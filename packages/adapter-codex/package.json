@@ -1,0 +1,10 @@
+{
+  "name": "@orbtex-ai/adapter-codex",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": "./src/index.js",
+  "dependencies": {
+    "@orbtex-ai/adapter-sdk": "workspace:*",
+    "smol-toml": "^1.4.2"
+  }
+}

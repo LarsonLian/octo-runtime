@@ -1,0 +1,17 @@
+{
+  "name": "@orbtex-ai/adapter-host-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "orbtex-adapter-host": "src/index.js" },
+  "scripts": { "start": "node src/index.js --manifest ../../config/adapters.json" },
+  "dependencies": {
+    "@orbtex-ai/adapter-host": "workspace:*",
+    "@orbtex-ai/adapter-codex": "workspace:*",
+    "@orbtex-ai/adapter-claude-code": "workspace:*",
+    "@orbtex-ai/adapter-codebuddy": "workspace:*",
+    "@orbtex-ai/adapter-opencode": "workspace:*",
+    "@orbtex-ai/adapter-openclaw": "workspace:*",
+    "@orbtex-ai/adapter-mock": "workspace:*"
+  }
+}

@@ -1,0 +1,121 @@
+# Pnpm Monorepo
+
+Orbtex 使用 pnpm workspace 管理多项目。workspace 边界由根目录 [pnpm-workspace.yaml](../pnpm-workspace.yaml) 定义：
+
+```yaml
+packages:
+  - "apps/*"
+  - "packages/*"
+```
+
+根目录的 `docs/`、`config/`、`fixtures/` 和 `test/` 是仓库级资源，不是独立发布项目。
+
+## 目录职责
+
+```text
+apps/
+  cli/                  面向用户的 Unix socket CLI
+  daemon/               daemon executable 与装配根
+  adapter-host/         manifest-driven adapter host executable
+  example-basic/        in-process example application
+
+packages/
+  protocol/             canonical protocol
+  core/                 domain engine and stores
+  daemon/               scheduling/runtime library
+  adapter-host/         adapter lifecycle and RPC library
+  adapter-sdk/          adapter authoring helpers
+  acp-client/           reusable ACP client
+  adapter-*/            provider adapter definitions
+```
+
+依赖方向：
+
+```text
+apps -> packages
+adapter-* -> adapter-sdk / provider protocol helpers
+daemon -> core -> protocol
+adapter-host -> protocol
+```
+
+`packages/*` 不应 import `apps/*`。provider 命令构造、native event parser、session codec 和权限适配必须留在 `packages/adapter-*`；apps 只做配置、进程启动和 I/O 装配。
+
+## 安装与常用命令
+
+根 [package.json](../package.json) 固定 `pnpm@11.19.0`：
+
+```bash
+pnpm install
+pnpm test
+pnpm demo
+pnpm daemon
+pnpm cli -- status
+```
+
+查看 workspace：
+
+```bash
+pnpm --recursive list --depth -1
+```
+
+运行单个 app：
+
+```bash
+pnpm --filter @orbtex-ai/example-basic start
+pnpm --filter @orbtex-ai/adapter-host-app start
+```
+
+查看单个 package 的依赖：
+
+```bash
+pnpm --filter @orbtex-ai/adapter-codex list
+```
+
+内部依赖必须使用 `workspace:*`：
+
+```json
+{
+  "dependencies": {
+    "@orbtex-ai/adapter-sdk": "workspace:*"
+  }
+}
+```
+
+这样 pnpm 安装时只会链接当前 workspace package，不会意外从 registry 拉取同名旧版本。
+
+## 新增 Adapter Package
+
+以 `foo` provider 为例：
+
+1. 创建 `packages/adapter-foo/package.json`、`src/index.js` 和 `README.md`。
+2. 包名使用 `@orbtex-ai/adapter-foo`，依赖 `@orbtex-ai/adapter-sdk: workspace:*`。
+3. 实现 metadata、probe、invoke、session 和 canonical event mapping。
+4. 在 [config/adapters.json](../config/adapters.json) 注册 adapter type/module/export。
+5. 在 `apps/adapter-host/package.json` 增加 workspace dependency，确保运行 host 能 import 它。
+6. 若根测试直接 import 该包，在根 `devDependencies` 增加 workspace dependency。
+7. 在 `test/` 添加 native fixture、success/error/cancel/session resume 合同测试。
+8. 在 [Packages And Adapter Guide](../packages/README.md) 和 provider matrix 中建立教程入口。
+
+Core、daemon 和 CLI 不应增加 `if adapterType === "foo"`。新增 provider 差异必须终止在 adapter contract 边界。
+
+## 新增 App
+
+1. 创建 `apps/<name>/package.json` 和 `src/index.js`。
+2. package 标记 `private: true`，命名为 `@orbtex-ai/<name>` 或 `@orbtex-ai/<name>-app`。
+3. 使用 `workspace:*` 依赖需要的 runtime packages。
+4. 在 app package 中提供 `start` script；需要统一入口时再加入根 scripts。
+
+App 可以选择不同 transport 或部署形式，但不能复制一份 Core/Adapter 业务逻辑。
+
+## Lockfile 与 CI
+
+仓库只提交根 `pnpm-lock.yaml`，不提交 `package-lock.json` 或子项目 lockfile。CI 推荐：
+
+```bash
+corepack enable
+corepack prepare pnpm@11.19.0 --activate
+pnpm install --frozen-lockfile
+pnpm test
+```
+
+升级 pnpm 时应同时更新根 `packageManager`、CI 版本和 lockfile；升级 provider CLI 不需要修改 workspace lock，但必须重跑 adapter contract 和受控 live smoke test。

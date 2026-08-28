@@ -1,0 +1,36 @@
+{
+  "name": "orbtex",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Provider-neutral agent harness runtime for chat, task and trigger workflows",
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/orbtex-ai/orbtex.git"
+  },
+  "scripts": {
+    "test": "node --test",
+    "demo": "node apps/example-basic/src/index.js",
+    "cli": "node apps/cli/src/index.js",
+    "daemon": "node apps/daemon/src/index.js",
+    "host": "node apps/adapter-host/src/index.js --manifest config/adapters.json"
+  },
+  "devDependencies": {
+    "@orbtex-ai/acp-client": "workspace:*",
+    "@orbtex-ai/adapter-claude-code": "workspace:*",
+    "@orbtex-ai/adapter-codebuddy": "workspace:*",
+    "@orbtex-ai/adapter-codex": "workspace:*",
+    "@orbtex-ai/adapter-host": "workspace:*",
+    "@orbtex-ai/adapter-mock": "workspace:*",
+    "@orbtex-ai/adapter-openclaw": "workspace:*",
+    "@orbtex-ai/adapter-opencode": "workspace:*",
+    "@orbtex-ai/core": "workspace:*",
+    "@orbtex-ai/daemon": "workspace:*",
+    "@orbtex-ai/daemon-app": "workspace:*"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=11"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@orbtex-ai/example-basic",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node src/index.js" },
+  "dependencies": {
+    "@orbtex-ai/core": "workspace:*",
+    "@orbtex-ai/adapter-host": "workspace:*",
+    "@orbtex-ai/adapter-mock": "workspace:*"
+  }
+}

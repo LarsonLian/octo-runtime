@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "adapters": [
+    { "type": "codex", "module": "@orbtex-ai/adapter-codex", "export": "codexAdapter" },
+    { "type": "claude-code", "module": "@orbtex-ai/adapter-claude-code", "export": "claudeCodeAdapter" },
+    { "type": "codebuddy", "module": "@orbtex-ai/adapter-codebuddy", "export": "codebuddyAdapter" },
+    { "type": "opencode", "module": "@orbtex-ai/adapter-opencode", "export": "opencodeAdapter" },
+    { "type": "openclaw", "module": "@orbtex-ai/adapter-openclaw", "export": "openclawAdapter" },
+    { "type": "mock", "module": "@orbtex-ai/adapter-mock", "export": "mockAdapter" }
+  ]
+}

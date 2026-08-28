@@ -1,0 +1,7 @@
+{
+  "name": "@orbtex-ai/adapter-mock",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": "./src/index.js",
+  "dependencies": { "@orbtex-ai/adapter-sdk": "workspace:*" }
+}

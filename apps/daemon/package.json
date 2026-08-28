@@ -1,0 +1,14 @@
+{
+  "name": "@orbtex-ai/daemon-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "orbtex-daemon": "src/index.js" },
+  "exports": "./src/server.js",
+  "scripts": { "start": "node src/index.js" },
+  "dependencies": {
+    "@orbtex-ai/adapter-host": "workspace:*",
+    "@orbtex-ai/core": "workspace:*",
+    "@orbtex-ai/daemon": "workspace:*"
+  }
+}
