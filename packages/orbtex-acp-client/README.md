@@ -48,4 +48,4 @@ try {
 }
 ```
 
-CodeBuddy 的完整接入教程见 [CodeBuddy Adapter](../adapter-codebuddy/README.md)。
+CodeBuddy 的完整接入教程见 [CodeBuddy Adapter](../orbtex-adapter-codebuddy/README.md)。

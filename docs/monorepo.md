@@ -20,27 +20,27 @@ apps/
   example-basic/        in-process example application
 
 packages/
-  protocol/             canonical protocol
-  core/                 domain engine and stores
-  daemon/               scheduling/runtime library
-  adapter-host/         adapter lifecycle and RPC library
-  adapter-sdk/          adapter authoring helpers
-  acp-client/           reusable ACP client
-  adapter-*/            provider adapter definitions
+  orbtex-protocol/             canonical protocol
+  orbtex-core/                 domain engine and stores
+  orbtex-daemon/               scheduling/runtime library
+  orbtex-adapter-host/         adapter lifecycle and RPC library
+  orbtex-adapter-sdk/          adapter authoring helpers
+  orbtex-acp-client/           reusable ACP client
+  orbtex-adapter-*/            provider adapter definitions
 ```
 
 依赖方向：
 
 ```text
 apps -> packages
-adapter-* -> adapter-sdk / provider protocol helpers
-daemon -> core -> protocol
-adapter-host -> protocol
+orbtex-adapter-* -> orbtex-adapter-sdk / provider protocol helpers
+orbtex-daemon -> orbtex-core -> orbtex-protocol
+orbtex-adapter-host -> orbtex-protocol
 ```
 
-`packages/*` 不应 import `apps/*`。provider 命令构造、native event parser、session codec 和权限适配必须留在 `packages/adapter-*`；apps 只做配置、进程启动和 I/O 装配。
+`packages/*` 不应 import `apps/*`。provider 命令构造、native event parser、session codec 和权限适配必须留在 `packages/orbtex-adapter-*`；apps 只做配置、进程启动和 I/O 装配。
 
-发布型 package 名称统一使用 `@orbtex-ai/orbtex-*`，例如目录 `packages/core` 发布为 `@orbtex-ai/orbtex-core`，目录 `packages/adapter-openclaw` 发布为 `@orbtex-ai/orbtex-adapter-openclaw`。目录保持短名是为了仓库导航，npm 名称带产品前缀是为了在依赖列表和 registry 搜索中保持明确归属。
+发布型 package 的目录名与 npm 非 scope 部分完全一致。例如目录 `packages/orbtex-core` 发布为 `@orbtex-ai/orbtex-core`，目录 `packages/orbtex-adapter-openclaw` 发布为 `@orbtex-ai/orbtex-adapter-openclaw`。这样仓库导航、workspace filter、依赖列表和 registry 搜索使用同一名称。
 
 ## TypeScript 构建约定
 
@@ -112,7 +112,7 @@ pnpm --filter @orbtex-ai/orbtex-adapter-codex list
 
 以 `foo` provider 为例：
 
-1. 创建 `packages/adapter-foo/package.json`、`src/index.ts` 和 `README.md`。
+1. 创建 `packages/orbtex-adapter-foo/package.json`、`src/index.ts` 和 `README.md`。
 2. 包名使用 `@orbtex-ai/orbtex-adapter-foo`，依赖 `@orbtex-ai/orbtex-adapter-sdk: workspace:*`。
 3. 实现 metadata、probe、invoke、session 和 canonical event mapping。
 4. 在 [config/adapters.json](../config/adapters.json) 注册 adapter type/module/export。

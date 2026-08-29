@@ -139,4 +139,4 @@ host abort 时 ACP client 关闭 CodeBuddy 子进程；虽然 client 实现了 `
 - `probe` 不验证登录、模型可用性或额度。
 - analysis 内容是否存在取决于 provider 实际发送的 ACP update；adapter 不伪造思考内容。
 
-实现：[src/index.ts](src/index.ts)，ACP client：[../../packages/acp-client/src/index.ts](../../packages/acp-client/src/index.ts)。公共使用流程见 [Adapter Guide](../README.md)。
+实现：[src/index.ts](src/index.ts)，ACP client：[../orbtex-acp-client/src/index.ts](../orbtex-acp-client/src/index.ts)。公共使用流程见 [Adapter Guide](../README.md)。

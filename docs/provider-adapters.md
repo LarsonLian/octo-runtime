@@ -4,11 +4,11 @@
 
 | Adapter | Native transport | Resume | Fork capability | Default permission |
 |---|---|---|---|---|
-| [`codex`](../packages/adapter-codex/README.md) | `codex exec --json` JSONL | `exec resume <thread>` | not exposed | workspace-write sandbox |
-| [`claude-code`](../packages/adapter-claude-code/README.md) | `claude --print --output-format stream-json` | `--resume <uuid>` | not exposed | `acceptEdits` |
-| [`codebuddy`](../packages/adapter-codebuddy/README.md) | ACP JSON-RPC stdio | `session/load` | not declared | `acceptEdits` + deny fallback |
-| [`opencode`](../packages/adapter-opencode/README.md) | `opencode run --format json` | `--session <id>` | not exposed | provider asks unless `autoApprove` |
-| [`openclaw`](../packages/adapter-openclaw/README.md) | `openclaw agent --local --json` | `--session-id <id>` | not exposed | OpenClaw agent policy |
+| [`codex`](../packages/orbtex-adapter-codex/README.md) | `codex exec --json` JSONL | `exec resume <thread>` | not exposed | workspace-write sandbox |
+| [`claude-code`](../packages/orbtex-adapter-claude-code/README.md) | `claude --print --output-format stream-json` | `--resume <uuid>` | not exposed | `acceptEdits` |
+| [`codebuddy`](../packages/orbtex-adapter-codebuddy/README.md) | ACP JSON-RPC stdio | `session/load` | not declared | `acceptEdits` + deny fallback |
+| [`opencode`](../packages/orbtex-adapter-opencode/README.md) | `opencode run --format json` | `--session <id>` | not exposed | provider asks unless `autoApprove` |
+| [`openclaw`](../packages/orbtex-adapter-openclaw/README.md) | `openclaw agent --local --json` JSONL | `--session-id <id>` | not exposed | OpenClaw agent policy |
 
 上层按 capability 做决策，不按 adapter type 写分支。虽然 Codex、Claude Code 和 OpenCode 原生 transport 可 fork，当前 host 没有 fork RPC，因此 adapters 不声明 `session.fork`；新增完整 host/daemon/CLI 流程后才能打开该 capability。
 

@@ -28,18 +28,18 @@ apps/
   adapter-host/        独立 provider host 进程
   example-basic/       in-process mock example
 packages/
-  protocol/            canonical event / invoke contract
-  core/                Chat/Task/Trigger/Run domain engine
-  daemon/              queue, scheduler, recovery
-  adapter-host/        host lifecycle + NDJSON RPC
-  adapter-sdk/         adapter helpers + subprocess runtime
-  acp-client/          CodeBuddy ACP JSON-RPC client
-  adapter-codex/       Codex provider adapter
-  adapter-claude-code/ Claude Code provider adapter
-  adapter-codebuddy/   CodeBuddy ACP adapter
-  adapter-opencode/    OpenCode provider adapter
-  adapter-openclaw/    OpenClaw local adapter
-  adapter-mock/        deterministic test adapter
+  orbtex-protocol/            canonical event / invoke contract
+  orbtex-core/                Chat/Task/Trigger/Run domain engine
+  orbtex-daemon/              queue, scheduler, recovery
+  orbtex-adapter-host/        host lifecycle + NDJSON RPC
+  orbtex-adapter-sdk/         adapter helpers + subprocess runtime
+  orbtex-acp-client/          CodeBuddy ACP JSON-RPC client
+  orbtex-adapter-codex/       Codex provider adapter
+  orbtex-adapter-claude-code/ Claude Code provider adapter
+  orbtex-adapter-codebuddy/   CodeBuddy ACP adapter
+  orbtex-adapter-opencode/    OpenCode provider adapter
+  orbtex-adapter-openclaw/    OpenClaw local adapter
+  orbtex-adapter-mock/        deterministic test adapter
 config/adapters.json   adapter manifest
 test/                  contract and integration tests
 ```

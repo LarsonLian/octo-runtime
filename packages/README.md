@@ -6,14 +6,14 @@
 
 | Package | 职责 |
 |---|---|
-| [`@orbtex-ai/orbtex-protocol`](protocol/README.md) | InvokeRequest、canonical event 与 envelope 合同 |
-| [`@orbtex-ai/orbtex-core`](core/README.md) | Chat、Task、Trigger、Attempt、Run 领域逻辑与 store |
-| [`@orbtex-ai/orbtex-daemon`](daemon/README.md) | durable queue、调度、恢复和 run wait/cancel |
-| [`@orbtex-ai/orbtex-adapter-host`](adapter-host/README.md) | adapter registry、invoke lifecycle 与 NDJSON RPC |
-| [`@orbtex-ai/orbtex-adapter-sdk`](adapter-sdk/README.md) | adapter 定义、CLI subprocess 与 probe helpers |
-| [`@orbtex-ai/orbtex-acp-client`](acp-client/README.md) | CodeBuddy ACP JSON-RPC client |
+| [`@orbtex-ai/orbtex-protocol`](orbtex-protocol/README.md) | InvokeRequest、canonical event 与 envelope 合同 |
+| [`@orbtex-ai/orbtex-core`](orbtex-core/README.md) | Chat、Task、Trigger、Attempt、Run 领域逻辑与 store |
+| [`@orbtex-ai/orbtex-daemon`](orbtex-daemon/README.md) | durable queue、调度、恢复和 run wait/cancel |
+| [`@orbtex-ai/orbtex-adapter-host`](orbtex-adapter-host/README.md) | adapter registry、invoke lifecycle 与 NDJSON RPC |
+| [`@orbtex-ai/orbtex-adapter-sdk`](orbtex-adapter-sdk/README.md) | adapter 定义、CLI subprocess 与 probe helpers |
+| [`@orbtex-ai/orbtex-acp-client`](orbtex-acp-client/README.md) | CodeBuddy ACP JSON-RPC client |
 
-所有 `packages/*` 的 npm 名称统一采用 `@orbtex-ai/orbtex-*`。provider packages 使用 `@orbtex-ai/orbtex-adapter-<provider>`；目录仍保留 `packages/adapter-<provider>` 短路径。
+所有 `packages/*` 的目录名和 npm 非 scope 部分保持一致。provider packages 使用 `packages/orbtex-adapter-<provider>` 与 `@orbtex-ai/orbtex-adapter-<provider>`。
 
 以下 `orbtex-adapter-*` packages 共享同一个 `InvokeRequest -> AsyncIterable<CanonicalEvent>` 上层合同，但底层 CLI、传输、权限和 provider session 格式不同。
 
@@ -27,12 +27,12 @@
 
 | Adapter | 节点上的执行形态 | Provider transport | 模型通常在哪里 | Session 恢复 | Gateway |
 |---|---|---|---|---|---|
-| [`codex`](adapter-codex/README.md) | `codex exec` 子进程 | stdin + JSONL stdout | Codex 配置的远程/本地 provider | thread ID + `exec resume` | 不需要 |
-| [`claude-code`](adapter-claude-code/README.md) | `claude --print` 子进程 | stdin + stream-json stdout | Anthropic/配置的云 provider | UUID + `--resume` | 不需要 |
-| [`codebuddy`](adapter-codebuddy/README.md) | `codebuddy --acp` 子进程 | ACP JSON-RPC stdio | CodeBuddy 配置的云 provider | `session/load` | 不需要 |
-| [`opencode`](adapter-opencode/README.md) | `opencode run` 子进程 | argv + JSON events stdout | OpenCode 配置的 provider | `--session` | 不需要 |
-| [`openclaw`](adapter-openclaw/README.md) | `openclaw agent --local` 子进程 | NDJSON/final JSON stdout | OpenClaw 配置的 provider | `--session-id` | **明确不使用** |
-| [`mock`](adapter-mock/README.md) | adapter-host 进程内 | 无 | 无模型 | 确定性 mock ID | 不需要 |
+| [`codex`](orbtex-adapter-codex/README.md) | `codex exec` 子进程 | stdin + JSONL stdout | Codex 配置的远程/本地 provider | thread ID + `exec resume` | 不需要 |
+| [`claude-code`](orbtex-adapter-claude-code/README.md) | `claude --print` 子进程 | stdin + stream-json stdout | Anthropic/配置的云 provider | UUID + `--resume` | 不需要 |
+| [`codebuddy`](orbtex-adapter-codebuddy/README.md) | `codebuddy --acp` 子进程 | ACP JSON-RPC stdio | CodeBuddy 配置的云 provider | `session/load` | 不需要 |
+| [`opencode`](orbtex-adapter-opencode/README.md) | `opencode run` 子进程 | argv + JSON events stdout | OpenCode 配置的 provider | `--session` | 不需要 |
+| [`openclaw`](orbtex-adapter-openclaw/README.md) | `openclaw agent --local` 子进程 | NDJSON/final JSON stdout | OpenClaw 配置的 provider | `--session-id` | **明确不使用** |
+| [`mock`](orbtex-adapter-mock/README.md) | adapter-host 进程内 | 无 | 无模型 | 确定性 mock ID | 不需要 |
 
 所有真实 adapter 都是“一次 invocation 一个本地 CLI process”。当前没有维护长期 provider CLI daemon；CodeBuddy 的 ACP session 可以跨新进程 `session/load`，OpenClaw local 依赖 state dir 中的 transcript，其余依赖各 provider 自己的 session store。
 
