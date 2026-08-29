@@ -40,6 +40,8 @@ adapter-host -> protocol
 
 `packages/*` 不应 import `apps/*`。provider 命令构造、native event parser、session codec 和权限适配必须留在 `packages/adapter-*`；apps 只做配置、进程启动和 I/O 装配。
 
+发布型 package 名称统一使用 `@orbtex-ai/orbtex-*`，例如目录 `packages/core` 发布为 `@orbtex-ai/orbtex-core`，目录 `packages/adapter-openclaw` 发布为 `@orbtex-ai/orbtex-adapter-openclaw`。目录保持短名是为了仓库导航，npm 名称带产品前缀是为了在依赖列表和 registry 搜索中保持明确归属。
+
 ## TypeScript 构建约定
 
 所有 app 和 package 的实现源码均为 `src/*.ts`，统一继承根目录的 [tsconfig.base.json](../tsconfig.base.json)。当前采用 `strict`、`NodeNext` module/module resolution，并开启 declaration 与 source map 输出。
@@ -91,7 +93,7 @@ pnpm --filter @orbtex-ai/adapter-host-app start
 查看单个 package 的依赖：
 
 ```bash
-pnpm --filter @orbtex-ai/adapter-codex list
+pnpm --filter @orbtex-ai/orbtex-adapter-codex list
 ```
 
 内部依赖必须使用 `workspace:*`：
@@ -99,7 +101,7 @@ pnpm --filter @orbtex-ai/adapter-codex list
 ```json
 {
   "dependencies": {
-    "@orbtex-ai/adapter-sdk": "workspace:*"
+    "@orbtex-ai/orbtex-adapter-sdk": "workspace:*"
   }
 }
 ```
@@ -111,13 +113,13 @@ pnpm --filter @orbtex-ai/adapter-codex list
 以 `foo` provider 为例：
 
 1. 创建 `packages/adapter-foo/package.json`、`src/index.ts` 和 `README.md`。
-2. 包名使用 `@orbtex-ai/adapter-foo`，依赖 `@orbtex-ai/adapter-sdk: workspace:*`。
+2. 包名使用 `@orbtex-ai/orbtex-adapter-foo`，依赖 `@orbtex-ai/orbtex-adapter-sdk: workspace:*`。
 3. 实现 metadata、probe、invoke、session 和 canonical event mapping。
 4. 在 [config/adapters.json](../config/adapters.json) 注册 adapter type/module/export。
 5. 在 `apps/adapter-host/package.json` 增加 workspace dependency，确保运行 host 能 import 它。
 6. 若根测试直接 import 该包，在根 `devDependencies` 增加 workspace dependency。
 7. 在 `test/` 添加 native fixture、success/error/cancel/session resume 合同测试。
-8. 在 [Packages And Adapter Guide](../packages/README.md) 和 provider matrix 中建立教程入口。
+8. README 至少说明包的作用、设计原则、适用场景、明确边界和最小用法，并在 [Packages And Adapter Guide](../packages/README.md) 与 provider matrix 中建立入口。
 
 Core、daemon 和 CLI 不应增加 `if adapterType === "foo"`。新增 provider 差异必须终止在 adapter contract 边界。
 

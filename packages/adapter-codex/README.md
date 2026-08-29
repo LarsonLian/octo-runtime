@@ -1,6 +1,22 @@
-# Codex Adapter
+# @orbtex-ai/orbtex-adapter-codex
+
+Codex provider adapter。
 
 Adapter type：`codex`
+
+## 作用与适用场景
+
+把本地 `codex exec` CLI 接入 Orbtex 的统一 `InvokeRequest -> CanonicalEvent` 合同。适合代码审阅、仓库修改、测试执行等需要 Codex 工具能力，并希望由 Orbtex 统一管理 Chat/Task、session resume、取消和事件汇报的场景。
+
+它只负责 Codex provider 差异，不负责排队、Trigger、持久化或远端节点调度。
+
+## 设计原则
+
+- 用户 prompt 走 stdin；harness control instructions 走 invocation-private shadow `CODEX_HOME`。
+- 复用真实认证与 sessions，但不修改用户真实 `config.toml`。
+- Codex thread ID 作为 opaque provider session 上报，由 Core 保存后用于 `exec resume`。
+- native item/turn 事件在 adapter 内转换，Core 不出现 Codex 专用分支。
+- 权限与 sandbox 由 Codex CLI 执行，workdir 本身不被描述成安全边界。
 
 ## 它运行在哪里
 

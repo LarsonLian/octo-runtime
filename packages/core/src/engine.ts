@@ -4,7 +4,7 @@ import {
   type AgentConfig,
   type CanonicalEvent,
   type InvokeRequest
-} from "@orbtex-ai/protocol";
+} from "@orbtex-ai/orbtex-protocol";
 import { randomUUID } from "node:crypto";
 import { composeContext, renderPortableInstructions } from "./prompt.js";
 import type {

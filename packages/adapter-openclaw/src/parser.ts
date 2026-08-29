@@ -1,4 +1,4 @@
-import type { CanonicalEvent } from "@orbtex-ai/adapter-sdk";
+import type { CanonicalEvent } from "@orbtex-ai/orbtex-adapter-sdk";
 
 type JsonRecord = Record<string, unknown>;
 

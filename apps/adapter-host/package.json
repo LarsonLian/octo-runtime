@@ -11,13 +11,13 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@orbtex-ai/adapter-claude-code": "workspace:*",
-    "@orbtex-ai/adapter-codebuddy": "workspace:*",
-    "@orbtex-ai/adapter-codex": "workspace:*",
-    "@orbtex-ai/adapter-host": "workspace:*",
-    "@orbtex-ai/adapter-mock": "workspace:*",
-    "@orbtex-ai/adapter-openclaw": "workspace:*",
-    "@orbtex-ai/adapter-opencode": "workspace:*"
+    "@orbtex-ai/orbtex-adapter-claude-code": "workspace:*",
+    "@orbtex-ai/orbtex-adapter-codebuddy": "workspace:*",
+    "@orbtex-ai/orbtex-adapter-codex": "workspace:*",
+    "@orbtex-ai/orbtex-adapter-host": "workspace:*",
+    "@orbtex-ai/orbtex-adapter-mock": "workspace:*",
+    "@orbtex-ai/orbtex-adapter-openclaw": "workspace:*",
+    "@orbtex-ai/orbtex-adapter-opencode": "workspace:*"
   },
   "types": "./dist/index.d.ts"
 }

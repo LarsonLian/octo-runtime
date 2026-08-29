@@ -6,14 +6,16 @@
 
 | Package | 职责 |
 |---|---|
-| `@orbtex-ai/protocol` | InvokeRequest、canonical event 与 envelope 合同 |
-| `@orbtex-ai/core` | Chat、Task、Trigger、Attempt、Run 领域逻辑与 store |
-| `@orbtex-ai/daemon` | durable queue、调度、恢复和 run wait/cancel |
-| `@orbtex-ai/adapter-host` | adapter registry、invoke lifecycle 与 NDJSON RPC |
-| `@orbtex-ai/adapter-sdk` | adapter 定义、CLI subprocess 与 probe helpers |
-| `@orbtex-ai/acp-client` | CodeBuddy ACP JSON-RPC client |
+| [`@orbtex-ai/orbtex-protocol`](protocol/README.md) | InvokeRequest、canonical event 与 envelope 合同 |
+| [`@orbtex-ai/orbtex-core`](core/README.md) | Chat、Task、Trigger、Attempt、Run 领域逻辑与 store |
+| [`@orbtex-ai/orbtex-daemon`](daemon/README.md) | durable queue、调度、恢复和 run wait/cancel |
+| [`@orbtex-ai/orbtex-adapter-host`](adapter-host/README.md) | adapter registry、invoke lifecycle 与 NDJSON RPC |
+| [`@orbtex-ai/orbtex-adapter-sdk`](adapter-sdk/README.md) | adapter 定义、CLI subprocess 与 probe helpers |
+| [`@orbtex-ai/orbtex-acp-client`](acp-client/README.md) | CodeBuddy ACP JSON-RPC client |
 
-以下 `adapter-*` packages 共享同一个 `InvokeRequest -> AsyncIterable<CanonicalEvent>` 上层合同，但底层 CLI、传输、权限和 provider session 格式不同。
+所有 `packages/*` 的 npm 名称统一采用 `@orbtex-ai/orbtex-*`。provider packages 使用 `@orbtex-ai/orbtex-adapter-<provider>`；目录仍保留 `packages/adapter-<provider>` 短路径。
+
+以下 `orbtex-adapter-*` packages 共享同一个 `InvokeRequest -> AsyncIterable<CanonicalEvent>` 上层合同，但底层 CLI、传输、权限和 provider session 格式不同。
 
 ## 先理解“本地”
 

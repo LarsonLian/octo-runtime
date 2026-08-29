@@ -5,7 +5,7 @@ import {
   type CanonicalEvent,
   type InvokeRequest,
   type MessageChannel
-} from "@orbtex-ai/protocol";
+} from "@orbtex-ai/orbtex-protocol";
 
 export interface HostedAdapterMetadata extends Record<string, unknown> {
   type: string;

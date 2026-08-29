@@ -11,39 +11,39 @@ importers:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.9.1)
-      '@orbtex-ai/acp-client':
-        specifier: workspace:*
-        version: link:packages/acp-client
-      '@orbtex-ai/adapter-claude-code':
-        specifier: workspace:*
-        version: link:packages/adapter-claude-code
-      '@orbtex-ai/adapter-codebuddy':
-        specifier: workspace:*
-        version: link:packages/adapter-codebuddy
-      '@orbtex-ai/adapter-codex':
-        specifier: workspace:*
-        version: link:packages/adapter-codex
-      '@orbtex-ai/adapter-host':
-        specifier: workspace:*
-        version: link:packages/adapter-host
-      '@orbtex-ai/adapter-mock':
-        specifier: workspace:*
-        version: link:packages/adapter-mock
-      '@orbtex-ai/adapter-openclaw':
-        specifier: workspace:*
-        version: link:packages/adapter-openclaw
-      '@orbtex-ai/adapter-opencode':
-        specifier: workspace:*
-        version: link:packages/adapter-opencode
-      '@orbtex-ai/core':
-        specifier: workspace:*
-        version: link:packages/core
-      '@orbtex-ai/daemon':
-        specifier: workspace:*
-        version: link:packages/daemon
       '@orbtex-ai/daemon-app':
         specifier: workspace:*
         version: link:apps/daemon
+      '@orbtex-ai/orbtex-acp-client':
+        specifier: workspace:*
+        version: link:packages/acp-client
+      '@orbtex-ai/orbtex-adapter-claude-code':
+        specifier: workspace:*
+        version: link:packages/adapter-claude-code
+      '@orbtex-ai/orbtex-adapter-codebuddy':
+        specifier: workspace:*
+        version: link:packages/adapter-codebuddy
+      '@orbtex-ai/orbtex-adapter-codex':
+        specifier: workspace:*
+        version: link:packages/adapter-codex
+      '@orbtex-ai/orbtex-adapter-host':
+        specifier: workspace:*
+        version: link:packages/adapter-host
+      '@orbtex-ai/orbtex-adapter-mock':
+        specifier: workspace:*
+        version: link:packages/adapter-mock
+      '@orbtex-ai/orbtex-adapter-openclaw':
+        specifier: workspace:*
+        version: link:packages/adapter-openclaw
+      '@orbtex-ai/orbtex-adapter-opencode':
+        specifier: workspace:*
+        version: link:packages/adapter-opencode
+      '@orbtex-ai/orbtex-core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@orbtex-ai/orbtex-daemon':
+        specifier: workspace:*
+        version: link:packages/daemon
       '@types/node':
         specifier: ^20.19.43
         version: 20.19.43
@@ -59,25 +59,25 @@ importers:
 
   apps/adapter-host:
     dependencies:
-      '@orbtex-ai/adapter-claude-code':
+      '@orbtex-ai/orbtex-adapter-claude-code':
         specifier: workspace:*
         version: link:../../packages/adapter-claude-code
-      '@orbtex-ai/adapter-codebuddy':
+      '@orbtex-ai/orbtex-adapter-codebuddy':
         specifier: workspace:*
         version: link:../../packages/adapter-codebuddy
-      '@orbtex-ai/adapter-codex':
+      '@orbtex-ai/orbtex-adapter-codex':
         specifier: workspace:*
         version: link:../../packages/adapter-codex
-      '@orbtex-ai/adapter-host':
+      '@orbtex-ai/orbtex-adapter-host':
         specifier: workspace:*
         version: link:../../packages/adapter-host
-      '@orbtex-ai/adapter-mock':
+      '@orbtex-ai/orbtex-adapter-mock':
         specifier: workspace:*
         version: link:../../packages/adapter-mock
-      '@orbtex-ai/adapter-openclaw':
+      '@orbtex-ai/orbtex-adapter-openclaw':
         specifier: workspace:*
         version: link:../../packages/adapter-openclaw
-      '@orbtex-ai/adapter-opencode':
+      '@orbtex-ai/orbtex-adapter-opencode':
         specifier: workspace:*
         version: link:../../packages/adapter-opencode
 
@@ -89,25 +89,25 @@ importers:
 
   apps/daemon:
     dependencies:
-      '@orbtex-ai/adapter-host':
+      '@orbtex-ai/orbtex-adapter-host':
         specifier: workspace:*
         version: link:../../packages/adapter-host
-      '@orbtex-ai/core':
+      '@orbtex-ai/orbtex-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@orbtex-ai/daemon':
+      '@orbtex-ai/orbtex-daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
 
   apps/example-basic:
     dependencies:
-      '@orbtex-ai/adapter-host':
+      '@orbtex-ai/orbtex-adapter-host':
         specifier: workspace:*
         version: link:../../packages/adapter-host
-      '@orbtex-ai/adapter-mock':
+      '@orbtex-ai/orbtex-adapter-mock':
         specifier: workspace:*
         version: link:../../packages/adapter-mock
-      '@orbtex-ai/core':
+      '@orbtex-ai/orbtex-core':
         specifier: workspace:*
         version: link:../../packages/core
 
@@ -115,22 +115,22 @@ importers:
 
   packages/adapter-claude-code:
     dependencies:
-      '@orbtex-ai/adapter-sdk':
+      '@orbtex-ai/orbtex-adapter-sdk':
         specifier: workspace:*
         version: link:../adapter-sdk
 
   packages/adapter-codebuddy:
     dependencies:
-      '@orbtex-ai/acp-client':
+      '@orbtex-ai/orbtex-acp-client':
         specifier: workspace:*
         version: link:../acp-client
-      '@orbtex-ai/adapter-sdk':
+      '@orbtex-ai/orbtex-adapter-sdk':
         specifier: workspace:*
         version: link:../adapter-sdk
 
   packages/adapter-codex:
     dependencies:
-      '@orbtex-ai/adapter-sdk':
+      '@orbtex-ai/orbtex-adapter-sdk':
         specifier: workspace:*
         version: link:../adapter-sdk
       smol-toml:
@@ -139,43 +139,43 @@ importers:
 
   packages/adapter-host:
     dependencies:
-      '@orbtex-ai/protocol':
+      '@orbtex-ai/orbtex-protocol':
         specifier: workspace:*
         version: link:../protocol
 
   packages/adapter-mock:
     dependencies:
-      '@orbtex-ai/adapter-sdk':
+      '@orbtex-ai/orbtex-adapter-sdk':
         specifier: workspace:*
         version: link:../adapter-sdk
 
   packages/adapter-openclaw:
     dependencies:
-      '@orbtex-ai/adapter-sdk':
+      '@orbtex-ai/orbtex-adapter-sdk':
         specifier: workspace:*
         version: link:../adapter-sdk
 
   packages/adapter-opencode:
     dependencies:
-      '@orbtex-ai/adapter-sdk':
+      '@orbtex-ai/orbtex-adapter-sdk':
         specifier: workspace:*
         version: link:../adapter-sdk
 
   packages/adapter-sdk:
     dependencies:
-      '@orbtex-ai/protocol':
+      '@orbtex-ai/orbtex-protocol':
         specifier: workspace:*
         version: link:../protocol
 
   packages/core:
     dependencies:
-      '@orbtex-ai/protocol':
+      '@orbtex-ai/orbtex-protocol':
         specifier: workspace:*
         version: link:../protocol
 
   packages/daemon:
     dependencies:
-      '@orbtex-ai/core':
+      '@orbtex-ai/orbtex-core':
         specifier: workspace:*
         version: link:../core
 

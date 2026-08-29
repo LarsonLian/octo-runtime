@@ -1,11 +1,11 @@
 {
-  "name": "@orbtex-ai/adapter-codebuddy",
+  "name": "@orbtex-ai/orbtex-adapter-codebuddy",
   "version": "0.1.0",
   "type": "module",
   "exports": "./dist/index.js",
   "dependencies": {
-    "@orbtex-ai/acp-client": "workspace:*",
-    "@orbtex-ai/adapter-sdk": "workspace:*"
+    "@orbtex-ai/orbtex-acp-client": "workspace:*",
+    "@orbtex-ai/orbtex-adapter-sdk": "workspace:*"
   },
   "types": "./dist/index.d.ts",
   "files": [

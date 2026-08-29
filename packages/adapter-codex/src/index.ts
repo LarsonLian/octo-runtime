@@ -1,4 +1,4 @@
-import { createJsonCliAdapter, probeCommand, type CanonicalEvent, type InvokeRequest } from "@orbtex-ai/adapter-sdk";
+import { createJsonCliAdapter, probeCommand, type CanonicalEvent, type InvokeRequest } from "@orbtex-ai/orbtex-adapter-sdk";
 import { parse, stringify } from "smol-toml";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";

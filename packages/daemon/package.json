@@ -1,10 +1,10 @@
 {
-  "name": "@orbtex-ai/daemon",
+  "name": "@orbtex-ai/orbtex-daemon",
   "version": "0.1.0",
   "type": "module",
   "exports": "./dist/index.js",
   "dependencies": {
-    "@orbtex-ai/core": "workspace:*"
+    "@orbtex-ai/orbtex-core": "workspace:*"
   },
   "types": "./dist/index.d.ts",
   "files": [

@@ -1,4 +1,4 @@
-import { defineAdapter } from "@orbtex-ai/adapter-sdk";
+import { defineAdapter } from "@orbtex-ai/orbtex-adapter-sdk";
 
 export const mockAdapter = defineAdapter({
   metadata: { type: "mock", capabilities: ["session.serialize", "tool.canonical"] },

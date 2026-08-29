@@ -1,6 +1,22 @@
-# CodeBuddy Adapter
+# @orbtex-ai/orbtex-adapter-codebuddy
+
+CodeBuddy provider adapter。
 
 Adapter type：`codebuddy`
+
+## 作用与适用场景
+
+通过 ACP stdio JSON-RPC 驱动本地 CodeBuddy CLI，并把 session updates 转换成 Orbtex canonical events。适合需要 CodeBuddy Agent 能力、思考/最终消息分频道、tool call 和跨 invocation session load 的场景。
+
+它不在 Core 中暴露 ACP 细节；通用 ACP request/response 由 `@orbtex-ai/orbtex-acp-client` 承担。
+
+## 设计原则
+
+- ACP transport 与 CodeBuddy event mapping 分层，client 可独立测试。
+- 新建和恢复 session 最终都进入同一条 `session/prompt` 流。
+- agent thought 映射为 `analysis` channel，agent message 映射为 `final` channel。
+- provider 反向权限请求默认拒绝，除非调用方显式提供策略。
+- 每次 invocation 的 ACP 子进程必须可取消并在结束后回收。
 
 ## 它运行在哪里
 

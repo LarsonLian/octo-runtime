@@ -12,9 +12,9 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@orbtex-ai/adapter-host": "workspace:*",
-    "@orbtex-ai/core": "workspace:*",
-    "@orbtex-ai/daemon": "workspace:*"
+    "@orbtex-ai/orbtex-adapter-host": "workspace:*",
+    "@orbtex-ai/orbtex-core": "workspace:*",
+    "@orbtex-ai/orbtex-daemon": "workspace:*"
   },
   "types": "./dist/server.d.ts"
 }

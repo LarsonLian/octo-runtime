@@ -4,7 +4,7 @@ import { access, chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { defineAdapter, probeCommand, type CanonicalEvent, type InvokeRequest } from "@orbtex-ai/adapter-sdk";
+import { defineAdapter, probeCommand, type CanonicalEvent, type InvokeRequest } from "@orbtex-ai/orbtex-adapter-sdk";
 import {
   normalizeOpenClawFrame,
   tryParseOpenClawEvent,

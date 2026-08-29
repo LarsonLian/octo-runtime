@@ -1,6 +1,22 @@
-# Claude Code Adapter
+# @orbtex-ai/orbtex-adapter-claude-code
+
+Claude Code provider adapter。
 
 Adapter type：`claude-code`
+
+## 作用与适用场景
+
+把本地 Claude Code `--print` 模式接入 Orbtex。适合需要 Claude Code 读取或修改可信代码目录，同时由 Orbtex 统一管理 Chat/Task、session resume、流式消息、tool call 和取消的场景。
+
+它不实现 Claude 模型 API，也不负责 workspace trust、容器隔离或业务任务状态。
+
+## 设计原则
+
+- 用户 prompt 走 stdin，control instructions 走 mode `0600` 的临时 system-prompt file。
+- Claude session UUID 原样保存和恢复，Core 不解释其格式。
+- stream-json 只在 adapter 内归一化为 canonical message/tool/usage/run events。
+- permission mode 必须显式映射；危险 bypass 不被默认启用。
+- 临时控制文件在 invocation 的 `finally` 阶段清理。
 
 ## 它运行在哪里
 

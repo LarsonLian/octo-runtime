@@ -3,7 +3,7 @@
 ## Minimal Contract
 
 ```js
-import { defineAdapter, probeCommand } from "@orbtex-ai/adapter-sdk";
+import { defineAdapter, probeCommand } from "@orbtex-ai/orbtex-adapter-sdk";
 
 export const adapter = defineAdapter({
   metadata: {

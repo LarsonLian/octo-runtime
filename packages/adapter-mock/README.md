@@ -1,6 +1,19 @@
-# Mock Adapter
+# @orbtex-ai/orbtex-adapter-mock
+
+Orbtex deterministic test adapter。
 
 Adapter type：`mock`
+
+## 作用
+
+提供不依赖模型、网络、认证或外部 CLI 的确定性 adapter，用于验证 Orbtex 自身的控制面和事件合同。它返回固定 session、message 与 terminal event，便于教程、CI 和故障定位。
+
+## 设计原则
+
+- 输出完全确定，不把模型随机性带入 harness 测试。
+- 使用与真实 adapter 相同的 async iterable 和 canonical event 合同。
+- 不读取或修改 workdir，不产生外部副作用。
+- 不伪装 provider 功能：不会生成虚假的 tool、usage 或权限行为。
 
 ## 它运行在哪里
 

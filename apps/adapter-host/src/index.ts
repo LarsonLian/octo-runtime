@@ -6,7 +6,7 @@ import {
   AdapterHost,
   AdapterHostRpcServer,
   type HostedAdapter
-} from "@orbtex-ai/adapter-host";
+} from "@orbtex-ai/orbtex-adapter-host";
 
 type JsonRecord = Record<string, unknown>;
 

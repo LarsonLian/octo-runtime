@@ -1,6 +1,6 @@
-import { AdapterHost } from "@orbtex-ai/adapter-host";
-import { HarnessEngine, MemoryStore } from "@orbtex-ai/core";
-import { mockAdapter } from "@orbtex-ai/adapter-mock";
+import { AdapterHost } from "@orbtex-ai/orbtex-adapter-host";
+import { HarnessEngine, MemoryStore } from "@orbtex-ai/orbtex-core";
+import { mockAdapter } from "@orbtex-ai/orbtex-adapter-mock";
 
 const host = new AdapterHost();
 host.register(mockAdapter);

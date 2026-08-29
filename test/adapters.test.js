@@ -2,18 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { readFile, stat } from "node:fs/promises";
-import { AdapterHost } from "@orbtex-ai/adapter-host";
-import { spawnAcpClient } from "@orbtex-ai/acp-client";
-import { createCodeBuddyAdapter, normalizeCodeBuddyUpdate } from "@orbtex-ai/adapter-codebuddy";
-import { normalizeCodexEvent, createCodexInvocationHome } from "@orbtex-ai/adapter-codex";
-import { buildClaudeCommand, normalizeClaudeEvent } from "@orbtex-ai/adapter-claude-code";
-import { buildOpenCodeCommand, normalizeOpenCodeEvent } from "@orbtex-ai/adapter-opencode";
+import { AdapterHost } from "@orbtex-ai/orbtex-adapter-host";
+import { spawnAcpClient } from "@orbtex-ai/orbtex-acp-client";
+import { createCodeBuddyAdapter, normalizeCodeBuddyUpdate } from "@orbtex-ai/orbtex-adapter-codebuddy";
+import { normalizeCodexEvent, createCodexInvocationHome } from "@orbtex-ai/orbtex-adapter-codex";
+import { buildClaudeCommand, normalizeClaudeEvent } from "@orbtex-ai/orbtex-adapter-claude-code";
+import { buildOpenCodeCommand, normalizeOpenCodeEvent } from "@orbtex-ai/orbtex-adapter-opencode";
 import {
   buildOpenClawCommand,
   createOpenClawAdapter,
   tryParseOpenClawEvent,
   tryParseOpenClawFinalBlob
-} from "@orbtex-ai/adapter-openclaw";
+} from "@orbtex-ai/orbtex-adapter-openclaw";
 
 const request = { invocationId: "inv-1", sessionId: "session-1", runId: "run-1", prompt: "work", workdir: process.cwd(), context: {}, appendInstructions: "CONTROL", agentConfig: {} };
 

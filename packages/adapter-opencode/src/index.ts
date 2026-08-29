@@ -1,4 +1,4 @@
-import { createJsonCliAdapter, probeCommand, type CanonicalEvent, type InvokeRequest } from "@orbtex-ai/adapter-sdk";
+import { createJsonCliAdapter, probeCommand, type CanonicalEvent, type InvokeRequest } from "@orbtex-ai/orbtex-adapter-sdk";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

@@ -8,9 +8,9 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@orbtex-ai/adapter-host": "workspace:*",
-    "@orbtex-ai/adapter-mock": "workspace:*",
-    "@orbtex-ai/core": "workspace:*"
+    "@orbtex-ai/orbtex-adapter-host": "workspace:*",
+    "@orbtex-ai/orbtex-adapter-mock": "workspace:*",
+    "@orbtex-ai/orbtex-core": "workspace:*"
   },
   "types": "./dist/index.d.ts"
 }

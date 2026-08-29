@@ -1,6 +1,22 @@
-# OpenClaw Local Adapter
+# @orbtex-ai/orbtex-adapter-openclaw
+
+OpenClaw local provider adapter。
 
 Adapter type：`openclaw`
+
+## 作用与适用场景
+
+使用 `openclaw agent --local` 在 adapter-host 节点动态启动一次 OpenClaw invocation。适合已有 OpenClaw agent/state 配置，希望绕过 Gateway、由 Orbtex 统一触发任务并消费 message/tool/usage/session 事件的场景。
+
+它不是 OpenClaw Gateway client，也不负责安装、启动、认证或同步 Gateway。
+
+## 设计原则
+
+- 明确 local-only：每次 invocation 一个 CLI 子进程，不隐式依赖常驻 Gateway。
+- prompt 使用 mode `0600` 的临时 message file，避免长文本和控制上下文进入 argv。
+- parser 同时接受流式 NDJSON 和尾部 pretty JSON blob，并在 adapter 边界去重。
+- OpenClaw agent/session/state 语义保持 provider-owned，Core 只保存 opaque session。
+- 取消、错误和非零退出最终统一收敛为一个 terminal event。
 
 ## 它运行在哪里
 

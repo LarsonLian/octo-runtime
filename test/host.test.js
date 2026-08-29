@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { AdapterHost, spawnAdapterHost } from "@orbtex-ai/adapter-host";
+import { AdapterHost, spawnAdapterHost } from "@orbtex-ai/orbtex-adapter-host";
 
 const request = { invocationId: "inv-host", sessionId: "s", runId: "r", prompt: "p", workdir: process.cwd() };
 

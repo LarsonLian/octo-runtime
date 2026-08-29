@@ -5,7 +5,7 @@ import type {
   RunStatus,
   Store,
   TriggerInput
-} from "@orbtex-ai/core";
+} from "@orbtex-ai/orbtex-core";
 
 const TERMINAL: ReadonlySet<RunStatus> = new Set(["completed", "failed", "cancelled"]);
 

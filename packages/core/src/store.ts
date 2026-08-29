@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { AgentConfig, EventEnvelope, ProviderSession } from "@orbtex-ai/protocol";
+import type { AgentConfig, EventEnvelope, ProviderSession } from "@orbtex-ai/orbtex-protocol";
 
 export type TriggerKind = "manual" | "event" | "interval";
 export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";

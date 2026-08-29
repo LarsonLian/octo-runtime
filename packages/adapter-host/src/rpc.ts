@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
-import type { CanonicalEvent, InvokeRequest } from "@orbtex-ai/protocol";
+import type { CanonicalEvent, InvokeRequest } from "@orbtex-ai/orbtex-protocol";
 import type { AdapterHost, HostedAdapterMetadata } from "./index.js";
 
 type JsonRecord = Record<string, unknown>;

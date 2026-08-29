@@ -8,13 +8,13 @@ import {
   type CreateTriggerInput,
   type RegisterAgentInput,
   type Store
-} from "@orbtex-ai/core";
-import { HarnessDaemon } from "@orbtex-ai/daemon";
+} from "@orbtex-ai/orbtex-core";
+import { HarnessDaemon } from "@orbtex-ai/orbtex-daemon";
 import {
   spawnAdapterHost,
   type AdapterHostProcess,
   type AdapterHostRpcClient
-} from "@orbtex-ai/adapter-host";
+} from "@orbtex-ai/orbtex-adapter-host";
 
 interface StartDaemonServerOptions {
   socketPath: string;

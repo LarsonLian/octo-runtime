@@ -2,9 +2,9 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
-import { isTerminal, type CanonicalEvent, type InvokeRequest } from "@orbtex-ai/protocol";
+import { isTerminal, type CanonicalEvent, type InvokeRequest } from "@orbtex-ai/orbtex-protocol";
 
-export type { CanonicalEvent, InvokeRequest } from "@orbtex-ai/protocol";
+export type { CanonicalEvent, InvokeRequest } from "@orbtex-ai/orbtex-protocol";
 
 export interface AdapterMetadata {
   type: string;

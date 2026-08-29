@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AdapterHost } from "@orbtex-ai/adapter-host";
-import { HarnessEngine, JsonFileStore } from "@orbtex-ai/core";
-import { HarnessDaemon } from "@orbtex-ai/daemon";
-import { mockAdapter } from "@orbtex-ai/adapter-mock";
+import { AdapterHost } from "@orbtex-ai/orbtex-adapter-host";
+import { HarnessEngine, JsonFileStore } from "@orbtex-ai/orbtex-core";
+import { HarnessDaemon } from "@orbtex-ai/orbtex-daemon";
+import { mockAdapter } from "@orbtex-ai/orbtex-adapter-mock";
 
 test("daemon recovery queues a materialized task that has no run", async () => {
   const directory = await mkdtemp(join(tmpdir(), "orbtex-orphan-test-"));

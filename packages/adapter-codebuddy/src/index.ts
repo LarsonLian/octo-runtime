@@ -1,6 +1,6 @@
-import { defineAdapter, probeCommand, type CanonicalEvent, type InvokeRequest } from "@orbtex-ai/adapter-sdk";
-import { spawnAcpClient } from "@orbtex-ai/acp-client";
-import type { AcpUpdate } from "@orbtex-ai/acp-client";
+import { defineAdapter, probeCommand, type CanonicalEvent, type InvokeRequest } from "@orbtex-ai/orbtex-adapter-sdk";
+import { spawnAcpClient } from "@orbtex-ai/orbtex-acp-client";
+import type { AcpUpdate } from "@orbtex-ai/orbtex-acp-client";
 
 interface CodeBuddyUpdate extends AcpUpdate {
   sessionUpdate?: string;

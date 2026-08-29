@@ -1,6 +1,22 @@
-# OpenCode Adapter
+# @orbtex-ai/orbtex-adapter-opencode
+
+OpenCode provider adapter。
 
 Adapter type：`opencode`
+
+## 作用与适用场景
+
+把本地 `opencode run --format json` 接入 Orbtex。适合使用 OpenCode provider/model 配置执行代码任务，并希望获得统一 session、text、tool、usage、terminal event 与取消语义的场景。
+
+它不管理 OpenCode provider 账号，也不把 OpenCode agent 概念自动映射成 Orbtex Agent。
+
+## 设计原则
+
+- harness instructions 通过临时文件加入 inline config，不改写用户持久配置。
+- OpenCode session ID 保持 opaque，并使用 `--session` 恢复。
+- 原生 part/state 只在 adapter 内转换成 canonical event。
+- `--auto` 只在显式 `autoApprove=true` 时启用。
+- provider CLI 的 cwd 来自 Agent workdir，但真正访问边界由外部权限机制决定。
 
 ## 它运行在哪里
 
