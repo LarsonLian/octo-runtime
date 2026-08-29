@@ -15,12 +15,12 @@
 ## Health And Discovery
 
 ```bash
-pnpm cli -- status
-pnpm cli -- adapter list
-pnpm cli -- adapter probe codex
-pnpm cli -- agent list
-pnpm cli -- trigger list
-pnpm cli -- task list
+pnpm cli status
+pnpm cli adapter list
+pnpm cli adapter probe codex
+pnpm cli agent list
+pnpm cli trigger list
+pnpm cli task list
 ```
 
 `probe` 只确认 binary 可执行；认证、模型、网络仍需 live invocation 验证。
@@ -28,10 +28,10 @@ pnpm cli -- task list
 ## Run Inspection
 
 ```bash
-pnpm cli -- run get <run-id>
-pnpm cli -- run events <run-id>
-pnpm cli -- run wait <run-id>
-pnpm cli -- run cancel <run-id> --reason operator_cancel
+pnpm cli run get <run-id>
+pnpm cli run events <run-id>
+pnpm cli run wait <run-id>
+pnpm cli run cancel <run-id> --reason operator_cancel
 ```
 
 诊断时先看最后一个 terminal event，再看此前的 provider error/tool event。事件 seq 是单 run 单调递增；不要用 wall-clock timestamp 代替顺序。

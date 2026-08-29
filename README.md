@@ -2,7 +2,7 @@
 
 从零实现的本地 Agent harness reference implementation。它统一 Codex、Claude Code、CodeBuddy、OpenCode 和 OpenClaw local，同时把 Chat、Task、Trigger、Run、provider session 与流式事件保持为明确的领域对象。
 
-项目仓库：[orbtex-ai/orbtex](https://github.com/orbtex-ai/orbtex)。本目录使用 pnpm workspace，所有可复用协议、runtime 与 adapters 位于 `packages/*`，所有可执行项目位于 `apps/*`。
+项目仓库：[orbtex-ai/orbtex](https://github.com/orbtex-ai/orbtex)。本目录使用 pnpm workspace 和严格 TypeScript，所有可复用协议、runtime 与 adapters 位于 `packages/*`，所有可执行项目位于 `apps/*`。源码统一为 `src/*.ts`，构建后从 `dist/*.js` 运行并发布对应的 `*.d.ts` 类型声明。
 
 ## 当前能力
 
@@ -51,11 +51,14 @@ test/                  contract and integration tests
 ```bash
 cd orbtex
 pnpm install
+pnpm build
+pnpm typecheck
+pnpm lint
 pnpm test
 pnpm demo
 ```
 
-测试不会调用真实模型。它使用 native event fixtures、真实 fake ACP 子进程、独立 adapter-host 进程和临时 JSON store。
+`pnpm test` 会先构建全部 workspace。测试不会调用真实模型；它使用 native event fixtures、真实 fake ACP 子进程、独立 adapter-host 进程和临时 JSON store。
 
 每个 adapter 的运行环境、认证、参数和完整教程统一收录在 [Packages And Adapter Guide](packages/README.md)，并可继续进入各 adapter package 的独立 README。
 
@@ -77,9 +80,9 @@ pnpm daemon
 终端 B：
 
 ```bash
-pnpm cli -- status
-pnpm cli -- adapter list
-pnpm cli -- adapter probe codex
+pnpm cli status
+pnpm cli adapter list
+pnpm cli adapter probe codex
 ```
 
 ## 最小 Task 示例
@@ -87,19 +90,19 @@ pnpm cli -- adapter probe codex
 先用 mock adapter 验证控制面，不消耗模型：
 
 ```bash
-pnpm cli -- agent create \
+pnpm cli agent create \
   --name demo \
   --adapter mock \
   --workdir "$PWD"
 
-pnpm cli -- trigger create \
+pnpm cli trigger create \
   --name inspect-repo \
   --kind manual \
   --agent <agent-id> \
   --title "Inspect repository" \
   --instruction "Summarize this repository"
 
-pnpm cli -- trigger fire <trigger-id> \
+pnpm cli trigger fire <trigger-id> \
   --event-id manual-001 \
   --payload '{"requestedBy":"local"}'
 ```
@@ -107,9 +110,9 @@ pnpm cli -- trigger fire <trigger-id> \
 `trigger fire` 立即返回 `taskId/runId`。随后：
 
 ```bash
-pnpm cli -- run wait <run-id>
-pnpm cli -- run events <run-id>
-pnpm cli -- task continue <task-id> \
+pnpm cli run wait <run-id>
+pnpm cli run events <run-id>
+pnpm cli task continue <task-id> \
   --source-id comment-001 \
   --instruction "Now focus on the test strategy"
 ```
@@ -119,10 +122,10 @@ pnpm cli -- task continue <task-id> \
 ## Chat 示例
 
 ```bash
-pnpm cli -- chat create --agent <agent-id> --title "Repository chat"
-pnpm cli -- chat send <session-id> --prompt "What is the architecture?"
-pnpm cli -- run wait <run-id>
-pnpm cli -- chat send <session-id> --prompt "Continue with failure modes"
+pnpm cli chat create --agent <agent-id> --title "Repository chat"
+pnpm cli chat send <session-id> --prompt "What is the architecture?"
+pnpm cli run wait <run-id>
+pnpm cli chat send <session-id> --prompt "Continue with failure modes"
 ```
 
 Chat 没有伪造 Task/Attempt；它与 Task 只共享 Session/Run/Event 和 provider session binding。
@@ -132,7 +135,7 @@ Chat 没有伪造 Task/Attempt；它与 Task 只共享 Session/Run/Event 和 pro
 事件 trigger：
 
 ```bash
-pnpm cli -- trigger create \
+pnpm cli trigger create \
   --name main-changed \
   --kind event \
   --event-type repo.changed \
@@ -141,7 +144,7 @@ pnpm cli -- trigger create \
   --title "Review change" \
   --instruction "Review the incoming repository change"
 
-pnpm cli -- event ingest \
+pnpm cli event ingest \
   --type repo.changed \
   --event-id github-delivery-123 \
   --payload '{"branch":"main","commit":"abc123"}'
@@ -150,7 +153,7 @@ pnpm cli -- event ingest \
 Interval trigger：
 
 ```bash
-pnpm cli -- trigger create \
+pnpm cli trigger create \
   --name periodic-check \
   --kind interval \
   --every-ms 60000 \
@@ -161,21 +164,23 @@ pnpm cli -- trigger create \
 
 ## 真实 Provider Agent
 
+以下命令必须在 Orbtex 仓库根目录执行，并且需要先在另一个终端运行 `pnpm daemon`。创建 Agent 只保存配置并检查 adapter 已加载，不会立即调用模型。
+
 ```bash
 # Codex: default workspace-write sandbox
-pnpm cli -- agent create --name codex --adapter codex --workdir "$PWD" --sandbox read-only
+pnpm cli agent create --name codex --adapter codex --workdir "$PWD" --sandbox read-only
 
 # Claude Code: defaults to acceptEdits; use dontAsk for read-only/noninteractive work
-pnpm cli -- agent create --name claude --adapter claude-code --workdir "$PWD" --permission-mode dontAsk
+pnpm cli agent create --name claude --adapter claude-code --workdir "$PWD" --permission-mode dontAsk
 
 # CodeBuddy: ACP transport
-pnpm cli -- agent create --name codebuddy --adapter codebuddy --workdir "$PWD" --permission-mode dontAsk
+pnpm cli agent create --name codebuddy --adapter codebuddy --workdir "$PWD" --permission-mode dontAsk
 
 # OpenCode: model is often best made explicit
-pnpm cli -- agent create --name opencode --adapter opencode --workdir "$PWD" --model opencode/hy3-free
+pnpm cli agent create --name opencode --adapter opencode --workdir "$PWD" --model opencode/hy3-free
 
 # OpenClaw: one local CLI subprocess per invocation; no Gateway required
-pnpm cli -- agent create --name openclaw --adapter openclaw --provider-agent main --thinking medium
+pnpm cli agent create --name openclaw --adapter openclaw --provider-agent main --thinking medium
 ```
 
 危险权限必须显式打开：Codex 使用 `--dangerously-bypass-permissions`，OpenCode 使用 `--auto-approve`。不要在没有外部 sandbox 的环境启用。
@@ -183,7 +188,7 @@ pnpm cli -- agent create --name openclaw --adapter openclaw --provider-agent mai
 取消执行：
 
 ```bash
-pnpm cli -- run cancel <run-id> --reason user_cancelled
+pnpm cli run cancel <run-id> --reason user_cancelled
 ```
 
 ## 进一步阅读

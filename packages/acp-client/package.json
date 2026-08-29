@@ -2,5 +2,12 @@
   "name": "@orbtex-ai/acp-client",
   "version": "0.1.0",
   "type": "module",
-  "exports": "./src/index.js"
+  "exports": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
 }

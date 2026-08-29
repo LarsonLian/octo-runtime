@@ -1,4 +1,14 @@
-export function composeContext({ agent, session, task, attempt, occurrence }) {
+import type { Agent, Attempt, Session, Task, TriggerOccurrence } from "./store.js";
+
+export interface HarnessContextInput {
+  agent: Agent;
+  session: Session;
+  task?: Task;
+  attempt?: Attempt;
+  occurrence?: TriggerOccurrence;
+}
+
+export function composeContext({ agent, session, task, attempt, occurrence }: HarnessContextInput): Readonly<Record<string, unknown>> {
   return Object.freeze({
     schema: "orbtex.context/v1",
     agent: { id: agent.id, name: agent.name },
@@ -9,7 +19,8 @@ export function composeContext({ agent, session, task, attempt, occurrence }) {
   });
 }
 
-export function renderPortableInstructions(context, perTurn = "") {
+export function renderPortableInstructions(context: Record<string, unknown>, perTurn = ""): string {
+  // harness 只追加可移植的执行契约；provider 私有参数由各 adapter 单独映射。
   return [
     "[Harness Context]",
     JSON.stringify(context, null, 2),

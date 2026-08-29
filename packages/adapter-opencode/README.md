@@ -49,9 +49,9 @@ pnpm daemon
 
 ```bash
 cd /absolute/path/to/orbtex
-pnpm cli -- adapter probe opencode
+pnpm cli adapter probe opencode
 
-pnpm cli -- agent create \
+pnpm cli agent create \
   --name opencode-reviewer \
   --adapter opencode \
   --workdir /absolute/path/to/repository \
@@ -61,10 +61,10 @@ pnpm cli -- agent create \
 然后使用统一 Chat 流程：
 
 ```bash
-pnpm cli -- chat create --agent <agent-id> --title "OpenCode review"
-pnpm cli -- chat send <session-id> --prompt "Summarize the repository"
-pnpm cli -- run wait <run-id>
-pnpm cli -- run events <run-id>
+pnpm cli chat create --agent <agent-id> --title "OpenCode review"
+pnpm cli chat send <session-id> --prompt "Summarize the repository"
+pnpm cli run wait <run-id>
+pnpm cli run events <run-id>
 ```
 
 ## 可配置项
@@ -121,4 +121,4 @@ Core 保存 OpenCode session ID，后续 Chat turn 或 Task continuation 自动�
 - `probe` 只检查 executable，不检查 provider credential、model 或 network。
 - 当前通用 subprocess runtime 没有完整进程组回收保证。
 
-实现：[src/index.js](src/index.js)。公共使用流程见 [Adapter Guide](../README.md)。
+实现：[src/index.ts](src/index.ts)。公共使用流程见 [Adapter Guide](../README.md)。

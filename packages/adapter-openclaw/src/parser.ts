@@ -1,25 +1,61 @@
-function record(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+import type { CanonicalEvent } from "@orbtex-ai/adapter-sdk";
+
+type JsonRecord = Record<string, unknown>;
+
+export type OpenClawFrame =
+  | { kind: "text"; text: string; sessionId?: string }
+  | { kind: "tool-call"; id: string; name: string; args: JsonRecord }
+  | { kind: "tool-result"; id: string; output: unknown; isError: boolean }
+  | { kind: "usage"; inputTokens: number; outputTokens: number; provider?: string; model?: string }
+  | { kind: "failure"; message: string }
+  | { kind: "cancelled"; message: string };
+
+export interface OpenClawFinalFrame {
+  kind: "final";
+  text: string;
+  aborted: boolean;
+  sessionId?: string;
+  provider?: string;
+  model?: string;
+  inputTokens: number;
+  outputTokens: number;
 }
 
-function string(value, fallback = "") {
+interface UsageLike {
+  inputTokens: number;
+  outputTokens: number;
+  provider?: string;
+  model?: string;
+}
+
+function record(value: unknown): JsonRecord | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as JsonRecord
+    : null;
+}
+
+function string(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }
 
-function number(value) {
+function number(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-function parseJson(text) {
-  try { return JSON.parse(text); } catch { return null; }
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
 }
 
-function toolId(native) {
+function toolId(native: JsonRecord): string {
   return string(native.callId) || string(native.toolCallId) || string(native.tool_call_id) ||
     string(native.tool_use_id) || string(native.id) || "tool";
 }
 
-export function tryParseOpenClawEvent(line) {
+export function tryParseOpenClawEvent(line: string): OpenClawFrame | null {
   const native = record(parseJson(line));
   if (!native) return null;
 
@@ -75,7 +111,7 @@ export function tryParseOpenClawEvent(line) {
   }
 }
 
-export function tryParseOpenClawFinalBlob(text) {
+export function tryParseOpenClawFinalBlob(text: string): OpenClawFinalFrame | null {
   const native = record(parseJson(text.trim()));
   if (!native || !Array.isArray(native.payloads)) return null;
   const reply = native.payloads
@@ -98,8 +134,9 @@ export function tryParseOpenClawFinalBlob(text) {
   };
 }
 
-export function normalizeOpenClawFrame(frame) {
-  switch (frame?.kind) {
+export function normalizeOpenClawFrame(frame: OpenClawFrame): CanonicalEvent[] {
+  // parser 保留 OpenClaw 的原生差异，本函数只向上暴露 provider-neutral canonical event。
+  switch (frame.kind) {
     case "text":
       return [{ type: "message.delta", payload: { text: frame.text, channel: "final" } }];
     case "tool-call":
@@ -116,7 +153,7 @@ export function normalizeOpenClawFrame(frame) {
   }
 }
 
-export function usagePayload(frame) {
+export function usagePayload(frame: UsageLike): Record<string, unknown> {
   return {
     inputTokens: frame.inputTokens ?? 0,
     outputTokens: frame.outputTokens ?? 0,

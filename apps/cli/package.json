@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": { "orbtex": "src/index.js" },
-  "scripts": { "start": "node src/index.js" }
+  "bin": {
+    "orbtex": "dist/index.js"
+  },
+  "scripts": {
+    "start": "node dist/index.js",
+    "build": "tsc -p tsconfig.json"
+  },
+  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@orbtex-ai/daemon-app": "workspace:*"
+  }
 }

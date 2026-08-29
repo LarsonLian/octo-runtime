@@ -37,7 +37,7 @@ test("host cancellation aborts provider and emits stopped once", async () => {
 
 test("separate adapter-host process loads manifest and streams events", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
-  const processHost = await spawnAdapterHost({ entrypoint: `${root}/apps/adapter-host/src/index.js`, manifest: `${root}/config/adapters.json` });
+  const processHost = await spawnAdapterHost({ entrypoint: `${root}/apps/adapter-host/dist/index.js`, manifest: `${root}/config/adapters.json` });
   try {
     assert.equal((await processHost.client.list()).some(item => item.type === "mock"), true);
     const events = []; for await (const event of processHost.client.invoke("mock", { ...request, invocationId: "rpc-inv" })) events.push(event);

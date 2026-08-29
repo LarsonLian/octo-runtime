@@ -45,9 +45,9 @@ pnpm daemon
 
 ```bash
 cd /absolute/path/to/orbtex
-pnpm cli -- adapter probe claude-code
+pnpm cli adapter probe claude-code
 
-pnpm cli -- agent create \
+pnpm cli agent create \
   --name claude-reviewer \
   --adapter claude-code \
   --workdir /absolute/path/to/repository \
@@ -57,10 +57,10 @@ pnpm cli -- agent create \
 然后使用公共 Chat API：
 
 ```bash
-pnpm cli -- chat create --agent <agent-id> --title "Claude review"
-pnpm cli -- chat send <session-id> --prompt "Explain the current architecture"
-pnpm cli -- run wait <run-id>
-pnpm cli -- run events <run-id>
+pnpm cli chat create --agent <agent-id> --title "Claude review"
+pnpm cli chat send <session-id> --prompt "Explain the current architecture"
+pnpm cli run wait <run-id>
+pnpm cli run events <run-id>
 ```
 
 `dontAsk` 适合无法弹出交互确认的保守自动化，但具体哪些工具可执行仍由 Claude Code 配置决定；它不是 Orbtex 自己实现的文件 sandbox。
@@ -113,4 +113,4 @@ claude --print \
 - `probe` 不验证认证、provider 网络、额度和模型名。
 - 取消目前只保证直接 CLI 进程终止，生产环境应补进程组回收。
 
-实现：[src/index.js](src/index.js)。公共使用流程见 [Adapter Guide](../README.md)。
+实现：[src/index.ts](src/index.ts)。公共使用流程见 [Adapter Guide](../README.md)。

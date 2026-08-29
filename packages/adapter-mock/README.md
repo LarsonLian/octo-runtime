@@ -39,7 +39,7 @@ pnpm daemon
 ```bash
 cd /absolute/path/to/orbtex
 
-pnpm cli -- agent create \
+pnpm cli agent create \
   --name demo \
   --adapter mock \
   --workdir /absolute/path/to/any/existing/directory
@@ -48,10 +48,10 @@ pnpm cli -- agent create \
 Chat：
 
 ```bash
-pnpm cli -- chat create --agent <agent-id> --title "Mock chat"
-pnpm cli -- chat send <session-id> --prompt "hello"
-pnpm cli -- run wait <run-id>
-pnpm cli -- run events <run-id>
+pnpm cli chat create --agent <agent-id> --title "Mock chat"
+pnpm cli chat send <session-id> --prompt "hello"
+pnpm cli run wait <run-id>
+pnpm cli run events <run-id>
 ```
 
 事件中的最终文本为：
@@ -63,15 +63,15 @@ Handled: hello
 Trigger -> Task：
 
 ```bash
-pnpm cli -- trigger create \
+pnpm cli trigger create \
   --name mock-task \
   --kind manual \
   --agent <agent-id> \
   --title "Mock task" \
   --instruction "exercise the task pipeline"
 
-pnpm cli -- trigger fire <trigger-id> --event-id mock-001
-pnpm cli -- run wait <run-id>
+pnpm cli trigger fire <trigger-id> --event-id mock-001
+pnpm cli run wait <run-id>
 ```
 
 ## 配置与事件
@@ -95,4 +95,4 @@ provider session ID 从 Harness Session ID 确定性生成，因此同一 Chat �
 - 不模拟 stderr、provider failure、usage、analysis、审批或 session fork。
 - 生产环境不应创建使用 mock adapter 的真实业务 Agent。
 
-真实 subprocess/ACP 合同测试位于 [../../test](../../test)。实现：[src/index.js](src/index.js)。公共使用流程见 [Adapter Guide](../README.md)。
+真实 subprocess/ACP 合同测试位于 [../../test](../../test)。实现：[src/index.ts](src/index.ts)。公共使用流程见 [Adapter Guide](../README.md)。

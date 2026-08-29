@@ -44,9 +44,9 @@ pnpm daemon
 
 ```bash
 cd /absolute/path/to/orbtex
-pnpm cli -- adapter probe codex
+pnpm cli adapter probe codex
 
-pnpm cli -- agent create \
+pnpm cli agent create \
   --name codex-reviewer \
   --adapter codex \
   --workdir /absolute/path/to/repository \
@@ -56,10 +56,10 @@ pnpm cli -- agent create \
 创建命令会返回 Orbtex Agent ID。随后走统一 Chat 流程：
 
 ```bash
-pnpm cli -- chat create --agent <agent-id> --title "Codex review"
-pnpm cli -- chat send <session-id> --prompt "Review this repository without modifying files"
-pnpm cli -- run wait <run-id>
-pnpm cli -- run events <run-id>
+pnpm cli chat create --agent <agent-id> --title "Codex review"
+pnpm cli chat send <session-id> --prompt "Review this repository without modifying files"
+pnpm cli run wait <run-id>
+pnpm cli run events <run-id>
 ```
 
 ## 可配置项
@@ -114,4 +114,4 @@ adapter 从 `thread.started` 取出 provider thread ID，以 `session.update` �
 - `probe` 只检查 executable，不检查认证、网络、模型额度或 workdir 权限。
 - provider 升级后应运行合同测试，再做受控的只读 live smoke test。
 
-实现：[src/index.js](src/index.js)。公共使用流程见 [Adapter Guide](../README.md)。
+实现：[src/index.ts](src/index.ts)。公共使用流程见 [Adapter Guide](../README.md)。

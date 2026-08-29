@@ -4,29 +4,54 @@ import { access, chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { defineAdapter, probeCommand } from "@orbtex-ai/adapter-sdk";
+import { defineAdapter, probeCommand, type CanonicalEvent, type InvokeRequest } from "@orbtex-ai/adapter-sdk";
 import {
   normalizeOpenClawFrame,
   tryParseOpenClawEvent,
   tryParseOpenClawFinalBlob,
-  usagePayload
+  usagePayload,
+  type OpenClawFinalFrame
 } from "./parser.js";
 
 const STDERR_LIMIT = 64 * 1024;
 
-export function composeOpenClawPrompt(req) {
+interface OpenClawCommandSpec {
+  command: string;
+  args: string[];
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  providerSessionId: string;
+  providerAgentId?: string;
+  messageFile: string;
+  cleanup: () => Promise<void>;
+}
+
+interface ProcessExit {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+}
+
+export function composeOpenClawPrompt(req: InvokeRequest): string {
   if (!req.appendInstructions) return req.prompt;
   return `[Harness Instructions]\n${req.appendInstructions}\n\n[User Request]\n${req.prompt}`;
 }
 
-async function existingDirectory(candidates) {
-  for (const candidate of candidates.filter(Boolean)) {
-    try { await access(candidate); return candidate; } catch {}
+async function existingDirectory(candidates: Array<string | undefined>): Promise<string> {
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try { await access(candidate); return candidate; } catch {
+      // 候选路径不存在时继续尝试，最终回退到当前目录。
+    }
   }
   return process.cwd();
 }
 
-export async function buildOpenClawCommand(req, command = "openclaw", commandArgsPrefix = [], extraEnv = {}) {
+export async function buildOpenClawCommand(
+  req: InvokeRequest,
+  command = "openclaw",
+  commandArgsPrefix: string[] = [],
+  extraEnv: NodeJS.ProcessEnv = {}
+): Promise<OpenClawCommandSpec> {
   const directory = await mkdtemp(join(tmpdir(), "orbtex-openclaw-message-"));
   await chmod(directory, 0o700).catch(() => {});
   const messageFile = join(directory, "message.txt");
@@ -34,14 +59,16 @@ export async function buildOpenClawCommand(req, command = "openclaw", commandArg
   await chmod(messageFile, 0o600).catch(() => {});
 
   const providerSessionId = req.providerSession?.sessionId ?? `orbtex-${randomUUID()}`;
-  const providerAgentId = req.agentConfig?.providerAgentId ??
-    req.agentConfig?.providerOptions?.OPENCLAW_AGENT_ID;
+  const configuredAgent = req.agentConfig.providerOptions?.OPENCLAW_AGENT_ID;
+  const providerAgentId = req.agentConfig.providerAgentId ??
+    (typeof configuredAgent === "string" ? configuredAgent : undefined);
   const args = [...commandArgsPrefix, "agent", "--local", "--json", "--session-id", providerSessionId];
   if (providerAgentId) args.push("--agent", providerAgentId);
   if (req.agentConfig?.model) args.push("--model", req.agentConfig.model);
   if (req.agentConfig?.thinking) args.push("--thinking", req.agentConfig.thinking);
-  if (Number.isFinite(req.agentConfig?.timeoutSeconds) && req.agentConfig.timeoutSeconds > 0) {
-    args.push("--timeout", String(req.agentConfig.timeoutSeconds));
+  const timeoutSeconds = req.agentConfig.timeoutSeconds;
+  if (Number.isFinite(timeoutSeconds) && (timeoutSeconds ?? 0) > 0) {
+    args.push("--timeout", String(timeoutSeconds));
   }
   args.push("--message-file", messageFile);
 
@@ -68,7 +95,7 @@ export async function buildOpenClawCommand(req, command = "openclaw", commandArg
   };
 }
 
-function sessionEvent(sessionId, providerAgentId) {
+function sessionEvent(sessionId: string, providerAgentId?: string): CanonicalEvent {
   return {
     type: "session.update",
     payload: {
@@ -81,16 +108,16 @@ function sessionEvent(sessionId, providerAgentId) {
   };
 }
 
-function failureMessage(spec, exit, spawnError, stderr) {
+function failureMessage(spec: OpenClawCommandSpec, exit: ProcessExit, spawnError: Error | undefined, stderr: string): string {
   return stderr.trim() || spawnError?.message ||
     `${spec.command} exited with ${exit.code ?? exit.signal ?? "an unknown status"}`;
 }
 
-function usageKey(frame) {
+function usageKey(frame: { inputTokens: number; outputTokens: number; provider?: string; model?: string }): string {
   return JSON.stringify(usagePayload(frame));
 }
 
-async function* invokeOpenClaw(req, spec) {
+async function* invokeOpenClaw(req: InvokeRequest, spec: OpenClawCommandSpec): AsyncGenerator<CanonicalEvent> {
   yield sessionEvent(spec.providerSessionId, spec.providerAgentId);
   yield { type: "message.create", payload: { role: "assistant", status: "streaming", channel: "final" } };
 
@@ -100,8 +127,8 @@ async function* invokeOpenClaw(req, spec) {
     stdio: ["ignore", "pipe", "pipe"],
     signal: req.signal
   });
-  let spawnError;
-  const exitPromise = new Promise(resolve => {
+  let spawnError: Error | undefined;
+  const exitPromise = new Promise<ProcessExit>(resolve => {
     child.once("error", error => { spawnError = error; });
     child.once("close", (code, signal) => resolve({ code, signal }));
   });
@@ -110,11 +137,11 @@ async function* invokeOpenClaw(req, spec) {
   child.stderr.on("data", chunk => { stderr = `${stderr}${chunk}`.slice(-STDERR_LIMIT); });
 
   let accumulatedText = "";
-  let finalFrame;
-  let failure;
-  let cancelled;
-  let blobLines = [];
-  let lastUsage;
+  let finalFrame: OpenClawFinalFrame | null = null;
+  let failure: string | undefined;
+  let cancelled: string | undefined;
+  let blobLines: string[] = [];
+  let lastUsage: string | undefined;
   let reportedSessionId = spec.providerSessionId;
 
   for await (const line of createInterface({ input: child.stdout })) {
@@ -148,7 +175,6 @@ async function* invokeOpenClaw(req, spec) {
   const exit = await exitPromise;
   if (!finalFrame && blobLines.length > 0) finalFrame = tryParseOpenClawFinalBlob(blobLines.join("\n"));
   if (finalFrame?.sessionId && finalFrame.sessionId !== reportedSessionId) {
-    reportedSessionId = finalFrame.sessionId;
     yield sessionEvent(finalFrame.sessionId, spec.providerAgentId);
   }
   if (finalFrame?.text) {
@@ -178,7 +204,7 @@ async function* invokeOpenClaw(req, spec) {
   yield { type: "run.finished", payload: {} };
 }
 
-export function createOpenClawAdapter({ command = "openclaw", commandArgsPrefix = [], env = {} } = {}) {
+export function createOpenClawAdapter({ command = "openclaw", commandArgsPrefix = [], env = {} }: { command?: string; commandArgsPrefix?: string[]; env?: NodeJS.ProcessEnv } = {}) {
   return defineAdapter({
     metadata: {
       type: "openclaw",
@@ -187,7 +213,7 @@ export function createOpenClawAdapter({ command = "openclaw", commandArgsPrefix 
       capabilities: ["session.serialize", "tool.canonical"]
     },
     probe: () => probeCommand(command, { env: { ...process.env, ...env } }),
-    async *invoke(req) {
+    async *invoke(req: InvokeRequest): AsyncGenerator<CanonicalEvent> {
       const spec = await buildOpenClawCommand(req, command, commandArgsPrefix, env);
       try { yield* invokeOpenClaw(req, spec); }
       finally { await spec.cleanup(); }

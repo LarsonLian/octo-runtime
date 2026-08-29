@@ -10,13 +10,17 @@
     "url": "git+https://github.com/orbtex-ai/orbtex.git"
   },
   "scripts": {
-    "test": "node --test",
-    "demo": "node apps/example-basic/src/index.js",
-    "cli": "node apps/cli/src/index.js",
-    "daemon": "node apps/daemon/src/index.js",
-    "host": "node apps/adapter-host/src/index.js --manifest config/adapters.json"
+    "test": "pnpm build && node --test",
+    "demo": "pnpm build && node apps/example-basic/dist/index.js",
+    "cli": "pnpm build && node apps/cli/dist/index.js",
+    "daemon": "pnpm build && node apps/daemon/dist/index.js",
+    "host": "pnpm build && node apps/adapter-host/dist/index.js --manifest config/adapters.json",
+    "build": "pnpm --recursive --filter \"./packages/**\" --filter \"./apps/**\" run build",
+    "typecheck": "pnpm build && tsc -p tsconfig.json --noEmit",
+    "lint": "eslint apps packages"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@orbtex-ai/acp-client": "workspace:*",
     "@orbtex-ai/adapter-claude-code": "workspace:*",
     "@orbtex-ai/adapter-codebuddy": "workspace:*",
@@ -27,7 +31,11 @@
     "@orbtex-ai/adapter-opencode": "workspace:*",
     "@orbtex-ai/core": "workspace:*",
     "@orbtex-ai/daemon": "workspace:*",
-    "@orbtex-ai/daemon-app": "workspace:*"
+    "@orbtex-ai/daemon-app": "workspace:*",
+    "@types/node": "^20.19.43",
+    "eslint": "^10.9.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.68.0"
   },
   "engines": {
     "node": ">=20",

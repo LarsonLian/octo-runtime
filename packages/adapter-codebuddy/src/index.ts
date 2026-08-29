@@ -1,10 +1,24 @@
-import { defineAdapter, probeCommand } from "@orbtex-ai/adapter-sdk";
+import { defineAdapter, probeCommand, type CanonicalEvent, type InvokeRequest } from "@orbtex-ai/adapter-sdk";
 import { spawnAcpClient } from "@orbtex-ai/acp-client";
+import type { AcpUpdate } from "@orbtex-ai/acp-client";
 
-export function normalizeCodeBuddyUpdate(update) {
+interface CodeBuddyUpdate extends AcpUpdate {
+  sessionUpdate?: string;
+  content?: unknown;
+  text?: string;
+  toolCallId?: string;
+  name?: string;
+  title?: string;
+  rawInput?: unknown;
+  input?: unknown;
+  status?: string;
+  output?: unknown;
+}
+
+export function normalizeCodeBuddyUpdate(update: CodeBuddyUpdate): CanonicalEvent[] {
   const type = update.sessionUpdate ?? update.type;
   if (type === "agent_message_chunk" || type === "agent_thought_chunk") {
-    const text = update.content?.text ?? update.text;
+    const text = isRecord(update.content) && typeof update.content.text === "string" ? update.content.text : update.text;
     return typeof text === "string" ? [{ type: "message.delta", payload: { text, channel: type === "agent_thought_chunk" ? "analysis" : "final" } }] : [];
   }
   if (type === "tool_call") return [{ type: "tool_call.create", payload: { id: update.toolCallId, name: update.name ?? update.title ?? "provider_tool", args: update.rawInput ?? update.input ?? {} } }];
@@ -13,17 +27,18 @@ export function normalizeCodeBuddyUpdate(update) {
   return [];
 }
 
-export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, command = "codebuddy" } = {}) {
+export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, command = "codebuddy" }: { acpClientFactory?: typeof spawnAcpClient; command?: string } = {}) {
   return defineAdapter({
     metadata: { type: "codebuddy", capabilities: ["session.serialize", "tool.canonical"] },
     probe: () => probeCommand(command),
-    async *invoke(req) {
+    async *invoke(req: InvokeRequest): AsyncGenerator<CanonicalEvent> {
       const client = acpClientFactory({
         command, args: ["--acp", "--permission-mode", req.agentConfig?.permissionMode ?? "acceptEdits", "--disallowedTools", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode"],
         cwd: req.workdir, signal: req.signal
       });
       try {
         await client.initialize();
+        // Orbtex session 只保存 provider sessionId；新建和恢复都收敛到同一个 ACP prompt 流。
         const session = req.providerSession?.sessionId
           ? await client.loadSession(req.providerSession.sessionId, { cwd: req.workdir })
           : await client.newSession({ cwd: req.workdir, model: req.agentConfig?.model });
@@ -37,6 +52,10 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
       } finally { await client.close?.(); }
     }
   });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 export const codebuddyAdapter = createCodeBuddyAdapter();

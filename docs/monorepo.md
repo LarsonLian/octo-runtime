@@ -40,16 +40,39 @@ adapter-host -> protocol
 
 `packages/*` 不应 import `apps/*`。provider 命令构造、native event parser、session codec 和权限适配必须留在 `packages/adapter-*`；apps 只做配置、进程启动和 I/O 装配。
 
+## TypeScript 构建约定
+
+所有 app 和 package 的实现源码均为 `src/*.ts`，统一继承根目录的 [tsconfig.base.json](../tsconfig.base.json)。当前采用 `strict`、`NodeNext` module/module resolution，并开启 declaration 与 source map 输出。
+
+每个 workspace 只把 `src/` 当作源码，把编译结果写到未提交 Git 的 `dist/`：
+
+```text
+src/index.ts
+   | pnpm build
+   v
+dist/index.js
+dist/index.js.map
+dist/index.d.ts
+dist/index.d.ts.map
+```
+
+可发布 package 的 `exports` 指向 `dist/index.js`，`types` 指向 `dist/index.d.ts`。因此本地 workspace 链接和 npm 安装使用同一套公开入口，不依赖 TypeScript 源文件或 ts-node loader。
+
+VS Code 配置位于 [.vscode/settings.json](../.vscode/settings.json)，固定使用 workspace TypeScript SDK 和 flat-config ESLint。安装推荐的 ESLint 扩展后，编辑器诊断应与命令行一致。
+
 ## 安装与常用命令
 
 根 [package.json](../package.json) 固定 `pnpm@11.19.0`：
 
 ```bash
 pnpm install
+pnpm build
+pnpm typecheck
+pnpm lint
 pnpm test
 pnpm demo
 pnpm daemon
-pnpm cli -- status
+pnpm cli status
 ```
 
 查看 workspace：
@@ -87,7 +110,7 @@ pnpm --filter @orbtex-ai/adapter-codex list
 
 以 `foo` provider 为例：
 
-1. 创建 `packages/adapter-foo/package.json`、`src/index.js` 和 `README.md`。
+1. 创建 `packages/adapter-foo/package.json`、`src/index.ts` 和 `README.md`。
 2. 包名使用 `@orbtex-ai/adapter-foo`，依赖 `@orbtex-ai/adapter-sdk: workspace:*`。
 3. 实现 metadata、probe、invoke、session 和 canonical event mapping。
 4. 在 [config/adapters.json](../config/adapters.json) 注册 adapter type/module/export。
@@ -100,7 +123,7 @@ Core、daemon 和 CLI 不应增加 `if adapterType === "foo"`。新增 provider 
 
 ## 新增 App
 
-1. 创建 `apps/<name>/package.json` 和 `src/index.js`。
+1. 创建 `apps/<name>/package.json` 和 `src/index.ts`。
 2. package 标记 `private: true`，命名为 `@orbtex-ai/<name>` 或 `@orbtex-ai/<name>-app`。
 3. 使用 `workspace:*` 依赖需要的 runtime packages。
 4. 在 app package 中提供 `start` script；需要统一入口时再加入根 scripts。
@@ -115,6 +138,8 @@ App 可以选择不同 transport 或部署形式，但不能复制一份 Core/Ad
 corepack enable
 corepack prepare pnpm@11.19.0 --activate
 pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm lint
 pnpm test
 ```
 

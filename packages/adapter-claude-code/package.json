@@ -2,6 +2,15 @@
   "name": "@orbtex-ai/adapter-claude-code",
   "version": "0.1.0",
   "type": "module",
-  "exports": "./src/index.js",
-  "dependencies": { "@orbtex-ai/adapter-sdk": "workspace:*" }
+  "exports": "./dist/index.js",
+  "dependencies": {
+    "@orbtex-ai/adapter-sdk": "workspace:*"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
 }

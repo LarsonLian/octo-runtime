@@ -42,9 +42,9 @@ pnpm daemon
 
 ```bash
 cd /absolute/path/to/orbtex
-pnpm cli -- adapter probe codebuddy
+pnpm cli adapter probe codebuddy
 
-pnpm cli -- agent create \
+pnpm cli agent create \
   --name codebuddy-reviewer \
   --adapter codebuddy \
   --workdir /absolute/path/to/repository \
@@ -55,10 +55,10 @@ pnpm cli -- agent create \
 公共 Chat 使用方式不变：
 
 ```bash
-pnpm cli -- chat create --agent <agent-id> --title "CodeBuddy review"
-pnpm cli -- chat send <session-id> --prompt "Inspect the test coverage"
-pnpm cli -- run wait <run-id>
-pnpm cli -- run events <run-id>
+pnpm cli chat create --agent <agent-id> --title "CodeBuddy review"
+pnpm cli chat send <session-id> --prompt "Inspect the test coverage"
+pnpm cli run wait <run-id>
+pnpm cli run events <run-id>
 ```
 
 ## 可配置项
@@ -123,4 +123,4 @@ host abort 时 ACP client 关闭 CodeBuddy 子进程；虽然 client 实现了 `
 - `probe` 不验证登录、模型可用性或额度。
 - analysis 内容是否存在取决于 provider 实际发送的 ACP update；adapter 不伪造思考内容。
 
-实现：[src/index.js](src/index.js)，ACP client：[../../packages/acp-client/src/index.js](../../packages/acp-client/src/index.js)。公共使用流程见 [Adapter Guide](../README.md)。
+实现：[src/index.ts](src/index.ts)，ACP client：[../../packages/acp-client/src/index.ts](../../packages/acp-client/src/index.ts)。公共使用流程见 [Adapter Guide](../README.md)。

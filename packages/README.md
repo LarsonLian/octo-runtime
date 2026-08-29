@@ -68,8 +68,8 @@ pnpm daemon
 ```bash
 cd /absolute/path/to/orbtex
 export ORBTEX_HOME=/absolute/path/to/orbtex-runtime-state
-pnpm cli -- status
-pnpm cli -- adapter list
+pnpm cli status
+pnpm cli adapter list
 ```
 
 `ORBTEX_HOME` 应在两个终端保持一致。默认值是启动命令 cwd 下的 `.orbtex`。
@@ -77,32 +77,32 @@ pnpm cli -- adapter list
 ## Probe 与创建 Agent
 
 ```bash
-pnpm cli -- adapter probe codex
-pnpm cli -- adapter probe claude-code
-pnpm cli -- adapter probe codebuddy
-pnpm cli -- adapter probe opencode
-pnpm cli -- adapter probe openclaw
+pnpm cli adapter probe codex
+pnpm cli adapter probe claude-code
+pnpm cli adapter probe codebuddy
+pnpm cli adapter probe opencode
+pnpm cli adapter probe openclaw
 ```
 
 典型创建命令：
 
 ```bash
-pnpm cli -- agent create --name codex --adapter codex \
+pnpm cli agent create --name codex --adapter codex \
   --workdir /absolute/path/to/repository --sandbox read-only
 
-pnpm cli -- agent create --name claude --adapter claude-code \
+pnpm cli agent create --name claude --adapter claude-code \
   --workdir /absolute/path/to/repository --permission-mode dontAsk
 
-pnpm cli -- agent create --name codebuddy --adapter codebuddy \
+pnpm cli agent create --name codebuddy --adapter codebuddy \
   --workdir /absolute/path/to/repository --permission-mode dontAsk --model glm-5.3
 
-pnpm cli -- agent create --name opencode --adapter opencode \
+pnpm cli agent create --name opencode --adapter opencode \
   --workdir /absolute/path/to/repository --model provider/model
 
-pnpm cli -- agent create --name openclaw --adapter openclaw \
+pnpm cli agent create --name openclaw --adapter openclaw \
   --provider-agent main --thinking medium --timeout-seconds 300
 
-pnpm cli -- agent create --name demo --adapter mock \
+pnpm cli agent create --name demo --adapter mock \
   --workdir /absolute/path/to/existing/directory
 ```
 
@@ -113,20 +113,20 @@ CLI 输出中的 `id` 是 Orbtex Agent ID。`--provider-agent` 当前只对 Open
 创建 Chat：
 
 ```bash
-pnpm cli -- chat create --agent <agent-id> --title "Repository chat"
+pnpm cli chat create --agent <agent-id> --title "Repository chat"
 ```
 
 命令返回一个 Session 对象，其中字段 `id` 是 Harness Session ID。把这个 `id` 用于第一轮：
 
 ```bash
-pnpm cli -- chat send <session-id> --prompt "Explain this repository"
+pnpm cli chat send <session-id> --prompt "Explain this repository"
 ```
 
 命令快速返回 `runId`；执行在 daemon 后台继续：
 
 ```bash
-pnpm cli -- run wait <run-id>
-pnpm cli -- run events <run-id>
+pnpm cli run wait <run-id>
+pnpm cli run events <run-id>
 ```
 
 第二次 `chat send` 复用同一个 Harness Session。Core 会把上一次 `session.update` 保存的 opaque provider session 交还相应 adapter，因此无需手工填写 Codex thread、Claude UUID 或其他 provider ID。
@@ -136,8 +136,8 @@ pnpm cli -- run events <run-id>
 取消仍在运行的 invocation：
 
 ```bash
-pnpm cli -- run cancel <run-id> --reason operator_cancel
-pnpm cli -- run wait <run-id>
+pnpm cli run cancel <run-id> --reason operator_cancel
+pnpm cli run wait <run-id>
 ```
 
 最终以 event stream 中唯一的 `run.finished`、`run.error` 或 `run.stopped` 为准，cancel RPC 的 ACK 本身不是执行终态。
@@ -147,7 +147,7 @@ pnpm cli -- run wait <run-id>
 创建 manual trigger：
 
 ```bash
-pnpm cli -- trigger create \
+pnpm cli trigger create \
   --name inspect-repository \
   --kind manual \
   --agent <agent-id> \
@@ -160,15 +160,15 @@ pnpm cli -- trigger create \
 触发并查询：
 
 ```bash
-pnpm cli -- trigger fire <trigger-id> --event-id manual-001
-pnpm cli -- run wait <run-id>
-pnpm cli -- task get <task-id>
+pnpm cli trigger fire <trigger-id> --event-id manual-001
+pnpm cli run wait <run-id>
+pnpm cli task get <task-id>
 ```
 
 继续同一个 Task：
 
 ```bash
-pnpm cli -- task continue <task-id> \
+pnpm cli task continue <task-id> \
   --source-id comment-001 \
   --instruction "Now focus on cancellation behavior"
 ```

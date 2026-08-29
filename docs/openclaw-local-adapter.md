@@ -75,13 +75,13 @@ OpenClaw 2026.x 的 `--json` 输出可能是逐行 NDJSON，也可能在尾部�
 先确认本机命令可用：
 
 ```bash
-pnpm cli -- adapter probe openclaw
+pnpm cli adapter probe openclaw
 ```
 
 创建绑定 OpenClaw provider agent `main` 的 Orbtex Agent：
 
 ```bash
-pnpm cli -- agent create \
+pnpm cli agent create \
   --name openclaw-local \
   --adapter openclaw \
   --provider-agent main \

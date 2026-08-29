@@ -2,6 +2,15 @@
   "name": "@orbtex-ai/daemon",
   "version": "0.1.0",
   "type": "module",
-  "exports": "./src/index.js",
-  "dependencies": { "@orbtex-ai/core": "workspace:*" }
+  "exports": "./dist/index.js",
+  "dependencies": {
+    "@orbtex-ai/core": "workspace:*"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
 }
