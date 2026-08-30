@@ -209,3 +209,4 @@ pnpm cli run cancel <run-id> --reason user_cancelled
 - [Adapter 开发指南](docs/08-adapter-authoring.md)
 - [Transport And Multi-node](docs/09-transport-and-multinode.md)
 - [Protocol Schema And Codegen](docs/10-protocol-schema-codegen.md)
+- [Aily 多触发机制与 Orbtex 统一 Blueprint](docs/11-aily-trigger-and-execution-review.html)
