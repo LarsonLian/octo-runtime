@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@orbtex-ai/orbtex-adapter-host": "workspace:*",
-    "@orbtex-ai/orbtex-adapter-mock": "workspace:*",
+    "@orbtex-ai/orbtex-adapter-codex": "workspace:*",
     "@orbtex-ai/orbtex-core": "workspace:*"
   },
   "types": "./dist/index.d.ts"

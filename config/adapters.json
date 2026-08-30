@@ -5,7 +5,6 @@
     { "type": "claude-code", "module": "@orbtex-ai/orbtex-adapter-claude-code", "export": "claudeCodeAdapter" },
     { "type": "codebuddy", "module": "@orbtex-ai/orbtex-adapter-codebuddy", "export": "codebuddyAdapter" },
     { "type": "opencode", "module": "@orbtex-ai/orbtex-adapter-opencode", "export": "opencodeAdapter" },
-    { "type": "openclaw", "module": "@orbtex-ai/orbtex-adapter-openclaw", "export": "openclawAdapter" },
-    { "type": "mock", "module": "@orbtex-ai/orbtex-adapter-mock", "export": "mockAdapter" }
+    { "type": "openclaw", "module": "@orbtex-ai/orbtex-adapter-openclaw", "export": "openclawAdapter" }
   ]
 }

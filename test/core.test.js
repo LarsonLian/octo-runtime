@@ -2,12 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { AdapterHost } from "@orbtex-ai/orbtex-adapter-host";
 import { HarnessEngine, MemoryStore } from "@orbtex-ai/orbtex-core";
-import { mockAdapter } from "@orbtex-ai/orbtex-adapter-mock";
+import { testAdapter } from "./fixtures/test-adapter.js";
 
 test("trigger occurrence is deduplicated and produces a terminal run", async () => {
-  const host = new AdapterHost(); host.register(mockAdapter);
+  const host = new AdapterHost(); host.register(testAdapter);
   const store = new MemoryStore(); const engine = new HarnessEngine({ store, host });
-  const agent = await engine.registerAgent({ name: "test", adapterType: "mock" });
+  const agent = await engine.registerAgent({ name: "test", adapterType: "test" });
   const trigger = await engine.createTrigger({ kind: "manual", agentId: agent.id, task: { title: "T", description: "Do T" } });
   const first = await engine.fire(trigger.id, { externalEventId: "event-1" });
   const second = await engine.fire(trigger.id, { externalEventId: "event-1" });
@@ -15,7 +15,7 @@ test("trigger occurrence is deduplicated and produces a terminal run", async () 
   assert.equal(first.result.events.at(-1).type, "run.finished");
   assert.equal(first.result.events[0].type, "run.queued");
   assert.equal(first.result.events[1].type, "run.running");
-  assert.equal(store.sessions.get(first.task.sessionId).providerSession.sessionId.startsWith("mock:"), true);
+  assert.equal(store.sessions.get(first.task.sessionId).providerSession.sessionId.startsWith("test:"), true);
   assert.equal(second.deduplicated, true);
   assert.equal(store.tasks.size, 1);
 });

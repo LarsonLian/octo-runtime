@@ -30,11 +30,11 @@ Orbtex 的 adapter registry、调用生命周期和 NDJSON JSON-RPC host。它�
 
 ```ts
 import { AdapterHost } from "@orbtex-ai/orbtex-adapter-host";
-import { mockAdapter } from "@orbtex-ai/orbtex-adapter-mock";
+import { codexAdapter } from "@orbtex-ai/orbtex-adapter-codex";
 import type { InvokeRequest } from "@orbtex-ai/orbtex-protocol";
 
 const host = new AdapterHost();
-host.register(mockAdapter);
+host.register(codexAdapter);
 
 const request: InvokeRequest = {
   invocationId: "invoke-1",
@@ -47,7 +47,7 @@ const request: InvokeRequest = {
   agentConfig: {}
 };
 
-for await (const event of host.invoke("mock", request)) {
+for await (const event of host.invoke("codex", request)) {
   console.log(event.type, event.payload);
 }
 ```

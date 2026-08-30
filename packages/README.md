@@ -19,7 +19,7 @@
 
 ## 先理解“本地”
 
-当前代码是 **单机 daemon + 本机 adapter-host**。除 `mock` 外，每个 adapter 都在 adapter-host 所在节点启动 provider CLI；这只说明 CLI、shell 和文件工具在该节点运行，不代表模型权重在本机：模型通常仍由各 provider 的云 API 提供。
+当前代码是 **单机 daemon + 本机 adapter-host**。每个 adapter 都在 adapter-host 所在节点启动 provider CLI；这只说明 CLI、shell 和文件工具在该节点运行，不代表模型权重在本机：模型通常仍由各 provider 的云 API 提供。
 
 跨云 WebSocket node、lease/fencing 和远端 workspace materialization 目前只有设计文档，尚未接入当前运行代码。不要把“Transport 可扩展”写成“已经支持多云生产调度”。
 
@@ -32,7 +32,6 @@
 | [`codebuddy`](orbtex-adapter-codebuddy/README.md) | `codebuddy --acp` 子进程 | ACP JSON-RPC stdio | CodeBuddy 配置的云 provider | `session/load` | 不需要 |
 | [`opencode`](orbtex-adapter-opencode/README.md) | `opencode run` 子进程 | argv + JSON events stdout | OpenCode 配置的 provider | `--session` | 不需要 |
 | [`openclaw`](orbtex-adapter-openclaw/README.md) | `openclaw agent --local` 子进程 | NDJSON/final JSON stdout | OpenClaw 配置的 provider | `--session-id` | **明确不使用** |
-| [`mock`](orbtex-adapter-mock/README.md) | adapter-host 进程内 | 无 | 无模型 | 确定性 mock ID | 不需要 |
 
 所有真实 adapter 都是“一次 invocation 一个本地 CLI process”。当前没有维护长期 provider CLI daemon；CodeBuddy 的 ACP session 可以跨新进程 `session/load`，OpenClaw local 依赖 state dir 中的 transcript，其余依赖各 provider 自己的 session store。
 
@@ -103,9 +102,6 @@ pnpm cli agent create --name opencode --adapter opencode \
 
 pnpm cli agent create --name openclaw --adapter openclaw \
   --provider-agent main --thinking medium --timeout-seconds 300
-
-pnpm cli agent create --name demo --adapter mock \
-  --workdir /absolute/path/to/existing/directory
 ```
 
 CLI 输出中的 `id` 是 Orbtex Agent ID。`--provider-agent` 当前只对 OpenClaw 有效；OpenCode 虽然原生有 `--agent`，此 adapter 尚未暴露。

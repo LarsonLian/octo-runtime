@@ -15,7 +15,6 @@
     "@orbtex-ai/orbtex-adapter-codebuddy": "workspace:*",
     "@orbtex-ai/orbtex-adapter-codex": "workspace:*",
     "@orbtex-ai/orbtex-adapter-host": "workspace:*",
-    "@orbtex-ai/orbtex-adapter-mock": "workspace:*",
     "@orbtex-ai/orbtex-adapter-openclaw": "workspace:*",
     "@orbtex-ai/orbtex-adapter-opencode": "workspace:*"
   },

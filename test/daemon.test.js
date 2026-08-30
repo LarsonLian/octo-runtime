@@ -6,15 +6,15 @@ import { join } from "node:path";
 import { AdapterHost } from "@orbtex-ai/orbtex-adapter-host";
 import { HarnessEngine, JsonFileStore } from "@orbtex-ai/orbtex-core";
 import { HarnessDaemon } from "@orbtex-ai/orbtex-daemon";
-import { mockAdapter } from "@orbtex-ai/orbtex-adapter-mock";
+import { testAdapter } from "./fixtures/test-adapter.js";
 
 test("daemon recovery queues a materialized task that has no run", async () => {
   const directory = await mkdtemp(join(tmpdir(), "orbtex-orphan-test-"));
   try {
     const store = await JsonFileStore.open(join(directory, "state.json"));
-    const host = new AdapterHost(); host.register(mockAdapter);
+    const host = new AdapterHost(); host.register(testAdapter);
     const engine = new HarnessEngine({ store, host });
-    const agent = await engine.registerAgent({ name: "mock", adapterType: "mock" });
+    const agent = await engine.registerAgent({ name: "test", adapterType: "test" });
     const trigger = await engine.createTrigger({ kind: "manual", agentId: agent.id, task: { title: "T", description: "Do T" } });
     const created = await engine.materializeTrigger(trigger.id, { externalEventId: "before-crash" });
     assert.equal(created.task.activeRunId, undefined);
@@ -29,10 +29,10 @@ test("daemon ACKs durable work, deduplicates triggers, and continues one task se
   try {
     const file = join(directory, "state.json");
     const store = await JsonFileStore.open(file);
-    const host = new AdapterHost(); host.register(mockAdapter);
+    const host = new AdapterHost(); host.register(testAdapter);
     const engine = new HarnessEngine({ store, host });
     const daemon = new HarnessDaemon({ engine, store });
-    const agent = await engine.registerAgent({ name: "mock", adapterType: "mock" });
+    const agent = await engine.registerAgent({ name: "test", adapterType: "test" });
     const trigger = await engine.createTrigger({ kind: "manual", agentId: agent.id, task: { title: "T", description: "Do T" } });
     const ack = await daemon.submitTrigger(trigger.id, { externalEventId: "event-1" });
     assert.equal(ack.accepted, true);
@@ -50,7 +50,7 @@ test("daemon ACKs durable work, deduplicates triggers, and continues one task se
     const chat = await engine.createChatSession({ agentId: agent.id, title: "Chat" });
     const chatOne = await daemon.submitChat(chat.id, "hello"); await daemon.waitForRun(chatOne.runId);
     const chatTwo = await daemon.submitChat(chat.id, "continue"); await daemon.waitForRun(chatTwo.runId);
-    assert.equal(store.sessions.get(chat.id).providerSession.sessionId, `mock:${chat.id}`);
+    assert.equal(store.sessions.get(chat.id).providerSession.sessionId, `test:${chat.id}`);
     assert.equal(store.runs.get(chatOne.runId).sessionId, store.runs.get(chatTwo.runId).sessionId);
 
     const continued = await daemon.continueTask(ack.taskId, { sourceType: "comment", sourceId: "comment-1", instructions: "continue" });

@@ -8,7 +8,7 @@ import {
 } from "@orbtex-ai/orbtex-protocol";
 
 /** Host 用于注册和能力发现的 provider-neutral metadata。 */
-export interface HostedAdapterMetadata extends Record<string, unknown> {
+export interface HostedAdapterMetadata {
   type: string;
   capabilities: string[];
 }

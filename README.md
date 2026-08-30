@@ -12,7 +12,7 @@
 - 原子 JSON 持久化、daemon 重启恢复、每个 Task/Chat session 单 active run。
 - 独立 Node adapter-host 进程，manifest 动态加载 adapters，NDJSON JSON-RPC 调用/事件/取消。
 - canonical message/tool/usage/session/run events；final/analysis channel 分离；terminal exactly once。
-- Codex、Claude Code、CodeBuddy ACP、OpenCode、OpenClaw local adapters；另有 mock adapter。
+- Codex、Claude Code、CodeBuddy ACP、OpenCode、OpenClaw local adapters。
 - provider session 恢复、命令 probe、CLI 和契约测试。
 
 这是可运行的架构基线，不是多节点生产调度器。JSON store 假设单 daemon writer；生产环境应替换成事务数据库、outbox、lease/fencing 和鉴权控制面。
@@ -26,7 +26,7 @@ apps/
   cli/                 Unix socket CLI
   daemon/              durable control plane + worker
   adapter-host/        独立 provider host 进程
-  example-basic/       in-process mock example
+  example-basic/       in-process Codex example
 packages/
   orbtex-protocol/            canonical event / invoke contract
   orbtex-core/                Chat/Task/Trigger/Run domain engine
@@ -39,7 +39,6 @@ packages/
   orbtex-adapter-codebuddy/   CodeBuddy ACP adapter
   orbtex-adapter-opencode/    OpenCode provider adapter
   orbtex-adapter-openclaw/    OpenClaw local adapter
-  orbtex-adapter-mock/        deterministic test adapter
 config/adapters.json   adapter manifest
 test/                  contract and integration tests
 ```
@@ -55,10 +54,9 @@ pnpm build
 pnpm typecheck
 pnpm lint
 pnpm test
-pnpm demo
 ```
 
-`pnpm test` 会先构建全部 workspace。测试不会调用真实模型；它使用 native event fixtures、真实 fake ACP 子进程、独立 adapter-host 进程和临时 JSON store。
+`pnpm test` 会先构建全部 workspace。测试不会调用真实模型；它使用测试内 adapter fixture、native event fixtures、真实 fake ACP 子进程、独立 adapter-host 进程和临时 JSON store。
 
 每个 adapter 的运行环境、认证、参数和完整教程统一收录在 [Packages And Adapter Guide](packages/README.md)，并可继续进入各 adapter package 的独立 README。
 
@@ -87,13 +85,14 @@ pnpm cli adapter probe codex
 
 ## 最小 Task 示例
 
-先用 mock adapter 验证控制面，不消耗模型：
+以下示例使用 Codex adapter，需要先安装并登录 Codex CLI：
 
 ```bash
 pnpm cli agent create \
   --name demo \
-  --adapter mock \
-  --workdir "$PWD"
+  --adapter codex \
+  --workdir "$PWD" \
+  --sandbox read-only
 
 pnpm cli trigger create \
   --name inspect-repo \
@@ -118,6 +117,12 @@ pnpm cli task continue <task-id> \
 ```
 
 第二次 Task attempt 复用同一个 harness/provider session，但获得新的 run ID 和独立 event seq。
+
+也可以用进程内示例执行同一流程：
+
+```bash
+pnpm demo
+```
 
 ## Chat 示例
 

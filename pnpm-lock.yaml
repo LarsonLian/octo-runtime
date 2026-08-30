@@ -29,9 +29,6 @@ importers:
       '@orbtex-ai/orbtex-adapter-host':
         specifier: workspace:*
         version: link:packages/orbtex-adapter-host
-      '@orbtex-ai/orbtex-adapter-mock':
-        specifier: workspace:*
-        version: link:packages/orbtex-adapter-mock
       '@orbtex-ai/orbtex-adapter-openclaw':
         specifier: workspace:*
         version: link:packages/orbtex-adapter-openclaw
@@ -71,9 +68,6 @@ importers:
       '@orbtex-ai/orbtex-adapter-host':
         specifier: workspace:*
         version: link:../../packages/orbtex-adapter-host
-      '@orbtex-ai/orbtex-adapter-mock':
-        specifier: workspace:*
-        version: link:../../packages/orbtex-adapter-mock
       '@orbtex-ai/orbtex-adapter-openclaw':
         specifier: workspace:*
         version: link:../../packages/orbtex-adapter-openclaw
@@ -101,12 +95,12 @@ importers:
 
   apps/example-basic:
     dependencies:
+      '@orbtex-ai/orbtex-adapter-codex':
+        specifier: workspace:*
+        version: link:../../packages/orbtex-adapter-codex
       '@orbtex-ai/orbtex-adapter-host':
         specifier: workspace:*
         version: link:../../packages/orbtex-adapter-host
-      '@orbtex-ai/orbtex-adapter-mock':
-        specifier: workspace:*
-        version: link:../../packages/orbtex-adapter-mock
       '@orbtex-ai/orbtex-core':
         specifier: workspace:*
         version: link:../../packages/orbtex-core
@@ -142,12 +136,6 @@ importers:
       '@orbtex-ai/orbtex-protocol':
         specifier: workspace:*
         version: link:../orbtex-protocol
-
-  packages/orbtex-adapter-mock:
-    dependencies:
-      '@orbtex-ai/orbtex-adapter-sdk':
-        specifier: workspace:*
-        version: link:../orbtex-adapter-sdk
 
   packages/orbtex-adapter-openclaw:
     dependencies:

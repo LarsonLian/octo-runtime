@@ -31,17 +31,17 @@ Orbtex 的领域模型与执行引擎。它管理 Agent、Chat/Task Session、Tr
 ```ts
 import { HarnessEngine, MemoryStore } from "@orbtex-ai/orbtex-core";
 import { AdapterHost } from "@orbtex-ai/orbtex-adapter-host";
-import { mockAdapter } from "@orbtex-ai/orbtex-adapter-mock";
+import { codexAdapter } from "@orbtex-ai/orbtex-adapter-codex";
 
 const host = new AdapterHost();
-host.register(mockAdapter);
+host.register(codexAdapter);
 
 const store = new MemoryStore();
 const engine = new HarnessEngine({ store, host });
 const agent = await engine.registerAgent({
   name: "demo",
-  adapterType: "mock",
-  config: { workdir: process.cwd() }
+  adapterType: "codex",
+  config: { workdir: process.cwd(), sandbox: "read-only" }
 });
 
 const chat = await engine.createChatSession({ agentId: agent.id });

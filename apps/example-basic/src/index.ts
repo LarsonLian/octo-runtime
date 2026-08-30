@@ -1,12 +1,16 @@
 import { AdapterHost } from "@orbtex-ai/orbtex-adapter-host";
+import { codexAdapter } from "@orbtex-ai/orbtex-adapter-codex";
 import { HarnessEngine, MemoryStore } from "@orbtex-ai/orbtex-core";
-import { mockAdapter } from "@orbtex-ai/orbtex-adapter-mock";
 
 const host = new AdapterHost();
-host.register(mockAdapter);
+host.register(codexAdapter);
 const store = new MemoryStore();
 const engine = new HarnessEngine({ store, host });
-const agent = await engine.registerAgent({ name: "demo", adapterType: "mock", config: { workdir: process.cwd() } });
+const agent = await engine.registerAgent({
+  name: "demo",
+  adapterType: "codex",
+  config: { workdir: process.cwd(), sandbox: "read-only" }
+});
 const trigger = await engine.createTrigger({
   name: "manual-demo", kind: "manual", agentId: agent.id,
   task: { title: "Inspect repository", description: "Summarize the current repository." }

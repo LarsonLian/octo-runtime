@@ -424,7 +424,7 @@ Secret 使用短期、run/node/tenant scoped credential，由 node credential br
 
 1. 抽出 `MessageTransport` 和 `JsonRpcPeer`，用现有 stdio host 契约测试锁住行为。
 2. 给本机 host 协议增加 `host.hello`、每 invocation `seq`、`invoke.session`，移除对额外 `invoke.done` 的必要依赖，终态 event 即完成标志。
-3. 实现单 control plane + 单 WebSocket node，先只跑 mock adapter。
+3. 实现单 control plane + 单 WebSocket node，先只跑测试 adapter fixture。
 4. 增加 durable command inbox、event spool、累计 ACK 和断线重放测试。
 5. 增加 node registry、capability scheduling、lease/fencing，再开放两个节点。
 6. 最后接真实 Codex/Claude/CodeBuddy/OpenCode/OpenClaw，验证取消、断线、重复 command、陈旧 lease 和大 tool output。
