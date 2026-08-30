@@ -3,22 +3,38 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { AgentConfig, EventEnvelope, ProviderSession } from "@orbtex-ai/orbtex-protocol";
 
+/** Trigger 的来源类型：人工触发、外部事件或本地间隔调度。 */
 export type TriggerKind = "manual" | "event" | "interval";
+
+/** Run 的完整状态机；terminal 状态为 completed、failed、cancelled。 */
 export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+
+/** 当前 reference model 让 Task 状态跟随最近一次 Attempt/Run。 */
 export type TaskStatus = RunStatus;
 
+/**
+ * 可被 Chat 或 Task 选用的 Agent 配置。
+ * Agent 只绑定 adapter 类型与配置，不代表一次执行，也不保存对话历史。
+ */
 export interface Agent {
   id: string;
   name: string;
+  /** 对应 Adapter Host 中 `metadata.type`，不是 npm 包名。 */
   adapterType: string;
   config: AgentConfig;
 }
 
+/** Trigger 每次物化 Task 时复制的业务模板。 */
 export interface TriggerTaskTemplate {
   title: string;
+  /** Task 的稳定用户请求；Task continuation 不会改写它。 */
   description: string;
 }
 
+/**
+ * 一个可重复触发的任务定义。
+ * Trigger 是规则，不是执行记录；每次命中由 TriggerOccurrence 记录。
+ */
 export interface Trigger {
   id: string;
   name: string;
@@ -31,6 +47,10 @@ export interface Trigger {
   everyMs?: number;
 }
 
+/**
+ * Trigger 对某个外部事件的一次命中记录。
+ * Store 使用 `(triggerId, externalEventId)` 作为幂等键，避免 webhook/调度重试重复创建 Task。
+ */
 export interface TriggerOccurrence {
   id: string;
   triggerId: string;
@@ -41,6 +61,9 @@ export interface TriggerOccurrence {
   taskId: string;
 }
 
+/**
+ * 持久业务任务。一个 Task 拥有一个长期 Session，可通过多个 Attempt 反复继续。
+ */
 export interface Task {
   id: string;
   title: string;
@@ -49,9 +72,14 @@ export interface Task {
   status: TaskStatus;
   sessionId: string;
   createdAt: number;
+  /** 非空时拒绝并发 Attempt，保证同一 Task 的 provider session 串行使用。 */
   activeRunId?: string;
 }
 
+/**
+ * Task 的一次尝试。
+ * Attempt 保存来源与编号；实际事件、取消和终态属于其一一对应的 Run。
+ */
 export interface Attempt {
   id: string;
   taskId: string;
@@ -63,6 +91,10 @@ export interface Attempt {
   sourceId?: string;
 }
 
+/**
+ * Chat 或 Task 的长期会话容器。
+ * Chat 直接绑定 Agent；Task 通过 Task.agentId 解析 Agent，因此 task session 不重复保存 agentId。
+ */
 export interface Session {
   id: string;
   type: "chat" | "task";
@@ -72,19 +104,27 @@ export interface Session {
   channel?: string;
   createdAt?: number;
   activeRunId?: string;
+  /** Adapter 通过 `session.update` 上报的 opaque 恢复信息。 */
   providerSession?: ProviderSession;
 }
 
+/**
+ * 一次可排队、执行、取消和终态化的业务执行。
+ * Chat turn 直接保存 prompt；Task Run 通过 attemptId 找到 Task.description。
+ */
 export interface Run {
   id: string;
   sessionId: string;
   status: RunStatus;
+  /** 下一个待分配的 event seq，从 1 开始，仅在本 Run 内递增。 */
   nextSeq: number;
   attemptId?: string;
   prompt?: string;
+  /** Provider 调用开始后写入，供取消请求定位 Adapter Host invocation。 */
   invocationId?: string;
 }
 
+/** JSON Store 的版本化序列化形状；Map 使用 entries 数组保存。 */
 export interface StoreSnapshot {
   agents: Array<[string, Agent]>;
   triggers: Array<[string, Trigger]>;
@@ -96,6 +136,10 @@ export interface StoreSnapshot {
   events: Array<[string, EventEnvelope[]]>;
 }
 
+/**
+ * Core 所需的最小持久化端口。
+ * Map 让 reference implementation 保持简单；生产数据库实现可以在适配层维护等价索引。
+ */
 export interface Store {
   agents: Map<string, Agent>;
   triggers: Map<string, Trigger>;
@@ -105,10 +149,16 @@ export interface Store {
   sessions: Map<string, Session>;
   runs: Map<string, Run>;
   events: Map<string, EventEnvelope[]>;
+  /** 以 `(runId, seq)` 去重追加事件；返回 false 表示该序号已经存在。 */
   appendEvent(event: EventEnvelope): boolean;
+  /** 提交当前状态。Core 会在关键状态迁移和每个 provider event 后调用。 */
   commit(): Promise<void>;
 }
 
+/**
+ * 无 I/O 的 Store，适合测试、示例和嵌入式短生命周期运行。
+ * 进程退出后数据丢失，且不提供跨线程/跨进程并发控制。
+ */
 export class MemoryStore implements Store {
   agents = new Map<string, Agent>();
   triggers = new Map<string, Trigger>();
@@ -127,8 +177,10 @@ export class MemoryStore implements Store {
     return true;
   }
 
+  /** 内存实现无需刷盘，但保留异步端口以便 Core 无差别使用持久 Store。 */
   async commit(): Promise<void> {}
 
+  /** 生成与 JSON 文件格式兼容的当前状态快照。 */
   snapshot(): StoreSnapshot {
     return {
       agents: [...this.agents.entries()],
@@ -143,6 +195,10 @@ export class MemoryStore implements Store {
   }
 }
 
+/**
+ * 单进程、单 writer 的 JSON 文件 Store reference implementation。
+ * 它演示恢复与原子替换，不替代生产数据库事务、lease 或 fencing。
+ */
 export class JsonFileStore extends MemoryStore {
   readonly #file: string;
   #writes: Promise<void> = Promise.resolve();
@@ -152,6 +208,7 @@ export class JsonFileStore extends MemoryStore {
     this.#file = file;
   }
 
+  /** 打开已有 version=1 快照；文件不存在时返回空 Store。 */
   static async open(file: string): Promise<JsonFileStore> {
     const store = new JsonFileStore(file);
     try {
@@ -171,6 +228,7 @@ export class JsonFileStore extends MemoryStore {
     return store;
   }
 
+  /** 把调用时的完整快照串行写入 mode 0600 临时文件，再原子替换目标文件。 */
   override async commit(): Promise<void> {
     const body = JSON.stringify({ version: 1, ...this.snapshot() }, null, 2) + "\n";
     // 串行化并发提交，再通过同目录 rename 原子替换，避免留下半写入的状态文件。

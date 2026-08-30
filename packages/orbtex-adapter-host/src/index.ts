@@ -7,11 +7,16 @@ import {
   type MessageChannel
 } from "@orbtex-ai/orbtex-protocol";
 
+/** Host 用于注册和能力发现的 provider-neutral metadata。 */
 export interface HostedAdapterMetadata extends Record<string, unknown> {
   type: string;
   capabilities: string[];
 }
 
+/**
+ * 任意 Orbtex adapter 必须实现的最小合同。
+ * invoke 可以封装 CLI 子进程、ACP、WebSocket 或进程内实现，只要输出 canonical event stream。
+ */
 export interface HostedAdapter {
   metadata: HostedAdapterMetadata;
   probe?: () => unknown;
@@ -23,19 +28,26 @@ interface MessageState {
   open: boolean;
 }
 
+/**
+ * Adapter 的进程内 registry 与生命周期守门员。
+ * 它校验插件输入输出、补齐 message lifecycle、保证单终态并把取消转换为 AbortSignal。
+ */
 export class AdapterHost {
   readonly #adapters = new Map<string, HostedAdapter>();
   readonly #active = new Map<string, AbortController>();
 
+  /** 按 `metadata.type` 注册 adapter；同一类型不能重复覆盖。 */
   register(adapter: HostedAdapter): void {
     if (this.#adapters.has(adapter.metadata.type)) throw new Error(`duplicate adapter: ${adapter.metadata.type}`);
     this.#adapters.set(adapter.metadata.type, adapter);
   }
 
+  /** 列出已注册 adapter，供 Agent 注册和控制面展示。 */
   list(): HostedAdapterMetadata[] {
     return [...this.#adapters.values()].map(adapter => adapter.metadata);
   }
 
+  /** 调用 adapter，并向上游输出经过生命周期修正的 canonical events。 */
   async *invoke(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
     assertInvokeRequest(request);
     const adapter = this.#adapters.get(adapterType);
@@ -95,6 +107,7 @@ export class AdapterHost {
     }
   }
 
+  /** 运行 adapter 自带的环境探测；没有 probe 时返回 unchecked 可用状态。 */
   probe(adapterType: string): unknown {
     const adapter = this.#adapters.get(adapterType);
     if (!adapter) throw new Error(`unknown adapter: ${adapterType}`);
@@ -102,6 +115,7 @@ export class AdapterHost {
     return adapter.probe();
   }
 
+  /** 中止活动 invocation；返回 false 表示该 invocation 已不存在或已经结束。 */
   cancel(invocationId: string, reason = "cancelled"): boolean {
     const controller = this.#active.get(invocationId);
     if (!controller) return false;

@@ -61,6 +61,10 @@ function writer(output: Writable): (value: RpcMessage) => void {
   };
 }
 
+/**
+ * 把 AdapterHost 暴露为按行分帧的 JSON-RPC 2.0 服务。
+ * 普通方法使用 request/response；长时间 invoke 使用 ACK + notification event stream。
+ */
 export class AdapterHostRpcServer {
   readonly #host: AdapterHost;
   readonly #send: (value: RpcMessage) => void;
@@ -70,6 +74,7 @@ export class AdapterHostRpcServer {
     this.#send = writer(output);
   }
 
+  /** 开始消费输入流；每行必须是一个完整 JSON-RPC 对象。 */
   listen(input: Readable): void {
     createInterface({ input }).on("line", line => {
       try {
@@ -138,6 +143,7 @@ export class AdapterHostRpcServer {
   }
 }
 
+/** AdapterHostRpcServer 的异步 client，同时把 invoke notifications 还原为 AsyncGenerator。 */
 export class AdapterHostRpcClient {
   readonly #send: (value: RpcMessage) => void;
   readonly #pending = new Map<string, Deferred<unknown>>();
@@ -181,6 +187,7 @@ export class AdapterHostRpcClient {
     else pending.resolve(message.result);
   }
 
+  /** 发送普通 JSON-RPC request，并按随机 ID 等待对应 response。 */
   request<T = unknown>(method: string, params: JsonRecord = {}): Promise<T> {
     const id = randomUUID();
     const promise = new Promise<unknown>((resolve, reject) => {
@@ -190,6 +197,7 @@ export class AdapterHostRpcClient {
     return promise as Promise<T>;
   }
 
+  /** 关闭逻辑连接，并让全部 pending request/invocation 以同一错误结束。 */
   close(error = new Error("adapter-host client closed")): void {
     for (const pending of this.#pending.values()) pending.reject(error);
     this.#pending.clear();
@@ -209,6 +217,7 @@ export class AdapterHostRpcClient {
     return this.request("cancel", { invocationId, reason });
   }
 
+  /** 先等待 invoke ACK，再持续产出该 invocation 的 event notifications，直到 done。 */
   async *invoke(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
     const queue = new AsyncQueue<CanonicalEvent>();
     this.#invocations.set(request.invocationId, queue);
