@@ -16,11 +16,22 @@ import {
   type AdapterHostRpcClient
 } from "@orbtex-ai/orbtex-adapter-host";
 
-interface StartDaemonServerOptions {
+export interface StartDaemonServerOptions {
   socketPath: string;
   storePath: string;
   manifestPath: string;
   hostEntrypoint: string;
+}
+
+export interface DaemonRuntimeInfo {
+  socketPath: string;
+  storePath: string;
+  manifestPath: string;
+  adapterHost: {
+    pid: number | null;
+    entrypoint: string;
+  };
+  adapters: string[];
 }
 
 interface DaemonRequest {
@@ -29,12 +40,13 @@ interface DaemonRequest {
   params?: Record<string, unknown>;
 }
 
-interface DaemonApplication {
+export interface DaemonApplication {
   server: Server;
   store: JsonFileStore;
   daemon: HarnessDaemon;
   engine: HarnessEngine;
   hostProcess: AdapterHostProcess;
+  runtime: DaemonRuntimeInfo;
   close(): Promise<void>;
 }
 
@@ -55,12 +67,29 @@ export async function startDaemonServer({
 
   const store = await JsonFileStore.open(storePath);
   const hostProcess = await spawnAdapterHost({ entrypoint: hostEntrypoint, manifest: manifestPath });
+  let adapters: string[];
+  try {
+    adapters = (await hostProcess.client.list()).map(adapter => adapter.type);
+  } catch (error) {
+    await hostProcess.close();
+    throw error;
+  }
+  const runtime: DaemonRuntimeInfo = {
+    socketPath,
+    storePath,
+    manifestPath,
+    adapterHost: {
+      pid: hostProcess.child.pid ?? null,
+      entrypoint: hostEntrypoint
+    },
+    adapters
+  };
   const engine = new HarnessEngine({ store, host: hostProcess.client });
   const daemon = new HarnessDaemon({ engine, store });
 
   const server = net.createServer(socket => {
     createInterface({ input: socket }).once("line", line => {
-      void handleRequestLine({ line, socket, daemon, engine, store, host: hostProcess.client });
+      void handleRequestLine({ line, socket, daemon, engine, store, host: hostProcess.client, runtime });
     });
   });
 
@@ -85,6 +114,7 @@ export async function startDaemonServer({
     daemon,
     engine,
     hostProcess,
+    runtime,
     async close(): Promise<void> {
       daemon.stop();
       await new Promise<void>(resolve => server.close(() => resolve()));
@@ -100,7 +130,8 @@ async function handleRequestLine({
   daemon,
   engine,
   store,
-  host
+  host,
+  runtime
 }: {
   line: string;
   socket: net.Socket;
@@ -108,11 +139,12 @@ async function handleRequestLine({
   engine: HarnessEngine;
   store: Store;
   host: AdapterHostRpcClient;
+  runtime: DaemonRuntimeInfo;
 }): Promise<void> {
   let request: DaemonRequest | undefined;
   try {
     request = parseRequest(line);
-    const result = await dispatch({ request, daemon, engine, store, host });
+    const result = await dispatch({ request, daemon, engine, store, host, runtime });
     socket.end(`${JSON.stringify({ id: request.id, result })}\n`);
   } catch (error) {
     const rpcError = error as NodeJS.ErrnoException;
@@ -128,13 +160,15 @@ async function dispatch({
   daemon,
   engine,
   store,
-  host
+  host,
+  runtime
 }: {
   request: DaemonRequest;
   daemon: HarnessDaemon;
   engine: HarnessEngine;
   store: Store;
   host: AdapterHostRpcClient;
+  runtime: DaemonRuntimeInfo;
 }): Promise<unknown> {
   const params = request.params ?? {};
   switch (request.method) {
@@ -142,6 +176,7 @@ async function dispatch({
       return {
         ready: true,
         pid: process.pid,
+        ...runtime,
         counts: Object.fromEntries(
           (["agents", "triggers", "tasks", "runs"] as const).map(name => [name, store[name].size])
         )

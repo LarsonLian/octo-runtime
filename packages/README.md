@@ -73,7 +73,8 @@ pnpm cli status
 pnpm cli adapter list
 ```
 
-`ORBTEX_HOME` 应在两个终端保持一致。默认值是启动命令 cwd 下的 `.orbtex`。
+`ORBTEX_HOME` 应在两个终端保持一致。默认值是用户目录下的 `~/.orbtex`，默认 socket 为
+`~/.orbtex/sockets/orbtex-daemon.sock`。
 
 ## Probe 与创建 Agent
 

@@ -1,20 +1,17 @@
 #!/usr/bin/env node
-import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
+import { resolveDaemonRuntimePaths } from "./runtime-options.js";
 import { startDaemonServer } from "./server.js";
 
-function option(name: string, fallback: string): string {
-  const index = process.argv.indexOf(name); return index >= 0 ? process.argv[index + 1] : fallback;
-}
-const home = resolve(process.env.ORBTEX_HOME ?? ".orbtex");
-const app = await startDaemonServer({
-  socketPath: resolve(option("--socket", `${home}/daemon.sock`)),
-  storePath: resolve(option("--store", `${home}/state.json`)),
-  manifestPath: resolve(option("--manifest", fileURLToPath(new URL("../../../config/adapters.json", import.meta.url)))),
-  hostEntrypoint: resolve(option("--host-entrypoint", fileURLToPath(new URL("../../adapter-host/dist/index.js", import.meta.url))))
-});
-console.error(`orbtex daemon ready pid=${process.pid}`);
+const runtimePaths = resolveDaemonRuntimePaths();
+const app = await startDaemonServer(runtimePaths);
+console.error(
+  `orbtex daemon ready pid=${process.pid} socket=${app.runtime.socketPath} ` +
+  `adapterHostPid=${app.runtime.adapterHost.pid ?? "unknown"} adapters=${app.runtime.adapters.join(",")}`
+);
+let stopping = false;
 const stop = (): void => {
+  if (stopping) return;
+  stopping = true;
   // signal handler 必须立即返回；实际清理仍由同一个 Promise 串行完成。
   void app.close().then(
     () => process.exit(0),
@@ -24,4 +21,4 @@ const stop = (): void => {
     }
   );
 };
-process.once("SIGINT", stop); process.once("SIGTERM", stop);
+process.on("SIGINT", stop); process.on("SIGTERM", stop);

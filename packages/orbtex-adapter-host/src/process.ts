@@ -20,6 +20,7 @@ export async function spawnAdapterHost({
   env = process.env
 }: SpawnAdapterHostOptions): Promise<AdapterHostProcess> {
   const child = spawn(process.execPath, [entrypoint, "--manifest", manifest], {
+    argv0: "orbtex-adapter-host",
     env,
     stdio: ["pipe", "pipe", "pipe"]
   });

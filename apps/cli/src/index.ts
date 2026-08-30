@@ -3,6 +3,7 @@ import net from "node:net";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
+import { resolveDaemonRuntimePaths } from "@orbtex-ai/daemon-app/runtime-options";
 
 type FlagValue = string | boolean;
 type Flags = Record<string, FlagValue>;
@@ -23,7 +24,7 @@ const { positionals, flags } = parseArguments(cliArguments);
 const [group, action, id] = positionals;
 
 try {
-  if (group === "daemon") await import("../../daemon/dist/index.js");
+  if (group === "daemon") await import("../../daemon/dist/launcher.js");
   else console.log(JSON.stringify(await callDaemon(command(group, action, id, flags)), null, 2));
 } catch (error) {
   console.error(JSON.stringify({ error: errorMessage(error) }, null, 2));
@@ -156,8 +157,7 @@ async function callDaemon(request: CliRequest): Promise<unknown> {
     ] };
   }
 
-  const home = resolve(process.env.ORBTEX_HOME ?? ".orbtex");
-  const socketPath = resolve(process.env.ORBTEX_SOCKET ?? `${home}/daemon.sock`);
+  const { socketPath } = resolveDaemonRuntimePaths([]);
   const socket = net.createConnection(socketPath);
   try {
     await new Promise<void>((resolveConnection, reject) => {
@@ -167,7 +167,7 @@ async function callDaemon(request: CliRequest): Promise<unknown> {
   } catch (error) {
     socket.destroy();
     const code = (error as NodeJS.ErrnoException).code;
-    if (code && ["ENOENT", "ECONNREFUSED"].includes(code)) {
+    if (code && ["ENOENT", "ECONNREFUSED", "EINVAL"].includes(code)) {
       throw new Error(
         `cannot connect to Orbtex daemon at ${socketPath}; start it from the repository root with: pnpm daemon`,
         { cause: error }

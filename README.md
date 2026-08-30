@@ -68,7 +68,8 @@ pnpm test
 pnpm daemon
 ```
 
-默认状态和 socket 位于当前目录的 `.orbtex/`。可显式隔离：
+默认状态位于 `~/.orbtex/state.json`，socket 位于
+`~/.orbtex/sockets/orbtex-daemon.sock`。可显式隔离：
 
 ```bash
 export ORBTEX_HOME=/absolute/path/to/runtime-state

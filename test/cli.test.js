@@ -14,12 +14,20 @@ test("CLI drives daemon socket through trigger to terminal run", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const home = await mkdtemp(join(tmpdir(), "orbtex-cli-test-"));
   const app = await startDaemonServer({
-    socketPath: join(home, "daemon.sock"), storePath: join(home, "state.json"),
+    socketPath: join(home, "sockets", "orbtex-daemon.sock"), storePath: join(home, "state.json"),
     manifestPath: join(root, "test/fixtures/adapters.json"), hostEntrypoint: join(root, "apps/adapter-host/dist/index.js")
   });
   const cli = async args => JSON.parse((await execute(process.execPath, [join(root, "apps/cli/dist/index.js"), ...args], { cwd: root, env: { ...process.env, ORBTEX_HOME: home } })).stdout);
   try {
-    assert.equal((await cli(["status"])).ready, true);
+    const status = await cli(["status"]);
+    assert.equal(status.ready, true);
+    assert.equal(status.pid, process.pid);
+    assert.equal(status.socketPath, join(home, "sockets", "orbtex-daemon.sock"));
+    assert.equal(status.storePath, join(home, "state.json"));
+    assert.equal(status.manifestPath, join(root, "test/fixtures/adapters.json"));
+    assert.equal(status.adapterHost.entrypoint, join(root, "apps/adapter-host/dist/index.js"));
+    assert.equal(status.adapterHost.pid, app.hostProcess.child.pid);
+    assert.deepEqual(status.adapters, ["test"]);
     assert.equal((await cli(["--", "status"])).ready, true);
     const agent = await cli(["agent", "create", "--name", "cli-test", "--adapter", "test", "--workdir", root]);
     const trigger = await cli(["trigger", "create", "--name", "cli-trigger", "--agent", agent.id, "--title", "T", "--instruction", "Do T"]);

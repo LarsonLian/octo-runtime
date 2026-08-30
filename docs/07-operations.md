@@ -2,15 +2,48 @@
 
 ## Runtime Files
 
-默认目录是启动 daemon 时 cwd 下的 `.orbtex/`：
+默认目录固定在当前用户 home 下，不受启动 cwd 影响：
 
 ```text
-.orbtex/
-  daemon.sock   mode 0600 Unix socket
-  state.json    mode 0600 versioned store
+~/.orbtex/
+  sockets/
+    orbtex-daemon.sock   mode 0600 Unix socket
+  state.json             mode 0600 versioned store
 ```
 
 用绝对路径 `ORBTEX_HOME` 固定运行实例。不要让两个 daemon 共享 state file；当前 store 是 single-writer。
+
+`pnpm daemon` 通过 launcher 把最终生效的绝对路径作为 daemon argv 传入。以下环境变量可覆盖默认值：
+
+```text
+ORBTEX_HOME
+ORBTEX_SOCKET
+ORBTEX_STORE
+ORBTEX_MANIFEST
+ORBTEX_ADAPTER_HOST
+```
+
+daemon 也直接接受 `--socket`、`--store`、`--manifest` 和 `--adapter-host`。旧的
+`--host-entrypoint` 继续作为 `--adapter-host` 的兼容别名。
+
+## Process Discovery
+
+launcher 会设置真实的 `argv[0]`，并把已解析的非敏感运行配置作为真实 argv 传给
+daemon 和 adapter-host：
+
+```bash
+ps -axo pid=,ppid=,args= | grep '[o]rbtex-'
+```
+
+典型输出：
+
+```text
+orbtex-daemon /absolute/apps/daemon/dist/index.js --socket /Users/name/.orbtex/sockets/orbtex-daemon.sock --store /Users/name/.orbtex/state.json --manifest /absolute/config/adapters.json --adapter-host /absolute/apps/adapter-host/dist/index.js
+orbtex-adapter-host /absolute/apps/adapter-host/dist/index.js --manifest /absolute/config/adapters.json
+```
+
+进程参数只用于本机快速发现，不放入 token、prompt 或 provider 凭据。脚本和监控应使用
+`orbtex status` 的结构化结果，不应解析 `ps` 文本。
 
 ## Health And Discovery
 
@@ -25,6 +58,9 @@ pnpm cli task list
 
 `probe` 只确认 binary 可执行；认证、模型、网络仍需 live invocation 验证。
 
+`status` 同时返回 daemon PID、socket/store/manifest 的有效绝对路径、adapter-host PID/入口、
+已加载 adapter 类型和领域对象计数。
+
 ## Run Inspection
 
 ```bash
@@ -38,7 +74,12 @@ pnpm cli run cancel <run-id> --reason operator_cancel
 
 ## Restart Semantics
 
-使用 SIGINT/SIGTERM 停止 daemon，server 会关闭 host 并删除自己的 socket。state file 保留。重启会重新调度 queued run，并为已 materialize 但尚未建 run 的 queued Task 补建 attempt；running run 因 provider process 已丢失被明确标为 failed，而不是盲目重复执行有副作用的 turn。
+使用 SIGINT/SIGTERM 停止 daemon 会启动关闭流程：停止调度、等待 Unix server 关闭、终止 host
+并删除 socket，state file 保留。当前 `server.close()` 会等待现有连接；未完成的 `run.wait`
+可能拖住关闭流程，使 host 终止和 socket 删除延后，且尚无 connection drain timeout。
+
+重启会重新调度 queued run，并为已 materialize 但尚未建 run 的 queued Task 补建 attempt；
+running run 因 provider process 已丢失被明确标为 failed，而不是盲目重复执行有副作用的 turn。
 
 需要 provider reattach 时，应新增 adapter capability、durable stdout/native run handle，再改变 recovery 策略；不能仅凭 provider session ID 假装能恢复正在流式执行的进程。
 

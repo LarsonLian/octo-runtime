@@ -4,12 +4,21 @@
   "private": true,
   "type": "module",
   "bin": {
-    "orbtex-daemon": "dist/index.js"
+    "orbtex-daemon": "dist/launcher.js"
   },
-  "exports": "./dist/server.js",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./runtime-options": {
+      "types": "./dist/runtime-options.d.ts",
+      "import": "./dist/runtime-options.js"
+    }
+  },
   "scripts": {
-    "start": "node dist/index.js",
-    "build": "tsc -p tsconfig.json"
+    "start": "node dist/launcher.js",
+    "build": "tsc -p tsconfig.json && chmod +x dist/launcher.js"
   },
   "dependencies": {
     "@orbtex-ai/orbtex-adapter-host": "workspace:*",
