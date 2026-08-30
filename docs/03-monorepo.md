@@ -1,4 +1,4 @@
-# Pnpm Monorepo
+# 03 Pnpm Monorepo
 
 Orbtex 使用 pnpm workspace 管理多项目。workspace 边界由根目录 [pnpm-workspace.yaml](../pnpm-workspace.yaml) 定义：
 

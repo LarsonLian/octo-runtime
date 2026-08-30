@@ -146,4 +146,4 @@ parser 支持两类 OpenClaw 2026.x 输出：逐行 `text/tool_use/tool_result/s
 - 当前取消依赖直接子进程 AbortSignal；生产节点应补进程组 `SIGTERM/SIGKILL` 回收。
 - 合同测试使用 fake OpenClaw；本机 executable probe 已通过，但没有执行真实 OpenClaw 模型调用。
 
-实现：[src/index.ts](src/index.ts) 与 [src/parser.ts](src/parser.ts)。更完整的设计说明见 [OpenClaw Local Adapter Design](../../docs/openclaw-local-adapter.md)，公共使用流程见 [Adapter Guide](../README.md)。
+实现：[src/index.ts](src/index.ts) 与 [src/parser.ts](src/parser.ts)。更完整的设计说明见 [OpenClaw Local Adapter Design](../../docs/06-openclaw-local-adapter.md)，公共使用流程见 [Adapter Guide](../README.md)。

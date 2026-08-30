@@ -52,4 +52,4 @@ for await (const event of host.invoke("mock", request)) {
 }
 ```
 
-跨进程启动使用 `spawnAdapterHost({ entrypoint, manifest })`。RPC 顺序见 [Transport And Multi-node](../../docs/transport-and-multinode.md)。
+跨进程启动使用 `spawnAdapterHost({ entrypoint, manifest })`。RPC 顺序见 [Transport And Multi-node](../../docs/09-transport-and-multinode.md)。

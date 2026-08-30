@@ -1,4 +1,4 @@
-# Provider Adapters
+# 05 Provider Adapters
 
 ## Capability Matrix
 
@@ -39,4 +39,4 @@ OpenClaw local adapter 使用 fake CLI 完成命令、双输出形态、tool、u
 
 ## Adding Provider Options
 
-Agent config 作为 InvokeRequest 的 `agentConfig` 传给 adapter。公共 CLI 当前支持 `model`、`providerAgentId`、`thinking`、`timeoutSeconds`、`permissionMode`、`sandbox`、`dangerouslyBypassPermissions`、`autoApprove`。provider-specific 新字段应由相应 adapter 读取，不应进入 core 分支。OpenClaw 的详细行为见 [OpenClaw Local Adapter](openclaw-local-adapter.md)。
+Agent config 作为 InvokeRequest 的 `agentConfig` 传给 adapter。公共 CLI 当前支持 `model`、`providerAgentId`、`thinking`、`timeoutSeconds`、`permissionMode`、`sandbox`、`dangerouslyBypassPermissions`、`autoApprove`。provider-specific 新字段应由相应 adapter 读取，不应进入 core 分支。OpenClaw 的详细行为见 [OpenClaw Local Adapter](06-openclaw-local-adapter.md)。

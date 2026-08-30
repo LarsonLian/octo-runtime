@@ -203,4 +203,4 @@ Task continuation 产生新的 Attempt 和 Harness Run，但复用 Task Session 
 - 当前单机 host 中所有 adapters 同进程加载；同步崩溃仍可能影响其他 provider。
 - 当前取消对多数 CLI 只保证直接进程 abort；生产环境应使用进程组和分级回收。
 
-workspace 维护见 [Pnpm Monorepo](../docs/monorepo.md)。架构与事件合同见 [Architecture](../docs/architecture.md)、[Provider Adapters](../docs/provider-adapters.md) 和 [Prompt And Workdir](../docs/prompt-and-workdir.md)。
+workspace 维护见 [Pnpm Monorepo](../docs/03-monorepo.md)。架构与事件合同见 [Architecture](../docs/01-architecture.md)、[Provider Adapters](../docs/05-provider-adapters.md) 和 [Prompt And Workdir](../docs/04-prompt-and-workdir.md)。

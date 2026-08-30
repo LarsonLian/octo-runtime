@@ -46,4 +46,4 @@ const stored = envelope({ id: "run-1", sessionId: "session-1" }, 1, event);
 console.log(stored.seq, isTerminal(event));
 ```
 
-事件生命周期和 JSON-RPC 映射见 [Architecture](../../docs/architecture.md) 与 [Transport And Multi-node](../../docs/transport-and-multinode.md)。
+事件生命周期和 JSON-RPC 映射见 [Architecture](../../docs/01-architecture.md) 与 [Transport And Multi-node](../../docs/09-transport-and-multinode.md)。

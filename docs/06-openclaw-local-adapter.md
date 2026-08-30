@@ -1,4 +1,4 @@
-# OpenClaw Local Adapter
+# 06 OpenClaw Local Adapter
 
 `openclaw` adapter 是 local-only 实现。它参考 Aily `adapter-oc-local` 的 local transport，但没有复制 Gateway 管理、插件同步和 Aily skill materialization：每次 Orbtex invocation 都启动一个 `openclaw agent --local` 子进程，结束后回收进程和临时 prompt 文件。
 

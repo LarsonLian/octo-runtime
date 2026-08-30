@@ -24,7 +24,7 @@ Orbtex 的后台编排 runtime。`HarnessDaemon` 位于 CLI/socket app 与 `Harn
 - 桌面端或单节点服务中的轻量后台 worker。
 - 验证 Trigger -> Task -> Run 模型与恢复行为。
 
-它不是多节点任务队列：没有数据库 lease、fencing、outbox 或跨节点选主。相关生产化方向见 [Operations](../../docs/operations.md)。
+它不是多节点任务队列：没有数据库 lease、fencing、outbox 或跨节点选主。相关生产化方向见 [Operations](../../docs/07-operations.md)。
 
 ## 使用示例
 

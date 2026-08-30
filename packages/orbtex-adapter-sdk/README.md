@@ -60,4 +60,4 @@ export const exampleAdapter = createJsonCliAdapter<NativeEvent>({
 });
 ```
 
-注册、测试和文档要求见 [Adapter Authoring](../../docs/adapter-authoring.md)。
+注册、测试和文档要求见 [Adapter 开发指南](../../docs/08-adapter-authoring.md)。

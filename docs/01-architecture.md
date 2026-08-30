@@ -1,6 +1,6 @@
-# Architecture
+# 01 Architecture
 
-本页描述当前可运行的单机架构。保持 Core/Adapter 契约不变的跨云节点演进方案见 [Transport And Multi-node](transport-and-multinode.md)。
+本页描述当前可运行的单机架构。逐模块职责、完整命令/事件时序和 Transport 消息示例见 [Current Modules And Transport Flow](02-module-and-transport-flow.md)；保持 Core/Adapter 契约不变的跨云节点演进方案见 [Transport And Multi-node](09-transport-and-multinode.md)。
 
 ## Process Boundaries
 

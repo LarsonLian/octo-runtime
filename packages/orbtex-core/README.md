@@ -48,4 +48,4 @@ const chat = await engine.createChatSession({ agentId: agent.id });
 await engine.sendChat(chat.id, "Explain the current project");
 ```
 
-完整领域关系见 [Architecture](../../docs/architecture.md)。
+完整领域关系见 [Architecture](../../docs/01-architecture.md)。

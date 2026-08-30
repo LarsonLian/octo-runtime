@@ -17,7 +17,7 @@
 
 这是可运行的架构基线，不是多节点生产调度器。JSON store 假设单 daemon writer；生产环境应替换成事务数据库、outbox、lease/fencing 和鉴权控制面。
 
-本地 stdio 与跨云 WebSocket 共用上层 Agent 逻辑的目标架构、双向 JSON-RPC 样例、event ACK/重放和多节点 lease 设计见 [Transport And Multi-node](docs/transport-and-multinode.md)。该文档描述下一阶段设计，不代表当前代码已经具备跨云运行能力。
+本地 stdio 与跨云 WebSocket 共用上层 Agent 逻辑的目标架构、双向 JSON-RPC 样例、event ACK/重放和多节点 lease 设计见 [Transport And Multi-node](docs/09-transport-and-multinode.md)。该文档描述下一阶段设计，不代表当前代码已经具备跨云运行能力。
 
 ## 项目结构
 
@@ -193,12 +193,13 @@ pnpm cli run cancel <run-id> --reason user_cancelled
 
 ## 进一步阅读
 
-- [Architecture](docs/architecture.md)
-- [Pnpm Monorepo](docs/monorepo.md)
+- [Architecture](docs/01-architecture.md)
+- [Current Modules And Transport Flow](docs/02-module-and-transport-flow.md)
+- [Pnpm Monorepo](docs/03-monorepo.md)
 - [Packages And Adapter Guide](packages/README.md)
-- [Prompt And Workdir](docs/prompt-and-workdir.md)
-- [Provider Adapters](docs/provider-adapters.md)
-- [OpenClaw Local Adapter](docs/openclaw-local-adapter.md)
-- [Operations](docs/operations.md)
-- [Adapter Authoring](docs/adapter-authoring.md)
-- [Transport And Multi-node](docs/transport-and-multinode.md)
+- [Prompt And Workdir](docs/04-prompt-and-workdir.md)
+- [Provider Adapters](docs/05-provider-adapters.md)
+- [OpenClaw Local Adapter](docs/06-openclaw-local-adapter.md)
+- [Operations](docs/07-operations.md)
+- [Adapter 开发指南](docs/08-adapter-authoring.md)
+- [Transport And Multi-node](docs/09-transport-and-multinode.md)
