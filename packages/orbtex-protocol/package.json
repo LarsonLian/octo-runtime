@@ -8,6 +8,10 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "gen": "node scripts/gen-types.mjs",
+    "build": "node scripts/gen-types.mjs && tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "json-schema-to-typescript": "^16.0.0"
   }
 }

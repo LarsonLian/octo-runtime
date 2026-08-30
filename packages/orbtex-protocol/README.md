@@ -47,3 +47,30 @@ console.log(stored.seq, isTerminal(event));
 ```
 
 事件生命周期和 JSON-RPC 映射见 [Architecture](../../docs/01-architecture.md) 与 [Transport And Multi-node](../../docs/09-transport-and-multinode.md)。
+
+## 协议真值：JSON Schema + Codegen
+
+数据形状类型不再手写，而是以 `schema/protocol.schema.json`（JSON Schema draft-07，中文 `description`）为唯一来源，生成 `src/generated/protocol-types.ts`：
+
+```text
+schema/protocol.schema.json → scripts/gen-types.mjs → src/generated/protocol-types.ts → src/index.ts 组合
+```
+
+- **schema 覆盖**：`ProviderSession`、`AgentConfig`、`CanonicalEventPayload`、`RunIdentity`、`InvokeRequestWire`、`MessageChannel` 等可 JSON 序列化的结构体。
+- **仍手写**（不是纯数据，codegen 无法表达）：`CANONICAL_EVENT_TYPES` 等运行时枚举常量、泛型 `CanonicalEvent<TType>`、以及带 `AbortSignal` 的 `InvokeRequest`（= 生成的 `InvokeRequestWire` 交叉 `signal`）。
+- **公共导出面不变**：所有类型名与运行时函数保持原样，消费方无需改动。
+
+为什么选 JSON Schema 而非 Protobuf/Thrift、与手写 TS 的对比、以及为后续 Go/Rust daemon 抽取的意义，见 [Protocol Schema And Codegen](../../docs/10-protocol-schema-codegen.md)。
+
+改协议的流程：
+
+```bash
+# 1. 编辑 schema
+$EDITOR schema/protocol.schema.json
+# 2. 重新生成（build 前自动执行）
+pnpm gen
+# 3. 构建
+pnpm build
+```
+
+`src/generated/protocol-types.ts` 由脚本生成、带「勿手改」横幅，任何改动都应通过 schema 完成。

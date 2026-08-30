@@ -203,3 +203,4 @@ pnpm cli run cancel <run-id> --reason user_cancelled
 - [Operations](docs/07-operations.md)
 - [Adapter 开发指南](docs/08-adapter-authoring.md)
 - [Transport And Multi-node](docs/09-transport-and-multinode.md)
+- [Protocol Schema And Codegen](docs/10-protocol-schema-codegen.md)

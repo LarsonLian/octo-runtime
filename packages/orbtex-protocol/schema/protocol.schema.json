@@ -1,0 +1,138 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://orbtex.ai/schema/protocol.schema.json",
+  "title": "OrbtexProtocolSchema",
+  "description": "Orbtex NDJSON 线协议的数据形状定义。这里只描述可 JSON 序列化的结构体；运行时行为（envelope、assert、isTerminal）、事件类型枚举常量与携带 AbortSignal 的 InvokeRequest 仍由 src/index.ts 手写组合。本文件是 TS 类型的唯一来源，改动后需运行 pnpm gen 重新生成。",
+  "type": "object",
+  "additionalProperties": false,
+  "definitions": {
+    "MessageChannel": {
+      "title": "MessageChannel",
+      "description": "assistant 输出频道。analysis 用于 provider 明确允许展示的思考/进度内容，final 用于面向用户的回答。",
+      "type": "string",
+      "enum": ["analysis", "final"]
+    },
+    "ProviderSession": {
+      "title": "ProviderSession",
+      "description": "Provider 自己拥有的会话恢复信息。sessionId 对 Core 完全 opaque；额外字段可由 adapter 写入并在下一次调用时原样取回。",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": {
+          "description": "Provider 私有的会话标识，Core 不解释其内容。",
+          "type": "string"
+        },
+        "resumable": {
+          "description": "当前 provider 是否声明该 session 可在后续 invocation 中恢复。",
+          "type": "boolean"
+        }
+      }
+    },
+    "AgentConfig": {
+      "title": "AgentConfig",
+      "description": "Agent 的持久配置。公共字段供现有 adapters 使用，扩展字段必须由对应 adapter 自行解释；Core 只负责保存和传递，不根据 provider 类型分支处理。",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "workdir": {
+          "description": "Provider CLI 的默认工作目录；它是 cwd，不是文件系统安全边界。",
+          "type": "string"
+        },
+        "model": { "description": "模型名。", "type": "string" },
+        "sandbox": { "description": "provider 的 sandbox 模式标识。", "type": "string" },
+        "permissionMode": { "description": "provider 的权限模式标识。", "type": "string" },
+        "dangerouslyBypassPermissions": {
+          "description": "是否危险地跳过权限确认；仅在明确授权场景使用。",
+          "type": "boolean"
+        },
+        "autoApprove": { "description": "是否自动批准工具调用。", "type": "boolean" },
+        "providerAgentId": { "description": "provider 侧的 agent 标识。", "type": "string" },
+        "thinking": { "description": "thinking/推理档位标识。", "type": "string" },
+        "timeoutSeconds": { "description": "单次调用超时秒数。", "type": "number" },
+        "openclawConfigPath": { "description": "OpenClaw 配置文件路径。", "type": "string" },
+        "openclawStateDir": { "description": "OpenClaw 状态目录。", "type": "string" },
+        "providerOptions": {
+          "description": "provider 私有的扩展选项；Core 原样透传，不做解释。",
+          "type": "object",
+          "additionalProperties": true,
+          "tsType": "Record<string, unknown>"
+        }
+      }
+    },
+    "CanonicalEventPayload": {
+      "title": "CanonicalEventPayload",
+      "description": "Canonical event 的公共 payload。开放字典用于容纳 tool/surface/usage 的结构化字段；常用生命周期字段在此显式列出，让 adapter 作者获得类型提示，同时避免把 provider-native 对象塞进顶层协议。",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "providerSession": { "$ref": "#/definitions/ProviderSession" },
+        "channel": { "$ref": "#/definitions/MessageChannel" },
+        "messageId": { "description": "消息稳定 ID。", "type": "string" },
+        "role": { "description": "消息角色，如 assistant。", "type": "string" },
+        "status": { "description": "工具调用或 run 的状态标识。", "type": "string" },
+        "text": { "description": "文本增量或完整文本。", "type": "string" },
+        "reason": { "description": "终止或错误原因。", "type": "string" },
+        "message": { "description": "面向人类的说明信息。", "type": "string" }
+      }
+    },
+    "RunIdentity": {
+      "title": "RunIdentity",
+      "description": "envelope 只需要 Run 的稳定标识，不要求传入完整领域对象。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sessionId"],
+      "properties": {
+        "id": { "description": "Run ID。", "type": "string" },
+        "sessionId": { "description": "所属 Harness Session ID。", "type": "string" }
+      }
+    },
+    "InvokeRequestWire": {
+      "title": "InvokeRequestWire",
+      "description": "Core 发给 Adapter Host 的一次执行请求的可序列化部分。运行中携带的 AbortSignal 不可跨进程序列化，由 src/index.ts 在此基础上交叉出完整 InvokeRequest。session、run、invocation 是三个不同层次的标识：session 跨多轮复用，run 表示一次业务执行，invocation 表示这次与 provider adapter 的活动调用，用于取消和事件路由。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "invocationId",
+        "sessionId",
+        "runId",
+        "prompt",
+        "workdir",
+        "appendInstructions",
+        "context",
+        "agentConfig"
+      ],
+      "properties": {
+        "invocationId": {
+          "description": "Adapter Host 活动调用 ID，也是 cancel 的目标。",
+          "type": "string"
+        },
+        "sessionId": {
+          "description": "Chat 或 Task 的长期 Harness Session ID。",
+          "type": "string"
+        },
+        "runId": { "description": "本次业务执行的 Run ID。", "type": "string" },
+        "prompt": {
+          "description": "用户请求或 Task description；不得混入 provider 私有控制参数。",
+          "type": "string"
+        },
+        "workdir": {
+          "description": "Provider 进程 cwd；真正的访问控制由 sandbox/容器/宿主权限提供。",
+          "type": "string"
+        },
+        "appendInstructions": {
+          "description": "Harness 生成的控制指令，由 adapter 放入 provider 支持的私有 carrier。",
+          "type": "string"
+        },
+        "context": {
+          "description": "供 prompt、审计和未来 transport 使用的结构化 Harness 上下文。",
+          "type": "object",
+          "additionalProperties": true,
+          "tsType": "Record<string, unknown>"
+        },
+        "providerSession": { "$ref": "#/definitions/ProviderSession" },
+        "agentConfig": { "$ref": "#/definitions/AgentConfig" }
+      }
+    }
+  }
+}

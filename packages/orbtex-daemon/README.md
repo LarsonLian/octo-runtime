@@ -26,6 +26,18 @@ Orbtex 的后台编排 runtime。`HarnessDaemon` 位于 CLI/socket app 与 `Harn
 
 它不是多节点任务队列：没有数据库 lease、fencing、outbox 或跨节点选主。相关生产化方向见 [Operations](../../docs/07-operations.md)。
 
+## 备注：后续演进方向
+
+当前 `HarnessDaemon` 以 TS 实现，兼顾编排逻辑与 provider/adapter 集成。后续计划把**长驻进程、并发、网络、持久化**这几个方向从 TS 中抽取为独立的 **Go / Rust 二进制**，作为稳定的性能内核；易变的 provider/adapter 集成层继续留在 TS。
+
+两层之间参考 aily-cli 的分层形态，通过跨语言协议（如 stdio JSON-RPC）完成 **daemon -> host -> n\*adapter** 的统一交互：
+
+- **daemon（Go/Rust）**：拥有 socket 入口、并发调度、网络/网关、持久化与恢复，是受信的性能内核。
+- **host（TS 子进程）**：加载并驱动多个 adapter，把 daemon 的 invoke 请求分发给具体 provider，事件流式回传。
+- **adapter（TS）**：包装各类本地 agent，贴合其 JS-native 集成契约。
+
+这样稳定内核与快速迭代的集成层解耦，代价是引入一条跨语言序列化缝。
+
 ## 使用示例
 
 在 app 装配层已经创建 `HarnessEngine` 和同一个 `Store` 后：

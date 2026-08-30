@@ -1,4 +1,20 @@
 import { randomUUID } from "node:crypto";
+import type {
+  CanonicalEventPayload,
+  InvokeRequestWire
+} from "./generated/protocol-types.js";
+
+// 数据形状类型由 schema/protocol.schema.json 生成，见 ./generated/protocol-types.ts。
+// 这里从生成文件重新导出，保持 `@orbtex-ai/orbtex-protocol` 的公共导出面不变。
+export type {
+  MessageChannel,
+  ProviderSession,
+  AgentConfig,
+  CanonicalEventPayload,
+  RunIdentity,
+  InvokeRequestWire
+} from "./generated/protocol-types.js";
+import type { RunIdentity } from "./generated/protocol-types.js";
 
 /**
  * 一次 Run 允许出现的三个终态。
@@ -27,60 +43,6 @@ export const CANONICAL_EVENT_TYPES = [
 /** 所有 provider 的原生事件最终只允许落到这组类型，Core 因此不感知底层 CLI。 */
 export type CanonicalEventType = (typeof CANONICAL_EVENT_TYPES)[number];
 
-/**
- * assistant 输出频道。
- * `analysis` 用于 provider 明确允许展示的思考/进度内容，`final` 用于面向用户的回答。
- */
-export type MessageChannel = "analysis" | "final";
-
-/**
- * Provider 自己拥有的会话恢复信息。
- *
- * `sessionId` 对 Core 完全 opaque；额外字段可由 adapter 写入并在下一次调用时原样取回。
- */
-export interface ProviderSession extends Record<string, unknown> {
-  sessionId: string;
-  /** 当前 provider 是否声明该 session 可在后续 invocation 中恢复。 */
-  resumable?: boolean;
-}
-
-/**
- * Agent 的持久配置。公共字段供现有 adapters 使用，扩展字段必须由对应 adapter 自行解释。
- * Core 只负责保存和传递，不根据 provider 类型分支处理。
- */
-export interface AgentConfig extends Record<string, unknown> {
-  /** Provider CLI 的默认工作目录；它是 cwd，不是文件系统安全边界。 */
-  workdir?: string;
-  model?: string;
-  sandbox?: string;
-  permissionMode?: string;
-  dangerouslyBypassPermissions?: boolean;
-  autoApprove?: boolean;
-  providerAgentId?: string;
-  thinking?: string;
-  timeoutSeconds?: number;
-  openclawConfigPath?: string;
-  openclawStateDir?: string;
-  providerOptions?: Record<string, unknown>;
-}
-
-/**
- * Canonical event 的公共 payload。
- *
- * 接口继承开放字典是为了容纳 tool/surface/usage 的结构化字段；常用生命周期字段在此显式列出，
- * 让 adapter 作者获得类型提示，同时避免把 provider-native 对象塞进顶层协议。
- */
-export interface CanonicalEventPayload extends Record<string, unknown> {
-  providerSession?: ProviderSession;
-  channel?: MessageChannel;
-  messageId?: string;
-  role?: string;
-  status?: string;
-  text?: string;
-  reason?: string;
-  message?: string;
-}
-
 /** Adapter 向 Host 输出的最小事件单元；持久化前还没有 seq、runId 和时间戳。 */
 export interface CanonicalEvent<TType extends CanonicalEventType = CanonicalEventType> {
   type: TType;
@@ -90,35 +52,12 @@ export interface CanonicalEvent<TType extends CanonicalEventType = CanonicalEven
 /**
  * Core 发给 Adapter Host 的一次执行请求。
  *
- * harness session、run 和 invocation 是三个不同层次的标识：session 跨多轮复用，run 表示一次业务执行，
- * invocation 表示这次与 provider adapter 的活动调用，用于取消和事件路由。
+ * 可序列化字段来自生成的 {@link InvokeRequestWire}；`signal` 是不可跨进程序列化的运行时对象，
+ * 只在进程内调用时存在，因此在此处交叉进来而不进入 schema。
  */
-export interface InvokeRequest {
-  /** Adapter Host 活动调用 ID，也是 cancel 的目标。 */
-  invocationId: string;
-  /** Chat 或 Task 的长期 Harness Session ID。 */
-  sessionId: string;
-  /** 本次业务执行的 Run ID。 */
-  runId: string;
-  /** 用户请求或 Task description；不得混入 provider 私有控制参数。 */
-  prompt: string;
-  /** Provider 进程 cwd；真正的访问控制由 sandbox/容器/宿主权限提供。 */
-  workdir: string;
-  /** Harness 生成的控制指令，由 adapter 放入 provider 支持的私有 carrier。 */
-  appendInstructions: string;
-  /** 供 prompt、审计和未来 transport 使用的结构化 Harness 上下文。 */
-  context: Record<string, unknown>;
-  /** 上一次 `session.update` 保存的 provider 恢复信息。 */
-  providerSession?: ProviderSession;
-  agentConfig: AgentConfig;
+export interface InvokeRequest extends InvokeRequestWire {
   /** Host 取消 invocation 时触发；adapter 应传播到子进程或协议 cancel。 */
   signal?: AbortSignal;
-}
-
-/** `envelope` 只需要 Run 的稳定标识，不要求传入完整领域对象。 */
-export interface RunIdentity {
-  id: string;
-  sessionId: string;
 }
 
 /**
