@@ -36,6 +36,23 @@ test("CLI drives daemon socket through trigger to terminal run", async () => {
     const completed = await cli(["run", "wait", ack.runId]);
     assert.equal(completed.run.status, "completed");
     assert.equal(completed.events.at(-1).type, "run.finished");
+
+    const chat = await cli(["chat", "create", "--agent", agent.id, "--title", "Follow test"]);
+    const followed = await execute(
+      process.execPath,
+      [join(root, "apps/cli/dist/index.js"), "chat", "send", chat.id, "--prompt", "stream me", "--follow"],
+      { cwd: root, env: { ...process.env, ORBTEX_HOME: home } }
+    );
+    const frames = followed.stdout.trim().split(/\r?\n/).map(line => JSON.parse(line));
+    assert.equal(frames[0].kind, "ack");
+    assert.equal(frames[0].result.agent.id, agent.id);
+    assert.equal(frames[0].result.agent.adapterType, "test");
+    const eventFrames = frames.filter(frame => frame.kind === "event");
+    assert.deepEqual(eventFrames.map(frame => frame.event.seq), eventFrames.map((_frame, index) => index + 1));
+    assert.equal(eventFrames[0].event.type, "run.queued");
+    assert.equal(eventFrames.at(-1).event.type, "run.finished");
+    assert.equal(frames.at(-1).kind, "done");
+    assert.equal(frames.at(-1).result.run.status, "completed");
   } finally {
     await app.close(); await rm(home, { recursive: true, force: true });
   }

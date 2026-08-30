@@ -61,12 +61,57 @@ pnpm cli task list
 `status` 同时返回 daemon PID、socket/store/manifest 的有效绝对路径、adapter-host PID/入口、
 已加载 adapter 类型和领域对象计数。
 
+## JSON-RPC Frame Trace
+
+设置 `ORBTEX_TRACE_RPC=1` 后启动 daemon，可以在 daemon 的 stderr 中看到 daemon 与
+adapter-host 之间每一条 NDJSON JSON-RPC 2.0 线上帧：
+
+```bash
+ORBTEX_TRACE_RPC=1 pnpm daemon
+```
+
+另一个终端只需提交消息：
+
+```bash
+node apps/cli/dist/index.js chat send <session-id> --prompt "你是谁？"
+```
+
+不需要执行 `run wait`。`chat send` 返回 ACK 后，第一终端仍会随着 provider 执行实时打印
+`invoke` response、每条 `invoke.event` 和最后的 `invoke.done`。
+
+要在第二终端的 CLI 中同时看到 canonical events，添加 `--follow`：
+
+```bash
+node apps/cli/dist/index.js chat send <session-id> --prompt "你是谁？" --follow
+```
+
+也可以根据已返回的 Run ID 回放并跟随：
+
+```bash
+node apps/cli/dist/index.js run stream <run-id>
+```
+
+输出按方向标记，标记后面的内容就是实际发送或收到的单行 JSON frame：
+
+```text
+[orbtex rpc daemon -> adapter-host] {"jsonrpc":"2.0","id":"...","method":"list","params":{}}
+[orbtex rpc adapter-host -> daemon] {"jsonrpc":"2.0","id":"...","result":[...]}
+[orbtex rpc daemon -> adapter-host] {"jsonrpc":"2.0","id":"...","method":"invoke","params":{...}}
+[orbtex rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{...}}
+```
+
+trace 默认关闭，修改环境变量后需要重启 daemon。它不会打印 CLI 与 daemon 之间的消息，
+因为该边界使用普通的一行 JSON request/response，并不是 JSON-RPC 2.0。`invoke` frame 包含
+完整 prompt、workdir、agent config 和 canonical events；不要在共享终端、公开日志或包含
+secret 的生产请求上启用。
+
 ## Run Inspection
 
 ```bash
 pnpm cli run get <run-id>
 pnpm cli run events <run-id>
 pnpm cli run wait <run-id>
+pnpm cli run stream <run-id>
 pnpm cli run cancel <run-id> --reason operator_cancel
 ```
 

@@ -128,6 +128,11 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export { AdapterHostRpcClient, AdapterHostRpcServer } from "./rpc.js";
+export {
+  AdapterHostRpcClient,
+  AdapterHostRpcServer,
+  type RpcTrace,
+  type RpcTraceDirection
+} from "./rpc.js";
 export { spawnAdapterHost } from "./process.js";
 export type { AdapterHostProcess, SpawnAdapterHostOptions } from "./process.js";

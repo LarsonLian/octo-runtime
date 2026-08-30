@@ -15,6 +15,7 @@ interface CliRequest {
 
 interface CliResponse {
   result?: unknown;
+  event?: unknown;
   error?: { message?: string; code?: string };
 }
 
@@ -25,7 +26,21 @@ const [group, action, id] = positionals;
 
 try {
   if (group === "daemon") await import("../../daemon/dist/launcher.js");
-  else console.log(JSON.stringify(await callDaemon(command(group, action, id, flags)), null, 2));
+  else {
+    const request = command(group, action, id, flags);
+    if (request.method === "chat.send" && flags.follow === true) {
+      const acknowledgement = await callDaemon(request);
+      writeJsonLine({ kind: "ack", result: acknowledgement });
+      await streamDaemon({
+        method: "run.stream",
+        params: { runId: resultString(acknowledgement, "runId") }
+      });
+    } else if (request.method === "run.stream") {
+      await streamDaemon(request);
+    } else {
+      console.log(JSON.stringify(await callDaemon(request), null, 2));
+    }
+  }
 } catch (error) {
   console.error(JSON.stringify({ error: errorMessage(error) }, null, 2));
   process.exitCode = 1;
@@ -139,6 +154,16 @@ function command(group: string | undefined, action: string | undefined, id: stri
   if (group === "run" && action && ["get", "events", "wait"].includes(action)) {
     return { method: `run.${action}`, params: { runId: required(id, "run-id") } };
   }
+  if (group === "run" && action === "stream") {
+    const fromSeq = optionalString(flags.fromSeq);
+    return {
+      method: "run.stream",
+      params: {
+        runId: required(id, "run-id"),
+        ...(fromSeq ? { fromSeq: Number(fromSeq) } : {})
+      }
+    };
+  }
   if (group === "run" && action === "cancel") {
     return { method: "run.cancel", params: { runId: required(id, "run-id"), reason: optionalString(flags.reason) ?? "cancelled_by_user" } };
   }
@@ -150,13 +175,51 @@ async function callDaemon(request: CliRequest): Promise<unknown> {
     return { usage: [
       "orbtex daemon", "orbtex status", "orbtex adapter list|probe <type>",
       "orbtex agent create --name N --adapter TYPE [--workdir DIR] [--model M] [--provider-agent SLUG]", "orbtex agent list",
-      "orbtex chat create --agent ID [--title T]", "orbtex chat send ID --prompt TEXT", "orbtex chat list|get ID",
+      "orbtex chat create --agent ID [--title T]", "orbtex chat send ID --prompt TEXT [--follow]", "orbtex chat list|get ID",
       "orbtex trigger create --name N --kind manual|event|interval --agent ID --title T --instruction TEXT", "orbtex trigger fire ID [--event-id ID]", "orbtex trigger list",
       "orbtex event ingest --type TYPE --event-id ID [--payload JSON]",
-      "orbtex task list|get ID|continue ID --instruction TEXT", "orbtex run get|events|wait|cancel ID"
+      "orbtex task list|get ID|continue ID --instruction TEXT", "orbtex run get|events|wait|stream|cancel ID"
     ] };
   }
 
+  const socket = await connectDaemon();
+  socket.write(`${JSON.stringify({ id: randomUUID(), ...request })}\n`);
+  const response = await new Promise<CliResponse>((resolveResponse, reject) => {
+    createInterface({ input: socket }).once("line", line => {
+      try {
+        resolveResponse(JSON.parse(line) as CliResponse);
+      } catch (error) {
+        reject(toError(error));
+      }
+    });
+    socket.once("error", reject);
+  });
+  if (response.error) throw new Error(response.error.message ?? "daemon request failed");
+  return response.result;
+}
+
+async function streamDaemon(request: CliRequest): Promise<void> {
+  const socket = await connectDaemon();
+  socket.write(`${JSON.stringify({ id: randomUUID(), ...request })}\n`);
+  let done = false;
+  try {
+    for await (const line of createInterface({ input: socket })) {
+      const response = JSON.parse(line) as CliResponse;
+      if (response.error) throw new Error(response.error.message ?? "daemon stream failed");
+      if (response.event !== undefined) writeJsonLine({ kind: "event", event: response.event });
+      if (response.result !== undefined) {
+        writeJsonLine({ kind: "done", result: response.result });
+        done = true;
+        break;
+      }
+    }
+    if (!done) throw new Error("daemon stream closed before completion");
+  } finally {
+    socket.destroy();
+  }
+}
+
+async function connectDaemon(): Promise<net.Socket> {
   const { socketPath } = resolveDaemonRuntimePaths([]);
   const socket = net.createConnection(socketPath);
   try {
@@ -175,20 +238,22 @@ async function callDaemon(request: CliRequest): Promise<unknown> {
     }
     throw error;
   }
+  return socket;
+}
 
-  socket.write(`${JSON.stringify({ id: randomUUID(), ...request })}\n`);
-  const response = await new Promise<CliResponse>((resolveResponse, reject) => {
-    createInterface({ input: socket }).once("line", line => {
-      try {
-        resolveResponse(JSON.parse(line) as CliResponse);
-      } catch (error) {
-        reject(toError(error));
-      }
-    });
-    socket.once("error", reject);
-  });
-  if (response.error) throw new Error(response.error.message ?? "daemon request failed");
-  return response.result;
+function writeJsonLine(value: unknown): void {
+  process.stdout.write(`${JSON.stringify(value)}\n`);
+}
+
+function resultString(value: unknown, name: string): string {
+  if (!isRecord(value) || typeof value[name] !== "string" || value[name].length === 0) {
+    throw new Error(`daemon result requires ${name}`);
+  }
+  return value[name];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function errorMessage(error: unknown): string {

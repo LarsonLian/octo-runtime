@@ -70,11 +70,11 @@ orbtex adapter list
 | `adapter list` | 列出 host 已加载的 adapters |
 | `adapter probe <type>` | 检查 provider CLI 是否可执行 |
 | `agent create/list` | 创建或列出 Agent 配置 |
-| `chat create/list/get/send` | 管理 Chat session 并提交 turn |
+| `chat create/list/get/send` | 管理 Chat session，提交 turn，并可用 `--follow` 跟随结果 |
 | `trigger create/list/fire` | 管理 manual/event/interval Trigger |
 | `event ingest` | 摄入外部事件并匹配 event Trigger |
 | `task list/get/continue` | 查看 Task 或创建后续 Attempt |
-| `run get/events/wait/cancel` | 查看事件、等待终态或取消 Run |
+| `run get/events/wait/stream/cancel` | 查看、等待、实时跟随或取消 Run |
 
 完整参数可执行：
 
@@ -92,11 +92,20 @@ pnpm cli agent create \
   --sandbox read-only
 
 pnpm cli chat create --agent <agent-id> --title "Repository chat"
-pnpm cli chat send <session-id> --prompt "Summarize this repository"
-pnpm cli run wait <run-id>
+pnpm cli chat send <session-id> --prompt "Summarize this repository" --follow
 ```
 
-Chat/Task 提交在 Run 持久化为 queued 后快速返回；需要最终结果时显式使用 `run wait`。
+不带 `--follow` 时，Chat/Task 提交在 Run 持久化为 queued 后快速返回。`chat send --follow`
+会在同一个 CLI 进程中先输出 ACK，再以 NDJSON 实时输出每个 canonical event，直到 terminal
+event 和 `done`。已有 Run 可以执行：
+
+```bash
+node apps/cli/dist/index.js run stream <run-id>
+node apps/cli/dist/index.js run stream <run-id> --from-seq 5
+```
+
+`run stream` 会先回放 `fromSeq` 之后已经持久化的事件，再继续跟随新增事件，因此不会漏掉
+CLI 建立流连接前已经到达的早期事件。
 
 ## 运行目录与 Socket
 

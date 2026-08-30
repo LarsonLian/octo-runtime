@@ -40,6 +40,10 @@ interface DaemonRequest {
   params?: Record<string, unknown>;
 }
 
+const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled"]);
+const TERMINAL_EVENT_TYPES = new Set(["run.finished", "run.error", "run.stopped"]);
+const STREAM_POLL_MS = 25;
+
 export interface DaemonApplication {
   server: Server;
   store: JsonFileStore;
@@ -144,6 +148,10 @@ async function handleRequestLine({
   let request: DaemonRequest | undefined;
   try {
     request = parseRequest(line);
+    if (request.method === "run.stream") {
+      await streamRunEvents({ request, socket, store });
+      return;
+    }
     const result = await dispatch({ request, daemon, engine, store, host, runtime });
     socket.end(`${JSON.stringify({ id: request.id, result })}\n`);
   } catch (error) {
@@ -153,6 +161,56 @@ async function handleRequestLine({
       error: { message: errorMessage(error), code: rpcError.code }
     })}\n`);
   }
+}
+
+async function streamRunEvents({
+  request,
+  socket,
+  store
+}: {
+  request: DaemonRequest;
+  socket: net.Socket;
+  store: Store;
+}): Promise<void> {
+  const params = request.params ?? {};
+  const runId = requiredString(params.runId, "runId");
+  let nextSeq = positiveInteger(params.fromSeq, "fromSeq", 1);
+  if (!store.runs.has(runId)) throw new Error(`run not found: ${runId}`);
+
+  while (!socket.destroyed) {
+    for (const event of store.events.get(runId) ?? []) {
+      if (event.seq < nextSeq) continue;
+      await writeSocketLine(socket, { id: request.id, event });
+      nextSeq = event.seq + 1;
+      if (TERMINAL_EVENT_TYPES.has(event.type)) {
+        await writeSocketLine(socket, {
+          id: request.id,
+          result: { done: true, run: store.runs.get(runId), nextSeq }
+        });
+        socket.end();
+        return;
+      }
+    }
+
+    const run = store.runs.get(runId);
+    if (!run) throw new Error(`run not found: ${runId}`);
+    if (TERMINAL_RUN_STATUSES.has(run.status)) {
+      await writeSocketLine(socket, { id: request.id, result: { done: true, run, nextSeq } });
+      socket.end();
+      return;
+    }
+    await new Promise<void>(resolve => setTimeout(resolve, STREAM_POLL_MS));
+  }
+}
+
+async function writeSocketLine(socket: net.Socket, value: unknown): Promise<void> {
+  if (socket.destroyed) return;
+  await new Promise<void>((resolve, reject) => {
+    socket.write(`${JSON.stringify(value)}\n`, error => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
 }
 
 async function dispatch({
@@ -263,6 +321,14 @@ function requiredString(value: unknown, name: string): string {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function positiveInteger(value: unknown, name: string, fallback: number): number {
+  if (value === undefined) return fallback;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new TypeError(`${name} must be a positive integer`);
+  }
+  return value;
 }
 
 function errorMessage(error: unknown): string {

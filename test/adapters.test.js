@@ -26,7 +26,55 @@ test("Codex native events map to session/message/usage/terminal", () => {
 test("Claude native events map to session/message/terminal", () => {
   assert.equal(normalizeClaudeEvent({ type: "system", session_id: "claude-1" })[0].type, "session.update");
   assert.equal(normalizeClaudeEvent({ type: "assistant", message: { content: [{ type: "text", text: "ok" }] } })[0].payload.text, "ok");
+  assert.deepEqual(
+    normalizeClaudeEvent({
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "tool-1", is_error: true, content: "permission denied" }] }
+    })[0],
+    {
+      type: "tool_call.update",
+      payload: {
+        id: "tool-1",
+        status: "error",
+        output: "permission denied",
+        error: { message: "permission denied" }
+      }
+    }
+  );
+  assert.deepEqual(
+    normalizeClaudeEvent({
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "tool-2", content: [{ type: "text", text: "done" }] }] }
+    })[0],
+    { type: "tool_call.update", payload: { id: "tool-2", status: "completed", output: "done" } }
+  );
   assert.equal(normalizeClaudeEvent({ type: "result", session_id: "claude-1", result: "ok", usage: {} }).at(-1).type, "run.finished");
+});
+
+test("Claude defaults to unattended bypass and disables interactive tools", async () => {
+  const claude = await buildClaudeCommand(request);
+  assert.equal(claude.args[claude.args.indexOf("--permission-mode") + 1], "bypassPermissions");
+  assert.equal(claude.args.includes("--dangerously-skip-permissions"), true);
+  assert.deepEqual(
+    claude.args.flatMap((arg, index) => arg === "--disallowedTools" ? [claude.args[index + 1]] : []),
+    ["AskUserQuestion", "EnterPlanMode", "ExitPlanMode"]
+  );
+  await claude.cleanup();
+});
+
+test("Claude preserves an explicit restricted permission mode", async () => {
+  const claude = await buildClaudeCommand({ ...request, agentConfig: { permissionMode: "dontAsk" } });
+  assert.equal(claude.args[claude.args.indexOf("--permission-mode") + 1], "dontAsk");
+  assert.equal(claude.args.includes("--dangerously-skip-permissions"), false);
+  await claude.cleanup();
+
+  const forced = await buildClaudeCommand({
+    ...request,
+    agentConfig: { permissionMode: "dontAsk", dangerouslyBypassPermissions: true }
+  });
+  assert.equal(forced.args[forced.args.indexOf("--permission-mode") + 1], "bypassPermissions");
+  assert.equal(forced.args.includes("--dangerously-skip-permissions"), true);
+  await forced.cleanup();
 });
 
 test("OpenCode native events map session/text/tool/usage", () => {

@@ -93,7 +93,7 @@ pnpm cli agent create --name codex --adapter codex \
   --workdir /absolute/path/to/repository --sandbox read-only
 
 pnpm cli agent create --name claude --adapter claude-code \
-  --workdir /absolute/path/to/repository --permission-mode dontAsk
+  --workdir /absolute/path/to/repository
 
 pnpm cli agent create --name codebuddy --adapter codebuddy \
   --workdir /absolute/path/to/repository --permission-mode dontAsk --model glm-5.3
@@ -182,7 +182,7 @@ Task continuation 产生新的 Attempt 和 Harness Run，但复用 Task Session 
 | `--model MODEL` | 所有真实 provider，具体语义各异 | 传给相应 adapter；resume 是否重新应用见子 README |
 | `--permission-mode MODE` | Claude/CodeBuddy | provider 自己的 permission mode |
 | `--sandbox MODE` | Codex | 新 session 的 Codex sandbox |
-| `--dangerously-bypass-permissions` | Codex | 关闭审批和 sandbox，危险 |
+| `--dangerously-bypass-permissions` | Codex/Claude | Codex 关闭审批和 sandbox；Claude 强制使用 bypassPermissions；危险 |
 | `--auto-approve` | OpenCode | 对 provider 加 `--auto`，危险 |
 | `--provider-agent SLUG` | OpenClaw | OpenClaw-local agent slug |
 | `--thinking LEVEL` | OpenClaw | provider thinking level；不保证输出 reasoning event |

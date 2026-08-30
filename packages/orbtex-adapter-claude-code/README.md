@@ -15,7 +15,8 @@ Adapter type：`claude-code`
 - 用户 prompt 走 stdin，control instructions 走 mode `0600` 的临时 system-prompt file。
 - Claude session UUID 原样保存和恢复，Core 不解释其格式。
 - stream-json 只在 adapter 内归一化为 canonical message/tool/usage/run events。
-- permission mode 必须显式映射；危险 bypass 不被默认启用。
+- 无人值守 invocation 默认使用 bypassPermissions；外层 Runtime 必须提供真正的隔离边界。
+- AskUserQuestion、EnterPlanMode 和 ExitPlanMode 在无交互通道的执行中固定禁用。
 - 临时控制文件在 invocation 的 `finally` 阶段清理。
 
 ## 它运行在哪里
@@ -32,7 +33,7 @@ CLI、文件工具和 shell 在 host 节点运行；模型请求通常发往 Ant
 | Session resume | `--resume <claude-session-uuid>` |
 | Control instructions | mode `0600` 临时文件 |
 | User prompt | stdin，不进入 argv |
-| 默认 permission mode | `acceptEdits` |
+| 默认 permission mode | `bypassPermissions` + `--dangerously-skip-permissions` |
 | 本机验证版本 | Claude Code `2.1.145`，2026-08-28 |
 
 ## 环境准备
@@ -66,8 +67,7 @@ pnpm cli adapter probe claude-code
 pnpm cli agent create \
   --name claude-reviewer \
   --adapter claude-code \
-  --workdir /absolute/path/to/repository \
-  --permission-mode dontAsk
+  --workdir /absolute/path/to/repository
 ```
 
 然后使用公共 Chat API：
@@ -79,7 +79,7 @@ pnpm cli run wait <run-id>
 pnpm cli run events <run-id>
 ```
 
-`dontAsk` 适合无法弹出交互确认的保守自动化，但具体哪些工具可执行仍由 Claude Code 配置决定；它不是 Orbtex 自己实现的文件 sandbox。
+默认 bypass 只解决 daemon 无法回答 provider 权限提示的问题，不提供安全隔离。生产 Runtime 必须使用容器、VM 或等价机制限制子进程可访问的文件系统、网络和凭证。需要保守执行时可以显式选择 `dontAsk`，但没有 Claude allow rules 的工具会直接被拒绝。
 
 ## 可配置项
 
@@ -87,9 +87,10 @@ pnpm cli run events <run-id>
 |---|---|---|
 | `--workdir DIR` | `workdir` | Claude Code cwd 和预期代码目标，不构成安全边界 |
 | `--model MODEL` | `model` | `--model`，可用别名/完整名称取决于 CLI |
-| `--permission-mode MODE` | `permissionMode` | 默认 `acceptEdits`；本机版本支持 `acceptEdits/auto/bypassPermissions/default/dontAsk/plan` |
+| `--permission-mode MODE` | `permissionMode` | 默认 `bypassPermissions`；本机版本支持 `acceptEdits/auto/bypassPermissions/default/dontAsk/plan` |
+| `--dangerously-bypass-permissions` | `dangerouslyBypassPermissions` | 强制使用 `bypassPermissions`，优先于 `permissionMode` |
 
-当且仅当 mode 为 `bypassPermissions` 时，adapter 还会传入 `--dangerously-skip-permissions`。不要在无外部 sandbox 的共享机器上启用。
+当 mode 为 `bypassPermissions` 时，adapter 同时传入 `--dangerously-skip-permissions`。adapter 固定通过 `--disallowedTools` 禁用 AskUserQuestion、EnterPlanMode 和 ExitPlanMode，避免无人值守 Run 进入无法完成的交互流程。
 
 ## 实际命令形态
 
@@ -102,6 +103,10 @@ claude --print \
   [--resume <provider-session-id>] \
   [--model <model>] \
   --permission-mode <mode> \
+  [--dangerously-skip-permissions] \
+  --disallowedTools AskUserQuestion \
+  --disallowedTools EnterPlanMode \
+  --disallowedTools ExitPlanMode \
   -
 ```
 
@@ -114,9 +119,8 @@ claude --print \
 - `system.session_id` -> `session.update`。
 - assistant text block -> `message.delta`。
 - assistant `tool_use` block -> `tool_call.create`。
+- user `tool_result` block -> `tool_call.update(completed/error)`。
 - result -> usage、完整 message terminal 和 run terminal。
-
-当前 parser 没有把 Claude 的 tool result 单独归一化为 `tool_call.update`；如果上层必须依赖完整工具终态，应先扩展 parser 和 fixture，再把它当成稳定契约。
 
 ## 取消与限制
 
@@ -125,7 +129,7 @@ claude --print \
 当前限制：
 
 - 不暴露 fork、MCP config、allowed tools、budget、effort、structured output 等 Claude 参数。
-- 默认 `acceptEdits` 可能修改 workdir；只读任务应显式选更保守的 provider 策略，并使用文件系统隔离。
+- 默认 bypass 可以执行 shell、修改 workdir 并访问宿主机用户可访问的其他资源；没有外部隔离时不得用于不可信任务。
 - `probe` 不验证认证、provider 网络、额度和模型名。
 - 取消目前只保证直接 CLI 进程终止，生产环境应补进程组回收。
 

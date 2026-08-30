@@ -7,6 +7,9 @@ import type { AdapterHost, HostedAdapterMetadata } from "./index.js";
 type JsonRecord = Record<string, unknown>;
 type RpcId = string | number | null;
 
+export type RpcTraceDirection = "send" | "receive";
+export type RpcTrace = (direction: RpcTraceDirection, frame: string) => void;
+
 interface RpcMessage extends JsonRecord {
   jsonrpc: "2.0";
   id?: RpcId;
@@ -55,9 +58,11 @@ class AsyncQueue<T> implements AsyncIterableIterator<T> {
   }
 }
 
-function writer(output: Writable): (value: RpcMessage) => void {
+function writer(output: Writable, trace?: RpcTrace): (value: RpcMessage) => void {
   return value => {
-    output.write(`${JSON.stringify(value)}\n`);
+    const frame = JSON.stringify(value);
+    trace?.("send", frame);
+    output.write(`${frame}\n`);
   };
 }
 
@@ -68,15 +73,18 @@ function writer(output: Writable): (value: RpcMessage) => void {
 export class AdapterHostRpcServer {
   readonly #host: AdapterHost;
   readonly #send: (value: RpcMessage) => void;
+  readonly #trace: RpcTrace | undefined;
 
-  constructor({ host, output }: { host: AdapterHost; output: Writable }) {
+  constructor({ host, output, trace }: { host: AdapterHost; output: Writable; trace?: RpcTrace }) {
     this.#host = host;
-    this.#send = writer(output);
+    this.#send = writer(output, trace);
+    this.#trace = trace;
   }
 
   /** 开始消费输入流；每行必须是一个完整 JSON-RPC 对象。 */
   listen(input: Readable): void {
     createInterface({ input }).on("line", line => {
+      this.#trace?.("receive", line);
       try {
         void this.#dispatch(asRpcMessage(JSON.parse(line)));
       } catch (error) {
@@ -149,10 +157,11 @@ export class AdapterHostRpcClient {
   readonly #pending = new Map<string, Deferred<unknown>>();
   readonly #invocations = new Map<string, AsyncQueue<CanonicalEvent>>();
 
-  constructor({ input, output }: { input: Readable; output: Writable }) {
-    this.#send = writer(output);
+  constructor({ input, output, trace }: { input: Readable; output: Writable; trace?: RpcTrace }) {
+    this.#send = writer(output, trace);
     const lines = createInterface({ input });
     lines.on("line", line => {
+      trace?.("receive", line);
       try {
         this.#receive(asRpcMessage(JSON.parse(line)));
       } catch (error) {

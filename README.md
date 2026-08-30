@@ -176,8 +176,8 @@ pnpm cli trigger create \
 # Codex: default workspace-write sandbox
 pnpm cli agent create --name codex --adapter codex --workdir "$PWD" --sandbox read-only
 
-# Claude Code: defaults to acceptEdits; use dontAsk for read-only/noninteractive work
-pnpm cli agent create --name claude --adapter claude-code --workdir "$PWD" --permission-mode dontAsk
+# Claude Code: unattended bypass by default; requires an externally isolated runtime
+pnpm cli agent create --name claude --adapter claude-code --workdir "$PWD"
 
 # CodeBuddy: ACP transport
 pnpm cli agent create --name codebuddy --adapter codebuddy --workdir "$PWD" --permission-mode dontAsk
@@ -189,7 +189,7 @@ pnpm cli agent create --name opencode --adapter opencode --workdir "$PWD" --mode
 pnpm cli agent create --name openclaw --adapter openclaw --provider-agent main --thinking medium
 ```
 
-危险权限必须显式打开：Codex 使用 `--dangerously-bypass-permissions`，OpenCode 使用 `--auto-approve`。不要在没有外部 sandbox 的环境启用。
+Claude Code 默认绕过 provider 权限确认以支持无人值守执行，必须由容器、VM 或等价的 Runtime 隔离限制文件系统、网络和凭证。Codex 的 `--dangerously-bypass-permissions` 与 OpenCode 的 `--auto-approve` 仍需显式打开；不要在没有外部 sandbox 的环境启用危险权限。
 
 取消执行：
 
@@ -211,3 +211,4 @@ pnpm cli run cancel <run-id> --reason user_cancelled
 - [Transport And Multi-node](docs/09-transport-and-multinode.md)
 - [Protocol Schema And Codegen](docs/10-protocol-schema-codegen.md)
 - [Aily 多触发机制与 Orbtex 统一 Blueprint](docs/11-aily-trigger-and-execution-review.html)
+- [Aily Task、Run 与 Agent 执行概念模型](docs/12-aily-task-agent-run-concept-model.md)

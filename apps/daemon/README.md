@@ -116,11 +116,13 @@ chat.create / chat.list / chat.get / chat.send
 trigger.create / trigger.list / trigger.fire
 event.ingest
 task.list / task.get / task.continue
-run.get / run.events / run.wait / run.cancel
+run.get / run.events / run.wait / run.stream / run.cancel
 ```
 
 CLI 到 daemon 使用一行 JSON request/response，不是 JSON-RPC 2.0。每个连接只读取第一行。
-daemon 到 adapter-host 才使用 stdio NDJSON JSON-RPC 2.0。
+`run.stream` 是例外：request 仍为一行 JSON，response 使用多行 NDJSON 回放并实时推送
+canonical events，terminal 后以 `done` 结束连接。daemon 到 adapter-host 才使用 stdio
+NDJSON JSON-RPC 2.0。
 
 ## ACK、执行与恢复
 

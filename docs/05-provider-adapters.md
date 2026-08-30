@@ -5,7 +5,7 @@
 | Adapter | Native transport | Resume | Fork capability | Default permission |
 |---|---|---|---|---|
 | [`codex`](../packages/orbtex-adapter-codex/README.md) | `codex exec --json` JSONL | `exec resume <thread>` | not exposed | workspace-write sandbox |
-| [`claude-code`](../packages/orbtex-adapter-claude-code/README.md) | `claude --print --output-format stream-json` | `--resume <uuid>` | not exposed | `acceptEdits` |
+| [`claude-code`](../packages/orbtex-adapter-claude-code/README.md) | `claude --print --output-format stream-json` | `--resume <uuid>` | not exposed | `bypassPermissions` + external isolation required |
 | [`codebuddy`](../packages/orbtex-adapter-codebuddy/README.md) | ACP JSON-RPC stdio | `session/load` | not declared | `acceptEdits` + deny fallback |
 | [`opencode`](../packages/orbtex-adapter-opencode/README.md) | `opencode run --format json` | `--session <id>` | not exposed | provider asks unless `autoApprove` |
 | [`openclaw`](../packages/orbtex-adapter-openclaw/README.md) | `openclaw agent --local --json` JSONL | `--session-id <id>` | not exposed | OpenClaw agent policy |
@@ -16,7 +16,7 @@
 
 Codex：`thread.started -> session.update`，agent message item -> message delta，command/tool item -> tool lifecycle，`turn.completed -> usage + message.update + run.finished`。
 
-Claude Code：system init -> session update，assistant content blocks -> text/tool events，result -> usage/message terminal/run terminal。
+Claude Code：system init -> session update，assistant content blocks -> text/tool create events，user tool result blocks -> tool update，result -> usage/message terminal/run terminal。
 
 CodeBuddy：ACP `session/update` 的 `agent_message_chunk` 和 `agent_thought_chunk` 映射为 final/analysis channels；tool_call/update 保留 ID；prompt result usage 映射 usage update。
 

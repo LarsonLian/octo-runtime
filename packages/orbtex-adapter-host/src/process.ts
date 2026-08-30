@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { AdapterHostRpcClient } from "./rpc.js";
+import { AdapterHostRpcClient, type RpcTrace } from "./rpc.js";
 
 export interface SpawnAdapterHostOptions {
   entrypoint: string;
@@ -29,7 +29,12 @@ export async function spawnAdapterHost({
   child.stderr.on("data", (value: string | Buffer) => {
     stderr = (stderr + value.toString()).slice(-8192);
   });
-  const client = new AdapterHostRpcClient({ input: child.stdout, output: child.stdin });
+  const trace = rpcTrace(env);
+  const client = new AdapterHostRpcClient({
+    input: child.stdout,
+    output: child.stdin,
+    ...(trace ? { trace } : {})
+  });
   try {
     await client.list();
   } catch (error) {
@@ -49,6 +54,14 @@ export async function spawnAdapterHost({
       if (child.exitCode === null) child.kill("SIGKILL");
     },
     stderr: () => stderr
+  };
+}
+
+function rpcTrace(env: NodeJS.ProcessEnv): RpcTrace | undefined {
+  if (env.ORBTEX_TRACE_RPC !== "1") return undefined;
+  return (direction, frame) => {
+    const route = direction === "send" ? "daemon -> adapter-host" : "adapter-host -> daemon";
+    process.stderr.write(`[orbtex rpc ${route}] ${frame}\n`);
   };
 }
 

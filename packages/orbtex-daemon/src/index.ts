@@ -128,10 +128,24 @@ export class HarnessDaemon extends EventEmitter {
   }
 
   /** 为 Chat 排队一个 turn 并快速返回，不等待模型结果。 */
-  async submitChat(sessionId: string, prompt: string, instructions = ""): Promise<{ accepted: true; sessionId: string; runId: string }> {
+  async submitChat(sessionId: string, prompt: string, instructions = ""): Promise<{
+    accepted: true;
+    sessionId: string;
+    runId: string;
+    agent: { id: string; name: string; adapterType: string };
+  }> {
+    const session = this.#store.sessions.get(sessionId);
+    if (!session || session.type !== "chat") throw new Error(`chat session not found: ${sessionId}`);
+    const agent = this.#store.agents.get(session.agentId ?? "");
+    if (!agent) throw new Error(`agent not found for chat session: ${sessionId}`);
     const queued = await this.#engine.queueChatTurn(sessionId, prompt);
     this.#schedule(queued.run.id, instructions);
-    return { accepted: true, sessionId, runId: queued.run.id };
+    return {
+      accepted: true,
+      sessionId,
+      runId: queued.run.id,
+      agent: { id: agent.id, name: agent.name, adapterType: agent.adapterType }
+    };
   }
 
   #schedule(runId: string, instructions = ""): void {

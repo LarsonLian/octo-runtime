@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { AdapterHost, spawnAdapterHost } from "@orbtex-ai/orbtex-adapter-host";
+import { PassThrough } from "node:stream";
+import { AdapterHost, AdapterHostRpcClient, AdapterHostRpcServer, spawnAdapterHost } from "@orbtex-ai/orbtex-adapter-host";
 
 const request = { invocationId: "inv-host", sessionId: "s", runId: "r", prompt: "p", workdir: process.cwd() };
 
@@ -44,4 +45,27 @@ test("separate adapter-host process loads manifest and streams events", async ()
     const events = []; for await (const event of processHost.client.invoke("test", { ...request, invocationId: "rpc-inv" })) events.push(event);
     assert.equal(events.at(-1).type, "run.finished");
   } finally { await processHost.close(); }
+});
+
+test("RPC trace observes every client frame without changing the wire", async () => {
+  const clientToServer = new PassThrough();
+  const serverToClient = new PassThrough();
+  const host = new AdapterHost();
+  const traced = [];
+  new AdapterHostRpcServer({ host, output: serverToClient }).listen(clientToServer);
+  const client = new AdapterHostRpcClient({
+    input: serverToClient,
+    output: clientToServer,
+    trace: (direction, frame) => traced.push({ direction, frame })
+  });
+
+  assert.deepEqual(await client.list(), []);
+  assert.deepEqual(traced.map(item => item.direction), ["send", "receive"]);
+  assert.deepEqual(traced.map(item => JSON.parse(item.frame)), [
+    { jsonrpc: "2.0", id: JSON.parse(traced[0].frame).id, method: "list", params: {} },
+    { jsonrpc: "2.0", id: JSON.parse(traced[0].frame).id, result: [] }
+  ]);
+  client.close();
+  clientToServer.end();
+  serverToClient.end();
 });
