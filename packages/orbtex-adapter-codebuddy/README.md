@@ -45,7 +45,7 @@ codebuddy --version
 codebuddy --help
 ```
 
-CodeBuddy 当前 CLI 没有与其他 provider 完全一致的 `auth status` 合同，所以 `adapter probe` 只做 executable 检查。认证是否可用应通过受控的 provider smoke test 确认。
+CodeBuddy 当前 CLI 没有与其他 provider 完全一致的 `auth status` 契约，所以 `adapter probe` 只做 executable 检查。认证是否可用应通过受控的 provider smoke test 确认。
 
 ## 创建 Agent
 

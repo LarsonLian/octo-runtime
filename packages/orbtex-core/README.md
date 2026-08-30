@@ -22,7 +22,7 @@ Orbtex 的领域模型与执行引擎。它管理 Agent、Chat/Task Session、Tr
 
 - 在自定义 daemon、桌面应用或测试进程中复用 Orbtex 的 Chat/Task 建模。
 - 替换控制面 transport 或持久层，而不重写 Agent 执行语义。
-- 用 `MemoryStore` 编写快速合同测试，或用 `JsonFileStore` 运行单机 reference deployment。
+- 用 `MemoryStore` 编写快速契约测试，或用 `JsonFileStore` 运行单机 reference deployment。
 
 本包不提供网络服务、长期调度、进程隔离或多节点 lease。生产部署应通过单独 app 组装，并替换 reference JSON store。
 

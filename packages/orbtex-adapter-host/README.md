@@ -14,7 +14,7 @@ Orbtex 的 adapter registry、调用生命周期和 NDJSON JSON-RPC host。它�
 
 1. **统一生命周期**：adapter 即使只发送 delta，上层也能看到完整 message 与唯一 run terminal。
 2. **Adapter 故障止于边界**：非法事件、异常退出和 cleanup error 被转换成明确的 `run.error/stopped`。
-3. **调用与传输解耦**：Core 依赖 `invoke/list/cancel` 合同，不依赖 NDJSON 实现。
+3. **调用与传输解耦**：Core 依赖 `invoke/list/cancel` 契约，不依赖 NDJSON 实现。
 4. **长任务使用事件推送**：RPC 先 ACK invocation，再通过 notification 流式发送事件。
 5. **动态加载必须校验**：app 读取 manifest 后验证 module export 和 adapter 形状。
 

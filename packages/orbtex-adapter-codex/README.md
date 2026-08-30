@@ -6,7 +6,7 @@ Adapter type：`codex`
 
 ## 作用与适用场景
 
-把本地 `codex exec` CLI 接入 Orbtex 的统一 `InvokeRequest -> CanonicalEvent` 合同。适合代码审阅、仓库修改、测试执行等需要 Codex 工具能力，并希望由 Orbtex 统一管理 Chat/Task、session resume、取消和事件汇报的场景。
+把本地 `codex exec` CLI 接入 Orbtex 的统一 `InvokeRequest -> CanonicalEvent` 契约。适合代码审阅、仓库修改、测试执行等需要 Codex 工具能力，并希望由 Orbtex 统一管理 Chat/Task、session resume、取消和事件汇报的场景。
 
 它只负责 Codex provider 差异，不负责排队、Trigger、持久化或远端节点调度。
 
@@ -128,6 +128,6 @@ adapter 从 `thread.started` 取出 provider thread ID，以 `session.update` �
 - 没有暴露 Codex image、output schema、fork、review 等额外 CLI 能力。
 - adapter 使用 `--skip-git-repo-check`，因此非 Git 目录也可运行；这不等于目录可信。
 - `probe` 只检查 executable，不检查认证、网络、模型额度或 workdir 权限。
-- provider 升级后应运行合同测试，再做受控的只读 live smoke test。
+- provider 升级后应运行契约测试，再做受控的只读 live smoke test。
 
 实现：[src/index.ts](src/index.ts)。公共使用流程见 [Adapter Guide](../README.md)。

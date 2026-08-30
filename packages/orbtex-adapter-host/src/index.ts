@@ -14,7 +14,7 @@ export interface HostedAdapterMetadata extends Record<string, unknown> {
 }
 
 /**
- * 任意 Orbtex adapter 必须实现的最小合同。
+ * 任意 Orbtex adapter 必须实现的最小契约。
  * invoke 可以封装 CLI 子进程、ACP、WebSocket 或进程内实现，只要输出 canonical event stream。
  */
 export interface HostedAdapter {

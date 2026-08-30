@@ -97,4 +97,4 @@ pnpm cli agent create \
 - 不从 Orbtex workdir 注入 skills；skills 是 OpenClaw agent 配置能力，不是 Run 汇报协议。
 - 不实现 session fork 文件复制；当前只声明 `session.serialize`，不声明 `session.fork`。
 - 当前进程取消依赖 Node `AbortSignal` 终止 CLI；生产环境应升级为进程组终止和分级 `SIGTERM/SIGKILL` 回收。
-- 合同测试使用 fake OpenClaw，不调用真实模型。2026-08-28 本机 `OpenClaw 2026.7.1-2` 的 executable probe 通过，尚未把真实模型调用冒充为已验证结果。
+- 契约测试使用 fake OpenClaw，不调用真实模型。2026-08-28 本机 `OpenClaw 2026.7.1-2` 的 executable probe 通过，尚未把真实模型调用冒充为已验证结果。

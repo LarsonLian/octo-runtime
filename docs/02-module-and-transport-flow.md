@@ -5,7 +5,7 @@
 ## 先给结论
 
 - **领域核心**是 `packages/orbtex-core` 中的 `HarnessEngine`。它决定 Chat、Task、Trigger、Session、Attempt、Run 的关系和状态迁移。
-- **稳定合同**是 `packages/orbtex-protocol`。它定义 `InvokeRequest`、canonical event、provider session 和持久化 `EventEnvelope`。
+- **稳定契约**是 `packages/orbtex-protocol`。它定义 `InvokeRequest`、canonical event、provider session 和持久化 `EventEnvelope`。
 - **后台编排器**是 `packages/orbtex-daemon` 中的 `HarnessDaemon`。它负责排队、`setImmediate` 后台执行、trigger 匹配、interval timer、等待、取消和重启恢复。
 - **执行边界**是 `packages/orbtex-adapter-host` 中的 `AdapterHost`。它选择 adapter、控制 invocation、传播取消、修正 message lifecycle 并保证当前协议下单一终态。
 - **Provider 差异**终止于各 `orbtex-adapter-*`。Core 不包含 `if adapterType === "codex"` 一类分支。
@@ -145,7 +145,7 @@ flowchart LR
 | Host -> CodeBuddy | child stdin/stdout | ACP JSON-RPC 2.0 | 每 invocation 一个 ACP 子进程/client |
 | UI/Runtime -> remote node | 当前不存在 | WSS 只写在目标设计中 | 尚未实现 |
 
-因此，当前代码不能概括为“所有模块都使用 JSON-RPC 2.0”。统一发生在 `HarnessHost` 和 canonical event 合同，不是所有 wire 都相同。
+因此，当前代码不能概括为“所有模块都使用 JSON-RPC 2.0”。统一发生在 `HarnessHost` 和 canonical event 契约，不是所有 wire 都相同。
 
 ### Transport 上的真实消息形状
 
@@ -411,7 +411,7 @@ sequenceDiagram
   end
 ```
 
-通常能响应 `AbortSignal` 的 adapter 会收敛为 `run.stopped`；如果 provider 忽略取消或与自然完成竞态，当前合同仍可能收到 `run.finished` 或 `run.error`，最终以 event stream 为准。
+通常能响应 `AbortSignal` 的 adapter 会收敛为 `run.stopped`；如果 provider 忽略取消或与自然完成竞态，在当前契约下，上层仍可能收到 `run.finished` 或 `run.error`，最终以 event stream 为准。
 
 ## 九、当前 capabilities 和 allowed methods 到底在哪里
 
@@ -455,7 +455,7 @@ flowchart TB
 1. [`apps/daemon/src/server.ts`](../apps/daemon/src/server.ts)：装配根和外部 method dispatch。
 2. [`packages/orbtex-daemon/src/index.ts`](../packages/orbtex-daemon/src/index.ts)：排队、后台执行、恢复和取消。
 3. [`packages/orbtex-core/src/engine.ts`](../packages/orbtex-core/src/engine.ts)：真正的领域核心与 InvokeRequest 组装。
-4. [`packages/orbtex-protocol/src/index.ts`](../packages/orbtex-protocol/src/index.ts)：请求和事件合同。
+4. [`packages/orbtex-protocol/src/index.ts`](../packages/orbtex-protocol/src/index.ts)：请求和事件契约。
 5. [`packages/orbtex-adapter-host/src/rpc.ts`](../packages/orbtex-adapter-host/src/rpc.ts)：stdio JSON-RPC ACK/stream。
 6. [`packages/orbtex-adapter-host/src/index.ts`](../packages/orbtex-adapter-host/src/index.ts)：adapter lifecycle 和取消。
 7. [`apps/adapter-host/src/index.ts`](../apps/adapter-host/src/index.ts)：manifest 动态加载。

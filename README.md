@@ -13,7 +13,7 @@
 - 独立 Node adapter-host 进程，manifest 动态加载 adapters，NDJSON JSON-RPC 调用/事件/取消。
 - canonical message/tool/usage/session/run events；final/analysis channel 分离；terminal exactly once。
 - Codex、Claude Code、CodeBuddy ACP、OpenCode、OpenClaw local adapters；另有 mock adapter。
-- provider session 恢复、命令 probe、CLI 和合同测试。
+- provider session 恢复、命令 probe、CLI 和契约测试。
 
 这是可运行的架构基线，不是多节点生产调度器。JSON store 假设单 daemon writer；生产环境应替换成事务数据库、outbox、lease/fencing 和鉴权控制面。
 

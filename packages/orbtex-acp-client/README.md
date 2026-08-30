@@ -21,7 +21,7 @@ Orbtex 使用的轻量 ACP stdio client。目前主要服务于 CodeBuddy adapte
 ## 适用场景
 
 - 为 CodeBuddy 或其他兼容 ACP stdio 的本地 Agent CLI 编写 Orbtex adapter。
-- 在合同测试中使用 fake ACP 子进程验证 session、usage、权限和取消。
+- 在契约测试中使用 fake ACP 子进程验证 session、usage、权限和取消。
 - 需要比完整 ACP SDK 更小的 Node.js 客户端边界时。
 
 本实现不是通用 ACP 全能力 SDK；当前没有暴露文件系统、terminal、MCP server 或所有 capability 协商扩展。

@@ -116,7 +116,7 @@ claude --print \
 - assistant `tool_use` block -> `tool_call.create`。
 - result -> usage、完整 message terminal 和 run terminal。
 
-当前 parser 没有把 Claude 的 tool result 单独归一化为 `tool_call.update`；如果上层必须依赖完整工具终态，应先扩展 parser 和 fixture，再把它当成稳定合同。
+当前 parser 没有把 Claude 的 tool result 单独归一化为 `tool_call.update`；如果上层必须依赖完整工具终态，应先扩展 parser 和 fixture，再把它当成稳定契约。
 
 ## 取消与限制
 

@@ -6,7 +6,7 @@
 
 | Package | 职责 |
 |---|---|
-| [`@orbtex-ai/orbtex-protocol`](orbtex-protocol/README.md) | InvokeRequest、canonical event 与 envelope 合同 |
+| [`@orbtex-ai/orbtex-protocol`](orbtex-protocol/README.md) | InvokeRequest、canonical event 与 envelope 契约 |
 | [`@orbtex-ai/orbtex-core`](orbtex-core/README.md) | Chat、Task、Trigger、Attempt、Run 领域逻辑与 store |
 | [`@orbtex-ai/orbtex-daemon`](orbtex-daemon/README.md) | durable queue、调度、恢复和 run wait/cancel |
 | [`@orbtex-ai/orbtex-adapter-host`](orbtex-adapter-host/README.md) | adapter registry、invoke lifecycle 与 NDJSON RPC |
@@ -15,7 +15,7 @@
 
 所有 `packages/*` 的目录名和 npm 非 scope 部分保持一致。provider packages 使用 `packages/orbtex-adapter-<provider>` 与 `@orbtex-ai/orbtex-adapter-<provider>`。
 
-以下 `orbtex-adapter-*` packages 共享同一个 `InvokeRequest -> AsyncIterable<CanonicalEvent>` 上层合同，但底层 CLI、传输、权限和 provider session 格式不同。
+以下 `orbtex-adapter-*` packages 共享同一个 `InvokeRequest -> AsyncIterable<CanonicalEvent>` 上层契约，但底层 CLI、传输、权限和 provider session 格式不同。
 
 ## 先理解“本地”
 
@@ -203,4 +203,4 @@ Task continuation 产生新的 Attempt 和 Harness Run，但复用 Task Session 
 - 当前单机 host 中所有 adapters 同进程加载；同步崩溃仍可能影响其他 provider。
 - 当前取消对多数 CLI 只保证直接进程 abort；生产环境应使用进程组和分级回收。
 
-workspace 维护见 [Pnpm Monorepo](../docs/03-monorepo.md)。架构与事件合同见 [Architecture](../docs/01-architecture.md)、[Provider Adapters](../docs/05-provider-adapters.md) 和 [Prompt And Workdir](../docs/04-prompt-and-workdir.md)。
+workspace 维护见 [Pnpm Monorepo](../docs/03-monorepo.md)。架构与事件契约见 [Architecture](../docs/01-architecture.md)、[Provider Adapters](../docs/05-provider-adapters.md) 和 [Prompt And Workdir](../docs/04-prompt-and-workdir.md)。

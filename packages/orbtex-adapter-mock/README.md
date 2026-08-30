@@ -6,12 +6,12 @@ Adapter type：`mock`
 
 ## 作用
 
-提供不依赖模型、网络、认证或外部 CLI 的确定性 adapter，用于验证 Orbtex 自身的控制面和事件合同。它返回固定 session、message 与 terminal event，便于教程、CI 和故障定位。
+提供不依赖模型、网络、认证或外部 CLI 的确定性 adapter，用于验证 Orbtex 自身的控制面和事件契约。它返回固定 session、message 与 terminal event，便于教程、CI 和故障定位。
 
 ## 设计原则
 
 - 输出完全确定，不把模型随机性带入 harness 测试。
-- 使用与真实 adapter 相同的 async iterable 和 canonical event 合同。
+- 使用与真实 adapter 相同的 async iterable 和 canonical event 契约。
 - 不读取或修改 workdir，不产生外部副作用。
 - 不伪装 provider 功能：不会生成虚假的 tool、usage 或权限行为。
 
@@ -108,4 +108,4 @@ provider session ID 从 Harness Session ID 确定性生成，因此同一 Chat �
 - 不模拟 stderr、provider failure、usage、analysis、审批或 session fork。
 - 生产环境不应创建使用 mock adapter 的真实业务 Agent。
 
-真实 subprocess/ACP 合同测试位于 [../../test](../../test)。实现：[src/index.ts](src/index.ts)。公共使用流程见 [Adapter Guide](../README.md)。
+真实 subprocess/ACP 契约测试位于 [../../test](../../test)。实现：[src/index.ts](src/index.ts)。公共使用流程见 [Adapter Guide](../README.md)。

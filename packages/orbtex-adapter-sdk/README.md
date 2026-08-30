@@ -1,6 +1,6 @@
 # @orbtex-ai/orbtex-adapter-sdk
 
-Orbtex 的 adapter authoring SDK。它提供 adapter 合同、CLI probe、NDJSON 子进程执行、JSON 行解析、错误封装和常见 canonical event 流程，减少各 provider adapter 的重复代码。
+Orbtex 的 adapter authoring SDK。它提供 adapter 契约、CLI probe、NDJSON 子进程执行、JSON 行解析、错误封装和常见 canonical event 流程，减少各 provider adapter 的重复代码。
 
 ## 作用
 
@@ -22,7 +22,7 @@ Orbtex 的 adapter authoring SDK。它提供 adapter 合同、CLI probe、NDJSON
 
 - provider CLI 支持 JSON/JSONL/NDJSON 流式输出。
 - 新建 Orbtex provider adapter 并接入统一 host。
-- 为 command builder 和 native event normalizer 编写无模型合同测试。
+- 为 command builder 和 native event normalizer 编写无模型契约测试。
 
 如果 provider 使用双向 JSON-RPC、WebSocket 或常驻 daemon，可继续实现 `Adapter` 接口，但不必使用 `createJsonCliAdapter`。
 

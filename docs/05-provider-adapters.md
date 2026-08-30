@@ -33,7 +33,7 @@ OpenClaw：adapter 先生成或恢复 provider session ID；`text/tool_use/tool_
 - CodeBuddy：ACP session `a370c065-...`，analysis/final chunks 和 run.finished。
 - OpenCode：使用 `opencode/hy3-free`，session `ses_fb9185921ffe...`，有 usage 和 run.finished。
 
-OpenClaw local adapter 使用 fake CLI 完成命令、双输出形态、tool、usage、session 和取消合同测试；本机 `OpenClaw 2026.7.1-2` probe 通过，但没有执行真实模型调用。因此它不能列入上面的 live invocation 证据。
+OpenClaw local adapter 使用 fake CLI 完成命令、双输出形态、tool、usage、session 和取消契约测试；本机 `OpenClaw 2026.7.1-2` probe 通过，但没有执行真实模型调用。因此它不能列入上面的 live invocation 证据。
 
 这证明当前机器上的真实 wire shape 可被 parser 消费；不是未来版本兼容承诺。升级 provider 后先运行 tests，再做一个只读 live smoke test。
 

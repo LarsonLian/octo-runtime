@@ -118,7 +118,7 @@ pnpm --filter @orbtex-ai/orbtex-adapter-codex list
 4. 在 [config/adapters.json](../config/adapters.json) 注册 adapter type/module/export。
 5. 在 `apps/adapter-host/package.json` 增加 workspace dependency，确保运行 host 能 import 它。
 6. 若根测试直接 import 该包，在根 `devDependencies` 增加 workspace dependency。
-7. 在 `test/` 添加 native fixture、success/error/cancel/session resume 合同测试。
+7. 在 `test/` 添加 native fixture、success/error/cancel/session resume 契约测试。
 8. README 至少说明包的作用、设计原则、适用场景、明确边界和最小用法，并在 [Packages And Adapter Guide](../packages/README.md) 与 provider matrix 中建立入口。
 
 Core、daemon 和 CLI 不应增加 `if adapterType === "foo"`。新增 provider 差异必须终止在 adapter contract 边界。
