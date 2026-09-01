@@ -84,11 +84,6 @@ export async function buildClaudeCommand(
     : req.agentConfig?.permissionMode ?? "bypassPermissions";
   args.push("--permission-mode", mode);
   if (mode === "bypassPermissions") args.push("--dangerously-skip-permissions");
-  args.push(
-    "--disallowedTools", "AskUserQuestion",
-    "--disallowedTools", "EnterPlanMode",
-    "--disallowedTools", "ExitPlanMode"
-  );
   args.push("-");
   return { command, args, input: req.prompt, cleanup: () => rm(directory, { recursive: true, force: true }) };
 }

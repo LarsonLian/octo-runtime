@@ -75,15 +75,12 @@ test("Claude native events map to session/message/terminal", () => {
   assert.equal(normalizeClaudeEvent({ type: "result", session_id: "claude-1", result: "ok", usage: {} }).at(-1).type, "run.finished");
 });
 
-test("Claude defaults to unattended bypass and disables interactive tools", async () => {
+test("Claude defaults to unattended bypass without restricting its tool catalog", async () => {
   const claude = await buildClaudeCommand(request);
   assert.equal(claude.args.includes("--include-partial-messages"), true);
   assert.equal(claude.args[claude.args.indexOf("--permission-mode") + 1], "bypassPermissions");
   assert.equal(claude.args.includes("--dangerously-skip-permissions"), true);
-  assert.deepEqual(
-    claude.args.flatMap((arg, index) => arg === "--disallowedTools" ? [claude.args[index + 1]] : []),
-    ["AskUserQuestion", "EnterPlanMode", "ExitPlanMode"]
-  );
+  assert.equal(claude.args.includes("--disallowedTools"), false);
   await claude.cleanup();
 });
 
@@ -196,11 +193,16 @@ test("control instructions use private provider-native carriers", async () => {
 
 test("CodeBuddy ACP subprocess completes the canonical contract", async () => {
   const fixture = fileURLToPath(new URL("../fixtures/fake-acp.mjs", import.meta.url));
-  const adapter = createCodeBuddyAdapter({ acpClientFactory: opts => spawnAcpClient({ ...opts, command: process.execPath, args: [fixture] }) });
+  let spawnOptions;
+  const adapter = createCodeBuddyAdapter({ acpClientFactory: opts => {
+    spawnOptions = opts;
+    return spawnAcpClient({ ...opts, command: process.execPath, args: [fixture] });
+  } });
   const host = new AdapterHost(); host.register(adapter);
   const events = [];
   for await (const event of host.invoke("codebuddy", request)) events.push(event);
   assert.deepEqual(events.map(x => x.type), ["session.update", "message.create", "message.delta", "tool_call.create", "tool_call.update", "usage.update", "message.update", "run.finished"]);
+  assert.deepEqual(spawnOptions.args, ["--acp", "--permission-mode", "acceptEdits"]);
   assert.equal(normalizeCodeBuddyUpdate({ type: "usage", usage: { inputTokens: 1 } })[0].type, "usage.update");
 });
 

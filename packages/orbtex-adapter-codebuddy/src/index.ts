@@ -33,7 +33,7 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
     probe: () => probeCommand(command),
     async *invoke(req: InvokeRequest): AsyncGenerator<CanonicalEvent> {
       const client = acpClientFactory({
-        command, args: ["--acp", "--permission-mode", req.agentConfig?.permissionMode ?? "acceptEdits", "--disallowedTools", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode"],
+        command, args: ["--acp", "--permission-mode", req.agentConfig?.permissionMode ?? "acceptEdits"],
         cwd: req.workdir, signal: req.signal
       });
       try {

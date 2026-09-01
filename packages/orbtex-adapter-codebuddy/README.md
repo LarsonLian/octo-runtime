@@ -93,8 +93,7 @@ pnpm cli run events <run-id>
 
 ```text
 codebuddy --acp \
-  --permission-mode <mode> \
-  --disallowedTools AskUserQuestion EnterPlanMode ExitPlanMode
+  --permission-mode <mode>
 ```
 
 RPC 顺序：
@@ -106,7 +105,7 @@ session/prompt(sessionId, prompt=[{type:"text", text:"..."}])
 session/update notifications...
 ```
 
-交互式 AskUser/plan tools 被禁止，因为 daemon 后台 run 没有终端用户可以回答。ACP server 反向发起权限请求时，当前 client 会优先选择 reject/deny 选项；不能把 provider 没有弹窗误解成自动批准。
+adapter 不通过 CLI 参数删减 provider 的工具目录。ACP server 反向发起权限请求时，当前 client 会优先选择 reject/deny 选项；不能把 provider 没有弹窗误解成自动批准，也不能把“工具可见”误解成 surface 已实现所有交互合同。
 
 ## Prompt、事件与 session
 

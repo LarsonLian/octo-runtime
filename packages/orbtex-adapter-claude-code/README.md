@@ -16,7 +16,7 @@ Adapter type：`claude-code`
 - Claude session UUID 原样保存和恢复，Core 不解释其格式。
 - stream-json partial messages 只在 adapter 内归一化为 canonical message/tool/usage/run events；完整 assistant block 仅作兼容输入，不会和 partial delta 双写。
 - 无人值守 invocation 默认使用 bypassPermissions；外层 Runtime 必须提供真正的隔离边界。
-- AskUserQuestion、EnterPlanMode 和 ExitPlanMode 在无交互通道的执行中固定禁用。
+- adapter 不传 `--disallowedTools`，保留 Claude Code 自身可用的完整工具目录。
 - 临时控制文件在 invocation 的 `finally` 阶段清理。
 
 ## 它运行在哪里
@@ -91,7 +91,7 @@ pnpm cli run events <run-id>
 | `--permission-mode MODE` | `permissionMode` | 默认 `bypassPermissions`；本机版本支持 `acceptEdits/auto/bypassPermissions/default/dontAsk/plan` |
 | `--dangerously-bypass-permissions` | `dangerouslyBypassPermissions` | 强制使用 `bypassPermissions`，优先于 `permissionMode` |
 
-当 mode 为 `bypassPermissions` 时，adapter 同时传入 `--dangerously-skip-permissions`。adapter 固定通过 `--disallowedTools` 禁用 AskUserQuestion、EnterPlanMode 和 ExitPlanMode，避免无人值守 Run 进入无法完成的交互流程。
+当 mode 为 `bypassPermissions` 时，adapter 同时传入 `--dangerously-skip-permissions`。adapter 不额外传入 `--disallowedTools`；需要交互的工具是否成功仍取决于当前 surface 是否实现对应交互合同。
 
 ## 实际命令形态
 
@@ -107,9 +107,6 @@ claude --print \
   [--effort <level>] \
   --permission-mode <mode> \
   [--dangerously-skip-permissions] \
-  --disallowedTools AskUserQuestion \
-  --disallowedTools EnterPlanMode \
-  --disallowedTools ExitPlanMode \
   -
 ```
 
