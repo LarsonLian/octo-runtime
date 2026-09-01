@@ -5,7 +5,12 @@ import { readFile, stat } from "node:fs/promises";
 import { AdapterHost } from "@orbtex-ai/orbtex-adapter-host";
 import { spawnAcpClient } from "@orbtex-ai/orbtex-acp-client";
 import { createCodeBuddyAdapter, normalizeCodeBuddyUpdate } from "@orbtex-ai/orbtex-adapter-codebuddy";
-import { normalizeCodexEvent, createCodexInvocationHome } from "@orbtex-ai/orbtex-adapter-codex";
+import {
+  buildCodexCommand,
+  createCodexAdapter,
+  createCodexInvocationHome,
+  normalizeCodexEvent
+} from "@orbtex-ai/orbtex-adapter-codex";
 import { buildClaudeCommand, normalizeClaudeEvent } from "@orbtex-ai/orbtex-adapter-claude-code";
 import { buildOpenCodeCommand, normalizeOpenCodeEvent } from "@orbtex-ai/orbtex-adapter-opencode";
 import {
@@ -18,9 +23,24 @@ import {
 const request = { invocationId: "inv-1", sessionId: "session-1", runId: "run-1", prompt: "work", workdir: process.cwd(), context: {}, appendInstructions: "CONTROL", agentConfig: {} };
 
 test("Codex native events map to session/message/usage/terminal", () => {
-  assert.equal(normalizeCodexEvent({ type: "thread.started", thread_id: "thread-1" })[0].type, "session.update");
-  assert.equal(normalizeCodexEvent({ type: "item.completed", item: { type: "agent_message", text: "ok" } })[0].type, "message.delta");
-  assert.deepEqual(normalizeCodexEvent({ type: "turn.completed", usage: { input_tokens: 1 } }).map(x => x.type), ["usage.update", "message.update", "run.finished"]);
+  assert.equal(normalizeCodexEvent({ method: "thread/started", params: { thread: { id: "thread-1" } } })[0].type, "session.update");
+  assert.equal(normalizeCodexEvent({ method: "item/agentMessage/delta", params: { itemId: "message-1", delta: "ok" } })[0].type, "message.delta");
+  assert.equal(normalizeCodexEvent({
+    method: "thread/tokenUsage/updated",
+    params: { tokenUsage: { last: { inputTokens: 1 }, total: { inputTokens: 2 } } }
+  })[0].type, "usage.update");
+  assert.deepEqual(
+    normalizeCodexEvent({ method: "turn/completed", params: { turn: { status: "completed" } } }).map(x => x.type),
+    ["run.finished"]
+  );
+});
+
+test("Codex command starts app-server over stdio", async () => {
+  const command = await buildCodexCommand(request);
+  assert.deepEqual(command.args, ["app-server", "--listen", "stdio://"]);
+  assert.equal(command.cwd, request.workdir);
+  assert.equal(typeof command.env.CODEX_HOME, "string");
+  await command.cleanup();
 });
 
 test("Claude native events map to session/message/terminal", () => {
@@ -141,6 +161,66 @@ test("CodeBuddy ACP subprocess completes the canonical contract", async () => {
   for await (const event of host.invoke("codebuddy", request)) events.push(event);
   assert.deepEqual(events.map(x => x.type), ["session.update", "message.create", "message.delta", "tool_call.create", "tool_call.update", "usage.update", "message.update", "run.finished"]);
   assert.equal(normalizeCodeBuddyUpdate({ type: "usage", usage: { inputTokens: 1 } })[0].type, "usage.update");
+});
+
+test("Codex app-server subprocess completes the canonical contract", async () => {
+  const fixture = fileURLToPath(new URL("../fixtures/fake-codex-app-server.mjs", import.meta.url));
+  const adapter = createCodexAdapter({ command: process.execPath, appServerArgs: [fixture] });
+  const host = new AdapterHost(); host.register(adapter);
+  const events = [];
+  for await (const event of host.invoke("codex", request)) events.push(event);
+  assert.deepEqual(events.map(event => event.type), [
+    "session.update", "message.create", "message.delta", "message.update",
+    "tool_call.create", "tool_call.delta", "tool_call.update", "usage.update", "run.finished"
+  ]);
+  assert.equal(events.find(event => event.type === "session.update").payload.providerSession.sessionId, "thread-app-server-1");
+  assert.equal(events.find(event => event.type === "tool_call.create").payload.name, "exec_command");
+  assert.equal(events.find(event => event.type === "usage.update").payload.inputTokens, 3);
+});
+
+test("Codex app-server falls back to a fresh thread when resume fails", async () => {
+  const fixture = fileURLToPath(new URL("../fixtures/fake-codex-app-server.mjs", import.meta.url));
+  const adapter = createCodexAdapter({ command: process.execPath, appServerArgs: [fixture] });
+  const host = new AdapterHost(); host.register(adapter);
+  const events = [];
+  for await (const event of host.invoke("codex", {
+    ...request,
+    invocationId: "inv-codex-resume",
+    providerSession: { sessionId: "missing-thread" }
+  })) events.push(event);
+  const session = events.find(event => event.type === "session.update").payload.providerSession;
+  assert.equal(session.sessionId, "thread-app-server-1");
+  assert.equal(session.resumeOutcome, "fresh_fallback");
+  assert.equal(session.resumeFallback, "resume_rejected");
+  assert.equal(events.at(-1).type, "run.finished");
+});
+
+test("Codex app-server maps disabled thinking to low effort", async () => {
+  const fixture = fileURLToPath(new URL("../fixtures/fake-codex-app-server.mjs", import.meta.url));
+  const adapter = createCodexAdapter({ command: process.execPath, appServerArgs: [fixture] });
+  const host = new AdapterHost(); host.register(adapter);
+  const events = [];
+  for await (const event of host.invoke("codex", {
+    ...request,
+    invocationId: "inv-codex-low-effort",
+    prompt: "EXPECT_LOW_EFFORT",
+    agentConfig: { thinking: "disabled" }
+  })) events.push(event);
+  assert.equal(events.at(-1).type, "run.finished");
+});
+
+test("Codex app-server follows host cancellation", async () => {
+  const fixture = fileURLToPath(new URL("../fixtures/fake-codex-app-server.mjs", import.meta.url));
+  const adapter = createCodexAdapter({ command: process.execPath, appServerArgs: [fixture] });
+  const host = new AdapterHost(); host.register(adapter);
+  const invocation = { ...request, invocationId: "inv-codex-cancel", prompt: "WAIT_FOR_CANCEL" };
+  const events = [];
+  for await (const event of host.invoke("codex", invocation)) {
+    events.push(event);
+    if (event.type === "message.delta") assert.equal(host.cancel(invocation.invocationId, "test_cancel"), true);
+  }
+  assert.equal(events.at(-1).type, "run.stopped");
+  assert.equal(events.filter(event => event.type.startsWith("run.")).length, 1);
 });
 
 test("OpenClaw local subprocess completes the canonical contract", async () => {

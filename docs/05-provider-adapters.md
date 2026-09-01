@@ -4,7 +4,7 @@
 
 | Adapter | Native transport | Resume | Fork capability | Default permission |
 |---|---|---|---|---|
-| [`codex`](../packages/orbtex-adapter-codex/README.md) | `codex exec --json` JSONL | `exec resume <thread>` | not exposed | workspace-write sandbox |
+| [`codex`](../packages/orbtex-adapter-codex/README.md) | app-server JSON-RPC 2.0 stdio | `thread/resume`，失败 fresh fallback | not exposed | workspace-write sandbox |
 | [`claude-code`](../packages/orbtex-adapter-claude-code/README.md) | `claude --print --output-format stream-json` | `--resume <uuid>` | not exposed | `bypassPermissions` + external isolation required |
 | [`codebuddy`](../packages/orbtex-adapter-codebuddy/README.md) | ACP JSON-RPC stdio | `session/load` | not declared | `acceptEdits` + deny fallback |
 | [`opencode`](../packages/orbtex-adapter-opencode/README.md) | `opencode run --format json` | `--session <id>` | not exposed | provider asks unless `autoApprove` |

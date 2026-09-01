@@ -327,7 +327,7 @@ flowchart LR
 
 | Adapter | 用户 prompt | Harness instructions | Session 恢复 |
 |---|---|---|---|
-| Codex | stdin，`codex exec ... -` | 临时 `CODEX_HOME/config.toml` 的 `developer_instructions` | `codex exec resume <thread>` |
+| Codex | app-server `turn/start.input` | 临时 `CODEX_HOME/config.toml` + thread `developerInstructions` | app-server `thread/resume` |
 | Claude Code | stdin | 临时文件 + `--append-system-prompt-file` | `--resume <session>` |
 | CodeBuddy | ACP `session/prompt` text | 当前实现与 prompt 拼接后一起发送 | ACP `session/load` |
 | OpenCode | CLI positional prompt | 临时 instructions 文件写入 `OPENCODE_CONFIG_CONTENT` | `--session <id>` |

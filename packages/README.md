@@ -27,7 +27,7 @@
 
 | Adapter | 节点上的执行形态 | Provider transport | 模型通常在哪里 | Session 恢复 | Gateway |
 |---|---|---|---|---|---|
-| [`codex`](orbtex-adapter-codex/README.md) | `codex exec` 子进程 | stdin + JSONL stdout | Codex 配置的远程/本地 provider | thread ID + `exec resume` | 不需要 |
+| [`codex`](orbtex-adapter-codex/README.md) | `codex app-server` 子进程 | JSON-RPC 2.0 stdin/stdout | Codex 配置的远程/本地 provider | thread ID + `thread/resume` | 不需要 |
 | [`claude-code`](orbtex-adapter-claude-code/README.md) | `claude --print` 子进程 | stdin + stream-json stdout | Anthropic/配置的云 provider | UUID + `--resume` | 不需要 |
 | [`codebuddy`](orbtex-adapter-codebuddy/README.md) | `codebuddy --acp` 子进程 | ACP JSON-RPC stdio | CodeBuddy 配置的云 provider | `session/load` | 不需要 |
 | [`opencode`](orbtex-adapter-opencode/README.md) | `opencode run` 子进程 | argv + JSON events stdout | OpenCode 配置的 provider | `--session` | 不需要 |
