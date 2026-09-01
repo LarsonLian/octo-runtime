@@ -234,7 +234,7 @@ Pending 必须先登记再写 stdin，避免本地测试 server 极快回包时�
 | `execCommandApproval` | `{ decision: "accept" }` | 兼容旧方法名 |
 | `item/fileChange/requestApproval` | `{ decision: "accept" }` | 接受文件修改 |
 | `applyPatchApproval` | `{ decision: "accept" }` | 兼容旧方法名 |
-| `mcpServer/elicitation/request` | `{ action: "accept", content: null }` | 仅协议确认，不提供用户内容 |
+| `mcpServer/elicitation/request` | `{ action: "accept", content: null, _meta: null }` | 仅协议确认，不提供用户内容 |
 | 未知方法 | JSON-RPC error `-32601` | 明确拒绝，避免服务端挂起 |
 
 这里的 accept 不等于无限权限，也不构成独立安全边界。真实 capability surface 同时取决于 Codex 文件 sandbox、OS 用户/容器、网络策略、外部服务权限、继承环境和可用凭证。当前没有把 approval 转发给 Orbtex UI，因此不能把它描述成“人工审批”。
@@ -321,23 +321,81 @@ symlink 是 live alias，不是只读快照。目录 symlink 下的文件写入�
 
 `normalizeCodexEvent()` 是无跨帧状态的纯函数。生命周期控制由 client 和 host 完成。
 
-| Codex notification/item | CanonicalEvent | 处理要点 |
+本节的“Codex 协议”以本机 `codex-cli 0.151.0` 生成的 experimental app-server JSON Schema 为准：
+
+```bash
+codex app-server generate-json-schema --experimental --out <schema-dir>
+```
+
+Orbtex 目标协议以 [`@orbtex-ai/orbtex-protocol`](../orbtex-protocol/src/index.ts) 的 `CANONICAL_EVENT_TYPES` 为准。这里必须区分四种结果：**转换成 event**、**仅在 adapter 内部消费**、**返回 JSON-RPC response 但不产 event**、**明确忽略**。
+
+### 协议覆盖快照
+
+| 协议方向 | Codex 0.151.0 schema | 当前 adapter 行为 | 是否产生 Orbtex event |
+|---|---:|---|---|
+| Client request：Orbtex -> Codex | 154 种 | 只发送 `initialize`、`thread/start`、`thread/resume`、`turn/start`、`turn/interrupt` 5 种；其余 149 种不发送 | thread/turn response 只推进内部状态；turn 启动成功后由 runner 生成 `session.update` |
+| Client notification：Orbtex -> Codex | 1 种 | 发送 `initialized` | 否 |
+| Server request：Codex -> Orbtex | 11 种 | 5 种有明确 response，6 种返回 `-32601` | 否；当前没有 approval/user-input canonical event |
+| Server notification：Codex -> Orbtex | 79 种 | 识别 12 个 method；其余 67 个 method 忽略 | 识别项映射到 session/message/tool/usage/run |
+| `ThreadItem` union | 19 种 item | 12 种转换，7 种忽略 | 转换项映射到 message 或 tool lifecycle |
+| Orbtex `CanonicalEvent` | 16 种 event | 本 adapter 可输出 11 种 | 不输出 `surface.*`、`run.queued`、`run.running` |
+
+“不发送”不是收到后丢弃，而是当前 invocation contract 根本不会调用那些 client API；“忽略”表示 frame 已从 stdout 收到，但 parser 有意返回空数组。
+
+表中的“识别 12 个 method”严格只统计 Codex 0.151.0 `ServerNotification` schema 内的名字。此外，代码还识别一个 schema 外的 args-delta 兼容 pattern：`item/functionCall/{argumentsDelta,argsDelta,inputDelta,parametersDelta}`，以及将 `functionCall` 分别替换为 `toolCall`、`mcpToolCall`、`dynamicToolCall` 的组合，共 16 个可能方法名；它们不计入 `12 + 67 = 79` 的 schema 覆盖统计。
+
+### Client request 与 server request 汇总
+
+| Codex 协议 | 方向 | Adapter 处理 | Orbtex event / 结果 |
+|---|---|---|---|
+| `initialize`、`initialized` | Adapter -> Codex | 建立协议能力后进入 thread 阶段 | 无 event |
+| `thread/start`、`thread/resume` | Adapter -> Codex | 提取 opaque thread ID；resume error 可降级 fresh thread | response 先内部消费，`turn/start` 成功后生成 `session.update` |
+| `turn/start` | Adapter -> Codex | 发送 prompt、cwd、model、effort | response 不直接产 event；随后开始消费 notification |
+| `turn/interrupt` | Adapter -> Codex | Host abort 后 best-effort 发送 | client 取消路径独立生成 `run.stopped` |
+| `item/commandExecution/requestApproval`、`item/fileChange/requestApproval` | Codex -> Adapter | 返回 `{ decision: "accept" }` | 无 event |
+| `applyPatchApproval`、`execCommandApproval` | Codex -> Adapter | 兼容旧协议，同样返回 accept | 无 event |
+| `mcpServer/elicitation/request` | Codex -> Adapter | 返回 `{ action: "accept", content: null, _meta: null }` | 无 event，也不代表用户提供了输入 |
+| `item/tool/requestUserInput`、`item/permissions/requestApproval`、`item/tool/call` | Codex -> Adapter | 当前未接 UI/动态工具执行，返回 JSON-RPC `-32601` | 无 event；对应 turn 可能失败 |
+| `account/chatgptAuthTokens/refresh`、`attestation/generate`、`currentTime/read` | Codex -> Adapter | 当前没有宿主实现，返回 JSON-RPC `-32601` | 无 event |
+| 其余 149 个 client request | Adapter -> Codex | 当前 adapter 从不发送 | 不适用；不是 notification ignore |
+
+### 已转换的 server notification
+
+| Codex notification / 条件 | Orbtex `CanonicalEvent` | 关键 payload | 处理要点 |
+|---|---|---|---|
+| `thread/started` | `session.update` | `providerSession.sessionId`、`resumable=true` | runner 已在 turn 启动后生成权威 session update；同 thread ID 的这条 parser 输出会被过滤 |
+| `item/started`，item=`agentMessage` | `message.create` | `role=assistant`、`channel=final`、`status=streaming`、`messageId` | 打开最终回答生命周期 |
+| `item/agentMessage/delta` | `message.delta` | `text`、`channel=final`、`messageId` | 逐段输出最终回答 |
+| `item/completed`，item=`agentMessage` | `message.update` | `status=completed`、`text`、`messageId` | 关闭最终回答生命周期 |
+| `item/started`，item=`reasoning` 或 `plan` | `message.create` | `channel=analysis`、`status=streaming` | 推理与最终回答分频道 |
+| `item/reasoning/summaryTextDelta`、`item/reasoning/textDelta`、`item/plan/delta` | `message.delta` | `text`、`channel=analysis`、`messageId` | 共 3 个 Codex method |
+| `item/completed`，item=`reasoning` 或 `plan` | `message.update` | `status=completed`、`channel=analysis`、汇总文本 | 关闭 analysis lifecycle |
+| `item/started`，item 为受支持工具 | `tool_call.create` | `id`、canonical `name`、结构化 `args` | 受支持 item 见下一表 |
+| `item/commandExecution/outputDelta`、`item/fileChange/outputDelta` | `tool_call.delta` | `id`、`outputDelta` | 流式工具输出 |
+| 兼容 method pattern：`item/functionCall/*Delta`、`item/toolCall/*Delta`、`item/mcpToolCall/*Delta`、`item/dynamicToolCall/*Delta` | `tool_call.delta` | `id`、`argsDelta` | 后缀支持 `argumentsDelta`、`argsDelta`、`inputDelta`、`parametersDelta`；0.151.0 schema 未枚举，代码为旧版/后续版本保留 |
+| `item/completed`，item 为受支持工具 | `tool_call.update` | `id`、`status`、`output`、可选 `exitCode` | 关闭工具生命周期；`inProgress` 转为 `running` |
+| `thread/tokenUsage/updated` | `usage.update` | last usage 展平，total 放在 `cumulative`，附 context window | 不把累计值误当本轮增量 |
+| `turn/completed`，status=`completed` | `run.finished` | 空 payload | 成功终态；当前代码对其他非 failed/interrupted 值也回退为 finished |
+| `turn/completed`，status=`failed` | `run.error` | `message` | provider 失败终态 |
+| `turn/completed`，status=`interrupted` | `run.stopped` | `reason=interrupted` | provider 中断终态 |
+| `error`，`willRetry=true` | 无 | 无 | Codex 自己重试，adapter 明确忽略，避免提前结束 run |
+| `error`，`willRetry!=true` | `run.error` | `message` | 不可重试错误终态 |
+
+### 转换示例
+
+下表省略 JSON-RPC envelope 中不影响映射的字段，只展示决定转换结果的最小形状。
+
+| 场景 | Codex app-server frame | Orbtex `CanonicalEvent` |
 |---|---|---|
-| `thread/started` | `session.update` | 提取 thread/session ID |
-| `item/started(agentMessage)` | `message.create` | `channel=final`、`status=streaming` |
-| `item/agentMessage/delta` | `message.delta` | 保留 message ID |
-| `item/started(reasoning/plan)` | `message.create` | `channel=analysis` |
-| reasoning/plan delta | `message.delta` | 与最终回答分频道 |
-| message/reasoning/plan completed | `message.update` | 关闭对应 message lifecycle |
-| command/file/MCP/dynamic item started | `tool_call.create` | 统一工具名和结构化 args |
-| tool args/output delta | `tool_call.delta` | 区分 `argsDelta` 与 `outputDelta` |
-| tool item completed | `tool_call.update` | 状态、输出、exitCode |
-| `thread/tokenUsage/updated` | `usage.update` | last 为本次值，total 放在 cumulative |
-| `turn/completed(completed)` | `run.finished` | 成功终态 |
-| `turn/completed(failed)` | `run.error` | provider 失败终态 |
-| `turn/completed(interrupted)` | `run.stopped` | 取消终态 |
-| `error(willRetry=true)` | 无 | Codex 自己会重试，不提前终止 Orbtex run |
-| `error(willRetry!=true)` | `run.error` | 不可重试错误 |
+| 最终回答增量 | `{"method":"item/agentMessage/delta","params":{"itemId":"msg_1","delta":"done"}}` | `{"type":"message.delta","payload":{"text":"done","channel":"final","messageId":"msg_1"}}` |
+| 推理增量 | `{"method":"item/reasoning/textDelta","params":{"itemId":"reason_1","delta":"checking"}}` | `{"type":"message.delta","payload":{"text":"checking","channel":"analysis","messageId":"reason_1"}}` |
+| 命令开始 | `{"method":"item/started","params":{"item":{"type":"commandExecution","id":"tool_1","command":"pwd","cwd":"/repo","status":"inProgress"}}}` | `{"type":"tool_call.create","payload":{"id":"tool_1","name":"exec_command","args":{"command":"pwd","cwd":"/repo"}}}` |
+| 命令输出 | `{"method":"item/commandExecution/outputDelta","params":{"itemId":"tool_1","delta":"/repo\n"}}` | `{"type":"tool_call.delta","payload":{"id":"tool_1","outputDelta":"/repo\n"}}` |
+| 命令完成 | `{"method":"item/completed","params":{"item":{"type":"commandExecution","id":"tool_1","status":"completed","aggregatedOutput":"/repo\n","exitCode":0}}}` | `{"type":"tool_call.update","payload":{"id":"tool_1","status":"completed","output":"/repo\n","exitCode":0}}` |
+| Token usage | `{"method":"thread/tokenUsage/updated","params":{"tokenUsage":{"last":{"inputTokens":12,"outputTokens":4},"total":{"inputTokens":30,"outputTokens":10},"modelContextWindow":200000}}}` | `{"type":"usage.update","payload":{"inputTokens":12,"outputTokens":4,"cumulative":{"inputTokens":30,"outputTokens":10},"modelContextWindow":200000}}` |
+| Turn 成功 | `{"method":"turn/completed","params":{"turn":{"status":"completed"}}}` | `{"type":"run.finished","payload":{}}` |
+| Provider 将重试 | `{"method":"error","params":{"willRetry":true,"error":{"message":"temporary"}}}` | 不输出 event |
+| 未映射警告 | `{"method":"warning","params":{"message":"..."}}` | 不输出 event |
 
 ### 工具名映射
 
@@ -352,6 +410,48 @@ symlink 是 live alias，不是只读快照。目录 symlink 下的文件写入�
 | `imageView` | `view_image` |
 | `imageGeneration` | `image_generation` |
 | `sleep` | `sleep` |
+
+### `ThreadItem` 转换与忽略
+
+| Codex `ThreadItem.type` | Orbtex 映射 |
+|---|---|
+| `agentMessage` | `message.create` / `message.update`，文本 delta 由专用 notification 补充 |
+| `reasoning`、`plan` | analysis channel 的 `message.create` / `message.update` |
+| `commandExecution`、`fileChange`、`mcpToolCall`、`dynamicToolCall`、`collabAgentToolCall`、`webSearch`、`imageView`、`imageGeneration`、`sleep` | `tool_call.create` / `tool_call.update`，工具名按上一表规范化 |
+| `userMessage`、`hookPrompt`、`functionCallOutput` | 忽略；Orbtex 当前不把 provider 回放的用户输入或独立 function output 投影成 assistant event |
+| `subAgentActivity` | 忽略；尚未映射到 `surface.*` 或专门的协作事件 |
+| `enteredReviewMode`、`exitedReviewMode` | 忽略；Orbtex protocol 暂无 review-mode event |
+| `contextCompaction` | 忽略；当前不对外暴露 provider compaction lifecycle |
+| 未知 item type | 忽略；不会伪装成通用工具 |
+
+### 明确忽略的 server notification 汇总
+
+以下 67 个 method 存在于 Codex 0.151.0 experimental schema，但当前 `normalizeCodexEvent()` 会返回空数组。它们按用途分组列出，便于升级 parser 时判断是否需要新增 Orbtex event。
+
+| 类别 | 数量 | 当前忽略的 Codex method | 为什么不转换 |
+|---|---:|---|---|
+| Thread/session 元数据 | 15 | `thread/status/changed`、`thread/archived`、`thread/deleted`、`thread/unarchived`、`thread/closed`、`thread/reverted`、`thread/name/updated`、`thread/goal/updated`、`thread/goal/cleared`、`thread/queue/changed`、`thread/project/updated`、`thread/environment/connected`、`thread/environment/disconnected`、`thread/settings/updated`、`thread/compacted` | 当前 session side channel 只保存 thread ID 和 resume 结果 |
+| Turn、hook 与 review | 9 | `turn/started`、`hook/started`、`hook/completed`、`turn/diff/updated`、`turn/plan/updated`、`item/autoApprovalReview/started`、`item/autoApprovalReview/completed`、`autoApprovalReview/strictReviewRequired`、`turn/moderationMetadata` | Adapter 不输出 `run.running`，也没有 hook/review canonical event；plan 文本只消费 `item/plan/delta` |
+| 独立 command/process API | 3 | `command/exec/outputDelta`、`process/outputDelta`、`process/exited` | 当前 invocation 使用 turn item lifecycle，不调用独立 command/process client API |
+| 工具细粒度进度 | 4 | `item/commandExecution/terminalInteraction`、`item/fileChange/patchUpdated`、`serverRequest/resolved`、`item/mcpToolCall/progress` | 当前只保留通用 create/delta/completed；尚未定义更细 canonical payload |
+| MCP、账户、App、远控 | 7 | `mcpServer/oauthLogin/completed`、`mcpServer/startupStatus/updated`、`mcpServer/event/stream/notification`、`account/updated`、`account/rateLimits/updated`、`app/list/updated`、`remoteControl/status/changed` | 属于运行环境/控制面，不属于单 turn 业务事件；其中 startup status 和 remote status 已在 initialize 中请求 opt-out |
+| Workspace 与导入状态 | 5 | `skills/changed`、`project/changed`、`externalAgentConfig/import/progress`、`externalAgentConfig/import/completed`、`fs/changed` | 当前 adapter 不承载 workspace 管理 UI |
+| 推理辅助、模型与警告 | 8 | `item/reasoning/summaryPartAdded`、`model/rerouted`、`model/verification`、`model/safetyBuffering/updated`、`warning`、`guardianWarning`、`deprecationNotice`、`configWarning` | Orbtex 尚无 model reroute/warning event；推理文本仍由 text delta 映射 |
+| Fuzzy file search | 2 | `fuzzyFileSearch/sessionUpdated`、`fuzzyFileSearch/sessionCompleted` | 当前不调用该 client API |
+| Realtime/audio | 11 | `thread/realtime/started`、`thread/realtime/itemAdded`、`thread/realtime/item/started`、`thread/realtime/item/transcript/delta`、`thread/realtime/item/completed`、`thread/realtime/transcript/delta`、`thread/realtime/transcript/done`、`thread/realtime/outputAudio/delta`、`thread/realtime/sdp`、`thread/realtime/error`、`thread/realtime/closed` | Orbtex InvokeRequest 和 CanonicalEvent 尚未定义实时音频协议 |
+| 平台状态 | 3 | `windows/worldWritableWarning`、`windowsSandbox/setupCompleted`、`account/login/completed` | 属于安装、登录或平台诊断，不进入单 turn event stream |
+
+### 从 Orbtex event 反查 Codex 来源
+
+| Orbtex event | 当前 Codex adapter 是否输出 | Codex 来源或说明 |
+|---|---|---|
+| `session.update` | 是 | thread RPC result；重复 `thread/started` 映射由 runner 过滤 |
+| `usage.update` | 是 | `thread/tokenUsage/updated` |
+| `message.create`、`message.delta`、`message.update` | 是 | agentMessage、reasoning、plan item lifecycle 和 delta |
+| `tool_call.create`、`tool_call.delta`、`tool_call.update` | 是 | 受支持工具 item lifecycle、args/output delta |
+| `surface.create`、`surface.delta`、`surface.update` | 否 | 当前未把 sub-agent、review、diff 或 realtime 投影为 Surface |
+| `run.queued`、`run.running` | 否 | 由 Core/Host 业务生命周期负责；adapter 不转换 `turn/started` |
+| `run.finished`、`run.error`、`run.stopped` | 是 | `turn/completed`、不可重试 `error`、AbortSignal/进程异常 |
 
 未知 item 不会被伪装成工具事件。未知 notification 默认忽略，以便非关键协议扩展保持前向兼容。这里的“关键”指会影响 session 身份、message/tool lifecycle、usage 记账或 run 终态的 frame；新增这类 item 时必须同步补 parser fixture 和 canonical contract 测试。
 
