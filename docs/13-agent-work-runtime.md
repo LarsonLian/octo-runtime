@@ -56,6 +56,9 @@ pnpm cli status
 ```
 
 `status.agentWork` 返回 `enabled/connected/runtimeId/activeRuns/lastAckedCommandSeq`。
+每次 WSS 重连时，daemon 还会在 `runtime.hello` 上报 `active_run_ids`。Agent Work
+据此终结已经 ACK、但不再由重启后 daemon 持有的悬挂 Run；省略该字段的旧 runtime
+不会触发所有权对账。
 token 只允许通过环境变量注入，不写入 manifest、Agent revision、workdir 或 event payload。
 
 ## 当前实验边界

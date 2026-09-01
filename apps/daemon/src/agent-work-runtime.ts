@@ -159,6 +159,7 @@ export class AgentWorkRuntime {
     this.#socket = socket;
     this.#send("runtime.hello", {
       last_acked_command_seq: this.#lastAckedCommandSeq,
+      active_run_ids: [...this.#activeRuns.keys()],
       runtime_version: "0.1.0"
     });
   }
