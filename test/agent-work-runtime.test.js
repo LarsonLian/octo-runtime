@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  accumulateFinalText,
   mapExecutionEnvelope,
   mapRuntimeEvent,
   renderImmutableExecutionInputPrompt
@@ -61,4 +62,27 @@ test("runtime terminal mapping carries the assembled final answer", () => {
     payload: { text: "done" }
   });
   assert.equal(mapRuntimeEvent({ type: "run.stopped", payload: { reason: "cancelled" } }, "").type, "run.cancelled");
+});
+
+test("final answer accumulator replaces snapshots and appends deltas", () => {
+  let text = accumulateFinalText("", {
+    type: "message.delta",
+    payload: { channel: "final", text: "part" }
+  });
+  text = accumulateFinalText(text, {
+    type: "message.update",
+    payload: { channel: "final", text: "complete answer", replace: true }
+  });
+  text = accumulateFinalText(text, {
+    type: "message.delta",
+    payload: { channel: "analysis", text: "private reasoning" }
+  });
+  assert.equal(text, "complete answer");
+});
+
+test("terminal mapping uses provider terminal text when no message frame carried final text", () => {
+  assert.deepEqual(mapRuntimeEvent({ type: "run.finished", payload: { text: "provider answer" } }, ""), {
+    type: "run.completed",
+    payload: { text: "provider answer" }
+  });
 });

@@ -294,9 +294,7 @@ export class AgentWorkRuntime {
       await this.#sendRunEvent(command, seq++, "run.started", {});
       for await (const event of this.#host.invoke(adapterType, request)) {
         if (event.type === "run.running" || event.type === "run.queued") continue;
-        if (event.type === "message.delta" && (event.payload.channel ?? "final") === "final" && event.payload.text) {
-          finalText += event.payload.text;
-        }
+        finalText = accumulateFinalText(finalText, event);
         const mapped = mapRuntimeEvent(event, finalText);
         await this.#sendRunEvent(command, seq++, mapped.type, mapped.payload);
       }
@@ -364,6 +362,14 @@ export class AgentWorkRuntime {
     for (const pending of this.#eventAcks.values()) pending.reject(error);
     this.#eventAcks.clear();
   }
+}
+
+export function accumulateFinalText(current: string, event: CanonicalEvent): string {
+  if (!event.type.startsWith("message.") || (event.payload.channel ?? "final") !== "final") return current;
+  const text = stringValue(event.payload.text);
+  if (!text) return current;
+  if (event.type === "message.delta") return current + text;
+  return text;
 }
 
 export function mapExecutionEnvelope(envelope: ExecutionEnvelope): { adapterType: string; request: InvokeRequest } {
@@ -437,13 +443,14 @@ function rawDataText(data: WebSocket.RawData): string {
 }
 
 export function mapRuntimeEvent(event: CanonicalEvent, finalText: string): { type: string; payload: Record<string, unknown> } {
+	const terminalText = finalText || stringValue(event.payload.text) || "";
   switch (event.type) {
     case "run.finished":
-      return { type: "run.completed", payload: { ...event.payload, text: finalText } };
+      return { type: "run.completed", payload: { ...event.payload, text: terminalText } };
     case "run.error":
-      return { type: "run.failed", payload: { code: "PROVIDER_ERROR", ...event.payload, text: finalText } };
+      return { type: "run.failed", payload: { code: "PROVIDER_ERROR", ...event.payload, text: terminalText } };
     case "run.stopped":
-      return { type: "run.cancelled", payload: { ...event.payload, text: finalText } };
+      return { type: "run.cancelled", payload: { ...event.payload, text: terminalText } };
     default:
       return { type: event.type, payload: event.payload };
   }
