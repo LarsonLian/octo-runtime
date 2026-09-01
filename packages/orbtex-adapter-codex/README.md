@@ -195,7 +195,7 @@ resume RPC 抛错时会降级 fresh thread。若 resume response 成功却不含
 
 Orbtex 的 `thinking: disabled` 不能直接传给 Codex app-server，因此兼容映射为最低有效等级 `low`。其他值按原值传递。
 
-`summary` 默认显式传 `auto`，因为只设置 `effort` 不能保证 app-server 返回可流式展示的 reasoning summary。可通过 `agentConfig.providerOptions.reasoningSummary` 设置 `auto | concise | detailed | none`；当 `thinking: disabled` 且没有显式配置时，adapter 使用 `summary: none`。
+`summary` 默认显式传 `auto`，因为只设置 `effort` 不能保证 app-server 返回可供 canonical ledger 采集的 reasoning summary。可通过 `agentConfig.providerOptions.reasoningSummary` 设置 `auto | concise | detailed | none`；当 `thinking: disabled` 且没有显式配置时，adapter 使用 `summary: none`。这个字段只控制 provider 采集偏好/上限，不授予任何 audience 可见权限；产品侧是否展示以及展示多少仍由 agent-work 的 Presentation policy 决定。
 
 ### Phase 4：stream
 
@@ -224,6 +224,8 @@ run.finished
 | `run.finished/run.error/run.stopped` | run 的唯一终态；下游 accumulator/projector 收口仍未关闭的 item |
 
 同一次 run 中可以出现多个 `messageId`。内部消费端不能把所有 final 消息当成一个可覆盖字符串；真实复杂任务可以出现“阶段文本 -> tool -> analysis -> 阶段文本 -> tool -> 最终总结”。Adapter 只保证 provider 事件归一和保序，不决定 Buddy/IM 可见性。产品客户端应消费 agent-work 按 audience、surface capability 与 frozen policy 生成的 ExperienceEvent；IM gateway 只执行完整 DeliveryIntent，不拼 canonical delta。
+
+目标 Experience 协议要求每个 item 有稳定 ID。当前 adapter 在 provider 缺少 ID 时仍可能输出可选 `messageId`，尚未实现 invocation + provider item ordinal 的跨帧兜底；因此本节只是 canonical 事件消费约定，不代表 Presentation replay 前置条件已经全部满足。
 
 ## JSON-RPC client 设计
 
@@ -527,7 +529,7 @@ RPC timeout 不是整轮 run timeout：若 app-server 保持连接、`turn/start
 | `--dangerously-bypass-permissions` | `dangerouslyBypassPermissions` | 强制 thread sandbox 为 `danger-full-access` | `false` |
 | provider option | `providerOptions.appServerRequestTimeoutMs` | client request timeout | `30000` |
 
-需要更详细的可见 reasoning summary 时，可以这样配置：
+需要让 provider 产生更详细、可供 canonical ledger 采集的 reasoning summary 时，可以这样配置：
 
 ```json
 {
@@ -538,7 +540,7 @@ RPC timeout 不是整轮 run timeout：若 app-server 保持连接、`turn/start
 }
 ```
 
-设置 `reasoningSummary: none` 会关闭 analysis summary 流，但不会关闭工具事件或 final 文本流。
+设置 `reasoningSummary: none` 会关闭 analysis summary 采集流，但不会关闭工具事件或 final 文本流。`detailed` 也不代表 Buddy 或 IM 一定可见，最终输出仍受 tenant、AgentRevision、route、viewer 与 surface policy 的交集限制。
 
 支持的 sandbox：
 
