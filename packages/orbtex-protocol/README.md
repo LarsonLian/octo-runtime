@@ -46,6 +46,16 @@ const stored = envelope({ id: "run-1", sessionId: "session-1" }, 1, event);
 console.log(stored.seq, isTerminal(event));
 ```
 
+### Tool call 原始输入
+
+工具输入属于 canonical protocol 的正式合同，不是 UI 推导字段：
+
+- 非分片 provider 在 `tool_call.create.payload.args` 中发送完整结构化输入；命令工具的原始指令位于 `args.command`。
+- 分片 provider 可以先用空 `args` 创建工具，再按同一 `id` 发送多个 `tool_call.delta.payload.argsDelta`。consumer 必须按事件顺序拼接全部 JSON 字符串，完整后只解析一次。
+- `tool_call.update` 只关闭 lifecycle 并携带最终 `status/output/error`，不能用 output 反推或覆盖输入。
+
+canonical event ledger 保存原始输入用于执行追踪；向产品 surface 投影前必须在服务端完成授权过滤与敏感字段脱敏。
+
 事件生命周期和 JSON-RPC 映射见 [Architecture](../../docs/01-architecture.md) 与 [Transport And Multi-node](../../docs/09-transport-and-multinode.md)。
 
 ## 协议真值：JSON Schema + Codegen
@@ -56,7 +66,7 @@ console.log(stored.seq, isTerminal(event));
 schema/protocol.schema.json → scripts/gen-types.mjs → src/generated/protocol-types.ts → src/index.ts 组合
 ```
 
-- **schema 覆盖**：`ProviderSession`、`AgentConfig`、`CanonicalEventPayload`、`RunIdentity`、`InvokeRequestWire`、`MessageChannel` 等可 JSON 序列化的结构体。
+- **schema 覆盖**：`ProviderSession`、`AgentConfig`、`CanonicalEventPayload`、`ToolCallCreatePayload`、`ToolCallDeltaPayload`、`ToolCallUpdatePayload`、`RunIdentity`、`InvokeRequestWire`、`MessageChannel` 等可 JSON 序列化的结构体。
 - **仍手写**（不是纯数据，codegen 无法表达）：`CANONICAL_EVENT_TYPES` 等运行时枚举常量、泛型 `CanonicalEvent<TType>`、以及带 `AbortSignal` 的 `InvokeRequest`（= 生成的 `InvokeRequestWire` 交叉 `signal`）。
 - **公共导出面不变**：所有类型名与运行时函数保持原样，消费方无需改动。
 

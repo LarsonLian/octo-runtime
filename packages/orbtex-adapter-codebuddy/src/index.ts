@@ -21,8 +21,22 @@ export function normalizeCodeBuddyUpdate(update: CodeBuddyUpdate): CanonicalEven
     const text = isRecord(update.content) && typeof update.content.text === "string" ? update.content.text : update.text;
     return typeof text === "string" ? [{ type: "message.delta", payload: { text, channel: type === "agent_thought_chunk" ? "analysis" : "final" } }] : [];
   }
-  if (type === "tool_call") return [{ type: "tool_call.create", payload: { id: update.toolCallId, name: update.name ?? update.title ?? "provider_tool", args: update.rawInput ?? update.input ?? {} } }];
-  if (type === "tool_call_update") return [{ type: "tool_call.update", payload: { id: update.toolCallId, status: update.status, output: update.content ?? update.output } }];
+  if (type === "tool_call") {
+    if (!update.toolCallId) return [];
+    const value = update.rawInput ?? update.input;
+    const args = isRecord(value) ? value : value == null ? {} : { value };
+    return [{
+      type: "tool_call.create",
+      payload: { id: update.toolCallId, name: update.name ?? update.title ?? "provider_tool", args }
+    }];
+  }
+  if (type === "tool_call_update") {
+    if (!update.toolCallId || !update.status) return [];
+    return [{
+      type: "tool_call.update",
+      payload: { id: update.toolCallId, status: update.status, output: update.content ?? update.output }
+    }];
+  }
   if (type === "usage") return [{ type: "usage.update", payload: { ...update.usage, model: update.model } }];
   return [];
 }

@@ -126,6 +126,81 @@ export interface CanonicalEventPayload {
   [k: string]: unknown;
 }
 /**
+ * tool_call.create 的正式 payload。args 保留工具原始结构化输入；exec_command/Bash 的原始命令位于 args.command。
+ *
+ * This interface was referenced by `OrbtexProtocolSchema`'s JSON-Schema
+ * via the `definition` "ToolCallCreatePayload".
+ */
+export interface ToolCallCreatePayload {
+  /**
+   * 一次工具调用的稳定 ID，后续 delta/update 必须复用。
+   */
+  id: string;
+  /**
+   * 跨 provider 归一化的工具名。
+   */
+  name: string;
+  /**
+   * 工具调用开始时已知的原始结构化输入。流式 provider 可以先发送空对象，再通过 argsDelta 补齐。
+   */
+  args: Record<string, unknown>;
+  /**
+   * 可选的初始工具状态。
+   */
+  status?: string;
+  [k: string]: unknown;
+}
+/**
+ * tool_call.delta 的正式 payload。argsDelta 是同一 tool ID 的原始 JSON 参数分片，必须按事件顺序拼接后再解析。
+ *
+ * This interface was referenced by `OrbtexProtocolSchema`'s JSON-Schema
+ * via the `definition` "ToolCallDeltaPayload".
+ */
+export interface ToolCallDeltaPayload {
+  /**
+   * 对应 tool_call.create 的稳定 ID。
+   */
+  id: string;
+  /**
+   * 原始 JSON 参数字符串分片；不得逐片 JSON.parse。
+   */
+  argsDelta?: string;
+  /**
+   * 工具输出文本分片。
+   */
+  outputDelta?: string;
+  [k: string]: unknown;
+}
+/**
+ * tool_call.update 的正式 payload，关闭对应工具生命周期并携带最终结果。
+ *
+ * This interface was referenced by `OrbtexProtocolSchema`'s JSON-Schema
+ * via the `definition` "ToolCallUpdatePayload".
+ */
+export interface ToolCallUpdatePayload {
+  /**
+   * 对应 tool_call.create 的稳定 ID。
+   */
+  id: string;
+  /**
+   * 工具终态，如 completed、error、failed 或 cancelled。
+   */
+  status: string;
+  /**
+   * 工具最终输出；可以是文本或结构化 JSON。
+   */
+  output?: unknown;
+  /**
+   * 结构化错误详情。
+   */
+  error?: Record<string, unknown>;
+  /**
+   * 命令类工具的进程退出码。
+   */
+  exitCode?: number;
+  [k: string]: unknown;
+}
+/**
  * envelope 只需要 Run 的稳定标识，不要求传入完整领域对象。
  *
  * This interface was referenced by `OrbtexProtocolSchema`'s JSON-Schema

@@ -127,7 +127,7 @@ export class ClaudeEventNormalizer {
         if (block.type === "thinking" && block.thinking) {
           events.push({ type: "message.delta", payload: { text: block.thinking, channel: "analysis" } });
         }
-        if (block.type === "tool_use") {
+        if (block.type === "tool_use" && block.id && block.name) {
           events.push({
             type: "tool_call.create",
             payload: { id: block.id, name: block.name, args: block.input ?? {} }
@@ -190,7 +190,7 @@ export class ClaudeEventNormalizer {
 
     if (event.type === "content_block_start") {
       const block = event.content_block;
-      if (block?.type !== "tool_use" || typeof event.index !== "number" || !block.id) return [];
+      if (block?.type !== "tool_use" || typeof event.index !== "number" || !block.id || !block.name) return [];
       let blocks = this.#toolBlocks.get(scope);
       if (!blocks) {
         blocks = new Map();

@@ -76,6 +76,55 @@
         "message": { "description": "面向人类的说明信息。", "type": "string" }
       }
     },
+    "ToolCallCreatePayload": {
+      "title": "ToolCallCreatePayload",
+      "description": "tool_call.create 的正式 payload。args 保留工具原始结构化输入；exec_command/Bash 的原始命令位于 args.command。",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "name", "args"],
+      "properties": {
+        "id": { "description": "一次工具调用的稳定 ID，后续 delta/update 必须复用。", "type": "string" },
+        "name": { "description": "跨 provider 归一化的工具名。", "type": "string" },
+        "args": {
+          "description": "工具调用开始时已知的原始结构化输入。流式 provider 可以先发送空对象，再通过 argsDelta 补齐。",
+          "type": "object",
+          "additionalProperties": true,
+          "tsType": "Record<string, unknown>"
+        },
+        "status": { "description": "可选的初始工具状态。", "type": "string" }
+      }
+    },
+    "ToolCallDeltaPayload": {
+      "title": "ToolCallDeltaPayload",
+      "description": "tool_call.delta 的正式 payload。argsDelta 是同一 tool ID 的原始 JSON 参数分片，必须按事件顺序拼接后再解析。",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id"],
+      "properties": {
+        "id": { "description": "对应 tool_call.create 的稳定 ID。", "type": "string" },
+        "argsDelta": { "description": "原始 JSON 参数字符串分片；不得逐片 JSON.parse。", "type": "string" },
+        "outputDelta": { "description": "工具输出文本分片。", "type": "string" }
+      }
+    },
+    "ToolCallUpdatePayload": {
+      "title": "ToolCallUpdatePayload",
+      "description": "tool_call.update 的正式 payload，关闭对应工具生命周期并携带最终结果。",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "status"],
+      "properties": {
+        "id": { "description": "对应 tool_call.create 的稳定 ID。", "type": "string" },
+        "status": { "description": "工具终态，如 completed、error、failed 或 cancelled。", "type": "string" },
+        "output": { "description": "工具最终输出；可以是文本或结构化 JSON。", "tsType": "unknown" },
+        "error": {
+          "description": "结构化错误详情。",
+          "type": "object",
+          "additionalProperties": true,
+          "tsType": "Record<string, unknown>"
+        },
+        "exitCode": { "description": "命令类工具的进程退出码。", "type": "integer" }
+      }
+    },
     "RunIdentity": {
       "title": "RunIdentity",
       "description": "envelope 只需要 Run 的稳定标识，不要求传入完整领域对象。",

@@ -53,12 +53,22 @@ export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEv
   }
   const part: OpenCodePart = native.part ?? native;
   const toolState = part.state;
+  const toolId = part.callID ?? part.id;
   if ((native.type === "text" || part.type === "text") && typeof part.text === "string") events.push({ type: "message.delta", payload: { text: part.text } });
-  if (part.type === "tool" && part.state?.status === "running") events.push({ type: "tool_call.create", payload: { id: part.callID ?? part.id, name: part.tool, args: part.state.input ?? {} } });
-  if (part.type === "tool" && toolState?.status && ["completed", "error"].includes(toolState.status)) events.push({ type: "tool_call.update", payload: { id: part.callID ?? part.id, status: toolState.status, output: toolState.output ?? toolState.error } });
+  if (part.type === "tool" && toolState?.status === "running" && toolId && part.tool) {
+    const args = isRecord(toolState.input) ? toolState.input : toolState.input == null ? {} : { value: toolState.input };
+    events.push({ type: "tool_call.create", payload: { id: toolId, name: part.tool, args } });
+  }
+  if (part.type === "tool" && toolId && toolState?.status && ["completed", "error"].includes(toolState.status)) {
+    events.push({ type: "tool_call.update", payload: { id: toolId, status: toolState.status, output: toolState.output ?? toolState.error } });
+  }
   if (native.type === "step_finish" || part.type === "step-finish") events.push({ type: "usage.update", payload: { ...(part.tokens ?? native.usage ?? {}), cost: part.cost } });
   if (native.type === "error") events.push({ type: "run.error", payload: { message: native.error?.data?.message ?? native.error?.message ?? "OpenCode failed", providerError: native.error } });
   return events;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 export function createOpenCodeAdapter({ command = "opencode" }: { command?: string } = {}) {

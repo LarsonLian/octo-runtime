@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type {
   CanonicalEventPayload,
-  InvokeRequestWire
+  InvokeRequestWire,
+  ToolCallCreatePayload,
+  ToolCallDeltaPayload,
+  ToolCallUpdatePayload
 } from "./generated/protocol-types.js";
 
 // 数据形状类型由 schema/protocol.schema.json 生成，见 ./generated/protocol-types.ts。
@@ -11,6 +14,9 @@ export type {
   ProviderSession,
   AgentConfig,
   CanonicalEventPayload,
+  ToolCallCreatePayload,
+  ToolCallDeltaPayload,
+  ToolCallUpdatePayload,
   RunIdentity,
   InvokeRequestWire
 } from "./generated/protocol-types.js";
@@ -43,11 +49,17 @@ export const CANONICAL_EVENT_TYPES = [
 /** 所有 provider 的原生事件最终只允许落到这组类型，Core 因此不感知底层 CLI。 */
 export type CanonicalEventType = (typeof CANONICAL_EVENT_TYPES)[number];
 
-/** Adapter 向 Host 输出的最小事件单元；持久化前还没有 seq、runId 和时间戳。 */
-export interface CanonicalEvent<TType extends CanonicalEventType = CanonicalEventType> {
-  type: TType;
-  payload: CanonicalEventPayload;
-}
+export type CanonicalPayloadFor<TType extends CanonicalEventType> =
+  TType extends "tool_call.create" ? CanonicalEventPayload & ToolCallCreatePayload
+    : TType extends "tool_call.delta" ? CanonicalEventPayload & ToolCallDeltaPayload
+      : TType extends "tool_call.update" ? CanonicalEventPayload & ToolCallUpdatePayload
+        : CanonicalEventPayload;
+
+/** Adapter 向 Host 输出的最小事件单元；tool lifecycle 的 payload 会按 type 收窄。 */
+export type CanonicalEvent<TType extends CanonicalEventType = CanonicalEventType> =
+  TType extends CanonicalEventType
+    ? { type: TType; payload: CanonicalPayloadFor<TType> }
+    : never;
 
 /**
  * Core 发给 Adapter Host 的一次执行请求。
@@ -64,14 +76,14 @@ export interface InvokeRequest extends InvokeRequestWire {
  * 写入 Store 的事件记录。
  * `seq` 只在单个 run 内单调递增；消费者应使用 `(runId, seq)` 做排序和去重。
  */
-export interface EventEnvelope extends CanonicalEvent {
+export type EventEnvelope<TType extends CanonicalEventType = CanonicalEventType> = CanonicalEvent<TType> & {
   /** 每条持久化事件的全局随机 ID。 */
   id: string;
   seq: number;
   tsMs: number;
   sessionId: string;
   runId: string;
-}
+};
 
 export const TERMINAL_EVENTS: ReadonlySet<CanonicalEventType> = new Set(TERMINAL_EVENT_TYPES);
 export const EVENT_TYPES: ReadonlySet<CanonicalEventType> = new Set(CANONICAL_EVENT_TYPES);
@@ -91,9 +103,14 @@ export const capabilities = Object.freeze({
  * 校验 adapter event，并补齐持久化需要的 ID、序号、时间和 Run 归属。
  * 返回冻结对象，避免 append 后被调用方继续修改。
  */
-export function envelope(run: RunIdentity, seq: number, event: CanonicalEvent): Readonly<EventEnvelope> {
+export function envelope<TType extends CanonicalEventType>(
+  run: RunIdentity,
+  seq: number,
+  event: CanonicalEvent<TType>
+): Readonly<EventEnvelope<TType>> {
   assertCanonicalEvent(event);
-  return Object.freeze({
+  // TypeScript loses the indexed type/payload relationship when a generic union is spread.
+  const value = {
     id: randomUUID(),
     seq,
     tsMs: Date.now(),
@@ -101,7 +118,8 @@ export function envelope(run: RunIdentity, seq: number, event: CanonicalEvent): 
     runId: run.id,
     type: event.type,
     payload: event.payload ?? {}
-  });
+  } as unknown as EventEnvelope<TType>;
+  return Object.freeze(value);
 }
 
 /** 在动态 adapter 边界验证 canonical event 的最小运行时形状。 */
@@ -112,6 +130,24 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
   }
   if (event.payload !== undefined && !isRecord(event.payload)) {
     throw new TypeError("event.payload must be an object");
+  }
+  const payload = isRecord(event.payload) ? event.payload : {};
+  if (event.type === "tool_call.create") {
+    requireToolString(payload, "id", event.type);
+    requireToolString(payload, "name", event.type);
+    if (!isRecord(payload.args)) throw new TypeError("tool_call.create payload.args must be an object");
+  }
+  if (event.type === "tool_call.delta") {
+    requireToolString(payload, "id", event.type);
+    const hasArgs = typeof payload.argsDelta === "string";
+    const hasOutput = typeof payload.outputDelta === "string";
+    if (!hasArgs && !hasOutput) {
+      throw new TypeError("tool_call.delta requires argsDelta or outputDelta");
+    }
+  }
+  if (event.type === "tool_call.update") {
+    requireToolString(payload, "id", event.type);
+    requireToolString(payload, "status", event.type);
   }
 }
 
@@ -132,4 +168,10 @@ export function isTerminal(event: CanonicalEvent): event is CanonicalEvent<Termi
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function requireToolString(payload: Record<string, unknown>, key: string, eventType: string): void {
+  if (typeof payload[key] !== "string" || payload[key].length === 0) {
+    throw new TypeError(`${eventType} payload.${key} must be a non-empty string`);
+  }
 }

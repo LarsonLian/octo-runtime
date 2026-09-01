@@ -59,7 +59,10 @@ export class AdapterHost {
 
     // provider 可以只发送 delta；host 在这里补齐 message 生命周期并稳定 messageId。
     const prepareMessage = (event: CanonicalEvent): { prefix: CanonicalEvent[]; event: CanonicalEvent } => {
-      if (!event.type.startsWith("message.")) return { prefix: [], event };
+      const isMessage = event.type === "message.create"
+        || event.type === "message.delta"
+        || event.type === "message.update";
+      if (!isMessage) return { prefix: [], event };
       const channel = event.payload.channel ?? "final";
       const messageId = event.payload.messageId ?? `${request.runId}:${channel}`;
       const state = messages.get(channel);
