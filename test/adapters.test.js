@@ -11,7 +11,11 @@ import {
   createCodexInvocationHome,
   normalizeCodexEvent
 } from "@orbtex-ai/orbtex-adapter-codex";
-import { buildClaudeCommand, normalizeClaudeEvent } from "@orbtex-ai/orbtex-adapter-claude-code";
+import {
+  buildClaudeCommand,
+  createClaudeCodeAdapter,
+  normalizeClaudeEvent
+} from "@orbtex-ai/orbtex-adapter-claude-code";
 import { buildOpenCodeCommand, normalizeOpenCodeEvent } from "@orbtex-ai/orbtex-adapter-opencode";
 import {
   buildOpenClawCommand,
@@ -73,6 +77,7 @@ test("Claude native events map to session/message/terminal", () => {
 
 test("Claude defaults to unattended bypass and disables interactive tools", async () => {
   const claude = await buildClaudeCommand(request);
+  assert.equal(claude.args.includes("--include-partial-messages"), true);
   assert.equal(claude.args[claude.args.indexOf("--permission-mode") + 1], "bypassPermissions");
   assert.equal(claude.args.includes("--dangerously-skip-permissions"), true);
   assert.deepEqual(
@@ -80,6 +85,42 @@ test("Claude defaults to unattended bypass and disables interactive tools", asyn
     ["AskUserQuestion", "EnterPlanMode", "ExitPlanMode"]
   );
   await claude.cleanup();
+});
+
+test("Claude maps thinking/text/tool argument partials without replaying assistant snapshots", async () => {
+  const fixture = fileURLToPath(new URL("../fixtures/fake-claude-stream.mjs", import.meta.url));
+  const adapter = createClaudeCodeAdapter({ command: process.execPath, commandArgsPrefix: [fixture] });
+  const host = new AdapterHost(); host.register(adapter);
+  const events = [];
+  for await (const event of host.invoke("claude-code", request)) events.push(event);
+
+  assert.deepEqual(events.map(event => event.type), [
+    "message.create", "session.update", "message.create", "message.delta",
+    "tool_call.create", "tool_call.delta", "tool_call.delta", "tool_call.update",
+    "message.delta", "tool_call.create", "tool_call.delta", "tool_call.update",
+    "message.delta", "usage.update", "message.update", "message.update", "run.finished"
+  ]);
+  assert.equal(
+    events.filter(event => event.type === "message.delta" && event.payload.channel === "analysis")
+      .map(event => event.payload.text).join(""),
+    "检查 /tmp。检查 /home/lvsijia。"
+  );
+  assert.equal(
+    events.filter(event => event.type === "message.delta" && event.payload.channel === "final")
+      .map(event => event.payload.text).join(""),
+    "两步检查完成。"
+  );
+  assert.deepEqual(
+    events.filter(event => event.type === "tool_call.create").map(event => event.payload.id),
+    ["tool-1", "tool-2"]
+  );
+  assert.equal(
+    events.filter(event => event.type === "tool_call.delta" && event.payload.id === "tool-1")
+      .map(event => event.payload.argsDelta).join(""),
+    '{"command":"find /tmp"}'
+  );
+  assert.equal(events.filter(event => event.type === "session.update").length, 1);
+  assert.equal(events.find(event => event.type === "message.update" && event.payload.channel === "final").payload.text, undefined);
 });
 
 test("Claude preserves an explicit restricted permission mode", async () => {
@@ -171,10 +212,21 @@ test("Codex app-server subprocess completes the canonical contract", async () =>
   for await (const event of host.invoke("codex", request)) events.push(event);
   assert.deepEqual(events.map(event => event.type), [
     "session.update", "message.create", "message.delta", "message.update",
-    "tool_call.create", "tool_call.delta", "tool_call.update", "usage.update", "run.finished"
+    "tool_call.create", "tool_call.delta", "tool_call.update",
+    "message.create", "message.delta", "message.update",
+    "tool_call.create", "tool_call.delta", "tool_call.update",
+    "message.create", "message.delta", "message.update", "usage.update", "run.finished"
   ]);
   assert.equal(events.find(event => event.type === "session.update").payload.providerSession.sessionId, "thread-app-server-1");
-  assert.equal(events.find(event => event.type === "tool_call.create").payload.name, "exec_command");
+  assert.deepEqual(
+    events.filter(event => event.type === "tool_call.create").map(event => event.payload.name),
+    ["exec_command", "exec_command"]
+  );
+  assert.equal(
+    events.filter(event => event.type === "message.delta" && event.payload.channel === "analysis")
+      .map(event => event.payload.text).join(""),
+    "Inspect /tmp.Inspect /home/lvsijia."
+  );
   assert.equal(events.find(event => event.type === "usage.update").payload.inputTokens, 3);
 });
 
@@ -207,6 +259,20 @@ test("Codex app-server maps disabled thinking to low effort", async () => {
     agentConfig: { thinking: "disabled" }
   })) events.push(event);
   assert.equal(events.at(-1).type, "run.finished");
+});
+
+test("Codex rejects unsupported reasoning summary overrides before starting a turn", async () => {
+  const fixture = fileURLToPath(new URL("../fixtures/fake-codex-app-server.mjs", import.meta.url));
+  const adapter = createCodexAdapter({ command: process.execPath, appServerArgs: [fixture] });
+  const host = new AdapterHost(); host.register(adapter);
+  const events = [];
+  for await (const event of host.invoke("codex", {
+    ...request,
+    invocationId: "inv-codex-invalid-summary",
+    agentConfig: { providerOptions: { reasoningSummary: "verbatim" } }
+  })) events.push(event);
+  assert.equal(events.at(-1).type, "run.error");
+  assert.match(events.at(-1).payload.message, /unsupported Codex reasoning summary/);
 });
 
 test("Codex app-server follows host cancellation", async () => {

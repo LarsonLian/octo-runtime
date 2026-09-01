@@ -42,3 +42,23 @@ test("daemon runtime argv uses explicit options and normalizes the legacy host a
     "--adapter-host", resolve("runtime/host.js")
   ]);
 });
+
+test("Agent Work runtime mode is opt-in and validates required identity", () => {
+  const paths = resolveDaemonRuntimePaths([], {
+    ORBTEX_HOME: resolve(".tmp/runtime-home"),
+    ORBTEX_AGENT_WORK_URL: "http://127.0.0.1:8092",
+    ORBTEX_AGENT_WORK_RUNTIME_TOKEN: "runtime-token",
+    ORBTEX_AGENT_WORK_TENANT_ID: "tenant-1",
+    ORBTEX_AGENT_WORK_SUBJECT_ID: "device-1",
+    ORBTEX_AGENT_WORK_RUNTIME_ID: "runtime-1"
+  });
+  assert.deepEqual(paths.agentWork, {
+    baseUrl: "http://127.0.0.1:8092",
+    token: "runtime-token",
+    tenantId: "tenant-1",
+    subjectId: "device-1",
+    runtimeId: "runtime-1",
+    runtimeName: "orbtex-local",
+    fingerprint: `orbtex:${process.platform}:${process.arch}`
+  });
+});

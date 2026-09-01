@@ -12,6 +12,7 @@
 | [`@orbtex-ai/orbtex-adapter-host`](orbtex-adapter-host/README.md) | adapter registry、invoke lifecycle 与 NDJSON RPC |
 | [`@orbtex-ai/orbtex-adapter-sdk`](orbtex-adapter-sdk/README.md) | adapter 定义、CLI subprocess 与 probe helpers |
 | [`@orbtex-ai/orbtex-acp-client`](orbtex-acp-client/README.md) | CodeBuddy ACP JSON-RPC client |
+| [`@orbtex-ai/orbtex-dify-client`](orbtex-dify-client/README.md) | Dify HTTPS/SSE、认证、probe 与停止请求 |
 
 所有 `packages/*` 的目录名和 npm 非 scope 部分保持一致。provider packages 使用 `packages/orbtex-adapter-<provider>` 与 `@orbtex-ai/orbtex-adapter-<provider>`。
 
@@ -32,8 +33,10 @@
 | [`codebuddy`](orbtex-adapter-codebuddy/README.md) | `codebuddy --acp` 子进程 | ACP JSON-RPC stdio | CodeBuddy 配置的云 provider | `session/load` | 不需要 |
 | [`opencode`](orbtex-adapter-opencode/README.md) | `opencode run` 子进程 | argv + JSON events stdout | OpenCode 配置的 provider | `--session` | 不需要 |
 | [`openclaw`](orbtex-adapter-openclaw/README.md) | `openclaw agent --local` 子进程 | NDJSON/final JSON stdout | OpenClaw 配置的 provider | `--session-id` | **明确不使用** |
+| [`dify-chatflow`](orbtex-adapter-dify-chatflow/README.md) | adapter-host 内远程请求 | HTTPS POST + SSE | Dify Cloud / 自建 Dify | `conversation_id` | 不需要 |
+| [`dify-workflow`](orbtex-adapter-dify-workflow/README.md) | adapter-host 内远程请求 | HTTPS POST + SSE | Dify Cloud / 自建 Dify | 无，调用相互独立 | 不需要 |
 
-所有真实 adapter 都是“一次 invocation 一个本地 CLI process”。当前没有维护长期 provider CLI daemon；CodeBuddy 的 ACP session 可以跨新进程 `session/load`，OpenClaw local 依赖 state dir 中的 transcript，其余依赖各 provider 自己的 session store。
+五个本地 CLI adapter 是“一次 invocation 一个本地 CLI process”。Dify adapters 不启动 CLI，而是在 adapter-host 进程中发起一次远程 HTTPS + SSE 请求。当前没有维护长期 provider CLI daemon；CodeBuddy 的 ACP session 可以跨新进程 `session/load`，OpenClaw local 依赖 state dir 中的 transcript，Dify Chatflow 通过 opaque `conversation_id` 恢复，Dify Workflow 调用则相互独立。
 
 ## 公共环境准备
 
@@ -84,6 +87,8 @@ pnpm cli adapter probe claude-code
 pnpm cli adapter probe codebuddy
 pnpm cli adapter probe opencode
 pnpm cli adapter probe openclaw
+pnpm cli adapter probe dify-chatflow
+pnpm cli adapter probe dify-workflow
 ```
 
 典型创建命令：
@@ -103,6 +108,12 @@ pnpm cli agent create --name opencode --adapter opencode \
 
 pnpm cli agent create --name openclaw --adapter openclaw \
   --provider-agent main --thinking medium --timeout-seconds 300
+
+pnpm cli agent create --name dify-chat --adapter dify-chatflow \
+  --workdir "$PWD"
+
+pnpm cli agent create --name dify-workflow --adapter dify-workflow \
+  --workdir "$PWD"
 ```
 
 CLI 输出中的 `id` 是 Orbtex Agent ID。`--provider-agent` 当前只对 OpenClaw 有效；OpenCode 虽然原生有 `--agent`，此 adapter 尚未暴露。

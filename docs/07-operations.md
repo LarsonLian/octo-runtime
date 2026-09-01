@@ -115,6 +115,11 @@ pnpm cli run stream <run-id>
 pnpm cli run cancel <run-id> --reason operator_cancel
 ```
 
+## Agent Work Runtime
+
+daemon 可选连接 `orbtex-agent-work` 的 Runtime WSS，并继续复用同一个 adapter-host。
+配置、事件映射和边界见 [Agent Work Runtime 模式](13-agent-work-runtime.md)。
+
 诊断时先看最后一个 terminal event，再看此前的 provider error/tool event。事件 seq 是单 run 单调递增；不要用 wall-clock timestamp 代替顺序。
 
 ## Restart Semantics

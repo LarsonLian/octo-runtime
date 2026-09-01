@@ -110,7 +110,7 @@ sequenceDiagram
         C-->>A: thread response
     end
 
-    A->>C: turn/start(input, cwd, model, effort)
+    A->>C: turn/start(input, cwd, model, effort, summary)
     C-->>A: turn response 或 thread-not-found
     opt resumed turn 返回 thread-not-found
         A->>C: thread/start
@@ -187,16 +187,43 @@ resume RPC 抛错时会降级 fresh thread。若 resume response 成功却不含
     ],
     "cwd": "/absolute/workdir",
     "model": "optional-model",
-    "effort": "low"
+    "effort": "low",
+    "summary": "auto"
   }
 }
 ```
 
 Orbtex 的 `thinking: disabled` 不能直接传给 Codex app-server，因此兼容映射为最低有效等级 `low`。其他值按原值传递。
 
+`summary` 默认显式传 `auto`，因为只设置 `effort` 不能保证 app-server 返回可流式展示的 reasoning summary。可通过 `agentConfig.providerOptions.reasoningSummary` 设置 `auto | concise | detailed | none`；当 `thinking: disabled` 且没有显式配置时，adapter 使用 `summary: none`。
+
 ### Phase 4：stream
 
 `turn/start` 成功后，adapter 先上报权威 `session.update`，再持续消费 notification。Codex 可能已经发送并排队同一 thread ID 的 `thread/started`；runner 会过滤这条重复 session 映射，因此 Core 只看到带完整 resume metadata 的权威更新。遇到 run 终态后立即关闭事件队列，不再接受后续 provider 事件。
+
+### Canonical event 内部消费约定
+
+复杂任务不会被压缩成“一个 reasoning + 一批 tool call + 一个 final”。adapter 按 app-server 到达顺序发布事件，典型序列是：
+
+```text
+message.create/delta/update (analysis 或 final)
+tool_call.create/delta/update x N
+message.create/delta/update (analysis 或 final)
+tool_call.create/delta/update x N
+message.create/delta/update (final)
+run.finished
+```
+
+| 事件 | agent-work/runtime 内部消费方式 |
+|---|---|
+| `message.* channel=analysis` | 立即保序转发给 canonical ledger；它只表示 provider 暴露的 reasoning summary/plan，不是可直接公开给任意 viewer 的私有思维链 |
+| `message.* channel=final` | 按 `messageId` 累积 item；不要等到 `run.finished` 才丢弃中间 item，`message.update.text` 是完成 snapshot |
+| `tool_call.create` | 以 provider item ID 建立工具调用；Codex 当前通常会在 create 中给出完整参数，公开前必须由 experience projector 脱敏 |
+| `tool_call.delta` | 按 payload 中同一 `id` 增量追加参数或输出；不能直接发送到产品客户端或 IM gateway |
+| `tool_call.update` | 关闭该工具调用；单个工具失败不等同于整个 run 必然失败 |
+| `run.finished/run.error/run.stopped` | run 的唯一终态；下游 accumulator/projector 收口仍未关闭的 item |
+
+同一次 run 中可以出现多个 `messageId`。内部消费端不能把所有 final 消息当成一个可覆盖字符串；真实复杂任务可以出现“阶段文本 -> tool -> analysis -> 阶段文本 -> tool -> 最终总结”。Adapter 只保证 provider 事件归一和保序，不决定 Buddy/IM 可见性。产品客户端应消费 agent-work 按 audience、surface capability 与 frozen policy 生成的 ExperienceEvent；IM gateway 只执行完整 DeliveryIntent，不拼 canonical delta。
 
 ## JSON-RPC client 设计
 
@@ -350,7 +377,7 @@ Orbtex 目标协议以 [`@orbtex-ai/orbtex-protocol`](../orbtex-protocol/src/ind
 |---|---|---|---|
 | `initialize`、`initialized` | Adapter -> Codex | 建立协议能力后进入 thread 阶段 | 无 event |
 | `thread/start`、`thread/resume` | Adapter -> Codex | 提取 opaque thread ID；resume error 可降级 fresh thread | response 先内部消费，`turn/start` 成功后生成 `session.update` |
-| `turn/start` | Adapter -> Codex | 发送 prompt、cwd、model、effort | response 不直接产 event；随后开始消费 notification |
+| `turn/start` | Adapter -> Codex | 发送 prompt、cwd、model、effort、reasoning summary 偏好 | response 不直接产 event；随后开始消费 notification |
 | `turn/interrupt` | Adapter -> Codex | Host abort 后 best-effort 发送 | client 取消路径独立生成 `run.stopped` |
 | `item/commandExecution/requestApproval`、`item/fileChange/requestApproval` | Codex -> Adapter | 返回 `{ decision: "accept" }` | 无 event |
 | `applyPatchApproval`、`execCommandApproval` | Codex -> Adapter | 兼容旧协议，同样返回 accept | 无 event |
@@ -495,9 +522,23 @@ RPC timeout 不是整轮 run timeout：若 app-server 保持连接、`turn/start
 | `--workdir DIR` | `workdir` | process/thread/turn cwd | 必填 |
 | `--model MODEL` | `model` | thread + turn | Codex 配置决定 |
 | thinking 配置 | `thinking` | turn effort | Codex 配置决定；disabled -> low |
+| provider option | `providerOptions.reasoningSummary` | turn summary | `auto`；支持 `auto/concise/detailed/none`，thinking=disabled 时默认 `none` |
 | `--sandbox MODE` | `sandbox` | thread sandbox | `workspace-write` |
 | `--dangerously-bypass-permissions` | `dangerouslyBypassPermissions` | 强制 thread sandbox 为 `danger-full-access` | `false` |
 | provider option | `providerOptions.appServerRequestTimeoutMs` | client request timeout | `30000` |
+
+需要更详细的可见 reasoning summary 时，可以这样配置：
+
+```json
+{
+  "thinking": "high",
+  "providerOptions": {
+    "reasoningSummary": "detailed"
+  }
+}
+```
+
+设置 `reasoningSummary: none` 会关闭 analysis summary 流，但不会关闭工具事件或 final 文本流。
 
 支持的 sandbox：
 
@@ -558,6 +599,7 @@ pnpm cli run events <run-id>
 - thread/start、turn/start 和 canonical message/tool/usage/terminal 链路。
 - resume RPC 失败后的 fresh fallback 与 session metadata。
 - `thinking: disabled` 到 `effort: low` 的兼容映射。
+- 默认请求 `summary: auto`、disabled 时关闭 summary，以及非法 summary override 的失败路径。
 - host cancel 和唯一 `run.stopped`；fixture 能处理 interrupt，但当前断言没有单独锁定该 wire frame。
 - notification parser 的 session/message/usage/terminal 基础映射。
 
@@ -639,6 +681,7 @@ pnpm test
 - [`src/app-server.ts`](src/app-server.ts)：协议 runner、JSON-RPC client、进程管理和事件映射。
 - [`../../fixtures/fake-codex-app-server.mjs`](../../fixtures/fake-codex-app-server.mjs)：端到端 stdin/stdout 协议 fixture。
 - [`../../test/adapters.test.js`](../../test/adapters.test.js)：canonical contract、resume、reasoning 和 cancel 测试。
+- [`../../../docs/testreport/27-codex-streaming-complex-task-report.html`](../../../docs/testreport/27-codex-streaming-complex-task-report.html)：真实 Codex CLI 复杂任务的 247 条 canonical event 流报告。
 - [`../../../docs/23-aily-codex-adapter-implementation.html`](../../../docs/23-aily-codex-adapter-implementation.html)：Aily 0.1.54 参考实现、特性目标和 Orbtex 落地对照。
 
-本机验证基线：`codex-cli 0.151.0`，2026-09-01。升级 Codex CLI 后，应先运行 fixture 测试，再用真实 app-server 检查 initialize、thread、turn 和 server request shape。
+本机验证基线：`codex-cli 0.151.0`，2026-09-02。升级 Codex CLI 后，应先运行 fixture 测试，再用真实 app-server 检查 initialize、thread、turn 和 server request shape。

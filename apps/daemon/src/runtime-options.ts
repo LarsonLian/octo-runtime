@@ -24,8 +24,32 @@ export function resolveDaemonRuntimePaths(
       args,
       ["--adapter-host", "--host-entrypoint"],
       env.ORBTEX_ADAPTER_HOST ?? fileURLToPath(new URL("../../adapter-host/dist/index.js", import.meta.url))
-    ))
+    )),
+    agentWork: resolveAgentWorkOptions(env)
   };
+}
+
+function resolveAgentWorkOptions(env: NodeJS.ProcessEnv): StartDaemonServerOptions["agentWork"] {
+  const baseUrl = env.ORBTEX_AGENT_WORK_URL?.trim();
+  if (!baseUrl) return undefined;
+  const token = requiredEnv(env, "ORBTEX_AGENT_WORK_RUNTIME_TOKEN");
+  const tenantId = requiredEnv(env, "ORBTEX_AGENT_WORK_TENANT_ID");
+  const subjectId = requiredEnv(env, "ORBTEX_AGENT_WORK_SUBJECT_ID");
+  return {
+    baseUrl,
+    token,
+    tenantId,
+    subjectId,
+    runtimeId: env.ORBTEX_AGENT_WORK_RUNTIME_ID?.trim() || undefined,
+    runtimeName: env.ORBTEX_AGENT_WORK_RUNTIME_NAME?.trim() || "orbtex-local",
+    fingerprint: env.ORBTEX_AGENT_WORK_FINGERPRINT?.trim() || `orbtex:${process.platform}:${process.arch}`
+  };
+}
+
+function requiredEnv(env: NodeJS.ProcessEnv, name: string): string {
+  const value = env[name]?.trim();
+  if (!value) throw new Error(`${name} is required when ORBTEX_AGENT_WORK_URL is set`);
+  return value;
 }
 
 export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[] {

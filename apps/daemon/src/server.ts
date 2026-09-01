@@ -15,12 +15,14 @@ import {
   type AdapterHostProcess,
   type AdapterHostRpcClient
 } from "@orbtex-ai/orbtex-adapter-host";
+import { AgentWorkRuntime, type AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
 
 export interface StartDaemonServerOptions {
   socketPath: string;
   storePath: string;
   manifestPath: string;
   hostEntrypoint: string;
+  agentWork?: AgentWorkRuntimeOptions;
 }
 
 export interface DaemonRuntimeInfo {
@@ -51,6 +53,7 @@ export interface DaemonApplication {
   engine: HarnessEngine;
   hostProcess: AdapterHostProcess;
   runtime: DaemonRuntimeInfo;
+  agentWorkRuntime?: AgentWorkRuntime;
   close(): Promise<void>;
 }
 
@@ -58,7 +61,8 @@ export async function startDaemonServer({
   socketPath,
   storePath,
   manifestPath,
-  hostEntrypoint
+  hostEntrypoint,
+  agentWork
 }: StartDaemonServerOptions): Promise<DaemonApplication> {
   await mkdir(dirname(socketPath), { recursive: true });
   try {
@@ -90,10 +94,11 @@ export async function startDaemonServer({
   };
   const engine = new HarnessEngine({ store, host: hostProcess.client });
   const daemon = new HarnessDaemon({ engine, store });
+  const agentWorkRuntime = agentWork ? new AgentWorkRuntime(agentWork, hostProcess.client) : undefined;
 
   const server = net.createServer(socket => {
     createInterface({ input: socket }).once("line", line => {
-      void handleRequestLine({ line, socket, daemon, engine, store, host: hostProcess.client, runtime });
+      void handleRequestLine({ line, socket, daemon, engine, store, host: hostProcess.client, runtime, agentWorkRuntime });
     });
   });
 
@@ -105,8 +110,10 @@ export async function startDaemonServer({
     });
     // Unix socket 是本地控制面的权限边界，只允许当前宿主账号访问。
     await chmod(socketPath, 0o600);
+    await agentWorkRuntime?.start();
   } catch (error) {
     daemon.stop();
+    await agentWorkRuntime?.close();
     await hostProcess.close();
     await rm(socketPath, { force: true });
     throw error;
@@ -119,8 +126,10 @@ export async function startDaemonServer({
     engine,
     hostProcess,
     runtime,
+    agentWorkRuntime,
     async close(): Promise<void> {
       daemon.stop();
+      await agentWorkRuntime?.close();
       await new Promise<void>(resolve => server.close(() => resolve()));
       await hostProcess.close();
       await rm(socketPath, { force: true });
@@ -135,7 +144,8 @@ async function handleRequestLine({
   engine,
   store,
   host,
-  runtime
+  runtime,
+  agentWorkRuntime
 }: {
   line: string;
   socket: net.Socket;
@@ -144,6 +154,7 @@ async function handleRequestLine({
   store: Store;
   host: AdapterHostRpcClient;
   runtime: DaemonRuntimeInfo;
+  agentWorkRuntime?: AgentWorkRuntime;
 }): Promise<void> {
   let request: DaemonRequest | undefined;
   try {
@@ -152,7 +163,7 @@ async function handleRequestLine({
       await streamRunEvents({ request, socket, store });
       return;
     }
-    const result = await dispatch({ request, daemon, engine, store, host, runtime });
+    const result = await dispatch({ request, daemon, engine, store, host, runtime, agentWorkRuntime });
     socket.end(`${JSON.stringify({ id: request.id, result })}\n`);
   } catch (error) {
     const rpcError = error as NodeJS.ErrnoException;
@@ -219,7 +230,8 @@ async function dispatch({
   engine,
   store,
   host,
-  runtime
+  runtime,
+  agentWorkRuntime
 }: {
   request: DaemonRequest;
   daemon: HarnessDaemon;
@@ -227,6 +239,7 @@ async function dispatch({
   store: Store;
   host: AdapterHostRpcClient;
   runtime: DaemonRuntimeInfo;
+  agentWorkRuntime?: AgentWorkRuntime;
 }): Promise<unknown> {
   const params = request.params ?? {};
   switch (request.method) {
@@ -235,6 +248,7 @@ async function dispatch({
         ready: true,
         pid: process.pid,
         ...runtime,
+        agentWork: agentWorkRuntime?.status ?? { enabled: false },
         counts: Object.fromEntries(
           (["agents", "triggers", "tasks", "runs"] as const).map(name => [name, store[name].size])
         )

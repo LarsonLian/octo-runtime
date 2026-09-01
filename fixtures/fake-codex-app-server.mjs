@@ -49,29 +49,47 @@ reader.on("line", line => {
       send({ jsonrpc: "2.0", id: message.id, error: { code: -32602, message: "invalid turn params" } });
       return;
     }
-    if (prompt.includes("EXPECT_LOW_EFFORT") && message.params.effort !== "low") {
-      send({ jsonrpc: "2.0", id: message.id, error: { code: -32602, message: "disabled thinking must map to low effort" } });
+    if (prompt.includes("EXPECT_LOW_EFFORT") && (message.params.effort !== "low" || message.params.summary !== "none")) {
+      send({ jsonrpc: "2.0", id: message.id, error: { code: -32602, message: "disabled thinking must map to low effort without summary" } });
+      return;
+    }
+    if (!prompt.includes("EXPECT_LOW_EFFORT") && message.params.summary !== "auto") {
+      send({ jsonrpc: "2.0", id: message.id, error: { code: -32602, message: "default turn must request reasoning summary" } });
       return;
     }
     respond(message.id, { turn: { id: "turn-1", status: "inProgress", items: [] } });
     queueMicrotask(() => {
       notify("turn/started", { threadId: activeThreadId, turn: { id: "turn-1", status: "inProgress", items: [] } });
+      if (prompt.includes("WAIT_FOR_CANCEL")) {
+        notify("item/started", {
+          threadId: activeThreadId,
+          turnId: "turn-1",
+          item: { type: "agentMessage", id: "message-waiting", text: "" }
+        });
+        notify("item/agentMessage/delta", {
+          threadId: activeThreadId,
+          turnId: "turn-1",
+          itemId: "message-waiting",
+          delta: "waiting"
+        });
+        return;
+      }
+
       notify("item/started", {
         threadId: activeThreadId,
         turnId: "turn-1",
-        item: { type: "agentMessage", id: "message-1", text: "" }
+        item: { type: "reasoning", id: "reasoning-1", summary: [], content: [] }
       });
-      notify("item/agentMessage/delta", {
+      notify("item/reasoning/textDelta", {
         threadId: activeThreadId,
         turnId: "turn-1",
-        itemId: "message-1",
-        delta: prompt.includes("WAIT_FOR_CANCEL") ? "waiting" : "App-server reply"
+        itemId: "reasoning-1",
+        delta: "Inspect /tmp."
       });
-      if (prompt.includes("WAIT_FOR_CANCEL")) return;
       notify("item/completed", {
         threadId: activeThreadId,
         turnId: "turn-1",
-        item: { type: "agentMessage", id: "message-1", text: "App-server reply" }
+        item: { type: "reasoning", id: "reasoning-1", summary: ["Inspect /tmp."], content: [] }
       });
       notify("item/started", {
         threadId: activeThreadId,
@@ -102,6 +120,68 @@ reader.on("line", line => {
           aggregatedOutput: "/workspace\n",
           exitCode: 0
         }
+      });
+      notify("item/started", {
+        threadId: activeThreadId,
+        turnId: "turn-1",
+        item: { type: "reasoning", id: "reasoning-2", summary: [], content: [] }
+      });
+      notify("item/reasoning/textDelta", {
+        threadId: activeThreadId,
+        turnId: "turn-1",
+        itemId: "reasoning-2",
+        delta: "Inspect /home/lvsijia."
+      });
+      notify("item/completed", {
+        threadId: activeThreadId,
+        turnId: "turn-1",
+        item: { type: "reasoning", id: "reasoning-2", summary: ["Inspect /home/lvsijia."], content: [] }
+      });
+      notify("item/started", {
+        threadId: activeThreadId,
+        turnId: "turn-1",
+        item: {
+          type: "commandExecution",
+          id: "tool-2",
+          command: "du -sh /home/lvsijia/*",
+          cwd: process.cwd(),
+          status: "inProgress"
+        }
+      });
+      notify("item/commandExecution/outputDelta", {
+        threadId: activeThreadId,
+        turnId: "turn-1",
+        itemId: "tool-2",
+        delta: "No such file or directory\n"
+      });
+      notify("item/completed", {
+        threadId: activeThreadId,
+        turnId: "turn-1",
+        item: {
+          type: "commandExecution",
+          id: "tool-2",
+          command: "du -sh /home/lvsijia/*",
+          cwd: process.cwd(),
+          status: "failed",
+          aggregatedOutput: "No such file or directory\n",
+          exitCode: 1
+        }
+      });
+      notify("item/started", {
+        threadId: activeThreadId,
+        turnId: "turn-1",
+        item: { type: "agentMessage", id: "message-1", text: "" }
+      });
+      notify("item/agentMessage/delta", {
+        threadId: activeThreadId,
+        turnId: "turn-1",
+        itemId: "message-1",
+        delta: "App-server reply"
+      });
+      notify("item/completed", {
+        threadId: activeThreadId,
+        turnId: "turn-1",
+        item: { type: "agentMessage", id: "message-1", text: "App-server reply" }
       });
       notify("thread/tokenUsage/updated", {
         threadId: activeThreadId,

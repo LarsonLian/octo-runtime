@@ -5,6 +5,28 @@
     { "type": "claude-code", "module": "@orbtex-ai/orbtex-adapter-claude-code", "export": "claudeCodeAdapter" },
     { "type": "codebuddy", "module": "@orbtex-ai/orbtex-adapter-codebuddy", "export": "codebuddyAdapter" },
     { "type": "opencode", "module": "@orbtex-ai/orbtex-adapter-opencode", "export": "opencodeAdapter" },
-    { "type": "openclaw", "module": "@orbtex-ai/orbtex-adapter-openclaw", "export": "openclawAdapter" }
+    { "type": "openclaw", "module": "@orbtex-ai/orbtex-adapter-openclaw", "export": "openclawAdapter" },
+    {
+      "type": "dify-chatflow",
+      "module": "@orbtex-ai/orbtex-adapter-dify-chatflow",
+      "export": "createDifyChatflowAdapter",
+      "factory": true,
+      "options": {
+        "apiKeyEnv": "DIFY_CHATFLOW_API_KEY",
+        "baseUrl": "https://api.dify.ai/v1",
+        "applicationMode": "chatbot"
+      }
+    },
+    {
+      "type": "dify-workflow",
+      "module": "@orbtex-ai/orbtex-adapter-dify-workflow",
+      "export": "createDifyWorkflowAdapter",
+      "factory": true,
+      "options": {
+        "apiKeyEnv": "DIFY_WORKFLOW_API_KEY",
+        "baseUrl": "https://api.dify.ai/v1",
+        "applicationMode": "workflow"
+      }
+    }
   ]
 }

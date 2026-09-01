@@ -1,0 +1,18 @@
+{
+  "name": "@orbtex-ai/orbtex-adapter-dify-workflow",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "dependencies": {
+    "@orbtex-ai/orbtex-adapter-sdk": "workspace:*",
+    "@orbtex-ai/orbtex-dify-client": "workspace:*",
+    "@orbtex-ai/orbtex-protocol": "workspace:*"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

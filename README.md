@@ -1,6 +1,6 @@
 # Orbtex
 
-从零实现的本地 Agent harness reference implementation。它统一 Codex、Claude Code、CodeBuddy、OpenCode 和 OpenClaw local，同时把 Chat、Task、Trigger、Run、provider session 与流式事件保持为明确的领域对象。
+从零实现的 Agent harness reference implementation。它统一 Codex、Claude Code、CodeBuddy、OpenCode、OpenClaw local 与 Dify 远程应用，同时把 Chat、Task、Trigger、Run、provider session 与流式事件保持为明确的领域对象。
 
 项目仓库：[orbtex-ai/orbtex](https://github.com/orbtex-ai/orbtex)。本目录使用 pnpm workspace 和严格 TypeScript，所有可复用协议、runtime 与 adapters 位于 `packages/*`，所有可执行项目位于 `apps/*`。源码统一为 `src/*.ts`，构建后从 `dist/*.js` 运行并发布对应的 `*.d.ts` 类型声明。
 
@@ -12,7 +12,7 @@
 - 原子 JSON 持久化、daemon 重启恢复、每个 Task/Chat session 单 active run。
 - 独立 Node adapter-host 进程，manifest 动态加载 adapters，NDJSON JSON-RPC 调用/事件/取消。
 - canonical message/tool/usage/session/run events；final/analysis channel 分离；terminal exactly once。
-- Codex、Claude Code、CodeBuddy ACP、OpenCode、OpenClaw local adapters。
+- Codex、Claude Code、CodeBuddy ACP、OpenCode、OpenClaw local、Dify Chatflow 与 Dify Workflow adapters。
 - provider session 恢复、命令 probe、CLI 和契约测试。
 
 这是可运行的架构基线，不是多节点生产调度器。JSON store 假设单 daemon writer；生产环境应替换成事务数据库、outbox、lease/fencing 和鉴权控制面。
@@ -39,6 +39,9 @@ packages/
   orbtex-adapter-codebuddy/   CodeBuddy ACP adapter
   orbtex-adapter-opencode/    OpenCode provider adapter
   orbtex-adapter-openclaw/    OpenClaw local adapter
+  orbtex-dify-client/         Dify HTTP/SSE transport client
+  orbtex-adapter-dify-chatflow/ Dify Chatbot/Chatflow adapter
+  orbtex-adapter-dify-workflow/ Dify Workflow/Completion adapter
 config/adapters.json   adapter manifest
 test/                  contract and integration tests
 ```
@@ -187,6 +190,12 @@ pnpm cli agent create --name opencode --adapter opencode --workdir "$PWD" --mode
 
 # OpenClaw: one local CLI subprocess per invocation; no Gateway required
 pnpm cli agent create --name openclaw --adapter openclaw --provider-agent main --thinking medium
+
+# Dify Chatbot/Chatflow: remote HTTPS + SSE; requires DIFY_CHATFLOW_API_KEY
+pnpm cli agent create --name dify-chat --adapter dify-chatflow --workdir "$PWD"
+
+# Dify Workflow: fixed inputs are configured in the adapter manifest or an Input Resolver
+pnpm cli agent create --name dify-workflow --adapter dify-workflow --workdir "$PWD"
 ```
 
 Claude Code 默认绕过 provider 权限确认以支持无人值守执行，必须由容器、VM 或等价的 Runtime 隔离限制文件系统、网络和凭证。Codex 的 `--dangerously-bypass-permissions` 与 OpenCode 的 `--auto-approve` 仍需显式打开；不要在没有外部 sandbox 的环境启用危险权限。
@@ -212,3 +221,4 @@ pnpm cli run cancel <run-id> --reason user_cancelled
 - [Protocol Schema And Codegen](docs/10-protocol-schema-codegen.md)
 - [Aily 多触发机制与 Orbtex 统一 Blueprint](docs/11-aily-trigger-and-execution-review.html)
 - [Aily Task、Run 与 Agent 执行概念模型](docs/12-aily-task-agent-run-concept-model.md)
+- [Agent Work Runtime 模式](docs/13-agent-work-runtime.md)

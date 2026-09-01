@@ -235,6 +235,8 @@ export async function* runCodexAppServerTurn({
 /**
  * 将一条 app-server notification 纯函数式映射为零到多条统一事件。
  *
+ * 每条 notification 到达后立即映射并入队，不跨 reasoning/tool/final 阶段缓冲，
+ * 因此复杂任务的交错顺序由 provider 原始到达顺序决定。
  * 这里不维护跨帧状态：request 关联、单终态和 active thread 过滤由 client 处理。
  * 未识别的方法返回空数组，便于 Codex 增加非关键 notification 时保持前向兼容。
  */
@@ -643,7 +645,11 @@ function threadParams(request: InvokeRequest, extra: JsonRecord): JsonRecord {
   };
 }
 
-/** turn/start 只承载本轮输入和可逐轮覆盖的 model/effort。 */
+/**
+ * turn/start 承载本轮输入，以及可逐轮覆盖的 model、effort 和 reasoning summary。
+ * summary 必须显式发送；只设置 effort 会消耗 reasoning tokens，但 app-server 不保证发布
+ * summaryTextDelta，UI 因而可能只看到空 analysis lifecycle。
+ */
 function turnParams(request: InvokeRequest, threadId: string): JsonRecord {
   const effort = codexEffort(request.agentConfig.thinking);
   return {
@@ -651,13 +657,29 @@ function turnParams(request: InvokeRequest, threadId: string): JsonRecord {
     input: [{ type: "text", text: request.prompt, text_elements: [] }],
     cwd: request.workdir,
     ...(request.agentConfig.model ? { model: request.agentConfig.model } : {}),
-    ...(effort ? { effort } : {})
+    ...(effort ? { effort } : {}),
+    summary: codexReasoningSummary(request)
   };
 }
 
 function codexEffort(value: string | undefined): string | undefined {
   // Codex app-server 不接受 disabled；与 Aily 行为一致，用最低有效等级 low 兼容。
   return value === "disabled" ? "low" : value;
+}
+
+/**
+ * app-server 不会因为设置了 effort 就自动发布 reasoning summary delta。
+ * Chat 默认请求 auto；调用方可通过 providerOptions.reasoningSummary 收紧或关闭。
+ */
+function codexReasoningSummary(request: InvokeRequest): string {
+  const configured = recordValue(request.agentConfig.providerOptions)?.reasoningSummary;
+  const value = typeof configured === "string"
+    ? configured
+    : request.agentConfig.thinking === "disabled" ? "none" : "auto";
+  if (!["auto", "concise", "detailed", "none"].includes(value)) {
+    throw new Error(`unsupported Codex reasoning summary: ${value}`);
+  }
+  return value;
 }
 
 function codexSandbox(request: InvokeRequest): string {
@@ -677,7 +699,10 @@ function appServerRequestTimeout(request: InvokeRequest): number {
     : APP_SERVER_REQUEST_TIMEOUT_MS;
 }
 
-/** 文本 delta 保留 analysis/final 频道，避免推理内容混入最终答复。 */
+/**
+ * 文本 delta 原样保序，并保留 analysis/final 频道。
+ * analysis 只代表 provider 公开的 reasoning summary/plan，不是完整私有 chain-of-thought。
+ */
 function textDelta(params: JsonRecord, channel: "analysis" | "final"): CanonicalEvent[] {
   const text = stringValue(params.delta);
   if (!text) return [];

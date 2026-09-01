@@ -23,7 +23,12 @@
   "dependencies": {
     "@orbtex-ai/orbtex-adapter-host": "workspace:*",
     "@orbtex-ai/orbtex-core": "workspace:*",
-    "@orbtex-ai/orbtex-daemon": "workspace:*"
+    "@orbtex-ai/orbtex-daemon": "workspace:*",
+    "@orbtex-ai/orbtex-protocol": "workspace:*",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
   },
   "types": "./dist/server.d.ts"
 }
