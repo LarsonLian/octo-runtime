@@ -1,0 +1,24 @@
+{
+  "name": "@mininglamp-oss/octo-harness-adapter-host-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "octo-harness-adapter-host": "dist/index.js"
+  },
+  "scripts": {
+    "start": "node dist/index.js --manifest ../../config/adapters.json",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mininglamp-oss/octo-harness-adapter-claude-code": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-codebuddy": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-codex": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-dify-chatflow": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-dify-workflow": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-host": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-openclaw": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-opencode": "workspace:*"
+  },
+  "types": "./dist/index.d.ts"
+}

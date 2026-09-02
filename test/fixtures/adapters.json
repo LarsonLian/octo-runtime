@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "adapters": [
+    { "type": "test", "module": "./test-adapter.js", "export": "testAdapter" }
+  ]
+}

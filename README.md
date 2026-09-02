@@ -1,93 +1,224 @@
-# octo-harness
+# Octo Harness
 
+从零实现的 Agent harness reference implementation。它统一 Codex、Claude Code、CodeBuddy、OpenCode、OpenClaw local 与 Dify 远程应用，同时把 Chat、Task、Trigger、Run、provider session 与流式事件保持为明确的领域对象。
 
+项目仓库：[dmwork/octo-harness/octo-harness](https://codex.mlamp.cn/dmwork/octo-harness/octo-harness)。本目录使用 pnpm workspace 和严格 TypeScript，所有可复用协议、runtime 与 adapters 位于 `packages/*`，所有可执行项目位于 `apps/*`。源码统一为 `src/*.ts`，构建后从 `dist/*.js` 运行并发布对应的 `*.d.ts` 类型声明。
 
-## Getting started
+## 当前能力
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+- Chat 与 Task 共用 `Session -> Run -> EventEnvelope`，Task 额外拥有 Attempt/trigger source。
+- `manual`、`event + filter`、`interval` triggers；trigger occurrence 幂等落 Task。
+- daemon 快速 ACK 后后台执行，支持 comment-style Task continuation。
+- 原子 JSON 持久化、daemon 重启恢复、每个 Task/Chat session 单 active run。
+- 独立 Node adapter-host 进程，manifest 动态加载 adapters，NDJSON JSON-RPC 调用/事件/取消。
+- canonical message/tool/usage/session/run events；final/analysis channel 分离；terminal exactly once。
+- Codex、Claude Code、CodeBuddy ACP、OpenCode、OpenClaw local、Dify Chatflow 与 Dify Workflow adapters。
+- provider session 恢复、命令 probe、CLI 和契约测试。
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+这是可运行的架构基线，不是多节点生产调度器。JSON store 假设单 daemon writer；生产环境应替换成事务数据库、outbox、lease/fencing 和鉴权控制面。
 
-## Add your files
+本地 stdio 与跨云 WebSocket 共用上层 Agent 逻辑的目标架构、双向 JSON-RPC 样例、event ACK/重放和多节点 lease 设计见 [Transport And Multi-node](docs/09-transport-and-multinode.md)。该文档描述下一阶段设计，不代表当前代码已经具备跨云运行能力。
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+## 项目结构
 
+```text
+apps/
+  cli/                 Unix socket CLI
+  daemon/              durable control plane + worker
+  adapter-host/        独立 provider host 进程
+  example-basic/       in-process Codex example
+packages/
+  octo-harness-protocol/            canonical event / invoke contract
+  octo-harness-core/                Chat/Task/Trigger/Run domain engine
+  octo-harness-daemon/              queue, scheduler, recovery
+  octo-harness-adapter-host/        host lifecycle + NDJSON RPC
+  octo-harness-adapter-sdk/         adapter helpers + subprocess runtime
+  octo-harness-acp-client/          CodeBuddy ACP JSON-RPC client
+  octo-harness-adapter-codex/       Codex provider adapter
+  octo-harness-adapter-claude-code/ Claude Code provider adapter
+  octo-harness-adapter-codebuddy/   CodeBuddy ACP adapter
+  octo-harness-adapter-opencode/    OpenCode provider adapter
+  octo-harness-adapter-openclaw/    OpenClaw local adapter
+  octo-harness-dify-client/         Dify HTTP/SSE transport client
+  octo-harness-adapter-dify-chatflow/ Dify Chatbot/Chatflow adapter
+  octo-harness-adapter-dify-workflow/ Dify Workflow/Completion adapter
+config/adapters.json   adapter manifest
+test/                  contract and integration tests
 ```
-cd existing_repo
-git remote add origin https://codex.mlamp.cn/dmwork/octo-harness/octo-harness.git
-git branch -M main
-git push -uf origin main
+
+## 安装与验证
+
+要求 Node.js 20+。真实 provider 还需要相应 CLI 已安装并完成认证。
+
+```bash
+cd octo-harness
+pnpm install
+pnpm build
+pnpm typecheck
+pnpm lint
+pnpm test
 ```
 
-## Integrate with your tools
+`pnpm test` 会先构建全部 workspace。测试不会调用真实模型；它使用测试内 adapter fixture、native event fixtures、真实 fake ACP 子进程、独立 adapter-host 进程和临时 JSON store。
 
-* [Set up project integrations](https://codex.mlamp.cn/dmwork/octo-harness/octo-harness/-/settings/integrations)
+每个 adapter 的运行环境、认证、参数和完整教程统一收录在 [Packages And Adapter Guide](packages/README.md)，并可继续进入各 adapter package 的独立 README。
 
-## Collaborate with your team
+## 启动 daemon
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+终端 A：
 
-## Test and Deploy
+```bash
+pnpm daemon
+```
 
-Use the built-in continuous integration in GitLab.
+默认状态位于 `~/.octo-harness/state.json`，socket 位于
+`~/.octo-harness/sockets/octo-harness-daemon.sock`。可显式隔离：
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+```bash
+export OCTO_HARNESS_HOME=/absolute/path/to/runtime-state
+pnpm daemon
+```
 
-***
+终端 B：
 
-# Editing this README
+```bash
+pnpm cli status
+pnpm cli adapter list
+pnpm cli adapter probe codex
+```
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+## 最小 Task 示例
 
-## Suggestions for a good README
+以下示例使用 Codex adapter，需要先安装并登录 Codex CLI：
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+```bash
+pnpm cli agent create \
+  --name demo \
+  --adapter codex \
+  --workdir "$PWD" \
+  --sandbox read-only
 
-## Name
-Choose a self-explaining name for your project.
+pnpm cli trigger create \
+  --name inspect-repo \
+  --kind manual \
+  --agent <agent-id> \
+  --title "Inspect repository" \
+  --instruction "Summarize this repository"
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+pnpm cli trigger fire <trigger-id> \
+  --event-id manual-001 \
+  --payload '{"requestedBy":"local"}'
+```
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+`trigger fire` 立即返回 `taskId/runId`。随后：
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+```bash
+pnpm cli run wait <run-id>
+pnpm cli run events <run-id>
+pnpm cli task continue <task-id> \
+  --source-id comment-001 \
+  --instruction "Now focus on the test strategy"
+```
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+第二次 Task attempt 复用同一个 harness/provider session，但获得新的 run ID 和独立 event seq。
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+也可以用进程内示例执行同一流程：
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+```bash
+pnpm demo
+```
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+## Chat 示例
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+```bash
+pnpm cli chat create --agent <agent-id> --title "Repository chat"
+pnpm cli chat send <session-id> --prompt "What is the architecture?"
+pnpm cli run wait <run-id>
+pnpm cli chat send <session-id> --prompt "Continue with failure modes"
+```
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+Chat 没有伪造 Task/Attempt；它与 Task 只共享 Session/Run/Event 和 provider session binding。
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+## Event 与 Interval Trigger
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+事件 trigger：
 
-## License
-For open source projects, say how it is licensed.
+```bash
+pnpm cli trigger create \
+  --name main-changed \
+  --kind event \
+  --event-type repo.changed \
+  --filter '{"branch":"main"}' \
+  --agent <agent-id> \
+  --title "Review change" \
+  --instruction "Review the incoming repository change"
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+pnpm cli event ingest \
+  --type repo.changed \
+  --event-id github-delivery-123 \
+  --payload '{"branch":"main","commit":"abc123"}'
+```
+
+Interval trigger：
+
+```bash
+pnpm cli trigger create \
+  --name periodic-check \
+  --kind interval \
+  --every-ms 60000 \
+  --agent <agent-id> \
+  --title "Periodic check" \
+  --instruction "Inspect current repository health"
+```
+
+## 真实 Provider Agent
+
+以下命令必须在 Octo Harness 仓库根目录执行，并且需要先在另一个终端运行 `pnpm daemon`。创建 Agent 只保存配置并检查 adapter 已加载，不会立即调用模型。
+
+```bash
+# Codex: default workspace-write sandbox
+pnpm cli agent create --name codex --adapter codex --workdir "$PWD" --sandbox read-only
+
+# Claude Code: unattended bypass by default; requires an externally isolated runtime
+pnpm cli agent create --name claude --adapter claude-code --workdir "$PWD"
+
+# CodeBuddy: ACP transport
+pnpm cli agent create --name codebuddy --adapter codebuddy --workdir "$PWD" --permission-mode dontAsk
+
+# OpenCode: model is often best made explicit
+pnpm cli agent create --name opencode --adapter opencode --workdir "$PWD" --model opencode/hy3-free
+
+# OpenClaw: one local CLI subprocess per invocation; no Gateway required
+pnpm cli agent create --name openclaw --adapter openclaw --provider-agent main --thinking medium
+
+# Dify Chatbot/Chatflow: remote HTTPS + SSE; requires DIFY_CHATFLOW_API_KEY
+pnpm cli agent create --name dify-chat --adapter dify-chatflow --workdir "$PWD"
+
+# Dify Workflow: fixed inputs are configured in the adapter manifest or an Input Resolver
+pnpm cli agent create --name dify-workflow --adapter dify-workflow --workdir "$PWD"
+```
+
+Claude Code 默认绕过 provider 权限确认以支持无人值守执行，必须由容器、VM 或等价的 Runtime 隔离限制文件系统、网络和凭证。Codex 的 `--dangerously-bypass-permissions` 与 OpenCode 的 `--auto-approve` 仍需显式打开；不要在没有外部 sandbox 的环境启用危险权限。
+
+取消执行：
+
+```bash
+pnpm cli run cancel <run-id> --reason user_cancelled
+```
+
+## 进一步阅读
+
+- [Architecture](docs/01-architecture.md)
+- [Current Modules And Transport Flow](docs/02-module-and-transport-flow.md)
+- [Pnpm Monorepo](docs/03-monorepo.md)
+- [Packages And Adapter Guide](packages/README.md)
+- [Prompt And Workdir](docs/04-prompt-and-workdir.md)
+- [Provider Adapters](docs/05-provider-adapters.md)
+- [OpenClaw Local Adapter](docs/06-openclaw-local-adapter.md)
+- [Operations](docs/07-operations.md)
+- [Adapter 开发指南](docs/08-adapter-authoring.md)
+- [Transport And Multi-node](docs/09-transport-and-multinode.md)
+- [Protocol Schema And Codegen](docs/10-protocol-schema-codegen.md)
+- [Aily 多触发机制与 Octo Harness 统一 Blueprint](docs/11-aily-trigger-and-execution-review.html)
+- [Aily Task、Run 与 Agent 执行概念模型](docs/12-aily-task-agent-run-concept-model.md)
+- [Agent Work Runtime 模式](docs/13-agent-work-runtime.md)

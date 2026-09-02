@@ -1,0 +1,46 @@
+{
+  "name": "octo-harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Provider-neutral agent harness runtime for chat, task and trigger workflows",
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@codex.mlamp.cn/dmwork/octo-harness/octo-harness.git"
+  },
+  "scripts": {
+    "test": "pnpm build && node --test",
+    "demo": "pnpm build && node apps/example-basic/dist/index.js",
+    "cli": "pnpm build && node apps/cli/dist/index.js",
+    "daemon": "pnpm build && node apps/daemon/dist/launcher.js",
+    "host": "pnpm build && node apps/adapter-host/dist/index.js --manifest config/adapters.json",
+    "build": "pnpm --recursive --filter \"./packages/**\" --filter \"./apps/**\" run build",
+    "typecheck": "pnpm build && tsc -p tsconfig.json --noEmit",
+    "lint": "eslint apps packages"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@mininglamp-oss/octo-harness-acp-client": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-claude-code": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-codebuddy": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-codex": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-dify-chatflow": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-dify-workflow": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-host": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-openclaw": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-opencode": "workspace:*",
+    "@mininglamp-oss/octo-harness-core": "workspace:*",
+    "@mininglamp-oss/octo-harness-daemon": "workspace:*",
+    "@mininglamp-oss/octo-harness-dify-client": "workspace:*",
+    "@mininglamp-oss/octo-harness-daemon-app": "workspace:*",
+    "@types/node": "^20.19.43",
+    "eslint": "^10.9.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.68.0"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=11"
+  }
+}
