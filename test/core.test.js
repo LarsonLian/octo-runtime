@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AdapterHost } from "@orbtex-ai/orbtex-adapter-host";
-import { HarnessEngine, MemoryStore } from "@orbtex-ai/orbtex-core";
+import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
+import { HarnessEngine, MemoryStore } from "@mininglamp-oss/octo-harness-core";
 import { testAdapter } from "./fixtures/test-adapter.js";
 
 test("trigger occurrence is deduplicated and produces a terminal run", async () => {

@@ -1,6 +1,6 @@
-# @orbtex-ai/cli
+# @mininglamp-oss/octo-harness-cli
 
-Orbtex 面向用户和本地脚本的命令行入口。它把命令行参数转换为 daemon method，通过 Unix
+Octo Harness 面向用户和本地脚本的命令行入口。它把命令行参数转换为 daemon method，通过 Unix
 Domain Socket 发送一行 JSON request，读取一行 JSON response，并把结果输出为 JSON。
 
 ## 作用
@@ -17,7 +17,7 @@ Domain Socket 发送一行 JSON request，读取一行 JSON response，并把结
 ```text
 用户或本地脚本
   -> apps/cli
-  -> ~/.orbtex/sockets/orbtex-daemon.sock
+  -> ~/.octo-harness/sockets/octo-harness-daemon.sock
   -> apps/daemon
 ```
 
@@ -34,7 +34,7 @@ CLI 只负责参数解析、请求映射、socket I/O 和 JSON 展示，不负�
 - 启动 Codex、Claude Code 等 provider CLI；
 - 实现后台调度或恢复。
 
-领域规则属于 `orbtex-core`，后台编排属于 `orbtex-daemon`，provider 执行通过独立
+领域规则属于 `octo-harness-core`，后台编排属于 `octo-harness-daemon`，provider 执行通过独立
 adapter-host 完成。
 
 ## 启动
@@ -53,14 +53,14 @@ pnpm cli adapter list
 pnpm cli adapter probe codex
 ```
 
-通过 workspace bin 安装或链接后，也可以直接使用 `orbtex`：
+通过 workspace bin 安装或链接后，也可以直接使用 `octo-harness`：
 
 ```bash
-orbtex status
-orbtex adapter list
+octo-harness status
+octo-harness adapter list
 ```
 
-`orbtex daemon` 会进入 daemon launcher，与根命令 `pnpm daemon` 使用相同的运行路径解析规则。
+`octo-harness daemon` 会进入 daemon launcher，与根命令 `pnpm daemon` 使用相同的运行路径解析规则。
 
 ## 命令概览
 
@@ -112,19 +112,19 @@ CLI 建立流连接前已经到达的早期事件。
 默认 socket：
 
 ```text
-~/.orbtex/sockets/orbtex-daemon.sock
+~/.octo-harness/sockets/octo-harness-daemon.sock
 ```
 
-CLI 和 daemon 复用 `@orbtex-ai/daemon-app/runtime-options`，避免默认路径漂移。可以通过以下
+CLI 和 daemon 复用 `@mininglamp-oss/octo-harness-daemon-app/runtime-options`，避免默认路径漂移。可以通过以下
 环境变量覆盖：
 
 ```text
-ORBTEX_HOME
-ORBTEX_SOCKET
+OCTO_HARNESS_HOME
+OCTO_HARNESS_SOCKET
 ```
 
-`ORBTEX_HOME=/custom/home` 时，默认 socket 为
-`/custom/home/sockets/orbtex-daemon.sock`；`ORBTEX_SOCKET` 优先级更高。
+`OCTO_HARNESS_HOME=/custom/home` 时，默认 socket 为
+`/custom/home/sockets/octo-harness-daemon.sock`；`OCTO_HARNESS_SOCKET` 优先级更高。
 
 ## 输出与错误
 

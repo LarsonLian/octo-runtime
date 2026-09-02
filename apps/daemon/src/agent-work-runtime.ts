@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { hostname, platform, arch } from "node:os";
 import WebSocket from "ws";
-import type { AdapterHostRpcClient } from "@orbtex-ai/orbtex-adapter-host";
-import type { AgentConfig, CanonicalEvent, InvokeRequest, ProviderSession } from "@orbtex-ai/orbtex-protocol";
+import type { AdapterHostRpcClient } from "@mininglamp-oss/octo-harness-adapter-host";
+import type { AgentConfig, CanonicalEvent, InvokeRequest, ProviderSession } from "@mininglamp-oss/octo-harness-protocol";
 
 const PROTOCOL_VERSION = 1;
 
@@ -171,7 +171,7 @@ export class AgentWorkRuntime {
         try {
           await this.#waitForDisconnect(socket);
         } catch (error) {
-          console.error(`orbtex Agent Work runtime connection failed: ${errorMessage(error)}`);
+          console.error(`octo-harness Agent Work runtime connection failed: ${errorMessage(error)}`);
         }
         if (this.#socket === socket) this.#socket = undefined;
       }
@@ -185,7 +185,7 @@ export class AgentWorkRuntime {
         try {
           await this.#connect();
         } catch (error) {
-          console.error(`orbtex Agent Work runtime reconnect failed: ${errorMessage(error)}`);
+          console.error(`octo-harness Agent Work runtime reconnect failed: ${errorMessage(error)}`);
         }
       }
     }

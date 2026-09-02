@@ -11,45 +11,45 @@ importers:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.9.1)
-      '@orbtex-ai/daemon-app':
+      '@mininglamp-oss/octo-harness-acp-client':
+        specifier: workspace:*
+        version: link:packages/octo-harness-acp-client
+      '@mininglamp-oss/octo-harness-adapter-claude-code':
+        specifier: workspace:*
+        version: link:packages/octo-harness-adapter-claude-code
+      '@mininglamp-oss/octo-harness-adapter-codebuddy':
+        specifier: workspace:*
+        version: link:packages/octo-harness-adapter-codebuddy
+      '@mininglamp-oss/octo-harness-adapter-codex':
+        specifier: workspace:*
+        version: link:packages/octo-harness-adapter-codex
+      '@mininglamp-oss/octo-harness-adapter-dify-chatflow':
+        specifier: workspace:*
+        version: link:packages/octo-harness-adapter-dify-chatflow
+      '@mininglamp-oss/octo-harness-adapter-dify-workflow':
+        specifier: workspace:*
+        version: link:packages/octo-harness-adapter-dify-workflow
+      '@mininglamp-oss/octo-harness-adapter-host':
+        specifier: workspace:*
+        version: link:packages/octo-harness-adapter-host
+      '@mininglamp-oss/octo-harness-adapter-openclaw':
+        specifier: workspace:*
+        version: link:packages/octo-harness-adapter-openclaw
+      '@mininglamp-oss/octo-harness-adapter-opencode':
+        specifier: workspace:*
+        version: link:packages/octo-harness-adapter-opencode
+      '@mininglamp-oss/octo-harness-core':
+        specifier: workspace:*
+        version: link:packages/octo-harness-core
+      '@mininglamp-oss/octo-harness-daemon':
+        specifier: workspace:*
+        version: link:packages/octo-harness-daemon
+      '@mininglamp-oss/octo-harness-daemon-app':
         specifier: workspace:*
         version: link:apps/daemon
-      '@orbtex-ai/orbtex-acp-client':
+      '@mininglamp-oss/octo-harness-dify-client':
         specifier: workspace:*
-        version: link:packages/orbtex-acp-client
-      '@orbtex-ai/orbtex-adapter-claude-code':
-        specifier: workspace:*
-        version: link:packages/orbtex-adapter-claude-code
-      '@orbtex-ai/orbtex-adapter-codebuddy':
-        specifier: workspace:*
-        version: link:packages/orbtex-adapter-codebuddy
-      '@orbtex-ai/orbtex-adapter-codex':
-        specifier: workspace:*
-        version: link:packages/orbtex-adapter-codex
-      '@orbtex-ai/orbtex-adapter-dify-chatflow':
-        specifier: workspace:*
-        version: link:packages/orbtex-adapter-dify-chatflow
-      '@orbtex-ai/orbtex-adapter-dify-workflow':
-        specifier: workspace:*
-        version: link:packages/orbtex-adapter-dify-workflow
-      '@orbtex-ai/orbtex-adapter-host':
-        specifier: workspace:*
-        version: link:packages/orbtex-adapter-host
-      '@orbtex-ai/orbtex-adapter-openclaw':
-        specifier: workspace:*
-        version: link:packages/orbtex-adapter-openclaw
-      '@orbtex-ai/orbtex-adapter-opencode':
-        specifier: workspace:*
-        version: link:packages/orbtex-adapter-opencode
-      '@orbtex-ai/orbtex-core':
-        specifier: workspace:*
-        version: link:packages/orbtex-core
-      '@orbtex-ai/orbtex-daemon':
-        specifier: workspace:*
-        version: link:packages/orbtex-daemon
-      '@orbtex-ai/orbtex-dify-client':
-        specifier: workspace:*
-        version: link:packages/orbtex-dify-client
+        version: link:packages/octo-harness-dify-client
       '@types/node':
         specifier: ^20.19.43
         version: 20.19.43
@@ -65,51 +65,51 @@ importers:
 
   apps/adapter-host:
     dependencies:
-      '@orbtex-ai/orbtex-adapter-claude-code':
+      '@mininglamp-oss/octo-harness-adapter-claude-code':
         specifier: workspace:*
-        version: link:../../packages/orbtex-adapter-claude-code
-      '@orbtex-ai/orbtex-adapter-codebuddy':
+        version: link:../../packages/octo-harness-adapter-claude-code
+      '@mininglamp-oss/octo-harness-adapter-codebuddy':
         specifier: workspace:*
-        version: link:../../packages/orbtex-adapter-codebuddy
-      '@orbtex-ai/orbtex-adapter-codex':
+        version: link:../../packages/octo-harness-adapter-codebuddy
+      '@mininglamp-oss/octo-harness-adapter-codex':
         specifier: workspace:*
-        version: link:../../packages/orbtex-adapter-codex
-      '@orbtex-ai/orbtex-adapter-dify-chatflow':
+        version: link:../../packages/octo-harness-adapter-codex
+      '@mininglamp-oss/octo-harness-adapter-dify-chatflow':
         specifier: workspace:*
-        version: link:../../packages/orbtex-adapter-dify-chatflow
-      '@orbtex-ai/orbtex-adapter-dify-workflow':
+        version: link:../../packages/octo-harness-adapter-dify-chatflow
+      '@mininglamp-oss/octo-harness-adapter-dify-workflow':
         specifier: workspace:*
-        version: link:../../packages/orbtex-adapter-dify-workflow
-      '@orbtex-ai/orbtex-adapter-host':
+        version: link:../../packages/octo-harness-adapter-dify-workflow
+      '@mininglamp-oss/octo-harness-adapter-host':
         specifier: workspace:*
-        version: link:../../packages/orbtex-adapter-host
-      '@orbtex-ai/orbtex-adapter-openclaw':
+        version: link:../../packages/octo-harness-adapter-host
+      '@mininglamp-oss/octo-harness-adapter-openclaw':
         specifier: workspace:*
-        version: link:../../packages/orbtex-adapter-openclaw
-      '@orbtex-ai/orbtex-adapter-opencode':
+        version: link:../../packages/octo-harness-adapter-openclaw
+      '@mininglamp-oss/octo-harness-adapter-opencode':
         specifier: workspace:*
-        version: link:../../packages/orbtex-adapter-opencode
+        version: link:../../packages/octo-harness-adapter-opencode
 
   apps/cli:
     dependencies:
-      '@orbtex-ai/daemon-app':
+      '@mininglamp-oss/octo-harness-daemon-app':
         specifier: workspace:*
         version: link:../daemon
 
   apps/daemon:
     dependencies:
-      '@orbtex-ai/orbtex-adapter-host':
+      '@mininglamp-oss/octo-harness-adapter-host':
         specifier: workspace:*
-        version: link:../../packages/orbtex-adapter-host
-      '@orbtex-ai/orbtex-core':
+        version: link:../../packages/octo-harness-adapter-host
+      '@mininglamp-oss/octo-harness-core':
         specifier: workspace:*
-        version: link:../../packages/orbtex-core
-      '@orbtex-ai/orbtex-daemon':
+        version: link:../../packages/octo-harness-core
+      '@mininglamp-oss/octo-harness-daemon':
         specifier: workspace:*
-        version: link:../../packages/orbtex-daemon
-      '@orbtex-ai/orbtex-protocol':
+        version: link:../../packages/octo-harness-daemon
+      '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
-        version: link:../../packages/orbtex-protocol
+        version: link:../../packages/octo-harness-protocol
       ws:
         specifier: ^8.18.3
         version: 8.21.3
@@ -120,105 +120,105 @@ importers:
 
   apps/example-basic:
     dependencies:
-      '@orbtex-ai/orbtex-adapter-codex':
+      '@mininglamp-oss/octo-harness-adapter-codex':
         specifier: workspace:*
-        version: link:../../packages/orbtex-adapter-codex
-      '@orbtex-ai/orbtex-adapter-host':
+        version: link:../../packages/octo-harness-adapter-codex
+      '@mininglamp-oss/octo-harness-adapter-host':
         specifier: workspace:*
-        version: link:../../packages/orbtex-adapter-host
-      '@orbtex-ai/orbtex-core':
+        version: link:../../packages/octo-harness-adapter-host
+      '@mininglamp-oss/octo-harness-core':
         specifier: workspace:*
-        version: link:../../packages/orbtex-core
+        version: link:../../packages/octo-harness-core
 
-  packages/orbtex-acp-client: {}
+  packages/octo-harness-acp-client: {}
 
-  packages/orbtex-adapter-claude-code:
+  packages/octo-harness-adapter-claude-code:
     dependencies:
-      '@orbtex-ai/orbtex-adapter-sdk':
+      '@mininglamp-oss/octo-harness-adapter-sdk':
         specifier: workspace:*
-        version: link:../orbtex-adapter-sdk
+        version: link:../octo-harness-adapter-sdk
 
-  packages/orbtex-adapter-codebuddy:
+  packages/octo-harness-adapter-codebuddy:
     dependencies:
-      '@orbtex-ai/orbtex-acp-client':
+      '@mininglamp-oss/octo-harness-acp-client':
         specifier: workspace:*
-        version: link:../orbtex-acp-client
-      '@orbtex-ai/orbtex-adapter-sdk':
+        version: link:../octo-harness-acp-client
+      '@mininglamp-oss/octo-harness-adapter-sdk':
         specifier: workspace:*
-        version: link:../orbtex-adapter-sdk
+        version: link:../octo-harness-adapter-sdk
 
-  packages/orbtex-adapter-codex:
+  packages/octo-harness-adapter-codex:
     dependencies:
-      '@orbtex-ai/orbtex-adapter-sdk':
+      '@mininglamp-oss/octo-harness-adapter-sdk':
         specifier: workspace:*
-        version: link:../orbtex-adapter-sdk
+        version: link:../octo-harness-adapter-sdk
       smol-toml:
         specifier: ^1.4.2
         version: 1.8.0
 
-  packages/orbtex-adapter-dify-chatflow:
+  packages/octo-harness-adapter-dify-chatflow:
     dependencies:
-      '@orbtex-ai/orbtex-adapter-sdk':
+      '@mininglamp-oss/octo-harness-adapter-sdk':
         specifier: workspace:*
-        version: link:../orbtex-adapter-sdk
-      '@orbtex-ai/orbtex-dify-client':
+        version: link:../octo-harness-adapter-sdk
+      '@mininglamp-oss/octo-harness-dify-client':
         specifier: workspace:*
-        version: link:../orbtex-dify-client
-      '@orbtex-ai/orbtex-protocol':
+        version: link:../octo-harness-dify-client
+      '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
-        version: link:../orbtex-protocol
+        version: link:../octo-harness-protocol
 
-  packages/orbtex-adapter-dify-workflow:
+  packages/octo-harness-adapter-dify-workflow:
     dependencies:
-      '@orbtex-ai/orbtex-adapter-sdk':
+      '@mininglamp-oss/octo-harness-adapter-sdk':
         specifier: workspace:*
-        version: link:../orbtex-adapter-sdk
-      '@orbtex-ai/orbtex-dify-client':
+        version: link:../octo-harness-adapter-sdk
+      '@mininglamp-oss/octo-harness-dify-client':
         specifier: workspace:*
-        version: link:../orbtex-dify-client
-      '@orbtex-ai/orbtex-protocol':
+        version: link:../octo-harness-dify-client
+      '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
-        version: link:../orbtex-protocol
+        version: link:../octo-harness-protocol
 
-  packages/orbtex-adapter-host:
+  packages/octo-harness-adapter-host:
     dependencies:
-      '@orbtex-ai/orbtex-protocol':
+      '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
-        version: link:../orbtex-protocol
+        version: link:../octo-harness-protocol
 
-  packages/orbtex-adapter-openclaw:
+  packages/octo-harness-adapter-openclaw:
     dependencies:
-      '@orbtex-ai/orbtex-adapter-sdk':
+      '@mininglamp-oss/octo-harness-adapter-sdk':
         specifier: workspace:*
-        version: link:../orbtex-adapter-sdk
+        version: link:../octo-harness-adapter-sdk
 
-  packages/orbtex-adapter-opencode:
+  packages/octo-harness-adapter-opencode:
     dependencies:
-      '@orbtex-ai/orbtex-adapter-sdk':
+      '@mininglamp-oss/octo-harness-adapter-sdk':
         specifier: workspace:*
-        version: link:../orbtex-adapter-sdk
+        version: link:../octo-harness-adapter-sdk
 
-  packages/orbtex-adapter-sdk:
+  packages/octo-harness-adapter-sdk:
     dependencies:
-      '@orbtex-ai/orbtex-protocol':
+      '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
-        version: link:../orbtex-protocol
+        version: link:../octo-harness-protocol
 
-  packages/orbtex-core:
+  packages/octo-harness-core:
     dependencies:
-      '@orbtex-ai/orbtex-protocol':
+      '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
-        version: link:../orbtex-protocol
+        version: link:../octo-harness-protocol
 
-  packages/orbtex-daemon:
+  packages/octo-harness-daemon:
     dependencies:
-      '@orbtex-ai/orbtex-core':
+      '@mininglamp-oss/octo-harness-core':
         specifier: workspace:*
-        version: link:../orbtex-core
+        version: link:../octo-harness-core
 
-  packages/orbtex-dify-client: {}
+  packages/octo-harness-dify-client: {}
 
-  packages/orbtex-protocol:
+  packages/octo-harness-protocol:
     devDependencies:
       json-schema-to-typescript:
         specifier: ^16.0.0

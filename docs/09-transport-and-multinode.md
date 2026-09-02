@@ -2,7 +2,7 @@
 
 ## 当前状态与目标
 
-当前 Orbtex Harness 是可运行的单机基线：CLI 通过 Unix socket 调 daemon，daemon 通过 stdio NDJSON JSON-RPC 调 adapter-host。它**尚未实现 WebSocket 节点注册、跨云调度、事件 ACK/重放和 lease/fencing**。
+当前 Octo Harness Harness 是可运行的单机基线：CLI 通过 Unix socket 调 daemon，daemon 通过 stdio NDJSON JSON-RPC 调 adapter-host。它**尚未实现 WebSocket 节点注册、跨云调度、事件 ACK/重放和 lease/fencing**。
 
 目标版本增加本地与跨云节点后，Chat/Task/Trigger/Run 核心模型和 adapter 的 `invoke(): AsyncIterable<CanonicalEvent>` 不修改。新增内容止于 control plane、node runtime 和 transport/rpc 层。
 
@@ -10,7 +10,7 @@
 
 ```mermaid
 flowchart TB
-  UI["Chat / Task / Trigger API"] --> CP["Orbtex Control Plane\nDB + scheduler + outbox"]
+  UI["Chat / Task / Trigger API"] --> CP["Octo Harness Control Plane\nDB + scheduler + outbox"]
   CP <-->|"WSS bidirectional JSON-RPC\ncommands + canonical events"| N1["Local Node"]
   CP <-->|"WSS bidirectional JSON-RPC"| N2["Cloud A Node"]
   CP <-->|"WSS bidirectional JSON-RPC"| N3["Cloud B Node"]
@@ -103,7 +103,7 @@ interface JsonRpcPeer {
 }
 ```
 
-它维护 pending request map、生成 ID、分发双向 method、校验 result/error 互斥，并在连接关闭时拒绝 pending promises。严格 JSON-RPC error 使用整数 `code`，Orbtex 的业务错误码放在 `error.data.code`，例如：
+它维护 pending request map、生成 ID、分发双向 method、校验 result/error 互斥，并在连接关闭时拒绝 pending promises。严格 JSON-RPC error 使用整数 `code`，Octo Harness 的业务错误码放在 `error.data.code`，例如：
 
 ```json
 {
@@ -262,7 +262,7 @@ node 必须在本地 durable inbox 记录 `commandId` 和 assignment 后再 ACK�
 
 ## Canonical event：thinking、tool call 和 result
 
-Orbtex 保持当前 `channel: "analysis" | "final"` 设计；adapter 可把 Aily 风格 `reasoningContent` 映射到 analysis channel。传输层完全不理解这些内容。
+Octo Harness 保持当前 `channel: "analysis" | "final"` 设计；adapter 可把 Aily 风格 `reasoningContent` 映射到 analysis channel。传输层完全不理解这些内容。
 
 ```json
 {

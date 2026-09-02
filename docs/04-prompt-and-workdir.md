@@ -2,11 +2,11 @@
 
 ## Authoritative Context
 
-Core 生成 `orbtex.context/v1`：Agent identity、Session、可选 Task/Attempt/Trigger occurrence。`renderPortableInstructions` 再附加 harness contract 和 per-turn instructions。这个对象来自持久控制面，不从 workdir 文件反推。
+Core 生成 `octo-harness.context/v1`：Agent identity、Session、可选 Task/Attempt/Trigger occurrence。`renderPortableInstructions` 再附加 harness contract 和 per-turn instructions。这个对象来自持久控制面，不从 workdir 文件反推。
 
 ```json
 {
-  "schema": "orbtex.context/v1",
+  "schema": "octo-harness.context/v1",
   "agent": { "id": "agent_...", "name": "reviewer" },
   "session": { "id": "session_...", "type": "task" },
   "task": { "id": "task_...", "title": "Review", "description": "..." },
@@ -47,7 +47,7 @@ skills 可以提升 Agent 能力，但 run 正确收敛不能依赖模型是否�
 
 真实文件访问范围必须由 provider sandbox、容器/虚拟机、宿主账号权限和 secret policy 建立。尤其 Claude `--print` 会跳过交互式 workspace trust，不能把 `workdir` 字符串当成可信度或隔离证明。
 
-OpenClaw 是一个有意的例外：它的 cwd 优先 state/config/HOME，而不是 Orbtex Agent workdir，因为 agent workspace 与相对 plugin 路径由 OpenClaw 配置拥有。Orbtex 不把自己的 Task 状态或 skills 投影到那个 workspace；细节见 [OpenClaw Local Adapter](06-openclaw-local-adapter.md)。
+OpenClaw 是一个有意的例外：它的 cwd 优先 state/config/HOME，而不是 Octo Harness Agent workdir，因为 agent workspace 与相对 plugin 路径由 OpenClaw 配置拥有。Octo Harness 不把自己的 Task 状态或 skills 投影到那个 workspace；细节见 [OpenClaw Local Adapter](06-openclaw-local-adapter.md)。
 
 ## Secrets And Process Visibility
 

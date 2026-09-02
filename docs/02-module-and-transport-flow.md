@@ -1,15 +1,15 @@
-# 02 Orbtex 当前模块、核心与消息流程
+# 02 Octo Harness 当前模块、核心与消息流程
 
 本文只描述当前工作区中已经运行的单机实现。跨节点 WSS、ACK 重放、lease/fencing 仍是 [Transport And Multi-node](09-transport-and-multinode.md) 的目标设计，不在当前调用链中。
 
 ## 先给结论
 
-- **领域核心**是 `packages/orbtex-core` 中的 `HarnessEngine`。它决定 Chat、Task、Trigger、Session、Attempt、Run 的关系和状态迁移。
-- **稳定契约**是 `packages/orbtex-protocol`。它定义 `InvokeRequest`、canonical event、provider session 和持久化 `EventEnvelope`。
-- **后台编排器**是 `packages/orbtex-daemon` 中的 `HarnessDaemon`。它负责排队、`setImmediate` 后台执行、trigger 匹配、interval timer、等待、取消和重启恢复。
-- **执行边界**是 `packages/orbtex-adapter-host` 中的 `AdapterHost`。它选择 adapter、控制 invocation、传播取消、修正 message lifecycle 并保证当前协议下单一终态。
-- **Provider 差异**终止于各 `orbtex-adapter-*`。Core 不包含 `if adapterType === "codex"` 一类分支。
-- 当前有两条 **Orbtex 自有控制边界**：CLI 到 daemon 使用 Unix socket；daemon 到 adapter-host 子进程使用 stdio。只有第二条是 JSON-RPC 2.0。Adapter 到 provider 还会产生额外的本地子进程 IPC，其中 CodeBuddy ACP 也是 JSON-RPC 2.0。
+- **领域核心**是 `packages/octo-harness-core` 中的 `HarnessEngine`。它决定 Chat、Task、Trigger、Session、Attempt、Run 的关系和状态迁移。
+- **稳定契约**是 `packages/octo-harness-protocol`。它定义 `InvokeRequest`、canonical event、provider session 和持久化 `EventEnvelope`。
+- **后台编排器**是 `packages/octo-harness-daemon` 中的 `HarnessDaemon`。它负责排队、`setImmediate` 后台执行、trigger 匹配、interval timer、等待、取消和重启恢复。
+- **执行边界**是 `packages/octo-harness-adapter-host` 中的 `AdapterHost`。它选择 adapter、控制 invocation、传播取消、修正 message lifecycle 并保证当前协议下单一终态。
+- **Provider 差异**终止于各 `octo-harness-adapter-*`。Core 不包含 `if adapterType === "codex"` 一类分支。
+- 当前有两条 **Octo Harness 自有控制边界**：CLI 到 daemon 使用 Unix socket；daemon 到 adapter-host 子进程使用 stdio。只有第二条是 JSON-RPC 2.0。Adapter 到 provider 还会产生额外的本地子进程 IPC，其中 CodeBuddy ACP 也是 JSON-RPC 2.0。
 
 ## 一、源码模块依赖
 
@@ -25,16 +25,16 @@ flowchart TB
   end
 
   subgraph Domain["领域与调度"]
-    DL["orbtex-daemon\nHarnessDaemon"]
-    CORE["orbtex-core\nHarnessEngine + Store"]:::core
-    PROTO["orbtex-protocol\nInvokeRequest + CanonicalEvent"]:::contract
+    DL["octo-harness-daemon\nHarnessDaemon"]
+    CORE["octo-harness-core\nHarnessEngine + Store"]:::core
+    PROTO["octo-harness-protocol\nInvokeRequest + CanonicalEvent"]:::contract
   end
 
   subgraph Execution["执行与 Provider 适配"]
-    HOST["orbtex-adapter-host\nAdapterHost + RPC client/server"]
-    SDK["orbtex-adapter-sdk\nsubprocess helpers"]
-    ADAPTERS["orbtex-adapter-*\nCodex / Claude / CodeBuddy / OpenCode / OpenClaw / Mock"]
-    ACP["orbtex-acp-client\nCodeBuddy ACP client"]
+    HOST["octo-harness-adapter-host\nAdapterHost + RPC client/server"]
+    SDK["octo-harness-adapter-sdk\nsubprocess helpers"]
+    ADAPTERS["octo-harness-adapter-*\nCodex / Claude / CodeBuddy / OpenCode / OpenClaw / Mock"]
+    ACP["octo-harness-acp-client\nCodeBuddy ACP client"]
   end
 
   CLI --> DA
@@ -70,16 +70,16 @@ flowchart TB
 |---|---|---|---|
 | `apps/cli` | `command`, `callDaemon` | CLI 参数转 daemon method；一次 socket request/response | 领域状态、provider 进程 |
 | `apps/daemon` | `startDaemonServer`, `dispatch` | 装配 Store/Engine/Daemon/Host；Unix socket server；方法路由 | Provider native event 解析 |
-| `orbtex-daemon` | `HarnessDaemon` | trigger 匹配、排队、后台执行、timer、wait、cancel、recover | 组装 provider 命令 |
-| `orbtex-core` | `HarnessEngine` | 领域对象、状态机、`InvokeRequest` 组装、event envelope、持久化 | IPC、provider native 协议 |
-| `orbtex-core/store` | `MemoryStore`, `JsonFileStore` | Map 索引、event append、JSON snapshot/atomic rename | 多 writer 事务、分布式 lease |
-| `orbtex-protocol` | `InvokeRequest`, `CanonicalEvent`, `EventEnvelope` | Core/Host/Adapter 共同类型与最小 runtime validation | 调度策略和 I/O |
-| `orbtex-adapter-host` | `AdapterHost` | adapter registry、invoke、cancel、message/terminal lifecycle | Task/Chat 状态 |
-| `orbtex-adapter-host/rpc` | `AdapterHostRpcClient/Server` | stdio NDJSON JSON-RPC；ACK + event notifications | Provider 命令构造 |
+| `octo-harness-daemon` | `HarnessDaemon` | trigger 匹配、排队、后台执行、timer、wait、cancel、recover | 组装 provider 命令 |
+| `octo-harness-core` | `HarnessEngine` | 领域对象、状态机、`InvokeRequest` 组装、event envelope、持久化 | IPC、provider native 协议 |
+| `octo-harness-core/store` | `MemoryStore`, `JsonFileStore` | Map 索引、event append、JSON snapshot/atomic rename | 多 writer 事务、分布式 lease |
+| `octo-harness-protocol` | `InvokeRequest`, `CanonicalEvent`, `EventEnvelope` | Core/Host/Adapter 共同类型与最小 runtime validation | 调度策略和 I/O |
+| `octo-harness-adapter-host` | `AdapterHost` | adapter registry、invoke、cancel、message/terminal lifecycle | Task/Chat 状态 |
+| `octo-harness-adapter-host/rpc` | `AdapterHostRpcClient/Server` | stdio NDJSON JSON-RPC；ACK + event notifications | Provider 命令构造 |
 | `apps/adapter-host` | manifest loader | 动态 import adapter，注册到一个 Host，启动 RPC server | 调度 Run |
-| `orbtex-adapter-sdk` | `createJsonCliAdapter`, `spawnJsonLines` | provider 子进程和 JSONL 的公共模板 | Provider 字段语义 |
-| `orbtex-acp-client` | `AcpClient` | CodeBuddy ACP initialize/session/prompt/update/cancel | Canonical event 语义 |
-| `orbtex-adapter-*` | `build*Command`, `normalize*Event` | 通用请求转 provider 输入；native stream 转 canonical events | 修改全局 Run/Task |
+| `octo-harness-adapter-sdk` | `createJsonCliAdapter`, `spawnJsonLines` | provider 子进程和 JSONL 的公共模板 | Provider 字段语义 |
+| `octo-harness-acp-client` | `AcpClient` | CodeBuddy ACP initialize/session/prompt/update/cancel | Canonical event 语义 |
+| `octo-harness-adapter-*` | `build*Command`, `normalize*Event` | 通用请求转 provider 输入；native stream 转 canonical events | 修改全局 Run/Task |
 | `config/adapters.json` | adapter manifest | 决定 host 加载哪几个 adapter module | 表示 provider 已经启动 |
 
 ## 三、当前运行时进程和 Transport
@@ -98,7 +98,7 @@ flowchart LR
     SOCKET["Unix socket server\ndispatch"]
     HD["HarnessDaemon\n后台编排"]
     HE["HarnessEngine\n领域核心"]:::core
-    STORE["JsonFileStore\n.orbtex/state.json"]
+    STORE["JsonFileStore\n.octo-harness/state.json"]
     HC["AdapterHostRpcClient"]
   end
 
@@ -170,7 +170,7 @@ Engine 组装并交给 Host 的核心请求形状为：
   "runId": "run-1",
   "prompt": "分析仓库",
   "workdir": "/workspace/repo",
-  "context": {"schema": "orbtex.context/v1"},
+  "context": {"schema": "octo-harness.context/v1"},
   "appendInstructions": "[Harness Context]\n...\n\n[Per-Turn Instructions]\n先给结论",
   "providerSession": {"sessionId": "provider-thread-1", "resumable": true},
   "agentConfig": {"model": "..."}
@@ -201,7 +201,7 @@ host 先 ACK：
 
 ## 四、一条 Chat 指令如何执行
 
-下面对应 `orbtex chat send <session-id> --prompt ...`。
+下面对应 `octo-harness chat send <session-id> --prompt ...`。
 
 ```mermaid
 sequenceDiagram
@@ -453,10 +453,10 @@ flowchart TB
 按下面顺序阅读，能最快还原完整调用链：
 
 1. [`apps/daemon/src/server.ts`](../apps/daemon/src/server.ts)：装配根和外部 method dispatch。
-2. [`packages/orbtex-daemon/src/index.ts`](../packages/orbtex-daemon/src/index.ts)：排队、后台执行、恢复和取消。
-3. [`packages/orbtex-core/src/engine.ts`](../packages/orbtex-core/src/engine.ts)：真正的领域核心与 InvokeRequest 组装。
-4. [`packages/orbtex-protocol/src/index.ts`](../packages/orbtex-protocol/src/index.ts)：请求和事件契约。
-5. [`packages/orbtex-adapter-host/src/rpc.ts`](../packages/orbtex-adapter-host/src/rpc.ts)：stdio JSON-RPC ACK/stream。
-6. [`packages/orbtex-adapter-host/src/index.ts`](../packages/orbtex-adapter-host/src/index.ts)：adapter lifecycle 和取消。
+2. [`packages/octo-harness-daemon/src/index.ts`](../packages/octo-harness-daemon/src/index.ts)：排队、后台执行、恢复和取消。
+3. [`packages/octo-harness-core/src/engine.ts`](../packages/octo-harness-core/src/engine.ts)：真正的领域核心与 InvokeRequest 组装。
+4. [`packages/octo-harness-protocol/src/index.ts`](../packages/octo-harness-protocol/src/index.ts)：请求和事件契约。
+5. [`packages/octo-harness-adapter-host/src/rpc.ts`](../packages/octo-harness-adapter-host/src/rpc.ts)：stdio JSON-RPC ACK/stream。
+6. [`packages/octo-harness-adapter-host/src/index.ts`](../packages/octo-harness-adapter-host/src/index.ts)：adapter lifecycle 和取消。
 7. [`apps/adapter-host/src/index.ts`](../apps/adapter-host/src/index.ts)：manifest 动态加载。
-8. 任一 [`packages/orbtex-adapter-*`](../packages/)：provider 输入和 native event 归一化。
+8. 任一 [`packages/octo-harness-adapter-*`](../packages/)：provider 输入和 native event 归一化。

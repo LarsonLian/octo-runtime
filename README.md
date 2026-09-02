@@ -1,8 +1,8 @@
-# Orbtex
+# Octo Harness
 
 从零实现的 Agent harness reference implementation。它统一 Codex、Claude Code、CodeBuddy、OpenCode、OpenClaw local 与 Dify 远程应用，同时把 Chat、Task、Trigger、Run、provider session 与流式事件保持为明确的领域对象。
 
-项目仓库：[orbtex-ai/orbtex](https://github.com/orbtex-ai/orbtex)。本目录使用 pnpm workspace 和严格 TypeScript，所有可复用协议、runtime 与 adapters 位于 `packages/*`，所有可执行项目位于 `apps/*`。源码统一为 `src/*.ts`，构建后从 `dist/*.js` 运行并发布对应的 `*.d.ts` 类型声明。
+项目仓库：[dmwork/octo-harness/octo-harness](https://codex.mlamp.cn/dmwork/octo-harness/octo-harness)。本目录使用 pnpm workspace 和严格 TypeScript，所有可复用协议、runtime 与 adapters 位于 `packages/*`，所有可执行项目位于 `apps/*`。源码统一为 `src/*.ts`，构建后从 `dist/*.js` 运行并发布对应的 `*.d.ts` 类型声明。
 
 ## 当前能力
 
@@ -28,20 +28,20 @@ apps/
   adapter-host/        独立 provider host 进程
   example-basic/       in-process Codex example
 packages/
-  orbtex-protocol/            canonical event / invoke contract
-  orbtex-core/                Chat/Task/Trigger/Run domain engine
-  orbtex-daemon/              queue, scheduler, recovery
-  orbtex-adapter-host/        host lifecycle + NDJSON RPC
-  orbtex-adapter-sdk/         adapter helpers + subprocess runtime
-  orbtex-acp-client/          CodeBuddy ACP JSON-RPC client
-  orbtex-adapter-codex/       Codex provider adapter
-  orbtex-adapter-claude-code/ Claude Code provider adapter
-  orbtex-adapter-codebuddy/   CodeBuddy ACP adapter
-  orbtex-adapter-opencode/    OpenCode provider adapter
-  orbtex-adapter-openclaw/    OpenClaw local adapter
-  orbtex-dify-client/         Dify HTTP/SSE transport client
-  orbtex-adapter-dify-chatflow/ Dify Chatbot/Chatflow adapter
-  orbtex-adapter-dify-workflow/ Dify Workflow/Completion adapter
+  octo-harness-protocol/            canonical event / invoke contract
+  octo-harness-core/                Chat/Task/Trigger/Run domain engine
+  octo-harness-daemon/              queue, scheduler, recovery
+  octo-harness-adapter-host/        host lifecycle + NDJSON RPC
+  octo-harness-adapter-sdk/         adapter helpers + subprocess runtime
+  octo-harness-acp-client/          CodeBuddy ACP JSON-RPC client
+  octo-harness-adapter-codex/       Codex provider adapter
+  octo-harness-adapter-claude-code/ Claude Code provider adapter
+  octo-harness-adapter-codebuddy/   CodeBuddy ACP adapter
+  octo-harness-adapter-opencode/    OpenCode provider adapter
+  octo-harness-adapter-openclaw/    OpenClaw local adapter
+  octo-harness-dify-client/         Dify HTTP/SSE transport client
+  octo-harness-adapter-dify-chatflow/ Dify Chatbot/Chatflow adapter
+  octo-harness-adapter-dify-workflow/ Dify Workflow/Completion adapter
 config/adapters.json   adapter manifest
 test/                  contract and integration tests
 ```
@@ -51,7 +51,7 @@ test/                  contract and integration tests
 要求 Node.js 20+。真实 provider 还需要相应 CLI 已安装并完成认证。
 
 ```bash
-cd orbtex
+cd octo-harness
 pnpm install
 pnpm build
 pnpm typecheck
@@ -71,11 +71,11 @@ pnpm test
 pnpm daemon
 ```
 
-默认状态位于 `~/.orbtex/state.json`，socket 位于
-`~/.orbtex/sockets/orbtex-daemon.sock`。可显式隔离：
+默认状态位于 `~/.octo-harness/state.json`，socket 位于
+`~/.octo-harness/sockets/octo-harness-daemon.sock`。可显式隔离：
 
 ```bash
-export ORBTEX_HOME=/absolute/path/to/runtime-state
+export OCTO_HARNESS_HOME=/absolute/path/to/runtime-state
 pnpm daemon
 ```
 
@@ -173,7 +173,7 @@ pnpm cli trigger create \
 
 ## 真实 Provider Agent
 
-以下命令必须在 Orbtex 仓库根目录执行，并且需要先在另一个终端运行 `pnpm daemon`。创建 Agent 只保存配置并检查 adapter 已加载，不会立即调用模型。
+以下命令必须在 Octo Harness 仓库根目录执行，并且需要先在另一个终端运行 `pnpm daemon`。创建 Agent 只保存配置并检查 adapter 已加载，不会立即调用模型。
 
 ```bash
 # Codex: default workspace-write sandbox
@@ -219,6 +219,6 @@ pnpm cli run cancel <run-id> --reason user_cancelled
 - [Adapter 开发指南](docs/08-adapter-authoring.md)
 - [Transport And Multi-node](docs/09-transport-and-multinode.md)
 - [Protocol Schema And Codegen](docs/10-protocol-schema-codegen.md)
-- [Aily 多触发机制与 Orbtex 统一 Blueprint](docs/11-aily-trigger-and-execution-review.html)
+- [Aily 多触发机制与 Octo Harness 统一 Blueprint](docs/11-aily-trigger-and-execution-review.html)
 - [Aily Task、Run 与 Agent 执行概念模型](docs/12-aily-task-agent-run-concept-model.md)
 - [Agent Work Runtime 模式](docs/13-agent-work-runtime.md)

@@ -1,8 +1,8 @@
-# @orbtex-ai/example-basic
+# @mininglamp-oss/octo-harness-example-basic
 
-Orbtex 最小的进程内端到端示例。它不启动 daemon、Unix socket 或独立 adapter-host，而是在
+Octo Harness 最小的进程内端到端示例。它不启动 daemon、Unix socket 或独立 adapter-host，而是在
 一个 Node.js 进程中直接组合 `HarnessEngine`、`MemoryStore`、`AdapterHost` 和 Codex adapter，
-用于展示 Orbtex 核心 API 如何协作。
+用于展示 Octo Harness 核心 API 如何协作。
 
 ## 作用
 
@@ -61,7 +61,7 @@ adapter-host 是正式 daemon 拓扑中的必要架构边界；本示例以内�
 
 ## 运行
 
-在 Orbtex 仓库根目录执行：
+在 Octo Harness 仓库根目录执行：
 
 ```bash
 pnpm demo
@@ -70,11 +70,11 @@ pnpm demo
 也可以在已经完成构建后只运行该 workspace：
 
 ```bash
-pnpm --filter @orbtex-ai/example-basic start
+pnpm --filter @mininglamp-oss/octo-harness-example-basic start
 ```
 
 示例将当前 `process.cwd()` 作为 Agent workdir，因此应从希望 Codex 检查的目录启动。根命令
-`pnpm demo` 默认检查 Orbtex 仓库本身。
+`pnpm demo` 默认检查 Octo Harness 仓库本身。
 
 ## 输出
 

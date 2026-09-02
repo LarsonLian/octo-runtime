@@ -1,15 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AdapterHost } from "@orbtex-ai/orbtex-adapter-host";
+import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 import {
   buildDifyChatRequest,
   createDifyChatflowAdapter
-} from "@orbtex-ai/orbtex-adapter-dify-chatflow";
+} from "@mininglamp-oss/octo-harness-adapter-dify-chatflow";
 import {
   buildDifyStatelessRequest,
   createDifyWorkflowAdapter
-} from "@orbtex-ai/orbtex-adapter-dify-workflow";
-import { parseDifyEvent, parseSse } from "@orbtex-ai/orbtex-dify-client";
+} from "@mininglamp-oss/octo-harness-adapter-dify-workflow";
+import { parseDifyEvent, parseSse } from "@mininglamp-oss/octo-harness-dify-client";
 
 const request = {
   invocationId: "inv-dify-1",
@@ -66,13 +66,13 @@ test("Dify Chatbot stream becomes canonical session, message, usage, and termina
 test("Dify Chat request resumes conversation and user without leaking instructions into query", () => {
   const built = buildDifyChatRequest({
     ...request,
-    providerSession: { sessionId: "conversation-existing", user: "orbtex-user-existing" },
+    providerSession: { sessionId: "conversation-existing", user: "octo-harness-user-existing" },
     context: { workflowInputs: { locale: "zh-CN" } },
     agentConfig: { providerOptions: { inputs: { tenant: "tenant-a" } } }
   }, { defaultInputs: { tone: "short" } });
 
   assert.equal(built.body.conversation_id, "conversation-existing");
-  assert.equal(built.body.user, "orbtex-user-existing");
+  assert.equal(built.body.user, "octo-harness-user-existing");
   assert.equal(built.body.query, "你好");
   assert.equal(String(built.body.query).includes("只给结论"), false);
   assert.deepEqual(built.body.inputs, { tone: "short", tenant: "tenant-a", locale: "zh-CN" });

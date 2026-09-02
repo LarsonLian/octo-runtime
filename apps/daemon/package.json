@@ -1,10 +1,10 @@
 {
-  "name": "@orbtex-ai/daemon-app",
+  "name": "@mininglamp-oss/octo-harness-daemon-app",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "bin": {
-    "orbtex-daemon": "dist/launcher.js"
+    "octo-harness-daemon": "dist/launcher.js"
   },
   "exports": {
     ".": {
@@ -21,10 +21,10 @@
     "build": "tsc -p tsconfig.json && chmod +x dist/launcher.js"
   },
   "dependencies": {
-    "@orbtex-ai/orbtex-adapter-host": "workspace:*",
-    "@orbtex-ai/orbtex-core": "workspace:*",
-    "@orbtex-ai/orbtex-daemon": "workspace:*",
-    "@orbtex-ai/orbtex-protocol": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-host": "workspace:*",
+    "@mininglamp-oss/octo-harness-core": "workspace:*",
+    "@mininglamp-oss/octo-harness-daemon": "workspace:*",
+    "@mininglamp-oss/octo-harness-protocol": "workspace:*",
     "ws": "^8.18.3"
   },
   "devDependencies": {

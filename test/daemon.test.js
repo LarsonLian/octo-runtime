@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AdapterHost } from "@orbtex-ai/orbtex-adapter-host";
-import { HarnessEngine, JsonFileStore } from "@orbtex-ai/orbtex-core";
-import { HarnessDaemon } from "@orbtex-ai/orbtex-daemon";
+import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
+import { HarnessEngine, JsonFileStore } from "@mininglamp-oss/octo-harness-core";
+import { HarnessDaemon } from "@mininglamp-oss/octo-harness-daemon";
 import { testAdapter } from "./fixtures/test-adapter.js";
 
 test("daemon recovery queues a materialized task that has no run", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "orbtex-orphan-test-"));
+  const directory = await mkdtemp(join(tmpdir(), "octo-harness-orphan-test-"));
   try {
     const store = await JsonFileStore.open(join(directory, "state.json"));
     const host = new AdapterHost(); host.register(testAdapter);
@@ -25,7 +25,7 @@ test("daemon recovery queues a materialized task that has no run", async () => {
 });
 
 test("daemon ACKs durable work, deduplicates triggers, and continues one task session", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "orbtex-store-test-"));
+  const directory = await mkdtemp(join(tmpdir(), "octo-harness-store-test-"));
   try {
     const file = join(directory, "state.json");
     const store = await JsonFileStore.open(file);

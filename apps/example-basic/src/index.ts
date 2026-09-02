@@ -1,6 +1,6 @@
-import { AdapterHost } from "@orbtex-ai/orbtex-adapter-host";
-import { codexAdapter } from "@orbtex-ai/orbtex-adapter-codex";
-import { HarnessEngine, MemoryStore } from "@orbtex-ai/orbtex-core";
+import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
+import { codexAdapter } from "@mininglamp-oss/octo-harness-adapter-codex";
+import { HarnessEngine, MemoryStore } from "@mininglamp-oss/octo-harness-core";
 
 const host = new AdapterHost();
 host.register(codexAdapter);

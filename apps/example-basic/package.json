@@ -1,5 +1,5 @@
 {
-  "name": "@orbtex-ai/example-basic",
+  "name": "@mininglamp-oss/octo-harness-example-basic",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,9 +8,9 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@orbtex-ai/orbtex-adapter-host": "workspace:*",
-    "@orbtex-ai/orbtex-adapter-codex": "workspace:*",
-    "@orbtex-ai/orbtex-core": "workspace:*"
+    "@mininglamp-oss/octo-harness-adapter-host": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-codex": "workspace:*",
+    "@mininglamp-oss/octo-harness-core": "workspace:*"
   },
   "types": "./dist/index.d.ts"
 }

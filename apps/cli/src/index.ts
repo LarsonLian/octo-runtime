@@ -3,7 +3,7 @@ import net from "node:net";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { resolveDaemonRuntimePaths } from "@orbtex-ai/daemon-app/runtime-options";
+import { resolveDaemonRuntimePaths } from "@mininglamp-oss/octo-harness-daemon-app/runtime-options";
 
 type FlagValue = string | boolean;
 type Flags = Record<string, FlagValue>;
@@ -167,18 +167,18 @@ function command(group: string | undefined, action: string | undefined, id: stri
   if (group === "run" && action === "cancel") {
     return { method: "run.cancel", params: { runId: required(id, "run-id"), reason: optionalString(flags.reason) ?? "cancelled_by_user" } };
   }
-  throw new Error("unknown command; run orbtex help");
+  throw new Error("unknown command; run octo-harness help");
 }
 
 async function callDaemon(request: CliRequest): Promise<unknown> {
   if (request.method === "help") {
     return { usage: [
-      "orbtex daemon", "orbtex status", "orbtex adapter list|probe <type>",
-      "orbtex agent create --name N --adapter TYPE [--workdir DIR] [--model M] [--provider-agent SLUG]", "orbtex agent list",
-      "orbtex chat create --agent ID [--title T]", "orbtex chat send ID --prompt TEXT [--follow]", "orbtex chat list|get ID",
-      "orbtex trigger create --name N --kind manual|event|interval --agent ID --title T --instruction TEXT", "orbtex trigger fire ID [--event-id ID]", "orbtex trigger list",
-      "orbtex event ingest --type TYPE --event-id ID [--payload JSON]",
-      "orbtex task list|get ID|continue ID --instruction TEXT", "orbtex run get|events|wait|stream|cancel ID"
+      "octo-harness daemon", "octo-harness status", "octo-harness adapter list|probe <type>",
+      "octo-harness agent create --name N --adapter TYPE [--workdir DIR] [--model M] [--provider-agent SLUG]", "octo-harness agent list",
+      "octo-harness chat create --agent ID [--title T]", "octo-harness chat send ID --prompt TEXT [--follow]", "octo-harness chat list|get ID",
+      "octo-harness trigger create --name N --kind manual|event|interval --agent ID --title T --instruction TEXT", "octo-harness trigger fire ID [--event-id ID]", "octo-harness trigger list",
+      "octo-harness event ingest --type TYPE --event-id ID [--payload JSON]",
+      "octo-harness task list|get ID|continue ID --instruction TEXT", "octo-harness run get|events|wait|stream|cancel ID"
     ] };
   }
 
@@ -232,7 +232,7 @@ async function connectDaemon(): Promise<net.Socket> {
     const code = (error as NodeJS.ErrnoException).code;
     if (code && ["ENOENT", "ECONNREFUSED", "EINVAL"].includes(code)) {
       throw new Error(
-        `cannot connect to Orbtex daemon at ${socketPath}; start it from the repository root with: pnpm daemon`,
+        `cannot connect to Octo Harness daemon at ${socketPath}; start it from the repository root with: pnpm daemon`,
         { cause: error }
       );
     }

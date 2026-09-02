@@ -2,27 +2,27 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { readFile, stat } from "node:fs/promises";
-import { AdapterHost } from "@orbtex-ai/orbtex-adapter-host";
-import { spawnAcpClient } from "@orbtex-ai/orbtex-acp-client";
-import { createCodeBuddyAdapter, normalizeCodeBuddyUpdate } from "@orbtex-ai/orbtex-adapter-codebuddy";
+import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
+import { spawnAcpClient } from "@mininglamp-oss/octo-harness-acp-client";
+import { createCodeBuddyAdapter, normalizeCodeBuddyUpdate } from "@mininglamp-oss/octo-harness-adapter-codebuddy";
 import {
   buildCodexCommand,
   createCodexAdapter,
   createCodexInvocationHome,
   normalizeCodexEvent
-} from "@orbtex-ai/orbtex-adapter-codex";
+} from "@mininglamp-oss/octo-harness-adapter-codex";
 import {
   buildClaudeCommand,
   createClaudeCodeAdapter,
   normalizeClaudeEvent
-} from "@orbtex-ai/orbtex-adapter-claude-code";
-import { buildOpenCodeCommand, normalizeOpenCodeEvent } from "@orbtex-ai/orbtex-adapter-opencode";
+} from "@mininglamp-oss/octo-harness-adapter-claude-code";
+import { buildOpenCodeCommand, normalizeOpenCodeEvent } from "@mininglamp-oss/octo-harness-adapter-opencode";
 import {
   buildOpenClawCommand,
   createOpenClawAdapter,
   tryParseOpenClawEvent,
   tryParseOpenClawFinalBlob
-} from "@orbtex-ai/orbtex-adapter-openclaw";
+} from "@mininglamp-oss/octo-harness-adapter-openclaw";
 
 const request = { invocationId: "inv-1", sessionId: "session-1", runId: "run-1", prompt: "work", workdir: process.cwd(), context: {}, appendInstructions: "CONTROL", agentConfig: {} };
 

@@ -203,7 +203,7 @@ flowchart LR
 
 ## “Agent Run”应该怎么用
 
-本机 Aily 包含 “inside an agent run” 一类描述，但可见 API 中没有名为 `AgentRun` 的权威接口或数据结构。为了避免歧义，Orbtex 应采用以下命名规则：
+本机 Aily 包含 “inside an agent run” 一类描述，但可见 API 中没有名为 `AgentRun` 的权威接口或数据结构。为了避免歧义，Octo Harness 应采用以下命名规则：
 
 | 使用场景 | 推荐名称 | 不建议 |
 |---|---|---|
@@ -223,12 +223,12 @@ UI 的“Agent 执行详情”可以聚合展示：
 
 也就是说，`Agent 执行`适合作为读模型，不适合作为第四套重复的状态机。
 
-## 对 Orbtex 的映射
+## 对 Octo Harness 的映射
 
-| Aily 概念 | Orbtex 当前对象 | 判断 |
+| Aily 概念 | Octo Harness 当前对象 | 判断 |
 |---|---|---|
 | Task | `Task` | 一致 |
-| Task Run 的 `attemptNo` 与来源 | `Attempt` | Orbtex 拆得更明确 |
+| Task Run 的 `attemptNo` 与来源 | `Attempt` | Octo Harness 拆得更明确 |
 | Task/Chat 的业务执行 | `Run` | 一致，Chat 与 Task 在此收敛 |
 | Session | `Session(type=chat\|task)` | 一致 |
 | Adapter Invocation | `Run.invocationId` + `InvokeRequest.invocationId` | 已存在，但生产版宜单独持久化 invocation/lease |
@@ -236,7 +236,7 @@ UI 的“Agent 执行详情”可以聚合展示：
 | AutoTaskRun | `TriggerOccurrence + Task` | 语义接近；可增加面向 UI 的 Auto run projection |
 | Session/Event Store | `EventEnvelope(runId, seq)` | 一致 |
 
-Orbtex 当前的 `Attempt + Run` 比单个 Task Run 更适合高可用实现：Attempt 保存业务来源和编号，Run 保存排队、执行、取消和事件。生产化时只需要进一步把 Runtime `Invocation` 从 Run 中拆为可租约、可 fencing、可 reattach 的持久记录，而不是新增含糊的 `AgentRun`。
+Octo Harness 当前的 `Attempt + Run` 比单个 Task Run 更适合高可用实现：Attempt 保存业务来源和编号，Run 保存排队、执行、取消和事件。生产化时只需要进一步把 Runtime `Invocation` 从 Run 中拆为可租约、可 fencing、可 reattach 的持久记录，而不是新增含糊的 `AgentRun`。
 
 ## 依据与边界
 

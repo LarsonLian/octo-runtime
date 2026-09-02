@@ -5,7 +5,7 @@ import { startDaemonServer } from "./server.js";
 const runtimePaths = resolveDaemonRuntimePaths();
 const app = await startDaemonServer(runtimePaths);
 console.error(
-  `orbtex daemon ready pid=${process.pid} socket=${app.runtime.socketPath} ` +
+  `octo-harness daemon ready pid=${process.pid} socket=${app.runtime.socketPath} ` +
   `adapterHostPid=${app.runtime.adapterHost.pid ?? "unknown"} adapters=${app.runtime.adapters.join(",")}`
 );
 let stopping = false;
@@ -16,7 +16,7 @@ const stop = (): void => {
   void app.close().then(
     () => process.exit(0),
     error => {
-      console.error(`orbtex daemon shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`octo-harness daemon shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
       process.exit(1);
     }
   );

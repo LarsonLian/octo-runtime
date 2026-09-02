@@ -8,13 +8,13 @@ import {
   type CreateTriggerInput,
   type RegisterAgentInput,
   type Store
-} from "@orbtex-ai/orbtex-core";
-import { HarnessDaemon } from "@orbtex-ai/orbtex-daemon";
+} from "@mininglamp-oss/octo-harness-core";
+import { HarnessDaemon } from "@mininglamp-oss/octo-harness-daemon";
 import {
   spawnAdapterHost,
   type AdapterHostProcess,
   type AdapterHostRpcClient
-} from "@orbtex-ai/orbtex-adapter-host";
+} from "@mininglamp-oss/octo-harness-adapter-host";
 import { AgentWorkRuntime, type AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
 
 export interface StartDaemonServerOptions {

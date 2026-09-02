@@ -6,7 +6,7 @@ import { daemonRuntimeArguments, resolveDaemonRuntimePaths } from "./runtime-opt
 const entrypoint = fileURLToPath(new URL("./index.js", import.meta.url));
 const runtimePaths = resolveDaemonRuntimePaths();
 const child = spawn(process.execPath, [entrypoint, ...daemonRuntimeArguments(runtimePaths)], {
-  argv0: "orbtex-daemon",
+  argv0: "octo-harness-daemon",
   env: process.env,
   stdio: "inherit"
 });

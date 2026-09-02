@@ -5,22 +5,22 @@
 默认目录固定在当前用户 home 下，不受启动 cwd 影响：
 
 ```text
-~/.orbtex/
+~/.octo-harness/
   sockets/
-    orbtex-daemon.sock   mode 0600 Unix socket
+    octo-harness-daemon.sock   mode 0600 Unix socket
   state.json             mode 0600 versioned store
 ```
 
-用绝对路径 `ORBTEX_HOME` 固定运行实例。不要让两个 daemon 共享 state file；当前 store 是 single-writer。
+用绝对路径 `OCTO_HARNESS_HOME` 固定运行实例。不要让两个 daemon 共享 state file；当前 store 是 single-writer。
 
 `pnpm daemon` 通过 launcher 把最终生效的绝对路径作为 daemon argv 传入。以下环境变量可覆盖默认值：
 
 ```text
-ORBTEX_HOME
-ORBTEX_SOCKET
-ORBTEX_STORE
-ORBTEX_MANIFEST
-ORBTEX_ADAPTER_HOST
+OCTO_HARNESS_HOME
+OCTO_HARNESS_SOCKET
+OCTO_HARNESS_STORE
+OCTO_HARNESS_MANIFEST
+OCTO_HARNESS_ADAPTER_HOST
 ```
 
 daemon 也直接接受 `--socket`、`--store`、`--manifest` 和 `--adapter-host`。旧的
@@ -38,12 +38,12 @@ ps -axo pid=,ppid=,args= | grep '[o]rbtex-'
 典型输出：
 
 ```text
-orbtex-daemon /absolute/apps/daemon/dist/index.js --socket /Users/name/.orbtex/sockets/orbtex-daemon.sock --store /Users/name/.orbtex/state.json --manifest /absolute/config/adapters.json --adapter-host /absolute/apps/adapter-host/dist/index.js
-orbtex-adapter-host /absolute/apps/adapter-host/dist/index.js --manifest /absolute/config/adapters.json
+octo-harness-daemon /absolute/apps/daemon/dist/index.js --socket /Users/name/.octo-harness/sockets/octo-harness-daemon.sock --store /Users/name/.octo-harness/state.json --manifest /absolute/config/adapters.json --adapter-host /absolute/apps/adapter-host/dist/index.js
+octo-harness-adapter-host /absolute/apps/adapter-host/dist/index.js --manifest /absolute/config/adapters.json
 ```
 
 进程参数只用于本机快速发现，不放入 token、prompt 或 provider 凭据。脚本和监控应使用
-`orbtex status` 的结构化结果，不应解析 `ps` 文本。
+`octo-harness status` 的结构化结果，不应解析 `ps` 文本。
 
 ## Health And Discovery
 
@@ -63,11 +63,11 @@ pnpm cli task list
 
 ## JSON-RPC Frame Trace
 
-设置 `ORBTEX_TRACE_RPC=1` 后启动 daemon，可以在 daemon 的 stderr 中看到 daemon 与
+设置 `OCTO_HARNESS_TRACE_RPC=1` 后启动 daemon，可以在 daemon 的 stderr 中看到 daemon 与
 adapter-host 之间每一条 NDJSON JSON-RPC 2.0 线上帧：
 
 ```bash
-ORBTEX_TRACE_RPC=1 pnpm daemon
+OCTO_HARNESS_TRACE_RPC=1 pnpm daemon
 ```
 
 另一个终端只需提交消息：
@@ -94,10 +94,10 @@ node apps/cli/dist/index.js run stream <run-id>
 输出按方向标记，标记后面的内容就是实际发送或收到的单行 JSON frame：
 
 ```text
-[orbtex rpc daemon -> adapter-host] {"jsonrpc":"2.0","id":"...","method":"list","params":{}}
-[orbtex rpc adapter-host -> daemon] {"jsonrpc":"2.0","id":"...","result":[...]}
-[orbtex rpc daemon -> adapter-host] {"jsonrpc":"2.0","id":"...","method":"invoke","params":{...}}
-[orbtex rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{...}}
+[octo-harness rpc daemon -> adapter-host] {"jsonrpc":"2.0","id":"...","method":"list","params":{}}
+[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","id":"...","result":[...]}
+[octo-harness rpc daemon -> adapter-host] {"jsonrpc":"2.0","id":"...","method":"invoke","params":{...}}
+[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{...}}
 ```
 
 trace 默认关闭，修改环境变量后需要重启 daemon。它不会打印 CLI 与 daemon 之间的消息，
@@ -117,7 +117,7 @@ pnpm cli run cancel <run-id> --reason operator_cancel
 
 ## Agent Work Runtime
 
-daemon 可选连接 `orbtex-agent-work` 的 Runtime WSS，并继续复用同一个 adapter-host。
+daemon 可选连接 `octo-harness-agent-work` 的 Runtime WSS，并继续复用同一个 adapter-host。
 配置、事件映射和边界见 [Agent Work Runtime 模式](13-agent-work-runtime.md)。
 
 诊断时先看最后一个 terminal event，再看此前的 provider error/tool event。事件 seq 是单 run 单调递增；不要用 wall-clock timestamp 代替顺序。

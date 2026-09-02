@@ -1,6 +1,6 @@
-# @orbtex-ai/daemon-app
+# @mininglamp-oss/octo-harness-daemon-app
 
-Orbtex 的长驻 daemon 可执行程序与装配根。它把持久化 Store、领域 Engine、后台
+Octo Harness 的长驻 daemon 可执行程序与装配根。它把持久化 Store、领域 Engine、后台
 `HarnessDaemon` 和独立 adapter-host 子进程组合起来，并通过本地 Unix Domain Socket 暴露
 控制面。
 
@@ -30,18 +30,18 @@ daemon app
 
 ## App 与 Package 的区别
 
-`apps/daemon` 和 `packages/orbtex-daemon` 不是重复实现：
+`apps/daemon` 和 `packages/octo-harness-daemon` 不是重复实现：
 
 | 模块 | 作用 |
 |---|---|
 | `apps/daemon` | 可执行程序、路径配置、进程装配、Unix socket server 和 method dispatch |
-| `packages/orbtex-daemon` | 可复用的 `HarnessDaemon` 调度库，负责 queue、trigger、wait、cancel 和 recovery |
+| `packages/octo-harness-daemon` | 可复用的 `HarnessDaemon` 调度库，负责 queue、trigger、wait、cancel 和 recovery |
 
 package 不知道 socket、manifest、host entrypoint 或进程信号；app 负责把这些外部资源装配起来。
 
 ## 架构约束
 
-daemon 是有状态控制面，不得直接 import 或加载 `@orbtex-ai/orbtex-adapter-*`。provider
+daemon 是有状态控制面，不得直接 import 或加载 `@mininglamp-oss/octo-harness-adapter-*`。provider
 adapter 必须由独立 `apps/adapter-host` 加载，daemon 只通过
 `AdapterHostRpcClient` 的 `list/probe/invoke/cancel` 契约访问执行层。
 
@@ -54,9 +54,9 @@ daemon 迁移到 Go/Rust 等运行时而保留 Node.js adapter 生态。完整�
 默认运行目录与启动 cwd 无关：
 
 ```text
-~/.orbtex/
+~/.octo-harness/
   sockets/
-    orbtex-daemon.sock
+    octo-harness-daemon.sock
   state.json
 ```
 
@@ -72,13 +72,13 @@ daemon 迁移到 Go/Rust 等运行时而保留 Node.js adapter 生态。完整�
 
 | 资源 | 参数 | 环境变量 | 默认值 |
 |---|---|---|---|
-| Socket | `--socket` | `ORBTEX_SOCKET` | `~/.orbtex/sockets/orbtex-daemon.sock` |
-| Store | `--store` | `ORBTEX_STORE` | `~/.orbtex/state.json` |
-| Adapter manifest | `--manifest` | `ORBTEX_MANIFEST` | 仓库 `config/adapters.json` |
-| Adapter-host entrypoint | `--adapter-host` | `ORBTEX_ADAPTER_HOST` | `apps/adapter-host/dist/index.js` |
+| Socket | `--socket` | `OCTO_HARNESS_SOCKET` | `~/.octo-harness/sockets/octo-harness-daemon.sock` |
+| Store | `--store` | `OCTO_HARNESS_STORE` | `~/.octo-harness/state.json` |
+| Adapter manifest | `--manifest` | `OCTO_HARNESS_MANIFEST` | 仓库 `config/adapters.json` |
+| Adapter-host entrypoint | `--adapter-host` | `OCTO_HARNESS_ADAPTER_HOST` | `apps/adapter-host/dist/index.js` |
 
-`--host-entrypoint` 是 `--adapter-host` 的兼容别名。`ORBTEX_HOME` 会同时改变默认 socket 和
-store 根目录，但不会覆盖显式的 `ORBTEX_SOCKET` 或 `ORBTEX_STORE`。
+`--host-entrypoint` 是 `--adapter-host` 的兼容别名。`OCTO_HARNESS_HOME` 会同时改变默认 socket 和
+store 根目录，但不会覆盖显式的 `OCTO_HARNESS_SOCKET` 或 `OCTO_HARNESS_STORE`。
 
 ## 启动
 
@@ -91,7 +91,7 @@ pnpm daemon
 也可以运行 workspace app：
 
 ```bash
-pnpm --filter @orbtex-ai/daemon-app start
+pnpm --filter @mininglamp-oss/octo-harness-daemon-app start
 ```
 
 launcher 会把有效配置转换为绝对路径和真实 argv，daemon 在就绪后向 stderr 输出 PID、
@@ -149,8 +149,8 @@ NDJSON JSON-RPC 2.0。
 测试或其他本地 app 可以直接 import：
 
 ```ts
-import { startDaemonServer } from "@orbtex-ai/daemon-app";
-import { resolveDaemonRuntimePaths } from "@orbtex-ai/daemon-app/runtime-options";
+import { startDaemonServer } from "@mininglamp-oss/octo-harness-daemon-app";
+import { resolveDaemonRuntimePaths } from "@mininglamp-oss/octo-harness-daemon-app/runtime-options";
 ```
 
 `startDaemonServer` 返回 Store、Engine、Daemon、host process、runtime metadata 和 `close()`，

@@ -1,10 +1,10 @@
 {
-  "name": "@orbtex-ai/cli",
+  "name": "@mininglamp-oss/octo-harness-cli",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "bin": {
-    "orbtex": "dist/index.js"
+    "octo-harness": "dist/index.js"
   },
   "scripts": {
     "start": "node dist/index.js",
@@ -12,6 +12,6 @@
   },
   "types": "./dist/index.d.ts",
   "dependencies": {
-    "@orbtex-ai/daemon-app": "workspace:*"
+    "@mininglamp-oss/octo-harness-daemon-app": "workspace:*"
   }
 }

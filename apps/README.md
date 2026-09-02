@@ -1,6 +1,6 @@
-# Orbtex Apps
+# Octo Harness Apps
 
-`apps/` 包含 Orbtex 的可执行入口。可复用领域逻辑、协议、daemon 调度和 provider adapters
+`apps/` 包含 Octo Harness 的可执行入口。可复用领域逻辑、协议、daemon 调度和 provider adapters
 位于 `packages/`，这里负责把它们装配成可直接运行的进程。
 
 | App | 作用 | 入口说明 |
@@ -25,14 +25,14 @@ CLI 创建本地 Agent 配置
 ### 重要限制
 
 当前 `agent create/list` 是为了跑通单机 reference implementation 的假 CLI。它只把本地执行
-配置写入 `~/.orbtex/state.json`，不会创建云端 Agent，也不是未来产品合同。目标设计见
+配置写入 `~/.octo-harness/state.json`，不会创建云端 Agent，也不是未来产品合同。目标设计见
 [`TODO-0001`](../../docs/todo/TODO-0001-replace-fake-local-agent-cli-with-cloud-control-plane.md)。
 
 这个例子只用于验证当前本地执行链和协议帧。
 
 ### 前提
 
-- 在 Orbtex 仓库根目录执行命令；
+- 在 Octo Harness 仓库根目录执行命令；
 - 已执行 `pnpm install` 和 `pnpm build`；
 - 已安装并登录 Codex CLI；
 - 本机有 `jq`，用于从 CLI JSON 输出中提取 ID。
@@ -42,10 +42,10 @@ CLI 创建本地 Agent 配置
 如果 daemon 已经在运行，先按 `Ctrl+C` 停止，再带 trace 环境变量重新启动：
 
 ```bash
-ORBTEX_TRACE_RPC=1 pnpm daemon
+OCTO_HARNESS_TRACE_RPC=1 pnpm daemon
 ```
 
-`ORBTEX_TRACE_RPC=1` 会把 daemon 与 adapter-host 之间实际发送和收到的每一条 NDJSON
+`OCTO_HARNESS_TRACE_RPC=1` 会把 daemon 与 adapter-host 之间实际发送和收到的每一条 NDJSON
 JSON-RPC 2.0 frame 写到 daemon 的 stderr。修改这个环境变量后必须重启 daemon。
 
 ### 终端 B：创建 Codex Agent 和 Chat
@@ -117,20 +117,20 @@ node apps/cli/dist/index.js run stream <run-id>
 
 ### 终端 A：观察原始 JSON-RPC 帧
 
-启用 `ORBTEX_TRACE_RPC=1` 的 daemon 会同时随着 provider 执行实时出现：
+启用 `OCTO_HARNESS_TRACE_RPC=1` 的 daemon 会同时随着 provider 执行实时出现：
 
 ```text
-[orbtex rpc daemon -> adapter-host] {"jsonrpc":"2.0","id":"...","method":"invoke","params":{"adapterType":"codex",...}}
-[orbtex rpc adapter-host -> daemon] {"jsonrpc":"2.0","id":"...","result":{"invocationId":"..."}}
-[orbtex rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{"event":{"type":"message.create",...}}}
-[orbtex rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{"event":{"type":"session.update",...}}}
-[orbtex rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{"event":{"type":"message.delta",...}}}
-[orbtex rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{"event":{"type":"usage.update",...}}}
-[orbtex rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{"event":{"type":"run.finished","payload":{}}}}
-[orbtex rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.done","params":{"invocationId":"..."}}
+[octo-harness rpc daemon -> adapter-host] {"jsonrpc":"2.0","id":"...","method":"invoke","params":{"adapterType":"codex",...}}
+[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","id":"...","result":{"invocationId":"..."}}
+[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{"event":{"type":"message.create",...}}}
+[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{"event":{"type":"session.update",...}}}
+[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{"event":{"type":"message.delta",...}}}
+[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{"event":{"type":"usage.update",...}}}
+[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{"event":{"type":"run.finished","payload":{}}}}
+[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.done","params":{"invocationId":"..."}}
 ```
 
-同一个 `SESSION_ID` 可以继续发送下一轮，Orbtex 会把已保存的 opaque provider session 交回
+同一个 `SESSION_ID` 可以继续发送下一轮，Octo Harness 会把已保存的 opaque provider session 交回
 Codex adapter 用于 resume：
 
 ```bash
@@ -145,7 +145,7 @@ node apps/cli/dist/index.js chat send "$SESSION_ID" \
 
 - CLI 与 daemon 之间使用 Unix socket 上的一行 JSON request/response，不是 JSON-RPC 2.0。
 - Codex CLI 自身输出 JSONL native events，也不是 JSON-RPC 2.0。
-- 这里展示的是 daemon 与 adapter-host 之间的 Orbtex JSON-RPC 边界。
+- 这里展示的是 daemon 与 adapter-host 之间的 Octo Harness JSON-RPC 边界。
 
 trace 会完整打印 prompt、workdir、Agent config、tool event 和模型输出。不要在共享终端、公开
 日志或包含 secret 的请求上开启。

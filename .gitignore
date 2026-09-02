@@ -30,8 +30,8 @@ yarn-error.log*
 .env.*
 !.env.example
 
-# Orbtex runtime state
-.orbtex/
+# Octo Harness runtime state
+.octo-harness/
 
 # Temporary and packaged artifacts
 .tmp/

@@ -6,23 +6,23 @@ import { fileURLToPath } from "node:url";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { startDaemonServer } from "@orbtex-ai/daemon-app";
+import { startDaemonServer } from "@mininglamp-oss/octo-harness-daemon-app";
 
 const execute = promisify(execFile);
 
 test("CLI drives daemon socket through trigger to terminal run", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
-  const home = await mkdtemp(join(tmpdir(), "orbtex-cli-test-"));
+  const home = await mkdtemp(join(tmpdir(), "oh-cli-"));
   const app = await startDaemonServer({
-    socketPath: join(home, "sockets", "orbtex-daemon.sock"), storePath: join(home, "state.json"),
+    socketPath: join(home, "sockets", "octo-harness-daemon.sock"), storePath: join(home, "state.json"),
     manifestPath: join(root, "test/fixtures/adapters.json"), hostEntrypoint: join(root, "apps/adapter-host/dist/index.js")
   });
-  const cli = async args => JSON.parse((await execute(process.execPath, [join(root, "apps/cli/dist/index.js"), ...args], { cwd: root, env: { ...process.env, ORBTEX_HOME: home } })).stdout);
+  const cli = async args => JSON.parse((await execute(process.execPath, [join(root, "apps/cli/dist/index.js"), ...args], { cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home } })).stdout);
   try {
     const status = await cli(["status"]);
     assert.equal(status.ready, true);
     assert.equal(status.pid, process.pid);
-    assert.equal(status.socketPath, join(home, "sockets", "orbtex-daemon.sock"));
+    assert.equal(status.socketPath, join(home, "sockets", "octo-harness-daemon.sock"));
     assert.equal(status.storePath, join(home, "state.json"));
     assert.equal(status.manifestPath, join(root, "test/fixtures/adapters.json"));
     assert.equal(status.adapterHost.entrypoint, join(root, "apps/adapter-host/dist/index.js"));
@@ -41,7 +41,7 @@ test("CLI drives daemon socket through trigger to terminal run", async () => {
     const followed = await execute(
       process.execPath,
       [join(root, "apps/cli/dist/index.js"), "chat", "send", chat.id, "--prompt", "stream me", "--follow"],
-      { cwd: root, env: { ...process.env, ORBTEX_HOME: home } }
+      { cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home } }
     );
     const frames = followed.stdout.trim().split(/\r?\n/).map(line => JSON.parse(line));
     assert.equal(frames[0].kind, "ack");
@@ -60,12 +60,12 @@ test("CLI drives daemon socket through trigger to terminal run", async () => {
 
 test("CLI explains how to start a missing daemon", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
-  const home = await mkdtemp(join(tmpdir(), "orbtex-cli-missing-daemon-"));
+  const home = await mkdtemp(join(tmpdir(), "octo-harness-cli-missing-daemon-"));
   try {
     await assert.rejects(
       execute(process.execPath, [join(root, "apps/cli/dist/index.js"), "status"], {
         cwd: root,
-        env: { ...process.env, ORBTEX_HOME: home }
+        env: { ...process.env, OCTO_HARNESS_HOME: home }
       }),
       error => error.stderr.includes("start it from the repository root with: pnpm daemon")
     );

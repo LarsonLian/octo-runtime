@@ -1,22 +1,22 @@
 # Packages And Adapter Guide
 
-本目录包含 Orbtex 的全部可复用 packages，adapter 定义也全部位于这里；`apps/*` 只负责组装 CLI、daemon、adapter-host 和示例进程。
+本目录包含 Octo Harness 的全部可复用 packages，adapter 定义也全部位于这里；`apps/*` 只负责组装 CLI、daemon、adapter-host 和示例进程。
 
 ## Runtime Packages
 
 | Package | 职责 |
 |---|---|
-| [`@orbtex-ai/orbtex-protocol`](orbtex-protocol/README.md) | InvokeRequest、canonical event 与 envelope 契约 |
-| [`@orbtex-ai/orbtex-core`](orbtex-core/README.md) | Chat、Task、Trigger、Attempt、Run 领域逻辑与 store |
-| [`@orbtex-ai/orbtex-daemon`](orbtex-daemon/README.md) | durable queue、调度、恢复和 run wait/cancel |
-| [`@orbtex-ai/orbtex-adapter-host`](orbtex-adapter-host/README.md) | adapter registry、invoke lifecycle 与 NDJSON RPC |
-| [`@orbtex-ai/orbtex-adapter-sdk`](orbtex-adapter-sdk/README.md) | adapter 定义、CLI subprocess 与 probe helpers |
-| [`@orbtex-ai/orbtex-acp-client`](orbtex-acp-client/README.md) | CodeBuddy ACP JSON-RPC client |
-| [`@orbtex-ai/orbtex-dify-client`](orbtex-dify-client/README.md) | Dify HTTPS/SSE、认证、probe 与停止请求 |
+| [`@mininglamp-oss/octo-harness-protocol`](octo-harness-protocol/README.md) | InvokeRequest、canonical event 与 envelope 契约 |
+| [`@mininglamp-oss/octo-harness-core`](octo-harness-core/README.md) | Chat、Task、Trigger、Attempt、Run 领域逻辑与 store |
+| [`@mininglamp-oss/octo-harness-daemon`](octo-harness-daemon/README.md) | durable queue、调度、恢复和 run wait/cancel |
+| [`@mininglamp-oss/octo-harness-adapter-host`](octo-harness-adapter-host/README.md) | adapter registry、invoke lifecycle 与 NDJSON RPC |
+| [`@mininglamp-oss/octo-harness-adapter-sdk`](octo-harness-adapter-sdk/README.md) | adapter 定义、CLI subprocess 与 probe helpers |
+| [`@mininglamp-oss/octo-harness-acp-client`](octo-harness-acp-client/README.md) | CodeBuddy ACP JSON-RPC client |
+| [`@mininglamp-oss/octo-harness-dify-client`](octo-harness-dify-client/README.md) | Dify HTTPS/SSE、认证、probe 与停止请求 |
 
-所有 `packages/*` 的目录名和 npm 非 scope 部分保持一致。provider packages 使用 `packages/orbtex-adapter-<provider>` 与 `@orbtex-ai/orbtex-adapter-<provider>`。
+所有 `packages/*` 的目录名和 npm 非 scope 部分保持一致。provider packages 使用 `packages/octo-harness-adapter-<provider>` 与 `@mininglamp-oss/octo-harness-adapter-<provider>`。
 
-以下 `orbtex-adapter-*` packages 共享同一个 `InvokeRequest -> AsyncIterable<CanonicalEvent>` 上层契约，但底层 CLI、传输、权限和 provider session 格式不同。
+以下 `octo-harness-adapter-*` packages 共享同一个 `InvokeRequest -> AsyncIterable<CanonicalEvent>` 上层契约，但底层 CLI、传输、权限和 provider session 格式不同。
 
 ## 先理解“本地”
 
@@ -28,13 +28,13 @@
 
 | Adapter | 节点上的执行形态 | Provider transport | 模型通常在哪里 | Session 恢复 | Gateway |
 |---|---|---|---|---|---|
-| [`codex`](orbtex-adapter-codex/README.md) | `codex app-server` 子进程 | JSON-RPC 2.0 stdin/stdout | Codex 配置的远程/本地 provider | thread ID + `thread/resume` | 不需要 |
-| [`claude-code`](orbtex-adapter-claude-code/README.md) | `claude --print` 子进程 | stdin + stream-json stdout | Anthropic/配置的云 provider | UUID + `--resume` | 不需要 |
-| [`codebuddy`](orbtex-adapter-codebuddy/README.md) | `codebuddy --acp` 子进程 | ACP JSON-RPC stdio | CodeBuddy 配置的云 provider | `session/load` | 不需要 |
-| [`opencode`](orbtex-adapter-opencode/README.md) | `opencode run` 子进程 | argv + JSON events stdout | OpenCode 配置的 provider | `--session` | 不需要 |
-| [`openclaw`](orbtex-adapter-openclaw/README.md) | `openclaw agent --local` 子进程 | NDJSON/final JSON stdout | OpenClaw 配置的 provider | `--session-id` | **明确不使用** |
-| [`dify-chatflow`](orbtex-adapter-dify-chatflow/README.md) | adapter-host 内远程请求 | HTTPS POST + SSE | Dify Cloud / 自建 Dify | `conversation_id` | 不需要 |
-| [`dify-workflow`](orbtex-adapter-dify-workflow/README.md) | adapter-host 内远程请求 | HTTPS POST + SSE | Dify Cloud / 自建 Dify | 无，调用相互独立 | 不需要 |
+| [`codex`](octo-harness-adapter-codex/README.md) | `codex app-server` 子进程 | JSON-RPC 2.0 stdin/stdout | Codex 配置的远程/本地 provider | thread ID + `thread/resume` | 不需要 |
+| [`claude-code`](octo-harness-adapter-claude-code/README.md) | `claude --print` 子进程 | stdin + stream-json stdout | Anthropic/配置的云 provider | UUID + `--resume` | 不需要 |
+| [`codebuddy`](octo-harness-adapter-codebuddy/README.md) | `codebuddy --acp` 子进程 | ACP JSON-RPC stdio | CodeBuddy 配置的云 provider | `session/load` | 不需要 |
+| [`opencode`](octo-harness-adapter-opencode/README.md) | `opencode run` 子进程 | argv + JSON events stdout | OpenCode 配置的 provider | `--session` | 不需要 |
+| [`openclaw`](octo-harness-adapter-openclaw/README.md) | `openclaw agent --local` 子进程 | NDJSON/final JSON stdout | OpenClaw 配置的 provider | `--session-id` | **明确不使用** |
+| [`dify-chatflow`](octo-harness-adapter-dify-chatflow/README.md) | adapter-host 内远程请求 | HTTPS POST + SSE | Dify Cloud / 自建 Dify | `conversation_id` | 不需要 |
+| [`dify-workflow`](octo-harness-adapter-dify-workflow/README.md) | adapter-host 内远程请求 | HTTPS POST + SSE | Dify Cloud / 自建 Dify | 无，调用相互独立 | 不需要 |
 
 五个本地 CLI adapter 是“一次 invocation 一个本地 CLI process”。Dify adapters 不启动 CLI，而是在 adapter-host 进程中发起一次远程 HTTPS + SSE 请求。当前没有维护长期 provider CLI daemon；CodeBuddy 的 ACP session 可以跨新进程 `session/load`，OpenClaw local 依赖 state dir 中的 transcript，Dify Chatflow 通过 opaque `conversation_id` 恢复，Dify Workflow 调用则相互独立。
 
@@ -43,7 +43,7 @@
 要求 Node.js 20+：
 
 ```bash
-cd /absolute/path/to/orbtex
+cd /absolute/path/to/octo-harness
 pnpm install
 pnpm test
 ```
@@ -57,27 +57,27 @@ pnpm test
 
 `adapter probe` 只验证 executable，不验证登录、provider 网络、模型、额度和文件权限。
 
-## 启动 Orbtex
+## 启动 Octo Harness
 
 终端 A：
 
 ```bash
-cd /absolute/path/to/orbtex
-export ORBTEX_HOME=/absolute/path/to/orbtex-runtime-state
+cd /absolute/path/to/octo-harness
+export OCTO_HARNESS_HOME=/absolute/path/to/octo-harness-runtime-state
 pnpm daemon
 ```
 
 终端 B：
 
 ```bash
-cd /absolute/path/to/orbtex
-export ORBTEX_HOME=/absolute/path/to/orbtex-runtime-state
+cd /absolute/path/to/octo-harness
+export OCTO_HARNESS_HOME=/absolute/path/to/octo-harness-runtime-state
 pnpm cli status
 pnpm cli adapter list
 ```
 
-`ORBTEX_HOME` 应在两个终端保持一致。默认值是用户目录下的 `~/.orbtex`，默认 socket 为
-`~/.orbtex/sockets/orbtex-daemon.sock`。
+`OCTO_HARNESS_HOME` 应在两个终端保持一致。默认值是用户目录下的 `~/.octo-harness`，默认 socket 为
+`~/.octo-harness/sockets/octo-harness-daemon.sock`。
 
 ## Probe 与创建 Agent
 
@@ -116,7 +116,7 @@ pnpm cli agent create --name dify-workflow --adapter dify-workflow \
   --workdir "$PWD"
 ```
 
-CLI 输出中的 `id` 是 Orbtex Agent ID。`--provider-agent` 当前只对 OpenClaw 有效；OpenCode 虽然原生有 `--agent`，此 adapter 尚未暴露。
+CLI 输出中的 `id` 是 Octo Harness Agent ID。`--provider-agent` 当前只对 OpenClaw 有效；OpenCode 虽然原生有 `--agent`，此 adapter 尚未暴露。
 
 ## 公共 Chat 教程
 

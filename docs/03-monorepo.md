@@ -1,6 +1,6 @@
 # 03 Pnpm Monorepo
 
-Orbtex 使用 pnpm workspace 管理多项目。workspace 边界由根目录 [pnpm-workspace.yaml](../pnpm-workspace.yaml) 定义：
+Octo Harness 使用 pnpm workspace 管理多项目。workspace 边界由根目录 [pnpm-workspace.yaml](../pnpm-workspace.yaml) 定义：
 
 ```yaml
 packages:
@@ -20,27 +20,27 @@ apps/
   example-basic/        in-process example application
 
 packages/
-  orbtex-protocol/             canonical protocol
-  orbtex-core/                 domain engine and stores
-  orbtex-daemon/               scheduling/runtime library
-  orbtex-adapter-host/         adapter lifecycle and RPC library
-  orbtex-adapter-sdk/          adapter authoring helpers
-  orbtex-acp-client/           reusable ACP client
-  orbtex-adapter-*/            provider adapter definitions
+  octo-harness-protocol/             canonical protocol
+  octo-harness-core/                 domain engine and stores
+  octo-harness-daemon/               scheduling/runtime library
+  octo-harness-adapter-host/         adapter lifecycle and RPC library
+  octo-harness-adapter-sdk/          adapter authoring helpers
+  octo-harness-acp-client/           reusable ACP client
+  octo-harness-adapter-*/            provider adapter definitions
 ```
 
 依赖方向：
 
 ```text
 apps -> packages
-orbtex-adapter-* -> orbtex-adapter-sdk / provider protocol helpers
-orbtex-daemon -> orbtex-core -> orbtex-protocol
-orbtex-adapter-host -> orbtex-protocol
+octo-harness-adapter-* -> octo-harness-adapter-sdk / provider protocol helpers
+octo-harness-daemon -> octo-harness-core -> octo-harness-protocol
+octo-harness-adapter-host -> octo-harness-protocol
 ```
 
-`packages/*` 不应 import `apps/*`。provider 命令构造、native event parser、session codec 和权限适配必须留在 `packages/orbtex-adapter-*`；apps 只做配置、进程启动和 I/O 装配。
+`packages/*` 不应 import `apps/*`。provider 命令构造、native event parser、session codec 和权限适配必须留在 `packages/octo-harness-adapter-*`；apps 只做配置、进程启动和 I/O 装配。
 
-发布型 package 的目录名与 npm 非 scope 部分完全一致。例如目录 `packages/orbtex-core` 发布为 `@orbtex-ai/orbtex-core`，目录 `packages/orbtex-adapter-openclaw` 发布为 `@orbtex-ai/orbtex-adapter-openclaw`。这样仓库导航、workspace filter、依赖列表和 registry 搜索使用同一名称。
+发布型 package 的目录名与 npm 非 scope 部分完全一致。例如目录 `packages/octo-harness-core` 发布为 `@mininglamp-oss/octo-harness-core`，目录 `packages/octo-harness-adapter-openclaw` 发布为 `@mininglamp-oss/octo-harness-adapter-openclaw`。这样仓库导航、workspace filter、依赖列表和 registry 搜索使用同一名称。
 
 ## TypeScript 构建约定
 
@@ -86,14 +86,14 @@ pnpm --recursive list --depth -1
 运行单个 app：
 
 ```bash
-pnpm --filter @orbtex-ai/example-basic start
-pnpm --filter @orbtex-ai/adapter-host-app start
+pnpm --filter @mininglamp-oss/octo-harness-example-basic start
+pnpm --filter @mininglamp-oss/octo-harness-adapter-host-app start
 ```
 
 查看单个 package 的依赖：
 
 ```bash
-pnpm --filter @orbtex-ai/orbtex-adapter-codex list
+pnpm --filter @mininglamp-oss/octo-harness-adapter-codex list
 ```
 
 内部依赖必须使用 `workspace:*`：
@@ -101,7 +101,7 @@ pnpm --filter @orbtex-ai/orbtex-adapter-codex list
 ```json
 {
   "dependencies": {
-    "@orbtex-ai/orbtex-adapter-sdk": "workspace:*"
+    "@mininglamp-oss/octo-harness-adapter-sdk": "workspace:*"
   }
 }
 ```
@@ -112,8 +112,8 @@ pnpm --filter @orbtex-ai/orbtex-adapter-codex list
 
 以 `foo` provider 为例：
 
-1. 创建 `packages/orbtex-adapter-foo/package.json`、`src/index.ts` 和 `README.md`。
-2. 包名使用 `@orbtex-ai/orbtex-adapter-foo`，依赖 `@orbtex-ai/orbtex-adapter-sdk: workspace:*`。
+1. 创建 `packages/octo-harness-adapter-foo/package.json`、`src/index.ts` 和 `README.md`。
+2. 包名使用 `@mininglamp-oss/octo-harness-adapter-foo`，依赖 `@mininglamp-oss/octo-harness-adapter-sdk: workspace:*`。
 3. 实现 metadata、probe、invoke、session 和 canonical event mapping。
 4. 在 [config/adapters.json](../config/adapters.json) 注册 adapter type/module/export。
 5. 在 `apps/adapter-host/package.json` 增加 workspace dependency，确保运行 host 能 import 它。
@@ -126,7 +126,7 @@ Core、daemon 和 CLI 不应增加 `if adapterType === "foo"`。新增 provider 
 ## 新增 App
 
 1. 创建 `apps/<name>/package.json` 和 `src/index.ts`。
-2. package 标记 `private: true`，命名为 `@orbtex-ai/<name>` 或 `@orbtex-ai/<name>-app`。
+2. package 标记 `private: true`，命名为 `@octo-harness-ai/<name>` 或 `@octo-harness-ai/<name>-app`。
 3. 使用 `workspace:*` 依赖需要的 runtime packages。
 4. 在 app package 中提供 `start` script；需要统一入口时再加入根 scripts。
 

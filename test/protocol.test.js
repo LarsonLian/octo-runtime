@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assertCanonicalEvent } from "../packages/orbtex-protocol/dist/index.js";
+import { assertCanonicalEvent } from "../packages/octo-harness-protocol/dist/index.js";
 
 test("tool call protocol preserves complete and streamed command inputs", () => {
   const codex = {
@@ -13,15 +13,15 @@ test("tool call protocol preserves complete and streamed command inputs", () => 
   const claude = [
     { type: "tool_call.create", payload: { id: "tool-claude", name: "Bash", args: {} } },
     { type: "tool_call.delta", payload: { id: "tool-claude", argsDelta: '{"command":"printf ' } },
-    { type: "tool_call.delta", payload: { id: "tool-claude", argsDelta: 'orbtex-ok"}' } },
-    { type: "tool_call.update", payload: { id: "tool-claude", status: "completed", output: "orbtex-ok" } }
+    { type: "tool_call.delta", payload: { id: "tool-claude", argsDelta: 'octo-harness-ok"}' } },
+    { type: "tool_call.update", payload: { id: "tool-claude", status: "completed", output: "octo-harness-ok" } }
   ];
   for (const event of claude) assert.doesNotThrow(() => assertCanonicalEvent(event));
   const streamedArgs = claude
     .filter(event => event.type === "tool_call.delta")
     .map(event => event.payload.argsDelta)
     .join("");
-  assert.equal(JSON.parse(streamedArgs).command, "printf orbtex-ok");
+  assert.equal(JSON.parse(streamedArgs).command, "printf octo-harness-ok");
 });
 
 test("tool call protocol rejects events that cannot reconstruct a command lifecycle", () => {

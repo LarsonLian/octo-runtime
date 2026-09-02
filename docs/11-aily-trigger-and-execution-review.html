@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Aily 多触发机制与 Orbtex 统一 Blueprint</title>
+  <title>Aily 多触发机制与 Octo Harness 统一 Blueprint</title>
   <style>
     :root {
       --page: #eef1f4;
@@ -224,12 +224,12 @@
   <header class="masthead">
     <div class="inner">
       <p class="eyebrow">Architecture Review / 方案评审</p>
-      <h1>Aily 多触发机制与 Orbtex 统一 Blueprint</h1>
-      <p class="lead">分析 Chat、Task、Auto、Lark Event、Webhook 与 Manual Run 如何进入同一执行链，并给出 Orbtex 演进为 UI-Agent 高可用协作网络的边界和落地顺序。</p>
+      <h1>Aily 多触发机制与 Octo Harness 统一 Blueprint</h1>
+      <p class="lead">分析 Chat、Task、Auto、Lark Event、Webhook 与 Manual Run 如何进入同一执行链，并给出 Octo Harness 演进为 UI-Agent 高可用协作网络的边界和落地顺序。</p>
       <div class="meta">
         <span>证据版本：Aily runtime 0.1.54</span>
         <span>检查日期：2026-08-30</span>
-        <span>范围：本机 CLI / Gateway API 类型 / Runtime 状态 / Orbtex 源码</span>
+        <span>范围：本机 CLI / Gateway API 类型 / Runtime 状态 / Octo Harness 源码</span>
         <a href="assets/11-aily-trigger-blueprint.svg">打开独立 SVG 架构图</a>
       </div>
     </div>
@@ -241,7 +241,7 @@
       <a href="#architecture">总图</a>
       <a href="#flows">触发链路</a>
       <a href="#surface">Surface</a>
-      <a href="#compare">Aily vs Orbtex</a>
+      <a href="#compare">Aily vs Octo Harness</a>
       <a href="#blueprint">目标 Blueprint</a>
       <a href="#roadmap">落地路线</a>
       <a href="#review">评审决策</a>
@@ -373,12 +373,12 @@
     <section id="compare" class="band">
       <div class="inner">
         <div class="section-head">
-          <div><span class="kicker">Gap analysis</span><h2>Aily 与 Orbtex 当前差异</h2></div>
-          <p>Orbtex 的领域骨架已经接近正确答案：Trigger → Occurrence → Task → Attempt → Run，Chat 直接形成 Run。差距集中在企业控制面和高可用执行面。</p>
+          <div><span class="kicker">Gap analysis</span><h2>Aily 与 Octo Harness 当前差异</h2></div>
+          <p>Octo Harness 的领域骨架已经接近正确答案：Trigger → Occurrence → Task → Attempt → Run，Chat 直接形成 Run。差距集中在企业控制面和高可用执行面。</p>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>能力</th><th>Aily 本机可见设计</th><th>Orbtex 当前实现</th><th>方案判断</th></tr></thead>
+            <thead><tr><th>能力</th><th>Aily 本机可见设计</th><th>Octo Harness 当前实现</th><th>方案判断</th></tr></thead>
             <tbody>
               <tr><td>Chat / Task 建模</td><td>SessionType=Chat/Task；两类 Run 状态机</td><td>Session(chat/task)、Task、Attempt、Run 已分离</td><td><span class="state verified">基本一致</span></td></tr>
               <tr><td>Auto 物化</td><td>Trigger 命中形成带 <code>taskId</code> 的 AutoTaskRun</td><td>TriggerOccurrence 原子创建 Task + task Session</td><td><span class="state verified">方向正确</span></td></tr>
@@ -398,7 +398,7 @@
     <section id="blueprint" class="band alt">
       <div class="inner">
         <div class="section-head">
-          <div><span class="kicker">Target architecture</span><h2>建议的 Orbtex 统一 Blueprint</h2></div>
+          <div><span class="kicker">Target architecture</span><h2>建议的 Octo Harness 统一 Blueprint</h2></div>
           <p>坚持“一个执行核心、两种工作容器、多种 Trigger Adapter、独立 Delivery Plane”。Buddy 类产品和本地 Codex 类产品只在入口、Transport 和 Surface 策略上不同。</p>
         </div>
         <div class="blueprint">
@@ -460,7 +460,7 @@
             <ul>
               <li>Aily 云端内部具体使用何种消息队列、lease、fencing 与 outbox，本机发行包没有源码证据。</li>
               <li>Webhook Trigger 已出现在 Gateway API 类型中，但 Aily CLI 0.1.54 的 <code>auto create</code> 只开放 cron / interval / event。</li>
-              <li>Orbtex 当前 JSON Store 和进程内 timer 是 reference model，不能直接作为生产 HA 结论。</li>
+              <li>Octo Harness 当前 JSON Store 和进程内 timer 是 reference model，不能直接作为生产 HA 结论。</li>
             </ul>
           </section>
         </div>
@@ -482,15 +482,15 @@
           <li><code>~/.aily-cli/current/js/dist/command-surface.js</code><span>full / agent-lite 过滤和 risk / stableOutput / requires 校验。</span></li>
           <li><code>~/.aily-cli/current/js/node_modules/@lark-harness/adapter-host/dist/protocol.d.ts</code><span>daemon ↔ Host 的 stdio JSON-RPC 方法与 event notifications。</span></li>
           <li><code>aily-cli doctor --json / daemon status --json</code><span>WSS connected、runtime 在线、Host READY、7 adapters。</span></li>
-          <li><code>orbtex/packages/orbtex-core/src/engine.ts</code><span>Trigger → Occurrence → Task → Attempt → Run 与 Chat Run。</span></li>
-          <li><code>orbtex/packages/orbtex-daemon/src/index.ts</code><span>当前单机 interval、event ingest、快速 ACK 和后台执行。</span></li>
+          <li><code>octo-harness/packages/octo-harness-core/src/engine.ts</code><span>Trigger → Occurrence → Task → Attempt → Run 与 Chat Run。</span></li>
+          <li><code>octo-harness/packages/octo-harness-daemon/src/index.ts</code><span>当前单机 interval、event ingest、快速 ACK 和后台执行。</span></li>
         </ul>
       </div>
     </section>
   </main>
 
   <footer>
-    <div class="inner">Orbtex Architecture Review · 本文档面向方案评审，不替代生产容量测试、安全评估和云端服务内部设计说明。</div>
+    <div class="inner">Octo Harness Architecture Review · 本文档面向方案评审，不替代生产容量测试、安全评估和云端服务内部设计说明。</div>
   </footer>
 
   <script>

@@ -1,12 +1,12 @@
-# @orbtex-ai/adapter-host-app
+# @mininglamp-oss/octo-harness-adapter-host-app
 
-Orbtex 的独立 adapter 执行进程。它从 manifest 动态加载多个 provider adapter，并通过
+Octo Harness 的独立 adapter 执行进程。它从 manifest 动态加载多个 provider adapter，并通过
 stdin/stdout NDJSON JSON-RPC 向 daemon 提供统一的 `list`、`probe`、`invoke` 和 `cancel`
 能力。
 
 ## 架构约束
 
-**adapter-host 是 Orbtex 的必要架构边界，不得为了减少一个进程而把 provider adapters
+**adapter-host 是 Octo Harness 的必要架构边界，不得为了减少一个进程而把 provider adapters
 直接加载进 daemon。**
 
 必须保持以下依赖和运行方向：
@@ -28,7 +28,7 @@ adapter-host（插件加载、调用生命周期）
 当前单机拓扑是一个 daemon 启动一个长驻 adapter-host，该 host 加载 manifest 中的全部
 adapter。它不是每 workspace、每 adapter 或每 invocation 一个 host。
 
-daemon 不得直接依赖或 import `@orbtex-ai/orbtex-adapter-*`。新增 provider 时，应增加
+daemon 不得直接依赖或 import `@mininglamp-oss/octo-harness-adapter-*`。新增 provider 时，应增加
 adapter package、更新 [adapter manifest](../../config/adapters.json)，并让本 app 负责动态加载。
 
 ## 为什么必须保留 Host
@@ -51,7 +51,7 @@ adapter，并把 canonical event stream 返回给 daemon。
 
 ### 3. 统一调用生命周期
 
-通用 [adapter-host library](../../packages/orbtex-adapter-host/README.md) 在执行边界负责：
+通用 [adapter-host library](../../packages/octo-harness-adapter-host/README.md) 在执行边界负责：
 
 - 校验 `InvokeRequest` 和 canonical event；
 - 补齐 message create/update 与稳定 message ID；
@@ -105,8 +105,8 @@ CLI 子进程可能继续存活，而 daemon 已将对应 Run 标记为 error。
 | 模块 | 负责 | 不负责 |
 |---|---|---|
 | `apps/adapter-host` | manifest 读取、动态 import、adapter 形状校验、启动 RPC server | Task/Run 状态和调度 |
-| `packages/orbtex-adapter-host` | registry、invoke/cancel 生命周期、RPC client/server、host 子进程管理 | 选择部署 manifest |
-| `packages/orbtex-adapter-*` | provider 命令、session 恢复、native event 到 canonical event 映射 | 全局 Run 状态 |
+| `packages/octo-harness-adapter-host` | registry、invoke/cancel 生命周期、RPC client/server、host 子进程管理 | 选择部署 manifest |
+| `packages/octo-harness-adapter-*` | provider 命令、session 恢复、native event 到 canonical event 映射 | 全局 Run 状态 |
 | `apps/daemon` | Store/Core/Daemon/Host client 装配、Unix socket 控制面 | 直接加载 provider adapter |
 
 ## 允许重新评估的条件
@@ -131,7 +131,7 @@ pnpm host
 直接运行 workspace app：
 
 ```bash
-pnpm --filter @orbtex-ai/adapter-host-app start
+pnpm --filter @mininglamp-oss/octo-harness-adapter-host-app start
 ```
 
 daemon 运行时可验证 host 握手和已加载 adapters：

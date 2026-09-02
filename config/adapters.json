@@ -1,14 +1,14 @@
 {
   "version": 1,
   "adapters": [
-    { "type": "codex", "module": "@orbtex-ai/orbtex-adapter-codex", "export": "codexAdapter" },
-    { "type": "claude-code", "module": "@orbtex-ai/orbtex-adapter-claude-code", "export": "claudeCodeAdapter" },
-    { "type": "codebuddy", "module": "@orbtex-ai/orbtex-adapter-codebuddy", "export": "codebuddyAdapter" },
-    { "type": "opencode", "module": "@orbtex-ai/orbtex-adapter-opencode", "export": "opencodeAdapter" },
-    { "type": "openclaw", "module": "@orbtex-ai/orbtex-adapter-openclaw", "export": "openclawAdapter" },
+    { "type": "codex", "module": "@mininglamp-oss/octo-harness-adapter-codex", "export": "codexAdapter" },
+    { "type": "claude-code", "module": "@mininglamp-oss/octo-harness-adapter-claude-code", "export": "claudeCodeAdapter" },
+    { "type": "codebuddy", "module": "@mininglamp-oss/octo-harness-adapter-codebuddy", "export": "codebuddyAdapter" },
+    { "type": "opencode", "module": "@mininglamp-oss/octo-harness-adapter-opencode", "export": "opencodeAdapter" },
+    { "type": "openclaw", "module": "@mininglamp-oss/octo-harness-adapter-openclaw", "export": "openclawAdapter" },
     {
       "type": "dify-chatflow",
-      "module": "@orbtex-ai/orbtex-adapter-dify-chatflow",
+      "module": "@mininglamp-oss/octo-harness-adapter-dify-chatflow",
       "export": "createDifyChatflowAdapter",
       "factory": true,
       "options": {
@@ -19,7 +19,7 @@
     },
     {
       "type": "dify-workflow",
-      "module": "@orbtex-ai/orbtex-adapter-dify-workflow",
+      "module": "@mininglamp-oss/octo-harness-adapter-dify-workflow",
       "export": "createDifyWorkflowAdapter",
       "factory": true,
       "options": {

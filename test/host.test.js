@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { PassThrough } from "node:stream";
-import { AdapterHost, AdapterHostRpcClient, AdapterHostRpcServer, spawnAdapterHost } from "@orbtex-ai/orbtex-adapter-host";
+import { AdapterHost, AdapterHostRpcClient, AdapterHostRpcServer, spawnAdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 
 const request = { invocationId: "inv-host", sessionId: "s", runId: "r", prompt: "p", workdir: process.cwd() };
 
@@ -40,7 +40,7 @@ test("separate adapter-host process loads manifest and streams events", async ()
   const root = fileURLToPath(new URL("..", import.meta.url));
   const processHost = await spawnAdapterHost({ entrypoint: `${root}/apps/adapter-host/dist/index.js`, manifest: `${root}/test/fixtures/adapters.json` });
   try {
-    assert.equal(processHost.child.spawnargs[0], "orbtex-adapter-host");
+    assert.equal(processHost.child.spawnargs[0], "octo-harness-adapter-host");
     assert.equal((await processHost.client.list()).some(item => item.type === "test"), true);
     const events = []; for await (const event of processHost.client.invoke("test", { ...request, invocationId: "rpc-inv" })) events.push(event);
     assert.equal(events.at(-1).type, "run.finished");

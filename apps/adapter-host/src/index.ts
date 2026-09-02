@@ -6,7 +6,7 @@ import {
   AdapterHost,
   AdapterHostRpcServer,
   type HostedAdapter
-} from "@orbtex-ai/orbtex-adapter-host";
+} from "@mininglamp-oss/octo-harness-adapter-host";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -24,7 +24,7 @@ interface AdapterManifest {
 }
 
 const index = process.argv.indexOf("--manifest");
-if (index < 0 || !process.argv[index + 1]) throw new Error("usage: orbtex-adapter-host --manifest <file>");
+if (index < 0 || !process.argv[index + 1]) throw new Error("usage: octo-harness-adapter-host --manifest <file>");
 
 const manifestPath = resolve(process.argv[index + 1]);
 const rawManifest: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
@@ -47,7 +47,7 @@ for (const entry of manifest.adapters) {
     ? callFactory(exported, entry.options, entry)
     : exported;
   if (!isHostedAdapter(instance)) {
-    throw new TypeError(`${entry.module}#${entry.exportName} is not an Orbtex adapter`);
+    throw new TypeError(`${entry.module}#${entry.exportName} is not an Octo Harness adapter`);
   }
   if (entry.type && instance.metadata.type !== entry.type) {
     throw new Error(`manifest type ${entry.type} does not match adapter ${instance.metadata.type}`);

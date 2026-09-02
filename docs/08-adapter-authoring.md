@@ -2,10 +2,10 @@
 
 ## 最小契约
 
-一个 adapter 的必需部分只有两项：静态元数据 `metadata`，以及把 provider 原生输出转换成 Orbtex 规范事件流的 `invoke`。`metadata` 必须包含字符串 `type` 和能力数组 `capabilities`，没有额外能力时也要传空数组。`probe` 是建议实现的可选项；如果省略，Host 会把探测结果标记为 `unchecked`，不代表 provider 已经确认可用。
+一个 adapter 的必需部分只有两项：静态元数据 `metadata`，以及把 provider 原生输出转换成 Octo Harness 规范事件流的 `invoke`。`metadata` 必须包含字符串 `type` 和能力数组 `capabilities`，没有额外能力时也要传空数组。`probe` 是建议实现的可选项；如果省略，Host 会把探测结果标记为 `unchecked`，不代表 provider 已经确认可用。
 
 ```js
-import { defineAdapter, probeCommand } from "@orbtex-ai/orbtex-adapter-sdk";
+import { defineAdapter, probeCommand } from "@mininglamp-oss/octo-harness-adapter-sdk";
 
 export const adapter = defineAdapter({
   metadata: {
@@ -29,7 +29,7 @@ export const adapter = defineAdapter({
 
 1. Provider 原生协议的解析必须留在 adapter 内；core 不得导入任何 provider 专属包。
 2. Provider session 必须通过 `session.update` 上报，不得塞进终态事件的 payload，也不得写入工作目录文件来传递。
-3. 不得把 provider 的原始事件名直接当作 Orbtex 规范事件类型发出。
+3. 不得把 provider 的原始事件名直接当作 Octo Harness 规范事件类型发出。
 4. 在可能的情况下，先发出 create 事件，再发出对应的 delta；Host 的补齐逻辑只用于安全兜底。
 5. 每次调用只产生一个终态事件；Host 会等异步生成器清理完成后再向上游转发该事件。
 6. 必须响应 `request.signal`，把取消请求传递给直接启动的 provider 子进程并完成资源清理。当前 SDK 只负责向直接子进程请求终止，不保证进程一定退出；生产 adapter 必须补齐超时后的 `SIGKILL` 升级，以及整个进程组或后代进程树的回收。
