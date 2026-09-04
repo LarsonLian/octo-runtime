@@ -14,7 +14,7 @@ test("CLI drives daemon socket through trigger to terminal run", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const home = await mkdtemp(join(tmpdir(), "oh-cli-"));
   const app = await startDaemonServer({
-    socketPath: join(home, "sockets", "octo-harness-daemon.sock"), storePath: join(home, "state.json"),
+    socketPath: join(home, "sockets", "octo-harness-daemon.sock"), storePath: join(home, "state.db"),
     manifestPath: join(root, "test/fixtures/adapters.json"), hostEntrypoint: join(root, "apps/adapter-host/dist/index.js")
   });
   const cli = async args => JSON.parse((await execute(process.execPath, [join(root, "apps/cli/dist/index.js"), ...args], { cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home } })).stdout);
@@ -23,7 +23,7 @@ test("CLI drives daemon socket through trigger to terminal run", async () => {
     assert.equal(status.ready, true);
     assert.equal(status.pid, process.pid);
     assert.equal(status.socketPath, join(home, "sockets", "octo-harness-daemon.sock"));
-    assert.equal(status.storePath, join(home, "state.json"));
+    assert.equal(status.storePath, join(home, "state.db"));
     assert.equal(status.manifestPath, join(root, "test/fixtures/adapters.json"));
     assert.equal(status.adapterHost.entrypoint, join(root, "apps/adapter-host/dist/index.js"));
     assert.equal(status.adapterHost.pid, app.hostProcess.child.pid);
@@ -67,7 +67,7 @@ test("CLI explains how to start a missing daemon", async () => {
         cwd: root,
         env: { ...process.env, OCTO_HARNESS_HOME: home }
       }),
-      error => error.stderr.includes("start it from the repository root with: pnpm daemon")
+      error => error.stderr.includes("start it with: octo-harness daemon")
     );
   } finally {
     await rm(home, { recursive: true, force: true });

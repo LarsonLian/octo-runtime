@@ -90,12 +90,20 @@ event contract, not at the wire.
   set is currently duplicated across protocol/engine/daemon/server — keep them
   in sync.
 
-- **Single-writer JSON store.** `JsonFileStore` writes a versioned snapshot via
-  a `0600` temp file + atomic rename; the daemon is the sole writer. The commit
-  chain is serialized through one promise — a failed write must not poison
-  subsequent commits. Concurrent runs share mutable Maps; cross-run session
-  fields (`providerSession`, `activeRunId`) rely on check-then-set, not a lock.
-  Treat the `Store` interface (not adapters) as the production replacement point.
+- **Single-writer SQLite store.** `SqliteStore` persists each state transition
+  incrementally to a SQLite (WAL) database (`state.db`, mode `0600`) via
+  repository methods wrapped in one `transaction`; the daemon is the sole writer.
+  Reads/writes go through `get*/list*/put*` + `appendEvent` — the `Store`
+  interface no longer exposes mutable Maps. Cross-run session fields
+  (`providerSession`, `activeRunId`) rely on check-then-set, not a lock. Treat the
+  `Store` interface (not adapters) as the production replacement point.
+
+- **Agent Work durable outbox.** The Agent Work runtime writes each produced
+  event to a local SQLite outbox (`agent-work.db`) inside a transaction before it
+  is sent, then a sender loop drains it; a cumulative `event.ack{run_id, seq}`
+  advances the per-run watermark and deletes confirmed rows. Unacked events
+  survive restart and are replayed with a stable `event_id`; they are never
+  deleted by time, only backpressured at the soft/hard capacity watermark.
 
 - **Idempotency keys.** Trigger materialization dedupes on
   `(triggerId, externalEventId)`; event append dedupes on `(runId, seq)`. Event

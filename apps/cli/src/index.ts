@@ -3,7 +3,7 @@ import net from "node:net";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { resolveDaemonRuntimePaths } from "@mininglamp-oss/octo-harness-daemon-app/runtime-options";
+import { resolveDaemonRuntimePaths } from "../../daemon/dist/runtime-options.js";
 
 type FlagValue = string | boolean;
 type Flags = Record<string, FlagValue>;
@@ -232,7 +232,7 @@ async function connectDaemon(): Promise<net.Socket> {
     const code = (error as NodeJS.ErrnoException).code;
     if (code && ["ENOENT", "ECONNREFUSED", "EINVAL"].includes(code)) {
       throw new Error(
-        `cannot connect to Octo Harness daemon at ${socketPath}; start it from the repository root with: pnpm daemon`,
+        `cannot connect to Octo Harness daemon at ${socketPath}; start it with: octo-harness daemon`,
         { cause: error }
       );
     }

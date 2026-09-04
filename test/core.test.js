@@ -15,7 +15,7 @@ test("trigger occurrence is deduplicated and produces a terminal run", async () 
   assert.equal(first.result.events.at(-1).type, "run.finished");
   assert.equal(first.result.events[0].type, "run.queued");
   assert.equal(first.result.events[1].type, "run.running");
-  assert.equal(store.sessions.get(first.task.sessionId).providerSession.sessionId.startsWith("test:"), true);
+  assert.equal(store.getSession(first.task.sessionId).providerSession.sessionId.startsWith("test:"), true);
   assert.equal(second.deduplicated, true);
-  assert.equal(store.tasks.size, 1);
+  assert.equal(store.listTasks().length, 1);
 });

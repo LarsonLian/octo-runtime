@@ -4,7 +4,7 @@ import { chmod, lstat, mkdir, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   HarnessEngine,
-  JsonFileStore,
+  SqliteStore,
   type CreateTriggerInput,
   type RegisterAgentInput,
   type Store
@@ -48,7 +48,7 @@ const STREAM_POLL_MS = 25;
 
 export interface DaemonApplication {
   server: Server;
-  store: JsonFileStore;
+  store: SqliteStore;
   daemon: HarnessDaemon;
   engine: HarnessEngine;
   hostProcess: AdapterHostProcess;
@@ -73,13 +73,20 @@ export async function startDaemonServer({
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 
-  const store = await JsonFileStore.open(storePath);
-  const hostProcess = await spawnAdapterHost({ entrypoint: hostEntrypoint, manifest: manifestPath });
+  const store = SqliteStore.open(storePath);
+  let hostProcess: AdapterHostProcess;
+  try {
+    hostProcess = await spawnAdapterHost({ entrypoint: hostEntrypoint, manifest: manifestPath });
+  } catch (error) {
+    store.close();
+    throw error;
+  }
   let adapters: string[];
   try {
     adapters = (await hostProcess.client.list()).map(adapter => adapter.type);
   } catch (error) {
     await hostProcess.close();
+    store.close();
     throw error;
   }
   const runtime: DaemonRuntimeInfo = {
@@ -115,6 +122,7 @@ export async function startDaemonServer({
     daemon.stop();
     await agentWorkRuntime?.close();
     await hostProcess.close();
+    store.close();
     await rm(socketPath, { force: true });
     throw error;
   }
@@ -132,6 +140,7 @@ export async function startDaemonServer({
       await agentWorkRuntime?.close();
       await new Promise<void>(resolve => server.close(() => resolve()));
       await hostProcess.close();
+      store.close();
       await rm(socketPath, { force: true });
     }
   };
@@ -186,24 +195,24 @@ async function streamRunEvents({
   const params = request.params ?? {};
   const runId = requiredString(params.runId, "runId");
   let nextSeq = positiveInteger(params.fromSeq, "fromSeq", 1);
-  if (!store.runs.has(runId)) throw new Error(`run not found: ${runId}`);
+  if (!store.hasRun(runId)) throw new Error(`run not found: ${runId}`);
 
   while (!socket.destroyed) {
-    for (const event of store.events.get(runId) ?? []) {
+    for (const event of store.getEvents(runId)) {
       if (event.seq < nextSeq) continue;
       await writeSocketLine(socket, { id: request.id, event });
       nextSeq = event.seq + 1;
       if (TERMINAL_EVENT_TYPES.has(event.type)) {
         await writeSocketLine(socket, {
           id: request.id,
-          result: { done: true, run: store.runs.get(runId), nextSeq }
+          result: { done: true, run: store.getRun(runId), nextSeq }
         });
         socket.end();
         return;
       }
     }
 
-    const run = store.runs.get(runId);
+    const run = store.getRun(runId);
     if (!run) throw new Error(`run not found: ${runId}`);
     if (TERMINAL_RUN_STATUSES.has(run.status)) {
       await writeSocketLine(socket, { id: request.id, result: { done: true, run, nextSeq } });
@@ -249,9 +258,12 @@ async function dispatch({
         pid: process.pid,
         ...runtime,
         agentWork: agentWorkRuntime?.status ?? { enabled: false },
-        counts: Object.fromEntries(
-          (["agents", "triggers", "tasks", "runs"] as const).map(name => [name, store[name].size])
-        )
+        counts: {
+          agents: store.listAgents().length,
+          triggers: store.listTriggers().length,
+          tasks: store.listTasks().length,
+          runs: store.listRuns().length
+        }
       };
     case "adapter.list":
       return host.list();
@@ -260,13 +272,13 @@ async function dispatch({
     case "agent.create":
       return engine.registerAgent(params as unknown as RegisterAgentInput);
     case "agent.list":
-      return [...store.agents.values()];
+      return store.listAgents();
     case "chat.create":
       return engine.createChatSession(params as unknown as { agentId: string; title?: string; channel?: string });
     case "chat.list":
-      return [...store.sessions.values()].filter(item => item.type === "chat");
+      return store.listSessions().filter(item => item.type === "chat");
     case "chat.get":
-      return store.sessions.get(requiredString(params.sessionId, "sessionId")) ?? null;
+      return store.getSession(requiredString(params.sessionId, "sessionId")) ?? null;
     case "chat.send":
       return daemon.submitChat(
         requiredString(params.sessionId, "sessionId"),
@@ -279,7 +291,7 @@ async function dispatch({
       return trigger;
     }
     case "trigger.list":
-      return [...store.triggers.values()];
+      return store.listTriggers();
     case "trigger.fire":
       return daemon.submitTrigger(requiredString(params.triggerId, "triggerId"), {
         externalEventId: requiredString(params.externalEventId, "externalEventId"),
@@ -292,9 +304,9 @@ async function dispatch({
         payload: optionalRecord(params.payload)
       });
     case "task.list":
-      return [...store.tasks.values()];
+      return store.listTasks();
     case "task.get":
-      return store.tasks.get(requiredString(params.taskId, "taskId")) ?? null;
+      return store.getTask(requiredString(params.taskId, "taskId")) ?? null;
     case "task.continue":
       return daemon.continueTask(requiredString(params.taskId, "taskId"), {
         sourceType: optionalString(params.sourceType) ?? "comment",
@@ -302,9 +314,9 @@ async function dispatch({
         instructions: optionalString(params.instructions) ?? ""
       });
     case "run.get":
-      return store.runs.get(requiredString(params.runId, "runId")) ?? null;
+      return store.getRun(requiredString(params.runId, "runId")) ?? null;
     case "run.events":
-      return store.events.get(requiredString(params.runId, "runId")) ?? [];
+      return store.getEvents(requiredString(params.runId, "runId"));
     case "run.wait":
       return daemon.waitForRun(requiredString(params.runId, "runId"));
     case "run.cancel":

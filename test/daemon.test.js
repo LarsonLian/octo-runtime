@@ -4,14 +4,14 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
-import { HarnessEngine, JsonFileStore } from "@mininglamp-oss/octo-harness-core";
+import { HarnessEngine, SqliteStore } from "@mininglamp-oss/octo-harness-core";
 import { HarnessDaemon } from "@mininglamp-oss/octo-harness-daemon";
 import { testAdapter } from "./fixtures/test-adapter.js";
 
 test("daemon recovery queues a materialized task that has no run", async () => {
   const directory = await mkdtemp(join(tmpdir(), "octo-harness-orphan-test-"));
   try {
-    const store = await JsonFileStore.open(join(directory, "state.json"));
+    const store = SqliteStore.open(join(directory, "state.db"));
     const host = new AdapterHost(); host.register(testAdapter);
     const engine = new HarnessEngine({ store, host });
     const agent = await engine.registerAgent({ name: "test", adapterType: "test" });
@@ -19,16 +19,17 @@ test("daemon recovery queues a materialized task that has no run", async () => {
     const created = await engine.materializeTrigger(trigger.id, { externalEventId: "before-crash" });
     assert.equal(created.task.activeRunId, undefined);
     const daemon = new HarnessDaemon({ engine, store }); await daemon.recover();
-    const runId = store.tasks.get(created.task.id).activeRunId;
+    const runId = store.getTask(created.task.id).activeRunId;
     assert.ok(runId); assert.equal((await daemon.waitForRun(runId)).run.status, "completed"); daemon.stop();
+    store.close();
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test("daemon ACKs durable work, deduplicates triggers, and continues one task session", async () => {
   const directory = await mkdtemp(join(tmpdir(), "octo-harness-store-test-"));
   try {
-    const file = join(directory, "state.json");
-    const store = await JsonFileStore.open(file);
+    const file = join(directory, "state.db");
+    const store = SqliteStore.open(file);
     const host = new AdapterHost(); host.register(testAdapter);
     const engine = new HarnessEngine({ store, host });
     const daemon = new HarnessDaemon({ engine, store });
@@ -50,18 +51,21 @@ test("daemon ACKs durable work, deduplicates triggers, and continues one task se
     const chat = await engine.createChatSession({ agentId: agent.id, title: "Chat" });
     const chatOne = await daemon.submitChat(chat.id, "hello"); await daemon.waitForRun(chatOne.runId);
     const chatTwo = await daemon.submitChat(chat.id, "continue"); await daemon.waitForRun(chatTwo.runId);
-    assert.equal(store.sessions.get(chat.id).providerSession.sessionId, `test:${chat.id}`);
-    assert.equal(store.runs.get(chatOne.runId).sessionId, store.runs.get(chatTwo.runId).sessionId);
+    assert.equal(store.getSession(chat.id).providerSession.sessionId, `test:${chat.id}`);
+    assert.equal(store.getRun(chatOne.runId).sessionId, store.getRun(chatTwo.runId).sessionId);
 
     const continued = await daemon.continueTask(ack.taskId, { sourceType: "comment", sourceId: "comment-1", instructions: "continue" });
     await daemon.waitForRun(continued.runId);
-    const attempts = [...store.attempts.values()].filter(item => item.taskId === ack.taskId);
+    const attempts = store.listAttemptsByTask(ack.taskId);
     assert.equal(attempts.length, 2);
-    assert.equal(new Set(attempts.map(item => store.runs.get(item.runId).sessionId)).size, 1);
+    assert.equal(new Set(attempts.map(item => store.getRun(item.runId).sessionId)).size, 1);
+    daemon.stop();
+    store.close();
 
-    const reopened = await JsonFileStore.open(file);
-    assert.equal(reopened.tasks.size, 2);
-    assert.equal(reopened.runs.size, 5);
-    assert.equal(reopened.events.get(continued.runId).at(-1).type, "run.finished");
+    const reopened = SqliteStore.open(file);
+    assert.equal(reopened.listTasks().length, 2);
+    assert.equal(reopened.listRuns().length, 5);
+    assert.equal(reopened.getEvents(continued.runId).at(-1).type, "run.finished");
+    reopened.close();
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
