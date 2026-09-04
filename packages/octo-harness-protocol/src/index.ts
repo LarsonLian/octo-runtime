@@ -240,6 +240,7 @@ export const MESSAGE_EXPOSURES: ReadonlySet<MessageExposure> = new Set([
  */
 export const capabilities = Object.freeze({
   SESSION_SERIALIZE: "session.serialize",
+  SESSION_RESUME_RECOVERY: "session.resume_recovery",
   SESSION_FORK: "session.fork",
   MESSAGE_APPEND: "message.append",
   TOOL_CANONICAL: "tool.canonical",

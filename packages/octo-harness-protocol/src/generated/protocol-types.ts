@@ -61,6 +61,18 @@ export interface ProviderSession {
    * Whether the provider declares that later invocations can resume this session.
    */
   resumable?: boolean;
+  /**
+   * Continuity outcome for this session update. Compaction applies to the next turn; fresh fallback applies to the current turn.
+   */
+  resumeOutcome?: "new" | "resumed" | "fresh_fallback" | "compacted";
+  /**
+   * Low-cardinality reason for a fresh resume fallback.
+   */
+  resumeFallback?: string;
+  /**
+   * Frozen context input variant actually selected for the current provider turn.
+   */
+  contextInputVariant?: "primary" | "recovery";
   [k: string]: unknown;
 }
 /**

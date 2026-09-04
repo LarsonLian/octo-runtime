@@ -65,6 +65,20 @@ export class ChannelContextConsumerBusyError extends Error {
   }
 }
 
+export class ChannelContextStaleGenerationError extends Error {
+  readonly requestedGeneration: number;
+  readonly latestGeneration: number;
+
+  constructor(requestedGeneration: number, latestGeneration: number) {
+    super(
+      `channel context generation ${requestedGeneration} is stale; latest generation is ${latestGeneration}`
+    );
+    this.name = "ChannelContextStaleGenerationError";
+    this.requestedGeneration = requestedGeneration;
+    this.latestGeneration = latestGeneration;
+  }
+}
+
 interface SnapshotRow {
   snapshot_id: string;
   run_id: string;
@@ -82,9 +96,9 @@ interface SnapshotRow {
   serializer_version: string;
   rendered_sha256: string;
   completeness: "complete" | "partial" | "unavailable";
-  recovery_rendered_text: string;
-  recovery_rendered_sha256: string;
-  recovery_completeness: "complete" | "partial" | "unavailable";
+  recovery_rendered_text: string | null;
+  recovery_rendered_sha256: string | null;
+  recovery_completeness: "complete" | "partial" | "unavailable" | null;
   state: "prepared" | "submitted" | "committed" | "failed";
 }
 
@@ -179,6 +193,13 @@ export class ChannelContextStore {
     const existing = this.#snapshotForRun(runId);
     if (existing) {
       assertSnapshotIdentity(existing, descriptor);
+      this.#assertCurrentGeneration(
+        existing.scope_key,
+        existing.consumer_key,
+        descriptor.session_generation,
+        Math.max(descriptor.session_generation, existing.effective_session_generation),
+        runId
+      );
       if (existing.state === "failed") {
         const active = this.#db.prepare(
           `SELECT run_id FROM channel_context_snapshots
@@ -206,6 +227,13 @@ export class ChannelContextStore {
       this.#upsertScope(scopeKey, descriptor.scope, undefined, now);
       // Trigger delivery is reliable even when prior context-only pushes were dropped.
       this.#upsertFact(scopeKey, descriptor.trigger_fact, now);
+      this.#assertCurrentGeneration(
+        scopeKey,
+        descriptor.consumer_key,
+        descriptor.session_generation,
+        descriptor.session_generation,
+        runId
+      );
       this.#db.prepare(
         `INSERT OR IGNORE INTO channel_context_consumers (
            scope_key, consumer_key, session_generation, consumed_order_key,
@@ -488,7 +516,7 @@ export class ChannelContextStore {
              SELECT 1 FROM channel_context_snapshots s
              WHERE s.scope_key = channel_context_consumers.scope_key
                AND s.consumer_key = channel_context_consumers.consumer_key
-               AND s.session_generation = channel_context_consumers.session_generation
+               AND s.effective_session_generation = channel_context_consumers.session_generation
                AND s.state IN ('prepared', 'submitted')
            )`
       ).run(retentionCutoff);
@@ -638,6 +666,31 @@ export class ChannelContextStore {
     return undefined;
   }
 
+  #assertCurrentGeneration(
+    scopeKey: string,
+    consumerKey: string,
+    requestedGeneration: number,
+    allowedGeneration: number,
+    runId: string
+  ): void {
+    const row = this.#db.prepare(
+      `SELECT MAX(generation) AS latest_generation FROM (
+         SELECT session_generation AS generation
+         FROM channel_context_consumers
+         WHERE scope_key = ? AND consumer_key = ?
+         UNION ALL
+         SELECT effective_session_generation AS generation
+         FROM channel_context_snapshots
+         WHERE scope_key = ? AND consumer_key = ? AND run_id <> ?
+       )`
+    ).get(scopeKey, consumerKey, scopeKey, consumerKey, runId) as {
+      latest_generation: number | null;
+    };
+    if (row.latest_generation !== null && row.latest_generation > allowedGeneration) {
+      throw new ChannelContextStaleGenerationError(requestedGeneration, row.latest_generation);
+    }
+  }
+
   #pruneScope(scopeKey: string, now: number): void {
     this.#db.prepare(
       "DELETE FROM channel_context_messages WHERE scope_key = ? AND ingested_at_ms < ?"
@@ -766,16 +819,15 @@ function migrate(db: DatabaseSync): void {
       ALTER TABLE channel_context_snapshots
         ADD COLUMN selected_variant TEXT NOT NULL DEFAULT 'primary';
       ALTER TABLE channel_context_snapshots
-        ADD COLUMN recovery_rendered_text TEXT NOT NULL DEFAULT '';
+        ADD COLUMN recovery_rendered_text TEXT;
       ALTER TABLE channel_context_snapshots
-        ADD COLUMN recovery_rendered_sha256 TEXT NOT NULL DEFAULT '';
+        ADD COLUMN recovery_rendered_sha256 TEXT;
       ALTER TABLE channel_context_snapshots
-        ADD COLUMN recovery_completeness TEXT NOT NULL DEFAULT 'partial';
+        ADD COLUMN recovery_completeness TEXT;
       UPDATE channel_context_snapshots
-        SET effective_session_generation = session_generation,
-            recovery_rendered_text = rendered_text,
-            recovery_rendered_sha256 = rendered_sha256,
-            recovery_completeness = completeness;
+        SET effective_session_generation = session_generation;
+      DELETE FROM channel_context_snapshots
+        WHERE state IN ('prepared', 'submitted', 'failed');
       CREATE INDEX IF NOT EXISTS channel_context_snapshots_effective_consumer
         ON channel_context_snapshots(scope_key, consumer_key, effective_session_generation, created_at_ms);
       PRAGMA user_version = 2;
@@ -794,9 +846,12 @@ function snapshotFromRow(row: SnapshotRow): PreparedChannelContextSnapshot {
     recovery_completeness?: "complete" | "partial" | "unavailable";
   };
   const facts = payload.facts ?? [];
-  const recoveryFacts = payload.recovery_facts ?? facts;
-  const recoveryRenderedText = row.recovery_rendered_text;
-  const recoveryCompleteness = row.recovery_completeness;
+  const hasRecovery = row.recovery_rendered_text !== null
+    && row.recovery_rendered_sha256 !== null
+    && row.recovery_completeness !== null;
+  const recoveryFacts = hasRecovery ? (payload.recovery_facts ?? []) : [];
+  const recoveryRenderedText = row.recovery_rendered_text ?? "";
+  const recoveryCompleteness = row.recovery_completeness ?? "unavailable";
   return {
     ref: {
       snapshot_id: row.snapshot_id,
@@ -811,8 +866,10 @@ function snapshotFromRow(row: SnapshotRow): PreparedChannelContextSnapshot {
       serializer_version: row.serializer_version,
       rendered_sha256: row.rendered_sha256,
       completeness: row.completeness,
-      recovery_rendered_sha256: row.recovery_rendered_sha256,
-      recovery_completeness: recoveryCompleteness
+      ...(hasRecovery ? {
+        recovery_rendered_sha256: row.recovery_rendered_sha256!,
+        recovery_completeness: recoveryCompleteness
+      } : {})
     },
     facts,
     renderedText: row.rendered_text,

@@ -21,6 +21,7 @@ import type { OutboxRow } from "./agent-work-store.js";
 import {
   ChannelContextStore,
   ChannelContextConsumerBusyError,
+  ChannelContextStaleGenerationError,
   channelScopeKey,
   composeProviderModelInput,
   type ChannelContextStoreOptions,
@@ -591,7 +592,14 @@ export class AgentWorkRuntime {
           return;
         }
         this.#contextStore?.markFailed(command.run_id);
-        const failure = { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) };
+        const failure = error instanceof ChannelContextStaleGenerationError
+          ? {
+              code: "STALE_CONTEXT_GENERATION",
+              message: error.message,
+              requested_generation: error.requestedGeneration,
+              latest_generation: error.latestGeneration
+            }
+          : { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) };
         store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
         this.#ackCommand(command, false, failure);
         return;
@@ -640,6 +648,9 @@ export class AgentWorkRuntime {
     if (!this.#usesAppendOnlyDelta()) return undefined;
     if (!this.#adapterCapabilities.get(adapterType)?.has("session.serialize")) {
       throw new Error(`adapter ${adapterType} lacks session.serialize required by append-only channel context`);
+    }
+    if (!this.#adapterCapabilities.get(adapterType)?.has("session.resume_recovery")) {
+      throw new Error(`adapter ${adapterType} lacks session.resume_recovery required by append-only channel context`);
     }
     if (contextStore.needsSync(descriptor.scope)) await this.#requestContextSync(descriptor, signal);
     while (this.#isCurrentLifecycle(epoch)) {

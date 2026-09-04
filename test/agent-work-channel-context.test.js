@@ -92,7 +92,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["session.serialize"] }],
+      list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         providerRequest = request;
@@ -230,7 +230,7 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["session.serialize"] }],
+      list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         yield { type: "run.finished", payload: {} };
@@ -359,7 +359,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["session.serialize"] }],
+      list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         yield { type: "run.finished", payload: {} };
@@ -537,7 +537,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["session.serialize"] }],
+      list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         providerRequests.push(request);
@@ -607,6 +607,105 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
     assert.equal(contextStore.getSnapshot("run-third").state, "committed");
     assert.deepEqual(contextStore.getSnapshot("run-third").facts.map(item => item.message_seq), [6]);
     contextStore.close();
+  } finally {
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("runtime rejects a queued source generation after recovery advanced the effective generation", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-channel-runtime-stale-generation-"));
+  const contextPath = join(directory, "channel-context.db");
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  const rejected = deferred();
+  let runtime;
+  let invocationCount = 0;
+
+  const contextStore = ChannelContextStore.open(contextPath);
+  contextStore.applySyncResult({
+    request_id: "sync-recovery-blocker",
+    scope,
+    facts: [fact(1, "background")],
+    completeness: "complete",
+    through_seq: 1
+  });
+  const blocker = executionEnvelope("run-recovery-blocker", 2, "recovery trigger")
+    .immutable_execution_input.content.channel_context;
+  contextStore.prepareSnapshot("run-recovery-blocker", blocker);
+  contextStore.selectRecovery("run-recovery-blocker");
+  contextStore.markSubmitted("run-recovery-blocker");
+  contextStore.close();
+
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* consume registration body */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { id: "runtime-stale-generation" } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    websocket.on("message", data => {
+      const envelope = JSON.parse(data.toString("utf8"));
+      if (envelope.type === "runtime.hello") {
+        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("runtime.command", {
+          server_seq: 1,
+          command_id: "command-stale-generation",
+          run_id: "run-stale-generation",
+          type: "run.start",
+          payload: executionEnvelope("run-stale-generation", 3, "queued trigger"),
+          lease_id: "lease-stale-generation",
+          fencing_token: 1
+        }));
+      }
+      if (envelope.type === "command.ack" && envelope.payload.command_id === "command-stale-generation") {
+        rejected.resolve(envelope.payload);
+      }
+    });
+  });
+
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    const host = {
+      list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() {
+        invocationCount += 1;
+        yield { type: "run.finished", payload: {} };
+      }
+    };
+    runtime = new AgentWorkRuntime({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      tenantId: "tenant-e2e",
+      subjectId: "device-e2e",
+      runtimeName: "runtime-stale-generation",
+      fingerprint: "runtime:stale-generation",
+      storePath: join(directory, "agent-work.db"),
+      channelContext: {
+        store: "sqlite",
+        projection: "delta",
+        providerPersistence: "append_only",
+        storePath: contextPath
+      }
+    }, host);
+    await runtime.start();
+    const ack = await withTimeout(rejected.promise, 3_000, "stale generation rejection timeout");
+    assert.equal(ack.accepted, false);
+    assert.deepEqual(ack.error, {
+      code: "STALE_CONTEXT_GENERATION",
+      message: "channel context generation 1 is stale; latest generation is 2",
+      requested_generation: 1,
+      latest_generation: 2
+    });
+    assert.equal(invocationCount, 0);
+    assert.equal(runtime.status.channelContext.activeSnapshots, 1);
   } finally {
     await runtime?.close();
     for (const client of wsServer.clients) client.terminate();
@@ -687,7 +786,7 @@ test("runtime close joins a waiting command before immediate restart and replay"
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["session.serialize"] }],
+      list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         invocationCount += 1;
@@ -828,7 +927,7 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["session.serialize"] }],
+      list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         invocationCount += 1;
@@ -872,7 +971,7 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
   }
 });
 
-test("append-only channel context fails closed for adapters without persistent sessions", async () => {
+test("append-only channel context fails closed without continuity recovery", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-channel-runtime-capability-"));
   const httpServer = createServer();
   const wsServer = new WebSocketServer({ noServer: true });
@@ -913,7 +1012,7 @@ test("append-only channel context fails closed for adapters without persistent s
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: [] }],
+      list: async () => [{ type: "fake", capabilities: ["session.serialize"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         invocationCount += 1;
@@ -939,7 +1038,7 @@ test("append-only channel context fails closed for adapters without persistent s
     const ack = await withTimeout(rejected.promise, 3_000, "stateless adapter rejection timeout");
     assert.equal(ack.accepted, false);
     assert.equal(ack.error.code, "INVALID_EXECUTION_ENVELOPE");
-    assert.match(ack.error.message, /lacks session\.serialize/);
+    assert.match(ack.error.message, /lacks session\.resume_recovery/);
     assert.equal(invocationCount, 0);
   } finally {
     await runtime?.close();

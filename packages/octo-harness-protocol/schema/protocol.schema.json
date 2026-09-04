@@ -43,6 +43,20 @@
         "resumable": {
           "description": "Whether the provider declares that later invocations can resume this session.",
           "type": "boolean"
+        },
+        "resumeOutcome": {
+          "description": "Continuity outcome for this session update. Compaction applies to the next turn; fresh fallback applies to the current turn.",
+          "type": "string",
+          "enum": ["new", "resumed", "fresh_fallback", "compacted"]
+        },
+        "resumeFallback": {
+          "description": "Low-cardinality reason for a fresh resume fallback.",
+          "type": "string"
+        },
+        "contextInputVariant": {
+          "description": "Frozen context input variant actually selected for the current provider turn.",
+          "type": "string",
+          "enum": ["primary", "recovery"]
         }
       }
     },

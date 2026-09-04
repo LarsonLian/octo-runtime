@@ -68,6 +68,9 @@ reader.on("line", line => {
     respond(message.id, { turn: { id: "turn-1", status: "inProgress", items: [] } });
     queueMicrotask(() => {
       notify("turn/started", { threadId: activeThreadId, turn: { id: "turn-1", status: "inProgress", items: [] } });
+      if (prompt.includes("EMIT_COMPACTION")) {
+        notify("thread/compacted", { threadId: activeThreadId });
+      }
       if (prompt.includes("WAIT_FOR_CANCEL")) {
         notify("item/started", {
           threadId: activeThreadId,

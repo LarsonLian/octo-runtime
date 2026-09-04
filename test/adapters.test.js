@@ -28,6 +28,10 @@ const request = { invocationId: "inv-1", sessionId: "session-1", runId: "run-1",
 
 test("Codex native events map to session/message/usage/terminal", () => {
   assert.equal(normalizeCodexEvent({ method: "thread/started", params: { thread: { id: "thread-1" } } })[0].type, "session.update");
+  assert.deepEqual(
+    normalizeCodexEvent({ method: "thread/compacted", params: { threadId: "thread-1" } })[0].payload,
+    { providerSession: { sessionId: "thread-1", resumable: true, resumeOutcome: "compacted" } }
+  );
   assert.equal(normalizeCodexEvent({ method: "item/agentMessage/delta", params: { itemId: "message-1", delta: "ok" } })[0].type, "message.delta");
   assert.equal(normalizeCodexEvent({
     method: "thread/tokenUsage/updated",
@@ -348,6 +352,33 @@ test("Codex app-server falls back to a fresh thread when resume fails", async ()
   assert.equal(session.resumeFallback, "resume_rejected");
   assert.equal(session.contextInputVariant, "recovery");
   assert.equal(events.at(-1).type, "run.finished");
+});
+
+test("Codex app-server preserves a compaction session update for the next turn", async () => {
+  const fixture = fileURLToPath(new URL("../fixtures/fake-codex-app-server.mjs", import.meta.url));
+  const adapter = createCodexAdapter({ command: process.execPath, appServerArgs: [fixture] });
+  const host = new AdapterHost(); host.register(adapter);
+  const events = [];
+  for await (const event of host.invoke("codex", {
+    ...request,
+    invocationId: "inv-codex-compacted",
+    prompt: "EMIT_COMPACTION",
+    providerSession: { sessionId: "existing-thread" }
+  })) events.push(event);
+  const sessions = events
+    .filter(event => event.type === "session.update")
+    .map(event => event.payload.providerSession);
+  assert.deepEqual(sessions, [
+    { sessionId: "existing-thread", resumable: true, resumeOutcome: "resumed" },
+    { sessionId: "existing-thread", resumable: true, resumeOutcome: "compacted" }
+  ]);
+  assert.equal(events.at(-1).type, "run.finished");
+});
+
+test("only Codex declares append-only continuity recovery", () => {
+  assert.equal(createCodexAdapter().metadata.capabilities.includes("session.resume_recovery"), true);
+  assert.equal(createClaudeCodeAdapter().metadata.capabilities.includes("session.resume_recovery"), false);
+  assert.equal(createCodeBuddyAdapter().metadata.capabilities.includes("session.resume_recovery"), false);
 });
 
 test("Codex app-server maps disabled thinking to low effort", async () => {

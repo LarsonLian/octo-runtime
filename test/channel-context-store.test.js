@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import {
   ChannelContextStore,
   CHANNEL_CONTEXT_SERIALIZER_VERSION,
+  channelScopeKey,
   composeProviderModelInput
 } from "../apps/daemon/dist/channel-context-store.js";
 
@@ -140,6 +141,28 @@ test("retry reuses exact frozen bytes and consumer snapshots are serialized", as
   });
 });
 
+test("a recovery generation makes a queued source-generation snapshot stale", async () => {
+  await withStore("oh-channel-stale-generation", async store => {
+    store.applySyncResult({
+      request_id: "sync-stale-generation",
+      scope,
+      completeness: "complete",
+      facts: [fact(1)]
+    });
+    store.prepareSnapshot("run-recovery", descriptor(2));
+    const recovery = store.selectRecovery("run-recovery");
+    assert.equal(recovery.ref.session_generation, 2);
+    store.markSubmitted("run-recovery");
+    assert.equal(store.prepareSnapshot("run-recovery", descriptor(2)).ref.snapshot_id, recovery.ref.snapshot_id);
+    assert.throws(
+      () => store.prepareSnapshot("run-stale-queued", descriptor(3)),
+      error => error?.name === "ChannelContextStaleGenerationError"
+        && error.requestedGeneration === 1
+        && error.latestGeneration === 2
+    );
+  });
+});
+
 test("sequence gaps make snapshots partial until bounded sync repairs the scope", async () => {
   await withStore("oh-channel-gap", async store => {
     store.applySyncResult({ request_id: "sync-gap-1", scope, completeness: "complete", facts: [fact(1)] });
@@ -231,12 +254,68 @@ test("reconcile uses ingest time and bounds cross-scope churn while preserving a
   }, { retentionMs: 100, snapshotRetentionMs: 100 });
 });
 
-test("schema v1 snapshots migrate with primary effective-generation defaults", async () => {
+test("reconcile preserves the effective recovery consumer until commit", async () => {
+  await withStore("oh-channel-recovery-retention", async store => {
+    store.applySyncResult({
+      request_id: "sync-recovery-retention",
+      scope,
+      completeness: "complete",
+      facts: [fact(1)]
+    }, 1_000);
+    store.prepareSnapshot("run-recovery-retention", descriptor(2), 1_000);
+    const recovery = store.selectRecovery("run-recovery-retention", 1_000);
+    assert.equal(recovery.ref.session_generation, 2);
+    store.markSubmitted("run-recovery-retention");
+
+    store.reconcile(2_000);
+    assert.equal(store.getSnapshot("run-recovery-retention").state, "submitted");
+    assert.deepEqual(store.commitSnapshot("run-recovery-retention", 2_001), {
+      snapshot_id: recovery.ref.snapshot_id,
+      committed: true
+    });
+  }, { retentionMs: 100, snapshotRetentionMs: 100 });
+});
+
+test("schema v1 migration refreezes active snapshots and keeps committed primary audit only", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-channel-context-migrate-"));
   const file = join(directory, "channel-context.db");
   try {
     const legacy = new DatabaseSync(file);
     legacy.exec(`
+      CREATE TABLE channel_context_scopes (
+        scope_key TEXT PRIMARY KEY,
+        scope_json TEXT NOT NULL,
+        gap_after_seq INTEGER,
+        sync_completeness TEXT,
+        created_at_ms INTEGER NOT NULL,
+        updated_at_ms INTEGER NOT NULL
+      );
+      CREATE TABLE channel_context_messages (
+        scope_key TEXT NOT NULL REFERENCES channel_context_scopes(scope_key) ON DELETE CASCADE,
+        message_id TEXT NOT NULL,
+        message_seq INTEGER,
+        order_key TEXT NOT NULL,
+        sender_id TEXT NOT NULL,
+        sender_label TEXT,
+        occurred_at_ms INTEGER NOT NULL,
+        parts_json TEXT NOT NULL,
+        fact_json TEXT NOT NULL,
+        content_bytes INTEGER NOT NULL,
+        flags INTEGER NOT NULL DEFAULT 0,
+        ingested_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (scope_key, message_id)
+      );
+      CREATE TABLE channel_context_consumers (
+        scope_key TEXT NOT NULL REFERENCES channel_context_scopes(scope_key) ON DELETE CASCADE,
+        consumer_key TEXT NOT NULL,
+        session_generation INTEGER NOT NULL,
+        consumed_order_key TEXT,
+        consumed_through_seq INTEGER,
+        consumed_message_id TEXT,
+        version INTEGER NOT NULL DEFAULT 0,
+        updated_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (scope_key, consumer_key, session_generation)
+      );
       CREATE TABLE channel_context_snapshots (
         snapshot_id TEXT PRIMARY KEY,
         run_id TEXT NOT NULL UNIQUE,
@@ -257,24 +336,60 @@ test("schema v1 snapshots migrate with primary effective-generation defaults", a
         created_at_ms INTEGER NOT NULL,
         committed_at_ms INTEGER
       );
-      INSERT INTO channel_context_snapshots (
-        snapshot_id, run_id, scope_key, consumer_key, session_generation,
-        base_consumer_version, trigger_message_id, commit_order_key, payload_json,
-        rendered_text, serializer_version, rendered_sha256, completeness, state, created_at_ms
-      ) VALUES (
-        'ctx-legacy', 'run-legacy', 'scope-legacy', 'consumer-legacy', 4,
-        0, 'message-legacy', 's:legacy', '{"facts":[]}', '',
-        'channel-context-jsonl-v1', '${createHash("sha256").update("").digest("hex")}',
-        'partial', 'failed', 1
-      );
       PRAGMA user_version = 1;
     `);
+    const scopeKey = channelScopeKey(scope);
+    legacy.prepare(
+      `INSERT INTO channel_context_scopes (
+         scope_key, scope_json, gap_after_seq, sync_completeness, created_at_ms, updated_at_ms
+       ) VALUES (?, ?, NULL, 'complete', 1, 1)`
+    ).run(scopeKey, JSON.stringify(scope));
+    const insertSnapshot = legacy.prepare(
+      `INSERT INTO channel_context_snapshots (
+         snapshot_id, run_id, scope_key, consumer_key, session_generation,
+         base_consumer_version, trigger_message_id, trigger_seq, commit_order_key, payload_json,
+         rendered_text, serializer_version, rendered_sha256, completeness, state,
+         created_at_ms, committed_at_ms
+       ) VALUES (?, ?, ?, ?, 1, 0, 'message-2', 2, 'q:2', '{"facts":[]}', ?, ?, ?,
+                 'complete', ?, 1, ?)`
+    );
+    for (const state of ["prepared", "submitted", "failed", "committed"]) {
+      const rendered = `legacy-${state}`;
+      insertSnapshot.run(
+        `ctx-${state}`,
+        `run-${state}`,
+        scopeKey,
+        descriptor(2).consumer_key,
+        rendered,
+        CHANNEL_CONTEXT_SERIALIZER_VERSION,
+        createHash("sha256").update(rendered).digest("hex"),
+        state,
+        state === "committed" ? 2 : null
+      );
+    }
     legacy.close();
 
     const migrated = ChannelContextStore.open(file);
-    const snapshot = migrated.getSnapshot("run-legacy");
-    assert.equal(snapshot.ref.session_generation, 4);
-    assert.equal(snapshot.selectedVariant, "primary");
+    assert.equal(migrated.getSnapshot("run-prepared"), undefined);
+    assert.equal(migrated.getSnapshot("run-submitted"), undefined);
+    assert.equal(migrated.getSnapshot("run-failed"), undefined);
+    const committed = migrated.getSnapshot("run-committed");
+    assert.equal(committed.ref.session_generation, 1);
+    assert.equal(committed.selectedVariant, "primary");
+    assert.equal(committed.ref.recovery_rendered_sha256, undefined);
+    assert.equal(committed.recoveryRenderedText, "");
+    assert.deepEqual(committed.recoveryFacts, []);
+    assert.throws(() => migrated.selectRecovery("run-committed"), /cannot select recovery from state committed/);
+
+    migrated.applySyncResult({
+      request_id: "sync-migrated-replay",
+      scope,
+      completeness: "complete",
+      facts: [fact(1)]
+    });
+    const refrozen = migrated.prepareSnapshot("run-prepared", descriptor(2));
+    assert.deepEqual(refrozen.facts.map(item => item.message_seq), [1]);
+    assert.equal(typeof refrozen.ref.recovery_rendered_sha256, "string");
     migrated.close();
 
     const inspect = new DatabaseSync(file);

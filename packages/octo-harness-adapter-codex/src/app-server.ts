@@ -200,8 +200,11 @@ export async function* runCodexAppServerTurn({
 
     // Phase 4：client queue 已经把 JSON-RPC notification 归一化为 CanonicalEvent。
     for await (const event of client.events()) {
-      // thread RPC response 已用于构造带 resumeOutcome 的权威 session.update；过滤重复通知。
-      if (event.type === "session.update" && event.payload.providerSession?.sessionId === threadId) {
+      // The thread RPC response already produced the authoritative initial
+      // update. Later lifecycle outcomes (such as compaction) must pass through.
+      if (event.type === "session.update"
+        && event.payload.providerSession?.sessionId === threadId
+        && event.payload.providerSession.resumeOutcome === undefined) {
         continue;
       }
       terminal ||= isTerminalEvent(event);
@@ -257,6 +260,21 @@ export function normalizeCodexEvent(native: CodexAppServerNotification): Canonic
       return threadId ? [{
         type: "session.update",
         payload: { providerSession: { sessionId: threadId, resumable: true } }
+      }] : [];
+    }
+    case "thread/compacted": {
+      const threadId = stringValue(params.threadId)
+        || stringValue(recordValue(params.thread)?.id)
+        || stringValue(recordValue(params.thread)?.sessionId);
+      return threadId ? [{
+        type: "session.update",
+        payload: {
+          providerSession: {
+            sessionId: threadId,
+            resumable: true,
+            resumeOutcome: "compacted"
+          }
+        }
       }] : [];
     }
     case "item/agentMessage/delta":
