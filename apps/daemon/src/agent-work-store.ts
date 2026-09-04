@@ -1,7 +1,7 @@
-import { chmodSync, mkdirSync, statSync } from "node:fs";
-import { dirname } from "node:path";
+import { statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openWalDatabase } from "@mininglamp-oss/octo-harness-core";
 
 /** ACK 前暂存的一条待发送事件，已带上重放需要的 lease/fencing 与稳定 event_id。 */
 export interface OutboxRow {
@@ -39,6 +39,8 @@ export type AckOutcome =
 
 const TERMINAL_EVENT_TYPES = new Set(["run.completed", "run.failed", "run.cancelled"]);
 const LAST_ACKED_COMMAND_SEQ = "last_acked_command_seq";
+/** command receipt 与终态 run 的默认本地保留期（7 天），到期后由 reconcile 清理。 */
+const DEFAULT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface RunRow {
   next_seq: number;
@@ -65,17 +67,7 @@ export class AgentWorkStore {
   }
 
   static open(file: string): AgentWorkStore {
-    mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-    const db = new DatabaseSync(file);
-    db.exec(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA synchronous = FULL;
-      PRAGMA foreign_keys = ON;
-      PRAGMA busy_timeout = 5000;
-      PRAGMA wal_autocheckpoint = 1000;
-      PRAGMA journal_size_limit = 67108864;
-      PRAGMA auto_vacuum = INCREMENTAL;
-    `);
+    const db = openWalDatabase(file);
     db.exec(`
       CREATE TABLE IF NOT EXISTS runs (
         run_id TEXT PRIMARY KEY,
@@ -112,7 +104,6 @@ export class AgentWorkStore {
       );
       CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     `);
-    for (const suffix of ["", "-wal", "-shm"]) chmodQuiet(`${file}${suffix}`, 0o600);
     return new AgentWorkStore(db, file);
   }
 
@@ -134,6 +125,8 @@ export class AgentWorkStore {
     error?: Record<string, unknown>,
     expiresAt?: number
   ): void {
+    // 默认保留 7 天，重启后仍可去重；到期由 reconcile 清理。
+    const expiry = expiresAt ?? Date.now() + DEFAULT_RETENTION_MS;
     this.#db.prepare(
       `INSERT INTO command_receipts (command_id, server_seq, accepted, result_json, expires_at)
        VALUES (?, ?, ?, ?, ?)
@@ -142,7 +135,7 @@ export class AgentWorkStore {
          accepted = excluded.accepted,
          result_json = excluded.result_json,
          expires_at = excluded.expires_at`
-    ).run(commandId, serverSeq, accepted ? 1 : 0, error ? JSON.stringify(error) : null, expiresAt ?? null);
+    ).run(commandId, serverSeq, accepted ? 1 : 0, error ? JSON.stringify(error) : null, expiry);
   }
 
   get lastAckedCommandSeq(): number {
@@ -285,13 +278,20 @@ export class AgentWorkStore {
     return (this.#db.prepare("SELECT COUNT(*) AS n FROM event_outbox").get() as { n: number }).n;
   }
 
-  /** 一致性清扫：删除已在水位内的残留行，checkpoint 并小批回收空闲页。 */
-  reconcile(): void {
+  /** 一致性清扫：删除已在水位内的残留行与过期元数据，checkpoint 并小批回收空闲页。 */
+  reconcile(now = Date.now()): void {
     this.#db.prepare(
       `DELETE FROM event_outbox WHERE (run_id, seq) IN (
         SELECT o.run_id, o.seq FROM event_outbox o JOIN runs r ON r.run_id = o.run_id WHERE o.seq <= r.ack_through_seq
       )`
     ).run();
+    // 过期 command receipt 与本地保留期已过的终态 run（其 outbox 已排空）不再需要。
+    this.#db.prepare("DELETE FROM command_receipts WHERE expires_at IS NOT NULL AND expires_at < ?").run(now);
+    this.#db.prepare(
+      `DELETE FROM runs
+       WHERE completed_at IS NOT NULL AND completed_at < ?
+         AND run_id NOT IN (SELECT run_id FROM event_outbox)`
+    ).run(now - DEFAULT_RETENTION_MS);
     this.#db.exec("PRAGMA wal_checkpoint(PASSIVE)");
     this.#db.exec("PRAGMA incremental_vacuum");
   }
@@ -308,13 +308,5 @@ function fileBytes(path: string): number {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0;
     throw error;
-  }
-}
-
-function chmodQuiet(path: string, mode: number): void {
-  try {
-    chmodSync(path, mode);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 }

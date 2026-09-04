@@ -120,3 +120,13 @@ test("reconcile clears events already within the ack watermark", async () => {
     assert.equal(store.outboxBytes(), 0);
   });
 });
+
+test("reconcile prunes expired command receipts but keeps fresh ones", async () => {
+  await withStore("prune", store => {
+    store.recordCommandReceipt("old", 1, true, undefined, 1000);
+    store.recordCommandReceipt("fresh", 2, true);
+    store.reconcile(5000);
+    assert.equal(store.getCommandReceipt("old"), undefined);
+    assert.ok(store.getCommandReceipt("fresh"));
+  });
+});

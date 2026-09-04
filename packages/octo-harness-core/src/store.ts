@@ -1,7 +1,6 @@
-import { chmodSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 import type { AgentConfig, EventEnvelope, ProviderSession } from "@mininglamp-oss/octo-harness-protocol";
+import { openWalDatabase } from "./sqlite.js";
 
 /** Trigger 的来源类型：人工触发、外部事件或本地间隔调度。 */
 export type TriggerKind = "manual" | "event" | "interval";
@@ -258,17 +257,7 @@ export class SqliteStore implements Store {
 
   /** 打开或创建 mode 0600 的数据库文件，应用 WAL/耐久 PRAGMA 并建表。 */
   static open(file: string): SqliteStore {
-    mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-    const db = new DatabaseSync(file);
-    db.exec(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA synchronous = FULL;
-      PRAGMA foreign_keys = ON;
-      PRAGMA busy_timeout = 5000;
-      PRAGMA wal_autocheckpoint = 1000;
-      PRAGMA journal_size_limit = 67108864;
-      PRAGMA auto_vacuum = INCREMENTAL;
-    `);
+    const db = openWalDatabase(file);
     db.exec(`
       CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS triggers (id TEXT PRIMARY KEY, json TEXT NOT NULL);
@@ -293,8 +282,6 @@ export class SqliteStore implements Store {
         PRIMARY KEY (run_id, seq)
       );
     `);
-    // 数据库及其 WAL/SHM 边车文件只允许当前宿主账号访问。
-    for (const suffix of ["", "-wal", "-shm"]) chmodQuiet(`${file}${suffix}`, 0o600);
     return new SqliteStore(db);
   }
 
@@ -372,8 +359,15 @@ export class SqliteStore implements Store {
   }
 
   transaction<T>(fn: () => T): Promise<T> {
-    // 支持重入：嵌套调用复用最外层事务，避免 SQLite "cannot start a transaction within a transaction"。
-    if (this.#depth > 0) return Promise.resolve(fn());
+    // 单连接、单 writer；SQLite 不支持事务嵌套，嵌套调用复用最外层事务。
+    if (this.#depth > 0) {
+      this.#depth += 1;
+      try {
+        return Promise.resolve(fn());
+      } finally {
+        this.#depth -= 1;
+      }
+    }
     this.#db.exec("BEGIN IMMEDIATE");
     this.#depth = 1;
     try {
@@ -411,13 +405,5 @@ export class SqliteStore implements Store {
     if (row === undefined || row === null) return undefined;
     const json = (row as { json?: unknown }).json;
     return typeof json === "string" ? JSON.parse(json) as T : undefined;
-  }
-}
-
-function chmodQuiet(path: string, mode: number): void {
-  try {
-    chmodSync(path, mode);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 }

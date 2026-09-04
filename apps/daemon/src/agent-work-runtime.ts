@@ -12,6 +12,8 @@ const DEFAULT_HARD_WATERMARK_BYTES = 2 * 1024 * 1024 * 1024;
 const DEFAULT_RECONCILE_MS = 5 * 60_000;
 const PUMP_POLL_MS = 50;
 const BACKPRESSURE_POLL_MS = 100;
+/** 终态事件必须能落盘收尾，不受软水位背压阻塞。 */
+const TERMINAL_OUTBOX_TYPES = new Set(["run.completed", "run.failed", "run.cancelled"]);
 
 export interface AgentWorkRuntimeOptions {
   baseUrl: string;
@@ -292,9 +294,9 @@ export class AgentWorkRuntime {
         if (!outcome.advanced && outcome.reason === "ack_beyond_produced") {
           console.error(`octo-harness Agent Work runtime rejected out-of-range ACK run=${runId} seq=${seq}`);
         }
+        const prefix = `${runId}:`;
         for (const key of [...this.#inFlight]) {
-          const [inFlightRun, inFlightSeq] = key.split(":");
-          if (inFlightRun === runId && Number(inFlightSeq) <= seq) this.#inFlight.delete(key);
+          if (key.startsWith(prefix) && Number(key.slice(prefix.length)) <= seq) this.#inFlight.delete(key);
         }
         // ACK 删除已释放容量，且可能有更多可发送项，唤醒 sender。
         this.#kickSender();
@@ -385,8 +387,9 @@ export class AgentWorkRuntime {
       for await (const event of this.#host.invoke(adapterType, request)) {
         if (event.type === "run.running" || event.type === "run.queued") continue;
         finalText = accumulateFinalText(finalText, event);
-        await this.#awaitOutboxCapacity(command.run_id);
         const mapped = mapRuntimeEvent(event, finalText);
+        // 终态事件绕过软水位背压，保证 Run 在持续背压下仍能落盘收尾。
+        if (!TERMINAL_OUTBOX_TYPES.has(mapped.type)) await this.#awaitOutboxCapacity(command.run_id);
         store.allocateAndAppend(command.run_id, mapped.type, mapped.payload);
         this.#kickSender();
       }
