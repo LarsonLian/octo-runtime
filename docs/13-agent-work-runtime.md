@@ -31,6 +31,8 @@ Runtime 注册时上报本机 adapter 列表。`run.start` 的 `ExecutionEnvelop
 `context.append` 和 `context.sync_result` 是独立 WSS envelope，不写入可靠 Run command inbox，
 也不返回 `command.ack`。这两类消息是可回源、按 `(scope,message_id)` 幂等的派生事实；
 冷启动或检测到 `message_seq` gap 时，daemon 用 `context.sync_request` 请求最多 40 条回填。
+无 gap 的 bounded `partial` 表示窗口已建立，后续走热路径但 snapshot 继续标记 `partial`；
+明确 gap 或 `unavailable` 会在下一次 trigger 再请求回填。
 `run.start` 中的 `trigger_fact` 始终走可靠路径重新 UPSERT，防止 best-effort append 丢失当前
 触发边界。
 
@@ -96,9 +98,10 @@ ACK 的执行事件，不能按 Channel Context 的 TTL 清理。快照按
 `scope + consumer_key + session_generation` 隔离，同一 Run 重试复用已冻结的 rendered bytes
 和 SHA-256。只有 Agent Work 对成功 terminal event 返回 `durable_through_seq` 后，daemon
 才用 CAS 把 consumer cursor 推进到 trigger；provider 失败或取消不会消费背景消息。
-正常分发由 agent-worker 的 chat-session claim 串行化同一 consumer；daemon 对相同
-`scope + consumer_key + session_generation` 的并行 active snapshot 保持 fail-closed，作为绕过
-正常分发路径时的防御约束。
+正常分发由 agent-worker 的 chat-session claim 串行化同一 consumer；若下一条 `run.start`
+仍早于前一条 terminal durable ACK 到达，daemon 会等 cursor CAS 完成后再冻结和 ACK command。
+底层 Store 对相同 `scope + consumer_key + session_generation` 的并行 active snapshot 仍保持
+原子 fail-closed，Runtime 的等待/重试把它转换为有序执行。
 
 `status.agentWork` 返回 `enabled/connected/runtimeId/activeRuns/lastAckedCommandSeq` 和
 `channelContext` 开关、DB/WAL 大小。

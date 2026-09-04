@@ -134,6 +134,27 @@ test("sequence gaps make snapshots partial until bounded sync repairs the scope"
   });
 });
 
+test("bounded partial sync warms a cold scope but an explicit gap still requests sync", async () => {
+  await withStore("oh-channel-partial", async store => {
+    store.applySyncResult({ request_id: "sync-partial", scope, completeness: "partial", facts: [fact(1)] });
+    assert.equal(store.needsSync(scope), false);
+    const partial = store.prepareSnapshot("run-partial", descriptor(2));
+    assert.equal(partial.ref.completeness, "partial");
+    store.markSubmitted("run-partial");
+    store.commitSnapshot("run-partial");
+
+    store.append({ scope, facts: [fact(4)] });
+    assert.equal(store.needsSync(scope), true);
+  });
+});
+
+test("an unavailable sync remains retryable for the next trigger", async () => {
+  await withStore("oh-channel-unavailable", async store => {
+    store.applySyncResult({ request_id: "sync-unavailable", scope, completeness: "unavailable", facts: [] });
+    assert.equal(store.needsSync(scope), true);
+  });
+});
+
 test("journal deduplicates per scope and enforces the per-scope row bound", async () => {
   await withStore("oh-channel-bound", async store => {
     const facts = Array.from({ length: 230 }, (_, index) => fact(index + 1));

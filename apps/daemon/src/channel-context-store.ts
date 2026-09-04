@@ -51,6 +51,16 @@ export interface ChannelContextStoreStats {
   walBytes: number;
 }
 
+export class ChannelContextConsumerBusyError extends Error {
+  readonly blockingRunId: string;
+
+  constructor(blockingRunId: string) {
+    super(`channel context consumer is busy with run ${blockingRunId}`);
+    this.name = "ChannelContextConsumerBusyError";
+    this.blockingRunId = blockingRunId;
+  }
+}
+
 interface SnapshotRow {
   snapshot_id: string;
   run_id: string;
@@ -172,7 +182,7 @@ export class ChannelContextStore {
           existing.session_generation,
           runId
         ) as { run_id: string } | undefined;
-        if (active) throw new Error(`channel context consumer is busy with run ${active.run_id}`);
+        if (active) throw new ChannelContextConsumerBusyError(active.run_id);
         this.#db.prepare(
           "UPDATE channel_context_snapshots SET state = 'prepared' WHERE snapshot_id = ? AND state = 'failed'"
         ).run(existing.snapshot_id);
@@ -200,7 +210,7 @@ export class ChannelContextStore {
            AND run_id <> ? AND state IN ('prepared', 'submitted')
          LIMIT 1`
       ).get(scopeKey, descriptor.consumer_key, descriptor.session_generation, runId) as { run_id: string } | undefined;
-      if (active) throw new Error(`channel context consumer is busy with run ${active.run_id}`);
+      if (active) throw new ChannelContextConsumerBusyError(active.run_id);
 
       const consumer = this.#db.prepare(
         `SELECT consumed_order_key, consumed_through_seq, version
@@ -426,7 +436,10 @@ export class ChannelContextStore {
     const row = this.#db.prepare(
       "SELECT gap_after_seq, sync_completeness FROM channel_context_scopes WHERE scope_key = ?"
     ).get(channelScopeKey(scope)) as { gap_after_seq: number | null; sync_completeness: string | null } | undefined;
-    return !row || row.gap_after_seq !== null || row.sync_completeness !== "complete";
+    // A gap-free partial means the bounded window is warm even though the
+    // snapshot stays partial. Unavailable remains retryable on the next trigger.
+    return !row || row.gap_after_seq !== null
+      || row.sync_completeness === null || row.sync_completeness === "unavailable";
   }
 
   syncAfterSeq(scope: ChannelScope): number | undefined {

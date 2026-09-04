@@ -20,6 +20,7 @@ import { AgentWorkStore } from "./agent-work-store.js";
 import type { OutboxRow } from "./agent-work-store.js";
 import {
   ChannelContextStore,
+  ChannelContextConsumerBusyError,
   channelScopeKey,
   composeProviderModelInput,
   type ChannelContextStoreOptions,
@@ -35,6 +36,7 @@ const PUMP_POLL_MS = 50;
 const BACKPRESSURE_POLL_MS = 100;
 const DEFAULT_CONTEXT_SYNC_TIMEOUT_MS = 3_000;
 const DEFAULT_CONTEXT_SYNC_LIMIT = 40;
+const CONTEXT_BUSY_POLL_MS = 25;
 /** 终态事件必须能落盘收尾，不受软水位背压阻塞。 */
 const TERMINAL_OUTBOX_TYPES = new Set(["run.completed", "run.failed", "run.cancelled"]);
 
@@ -130,6 +132,8 @@ export class AgentWorkRuntime {
   readonly #options: AgentWorkRuntimeOptions;
   readonly #host: AdapterHostRpcClient;
   readonly #activeRuns = new Map<string, ActiveRun>();
+  readonly #acceptingCommandIds = new Set<string>();
+  readonly #acceptingRunIds = new Set<string>();
   /** 本连接内已发出、等待 ACK 的 `${runId}:${seq}`；重连时清空以触发重放。 */
   readonly #inFlight = new Set<string>();
   readonly #pendingContextSyncs = new Map<string, PendingContextSync>();
@@ -481,42 +485,57 @@ export class AgentWorkRuntime {
       this.#ackCommand(command, true);
       return;
     }
-    let request: InvokeRequest;
-    let adapterType: string;
-    let sessionId: string;
-    let leaseId: string;
-    let fencingToken: number;
+    // The same command can be replayed on a new socket while the original
+    // handler is waiting for a prior consumer cursor. The original handler
+    // remains authoritative and will ACK through whichever socket is current.
+    if (this.#acceptingCommandIds.has(command.command_id) || this.#acceptingRunIds.has(command.run_id)) return;
+    this.#acceptingCommandIds.add(command.command_id);
+    this.#acceptingRunIds.add(command.run_id);
     try {
-      leaseId = requiredString(command.lease_id, "run.start lease_id");
-      fencingToken = requiredSafeInteger(command.fencing_token, "run.start fencing_token");
-      const executionEnvelope = command.payload as ExecutionEnvelope;
-      const contextSnapshot = await this.#prepareChannelContext(command.run_id, executionEnvelope);
-      const mapped = mapExecutionEnvelope(executionEnvelope, contextSnapshot);
-      request = mapped.request;
-      adapterType = mapped.adapterType;
-      sessionId = request.sessionId;
-    } catch (error) {
-      this.#contextStore?.markFailed(command.run_id);
-      const failure = { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) };
-      store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
-      this.#ackCommand(command, false, failure);
-      return;
+      let request: InvokeRequest;
+      let adapterType: string;
+      let sessionId: string;
+      let leaseId: string;
+      let fencingToken: number;
+      try {
+        leaseId = requiredString(command.lease_id, "run.start lease_id");
+        fencingToken = requiredSafeInteger(command.fencing_token, "run.start fencing_token");
+        const executionEnvelope = command.payload as ExecutionEnvelope;
+        const contextSnapshot = await this.#prepareChannelContext(command.run_id, executionEnvelope);
+        const mapped = mapExecutionEnvelope(executionEnvelope, contextSnapshot);
+        request = mapped.request;
+        adapterType = mapped.adapterType;
+        sessionId = request.sessionId;
+      } catch (error) {
+        if (error instanceof RuntimeStoppingError) {
+          this.#contextStore?.markFailed(command.run_id);
+          return;
+        }
+        this.#contextStore?.markFailed(command.run_id);
+        const failure = { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) };
+        store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
+        this.#ackCommand(command, false, failure);
+        return;
+      }
+      store.upsertRun({
+        runId: command.run_id,
+        sessionId,
+        commandId: command.command_id,
+        leaseId,
+        fencingToken
+      });
+      store.recordCommandReceipt(command.command_id, command.server_seq, true);
+      this.#activeRuns.set(command.run_id, {
+        invocationId: request.invocationId,
+        leaseId,
+        fencingToken
+      });
+      this.#ackCommand(command, true);
+      void this.#execute(command, adapterType, request);
+    } finally {
+      this.#acceptingCommandIds.delete(command.command_id);
+      this.#acceptingRunIds.delete(command.run_id);
     }
-    store.upsertRun({
-      runId: command.run_id,
-      sessionId,
-      commandId: command.command_id,
-      leaseId,
-      fencingToken
-    });
-    store.recordCommandReceipt(command.command_id, command.server_seq, true);
-    this.#activeRuns.set(command.run_id, {
-      invocationId: request.invocationId,
-      leaseId,
-      fencingToken
-    });
-    this.#ackCommand(command, true);
-    void this.#execute(command, adapterType, request);
   }
 
   async #prepareChannelContext(
@@ -534,7 +553,15 @@ export class AgentWorkRuntime {
     contextStore.append({ scope: descriptor.scope, facts: [descriptor.trigger_fact] });
     if (!this.#usesAppendOnlyDelta()) return undefined;
     if (contextStore.needsSync(descriptor.scope)) await this.#requestContextSync(descriptor);
-    return contextStore.prepareSnapshot(runId, descriptor);
+    while (!this.#stopped) {
+      try {
+        return contextStore.prepareSnapshot(runId, descriptor);
+      } catch (error) {
+        if (!(error instanceof ChannelContextConsumerBusyError)) throw error;
+        await delay(CONTEXT_BUSY_POLL_MS);
+      }
+    }
+    throw new RuntimeStoppingError();
   }
 
   async #requestContextSync(descriptor: ChannelContextDescriptor): Promise<void> {
@@ -909,6 +936,13 @@ function matchesPendingContextSync(pending: PendingContextSync, result: ContextS
     if (result.facts.some(fact => fact.message_seq !== undefined && fact.message_seq <= pending.afterSeq!)) return false;
   }
   return true;
+}
+
+class RuntimeStoppingError extends Error {
+  constructor() {
+    super("Agent Work runtime stopped while waiting for channel context cursor");
+    this.name = "RuntimeStoppingError";
+  }
 }
 
 function stripSlash(value: string): string {
