@@ -40,6 +40,8 @@ export type AckOutcome =
 export interface DurableTerminal {
   seq: number;
   type: string;
+  eventId: string;
+  payload: Record<string, unknown>;
 }
 
 export type DurableAckInspection =
@@ -323,11 +325,21 @@ export class AgentWorkStore {
 
   durableTerminal(runId: string, durableThrough: number): DurableTerminal | undefined {
     const row = this.#db.prepare(
-      `SELECT o.seq, o.event_type
+      `SELECT o.seq, o.event_id, o.event_type, o.payload_json
        FROM event_outbox o JOIN runs r ON r.run_id = o.run_id
        WHERE o.run_id = ? AND r.terminal_seq = o.seq AND o.seq <= ?`
-    ).get(runId, durableThrough) as { seq: number; event_type: string } | undefined;
-    return row ? { seq: row.seq, type: row.event_type } : undefined;
+    ).get(runId, durableThrough) as {
+      seq: number;
+      event_id: string;
+      event_type: string;
+      payload_json: string;
+    } | undefined;
+    return row ? {
+      seq: row.seq,
+      type: row.event_type,
+      eventId: row.event_id,
+      payload: JSON.parse(row.payload_json) as Record<string, unknown>
+    } : undefined;
   }
 
   /** 未 ACK 事件正文的合计字节，用于容量水位判断。 */

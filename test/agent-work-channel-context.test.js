@@ -80,7 +80,8 @@ test("Agent Work channel context sync becomes one provider turn and commits only
         websocket.send(wire("event.ack", {
           run_id: envelope.payload.run_id,
           received_through_seq: envelope.payload.last_seq,
-          durable_through_seq: envelope.payload.last_seq
+          durable_through_seq: envelope.payload.last_seq,
+          ...(terminal ? terminalGrant(terminal) : {})
         }));
         if (terminal) terminalSent.resolve();
       }
@@ -91,7 +92,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake" }],
+      list: async () => [{ type: "fake", capabilities: ["session.serialize"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         providerRequest = request;
@@ -217,7 +218,8 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
         websocket.send(wire("event.ack", {
           run_id: envelope.payload.run_id,
           received_through_seq: envelope.payload.last_seq,
-          durable_through_seq: envelope.payload.last_seq
+          durable_through_seq: envelope.payload.last_seq,
+          ...(terminal ? terminalGrant(terminal) : {})
         }));
         if (terminal) terminalAckSent.resolve();
       }
@@ -228,7 +230,7 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake" }],
+      list: async () => [{ type: "fake", capabilities: ["session.serialize"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         yield { type: "run.finished", payload: {} };
@@ -278,6 +280,135 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
   }
 });
 
+test("context cursor fails closed when the durable ACK lacks matching terminal authority", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-channel-runtime-authority-"));
+  const contextPath = join(directory, "channel-context.db");
+  const outboxPath = join(directory, "agent-work.db");
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  const allAcked = deferred();
+  let runtime;
+
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* consume registration body */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { id: "runtime-authority" } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    const sendStart = index => websocket.send(wire("runtime.command", {
+      server_seq: index,
+      command_id: `command-authority-${index}`,
+      run_id: `run-authority-${index}`,
+      type: "run.start",
+      payload: executionEnvelope(`run-authority-${index}`, index + 2, `trigger authority ${index}`),
+      lease_id: `lease-authority-${index}`,
+      fencing_token: index
+    }));
+    websocket.on("message", data => {
+      const envelope = JSON.parse(data.toString("utf8"));
+      if (envelope.type === "runtime.hello") {
+        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("context.append", { scope, facts: [fact(1, "first"), fact(2, "second")] }));
+        sendStart(1);
+        return;
+      }
+      if (envelope.type === "context.sync_request") {
+        websocket.send(wire("context.sync_result", {
+          request_id: envelope.payload.request_id,
+          scope,
+          facts: [fact(1, "first"), fact(2, "second")],
+          completeness: "complete",
+          through_seq: 2
+        }));
+        return;
+      }
+      if (envelope.type !== "run.event_batch") return;
+      const terminal = envelope.payload.events.find(event => event.type === "run.completed");
+      const index = Number(envelope.payload.run_id.split("-").at(-1));
+      const authority = terminal && index === 1
+        ? { context_commit_granted: true }
+        : terminal && index === 2
+          ? {
+              context_commit_granted: true,
+              authoritative_terminal_status: "completed",
+              authoritative_terminal_event_id: "event-wrong"
+            }
+          : terminal
+            ? {
+                context_commit_granted: false,
+                authoritative_terminal_status: "failed",
+                authoritative_terminal_event_id: terminal.event_id
+              }
+            : {};
+      websocket.send(wire("event.ack", {
+        run_id: envelope.payload.run_id,
+        received_through_seq: envelope.payload.last_seq,
+        durable_through_seq: envelope.payload.last_seq,
+        ...authority
+      }));
+      if (!terminal) return;
+      if (index < 3) setTimeout(() => sendStart(index + 1), 30);
+      else allAcked.resolve();
+    });
+  });
+
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    const host = {
+      list: async () => [{ type: "fake", capabilities: ["session.serialize"] }],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() {
+        yield { type: "run.finished", payload: {} };
+      }
+    };
+    runtime = new AgentWorkRuntime({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      tenantId: "tenant-e2e",
+      subjectId: "device-e2e",
+      runtimeName: "runtime-authority",
+      fingerprint: "runtime:authority",
+      storePath: outboxPath,
+      channelContext: {
+        store: "sqlite",
+        projection: "delta",
+        providerPersistence: "append_only",
+        storePath: contextPath,
+        syncTimeoutMs: 1_000
+      }
+    }, host);
+    await runtime.start();
+    await withTimeout(allAcked.promise, 3_000, "authority ACK sequence timeout");
+    await waitFor(() => runtime.status.outboxPending === 0 && runtime.status.channelContext.activeSnapshots === 0);
+    await runtime.close();
+    runtime = undefined;
+
+    const contextStore = ChannelContextStore.open(contextPath);
+    for (let index = 1; index <= 3; index += 1) {
+      assert.equal(contextStore.getSnapshot(`run-authority-${index}`).state, "failed");
+    }
+    const probe = contextStore.prepareSnapshot("run-authority-probe", executionEnvelope(
+      "run-authority-probe", 6, "probe"
+    ).immutable_execution_input.content.channel_context);
+    assert.deepEqual(probe.facts.map(item => item.message_seq), [1, 2, 3, 4, 5]);
+    contextStore.close();
+
+    const outboxStore = AgentWorkStore.open(outboxPath);
+    assert.equal(outboxStore.pendingCount(), 0, "authoritatively rejected terminals are still durably received");
+    outboxStore.close();
+  } finally {
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("a later run waits for the prior durable cursor commit and then freezes from the advanced cursor", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-channel-runtime-ordered-"));
   const contextPath = join(directory, "channel-context.db");
@@ -286,13 +417,16 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
   const priorAckReleased = deferred();
   const secondCommandAcked = deferred();
   const secondTerminalAcked = deferred();
+  const thirdTerminalAcked = deferred();
   const providerRequests = [];
   let runtime;
   let secondAckSeen = false;
   let secondAckCount = 0;
   let secondInvokeSeen = false;
   let secondSent = false;
+  let thirdSent = false;
   let observedBeforePriorAck;
+  let nextStarted;
 
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
@@ -341,6 +475,9 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
       if (envelope.type !== "run.event_batch") return;
 
       const terminal = envelope.payload.events.find(event => event.type === "run.completed");
+      if (envelope.payload.run_id === "run-next") {
+        nextStarted ??= envelope.payload.events.find(event => event.type === "run.started");
+      }
       if (envelope.payload.run_id === "run-prior" && terminal && !secondSent) {
         secondSent = true;
         websocket.send(wire("context.append", { scope, facts: [fact(4, "fourth background")] }));
@@ -360,7 +497,8 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
           websocket.send(wire("event.ack", {
             run_id: "run-prior",
             received_through_seq: envelope.payload.last_seq,
-            durable_through_seq: envelope.payload.last_seq
+            durable_through_seq: envelope.payload.last_seq,
+            ...terminalGrant(terminal)
           }));
           priorAckReleased.resolve();
         }, 80);
@@ -370,9 +508,28 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
       websocket.send(wire("event.ack", {
         run_id: envelope.payload.run_id,
         received_through_seq: envelope.payload.last_seq,
-        durable_through_seq: envelope.payload.last_seq
+        durable_through_seq: envelope.payload.last_seq,
+        ...(terminal ? terminalGrant(terminal) : {})
       }));
-      if (envelope.payload.run_id === "run-next" && terminal) secondTerminalAcked.resolve();
+      if (envelope.payload.run_id === "run-next" && terminal) {
+        secondTerminalAcked.resolve();
+        if (!thirdSent) {
+          thirdSent = true;
+          setTimeout(() => {
+            websocket.send(wire("context.append", { scope, facts: [fact(6, "sixth background")] }));
+            websocket.send(wire("runtime.command", {
+              server_seq: 3,
+              command_id: "command-third",
+              run_id: "run-third",
+              type: "run.start",
+              payload: executionEnvelope("run-third", 7, "third trigger", 2),
+              lease_id: "lease-third",
+              fencing_token: 3
+            }));
+          }, 30);
+        }
+      }
+      if (envelope.payload.run_id === "run-third" && terminal) thirdTerminalAcked.resolve();
     });
   });
 
@@ -380,11 +537,23 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake" }],
+      list: async () => [{ type: "fake", capabilities: ["session.serialize"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         providerRequests.push(request);
         if (request.runId === "run-next") secondInvokeSeen = true;
+        if (request.runId === "run-next") {
+          yield {
+            type: "session.update",
+            payload: {
+              providerSession: {
+                sessionId: "fresh-provider-session",
+                resumeOutcome: "fresh_fallback",
+                contextInputVariant: "recovery"
+              }
+            }
+          };
+        }
         yield { type: "run.finished", payload: {} };
       }
     };
@@ -409,6 +578,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
     assert.deepEqual(observedBeforePriorAck, { secondAckSeen: false, secondInvokeSeen: false });
     await withTimeout(secondCommandAcked.promise, 3_000, "second command ACK timeout");
     await withTimeout(secondTerminalAcked.promise, 3_000, "second terminal timeout");
+    await withTimeout(thirdTerminalAcked.promise, 3_000, "third terminal timeout");
     await waitFor(() => runtime.status.channelContext.activeSnapshots === 0);
     assert.equal(secondAckCount, 1);
     assert.equal(providerRequests.filter(request => request.runId === "run-next").length, 1);
@@ -416,6 +586,15 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
     const nextRequest = providerRequests.find(request => request.runId === "run-next");
     assert.match(nextRequest.modelInput, /fourth background/);
     assert.doesNotMatch(nextRequest.modelInput, /first background|second background|prior trigger/);
+    assert.match(nextRequest.freshFallbackModelInput, /first background/);
+    assert.match(nextRequest.freshFallbackModelInput, /second background/);
+    assert.match(nextRequest.freshFallbackModelInput, /prior trigger/);
+    assert.equal(nextStarted.payload.context_input_variant, "recovery");
+    assert.equal(nextStarted.payload.context_session_generation, 2);
+    assert.equal(nextStarted.payload.context_snapshot_sha256, nextRequest.contextSnapshot.recovery_rendered_sha256);
+    const thirdRequest = providerRequests.find(request => request.runId === "run-third");
+    assert.match(thirdRequest.modelInput, /sixth background/);
+    assert.doesNotMatch(thirdRequest.modelInput, /first background|second background|prior trigger|fourth background/);
 
     await runtime.close();
     runtime = undefined;
@@ -423,6 +602,10 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
     assert.equal(contextStore.getSnapshot("run-prior").state, "committed");
     assert.equal(contextStore.getSnapshot("run-next").state, "committed");
     assert.deepEqual(contextStore.getSnapshot("run-next").facts.map(item => item.message_seq), [4]);
+    assert.equal(contextStore.getSnapshot("run-next").selectedVariant, "recovery");
+    assert.equal(contextStore.getSnapshot("run-next").ref.session_generation, 2);
+    assert.equal(contextStore.getSnapshot("run-third").state, "committed");
+    assert.deepEqual(contextStore.getSnapshot("run-third").facts.map(item => item.message_seq), [6]);
     contextStore.close();
   } finally {
     await runtime?.close();
@@ -433,15 +616,17 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
   }
 });
 
-test("runtime close interrupts a channel context consumer wait without starting the run", async () => {
+test("runtime close joins a waiting command before immediate restart and replay", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-channel-runtime-close-wait-"));
   const contextPath = join(directory, "channel-context.db");
   const httpServer = createServer();
   const wsServer = new WebSocketServer({ noServer: true });
   const commandDispatched = deferred();
+  const replayTerminal = deferred();
   let runtime;
   let commandAcked = false;
   let invocationCount = 0;
+  let helloCount = 0;
 
   const contextStore = ChannelContextStore.open(contextPath);
   contextStore.applySyncResult({
@@ -469,6 +654,7 @@ test("runtime close interrupts a channel context consumer wait without starting 
     websocket.on("message", data => {
       const envelope = JSON.parse(data.toString("utf8"));
       if (envelope.type === "runtime.hello") {
+        helloCount += 1;
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
         websocket.send(wire("runtime.command", {
           server_seq: 1,
@@ -484,6 +670,16 @@ test("runtime close interrupts a channel context consumer wait without starting 
       if (envelope.type === "command.ack" && envelope.payload.command_id === "command-waiting") {
         commandAcked = true;
       }
+      if (envelope.type === "run.event_batch") {
+        const terminal = envelope.payload.events.find(event => event.type === "run.completed");
+        websocket.send(wire("event.ack", {
+          run_id: envelope.payload.run_id,
+          received_through_seq: envelope.payload.last_seq,
+          durable_through_seq: envelope.payload.last_seq,
+          ...(terminal ? terminalGrant(terminal) : {})
+        }));
+        if (terminal) replayTerminal.resolve();
+      }
     });
   });
 
@@ -491,7 +687,7 @@ test("runtime close interrupts a channel context consumer wait without starting 
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake" }],
+      list: async () => [{ type: "fake", capabilities: ["session.serialize"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         invocationCount += 1;
@@ -520,12 +716,152 @@ test("runtime close interrupts a channel context consumer wait without starting 
     assert.equal(commandAcked, false);
     assert.equal(invocationCount, 0);
     await withTimeout(runtime.close(), 1_000, "runtime close while waiting timeout");
-    runtime = undefined;
     await new Promise(resolve => setTimeout(resolve, 40));
     assert.equal(invocationCount, 0);
 
     const reopened = ChannelContextStore.open(contextPath);
     assert.equal(reopened.getSnapshot("run-waiting"), undefined);
+    reopened.markFailed("run-blocker");
+    reopened.close();
+
+    await runtime.start();
+    await withTimeout(replayTerminal.promise, 3_000, "replayed run terminal timeout");
+    await waitFor(() => runtime.status.outboxPending === 0);
+    assert.equal(helloCount, 2);
+    assert.equal(commandAcked, true);
+    assert.equal(invocationCount, 1);
+    await runtime.close();
+    runtime = undefined;
+
+    const completed = ChannelContextStore.open(contextPath);
+    assert.equal(completed.getSnapshot("run-waiting").state, "committed");
+    completed.close();
+  } finally {
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("run.cancel tombstones a busy accepting run and replay cannot invoke it", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-channel-runtime-cancel-wait-"));
+  const contextPath = join(directory, "channel-context.db");
+  const outboxPath = join(directory, "agent-work.db");
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  const cancelled = deferred();
+  const replayed = deferred();
+  let runtime;
+  let invocationCount = 0;
+  let startAckCount = 0;
+  let beforeCancelAck;
+
+  const contextStore = ChannelContextStore.open(contextPath);
+  contextStore.applySyncResult({
+    request_id: "sync-cancel-blocker",
+    scope,
+    facts: [fact(1, "background")],
+    completeness: "complete",
+    through_seq: 1
+  });
+  const blocker = executionEnvelope("run-cancel-blocker", 2, "blocker trigger")
+    .immutable_execution_input.content.channel_context;
+  contextStore.prepareSnapshot("run-cancel-blocker", blocker);
+  contextStore.markSubmitted("run-cancel-blocker");
+  contextStore.close();
+
+  const startCommand = {
+    server_seq: 1,
+    command_id: "command-cancel-waiting",
+    run_id: "run-cancel-waiting",
+    type: "run.start",
+    payload: executionEnvelope("run-cancel-waiting", 3, "waiting trigger"),
+    lease_id: "lease-cancel-waiting",
+    fencing_token: 1
+  };
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* consume registration body */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { id: "runtime-cancel-wait" } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    websocket.on("message", data => {
+      const envelope = JSON.parse(data.toString("utf8"));
+      if (envelope.type === "runtime.hello") {
+        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("runtime.command", startCommand));
+        setTimeout(() => {
+          beforeCancelAck = startAckCount;
+          websocket.send(wire("runtime.command", {
+            server_seq: 2,
+            command_id: "command-cancel-accepting",
+            run_id: "run-cancel-waiting",
+            type: "run.cancel",
+            payload: {},
+            lease_id: "lease-cancel-waiting",
+            fencing_token: 1
+          }));
+        }, 60);
+        return;
+      }
+      if (envelope.type !== "command.ack") return;
+      if (envelope.payload.command_id === "command-cancel-accepting") {
+        assert.equal(envelope.payload.accepted, true);
+        cancelled.resolve();
+      }
+      if (envelope.payload.command_id === startCommand.command_id) {
+        startAckCount += 1;
+        assert.equal(envelope.payload.accepted, false);
+        assert.equal(envelope.payload.error.code, "RUN_CANCELLED_BEFORE_START");
+        if (startAckCount === 1) websocket.send(wire("runtime.command", startCommand));
+        if (startAckCount === 2) replayed.resolve();
+      }
+    });
+  });
+
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    const host = {
+      list: async () => [{ type: "fake", capabilities: ["session.serialize"] }],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() {
+        invocationCount += 1;
+        yield { type: "run.finished", payload: {} };
+      }
+    };
+    runtime = new AgentWorkRuntime({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      tenantId: "tenant-e2e",
+      subjectId: "device-e2e",
+      runtimeName: "runtime-cancel-wait",
+      fingerprint: "runtime:cancel-wait",
+      storePath: outboxPath,
+      channelContext: {
+        store: "sqlite",
+        projection: "delta",
+        providerPersistence: "append_only",
+        storePath: contextPath,
+        syncTimeoutMs: 1_000
+      }
+    }, host);
+    await runtime.start();
+    await withTimeout(cancelled.promise, 3_000, "accepting cancel ACK timeout");
+    await withTimeout(replayed.promise, 3_000, "cancelled start replay ACK timeout");
+    assert.equal(beforeCancelAck, 0);
+    assert.equal(invocationCount, 0);
+    assert.equal(startAckCount, 2);
+    await runtime.close();
+    runtime = undefined;
+
+    const reopened = AgentWorkStore.open(outboxPath);
+    assert.equal(reopened.getCommandReceipt(startCommand.command_id).accepted, false);
     reopened.close();
   } finally {
     await runtime?.close();
@@ -536,7 +872,85 @@ test("runtime close interrupts a channel context consumer wait without starting 
   }
 });
 
-function executionEnvelope(runId = "run-e2e", triggerSeq = 3, currentText = "trigger current") {
+test("append-only channel context fails closed for adapters without persistent sessions", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-channel-runtime-capability-"));
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  const rejected = deferred();
+  let runtime;
+  let invocationCount = 0;
+
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* consume registration body */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { id: "runtime-capability" } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    websocket.on("message", data => {
+      const envelope = JSON.parse(data.toString("utf8"));
+      if (envelope.type === "runtime.hello") {
+        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("runtime.command", {
+          server_seq: 1,
+          command_id: "command-stateless",
+          run_id: "run-stateless",
+          type: "run.start",
+          payload: executionEnvelope("run-stateless"),
+          lease_id: "lease-stateless",
+          fencing_token: 1
+        }));
+      }
+      if (envelope.type === "command.ack" && envelope.payload.command_id === "command-stateless") {
+        rejected.resolve(envelope.payload);
+      }
+    });
+  });
+
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    const host = {
+      list: async () => [{ type: "fake", capabilities: [] }],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() {
+        invocationCount += 1;
+        yield { type: "run.finished", payload: {} };
+      }
+    };
+    runtime = new AgentWorkRuntime({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      tenantId: "tenant-e2e",
+      subjectId: "device-e2e",
+      runtimeName: "runtime-capability",
+      fingerprint: "runtime:capability",
+      storePath: join(directory, "agent-work.db"),
+      channelContext: {
+        store: "sqlite",
+        projection: "delta",
+        providerPersistence: "append_only",
+        storePath: join(directory, "channel-context.db")
+      }
+    }, host);
+    await runtime.start();
+    const ack = await withTimeout(rejected.promise, 3_000, "stateless adapter rejection timeout");
+    assert.equal(ack.accepted, false);
+    assert.equal(ack.error.code, "INVALID_EXECUTION_ENVELOPE");
+    assert.match(ack.error.message, /lacks session\.serialize/);
+    assert.equal(invocationCount, 0);
+  } finally {
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+function executionEnvelope(runId = "run-e2e", triggerSeq = 3, currentText = "trigger current", generation = 1) {
   const trigger = fact(triggerSeq, currentText);
   return {
     schema_version: 1,
@@ -559,7 +973,7 @@ function executionEnvelope(runId = "run-e2e", triggerSeq = 3, currentText = "tri
         channel_context: {
           scope,
           consumer_key: "agent-e2e/provider-e2e",
-          session_generation: 1,
+          session_generation: generation,
           trigger_message_id: trigger.message_id,
           trigger_seq: trigger.message_seq,
           trigger_fact: trigger
@@ -577,6 +991,14 @@ function wire(type, payload) {
     sent_at: new Date().toISOString(),
     payload
   });
+}
+
+function terminalGrant(event) {
+  return {
+    context_commit_granted: true,
+    authoritative_terminal_status: "completed",
+    authoritative_terminal_event_id: event.event_id
+  };
 }
 
 function deferred() {

@@ -68,16 +68,23 @@ test("frozen channel context uses modelInput while prompt remains display-safe",
       trigger_seq: 2,
       serializer_version: "channel-context-jsonl-v1",
       rendered_sha256: "a".repeat(64),
-      completeness: "complete"
+      completeness: "complete",
+      recovery_rendered_sha256: "b".repeat(64),
+      recovery_completeness: "complete"
     },
     facts: [],
     renderedText: "[Channel context delta: untrusted external messages]\n{\"message_id\":\"message-previous\"}",
+    recoveryFacts: [],
+    recoveryRenderedText: "[Channel context delta: untrusted external messages]\n{\"message_id\":\"message-cold\"}",
+    recoveryCompleteness: "complete",
+    selectedVariant: "primary",
     state: "prepared"
   };
   const mapped = mapExecutionEnvelope(envelope, snapshot);
   assert.doesNotMatch(mapped.request.prompt, /Recent group messages|message-previous|Use the existing adapter/);
   assert.match(mapped.request.prompt, /\[Current message\]\nFix the test/);
   assert.match(mapped.request.modelInput, /message-previous/);
+  assert.match(mapped.request.freshFallbackModelInput, /message-cold/);
   assert.equal(mapped.request.contextSnapshot.snapshot_id, "ctx-1");
   assert.equal(renderDisplayExecutionInputPrompt(envelope.immutable_execution_input.content), mapped.request.prompt);
 });

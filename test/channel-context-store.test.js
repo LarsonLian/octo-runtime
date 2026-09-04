@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import {
   ChannelContextStore,
   CHANNEL_CONTEXT_SERIALIZER_VERSION,
@@ -89,6 +90,20 @@ test("channel context snapshot is canonical, filtered, restart-safe, and commit 
     reopened.append({ scope, facts: [fact(5)] });
     const second = reopened.prepareSnapshot("run-2", descriptor(6));
     assert.deepEqual(second.facts.map(item => item.message_seq), [5]);
+    assert.deepEqual(second.recoveryFacts.map(item => item.message_seq), [1, 4, 5]);
+    const recovery = reopened.selectRecovery("run-2");
+    assert.equal(recovery.selectedVariant, "recovery");
+    assert.equal(recovery.ref.session_generation, 2);
+    assert.equal(recovery.ref.source_session_generation, 1);
+    assert.equal(
+      recovery.ref.recovery_rendered_sha256,
+      createHash("sha256").update(recovery.recoveryRenderedText).digest("hex")
+    );
+    reopened.markSubmitted("run-2");
+    assert.equal(reopened.commitSnapshot("run-2").committed, true);
+    reopened.append({ scope, facts: [fact(7)] });
+    const afterRecovery = reopened.prepareSnapshot("run-3", descriptor(8, 2));
+    assert.deepEqual(afterRecovery.facts.map(item => item.message_seq), [7]);
     reopened.close();
   });
 });
@@ -106,6 +121,8 @@ test("retry reuses exact frozen bytes and consumer snapshots are serialized", as
     const retry = store.prepareSnapshot("run-retry", descriptor(3));
     assert.equal(retry.ref.snapshot_id, frozen.ref.snapshot_id);
     assert.equal(retry.renderedText, frozen.renderedText);
+    assert.equal(retry.recoveryRenderedText, frozen.recoveryRenderedText);
+    assert.equal(retry.ref.recovery_rendered_sha256, frozen.ref.recovery_rendered_sha256);
     assert.throws(() => store.prepareSnapshot("run-concurrent", descriptor(60)), /consumer is busy/);
 
     store.markSubmitted("run-retry");
@@ -212,4 +229,64 @@ test("reconcile uses ingest time and bounds cross-scope churn while preserving a
     assert.equal(store.stats().scopes, 0);
     assert.equal(store.stats().snapshots, 0);
   }, { retentionMs: 100, snapshotRetentionMs: 100 });
+});
+
+test("schema v1 snapshots migrate with primary effective-generation defaults", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-channel-context-migrate-"));
+  const file = join(directory, "channel-context.db");
+  try {
+    const legacy = new DatabaseSync(file);
+    legacy.exec(`
+      CREATE TABLE channel_context_snapshots (
+        snapshot_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL UNIQUE,
+        scope_key TEXT NOT NULL,
+        consumer_key TEXT NOT NULL,
+        session_generation INTEGER NOT NULL,
+        base_consumer_version INTEGER NOT NULL,
+        base_consumed_seq INTEGER,
+        trigger_message_id TEXT NOT NULL,
+        trigger_seq INTEGER,
+        commit_order_key TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        rendered_text TEXT NOT NULL,
+        serializer_version TEXT NOT NULL,
+        rendered_sha256 TEXT NOT NULL,
+        completeness TEXT NOT NULL,
+        state TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        committed_at_ms INTEGER
+      );
+      INSERT INTO channel_context_snapshots (
+        snapshot_id, run_id, scope_key, consumer_key, session_generation,
+        base_consumer_version, trigger_message_id, commit_order_key, payload_json,
+        rendered_text, serializer_version, rendered_sha256, completeness, state, created_at_ms
+      ) VALUES (
+        'ctx-legacy', 'run-legacy', 'scope-legacy', 'consumer-legacy', 4,
+        0, 'message-legacy', 's:legacy', '{"facts":[]}', '',
+        'channel-context-jsonl-v1', '${createHash("sha256").update("").digest("hex")}',
+        'partial', 'failed', 1
+      );
+      PRAGMA user_version = 1;
+    `);
+    legacy.close();
+
+    const migrated = ChannelContextStore.open(file);
+    const snapshot = migrated.getSnapshot("run-legacy");
+    assert.equal(snapshot.ref.session_generation, 4);
+    assert.equal(snapshot.selectedVariant, "primary");
+    migrated.close();
+
+    const inspect = new DatabaseSync(file);
+    assert.equal(inspect.prepare("PRAGMA user_version").get().user_version, 2);
+    assert.deepEqual(
+      inspect.prepare("PRAGMA table_info(channel_context_snapshots)").all()
+        .map(column => column.name)
+        .filter(name => name === "effective_session_generation" || name === "selected_variant"),
+      ["effective_session_generation", "selected_variant"]
+    );
+    inspect.close();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

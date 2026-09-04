@@ -17,7 +17,7 @@ import {
   assertContextSyncResult
 } from "@mininglamp-oss/octo-harness-protocol";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 export const CHANNEL_CONTEXT_SERIALIZER_VERSION = "channel-context-jsonl-v1";
 const DEFAULT_RETENTION_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_SNAPSHOT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -39,6 +39,10 @@ export interface PreparedChannelContextSnapshot {
   ref: ChannelContextSnapshotRef;
   facts: ChannelMessageFact[];
   renderedText: string;
+  recoveryFacts: ChannelMessageFact[];
+  recoveryRenderedText: string;
+  recoveryCompleteness: "complete" | "partial" | "unavailable";
+  selectedVariant: "primary" | "recovery";
   state: "prepared" | "submitted" | "committed" | "failed";
 }
 
@@ -67,6 +71,8 @@ interface SnapshotRow {
   scope_key: string;
   consumer_key: string;
   session_generation: number;
+  effective_session_generation: number;
+  selected_variant: "primary" | "recovery";
   base_consumer_version: number;
   trigger_message_id: string;
   trigger_seq: number | null;
@@ -76,6 +82,9 @@ interface SnapshotRow {
   serializer_version: string;
   rendered_sha256: string;
   completeness: "complete" | "partial" | "unavailable";
+  recovery_rendered_text: string;
+  recovery_rendered_sha256: string;
+  recovery_completeness: "complete" | "partial" | "unavailable";
   state: "prepared" | "submitted" | "committed" | "failed";
 }
 
@@ -173,13 +182,13 @@ export class ChannelContextStore {
       if (existing.state === "failed") {
         const active = this.#db.prepare(
           `SELECT run_id FROM channel_context_snapshots
-           WHERE scope_key = ? AND consumer_key = ? AND session_generation = ?
+           WHERE scope_key = ? AND consumer_key = ? AND effective_session_generation = ?
              AND run_id <> ? AND state IN ('prepared', 'submitted')
            LIMIT 1`
         ).get(
           existing.scope_key,
           existing.consumer_key,
-          existing.session_generation,
+          existing.effective_session_generation,
           runId
         ) as { run_id: string } | undefined;
         if (active) throw new ChannelContextConsumerBusyError(active.run_id);
@@ -206,7 +215,7 @@ export class ChannelContextStore {
 
       const active = this.#db.prepare(
         `SELECT run_id FROM channel_context_snapshots
-         WHERE scope_key = ? AND consumer_key = ? AND session_generation = ?
+         WHERE scope_key = ? AND consumer_key = ? AND effective_session_generation = ?
            AND run_id <> ? AND state IN ('prepared', 'submitted')
          LIMIT 1`
       ).get(scopeKey, descriptor.consumer_key, descriptor.session_generation, runId) as { run_id: string } | undefined;
@@ -222,59 +231,55 @@ export class ChannelContextStore {
       ).get(scopeKey, descriptor.trigger_message_id) as { order_key: string } | undefined;
       if (!trigger) throw new Error("channel context trigger fact was not persisted");
 
-      const available = this.#db.prepare(
-        `SELECT fact_json, content_bytes
-         FROM channel_context_messages
-         WHERE scope_key = ? AND order_key < ?
-           AND (? IS NULL OR order_key > ?)
-           AND message_id <> ?
-           AND (flags & ?) = 0
-         ORDER BY order_key DESC
-         LIMIT ?`
-      ).all(
+      const selected = this.#selectFacts(
         scopeKey,
         trigger.order_key,
         consumer.consumed_order_key,
-        consumer.consumed_order_key,
-        descriptor.trigger_message_id,
-        FLAG_SELF | FLAG_CONTROL,
-        this.#options.maxProjectedMessages + 1
-      ) as Array<{ fact_json: string; content_bytes: number }>;
-
-      let truncated = available.length > this.#options.maxProjectedMessages;
-      const selectedDescending: ChannelMessageFact[] = [];
-      let selectedBytes = 0;
-      for (const row of available.slice(0, this.#options.maxProjectedMessages)) {
-        if (selectedBytes + row.content_bytes > this.#options.maxProjectedBytes) {
-          truncated = true;
-          continue;
-        }
-        selectedDescending.push(JSON.parse(row.fact_json) as ChannelMessageFact);
-        selectedBytes += row.content_bytes;
-      }
-      const facts = selectedDescending.reverse();
+        descriptor.trigger_message_id
+      );
+      // A resumed provider consumes the delta. If resume falls back to a fresh
+      // provider session, the adapter instead uses this independently bounded
+      // cold projection during the same turn.
+      const recovery = this.#selectFacts(
+        scopeKey,
+        trigger.order_key,
+        null,
+        descriptor.trigger_message_id
+      );
       const scopeState = this.#db.prepare(
         "SELECT gap_after_seq, sync_completeness FROM channel_context_scopes WHERE scope_key = ?"
       ).get(scopeKey) as { gap_after_seq: number | null; sync_completeness: string | null };
-      const completeness = contextCompleteness(scopeState, truncated);
-      const payloadJson = canonicalJson({ facts, trust: "untrusted_external", version: CHANNEL_CONTEXT_SERIALIZER_VERSION });
-      const renderedText = renderChannelContextDelta(facts);
+      const completeness = contextCompleteness(scopeState, selected.truncated);
+      const recoveryCompleteness = contextCompleteness(scopeState, recovery.truncated);
+      const payloadJson = canonicalJson({
+        facts: selected.facts,
+        recovery_facts: recovery.facts,
+        recovery_completeness: recoveryCompleteness,
+        trust: "untrusted_external",
+        version: CHANNEL_CONTEXT_SERIALIZER_VERSION
+      });
+      const renderedText = renderChannelContextDelta(selected.facts);
       const renderedSha256 = sha256(renderedText);
+      const recoveryRenderedText = renderChannelContextDelta(recovery.facts);
+      const recoveryRenderedSha256 = sha256(recoveryRenderedText);
       const snapshotId = `ctx_${randomUUID()}`;
       const triggerSeq = descriptor.trigger_seq ?? descriptor.trigger_fact.message_seq ?? null;
 
       this.#db.prepare(
         `INSERT INTO channel_context_snapshots (
            snapshot_id, run_id, scope_key, consumer_key, session_generation,
+           effective_session_generation, selected_variant,
            base_consumer_version, base_consumed_seq, trigger_message_id, trigger_seq,
            commit_order_key, payload_json, rendered_text, serializer_version,
-           rendered_sha256, completeness, state, created_at_ms
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'prepared', ?)`
+           rendered_sha256, completeness, recovery_rendered_text,
+           recovery_rendered_sha256, recovery_completeness, state, created_at_ms
+         ) VALUES (?, ?, ?, ?, ?, ?, 'primary', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'prepared', ?)`
       ).run(
         snapshotId,
         runId,
         scopeKey,
         descriptor.consumer_key,
+        descriptor.session_generation,
         descriptor.session_generation,
         consumer.version,
         consumer.consumed_through_seq,
@@ -286,6 +291,9 @@ export class ChannelContextStore {
         CHANNEL_CONTEXT_SERIALIZER_VERSION,
         renderedSha256,
         completeness,
+        recoveryRenderedText,
+        recoveryRenderedSha256,
+        recoveryCompleteness,
         now
       );
       this.#db.exec("COMMIT");
@@ -296,9 +304,104 @@ export class ChannelContextStore {
     }
   }
 
+  #selectFacts(
+    scopeKey: string,
+    triggerOrderKey: string,
+    afterOrderKey: string | null,
+    triggerMessageId: string
+  ): { facts: ChannelMessageFact[]; truncated: boolean } {
+    const available = this.#db.prepare(
+      `SELECT fact_json, content_bytes
+       FROM channel_context_messages
+       WHERE scope_key = ? AND order_key < ?
+         AND (? IS NULL OR order_key > ?)
+         AND message_id <> ?
+         AND (flags & ?) = 0
+       ORDER BY order_key DESC
+       LIMIT ?`
+    ).all(
+      scopeKey,
+      triggerOrderKey,
+      afterOrderKey,
+      afterOrderKey,
+      triggerMessageId,
+      FLAG_SELF | FLAG_CONTROL,
+      this.#options.maxProjectedMessages + 1
+    ) as Array<{ fact_json: string; content_bytes: number }>;
+
+    let truncated = available.length > this.#options.maxProjectedMessages;
+    const selectedDescending: ChannelMessageFact[] = [];
+    let selectedBytes = 0;
+    for (const row of available.slice(0, this.#options.maxProjectedMessages)) {
+      if (selectedBytes + row.content_bytes > this.#options.maxProjectedBytes) {
+        truncated = true;
+        continue;
+      }
+      selectedDescending.push(JSON.parse(row.fact_json) as ChannelMessageFact);
+      selectedBytes += row.content_bytes;
+    }
+    return { facts: selectedDescending.reverse(), truncated };
+  }
+
   getSnapshot(runId: string): PreparedChannelContextSnapshot | undefined {
     const row = this.#snapshotForRun(runId);
     return row ? snapshotFromRow(row) : undefined;
+  }
+
+  /** Switch an already frozen run to its cold projection and generation N+1. */
+  selectRecovery(runId: string, now = Date.now()): PreparedChannelContextSnapshot {
+    this.#db.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.#snapshotForRun(runId);
+      if (!row) throw new Error(`channel context snapshot not found for run ${runId}`);
+      if (row.selected_variant === "recovery") {
+        this.#db.exec("COMMIT");
+        return snapshotFromRow(row);
+      }
+      if (row.state !== "prepared" && row.state !== "submitted") {
+        throw new Error(`channel context snapshot cannot select recovery from state ${row.state}`);
+      }
+      const recoveryGeneration = row.session_generation + 1;
+      if (!Number.isSafeInteger(recoveryGeneration)) {
+        throw new Error("channel context recovery generation exceeds the safe integer range");
+      }
+      const active = this.#db.prepare(
+        `SELECT run_id FROM channel_context_snapshots
+         WHERE scope_key = ? AND consumer_key = ? AND effective_session_generation = ?
+           AND run_id <> ? AND state IN ('prepared', 'submitted')
+         LIMIT 1`
+      ).get(row.scope_key, row.consumer_key, recoveryGeneration, runId) as { run_id: string } | undefined;
+      if (active) throw new ChannelContextConsumerBusyError(active.run_id);
+      this.#db.prepare(
+        `INSERT OR IGNORE INTO channel_context_consumers (
+           scope_key, consumer_key, session_generation, consumed_order_key,
+           consumed_through_seq, consumed_message_id, version, updated_at_ms
+         ) VALUES (?, ?, ?, NULL, NULL, NULL, 0, ?)`
+      ).run(row.scope_key, row.consumer_key, recoveryGeneration, now);
+      const consumer = this.#db.prepare(
+        `SELECT consumed_through_seq, version FROM channel_context_consumers
+         WHERE scope_key = ? AND consumer_key = ? AND session_generation = ?`
+      ).get(row.scope_key, row.consumer_key, recoveryGeneration) as {
+        consumed_through_seq: number | null;
+        version: number;
+      };
+      this.#db.prepare(
+        `UPDATE channel_context_snapshots
+         SET effective_session_generation = ?, selected_variant = 'recovery',
+             base_consumer_version = ?, base_consumed_seq = ?
+         WHERE snapshot_id = ?`
+      ).run(
+        recoveryGeneration,
+        consumer.version,
+        consumer.consumed_through_seq,
+        row.snapshot_id
+      );
+      this.#db.exec("COMMIT");
+      return this.getSnapshot(runId)!;
+    } catch (error) {
+      this.#db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   markSubmitted(runId: string): PreparedChannelContextSnapshot | undefined {
@@ -347,7 +450,7 @@ export class ChannelContextStore {
         now,
         row.scope_key,
         row.consumer_key,
-        row.session_generation,
+        row.effective_session_generation,
         row.base_consumer_version
       );
       if (Number(updated.changes) !== 1) {
@@ -456,9 +559,11 @@ export class ChannelContextStore {
   #snapshotForRun(runId: string): SnapshotRow | undefined {
     return this.#db.prepare(
       `SELECT snapshot_id, run_id, scope_key, consumer_key, session_generation,
-              base_consumer_version, trigger_message_id, trigger_seq, commit_order_key,
+              effective_session_generation, selected_variant,
+              base_consumer_version, base_consumed_seq, trigger_message_id, trigger_seq, commit_order_key,
               payload_json, rendered_text, serializer_version, rendered_sha256,
-              completeness, state
+              completeness, recovery_rendered_text, recovery_rendered_sha256,
+              recovery_completeness, state
        FROM channel_context_snapshots WHERE run_id = ?`
     ).get(runId) as SnapshotRow | undefined;
   }
@@ -575,9 +680,10 @@ function migrate(db: DatabaseSync): void {
   const version = Number((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
   if (version > SCHEMA_VERSION) throw new Error(`unsupported channel context schema version ${version}`);
   if (version === SCHEMA_VERSION) return;
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    db.exec(`
+  if (version === 0) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
       CREATE TABLE IF NOT EXISTS channel_context_scopes (
         scope_key TEXT PRIMARY KEY,
         scope_json TEXT NOT NULL,
@@ -620,6 +726,8 @@ function migrate(db: DatabaseSync): void {
         scope_key TEXT NOT NULL,
         consumer_key TEXT NOT NULL,
         session_generation INTEGER NOT NULL,
+        effective_session_generation INTEGER NOT NULL,
+        selected_variant TEXT NOT NULL DEFAULT 'primary',
         base_consumer_version INTEGER NOT NULL,
         base_consumed_seq INTEGER,
         trigger_message_id TEXT NOT NULL,
@@ -630,13 +738,47 @@ function migrate(db: DatabaseSync): void {
         serializer_version TEXT NOT NULL,
         rendered_sha256 TEXT NOT NULL,
         completeness TEXT NOT NULL,
+        recovery_rendered_text TEXT NOT NULL,
+        recovery_rendered_sha256 TEXT NOT NULL,
+        recovery_completeness TEXT NOT NULL,
         state TEXT NOT NULL,
         created_at_ms INTEGER NOT NULL,
         committed_at_ms INTEGER
       );
       CREATE INDEX IF NOT EXISTS channel_context_snapshots_consumer
         ON channel_context_snapshots(scope_key, consumer_key, session_generation, created_at_ms);
-      PRAGMA user_version = 1;
+      CREATE INDEX IF NOT EXISTS channel_context_snapshots_effective_consumer
+        ON channel_context_snapshots(scope_key, consumer_key, effective_session_generation, created_at_ms);
+      PRAGMA user_version = 2;
+      `);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+    return;
+  }
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.exec(`
+      ALTER TABLE channel_context_snapshots
+        ADD COLUMN effective_session_generation INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE channel_context_snapshots
+        ADD COLUMN selected_variant TEXT NOT NULL DEFAULT 'primary';
+      ALTER TABLE channel_context_snapshots
+        ADD COLUMN recovery_rendered_text TEXT NOT NULL DEFAULT '';
+      ALTER TABLE channel_context_snapshots
+        ADD COLUMN recovery_rendered_sha256 TEXT NOT NULL DEFAULT '';
+      ALTER TABLE channel_context_snapshots
+        ADD COLUMN recovery_completeness TEXT NOT NULL DEFAULT 'partial';
+      UPDATE channel_context_snapshots
+        SET effective_session_generation = session_generation,
+            recovery_rendered_text = rendered_text,
+            recovery_rendered_sha256 = rendered_sha256,
+            recovery_completeness = completeness;
+      CREATE INDEX IF NOT EXISTS channel_context_snapshots_effective_consumer
+        ON channel_context_snapshots(scope_key, consumer_key, effective_session_generation, created_at_ms);
+      PRAGMA user_version = 2;
     `);
     db.exec("COMMIT");
   } catch (error) {
@@ -646,21 +788,38 @@ function migrate(db: DatabaseSync): void {
 }
 
 function snapshotFromRow(row: SnapshotRow): PreparedChannelContextSnapshot {
-  const payload = JSON.parse(row.payload_json) as { facts?: ChannelMessageFact[] };
+  const payload = JSON.parse(row.payload_json) as {
+    facts?: ChannelMessageFact[];
+    recovery_facts?: ChannelMessageFact[];
+    recovery_completeness?: "complete" | "partial" | "unavailable";
+  };
+  const facts = payload.facts ?? [];
+  const recoveryFacts = payload.recovery_facts ?? facts;
+  const recoveryRenderedText = row.recovery_rendered_text;
+  const recoveryCompleteness = row.recovery_completeness;
   return {
     ref: {
       snapshot_id: row.snapshot_id,
       scope_key: row.scope_key,
       consumer_key: row.consumer_key,
-      session_generation: row.session_generation,
+      session_generation: row.effective_session_generation,
+      ...(row.effective_session_generation === row.session_generation
+        ? {}
+        : { source_session_generation: row.session_generation }),
       trigger_message_id: row.trigger_message_id,
       ...(row.trigger_seq === null ? {} : { trigger_seq: row.trigger_seq }),
       serializer_version: row.serializer_version,
       rendered_sha256: row.rendered_sha256,
-      completeness: row.completeness
+      completeness: row.completeness,
+      recovery_rendered_sha256: row.recovery_rendered_sha256,
+      recovery_completeness: recoveryCompleteness
     },
-    facts: payload.facts ?? [],
+    facts,
     renderedText: row.rendered_text,
+    recoveryFacts,
+    recoveryRenderedText,
+    recoveryCompleteness,
+    selectedVariant: row.selected_variant,
     state: row.state
   };
 }

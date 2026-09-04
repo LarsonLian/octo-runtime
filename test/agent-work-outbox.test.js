@@ -63,13 +63,18 @@ test("terminal event stays active until its seq is durably acknowledged", async 
   await withStore("terminal", store => {
     store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });
     store.allocateAndAppend("r1", "run.started", {});
-    store.allocateAndAppend("r1", "run.completed", { text: "done" });
+    const terminal = store.allocateAndAppend("r1", "run.completed", { text: "done" });
     assert.deepEqual(store.activeRunIds(), ["r1"]);
 
     // received alone does not retire the run — only durable coverage does.
     store.advanceReceived("r1", 2);
     assert.deepEqual(store.activeRunIds(), ["r1"]);
-    assert.deepEqual(store.durableTerminal("r1", 2), { seq: 2, type: "run.completed" });
+    assert.deepEqual(store.durableTerminal("r1", 2), {
+      seq: 2,
+      type: "run.completed",
+      eventId: terminal.eventId,
+      payload: { text: "done" }
+    });
 
     store.advanceDurable("r1", 2);
     assert.deepEqual(store.activeRunIds(), []);
@@ -85,17 +90,21 @@ test("durable ACK inspection validates bounds and leaves terminal replayable acr
     const store = AgentWorkStore.open(file);
     store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });
     store.allocateAndAppend("r1", "run.started", {});
-    store.allocateAndAppend("r1", "run.completed", { text: "done" });
+    const terminal = store.allocateAndAppend("r1", "run.completed", { text: "done" });
     assert.deepEqual(store.inspectDurableAck("r1", 9), { advanced: false, reason: "ack_beyond_produced" });
     assert.deepEqual(store.inspectDurableAck("r1", 2), {
-      advanced: true, through: 2, terminal: { seq: 2, type: "run.completed" }
+      advanced: true,
+      through: 2,
+      terminal: { seq: 2, type: "run.completed", eventId: terminal.eventId, payload: { text: "done" } }
     });
     assert.equal(store.pendingCount(), 2);
     store.close();
 
     const reopened = AgentWorkStore.open(file);
     assert.deepEqual(reopened.inspectDurableAck("r1", 2), {
-      advanced: true, through: 2, terminal: { seq: 2, type: "run.completed" }
+      advanced: true,
+      through: 2,
+      terminal: { seq: 2, type: "run.completed", eventId: terminal.eventId, payload: { text: "done" } }
     });
     reopened.advanceDurable("r1", 2);
     assert.equal(reopened.pendingCount(), 0);

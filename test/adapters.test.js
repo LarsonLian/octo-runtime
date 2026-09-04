@@ -338,12 +338,15 @@ test("Codex app-server falls back to a fresh thread when resume fails", async ()
   for await (const event of host.invoke("codex", {
     ...request,
     invocationId: "inv-codex-resume",
+    modelInput: "PRIMARY_DELTA_MUST_NOT_REACH_FRESH",
+    freshFallbackModelInput: "FROZEN_COLD_RECOVERY_INPUT",
     providerSession: { sessionId: "missing-thread" }
   })) events.push(event);
   const session = events.find(event => event.type === "session.update").payload.providerSession;
   assert.equal(session.sessionId, "thread-app-server-1");
   assert.equal(session.resumeOutcome, "fresh_fallback");
   assert.equal(session.resumeFallback, "resume_rejected");
+  assert.equal(session.contextInputVariant, "recovery");
   assert.equal(events.at(-1).type, "run.finished");
 });
 

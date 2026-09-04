@@ -53,6 +53,10 @@ reader.on("line", line => {
       send({ jsonrpc: "2.0", id: message.id, error: { code: -32602, message: "display prompt leaked to provider" } });
       return;
     }
+    if (prompt.includes("PRIMARY_DELTA_MUST_NOT_REACH_FRESH")) {
+      send({ jsonrpc: "2.0", id: message.id, error: { code: -32602, message: "fresh fallback reused resumed-session delta" } });
+      return;
+    }
     if (prompt.includes("EXPECT_LOW_EFFORT") && (message.params.effort !== "low" || message.params.summary !== "none")) {
       send({ jsonrpc: "2.0", id: message.id, error: { code: -32602, message: "disabled thinking must map to low effort without summary" } });
       return;

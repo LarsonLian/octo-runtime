@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "urn:mininglamp-oss:octo-harness:protocol-schema",
   "title": "OctoHarnessProtocolSchema",
-  "description": "Octo Harness NDJSON 线协议的数据形状定义。这里只描述可 JSON 序列化的结构体；运行时行为（envelope、assert、isTerminal）、事件类型枚举常量与携带 AbortSignal 的 InvokeRequest 仍由 src/index.ts 手写组合。本文件是 TS 类型的唯一来源，改动后需运行 pnpm gen 重新生成。",
+  "description": "Serializable data shapes for the Octo Harness NDJSON protocol. Runtime behavior remains hand-written in src/index.ts, and this schema is the source of truth for generated TypeScript types.",
   "type": "object",
   "additionalProperties": false,
   "definitions": {
@@ -31,46 +31,46 @@
     },
     "ProviderSession": {
       "title": "ProviderSession",
-      "description": "Provider 自己拥有的会话恢复信息。sessionId 对 Core 完全 opaque；额外字段可由 adapter 写入并在下一次调用时原样取回。",
+      "description": "Provider-owned session resume data. Core treats sessionId and adapter extension fields as opaque.",
       "type": "object",
       "additionalProperties": true,
       "required": ["sessionId"],
       "properties": {
         "sessionId": {
-          "description": "Provider 私有的会话标识，Core 不解释其内容。",
+          "description": "Opaque provider session identifier.",
           "type": "string"
         },
         "resumable": {
-          "description": "当前 provider 是否声明该 session 可在后续 invocation 中恢复。",
+          "description": "Whether the provider declares that later invocations can resume this session.",
           "type": "boolean"
         }
       }
     },
     "AgentConfig": {
       "title": "AgentConfig",
-      "description": "Agent 的持久配置。公共字段供现有 adapters 使用，扩展字段必须由对应 adapter 自行解释；Core 只负责保存和传递，不根据 provider 类型分支处理。",
+      "description": "Persisted agent configuration. Adapters interpret provider-specific extensions while Core only stores and forwards them.",
       "type": "object",
       "additionalProperties": true,
       "properties": {
         "workdir": {
-          "description": "Provider CLI 的默认工作目录；它是 cwd，不是文件系统安全边界。",
+          "description": "Default provider CLI working directory. It is a cwd, not a filesystem security boundary.",
           "type": "string"
         },
-        "model": { "description": "模型名。", "type": "string" },
-        "sandbox": { "description": "provider 的 sandbox 模式标识。", "type": "string" },
-        "permissionMode": { "description": "provider 的权限模式标识。", "type": "string" },
+        "model": { "description": "Model identifier.", "type": "string" },
+        "sandbox": { "description": "Provider sandbox mode identifier.", "type": "string" },
+        "permissionMode": { "description": "Provider permission mode identifier.", "type": "string" },
         "dangerouslyBypassPermissions": {
-          "description": "是否危险地跳过权限确认；仅在明确授权场景使用。",
+          "description": "Whether to bypass permission confirmation. Use only with explicit authorization.",
           "type": "boolean"
         },
-        "autoApprove": { "description": "是否自动批准工具调用。", "type": "boolean" },
-        "providerAgentId": { "description": "provider 侧的 agent 标识。", "type": "string" },
-        "thinking": { "description": "thinking/推理档位标识。", "type": "string" },
-        "timeoutSeconds": { "description": "单次调用超时秒数。", "type": "number" },
-        "openclawConfigPath": { "description": "OpenClaw 配置文件路径。", "type": "string" },
-        "openclawStateDir": { "description": "OpenClaw 状态目录。", "type": "string" },
+        "autoApprove": { "description": "Whether tool calls are approved automatically.", "type": "boolean" },
+        "providerAgentId": { "description": "Provider-side agent identifier.", "type": "string" },
+        "thinking": { "description": "Thinking/reasoning effort identifier.", "type": "string" },
+        "timeoutSeconds": { "description": "Invocation timeout in seconds.", "type": "number" },
+        "openclawConfigPath": { "description": "OpenClaw configuration path.", "type": "string" },
+        "openclawStateDir": { "description": "OpenClaw state directory.", "type": "string" },
         "providerOptions": {
-          "description": "provider 私有的扩展选项；Core 原样透传，不做解释。",
+          "description": "Provider-specific extension options passed through unchanged by Core.",
           "type": "object",
           "additionalProperties": true,
           "tsType": "Record<string, unknown>"
@@ -79,7 +79,7 @@
     },
     "CanonicalEventPayload": {
       "title": "CanonicalEventPayload",
-      "description": "Canonical event 的公共 payload。开放字典用于容纳 tool/surface/usage 的结构化字段；常用生命周期字段在此显式列出，让 adapter 作者获得类型提示，同时避免把 provider-native 对象塞进顶层协议。",
+      "description": "Shared canonical event payload. The open dictionary carries structured tool, surface, and usage fields while common lifecycle fields remain explicit.",
       "type": "object",
       "additionalProperties": true,
       "properties": {
@@ -87,77 +87,77 @@
         "channel": { "$ref": "#/definitions/MessageChannel" },
         "exposure": { "$ref": "#/definitions/MessageExposure" },
         "provenance": { "$ref": "#/definitions/MessageProvenance" },
-        "messageId": { "description": "消息稳定 ID。", "type": "string" },
-        "role": { "description": "消息角色，如 assistant。", "type": "string" },
-        "status": { "description": "工具调用或 run 的状态标识。", "type": "string" },
-        "text": { "description": "文本增量或完整文本。", "type": "string" },
-        "reason": { "description": "终止或错误原因。", "type": "string" },
-        "message": { "description": "面向人类的说明信息。", "type": "string" }
+        "messageId": { "description": "Stable message identifier.", "type": "string" },
+        "role": { "description": "Message role, such as assistant.", "type": "string" },
+        "status": { "description": "Tool call or run status identifier.", "type": "string" },
+        "text": { "description": "Text delta or complete text.", "type": "string" },
+        "reason": { "description": "Termination or error reason.", "type": "string" },
+        "message": { "description": "Human-readable diagnostic message.", "type": "string" }
       }
     },
     "ToolCallCreatePayload": {
       "title": "ToolCallCreatePayload",
-      "description": "tool_call.create 的正式 payload。args 保留工具原始结构化输入；exec_command/Bash 的原始命令位于 args.command。",
+      "description": "Formal tool_call.create payload. args preserves the original structured input, including args.command for shell tools.",
       "type": "object",
       "additionalProperties": true,
       "required": ["id", "name", "args"],
       "properties": {
-        "id": { "description": "一次工具调用的稳定 ID，后续 delta/update 必须复用。", "type": "string" },
-        "name": { "description": "跨 provider 归一化的工具名。", "type": "string" },
+        "id": { "description": "Stable tool call identifier reused by later delta and update events.", "type": "string" },
+        "name": { "description": "Tool name normalized across providers.", "type": "string" },
         "args": {
-          "description": "工具调用开始时已知的原始结构化输入。流式 provider 可以先发送空对象，再通过 argsDelta 补齐。",
+          "description": "Original structured input known when the tool call starts. Streaming providers may begin empty and append argsDelta.",
           "type": "object",
           "additionalProperties": true,
           "tsType": "Record<string, unknown>"
         },
-        "status": { "description": "可选的初始工具状态。", "type": "string" }
+        "status": { "description": "Optional initial tool status.", "type": "string" }
       }
     },
     "ToolCallDeltaPayload": {
       "title": "ToolCallDeltaPayload",
-      "description": "tool_call.delta 的正式 payload。argsDelta 是同一 tool ID 的原始 JSON 参数分片，必须按事件顺序拼接后再解析。",
+      "description": "Formal tool_call.delta payload. argsDelta is an ordered raw JSON fragment and must be concatenated before parsing.",
       "type": "object",
       "additionalProperties": true,
       "required": ["id", "kind"],
       "properties": {
-        "id": { "description": "对应 tool_call.create 的稳定 ID。", "type": "string" },
-        "argsDelta": { "description": "原始 JSON 参数字符串分片；不得逐片 JSON.parse。", "type": "string" },
-        "outputDelta": { "description": "工具输出文本分片。", "type": "string" }
+        "id": { "description": "Stable identifier from the corresponding tool_call.create event.", "type": "string" },
+        "argsDelta": { "description": "Raw JSON argument fragment; do not parse fragments independently.", "type": "string" },
+        "outputDelta": { "description": "Tool output text fragment.", "type": "string" }
       }
     },
     "ToolCallUpdatePayload": {
       "title": "ToolCallUpdatePayload",
-      "description": "tool_call.update 的正式 payload，关闭对应工具生命周期并携带最终结果。",
+      "description": "Formal tool_call.update payload that closes the tool lifecycle and carries its final result.",
       "type": "object",
       "additionalProperties": true,
       "required": ["id", "status"],
       "properties": {
-        "id": { "description": "对应 tool_call.create 的稳定 ID。", "type": "string" },
-        "status": { "description": "工具终态，如 completed、error、failed 或 cancelled。", "type": "string" },
-        "output": { "description": "工具最终输出；可以是文本或结构化 JSON。", "tsType": "unknown" },
+        "id": { "description": "Stable identifier from the corresponding tool_call.create event.", "type": "string" },
+        "status": { "description": "Terminal tool status such as completed, error, failed, or cancelled.", "type": "string" },
+        "output": { "description": "Final tool output as text or structured JSON.", "tsType": "unknown" },
         "error": {
-          "description": "结构化错误详情。",
+          "description": "Structured error details.",
           "type": "object",
           "additionalProperties": true,
           "tsType": "Record<string, unknown>"
         },
-        "exitCode": { "description": "命令类工具的进程退出码。", "type": "integer" }
+        "exitCode": { "description": "Process exit code for command tools.", "type": "integer" }
       }
     },
     "RunIdentity": {
       "title": "RunIdentity",
-      "description": "envelope 只需要 Run 的稳定标识，不要求传入完整领域对象。",
+      "description": "Stable run identity used by envelopes without requiring the complete domain object.",
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "sessionId"],
       "properties": {
-        "id": { "description": "Run ID。", "type": "string" },
-        "sessionId": { "description": "所属 Harness Session ID。", "type": "string" }
+        "id": { "description": "Run identifier.", "type": "string" },
+        "sessionId": { "description": "Owning Harness session identifier.", "type": "string" }
       }
     },
     "ChannelScope": {
       "title": "ChannelScope",
-      "description": "平台无关的频道隔离键。account_id 可为空，但字段保留以区分同一 endpoint 下的 installation；thread_id 缺失表示 conversation 根上下文。",
+      "description": "Platform-neutral channel isolation key. account_id may be null but remains explicit; an absent thread_id selects the conversation root.",
       "type": "object",
       "additionalProperties": false,
       "required": ["tenant_id", "endpoint_id", "channel", "account_id", "bot_id", "conversation_id"],
@@ -173,7 +173,7 @@
     },
     "ChannelMessagePart": {
       "title": "ChannelMessagePart",
-      "description": "平台消息的规范化内容片段。type/text 是通用字段，其余结构由 producing connector 定义并视为不可信外部数据。",
+      "description": "Normalized platform message part. type and text are common fields; connector extensions remain untrusted external data.",
       "type": "object",
       "additionalProperties": true,
       "required": ["type"],
@@ -184,7 +184,7 @@
     },
     "ChannelMessageSender": {
       "title": "ChannelMessageSender",
-      "description": "规范化发送者事实，不包含平台鉴权凭据。",
+      "description": "Normalized sender fact without platform credentials.",
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "kind"],
@@ -196,7 +196,7 @@
     },
     "ChannelMessageFlags": {
       "title": "ChannelMessageFlags",
-      "description": "影响上下文投影的通用消息标记。self/control 默认不进入 provider-visible delta。",
+      "description": "Common message flags that affect context projection. Self and control messages are excluded from provider-visible context.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -206,7 +206,7 @@
     },
     "ChannelMessageFact": {
       "title": "ChannelMessageFact",
-      "description": "可重建 Channel Journal 中的一条平台无关消息事实。消息正文始终是 untrusted external content。",
+      "description": "A platform-neutral message fact in the rebuildable channel journal. Message content is always untrusted external input.",
       "type": "object",
       "additionalProperties": false,
       "required": ["message_id", "sender", "occurred_at_ms", "parts"],
@@ -225,7 +225,7 @@
     },
     "ChannelContextAppend": {
       "title": "ChannelContextAppend",
-      "description": "agent-worker 到绑定 daemon 的幂等 context-only 批量写入命令。",
+      "description": "Idempotent context-only batch appended by agent-worker to its bound daemon.",
       "type": "object",
       "additionalProperties": false,
       "required": ["scope", "facts"],
@@ -242,7 +242,7 @@
     },
     "ContextSyncRequest": {
       "title": "ContextSyncRequest",
-      "description": "daemon 发现冷启动或 gap 后向 agent-worker 请求的有界回填，不携带平台 token。",
+      "description": "Bounded backfill requested by the daemon after cold start or gap detection. It never carries platform tokens.",
       "type": "object",
       "additionalProperties": false,
       "required": ["request_id", "scope", "trigger_message_id", "limit"],
@@ -257,7 +257,7 @@
     },
     "ContextSyncResult": {
       "title": "ContextSyncResult",
-      "description": "有界历史回填结果；complete 仅表示所请求窗口已完整返回，不表示本地数据库是 IM 权威副本。",
+      "description": "Bounded history result. complete means only that the requested window was returned, not that the local journal is authoritative.",
       "type": "object",
       "additionalProperties": false,
       "required": ["request_id", "scope", "facts", "completeness"],
@@ -279,7 +279,7 @@
     },
     "ChannelContextDescriptor": {
       "title": "ChannelContextDescriptor",
-      "description": "ExecutionEnvelope 中的快照选择请求。scope+consumer_key+session_generation 共同隔离消费水位。",
+      "description": "Snapshot selection descriptor in ExecutionEnvelope. Scope, consumer_key, and session_generation isolate the consumption cursor.",
       "type": "object",
       "additionalProperties": false,
       "required": ["scope", "consumer_key", "session_generation", "trigger_message_id", "trigger_fact"],
@@ -294,7 +294,7 @@
     },
     "ChannelContextSnapshotRef": {
       "title": "ChannelContextSnapshotRef",
-      "description": "已冻结 provider-visible context delta 的可追踪引用。rendered_sha256 覆盖 exact rendered bytes。",
+      "description": "Traceable reference to frozen provider-visible context. The primary and recovery hashes cover their exact rendered bytes.",
       "type": "object",
       "additionalProperties": false,
       "required": ["snapshot_id", "scope_key", "consumer_key", "session_generation", "trigger_message_id", "serializer_version", "rendered_sha256", "completeness"],
@@ -303,16 +303,31 @@
         "scope_key": { "type": "string", "minLength": 1 },
         "consumer_key": { "type": "string", "minLength": 1 },
         "session_generation": { "type": "integer", "minimum": 1 },
+        "source_session_generation": {
+          "description": "Original descriptor generation when recovery promotes the effective consumer generation.",
+          "type": "integer",
+          "minimum": 1
+        },
         "trigger_message_id": { "type": "string", "minLength": 1 },
         "trigger_seq": { "type": "integer", "minimum": 0 },
         "serializer_version": { "type": "string", "minLength": 1 },
         "rendered_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-        "completeness": { "type": "string", "enum": ["complete", "partial", "unavailable"] }
+        "completeness": { "type": "string", "enum": ["complete", "partial", "unavailable"] },
+        "recovery_rendered_sha256": {
+          "description": "Hash of the frozen bounded cold projection used when provider resume falls back to a fresh session.",
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "recovery_completeness": {
+          "description": "Completeness of the frozen cold recovery projection.",
+          "type": "string",
+          "enum": ["complete", "partial", "unavailable"]
+        }
       }
     },
     "ContextCommitResult": {
       "title": "ContextCommitResult",
-      "description": "终态后以 consumer version CAS 推进水位的结果。",
+      "description": "Result of advancing the consumer cursor with version CAS after terminal durability.",
       "type": "object",
       "additionalProperties": false,
       "required": ["snapshot_id", "committed"],
@@ -324,7 +339,7 @@
     },
     "InvokeRequestWire": {
       "title": "InvokeRequestWire",
-      "description": "Core 发给 Adapter Host 的一次执行请求的可序列化部分。运行中携带的 AbortSignal 不可跨进程序列化，由 src/index.ts 在此基础上交叉出完整 InvokeRequest。session、run、invocation 是三个不同层次的标识：session 跨多轮复用，run 表示一次业务执行，invocation 表示这次与 provider adapter 的活动调用，用于取消和事件路由。",
+      "description": "Serializable execution request sent from Core to Adapter Host. AbortSignal is added in src/index.ts because it cannot cross a process boundary.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -339,33 +354,37 @@
       ],
       "properties": {
         "invocationId": {
-          "description": "Adapter Host 活动调用 ID，也是 cancel 的目标。",
+          "description": "Active Adapter Host invocation identifier and cancellation target.",
           "type": "string"
         },
         "sessionId": {
-          "description": "Chat 或 Task 的长期 Harness Session ID。",
+          "description": "Long-lived Harness session identifier for the chat or task.",
           "type": "string"
         },
-        "runId": { "description": "本次业务执行的 Run ID。", "type": "string" },
+        "runId": { "description": "Run identifier for this execution.", "type": "string" },
         "prompt": {
-          "description": "产品/UI 可显示的当前用户请求或 Task description；不得混入隐藏频道背景或 provider 私有控制参数。",
+          "description": "Display-safe current request or task description. It excludes hidden channel context and provider control parameters.",
           "type": "string"
         },
         "modelInput": {
-          "description": "provider 本轮必须 exact-once 接收的完整 user turn。缺失时 adapter 回退到 prompt。",
+          "description": "Exact provider-visible user turn. Adapters fall back to prompt when this field is absent.",
+          "type": "string"
+        },
+        "freshFallbackModelInput": {
+          "description": "Frozen alternate user turn for the first turn of a fresh provider session after resume fails.",
           "type": "string"
         },
         "contextSnapshot": { "$ref": "#/definitions/ChannelContextSnapshotRef" },
         "workdir": {
-          "description": "Provider 进程 cwd；真正的访问控制由 sandbox/容器/宿主权限提供。",
+          "description": "Provider process cwd. Sandboxing, containers, or host permissions provide the actual access boundary.",
           "type": "string"
         },
         "appendInstructions": {
-          "description": "Harness 生成的控制指令，由 adapter 放入 provider 支持的私有 carrier。",
+          "description": "Harness-generated control instructions placed in a provider-native private carrier by the adapter.",
           "type": "string"
         },
         "context": {
-          "description": "供 prompt、审计和未来 transport 使用的结构化 Harness 上下文。",
+          "description": "Structured Harness context for prompts, auditing, and future transports.",
           "type": "object",
           "additionalProperties": true,
           "tsType": "Record<string, unknown>"

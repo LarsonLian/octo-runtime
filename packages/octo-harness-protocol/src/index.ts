@@ -96,6 +96,11 @@ export function providerInputText(request: InvokeRequest): string {
   return request.modelInput ?? request.prompt;
 }
 
+/** Exact alternate input for a provider that could not resume its session. */
+export function freshFallbackInputText(request: InvokeRequest): string {
+  return request.freshFallbackModelInput ?? providerInputText(request);
+}
+
 /** Runtime validation at the Agent Work plugin boundary; JSON schema remains the wire source of truth. */
 export function assertChannelScope(value: unknown): asserts value is ChannelScope {
   if (!isRecord(value)) throw new TypeError("channel context scope must be an object");
@@ -307,6 +312,10 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
   if (request.modelInput !== undefined
     && (typeof request.modelInput !== "string" || request.modelInput.length === 0)) {
     throw new TypeError("InvokeRequest.modelInput must be a non-empty string when present");
+  }
+  if (request.freshFallbackModelInput !== undefined
+    && (typeof request.freshFallbackModelInput !== "string" || request.freshFallbackModelInput.length === 0)) {
+    throw new TypeError("InvokeRequest.freshFallbackModelInput must be a non-empty string when present");
   }
 }
 
