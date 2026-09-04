@@ -16,7 +16,7 @@ async function withStore(name, fn) {
   }
 }
 
-test("outbox appends in seq order and a cumulative ACK deletes confirmed events", async () => {
+test("outbox appends in seq order; received releases the window, durable deletes", async () => {
   await withStore("ack", store => {
     store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 3 });
     assert.equal(store.allocateAndAppend("r1", "run.started", {}).seq, 1);
@@ -28,20 +28,30 @@ test("outbox appends in seq order and a cumulative ACK deletes confirmed events"
     assert.equal(sendable[0].fencingToken, 3);
     assert.ok(store.outboxBytes() > 0);
 
-    assert.deepEqual(store.ackThrough("r1", 1), { advanced: true, through: 1 });
+    // received ACK releases the send window but must NOT delete the outbox.
+    assert.deepEqual(store.advanceReceived("r1", 1), { advanced: true, through: 1 });
     sendable = store.listSendable(10);
     assert.deepEqual(sendable.map(row => row.seq), [2]);
+    assert.ok(store.outboxBytes() > 0);
+
+    // durable ACK deletes confirmed rows.
+    assert.deepEqual(store.advanceDurable("r1", 1), { advanced: true, through: 1 });
+    assert.equal(store.pendingCount(), 1);
   });
 });
 
-test("terminal event stays active until its seq is acknowledged", async () => {
+test("terminal event stays active until its seq is durably acknowledged", async () => {
   await withStore("terminal", store => {
     store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });
     store.allocateAndAppend("r1", "run.started", {});
     store.allocateAndAppend("r1", "run.completed", { text: "done" });
     assert.deepEqual(store.activeRunIds(), ["r1"]);
 
-    store.ackThrough("r1", 2);
+    // received alone does not retire the run — only durable coverage does.
+    store.advanceReceived("r1", 2);
+    assert.deepEqual(store.activeRunIds(), ["r1"]);
+
+    store.advanceDurable("r1", 2);
     assert.deepEqual(store.activeRunIds(), []);
     assert.equal(store.outboxBytes(), 0);
   });
@@ -53,13 +63,13 @@ test("duplicate, backward and out-of-range ACKs are handled without deleting una
     store.allocateAndAppend("r1", "run.started", {});
     store.allocateAndAppend("r1", "message.delta", { text: "a" });
 
-    assert.deepEqual(store.ackThrough("r1", 5), { advanced: false, reason: "ack_beyond_produced" });
+    assert.deepEqual(store.advanceDurable("r1", 5), { advanced: false, reason: "ack_beyond_produced" });
     assert.equal(store.listSendable(10).length, 2);
 
-    assert.deepEqual(store.ackThrough("r1", 2), { advanced: true, through: 2 });
-    assert.deepEqual(store.ackThrough("r1", 2), { advanced: false, reason: "stale" });
-    assert.deepEqual(store.ackThrough("r1", 1), { advanced: false, reason: "stale" });
-    assert.deepEqual(store.ackThrough("missing", 1), { advanced: false, reason: "unknown_run" });
+    assert.deepEqual(store.advanceDurable("r1", 2), { advanced: true, through: 2 });
+    assert.deepEqual(store.advanceDurable("r1", 2), { advanced: false, reason: "stale" });
+    assert.deepEqual(store.advanceDurable("r1", 1), { advanced: false, reason: "stale" });
+    assert.deepEqual(store.advanceReceived("missing", 1), { advanced: false, reason: "unknown_run" });
   });
 });
 
@@ -71,7 +81,8 @@ test("unacknowledged events survive reopen and are replayed", async () => {
     store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });
     const first = store.allocateAndAppend("r1", "run.started", {});
     store.allocateAndAppend("r1", "message.delta", { text: "hi" });
-    store.ackThrough("r1", 1);
+    store.advanceReceived("r1", 1);
+    store.advanceDurable("r1", 1);
     store.close();
 
     const reopened = AgentWorkStore.open(file);
@@ -108,12 +119,12 @@ test("command receipts and last acked command seq persist for restart dedupe", a
   }
 });
 
-test("reconcile clears events already within the ack watermark", async () => {
+test("reconcile clears events already within the durable watermark", async () => {
   await withStore("reconcile", store => {
     store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });
     store.allocateAndAppend("r1", "run.started", {});
     store.allocateAndAppend("r1", "run.completed", {});
-    store.ackThrough("r1", 2);
+    store.advanceDurable("r1", 2);
     assert.equal(store.pendingCount(), 0);
     store.reconcile();
     assert.equal(store.pendingCount(), 0);

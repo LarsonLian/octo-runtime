@@ -44,7 +44,8 @@ const DEFAULT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface RunRow {
   next_seq: number;
-  ack_through_seq: number;
+  received_through_seq: number;
+  durable_through_seq: number;
   terminal_seq: number | null;
   lease_id: string;
   fencing_token: number;
@@ -77,7 +78,8 @@ export class AgentWorkStore {
         fencing_token INTEGER NOT NULL,
         status TEXT NOT NULL,
         next_seq INTEGER NOT NULL DEFAULT 1,
-        ack_through_seq INTEGER NOT NULL DEFAULT 0,
+        received_through_seq INTEGER NOT NULL DEFAULT 0,
+        durable_through_seq INTEGER NOT NULL DEFAULT 0,
         terminal_seq INTEGER,
         updated_at INTEGER NOT NULL,
         completed_at INTEGER
@@ -154,8 +156,8 @@ export class AgentWorkStore {
   /** 创建或恢复 run；已存在时只刷新 lease/fencing/status，不重置 seq 与 ACK 水位。 */
   upsertRun(input: AgentWorkRunInput): void {
     this.#db.prepare(
-      `INSERT INTO runs (run_id, session_id, command_id, lease_id, fencing_token, status, next_seq, ack_through_seq, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'running', 1, 0, ?)
+      `INSERT INTO runs (run_id, session_id, command_id, lease_id, fencing_token, status, next_seq, received_through_seq, durable_through_seq, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'running', 1, 0, 0, ?)
        ON CONFLICT(run_id) DO UPDATE SET
          lease_id = excluded.lease_id,
          fencing_token = excluded.fencing_token,
@@ -168,10 +170,10 @@ export class AgentWorkStore {
     return this.#db.prepare("SELECT 1 FROM runs WHERE run_id = ?").get(runId) !== undefined;
   }
 
-  /** 尚未收到 terminal ACK 的 run，用于重连后重放。 */
+  /** Runs without a durable terminal ACK yet, used for replay after reconnect. */
   activeRunIds(): string[] {
     return this.#db.prepare(
-      "SELECT run_id FROM runs WHERE terminal_seq IS NULL OR ack_through_seq < terminal_seq"
+      "SELECT run_id FROM runs WHERE terminal_seq IS NULL OR durable_through_seq < terminal_seq"
     ).all().map(row => (row as { run_id: string }).run_id);
   }
 
@@ -205,12 +207,14 @@ export class AgentWorkStore {
     return { seq, eventId };
   }
 
-  /** 按 (run_id, seq) 顺序返回仍需发送的事件（seq 大于该 run 的 ACK 水位）。 */
+  /** Return events still pending send in (run_id, seq) order: seq beyond the
+   * run's received watermark. The received watermark (not durable) gates
+   * resend, so a batch already held in Worker memory is not resent. */
   listSendable(limit: number): OutboxRow[] {
     return this.#db.prepare(
       `SELECT o.run_id, o.seq, o.event_id, o.event_type, o.payload_json, o.created_at, r.lease_id, r.fencing_token
        FROM event_outbox o JOIN runs r ON r.run_id = o.run_id
-       WHERE o.seq > r.ack_through_seq
+       WHERE o.seq > r.received_through_seq
        ORDER BY o.run_id, o.seq
        LIMIT ?`
     ).all(limit).map(raw => {
@@ -237,19 +241,36 @@ export class AgentWorkStore {
   }
 
   /**
-   * 把 run 的 ACK 水位推进到累计 seq，并删除已确认 outbox；terminal 覆盖后标记 completed_at。
-   * 重复/倒退 ACK 忽略；越过已产生序号的 ACK 拒绝并交由调用方告警。
+   * Advance the received watermark: the batch is safely held in Worker memory,
+   * so the send window is released, but the outbox rows are NOT deleted — only
+   * a durable ACK may delete them. Stale/out-of-range values are rejected.
    */
-  ackThrough(runId: string, seq: number): AckOutcome {
+  advanceReceived(runId: string, seq: number): AckOutcome {
     const run = this.#db.prepare(
-      "SELECT next_seq, ack_through_seq, terminal_seq FROM runs WHERE run_id = ?"
-    ).get(runId) as Pick<RunRow, "next_seq" | "ack_through_seq" | "terminal_seq"> | undefined;
+      "SELECT next_seq, received_through_seq, durable_through_seq, terminal_seq FROM runs WHERE run_id = ?"
+    ).get(runId) as Pick<RunRow, "next_seq" | "received_through_seq" | "durable_through_seq" | "terminal_seq"> | undefined;
     if (!run) return { advanced: false, reason: "unknown_run" };
     if (seq > run.next_seq - 1) return { advanced: false, reason: "ack_beyond_produced" };
-    if (seq <= run.ack_through_seq) return { advanced: false, reason: "stale" };
+    if (seq <= run.received_through_seq) return { advanced: false, reason: "stale" };
+    this.#db.prepare("UPDATE runs SET received_through_seq = ?, updated_at = ? WHERE run_id = ?").run(seq, Date.now(), runId);
+    return { advanced: true, through: seq };
+  }
+
+  /**
+   * Advance the durable watermark: the aggregated business state is committed
+   * cloud-side, so confirmed outbox rows can be deleted; terminal coverage
+   * marks completed_at. This is the only path that deletes outbox rows.
+   */
+  advanceDurable(runId: string, seq: number): AckOutcome {
+    const run = this.#db.prepare(
+      "SELECT next_seq, received_through_seq, durable_through_seq, terminal_seq FROM runs WHERE run_id = ?"
+    ).get(runId) as Pick<RunRow, "next_seq" | "received_through_seq" | "durable_through_seq" | "terminal_seq"> | undefined;
+    if (!run) return { advanced: false, reason: "unknown_run" };
+    if (seq > run.next_seq - 1) return { advanced: false, reason: "ack_beyond_produced" };
+    if (seq <= run.durable_through_seq) return { advanced: false, reason: "stale" };
     this.#db.exec("BEGIN IMMEDIATE");
     try {
-      this.#db.prepare("UPDATE runs SET ack_through_seq = ?, updated_at = ? WHERE run_id = ?").run(seq, Date.now(), runId);
+      this.#db.prepare("UPDATE runs SET durable_through_seq = ?, updated_at = ? WHERE run_id = ?").run(seq, Date.now(), runId);
       this.#db.prepare("DELETE FROM event_outbox WHERE run_id = ? AND seq <= ?").run(runId, seq);
       if (run.terminal_seq !== null && seq >= run.terminal_seq) {
         this.#db.prepare("UPDATE runs SET completed_at = ? WHERE run_id = ? AND completed_at IS NULL").run(Date.now(), runId);
@@ -282,7 +303,7 @@ export class AgentWorkStore {
   reconcile(now = Date.now()): void {
     this.#db.prepare(
       `DELETE FROM event_outbox WHERE (run_id, seq) IN (
-        SELECT o.run_id, o.seq FROM event_outbox o JOIN runs r ON r.run_id = o.run_id WHERE o.seq <= r.ack_through_seq
+        SELECT o.run_id, o.seq FROM event_outbox o JOIN runs r ON r.run_id = o.run_id WHERE o.seq <= r.durable_through_seq
       )`
     ).run();
     // 过期 command receipt 与本地保留期已过的终态 run（其 outbox 已排空）不再需要。

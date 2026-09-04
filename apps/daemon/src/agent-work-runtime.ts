@@ -4,6 +4,7 @@ import WebSocket from "ws";
 import type { AdapterHostRpcClient } from "@mininglamp-oss/octo-harness-adapter-host";
 import type { AgentConfig, CanonicalEvent, InvokeRequest, ProviderSession } from "@mininglamp-oss/octo-harness-protocol";
 import { AgentWorkStore } from "./agent-work-store.js";
+import type { OutboxRow } from "./agent-work-store.js";
 
 const PROTOCOL_VERSION = 1;
 const DEFAULT_SEND_WINDOW = 32;
@@ -287,20 +288,37 @@ export class AgentWorkRuntime {
     if (envelope.type === "event.ack") {
       const payload = asRecord(envelope.payload);
       const runId = String(payload.run_id);
-      const seq = Number(payload.seq);
+      const received = Number(payload.received_through_seq);
+      const durable = Number(payload.durable_through_seq);
       const store = this.#store;
-      if (store && Number.isFinite(seq)) {
-        const outcome = store.ackThrough(runId, seq);
-        if (!outcome.advanced && outcome.reason === "ack_beyond_produced") {
-          console.error(`octo-harness Agent Work runtime rejected out-of-range ACK run=${runId} seq=${seq}`);
+      if (store) {
+        // received_through_seq: the batch is safely held in Worker memory —
+        // release the send window (do not delete the outbox yet).
+        if (Number.isFinite(received)) {
+          const outcome = store.advanceReceived(runId, received);
+          if (!outcome.advanced && outcome.reason === "ack_beyond_produced") {
+            console.error(`octo-harness Agent Work runtime rejected out-of-range received ACK run=${runId} seq=${received}`);
+          }
+          const prefix = `${runId}:`;
+          for (const key of [...this.#inFlight]) {
+            if (key.startsWith(prefix) && Number(key.slice(prefix.length)) <= received) this.#inFlight.delete(key);
+          }
         }
-        const prefix = `${runId}:`;
-        for (const key of [...this.#inFlight]) {
-          if (key.startsWith(prefix) && Number(key.slice(prefix.length)) <= seq) this.#inFlight.delete(key);
+        // durable_through_seq: aggregated state committed cloud-side — only now
+        // may confirmed outbox rows be deleted.
+        if (Number.isFinite(durable) && durable > 0) {
+          store.advanceDurable(runId, durable);
         }
-        // ACK 删除已释放容量，且可能有更多可发送项，唤醒 sender。
+        // ACK released capacity and may unblock more sendable rows.
         this.#kickSender();
       }
+      return;
+    }
+    if (envelope.type === "event.nack") {
+      // Peer asked us to pause and resume from a known-good seq; the sender
+      // reloads from listSendable on the next kick, so just log and continue.
+      const payload = asRecord(envelope.payload);
+      console.error(`octo-harness Agent Work runtime received NACK run=${String(payload.run_id)} code=${String(payload.code)} resume_from=${String(payload.resume_from_seq)}`);
       return;
     }
     if (envelope.type === "error") {
@@ -418,32 +436,40 @@ export class AgentWorkRuntime {
     }
   }
 
-  /** 连接可用时按 (run_id, seq) 顺序发送未确认事件；断线只等待，不丢弃。 */
+  /** Send unacked events in (run_id, seq) order as run.event_batch frames when
+   * connected; on disconnect it waits rather than dropping. Contiguous rows of
+   * a single run are coalesced into one batch (the wire transport unit). */
   async #senderLoop(): Promise<void> {
     const window = this.#options.sendWindow ?? DEFAULT_SEND_WINDOW;
     while (!this.#stopped) {
       const store = this.#store;
       if (store && this.#connected && this.#socket?.readyState === WebSocket.OPEN) {
-        for (const row of store.listSendable(window)) {
-          const key = `${row.runId}:${row.seq}`;
-          if (this.#inFlight.has(key)) continue;
+        const rows = store.listSendable(window).filter(row => !this.#inFlight.has(`${row.runId}:${row.seq}`));
+        for (const batch of coalesceBatches(rows)) {
           if (this.#socket?.readyState !== WebSocket.OPEN) break;
           try {
-            this.#send("run.event", {
-              event_id: row.eventId,
-              run_id: row.runId,
-              seq: row.seq,
-              type: row.eventType,
-              payload: row.payload,
-              lease_id: row.leaseId,
-              fencing_token: row.fencingToken,
-              occurred_at: new Date(row.createdAt).toISOString()
-            }, row.seq);
+            this.#send("run.event_batch", {
+              run_id: batch.runId,
+              first_seq: batch.events[0].seq,
+              last_seq: batch.events[batch.events.length - 1].seq,
+              events: batch.events.map(row => ({
+                event_id: row.eventId,
+                run_id: row.runId,
+                seq: row.seq,
+                type: row.eventType,
+                payload: row.payload,
+                lease_id: row.leaseId,
+                fencing_token: row.fencingToken,
+                occurred_at: new Date(row.createdAt).toISOString()
+              }))
+            }, batch.events[batch.events.length - 1].seq);
           } catch {
             break;
           }
-          this.#inFlight.add(key);
-          store.markSent(row.runId, row.seq);
+          for (const row of batch.events) {
+            this.#inFlight.add(`${row.runId}:${row.seq}`);
+            store.markSent(row.runId, row.seq);
+          }
         }
       }
       await this.#waitKick(PUMP_POLL_MS);
@@ -625,4 +651,27 @@ function delay(ms: number): Promise<void> {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+interface EventBatch {
+  runId: string;
+  events: OutboxRow[];
+}
+
+/** Group ordered outbox rows into contiguous per-run batches. A batch breaks on
+ * a run change or a seq gap so each frame carries a single run with a contiguous
+ * first_seq..last_seq range, matching the run.event_batch wire contract. */
+function coalesceBatches(rows: OutboxRow[]): EventBatch[] {
+  const batches: EventBatch[] = [];
+  let current: EventBatch | undefined;
+  for (const row of rows) {
+    const last = current?.events[current.events.length - 1];
+    const contiguous = current !== undefined && last !== undefined && last.runId === row.runId && row.seq === last.seq + 1;
+    if (!contiguous) {
+      current = { runId: row.runId, events: [] };
+      batches.push(current);
+    }
+    current!.events.push(row);
+  }
+  return batches;
 }
