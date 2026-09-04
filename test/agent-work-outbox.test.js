@@ -116,6 +116,22 @@ test("unacknowledged events survive reopen and are replayed", async () => {
   }
 });
 
+test("new transport connection replays received but non-durable events", async () => {
+  await withStore("received-replay", store => {
+    store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });
+    store.allocateAndAppend("r1", "run.started", {});
+    store.allocateAndAppend("r1", "message.delta", { text: "live only" });
+    store.advanceReceived("r1", 2);
+    store.advanceDurable("r1", 1);
+    assert.deepEqual(store.listSendable(10), []);
+
+    assert.equal(store.prepareReplayAfterReconnect(), 1);
+    const replay = store.listSendable(10);
+    assert.deepEqual(replay.map(row => row.seq), [2]);
+    assert.equal(replay[0].payload.text, "live only");
+  });
+});
+
 test("command receipts and last acked command seq persist for restart dedupe", async () => {
   const dir = await mkdtemp(join(tmpdir(), "oh-outbox-receipt-"));
   const file = join(dir, "agent-work.db");
