@@ -39,7 +39,7 @@ export class HarnessDaemon extends EventEmitter {
   /** 恢复 queued 工作，并把无法重新附着的 running Run 明确标记为失败。 */
   async recover(): Promise<void> {
     // daemon 重启后不能假装旧 provider 进程仍然存活；running run 必须先明确终止。
-    for (const run of this.#store.runs.values()) {
+    for (const run of this.#store.listRuns()) {
       if (run.status === "running") {
         await this.#engine.terminalizeRun(run.id, {
           type: "run.error",
@@ -49,9 +49,9 @@ export class HarnessDaemon extends EventEmitter {
         this.#schedule(run.id);
       }
     }
-    for (const task of this.#store.tasks.values()) {
+    for (const task of this.#store.listTasks()) {
       if (task.status !== "queued" || task.activeRunId) continue;
-      const occurrence = [...this.#store.occurrences.values()].find(item => item.taskId === task.id);
+      const occurrence = this.#store.findOccurrenceByTaskId(task.id);
       const queued = await this.#engine.queueTask(task.id, {
         occurrenceId: occurrence?.id,
         sourceType: occurrence?.kind ?? "recovery",
@@ -64,7 +64,7 @@ export class HarnessDaemon extends EventEmitter {
 
   /** 为 enabled interval Triggers 创建本进程定时器；重复调用不会重复注册。 */
   startSchedulers(): void {
-    for (const trigger of this.#store.triggers.values()) {
+    for (const trigger of this.#store.listTriggers()) {
       const everyMs = trigger.everyMs;
       if (!trigger.enabled || trigger.kind !== "interval" || !everyMs || this.#timers.has(trigger.id)) continue;
       const timer = setInterval(() => {
@@ -87,7 +87,7 @@ export class HarnessDaemon extends EventEmitter {
   /** 匹配 event Trigger，并为每个命中规则提交一次幂等执行。 */
   async ingestEvent({ eventType, externalEventId, payload = {} }: IngestEventInput): Promise<unknown[]> {
     if (!eventType || !externalEventId) throw new Error("eventType and externalEventId are required");
-    const matched = [...this.#store.triggers.values()].filter(trigger =>
+    const matched = this.#store.listTriggers().filter(trigger =>
       trigger.enabled &&
       trigger.kind === "event" &&
       trigger.eventType === eventType &&
@@ -105,8 +105,8 @@ export class HarnessDaemon extends EventEmitter {
   }> {
     const created = await this.#engine.materializeTrigger(triggerId, input);
     if (created.deduplicated) {
-      const run = [...this.#store.runs.values()].find(item => {
-        const attempt = item.attemptId ? this.#store.attempts.get(item.attemptId) : undefined;
+      const run = this.#store.listRuns().find(item => {
+        const attempt = item.attemptId ? this.#store.getAttempt(item.attemptId) : undefined;
         return attempt?.taskId === created.task.id;
       });
       return { accepted: false, deduplicated: true, taskId: created.task.id, runId: run?.id };
@@ -134,9 +134,9 @@ export class HarnessDaemon extends EventEmitter {
     runId: string;
     agent: { id: string; name: string; adapterType: string };
   }> {
-    const session = this.#store.sessions.get(sessionId);
+    const session = this.#store.getSession(sessionId);
     if (!session || session.type !== "chat") throw new Error(`chat session not found: ${sessionId}`);
-    const agent = this.#store.agents.get(session.agentId ?? "");
+    const agent = this.#store.getAgent(session.agentId ?? "");
     if (!agent) throw new Error(`agent not found for chat session: ${sessionId}`);
     const queued = await this.#engine.queueChatTurn(sessionId, prompt);
     this.#schedule(queued.run.id, instructions);
@@ -158,10 +158,10 @@ export class HarnessDaemon extends EventEmitter {
           type: "run.error",
           payload: { code: "daemon_execution_error", message: errorMessage(error) }
         });
-        return { run: this.#store.runs.get(runId), error };
+        return { run: this.#store.getRun(runId), error };
       })
       .then(result => {
-        this.emit("run.terminal", { runId, status: this.#store.runs.get(runId)?.status });
+        this.emit("run.terminal", { runId, status: this.#store.getRun(runId)?.status });
         for (const resolve of this.#waiters.get(runId) ?? []) resolve(result);
         this.#waiters.delete(runId);
         return result;
@@ -172,9 +172,9 @@ export class HarnessDaemon extends EventEmitter {
 
   /** Run 已终态时立即返回，否则等待本进程调度的执行完成。 */
   async waitForRun(runId: string): Promise<unknown> {
-    const run = this.#store.runs.get(runId);
+    const run = this.#store.getRun(runId);
     if (!run) throw new Error(`run not found: ${runId}`);
-    if (TERMINAL.has(run.status)) return { run, events: this.#store.events.get(runId) ?? [] };
+    if (TERMINAL.has(run.status)) return { run, events: this.#store.getEvents(runId) };
     return new Promise(resolve => {
       const waiters = this.#waiters.get(runId) ?? [];
       waiters.push(resolve);

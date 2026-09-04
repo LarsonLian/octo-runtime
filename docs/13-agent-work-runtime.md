@@ -42,6 +42,20 @@ item，并以 `message.update.text` 校正 delta 累积。Buddy 消费经过 Pre
 
 ## 配置
 
+已 link 的 CLI 可以把非敏感连接信息作为 daemon 参数传入；Runtime token 始终只从环境变量读取：
+
+```bash
+export OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN=dev-runtime-token
+
+octo-harness daemon \
+  --agent-work-url http://127.0.0.1:8092 \
+  --agent-work-tenant-id tenant-1 \
+  --agent-work-subject-id device-local-1 \
+  --agent-work-runtime-name octo-harness-local
+```
+
+也可以完全使用环境变量：
+
 ```bash
 export OCTO_HARNESS_AGENT_WORK_URL=http://127.0.0.1:8092
 export OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN=dev-runtime-token
@@ -59,7 +73,9 @@ pnpm cli status
 每次 WSS 重连时，daemon 还会在 `runtime.hello` 上报 `active_run_ids`。Agent Work
 据此终结已经 ACK、但不再由重启后 daemon 持有的悬挂 Run；省略该字段的旧 runtime
 不会触发所有权对账。
-token 只允许通过环境变量注入，不写入 manifest、Agent revision、workdir 或 event payload。
+该 token 必须与 agent-worker 的 `RUNTIME_AUTH_TOKEN` 相同。token 只允许通过环境变量注入，不写入
+argv、manifest、Agent revision、workdir 或 event payload。完整 link 和部署说明见
+[`../DEPLOYMENTS.md`](../DEPLOYMENTS.md)。
 
 ## 当前实验边界
 

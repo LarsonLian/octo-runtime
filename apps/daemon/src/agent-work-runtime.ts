@@ -3,8 +3,17 @@ import { hostname, platform, arch } from "node:os";
 import WebSocket from "ws";
 import type { AdapterHostRpcClient } from "@mininglamp-oss/octo-harness-adapter-host";
 import type { AgentConfig, CanonicalEvent, InvokeRequest, ProviderSession } from "@mininglamp-oss/octo-harness-protocol";
+import { AgentWorkStore } from "./agent-work-store.js";
 
 const PROTOCOL_VERSION = 1;
+const DEFAULT_SEND_WINDOW = 32;
+const DEFAULT_SOFT_WATERMARK_BYTES = 512 * 1024 * 1024;
+const DEFAULT_HARD_WATERMARK_BYTES = 2 * 1024 * 1024 * 1024;
+const DEFAULT_RECONCILE_MS = 5 * 60_000;
+const PUMP_POLL_MS = 50;
+const BACKPRESSURE_POLL_MS = 100;
+/** 终态事件必须能落盘收尾，不受软水位背压阻塞。 */
+const TERMINAL_OUTBOX_TYPES = new Set(["run.completed", "run.failed", "run.cancelled"]);
 
 export interface AgentWorkRuntimeOptions {
   baseUrl: string;
@@ -15,6 +24,15 @@ export interface AgentWorkRuntimeOptions {
   runtimeName: string;
   fingerprint: string;
   reconnectMs?: number;
+  /** 本地 Outbox 数据库路径；缺省由 daemon 解析。 */
+  storePath: string;
+  /** 单次可在途发送的事件数上限。 */
+  sendWindow?: number;
+  /** 软水位：达到后停止接收新 Run 并暂停 provider 读取形成背压。 */
+  softWatermarkBytes?: number;
+  /** 硬水位：仅用于高优告警，未 ACK 数据仍不删除。 */
+  hardWatermarkBytes?: number;
+  reconcileMs?: number;
 }
 
 interface ExecutionEnvelope {
@@ -71,13 +89,17 @@ export class AgentWorkRuntime {
   readonly #options: AgentWorkRuntimeOptions;
   readonly #host: AdapterHostRpcClient;
   readonly #activeRuns = new Map<string, ActiveRun>();
-  readonly #eventAcks = new Map<string, { resolve(stored: boolean): void; reject(error: Error): void }>();
+  /** 本连接内已发出、等待 ACK 的 `${runId}:${seq}`；重连时清空以触发重放。 */
+  readonly #inFlight = new Set<string>();
+  #store?: AgentWorkStore;
   #runtimeId = "";
   #socket?: WebSocket;
   #heartbeat?: NodeJS.Timeout;
+  #reconcileTimer?: NodeJS.Timeout;
   #loop?: Promise<void>;
+  #pump?: Promise<void>;
+  #senderKick?: () => void;
   #stopped = true;
-  #lastAckedCommandSeq = 0;
   #connected = false;
 
   constructor(options: AgentWorkRuntimeOptions, host: AdapterHostRpcClient) {
@@ -86,33 +108,55 @@ export class AgentWorkRuntime {
   }
 
   get status(): Record<string, unknown> {
+    const store = this.#store;
     return {
       enabled: true,
       connected: this.#connected,
       runtimeId: this.#runtimeId || this.#options.runtimeId,
       activeRuns: this.#activeRuns.size,
-      lastAckedCommandSeq: this.#lastAckedCommandSeq
+      lastAckedCommandSeq: store?.lastAckedCommandSeq ?? 0,
+      outboxPendingBytes: store?.outboxBytes() ?? 0,
+      outboxPending: store?.pendingCount() ?? 0,
+      outboxOldestAgeMs: store?.oldestUnackedAgeMs() ?? null,
+      dbBytes: store?.dbBytes() ?? 0,
+      walBytes: store?.walBytes() ?? 0
     };
   }
 
   async start(): Promise<void> {
     if (!this.#stopped) return;
     this.#stopped = false;
+    this.#store = AgentWorkStore.open(this.#options.storePath);
     this.#runtimeId = this.#options.runtimeId ?? await this.#register();
     await this.#connect();
     this.#loop = this.#readLoop();
+    this.#pump = this.#senderLoop();
+    const reconcileMs = this.#options.reconcileMs ?? DEFAULT_RECONCILE_MS;
+    this.#reconcileTimer = setInterval(() => {
+      try {
+        this.#store?.reconcile();
+      } catch (error) {
+        console.error(`octo-harness Agent Work outbox reconcile failed: ${errorMessage(error)}`);
+      }
+    }, reconcileMs);
   }
 
   async close(): Promise<void> {
     this.#stopped = true;
     if (this.#heartbeat) clearInterval(this.#heartbeat);
     this.#heartbeat = undefined;
+    if (this.#reconcileTimer) clearInterval(this.#reconcileTimer);
+    this.#reconcileTimer = undefined;
+    this.#kickSender();
     for (const run of this.#activeRuns.values()) {
       await this.#host.cancel(run.invocationId, "runtime shutdown").catch(() => undefined);
     }
     this.#socket?.close(1000, "runtime shutdown");
     await this.#loop?.catch(() => undefined);
-    this.#rejectPendingAcks(new Error("Agent Work runtime closed"));
+    await this.#pump?.catch(() => undefined);
+    // 未 ACK 事件留在 Outbox，重启后重放；这里只释放连接与句柄。
+    this.#store?.close();
+    this.#store = undefined;
   }
 
   async #register(): Promise<string> {
@@ -158,8 +202,8 @@ export class AgentWorkRuntime {
     });
     this.#socket = socket;
     this.#send("runtime.hello", {
-      last_acked_command_seq: this.#lastAckedCommandSeq,
-      active_run_ids: [...this.#activeRuns.keys()],
+      last_acked_command_seq: this.#store?.lastAckedCommandSeq ?? 0,
+      active_run_ids: this.#store?.activeRunIds() ?? [],
       runtime_version: "0.1.0"
     });
   }
@@ -178,7 +222,8 @@ export class AgentWorkRuntime {
       this.#connected = false;
       if (this.#heartbeat) clearInterval(this.#heartbeat);
       this.#heartbeat = undefined;
-      this.#rejectPendingAcks(new Error("Agent Work runtime disconnected"));
+      // 断线不丢事件：清空在途标记，重连后从最小未确认 seq 全部重放。
+      this.#inFlight.clear();
       if (this.#stopped) return;
       while (!this.#stopped && !this.#socket) {
         await delay(this.#options.reconnectMs ?? 1_000);
@@ -230,7 +275,9 @@ export class AgentWorkRuntime {
       const everyMs = typeof payload.heartbeat_every_ms === "number" ? payload.heartbeat_every_ms : 30_000;
       this.#connected = true;
       if (this.#heartbeat) clearInterval(this.#heartbeat);
-      this.#heartbeat = setInterval(() => this.#send("runtime.heartbeat", { runtime_version: "0.1.0" }), everyMs);
+      this.#heartbeat = setInterval(() => this.#trySend("runtime.heartbeat", { runtime_version: "0.1.0" }), everyMs);
+      // 连接就绪后立刻排空 Outbox（含断线期间积压的事件）。
+      this.#kickSender();
       return;
     }
     if (envelope.type === "runtime.command") {
@@ -239,11 +286,20 @@ export class AgentWorkRuntime {
     }
     if (envelope.type === "event.ack") {
       const payload = asRecord(envelope.payload);
-      const key = `${String(payload.run_id)}:${String(payload.seq)}`;
-      const pending = this.#eventAcks.get(key);
-      if (pending) {
-        this.#eventAcks.delete(key);
-        pending.resolve(payload.stored === true);
+      const runId = String(payload.run_id);
+      const seq = Number(payload.seq);
+      const store = this.#store;
+      if (store && Number.isFinite(seq)) {
+        const outcome = store.ackThrough(runId, seq);
+        if (!outcome.advanced && outcome.reason === "ack_beyond_produced") {
+          console.error(`octo-harness Agent Work runtime rejected out-of-range ACK run=${runId} seq=${seq}`);
+        }
+        const prefix = `${runId}:`;
+        for (const key of [...this.#inFlight]) {
+          if (key.startsWith(prefix) && Number(key.slice(prefix.length)) <= seq) this.#inFlight.delete(key);
+        }
+        // ACK 删除已释放容量，且可能有更多可发送项，唤醒 sender。
+        this.#kickSender();
       }
       return;
     }
@@ -255,6 +311,8 @@ export class AgentWorkRuntime {
 
   async #acceptCommand(command: RuntimeCommand): Promise<void> {
     if (!command?.command_id || !command.run_id || !command.type) throw new Error("invalid runtime.command payload");
+    const store = this.#store;
+    if (!store) throw new Error("Agent Work runtime store is not open");
     if (command.type === "run.cancel") {
       const active = this.#activeRuns.get(command.run_id);
       const cancelled = active ? (await this.#host.cancel(active.invocationId, "control plane cancel")).cancelled : false;
@@ -265,20 +323,51 @@ export class AgentWorkRuntime {
       this.#ackCommand(command, false, { code: "UNSUPPORTED_COMMAND", message: command.type });
       return;
     }
+    // 重启后仍能去重：同一 command_id 直接回放已保存结果，不重复执行。
+    const receipt = store.getCommandReceipt(command.command_id);
+    if (receipt) {
+      this.#ackCommand(command, receipt.accepted, receipt.error);
+      return;
+    }
+    // 软水位背压：拒绝新 Run，让已有 Outbox 先排空；未 ACK 数据不删除。
+    const softWatermark = this.#options.softWatermarkBytes ?? DEFAULT_SOFT_WATERMARK_BYTES;
+    const hardWatermark = this.#options.hardWatermarkBytes ?? DEFAULT_HARD_WATERMARK_BYTES;
+    const pendingBytes = store.outboxBytes();
+    if (pendingBytes >= hardWatermark) {
+      console.error(`octo-harness Agent Work outbox above hard watermark: ${pendingBytes} bytes (limit ${hardWatermark})`);
+    }
+    if (pendingBytes >= softWatermark) {
+      const error = { code: "OUTBOX_BACKPRESSURE", message: "local outbox above soft watermark" };
+      store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
+      this.#ackCommand(command, false, error);
+      return;
+    }
     if (this.#activeRuns.has(command.run_id)) {
       this.#ackCommand(command, true);
       return;
     }
     let request: InvokeRequest;
     let adapterType: string;
+    let sessionId: string;
     try {
       const mapped = mapExecutionEnvelope(command.payload as ExecutionEnvelope);
       request = mapped.request;
       adapterType = mapped.adapterType;
+      sessionId = request.sessionId;
     } catch (error) {
-      this.#ackCommand(command, false, { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) });
+      const failure = { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) };
+      store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
+      this.#ackCommand(command, false, failure);
       return;
     }
+    store.upsertRun({
+      runId: command.run_id,
+      sessionId,
+      commandId: command.command_id,
+      leaseId: command.lease_id,
+      fencingToken: command.fencing_token
+    });
+    store.recordCommandReceipt(command.command_id, command.server_seq, true);
     this.#activeRuns.set(command.run_id, {
       invocationId: request.invocationId,
       leaseId: command.lease_id,
@@ -289,46 +378,99 @@ export class AgentWorkRuntime {
   }
 
   async #execute(command: RuntimeCommand, adapterType: string, request: InvokeRequest): Promise<void> {
-    let seq = 1;
+    const store = this.#store;
+    if (!store) return;
     let finalText = "";
     try {
-      await this.#sendRunEvent(command, seq++, "run.started", {});
+      store.allocateAndAppend(command.run_id, "run.started", {});
+      this.#kickSender();
       for await (const event of this.#host.invoke(adapterType, request)) {
         if (event.type === "run.running" || event.type === "run.queued") continue;
         finalText = accumulateFinalText(finalText, event);
         const mapped = mapRuntimeEvent(event, finalText);
-        await this.#sendRunEvent(command, seq++, mapped.type, mapped.payload);
+        // 终态事件绕过软水位背压，保证 Run 在持续背压下仍能落盘收尾。
+        if (!TERMINAL_OUTBOX_TYPES.has(mapped.type)) await this.#awaitOutboxCapacity(command.run_id);
+        store.allocateAndAppend(command.run_id, mapped.type, mapped.payload);
+        this.#kickSender();
       }
     } catch (error) {
-      await this.#sendRunEvent(command, seq, "run.failed", {
-        code: "ADAPTER_INVOCATION_FAILED",
-        message: errorMessage(error),
-        text: finalText
-      }).catch(sendError => console.error(`failed to report run failure: ${errorMessage(sendError)}`));
+      try {
+        store.allocateAndAppend(command.run_id, "run.failed", {
+          code: "ADAPTER_INVOCATION_FAILED",
+          message: errorMessage(error),
+          text: finalText
+        });
+        this.#kickSender();
+      } catch (appendError) {
+        console.error(`failed to record run failure: ${errorMessage(appendError)}`);
+      }
     } finally {
       this.#activeRuns.delete(command.run_id);
     }
   }
 
-  async #sendRunEvent(command: RuntimeCommand, seq: number, type: string, payload: Record<string, unknown>): Promise<boolean> {
-    const key = `${command.run_id}:${seq}`;
-    const ack = new Promise<boolean>((resolve, reject) => this.#eventAcks.set(key, { resolve, reject }));
-    this.#send("run.event", {
-      event_id: `event_${randomUUID()}`,
-      run_id: command.run_id,
-      seq,
-      type,
-      payload,
-      lease_id: command.lease_id,
-      fencing_token: command.fencing_token,
-      occurred_at: new Date().toISOString()
-    }, seq);
-    return ack;
+  /** 软水位背压：暂停从 provider 继续读取，直到 Outbox 排空到阈值以下或 Run 结束。 */
+  async #awaitOutboxCapacity(runId: string): Promise<void> {
+    const store = this.#store;
+    const softWatermark = this.#options.softWatermarkBytes ?? DEFAULT_SOFT_WATERMARK_BYTES;
+    while (store && !this.#stopped && this.#activeRuns.has(runId) && store.outboxBytes() >= softWatermark) {
+      await delay(BACKPRESSURE_POLL_MS);
+    }
+  }
+
+  /** 连接可用时按 (run_id, seq) 顺序发送未确认事件；断线只等待，不丢弃。 */
+  async #senderLoop(): Promise<void> {
+    const window = this.#options.sendWindow ?? DEFAULT_SEND_WINDOW;
+    while (!this.#stopped) {
+      const store = this.#store;
+      if (store && this.#connected && this.#socket?.readyState === WebSocket.OPEN) {
+        for (const row of store.listSendable(window)) {
+          const key = `${row.runId}:${row.seq}`;
+          if (this.#inFlight.has(key)) continue;
+          if (this.#socket?.readyState !== WebSocket.OPEN) break;
+          try {
+            this.#send("run.event", {
+              event_id: row.eventId,
+              run_id: row.runId,
+              seq: row.seq,
+              type: row.eventType,
+              payload: row.payload,
+              lease_id: row.leaseId,
+              fencing_token: row.fencingToken,
+              occurred_at: new Date(row.createdAt).toISOString()
+            }, row.seq);
+          } catch {
+            break;
+          }
+          this.#inFlight.add(key);
+          store.markSent(row.runId, row.seq);
+        }
+      }
+      await this.#waitKick(PUMP_POLL_MS);
+    }
+  }
+
+  #waitKick(ms: number): Promise<void> {
+    return new Promise<void>(resolve => {
+      const timer = setTimeout(() => {
+        this.#senderKick = undefined;
+        resolve();
+      }, ms);
+      this.#senderKick = (): void => {
+        clearTimeout(timer);
+        this.#senderKick = undefined;
+        resolve();
+      };
+    });
+  }
+
+  #kickSender(): void {
+    this.#senderKick?.();
   }
 
   #ackCommand(command: RuntimeCommand, accepted: boolean, error?: Record<string, unknown>): void {
-    this.#lastAckedCommandSeq = Math.max(this.#lastAckedCommandSeq, command.server_seq);
-    this.#send("command.ack", {
+    this.#store?.setLastAckedCommandSeq(Math.max(this.#store.lastAckedCommandSeq, command.server_seq));
+    this.#trySend("command.ack", {
       command_id: command.command_id,
       server_seq: command.server_seq,
       accepted,
@@ -350,6 +492,15 @@ export class AgentWorkRuntime {
     } satisfies WireEnvelope));
   }
 
+  /** 发送失败不抛出（心跳/ACK 在断线时可安全丢弃，业务事件由 Outbox 保证重放）。 */
+  #trySend(type: string, payload: unknown, seq?: number, ack?: number): void {
+    try {
+      this.#send(type, payload, seq, ack);
+    } catch {
+      // 忽略：连接已断，下一次连接会重新协商。
+    }
+  }
+
   #headers(json: boolean): Record<string, string> {
     return {
       Authorization: `Bearer ${this.#options.token}`,
@@ -357,11 +508,6 @@ export class AgentWorkRuntime {
       "X-Subject-ID": this.#options.subjectId,
       ...(json ? { "Content-Type": "application/json" } : {})
     };
-  }
-
-  #rejectPendingAcks(error: Error): void {
-    for (const pending of this.#eventAcks.values()) pending.reject(error);
-    this.#eventAcks.clear();
   }
 }
 

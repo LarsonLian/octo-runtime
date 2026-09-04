@@ -15,7 +15,7 @@
 - Codex、Claude Code、CodeBuddy ACP、OpenCode、OpenClaw local、Dify Chatflow 与 Dify Workflow adapters。
 - provider session 恢复、命令 probe、CLI 和契约测试。
 
-这是可运行的架构基线，不是多节点生产调度器。JSON store 假设单 daemon writer；生产环境应替换成事务数据库、outbox、lease/fencing 和鉴权控制面。
+这是可运行的架构基线，不是多节点生产调度器。SQLite (WAL) store 与本地 Agent Work outbox 假设单 daemon writer；生产环境应替换成分布式事务数据库、lease/fencing 和鉴权控制面。
 
 本地 stdio 与跨云 WebSocket 共用上层 Agent 逻辑的目标架构、双向 JSON-RPC 样例、event ACK/重放和多节点 lease 设计见 [Transport And Multi-node](docs/09-transport-and-multinode.md)。该文档描述下一阶段设计，不代表当前代码已经具备跨云运行能力。
 
@@ -59,7 +59,11 @@ pnpm lint
 pnpm test
 ```
 
-`pnpm test` 会先构建全部 workspace。测试不会调用真实模型；它使用测试内 adapter fixture、native event fixtures、真实 fake ACP 子进程、独立 adapter-host 进程和临时 JSON store。
+需要把当前 checkout 编译并链接为全局 `octo-harness` 命令时，执行
+`npm link --foreground-scripts`。本地 link、agent-worker 连接、Runtime token 与未来发布流程见
+[DEPLOYMENTS.md](DEPLOYMENTS.md)。
+
+`pnpm test` 会先构建全部 workspace。测试不会调用真实模型；它使用测试内 adapter fixture、native event fixtures、真实 fake ACP 子进程、独立 adapter-host 进程和临时 SQLite store。
 
 每个 adapter 的运行环境、认证、参数和完整教程统一收录在 [Packages And Adapter Guide](packages/README.md)，并可继续进入各 adapter package 的独立 README。
 
@@ -71,7 +75,7 @@ pnpm test
 pnpm daemon
 ```
 
-默认状态位于 `~/.octo-harness/state.json`，socket 位于
+默认状态位于 `~/.octo-harness/state.db`，socket 位于
 `~/.octo-harness/sockets/octo-harness-daemon.sock`。可显式隔离：
 
 ```bash

@@ -7,9 +7,10 @@ domain model, while keeping Chat, Task, Trigger, Run, provider session and
 streamed events as explicit domain objects.
 
 This is a runnable single-node baseline, **not** a multi-node production
-scheduler. The JSON store assumes a single daemon writer; a production
-deployment should replace it with a transactional database, an outbox, worker
-lease/fencing and an authenticated control plane. The target design for
+scheduler. The SQLite (WAL) store and local Agent Work outbox assume a single
+daemon writer; a production deployment should still replace them with a
+distributed transactional database, worker lease/fencing and an authenticated
+control plane. The target design for
 cross-node operation is described in
 [docs/09-transport-and-multinode.md](docs/09-transport-and-multinode.md); it is
 a next-phase design, not current capability.
@@ -25,8 +26,11 @@ a next-phase design, not current capability.
    transport to look the same. CLI↔daemon is a one-line JSON request/response
    over a Unix socket; daemon↔adapter-host is NDJSON JSON-RPC 2.0 over stdio.
 3. **One writer, atomic persistence.** The daemon is the sole authoritative
-   writer of Chat/Task/Trigger/Run. State is persisted as a versioned JSON
-   snapshot written through a `0600` temp file + atomic rename.
+   writer of Chat/Task/Trigger/Run. State is persisted incrementally to a SQLite
+   (WAL) database (`state.db`, mode `0600`); each state transition is one
+   transaction rather than a full-snapshot rewrite. Agent Work events are written
+   to a local durable outbox before they are sent and deleted only after the
+   cloud durably ACKs them.
 4. **Exactly-once terminal events.** The host stages an adapter's terminal event
    until cleanup succeeds, synthesizes `run.stopped`/`run.error` when an adapter
    misbehaves, and collapses cancellation into a single terminal event. The
@@ -47,7 +51,7 @@ a next-phase design, not current capability.
                                    │  │recover)  │  └─────┬───────┘ │
                                    │  └──────────┘        │         │
                                    │              single-writer     │
-                                   │              JSON store        │
+                                   │              SQLite store      │
                                    └───────────────┬───────────────┘
                                                    │ NDJSON JSON-RPC 2.0
                                                    │ (stdio)
@@ -117,7 +121,7 @@ package imports, not runtime network connections.
 | Package | Core class / fn | Owns | Does NOT own |
 |---|---|---|---|
 | `octo-harness-core` | `HarnessEngine` | Domain objects, state machine, `InvokeRequest` assembly, event envelopes, persistence | IPC, provider-native protocols |
-| `octo-harness-core/store` | `MemoryStore`, `JsonFileStore` | Map indexes, event append, JSON snapshot + atomic rename | Multi-writer transactions, distributed lease |
+| `octo-harness-core/store` | `MemoryStore`, `SqliteStore` | Repository methods, idempotent event append, incremental SQLite (WAL) writes | Multi-writer transactions, distributed lease |
 | `octo-harness-protocol` | `InvokeRequest`, `CanonicalEvent`, `EventEnvelope` | Shared types + minimal runtime validation (generated from a JSON Schema source of truth) | Scheduling policy, I/O |
 | `octo-harness-daemon` | `HarnessDaemon` | Trigger matching, queueing, `setImmediate` background execution, interval timers, wait, cancel, restart recovery | Building provider commands |
 
@@ -218,11 +222,11 @@ transport seq today.
 
 ## Persistence And Recovery
 
-`JsonFileStore` writes all Maps to a versioned JSON snapshot using a `0600` temp
-file + atomic rename. Default state lives at `~/.octo-harness/state.json`
-(overridable via `OCTO_HARNESS_HOME`); the socket lives at
-`~/.octo-harness/sockets/octo-harness-daemon.sock`. The daemon is the single
-writer. On restart:
+`SqliteStore` persists each state transition incrementally to a SQLite (WAL)
+database via repository methods wrapped in a transaction. Default state lives at
+`~/.octo-harness/state.db` (overridable via `OCTO_HARNESS_HOME`); the socket
+lives at `~/.octo-harness/sockets/octo-harness-daemon.sock`. The daemon is the
+single writer. On restart:
 
 - Queued runs are re-enqueued.
 - A materialized-but-run-less queued Task rebuilds its Attempt/Run and enqueues.
@@ -256,14 +260,15 @@ runtime (container, VM or equivalent), not enforced by the harness.
 
 Honest current-state caveats (tracked, not hidden):
 
-- **Single-writer JSON store.** No multi-writer transactions, no lease/fencing.
-  Concurrent runs share mutable Maps; cross-run session fields
+- **Single-writer SQLite store.** No multi-writer transactions, no lease/fencing.
+  A single daemon owns `state.db` (WAL); cross-run session fields
   (`providerSession`, `activeRunId`) are protected only by check-then-set at
   `await` boundaries, not by a lock. This is safe enough for a single local
   daemon but is a real replacement point for production.
-- **Persistence chain fragility.** The commit chain is serialized through a
-  single promise; a failed write must not be allowed to poison subsequent
-  commits. Treat store durability as a hardening target before production use.
+- **Local durability, not cloud durability.** The Agent Work outbox guarantees a
+  produced event survives daemon restart and is replayed until the cloud ACKs it,
+  but the daemon is still a single node. Distributed durability, lease/fencing and
+  large-payload blob externalization remain hardening targets before production use.
 - **`Task.status` currently mirrors `RunStatus`.** The concept model
   ([docs/12](docs/12-aily-task-agent-run-concept-model.md)) distinguishes Task
   *business* status (todo/in_progress/in_review/blocked/done) from Run

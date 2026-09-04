@@ -3,6 +3,7 @@ import {
   isTerminal,
   type AgentConfig,
   type CanonicalEvent,
+  type EventEnvelope,
   type InvokeRequest
 } from "@mininglamp-oss/octo-harness-protocol";
 import { randomUUID } from "node:crypto";
@@ -97,14 +98,13 @@ export class HarnessEngine {
       adapterType: input.adapterType,
       config: input.config ?? {}
     };
-    this.store.agents.set(agent.id, agent);
-    await this.store.commit();
+    await this.store.transaction(() => this.store.putAgent(agent));
     return agent;
   }
 
   /** 创建并启用 Trigger 规则；不会在创建时物化 Task。 */
   async createTrigger(input: CreateTriggerInput): Promise<Trigger> {
-    if (!this.store.agents.has(input.agentId)) throw new Error(`agent not found: ${input.agentId}`);
+    if (!this.store.hasAgent(input.agentId)) throw new Error(`agent not found: ${input.agentId}`);
     if (!input.task?.title || !input.task?.description) throw new Error("trigger.task title and description are required");
     if (!new Set<TriggerKind>(["manual", "event", "interval"]).has(input.kind)) throw new Error(`unsupported trigger kind: ${input.kind}`);
     if (input.kind === "event" && !input.eventType) throw new Error("event trigger requires eventType");
@@ -112,8 +112,7 @@ export class HarnessEngine {
       throw new Error("interval trigger requires everyMs >= 1000");
     }
     const trigger: Trigger = { ...input, id: input.id ?? id("trigger"), enabled: true };
-    this.store.triggers.set(trigger.id, trigger);
-    await this.store.commit();
+    await this.store.transaction(() => this.store.putTrigger(trigger));
     return trigger;
   }
 
@@ -125,21 +124,20 @@ export class HarnessEngine {
     triggerId: string,
     { externalEventId, payload = {} }: TriggerInput
   ): Promise<{ deduplicated: boolean; occurrence: TriggerOccurrence; task: Task }> {
-    const trigger = this.store.triggers.get(triggerId);
+    const trigger = this.store.getTrigger(triggerId);
     if (!trigger?.enabled) throw new Error("trigger is missing or disabled");
     if (typeof externalEventId !== "string" || !externalEventId) throw new Error("externalEventId is required");
-    const dedupeKey = `${triggerId}:${externalEventId}`;
-    const existing = this.store.occurrences.get(dedupeKey);
+    const existing = this.store.getOccurrenceByKey(triggerId, externalEventId);
     // 同一个外部事件只能物化一次，重试时返回原 task，避免重复执行副作用。
     if (existing) {
-      const task = this.store.tasks.get(existing.taskId);
+      const task = this.store.getTask(existing.taskId);
       if (!task) throw new Error(`deduplicated occurrence has no task: ${existing.id}`);
       return { deduplicated: true, occurrence: existing, task };
     }
 
     const taskId = id("task");
     const sessionId = id("session");
-    // 三个对象在一次 commit 中建立关系，避免出现有 Occurrence 却找不到 Task/Session 的半成品。
+    // 三个对象在一次事务中建立关系，避免出现有 Occurrence 却找不到 Task/Session 的半成品。
     const occurrence: TriggerOccurrence = {
       id: id("occ"),
       triggerId,
@@ -159,10 +157,11 @@ export class HarnessEngine {
       createdAt: Date.now()
     };
     const session: Session = { id: sessionId, type: "task", status: "active" };
-    this.store.occurrences.set(dedupeKey, occurrence);
-    this.store.tasks.set(task.id, task);
-    this.store.sessions.set(session.id, session);
-    await this.store.commit();
+    await this.store.transaction(() => {
+      this.store.putOccurrence(occurrence);
+      this.store.putTask(task);
+      this.store.putSession(session);
+    });
     return { deduplicated: false, occurrence, task };
   }
 
@@ -176,7 +175,7 @@ export class HarnessEngine {
     title?: string;
     channel?: string;
   }): Promise<Session> {
-    if (!this.store.agents.has(agentId)) throw new Error(`agent not found: ${agentId}`);
+    if (!this.store.hasAgent(agentId)) throw new Error(`agent not found: ${agentId}`);
     const session: Session = {
       id: id("session"),
       type: "chat",
@@ -186,8 +185,7 @@ export class HarnessEngine {
       status: "active",
       createdAt: Date.now()
     };
-    this.store.sessions.set(session.id, session);
-    await this.store.commit();
+    await this.store.transaction(() => this.store.putSession(session));
     return session;
   }
 
@@ -196,16 +194,18 @@ export class HarnessEngine {
    * 它不执行 provider，适合 daemon 先持久化再快速 ACK。
    */
   async queueChatTurn(sessionId: string, prompt: string): Promise<{ session: Session; run: Run }> {
-    const session = this.store.sessions.get(sessionId);
+    const session = this.store.getSession(sessionId);
     if (!session || session.type !== "chat") throw new Error(`chat session not found: ${sessionId}`);
     // 同一 session 并发调用会争用 provider session/history，因此 reference model 强制串行。
     if (session.activeRunId) throw new Error(`chat already has an active run: ${session.activeRunId}`);
     if (typeof prompt !== "string" || !prompt.trim()) throw new Error("chat prompt is required");
     const run: Run = { id: id("run"), sessionId, status: "queued", nextSeq: 1, prompt };
     session.activeRunId = run.id;
-    this.store.runs.set(run.id, run);
-    this.store.appendEvent(envelope(run, run.nextSeq++, { type: "run.queued", payload: { sourceType: "chat" } }));
-    await this.store.commit();
+    await this.store.transaction(() => {
+      this.store.appendEvent(envelope(run, run.nextSeq++, { type: "run.queued", payload: { sourceType: "chat" } }));
+      this.store.putRun(run);
+      this.store.putSession(session);
+    });
     return { session, run };
   }
 
@@ -215,10 +215,10 @@ export class HarnessEngine {
    */
   async queueTask(taskId: string, input: QueueTaskInput = {}): Promise<{ task: Task; attempt: Attempt; run: Run }> {
     const { occurrenceId, sourceType = "manual", sourceId } = input;
-    const task = this.store.tasks.get(taskId);
+    const task = this.store.getTask(taskId);
     if (!task) throw new Error(`task not found: ${taskId}`);
     if (task.activeRunId) throw new Error(`task already has an active run: ${task.activeRunId}`);
-    const prior = [...this.store.attempts.values()].filter(item => item.taskId === taskId);
+    const prior = this.store.listAttemptsByTask(taskId);
     const attemptId = id("attempt");
     const runId = id("run");
     const attempt: Attempt = {
@@ -234,10 +234,12 @@ export class HarnessEngine {
     const run: Run = { id: runId, sessionId: task.sessionId, attemptId, status: "queued", nextSeq: 1 };
     task.activeRunId = run.id;
     task.status = "queued";
-    this.store.attempts.set(attempt.id, attempt);
-    this.store.runs.set(run.id, run);
-    this.store.appendEvent(envelope(run, run.nextSeq++, { type: "run.queued", payload: { attemptId: attempt.id } }));
-    await this.store.commit();
+    await this.store.transaction(() => {
+      this.store.appendEvent(envelope(run, run.nextSeq++, { type: "run.queued", payload: { attemptId: attempt.id } }));
+      this.store.putAttempt(attempt);
+      this.store.putRun(run);
+      this.store.putTask(task);
+    });
     return { task, attempt, run };
   }
 
@@ -248,16 +250,16 @@ export class HarnessEngine {
   async executeRun(
     runId: string,
     perTurn = ""
-  ): Promise<{ task?: Task; attempt?: Attempt; run: Run; events: ReturnType<Store["events"]["get"]> }> {
-    const run = this.store.runs.get(runId);
+  ): Promise<{ task?: Task; attempt?: Attempt; run: Run; events: EventEnvelope[] }> {
+    const run = this.store.getRun(runId);
     if (!run) throw new Error(`run not found: ${runId}`);
     if (run.status !== "queued") throw new Error(`run is not queued: ${run.status}`);
-    const attempt = run.attemptId ? this.store.attempts.get(run.attemptId) : undefined;
-    const task = attempt ? this.store.tasks.get(attempt.taskId) : undefined;
-    const session = this.store.sessions.get(run.sessionId);
+    const attempt = run.attemptId ? this.store.getAttempt(run.attemptId) : undefined;
+    const task = attempt ? this.store.getTask(attempt.taskId) : undefined;
+    const session = this.store.getSession(run.sessionId);
     if (!session) throw new Error(`session not found for run: ${run.id}`);
     if (attempt && !task) throw new Error(`task not found for attempt: ${attempt.id}`);
-    const agent = this.store.agents.get(task?.agentId ?? session.agentId ?? "");
+    const agent = this.store.getAgent(task?.agentId ?? session.agentId ?? "");
     if (!agent) throw new Error(`agent not found for run: ${run.id}`);
     // running 状态必须先于 provider 调用落盘；崩溃恢复才能区分 queued 与已启动但失联的 Run。
     run.status = "running";
@@ -265,12 +267,18 @@ export class HarnessEngine {
       attempt.status = "running";
       task.status = "running";
     }
-    this.store.appendEvent(envelope(run, run.nextSeq++, { type: "run.running", payload: {} }));
-    await this.store.commit();
+    await this.store.transaction(() => {
+      this.store.appendEvent(envelope(run, run.nextSeq++, { type: "run.running", payload: {} }));
+      this.store.putRun(run);
+      if (attempt && task) {
+        this.store.putAttempt(attempt);
+        this.store.putTask(task);
+      }
+    });
 
     // Chat 和 Task 到这里已经收敛成同一种 Run；差异只存在于上下文和提示词来源。
     const occurrence = attempt?.triggerOccurrenceId
-      ? [...this.store.occurrences.values()].find(item => item.id === attempt.triggerOccurrenceId)
+      ? this.store.findOccurrenceById(attempt.triggerOccurrenceId)
       : undefined;
     const context = composeContext({ agent, session, task, attempt, occurrence });
     const request: InvokeRequest = {
@@ -287,25 +295,31 @@ export class HarnessEngine {
     run.invocationId = request.invocationId;
     // Host 保证消息生命周期和 terminal exactly-once；Core 只负责领域状态投影与持久化。
     for await (const event of this.host.invoke(agent.adapterType, request)) {
-      this.store.appendEvent(envelope(run, run.nextSeq++, event));
-      if (event.type === "session.update" && event.payload.providerSession) {
-        // provider session 是恢复执行的旁路状态，不混进用户可见消息文本。
-        session.providerSession = event.payload.providerSession;
-      }
-      if (isTerminal(event)) {
-        // Run 终态同时投影到 Attempt/Task，并释放 session 的单活动 Run 锁。
-        run.status = event.type === "run.finished" ? "completed" : event.type === "run.stopped" ? "cancelled" : "failed";
-        if (attempt && task) {
-          attempt.status = run.status;
-          task.status = run.status;
-          delete task.activeRunId;
-        } else {
-          delete session.activeRunId;
+      await this.store.transaction(() => {
+        this.store.appendEvent(envelope(run, run.nextSeq++, event));
+        if (event.type === "session.update" && event.payload.providerSession) {
+          // provider session 是恢复执行的旁路状态，不混进用户可见消息文本。
+          session.providerSession = event.payload.providerSession;
+          this.store.putSession(session);
         }
-      }
-      await this.store.commit();
+        if (isTerminal(event)) {
+          // Run 终态同时投影到 Attempt/Task，并释放 session 的单活动 Run 锁。
+          run.status = event.type === "run.finished" ? "completed" : event.type === "run.stopped" ? "cancelled" : "failed";
+          if (attempt && task) {
+            attempt.status = run.status;
+            task.status = run.status;
+            delete task.activeRunId;
+            this.store.putAttempt(attempt);
+            this.store.putTask(task);
+          } else {
+            delete session.activeRunId;
+            this.store.putSession(session);
+          }
+        }
+        this.store.putRun(run);
+      });
     }
-    return { task, attempt, run, events: this.store.events.get(run.id) };
+    return { task, attempt, run, events: this.store.getEvents(run.id) };
   }
 
   /** 同步便利 API：物化 Trigger、创建 Attempt/Run，并等待 provider 执行完成。 */
@@ -341,21 +355,26 @@ export class HarnessEngine {
    */
   async terminalizeRun(runId: string, event: CanonicalEvent): Promise<Run | undefined> {
     if (!isTerminal(event)) throw new TypeError("terminal event required");
-    const run = this.store.runs.get(runId);
+    const run = this.store.getRun(runId);
     if (!run || ["completed", "failed", "cancelled"].includes(run.status)) return run;
-    const attempt = run.attemptId ? this.store.attempts.get(run.attemptId) : undefined;
-    const task = attempt ? this.store.tasks.get(attempt.taskId) : undefined;
-    const session = this.store.sessions.get(run.sessionId);
-    this.store.appendEvent(envelope(run, run.nextSeq++, event));
+    const attempt = run.attemptId ? this.store.getAttempt(run.attemptId) : undefined;
+    const task = attempt ? this.store.getTask(attempt.taskId) : undefined;
+    const session = this.store.getSession(run.sessionId);
     run.status = event.type === "run.finished" ? "completed" : event.type === "run.stopped" ? "cancelled" : "failed";
-    if (attempt && task) {
-      attempt.status = run.status;
-      task.status = run.status;
-      delete task.activeRunId;
-    } else if (session) {
-      delete session.activeRunId;
-    }
-    await this.store.commit();
+    await this.store.transaction(() => {
+      this.store.appendEvent(envelope(run, run.nextSeq++, event));
+      if (attempt && task) {
+        attempt.status = run.status;
+        task.status = run.status;
+        delete task.activeRunId;
+        this.store.putAttempt(attempt);
+        this.store.putTask(task);
+      } else if (session) {
+        delete session.activeRunId;
+        this.store.putSession(session);
+      }
+      this.store.putRun(run);
+    });
     return run;
   }
 
@@ -364,7 +383,7 @@ export class HarnessEngine {
    * 最终状态仍以随后到达的 `run.stopped/error/finished` 事件为准。
    */
   async cancelRun(runId: string, reason = "cancelled"): Promise<{ cancelled: boolean; status: Run["status"] }> {
-    const run = this.store.runs.get(runId);
+    const run = this.store.getRun(runId);
     if (!run) throw new Error(`run not found: ${runId}`);
     if (["completed", "failed", "cancelled"].includes(run.status)) return { cancelled: false, status: run.status };
     if (run.status === "queued") {

@@ -14,7 +14,7 @@ export function resolveDaemonRuntimePaths(
       ["--socket"],
       env.OCTO_HARNESS_SOCKET ?? join(home, "sockets", "octo-harness-daemon.sock")
     )),
-    storePath: resolve(option(args, ["--store"], env.OCTO_HARNESS_STORE ?? join(home, "state.json"))),
+    storePath: resolve(option(args, ["--store"], env.OCTO_HARNESS_STORE ?? join(home, "state.db"))),
     manifestPath: resolve(option(
       args,
       ["--manifest"],
@@ -25,25 +25,68 @@ export function resolveDaemonRuntimePaths(
       ["--adapter-host", "--host-entrypoint"],
       env.OCTO_HARNESS_ADAPTER_HOST ?? fileURLToPath(new URL("../../adapter-host/dist/index.js", import.meta.url))
     )),
-    agentWork: resolveAgentWorkOptions(env)
+    agentWork: resolveAgentWorkOptions(args, env, home)
   };
 }
 
-function resolveAgentWorkOptions(env: NodeJS.ProcessEnv): StartDaemonServerOptions["agentWork"] {
-  const baseUrl = env.OCTO_HARNESS_AGENT_WORK_URL?.trim();
+function resolveAgentWorkOptions(
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  home: string
+): StartDaemonServerOptions["agentWork"] {
+  const baseUrl = optionalOption(args, ["--agent-work-url"], env.OCTO_HARNESS_AGENT_WORK_URL);
   if (!baseUrl) return undefined;
   const token = requiredEnv(env, "OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN");
-  const tenantId = requiredEnv(env, "OCTO_HARNESS_AGENT_WORK_TENANT_ID");
-  const subjectId = requiredEnv(env, "OCTO_HARNESS_AGENT_WORK_SUBJECT_ID");
+  const tenantId = requiredOption(
+    args,
+    ["--agent-work-tenant-id"],
+    env.OCTO_HARNESS_AGENT_WORK_TENANT_ID,
+    "OCTO_HARNESS_AGENT_WORK_TENANT_ID"
+  );
+  const subjectId = requiredOption(
+    args,
+    ["--agent-work-subject-id"],
+    env.OCTO_HARNESS_AGENT_WORK_SUBJECT_ID,
+    "OCTO_HARNESS_AGENT_WORK_SUBJECT_ID"
+  );
   return {
     baseUrl,
     token,
     tenantId,
     subjectId,
-    runtimeId: env.OCTO_HARNESS_AGENT_WORK_RUNTIME_ID?.trim() || undefined,
-    runtimeName: env.OCTO_HARNESS_AGENT_WORK_RUNTIME_NAME?.trim() || "octo-harness-local",
-    fingerprint: env.OCTO_HARNESS_AGENT_WORK_FINGERPRINT?.trim() || `octo-harness:${process.platform}:${process.arch}`
+    runtimeId: optionalOption(args, ["--agent-work-runtime-id"], env.OCTO_HARNESS_AGENT_WORK_RUNTIME_ID),
+    runtimeName: optionalOption(
+      args,
+      ["--agent-work-runtime-name"],
+      env.OCTO_HARNESS_AGENT_WORK_RUNTIME_NAME
+    ) ?? "octo-harness-local",
+    fingerprint: optionalOption(
+      args,
+      ["--agent-work-fingerprint"],
+      env.OCTO_HARNESS_AGENT_WORK_FINGERPRINT
+    ) ?? `octo-harness:${process.platform}:${process.arch}`,
+    storePath: resolve(optionalOption(
+      args,
+      ["--agent-work-db"],
+      env.OCTO_HARNESS_AGENT_WORK_DB
+    ) ?? join(home, "agent-work.db")),
+    ...optionalNumber(args, ["--agent-work-send-window"], env.OCTO_HARNESS_AGENT_WORK_SEND_WINDOW, "sendWindow"),
+    ...optionalNumber(args, ["--agent-work-soft-bytes"], env.OCTO_HARNESS_AGENT_WORK_SOFT_BYTES, "softWatermarkBytes"),
+    ...optionalNumber(args, ["--agent-work-hard-bytes"], env.OCTO_HARNESS_AGENT_WORK_HARD_BYTES, "hardWatermarkBytes")
   };
+}
+
+function optionalNumber(
+  args: string[],
+  names: string[],
+  fallback: string | undefined,
+  key: string
+): Record<string, number> {
+  const raw = optionalOption(args, names, fallback);
+  if (raw === undefined) return {};
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) throw new Error(`${names[0]} must be a positive number`);
+  return { [key]: value };
 }
 
 function requiredEnv(env: NodeJS.ProcessEnv, name: string): string {
@@ -53,12 +96,24 @@ function requiredEnv(env: NodeJS.ProcessEnv, name: string): string {
 }
 
 export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[] {
-  return [
+  const args = [
     "--socket", paths.socketPath,
     "--store", paths.storePath,
     "--manifest", paths.manifestPath,
     "--adapter-host", paths.hostEntrypoint
   ];
+  if (paths.agentWork) {
+    args.push(
+      "--agent-work-url", paths.agentWork.baseUrl,
+      "--agent-work-tenant-id", paths.agentWork.tenantId,
+      "--agent-work-subject-id", paths.agentWork.subjectId,
+      "--agent-work-runtime-name", paths.agentWork.runtimeName,
+      "--agent-work-fingerprint", paths.agentWork.fingerprint,
+      "--agent-work-db", paths.agentWork.storePath
+    );
+    if (paths.agentWork.runtimeId) args.push("--agent-work-runtime-id", paths.agentWork.runtimeId);
+  }
+  return args;
 }
 
 function option(args: string[], names: string[], fallback: string): string {
@@ -70,4 +125,26 @@ function option(args: string[], names: string[], fallback: string): string {
     return value;
   }
   return fallback;
+}
+
+function optionalOption(
+  args: string[],
+  names: string[],
+  fallback: string | undefined
+): string | undefined {
+  const value = option(args, names, fallback ?? "").trim();
+  return value || undefined;
+}
+
+function requiredOption(
+  args: string[],
+  names: string[],
+  fallback: string | undefined,
+  environmentName: string
+): string {
+  const value = optionalOption(args, names, fallback);
+  if (!value) {
+    throw new Error(`${names[0]} or ${environmentName} is required when Agent Work is enabled`);
+  }
+  return value;
 }
