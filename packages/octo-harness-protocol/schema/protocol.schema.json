@@ -8,25 +8,25 @@
   "definitions": {
     "MessageChannel": {
       "title": "MessageChannel",
-      "description": "assistant 输出频道。analysis 只表示推理类内容，是否允许向 viewer 展示必须再检查 exposure；final 用于面向用户的回答。",
+      "description": "Assistant output channel. analysis identifies reasoning-class content whose exposure must be authorized separately; final is user-facing output.",
       "type": "string",
       "enum": ["analysis", "final"]
     },
     "MessageExposure": {
       "title": "MessageExposure",
-      "description": "Adapter 对 analysis 消息内容性质的可信分类。只有 public_summary/public_plan 可进入公开 Presentation；缺失字段必须按 unknown 处理。",
+      "description": "Adapter-authenticated classification of analysis content. Only public_summary and public_plan may enter a public Presentation; missing values are unknown.",
       "type": "string",
       "enum": ["public_summary", "public_plan", "private_reasoning", "unknown"]
     },
     "MessageProvenance": {
       "title": "MessageProvenance",
-      "description": "Adapter 写入的 provider 原生来源。Audience projector 用它审计公开 exposure，不能由客户端覆盖。",
+      "description": "Provider-native provenance written by the adapter. Audience projectors use it to audit public exposure and clients cannot override it.",
       "type": "object",
       "additionalProperties": false,
       "required": ["provider", "nativeEvent"],
       "properties": {
-        "provider": { "description": "产生消息的 adapter/provider 类型。", "type": "string" },
-        "nativeEvent": { "description": "被归一化的 provider 原生事件类型。", "type": "string" }
+        "provider": { "description": "Adapter or provider type that produced the message.", "type": "string" },
+        "nativeEvent": { "description": "Provider-native event type that was normalized.", "type": "string" }
       }
     },
     "ProviderSession": {

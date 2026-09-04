@@ -5,14 +5,14 @@
  */
 
 /**
- * assistant 输出频道。analysis 只表示推理类内容，是否允许向 viewer 展示必须再检查 exposure；final 用于面向用户的回答。
+ * Assistant output channel. analysis identifies reasoning-class content whose exposure must be authorized separately; final is user-facing output.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "MessageChannel".
  */
 export type MessageChannel = "analysis" | "final";
 /**
- * Adapter 对 analysis 消息内容性质的可信分类。只有 public_summary/public_plan 可进入公开 Presentation；缺失字段必须按 unknown 处理。
+ * Adapter-authenticated classification of analysis content. Only public_summary and public_plan may enter a public Presentation; missing values are unknown.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "MessageExposure".
@@ -24,18 +24,18 @@ export type MessageExposure = "public_summary" | "public_plan" | "private_reason
  */
 export interface OctoHarnessProtocolSchema {}
 /**
- * Adapter 写入的 provider 原生来源。Audience projector 用它审计公开 exposure，不能由客户端覆盖。
+ * Provider-native provenance written by the adapter. Audience projectors use it to audit public exposure and clients cannot override it.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "MessageProvenance".
  */
 export interface MessageProvenance {
   /**
-   * 产生消息的 adapter/provider 类型。
+   * Adapter or provider type that produced the message.
    */
   provider: string;
   /**
-   * 被归一化的 provider 原生事件类型。
+   * Provider-native event type that was normalized.
    */
   nativeEvent: string;
 }
