@@ -16,7 +16,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 import {
   type CanonicalEvent,
-  type InvokeRequest
+  type InvokeRequest,
+  type MessageExposure
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
 
 const APP_SERVER_REQUEST_TIMEOUT_MS = 30_000;
@@ -255,9 +256,11 @@ export function normalizeCodexEvent(native: CodexAppServerNotification): Canonic
     case "item/agentMessage/delta":
       return textDelta(params, "final");
     case "item/reasoning/summaryTextDelta":
+      return textDelta(params, "analysis", "public_summary", "item/reasoning/summaryTextDelta");
     case "item/reasoning/textDelta":
+      return textDelta(params, "analysis", "private_reasoning", "item/reasoning/textDelta");
     case "item/plan/delta":
-      return textDelta(params, "analysis");
+      return textDelta(params, "analysis", "public_plan", "item/plan/delta");
     case "item/commandExecution/outputDelta":
     case "item/fileChange/outputDelta": {
       const id = itemId(params);
@@ -700,16 +703,29 @@ function appServerRequestTimeout(request: InvokeRequest): number {
 }
 
 /**
- * 文本 delta 原样保序，并保留 analysis/final 频道。
- * analysis 只代表 provider 公开的 reasoning summary/plan，不是完整私有 chain-of-thought。
+ * Text deltas preserve provider arrival order. Analysis deltas additionally carry
+ * an adapter-signed exposure classification so a presentation can fail closed.
  */
-function textDelta(params: JsonRecord, channel: "analysis" | "final"): CanonicalEvent[] {
+function textDelta(
+  params: JsonRecord,
+  channel: "analysis" | "final",
+  exposure?: MessageExposure,
+  nativeEvent?: string
+): CanonicalEvent[] {
   const text = stringValue(params.delta);
   if (!text) return [];
   const id = itemId(params);
   return [{
     type: "message.delta",
-    payload: { text, channel, ...(id ? { messageId: id } : {}) }
+    payload: {
+      text,
+      channel,
+      ...(id ? { messageId: id } : {}),
+      ...(exposure && nativeEvent ? {
+        exposure,
+        provenance: { provider: "codex", nativeEvent }
+      } : {})
+    }
   }];
 }
 
@@ -743,9 +759,17 @@ function itemStartedEvents(item: JsonRecord | undefined): CanonicalEvent[] {
     }];
   }
   if (type === "reasoning" || type === "plan") {
+    const exposure: MessageExposure = type === "plan" ? "public_plan" : "unknown";
     return [{
       type: "message.create",
-      payload: { role: "assistant", status: "streaming", channel: "analysis", ...(id ? { messageId: id } : {}) }
+      payload: {
+        role: "assistant",
+        status: "streaming",
+        channel: "analysis",
+        exposure,
+        provenance: { provider: "codex", nativeEvent: "item/started" },
+        ...(id ? { messageId: id } : {})
+      }
     }];
   }
   const tool = toolDescriptor(item);
@@ -773,15 +797,18 @@ function itemCompletedEvents(item: JsonRecord | undefined): CanonicalEvent[] {
     }];
   }
   if (type === "reasoning" || type === "plan") {
+    const exposure: MessageExposure = type === "plan" ? "public_plan" : "public_summary";
     const text = type === "plan"
       ? stringValue(item.text)
-      : [...stringArray(item.summary), ...stringArray(item.content)].join("\n");
+      : stringArray(item.summary).join("\n") || undefined;
     return [{
       type: "message.update",
       payload: {
         role: "assistant",
         status: "completed",
         channel: "analysis",
+        exposure,
+        provenance: { provider: "codex", nativeEvent: "item/completed" },
         ...(id ? { messageId: id } : {}),
         ...(text ? { text } : {})
       }

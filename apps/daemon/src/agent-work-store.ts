@@ -208,8 +208,8 @@ export class AgentWorkStore {
   }
 
   /** Return events still pending send in (run_id, seq) order: seq beyond the
-   * run's received watermark. The received watermark (not durable) gates
-   * resend, so a batch already held in Worker memory is not resent. */
+   * run's connection-local received watermark. A new transport connection
+   * rewinds received to durable because Worker memory may have been lost. */
   listSendable(limit: number): OutboxRow[] {
     return this.#db.prepare(
       `SELECT o.run_id, o.seq, o.event_id, o.event_type, o.payload_json, o.created_at, r.lease_id, r.fencing_token
@@ -238,6 +238,17 @@ export class AgentWorkStore {
   markSent(runId: string, seq: number, at = Date.now()): void {
     this.#db.prepare("UPDATE event_outbox SET last_sent_at = ?, send_attempts = send_attempts + 1 WHERE run_id = ? AND seq = ?")
       .run(at, runId, seq);
+  }
+
+  /** Worker received state is memory-only. On every new WebSocket session,
+   * replay everything not covered by the durable watermark. Duplicate rows
+   * are harmless because Worker folds canonical seq idempotently. */
+  prepareReplayAfterReconnect(at = Date.now()): number {
+    return Number(this.#db.prepare(
+      `UPDATE runs
+       SET received_through_seq = durable_through_seq, updated_at = ?
+       WHERE received_through_seq > durable_through_seq`
+    ).run(at).changes);
   }
 
   /**

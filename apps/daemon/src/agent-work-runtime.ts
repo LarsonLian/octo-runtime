@@ -274,6 +274,10 @@ export class AgentWorkRuntime {
     if (envelope.type === "runtime.welcome") {
       const payload = asRecord(envelope.payload);
       const everyMs = typeof payload.heartbeat_every_ms === "number" ? payload.heartbeat_every_ms : 30_000;
+      // received ACK only proves that the previous Worker process held the
+      // batch in memory. A new socket may point at a restarted Worker, so the
+      // local Outbox must replay every row not covered by durable ACK.
+      this.#store?.prepareReplayAfterReconnect();
       this.#connected = true;
       if (this.#heartbeat) clearInterval(this.#heartbeat);
       this.#heartbeat = setInterval(() => this.#trySend("runtime.heartbeat", { runtime_version: "0.1.0" }), everyMs);

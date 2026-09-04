@@ -56,6 +56,15 @@ console.log(stored.seq, isTerminal(event));
 
 canonical event ledger 保存原始输入用于执行追踪；向产品 surface 投影前必须在服务端完成授权过滤与敏感字段脱敏。
 
+### Analysis 暴露分类
+
+`channel=analysis` 只区分消息通道，不代表内容可以直接公开。内置 adapter 会额外写入：
+
+- `exposure=public_summary | public_plan | private_reasoning | unknown`；
+- `provenance={provider,nativeEvent}`，记录 adapter 判定所依据的 provider 原生事件。
+
+只有 `public_summary` 和 `public_plan` 可以进入公开 Presentation。旧 adapter 缺少 `exposure` 时，Adapter Host 会补成 `unknown`；显式 exposure 没有合法 provenance 会被协议校验拒绝。consumer 仍必须把缺失、`unknown` 和 `private_reasoning` 当作不可公开内容，不能只检查 `channel=analysis`。
+
 事件生命周期和 JSON-RPC 映射见 [Architecture](../../docs/01-architecture.md) 与 [Transport And Multi-node](../../docs/09-transport-and-multinode.md)。
 
 ## 协议真值：JSON Schema + Codegen
@@ -66,7 +75,7 @@ canonical event ledger 保存原始输入用于执行追踪；向产品 surface 
 schema/protocol.schema.json → scripts/gen-types.mjs → src/generated/protocol-types.ts → src/index.ts 组合
 ```
 
-- **schema 覆盖**：`ProviderSession`、`AgentConfig`、`CanonicalEventPayload`、`ToolCallCreatePayload`、`ToolCallDeltaPayload`、`ToolCallUpdatePayload`、`RunIdentity`、`InvokeRequestWire`、`MessageChannel` 等可 JSON 序列化的结构体。
+- **schema 覆盖**：`ProviderSession`、`AgentConfig`、`CanonicalEventPayload`、`ToolCallCreatePayload`、`ToolCallDeltaPayload`、`ToolCallUpdatePayload`、`RunIdentity`、`InvokeRequestWire`、`MessageChannel`、`MessageExposure`、`MessageProvenance` 等可 JSON 序列化的结构体。
 - **仍手写**（不是纯数据，codegen 无法表达）：`CANONICAL_EVENT_TYPES` 等运行时枚举常量、泛型 `CanonicalEvent<TType>`、以及带 `AbortSignal` 的 `InvokeRequest`（= 生成的 `InvokeRequestWire` 交叉 `signal`）。
 - **公共导出面不变**：所有类型名与运行时函数保持原样，消费方无需改动。
 

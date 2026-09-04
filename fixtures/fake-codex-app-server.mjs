@@ -80,7 +80,7 @@ reader.on("line", line => {
         turnId: "turn-1",
         item: { type: "reasoning", id: "reasoning-1", summary: [], content: [] }
       });
-      notify("item/reasoning/textDelta", {
+      notify("item/reasoning/summaryTextDelta", {
         threadId: activeThreadId,
         turnId: "turn-1",
         itemId: "reasoning-1",
@@ -126,7 +126,7 @@ reader.on("line", line => {
         turnId: "turn-1",
         item: { type: "reasoning", id: "reasoning-2", summary: [], content: [] }
       });
-      notify("item/reasoning/textDelta", {
+      notify("item/reasoning/summaryTextDelta", {
         threadId: activeThreadId,
         turnId: "turn-1",
         itemId: "reasoning-2",

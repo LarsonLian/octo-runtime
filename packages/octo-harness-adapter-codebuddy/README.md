@@ -121,7 +121,7 @@ adapter 不通过 CLI 参数删减 provider 的工具目录。ACP server 反向�
 
 - `session/new/load` 的 ID -> `session.update`。
 - `agent_message_chunk` -> final `message.delta`。
-- `agent_thought_chunk` -> analysis `message.delta`。
+- `agent_thought_chunk` -> analysis `message.delta`，并标记 `exposure=unknown` 与 CodeBuddy provenance；ACP 事件没有更强的公开语义，因此默认不进入公开 Presentation。
 - `tool_call` / `tool_call_update` -> canonical tool lifecycle。
 - prompt result usage -> `usage.update`。
 - 正常 stream 结束 -> `message.update` + `run.finished`。

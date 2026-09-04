@@ -216,7 +216,7 @@ run.finished
 
 | 事件 | agent-work/runtime 内部消费方式 |
 |---|---|
-| `message.* channel=analysis` | 立即保序转发给 canonical ledger；它只表示 provider 暴露的 reasoning summary/plan，不是可直接公开给任意 viewer 的私有思维链 |
+| `message.* channel=analysis` | 立即保序转发给 canonical ledger；必须再按 `exposure` 判断内容是公开 summary/plan、私有 reasoning 还是 unknown，不能仅凭 channel 向 viewer 公开 |
 | `message.* channel=final` | 按 `messageId` 累积 item；不要等到 `run.finished` 才丢弃中间 item，`message.update.text` 是完成 snapshot |
 | `tool_call.create` | 以 provider item ID 建立工具调用；Codex 当前通常会在 create 中给出完整参数，公开前必须由 experience projector 脱敏 |
 | `tool_call.delta` | 按 payload 中同一 `id` 增量追加参数或输出；不能直接发送到产品客户端或 IM gateway |
@@ -396,9 +396,11 @@ Octo Harness 目标协议以 [`@mininglamp-oss/octo-harness-protocol`](../octo-h
 | `item/started`，item=`agentMessage` | `message.create` | `role=assistant`、`channel=final`、`status=streaming`、`messageId` | 打开最终回答生命周期 |
 | `item/agentMessage/delta` | `message.delta` | `text`、`channel=final`、`messageId` | 逐段输出最终回答 |
 | `item/completed`，item=`agentMessage` | `message.update` | `status=completed`、`text`、`messageId` | 关闭最终回答生命周期 |
-| `item/started`，item=`reasoning` 或 `plan` | `message.create` | `channel=analysis`、`status=streaming` | 推理与最终回答分频道 |
-| `item/reasoning/summaryTextDelta`、`item/reasoning/textDelta`、`item/plan/delta` | `message.delta` | `text`、`channel=analysis`、`messageId` | 共 3 个 Codex method |
-| `item/completed`，item=`reasoning` 或 `plan` | `message.update` | `status=completed`、`channel=analysis`、汇总文本 | 关闭 analysis lifecycle |
+| `item/started`，item=`reasoning` 或 `plan` | `message.create` | `channel=analysis`、reasoning 为 `exposure=unknown`、plan 为 `public_plan`、provenance | 打开 analysis lifecycle，reasoning 尚未产生内容时默认不可公开 |
+| `item/reasoning/summaryTextDelta` | `message.delta` | `text`、`channel=analysis`、`exposure=public_summary`、provenance | 到达即输出公开摘要增量 |
+| `item/plan/delta` | `message.delta` | `text`、`channel=analysis`、`exposure=public_plan`、provenance | 到达即输出公开计划增量 |
+| `item/reasoning/textDelta` | `message.delta` | `text`、`channel=analysis`、`exposure=private_reasoning`、provenance | 原始 reasoning 保留在 canonical ledger，但默认禁止公开 |
+| `item/completed`，item=`reasoning` 或 `plan` | `message.update` | `status=completed`、`channel=analysis`、exposure、provenance | reasoning 只携带 `item.summary` 的公开快照，不把 `item.content` 混入公开摘要 |
 | `item/started`，item 为受支持工具 | `tool_call.create` | `id`、canonical `name`、结构化 `args` | 受支持 item 见下一表 |
 | `item/commandExecution/outputDelta`、`item/fileChange/outputDelta` | `tool_call.delta` | `id`、`outputDelta` | 流式工具输出 |
 | 兼容 method pattern：`item/functionCall/*Delta`、`item/toolCall/*Delta`、`item/mcpToolCall/*Delta`、`item/dynamicToolCall/*Delta` | `tool_call.delta` | `id`、`argsDelta` | 后缀支持 `argumentsDelta`、`argsDelta`、`inputDelta`、`parametersDelta`；0.151.0 schema 未枚举，代码为旧版/后续版本保留 |
@@ -417,7 +419,8 @@ Octo Harness 目标协议以 [`@mininglamp-oss/octo-harness-protocol`](../octo-h
 | 场景 | Codex app-server frame | Octo Harness `CanonicalEvent` |
 |---|---|---|
 | 最终回答增量 | `{"method":"item/agentMessage/delta","params":{"itemId":"msg_1","delta":"done"}}` | `{"type":"message.delta","payload":{"text":"done","channel":"final","messageId":"msg_1"}}` |
-| 推理增量 | `{"method":"item/reasoning/textDelta","params":{"itemId":"reason_1","delta":"checking"}}` | `{"type":"message.delta","payload":{"text":"checking","channel":"analysis","messageId":"reason_1"}}` |
+| 公开摘要增量 | `{"method":"item/reasoning/summaryTextDelta","params":{"itemId":"reason_1","delta":"checking"}}` | `{"type":"message.delta","payload":{"text":"checking","channel":"analysis","messageId":"reason_1","exposure":"public_summary","provenance":{"provider":"codex","nativeEvent":"item/reasoning/summaryTextDelta"}}}` |
+| 私有 reasoning 增量 | `{"method":"item/reasoning/textDelta","params":{"itemId":"reason_1","delta":"raw"}}` | `{"type":"message.delta","payload":{"text":"raw","channel":"analysis","messageId":"reason_1","exposure":"private_reasoning","provenance":{"provider":"codex","nativeEvent":"item/reasoning/textDelta"}}}` |
 | 命令开始 | `{"method":"item/started","params":{"item":{"type":"commandExecution","id":"tool_1","command":"pwd","cwd":"/repo","status":"inProgress"}}}` | `{"type":"tool_call.create","payload":{"id":"tool_1","name":"exec_command","args":{"command":"pwd","cwd":"/repo"}}}` |
 | 命令输出 | `{"method":"item/commandExecution/outputDelta","params":{"itemId":"tool_1","delta":"/repo\n"}}` | `{"type":"tool_call.delta","payload":{"id":"tool_1","outputDelta":"/repo\n"}}` |
 | 命令完成 | `{"method":"item/completed","params":{"item":{"type":"commandExecution","id":"tool_1","status":"completed","aggregatedOutput":"/repo\n","exitCode":0}}}` | `{"type":"tool_call.update","payload":{"id":"tool_1","status":"completed","output":"/repo\n","exitCode":0}}` |

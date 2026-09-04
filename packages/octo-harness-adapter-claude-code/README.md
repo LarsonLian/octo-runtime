@@ -117,7 +117,7 @@ claude --print \
 - daemon-owned context 和 per-turn instructions 写入 `0600` 临时文件，通过 `--append-system-prompt-file` 注入。
 - 用户 prompt 走 stdin。
 - 首个 `system.session_id` -> `session.update`；同一 CLI turn 后续重复 status event 不再重复发布。
-- partial `thinking_delta` -> analysis channel 的 `message.delta`；空 delta 不发布。
+- partial `thinking_delta` -> analysis channel 的 `message.delta`，并标记 `exposure=private_reasoning` 与 Claude provenance；空 delta 不发布。
 - partial `text_delta` -> final channel 的 `message.delta`。
 - partial `tool_use` block start -> `tool_call.create`；同 block 的 `input_json_delta` -> `tool_call.delta.argsDelta`。
 - partial 模式随后重放的完整 assistant block 被抑制，避免文本和工具调用双写。
@@ -143,14 +143,14 @@ run.finished
 | Canonical event | Consumer 处理 |
 |---|---|
 | `message.delta(channel=final)` | 立即追加用户可见文本；工具前后的阶段说明也属于可见输出，不要等 `result` |
-| `message.delta(channel=analysis)` | 单独追加 provider 实际公开的 thinking；空 thinking 不会产生 event |
+| `message.delta(channel=analysis)` | Claude 原始 thinking 标记为 `private_reasoning`；默认不进入公开 Presentation，不能仅凭 analysis channel 展示 |
 | `tool_call.create` | 按 `id` 创建工具行；partial 模式下初始 `args` 通常为空对象 |
 | `tool_call.delta.argsDelta` | 按同一 `id` 顺序拼接 JSON 字符串；不得逐 chunk 单独 `JSON.parse` |
 | `tool_call.update` | 关闭对应工具生命周期并展示 output/error |
 | `message.update` | 更新状态；partial 模式没有 `text` 时不得清空之前累计的文本 |
 | `run.*` | 整轮唯一终态；不能用工具完成代替 run 完成 |
 
-`thinking_delta` 与用户可见的 `text_delta` 语义不同。截图式“正在检查文件”“现在执行第二阶段”通常是 final channel 的可见阶段说明；只有 provider 明确给出的 thinking 才进入 analysis channel。
+`thinking_delta` 与用户可见的 `text_delta` 语义不同。截图式“正在检查文件”“现在执行第二阶段”通常是 final channel 的可见阶段说明；Claude thinking 会进入 canonical analysis ledger，但其 exposure 是 `private_reasoning`，除非未来 provider 提供可判定的公开 summary/plan 事件，否则不能投影给 Buddy。
 
 ## 取消与限制
 

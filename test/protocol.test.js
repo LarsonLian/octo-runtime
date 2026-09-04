@@ -1,6 +1,50 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assertCanonicalEvent } from "../packages/octo-harness-protocol/dist/index.js";
+import {
+  assertCanonicalEvent,
+  messageExposure
+} from "../packages/octo-harness-protocol/dist/index.js";
+
+test("analysis exposure defaults closed and public classifications require provenance", () => {
+  const legacy = {
+    type: "message.delta",
+    payload: { channel: "analysis", text: "unclassified" }
+  };
+  assert.doesNotThrow(() => assertCanonicalEvent(legacy));
+  assert.equal(messageExposure(legacy), "unknown");
+
+  const summary = {
+    type: "message.delta",
+    payload: {
+      channel: "analysis",
+      text: "Checked the source.",
+      exposure: "public_summary",
+      provenance: { provider: "codex", nativeEvent: "item/reasoning/summaryTextDelta" }
+    }
+  };
+  assert.doesNotThrow(() => assertCanonicalEvent(summary));
+  assert.equal(messageExposure(summary), "public_summary");
+
+  assert.throws(
+    () => assertCanonicalEvent({
+      type: "message.delta",
+      payload: { channel: "analysis", text: "unsafe", exposure: "public_summary" }
+    }),
+    /requires payload\.provenance/
+  );
+  assert.throws(
+    () => assertCanonicalEvent({
+      type: "message.delta",
+      payload: {
+        channel: "analysis",
+        text: "unsafe",
+        exposure: "public_thought",
+        provenance: { provider: "test", nativeEvent: "thought" }
+      }
+    }),
+    /payload\.exposure is invalid/
+  );
+});
 
 test("tool call protocol preserves complete and streamed command inputs", () => {
   const codex = {
