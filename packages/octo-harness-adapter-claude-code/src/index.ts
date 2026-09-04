@@ -12,7 +12,8 @@ import {
   probeCommand,
   spawnJsonLines,
   type CanonicalEvent,
-  type InvokeRequest
+  type InvokeRequest,
+  type MessageExposure
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -125,7 +126,13 @@ export class ClaudeEventNormalizer {
           events.push({ type: "message.delta", payload: { text: block.text, channel: "final" } });
         }
         if (block.type === "thinking" && block.thinking) {
-          events.push({ type: "message.delta", payload: { text: block.thinking, channel: "analysis" } });
+          events.push({
+            type: "message.delta",
+            payload: {
+              text: block.thinking,
+              ...claudeAnalysisMetadata("private_reasoning", "assistant.content.thinking")
+            }
+          });
         }
         if (block.type === "tool_use" && block.id && block.name) {
           events.push({
@@ -209,7 +216,13 @@ export class ClaudeEventNormalizer {
       return [{ type: "message.delta", payload: { text: delta.text, channel: "final" } }];
     }
     if (delta?.type === "thinking_delta" && delta.thinking) {
-      return [{ type: "message.delta", payload: { text: delta.thinking, channel: "analysis" } }];
+      return [{
+        type: "message.delta",
+        payload: {
+          text: delta.thinking,
+          ...claudeAnalysisMetadata("private_reasoning", "stream_event.thinking_delta")
+        }
+      }];
     }
     if (delta?.type === "input_json_delta" && delta.partial_json && typeof event.index === "number") {
       const id = this.#toolBlocks.get(scope)?.get(event.index);
@@ -220,6 +233,14 @@ export class ClaudeEventNormalizer {
     }
     return [];
   }
+}
+
+function claudeAnalysisMetadata(exposure: MessageExposure, nativeEvent: string) {
+  return {
+    channel: "analysis" as const,
+    exposure,
+    provenance: { provider: "claude-code", nativeEvent }
+  };
 }
 
 /** 单条完整事件的兼容入口；partial 序列应复用同一个 ClaudeEventNormalizer。 */

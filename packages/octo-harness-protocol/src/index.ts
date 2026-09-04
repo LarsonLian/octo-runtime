@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type {
   CanonicalEventPayload,
   InvokeRequestWire,
+  MessageExposure,
   ToolCallCreatePayload,
   ToolCallDeltaPayload,
   ToolCallUpdatePayload
@@ -11,6 +12,8 @@ import type {
 // 这里从生成文件重新导出，保持 `@mininglamp-oss/octo-harness-protocol` 的公共导出面不变。
 export type {
   MessageChannel,
+  MessageExposure,
+  MessageProvenance,
   ProviderSession,
   AgentConfig,
   CanonicalEventPayload,
@@ -87,6 +90,12 @@ export type EventEnvelope<TType extends CanonicalEventType = CanonicalEventType>
 
 export const TERMINAL_EVENTS: ReadonlySet<CanonicalEventType> = new Set(TERMINAL_EVENT_TYPES);
 export const EVENT_TYPES: ReadonlySet<CanonicalEventType> = new Set(CANONICAL_EVENT_TYPES);
+export const MESSAGE_EXPOSURES: ReadonlySet<MessageExposure> = new Set([
+  "public_summary",
+  "public_plan",
+  "private_reasoning",
+  "unknown"
+]);
 
 /**
  * Adapter 可声明的能力名。能力描述真实的端到端能力，不应只因为底层 CLI 支持就提前声明。
@@ -132,6 +141,9 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
     throw new TypeError("event.payload must be an object");
   }
   const payload = isRecord(event.payload) ? event.payload : {};
+  if (event.type.startsWith("message.") && payload.channel === "analysis") {
+    assertAnalysisExposure(payload);
+  }
   if (event.type === "tool_call.create") {
     requireToolString(payload, "id", event.type);
     requireToolString(payload, "name", event.type);
@@ -166,6 +178,15 @@ export function isTerminal(event: CanonicalEvent): event is CanonicalEvent<Termi
   return TERMINAL_EVENTS.has(event.type);
 }
 
+/** Missing or malformed analysis metadata is never treated as public. */
+export function messageExposure(event: CanonicalEvent): MessageExposure {
+  if (!event.type.startsWith("message.") || event.payload.channel !== "analysis") return "unknown";
+  const exposure = event.payload.exposure;
+  return typeof exposure === "string" && MESSAGE_EXPOSURES.has(exposure)
+    ? exposure
+    : "unknown";
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -173,5 +194,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function requireToolString(payload: Record<string, unknown>, key: string, eventType: string): void {
   if (typeof payload[key] !== "string" || payload[key].length === 0) {
     throw new TypeError(`${eventType} payload.${key} must be a non-empty string`);
+  }
+}
+
+function assertAnalysisExposure(payload: Record<string, unknown>): void {
+  if (payload.exposure !== undefined
+    && (typeof payload.exposure !== "string" || !MESSAGE_EXPOSURES.has(payload.exposure as MessageExposure))) {
+    throw new TypeError("analysis message payload.exposure is invalid");
+  }
+  if (payload.exposure !== undefined && !isRecord(payload.provenance)) {
+    throw new TypeError("analysis message with explicit exposure requires payload.provenance");
+  }
+  if (payload.provenance === undefined) return;
+  if (!isRecord(payload.provenance)) {
+    throw new TypeError("analysis message payload.provenance must be an object");
+  }
+  for (const key of ["provider", "nativeEvent"] as const) {
+    if (typeof payload.provenance[key] !== "string" || payload.provenance[key].length === 0) {
+      throw new TypeError(`analysis message payload.provenance.${key} must be a non-empty string`);
+    }
   }
 }

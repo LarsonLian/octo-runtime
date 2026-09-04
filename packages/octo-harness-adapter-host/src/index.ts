@@ -4,7 +4,9 @@ import {
   isTerminal,
   type CanonicalEvent,
   type InvokeRequest,
-  type MessageChannel
+  type MessageChannel,
+  type MessageExposure,
+  type MessageProvenance
 } from "@mininglamp-oss/octo-harness-protocol";
 
 /** Host 用于注册和能力发现的 provider-neutral metadata。 */
@@ -26,6 +28,8 @@ export interface HostedAdapter {
 interface MessageState {
   messageId: string;
   open: boolean;
+  exposure?: MessageExposure;
+  provenance?: MessageProvenance;
 }
 
 /**
@@ -66,11 +70,21 @@ export class AdapterHost {
       const channel = event.payload.channel ?? "final";
       const messageId = event.payload.messageId ?? `${request.runId}:${channel}`;
       const state = messages.get(channel);
-      const prepared: CanonicalEvent = { ...event, payload: { ...event.payload, channel, messageId } };
+      const analysisMetadata = channel === "analysis" ? {
+        exposure: event.payload.exposure ?? "unknown",
+        provenance: event.payload.provenance ?? { provider: adapterType, nativeEvent: "unknown" }
+      } : {};
+      const prepared: CanonicalEvent = {
+        ...event,
+        payload: { ...event.payload, channel, messageId, ...analysisMetadata }
+      };
       const prefix: CanonicalEvent[] = !state && event.type !== "message.create"
-        ? [{ type: "message.create", payload: { role: "assistant", status: "streaming", channel, messageId } }]
+        ? [{
+            type: "message.create",
+            payload: { role: "assistant", status: "streaming", channel, messageId, ...analysisMetadata }
+          }]
         : [];
-      messages.set(channel, { messageId, open: event.type !== "message.update" });
+      messages.set(channel, { messageId, open: event.type !== "message.update", ...analysisMetadata });
       return { prefix, event: prepared };
     };
 
@@ -78,7 +92,14 @@ export class AdapterHost {
       .filter(([, state]) => state.open)
       .map(([channel, state]) => ({
         type: "message.update",
-        payload: { role: "assistant", status, channel, messageId: state.messageId }
+        payload: {
+          role: "assistant",
+          status,
+          channel,
+          messageId: state.messageId,
+          ...(state.exposure ? { exposure: state.exposure } : {}),
+          ...(state.provenance ? { provenance: state.provenance } : {})
+        }
       }));
 
     try {

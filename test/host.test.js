@@ -21,6 +21,25 @@ test("host synthesizes stopped when adapter exits without terminal", async () =>
   assert.equal(events.at(-1).type, "run.stopped");
 });
 
+test("host normalizes unclassified analysis to an explicit fail-closed exposure", async () => {
+  const host = new AdapterHost();
+  host.register({
+    metadata: { type: "legacy", capabilities: [] },
+    async *invoke() {
+      yield { type: "message.delta", payload: { channel: "analysis", text: "internal" } };
+      yield { type: "run.finished", payload: {} };
+    }
+  });
+  const events = [];
+  for await (const event of host.invoke("legacy", request)) events.push(event);
+  const analysis = events.filter(event => event.type.startsWith("message."));
+  assert.equal(analysis.length, 3);
+  for (const event of analysis) {
+    assert.equal(event.payload.exposure, "unknown");
+    assert.deepEqual(event.payload.provenance, { provider: "legacy", nativeEvent: "unknown" });
+  }
+});
+
 test("host cancellation aborts provider and emits stopped once", async () => {
   const host = new AdapterHost();
   host.register({ metadata: { type: "slow", capabilities: [] }, async *invoke(req) {

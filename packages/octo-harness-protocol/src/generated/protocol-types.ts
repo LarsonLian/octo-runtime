@@ -5,17 +5,40 @@
  */
 
 /**
- * assistant 输出频道。analysis 用于 provider 明确允许展示的思考/进度内容，final 用于面向用户的回答。
+ * assistant 输出频道。analysis 只表示推理类内容，是否允许向 viewer 展示必须再检查 exposure；final 用于面向用户的回答。
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "MessageChannel".
  */
 export type MessageChannel = "analysis" | "final";
+/**
+ * Adapter 对 analysis 消息内容性质的可信分类。只有 public_summary/public_plan 可进入公开 Presentation；缺失字段必须按 unknown 处理。
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "MessageExposure".
+ */
+export type MessageExposure = "public_summary" | "public_plan" | "private_reasoning" | "unknown";
 
 /**
  * Octo Harness NDJSON 线协议的数据形状定义。这里只描述可 JSON 序列化的结构体；运行时行为（envelope、assert、isTerminal）、事件类型枚举常量与携带 AbortSignal 的 InvokeRequest 仍由 src/index.ts 手写组合。本文件是 TS 类型的唯一来源，改动后需运行 pnpm gen 重新生成。
  */
 export interface OctoHarnessProtocolSchema {}
+/**
+ * Adapter 写入的 provider 原生来源。Audience projector 用它审计公开 exposure，不能由客户端覆盖。
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "MessageProvenance".
+ */
+export interface MessageProvenance {
+  /**
+   * 产生消息的 adapter/provider 类型。
+   */
+  provider: string;
+  /**
+   * 被归一化的 provider 原生事件类型。
+   */
+  nativeEvent: string;
+}
 /**
  * Provider 自己拥有的会话恢复信息。sessionId 对 Core 完全 opaque；额外字段可由 adapter 写入并在下一次调用时原样取回。
  *
@@ -99,6 +122,8 @@ export interface AgentConfig {
 export interface CanonicalEventPayload {
   providerSession?: ProviderSession;
   channel?: MessageChannel;
+  exposure?: MessageExposure;
+  provenance?: MessageProvenance;
   /**
    * 消息稳定 ID。
    */

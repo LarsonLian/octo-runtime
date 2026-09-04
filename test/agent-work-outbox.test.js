@@ -40,6 +40,25 @@ test("outbox appends in seq order; received releases the window, durable deletes
   });
 });
 
+test("analysis exposure provenance survives the reliable outbox and dual watermarks", async () => {
+  await withStore("analysis-provenance", store => {
+    store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 3 });
+    const payload = {
+      channel: "analysis",
+      text: "Checked the source.",
+      exposure: "public_summary",
+      provenance: { provider: "codex", nativeEvent: "item/reasoning/summaryTextDelta" }
+    };
+    store.allocateAndAppend("r1", "message.delta", payload);
+
+    assert.deepEqual(store.listSendable(10)[0].payload, payload);
+    store.advanceReceived("r1", 1);
+    assert.equal(store.pendingCount(), 1);
+    store.advanceDurable("r1", 1);
+    assert.equal(store.pendingCount(), 0);
+  });
+});
+
 test("terminal event stays active until its seq is durably acknowledged", async () => {
   await withStore("terminal", store => {
     store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });

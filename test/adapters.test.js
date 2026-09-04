@@ -39,6 +39,55 @@ test("Codex native events map to session/message/usage/terminal", () => {
   );
 });
 
+test("Codex reasoning and plan deltas are emitted immediately with explicit exposure provenance", () => {
+  const cases = [
+    ["item/reasoning/summaryTextDelta", "public_summary"],
+    ["item/plan/delta", "public_plan"],
+    ["item/reasoning/textDelta", "private_reasoning"]
+  ];
+  for (const [method, exposure] of cases) {
+    assert.deepEqual(
+      normalizeCodexEvent({ method, params: { itemId: "analysis-1", delta: "step" } }),
+      [{
+        type: "message.delta",
+        payload: {
+          text: "step",
+          channel: "analysis",
+          messageId: "analysis-1",
+          exposure,
+          provenance: { provider: "codex", nativeEvent: method }
+        }
+      }]
+    );
+  }
+
+  assert.deepEqual(
+    normalizeCodexEvent({
+      method: "item/completed",
+      params: {
+        item: {
+          type: "reasoning",
+          id: "analysis-1",
+          summary: ["Safe summary"],
+          content: ["Private reasoning"]
+        }
+      }
+    }),
+    [{
+      type: "message.update",
+      payload: {
+        role: "assistant",
+        status: "completed",
+        channel: "analysis",
+        exposure: "public_summary",
+        provenance: { provider: "codex", nativeEvent: "item/completed" },
+        messageId: "analysis-1",
+        text: "Safe summary"
+      }
+    }]
+  );
+});
+
 test("Codex command starts app-server over stdio", async () => {
   const command = await buildCodexCommand(request);
   assert.deepEqual(command.args, ["app-server", "--listen", "stdio://"]);
@@ -101,6 +150,12 @@ test("Claude maps thinking/text/tool argument partials without replaying assista
     events.filter(event => event.type === "message.delta" && event.payload.channel === "analysis")
       .map(event => event.payload.text).join(""),
     "检查 /tmp。检查 /home/lvsijia。"
+  );
+  assert.equal(
+    events.filter(event => event.type === "message.delta" && event.payload.channel === "analysis")
+      .every(event => event.payload.exposure === "private_reasoning"
+        && event.payload.provenance?.provider === "claude-code"),
+    true
   );
   assert.equal(
     events.filter(event => event.type === "message.delta" && event.payload.channel === "final")
@@ -204,6 +259,15 @@ test("CodeBuddy ACP subprocess completes the canonical contract", async () => {
   assert.deepEqual(events.map(x => x.type), ["session.update", "message.create", "message.delta", "tool_call.create", "tool_call.update", "usage.update", "message.update", "run.finished"]);
   assert.deepEqual(spawnOptions.args, ["--acp", "--permission-mode", "acceptEdits"]);
   assert.equal(normalizeCodeBuddyUpdate({ type: "usage", usage: { inputTokens: 1 } })[0].type, "usage.update");
+  assert.deepEqual(
+    normalizeCodeBuddyUpdate({ type: "agent_thought_chunk", text: "checking" })[0].payload,
+    {
+      text: "checking",
+      channel: "analysis",
+      exposure: "unknown",
+      provenance: { provider: "codebuddy", nativeEvent: "agent_thought_chunk" }
+    }
+  );
 });
 
 test("Codex app-server subprocess completes the canonical contract", async () => {
@@ -228,6 +292,12 @@ test("Codex app-server subprocess completes the canonical contract", async () =>
     events.filter(event => event.type === "message.delta" && event.payload.channel === "analysis")
       .map(event => event.payload.text).join(""),
     "Inspect /tmp.Inspect /home/lvsijia."
+  );
+  assert.equal(
+    events.filter(event => event.type === "message.delta" && event.payload.channel === "analysis")
+      .every(event => event.payload.exposure === "public_summary"
+        && event.payload.provenance?.nativeEvent === "item/reasoning/summaryTextDelta"),
+    true
   );
   assert.equal(events.find(event => event.type === "usage.update").payload.inputTokens, 3);
 });

@@ -2,9 +2,18 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
-import { isTerminal, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-protocol";
+import {
+  isTerminal,
+  type CanonicalEvent,
+  type InvokeRequest
+} from "@mininglamp-oss/octo-harness-protocol";
 
-export type { CanonicalEvent, InvokeRequest } from "@mininglamp-oss/octo-harness-protocol";
+export type {
+  CanonicalEvent,
+  InvokeRequest,
+  MessageExposure,
+  MessageProvenance
+} from "@mininglamp-oss/octo-harness-protocol";
 
 export interface AdapterMetadata {
   type: string;

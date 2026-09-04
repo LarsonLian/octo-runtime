@@ -1,4 +1,9 @@
-import { defineAdapter, probeCommand, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import {
+  defineAdapter,
+  probeCommand,
+  type CanonicalEvent,
+  type InvokeRequest
+} from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { spawnAcpClient } from "@mininglamp-oss/octo-harness-acp-client";
 import type { AcpUpdate } from "@mininglamp-oss/octo-harness-acp-client";
 
@@ -19,7 +24,18 @@ export function normalizeCodeBuddyUpdate(update: CodeBuddyUpdate): CanonicalEven
   const type = update.sessionUpdate ?? update.type;
   if (type === "agent_message_chunk" || type === "agent_thought_chunk") {
     const text = isRecord(update.content) && typeof update.content.text === "string" ? update.content.text : update.text;
-    return typeof text === "string" ? [{ type: "message.delta", payload: { text, channel: type === "agent_thought_chunk" ? "analysis" : "final" } }] : [];
+    if (typeof text !== "string") return [];
+    return [{
+      type: "message.delta",
+      payload: type === "agent_thought_chunk"
+        ? {
+            text,
+            channel: "analysis",
+            exposure: "unknown",
+            provenance: { provider: "codebuddy", nativeEvent: "agent_thought_chunk" }
+          }
+        : { text, channel: "final" }
+    }];
   }
   if (type === "tool_call") {
     if (!update.toolCallId) return [];
