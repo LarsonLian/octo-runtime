@@ -18,6 +18,13 @@ export type MessageChannel = "analysis" | "final";
  * via the `definition` "MessageExposure".
  */
 export type MessageExposure = "public_summary" | "public_plan" | "private_reasoning" | "unknown";
+/**
+ * 有界历史回填结果；complete 仅表示所请求窗口已完整返回，不表示本地数据库是 IM 权威副本。
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextSyncResult".
+ */
+export type ContextSyncResult = ContextSyncResult1;
 
 /**
  * Octo Harness NDJSON 线协议的数据形状定义。这里只描述可 JSON 序列化的结构体；运行时行为（envelope、assert、isTerminal）、事件类型枚举常量与携带 AbortSignal 的 InvokeRequest 仍由 src/index.ts 手写组合。本文件是 TS 类型的唯一来源，改动后需运行 pnpm gen 重新生成。
@@ -242,6 +249,152 @@ export interface RunIdentity {
   sessionId: string;
 }
 /**
+ * 平台无关的频道隔离键。account_id 可为空，但字段保留以区分同一 endpoint 下的 installation；thread_id 缺失表示 conversation 根上下文。
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ChannelScope".
+ */
+export interface ChannelScope {
+  tenant_id: string;
+  endpoint_id: string;
+  channel: string;
+  account_id: string | null;
+  bot_id: string;
+  conversation_id: string;
+  thread_id?: string | null;
+}
+/**
+ * 平台消息的规范化内容片段。type/text 是通用字段，其余结构由 producing connector 定义并视为不可信外部数据。
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ChannelMessagePart".
+ */
+export interface ChannelMessagePart {
+  type: string;
+  text?: string;
+  [k: string]: unknown;
+}
+/**
+ * 规范化发送者事实，不包含平台鉴权凭据。
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ChannelMessageSender".
+ */
+export interface ChannelMessageSender {
+  id: string;
+  label?: string;
+  kind: string;
+}
+/**
+ * 影响上下文投影的通用消息标记。self/control 默认不进入 provider-visible delta。
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ChannelMessageFlags".
+ */
+export interface ChannelMessageFlags {
+  self?: boolean;
+  control?: boolean;
+}
+/**
+ * 可重建 Channel Journal 中的一条平台无关消息事实。消息正文始终是 untrusted external content。
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ChannelMessageFact".
+ */
+export interface ChannelMessageFact {
+  message_id: string;
+  message_seq?: number;
+  sender: ChannelMessageSender;
+  occurred_at_ms: number;
+  /**
+   * @minItems 1
+   */
+  parts: [ChannelMessagePart, ...ChannelMessagePart[]];
+  flags?: ChannelMessageFlags;
+}
+/**
+ * agent-worker 到绑定 daemon 的幂等 context-only 批量写入命令。
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ChannelContextAppend".
+ */
+export interface ChannelContextAppend {
+  scope: ChannelScope;
+  /**
+   * @minItems 1
+   * @maxItems 100
+   */
+  facts: [ChannelMessageFact, ...ChannelMessageFact[]];
+  gap_after_seq?: number;
+}
+/**
+ * daemon 发现冷启动或 gap 后向 agent-worker 请求的有界回填，不携带平台 token。
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextSyncRequest".
+ */
+export interface ContextSyncRequest {
+  request_id: string;
+  scope: ChannelScope;
+  trigger_message_id: string;
+  trigger_seq?: number;
+  after_seq?: number;
+  limit: number;
+}
+export interface ContextSyncResult1 {
+  request_id: string;
+  scope: ChannelScope;
+  /**
+   * @maxItems 100
+   */
+  facts: ChannelMessageFact[];
+  completeness: "complete" | "partial" | "unavailable";
+  through_seq?: number;
+}
+/**
+ * ExecutionEnvelope 中的快照选择请求。scope+consumer_key+session_generation 共同隔离消费水位。
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ChannelContextDescriptor".
+ */
+export interface ChannelContextDescriptor {
+  scope: ChannelScope;
+  consumer_key: string;
+  session_generation: number;
+  trigger_message_id: string;
+  trigger_seq?: number;
+  trigger_fact: ChannelMessageFact;
+}
+/**
+ * 已冻结 provider-visible context delta 的可追踪引用。rendered_sha256 覆盖 exact rendered bytes。
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ChannelContextSnapshotRef".
+ */
+export interface ChannelContextSnapshotRef {
+  snapshot_id: string;
+  scope_key: string;
+  consumer_key: string;
+  session_generation: number;
+  trigger_message_id: string;
+  trigger_seq?: number;
+  serializer_version: string;
+  rendered_sha256: string;
+  completeness: "complete" | "partial" | "unavailable";
+}
+/**
+ * 终态后以 consumer version CAS 推进水位的结果。
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextCommitResult".
+ */
+export interface ContextCommitResult {
+  snapshot_id: string;
+  committed: boolean;
+  reason?:
+    "already_committed" | "snapshot_not_found" | "snapshot_not_submitted" | "consumer_advanced" | "snapshot_failed";
+}
+/**
  * Core 发给 Adapter Host 的一次执行请求的可序列化部分。运行中携带的 AbortSignal 不可跨进程序列化，由 src/index.ts 在此基础上交叉出完整 InvokeRequest。session、run、invocation 是三个不同层次的标识：session 跨多轮复用，run 表示一次业务执行，invocation 表示这次与 provider adapter 的活动调用，用于取消和事件路由。
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -261,9 +414,14 @@ export interface InvokeRequestWire {
    */
   runId: string;
   /**
-   * 用户请求或 Task description；不得混入 provider 私有控制参数。
+   * 产品/UI 可显示的当前用户请求或 Task description；不得混入隐藏频道背景或 provider 私有控制参数。
    */
   prompt: string;
+  /**
+   * provider 本轮必须 exact-once 接收的完整 user turn。缺失时 adapter 回退到 prompt。
+   */
+  modelInput?: string;
+  contextSnapshot?: ChannelContextSnapshotRef;
   /**
    * Provider 进程 cwd；真正的访问控制由 sandbox/容器/宿主权限提供。
    */

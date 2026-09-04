@@ -1,4 +1,4 @@
-import { createJsonCliAdapter, probeCommand, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { createJsonCliAdapter, probeCommand, providerInputText, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -38,7 +38,7 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
   if (req.providerSession?.sessionId) args.push("--session", req.providerSession.sessionId);
   if (req.agentConfig?.model) args.push("--model", req.agentConfig.model);
   if (req.agentConfig?.autoApprove === true) args.push("--auto");
-  args.push(req.prompt);
+  args.push(providerInputText(req));
   return {
     command, args, env: { OPENCODE_CONFIG_CONTENT: JSON.stringify(inline), OPENCODE_CLIENT: "octo-harness" },
     cleanup: () => rm(directory, { recursive: true, force: true })

@@ -15,6 +15,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 import {
+  providerInputText,
   type CanonicalEvent,
   type InvokeRequest,
   type MessageExposure
@@ -657,7 +658,7 @@ function turnParams(request: InvokeRequest, threadId: string): JsonRecord {
   const effort = codexEffort(request.agentConfig.thinking);
   return {
     threadId,
-    input: [{ type: "text", text: request.prompt, text_elements: [] }],
+    input: [{ type: "text", text: providerInputText(request), text_elements: [] }],
     cwd: request.workdir,
     ...(request.agentConfig.model ? { model: request.agentConfig.model } : {}),
     ...(effort ? { effort } : {}),

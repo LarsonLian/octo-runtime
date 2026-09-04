@@ -246,6 +246,34 @@ test("control instructions use private provider-native carriers", async () => {
   await resumedOpenClaw.cleanup();
 });
 
+test("text adapters prefer the exact modelInput over the display prompt", async () => {
+  const modelRequest = {
+    ...request,
+    invocationId: "inv-model-input",
+    prompt: "DISPLAY_ONLY_MUST_NOT_REACH_PROVIDER",
+    modelInput: "MODEL_INPUT_OK"
+  };
+
+  const claude = await buildClaudeCommand(modelRequest);
+  assert.equal(claude.input, "MODEL_INPUT_OK");
+  await claude.cleanup();
+
+  const opencode = await buildOpenCodeCommand(modelRequest);
+  assert.equal(opencode.args.at(-1), "MODEL_INPUT_OK");
+  await opencode.cleanup();
+
+  const openclaw = await buildOpenClawCommand(modelRequest);
+  assert.match(await readFile(openclaw.messageFile, "utf8"), /\[User Request\]\nMODEL_INPUT_OK$/);
+  await openclaw.cleanup();
+
+  const fixture = fileURLToPath(new URL("../fixtures/fake-codex-app-server.mjs", import.meta.url));
+  const codex = createCodexAdapter({ command: process.execPath, appServerArgs: [fixture] });
+  const host = new AdapterHost(); host.register(codex);
+  const events = [];
+  for await (const event of host.invoke("codex", modelRequest)) events.push(event);
+  assert.equal(events.at(-1).type, "run.finished");
+});
+
 test("CodeBuddy ACP subprocess completes the canonical contract", async () => {
   const fixture = fileURLToPath(new URL("../fixtures/fake-acp.mjs", import.meta.url));
   let spawnOptions;

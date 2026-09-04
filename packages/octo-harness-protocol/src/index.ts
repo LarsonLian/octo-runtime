@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type {
   CanonicalEventPayload,
+  ChannelContextAppend,
+  ChannelContextDescriptor,
+  ChannelMessageFact,
+  ChannelScope,
+  ContextSyncResult,
   InvokeRequestWire,
   MessageExposure,
   ToolCallCreatePayload,
@@ -20,6 +25,17 @@ export type {
   ToolCallCreatePayload,
   ToolCallDeltaPayload,
   ToolCallUpdatePayload,
+  ChannelScope,
+  ChannelMessagePart,
+  ChannelMessageSender,
+  ChannelMessageFlags,
+  ChannelMessageFact,
+  ChannelContextAppend,
+  ContextSyncRequest,
+  ContextSyncResult,
+  ChannelContextDescriptor,
+  ChannelContextSnapshotRef,
+  ContextCommitResult,
   RunIdentity,
   InvokeRequestWire
 } from "./generated/protocol-types.js";
@@ -73,6 +89,123 @@ export type CanonicalEvent<TType extends CanonicalEventType = CanonicalEventType
 export interface InvokeRequest extends InvokeRequestWire {
   /** Host 取消 invocation 时触发；adapter 应传播到子进程或协议 cancel。 */
   signal?: AbortSignal;
+}
+
+/** Provider adapters must use this accessor so hidden context is sent exactly once when present. */
+export function providerInputText(request: InvokeRequest): string {
+  return request.modelInput ?? request.prompt;
+}
+
+/** Runtime validation at the Agent Work plugin boundary; JSON schema remains the wire source of truth. */
+export function assertChannelScope(value: unknown): asserts value is ChannelScope {
+  if (!isRecord(value)) throw new TypeError("channel context scope must be an object");
+  for (const key of ["tenant_id", "endpoint_id", "channel", "bot_id", "conversation_id"] as const) {
+    if (typeof value[key] !== "string" || value[key].length === 0) {
+      throw new TypeError(`channel context scope.${key} must be a non-empty string`);
+    }
+  }
+  if (!(typeof value.account_id === "string" || value.account_id === null)) {
+    throw new TypeError("channel context scope.account_id must be a string or null");
+  }
+  if (value.thread_id !== undefined && value.thread_id !== null && typeof value.thread_id !== "string") {
+    throw new TypeError("channel context scope.thread_id must be a string, null, or omitted");
+  }
+}
+
+export function assertChannelMessageFact(value: unknown): asserts value is ChannelMessageFact {
+  if (!isRecord(value)) throw new TypeError("channel context fact must be an object");
+  if (typeof value.message_id !== "string" || value.message_id.length === 0) {
+    throw new TypeError("channel context fact.message_id must be a non-empty string");
+  }
+  if (value.message_seq !== undefined && (!Number.isSafeInteger(value.message_seq) || Number(value.message_seq) < 0)) {
+    throw new TypeError("channel context fact.message_seq must be a non-negative safe integer when present");
+  }
+  const sender = value.sender;
+  if (!isRecord(sender) || typeof sender.id !== "string" || sender.id.length === 0) {
+    throw new TypeError("channel context fact.sender.id must be a non-empty string");
+  }
+  if (typeof sender.kind !== "string" || sender.kind.length === 0) {
+    throw new TypeError("channel context fact.sender.kind must be a non-empty string");
+  }
+  if (sender.label !== undefined && typeof sender.label !== "string") {
+    throw new TypeError("channel context fact.sender.label must be a string when present");
+  }
+  if (!Number.isSafeInteger(value.occurred_at_ms) || Number(value.occurred_at_ms) <= 0) {
+    throw new TypeError("channel context fact.occurred_at_ms must be a positive safe integer");
+  }
+  if (!Array.isArray(value.parts) || value.parts.length === 0
+    || value.parts.some(part => !isRecord(part) || typeof part.type !== "string" || part.type.length === 0
+      || (part.text !== undefined && typeof part.text !== "string"))) {
+    throw new TypeError("channel context fact.parts must contain at least one typed object");
+  }
+  if (value.flags !== undefined && (!isRecord(value.flags)
+    || (value.flags.self !== undefined && typeof value.flags.self !== "boolean")
+    || (value.flags.control !== undefined && typeof value.flags.control !== "boolean"))) {
+    throw new TypeError("channel context fact.flags must contain optional boolean self/control values");
+  }
+}
+
+export function assertChannelContextAppend(value: unknown): asserts value is ChannelContextAppend {
+  if (!isRecord(value)) throw new TypeError("channel context append must be an object");
+  assertChannelScope(value.scope);
+  if (!Array.isArray(value.facts) || value.facts.length < 1 || value.facts.length > 100) {
+    throw new TypeError("channel context append.facts must contain 1..100 facts");
+  }
+  for (const fact of value.facts) assertChannelMessageFact(fact);
+  if (value.gap_after_seq !== undefined
+    && (!Number.isSafeInteger(value.gap_after_seq) || Number(value.gap_after_seq) < 0)) {
+    throw new TypeError("channel context append.gap_after_seq must be a non-negative safe integer when present");
+  }
+}
+
+export function assertContextSyncResult(value: unknown): asserts value is ContextSyncResult {
+  if (!isRecord(value)) throw new TypeError("context sync result must be an object");
+  assertChannelScope(value.scope);
+  if (!Array.isArray(value.facts) || value.facts.length > 100) {
+    throw new TypeError("context sync result.facts must contain at most 100 facts");
+  }
+  for (const fact of value.facts) assertChannelMessageFact(fact);
+  const result = value as unknown as ContextSyncResult;
+  if (typeof result.request_id !== "string" || result.request_id.length === 0) {
+    throw new TypeError("context sync result.request_id must be a non-empty string");
+  }
+  if (!["complete", "partial", "unavailable"].includes(result.completeness)) {
+    throw new TypeError("context sync result.completeness is invalid");
+  }
+  if (result.completeness === "unavailable" && result.facts.length !== 0) {
+    throw new TypeError("unavailable context sync result must not contain facts");
+  }
+  if (result.through_seq !== undefined
+    && (!Number.isSafeInteger(result.through_seq) || Number(result.through_seq) < 0)) {
+    throw new TypeError("context sync result.through_seq must be a non-negative safe integer when present");
+  }
+}
+
+export function assertChannelContextDescriptor(value: unknown): asserts value is ChannelContextDescriptor {
+  if (!isRecord(value)) throw new TypeError("channel context descriptor must be an object");
+  assertChannelScope(value.scope);
+  if (typeof value.consumer_key !== "string" || value.consumer_key.length === 0) {
+    throw new TypeError("channel context descriptor.consumer_key must be a non-empty string");
+  }
+  if (!Number.isSafeInteger(value.session_generation) || Number(value.session_generation) < 1) {
+    throw new TypeError("channel context descriptor.session_generation must be a positive safe integer");
+  }
+  if (typeof value.trigger_message_id !== "string" || value.trigger_message_id.length === 0) {
+    throw new TypeError("channel context descriptor.trigger_message_id must be a non-empty string");
+  }
+  assertChannelMessageFact(value.trigger_fact);
+  if (value.trigger_fact.message_id !== value.trigger_message_id) {
+    throw new TypeError("channel context descriptor trigger_fact.message_id must match trigger_message_id");
+  }
+  if (value.trigger_seq !== undefined
+    && (!Number.isSafeInteger(value.trigger_seq) || Number(value.trigger_seq) < 0)) {
+    throw new TypeError("channel context descriptor.trigger_seq must be a non-negative safe integer when present");
+  }
+  const hasTriggerSeq = value.trigger_seq !== undefined;
+  const factHasTriggerSeq = value.trigger_fact.message_seq !== undefined;
+  if (hasTriggerSeq !== factHasTriggerSeq || value.trigger_fact.message_seq !== value.trigger_seq) {
+    throw new TypeError("channel context descriptor trigger_fact.message_seq must match trigger_seq");
+  }
 }
 
 /**
@@ -170,6 +303,10 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
     if (typeof request[key] !== "string" || request[key].length === 0) {
       throw new TypeError(`InvokeRequest.${key} must be a non-empty string`);
     }
+  }
+  if (request.modelInput !== undefined
+    && (typeof request.modelInput !== "string" || request.modelInput.length === 0)) {
+    throw new TypeError("InvokeRequest.modelInput must be a non-empty string when present");
   }
 }
 

@@ -118,7 +118,7 @@
       "description": "tool_call.delta 的正式 payload。argsDelta 是同一 tool ID 的原始 JSON 参数分片，必须按事件顺序拼接后再解析。",
       "type": "object",
       "additionalProperties": true,
-      "required": ["id"],
+      "required": ["id", "kind"],
       "properties": {
         "id": { "description": "对应 tool_call.create 的稳定 ID。", "type": "string" },
         "argsDelta": { "description": "原始 JSON 参数字符串分片；不得逐片 JSON.parse。", "type": "string" },
@@ -155,6 +155,173 @@
         "sessionId": { "description": "所属 Harness Session ID。", "type": "string" }
       }
     },
+    "ChannelScope": {
+      "title": "ChannelScope",
+      "description": "平台无关的频道隔离键。account_id 可为空，但字段保留以区分同一 endpoint 下的 installation；thread_id 缺失表示 conversation 根上下文。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenant_id", "endpoint_id", "channel", "account_id", "bot_id", "conversation_id"],
+      "properties": {
+        "tenant_id": { "type": "string", "minLength": 1 },
+        "endpoint_id": { "type": "string", "minLength": 1 },
+        "channel": { "type": "string", "minLength": 1 },
+        "account_id": { "type": ["string", "null"] },
+        "bot_id": { "type": "string", "minLength": 1 },
+        "conversation_id": { "type": "string", "minLength": 1 },
+        "thread_id": { "type": ["string", "null"] }
+      }
+    },
+    "ChannelMessagePart": {
+      "title": "ChannelMessagePart",
+      "description": "平台消息的规范化内容片段。type/text 是通用字段，其余结构由 producing connector 定义并视为不可信外部数据。",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "text": { "type": "string" }
+      }
+    },
+    "ChannelMessageSender": {
+      "title": "ChannelMessageSender",
+      "description": "规范化发送者事实，不包含平台鉴权凭据。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" },
+        "kind": { "type": "string", "minLength": 1 }
+      }
+    },
+    "ChannelMessageFlags": {
+      "title": "ChannelMessageFlags",
+      "description": "影响上下文投影的通用消息标记。self/control 默认不进入 provider-visible delta。",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "self": { "type": "boolean" },
+        "control": { "type": "boolean" }
+      }
+    },
+    "ChannelMessageFact": {
+      "title": "ChannelMessageFact",
+      "description": "可重建 Channel Journal 中的一条平台无关消息事实。消息正文始终是 untrusted external content。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message_id", "sender", "occurred_at_ms", "parts"],
+      "properties": {
+        "message_id": { "type": "string", "minLength": 1 },
+        "message_seq": { "type": "integer", "minimum": 0 },
+        "sender": { "$ref": "#/definitions/ChannelMessageSender" },
+        "occurred_at_ms": { "type": "integer", "minimum": 1 },
+        "parts": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/ChannelMessagePart" }
+        },
+        "flags": { "$ref": "#/definitions/ChannelMessageFlags" }
+      }
+    },
+    "ChannelContextAppend": {
+      "title": "ChannelContextAppend",
+      "description": "agent-worker 到绑定 daemon 的幂等 context-only 批量写入命令。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "facts"],
+      "properties": {
+        "scope": { "$ref": "#/definitions/ChannelScope" },
+        "facts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": { "$ref": "#/definitions/ChannelMessageFact" }
+        },
+        "gap_after_seq": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ContextSyncRequest": {
+      "title": "ContextSyncRequest",
+      "description": "daemon 发现冷启动或 gap 后向 agent-worker 请求的有界回填，不携带平台 token。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "scope", "trigger_message_id", "limit"],
+      "properties": {
+        "request_id": { "type": "string", "minLength": 1 },
+        "scope": { "$ref": "#/definitions/ChannelScope" },
+        "trigger_message_id": { "type": "string", "minLength": 1 },
+        "trigger_seq": { "type": "integer", "minimum": 0 },
+        "after_seq": { "type": "integer", "minimum": 0 },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
+      }
+    },
+    "ContextSyncResult": {
+      "title": "ContextSyncResult",
+      "description": "有界历史回填结果；complete 仅表示所请求窗口已完整返回，不表示本地数据库是 IM 权威副本。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "scope", "facts", "completeness"],
+      "properties": {
+        "request_id": { "type": "string", "minLength": 1 },
+        "scope": { "$ref": "#/definitions/ChannelScope" },
+        "facts": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/definitions/ChannelMessageFact" }
+        },
+        "completeness": { "type": "string", "enum": ["complete", "partial", "unavailable"] },
+        "through_seq": { "type": "integer", "minimum": 0 }
+      },
+      "allOf": [{
+        "if": { "properties": { "completeness": { "const": "unavailable" } } },
+        "then": { "properties": { "facts": { "maxItems": 0 } } }
+      }]
+    },
+    "ChannelContextDescriptor": {
+      "title": "ChannelContextDescriptor",
+      "description": "ExecutionEnvelope 中的快照选择请求。scope+consumer_key+session_generation 共同隔离消费水位。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "consumer_key", "session_generation", "trigger_message_id", "trigger_fact"],
+      "properties": {
+        "scope": { "$ref": "#/definitions/ChannelScope" },
+        "consumer_key": { "type": "string", "minLength": 1 },
+        "session_generation": { "type": "integer", "minimum": 1 },
+        "trigger_message_id": { "type": "string", "minLength": 1 },
+        "trigger_seq": { "type": "integer", "minimum": 0 },
+        "trigger_fact": { "$ref": "#/definitions/ChannelMessageFact" }
+      }
+    },
+    "ChannelContextSnapshotRef": {
+      "title": "ChannelContextSnapshotRef",
+      "description": "已冻结 provider-visible context delta 的可追踪引用。rendered_sha256 覆盖 exact rendered bytes。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshot_id", "scope_key", "consumer_key", "session_generation", "trigger_message_id", "serializer_version", "rendered_sha256", "completeness"],
+      "properties": {
+        "snapshot_id": { "type": "string", "minLength": 1 },
+        "scope_key": { "type": "string", "minLength": 1 },
+        "consumer_key": { "type": "string", "minLength": 1 },
+        "session_generation": { "type": "integer", "minimum": 1 },
+        "trigger_message_id": { "type": "string", "minLength": 1 },
+        "trigger_seq": { "type": "integer", "minimum": 0 },
+        "serializer_version": { "type": "string", "minLength": 1 },
+        "rendered_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "completeness": { "type": "string", "enum": ["complete", "partial", "unavailable"] }
+      }
+    },
+    "ContextCommitResult": {
+      "title": "ContextCommitResult",
+      "description": "终态后以 consumer version CAS 推进水位的结果。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshot_id", "committed"],
+      "properties": {
+        "snapshot_id": { "type": "string", "minLength": 1 },
+        "committed": { "type": "boolean" },
+        "reason": { "type": "string", "enum": ["already_committed", "snapshot_not_found", "snapshot_not_submitted", "consumer_advanced", "snapshot_failed"] }
+      }
+    },
     "InvokeRequestWire": {
       "title": "InvokeRequestWire",
       "description": "Core 发给 Adapter Host 的一次执行请求的可序列化部分。运行中携带的 AbortSignal 不可跨进程序列化，由 src/index.ts 在此基础上交叉出完整 InvokeRequest。session、run、invocation 是三个不同层次的标识：session 跨多轮复用，run 表示一次业务执行，invocation 表示这次与 provider adapter 的活动调用，用于取消和事件路由。",
@@ -181,9 +348,14 @@
         },
         "runId": { "description": "本次业务执行的 Run ID。", "type": "string" },
         "prompt": {
-          "description": "用户请求或 Task description；不得混入 provider 私有控制参数。",
+          "description": "产品/UI 可显示的当前用户请求或 Task description；不得混入隐藏频道背景或 provider 私有控制参数。",
           "type": "string"
         },
+        "modelInput": {
+          "description": "provider 本轮必须 exact-once 接收的完整 user turn。缺失时 adapter 回退到 prompt。",
+          "type": "string"
+        },
+        "contextSnapshot": { "$ref": "#/definitions/ChannelContextSnapshotRef" },
         "workdir": {
           "description": "Provider 进程 cwd；真正的访问控制由 sandbox/容器/宿主权限提供。",
           "type": "string"

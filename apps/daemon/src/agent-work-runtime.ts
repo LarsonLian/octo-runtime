@@ -2,9 +2,29 @@ import { randomUUID } from "node:crypto";
 import { hostname, platform, arch } from "node:os";
 import WebSocket from "ws";
 import type { AdapterHostRpcClient } from "@mininglamp-oss/octo-harness-adapter-host";
-import type { AgentConfig, CanonicalEvent, InvokeRequest, ProviderSession } from "@mininglamp-oss/octo-harness-protocol";
+import type {
+  AgentConfig,
+  CanonicalEvent,
+  ChannelContextDescriptor,
+  ContextSyncRequest,
+  ContextSyncResult,
+  InvokeRequest,
+  ProviderSession
+} from "@mininglamp-oss/octo-harness-protocol";
+import {
+  assertChannelContextAppend,
+  assertChannelContextDescriptor,
+  assertContextSyncResult
+} from "@mininglamp-oss/octo-harness-protocol";
 import { AgentWorkStore } from "./agent-work-store.js";
 import type { OutboxRow } from "./agent-work-store.js";
+import {
+  ChannelContextStore,
+  channelScopeKey,
+  composeProviderModelInput,
+  type ChannelContextStoreOptions,
+  type PreparedChannelContextSnapshot
+} from "./channel-context-store.js";
 
 const PROTOCOL_VERSION = 1;
 const DEFAULT_SEND_WINDOW = 32;
@@ -13,6 +33,8 @@ const DEFAULT_HARD_WATERMARK_BYTES = 2 * 1024 * 1024 * 1024;
 const DEFAULT_RECONCILE_MS = 5 * 60_000;
 const PUMP_POLL_MS = 50;
 const BACKPRESSURE_POLL_MS = 100;
+const DEFAULT_CONTEXT_SYNC_TIMEOUT_MS = 3_000;
+const DEFAULT_CONTEXT_SYNC_LIMIT = 40;
 /** 终态事件必须能落盘收尾，不受软水位背压阻塞。 */
 const TERMINAL_OUTBOX_TYPES = new Set(["run.completed", "run.failed", "run.cancelled"]);
 
@@ -34,9 +56,18 @@ export interface AgentWorkRuntimeOptions {
   /** 硬水位：仅用于高优告警，未 ACK 数据仍不删除。 */
   hardWatermarkBytes?: number;
   reconcileMs?: number;
+  channelContext?: ChannelContextRuntimeOptions;
 }
 
-interface ExecutionEnvelope {
+export interface ChannelContextRuntimeOptions extends ChannelContextStoreOptions {
+  store: "memory" | "sqlite";
+  projection: "window" | "delta";
+  providerPersistence: "ephemeral" | "append_only";
+  storePath: string;
+  syncTimeoutMs?: number;
+}
+
+export interface ExecutionEnvelope {
   schema_version: number;
   run_id: string;
   harness_session_id: string;
@@ -86,13 +117,25 @@ interface ActiveRun {
   fencingToken: number;
 }
 
+interface PendingContextSync {
+  scopeKey: string;
+  triggerMessageId: string;
+  triggerSeq?: number;
+  afterSeq?: number;
+  resolve: () => void;
+  timer: NodeJS.Timeout;
+}
+
 export class AgentWorkRuntime {
   readonly #options: AgentWorkRuntimeOptions;
   readonly #host: AdapterHostRpcClient;
   readonly #activeRuns = new Map<string, ActiveRun>();
   /** 本连接内已发出、等待 ACK 的 `${runId}:${seq}`；重连时清空以触发重放。 */
   readonly #inFlight = new Set<string>();
+  readonly #pendingContextSyncs = new Map<string, PendingContextSync>();
+  readonly #latestContextSyncByScope = new Map<string, string>();
   #store?: AgentWorkStore;
+  #contextStore?: ChannelContextStore;
   #runtimeId = "";
   #socket?: WebSocket;
   #heartbeat?: NodeJS.Timeout;
@@ -110,6 +153,7 @@ export class AgentWorkRuntime {
 
   get status(): Record<string, unknown> {
     const store = this.#store;
+    const contextStats = this.#contextStore?.stats();
     return {
       enabled: true,
       connected: this.#connected,
@@ -120,7 +164,18 @@ export class AgentWorkRuntime {
       outboxPending: store?.pendingCount() ?? 0,
       outboxOldestAgeMs: store?.oldestUnackedAgeMs() ?? null,
       dbBytes: store?.dbBytes() ?? 0,
-      walBytes: store?.walBytes() ?? 0
+      walBytes: store?.walBytes() ?? 0,
+      channelContext: {
+        store: this.#options.channelContext?.store ?? "memory",
+        projection: this.#options.channelContext?.projection ?? "window",
+        providerPersistence: this.#options.channelContext?.providerPersistence ?? "ephemeral",
+        scopes: contextStats?.scopes ?? 0,
+        messages: contextStats?.messages ?? 0,
+        snapshots: contextStats?.snapshots ?? 0,
+        activeSnapshots: contextStats?.activeSnapshots ?? 0,
+        dbBytes: contextStats?.dbBytes ?? 0,
+        walBytes: contextStats?.walBytes ?? 0
+      }
     };
   }
 
@@ -128,6 +183,12 @@ export class AgentWorkRuntime {
     if (!this.#stopped) return;
     this.#stopped = false;
     this.#store = AgentWorkStore.open(this.#options.storePath);
+    if (this.#options.channelContext?.store === "sqlite") {
+      this.#contextStore = ChannelContextStore.open(
+        this.#options.channelContext.storePath,
+        this.#options.channelContext
+      );
+    }
     this.#runtimeId = this.#options.runtimeId ?? await this.#register();
     await this.#connect();
     this.#loop = this.#readLoop();
@@ -136,6 +197,7 @@ export class AgentWorkRuntime {
     this.#reconcileTimer = setInterval(() => {
       try {
         this.#store?.reconcile();
+        this.#contextStore?.reconcile();
       } catch (error) {
         console.error(`octo-harness Agent Work outbox reconcile failed: ${errorMessage(error)}`);
       }
@@ -153,11 +215,19 @@ export class AgentWorkRuntime {
       await this.#host.cancel(run.invocationId, "runtime shutdown").catch(() => undefined);
     }
     this.#socket?.close(1000, "runtime shutdown");
+    for (const pending of this.#pendingContextSyncs.values()) {
+      clearTimeout(pending.timer);
+      pending.resolve();
+    }
+    this.#pendingContextSyncs.clear();
+    this.#latestContextSyncByScope.clear();
     await this.#loop?.catch(() => undefined);
     await this.#pump?.catch(() => undefined);
     // 未 ACK 事件留在 Outbox，重启后重放；这里只释放连接与句柄。
     this.#store?.close();
     this.#store = undefined;
+    this.#contextStore?.close();
+    this.#contextStore = undefined;
   }
 
   async #register(): Promise<string> {
@@ -175,7 +245,15 @@ export class AgentWorkRuntime {
         },
         runtime_version: "0.1.0",
         protocol_version: PROTOCOL_VERSION,
-        capabilities: { adapters: (await this.#host.list()).map(item => item.type) }
+        capabilities: {
+          adapters: (await this.#host.list()).map(item => item.type),
+          channel_context: {
+            protocol_version: 1,
+            store: this.#options.channelContext?.store ?? "memory",
+            projection: this.#options.channelContext?.projection ?? "window",
+            provider_persistence: this.#options.channelContext?.providerPersistence ?? "ephemeral"
+          }
+        }
       })
     });
     const body = await response.json() as { runtime?: { id?: string }; error?: { message?: string } };
@@ -271,6 +349,21 @@ export class AgentWorkRuntime {
 
   async #receive(envelope: WireEnvelope): Promise<void> {
     if (envelope.version !== PROTOCOL_VERSION) throw new Error(`unsupported Agent Work protocol ${envelope.version}`);
+    if (envelope.type === "context.append") {
+      assertChannelContextAppend(envelope.payload);
+      this.#contextStore?.append(envelope.payload);
+      return;
+    }
+    if (envelope.type === "context.sync_result") {
+      assertContextSyncResult(envelope.payload);
+      const pending = this.#pendingContextSyncs.get(envelope.payload.request_id);
+      if (!pending
+        || this.#latestContextSyncByScope.get(pending.scopeKey) !== envelope.payload.request_id
+        || !matchesPendingContextSync(pending, envelope.payload)) return;
+      this.#contextStore?.applySyncResult(envelope.payload);
+      this.#resolveContextSync(envelope.payload.request_id);
+      return;
+    }
     if (envelope.type === "runtime.welcome") {
       const payload = asRecord(envelope.payload);
       const everyMs = typeof payload.heartbeat_every_ms === "number" ? payload.heartbeat_every_ms : 30_000;
@@ -311,7 +404,26 @@ export class AgentWorkRuntime {
         // durable_through_seq: aggregated state committed cloud-side — only now
         // may confirmed outbox rows be deleted.
         if (Number.isFinite(durable) && durable > 0) {
-          store.advanceDurable(runId, durable);
+          const inspection = store.inspectDurableAck(runId, durable);
+          if (inspection.advanced) {
+            let contextCommitted = true;
+            if (inspection.terminal?.type === "run.completed") {
+              const result = this.#contextStore?.getSnapshot(runId)
+                ? this.#contextStore.commitSnapshot(runId)
+                : undefined;
+              if (result && !result.committed) {
+                console.error(`channel context cursor commit rejected run=${runId} reason=${result.reason}`);
+                contextCommitted = false;
+              }
+            } else if (inspection.terminal) {
+              this.#contextStore?.markFailed(runId);
+            }
+            // Commit context first: if it fails, leave terminal in the outbox so
+            // the durable ACK can be replayed after reconnect. Both operations are idempotent.
+            if (contextCommitted) store.advanceDurable(runId, durable);
+          } else if (inspection.reason === "ack_beyond_produced") {
+            console.error(`octo-harness Agent Work runtime rejected out-of-range durable ACK run=${runId} seq=${durable}`);
+          }
         }
         // ACK released capacity and may unblock more sendable rows.
         this.#kickSender();
@@ -338,6 +450,7 @@ export class AgentWorkRuntime {
     if (command.type === "run.cancel") {
       const active = this.#activeRuns.get(command.run_id);
       const cancelled = active ? (await this.#host.cancel(active.invocationId, "control plane cancel")).cancelled : false;
+      if (!active) this.#contextStore?.markFailed(command.run_id);
       this.#ackCommand(command, true, cancelled ? undefined : { code: "RUN_NOT_ACTIVE" });
       return;
     }
@@ -371,12 +484,19 @@ export class AgentWorkRuntime {
     let request: InvokeRequest;
     let adapterType: string;
     let sessionId: string;
+    let leaseId: string;
+    let fencingToken: number;
     try {
-      const mapped = mapExecutionEnvelope(command.payload as ExecutionEnvelope);
+      leaseId = requiredString(command.lease_id, "run.start lease_id");
+      fencingToken = requiredSafeInteger(command.fencing_token, "run.start fencing_token");
+      const executionEnvelope = command.payload as ExecutionEnvelope;
+      const contextSnapshot = await this.#prepareChannelContext(command.run_id, executionEnvelope);
+      const mapped = mapExecutionEnvelope(executionEnvelope, contextSnapshot);
       request = mapped.request;
       adapterType = mapped.adapterType;
       sessionId = request.sessionId;
     } catch (error) {
+      this.#contextStore?.markFailed(command.run_id);
       const failure = { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) };
       store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
       this.#ackCommand(command, false, failure);
@@ -386,33 +506,123 @@ export class AgentWorkRuntime {
       runId: command.run_id,
       sessionId,
       commandId: command.command_id,
-      leaseId: command.lease_id,
-      fencingToken: command.fencing_token
+      leaseId,
+      fencingToken
     });
     store.recordCommandReceipt(command.command_id, command.server_seq, true);
     this.#activeRuns.set(command.run_id, {
       invocationId: request.invocationId,
-      leaseId: command.lease_id,
-      fencingToken: command.fencing_token
+      leaseId,
+      fencingToken
     });
     this.#ackCommand(command, true);
     void this.#execute(command, adapterType, request);
+  }
+
+  async #prepareChannelContext(
+    runId: string,
+    envelope: ExecutionEnvelope
+  ): Promise<PreparedChannelContextSnapshot | undefined> {
+    const descriptorValue = asRecord(envelope.immutable_execution_input.content).channel_context;
+    if (descriptorValue === undefined) return undefined;
+    assertChannelContextDescriptor(descriptorValue);
+    const descriptor = descriptorValue;
+    const contextStore = this.#contextStore;
+    if (!contextStore) return undefined;
+
+    // Reliable trigger path repairs a dropped best-effort append before selection.
+    contextStore.append({ scope: descriptor.scope, facts: [descriptor.trigger_fact] });
+    if (!this.#usesAppendOnlyDelta()) return undefined;
+    if (contextStore.needsSync(descriptor.scope)) await this.#requestContextSync(descriptor);
+    return contextStore.prepareSnapshot(runId, descriptor);
+  }
+
+  async #requestContextSync(descriptor: ChannelContextDescriptor): Promise<void> {
+    const contextStore = this.#contextStore;
+    if (!contextStore) return;
+    const requestId = `ctx_sync_${randomUUID()}`;
+    const afterSeq = contextStore.syncAfterSeq(descriptor.scope);
+    const request: ContextSyncRequest = {
+      request_id: requestId,
+      scope: descriptor.scope,
+      trigger_message_id: descriptor.trigger_message_id,
+      ...(descriptor.trigger_seq === undefined ? {} : { trigger_seq: descriptor.trigger_seq }),
+      ...(afterSeq === undefined ? {} : { after_seq: afterSeq }),
+      limit: Math.min(this.#options.channelContext?.maxProjectedMessages ?? DEFAULT_CONTEXT_SYNC_LIMIT, 100)
+    };
+    const scopeKey = channelScopeKey(descriptor.scope);
+    const wait = new Promise<void>(resolve => {
+      const timer = setTimeout(() => {
+        this.#pendingContextSyncs.delete(requestId);
+        if (this.#latestContextSyncByScope.get(scopeKey) === requestId) {
+          this.#latestContextSyncByScope.delete(scopeKey);
+        }
+        resolve();
+      }, this.#options.channelContext?.syncTimeoutMs ?? DEFAULT_CONTEXT_SYNC_TIMEOUT_MS);
+      timer.unref?.();
+      this.#pendingContextSyncs.set(requestId, {
+        scopeKey,
+        triggerMessageId: descriptor.trigger_message_id,
+        ...(descriptor.trigger_seq === undefined ? {} : { triggerSeq: descriptor.trigger_seq }),
+        ...(afterSeq === undefined ? {} : { afterSeq }),
+        resolve,
+        timer
+      });
+      this.#latestContextSyncByScope.set(scopeKey, requestId);
+    });
+    try {
+      this.#send("context.sync_request", request);
+    } catch {
+      this.#resolveContextSync(requestId);
+    }
+    await wait;
+  }
+
+  #resolveContextSync(requestId: string): void {
+    const pending = this.#pendingContextSyncs.get(requestId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.#pendingContextSyncs.delete(requestId);
+    if (this.#latestContextSyncByScope.get(pending.scopeKey) === requestId) {
+      this.#latestContextSyncByScope.delete(pending.scopeKey);
+    }
+    pending.resolve();
+  }
+
+  #usesAppendOnlyDelta(): boolean {
+    const options = this.#options.channelContext;
+    return options?.store === "sqlite"
+      && options.projection === "delta"
+      && options.providerPersistence === "append_only";
   }
 
   async #execute(command: RuntimeCommand, adapterType: string, request: InvokeRequest): Promise<void> {
     const store = this.#store;
     if (!store) return;
     let finalText = "";
+    let completed = false;
     try {
-      store.allocateAndAppend(command.run_id, "run.started", {});
+      const contextSnapshot = this.#contextStore?.markSubmitted(command.run_id);
+      store.allocateAndAppend(command.run_id, "run.started", contextSnapshot ? {
+        context_snapshot_id: contextSnapshot.ref.snapshot_id,
+        context_snapshot_sha256: contextSnapshot.ref.rendered_sha256,
+        context_completeness: contextSnapshot.ref.completeness
+      } : {});
       this.#kickSender();
       for await (const event of this.#host.invoke(adapterType, request)) {
         if (event.type === "run.running" || event.type === "run.queued") continue;
         finalText = accumulateFinalText(finalText, event);
         const mapped = mapRuntimeEvent(event, finalText);
+        if (contextSnapshot && TERMINAL_OUTBOX_TYPES.has(mapped.type)) {
+          Object.assign(mapped.payload, {
+            context_snapshot_id: contextSnapshot.ref.snapshot_id,
+            context_snapshot_sha256: contextSnapshot.ref.rendered_sha256
+          });
+        }
         // 终态事件绕过软水位背压，保证 Run 在持续背压下仍能落盘收尾。
         if (!TERMINAL_OUTBOX_TYPES.has(mapped.type)) await this.#awaitOutboxCapacity(command.run_id);
         store.allocateAndAppend(command.run_id, mapped.type, mapped.payload);
+        completed ||= event.type === "run.finished";
         this.#kickSender();
       }
     } catch (error) {
@@ -427,6 +637,8 @@ export class AgentWorkRuntime {
         console.error(`failed to record run failure: ${errorMessage(appendError)}`);
       }
     } finally {
+      // Success remains submitted until the terminal outbox row receives a durable ACK.
+      if (!completed) this.#contextStore?.markFailed(command.run_id);
       this.#activeRuns.delete(command.run_id);
     }
   }
@@ -549,7 +761,10 @@ export function accumulateFinalText(current: string, event: CanonicalEvent): str
   return text;
 }
 
-export function mapExecutionEnvelope(envelope: ExecutionEnvelope): { adapterType: string; request: InvokeRequest } {
+export function mapExecutionEnvelope(
+  envelope: ExecutionEnvelope,
+  contextSnapshot?: PreparedChannelContextSnapshot
+): { adapterType: string; request: InvokeRequest } {
   if (!envelope?.run_id || !envelope.harness_session_id || !envelope.agent_revision || !envelope.immutable_execution_input) {
     throw new TypeError("execution envelope is missing run/session/revision/immutable execution input");
   }
@@ -559,13 +774,18 @@ export function mapExecutionEnvelope(envelope: ExecutionEnvelope): { adapterType
   const agentConfig = asRecord(profile.agent_config) as AgentConfig;
   const workdir = stringValue(profile.workdir) ?? stringValue(agentConfig.workdir);
   if (!workdir) throw new TypeError("execution_profile.workdir is required for a local runtime");
+  const content = envelope.immutable_execution_input.content;
+  const displayPrompt = contextSnapshot
+    ? renderDisplayExecutionInputPrompt(content)
+    : renderImmutableExecutionInputPrompt(content);
   const context = {
     schemaVersion: envelope.schema_version,
     agentId: envelope.execution_request.agent_id,
     agentRevisionId: envelope.execution_request.agent_revision_id,
     sourceType: envelope.execution_request.source_type,
     sourceId: envelope.execution_request.source_id,
-    immutableExecutionInput: envelope.immutable_execution_input.content ?? {}
+    immutableExecutionInput: content ?? {},
+    ...(contextSnapshot ? { contextSnapshot: contextSnapshot.ref } : {})
   };
   return {
     adapterType,
@@ -573,7 +793,11 @@ export function mapExecutionEnvelope(envelope: ExecutionEnvelope): { adapterType
       invocationId: `invoke_${randomUUID()}`,
       sessionId: envelope.harness_session_id,
       runId: envelope.run_id,
-      prompt: renderImmutableExecutionInputPrompt(envelope.immutable_execution_input.content),
+      prompt: displayPrompt,
+      ...(contextSnapshot ? {
+        modelInput: composeProviderModelInput(contextSnapshot.renderedText, displayPrompt),
+        contextSnapshot: contextSnapshot.ref
+      } : {}),
       workdir,
       appendInstructions: stringValue(definition.instructions) ?? "",
       context,
@@ -613,6 +837,23 @@ export function renderImmutableExecutionInputPrompt(content: Record<string, unkn
   return blocks.join("\n\n");
 }
 
+/** Render the product-visible current turn without context-only channel facts. */
+export function renderDisplayExecutionInputPrompt(content: Record<string, unknown> | undefined): string {
+  const input = asRecord(content);
+  const parts = Array.isArray(input.parts) ? input.parts : [];
+  const current = parts.map(part => {
+    const value = asRecord(part);
+    return value.type === "text" && typeof value.text === "string" ? value.text : "";
+  }).filter(Boolean).join("\n");
+  const blocks: string[] = [];
+  const reply = asRecord(input.reply_to);
+  if (stringValue(reply.text)) {
+    blocks.push(`[Quoted message from ${stringValue(reply.author_name) ?? stringValue(reply.author_id) ?? "unknown"}]\n${stringValue(reply.text)}`);
+  }
+  blocks.push(`[Current message]\n${current}`);
+  return blocks.join("\n\n");
+}
+
 function rawDataText(data: WebSocket.RawData): string {
   if (Array.isArray(data)) return Buffer.concat(data).toString("utf8");
   if (data instanceof ArrayBuffer) return Buffer.from(data).toString("utf8");
@@ -643,6 +884,31 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function requiredString(value: unknown, name: string): string {
+  const result = stringValue(value);
+  if (!result) throw new TypeError(`${name} must be a non-empty string`);
+  return result;
+}
+
+function requiredSafeInteger(value: unknown, name: string): number {
+  if (!Number.isSafeInteger(value)) throw new TypeError(`${name} must be a safe integer`);
+  return Number(value);
+}
+
+function matchesPendingContextSync(pending: PendingContextSync, result: ContextSyncResult): boolean {
+  if (channelScopeKey(result.scope) !== pending.scopeKey) return false;
+  if (result.facts.some(fact => fact.message_id === pending.triggerMessageId)) return false;
+  if (pending.triggerSeq !== undefined) {
+    if (result.through_seq !== undefined && result.through_seq >= pending.triggerSeq) return false;
+    if (result.facts.some(fact => fact.message_seq !== undefined && fact.message_seq >= pending.triggerSeq!)) return false;
+  }
+  if (pending.afterSeq !== undefined) {
+    if (result.through_seq !== undefined && result.through_seq < pending.afterSeq) return false;
+    if (result.facts.some(fact => fact.message_seq !== undefined && fact.message_seq <= pending.afterSeq!)) return false;
+  }
+  return true;
 }
 
 function stripSlash(value: string): string {

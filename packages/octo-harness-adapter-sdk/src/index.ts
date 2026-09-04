@@ -14,6 +14,7 @@ export type {
   MessageExposure,
   MessageProvenance
 } from "@mininglamp-oss/octo-harness-protocol";
+export { providerInputText } from "@mininglamp-oss/octo-harness-protocol";
 
 export interface AdapterMetadata {
   type: string;

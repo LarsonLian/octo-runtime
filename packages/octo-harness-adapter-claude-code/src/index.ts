@@ -10,6 +10,7 @@ import {
   defineAdapter,
   parseJsonLine,
   probeCommand,
+  providerInputText,
   spawnJsonLines,
   type CanonicalEvent,
   type InvokeRequest,
@@ -86,7 +87,7 @@ export async function buildClaudeCommand(
   args.push("--permission-mode", mode);
   if (mode === "bypassPermissions") args.push("--dangerously-skip-permissions");
   args.push("-");
-  return { command, args, input: req.prompt, cleanup: () => rm(directory, { recursive: true, force: true }) };
+  return { command, args, input: providerInputText(req), cleanup: () => rm(directory, { recursive: true, force: true }) };
 }
 
 /**

@@ -78,6 +78,18 @@ test("Dify Chat request resumes conversation and user without leaking instructio
   assert.deepEqual(built.body.inputs, { tone: "short", tenant: "tenant-a", locale: "zh-CN" });
 });
 
+test("Dify request builders send modelInput when a hidden channel context turn exists", () => {
+  const exact = { ...request, prompt: "display-current", modelInput: "context-delta\n\ndisplay-current" };
+  const chat = buildDifyChatRequest(exact, {});
+  const workflow = buildDifyStatelessRequest(exact, {
+    applicationMode: "completion",
+    promptInput: "query"
+  });
+  assert.equal(chat.body.query, exact.modelInput);
+  assert.equal(workflow.body.query, exact.modelInput);
+  assert.equal(workflow.body.inputs.query, exact.modelInput);
+});
+
 test("Dify Chatflow waits for workflow_finished after message_end", async () => {
   const adapter = createDifyChatflowAdapter({
     apiKey: "test-key",

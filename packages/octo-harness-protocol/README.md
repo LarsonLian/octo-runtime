@@ -1,11 +1,12 @@
 # @mininglamp-oss/octo-harness-protocol
 
-Octo Harness 的 provider-neutral 协议包。它定义 Core、Adapter Host 和所有 provider adapter 共同使用的 `InvokeRequest`、`CanonicalEvent`、`EventEnvelope`、provider session 与 capability 类型。
+Octo Harness 的 provider-neutral 协议包。它定义 Core、Adapter Host 和所有 provider adapter 共同使用的 `InvokeRequest`、`CanonicalEvent`、`EventEnvelope`、provider session、Channel Context 与 capability 类型。
 
 ## 作用
 
 - 把 Codex、Claude Code、CodeBuddy、OpenCode、OpenClaw 的原生输出收敛为稳定事件。
 - 为一次调用提供统一输入，包括 harness session、run、prompt、workdir、控制指令和取消信号。
+- 约束平台无关的 `ChannelScope`、`ChannelMessageFact`、sync/snapshot contract，并用 `modelInput ?? prompt` 区分 provider 输入和产品显示文本。
 - 用 `EventEnvelope` 为事件补充 `runId`、`sessionId`、序号和时间戳。
 - 提供运行时边界校验，避免动态 adapter 用错误对象污染 Core。
 

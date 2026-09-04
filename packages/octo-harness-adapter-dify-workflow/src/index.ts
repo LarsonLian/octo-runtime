@@ -1,4 +1,4 @@
-import { defineAdapter, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { defineAdapter, providerInputText, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { isTerminal } from "@mininglamp-oss/octo-harness-protocol";
 import {
   DifyClient,
@@ -117,7 +117,7 @@ export function buildDifyStatelessRequest(
   const inputs: JsonRecord = { ...(options.defaultInputs ?? {}), ...providerInputs };
   const promptInput = optionalString(providerOptions.promptInput) ?? options.promptInput;
   const instructionInput = optionalString(providerOptions.instructionInput) ?? options.instructionInput;
-  if (promptInput) inputs[promptInput] = request.prompt;
+  if (promptInput) inputs[promptInput] = providerInputText(request);
   if (instructionInput && request.appendInstructions) inputs[instructionInput] = request.appendInstructions;
   Object.assign(inputs, turnInputs);
 
@@ -125,7 +125,7 @@ export function buildDifyStatelessRequest(
   const body: JsonRecord = { inputs, response_mode: "streaming", user };
   const files = mapDifyFiles(request.context.attachments);
   if (files.length > 0) body.files = files;
-  if (mode === "completion") body.query = request.prompt;
+  if (mode === "completion") body.query = providerInputText(request);
   return {
     path: mode === "completion" ? "/completion-messages" : "/workflows/run",
     body,

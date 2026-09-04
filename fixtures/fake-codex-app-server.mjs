@@ -49,6 +49,10 @@ reader.on("line", line => {
       send({ jsonrpc: "2.0", id: message.id, error: { code: -32602, message: "invalid turn params" } });
       return;
     }
+    if (prompt.includes("DISPLAY_ONLY_MUST_NOT_REACH_PROVIDER")) {
+      send({ jsonrpc: "2.0", id: message.id, error: { code: -32602, message: "display prompt leaked to provider" } });
+      return;
+    }
     if (prompt.includes("EXPECT_LOW_EFFORT") && (message.params.effort !== "low" || message.params.summary !== "none")) {
       send({ jsonrpc: "2.0", id: message.id, error: { code: -32602, message: "disabled thinking must map to low effort without summary" } });
       return;

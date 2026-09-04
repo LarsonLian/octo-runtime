@@ -37,6 +37,15 @@ export type AckOutcome =
   | { advanced: true; through: number }
   | { advanced: false; reason: "unknown_run" | "stale" | "ack_beyond_produced" };
 
+export interface DurableTerminal {
+  seq: number;
+  type: string;
+}
+
+export type DurableAckInspection =
+  | { advanced: true; through: number; terminal?: DurableTerminal }
+  | { advanced: false; reason: "unknown_run" | "stale" | "ack_beyond_produced" };
+
 const TERMINAL_EVENT_TYPES = new Set(["run.completed", "run.failed", "run.cancelled"]);
 const LAST_ACKED_COMMAND_SEQ = "last_acked_command_seq";
 /** command receipt 与终态 run 的默认本地保留期（7 天），到期后由 reconcile 清理。 */
@@ -292,6 +301,33 @@ export class AgentWorkStore {
       throw error;
     }
     return { advanced: true, through: seq };
+  }
+
+  /**
+   * Validate a durable ACK and inspect terminal coverage without mutating the
+   * outbox. Callers can durably update a second database before advanceDurable;
+   * a crash between those operations then leaves this terminal replayable.
+   */
+  inspectDurableAck(runId: string, seq: number): DurableAckInspection {
+    const run = this.#db.prepare(
+      "SELECT next_seq, durable_through_seq, terminal_seq FROM runs WHERE run_id = ?"
+    ).get(runId) as Pick<RunRow, "next_seq" | "durable_through_seq" | "terminal_seq"> | undefined;
+    if (!run) return { advanced: false, reason: "unknown_run" };
+    if (seq > run.next_seq - 1) return { advanced: false, reason: "ack_beyond_produced" };
+    if (seq <= run.durable_through_seq) return { advanced: false, reason: "stale" };
+    const terminal = run.terminal_seq !== null && seq >= run.terminal_seq
+      ? this.durableTerminal(runId, seq)
+      : undefined;
+    return { advanced: true, through: seq, ...(terminal ? { terminal } : {}) };
+  }
+
+  durableTerminal(runId: string, durableThrough: number): DurableTerminal | undefined {
+    const row = this.#db.prepare(
+      `SELECT o.seq, o.event_type
+       FROM event_outbox o JOIN runs r ON r.run_id = o.run_id
+       WHERE o.run_id = ? AND r.terminal_seq = o.seq AND o.seq <= ?`
+    ).get(runId, durableThrough) as { seq: number; event_type: string } | undefined;
+    return row ? { seq: row.seq, type: row.event_type } : undefined;
   }
 
   /** 未 ACK 事件正文的合计字节，用于容量水位判断。 */
