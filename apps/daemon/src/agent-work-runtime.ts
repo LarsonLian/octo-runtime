@@ -237,7 +237,8 @@ export class AgentWorkRuntime {
     };
   }
 
-  /** Open durable stores, register if necessary, then start receive and outbox loops. */
+  /** Open durable stores, refresh Runtime capabilities and validate identity,
+   * then start the receive and outbox loops. */
   async start(): Promise<void> {
     if (!this.#stopped) return;
     this.#stopped = false;
