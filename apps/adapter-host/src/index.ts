@@ -4,13 +4,19 @@
 // on stdio (the daemon-to-host transport). Kept separate from the daemon so
 // provider processes are isolated behind a process boundary.
 import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   AdapterHost,
   AdapterHostRpcServer,
   type HostedAdapter
 } from "@mininglamp-oss/octo-harness-adapter-host";
+import {
+  installCrashReporter,
+  LocalObservability,
+  observabilityConfigurationFromEnv
+} from "@mininglamp-oss/octo-harness-observability";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -30,10 +36,20 @@ interface AdapterManifest {
 const index = process.argv.indexOf("--manifest");
 if (index < 0 || !process.argv[index + 1]) throw new Error("usage: octo-harness-adapter-host --manifest <file>");
 
+const logging = observabilityConfigurationFromEnv(
+  process.env,
+  join(process.env.OCTO_HARNESS_HOME ?? join(homedir(), ".octo-harness"), "logs")
+);
+const crashReporter = logging.fileLog
+  ? installCrashReporter({ directory: logging.directory, component: "adapter-host" })
+  : undefined;
 const manifestPath = resolve(process.argv[index + 1]);
 const rawManifest: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
 const manifest = parseManifest(rawManifest);
-const host = new AdapterHost();
+const observability = new LocalObservability({ ...logging, component: "adapter-host" });
+const host = new AdapterHost({
+  observe: (identity, observation) => observability.observeProvider(identity, observation)
+});
 
 for (const entry of manifest.adapters) {
   const specifier = entry.module.startsWith(".") || entry.module.startsWith("/")
@@ -58,9 +74,42 @@ for (const entry of manifest.adapters) {
     throw new Error(`manifest type ${entry.type} does not match adapter ${instance.metadata.type}`);
   }
   host.register(instance);
+  observability.log({
+    level: "info",
+    scope: "adapter.registry",
+    event: "adapter.registered",
+    message: "adapter registered",
+    adapterType: instance.metadata.type,
+    data: { capabilities: instance.metadata.capabilities }
+  });
 }
 
 new AdapterHostRpcServer({ host, output: process.stdout }).listen(process.stdin);
+observability.log({
+  level: "info",
+  scope: "adapter-host.lifecycle",
+  event: "adapter-host.ready",
+  message: "adapter host ready",
+  data: { manifest_path: manifestPath, adapters: host.list().map(adapter => adapter.type) }
+});
+
+process.once("beforeExit", () => {
+  // beforeExit can be emitted more than once; close is idempotent and failures
+  // are intentionally contained because there is no protocol-safe stderr body.
+  void observability.close().catch(() => undefined);
+});
+let stopping = false;
+const stop = (): void => {
+  if (stopping) return;
+  stopping = true;
+  void observability.close().then(
+    () => process.exit(0),
+    () => process.exit(1)
+  );
+};
+process.once("SIGINT", stop);
+process.once("SIGTERM", stop);
+process.once("exit", () => crashReporter?.close());
 
 /** Parse and validate the on-disk manifest. Only version 1 is supported; each
  * entry names a module, an export, whether that export is a factory, and options. */

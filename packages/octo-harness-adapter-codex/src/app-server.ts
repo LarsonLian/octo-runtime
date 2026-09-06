@@ -21,7 +21,10 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 import {
   freshFallbackInputText,
+  observeBestEffort,
+  observeProviderOutput,
   providerInputText,
+  type AdapterInvocationContext,
   type CanonicalEvent,
   type InvokeRequest,
   type MessageExposure
@@ -107,15 +110,18 @@ export function buildCodexAppServerArgs(): string[] {
 export async function* runCodexAppServerTurn({
   request,
   spec,
-  spawnFn = defaultSpawn
+  spawnFn = defaultSpawn,
+  context
 }: {
   request: InvokeRequest;
   spec: CodexAppServerCommand;
   spawnFn?: CodexAppServerSpawn;
+  context?: AdapterInvocationContext;
 }): AsyncGenerator<CanonicalEvent> {
   const requestTimeoutMs = appServerRequestTimeout(request);
   const client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, request.signal);
   let terminal = false;
+  let turnProviderRequestId: string | undefined;
 
   try {
     throwIfAborted(request.signal);
@@ -145,9 +151,13 @@ export async function* runCodexAppServerTurn({
 
     if (requestedSessionId) {
       try {
-        threadResult = await client.request("thread/resume", threadParams(request, {
-          threadId: requestedSessionId
-        }));
+        threadResult = await observedRequest({
+          client,
+          context,
+          method: "thread/resume",
+          params: threadParams(request, { threadId: requestedSessionId }),
+          providerSessionId: requestedSessionId
+        });
         resumed = true;
       } catch (error) {
         // A failed resume does not abort this turn; record a low-cardinality reason and fall back to a fresh thread.
@@ -156,9 +166,12 @@ export async function* runCodexAppServerTurn({
     }
 
     if (!threadResult) {
-      threadResult = await client.request("thread/start", threadParams(request, {
-        sessionStartSource: "startup"
-      }));
+      threadResult = await observedRequest({
+        client,
+        context,
+        method: "thread/start",
+        params: threadParams(request, { sessionStartSource: "startup" })
+      });
     }
 
     let threadId = extractThreadId(threadResult);
@@ -168,21 +181,38 @@ export async function* runCodexAppServerTurn({
     // Phase 3: only a successful turn/start means this turn is truly executable.
     let turnResult: unknown;
     try {
-      turnResult = await client.request("turn/start", turnParams(request, threadId, resumeFallback !== undefined));
+      turnResult = await observedRequest({
+        client,
+        context,
+        method: "turn/start",
+        params: turnParams(request, threadId, resumeFallback !== undefined),
+        providerSessionId: threadId,
+        onRequestId: id => { turnProviderRequestId = id; }
+      });
     } catch (error) {
       // Some corrupt sessions pass thread/resume but only reveal the missing rollout at turn/start.
       if (!resumed || !isThreadNotFound(error)) throw error;
       resumeFallback = "turn_start_thread_not_found";
       resumed = false;
-      threadResult = await client.request("thread/start", threadParams(request, {
-        sessionStartSource: "startup"
-      }));
+      threadResult = await observedRequest({
+        client,
+        context,
+        method: "thread/start",
+        params: threadParams(request, { sessionStartSource: "startup" })
+      });
       threadId = extractThreadId(threadResult);
       if (!threadId) {
         throw new Error("codex fresh fallback returned no thread id", { cause: error });
       }
       client.setActiveThread(threadId);
-      turnResult = await client.request("turn/start", turnParams(request, threadId, true));
+      turnResult = await observedRequest({
+        client,
+        context,
+        method: "turn/start",
+        params: turnParams(request, threadId, true),
+        providerSessionId: threadId,
+        onRequestId: id => { turnProviderRequestId = id; }
+      });
     }
 
     const turnId = extractTurnId(turnResult);
@@ -206,6 +236,7 @@ export async function* runCodexAppServerTurn({
     };
 
     // Phase 4: the client queue has already normalized JSON-RPC notifications into CanonicalEvents.
+    let firstOutput = true;
     for await (const event of client.events()) {
       // The thread RPC response already produced the authoritative initial
       // update. Later lifecycle outcomes (such as compaction) must pass through.
@@ -214,6 +245,27 @@ export async function* runCodexAppServerTurn({
         && event.payload.providerSession.resumeOutcome === undefined) {
         continue;
       }
+      if (firstOutput) {
+        firstOutput = false;
+        // This is the first accepted provider notification after turn/start,
+        // not merely the JSON-RPC response that acknowledged the request.
+        observeBestEffort(context, {
+          event: "provider.output.first",
+          rpcMethod: "notification",
+          providerSessionId: threadId,
+          ...(turnProviderRequestId ? { providerRequestId: turnProviderRequestId } : {})
+        });
+      }
+      observeProviderOutput(context, [event], {
+        rpcMethod: "notification",
+        providerSessionId: threadId,
+        ...(turnProviderRequestId ? { providerRequestId: turnProviderRequestId } : {}),
+        native: {
+          type: typeof event.payload.provenance?.nativeEvent === "string"
+            ? event.payload.provenance.nativeEvent
+            : event.type
+        }
+      });
       terminal ||= isTerminalEvent(event);
       yield event;
       if (terminal) break;
@@ -236,9 +288,14 @@ export async function* runCodexAppServerTurn({
           payload: { reason: String(request.signal.reason ?? "cancelled") }
         };
       } else {
+        const code = stringErrorCode(error);
         yield {
           type: "run.error",
-          payload: { message: client.errorMessage(error), adapterType: "codex" }
+          payload: {
+            message: client.errorMessage(error),
+            adapterType: "codex",
+            ...(code ? { code } : {})
+          }
         };
       }
     }
@@ -247,6 +304,84 @@ export async function* runCodexAppServerTurn({
     await client.close();
     await spec.cleanup?.();
   }
+}
+
+/**
+ * Send one model-affecting app-server request with ordered observations.
+ *
+ * The carrier is the exact `{ method, params }` object serialized onto stdin;
+ * it is captured before the write and awaited so strict capture can fail closed.
+ * `provider.dispatch.written` comes from the stdin write callback, whereas
+ * `provider.dispatch.acknowledged` requires the matching JSON-RPC response.
+ * These states must not be collapsed: a locally buffered frame can still be
+ * rejected, time out, or disappear with a crashed provider process.
+ */
+async function observedRequest({
+  client,
+  context,
+  method,
+  params,
+  providerSessionId,
+  onRequestId
+}: {
+  client: CodexAppServerClient;
+  context?: AdapterInvocationContext;
+  method: string;
+  params: JsonRecord;
+  providerSessionId?: string;
+  onRequestId?: (id: string) => void;
+}): Promise<unknown> {
+  const requestId = client.reserveRequestId();
+  const providerRequestId = String(requestId);
+  onRequestId?.(providerRequestId);
+  // Do not reconstruct this from InvokeRequest: thread fallback and provider
+  // defaults have already selected the exact method and params sent on the wire.
+  await context?.observe({
+    event: "provider.input",
+    rpcMethod: method,
+    providerRequestId,
+    ...(providerSessionId ? { providerSessionId } : {}),
+    carrier: { kind: "json_params", content: { method, params } }
+  });
+  const response = client.request(method, params, undefined, () => {
+    // The callback is reached only after Node accepts the complete NDJSON frame.
+    observeBestEffort(context, {
+      event: "provider.dispatch.written",
+      rpcMethod: method,
+      providerRequestId,
+      ...(providerSessionId ? { providerSessionId } : {})
+    });
+  }, requestId);
+  try {
+    const result = await response;
+    // A correlated response is the app-server's protocol-level acknowledgement;
+    // streamed model output may arrive later as independent notifications.
+    observeBestEffort(context, {
+      event: "provider.dispatch.acknowledged",
+      rpcMethod: method,
+      providerRequestId,
+      ...(providerSessionId ? { providerSessionId } : {})
+    });
+    return result;
+  } catch (error) {
+    observeBestEffort(context, {
+      event: "provider.dispatch.failed",
+      rpcMethod: method,
+      providerRequestId,
+      ...(providerSessionId ? { providerSessionId } : {}),
+      data: { error: error instanceof Error ? error.message : String(error) }
+    });
+    throw error;
+  }
+}
+
+function stringErrorCode(error: unknown): string | undefined {
+  return error !== null
+    && typeof error === "object"
+    && "code" in error
+    && typeof error.code === "string"
+    ? error.code
+    : undefined;
 }
 
 /**
@@ -435,11 +570,20 @@ class CodexAppServerClient {
     return this.#exitPromise;
   }
 
-  request(method: string, params: unknown, timeoutMs = this.#requestTimeoutMs): Promise<unknown> {
+  request(
+    method: string,
+    params: unknown,
+    timeoutMs = this.#requestTimeoutMs,
+    onWritten?: () => void,
+    requestId?: RpcId
+  ): Promise<unknown> {
     if (this.#closed || this.#exited) {
       return Promise.reject(new Error("codex app-server is closed"));
     }
-    const id = this.#nextId++;
+    const id = requestId ?? this.reserveRequestId();
+    if (this.#pending.has(id)) {
+      return Promise.reject(new Error(`codex app-server request id ${String(id)} is already pending`));
+    }
     return new Promise((resolve, reject) => {
       // Register pending before writing stdin, so a synchronous reply from a test server/local process cannot arrive first.
       const timer = setTimeout(() => {
@@ -447,14 +591,25 @@ class CodexAppServerClient {
         reject(new Error(`codex app-server ${method} timed out after ${timeoutMs}ms`));
       }, timeoutMs);
       this.#pending.set(id, { method, resolve, reject, timer });
-      this.#write({ jsonrpc: "2.0", id, method, params }, error => {
-        const pending = this.#pending.get(id);
-        if (!pending) return;
-        this.#pending.delete(id);
-        clearTimeout(pending.timer);
-        pending.reject(error);
-      });
+      // onWritten is deliberately passed through to #write instead of running
+      // before it; callers use it as the transport-written observation boundary.
+      this.#write(
+        { jsonrpc: "2.0", id, method, params },
+        error => {
+          const pending = this.#pending.get(id);
+          if (!pending) return;
+          this.#pending.delete(id);
+          clearTimeout(pending.timer);
+          pending.reject(error);
+        },
+        onWritten
+      );
     });
+  }
+
+  /** Allocate the exact JSON-RPC id a subsequent request will put on the wire. */
+  reserveRequestId(): RpcId {
+    return this.#nextId++;
   }
 
   notify(method: string, params?: unknown): void {
@@ -572,14 +727,21 @@ class CodexAppServerClient {
     this.#write({ jsonrpc: "2.0", id, result });
   }
 
-  #write(message: JsonRecord, onError?: (error: Error) => void): void {
+  #write(
+    message: JsonRecord,
+    onError?: (error: Error) => void,
+    onWritten?: () => void
+  ): void {
     if (this.#closed || this.#exited) {
       onError?.(new Error("codex app-server is closed"));
       return;
     }
     const line = `${JSON.stringify(message)}\n`;
     this.#child.stdin.write(line, error => {
+      // Writable completion means local acceptance of the bytes. Only a later
+      // frame with the same JSON-RPC id can acknowledge a request.
       if (error) onError?.(error);
+      else onWritten?.();
     });
   }
 

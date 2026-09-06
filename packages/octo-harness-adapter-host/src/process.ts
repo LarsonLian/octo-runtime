@@ -5,6 +5,12 @@ export interface SpawnAdapterHostOptions {
   entrypoint: string;
   manifest: string;
   env?: NodeJS.ProcessEnv;
+  /**
+   * Optional caller-owned wire observer. The daemon supplies a structured,
+   * redacting trace sink; this helper deliberately does not infer tracing from
+   * environment variables or write raw RPC frames to stderr.
+   */
+  trace?: RpcTrace;
 }
 
 export interface AdapterHostProcess {
@@ -18,12 +24,15 @@ export interface AdapterHostProcess {
  * Spawn the adapter-host as a child process and return a ready-to-use RPC
  * client. It waits for the first `list` to succeed as a readiness handshake, so
  * a failed spawn (bad manifest, missing binary) surfaces here with the child's
- * captured stderr rather than at first invoke.
+ * captured stderr rather than at first invoke. Wire tracing is injected by the
+ * caller so all frames pass through the same retention and redaction policy as
+ * other daemon logs.
  */
 export async function spawnAdapterHost({
   entrypoint,
   manifest,
-  env = process.env
+  env = process.env,
+  trace
 }: SpawnAdapterHostOptions): Promise<AdapterHostProcess> {
   const child = spawn(process.execPath, [entrypoint, "--manifest", manifest], {
     argv0: "octo-harness-adapter-host",
@@ -36,7 +45,6 @@ export async function spawnAdapterHost({
     // Keep only the tail so a chatty child cannot grow this buffer unbounded.
     stderr = (stderr + value.toString()).slice(-8192);
   });
-  const trace = rpcTrace(env);
   const client = new AdapterHostRpcClient({
     input: child.stdout,
     output: child.stdin,
@@ -62,15 +70,6 @@ export async function spawnAdapterHost({
       if (child.exitCode === null) child.kill("SIGKILL");
     },
     stderr: () => stderr
-  };
-}
-
-/** Opt-in wire tracer: when `OCTO_HARNESS_TRACE_RPC=1`, mirror every daemon<->adapter-host frame to stderr. */
-function rpcTrace(env: NodeJS.ProcessEnv): RpcTrace | undefined {
-  if (env.OCTO_HARNESS_TRACE_RPC !== "1") return undefined;
-  return (direction, frame) => {
-    const route = direction === "send" ? "daemon -> adapter-host" : "adapter-host -> daemon";
-    process.stderr.write(`[octo-harness rpc ${route}] ${frame}\n`);
   };
 }
 

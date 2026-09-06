@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { hostname, platform, arch } from "node:os";
 import WebSocket from "ws";
 import type { AdapterHostRpcClient } from "@mininglamp-oss/octo-harness-adapter-host";
+import type { LocalObservability, LogInput } from "@mininglamp-oss/octo-harness-observability";
 import type {
   AgentConfig,
   CanonicalEvent,
@@ -42,6 +43,11 @@ const CONTEXT_BUSY_POLL_MS = 25;
  * they bypass the soft-watermark backpressure. */
 const TERMINAL_OUTBOX_TYPES = new Set(["run.completed", "run.failed", "run.cancelled"]);
 
+/**
+ * Configuration for the optional bridge between a local adapter host and the
+ * Agent Work control plane. Authentication values are transport inputs only and
+ * must never be copied into observability records.
+ */
 export interface AgentWorkRuntimeOptions {
   baseUrl: string;
   token: string;
@@ -65,6 +71,7 @@ export interface AgentWorkRuntimeOptions {
   channelContext?: ChannelContextRuntimeOptions;
 }
 
+/** Controls local persistence and projection of channel context presented to a provider. */
 export interface ChannelContextRuntimeOptions extends ChannelContextStoreOptions {
   store: "memory" | "sqlite";
   projection: "window" | "delta";
@@ -73,6 +80,7 @@ export interface ChannelContextRuntimeOptions extends ChannelContextStoreOptions
   syncTimeoutMs?: number;
 }
 
+/** Immutable execution description received from Agent Work before local mapping. */
 export interface ExecutionEnvelope {
   schema_version: number;
   run_id: string;
@@ -155,6 +163,9 @@ interface PendingContextSync {
 export class AgentWorkRuntime {
   readonly #options: AgentWorkRuntimeOptions;
   readonly #host: AdapterHostRpcClient;
+  // Observability is optional so the reusable runtime preserves compatibility
+  // with existing embedders. When present, it replaces routine stderr output.
+  readonly #observability?: LocalObservability;
   readonly #activeRuns = new Map<string, ActiveRun>();
   readonly #acceptingCommandIds = new Set<string>();
   readonly #acceptingRuns = new Map<string, AcceptingRun>();
@@ -178,12 +189,22 @@ export class AgentWorkRuntime {
   #stopped = true;
   #connected = false;
   #lifecycleEpoch = 0;
+  // Attempts are process-lifetime diagnostics; connection ids identify one
+  // concrete WSS session and are reset whenever that session closes.
+  #connectionAttempt = 0;
+  #connectionId?: string;
 
-  constructor(options: AgentWorkRuntimeOptions, host: AdapterHostRpcClient) {
+  constructor(
+    options: AgentWorkRuntimeOptions,
+    host: AdapterHostRpcClient,
+    observability?: LocalObservability
+  ) {
     this.#options = options;
     this.#host = host;
+    this.#observability = observability;
   }
 
+  /** Return operational state only. Endpoint credentials and message content are excluded. */
   get status(): Record<string, unknown> {
     const store = this.#store;
     const contextStats = this.#contextStore?.stats();
@@ -212,6 +233,7 @@ export class AgentWorkRuntime {
     };
   }
 
+  /** Open durable stores, register if necessary, then start receive and outbox loops. */
   async start(): Promise<void> {
     if (!this.#stopped) return;
     this.#stopped = false;
@@ -238,11 +260,15 @@ export class AgentWorkRuntime {
         this.#store?.reconcile();
         this.#contextStore?.reconcile();
       } catch (error) {
-        console.error(`octo-harness Agent Work outbox reconcile failed: ${errorMessage(error)}`);
+        this.#reportError("agent_work.outbox.reconcile_failed", "Agent Work outbox reconcile failed", error);
       }
     }, reconcileMs);
   }
 
+  /**
+   * Stop accepting work, cancel local invocations and close transports/stores.
+   * Durable, unacknowledged outbox rows are intentionally retained for replay.
+   */
   async close(): Promise<void> {
     if (this.#stopped && !this.#store) return;
     this.#stopped = true;
@@ -278,6 +304,13 @@ export class AgentWorkRuntime {
   }
 
   async #register(adapterTypes: string[]): Promise<string> {
+    this.#log({
+      level: "info",
+      scope: "agent-work.registration",
+      event: "agent_work.registration.started",
+      message: "registering local Agent Work runtime",
+      data: { endpoint: httpEndpointMetadata(this.#options.baseUrl), adapter_types: adapterTypes }
+    });
     const response = await fetch(`${stripSlash(this.#options.baseUrl)}/api/v1/runtimes/register`, {
       method: "POST",
       headers: this.#headers(true),
@@ -307,26 +340,74 @@ export class AgentWorkRuntime {
     if (!response.ok || !body.runtime?.id) {
       throw new Error(`Agent Work runtime registration failed (${response.status}): ${body.error?.message ?? "invalid response"}`);
     }
+    this.#log({
+      level: "info",
+      scope: "agent-work.registration",
+      event: "agent_work.registration.completed",
+      message: "local Agent Work runtime registered",
+      data: { runtime_id: body.runtime.id, http_status: response.status }
+    });
     return body.runtime.id;
   }
 
   async #connect(): Promise<void> {
     const url = new URL(`${stripSlash(this.#options.baseUrl)}/api/v1/runtimes/connect`);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(url, { headers: this.#headers(false) });
-    await new Promise<void>((resolve, reject) => {
-      const onOpen = (): void => {
-        socket.off("error", onError);
-        resolve();
-      };
-      const onError = (error: Error): void => {
-        socket.off("open", onOpen);
-        reject(error);
-      };
-      socket.once("open", onOpen);
-      socket.once("error", onError);
+    const connectionId = `conn_wss_${randomUUID()}`;
+    const attempt = ++this.#connectionAttempt;
+    // Endpoint metadata is intentionally reconstructed from URL components. Do
+    // not record the original URL: it may contain userinfo or query credentials.
+    const endpoint = webSocketEndpointMetadata(url);
+    this.#log({
+      level: "info",
+      scope: "transport.wss",
+      event: "transport.connection.connecting",
+      message: "Agent Work WebSocket connection starting",
+      data: { connection_id: connectionId, reconnect_attempt: attempt, endpoint }
     });
+    const socket = new WebSocket(url, { headers: this.#headers(false) });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const onOpen = (): void => {
+          socket.off("error", onError);
+          resolve();
+        };
+        const onError = (error: Error): void => {
+          socket.off("open", onOpen);
+          reject(error);
+        };
+        socket.once("open", onOpen);
+        socket.once("error", onError);
+      });
+    } catch (error) {
+      this.#log({
+        level: "warn",
+        scope: "transport.wss",
+        event: "transport.connection.failed",
+        message: "Agent Work WebSocket connection failed",
+        data: {
+          connection_id: connectionId,
+          reconnect_attempt: attempt,
+          endpoint,
+          error: errorMessage(error)
+        }
+      });
+      throw error;
+    }
     this.#socket = socket;
+    this.#connectionId = connectionId;
+    this.#log({
+      level: "info",
+      scope: "transport.wss",
+      event: "transport.connection.opened",
+      message: "Agent Work WebSocket connection opened",
+      data: {
+        connection_id: connectionId,
+        reconnect_attempt: attempt,
+        runtime_id: this.#runtimeId,
+        endpoint
+      }
+    });
     this.#send("runtime.hello", {
       last_acked_command_seq: this.#store?.lastAckedCommandSeq ?? 0,
       active_run_ids: this.#store?.activeRunIds() ?? [],
@@ -341,9 +422,12 @@ export class AgentWorkRuntime {
         try {
           await this.#waitForDisconnect(socket, epoch);
         } catch (error) {
-          console.error(`octo-harness Agent Work runtime connection failed: ${errorMessage(error)}`);
+          this.#reportError("transport.connection.error", "Agent Work WebSocket connection failed", error, {
+            connection_id: this.#connectionId
+          });
         }
         if (this.#socket === socket) this.#socket = undefined;
+        this.#connectionId = undefined;
       }
       this.#connected = false;
       if (this.#heartbeat) clearInterval(this.#heartbeat);
@@ -357,7 +441,9 @@ export class AgentWorkRuntime {
         try {
           await this.#connect();
         } catch (error) {
-          console.error(`octo-harness Agent Work runtime reconnect failed: ${errorMessage(error)}`);
+          this.#reportError("transport.connection.reconnect_failed", "Agent Work WebSocket reconnect failed", error, {
+            reconnect_attempt: this.#connectionAttempt
+          });
         }
       }
     }
@@ -389,7 +475,20 @@ export class AgentWorkRuntime {
         this.#messageHandlers.add(handler);
         void handler.finally(() => this.#messageHandlers.delete(handler));
       };
-      const onClose = (): void => settle();
+      const onClose = (code: number, reason: Buffer): void => {
+        this.#log({
+          level: code === 1000 ? "info" : "warn",
+          scope: "transport.wss",
+          event: "transport.connection.closed",
+          message: "Agent Work WebSocket connection closed",
+          data: {
+            connection_id: this.#connectionId,
+            close_code: code,
+            close_reason: reason.toString("utf8") || undefined
+          }
+        });
+        settle();
+      };
       const onError = (error: Error): void => settle(error);
       socket.on("message", onMessage);
       socket.once("close", onClose);
@@ -400,6 +499,27 @@ export class AgentWorkRuntime {
   async #receive(envelope: WireEnvelope, epoch: number): Promise<void> {
     if (!this.#isCurrentLifecycle(epoch)) return;
     if (envelope.version !== PROTOCOL_VERSION) throw new Error(`unsupported Agent Work protocol ${envelope.version}`);
+    const envelopePayload = asRecord(envelope.payload);
+    const commandPayload = envelope.type === "runtime.command" ? envelopePayload : undefined;
+    // Transport traces carry routing and correlation fields, never the envelope
+    // payload. Business payloads can contain full ChatTurn or provider content
+    // and belong only in the explicitly enabled sensitive capture stream.
+    this.#log({
+      level: "debug",
+      scope: "transport.wss",
+      event: "transport.message.received",
+      message: "Agent Work WebSocket message received",
+      runId: stringValue(commandPayload?.run_id) ?? stringValue(envelopePayload.run_id),
+      data: {
+        connection_id: this.#connectionId,
+        envelope_id: envelope.id,
+        frame_type: envelope.type,
+        command_id: stringValue(commandPayload?.command_id),
+        server_seq: commandPayload?.server_seq,
+        seq: envelope.seq,
+        ack: envelope.ack
+      }
+    });
     if (envelope.type === "context.append") {
       assertChannelContextAppend(envelope.payload);
       this.#contextStore?.append(envelope.payload);
@@ -446,7 +566,7 @@ export class AgentWorkRuntime {
         if (Number.isFinite(received)) {
           const outcome = store.advanceReceived(runId, received);
           if (!outcome.advanced && outcome.reason === "ack_beyond_produced") {
-            console.error(`octo-harness Agent Work runtime rejected out-of-range received ACK run=${runId} seq=${received}`);
+            this.#reportError("agent_work.ack.rejected", "Agent Work received ACK was out of range", new Error("ack_beyond_produced"), { run_id: runId, seq: received });
           }
           const prefix = `${runId}:`;
           for (const key of [...this.#inFlight]) {
@@ -470,13 +590,14 @@ export class AgentWorkRuntime {
                   && authoritativeEventId === inspection.terminal.eventId;
                 if (!grantMatchesTerminal) {
                   this.#contextStore?.markFailed(runId);
-                  console.error(
-                    `channel context commit not granted run=${runId} status=${authoritativeStatus ?? "missing"}`
-                  );
+                  this.#reportError("channel_context.commit_not_granted", "channel context commit was not granted", new Error("commit_not_granted"), {
+                    run_id: runId,
+                    authoritative_status: authoritativeStatus ?? "missing"
+                  });
                 } else {
                   const result = this.#contextStore!.commitSnapshot(runId);
                   if (!result.committed) {
-                    console.error(`channel context cursor commit rejected run=${runId} reason=${result.reason}`);
+                    this.#reportError("channel_context.commit_rejected", "channel context cursor commit was rejected", new Error(result.reason), { run_id: runId });
                     contextCommitted = false;
                   }
                 }
@@ -488,7 +609,7 @@ export class AgentWorkRuntime {
             // the durable ACK can be replayed after reconnect. Both operations are idempotent.
             if (contextCommitted) store.advanceDurable(runId, durable);
           } else if (inspection.reason === "ack_beyond_produced") {
-            console.error(`octo-harness Agent Work runtime rejected out-of-range durable ACK run=${runId} seq=${durable}`);
+            this.#reportError("agent_work.ack.rejected", "Agent Work durable ACK was out of range", new Error("ack_beyond_produced"), { run_id: runId, seq: durable });
           }
         }
         // ACK released capacity and may unblock more sendable rows.
@@ -500,7 +621,14 @@ export class AgentWorkRuntime {
       // Peer asked us to pause and resume from a known-good seq; the sender
       // reloads from listSendable on the next kick, so just log and continue.
       const payload = asRecord(envelope.payload);
-      console.error(`octo-harness Agent Work runtime received NACK run=${String(payload.run_id)} code=${String(payload.code)} resume_from=${String(payload.resume_from_seq)}`);
+      this.#log({
+        level: "warn",
+        scope: "agent-work.delivery",
+        event: "agent_work.event.nack",
+        message: "Agent Work event batch was rejected",
+        runId: stringValue(payload.run_id),
+        data: { code: payload.code, resume_from_seq: payload.resume_from_seq, connection_id: this.#connectionId }
+      });
       return;
     }
     if (envelope.type === "error") {
@@ -511,6 +639,19 @@ export class AgentWorkRuntime {
 
   async #acceptCommand(command: RuntimeCommand, epoch: number): Promise<void> {
     if (!command?.command_id || !command.run_id || !command.type) throw new Error("invalid runtime.command payload");
+    this.#log({
+      level: "info",
+      scope: "agent-work.command",
+      event: "agent_work.command.received",
+      message: "Agent Work command received",
+      runId: command.run_id,
+      data: {
+        connection_id: this.#connectionId,
+        command_id: command.command_id,
+        command_type: command.type,
+        server_seq: command.server_seq
+      }
+    });
     const store = this.#store;
     if (!store) throw new Error("Agent Work runtime store is not open");
     if (command.type === "run.cancel") {
@@ -557,7 +698,14 @@ export class AgentWorkRuntime {
     const hardWatermark = this.#options.hardWatermarkBytes ?? DEFAULT_HARD_WATERMARK_BYTES;
     const pendingBytes = store.outboxBytes();
     if (pendingBytes >= hardWatermark) {
-      console.error(`octo-harness Agent Work outbox above hard watermark: ${pendingBytes} bytes (limit ${hardWatermark})`);
+      this.#log({
+        level: "error",
+        scope: "agent-work.outbox",
+        event: "agent_work.outbox.hard_watermark",
+        message: "Agent Work outbox is above the hard watermark",
+        runId: command.run_id,
+        data: { pending_bytes: pendingBytes, hard_watermark_bytes: hardWatermark }
+      });
     }
     if (pendingBytes >= softWatermark) {
       const error = { code: "OUTBOX_BACKPRESSURE", message: "local outbox above soft watermark" };
@@ -596,6 +744,41 @@ export class AgentWorkRuntime {
         request = mapped.request;
         adapterType = mapped.adapterType;
         sessionId = request.sessionId;
+        const sourceType = executionEnvelope.execution_request.source_type;
+        const sourceId = executionEnvelope.execution_request.source_id;
+        this.#log({
+          level: "info",
+          scope: "agent-work.dispatch",
+          event: sourceType === "chat_turn" ? "chat_turn.received" : "agent_work.execution.received",
+          message: sourceType === "chat_turn" ? "ChatTurn received from Agent Work" : "execution request received from Agent Work",
+          runId: command.run_id,
+          invocationId: request.invocationId,
+          sessionId,
+          data: {
+            connection_id: this.#connectionId,
+            command_id: command.command_id,
+            execution_request_id: executionEnvelope.execution_request.id,
+            source_type: sourceType,
+            source_id: sourceId,
+            ...(sourceType === "chat_turn" ? { chat_turn_id: sourceId } : {})
+          }
+        });
+        this.#log({
+          level: "info",
+          scope: "adapter.dispatch",
+          event: "adapter.selected",
+          message: `selected ${adapterType} adapter`,
+          runId: command.run_id,
+          invocationId: request.invocationId,
+          sessionId,
+          adapterType,
+          data: {
+            command_id: command.command_id,
+            source_type: sourceType,
+            source_id: sourceId,
+            ...(sourceType === "chat_turn" ? { chat_turn_id: sourceId } : {})
+          }
+        });
       } catch (error) {
         if (error instanceof RuntimeStoppingError) {
           this.#contextStore?.markFailed(command.run_id);
@@ -765,6 +948,24 @@ export class AgentWorkRuntime {
     let completed = false;
     let contextSnapshot = this.#contextStore?.markSubmitted(command.run_id);
     let started = false;
+    // Preserve all four correlation domains: the remote Run, local adapter
+    // invocation, harness session, and ChatTurn source id. They are not
+    // interchangeable and each answers a different support question.
+    this.#log({
+      level: "info",
+      scope: "adapter.invoke",
+      event: "adapter.invoke.started",
+      message: "adapter invocation started",
+      runId: command.run_id,
+      invocationId: request.invocationId,
+      sessionId: request.sessionId,
+      adapterType,
+      data: {
+        source_type: stringValue(request.context?.sourceType),
+        source_id: stringValue(request.context?.sourceId),
+        chat_turn_id: request.context?.sourceType === "chat_turn" ? stringValue(request.context.sourceId) : undefined
+      }
+    });
     const appendStarted = (): void => {
       if (started) return;
       store.allocateAndAppend(command.run_id, "run.started", contextSnapshot
@@ -785,6 +986,17 @@ export class AgentWorkRuntime {
         appendStarted();
         finalText = accumulateFinalText(finalText, event);
         const mapped = mapRuntimeEvent(event, finalText);
+        this.#log({
+          level: "debug",
+          scope: "adapter.invoke",
+          event: "adapter.event.received",
+          message: `adapter emitted ${event.type}`,
+          runId: command.run_id,
+          invocationId: request.invocationId,
+          sessionId: request.sessionId,
+          adapterType,
+          data: { canonical_event_type: event.type, outbox_event_type: mapped.type }
+        });
         if (contextSnapshot && TERMINAL_OUTBOX_TYPES.has(mapped.type)) {
           Object.assign(mapped.payload, contextEventFields(contextSnapshot));
         }
@@ -795,7 +1007,28 @@ export class AgentWorkRuntime {
         completed ||= event.type === "run.finished";
         this.#kickSender();
       }
+      this.#log({
+        level: completed ? "info" : "warn",
+        scope: "adapter.invoke",
+        event: completed ? "adapter.invoke.completed" : "adapter.invoke.ended_without_terminal",
+        message: completed ? "adapter invocation completed" : "adapter invocation ended without a terminal event",
+        runId: command.run_id,
+        invocationId: request.invocationId,
+        sessionId: request.sessionId,
+        adapterType
+      });
     } catch (error) {
+      this.#log({
+        level: "error",
+        scope: "adapter.invoke",
+        event: "adapter.invoke.failed",
+        message: "adapter invocation failed",
+        runId: command.run_id,
+        invocationId: request.invocationId,
+        sessionId: request.sessionId,
+        adapterType,
+        data: { error: errorMessage(error) }
+      });
       try {
         appendStarted();
         const payload = {
@@ -807,7 +1040,7 @@ export class AgentWorkRuntime {
         store.allocateAndAppend(command.run_id, "run.failed", payload);
         this.#kickSender();
       } catch (appendError) {
-        console.error(`failed to record run failure: ${errorMessage(appendError)}`);
+        this.#reportError("agent_work.outbox.failure_record_failed", "failed to record run failure", appendError, { run_id: command.run_id });
       }
     } finally {
       // Success remains submitted until the terminal outbox row receives a durable ACK.
@@ -896,9 +1129,10 @@ export class AgentWorkRuntime {
 
   #send(type: string, payload: unknown, seq?: number, ack?: number): void {
     if (!this.#socket || this.#socket.readyState !== WebSocket.OPEN) throw new Error("Agent Work runtime socket is not open");
+    const envelopeId = `msg_${randomUUID()}`;
     this.#socket.send(JSON.stringify({
       version: PROTOCOL_VERSION,
-      id: `msg_${randomUUID()}`,
+      id: envelopeId,
       type,
       runtime_id: this.#runtimeId,
       ...(seq === undefined ? {} : { seq }),
@@ -906,6 +1140,24 @@ export class AgentWorkRuntime {
       sent_at: new Date().toISOString(),
       payload
     } satisfies WireEnvelope));
+    const payloadRecord = asRecord(payload);
+    // As on receive, log the envelope identity and sequencing metadata only.
+    // The wire payload is deliberately excluded from normal operational logs.
+    this.#log({
+      level: "debug",
+      scope: "transport.wss",
+      event: "transport.message.sent",
+      message: "Agent Work WebSocket message sent",
+      runId: stringValue(payloadRecord.run_id),
+      data: {
+        connection_id: this.#connectionId,
+        envelope_id: envelopeId,
+        frame_type: type,
+        command_id: stringValue(payloadRecord.command_id),
+        seq,
+        ack
+      }
+    });
   }
 
   /** Send without throwing (heartbeat/ACK are safe to drop while disconnected;
@@ -925,6 +1177,34 @@ export class AgentWorkRuntime {
       "X-Subject-ID": this.#options.subjectId,
       ...(json ? { "Content-Type": "application/json" } : {})
     };
+  }
+
+  #log(input: LogInput): void {
+    this.#observability?.log(input);
+  }
+
+  /**
+   * Route runtime failures through the protected local log when available.
+   * stderr remains a compatibility fallback for embedders that did not supply
+   * observability; it receives only the synthesized error message.
+   */
+  #reportError(
+    event: string,
+    message: string,
+    error: unknown,
+    data: Record<string, unknown> = {}
+  ): void {
+    if (!this.#observability) {
+      console.error(`octo-harness ${message}: ${errorMessage(error)}`);
+      return;
+    }
+    this.#observability.log({
+      level: "error",
+      scope: "agent-work.runtime",
+      event,
+      message,
+      data: { ...data, error: errorMessage(error) }
+    });
   }
 }
 
@@ -999,6 +1279,26 @@ function executionAdapterType(envelope: ExecutionEnvelope): string {
   const profile = asRecord(envelope.agent_revision?.execution_profile);
   return stringValue(profile.adapter_type)
     ?? normalizeAdapterType(stringValue(profile.default_adapter) ?? "codex");
+}
+
+function httpEndpointMetadata(baseUrl: string): Record<string, string> {
+  const url = new URL(baseUrl);
+  return {
+    scheme: url.protocol.slice(0, -1),
+    host: url.hostname,
+    port: url.port || (url.protocol === "https:" ? "443" : "80"),
+    path: "/api/v1/runtimes/register"
+  };
+}
+
+/** Return only support-safe WSS location fields; credentials and query are omitted. */
+function webSocketEndpointMetadata(url: URL): Record<string, string> {
+  return {
+    scheme: url.protocol.slice(0, -1),
+    host: url.hostname,
+    port: url.port || (url.protocol === "wss:" ? "443" : "80"),
+    path: url.pathname
+  };
 }
 
 /** Render the full immutable execution input (current parts, recent group

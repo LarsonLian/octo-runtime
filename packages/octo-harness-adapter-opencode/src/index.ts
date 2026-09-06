@@ -37,6 +37,10 @@ interface OpenCodeNativeEvent extends OpenCodePart {
  * config (a temp markdown file) delivered through OPENCODE_CONFIG_CONTENT,
  * merged onto any inline config so the user's existing OpenCode config is not
  * overwritten. Returns a `cleanup` that removes the temp directory.
+ *
+ * The observation carrier contains the finalized argv and inline config,
+ * including the user input and instruction-file reference actually exposed to
+ * OpenCode. It must stay coupled to this builder as these transformations evolve.
  */
 export async function buildOpenCodeCommand(req: InvokeRequest, command = "opencode") {
   const directory = await mkdtemp(join(tmpdir(), "octo-harness-opencode-"));
@@ -56,6 +60,21 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
   args.push(providerInputText(req));
   return {
     command, args, env: { OPENCODE_CONFIG_CONTENT: JSON.stringify(inline), OPENCODE_CLIENT: "octo-harness" },
+    rpcMethod: "process.argv",
+    providerSessionId: req.providerSession?.sessionId,
+    // Do not fall back to the generic CommandSpec snapshot here: retaining the
+    // logical inputs alongside argv makes file/config indirection evaluable.
+    providerInput: {
+      kind: "json_params" as const,
+      content: {
+        command,
+        args,
+        cwd: req.workdir,
+        user_input: providerInputText(req),
+        instructions: req.appendInstructions,
+        inline_config: inline
+      }
+    },
     cleanup: () => rm(directory, { recursive: true, force: true })
   };
 }

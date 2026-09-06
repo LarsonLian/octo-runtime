@@ -10,11 +10,14 @@
  */
 import {
   defineAdapter,
+  observeBestEffort,
+  observeProviderOutput,
   parseJsonLine,
   probeCommand,
   providerInputText,
   spawnJsonLines,
   type CanonicalEvent,
+  type AdapterInvocationContext,
   type InvokeRequest,
   type MessageExposure
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
@@ -64,6 +67,9 @@ interface ClaudeNativeEvent {
  * The system/control prompt is written to a private temp file passed via
  * `--append-system-prompt-file`, while the user prompt stays on stdin, so the
  * two never get conflated. Returns a `cleanup` that removes the temp directory.
+ * `providerInput` records both channels after argv construction; it is the
+ * provider-visible carrier used for evaluation rather than an approximation
+ * reconstructed from the original InvokeRequest.
  */
 export async function buildClaudeCommand(
   req: InvokeRequest,
@@ -98,7 +104,27 @@ export async function buildClaudeCommand(
   args.push("--permission-mode", mode);
   if (mode === "bypassPermissions") args.push("--dangerously-skip-permissions");
   args.push("-");
-  return { command, args, input: providerInputText(req), cleanup: () => rm(directory, { recursive: true, force: true }) };
+  const input = providerInputText(req);
+  return {
+    command,
+    args,
+    input,
+    rpcMethod: "process.stdin",
+    providerSessionId: req.providerSession?.sessionId,
+    providerInput: {
+      kind: "json_params" as const,
+      content: {
+        command,
+        args,
+        cwd: req.workdir,
+        stdin: input,
+        append_system_prompt: req.appendInstructions,
+        model: req.agentConfig?.model,
+        effort: req.agentConfig?.thinking
+      }
+    },
+    cleanup: () => rm(directory, { recursive: true, force: true })
+  };
 }
 
 /**
@@ -289,11 +315,20 @@ export function createClaudeCodeAdapter({
       transport: "ndjson/stdio"
     },
     probe: () => probeCommand(command),
-    async *invoke(request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
+    async *invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
       const spec = await buildClaudeCommand(request, command, commandArgsPrefix);
       // The normalizer must not be hoisted to an adapter singleton: one adapter may run several invocations concurrently.
       const normalizer = new ClaudeEventNormalizer();
+      let firstOutput = true;
       try {
+        // Await capture before spawning. Under require-capture this prevents the
+        // model input from leaving the harness unless its audit copy is durable.
+        await context?.observe({
+          event: "provider.input",
+          rpcMethod: spec.rpcMethod,
+          ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {}),
+          carrier: spec.providerInput
+        });
         yield {
           type: "message.create",
           payload: { role: "assistant", status: "streaming", channel: "final" }
@@ -302,10 +337,47 @@ export function createClaudeCodeAdapter({
           ...spec,
           cwd: request.workdir,
           signal: request.signal,
+          onInputWritten: () => {
+            // Claude has no response envelope for stdin input. This marks local
+            // stream acceptance only; first stdout is the next observable state.
+            observeBestEffort(context, {
+              event: "provider.dispatch.written",
+              rpcMethod: spec.rpcMethod,
+              ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {})
+            });
+          },
           parseLine: parseJsonLine
         })) {
-          yield* normalizer.normalize(native);
+          if (firstOutput) {
+            firstOutput = false;
+            // Count the first native frame even if normalization produces no
+            // canonical event; it still proves the provider responded.
+            observeBestEffort(context, {
+              event: "provider.output.first",
+              rpcMethod: "process.stdout",
+              ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {})
+            });
+          }
+          const events = normalizer.normalize(native);
+          observeProviderOutput(context, events, {
+            rpcMethod: "process.stdout",
+            ...(native.session_id ?? spec.providerSessionId
+              ? { providerSessionId: native.session_id ?? spec.providerSessionId }
+              : {}),
+            native: {
+              ...(native.type ? { type: native.type } : {}),
+              ...(native.event?.type ? { subtype: native.event.type } : {})
+            }
+          });
+          yield* events;
         }
+      } catch (error) {
+        observeBestEffort(context, {
+          event: "provider.dispatch.failed",
+          rpcMethod: spec.rpcMethod,
+          data: { error: error instanceof Error ? error.message : String(error) }
+        });
+        throw error;
       } finally {
         await spec.cleanup();
       }

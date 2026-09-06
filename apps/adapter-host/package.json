@@ -16,7 +16,8 @@
     "@mininglamp-oss/octo-harness-adapter-codex": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-host": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-openclaw": "workspace:*",
-    "@mininglamp-oss/octo-harness-adapter-opencode": "workspace:*"
+    "@mininglamp-oss/octo-harness-adapter-opencode": "workspace:*",
+    "@mininglamp-oss/octo-harness-observability": "workspace:*"
   },
   "types": "./dist/index.d.ts"
 }
