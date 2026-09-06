@@ -20,8 +20,8 @@ need to get productive.
 - **Node.js** ≥ 20
 - **pnpm** ≥ 11
 - For real provider runs: the corresponding provider CLI installed and
-  authenticated (Codex, Claude Code, CodeBuddy, OpenCode, OpenClaw), or a Dify
-  API key. Tests do **not** call real models.
+  authenticated (Codex, Claude Code, CodeBuddy, OpenCode, OpenClaw). Tests do
+  **not** call real models.
 
 ### Getting Started
 
@@ -81,7 +81,6 @@ octo-harness/
 │   ├── octo-harness-adapter-host/        # host lifecycle + NDJSON RPC
 │   ├── octo-harness-adapter-sdk/         # adapter helpers + subprocess runtime
 │   ├── octo-harness-acp-client/          # CodeBuddy ACP JSON-RPC client
-│   ├── octo-harness-dify-client/         # Dify HTTP/SSE transport client
 │   └── octo-harness-adapter-*/           # per-provider adapters
 ├── config/adapters.json     # adapter manifest
 ├── test/                    # contract and integration tests

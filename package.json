@@ -35,8 +35,6 @@
     "@mininglamp-oss/octo-harness-adapter-claude-code": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-codebuddy": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-codex": "workspace:*",
-    "@mininglamp-oss/octo-harness-adapter-dify-chatflow": "workspace:*",
-    "@mininglamp-oss/octo-harness-adapter-dify-workflow": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-host": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-openclaw": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-opencode": "workspace:*",
@@ -48,7 +46,6 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@mininglamp-oss/octo-harness-acp-client": "workspace:*",
-    "@mininglamp-oss/octo-harness-dify-client": "workspace:*",
     "@mininglamp-oss/octo-harness-daemon-app": "workspace:*",
     "@types/node": "^24.0.0",
     "eslint": "^10.9.1",

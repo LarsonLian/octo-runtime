@@ -2,7 +2,7 @@
 
 This document describes the internal architecture of **Octo Harness**: a
 provider-neutral agent harness reference implementation. It unifies Codex,
-Claude Code, CodeBuddy, OpenCode, OpenClaw (local) and Dify (remote) behind one
+Claude Code, CodeBuddy, OpenCode and OpenClaw (local) behind one
 domain model, while keeping Chat, Task, Trigger, Run, provider session and
 streamed events as explicit domain objects.
 
@@ -61,11 +61,10 @@ a next-phase design, not current capability.
                                    │   lifecycle + provider procs)   │
                                    └───────────────┬───────────────┘
                                                    │ one subprocess per invocation
-        ┌──────────┬──────────┬──────────┬────────┴───┬──────────┬──────────┐
-        ▼          ▼          ▼          ▼            ▼          ▼          ▼
-      Codex   Claude Code  CodeBuddy  OpenCode   OpenClaw     Dify        Dify
-                            (ACP)                (local CLI) Chatflow    Workflow
-                                                            (HTTPS+SSE) (HTTPS+SSE)
+        ┌──────────────┬──────────────┬────────────┴─┬──────────────┐
+        ▼              ▼              ▼              ▼              ▼
+      Codex      Claude Code      CodeBuddy       OpenCode       OpenClaw
+                                    (ACP)                       (local CLI)
 ```
 
 Solid boundaries are process boundaries. The CLI never reads or writes state
@@ -133,7 +132,6 @@ package imports, not runtime network connections.
 | `octo-harness-adapter-host/rpc` | `AdapterHostRpcClient/Server` | stdio NDJSON JSON-RPC; ACK + event notifications | Building provider commands |
 | `octo-harness-adapter-sdk` | `createJsonCliAdapter`, `spawnJsonLines` | Common subprocess + JSONL template for CLI providers | Provider field semantics |
 | `octo-harness-acp-client` | `AcpClient` | CodeBuddy ACP initialize/session/prompt/update/cancel | Canonical event semantics |
-| `octo-harness-dify-client` | Dify HTTP/SSE client | Dify remote HTTPS + SSE transport | Canonical event semantics |
 | `octo-harness-adapter-*` | `build*Command`, `normalize*Event` | Generic request → provider input; native stream → canonical events | Mutating global Run/Task |
 
 ### Executable apps
@@ -164,7 +162,7 @@ run.finished | run.error | run.stopped
 Three event levels must not be conflated:
 
 1. **Provider-native event** — Codex `thread.started`, Claude `assistant/result`,
-   ACP `session/update`, Dify SSE, etc. Exists only inside an adapter.
+   ACP `session/update`, etc. Exists only inside an adapter.
 2. **CanonicalEvent** — `type + payload` only; shared by host and engine.
 3. **EventEnvelope** — the engine adds `id/seq/tsMs/sessionId/runId` before
    writing to the store. CLI/UI read this level.
@@ -211,7 +209,6 @@ stream.
 | host → OpenCode | argv/env/temp file + stdout | Prompt as positional argv; native JSONL via stdout | One subprocess per invocation |
 | host → OpenClaw | argv/message file + stdout JSON | OpenClaw local CLI | One subprocess per invocation |
 | host → CodeBuddy | child stdin/stdout | ACP JSON-RPC 2.0 | One ACP subprocess/client per invocation |
-| host → Dify | HTTPS + SSE | Dify remote API | Per-invocation HTTP request |
 | UI/Runtime → remote node | not implemented | WSS (target design only) | — |
 
 The daemon-to-host stdio path carries two independent ACKs: the daemon ACKs the

@@ -5,28 +5,6 @@
     { "type": "claude-code", "module": "@mininglamp-oss/octo-harness-adapter-claude-code", "export": "claudeCodeAdapter" },
     { "type": "codebuddy", "module": "@mininglamp-oss/octo-harness-adapter-codebuddy", "export": "codebuddyAdapter" },
     { "type": "opencode", "module": "@mininglamp-oss/octo-harness-adapter-opencode", "export": "opencodeAdapter" },
-    { "type": "openclaw", "module": "@mininglamp-oss/octo-harness-adapter-openclaw", "export": "openclawAdapter" },
-    {
-      "type": "dify-chatflow",
-      "module": "@mininglamp-oss/octo-harness-adapter-dify-chatflow",
-      "export": "createDifyChatflowAdapter",
-      "factory": true,
-      "options": {
-        "apiKeyEnv": "DIFY_CHATFLOW_API_KEY",
-        "baseUrl": "https://api.dify.ai/v1",
-        "applicationMode": "chatbot"
-      }
-    },
-    {
-      "type": "dify-workflow",
-      "module": "@mininglamp-oss/octo-harness-adapter-dify-workflow",
-      "export": "createDifyWorkflowAdapter",
-      "factory": true,
-      "options": {
-        "apiKeyEnv": "DIFY_WORKFLOW_API_KEY",
-        "baseUrl": "https://api.dify.ai/v1",
-        "applicationMode": "workflow"
-      }
-    }
+    { "type": "openclaw", "module": "@mininglamp-oss/octo-harness-adapter-openclaw", "export": "openclawAdapter" }
   ]
 }

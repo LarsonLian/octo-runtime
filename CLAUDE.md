@@ -3,8 +3,8 @@
 ## Project
 
 Octo Harness: a provider-neutral agent harness reference implementation. It
-unifies Codex, Claude Code, CodeBuddy, OpenCode, OpenClaw (local) and Dify
-(remote) behind one domain model, keeping Chat, Task, Trigger, Run, provider
+unifies Codex, Claude Code, CodeBuddy, OpenCode and OpenClaw (local)
+behind one domain model, keeping Chat, Task, Trigger, Run, provider
 session and streamed events as explicit domain objects. Runnable single-node
 baseline — not a multi-node production scheduler.
 
@@ -61,8 +61,8 @@ Full document in [ARCHITECTURE.md](./ARCHITECTURE.md); deep dives in
 Transports differ by boundary (do NOT assume "everything is JSON-RPC"):
 CLI→daemon is a one-line JSON request/response over a Unix socket (not
 JSON-RPC); daemon→adapter-host is NDJSON JSON-RPC 2.0 over stdio;
-host→provider is a per-invocation subprocess (CodeBuddy is ACP JSON-RPC 2.0,
-Dify is HTTPS+SSE). Unification lives at the `HarnessHost` port and the canonical
+host→provider is a per-invocation subprocess (CodeBuddy is ACP JSON-RPC 2.0).
+Unification lives at the `HarnessHost` port and the canonical
 event contract, not at the wire.
 
 ## Testing
