@@ -195,6 +195,14 @@ export class AgentWorkStore {
     ).all().map(row => (row as { run_id: string }).run_id);
   }
 
+  /** Terminal runs whose context commit decision can still arrive through a
+   * durable ACK. Running work is protected by AgentWorkRuntime's live maps. */
+  pendingTerminalAckRunIds(): string[] {
+    return this.#db.prepare(
+      "SELECT run_id FROM runs WHERE terminal_seq IS NOT NULL AND durable_through_seq < terminal_seq"
+    ).all().map(row => (row as { run_id: string }).run_id);
+  }
+
   /** Allocate the next seq, mint a stable event_id and append to the outbox in one
    * transaction; a terminal event also records terminal_seq. */
   allocateAndAppend(runId: string, type: string, payload: Record<string, unknown>): { seq: number; eventId: string } {

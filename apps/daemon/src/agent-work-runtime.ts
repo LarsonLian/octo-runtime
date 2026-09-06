@@ -263,7 +263,7 @@ export class AgentWorkRuntime {
       try {
         this.#store?.reconcile();
         const protectedRunIds = new Set([
-          ...(this.#store?.activeRunIds() ?? []),
+          ...(this.#store?.pendingTerminalAckRunIds() ?? []),
           ...this.#activeRuns.keys(),
           ...this.#acceptingRuns.keys()
         ]);

@@ -17,6 +17,7 @@ import {
   renderDisplayExecutionInputPrompt,
   renderImmutableExecutionInputPrompt
 } from "../apps/daemon/dist/agent-work-runtime.js";
+import { deferred, wire } from "./agent-work-runtime-fixture.js";
 
 const envelope = {
   schema_version: 1,
@@ -238,18 +239,3 @@ test("Agent Work observability correlates WSS, ChatTurn, Run, invocation and ada
     await rm(directory, { recursive: true, force: true });
   }
 });
-
-function wire(type, payload) {
-  return JSON.stringify({
-    version: 1,
-    id: `wire-${Math.random()}`,
-    type,
-    sent_at: new Date().toISOString(),
-    payload
-  });
-}
-
-function deferred() {
-  let resolve;
-  return { promise: new Promise(done => { resolve = done; }), resolve };
-}

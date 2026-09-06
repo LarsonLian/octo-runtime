@@ -8,6 +8,7 @@ import { WebSocketServer } from "ws";
 import { AgentWorkRuntime } from "../apps/daemon/dist/agent-work-runtime.js";
 import { AgentWorkStore } from "../apps/daemon/dist/agent-work-store.js";
 import { ChannelContextStore } from "../apps/daemon/dist/channel-context-store.js";
+import { deferred, terminalGrant, waitFor, wire, withTimeout } from "./agent-work-runtime-fixture.js";
 
 const now = Date.now();
 const scope = {
@@ -1083,47 +1084,4 @@ function executionEnvelope(runId = "run-e2e", triggerSeq = 3, currentText = "tri
       }
     }
   };
-}
-
-function wire(type, payload) {
-  return JSON.stringify({
-    version: 1,
-    id: `wire-${Math.random()}`,
-    type,
-    sent_at: new Date().toISOString(),
-    payload
-  });
-}
-
-function terminalGrant(event) {
-  return {
-    context_commit_granted: true,
-    authoritative_terminal_status: "completed",
-    authoritative_terminal_event_id: event.event_id
-  };
-}
-
-function deferred() {
-  let resolve;
-  return { promise: new Promise(done => { resolve = done; }), resolve };
-}
-
-async function waitFor(predicate) {
-  const deadline = Date.now() + 2_000;
-  while (!predicate()) {
-    if (Date.now() >= deadline) throw new Error("condition timeout");
-    await new Promise(resolve => setTimeout(resolve, 10));
-  }
-}
-
-async function withTimeout(promise, timeoutMs, message) {
-  let timer;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), timeoutMs); })
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
 }

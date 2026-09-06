@@ -62,9 +62,11 @@ test("analysis exposure provenance survives the reliable outbox and dual waterma
 test("terminal event stays active until its seq is durably acknowledged", async () => {
   await withStore("terminal", store => {
     store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });
+    assert.deepEqual(store.pendingTerminalAckRunIds(), []);
     store.allocateAndAppend("r1", "run.started", {});
     const terminal = store.allocateAndAppend("r1", "run.completed", { text: "done" });
     assert.deepEqual(store.activeRunIds(), ["r1"]);
+    assert.deepEqual(store.pendingTerminalAckRunIds(), ["r1"]);
 
     // received alone does not retire the run — only durable coverage does.
     store.advanceReceived("r1", 2);
@@ -78,6 +80,7 @@ test("terminal event stays active until its seq is durably acknowledged", async 
 
     store.advanceDurable("r1", 2);
     assert.deepEqual(store.activeRunIds(), []);
+    assert.deepEqual(store.pendingTerminalAckRunIds(), []);
     assert.equal(store.outboxBytes(), 0);
     assert.equal(store.durableTerminal("r1", 2), undefined);
   });
