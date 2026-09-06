@@ -1,7 +1,14 @@
 import net, { type Server } from "node:net";
+import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import { chmod, lstat, mkdir, rm } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+import {
+  DEFAULT_OBSERVABILITY_CONFIGURATION,
+  LocalObservability,
+  observabilityEnvironment,
+  type ObservabilityConfiguration
+} from "@mininglamp-oss/octo-harness-observability";
 import {
   HarnessEngine,
   SqliteStore,
@@ -22,9 +29,11 @@ export interface StartDaemonServerOptions {
   storePath: string;
   manifestPath: string;
   hostEntrypoint: string;
+  logging?: ObservabilityConfiguration;
   agentWork?: AgentWorkRuntimeOptions;
 }
 
+/** Non-secret process metadata returned by `status` and suitable for support output. */
 export interface DaemonRuntimeInfo {
   socketPath: string;
   storePath: string;
@@ -59,6 +68,7 @@ export interface DaemonApplication {
   hostProcess: AdapterHostProcess;
   runtime: DaemonRuntimeInfo;
   agentWorkRuntime?: AgentWorkRuntime;
+  observability: LocalObservability;
   close(): Promise<void>;
 }
 
@@ -73,23 +83,83 @@ export async function startDaemonServer({
   storePath,
   manifestPath,
   hostEntrypoint,
+  logging,
   agentWork
 }: StartDaemonServerOptions): Promise<DaemonApplication> {
-  await mkdir(dirname(socketPath), { recursive: true });
+  // Construct observability before every other owned resource. Startup failures
+  // are otherwise the most difficult failures to diagnose and would leave no
+  // durable evidence.
+  const loggingConfiguration: ObservabilityConfiguration = logging ?? {
+    directory: join(dirname(storePath), "logs"),
+    ...DEFAULT_OBSERVABILITY_CONFIGURATION
+  };
+  const observability = new LocalObservability({ ...loggingConfiguration, component: "daemon" });
+  observability.log({
+    level: "info",
+    scope: "daemon.lifecycle",
+    event: "daemon.starting",
+    message: "daemon starting",
+    data: { socket_path: socketPath, store_path: storePath, manifest_path: manifestPath }
+  });
   try {
-    const stat = await lstat(socketPath);
-    if (!stat.isSocket()) throw new Error(`refusing to replace non-socket path: ${socketPath}`);
-    await rm(socketPath);
+    await mkdir(dirname(socketPath), { recursive: true });
+    try {
+      const stat = await lstat(socketPath);
+      if (!stat.isSocket()) throw new Error(`refusing to replace non-socket path: ${socketPath}`);
+      await rm(socketPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    observability.log({
+      level: "error",
+      scope: "daemon.lifecycle",
+      event: "daemon.start.failed",
+      message: "daemon failed before opening its store",
+      data: { error: errorMessage(error) }
+    });
+    await observability.close();
+    throw error;
   }
 
-  const store = SqliteStore.open(storePath);
+  let store: SqliteStore;
+  try {
+    store = SqliteStore.open(storePath);
+  } catch (error) {
+    observability.log({
+      level: "error",
+      scope: "daemon.lifecycle",
+      event: "daemon.start.failed",
+      message: "daemon store failed to open",
+      data: { error: errorMessage(error) }
+    });
+    await observability.close();
+    throw error;
+  }
   let hostProcess: AdapterHostProcess;
   try {
-    hostProcess = await spawnAdapterHost({ entrypoint: hostEntrypoint, manifest: manifestPath });
+    // The adapter host writes its own component stream, but inherits the exact
+    // same privacy, retention and capture policy as the daemon. RPC frames at
+    // this boundary are recorded by the parent so request/response ordering is
+    // preserved from the daemon's point of view.
+    hostProcess = await spawnAdapterHost({
+      entrypoint: hostEntrypoint,
+      manifest: manifestPath,
+      env: { ...process.env, ...observabilityEnvironment(loggingConfiguration) },
+      ...(loggingConfiguration.traceRpc ? {
+        trace: (direction, frame) => observability.traceRpc(direction, frame)
+      } : {})
+    });
   } catch (error) {
     store.close();
+    observability.log({
+      level: "error",
+      scope: "daemon.lifecycle",
+      event: "daemon.start.failed",
+      message: "adapter host failed to start",
+      data: { error: errorMessage(error) }
+    });
+    await observability.close();
     throw error;
   }
   let adapters: string[];
@@ -98,6 +168,14 @@ export async function startDaemonServer({
   } catch (error) {
     await hostProcess.close();
     store.close();
+    observability.log({
+      level: "error",
+      scope: "daemon.lifecycle",
+      event: "daemon.start.failed",
+      message: "adapter host readiness check failed",
+      data: { error: errorMessage(error) }
+    });
+    await observability.close();
     throw error;
   }
   const runtime: DaemonRuntimeInfo = {
@@ -112,11 +190,70 @@ export async function startDaemonServer({
   };
   const engine = new HarnessEngine({ store, host: hostProcess.client });
   const daemon = new HarnessDaemon({ engine, store });
-  const agentWorkRuntime = agentWork ? new AgentWorkRuntime(agentWork, hostProcess.client) : undefined;
+  const agentWorkRuntime = agentWork ? new AgentWorkRuntime(agentWork, hostProcess.client, observability) : undefined;
+  // HarnessDaemon events mark execution, rather than submission, boundaries.
+  // A control request can therefore be acknowledged before `run.started` while
+  // the resulting Run still remains correlated by its stable runId.
+  daemon.on("run.started", ({ runId }: { runId: string }) => {
+    const run = store.getRun(runId);
+    observability.log({
+      level: "info",
+      scope: "run.execution",
+      event: "run.execution.started",
+      message: "run execution started",
+      runId,
+      sessionId: run?.sessionId,
+      data: { priorStatus: run?.status ?? "unknown" }
+    });
+  });
+  daemon.on("run.terminal", ({ runId, status }: { runId: string; status?: string }) => {
+    const run = store.getRun(runId);
+    observability.log({
+      level: status === "completed" ? "info" : "error",
+      scope: "run.execution",
+      event: status === "completed" ? "run.execution.completed" : "run.execution.failed",
+      message: status === "completed" ? "run execution completed" : "run execution ended unsuccessfully",
+      runId,
+      sessionId: run?.sessionId,
+      data: { status: status ?? run?.status ?? "unknown" }
+    });
+  });
 
   const server = net.createServer(socket => {
+    // A connection id scopes transport evidence only. Run, session, ChatTurn and
+    // invocation ids retain their domain meanings and may span other transports.
+    const connectionId = `conn_${randomUUID()}`;
+    observability.log({
+      level: "info",
+      scope: "transport.unix",
+      event: "transport.connection.opened",
+      message: "daemon control connection opened",
+      data: {
+        connection_id: connectionId,
+        transport: "unix",
+        local_path: socketPath
+      }
+    });
+    socket.once("close", () => observability.log({
+      level: "info",
+      scope: "transport.unix",
+      event: "transport.connection.closed",
+      message: "daemon control connection closed",
+      data: { connection_id: connectionId, transport: "unix" }
+    }));
     createInterface({ input: socket }).once("line", line => {
-      void handleRequestLine({ line, socket, daemon, engine, store, host: hostProcess.client, runtime, agentWorkRuntime });
+      void handleRequestLine({
+        line,
+        socket,
+        daemon,
+        engine,
+        store,
+        host: hostProcess.client,
+        runtime,
+        agentWorkRuntime,
+        observability,
+        connectionId
+      });
     });
   });
 
@@ -130,12 +267,31 @@ export async function startDaemonServer({
     // 0600 restricts it to the current host account (there is no RBAC above it).
     await chmod(socketPath, 0o600);
     await agentWorkRuntime?.start();
+    observability.log({
+      level: "info",
+      scope: "daemon.lifecycle",
+      event: "daemon.ready",
+      message: "daemon ready",
+      data: {
+        socket_path: socketPath,
+        adapter_host_pid: hostProcess.child.pid ?? null,
+        adapters
+      }
+    });
   } catch (error) {
+    observability.log({
+      level: "error",
+      scope: "daemon.lifecycle",
+      event: "daemon.start.failed",
+      message: "daemon failed to start",
+      data: { error: errorMessage(error) }
+    });
     daemon.stop();
     await agentWorkRuntime?.close();
     await hostProcess.close();
     store.close();
     await rm(socketPath, { force: true });
+    await observability.close();
     throw error;
   }
 
@@ -147,13 +303,27 @@ export async function startDaemonServer({
     hostProcess,
     runtime,
     agentWorkRuntime,
+    observability,
     async close(): Promise<void> {
+      observability.log({
+        level: "info",
+        scope: "daemon.lifecycle",
+        event: "daemon.stopping",
+        message: "daemon stopping"
+      });
       daemon.stop();
       await agentWorkRuntime?.close();
       await new Promise<void>(resolve => server.close(() => resolve()));
       await hostProcess.close();
       store.close();
       await rm(socketPath, { force: true });
+      observability.log({
+        level: "info",
+        scope: "daemon.lifecycle",
+        event: "daemon.stopped",
+        message: "daemon stopped"
+      });
+      await observability.close();
     }
   };
 }
@@ -169,7 +339,9 @@ async function handleRequestLine({
   store,
   host,
   runtime,
-  agentWorkRuntime
+  agentWorkRuntime,
+  observability,
+  connectionId
 }: {
   line: string;
   socket: net.Socket;
@@ -179,17 +351,87 @@ async function handleRequestLine({
   host: AdapterHostRpcClient;
   runtime: DaemonRuntimeInfo;
   agentWorkRuntime?: AgentWorkRuntime;
+  observability: LocalObservability;
+  connectionId: string;
 }): Promise<void> {
   let request: DaemonRequest | undefined;
   try {
     request = parseRequest(line);
+    // Do not observe the observation query itself. The Viewer polls this method;
+    // recording each poll would create an unbounded feedback loop and bury the
+    // application events the operator is trying to inspect.
+    const logsItself = request.method !== "logs.query";
+    if (logsItself) {
+      observability.log({
+        level: "debug",
+        scope: "control.request",
+        event: "control.request.received",
+        message: "daemon control request received",
+        runId: optionalString(request.params?.runId),
+        sessionId: optionalString(request.params?.sessionId),
+        data: {
+          connection_id: connectionId,
+          request_id: typeof request.id === "string" || typeof request.id === "number" ? request.id : null,
+          method: request.method,
+          chat_turn_id: optionalString(request.params?.chatTurnId)
+        }
+      });
+    }
     if (request.method === "run.stream") {
-      await streamRunEvents({ request, socket, store });
+      await streamRunEvents({ request, socket, store, observability, connectionId });
       return;
     }
-    const result = await dispatch({ request, daemon, engine, store, host, runtime, agentWorkRuntime });
+    const result = await dispatch({ request, daemon, engine, store, host, runtime, agentWorkRuntime, observability });
+    const resultRecord = isRecord(result) ? result : {};
+    const resultAgent = isRecord(resultRecord.agent) ? resultRecord.agent : undefined;
+    if (logsItself) {
+      observability.log({
+        level: "info",
+        scope: "control.request",
+        event: request.method === "chat.send" ? "chat_turn.dispatch.accepted" : "control.request.completed",
+        message: "daemon control request completed",
+        runId: optionalString(resultRecord.runId) ?? optionalString(request.params?.runId),
+        sessionId: optionalString(request.params?.sessionId),
+        adapterType: resultAgent ? optionalString(resultAgent.adapterType) : undefined,
+        data: {
+          connection_id: connectionId,
+          method: request.method,
+          chat_turn_id: optionalString(request.params?.chatTurnId)
+        }
+      });
+    }
+    if (request.method === "chat.send" && resultAgent) {
+      observability.log({
+        level: "info",
+        scope: "adapter.dispatch",
+        event: "adapter.selected",
+        message: `selected ${optionalString(resultAgent.adapterType) ?? "unknown"} adapter`,
+        runId: optionalString(resultRecord.runId),
+        sessionId: optionalString(request.params?.sessionId),
+        adapterType: optionalString(resultAgent.adapterType),
+        data: {
+          connection_id: connectionId,
+          chat_turn_id: optionalString(request.params?.chatTurnId),
+          agent_id: optionalString(resultAgent.id)
+        }
+      });
+    }
     socket.end(`${JSON.stringify({ id: request.id, result })}\n`);
   } catch (error) {
+    observability.log({
+      level: "error",
+      scope: "control.request",
+      event: "control.request.failed",
+      message: "daemon control request failed",
+      runId: optionalString(request?.params?.runId),
+      sessionId: optionalString(request?.params?.sessionId),
+      data: {
+        connection_id: connectionId,
+        method: request?.method ?? "unknown",
+        error: errorMessage(error),
+        code: (error as NodeJS.ErrnoException).code
+      }
+    });
     const rpcError = error as NodeJS.ErrnoException;
     socket.end(`${JSON.stringify({
       id: request?.id,
@@ -207,11 +449,15 @@ async function handleRequestLine({
 async function streamRunEvents({
   request,
   socket,
-  store
+  store,
+  observability,
+  connectionId
 }: {
   request: DaemonRequest;
   socket: net.Socket;
   store: Store;
+  observability: LocalObservability;
+  connectionId: string;
 }): Promise<void> {
   const params = request.params ?? {};
   const runId = requiredString(params.runId, "runId");
@@ -222,6 +468,14 @@ async function streamRunEvents({
     for (const event of store.getEvents(runId)) {
       if (event.seq < nextSeq) continue;
       await writeSocketLine(socket, { id: request.id, event });
+      observability.log({
+        level: "debug",
+        scope: "run.stream",
+        event: "run.event.streamed",
+        message: "run event streamed to control client",
+        runId,
+        data: { connection_id: connectionId, event_type: event.type, event_seq: event.seq }
+      });
       nextSeq = event.seq + 1;
       if (TERMINAL_EVENT_TYPES.has(event.type)) {
         await writeSocketLine(socket, {
@@ -264,7 +518,8 @@ async function dispatch({
   store,
   host,
   runtime,
-  agentWorkRuntime
+  agentWorkRuntime,
+  observability
 }: {
   request: DaemonRequest;
   daemon: HarnessDaemon;
@@ -273,6 +528,7 @@ async function dispatch({
   host: AdapterHostRpcClient;
   runtime: DaemonRuntimeInfo;
   agentWorkRuntime?: AgentWorkRuntime;
+  observability: LocalObservability;
 }): Promise<unknown> {
   const params = request.params ?? {};
   switch (request.method) {
@@ -281,6 +537,7 @@ async function dispatch({
         ready: true,
         pid: process.pid,
         ...runtime,
+        logging: observability.status,
         agentWork: agentWorkRuntime?.status ?? { enabled: false },
         counts: {
           agents: store.listAgents().length,
@@ -289,6 +546,17 @@ async function dispatch({
           runs: store.listRuns().length
         }
       };
+    case "logs.path":
+      return observability.status;
+    case "logs.query":
+      // Sensitive provider/RPC streams remain opt-in even though this control
+      // socket is local. Callers must explicitly cross the privacy boundary.
+      return observability.query({
+        runId: optionalString(params.runId),
+        invocationId: optionalString(params.invocationId),
+        includeSensitive: params.includeSensitive === true,
+        ...(typeof params.limit === "number" ? { limit: params.limit } : {})
+      });
     case "adapter.list":
       return host.list();
     case "adapter.probe":

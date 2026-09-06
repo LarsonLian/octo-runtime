@@ -260,22 +260,41 @@ test("text adapters prefer the exact modelInput over the display prompt", async 
 
   const claude = await buildClaudeCommand(modelRequest);
   assert.equal(claude.input, "MODEL_INPUT_OK");
+  assert.equal(claude.providerInput.content.stdin, claude.input);
   await claude.cleanup();
 
   const opencode = await buildOpenCodeCommand(modelRequest);
   assert.equal(opencode.args.at(-1), "MODEL_INPUT_OK");
+  assert.equal(opencode.providerInput.content.user_input, opencode.args.at(-1));
   await opencode.cleanup();
 
   const openclaw = await buildOpenClawCommand(modelRequest);
-  assert.match(await readFile(openclaw.messageFile, "utf8"), /\[User Request\]\nMODEL_INPUT_OK$/);
+  const openclawInput = await readFile(openclaw.messageFile, "utf8");
+  assert.match(openclawInput, /\[User Request\]\nMODEL_INPUT_OK$/);
+  assert.equal(openclaw.providerInput.content.message, openclawInput);
   await openclaw.cleanup();
 
   const fixture = fileURLToPath(new URL("../fixtures/fake-codex-app-server.mjs", import.meta.url));
   const codex = createCodexAdapter({ command: process.execPath, appServerArgs: [fixture] });
-  const host = new AdapterHost(); host.register(codex);
+  const observations = [];
+  const host = new AdapterHost({
+    observe: async (identity, observation) => {
+      observations.push({ identity, observation });
+      return { captureId: "capture-adapter-test", state: "accepted", complete: true };
+    }
+  });
+  host.register(codex);
   const events = [];
   for await (const event of host.invoke("codex", modelRequest)) events.push(event);
   assert.equal(events.at(-1).type, "run.finished");
+  const codexInput = observations.find(item =>
+    item.observation.event === "provider.input" && item.observation.rpcMethod === "turn/start"
+  );
+  assert.equal(codexInput.identity.runId, "run-1");
+  assert.equal(codexInput.identity.adapterType, "codex");
+  assert.equal(codexInput.observation.carrier.content.params.input[0].text, "MODEL_INPUT_OK");
+  assert.ok(observations.some(item => item.observation.event === "provider.dispatch.written"));
+  assert.ok(observations.some(item => item.observation.event === "provider.dispatch.acknowledged"));
 });
 
 test("CodeBuddy ACP subprocess completes the canonical contract", async () => {
@@ -285,11 +304,21 @@ test("CodeBuddy ACP subprocess completes the canonical contract", async () => {
     spawnOptions = opts;
     return spawnAcpClient({ ...opts, command: process.execPath, args: [fixture] });
   } });
-  const host = new AdapterHost(); host.register(adapter);
+  const observations = [];
+  const host = new AdapterHost({
+    observe: async (identity, observation) => {
+      observations.push({ identity, observation });
+      return { captureId: "capture-codebuddy-test", state: "accepted", complete: true };
+    }
+  });
+  host.register(adapter);
   const events = [];
   for await (const event of host.invoke("codebuddy", request)) events.push(event);
   assert.deepEqual(events.map(x => x.type), ["session.update", "message.create", "message.delta", "tool_call.create", "tool_call.update", "usage.update", "message.update", "run.finished"]);
   assert.deepEqual(spawnOptions.args, ["--acp", "--permission-mode", "acceptEdits"]);
+  const providerInput = observations.find(item => item.observation.event === "provider.input");
+  assert.equal(providerInput.identity.adapterType, "codebuddy");
+  assert.equal(providerInput.observation.carrier.content.prompt[0].text, "work\n\nCONTROL");
   assert.equal(normalizeCodeBuddyUpdate({ type: "usage", usage: { inputTokens: 1 } })[0].type, "usage.update");
   assert.deepEqual(
     normalizeCodeBuddyUpdate({ type: "agent_thought_chunk", text: "checking" })[0].payload,

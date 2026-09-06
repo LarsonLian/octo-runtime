@@ -4,7 +4,7 @@ import { access, chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { defineAdapter, probeCommand, providerInputText, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { defineAdapter, probeCommand, providerInputText, type AdapterInvocationContext, type CanonicalEvent, type InvokeRequest, type ProviderCarrier } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import {
   normalizeOpenClawFrame,
   tryParseOpenClawEvent,
@@ -24,6 +24,8 @@ interface OpenClawCommandSpec {
   providerSessionId: string;
   providerAgentId?: string;
   messageFile: string;
+  /** Final argv plus the message-file content that OpenClaw will consume. */
+  providerInput: ProviderCarrier;
   cleanup: () => Promise<void>;
 }
 
@@ -57,6 +59,8 @@ async function existingDirectory(candidates: Array<string | undefined>): Promise
  * command line. A provider session id is generated when none is resumed, so the
  * local session is addressable. The chosen `cwd` is the first existing of the
  * configured state/config dirs, then $HOME, so OpenClaw finds its local state.
+ * The observation carrier includes the file body, not just its ephemeral path,
+ * because the file contents are the provider-visible model input.
  */
 export async function buildOpenClawCommand(
   req: InvokeRequest,
@@ -103,6 +107,19 @@ export async function buildOpenClawCommand(
     providerSessionId,
     providerAgentId,
     messageFile,
+    providerInput: {
+      kind: "json_params",
+      content: {
+        command,
+        args,
+        cwd,
+        message: composeOpenClawPrompt(req),
+        session_id: providerSessionId,
+        agent_id: providerAgentId,
+        model: req.agentConfig?.model,
+        thinking: req.agentConfig?.thinking
+      }
+    },
     cleanup: () => rm(directory, { recursive: true, force: true })
   };
 }
@@ -144,7 +161,11 @@ function usageKey(frame: { inputTokens: number; outputTokens: number; provider?:
  *   explicit cancel/failure frame and the abort signal are all considered,
  *   yielding exactly one run.stopped / run.error / run.finished terminal.
  */
-async function* invokeOpenClaw(req: InvokeRequest, spec: OpenClawCommandSpec): AsyncGenerator<CanonicalEvent> {
+async function* invokeOpenClaw(
+  req: InvokeRequest,
+  spec: OpenClawCommandSpec,
+  context?: AdapterInvocationContext
+): AsyncGenerator<CanonicalEvent> {
   yield sessionEvent(spec.providerSessionId, spec.providerAgentId);
   yield { type: "message.create", payload: { role: "assistant", status: "streaming", channel: "final" } };
 
@@ -153,6 +174,17 @@ async function* invokeOpenClaw(req: InvokeRequest, spec: OpenClawCommandSpec): A
     env: { ...process.env, ...spec.env },
     stdio: ["ignore", "pipe", "pipe"],
     signal: req.signal
+  });
+  child.once("spawn", () => {
+    // With an argv/message-file CLI there is no request response. Successful
+    // spawn is the strongest available dispatch-written boundary; it does not
+    // prove that OpenClaw opened or parsed the message file.
+    void context?.observe({
+      event: "provider.dispatch.written",
+      rpcMethod: "process.argv",
+      providerSessionId: spec.providerSessionId,
+      data: { pid: child.pid ?? null }
+    });
   });
   let spawnError: Error | undefined;
   const exitPromise = new Promise<ProcessExit>(resolve => {
@@ -170,8 +202,19 @@ async function* invokeOpenClaw(req: InvokeRequest, spec: OpenClawCommandSpec): A
   let blobLines: string[] = [];
   let lastUsage: string | undefined;
   let reportedSessionId = spec.providerSessionId;
+  let firstOutput = true;
 
   for await (const line of createInterface({ input: child.stdout })) {
+    if (firstOutput) {
+      firstOutput = false;
+      // Observe native stdout before parsing so diagnostic or final-blob lines
+      // still establish that the provider process produced output.
+      void context?.observe({
+        event: "provider.output.first",
+        rpcMethod: "process.stdout",
+        providerSessionId: reportedSessionId
+      });
+    }
     const frame = tryParseOpenClawEvent(line);
     if (!frame) {
       // A non-event line may be the final blob: either a compact single line, or a multi-line object we accumulate until it parses.
@@ -243,9 +286,28 @@ export function createOpenClawAdapter({ command = "openclaw", commandArgsPrefix 
       capabilities: ["session.serialize", "tool.canonical"]
     },
     probe: () => probeCommand(command, { env: { ...process.env, ...env } }),
-    async *invoke(req: InvokeRequest): AsyncGenerator<CanonicalEvent> {
+    async *invoke(req: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
       const spec = await buildOpenClawCommand(req, command, commandArgsPrefix, env);
-      try { yield* invokeOpenClaw(req, spec); }
+      try {
+        // Capture must complete before spawn: strict mode must never dispatch
+        // provider-visible input for which no durable evaluation record exists.
+        await context?.observe({
+          event: "provider.input",
+          rpcMethod: "process.argv",
+          providerSessionId: spec.providerSessionId,
+          carrier: spec.providerInput
+        });
+        yield* invokeOpenClaw(req, spec, context);
+      }
+      catch (error) {
+        void context?.observe({
+          event: "provider.dispatch.failed",
+          rpcMethod: "process.argv",
+          providerSessionId: spec.providerSessionId,
+          data: { error: error instanceof Error ? error.message : String(error) }
+        });
+        throw error;
+      }
       finally { await spec.cleanup(); }
     }
   });

@@ -28,6 +28,8 @@ test("CLI drives daemon socket through trigger to terminal run", async () => {
     assert.equal(status.adapterHost.entrypoint, join(root, "apps/adapter-host/dist/index.js"));
     assert.equal(status.adapterHost.pid, app.hostProcess.child.pid);
     assert.deepEqual(status.adapters, ["test"]);
+    assert.equal(status.logging.directory, join(home, "logs"));
+    assert.equal(status.logging.fileLog, true);
     assert.equal((await cli(["--", "status"])).ready, true);
     const agent = await cli(["agent", "create", "--name", "cli-test", "--adapter", "test", "--workdir", root]);
     const trigger = await cli(["trigger", "create", "--name", "cli-trigger", "--agent", agent.id, "--title", "T", "--instruction", "Do T"]);
@@ -53,6 +55,11 @@ test("CLI drives daemon socket through trigger to terminal run", async () => {
     assert.equal(eventFrames.at(-1).event.type, "run.finished");
     assert.equal(frames.at(-1).kind, "done");
     assert.equal(frames.at(-1).result.run.status, "completed");
+    const trace = await cli(["logs", "query", frames[0].result.runId]);
+    const chatTurn = trace.find(record => record.event === "chat_turn.dispatch.accepted");
+    assert.match(chatTurn.data.chat_turn_id, /^turn_local_/);
+    const traceAfterRefresh = await cli(["logs", "query", frames[0].result.runId]);
+    assert.equal(traceAfterRefresh.some(record => record.data?.method === "logs.query"), false);
   } finally {
     await app.close(); await rm(home, { recursive: true, force: true });
   }

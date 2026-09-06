@@ -7,6 +7,7 @@ import {
   defineAdapter,
   probeCommand,
   providerInputText,
+  type AdapterInvocationContext,
   type CanonicalEvent,
   type InvokeRequest
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
@@ -76,7 +77,7 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
   return defineAdapter({
     metadata: { type: "codebuddy", capabilities: ["session.serialize", "tool.canonical"] },
     probe: () => probeCommand(command),
-    async *invoke(req: InvokeRequest): AsyncGenerator<CanonicalEvent> {
+    async *invoke(req: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
       const client = acpClientFactory({
         command, args: ["--acp", "--permission-mode", req.agentConfig?.permissionMode ?? "acceptEdits"],
         cwd: req.workdir, signal: req.signal
@@ -89,11 +90,59 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
           : await client.newSession({ cwd: req.workdir, model: req.agentConfig?.model });
         yield { type: "session.update", payload: { providerSession: { sessionId: session.id, resumable: true, model: req.agentConfig?.model } } };
         yield { type: "message.create", payload: { role: "assistant", status: "streaming" } };
-        for await (const update of client.prompt(session.id, `${providerInputText(req)}\n\n${req.appendInstructions}`)) {
+        // Build once and reuse for capture and dispatch. Reconstructing the
+        // carrier separately risks evaluating content that was never sent.
+        const prompt = `${providerInputText(req)}\n\n${req.appendInstructions}`;
+        // The await is the strict-capture gate and occurs before session/prompt
+        // is written to the ACP subprocess.
+        await context?.observe({
+          event: "provider.input",
+          rpcMethod: "session/prompt",
+          providerSessionId: session.id,
+          carrier: {
+            kind: "json_params",
+            content: { sessionId: session.id, prompt: [{ type: "text", text: prompt }] }
+          }
+        });
+        let firstOutput = true;
+        for await (const update of client.prompt(session.id, prompt, {
+          onWritten: () => {
+            // ACP's stdin callback establishes local write completion only.
+            void context?.observe({
+              event: "provider.dispatch.written",
+              rpcMethod: "session/prompt",
+              providerSessionId: session.id
+            });
+          }
+        })) {
+          if (firstOutput) {
+            firstOutput = false;
+            // session/update may precede the final response and is therefore a
+            // separate output milestone rather than request acknowledgement.
+            void context?.observe({
+              event: "provider.output.first",
+              rpcMethod: "session/update",
+              providerSessionId: session.id
+            });
+          }
           for (const event of normalizeCodeBuddyUpdate(update)) yield event;
         }
+        // AcpClient.prompt completes only after the session/prompt response; this
+        // is the protocol acknowledgement boundary, not merely stream closure.
+        void context?.observe({
+          event: "provider.dispatch.acknowledged",
+          rpcMethod: "session/prompt",
+          providerSessionId: session.id
+        });
         yield { type: "message.update", payload: { role: "assistant", status: "completed" } };
         yield { type: "run.finished", payload: {} };
+      } catch (error) {
+        void context?.observe({
+          event: "provider.dispatch.failed",
+          rpcMethod: "session/prompt",
+          data: { error: error instanceof Error ? error.message : String(error) }
+        });
+        throw error;
       } finally { await client.close?.(); }
     }
   });

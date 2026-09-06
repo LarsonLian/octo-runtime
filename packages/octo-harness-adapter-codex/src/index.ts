@@ -7,7 +7,7 @@
  * subprocess lifecycle live in app-server.ts, so the entry layer does not also
  * carry protocol logic.
  */
-import { defineAdapter, probeCommand, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { defineAdapter, probeCommand, type AdapterInvocationContext, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { parse, stringify } from "smol-toml";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -128,6 +128,9 @@ export async function buildCodexCommand(
  * command/appServerArgs/spawnFn are all injectable, mainly to test the real
  * stdin/stdout JSON-RPC without connecting to a real Codex service in tests. The
  * production defaults always run `codex app-server --listen stdio://`.
+ * Provider observation is forwarded to the transport unchanged because only
+ * the app-server layer knows the final JSON-RPC params and write/response
+ * boundaries.
  */
 export function createCodexAdapter({
   command = "codex",
@@ -147,10 +150,11 @@ export function createCodexAdapter({
       transport: "json-rpc-2.0/stdio"
     },
     probe: () => probeCommand(command),
-    async *invoke(request: InvokeRequest) {
-      // spec.cleanup is invoked by runCodexAppServerTurn's finally block.
+    async *invoke(request: InvokeRequest, context?: AdapterInvocationContext) {
+      // The transport owns cleanup as well as observation ordering, so the
+      // shadow home cannot be deleted while its final RPC is still in flight.
       const spec = await buildCodexCommand(request, command, appServerArgs);
-      yield* runCodexAppServerTurn({ request, spec, ...(spawnFn ? { spawnFn } : {}) });
+      yield* runCodexAppServerTurn({ request, spec, context, ...(spawnFn ? { spawnFn } : {}) });
     }
   });
 }

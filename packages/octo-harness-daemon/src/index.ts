@@ -151,9 +151,15 @@ export class HarnessDaemon extends EventEmitter {
 
   #schedule(runId: string, instructions = ""): void {
     if (this.#pending.has(runId)) return;
-    // ACK first, then enter the event loop to run the provider, so a long task does not block control requests.
+    // Submission and execution are deliberately separate lifecycle boundaries.
+    // The caller can ACK a durable queued Run first; observers receive
+    // `run.started` immediately before provider execution and `run.terminal`
+    // after terminalization, with runId as the stable correlation key.
     const job = new Promise<void>(resolve => setImmediate(resolve))
-      .then(() => this.#engine.executeRun(runId, instructions))
+      .then(() => {
+        this.emit("run.started", { runId });
+        return this.#engine.executeRun(runId, instructions);
+      })
       .catch(async (error: unknown) => {
         await this.#engine.terminalizeRun(runId, {
           type: "run.error",

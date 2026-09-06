@@ -1,15 +1,11 @@
 #!/usr/bin/env node
-// Daemon entrypoint: resolve runtime paths, start the socket control plane +
-// worker, and translate SIGINT/SIGTERM into a single graceful shutdown.
+// Thin process entrypoint. Resource ownership lives in startDaemonServer(); this
+// file only translates process signals into its idempotent close contract.
 import { resolveDaemonRuntimePaths } from "./runtime-options.js";
 import { startDaemonServer } from "./server.js";
 
 const runtimePaths = resolveDaemonRuntimePaths();
 const app = await startDaemonServer(runtimePaths);
-console.error(
-  `octo-harness daemon ready pid=${process.pid} socket=${app.runtime.socketPath} ` +
-  `adapterHostPid=${app.runtime.adapterHost.pid ?? "unknown"} adapters=${app.runtime.adapters.join(",")}`
-);
 let stopping = false;
 const stop = (): void => {
   if (stopping) return;
@@ -19,7 +15,20 @@ const stop = (): void => {
   void app.close().then(
     () => process.exit(0),
     error => {
-      console.error(`octo-harness daemon shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
+      app.observability.log({
+        level: "error",
+        scope: "daemon.lifecycle",
+        event: "daemon.shutdown.failed",
+        message: "daemon shutdown failed",
+        data: { error: error instanceof Error ? error.message : String(error) }
+      });
+      // stderr is an emergency channel only. Normal diagnostics stay in the
+      // protected log directory, but a failed logger shutdown must remain visible
+      // to a supervising process even when the file sink is unavailable.
+      console.error(JSON.stringify({
+        event: "daemon.shutdown.failed",
+        error: error instanceof Error ? error.message : String(error)
+      }));
       process.exit(1);
     }
   );

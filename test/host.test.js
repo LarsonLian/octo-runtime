@@ -21,6 +21,39 @@ test("host synthesizes stopped when adapter exits without terminal", async () =>
   assert.equal(events.at(-1).type, "run.stopped");
 });
 
+test("host gives adapters a provider observation context with full invocation identity", async () => {
+  const observations = [];
+  const host = new AdapterHost({
+    observe: async (identity, observation) => {
+      observations.push({ identity, observation });
+      return { captureId: "cap-test", state: "durable", complete: true };
+    }
+  });
+  host.register({
+    metadata: { type: "observed", capabilities: [] },
+    async *invoke(_request, context) {
+      const receipt = await context.observe({
+        event: "provider.input",
+        rpcMethod: "turn/start",
+        carrier: { kind: "json_params", content: { prompt: "raw input" } }
+      });
+      assert.equal(receipt.state, "durable");
+      yield { type: "run.finished", payload: {} };
+    }
+  });
+
+  const events = [];
+  for await (const event of host.invoke("observed", request)) events.push(event);
+  assert.equal(events.at(-1).type, "run.finished");
+  assert.deepEqual(observations[0].identity, {
+    runId: "r",
+    invocationId: "inv-host",
+    sessionId: "s",
+    adapterType: "observed"
+  });
+  assert.equal(observations[0].observation.rpcMethod, "turn/start");
+});
+
 test("host normalizes unclassified analysis to an explicit fail-closed exposure", async () => {
   const host = new AdapterHost();
   host.register({

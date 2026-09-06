@@ -15,6 +15,8 @@ test("daemon runtime options resolve environment defaults to absolute paths", ()
   assert.equal(paths.storePath, `${home}/state.db`);
   assert.equal(paths.manifestPath, resolve("config/adapters.json"));
   assert.equal(paths.hostEntrypoint, resolve("apps/adapter-host/dist/index.js"));
+  assert.equal(paths.logging.directory, `${home}/logs`);
+  assert.equal(paths.logging.fileLog, true);
 });
 
 test("daemon runtime defaults to the user-level Octo Harness directory", () => {
@@ -39,8 +41,52 @@ test("daemon runtime argv uses explicit options and normalizes the legacy host a
     "--socket", resolve("runtime/custom.sock"),
     "--store", resolve("runtime/custom.json"),
     "--manifest", resolve("runtime/adapters.json"),
-    "--adapter-host", resolve("runtime/host.js")
+    "--adapter-host", resolve("runtime/host.js"),
+    "--log-dir", resolve("ignored/logs"),
+    "--log-level", "info",
+    "--log-retention-days", "14",
+    "--trace-retention-days", "3",
+    "--crash-retention-days", "30",
+    "--log-max-file-bytes", String(64 * 1024 * 1024),
+    "--log-max-total-bytes", String(1024 * 1024 * 1024)
   ]);
+});
+
+test("verbose is an atomic preset for debug, RPC tracing and full provider capture", () => {
+  const paths = resolveDaemonRuntimePaths([
+    "--verbose",
+    "--require-provider-capture",
+    "--log-dir", ".tmp/verbose-logs"
+  ], {});
+
+  assert.equal(paths.logging.logLevel, "debug");
+  assert.equal(paths.logging.verbose, true);
+  assert.equal(paths.logging.traceRpc, true);
+  assert.equal(paths.logging.captureProviderIo, "full");
+  assert.equal(paths.logging.requireProviderCapture, true);
+  assert.equal(paths.logging.directory, resolve(".tmp/verbose-logs"));
+  const args = daemonRuntimeArguments(paths);
+  assert.ok(args.includes("--verbose"));
+  assert.ok(args.includes("--require-provider-capture"));
+});
+
+test("logging options reject contradictory or non-durable capture configurations", () => {
+  assert.throws(
+    () => resolveDaemonRuntimePaths(["--verbose", "--log-level", "info"], {}),
+    /verbose conflicts/
+  );
+  assert.throws(
+    () => resolveDaemonRuntimePaths(["--verbose", "--capture-provider-io", "input"], {}),
+    /verbose conflicts/
+  );
+  assert.throws(
+    () => resolveDaemonRuntimePaths(["--require-provider-capture"], {}),
+    /requires --capture-provider-io/
+  );
+  assert.throws(
+    () => resolveDaemonRuntimePaths(["--no-file-log", "--trace-rpc"], {}),
+    /cannot be combined/
+  );
 });
 
 test("Agent Work runtime mode is opt-in and validates required identity", () => {

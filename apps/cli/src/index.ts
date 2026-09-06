@@ -4,6 +4,7 @@ import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { resolveDaemonRuntimePaths } from "../../daemon/dist/runtime-options.js";
+import { openBrowser, startLogViewer } from "./log-viewer.js";
 
 type FlagValue = string | boolean;
 type Flags = Record<string, FlagValue>;
@@ -32,6 +33,11 @@ try {
   // `daemon` is handled in-process by importing the launcher; every other command
   // becomes a single request/response (or stream) against a running daemon.
   if (group === "daemon") await import("../../daemon/dist/launcher.js");
+  else if (group === "logs" && action === "open") {
+    // The viewer belongs to the invoking CLI process and dies with it. It is not
+    // a daemon endpoint and never widens the daemon's Unix-socket trust boundary.
+    await runLogViewer(flags);
+  }
   else {
     const request = command(group, action, id, flags);
     // `--follow` submits the chat, prints the ack, then attaches to the run's
@@ -89,6 +95,19 @@ function json(value: FlagValue | undefined, fallback: unknown = {}): unknown {
 function command(group: string | undefined, action: string | undefined, id: string | undefined, flags: Flags): CliRequest {
   if (!group || group === "help" || flags.help) return { method: "help" };
   if (group === "status") return { method: "status" };
+  if (group === "logs" && action === "path") return { method: "logs.path" };
+  if (group === "logs" && action === "query") {
+    const limit = optionalString(flags.limit);
+    return {
+      method: "logs.query",
+      params: {
+        ...(id ? { runId: id } : {}),
+        ...(optionalString(flags.invocation) ? { invocationId: optionalString(flags.invocation) } : {}),
+        ...(limit ? { limit: Number(limit) } : {}),
+        includeSensitive: flags.sensitive === true
+      }
+    };
+  }
   if (group === "adapter" && action === "list") return { method: "adapter.list" };
   if (group === "adapter" && action === "probe") return { method: "adapter.probe", params: { adapterType: required(id, "adapter-type") } };
   if (group === "agent" && action === "list") return { method: "agent.list" };
@@ -125,7 +144,15 @@ function command(group: string | undefined, action: string | undefined, id: stri
   if (group === "chat" && action === "list") return { method: "chat.list" };
   if (group === "chat" && action === "get") return { method: "chat.get", params: { sessionId: required(id, "session-id") } };
   if (group === "chat" && action === "send") {
-    return { method: "chat.send", params: { sessionId: required(id, "session-id"), prompt: required(flags.prompt, "prompt"), instructions: optionalString(flags.instruction) ?? "" } };
+    return {
+      method: "chat.send",
+      params: {
+        sessionId: required(id, "session-id"),
+        chatTurnId: optionalString(flags.chatTurnId) ?? `turn_local_${randomUUID()}`,
+        prompt: required(flags.prompt, "prompt"),
+        instructions: optionalString(flags.instruction) ?? ""
+      }
+    };
   }
   if (group === "trigger" && action === "list") return { method: "trigger.list" };
   if (group === "trigger" && action === "create") {
@@ -187,8 +214,9 @@ async function callDaemon(request: CliRequest): Promise<unknown> {
   if (request.method === "help") {
     return { usage: [
       "octo-harness daemon", "octo-harness status", "octo-harness adapter list|probe <type>",
+      "octo-harness logs path|query [RUN_ID] [--sensitive]", "octo-harness logs open [--run RUN_ID] [--no-open]",
       "octo-harness agent create --name N --adapter TYPE [--workdir DIR] [--model M] [--provider-agent SLUG]", "octo-harness agent list",
-      "octo-harness chat create --agent ID [--title T]", "octo-harness chat send ID --prompt TEXT [--follow]", "octo-harness chat list|get ID",
+      "octo-harness chat create --agent ID [--title T]", "octo-harness chat send ID --prompt TEXT [--chat-turn-id ID] [--follow]", "octo-harness chat list|get ID",
       "octo-harness trigger create --name N --kind manual|event|interval --agent ID --title T --instruction TEXT", "octo-harness trigger fire ID [--event-id ID]", "octo-harness trigger list",
       "octo-harness event ingest --type TYPE --event-id ID [--payload JSON]",
       "octo-harness task list|get ID|continue ID --instruction TEXT", "octo-harness run get|events|wait|stream|cancel ID"
@@ -209,6 +237,28 @@ async function callDaemon(request: CliRequest): Promise<unknown> {
   });
   if (response.error) throw new Error(response.error.message ?? "daemon request failed");
   return response.result;
+}
+
+async function runLogViewer(flags: Flags): Promise<void> {
+  const runId = optionalString(flags.run);
+  const host = optionalString(flags.host) ?? "127.0.0.1";
+  const portValue = optionalString(flags.port);
+  const viewer = await startLogViewer({
+    host,
+    port: portValue ? Number(portValue) : 0,
+    ...(runId ? { initialRunId: runId } : {}),
+    query: options => callDaemon({ method: "logs.query", params: { ...options } })
+  });
+  // Print the capability-bearing URL before opening a browser so headless callers
+  // can consume it without scraping platform launcher output.
+  console.log(JSON.stringify({ url: viewer.url, pid: process.pid }));
+  if (flags.noOpen !== true) openBrowser(viewer.url);
+  await new Promise<void>(resolveStop => {
+    const stop = (): void => resolveStop();
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
+  await viewer.close();
 }
 
 /** Consume a run event stream: many `event` lines followed by a terminal

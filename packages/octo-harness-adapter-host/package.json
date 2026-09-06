@@ -4,6 +4,7 @@
   "type": "module",
   "exports": "./dist/index.js",
   "dependencies": {
+    "@mininglamp-oss/octo-harness-observability": "workspace:*",
     "@mininglamp-oss/octo-harness-protocol": "workspace:*"
   },
   "types": "./dist/index.d.ts",

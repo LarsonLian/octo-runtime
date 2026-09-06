@@ -103,8 +103,13 @@ export class AcpClient {
     });
   }
 
-  #send(message: JsonRecord): void {
-    this.#child.stdin.write(`${JSON.stringify(message)}\n`);
+  #send(message: JsonRecord, onWritten?: () => void): void {
+    // The write callback confirms acceptance by Node's stdin stream. It does not
+    // imply that the ACP peer parsed the frame; the matching JSON-RPC response
+    // remains the acknowledgement boundary.
+    this.#child.stdin.write(`${JSON.stringify(message)}\n`, error => {
+      if (!error) onWritten?.();
+    });
   }
 
   /** Dispatch one inbound JSON-RPC message: response by id, `session/update` notification, or an inbound permission request. */
@@ -149,8 +154,19 @@ export class AcpClient {
     this.#updates.clear();
   }
 
-  /** Issue a JSON-RPC request and resolve with its `result`. A per-call timeout (unref'd, so it never keeps Node alive) rejects if no response arrives. */
-  request<T = unknown>(method: string, params: JsonRecord, { timeoutMs = 300_000 }: { timeoutMs?: number } = {}): Promise<T> {
+  /**
+   * Issue a JSON-RPC request and resolve with its `result`.
+   *
+   * `onWritten` runs after the serialized frame is accepted by the child stdin
+   * stream and therefore precedes acknowledgement by the peer. A per-call
+   * timeout (unref'd, so it never keeps Node alive) rejects if no response
+   * arrives.
+   */
+  request<T = unknown>(
+    method: string,
+    params: JsonRecord,
+    { timeoutMs = 300_000, onWritten }: { timeoutMs?: number; onWritten?: () => void } = {}
+  ): Promise<T> {
     const id = this.#nextId++;
     let timer: NodeJS.Timeout | undefined;
     const request = new Promise<unknown>((resolve, reject) => {
@@ -165,7 +181,7 @@ export class AcpClient {
         }
       });
     });
-    this.#send({ jsonrpc: "2.0", id, method, params });
+    this.#send({ jsonrpc: "2.0", id, method, params }, onWritten);
     if (timeoutMs > 0) {
       timer = setTimeout(() => {
         const pending = this.#pending.get(id);
@@ -211,15 +227,21 @@ export class AcpClient {
    * terminal `usage`/`model` are pushed as a final synthetic update before the
    * queue closes, or a rejection closes the queue with that error. The
    * per-session queue is always removed in `finally`. The multi-hour timeout
-   * covers long autonomous turns.
+   * covers long autonomous turns. `onWritten` observes only the outbound
+   * `session/prompt` frame; completion of this generator implies the correlated
+   * JSON-RPC response was received and is the provider acknowledgement boundary.
    */
-  async *prompt(sessionId: string, text: string): AsyncGenerator<AcpUpdate> {
+  async *prompt(
+    sessionId: string,
+    text: string,
+    { onWritten }: { onWritten?: () => void } = {}
+  ): AsyncGenerator<AcpUpdate> {
     const queue = new AsyncQueue<AcpUpdate>();
     this.#updates.set(sessionId, queue);
     const result = this.request<JsonRecord>(
       "session/prompt",
       { sessionId, prompt: [{ type: "text", text }] },
-      { timeoutMs: 8 * 60 * 60 * 1000 }
+      { timeoutMs: 8 * 60 * 60 * 1000, onWritten }
     ).then(value => {
       if (isRecord(value.usage)) {
         queue.push({ type: "usage", usage: value.usage, ...(typeof value.model === "string" ? { model: value.model } : {}) });

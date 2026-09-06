@@ -12,6 +12,7 @@
   },
   "types": "./dist/index.d.ts",
   "dependencies": {
-    "@mininglamp-oss/octo-harness-daemon-app": "workspace:*"
+    "@mininglamp-oss/octo-harness-daemon-app": "workspace:*",
+    "@mininglamp-oss/octo-harness-observability": "workspace:*"
   }
 }

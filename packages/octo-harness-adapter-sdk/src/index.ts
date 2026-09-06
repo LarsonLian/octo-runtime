@@ -7,6 +7,10 @@ import {
   type CanonicalEvent,
   type InvokeRequest
 } from "@mininglamp-oss/octo-harness-protocol";
+import type {
+  AdapterInvocationContext,
+  ProviderCarrier
+} from "@mininglamp-oss/octo-harness-observability";
 
 export type {
   CanonicalEvent,
@@ -14,6 +18,12 @@ export type {
   MessageExposure,
   MessageProvenance
 } from "@mininglamp-oss/octo-harness-protocol";
+export type {
+  AdapterInvocationContext,
+  CaptureReceipt,
+  ProviderCarrier,
+  ProviderObservation
+} from "@mininglamp-oss/octo-harness-observability";
 export { freshFallbackInputText, providerInputText } from "@mininglamp-oss/octo-harness-protocol";
 
 export interface AdapterMetadata {
@@ -32,9 +42,18 @@ export interface ProbeResult {
 export interface Adapter {
   metadata: AdapterMetadata;
   probe?: () => Promise<ProbeResult>;
-  invoke(request: InvokeRequest): AsyncIterable<CanonicalEvent>;
+  /**
+   * Execute one provider turn.
+   *
+   * `context` is optional so adapters built against the original SDK contract
+   * remain loadable. New adapters should report provider I/O through it, but
+   * must not use observability as a source of invocation identity or control
+   * flow. The host attaches Run/session correlation outside the plugin boundary.
+   */
+  invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncIterable<CanonicalEvent>;
 }
 
+/** The fully materialized subprocess contract produced immediately before spawn. */
 export interface CommandSpec {
   command: string;
   args?: string[];
@@ -42,6 +61,16 @@ export interface CommandSpec {
   env?: NodeJS.ProcessEnv;
   input?: string;
   cleanup?: () => void | Promise<void>;
+  /**
+   * Exact logical carrier presented to the provider after all adapter-specific
+   * prompt, configuration, argv, and stdin transformations have been applied.
+   * When omitted, the generic helper derives a carrier from this command spec.
+   */
+  providerInput?: ProviderCarrier;
+  /** Stable transport operation name used to group provider observations. */
+  rpcMethod?: string;
+  /** Opaque provider-owned session identifier, when known before dispatch. */
+  providerSessionId?: string;
 }
 
 export interface JsonCliAdapterOptions<TNative> {
@@ -55,6 +84,8 @@ export interface JsonCliAdapterOptions<TNative> {
 interface SpawnJsonLinesOptions<TNative> extends CommandSpec {
   signal?: AbortSignal;
   parseLine: (line: string) => TNative | null;
+  /** Called only after Node accepts the complete stdin payload for writing. */
+  onInputWritten?: () => void;
 }
 
 interface ProcessExit {
@@ -78,9 +109,14 @@ export function defineAdapter<TAdapter extends Adapter>(adapter: TAdapter): Read
  * line. stderr is buffered and surfaced only if the process exits non-zero (as
  * `ProviderProcessError`); the `signal` aborts the child. Stdout is drained to
  * completion before the exit code is awaited so no trailing events are lost.
+ *
+ * `onInputWritten` observes the stdin stream callback. It means the carrier was
+ * accepted by Node's writable stream, not that the provider parsed or accepted
+ * the request; transports with a response protocol must report acknowledgement
+ * separately.
  */
 export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TNative>): AsyncGenerator<TNative> {
-  const { command, args = [], cwd, env, input, signal, parseLine } = options;
+  const { command, args = [], cwd, env, input, signal, parseLine, onInputWritten } = options;
   const child = spawn(command, args, {
     cwd,
     env: { ...process.env, ...env },
@@ -96,7 +132,9 @@ export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TN
   child.stderr.on("data", (chunk: string | Buffer) => {
     stderr += chunk.toString();
   });
-  child.stdin.end(input);
+  // Use the completion callback rather than observing before end(): the latter
+  // would incorrectly classify a synchronous write failure as dispatched.
+  child.stdin.end(input, onInputWritten);
 
   // One provider-native event per line; whether a parse failure is ignored is
   // left to the specific adapter's parseLine.
@@ -140,6 +178,11 @@ export function parseJsonLine(line: string): Record<string, unknown> | null {
  * normalize each native line into canonical events, and — if the provider never
  * produced a terminal event — synthesize the `onSuccess` events. `cleanup` runs
  * in a `finally` so it fires on cancellation and error paths too.
+ *
+ * Observation ordering is intentional: `provider.input` is awaited before the
+ * subprocess is spawned, allowing require-capture mode to fail closed. The
+ * write and first-output observations are best-effort timing markers and never
+ * delay the provider stream.
  */
 export function createJsonCliAdapter<TNative = Record<string, unknown>>(
   options: JsonCliAdapterOptions<TNative>
@@ -148,17 +191,53 @@ export function createJsonCliAdapter<TNative = Record<string, unknown>>(
   return defineAdapter({
     metadata,
     ...(probe ? { probe } : {}),
-    async *invoke(request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
+    async *invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
       const spec = await buildCommand(request);
       let terminal = false;
+      let firstOutput = true;
       try {
+        // Capture the final provider-visible carrier before starting a process.
+        // In strict mode this await is the durability barrier for model input.
+        await context?.observe({
+          event: "provider.input",
+          rpcMethod: spec.rpcMethod ?? "process.spawn",
+          ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {}),
+          carrier: spec.providerInput ?? {
+            kind: "json_params",
+            content: {
+              command: spec.command,
+              args: spec.args ?? [],
+              cwd: spec.cwd ?? request.workdir,
+              env: spec.env ?? {},
+              input: spec.input ?? ""
+            }
+          }
+        });
         yield { type: "message.create", payload: { role: "assistant", status: "streaming" } };
         for await (const native of spawnJsonLines({
           ...spec,
           cwd: spec.cwd ?? request.workdir,
           signal: request.signal,
+          onInputWritten: () => {
+            // A stream write is a transport milestone, not provider acceptance.
+            void context?.observe({
+              event: "provider.dispatch.written",
+              rpcMethod: spec.rpcMethod ?? "process.stdin",
+              ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {})
+            });
+          },
           parseLine: parseJsonLine as (line: string) => TNative | null
         })) {
+          if (firstOutput) {
+            firstOutput = false;
+            // The first native stdout record proves that the provider started
+            // producing a response, even for records the normalizer discards.
+            void context?.observe({
+              event: "provider.output.first",
+              rpcMethod: spec.rpcMethod ?? "process.stdout",
+              ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {})
+            });
+          }
           for (const event of normalize(native, request) ?? []) {
             terminal ||= isTerminal(event);
             yield event;
@@ -167,6 +246,14 @@ export function createJsonCliAdapter<TNative = Record<string, unknown>>(
         if (!terminal) {
           for (const event of onSuccess?.(request) ?? []) yield event;
         }
+      } catch (error) {
+        await context?.observe({
+          event: "provider.dispatch.failed",
+          rpcMethod: spec.rpcMethod ?? "process.spawn",
+          ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {}),
+          data: { error: error instanceof Error ? error.message : String(error) }
+        });
+        throw error;
       } finally {
         await spec.cleanup?.();
       }

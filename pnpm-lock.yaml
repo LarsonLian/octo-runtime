@@ -32,6 +32,9 @@ importers:
       '@mininglamp-oss/octo-harness-daemon':
         specifier: workspace:*
         version: link:packages/octo-harness-daemon
+      '@mininglamp-oss/octo-harness-observability':
+        specifier: workspace:*
+        version: link:packages/octo-harness-observability
       '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
         version: link:packages/octo-harness-protocol
@@ -81,12 +84,18 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-opencode':
         specifier: workspace:*
         version: link:../../packages/octo-harness-adapter-opencode
+      '@mininglamp-oss/octo-harness-observability':
+        specifier: workspace:*
+        version: link:../../packages/octo-harness-observability
 
   apps/cli:
     dependencies:
       '@mininglamp-oss/octo-harness-daemon-app':
         specifier: workspace:*
         version: link:../daemon
+      '@mininglamp-oss/octo-harness-observability':
+        specifier: workspace:*
+        version: link:../../packages/octo-harness-observability
 
   apps/daemon:
     dependencies:
@@ -99,6 +108,9 @@ importers:
       '@mininglamp-oss/octo-harness-daemon':
         specifier: workspace:*
         version: link:../../packages/octo-harness-daemon
+      '@mininglamp-oss/octo-harness-observability':
+        specifier: workspace:*
+        version: link:../../packages/octo-harness-observability
       '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
         version: link:../../packages/octo-harness-protocol
@@ -138,6 +150,9 @@ importers:
 
   packages/octo-harness-adapter-host:
     dependencies:
+      '@mininglamp-oss/octo-harness-observability':
+        specifier: workspace:*
+        version: link:../octo-harness-observability
       '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
         version: link:../octo-harness-protocol
@@ -156,6 +171,9 @@ importers:
 
   packages/octo-harness-adapter-sdk:
     dependencies:
+      '@mininglamp-oss/octo-harness-observability':
+        specifier: workspace:*
+        version: link:../octo-harness-observability
       '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
         version: link:../octo-harness-protocol
@@ -171,6 +189,8 @@ importers:
       '@mininglamp-oss/octo-harness-core':
         specifier: workspace:*
         version: link:../octo-harness-core
+
+  packages/octo-harness-observability: {}
 
   packages/octo-harness-protocol:
     devDependencies:
