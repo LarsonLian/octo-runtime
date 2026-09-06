@@ -1,32 +1,57 @@
 # @mininglamp-oss/octo-harness-acp-client
 
-Octo Harness 使用的轻量 ACP stdio client。目前主要服务于 CodeBuddy adapter，把 ACP JSON-RPC request/response、session update 和反向权限请求封装成可消费的 TypeScript API。
+一个面向 ACP（Agent Client Protocol）本地 Agent CLI 的传输层客户端：负责启动子进程、发起请求、按序递交对方推送的通知流，并对反向的权限请求给出应答。
 
-## 作用
+## 定位与职责
 
-- 启动支持 ACP 的本地 CLI 子进程并通过 NDJSON stdio 通信。
-- 关联并发 JSON-RPC request/response，管理超时和 provider 退出错误。
-- 支持 `initialize`、`session/new`、`session/load`、`session/prompt` 与 `session/cancel`。
-- 把 `session/update` notification 转换成 `AsyncGenerator<AcpUpdate>`。
-- 处理 provider -> client 的权限反向请求。
+部分 Agent CLI（如 CodeBuddy）并非“单次执行、打印结果后退出”，而是通过 ACP 持续对话：JSON-RPC 2.0 报文逐行传输，经由子进程的 stdin/stdout 双向通信。
 
-## 设计原则
+直接面向该子进程编写代码存在若干难点：
 
-1. **协议与 adapter 分层**：本包不生成 Octo Harness canonical event，映射由 CodeBuddy adapter 完成。
-2. **默认拒绝权限**：未配置 permission handler 时优先选择 reject/deny option，避免静默提权。
-3. **Session ID 原样传递**：ACP session 由 provider 拥有，client 只负责创建、恢复和路由 update。
-4. **流式消费**：prompt response 与 session updates 汇合为 async iterable，不要求调用方缓存完整输出。
-5. **失败统一传播**：无效 JSON、超时、stderr/进程退出会终止 pending request 和 update queue。
+- 每个发出的请求携带一个数字 `id`，对方的响应亦携带 `id`，需自行完成“响应与请求”的配对；
+- 在等待响应的同时，对方还会持续推送无 `id` 的 `session/update` 通知（模型输出、工具调用），需单独接收；
+- ACP 的权限请求是反向的——由 provider 主动询问“是否批准某项操作”，调用方必须回复一条应答，否则 provider 将阻塞等待；
+- 子进程可能中途崩溃，此时所有待处理的请求与进行中的流都需被明确置为失败，而非无限期挂起。
 
-## 适用场景
+本包将上述传输层处理全部收敛，对外仅暴露一组简洁的方法：`initialize / newSession / loadSession / prompt / cancel / close`。它不生成 Octo Harness 的 canonical event——该职责属于适配器，本包仅实现纯粹的 ACP 传输层。
 
-- 为 CodeBuddy 或其他兼容 ACP stdio 的本地 Agent CLI 编写 Octo Harness adapter。
-- 在契约测试中使用 fake ACP 子进程验证 session、usage、权限和取消。
-- 需要比完整 ACP SDK 更小的 Node.js 客户端边界时。
+## 工作原理
 
-本实现不是通用 ACP 全能力 SDK；当前没有暴露文件系统、terminal、MCP server 或所有 capability 协商扩展。
+子进程的 stdout 上混合着三类消息，客户端需在同一条流中分别处理：**带 id 的响应**（配对到对应请求）、**`session/update` 通知**（送入对应 session 的流）、**反向权限请求**（客户端必须回复一条应答）。
 
-## 使用示例
+```mermaid
+sequenceDiagram
+    participant Caller as 调用方(adapter)
+    participant Client as AcpClient
+    participant Proc as ACP 子进程
+
+    Caller->>Client: request("session/prompt", …)
+    Client->>Proc: {"jsonrpc","id":N,"method",…}\n
+
+    loop 一次 turn 期间
+        Proc-->>Client: session/update 通知(无 id)
+        Client->>Client: 按 sessionId 送入 AsyncQueue
+        Client-->>Caller: AsyncGenerator 逐条 yield
+        Proc-->>Client: 权限请求(有 id, method 含 permission)
+        Client->>Proc: 默认 deny 应答
+    end
+
+    Proc-->>Client: {"id":N,"result":{usage,model}}
+    Client->>Client: usage 作为最后一条 update 推入, 再关闭流
+    Client-->>Caller: 生成器结束
+```
+
+关键机制如下：
+
+1. **请求与响应经数字 id 配对**。`request()` 自增一个 `id` 并登记一个 pending 项，收到同 `id` 的 `result`/`error` 时 resolve/reject 对应项。每个请求配有一个不阻止 Node 退出（`unref`）的超时兜底。
+2. **通知走独立队列**。`session/update` 无 `id`，按 `sessionId` 路由至一个单消费者 `AsyncQueue`，`prompt()` 将其包装为 `AsyncGenerator` 供调用方 `for await` 消费。
+3. **`prompt` 将响应与流合并为一条**。`session/prompt` 的最终响应（含 `usage`/`model`）作为最后一条合成 update 推入队列后关闭流；若响应为 reject，则队列以该错误关闭。无论何种结果，`finally` 中都会摘除该 session 的队列。
+4. **权限反向请求默认拒绝**。对于 provider 发来的权限请求，默认 handler 优先选择带 reject/deny 的选项（无则选择最后一个，再无则返回 `cancelled`），确保无人值守的 run 不会阻塞于权限提示。
+5. **进程终止时统一置为失败**。子进程退出且仍有未完成的请求或流时，以捕获到的 stderr 尾部（最多 8KB）作为错误，reject 所有 pending 请求并关闭所有 update 队列。无效 JSON 同理处理。
+
+## 使用
+
+`spawnAcpClient` 启动子进程并包装为客户端，随后按 ACP 顺序调用即可：
 
 ```ts
 import { spawnAcpClient } from "@mininglamp-oss/octo-harness-acp-client";
@@ -35,17 +60,32 @@ const client = spawnAcpClient({
   command: "codebuddy",
   args: ["--acp"],
   cwd: process.cwd()
+  // 可选：signal（abort 时自动 close），permissionHandler（覆盖默认 deny）
 });
 
 try {
-  await client.initialize();
+  await client.initialize();                         // ACP 握手，必须最先调用
   const session = await client.newSession({ cwd: process.cwd() });
   for await (const update of client.prompt(session.id, "Inspect this repository")) {
-    console.log(update);
+    console.log(update);                             // 逐条消费 session/update
   }
 } finally {
-  await client.close();
+  await client.close();                              // SIGTERM，1 秒未退出则 SIGKILL
 }
 ```
 
-CodeBuddy 的完整接入教程见 [CodeBuddy Adapter](../octo-harness-adapter-codebuddy/README.md)。
+恢复已有会话使用 `client.loadSession(sessionId, { cwd })`（超时放宽至 10 分钟，因部分 provider 会在 load 时回放历史）；中途打断使用 `client.cancel(sessionId)`（一条无 id 的 fire-and-forget 通知）。
+
+## 约束与注意事项
+
+- **并非完整的 ACP SDK**。仅覆盖 `initialize` 与 `session` 相关方法，未暴露文件系统、terminal、MCP server 等 capability 协商扩展。握手时通告的 `clientCapabilities` 为空。
+- **默认拒绝权限是安全默认，而非“provider 未弹出提示即等同自动放行”**。如需放开，应显式传入 `permissionHandler`。
+- **不产出 canonical event**。session/update 的语义翻译（区分思考、最终回复与工具调用）在 CodeBuddy 适配器中完成。
+- **非 Windows 环境下子进程被 detach 为独立进程组**，使 `close()` 能整棵进程树一并回收；`signal` 触发 abort 时自动执行 `close()`。
+- **`prompt` 的超时上限为 8 小时**，用以覆盖长时间自主运行的 turn，不应误认为其会快速超时返回。
+
+## 相关文档
+
+- CodeBuddy 完整接入教程：[CodeBuddy Adapter](../octo-harness-adapter-codebuddy/README.md)
+- 事件契约与三层事件模型：[Protocol](../octo-harness-protocol/README.md)
+- Adapter 编写指南：[Adapter Authoring](../../docs/08-adapter-authoring.md)

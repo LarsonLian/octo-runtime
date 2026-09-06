@@ -1,25 +1,57 @@
 # @mininglamp-oss/octo-harness-adapter-dify-chatflow
 
-Dify Chatbot / Chatflow 远程 provider adapter。
+Octo Harness 的 Dify Chatflow 适配器：在 adapter-host 进程内向远端 Dify 发起一次 HTTPS 请求并读回一条 SSE 流，将 Dify 的原生输出翻译为 Octo Harness 的统一事件，并依据 `conversation_id` 维持同一段对话的上下文连续性。
 
-Adapter type：`dify-chatflow`
+## 定位与职责
 
-它调用 `POST /chat-messages`，把 Dify 的 HTTP + SSE 输出转换成 Octo Harness `session/message/usage/surface/run` canonical events。Dify Chatbot 与 Chatflow 共用该 endpoint，但终态不同；adapter 默认自动识别：
+Dify 上的 Chatbot / Chatflow 应用运行于远端（Dify Cloud 或自建 Dify），无可启动的本地 CLI。将其接入 Octo Harness 需解决三个问题：
 
-- Chatbot：`message_end` 是成功终态。
-- Chatflow：先出现 `workflow_started`，`message_end` 后继续等待 `workflow_finished`。
+- **调用方式**：调用 `POST /chat-messages`，请求体为 JSON，响应为一条持续推送的 SSE（Server-Sent Events）流。
+- **上下文维持**：Dify 以一个 opaque 的 `conversation_id` 标识一段对话。首轮由 Dify 分配，后续轮次携带该值即可续接同一段对话记忆。
+- **终态判定**：在同一 endpoint 上，Chatbot 应用于 `message_end` 即结束，而 Chatflow 应用需等待 `workflow_finished`，两者终态判定不同。
 
-官方契约：[Chatflow API](https://docs.dify.ai/zh/api-reference/guides/chatflow)、[发送对话消息](https://docs.dify.ai/zh/api-reference/chat-messages/send-chat-message)、[SSE 指南](https://docs.dify.ai/zh/api-reference/guides/streaming)。
+适配器将 Dify 的原生 SSE 事件翻译为统一的 session / message / usage / surface / run 事件，使上层无需感知 Dify 的具体协议。
 
-## 配置
+## 工作原理
 
-API key 只放环境变量：
+关键区别在于不启动子进程：整条流均在 adapter-host 进程内完成——发起一次远程 POST，随后逐帧解析 SSE。
+
+```mermaid
+sequenceDiagram
+    participant Host as AdapterHost
+    participant AD as Chatflow Adapter
+    participant Dify as Dify /chat-messages（远端）
+
+    Host->>AD: invoke(InvokeRequest, signal)
+    AD->>AD: 组装请求体（inputs / query / conversation_id / user）
+    AD->>Dify: HTTPS POST（Accept: text/event-stream）
+    Dify-->>AD: SSE 流（content-type 必须为 event-stream）
+    loop 逐帧 parseSse
+        Dify-->>AD: workflow_started / message / message_end / workflow_finished …
+        AD-->>Host: surface.* / message.* / usage.update
+    end
+    Note over AD: 首见 conversation_id → session.update（resumable）
+    AD-->>Host: run.finished / run.stopped / run.error（唯一终态）
+    Note over AD: signal 已 abort 时，finally 以 task_id 尽力调用 /stop
+```
+
+关键机制：
+
+1. **远程依赖，非本地 CLI**。请求经由底层 `DifyClient`（HTTPS + SSE）发出，模型与执行均在 Dify 侧，本机不运行任何进程。
+2. **依据 `conversation_id` 续接对话**。请求体 `conversation_id` 填入上一轮保存的 provider session（首轮为空字符串）；流中首次出现 `conversation_id` 时，适配器发出一个 `session.update`（标记 `resumable`、携带 `user`、`provider: "dify"`），Core 保存后于下一轮回填。因此适配器声明 `session.serialize`，并复用首轮的 Dify `user` 以满足会话与文件的用户隔离。
+3. **终态判定取决于 `applicationMode`**：`chatbot` 于 `message_end` 结束；`chatflow` 将终态推迟至 `workflow_finished`；默认 `auto` 依据是否见过 workflow 事件自动判断。`workflow_finished.status` 决定 `run.finished`（succeeded）/ `run.stopped`（stopped）/ `run.error`（其余）。
+4. **workflow 进度可选透传**。node / iteration / loop 生命周期默认以 `surface.*` 上报（可经 `exposeWorkflowEvents` 关闭）；`workflow_paused` 收敛为可恢复的 `run.stopped`（当前无一等 `run.paused` 状态）。
+5. **取消尽力而为**。上层 abort 后，`finally` 以捕获到的 `task_id` 调用 `/chat-messages/{taskId}/stop`；即便失败，Host 侧取消仍照常上报。
+
+## 使用
+
+API key 仅置于环境变量，不写入 manifest / Agent config / prompt / 源码：
 
 ```bash
 export DIFY_CHATFLOW_API_KEY='app-...'
 ```
 
-默认 base URL 是 `https://api.dify.ai/v1`。仓库的 `config/adapters.json` 已使用 factory 注册：
+仓库 `config/adapters.json` 已通过 factory 注册（默认 base URL 为 `https://api.dify.ai/v1`，自建 Dify 修改 `baseUrl`，非 localhost 必须 HTTPS）：
 
 ```json
 {
@@ -35,95 +67,30 @@ export DIFY_CHATFLOW_API_KEY='app-...'
 }
 ```
 
-不要把 key 写进 manifest、Agent config、prompt 或 source。自建 Dify 可改 `baseUrl`；非 localhost 地址必须使用 HTTPS。
-
-## 使用 Octo Harness Chat
-
-启动 daemon 前导出环境变量，adapter-host 会继承：
-
-```bash
-cd /absolute/path/to/octo-harness
-export DIFY_CHATFLOW_API_KEY='app-...'
-export OCTO_HARNESS_HOME=/absolute/path/to/runtime-state
-pnpm daemon
-```
-
-另一个终端使用相同 `OCTO_HARNESS_HOME`：
+启动 daemon 前导出变量（adapter-host 将继承），随后使用公共命令：
 
 ```bash
 pnpm cli adapter probe dify-chatflow
-
-pnpm cli agent create \
-  --name dify-assistant \
-  --adapter dify-chatflow \
-  --workdir "$PWD"
-
+pnpm cli agent create --name dify-assistant --adapter dify-chatflow --workdir "$PWD"
 pnpm cli chat create --agent <agent-id> --title "Dify chat"
 pnpm cli chat send <session-id> --prompt "你好，请介绍你自己"
 pnpm cli run wait <run-id>
-pnpm cli run events <run-id>
 ```
 
-第二次对同一 Octo Harness Session 执行 `chat send` 时，Core 会把第一轮 `session.update` 保存的 Dify `conversation_id` 放回 `request.providerSession`。Adapter 同时复用首次请求的 Dify `user`，满足 Dify 对会话和文件的用户隔离要求。
+`inputs` 分层合并：`defaultInputs` < provider options 的 `inputs` < 本轮 `context.workflowInputs`；`query` 取当前 turn 的 `modelInput ?? prompt`。`/chat-messages` 无独立 system carrier，默认不将 `appendInstructions` 拼入 query；仅当 factory 显式设置 `instructionInput` 时，控制指令才写入该具名 input。
 
-## 事件映射
+## 约束与注意事项
 
-| Dify event | Octo Harness event |
-|---|---|
-| 首次 `conversation_id` | `session.update`，`sessionId=conversation_id` |
-| `message` / `agent_message` | `message.create` + `message.delta` |
-| `message_end.metadata.usage` | `usage.update` |
-| `workflow_started` | `surface.create(kind=workflow_progress)` |
-| node / iteration / loop events | `surface.delta`；只保留 ID、类型、标题、状态、耗时和错误 |
-| `message_file` | `surface.create(kind=provider_file)` |
-| Chatbot `message_end` | `message.update` + `run.finished` |
-| Chatflow `workflow_finished: succeeded` | `surface.update` + `run.finished` |
-| `error` / failed workflow | `run.error` |
-| `workflow_paused` | `surface.update(status=paused)` + `run.stopped(resumable=true)` |
+- **需配置 key 与 endpoint**：key 缺失将在解析时明确报错；`baseUrl` 默认强制 HTTPS，仅 `localhost` / `127.0.0.1` 允许明文（本地开发）。
+- **SSE 具备护栏**：成功响应若 content-type 非 `text/event-stream`（例如返回 200 的 HTML 登录页或错误页），将抛出 `DifyProtocolError` 并附带截断预览；单帧超过 `maxFrameChars` 亦报错；流结束前未出现终态事件同样报 `DifyProtocolError`。
+- **workdir 基本无意义**：执行在 Dify 侧，`--workdir` 不改变远端行为，仅作本地占位。
+- **probe 仅做可达性 / 鉴权探测**：底层对 `/parameters` 发起一次 GET，2xx 即视为可用，不代表应用配置正确或有额度。
+- **附件**：`context.attachments` 映射为 Dify 的 file 结构，需携带 `url`（remote_url）或 `uploadFileId`（local_file），`type` 属于 document/image/audio/video/custom；适配器不读取任意本机路径，也不将附件 base64 塞入 event。`message_file` 暂保留 provider 短期 URL，生产投递前应拉入 artifact store。
 
-当前 Octo Harness 没有一等 `run.paused` / interaction 状态，因此人工介入暂停只能收敛为可恢复的 `run.stopped`。这不会伪装成正常完成。
+## 相关文档
 
-## Inputs、控制指令与附件
-
-请求 `inputs` 按以下优先级合并，后者覆盖前者：
-
-1. adapter factory 的 `defaultInputs`；
-2. `agentConfig.providerOptions.inputs`；
-3. 本轮 `context.workflowInputs`。
-
-Dify `/chat-messages` 没有独立 system/developer carrier。Adapter 默认不会把 `appendInstructions` 偷偷拼进用户 query。若 Chatflow 显式定义了控制输入变量，可在 factory 配置 `instructionInput`，adapter 才把控制指令写入该 input。
-
-当前 v1 附件约定从 `request.context.attachments` 读取，只接受受控远程 URL 或已经上传到 Dify 的 file ID：
-
-```json
-{
-  "attachments": [
-    { "type": "image", "url": "https://example.test/image.png" },
-    { "type": "document", "uploadFileId": "dify-file-id" }
-  ]
-}
-```
-
-Adapter 不读取任意本机路径，也不把文件 base64 塞进 event。Octo Harness CLI 目前还没有附件参数；完整 artifact bridge 需要由上层先上传到 Dify `/files/upload`，并把 file ID 放入 context。
-
-## Factory options
-
-| 字段 | 默认值 | 说明 |
-|---|---|---|
-| `type` | `dify-chatflow` | 允许同一 host 注册多个 Dify app，例如 `dify-support` |
-| `baseUrl` | `https://api.dify.ai/v1` | Dify API base |
-| `apiKeyEnv` | `DIFY_CHATFLOW_API_KEY` | 读取 key 的环境变量名 |
-| `userPrefix` | `octo-harness` | 默认 Dify user 为 `<prefix>:<sessionId>` |
-| `applicationMode` | `auto` | `auto` / `chatbot` / `chatflow` |
-| `defaultInputs` | `{}` | 每轮固定输入 |
-| `instructionInput` | 无 | 显式承载 Octo Harness 控制指令的 Dify input key |
-| `workflowId` | 最新发布版本 | Chatflow 指定发布 workflow 版本 |
-| `autoGenerateName` | `true` | Dify 是否自动生成会话标题 |
-| `exposeWorkflowEvents` | `true` | 是否将节点进度映射为 surface |
-| `maxFrameChars` | `1048576` | 单个 SSE frame 字符上限 |
-
-## 取消与限制
-
-收到 Octo Harness `AbortSignal` 后，adapter 中断本地 SSE reader，并在已获得 `task_id` 时调用 `POST /chat-messages/{task_id}/stop`。Host 最终只输出一个 `run.stopped`。
-
-当前没有实现 Dify `workflow_run_id` 断线重连，因此不声明 `run.reattach`。`message_file` 暂时保留 provider URL；生产投递前应拉取到 Octo Harness artifact store，不能把 Dify 短期 URL 当永久产物。
+- 底层传输 client：[dify-client](../octo-harness-dify-client/README.md)
+- 无状态兄弟适配器：[dify-workflow](../octo-harness-adapter-dify-workflow/README.md)
+- 事件契约：[Protocol](../octo-harness-protocol/README.md)
+- 公共流程与对比：[Adapter Guide](../README.md)
+- Dify 官方契约：[Chatflow API](https://docs.dify.ai/zh/api-reference/guides/chatflow)、[SSE 指南](https://docs.dify.ai/zh/api-reference/guides/streaming)

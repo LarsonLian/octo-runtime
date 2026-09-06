@@ -1,67 +1,66 @@
 # @mininglamp-oss/octo-harness-adapter-claude-code
 
-Claude Code provider adapter。
+Octo Harness 的 Claude Code 适配器：将本地 Claude Code CLI 接入统一的适配器契约，负责启动 `claude --print` 子进程、读取其流式输出、续跑上一轮会话，并将 Claude 的原生事件翻译为保序、去重、终态唯一的 `CanonicalEvent` 流。
 
-Adapter type：`claude-code`
+## 定位与职责
 
-## 作用与适用场景
+直接对接 Claude Code CLI 存在若干需要处理的差异：Claude 的 `stream-json` 输出中，同一段文字先以 delta 增量流出，随后又将完整的 assistant 块重放一次，若原样接收会导致文本与工具调用双写；工具参数的增量（`input_json_delta`）不携带工具 ID，仅带一个 block 序号，需要自行维护「序号 → 工具 ID」的映射，否则并发的子任务会相互串扰；此外还需处理上一轮会话的续跑，以及非交互模式下的权限提示应答。
 
-把本地 Claude Code `--print` 模式接入 Octo Harness。适合需要 Claude Code 读取或修改可信代码目录，同时由 Octo Harness 统一管理 Chat/Task、session resume、流式消息、tool call 和取消的场景。
+本适配器将上述差异收敛在自身边界内。它为每次调用启动一个 `claude --print` 子进程，用户 prompt 经 stdin 传入，Claude 的 stream-json 经 stdout 输出，适配器将原生事件翻译为 Octo Harness 统一的 message / tool / usage / run 事件。上层得到保序、去重、仅含单一终态的干净事件流。
 
-它不实现 Claude 模型 API，也不负责 workspace trust、容器隔离或业务任务状态。
+适配器不实现 Claude 模型 API，也不负责 workspace trust、容器隔离或业务任务状态。
 
-## 设计原则
+## 工作原理
 
-- 用户 prompt 走 stdin，control instructions 走 mode `0600` 的临时 system-prompt file。
-- Claude session UUID 原样保存和恢复，Core 不解释其格式。
-- stream-json partial messages 只在 adapter 内归一化为 canonical message/tool/usage/run events；完整 assistant block 仅作兼容输入，不会和 partial delta 双写。
-- 无人值守 invocation 默认使用 bypassPermissions；外层 Runtime 必须提供真正的隔离边界。
-- adapter 不传 `--disallowedTools`，保留 Claude Code 自身可用的完整工具目录。
-- 临时控制文件在 invocation 的 `finally` 阶段清理。
+每次调用对应一个 `claude --print` 子进程。必须启用 `--include-partial-messages` 才能获得 thinking / text / 工具参数的增量；普通 stream-json 只提供整块 assistant，无法满足本地 Chat 的实时流式需求。
 
-## 它运行在哪里
+```mermaid
+sequenceDiagram
+    participant Host as adapter-host
+    participant A as Claude adapter
+    participant C as claude --print
 
-这是一个 **本地 Claude Code CLI subprocess adapter**。adapter-host 在当前节点为每次 invocation 启动 `claude --print`，用户 prompt 走 stdin，Claude stream-json 走 stdout。
+    Host->>A: InvokeRequest（含可选的上一轮 session UUID）
+    A->>A: control 指令写入 0600 临时文件
+    A->>C: 启动子进程（stdin=prompt，可带 --resume UUID）
+    A-->>Host: message.create（开启一个 assistant 消息）
 
-CLI、文件工具和 shell 在 host 节点运行；模型请求通常发往 Anthropic 或 Claude Code 配置的云 provider。“本地 adapter”不代表模型权重在本机，也不代表当前 Octo Harness 已支持跨云节点调度。
+    C-->>A: system 事件（携带 session_id）
+    A-->>Host: session.update（每个会话仅发一次）
 
-| 项目 | 当前实现 |
-|---|---|
-| Process model | 每次 invocation 一个 `claude` 子进程 |
-| Native transport | stdin text + stdout stream-json partial messages |
-| Workdir | Octo Harness Agent 的 `workdir`，作为 CLI cwd；本身不是文件系统隔离 |
-| Session resume | `--resume <claude-session-uuid>` |
-| Control instructions | mode `0600` 临时文件 |
-| User prompt | stdin，不进入 argv |
-| 默认 permission mode | `bypassPermissions` + `--dangerously-skip-permissions` |
-| 本机验证版本 | Claude Code `2.1.145`，2026-09-02 |
+    loop stream_event（partial 增量）
+        C-->>A: text_delta / thinking_delta / input_json_delta
+        A-->>Host: message.delta / tool_call.create/delta
+    end
+    Note over A: 随后重放的完整 assistant 块<br/>被抑制，避免双写
+    C-->>A: user 事件（tool_result）
+    A-->>Host: tool_call.update
+    C-->>A: result 事件
+    A-->>Host: usage.update + message.update + run.finished/error
+```
 
-## 环境准备
+其核心机制体现为以下几点：
 
-1. 安装 Node.js 20+ 并在 monorepo 根目录执行 `pnpm install`。
-2. 安装 Claude Code，使 `claude` 位于 daemon/host 的 `PATH`。
-3. 使用同一操作系统用户完成认证。
+1. **会话续跑依赖 session UUID**。首次调用从 Claude 的 `system` 事件获取 session UUID，通过 `session.update` 上报，Core 原样保存（不解析格式）；下一轮自动附加 `--resume <uuid>` 续接会话。Claude CLI 原生支持 fork，但当前 host / core 无 fork 流程，因此适配器不声明 `session.fork`。
+2. **仅发增量、抑制重放**。partial 模式下一段内容先以 delta 流出，随后 Claude 会将完整块再发一次，适配器只发送前者。`result` 中的完整 text 也不会覆盖已流出的交错文本，否则 UI 中工具调用之前的进度会被抹除。
+3. **每次调用独立的归一化状态**。工具参数增量仅带 block 序号而不带工具 ID，normalizer 需按「序号 → 工具 ID」逐调用维护映射。因此 normalizer 不可实现为 adapter 单例——一个 adapter 可能同时执行多个调用，共享状态会导致串扰。
+4. **thinking 为私有内容**。Claude 的 `thinking_delta` 归入 analysis channel 并标记 `exposure=private_reasoning`；默认不进入面向用户的展示，不应仅凭 channel 判定其可公开。
+5. **默认绕过权限**。无人值守下默认 `bypassPermissions` 并附加 `--dangerously-skip-permissions`。该机制解决的是 daemon 无法应答权限提示的问题，不提供任何隔离（见下文）。
+
+## 使用
+
+前置条件：Node.js 20+、pnpm，以及 PATH 上一个已登录的 Claude Code CLI（使用同一 OS 用户认证）。
 
 ```bash
 claude --version
 claude auth status
 ```
 
-也可以使用 Claude Code 支持的 provider 环境变量，但 secret 必须只存在于进程环境或凭证存储，不能写入 Agent prompt、Octo Harness state 或 workdir。
-
-当前 adapter 固定使用 `--print`。本机 Claude Code `2.1.145` 的帮助明确说明非交互 print 模式跳过 workspace trust 对话框，因此必须只配置已经审查并信任的 workdir；Octo Harness 不会代替该对话框判断目录可信度。
-
-## 创建 Agent
+启动 daemon，另开终端探测并创建 Agent：
 
 ```bash
-cd /absolute/path/to/octo-harness
 pnpm daemon
-```
 
-另一个终端：
-
-```bash
-cd /absolute/path/to/octo-harness
 pnpm cli adapter probe claude-code
 
 pnpm cli agent create \
@@ -70,7 +69,7 @@ pnpm cli agent create \
   --workdir /absolute/path/to/repository
 ```
 
-然后使用公共 Chat API：
+随后执行统一的 Chat 流程：
 
 ```bash
 pnpm cli chat create --agent <agent-id> --title "Claude review"
@@ -79,95 +78,41 @@ pnpm cli run wait <run-id>
 pnpm cli run events <run-id>
 ```
 
-默认 bypass 只解决 daemon 无法回答 provider 权限提示的问题，不提供安全隔离。生产 Runtime 必须使用容器、VM 或等价机制限制子进程可访问的文件系统、网络和凭证。需要保守执行时可以显式选择 `dontAsk`，但没有 Claude allow rules 的工具会直接被拒绝。
+实际拼装出的命令大致如下：
 
-## 可配置项
+```text
+claude --print --input-format text --output-format stream-json --verbose \
+  --include-partial-messages --append-system-prompt-file <临时文件> \
+  [--resume <session-uuid>] [--model <model>] [--effort <level>] \
+  --permission-mode <mode> [--dangerously-skip-permissions] -
+```
 
-| `agent create` 参数 | `agentConfig` 字段 | 作用 |
+## 配置
+
+| 字段 | 作用 | 默认 |
 |---|---|---|
-| `--workdir DIR` | `workdir` | Claude Code cwd 和预期代码目标，不构成安全边界 |
-| `--model MODEL` | `model` | `--model`，可用别名/完整名称取决于 CLI |
-| thinking 配置 | `thinking` | `--effort`；支持 `low/medium/high/xhigh/max`，`disabled` 兼容映射为 `low` |
-| `--permission-mode MODE` | `permissionMode` | 默认 `bypassPermissions`；本机版本支持 `acceptEdits/auto/bypassPermissions/default/dontAsk/plan` |
-| `--dangerously-bypass-permissions` | `dangerouslyBypassPermissions` | 强制使用 `bypassPermissions`，优先于 `permissionMode` |
+| `workdir` | Claude 的 cwd 与代码目标（不是安全边界） | 必填 |
+| `model` | `--model`，别名 / 全名取决于 CLI | 由 CLI 决定 |
+| `thinking` | `--effort`；支持 `low/medium/high/xhigh/max`，`disabled` 兼容映射为 `low` | 由 CLI 决定 |
+| `permissionMode` | 支持 `acceptEdits/auto/bypassPermissions/default/dontAsk/plan` | `bypassPermissions` |
+| `dangerouslyBypassPermissions` | 为 `true` 时强制 `bypassPermissions`，优先级高于 `permissionMode` | `false` |
 
-当 mode 为 `bypassPermissions` 时，adapter 同时传入 `--dangerously-skip-permissions`。adapter 不额外传入 `--disallowedTools`；需要交互的工具是否成功仍取决于当前 surface 是否实现对应交互合同。
+control 指令经 `0600` 临时文件（`--append-system-prompt-file`）传入，用户 prompt 经 stdin 传入，两者互不混淆；临时文件在调用的 `finally` 阶段清理。适配器不传 `--disallowedTools`，保留 Claude 完整工具目录。
 
-## 实际命令形态
+## 约束与注意事项
 
-```text
-claude --print \
-  --input-format text \
-  --output-format stream-json \
-  --verbose \
-  --include-partial-messages \
-  --append-system-prompt-file <temporary-file> \
-  [--resume <provider-session-id>] \
-  [--model <model>] \
-  [--effort <level>] \
-  --permission-mode <mode> \
-  [--dangerously-skip-permissions] \
-  -
-```
+- **workdir 不是沙箱，默认 bypass 更不是**。默认绕过权限意味着可执行 shell、修改 workdir、访问该 OS 用户可触及的一切资源。生产环境必须使用容器 / VM / 独立用户实现真正隔离，否则不得运行不可信任务。若需保守执行，可显式选择 `dontAsk`，但缺少 Claude allow rules 的工具会被直接拒绝。
+- **`--print` 会跳过 workspace trust 对话框**。因此只能指向已审查、信任的 workdir——Octo Harness 不会代为判断目录是否可信。
+- **凭证只能保留在进程环境中**，不得写入 Agent prompt、Octo Harness state 或 workdir。
+- **thinking 不一定有内容**。部分 provider / model 仅给出空 thinking 与签名；此时仍有逐 chunk 的可见 text，但适配器不会伪造 analysis 内容。
+- **`probe` 仅检查可执行文件**，不验证认证、provider 网络、额度或模型名。
+- **取消仅保证直接 CLI 进程终止**（AbortSignal 加 host 收尾唯一 `run.stopped`），生产环境应补充进程组回收。
+- 尚未暴露 fork、MCP config、allowed tools、budget、structured output 等 Claude 参数。
 
-首次 invocation 从 Claude `system` 事件取得 session UUID；Core 持久化后，下一轮自动加 `--resume`。Claude CLI 原生支持 fork，但当前 host/core 没有 fork 流程，因此 adapter 不声明 `session.fork`。
+## 相关文档
 
-## Prompt 与事件
-
-- daemon-owned context 和 per-turn instructions 写入 `0600` 临时文件，通过 `--append-system-prompt-file` 注入。
-- 用户 prompt 走 stdin。
-- 首个 `system.session_id` -> `session.update`；同一 CLI turn 后续重复 status event 不再重复发布。
-- partial `thinking_delta` -> analysis channel 的 `message.delta`，并标记 `exposure=private_reasoning` 与 Claude provenance；空 delta 不发布。
-- partial `text_delta` -> final channel 的 `message.delta`。
-- partial `tool_use` block start -> `tool_call.create`；同 block 的 `input_json_delta` -> `tool_call.delta.argsDelta`。
-- partial 模式随后重放的完整 assistant block 被抑制，避免文本和工具调用双写。
-- user `tool_result` block -> `tool_call.update(completed/error)`。
-- result -> usage、message terminal 和 run terminal；partial 模式的 terminal update 不覆盖已经流出的交错文本。
-
-### 流式 Chat 消费约定
-
-一次复杂 Run 不应被渲染成固定数量的“思考区 + 两个工具 + 最终回答”槽位。Claude 可以为路径确认、实际查询和错误诊断分别发起工具，consumer 必须严格按 canonical event 到达顺序追加：
-
-```text
-message.delta(final: 阶段说明)
-tool_call.create
-tool_call.delta(argsDelta) × N
-tool_call.update
-message.delta(final 或 analysis) × N
-tool_call.create ...
-message.delta(final: 最终总结)
-message.update(final: completed, partial 模式无覆盖 text)
-run.finished
-```
-
-| Canonical event | Consumer 处理 |
-|---|---|
-| `message.delta(channel=final)` | 立即追加用户可见文本；工具前后的阶段说明也属于可见输出，不要等 `result` |
-| `message.delta(channel=analysis)` | Claude 原始 thinking 标记为 `private_reasoning`；默认不进入公开 Presentation，不能仅凭 analysis channel 展示 |
-| `tool_call.create` | 按 `id` 创建工具行；partial 模式下初始 `args` 通常为空对象 |
-| `tool_call.delta.argsDelta` | 按同一 `id` 顺序拼接 JSON 字符串；不得逐 chunk 单独 `JSON.parse` |
-| `tool_call.update` | 关闭对应工具生命周期并展示 output/error |
-| `message.update` | 更新状态；partial 模式没有 `text` 时不得清空之前累计的文本 |
-| `run.*` | 整轮唯一终态；不能用工具完成代替 run 完成 |
-
-`thinking_delta` 与用户可见的 `text_delta` 语义不同。截图式“正在检查文件”“现在执行第二阶段”通常是 final channel 的可见阶段说明；Claude thinking 会进入 canonical analysis ledger，但其 exposure 是 `private_reasoning`，除非未来 provider 提供可判定的公开 summary/plan 事件，否则不能投影给 Buddy。
-
-## 取消与限制
-
-`run cancel` 通过 AbortSignal 终止当前 Claude 子进程，host 负责 message 收尾和唯一 `run.stopped`。
-
-当前限制：
-
-- 不暴露 fork、MCP config、allowed tools、budget、structured output 等 Claude 参数。
-- adapter 只能转发 provider 实际给出的 `thinking_delta`。部分 provider/model 会只给空 thinking 和签名；此时仍有逐 chunk 可见 text，但不能伪造 analysis 内容。
-- 默认 bypass 可以执行 shell、修改 workdir 并访问宿主机用户可访问的其他资源；没有外部隔离时不得用于不可信任务。
-- `probe` 不验证认证、provider 网络、额度和模型名。
-- 取消目前只保证直接 CLI 进程终止，生产环境应补进程组回收。
-
-## 测试与实测报告
-
-- [`../../fixtures/fake-claude-stream.mjs`](../../fixtures/fake-claude-stream.mjs)：覆盖 thinking/text partial、两个 tool block、args delta、完整 snapshot 重放和重复 session status。
-- [`../../test/adapters.test.js`](../../test/adapters.test.js)：验证 interleaving、tool id 关联、session 去重和 terminal update 不覆盖流式文本。
-- [Claude Code 复杂任务真实流式报告](../../../docs/testreport/28-claude-code-streaming-complex-task-report.html)：本机真实 CLI 的 146 条 canonical event 时间线。
-
-实现：[src/index.ts](src/index.ts)。公共使用流程见 [Adapter Guide](../README.md)。
+- 事件契约与三层事件模型：[Protocol](../octo-harness-protocol/README.md)
+- 适配器的调用生命周期与终态兜底：[Adapter Host](../octo-harness-adapter-host/README.md)
+- provider adapter 概览与编写指南：[docs/05](../../docs/05-provider-adapters.md)、[docs/08](../../docs/08-adapter-authoring.md)
+- 流式事件 fixture：[`fixtures/fake-claude-stream.mjs`](../../fixtures/fake-claude-stream.mjs)
+- 源码：[`src/index.ts`](src/index.ts)

@@ -1,32 +1,40 @@
 # @mininglamp-oss/octo-harness-adapter-sdk
 
-Octo Harness 的 adapter authoring SDK。它提供 adapter 契约、CLI probe、NDJSON 子进程执行、JSON 行解析、错误封装和常见 canonical event 流程，减少各 provider adapter 的重复代码。
+Octo Harness 的适配器开发 SDK。多数 provider CLI 的形态一致——接收一段输入、按行输出 JSON——本包将这类适配器的通用流程（启动子进程、按行读取、解析、取消、清理）沉淀为若干工具函数，使适配器作者只需实现 provider 特有的部分。
 
-## 作用
+## 定位与职责
 
-- 用 `defineAdapter` 检查并冻结 adapter 定义。
-- 用 `probeCommand` 在当前 `PATH` 中检查 provider executable。
-- 用 `spawnJsonLines` 运行一次 invocation 对应的 CLI 子进程并流式读取 stdout。
-- 用 `createJsonCliAdapter` 组合命令构造、原生事件归一化、取消和 cleanup。
-- 统一抛出带退出状态的 `ProviderProcessError`。
+若每个 provider 适配器都从零实现，将反复出现相同的样板代码：启动子进程、按行读取 stdout、将 `AbortSignal` 接入进程终止、确保临时文件在成功/失败/取消后均被清理、在退出码非零时报错等。
 
-## 设计原则
+本 SDK 将这些通用逻辑封装为工具函数。接入一个“JSON 流式 CLI”型 provider 时，适配器作者真正需要实现的仅有三处 provider 特有逻辑：如何构造命令、如何将原生事件翻译为 `CanonicalEvent`、以及结束时补充何种终态。
 
-1. **Adapter 只处理 provider 差异**：命令、权限、session codec 和 native event mapping 留在 adapter 内。
-2. **一行一个原生事件**：通用 runtime 只负责读取，具体 adapter 决定如何解析和忽略噪声。
-3. **Prompt carrier 显式**：用户 prompt、control instructions、环境变量和临时配置由 adapter 分别映射。
-4. **取消走 AbortSignal**：上层 Transport 不需要知道 provider 的进程模型。
-5. **清理必达**：临时目录和 shadow config 在成功、失败、取消后都进入 `finally`。
+## 工作原理
 
-## 适用场景
+`createJsonCliAdapter` 固定通用流程，并将 provider 差异保留为若干回调：
 
-- provider CLI 支持 JSON/JSONL/NDJSON 流式输出。
-- 新建 Octo Harness provider adapter 并接入统一 host。
-- 为 command builder 和 native event normalizer 编写无模型契约测试。
+```mermaid
+flowchart TD
+    Req[InvokeRequest] --> Build[buildCommand<br/>作者实现：命令 + 参数 + 输入]
+    Build --> Spawn[spawnJsonLines<br/>SDK：启动子进程并按行读取 stdout]
+    Spawn --> Line{每一行}
+    Line --> Norm[normalize<br/>作者实现：原生事件 → CanonicalEvent]
+    Norm --> Out[(canonical 事件流)]
+    Spawn -->|正常结束| Success[onSuccess<br/>作者实现：补充 message.update / run.finished]
+    Success --> Out
+    Spawn -->|非零退出| Err[ProviderProcessError<br/>SDK：带退出状态抛出]
+    Note[取消：AbortSignal 终止子进程<br/>清理：临时目录/影子配置在 finally 中必达]
+```
 
-如果 provider 使用双向 JSON-RPC、WebSocket 或常驻 daemon，可继续实现 `Adapter` 接口，但不必使用 `createJsonCliAdapter`。
+若干约定：
 
-## 最小 Adapter
+1. **适配器只处理 provider 差异**：命令、权限、会话编解码与原生事件映射均留在适配器内，通用运行时不予涉及。
+2. **一行一个原生事件**：运行时仅负责按行读取，如何解析、忽略哪些噪声由 `normalize` 决定。
+3. **prompt 载体显式**：用户 prompt、控制指令、环境变量与临时配置由适配器分别映射（以 `providerInputText(request)` 取应发送给模型的文本）。
+4. **取消经由 AbortSignal，清理经由 `finally`**：成功、失败、取消三种路径均会执行清理。
+
+## 使用
+
+一个最小适配器：
 
 ```ts
 import {
@@ -36,10 +44,7 @@ import {
   type CanonicalEvent
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
 
-interface NativeEvent {
-  type?: string;
-  text?: string;
-}
+interface NativeEvent { type?: string; text?: string; }
 
 export const exampleAdapter = createJsonCliAdapter<NativeEvent>({
   metadata: { type: "example", capabilities: [] },
@@ -61,4 +66,11 @@ export const exampleAdapter = createJsonCliAdapter<NativeEvent>({
 });
 ```
 
-注册、测试和文档要求见 [Adapter 开发指南](../../docs/08-adapter-authoring.md)。
+## 约束与注意事项
+
+- 仅适用于“一次调用对应一个 CLI 子进程、且以 JSON/JSONL 流式输出”的 provider。
+- 若 provider 使用双向 JSON-RPC、WebSocket 或常驻 daemon（如 Codex app-server、CodeBuddy 的 ACP），则不应使用 `createJsonCliAdapter`，而应直接实现 `Adapter` 接口，可参考 codex / codebuddy 适配器。
+
+## 相关文档
+
+- 注册、测试与文档要求：[Adapter 开发指南](../../docs/08-adapter-authoring.md)
