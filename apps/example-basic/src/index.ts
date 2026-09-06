@@ -1,3 +1,6 @@
+// In-process demo: wire an AdapterHost + Codex adapter and an in-memory store
+// into the engine with no daemon or socket, then fire a manual trigger and print
+// the resulting Run. The shortest path through the core domain model.
 import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 import { codexAdapter } from "@mininglamp-oss/octo-harness-adapter-codex";
 import { HarnessEngine, MemoryStore } from "@mininglamp-oss/octo-harness-core";

@@ -18,6 +18,8 @@ import {
 } from "@mininglamp-oss/octo-harness-protocol";
 
 const SCHEMA_VERSION = 2;
+/** Serializer version stamped on every snapshot; a snapshot's rendered bytes are
+ * only reproducible under the same version, so it is part of the snapshot ref. */
 export const CHANNEL_CONTEXT_SERIALIZER_VERSION = "channel-context-jsonl-v1";
 const DEFAULT_RETENTION_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_SNAPSHOT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -27,6 +29,7 @@ const DEFAULT_MAX_PROJECTED_BYTES = 32 * 1024;
 const FLAG_SELF = 1;
 const FLAG_CONTROL = 2;
 
+/** Tunable bounds for retention and projection size. All optional; defaults above. */
 export interface ChannelContextStoreOptions {
   retentionMs?: number;
   snapshotRetentionMs?: number;
@@ -35,6 +38,13 @@ export interface ChannelContextStoreOptions {
   maxProjectedBytes?: number;
 }
 
+/**
+ * A frozen per-run view of channel context. `facts`/`renderedText` are the delta a
+ * resumed provider consumes; the `recovery*` variant is the independently bounded
+ * cold projection used if the provider falls back to a fresh session. `ref` is the
+ * portable descriptor (ids + sha256 + completeness) attached to the InvokeRequest
+ * and echoed on terminal events. `state` tracks the commit lifecycle.
+ */
 export interface PreparedChannelContextSnapshot {
   ref: ChannelContextSnapshotRef;
   facts: ChannelMessageFact[];
@@ -55,6 +65,9 @@ export interface ChannelContextStoreStats {
   walBytes: number;
 }
 
+/** Raised when a scope's context consumer is already occupied by another
+ * prepared/submitted run for the same generation — only one uncommitted snapshot
+ * may advance the consumer at a time, so the caller must retry (poll). */
 export class ChannelContextConsumerBusyError extends Error {
   readonly blockingRunId: string;
 
@@ -65,6 +78,9 @@ export class ChannelContextConsumerBusyError extends Error {
   }
 }
 
+/** Raised when a run requests a session generation older than the latest known
+ * generation for its consumer — a recovery already bumped the generation, so the
+ * stale command must be rejected rather than resurrect an old cursor. */
 export class ChannelContextStaleGenerationError extends Error {
   readonly requestedGeneration: number;
   readonly latestGeneration: number;
@@ -111,6 +127,13 @@ interface ConsumerRow {
 /**
  * Rebuildable bounded Channel Journal. This database is deliberately separate
  * from the Agent Work execution outbox and never stores provider/platform tokens.
+ *
+ * Responsibilities: ingest untrusted external channel message facts per scope,
+ * keep the per-scope window bounded, freeze one immutable per-run snapshot
+ * (primary delta + recovery cold projection), and advance a per-consumer cursor
+ * (with a monotonic session generation) only after the run's terminal event is
+ * durably ACKed. All mutations run inside a single SQLite (WAL) transaction; the
+ * store is safe to blow away and rebuild from the channel source.
  */
 export class ChannelContextStore {
   readonly #db: DatabaseSync;
@@ -129,6 +152,8 @@ export class ChannelContextStore {
     };
   }
 
+  /** Open (creating/migrating) the WAL database. A corrupt file is quarantined
+   * aside and replaced — the journal is rebuildable, so recovery beats failing. */
   static open(file: string, options: ChannelContextStoreOptions = {}): ChannelContextStore {
     let db: DatabaseSync | undefined;
     try {
@@ -148,6 +173,9 @@ export class ChannelContextStore {
     }
   }
 
+  /** Ingest best-effort channel facts for a scope: upsert the scope (tracking any
+   * detected sequence gap), upsert each fact idempotently on (scope, message_id),
+   * then prune the scope back to its bounds. */
   append(input: ChannelContextAppend, now = Date.now()): { accepted: number; scopeKey: string } {
     assertChannelContextAppend(input);
     const scopeKey = channelScopeKey(input.scope);
@@ -165,6 +193,9 @@ export class ChannelContextStore {
     return { accepted: input.facts.length, scopeKey };
   }
 
+  /** Apply the reliable result of a bounded sync: upsert the returned facts and
+   * record scope completeness, clearing the gap only when the sync reports
+   * `complete`. This is how a cold/gapped scope becomes warm. */
   applySyncResult(input: ContextSyncResult, now = Date.now()): { accepted: number; scopeKey: string } {
     assertContextSyncResult(input);
     const scopeKey = channelScopeKey(input.scope);
@@ -187,7 +218,16 @@ export class ChannelContextStore {
     return { accepted: input.facts.length, scopeKey };
   }
 
-  /** Freeze exact canonical facts and rendered bytes once per run. */
+  /**
+   * Freeze exactly one snapshot per run: the canonical facts and rendered bytes
+   * are computed once and never recomputed. Idempotent — a second call for the
+   * same run returns the existing snapshot (after asserting identical descriptor
+   * identity), and a previously failed snapshot is revived to `prepared` if no
+   * other run holds the consumer. Throws `ConsumerBusy` when another uncommitted
+   * run occupies the consumer generation, and `StaleGeneration` when the requested
+   * generation is behind the latest. Selects both the delta (after the consumer
+   * cursor) and an independent recovery projection (from the start of the window).
+   */
   prepareSnapshot(runId: string, descriptor: ChannelContextDescriptor, now = Date.now()): PreparedChannelContextSnapshot {
     assertChannelContextDescriptor(descriptor);
     const existing = this.#snapshotForRun(runId);
@@ -332,6 +372,10 @@ export class ChannelContextStore {
     }
   }
 
+  /** Select the newest window messages strictly between the consumer cursor
+   * (`afterOrderKey`, null for the full recovery projection) and the trigger,
+   * excluding self/control facts, bounded by both the message count and byte
+   * budget. Returned oldest-first, with `truncated` set when either bound clipped. */
   #selectFacts(
     scopeKey: string,
     triggerOrderKey: string,
@@ -371,12 +415,16 @@ export class ChannelContextStore {
     return { facts: selectedDescending.reverse(), truncated };
   }
 
+  /** Return the frozen snapshot for a run, or undefined if none was prepared. */
   getSnapshot(runId: string): PreparedChannelContextSnapshot | undefined {
     const row = this.#snapshotForRun(runId);
     return row ? snapshotFromRow(row) : undefined;
   }
 
-  /** Switch an already frozen run to its cold projection and generation N+1. */
+  /** Switch an already frozen run to its cold projection and generation N+1.
+   * Called when the provider's resume fell back to a fresh session mid-turn: the
+   * snapshot rebinds to the recovery variant and a new consumer generation so the
+   * later commit advances the right cursor. Idempotent; guarded by ConsumerBusy. */
   selectRecovery(runId: string, now = Date.now()): PreparedChannelContextSnapshot {
     this.#db.exec("BEGIN IMMEDIATE");
     try {
@@ -432,6 +480,8 @@ export class ChannelContextStore {
     }
   }
 
+  /** Mark a prepared snapshot as submitted once its run.started has been enqueued;
+   * the consumer cursor is not advanced until commit. No-op if not `prepared`. */
   markSubmitted(runId: string): PreparedChannelContextSnapshot | undefined {
     this.#db.prepare(
       "UPDATE channel_context_snapshots SET state = 'submitted' WHERE run_id = ? AND state = 'prepared'"
@@ -439,13 +489,20 @@ export class ChannelContextStore {
     return this.getSnapshot(runId);
   }
 
+  /** Abandon a snapshot (run failed/cancelled or context could not be granted) so
+   * it releases the consumer without advancing the cursor. Only affects
+   * prepared/submitted rows; committed snapshots are untouched. */
   markFailed(runId: string): void {
     this.#db.prepare(
       "UPDATE channel_context_snapshots SET state = 'failed' WHERE run_id = ? AND state IN ('prepared', 'submitted')"
     ).run(runId);
   }
 
-  /** Advance the consumer only after Agent Work durably ACKs the successful terminal event. */
+  /** Advance the consumer only after Agent Work durably ACKs the successful
+   * terminal event. The advance is a version-guarded compare-and-set on the
+   * consumer row: if the version moved (another run committed), this snapshot is
+   * marked failed and reports `consumer_advanced`. Idempotent — already-committed
+   * returns success. This is the only method that moves the consumer cursor. */
   commitSnapshot(runId: string, now = Date.now()): ContextCommitResult {
     this.#db.exec("BEGIN IMMEDIATE");
     try {
@@ -499,6 +556,10 @@ export class ChannelContextStore {
     }
   }
 
+  /** Periodic GC: drop messages past retention, re-prune every scope, delete aged
+   * committed/failed snapshots and consumers/scopes with no remaining references,
+   * then checkpoint the WAL and reclaim free pages. Live prepared/submitted
+   * snapshots pin their consumer and scope. */
   reconcile(now = Date.now()): void {
     const retentionCutoff = now - this.#options.retentionMs;
     this.#db.exec("BEGIN IMMEDIATE");
@@ -543,12 +604,14 @@ export class ChannelContextStore {
     this.#db.exec("PRAGMA incremental_vacuum");
   }
 
+  /** Number of retained messages in a scope's window (test/introspection helper). */
   messageCount(scope: ChannelScope): number {
     return (this.#db.prepare(
       "SELECT COUNT(*) AS n FROM channel_context_messages WHERE scope_key = ?"
     ).get(channelScopeKey(scope)) as { n: number }).n;
   }
 
+  /** Aggregate counts and on-disk sizes, surfaced in the runtime status envelope. */
   stats(): ChannelContextStoreStats {
     const count = (table: string, where = ""): number => (
       this.#db.prepare(`SELECT COUNT(*) AS n FROM ${table}${where}`).get() as { n: number }
@@ -563,6 +626,8 @@ export class ChannelContextStore {
     };
   }
 
+  /** Whether a bounded sync should run before preparing: true for an unknown scope,
+   * a known gap, or unavailable/unknown completeness. */
   needsSync(scope: ChannelScope): boolean {
     const row = this.#db.prepare(
       "SELECT gap_after_seq, sync_completeness FROM channel_context_scopes WHERE scope_key = ?"
@@ -573,6 +638,8 @@ export class ChannelContextStore {
       || row.sync_completeness === null || row.sync_completeness === "unavailable";
   }
 
+  /** The seq after which a sync should backfill (the recorded gap), or undefined
+   * to sync the tail. Passed as `after_seq` in the sync request. */
   syncAfterSeq(scope: ChannelScope): number | undefined {
     const row = this.#db.prepare(
       "SELECT gap_after_seq FROM channel_context_scopes WHERE scope_key = ?"
@@ -596,6 +663,8 @@ export class ChannelContextStore {
     ).get(runId) as SnapshotRow | undefined;
   }
 
+  /** Upsert a scope row. `gap_after_seq` monotonically tightens: a new gap only
+   * lowers the recorded seq (MIN), never widens it, and null leaves it unchanged. */
   #upsertScope(scopeKey: string, scope: ChannelScope, gapAfterSeq: number | undefined, now: number): void {
     this.#db.prepare(
       `INSERT INTO channel_context_scopes (
@@ -612,6 +681,9 @@ export class ChannelContextStore {
     ).run(scopeKey, canonicalJson(scope), gapAfterSeq ?? null, now, now);
   }
 
+  /** Insert or replace a fact, keyed on (scope, message_id) so redelivery is
+   * idempotent. Derives the sort `order_key`, content byte size and self/control
+   * flag bits used later by selection and pruning. */
   #upsertFact(scopeKey: string, fact: ChannelMessageFact, now: number): void {
     const factJson = canonicalJson(fact);
     this.#db.prepare(
@@ -646,6 +718,9 @@ export class ChannelContextStore {
     );
   }
 
+  /** Detect a missing-seq gap between the incoming facts and what is already
+   * stored, returning the last contiguous seq before the hole (to record as
+   * `gap_after_seq`). An empty cache is treated as cold, not a proven gap. */
   #detectSequenceGap(scopeKey: string, facts: readonly ChannelMessageFact[]): number | undefined {
     const incoming = [...new Set(
       facts.map(fact => fact.message_seq).filter((value): value is number => value !== undefined)
@@ -666,6 +741,9 @@ export class ChannelContextStore {
     return undefined;
   }
 
+  /** Guard generation monotonicity: throw StaleGeneration if any consumer row or
+   * other run's snapshot for this consumer already sits above `allowedGeneration`.
+   * Prevents a late/stale command from reviving an obsolete cursor. */
   #assertCurrentGeneration(
     scopeKey: string,
     consumerKey: string,
@@ -691,6 +769,8 @@ export class ChannelContextStore {
     }
   }
 
+  /** Enforce the per-scope bounds: drop messages past retention and keep only the
+   * newest `maxMessagesPerScope` by order_key. */
   #pruneScope(scopeKey: string, now: number): void {
     this.#db.prepare(
       "DELETE FROM channel_context_messages WHERE scope_key = ? AND ingested_at_ms < ?"
@@ -705,6 +785,8 @@ export class ChannelContextStore {
   }
 }
 
+/** Stable string key for a scope: canonical (sorted-key) JSON of its identity
+ * fields so equal scopes always hash to the same row regardless of field order. */
 export function channelScopeKey(scope: ChannelScope): string {
   return canonicalJson({
     tenant_id: scope.tenant_id,
@@ -717,6 +799,9 @@ export function channelScopeKey(scope: ChannelScope): string {
   });
 }
 
+/** Render the selected facts into the model-facing delta block, explicitly framed
+ * as untrusted external messages. Empty facts render to an empty string so the
+ * caller can omit the block. The rendered bytes are what the snapshot sha256s. */
 export function renderChannelContextDelta(facts: readonly ChannelMessageFact[]): string {
   if (facts.length === 0) return "";
   return [
@@ -725,10 +810,16 @@ export function renderChannelContextDelta(facts: readonly ChannelMessageFact[]):
   ].join("\n");
 }
 
+/** Prepend the rendered context (when non-empty) to the display prompt to form the
+ * provider model input; with no context the prompt is passed through unchanged. */
 export function composeProviderModelInput(renderedContext: string, displayPrompt: string): string {
   return renderedContext ? `${renderedContext}\n\n${displayPrompt}` : displayPrompt;
 }
 
+/** Bring the schema up to SCHEMA_VERSION in one transaction. A future version
+ * fails closed; version 0 creates the tables, and the v1->v2 step adds the
+ * recovery/generation columns and drops any non-committed snapshots (which cannot
+ * be safely upgraded to carry a recovery variant). */
 function migrate(db: DatabaseSync): void {
   const version = Number((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
   if (version > SCHEMA_VERSION) throw new Error(`unsupported channel context schema version ${version}`);
@@ -839,6 +930,8 @@ function migrate(db: DatabaseSync): void {
   }
 }
 
+/** Reconstruct the in-memory snapshot from a DB row, decoding the stored payload
+ * and exposing `source_session_generation` only when recovery bumped it. */
 function snapshotFromRow(row: SnapshotRow): PreparedChannelContextSnapshot {
   const payload = JSON.parse(row.payload_json) as {
     facts?: ChannelMessageFact[];
@@ -881,6 +974,9 @@ function snapshotFromRow(row: SnapshotRow): PreparedChannelContextSnapshot {
   };
 }
 
+/** Guard idempotent prepareSnapshot: a repeat call for the same run must carry an
+ * identical descriptor identity (scope/consumer/generation/trigger), else two
+ * different contexts would share one run. */
 function assertSnapshotIdentity(row: SnapshotRow, descriptor: ChannelContextDescriptor): void {
   if (row.scope_key !== channelScopeKey(descriptor.scope)
     || row.consumer_key !== descriptor.consumer_key
@@ -891,6 +987,8 @@ function assertSnapshotIdentity(row: SnapshotRow, descriptor: ChannelContextDesc
   }
 }
 
+/** Derive snapshot completeness from scope health and truncation: `unavailable`
+ * if sync failed, `partial` on any gap/truncation/incomplete sync, else `complete`. */
 function contextCompleteness(
   scope: { gap_after_seq: number | null; sync_completeness: string | null },
   truncated: boolean
@@ -900,6 +998,9 @@ function contextCompleteness(
   return "complete";
 }
 
+/** Lexicographically sortable ordering key: prefer message_seq (`s:`), fall back
+ * to occurred_at (`t:`), with the message_id appended to break ties. Zero-padding
+ * makes the integer portion sort correctly as text. */
 function messageOrderKey(fact: ChannelMessageFact): string {
   const id = Buffer.from(fact.message_id).toString("base64url");
   if (fact.message_seq !== undefined) return `s:${sortableInteger(fact.message_seq)}:${id}`;
@@ -911,6 +1012,8 @@ function sortableInteger(value: number): string {
   return value.toString().padStart(20, "0");
 }
 
+/** Deterministic JSON with recursively sorted keys and dropped `undefined`, so
+ * scope keys and snapshot payloads hash stably across processes. */
 function canonicalJson(value: unknown): string {
   return JSON.stringify(sortJson(value));
 }
@@ -930,12 +1033,16 @@ function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+/** Classify open/migrate errors that indicate on-disk corruption, so `open` can
+ * quarantine and rebuild rather than crash the daemon. */
 function isCorruptDatabase(error: unknown): boolean {
   const record = error as { code?: unknown; message?: unknown };
   return record?.code === "SQLITE_CORRUPT" || record?.code === "SQLITE_NOTADB"
     || /malformed|not a database|database disk image is malformed/i.test(String(record?.message ?? error));
 }
 
+/** Rename the corrupt database and its WAL/SHM sidecars aside (never delete), so
+ * a fresh database can take the path while the bad files remain for inspection. */
 function quarantineDatabase(file: string): void {
   const suffix = `.corrupt-${Date.now()}`;
   for (const sidecar of ["", "-wal", "-shm"]) {

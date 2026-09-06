@@ -13,9 +13,10 @@ const WAL_PRAGMAS = `
 `;
 
 /**
- * 打开或创建一个 WAL 模式、掉电耐久的 SQLite 数据库。
- * 目录 0700、数据库及其 -wal/-shm 边车文件 0600，仅允许当前宿主账号访问。
- * 调用方负责随后建表（schema 各不相同）。
+ * Open or create a WAL-mode, power-loss-durable SQLite database.
+ * The directory is 0700 and the database plus its -wal/-shm sidecar files are
+ * 0600, so only the current host account can access them. The caller is
+ * responsible for creating tables afterwards (schemas differ).
  */
 export function openWalDatabase(file: string): DatabaseSync {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
@@ -25,7 +26,7 @@ export function openWalDatabase(file: string): DatabaseSync {
   return db;
 }
 
-/** chmod 一个可能尚未创建的文件；文件不存在时静默跳过。 */
+/** chmod a file that may not exist yet; silently skip when the file is absent. */
 export function chmodQuiet(path: string, mode: number): void {
   try {
     chmodSync(path, mode);

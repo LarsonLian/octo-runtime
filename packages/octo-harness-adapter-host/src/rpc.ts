@@ -24,6 +24,7 @@ interface Deferred<T> {
   reject(error: Error): void;
 }
 
+/** A single-consumer async queue: producers `push`, one consumer iterates, and `close` ends the stream (optionally with an error). */
 class AsyncQueue<T> implements AsyncIterableIterator<T> {
   readonly #items: T[] = [];
   readonly #waiters: Array<Deferred<IteratorResult<T>>> = [];
@@ -67,8 +68,9 @@ function writer(output: Writable, trace?: RpcTrace): (value: RpcMessage) => void
 }
 
 /**
- * 把 AdapterHost 暴露为按行分帧的 JSON-RPC 2.0 服务。
- * 普通方法使用 request/response；长时间 invoke 使用 ACK + notification event stream。
+ * Expose an AdapterHost as a line-delimited JSON-RPC 2.0 service.
+ * Ordinary methods use request/response; a long-running invoke uses an ACK plus
+ * a notification event stream.
  */
 export class AdapterHostRpcServer {
   readonly #host: AdapterHost;
@@ -81,7 +83,7 @@ export class AdapterHostRpcServer {
     this.#trace = trace;
   }
 
-  /** 开始消费输入流；每行必须是一个完整 JSON-RPC 对象。 */
+  /** Start consuming the input stream; each line must be one complete JSON-RPC object. */
   listen(input: Readable): void {
     createInterface({ input }).on("line", line => {
       this.#trace?.("receive", line);
@@ -120,7 +122,7 @@ export class AdapterHostRpcServer {
       if (method === "invoke") {
         const request = params.request as InvokeRequest;
         const adapterType = requiredString(params.adapterType, "adapterType");
-        // 先 ACK invocationId，再用 notification 持续推送事件，控制面不会被长任务占住。
+        // ACK the invocationId first, then keep pushing events via notifications, so the control plane is not held by a long task.
         this.#send({ jsonrpc: "2.0", id, result: { invocationId: request?.invocationId } });
         void this.#streamInvoke(adapterType, request);
         return;
@@ -151,7 +153,7 @@ export class AdapterHostRpcServer {
   }
 }
 
-/** AdapterHostRpcServer 的异步 client，同时把 invoke notifications 还原为 AsyncGenerator。 */
+/** The async client for AdapterHostRpcServer; it also reassembles invoke notifications back into an AsyncGenerator. */
 export class AdapterHostRpcClient {
   readonly #send: (value: RpcMessage) => void;
   readonly #pending = new Map<string, Deferred<unknown>>();
@@ -196,7 +198,7 @@ export class AdapterHostRpcClient {
     else pending.resolve(message.result);
   }
 
-  /** 发送普通 JSON-RPC request，并按随机 ID 等待对应 response。 */
+  /** Send an ordinary JSON-RPC request and await the matching response by random ID. */
   request<T = unknown>(method: string, params: JsonRecord = {}): Promise<T> {
     const id = randomUUID();
     const promise = new Promise<unknown>((resolve, reject) => {
@@ -206,7 +208,7 @@ export class AdapterHostRpcClient {
     return promise as Promise<T>;
   }
 
-  /** 关闭逻辑连接，并让全部 pending request/invocation 以同一错误结束。 */
+  /** Close the logical connection and end every pending request/invocation with the same error. */
   close(error = new Error("adapter-host client closed")): void {
     for (const pending of this.#pending.values()) pending.reject(error);
     this.#pending.clear();
@@ -226,7 +228,7 @@ export class AdapterHostRpcClient {
     return this.request("cancel", { invocationId, reason });
   }
 
-  /** 先等待 invoke ACK，再持续产出该 invocation 的 event notifications，直到 done。 */
+  /** Await the invoke ACK first, then keep yielding this invocation's event notifications until done. */
   async *invoke(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
     const queue = new AsyncQueue<CanonicalEvent>();
     this.#invocations.set(request.invocationId, queue);

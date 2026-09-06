@@ -2,6 +2,7 @@ import type { CanonicalEvent } from "@mininglamp-oss/octo-harness-adapter-sdk";
 
 type JsonRecord = Record<string, unknown>;
 
+/** A decoded OpenClaw stdout event, discriminated by `kind`; keeps provider-native shape until normalized. */
 export type OpenClawFrame =
   | { kind: "text"; text: string; sessionId?: string }
   | { kind: "tool-call"; id: string; name: string; args: JsonRecord }
@@ -10,6 +11,7 @@ export type OpenClawFrame =
   | { kind: "failure"; message: string }
   | { kind: "cancelled"; message: string };
 
+/** The trailing "final blob" OpenClaw prints at the end of a run: authoritative reply text plus session/usage metadata. */
 export interface OpenClawFinalFrame {
   kind: "final";
   text: string;
@@ -42,6 +44,7 @@ function number(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+/** Best-effort JSON parse that returns null instead of throwing, so a malformed line is simply skipped. */
 function parseJson(text: string): unknown {
   try {
     return JSON.parse(text) as unknown;
@@ -50,11 +53,13 @@ function parseJson(text: string): unknown {
   }
 }
 
+/** Resolve a tool call id across the several field names OpenClaw uses, defaulting to "tool" when none is present. */
 function toolId(native: JsonRecord): string {
   return string(native.callId) || string(native.toolCallId) || string(native.tool_call_id) ||
     string(native.tool_use_id) || string(native.id) || "tool";
 }
 
+/** Parse one OpenClaw stdout line into a frame, or null if the line is not a recognized event. */
 export function tryParseOpenClawEvent(line: string): OpenClawFrame | null {
   const native = record(parseJson(line));
   if (!native) return null;
@@ -111,6 +116,7 @@ export function tryParseOpenClawEvent(line: string): OpenClawFrame | null {
   }
 }
 
+/** Parse the accumulated final blob (payloads + meta/usage) into a final frame, or null if it is not yet a complete/meaningful blob. */
 export function tryParseOpenClawFinalBlob(text: string): OpenClawFinalFrame | null {
   const native = record(parseJson(text.trim()));
   if (!native || !Array.isArray(native.payloads)) return null;
@@ -134,8 +140,9 @@ export function tryParseOpenClawFinalBlob(text: string): OpenClawFinalFrame | nu
   };
 }
 
+/** Map a parsed frame to canonical events. */
 export function normalizeOpenClawFrame(frame: OpenClawFrame): CanonicalEvent[] {
-  // parser 保留 OpenClaw 的原生差异，本函数只向上暴露 provider-neutral canonical event。
+  // The parser preserves OpenClaw's native differences; this function only exposes provider-neutral canonical events upward.
   switch (frame.kind) {
     case "text":
       return [{ type: "message.delta", payload: { text: frame.text, channel: "final" } }];
@@ -153,6 +160,7 @@ export function normalizeOpenClawFrame(frame: OpenClawFrame): CanonicalEvent[] {
   }
 }
 
+/** Build the canonical usage payload, omitting provider/model when absent so the shape stays stable across frames. */
 export function usagePayload(frame: UsageLike): Record<string, unknown> {
   return {
     inputTokens: frame.inputTokens ?? 0,

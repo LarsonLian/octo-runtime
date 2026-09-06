@@ -8,11 +8,15 @@ import { resolveDaemonRuntimePaths } from "../../daemon/dist/runtime-options.js"
 type FlagValue = string | boolean;
 type Flags = Record<string, FlagValue>;
 
+/** One CLI-to-daemon call: `{ id, method, params }` serialized as a single JSON
+ * line over the Unix socket. This is the daemon control-plane shape, not JSON-RPC. */
 interface CliRequest {
   method: string;
   params?: Record<string, unknown>;
 }
 
+/** One JSON line from the daemon: a unary `result`, one streamed `event`, or an
+ * `error`. A `run.stream` connection emits many `event` lines then a final `result`. */
 interface CliResponse {
   result?: unknown;
   event?: unknown;
@@ -25,9 +29,13 @@ const { positionals, flags } = parseArguments(cliArguments);
 const [group, action, id] = positionals;
 
 try {
+  // `daemon` is handled in-process by importing the launcher; every other command
+  // becomes a single request/response (or stream) against a running daemon.
   if (group === "daemon") await import("../../daemon/dist/launcher.js");
   else {
     const request = command(group, action, id, flags);
+    // `--follow` submits the chat, prints the ack, then attaches to the run's
+    // event stream using the runId the daemon returned.
     if (request.method === "chat.send" && flags.follow === true) {
       const acknowledgement = await callDaemon(request);
       writeJsonLine({ kind: "ack", result: acknowledgement });
@@ -55,6 +63,7 @@ function parseArguments(args: string[]): { flags: Flags; positionals: string[] }
       positionals.push(argument);
       continue;
     }
+    // `--kebab-case` becomes `camelCase`; a flag with no following value is boolean.
     const key = argument.slice(2).replace(/-([a-z])/g, (_match: string, char: string) => char.toUpperCase());
     const next = args[index + 1];
     flags[key] = next && !next.startsWith("--") ? args[++index] : true;
@@ -75,6 +84,8 @@ function json(value: FlagValue | undefined, fallback: unknown = {}): unknown {
   return typeof value === "string" ? JSON.parse(value) : fallback;
 }
 
+/** Translate positional command + flags into a daemon request. Unknown commands
+ * throw; `help` is answered locally without touching the socket. */
 function command(group: string | undefined, action: string | undefined, id: string | undefined, flags: Flags): CliRequest {
   if (!group || group === "help" || flags.help) return { method: "help" };
   if (group === "status") return { method: "status" };
@@ -170,6 +181,8 @@ function command(group: string | undefined, action: string | undefined, id: stri
   throw new Error("unknown command; run octo-harness help");
 }
 
+/** Send one request and read exactly one JSON-line response. `help` is served
+ * locally. The daemon closes the socket after the single reply. */
 async function callDaemon(request: CliRequest): Promise<unknown> {
   if (request.method === "help") {
     return { usage: [
@@ -198,6 +211,8 @@ async function callDaemon(request: CliRequest): Promise<unknown> {
   return response.result;
 }
 
+/** Consume a run event stream: many `event` lines followed by a terminal
+ * `result`. Errors and a stream that closes before the terminal both throw. */
 async function streamDaemon(request: CliRequest): Promise<void> {
   const socket = await connectDaemon();
   socket.write(`${JSON.stringify({ id: randomUUID(), ...request })}\n`);
@@ -219,6 +234,8 @@ async function streamDaemon(request: CliRequest): Promise<void> {
   }
 }
 
+/** Connect to the daemon's Unix socket (path derived from the same runtime
+ * resolution the daemon uses), mapping "not running" errno codes to a hint. */
 async function connectDaemon(): Promise<net.Socket> {
   const { socketPath } = resolveDaemonRuntimePaths([]);
   const socket = net.createConnection(socketPath);

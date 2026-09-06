@@ -27,6 +27,7 @@ export interface DifyProbeResult {
   status?: number;
 }
 
+/** A non-2xx HTTP response from the Dify API; carries the status and, when the body was JSON, the provider `code`. */
 export class DifyHttpError extends Error {
   constructor(
     message: string,
@@ -38,6 +39,7 @@ export class DifyHttpError extends Error {
   }
 }
 
+/** A well-formed HTTP response whose SSE stream violates the protocol (wrong content-type, unparseable JSON, oversized frame, or no terminal event). */
 export class DifyProtocolError extends Error {
   constructor(message: string) {
     super(message);
@@ -45,6 +47,13 @@ export class DifyProtocolError extends Error {
   }
 }
 
+/**
+ * Thin HTTP+SSE transport for the Dify remote API, shared by the chatflow and
+ * workflow adapters. It only handles auth, URL/header assembly and opening the
+ * event stream; the caller owns request-body shape and event normalization.
+ * The API key is resolved lazily (option or env) so probing does not force a
+ * key to be present at construction time.
+ */
 export class DifyClient {
   readonly baseUrl: string;
   readonly apiKeyEnv: string;
@@ -61,17 +70,24 @@ export class DifyClient {
     if (typeof this.#fetch !== "function") throw new TypeError("Dify adapter requires global fetch or options.fetch");
   }
 
+  /** Resolve the API key from the explicit option or the configured env var, failing loudly if neither is set. */
   resolveApiKey(): string {
     const value = this.#apiKey ?? process.env[this.apiKeyEnv];
     if (!value) throw new Error(`Dify API key is not configured; set ${this.apiKeyEnv}`);
     return value;
   }
 
+  /**
+   * Derive the Dify `user` identifier for a turn. A resumed session's user is
+   * preferred so a conversation keeps a stable identity across turns; otherwise
+   * fall back to the configured user or a deterministic per-session default.
+   */
   userFor(sessionId: string, providerSession?: JsonRecord, configuredUser?: string): string {
     const resumed = optionalString(providerSession?.user);
     return resumed ?? configuredUser ?? `${this.userPrefix}:${sessionId}`;
   }
 
+  /** Cheap reachability/auth check via a GET; the body is discarded and never streamed. */
   async probe(path = "/parameters"): Promise<DifyProbeResult> {
     const command = this.url(path);
     try {
@@ -91,6 +107,13 @@ export class DifyClient {
     }
   }
 
+  /**
+   * POST a request body and return the raw streaming Response for the caller to
+   * feed into `parseSse`. Guards the SSE contract up front: a non-2xx status
+   * throws `DifyHttpError`, and a success response that is not
+   * `text/event-stream` (or has no body) throws `DifyProtocolError` with a
+   * bounded preview — this catches HTML error/login pages served with 200.
+   */
   async openSse(path: string, body: JsonRecord, signal?: AbortSignal): Promise<Response> {
     const response = await this.#fetch(this.url(path), {
       method: "POST",
@@ -108,6 +131,7 @@ export class DifyClient {
     return response;
   }
 
+  /** Best-effort request to abort a running task on the provider side; short timeout since the client-side Run already ended. */
   async stop(path: string, user: string): Promise<void> {
     const response = await this.#fetch(this.url(path), {
       method: "POST",
@@ -131,6 +155,13 @@ export class DifyClient {
   }
 }
 
+/**
+ * Decode a byte stream into SSE frames per the wire format: frames are split on
+ * a blank line (`\r\n\r\n`, `\n\n` or `\r\r`) and multiple `data:` lines within
+ * one frame are joined with newlines. `maxFrameChars` bounds buffering so a
+ * server that never emits a boundary cannot grow the buffer without limit. A
+ * trailing partial frame with no boundary is emitted on stream end.
+ */
 export async function* parseSse(
   body: ReadableStream<Uint8Array>,
   { maxFrameChars = 1_048_576 }: ParseSseOptions = {}
@@ -172,6 +203,13 @@ export async function* parseSse(
   }
 }
 
+/**
+ * Parse one SSE frame's `data` payload into a JSON object. The SSE keep-alive
+ * sentinel `[DONE]` and empty frames yield `null` (skip); malformed JSON throws
+ * `DifyProtocolError`. When the frame carries an `event:` field but the JSON
+ * body omits `event`, the field is copied in so downstream normalizers can
+ * dispatch on a single shape.
+ */
 export function parseDifyEvent(frame: DifySseFrame): JsonRecord | null {
   if (!frame.data || frame.data === "[DONE]") return null;
   let value: unknown;
@@ -185,23 +223,28 @@ export function parseDifyEvent(frame: DifySseFrame): JsonRecord | null {
   return event;
 }
 
+/** Assert a value is a plain JSON object, throwing a named `TypeError` otherwise. */
 export function asRecord(value: unknown, name = "value"): JsonRecord {
   if (!isRecord(value)) throw new TypeError(`${name} must be an object`);
   return value;
 }
 
+/** Narrow to a plain JSON object (excludes arrays and null). */
 export function isRecord(value: unknown): value is JsonRecord {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+/** Return the value only if it is a plain JSON object, else undefined — for optional nested fields. */
 export function optionalRecord(value: unknown): JsonRecord | undefined {
   return isRecord(value) ? value : undefined;
 }
 
+/** Return the value only if it is a non-empty string; empty strings collapse to undefined. */
 export function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/** Return the value only if it is a finite number (rejects NaN/Infinity). */
 export function optionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
@@ -210,6 +253,7 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Strip trailing slashes and require HTTPS, allowing plain HTTP only for localhost loopback (dev). */
 function normalizeBaseUrl(value: string): string {
   const normalized = value.replace(/\/+$/, "");
   const url = new URL(normalized);
@@ -224,6 +268,12 @@ function findFrameBoundary(value: string): { index: number; length: number } | u
   return match?.index === undefined ? undefined : { index: match.index, length: match[0].length };
 }
 
+/**
+ * Parse one SSE block into a frame, following the SSE grammar: comment lines
+ * (leading `:`) are ignored, `field: value` pairs strip a single leading space
+ * from the value, `data` lines accumulate, and a NUL in `id` invalidates it.
+ * Returns null when the block carried no recognized field.
+ */
 function parseSseBlock(block: string): DifySseFrame | null {
   const frame: DifySseFrame = {};
   const data: string[] = [];
@@ -254,6 +304,7 @@ function parseSseBlock(block: string): DifySseFrame | null {
   return hasField ? frame : null;
 }
 
+/** Build a `DifyHttpError` from a failed response, preferring the JSON `code`/`message` and falling back to a bounded text preview. */
 async function responseFailure(response: Response): Promise<DifyHttpError> {
   const preview = (await response.text()).slice(0, 4096);
   let code: string | undefined;

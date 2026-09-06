@@ -9,15 +9,16 @@ import {
   type MessageProvenance
 } from "@mininglamp-oss/octo-harness-protocol";
 
-/** Host 用于注册和能力发现的 provider-neutral metadata。 */
+/** Provider-neutral metadata the Host uses for registration and capability discovery. */
 export interface HostedAdapterMetadata {
   type: string;
   capabilities: string[];
 }
 
 /**
- * 任意 Octo Harness adapter 必须实现的最小契约。
- * invoke 可以封装 CLI 子进程、ACP、WebSocket 或进程内实现，只要输出 canonical event stream。
+ * The minimal contract any Octo Harness adapter must implement.
+ * invoke may wrap a CLI subprocess, ACP, WebSocket or an in-process
+ * implementation, as long as it emits a canonical event stream.
  */
 export interface HostedAdapter {
   metadata: HostedAdapterMetadata;
@@ -33,25 +34,26 @@ interface MessageState {
 }
 
 /**
- * Adapter 的进程内 registry 与生命周期守门员。
- * 它校验插件输入输出、补齐 message lifecycle、保证单终态并把取消转换为 AbortSignal。
+ * The in-process registry and lifecycle gatekeeper for adapters.
+ * It validates plugin input/output, fills in the message lifecycle, guarantees
+ * a single terminal, and turns cancellation into an AbortSignal.
  */
 export class AdapterHost {
   readonly #adapters = new Map<string, HostedAdapter>();
   readonly #active = new Map<string, AbortController>();
 
-  /** 按 `metadata.type` 注册 adapter；同一类型不能重复覆盖。 */
+  /** Register an adapter by `metadata.type`; the same type cannot be overwritten twice. */
   register(adapter: HostedAdapter): void {
     if (this.#adapters.has(adapter.metadata.type)) throw new Error(`duplicate adapter: ${adapter.metadata.type}`);
     this.#adapters.set(adapter.metadata.type, adapter);
   }
 
-  /** 列出已注册 adapter，供 Agent 注册和控制面展示。 */
+  /** List registered adapters, for Agent registration and control-plane display. */
   list(): HostedAdapterMetadata[] {
     return [...this.#adapters.values()].map(adapter => adapter.metadata);
   }
 
-  /** 调用 adapter，并向上游输出经过生命周期修正的 canonical events。 */
+  /** Invoke an adapter and emit lifecycle-corrected canonical events upstream. */
   async *invoke(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
     assertInvokeRequest(request);
     const adapter = this.#adapters.get(adapterType);
@@ -61,7 +63,7 @@ export class AdapterHost {
     let terminal: CanonicalEvent | undefined;
     const messages = new Map<MessageChannel, MessageState>();
 
-    // provider 可以只发送 delta；host 在这里补齐 message 生命周期并稳定 messageId。
+    // A provider may emit only deltas; here the host fills in the message lifecycle and stabilizes the messageId.
     const prepareMessage = (event: CanonicalEvent): { prefix: CanonicalEvent[]; event: CanonicalEvent } => {
       const isMessage = event.type === "message.create"
         || event.type === "message.delta"
@@ -131,7 +133,7 @@ export class AdapterHost {
     }
   }
 
-  /** 运行 adapter 自带的环境探测；没有 probe 时返回 unchecked 可用状态。 */
+  /** Run the adapter's own environment probe; return an unchecked-available status when there is no probe. */
   probe(adapterType: string): unknown {
     const adapter = this.#adapters.get(adapterType);
     if (!adapter) throw new Error(`unknown adapter: ${adapterType}`);
@@ -139,7 +141,7 @@ export class AdapterHost {
     return adapter.probe();
   }
 
-  /** 中止活动 invocation；返回 false 表示该 invocation 已不存在或已经结束。 */
+  /** Abort an active invocation; returns false when that invocation no longer exists or has already ended. */
   cancel(invocationId: string, reason = "cancelled"): boolean {
     const controller = this.#active.get(invocationId);
     if (!controller) return false;

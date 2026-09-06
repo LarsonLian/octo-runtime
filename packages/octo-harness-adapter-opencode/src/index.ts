@@ -1,8 +1,14 @@
+/**
+ * OpenCode adapter: wraps the OpenCode CLI (`opencode run --format json`) and
+ * normalizes its JSON event/part stream into canonical events. Dangerous
+ * auto-approval (`--auto`) is opt-in via agentConfig.autoApprove.
+ */
 import { createJsonCliAdapter, probeCommand, providerInputText, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+/** A single OpenCode stream part; tool lifecycle is carried in `state.status` (running -> completed/error). */
 interface OpenCodePart {
   sessionID?: string;
   type?: string;
@@ -15,6 +21,7 @@ interface OpenCodePart {
   cost?: unknown;
 }
 
+/** A top-level OpenCode event, which may wrap a part and carries session/usage/error at the envelope level. */
 interface OpenCodeNativeEvent extends OpenCodePart {
   sessionID?: string;
   sessionId?: string;
@@ -23,6 +30,14 @@ interface OpenCodeNativeEvent extends OpenCodePart {
   error?: { data?: { message?: string }; message?: string };
 }
 
+/**
+ * Build the OpenCode CLI argv/env for one invocation.
+ *
+ * Harness context is injected as an extra entry in OpenCode's `instructions`
+ * config (a temp markdown file) delivered through OPENCODE_CONFIG_CONTENT,
+ * merged onto any inline config so the user's existing OpenCode config is not
+ * overwritten. Returns a `cleanup` that removes the temp directory.
+ */
 export async function buildOpenCodeCommand(req: InvokeRequest, command = "opencode") {
   const directory = await mkdtemp(join(tmpdir(), "octo-harness-opencode-"));
   const instructions = join(directory, "instructions.md");
@@ -32,7 +47,7 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
   const configuredInstructions = Array.isArray(inline.instructions)
     ? inline.instructions.filter((value): value is string => typeof value === "string")
     : [];
-  // 通过临时指令文件注入 harness 上下文，不改写用户现有的 OpenCode 配置。
+  // Inject harness context via a temporary instructions file, without rewriting the user's existing OpenCode config.
   inline.instructions = [...configuredInstructions, instructions];
   const args = ["run", "--format", "json"];
   if (req.providerSession?.sessionId) args.push("--session", req.providerSession.sessionId);
@@ -45,6 +60,7 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
   };
 }
 
+/** Translate one OpenCode native event/part into canonical events; unrelated events yield an empty list. */
 export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEvent[] {
   const events: CanonicalEvent[] = [];
   const sessionId = native.sessionID ?? native.sessionId ?? native.part?.sessionID;
@@ -67,10 +83,16 @@ export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEv
   return events;
 }
 
+/** Narrow an unknown value to a plain object (excluding arrays), used to guard tool input before spreading it. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+/**
+ * Create an OpenCode adapter over the JSON CLI helper. OpenCode's stream ends
+ * without an explicit terminal, so `onSuccess` synthesizes the closing
+ * message.update/run.finished; run.error is emitted inline by the normalizer.
+ */
 export function createOpenCodeAdapter({ command = "opencode" }: { command?: string } = {}) {
   return createJsonCliAdapter<OpenCodeNativeEvent>({
     metadata: { type: "opencode", capabilities: ["session.serialize", "tool.canonical"] },

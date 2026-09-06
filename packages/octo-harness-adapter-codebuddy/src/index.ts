@@ -1,3 +1,8 @@
+/**
+ * CodeBuddy adapter: wraps the CodeBuddy CLI spoken over ACP (Agent Client
+ * Protocol) as JSON-RPC 2.0 on stdio, and normalizes its `session/update`
+ * notifications into the harness canonical event stream.
+ */
 import {
   defineAdapter,
   probeCommand,
@@ -8,6 +13,7 @@ import {
 import { spawnAcpClient } from "@mininglamp-oss/octo-harness-acp-client";
 import type { AcpUpdate } from "@mininglamp-oss/octo-harness-acp-client";
 
+/** One ACP `session/update` notification; fields are optional because their presence depends on `sessionUpdate`. */
 interface CodeBuddyUpdate extends AcpUpdate {
   sessionUpdate?: string;
   content?: unknown;
@@ -21,6 +27,7 @@ interface CodeBuddyUpdate extends AcpUpdate {
   output?: unknown;
 }
 
+/** Translate one ACP update into canonical events; unrecognized update kinds yield nothing. */
 export function normalizeCodeBuddyUpdate(update: CodeBuddyUpdate): CanonicalEvent[] {
   const type = update.sessionUpdate ?? update.type;
   if (type === "agent_message_chunk" || type === "agent_thought_chunk") {
@@ -30,6 +37,7 @@ export function normalizeCodeBuddyUpdate(update: CodeBuddyUpdate): CanonicalEven
       type: "message.delta",
       payload: type === "agent_thought_chunk"
         ? {
+            // ACP does not declare whether thoughts are user-visible, so exposure stays "unknown".
             text,
             channel: "analysis",
             exposure: "unknown",
@@ -58,6 +66,12 @@ export function normalizeCodeBuddyUpdate(update: CodeBuddyUpdate): CanonicalEven
   return [];
 }
 
+/**
+ * Create a CodeBuddy adapter. Each invocation spawns an ACP client, initializes
+ * the connection, then either loads the stored provider session or creates a
+ * new one. The final `message.update`/`run.finished` terminals are synthesized
+ * here because ACP prompt streams end silently rather than with a terminal.
+ */
 export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, command = "codebuddy" }: { acpClientFactory?: typeof spawnAcpClient; command?: string } = {}) {
   return defineAdapter({
     metadata: { type: "codebuddy", capabilities: ["session.serialize", "tool.canonical"] },
@@ -69,7 +83,7 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
       });
       try {
         await client.initialize();
-        // Octo Harness session 只保存 provider sessionId；新建和恢复都收敛到同一个 ACP prompt 流。
+        // The Octo Harness session stores only the provider sessionId; both the new and resume paths converge on the same ACP prompt stream.
         const session = req.providerSession?.sessionId
           ? await client.loadSession(req.providerSession.sessionId, { cwd: req.workdir })
           : await client.newSession({ cwd: req.workdir, model: req.agentConfig?.model });
@@ -85,6 +99,7 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
   });
 }
 
+/** Narrow an unknown value to a plain object (excluding arrays), used to guard ACP payloads before indexing. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }

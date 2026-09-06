@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Daemon entrypoint: resolve runtime paths, start the socket control plane +
+// worker, and translate SIGINT/SIGTERM into a single graceful shutdown.
 import { resolveDaemonRuntimePaths } from "./runtime-options.js";
 import { startDaemonServer } from "./server.js";
 
@@ -12,7 +14,8 @@ let stopping = false;
 const stop = (): void => {
   if (stopping) return;
   stopping = true;
-  // signal handler 必须立即返回；实际清理仍由同一个 Promise 串行完成。
+  // The signal handler must return immediately; the actual cleanup still runs
+  // serially through this single close() promise.
   void app.close().then(
     () => process.exit(0),
     error => {
