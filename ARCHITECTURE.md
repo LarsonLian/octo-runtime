@@ -141,10 +141,9 @@ package imports, not runtime network connections.
 | `apps/daemon` | Composition root: wires Store/Engine/Daemon/Host; Unix socket server; method dispatch |
 | `apps/cli` | Turns CLI args into a daemon method; one socket request/response per command |
 | `apps/adapter-host` | Manifest loader: dynamically imports adapter modules, registers them into one host, starts the RPC server |
-| `apps/example-basic` | In-process Codex example (Engine + MemoryStore + in-process host) |
 
 Why `HarnessEngine` is the core and not the daemon: the engine runs directly
-with `MemoryStore` + an in-process host (as `example-basic` and the core tests
+with `MemoryStore` + an in-process host (as the core tests
 do); the daemon only adds async queueing, timers and recovery around it.
 Deleting the daemon does not delete the domain model.
 

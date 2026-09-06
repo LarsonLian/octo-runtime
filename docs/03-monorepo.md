@@ -17,7 +17,6 @@ apps/
   cli/                  面向用户的 Unix socket CLI
   daemon/               daemon executable 与装配根
   adapter-host/         manifest-driven adapter host executable
-  example-basic/        in-process example application
 
 packages/
   octo-harness-protocol/             canonical protocol
@@ -72,7 +71,6 @@ pnpm build
 pnpm typecheck
 pnpm lint
 pnpm test
-pnpm demo
 pnpm daemon
 pnpm cli status
 ```
@@ -86,7 +84,6 @@ pnpm --recursive list --depth -1
 运行单个 app：
 
 ```bash
-pnpm --filter @mininglamp-oss/octo-harness-example-basic start
 pnpm --filter @mininglamp-oss/octo-harness-adapter-host-app start
 ```
 

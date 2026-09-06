@@ -110,18 +110,6 @@ importers:
         specifier: ^8.18.1
         version: 8.18.1
 
-  apps/example-basic:
-    dependencies:
-      '@mininglamp-oss/octo-harness-adapter-codex':
-        specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-codex
-      '@mininglamp-oss/octo-harness-adapter-host':
-        specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-host
-      '@mininglamp-oss/octo-harness-core':
-        specifier: workspace:*
-        version: link:../../packages/octo-harness-core
-
   packages/octo-harness-acp-client: {}
 
   packages/octo-harness-adapter-claude-code:

@@ -21,7 +21,6 @@ flowchart TB
     CLI["cli\n命令解析 + Unix socket client"]
     DA["daemon app\nserver + dispatch + composition root"]
     HA["adapter-host app\nmanifest loader + RPC server"]
-    EX["example-basic\nin-process 示例"]
   end
 
   subgraph Domain["领域与调度"]
@@ -49,9 +48,6 @@ flowchart TB
   ADAPTERS --> ACP
   HA --> HOST
   HA --> ADAPTERS
-  EX --> CORE
-  EX --> HOST
-  EX --> ADAPTERS
 
   classDef core fill:#fff3bf,stroke:#8a6500,stroke-width:3px,color:#171717;
   classDef contract fill:#e8f3ff,stroke:#1769aa,stroke-width:2px,color:#171717;
@@ -59,7 +55,7 @@ flowchart TB
 
 为什么 `HarnessEngine` 是核心，而不是 daemon：
 
-1. Engine 可以直接搭配 `MemoryStore + in-process AdapterHost` 运行，`example-basic` 和 core tests 就是这样做的。
+1. Engine 可以直接搭配 `MemoryStore + in-process AdapterHost` 运行，core tests 就是这样做的。
 2. Engine 只依赖 `Store` 与 `HarnessHost` 两个端口，不依赖 Unix socket、stdio、child process 或具体 provider。
 3. daemon 把异步排队、timer 和恢复加在 Engine 外层；删除 daemon 不会删除领域模型。
 4. AdapterHost 负责执行纪律，不拥有 Task/Chat 的业务状态。

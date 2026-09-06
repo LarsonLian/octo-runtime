@@ -51,7 +51,6 @@ process and a temporary JSON store — no real model is invoked.
 | `pnpm daemon` | Start the daemon (Unix socket control plane + worker) |
 | `pnpm cli <args>` | Run the CLI against a running daemon |
 | `pnpm host` | Start a standalone adapter-host with `config/adapters.json` |
-| `pnpm demo` | Run the in-process `example-basic` Codex example |
 
 ### Running Locally
 
@@ -72,8 +71,7 @@ octo-harness/
 ├── apps/
 │   ├── cli/                 # Unix socket CLI client
 │   ├── daemon/              # composition root + control plane + worker
-│   ├── adapter-host/        # standalone provider host process
-│   └── example-basic/       # in-process Codex example
+│   └── adapter-host/        # standalone provider host process
 ├── packages/
 │   ├── octo-harness-protocol/            # canonical event / invoke contract (JSON Schema → TS)
 │   ├── octo-harness-core/                # HarnessEngine + Store (domain core)

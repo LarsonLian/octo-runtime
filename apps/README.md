@@ -8,7 +8,6 @@
 | [`cli`](cli/README.md) | 通过 Unix socket 调用 daemon | `apps/cli/dist/index.js` |
 | [`daemon`](daemon/README.md) | 本地状态、调度、恢复和 socket 控制面 | `apps/daemon/dist/launcher.js` |
 | [`adapter-host`](adapter-host/README.md) | 动态加载 adapters，提供 stdio NDJSON JSON-RPC | `apps/adapter-host/dist/index.js` |
-| [`example-basic`](example-basic/README.md) | 不经过 daemon 的进程内 Codex 示例 | `apps/example-basic/dist/index.js` |
 
 ## 示例：指定 Codex 并实时查看每个 JSON-RPC 帧
 

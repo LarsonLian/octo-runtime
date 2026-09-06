@@ -26,7 +26,6 @@ baseline — not a multi-node production scheduler.
 - `pnpm daemon` — start the daemon (Unix socket control plane + worker)
 - `pnpm cli <args>` — CLI client against a running daemon
 - `pnpm host` — standalone adapter-host with `config/adapters.json`
-- `pnpm demo` — in-process Codex example
 
 ## Code Style
 

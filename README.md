@@ -26,7 +26,6 @@ apps/
   cli/                 Unix socket CLI
   daemon/              durable control plane + worker
   adapter-host/        独立 provider host 进程
-  example-basic/       in-process Codex example
 packages/
   octo-harness-protocol/            canonical event / invoke contract
   octo-harness-core/                Chat/Task/Trigger/Run domain engine
@@ -122,12 +121,6 @@ pnpm cli task continue <task-id> \
 ```
 
 第二次 Task attempt 复用同一个 harness/provider session，但获得新的 run ID 和独立 event seq。
-
-也可以用进程内示例执行同一流程：
-
-```bash
-pnpm demo
-```
 
 ## Chat 示例
 
