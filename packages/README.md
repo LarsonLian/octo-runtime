@@ -18,10 +18,8 @@ flowchart TD
     Host --> A3[adapter-codebuddy]
     Host --> A4[adapter-opencode]
     Host --> A5[adapter-openclaw]
-    Host --> A6[adapter-dify-*]
     A3 -.依赖.-> ACP[acp-client]
-    A6 -.依赖.-> DifyC[dify-client]
-    A1 & A2 & A3 & A4 & A5 & A6 -.基于.-> Proto[protocol：统一类型契约]
+    A1 & A2 & A3 & A4 & A5 -.基于.-> Proto[protocol：统一类型契约]
     SDK[adapter-sdk] -.开发依赖.-> A4
 ```
 
@@ -35,11 +33,10 @@ flowchart TD
 | [`@mininglamp-oss/octo-harness-adapter-host`](octo-harness-adapter-host/README.md) | 适配器宿主：将统一请求路由到具体适配器，保证生命周期与单一终态 |
 | [`@mininglamp-oss/octo-harness-adapter-sdk`](octo-harness-adapter-sdk/README.md) | 适配器开发 SDK：子进程、按行读取 JSON、探测、清理 |
 | [`@mininglamp-oss/octo-harness-acp-client`](octo-harness-acp-client/README.md) | CodeBuddy 使用的 ACP JSON-RPC stdio 客户端 |
-| [`@mininglamp-oss/octo-harness-dify-client`](octo-harness-dify-client/README.md) | Dify 使用的 HTTPS + SSE 客户端（认证、探测、停止） |
 
 所有 `packages/*` 的目录名和 npm 非 scope 部分保持一致。provider packages 使用 `packages/octo-harness-adapter-<provider>` 与 `@mininglamp-oss/octo-harness-adapter-<provider>`。
 
-以下 `octo-harness-adapter-*` packages 共享同一个 `InvokeRequest -> AsyncIterable<CanonicalEvent>` 上层契约，但底层 CLI、传输、权限和 provider session 格式不同。
+以下 `octo-harness-adapter-*` packages 共享同一个 `InvokeRequest -> AsyncIterable<CanonicalEvent>` 上层契约，但底层 CLI、传输、权限和 provider session 格式不同。当前内置的适配器都面向**本地 Agent CLI**；关于自定义/远程集成（如 Dify）的定位，见 [自定义与远程集成](#自定义与远程集成)。
 
 ## 先理解“本地”
 
@@ -56,10 +53,17 @@ flowchart TD
 | [`codebuddy`](octo-harness-adapter-codebuddy/README.md) | `codebuddy --acp` 子进程 | ACP JSON-RPC stdio | CodeBuddy 配置的云 provider | `session/load` | 不需要 |
 | [`opencode`](octo-harness-adapter-opencode/README.md) | `opencode run` 子进程 | argv + JSON events stdout | OpenCode 配置的 provider | `--session` | 不需要 |
 | [`openclaw`](octo-harness-adapter-openclaw/README.md) | `openclaw agent --local` 子进程 | NDJSON/final JSON stdout | OpenClaw 配置的 provider | `--session-id` | **明确不使用** |
-| [`dify-chatflow`](octo-harness-adapter-dify-chatflow/README.md) | adapter-host 内远程请求 | HTTPS POST + SSE | Dify Cloud / 自建 Dify | `conversation_id` | 不需要 |
-| [`dify-workflow`](octo-harness-adapter-dify-workflow/README.md) | adapter-host 内远程请求 | HTTPS POST + SSE | Dify Cloud / 自建 Dify | 无，调用相互独立 | 不需要 |
 
-五个本地 CLI adapter 是“一次 invocation 一个本地 CLI process”。Dify adapters 不启动 CLI，而是在 adapter-host 进程中发起一次远程 HTTPS + SSE 请求。当前没有维护长期 provider CLI daemon；CodeBuddy 的 ACP session 可以跨新进程 `session/load`，OpenClaw local 依赖 state dir 中的 transcript，Dify Chatflow 通过 opaque `conversation_id` 恢复，Dify Workflow 调用则相互独立。
+五个内置适配器均为“一次 invocation 一个本地 CLI 进程”。当前没有维护长期 provider CLI daemon；CodeBuddy 的 ACP session 可以跨新进程 `session/load`，OpenClaw local 依赖 state dir 中的 transcript。
+
+## 自定义与远程集成
+
+上层契约（`InvokeRequest -> AsyncIterable<CanonicalEvent>`）本身与传输无关，因此技术上完全可以实现非本地 CLI 的适配器——例如通过 HTTPS + SSE 接入 Dify 这类远程编排/应用平台。**但当前不建议这样做**，原因是它与本项目的定位存在歧义：
+
+- Octo Harness 的目标是**统一本地 Agent CLI**（代码执行、工具调用、文件操作发生在本机节点）。远程应用平台是一个“黑盒工作流服务”，其能力边界、权限模型与本地适配器不可比，混在同一份适配器矩阵中会让使用者误判系统的安全与执行语义。
+- 远程集成把执行与凭证移出本机边界，`workdir`、sandbox、进程隔离等本地约束不再适用，取消与终态语义也更弱。
+
+若确有需要自行接入此类集成，除实现事件翻译外，**该适配器必须在 agent 配置层显式声明其 capability 能力包与限制**（例如是否支持 `session.serialize`、是否具备文件/工具能力、可用的取消语义），使上层能按 capability 而非按 adapter type 做决策与限制。需要注意：当前 `capabilities` 仅为 metadata、尚未在运行时强制校验（见 [Architecture](../ARCHITECTURE.md) 与各适配器 README），因此能力边界目前依赖约定而非强制。
 
 ## 公共环境准备
 
@@ -110,8 +114,6 @@ pnpm cli adapter probe claude-code
 pnpm cli adapter probe codebuddy
 pnpm cli adapter probe opencode
 pnpm cli adapter probe openclaw
-pnpm cli adapter probe dify-chatflow
-pnpm cli adapter probe dify-workflow
 ```
 
 典型创建命令：
@@ -131,12 +133,6 @@ pnpm cli agent create --name opencode --adapter opencode \
 
 pnpm cli agent create --name openclaw --adapter openclaw \
   --provider-agent main --thinking medium --timeout-seconds 300
-
-pnpm cli agent create --name dify-chat --adapter dify-chatflow \
-  --workdir "$PWD"
-
-pnpm cli agent create --name dify-workflow --adapter dify-workflow \
-  --workdir "$PWD"
 ```
 
 CLI 输出中的 `id` 是 Octo Harness Agent ID。`--provider-agent` 当前只对 OpenClaw 有效；OpenCode 虽然原生有 `--agent`，此 adapter 尚未暴露。

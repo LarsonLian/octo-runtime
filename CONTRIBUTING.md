@@ -20,8 +20,8 @@ need to get productive.
 - **Node.js** ≥ 20
 - **pnpm** ≥ 11
 - For real provider runs: the corresponding provider CLI installed and
-  authenticated (Codex, Claude Code, CodeBuddy, OpenCode, OpenClaw), or a Dify
-  API key. Tests do **not** call real models.
+  authenticated (Codex, Claude Code, CodeBuddy, OpenCode, OpenClaw). Tests do
+  **not** call real models.
 
 ### Getting Started
 
@@ -51,7 +51,6 @@ process and a temporary JSON store — no real model is invoked.
 | `pnpm daemon` | Start the daemon (Unix socket control plane + worker) |
 | `pnpm cli <args>` | Run the CLI against a running daemon |
 | `pnpm host` | Start a standalone adapter-host with `config/adapters.json` |
-| `pnpm demo` | Run the in-process `example-basic` Codex example |
 
 ### Running Locally
 
@@ -72,8 +71,7 @@ octo-harness/
 ├── apps/
 │   ├── cli/                 # Unix socket CLI client
 │   ├── daemon/              # composition root + control plane + worker
-│   ├── adapter-host/        # standalone provider host process
-│   └── example-basic/       # in-process Codex example
+│   └── adapter-host/        # standalone provider host process
 ├── packages/
 │   ├── octo-harness-protocol/            # canonical event / invoke contract (JSON Schema → TS)
 │   ├── octo-harness-core/                # HarnessEngine + Store (domain core)
@@ -81,7 +79,6 @@ octo-harness/
 │   ├── octo-harness-adapter-host/        # host lifecycle + NDJSON RPC
 │   ├── octo-harness-adapter-sdk/         # adapter helpers + subprocess runtime
 │   ├── octo-harness-acp-client/          # CodeBuddy ACP JSON-RPC client
-│   ├── octo-harness-dify-client/         # Dify HTTP/SSE transport client
 │   └── octo-harness-adapter-*/           # per-provider adapters
 ├── config/adapters.json     # adapter manifest
 ├── test/                    # contract and integration tests

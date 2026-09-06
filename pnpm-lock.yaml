@@ -17,12 +17,6 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-codex':
         specifier: workspace:*
         version: link:packages/octo-harness-adapter-codex
-      '@mininglamp-oss/octo-harness-adapter-dify-chatflow':
-        specifier: workspace:*
-        version: link:packages/octo-harness-adapter-dify-chatflow
-      '@mininglamp-oss/octo-harness-adapter-dify-workflow':
-        specifier: workspace:*
-        version: link:packages/octo-harness-adapter-dify-workflow
       '@mininglamp-oss/octo-harness-adapter-host':
         specifier: workspace:*
         version: link:packages/octo-harness-adapter-host
@@ -54,9 +48,6 @@ importers:
       '@mininglamp-oss/octo-harness-daemon-app':
         specifier: workspace:*
         version: link:apps/daemon
-      '@mininglamp-oss/octo-harness-dify-client':
-        specifier: workspace:*
-        version: link:packages/octo-harness-dify-client
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
@@ -81,12 +72,6 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-codex':
         specifier: workspace:*
         version: link:../../packages/octo-harness-adapter-codex
-      '@mininglamp-oss/octo-harness-adapter-dify-chatflow':
-        specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-dify-chatflow
-      '@mininglamp-oss/octo-harness-adapter-dify-workflow':
-        specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-dify-workflow
       '@mininglamp-oss/octo-harness-adapter-host':
         specifier: workspace:*
         version: link:../../packages/octo-harness-adapter-host
@@ -125,18 +110,6 @@ importers:
         specifier: ^8.18.1
         version: 8.18.1
 
-  apps/example-basic:
-    dependencies:
-      '@mininglamp-oss/octo-harness-adapter-codex':
-        specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-codex
-      '@mininglamp-oss/octo-harness-adapter-host':
-        specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-host
-      '@mininglamp-oss/octo-harness-core':
-        specifier: workspace:*
-        version: link:../../packages/octo-harness-core
-
   packages/octo-harness-acp-client: {}
 
   packages/octo-harness-adapter-claude-code:
@@ -162,30 +135,6 @@ importers:
       smol-toml:
         specifier: ^1.4.2
         version: 1.8.0
-
-  packages/octo-harness-adapter-dify-chatflow:
-    dependencies:
-      '@mininglamp-oss/octo-harness-adapter-sdk':
-        specifier: workspace:*
-        version: link:../octo-harness-adapter-sdk
-      '@mininglamp-oss/octo-harness-dify-client':
-        specifier: workspace:*
-        version: link:../octo-harness-dify-client
-      '@mininglamp-oss/octo-harness-protocol':
-        specifier: workspace:*
-        version: link:../octo-harness-protocol
-
-  packages/octo-harness-adapter-dify-workflow:
-    dependencies:
-      '@mininglamp-oss/octo-harness-adapter-sdk':
-        specifier: workspace:*
-        version: link:../octo-harness-adapter-sdk
-      '@mininglamp-oss/octo-harness-dify-client':
-        specifier: workspace:*
-        version: link:../octo-harness-dify-client
-      '@mininglamp-oss/octo-harness-protocol':
-        specifier: workspace:*
-        version: link:../octo-harness-protocol
 
   packages/octo-harness-adapter-host:
     dependencies:
@@ -222,8 +171,6 @@ importers:
       '@mininglamp-oss/octo-harness-core':
         specifier: workspace:*
         version: link:../octo-harness-core
-
-  packages/octo-harness-dify-client: {}
 
   packages/octo-harness-protocol:
     devDependencies:

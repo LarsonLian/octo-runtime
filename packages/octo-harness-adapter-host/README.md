@@ -44,19 +44,20 @@ sequenceDiagram
 2. **终态唯一**：正常结束归一为 `run.finished`，错误归一为 `run.error`，取消或流中断归一为 `run.stopped`。适配器崩溃、缺失收尾、或在终态后继续发送事件的情况，均由宿主兜底或纠正为单一终态。
 3. **取消经由 AbortSignal**：`cancel(invocationId)` 触发对应调用的 `AbortController`，由适配器负责将其传导至子进程或协议层；上层无需了解 provider 的进程模型。
 
-宿主提供两种部署形态：进程内直接实例化 `AdapterHost`（适用于测试、嵌入式与示例），或将适配器置于独立子进程、通过 stdio 上的 NDJSON JSON-RPC 通信（`spawnAdapterHost`）。两种形态对 Core 暴露相同的 `invoke/list/cancel` 契约，与是否跨进程无关。
+适配器宿主作为 daemon 启动的独立子进程运行：宿主进程内的 `AdapterHostRpcServer` 依据 manifest 加载适配器并对外提供服务，daemon 通过 `spawnAdapterHost` 建立 `AdapterHostRpcClient`，两者以 stdio 上的 NDJSON JSON-RPC 2.0 通信。这条子进程边界是宿主的运行方式，Core 面向的始终是同一组 `invoke/list/cancel` 契约。
 
 ## 使用
 
-进程内注册并调用适配器：
+宿主要加载的适配器由 manifest（`config/adapters.json`）声明。正常运行时由 daemon 负责拉起宿主子进程并与之通信，无需手工实例化；如需在自定义进程中直接驱动，使用 `spawnAdapterHost`：
 
 ```ts
-import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
-import { codexAdapter } from "@mininglamp-oss/octo-harness-adapter-codex";
+import { spawnAdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 import type { InvokeRequest } from "@mininglamp-oss/octo-harness-protocol";
 
-const host = new AdapterHost();
-host.register(codexAdapter);
+const host = await spawnAdapterHost({
+  entrypoint: "apps/adapter-host/dist/index.js",
+  manifest: "config/adapters.json"
+});
 
 const request: InvokeRequest = {
   invocationId: "invoke-1",
@@ -69,12 +70,14 @@ const request: InvokeRequest = {
   agentConfig: {}
 };
 
-for await (const event of host.invoke("codex", request)) {
+for await (const event of host.client.invoke("codex", request)) {
   console.log(event.type, event.payload);
 }
+
+await host.close();
 ```
 
-跨进程启动使用 `spawnAdapterHost({ entrypoint, manifest })`，它以首次 `list` 成功作为就绪握手；manifest 错误或可执行文件缺失会在此阶段即时暴露，而非延迟到首次调用。
+`spawnAdapterHost` 以首次 `list` 成功作为就绪握手：manifest 错误或可执行文件缺失会在此阶段即时暴露，而非延迟到首次调用。
 
 ## 约束与注意事项
 
