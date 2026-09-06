@@ -254,7 +254,13 @@ export class AgentWorkRuntime {
         this.#options.channelContext
       );
     }
-    this.#runtimeId = this.#options.runtimeId ?? await this.#register([...this.#adapterCapabilities.keys()]);
+    const registeredRuntimeId = await this.#register([...this.#adapterCapabilities.keys()]);
+    if (this.#options.runtimeId && this.#options.runtimeId !== registeredRuntimeId) {
+      throw new Error(
+        `Agent Work runtime registration returned ${registeredRuntimeId}, expected configured runtime ${this.#options.runtimeId}`
+      );
+    }
+    this.#runtimeId = registeredRuntimeId;
     await this.#connect();
     this.#loop = this.#readLoop(epoch);
     this.#pump = this.#senderLoop(epoch);

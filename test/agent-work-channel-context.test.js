@@ -106,6 +106,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
       token: "runtime-token",
       tenantId: "tenant-e2e",
       subjectId: "device-e2e",
+      runtimeId: "runtime-e2e",
       runtimeName: "runtime-e2e",
       fingerprint: "runtime:e2e",
       storePath: join(directory, "agent-work.db"),
