@@ -13,6 +13,7 @@ import {
   type HostedAdapter
 } from "@mininglamp-oss/octo-harness-adapter-host";
 import {
+  installCrashReporter,
   LocalObservability,
   observabilityConfigurationFromEnv
 } from "@mininglamp-oss/octo-harness-observability";
@@ -35,13 +36,16 @@ interface AdapterManifest {
 const index = process.argv.indexOf("--manifest");
 if (index < 0 || !process.argv[index + 1]) throw new Error("usage: octo-harness-adapter-host --manifest <file>");
 
-const manifestPath = resolve(process.argv[index + 1]);
-const rawManifest: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
-const manifest = parseManifest(rawManifest);
 const logging = observabilityConfigurationFromEnv(
   process.env,
   join(process.env.OCTO_HARNESS_HOME ?? join(homedir(), ".octo-harness"), "logs")
 );
+const crashReporter = logging.fileLog
+  ? installCrashReporter({ directory: logging.directory, component: "adapter-host" })
+  : undefined;
+const manifestPath = resolve(process.argv[index + 1]);
+const rawManifest: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
+const manifest = parseManifest(rawManifest);
 const observability = new LocalObservability({ ...logging, component: "adapter-host" });
 const host = new AdapterHost({
   observe: (identity, observation) => observability.observeProvider(identity, observation)
@@ -90,7 +94,9 @@ observability.log({
 });
 
 process.once("beforeExit", () => {
-  void observability.close();
+  // beforeExit can be emitted more than once; close is idempotent and failures
+  // are intentionally contained because there is no protocol-safe stderr body.
+  void observability.close().catch(() => undefined);
 });
 let stopping = false;
 const stop = (): void => {
@@ -103,6 +109,7 @@ const stop = (): void => {
 };
 process.once("SIGINT", stop);
 process.once("SIGTERM", stop);
+process.once("exit", () => crashReporter?.close());
 
 /** Parse and validate the on-disk manifest. Only version 1 is supported; each
  * entry names a module, an export, whether that export is a factory, and options. */

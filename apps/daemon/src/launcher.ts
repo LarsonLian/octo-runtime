@@ -4,11 +4,17 @@
 // initialize its own lifecycle log.
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { LocalObservability } from "@mininglamp-oss/octo-harness-observability";
+import {
+  installCrashReporter,
+  LocalObservability
+} from "@mininglamp-oss/octo-harness-observability";
 import { daemonRuntimeArguments, resolveDaemonRuntimePaths } from "./runtime-options.js";
 
 const entrypoint = fileURLToPath(new URL("./index.js", import.meta.url));
 const runtimePaths = resolveDaemonRuntimePaths();
+const crashReporter = runtimePaths.logging?.fileLog
+  ? installCrashReporter({ directory: runtimePaths.logging.directory, component: "launcher" })
+  : undefined;
 const observability = new LocalObservability({
   ...runtimePaths.logging!,
   component: "launcher"
@@ -79,3 +85,4 @@ observability.log({
   data: { exit_code: result.code }
 });
 await observability.close();
+crashReporter?.close();

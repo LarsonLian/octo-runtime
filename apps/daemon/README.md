@@ -8,7 +8,7 @@ Octo Harness 的长驻 daemon 可执行程序与装配根。它把持久化 Stor
 
 - 解析 socket、store、manifest 和 adapter-host 运行路径；
 - 启动独立 adapter-host，并通过 `list` 完成就绪握手；
-- 打开 `JsonFileStore`，创建 `HarnessEngine` 和 `HarnessDaemon`；
+- 打开单进程 `SqliteStore`，创建 `HarnessEngine` 和 `HarnessDaemon`；
 - 恢复 queued 工作并启动 interval schedulers；
 - 监听本地 Unix socket，把 CLI method 分派到 Engine、Daemon、Store 或 Host client；
 - 在 SIGINT/SIGTERM 时启动停止调度、关闭 server、终止 host 和删除 socket 的关闭流程；
@@ -20,7 +20,7 @@ Octo Harness 的长驻 daemon 可执行程序与装配根。它把持久化 Stor
 CLI
   -> Unix socket
 daemon app
-  -> JsonFileStore
+  -> SqliteStore (WAL)
   -> HarnessEngine
   -> HarnessDaemon
   -> AdapterHostRpcClient
@@ -57,14 +57,20 @@ daemon 迁移到 Go/Rust 等运行时而保留 Node.js adapter 生态。完整�
 ~/.octo-harness/
   sockets/
     octo-harness-daemon.sock
-  state.json
+  state.db
+  logs/
+    YYYY-MM-DD/
+      daemon.N.jsonl
+      adapter-host.N.jsonl
+      evaluation/
 ```
 
 - socket 启动后权限设为 `0600`；
 - socket 父目录自动创建；
 - daemon 正常关闭时删除 socket；
-- `state.json` 保留，用于下一次启动恢复；
-- 当前 JSON Store 只支持单 daemon writer，不得让两个 daemon 共用同一 store。
+- `state.db` 保留，用于下一次启动恢复；
+- `logs/` 按本地日期和文件大小滚动，restricted evidence 单独存放；
+- 当前 SQLite Store 只支持单 daemon writer，不得让两个 daemon 共用同一 store。
 
 ## 配置优先级
 
@@ -73,9 +79,12 @@ daemon 迁移到 Go/Rust 等运行时而保留 Node.js adapter 生态。完整�
 | 资源 | 参数 | 环境变量 | 默认值 |
 |---|---|---|---|
 | Socket | `--socket` | `OCTO_HARNESS_SOCKET` | `~/.octo-harness/sockets/octo-harness-daemon.sock` |
-| Store | `--store` | `OCTO_HARNESS_STORE` | `~/.octo-harness/state.json` |
+| Store | `--store` | `OCTO_HARNESS_STORE` | `~/.octo-harness/state.db` |
 | Adapter manifest | `--manifest` | `OCTO_HARNESS_MANIFEST` | 仓库 `config/adapters.json` |
 | Adapter-host entrypoint | `--adapter-host` | `OCTO_HARNESS_ADAPTER_HOST` | `apps/adapter-host/dist/index.js` |
+| Log directory | `--log-dir` | `OCTO_HARNESS_LOG_DIR` | `~/.octo-harness/logs` |
+| Log level | `--log-level` | `OCTO_HARNESS_LOG_LEVEL` | `info` |
+| Verbose capture | `--verbose` | `OCTO_HARNESS_VERBOSE=1` | 关闭 |
 
 `--host-entrypoint` 是 `--adapter-host` 的兼容别名。`OCTO_HARNESS_HOME` 会同时改变默认 socket 和
 store 根目录，但不会覆盖显式的 `OCTO_HARNESS_SOCKET` 或 `OCTO_HARNESS_STORE`。
@@ -94,8 +103,8 @@ pnpm daemon
 pnpm --filter @mininglamp-oss/octo-harness-daemon-app start
 ```
 
-launcher 会把有效配置转换为绝对路径和真实 argv，daemon 在就绪后向 stderr 输出 PID、
-socket、adapter-host PID 和已加载 adapters。
+launcher 会把有效配置转换为绝对路径和真实 argv。daemon 生命周期和就绪信息写入本地
+operational JSONL；stderr 只用于启动失败或日志系统降级等兜底元数据。
 
 另一个终端检查状态：
 
@@ -110,6 +119,7 @@ daemon 当前暴露以下方法组：
 
 ```text
 status
+logs.path / logs.query / logs.viewer
 adapter.list / adapter.probe
 agent.create / agent.list
 chat.create / chat.list / chat.get / chat.send
@@ -124,6 +134,10 @@ CLI 到 daemon 使用一行 JSON request/response，不是 JSON-RPC 2.0。每个
 canonical events，terminal 后以 `done` 结束连接。daemon 到 adapter-host 才使用 stdio
 NDJSON JSON-RPC 2.0。
 
+`logs.viewer` 是 CLI 本地 Viewer 使用的有界增量读模型：Run 状态、canonical-event 时间和
+session/provider session 来自 `state.db`，WSS、ChatTurn、adapter 和 provider evidence 来自
+本地 JSONL。restricted evidence 必须显式 opt-in，页面还要求用户二次确认。
+
 ## ACK、执行与恢复
 
 - Chat、Trigger 和 Task continuation 在 queued Run 落 Store 后快速返回；
@@ -136,7 +150,7 @@ NDJSON JSON-RPC 2.0。
 
 ## 当前限制
 
-- 单机、单 writer JSON Store，不是多节点生产调度器；
+- 单机、单 writer SQLite Store，不是多节点生产调度器；
 - 没有数据库事务、lease/fencing、outbox 或跨节点选主；
 - adapter-host 崩溃后当前不会自动重启，需要重启 daemon；
 - host 被异常终止时，不保证活动 provider CLI 子进程同步退出；

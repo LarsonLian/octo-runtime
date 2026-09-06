@@ -9,7 +9,8 @@ import {
 } from "@mininglamp-oss/octo-harness-protocol";
 import type {
   AdapterInvocationContext,
-  ProviderCarrier
+  ProviderCarrier,
+  ProviderObservation
 } from "@mininglamp-oss/octo-harness-observability";
 
 export type {
@@ -81,6 +82,33 @@ export interface JsonCliAdapterOptions<TNative> {
   onSuccess?: (request: InvokeRequest) => CanonicalEvent[];
 }
 
+/** Low-cardinality provider metadata that is safe to retain beside public output. */
+export interface ProviderOutputMetadata {
+  type?: string;
+  subtype?: string;
+  provider?: string;
+  model?: string;
+}
+
+/**
+ * A provider-native-shaped projection built exclusively from canonical fields
+ * that the adapter already classified as public. It deliberately has no
+ * catch-all envelope field, so prompt carriers and co-located private reasoning
+ * cannot cross the adapter boundary by accident.
+ */
+export interface ProviderPublicOutputProjection {
+  kind: "message" | "tool" | "usage" | "error";
+  type: string;
+  content: Record<string, unknown>;
+}
+
+export interface ObserveProviderOutputOptions {
+  rpcMethod: string;
+  providerSessionId?: string;
+  providerRequestId?: string;
+  native?: ProviderOutputMetadata;
+}
+
 interface SpawnJsonLinesOptions<TNative> extends CommandSpec {
   signal?: AbortSignal;
   parseLine: (line: string) => TNative | null;
@@ -102,6 +130,142 @@ export function defineAdapter<TAdapter extends Adapter>(adapter: TAdapter): Read
     throw new TypeError("adapter requires metadata.type and invoke(req)");
   }
   return Object.freeze(adapter);
+}
+
+/**
+ * Submit a non-critical observation without allowing logging availability to
+ * alter provider execution. Strict provider input must continue to call and
+ * await `context.observe` directly; every other milestone uses this helper so a
+ * logger closed during shutdown cannot create an unhandled rejection.
+ */
+export function observeBestEffort(
+  context: AdapterInvocationContext | undefined,
+  observation: ProviderObservation
+): void {
+  if (!context) return;
+  void context.observe(observation).catch(() => undefined);
+}
+
+/**
+ * Capture only provider output that the canonical privacy contract classifies
+ * as public. Raw provider envelopes are intentionally excluded because they may
+ * echo prompts or co-locate private reasoning with public content. The optional
+ * native projection is restricted to bounded type/provider/model labels.
+ */
+export function observeProviderOutput(
+  context: AdapterInvocationContext | undefined,
+  events: readonly CanonicalEvent[],
+  options: ObserveProviderOutputOptions
+): void {
+  const canonical = events
+    .filter(isAllowedProviderOutput)
+    .map(sanitizeCanonicalProviderOutput);
+  if (canonical.length === 0) return;
+  const native = sanitizeProviderOutputMetadata(options.native);
+  const publicOutput = canonical.map(projectPublicProviderOutput);
+  observeBestEffort(context, {
+    event: "provider.output",
+    rpcMethod: options.rpcMethod,
+    ...(options.providerSessionId ? { providerSessionId: options.providerSessionId } : {}),
+    ...(options.providerRequestId ? { providerRequestId: options.providerRequestId } : {}),
+    data: {
+      native: { ...native, public: publicOutput },
+      canonical
+    }
+  });
+}
+
+function isAllowedProviderOutput(event: CanonicalEvent): boolean {
+  if (event.type.startsWith("tool_call.")) return true;
+  if (event.type === "usage.update" || event.type === "run.error") return true;
+  if (!event.type.startsWith("message.")) return false;
+  if (event.payload.channel !== "analysis") return true;
+  return event.payload.exposure === "public_summary" || event.payload.exposure === "public_plan";
+}
+
+function sanitizeProviderOutputMetadata(metadata: ProviderOutputMetadata | undefined): ProviderOutputMetadata {
+  if (!metadata) return {};
+  const output: ProviderOutputMetadata = {};
+  for (const key of ["type", "subtype", "provider", "model"] as const) {
+    const value = metadata[key];
+    if (typeof value === "string" && value.length > 0) output[key] = value.slice(0, 256);
+  }
+  return output;
+}
+
+/** Clone and redact the selected public event before handing it to a sink. */
+function sanitizeCanonicalProviderOutput(event: CanonicalEvent): CanonicalEvent {
+  return sanitizePublicValue(event) as CanonicalEvent;
+}
+
+/**
+ * Convert a canonical provider event back into a small native-shaped record for
+ * evaluation tooling. Only explicitly enumerated public fields are selected;
+ * the original provider frame is never accepted by this function.
+ */
+function projectPublicProviderOutput(event: CanonicalEvent): ProviderPublicOutputProjection {
+  const payload = event.payload as Record<string, unknown>;
+  if (event.type.startsWith("message.")) {
+    return {
+      kind: "message",
+      type: event.type,
+      content: selectPublicFields(payload, ["messageId", "role", "status", "channel", "exposure", "text"])
+    };
+  }
+  if (event.type.startsWith("tool_call.")) {
+    return {
+      kind: "tool",
+      type: event.type,
+      content: selectPublicFields(payload, ["id", "name", "status", "args", "argsDelta", "output", "error"])
+    };
+  }
+  if (event.type === "usage.update") {
+    return { kind: "usage", type: event.type, content: { ...payload } };
+  }
+  return {
+    kind: "error",
+    type: event.type,
+    content: selectPublicFields(payload, ["adapterType", "code", "message"])
+  };
+}
+
+function selectPublicFields(
+  source: Record<string, unknown>,
+  fields: readonly string[]
+): Record<string, unknown> {
+  const selected: Record<string, unknown> = {};
+  for (const field of fields) {
+    if (source[field] !== undefined) selected[field] = source[field];
+  }
+  return selected;
+}
+
+const SENSITIVE_OUTPUT_KEY = /(?:^|[_-])(?:authorization|proxy[_-]?authorization|cookie|set[_-]?cookie|token|access[_-]?token|refresh[_-]?token|secret|password|passwd|api[_-]?key|credential|private[_-]?key)(?:$|[_-])/i;
+
+/** Defense in depth for direct sinks; the observability logger repeats broader redaction at persistence time. */
+function sanitizePublicValue(value: unknown, key = "", depth = 0): unknown {
+  if (SENSITIVE_OUTPUT_KEY.test(key)) return "[REDACTED]";
+  if (typeof value === "string") return redactCredentialText(value);
+  if (value === null || typeof value !== "object") return value;
+  if (depth >= 16) return "[TRUNCATED]";
+  if (Array.isArray(value)) {
+    return value.map(item => sanitizePublicValue(item, "", depth + 1));
+  }
+  const result: Record<string, unknown> = {};
+  for (const [childKey, childValue] of Object.entries(value as Record<string, unknown>)) {
+    result[childKey] = sanitizePublicValue(childValue, childKey, depth + 1);
+  }
+  return result;
+}
+
+function redactCredentialText(value: string): string {
+  return value
+    .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/gi, "[REDACTED]")
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [REDACTED]")
+    .replace(/\b(api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd|secret)\s*[:=]\s*[^\s,;&]+/gi, "$1=[REDACTED]")
+    .replace(/([?&](?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)=)[^&#\s]*/gi, "$1[REDACTED]")
+    .replace(/\bsk-[A-Za-z0-9_-]{16,}\b/g, "[REDACTED]")
+    .replace(/:\/\/[^/\s:@]+:[^@\s/]+@/g, "://[REDACTED]@");
 }
 
 /**
@@ -220,7 +384,7 @@ export function createJsonCliAdapter<TNative = Record<string, unknown>>(
           signal: request.signal,
           onInputWritten: () => {
             // A stream write is a transport milestone, not provider acceptance.
-            void context?.observe({
+            observeBestEffort(context, {
               event: "provider.dispatch.written",
               rpcMethod: spec.rpcMethod ?? "process.stdin",
               ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {})
@@ -232,22 +396,34 @@ export function createJsonCliAdapter<TNative = Record<string, unknown>>(
             firstOutput = false;
             // The first native stdout record proves that the provider started
             // producing a response, even for records the normalizer discards.
-            void context?.observe({
+            observeBestEffort(context, {
               event: "provider.output.first",
               rpcMethod: spec.rpcMethod ?? "process.stdout",
               ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {})
             });
           }
-          for (const event of normalize(native, request) ?? []) {
+          const events = normalize(native, request) ?? [];
+          observeProviderOutput(context, events, {
+            rpcMethod: spec.rpcMethod ?? "process.stdout",
+            ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {}),
+            native: providerOutputMetadata(native)
+          });
+          for (const event of events) {
             terminal ||= isTerminal(event);
             yield event;
           }
         }
         if (!terminal) {
-          for (const event of onSuccess?.(request) ?? []) yield event;
+          const events = onSuccess?.(request) ?? [];
+          observeProviderOutput(context, events, {
+            rpcMethod: spec.rpcMethod ?? "process.exit",
+            ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {}),
+            native: { type: "process.exit" }
+          });
+          for (const event of events) yield event;
         }
       } catch (error) {
-        await context?.observe({
+        observeBestEffort(context, {
           event: "provider.dispatch.failed",
           rpcMethod: spec.rpcMethod ?? "process.spawn",
           ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {}),
@@ -259,6 +435,21 @@ export function createJsonCliAdapter<TNative = Record<string, unknown>>(
       }
     }
   });
+}
+
+/** Extract only low-cardinality labels from an otherwise untrusted native frame. */
+function providerOutputMetadata(value: unknown): ProviderOutputMetadata {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+  const record = value as Record<string, unknown>;
+  const part = record.part !== null && typeof record.part === "object" && !Array.isArray(record.part)
+    ? record.part as Record<string, unknown>
+    : undefined;
+  return {
+    ...(typeof record.type === "string" ? { type: record.type } : {}),
+    ...(typeof part?.type === "string" ? { subtype: part.type } : {}),
+    ...(typeof record.provider === "string" ? { provider: record.provider } : {}),
+    ...(typeof record.model === "string" ? { model: record.model } : {})
+  };
 }
 
 /**

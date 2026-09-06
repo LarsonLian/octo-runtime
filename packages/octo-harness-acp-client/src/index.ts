@@ -24,6 +24,28 @@ export interface SpawnAcpClientOptions {
   permissionHandler?: PermissionHandler;
 }
 
+export interface AcpRequestOptions {
+  timeoutMs?: number;
+  onWritten?: () => void;
+  /** A real JSON-RPC id previously allocated by `reserveRequestId`. */
+  requestId?: number;
+}
+
+/** Build the exact params serialized by `session/new`. */
+export function acpNewSessionParams({ cwd, model }: { cwd: string; model?: string }): JsonRecord {
+  return { cwd, mcpServers: [], ...(model ? { model } : {}) };
+}
+
+/** Build the exact params serialized by `session/load`. */
+export function acpLoadSessionParams(sessionId: string, { cwd = process.cwd() }: { cwd?: string } = {}): JsonRecord {
+  return { sessionId, cwd, mcpServers: [] };
+}
+
+/** Build the exact params serialized by `session/prompt`. */
+export function acpPromptParams(sessionId: string, text: string): JsonRecord {
+  return { sessionId, prompt: [{ type: "text", text }] };
+}
+
 /**
  * A single-consumer async queue used to hand `session/update` notifications from
  * the JSON-RPC receive loop to a `prompt` generator. `push` resolves a waiting
@@ -155,6 +177,15 @@ export class AcpClient {
   }
 
   /**
+   * Allocate the JSON-RPC id that a later request will put on the wire. This
+   * lets callers durably record the exact request identity before dispatch
+   * without fabricating an adapter-local correlation id.
+   */
+  reserveRequestId(): number {
+    return this.#nextId++;
+  }
+
+  /**
    * Issue a JSON-RPC request and resolve with its `result`.
    *
    * `onWritten` runs after the serialized frame is accepted by the child stdin
@@ -165,9 +196,12 @@ export class AcpClient {
   request<T = unknown>(
     method: string,
     params: JsonRecord,
-    { timeoutMs = 300_000, onWritten }: { timeoutMs?: number; onWritten?: () => void } = {}
+    { timeoutMs = 300_000, onWritten, requestId }: AcpRequestOptions = {}
   ): Promise<T> {
-    const id = this.#nextId++;
+    const id = requestId ?? this.reserveRequestId();
+    if (this.#pending.has(id)) {
+      return Promise.reject(new Error(`ACP request id ${id} is already pending`));
+    }
     let timer: NodeJS.Timeout | undefined;
     const request = new Promise<unknown>((resolve, reject) => {
       this.#pending.set(id, {
@@ -204,20 +238,26 @@ export class AcpClient {
   }
 
   /** Start a fresh provider session and return its ACP `sessionId` (also aliased as `id`); throws if the provider omits it. */
-  async newSession({ cwd, model }: { cwd: string; model?: string }): Promise<JsonRecord & { id: string; sessionId: string }> {
-    const result = await this.request<JsonRecord>("session/new", {
-      cwd,
-      mcpServers: [],
-      ...(model ? { model } : {})
-    });
+  async newSession(
+    input: { cwd: string; model?: string },
+    options: AcpRequestOptions = {}
+  ): Promise<JsonRecord & { id: string; sessionId: string }> {
+    const result = await this.request<JsonRecord>("session/new", acpNewSessionParams(input), options);
     const sessionId = stringField(result, "sessionId");
     if (!sessionId) throw new Error("ACP session/new returned no sessionId");
     return { ...result, id: sessionId, sessionId };
   }
 
   /** Resume a prior provider session by id; the long timeout accommodates providers that replay history on load. */
-  async loadSession(sessionId: string, { cwd = process.cwd() }: { cwd?: string } = {}): Promise<{ id: string }> {
-    await this.request("session/load", { sessionId, cwd, mcpServers: [] }, { timeoutMs: 600_000 });
+  async loadSession(
+    sessionId: string,
+    input: { cwd?: string } = {},
+    options: AcpRequestOptions = {}
+  ): Promise<{ id: string }> {
+    await this.request("session/load", acpLoadSessionParams(sessionId, input), {
+      ...options,
+      timeoutMs: options.timeoutMs ?? 600_000
+    });
     return { id: sessionId };
   }
 
@@ -234,14 +274,18 @@ export class AcpClient {
   async *prompt(
     sessionId: string,
     text: string,
-    { onWritten }: { onWritten?: () => void } = {}
+    {
+      onWritten,
+      requestId,
+      params = acpPromptParams(sessionId, text)
+    }: Pick<AcpRequestOptions, "onWritten" | "requestId"> & { params?: JsonRecord } = {}
   ): AsyncGenerator<AcpUpdate> {
     const queue = new AsyncQueue<AcpUpdate>();
     this.#updates.set(sessionId, queue);
     const result = this.request<JsonRecord>(
       "session/prompt",
-      { sessionId, prompt: [{ type: "text", text }] },
-      { timeoutMs: 8 * 60 * 60 * 1000, onWritten }
+      params,
+      { timeoutMs: 8 * 60 * 60 * 1000, onWritten, requestId }
     ).then(value => {
       if (isRecord(value.usage)) {
         queue.push({ type: "usage", usage: value.usage, ...(typeof value.model === "string" ? { model: value.model } : {}) });

@@ -4,6 +4,10 @@ import { fileURLToPath } from "node:url";
 import { readFile, stat } from "node:fs/promises";
 import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 import { spawnAcpClient } from "@mininglamp-oss/octo-harness-acp-client";
+import {
+  observeBestEffort,
+  observeProviderOutput
+} from "../packages/octo-harness-adapter-sdk/dist/index.js";
 import { createCodeBuddyAdapter, normalizeCodeBuddyUpdate } from "@mininglamp-oss/octo-harness-adapter-codebuddy";
 import {
   buildCodexCommand,
@@ -25,6 +29,91 @@ import {
 } from "@mininglamp-oss/octo-harness-adapter-openclaw";
 
 const request = { invocationId: "inv-1", sessionId: "session-1", runId: "run-1", prompt: "work", workdir: process.cwd(), context: {}, appendInstructions: "CONTROL", agentConfig: {} };
+
+test("best-effort observations handle rejection and provider output excludes private reasoning", async () => {
+  observeBestEffort({
+    observe: async () => { throw new Error("logger closed"); }
+  }, {
+    event: "provider.output.first",
+    rpcMethod: "process.stdout"
+  });
+
+  const observations = [];
+  observeProviderOutput({
+    observe: async observation => {
+      observations.push(observation);
+      return { captureId: "output-test", state: "accepted", complete: true };
+    }
+  }, [
+    {
+      type: "message.delta",
+      payload: {
+        text: "PRIVATE_REASONING_CANARY",
+        channel: "analysis",
+        exposure: "private_reasoning",
+        provenance: { provider: "fixture", nativeEvent: "reasoning.delta" }
+      }
+    },
+    {
+      type: "message.delta",
+      payload: {
+        text: "safe summary",
+        channel: "analysis",
+        exposure: "public_summary",
+        provenance: { provider: "fixture", nativeEvent: "summary.delta" }
+      }
+    },
+    { type: "message.delta", payload: { text: "final answer", channel: "final" } },
+    {
+      type: "tool_call.update",
+      payload: {
+        id: "tool-1",
+        status: "completed",
+        output: {
+          safe: "done",
+          password: "CREDENTIAL_CANARY",
+          OPENAI_API_KEY: "sk-abcdefghijklmnopCREDENTIAL_CANARY"
+        }
+      }
+    },
+    { type: "usage.update", payload: { inputTokens: 1, outputTokens: 2 } },
+    { type: "run.error", payload: { message: "provider error Bearer TOKEN_CANARY" } },
+    { type: "session.update", payload: { providerSession: { sessionId: "not-output" } } }
+  ], {
+    rpcMethod: "fixture.stdout",
+    native: {
+      type: "mixed-frame",
+      subtype: "content",
+      provider: "fixture",
+      model: "fixture-model"
+    }
+  });
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(observations.length, 1);
+  assert.equal(observations[0].event, "provider.output");
+  assert.equal(observations[0].data.native.type, "mixed-frame");
+  assert.equal(observations[0].data.native.subtype, "content");
+  assert.equal(observations[0].data.native.provider, "fixture");
+  assert.equal(observations[0].data.native.model, "fixture-model");
+  assert.ok(observations[0].data.native.public.some(projection =>
+    projection.kind === "message" && projection.content.text === "final answer"
+  ));
+  assert.ok(observations[0].data.native.public.some(projection =>
+    projection.kind === "tool" && projection.content.status === "completed"
+  ));
+  assert.deepEqual(observations[0].data.canonical.map(event => event.type), [
+    "message.delta",
+    "message.delta",
+    "tool_call.update",
+    "usage.update",
+    "run.error"
+  ]);
+  assert.doesNotMatch(
+    JSON.stringify(observations),
+    /PRIVATE_REASONING_CANARY|CREDENTIAL_CANARY|TOKEN_CANARY|not-output/
+  );
+});
 
 test("Codex native events map to session/message/usage/terminal", () => {
   assert.equal(normalizeCodexEvent({ method: "thread/started", params: { thread: { id: "thread-1" } } })[0].type, "session.update");
@@ -140,7 +229,14 @@ test("Claude defaults to unattended bypass without restricting its tool catalog"
 test("Claude maps thinking/text/tool argument partials without replaying assistant snapshots", async () => {
   const fixture = fileURLToPath(new URL("../fixtures/fake-claude-stream.mjs", import.meta.url));
   const adapter = createClaudeCodeAdapter({ command: process.execPath, commandArgsPrefix: [fixture] });
-  const host = new AdapterHost(); host.register(adapter);
+  const observations = [];
+  const host = new AdapterHost({
+    observe: async (_identity, observation) => {
+      observations.push(observation);
+      return { captureId: "claude-output-test", state: "accepted", complete: true };
+    }
+  });
+  host.register(adapter);
   const events = [];
   for await (const event of host.invoke("claude-code", request)) events.push(event);
 
@@ -177,6 +273,13 @@ test("Claude maps thinking/text/tool argument partials without replaying assista
   );
   assert.equal(events.filter(event => event.type === "session.update").length, 1);
   assert.equal(events.find(event => event.type === "message.update" && event.payload.channel === "final").payload.text, undefined);
+  const output = observations.filter(observation => observation.event === "provider.output");
+  assert.ok(output.some(observation => observation.data.canonical.some(event => event.type === "tool_call.update")));
+  assert.ok(output.some(observation => observation.data.canonical.some(event =>
+    event.type === "message.delta" && event.payload.channel === "final"
+  )));
+  assert.doesNotMatch(JSON.stringify(output), /检查 \/tmp|检查 \/home/);
+  assert.equal(observations.some(observation => observation.event === "provider.dispatch.acknowledged"), false);
 });
 
 test("Claude preserves an explicit restricted permission mode", async () => {
@@ -293,8 +396,24 @@ test("text adapters prefer the exact modelInput over the display prompt", async 
   assert.equal(codexInput.identity.runId, "run-1");
   assert.equal(codexInput.identity.adapterType, "codex");
   assert.equal(codexInput.observation.carrier.content.params.input[0].text, "MODEL_INPUT_OK");
-  assert.ok(observations.some(item => item.observation.event === "provider.dispatch.written"));
-  assert.ok(observations.some(item => item.observation.event === "provider.dispatch.acknowledged"));
+  assert.equal(codexInput.observation.providerRequestId, "3");
+  const codexTurnObservations = observations.filter(item =>
+    item.observation.providerRequestId === codexInput.observation.providerRequestId
+  );
+  assert.ok(codexTurnObservations.some(item => item.observation.event === "provider.dispatch.written"));
+  assert.ok(codexTurnObservations.some(item => item.observation.event === "provider.dispatch.acknowledged"));
+  assert.ok(codexTurnObservations.some(item => item.observation.event === "provider.output.first"));
+  assert.ok(codexTurnObservations.some(item => item.observation.event === "provider.output"));
+  assert.equal(observations.filter(item =>
+    item.observation.event.startsWith("provider.dispatch.")
+      || item.observation.event === "provider.input"
+  ).every(item => typeof item.observation.providerRequestId === "string"), true);
+  const codexPublicOutput = codexTurnObservations
+    .filter(item => item.observation.event === "provider.output")
+    .flatMap(item => item.observation.data.native.public);
+  assert.ok(codexPublicOutput.some(projection =>
+    projection.kind === "message" && projection.content.text === "Inspect /tmp."
+  ));
 });
 
 test("CodeBuddy ACP subprocess completes the canonical contract", async () => {
@@ -313,12 +432,40 @@ test("CodeBuddy ACP subprocess completes the canonical contract", async () => {
   });
   host.register(adapter);
   const events = [];
-  for await (const event of host.invoke("codebuddy", request)) events.push(event);
+  const freshRequest = {
+    ...request,
+    agentConfig: { ...request.agentConfig, model: "codebuddy-model" }
+  };
+  for await (const event of host.invoke("codebuddy", freshRequest)) events.push(event);
   assert.deepEqual(events.map(x => x.type), ["session.update", "message.create", "message.delta", "tool_call.create", "tool_call.update", "usage.update", "message.update", "run.finished"]);
   assert.deepEqual(spawnOptions.args, ["--acp", "--permission-mode", "acceptEdits"]);
-  const providerInput = observations.find(item => item.observation.event === "provider.input");
-  assert.equal(providerInput.identity.adapterType, "codebuddy");
-  assert.equal(providerInput.observation.carrier.content.prompt[0].text, "work\n\nCONTROL");
+  const sessionInput = observations.find(item =>
+    item.observation.event === "provider.input" && item.observation.rpcMethod === "session/new"
+  );
+  assert.equal(sessionInput.identity.adapterType, "codebuddy");
+  assert.equal(sessionInput.observation.providerRequestId, "2");
+  assert.deepEqual(sessionInput.observation.carrier.content, {
+    method: "session/new",
+    params: { cwd: request.workdir, mcpServers: [], model: "codebuddy-model" }
+  });
+  const promptInput = observations.find(item =>
+    item.observation.event === "provider.input" && item.observation.rpcMethod === "session/prompt"
+  );
+  assert.equal(promptInput.observation.providerRequestId, "3");
+  assert.equal(promptInput.observation.carrier.content.params.prompt[0].text, "work\n\nCONTROL");
+  for (const [requestId, method] of [["2", "session/new"], ["3", "session/prompt"]]) {
+    const lifecycle = observations.filter(item => item.observation.providerRequestId === requestId);
+    assert.ok(lifecycle.some(item => item.observation.event === "provider.input" && item.observation.rpcMethod === method));
+    assert.ok(lifecycle.some(item => item.observation.event === "provider.dispatch.written"));
+    assert.ok(lifecycle.some(item => item.observation.event === "provider.dispatch.acknowledged"));
+  }
+  const promptLifecycle = observations.filter(item => item.observation.providerRequestId === "3");
+  assert.ok(promptLifecycle.some(item => item.observation.event === "provider.output.first"));
+  assert.ok(promptLifecycle.some(item => item.observation.event === "provider.output"));
+  assert.ok(promptLifecycle
+    .filter(item => item.observation.event === "provider.output")
+    .flatMap(item => item.observation.data.native.public)
+    .some(projection => projection.kind === "message" && projection.content.text === "ACP reply"));
   assert.equal(normalizeCodeBuddyUpdate({ type: "usage", usage: { inputTokens: 1 } })[0].type, "usage.update");
   assert.deepEqual(
     normalizeCodeBuddyUpdate({ type: "agent_thought_chunk", text: "checking" })[0].payload,
@@ -329,6 +476,74 @@ test("CodeBuddy ACP subprocess completes the canonical contract", async () => {
       provenance: { provider: "codebuddy", nativeEvent: "agent_thought_chunk" }
     }
   );
+});
+
+test("CodeBuddy captures exact ACP session/load params before dispatch", async () => {
+  const fixture = fileURLToPath(new URL("../fixtures/fake-acp.mjs", import.meta.url));
+  const adapter = createCodeBuddyAdapter({
+    acpClientFactory: opts => spawnAcpClient({ ...opts, command: process.execPath, args: [fixture] })
+  });
+  const observations = [];
+  const host = new AdapterHost({
+    observe: async (_identity, observation) => {
+      observations.push(observation);
+      return { captureId: "capture-codebuddy-load-test", state: "accepted", complete: true };
+    }
+  });
+  host.register(adapter);
+  const events = [];
+  for await (const event of host.invoke("codebuddy", {
+    ...request,
+    invocationId: "inv-codebuddy-load",
+    providerSession: { sessionId: "acp-existing-session" }
+  })) events.push(event);
+
+  assert.equal(events.at(-1).type, "run.finished");
+  const loadInput = observations.find(observation =>
+    observation.event === "provider.input" && observation.rpcMethod === "session/load"
+  );
+  assert.equal(loadInput.providerRequestId, "2");
+  assert.equal(loadInput.providerSessionId, "acp-existing-session");
+  assert.deepEqual(loadInput.carrier.content, {
+    method: "session/load",
+    params: { sessionId: "acp-existing-session", cwd: request.workdir, mcpServers: [] }
+  });
+  const loadLifecycle = observations.filter(observation => observation.providerRequestId === "2");
+  assert.deepEqual(
+    loadLifecycle.map(observation => observation.event),
+    ["provider.input", "provider.dispatch.written", "provider.dispatch.acknowledged"]
+  );
+});
+
+test("CodeBuddy failed dispatch retains the real prompt request id", async () => {
+  const fixture = fileURLToPath(new URL("../fixtures/fake-acp.mjs", import.meta.url));
+  const adapter = createCodeBuddyAdapter({
+    acpClientFactory: opts => spawnAcpClient({ ...opts, command: process.execPath, args: [fixture] })
+  });
+  const observations = [];
+  const host = new AdapterHost({
+    observe: async (_identity, observation) => {
+      observations.push(observation);
+      return { captureId: "capture-codebuddy-failed-test", state: "accepted", complete: true };
+    }
+  });
+  host.register(adapter);
+  const events = [];
+  for await (const event of host.invoke("codebuddy", {
+    ...request,
+    invocationId: "inv-codebuddy-failed",
+    prompt: "FAIL_PROVIDER_REQUEST"
+  })) events.push(event);
+
+  assert.equal(events.at(-1).type, "run.error");
+  const promptLifecycle = observations.filter(observation => observation.providerRequestId === "3");
+  assert.deepEqual(
+    promptLifecycle.map(observation => observation.event),
+    ["provider.input", "provider.dispatch.written", "provider.dispatch.failed"]
+  );
+  assert.equal(promptLifecycle.every(observation =>
+    observation.rpcMethod === "session/prompt"
+  ), true);
 });
 
 test("Codex app-server subprocess completes the canonical contract", async () => {
@@ -363,10 +578,38 @@ test("Codex app-server subprocess completes the canonical contract", async () =>
   assert.equal(events.find(event => event.type === "usage.update").payload.inputTokens, 3);
 });
 
+test("Codex preserves strict capture failure semantics before a model-affecting request", async () => {
+  const fixture = fileURLToPath(new URL("../fixtures/fake-codex-app-server.mjs", import.meta.url));
+  const adapter = createCodexAdapter({ command: process.execPath, appServerArgs: [fixture] });
+  const host = new AdapterHost({
+    observe: async (_identity, observation) => {
+      if (observation.event === "provider.input") {
+        throw Object.assign(new Error("capture unavailable"), { code: "trace_capture_failed" });
+      }
+      return { captureId: "codex-strict-test", state: "accepted", complete: true };
+    }
+  });
+  host.register(adapter);
+  const events = [];
+  for await (const event of host.invoke("codex", {
+    ...request,
+    invocationId: "inv-codex-capture-failure"
+  })) events.push(event);
+  assert.equal(events.at(-1).type, "run.error");
+  assert.equal(events.at(-1).payload.code, "trace_capture_failed");
+});
+
 test("Codex app-server falls back to a fresh thread when resume fails", async () => {
   const fixture = fileURLToPath(new URL("../fixtures/fake-codex-app-server.mjs", import.meta.url));
   const adapter = createCodexAdapter({ command: process.execPath, appServerArgs: [fixture] });
-  const host = new AdapterHost(); host.register(adapter);
+  const observations = [];
+  const host = new AdapterHost({
+    observe: async (_identity, observation) => {
+      observations.push(observation);
+      return { captureId: "capture-codex-resume-test", state: "accepted", complete: true };
+    }
+  });
+  host.register(adapter);
   const events = [];
   for await (const event of host.invoke("codex", {
     ...request,
@@ -381,6 +624,14 @@ test("Codex app-server falls back to a fresh thread when resume fails", async ()
   assert.equal(session.resumeFallback, "resume_rejected");
   assert.equal(session.contextInputVariant, "recovery");
   assert.equal(events.at(-1).type, "run.finished");
+  const resumeLifecycle = observations.filter(observation => observation.providerRequestId === "2");
+  assert.deepEqual(
+    resumeLifecycle.map(observation => observation.event),
+    ["provider.input", "provider.dispatch.written", "provider.dispatch.failed"]
+  );
+  assert.equal(resumeLifecycle.every(observation =>
+    observation.rpcMethod === "thread/resume"
+  ), true);
 });
 
 test("Codex app-server preserves a compaction session update for the next turn", async () => {
@@ -455,7 +706,14 @@ test("Codex app-server follows host cancellation", async () => {
 test("OpenClaw local subprocess completes the canonical contract", async () => {
   const fixture = fileURLToPath(new URL("../fixtures/fake-openclaw.mjs", import.meta.url));
   const adapter = createOpenClawAdapter({ command: process.execPath, commandArgsPrefix: [fixture] });
-  const host = new AdapterHost(); host.register(adapter);
+  const observations = [];
+  const host = new AdapterHost({
+    observe: async (_identity, observation) => {
+      observations.push(observation);
+      return { captureId: "openclaw-output-test", state: "accepted", complete: true };
+    }
+  });
+  host.register(adapter);
   const events = [];
   for await (const event of host.invoke("openclaw", request)) events.push(event);
   assert.deepEqual(events.map(event => event.type), [
@@ -464,6 +722,8 @@ test("OpenClaw local subprocess completes the canonical contract", async () => {
   ]);
   assert.equal(events.filter(event => event.type === "message.delta").map(event => event.payload.text).join(""), "OpenClaw reply");
   assert.equal(events.at(-1).type, "run.finished");
+  assert.ok(observations.some(observation => observation.event === "provider.output"));
+  assert.equal(observations.some(observation => observation.event === "provider.dispatch.acknowledged"), false);
 });
 
 test("OpenClaw local subprocess follows host cancellation", async () => {

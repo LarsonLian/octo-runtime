@@ -10,6 +10,7 @@ Domain Socket 发送一行 JSON request，读取一行 JSON response，并把结
 - 创建 Agent、Chat 和 Trigger；
 - 发送 Chat turn、触发 Trigger、摄入外部事件和继续 Task；
 - 等待、检查或取消 Run；
+- 查询本地日志，或启动仅监听 loopback 的 Run Trace Viewer；
 - 把相对 workdir 规范化为绝对路径。
 
 运行链路：
@@ -28,7 +29,7 @@ CLI 到 daemon 的协议是“一行 JSON request + 一行 JSON response”，�
 
 CLI 只负责参数解析、请求映射、socket I/O 和 JSON 展示，不负责：
 
-- 直接读取或修改 `state.json`；
+- 直接读取或修改 `state.db` 或日志文件；
 - 执行 Task/Run 状态迁移；
 - 加载 provider adapter；
 - 启动 Codex、Claude Code 等 provider CLI；
@@ -69,6 +70,7 @@ octo-harness adapter list
 | `status` | 查看 daemon/adapter-host PID、运行路径、adapter 和对象计数 |
 | `adapter list` | 列出 host 已加载的 adapters |
 | `adapter probe <type>` | 检查 provider CLI 是否可执行 |
+| `logs path/query/open` | 查看日志状态、终端查询或打开本地 Trace Viewer |
 | `agent create/list` | 创建或列出 Agent 配置 |
 | `chat create/list/get/send` | 管理 Chat session，提交 turn，并可用 `--follow` 跟随结果 |
 | `trigger create/list/fire` | 管理 manual/event/interval Trigger |
@@ -106,6 +108,22 @@ node apps/cli/dist/index.js run stream <run-id> --from-seq 5
 
 `run stream` 会先回放 `fromSeq` 之后已经持久化的事件，再继续跟随新增事件，因此不会漏掉
 CLI 建立流连接前已经到达的早期事件。
+
+## 本地日志与 Viewer
+
+```bash
+octo-harness logs path
+octo-harness logs query <run-id>
+octo-harness logs open --run <run-id>
+```
+
+`logs query` 在终端返回 JSON；`logs open` 启动临时 HTTP Viewer 并默认打开浏览器。Viewer 只
+监听 loopback，访问能力放在 URL fragment 中并在页面载入后移除。页面通过 daemon 的
+`logs.viewer` 只读方法增量获取有界记录，而不是直接读取 state 或 JSONL 文件。
+
+restricted RPC/provider evidence 默认不返回。终端查询使用 `--sensitive`；Viewer 必须由用户
+显式确认，并在空闲十分钟后自动折叠。Viewer 从 `state.db` 获取 Run 状态和 canonical-event
+时序，再与 JSONL 的 WSS、ChatTurn、adapter 和 provider 证据合并。
 
 ## 运行目录与 Socket
 

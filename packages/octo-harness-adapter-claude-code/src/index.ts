@@ -10,6 +10,8 @@
  */
 import {
   defineAdapter,
+  observeBestEffort,
+  observeProviderOutput,
   parseJsonLine,
   probeCommand,
   providerInputText,
@@ -338,7 +340,7 @@ export function createClaudeCodeAdapter({
           onInputWritten: () => {
             // Claude has no response envelope for stdin input. This marks local
             // stream acceptance only; first stdout is the next observable state.
-            void context?.observe({
+            observeBestEffort(context, {
               event: "provider.dispatch.written",
               rpcMethod: spec.rpcMethod,
               ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {})
@@ -350,16 +352,27 @@ export function createClaudeCodeAdapter({
             firstOutput = false;
             // Count the first native frame even if normalization produces no
             // canonical event; it still proves the provider responded.
-            void context?.observe({
+            observeBestEffort(context, {
               event: "provider.output.first",
               rpcMethod: "process.stdout",
               ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {})
             });
           }
-          yield* normalizer.normalize(native);
+          const events = normalizer.normalize(native);
+          observeProviderOutput(context, events, {
+            rpcMethod: "process.stdout",
+            ...(native.session_id ?? spec.providerSessionId
+              ? { providerSessionId: native.session_id ?? spec.providerSessionId }
+              : {}),
+            native: {
+              ...(native.type ? { type: native.type } : {}),
+              ...(native.event?.type ? { subtype: native.event.type } : {})
+            }
+          });
+          yield* events;
         }
       } catch (error) {
-        void context?.observe({
+        observeBestEffort(context, {
           event: "provider.dispatch.failed",
           rpcMethod: spec.rpcMethod,
           data: { error: error instanceof Error ? error.message : String(error) }

@@ -21,6 +21,29 @@ test("host synthesizes stopped when adapter exits without terminal", async () =>
   assert.equal(events.at(-1).type, "run.stopped");
 });
 
+test("host preserves a strict trace capture error code in its synthesized terminal", async () => {
+  const host = new AdapterHost({
+    observe: async () => {
+      throw Object.assign(new Error("provider trace capture failed"), { code: "trace_capture_failed" });
+    }
+  });
+  host.register({
+    metadata: { type: "capture-failure", capabilities: [] },
+    async *invoke(_request, context) {
+      await context.observe({
+        event: "provider.input",
+        rpcMethod: "turn/start",
+        carrier: { kind: "json_params", content: { prompt: "strict input" } }
+      });
+      yield { type: "run.finished", payload: {} };
+    }
+  });
+  const events = [];
+  for await (const event of host.invoke("capture-failure", request)) events.push(event);
+  assert.equal(events.at(-1).type, "run.error");
+  assert.equal(events.at(-1).payload.code, "trace_capture_failed");
+});
+
 test("host gives adapters a provider observation context with full invocation identity", async () => {
   const observations = [];
   const host = new AdapterHost({

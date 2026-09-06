@@ -9,7 +9,7 @@
 | [`daemon`](daemon/README.md) | 本地状态、调度、恢复和 socket 控制面 | `apps/daemon/dist/launcher.js` |
 | [`adapter-host`](adapter-host/README.md) | 动态加载 adapters，提供 stdio NDJSON JSON-RPC | `apps/adapter-host/dist/index.js` |
 
-## 示例：指定 Codex 并实时查看每个 JSON-RPC 帧
+## 示例：指定 Codex 并查看本地执行时间线
 
 这个例子完成以下流程：
 
@@ -24,7 +24,7 @@ CLI 创建本地 Agent 配置
 ### 重要限制
 
 当前 `agent create/list` 是为了跑通单机 reference implementation 的假 CLI。它只把本地执行
-配置写入 `~/.octo-harness/state.json`，不会创建云端 Agent，也不是未来产品合同。目标设计见
+配置写入 `~/.octo-harness/state.db`，不会创建云端 Agent，也不是未来产品合同。目标设计见
 [`TODO-0001`](../../docs/todo/TODO-0001-replace-fake-local-agent-cli-with-cloud-control-plane.md)。
 
 这个例子只用于验证当前本地执行链和协议帧。
@@ -36,16 +36,16 @@ CLI 创建本地 Agent 配置
 - 已安装并登录 Codex CLI；
 - 本机有 `jq`，用于从 CLI JSON 输出中提取 ID。
 
-### 终端 A：启动逐帧 trace
+### 终端 A：启动本地 trace
 
-如果 daemon 已经在运行，先按 `Ctrl+C` 停止，再带 trace 环境变量重新启动：
+如果 daemon 已经在运行，先按 `Ctrl+C` 停止，再以 verbose 模式启动：
 
 ```bash
-OCTO_HARNESS_TRACE_RPC=1 pnpm daemon
+node apps/daemon/dist/launcher.js --verbose
 ```
 
-`OCTO_HARNESS_TRACE_RPC=1` 会把 daemon 与 adapter-host 之间实际发送和收到的每一条 NDJSON
-JSON-RPC 2.0 frame 写到 daemon 的 stderr。修改这个环境变量后必须重启 daemon。
+`--verbose` 会启用 debug operational log、RPC trace 和完整 provider I/O capture，并写入
+`~/.octo-harness/logs/`。这些内容不会持续打印到 stderr。修改采集配置后必须重启 daemon。
 
 ### 终端 B：创建 Codex Agent 和 Chat
 
@@ -114,20 +114,18 @@ ACK，再显示每个 canonical event，最后显示 `done`：
 node apps/cli/dist/index.js run stream <run-id>
 ```
 
-### 终端 A：观察原始 JSON-RPC 帧
+### 终端 C：查看执行证据
 
-启用 `OCTO_HARNESS_TRACE_RPC=1` 的 daemon 会同时随着 provider 执行实时出现：
+使用 ACK 中的 Run ID 直接查询 JSON，或打开本地可视化时间线：
 
-```text
-[octo-harness rpc daemon -> adapter-host] {"jsonrpc":"2.0","id":"...","method":"invoke","params":{"adapterType":"codex",...}}
-[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","id":"...","result":{"invocationId":"..."}}
-[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{"event":{"type":"message.create",...}}}
-[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{"event":{"type":"session.update",...}}}
-[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{"event":{"type":"message.delta",...}}}
-[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{"event":{"type":"usage.update",...}}}
-[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{"event":{"type":"run.finished","payload":{}}}}
-[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.done","params":{"invocationId":"..."}}
+```bash
+node apps/cli/dist/index.js logs query <run-id>
+node apps/cli/dist/index.js logs open --run <run-id>
 ```
+
+Viewer 的第一屏从 `state.db` 展示 Run 状态、起止时间、耗时、停滞时间、Session/Conversation、
+ChatTurn、invocation、adapter/model 和 provider session；时间线再合并 WSS、adapter dispatch 和
+provider evidence。完整 provider input 属于 restricted evidence，需要在页面中显式确认后查看。
 
 同一个 `SESSION_ID` 可以继续发送下一轮，Octo Harness 会把已保存的 opaque provider session 交回
 Codex adapter 用于 resume：
@@ -138,16 +136,17 @@ node apps/cli/dist/index.js chat send "$SESSION_ID" \
   --follow
 ```
 
-仍然不需要 `run wait`。CLI 在终端 B 输出 canonical events，原始 RPC 帧继续出现在终端 A。
+仍然不需要 `run wait`。CLI 在终端 B 输出 canonical events，本地证据持续写入日志目录。
 
-### 哪些内容不会显示为 JSON-RPC
+### 证据中的协议边界
 
 - CLI 与 daemon 之间使用 Unix socket 上的一行 JSON request/response，不是 JSON-RPC 2.0。
 - Codex CLI 自身输出 JSONL native events，也不是 JSON-RPC 2.0。
-- 这里展示的是 daemon 与 adapter-host 之间的 Octo Harness JSON-RPC 边界。
+- RPC trace 记录的是 daemon 与 adapter-host 之间的 Octo Harness JSON-RPC 边界。
 
-trace 会完整打印 prompt、workdir、Agent config、tool event 和模型输出。不要在共享终端、公开
-日志或包含 secret 的请求上开启。
+迁移说明：旧版本会把 `OCTO_HARNESS_TRACE_RPC=1` 的 frame 输出到 stderr；现在该开关只写入
+restricted JSONL。依赖 stderr 的脚本应迁移到 `logs query`。敏感 trace 可能包含完整 prompt、
+workdir、Agent config、tool event 和模型输出，只能在受控本机环境中启用。
 
 ## 进一步阅读
 

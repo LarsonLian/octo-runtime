@@ -23,6 +23,7 @@ import {
   type AdapterHostRpcClient
 } from "@mininglamp-oss/octo-harness-adapter-host";
 import { AgentWorkRuntime, type AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
+import { ViewerLogIndex, viewerTraceSnapshot } from "./log-viewer.js";
 
 export interface StartDaemonServerOptions {
   socketPath: string;
@@ -191,6 +192,7 @@ export async function startDaemonServer({
   const engine = new HarnessEngine({ store, host: hostProcess.client });
   const daemon = new HarnessDaemon({ engine, store });
   const agentWorkRuntime = agentWork ? new AgentWorkRuntime(agentWork, hostProcess.client, observability) : undefined;
+  const viewerIndex = new ViewerLogIndex(loggingConfiguration.directory);
   // HarnessDaemon events mark execution, rather than submission, boundaries.
   // A control request can therefore be acknowledged before `run.started` while
   // the resulting Run still remains correlated by its stable runId.
@@ -252,6 +254,7 @@ export async function startDaemonServer({
         runtime,
         agentWorkRuntime,
         observability,
+        viewerIndex,
         connectionId
       });
     });
@@ -341,6 +344,7 @@ async function handleRequestLine({
   runtime,
   agentWorkRuntime,
   observability,
+  viewerIndex,
   connectionId
 }: {
   line: string;
@@ -352,6 +356,7 @@ async function handleRequestLine({
   runtime: DaemonRuntimeInfo;
   agentWorkRuntime?: AgentWorkRuntime;
   observability: LocalObservability;
+  viewerIndex: ViewerLogIndex;
   connectionId: string;
 }): Promise<void> {
   let request: DaemonRequest | undefined;
@@ -360,7 +365,7 @@ async function handleRequestLine({
     // Do not observe the observation query itself. The Viewer polls this method;
     // recording each poll would create an unbounded feedback loop and bury the
     // application events the operator is trying to inspect.
-    const logsItself = request.method !== "logs.query";
+    const logsItself = request.method !== "logs.query" && request.method !== "logs.viewer";
     if (logsItself) {
       observability.log({
         level: "debug",
@@ -381,7 +386,9 @@ async function handleRequestLine({
       await streamRunEvents({ request, socket, store, observability, connectionId });
       return;
     }
-    const result = await dispatch({ request, daemon, engine, store, host, runtime, agentWorkRuntime, observability });
+    const result = await dispatch({
+      request, daemon, engine, store, host, runtime, agentWorkRuntime, observability, viewerIndex
+    });
     const resultRecord = isRecord(result) ? result : {};
     const resultAgent = isRecord(resultRecord.agent) ? resultRecord.agent : undefined;
     if (logsItself) {
@@ -519,7 +526,8 @@ async function dispatch({
   host,
   runtime,
   agentWorkRuntime,
-  observability
+  observability,
+  viewerIndex
 }: {
   request: DaemonRequest;
   daemon: HarnessDaemon;
@@ -529,6 +537,7 @@ async function dispatch({
   runtime: DaemonRuntimeInfo;
   agentWorkRuntime?: AgentWorkRuntime;
   observability: LocalObservability;
+  viewerIndex: ViewerLogIndex;
 }): Promise<unknown> {
   const params = request.params ?? {};
   switch (request.method) {
@@ -557,6 +566,8 @@ async function dispatch({
         includeSensitive: params.includeSensitive === true,
         ...(typeof params.limit === "number" ? { limit: params.limit } : {})
       });
+    case "logs.viewer":
+      return viewerTraceSnapshot({ store, index: viewerIndex, params });
     case "adapter.list":
       return host.list();
     case "adapter.probe":

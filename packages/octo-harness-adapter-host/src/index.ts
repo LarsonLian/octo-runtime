@@ -169,7 +169,15 @@ export class AdapterHost {
       } else if (terminal?.type === "run.error") {
         yield { ...terminal, payload: { ...terminal.payload, cleanupError: errorMessage(error) } };
       } else {
-        yield { type: "run.error", payload: { message: errorMessage(error), adapterType } };
+        const code = errorCode(error);
+        yield {
+          type: "run.error",
+          payload: {
+            message: errorMessage(error),
+            adapterType,
+            ...(code ? { code } : {})
+          }
+        };
       }
     } finally {
       this.#active.delete(request.invocationId);
@@ -195,6 +203,15 @@ export class AdapterHost {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function errorCode(error: unknown): string | undefined {
+  return error !== null
+    && typeof error === "object"
+    && "code" in error
+    && typeof error.code === "string"
+    ? error.code
+    : undefined;
 }
 
 export {

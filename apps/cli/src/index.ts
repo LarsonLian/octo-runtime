@@ -247,7 +247,7 @@ async function runLogViewer(flags: Flags): Promise<void> {
     host,
     port: portValue ? Number(portValue) : 0,
     ...(runId ? { initialRunId: runId } : {}),
-    query: options => callDaemon({ method: "logs.query", params: { ...options } })
+    query: options => callDaemon({ method: "logs.viewer", params: { ...options } })
   });
   // Print the capability-bearing URL before opening a browser so headless callers
   // can consume it without scraping platform launcher output.

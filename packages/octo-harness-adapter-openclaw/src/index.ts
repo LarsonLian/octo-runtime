@@ -4,7 +4,7 @@ import { access, chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { defineAdapter, probeCommand, providerInputText, type AdapterInvocationContext, type CanonicalEvent, type InvokeRequest, type ProviderCarrier } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { defineAdapter, observeBestEffort, observeProviderOutput, probeCommand, providerInputText, type AdapterInvocationContext, type CanonicalEvent, type InvokeRequest, type ProviderCarrier } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import {
   normalizeOpenClawFrame,
   tryParseOpenClawEvent,
@@ -179,7 +179,7 @@ async function* invokeOpenClaw(
     // With an argv/message-file CLI there is no request response. Successful
     // spawn is the strongest available dispatch-written boundary; it does not
     // prove that OpenClaw opened or parsed the message file.
-    void context?.observe({
+    observeBestEffort(context, {
       event: "provider.dispatch.written",
       rpcMethod: "process.argv",
       providerSessionId: spec.providerSessionId,
@@ -209,7 +209,7 @@ async function* invokeOpenClaw(
       firstOutput = false;
       // Observe native stdout before parsing so diagnostic or final-blob lines
       // still establish that the provider process produced output.
-      void context?.observe({
+      observeBestEffort(context, {
         event: "provider.output.first",
         rpcMethod: "process.stdout",
         providerSessionId: reportedSessionId
@@ -240,7 +240,17 @@ async function* invokeOpenClaw(
       }
     }
     if (frame.kind === "usage") lastUsage = usageKey(frame);
-    for (const event of normalizeOpenClawFrame(frame)) yield event;
+    const events = normalizeOpenClawFrame(frame);
+    observeProviderOutput(context, events, {
+      rpcMethod: "process.stdout",
+      providerSessionId: reportedSessionId,
+      native: {
+        type: frame.kind,
+        ...(frame.kind === "usage" && frame.provider ? { provider: frame.provider } : {}),
+        ...(frame.kind === "usage" && frame.model ? { model: frame.model } : {})
+      }
+    });
+    for (const event of events) yield event;
   }
 
   const exit = await exitPromise;
@@ -252,13 +262,37 @@ async function* invokeOpenClaw(
     // The final blob text is authoritative; emit only the suffix beyond what was already streamed so text is not duplicated.
     if (finalFrame.text.startsWith(accumulatedText)) {
       const suffix = finalFrame.text.slice(accumulatedText.length);
-      if (suffix) yield { type: "message.delta", payload: { text: suffix, channel: "final" } };
+      if (suffix) {
+        const event: CanonicalEvent = { type: "message.delta", payload: { text: suffix, channel: "final" } };
+        observeProviderOutput(context, [event], {
+          rpcMethod: "process.stdout",
+          providerSessionId: finalFrame.sessionId ?? reportedSessionId,
+          native: {
+            type: finalFrame.kind,
+            ...(finalFrame.provider ? { provider: finalFrame.provider } : {}),
+            ...(finalFrame.model ? { model: finalFrame.model } : {})
+          }
+        });
+        yield event;
+      }
     }
     accumulatedText = finalFrame.text;
   }
   if (finalFrame && (finalFrame.inputTokens > 0 || finalFrame.outputTokens > 0)) {
     const key = usageKey(finalFrame);
-    if (key !== lastUsage) yield { type: "usage.update", payload: usagePayload(finalFrame) };
+    if (key !== lastUsage) {
+      const event: CanonicalEvent = { type: "usage.update", payload: usagePayload(finalFrame) };
+      observeProviderOutput(context, [event], {
+        rpcMethod: "process.stdout",
+        providerSessionId: finalFrame.sessionId ?? reportedSessionId,
+        native: {
+          type: finalFrame.kind,
+          ...(finalFrame.provider ? { provider: finalFrame.provider } : {}),
+          ...(finalFrame.model ? { model: finalFrame.model } : {})
+        }
+      });
+      yield event;
+    }
   }
 
   if (req.signal?.aborted || cancelled || finalFrame?.aborted) {
@@ -269,10 +303,25 @@ async function* invokeOpenClaw(
   if (failure || spawnError || exit.code !== 0) {
     const message = failure ?? failureMessage(spec, exit, spawnError, stderr);
     yield { type: "message.update", payload: { role: "assistant", status: "failed", text: accumulatedText, channel: "final" } };
-    yield { type: "run.error", payload: { message, adapterType: "openclaw", exit } };
+    const event: CanonicalEvent = { type: "run.error", payload: { message, adapterType: "openclaw", exit } };
+    observeProviderOutput(context, [event], {
+      rpcMethod: "process.stdout",
+      providerSessionId: finalFrame?.sessionId ?? reportedSessionId,
+      native: { type: failure ? "failure" : "process.exit" }
+    });
+    yield event;
     return;
   }
-  yield { type: "message.update", payload: { role: "assistant", status: "completed", text: accumulatedText, channel: "final" } };
+  const completed: CanonicalEvent = {
+    type: "message.update",
+    payload: { role: "assistant", status: "completed", text: accumulatedText, channel: "final" }
+  };
+  observeProviderOutput(context, [completed], {
+    rpcMethod: "process.stdout",
+    providerSessionId: finalFrame?.sessionId ?? reportedSessionId,
+    native: { type: finalFrame?.kind ?? "process.exit" }
+  });
+  yield completed;
   yield { type: "run.finished", payload: {} };
 }
 
@@ -300,7 +349,7 @@ export function createOpenClawAdapter({ command = "openclaw", commandArgsPrefix 
         yield* invokeOpenClaw(req, spec, context);
       }
       catch (error) {
-        void context?.observe({
+        observeBestEffort(context, {
           event: "provider.dispatch.failed",
           rpcMethod: "process.argv",
           providerSessionId: spec.providerSessionId,

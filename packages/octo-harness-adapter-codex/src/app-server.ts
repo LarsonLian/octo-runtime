@@ -21,6 +21,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 import {
   freshFallbackInputText,
+  observeBestEffort,
+  observeProviderOutput,
   providerInputText,
   type AdapterInvocationContext,
   type CanonicalEvent,
@@ -119,6 +121,7 @@ export async function* runCodexAppServerTurn({
   const requestTimeoutMs = appServerRequestTimeout(request);
   const client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, request.signal);
   let terminal = false;
+  let turnProviderRequestId: string | undefined;
 
   try {
     throwIfAborted(request.signal);
@@ -183,7 +186,8 @@ export async function* runCodexAppServerTurn({
         context,
         method: "turn/start",
         params: turnParams(request, threadId, resumeFallback !== undefined),
-        providerSessionId: threadId
+        providerSessionId: threadId,
+        onRequestId: id => { turnProviderRequestId = id; }
       });
     } catch (error) {
       // Some corrupt sessions pass thread/resume but only reveal the missing rollout at turn/start.
@@ -206,7 +210,8 @@ export async function* runCodexAppServerTurn({
         context,
         method: "turn/start",
         params: turnParams(request, threadId, true),
-        providerSessionId: threadId
+        providerSessionId: threadId,
+        onRequestId: id => { turnProviderRequestId = id; }
       });
     }
 
@@ -244,12 +249,23 @@ export async function* runCodexAppServerTurn({
         firstOutput = false;
         // This is the first accepted provider notification after turn/start,
         // not merely the JSON-RPC response that acknowledged the request.
-        void context?.observe({
+        observeBestEffort(context, {
           event: "provider.output.first",
           rpcMethod: "notification",
-          providerSessionId: threadId
+          providerSessionId: threadId,
+          ...(turnProviderRequestId ? { providerRequestId: turnProviderRequestId } : {})
         });
       }
+      observeProviderOutput(context, [event], {
+        rpcMethod: "notification",
+        providerSessionId: threadId,
+        ...(turnProviderRequestId ? { providerRequestId: turnProviderRequestId } : {}),
+        native: {
+          type: typeof event.payload.provenance?.nativeEvent === "string"
+            ? event.payload.provenance.nativeEvent
+            : event.type
+        }
+      });
       terminal ||= isTerminalEvent(event);
       yield event;
       if (terminal) break;
@@ -272,9 +288,14 @@ export async function* runCodexAppServerTurn({
           payload: { reason: String(request.signal.reason ?? "cancelled") }
         };
       } else {
+        const code = stringErrorCode(error);
         yield {
           type: "run.error",
-          payload: { message: client.errorMessage(error), adapterType: "codex" }
+          payload: {
+            message: client.errorMessage(error),
+            adapterType: "codex",
+            ...(code ? { code } : {})
+          }
         };
       }
     }
@@ -300,49 +321,67 @@ async function observedRequest({
   context,
   method,
   params,
-  providerSessionId
+  providerSessionId,
+  onRequestId
 }: {
   client: CodexAppServerClient;
   context?: AdapterInvocationContext;
   method: string;
   params: JsonRecord;
   providerSessionId?: string;
+  onRequestId?: (id: string) => void;
 }): Promise<unknown> {
+  const requestId = client.reserveRequestId();
+  const providerRequestId = String(requestId);
+  onRequestId?.(providerRequestId);
   // Do not reconstruct this from InvokeRequest: thread fallback and provider
   // defaults have already selected the exact method and params sent on the wire.
   await context?.observe({
     event: "provider.input",
     rpcMethod: method,
+    providerRequestId,
     ...(providerSessionId ? { providerSessionId } : {}),
     carrier: { kind: "json_params", content: { method, params } }
   });
   const response = client.request(method, params, undefined, () => {
     // The callback is reached only after Node accepts the complete NDJSON frame.
-    void context?.observe({
+    observeBestEffort(context, {
       event: "provider.dispatch.written",
       rpcMethod: method,
+      providerRequestId,
       ...(providerSessionId ? { providerSessionId } : {})
     });
-  });
+  }, requestId);
   try {
     const result = await response;
     // A correlated response is the app-server's protocol-level acknowledgement;
     // streamed model output may arrive later as independent notifications.
-    void context?.observe({
+    observeBestEffort(context, {
       event: "provider.dispatch.acknowledged",
       rpcMethod: method,
+      providerRequestId,
       ...(providerSessionId ? { providerSessionId } : {})
     });
     return result;
   } catch (error) {
-    void context?.observe({
+    observeBestEffort(context, {
       event: "provider.dispatch.failed",
       rpcMethod: method,
+      providerRequestId,
       ...(providerSessionId ? { providerSessionId } : {}),
       data: { error: error instanceof Error ? error.message : String(error) }
     });
     throw error;
   }
+}
+
+function stringErrorCode(error: unknown): string | undefined {
+  return error !== null
+    && typeof error === "object"
+    && "code" in error
+    && typeof error.code === "string"
+    ? error.code
+    : undefined;
 }
 
 /**
@@ -535,12 +574,16 @@ class CodexAppServerClient {
     method: string,
     params: unknown,
     timeoutMs = this.#requestTimeoutMs,
-    onWritten?: () => void
+    onWritten?: () => void,
+    requestId?: RpcId
   ): Promise<unknown> {
     if (this.#closed || this.#exited) {
       return Promise.reject(new Error("codex app-server is closed"));
     }
-    const id = this.#nextId++;
+    const id = requestId ?? this.reserveRequestId();
+    if (this.#pending.has(id)) {
+      return Promise.reject(new Error(`codex app-server request id ${String(id)} is already pending`));
+    }
     return new Promise((resolve, reject) => {
       // Register pending before writing stdin, so a synchronous reply from a test server/local process cannot arrive first.
       const timer = setTimeout(() => {
@@ -562,6 +605,11 @@ class CodexAppServerClient {
         onWritten
       );
     });
+  }
+
+  /** Allocate the exact JSON-RPC id a subsequent request will put on the wire. */
+  reserveRequestId(): RpcId {
+    return this.#nextId++;
   }
 
   notify(method: string, params?: unknown): void {

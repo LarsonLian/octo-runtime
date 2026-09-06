@@ -3,8 +3,12 @@
 // file only translates process signals into its idempotent close contract.
 import { resolveDaemonRuntimePaths } from "./runtime-options.js";
 import { startDaemonServer } from "./server.js";
+import { installCrashReporter } from "@mininglamp-oss/octo-harness-observability";
 
 const runtimePaths = resolveDaemonRuntimePaths();
+const crashReporter = runtimePaths.logging?.fileLog
+  ? installCrashReporter({ directory: runtimePaths.logging.directory, component: "daemon" })
+  : undefined;
 const app = await startDaemonServer(runtimePaths);
 let stopping = false;
 const stop = (): void => {
@@ -34,3 +38,4 @@ const stop = (): void => {
   );
 };
 process.on("SIGINT", stop); process.on("SIGTERM", stop);
+process.once("exit", () => crashReporter?.close());

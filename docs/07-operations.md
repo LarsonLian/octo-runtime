@@ -8,7 +8,12 @@
 ~/.octo-harness/
   sockets/
     octo-harness-daemon.sock   mode 0600 Unix socket
-  state.json             mode 0600 versioned store
+  state.db                      SQLite durable state
+  logs/
+    YYYY-MM-DD/
+      daemon.N.jsonl            operational events
+      adapter-host.N.jsonl
+      evaluation/               restricted RPC/provider evidence
 ```
 
 用绝对路径 `OCTO_HARNESS_HOME` 固定运行实例。不要让两个 daemon 共享 state file；当前 store 是 single-writer。
@@ -21,9 +26,15 @@ OCTO_HARNESS_SOCKET
 OCTO_HARNESS_STORE
 OCTO_HARNESS_MANIFEST
 OCTO_HARNESS_ADAPTER_HOST
+OCTO_HARNESS_LOG_DIR
+OCTO_HARNESS_LOG_LEVEL
+OCTO_HARNESS_VERBOSE
+OCTO_HARNESS_TRACE_RPC
+OCTO_HARNESS_CAPTURE_PROVIDER_IO
 ```
 
-daemon 也直接接受 `--socket`、`--store`、`--manifest` 和 `--adapter-host`。旧的
+daemon 也直接接受 `--socket`、`--store`、`--manifest`、`--adapter-host`、`--log-dir`、
+`--log-level`、`--verbose`、`--trace-rpc` 和 `--capture-provider-io`。旧的
 `--host-entrypoint` 继续作为 `--adapter-host` 的兼容别名。
 
 ## Process Discovery
@@ -38,7 +49,7 @@ ps -axo pid=,ppid=,args= | grep '[o]rbtex-'
 典型输出：
 
 ```text
-octo-harness-daemon /absolute/apps/daemon/dist/index.js --socket /Users/name/.octo-harness/sockets/octo-harness-daemon.sock --store /Users/name/.octo-harness/state.json --manifest /absolute/config/adapters.json --adapter-host /absolute/apps/adapter-host/dist/index.js
+octo-harness-daemon /absolute/apps/daemon/dist/index.js --socket /Users/name/.octo-harness/sockets/octo-harness-daemon.sock --store /Users/name/.octo-harness/state.db --manifest /absolute/config/adapters.json --adapter-host /absolute/apps/adapter-host/dist/index.js
 octo-harness-adapter-host /absolute/apps/adapter-host/dist/index.js --manifest /absolute/config/adapters.json
 ```
 
@@ -61,49 +72,41 @@ pnpm cli task list
 `status` 同时返回 daemon PID、socket/store/manifest 的有效绝对路径、adapter-host PID/入口、
 已加载 adapter 类型和领域对象计数。
 
-## JSON-RPC Frame Trace
+## Local Logs And Trace Viewer
 
-设置 `OCTO_HARNESS_TRACE_RPC=1` 后启动 daemon，可以在 daemon 的 stderr 中看到 daemon 与
-adapter-host 之间每一条 NDJSON JSON-RPC 2.0 线上帧：
-
-```bash
-OCTO_HARNESS_TRACE_RPC=1 pnpm daemon
-```
-
-另一个终端只需提交消息：
+daemon 默认把 operational 日志写入 `~/.octo-harness/logs/YYYY-MM-DD/`，按日和文件大小滚动。
+日志不会持续打印到 stderr；stderr 只保留启动失败或日志系统降级等兜底元数据。查看有效目录和
+采集状态：
 
 ```bash
-node apps/cli/dist/index.js chat send <session-id> --prompt "你是谁？"
+octo-harness logs path
+octo-harness logs query <run-id>
+octo-harness logs open --run <run-id>
 ```
 
-不需要执行 `run wait`。`chat send` 返回 ACK 后，第一终端仍会随着 provider 执行实时打印
-`invoke` response、每条 `invoke.event` 和最后的 `invoke.done`。
+`logs open` 启动仅绑定 loopback 的临时 Viewer。页面用 Run 时间线展示 state.db 中的权威状态和
+canonical event，以及 JSONL 中的 WSS、ChatTurn、adapter 和 provider dispatch 证据。
 
-要在第二终端的 CLI 中同时看到 canonical events，添加 `--follow`：
+需要完整 RPC 和最终 provider input 时，以 verbose 模式启动 daemon：
 
 ```bash
-node apps/cli/dist/index.js chat send <session-id> --prompt "你是谁？" --follow
+octo-harness daemon --verbose
 ```
 
-也可以根据已返回的 Run ID 回放并跟随：
+也可以分别使用 `--trace-rpc` 和 `--capture-provider-io=input|full`。受限 evidence 默认不会被
+普通查询或 Viewer 返回；终端查询需要 `--sensitive`，Viewer 需要显式确认，并会在空闲十分钟
+后自动折叠：
 
 ```bash
-node apps/cli/dist/index.js run stream <run-id>
+octo-harness logs query <run-id> --sensitive
 ```
 
-输出按方向标记，标记后面的内容就是实际发送或收到的单行 JSON frame：
+### Migration From Stderr Trace
 
-```text
-[octo-harness rpc daemon -> adapter-host] {"jsonrpc":"2.0","id":"...","method":"list","params":{}}
-[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","id":"...","result":[...]}
-[octo-harness rpc daemon -> adapter-host] {"jsonrpc":"2.0","id":"...","method":"invoke","params":{...}}
-[octo-harness rpc adapter-host -> daemon] {"jsonrpc":"2.0","method":"invoke.event","params":{...}}
-```
-
-trace 默认关闭，修改环境变量后需要重启 daemon。它不会打印 CLI 与 daemon 之间的消息，
-因为该边界使用普通的一行 JSON request/response，并不是 JSON-RPC 2.0。`invoke` frame 包含
-完整 prompt、workdir、agent config 和 canonical events；不要在共享终端、公开日志或包含
-secret 的生产请求上启用。
+旧版本的 `OCTO_HARNESS_TRACE_RPC=1` 会把完整 frame 连续写入 daemon stderr。现在同一开关仍然
+有效，但 frame 写入受限的本地 JSONL 文件，不再输出到终端或 service-manager journal。
+依赖 stderr 文本的脚本应迁移到 `logs query`；人工诊断应使用 `logs open`。修改采集配置后仍需
+重启 daemon。完整 provider input 可能包含客户数据和凭据，只能在受控本机环境中启用和查看。
 
 ## Run Inspection
 
@@ -135,7 +138,7 @@ running run 因 provider process 已丢失被明确标为 failed，而不是盲�
 
 ## Failure Boundaries
 
-- daemon 崩溃：JSON 最近一次 atomic commit 可恢复。
+- daemon 崩溃：SQLite 中最近一次 atomic commit 可恢复。
 - adapter-host 崩溃：RPC pending requests 立即 reject，daemon 将 run 收敛为 error。
 - provider 非零退出：stderr tail 或结构化 provider error 进入 run.error。
 - adapter 无 terminal：host 合成 stopped。

@@ -9,5 +9,9 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "js-yaml": "^4.3.2",
+    "smol-toml": "^1.8.0"
   }
 }
