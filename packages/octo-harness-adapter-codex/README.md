@@ -288,7 +288,7 @@ Adapter 上报的 session 信息可能包含：
 }
 ```
 
-首次 fresh thread 只包含 `sessionId` 和 `resumable`；正常 resume 额外包含 `resumeOutcome: "resumed"`；发生降级时包含 `resumeOutcome: "fresh_fallback"` 和 `resumeFallback`。
+首次 fresh thread 只包含 `sessionId` 和 `resumable`；正常 resume 额外包含 `resumeOutcome: "resumed"`；发生降级时包含 `resumeOutcome: "fresh_fallback"` 和 `resumeFallback`。若 Codex 在当前 turn 内发出 `thread/compacted`，adapter 会继续上报同一 `sessionId` 和 `resumeOutcome: "compacted"`；该信号不改变当前 turn 已冻结的输入，而是通知上游让下一轮重新建立 context generation。
 
 或降级：
 
@@ -312,6 +312,8 @@ Adapter 上报的 session 信息可能包含：
 当前分类依赖英文错误文本：`/rollout path/i` 和 `/thread not found/i`，没有绑定数值 error code。升级 Codex 后若错误文案变化，需要同步更新 fixture 和分类逻辑。
 
 完整 provider error 不写进 session side channel，避免高基数路径或敏感信息进入持久化 session metadata。可恢复的 resume error 被消费后只留下低基数 fallback，不额外发 `run.error`；不可恢复的 initialize/thread/turn/process 错误才通过 `run.error` 与 stderr 尾部诊断。
+
+Codex 声明 `session.serialize` 与 `session.resume_recovery`。后者表示 adapter 能在 resume 降级时为当前真实 turn 选择调用方提供的冻结 recovery input；只具备 session ID 序列化、但没有该能力的 adapter 不能安全使用 append-only delta 投影。
 
 ### 为什么 session.update 要晚发
 
@@ -365,13 +367,13 @@ Octo Harness 目标协议以 [`@mininglamp-oss/octo-harness-protocol`](../octo-h
 | Client request：Octo Harness -> Codex | 154 种 | 只发送 `initialize`、`thread/start`、`thread/resume`、`turn/start`、`turn/interrupt` 5 种；其余 149 种不发送 | thread/turn response 只推进内部状态；turn 启动成功后由 runner 生成 `session.update` |
 | Client notification：Octo Harness -> Codex | 1 种 | 发送 `initialized` | 否 |
 | Server request：Codex -> Octo Harness | 11 种 | 5 种有明确 response，6 种返回 `-32601` | 否；当前没有 approval/user-input canonical event |
-| Server notification：Codex -> Octo Harness | 79 种 | 识别 12 个 method；其余 67 个 method 忽略 | 识别项映射到 session/message/tool/usage/run |
+| Server notification：Codex -> Octo Harness | 79 种 | 识别 13 个 method；其余 66 个 method 忽略 | 识别项映射到 session/message/tool/usage/run |
 | `ThreadItem` union | 19 种 item | 12 种转换，7 种忽略 | 转换项映射到 message 或 tool lifecycle |
 | Octo Harness `CanonicalEvent` | 16 种 event | 本 adapter 可输出 11 种 | 不输出 `surface.*`、`run.queued`、`run.running` |
 
 “不发送”不是收到后丢弃，而是当前 invocation contract 根本不会调用那些 client API；“忽略”表示 frame 已从 stdout 收到，但 parser 有意返回空数组。
 
-表中的“识别 12 个 method”严格只统计 Codex 0.151.0 `ServerNotification` schema 内的名字。此外，代码还识别一个 schema 外的 args-delta 兼容 pattern：`item/functionCall/{argumentsDelta,argsDelta,inputDelta,parametersDelta}`，以及将 `functionCall` 分别替换为 `toolCall`、`mcpToolCall`、`dynamicToolCall` 的组合，共 16 个可能方法名；它们不计入 `12 + 67 = 79` 的 schema 覆盖统计。
+表中的“识别 13 个 method”严格只统计 Codex 0.151.0 `ServerNotification` schema 内的名字。此外，代码还识别一个 schema 外的 args-delta 兼容 pattern：`item/functionCall/{argumentsDelta,argsDelta,inputDelta,parametersDelta}`，以及将 `functionCall` 分别替换为 `toolCall`、`mcpToolCall`、`dynamicToolCall` 的组合，共 16 个可能方法名；它们不计入 `13 + 66 = 79` 的 schema 覆盖统计。
 
 ### Client request 与 server request 汇总
 
@@ -393,6 +395,7 @@ Octo Harness 目标协议以 [`@mininglamp-oss/octo-harness-protocol`](../octo-h
 | Codex notification / 条件 | Octo Harness `CanonicalEvent` | 关键 payload | 处理要点 |
 |---|---|---|---|
 | `thread/started` | `session.update` | `providerSession.sessionId`、`resumable=true` | runner 已在 turn 启动后生成权威 session update；同 thread ID 的这条 parser 输出会被过滤 |
+| `thread/compacted` | `session.update` | `providerSession.sessionId`、`resumeOutcome=compacted` | 保留当前 thread ID；不切换当前输入，通知上游下一轮恢复 continuity |
 | `item/started`，item=`agentMessage` | `message.create` | `role=assistant`、`channel=final`、`status=streaming`、`messageId` | 打开最终回答生命周期 |
 | `item/agentMessage/delta` | `message.delta` | `text`、`channel=final`、`messageId` | 逐段输出最终回答 |
 | `item/completed`，item=`agentMessage` | `message.update` | `status=completed`、`text`、`messageId` | 关闭最终回答生命周期 |
@@ -458,11 +461,11 @@ Octo Harness 目标协议以 [`@mininglamp-oss/octo-harness-protocol`](../octo-h
 
 ### 明确忽略的 server notification 汇总
 
-以下 67 个 method 存在于 Codex 0.151.0 experimental schema，但当前 `normalizeCodexEvent()` 会返回空数组。它们按用途分组列出，便于升级 parser 时判断是否需要新增 Octo Harness event。
+以下 66 个 method 存在于 Codex 0.151.0 experimental schema，但当前 `normalizeCodexEvent()` 会返回空数组。它们按用途分组列出，便于升级 parser 时判断是否需要新增 Octo Harness event。
 
 | 类别 | 数量 | 当前忽略的 Codex method | 为什么不转换 |
 |---|---:|---|---|
-| Thread/session 元数据 | 15 | `thread/status/changed`、`thread/archived`、`thread/deleted`、`thread/unarchived`、`thread/closed`、`thread/reverted`、`thread/name/updated`、`thread/goal/updated`、`thread/goal/cleared`、`thread/queue/changed`、`thread/project/updated`、`thread/environment/connected`、`thread/environment/disconnected`、`thread/settings/updated`、`thread/compacted` | 当前 session side channel 只保存 thread ID 和 resume 结果 |
+| Thread/session 元数据 | 14 | `thread/status/changed`、`thread/archived`、`thread/deleted`、`thread/unarchived`、`thread/closed`、`thread/reverted`、`thread/name/updated`、`thread/goal/updated`、`thread/goal/cleared`、`thread/queue/changed`、`thread/project/updated`、`thread/environment/connected`、`thread/environment/disconnected`、`thread/settings/updated` | 当前 session side channel 只保存 thread ID、resume 结果与 compaction continuity 信号 |
 | Turn、hook 与 review | 9 | `turn/started`、`hook/started`、`hook/completed`、`turn/diff/updated`、`turn/plan/updated`、`item/autoApprovalReview/started`、`item/autoApprovalReview/completed`、`autoApprovalReview/strictReviewRequired`、`turn/moderationMetadata` | Adapter 不输出 `run.running`，也没有 hook/review canonical event；plan 文本只消费 `item/plan/delta` |
 | 独立 command/process API | 3 | `command/exec/outputDelta`、`process/outputDelta`、`process/exited` | 当前 invocation 使用 turn item lifecycle，不调用独立 command/process client API |
 | 工具细粒度进度 | 4 | `item/commandExecution/terminalInteraction`、`item/fileChange/patchUpdated`、`serverRequest/resolved`、`item/mcpToolCall/progress` | 当前只保留通用 create/delta/completed；尚未定义更细 canonical payload |
@@ -477,7 +480,7 @@ Octo Harness 目标协议以 [`@mininglamp-oss/octo-harness-protocol`](../octo-h
 
 | Octo Harness event | 当前 Codex adapter 是否输出 | Codex 来源或说明 |
 |---|---|---|
-| `session.update` | 是 | thread RPC result；重复 `thread/started` 映射由 runner 过滤 |
+| `session.update` | 是 | thread RPC result；重复 `thread/started` 映射由 runner 过滤；`thread/compacted` 保留为下一轮 continuity 信号 |
 | `usage.update` | 是 | `thread/tokenUsage/updated` |
 | `message.create`、`message.delta`、`message.update` | 是 | agentMessage、reasoning、plan item lifecycle 和 delta |
 | `tool_call.create`、`tool_call.delta`、`tool_call.update` | 是 | 受支持工具 item lifecycle、args/output delta |

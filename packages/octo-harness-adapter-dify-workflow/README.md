@@ -35,7 +35,7 @@ Dify 固定参数应用的远程 provider adapter。默认接入 Workflow 的 `P
 }
 ```
 
-每次 Octo Harness `request.prompt` 会写入 `inputs.query`。`defaultInputs` 适合真正固定且非敏感的值；本轮 `context.workflowInputs` 可以覆盖默认值。
+每次 Octo Harness 的 `modelInput ?? prompt` 会写入 `inputs.query`。`modelInput` 是 provider 可见但产品 transcript 隐藏的完整当前 turn；`defaultInputs` 适合真正固定且非敏感的值；本轮 `context.workflowInputs` 可以覆盖默认值。
 
 ## 多输入：小模型槽位提取
 

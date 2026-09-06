@@ -1,6 +1,7 @@
 import {
   defineAdapter,
   probeCommand,
+  providerInputText,
   type CanonicalEvent,
   type InvokeRequest
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
@@ -74,7 +75,7 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
           : await client.newSession({ cwd: req.workdir, model: req.agentConfig?.model });
         yield { type: "session.update", payload: { providerSession: { sessionId: session.id, resumable: true, model: req.agentConfig?.model } } };
         yield { type: "message.create", payload: { role: "assistant", status: "streaming" } };
-        for await (const update of client.prompt(session.id, `${req.prompt}\n\n${req.appendInstructions}`)) {
+        for await (const update of client.prompt(session.id, `${providerInputText(req)}\n\n${req.appendInstructions}`)) {
           for (const event of normalizeCodeBuddyUpdate(update)) yield event;
         }
         yield { type: "message.update", payload: { role: "assistant", status: "completed" } };

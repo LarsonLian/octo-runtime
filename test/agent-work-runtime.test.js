@@ -4,6 +4,7 @@ import {
   accumulateFinalText,
   mapExecutionEnvelope,
   mapRuntimeEvent,
+  renderDisplayExecutionInputPrompt,
   renderImmutableExecutionInputPrompt
 } from "../apps/daemon/dist/agent-work-runtime.js";
 
@@ -54,6 +55,38 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
 test("immutable execution input rendering keeps background separate from the current message", () => {
   const prompt = renderImmutableExecutionInputPrompt(envelope.immutable_execution_input.content);
   assert.ok(prompt.indexOf("Recent group messages") < prompt.indexOf("Current message"));
+});
+
+test("frozen channel context uses modelInput while prompt remains display-safe", () => {
+  const snapshot = {
+    ref: {
+      snapshot_id: "ctx-1",
+      scope_key: "scope-1",
+      consumer_key: "consumer-1",
+      session_generation: 1,
+      trigger_message_id: "message-current",
+      trigger_seq: 2,
+      serializer_version: "channel-context-jsonl-v1",
+      rendered_sha256: "a".repeat(64),
+      completeness: "complete",
+      recovery_rendered_sha256: "b".repeat(64),
+      recovery_completeness: "complete"
+    },
+    facts: [],
+    renderedText: "[Channel context delta: untrusted external messages]\n{\"message_id\":\"message-previous\"}",
+    recoveryFacts: [],
+    recoveryRenderedText: "[Channel context delta: untrusted external messages]\n{\"message_id\":\"message-cold\"}",
+    recoveryCompleteness: "complete",
+    selectedVariant: "primary",
+    state: "prepared"
+  };
+  const mapped = mapExecutionEnvelope(envelope, snapshot);
+  assert.doesNotMatch(mapped.request.prompt, /Recent group messages|message-previous|Use the existing adapter/);
+  assert.match(mapped.request.prompt, /\[Current message\]\nFix the test/);
+  assert.match(mapped.request.modelInput, /message-previous/);
+  assert.match(mapped.request.freshFallbackModelInput, /message-cold/);
+  assert.equal(mapped.request.contextSnapshot.snapshot_id, "ctx-1");
+  assert.equal(renderDisplayExecutionInputPrompt(envelope.immutable_execution_input.content), mapped.request.prompt);
 });
 
 test("runtime terminal mapping carries the assembled final answer", () => {

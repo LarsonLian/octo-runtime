@@ -15,6 +15,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 import {
+  freshFallbackInputText,
+  providerInputText,
   type CanonicalEvent,
   type InvokeRequest,
   type MessageExposure
@@ -159,7 +161,7 @@ export async function* runCodexAppServerTurn({
     // Phase 3：turn/start 成功才表示本轮真正可执行。
     let turnResult: unknown;
     try {
-      turnResult = await client.request("turn/start", turnParams(request, threadId));
+      turnResult = await client.request("turn/start", turnParams(request, threadId, resumeFallback !== undefined));
     } catch (error) {
       // 某些损坏 session 能通过 thread/resume，但在 turn/start 才暴露 rollout 缺失。
       if (!resumed || !isThreadNotFound(error)) throw error;
@@ -173,7 +175,7 @@ export async function* runCodexAppServerTurn({
         throw new Error("codex fresh fallback returned no thread id", { cause: error });
       }
       client.setActiveThread(threadId);
-      turnResult = await client.request("turn/start", turnParams(request, threadId));
+      turnResult = await client.request("turn/start", turnParams(request, threadId, true));
     }
 
     const turnId = extractTurnId(turnResult);
@@ -187,15 +189,22 @@ export async function* runCodexAppServerTurn({
           sessionId: threadId,
           resumable: true,
           ...(resumed ? { resumeOutcome: "resumed" } : {}),
-          ...(resumeFallback ? { resumeOutcome: "fresh_fallback", resumeFallback } : {})
+          ...(resumeFallback ? {
+            resumeOutcome: "fresh_fallback",
+            resumeFallback,
+            contextInputVariant: request.freshFallbackModelInput ? "recovery" : "primary"
+          } : {})
         }
       }
     };
 
     // Phase 4：client queue 已经把 JSON-RPC notification 归一化为 CanonicalEvent。
     for await (const event of client.events()) {
-      // thread RPC response 已用于构造带 resumeOutcome 的权威 session.update；过滤重复通知。
-      if (event.type === "session.update" && event.payload.providerSession?.sessionId === threadId) {
+      // The thread RPC response already produced the authoritative initial
+      // update. Later lifecycle outcomes (such as compaction) must pass through.
+      if (event.type === "session.update"
+        && event.payload.providerSession?.sessionId === threadId
+        && event.payload.providerSession.resumeOutcome === undefined) {
         continue;
       }
       terminal ||= isTerminalEvent(event);
@@ -251,6 +260,21 @@ export function normalizeCodexEvent(native: CodexAppServerNotification): Canonic
       return threadId ? [{
         type: "session.update",
         payload: { providerSession: { sessionId: threadId, resumable: true } }
+      }] : [];
+    }
+    case "thread/compacted": {
+      const threadId = stringValue(params.threadId)
+        || stringValue(recordValue(params.thread)?.id)
+        || stringValue(recordValue(params.thread)?.sessionId);
+      return threadId ? [{
+        type: "session.update",
+        payload: {
+          providerSession: {
+            sessionId: threadId,
+            resumable: true,
+            resumeOutcome: "compacted"
+          }
+        }
       }] : [];
     }
     case "item/agentMessage/delta":
@@ -653,11 +677,15 @@ function threadParams(request: InvokeRequest, extra: JsonRecord): JsonRecord {
  * summary 必须显式发送；只设置 effort 会消耗 reasoning tokens，但 app-server 不保证发布
  * summaryTextDelta，UI 因而可能只看到空 analysis lifecycle。
  */
-function turnParams(request: InvokeRequest, threadId: string): JsonRecord {
+function turnParams(request: InvokeRequest, threadId: string, freshFallback = false): JsonRecord {
   const effort = codexEffort(request.agentConfig.thinking);
   return {
     threadId,
-    input: [{ type: "text", text: request.prompt, text_elements: [] }],
+    input: [{
+      type: "text",
+      text: freshFallback ? freshFallbackInputText(request) : providerInputText(request),
+      text_elements: []
+    }],
     cwd: request.workdir,
     ...(request.agentConfig.model ? { model: request.agentConfig.model } : {}),
     ...(effort ? { effort } : {}),

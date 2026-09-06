@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   assertCanonicalEvent,
+  assertChannelContextAppend,
+  assertChannelContextDescriptor,
+  assertContextSyncResult,
   messageExposure
 } from "../packages/octo-harness-protocol/dist/index.js";
 
@@ -44,6 +47,57 @@ test("analysis exposure defaults closed and public classifications require prove
     }),
     /payload\.exposure is invalid/
   );
+});
+
+test("channel context wire contracts reject incomplete scope and mismatched trigger facts", () => {
+  const scope = {
+    tenant_id: "tenant-1", endpoint_id: "endpoint-1", channel: "discord",
+    account_id: null, bot_id: "bot-1", conversation_id: "conversation-1"
+  };
+  const trigger = {
+    message_id: "message-2", message_seq: 2,
+    sender: { id: "member-1", kind: "member" }, occurred_at_ms: 2,
+    parts: [{ type: "text", text: "current" }]
+  };
+  assert.doesNotThrow(() => assertChannelContextAppend({
+    scope,
+    facts: [{ ...trigger, message_id: "message-1", message_seq: 1 }]
+  }));
+  assert.doesNotThrow(() => assertChannelContextDescriptor({
+    scope, consumer_key: "agent/provider", session_generation: 1,
+    trigger_message_id: "message-2", trigger_seq: 2, trigger_fact: trigger
+  }));
+  assert.throws(() => assertChannelContextDescriptor({
+    scope, consumer_key: "agent/provider", session_generation: 1,
+    trigger_message_id: "different", trigger_seq: 2, trigger_fact: trigger
+  }), /must match trigger_message_id/);
+  assert.throws(() => assertChannelContextAppend({
+    scope: { ...scope, channel: "" }, facts: [trigger]
+  }), /scope.channel/);
+  assert.throws(() => assertChannelContextAppend({ scope, facts: [] }), /1\.\.100/);
+  assert.throws(() => assertChannelContextDescriptor({
+    scope, consumer_key: "agent/provider", session_generation: 1,
+    trigger_message_id: trigger.message_id, trigger_fact: trigger
+  }), /must match trigger_seq/);
+  assert.throws(() => assertChannelContextDescriptor({
+    scope, consumer_key: "agent/provider", session_generation: 0,
+    trigger_message_id: trigger.message_id, trigger_seq: 2, trigger_fact: trigger
+  }), /session_generation/);
+  assert.throws(() => assertChannelContextAppend({
+    scope, facts: [{ ...trigger, sender: { id: "member-1" } }]
+  }), /sender.kind/);
+  assert.throws(() => assertChannelContextAppend({
+    scope, facts: [{ ...trigger, occurred_at_ms: 0 }]
+  }), /occurred_at_ms/);
+  assert.throws(() => assertChannelContextAppend({
+    scope, facts: [{ ...trigger, parts: [] }]
+  }), /at least one/);
+  assert.throws(() => assertContextSyncResult({
+    request_id: "sync-1", scope, facts: [trigger], completeness: "unavailable"
+  }), /must not contain facts/);
+  assert.doesNotThrow(() => assertContextSyncResult({
+    request_id: "sync-2", scope, facts: [], completeness: "unavailable"
+  }));
 });
 
 test("tool call protocol preserves complete and streamed command inputs", () => {

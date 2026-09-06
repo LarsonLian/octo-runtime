@@ -7,6 +7,8 @@
 
 ```text
 octo-harness-agent-work --WSS run.start/cancel--> apps/daemon
+octo-harness-agent-work --WSS context.append/sync_result--> apps/daemon
+apps/daemon       --WSS context.sync_request------> octo-harness-agent-work
 apps/daemon       --stdio JSON-RPC-------> adapter-host
 adapter-host      --canonical events----> apps/daemon
 apps/daemon       --WSS run.event--------> octo-harness-agent-work
@@ -20,8 +22,19 @@ Runtime 注册时上报本机 adapter 列表。`run.start` 的 `ExecutionEnvelop
 - `agent_revision.execution_profile.workdir` -> 固定 provider cwd；
 - `default_adapter=codex-local|codebuddy-local` -> manifest 中的 `codex|codebuddy`；
 - `definition.instructions` -> adapter 的私有 control-instruction carrier；
-- `immutable_execution_input` -> 带 `[Recent group messages]`、quoted message 和
-  `[Current message]` 边界的 user prompt。
+- 兼容模式下，`immutable_execution_input.context_refs` -> 带 `[Recent group messages]`、
+  quoted message 和 `[Current message]` 边界的旧 user prompt；
+- 增量模式下，`immutable_execution_input.content.channel_context` -> daemon 从独立的
+  `channel-context.db` 冻结 delta；`InvokeRequest.prompt` 只保留产品可显示的当前消息，
+  `InvokeRequest.modelInput` 保存 provider 实际收到的 context delta + current turn。
+
+`context.append` 和 `context.sync_result` 是独立 WSS envelope，不写入可靠 Run command inbox，
+也不返回 `command.ack`。这两类消息是可回源、按 `(scope,message_id)` 幂等的派生事实；
+冷启动或检测到 `message_seq` gap 时，daemon 用 `context.sync_request` 请求最多 40 条回填。
+无 gap 的 bounded `partial` 表示窗口已建立，后续走热路径但 snapshot 继续标记 `partial`；
+明确 gap 或 `unavailable` 会在下一次 trigger 再请求回填。
+`run.start` 中的 `trigger_fact` 始终走可靠路径重新 UPSERT，防止 best-effort append 丢失当前
+触发边界。
 
 Runtime 将 Octo Harness 终态映射为 Agent Work 终态，并逐条保留 canonical message/tool/usage
 事件。当前兼容路径仍在 terminal payload 中携带由 final delta 拼出的文本，供旧 Delivery
@@ -69,7 +82,29 @@ pnpm daemon
 pnpm cli status
 ```
 
-`status.agentWork` 返回 `enabled/connected/runtimeId/activeRuns/lastAckedCommandSeq`。
+Channel Context 默认保持兼容模式。三个开关必须一起切换才会改变 provider 输入：
+
+```bash
+export OCTO_HARNESS_CHANNEL_CONTEXT_STORE=sqlite
+export OCTO_HARNESS_CHANNEL_CONTEXT_PROJECTION=delta
+export OCTO_HARNESS_CHANNEL_CONTEXT_PROVIDER_PERSISTENCE=append_only
+# 可选；默认 ~/.octo-harness/channel-context.db
+export OCTO_HARNESS_CHANNEL_CONTEXT_DB=/absolute/path/channel-context.db
+```
+
+`channel-context.db` 与可靠执行 Outbox 的 `agent-work.db` 分文件。前者默认每 scope 保留
+200 条且不超过 24 小时，是可以删除并从频道历史重建的本地缓存；后者保存未获 durable
+ACK 的执行事件，不能按 Channel Context 的 TTL 清理。快照按
+`scope + consumer_key + session_generation` 隔离，同一 Run 重试复用已冻结的 rendered bytes
+和 SHA-256。只有 Agent Work 对成功 terminal event 返回 `durable_through_seq` 后，daemon
+才用 CAS 把 consumer cursor 推进到 trigger；provider 失败或取消不会消费背景消息。
+正常分发由 agent-worker 的 chat-session claim 串行化同一 consumer；若下一条 `run.start`
+仍早于前一条 terminal durable ACK 到达，daemon 会等 cursor CAS 完成后再冻结和 ACK command。
+底层 Store 对相同 `scope + consumer_key + session_generation` 的并行 active snapshot 仍保持
+原子 fail-closed，Runtime 的等待/重试把它转换为有序执行。
+
+`status.agentWork` 返回 `enabled/connected/runtimeId/activeRuns/lastAckedCommandSeq` 和
+`channelContext` 开关、DB/WAL 大小。
 每次 WSS 重连时，daemon 还会在 `runtime.hello` 上报 `active_run_ids`。Agent Work
 据此终结已经 ACK、但不再由重启后 daemon 持有的悬挂 Run；省略该字段的旧 runtime
 不会触发所有权对账。

@@ -60,7 +60,13 @@ test("Agent Work runtime mode is opt-in and validates required identity", () => 
     runtimeId: "runtime-1",
     runtimeName: "octo-harness-local",
     fingerprint: `octo-harness:${process.platform}:${process.arch}`,
-    storePath: resolve(".tmp/runtime-home", "agent-work.db")
+    storePath: resolve(".tmp/runtime-home", "agent-work.db"),
+    channelContext: {
+      store: "memory",
+      projection: "window",
+      providerPersistence: "ephemeral",
+      storePath: resolve(".tmp/runtime-home", "channel-context.db")
+    }
   });
 });
 
@@ -88,10 +94,41 @@ test("Agent Work connection flags override non-secret environment settings", () 
     runtimeId: "runtime-from-flag",
     runtimeName: "linked-runtime",
     fingerprint: "linked:fingerprint",
-    storePath: resolve(".tmp/runtime-home", "agent-work.db")
+    storePath: resolve(".tmp/runtime-home", "agent-work.db"),
+    channelContext: {
+      store: "memory",
+      projection: "window",
+      providerPersistence: "ephemeral",
+      storePath: resolve(".tmp/runtime-home", "channel-context.db")
+    }
   });
   const args = daemonRuntimeArguments(paths);
   assert.ok(args.includes("--agent-work-url"));
   assert.ok(args.includes("http://127.0.0.1:9092"));
   assert.ok(!args.includes("environment-only-token"));
+});
+
+test("channel context rollout flags are independent and use a separate database", () => {
+  const paths = resolveDaemonRuntimePaths([
+    "--agent-work-url", "http://127.0.0.1:9092",
+    "--agent-work-tenant-id", "tenant-1",
+    "--agent-work-subject-id", "device-1",
+    "--channel-context-store", "sqlite",
+    "--channel-context-projection", "delta",
+    "--channel-context-provider-persistence", "append_only",
+    "--channel-context-db", ".tmp/channel-context-custom.db",
+    "--channel-context-max-projected-messages", "25"
+  ], {
+    OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN: "runtime-token"
+  });
+  assert.deepEqual(paths.agentWork.channelContext, {
+    store: "sqlite",
+    projection: "delta",
+    providerPersistence: "append_only",
+    storePath: resolve(".tmp/channel-context-custom.db"),
+    maxProjectedMessages: 25
+  });
+  const args = daemonRuntimeArguments(paths);
+  assert.equal(args[args.indexOf("--channel-context-store") + 1], "sqlite");
+  assert.equal(args[args.indexOf("--channel-context-max-projected-messages") + 1], "25");
 });

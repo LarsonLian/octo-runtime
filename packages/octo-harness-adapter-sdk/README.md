@@ -32,6 +32,7 @@ Octo Harness 的 adapter authoring SDK。它提供 adapter 契约、CLI probe、
 import {
   createJsonCliAdapter,
   probeCommand,
+  providerInputText,
   type CanonicalEvent
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
 
@@ -47,7 +48,7 @@ export const exampleAdapter = createJsonCliAdapter<NativeEvent>({
     command: "example-cli",
     args: ["--json"],
     cwd: request.workdir,
-    input: request.prompt
+    input: providerInputText(request)
   }),
   normalize: (native): CanonicalEvent[] =>
     native.type === "text"

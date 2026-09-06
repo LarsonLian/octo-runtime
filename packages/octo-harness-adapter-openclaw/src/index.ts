@@ -4,7 +4,7 @@ import { access, chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { defineAdapter, probeCommand, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { defineAdapter, probeCommand, providerInputText, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import {
   normalizeOpenClawFrame,
   tryParseOpenClawEvent,
@@ -32,8 +32,9 @@ interface ProcessExit {
 }
 
 export function composeOpenClawPrompt(req: InvokeRequest): string {
-  if (!req.appendInstructions) return req.prompt;
-  return `[Harness Instructions]\n${req.appendInstructions}\n\n[User Request]\n${req.prompt}`;
+  const input = providerInputText(req);
+  if (!req.appendInstructions) return input;
+  return `[Harness Instructions]\n${req.appendInstructions}\n\n[User Request]\n${input}`;
 }
 
 async function existingDirectory(candidates: Array<string | undefined>): Promise<string> {

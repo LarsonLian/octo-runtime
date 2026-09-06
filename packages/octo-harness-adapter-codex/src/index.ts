@@ -132,8 +132,8 @@ export function createCodexAdapter({
   return defineAdapter({
     metadata: {
       type: "codex",
-      // 目前只有 thread ID 的 serialize/resume 已贯通 Core；不要提前声明 fork/reattach。
-      capabilities: ["session.serialize"],
+      // Thread serialization and same-turn fresh fallback are end-to-end supported.
+      capabilities: ["session.serialize", "session.resume_recovery"],
       processModel: "subprocess-per-invocation",
       transport: "json-rpc-2.0/stdio"
     },

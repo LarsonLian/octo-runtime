@@ -70,6 +70,36 @@ function resolveAgentWorkOptions(
       ["--agent-work-db"],
       env.OCTO_HARNESS_AGENT_WORK_DB
     ) ?? join(home, "agent-work.db")),
+    channelContext: {
+      store: enumOption(
+        args,
+        ["--channel-context-store"],
+        env.OCTO_HARNESS_CHANNEL_CONTEXT_STORE ?? "memory",
+        ["memory", "sqlite"]
+      ),
+      projection: enumOption(
+        args,
+        ["--channel-context-projection"],
+        env.OCTO_HARNESS_CHANNEL_CONTEXT_PROJECTION ?? "window",
+        ["window", "delta"]
+      ),
+      providerPersistence: enumOption(
+        args,
+        ["--channel-context-provider-persistence"],
+        env.OCTO_HARNESS_CHANNEL_CONTEXT_PROVIDER_PERSISTENCE ?? "ephemeral",
+        ["ephemeral", "append_only"]
+      ),
+      storePath: resolve(optionalOption(
+        args,
+        ["--channel-context-db"],
+        env.OCTO_HARNESS_CHANNEL_CONTEXT_DB
+      ) ?? join(home, "channel-context.db")),
+      ...optionalNumber(args, ["--channel-context-retention-ms"], env.OCTO_HARNESS_CHANNEL_CONTEXT_RETENTION_MS, "retentionMs"),
+      ...optionalNumber(args, ["--channel-context-max-scope-messages"], env.OCTO_HARNESS_CHANNEL_CONTEXT_MAX_SCOPE_MESSAGES, "maxMessagesPerScope"),
+      ...optionalNumber(args, ["--channel-context-max-projected-messages"], env.OCTO_HARNESS_CHANNEL_CONTEXT_MAX_PROJECTED_MESSAGES, "maxProjectedMessages"),
+      ...optionalNumber(args, ["--channel-context-max-projected-bytes"], env.OCTO_HARNESS_CHANNEL_CONTEXT_MAX_PROJECTED_BYTES, "maxProjectedBytes"),
+      ...optionalNumber(args, ["--channel-context-sync-timeout-ms"], env.OCTO_HARNESS_CHANNEL_CONTEXT_SYNC_TIMEOUT_MS, "syncTimeoutMs")
+    },
     ...optionalNumber(args, ["--agent-work-send-window"], env.OCTO_HARNESS_AGENT_WORK_SEND_WINDOW, "sendWindow"),
     ...optionalNumber(args, ["--agent-work-soft-bytes"], env.OCTO_HARNESS_AGENT_WORK_SOFT_BYTES, "softWatermarkBytes"),
     ...optionalNumber(args, ["--agent-work-hard-bytes"], env.OCTO_HARNESS_AGENT_WORK_HARD_BYTES, "hardWatermarkBytes")
@@ -109,11 +139,38 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[
       "--agent-work-subject-id", paths.agentWork.subjectId,
       "--agent-work-runtime-name", paths.agentWork.runtimeName,
       "--agent-work-fingerprint", paths.agentWork.fingerprint,
-      "--agent-work-db", paths.agentWork.storePath
+      "--agent-work-db", paths.agentWork.storePath,
+      "--channel-context-store", paths.agentWork.channelContext?.store ?? "memory",
+      "--channel-context-projection", paths.agentWork.channelContext?.projection ?? "window",
+      "--channel-context-provider-persistence", paths.agentWork.channelContext?.providerPersistence ?? "ephemeral",
+      "--channel-context-db", paths.agentWork.channelContext?.storePath ?? resolve("channel-context.db")
     );
     if (paths.agentWork.runtimeId) args.push("--agent-work-runtime-id", paths.agentWork.runtimeId);
+    pushNumberOption(args, "--agent-work-send-window", paths.agentWork.sendWindow);
+    pushNumberOption(args, "--agent-work-soft-bytes", paths.agentWork.softWatermarkBytes);
+    pushNumberOption(args, "--agent-work-hard-bytes", paths.agentWork.hardWatermarkBytes);
+    pushNumberOption(args, "--channel-context-retention-ms", paths.agentWork.channelContext?.retentionMs);
+    pushNumberOption(args, "--channel-context-max-scope-messages", paths.agentWork.channelContext?.maxMessagesPerScope);
+    pushNumberOption(args, "--channel-context-max-projected-messages", paths.agentWork.channelContext?.maxProjectedMessages);
+    pushNumberOption(args, "--channel-context-max-projected-bytes", paths.agentWork.channelContext?.maxProjectedBytes);
+    pushNumberOption(args, "--channel-context-sync-timeout-ms", paths.agentWork.channelContext?.syncTimeoutMs);
   }
   return args;
+}
+
+function pushNumberOption(args: string[], name: string, value: number | undefined): void {
+  if (value !== undefined) args.push(name, String(value));
+}
+
+function enumOption<const TValue extends string>(
+  args: string[],
+  names: string[],
+  fallback: string,
+  allowed: readonly TValue[]
+): TValue {
+  const value = option(args, names, fallback);
+  if (!allowed.includes(value as TValue)) throw new Error(`${names[0]} must be one of: ${allowed.join(", ")}`);
+  return value as TValue;
 }
 
 function option(args: string[], names: string[], fallback: string): string {

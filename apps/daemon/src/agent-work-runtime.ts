@@ -2,9 +2,31 @@ import { randomUUID } from "node:crypto";
 import { hostname, platform, arch } from "node:os";
 import WebSocket from "ws";
 import type { AdapterHostRpcClient } from "@mininglamp-oss/octo-harness-adapter-host";
-import type { AgentConfig, CanonicalEvent, InvokeRequest, ProviderSession } from "@mininglamp-oss/octo-harness-protocol";
+import type {
+  AgentConfig,
+  CanonicalEvent,
+  ChannelContextDescriptor,
+  ContextSyncRequest,
+  ContextSyncResult,
+  InvokeRequest,
+  ProviderSession
+} from "@mininglamp-oss/octo-harness-protocol";
+import {
+  assertChannelContextAppend,
+  assertChannelContextDescriptor,
+  assertContextSyncResult
+} from "@mininglamp-oss/octo-harness-protocol";
 import { AgentWorkStore } from "./agent-work-store.js";
 import type { OutboxRow } from "./agent-work-store.js";
+import {
+  ChannelContextStore,
+  ChannelContextConsumerBusyError,
+  ChannelContextStaleGenerationError,
+  channelScopeKey,
+  composeProviderModelInput,
+  type ChannelContextStoreOptions,
+  type PreparedChannelContextSnapshot
+} from "./channel-context-store.js";
 
 const PROTOCOL_VERSION = 1;
 const DEFAULT_SEND_WINDOW = 32;
@@ -13,6 +35,9 @@ const DEFAULT_HARD_WATERMARK_BYTES = 2 * 1024 * 1024 * 1024;
 const DEFAULT_RECONCILE_MS = 5 * 60_000;
 const PUMP_POLL_MS = 50;
 const BACKPRESSURE_POLL_MS = 100;
+const DEFAULT_CONTEXT_SYNC_TIMEOUT_MS = 3_000;
+const DEFAULT_CONTEXT_SYNC_LIMIT = 40;
+const CONTEXT_BUSY_POLL_MS = 25;
 /** 终态事件必须能落盘收尾，不受软水位背压阻塞。 */
 const TERMINAL_OUTBOX_TYPES = new Set(["run.completed", "run.failed", "run.cancelled"]);
 
@@ -34,9 +59,18 @@ export interface AgentWorkRuntimeOptions {
   /** 硬水位：仅用于高优告警，未 ACK 数据仍不删除。 */
   hardWatermarkBytes?: number;
   reconcileMs?: number;
+  channelContext?: ChannelContextRuntimeOptions;
 }
 
-interface ExecutionEnvelope {
+export interface ChannelContextRuntimeOptions extends ChannelContextStoreOptions {
+  store: "memory" | "sqlite";
+  projection: "window" | "delta";
+  providerPersistence: "ephemeral" | "append_only";
+  storePath: string;
+  syncTimeoutMs?: number;
+}
+
+export interface ExecutionEnvelope {
   schema_version: number;
   run_id: string;
   harness_session_id: string;
@@ -86,13 +120,39 @@ interface ActiveRun {
   fencingToken: number;
 }
 
+interface AcceptingRun {
+  commandId: string;
+  serverSeq: number;
+  controller: AbortController;
+}
+
+interface PendingContextSync {
+  scopeKey: string;
+  triggerMessageId: string;
+  triggerSeq?: number;
+  afterSeq?: number;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
+  signal?: AbortSignal;
+  onAbort?: () => void;
+}
+
 export class AgentWorkRuntime {
   readonly #options: AgentWorkRuntimeOptions;
   readonly #host: AdapterHostRpcClient;
   readonly #activeRuns = new Map<string, ActiveRun>();
+  readonly #acceptingCommandIds = new Set<string>();
+  readonly #acceptingRuns = new Map<string, AcceptingRun>();
+  readonly #messageHandlers = new Set<Promise<void>>();
+  readonly #executionTasks = new Set<Promise<void>>();
+  readonly #adapterCapabilities = new Map<string, Set<string>>();
   /** 本连接内已发出、等待 ACK 的 `${runId}:${seq}`；重连时清空以触发重放。 */
   readonly #inFlight = new Set<string>();
+  readonly #pendingContextSyncs = new Map<string, PendingContextSync>();
+  readonly #latestContextSyncByScope = new Map<string, string>();
   #store?: AgentWorkStore;
+  #contextStore?: ChannelContextStore;
   #runtimeId = "";
   #socket?: WebSocket;
   #heartbeat?: NodeJS.Timeout;
@@ -102,6 +162,7 @@ export class AgentWorkRuntime {
   #senderKick?: () => void;
   #stopped = true;
   #connected = false;
+  #lifecycleEpoch = 0;
 
   constructor(options: AgentWorkRuntimeOptions, host: AdapterHostRpcClient) {
     this.#options = options;
@@ -110,6 +171,7 @@ export class AgentWorkRuntime {
 
   get status(): Record<string, unknown> {
     const store = this.#store;
+    const contextStats = this.#contextStore?.stats();
     return {
       enabled: true,
       connected: this.#connected,
@@ -120,22 +182,46 @@ export class AgentWorkRuntime {
       outboxPending: store?.pendingCount() ?? 0,
       outboxOldestAgeMs: store?.oldestUnackedAgeMs() ?? null,
       dbBytes: store?.dbBytes() ?? 0,
-      walBytes: store?.walBytes() ?? 0
+      walBytes: store?.walBytes() ?? 0,
+      channelContext: {
+        store: this.#options.channelContext?.store ?? "memory",
+        projection: this.#options.channelContext?.projection ?? "window",
+        providerPersistence: this.#options.channelContext?.providerPersistence ?? "ephemeral",
+        scopes: contextStats?.scopes ?? 0,
+        messages: contextStats?.messages ?? 0,
+        snapshots: contextStats?.snapshots ?? 0,
+        activeSnapshots: contextStats?.activeSnapshots ?? 0,
+        dbBytes: contextStats?.dbBytes ?? 0,
+        walBytes: contextStats?.walBytes ?? 0
+      }
     };
   }
 
   async start(): Promise<void> {
     if (!this.#stopped) return;
     this.#stopped = false;
+    const epoch = ++this.#lifecycleEpoch;
+    this.#adapterCapabilities.clear();
+    const adapters = await this.#host.list();
+    for (const adapter of adapters) {
+      this.#adapterCapabilities.set(adapter.type, new Set(adapter.capabilities ?? []));
+    }
     this.#store = AgentWorkStore.open(this.#options.storePath);
-    this.#runtimeId = this.#options.runtimeId ?? await this.#register();
+    if (this.#options.channelContext?.store === "sqlite") {
+      this.#contextStore = ChannelContextStore.open(
+        this.#options.channelContext.storePath,
+        this.#options.channelContext
+      );
+    }
+    this.#runtimeId = this.#options.runtimeId ?? await this.#register([...this.#adapterCapabilities.keys()]);
     await this.#connect();
-    this.#loop = this.#readLoop();
-    this.#pump = this.#senderLoop();
+    this.#loop = this.#readLoop(epoch);
+    this.#pump = this.#senderLoop(epoch);
     const reconcileMs = this.#options.reconcileMs ?? DEFAULT_RECONCILE_MS;
     this.#reconcileTimer = setInterval(() => {
       try {
         this.#store?.reconcile();
+        this.#contextStore?.reconcile();
       } catch (error) {
         console.error(`octo-harness Agent Work outbox reconcile failed: ${errorMessage(error)}`);
       }
@@ -143,24 +229,39 @@ export class AgentWorkRuntime {
   }
 
   async close(): Promise<void> {
+    if (this.#stopped && !this.#store) return;
     this.#stopped = true;
+    this.#lifecycleEpoch += 1;
     if (this.#heartbeat) clearInterval(this.#heartbeat);
     this.#heartbeat = undefined;
     if (this.#reconcileTimer) clearInterval(this.#reconcileTimer);
     this.#reconcileTimer = undefined;
     this.#kickSender();
+    for (const accepting of this.#acceptingRuns.values()) {
+      accepting.controller.abort(new RuntimeStoppingError());
+    }
     for (const run of this.#activeRuns.values()) {
       await this.#host.cancel(run.invocationId, "runtime shutdown").catch(() => undefined);
     }
     this.#socket?.close(1000, "runtime shutdown");
+    for (const requestId of [...this.#pendingContextSyncs.keys()]) {
+      this.#resolveContextSync(requestId, new RuntimeStoppingError());
+    }
+    this.#latestContextSyncByScope.clear();
     await this.#loop?.catch(() => undefined);
     await this.#pump?.catch(() => undefined);
+    await Promise.allSettled([...this.#messageHandlers]);
+    await Promise.allSettled([...this.#executionTasks]);
     // 未 ACK 事件留在 Outbox，重启后重放；这里只释放连接与句柄。
     this.#store?.close();
     this.#store = undefined;
+    this.#contextStore?.close();
+    this.#contextStore = undefined;
+    this.#acceptingCommandIds.clear();
+    this.#acceptingRuns.clear();
   }
 
-  async #register(): Promise<string> {
+  async #register(adapterTypes: string[]): Promise<string> {
     const response = await fetch(`${stripSlash(this.#options.baseUrl)}/api/v1/runtimes/register`, {
       method: "POST",
       headers: this.#headers(true),
@@ -175,7 +276,15 @@ export class AgentWorkRuntime {
         },
         runtime_version: "0.1.0",
         protocol_version: PROTOCOL_VERSION,
-        capabilities: { adapters: (await this.#host.list()).map(item => item.type) }
+        capabilities: {
+          adapters: adapterTypes,
+          channel_context: {
+            protocol_version: 1,
+            store: this.#options.channelContext?.store ?? "memory",
+            projection: this.#options.channelContext?.projection ?? "window",
+            provider_persistence: this.#options.channelContext?.providerPersistence ?? "ephemeral"
+          }
+        }
       })
     });
     const body = await response.json() as { runtime?: { id?: string }; error?: { message?: string } };
@@ -209,12 +318,12 @@ export class AgentWorkRuntime {
     });
   }
 
-  async #readLoop(): Promise<void> {
-    while (!this.#stopped) {
+  async #readLoop(epoch: number): Promise<void> {
+    while (this.#isCurrentLifecycle(epoch)) {
       const socket = this.#socket;
       if (socket) {
         try {
-          await this.#waitForDisconnect(socket);
+          await this.#waitForDisconnect(socket, epoch);
         } catch (error) {
           console.error(`octo-harness Agent Work runtime connection failed: ${errorMessage(error)}`);
         }
@@ -225,8 +334,8 @@ export class AgentWorkRuntime {
       this.#heartbeat = undefined;
       // 断线不丢事件：清空在途标记，重连后从最小未确认 seq 全部重放。
       this.#inFlight.clear();
-      if (this.#stopped) return;
-      while (!this.#stopped && !this.#socket) {
+      if (!this.#isCurrentLifecycle(epoch)) return;
+      while (this.#isCurrentLifecycle(epoch) && !this.#socket) {
         await delay(this.#options.reconnectMs ?? 1_000);
         try {
           await this.#connect();
@@ -237,7 +346,7 @@ export class AgentWorkRuntime {
     }
   }
 
-  #waitForDisconnect(socket: WebSocket): Promise<void> {
+  #waitForDisconnect(socket: WebSocket, epoch: number): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       let settled = false;
       const cleanup = (): void => {
@@ -253,13 +362,15 @@ export class AgentWorkRuntime {
         else resolve();
       };
       const onMessage = (data: WebSocket.RawData): void => {
-        void (async () => {
+        const handler = (async () => {
           const envelope = JSON.parse(rawDataText(data)) as WireEnvelope;
-          await this.#receive(envelope);
+          await this.#receive(envelope, epoch);
         })().catch((error: unknown) => {
           socket.terminate();
           settle(error instanceof Error ? error : new Error(String(error)));
         });
+        this.#messageHandlers.add(handler);
+        void handler.finally(() => this.#messageHandlers.delete(handler));
       };
       const onClose = (): void => settle();
       const onError = (error: Error): void => settle(error);
@@ -269,8 +380,24 @@ export class AgentWorkRuntime {
     });
   }
 
-  async #receive(envelope: WireEnvelope): Promise<void> {
+  async #receive(envelope: WireEnvelope, epoch: number): Promise<void> {
+    if (!this.#isCurrentLifecycle(epoch)) return;
     if (envelope.version !== PROTOCOL_VERSION) throw new Error(`unsupported Agent Work protocol ${envelope.version}`);
+    if (envelope.type === "context.append") {
+      assertChannelContextAppend(envelope.payload);
+      this.#contextStore?.append(envelope.payload);
+      return;
+    }
+    if (envelope.type === "context.sync_result") {
+      assertContextSyncResult(envelope.payload);
+      const pending = this.#pendingContextSyncs.get(envelope.payload.request_id);
+      if (!pending
+        || this.#latestContextSyncByScope.get(pending.scopeKey) !== envelope.payload.request_id
+        || !matchesPendingContextSync(pending, envelope.payload)) return;
+      this.#contextStore?.applySyncResult(envelope.payload);
+      this.#resolveContextSync(envelope.payload.request_id);
+      return;
+    }
     if (envelope.type === "runtime.welcome") {
       const payload = asRecord(envelope.payload);
       const everyMs = typeof payload.heartbeat_every_ms === "number" ? payload.heartbeat_every_ms : 30_000;
@@ -286,7 +413,7 @@ export class AgentWorkRuntime {
       return;
     }
     if (envelope.type === "runtime.command") {
-      await this.#acceptCommand(envelope.payload as RuntimeCommand);
+      await this.#acceptCommand(envelope.payload as RuntimeCommand, epoch);
       return;
     }
     if (envelope.type === "event.ack") {
@@ -311,7 +438,40 @@ export class AgentWorkRuntime {
         // durable_through_seq: aggregated state committed cloud-side — only now
         // may confirmed outbox rows be deleted.
         if (Number.isFinite(durable) && durable > 0) {
-          store.advanceDurable(runId, durable);
+          const inspection = store.inspectDurableAck(runId, durable);
+          if (inspection.advanced) {
+            let contextCommitted = true;
+            if (inspection.terminal?.type === "run.completed") {
+              const snapshot = this.#contextStore?.getSnapshot(runId);
+              if (snapshot) {
+                const grant = payload.context_commit_granted === true;
+                const authoritativeStatus = stringValue(payload.authoritative_terminal_status);
+                const authoritativeEventId = stringValue(payload.authoritative_terminal_event_id);
+                const grantMatchesTerminal = grant
+                  && authoritativeStatus === "completed"
+                  && authoritativeEventId === inspection.terminal.eventId;
+                if (!grantMatchesTerminal) {
+                  this.#contextStore?.markFailed(runId);
+                  console.error(
+                    `channel context commit not granted run=${runId} status=${authoritativeStatus ?? "missing"}`
+                  );
+                } else {
+                  const result = this.#contextStore!.commitSnapshot(runId);
+                  if (!result.committed) {
+                    console.error(`channel context cursor commit rejected run=${runId} reason=${result.reason}`);
+                    contextCommitted = false;
+                  }
+                }
+              }
+            } else if (inspection.terminal) {
+              this.#contextStore?.markFailed(runId);
+            }
+            // Commit context first: if it fails, leave terminal in the outbox so
+            // the durable ACK can be replayed after reconnect. Both operations are idempotent.
+            if (contextCommitted) store.advanceDurable(runId, durable);
+          } else if (inspection.reason === "ack_beyond_produced") {
+            console.error(`octo-harness Agent Work runtime rejected out-of-range durable ACK run=${runId} seq=${durable}`);
+          }
         }
         // ACK released capacity and may unblock more sendable rows.
         this.#kickSender();
@@ -331,14 +491,28 @@ export class AgentWorkRuntime {
     }
   }
 
-  async #acceptCommand(command: RuntimeCommand): Promise<void> {
+  async #acceptCommand(command: RuntimeCommand, epoch: number): Promise<void> {
     if (!command?.command_id || !command.run_id || !command.type) throw new Error("invalid runtime.command payload");
     const store = this.#store;
     if (!store) throw new Error("Agent Work runtime store is not open");
     if (command.type === "run.cancel") {
       const active = this.#activeRuns.get(command.run_id);
-      const cancelled = active ? (await this.#host.cancel(active.invocationId, "control plane cancel")).cancelled : false;
-      this.#ackCommand(command, true, cancelled ? undefined : { code: "RUN_NOT_ACTIVE" });
+      if (active) {
+        const cancelled = (await this.#host.cancel(active.invocationId, "control plane cancel")).cancelled;
+        this.#ackCommand(command, true, cancelled ? undefined : { code: "RUN_NOT_ACTIVE" });
+        return;
+      }
+      const accepting = this.#acceptingRuns.get(command.run_id);
+      if (accepting) {
+        const failure = { code: "RUN_CANCELLED_BEFORE_START", message: "run cancelled while waiting for admission" };
+        store.recordCommandReceipt(accepting.commandId, accepting.serverSeq, false, failure);
+        this.#contextStore?.markFailed(command.run_id);
+        accepting.controller.abort(new AcceptingRunCancelledError());
+        this.#ackCommand(command, true);
+        return;
+      }
+      this.#contextStore?.markFailed(command.run_id);
+      this.#ackCommand(command, true, { code: "RUN_NOT_ACTIVE" });
       return;
     }
     if (command.type !== "run.start") {
@@ -351,6 +525,13 @@ export class AgentWorkRuntime {
       this.#ackCommand(command, receipt.accepted, receipt.error);
       return;
     }
+    if (this.#activeRuns.has(command.run_id)) {
+      this.#ackCommand(command, true);
+      return;
+    }
+    // A replay while the first handler waits must join the in-flight
+    // admission attempt before evaluating mutable capacity constraints.
+    if (this.#acceptingCommandIds.has(command.command_id) || this.#acceptingRuns.has(command.run_id)) return;
     // 软水位背压：拒绝新 Run，让已有 Outbox 先排空；未 ACK 数据不删除。
     const softWatermark = this.#options.softWatermarkBytes ?? DEFAULT_SOFT_WATERMARK_BYTES;
     const hardWatermark = this.#options.hardWatermarkBytes ?? DEFAULT_HARD_WATERMARK_BYTES;
@@ -364,69 +545,252 @@ export class AgentWorkRuntime {
       this.#ackCommand(command, false, error);
       return;
     }
-    if (this.#activeRuns.has(command.run_id)) {
-      this.#ackCommand(command, true);
-      return;
-    }
-    let request: InvokeRequest;
-    let adapterType: string;
-    let sessionId: string;
-    try {
-      const mapped = mapExecutionEnvelope(command.payload as ExecutionEnvelope);
-      request = mapped.request;
-      adapterType = mapped.adapterType;
-      sessionId = request.sessionId;
-    } catch (error) {
-      const failure = { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) };
-      store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
-      this.#ackCommand(command, false, failure);
-      return;
-    }
-    store.upsertRun({
-      runId: command.run_id,
-      sessionId,
+    const controller = new AbortController();
+    this.#acceptingCommandIds.add(command.command_id);
+    this.#acceptingRuns.set(command.run_id, {
       commandId: command.command_id,
-      leaseId: command.lease_id,
-      fencingToken: command.fencing_token
+      serverSeq: command.server_seq,
+      controller
     });
-    store.recordCommandReceipt(command.command_id, command.server_seq, true);
-    this.#activeRuns.set(command.run_id, {
-      invocationId: request.invocationId,
-      leaseId: command.lease_id,
-      fencingToken: command.fencing_token
+    try {
+      let request: InvokeRequest;
+      let adapterType: string;
+      let sessionId: string;
+      let leaseId: string;
+      let fencingToken: number;
+      try {
+        leaseId = requiredString(command.lease_id, "run.start lease_id");
+        fencingToken = requiredSafeInteger(command.fencing_token, "run.start fencing_token");
+        const executionEnvelope = command.payload as ExecutionEnvelope;
+        const adapterTypeForContext = executionAdapterType(executionEnvelope);
+        const contextSnapshot = await this.#prepareChannelContext(
+          command.run_id,
+          executionEnvelope,
+          adapterTypeForContext,
+          controller.signal,
+          epoch
+        );
+        throwIfAcceptingAborted(controller.signal);
+        this.#assertCurrentLifecycle(epoch);
+        const mapped = mapExecutionEnvelope(executionEnvelope, contextSnapshot);
+        request = mapped.request;
+        adapterType = mapped.adapterType;
+        sessionId = request.sessionId;
+      } catch (error) {
+        if (error instanceof RuntimeStoppingError) {
+          this.#contextStore?.markFailed(command.run_id);
+          return;
+        }
+        if (error instanceof AcceptingRunCancelledError) {
+          this.#contextStore?.markFailed(command.run_id);
+          const failure = store.getCommandReceipt(command.command_id)?.error
+            ?? { code: "RUN_CANCELLED_BEFORE_START", message: "run cancelled while waiting for admission" };
+          if (!store.getCommandReceipt(command.command_id)) {
+            store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
+          }
+          this.#ackCommand(command, false, failure);
+          return;
+        }
+        this.#contextStore?.markFailed(command.run_id);
+        const failure = error instanceof ChannelContextStaleGenerationError
+          ? {
+              code: "STALE_CONTEXT_GENERATION",
+              message: error.message,
+              requested_generation: error.requestedGeneration,
+              latest_generation: error.latestGeneration
+            }
+          : { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) };
+        store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
+        this.#ackCommand(command, false, failure);
+        return;
+      }
+      store.upsertRun({
+        runId: command.run_id,
+        sessionId,
+        commandId: command.command_id,
+        leaseId,
+        fencingToken
+      });
+      store.recordCommandReceipt(command.command_id, command.server_seq, true);
+      this.#activeRuns.set(command.run_id, {
+        invocationId: request.invocationId,
+        leaseId,
+        fencingToken
+      });
+      this.#ackCommand(command, true);
+      const execution = this.#execute(command, adapterType, request);
+      this.#executionTasks.add(execution);
+      void execution.finally(() => this.#executionTasks.delete(execution));
+    } finally {
+      this.#acceptingCommandIds.delete(command.command_id);
+      if (this.#acceptingRuns.get(command.run_id)?.controller === controller) {
+        this.#acceptingRuns.delete(command.run_id);
+      }
+    }
+  }
+
+  async #prepareChannelContext(
+    runId: string,
+    envelope: ExecutionEnvelope,
+    adapterType: string,
+    signal: AbortSignal,
+    epoch: number
+  ): Promise<PreparedChannelContextSnapshot | undefined> {
+    const descriptorValue = asRecord(envelope.immutable_execution_input.content).channel_context;
+    if (descriptorValue === undefined) return undefined;
+    assertChannelContextDescriptor(descriptorValue);
+    const descriptor = descriptorValue;
+    const contextStore = this.#contextStore;
+    if (!contextStore) return undefined;
+
+    // Reliable trigger path repairs a dropped best-effort append before selection.
+    contextStore.append({ scope: descriptor.scope, facts: [descriptor.trigger_fact] });
+    if (!this.#usesAppendOnlyDelta()) return undefined;
+    if (!this.#adapterCapabilities.get(adapterType)?.has("session.serialize")) {
+      throw new Error(`adapter ${adapterType} lacks session.serialize required by append-only channel context`);
+    }
+    if (!this.#adapterCapabilities.get(adapterType)?.has("session.resume_recovery")) {
+      throw new Error(`adapter ${adapterType} lacks session.resume_recovery required by append-only channel context`);
+    }
+    if (contextStore.needsSync(descriptor.scope)) await this.#requestContextSync(descriptor, signal);
+    while (this.#isCurrentLifecycle(epoch)) {
+      throwIfAcceptingAborted(signal);
+      try {
+        return contextStore.prepareSnapshot(runId, descriptor);
+      } catch (error) {
+        if (!(error instanceof ChannelContextConsumerBusyError)) throw error;
+        await abortableDelay(CONTEXT_BUSY_POLL_MS, signal);
+      }
+    }
+    throw new RuntimeStoppingError();
+  }
+
+  async #requestContextSync(descriptor: ChannelContextDescriptor, signal: AbortSignal): Promise<void> {
+    const contextStore = this.#contextStore;
+    if (!contextStore) return;
+    const requestId = `ctx_sync_${randomUUID()}`;
+    const afterSeq = contextStore.syncAfterSeq(descriptor.scope);
+    const request: ContextSyncRequest = {
+      request_id: requestId,
+      scope: descriptor.scope,
+      trigger_message_id: descriptor.trigger_message_id,
+      ...(descriptor.trigger_seq === undefined ? {} : { trigger_seq: descriptor.trigger_seq }),
+      ...(afterSeq === undefined ? {} : { after_seq: afterSeq }),
+      limit: Math.min(this.#options.channelContext?.maxProjectedMessages ?? DEFAULT_CONTEXT_SYNC_LIMIT, 100)
+    };
+    const scopeKey = channelScopeKey(descriptor.scope);
+    const wait = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.#resolveContextSync(requestId);
+      }, this.#options.channelContext?.syncTimeoutMs ?? DEFAULT_CONTEXT_SYNC_TIMEOUT_MS);
+      timer.unref?.();
+      const onAbort = (): void => {
+        this.#resolveContextSync(requestId, acceptingAbortError(signal));
+      };
+      this.#pendingContextSyncs.set(requestId, {
+        scopeKey,
+        triggerMessageId: descriptor.trigger_message_id,
+        ...(descriptor.trigger_seq === undefined ? {} : { triggerSeq: descriptor.trigger_seq }),
+        ...(afterSeq === undefined ? {} : { afterSeq }),
+        resolve,
+        reject,
+        timer,
+        signal,
+        onAbort
+      });
+      this.#latestContextSyncByScope.set(scopeKey, requestId);
+      signal.addEventListener("abort", onAbort, { once: true });
+      if (signal.aborted) onAbort();
     });
-    this.#ackCommand(command, true);
-    void this.#execute(command, adapterType, request);
+    try {
+      this.#send("context.sync_request", request);
+    } catch {
+      this.#resolveContextSync(requestId);
+    }
+    await wait;
+  }
+
+  #resolveContextSync(requestId: string, error?: Error): void {
+    const pending = this.#pendingContextSyncs.get(requestId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    if (pending.signal && pending.onAbort) pending.signal.removeEventListener("abort", pending.onAbort);
+    this.#pendingContextSyncs.delete(requestId);
+    if (this.#latestContextSyncByScope.get(pending.scopeKey) === requestId) {
+      this.#latestContextSyncByScope.delete(pending.scopeKey);
+    }
+    if (error) pending.reject(error);
+    else pending.resolve();
+  }
+
+  #usesAppendOnlyDelta(): boolean {
+    const options = this.#options.channelContext;
+    return options?.store === "sqlite"
+      && options.projection === "delta"
+      && options.providerPersistence === "append_only";
+  }
+
+  #isCurrentLifecycle(epoch: number): boolean {
+    return !this.#stopped && epoch === this.#lifecycleEpoch;
+  }
+
+  #assertCurrentLifecycle(epoch: number): void {
+    if (!this.#isCurrentLifecycle(epoch)) throw new RuntimeStoppingError();
   }
 
   async #execute(command: RuntimeCommand, adapterType: string, request: InvokeRequest): Promise<void> {
     const store = this.#store;
     if (!store) return;
     let finalText = "";
-    try {
-      store.allocateAndAppend(command.run_id, "run.started", {});
+    let completed = false;
+    let contextSnapshot = this.#contextStore?.markSubmitted(command.run_id);
+    let started = false;
+    const appendStarted = (): void => {
+      if (started) return;
+      store.allocateAndAppend(command.run_id, "run.started", contextSnapshot
+        ? contextEventFields(contextSnapshot)
+        : {});
+      started = true;
       this.#kickSender();
+    };
+    try {
       for await (const event of this.#host.invoke(adapterType, request)) {
         if (event.type === "run.running" || event.type === "run.queued") continue;
+        if (contextSnapshot && selectsRecoveryInput(event)) {
+          if (started && contextSnapshot.selectedVariant !== "recovery") {
+            throw new Error("provider selected channel context recovery after run.started was persisted");
+          }
+          contextSnapshot = this.#contextStore?.selectRecovery(command.run_id) ?? contextSnapshot;
+        }
+        appendStarted();
         finalText = accumulateFinalText(finalText, event);
         const mapped = mapRuntimeEvent(event, finalText);
+        if (contextSnapshot && TERMINAL_OUTBOX_TYPES.has(mapped.type)) {
+          Object.assign(mapped.payload, contextEventFields(contextSnapshot));
+        }
         // 终态事件绕过软水位背压，保证 Run 在持续背压下仍能落盘收尾。
         if (!TERMINAL_OUTBOX_TYPES.has(mapped.type)) await this.#awaitOutboxCapacity(command.run_id);
         store.allocateAndAppend(command.run_id, mapped.type, mapped.payload);
+        completed ||= event.type === "run.finished";
         this.#kickSender();
       }
     } catch (error) {
       try {
-        store.allocateAndAppend(command.run_id, "run.failed", {
+        appendStarted();
+        const payload = {
           code: "ADAPTER_INVOCATION_FAILED",
           message: errorMessage(error),
           text: finalText
-        });
+        };
+        if (contextSnapshot) Object.assign(payload, contextEventFields(contextSnapshot));
+        store.allocateAndAppend(command.run_id, "run.failed", payload);
         this.#kickSender();
       } catch (appendError) {
         console.error(`failed to record run failure: ${errorMessage(appendError)}`);
       }
     } finally {
+      // Success remains submitted until the terminal outbox row receives a durable ACK.
+      if (!completed) this.#contextStore?.markFailed(command.run_id);
       this.#activeRuns.delete(command.run_id);
     }
   }
@@ -443,9 +807,9 @@ export class AgentWorkRuntime {
   /** Send unacked events in (run_id, seq) order as run.event_batch frames when
    * connected; on disconnect it waits rather than dropping. Contiguous rows of
    * a single run are coalesced into one batch (the wire transport unit). */
-  async #senderLoop(): Promise<void> {
+  async #senderLoop(epoch: number): Promise<void> {
     const window = this.#options.sendWindow ?? DEFAULT_SEND_WINDOW;
-    while (!this.#stopped) {
+    while (this.#isCurrentLifecycle(epoch)) {
       const store = this.#store;
       if (store && this.#connected && this.#socket?.readyState === WebSocket.OPEN) {
         const rows = store.listSendable(window).filter(row => !this.#inFlight.has(`${row.runId}:${row.seq}`));
@@ -549,23 +913,31 @@ export function accumulateFinalText(current: string, event: CanonicalEvent): str
   return text;
 }
 
-export function mapExecutionEnvelope(envelope: ExecutionEnvelope): { adapterType: string; request: InvokeRequest } {
+export function mapExecutionEnvelope(
+  envelope: ExecutionEnvelope,
+  contextSnapshot?: PreparedChannelContextSnapshot
+): { adapterType: string; request: InvokeRequest } {
   if (!envelope?.run_id || !envelope.harness_session_id || !envelope.agent_revision || !envelope.immutable_execution_input) {
     throw new TypeError("execution envelope is missing run/session/revision/immutable execution input");
   }
   const profile = asRecord(envelope.agent_revision.execution_profile);
   const definition = asRecord(envelope.agent_revision.definition);
-  const adapterType = stringValue(profile.adapter_type) ?? normalizeAdapterType(stringValue(profile.default_adapter) ?? "codex");
+  const adapterType = executionAdapterType(envelope);
   const agentConfig = asRecord(profile.agent_config) as AgentConfig;
   const workdir = stringValue(profile.workdir) ?? stringValue(agentConfig.workdir);
   if (!workdir) throw new TypeError("execution_profile.workdir is required for a local runtime");
+  const content = envelope.immutable_execution_input.content;
+  const displayPrompt = contextSnapshot
+    ? renderDisplayExecutionInputPrompt(content)
+    : renderImmutableExecutionInputPrompt(content);
   const context = {
     schemaVersion: envelope.schema_version,
     agentId: envelope.execution_request.agent_id,
     agentRevisionId: envelope.execution_request.agent_revision_id,
     sourceType: envelope.execution_request.source_type,
     sourceId: envelope.execution_request.source_id,
-    immutableExecutionInput: envelope.immutable_execution_input.content ?? {}
+    immutableExecutionInput: content ?? {},
+    ...(contextSnapshot ? { contextSnapshot: contextSnapshot.ref } : {})
   };
   return {
     adapterType,
@@ -573,7 +945,17 @@ export function mapExecutionEnvelope(envelope: ExecutionEnvelope): { adapterType
       invocationId: `invoke_${randomUUID()}`,
       sessionId: envelope.harness_session_id,
       runId: envelope.run_id,
-      prompt: renderImmutableExecutionInputPrompt(envelope.immutable_execution_input.content),
+      prompt: displayPrompt,
+      ...(contextSnapshot ? {
+        modelInput: composeProviderModelInput(
+          contextSnapshot.selectedVariant === "recovery"
+            ? contextSnapshot.recoveryRenderedText
+            : contextSnapshot.renderedText,
+          displayPrompt
+        ),
+        freshFallbackModelInput: composeProviderModelInput(contextSnapshot.recoveryRenderedText, displayPrompt),
+        contextSnapshot: contextSnapshot.ref
+      } : {}),
       workdir,
       appendInstructions: stringValue(definition.instructions) ?? "",
       context,
@@ -581,6 +963,12 @@ export function mapExecutionEnvelope(envelope: ExecutionEnvelope): { adapterType
       agentConfig: { ...agentConfig, workdir }
     }
   };
+}
+
+function executionAdapterType(envelope: ExecutionEnvelope): string {
+  const profile = asRecord(envelope.agent_revision?.execution_profile);
+  return stringValue(profile.adapter_type)
+    ?? normalizeAdapterType(stringValue(profile.default_adapter) ?? "codex");
 }
 
 export function renderImmutableExecutionInputPrompt(content: Record<string, unknown> | undefined): string {
@@ -605,6 +993,23 @@ export function renderImmutableExecutionInputPrompt(content: Record<string, unkn
       return `${author}: ${stringValue(value.text) ?? ""}`;
     }).join("\n"));
   }
+  const reply = asRecord(input.reply_to);
+  if (stringValue(reply.text)) {
+    blocks.push(`[Quoted message from ${stringValue(reply.author_name) ?? stringValue(reply.author_id) ?? "unknown"}]\n${stringValue(reply.text)}`);
+  }
+  blocks.push(`[Current message]\n${current}`);
+  return blocks.join("\n\n");
+}
+
+/** Render the product-visible current turn without context-only channel facts. */
+export function renderDisplayExecutionInputPrompt(content: Record<string, unknown> | undefined): string {
+  const input = asRecord(content);
+  const parts = Array.isArray(input.parts) ? input.parts : [];
+  const current = parts.map(part => {
+    const value = asRecord(part);
+    return value.type === "text" && typeof value.text === "string" ? value.text : "";
+  }).filter(Boolean).join("\n");
+  const blocks: string[] = [];
   const reply = asRecord(input.reply_to);
   if (stringValue(reply.text)) {
     blocks.push(`[Quoted message from ${stringValue(reply.author_name) ?? stringValue(reply.author_id) ?? "unknown"}]\n${stringValue(reply.text)}`);
@@ -645,12 +1050,99 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function requiredString(value: unknown, name: string): string {
+  const result = stringValue(value);
+  if (!result) throw new TypeError(`${name} must be a non-empty string`);
+  return result;
+}
+
+function requiredSafeInteger(value: unknown, name: string): number {
+  if (!Number.isSafeInteger(value)) throw new TypeError(`${name} must be a safe integer`);
+  return Number(value);
+}
+
+function matchesPendingContextSync(pending: PendingContextSync, result: ContextSyncResult): boolean {
+  if (channelScopeKey(result.scope) !== pending.scopeKey) return false;
+  if (result.facts.some(fact => fact.message_id === pending.triggerMessageId)) return false;
+  if (pending.triggerSeq !== undefined) {
+    if (result.through_seq !== undefined && result.through_seq >= pending.triggerSeq) return false;
+    if (result.facts.some(fact => fact.message_seq !== undefined && fact.message_seq >= pending.triggerSeq!)) return false;
+  }
+  if (pending.afterSeq !== undefined) {
+    if (result.through_seq !== undefined && result.through_seq < pending.afterSeq) return false;
+    if (result.facts.some(fact => fact.message_seq !== undefined && fact.message_seq <= pending.afterSeq!)) return false;
+  }
+  return true;
+}
+
+function selectsRecoveryInput(event: CanonicalEvent): boolean {
+  if (event.type !== "session.update") return false;
+  const providerSession = asRecord(event.payload.providerSession);
+  return providerSession.resumeOutcome === "fresh_fallback"
+    && providerSession.contextInputVariant === "recovery";
+}
+
+function contextEventFields(snapshot: PreparedChannelContextSnapshot): Record<string, unknown> {
+  const recovery = snapshot.selectedVariant === "recovery";
+  return {
+    context_snapshot_id: snapshot.ref.snapshot_id,
+    context_snapshot_sha256: recovery
+      ? snapshot.ref.recovery_rendered_sha256
+      : snapshot.ref.rendered_sha256,
+    context_completeness: recovery
+      ? snapshot.recoveryCompleteness
+      : snapshot.ref.completeness,
+    context_input_variant: recovery ? "recovery" : "delta",
+    context_session_generation: snapshot.ref.session_generation,
+    ...(snapshot.ref.source_session_generation === undefined
+      ? {}
+      : { context_source_session_generation: snapshot.ref.source_session_generation })
+  };
+}
+
+class RuntimeStoppingError extends Error {
+  constructor() {
+    super("Agent Work runtime stopped while waiting for channel context cursor");
+    this.name = "RuntimeStoppingError";
+  }
+}
+
+class AcceptingRunCancelledError extends Error {
+  constructor() {
+    super("run cancelled before provider invocation");
+    this.name = "AcceptingRunCancelledError";
+  }
+}
+
+function acceptingAbortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new AcceptingRunCancelledError();
+}
+
+function throwIfAcceptingAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw acceptingAbortError(signal);
+}
+
 function stripSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
+  throwIfAcceptingAborted(signal);
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(acceptingAbortError(signal));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function errorMessage(error: unknown): string {

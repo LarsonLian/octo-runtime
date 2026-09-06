@@ -1,5 +1,6 @@
 import {
   defineAdapter,
+  providerInputText,
   type CanonicalEvent,
   type InvokeRequest
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
@@ -124,7 +125,7 @@ export function buildDifyChatRequest(
   const workflowId = optionalString(providerOptions.workflowId) ?? options.workflowId;
   const body: JsonRecord = {
     inputs,
-    query: request.prompt,
+    query: providerInputText(request),
     response_mode: "streaming",
     conversation_id: request.providerSession?.sessionId ?? "",
     user,

@@ -49,6 +49,14 @@ reader.on("line", line => {
       send({ jsonrpc: "2.0", id: message.id, error: { code: -32602, message: "invalid turn params" } });
       return;
     }
+    if (prompt.includes("DISPLAY_ONLY_MUST_NOT_REACH_PROVIDER")) {
+      send({ jsonrpc: "2.0", id: message.id, error: { code: -32602, message: "display prompt leaked to provider" } });
+      return;
+    }
+    if (prompt.includes("PRIMARY_DELTA_MUST_NOT_REACH_FRESH")) {
+      send({ jsonrpc: "2.0", id: message.id, error: { code: -32602, message: "fresh fallback reused resumed-session delta" } });
+      return;
+    }
     if (prompt.includes("EXPECT_LOW_EFFORT") && (message.params.effort !== "low" || message.params.summary !== "none")) {
       send({ jsonrpc: "2.0", id: message.id, error: { code: -32602, message: "disabled thinking must map to low effort without summary" } });
       return;
@@ -60,6 +68,9 @@ reader.on("line", line => {
     respond(message.id, { turn: { id: "turn-1", status: "inProgress", items: [] } });
     queueMicrotask(() => {
       notify("turn/started", { threadId: activeThreadId, turn: { id: "turn-1", status: "inProgress", items: [] } });
+      if (prompt.includes("EMIT_COMPACTION")) {
+        notify("thread/compacted", { threadId: activeThreadId });
+      }
       if (prompt.includes("WAIT_FOR_CANCEL")) {
         notify("item/started", {
           threadId: activeThreadId,
