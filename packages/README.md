@@ -1,18 +1,41 @@
 # Packages And Adapter Guide
 
-本目录包含 Octo Harness 的全部可复用 packages，adapter 定义也全部位于这里；`apps/*` 只负责组装 CLI、daemon、adapter-host 和示例进程。
+本目录包含 Octo Harness 的全部可复用 packages 与各 provider 适配器；`apps/*` 负责将这些 packages 组装为可运行的 CLI、daemon、adapter-host 与示例进程。各包的详细说明见其自身 README，下文提供索引、整体调用关系与端到端的使用教程。
+
+## 整体调用关系
+
+一次请求由 CLI 进入，依次经过 daemon（调度）、core（领域逻辑）、adapter-host（调用路由）到达具体适配器，事件再沿原路径回流；protocol 为各层共用的类型契约。
+
+```mermaid
+flowchart TD
+    CLI[apps/cli] -->|Unix socket 单行 JSON| Daemon
+    subgraph 单机 daemon 进程
+        Daemon[daemon：排队 / 调度 / 恢复] --> Core[core：Agent / Session / Task / Run 领域逻辑]
+        Core --> Host[adapter-host：校验 / 生命周期 / 单一终态]
+    end
+    Host -->|invoke / list / cancel| A1[adapter-codex]
+    Host --> A2[adapter-claude-code]
+    Host --> A3[adapter-codebuddy]
+    Host --> A4[adapter-opencode]
+    Host --> A5[adapter-openclaw]
+    Host --> A6[adapter-dify-*]
+    A3 -.依赖.-> ACP[acp-client]
+    A6 -.依赖.-> DifyC[dify-client]
+    A1 & A2 & A3 & A4 & A5 & A6 -.基于.-> Proto[protocol：统一类型契约]
+    SDK[adapter-sdk] -.开发依赖.-> A4
+```
 
 ## Runtime Packages
 
 | Package | 职责 |
 |---|---|
-| [`@mininglamp-oss/octo-harness-protocol`](octo-harness-protocol/README.md) | InvokeRequest、canonical event 与 envelope 契约 |
-| [`@mininglamp-oss/octo-harness-core`](octo-harness-core/README.md) | Chat、Task、Trigger、Attempt、Run 领域逻辑与 store |
-| [`@mininglamp-oss/octo-harness-daemon`](octo-harness-daemon/README.md) | durable queue、调度、恢复和 run wait/cancel |
-| [`@mininglamp-oss/octo-harness-adapter-host`](octo-harness-adapter-host/README.md) | adapter registry、invoke lifecycle 与 NDJSON RPC |
-| [`@mininglamp-oss/octo-harness-adapter-sdk`](octo-harness-adapter-sdk/README.md) | adapter 定义、CLI subprocess 与 probe helpers |
-| [`@mininglamp-oss/octo-harness-acp-client`](octo-harness-acp-client/README.md) | CodeBuddy ACP JSON-RPC client |
-| [`@mininglamp-oss/octo-harness-dify-client`](octo-harness-dify-client/README.md) | Dify HTTPS/SSE、认证、probe 与停止请求 |
+| [`@mininglamp-oss/octo-harness-protocol`](octo-harness-protocol/README.md) | 各层共用的类型契约：请求、事件、envelope |
+| [`@mininglamp-oss/octo-harness-core`](octo-harness-core/README.md) | 领域模型与执行引擎：Agent / 会话 / 触发器 / 任务 / Run 的关系与状态机 |
+| [`@mininglamp-oss/octo-harness-daemon`](octo-harness-daemon/README.md) | 后台编排：受理与执行分离、定时触发、崩溃恢复、等待与取消 |
+| [`@mininglamp-oss/octo-harness-adapter-host`](octo-harness-adapter-host/README.md) | 适配器宿主：将统一请求路由到具体适配器，保证生命周期与单一终态 |
+| [`@mininglamp-oss/octo-harness-adapter-sdk`](octo-harness-adapter-sdk/README.md) | 适配器开发 SDK：子进程、按行读取 JSON、探测、清理 |
+| [`@mininglamp-oss/octo-harness-acp-client`](octo-harness-acp-client/README.md) | CodeBuddy 使用的 ACP JSON-RPC stdio 客户端 |
+| [`@mininglamp-oss/octo-harness-dify-client`](octo-harness-dify-client/README.md) | Dify 使用的 HTTPS + SSE 客户端（认证、探测、停止） |
 
 所有 `packages/*` 的目录名和 npm 非 scope 部分保持一致。provider packages 使用 `packages/octo-harness-adapter-<provider>` 与 `@mininglamp-oss/octo-harness-adapter-<provider>`。
 

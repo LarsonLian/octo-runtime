@@ -1,70 +1,63 @@
 # @mininglamp-oss/octo-harness-adapter-opencode
 
-OpenCode provider adapter。
+Octo Harness 的 OpenCode 适配器：将本地 OpenCode CLI 接入统一的 Harness 调用模型，组装并执行单次 `opencode run --format json`，并将其逐行输出的 JSON 事件翻译为 Harness 的 canonical event。
 
 Adapter type：`opencode`
 
-## 作用与适用场景
+## 定位与职责
 
-把本地 `opencode run --format json` 接入 Octo Harness。适合使用 OpenCode provider/model 配置执行代码任务，并希望获得统一 session、text、tool、usage、terminal event 与取消语义的场景。
+OpenCode 是“单次执行后退出”的 CLI：将 prompt 作为命令行参数传入，以 `--format json` 模式在 stdout 上逐行输出 JSON 事件（模型输出、工具调用、token 用量等），执行完毕即退出。
 
-它不管理 OpenCode provider 账号，也不把 OpenCode agent 概念自动映射成 Octo Harness Agent。
+将其接入 Harness 需解决以下具体问题：
 
-## 设计原则
+- 如何注入 Harness 的上下文，同时不破坏用户既有的 OpenCode 配置；
+- 其 JSON 事件采用 OpenCode 自有格式（`step_start`、`text` part、`tool` part 的 `state.status` 等），上层无法识别；
+- 执行完毕即干净退出，不发出“结束”事件，需由适配器补全收尾；
+- 危险的自动批准（`--auto`，使 provider 不再逐项询问即可修改文件）绝不能默认开启。
 
-- harness instructions 通过临时文件加入 inline config，不改写用户持久配置。
-- OpenCode session ID 保持 opaque，并使用 `--session` 恢复。
-- 原生 part/state 只在 adapter 内转换成 canonical event。
-- `--auto` 只在显式 `autoApprove=true` 时启用。
-- provider CLI 的 cwd 来自 Agent workdir，但真正访问边界由外部权限机制决定。
+本适配器处理上述全部问题：以临时文件注入上下文、翻译 JSON 事件、在成功退出时合成收尾事件、仅在显式要求时附加 `--auto`。它不管理 OpenCode 的 provider 账号，也不会将 OpenCode 自身的 agent 概念自动映射为 Harness Agent。
 
-## 它运行在哪里
+需与 OpenClaw 区分：OpenCode 与 OpenClaw 是两个不同的适配器、两个不同的可执行文件、两套不同的 session 格式。
 
-这是一个 **本地 OpenCode CLI subprocess adapter**。adapter-host 在当前节点为每次 invocation 启动 `opencode run --format json`，读取 stdout JSON events 并转换成 Octo Harness canonical events。
+## 工作原理
 
-OpenCode CLI 与文件工具在 host 节点执行；模型位置由 OpenCode provider 配置决定，通常是远程服务。不要把 OpenCode 和 OpenClaw 混淆：它们是两个 adapter、两个 executable 和两套 session 格式。
+`buildOpenCodeCommand` 先组装 argv 与环境变量，JSON CLI 助手启动子进程，`normalizeOpenCodeEvent` 将每行 JSON 翻译为 canonical event，进程正常退出时 `onSuccess` 补全收尾。
 
-| 项目 | 当前实现 |
-|---|---|
-| Process model | 每次 invocation 一个 `opencode run` 子进程 |
-| Native transport | argv message + stdout JSON events |
-| Workdir | Octo Harness Agent 的 `workdir`，作为 CLI cwd；本身不是 sandbox |
-| Session resume | `--session <opencode-session-id>` |
-| Control instructions | mode `0600` 临时文件 + inline config |
-| User prompt | OpenCode positional argv |
-| 默认权限 | provider 正常询问；`autoApprove=true` 时传 `--auto` |
-| 本机验证版本 | OpenCode `1.18.21`，2026-08-28 |
-
-## 环境准备
-
-1. 安装 Node.js 20+，在 `octo-harness` 根目录执行 `pnpm install`。
-2. 安装 OpenCode CLI，使 `opencode` 位于 daemon/host 的 `PATH`。
-3. 配置至少一个 provider 和凭证。
-
-```bash
-opencode --version
-opencode auth list
+```mermaid
+flowchart TD
+    A[InvokeRequest] --> B[buildOpenCodeCommand]
+    B --> B1[写入 0600 临时 instructions.md]
+    B --> B2[合并进 OPENCODE_CONFIG_CONTENT<br/>不覆盖用户 instructions]
+    B --> B3[组装 argv: run --format json<br/>--session? --model? --auto?]
+    B --> C[opencode run 子进程]
+    C -->|stdout 每行一条 JSON| D[normalizeOpenCodeEvent]
+    D --> E[session.update / message.delta<br/>tool_call.* / usage.update]
+    D -->|native.type == error| F[run.error]
+    C -->|正常退出| G[onSuccess: message.update + run.finished]
+    C -->|清理| H[cleanup 删除临时目录]
 ```
 
-需要新增 provider 时使用当前 CLI 的认证入口：
+翻译规则（`normalizeOpenCodeEvent`）如下：
 
-```bash
-opencode auth login
-```
+1. `step_start` 与 `session.created` 映射为 `session.update`（记录 OpenCode 的 session ID，供下次恢复）；
+2. `text` part 映射为 `message.delta`；
+3. `tool` part 的 `state.status === "running"` 映射为 `tool_call.create`；`completed` 与 `error` 映射为 `tool_call.update`；
+4. `step_finish` 映射为 `usage.update`（含 tokens 与 cost）；
+5. `error` 事件映射为 `run.error`（内联发出，这是唯一由 normalizer 直接产出的终态）；
+6. 进程正常退出但 provider 未给出终态时，`onSuccess` 合成 `message.update` 与 `run.finished`。
 
-具体 provider/model 名称随本地 OpenCode 配置变化；不要把示例模型当成跨环境固定值。
+## 使用
 
-## 创建 Agent
+首先启动 daemon：
 
 ```bash
 cd /absolute/path/to/octo-harness
 pnpm daemon
 ```
 
-另一个终端：
+在另一终端中探测可用性并创建 Agent：
 
 ```bash
-cd /absolute/path/to/octo-harness
 pnpm cli adapter probe opencode
 
 pnpm cli agent create \
@@ -74,7 +67,7 @@ pnpm cli agent create \
   --model provider/model
 ```
 
-然后使用统一 Chat 流程：
+随后走统一的 Chat 流程：
 
 ```bash
 pnpm cli chat create --agent <agent-id> --title "OpenCode review"
@@ -83,58 +76,28 @@ pnpm cli run wait <run-id>
 pnpm cli run events <run-id>
 ```
 
-## 可配置项
+## 配置
 
-| `agent create` 参数 | `agentConfig` 字段 | 作用 |
+| `agent create` 参数 | `agentConfig` 字段 | 拼入命令行 |
 |---|---|---|
-| `--workdir DIR` | `workdir` | OpenCode cwd 和预期代码目标，不构成文件访问隔离 |
-| `--model provider/model` | `model` | 传给 `opencode run --model` |
-| `--auto-approve` | `autoApprove` | 传给危险的 `--auto` |
+| `--workdir DIR` | `workdir` | 子进程 cwd；本身不构成文件访问隔离 |
+| `--model provider/model` | `model` | `--model provider/model` |
+| `--auto-approve` | `autoApprove` | 危险的 `--auto` |
 
-`--auto-approve` 会允许 provider 自动批准没有被显式拒绝的权限。只应在受控 workdir 和外部隔离节点使用。
+实际命令形态：首次 turn 为 `opencode run --format json [--model …] [--auto] <prompt>`；后续 turn 会附加 `--session <provider-session-id>` 以恢复会话。
 
-## 实际命令形态
+## 约束与注意事项
 
-首次 turn：
+- **`--auto` 具有危险性**：它使 provider 自动批准未被显式拒绝的权限（可直接修改文件）。仅应在受控 workdir 与外部隔离的节点上开启，默认关闭。
+- **用户 prompt 出现在 argv 中**：同机的进程检查工具可能读取到它，不适合承载 secret。若需更强的隐私保障，应改用 OpenCode server/API 或引入 stdin carrier，而非假定 argv 已被隐藏。
+- **上下文经临时文件注入**：`appendInstructions` 写入一个 `0600` 临时 Markdown，追加到 `OPENCODE_CONFIG_CONTENT` 中已有的 `instructions` 列表末尾，合并结果注入子进程环境，不覆盖用户原有配置。`OPENCODE_CONFIG_CONTENT` 必须为合法 JSON，非法值将在 spawn 前失败。
+- **每次 invocation 均为一次性子进程**，无常驻 daemon。session ID 由 Core 保存，下次 Chat turn 或 Task 续跑时自动经 `--session` 恢复。
+- **未暴露 OpenCode 的 `--fork` 与 `--agent` 等原生能力**。公共 CLI 的 `--provider-agent` 目前仅被 OpenClaw 适配器消费，不能用于配置 OpenCode agent。
+- **`probe` 仅检查可执行文件是否存在**，不验证 provider 凭证、模型或网络。取消由 host 保证最终仅发出一个 `run.stopped`；当前通用 subprocess runtime 尚不具备完整的进程组回收保证。
 
-```text
-opencode run --format json [--model provider/model] [--auto] <user-prompt>
-```
+## 相关文档
 
-后续 turn：
-
-```text
-opencode run --format json --session <provider-session-id> [--model ...] [--auto] <user-prompt>
-```
-
-OpenCode 原生支持 `--fork` 和 `--agent`，但当前 Octo Harness adapter 没有暴露这两个能力。公共 CLI 的 `--provider-agent` 目前只由 OpenClaw adapter 消费，不能用它配置 OpenCode agent。
-
-## Prompt、配置与 session
-
-daemon instructions 写到 `0600` 临时 Markdown 文件。adapter 读取已有 `OPENCODE_CONFIG_CONTENT`，保留其中的 `instructions`，再把临时文件追加到列表中，并把合并结果注入子进程环境。
-
-用户 prompt 作为 `opencode run` positional message 出现在 argv。这意味着同机进程检查工具可能看到 prompt；如需更强隐私，应改用 OpenCode server/API 或增加 stdin/message-file carrier，而不是声称当前实现已经隐藏 argv。
-
-- `step_start/session.created` -> `session.update`。
-- text part -> `message.delta`。
-- running tool part -> `tool_call.create`。
-- completed/error tool part -> `tool_call.update`。
-- step finish -> `usage.update`。
-- structured error -> `run.error`。
-- 进程正常退出且 provider 未发 terminal -> adapter 合成 message terminal 和 `run.finished`。
-
-Core 保存 OpenCode session ID，后续 Chat turn 或 Task continuation 自动恢复。
-
-## 取消与限制
-
-`run cancel` abort 当前 OpenCode CLI。host 保证最终只有一个 `run.stopped`。
-
-当前限制：
-
-- 用户 prompt 在 argv 中，不适合含 secret 的请求。
-- 不暴露 OpenCode agent、variant、thinking、attach/server、fork 等选项。
-- `OPENCODE_CONFIG_CONTENT` 必须是合法 JSON；非法值会在 spawn 前失败。
-- `probe` 只检查 executable，不检查 provider credential、model 或 network。
-- 当前通用 subprocess runtime 没有完整进程组回收保证。
-
-实现：[src/index.ts](src/index.ts)。公共使用流程见 [Adapter Guide](../README.md)。
+- 事件修整与终态兜底：[Adapter Host](../octo-harness-adapter-host/README.md)
+- Provider adapter 总览：[Provider Adapters](../../docs/05-provider-adapters.md)
+- Prompt 与 workdir 约定：[Prompt And Workdir](../../docs/04-prompt-and-workdir.md)
+- Adapter 编写指南：[Adapter Authoring](../../docs/08-adapter-authoring.md)

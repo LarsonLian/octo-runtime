@@ -1,40 +1,44 @@
 # @mininglamp-oss/octo-harness-protocol
 
-Octo Harness 的 provider-neutral 协议包。它定义 Core、Adapter Host 和所有 provider adapter 共同使用的 `InvokeRequest`、`CanonicalEvent`、`EventEnvelope`、provider session、Channel Context 与 capability 类型。
+Octo Harness 的协议包：定义 Core、Adapter Host 与所有 provider 适配器共用的类型契约与运行时校验，包括 `InvokeRequest`、`CanonicalEvent`、`EventEnvelope`、provider 会话与 capability。它与具体 provider 及传输方式均无关。
 
-## 作用
+## 定位与职责
 
-- 把 Codex、Claude Code、CodeBuddy、OpenCode、OpenClaw 的原生输出收敛为稳定事件。
-- 为一次调用提供统一输入，包括 harness session、run、prompt、workdir、控制指令和取消信号。
-- 约束平台无关的 `ChannelScope`、`ChannelMessageFact`、sync/snapshot contract，并用 `modelInput ?? prompt` 区分 provider 输入和产品显示文本。
-- 用 `EventEnvelope` 为事件补充 `runId`、`sessionId`、序号和时间戳。
-- 提供运行时边界校验，避免动态 adapter 用错误对象污染 Core。
+各 provider 的原生事件格式差异很大。若缺少统一契约，会带来两个问题：其一，上层（UI、存储）被 provider 绑定，需为每家单独解析，更换 provider 即需重写；其二，适配器作为插件，一个格式错误的事件对象可能污染 Core 的状态。
 
-## 设计原则
+本包提供一套 **provider 无关、传输无关** 的类型定义与 `assert*` 校验函数：规范一次调用的输入（`InvokeRequest`）、事件的形态（`CanonicalEvent`）、以及持久化时的封装（`EventEnvelope`），并在插件边界上进行运行时校验。
 
-1. **Provider-neutral**：协议中不出现某个 CLI 的原生事件名或命令参数。
-2. **Transport-neutral**：同一消息模型可承载在进程内调用、NDJSON stdio 或未来 WebSocket 上。
-3. **终态唯一**：一次 run 最终只能收敛为 `run.finished`、`run.error` 或 `run.stopped`。
-4. **Session opaque**：Core 只持久化 provider session，不解释 provider 私有字段。
-5. **编译期与运行时双校验**：TypeScript 类型服务内部调用，assert 函数保护动态插件边界。
+## 工作原理
 
-## 适用场景
+同一条信息存在三个层次，越靠上越稳定。provider 的原生事件须先由适配器翻译为 `CanonicalEvent`，Core 在持久化前再封装为 `EventEnvelope`：
 
-- 编写新的 Octo Harness adapter 或 host transport。
-- 消费统一的 message、tool call、usage、surface 和 run 事件。
-- 将本地 adapter-host 接到远端控制面，同时保持上层领域逻辑不变。
+```mermaid
+flowchart LR
+    Native["provider 原生事件<br/>(codex thread.item / claude stream-json 等)"]
+    Canonical["CanonicalEvent<br/>{ type, payload }"]
+    Envelope["EventEnvelope<br/>+ id / seq / tsMs / sessionId / runId"]
 
-不适合直接表达 provider 的完整私有协议；无法统一的字段应保留在 adapter 内，必要时放入允许扩展的 payload 或 provider session。
+    Native -->|适配器翻译| Canonical
+    Canonical -->|Core: envelope()| Envelope
+    Envelope -->|按 (runId, seq) 幂等追加| Store[(Store)]
+```
 
-## 使用示例
+关键约定：
+
+1. **三个 ID 互不混淆**：Harness Session ID（一段稳定对话）、Harness Run ID（一次执行）、Provider Session ID（Codex thread / Claude UUID 等）是三个独立标识。`seq` 仅在单个 run 内单调递增，消费方按 `(runId, seq)` 排序与去重。
+2. **终态唯一**：一次 run 最终只能收敛为 `run.finished` / `run.error` / `run.stopped` 之一。
+3. **会话凭证不透明**：Core 仅搬运 provider session，不解释其私有字段。
+4. **`modelInput ?? prompt`**：发送给模型的文本与用于产品展示的文本可以不同，从而使“发送给模型的隐藏上下文”精确地只发送一次。
+5. **编译期与运行时双重校验**：TypeScript 负责编译期，`assert*` 函数保护动态插件边界。
+
+## 使用
 
 ```ts
 import {
   assertCanonicalEvent,
   envelope,
   isTerminal,
-  type CanonicalEvent,
-  type InvokeRequest
+  type CanonicalEvent
 } from "@mininglamp-oss/octo-harness-protocol";
 
 const event: CanonicalEvent = {
@@ -42,55 +46,43 @@ const event: CanonicalEvent = {
   payload: { channel: "final", text: "done" }
 };
 
-assertCanonicalEvent(event);
+assertCanonicalEvent(event);                                  // 边界校验
 const stored = envelope({ id: "run-1", sessionId: "session-1" }, 1, event);
 console.log(stored.seq, isTerminal(event));
 ```
 
-### Tool call 原始输入
+以下两个细节属于正式契约，需特别注意：
 
-工具输入属于 canonical protocol 的正式合同，不是 UI 推导字段：
+- **工具输入是契约，而非 UI 推导字段**：完整输入位于 `tool_call.create.payload.args`；分片型 provider 先发送空 `args`，再按同一 `id` 发送多个 `tool_call.delta.argsDelta`，消费方须按顺序拼接 JSON 片段、完整后仅解析一次。`tool_call.update` 仅负责收尾，不能以其 output 反推输入。
+- **`channel=analysis` 不等同于可公开**：仅当 `exposure` 明确为 `public_summary` / `public_plan` 时方可进入公开展示；缺失、`unknown`、`private_reasoning` 一律视为不可公开——不应仅依据 `channel=analysis` 判断。
 
-- 非分片 provider 在 `tool_call.create.payload.args` 中发送完整结构化输入；命令工具的原始指令位于 `args.command`。
-- 分片 provider 可以先用空 `args` 创建工具，再按同一 `id` 发送多个 `tool_call.delta.payload.argsDelta`。consumer 必须按事件顺序拼接全部 JSON 字符串，完整后只解析一次。
-- `tool_call.update` 只关闭 lifecycle 并携带最终 `status/output/error`，不能用 output 反推或覆盖输入。
+## 协议真值：JSON Schema 与代码生成
 
-canonical event ledger 保存原始输入用于执行追踪；向产品 surface 投影前必须在服务端完成授权过滤与敏感字段脱敏。
-
-### Analysis 暴露分类
-
-`channel=analysis` 只区分消息通道，不代表内容可以直接公开。内置 adapter 会额外写入：
-
-- `exposure=public_summary | public_plan | private_reasoning | unknown`；
-- `provenance={provider,nativeEvent}`，记录 adapter 判定所依据的 provider 原生事件。
-
-只有 `public_summary` 和 `public_plan` 可以进入公开 Presentation。旧 adapter 缺少 `exposure` 时，Adapter Host 会补成 `unknown`；显式 exposure 没有合法 provenance 会被协议校验拒绝。consumer 仍必须把缺失、`unknown` 和 `private_reasoning` 当作不可公开内容，不能只检查 `channel=analysis`。
-
-事件生命周期和 JSON-RPC 映射见 [Architecture](../../docs/01-architecture.md) 与 [Transport And Multi-node](../../docs/09-transport-and-multinode.md)。
-
-## 协议真值：JSON Schema + Codegen
-
-数据形状类型不再手写，而是以 `schema/protocol.schema.json`（JSON Schema draft-07，中文 `description`）为唯一来源，生成 `src/generated/protocol-types.ts`：
+数据结构类型并非手写，而是以 `schema/protocol.schema.json`（JSON Schema draft-07）为唯一真值自动生成：
 
 ```text
-schema/protocol.schema.json → scripts/gen-types.mjs → src/generated/protocol-types.ts → src/index.ts 组合
+schema/protocol.schema.json → scripts/gen-types.mjs → src/generated/protocol-types.ts → src/index.ts 组合导出
 ```
 
-- **schema 覆盖**：`ProviderSession`、`AgentConfig`、`CanonicalEventPayload`、`ToolCallCreatePayload`、`ToolCallDeltaPayload`、`ToolCallUpdatePayload`、`RunIdentity`、`InvokeRequestWire`、`MessageChannel`、`MessageExposure`、`MessageProvenance` 等可 JSON 序列化的结构体。
-- **仍手写**（不是纯数据，codegen 无法表达）：`CANONICAL_EVENT_TYPES` 等运行时枚举常量、泛型 `CanonicalEvent<TType>`、以及带 `AbortSignal` 的 `InvokeRequest`（= 生成的 `InvokeRequestWire` 交叉 `signal`）。
-- **公共导出面不变**：所有类型名与运行时函数保持原样，消费方无需改动。
+- **自动生成**：各类可 JSON 序列化的结构体（`ProviderSession`、`AgentConfig`、`CanonicalEventPayload`、`InvokeRequestWire` 等）。
+- **仍需手写**（非纯数据，代码生成无法表达）：运行时枚举常量（如 `CANONICAL_EVENT_TYPES`）、泛型 `CanonicalEvent<TType>`，以及带 `AbortSignal` 的 `InvokeRequest`（即 `InvokeRequestWire` 交叉一个 `signal`）。
 
-为什么选 JSON Schema 而非 Protobuf/Thrift、与手写 TS 的对比、以及为后续 Go/Rust daemon 抽取的意义，见 [Protocol Schema And Codegen](../../docs/10-protocol-schema-codegen.md)。
-
-改协议的流程：
+修改协议的流程：
 
 ```bash
-# 1. 编辑 schema
-$EDITOR schema/protocol.schema.json
-# 2. 重新生成（build 前自动执行）
-pnpm gen
-# 3. 构建
-pnpm build
+$EDITOR schema/protocol.schema.json   # 1. 修改 schema
+pnpm gen                              # 2. 重新生成（build 前会自动执行）
+pnpm build                            # 3. 构建
 ```
 
-`src/generated/protocol-types.ts` 由脚本生成、带「勿手改」横幅，任何改动都应通过 schema 完成。
+`src/generated/*` 带有“请勿手改”横幅，任何改动均须经由 schema。
+
+## 约束与注意事项
+
+- 本包不表达某个 provider 的完整私有协议；无法统一的字段应保留在适配器内，必要时置于可扩展的 payload 或 provider session 中。
+- 选用 JSON Schema（而非 Protobuf/Thrift）的权衡，以及为将来 Go/Rust daemon 抽取类型的意义，见下方文档。
+
+## 相关文档
+
+- 事件生命周期与 JSON-RPC 映射：[Architecture](../../docs/01-architecture.md)
+- 为何选用 JSON Schema：[Protocol Schema And Codegen](../../docs/10-protocol-schema-codegen.md)

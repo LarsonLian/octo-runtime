@@ -1,32 +1,56 @@
 # @mininglamp-oss/octo-harness-core
 
-Octo Harness 的领域模型与执行引擎。它管理 Agent、Chat/Task Session、Trigger、Occurrence、Attempt、Run、事件流和 provider session binding，但不负责启动 daemon 或解析任何 provider CLI 输出。
+Octo Harness 的领域模型与执行引擎。它定义 Agent、会话（Session）、任务（Task）、触发器（Trigger）、尝试（Attempt）与运行（Run）之间的关系与状态迁移，负责组装调用请求、驱动执行并持久化事件；但不启动任何 CLI，也不感知具体 provider。
 
-## 作用
+## 定位与职责
 
-- 注册 Agent，并验证对应 adapter 已由 host 加载。
-- 创建 Chat session，或把 Trigger 幂等物化为 Task session。
-- 把 Chat turn 和 Task attempt 统一排队为 Run。
-- 生成可移植 harness context/control instructions，调用 `HarnessHost` 并持久化 canonical events。
-- 提供内存 store 和单机 JSON 文件 store 参考实现。
+一个 Agent 平台需要回答一组基础问题：一次“对话”与一次“任务执行”是什么关系、多轮如何延续；定时、事件、手动等多种触发方式如何避免重复执行；进程崩溃重启后哪些执行有效、哪些需要重来；各 provider 的会话恢复凭证（如 Codex thread、Claude UUID）如何存储并在下一轮回传。
 
-## 设计原则
+本包将这些问题收敛为一套 **与 provider 无关** 的领域模型和状态机。更换持久层、控制面或新增 provider，均无需改动此处的执行语义。它刻意不承担的职责包括：网络服务、长期调度、进程隔离与多节点协调——这些由上层 app 与 daemon 负责。
 
-1. **Chat 与 Task 在 Run 层统一**：两者共享执行、事件、取消和 provider session；Task 额外拥有 Trigger 与 Attempt。
-2. **Core 不认识 provider**：新增 adapter 不应在 Core 中增加 `if adapterType === ...`。
-3. **Trigger 幂等**：`triggerId + externalEventId` 只物化一个 occurrence/task。
-4. **Provider session 旁路持久化**：恢复标识不写进用户文本，也不由 Core 解释。
-5. **状态先于执行**：queued/running/terminal 状态和事件均通过 Store 明确提交。
+## 核心概念
 
-## 适用场景
+| 概念 | 含义 | 要点 |
+|---|---|---|
+| **Agent** | 一份配置：绑定某个 adapter 及其参数 | 不代表一次执行，也不保存对话历史 |
+| **Session** | 长期会话容器，分 `chat` 与 `task` 两类 | 保存 provider 会话恢复凭证 |
+| **Trigger** | 可重复触发的规则 | 分 manual / event / interval |
+| **Occurrence** | 触发器命中一次外部事件的记录 | 以 `triggerId + externalEventId` 去重 |
+| **Task** | 持久业务任务 | 拥有一个 Session，可多次延续 |
+| **Attempt** | 对某个 Task 的一次尝试 | 记录来源与序号 |
+| **Run** | 一次执行（排队 → 运行 → 终态） | Chat 与 Task 最终都收敛为 Run |
 
-- 在自定义 daemon、桌面应用或测试进程中复用 Octo Harness 的 Chat/Task 建模。
-- 替换控制面 transport 或持久层，而不重写 Agent 执行语义。
-- 用 `MemoryStore` 编写快速契约测试，或用 `JsonFileStore` 运行单机 reference deployment。
+## 工作原理
 
-本包不提供网络服务、长期调度、进程隔离或多节点 lease。生产部署应通过单独 app 组装，并替换 reference JSON store。
+对话（Chat）与触发器→任务（Trigger → Task）两条入口最终都收敛为同一种执行单元——**Run**。Run 是唯一“可执行、产生事件、可取消、可终态”的对象。
 
-## 使用示例
+```mermaid
+flowchart TD
+    subgraph 入口A[对话路径]
+        Chat[Chat Session] --> ChatTurn[queueChatTurn]
+    end
+    subgraph 入口B[任务路径]
+        Trig[Trigger] -->|命中并去重| Occ[Occurrence]
+        Occ --> Task[Task + Session]
+        Task --> Att[Attempt]
+    end
+    ChatTurn --> Run[Run：queued]
+    Att --> Run
+    Run -->|executeRun| Host[[HarnessHost.invoke]]
+    Host -->|流式 CanonicalEvent| Proj[状态投影与持久化]
+    Proj -->|每步一个事务| Store[(Store)]
+    Proj -->|终态| Term[run.finished / error / stopped]
+```
+
+设计上遵循若干关键约束：
+
+1. **Chat 与 Task 在 Run 层统一**：二者共用执行、事件、取消与 provider 会话；Task 额外具备 Trigger 与 Attempt。因此下层只需面向 Run。
+2. **Core 不感知 provider**：新增 adapter 不应在 Core 中引入任何 `if (adapterType === …)` 分支，差异应止于 adapter。
+3. **触发器幂等**：同一 `triggerId + externalEventId` 仅物化一个 occurrence/task，webhook 或调度重试不会重复执行。
+4. **状态先于执行落盘**：Run 在调用 provider 之前即将 `running` 写入 Store，使崩溃恢复能够区分“尚未启动”与“已启动但失联”。
+5. **provider 会话为旁路状态**：恢复凭证由 adapter 通过 `session.update` 上报，Core 仅负责存储与回传，不写入用户可见文本，也不解释其内容。
+
+## 使用
 
 ```ts
 import { HarnessEngine, MemoryStore } from "@mininglamp-oss/octo-harness-core";
@@ -36,8 +60,9 @@ import { codexAdapter } from "@mininglamp-oss/octo-harness-adapter-codex";
 const host = new AdapterHost();
 host.register(codexAdapter);
 
-const store = new MemoryStore();
+const store = new MemoryStore();               // 测试/示例；单机持久化使用 SqliteStore
 const engine = new HarnessEngine({ store, host });
+
 const agent = await engine.registerAgent({
   name: "demo",
   adapterType: "codex",
@@ -48,4 +73,14 @@ const chat = await engine.createChatSession({ agentId: agent.id });
 await engine.sendChat(chat.id, "Explain the current project");
 ```
 
-完整领域关系见 [Architecture](../../docs/01-architecture.md)。
+## 约束与注意事项
+
+- **两种 Store 参考实现**：`MemoryStore`（进程内、退出即失，适用于契约测试）与 `SqliteStore`（单机、WAL、掉电耐久，是 daemon 的本地事实源）。生产环境替换持久层即替换 `Store` 接口，无需改动执行语义。
+- **`Task.status` 当前跟随 `RunStatus`**，是已知的简化：尚未区分“业务完成”与“执行完成”。扩展 Task 时不应默认二者等同。
+- 本包不提供网络、调度、隔离与多节点 lease；生产部署需由独立 app 组装。
+
+## 相关文档
+
+- 领域关系与事件契约：[Architecture](../../docs/01-architecture.md)
+- 事件三层模型：[Protocol](../octo-harness-protocol/README.md)
+- 后台编排与恢复：[Daemon](../octo-harness-daemon/README.md)
