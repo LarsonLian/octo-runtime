@@ -121,6 +121,9 @@ test("Agent Work channel context sync becomes one provider turn and commits only
     await waitFor(() => runtime.status.channelContext.activeSnapshots === 0);
 
     assert.equal(registration.capabilities.channel_context.store, "sqlite");
+    assert.equal(registration.capabilities.channel_context.serializer_version, "channel-context-jsonl-v2");
+    assert.equal(registration.capabilities.channel_context.message_retention_ms, 24 * 60 * 60 * 1000);
+    assert.equal(registration.capabilities.channel_context.active_snapshot_timeout_ms, 24 * 60 * 60 * 1000);
     assert.equal(providerRequest.prompt.includes("first background"), false);
     assert.match(providerRequest.modelInput, /first background/);
     assert.match(providerRequest.modelInput, /second background/);

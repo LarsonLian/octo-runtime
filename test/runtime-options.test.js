@@ -163,6 +163,8 @@ test("channel context rollout flags are independent and use a separate database"
     "--channel-context-projection", "delta",
     "--channel-context-provider-persistence", "append_only",
     "--channel-context-db", ".tmp/channel-context-custom.db",
+    "--channel-context-snapshot-retention-ms", "604800000",
+    "--channel-context-active-snapshot-timeout-ms", "86400000",
     "--channel-context-max-projected-messages", "25"
   ], {
     OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN: "runtime-token"
@@ -172,9 +174,13 @@ test("channel context rollout flags are independent and use a separate database"
     projection: "delta",
     providerPersistence: "append_only",
     storePath: resolve(".tmp/channel-context-custom.db"),
+    snapshotRetentionMs: 604800000,
+    activeSnapshotTimeoutMs: 86400000,
     maxProjectedMessages: 25
   });
   const args = daemonRuntimeArguments(paths);
   assert.equal(args[args.indexOf("--channel-context-store") + 1], "sqlite");
+  assert.equal(args[args.indexOf("--channel-context-snapshot-retention-ms") + 1], "604800000");
+  assert.equal(args[args.indexOf("--channel-context-active-snapshot-timeout-ms") + 1], "86400000");
   assert.equal(args[args.indexOf("--channel-context-max-projected-messages") + 1], "25");
 });

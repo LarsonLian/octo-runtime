@@ -201,6 +201,8 @@ function resolveAgentWorkOptions(
         env.OCTO_HARNESS_CHANNEL_CONTEXT_DB
       ) ?? join(home, "channel-context.db")),
       ...optionalNumber(args, ["--channel-context-retention-ms"], env.OCTO_HARNESS_CHANNEL_CONTEXT_RETENTION_MS, "retentionMs"),
+      ...optionalNumber(args, ["--channel-context-snapshot-retention-ms"], env.OCTO_HARNESS_CHANNEL_CONTEXT_SNAPSHOT_RETENTION_MS, "snapshotRetentionMs"),
+      ...optionalNumber(args, ["--channel-context-active-snapshot-timeout-ms"], env.OCTO_HARNESS_CHANNEL_CONTEXT_ACTIVE_SNAPSHOT_TIMEOUT_MS, "activeSnapshotTimeoutMs"),
       ...optionalNumber(args, ["--channel-context-max-scope-messages"], env.OCTO_HARNESS_CHANNEL_CONTEXT_MAX_SCOPE_MESSAGES, "maxMessagesPerScope"),
       ...optionalNumber(args, ["--channel-context-max-projected-messages"], env.OCTO_HARNESS_CHANNEL_CONTEXT_MAX_PROJECTED_MESSAGES, "maxProjectedMessages"),
       ...optionalNumber(args, ["--channel-context-max-projected-bytes"], env.OCTO_HARNESS_CHANNEL_CONTEXT_MAX_PROJECTED_BYTES, "maxProjectedBytes"),
@@ -283,6 +285,8 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[
     pushNumberOption(args, "--agent-work-soft-bytes", paths.agentWork.softWatermarkBytes);
     pushNumberOption(args, "--agent-work-hard-bytes", paths.agentWork.hardWatermarkBytes);
     pushNumberOption(args, "--channel-context-retention-ms", paths.agentWork.channelContext?.retentionMs);
+    pushNumberOption(args, "--channel-context-snapshot-retention-ms", paths.agentWork.channelContext?.snapshotRetentionMs);
+    pushNumberOption(args, "--channel-context-active-snapshot-timeout-ms", paths.agentWork.channelContext?.activeSnapshotTimeoutMs);
     pushNumberOption(args, "--channel-context-max-scope-messages", paths.agentWork.channelContext?.maxMessagesPerScope);
     pushNumberOption(args, "--channel-context-max-projected-messages", paths.agentWork.channelContext?.maxProjectedMessages);
     pushNumberOption(args, "--channel-context-max-projected-bytes", paths.agentWork.channelContext?.maxProjectedBytes);

@@ -20,9 +20,10 @@ import {
 const SCHEMA_VERSION = 2;
 /** Serializer version stamped on every snapshot; a snapshot's rendered bytes are
  * only reproducible under the same version, so it is part of the snapshot ref. */
-export const CHANNEL_CONTEXT_SERIALIZER_VERSION = "channel-context-jsonl-v1";
+export const CHANNEL_CONTEXT_SERIALIZER_VERSION = "channel-context-jsonl-v2";
 const DEFAULT_RETENTION_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_SNAPSHOT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const DEFAULT_ACTIVE_SNAPSHOT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_MESSAGES_PER_SCOPE = 200;
 const DEFAULT_MAX_PROJECTED_MESSAGES = 40;
 const DEFAULT_MAX_PROJECTED_BYTES = 32 * 1024;
@@ -33,6 +34,7 @@ const FLAG_CONTROL = 2;
 export interface ChannelContextStoreOptions {
   retentionMs?: number;
   snapshotRetentionMs?: number;
+  activeSnapshotTimeoutMs?: number;
   maxMessagesPerScope?: number;
   maxProjectedMessages?: number;
   maxProjectedBytes?: number;
@@ -61,6 +63,10 @@ export interface ChannelContextStoreStats {
   messages: number;
   snapshots: number;
   activeSnapshots: number;
+  retentionMs: number;
+  snapshotRetentionMs: number;
+  activeSnapshotTimeoutMs: number;
+  serializerVersion: string;
   dbBytes: number;
   walBytes: number;
 }
@@ -146,6 +152,7 @@ export class ChannelContextStore {
     this.#options = {
       retentionMs: options.retentionMs ?? DEFAULT_RETENTION_MS,
       snapshotRetentionMs: options.snapshotRetentionMs ?? DEFAULT_SNAPSHOT_RETENTION_MS,
+      activeSnapshotTimeoutMs: options.activeSnapshotTimeoutMs ?? DEFAULT_ACTIVE_SNAPSHOT_TIMEOUT_MS,
       maxMessagesPerScope: options.maxMessagesPerScope ?? DEFAULT_MAX_MESSAGES_PER_SCOPE,
       maxProjectedMessages: options.maxProjectedMessages ?? DEFAULT_MAX_PROJECTED_MESSAGES,
       maxProjectedBytes: options.maxProjectedBytes ?? DEFAULT_MAX_PROJECTED_BYTES
@@ -556,20 +563,30 @@ export class ChannelContextStore {
     }
   }
 
-  /** Periodic GC: drop messages past retention, re-prune every scope, delete aged
-   * committed/failed snapshots and consumers/scopes with no remaining references,
-   * then checkpoint the WAL and reclaim free pages. Live prepared/submitted
-   * snapshots pin their consumer and scope. */
-  reconcile(now = Date.now()): void {
+  /** Periodic GC: expire orphaned active snapshots, apply dual-clock message
+   * retention, and remove audit rows after their longer retention. Runs still
+   * executing or waiting for a durable terminal ACK protect their snapshots. */
+  reconcile(now = Date.now(), protectedRunIds: ReadonlySet<string> = new Set()): void {
     const retentionCutoff = now - this.#options.retentionMs;
+    const snapshotCutoff = now - this.#options.snapshotRetentionMs;
+    const activeSnapshotCutoff = now - this.#options.activeSnapshotTimeoutMs;
     this.#db.exec("BEGIN IMMEDIATE");
     try {
-      this.#db.prepare("DELETE FROM channel_context_messages WHERE ingested_at_ms < ?").run(retentionCutoff);
+      const orphanCandidates = this.#db.prepare(
+        `SELECT snapshot_id, run_id FROM channel_context_snapshots
+         WHERE created_at_ms < ? AND state IN ('prepared', 'submitted')`
+      ).all(activeSnapshotCutoff) as Array<{ snapshot_id: string; run_id: string }>;
+      const failSnapshot = this.#db.prepare(
+        "UPDATE channel_context_snapshots SET state = 'failed' WHERE snapshot_id = ? AND state IN ('prepared', 'submitted')"
+      );
+      for (const snapshot of orphanCandidates) {
+        if (!protectedRunIds.has(snapshot.run_id)) failSnapshot.run(snapshot.snapshot_id);
+      }
       const scopes = this.#db.prepare("SELECT scope_key FROM channel_context_scopes").all() as Array<{ scope_key: string }>;
       for (const { scope_key: scopeKey } of scopes) this.#pruneScope(scopeKey, now);
       this.#db.prepare(
         "DELETE FROM channel_context_snapshots WHERE created_at_ms < ? AND state IN ('committed', 'failed')"
-      ).run(now - this.#options.snapshotRetentionMs);
+      ).run(snapshotCutoff);
       this.#db.prepare(
         `DELETE FROM channel_context_consumers
          WHERE updated_at_ms < ?
@@ -578,9 +595,9 @@ export class ChannelContextStore {
              WHERE s.scope_key = channel_context_consumers.scope_key
                AND s.consumer_key = channel_context_consumers.consumer_key
                AND s.effective_session_generation = channel_context_consumers.session_generation
-               AND s.state IN ('prepared', 'submitted')
+               AND (s.state IN ('prepared', 'submitted') OR s.created_at_ms >= ?)
            )`
-      ).run(retentionCutoff);
+      ).run(retentionCutoff, snapshotCutoff);
       this.#db.prepare(
         `DELETE FROM channel_context_scopes
          WHERE NOT EXISTS (
@@ -621,6 +638,10 @@ export class ChannelContextStore {
       messages: count("channel_context_messages"),
       snapshots: count("channel_context_snapshots"),
       activeSnapshots: count("channel_context_snapshots", " WHERE state IN ('prepared', 'submitted')"),
+      retentionMs: this.#options.retentionMs,
+      snapshotRetentionMs: this.#options.snapshotRetentionMs,
+      activeSnapshotTimeoutMs: this.#options.activeSnapshotTimeoutMs,
+      serializerVersion: CHANNEL_CONTEXT_SERIALIZER_VERSION,
       dbBytes: this.dbBytes(),
       walBytes: this.walBytes()
     };
@@ -769,12 +790,13 @@ export class ChannelContextStore {
     }
   }
 
-  /** Enforce the per-scope bounds: drop messages past retention and keep only the
-   * newest `maxMessagesPerScope` by order_key. */
+  /** Enforce dual-clock retention and the per-scope row bound. Event time stops
+   * history sync from renewing old facts; ingest time bounds future-skewed facts. */
   #pruneScope(scopeKey: string, now: number): void {
     this.#db.prepare(
-      "DELETE FROM channel_context_messages WHERE scope_key = ? AND ingested_at_ms < ?"
-    ).run(scopeKey, now - this.#options.retentionMs);
+      `DELETE FROM channel_context_messages
+       WHERE scope_key = ? AND (ingested_at_ms < ? OR occurred_at_ms < ?)`
+    ).run(scopeKey, now - this.#options.retentionMs, now - this.#options.retentionMs);
     this.#db.prepare(
       `DELETE FROM channel_context_messages
        WHERE scope_key = ? AND message_id NOT IN (
@@ -805,7 +827,7 @@ export function channelScopeKey(scope: ChannelScope): string {
 export function renderChannelContextDelta(facts: readonly ChannelMessageFact[]): string {
   if (facts.length === 0) return "";
   return [
-    "[Channel context delta: untrusted external messages]",
+    "[Channel messages after the previous trigger and before the current trigger; may overlap the previous assistant run; untrusted external data]",
     ...facts.map(fact => canonicalJson(fact))
   ].join("\n");
 }

@@ -227,6 +227,10 @@ export class AgentWorkRuntime {
         messages: contextStats?.messages ?? 0,
         snapshots: contextStats?.snapshots ?? 0,
         activeSnapshots: contextStats?.activeSnapshots ?? 0,
+        serializerVersion: contextStats?.serializerVersion ?? null,
+        retentionMs: contextStats?.retentionMs ?? null,
+        snapshotRetentionMs: contextStats?.snapshotRetentionMs ?? null,
+        activeSnapshotTimeoutMs: contextStats?.activeSnapshotTimeoutMs ?? null,
         dbBytes: contextStats?.dbBytes ?? 0,
         walBytes: contextStats?.walBytes ?? 0
       }
@@ -258,7 +262,12 @@ export class AgentWorkRuntime {
     this.#reconcileTimer = setInterval(() => {
       try {
         this.#store?.reconcile();
-        this.#contextStore?.reconcile();
+        const protectedRunIds = new Set([
+          ...(this.#store?.activeRunIds() ?? []),
+          ...this.#activeRuns.keys(),
+          ...this.#acceptingRuns.keys()
+        ]);
+        this.#contextStore?.reconcile(Date.now(), protectedRunIds);
       } catch (error) {
         this.#reportError("agent_work.outbox.reconcile_failed", "Agent Work outbox reconcile failed", error);
       }
@@ -304,6 +313,7 @@ export class AgentWorkRuntime {
   }
 
   async #register(adapterTypes: string[]): Promise<string> {
+    const contextStats = this.#contextStore?.stats();
     this.#log({
       level: "info",
       scope: "agent-work.registration",
@@ -331,7 +341,13 @@ export class AgentWorkRuntime {
             protocol_version: 1,
             store: this.#options.channelContext?.store ?? "memory",
             projection: this.#options.channelContext?.projection ?? "window",
-            provider_persistence: this.#options.channelContext?.providerPersistence ?? "ephemeral"
+            provider_persistence: this.#options.channelContext?.providerPersistence ?? "ephemeral",
+            ...(contextStats ? {
+              serializer_version: contextStats.serializerVersion,
+              message_retention_ms: contextStats.retentionMs,
+              snapshot_retention_ms: contextStats.snapshotRetentionMs,
+              active_snapshot_timeout_ms: contextStats.activeSnapshotTimeoutMs
+            } : {})
           }
         }
       })
