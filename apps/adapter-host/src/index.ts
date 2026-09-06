@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+// Standalone adapter-host process: load the adapters listed in a JSON manifest,
+// register them into an AdapterHost, then serve invocations over NDJSON JSON-RPC
+// on stdio (the daemon-to-host transport). Kept separate from the daemon so
+// provider processes are isolated behind a process boundary.
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -42,7 +46,8 @@ for (const entry of manifest.adapters) {
     throw new Error(`missing export ${entry.exportName} from ${entry.module}`);
   }
 
-  // manifest 是动态插件边界：先检查工厂和 adapter 形状，再交给 host 注册。
+  // The manifest is a dynamic plugin boundary: validate the factory and adapter
+  // shape before handing the instance to the host for registration.
   const instance: unknown = entry.factory
     ? callFactory(exported, entry.options, entry)
     : exported;
@@ -57,6 +62,8 @@ for (const entry of manifest.adapters) {
 
 new AdapterHostRpcServer({ host, output: process.stdout }).listen(process.stdin);
 
+/** Parse and validate the on-disk manifest. Only version 1 is supported; each
+ * entry names a module, an export, whether that export is a factory, and options. */
 function parseManifest(value: unknown): AdapterManifest {
   const record = asRecord(value, "adapter manifest");
   if (record.version !== 1) throw new TypeError("adapter manifest.version must be 1");
@@ -85,6 +92,8 @@ function callFactory(value: unknown, options: JsonRecord, entry: AdapterManifest
   return factory(options);
 }
 
+/** Structural type guard: only `metadata.type`, a string `capabilities` array and
+ * an `invoke` method are required, so any conforming object can be a hosted adapter. */
 function isHostedAdapter(value: unknown): value is HostedAdapter {
   if (!isRecord(value) || !isRecord(value.metadata)) return false;
   return typeof value.metadata.type === "string" &&

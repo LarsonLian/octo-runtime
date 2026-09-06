@@ -1,16 +1,21 @@
 /**
- * Codex app-server transport 与事件适配层。
+ * Codex app-server transport and event adaptation layer.
  *
- * 与 `codex exec --json` 的单向 NDJSON 不同，app-server 使用 stdin/stdout 上的
- * 双向 JSON-RPC 2.0：Octo Harness 既要发 initialize/thread/turn 请求，也要响应 Codex
- * 主动发来的 approval/elicitation 请求。因此这里没有复用通用 JSON CLI helper，
- * 而是维护 request pending map、notification parser、取消和进程回收状态。
+ * Unlike the one-way NDJSON of `codex exec --json`, the app-server uses
+ * bidirectional JSON-RPC 2.0 over stdin/stdout: Octo Harness both sends
+ * initialize/thread/turn requests and must respond to approval/elicitation
+ * requests that Codex sends back. That is why this does not reuse the generic
+ * JSON CLI helper, but instead maintains a request pending map, notification
+ * parser, cancellation and process-reaping state.
  *
- * 本模块遵守四个关键不变量：
- * - provider session 只有在 turn/start 成功后才对 Core 可见；
- * - 每个 invocation 最多发布一个 run.* 终态；
- * - 只消费当前 active thread 的 notification，避免串流；
- * - 所有 pending RPC 和子进程资源最终都由 close()/finally 收敛。
+ * This module upholds four key invariants:
+ * - the provider session becomes visible to the Core only after turn/start
+ *   succeeds;
+ * - each invocation publishes at most one run.* terminal;
+ * - only notifications for the current active thread are consumed, avoiding
+ *   crosstalk;
+ * - all pending RPCs and subprocess resources eventually converge via
+ *   close()/finally.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
@@ -25,14 +30,14 @@ import {
 const APP_SERVER_REQUEST_TIMEOUT_MS = 30_000;
 const APP_SERVER_CLOSE_GRACE_MS = 500;
 const APP_SERVER_KILL_GRACE_MS = 1_000;
-// stderr 只保留尾部，兼顾错误可诊断性和常驻进程的内存上限。
+// Keep only the tail of stderr, balancing error diagnosability against the memory ceiling of a long-lived process.
 const STDERR_TAIL_LIMIT = 64 * 1024;
 
 type JsonRecord = Record<string, unknown>;
 type RpcId = string | number;
 
 interface PendingRequest {
-  /** 用于在超时或 RPC error 中保留业务方法名，而不是只暴露数字 ID。 */
+  /** Retains the business method name across a timeout or RPC error, rather than exposing only a numeric ID. */
   method: string;
   resolve: (value: unknown) => void;
   reject: (reason: Error) => void;
@@ -50,7 +55,7 @@ export interface CodexAppServerNotification {
 }
 
 export interface CodexAppServerCommand {
-  /** 可执行文件与 app-server 参数；测试可以替换成 fake server。 */
+  /** Executable and app-server args; tests can substitute a fake server. */
   command: string;
   args: string[];
   cwd: string;
@@ -64,7 +69,7 @@ export type CodexAppServerSpawn = (
   options: { cwd: string; env: NodeJS.ProcessEnv }
 ) => ChildProcessWithoutNullStreams;
 
-/** app-server 明确返回的 JSON-RPC error，保留 method、code 和原始 data。 */
+/** A JSON-RPC error the app-server explicitly returned, preserving method, code and raw data. */
 export class CodexAppServerRpcError extends Error {
   constructor(
     readonly method: string,
@@ -77,7 +82,7 @@ export class CodexAppServerRpcError extends Error {
   }
 }
 
-/** 子进程未产生 run 终态就退出时的错误，保留 exit code/signal。 */
+/** Error for when the subprocess exits without producing a run terminal, preserving exit code/signal. */
 export class CodexAppServerProcessError extends Error {
   constructor(message: string, readonly exit: ProcessExit) {
     super(message);
@@ -85,17 +90,19 @@ export class CodexAppServerProcessError extends Error {
   }
 }
 
-/** 生产环境固定使用 stdio transport；注入其他参数只用于测试 server。 */
+/** Production always uses the stdio transport; other injected args are only for a test server. */
 export function buildCodexAppServerArgs(): string[] {
   return ["app-server", "--listen", "stdio://"];
 }
 
 /**
- * 执行一个 Octo Harness invocation，并把 Codex 原生事件流转换成 CanonicalEvent。
+ * Execute one Octo Harness invocation and convert the native Codex event stream
+ * into CanonicalEvents.
  *
- * 这是顶层协议状态机：initialize -> thread resume/start -> turn/start -> stream。
- * 函数本身负责“阶段推进”和 resume 降级；CodexAppServerClient 负责 wire I/O，
- * normalizeCodexEvent 负责单条 notification 的纯转换。
+ * This is the top-level protocol state machine: initialize -> thread
+ * resume/start -> turn/start -> stream. The function itself drives "phase
+ * advancement" and resume fallback; CodexAppServerClient owns wire I/O and
+ * normalizeCodexEvent handles the pure per-notification conversion.
  */
 export async function* runCodexAppServerTurn({
   request,
@@ -113,7 +120,7 @@ export async function* runCodexAppServerTurn({
   try {
     throwIfAborted(request.signal);
 
-    // Phase 1：先协商 experimental app-server API；未完成 initialize 不发送 thread 请求。
+    // Phase 1: negotiate the experimental app-server API first; no thread request is sent until initialize completes.
     await client.request("initialize", {
       clientInfo: {
         name: "@mininglamp-oss/octo-harness-adapter-codex",
@@ -130,7 +137,7 @@ export async function* runCodexAppServerTurn({
     });
     client.notify("initialized");
 
-    // Phase 2：providerSession.sessionId 是 Codex thread ID，对 Core 保持 opaque。
+    // Phase 2: providerSession.sessionId is the Codex thread ID, kept opaque to the Core.
     const requestedSessionId = request.providerSession?.sessionId;
     let resumeFallback: string | undefined;
     let resumed = false;
@@ -143,7 +150,7 @@ export async function* runCodexAppServerTurn({
         }));
         resumed = true;
       } catch (error) {
-        // resume 失败不直接终止本轮；记录低基数原因后降级为 fresh thread。
+        // A failed resume does not abort this turn; record a low-cardinality reason and fall back to a fresh thread.
         resumeFallback = rpcFailureReason(error);
       }
     }
@@ -158,12 +165,12 @@ export async function* runCodexAppServerTurn({
     if (!threadId) throw new Error("codex thread start/resume returned no thread id");
     client.setActiveThread(threadId);
 
-    // Phase 3：turn/start 成功才表示本轮真正可执行。
+    // Phase 3: only a successful turn/start means this turn is truly executable.
     let turnResult: unknown;
     try {
       turnResult = await client.request("turn/start", turnParams(request, threadId, resumeFallback !== undefined));
     } catch (error) {
-      // 某些损坏 session 能通过 thread/resume，但在 turn/start 才暴露 rollout 缺失。
+      // Some corrupt sessions pass thread/resume but only reveal the missing rollout at turn/start.
       if (!resumed || !isThreadNotFound(error)) throw error;
       resumeFallback = "turn_start_thread_not_found";
       resumed = false;
@@ -181,7 +188,7 @@ export async function* runCodexAppServerTurn({
     const turnId = extractTurnId(turnResult);
     if (turnId) client.setActiveTurn(turnId);
 
-    // 必须晚于 turn/start：否则 Core 会持久化一个无法继续执行的 provider session。
+    // Must come after turn/start: otherwise the Core would persist a provider session that cannot be executed.
     yield {
       type: "session.update",
       payload: {
@@ -198,7 +205,7 @@ export async function* runCodexAppServerTurn({
       }
     };
 
-    // Phase 4：client queue 已经把 JSON-RPC notification 归一化为 CanonicalEvent。
+    // Phase 4: the client queue has already normalized JSON-RPC notifications into CanonicalEvents.
     for await (const event of client.events()) {
       // The thread RPC response already produced the authoritative initial
       // update. Later lifecycle outcomes (such as compaction) must pass through.
@@ -213,7 +220,7 @@ export async function* runCodexAppServerTurn({
     }
 
     if (!terminal) {
-      // 队列无终态结束属于协议/进程异常，不能伪装成成功。
+      // Ending without a terminal in the queue is a protocol/process anomaly and must not be disguised as success.
       const exit = await client.exit();
       throw new CodexAppServerProcessError(
         client.processErrorMessage(exit),
@@ -222,7 +229,7 @@ export async function* runCodexAppServerTurn({
     }
   } catch (error) {
     if (!terminal) {
-      // AbortSignal 优先决定 cancelled 语义；其余异常统一投影为 provider run.error。
+      // AbortSignal takes priority in deciding cancelled semantics; all other errors project uniformly to provider run.error.
       if (request.signal?.aborted) {
         yield {
           type: "run.stopped",
@@ -236,19 +243,22 @@ export async function* runCodexAppServerTurn({
       }
     }
   } finally {
-    // close() 负责 RPC/stdio/进程，spec.cleanup 负责 shadow CODEX_HOME。
+    // close() handles RPC/stdio/process; spec.cleanup handles the shadow CODEX_HOME.
     await client.close();
     await spec.cleanup?.();
   }
 }
 
 /**
- * 将一条 app-server notification 纯函数式映射为零到多条统一事件。
+ * Purely map one app-server notification into zero or more canonical events.
  *
- * 每条 notification 到达后立即映射并入队，不跨 reasoning/tool/final 阶段缓冲，
- * 因此复杂任务的交错顺序由 provider 原始到达顺序决定。
- * 这里不维护跨帧状态：request 关联、单终态和 active thread 过滤由 client 处理。
- * 未识别的方法返回空数组，便于 Codex 增加非关键 notification 时保持前向兼容。
+ * Each notification is mapped and enqueued immediately on arrival, with no
+ * buffering across reasoning/tool/final phases, so the interleaving order for
+ * complex tasks is determined by the provider's raw arrival order. This function
+ * holds no cross-frame state: request correlation, single-terminal enforcement
+ * and active-thread filtering are handled by the client. Unrecognized methods
+ * return an empty array, keeping forward compatibility as Codex adds
+ * non-critical notifications.
  */
 export function normalizeCodexEvent(native: CodexAppServerNotification): CanonicalEvent[] {
   const params = native.params ?? {};
@@ -325,14 +335,15 @@ export function normalizeCodexEvent(native: CodexAppServerNotification): Canonic
 }
 
 /**
- * 单 invocation、单 app-server 子进程的 JSON-RPC client。
+ * JSON-RPC client for a single invocation, backed by a single app-server subprocess.
  *
- * stdout 中可能交错出现三种 frame：
- * 1. 带 id + result/error 的 response，完成 #pending 中的 Promise；
- * 2. 不带 id 的 notification，转换后写入 #queue；
- * 3. 带 id + method 的 server request，必须由 adapter 反向响应。
+ * Three kinds of frame may interleave on stdout:
+ * 1. a response carrying id + result/error, which settles a Promise in #pending;
+ * 2. a notification with no id, which is converted and pushed into #queue;
+ * 3. a server request carrying id + method, which the adapter must respond to.
  *
- * 这个类不决定 resume/fresh 策略，只拥有 wire、进程和 active thread/turn 状态。
+ * This class does not decide the resume/fresh strategy; it only owns the wire,
+ * the process and the active thread/turn state.
  */
 class CodexAppServerClient {
   readonly #child: ChildProcessWithoutNullStreams;
@@ -354,10 +365,13 @@ class CodexAppServerClient {
   #abortTimer?: NodeJS.Timeout;
 
   /**
-   * 取消采用“先收敛宿主事件、再尽力通知 provider”的顺序。
+   * Cancellation follows a "converge host events first, then best-effort notify
+   * the provider" order.
    *
-   * queue 立即发布唯一 run.stopped，避免 UI 等待 Codex 响应；若 thread/turn ID 已知，
-   * 后台发送 turn/interrupt。250ms 后仍未退出则 SIGTERM，最终兜底由 close() SIGKILL。
+   * The queue immediately publishes the sole run.stopped so the UI need not wait
+   * for a Codex response; if the thread/turn IDs are known, turn/interrupt is
+   * sent in the background. After 250ms without exit, SIGTERM follows, with the
+   * final SIGKILL fallback left to close().
    */
   readonly #abortListener = (): void => {
     if (this.#closed || this.#terminal) return;
@@ -390,7 +404,7 @@ class CodexAppServerClient {
     });
     this.#child = spawnFn(spec.command, spec.args, { cwd: spec.cwd, env: spec.env });
 
-    // app-server 协议要求一行一个 JSON-RPC frame；readline 负责处理 chunk 边界。
+    // The app-server protocol requires one JSON-RPC frame per line; readline handles chunk boundaries.
     this.#reader = createInterface({ input: this.#child.stdout });
     this.#reader.on("line", line => this.#handleLine(line));
     this.#child.stderr.setEncoding("utf8");
@@ -398,7 +412,7 @@ class CodexAppServerClient {
       this.#stderr = (this.#stderr + chunk.toString()).slice(-STDERR_TAIL_LIMIT);
     });
 
-    // spawn error 与正常/异常 close 分开监听，但最终都会拒绝 pending RPC 并关闭事件流。
+    // spawn error and normal/abnormal close are watched separately, but both ultimately reject pending RPCs and close the event stream.
     this.#child.once("error", error => this.#handleProcessError(error));
     this.#child.once("close", (code, exitSignal) => this.#handleExit({ code, signal: exitSignal }));
     if (signal?.aborted) queueMicrotask(this.#abortListener);
@@ -427,7 +441,7 @@ class CodexAppServerClient {
     }
     const id = this.#nextId++;
     return new Promise((resolve, reject) => {
-      // 先登记 pending 再写 stdin，避免测试 server/本地进程同步回包造成 response 先到。
+      // Register pending before writing stdin, so a synchronous reply from a test server/local process cannot arrive first.
       const timer = setTimeout(() => {
         if (!this.#pending.delete(id)) return;
         reject(new Error(`codex app-server ${method} timed out after ${timeoutMs}ms`));
@@ -452,10 +466,12 @@ class CodexAppServerClient {
   }
 
   /**
-   * 幂等关闭 client，并按 stdin EOF -> SIGTERM -> SIGKILL 的阶梯回收子进程。
+   * Idempotently close the client and reap the subprocess along the ladder
+   * stdin EOF -> SIGTERM -> SIGKILL.
    *
-   * close 前先移除 AbortSignal listener、关闭 reader、拒绝 pending request，保证没有
-   * Promise 或事件消费者永久悬挂。正常 app-server 应在 stdin EOF 后自行退出。
+   * Before closing it removes the AbortSignal listener, closes the reader and
+   * rejects pending requests, guaranteeing no Promise or event consumer hangs
+   * forever. A well-behaved app-server should exit on its own after stdin EOF.
    */
   async close(): Promise<void> {
     if (this.#closed) return;
@@ -485,7 +501,7 @@ class CodexAppServerClient {
     return this.#stderr.trim() ? `${base}: ${this.#stderr.trim()}` : base;
   }
 
-  /** 分派一条 stdout frame。判断顺序很重要：response 也可能没有 method。 */
+  /** Dispatch one stdout frame. Ordering of the checks matters: a response may also lack a method. */
   #handleLine(line: string): void {
     const message = parseRecord(line);
     if (!message) return;
@@ -512,7 +528,7 @@ class CodexAppServerClient {
   }
 
   #handleResponse(id: RpcId, message: JsonRecord): void {
-    // 超时后到达的 late response 没有 pending 项，直接丢弃，不能污染下一次请求。
+    // A late response arriving after timeout has no pending entry; drop it so it cannot pollute the next request.
     const pending = this.#pending.get(id);
     if (!pending) return;
     this.#pending.delete(id);
@@ -531,7 +547,7 @@ class CodexAppServerClient {
   }
 
   #handleServerRequest(id: RpcId, method: string): void {
-    // 当前 adapter 采用非交互运行语义：approval 由 sandbox 边界兜底，不转发到 UI。
+    // The current adapter uses non-interactive run semantics: approval is backstopped by the sandbox boundary, not forwarded to a UI.
     switch (method) {
       case "item/commandExecution/requestApproval":
       case "execCommandApproval":
@@ -543,7 +559,7 @@ class CodexAppServerClient {
         this.#respond(id, { action: "accept", content: null, _meta: null });
         return;
       default:
-        // 必须给未知 server request 回错误，否则 Codex 会一直等待这个 JSON-RPC ID。
+        // Unknown server requests must be answered with an error, otherwise Codex waits forever on that JSON-RPC ID.
         this.#write({
           jsonrpc: "2.0",
           id,
@@ -568,7 +584,7 @@ class CodexAppServerClient {
   }
 
   #acceptNotification(params: JsonRecord): boolean {
-    // initialize 阶段尚无 active thread，允许全局 notification；之后过滤其他 thread。
+    // During initialize there is no active thread yet, so global notifications are allowed; afterward other threads are filtered out.
     if (!this.#activeThreadId) return true;
     const threadId = stringValue(params.threadId);
     return !threadId || threadId === this.#activeThreadId;
@@ -598,10 +614,12 @@ class CodexAppServerClient {
 }
 
 /**
- * 把 EventEmitter 风格的进程回调桥接成 AsyncIterable。
+ * Bridge EventEmitter-style process callbacks into an AsyncIterable.
  *
- * values 缓存“生产快于消费”的事件，waiters 保存“消费快于生产”的 next()；close 是
- * 正常完成，fail 会让等待者抛错。关闭后 push 被忽略，从容保证终态后不再发事件。
+ * values buffers events when production outpaces consumption; waiters holds
+ * next() calls when consumption outpaces production. close is normal completion,
+ * fail makes waiters throw. After closing, push is ignored, cleanly guaranteeing
+ * no events are emitted past the terminal.
  */
 class AsyncEventQueue<T> implements AsyncIterable<T> {
   readonly #values: T[] = [];
@@ -660,7 +678,7 @@ function defaultSpawn(
   });
 }
 
-/** thread/start 与 thread/resume 的公共参数，权限策略在 thread 层确定。 */
+/** Shared params for thread/start and thread/resume; the permission policy is fixed at the thread level. */
 function threadParams(request: InvokeRequest, extra: JsonRecord): JsonRecord {
   return {
     ...extra,
@@ -673,9 +691,10 @@ function threadParams(request: InvokeRequest, extra: JsonRecord): JsonRecord {
 }
 
 /**
- * turn/start 承载本轮输入，以及可逐轮覆盖的 model、effort 和 reasoning summary。
- * summary 必须显式发送；只设置 effort 会消耗 reasoning tokens，但 app-server 不保证发布
- * summaryTextDelta，UI 因而可能只看到空 analysis lifecycle。
+ * turn/start carries this turn's input plus the per-turn overridable model,
+ * effort and reasoning summary. The summary must be sent explicitly: setting only
+ * effort still consumes reasoning tokens, but the app-server does not guarantee
+ * publishing summaryTextDelta, so a UI might see only an empty analysis lifecycle.
  */
 function turnParams(request: InvokeRequest, threadId: string, freshFallback = false): JsonRecord {
   const effort = codexEffort(request.agentConfig.thinking);
@@ -694,13 +713,14 @@ function turnParams(request: InvokeRequest, threadId: string, freshFallback = fa
 }
 
 function codexEffort(value: string | undefined): string | undefined {
-  // Codex app-server 不接受 disabled；与 Aily 行为一致，用最低有效等级 low 兼容。
+  // The Codex app-server does not accept disabled; matching Aily behavior, use the lowest effective level low for compatibility.
   return value === "disabled" ? "low" : value;
 }
 
 /**
- * app-server 不会因为设置了 effort 就自动发布 reasoning summary delta。
- * Chat 默认请求 auto；调用方可通过 providerOptions.reasoningSummary 收紧或关闭。
+ * The app-server will not automatically publish reasoning summary deltas just
+ * because effort was set. Chat requests auto by default; callers can tighten or
+ * disable it via providerOptions.reasoningSummary.
  */
 function codexReasoningSummary(request: InvokeRequest): string {
   const configured = recordValue(request.agentConfig.providerOptions)?.reasoningSummary;
@@ -757,7 +777,7 @@ function textDelta(
   }];
 }
 
-/** usage 同时保留本次增量(last)和 provider 累计值(total)。 */
+/** usage carries both this turn's increment (last) and the provider cumulative value (total). */
 function usageEvents(params: JsonRecord): CanonicalEvent[] {
   const tokenUsage = recordValue(params.tokenUsage);
   const last = recordValue(tokenUsage?.last);
@@ -775,7 +795,7 @@ function usageEvents(params: JsonRecord): CanonicalEvent[] {
   }];
 }
 
-/** item started 只创建 lifecycle 对象，不在这里猜测最终输出。 */
+/** item started only creates the lifecycle object; it does not guess the final output here. */
 function itemStartedEvents(item: JsonRecord | undefined): CanonicalEvent[] {
   if (!item) return [];
   const type = stringValue(item.type);
@@ -807,7 +827,7 @@ function itemStartedEvents(item: JsonRecord | undefined): CanonicalEvent[] {
   }] : [];
 }
 
-/** item completed 关闭对应 message/tool lifecycle，并附上 provider 的最终快照。 */
+/** item completed closes the corresponding message/tool lifecycle and attaches the provider's final snapshot. */
 function itemCompletedEvents(item: JsonRecord | undefined): CanonicalEvent[] {
   if (!item) return [];
   const type = stringValue(item.type);
@@ -855,7 +875,7 @@ function itemCompletedEvents(item: JsonRecord | undefined): CanonicalEvent[] {
   }];
 }
 
-/** Codex turn 终态到 Octo Harness run 终态的一对一映射。 */
+/** One-to-one mapping from a Codex turn terminal to an Octo Harness run terminal. */
 function turnCompletedEvents(turn: JsonRecord | undefined): CanonicalEvent[] {
   const status = stringValue(turn?.status);
   if (status === "interrupted") {
@@ -872,10 +892,11 @@ function turnCompletedEvents(turn: JsonRecord | undefined): CanonicalEvent[] {
 }
 
 /**
- * 将不同 Codex item 压平为 Octo Harness 工具描述。
+ * Flatten the various Codex items into an Octo Harness tool descriptor.
  *
- * name 是跨 provider 的展示/查询键；args 尽量保留结构化原始字段。未知 item 返回
- * undefined 而不是冒充工具，避免 Core 持久化无法解释的 lifecycle。
+ * name is the cross-provider display/lookup key; args preserve the structured raw
+ * fields as much as possible. An unknown item returns undefined rather than
+ * impersonating a tool, avoiding the Core persisting an unexplainable lifecycle.
  */
 function toolDescriptor(item: JsonRecord): { id: string; name: string; args: JsonRecord } | undefined {
   const id = stringValue(item.id);
@@ -925,14 +946,14 @@ function toolDescriptor(item: JsonRecord): { id: string; name: string; args: Jso
   }
 }
 
-/** Codex 使用 inProgress，Octo Harness canonical contract 使用 running。 */
+/** Codex uses inProgress; the Octo Harness canonical contract uses running. */
 function toolStatus(item: JsonRecord): string {
   const status = stringValue(item.status);
   if (status === "inProgress") return "running";
   return status || "completed";
 }
 
-/** 为常见工具提取紧凑输出；其他工具保留完整 item 作为前向兼容回退。 */
+/** Extract compact output for common tools; other tools keep the full item as a forward-compatible fallback. */
 function toolOutput(item: JsonRecord): unknown {
   switch (stringValue(item.type)) {
     case "commandExecution":
@@ -948,7 +969,7 @@ function toolOutput(item: JsonRecord): unknown {
   }
 }
 
-// app-server 版本间 response 外形略有差异，ID extractor 同时兼容顶层和嵌套字段。
+// Response shapes differ slightly across app-server versions, so the ID extractor accepts both top-level and nested fields.
 function extractThreadId(value: unknown): string {
   const result = recordValue(value);
   const thread = recordValue(result?.thread);
@@ -970,7 +991,7 @@ function itemId(params: JsonRecord): string {
 }
 
 function isToolArgsDeltaMethod(method: string): boolean {
-  // 只接受已知 item namespace，避免把无关 delta 错投影成工具参数。
+  // Only accept known item namespaces, to avoid misprojecting an unrelated delta as tool arguments.
   return /^item\/(?:functionCall|toolCall|mcpToolCall|dynamicToolCall)\/(?:argumentsDelta|argsDelta|inputDelta|parametersDelta)$/.test(method);
 }
 
@@ -983,7 +1004,7 @@ function isThreadNotFound(error: unknown): boolean {
 }
 
 function rpcFailureReason(error: unknown): string {
-  // side channel 只保存低基数分类，不把可能包含路径/凭证的完整 provider error 写入 session。
+  // The side channel stores only a low-cardinality classification, not the full provider error which may contain paths/credentials, into the session.
   const message = error instanceof Error ? error.message : String(error);
   return /rollout path/i.test(message) ? "rollout_path_missing" : "resume_rejected";
 }
@@ -997,7 +1018,7 @@ function parseRecord(line: string): JsonRecord | undefined {
   try {
     return recordValue(JSON.parse(line));
   } catch {
-    // stdout 偶发非协议文本不应击穿整个 run；真正诊断信息仍会从 stderr 附加到错误。
+    // Occasional non-protocol text on stdout must not blow up the whole run; real diagnostics are still appended to the error from stderr.
     return undefined;
   }
 }

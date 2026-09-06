@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Launcher wrapper: spawn the real daemon (index.js) as a child under a stable
+// argv0, forward termination signals to it, and mirror its exit code/signal so
+// the parent (e.g. the CLI `daemon` command) exits with the same status.
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { daemonRuntimeArguments, resolveDaemonRuntimePaths } from "./runtime-options.js";

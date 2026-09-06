@@ -20,8 +20,9 @@ interface ContinueTaskInput extends QueueTaskInput {
 }
 
 /**
- * 单节点后台编排器：把已持久化的 queued Run 放到事件循环后台执行，
- * 同时提供 Trigger 调度、崩溃恢复、终态等待和取消入口。
+ * The single-node background orchestrator: it pushes already-persisted queued
+ * Runs onto the event loop for background execution, and provides Trigger
+ * scheduling, crash recovery, terminal waiting and cancellation entry points.
  */
 export class HarnessDaemon extends EventEmitter {
   readonly #engine: HarnessEngine;
@@ -36,9 +37,9 @@ export class HarnessDaemon extends EventEmitter {
     this.#store = store;
   }
 
-  /** 恢复 queued 工作，并把无法重新附着的 running Run 明确标记为失败。 */
+  /** Resume queued work and explicitly mark as failed any running Run that cannot be re-attached. */
   async recover(): Promise<void> {
-    // daemon 重启后不能假装旧 provider 进程仍然存活；running run 必须先明确终止。
+    // After a daemon restart we cannot pretend the old provider process is still alive; a running run must first be explicitly terminated.
     for (const run of this.#store.listRuns()) {
       if (run.status === "running") {
         await this.#engine.terminalizeRun(run.id, {
@@ -62,7 +63,7 @@ export class HarnessDaemon extends EventEmitter {
     this.startSchedulers();
   }
 
-  /** 为 enabled interval Triggers 创建本进程定时器；重复调用不会重复注册。 */
+  /** Create this-process timers for enabled interval Triggers; calling again does not re-register. */
   startSchedulers(): void {
     for (const trigger of this.#store.listTriggers()) {
       const everyMs = trigger.everyMs;
@@ -78,13 +79,13 @@ export class HarnessDaemon extends EventEmitter {
     }
   }
 
-  /** 停止本地 interval timers；不会强制终止已经启动的 provider invocation。 */
+  /** Stop the local interval timers; this does not forcibly kill provider invocations that have already started. */
   stop(): void {
     for (const timer of this.#timers.values()) clearInterval(timer);
     this.#timers.clear();
   }
 
-  /** 匹配 event Trigger，并为每个命中规则提交一次幂等执行。 */
+  /** Match event Triggers and submit one idempotent execution per matched rule. */
   async ingestEvent({ eventType, externalEventId, payload = {} }: IngestEventInput): Promise<unknown[]> {
     if (!eventType || !externalEventId) throw new Error("eventType and externalEventId are required");
     const matched = this.#store.listTriggers().filter(trigger =>
@@ -96,7 +97,7 @@ export class HarnessDaemon extends EventEmitter {
     return Promise.all(matched.map(trigger => this.submitTrigger(trigger.id, { externalEventId, payload })));
   }
 
-  /** 物化 Trigger、排队 Run 并快速返回；provider 在后台执行。 */
+  /** Materialize a Trigger, queue the Run and return quickly; the provider runs in the background. */
   async submitTrigger(triggerId: string, input: TriggerInput): Promise<{
     accepted: boolean;
     deduplicated: boolean;
@@ -120,14 +121,14 @@ export class HarnessDaemon extends EventEmitter {
     return { accepted: true, deduplicated: false, taskId: created.task.id, runId: queued.run.id };
   }
 
-  /** 为已有 Task 创建后续 Attempt，并把本轮 instructions 交给后台执行。 */
+  /** Create a follow-up Attempt for an existing Task and hand this turn's instructions to background execution. */
   async continueTask(taskId: string, input: ContinueTaskInput = {}): Promise<{ accepted: true; taskId: string; runId: string }> {
     const queued = await this.#engine.queueTask(taskId, input);
     this.#schedule(queued.run.id, input.instructions ?? "");
     return { accepted: true, taskId, runId: queued.run.id };
   }
 
-  /** 为 Chat 排队一个 turn 并快速返回，不等待模型结果。 */
+  /** Queue one Chat turn and return quickly, without waiting for the model result. */
   async submitChat(sessionId: string, prompt: string, instructions = ""): Promise<{
     accepted: true;
     sessionId: string;
@@ -150,7 +151,7 @@ export class HarnessDaemon extends EventEmitter {
 
   #schedule(runId: string, instructions = ""): void {
     if (this.#pending.has(runId)) return;
-    // 先返回 ACK，再进入事件循环执行 provider，避免长任务阻塞控制请求。
+    // ACK first, then enter the event loop to run the provider, so a long task does not block control requests.
     const job = new Promise<void>(resolve => setImmediate(resolve))
       .then(() => this.#engine.executeRun(runId, instructions))
       .catch(async (error: unknown) => {
@@ -170,7 +171,7 @@ export class HarnessDaemon extends EventEmitter {
     this.#pending.set(runId, job);
   }
 
-  /** Run 已终态时立即返回，否则等待本进程调度的执行完成。 */
+  /** Return immediately when the Run is already terminal, otherwise wait for the execution scheduled in this process to finish. */
   async waitForRun(runId: string): Promise<unknown> {
     const run = this.#store.getRun(runId);
     if (!run) throw new Error(`run not found: ${runId}`);
@@ -182,7 +183,7 @@ export class HarnessDaemon extends EventEmitter {
     });
   }
 
-  /** 把取消请求转交 Core/Host；取消 ACK 不等于 Run 已经终态。 */
+  /** Hand the cancel request to Core/Host; a cancel ACK does not mean the Run is already terminal. */
   cancelRun(runId: string, reason?: string): ReturnType<HarnessEngine["cancelRun"]> {
     return this.#engine.cancelRun(runId, reason);
   }

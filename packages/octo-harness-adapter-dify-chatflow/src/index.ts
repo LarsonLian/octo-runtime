@@ -20,6 +20,13 @@ import {
 
 export type DifyConversationMode = "auto" | "chatbot" | "chatflow";
 
+/**
+ * Options for the chatflow adapter. `applicationMode` decides who emits the Run
+ * terminal: `chatbot` finishes on `message_end`, `chatflow` on
+ * `workflow_finished`, and `auto` picks based on whether workflow events were
+ * seen. `exposeWorkflowEvents` toggles surfacing node/iteration progress as
+ * `surface.*` events.
+ */
 export interface DifyChatflowAdapterOptions extends DifyClientOptions {
   type?: string;
   user?: string;
@@ -32,6 +39,7 @@ export interface DifyChatflowAdapterOptions extends DifyClientOptions {
   maxFrameChars?: number;
 }
 
+/** Mutable per-invocation state threaded through the event normalizer to track the open message, session and workflow surface across SSE frames. */
 export interface DifyChatState {
   runId: string;
   user: string;
@@ -50,6 +58,12 @@ export interface DifyChatRequest {
   user: string;
 }
 
+/**
+ * Build a Dify chatflow adapter over the `/chat-messages` endpoint. The adapter
+ * opens one SSE stream per turn, translates native frames into canonical events,
+ * and returns as soon as a terminal is produced. On an aborted signal it makes a
+ * best-effort provider-side stop in `finally` using the captured task id.
+ */
 export function createDifyChatflowAdapter(options: DifyChatflowAdapterOptions = {}) {
   const client = new DifyClient({
     baseUrl: options.baseUrl,
@@ -107,6 +121,13 @@ export function createDifyChatflowAdapter(options: DifyChatflowAdapterOptions = 
   });
 }
 
+/**
+ * Assemble the `/chat-messages` request body from the InvokeRequest. Inputs are
+ * layered defaults < provider options < turn inputs; the portable append-only
+ * instructions are injected into a named input when `instructionInput` is set.
+ * `conversation_id` carries the resumed provider session so Dify continues the
+ * same conversation.
+ */
 export function buildDifyChatRequest(
   request: InvokeRequest,
   options: DifyChatflowAdapterOptions,
@@ -136,6 +157,13 @@ export function buildDifyChatRequest(
   return { body, user };
 }
 
+/**
+ * Translate one native Dify chat SSE event into zero or more canonical events,
+ * mutating `state` to track the open assistant message and workflow surface. A
+ * first-seen `conversation_id` is reported via `session.update` so the engine
+ * can resume the conversation next turn. Which native event closes the Run
+ * depends on `applicationMode` (see options). Returns the events for this frame.
+ */
 export function normalizeDifyChatEvent(native: JsonRecord, state: DifyChatState): CanonicalEvent[] {
   const events: CanonicalEvent[] = [];
   const eventType = optionalString(native.event) ?? "";
@@ -252,6 +280,7 @@ export function normalizeDifyChatEvent(native: JsonRecord, state: DifyChatState)
     const usage = usageEvent(native.metadata, data);
     if (usage) events.push(usage);
     closeMessage(events, state, "completed");
+    // Chatbot mode ends here; chatflow defers the terminal to workflow_finished.
     const shouldFinish = state.applicationMode === "chatbot" || (state.applicationMode === "auto" && !state.workflowSeen);
     if (shouldFinish) events.push({ type: "run.finished", payload: { provider: "dify", taskId: state.taskId } });
     return events;
@@ -334,6 +363,7 @@ export function normalizeDifyChatEvent(native: JsonRecord, state: DifyChatState)
   return events;
 }
 
+/** Map InvokeRequest attachments to Dify's file shape, resolving the file `type` from an explicit value or the MIME type, and choosing remote_url vs local_file transfer. */
 function mapDifyFiles(value: unknown): JsonRecord[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) throw new TypeError("InvokeRequest.context.attachments must be an array");
@@ -359,6 +389,7 @@ function mediaType(mimeType: string | undefined): string | undefined {
   return "document";
 }
 
+/** Emit the closing `message.update` for the open assistant message, if any, and mark it closed so terminals don't double-close. */
 function closeMessage(events: CanonicalEvent[], state: DifyChatState, status: string): void {
   if (!state.messageOpen) return;
   events.push({
@@ -368,6 +399,7 @@ function closeMessage(events: CanonicalEvent[], state: DifyChatState, status: st
   state.messageOpen = false;
 }
 
+/** Build a `usage.update` from Dify's `metadata.usage`, returning undefined when no token/price/latency field is present so no empty event is emitted. */
 function usageEvent(metadataValue: unknown, data: JsonRecord): CanonicalEvent | undefined {
   const metadata = optionalRecord(metadataValue);
   const usage = optionalRecord(metadata?.usage);
@@ -392,10 +424,12 @@ function usageEvent(metadataValue: unknown, data: JsonRecord): CanonicalEvent | 
   };
 }
 
+/** Stable per-run id for the single workflow-progress surface, so create/delta/update events all address the same surface. */
 function workflowSurfaceId(state: DifyChatState): string {
   return `${state.runId}:dify-workflow`;
 }
 
+/** Final `surface.update` closing the workflow-progress surface with aggregate totals and any error. */
 function workflowSurfaceTerminal(state: DifyChatState, status: string, data: JsonRecord): CanonicalEvent {
   return {
     type: "surface.update",

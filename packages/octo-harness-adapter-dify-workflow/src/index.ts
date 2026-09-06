@@ -15,6 +15,13 @@ import {
 
 export type DifyStatelessMode = "workflow" | "completion";
 
+/**
+ * Options for the stateless adapter. `applicationMode` selects the endpoint and
+ * terminal contract: `workflow` hits `/workflows/run` and finishes on
+ * `workflow_finished`, `completion` hits `/completion-messages` and finishes on
+ * `message_end`. `promptInput`/`outputKey` name the workflow input/output fields
+ * carrying the prompt text and the answer.
+ */
 export interface DifyWorkflowAdapterOptions extends DifyClientOptions {
   type?: string;
   user?: string;
@@ -33,6 +40,7 @@ export interface DifyStatelessRequest {
   user: string;
 }
 
+/** Mutable per-invocation state for the stateless normalizer; `textEmitted` guards against duplicating the answer both streamed and from `workflow_finished` outputs. */
 export interface DifyStatelessState {
   runId: string;
   user: string;
@@ -46,6 +54,13 @@ export interface DifyStatelessState {
   workflowRunId?: string;
 }
 
+/**
+ * Build a Dify adapter for the two stateless (no conversation) app kinds:
+ * workflow and completion. Unlike chatflow it never reports a provider session,
+ * so `capabilities` is empty. The invocation opens one SSE stream, normalizes to
+ * canonical events, and best-effort stops the provider task on abort in
+ * `finally` (the stop path differs per mode).
+ */
 export function createDifyWorkflowAdapter(options: DifyWorkflowAdapterOptions = {}) {
   const mode = options.applicationMode ?? "workflow";
   const client = new DifyClient({
@@ -105,6 +120,12 @@ export function createDifyWorkflowAdapter(options: DifyWorkflowAdapterOptions = 
   });
 }
 
+/**
+ * Assemble the endpoint path and request body for a stateless turn. Inputs layer
+ * defaults < provider options, then the prompt text and append-only instructions
+ * are placed into their named input fields, and per-turn `workflowInputs` are
+ * applied last so they win. Completion mode additionally sends `query`.
+ */
 export function buildDifyStatelessRequest(
   request: InvokeRequest,
   options: DifyWorkflowAdapterOptions,
@@ -133,6 +154,13 @@ export function buildDifyStatelessRequest(
   };
 }
 
+/**
+ * Translate one native stateless SSE event into canonical events, mutating
+ * `state`. Text arrives either as streamed `message`/`text_chunk` deltas or, for
+ * workflows that don't stream, once from `workflow_finished` outputs — the
+ * `textEmitted` guard ensures the answer is surfaced exactly once. Non-string or
+ * unmatched outputs are exposed as a `structured_output` surface instead.
+ */
 export function normalizeDifyStatelessEvent(native: JsonRecord, state: DifyStatelessState): CanonicalEvent[] {
   const events: CanonicalEvent[] = [];
   const eventType = optionalString(native.event) ?? "";
@@ -281,6 +309,7 @@ export function normalizeDifyStatelessEvent(native: JsonRecord, state: DifyState
   return events;
 }
 
+/** Emit `message.create` on first text then a `message.delta`, opening the assistant message lazily and marking `textEmitted`. */
 function appendText(events: CanonicalEvent[], state: DifyStatelessState, text: string, nativeMessageId: string | undefined): void {
   const messageId = state.messageId ?? nativeMessageId ?? `${state.runId}:final`;
   state.messageId = messageId;
@@ -292,12 +321,19 @@ function appendText(events: CanonicalEvent[], state: DifyStatelessState, text: s
   events.push({ type: "message.delta", payload: { channel: "final", messageId, text } });
 }
 
+/** Emit the closing `message.update` for the open assistant message, if any, and mark it closed. */
 function closeMessage(events: CanonicalEvent[], state: DifyStatelessState, status: string): void {
   if (!state.messageOpen) return;
   events.push({ type: "message.update", payload: { role: "assistant", status, channel: "final", messageId: state.messageId ?? `${state.runId}:final` } });
   state.messageOpen = false;
 }
 
+/**
+ * Pick the answer string from a workflow's `outputs`. With an explicit
+ * `outputKey`, non-string values are JSON-stringified; without one, try common
+ * keys (text/answer/result/output), else fall back to the sole entry when the
+ * output map has exactly one. Returns undefined when no single answer is clear.
+ */
 function selectOutput(outputs: JsonRecord, outputKey: string | undefined): string | undefined {
   const keys = outputKey ? [outputKey] : ["text", "answer", "result", "output"];
   for (const key of keys) {
@@ -313,6 +349,7 @@ function selectOutput(outputs: JsonRecord, outputKey: string | undefined): strin
   return undefined;
 }
 
+/** Map InvokeRequest attachments to Dify's file shape, resolving the file `type` from an explicit value or the MIME type, and choosing remote_url vs local_file transfer. */
 function mapDifyFiles(value: unknown): JsonRecord[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) throw new TypeError("InvokeRequest.context.attachments must be an array");
@@ -338,6 +375,7 @@ function mediaType(mimeType: string | undefined): string | undefined {
   return "document";
 }
 
+/** Build a `usage.update` from Dify's `metadata.usage`, returning undefined when no token/price/latency field is present so no empty event is emitted. */
 function usageEvent(metadataValue: unknown, data: JsonRecord): CanonicalEvent | undefined {
   const metadata = optionalRecord(metadataValue);
   const usage = optionalRecord(metadata?.usage);
@@ -362,6 +400,7 @@ function usageEvent(metadataValue: unknown, data: JsonRecord): CanonicalEvent | 
   };
 }
 
+/** True for the node/iteration/loop lifecycle events surfaced as workflow-progress deltas. */
 function isWorkflowProgressEvent(eventType: string): boolean {
   return [
     "node_started", "node_finished",
@@ -382,10 +421,12 @@ function projectNode(data: JsonRecord): JsonRecord {
   };
 }
 
+/** Stable per-run id for the single workflow-progress surface, so create/delta/update events all address the same surface. */
 function workflowSurfaceId(state: DifyStatelessState): string {
   return `${state.runId}:dify-workflow`;
 }
 
+/** Final `surface.update` closing the workflow-progress surface with aggregate totals and any error. */
 function workflowSurfaceTerminal(state: DifyStatelessState, status: string, data: JsonRecord): CanonicalEvent {
   return {
     type: "surface.update",

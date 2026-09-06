@@ -2,37 +2,38 @@ import type { DatabaseSync } from "node:sqlite";
 import type { AgentConfig, EventEnvelope, ProviderSession } from "@mininglamp-oss/octo-harness-protocol";
 import { openWalDatabase } from "./sqlite.js";
 
-/** Trigger 的来源类型：人工触发、外部事件或本地间隔调度。 */
+/** Where a Trigger comes from: manual firing, an external event, or local interval scheduling. */
 export type TriggerKind = "manual" | "event" | "interval";
 
-/** Run 的完整状态机；terminal 状态为 completed、failed、cancelled。 */
+/** The full Run state machine; the terminal states are completed, failed and cancelled. */
 export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
-/** 当前 reference model 让 Task 状态跟随最近一次 Attempt/Run。 */
+/** The current reference model has a Task's status follow its most recent Attempt/Run. */
 export type TaskStatus = RunStatus;
 
 /**
- * 可被 Chat 或 Task 选用的 Agent 配置。
- * Agent 只绑定 adapter 类型与配置，不代表一次执行，也不保存对话历史。
+ * Agent config that a Chat or Task can select.
+ * An Agent only binds an adapter type and its config; it is not an execution
+ * and holds no conversation history.
  */
 export interface Agent {
   id: string;
   name: string;
-  /** 对应 Adapter Host 中 `metadata.type`，不是 npm 包名。 */
+  /** Corresponds to `metadata.type` in the Adapter Host, not the npm package name. */
   adapterType: string;
   config: AgentConfig;
 }
 
-/** Trigger 每次物化 Task 时复制的业务模板。 */
+/** The business template a Trigger copies each time it materializes a Task. */
 export interface TriggerTaskTemplate {
   title: string;
-  /** Task 的稳定用户请求；Task continuation 不会改写它。 */
+  /** The Task's stable user request; Task continuation never rewrites it. */
   description: string;
 }
 
 /**
- * 一个可重复触发的任务定义。
- * Trigger 是规则，不是执行记录；每次命中由 TriggerOccurrence 记录。
+ * A repeatable task definition.
+ * A Trigger is a rule, not an execution record; each hit is recorded by a TriggerOccurrence.
  */
 export interface Trigger {
   id: string;
@@ -47,8 +48,9 @@ export interface Trigger {
 }
 
 /**
- * Trigger 对某个外部事件的一次命中记录。
- * Store 使用 `(triggerId, externalEventId)` 作为幂等键，避免 webhook/调度重试重复创建 Task。
+ * One record of a Trigger hitting a specific external event.
+ * The Store uses `(triggerId, externalEventId)` as an idempotency key so
+ * webhook/scheduler retries do not create duplicate Tasks.
  */
 export interface TriggerOccurrence {
   id: string;
@@ -61,7 +63,8 @@ export interface TriggerOccurrence {
 }
 
 /**
- * 持久业务任务。一个 Task 拥有一个长期 Session，可通过多个 Attempt 反复继续。
+ * A durable business task. A Task owns one long-lived Session and can be
+ * continued repeatedly through multiple Attempts.
  */
 export interface Task {
   id: string;
@@ -71,13 +74,14 @@ export interface Task {
   status: TaskStatus;
   sessionId: string;
   createdAt: number;
-  /** 非空时拒绝并发 Attempt，保证同一 Task 的 provider session 串行使用。 */
+  /** When set, concurrent Attempts are rejected so a Task's provider session is used serially. */
   activeRunId?: string;
 }
 
 /**
- * Task 的一次尝试。
- * Attempt 保存来源与编号；实际事件、取消和终态属于其一一对应的 Run。
+ * One attempt at a Task.
+ * An Attempt records provenance and a number; the actual events, cancellation
+ * and terminal belong to its one-to-one Run.
  */
 export interface Attempt {
   id: string;
@@ -91,8 +95,9 @@ export interface Attempt {
 }
 
 /**
- * Chat 或 Task 的长期会话容器。
- * Chat 直接绑定 Agent；Task 通过 Task.agentId 解析 Agent，因此 task session 不重复保存 agentId。
+ * The long-lived session container for a Chat or a Task.
+ * A Chat binds an Agent directly; a Task resolves its Agent via Task.agentId,
+ * so a task session does not store agentId again.
  */
 export interface Session {
   id: string;
@@ -103,32 +108,35 @@ export interface Session {
   channel?: string;
   createdAt?: number;
   activeRunId?: string;
-  /** Adapter 通过 `session.update` 上报的 opaque 恢复信息。 */
+  /** Opaque resume info reported by the adapter via `session.update`. */
   providerSession?: ProviderSession;
 }
 
 /**
- * 一次可排队、执行、取消和终态化的业务执行。
- * Chat turn 直接保存 prompt；Task Run 通过 attemptId 找到 Task.description。
+ * One business execution that can be queued, executed, cancelled and
+ * terminalized. A Chat turn stores its prompt directly; a Task Run reaches
+ * Task.description through attemptId.
  */
 export interface Run {
   id: string;
   sessionId: string;
   status: RunStatus;
-  /** 下一个待分配的 event seq，从 1 开始，仅在本 Run 内递增。 */
+  /** The next event seq to assign; starts at 1 and increments only within this Run. */
   nextSeq: number;
   attemptId?: string;
   prompt?: string;
-  /** Provider 调用开始后写入，供取消请求定位 Adapter Host invocation。 */
+  /** Written once the provider call starts, so a cancel request can locate the Adapter Host invocation. */
   invocationId?: string;
 }
 
 /**
- * Core 所需的持久化端口。
+ * The persistence port the Core requires.
  *
- * 接口不再暴露内部集合：调用方通过 get/list/put 方法读写领域对象，用 `transaction` 把
- * 一次状态迁移涉及的多次写入合并成一个原子提交。持久实现（SQLite）据此做增量写入，
- * 不再每次都序列化全量快照。
+ * The interface no longer exposes internal collections: callers read/write
+ * domain objects through get/list/put methods and use `transaction` to merge
+ * the several writes of one state transition into a single atomic commit. The
+ * durable implementation (SQLite) writes incrementally on this basis instead of
+ * serializing a full snapshot every time.
  */
 export interface Store {
   getAgent(id: string): Agent | undefined;
@@ -140,7 +148,7 @@ export interface Store {
   listTriggers(): Trigger[];
   putTrigger(trigger: Trigger): void;
 
-  /** 用幂等键 `(triggerId, externalEventId)` 查已物化的 occurrence。 */
+  /** Look up an already materialized occurrence by the idempotency key `(triggerId, externalEventId)`. */
   getOccurrenceByKey(triggerId: string, externalEventId: string): TriggerOccurrence | undefined;
   findOccurrenceById(id: string): TriggerOccurrence | undefined;
   findOccurrenceByTaskId(taskId: string): TriggerOccurrence | undefined;
@@ -164,18 +172,19 @@ export interface Store {
   putRun(run: Run): void;
 
   getEvents(runId: string): EventEnvelope[];
-  /** 以 `(runId, seq)` 去重追加事件；返回 false 表示该序号已经存在。 */
+  /** Append an event deduped on `(runId, seq)`; returns false when that sequence already exists. */
   appendEvent(event: EventEnvelope): boolean;
 
-  /** 把 fn 中的写入合并成一个原子提交；实现失败时整体回滚。 */
+  /** Merge the writes in fn into one atomic commit; the implementation rolls the whole thing back on failure. */
   transaction<T>(fn: () => T): Promise<T>;
-  /** 释放底层资源；内存实现为 no-op。 */
+  /** Release the underlying resources; a no-op for the in-memory implementation. */
   close(): void;
 }
 
 /**
- * 无 I/O 的 Store，适合测试、示例和嵌入式短生命周期运行。
- * 进程退出后数据丢失，`transaction` 不提供真正的回滚，也不提供跨线程/跨进程并发控制。
+ * An I/O-free Store, suited to tests, examples and embedded short-lived runs.
+ * Data is lost after the process exits; `transaction` provides no real rollback
+ * and no cross-thread/cross-process concurrency control.
  */
 export class MemoryStore implements Store {
   readonly #agents = new Map<string, Agent>();
@@ -244,8 +253,10 @@ export class MemoryStore implements Store {
 }
 
 /**
- * 单进程、单 writer 的 SQLite (WAL) Store，是 daemon 的本地事实源。
- * 每次状态迁移只写本次事务涉及的行，不再序列化全量快照；崩溃后重开即恢复。
+ * A single-process, single-writer SQLite (WAL) Store — the daemon's local
+ * source of truth. Each state transition writes only the rows involved in that
+ * transaction rather than serializing a full snapshot, and reopening after a
+ * crash recovers the state.
  */
 export class SqliteStore implements Store {
   readonly #db: DatabaseSync;
@@ -255,7 +266,7 @@ export class SqliteStore implements Store {
     this.#db = db;
   }
 
-  /** 打开或创建 mode 0600 的数据库文件，应用 WAL/耐久 PRAGMA 并建表。 */
+  /** Open or create the mode-0600 database file, apply the WAL/durability PRAGMAs and create the tables. */
   static open(file: string): SqliteStore {
     const db = openWalDatabase(file);
     db.exec(`
@@ -359,7 +370,7 @@ export class SqliteStore implements Store {
   }
 
   transaction<T>(fn: () => T): Promise<T> {
-    // 单连接、单 writer；SQLite 不支持事务嵌套，嵌套调用复用最外层事务。
+    // Single connection, single writer; SQLite does not support nested transactions, so nested calls reuse the outermost one.
     if (this.#depth > 0) {
       this.#depth += 1;
       try {

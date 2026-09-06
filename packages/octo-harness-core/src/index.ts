@@ -1,4 +1,4 @@
-// 公共入口只导出稳定领域 API；内部文件划分不应成为调用方依赖。
+// The public entry point exports only the stable domain API; the internal file layout should not become a caller dependency.
 export { MemoryStore, SqliteStore } from "./store.js";
 export { openWalDatabase } from "./sqlite.js";
 export { HarnessEngine } from "./engine.js";

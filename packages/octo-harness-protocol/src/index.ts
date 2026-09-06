@@ -13,8 +13,10 @@ import type {
   ToolCallUpdatePayload
 } from "./generated/protocol-types.js";
 
-// 数据形状类型由 schema/protocol.schema.json 生成，见 ./generated/protocol-types.ts。
-// 这里从生成文件重新导出，保持 `@mininglamp-oss/octo-harness-protocol` 的公共导出面不变。
+// The data-shape types are generated from schema/protocol.schema.json (see
+// ./generated/protocol-types.ts). We re-export them here so the public surface
+// of `@mininglamp-oss/octo-harness-protocol` stays stable regardless of how the
+// generator lays out its output.
 export type {
   MessageChannel,
   MessageExposure,
@@ -42,19 +44,21 @@ export type {
 import type { RunIdentity } from "./generated/protocol-types.js";
 
 /**
- * 一次 Run 允许出现的三个终态。
+ * The three terminal states a Run may reach.
  *
- * `finished` 表示正常完成，`error` 表示执行失败，`stopped` 表示主动取消或流被中止。
- * Adapter Host 负责保证每个 invocation 最终只向上游交付其中一个终态。
+ * `finished` means normal completion, `error` means execution failed, and
+ * `stopped` means an explicit cancellation or an aborted stream. The Adapter
+ * Host guarantees every invocation delivers exactly one of these upstream.
  */
 export const TERMINAL_EVENT_TYPES = ["run.finished", "run.error", "run.stopped"] as const;
 export type TerminalEventType = (typeof TERMINAL_EVENT_TYPES)[number];
 
 /**
- * Core 能持久化和上层 UI 能消费的稳定事件集合。
+ * The stable event set the Core can persist and upper-layer UIs can consume.
  *
- * 生命周期大致为：Run 排队/运行 -> 消息、工具、Surface、用量更新 -> Run 终态。
- * Provider 原生事件名必须在 adapter 内转换，不应直接穿透到这里。
+ * Rough lifecycle: Run queued/running -> message, tool, surface and usage
+ * updates -> a Run terminal. Provider-native event names must be translated
+ * inside the adapter and must never leak through to this level.
  */
 export const CANONICAL_EVENT_TYPES = [
   "session.update", "usage.update",
@@ -65,7 +69,7 @@ export const CANONICAL_EVENT_TYPES = [
   ...TERMINAL_EVENT_TYPES
 ] as const;
 
-/** 所有 provider 的原生事件最终只允许落到这组类型，Core 因此不感知底层 CLI。 */
+/** Every provider's native events must collapse into this set, so the Core stays agnostic of the underlying CLI. */
 export type CanonicalEventType = (typeof CANONICAL_EVENT_TYPES)[number];
 
 export type CanonicalPayloadFor<TType extends CanonicalEventType> =
@@ -74,20 +78,21 @@ export type CanonicalPayloadFor<TType extends CanonicalEventType> =
       : TType extends "tool_call.update" ? CanonicalEventPayload & ToolCallUpdatePayload
         : CanonicalEventPayload;
 
-/** Adapter 向 Host 输出的最小事件单元；tool lifecycle 的 payload 会按 type 收窄。 */
+/** The smallest event unit an adapter emits to the Host; the payload narrows by type for the tool lifecycle. */
 export type CanonicalEvent<TType extends CanonicalEventType = CanonicalEventType> =
   TType extends CanonicalEventType
     ? { type: TType; payload: CanonicalPayloadFor<TType> }
     : never;
 
 /**
- * Core 发给 Adapter Host 的一次执行请求。
+ * A single execution request the Core sends to the Adapter Host.
  *
- * 可序列化字段来自生成的 {@link InvokeRequestWire}；`signal` 是不可跨进程序列化的运行时对象，
- * 只在进程内调用时存在，因此在此处交叉进来而不进入 schema。
+ * The serializable fields come from the generated {@link InvokeRequestWire};
+ * `signal` is a runtime object that cannot cross a process boundary, so it is
+ * mixed in here (for in-process calls only) rather than added to the schema.
  */
 export interface InvokeRequest extends InvokeRequestWire {
-  /** Host 取消 invocation 时触发；adapter 应传播到子进程或协议 cancel。 */
+  /** Fired when the Host cancels the invocation; the adapter should propagate it to the subprocess or a protocol cancel. */
   signal?: AbortSignal;
 }
 
@@ -214,11 +219,12 @@ export function assertChannelContextDescriptor(value: unknown): asserts value is
 }
 
 /**
- * 写入 Store 的事件记录。
- * `seq` 只在单个 run 内单调递增；消费者应使用 `(runId, seq)` 做排序和去重。
+ * The event record written to the Store.
+ * `seq` is monotonic only within a single run; consumers should order and
+ * dedupe on `(runId, seq)`.
  */
 export type EventEnvelope<TType extends CanonicalEventType = CanonicalEventType> = CanonicalEvent<TType> & {
-  /** 每条持久化事件的全局随机 ID。 */
+  /** A globally random ID for each persisted event. */
   id: string;
   seq: number;
   tsMs: number;
@@ -236,7 +242,9 @@ export const MESSAGE_EXPOSURES: ReadonlySet<MessageExposure> = new Set([
 ]);
 
 /**
- * Adapter 可声明的能力名。能力描述真实的端到端能力，不应只因为底层 CLI 支持就提前声明。
+ * Capability names an adapter may declare. A capability describes a real
+ * end-to-end ability and should not be claimed just because the underlying CLI
+ * happens to support it.
  */
 export const capabilities = Object.freeze({
   SESSION_SERIALIZE: "session.serialize",
@@ -248,8 +256,9 @@ export const capabilities = Object.freeze({
 } as const);
 
 /**
- * 校验 adapter event，并补齐持久化需要的 ID、序号、时间和 Run 归属。
- * 返回冻结对象，避免 append 后被调用方继续修改。
+ * Validate an adapter event and stamp it with the ID, sequence, timestamp and
+ * Run ownership that persistence requires. Returns a frozen object so callers
+ * cannot mutate it after append.
  */
 export function envelope<TType extends CanonicalEventType>(
   run: RunIdentity,
@@ -270,9 +279,9 @@ export function envelope<TType extends CanonicalEventType>(
   return Object.freeze(value);
 }
 
-/** 在动态 adapter 边界验证 canonical event 的最小运行时形状。 */
+/** Assert the minimal runtime shape of a canonical event at the dynamic adapter boundary. */
 export function assertCanonicalEvent(event: unknown): asserts event is CanonicalEvent {
-  // adapter 是插件边界，运行时校验不能只依赖 TypeScript 的编译期类型。
+  // Adapters are a plugin boundary, so runtime validation cannot rely on TypeScript's compile-time types alone.
   if (!isRecord(event) || typeof event.type !== "string" || !EVENT_TYPES.has(event.type as CanonicalEventType)) {
     throw new TypeError(`unsupported canonical event: ${isRecord(event) ? String(event.type) : "undefined"}`);
   }
@@ -302,7 +311,7 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
   }
 }
 
-/** 在 Host 调用 adapter 前验证不可缺少的执行标识和路径字段。 */
+/** Assert the execution identifiers and path fields that must be present before the Host calls an adapter. */
 export function assertInvokeRequest(request: unknown): asserts request is InvokeRequest {
   if (!isRecord(request)) throw new TypeError("InvokeRequest must be an object");
   for (const key of ["invocationId", "sessionId", "runId", "prompt", "workdir"] as const) {
@@ -320,7 +329,7 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
   }
 }
 
-/** 类型守卫：判断事件是否会结束当前 Run。 */
+/** Type guard: whether an event ends the current Run. */
 export function isTerminal(event: CanonicalEvent): event is CanonicalEvent<TerminalEventType> {
   return TERMINAL_EVENTS.has(event.type);
 }

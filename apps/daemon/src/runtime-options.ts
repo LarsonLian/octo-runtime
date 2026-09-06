@@ -3,6 +3,12 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { StartDaemonServerOptions } from "./server.js";
 
+/**
+ * Resolve all daemon runtime paths and options from CLI args and env, defaulting
+ * everything under `$OCTO_HARNESS_HOME` (~/.octo-harness). CLI args win over env,
+ * env over defaults. Also the single source of truth the CLI uses to locate the
+ * daemon socket, so both sides always agree on the path.
+ */
 export function resolveDaemonRuntimePaths(
   args = process.argv.slice(2),
   env: NodeJS.ProcessEnv = process.env
@@ -29,6 +35,12 @@ export function resolveDaemonRuntimePaths(
   };
 }
 
+/**
+ * Agent Work is opt-in: absent a base URL it stays disabled and returns undefined.
+ * Once enabled, the runtime token/tenant/subject become required (fail fast rather
+ * than connect half-configured), and channel-context storage/projection knobs are
+ * validated against their allowed enums.
+ */
 function resolveAgentWorkOptions(
   args: string[],
   env: NodeJS.ProcessEnv,
@@ -125,6 +137,11 @@ function requiredEnv(env: NodeJS.ProcessEnv, name: string): string {
   return value;
 }
 
+/**
+ * Serialize resolved options back into argv for the spawned daemon child, so the
+ * launcher and the daemon share one resolution pass. Only emit Agent Work flags
+ * when it is enabled; optional numeric knobs are omitted when unset.
+ */
 export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[] {
   const args = [
     "--socket", paths.socketPath,

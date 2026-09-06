@@ -13,6 +13,7 @@ import {
   type OpenClawFinalFrame
 } from "./parser.js";
 
+/** Cap retained stderr so a chatty process cannot grow the buffer without bound; only the tail feeds the failure message. */
 const STDERR_LIMIT = 64 * 1024;
 
 interface OpenClawCommandSpec {
@@ -31,22 +32,32 @@ interface ProcessExit {
   signal: NodeJS.Signals | null;
 }
 
+/** Compose the OpenClaw prompt, prefixing harness instructions in labeled sections so the local agent can distinguish them from the user request. */
 export function composeOpenClawPrompt(req: InvokeRequest): string {
   const input = providerInputText(req);
   if (!req.appendInstructions) return input;
   return `[Harness Instructions]\n${req.appendInstructions}\n\n[User Request]\n${input}`;
 }
 
+/** Return the first accessible directory among the candidates, falling back to the current working directory. */
 async function existingDirectory(candidates: Array<string | undefined>): Promise<string> {
   for (const candidate of candidates) {
     if (!candidate) continue;
     try { await access(candidate); return candidate; } catch {
-      // 候选路径不存在时继续尝试，最终回退到当前目录。
+      // Skip a candidate that does not exist and keep trying; ultimately fall back to the current directory.
     }
   }
   return process.cwd();
 }
 
+/**
+ * Build the OpenClaw CLI argv, env and stdin for one invocation.
+ *
+ * The prompt is written to a private `--message-file` rather than passed on the
+ * command line. A provider session id is generated when none is resumed, so the
+ * local session is addressable. The chosen `cwd` is the first existing of the
+ * configured state/config dirs, then $HOME, so OpenClaw finds its local state.
+ */
 export async function buildOpenClawCommand(
   req: InvokeRequest,
   command = "openclaw",
@@ -96,6 +107,7 @@ export async function buildOpenClawCommand(
   };
 }
 
+/** Build a session.update event carrying the provider session (and optional agent) id for replay on the next invocation. */
 function sessionEvent(sessionId: string, providerAgentId?: string): CanonicalEvent {
   return {
     type: "session.update",
@@ -109,15 +121,29 @@ function sessionEvent(sessionId: string, providerAgentId?: string): CanonicalEve
   };
 }
 
+/** Pick the most informative failure text: trimmed stderr, else the spawn error, else a synthesized exit-status message. */
 function failureMessage(spec: OpenClawCommandSpec, exit: ProcessExit, spawnError: Error | undefined, stderr: string): string {
   return stderr.trim() || spawnError?.message ||
     `${spec.command} exited with ${exit.code ?? exit.signal ?? "an unknown status"}`;
 }
 
+/** Serialize a usage frame to its canonical payload JSON, used to suppress emitting a duplicate usage.update. */
 function usageKey(frame: { inputTokens: number; outputTokens: number; provider?: string; model?: string }): string {
   return JSON.stringify(usagePayload(frame));
 }
 
+/**
+ * Run one OpenClaw subprocess and stream canonical events.
+ *
+ * OpenClaw emits incremental JSON frames, then a trailing "final blob" (which
+ * may span several lines and is reassembled here). Reconciliation quirks:
+ * - the final blob's text is authoritative, so only its suffix beyond the
+ *   already-streamed text is emitted, avoiding duplicated output;
+ * - usage is emitted once, de-duplicated against the last streamed usage;
+ * - abort/failure is decided after the stream closes so the exit code, an
+ *   explicit cancel/failure frame and the abort signal are all considered,
+ *   yielding exactly one run.stopped / run.error / run.finished terminal.
+ */
 async function* invokeOpenClaw(req: InvokeRequest, spec: OpenClawCommandSpec): AsyncGenerator<CanonicalEvent> {
   yield sessionEvent(spec.providerSessionId, spec.providerAgentId);
   yield { type: "message.create", payload: { role: "assistant", status: "streaming", channel: "final" } };
@@ -148,6 +174,7 @@ async function* invokeOpenClaw(req: InvokeRequest, spec: OpenClawCommandSpec): A
   for await (const line of createInterface({ input: child.stdout })) {
     const frame = tryParseOpenClawEvent(line);
     if (!frame) {
+      // A non-event line may be the final blob: either a compact single line, or a multi-line object we accumulate until it parses.
       const compactFinal = tryParseOpenClawFinalBlob(line);
       if (compactFinal) finalFrame = compactFinal;
       else if (blobLines.length > 0 || line.trim() === "{") {
@@ -179,6 +206,7 @@ async function* invokeOpenClaw(req: InvokeRequest, spec: OpenClawCommandSpec): A
     yield sessionEvent(finalFrame.sessionId, spec.providerAgentId);
   }
   if (finalFrame?.text) {
+    // The final blob text is authoritative; emit only the suffix beyond what was already streamed so text is not duplicated.
     if (finalFrame.text.startsWith(accumulatedText)) {
       const suffix = finalFrame.text.slice(accumulatedText.length);
       if (suffix) yield { type: "message.delta", payload: { text: suffix, channel: "final" } };
@@ -205,6 +233,7 @@ async function* invokeOpenClaw(req: InvokeRequest, spec: OpenClawCommandSpec): A
   yield { type: "run.finished", payload: {} };
 }
 
+/** Create an OpenClaw adapter that drives the local `openclaw agent` CLI; each invocation is an isolated subprocess with its own message file. */
 export function createOpenClawAdapter({ command = "openclaw", commandArgsPrefix = [], env = {} }: { command?: string; commandArgsPrefix?: string[]; env?: NodeJS.ProcessEnv } = {}) {
   return defineAdapter({
     metadata: {

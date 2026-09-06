@@ -1,10 +1,12 @@
 /**
- * Claude Code 本地 CLI transport 与事件归一化层。
+ * Claude Code local CLI transport and event normalization layer.
  *
- * 生产调用固定启用 stream-json partial messages。Claude 会先发送 content block 的
- * start/delta，随后再重放同一 block 的完整 assistant snapshot；adapter 只发布前者，
- * 否则 Chat 会看到重复文本和重复 tool call。tool args delta 本身没有 tool_use id，
- * 所以每个 invocation 必须拥有独立的 ClaudeEventNormalizer 状态。
+ * Production invocations always enable stream-json partial messages. Claude
+ * first sends a content block's start/delta, then replays the same block as a
+ * complete assistant snapshot; the adapter only publishes the former, otherwise
+ * Chat would see duplicated text and duplicated tool calls. A tool-args delta
+ * carries no tool_use id of its own, so every invocation must own an
+ * independent ClaudeEventNormalizer state.
  */
 import {
   defineAdapter,
@@ -56,6 +58,13 @@ interface ClaudeNativeEvent {
   result?: string;
 }
 
+/**
+ * Build the Claude CLI argv and stdin for one invocation.
+ *
+ * The system/control prompt is written to a private temp file passed via
+ * `--append-system-prompt-file`, while the user prompt stays on stdin, so the
+ * two never get conflated. Returns a `cleanup` that removes the temp directory.
+ */
 export async function buildClaudeCommand(
   req: InvokeRequest,
   command = "claude",
@@ -63,10 +72,12 @@ export async function buildClaudeCommand(
 ) {
   const directory = await mkdtemp(join(tmpdir(), "octo-harness-claude-"));
   const promptFile = join(directory, "system-prompt.txt");
-  // 控制提示词走 Claude 的专用文件参数，用户 prompt 仍从 stdin 输入，二者不会混淆。
+  // The control prompt goes through Claude's dedicated file argument while the
+  // user prompt is still fed via stdin, so the two never get conflated.
   await writeFile(promptFile, req.appendInstructions, { mode: 0o600 });
-  // include-partial-messages 才会产生 thinking/text/input_json delta；单独的 stream-json
-  // 仍以完整 assistant block 为主，不能满足本地 Chat 的实时展示需求。
+  // Only --include-partial-messages produces thinking/text/input_json deltas;
+  // plain stream-json still delivers whole assistant blocks, which cannot
+  // satisfy the local Chat's real-time streaming requirement.
   const args = [
     ...commandArgsPrefix,
     "--print",
@@ -91,18 +102,21 @@ export async function buildClaudeCommand(
 }
 
 /**
- * Claude partial stream 中 tool 参数 delta 只携带 block index，不重复 tool_use id。
- * normalizer 因此必须按 invocation 保存 index -> id；全局复用会让并发 Run 串流。
+ * Translates Claude's native stream into canonical events for one invocation.
+ *
+ * In the partial stream a tool-args delta carries only its block index, not a
+ * repeated tool_use id, so the normalizer must map index -> id per invocation;
+ * sharing one instance globally would cross-wire concurrent Runs.
  */
 export class ClaudeEventNormalizer {
-  /** 一旦收到 partial，后续 assistant snapshot 与 result text 都只能作为重复快照处理。 */
+  /** Once a partial arrives, later assistant snapshots and result text are treated as duplicate snapshots. */
   #sawPartialMessages = false;
-  /** Claude 每个工具轮次都会重复 system/status；同一 session 只向 Core 发布一次。 */
+  /** Claude repeats system/status on every tool turn; publish the session id to Core only once per session. */
   #publishedSessionId?: string;
-  /** parent tool scope -> content block index -> tool_use id，防止并发子任务 index 冲突。 */
+  /** parent tool scope -> content block index -> tool_use id, so concurrent sub-tasks cannot collide on index. */
   readonly #toolBlocks = new Map<string, Map<number, string>>();
 
-  /** 按 stdout 到达顺序返回 canonical events；此方法不缓冲整轮，也不重排事件。 */
+  /** Return canonical events in stdout arrival order; this method neither buffers a whole turn nor reorders events. */
   normalize(native: ClaudeNativeEvent): CanonicalEvent[] {
     if (native.type === "system" && native.session_id) {
       if (native.session_id === this.#publishedSessionId) return [];
@@ -119,7 +133,7 @@ export class ClaudeEventNormalizer {
     }
 
     if (native.type === "assistant") {
-      // --include-partial-messages 会在 delta 后重放完整 block；不能再次输出。
+      // --include-partial-messages replays the complete block after the delta; do not emit it again.
       if (this.#sawPartialMessages) return [];
       const events: CanonicalEvent[] = [];
       for (const block of native.message?.content ?? []) {
@@ -172,7 +186,7 @@ export class ClaudeEventNormalizer {
             role: "assistant",
             status: native.is_error ? "failed" : "completed",
             channel: "final",
-            // partial 模式已经逐段交付了全部可见文本；这里覆盖会让 UI 丢失工具前进度。
+            // Partial mode already delivered all visible text incrementally; overwriting here would drop pre-tool progress in the UI.
             ...(!this.#sawPartialMessages && typeof native.result === "string" ? { text: native.result } : {})
           }
         },
@@ -191,7 +205,7 @@ export class ClaudeEventNormalizer {
     const scope = native.parent_tool_use_id ?? "root";
 
     if (event.type === "message_start") {
-      // block index 只在一条 provider message 内稳定，新 message 必须清空当前 scope。
+      // A block index is only stable within one provider message, so a new message must clear the current scope.
       this.#toolBlocks.set(scope, new Map());
       return [];
     }
@@ -244,7 +258,7 @@ function claudeAnalysisMetadata(exposure: MessageExposure, nativeEvent: string) 
   };
 }
 
-/** 单条完整事件的兼容入口；partial 序列应复用同一个 ClaudeEventNormalizer。 */
+/** Compatibility entry for a single complete event; a partial sequence must reuse one ClaudeEventNormalizer. */
 export function normalizeClaudeEvent(native: ClaudeNativeEvent): CanonicalEvent[] {
   return new ClaudeEventNormalizer().normalize(native);
 }
@@ -259,6 +273,7 @@ function claudeToolResultOutput(content: unknown): unknown {
   return text || content;
 }
 
+/** Create a Claude Code adapter bound to a resolved CLI command and optional argv prefix. */
 export function createClaudeCodeAdapter({
   command = "claude",
   commandArgsPrefix = []
@@ -276,7 +291,7 @@ export function createClaudeCodeAdapter({
     probe: () => probeCommand(command),
     async *invoke(request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
       const spec = await buildClaudeCommand(request, command, commandArgsPrefix);
-      // normalizer 不能提升到 adapter 单例：同一 adapter 可以并发执行多个 invocation。
+      // The normalizer must not be hoisted to an adapter singleton: one adapter may run several invocations concurrently.
       const normalizer = new ClaudeEventNormalizer();
       try {
         yield {

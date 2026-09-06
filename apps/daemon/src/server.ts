@@ -42,10 +42,15 @@ interface DaemonRequest {
   params?: Record<string, unknown>;
 }
 
+// Terminal sets are intentionally duplicated across protocol/engine/daemon/server;
+// keep them in sync. Here they let the streamer stop on either a terminal event or
+// a terminal run status.
 const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled"]);
 const TERMINAL_EVENT_TYPES = new Set(["run.finished", "run.error", "run.stopped"]);
 const STREAM_POLL_MS = 25;
 
+/** Everything the daemon owns for one process lifetime; `close()` tears the whole
+ * stack down in the reverse order it was brought up and removes the socket file. */
 export interface DaemonApplication {
   server: Server;
   store: SqliteStore;
@@ -57,6 +62,12 @@ export interface DaemonApplication {
   close(): Promise<void>;
 }
 
+/**
+ * Bring up the full daemon: open the SQLite store, spawn the adapter-host child,
+ * build engine + daemon, optionally start the Agent Work runtime, and listen on
+ * the Unix control socket. Partial-startup failures unwind in reverse. Each socket
+ * connection carries exactly one request line (see `handleRequestLine`).
+ */
 export async function startDaemonServer({
   socketPath,
   storePath,
@@ -115,7 +126,8 @@ export async function startDaemonServer({
       server.once("error", reject);
       server.listen(socketPath, () => resolve());
     });
-    // Unix socket 是本地控制面的权限边界，只允许当前宿主账号访问。
+    // The Unix socket is the only local access boundary for the control plane;
+    // 0600 restricts it to the current host account (there is no RBAC above it).
     await chmod(socketPath, 0o600);
     await agentWorkRuntime?.start();
   } catch (error) {
@@ -146,6 +158,9 @@ export async function startDaemonServer({
   };
 }
 
+/** Handle one request line. `run.stream` keeps the socket open and pushes many
+ * lines; every other method sends a single `{ id, result }` (or `{ id, error }`)
+ * and ends the socket. Errors carry an optional errno-style `code`. */
 async function handleRequestLine({
   line,
   socket,
@@ -183,6 +198,12 @@ async function handleRequestLine({
   }
 }
 
+/**
+ * Tail a run's events over the socket. Polls the store, emitting each event with
+ * `seq >= fromSeq` in order, then a terminal `{ done, run, nextSeq }` once a
+ * terminal event or terminal run status is observed. `nextSeq` lets a client
+ * resume without gaps. Stops early if the client disconnects.
+ */
 async function streamRunEvents({
   request,
   socket,
@@ -233,6 +254,9 @@ async function writeSocketLine(socket: net.Socket, value: unknown): Promise<void
   });
 }
 
+/** Route a parsed request to the engine, daemon or store. Read-only queries hit
+ * the store directly; anything that mutates run state or scheduling goes through
+ * the daemon so queueing and background execution stay centralized. */
 async function dispatch({
   request,
   daemon,

@@ -38,7 +38,8 @@ const BACKPRESSURE_POLL_MS = 100;
 const DEFAULT_CONTEXT_SYNC_TIMEOUT_MS = 3_000;
 const DEFAULT_CONTEXT_SYNC_LIMIT = 40;
 const CONTEXT_BUSY_POLL_MS = 25;
-/** 终态事件必须能落盘收尾，不受软水位背压阻塞。 */
+/** Terminal events must be able to reach durable storage and close out the run;
+ * they bypass the soft-watermark backpressure. */
 const TERMINAL_OUTBOX_TYPES = new Set(["run.completed", "run.failed", "run.cancelled"]);
 
 export interface AgentWorkRuntimeOptions {
@@ -50,13 +51,15 @@ export interface AgentWorkRuntimeOptions {
   runtimeName: string;
   fingerprint: string;
   reconnectMs?: number;
-  /** 本地 Outbox 数据库路径；缺省由 daemon 解析。 */
+  /** Local outbox database path; defaults are resolved by the daemon. */
   storePath: string;
-  /** 单次可在途发送的事件数上限。 */
+  /** Max number of events allowed in flight (unacked) per send window. */
   sendWindow?: number;
-  /** 软水位：达到后停止接收新 Run 并暂停 provider 读取形成背压。 */
+  /** Soft watermark: once reached, stop admitting new Runs and pause provider
+   * reads to form backpressure. */
   softWatermarkBytes?: number;
-  /** 硬水位：仅用于高优告警，未 ACK 数据仍不删除。 */
+  /** Hard watermark: used only for high-priority alerting; unacked data is still
+   * not deleted. */
   hardWatermarkBytes?: number;
   reconcileMs?: number;
   channelContext?: ChannelContextRuntimeOptions;
@@ -138,6 +141,17 @@ interface PendingContextSync {
   onAbort?: () => void;
 }
 
+/**
+ * The local Agent Work runtime: registers with the control plane, holds a
+ * WebSocket for commands, executes accepted Runs through the adapter host, and
+ * ships their events out of the durable outbox with cumulative ACK semantics.
+ *
+ * Durability contract: each event is written to the SQLite outbox before it is
+ * sent; a cumulative `event.ack{run_id, seq}` first releases the send window
+ * (received) and then, on the durable ACK, deletes confirmed rows. Unacked events
+ * survive restart and replay with a stable event_id. Channel-context commits are
+ * gated on the successful terminal's durable ACK.
+ */
 export class AgentWorkRuntime {
   readonly #options: AgentWorkRuntimeOptions;
   readonly #host: AdapterHostRpcClient;
@@ -147,7 +161,8 @@ export class AgentWorkRuntime {
   readonly #messageHandlers = new Set<Promise<void>>();
   readonly #executionTasks = new Set<Promise<void>>();
   readonly #adapterCapabilities = new Map<string, Set<string>>();
-  /** 本连接内已发出、等待 ACK 的 `${runId}:${seq}`；重连时清空以触发重放。 */
+  /** `${runId}:${seq}` already sent on this connection and awaiting ACK; cleared
+   * on reconnect so the sender replays them. */
   readonly #inFlight = new Set<string>();
   readonly #pendingContextSyncs = new Map<string, PendingContextSync>();
   readonly #latestContextSyncByScope = new Map<string, string>();
@@ -252,7 +267,8 @@ export class AgentWorkRuntime {
     await this.#pump?.catch(() => undefined);
     await Promise.allSettled([...this.#messageHandlers]);
     await Promise.allSettled([...this.#executionTasks]);
-    // 未 ACK 事件留在 Outbox，重启后重放；这里只释放连接与句柄。
+    // Unacked events stay in the outbox and replay after restart; here we only
+    // release the connection and handles.
     this.#store?.close();
     this.#store = undefined;
     this.#contextStore?.close();
@@ -332,7 +348,8 @@ export class AgentWorkRuntime {
       this.#connected = false;
       if (this.#heartbeat) clearInterval(this.#heartbeat);
       this.#heartbeat = undefined;
-      // 断线不丢事件：清空在途标记，重连后从最小未确认 seq 全部重放。
+      // No event loss on disconnect: clear the in-flight markers so reconnect
+      // replays everything from the lowest unacked seq.
       this.#inFlight.clear();
       if (!this.#isCurrentLifecycle(epoch)) return;
       while (this.#isCurrentLifecycle(epoch) && !this.#socket) {
@@ -408,7 +425,8 @@ export class AgentWorkRuntime {
       this.#connected = true;
       if (this.#heartbeat) clearInterval(this.#heartbeat);
       this.#heartbeat = setInterval(() => this.#trySend("runtime.heartbeat", { runtime_version: "0.1.0" }), everyMs);
-      // 连接就绪后立刻排空 Outbox（含断线期间积压的事件）。
+      // Once the connection is ready, immediately drain the outbox (including
+      // events backlogged during the disconnect).
       this.#kickSender();
       return;
     }
@@ -519,7 +537,8 @@ export class AgentWorkRuntime {
       this.#ackCommand(command, false, { code: "UNSUPPORTED_COMMAND", message: command.type });
       return;
     }
-    // 重启后仍能去重：同一 command_id 直接回放已保存结果，不重复执行。
+    // Idempotent across restart: a repeated command_id replays the saved receipt
+    // instead of re-executing.
     const receipt = store.getCommandReceipt(command.command_id);
     if (receipt) {
       this.#ackCommand(command, receipt.accepted, receipt.error);
@@ -532,7 +551,8 @@ export class AgentWorkRuntime {
     // A replay while the first handler waits must join the in-flight
     // admission attempt before evaluating mutable capacity constraints.
     if (this.#acceptingCommandIds.has(command.command_id) || this.#acceptingRuns.has(command.run_id)) return;
-    // 软水位背压：拒绝新 Run，让已有 Outbox 先排空；未 ACK 数据不删除。
+    // Soft-watermark backpressure: reject new Runs so the existing outbox drains
+    // first; unacked data is not deleted.
     const softWatermark = this.#options.softWatermarkBytes ?? DEFAULT_SOFT_WATERMARK_BYTES;
     const hardWatermark = this.#options.hardWatermarkBytes ?? DEFAULT_HARD_WATERMARK_BYTES;
     const pendingBytes = store.outboxBytes();
@@ -768,7 +788,8 @@ export class AgentWorkRuntime {
         if (contextSnapshot && TERMINAL_OUTBOX_TYPES.has(mapped.type)) {
           Object.assign(mapped.payload, contextEventFields(contextSnapshot));
         }
-        // 终态事件绕过软水位背压，保证 Run 在持续背压下仍能落盘收尾。
+        // Terminal events bypass soft-watermark backpressure so a Run can still
+        // reach durable storage and close out under sustained backpressure.
         if (!TERMINAL_OUTBOX_TYPES.has(mapped.type)) await this.#awaitOutboxCapacity(command.run_id);
         store.allocateAndAppend(command.run_id, mapped.type, mapped.payload);
         completed ||= event.type === "run.finished";
@@ -795,7 +816,8 @@ export class AgentWorkRuntime {
     }
   }
 
-  /** 软水位背压：暂停从 provider 继续读取，直到 Outbox 排空到阈值以下或 Run 结束。 */
+  /** Soft-watermark backpressure: pause reading further events from the provider
+   * until the outbox drains below the threshold or the Run ends. */
   async #awaitOutboxCapacity(runId: string): Promise<void> {
     const store = this.#store;
     const softWatermark = this.#options.softWatermarkBytes ?? DEFAULT_SOFT_WATERMARK_BYTES;
@@ -886,12 +908,13 @@ export class AgentWorkRuntime {
     } satisfies WireEnvelope));
   }
 
-  /** 发送失败不抛出（心跳/ACK 在断线时可安全丢弃，业务事件由 Outbox 保证重放）。 */
+  /** Send without throwing (heartbeat/ACK are safe to drop while disconnected;
+   * business events are guaranteed by outbox replay). */
   #trySend(type: string, payload: unknown, seq?: number, ack?: number): void {
     try {
       this.#send(type, payload, seq, ack);
     } catch {
-      // 忽略：连接已断，下一次连接会重新协商。
+      // Ignore: the connection is down; the next connection renegotiates.
     }
   }
 
@@ -905,6 +928,9 @@ export class AgentWorkRuntime {
   }
 }
 
+/** Accumulate the final-channel assistant text across message events so the
+ * terminal outbox event can carry the full reply (deltas concatenate, a full
+ * message replaces). Only `final`-channel messages count. */
 export function accumulateFinalText(current: string, event: CanonicalEvent): string {
   if (!event.type.startsWith("message.") || (event.payload.channel ?? "final") !== "final") return current;
   const text = stringValue(event.payload.text);
@@ -913,6 +939,10 @@ export function accumulateFinalText(current: string, event: CanonicalEvent): str
   return text;
 }
 
+/** Map a control-plane execution envelope into an adapter type + `InvokeRequest`.
+ * When a prepared channel-context snapshot is present the prompt is split: a
+ * product-visible display prompt plus a `modelInput` that prepends the delta (or
+ * the recovery/cold projection as `freshFallbackModelInput`). */
 export function mapExecutionEnvelope(
   envelope: ExecutionEnvelope,
   contextSnapshot?: PreparedChannelContextSnapshot
@@ -971,6 +1001,9 @@ function executionAdapterType(envelope: ExecutionEnvelope): string {
     ?? normalizeAdapterType(stringValue(profile.default_adapter) ?? "codex");
 }
 
+/** Render the full immutable execution input (current parts, recent group
+ * messages and any quoted message) into a single prompt. Used when no channel
+ * context snapshot drives the model input. */
 export function renderImmutableExecutionInputPrompt(content: Record<string, unknown> | undefined): string {
   const input = asRecord(content);
   const parts = Array.isArray(input.parts) ? input.parts : [];
@@ -1024,6 +1057,9 @@ function rawDataText(data: WebSocket.RawData): string {
   return data.toString("utf8");
 }
 
+/** Translate a canonical event into an outbox wire event: terminal run states are
+ * renamed to the Agent Work vocabulary (completed/failed/cancelled) and carry the
+ * accumulated final text; all other events pass through unchanged. */
 export function mapRuntimeEvent(event: CanonicalEvent, finalText: string): { type: string; payload: Record<string, unknown> } {
 	const terminalText = finalText || stringValue(event.payload.text) || "";
   switch (event.type) {

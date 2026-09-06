@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { openWalDatabase } from "@mininglamp-oss/octo-harness-core";
 
-/** ACK 前暂存的一条待发送事件，已带上重放需要的 lease/fencing 与稳定 event_id。 */
+/** One event staged before ACK, already carrying the lease/fencing and the stable
+ * event_id needed for replay. */
 export interface OutboxRow {
   runId: string;
   seq: number;
@@ -15,7 +16,7 @@ export interface OutboxRow {
   fencingToken: number;
 }
 
-/** 创建/恢复一个 Agent Work run 记录所需的输入。 */
+/** Input for creating or recovering an Agent Work run record. */
 export interface AgentWorkRunInput {
   runId: string;
   sessionId?: string;
@@ -24,7 +25,7 @@ export interface AgentWorkRunInput {
   fencingToken: number;
 }
 
-/** 一次 command 去重命中的持久化结果。 */
+/** Persisted result of a deduplicated command hit. */
 export interface CommandReceipt {
   commandId: string;
   serverSeq: number;
@@ -32,7 +33,8 @@ export interface CommandReceipt {
   error?: Record<string, unknown>;
 }
 
-/** 累计 ACK 推进的结果；`reason` 用于对越界/倒退 ACK 告警。 */
+/** Result of advancing a cumulative watermark; `reason` flags out-of-range or
+ * backwards (stale) ACKs so the caller can warn rather than silently ignore them. */
 export type AckOutcome =
   | { advanced: true; through: number }
   | { advanced: false; reason: "unknown_run" | "stale" | "ack_beyond_produced" };
@@ -50,7 +52,8 @@ export type DurableAckInspection =
 
 const TERMINAL_EVENT_TYPES = new Set(["run.completed", "run.failed", "run.cancelled"]);
 const LAST_ACKED_COMMAND_SEQ = "last_acked_command_seq";
-/** command receipt 与终态 run 的默认本地保留期（7 天），到期后由 reconcile 清理。 */
+/** Local retention (7 days) for command receipts and terminal runs; reconcile
+ * deletes them once expired. Unacked outbox rows are never deleted by time. */
 const DEFAULT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface RunRow {
@@ -63,11 +66,13 @@ interface RunRow {
 }
 
 /**
- * Agent Work runtime 的本地可靠 Outbox（SQLite WAL）。
+ * Local durable outbox (SQLite WAL) for the Agent Work runtime.
  *
- * 事件先在事务中分配 seq + 写入 outbox（本地耐久点），再由 sender 发送；云端 ACK 后立即删除。
- * ACK 按“累计 through_seq”语义解释：一条 `event.ack{run_id, seq}` 表示该 run 到 seq 为止全部耐久，
- * 因此保持现有 wire 形状即可前向兼容累计 ACK。未 ACK 事件永不按时间删除。
+ * Each event is allocated a seq and written to the outbox inside a transaction
+ * (the local durability point) before the sender transmits it; rows are deleted
+ * only after a cloud ACK. ACKs are cumulative: one `event.ack{run_id, seq}` means
+ * the run is durable through seq, so keeping the existing wire shape stays
+ * forward-compatible with cumulative ACK. Unacked events are never deleted by time.
  */
 export class AgentWorkStore {
   readonly #db: DatabaseSync;
@@ -138,7 +143,8 @@ export class AgentWorkStore {
     error?: Record<string, unknown>,
     expiresAt?: number
   ): void {
-    // 默认保留 7 天，重启后仍可去重；到期由 reconcile 清理。
+    // Default 7-day retention keeps dedup working across restart; reconcile
+    // deletes receipts once expired.
     const expiry = expiresAt ?? Date.now() + DEFAULT_RETENTION_MS;
     this.#db.prepare(
       `INSERT INTO command_receipts (command_id, server_seq, accepted, result_json, expires_at)
@@ -164,7 +170,8 @@ export class AgentWorkStore {
     ).run(LAST_ACKED_COMMAND_SEQ, String(seq));
   }
 
-  /** 创建或恢复 run；已存在时只刷新 lease/fencing/status，不重置 seq 与 ACK 水位。 */
+  /** Create or recover a run; when it already exists only lease/fencing/status are
+   * refreshed — seq and the ACK watermarks are never reset. */
   upsertRun(input: AgentWorkRunInput): void {
     this.#db.prepare(
       `INSERT INTO runs (run_id, session_id, command_id, lease_id, fencing_token, status, next_seq, received_through_seq, durable_through_seq, updated_at)
@@ -188,7 +195,8 @@ export class AgentWorkStore {
     ).all().map(row => (row as { run_id: string }).run_id);
   }
 
-  /** 事务内分配 seq、生成稳定 event_id 并写入 outbox；terminal 事件记录 terminal_seq。 */
+  /** Allocate the next seq, mint a stable event_id and append to the outbox in one
+   * transaction; a terminal event also records terminal_seq. */
   allocateAndAppend(runId: string, type: string, payload: Record<string, unknown>): { seq: number; eventId: string } {
     const run = this.#db.prepare("SELECT next_seq FROM runs WHERE run_id = ?").get(runId) as
       | { next_seq: number }
@@ -342,13 +350,13 @@ export class AgentWorkStore {
     } : undefined;
   }
 
-  /** 未 ACK 事件正文的合计字节，用于容量水位判断。 */
+  /** Total bytes of unacked event bodies, used for the capacity watermark checks. */
   outboxBytes(): number {
     const row = this.#db.prepare("SELECT COALESCE(SUM(payload_bytes), 0) AS bytes FROM event_outbox").get() as { bytes: number };
     return row.bytes;
   }
 
-  /** 最早未确认事件的年龄（ms）；无积压返回 null。 */
+  /** Age (ms) of the oldest unacked event; null when the outbox is empty. */
   oldestUnackedAgeMs(): number | null {
     const row = this.#db.prepare("SELECT MIN(created_at) AS oldest FROM event_outbox").get() as { oldest: number | null };
     return row.oldest === null ? null : Date.now() - row.oldest;
@@ -358,14 +366,16 @@ export class AgentWorkStore {
     return (this.#db.prepare("SELECT COUNT(*) AS n FROM event_outbox").get() as { n: number }).n;
   }
 
-  /** 一致性清扫：删除已在水位内的残留行与过期元数据，checkpoint 并小批回收空闲页。 */
+  /** Consistency sweep: delete rows already within the durable watermark and
+   * expired metadata, checkpoint the WAL, and incrementally reclaim free pages. */
   reconcile(now = Date.now()): void {
     this.#db.prepare(
       `DELETE FROM event_outbox WHERE (run_id, seq) IN (
         SELECT o.run_id, o.seq FROM event_outbox o JOIN runs r ON r.run_id = o.run_id WHERE o.seq <= r.durable_through_seq
       )`
     ).run();
-    // 过期 command receipt 与本地保留期已过的终态 run（其 outbox 已排空）不再需要。
+    // Expired command receipts and terminal runs past their local retention
+    // (whose outbox has already drained) are no longer needed.
     this.#db.prepare("DELETE FROM command_receipts WHERE expires_at IS NOT NULL AND expires_at < ?").run(now);
     this.#db.prepare(
       `DELETE FROM runs

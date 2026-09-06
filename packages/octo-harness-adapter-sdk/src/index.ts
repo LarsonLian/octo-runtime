@@ -62,6 +62,10 @@ interface ProcessExit {
   signal: NodeJS.Signals | null;
 }
 
+/**
+ * Validate and freeze an adapter definition. Freezing makes the metadata and
+ * `invoke` reference immutable so a loaded adapter cannot be mutated at runtime.
+ */
 export function defineAdapter<TAdapter extends Adapter>(adapter: TAdapter): Readonly<TAdapter> {
   if (!adapter?.metadata?.type || typeof adapter.invoke !== "function") {
     throw new TypeError("adapter requires metadata.type and invoke(req)");
@@ -69,6 +73,12 @@ export function defineAdapter<TAdapter extends Adapter>(adapter: TAdapter): Read
   return Object.freeze(adapter);
 }
 
+/**
+ * Spawn a JSON-lines subprocess and yield one parsed native event per stdout
+ * line. stderr is buffered and surfaced only if the process exits non-zero (as
+ * `ProviderProcessError`); the `signal` aborts the child. Stdout is drained to
+ * completion before the exit code is awaited so no trailing events are lost.
+ */
 export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TNative>): AsyncGenerator<TNative> {
   const { command, args = [], cwd, env, input, signal, parseLine } = options;
   const child = spawn(command, args, {
@@ -88,7 +98,8 @@ export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TN
   });
   child.stdin.end(input);
 
-  // 每行只承载一个 provider 原生事件；解析失败由具体 adapter 决定是否忽略。
+  // One provider-native event per line; whether a parse failure is ignored is
+  // left to the specific adapter's parseLine.
   for await (const line of createInterface({ input: child.stdout })) {
     const event = parseLine(line);
     if (event !== null) yield event;
@@ -103,6 +114,7 @@ export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TN
   }
 }
 
+/** Raised when a provider subprocess exits non-zero; carries the exit code/signal alongside the captured stderr message. */
 export class ProviderProcessError extends Error {
   constructor(message: string, readonly exit: ProcessExit) {
     super(message);
@@ -110,6 +122,7 @@ export class ProviderProcessError extends Error {
   }
 }
 
+/** Parse a line as a JSON object, returning null on invalid JSON or a non-object (array/scalar) so callers can skip noise lines. */
 export function parseJsonLine(line: string): Record<string, unknown> | null {
   try {
     const value: unknown = JSON.parse(line);
@@ -121,6 +134,13 @@ export function parseJsonLine(line: string): Record<string, unknown> | null {
   }
 }
 
+/**
+ * Build a stdout-JSON-lines CLI adapter from a per-provider spec. It handles the
+ * lifecycle shared by every such adapter: emit an opening `message.create`,
+ * normalize each native line into canonical events, and — if the provider never
+ * produced a terminal event — synthesize the `onSuccess` events. `cleanup` runs
+ * in a `finally` so it fires on cancellation and error paths too.
+ */
 export function createJsonCliAdapter<TNative = Record<string, unknown>>(
   options: JsonCliAdapterOptions<TNative>
 ): Readonly<Adapter> {
@@ -154,6 +174,11 @@ export function createJsonCliAdapter<TNative = Record<string, unknown>>(
   });
 }
 
+/**
+ * Resolve whether a command is runnable. A path-qualified command is checked
+ * directly; a bare name is searched across `PATH` (`;`-separated on Windows).
+ * Returns the first executable match, else `command_not_found`.
+ */
 export async function probeCommand(command: string, { env = process.env }: { env?: NodeJS.ProcessEnv } = {}): Promise<ProbeResult> {
   const candidates = command.includes("/")
     ? [command]
@@ -163,7 +188,7 @@ export async function probeCommand(command: string, { env = process.env }: { env
       await access(candidate, constants.X_OK);
       return { available: true, command: candidate };
     } catch {
-      // 当前候选不可执行，继续搜索 PATH 中的下一个目录。
+      // Current candidate is not executable; keep scanning the next PATH entry.
     }
   }
   return { available: false, command, reason: "command_not_found" };
