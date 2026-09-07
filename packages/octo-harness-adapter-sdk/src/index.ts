@@ -180,7 +180,9 @@ function isAllowedProviderOutput(event: CanonicalEvent): boolean {
   if (event.type === "usage.update" || event.type === "run.error") return true;
   if (!event.type.startsWith("message.")) return false;
   if (event.payload.channel !== "analysis") return true;
-  return event.payload.exposure === "public_summary" || event.payload.exposure === "public_plan";
+  return event.payload.exposure === "public_reasoning"
+    || event.payload.exposure === "public_summary"
+    || event.payload.exposure === "public_plan";
 }
 
 function sanitizeProviderOutputMetadata(metadata: ProviderOutputMetadata | undefined): ProviderOutputMetadata {

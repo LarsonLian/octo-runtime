@@ -28,6 +28,18 @@ test("analysis exposure defaults closed and public classifications require prove
   assert.doesNotThrow(() => assertCanonicalEvent(summary));
   assert.equal(messageExposure(summary), "public_summary");
 
+  const publicReasoning = {
+    type: "message.delta",
+    payload: {
+      channel: "analysis",
+      text: "Inspecting the requested data.",
+      exposure: "public_reasoning",
+      provenance: { provider: "opencode", nativeEvent: "reasoning" }
+    }
+  };
+  assert.doesNotThrow(() => assertCanonicalEvent(publicReasoning));
+  assert.equal(messageExposure(publicReasoning), "public_reasoning");
+
   assert.throws(
     () => assertCanonicalEvent({
       type: "message.delta",
@@ -46,6 +58,32 @@ test("analysis exposure defaults closed and public classifications require prove
       }
     }),
     /payload\.exposure is invalid/
+  );
+});
+
+test("model step lifecycle requires stable identity and valid timestamps", () => {
+  assert.doesNotThrow(() => assertCanonicalEvent({
+    type: "model_step.started",
+    payload: { stepId: "message-1", startedAtMs: 1_788_793_000_000 }
+  }));
+  assert.doesNotThrow(() => assertCanonicalEvent({
+    type: "model_step.finished",
+    payload: {
+      stepId: "message-1", status: "completed", finishReason: "tool-calls",
+      publicText: "I'll inspect the repository.", endedAtMs: 1_788_793_002_000
+    }
+  }));
+  assert.throws(
+    () => assertCanonicalEvent({ type: "model_step.started", payload: {} }),
+    /payload\.stepId/
+  );
+  assert.throws(
+    () => assertCanonicalEvent({ type: "model_step.finished", payload: { stepId: "message-1", status: "completed", endedAtMs: -1 } }),
+    /payload\.endedAtMs/
+  );
+  assert.throws(
+    () => assertCanonicalEvent({ type: "model_step.finished", payload: { stepId: "message-1", status: "completed", publicText: 42 } }),
+    /payload\.publicText/
   );
 });
 

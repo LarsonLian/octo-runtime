@@ -8,6 +8,8 @@ import type {
   ContextSyncResult,
   InvokeRequestWire,
   MessageExposure,
+  ModelStepFinishedPayload,
+  ModelStepStartedPayload,
   ToolCallCreatePayload,
   ToolCallDeltaPayload,
   ToolCallUpdatePayload
@@ -24,6 +26,8 @@ export type {
   ProviderSession,
   AgentConfig,
   CanonicalEventPayload,
+  ModelStepStartedPayload,
+  ModelStepFinishedPayload,
   ToolCallCreatePayload,
   ToolCallDeltaPayload,
   ToolCallUpdatePayload,
@@ -62,6 +66,7 @@ export type TerminalEventType = (typeof TERMINAL_EVENT_TYPES)[number];
  */
 export const CANONICAL_EVENT_TYPES = [
   "session.update", "usage.update",
+  "model_step.started", "model_step.finished",
   "message.create", "message.delta", "message.update",
   "tool_call.create", "tool_call.delta", "tool_call.update",
   "surface.create", "surface.delta", "surface.update",
@@ -73,7 +78,9 @@ export const CANONICAL_EVENT_TYPES = [
 export type CanonicalEventType = (typeof CANONICAL_EVENT_TYPES)[number];
 
 export type CanonicalPayloadFor<TType extends CanonicalEventType> =
-  TType extends "tool_call.create" ? CanonicalEventPayload & ToolCallCreatePayload
+  TType extends "model_step.started" ? CanonicalEventPayload & ModelStepStartedPayload
+    : TType extends "model_step.finished" ? CanonicalEventPayload & ModelStepFinishedPayload
+      : TType extends "tool_call.create" ? CanonicalEventPayload & ToolCallCreatePayload
     : TType extends "tool_call.delta" ? CanonicalEventPayload & ToolCallDeltaPayload
       : TType extends "tool_call.update" ? CanonicalEventPayload & ToolCallUpdatePayload
         : CanonicalEventPayload;
@@ -235,6 +242,7 @@ export type EventEnvelope<TType extends CanonicalEventType = CanonicalEventType>
 export const TERMINAL_EVENTS: ReadonlySet<CanonicalEventType> = new Set(TERMINAL_EVENT_TYPES);
 export const EVENT_TYPES: ReadonlySet<CanonicalEventType> = new Set(CANONICAL_EVENT_TYPES);
 export const MESSAGE_EXPOSURES: ReadonlySet<MessageExposure> = new Set([
+  "public_reasoning",
   "public_summary",
   "public_plan",
   "private_reasoning",
@@ -292,13 +300,31 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
   if (event.type.startsWith("message.") && payload.channel === "analysis") {
     assertAnalysisExposure(payload);
   }
+  if (event.type === "model_step.started" || event.type === "model_step.finished") {
+    requireEventString(payload, "stepId", event.type);
+    const timestampKey = event.type === "model_step.started" ? "startedAtMs" : "endedAtMs";
+    if (payload[timestampKey] !== undefined
+      && (!Number.isSafeInteger(payload[timestampKey]) || Number(payload[timestampKey]) <= 0)) {
+      throw new TypeError(`${event.type} payload.${timestampKey} must be a positive safe integer when present`);
+    }
+  }
+  if (event.type === "model_step.finished") {
+    requireEventString(payload, "status", event.type);
+    if (payload.finishReason !== undefined && typeof payload.finishReason !== "string") {
+      throw new TypeError("model_step.finished payload.finishReason must be a string when present");
+    }
+    if (payload.publicText !== undefined
+      && (typeof payload.publicText !== "string" || Array.from(payload.publicText).length > 1_000)) {
+      throw new TypeError("model_step.finished payload.publicText must be a string of at most 1000 characters when present");
+    }
+  }
   if (event.type === "tool_call.create") {
-    requireToolString(payload, "id", event.type);
-    requireToolString(payload, "name", event.type);
+    requireEventString(payload, "id", event.type);
+    requireEventString(payload, "name", event.type);
     if (!isRecord(payload.args)) throw new TypeError("tool_call.create payload.args must be an object");
   }
   if (event.type === "tool_call.delta") {
-    requireToolString(payload, "id", event.type);
+    requireEventString(payload, "id", event.type);
     const hasArgs = typeof payload.argsDelta === "string";
     const hasOutput = typeof payload.outputDelta === "string";
     if (!hasArgs && !hasOutput) {
@@ -306,8 +332,8 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
     }
   }
   if (event.type === "tool_call.update") {
-    requireToolString(payload, "id", event.type);
-    requireToolString(payload, "status", event.type);
+    requireEventString(payload, "id", event.type);
+    requireEventString(payload, "status", event.type);
   }
 }
 
@@ -347,7 +373,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function requireToolString(payload: Record<string, unknown>, key: string, eventType: string): void {
+function requireEventString(payload: Record<string, unknown>, key: string, eventType: string): void {
   if (typeof payload[key] !== "string" || payload[key].length === 0) {
     throw new TypeError(`${eventType} payload.${key} must be a non-empty string`);
   }

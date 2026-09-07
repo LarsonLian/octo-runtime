@@ -37,6 +37,9 @@ send({
   session_id: "claude-partial-1",
   message: { content: [{ type: "tool_use", id: "tool-1", name: "Bash", input: { command: "find /tmp" } }] }
 });
+stream({ type: "content_block_stop", index: 1 });
+stream({ type: "message_delta", delta: { stop_reason: "tool_use" } });
+stream({ type: "message_stop" });
 send({
   type: "user",
   session_id: "claude-partial-1",
@@ -47,12 +50,16 @@ send({ type: "system", subtype: "status", session_id: "claude-partial-1" });
 stream({ type: "message_start", message: { id: "message-2" } });
 stream({ type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" } });
 stream({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "检查 /home/lvsijia。" } });
+stream({ type: "content_block_stop", index: 0 });
 stream({
   type: "content_block_start",
   index: 1,
   content_block: { type: "tool_use", id: "tool-2", name: "Bash", input: {} }
 });
 stream({ type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: "{\"command\":\"du /home/lvsijia\"}" } });
+stream({ type: "content_block_stop", index: 1 });
+stream({ type: "message_delta", delta: { stop_reason: "tool_use" } });
+stream({ type: "message_stop" });
 send({
   type: "user",
   session_id: "claude-partial-1",
@@ -62,6 +69,9 @@ send({
 stream({ type: "message_start", message: { id: "message-3" } });
 stream({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
 stream({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "两步检查完成。" } });
+stream({ type: "content_block_stop", index: 0 });
+stream({ type: "message_delta", delta: { stop_reason: "end_turn" } });
+stream({ type: "message_stop" });
 send({
   type: "assistant",
   session_id: "claude-partial-1",

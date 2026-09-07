@@ -21,6 +21,7 @@ import {
 
 export {
   buildCodexAppServerArgs,
+  CodexEventNormalizer,
   CodexAppServerProcessError,
   CodexAppServerRpcError,
   normalizeCodexEvent,

@@ -34,7 +34,12 @@ test("CLI drives daemon socket through trigger to terminal run", async () => {
     assert.equal(status.logging.directory, join(home, "logs"));
     assert.equal(status.logging.fileLog, true);
     assert.equal((await cli(["--", "status"])).ready, true);
-    const agent = await cli(["agent", "create", "--name", "cli-test", "--adapter", "test", "--workdir", root, "--model", "test-model"]);
+    const agent = await cli([
+      "agent", "create", "--name", "cli-test", "--adapter", "test", "--workdir", root,
+      "--model", "test-model", "--thinking", "--effort", "high"
+    ]);
+    assert.equal(agent.config.thinking, true);
+    assert.equal(agent.config.effort, "high");
     const trigger = await cli(["trigger", "create", "--name", "cli-trigger", "--agent", agent.id, "--title", "T", "--instruction", "Do T"]);
     const ack = await cli(["trigger", "fire", trigger.id, "--event-id", "cli-event-1"]);
     assert.equal(ack.accepted, true);

@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { readFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 import { spawnAcpClient } from "@mininglamp-oss/octo-harness-acp-client";
 import {
@@ -11,12 +13,14 @@ import {
 import { createCodeBuddyAdapter, normalizeCodeBuddyUpdate } from "@mininglamp-oss/octo-harness-adapter-codebuddy";
 import {
   buildCodexCommand,
+  CodexEventNormalizer,
   createCodexAdapter,
   createCodexInvocationHome,
   normalizeCodexEvent
 } from "@mininglamp-oss/octo-harness-adapter-codex";
 import {
   buildClaudeCommand,
+  ClaudeEventNormalizer,
   createClaudeCodeAdapter,
   normalizeClaudeEvent
 } from "@mininglamp-oss/octo-harness-adapter-claude-code";
@@ -24,8 +28,10 @@ import { buildOpenCodeCommand, normalizeOpenCodeEvent } from "@mininglamp-oss/oc
 import {
   buildOpenClawCommand,
   createOpenClawAdapter,
+  OpenClawTranscriptNormalizer,
   tryParseOpenClawEvent,
-  tryParseOpenClawFinalBlob
+  tryParseOpenClawFinalBlob,
+  tryParseOpenClawTranscriptLine
 } from "@mininglamp-oss/octo-harness-adapter-openclaw";
 
 const request = { invocationId: "inv-1", sessionId: "session-1", runId: "run-1", prompt: "work", workdir: process.cwd(), context: {}, appendInstructions: "CONTROL", agentConfig: {} };
@@ -181,6 +187,61 @@ test("Codex reasoning and plan deltas are emitted immediately with explicit expo
   );
 });
 
+test("Codex reconstructs model rounds and associates reasoning, tool batches, and the final answer", () => {
+  const normalizer = new CodexEventNormalizer();
+  assert.deepEqual(normalizer.normalize({
+    method: "turn/started", params: { turn: { id: "turn-1", status: "inProgress" } }
+  }), []);
+
+  const first = normalizer.normalize({
+    method: "item/started",
+    params: { turnId: "turn-1", item: { type: "reasoning", id: "reasoning-1" } }
+  });
+  assert.deepEqual(first.map(event => event.type), ["model_step.started", "message.create"]);
+  assert.equal(first[0].payload.stepId, "codex:turn-1:round:1");
+  assert.equal(first[1].payload.stepId, first[0].payload.stepId);
+
+  const tool = normalizer.normalize({
+    method: "item/started",
+    params: {
+      turnId: "turn-1",
+      item: { type: "commandExecution", id: "tool-1", command: "pwd", status: "inProgress" }
+    }
+  });
+  assert.deepEqual(tool.map(event => event.type), ["tool_call.create", "model_step.finished"]);
+  assert.equal(tool[0].payload.stepId, "codex:turn-1:round:1");
+  assert.deepEqual(tool[1].payload, {
+    stepId: "codex:turn-1:round:1", status: "completed", finishReason: "tool-calls"
+  });
+
+  const secondTool = normalizer.normalize({
+    method: "item/started",
+    params: {
+      turnId: "turn-1",
+      item: { type: "webSearch", id: "tool-2", status: "inProgress" }
+    }
+  });
+  assert.deepEqual(secondTool.map(event => event.type), ["tool_call.create"]);
+  assert.equal(secondTool[0].payload.stepId, "codex:turn-1:round:1");
+
+  const answer = normalizer.normalize({
+    method: "item/started",
+    params: { turnId: "turn-1", item: { type: "agentMessage", id: "answer-1" } }
+  });
+  assert.deepEqual(answer.map(event => event.type), ["model_step.started", "message.create"]);
+  assert.equal(answer[0].payload.stepId, "codex:turn-1:round:2");
+  assert.equal(answer[1].payload.stepId, answer[0].payload.stepId);
+
+  const completed = normalizer.normalize({
+    method: "item/completed",
+    params: { turnId: "turn-1", item: { type: "agentMessage", id: "answer-1", text: "done" } }
+  });
+  assert.deepEqual(completed.map(event => event.type), ["message.update", "model_step.finished"]);
+  assert.deepEqual(completed[1].payload, {
+    stepId: "codex:turn-1:round:2", status: "completed", finishReason: "stop"
+  });
+});
+
 test("Codex command starts app-server over stdio", async () => {
   const command = await buildCodexCommand(request);
   assert.deepEqual(command.args, ["app-server", "--listen", "stdio://"]);
@@ -220,10 +281,109 @@ test("Claude native events map to session/message/terminal", () => {
 test("Claude defaults to unattended bypass without restricting its tool catalog", async () => {
   const claude = await buildClaudeCommand(request);
   assert.equal(claude.args.includes("--include-partial-messages"), true);
+  assert.equal(claude.args.includes("--settings"), false);
+  assert.equal(claude.args[claude.args.indexOf("--effort") + 1], "medium");
   assert.equal(claude.args[claude.args.indexOf("--permission-mode") + 1], "bypassPermissions");
   assert.equal(claude.args.includes("--dangerously-skip-permissions"), true);
   assert.equal(claude.args.includes("--disallowedTools"), false);
   await claude.cleanup();
+});
+
+test("Claude enables thinking explicitly and defaults optional effort to medium", async () => {
+  const thinking = await buildClaudeCommand({
+    ...request,
+    agentConfig: { thinking: true }
+  });
+  assert.deepEqual(
+    JSON.parse(thinking.args[thinking.args.indexOf("--settings") + 1]),
+    { alwaysThinkingEnabled: true }
+  );
+  assert.equal(thinking.args[thinking.args.indexOf("--effort") + 1], "medium");
+  assert.equal(thinking.providerInput.content.thinking, true);
+  assert.equal(thinking.providerInput.content.effort, "medium");
+  await thinking.cleanup();
+
+  const tuned = await buildClaudeCommand({
+    ...request,
+    agentConfig: { thinking: true, effort: "high" }
+  });
+  assert.equal(tuned.args[tuned.args.indexOf("--effort") + 1], "high");
+  assert.equal(tuned.providerInput.content.effort, "high");
+  await tuned.cleanup();
+
+  const disabled = await buildClaudeCommand({
+    ...request,
+    agentConfig: { thinking: false }
+  });
+  assert.deepEqual(
+    JSON.parse(disabled.args[disabled.args.indexOf("--settings") + 1]),
+    { alwaysThinkingEnabled: false }
+  );
+  await disabled.cleanup();
+});
+
+test("Claude preserves an empty thinking block as a public reasoning lifecycle", () => {
+  const normalizer = new ClaudeEventNormalizer();
+  const native = event => ({ type: "stream_event", parent_tool_use_id: null, event });
+  assert.deepEqual(normalizer.normalize(native({
+    type: "message_start", message: { id: "message-empty-thinking" }
+  })), [{
+    type: "model_step.started",
+    payload: { stepId: "message-empty-thinking" }
+  }]);
+  assert.deepEqual(normalizer.normalize(native({
+    type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" }
+  })), [{
+    type: "message.create",
+    payload: {
+      role: "assistant", status: "streaming", messageId: "claude:message-empty-thinking:thinking:0",
+      stepId: "message-empty-thinking",
+      channel: "analysis", exposure: "public_reasoning",
+      provenance: { provider: "claude-code", nativeEvent: "stream_event.thinking_start" }
+    }
+  }]);
+  assert.deepEqual(normalizer.normalize(native({
+    type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "" }
+  })), []);
+  assert.deepEqual(normalizer.normalize(native({ type: "content_block_stop", index: 0 })), [{
+    type: "message.update",
+    payload: {
+      role: "assistant", status: "completed", messageId: "claude:message-empty-thinking:thinking:0",
+      stepId: "message-empty-thinking",
+      channel: "analysis", exposure: "public_reasoning",
+      provenance: { provider: "claude-code", nativeEvent: "stream_event.thinking_stop" }
+    }
+  }]);
+  assert.deepEqual(normalizer.normalize(native({
+    type: "message_delta", delta: { stop_reason: "end_turn" }
+  })), []);
+  assert.deepEqual(normalizer.normalize(native({ type: "message_stop" })), [{
+    type: "model_step.finished",
+    payload: { stepId: "message-empty-thinking", status: "completed", finishReason: "end_turn" }
+  }]);
+});
+
+test("Claude carries bounded public round text without classifying it as reasoning", () => {
+  const normalizer = new ClaudeEventNormalizer();
+  const native = event => ({ type: "stream_event", parent_tool_use_id: null, event });
+  normalizer.normalize(native({ type: "message_start", message: { id: "message-public-text" } }));
+  assert.deepEqual(normalizer.normalize(native({
+    type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "I'll inspect " }
+  })), [{
+    type: "message.delta",
+    payload: { text: "I'll inspect ", channel: "final", stepId: "message-public-text" }
+  }]);
+  normalizer.normalize(native({
+    type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "the repository." }
+  }));
+  normalizer.normalize(native({ type: "message_delta", delta: { stop_reason: "tool_use" } }));
+  assert.deepEqual(normalizer.normalize(native({ type: "message_stop" })), [{
+    type: "model_step.finished",
+    payload: {
+      stepId: "message-public-text", status: "completed", finishReason: "tool_use",
+      publicText: "I'll inspect the repository."
+    }
+  }]);
 });
 
 test("Claude maps thinking/text/tool argument partials without replaying assistant snapshots", async () => {
@@ -241,11 +401,30 @@ test("Claude maps thinking/text/tool argument partials without replaying assista
   for await (const event of host.invoke("claude-code", request)) events.push(event);
 
   assert.deepEqual(events.map(event => event.type), [
-    "message.create", "session.update", "message.create", "message.delta",
-    "tool_call.create", "tool_call.delta", "tool_call.delta", "tool_call.update",
-    "message.delta", "tool_call.create", "tool_call.delta", "tool_call.update",
-    "message.delta", "usage.update", "message.update", "message.update", "run.finished"
+    "message.create", "session.update",
+    "model_step.started", "message.create", "message.delta", "message.update",
+    "tool_call.create", "tool_call.delta", "tool_call.delta", "model_step.finished", "tool_call.update",
+    "model_step.started", "message.create", "message.delta", "message.update",
+    "tool_call.create", "tool_call.delta", "model_step.finished", "tool_call.update",
+    "model_step.started", "message.delta", "model_step.finished",
+    "usage.update", "message.update", "run.finished"
   ]);
+  assert.deepEqual(
+    events.filter(event => event.type === "model_step.started").map(event => event.payload.stepId),
+    ["message-1", "message-2", "message-3"]
+  );
+  assert.deepEqual(
+    events.filter(event => event.type === "model_step.finished").map(event => ({
+      stepId: event.payload.stepId,
+      finishReason: event.payload.finishReason,
+      publicText: event.payload.publicText
+    })),
+    [
+      { stepId: "message-1", finishReason: "tool_use", publicText: undefined },
+      { stepId: "message-2", finishReason: "tool_use", publicText: undefined },
+      { stepId: "message-3", finishReason: "end_turn", publicText: "两步检查完成。" }
+    ]
+  );
   assert.equal(
     events.filter(event => event.type === "message.delta" && event.payload.channel === "analysis")
       .map(event => event.payload.text).join(""),
@@ -253,8 +432,9 @@ test("Claude maps thinking/text/tool argument partials without replaying assista
   );
   assert.equal(
     events.filter(event => event.type === "message.delta" && event.payload.channel === "analysis")
-      .every(event => event.payload.exposure === "private_reasoning"
-        && event.payload.provenance?.provider === "claude-code"),
+      .every(event => event.payload.exposure === "public_reasoning"
+        && event.payload.provenance?.provider === "claude-code"
+        && ["message-1", "message-2"].includes(event.payload.stepId)),
     true
   );
   assert.equal(
@@ -263,8 +443,15 @@ test("Claude maps thinking/text/tool argument partials without replaying assista
     "两步检查完成。"
   );
   assert.deepEqual(
-    events.filter(event => event.type === "tool_call.create").map(event => event.payload.id),
-    ["tool-1", "tool-2"]
+    events.filter(event => event.type === "tool_call.create").map(event => ({
+      id: event.payload.id,
+      stepId: event.payload.stepId
+    })),
+    [{ id: "tool-1", stepId: "message-1" }, { id: "tool-2", stepId: "message-2" }]
+  );
+  assert.equal(
+    events.find(event => event.type === "message.delta" && event.payload.channel === "final").payload.stepId,
+    "message-3"
   );
   assert.equal(
     events.filter(event => event.type === "tool_call.delta" && event.payload.id === "tool-1")
@@ -278,7 +465,7 @@ test("Claude maps thinking/text/tool argument partials without replaying assista
   assert.ok(output.some(observation => observation.data.canonical.some(event =>
     event.type === "message.delta" && event.payload.channel === "final"
   )));
-  assert.doesNotMatch(JSON.stringify(output), /检查 \/tmp|检查 \/home/);
+  assert.match(JSON.stringify(output), /检查 \/tmp/);
   assert.equal(observations.some(observation => observation.event === "provider.dispatch.acknowledged"), false);
 });
 
@@ -297,9 +484,21 @@ test("Claude preserves an explicit restricted permission mode", async () => {
   await forced.cleanup();
 });
 
-test("OpenCode native events map session/text/tool/usage", () => {
+test("OpenCode native events map session/text/reasoning/tool/usage", () => {
   assert.equal(normalizeOpenCodeEvent({ type: "step_start", sessionID: "oc-1", part: {} })[0].type, "session.update");
   assert.equal(normalizeOpenCodeEvent({ type: "text", part: { text: "ok" } })[0].type, "message.delta");
+  assert.deepEqual(normalizeOpenCodeEvent({
+    type: "reasoning",
+    part: { type: "reasoning", text: "checking the repository" }
+  }), [{
+    type: "message.delta",
+    payload: {
+      text: "checking the repository",
+      channel: "analysis",
+      exposure: "public_reasoning",
+      provenance: { provider: "opencode", nativeEvent: "reasoning" }
+    }
+  }]);
   assert.equal(normalizeOpenCodeEvent({ type: "step_finish", part: { tokens: { input: 1 } } })[0].type, "usage.update");
   assert.deepEqual(normalizeOpenCodeEvent({
     type: "tool_use",
@@ -357,6 +556,66 @@ test("OpenCode native events map session/text/tool/usage", () => {
   ]);
 });
 
+test("OpenCode preserves model rounds and associates their reasoning, tools, and text", () => {
+  assert.deepEqual(normalizeOpenCodeEvent({
+    type: "step_start", sessionID: "oc-1", timestamp: 1_788_793_000_000,
+    part: { type: "step-start", messageID: "message-1" }
+  }), [
+    { type: "session.update", payload: { providerSession: { sessionId: "oc-1", resumable: true } } },
+    { type: "model_step.started", payload: { stepId: "message-1", startedAtMs: 1_788_793_000_000 } }
+  ]);
+  assert.deepEqual(normalizeOpenCodeEvent({
+    type: "reasoning", part: { type: "reasoning", messageID: "message-1", text: "checking weather" }
+  })[0], {
+    type: "message.delta",
+    payload: {
+      text: "checking weather", stepId: "message-1", messageId: "opencode:message-1:reasoning",
+      channel: "analysis", exposure: "public_reasoning",
+      provenance: { provider: "opencode", nativeEvent: "reasoning" }
+    }
+  });
+  assert.deepEqual(normalizeOpenCodeEvent({
+    type: "tool_use",
+    part: { type: "tool", messageID: "message-1", callID: "call-1", tool: "websearch", state: { status: "running", input: { query: "宁波天气" } } }
+  })[0], {
+    type: "tool_call.create",
+    payload: { id: "call-1", name: "websearch", args: { query: "宁波天气" }, stepId: "message-1" }
+  });
+  assert.deepEqual(normalizeOpenCodeEvent({
+    type: "step_finish", timestamp: 1_788_793_002_000,
+    part: { type: "step-finish", messageID: "message-1", reason: "tool-calls", tokens: { input: 10 } }
+  }), [
+    {
+      type: "model_step.finished",
+      payload: { stepId: "message-1", status: "completed", finishReason: "tool-calls", endedAtMs: 1_788_793_002_000 }
+    },
+    { type: "usage.update", payload: { input: 10, cost: undefined, stepId: "message-1" } }
+  ]);
+});
+
+test("OpenCode always requests reasoning JSON and tool approval, maps thinking to variant, and resumes a provider session", async () => {
+  const withoutVariant = await buildOpenCodeCommand(request);
+  assert.deepEqual(withoutVariant.args.slice(0, 5), ["run", "--format", "json", "--thinking", "--auto"]);
+  assert.equal(withoutVariant.args.filter(arg => arg === "--auto").length, 1);
+  assert.equal(withoutVariant.args.includes("--variant"), false);
+  await withoutVariant.cleanup();
+
+  const opencode = await buildOpenCodeCommand({
+    ...request,
+    providerSession: { sessionId: "ses-existing" },
+    agentConfig: { model: "provider/model", thinking: "high", autoApprove: true }
+  });
+  assert.deepEqual(opencode.args, [
+    "run", "--format", "json", "--thinking", "--auto",
+    "--session", "ses-existing",
+    "--model", "provider/model",
+    "--variant", "high",
+    "work"
+  ]);
+  assert.equal(opencode.providerSessionId, "ses-existing");
+  await opencode.cleanup();
+});
+
 test("OpenClaw native NDJSON and pretty final blobs are parsed", () => {
   assert.deepEqual(
     tryParseOpenClawEvent('{"type":"tool_use","tool":"read","callId":"call-1","input":{"path":"README.md"}}'),
@@ -369,6 +628,63 @@ test("OpenClaw native NDJSON and pretty final blobs are parsed", () => {
   assert.equal(final.text, "first\nsecond");
   assert.equal(final.sessionId, "oc-1");
   assert.equal(final.inputTokens, 2);
+});
+
+test("OpenClaw transcript maps model rounds, public reasoning, tools, and durations", () => {
+  const normalizer = new OpenClawTranscriptNormalizer();
+  const assistant = tryParseOpenClawTranscriptLine(JSON.stringify({
+    type: "message", id: "assistant-1", timestamp: "2026-09-08T08:00:02.000Z",
+    message: {
+      role: "assistant", timestamp: 1_788_854_400_000, stopReason: "toolUse",
+      content: [
+        { type: "thinking", thinking: "checking the workspace" },
+        { type: "toolCall", id: "call-1", name: "exec", arguments: { command: "pwd" } }
+      ]
+    }
+  }));
+  assert.ok(assistant);
+  assert.deepEqual(normalizer.normalize(assistant), [
+    {
+      type: "model_step.started",
+      payload: { stepId: "openclaw:assistant-1", startedAtMs: 1_788_854_400_000 }
+    },
+    {
+      type: "message.delta",
+      payload: {
+        text: "checking the workspace", stepId: "openclaw:assistant-1",
+        messageId: "openclaw:assistant-1:reasoning", channel: "analysis",
+        exposure: "public_reasoning",
+        provenance: { provider: "openclaw", nativeEvent: "session.transcript.thinking" }
+      }
+    },
+    {
+      type: "tool_call.create",
+      payload: { id: "call-1", name: "exec", args: { command: "pwd" }, stepId: "openclaw:assistant-1" }
+    },
+    {
+      type: "model_step.finished",
+      payload: {
+        stepId: "openclaw:assistant-1", status: "completed", finishReason: "tool-calls",
+        endedAtMs: 1_788_854_402_000
+      }
+    }
+  ]);
+
+  const result = tryParseOpenClawTranscriptLine(JSON.stringify({
+    type: "message", id: "result-1", timestamp: "2026-09-08T08:00:02.125Z",
+    message: {
+      role: "toolResult", toolCallId: "call-1", toolName: "exec", isError: false,
+      content: [{ type: "text", text: "workspace" }], details: { durationMs: 125 }
+    }
+  }));
+  assert.ok(result);
+  assert.deepEqual(normalizer.normalize(result), [{
+    type: "tool_call.update",
+    payload: {
+      id: "call-1", name: "exec", status: "completed", output: "workspace",
+      stepId: "openclaw:assistant-1", durationMs: 125
+    }
+  }]);
 });
 
 test("control instructions use private provider-native carriers", async () => {
@@ -607,11 +923,12 @@ test("Codex app-server subprocess completes the canonical contract", async () =>
   const events = [];
   for await (const event of host.invoke("codex", request)) events.push(event);
   assert.deepEqual(events.map(event => event.type), [
-    "session.update", "message.create", "message.delta", "message.update",
-    "tool_call.create", "tool_call.delta", "tool_call.update",
-    "message.create", "message.delta", "message.update",
-    "tool_call.create", "tool_call.delta", "tool_call.update",
-    "message.create", "message.delta", "message.update", "usage.update", "run.finished"
+    "session.update", "model_step.started", "message.create", "message.delta", "message.update",
+    "tool_call.create", "model_step.finished", "tool_call.delta", "tool_call.update",
+    "model_step.started", "message.create", "message.delta", "message.update",
+    "tool_call.create", "model_step.finished", "tool_call.delta", "tool_call.update",
+    "model_step.started", "message.create", "message.delta", "message.update", "model_step.finished",
+    "usage.update", "run.finished"
   ]);
   assert.equal(events.find(event => event.type === "session.update").payload.providerSession.sessionId, "thread-app-server-1");
   assert.deepEqual(
@@ -630,6 +947,10 @@ test("Codex app-server subprocess completes the canonical contract", async () =>
     true
   );
   assert.equal(events.find(event => event.type === "usage.update").payload.inputTokens, 3);
+  assert.deepEqual(
+    events.filter(event => event.type === "model_step.started").map(event => event.payload.stepId),
+    ["codex:turn-1:round:1", "codex:turn-1:round:2", "codex:turn-1:round:3"]
+  );
 });
 
 test("Codex preserves strict capture failure semantics before a model-affecting request", async () => {
@@ -759,7 +1080,12 @@ test("Codex app-server follows host cancellation", async () => {
 
 test("OpenClaw local subprocess completes the canonical contract", async () => {
   const fixture = fileURLToPath(new URL("../fixtures/fake-openclaw.mjs", import.meta.url));
-  const adapter = createOpenClawAdapter({ command: process.execPath, commandArgsPrefix: [fixture] });
+  const stateDir = await mkdtemp(join(tmpdir(), "octo-harness-openclaw-state-"));
+  const adapter = createOpenClawAdapter({
+    command: process.execPath,
+    commandArgsPrefix: [fixture],
+    env: { OPENCLAW_STATE_DIR: stateDir, FAKE_OPENCLAW_TRANSCRIPT: "1" }
+  });
   const observations = [];
   const host = new AdapterHost({
     observe: async (_identity, observation) => {
@@ -769,15 +1095,36 @@ test("OpenClaw local subprocess completes the canonical contract", async () => {
   });
   host.register(adapter);
   const events = [];
-  for await (const event of host.invoke("openclaw", request)) events.push(event);
-  assert.deepEqual(events.map(event => event.type), [
-    "session.update", "message.create", "message.delta", "tool_call.create",
-    "tool_call.update", "usage.update", "message.delta", "message.update", "run.finished"
-  ]);
-  assert.equal(events.filter(event => event.type === "message.delta").map(event => event.payload.text).join(""), "OpenClaw reply");
-  assert.equal(events.at(-1).type, "run.finished");
-  assert.ok(observations.some(observation => observation.event === "provider.output"));
-  assert.equal(observations.some(observation => observation.event === "provider.dispatch.acknowledged"), false);
+  try {
+    for await (const event of host.invoke("openclaw", request)) events.push(event);
+    assert.deepEqual(events.map(event => event.type), [
+      "session.update", "message.create",
+      "model_step.started", "message.create", "message.delta", "tool_call.create", "message.update", "model_step.finished",
+      "tool_call.update",
+      "model_step.started", "message.delta", "model_step.finished",
+      "usage.update", "message.update", "run.finished"
+    ]);
+    assert.equal(
+      events.filter(event => event.type === "message.delta" && event.payload.channel === "final")
+        .map(event => event.payload.text).join(""),
+      "OpenClaw reply"
+    );
+    assert.equal(
+      events.find(event => event.type === "message.delta" && event.payload.channel === "analysis").payload.text,
+      "Inspect the repository."
+    );
+    assert.deepEqual(
+      events.filter(event => event.type === "model_step.started").map(event => event.payload.stepId),
+      ["openclaw:assistant-1", "openclaw:assistant-2"]
+    );
+    assert.equal(events.find(event => event.type === "tool_call.create").payload.stepId, "openclaw:assistant-1");
+    assert.equal(events.find(event => event.type === "tool_call.update").payload.durationMs, 15);
+    assert.equal(events.at(-1).type, "run.finished");
+    assert.ok(observations.some(observation => observation.event === "provider.output"));
+    assert.equal(observations.some(observation => observation.event === "provider.dispatch.acknowledged"), false);
+  } finally {
+    await rm(stateDir, { recursive: true, force: true });
+  }
 });
 
 test("OpenClaw local subprocess follows host cancellation", async () => {

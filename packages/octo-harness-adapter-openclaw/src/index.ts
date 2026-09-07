@@ -1,20 +1,25 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { access, chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, chmod, open, readdir, stat, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { defineAdapter, observeBestEffort, observeProviderOutput, probeCommand, providerInputText, type AdapterInvocationContext, type CanonicalEvent, type InvokeRequest, type ProviderCarrier } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import {
   normalizeOpenClawFrame,
+  OpenClawTranscriptNormalizer,
   tryParseOpenClawEvent,
   tryParseOpenClawFinalBlob,
+  tryParseOpenClawTranscriptLine,
   usagePayload,
-  type OpenClawFinalFrame
+  type OpenClawFinalFrame,
+  type OpenClawTranscriptFrame
 } from "./parser.js";
 
 /** Cap retained stderr so a chatty process cannot grow the buffer without bound; only the tail feeds the failure message. */
 const STDERR_LIMIT = 64 * 1024;
+const TRANSCRIPT_POLL_MS = 100;
+const TRANSCRIPT_READ_BYTES = 256 * 1024;
 
 interface OpenClawCommandSpec {
   command: string;
@@ -23,6 +28,7 @@ interface OpenClawCommandSpec {
   env: NodeJS.ProcessEnv;
   providerSessionId: string;
   providerAgentId?: string;
+  stateDir: string;
   messageFile: string;
   /** Final argv plus the message-file content that OpenClaw will consume. */
   providerInput: ProviderCarrier;
@@ -32,6 +38,155 @@ interface OpenClawCommandSpec {
 interface ProcessExit {
   code: number | null;
   signal: NodeJS.Signals | null;
+}
+
+interface OpenClawTranscriptCursor {
+  stateDir: string;
+  sessionId: string;
+  providerAgentId?: string;
+  path?: string;
+  offset: number;
+  pending: Buffer;
+}
+
+type OpenClawOutput =
+  | { source: "stdout"; line: string }
+  | { source: "transcript"; frame: OpenClawTranscriptFrame };
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
+/** Locate a session transcript without trusting provider-controlled ids as path segments. */
+async function findTranscriptPath(cursor: OpenClawTranscriptCursor): Promise<string | undefined> {
+  const agentsDir = join(cursor.stateDir, "agents");
+  let agents;
+  try {
+    agents = (await readdir(agentsDir, { withFileTypes: true }))
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name);
+  } catch {
+    return undefined;
+  }
+  if (cursor.providerAgentId) {
+    agents.sort((left, right) => Number(right === cursor.providerAgentId) - Number(left === cursor.providerAgentId));
+  }
+  const target = `${cursor.sessionId}.jsonl`;
+  for (const agent of agents) {
+    const sessionsDir = join(agentsDir, agent, "sessions");
+    try {
+      const entries = await readdir(sessionsDir, { withFileTypes: true });
+      if (entries.some(entry => entry.isFile() && entry.name === target)) return join(sessionsDir, target);
+    } catch {
+      // The agent may not have created its sessions directory yet.
+    }
+  }
+  return undefined;
+}
+
+/** Snapshot the existing transcript length so resumed sessions never replay history from earlier invocations. */
+async function createTranscriptCursor(spec: OpenClawCommandSpec): Promise<OpenClawTranscriptCursor> {
+  const cursor: OpenClawTranscriptCursor = {
+    stateDir: spec.stateDir,
+    sessionId: spec.providerSessionId,
+    providerAgentId: spec.providerAgentId,
+    offset: 0,
+    pending: Buffer.alloc(0)
+  };
+  cursor.path = await findTranscriptPath(cursor);
+  if (cursor.path) {
+    try { cursor.offset = (await stat(cursor.path)).size; } catch { cursor.path = undefined; }
+  }
+  return cursor;
+}
+
+/** Read complete, newly appended UTF-8 JSONL records while retaining a partial trailing line as bytes. */
+async function readTranscriptLines(cursor: OpenClawTranscriptCursor, flush = false): Promise<string[]> {
+  cursor.path ??= await findTranscriptPath(cursor);
+  if (!cursor.path) return [];
+  let size: number;
+  try { size = (await stat(cursor.path)).size; } catch { return []; }
+  if (size < cursor.offset) {
+    cursor.offset = 0;
+    cursor.pending = Buffer.alloc(0);
+  }
+  const lines: string[] = [];
+  while (cursor.offset < size) {
+    const length = Math.min(size - cursor.offset, TRANSCRIPT_READ_BYTES);
+    const buffer = Buffer.allocUnsafe(length);
+    const handle = await open(cursor.path, "r");
+    try {
+      const { bytesRead } = await handle.read(buffer, 0, length, cursor.offset);
+      if (bytesRead === 0) break;
+      cursor.offset += bytesRead;
+      cursor.pending = Buffer.concat([cursor.pending, buffer.subarray(0, bytesRead)]);
+    } finally {
+      await handle.close();
+    }
+    let newline = cursor.pending.indexOf(0x0a);
+    while (newline >= 0) {
+      const line = cursor.pending.subarray(0, newline).toString("utf8").trimEnd();
+      cursor.pending = cursor.pending.subarray(newline + 1);
+      if (line) lines.push(line);
+      newline = cursor.pending.indexOf(0x0a);
+    }
+  }
+  if (flush && cursor.pending.length > 0) {
+    const line = cursor.pending.toString("utf8").trim();
+    cursor.pending = Buffer.alloc(0);
+    if (line) lines.push(line);
+  }
+  return lines;
+}
+
+async function* tailOpenClawTranscript(
+  cursor: OpenClawTranscriptCursor,
+  processClosed: () => boolean
+): AsyncGenerator<OpenClawTranscriptFrame> {
+  // Give legacy OpenClaw versions a chance to identify their native stdout
+  // stream before consulting the durable transcript fallback.
+  await delay(TRANSCRIPT_POLL_MS);
+  while (true) {
+    for (const line of await readTranscriptLines(cursor)) {
+      const frame = tryParseOpenClawTranscriptLine(line);
+      if (frame) yield frame;
+    }
+    if (processClosed()) {
+      for (const line of await readTranscriptLines(cursor, true)) {
+        const frame = tryParseOpenClawTranscriptLine(line);
+        if (frame) yield frame;
+      }
+      return;
+    }
+    await delay(TRANSCRIPT_POLL_MS);
+  }
+}
+
+/** Merge stdout and transcript sources without losing a pending read from either iterator. */
+async function* openClawOutput(
+  stdout: AsyncIterable<string>,
+  transcript: AsyncIterable<OpenClawTranscriptFrame>
+): AsyncGenerator<OpenClawOutput> {
+  const stdoutIterator = stdout[Symbol.asyncIterator]();
+  const transcriptIterator = transcript[Symbol.asyncIterator]();
+  let stdoutNext: Promise<{ source: "stdout"; result: IteratorResult<string> }> | undefined =
+    stdoutIterator.next().then(result => ({ source: "stdout", result }));
+  let transcriptNext: Promise<{ source: "transcript"; result: IteratorResult<OpenClawTranscriptFrame> }> | undefined =
+    transcriptIterator.next().then(result => ({ source: "transcript", result }));
+  while (stdoutNext || transcriptNext) {
+    const next = await Promise.race([stdoutNext, transcriptNext].filter(value => value !== undefined));
+    if (next.source === "stdout") {
+      if (next.result.done) stdoutNext = undefined;
+      else {
+        stdoutNext = stdoutIterator.next().then(result => ({ source: "stdout", result }));
+        yield { source: "stdout", line: next.result.value };
+      }
+    } else if (next.result.done) transcriptNext = undefined;
+    else {
+      transcriptNext = transcriptIterator.next().then(result => ({ source: "transcript", result }));
+      yield { source: "transcript", frame: next.result.value };
+    }
+  }
 }
 
 /** Compose the OpenClaw prompt, prefixing harness instructions in labeled sections so the local agent can distinguish them from the user request. */
@@ -81,7 +236,8 @@ export async function buildOpenClawCommand(
   const args = [...commandArgsPrefix, "agent", "--local", "--json", "--session-id", providerSessionId];
   if (providerAgentId) args.push("--agent", providerAgentId);
   if (req.agentConfig?.model) args.push("--model", req.agentConfig.model);
-  if (req.agentConfig?.thinking) args.push("--thinking", req.agentConfig.thinking);
+  const thinkingLevel = typeof req.agentConfig.thinking === "string" ? req.agentConfig.thinking : undefined;
+  if (thinkingLevel) args.push("--thinking", thinkingLevel);
   const timeoutSeconds = req.agentConfig.timeoutSeconds;
   if (Number.isFinite(timeoutSeconds) && (timeoutSeconds ?? 0) > 0) {
     args.push("--timeout", String(timeoutSeconds));
@@ -92,6 +248,7 @@ export async function buildOpenClawCommand(
   if (req.agentConfig?.openclawConfigPath) env.OPENCLAW_CONFIG_PATH = req.agentConfig.openclawConfigPath;
   if (req.agentConfig?.openclawStateDir) env.OPENCLAW_STATE_DIR = req.agentConfig.openclawStateDir;
   const effectiveEnv = { ...process.env, ...env };
+  const stateDir = effectiveEnv.OPENCLAW_STATE_DIR ?? join(effectiveEnv.HOME || homedir(), ".openclaw");
   const cwd = await existingDirectory([
     effectiveEnv.OPENCLAW_STATE_DIR,
     effectiveEnv.OPENCLAW_CONFIG_PATH ? dirname(effectiveEnv.OPENCLAW_CONFIG_PATH) : undefined,
@@ -106,6 +263,7 @@ export async function buildOpenClawCommand(
     env,
     providerSessionId,
     providerAgentId,
+    stateDir,
     messageFile,
     providerInput: {
       kind: "json_params",
@@ -152,8 +310,10 @@ function usageKey(frame: { inputTokens: number; outputTokens: number; provider?:
 /**
  * Run one OpenClaw subprocess and stream canonical events.
  *
- * OpenClaw emits incremental JSON frames, then a trailing "final blob" (which
- * may span several lines and is reassembled here). Reconciliation quirks:
+ * OpenClaw writes incremental model/tool records to its session transcript and
+ * emits a trailing stdout "final blob" (which may span several lines and is
+ * reassembled here). Older native stdout event streams remain supported.
+ * Reconciliation quirks:
  * - the final blob's text is authoritative, so only its suffix beyond the
  *   already-streamed text is emitted, avoiding duplicated output;
  * - usage is emitted once, de-duplicated against the last streamed usage;
@@ -169,6 +329,7 @@ async function* invokeOpenClaw(
   yield sessionEvent(spec.providerSessionId, spec.providerAgentId);
   yield { type: "message.create", payload: { role: "assistant", status: "streaming", channel: "final" } };
 
+  const transcriptCursor = await createTranscriptCursor(spec);
   const child = spawn(spec.command, spec.args, {
     cwd: spec.cwd,
     env: { ...process.env, ...spec.env },
@@ -187,9 +348,13 @@ async function* invokeOpenClaw(
     });
   });
   let spawnError: Error | undefined;
+  let processClosed = false;
   const exitPromise = new Promise<ProcessExit>(resolve => {
     child.once("error", error => { spawnError = error; });
-    child.once("close", (code, signal) => resolve({ code, signal }));
+    child.once("close", (code, signal) => {
+      processClosed = true;
+      resolve({ code, signal });
+    });
   });
   let stderr = "";
   child.stderr.setEncoding("utf8");
@@ -203,18 +368,43 @@ async function* invokeOpenClaw(
   let lastUsage: string | undefined;
   let reportedSessionId = spec.providerSessionId;
   let firstOutput = true;
+  let sawNativeStream = false;
+  let sawTranscript = false;
+  const transcriptNormalizer = new OpenClawTranscriptNormalizer();
 
-  for await (const line of createInterface({ input: child.stdout })) {
-    if (firstOutput) {
-      firstOutput = false;
-      // Observe native stdout before parsing so diagnostic or final-blob lines
-      // still establish that the provider process produced output.
-      observeBestEffort(context, {
-        event: "provider.output.first",
-        rpcMethod: "process.stdout",
-        providerSessionId: reportedSessionId
+  const observeFirstOutput = (rpcMethod: string) => {
+    if (!firstOutput) return;
+    firstOutput = false;
+    observeBestEffort(context, {
+      event: "provider.output.first",
+      rpcMethod,
+      providerSessionId: reportedSessionId
+    });
+  };
+
+  const stdout = createInterface({ input: child.stdout });
+  const transcript = tailOpenClawTranscript(transcriptCursor, () => processClosed);
+  for await (const output of openClawOutput(stdout, transcript)) {
+    if (output.source === "transcript") {
+      if (sawNativeStream) continue;
+      sawTranscript = true;
+      observeFirstOutput("session.transcript");
+      const events = transcriptNormalizer.normalize(output.frame);
+      for (const event of events) {
+        if (event.type === "message.delta" && event.payload.channel === "final" && typeof event.payload.text === "string") {
+          accumulatedText += event.payload.text;
+        }
+      }
+      observeProviderOutput(context, events, {
+        rpcMethod: "session.transcript",
+        providerSessionId: reportedSessionId,
+        native: { type: `transcript.${output.frame.kind}` }
       });
+      for (const event of events) yield event;
+      continue;
     }
+    const line = output.line;
+    observeFirstOutput("process.stdout");
     const frame = tryParseOpenClawEvent(line);
     if (!frame) {
       // A non-event line may be the final blob: either a compact single line, or a multi-line object we accumulate until it parses.
@@ -230,6 +420,11 @@ async function* invokeOpenClaw(
       }
       continue;
     }
+    // A runtime either streams native NDJSON or exposes the same information
+    // through its transcript. Whichever source produces structured events
+    // first becomes authoritative for this invocation.
+    if (sawTranscript && frame.kind !== "failure" && frame.kind !== "cancelled") continue;
+    sawNativeStream = true;
     if (frame.kind === "failure") { failure ??= frame.message; continue; }
     if (frame.kind === "cancelled") { cancelled ??= frame.message; continue; }
     if (frame.kind === "text") {
@@ -364,8 +559,10 @@ export function createOpenClawAdapter({ command = "openclaw", commandArgsPrefix 
 
 export {
   normalizeOpenClawFrame,
+  OpenClawTranscriptNormalizer,
   tryParseOpenClawEvent,
-  tryParseOpenClawFinalBlob
+  tryParseOpenClawFinalBlob,
+  tryParseOpenClawTranscriptLine
 } from "./parser.js";
 
 export const openclawAdapter = createOpenClawAdapter();

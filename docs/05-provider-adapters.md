@@ -7,7 +7,7 @@
 | [`codex`](../packages/octo-harness-adapter-codex/README.md) | app-server JSON-RPC 2.0 stdio | `thread/resume`，失败 fresh fallback | not exposed | workspace-write sandbox |
 | [`claude-code`](../packages/octo-harness-adapter-claude-code/README.md) | `claude --print --output-format stream-json` | `--resume <uuid>` | not exposed | `bypassPermissions` + external isolation required |
 | [`codebuddy`](../packages/octo-harness-adapter-codebuddy/README.md) | ACP JSON-RPC stdio | `session/load` | not declared | `acceptEdits` + deny fallback |
-| [`opencode`](../packages/octo-harness-adapter-opencode/README.md) | `opencode run --format json` | `--session <id>` | not exposed | provider asks unless `autoApprove` |
+| [`opencode`](../packages/octo-harness-adapter-opencode/README.md) | `opencode run --format json --thinking --auto` | `--session <id>` | not exposed | adapter always auto-approves |
 | [`openclaw`](../packages/octo-harness-adapter-openclaw/README.md) | `openclaw agent --local --json` JSONL | `--session-id <id>` | not exposed | OpenClaw agent policy |
 
 上层按 capability 做决策，不按 adapter type 写分支。虽然 Codex、Claude Code 和 OpenCode 原生 transport 可 fork，当前 host 没有 fork RPC，因此 adapters 不声明 `session.fork`；新增完整 host/daemon/CLI 流程后才能打开该 capability。
@@ -20,7 +20,7 @@ Claude Code：system init -> session update，assistant content blocks -> text/t
 
 CodeBuddy：ACP `session/update` 的 `agent_message_chunk` 和 `agent_thought_chunk` 映射为 final/analysis channels；tool_call/update 保留 ID；prompt result usage 映射 usage update。
 
-OpenCode：step start -> session update，text part -> delta，tool part state -> tool lifecycle，step finish -> usage；进程成功退出后产生 message update/run finished。结构化 provider error 进入 run.error。
+OpenCode：step start/finish -> `model_step.started/finished`（并从 step start 更新 session），text/reasoning part -> final/public reasoning analysis delta，tool part state -> tool lifecycle，step finish 同时更新 usage；同一原生 `messageID` 作为 `stepId` 关联一轮中的 reasoning/tool/text。进程成功退出后产生 message update/run finished，结构化 provider error 进入 run.error。
 
 OpenClaw：adapter 先生成或恢复 provider session ID；`text/tool_use/tool_result/step_finish` 映射为公共事件，多行 final result blob 用来补齐最终文本、usage 和 session。取消终止本次 local CLI 并收敛为 `run.stopped`，不调用 Gateway `sessions.abort`。
 
@@ -47,4 +47,4 @@ OpenClaw local adapter 使用 fake CLI 完成命令、双输出形态、tool、u
 
 ## Adding Provider Options
 
-Agent config 作为 InvokeRequest 的 `agentConfig` 传给 adapter。公共 CLI 当前支持 `model`、`providerAgentId`、`thinking`、`timeoutSeconds`、`permissionMode`、`sandbox`、`dangerouslyBypassPermissions`、`autoApprove`。provider-specific 新字段应由相应 adapter 读取，不应进入 core 分支。OpenClaw 的详细行为见 [OpenClaw Local Adapter](06-openclaw-local-adapter.md)。
+Agent config 作为 InvokeRequest 的 `agentConfig` 传给 adapter。公共 CLI 当前支持 `model`、`providerAgentId`、`thinking`、`effort`、`timeoutSeconds`、`permissionMode`、`sandbox`、`dangerouslyBypassPermissions`、`autoApprove`。Claude Code 将 `thinking` 与可选 `effort` 分别映射为运行级 settings 和 `--effort`，未配置 effort 时显式使用 `medium`；其他 provider-specific 字段由相应 adapter 读取，不应进入 core 分支。OpenClaw 的详细行为见 [OpenClaw Local Adapter](06-openclaw-local-adapter.md)。

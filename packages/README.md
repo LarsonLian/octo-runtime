@@ -213,9 +213,11 @@ Task continuation 产生新的 Attempt 和 Harness Run，但复用 Task Session 
 | `--permission-mode MODE` | Claude/CodeBuddy | provider 自己的 permission mode |
 | `--sandbox MODE` | Codex | 新 session 的 Codex sandbox |
 | `--dangerously-bypass-permissions` | Codex/Claude | Codex 关闭审批和 sandbox；Claude 强制使用 bypassPermissions；危险 |
-| `--auto-approve` | OpenCode | 对 provider 加 `--auto`，危险 |
+| `--auto-approve` | OpenCode | 兼容保留；OpenCode adapter 已强制加 `--auto` |
 | `--provider-agent SLUG` | OpenClaw | OpenClaw-local agent slug |
-| `--thinking LEVEL` | OpenClaw | provider thinking level；不保证输出 reasoning event |
+| `--thinking` | Claude Code | 通过运行级 settings 显式启用 thinking；也接受 `--thinking disabled` 显式关闭 |
+| `--effort LEVEL` | Claude Code | 可选推理强度；未传时 adapter 显式使用 `medium` |
+| `--thinking LEVEL` | OpenCode/OpenClaw | OpenCode 映射为 `--variant LEVEL` 并采集 reasoning block；OpenClaw 映射为 thinking level，但不保证输出 reasoning event |
 | `--timeout-seconds N` | OpenClaw | provider turn timeout |
 
 未被某个 adapter 读取的字段不会自动获得语义。新增 provider-specific option 时应修改 adapter、CLI、测试和相应 README，不能在 Core 中按 adapter type 写执行分支。

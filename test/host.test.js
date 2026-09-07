@@ -96,6 +96,36 @@ test("host normalizes unclassified analysis to an explicit fail-closed exposure"
   }
 });
 
+test("host keeps step-scoped analysis messages separate and closes each round", async () => {
+  const host = new AdapterHost();
+  host.register({
+    metadata: { type: "steps", capabilities: [] },
+    async *invoke() {
+      for (const stepId of ["step-1", "step-2"]) {
+        yield { type: "model_step.started", payload: { stepId } };
+        yield {
+          type: "message.delta",
+          payload: {
+            channel: "analysis", messageId: `${stepId}:reasoning`, stepId, text: `${stepId} thought`,
+            exposure: "public_reasoning", provenance: { provider: "steps", nativeEvent: "reasoning" }
+          }
+        };
+        yield { type: "model_step.finished", payload: { stepId, status: "completed", finishReason: stepId === "step-1" ? "tool-calls" : "stop" } };
+      }
+      yield { type: "run.finished", payload: {} };
+    }
+  });
+  const events = [];
+  for await (const event of host.invoke("steps", request)) events.push(event);
+  const analysisCreates = events.filter(event => event.type === "message.create" && event.payload.channel === "analysis");
+  const analysisUpdates = events.filter(event => event.type === "message.update" && event.payload.channel === "analysis");
+  assert.deepEqual(analysisCreates.map(event => event.payload.messageId), ["step-1:reasoning", "step-2:reasoning"]);
+  assert.deepEqual(analysisUpdates.map(event => [event.payload.messageId, event.payload.stepId]), [
+    ["step-1:reasoning", "step-1"], ["step-2:reasoning", "step-2"]
+  ]);
+  assert.ok(events.indexOf(analysisUpdates[0]) < events.findIndex(event => event.type === "model_step.finished"));
+});
+
 test("host cancellation aborts provider and emits stopped once", async () => {
   const host = new AdapterHost();
   host.register({ metadata: { type: "slow", capabilities: [] }, async *invoke(req) {

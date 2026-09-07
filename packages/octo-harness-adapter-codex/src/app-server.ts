@@ -387,85 +387,191 @@ function stringErrorCode(error: unknown): string | undefined {
 /**
  * Purely map one app-server notification into zero or more canonical events.
  *
- * Each notification is mapped and enqueued immediately on arrival, with no
- * buffering across reasoning/tool/final phases, so the interleaving order for
- * complex tasks is determined by the provider's raw arrival order. This function
- * holds no cross-frame state: request correlation, single-terminal enforcement
- * and active-thread filtering are handled by the client. Unrecognized methods
- * return an empty array, keeping forward compatibility as Codex adds
- * non-critical notifications.
+ * The convenience function maps one isolated notification. Live invocations use
+ * CodexEventNormalizer below so related reasoning, tool, and answer items share a
+ * stable model-step id across notification boundaries.
  */
 export function normalizeCodexEvent(native: CodexAppServerNotification): CanonicalEvent[] {
-  const params = native.params ?? {};
-  switch (native.method) {
-    case "thread/started": {
-      const threadId = stringValue(params.threadId)
-        || stringValue(recordValue(params.thread)?.id)
-        || stringValue(recordValue(params.thread)?.sessionId);
-      return threadId ? [{
-        type: "session.update",
-        payload: { providerSession: { sessionId: threadId, resumable: true } }
-      }] : [];
-    }
-    case "thread/compacted": {
-      const threadId = stringValue(params.threadId)
-        || stringValue(recordValue(params.thread)?.id)
-        || stringValue(recordValue(params.thread)?.sessionId);
-      return threadId ? [{
-        type: "session.update",
-        payload: {
-          providerSession: {
-            sessionId: threadId,
-            resumable: true,
-            resumeOutcome: "compacted"
-          }
-        }
-      }] : [];
-    }
-    case "item/agentMessage/delta":
-      return textDelta(params, "final");
-    case "item/reasoning/summaryTextDelta":
-      return textDelta(params, "analysis", "public_summary", "item/reasoning/summaryTextDelta");
-    case "item/reasoning/textDelta":
-      return textDelta(params, "analysis", "private_reasoning", "item/reasoning/textDelta");
-    case "item/plan/delta":
-      return textDelta(params, "analysis", "public_plan", "item/plan/delta");
-    case "item/commandExecution/outputDelta":
-    case "item/fileChange/outputDelta": {
-      const id = itemId(params);
-      const delta = stringValue(params.delta);
-      return id && delta ? [{
-        type: "tool_call.delta",
-        payload: { id, outputDelta: delta }
-      }] : [];
-    }
-    case "thread/tokenUsage/updated":
-      return usageEvents(params);
-    case "item/started":
-      return itemStartedEvents(recordValue(params.item));
-    case "item/completed":
-      return itemCompletedEvents(recordValue(params.item));
-    case "turn/completed":
-      return turnCompletedEvents(recordValue(params.turn));
-    case "error": {
-      if (params.willRetry === true) return [];
-      const error = recordValue(params.error);
-      return [{
-        type: "run.error",
-        payload: { message: stringValue(error?.message) || "Codex turn failed" }
-      }];
-    }
-    default: {
-      if (isToolArgsDeltaMethod(native.method)) {
-        const id = itemId(params);
-        const delta = stringValue(params.delta);
-        return id && delta ? [{
-          type: "tool_call.delta",
-          payload: { id, argsDelta: delta }
+  return new CodexEventNormalizer().normalize(native);
+}
+
+/**
+ * Reconstruct Codex model rounds from its item stream.
+ *
+ * Codex does not publish OpenCode-style step_start/step_finish frames. A model
+ * round therefore starts with the first reasoning/plan/answer item after a tool
+ * batch and finishes when that model response requests tools or completes its
+ * answer. Consecutive tool items share the same round.
+ */
+export class CodexEventNormalizer {
+  #turnId?: string;
+  #round = 0;
+  #activeStepId?: string;
+  #toolBatchStepId?: string;
+  readonly #itemSteps = new Map<string, string>();
+
+  normalize(native: CodexAppServerNotification): CanonicalEvent[] {
+    const params = native.params ?? {};
+    switch (native.method) {
+      case "thread/started": {
+        const threadId = stringValue(params.threadId)
+          || stringValue(recordValue(params.thread)?.id)
+          || stringValue(recordValue(params.thread)?.sessionId);
+        return threadId ? [{
+          type: "session.update",
+          payload: { providerSession: { sessionId: threadId, resumable: true } }
         }] : [];
       }
-      return [];
+      case "thread/compacted": {
+        const threadId = stringValue(params.threadId)
+          || stringValue(recordValue(params.thread)?.id)
+          || stringValue(recordValue(params.thread)?.sessionId);
+        return threadId ? [{
+          type: "session.update",
+          payload: {
+            providerSession: {
+              sessionId: threadId,
+              resumable: true,
+              resumeOutcome: "compacted"
+            }
+          }
+        }] : [];
+      }
+      case "turn/started":
+        this.#beginTurn(params);
+        return [];
+      case "item/agentMessage/delta":
+        return textDelta(params, "final", undefined, undefined, this.#stepFor(params));
+      case "item/reasoning/summaryTextDelta":
+        return textDelta(params, "analysis", "public_summary", "item/reasoning/summaryTextDelta", this.#stepFor(params));
+      case "item/reasoning/textDelta":
+        return textDelta(params, "analysis", "private_reasoning", "item/reasoning/textDelta", this.#stepFor(params));
+      case "item/plan/delta":
+        return textDelta(params, "analysis", "public_plan", "item/plan/delta", this.#stepFor(params));
+      case "item/commandExecution/outputDelta":
+      case "item/fileChange/outputDelta": {
+        const id = itemId(params);
+        const delta = stringValue(params.delta);
+        const stepId = this.#stepFor(params);
+        return id && delta ? [{
+          type: "tool_call.delta",
+          payload: { id, outputDelta: delta, ...(stepId ? { stepId } : {}) }
+        }] : [];
+      }
+      case "thread/tokenUsage/updated":
+        return usageEvents(params);
+      case "item/started":
+        return this.#itemStarted(params);
+      case "item/completed":
+        return this.#itemCompleted(params);
+      case "turn/completed":
+        return [
+          ...this.#finishActiveStep(turnStepStatus(recordValue(params.turn)), "stop"),
+          ...turnCompletedEvents(recordValue(params.turn))
+        ];
+      case "error": {
+        if (params.willRetry === true) return [];
+        const error = recordValue(params.error);
+        return [
+          ...this.#finishActiveStep("failed", "error"),
+          {
+            type: "run.error",
+            payload: { message: stringValue(error?.message) || "Codex turn failed" }
+          }
+        ];
+      }
+      default: {
+        if (isToolArgsDeltaMethod(native.method)) {
+          const id = itemId(params);
+          const delta = stringValue(params.delta);
+          const stepId = this.#stepFor(params);
+          return id && delta ? [{
+            type: "tool_call.delta",
+            payload: { id, argsDelta: delta, ...(stepId ? { stepId } : {}) }
+          }] : [];
+        }
+        return [];
+      }
     }
+  }
+
+  #beginTurn(params: JsonRecord): void {
+    const turnId = notificationTurnId(params);
+    if (!turnId || turnId === this.#turnId) return;
+    this.#turnId = turnId;
+    this.#round = 0;
+    this.#activeStepId = undefined;
+    this.#toolBatchStepId = undefined;
+    this.#itemSteps.clear();
+  }
+
+  #itemStarted(params: JsonRecord): CanonicalEvent[] {
+    const item = recordValue(params.item);
+    if (!item) return [];
+    const id = stringValue(item.id);
+    const tool = toolDescriptor(item);
+    if (tool) {
+      const prefix: CanonicalEvent[] = [];
+      let stepId = this.#toolBatchStepId;
+      if (!stepId) {
+        const started = this.#ensureActiveStep(params);
+        prefix.push(...started.events);
+        stepId = started.stepId;
+      }
+      if (id && stepId) this.#itemSteps.set(id, stepId);
+      const events = itemStartedEvents(item, stepId);
+      if (this.#activeStepId === stepId) {
+        this.#toolBatchStepId = stepId;
+        events.push(...this.#finishActiveStep("completed", "tool-calls"));
+      }
+      return [...prefix, ...events];
+    }
+
+    const type = stringValue(item.type);
+    if (type !== "reasoning" && type !== "plan" && type !== "agentMessage") return [];
+    this.#toolBatchStepId = undefined;
+    const started = this.#ensureActiveStep(params);
+    if (id) this.#itemSteps.set(id, started.stepId);
+    return [...started.events, ...itemStartedEvents(item, started.stepId)];
+  }
+
+  #itemCompleted(params: JsonRecord): CanonicalEvent[] {
+    const item = recordValue(params.item);
+    if (!item) return [];
+    const id = stringValue(item.id);
+    const stepId = id ? this.#itemSteps.get(id) : undefined;
+    const events = itemCompletedEvents(item, stepId);
+    if (stringValue(item.type) === "agentMessage" && stepId === this.#activeStepId) {
+      events.push(...this.#finishActiveStep("completed", "stop"));
+    }
+    return events;
+  }
+
+  #ensureActiveStep(params: JsonRecord): { stepId: string; events: CanonicalEvent[] } {
+    this.#beginTurn(params);
+    if (this.#activeStepId) return { stepId: this.#activeStepId, events: [] };
+    const turnId = notificationTurnId(params) || this.#turnId || "turn";
+    const stepId = `codex:${turnId}:round:${++this.#round}`;
+    this.#activeStepId = stepId;
+    return {
+      stepId,
+      events: [{ type: "model_step.started", payload: { stepId } }]
+    };
+  }
+
+  #finishActiveStep(status: string, finishReason: string): CanonicalEvent[] {
+    const stepId = this.#activeStepId;
+    if (!stepId) return [];
+    this.#activeStepId = undefined;
+    return [{
+      type: "model_step.finished",
+      payload: { stepId, status, finishReason }
+    }];
+  }
+
+  #stepFor(params: JsonRecord): string | undefined {
+    const id = itemId(params);
+    return id ? this.#itemSteps.get(id) : undefined;
   }
 }
 
@@ -484,6 +590,7 @@ class CodexAppServerClient {
   readonly #child: ChildProcessWithoutNullStreams;
   readonly #reader: ReadLineInterface;
   readonly #queue = new AsyncEventQueue<CanonicalEvent>();
+  readonly #normalizer = new CodexEventNormalizer();
   readonly #pending = new Map<RpcId, PendingRequest>();
   readonly #requestTimeoutMs: number;
   readonly #signal?: AbortSignal;
@@ -673,7 +780,7 @@ class CodexAppServerClient {
     }
     const params = recordValue(message.params) ?? {};
     if (!this.#acceptNotification(params)) return;
-    for (const event of normalizeCodexEvent({ method, params })) {
+    for (const event of this.#normalizer.normalize({ method, params })) {
       this.#queue.push(event);
       if (isTerminalEvent(event)) {
         this.#terminal = true;
@@ -859,7 +966,10 @@ function threadParams(request: InvokeRequest, extra: JsonRecord): JsonRecord {
  * publishing summaryTextDelta, so a UI might see only an empty analysis lifecycle.
  */
 function turnParams(request: InvokeRequest, threadId: string, freshFallback = false): JsonRecord {
-  const effort = codexEffort(request.agentConfig.thinking);
+  const legacyEffort = typeof request.agentConfig.thinking === "string"
+    ? request.agentConfig.thinking
+    : undefined;
+  const effort = codexEffort(legacyEffort);
   return {
     threadId,
     input: [{
@@ -888,7 +998,7 @@ function codexReasoningSummary(request: InvokeRequest): string {
   const configured = recordValue(request.agentConfig.providerOptions)?.reasoningSummary;
   const value = typeof configured === "string"
     ? configured
-    : request.agentConfig.thinking === "disabled" ? "none" : "auto";
+    : request.agentConfig.thinking === false || request.agentConfig.thinking === "disabled" ? "none" : "auto";
   if (!["auto", "concise", "detailed", "none"].includes(value)) {
     throw new Error(`unsupported Codex reasoning summary: ${value}`);
   }
@@ -920,7 +1030,8 @@ function textDelta(
   params: JsonRecord,
   channel: "analysis" | "final",
   exposure?: MessageExposure,
-  nativeEvent?: string
+  nativeEvent?: string,
+  stepId?: string
 ): CanonicalEvent[] {
   const text = stringValue(params.delta);
   if (!text) return [];
@@ -931,6 +1042,7 @@ function textDelta(
       text,
       channel,
       ...(id ? { messageId: id } : {}),
+      ...(stepId ? { stepId } : {}),
       ...(exposure && nativeEvent ? {
         exposure,
         provenance: { provider: "codex", nativeEvent }
@@ -958,14 +1070,17 @@ function usageEvents(params: JsonRecord): CanonicalEvent[] {
 }
 
 /** item started only creates the lifecycle object; it does not guess the final output here. */
-function itemStartedEvents(item: JsonRecord | undefined): CanonicalEvent[] {
+function itemStartedEvents(item: JsonRecord | undefined, stepId?: string): CanonicalEvent[] {
   if (!item) return [];
   const type = stringValue(item.type);
   const id = stringValue(item.id);
   if (type === "agentMessage") {
     return [{
       type: "message.create",
-      payload: { role: "assistant", status: "streaming", channel: "final", ...(id ? { messageId: id } : {}) }
+      payload: {
+        role: "assistant", status: "streaming", channel: "final",
+        ...(id ? { messageId: id } : {}), ...(stepId ? { stepId } : {})
+      }
     }];
   }
   if (type === "reasoning" || type === "plan") {
@@ -978,19 +1093,20 @@ function itemStartedEvents(item: JsonRecord | undefined): CanonicalEvent[] {
         channel: "analysis",
         exposure,
         provenance: { provider: "codex", nativeEvent: "item/started" },
-        ...(id ? { messageId: id } : {})
+        ...(id ? { messageId: id } : {}),
+        ...(stepId ? { stepId } : {})
       }
     }];
   }
   const tool = toolDescriptor(item);
   return tool ? [{
     type: "tool_call.create",
-    payload: { id: tool.id, name: tool.name, args: tool.args }
+    payload: { id: tool.id, name: tool.name, args: tool.args, ...(stepId ? { stepId } : {}) }
   }] : [];
 }
 
 /** item completed closes the corresponding message/tool lifecycle and attaches the provider's final snapshot. */
-function itemCompletedEvents(item: JsonRecord | undefined): CanonicalEvent[] {
+function itemCompletedEvents(item: JsonRecord | undefined, stepId?: string): CanonicalEvent[] {
   if (!item) return [];
   const type = stringValue(item.type);
   const id = stringValue(item.id);
@@ -1002,6 +1118,7 @@ function itemCompletedEvents(item: JsonRecord | undefined): CanonicalEvent[] {
         status: "completed",
         channel: "final",
         ...(id ? { messageId: id } : {}),
+        ...(stepId ? { stepId } : {}),
         ...(stringValue(item.text) ? { text: stringValue(item.text) } : {})
       }
     }];
@@ -1020,6 +1137,7 @@ function itemCompletedEvents(item: JsonRecord | undefined): CanonicalEvent[] {
         exposure,
         provenance: { provider: "codex", nativeEvent: "item/completed" },
         ...(id ? { messageId: id } : {}),
+        ...(stepId ? { stepId } : {}),
         ...(text ? { text } : {})
       }
     }];
@@ -1032,6 +1150,7 @@ function itemCompletedEvents(item: JsonRecord | undefined): CanonicalEvent[] {
       id: tool.id,
       status: toolStatus(item),
       output: toolOutput(item),
+      ...(stepId ? { stepId } : {}),
       ...(typeof item.exitCode === "number" ? { exitCode: item.exitCode } : {})
     }
   }];
@@ -1150,6 +1269,21 @@ function itemId(params: JsonRecord): string {
   return stringValue(params.itemId)
     || stringValue(params.callId)
     || stringValue(recordValue(params.item)?.id);
+}
+
+function notificationTurnId(params: JsonRecord): string {
+  return stringValue(params.turnId) || stringValue(recordValue(params.turn)?.id);
+}
+
+function turnStepStatus(turn: JsonRecord | undefined): string {
+  switch (stringValue(turn?.status)) {
+    case "failed":
+      return "failed";
+    case "interrupted":
+      return "cancelled";
+    default:
+      return "completed";
+  }
 }
 
 function isToolArgsDeltaMethod(method: string): boolean {
