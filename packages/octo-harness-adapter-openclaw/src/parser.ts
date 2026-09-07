@@ -23,6 +23,34 @@ export interface OpenClawFinalFrame {
   outputTokens: number;
 }
 
+interface OpenClawTranscriptToolCall {
+  id: string;
+  name: string;
+  args: JsonRecord;
+}
+
+/** One durable message appended by OpenClaw to its per-session JSONL transcript. */
+export type OpenClawTranscriptFrame =
+  | {
+      kind: "assistant-step";
+      stepId: string;
+      reasoning: string[];
+      text: string;
+      tools: OpenClawTranscriptToolCall[];
+      status: string;
+      finishReason: string;
+      startedAtMs?: number;
+      endedAtMs?: number;
+    }
+  | {
+      kind: "tool-result";
+      id: string;
+      name?: string;
+      output: unknown;
+      isError: boolean;
+      durationMs?: number;
+    };
+
 interface UsageLike {
   inputTokens: number;
   outputTokens: number;
@@ -42,6 +70,22 @@ function string(value: unknown, fallback = ""): string {
 
 function number(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
+function nonNegativeInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+function timestamp(value: unknown): number | undefined {
+  const numeric = positiveInteger(value);
+  if (numeric !== undefined) return numeric;
+  if (typeof value !== "string") return undefined;
+  const parsed = Date.parse(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 /** Best-effort JSON parse that returns null instead of throwing, so a malformed line is simply skipped. */
@@ -138,6 +182,164 @@ export function tryParseOpenClawFinalBlob(text: string): OpenClawFinalFrame | nu
     inputTokens: number(usage?.input),
     outputTokens: number(usage?.output)
   };
+}
+
+function transcriptText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map(block => string(record(block)?.text))
+    .filter(Boolean)
+    .join("\n");
+}
+
+function finishReason(value: unknown): string {
+  const reason = string(value);
+  switch (reason.toLowerCase().replaceAll("_", "-")) {
+    case "tooluse":
+    case "tool-use":
+    case "tool-calls":
+      return "tool-calls";
+    case "stop":
+    case "end-turn":
+    case "completed":
+      return "stop";
+    default:
+      return reason;
+  }
+}
+
+/** Parse one newly appended OpenClaw session transcript record. */
+export function tryParseOpenClawTranscriptLine(line: string): OpenClawTranscriptFrame | null {
+  const native = record(parseJson(line));
+  const message = record(native?.message);
+  if (!native || native.type !== "message" || !message) return null;
+
+  const role = string(message.role);
+  if (role === "assistant") {
+    const nativeId = string(native.id) || string(message.responseId);
+    if (!nativeId || !Array.isArray(message.content)) return null;
+    const reasoning: string[] = [];
+    const texts: string[] = [];
+    const tools: OpenClawTranscriptToolCall[] = [];
+    for (const value of message.content) {
+      const block = record(value);
+      if (!block) continue;
+      switch (block.type) {
+        case "thinking": {
+          const thought = string(block.thinking);
+          if (thought) reasoning.push(thought);
+          break;
+        }
+        case "text": {
+          const text = string(block.text);
+          if (text) texts.push(text);
+          break;
+        }
+        case "toolCall": {
+          const id = string(block.id);
+          if (!id) break;
+          tools.push({
+            id,
+            name: string(block.name, "tool"),
+            args: record(block.arguments) ?? {}
+          });
+          break;
+        }
+      }
+    }
+    const reason = finishReason(message.stopReason);
+    const failed = ["error", "failed", "aborted", "cancelled"].includes(reason.toLowerCase());
+    return {
+      kind: "assistant-step",
+      stepId: `openclaw:${nativeId}`,
+      reasoning,
+      text: texts.join("\n"),
+      tools,
+      status: failed ? "failed" : "completed",
+      finishReason: reason,
+      startedAtMs: timestamp(message.timestamp),
+      endedAtMs: timestamp(native.timestamp)
+    };
+  }
+
+  if (role === "toolResult") {
+    const id = string(message.toolCallId);
+    if (!id) return null;
+    const details = record(message.details);
+    return {
+      kind: "tool-result",
+      id,
+      name: string(message.toolName) || undefined,
+      output: transcriptText(message.content),
+      isError: message.isError === true,
+      durationMs: nonNegativeInteger(details?.durationMs)
+    };
+  }
+  return null;
+}
+
+/** Stateful transcript normalizer that keeps tool results attached to their originating model round. */
+export class OpenClawTranscriptNormalizer {
+  private readonly toolSteps = new Map<string, string>();
+
+  normalize(frame: OpenClawTranscriptFrame): CanonicalEvent[] {
+    if (frame.kind === "tool-result") {
+      const stepId = this.toolSteps.get(frame.id);
+      return [{
+        type: "tool_call.update",
+        payload: {
+          id: frame.id,
+          ...(frame.name ? { name: frame.name } : {}),
+          status: frame.isError ? "failed" : "completed",
+          output: frame.output,
+          ...(stepId ? { stepId } : {}),
+          ...(frame.durationMs === undefined ? {} : { durationMs: frame.durationMs })
+        }
+      }];
+    }
+
+    const events: CanonicalEvent[] = [{
+      type: "model_step.started",
+      payload: {
+        stepId: frame.stepId,
+        ...(frame.startedAtMs === undefined ? {} : { startedAtMs: frame.startedAtMs })
+      }
+    }];
+    for (const thought of frame.reasoning) {
+      events.push({
+        type: "message.delta",
+        payload: {
+          text: thought,
+          stepId: frame.stepId,
+          messageId: `${frame.stepId}:reasoning`,
+          channel: "analysis",
+          exposure: "public_reasoning",
+          provenance: { provider: "openclaw", nativeEvent: "session.transcript.thinking" }
+        }
+      });
+    }
+    if (frame.text) {
+      events.push({ type: "message.delta", payload: { text: frame.text, channel: "final", stepId: frame.stepId } });
+    }
+    for (const tool of frame.tools) {
+      this.toolSteps.set(tool.id, frame.stepId);
+      events.push({
+        type: "tool_call.create",
+        payload: { id: tool.id, name: tool.name, args: tool.args, stepId: frame.stepId }
+      });
+    }
+    events.push({
+      type: "model_step.finished",
+      payload: {
+        stepId: frame.stepId,
+        status: frame.status,
+        ...(frame.finishReason ? { finishReason: frame.finishReason } : {}),
+        ...(frame.endedAtMs === undefined ? {} : { endedAtMs: frame.endedAtMs })
+      }
+    });
+    return events;
+  }
 }
 
 /** Map a parsed frame to canonical events. */

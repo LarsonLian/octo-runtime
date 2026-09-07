@@ -1,7 +1,8 @@
 /**
- * OpenCode adapter: wraps the OpenCode CLI (`opencode run --format json`) and
- * normalizes its JSON event/part stream into canonical events. Dangerous
- * auto-approval (`--auto`) is opt-in via agentConfig.autoApprove.
+ * OpenCode adapter: wraps the OpenCode CLI (`opencode run --format json
+ * --thinking --auto`) and normalizes its JSON event/part stream into canonical
+ * events. This adapter is an unattended local coding runtime, so tool
+ * permissions are always auto-approved.
  */
 import { createJsonCliAdapter, probeCommand, providerInputText, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -11,8 +12,10 @@ import { join } from "node:path";
 /** A single OpenCode stream part; tool lifecycle is carried in `state.status` (running -> completed/error). */
 interface OpenCodePart {
   sessionID?: string;
+  messageID?: string;
   type?: string;
   text?: string;
+  reason?: string;
   callID?: string;
   id?: string;
   tool?: string;
@@ -25,6 +28,7 @@ interface OpenCodePart {
   };
   tokens?: Record<string, unknown>;
   cost?: unknown;
+  time?: { start?: unknown; end?: unknown };
 }
 
 /** A top-level OpenCode event, which may wrap a part and carries session/usage/error at the envelope level. */
@@ -32,6 +36,7 @@ interface OpenCodeNativeEvent extends OpenCodePart {
   sessionID?: string;
   sessionId?: string;
   part?: OpenCodePart;
+  timestamp?: unknown;
   usage?: Record<string, unknown>;
   error?: { data?: { message?: string }; message?: string };
 }
@@ -59,10 +64,13 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
     : [];
   // Inject harness context via a temporary instructions file, without rewriting the user's existing OpenCode config.
   inline.instructions = [...configuredInstructions, instructions];
-  const args = ["run", "--format", "json"];
+  // Reasoning output and non-interactive tool approval are mandatory parts of
+  // this adapter's provider contract.
+  const args = ["run", "--format", "json", "--thinking", "--auto"];
   if (req.providerSession?.sessionId) args.push("--session", req.providerSession.sessionId);
   if (req.agentConfig?.model) args.push("--model", req.agentConfig.model);
-  if (req.agentConfig?.autoApprove === true) args.push("--auto");
+  const variant = typeof req.agentConfig?.thinking === "string" ? req.agentConfig.thinking : undefined;
+  if (variant && variant !== "enabled" && variant !== "disabled") args.push("--variant", variant);
   args.push(providerInputText(req));
   return {
     command, args, env: { OPENCODE_CONFIG_CONTENT: JSON.stringify(inline), OPENCODE_CLIENT: "octo-harness" },
@@ -88,17 +96,39 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
 /** Translate one OpenCode native event/part into canonical events; unrelated events yield an empty list. */
 export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEvent[] {
   const events: CanonicalEvent[] = [];
+  const part: OpenCodePart = native.part ?? native;
   const sessionId = native.sessionID ?? native.sessionId ?? native.part?.sessionID;
   if ((native.type === "step_start" || native.type === "session.created") && sessionId) {
     events.push({ type: "session.update", payload: { providerSession: { sessionId, resumable: true } } });
   }
-  const part: OpenCodePart = native.part ?? native;
+  const stepId = part.messageID;
+  const timestamp = providerTimestamp(native.timestamp);
+  if ((native.type === "step_start" || part.type === "step-start") && stepId) {
+    events.push({
+      type: "model_step.started",
+      payload: { stepId, ...(timestamp === undefined ? {} : { startedAtMs: timestamp }) }
+    });
+  }
   const toolState = part.state;
   const toolId = part.callID ?? part.id;
-  if ((native.type === "text" || part.type === "text") && typeof part.text === "string") events.push({ type: "message.delta", payload: { text: part.text } });
+  if ((native.type === "text" || part.type === "text") && typeof part.text === "string") {
+    events.push({ type: "message.delta", payload: { text: part.text, ...(stepId ? { stepId } : {}) } });
+  }
+  if ((native.type === "reasoning" || part.type === "reasoning") && typeof part.text === "string") {
+    events.push({
+      type: "message.delta",
+      payload: {
+        text: part.text,
+        ...(stepId ? { stepId, messageId: `opencode:${stepId}:reasoning` } : {}),
+        channel: "analysis",
+        exposure: "public_reasoning",
+        provenance: { provider: "opencode", nativeEvent: "reasoning" }
+      }
+    });
+  }
   if (part.type === "tool" && toolState?.status === "running" && toolId && part.tool) {
     const args = isRecord(toolState.input) ? toolState.input : toolState.input == null ? {} : { value: toolState.input };
-    events.push({ type: "tool_call.create", payload: { id: toolId, name: part.tool, args } });
+    events.push({ type: "tool_call.create", payload: { id: toolId, name: part.tool, args, ...(stepId ? { stepId } : {}) } });
   }
   if (part.type === "tool" && toolId && toolState?.status && ["completed", "error"].includes(toolState.status)) {
     const args = isRecord(toolState.input) ? toolState.input : toolState.input == null ? {} : { value: toolState.input };
@@ -112,11 +142,25 @@ export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEv
         ...(part.tool ? { name: part.tool, args } : {}),
         status: toolState.status === "error" ? "failed" : toolState.status,
         output: toolState.output ?? toolState.error,
+        ...(stepId ? { stepId } : {}),
         ...(durationMs === undefined ? {} : { durationMs })
       }
     });
   }
-  if (native.type === "step_finish" || part.type === "step-finish") events.push({ type: "usage.update", payload: { ...(part.tokens ?? native.usage ?? {}), cost: part.cost } });
+  if ((native.type === "step_finish" || part.type === "step-finish") && stepId) {
+    events.push({
+      type: "model_step.finished",
+      payload: {
+        stepId,
+        status: "completed",
+        ...(typeof part.reason === "string" ? { finishReason: part.reason } : {}),
+        ...(timestamp === undefined ? {} : { endedAtMs: timestamp })
+      }
+    });
+  }
+  if (native.type === "step_finish" || part.type === "step-finish") {
+    events.push({ type: "usage.update", payload: { ...(part.tokens ?? native.usage ?? {}), cost: part.cost, ...(stepId ? { stepId } : {}) } });
+  }
   if (native.type === "error") events.push({ type: "run.error", payload: { message: native.error?.data?.message ?? native.error?.message ?? "OpenCode failed", providerError: native.error } });
   return events;
 }
@@ -131,6 +175,11 @@ function toolDurationMs(time: { start?: unknown; end?: unknown } | undefined): n
   if (typeof time?.start !== "number" || typeof time.end !== "number") return undefined;
   if (!Number.isSafeInteger(time.start) || !Number.isSafeInteger(time.end) || time.end < time.start) return undefined;
   return time.end - time.start;
+}
+
+/** Preserve a provider event clock only when it is a valid Unix-millisecond value. */
+function providerTimestamp(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }
 
 /**

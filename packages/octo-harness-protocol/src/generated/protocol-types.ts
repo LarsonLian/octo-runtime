@@ -12,12 +12,12 @@
  */
 export type MessageChannel = "analysis" | "final";
 /**
- * Adapter-authenticated classification of analysis content. Only public_summary and public_plan may enter a public Presentation; missing values are unknown.
+ * Adapter-authenticated classification of analysis content. public_reasoning, public_summary, and public_plan may enter a public Presentation; missing values are unknown.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "MessageExposure".
  */
-export type MessageExposure = "public_summary" | "public_plan" | "private_reasoning" | "unknown";
+export type MessageExposure = "public_reasoning" | "public_summary" | "public_plan" | "private_reasoning" | "unknown";
 /**
  * Bounded history result. complete means only that the requested window was returned, not that the local journal is authoritative.
  *
@@ -111,9 +111,13 @@ export interface AgentConfig {
    */
   providerAgentId?: string;
   /**
-   * Thinking/reasoning effort identifier.
+   * Whether provider thinking is enabled, or a legacy provider-specific thinking mode identifier.
    */
-  thinking?: string;
+  thinking?: boolean | string;
+  /**
+   * Optional provider reasoning effort identifier. Provider adapters may define an explicit default.
+   */
+  effort?: string;
   /**
    * Invocation timeout in seconds.
    */
@@ -148,6 +152,10 @@ export interface CanonicalEventPayload {
    */
   messageId?: string;
   /**
+   * Stable model-step identifier used to associate messages and tool calls with one provider turn.
+   */
+  stepId?: string;
+  /**
    * Message role, such as assistant.
    */
   role?: string;
@@ -167,6 +175,52 @@ export interface CanonicalEventPayload {
    * Human-readable diagnostic message.
    */
   message?: string;
+  [k: string]: unknown;
+}
+/**
+ * Starts one provider model round. A round may contain public reasoning, tool calls, and text output.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ModelStepStartedPayload".
+ */
+export interface ModelStepStartedPayload {
+  /**
+   * Stable identifier reused by model_step.finished and child events.
+   */
+  stepId: string;
+  /**
+   * Provider-observed round content-start timestamp in Unix milliseconds.
+   */
+  startedAtMs?: number;
+  [k: string]: unknown;
+}
+/**
+ * Finishes one provider model round and records why control returned to the harness.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ModelStepFinishedPayload".
+ */
+export interface ModelStepFinishedPayload {
+  /**
+   * Stable identifier from model_step.started.
+   */
+  stepId: string;
+  /**
+   * Terminal round status.
+   */
+  status: string;
+  /**
+   * Provider-normalized reason such as tool-calls or stop.
+   */
+  finishReason?: string;
+  /**
+   * Bounded text the provider already emitted on a public final channel during this round. This is a display fallback, not private reasoning.
+   */
+  publicText?: string;
+  /**
+   * Provider-observed round finish timestamp in Unix milliseconds.
+   */
+  endedAtMs?: number;
   [k: string]: unknown;
 }
 /**

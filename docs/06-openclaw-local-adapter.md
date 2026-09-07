@@ -10,8 +10,9 @@ InvokeRequest
   -> compose control instructions + user request
   -> write mode 0600 temporary message file
   -> spawn openclaw agent --local --json --session-id ... --message-file ...
-  -> parse NDJSON events and optional pretty-printed final JSON blob
-  -> emit canonical session/message/tool/usage/run events
+  -> tail newly appended session transcript records while parsing stdout
+  -> emit canonical session/model-step/reasoning/message/tool/usage/run events
+  -> reconcile the optional pretty-printed final JSON blob
   -> remove temporary directory
 ```
 
@@ -56,6 +57,10 @@ cwd 与 Aily local 路径保持相同方向：优先 `OPENCLAW_STATE_DIR`，其�
 
 | OpenClaw output | Canonical event |
 |---|---|
+| transcript assistant record | `model_step.started/finished` |
+| transcript `thinking` block | `message.delta(channel=analysis, exposure=public_reasoning)` |
+| transcript `toolCall` block | `tool_call.create` with the assistant `stepId` |
+| transcript `toolResult` message | `tool_call.update` with the originating `stepId` and provider duration |
 | `text` | `message.delta(channel=final)` |
 | `tool_use` | `tool_call.create` |
 | `tool_result` | `tool_call.update(completed/error)` |
@@ -66,9 +71,9 @@ cwd 与 Aily local 路径保持相同方向：优先 `OPENCLAW_STATE_DIR`，其�
 | provider error/non-zero exit | `run.error` |
 | host abort/lifecycle cancelled | `run.stopped` |
 
-OpenClaw 2026.x 的 `--json` 输出可能是逐行 NDJSON，也可能在尾部给一个多行 JSON result blob。parser 同时处理两种形态，并用最终 blob 校正缺失的文本；usage 相同则不重复上报。
+OpenClaw 2026.x 的 `--json` stdout 可能是逐行 NDJSON，也可能只在尾部给一个多行 JSON result blob。后者不会携带工具过程，因此 adapter 在启动前记录当前 session JSONL 的文件偏移，运行期间只读取新增记录；resume 不会重放前几轮历史。parser 用最终 blob 校正缺失的文本和总 usage。旧版若先输出原生 NDJSON，则以 stdout 为过程事件源并忽略 transcript，避免重复。
 
-`--thinking` 控制 OpenClaw 的 thinking level，但当前已验证 local wire shape 没有独立 reasoning event。adapter 不伪造隐藏思维内容；未来若 OpenClaw 暴露稳定的 thought event，应映射为 `message.delta(channel=analysis)`，并受可见性和保留策略控制。
+`--thinking` 控制 OpenClaw 的 thinking level。OpenClaw 明文落入 transcript 的 `thinking` block 映射为带 provider provenance 的 `public_reasoning`，并与同一 assistant record 的工具调用共享 `stepId`；adapter 不读取 `thinkingSignature`，provider 未写出明文 thinking 时也不伪造内容。
 
 ## CLI Example
 
@@ -97,4 +102,4 @@ pnpm cli agent create \
 - 不从 Octo Harness workdir 注入 skills；skills 是 OpenClaw agent 配置能力，不是 Run 汇报协议。
 - 不实现 session fork 文件复制；当前只声明 `session.serialize`，不声明 `session.fork`。
 - 当前进程取消依赖 Node `AbortSignal` 终止 CLI；生产环境应升级为进程组终止和分级 `SIGTERM/SIGKILL` 回收。
-- 契约测试使用 fake OpenClaw，不调用真实模型。2026-08-28 本机 `OpenClaw 2026.7.1-2` 的 executable probe 通过，尚未把真实模型调用冒充为已验证结果。
+- 契约测试使用 fake OpenClaw，不调用真实模型。2026-09-08 本机 `OpenClaw 2026.7.1-2` 完成真实 Harness Run 验证，覆盖两轮 model step、公开 reasoning、`exec` tool lifecycle、final text 和 usage。

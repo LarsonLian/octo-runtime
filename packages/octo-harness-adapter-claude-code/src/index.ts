@@ -25,6 +25,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+const MAX_STEP_PUBLIC_TEXT_CHARS = 1_000;
+
 interface ClaudeContentBlock {
   type?: string;
   text?: string;
@@ -47,6 +49,7 @@ interface ClaudeStreamEvent {
     text?: string;
     thinking?: string;
     partial_json?: string;
+    stop_reason?: string | null;
   };
 }
 
@@ -95,9 +98,12 @@ export async function buildClaudeCommand(
   ];
   if (req.providerSession?.sessionId) args.push("--resume", req.providerSession.sessionId);
   if (req.agentConfig?.model) args.push("--model", req.agentConfig.model);
-  if (req.agentConfig?.thinking) {
-    args.push("--effort", req.agentConfig.thinking === "disabled" ? "low" : req.agentConfig.thinking);
+  if (req.agentConfig?.thinking !== undefined) {
+    const enabled = req.agentConfig.thinking !== false && req.agentConfig.thinking !== "disabled";
+    args.push("--settings", JSON.stringify({ alwaysThinkingEnabled: enabled }));
   }
+  const effort = req.agentConfig?.effort ?? "medium";
+  args.push("--effort", effort);
   const mode = req.agentConfig?.dangerouslyBypassPermissions === true
     ? "bypassPermissions"
     : req.agentConfig?.permissionMode ?? "bypassPermissions";
@@ -120,7 +126,8 @@ export async function buildClaudeCommand(
         stdin: input,
         append_system_prompt: req.appendInstructions,
         model: req.agentConfig?.model,
-        effort: req.agentConfig?.thinking
+        thinking: req.agentConfig?.thinking,
+        effort
       }
     },
     cleanup: () => rm(directory, { recursive: true, force: true })
@@ -141,6 +148,17 @@ export class ClaudeEventNormalizer {
   #publishedSessionId?: string;
   /** parent tool scope -> content block index -> tool_use id, so concurrent sub-tasks cannot collide on index. */
   readonly #toolBlocks = new Map<string, Map<number, string>>();
+  /** parent tool scope -> provider message id, used to give each thinking phase a stable public item identity. */
+  readonly #messageIds = new Map<string, string>();
+  /** parent tool scope -> native stop reason for the current provider model round. */
+  readonly #finishReasons = new Map<string, string>();
+  /** parent tool scope -> bounded text already emitted on the public final channel during this round. */
+  readonly #publicTexts = new Map<string, string>();
+  /** parent tool scope -> content block index -> public thinking item id. */
+  readonly #thinkingBlocks = new Map<string, Map<number, string>>();
+  /** tool_use id -> provider model round, retained until Claude reports the tool result. */
+  readonly #toolSteps = new Map<string, string>();
+  #messageSequence = 0;
 
   /** Return canonical events in stdout arrival order; this method neither buffers a whole turn nor reorders events. */
   normalize(native: ClaudeNativeEvent): CanonicalEvent[] {
@@ -171,7 +189,7 @@ export class ClaudeEventNormalizer {
             type: "message.delta",
             payload: {
               text: block.thinking,
-              ...claudeAnalysisMetadata("private_reasoning", "assistant.content.thinking")
+              ...claudeAnalysisMetadata("public_reasoning", "assistant.content.thinking")
             }
           });
         }
@@ -190,21 +208,25 @@ export class ClaudeEventNormalizer {
       for (const block of native.message?.content ?? []) {
         if (block.type !== "tool_result" || !block.tool_use_id) continue;
         const output = claudeToolResultOutput(block.content);
+        const stepId = this.#toolSteps.get(block.tool_use_id);
         events.push({
           type: "tool_call.update",
           payload: {
             id: block.tool_use_id,
             status: block.is_error ? "error" : "completed",
+            ...(stepId ? { stepId } : {}),
             ...(output === undefined ? {} : { output }),
             ...(block.is_error ? { error: { message: typeof output === "string" ? output : "Claude tool call failed" } } : {})
           }
         });
+        this.#toolSteps.delete(block.tool_use_id);
       }
       return events;
     }
 
     if (native.type === "result") {
-      return [
+      const events = this.#finishActiveSteps(native.is_error ? "failed" : "completed");
+      events.push(
         { type: "usage.update", payload: native.usage ?? {} },
         {
           type: "message.update",
@@ -220,7 +242,8 @@ export class ClaudeEventNormalizer {
           type: native.is_error ? "run.error" : "run.finished",
           payload: native.is_error ? { message: native.result ?? "Claude Code failed" } : {}
         }
-      ];
+      );
+      return events;
     }
     return [];
   }
@@ -231,13 +254,49 @@ export class ClaudeEventNormalizer {
     const scope = native.parent_tool_use_id ?? "root";
 
     if (event.type === "message_start") {
+      const events = this.#finishStep(scope, "completed");
       // A block index is only stable within one provider message, so a new message must clear the current scope.
       this.#toolBlocks.set(scope, new Map());
+      this.#thinkingBlocks.set(scope, new Map());
+      this.#finishReasons.delete(scope);
+      this.#publicTexts.set(scope, "");
+      const stepId = event.message?.id ?? `claude:${scope}:message-${++this.#messageSequence}`;
+      this.#messageIds.set(scope, stepId);
+      events.push({ type: "model_step.started", payload: { stepId } });
+      return events;
+    }
+
+    if (event.type === "message_delta") {
+      if (typeof event.delta?.stop_reason === "string") {
+        this.#finishReasons.set(scope, event.delta.stop_reason);
+      }
       return [];
     }
 
+    if (event.type === "message_stop") return this.#finishStep(scope, "completed");
+
     if (event.type === "content_block_start") {
       const block = event.content_block;
+      if (block?.type === "thinking" && typeof event.index === "number") {
+        let blocks = this.#thinkingBlocks.get(scope);
+        if (!blocks) {
+          blocks = new Map();
+          this.#thinkingBlocks.set(scope, blocks);
+        }
+        const providerMessageId = this.#messageIds.get(scope) ?? `message-${++this.#messageSequence}`;
+        const messageId = `claude:${providerMessageId}:thinking:${event.index}`;
+        blocks.set(event.index, messageId);
+        return [{
+          type: "message.create",
+          payload: {
+            role: "assistant",
+            status: "streaming",
+            messageId,
+            stepId: providerMessageId,
+            ...claudeAnalysisMetadata("public_reasoning", "stream_event.thinking_start")
+          }
+        }];
+      }
       if (block?.type !== "tool_use" || typeof event.index !== "number" || !block.id || !block.name) return [];
       let blocks = this.#toolBlocks.get(scope);
       if (!blocks) {
@@ -245,34 +304,95 @@ export class ClaudeEventNormalizer {
         this.#toolBlocks.set(scope, blocks);
       }
       blocks.set(event.index, block.id);
+      const stepId = this.#messageIds.get(scope);
+      if (stepId) this.#toolSteps.set(block.id, stepId);
       return [{
         type: "tool_call.create",
-        payload: { id: block.id, name: block.name, args: block.input ?? {} }
+        payload: { id: block.id, name: block.name, args: block.input ?? {}, ...(stepId ? { stepId } : {}) }
+      }];
+    }
+
+    if (event.type === "content_block_stop" && typeof event.index === "number") {
+      const messageId = this.#thinkingBlocks.get(scope)?.get(event.index);
+      if (!messageId) return [];
+      this.#thinkingBlocks.get(scope)?.delete(event.index);
+      return [{
+        type: "message.update",
+        payload: {
+          role: "assistant",
+          status: "completed",
+          messageId,
+          ...(this.#messageIds.get(scope) ? { stepId: this.#messageIds.get(scope) } : {}),
+          ...claudeAnalysisMetadata("public_reasoning", "stream_event.thinking_stop")
+        }
       }];
     }
 
     if (event.type !== "content_block_delta") return [];
     const delta = event.delta;
     if (delta?.type === "text_delta" && delta.text) {
-      return [{ type: "message.delta", payload: { text: delta.text, channel: "final" } }];
+      const stepId = this.#messageIds.get(scope);
+      this.#appendPublicText(scope, delta.text);
+      return [{
+        type: "message.delta",
+        payload: { text: delta.text, channel: "final", ...(stepId ? { stepId } : {}) }
+      }];
     }
     if (delta?.type === "thinking_delta" && delta.thinking) {
+      const messageId = typeof event.index === "number"
+        ? this.#thinkingBlocks.get(scope)?.get(event.index)
+        : undefined;
       return [{
         type: "message.delta",
         payload: {
           text: delta.thinking,
-          ...claudeAnalysisMetadata("private_reasoning", "stream_event.thinking_delta")
+          ...(messageId ? { messageId } : {}),
+          ...(this.#messageIds.get(scope) ? { stepId: this.#messageIds.get(scope) } : {}),
+          ...claudeAnalysisMetadata("public_reasoning", "stream_event.thinking_delta")
         }
       }];
     }
     if (delta?.type === "input_json_delta" && delta.partial_json && typeof event.index === "number") {
       const id = this.#toolBlocks.get(scope)?.get(event.index);
+      const stepId = this.#messageIds.get(scope);
       return id ? [{
         type: "tool_call.delta",
-        payload: { id, argsDelta: delta.partial_json }
+        payload: { id, argsDelta: delta.partial_json, ...(stepId ? { stepId } : {}) }
       }] : [];
     }
     return [];
+  }
+
+  #finishStep(scope: string, status: string): CanonicalEvent[] {
+    const stepId = this.#messageIds.get(scope);
+    if (!stepId) return [];
+    const finishReason = this.#finishReasons.get(scope);
+    const publicText = this.#publicTexts.get(scope)?.trim();
+    this.#messageIds.delete(scope);
+    this.#finishReasons.delete(scope);
+    this.#publicTexts.delete(scope);
+    return [{
+      type: "model_step.finished",
+      payload: {
+        stepId,
+        status,
+        ...(finishReason ? { finishReason } : {}),
+        ...(publicText ? { publicText } : {})
+      }
+    }];
+  }
+
+  #appendPublicText(scope: string, delta: string): void {
+    const current = this.#publicTexts.get(scope) ?? "";
+    const remaining = MAX_STEP_PUBLIC_TEXT_CHARS - Array.from(current).length;
+    if (remaining <= 0) return;
+    this.#publicTexts.set(scope, current + Array.from(delta).slice(0, remaining).join(""));
+  }
+
+  #finishActiveSteps(status: string): CanonicalEvent[] {
+    const events: CanonicalEvent[] = [];
+    for (const scope of [...this.#messageIds.keys()]) events.push(...this.#finishStep(scope, status));
+    return events;
   }
 }
 

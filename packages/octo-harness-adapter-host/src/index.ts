@@ -49,7 +49,9 @@ export interface AdapterHostOptions {
 
 interface MessageState {
   messageId: string;
+  channel: MessageChannel;
   open: boolean;
+  stepId?: string;
   exposure?: MessageExposure;
   provenance?: MessageProvenance;
 }
@@ -93,7 +95,7 @@ export class AdapterHost {
     const controller = new AbortController();
     this.#active.set(request.invocationId, controller);
     let terminal: CanonicalEvent | undefined;
-    const messages = new Map<MessageChannel, MessageState>();
+    const messages = new Map<string, MessageState>();
     // Correlation fields come from the validated host request, never from the
     // adapter. This prevents a plugin from accidentally attributing sensitive
     // input to another Run while still letting it describe transport details.
@@ -114,7 +116,8 @@ export class AdapterHost {
       if (!isMessage) return { prefix: [], event };
       const channel = event.payload.channel ?? "final";
       const messageId = event.payload.messageId ?? `${request.runId}:${channel}`;
-      const state = messages.get(channel);
+      const state = messages.get(messageId);
+      const stepId = typeof event.payload.stepId === "string" ? event.payload.stepId : state?.stepId;
       const analysisMetadata = channel === "analysis" ? {
         exposure: event.payload.exposure ?? "unknown",
         provenance: event.payload.provenance ?? { provider: adapterType, nativeEvent: "unknown" }
@@ -126,26 +129,30 @@ export class AdapterHost {
       const prefix: CanonicalEvent[] = !state && event.type !== "message.create"
         ? [{
             type: "message.create",
-            payload: { role: "assistant", status: "streaming", channel, messageId, ...analysisMetadata }
+            payload: { role: "assistant", status: "streaming", channel, messageId, ...(stepId ? { stepId } : {}), ...analysisMetadata }
           }]
         : [];
-      messages.set(channel, { messageId, open: event.type !== "message.update", ...analysisMetadata });
+      messages.set(messageId, { messageId, channel, open: event.type !== "message.update", ...(stepId ? { stepId } : {}), ...analysisMetadata });
       return { prefix, event: prepared };
     };
 
-    const closeMessages = (status: string): CanonicalEvent[] => [...messages.entries()]
-      .filter(([, state]) => state.open)
-      .map(([channel, state]) => ({
-        type: "message.update",
-        payload: {
-          role: "assistant",
-          status,
-          channel,
-          messageId: state.messageId,
-          ...(state.exposure ? { exposure: state.exposure } : {}),
-          ...(state.provenance ? { provenance: state.provenance } : {})
-        }
-      }));
+    const closeMessages = (status: string, stepId?: string): CanonicalEvent[] => {
+      const closed: CanonicalEvent[] = [];
+      for (const state of messages.values()) {
+        if (!state.open || (stepId !== undefined && (state.channel !== "analysis" || state.stepId !== stepId))) continue;
+        state.open = false;
+        closed.push({
+          type: "message.update",
+          payload: {
+            role: "assistant", status, channel: state.channel, messageId: state.messageId,
+            ...(state.stepId ? { stepId: state.stepId } : {}),
+            ...(state.exposure ? { exposure: state.exposure } : {}),
+            ...(state.provenance ? { provenance: state.provenance } : {})
+          }
+        });
+      }
+      return closed;
+    };
 
     try {
       for await (const event of adapter.invoke({ ...request, signal: controller.signal }, context)) {
@@ -153,6 +160,9 @@ export class AdapterHost {
         if (terminal) throw new Error(`${adapterType} emitted after terminal event`);
         if (isTerminal(event)) terminal = event;
         else {
+          if (event.type === "model_step.finished") {
+            for (const closed of closeMessages(event.payload.status, event.payload.stepId)) yield closed;
+          }
           const prepared = prepareMessage(event);
           for (const prefix of prepared.prefix) yield prefix;
           yield prepared.event;

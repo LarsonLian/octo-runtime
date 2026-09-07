@@ -115,7 +115,8 @@ function command(group: string | undefined, action: string | undefined, id: stri
     const workdir = optionalString(flags.workdir) ?? ".";
     const model = optionalString(flags.model);
     const providerAgentId = optionalString(flags.providerAgent);
-    const thinking = optionalString(flags.thinking);
+    const thinking = flags.thinking === true ? true : optionalString(flags.thinking);
+    const effort = optionalString(flags.effort);
     const timeoutSeconds = optionalString(flags.timeoutSeconds);
     const permissionMode = optionalString(flags.permissionMode);
     const sandbox = optionalString(flags.sandbox);
@@ -128,7 +129,8 @@ function command(group: string | undefined, action: string | undefined, id: stri
           workdir: resolve(workdir),
           ...(model ? { model } : {}),
           ...(providerAgentId ? { providerAgentId } : {}),
-          ...(thinking ? { thinking } : {}),
+          ...(thinking !== undefined ? { thinking } : {}),
+          ...(effort ? { effort } : {}),
           ...(timeoutSeconds ? { timeoutSeconds: Number(timeoutSeconds) } : {}),
           ...(permissionMode ? { permissionMode } : {}),
           ...(sandbox ? { sandbox } : {}),
@@ -215,7 +217,7 @@ async function callDaemon(request: CliRequest): Promise<unknown> {
     return { usage: [
       "octo-harness daemon", "octo-harness status", "octo-harness adapter list|probe <type>",
       "octo-harness logs path|query [RUN_ID] [--sensitive]", "octo-harness logs open [--run RUN_ID] [--no-open]",
-      "octo-harness agent create --name N --adapter TYPE [--workdir DIR] [--model M] [--provider-agent SLUG]", "octo-harness agent list",
+      "octo-harness agent create --name N --adapter TYPE [--workdir DIR] [--model M] [--thinking [MODE]] [--effort LEVEL] [--provider-agent SLUG]", "octo-harness agent list",
       "octo-harness chat create --agent ID [--title T]", "octo-harness chat send ID --prompt TEXT [--chat-turn-id ID] [--follow]", "octo-harness chat list|get ID",
       "octo-harness trigger create --name N --kind manual|event|interval --agent ID --title T --instruction TEXT", "octo-harness trigger fire ID [--event-id ID]", "octo-harness trigger list",
       "octo-harness event ingest --type TYPE --event-id ID [--payload JSON]",

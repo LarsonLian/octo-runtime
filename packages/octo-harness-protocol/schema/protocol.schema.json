@@ -14,9 +14,9 @@
     },
     "MessageExposure": {
       "title": "MessageExposure",
-      "description": "Adapter-authenticated classification of analysis content. Only public_summary and public_plan may enter a public Presentation; missing values are unknown.",
+      "description": "Adapter-authenticated classification of analysis content. public_reasoning, public_summary, and public_plan may enter a public Presentation; missing values are unknown.",
       "type": "string",
-      "enum": ["public_summary", "public_plan", "private_reasoning", "unknown"]
+      "enum": ["public_reasoning", "public_summary", "public_plan", "private_reasoning", "unknown"]
     },
     "MessageProvenance": {
       "title": "MessageProvenance",
@@ -79,7 +79,14 @@
         },
         "autoApprove": { "description": "Whether tool calls are approved automatically.", "type": "boolean" },
         "providerAgentId": { "description": "Provider-side agent identifier.", "type": "string" },
-        "thinking": { "description": "Thinking/reasoning effort identifier.", "type": "string" },
+        "thinking": {
+          "description": "Whether provider thinking is enabled, or a legacy provider-specific thinking mode identifier.",
+          "type": ["boolean", "string"]
+        },
+        "effort": {
+          "description": "Optional provider reasoning effort identifier. Provider adapters may define an explicit default.",
+          "type": "string"
+        },
         "timeoutSeconds": { "description": "Invocation timeout in seconds.", "type": "number" },
         "openclawConfigPath": { "description": "OpenClaw configuration path.", "type": "string" },
         "openclawStateDir": { "description": "OpenClaw state directory.", "type": "string" },
@@ -102,11 +109,37 @@
         "exposure": { "$ref": "#/definitions/MessageExposure" },
         "provenance": { "$ref": "#/definitions/MessageProvenance" },
         "messageId": { "description": "Stable message identifier.", "type": "string" },
+        "stepId": { "description": "Stable model-step identifier used to associate messages and tool calls with one provider turn.", "type": "string" },
         "role": { "description": "Message role, such as assistant.", "type": "string" },
         "status": { "description": "Tool call or run status identifier.", "type": "string" },
         "text": { "description": "Text delta or complete text.", "type": "string" },
         "reason": { "description": "Termination or error reason.", "type": "string" },
         "message": { "description": "Human-readable diagnostic message.", "type": "string" }
+      }
+    },
+    "ModelStepStartedPayload": {
+      "title": "ModelStepStartedPayload",
+      "description": "Starts one provider model round. A round may contain public reasoning, tool calls, and text output.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["stepId"],
+      "properties": {
+        "stepId": { "description": "Stable identifier reused by model_step.finished and child events.", "type": "string" },
+        "startedAtMs": { "description": "Provider-observed round content-start timestamp in Unix milliseconds.", "type": "integer", "minimum": 1 }
+      }
+    },
+    "ModelStepFinishedPayload": {
+      "title": "ModelStepFinishedPayload",
+      "description": "Finishes one provider model round and records why control returned to the harness.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["stepId", "status"],
+      "properties": {
+        "stepId": { "description": "Stable identifier from model_step.started.", "type": "string" },
+        "status": { "description": "Terminal round status.", "type": "string" },
+        "finishReason": { "description": "Provider-normalized reason such as tool-calls or stop.", "type": "string" },
+        "publicText": { "description": "Bounded text the provider already emitted on a public final channel during this round. This is a display fallback, not private reasoning.", "type": "string", "maxLength": 1000 },
+        "endedAtMs": { "description": "Provider-observed round finish timestamp in Unix milliseconds.", "type": "integer", "minimum": 1 }
       }
     },
     "ToolCallCreatePayload": {
