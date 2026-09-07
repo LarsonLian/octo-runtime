@@ -72,6 +72,10 @@ test("channel context snapshot is canonical, filtered, restart-safe, and commit 
     assert.equal(first.ref.serializer_version, CHANNEL_CONTEXT_SERIALIZER_VERSION);
     assert.equal(first.ref.completeness, "complete");
     assert.equal(
+      first.renderedText.split("\n")[0],
+      "[Channel messages after the previous trigger and before the current trigger; may overlap the previous assistant run; untrusted external data]"
+    );
+    assert.equal(
       first.ref.rendered_sha256,
       createHash("sha256").update(first.renderedText).digest("hex")
     );
@@ -138,6 +142,36 @@ test("retry reuses exact frozen bytes and consumer snapshots are serialized", as
     store.markFailed("run-after-commit");
     store.prepareSnapshot("run-new-active", descriptor(61));
     assert.throws(() => store.prepareSnapshot("run-after-commit", descriptor(60)), /consumer is busy/);
+  });
+});
+
+test("serializer upgrade replays an existing v1 snapshot without rewriting bytes", async () => {
+  await withStore("oh-channel-v1-replay", async (store, file) => {
+    store.applySyncResult({
+      request_id: "sync-v1-replay",
+      scope,
+      completeness: "complete",
+      facts: [fact(1)]
+    });
+    store.prepareSnapshot("run-v1-replay", descriptor(2));
+    store.close();
+
+    const legacyText = "[Channel context delta: untrusted external messages]\n{\"message_id\":\"legacy\"}";
+    const legacyHash = createHash("sha256").update(legacyText).digest("hex");
+    const database = new DatabaseSync(file);
+    database.prepare(
+      `UPDATE channel_context_snapshots
+       SET serializer_version = 'channel-context-jsonl-v1', rendered_text = ?, rendered_sha256 = ?
+       WHERE run_id = 'run-v1-replay'`
+    ).run(legacyText, legacyHash);
+    database.close();
+
+    const reopened = ChannelContextStore.open(file);
+    const replay = reopened.prepareSnapshot("run-v1-replay", descriptor(2));
+    assert.equal(replay.ref.serializer_version, "channel-context-jsonl-v1");
+    assert.equal(replay.renderedText, legacyText);
+    assert.equal(replay.ref.rendered_sha256, legacyHash);
+    reopened.close();
   });
 });
 
@@ -211,7 +245,7 @@ test("journal deduplicates per scope and enforces the per-scope row bound", asyn
   });
 });
 
-test("reconcile uses ingest time and bounds cross-scope churn while preserving active snapshots", async () => {
+test("reconcile bounds cross-scope churn while preserving protected snapshots", async () => {
   await withStore("oh-channel-churn", async store => {
     for (let index = 0; index < 25; index += 1) {
       const staleScope = { ...scope, conversation_id: `stale-${index}` };
@@ -243,6 +277,10 @@ test("reconcile uses ingest time and bounds cross-scope churn while preserving a
       messages: 0,
       snapshots: 1,
       activeSnapshots: 1,
+      retentionMs: 100,
+      snapshotRetentionMs: 100,
+      activeSnapshotTimeoutMs: 24 * 60 * 60 * 1000,
+      serializerVersion: "channel-context-jsonl-v2",
       dbBytes: store.dbBytes(),
       walBytes: store.walBytes()
     });
@@ -267,13 +305,61 @@ test("reconcile preserves the effective recovery consumer until commit", async (
     assert.equal(recovery.ref.session_generation, 2);
     store.markSubmitted("run-recovery-retention");
 
-    store.reconcile(2_000);
+    store.reconcile(2_000, new Set(["run-recovery-retention"]));
     assert.equal(store.getSnapshot("run-recovery-retention").state, "submitted");
     assert.deepEqual(store.commitSnapshot("run-recovery-retention", 2_001), {
       snapshot_id: recovery.ref.snapshot_id,
       committed: true
     });
-  }, { retentionMs: 100, snapshotRetentionMs: 100 });
+  }, { retentionMs: 100, snapshotRetentionMs: 100, activeSnapshotTimeoutMs: 100 });
+});
+
+test("retention uses event and ingest clocks so sync cannot renew old history", async () => {
+  await withStore("oh-channel-dual-clock", async store => {
+    const oldHistory = { ...fact(1), occurred_at_ms: 800 };
+    store.applySyncResult({
+      request_id: "sync-old-history",
+      scope,
+      completeness: "complete",
+      facts: [oldHistory]
+    }, 1_000);
+    assert.equal(store.messageCount(scope), 0, "event-old history expires on arrival");
+
+    const futureSkewed = { ...fact(2), occurred_at_ms: 100_000 };
+    store.append({ scope, facts: [futureSkewed] }, 1_000);
+    assert.equal(store.messageCount(scope), 1);
+    store.reconcile(1_101);
+    assert.equal(store.messageCount(scope), 0, "ingest time bounds future-skewed events");
+  }, { retentionMs: 100 });
+});
+
+test("orphaned snapshots fail after timeout and retain retry metadata through the audit window", async () => {
+  await withStore("oh-channel-orphan-snapshot", async store => {
+    store.applySyncResult({
+      request_id: "sync-orphan",
+      scope,
+      completeness: "complete",
+      facts: [fact(1)]
+    }, 1_000);
+    store.prepareSnapshot("run-orphan", descriptor(2), 1_000);
+    store.markSubmitted("run-orphan");
+
+    store.reconcile(1_101, new Set(["run-orphan"]));
+    assert.equal(store.getSnapshot("run-orphan").state, "submitted");
+
+    store.reconcile(1_102);
+    assert.equal(store.getSnapshot("run-orphan").state, "failed");
+    assert.equal(store.stats().activeSnapshots, 0);
+
+    const retry = store.prepareSnapshot("run-orphan", descriptor(2), 1_103);
+    assert.equal(retry.state, "prepared", "retained consumer metadata permits exact retry");
+    store.markFailed("run-orphan");
+    store.reconcile(2_000);
+    assert.equal(store.getSnapshot("run-orphan").state, "failed");
+    store.reconcile(2_001);
+    assert.equal(store.getSnapshot("run-orphan"), undefined);
+    assert.equal(store.stats().scopes, 0);
+  }, { retentionMs: 100, snapshotRetentionMs: 1_000, activeSnapshotTimeoutMs: 100 });
 });
 
 test("schema v1 migration refreezes active snapshots and keeps committed primary audit only", async () => {

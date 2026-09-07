@@ -16,7 +16,13 @@ interface OpenCodePart {
   callID?: string;
   id?: string;
   tool?: string;
-  state?: { status?: string; input?: unknown; output?: unknown; error?: unknown };
+  state?: {
+    status?: string;
+    input?: unknown;
+    output?: unknown;
+    error?: unknown;
+    time?: { start?: unknown; end?: unknown };
+  };
   tokens?: Record<string, unknown>;
   cost?: unknown;
 }
@@ -95,7 +101,20 @@ export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEv
     events.push({ type: "tool_call.create", payload: { id: toolId, name: part.tool, args } });
   }
   if (part.type === "tool" && toolId && toolState?.status && ["completed", "error"].includes(toolState.status)) {
-    events.push({ type: "tool_call.update", payload: { id: toolId, status: toolState.status, output: toolState.output ?? toolState.error } });
+    const args = isRecord(toolState.input) ? toolState.input : toolState.input == null ? {} : { value: toolState.input };
+    const durationMs = toolDurationMs(toolState.time);
+    // A terminal-only OpenCode frame carries enough identity to let the
+    // projector create the item without inventing a duplicate start event.
+    events.push({
+      type: "tool_call.update",
+      payload: {
+        id: toolId,
+        ...(part.tool ? { name: part.tool, args } : {}),
+        status: toolState.status === "error" ? "failed" : toolState.status,
+        output: toolState.output ?? toolState.error,
+        ...(durationMs === undefined ? {} : { durationMs })
+      }
+    });
   }
   if (native.type === "step_finish" || part.type === "step-finish") events.push({ type: "usage.update", payload: { ...(part.tokens ?? native.usage ?? {}), cost: part.cost } });
   if (native.type === "error") events.push({ type: "run.error", payload: { message: native.error?.data?.message ?? native.error?.message ?? "OpenCode failed", providerError: native.error } });
@@ -105,6 +124,13 @@ export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEv
 /** Narrow an unknown value to a plain object (excluding arrays), used to guard tool input before spreading it. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Return OpenCode's provider-measured whole-millisecond tool duration. */
+function toolDurationMs(time: { start?: unknown; end?: unknown } | undefined): number | undefined {
+  if (typeof time?.start !== "number" || typeof time.end !== "number") return undefined;
+  if (!Number.isSafeInteger(time.start) || !Number.isSafeInteger(time.end) || time.end < time.start) return undefined;
+  return time.end - time.start;
 }
 
 /**

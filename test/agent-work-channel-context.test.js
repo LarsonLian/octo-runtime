@@ -8,6 +8,7 @@ import { WebSocketServer } from "ws";
 import { AgentWorkRuntime } from "../apps/daemon/dist/agent-work-runtime.js";
 import { AgentWorkStore } from "../apps/daemon/dist/agent-work-store.js";
 import { ChannelContextStore } from "../apps/daemon/dist/channel-context-store.js";
+import { deferred, terminalGrant, waitFor, wire, withTimeout } from "./agent-work-runtime-fixture.js";
 
 const now = Date.now();
 const scope = {
@@ -105,6 +106,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
       token: "runtime-token",
       tenantId: "tenant-e2e",
       subjectId: "device-e2e",
+      runtimeId: "runtime-e2e",
       runtimeName: "runtime-e2e",
       fingerprint: "runtime:e2e",
       storePath: join(directory, "agent-work.db"),
@@ -121,6 +123,9 @@ test("Agent Work channel context sync becomes one provider turn and commits only
     await waitFor(() => runtime.status.channelContext.activeSnapshots === 0);
 
     assert.equal(registration.capabilities.channel_context.store, "sqlite");
+    assert.equal(registration.capabilities.channel_context.serializer_version, "channel-context-jsonl-v2");
+    assert.equal(registration.capabilities.channel_context.message_retention_ms, 24 * 60 * 60 * 1000);
+    assert.equal(registration.capabilities.channel_context.active_snapshot_timeout_ms, 24 * 60 * 60 * 1000);
     assert.equal(providerRequest.prompt.includes("first background"), false);
     assert.match(providerRequest.modelInput, /first background/);
     assert.match(providerRequest.modelInput, /second background/);
@@ -1080,47 +1085,4 @@ function executionEnvelope(runId = "run-e2e", triggerSeq = 3, currentText = "tri
       }
     }
   };
-}
-
-function wire(type, payload) {
-  return JSON.stringify({
-    version: 1,
-    id: `wire-${Math.random()}`,
-    type,
-    sent_at: new Date().toISOString(),
-    payload
-  });
-}
-
-function terminalGrant(event) {
-  return {
-    context_commit_granted: true,
-    authoritative_terminal_status: "completed",
-    authoritative_terminal_event_id: event.event_id
-  };
-}
-
-function deferred() {
-  let resolve;
-  return { promise: new Promise(done => { resolve = done; }), resolve };
-}
-
-async function waitFor(predicate) {
-  const deadline = Date.now() + 2_000;
-  while (!predicate()) {
-    if (Date.now() >= deadline) throw new Error("condition timeout");
-    await new Promise(resolve => setTimeout(resolve, 10));
-  }
-}
-
-async function withTimeout(promise, timeoutMs, message) {
-  let timer;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), timeoutMs); })
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
 }

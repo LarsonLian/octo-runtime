@@ -17,6 +17,7 @@ import {
   renderDisplayExecutionInputPrompt,
   renderImmutableExecutionInputPrompt
 } from "../apps/daemon/dist/agent-work-runtime.js";
+import { deferred, wire } from "./agent-work-runtime-fixture.js";
 
 const envelope = {
   schema_version: 1,
@@ -239,17 +240,44 @@ test("Agent Work observability correlates WSS, ChatTurn, Run, invocation and ada
   }
 });
 
-function wire(type, payload) {
-  return JSON.stringify({
-    version: 1,
-    id: `wire-${Math.random()}`,
-    type,
-    sent_at: new Date().toISOString(),
-    payload
+test("a configured runtime ID still refreshes registration and rejects identity drift", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-identity-"));
+  const httpServer = createServer();
+  let registrationCount = 0;
+  let runtime;
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume the registration body. */ }
+    registrationCount += 1;
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { id: "runtime-actual" } }));
   });
-}
 
-function deferred() {
-  let resolve;
-  return { promise: new Promise(done => { resolve = done; }), resolve };
-}
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    const host = {
+      list: async () => [],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() { yield { type: "run.finished", payload: {} }; }
+    };
+    runtime = new AgentWorkRuntime({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      tenantId: "tenant-identity",
+      subjectId: "device-identity",
+      runtimeId: "runtime-expected",
+      runtimeName: "runtime-identity",
+      fingerprint: "runtime:identity",
+      storePath: join(directory, "agent-work.db")
+    }, host);
+    await assert.rejects(
+      runtime.start(),
+      /registration returned runtime-actual, expected configured runtime runtime-expected/
+    );
+    assert.equal(registrationCount, 1);
+  } finally {
+    await runtime?.close();
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
