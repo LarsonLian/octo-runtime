@@ -301,6 +301,60 @@ test("OpenCode native events map session/text/tool/usage", () => {
   assert.equal(normalizeOpenCodeEvent({ type: "step_start", sessionID: "oc-1", part: {} })[0].type, "session.update");
   assert.equal(normalizeOpenCodeEvent({ type: "text", part: { text: "ok" } })[0].type, "message.delta");
   assert.equal(normalizeOpenCodeEvent({ type: "step_finish", part: { tokens: { input: 1 } } })[0].type, "usage.update");
+  assert.deepEqual(normalizeOpenCodeEvent({
+    type: "tool_use",
+    part: {
+      type: "tool",
+      tool: "bash",
+      callID: "call-1",
+      state: {
+        status: "completed",
+        input: { command: "pwd" },
+        output: "/workspace\n",
+        time: { start: 1_000, end: 1_051 }
+      }
+    }
+  }), [
+    {
+      type: "tool_call.update",
+      payload: {
+        id: "call-1",
+        name: "bash",
+        args: { command: "pwd" },
+        status: "completed",
+        output: "/workspace\n",
+        durationMs: 51
+      }
+    }
+  ]);
+  assert.deepEqual([
+    ...normalizeOpenCodeEvent({
+      type: "tool_use",
+      part: { type: "tool", tool: "bash", callID: "call-2", state: { status: "running", input: { command: "false" } } }
+    }),
+    ...normalizeOpenCodeEvent({
+      type: "tool_use",
+      part: {
+        type: "tool",
+        tool: "bash",
+        callID: "call-2",
+        state: { status: "error", input: { command: "false" }, error: "exit 1", time: { start: 2_000, end: 2_073 } }
+      }
+    })
+  ], [
+    { type: "tool_call.create", payload: { id: "call-2", name: "bash", args: { command: "false" } } },
+    {
+      type: "tool_call.update",
+      payload: {
+        id: "call-2",
+        name: "bash",
+        args: { command: "false" },
+        status: "failed",
+        output: "exit 1",
+        durationMs: 73
+      }
+    }
+  ]);
 });
 
 test("OpenClaw native NDJSON and pretty final blobs are parsed", () => {
