@@ -107,5 +107,4 @@ control 指令经 `0600` 临时文件（`--append-system-prompt-file`）传入�
 - 事件契约与三层事件模型：[Protocol](../octo-harness-protocol/README.md)
 - 适配器的调用生命周期与终态兜底：[Adapter Host](../octo-harness-adapter-host/README.md)
 - provider adapter 概览与编写指南：[docs/05](../../docs/05-provider-adapters.md)、[docs/08](../../docs/08-adapter-authoring.md)
-- 流式事件 fixture：[`fixtures/fake-claude-stream.mjs`](../../fixtures/fake-claude-stream.mjs)
 - 源码：[`src/index.ts`](src/index.ts)

@@ -1,7 +1,7 @@
 import net, { type Server } from "node:net";
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
-import { chmod, lstat, mkdir, rm } from "node:fs/promises";
+import { chmod, lstat, mkdir, open, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   DEFAULT_OBSERVABILITY_CONFIGURATION,
@@ -24,6 +24,8 @@ import { AgentWorkRuntime, type AgentWorkRuntimeOptions } from "./agent-work-run
 import { ViewerLogIndex, viewerTraceSnapshot } from "./log-viewer.js";
 
 export interface StartDaemonServerOptions {
+  homePath?: string;
+  pidPath?: string;
   socketPath: string;
   storePath: string;
   manifestPath: string;
@@ -34,6 +36,8 @@ export interface StartDaemonServerOptions {
 
 /** Non-secret process metadata returned by `status` and suitable for support output. */
 export interface DaemonRuntimeInfo {
+  homePath?: string;
+  pidPath?: string;
   socketPath: string;
   storePath: string;
   manifestPath: string;
@@ -56,6 +60,7 @@ interface DaemonRequest {
 const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled"]);
 const TERMINAL_EVENT_TYPES = new Set(["run.finished", "run.error", "run.stopped"]);
 const STREAM_POLL_MS = 25;
+const DEFAULT_DRAIN_TIMEOUT_MS = 30_000;
 
 /** Everything the daemon owns for one process lifetime; `close()` tears the whole
  * stack down in the reverse order it was brought up and removes the socket file. */
@@ -78,6 +83,8 @@ export interface DaemonApplication {
  * connection carries exactly one request line (see `handleRequestLine`).
  */
 export async function startDaemonServer({
+  homePath,
+  pidPath,
   socketPath,
   storePath,
   manifestPath,
@@ -100,14 +107,18 @@ export async function startDaemonServer({
     message: "daemon starting",
     data: { socket_path: socketPath, store_path: storePath, manifest_path: manifestPath }
   });
+  let releasePid = (): Promise<void> => Promise.resolve();
   try {
-    await mkdir(dirname(socketPath), { recursive: true });
-    try {
-      const stat = await lstat(socketPath);
-      if (!stat.isSocket()) throw new Error(`refusing to replace non-socket path: ${socketPath}`);
-      await rm(socketPath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    if (pidPath) releasePid = await acquirePidFile(pidPath);
+    if (process.platform !== "win32") {
+      await mkdir(dirname(socketPath), { recursive: true });
+      try {
+        const stat = await lstat(socketPath);
+        if (!stat.isSocket()) throw new Error(`refusing to replace non-socket path: ${socketPath}`);
+        await rm(socketPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
     }
   } catch (error) {
     observability.log({
@@ -117,6 +128,7 @@ export async function startDaemonServer({
       message: "daemon failed before opening its store",
       data: { error: errorMessage(error) }
     });
+    await releasePid();
     await observability.close();
     throw error;
   }
@@ -125,6 +137,7 @@ export async function startDaemonServer({
   try {
     store = SqliteStore.open(storePath);
   } catch (error) {
+    await releasePid();
     observability.log({
       level: "error",
       scope: "daemon.lifecycle",
@@ -151,6 +164,7 @@ export async function startDaemonServer({
     });
   } catch (error) {
     store.close();
+    await releasePid();
     observability.log({
       level: "error",
       scope: "daemon.lifecycle",
@@ -167,6 +181,7 @@ export async function startDaemonServer({
   } catch (error) {
     await hostProcess.close();
     store.close();
+    await releasePid();
     observability.log({
       level: "error",
       scope: "daemon.lifecycle",
@@ -178,6 +193,8 @@ export async function startDaemonServer({
     throw error;
   }
   const runtime: DaemonRuntimeInfo = {
+    homePath,
+    pidPath,
     socketPath,
     storePath,
     manifestPath,
@@ -189,7 +206,9 @@ export async function startDaemonServer({
   };
   const engine = new HarnessEngine({ store, host: hostProcess.client });
   const daemon = new HarnessDaemon({ engine, store });
-  const agentWorkRuntime = agentWork ? new AgentWorkRuntime(agentWork, hostProcess.client, observability) : undefined;
+  const agentWorkRuntime = agentWork
+    ? new AgentWorkRuntime(agentWork, hostProcess.client, observability)
+    : undefined;
   const viewerIndex = new ViewerLogIndex(loggingConfiguration.directory);
   // HarnessDaemon events mark execution, rather than submission, boundaries.
   // A control request can therefore be acknowledged before `run.started` while
@@ -265,7 +284,7 @@ export async function startDaemonServer({
     });
     // The Unix socket is the only local access boundary for the control plane;
     // 0600 restricts it to the current host account (there is no RBAC above it).
-    await chmod(socketPath, 0o600);
+    if (process.platform !== "win32") await chmod(socketPath, 0o600);
     await agentWorkRuntime?.start();
     observability.log({
       level: "info",
@@ -290,7 +309,8 @@ export async function startDaemonServer({
     await agentWorkRuntime?.close();
     await hostProcess.close();
     store.close();
-    await rm(socketPath, { force: true });
+    if (process.platform !== "win32") await rm(socketPath, { force: true });
+    await releasePid();
     await observability.close();
     throw error;
   }
@@ -316,7 +336,8 @@ export async function startDaemonServer({
       await new Promise<void>(resolve => server.close(() => resolve()));
       await hostProcess.close();
       store.close();
-      await rm(socketPath, { force: true });
+      if (process.platform !== "win32") await rm(socketPath, { force: true });
+      await releasePid();
       observability.log({
         level: "info",
         scope: "daemon.lifecycle",
@@ -349,7 +370,7 @@ async function handleRequestLine({
   store: Store;
   host: AdapterHostRpcClient;
   runtime: DaemonRuntimeInfo;
-  agentWorkRuntime?: AgentWorkRuntime;
+  agentWorkRuntime: AgentWorkRuntime | undefined;
   observability: LocalObservability;
   viewerIndex: ViewerLogIndex;
   connectionId: string;
@@ -510,7 +531,7 @@ async function dispatch({
   store: Store;
   host: AdapterHostRpcClient;
   runtime: DaemonRuntimeInfo;
-  agentWorkRuntime?: AgentWorkRuntime;
+  agentWorkRuntime: AgentWorkRuntime | undefined;
   observability: LocalObservability;
   viewerIndex: ViewerLogIndex;
 }): Promise<unknown> {
@@ -523,11 +544,26 @@ async function dispatch({
         ...runtime,
         logging: observability.status,
         agentWork: agentWorkRuntime?.status ?? { enabled: false },
+        lifecycle: daemon.status,
         counts: {
           agentSessions: store.listAgentSessions().length,
           agentRuns: store.listAgentRuns().length
         }
       };
+    case "lifecycle.drain": {
+      const timeoutMs = positiveInteger(params.timeoutMs, "timeoutMs", DEFAULT_DRAIN_TIMEOUT_MS);
+      daemon.beginDrain();
+      agentWorkRuntime?.beginDrain();
+      await Promise.all([
+        daemon.waitForDrained(timeoutMs),
+        ...(agentWorkRuntime ? [agentWorkRuntime.waitForDrained(timeoutMs)] : [])
+      ]);
+      return {
+        drained: true,
+        local: daemon.status,
+        agentWork: agentWorkRuntime?.status ?? { enabled: false }
+      };
+    }
     case "logs.path":
       return observability.status;
     case "logs.query":
@@ -593,4 +629,55 @@ function positiveInteger(value: unknown, name: string, fallback: number): number
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function acquirePidFile(path: string): Promise<() => Promise<void>> {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const file = await open(path, "wx", 0o600);
+      try {
+        await file.writeFile(`${process.pid}\n`, "utf8");
+        await file.sync();
+      } finally {
+        await file.close();
+      }
+      if (process.platform !== "win32") await chmod(path, 0o600);
+      return async () => {
+        try {
+          const owner = Number((await readFile(path, "utf8")).trim());
+          if (owner === process.pid) await rm(path, { force: true });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const owner = await readPid(path);
+      if (owner !== undefined && processAlive(owner)) {
+        throw new Error(`Octo Harness daemon is already running with pid ${owner}`, { cause: error });
+      }
+      await rm(path, { force: true });
+    }
+  }
+  throw new Error(`could not acquire daemon pid file: ${path}`);
+}
+
+async function readPid(path: string): Promise<number | undefined> {
+  try {
+    const value = Number((await readFile(path, "utf8")).trim());
+    return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
 }

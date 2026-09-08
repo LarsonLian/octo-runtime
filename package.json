@@ -11,6 +11,7 @@
   "files": [
     "apps/adapter-host/dist",
     "apps/cli/dist",
+    "apps/cli/README.md",
     "apps/daemon/dist",
     "config/adapters.json",
     "DEPLOYMENTS.md"
@@ -38,6 +39,7 @@
     "@mininglamp-oss/octo-harness-adapter-openclaw": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-opencode": "workspace:*",
     "@mininglamp-oss/octo-harness-core": "workspace:*",
+    "@mininglamp-oss/octo-harness-cross-service": "workspace:*",
     "@mininglamp-oss/octo-harness-daemon": "workspace:*",
     "@mininglamp-oss/octo-harness-observability": "workspace:*",
     "@mininglamp-oss/octo-harness-protocol": "workspace:*",

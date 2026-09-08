@@ -35,7 +35,8 @@ Usage:
   & ([scriptblock]::Create((irm https://SERVER/octo-harness/install.ps1))) ``
     "https://SERVER" "octo_enroll_..."
 
-The enrollment token may be omitted and entered securely.
+On first install, the enrollment token may be omitted and entered securely.
+An already enrolled profile can be repaired or updated without another token.
 Environment overrides:
   OCTO_HARNESS_CHANNEL       stable (default) or beta
   OCTO_HARNESS_PROFILE       profile name (default: default)
@@ -163,7 +164,8 @@ if (-not (Test-FullyQualifiedWindowsPath $HarnessHome)) {
   Fail "OCTO_HARNESS_HOME must be an absolute path"
 }
 
-if (-not $EnrollmentToken) {
+$profileIdentity = Join-Path $HarnessHome "identity\runtime.json"
+if (-not $EnrollmentToken -and -not (Test-Path -LiteralPath $profileIdentity -PathType Leaf)) {
   $secureToken = Read-Host "Enrollment token" -AsSecureString
   $tokenPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
   try {
@@ -172,7 +174,9 @@ if (-not $EnrollmentToken) {
     [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($tokenPointer)
   }
 }
-if (-not $EnrollmentToken) { Fail "EnrollmentToken must not be empty" }
+if (-not $EnrollmentToken -and -not (Test-Path -LiteralPath $profileIdentity -PathType Leaf)) {
+  Fail "EnrollmentToken must not be empty on first install"
+}
 
 try {
   Ensure-Node
@@ -283,21 +287,26 @@ try {
     Fail "npm completed but $cli is missing"
   }
 
-  $setupHelp = (& $cli setup --help 2>&1 | Out-String)
+  $loginHelp = (& $cli login --help 2>&1 | Out-String)
   if ($LASTEXITCODE -ne 0) {
-    Fail "the installed package does not provide 'octo-harness setup'"
+    Fail "the installed package does not provide 'octo-harness login'"
   }
-  if ($setupHelp -notmatch "--enroll-token-stdin" -or
+  if ($loginHelp -notmatch "--enroll-token-stdin") {
+    Fail "the installed login command does not implement secure enrollment"
+  }
+  $setupHelp = (& $cli setup --help 2>&1 | Out-String)
+  if ($LASTEXITCODE -ne 0 -or
       $setupHelp -notmatch "--prepare-update" -or
       $setupHelp -notmatch "--recover-update") {
-    Fail "the installed setup command does not implement the installer contract"
+    Fail "the installed package does not implement the installer update contract"
   }
 
   $setupArguments = @(
     "--home", $HarnessHome,
     "--profile", $Profile,
-    "setup",
+    "login",
     "--server-url", $ServerUrl,
+    "--agent-work-url", "$($ServerUrl.TrimEnd('/'))/agent-worker",
     "--channel", $Channel,
     "--enroll-token-stdin",
     "--install-service",
@@ -305,10 +314,19 @@ try {
     "--start",
     "--wait-online"
   )
-  Write-InstallerInfo "Enrolling this device and reconciling the current-user service"
+  Write-InstallerInfo "Logging in this device and reconciling the current-user service"
   $EnrollmentToken | & $cli @setupArguments
-  if ($LASTEXITCODE -ne 0) {
-    Fail "octo-harness setup failed (exit $LASTEXITCODE); rerun this installer after correcting the reported problem"
+  $loginExit = $LASTEXITCODE
+  if ($loginExit -ne 0) {
+    if ($PreparedUpdate) {
+      & $cli --home $HarnessHome --profile $Profile setup --recover-update --start
+      if ($LASTEXITCODE -eq 0) {
+        Write-InstallerInfo "Restored the service after the updated login failed"
+      } else {
+        Write-Warning "Service recovery also failed; repair the package, then run 'octo-harness setup --recover-update --start'"
+      }
+    }
+    Fail "octo-harness login failed (exit $loginExit); rerun this installer after correcting the reported problem"
   }
 
   Write-InstallerInfo "Installation complete"

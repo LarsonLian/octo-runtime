@@ -25,12 +25,14 @@ Usage:
   curl -fsSL https://SERVER/octo-harness/install.sh \
     | sh -s -- "https://SERVER" "octo_enroll_..."
 
-The enrollment token may be omitted and entered securely from the terminal.
+On first install, the enrollment token may be omitted and entered securely from the terminal.
+An already enrolled profile can be repaired or updated without another token.
 Environment overrides:
   OCTO_HARNESS_CHANNEL       stable (default) or beta
   OCTO_HARNESS_PROFILE       profile name (default: default)
   OCTO_HARNESS_HOME          state directory (default: ~/.octo-harness)
   OCTO_HARNESS_NPM_SPEC      npm package spec used instead of the channel default
+  OCTO_HARNESS_AGENT_WORK_URL  Agent Worker base (default: SERVER_URL/agent-worker)
 EOF
 }
 
@@ -85,6 +87,7 @@ ENROLLMENT_TOKEN=${2:-}
 CHANNEL=${OCTO_HARNESS_CHANNEL:-stable}
 PROFILE=${OCTO_HARNESS_PROFILE:-default}
 HARNESS_HOME=${OCTO_HARNESS_HOME:-"$HOME/.octo-harness"}
+AGENT_WORK_URL=${OCTO_HARNESS_AGENT_WORK_URL:-}
 
 [ "$(uname -s)" = "Darwin" ] || die "this installer supports macOS only"
 case "$SERVER_URL" in
@@ -97,6 +100,7 @@ esac
 while [ "${SERVER_URL%/}" != "$SERVER_URL" ]; do
   SERVER_URL=${SERVER_URL%/}
 done
+[ -n "$AGENT_WORK_URL" ] || AGENT_WORK_URL="$SERVER_URL/agent-worker"
 case "${SERVER_URL#https://}" in
   ""|/*) die "SERVER_URL must include a host" ;;
 esac
@@ -117,7 +121,8 @@ case "$HARNESS_HOME" in
   *) die "OCTO_HARNESS_HOME must be an absolute path" ;;
 esac
 
-if [ -z "$ENROLLMENT_TOKEN" ]; then
+PROFILE_IDENTITY="$HARNESS_HOME/identity/runtime.json"
+if [ -z "$ENROLLMENT_TOKEN" ] && [ ! -f "$PROFILE_IDENTITY" ]; then
   [ -r /dev/tty ] || die "no enrollment token was provided and no terminal is available"
   printf 'Enrollment token: ' > /dev/tty
   stty -echo < /dev/tty
@@ -127,7 +132,7 @@ if [ -z "$ENROLLMENT_TOKEN" ]; then
   TTY_ECHO_DISABLED=0
   printf '\n' > /dev/tty
 fi
-[ -n "$ENROLLMENT_TOKEN" ] || die "enrollment token must not be empty"
+[ -n "$ENROLLMENT_TOKEN" ] || [ -f "$PROFILE_IDENTITY" ] || die "enrollment token must not be empty on first install"
 
 node_major() {
   command -v node >/dev/null 2>&1 || return 1
@@ -336,13 +341,17 @@ if [ -n "$NODE_BIN_OVERRIDE" ]; then
 fi
 [ -x "$CLI" ] || die "npm completed but $CLI is missing or not executable"
 
-if ! SETUP_HELP=$("$CLI" setup --help 2>&1); then
-  die "the installed package does not provide 'octo-harness setup'"
+if ! LOGIN_HELP=$("$CLI" login --help 2>&1); then
+  die "the installed package does not provide 'octo-harness login'"
 fi
-case "$SETUP_HELP" in
+case "$LOGIN_HELP" in
   *--enroll-token-stdin*) ;;
-  *) die "the installed setup command is missing --enroll-token-stdin" ;;
+  *) die "the installed login command is missing --enroll-token-stdin" ;;
 esac
+LOGIN_HELP=""
+if ! SETUP_HELP=$("$CLI" setup --help 2>&1); then
+  die "the installed package does not provide the installer update contract"
+fi
 case "$SETUP_HELP" in
   *--prepare-update*) ;;
   *) die "the installed setup command is missing --prepare-update" ;;
@@ -353,19 +362,27 @@ case "$SETUP_HELP" in
 esac
 SETUP_HELP=""
 
-info "Enrolling this device and reconciling the current-user service"
+info "Logging in this device and reconciling the current-user service"
 if ! printf '%s\n' "$ENROLLMENT_TOKEN" | "$CLI" \
   --home "$HARNESS_HOME" \
   --profile "$PROFILE" \
-  setup \
+  login \
   --server-url "$SERVER_URL" \
+  --agent-work-url "$AGENT_WORK_URL" \
   --channel "$CHANNEL" \
   --enroll-token-stdin \
   --install-service \
   --autostart \
   --start \
   --wait-online; then
-  die "octo-harness setup failed; rerun this installer after correcting the reported problem"
+  if [ "$PREPARED_UPDATE" -eq 1 ]; then
+    if "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" setup --recover-update --start; then
+      info "Restored the service after the updated login failed"
+    else
+      printf '%s\n' "[octo-harness] ERROR: service recovery also failed; repair the package, then run 'octo-harness setup --recover-update --start'" >&2
+    fi
+  fi
+  die "octo-harness login failed; rerun this installer after correcting the reported problem"
 fi
 
 ENROLLMENT_TOKEN=""

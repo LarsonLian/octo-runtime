@@ -44,26 +44,27 @@ npm unlink --global @mininglamp-oss/octo-harness
 
 ## 2. 连接 octo-agent-worker
 
-`octo-harness daemon` 可以直接注册为 agent-worker 的 local Runtime 并建立 WSS 连接。先启动
-agent-worker，并确认它的 `RUNTIME_AUTH_TOKEN`：
+`octo-harness login` 先以 `octo_enroll_` 向 agent-worker 换取设备凭证，再调用
+`/api/v1/runtime/register`。先启动依赖 `octo-auth` 的 agent-worker：
 
 ```bash
 cd ../octo-agent-worker
 cp .env.example .env
-# 编辑 MYSQL_DSN；开发默认 RUNTIME_AUTH_TOKEN=dev-runtime-token。
+# 编辑 MYSQL_DSN、OCTO_APP_SERVER_URL 和 DEVICE_CREDENTIAL_HMAC_KEY。
 ./start.sh
 ```
 
-再启动已 link 的 harness：
+使用 Octo Web 生成的一次性 token 完成源码 profile；`server-url` 是 Octo Web 来源，
+`agent-work-url` 是本机 Worker 调试地址：
 
 ```bash
-export OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN=dev-runtime-token
-
-octo-harness daemon \
+printf '%s\n' 'octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN' | octo-harness \
+  --home "$PWD/.tmp/harness-home" login \
+  --server-url https://im-test.deepminer.com.cn \
   --agent-work-url http://127.0.0.1:8092 \
-  --agent-work-tenant-id tenant-1 \
-  --agent-work-subject-id device-local-1 \
-  --agent-work-runtime-name octo-harness-local
+  --enroll-token-stdin --no-install-service --no-start
+
+octo-harness --home "$PWD/.tmp/harness-home" daemon run
 ```
 
 另一个终端检查连接：
@@ -72,51 +73,22 @@ octo-harness daemon \
 octo-harness status
 ```
 
-`status.agentWork.connected` 应为 `true`，并返回已注册或复用的 `runtimeId`。默认不必指定
-Runtime ID；daemon 会根据 fingerprint 向 worker 注册或复用 Runtime。需要绑定固定 ID 时增加：
-
-```bash
---agent-work-runtime-id runtime_...
-```
-
-也可以完全使用环境变量，适合进程管理器和容器：
-
-```bash
-export OCTO_HARNESS_AGENT_WORK_URL=http://127.0.0.1:8092
-export OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN=dev-runtime-token
-export OCTO_HARNESS_AGENT_WORK_TENANT_ID=tenant-1
-export OCTO_HARNESS_AGENT_WORK_SUBJECT_ID=device-local-1
-export OCTO_HARNESS_AGENT_WORK_RUNTIME_NAME=octo-harness-local
-
-octo-harness daemon
-```
-
-CLI 参数覆盖对应的非敏感环境变量。Runtime token 没有 CLI 参数，只允许通过
-`OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN` 注入，避免 secret 出现在 shell history、`ps` 和服务
-定义的 `ExecStart` 中。
+`status.agentWork.connected` 应为 `true`，并返回 login 已写入的 `runtimeId`。daemon 从
+Harness Home 读取 server URL、Runtime ID 和受保护的 device credential；service argv 与
+环境变量都不携带 secret。一个 Home 只运行一个 daemon、一个 enabled profile 和一个 local Runtime，并持有唯一 `system_id`、credential、WSS 和 outbox。不同 profile 使用不同 Home；不同人或互不信任的身份必须使用不同 OS account。
 
 ## 3. Token 约定
 
-agent-worker 与 harness 使用的是同一份 Runtime credential，但两端变量名不同：
-
-| 进程 | 环境变量 | 作用 |
-|---|---|---|
-| `octo-agent-worker` | `RUNTIME_AUTH_TOKEN` | 校验 Runtime register 和 WSS connect |
-| `octo-harness` | `OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN` | 作为 Bearer token 发给 worker |
-
-两者的值必须完全一致。`npm link` 不生成 token，harness 也不会从相邻仓库、
-`~/.octo-harness` 或 agent-worker 的 `.env` 自动读取 token。
-
-开发环境可以显式使用 worker 的 `dev-runtime-token` 默认值。生产环境必须给两端注入同一个
-强随机 secret，并且不能使用以下凭证代替：
+凭证交换是单向的：Human token 只用于创建短期 enrollment，`octo_enroll_` 只用于一次
+设备注册，最终 `octo_device_` 只保存在 Worker hash 与 Harness mode 0600 文件中。它不能用
+以下凭证代替：
 
 - `INTERNAL_CREDENTIALS_JSON` 中任一 namespace-scoped service token：agent-worker 业务执行 API 的凭证；
 - Codex、Claude Code、CodeBuddy 等 provider token：模型执行凭证，由各 provider CLI 独立管理；
 - IM/Bot token：消息通道凭证，与 Runtime transport 无关。
 
-不要把 Runtime token 写入 `config/adapters.json`、Agent revision、workdir、命令参数或 Git。
-生产部署应通过 secret manager、容器 Secret 或受限的 service environment file 注入，并在轮换后
-重启 worker 和 harness。
+不要把 device token 写入 `config/adapters.json`、Agent revision、workdir、命令参数、service
+definition 或 Git。重新授权时使用新的 Human enrollment；Worker 可以单独撤销一台设备凭证。
 
 ## 4. 发布包结构
 
@@ -160,16 +132,16 @@ pnpm，不直接用 npm 发布 workspace。当前实现仍是 single-node refere
 
 ```bash
 npm install --global @mininglamp-oss/octo-harness
-octo-harness daemon
+octo-harness daemon run
 ```
 
-全局 npm prefix 管理 CLI 与 daemon 程序文件；`~/.octo-harness`（Windows 为 `%LOCALAPPDATA%\OctoHarness`）只保存 profile、`runtime_id`、credential、数据库、PID/socket 和日志。原生 service 必须保存绝对 Node 与 daemon entrypoint 路径，不依赖交互 shell PATH；Node/npm prefix 变化后重跑 installer 或 `setup --repair`。
+全局 npm prefix 管理 CLI 与 daemon 程序文件；`~/.octo-harness`（Windows 为 `%LOCALAPPDATA%\OctoHarness`）只保存 profile、`runtime_id`、credential、数据库、PID/socket 和日志。原生 service 保存绝对 Node 与 daemon entrypoint 路径，不依赖交互 shell PATH；Node/npm prefix 变化后重跑 installer/login 以重写 service definition。
 
 项目内安装并启动：
 
 ```bash
 npm install @mininglamp-oss/octo-harness
-npx octo-harness daemon
+npx octo-harness daemon run
 ```
 
 包名用于安装和依赖声明；`octo-harness` 是稳定的可执行命令名。

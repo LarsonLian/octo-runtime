@@ -60,3 +60,52 @@ test("daemon deduplicates occurrences and executes one session in run_no order",
     reopened.close();
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test("daemon drain closes admission and waits for active Runs", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "octo-harness-drain-"));
+  let releaseProvider;
+  const providerGate = new Promise(resolve => { releaseProvider = resolve; });
+  try {
+    const store = SqliteStore.open(join(directory, "state.db"));
+    const host = new AdapterHost();
+    host.register({
+      metadata: { type: "slow", capabilities: [] },
+      async *invoke() {
+        await providerGate;
+        yield { type: "run.finished", payload: {} };
+      }
+    });
+    const engine = new HarnessEngine({ store, host });
+    const daemon = new HarnessDaemon({ engine, store });
+    const agent = await engine.registerAgent({ name: "slow", adapterType: "slow" });
+    const base = { namespace: "test", agentId: agent.id, sessionKey: "v1/drain" };
+    const accepted = await daemon.submitAgentRun({
+      ...base,
+      trigger: { kind: "test", occurrenceId: "occurrence-1" },
+      input: { prompt: "wait" }
+    });
+
+    daemon.beginDrain();
+    const draining = daemon.waitForDrained(1_000);
+    await assert.rejects(
+      daemon.submitAgentRun({
+        ...base,
+        trigger: { kind: "test", occurrenceId: "occurrence-2" },
+        input: { prompt: "must reject" }
+      }),
+      error => error.code === "DAEMON_DRAINING"
+    );
+    assert.equal(daemon.status.draining, true);
+    assert.equal(daemon.status.activeRuns, 1);
+
+    releaseProvider();
+    await draining;
+    assert.equal(daemon.status.activeRuns, 0);
+    assert.equal((await daemon.waitForRun(accepted.agentRunId)).run.status, "completed");
+    daemon.stop();
+    store.close();
+  } finally {
+    releaseProvider?.();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

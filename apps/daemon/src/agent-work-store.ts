@@ -122,6 +122,7 @@ export class AgentWorkStore {
       );
       CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     `);
+    migrateRunSessionColumn(db);
     return new AgentWorkStore(db, file);
   }
 
@@ -398,6 +399,25 @@ export class AgentWorkStore {
   walBytes(): number { return fileBytes(`${this.#file}-wal`); }
 
   close(): void { this.#db.close(); }
+}
+
+function migrateRunSessionColumn(db: DatabaseSync): void {
+  const columns = new Set(
+    (db.prepare("PRAGMA table_info(runs)").all() as Array<{ name: string }>).map(column => column.name)
+  );
+  if (columns.has("agent_session_id")) return;
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.exec("ALTER TABLE runs ADD COLUMN agent_session_id TEXT");
+    if (columns.has("session_id")) {
+      db.exec("UPDATE runs SET agent_session_id = session_id WHERE agent_session_id IS NULL");
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 function fileBytes(path: string): number {

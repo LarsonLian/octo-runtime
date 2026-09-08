@@ -36,9 +36,9 @@ pnpm test
 ```
 
 `pnpm test` builds every workspace first, then runs the suite with Node's
-built-in test runner (`node --test`). Tests use an in-test adapter fixture,
-native event fixtures, a real fake-ACP subprocess, a standalone adapter-host
-process and a temporary JSON store — no real model is invoked.
+built-in test runner (`node --test`). Tests use an in-test adapter, native event
+samples, a standalone adapter-host process and a temporary JSON store — no real
+model is invoked.
 
 ### Useful Commands
 
@@ -118,8 +118,8 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full design, and
 ## Testing
 
 - Tests live in `test/*.test.js` and use Node's built-in runner (`node --test`).
-- Tests must not call real models — use the adapter fixture, native event
-  fixtures and the fake ACP subprocess.
+- Tests must not call real models — use the in-test adapter and native event
+  samples.
 - Every change to source behavior should carry a test for the changed behavior.
 - Cover edge cases: empty inputs, boundary values, error paths, idempotency
   (`(agentSessionId, triggerOccurrenceId)`, `(runId, seq)`), cancellation and restart
@@ -159,7 +159,7 @@ Adapters are the only place provider specifics may live. In brief:
    `normalize*Event` (native stream → `CanonicalEvent`). Report the opaque
    provider session through a `session.update` event so continuations resume.
 3. Register the module in `config/adapters.json`.
-4. Add a contract test with a native event fixture.
+4. Add a contract test with representative native events.
 
 The full walkthrough is in
 [docs/08-adapter-authoring.md](./docs/08-adapter-authoring.md).

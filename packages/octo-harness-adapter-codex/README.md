@@ -111,5 +111,4 @@ Agent revision 的 `execution_profile.agent_config` 提供 `workdir`、`model`�
 - 事件契约与三层事件模型：[Protocol](../octo-harness-protocol/README.md)
 - 适配器的调用生命周期与终态兜底：[Adapter Host](../octo-harness-adapter-host/README.md)
 - provider adapter 概览与编写指南：[docs/05](../../docs/05-provider-adapters.md)、[docs/08](../../docs/08-adapter-authoring.md)
-- 端到端协议 fixture：[`fixtures/fake-codex-app-server.mjs`](../../fixtures/fake-codex-app-server.mjs)
 - 源码：[`src/index.ts`](src/index.ts)（装配 + shadow HOME）、[`src/app-server.ts`](src/app-server.ts)（协议状态机 + JSON-RPC client + 事件映射）

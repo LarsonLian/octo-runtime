@@ -27,7 +27,7 @@ test("macOS installer exposes the public positional-argument contract without ne
   );
 });
 
-test("installers use global npm, pass enrollment through stdin, and keep setup in TypeScript", async () => {
+test("installers use global npm, pass enrollment through stdin, and keep login in TypeScript", async () => {
   const [macInstaller, windowsInstaller] = await Promise.all([
     readFile(macInstallerPath, "utf8"),
     readFile(windowsInstallerPath, "utf8")
@@ -41,6 +41,7 @@ test("installers use global npm, pass enrollment through stdin, and keep setup i
     assert.match(source, /@mininglamp-oss\/octo-harness/);
     assert.match(source, /24/);
     assert.match(source, /--enroll-token-stdin/);
+    assert.match(source, /login --help/);
     assert.match(source, /setup --help/);
     assert.doesNotMatch(source, /--token[= ]/);
     assert.doesNotMatch(source, /OCTO_HARNESS_INSTALL_ROOT/);
@@ -57,7 +58,7 @@ test("installers use global npm, pass enrollment through stdin, and keep setup i
   assert.match(windowsInstaller, /Test-FullyQualifiedWindowsPath/);
 });
 
-test("macOS installer resolves npm global bin, persists PATH, and invokes setup", async t => {
+test("macOS installer resolves npm global bin, persists PATH, and invokes login", async t => {
   if (process.platform === "win32") {
     t.skip("POSIX shell is not required on Windows");
     return;
@@ -85,8 +86,12 @@ if [ "$1" = "prefix" ]; then printf '%s\\n' "$FAKE_NPM_PREFIX"; fi
 if [ "$1" = "install" ] && [ "\${FAKE_NPM_FAIL:-0}" = "1" ]; then exit 9; fi
 `,
     "octo-harness": `#!/bin/sh
+if [ "$1" = "login" ] && [ "$2" = "--help" ]; then
+  printf '%s\\n' 'login --enroll-token-stdin'
+  exit 0
+fi
 if [ "$1" = "setup" ] && [ "$2" = "--help" ]; then
-  printf '%s\\n' 'setup --enroll-token-stdin --prepare-update --recover-update'
+  printf '%s\\n' 'setup --prepare-update --recover-update'
   exit 0
 fi
 case " $* " in
@@ -99,9 +104,10 @@ case " $* " in
     exit 0
     ;;
 esac
-printf 'SETUP %s\\n' "$*" >> "$FAKE_SETUP_LOG"
+printf 'LOGIN %s\\n' "$*" >> "$FAKE_SETUP_LOG"
 IFS= read -r token
 printf '%s\\n' "$token" >> "$FAKE_SETUP_LOG"
+if [ "\${FAKE_LOGIN_FAIL:-0}" = "1" ]; then exit 7; fi
 `
   };
   await Promise.all(Object.entries(executables).map(async ([name, contents]) => {
@@ -127,9 +133,22 @@ printf '%s\\n' "$token" >> "$FAKE_SETUP_LOG"
   assert.match(await readFile(npmLog, "utf8"), /install --global --no-audit --no-fund @mininglamp-oss\/octo-harness@latest/);
   const setupInvocation = await readFile(setupLog, "utf8");
   assert.match(setupInvocation, /PREPARE .*setup --prepare-update --wait-drained/);
-  assert.match(setupInvocation, new RegExp(`SETUP --home ${harnessHome.replaceAll("/", "\\/")} --profile default setup`));
+  assert.match(setupInvocation, new RegExp(`LOGIN --home ${harnessHome.replaceAll("/", "\\/")} --profile default login`));
   assert.match(setupInvocation, /--enroll-token-stdin --install-service --autostart --start --wait-online/);
   assert.match(setupInvocation, /octo_enroll_test/);
+  const identityPath = join(harnessHome, "identity/runtime.json");
+  await mkdir(join(harnessHome, "identity"), { recursive: true });
+  await writeFile(identityPath, '{"schema_version":1,"runtime_id":"runtime-existing"}\n', "utf8");
+  await execute("sh", [macInstallerPath, "https://server.example"], { env: installerEnvironment });
+  assert.match(await readFile(setupLog, "utf8"), /LOGIN .*--enroll-token-stdin[\s\S]*\n\n$/);
+
+  await assert.rejects(
+    execute("sh", [macInstallerPath, "https://server.example"], {
+      env: { ...installerEnvironment, FAKE_LOGIN_FAIL: "1" }
+    }),
+    error => error.code === 2 && /Restored the service after the updated login failed/.test(error.stdout)
+  );
+  assert.match(await readFile(setupLog, "utf8"), /RECOVER .*setup --recover-update --start/);
   assert.match(await readFile(join(userHome, ".zprofile"), "utf8"), new RegExp(npmPrefix.replaceAll("/", "\\/")));
 
   await assert.rejects(
@@ -167,6 +186,7 @@ test("root README publishes separate macOS and Windows one-line commands", async
 test("published root package requires Node.js 24 or newer", async () => {
   const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
   assert.equal(packageJson.engines?.node, ">=24");
+  assert.ok(packageJson.files.includes("apps/cli/README.md"));
 });
 
 test("Windows installer parses when PowerShell is available", async t => {

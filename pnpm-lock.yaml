@@ -29,6 +29,9 @@ importers:
       '@mininglamp-oss/octo-harness-core':
         specifier: workspace:*
         version: link:packages/octo-harness-core
+      '@mininglamp-oss/octo-harness-cross-service':
+        specifier: workspace:*
+        version: link:packages/octo-harness-cross-service
       '@mininglamp-oss/octo-harness-daemon':
         specifier: workspace:*
         version: link:packages/octo-harness-daemon
@@ -90,6 +93,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@mininglamp-oss/octo-harness-cross-service':
+        specifier: workspace:*
+        version: link:../../packages/octo-harness-cross-service
       '@mininglamp-oss/octo-harness-daemon-app':
         specifier: workspace:*
         version: link:../daemon

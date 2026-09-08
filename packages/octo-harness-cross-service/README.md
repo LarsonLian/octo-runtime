@@ -19,11 +19,10 @@ const service = createServiceBackend();
 const spec = {
   id: "cn.mininglamp.octo-harness.daemon",
   description: "Octo Harness daemon",
-  // setup 从 process.execPath 与当前 npm package 解析这两个绝对路径。
+  // login 从 process.execPath 与当前 npm package 解析这两个绝对路径。
   command: "/opt/homebrew/opt/node@24/bin/node",
   args: [
     "/opt/homebrew/lib/node_modules/@mininglamp-oss/octo-harness/apps/daemon/dist/launcher.js",
-    "run",
     "--home", "/Users/alice/.octo-harness"
   ],
   workingDirectory: "/Users/alice/.octo-harness",
@@ -50,7 +49,6 @@ await service.install({
   command: "C:\\Program Files\\nodejs\\node.exe",
   args: [
     "C:\\Users\\alice\\AppData\\Roaming\\npm\\node_modules\\@mininglamp-oss\\octo-harness\\apps\\daemon\\dist\\launcher.js",
-    "run",
     "--home", "C:\\Users\\alice\\AppData\\Local\\OctoHarness"
   ],
   workingDirectory: "C:\\Users\\alice\\AppData\\Local\\OctoHarness",
@@ -79,7 +77,7 @@ await service.install({
 
 `inspect().state === "running"` 只表示服务管理器看到进程运行。上层 CLI 必须继续等待 daemon IPC ready，并通过 `doctor` 分别确认本地 Runtime 和云端连接状态。
 
-CLI 是否能在终端中直接执行与 service 如何启动是两个合同：installer 负责把 npm global bin 加入用户 PATH；service 不读取该 PATH，必须使用 setup 当次解析出的绝对 Node 与 daemon entrypoint。Node/npm prefix 被移动或删除后，`doctor` 应报告路径失效，重跑 installer 或 `setup --repair` 更新定义。
+CLI 是否能在终端中直接执行与 service 如何启动是两个合同：installer 负责把 npm global bin 加入用户 PATH；service 不读取该 PATH，使用 login 当次解析出的绝对 Node 与 daemon entrypoint。Node/npm prefix 被移动或删除后，`doctor` 报告路径失效，重跑 installer/login 更新定义。
 
 - Linux 后端不会自动调用 `loginctl enable-linger`。无人登录时也要运行 user service，必须由管理员明确配置 linger，或改用 system service。
 - Windows 后端使用 `InteractiveToken` 与 `LeastPrivilege`，只在指定的当前用户登录时启动，不创建 `LocalSystem` 服务。
@@ -87,7 +85,7 @@ CLI 是否能在终端中直接执行与 service 如何启动是两个合同：i
 
 ## 安全边界
 
-服务定义会长期保存在磁盘，且通常能被当前用户读取，因此禁止把 enrollment token、access token、密码、cookie、私钥等放进 args 或 environment。安装流程应先把一次性 enrollment token 兑换为本地凭证，再让 daemon 通过自己的 `0600`/用户 ACL 凭证文件加载；`ServiceSpec` 只传 `run`、profile 和非敏感路径。
+服务定义会长期保存在磁盘，且通常能被当前用户读取，因此禁止把 enrollment token、access token、密码、cookie、私钥等放进 args 或 environment。安装流程应先把一次性 enrollment token 兑换为本地凭证，再让 daemon 通过自己的 `0600`/用户 ACL 凭证文件加载；`ServiceSpec` 只传绝对 Node 路径、daemon launcher 和非敏感的 `--home` 路径。daemon 再从 Home 加载唯一 enabled profile。
 
 所有命令都用 `spawn(executable, argv, { shell: false })` 执行。包不会解析 shell 字符串，也不会生成 `.sh`、`.bat` 或 PowerShell wrapper。
 

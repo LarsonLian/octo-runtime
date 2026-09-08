@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { AgentWorkStore } from "../apps/daemon/dist/agent-work-store.js";
 
 async function withStore(name, fn) {
@@ -38,6 +39,57 @@ test("outbox appends in seq order; received releases the window, durable deletes
     assert.deepEqual(store.advanceDurable("r1", 1), { advanced: true, through: 1 });
     assert.equal(store.pendingCount(), 1);
   });
+});
+
+test("opening a legacy outbox migrates session_id to agent_session_id", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "oh-outbox-legacy-session-"));
+  const file = join(dir, "agent-work.db");
+  try {
+    const legacy = new DatabaseSync(file);
+    legacy.exec(`
+      CREATE TABLE runs (
+        run_id TEXT PRIMARY KEY,
+        session_id TEXT,
+        command_id TEXT NOT NULL UNIQUE,
+        lease_id TEXT NOT NULL,
+        fencing_token INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        next_seq INTEGER NOT NULL DEFAULT 1,
+        received_through_seq INTEGER NOT NULL DEFAULT 0,
+        durable_through_seq INTEGER NOT NULL DEFAULT 0,
+        terminal_seq INTEGER,
+        updated_at INTEGER NOT NULL,
+        completed_at INTEGER
+      );
+      INSERT INTO runs (
+        run_id, session_id, command_id, lease_id, fencing_token, status, updated_at
+      ) VALUES ('legacy-run', 'legacy-session', 'legacy-command', 'legacy-lease', 1, 'running', 1);
+    `);
+    legacy.close();
+
+    const store = AgentWorkStore.open(file);
+    store.upsertRun({
+      runId: "new-run",
+      agentSessionId: "new-session",
+      commandId: "new-command",
+      leaseId: "new-lease",
+      fencingToken: 2
+    });
+    store.close();
+
+    const migrated = new DatabaseSync(file);
+    assert.equal(
+      migrated.prepare("SELECT agent_session_id FROM runs WHERE run_id = 'legacy-run'").get().agent_session_id,
+      "legacy-session"
+    );
+    assert.equal(
+      migrated.prepare("SELECT agent_session_id FROM runs WHERE run_id = 'new-run'").get().agent_session_id,
+      "new-session"
+    );
+    migrated.close();
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("analysis exposure provenance survives the reliable outbox and dual watermarks", async () => {

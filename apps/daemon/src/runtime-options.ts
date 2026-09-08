@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +7,7 @@ import {
   type ObservabilityConfiguration
 } from "@mininglamp-oss/octo-harness-observability";
 import type { StartDaemonServerOptions } from "./server.js";
+import { loadManagedAgentWork } from "./managed-profile.js";
 
 /**
  * Resolve all daemon runtime paths and options from CLI args and env, defaulting
@@ -17,12 +19,17 @@ export function resolveDaemonRuntimePaths(
   args = process.argv.slice(2),
   env: NodeJS.ProcessEnv = process.env
 ): StartDaemonServerOptions {
-  const home = resolve(env.OCTO_HARNESS_HOME ?? join(homedir(), ".octo-harness"));
+  const home = resolve(option(args, ["--home"], env.OCTO_HARNESS_HOME ?? defaultHarnessHome(env)));
+  const requestedProfile = optionalOption(args, ["--profile"], undefined);
+  const managed = loadManagedAgentWork(home, requestedProfile);
+  const selectedAgentWork = resolveAgentWorkOptions(args, env, home, managed);
   return {
+    homePath: home,
+    pidPath: resolve(option(args, ["--pid-file"], env.OCTO_HARNESS_PID_FILE ?? join(home, "octo-daemon.pid"))),
     socketPath: resolve(option(
       args,
       ["--socket"],
-      env.OCTO_HARNESS_SOCKET ?? join(home, "sockets", "octo-harness-daemon.sock")
+      env.OCTO_HARNESS_SOCKET ?? defaultSocketPath(home)
     )),
     storePath: resolve(option(args, ["--store"], env.OCTO_HARNESS_STORE ?? join(home, "state.db"))),
     manifestPath: resolve(option(
@@ -36,7 +43,7 @@ export function resolveDaemonRuntimePaths(
       env.OCTO_HARNESS_ADAPTER_HOST ?? fileURLToPath(new URL("../../adapter-host/dist/index.js", import.meta.url))
     )),
     logging: resolveLoggingOptions(args, env, home),
-    agentWork: resolveAgentWorkOptions(args, env, home)
+    ...(selectedAgentWork ? { agentWork: selectedAgentWork } : {})
   };
 }
 
@@ -131,42 +138,31 @@ function resolveLoggingOptions(
 
 /**
  * Agent Work is opt-in: absent a base URL it stays disabled and returns undefined.
- * Once enabled, the runtime token/tenant/subject become required (fail fast rather
- * than connect half-configured), and channel-context storage/projection knobs are
+ * Once enabled, the device token becomes required (fail fast rather than connect
+ * half-configured), and channel-context storage/projection knobs are
  * validated against their allowed enums.
  */
 function resolveAgentWorkOptions(
   args: string[],
   env: NodeJS.ProcessEnv,
-  home: string
+  home: string,
+  managed: StartDaemonServerOptions["agentWork"]
 ): StartDaemonServerOptions["agentWork"] {
-  const baseUrl = optionalOption(args, ["--agent-work-url"], env.OCTO_HARNESS_AGENT_WORK_URL);
+  const baseUrl = managed?.baseUrl ?? optionalOption(args, ["--agent-work-url"], env.OCTO_HARNESS_AGENT_WORK_URL);
   if (!baseUrl) return undefined;
-  const token = requiredEnv(env, "OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN");
-  const tenantId = requiredOption(
-    args,
-    ["--agent-work-tenant-id"],
-    env.OCTO_HARNESS_AGENT_WORK_TENANT_ID,
-    "OCTO_HARNESS_AGENT_WORK_TENANT_ID"
-  );
-  const subjectId = requiredOption(
-    args,
-    ["--agent-work-subject-id"],
-    env.OCTO_HARNESS_AGENT_WORK_SUBJECT_ID,
-    "OCTO_HARNESS_AGENT_WORK_SUBJECT_ID"
-  );
+  const token = managed?.token;
+  if (!token) throw new Error("Agent Work Runtime credential is missing from the managed Harness Home");
   return {
+    ...(managed?.profile ? { profile: managed.profile } : {}),
     baseUrl,
     token,
-    tenantId,
-    subjectId,
-    runtimeId: optionalOption(args, ["--agent-work-runtime-id"], env.OCTO_HARNESS_AGENT_WORK_RUNTIME_ID),
+    runtimeId: managed?.runtimeId ?? optionalOption(args, ["--agent-work-runtime-id"], env.OCTO_HARNESS_AGENT_WORK_RUNTIME_ID),
     runtimeName: optionalOption(
       args,
       ["--agent-work-runtime-name"],
-      env.OCTO_HARNESS_AGENT_WORK_RUNTIME_NAME
+      env.OCTO_HARNESS_AGENT_WORK_RUNTIME_NAME ?? managed?.runtimeName
     ) ?? "octo-harness-local",
-    fingerprint: optionalOption(
+    fingerprint: managed?.fingerprint ?? optionalOption(
       args,
       ["--agent-work-fingerprint"],
       env.OCTO_HARNESS_AGENT_WORK_FINGERPRINT
@@ -174,31 +170,31 @@ function resolveAgentWorkOptions(
     storePath: resolve(optionalOption(
       args,
       ["--agent-work-db"],
-      env.OCTO_HARNESS_AGENT_WORK_DB
+      env.OCTO_HARNESS_AGENT_WORK_DB ?? managed?.storePath
     ) ?? join(home, "agent-work.db")),
     channelContext: {
       store: enumOption(
         args,
         ["--channel-context-store"],
-        env.OCTO_HARNESS_CHANNEL_CONTEXT_STORE ?? "memory",
+        env.OCTO_HARNESS_CHANNEL_CONTEXT_STORE ?? managed?.channelContext?.store ?? "sqlite",
         ["memory", "sqlite"]
       ),
       projection: enumOption(
         args,
         ["--channel-context-projection"],
-        env.OCTO_HARNESS_CHANNEL_CONTEXT_PROJECTION ?? "window",
+        env.OCTO_HARNESS_CHANNEL_CONTEXT_PROJECTION ?? managed?.channelContext?.projection ?? "delta",
         ["window", "delta"]
       ),
       providerPersistence: enumOption(
         args,
         ["--channel-context-provider-persistence"],
-        env.OCTO_HARNESS_CHANNEL_CONTEXT_PROVIDER_PERSISTENCE ?? "ephemeral",
+        env.OCTO_HARNESS_CHANNEL_CONTEXT_PROVIDER_PERSISTENCE ?? managed?.channelContext?.providerPersistence ?? "append_only",
         ["ephemeral", "append_only"]
       ),
       storePath: resolve(optionalOption(
         args,
         ["--channel-context-db"],
-        env.OCTO_HARNESS_CHANNEL_CONTEXT_DB
+        env.OCTO_HARNESS_CHANNEL_CONTEXT_DB ?? managed?.channelContext?.storePath
       ) ?? join(home, "channel-context.db")),
       ...optionalNumber(args, ["--channel-context-retention-ms"], env.OCTO_HARNESS_CHANNEL_CONTEXT_RETENTION_MS, "retentionMs"),
       ...optionalNumber(args, ["--channel-context-snapshot-retention-ms"], env.OCTO_HARNESS_CHANNEL_CONTEXT_SNAPSHOT_RETENTION_MS, "snapshotRetentionMs"),
@@ -227,12 +223,6 @@ function optionalNumber(
   return { [key]: value };
 }
 
-function requiredEnv(env: NodeJS.ProcessEnv, name: string): string {
-  const value = env[name]?.trim();
-  if (!value) throw new Error(`${name} is required when OCTO_HARNESS_AGENT_WORK_URL is set`);
-  return value;
-}
-
 /**
  * Serialize resolved options back into argv for the spawned daemon child, so the
  * launcher and the daemon share one resolution pass. Only emit Agent Work flags
@@ -240,6 +230,8 @@ function requiredEnv(env: NodeJS.ProcessEnv, name: string): string {
  */
 export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[] {
   const args = [
+    ...(paths.homePath ? ["--home", paths.homePath] : []),
+    ...(paths.pidPath ? ["--pid-file", paths.pidPath] : []),
     "--socket", paths.socketPath,
     "--store", paths.storePath,
     "--manifest", paths.manifestPath,
@@ -270,14 +262,12 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[
   if (paths.agentWork) {
     args.push(
       "--agent-work-url", paths.agentWork.baseUrl,
-      "--agent-work-tenant-id", paths.agentWork.tenantId,
-      "--agent-work-subject-id", paths.agentWork.subjectId,
       "--agent-work-runtime-name", paths.agentWork.runtimeName,
       "--agent-work-fingerprint", paths.agentWork.fingerprint,
       "--agent-work-db", paths.agentWork.storePath,
-      "--channel-context-store", paths.agentWork.channelContext?.store ?? "memory",
-      "--channel-context-projection", paths.agentWork.channelContext?.projection ?? "window",
-      "--channel-context-provider-persistence", paths.agentWork.channelContext?.providerPersistence ?? "ephemeral",
+      "--channel-context-store", paths.agentWork.channelContext?.store ?? "sqlite",
+      "--channel-context-projection", paths.agentWork.channelContext?.projection ?? "delta",
+      "--channel-context-provider-persistence", paths.agentWork.channelContext?.providerPersistence ?? "append_only",
       "--channel-context-db", paths.agentWork.channelContext?.storePath ?? resolve("channel-context.db")
     );
     if (paths.agentWork.runtimeId) args.push("--agent-work-runtime-id", paths.agentWork.runtimeId);
@@ -292,6 +282,7 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[
     pushNumberOption(args, "--channel-context-max-projected-bytes", paths.agentWork.channelContext?.maxProjectedBytes);
     pushNumberOption(args, "--channel-context-sync-timeout-ms", paths.agentWork.channelContext?.syncTimeoutMs);
   }
+  // Managed credentials are reloaded from --home and never serialized to argv.
   return args;
 }
 
@@ -356,15 +347,13 @@ function optionalOption(
   return value || undefined;
 }
 
-function requiredOption(
-  args: string[],
-  names: string[],
-  fallback: string | undefined,
-  environmentName: string
-): string {
-  const value = optionalOption(args, names, fallback);
-  if (!value) {
-    throw new Error(`${names[0]} or ${environmentName} is required when Agent Work is enabled`);
-  }
-  return value;
+function defaultHarnessHome(env: NodeJS.ProcessEnv): string {
+  if (process.platform === "win32" && env.LOCALAPPDATA?.trim()) return join(env.LOCALAPPDATA.trim(), "OctoHarness");
+  return join(env.HOME?.trim() || homedir(), ".octo-harness");
+}
+
+function defaultSocketPath(home: string): string {
+  if (process.platform !== "win32") return join(home, "sockets", "octo-harness-daemon.sock");
+  const id = createHash("sha256").update(home.toLowerCase()).digest("hex").slice(0, 16);
+  return `\\\\.\\pipe\\octo-harness-${id}`;
 }

@@ -18,6 +18,8 @@ export class HarnessDaemon extends EventEmitter {
   readonly #store: Store;
   readonly #pending = new Map<string, Promise<unknown>>();
   readonly #waiters = new Map<string, Array<(result: unknown) => void>>();
+  #admitting = 0;
+  #draining = false;
   #stopped = false;
 
   constructor({ engine, store }: { engine: HarnessEngine; store: Store }) {
@@ -39,7 +41,35 @@ export class HarnessDaemon extends EventEmitter {
     }
   }
 
-  stop(): void { this.#stopped = true; }
+  get status(): { draining: boolean; activeRuns: number; admittingRuns: number } {
+    return {
+      draining: this.#draining,
+      activeRuns: this.#pending.size,
+      admittingRuns: this.#admitting
+    };
+  }
+
+  /** Close admission before waiting so a service update cannot race a new Run. */
+  beginDrain(): void {
+    this.#draining = true;
+  }
+
+  async waitForDrained(timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (this.#admitting > 0 || this.#pending.size > 0) {
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `daemon drain timed out with ${this.#admitting} admitting and ${this.#pending.size} active Runs`
+        );
+      }
+      await new Promise<void>(resolve => setTimeout(resolve, HEAD_POLL_MS));
+    }
+  }
+
+  stop(): void {
+    this.#draining = true;
+    this.#stopped = true;
+  }
 
   async submitAgentRun(input: SubmitAgentRunInput): Promise<{
     accepted: boolean;
@@ -48,15 +78,25 @@ export class HarnessDaemon extends EventEmitter {
     agentRunId: string;
     runNo: number;
   }> {
-    const result = await this.#engine.submitAgentRun(input);
-    if (!result.deduplicated && !TERMINAL.has(result.agentRun.status)) this.#schedule(result.agentRun.id);
-    return {
-      accepted: !result.deduplicated,
-      deduplicated: result.deduplicated,
-      agentSessionId: result.agentSession.id,
-      agentRunId: result.agentRun.id,
-      runNo: result.agentRun.runNo
-    };
+    if (this.#draining || this.#stopped) {
+      throw Object.assign(new Error("daemon is draining and is not accepting new AgentRuns"), {
+        code: "DAEMON_DRAINING"
+      });
+    }
+    this.#admitting += 1;
+    try {
+      const result = await this.#engine.submitAgentRun(input);
+      if (!result.deduplicated && !TERMINAL.has(result.agentRun.status)) this.#schedule(result.agentRun.id);
+      return {
+        accepted: !result.deduplicated,
+        deduplicated: result.deduplicated,
+        agentSessionId: result.agentSession.id,
+        agentRunId: result.agentRun.id,
+        runNo: result.agentRun.runNo
+      };
+    } finally {
+      this.#admitting -= 1;
+    }
   }
 
   #schedule(agentRunId: string): void {

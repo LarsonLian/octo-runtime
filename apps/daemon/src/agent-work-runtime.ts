@@ -49,10 +49,10 @@ const TERMINAL_OUTBOX_TYPES = new Set(["run.completed", "run.failed", "run.cance
  * must never be copied into observability records.
  */
 export interface AgentWorkRuntimeOptions {
+  /** Trusted local profile label; never used as an authorization claim. */
+  profile?: string;
   baseUrl: string;
   token: string;
-  tenantId: string;
-  subjectId: string;
   runtimeId?: string;
   runtimeName: string;
   fingerprint: string;
@@ -185,6 +185,7 @@ export class AgentWorkRuntime {
   #pump?: Promise<void>;
   #senderKick?: () => void;
   #stopped = true;
+  #draining = false;
   #connected = false;
   #lifecycleEpoch = 0;
   // Attempts are process-lifetime diagnostics; connection ids identify one
@@ -208,9 +209,12 @@ export class AgentWorkRuntime {
     const contextStats = this.#contextStore?.stats();
     return {
       enabled: true,
+      ...(this.#options.profile ? { profile: this.#options.profile } : {}),
       connected: this.#connected,
+      draining: this.#draining,
       runtimeId: this.#runtimeId || this.#options.runtimeId,
       activeRuns: this.#activeRuns.size,
+      acceptingRuns: this.#acceptingRuns.size,
       lastAckedCommandSeq: store?.lastAckedCommandSeq ?? 0,
       outboxPendingBytes: store?.outboxBytes() ?? 0,
       outboxPending: store?.pendingCount() ?? 0,
@@ -220,7 +224,7 @@ export class AgentWorkRuntime {
       channelContext: {
         store: this.#options.channelContext?.store ?? "memory",
         projection: this.#options.channelContext?.projection ?? "window",
-        providerPersistence: this.#options.channelContext?.providerPersistence ?? "ephemeral",
+        providerPersistence: this.#options.channelContext?.providerPersistence ?? "append_only",
         scopes: contextStats?.scopes ?? 0,
         messages: contextStats?.messages ?? 0,
         snapshots: contextStats?.snapshots ?? 0,
@@ -240,6 +244,7 @@ export class AgentWorkRuntime {
   async start(): Promise<void> {
     if (!this.#stopped) return;
     this.#stopped = false;
+    this.#draining = false;
     const epoch = ++this.#lifecycleEpoch;
     this.#adapterCapabilities.clear();
     const adapters = await this.#host.list();
@@ -286,6 +291,7 @@ export class AgentWorkRuntime {
   async close(): Promise<void> {
     if (this.#stopped && !this.#store) return;
     this.#stopped = true;
+    this.#draining = true;
     this.#lifecycleEpoch += 1;
     if (this.#heartbeat) clearInterval(this.#heartbeat);
     this.#heartbeat = undefined;
@@ -317,6 +323,23 @@ export class AgentWorkRuntime {
     this.#acceptingRuns.clear();
   }
 
+  /** Reject future run.start commands while allowing cancellation and replay. */
+  beginDrain(): void {
+    this.#draining = true;
+  }
+
+  async waitForDrained(timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (this.#acceptingRuns.size > 0 || this.#activeRuns.size > 0) {
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `Agent Work drain timed out with ${this.#acceptingRuns.size} accepting and ${this.#activeRuns.size} active Runs`
+        );
+      }
+      await delay(BACKPRESSURE_POLL_MS);
+    }
+  }
+
   async #register(adapterTypes: string[]): Promise<string> {
     const contextStats = this.#contextStore?.stats();
     this.#log({
@@ -330,7 +353,6 @@ export class AgentWorkRuntime {
       method: "POST",
       headers: this.#headers(true),
       body: JSON.stringify({
-        kind: "local",
         name: this.#options.runtimeName,
         device: {
           fingerprint: this.#options.fingerprint,
@@ -346,7 +368,7 @@ export class AgentWorkRuntime {
             protocol_version: 1,
             store: this.#options.channelContext?.store ?? "memory",
             projection: this.#options.channelContext?.projection ?? "window",
-            provider_persistence: this.#options.channelContext?.providerPersistence ?? "ephemeral",
+            provider_persistence: this.#options.channelContext?.providerPersistence ?? "append_only",
             ...(contextStats ? {
               serializer_version: contextStats.serializerVersion,
               message_retention_ms: contextStats.retentionMs,
@@ -713,6 +735,12 @@ export class AgentWorkRuntime {
     // A replay while the first handler waits must join the in-flight
     // admission attempt before evaluating mutable capacity constraints.
     if (this.#acceptingCommandIds.has(command.command_id) || this.#acceptingRuns.has(command.run_id)) return;
+    if (this.#draining) {
+      const error = { code: "RUNTIME_DRAINING", message: "runtime is draining for a service operation" };
+      store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
+      this.#ackCommand(command, false, error);
+      return;
+    }
     // Soft-watermark backpressure: reject new Runs so the existing outbox drains
     // first; unacked data is not deleted.
     const softWatermark = this.#options.softWatermarkBytes ?? DEFAULT_SOFT_WATERMARK_BYTES;
@@ -1192,8 +1220,6 @@ export class AgentWorkRuntime {
   #headers(json: boolean): Record<string, string> {
     return {
       Authorization: `Bearer ${this.#options.token}`,
-      "X-Tenant-ID": this.#options.tenantId,
-      "X-Subject-ID": this.#options.subjectId,
       ...(json ? { "Content-Type": "application/json" } : {})
     };
   }

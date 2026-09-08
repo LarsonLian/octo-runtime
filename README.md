@@ -48,7 +48,7 @@ Core 中的 SQLite `AgentSession`/`AgentRun` 是单机 reference profile 的诊�
 | macOS | `npm install -g @mininglamp-oss/octo-harness`；shim 位于 `<npm prefix -g>/bin/octo-harness` | `~/.octo-harness/` |
 | Windows | `npm install -g @mininglamp-oss/octo-harness`；shim 位于 `<npm prefix -g>\octo-harness.cmd` | `%LOCALAPPDATA%\OctoHarness\` |
 
-安装器会验证全局 shim，并在需要时自动把 npm global bin 加入 macOS shell profile 或 Windows 当前用户 PATH，所以安装后可直接用 `octo-harness` 调试。Harness Home 只保存 profile、`runtime_id`、设备凭证、SQLite/outbox、PID/socket 和日志。升级或普通卸载 package 时保留它；`uninstall --purge --yes` 才删除身份与状态。
+安装器会验证全局 shim，并在需要时自动把 npm global bin 加入 macOS shell profile 或 Windows 当前用户 PATH，所以安装后可直接用 `octo-harness` 调试。Harness Home 只保存 profile、`runtime_id`、设备凭证、SQLite/outbox、PID/socket 和日志。升级或普通卸载 package 时保留它；未来的 `uninstall --purge --yes` 才会删除身份与状态，当前 CLI 尚未提供该命令。
 
 ### macOS
 
@@ -71,10 +71,10 @@ curl -fsSL https://im-test.deepminer.com.cn/octo-harness/install.sh \
 
 1. 检查 Node.js 24+ 与 npm；macOS 可用已有 Homebrew 安装 `node@24`，Windows 可用已有 `winget` 安装当前 Node LTS。
 2. stable 默认执行 `npm install -g @mininglamp-oss/octo-harness@latest`，beta 对应 npm `beta` tag，并确保 CLI shim 可从 PATH 直接调用。
-3. 同版本 CLI 从 stdin 消费一次性 token，创建或对账 profile 的永久 `runtime_id` 与设备凭证。
+3. 同版本 CLI 的 `login` 从 stdin 消费一次性 token，创建或对账选中 profile 唯一的永久 `runtime_id` 与设备凭证。
 4. CLI 通过用户级原生管理器安装自启动：macOS LaunchAgent、Windows 当前用户 Task Scheduler；service definition 使用绝对 Node 与 daemon 入口路径，不依赖 shell PATH。
 5. daemon 启动后，CLI 分别等待本地 IPC Ready 和云端 Runtime Online；任一步失败都返回非零。
-6. 重跑时先取得 Home 与 npm prefix 安装锁；若旧 CLI 已存在，先执行 `setup --prepare-update` drain/stop，再更新 npm package，最后由新 CLI repair/start。npm 更新失败会尝试 `setup --recover-update` 恢复旧 service；全过程不创建第二个 Runtime，也不覆盖已有身份和 durable outbox。
+6. 重跑时先取得 Home 与 npm prefix 安装锁；若旧 CLI 已存在，先执行 `setup --prepare-update` drain/stop，再更新 npm package，最后由新 CLI `login` 对账并启动。npm 更新或更新后的 login 失败会尝试 `setup --recover-update` 恢复 service；全过程不创建第二个 Runtime，也不覆盖已有身份和 durable outbox。已有 identity 时可省略 token 重跑。
 
 把 token 直接放在位置参数里最适合 Web 页面生成“复制即安装”的一次性命令，但它会进入 shell/PowerShell 历史。更安全的人工安装方式是省略第二个参数，安装器会从 TTY/SecureString 隐藏读取 token：
 
@@ -88,9 +88,9 @@ curl -fsSL https://im-test.deepminer.com.cn/octo-harness/install.sh \
   "https://im-test.deepminer.com.cn"
 ```
 
-安装器源码、npm 发布合同、PATH 与提权边界见 [installers](installers/README.md)。它们是 stage-0，只负责 Node/npm 检查、全局安装和调用 `octo-harness setup`；凭证、service 与 readiness 状态机必须留在 TypeScript CLI。
+安装器源码、npm 发布合同、PATH 与提权边界见 [installers](installers/README.md)。它们是 stage-0，只负责 Node/npm 检查、全局安装和调用 `octo-harness login`；凭证、service 与 readiness 状态机留在 TypeScript CLI，并通过 `@mininglamp-oss/octo-harness-cross-service` 操作原生用户服务。
 
-> 当前仓库尚未具备可公开发布的一键安装链路：`apps/cli` 还未实现真正的 `setup`，npm package 也尚未正式发布。现有脚本会在 setup 失败时返回非零，不会把“npm package 已安装”假装成“Runtime 已上线”。
+客户端闭环已由 `login`、受保护的 profile、用户级 service 和 online readiness 组成；公开安装前仍需发布 npm package、部署安装脚本，并在 ingress 暴露 Agent Worker 的 enrollment/register/WSS 路由。
 
 ## 源码开发与验证
 
@@ -108,16 +108,19 @@ pnpm test
 
 ## 启动 Runtime
 
-连接 Agent Worker 时，非敏感连接信息可放参数或环境变量；Runtime token 只允许通过环境变量注入：
+源码调试也先走 enrollment。下面示例让 Octo Human 身份由测试环境验证，同时把 Runtime 注册到本机 Agent Worker；一次性 token 通过 stdin 传递：
 
 ```bash
-export OCTO_HARNESS_AGENT_WORK_URL=http://127.0.0.1:8092
-export OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN=dev-runtime-token
-export OCTO_HARNESS_AGENT_WORK_TENANT_ID=tenant-1
-export OCTO_HARNESS_AGENT_WORK_SUBJECT_ID=device-local-1
-export OCTO_HARNESS_AGENT_WORK_RUNTIME_NAME=octo-harness-local
-pnpm daemon
+printf '%s\n' 'octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN' | pnpm cli -- \
+  --home "$PWD/.tmp/harness-home" login \
+  --server-url https://im-test.deepminer.com.cn \
+  --agent-work-url http://127.0.0.1:8092 \
+  --enroll-token-stdin --no-install-service --no-start
+
+pnpm daemon -- --home "$PWD/.tmp/harness-home"
 ```
+
+daemon 从 Home 级 mode 0600 credential 文件读取 `octo_device_`，注册和 WSS 都只发送对应 Bearer。`octo_space_id`、`owner_user_id` 和 `system_id` 由 Worker 反查，不能通过 CLI 参数或 Header 声明。一个 Home 只运行一个 daemon、一个 enabled profile 和一个 local Runtime；多 adapter 是该 Runtime 的 capability，不是额外 Runtime。不同 profile 或身份必须使用不同 Home，不可信用户必须使用不同 OS account。
 
 本地运维命令：
 
