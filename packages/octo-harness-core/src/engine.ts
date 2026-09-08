@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import {
   envelope,
   isTerminal,
@@ -6,38 +7,18 @@ import {
   type EventEnvelope,
   type InvokeRequest
 } from "@mininglamp-oss/octo-harness-protocol";
-import { randomUUID } from "node:crypto";
 import { composeContext, renderPortableInstructions } from "./prompt.js";
-import type {
-  Agent,
-  Attempt,
-  Run,
-  Session,
-  Store,
-  Task,
-  Trigger,
-  TriggerKind,
-  TriggerOccurrence,
-  TriggerTaskTemplate
-} from "./store.js";
+import type { Agent, AgentRun, AgentRunTrigger, AgentSession, Store } from "./store.js";
 
 const id = (prefix: string): string => `${prefix}_${randomUUID()}`;
+const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 
-/**
- * The provider execution port the Core depends on.
- * Both the in-process AdapterHost and the NDJSON RPC client implement these
- * methods, so the Core stays unaware of the transport.
- */
 export interface HarnessHost {
-  /** Return a minimal view of the loaded adapter metadata, used to validate an adapter type before registering an Agent. */
   list(): Array<{ type: string }> | Promise<Array<{ type: string }>>;
-  /** Start a provider invocation and stream canonical events back in order. */
   invoke(adapterType: string, request: InvokeRequest): AsyncIterable<CanonicalEvent>;
-  /** Request cancellation of an active invocation; the return value is only a cancel ACK, not a Run terminal. */
   cancel(invocationId: string, reason?: string): boolean | { cancelled: boolean } | Promise<boolean | { cancelled: boolean }>;
 }
 
-/** Input for registering a durable Agent; the Core generates an id when omitted. */
 export interface RegisterAgentInput {
   id?: string;
   name: string;
@@ -45,41 +26,24 @@ export interface RegisterAgentInput {
   config?: AgentConfig;
 }
 
-/** Input for creating a Trigger rule together with its Task template. */
-export interface CreateTriggerInput {
-  id?: string;
-  name: string;
-  kind: TriggerKind;
+export interface SubmitAgentRunInput {
+  namespace: string;
   agentId: string;
-  task: TriggerTaskTemplate;
-  eventType?: string;
-  filter?: Record<string, unknown>;
-  everyMs?: number;
+  sessionKey: string;
+  trigger: AgentRunTrigger;
+  input: Record<string, unknown>;
+}
+
+export interface SubmitAgentRunResult {
+  agentSession: AgentSession;
+  agentRun: AgentRun;
+  deduplicated: boolean;
 }
 
 /**
- * External input for one Trigger hit.
- * `externalEventId` must be stable within a single Trigger so webhook/scheduler
- * retries can be deduplicated.
- */
-export interface TriggerInput {
-  externalEventId: string;
-  payload?: Record<string, unknown>;
-}
-
-/** Provenance recorded when creating a Task Attempt. */
-export interface QueueTaskInput {
-  occurrenceId?: string;
-  sourceType?: string;
-  sourceId?: string;
-}
-
-/**
- * The domain orchestration core of Octo Harness.
- *
- * It owns object relationships, state transitions, prompt/context assembly and
- * event persistence; background scheduling, socket/API and provider process
- * management belong to the daemon, the app and the Adapter Host respectively.
+ * Provider-neutral reference executor for the unified Session/Run contract.
+ * Business schedulers create occurrences outside Harness; this class only
+ * validates, deduplicates, queues and executes the supplied AgentRun.
  */
 export class HarnessEngine {
   readonly store: Store;
@@ -90,11 +54,12 @@ export class HarnessEngine {
     this.host = host;
   }
 
-  /** Register an Agent; this only writes config and does not invoke the provider. */
   async registerAgent(input: RegisterAgentInput): Promise<Agent> {
     if (!input.name || !input.adapterType) throw new Error("agent name and adapterType are required");
     const adapters = await this.host.list();
-    if (!adapters.some(item => item.type === input.adapterType)) throw new Error(`adapter not loaded: ${input.adapterType}`);
+    if (!adapters.some(item => item.type === input.adapterType)) {
+      throw new Error(`adapter not loaded: ${input.adapterType}`);
+    }
     const agent: Agent = {
       id: input.id ?? id("agent"),
       name: input.name,
@@ -105,304 +70,175 @@ export class HarnessEngine {
     return agent;
   }
 
-  /** Create and enable a Trigger rule; no Task is materialized at creation time. */
-  async createTrigger(input: CreateTriggerInput): Promise<Trigger> {
+  async submitAgentRun(input: SubmitAgentRunInput): Promise<SubmitAgentRunResult> {
+    validateSubmission(input);
     if (!this.store.hasAgent(input.agentId)) throw new Error(`agent not found: ${input.agentId}`);
-    if (!input.task?.title || !input.task?.description) throw new Error("trigger.task title and description are required");
-    if (!new Set<TriggerKind>(["manual", "event", "interval"]).has(input.kind)) throw new Error(`unsupported trigger kind: ${input.kind}`);
-    if (input.kind === "event" && !input.eventType) throw new Error("event trigger requires eventType");
-    if (input.kind === "interval" && (!Number.isFinite(input.everyMs) || (input.everyMs ?? 0) < 1000)) {
-      throw new Error("interval trigger requires everyMs >= 1000");
-    }
-    const trigger: Trigger = { ...input, id: input.id ?? id("trigger"), enabled: true };
-    await this.store.transaction(() => this.store.putTrigger(trigger));
-    return trigger;
-  }
-
-  /**
-   * Idempotently materialize one Trigger hit into an Occurrence, a Task and a
-   * task Session. This method only creates domain objects; it does not create
-   * an Attempt/Run and does not execute the provider.
-   */
-  async materializeTrigger(
-    triggerId: string,
-    { externalEventId, payload = {} }: TriggerInput
-  ): Promise<{ deduplicated: boolean; occurrence: TriggerOccurrence; task: Task }> {
-    const trigger = this.store.getTrigger(triggerId);
-    if (!trigger?.enabled) throw new Error("trigger is missing or disabled");
-    if (typeof externalEventId !== "string" || !externalEventId) throw new Error("externalEventId is required");
-    const existing = this.store.getOccurrenceByKey(triggerId, externalEventId);
-    // An external event may only be materialized once; on retry we return the original task to avoid duplicate side effects.
-    if (existing) {
-      const task = this.store.getTask(existing.taskId);
-      if (!task) throw new Error(`deduplicated occurrence has no task: ${existing.id}`);
-      return { deduplicated: true, occurrence: existing, task };
-    }
-
-    const taskId = id("task");
-    const sessionId = id("session");
-    // The three objects are linked in one transaction, so we never leave a half-built Occurrence whose Task/Session is missing.
-    const occurrence: TriggerOccurrence = {
-      id: id("occ"),
-      triggerId,
-      externalEventId,
-      kind: trigger.kind,
-      payload,
-      createdAt: Date.now(),
-      taskId
-    };
-    const task: Task = {
-      id: taskId,
-      title: trigger.task.title,
-      description: trigger.task.description,
-      agentId: trigger.agentId,
-      status: "queued",
-      sessionId,
-      createdAt: Date.now()
-    };
-    const session: Session = { id: sessionId, type: "task", status: "active" };
+    const requestHash = hashCanonical(input);
+    let result!: SubmitAgentRunResult;
     await this.store.transaction(() => {
-      this.store.putOccurrence(occurrence);
-      this.store.putTask(task);
-      this.store.putSession(session);
+      let session = this.store.getAgentSessionByKey(input.namespace, input.agentId, input.sessionKey);
+      if (!session) {
+        session = {
+          id: id("asess"),
+          namespace: input.namespace,
+          agentId: input.agentId,
+          sessionKey: input.sessionKey,
+          status: "active",
+          generation: 1,
+          nextRunNo: 1,
+          createdAt: Date.now()
+        };
+        this.store.putAgentSession(session);
+      }
+      const existing = this.store.getAgentRunByOccurrence(session.id, input.trigger.occurrenceId);
+      if (existing) {
+        if (existing.requestHash !== requestHash) {
+          throw new Error("trigger occurrence was reused with a different AgentRun request");
+        }
+        result = { agentSession: session, agentRun: existing, deduplicated: true };
+        return;
+      }
+      const run: AgentRun = {
+        id: id("arun"),
+        agentSessionId: session.id,
+        runNo: session.nextRunNo++,
+        status: "queued",
+        nextSeq: 1,
+        trigger: { ...input.trigger, occurredAt: input.trigger.occurredAt ?? Date.now() },
+        input: structuredClone(input.input),
+        requestHash
+      };
+      this.store.appendEvent(envelope(run, run.nextSeq++, {
+        type: "run.queued",
+        payload: { trigger_kind: run.trigger.kind, trigger_occurrence_id: run.trigger.occurrenceId }
+      }));
+      this.store.putAgentRun(run);
+      this.store.putAgentSession(session);
+      result = { agentSession: session, agentRun: run, deduplicated: false };
     });
-    return { deduplicated: false, occurrence, task };
+    return result;
   }
 
-  /** Create a long-lived Chat Session; each later `queueChatTurn` reuses this session and its provider session. */
-  async createChatSession({
-    agentId,
-    title = "New chat",
-    channel = "local"
-  }: {
-    agentId: string;
-    title?: string;
-    channel?: string;
-  }): Promise<Session> {
-    if (!this.store.hasAgent(agentId)) throw new Error(`agent not found: ${agentId}`);
-    const session: Session = {
-      id: id("session"),
-      type: "chat",
-      agentId,
-      title,
-      channel,
-      status: "active",
-      createdAt: Date.now()
-    };
-    await this.store.transaction(() => this.store.putSession(session));
-    return session;
+  canExecute(agentRunId: string): boolean {
+    const run = this.store.getAgentRun(agentRunId);
+    if (!run || run.status !== "queued") return false;
+    const session = this.store.getAgentSession(run.agentSessionId);
+    if (!session || (session.activeRunId && session.activeRunId !== run.id)) return false;
+    return !this.store.listAgentRuns().some(candidate =>
+      candidate.agentSessionId === run.agentSessionId &&
+      candidate.runNo < run.runNo &&
+      !TERMINAL.has(candidate.status)
+    );
   }
 
-  /**
-   * Create a queued Run for one Chat turn and write `run.queued`.
-   * It does not execute the provider, which lets the daemon persist first and ACK quickly.
-   */
-  async queueChatTurn(sessionId: string, prompt: string): Promise<{ session: Session; run: Run }> {
-    const session = this.store.getSession(sessionId);
-    if (!session || session.type !== "chat") throw new Error(`chat session not found: ${sessionId}`);
-    // Concurrent calls on the same session would contend over the provider session/history, so the reference model serializes them.
-    if (session.activeRunId) throw new Error(`chat already has an active run: ${session.activeRunId}`);
-    if (typeof prompt !== "string" || !prompt.trim()) throw new Error("chat prompt is required");
-    const run: Run = { id: id("run"), sessionId, status: "queued", nextSeq: 1, prompt };
+  async executeRun(agentRunId: string): Promise<{ run: AgentRun; events: EventEnvelope[] }> {
+    const run = this.store.getAgentRun(agentRunId);
+    if (!run) throw new Error(`agent run not found: ${agentRunId}`);
+    if (!this.canExecute(run.id)) throw new Error(`agent run is not the executable session head: ${run.id}`);
+    const session = this.store.getAgentSession(run.agentSessionId);
+    if (!session) throw new Error(`agent session not found: ${run.agentSessionId}`);
+    const agent = this.store.getAgent(session.agentId);
+    if (!agent) throw new Error(`agent not found: ${session.agentId}`);
+
+    run.status = "running";
     session.activeRunId = run.id;
     await this.store.transaction(() => {
-      this.store.appendEvent(envelope(run, run.nextSeq++, { type: "run.queued", payload: { sourceType: "chat" } }));
-      this.store.putRun(run);
-      this.store.putSession(session);
-    });
-    return { session, run };
-  }
-
-  /**
-   * Create the next Attempt and a queued Run for a Task.
-   * Task continuation also calls this, but keeps reusing the original
-   * Task.description as the stable user request.
-   */
-  async queueTask(taskId: string, input: QueueTaskInput = {}): Promise<{ task: Task; attempt: Attempt; run: Run }> {
-    const { occurrenceId, sourceType = "manual", sourceId } = input;
-    const task = this.store.getTask(taskId);
-    if (!task) throw new Error(`task not found: ${taskId}`);
-    if (task.activeRunId) throw new Error(`task already has an active run: ${task.activeRunId}`);
-    const prior = this.store.listAttemptsByTask(taskId);
-    const attemptId = id("attempt");
-    const runId = id("run");
-    const attempt: Attempt = {
-      id: attemptId,
-      taskId,
-      number: prior.length + 1,
-      status: "queued",
-      runId,
-      triggerOccurrenceId: occurrenceId,
-      sourceType,
-      sourceId
-    };
-    const run: Run = { id: runId, sessionId: task.sessionId, attemptId, status: "queued", nextSeq: 1 };
-    task.activeRunId = run.id;
-    task.status = "queued";
-    await this.store.transaction(() => {
-      this.store.appendEvent(envelope(run, run.nextSeq++, { type: "run.queued", payload: { attemptId: attempt.id } }));
-      this.store.putAttempt(attempt);
-      this.store.putRun(run);
-      this.store.putTask(task);
-    });
-    return { task, attempt, run };
-  }
-
-  /**
-   * Execute a queued Run: keep consuming Host events and commit to the Store
-   * after every state change. `perTurn` is this turn's supplementary control
-   * instruction and never overrides the Chat prompt or Task.description.
-   */
-  async executeRun(
-    runId: string,
-    perTurn = ""
-  ): Promise<{ task?: Task; attempt?: Attempt; run: Run; events: EventEnvelope[] }> {
-    const run = this.store.getRun(runId);
-    if (!run) throw new Error(`run not found: ${runId}`);
-    if (run.status !== "queued") throw new Error(`run is not queued: ${run.status}`);
-    const attempt = run.attemptId ? this.store.getAttempt(run.attemptId) : undefined;
-    const task = attempt ? this.store.getTask(attempt.taskId) : undefined;
-    const session = this.store.getSession(run.sessionId);
-    if (!session) throw new Error(`session not found for run: ${run.id}`);
-    if (attempt && !task) throw new Error(`task not found for attempt: ${attempt.id}`);
-    const agent = this.store.getAgent(task?.agentId ?? session.agentId ?? "");
-    if (!agent) throw new Error(`agent not found for run: ${run.id}`);
-    // The running state must be persisted before the provider call; crash recovery can then tell a queued Run from one that started but lost contact.
-    run.status = "running";
-    if (attempt && task) {
-      attempt.status = "running";
-      task.status = "running";
-    }
-    await this.store.transaction(() => {
       this.store.appendEvent(envelope(run, run.nextSeq++, { type: "run.running", payload: {} }));
-      this.store.putRun(run);
-      if (attempt && task) {
-        this.store.putAttempt(attempt);
-        this.store.putTask(task);
-      }
+      this.store.putAgentRun(run);
+      this.store.putAgentSession(session);
     });
 
-    // By this point Chat and Task have converged into the same kind of Run; the difference is only the source of context and prompt.
-    const occurrence = attempt?.triggerOccurrenceId
-      ? this.store.findOccurrenceById(attempt.triggerOccurrenceId)
-      : undefined;
-    const context = composeContext({ agent, session, task, attempt, occurrence });
+    const context = composeContext({ agent, agentSession: session, agentRun: run });
+    const prompt = promptFromInput(run.input);
     const request: InvokeRequest = {
       invocationId: id("invoke"),
-      sessionId: session.id,
+      agentSessionId: session.id,
       runId: run.id,
-      prompt: task?.description ?? run.prompt ?? "",
+      prompt,
       workdir: agent.config.workdir ?? process.cwd(),
       context,
-      appendInstructions: renderPortableInstructions(context, perTurn),
+      appendInstructions: renderPortableInstructions(context),
       providerSession: session.providerSession,
       agentConfig: agent.config
     };
     run.invocationId = request.invocationId;
-    // The Host guarantees the message lifecycle and exactly-once terminal; the Core only projects and persists domain state.
+    this.store.putAgentRun(run);
     for await (const event of this.host.invoke(agent.adapterType, request)) {
       await this.store.transaction(() => {
         this.store.appendEvent(envelope(run, run.nextSeq++, event));
         if (event.type === "session.update" && event.payload.providerSession) {
-          // The provider session is side-channel state for resuming execution; it must not be mixed into user-visible message text.
           session.providerSession = event.payload.providerSession;
-          this.store.putSession(session);
+          this.store.putAgentSession(session);
         }
         if (isTerminal(event)) {
-          // A Run terminal projects onto the Attempt/Task at the same time and releases the session's single-active-Run lock.
           run.status = event.type === "run.finished" ? "completed" : event.type === "run.stopped" ? "cancelled" : "failed";
-          if (attempt && task) {
-            attempt.status = run.status;
-            task.status = run.status;
-            delete task.activeRunId;
-            this.store.putAttempt(attempt);
-            this.store.putTask(task);
-          } else {
-            delete session.activeRunId;
-            this.store.putSession(session);
-          }
+          delete session.activeRunId;
+          this.store.putAgentSession(session);
         }
-        this.store.putRun(run);
+        this.store.putAgentRun(run);
       });
     }
-    return { task, attempt, run, events: this.store.getEvents(run.id) };
+    return { run, events: this.store.getEvents(run.id) };
   }
 
-  /** Convenience API: materialize a Trigger, create the Attempt/Run, and wait for the provider to finish. */
-  async fire(triggerId: string, input: TriggerInput): Promise<unknown> {
-    const created = await this.materializeTrigger(triggerId, input);
-    if (created.deduplicated) return created;
-    const queued = await this.queueTask(created.task.id, {
-      occurrenceId: created.occurrence.id,
-      sourceType: created.occurrence.kind,
-      sourceId: created.occurrence.externalEventId
-    });
-    return { ...created, result: await this.executeRun(queued.run.id) };
-  }
-
-  /** Convenience API: create a new Attempt for an existing Task and run this turn's supplement as control instructions. */
-  async continueTask(
-    taskId: string,
-    { sourceType = "comment", sourceId, instructions = "" }: QueueTaskInput & { instructions?: string } = {}
-  ): Promise<unknown> {
-    const queued = await this.queueTask(taskId, { sourceType, sourceId });
-    return this.executeRun(queued.run.id, instructions);
-  }
-
-  /** Convenience API: queue and immediately execute a Chat turn. The daemon usually splits this into separate queue/execute calls. */
-  async sendChat(sessionId: string, prompt: string, instructions = ""): Promise<unknown> {
-    const queued = await this.queueChatTurn(sessionId, prompt);
-    return this.executeRun(queued.run.id, instructions);
-  }
-
-  /**
-   * Force a Run into a terminal state outside the provider stream, e.g. on
-   * daemon restart or a background execution failure. A Run already in a
-   * terminal state is left unchanged, so recovery can safely call this again.
-   */
-  async terminalizeRun(runId: string, event: CanonicalEvent): Promise<Run | undefined> {
+  async terminalizeRun(agentRunId: string, event: CanonicalEvent): Promise<AgentRun | undefined> {
     if (!isTerminal(event)) throw new TypeError("terminal event required");
-    const run = this.store.getRun(runId);
-    if (!run || ["completed", "failed", "cancelled"].includes(run.status)) return run;
-    const attempt = run.attemptId ? this.store.getAttempt(run.attemptId) : undefined;
-    const task = attempt ? this.store.getTask(attempt.taskId) : undefined;
-    const session = this.store.getSession(run.sessionId);
+    const run = this.store.getAgentRun(agentRunId);
+    if (!run || TERMINAL.has(run.status)) return run;
+    const session = this.store.getAgentSession(run.agentSessionId);
     run.status = event.type === "run.finished" ? "completed" : event.type === "run.stopped" ? "cancelled" : "failed";
     await this.store.transaction(() => {
       this.store.appendEvent(envelope(run, run.nextSeq++, event));
-      if (attempt && task) {
-        attempt.status = run.status;
-        task.status = run.status;
-        delete task.activeRunId;
-        this.store.putAttempt(attempt);
-        this.store.putTask(task);
-      } else if (session) {
+      if (session?.activeRunId === run.id) {
         delete session.activeRunId;
-        this.store.putSession(session);
+        this.store.putAgentSession(session);
       }
-      this.store.putRun(run);
+      this.store.putAgentRun(run);
     });
     return run;
   }
 
-  /**
-   * Request cancellation of a Run. A queued Run can be terminalized directly; a
-   * running Run only gets a cancel request sent to the Host, and its final state
-   * still follows the `run.stopped/error/finished` event that arrives afterwards.
-   */
-  async cancelRun(runId: string, reason = "cancelled"): Promise<{ cancelled: boolean; status: Run["status"] }> {
-    const run = this.store.getRun(runId);
-    if (!run) throw new Error(`run not found: ${runId}`);
-    if (["completed", "failed", "cancelled"].includes(run.status)) return { cancelled: false, status: run.status };
+  async cancelRun(agentRunId: string, reason = "cancelled"): Promise<{ cancelled: boolean; status: AgentRun["status"] }> {
+    const run = this.store.getAgentRun(agentRunId);
+    if (!run) throw new Error(`agent run not found: ${agentRunId}`);
+    if (TERMINAL.has(run.status)) return { cancelled: false, status: run.status };
     if (run.status === "queued") {
-      await this.terminalizeRun(runId, { type: "run.stopped", payload: { reason } });
+      await this.terminalizeRun(run.id, { type: "run.stopped", payload: { reason } });
       return { cancelled: true, status: "cancelled" };
     }
-    if (!run.invocationId) throw new Error(`running run has no invocationId: ${run.id}`);
+    if (!run.invocationId) throw new Error(`running agent run has no invocationId: ${run.id}`);
     const outcome = await this.host.cancel(run.invocationId, reason);
     return {
       cancelled: typeof outcome === "boolean" ? outcome : outcome.cancelled === true,
       status: run.status
     };
   }
+}
+
+function validateSubmission(input: SubmitAgentRunInput): void {
+  if (!/^[a-z][a-z0-9._-]{0,63}$/.test(input.namespace)) throw new Error("invalid namespace");
+  if (!input.agentId || !input.sessionKey.startsWith("v1/")) throw new Error("agentId and canonical sessionKey are required");
+  if (!input.trigger?.kind || !input.trigger.occurrenceId) throw new Error("trigger kind and occurrenceId are required");
+  if (!input.input || Array.isArray(input.input)) throw new Error("input must be an object");
+}
+
+function hashCanonical(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(sortValue(value))).digest("hex");
+}
+
+function sortValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, sortValue(nested)]));
+  }
+  return value;
+}
+
+function promptFromInput(input: Record<string, unknown>): string {
+  for (const key of ["prompt", "instruction", "description"]) {
+    if (typeof input[key] === "string" && input[key].trim()) return input[key].trim();
+  }
+  return JSON.stringify(input);
 }

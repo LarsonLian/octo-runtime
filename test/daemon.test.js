@@ -8,25 +8,26 @@ import { HarnessEngine, SqliteStore } from "@mininglamp-oss/octo-harness-core";
 import { HarnessDaemon } from "@mininglamp-oss/octo-harness-daemon";
 import { testAdapter } from "./fixtures/test-adapter.js";
 
-test("daemon recovery queues a materialized task that has no run", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "octo-harness-orphan-test-"));
+test("daemon recovers queued AgentRuns and terminalizes orphaned running runs", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "octo-harness-recovery-"));
   try {
     const store = SqliteStore.open(join(directory, "state.db"));
     const host = new AdapterHost(); host.register(testAdapter);
     const engine = new HarnessEngine({ store, host });
     const agent = await engine.registerAgent({ name: "test", adapterType: "test" });
-    const trigger = await engine.createTrigger({ kind: "manual", agentId: agent.id, task: { title: "T", description: "Do T" } });
-    const created = await engine.materializeTrigger(trigger.id, { externalEventId: "before-crash" });
-    assert.equal(created.task.activeRunId, undefined);
-    const daemon = new HarnessDaemon({ engine, store }); await daemon.recover();
-    const runId = store.getTask(created.task.id).activeRunId;
-    assert.ok(runId); assert.equal((await daemon.waitForRun(runId)).run.status, "completed"); daemon.stop();
-    store.close();
+    const queued = await engine.submitAgentRun({
+      namespace: "loop", agentId: agent.id, sessionKey: "v1/task/task-1",
+      trigger: { kind: "loop.task.ready", occurrenceId: "task-event/e-1" }, input: { prompt: "run" }
+    });
+    const daemon = new HarnessDaemon({ engine, store });
+    await daemon.recover();
+    assert.equal((await daemon.waitForRun(queued.agentRun.id)).run.status, "completed");
+    daemon.stop(); store.close();
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test("daemon ACKs durable work, deduplicates triggers, and continues one task session", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "octo-harness-store-test-"));
+test("daemon deduplicates occurrences and executes one session in run_no order", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "octo-harness-fifo-"));
   try {
     const file = join(directory, "state.db");
     const store = SqliteStore.open(file);
@@ -34,38 +35,28 @@ test("daemon ACKs durable work, deduplicates triggers, and continues one task se
     const engine = new HarnessEngine({ store, host });
     const daemon = new HarnessDaemon({ engine, store });
     const agent = await engine.registerAgent({ name: "test", adapterType: "test" });
-    const trigger = await engine.createTrigger({ kind: "manual", agentId: agent.id, task: { title: "T", description: "Do T" } });
-    const ack = await daemon.submitTrigger(trigger.id, { externalEventId: "event-1" });
-    assert.equal(ack.accepted, true);
-    const first = await daemon.waitForRun(ack.runId);
-    assert.equal(first.run.status, "completed");
-    const duplicate = await daemon.submitTrigger(trigger.id, { externalEventId: "event-1" });
+    const base = { namespace: "im", agentId: agent.id, sessionKey: "v1/octo/ep-1/group/g-1" };
+    const first = await daemon.submitAgentRun({
+      ...base, trigger: { kind: "im.message", occurrenceId: "message/m-1" }, input: { prompt: "one" }
+    });
+    const second = await daemon.submitAgentRun({
+      ...base, trigger: { kind: "im.message", occurrenceId: "message/m-2" }, input: { prompt: "two" }
+    });
+    const duplicate = await daemon.submitAgentRun({
+      ...base, trigger: { kind: "im.message", occurrenceId: "message/m-1" }, input: { prompt: "one" }
+    });
     assert.equal(duplicate.deduplicated, true);
-
-    const eventTrigger = await engine.createTrigger({ kind: "event", eventType: "repo.changed", filter: { branch: "main" }, agentId: agent.id, task: { title: "Event", description: "Handle event" } });
-    assert.equal((await daemon.ingestEvent({ eventType: "repo.changed", externalEventId: "change-ignored", payload: { branch: "dev" } })).length, 0);
-    const eventAcks = await daemon.ingestEvent({ eventType: "repo.changed", externalEventId: "change-1", payload: { branch: "main" } });
-    assert.equal(eventAcks.length, 1);
-    await daemon.waitForRun(eventAcks[0].runId);
-
-    const chat = await engine.createChatSession({ agentId: agent.id, title: "Chat" });
-    const chatOne = await daemon.submitChat(chat.id, "hello"); await daemon.waitForRun(chatOne.runId);
-    const chatTwo = await daemon.submitChat(chat.id, "continue"); await daemon.waitForRun(chatTwo.runId);
-    assert.equal(store.getSession(chat.id).providerSession.sessionId, `test:${chat.id}`);
-    assert.equal(store.getRun(chatOne.runId).sessionId, store.getRun(chatTwo.runId).sessionId);
-
-    const continued = await daemon.continueTask(ack.taskId, { sourceType: "comment", sourceId: "comment-1", instructions: "continue" });
-    await daemon.waitForRun(continued.runId);
-    const attempts = store.listAttemptsByTask(ack.taskId);
-    assert.equal(attempts.length, 2);
-    assert.equal(new Set(attempts.map(item => store.getRun(item.runId).sessionId)).size, 1);
-    daemon.stop();
-    store.close();
+    await Promise.all([daemon.waitForRun(first.agentRunId), daemon.waitForRun(second.agentRunId)]);
+    assert.deepEqual(
+      store.listAgentRuns().sort((a, b) => a.runNo - b.runNo).map(run => [run.runNo, run.status]),
+      [[1, "completed"], [2, "completed"]]
+    );
+    assert.equal(new Set(store.listAgentRuns().map(run => run.agentSessionId)).size, 1);
+    daemon.stop(); store.close();
 
     const reopened = SqliteStore.open(file);
-    assert.equal(reopened.listTasks().length, 2);
-    assert.equal(reopened.listRuns().length, 5);
-    assert.equal(reopened.getEvents(continued.runId).at(-1).type, "run.finished");
+    assert.equal(reopened.listAgentSessions().length, 1);
+    assert.equal(reopened.listAgentRuns().length, 2);
     reopened.close();
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

@@ -4,623 +4,135 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Aily 多触发机制与 Octo Harness 统一 Blueprint</title>
+  <title>Aily 触发研究与 Octo 统一 AgentRun 架构</title>
   <style>
     :root {
-      --page: #eef1f4;
-      --surface: #ffffff;
-      --surface-alt: #f7f9fb;
-      --ink: #172033;
-      --muted: #58657a;
-      --line: #d6dce5;
-      --strong-line: #9aa7b8;
-      --nav: #111827;
-      --nav-ink: #f8fafc;
-      --blue: #2563eb;
-      --blue-soft: #dbeafe;
-      --green: #15803d;
-      --green-soft: #dcfce7;
-      --orange: #c2410c;
-      --orange-soft: #ffedd5;
-      --red: #b91c1c;
-      --red-soft: #fee2e2;
-      --purple: #6d28d9;
-      --purple-soft: #ede9fe;
-      --code: #101827;
-      --code-ink: #e2e8f0;
+      --page:#eef1f4; --paper:#fff; --ink:#172033; --muted:#5d6878;
+      --line:#d5dae1; --accent:#0f766e; --accent-soft:#dff4f0;
+      --business:#8a4b08; --runtime:#1d4ed8; --code:#101827; --code-ink:#e5e7eb;
     }
-
-    @media (prefers-color-scheme: dark) {
+    @media (prefers-color-scheme:dark) {
       :root {
-        --page: #0b1018;
-        --surface: #111827;
-        --surface-alt: #151e2d;
-        --ink: #edf2f7;
-        --muted: #a9b4c4;
-        --line: #334155;
-        --strong-line: #64748b;
-        --nav: #080d14;
-        --nav-ink: #f8fafc;
-        --blue: #60a5fa;
-        --blue-soft: #172d4d;
-        --green: #4ade80;
-        --green-soft: #153c2a;
-        --orange: #fb923c;
-        --orange-soft: #482719;
-        --red: #f87171;
-        --red-soft: #482021;
-        --purple: #c4b5fd;
-        --purple-soft: #2e2450;
-        --code: #050912;
-        --code-ink: #e2e8f0;
+        --page:#0c1118; --paper:#121923; --ink:#edf2f7; --muted:#aab4c3;
+        --line:#34404f; --accent:#5eead4; --accent-soft:#153c38;
+        --business:#fdba74; --runtime:#93c5fd; --code:#080d14; --code-ink:#e5e7eb;
       }
     }
-
-    * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
-    body {
-      margin: 0;
-      background: var(--page);
-      color: var(--ink);
-      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-      font-size: 16px;
-      line-height: 1.62;
-      letter-spacing: 0;
-    }
-    a { color: var(--blue); text-underline-offset: 3px; }
-    code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
-    code { font-size: 0.92em; }
-    .inner { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
-    .masthead { background: var(--nav); color: var(--nav-ink); border-bottom: 4px solid #22c55e; }
-    .masthead .inner { padding: 56px 0 48px; }
-    .eyebrow { margin: 0 0 12px; color: #86efac; font-size: 13px; font-weight: 700; text-transform: uppercase; }
-    h1, h2, h3 { margin: 0; letter-spacing: 0; line-height: 1.24; }
-    h1 { max-width: 900px; font-size: 42px; font-weight: 750; }
-    h2 { font-size: 28px; font-weight: 720; }
-    h3 { font-size: 18px; font-weight: 700; }
-    .lead { max-width: 900px; margin: 18px 0 0; color: #cbd5e1; font-size: 18px; }
-    .meta { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 28px; color: #94a3b8; font-size: 13px; }
-    .meta a { color: #bfdbfe; }
-
-    .toc { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--surface) 94%, transparent); border-bottom: 1px solid var(--line); backdrop-filter: blur(12px); }
-    .toc .inner { display: flex; gap: 26px; overflow-x: auto; padding: 12px 0; scrollbar-width: thin; }
-    .toc a { flex: 0 0 auto; color: var(--muted); font-size: 13px; font-weight: 650; text-decoration: none; }
-    .toc a:hover, .toc a:focus-visible { color: var(--ink); }
-
-    .band { background: var(--surface); border-bottom: 1px solid var(--line); }
-    .band.alt { background: var(--surface-alt); }
-    .band .inner { padding: 54px 0; }
-    .section-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 430px); gap: 28px; align-items: end; margin-bottom: 28px; }
-    .section-head p { margin: 0; color: var(--muted); }
-    .kicker { display: block; margin-bottom: 8px; color: var(--blue); font-size: 12px; font-weight: 750; text-transform: uppercase; }
-
-    .decision-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-    .decision { min-height: 150px; padding: 22px; background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--blue); border-radius: 6px; }
-    .decision:nth-child(2) { border-top-color: var(--green); }
-    .decision:nth-child(3) { border-top-color: var(--orange); }
-    .decision strong { display: block; margin-bottom: 10px; font-size: 18px; }
-    .decision p { margin: 0; color: var(--muted); }
-
-    .equation { margin: 28px 0 0; padding: 22px 24px; background: var(--code); color: var(--code-ink); border-radius: 6px; overflow-x: auto; white-space: nowrap; font-size: 15px; }
-    .equation b { color: #86efac; }
-
-    .diagram-frame { margin: 0; background: #f8fafc; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-    .diagram-frame img { display: block; width: 100%; height: auto; }
-    .diagram-frame figcaption { padding: 12px 16px; background: var(--surface); color: var(--muted); border-top: 1px solid var(--line); font-size: 13px; }
-
-    .axis-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 28px; }
-    .axis { padding: 18px; border-left: 4px solid var(--strong-line); background: var(--surface); }
-    .axis:nth-child(1) { border-left-color: var(--orange); }
-    .axis:nth-child(2) { border-left-color: var(--green); }
-    .axis:nth-child(3) { border-left-color: var(--blue); }
-    .axis:nth-child(4) { border-left-color: var(--purple); }
-    .axis p { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
-
-    .flow-picker { display: flex; flex-wrap: wrap; gap: 0; margin-bottom: 24px; border-bottom: 1px solid var(--line); }
-    .flow-picker button { appearance: none; min-height: 44px; padding: 10px 16px; color: var(--muted); background: transparent; border: 0; border-bottom: 3px solid transparent; font: inherit; font-size: 14px; font-weight: 680; cursor: pointer; }
-    .flow-picker button[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--blue); }
-    .flow-picker button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
-    .flow-detail { display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(0, 2.2fr); gap: 32px; align-items: start; }
-    .flow-summary { padding: 22px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
-    .flow-summary p { margin: 10px 0 0; color: var(--muted); }
-    .flow-summary dl { margin: 18px 0 0; }
-    .flow-summary dt { color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; }
-    .flow-summary dd { margin: 2px 0 13px; }
-    .step-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; counter-reset: flow-step; }
-    .step-list li { position: relative; min-height: 122px; padding: 18px 16px 16px 48px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; counter-increment: flow-step; }
-    .step-list li::before { content: counter(flow-step); position: absolute; top: 17px; left: 16px; display: grid; width: 24px; height: 24px; place-items: center; color: var(--nav-ink); background: var(--nav); border-radius: 50%; font-size: 12px; font-weight: 700; }
-    .step-list strong { display: block; margin-bottom: 6px; }
-    .step-list span { color: var(--muted); font-size: 14px; }
-
-    .table-wrap { overflow-x: auto; border-top: 1px solid var(--line); }
-    table { width: 100%; border-collapse: collapse; min-width: 860px; }
-    th, td { padding: 14px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
-    th { color: var(--muted); background: var(--surface-alt); font-size: 12px; font-weight: 750; text-transform: uppercase; }
-    td { font-size: 14px; }
-    td:first-child { font-weight: 700; }
-    .state { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
-    .verified { color: var(--green); background: var(--green-soft); }
-    .inferred { color: var(--orange); background: var(--orange-soft); }
-    .gap { color: var(--red); background: var(--red-soft); }
-
-    .surface-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
-    .surface-panel { padding: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
-    .surface-panel h3 { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    .surface-panel ul { margin: 16px 0 0; padding-left: 20px; color: var(--muted); }
-    .surface-panel li + li { margin-top: 8px; }
-    .not-equal { margin-top: 22px; padding: 18px 20px; border-left: 4px solid var(--red); background: var(--red-soft); }
-    .not-equal strong { color: var(--red); }
-
-    .runtime-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 24px; }
-    .metric { padding: 16px; background: var(--surface); border-bottom: 3px solid var(--line); }
-    .metric span { display: block; color: var(--muted); font-size: 12px; text-transform: uppercase; }
-    .metric strong { display: block; margin-top: 4px; font-size: 20px; }
-
-    .blueprint { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-    .blueprint article { padding: 22px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
-    .blueprint article:nth-child(1), .blueprint article:nth-child(4) { border-top: 4px solid var(--orange); }
-    .blueprint article:nth-child(2), .blueprint article:nth-child(5) { border-top: 4px solid var(--blue); }
-    .blueprint article:nth-child(3), .blueprint article:nth-child(6) { border-top: 4px solid var(--green); }
-    .blueprint p { margin: 10px 0 0; color: var(--muted); font-size: 14px; }
-    pre { margin: 22px 0 0; padding: 22px; background: var(--code); color: var(--code-ink); border-radius: 6px; overflow: auto; font-size: 13px; line-height: 1.55; }
-
-    .roadmap { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-    .phase { padding: 22px; border-right: 1px solid var(--line); }
-    .phase:last-child { border-right: 0; }
-    .phase b { display: block; color: var(--blue); font-size: 12px; text-transform: uppercase; }
-    .phase h3 { margin-top: 8px; }
-    .phase p { margin: 10px 0 0; color: var(--muted); font-size: 14px; }
-
-    .review-box { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 22px; }
-    .review-box section { padding: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
-    .review-box ul { margin: 16px 0 0; padding-left: 22px; }
-    .review-box li + li { margin-top: 9px; }
-    .review-box .approve { border-top: 4px solid var(--green); }
-    .review-box .boundary { border-top: 4px solid var(--orange); }
-
-    .evidence-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 28px; margin: 24px 0 0; padding: 0; list-style: none; }
-    .evidence-list li { padding-top: 12px; border-top: 1px solid var(--line); }
-    .evidence-list code { display: block; margin-bottom: 5px; overflow-wrap: anywhere; color: var(--blue); }
-    .evidence-list span { color: var(--muted); font-size: 13px; }
-    footer { padding: 28px 0 44px; color: var(--muted); font-size: 13px; }
-
-    @media (max-width: 900px) {
-      h1 { font-size: 34px; }
-      .section-head, .flow-detail, .review-box { grid-template-columns: 1fr; }
-      .decision-grid, .axis-grid, .blueprint { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .step-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .runtime-strip, .roadmap { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .phase:nth-child(2) { border-right: 0; }
-      .phase:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
-    }
-
-    @media (max-width: 620px) {
-      .inner { width: min(100% - 24px, 1180px); }
-      .masthead .inner { padding: 38px 0 34px; }
-      h1 { font-size: 29px; }
-      h2 { font-size: 24px; }
-      .lead { font-size: 16px; }
-      .band .inner { padding: 40px 0; }
-      .decision-grid, .axis-grid, .step-list, .surface-layout, .runtime-strip, .blueprint, .roadmap, .evidence-list { grid-template-columns: 1fr; }
-      .phase { border-right: 0; border-bottom: 1px solid var(--line); }
-      .phase:last-child { border-bottom: 0; }
-      .flow-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .flow-picker button { border-bottom-width: 2px; }
-      .diagram-frame { overflow-x: auto; }
-      .diagram-frame img { width: 900px; max-width: none; }
-    }
-
-    @media print {
-      :root { --page: #ffffff; --surface: #ffffff; --surface-alt: #f8fafc; --ink: #111827; --muted: #475569; --line: #cbd5e1; }
-      .toc, .flow-picker { display: none; }
-      .masthead { background: #111827 !important; print-color-adjust: exact; }
-      .band .inner { padding: 34px 0; }
-      .diagram-frame { break-inside: avoid; }
-      article, .decision, .surface-panel, .review-box section { break-inside: avoid; }
-    }
+    *{box-sizing:border-box} html{scroll-behavior:smooth}
+    body{margin:0;background:var(--page);color:var(--ink);font:15px/1.7 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    header{background:#111827;color:#f8fafc;border-bottom:4px solid var(--accent);padding:52px 24px 44px}
+    header>div,main{max-width:1120px;margin:auto}
+    .eyebrow{font:700 12px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;text-transform:uppercase;color:#99f6e4}
+    h1{font-size:clamp(34px,5vw,62px);line-height:1.08;margin:14px 0 18px;max-width:900px;letter-spacing:0}
+    header p{max-width:820px;color:#d1d5db;font-size:18px}
+    main{background:var(--paper);border-left:1px solid var(--line);border-right:1px solid var(--line);padding:44px 48px 64px}
+    section{padding:28px 0;border-top:1px solid var(--line)}
+    section:first-child{border-top:0;padding-top:0}
+    h2{font-size:26px;line-height:1.25;margin:0 0 12px;letter-spacing:0}
+    h3{font-size:17px;margin:0 0 8px;letter-spacing:0}
+    p{margin:8px 0 14px}
+    .lead{font-size:18px;max-width:850px}
+    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0}
+    article{border:1px solid var(--line);border-radius:6px;padding:18px;background:var(--paper)}
+    .owner{font:700 11px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--accent);text-transform:uppercase}
+    table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+    th,td{padding:12px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+    th{font-size:12px;text-transform:uppercase;color:var(--muted)}
+    code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}
+    pre{overflow:auto;background:var(--code);color:var(--code-ink);padding:18px;border-radius:6px;line-height:1.55}
+    .callout{border-left:4px solid var(--accent);padding:12px 16px;background:var(--accent-soft);margin:18px 0}
+    .business{color:var(--business)} .runtime{color:var(--runtime)}
+    footer{max-width:1120px;margin:0 auto;padding:22px 24px 40px;color:var(--muted)}
+    @media(max-width:760px){main{padding:30px 20px}.grid{grid-template-columns:1fr}table{display:block;overflow:auto}header{padding:40px 20px}}
+    @media print{body{background:#fff}header{background:#fff;color:#111;border-bottom:2px solid #111}header p,.eyebrow{color:#333}main{border:0;padding:24px 0}}
   </style>
 </head>
 <body>
-  <header class="masthead">
-    <div class="inner">
-      <p class="eyebrow">Architecture Review / 方案评审</p>
-      <h1>Aily 多触发机制与 Octo Harness 统一 Blueprint</h1>
-      <p class="lead">分析 Chat、Task、Auto、Lark Event、Webhook 与 Manual Run 如何进入同一执行链，并给出 Octo Harness 演进为 UI-Agent 高可用协作网络的边界和落地顺序。</p>
-      <div class="meta">
-        <span>证据版本：Aily runtime 0.1.54</span>
-        <span>检查日期：2026-08-30</span>
-        <span>范围：本机 CLI / Gateway API 类型 / Runtime 状态 / Octo Harness 源码</span>
-        <a href="assets/11-aily-trigger-blueprint.svg">打开独立 SVG 架构图</a>
-      </div>
+<header>
+  <div>
+    <div class="eyebrow">Research refresh / target architecture</div>
+    <h1>Aily 触发研究与 Octo 统一 AgentRun 架构</h1>
+    <p>保留 Aily 多入口、任务协作与 provider resume 的研究证据；Octo 的目标定义直接统一为 AgentSession / AgentRun，业务调度不进入 Engine Worker 或 Harness。</p>
+  </div>
+</header>
+<main>
+  <section>
+    <h2>结论</h2>
+    <p class="lead">Aily 展示了 manual、event、schedule 与 IM 等入口可以驱动长期工作，也说明业务 Task 与本地 provider invocation 不是同一个对象。Octo 不复制 Aily 的 Task Run / Session Run 多层状态机，而是在 Worker 中保留一个执行实体 <strong>AgentRun</strong>。</p>
+    <div class="callout"><strong>统一调用：</strong>业务服务提交 <code>namespace + agent_id + session_key + trigger_occurrence_id + input</code>。Worker 解析 AgentSession、排队和 lease；Harness 只执行。</div>
+  </section>
+
+  <section>
+    <h2>三层所有权</h2>
+    <div class="grid">
+      <article><div class="owner business">Business</div><h3>Loop / AutoPilot / Webhook / IM</h3><p>拥有触发器、父子任务、业务 attempt、投递策略和业务状态。每次应执行的事实由它们决定。</p></article>
+      <article><div class="owner">Control</div><h3>Agent Worker</h3><p>拥有 Agent、revision、AgentSession、AgentRun、状态机、lease、fencing 与 provider resume binding。</p></article>
+      <article><div class="owner runtime">Runtime</div><h3>Octo Harness</h3><p>拥有 invocation、provider 子进程、事件翻译、可靠 outbox；不拥有业务调度。</p></article>
     </div>
-  </header>
+  </section>
 
-  <nav class="toc" aria-label="文档目录">
-    <div class="inner">
-      <a href="#decision">核心结论</a>
-      <a href="#architecture">总图</a>
-      <a href="#flows">触发链路</a>
-      <a href="#surface">Surface</a>
-      <a href="#compare">Aily vs Octo Harness</a>
-      <a href="#blueprint">目标 Blueprint</a>
-      <a href="#roadmap">落地路线</a>
-      <a href="#review">评审决策</a>
-      <a href="#evidence">证据边界</a>
-    </div>
-  </nav>
+  <section>
+    <h2>Aily 概念如何落到目标架构</h2>
+    <table>
+      <thead><tr><th>Aily 研究对象</th><th>保留的结论</th><th>Octo 目标定义</th></tr></thead>
+      <tbody>
+        <tr><td>Trigger / Auto</td><td>入口规则和 occurrence 必须 durable</td><td>规则与 occurrence 留在业务 namespace；命中后提交 AgentRun</td></tr>
+        <tr><td>Task / Task Run</td><td>长期交付与某次执行不可混同</td><td>Loop 持有 Task/Attempt；每次尝试引用一个 Worker AgentRun</td></tr>
+        <tr><td>Session Run</td><td>每轮消息、工具和终态需要稳定归属</td><td>统一为 AgentRun，不再建立第二套 SessionRun</td></tr>
+        <tr><td>Invocation</td><td>本地调用要可取消、可观测</td><td>Harness 本地 invocation；不是业务 Run</td></tr>
+        <tr><td>Provider Session</td><td>恢复标识由 provider 定义</td><td>opaque 数据保存在 Worker AgentSession</td></tr>
+      </tbody>
+    </table>
+  </section>
 
-  <main>
-    <section id="decision" class="band">
-      <div class="inner">
-        <div class="section-head">
-          <div><span class="kicker">Executive summary</span><h2>先把四个概念拆开</h2></div>
-          <p>多数架构争论来自把“谁触发”“产生什么工作”“在哪里执行”“结果发给谁”混在同一层。Aily 的实现已经把这些维度拆开。</p>
-        </div>
-        <div class="decision-grid">
-          <article class="decision">
-            <strong>Auto 不是第三种执行引擎</strong>
-            <p>Auto 保存 instruction、assignee、Trigger 与投递策略。一次命中产生 <code>AutoTaskRun.taskId</code>，随后走 Task 执行链。</p>
-          </article>
-          <article class="decision">
-            <strong>Chat / Task 才是工作模型</strong>
-            <p>Chat 面向低延迟多轮交互；Task 面向持久异步工作、依赖、继续执行与重试。二者最终都收敛为 Run。</p>
-          </article>
-          <article class="decision">
-            <strong>Transport 不属于 Trigger</strong>
-            <p>云端经 WSS 下发 daemon，daemon 再经 stdio JSON-RPC 调 Adapter Host。改成本地 stdio 或远端 WSS，不应改变 Chat / Task 领域语义。</p>
-          </article>
-        </div>
-        <div class="equation" aria-label="统一执行公式"><b>TriggerSource</b> → TriggerEnvelope → <b>Chat | Task</b> → Run → RuntimeRoute → Adapter → Canonical Events → Delivery</div>
-      </div>
-    </section>
+  <section>
+    <h2>身份与去重</h2>
+    <pre><code>AgentSession identity:
+  (namespace, agent_id, session_key)
 
-    <section id="architecture" class="band alt">
-      <div class="inner">
-        <div class="section-head">
-          <div><span class="kicker">End-to-end view</span><h2>多入口，一条执行主干</h2></div>
-          <p>图中实线是本机发行包或 runtime 状态可直接验证的部分；虚线是由公开接口形状和 downlink 状态推断的云端内部步骤。</p>
-        </div>
-        <figure class="diagram-frame">
-          <img src="assets/11-aily-trigger-blueprint.svg" alt="Aily 从 Chat、Task、Auto、Webhook 到 Gateway、daemon、Adapter Host 和 Provider 的完整架构流程">
-          <figcaption>Auto / Webhook 只改变入口和上下文，不应分叉 provider 执行核心。事件回程和用户投递是独立平面。</figcaption>
-        </figure>
-        <div class="axis-grid">
-          <article class="axis"><h3>Trigger Source</h3><p>Chat 消息、Task 操作、Scheduler、Lark Event、Webhook、Manual。回答“为什么现在执行”。</p></article>
-          <article class="axis"><h3>Work Container</h3><p>Chat Session 或 Task。回答“这项工作如何持久、继续、协作和展示”。</p></article>
-          <article class="axis"><h3>Run / Invocation</h3><p>一次可排队、取消、终态化的执行。Run 属于产品域，Invocation 属于 runtime 调用域。</p></article>
-          <article class="axis"><h3>Delivery Plan</h3><p>Chat reply、Task comment/status、Auto DM/group/condition。回答“结果由谁、向哪里交付”。</p></article>
-        </div>
-      </div>
-    </section>
+AgentRun occurrence identity:
+  (agent_session_id, trigger_occurrence_id)
 
-    <section id="flows" class="band">
-      <div class="inner">
-        <div class="section-head">
-          <div><span class="kicker">Trigger walkthrough</span><h2>不同触发方式的真实链路</h2></div>
-          <p>选择入口查看它如何创建工作、如何下发，以及终态在哪里形成。这里刻意不把 Webhook 当成新的 Session 类型。</p>
-        </div>
-        <div class="flow-picker" role="group" aria-label="选择触发方式">
-          <button type="button" data-flow="chat" aria-pressed="true">Chat</button>
-          <button type="button" data-flow="task" aria-pressed="false">Task</button>
-          <button type="button" data-flow="schedule" aria-pressed="false">Auto 定时</button>
-          <button type="button" data-flow="event" aria-pressed="false">Lark Event</button>
-          <button type="button" data-flow="webhook" aria-pressed="false">Webhook</button>
-          <button type="button" data-flow="manual" aria-pressed="false">Manual Run</button>
-        </div>
-        <div class="flow-detail" aria-live="polite">
-          <aside class="flow-summary">
-            <h3 id="flow-title">Chat</h3>
-            <p id="flow-purpose">用户发起的一轮交互，低延迟追加到长期 Chat Session。</p>
-            <dl>
-              <dt>工作模型</dt><dd id="flow-work">Chat Session + Run</dd>
-              <dt>入口权威</dt><dd id="flow-owner">Workbench BFF / Gateway</dd>
-              <dt>关键边界</dt><dd id="flow-boundary">CLI 只发起并返回 ID，不等待回答。</dd>
-            </dl>
-          </aside>
-          <ol id="flow-steps" class="step-list"></ol>
-        </div>
+Examples:
+  im        + agent_1 + v1/octo/endpoint_1/group/group_9
+  loop      + agent_1 + v1/task/task_42
+  autopilot + agent_1 + v1/automation/auto_7/repo_main
+  webhook   + agent_1 + v1/source/hook_3/repo_main</code></pre>
+    <p><code>trigger_occurrence_id</code> 比抽象的 idempotency key 更具体：它表示真实发生的一次入口事件。相同 occurrence 与相同请求返回原 Run；同 ID 携带不同请求必须冲突。</p>
+  </section>
 
-        <div class="table-wrap" style="margin-top: 36px">
-          <table>
-            <thead><tr><th>入口</th><th>匹配位置</th><th>物化对象</th><th>手动触发</th><th>主要交付</th><th>本机证据</th></tr></thead>
-            <tbody>
-              <tr><td>Chat / IM</td><td>BFF / IM ingress</td><td>Chat Session + Run</td><td>直接 invoke / send</td><td>Session events / 回复</td><td><span class="state verified">已验证</span></td></tr>
-              <tr><td>Task</td><td>Task Service</td><td>Task + Run</td><td>create / continue</td><td>状态、评论、交互</td><td><span class="state verified">已验证</span></td></tr>
-              <tr><td>Auto Scheduler</td><td>Autopilot 服务端</td><td>AutoTaskRun → Task</td><td>允许 <code>auto run</code></td><td>DM / 群 / 条件投递</td><td><span class="state verified">已验证</span></td></tr>
-              <tr><td>Lark Event</td><td>飞书事件管线 + 条件 DSL</td><td>AutoTaskRun → Task</td><td>不允许合成 payload</td><td>DM / 群 / 条件投递</td><td><span class="state verified">已验证</span></td></tr>
-              <tr><td>Webhook</td><td>Autopilot Webhook ingress</td><td>推断为 AutoTaskRun → Task</td><td>独立 HTTP 调用</td><td>沿 Auto notifyConfig</td><td><span class="state inferred">接口可见</span></td></tr>
-              <tr><td>Manual Auto</td><td><code>RunAuto</code></td><td>返回 <code>taskId</code></td><td>Scheduler Auto only</td><td>沿 Auto notifyConfig</td><td><span class="state verified">已验证</span></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
+  <section>
+    <h2>状态不可机械复制</h2>
+    <table>
+      <thead><tr><th>状态机</th><th>示例</th><th>权威</th></tr></thead>
+      <tbody>
+        <tr><td>业务工作</td><td>todo / in progress / review / blocked / done</td><td>Loop 等业务服务</td></tr>
+        <tr><td>AgentRun</td><td>queued / leased / running / interacting / cancelling / terminal</td><td>Agent Worker</td></tr>
+        <tr><td>Invocation</td><td>accepted / executing / stopped</td><td>Harness</td></tr>
+        <tr><td>Delivery</td><td>pending / delivered / failed</td><td>Channel Gateway / delivery worker</td></tr>
+      </tbody>
+    </table>
+    <p>Run completed 可以把 Loop Task 投影成 in review；delivery failed 也不会反向把已完成的 AgentRun 改成 failed。</p>
+  </section>
 
-    <section id="surface" class="band alt">
-      <div class="inner">
-        <div class="section-head">
-          <div><span class="kicker">Command policy</span><h2>Surface 到底是什么</h2></div>
-          <p><code>AILY_CLI_SURFACE</code> 是命令注册与暴露策略，不是 UI 类型、Transport 类型，也不是 adapter capability。</p>
-        </div>
-        <div class="surface-layout">
-          <article class="surface-panel">
-            <h3><code>full</code><span class="state verified">宿主 / 管理面</span></h3>
-            <ul>
-              <li>包含 daemon、adapter、doctor、chat、auth 等本机管理和直接调试命令。</li>
-              <li>允许外部 command plugins；适合人类终端、宿主进程和运维诊断。</li>
-              <li><code>chat</code> 属于 full，因为它是外部控制客户端，不是给正在运行的 Agent 自己调用的工具。</li>
-            </ul>
-          </article>
-          <article class="surface-panel">
-            <h3><code>agent-lite</code><span class="state verified">Agent 工具面</span></h3>
-            <ul>
-              <li>暴露 task、auto、session、deliver、user-context 等受控业务命令。</li>
-              <li>每个可执行命令必须声明 <code>risk</code>、<code>stableOutput</code> 和 <code>requires</code>。</li>
-              <li>过滤 full-only 命令和外部 command plugins，缩小 Agent 可调用面。</li>
-            </ul>
-          </article>
-        </div>
-        <div class="not-equal"><strong>关键边界：</strong>Surface 决定“CLI 中哪些方法可见”；Capability 决定“某 adapter 能否实现某行为”；Transport 决定“消息从哪里到哪里”。三者不能合并成同一个枚举。</div>
-        <div class="runtime-strip">
-          <div class="metric"><span>Runtime</span><strong>0.1.54</strong></div>
-          <div class="metric"><span>Daemon</span><strong>Running</strong></div>
-          <div class="metric"><span>Gateway WSS</span><strong>Connected</strong></div>
-          <div class="metric"><span>Loaded adapters</span><strong>7</strong></div>
-        </div>
-      </div>
-    </section>
+  <section>
+    <h2>端到端时序</h2>
+    <pre><code>Business scheduler
+  -> Agent Worker: submit AgentRun
+  -> Worker DB: get/create AgentSession, dedupe occurrence, queue Run
+  -> Harness: run.start + lease/fencing + optional provider_session
+  -> Provider: start or resume
+  <- Harness: run.event(seq), session.update, terminal
+  <- Worker: durable ACK and authoritative state
+  <- Business: projection / delivery</code></pre>
+    <p>IM 与 schedule 的差异止于业务入口和最终 delivery。进入 Worker 后它们执行完全相同的 AgentRun 协议。</p>
+  </section>
 
-    <section id="compare" class="band">
-      <div class="inner">
-        <div class="section-head">
-          <div><span class="kicker">Gap analysis</span><h2>Aily 与 Octo Harness 当前差异</h2></div>
-          <p>Octo Harness 的领域骨架已经接近正确答案：Trigger → Occurrence → Task → Attempt → Run，Chat 直接形成 Run。差距集中在企业控制面和高可用执行面。</p>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>能力</th><th>Aily 本机可见设计</th><th>Octo Harness 当前实现</th><th>方案判断</th></tr></thead>
-            <tbody>
-              <tr><td>Chat / Task 建模</td><td>SessionType=Chat/Task；两类 Run 状态机</td><td>Session(chat/task)、Task、Attempt、Run 已分离</td><td><span class="state verified">基本一致</span></td></tr>
-              <tr><td>Auto 物化</td><td>Trigger 命中形成带 <code>taskId</code> 的 AutoTaskRun</td><td>TriggerOccurrence 原子创建 Task + task Session</td><td><span class="state verified">方向正确</span></td></tr>
-              <tr><td>Scheduler</td><td>云端 cron / interval / once，支持 idle pre-exec</td><td>daemon 进程内 <code>setInterval</code></td><td><span class="state gap">需服务化</span></td></tr>
-              <tr><td>Event / Webhook</td><td>Lark event DSL、文件过滤；Webhook 协议含 URL / method / secret / IP</td><td>调用方直接 <code>ingestEvent</code>，简单字段相等过滤</td><td><span class="state gap">缺 ingress</span></td></tr>
-              <tr><td>远端 Runtime</td><td>Gateway WSS、runtime heartbeat、downlink</td><td>单机 socket / 进程内 daemon</td><td><span class="state gap">需 Runtime Gateway</span></td></tr>
-              <tr><td>Adapter Host</td><td>单 Host 多 adapter；stdio JSON-RPC；heartbeat / invoke stream / cancel</td><td>Host + registry + NDJSON RPC，机制较轻</td><td><span class="state inferred">可演进复用</span></td></tr>
-              <tr><td>幂等与恢复</td><td>服务端任务与 Run、runtime 状态；具体 queue/lease 未包含在本机包</td><td><code>triggerId:externalEventId</code> 去重；单 writer JSON store</td><td><span class="state gap">需 DB + outbox</span></td></tr>
-              <tr><td>投递平面</td><td>Chat reply、Task 状态/评论、Auto notifyConfig；自环保护</td><td>只有 canonical events，无收件人/条件/渠道路由</td><td><span class="state gap">需独立 Delivery</span></td></tr>
-              <tr><td>命令治理</td><td>Surface + risk + stableOutput + requires</td><td>CLI 未建立细粒度 command policy</td><td><span class="state gap">需方法策略层</span></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <section id="blueprint" class="band alt">
-      <div class="inner">
-        <div class="section-head">
-          <div><span class="kicker">Target architecture</span><h2>建议的 Octo Harness 统一 Blueprint</h2></div>
-          <p>坚持“一个执行核心、两种工作容器、多种 Trigger Adapter、独立 Delivery Plane”。Buddy 类产品和本地 Codex 类产品只在入口、Transport 和 Surface 策略上不同。</p>
-        </div>
-        <div class="blueprint">
-          <article><h3>1. Edge / Gateway</h3><p>接收 UI、IM、OpenAPI、Webhook；完成用户身份、租户、速率限制和 request id。UI 远端走 HTTPS/WSS，本地控制器可走 stdio/socket。</p></article>
-          <article><h3>2. Trigger Service</h3><p>Scheduler、Lark Event、Webhook、Manual 都实现同一 <code>TriggerAdapter</code>，输出规范化 <code>TriggerEnvelope</code>，不直接调用模型。</p></article>
-          <article><h3>3. Work Orchestrator</h3><p>Chat 输入创建 Chat Run；Auto/Event/Webhook 创建 Task，再创建 Attempt/Run。用数据库事务和 outbox 保证“命中”和“排队”一致。</p></article>
-          <article><h3>4. Runtime Router</h3><p>根据 agent binding、runtime 在线状态、能力、数据位置和负载选择节点。下发必须携带 lease epoch / fencing token。</p></article>
-          <article><h3>5. Daemon + Adapter Host</h3><p>Daemon 管理本机资源和 invocation；Host 通过稳定 JSON-RPC 驱动多个 adapter；adapter capability 决定 session、tool、skill、append 等中间件。</p></article>
-          <article><h3>6. Event + Delivery</h3><p>事件先进入持久 event log，再由 Chat、Task、IM、Auto delivery projector 消费。投递失败不能回滚已完成的 Run。</p></article>
-        </div>
-        <pre aria-label="建议的触发信封 JSON 示例"><code>{
-  "eventId": "evt_01J...",             // 全局幂等键
-  "source": { "kind": "webhook", "triggerId": "trg_..." },
-  "actor": { "type": "user|system|agent", "id": "..." },
-  "scope": { "tenantId": "...", "workspaceId": "..." },
-  "target": { "workKind": "task", "agentId": "..." },
-  "payloadRef": "blob://encrypted/...", // 大 payload 不直接进队列
-  "deliveryContext": { "channel": "im", "sessionId": "..." },
-  "traceId": "trace_...",
-  "occurredAtMs": 1788067200000
-}</code></pre>
-      </div>
-    </section>
-
-    <section id="roadmap" class="band">
-      <div class="inner">
-        <div class="section-head">
-          <div><span class="kicker">Delivery plan</span><h2>建议落地顺序</h2></div>
-          <p>先锁定领域边界，再引入网络和 HA。直接从 WSS 开始，会把触发、执行、投递三类问题同时带进 daemon。</p>
-        </div>
-        <div class="roadmap">
-          <article class="phase"><b>Phase 0</b><h3>契约收敛</h3><p>定义 TriggerEnvelope、WorkKind、Run、Invocation、DeliveryPlan；补 command surface 与 capability 校验。</p></article>
-          <article class="phase"><b>Phase 1</b><h3>Runtime Gateway</h3><p>实现 runtime registry、WSS 双向 JSON-RPC、ACK/replay、heartbeat、断线重连和节点 draining。</p></article>
-          <article class="phase"><b>Phase 2</b><h3>Trigger Service</h3><p>把 interval 迁出 daemon；增加 cron、Webhook 签名/IP/重放防护、事件订阅和原子物化。</p></article>
-          <article class="phase"><b>Phase 3</b><h3>HA 与交付</h3><p>事务 DB、outbox、lease/fencing、DLQ、重试预算、审计日志、条件投递和多渠道 projector。</p></article>
-        </div>
-      </div>
-    </section>
-
-    <section id="review" class="band alt">
-      <div class="inner">
-        <div class="section-head">
-          <div><span class="kicker">Decision request</span><h2>本次评审建议拍板的事项</h2></div>
-          <p>这些决策一旦统一，后续 Buddy、IM Agent、本地 Codex 和远端 Runtime 可以共享同一套 blueprint，而不需要复制业务调度。</p>
-        </div>
-        <div class="review-box">
-          <section class="approve">
-            <h3>建议批准</h3>
-            <ul>
-              <li><strong>Auto / Event / Webhook 一律物化 Task</strong>，不新增 Auto Session 或 Webhook Run。</li>
-              <li><strong>Chat 直接创建 Session Run</strong>，保持低延迟与多轮历史语义。</li>
-              <li><strong>Run 与 Invocation 分离</strong>：Run 可重试，Invocation 是一次 runtime 尝试。</li>
-              <li><strong>Transport 可替换</strong>：本地 stdio/socket 与远端 WSS 共用领域契约。</li>
-              <li><strong>Delivery 独立</strong>：执行完成不等于用户已收到，二者分别终态化。</li>
-            </ul>
-          </section>
-          <section class="boundary">
-            <h3>暂不冒充已验证</h3>
-            <ul>
-              <li>Aily 云端内部具体使用何种消息队列、lease、fencing 与 outbox，本机发行包没有源码证据。</li>
-              <li>Webhook Trigger 已出现在 Gateway API 类型中，但 Aily CLI 0.1.54 的 <code>auto create</code> 只开放 cron / interval / event。</li>
-              <li>Octo Harness 当前 JSON Store 和进程内 timer 是 reference model，不能直接作为生产 HA 结论。</li>
-            </ul>
-          </section>
-        </div>
-      </div>
-    </section>
-
-    <section id="evidence" class="band">
-      <div class="inner">
-        <div class="section-head">
-          <div><span class="kicker">Evidence index</span><h2>证据来源与可信边界</h2></div>
-          <p>报告没有把本机看不到的云端实现写成事实。代码、IDL 与运行状态用于验证对外行为；内部队列步骤只做架构推断。</p>
-        </div>
-        <ul class="evidence-list">
-          <li><code>~/.aily-cli/current/js/dist/commands/chat.js</code><span>CreateSession / InvokeChat、fire-and-forget、session events。</span></li>
-          <li><code>~/.aily-cli/current/js/dist/commands/task/index.js</code><span>Task Run 状态由 daemon 围绕 worker 生命周期驱动。</span></li>
-          <li><code>~/.aily-cli/current/js/dist/commands/auto/create.js</code><span>Auto + initialTrigger、Scheduler/Lark Event、notifyConfig。</span></li>
-          <li><code>~/.aily-cli/current/js/dist/commands/auto/run.js</code><span>Manual Run 仅允许 cron / interval，event 不合成 payload。</span></li>
-          <li><code>~/.aily-cli/current/js/node_modules/@lark-harness/gateway-api/dist/__apis.d.ts</code><span>TriggerKind、WebhookTriggerSpec、AutoTaskRun.taskId、SessionType。</span></li>
-          <li><code>~/.aily-cli/current/js/dist/command-surface.js</code><span>full / agent-lite 过滤和 risk / stableOutput / requires 校验。</span></li>
-          <li><code>~/.aily-cli/current/js/node_modules/@lark-harness/adapter-host/dist/protocol.d.ts</code><span>daemon ↔ Host 的 stdio JSON-RPC 方法与 event notifications。</span></li>
-          <li><code>aily-cli doctor --json / daemon status --json</code><span>WSS connected、runtime 在线、Host READY、7 adapters。</span></li>
-          <li><code>octo-harness/packages/octo-harness-core/src/engine.ts</code><span>Trigger → Occurrence → Task → Attempt → Run 与 Chat Run。</span></li>
-          <li><code>octo-harness/packages/octo-harness-daemon/src/index.ts</code><span>当前单机 interval、event ingest、快速 ACK 和后台执行。</span></li>
-        </ul>
-      </div>
-    </section>
-  </main>
-
-  <footer>
-    <div class="inner">Octo Harness Architecture Review · 本文档面向方案评审，不替代生产容量测试、安全评估和云端服务内部设计说明。</div>
-  </footer>
-
-  <script>
-    const flowData = {
-      chat: {
-        title: "Chat",
-        purpose: "用户发起的一轮交互，低延迟追加到长期 Chat Session。",
-        work: "Chat Session + Run",
-        owner: "Workbench BFF / Gateway",
-        boundary: "CLI 只发起并返回 ID，不等待回答。",
-        steps: [
-          ["创建或校验 Session", "CreateSession 创建 WebP2P 会话；复用时先 GetSessionDetail。"],
-          ["提交用户消息", "InvokeChat 写入 inputMessage，返回 message ID 与可能的 run ID。"],
-          ["持久化 Run", "Gateway 将 Session(type=Chat) 与 Run 状态关联。"],
-          ["下发 Runtime", "根据 agent binding 选择在线 runtime，经 WSS downlink。"],
-          ["调用 Adapter", "daemon 经 stdio JSON-RPC 请求 Adapter Host invoke。"],
-          ["流式回程", "message/tool/run envelopes 写回；session events 查询结果。"]
-        ]
-      },
-      task: {
-        title: "Task",
-        purpose: "面向可追踪、可继续、可协作的持久异步工作。",
-        work: "Task + Run（attemptNo）",
-        owner: "Task Service",
-        boundary: "Task CLI 不直接 start/complete/fail Run；daemon 管状态迁移。",
-        steps: [
-          ["创建 Task", "CreateTask 写入描述、assignee、依赖、来源渠道和幂等 request id。"],
-          ["检查可运行性", "依赖未满足时保持 blocked；continuous Task 按 cadence 再次唤醒。"],
-          ["创建 Run", "服务端形成 runId、attemptNo 与 trigger source。"],
-          ["Daemon StartRun", "worker 启动前写入 sessionId / sessionRunId。"],
-          ["Agent 执行", "daemon 注入 workspace/task/run 环境并选择 adapter。"],
-          ["形成终态", "daemon 根据 worker 结果调用 CompleteRun / FailRun；submit 可结束任务。"]
-        ]
-      },
-      schedule: {
-        title: "Auto 定时",
-        purpose: "服务端按 cron、interval 或 once 规则触发自动任务。",
-        work: "AutoTaskRun → Task + Run",
-        owner: "Autopilot Scheduler",
-        boundary: "Auto 保存规则，不在 daemon 本地 setInterval。",
-        steps: [
-          ["创建 Auto", "CreateAuto 原子写入 instruction、assignee、initialTrigger 与 notifyConfig。"],
-          ["服务端计时", "SchedulerConfig 区分 cron / interval / once，并处理 active hours。"],
-          ["触发命中", "记录 triggerKind / triggerId / triggerAt。"],
-          ["物化 Task", "AutoTaskRun 返回 taskId，进入 Task 状态机。"],
-          ["Runtime 执行", "Gateway WSS → daemon → Adapter Host → provider。"],
-          ["条件投递", "结果按 sendToSelf、群 receivers、conditionDesc 投递；idle 模式可先执行后发送。"]
-        ]
-      },
-      event: {
-        title: "Lark Event",
-        purpose: "飞书事件管线匹配租户可用事件、对象范围和条件 DSL。",
-        work: "AutoTaskRun → Task + Run",
-        owner: "Autopilot Event Pipeline",
-        boundary: "Event Auto 不能用 auto run 手动伪造，因为缺少真实 payload。",
-        steps: [
-          ["发现事件", "ListSupportedEvents 返回租户当前可订阅的 IM、文档、Base 等事件。"],
-          ["配置过滤", "inner_im_event 使用 condition-group；文件事件绑定 target-file。"],
-          ["事件到达", "飞书事件管线进行授权、范围与条件匹配。"],
-          ["保留上下文", "事件 payload 与创建渠道 env 用于 Task prompt 和投递。"],
-          ["物化 Task", "匹配成功后沿 AutoTaskRun 进入 Task 执行。"],
-          ["交付结果", "执行事件与投递事件分离，失败可独立观测和重试。"]
-        ]
-      },
-      webhook: {
-        title: "Webhook",
-        purpose: "外部系统通过专用 URL 触发 Auto，适合非飞书事件源。",
-        work: "推断：AutoTaskRun → Task + Run",
-        owner: "Autopilot Webhook Ingress",
-        boundary: "协议已定义 URL / method / secret / allowedIps；CLI 0.1.54 未开放创建入口。",
-        steps: [
-          ["创建配置", "通过 GUI 或服务 API 建立 Webhook Trigger；当前 CLI 不支持。"],
-          ["接收 HTTP", "Webhook URL 接收外部 payload，并依据 method 和安全策略校验。"],
-          ["防重放", "目标实现应验证时间窗、签名、来源 IP 与 event id。"],
-          ["规范化事件", "生成 TriggerEnvelope，把大 payload 转为加密引用。"],
-          ["物化 Task", "依据 AutoTaskRun.taskId 结构推断进入统一 Task 链。"],
-          ["异步响应", "Ingress 快速 ACK；执行与投递结果通过查询或 callback 观察。"]
-        ]
-      },
-      manual: {
-        title: "Manual Run",
-        purpose: "用户点击立即运行或调用 RunAuto，绕过下一次调度时间。",
-        work: "AutoTaskRun(triggerKind=Manual) → Task",
-        owner: "Autopilot RunAuto",
-        boundary: "只允许 cron / interval Auto；Lark Event 无法手动合成输入。",
-        steps: [
-          ["提交 autoUid", "RunAuto 只需要 autoUid，可选 params / idleExec。"],
-          ["服务端校验", "Auto 必须可运行且属于 Scheduler 类。"],
-          ["标记来源", "Manual 是 Run 来源标记，不是长期 Trigger 配置。"],
-          ["返回 taskId", "调用快速返回被物化的 Task ID。"],
-          ["统一执行", "Task 经 WSS 下发本地 runtime，并调用选定 adapter。"],
-          ["沿用投递", "结果继续遵循该 Auto 已保存的 notifyConfig。"]
-        ]
-      }
-    };
-
-    const title = document.getElementById("flow-title");
-    const purpose = document.getElementById("flow-purpose");
-    const work = document.getElementById("flow-work");
-    const owner = document.getElementById("flow-owner");
-    const boundary = document.getElementById("flow-boundary");
-    const steps = document.getElementById("flow-steps");
-    const buttons = Array.from(document.querySelectorAll("[data-flow]"));
-
-    function renderFlow(key) {
-      const flow = flowData[key];
-      if (!flow) return;
-      title.textContent = flow.title;
-      purpose.textContent = flow.purpose;
-      work.textContent = flow.work;
-      owner.textContent = flow.owner;
-      boundary.textContent = flow.boundary;
-      steps.replaceChildren(...flow.steps.map(([heading, detail]) => {
-        const item = document.createElement("li");
-        const strong = document.createElement("strong");
-        const span = document.createElement("span");
-        strong.textContent = heading;
-        span.textContent = detail;
-        item.append(strong, span);
-        return item;
-      }));
-      for (const button of buttons) {
-        button.setAttribute("aria-pressed", String(button.dataset.flow === key));
-      }
-    }
-
-    for (const button of buttons) {
-      button.addEventListener("click", () => renderFlow(button.dataset.flow));
-    }
-    renderFlow("chat");
-  </script>
+  <section>
+    <h2>Reset</h2>
+    <p>Worker reset 增加 session generation/provider epoch、清空 provider session，并按策略取消旧 Run。下一次调用没有 resume ID，provider 创建新 thread/session，再由 <code>session.update</code> 回写。Harness 和业务服务都不自行拼接 provider thread ID。</p>
+  </section>
+</main>
+<footer>Octo Harness research note · unified AgentSession / AgentRun target model</footer>
 </body>
 </html>

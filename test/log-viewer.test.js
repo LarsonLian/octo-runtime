@@ -73,22 +73,21 @@ test("trace viewer is loopback-only and protects its read API with a fragment ca
   await assert.rejects(startLogViewer({ host: "0.0.0.0", query: async () => [] }), /loopback/);
 });
 
-test("Viewer joins explicit pre-Run WSS and ChatTurn evidence without pulling another Run", () => {
+test("Viewer joins explicit AgentRun transport evidence without pulling another Run", () => {
   const records = [
     record("transport.connection.opened", { connection_id: "conn-1", endpoint: "wss://gateway.example/ws" }),
-    record("chat_turn.received", { connection_id: "conn-1", chat_turn_id: "turn-1" }),
-    record("chat_turn.dispatch.accepted", { connection_id: "conn-1", chat_turn_id: "turn-1" }, "run-1"),
+    record("agent_run.received", { connection_id: "conn-1", trigger_occurrence_id: "message/m-1" }),
+    record("agent_run.dispatch.accepted", { connection_id: "conn-1" }, "run-1"),
     record("adapter.invoke.started", { connection_id: "conn-1" }, "run-1"),
     record("transport.message.received", { connection_id: "conn-1", frame_type: "context.sync_result" }),
     record("adapter.invoke.started", { connection_id: "conn-1" }, "run-2"),
     record("transport.connection.opened", { connection_id: "conn-2" })
   ];
 
-  const selected = selectViewerRecords(records, "run-1", "turn-1");
+  const selected = selectViewerRecords(records, "run-1");
   assert.deepEqual(selected.map(item => item.event), [
     "transport.connection.opened",
-    "chat_turn.received",
-    "chat_turn.dispatch.accepted",
+    "agent_run.dispatch.accepted",
     "adapter.invoke.started"
   ]);
   assert.equal(selected.some(item => item.run_id === "run-2"), false);

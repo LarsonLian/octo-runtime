@@ -34,7 +34,7 @@ import {
   tryParseOpenClawTranscriptLine
 } from "@mininglamp-oss/octo-harness-adapter-openclaw";
 
-const request = { invocationId: "inv-1", sessionId: "session-1", runId: "run-1", prompt: "work", workdir: process.cwd(), context: {}, appendInstructions: "CONTROL", agentConfig: {} };
+const request = { invocationId: "inv-1", agentSessionId: "session-1", runId: "run-1", prompt: "work", workdir: process.cwd(), context: {}, appendInstructions: "CONTROL", agentConfig: {} };
 
 test("best-effort observations handle rejection and provider output excludes private reasoning", async () => {
   observeBestEffort({
@@ -807,7 +807,10 @@ test("CodeBuddy ACP subprocess completes the canonical contract", async () => {
     agentConfig: { ...request.agentConfig, model: "codebuddy-model" }
   };
   for await (const event of host.invoke("codebuddy", freshRequest)) events.push(event);
-  assert.deepEqual(events.map(x => x.type), ["session.update", "message.create", "message.delta", "tool_call.create", "tool_call.update", "usage.update", "message.update", "run.finished"]);
+  assert.deepEqual(events.map(x => x.type), [
+    "session.update", "message.create", "message.create", "message.delta", "message.delta",
+    "tool_call.create", "tool_call.update", "usage.update", "message.update", "message.update", "run.finished"
+  ]);
   assert.deepEqual(spawnOptions.args, ["--acp", "--permission-mode", "acceptEdits"]);
   const sessionInput = observations.find(item =>
     item.observation.event === "provider.input" && item.observation.rpcMethod === "session/new"
@@ -836,13 +839,19 @@ test("CodeBuddy ACP subprocess completes the canonical contract", async () => {
     .filter(item => item.observation.event === "provider.output")
     .flatMap(item => item.observation.data.native.public)
     .some(projection => projection.kind === "message" && projection.content.text === "ACP reply"));
+  assert.ok(promptLifecycle
+    .filter(item => item.observation.event === "provider.output")
+    .flatMap(item => item.observation.data.native.public)
+    .some(projection => projection.kind === "message"
+      && projection.content.text === "Checking the workspace"
+      && projection.content.exposure === "public_reasoning"));
   assert.equal(normalizeCodeBuddyUpdate({ type: "usage", usage: { inputTokens: 1 } })[0].type, "usage.update");
   assert.deepEqual(
     normalizeCodeBuddyUpdate({ type: "agent_thought_chunk", text: "checking" })[0].payload,
     {
       text: "checking",
       channel: "analysis",
-      exposure: "unknown",
+      exposure: "public_reasoning",
       provenance: { provider: "codebuddy", nativeEvent: "agent_thought_chunk" }
     }
   );

@@ -2,7 +2,7 @@
   "name": "@mininglamp-oss/octo-harness",
   "version": "0.1.0",
   "private": false,
-  "description": "Provider-neutral agent harness runtime for chat, task and trigger workflows",
+  "description": "Provider-neutral Harness runtime for unified AgentSession and AgentRun execution",
   "type": "module",
   "bin": {
     "octo-harness": "apps/cli/dist/index.js",
@@ -53,7 +53,7 @@
     "typescript-eslint": "^8.68.0"
   },
   "engines": {
-    "node": ">=22",
+    "node": ">=24",
     "pnpm": ">=11"
   }
 }

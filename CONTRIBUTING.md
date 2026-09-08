@@ -122,7 +122,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full design, and
   fixtures and the fake ACP subprocess.
 - Every change to source behavior should carry a test for the changed behavior.
 - Cover edge cases: empty inputs, boundary values, error paths, idempotency
-  (`(triggerId, externalEventId)`, `(runId, seq)`), cancellation and restart
+  (`(agentSessionId, triggerOccurrenceId)`, `(runId, seq)`), cancellation and restart
   recovery.
 
 ### Pre-submit Checklist

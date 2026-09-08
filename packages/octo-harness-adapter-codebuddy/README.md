@@ -48,7 +48,7 @@ sequenceDiagram
 翻译规则（`normalizeCodeBuddyUpdate`）如下：
 
 1. `agent_message_chunk` 映射为 `final` 频道的 `message.delta`；
-2. `agent_thought_chunk` 映射为 `analysis` 频道的 `message.delta`，并标注 `exposure: "unknown"` 与 CodeBuddy provenance——由于 ACP 未声明思考内容是否应对用户可见，故不擅自公开；
+2. `agent_thought_chunk` 是 CodeBuddy 经 ACP 主动输出的展示级思考流，映射为 `analysis` 频道的 `message.delta`，并标注 `exposure: "public_reasoning"` 与 CodeBuddy provenance，使其能够进入公开进度卡片；
 3. `tool_call` 与 `tool_call_update` 映射为标准的 `tool_call.create` 与 `tool_call.update`；
 4. prompt 结束时的 `usage` 映射为 `usage.update`；
 5. 无法识别的 update 类型直接忽略（返回空数组）。
@@ -62,31 +62,19 @@ cd /absolute/path/to/octo-harness
 pnpm daemon
 ```
 
-在另一终端中探测可用性并创建 Agent：
+在另一终端中探测可用性：
 
 ```bash
 pnpm cli adapter probe codebuddy
-
-pnpm cli agent create \
-  --name codebuddy-reviewer \
-  --adapter codebuddy \
-  --workdir /absolute/path/to/repository \
-  --permission-mode dontAsk \
-  --model glm-5.3
 ```
 
-随后走统一的 Chat 流程，与所选 provider 无关：
-
-```bash
-pnpm cli chat create --agent <agent-id> --title "CodeBuddy review"
-pnpm cli chat send <session-id> --prompt "Inspect the test coverage"
-pnpm cli run wait <run-id>
-pnpm cli run events <run-id>
-```
+Agent Worker 在 Agent revision 中保存该 execution profile。业务服务提交 AgentRun，
+Runtime 将 Worker 的 AgentSession/provider session 原样交给 CodeBuddy ACP adapter；
+adapter 不创建 Chat、Task 或 Trigger。
 
 ## 配置
 
-| `agent create` 参数 | `agentConfig` 字段 | 作用 |
+| Agent revision 配置 | `agentConfig` 字段 | 作用 |
 |---|---|---|
 | `--workdir DIR` | `workdir` | 作为 ACP cwd，也是代码目标目录；本身不限制对其他宿主路径的读取 |
 | `--model MODEL` | `model` | 仅在 `session/new` 新建会话时传入 |

@@ -45,10 +45,10 @@ export function normalizeCodeBuddyUpdate(update: CodeBuddyUpdate): CanonicalEven
       type: "message.delta",
       payload: type === "agent_thought_chunk"
         ? {
-            // ACP does not declare whether thoughts are user-visible, so exposure stays "unknown".
+            // agent_thought_chunk is CodeBuddy's presentation-facing ACP reasoning stream.
             text,
             channel: "analysis",
-            exposure: "unknown",
+            exposure: "public_reasoning",
             provenance: { provider: "codebuddy", nativeEvent: "agent_thought_chunk" }
           }
         : { text, channel: "final" }
@@ -144,7 +144,7 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
           });
           throw error;
         }
-        // The Octo Harness session stores only the provider sessionId; both the
+        // The AgentSession stores only the provider sessionId; both the
         // new and resume paths converge on the same ACP prompt stream.
         yield { type: "session.update", payload: { providerSession: { sessionId: session.id, resumable: true, model: req.agentConfig?.model } } };
         yield { type: "message.create", payload: { role: "assistant", status: "streaming" } };

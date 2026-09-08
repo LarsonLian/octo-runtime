@@ -16,7 +16,7 @@ Octo Harness 的协议包：定义 Core、Adapter Host 与所有 provider 适配
 flowchart LR
     Native["provider 原生事件<br/>(codex thread.item / claude stream-json 等)"]
     Canonical["CanonicalEvent<br/>{ type, payload }"]
-    Envelope["EventEnvelope<br/>+ id / seq / tsMs / sessionId / runId"]
+    Envelope["EventEnvelope<br/>+ id / seq / tsMs / agentSessionId / runId"]
 
     Native -->|适配器翻译| Canonical
     Canonical -->|Core: envelope()| Envelope
@@ -25,7 +25,7 @@ flowchart LR
 
 关键约定：
 
-1. **三个 ID 互不混淆**：Harness Session ID（一段稳定对话）、Harness Run ID（一次执行）、Provider Session ID（Codex thread / Claude UUID 等）是三个独立标识。`seq` 仅在单个 run 内单调递增，消费方按 `(runId, seq)` 排序与去重。
+1. **四个 ID 互不混淆**：Worker AgentSession ID、AgentRun ID、Harness invocation ID、Provider Session ID（Codex thread / Claude UUID 等）是独立标识。`seq` 仅在单个 run 内单调递增，消费方按 `(runId, seq)` 排序与去重。
 2. **终态唯一**：一次 run 最终只能收敛为 `run.finished` / `run.error` / `run.stopped` 之一。
 3. **会话凭证不透明**：Core 仅搬运 provider session，不解释其私有字段。
 4. **`modelInput ?? prompt`**：发送给模型的文本与用于产品展示的文本可以不同，从而使“发送给模型的隐藏上下文”精确地只发送一次。

@@ -52,7 +52,7 @@ interface RpcCorrelation {
   rpcMethod?: string;
   runId?: string;
   invocationId?: string;
-  sessionId?: string;
+  agentSessionId?: string;
   adapterType?: string;
 }
 
@@ -141,7 +141,7 @@ export class LocalObservability {
       message: `adapter-host RPC ${direction}`,
       runId: correlation.runId,
       invocationId: correlation.invocationId,
-      sessionId: correlation.sessionId,
+      agentSessionId: correlation.agentSessionId,
       adapterType: correlation.adapterType,
       data: {
         direction,
@@ -176,7 +176,7 @@ export class LocalObservability {
       message: providerObservationMessage(observation.event),
       runId: identity.runId,
       invocationId: identity.invocationId,
-      sessionId: identity.sessionId,
+      agentSessionId: identity.agentSessionId,
       adapterType: identity.adapterType,
       data: {
         ...safeObservationData,
@@ -328,7 +328,7 @@ export class LocalObservability {
       sensitivity,
       ...(input.runId ? { run_id: input.runId } : {}),
       ...(input.invocationId ? { invocation_id: input.invocationId } : {}),
-      ...(input.sessionId ? { session_id: input.sessionId } : {}),
+      ...(input.agentSessionId ? { agent_session_id: input.agentSessionId } : {}),
       ...(input.adapterType ? { adapter_type: input.adapterType } : {}),
       ...(data ? { data } : {})
     };
@@ -504,7 +504,7 @@ export class LocalObservability {
       message: `provider capture ${state}`,
       runId: identity.runId,
       invocationId: identity.invocationId,
-      sessionId: identity.sessionId,
+      agentSessionId: identity.agentSessionId,
       adapterType: identity.adapterType,
       data: { capture_id: captureId, state, complete: state === "persisted", ...(reason ? { reason } : {}) }
     }, "restricted");
@@ -550,13 +550,13 @@ export class LocalObservability {
       rpcMethod: optionalStringValue(value.method),
       runId: optionalStringValue(request.runId) ?? optionalStringValue(params.runId),
       invocationId,
-      sessionId: optionalStringValue(request.sessionId) ?? optionalStringValue(params.sessionId),
+      agentSessionId: optionalStringValue(request.agentSessionId) ?? optionalStringValue(params.agentSessionId),
       adapterType: optionalStringValue(params.adapterType) ?? optionalStringValue(request.adapterType)
     };
     if (rpcId) correlation = mergeDefined(this.#rpcRequests.get(rpcId), correlation);
     if (invocationId) correlation = mergeDefined(this.#rpcInvocations.get(invocationId), correlation);
     if (direction === "send" && rpcId && value.method) this.#rpcRequests.set(rpcId, correlation);
-    if (invocationId && (correlation.runId || correlation.sessionId || correlation.adapterType)) {
+    if (invocationId && (correlation.runId || correlation.agentSessionId || correlation.adapterType)) {
       this.#rpcInvocations.set(invocationId, correlation);
     }
     if (direction === "receive" && rpcId && ("result" in value || "error" in value)) this.#rpcRequests.delete(rpcId);
@@ -664,7 +664,7 @@ function mergeDefined(base: RpcCorrelation | undefined, override: RpcCorrelation
     rpcMethod: override.rpcMethod ?? base?.rpcMethod,
     runId: override.runId ?? base?.runId,
     invocationId: override.invocationId ?? base?.invocationId,
-    sessionId: override.sessionId ?? base?.sessionId,
+    agentSessionId: override.agentSessionId ?? base?.agentSessionId,
     adapterType: override.adapterType ?? base?.adapterType
   };
 }

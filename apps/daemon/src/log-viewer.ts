@@ -3,7 +3,7 @@ import { open, readdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join, relative, resolve } from "node:path";
 import type { StoredLogRecord } from "@mininglamp-oss/octo-harness-observability";
-import type { Run, Store } from "@mininglamp-oss/octo-harness-core";
+import type { AgentRun, Store } from "@mininglamp-oss/octo-harness-core";
 
 const VIEWER_RUN_LIMIT = 100;
 const VIEWER_QUERY_LIMIT = 1000;
@@ -16,10 +16,9 @@ const TERMINAL_EVENT_TYPES = new Set(["run.finished", "run.error", "run.stopped"
 interface ViewerRunSummary {
   runId: string;
   status: string;
-  sessionId: string;
-  conversation: { id: string; type?: string; title?: string; channel?: string };
+  agentSessionId: string;
+  conversation: { id: string; namespace?: string; sessionKey?: string };
   invocationId?: string;
-  chatTurnId?: string;
   adapterType?: string;
   model?: string;
   providerSessionId?: string;
@@ -276,15 +275,14 @@ export async function viewerTraceSnapshot({
   await index.refresh(includeSensitive);
   const allRecords = index.records(includeSensitive)
     .filter(record => logRecordData(record).method !== "logs.query" && logRecordData(record).method !== "logs.viewer");
-  const candidateRuns = store.listRuns().slice(-VIEWER_RUN_LIMIT);
-  const requestedRun = requestedRunId ? store.getRun(requestedRunId) : undefined;
+  const candidateRuns = store.listAgentRuns().slice(-VIEWER_RUN_LIMIT);
+  const requestedRun = requestedRunId ? store.getAgentRun(requestedRunId) : undefined;
   if (requestedRun && !candidateRuns.some(run => run.id === requestedRun.id)) candidateRuns.unshift(requestedRun);
   const summaries = candidateRuns
     .map(run => summarizeViewerRun(store, run, allRecords))
     .sort((left, right) => (right.lastEventAt ?? "").localeCompare(left.lastEventAt ?? ""));
   const selectedRunId = requestedRunId ?? summaries[0]?.runId;
-  const selectedSummary = summaries.find(summary => summary.runId === selectedRunId);
-  const related = new Set(selectViewerRecords(allRecords, selectedRunId, selectedSummary?.chatTurnId));
+  const related = new Set(selectViewerRecords(allRecords, selectedRunId));
   const page = index.page(related, optionalString(params.after), limit, includeSensitive);
 
   const fromSeq = boundedInteger(params.fromSeq, "fromSeq", 1, Number.MAX_SAFE_INTEGER);
@@ -296,7 +294,7 @@ export async function viewerTraceSnapshot({
     ts: new Date(event.tsMs).toISOString(),
     event: event.type,
     run_id: event.runId,
-    session_id: event.sessionId,
+    agent_session_id: event.agentSessionId,
     source: "state"
   }));
   const nextSeq = events.length > 0 ? Number(events.at(-1)!.seq) + 1 : fromSeq;
@@ -313,24 +311,17 @@ export async function viewerTraceSnapshot({
   };
 }
 
-/** Join only explicit pre-Run ChatTurn and connection identities into a Run. */
+/** Join a Run only with its explicitly correlated transport connection records. */
 export function selectViewerRecords(
   records: StoredLogRecord[],
-  runId: string | undefined,
-  chatTurnId?: string
+  runId: string | undefined
 ): StoredLogRecord[] {
   if (!runId) return records;
   const scoped = records.filter(record => logRunId(record) === runId);
   const connectionIds = new Set(scoped.map(logConnectionId).filter(isDefined));
-  const chatTurnIds = new Set([
-    ...(chatTurnId ? [chatTurnId] : []),
-    ...scoped.map(record => optionalString(logRecordData(record).chat_turn_id)).filter(isDefined)
-  ]);
   return records.filter(record => {
     if (logRunId(record) === runId) return true;
     if (logRunId(record)) return false;
-    const recordChatTurnId = optionalString(logRecordData(record).chat_turn_id);
-    if (recordChatTurnId !== undefined) return chatTurnIds.has(recordChatTurnId);
     const connectionId = logConnectionId(record);
     return connectionId !== undefined
       && connectionIds.has(connectionId)
@@ -339,12 +330,10 @@ export function selectViewerRecords(
   });
 }
 
-function summarizeViewerRun(store: Store, run: Run, records: StoredLogRecord[]): ViewerRunSummary {
+function summarizeViewerRun(store: Store, run: AgentRun, records: StoredLogRecord[]): ViewerRunSummary {
   const events = store.getEvents(run.id);
-  const session = store.getSession(run.sessionId);
-  const attempt = run.attemptId ? store.getAttempt(run.attemptId) : undefined;
-  const task = attempt ? store.getTask(attempt.taskId) : undefined;
-  const agent = store.getAgent(task?.agentId ?? session?.agentId ?? "");
+  const session = store.getAgentSession(run.agentSessionId);
+  const agent = store.getAgent(session?.agentId ?? "");
   const runRecords = records.filter(record => logRunId(record) === run.id);
   const queued = events.find(event => event.type === "run.queued");
   const started = events.find(event => event.type === "run.running");
@@ -356,7 +345,6 @@ function summarizeViewerRun(store: Store, run: Run, records: StoredLogRecord[]):
   const durationEnd = ended?.tsMs ?? (durationStart === undefined ? undefined : now);
   const active = !TERMINAL_RUN_STATUSES.has(run.status);
   const stallMs = active && activityAt !== undefined ? Math.max(0, now - activityAt) : 0;
-  const chatTurnId = runRecords.map(record => optionalString(logRecordData(record).chat_turn_id)).find(isDefined);
   const adapterType = agent?.adapterType
     ?? runRecords.map(record => optionalString(record.adapter_type)).find(isDefined);
   const providerSessionId = optionalString(session?.providerSession?.sessionId)
@@ -364,15 +352,13 @@ function summarizeViewerRun(store: Store, run: Run, records: StoredLogRecord[]):
   return {
     runId: run.id,
     status: run.status,
-    sessionId: run.sessionId,
+    agentSessionId: run.agentSessionId,
     conversation: {
-      id: session?.id ?? run.sessionId,
-      ...(session?.type ? { type: session.type } : {}),
-      ...(session?.title ? { title: session.title } : {}),
-      ...(session?.channel ? { channel: session.channel } : {})
+      id: session?.id ?? run.agentSessionId,
+      ...(session?.namespace ? { namespace: session.namespace } : {}),
+      ...(session?.sessionKey ? { sessionKey: session.sessionKey } : {})
     },
     ...(run.invocationId ? { invocationId: run.invocationId } : {}),
-    ...(chatTurnId ? { chatTurnId } : {}),
     ...(adapterType ? { adapterType } : {}),
     ...(typeof agent?.config.model === "string" ? { model: agent.config.model } : {}),
     ...(providerSessionId ? { providerSessionId } : {}),

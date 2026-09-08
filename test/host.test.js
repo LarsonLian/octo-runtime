@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { PassThrough } from "node:stream";
 import { AdapterHost, AdapterHostRpcClient, AdapterHostRpcServer, spawnAdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 
-const request = { invocationId: "inv-host", sessionId: "s", runId: "r", prompt: "p", workdir: process.cwd() };
+const request = { invocationId: "inv-host", agentSessionId: "s", runId: "r", prompt: "p", workdir: process.cwd() };
 
 test("host holds terminal until adapter stream cleanup succeeds", async () => {
   const host = new AdapterHost();
@@ -71,7 +71,7 @@ test("host gives adapters a provider observation context with full invocation id
   assert.deepEqual(observations[0].identity, {
     runId: "r",
     invocationId: "inv-host",
-    sessionId: "s",
+    agentSessionId: "s",
     adapterType: "observed"
   });
   assert.equal(observations[0].observation.rpcMethod, "turn/start");

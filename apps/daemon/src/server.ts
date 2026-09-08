@@ -12,8 +12,6 @@ import {
 import {
   HarnessEngine,
   SqliteStore,
-  type CreateTriggerInput,
-  type RegisterAgentInput,
   type Store
 } from "@mininglamp-oss/octo-harness-core";
 import { HarnessDaemon } from "@mininglamp-oss/octo-harness-daemon";
@@ -196,33 +194,33 @@ export async function startDaemonServer({
   // HarnessDaemon events mark execution, rather than submission, boundaries.
   // A control request can therefore be acknowledged before `run.started` while
   // the resulting Run still remains correlated by its stable runId.
-  daemon.on("run.started", ({ runId }: { runId: string }) => {
-    const run = store.getRun(runId);
+  daemon.on("agent_run.started", ({ agentRunId }: { agentRunId: string }) => {
+    const run = store.getAgentRun(agentRunId);
     observability.log({
       level: "info",
       scope: "run.execution",
       event: "run.execution.started",
       message: "run execution started",
-      runId,
-      sessionId: run?.sessionId,
+      runId: agentRunId,
+      agentSessionId: run?.agentSessionId,
       data: { priorStatus: run?.status ?? "unknown" }
     });
   });
-  daemon.on("run.terminal", ({ runId, status }: { runId: string; status?: string }) => {
-    const run = store.getRun(runId);
+  daemon.on("agent_run.terminal", ({ agentRunId, status }: { agentRunId: string; status?: string }) => {
+    const run = store.getAgentRun(agentRunId);
     observability.log({
       level: status === "completed" ? "info" : "error",
       scope: "run.execution",
       event: status === "completed" ? "run.execution.completed" : "run.execution.failed",
       message: status === "completed" ? "run execution completed" : "run execution ended unsuccessfully",
-      runId,
-      sessionId: run?.sessionId,
+      runId: agentRunId,
+      agentSessionId: run?.agentSessionId,
       data: { status: status ?? run?.status ?? "unknown" }
     });
   });
 
   const server = net.createServer(socket => {
-    // A connection id scopes transport evidence only. Run, session, ChatTurn and
+    // A connection id scopes transport evidence only. AgentRun, AgentSession and
     // invocation ids retain their domain meanings and may span other transports.
     const connectionId = `conn_${randomUUID()}`;
     observability.log({
@@ -248,7 +246,6 @@ export async function startDaemonServer({
         line,
         socket,
         daemon,
-        engine,
         store,
         host: hostProcess.client,
         runtime,
@@ -338,7 +335,6 @@ async function handleRequestLine({
   line,
   socket,
   daemon,
-  engine,
   store,
   host,
   runtime,
@@ -350,7 +346,6 @@ async function handleRequestLine({
   line: string;
   socket: net.Socket;
   daemon: HarnessDaemon;
-  engine: HarnessEngine;
   store: Store;
   host: AdapterHostRpcClient;
   runtime: DaemonRuntimeInfo;
@@ -372,22 +367,21 @@ async function handleRequestLine({
         scope: "control.request",
         event: "control.request.received",
         message: "daemon control request received",
-        runId: optionalString(request.params?.runId),
-        sessionId: optionalString(request.params?.sessionId),
+        runId: optionalString(request.params?.agentRunId),
+        agentSessionId: optionalString(request.params?.agentSessionId),
         data: {
           connection_id: connectionId,
           request_id: typeof request.id === "string" || typeof request.id === "number" ? request.id : null,
-          method: request.method,
-          chat_turn_id: optionalString(request.params?.chatTurnId)
+          method: request.method
         }
       });
     }
-    if (request.method === "run.stream") {
+    if (request.method === "agent_run.stream") {
       await streamRunEvents({ request, socket, store, observability, connectionId });
       return;
     }
     const result = await dispatch({
-      request, daemon, engine, store, host, runtime, agentWorkRuntime, observability, viewerIndex
+      request, daemon, store, host, runtime, agentWorkRuntime, observability, viewerIndex
     });
     const resultRecord = isRecord(result) ? result : {};
     const resultAgent = isRecord(resultRecord.agent) ? resultRecord.agent : undefined;
@@ -395,31 +389,14 @@ async function handleRequestLine({
       observability.log({
         level: "info",
         scope: "control.request",
-        event: request.method === "chat.send" ? "chat_turn.dispatch.accepted" : "control.request.completed",
+        event: "control.request.completed",
         message: "daemon control request completed",
-        runId: optionalString(resultRecord.runId) ?? optionalString(request.params?.runId),
-        sessionId: optionalString(request.params?.sessionId),
+        runId: optionalString(resultRecord.agentRunId) ?? optionalString(request.params?.agentRunId),
+        agentSessionId: optionalString(request.params?.agentSessionId),
         adapterType: resultAgent ? optionalString(resultAgent.adapterType) : undefined,
         data: {
           connection_id: connectionId,
-          method: request.method,
-          chat_turn_id: optionalString(request.params?.chatTurnId)
-        }
-      });
-    }
-    if (request.method === "chat.send" && resultAgent) {
-      observability.log({
-        level: "info",
-        scope: "adapter.dispatch",
-        event: "adapter.selected",
-        message: `selected ${optionalString(resultAgent.adapterType) ?? "unknown"} adapter`,
-        runId: optionalString(resultRecord.runId),
-        sessionId: optionalString(request.params?.sessionId),
-        adapterType: optionalString(resultAgent.adapterType),
-        data: {
-          connection_id: connectionId,
-          chat_turn_id: optionalString(request.params?.chatTurnId),
-          agent_id: optionalString(resultAgent.id)
+          method: request.method
         }
       });
     }
@@ -430,8 +407,8 @@ async function handleRequestLine({
       scope: "control.request",
       event: "control.request.failed",
       message: "daemon control request failed",
-      runId: optionalString(request?.params?.runId),
-      sessionId: optionalString(request?.params?.sessionId),
+      runId: optionalString(request?.params?.agentRunId),
+      agentSessionId: optionalString(request?.params?.agentSessionId),
       data: {
         connection_id: connectionId,
         method: request?.method ?? "unknown",
@@ -448,7 +425,7 @@ async function handleRequestLine({
 }
 
 /**
- * Tail a run's events over the socket. Polls the store, emitting each event with
+ * Tail an AgentRun's events over the socket. Polls the store, emitting each event with
  * `seq >= fromSeq` in order, then a terminal `{ done, run, nextSeq }` once a
  * terminal event or terminal run status is observed. `nextSeq` lets a client
  * resume without gaps. Stops early if the client disconnects.
@@ -467,9 +444,9 @@ async function streamRunEvents({
   connectionId: string;
 }): Promise<void> {
   const params = request.params ?? {};
-  const runId = requiredString(params.runId, "runId");
+  const runId = requiredString(params.agentRunId, "agentRunId");
   let nextSeq = positiveInteger(params.fromSeq, "fromSeq", 1);
-  if (!store.hasRun(runId)) throw new Error(`run not found: ${runId}`);
+  if (!store.getAgentRun(runId)) throw new Error(`agent run not found: ${runId}`);
 
   while (!socket.destroyed) {
     for (const event of store.getEvents(runId)) {
@@ -487,15 +464,15 @@ async function streamRunEvents({
       if (TERMINAL_EVENT_TYPES.has(event.type)) {
         await writeSocketLine(socket, {
           id: request.id,
-          result: { done: true, run: store.getRun(runId), nextSeq }
+          result: { done: true, run: store.getAgentRun(runId), nextSeq }
         });
         socket.end();
         return;
       }
     }
 
-    const run = store.getRun(runId);
-    if (!run) throw new Error(`run not found: ${runId}`);
+    const run = store.getAgentRun(runId);
+    if (!run) throw new Error(`agent run not found: ${runId}`);
     if (TERMINAL_RUN_STATUSES.has(run.status)) {
       await writeSocketLine(socket, { id: request.id, result: { done: true, run, nextSeq } });
       socket.end();
@@ -521,7 +498,6 @@ async function writeSocketLine(socket: net.Socket, value: unknown): Promise<void
 async function dispatch({
   request,
   daemon,
-  engine,
   store,
   host,
   runtime,
@@ -531,7 +507,6 @@ async function dispatch({
 }: {
   request: DaemonRequest;
   daemon: HarnessDaemon;
-  engine: HarnessEngine;
   store: Store;
   host: AdapterHostRpcClient;
   runtime: DaemonRuntimeInfo;
@@ -549,10 +524,8 @@ async function dispatch({
         logging: observability.status,
         agentWork: agentWorkRuntime?.status ?? { enabled: false },
         counts: {
-          agents: store.listAgents().length,
-          triggers: store.listTriggers().length,
-          tasks: store.listTasks().length,
-          runs: store.listRuns().length
+          agentSessions: store.listAgentSessions().length,
+          agentRuns: store.listAgentRuns().length
         }
       };
     case "logs.path":
@@ -572,58 +545,20 @@ async function dispatch({
       return host.list();
     case "adapter.probe":
       return host.probe(requiredString(params.adapterType, "adapterType"));
-    case "agent.create":
-      return engine.registerAgent(params as unknown as RegisterAgentInput);
-    case "agent.list":
-      return store.listAgents();
-    case "chat.create":
-      return engine.createChatSession(params as unknown as { agentId: string; title?: string; channel?: string });
-    case "chat.list":
-      return store.listSessions().filter(item => item.type === "chat");
-    case "chat.get":
-      return store.getSession(requiredString(params.sessionId, "sessionId")) ?? null;
-    case "chat.send":
-      return daemon.submitChat(
-        requiredString(params.sessionId, "sessionId"),
-        requiredString(params.prompt, "prompt"),
-        optionalString(params.instructions) ?? ""
-      );
-    case "trigger.create": {
-      const trigger = await engine.createTrigger(params as unknown as CreateTriggerInput);
-      daemon.startSchedulers();
-      return trigger;
-    }
-    case "trigger.list":
-      return store.listTriggers();
-    case "trigger.fire":
-      return daemon.submitTrigger(requiredString(params.triggerId, "triggerId"), {
-        externalEventId: requiredString(params.externalEventId, "externalEventId"),
-        payload: optionalRecord(params.payload)
-      });
-    case "event.ingest":
-      return daemon.ingestEvent({
-        eventType: requiredString(params.eventType, "eventType"),
-        externalEventId: requiredString(params.externalEventId, "externalEventId"),
-        payload: optionalRecord(params.payload)
-      });
-    case "task.list":
-      return store.listTasks();
-    case "task.get":
-      return store.getTask(requiredString(params.taskId, "taskId")) ?? null;
-    case "task.continue":
-      return daemon.continueTask(requiredString(params.taskId, "taskId"), {
-        sourceType: optionalString(params.sourceType) ?? "comment",
-        sourceId: optionalString(params.sourceId),
-        instructions: optionalString(params.instructions) ?? ""
-      });
-    case "run.get":
-      return store.getRun(requiredString(params.runId, "runId")) ?? null;
-    case "run.events":
-      return store.getEvents(requiredString(params.runId, "runId"));
-    case "run.wait":
-      return daemon.waitForRun(requiredString(params.runId, "runId"));
-    case "run.cancel":
-      return daemon.cancelRun(requiredString(params.runId, "runId"), optionalString(params.reason));
+    case "agent_session.list":
+      return store.listAgentSessions();
+    case "agent_session.get":
+      return store.getAgentSession(requiredString(params.agentSessionId, "agentSessionId")) ?? null;
+    case "agent_run.list":
+      return store.listAgentRuns();
+    case "agent_run.get":
+      return store.getAgentRun(requiredString(params.agentRunId, "agentRunId")) ?? null;
+    case "agent_run.events":
+      return store.getEvents(requiredString(params.agentRunId, "agentRunId"));
+    case "agent_run.wait":
+      return daemon.waitForRun(requiredString(params.agentRunId, "agentRunId"));
+    case "agent_run.cancel":
+      return daemon.cancelRun(requiredString(params.agentRunId, "agentRunId"), optionalString(params.reason));
     default:
       throw Object.assign(new Error(`unknown daemon method: ${request.method}`), { code: "method_not_found" });
   }
@@ -633,10 +568,6 @@ function parseRequest(line: string): DaemonRequest {
   const value: unknown = JSON.parse(line);
   if (!isRecord(value) || typeof value.method !== "string") throw new TypeError("daemon request requires method");
   return value as unknown as DaemonRequest;
-}
-
-function optionalRecord(value: unknown): Record<string, unknown> {
-  return isRecord(value) ? value : {};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

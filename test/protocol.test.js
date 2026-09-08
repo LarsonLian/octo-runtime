@@ -98,6 +98,7 @@ test("channel context wire contracts reject incomplete scope and mismatched trig
     parts: [{ type: "text", text: "current" }]
   };
   assert.doesNotThrow(() => assertChannelContextAppend({
+	agent_id: "agent-1",
     scope,
     facts: [{ ...trigger, message_id: "message-1", message_seq: 1 }]
   }));
@@ -110,9 +111,11 @@ test("channel context wire contracts reject incomplete scope and mismatched trig
     trigger_message_id: "different", trigger_seq: 2, trigger_fact: trigger
   }), /must match trigger_message_id/);
   assert.throws(() => assertChannelContextAppend({
+	agent_id: "agent-1",
     scope: { ...scope, channel: "" }, facts: [trigger]
   }), /scope.channel/);
-  assert.throws(() => assertChannelContextAppend({ scope, facts: [] }), /1\.\.100/);
+  assert.throws(() => assertChannelContextAppend({ agent_id: "agent-1", scope, facts: [] }), /1\.\.100/);
+	assert.throws(() => assertChannelContextAppend({ scope, facts: [trigger] }), /agent_id/);
   assert.throws(() => assertChannelContextDescriptor({
     scope, consumer_key: "agent/provider", session_generation: 1,
     trigger_message_id: trigger.message_id, trigger_fact: trigger
@@ -122,12 +125,15 @@ test("channel context wire contracts reject incomplete scope and mismatched trig
     trigger_message_id: trigger.message_id, trigger_seq: 2, trigger_fact: trigger
   }), /session_generation/);
   assert.throws(() => assertChannelContextAppend({
+	agent_id: "agent-1",
     scope, facts: [{ ...trigger, sender: { id: "member-1" } }]
   }), /sender.kind/);
   assert.throws(() => assertChannelContextAppend({
+	agent_id: "agent-1",
     scope, facts: [{ ...trigger, occurred_at_ms: 0 }]
   }), /occurred_at_ms/);
   assert.throws(() => assertChannelContextAppend({
+	agent_id: "agent-1",
     scope, facts: [{ ...trigger, parts: [] }]
   }), /at least one/);
   assert.throws(() => assertContextSyncResult({

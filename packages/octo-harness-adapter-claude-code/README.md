@@ -57,27 +57,17 @@ claude --version
 claude auth status
 ```
 
-启动 daemon，另开终端探测并创建 Agent：
+启动 daemon 并探测 adapter：
 
 ```bash
 pnpm daemon
 
 pnpm cli adapter probe claude-code
-
-pnpm cli agent create \
-  --name claude-reviewer \
-  --adapter claude-code \
-  --workdir /absolute/path/to/repository
 ```
 
-随后执行统一的 Chat 流程：
-
-```bash
-pnpm cli chat create --agent <agent-id> --title "Claude review"
-pnpm cli chat send <session-id> --prompt "Explain the current architecture"
-pnpm cli run wait <run-id>
-pnpm cli run events <run-id>
-```
+Agent Worker 在 Agent revision 中保存该 execution profile，并把所有业务入口统一下发
+为 AgentRun。adapter 只处理 `InvokeRequest`；provider session 由 Worker 的
+AgentSession 保存并在后续调用中作为 opaque resume UUID 下发。
 
 实际拼装出的命令大致如下：
 

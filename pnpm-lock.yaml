@@ -184,6 +184,8 @@ importers:
         specifier: workspace:*
         version: link:../octo-harness-protocol
 
+  packages/octo-harness-cross-service: {}
+
   packages/octo-harness-daemon:
     dependencies:
       '@mininglamp-oss/octo-harness-core':

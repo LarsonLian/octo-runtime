@@ -196,10 +196,10 @@
       "description": "Stable run identity used by envelopes without requiring the complete domain object.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "sessionId"],
+      "required": ["id", "agentSessionId"],
       "properties": {
         "id": { "description": "Run identifier.", "type": "string" },
-        "sessionId": { "description": "Owning Harness session identifier.", "type": "string" }
+        "agentSessionId": { "description": "Owning Agent Worker session identifier.", "type": "string" }
       }
     },
     "ChannelScope": {
@@ -275,8 +275,9 @@
       "description": "Idempotent context-only batch appended by agent-worker to its bound daemon.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["scope", "facts"],
+      "required": ["agent_id", "scope", "facts"],
       "properties": {
+		"agent_id": { "type": "string", "minLength": 1, "maxLength": 96 },
         "scope": { "$ref": "#/definitions/ChannelScope" },
         "facts": {
           "type": "array",
@@ -292,9 +293,10 @@
       "description": "Bounded backfill requested by the daemon after cold start or gap detection. It never carries platform tokens.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["request_id", "scope", "trigger_message_id", "limit"],
+      "required": ["request_id", "agent_run_id", "scope", "trigger_message_id", "limit"],
       "properties": {
         "request_id": { "type": "string", "minLength": 1 },
+        "agent_run_id": { "type": "string", "minLength": 1 },
         "scope": { "$ref": "#/definitions/ChannelScope" },
         "trigger_message_id": { "type": "string", "minLength": 1 },
         "trigger_seq": { "type": "integer", "minimum": 0 },
@@ -391,7 +393,7 @@
       "additionalProperties": false,
       "required": [
         "invocationId",
-        "sessionId",
+        "agentSessionId",
         "runId",
         "prompt",
         "workdir",
@@ -404,8 +406,8 @@
           "description": "Active Adapter Host invocation identifier and cancellation target.",
           "type": "string"
         },
-        "sessionId": {
-          "description": "Long-lived Harness session identifier for the chat or task.",
+        "agentSessionId": {
+          "description": "Long-lived Agent Worker session identifier for this execution context.",
           "type": "string"
         },
         "runId": { "description": "Run identifier for this execution.", "type": "string" },

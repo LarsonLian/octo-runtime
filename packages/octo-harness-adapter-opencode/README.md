@@ -56,30 +56,19 @@ cd /absolute/path/to/octo-harness
 pnpm daemon
 ```
 
-在另一终端中探测可用性并创建 Agent：
+在另一终端中探测可用性：
 
 ```bash
 pnpm cli adapter probe opencode
-
-pnpm cli agent create \
-  --name opencode-reviewer \
-  --adapter opencode \
-  --workdir /absolute/path/to/repository \
-  --model provider/model
 ```
 
-随后走统一的 Chat 流程：
-
-```bash
-pnpm cli chat create --agent <agent-id> --title "OpenCode review"
-pnpm cli chat send <session-id> --prompt "Summarize the repository"
-pnpm cli run wait <run-id>
-pnpm cli run events <run-id>
-```
+Agent Worker 在 Agent revision 中保存该 execution profile。业务服务提交统一
+AgentRun；adapter 从 Worker AgentSession 的 opaque provider session 读取 OpenCode
+session ID 并通过 `--session` 恢复。
 
 ## 配置
 
-| `agent create` 参数 | `agentConfig` 字段 | 拼入命令行 |
+| Agent revision 配置 | `agentConfig` 字段 | 拼入命令行 |
 |---|---|---|
 | `--workdir DIR` | `workdir` | 子进程 cwd；本身不构成文件访问隔离 |
 | `--model provider/model` | `model` | `--model provider/model` |
@@ -93,7 +82,7 @@ pnpm cli run events <run-id>
 - **`--auto` 具有危险性且由此 adapter 强制开启**：provider 会自动批准未被显式拒绝的权限（可直接修改文件）。因此只能把该 adapter 部署在受控 workdir 与具备外部隔离的节点上。
 - **用户 prompt 出现在 argv 中**：同机的进程检查工具可能读取到它，不适合承载 secret。若需更强的隐私保障，应改用 OpenCode server/API 或引入 stdin carrier，而非假定 argv 已被隐藏。
 - **上下文经临时文件注入**：`appendInstructions` 写入一个 `0600` 临时 Markdown，追加到 `OPENCODE_CONFIG_CONTENT` 中已有的 `instructions` 列表末尾，合并结果注入子进程环境，不覆盖用户原有配置。`OPENCODE_CONFIG_CONTENT` 必须为合法 JSON，非法值将在 spawn 前失败。
-- **每次 invocation 均为一次性子进程**，无常驻 daemon。session ID 由 Core 保存，下次 Chat turn 或 Task 续跑时自动经 `--session` 恢复。
+- **每次 invocation 均为一次性子进程**，无常驻 daemon。生产模式下 session ID 由 Worker 的 AgentSession 保存，下一次 AgentRun 自动经 `--session` 恢复。
 - **reasoning 是显式展示内容**：Adapter 无条件传入 `--thinking`，因此将 OpenCode 主动输出的 reasoning block 归入 analysis channel 并标记 `exposure=public_reasoning`，使其进入消息卡片的思考区域；其他 provider 的 `private_reasoning` 仍保持不可见。
 - **卡片按模型轮次组织**：同一 OpenCode `messageID` 下的 reasoning、tool 与 text 共享 `stepId`。Worker 可据 `model_step.started/finished` 将它们归入同一轮；最终 `text` 仍是独立正文，不会被重复标成“总结”。
 - **未暴露 OpenCode 的 `--fork` 与 `--agent` 等原生能力**。公共 CLI 的 `--provider-agent` 目前仅被 OpenClaw 适配器消费，不能用于配置 OpenCode agent。

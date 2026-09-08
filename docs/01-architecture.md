@@ -1,96 +1,74 @@
-# 01 Architecture
+# Octo Harness 目标架构
 
-本页描述当前可运行的单机架构。逐模块职责、完整命令/事件时序和 Transport 消息示例见 [Current Modules And Transport Flow](02-module-and-transport-flow.md)；保持 Core/Adapter 契约不变的跨云节点演进方案见 [Transport And Multi-node](09-transport-and-multinode.md)。
+Octo Harness 是 Agent Worker 的执行节点，不是业务调度器。统一模型只有 `AgentSession -> AgentRun -> Invocation -> CanonicalEvent`。
 
-## Process Boundaries
+## 权威边界
+
+| 领域 | 权威组件 |
+|---|---|
+| Agent 定义与 revision | Agent Worker |
+| AgentSession、provider resume、reset generation | Agent Worker |
+| AgentRun、lease、fencing、执行状态 | Agent Worker |
+| Loop Task/Attempt/父子关系/调度 | Loop service |
+| IM occurrence、conversation address、delivery | Channel Gateway |
+| AutoPilot schedule/misfire | AutoPilot service |
+| Webhook endpoint/filter/event | Webhook service |
+| Provider process、invocation、native event translation | Octo Harness |
+
+Harness 不能根据输入猜测“这是 Chat 还是 Task”，也不能创建业务 Task。上游只提交 namespace、Agent、session key、trigger occurrence 与输入。
+
+## 统一对象
 
 ```mermaid
 flowchart LR
-  C["CLI / event producer"] <-->|"Unix socket request/response"| D["daemon"]
-  D --> S["single-writer JSON store"]
-  D <-->|"NDJSON JSON-RPC"| H["adapter-host process"]
-  H --> CX["Codex"]
-  H --> CL["Claude Code"]
-  H --> CB["CodeBuddy ACP"]
-  H --> OC["OpenCode"]
-  H --> OW["OpenClaw local CLI"]
+  B[Business scheduler] -->|submit| S[AgentSession]
+  S --> R[AgentRun]
+  R --> L[Lease / fencing]
+  L --> I[Harness Invocation]
+  I --> P[Provider session]
+  I --> E[Canonical events]
+  E --> R
+  R --> B
 ```
 
-CLI 不读写 workdir 内的状态文件，也不直接启动 provider。daemon 是 Chat/Task/Trigger/Run 的权威写入者；adapter-host 只拥有 invocation 生命周期和 provider 子进程。manifest 决定 host 加载哪些 adapter，daemon 只依赖公共 host client。
+- `AgentSession`：`(namespace, agent_id, session_key)` 唯一，保存 generation 与 opaque provider session。
+- `AgentRun`：一次可排队、执行、取消并进入终态的执行；同一 session 内按 run number/FIFO 串行。
+- `Invocation`：Harness 本地一次 provider 调用。重派或失败恢复可能产生新的 invocation，但不会改变业务对象语义。
+- `ProviderSession`：Codex thread、Claude UUID、OpenCode session 等 provider 私有恢复数据。
+- `TriggerOccurrenceID`：上游一次触发事实的稳定 ID。重复提交相同请求返回原 Run；同 ID 不同 payload 必须冲突。
 
-## Domain Model
+## 状态
 
-```mermaid
-erDiagram
-  AGENT ||--o{ CHAT_SESSION : serves
-  AGENT ||--o{ TRIGGER : owns
-  TRIGGER ||--o{ OCCURRENCE : matches
-  OCCURRENCE ||--|| TASK : materializes
-  TASK ||--o{ ATTEMPT : retries
-  ATTEMPT ||--|| RUN : bridges
-  CHAT_SESSION ||--o{ RUN : turns
-  SESSION ||--o{ RUN : contains
-  RUN ||--o{ EVENT_ENVELOPE : emits
-```
-
-- Chat Session：连续对话和 provider session binding，不含 Task orchestration 字段。
-- Task：持久工作项，由 trigger occurrence 产生或继续。
-- Attempt：某个 Task 的第 N 次执行，保存 trigger/comment source。
-- Run：一次 provider invocation，Chat 与 Task 共享。
-- Session：`chat|task` 分类、单 active run、opaque provider session。
-- Trigger/Occurrence：规则定义与一次实际发生分离；后者承担幂等键。
-
-## Trigger To Run
-
-1. `materializeTrigger` 检查 `(triggerId, externalEventId)`。
-2. 新 occurrence、Task、Task Session 在一次 store commit 中持久化。
-3. `queueTask` 建 Attempt/Run，先写 `run.queued`。
-4. daemon 返回 `taskId/runId`，通过 `setImmediate` 后台执行。
-5. `executeRun` 写 `run.running`，构造显式 InvokeRequest。
-6. host 迭代 adapter stream，daemon 按 seq 追加 envelopes。
-7. terminal event 更新 Run/Attempt/Task，释放 session active run。
-
-Event trigger 只做匹配；interval trigger 只产生 occurrence。二者都不能直接调用 host。
-
-## Canonical Event Contract
+Worker 的完整状态机为：
 
 ```text
-run.queued -> run.running
-session.update?
-message.create -> message.delta* -> message.update
-tool_call.create -> tool_call.delta* -> tool_call.update
-usage.update*
-run.finished | run.error | run.stopped
+queued -> leased -> running -> interacting -> cancelling
+   \          \         \           \          \
+    +----------------------------------> completed | failed | cancelled | expired
 ```
 
-Host 执行以下约束：
+Harness canonical terminal 映射：
 
-- adapter terminal 暂存到 stream/cleanup 成功后才发布。
-- adapter 无 terminal 退出时合成 `run.stopped`。
-- provider/cleanup 异常合成 `run.error`。
-- cancellation 只收敛为一个 `run.stopped`。
-- final/analysis channel 各有稳定 `messageId`。
-- delta 前缺 create 时补 create；terminal 前 open message 自动补 update。
+| Harness event | AgentRun terminal |
+|---|---|
+| `run.finished` | `completed` |
+| `run.error` | `failed` |
+| `run.stopped` | `cancelled` |
 
-Gateway envelope 再增加 `id, seq, tsMs, sessionId, runId`。store 以 `(runId, seq)` 幂等追加。
+Task 的业务状态不能复制 AgentRun 状态。Loop 可把 Run 完成投影为待审核，IM 可把完成结果投递到群聊，两者都不改变 Run 终态。
 
-## Session Identity
+## Reset 与恢复
 
-三个 ID 不应合并：
+`POST /api/v1/agent_session/reset` 由 Worker 执行：
 
-- Harness Session ID：Chat/Task 的稳定会话。
-- Harness Run ID：一次 turn/attempt。
-- Provider Session ID：Codex thread、Claude UUID、ACP/OpenCode session 或 OpenClaw local session ID。
+1. 校验 expected generation。
+2. 增加 generation、provider epoch 和 context epoch。
+3. 清空 `provider_session`。
+4. 取消旧 generation 中尚未开始的 Run；按参数请求取消 active Run。
+5. 按 trigger occurrence 保存 reset receipt，使重试返回同一结果。
 
-adapter 通过 `session.update` side channel 上报 opaque `providerSession`；core 保存到 Session，下一轮放回 InvokeRequest。Task continuation 和 Chat next turn 因而都能恢复 provider context，同时拥有新的 Harness Run/event seq。
+下一次 `run.start` 不带 provider session，provider 创建新 thread/session；Harness 从 `session.update` 收到新值并回传 Worker。外部 `--resume` 参数始终来自 Worker 的 AgentSession，不来自 IM、Loop 或 Harness 自行拼接。
 
-## Persistence And Recovery
+## Reference Core
 
-`JsonFileStore` 把所有 Map 写入 versioned JSON，使用 `0600` 临时文件 + atomic rename。daemon 是单 writer。重启时：
-
-- queued run 重新入队。
-- 已 materialize 但尚无 run 的 queued Task 补建 Attempt/Run 后入队。
-- 失去 provider process 的 running run 终止为 `run.error(code=daemon_restarted)`。
-- terminal run 原样保留。
-
-生产替换点是 store 接口，不是 adapter：使用关系数据库事务、outbox、worker lease/fencing 和事件总线即可保留领域边界。
+`packages/octo-harness-core` 保留单机 reference profile，用于 adapter 合同测试。它只有 Agent、AgentSession、AgentRun 和 EventEnvelope；生产接入时 Worker 数据库仍是唯一权威。

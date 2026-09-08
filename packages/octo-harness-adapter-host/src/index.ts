@@ -103,7 +103,7 @@ export class AdapterHost {
       observe: observation => this.#observe({
         runId: request.runId,
         invocationId: request.invocationId,
-        sessionId: request.sessionId,
+        agentSessionId: request.agentSessionId,
         adapterType
       }, observation)
     };

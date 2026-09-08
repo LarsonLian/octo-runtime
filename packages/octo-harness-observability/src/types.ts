@@ -34,7 +34,7 @@ export interface LogInput {
   data?: Record<string, unknown>;
   runId?: string;
   invocationId?: string;
-  sessionId?: string;
+  agentSessionId?: string;
   adapterType?: string;
 }
 
@@ -73,7 +73,7 @@ export interface AdapterInvocationContext {
 export interface ObservationIdentity {
   runId: string;
   invocationId: string;
-  sessionId: string;
+  agentSessionId: string;
   adapterType: string;
 }
 

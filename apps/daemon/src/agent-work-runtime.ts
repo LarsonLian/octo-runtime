@@ -84,23 +84,21 @@ export interface ChannelContextRuntimeOptions extends ChannelContextStoreOptions
 export interface ExecutionEnvelope {
   schema_version: number;
   run_id: string;
-  harness_session_id: string;
+  agent_session_id: string;
   provider_session?: ProviderSession;
-  execution_request: {
-    id: string;
+  agent_run_request: {
+    namespace: string;
     agent_id: string;
     agent_revision_id: string;
-    source_type: string;
-    source_id: string;
-    policy?: Record<string, unknown>;
-    delivery_context?: Record<string, unknown>;
+    session_key: string;
+    trigger: { kind: string; occurrence_id: string; occurred_at?: string };
+    input: Record<string, unknown>;
+    execution_policy?: Record<string, unknown>;
+    trace?: Record<string, unknown>;
   };
   agent_revision: {
     definition?: Record<string, unknown>;
     execution_profile?: Record<string, unknown>;
-  };
-  immutable_execution_input: {
-    content?: Record<string, unknown>;
   };
 }
 
@@ -328,7 +326,7 @@ export class AgentWorkRuntime {
       message: "registering local Agent Work runtime",
       data: { endpoint: httpEndpointMetadata(this.#options.baseUrl), adapter_types: adapterTypes }
     });
-    const response = await fetch(`${stripSlash(this.#options.baseUrl)}/api/v1/runtimes/register`, {
+    const response = await fetch(`${stripSlash(this.#options.baseUrl)}/api/v1/runtime/register`, {
       method: "POST",
       headers: this.#headers(true),
       body: JSON.stringify({
@@ -374,7 +372,7 @@ export class AgentWorkRuntime {
   }
 
   async #connect(): Promise<void> {
-    const url = new URL(`${stripSlash(this.#options.baseUrl)}/api/v1/runtimes/connect`);
+    const url = new URL(`${stripSlash(this.#options.baseUrl)}/api/v1/runtime/connect`);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     const connectionId = `conn_wss_${randomUUID()}`;
     const attempt = ++this.#connectionAttempt;
@@ -525,7 +523,7 @@ export class AgentWorkRuntime {
     const envelopePayload = asRecord(envelope.payload);
     const commandPayload = envelope.type === "runtime.command" ? envelopePayload : undefined;
     // Transport traces carry routing and correlation fields, never the envelope
-    // payload. Business payloads can contain full ChatTurn or provider content
+    // payload. Business payloads can contain full occurrence or provider content
     // and belong only in the explicitly enabled sensitive capture stream.
     this.#log({
       level: "debug",
@@ -746,7 +744,7 @@ export class AgentWorkRuntime {
     try {
       let request: InvokeRequest;
       let adapterType: string;
-      let sessionId: string;
+      let agentSessionId: string;
       let leaseId: string;
       let fencingToken: number;
       try {
@@ -766,24 +764,22 @@ export class AgentWorkRuntime {
         const mapped = mapExecutionEnvelope(executionEnvelope, contextSnapshot);
         request = mapped.request;
         adapterType = mapped.adapterType;
-        sessionId = request.sessionId;
-        const sourceType = executionEnvelope.execution_request.source_type;
-        const sourceId = executionEnvelope.execution_request.source_id;
+        agentSessionId = request.agentSessionId;
+        const trigger = executionEnvelope.agent_run_request.trigger;
         this.#log({
           level: "info",
           scope: "agent-work.dispatch",
-          event: sourceType === "chat_turn" ? "chat_turn.received" : "agent_work.execution.received",
-          message: sourceType === "chat_turn" ? "ChatTurn received from Agent Work" : "execution request received from Agent Work",
+          event: "agent_run.received",
+          message: "AgentRun received from Agent Worker",
           runId: command.run_id,
           invocationId: request.invocationId,
-          sessionId,
+          agentSessionId,
           data: {
             connection_id: this.#connectionId,
             command_id: command.command_id,
-            execution_request_id: executionEnvelope.execution_request.id,
-            source_type: sourceType,
-            source_id: sourceId,
-            ...(sourceType === "chat_turn" ? { chat_turn_id: sourceId } : {})
+            namespace: executionEnvelope.agent_run_request.namespace,
+            trigger_kind: trigger.kind,
+            trigger_occurrence_id: trigger.occurrence_id
           }
         });
         this.#log({
@@ -793,13 +789,13 @@ export class AgentWorkRuntime {
           message: `selected ${adapterType} adapter`,
           runId: command.run_id,
           invocationId: request.invocationId,
-          sessionId,
+          agentSessionId,
           adapterType,
           data: {
             command_id: command.command_id,
-            source_type: sourceType,
-            source_id: sourceId,
-            ...(sourceType === "chat_turn" ? { chat_turn_id: sourceId } : {})
+            namespace: executionEnvelope.agent_run_request.namespace,
+            trigger_kind: trigger.kind,
+            trigger_occurrence_id: trigger.occurrence_id
           }
         });
       } catch (error) {
@@ -832,7 +828,7 @@ export class AgentWorkRuntime {
       }
       store.upsertRun({
         runId: command.run_id,
-        sessionId,
+        agentSessionId,
         commandId: command.command_id,
         leaseId,
         fencingToken
@@ -862,7 +858,7 @@ export class AgentWorkRuntime {
     signal: AbortSignal,
     epoch: number
   ): Promise<PreparedChannelContextSnapshot | undefined> {
-    const descriptorValue = asRecord(envelope.immutable_execution_input.content).channel_context;
+    const descriptorValue = asRecord(envelope.agent_run_request.input).channel_context;
     if (descriptorValue === undefined) return undefined;
     assertChannelContextDescriptor(descriptorValue);
     const descriptor = descriptorValue;
@@ -870,7 +866,7 @@ export class AgentWorkRuntime {
     if (!contextStore) return undefined;
 
     // Reliable trigger path repairs a dropped best-effort append before selection.
-    contextStore.append({ scope: descriptor.scope, facts: [descriptor.trigger_fact] });
+	contextStore.append({ agent_id: envelope.agent_run_request.agent_id, scope: descriptor.scope, facts: [descriptor.trigger_fact] });
     if (!this.#usesAppendOnlyDelta()) return undefined;
     if (!this.#adapterCapabilities.get(adapterType)?.has("session.serialize")) {
       throw new Error(`adapter ${adapterType} lacks session.serialize required by append-only channel context`);
@@ -878,7 +874,7 @@ export class AgentWorkRuntime {
     if (!this.#adapterCapabilities.get(adapterType)?.has("session.resume_recovery")) {
       throw new Error(`adapter ${adapterType} lacks session.resume_recovery required by append-only channel context`);
     }
-    if (contextStore.needsSync(descriptor.scope)) await this.#requestContextSync(descriptor, signal);
+    if (contextStore.needsSync(descriptor.scope)) await this.#requestContextSync(runId, descriptor, signal);
     while (this.#isCurrentLifecycle(epoch)) {
       throwIfAcceptingAborted(signal);
       try {
@@ -891,13 +887,14 @@ export class AgentWorkRuntime {
     throw new RuntimeStoppingError();
   }
 
-  async #requestContextSync(descriptor: ChannelContextDescriptor, signal: AbortSignal): Promise<void> {
+  async #requestContextSync(runId: string, descriptor: ChannelContextDescriptor, signal: AbortSignal): Promise<void> {
     const contextStore = this.#contextStore;
     if (!contextStore) return;
     const requestId = `ctx_sync_${randomUUID()}`;
     const afterSeq = contextStore.syncAfterSeq(descriptor.scope);
     const request: ContextSyncRequest = {
       request_id: requestId,
+      agent_run_id: runId,
       scope: descriptor.scope,
       trigger_message_id: descriptor.trigger_message_id,
       ...(descriptor.trigger_seq === undefined ? {} : { trigger_seq: descriptor.trigger_seq }),
@@ -971,9 +968,8 @@ export class AgentWorkRuntime {
     let completed = false;
     let contextSnapshot = this.#contextStore?.markSubmitted(command.run_id);
     let started = false;
-    // Preserve all four correlation domains: the remote Run, local adapter
-    // invocation, harness session, and ChatTurn source id. They are not
-    // interchangeable and each answers a different support question.
+    // Keep execution, invocation, business namespace, and trigger occurrence
+    // as distinct correlation domains.
     this.#log({
       level: "info",
       scope: "adapter.invoke",
@@ -981,12 +977,12 @@ export class AgentWorkRuntime {
       message: "adapter invocation started",
       runId: command.run_id,
       invocationId: request.invocationId,
-      sessionId: request.sessionId,
+      agentSessionId: request.agentSessionId,
       adapterType,
       data: {
-        source_type: stringValue(request.context?.sourceType),
-        source_id: stringValue(request.context?.sourceId),
-        chat_turn_id: request.context?.sourceType === "chat_turn" ? stringValue(request.context.sourceId) : undefined
+        namespace: stringValue(request.context?.namespace),
+        trigger_kind: stringValue(request.context?.triggerKind),
+        trigger_occurrence_id: stringValue(request.context?.triggerOccurrenceId)
       }
     });
     const appendStarted = (): void => {
@@ -1016,7 +1012,7 @@ export class AgentWorkRuntime {
           message: `adapter emitted ${event.type}`,
           runId: command.run_id,
           invocationId: request.invocationId,
-          sessionId: request.sessionId,
+          agentSessionId: request.agentSessionId,
           adapterType,
           data: { canonical_event_type: event.type, outbox_event_type: mapped.type }
         });
@@ -1037,7 +1033,7 @@ export class AgentWorkRuntime {
         message: completed ? "adapter invocation completed" : "adapter invocation ended without a terminal event",
         runId: command.run_id,
         invocationId: request.invocationId,
-        sessionId: request.sessionId,
+        agentSessionId: request.agentSessionId,
         adapterType
       });
     } catch (error) {
@@ -1048,7 +1044,7 @@ export class AgentWorkRuntime {
         message: "adapter invocation failed",
         runId: command.run_id,
         invocationId: request.invocationId,
-        sessionId: request.sessionId,
+        agentSessionId: request.agentSessionId,
         adapterType,
         data: { error: errorMessage(error) }
       });
@@ -1250,8 +1246,8 @@ export function mapExecutionEnvelope(
   envelope: ExecutionEnvelope,
   contextSnapshot?: PreparedChannelContextSnapshot
 ): { adapterType: string; request: InvokeRequest } {
-  if (!envelope?.run_id || !envelope.harness_session_id || !envelope.agent_revision || !envelope.immutable_execution_input) {
-    throw new TypeError("execution envelope is missing run/session/revision/immutable execution input");
+  if (!envelope?.run_id || !envelope.agent_session_id || !envelope.agent_revision || !envelope.agent_run_request?.input) {
+    throw new TypeError("execution envelope is missing run/session/revision/agent run request");
   }
   const profile = asRecord(envelope.agent_revision.execution_profile);
   const definition = asRecord(envelope.agent_revision.definition);
@@ -1259,24 +1255,26 @@ export function mapExecutionEnvelope(
   const agentConfig = asRecord(profile.agent_config) as AgentConfig;
   const workdir = stringValue(profile.workdir) ?? stringValue(agentConfig.workdir);
   if (!workdir) throw new TypeError("execution_profile.workdir is required for a local runtime");
-  const content = envelope.immutable_execution_input.content;
+  const content = envelope.agent_run_request.input;
   const displayPrompt = contextSnapshot
     ? renderDisplayExecutionInputPrompt(content)
-    : renderImmutableExecutionInputPrompt(content);
+    : renderAgentRunInputPrompt(content);
   const context = {
     schemaVersion: envelope.schema_version,
-    agentId: envelope.execution_request.agent_id,
-    agentRevisionId: envelope.execution_request.agent_revision_id,
-    sourceType: envelope.execution_request.source_type,
-    sourceId: envelope.execution_request.source_id,
-    immutableExecutionInput: content ?? {},
+    namespace: envelope.agent_run_request.namespace,
+    agentId: envelope.agent_run_request.agent_id,
+    agentRevisionId: envelope.agent_run_request.agent_revision_id,
+    sessionKey: envelope.agent_run_request.session_key,
+    triggerKind: envelope.agent_run_request.trigger.kind,
+    triggerOccurrenceId: envelope.agent_run_request.trigger.occurrence_id,
+    input: content,
     ...(contextSnapshot ? { contextSnapshot: contextSnapshot.ref } : {})
   };
   return {
     adapterType,
     request: {
       invocationId: `invoke_${randomUUID()}`,
-      sessionId: envelope.harness_session_id,
+      agentSessionId: envelope.agent_session_id,
       runId: envelope.run_id,
       prompt: displayPrompt,
       ...(contextSnapshot ? {
@@ -1300,8 +1298,9 @@ export function mapExecutionEnvelope(
 
 function executionAdapterType(envelope: ExecutionEnvelope): string {
   const profile = asRecord(envelope.agent_revision?.execution_profile);
-  return stringValue(profile.adapter_type)
-    ?? normalizeAdapterType(stringValue(profile.default_adapter) ?? "codex");
+  const adapterType = stringValue(profile.default_adapter);
+  if (!adapterType) throw new Error("agent_revision.execution_profile.default_adapter is required");
+  return adapterType;
 }
 
 function httpEndpointMetadata(baseUrl: string): Record<string, string> {
@@ -1310,7 +1309,7 @@ function httpEndpointMetadata(baseUrl: string): Record<string, string> {
     scheme: url.protocol.slice(0, -1),
     host: url.hostname,
     port: url.port || (url.protocol === "https:" ? "443" : "80"),
-    path: "/api/v1/runtimes/register"
+    path: "/api/v1/runtime/register"
   };
 }
 
@@ -1327,7 +1326,7 @@ function webSocketEndpointMetadata(url: URL): Record<string, string> {
 /** Render the full immutable execution input (current parts, recent group
  * messages and any quoted message) into a single prompt. Used when no channel
  * context snapshot drives the model input. */
-export function renderImmutableExecutionInputPrompt(content: Record<string, unknown> | undefined): string {
+export function renderAgentRunInputPrompt(content: Record<string, unknown> | undefined): string {
   const input = asRecord(content);
   const parts = Array.isArray(input.parts) ? input.parts : [];
   const current = parts.map(part => {
@@ -1395,10 +1394,6 @@ export function mapRuntimeEvent(event: CanonicalEvent, finalText: string): { typ
     default:
       return { type: event.type, payload: event.payload };
   }
-}
-
-function normalizeAdapterType(value: string): string {
-  return value.endsWith("-local") ? value.slice(0, -"-local".length) : value;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

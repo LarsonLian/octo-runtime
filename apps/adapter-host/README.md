@@ -14,7 +14,7 @@ stdin/stdout NDJSON JSON-RPC 向 daemon 提供统一的 `list`、`probe`、`invo
 ```text
 CLI
   -> Unix socket
-daemon（状态、调度、恢复）
+daemon（invocation、outbox、执行恢复）
   -> stdio NDJSON JSON-RPC
 adapter-host（插件加载、调用生命周期）
   -> n 个 adapter 模块
@@ -35,7 +35,8 @@ adapter package、更新 [adapter manifest](../../config/adapters.json)，并让
 
 ### 1. 保护有状态控制面
 
-daemon 持有 Task、Run、Trigger、恢复逻辑和持久化 Store。adapter 则包含动态模块、第三方
+Agent Worker 持有 AgentSession/AgentRun 权威；daemon 只持有本地 invocation、可靠 outbox
+和执行恢复。adapter 则包含动态模块、第三方
 依赖、provider CLI 子进程和 native event parser，故障概率与资源行为更不可控。
 
 独立进程避免 adapter 加载失败、未捕获异常或执行层崩溃直接成为 daemon 进程内的异常。
@@ -47,7 +48,7 @@ daemon 只面向 provider-neutral 的 `list/probe/invoke/cancel` 契约，不包
 `if (adapterType === "codex")` 一类 provider 分支。host 根据 `adapterType` 路由到具体
 adapter，并把 canonical event stream 返回给 daemon。
 
-这个边界允许 adapter 独立增加、替换和升级，而不改变 Task/Chat/Run 领域模型。
+这个边界允许 adapter 独立增加、替换和升级，而不改变统一 AgentRun 协议。
 
 ### 3. 统一调用生命周期
 
@@ -104,7 +105,7 @@ CLI 子进程可能继续存活，而 daemon 已将对应 Run 标记为 error。
 
 | 模块 | 负责 | 不负责 |
 |---|---|---|
-| `apps/adapter-host` | manifest 读取、动态 import、adapter 形状校验、启动 RPC server | Task/Run 状态和调度 |
+| `apps/adapter-host` | manifest 读取、动态 import、adapter 形状校验、启动 RPC server | AgentRun 权威状态和业务调度 |
 | `packages/octo-harness-adapter-host` | registry、invoke/cancel 生命周期、RPC client/server、host 子进程管理 | 选择部署 manifest |
 | `packages/octo-harness-adapter-*` | provider 命令、session 恢复、native event 到 canonical event 映射 | 全局 Run 状态 |
 | `apps/daemon` | Store/Core/Daemon/Host client 装配、Unix socket 控制面 | 直接加载 provider adapter |

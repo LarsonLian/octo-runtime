@@ -106,7 +106,7 @@
     <rect x="675" y="456" width="240" height="222" rx="8" fill="#ffffff" stroke="#94a3b8"/>
     <text class="node-title" x="695" y="490">物化 Task</text>
     <text class="node-text" x="695" y="520">AutoTaskRun.taskId</text>
-    <text class="node-text" x="695" y="550">triggerKind / triggerId</text>
+    <text class="node-text" x="695" y="550">triggerKind / triggerOccurrenceId</text>
     <text class="node-text" x="695" y="580">状态沿用 Task 状态机</text>
     <line x1="700" y1="607" x2="890" y2="607" stroke="#cbd5e1"/>
     <text class="small" x="695" y="635">结论：Auto 不直接执行模型，</text>

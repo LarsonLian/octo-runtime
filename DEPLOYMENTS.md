@@ -1,10 +1,10 @@
 # Octo Harness Deployment
 
-本文档说明本地 `npm link`、连接 `octo-agent-worker` 和未来 npm 发布的约定。
+本文档说明本地 `npm link`、连接 `octo-agent-worker` 和 npm 全局发行约定。最终用户的一键入口见根 [README](README.md) 与 [installers](installers/README.md)。
 
 ## 1. 本地编译并 link
 
-要求 Node.js 20+、pnpm 11。首次 checkout 或依赖变化后先安装 workspace 依赖：
+要求 Node.js 24+、pnpm 11。首次 checkout 或依赖变化后先安装 workspace 依赖：
 
 ```bash
 corepack enable
@@ -110,7 +110,7 @@ agent-worker 与 harness 使用的是同一份 Runtime credential，但两端变
 开发环境可以显式使用 worker 的 `dev-runtime-token` 默认值。生产环境必须给两端注入同一个
 强随机 secret，并且不能使用以下凭证代替：
 
-- `INTERNAL_AUTH_TOKEN`：agent-worker 业务/control-plane HTTP API 的凭证；
+- `INTERNAL_CREDENTIALS_JSON` 中任一 namespace-scoped service token：agent-worker 业务执行 API 的凭证；
 - Codex、Claude Code、CodeBuddy 等 provider token：模型执行凭证，由各 provider CLI 独立管理；
 - IM/Bot token：消息通道凭证，与 Runtime transport 无关。
 
@@ -162,6 +162,8 @@ pnpm，不直接用 npm 发布 workspace。当前实现仍是 single-node refere
 npm install --global @mininglamp-oss/octo-harness
 octo-harness daemon
 ```
+
+全局 npm prefix 管理 CLI 与 daemon 程序文件；`~/.octo-harness`（Windows 为 `%LOCALAPPDATA%\OctoHarness`）只保存 profile、`runtime_id`、credential、数据库、PID/socket 和日志。原生 service 必须保存绝对 Node 与 daemon entrypoint 路径，不依赖交互 shell PATH；Node/npm prefix 变化后重跑 installer 或 `setup --repair`。
 
 项目内安装并启动：
 

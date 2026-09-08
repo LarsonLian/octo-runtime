@@ -310,9 +310,9 @@ export interface RunIdentity {
    */
   id: string;
   /**
-   * Owning Harness session identifier.
+   * Owning Agent Worker session identifier.
    */
-  sessionId: string;
+  agentSessionId: string;
 }
 /**
  * Platform-neutral channel isolation key. account_id may be null but remains explicit; an absent thread_id selects the conversation root.
@@ -385,6 +385,7 @@ export interface ChannelMessageFact {
  * via the `definition` "ChannelContextAppend".
  */
 export interface ChannelContextAppend {
+  agent_id: string;
   scope: ChannelScope;
   /**
    * @minItems 1
@@ -401,6 +402,7 @@ export interface ChannelContextAppend {
  */
 export interface ContextSyncRequest {
   request_id: string;
+  agent_run_id: string;
   scope: ChannelScope;
   trigger_message_id: string;
   trigger_seq?: number;
@@ -484,9 +486,9 @@ export interface InvokeRequestWire {
    */
   invocationId: string;
   /**
-   * Long-lived Harness session identifier for the chat or task.
+   * Long-lived Agent Worker session identifier for this execution context.
    */
-  sessionId: string;
+  agentSessionId: string;
   /**
    * Run identifier for this execution.
    */

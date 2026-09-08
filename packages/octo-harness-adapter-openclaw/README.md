@@ -53,29 +53,18 @@ sequenceDiagram
 
 ## 使用
 
-启动 daemon 后，先 probe 再创建 Agent：
+启动 daemon 后探测 adapter：
 
 ```bash
 pnpm cli adapter probe openclaw
-
-pnpm cli agent create \
-  --name openclaw-local \
-  --adapter openclaw \
-  --provider-agent main \
-  --thinking medium \
-  --timeout-seconds 300
 ```
 
-`--provider-agent main` 的取值是 OpenClaw 自身的 agent slug，而非 Octo Harness Agent UUID。此后使用公共 Chat / Task 命令即可：
+`providerAgent=main` 的取值是 OpenClaw 自身的 agent slug，而非 Worker Agent ID。
+该配置保存在 Agent revision；业务入口统一提交 AgentRun，adapter 不区分 Chat/Task。
 
-```bash
-pnpm cli chat create --agent <agent-id> --title "OpenClaw chat"
-pnpm cli chat send <session-id> --prompt "Inspect the configured workspace"
-pnpm cli run wait <run-id>
-pnpm cli run events <run-id>
-```
-
-可配置项：`--provider-agent`（`--agent`）、`--model`、`--thinking`、`--timeout-seconds`（`--timeout`）。程序化创建时还可设置 `openclawConfigPath` / `openclawStateDir`，分别注入 `OPENCLAW_CONFIG_PATH` 与 `OPENCLAW_STATE_DIR`；这两项当前未由公共 CLI 暴露。
+Agent revision 可配置 `providerAgent`、`model`、`thinking`、
+`timeoutSeconds`、`openclawConfigPath` 和 `openclawStateDir`；后两项分别注入
+`OPENCLAW_CONFIG_PATH` 与 `OPENCLAW_STATE_DIR`。
 
 ## 约束与注意事项
 

@@ -5,14 +5,10 @@ export { HarnessEngine } from "./engine.js";
 export { composeContext, renderPortableInstructions } from "./prompt.js";
 export type {
   Agent,
-  Attempt,
-  Run,
-  RunStatus,
-  Session,
+  AgentRun,
+  AgentRunStatus,
+  AgentRunTrigger,
+  AgentSession,
   Store,
-  Task,
-  Trigger,
-  TriggerKind,
-  TriggerOccurrence
 } from "./store.js";
-export type { CreateTriggerInput, HarnessHost, QueueTaskInput, RegisterAgentInput, TriggerInput } from "./engine.js";
+export type { HarnessHost, RegisterAgentInput, SubmitAgentRunInput, SubmitAgentRunResult } from "./engine.js";

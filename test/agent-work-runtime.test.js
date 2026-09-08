@@ -15,32 +15,22 @@ import {
   mapExecutionEnvelope,
   mapRuntimeEvent,
   renderDisplayExecutionInputPrompt,
-  renderImmutableExecutionInputPrompt
+  renderAgentRunInputPrompt
 } from "../apps/daemon/dist/agent-work-runtime.js";
 import { deferred, wire } from "./agent-work-runtime-fixture.js";
 
 const envelope = {
   schema_version: 1,
   run_id: "run-1",
-  harness_session_id: "chat-1",
+  agent_session_id: "chat-1",
   provider_session: { sessionId: "thread-previous", resumable: true },
-  execution_request: {
-    id: "exec-1",
+  agent_run_request: {
+    namespace: "im",
     agent_id: "agent-1",
     agent_revision_id: "revision-1",
-    source_type: "chat_turn",
-    source_id: "turn-1"
-  },
-  agent_revision: {
-    definition: { instructions: "Keep changes scoped." },
-    execution_profile: {
-      default_adapter: "codex-local",
-      workdir: "/workspace/project",
-      agent_config: { sandbox: "workspace-write", model: "gpt-5" }
-    }
-  },
-  immutable_execution_input: {
-    content: {
+    session_key: "v1/octo/ep-1/group/group-1",
+    trigger: { kind: "im.message", occurrence_id: "message/event-1" },
+    input: {
       parts: [{ type: "text", text: "Fix the test" }],
       reply_to: { author_name: "Ada", text: "The failing case is reset." },
       context_refs: [{
@@ -48,13 +38,21 @@ const envelope = {
         messages: [{ author_name: "Lin", text: "Use the existing adapter." }]
       }]
     }
+  },
+  agent_revision: {
+    definition: { instructions: "Keep changes scoped." },
+    execution_profile: {
+      default_adapter: "codex",
+      workdir: "/workspace/project",
+      agent_config: { sandbox: "workspace-write", model: "gpt-5" }
+    }
   }
 };
 
 test("Agent Work envelope maps to a local adapter invocation with fixed cwd and resume", () => {
   const mapped = mapExecutionEnvelope(envelope);
   assert.equal(mapped.adapterType, "codex");
-  assert.equal(mapped.request.sessionId, "chat-1");
+  assert.equal(mapped.request.agentSessionId, "chat-1");
   assert.equal(mapped.request.workdir, "/workspace/project");
   assert.equal(mapped.request.providerSession.sessionId, "thread-previous");
   assert.equal(mapped.request.agentConfig.sandbox, "workspace-write");
@@ -63,8 +61,21 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
   assert.match(mapped.request.prompt, /\[Current message\]\nFix the test/);
 });
 
+test("execution envelope rejects legacy adapter_type without default_adapter", () => {
+  assert.throws(
+    () => mapExecutionEnvelope({
+      ...envelope,
+      agent_revision: {
+        ...envelope.agent_revision,
+        execution_profile: { adapter_type: "codex", workdir: "/workspace/project" }
+      }
+    }),
+    /execution_profile\.default_adapter is required/
+  );
+});
+
 test("immutable execution input rendering keeps background separate from the current message", () => {
-  const prompt = renderImmutableExecutionInputPrompt(envelope.immutable_execution_input.content);
+  const prompt = renderAgentRunInputPrompt(envelope.agent_run_request.input);
   assert.ok(prompt.indexOf("Recent group messages") < prompt.indexOf("Current message"));
 });
 
@@ -97,7 +108,7 @@ test("frozen channel context uses modelInput while prompt remains display-safe",
   assert.match(mapped.request.modelInput, /message-previous/);
   assert.match(mapped.request.freshFallbackModelInput, /message-cold/);
   assert.equal(mapped.request.contextSnapshot.snapshot_id, "ctx-1");
-  assert.equal(renderDisplayExecutionInputPrompt(envelope.immutable_execution_input.content), mapped.request.prompt);
+  assert.equal(renderDisplayExecutionInputPrompt(envelope.agent_run_request.input), mapped.request.prompt);
 });
 
 test("runtime terminal mapping carries the assembled final answer", () => {
@@ -131,7 +142,7 @@ test("terminal mapping uses provider terminal text when no message frame carried
   });
 });
 
-test("Agent Work observability correlates WSS, ChatTurn, Run, invocation and adapter without logging credentials", async () => {
+test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation and adapter without logging credentials", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-agent-work-logs-"));
   const httpServer = createServer();
   const wsServer = new WebSocketServer({ noServer: true });
@@ -165,17 +176,15 @@ test("Agent Work observability correlates WSS, ChatTurn, Run, invocation and ada
           payload: {
             ...envelope,
             run_id: "run-observed",
-            harness_session_id: "session-observed",
-            execution_request: {
-              ...envelope.execution_request,
-              id: "execution-observed",
-              source_type: "chat_turn",
-              source_id: "turn-observed"
+            agent_session_id: "session-observed",
+            agent_run_request: {
+              ...envelope.agent_run_request,
+              trigger: { kind: "im.message", occurrence_id: "message/observed" }
             },
             agent_revision: {
               ...envelope.agent_revision,
               execution_profile: {
-                adapter_type: "codex",
+                default_adapter: "codex",
                 workdir: process.cwd(),
                 agent_config: {}
               }
@@ -216,7 +225,7 @@ test("Agent Work observability correlates WSS, ChatTurn, Run, invocation and ada
     await runtime.close();
     runtime = undefined;
     const trace = await logger.query({ runId: "run-observed" });
-    assert.ok(trace.some(record => record.event === "chat_turn.received" && record.data.chat_turn_id === "turn-observed"));
+    assert.ok(trace.some(record => record.event === "agent_run.received" && record.data.trigger_occurrence_id === "message/observed"));
     assert.ok(trace.some(record => record.event === "adapter.selected" && record.adapter_type === "codex"));
     assert.ok(trace.some(record => record.event === "adapter.invoke.started" && record.invocation_id));
     assert.ok(trace.some(record => record.event === "transport.message.received" && record.data.frame_type === "runtime.command"));
@@ -226,7 +235,7 @@ test("Agent Work observability correlates WSS, ChatTurn, Run, invocation and ada
       scheme: "ws",
       host: "127.0.0.1",
       port: String(address.port),
-      path: "/api/v1/runtimes/connect"
+      path: "/api/v1/runtime/connect"
     });
     const serialized = JSON.stringify(all);
     assert.doesNotMatch(serialized, /runtime-token-must-not-leak|Fix the test/);

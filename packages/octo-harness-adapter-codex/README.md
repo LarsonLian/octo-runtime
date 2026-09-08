@@ -64,28 +64,20 @@ codex --version
 codex login status
 ```
 
-在仓库根目录启动 daemon，另开终端探测并创建 Agent：
+在仓库根目录启动 daemon 并探测 adapter：
 
 ```bash
 pnpm daemon
 
 pnpm cli adapter probe codex
-
-pnpm cli agent create \
-  --name codex-reviewer \
-  --adapter codex \
-  --workdir /absolute/path/to/repository \
-  --sandbox read-only
 ```
 
-随后执行统一的 Chat 流程：
+Agent Worker 在 Agent revision 中保存该 execution profile。所有 IM、Loop、
+AutoPilot 或 Webhook 输入都由 Worker 统一下发为 AgentRun；adapter 只接收
+`InvokeRequest`，并把 Worker 提供的 provider session 映射为 Codex resume thread。
 
-```bash
-pnpm cli chat create --agent <agent-id> --title "Codex review"
-pnpm cli chat send <session-id> --prompt "Review this repository without modifying files"
-pnpm cli run wait <run-id>
-pnpm cli run events <run-id>
-```
+Agent revision 的 `execution_profile.agent_config` 提供 `workdir`、`model`、
+`sandbox` 和 approval 配置。
 
 ## 配置
 

@@ -75,7 +75,7 @@ OpenClaw 2026.x 的 `--json` stdout 可能是逐行 NDJSON，也可能只在尾�
 
 `--thinking` 控制 OpenClaw 的 thinking level。OpenClaw 明文落入 transcript 的 `thinking` block 映射为带 provider provenance 的 `public_reasoning`，并与同一 assistant record 的工具调用共享 `stepId`；adapter 不读取 `thinkingSignature`，provider 未写出明文 thinking 时也不伪造内容。
 
-## CLI Example
+## Runtime Configuration
 
 先确认本机命令可用：
 
@@ -83,18 +83,10 @@ OpenClaw 2026.x 的 `--json` stdout 可能是逐行 NDJSON，也可能只在尾�
 pnpm cli adapter probe openclaw
 ```
 
-创建绑定 OpenClaw provider agent `main` 的 Octo Harness Agent：
-
-```bash
-pnpm cli agent create \
-  --name openclaw-local \
-  --adapter openclaw \
-  --provider-agent main \
-  --thinking medium \
-  --timeout-seconds 300
-```
-
-`--model provider/model` 可选。OpenClaw 的认证、provider 和 agent workspace 仍由 OpenClaw 自己的配置负责。随后使用普通 `chat create/chat send` 或 Trigger -> Task 流程，上层不需要 OpenClaw 专用分支。
+Agent Worker 的 revision 将 `default_adapter=openclaw` 与 `providerAgent=main`
+下发给 Runtime；`model`、`thinking`、`timeoutSeconds` 可选。OpenClaw 的认证、
+provider 和 agent workspace 仍由 OpenClaw 自己的配置负责。IM、Loop、AutoPilot 与
+Webhook 都提交同一种 AgentRun，上层不需要 OpenClaw 专用业务分支。
 
 ## Deliberate Limits
 

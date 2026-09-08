@@ -38,10 +38,12 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
       if (envelope.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
         websocket.send(wire("context.append", {
+		  agent_id: "agent-a",
           scope: scopes.a,
           facts: [groupFact("a", 1, "A background ABCDE")]
         }));
         websocket.send(wire("context.append", {
+		  agent_id: "agent-b",
           scope: scopes.b,
           facts: [groupFact("b", 1, "B background ABCDE")]
         }));
@@ -75,10 +77,12 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
       if (!secondRoundSent && ["run-group-a-1", "run-group-b-1", "run-dm-a-1"].every(id => completedRuns.has(id))) {
         secondRoundSent = true;
         websocket.send(wire("context.append", {
+		  agent_id: "agent-a",
           scope: scopes.a,
           facts: [groupFact("a", 3, "F after R1 for A")]
         }));
         websocket.send(wire("context.append", {
+		  agent_id: "agent-b",
           scope: scopes.b,
           facts: [groupFact("b", 3, "F after R1 for B")]
         }));
@@ -89,6 +93,7 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
       if (!recoveryRoundSent && ["run-group-a-2", "run-group-b-2", "run-dm-a-2"].every(id => completedRuns.has(id))) {
         recoveryRoundSent = true;
         websocket.send(wire("context.append", {
+		  agent_id: "agent-a",
           scope: scopes.a,
           facts: [groupFact("a", 5, "G before idle recovery for A")]
         }));
@@ -218,21 +223,15 @@ function groupEnvelope(agent, round, text) {
   return {
     schema_version: 1,
     run_id: `run-group-${agent}-${round}`,
-    harness_session_id: `harness-group-${agent}`,
+    agent_session_id: `harness-group-${agent}`,
     ...(round === 2 ? { provider_session: { sessionId: `provider-group-${agent}`, resumable: true } } : {}),
-    execution_request: {
-      id: `execution-group-${agent}-${round}`,
+    agent_run_request: {
+      namespace: "im",
       agent_id: `agent-${agent}`,
       agent_revision_id: `revision-${agent}`,
-      source_type: "channel_message",
-      source_id: trigger.message_id
-    },
-    agent_revision: {
-      definition: { instructions: `Answer as Agent ${agent.toUpperCase()}.` },
-      execution_profile: { adapter_type: "fake", workdir: process.cwd(), agent_config: {} }
-    },
-    immutable_execution_input: {
-      content: {
+      session_key: `v1/octo/endpoint-${agent}/group/group-${agent}`,
+      trigger: { kind: "im.message", occurrence_id: `message/${trigger.message_id}` },
+      input: {
         parts: [{ type: "text", text }],
         channel_context: {
           scope: groupScope(agent),
@@ -243,6 +242,10 @@ function groupEnvelope(agent, round, text) {
           trigger_fact: trigger
         }
       }
+    },
+    agent_revision: {
+      definition: { instructions: `Answer as Agent ${agent.toUpperCase()}.` },
+      execution_profile: { default_adapter: "fake", workdir: process.cwd(), agent_config: {} }
     }
   };
 }
@@ -251,20 +254,20 @@ function dmEnvelope(round) {
   return {
     schema_version: 1,
     run_id: `run-dm-a-${round}`,
-    harness_session_id: "harness-dm-a",
+    agent_session_id: "harness-dm-a",
     ...(round === 2 ? { provider_session: { sessionId: "provider-dm-a", resumable: true } } : {}),
-    execution_request: {
-      id: `execution-dm-a-${round}`,
+    agent_run_request: {
+      namespace: "im",
       agent_id: "agent-a",
       agent_revision_id: "revision-a",
-      source_type: "channel_message",
-      source_id: `dm-message-${round}`
+      session_key: "v1/octo/endpoint-a/dm/user-a",
+      trigger: { kind: "im.message", occurrence_id: `message/dm-message-${round}` },
+      input: { parts: [{ type: "text", text: `DM U${round} for A` }] }
     },
     agent_revision: {
       definition: { instructions: "Answer as Agent A." },
-      execution_profile: { adapter_type: "fake", workdir: process.cwd(), agent_config: {} }
-    },
-    immutable_execution_input: { content: { parts: [{ type: "text", text: `DM U${round} for A` }] } }
+      execution_profile: { default_adapter: "fake", workdir: process.cwd(), agent_config: {} }
+    }
   };
 }
 

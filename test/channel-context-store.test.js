@@ -92,7 +92,7 @@ test("channel context snapshot is canonical, filtered, restart-safe, and commit 
     const replay = reopened.prepareSnapshot("run-1", descriptor(4));
     assert.equal(replay.renderedText, first.renderedText);
     assert.equal(replay.ref.rendered_sha256, first.ref.rendered_sha256);
-    reopened.append({ scope, facts: [fact(5)] });
+	reopened.append({ agent_id: "agent-1", scope, facts: [fact(5)] });
     const second = reopened.prepareSnapshot("run-2", descriptor(6));
     assert.deepEqual(second.facts.map(item => item.message_seq), [5]);
     assert.deepEqual(second.recoveryFacts.map(item => item.message_seq), [1, 4, 5]);
@@ -106,7 +106,7 @@ test("channel context snapshot is canonical, filtered, restart-safe, and commit 
     );
     reopened.markSubmitted("run-2");
     assert.equal(reopened.commitSnapshot("run-2").committed, true);
-    reopened.append({ scope, facts: [fact(7)] });
+	reopened.append({ agent_id: "agent-1", scope, facts: [fact(7)] });
     const afterRecovery = reopened.prepareSnapshot("run-3", descriptor(8, 2));
     assert.deepEqual(afterRecovery.facts.map(item => item.message_seq), [7]);
     reopened.close();
@@ -122,7 +122,7 @@ test("retry reuses exact frozen bytes and consumer snapshots are serialized", as
       facts: [fact(1), fact(2)]
     });
     const frozen = store.prepareSnapshot("run-retry", descriptor(3));
-    store.append({ scope, facts: Array.from({ length: 50 }, (_, index) => fact(index + 4)) });
+	store.append({ agent_id: "agent-1", scope, facts: Array.from({ length: 50 }, (_, index) => fact(index + 4)) });
     const retry = store.prepareSnapshot("run-retry", descriptor(3));
     assert.equal(retry.ref.snapshot_id, frozen.ref.snapshot_id);
     assert.equal(retry.renderedText, frozen.renderedText);
@@ -201,7 +201,7 @@ test("sequence gaps make snapshots partial until bounded sync repairs the scope"
   await withStore("oh-channel-gap", async store => {
     store.applySyncResult({ request_id: "sync-gap-1", scope, completeness: "complete", facts: [fact(1)] });
     assert.equal(store.needsSync(scope), false);
-    store.append({ scope, facts: [fact(3)] });
+	store.append({ agent_id: "agent-1", scope, facts: [fact(3)] });
     assert.equal(store.needsSync(scope), true);
     const partial = store.prepareSnapshot("run-gap", descriptor(4));
     assert.equal(partial.ref.completeness, "partial");
@@ -217,7 +217,7 @@ test("bounded partial sync warms a cold scope but an explicit gap still requests
     store.markSubmitted("run-partial");
     store.commitSnapshot("run-partial");
 
-    store.append({ scope, facts: [fact(4)] });
+	store.append({ agent_id: "agent-1", scope, facts: [fact(4)] });
     assert.equal(store.needsSync(scope), true);
   });
 });
@@ -232,14 +232,14 @@ test("an unavailable sync remains retryable for the next trigger", async () => {
 test("journal deduplicates per scope and enforces the per-scope row bound", async () => {
   await withStore("oh-channel-bound", async store => {
     const facts = Array.from({ length: 230 }, (_, index) => fact(index + 1));
-    store.append({ scope, facts: facts.slice(0, 100) });
-    store.append({ scope, facts: facts.slice(100, 200) });
-    store.append({ scope, facts: facts.slice(200) });
-    store.append({ scope, facts: [fact(230, "updated")] });
+	store.append({ agent_id: "agent-1", scope, facts: facts.slice(0, 100) });
+	store.append({ agent_id: "agent-1", scope, facts: facts.slice(100, 200) });
+	store.append({ agent_id: "agent-1", scope, facts: facts.slice(200) });
+	store.append({ agent_id: "agent-1", scope, facts: [fact(230, "updated")] });
     assert.equal(store.messageCount(scope), 200);
 
     const other = { ...scope, conversation_id: "conversation-2" };
-    store.append({ scope: other, facts: [fact(230)] });
+	store.append({ agent_id: "agent-1", scope: other, facts: [fact(230)] });
     assert.equal(store.messageCount(other), 1);
     assert.equal(store.messageCount(scope), 200);
   });
@@ -257,14 +257,14 @@ test("reconcile bounds cross-scope churn while preserving protected snapshots", 
         trigger_message_id: staleFact.message_id,
         trigger_fact: staleFact
       };
-      store.append({ scope: staleScope, facts: [staleFact] }, 1_000);
+	  store.append({ agent_id: "agent-1", scope: staleScope, facts: [staleFact] }, 1_000);
       store.prepareSnapshot(`stale-run-${index}`, staleDescriptor, 1_000);
       store.markFailed(`stale-run-${index}`);
     }
 
     const activeScope = { ...scope, conversation_id: "active" };
     const activeFact = { ...fact(1), message_id: "active-message" };
-    store.append({ scope: activeScope, facts: [activeFact] }, 1_000);
+	store.append({ agent_id: "agent-1", scope: activeScope, facts: [activeFact] }, 1_000);
     store.prepareSnapshot("active-run", {
       ...descriptor(1), scope: activeScope, consumer_key: "active-consumer",
       trigger_message_id: activeFact.message_id, trigger_fact: activeFact
@@ -326,7 +326,7 @@ test("retention uses event and ingest clocks so sync cannot renew old history", 
     assert.equal(store.messageCount(scope), 0, "event-old history expires on arrival");
 
     const futureSkewed = { ...fact(2), occurred_at_ms: 100_000 };
-    store.append({ scope, facts: [futureSkewed] }, 1_000);
+	store.append({ agent_id: "agent-1", scope, facts: [futureSkewed] }, 1_000);
     assert.equal(store.messageCount(scope), 1);
     store.reconcile(1_101);
     assert.equal(store.messageCount(scope), 0, "ingest time bounds future-skewed events");

@@ -1,53 +1,102 @@
 # Octo Harness
 
-从零实现的 Agent harness reference implementation。它统一 Codex、Claude Code、CodeBuddy、OpenCode 与 OpenClaw local 等本地 Agent CLI，同时把 Chat、Task、Trigger、Run、provider session 与流式事件保持为明确的领域对象。
+Octo Harness 是 provider-neutral 的本地 Agent Runtime。它把 Codex、Claude Code、CodeBuddy、OpenCode 和 OpenClaw local 统一成一套 invocation 与 canonical event 协议，但不拥有 IM、Loop、AutoPilot、Webhook 等业务的任务模型或调度状态。
 
-项目仓库：[dmwork/octo-harness/octo-harness](https://codex.mlamp.cn/dmwork/octo-harness/octo-harness)。本目录使用 pnpm workspace 和严格 TypeScript，所有可复用协议、runtime 与 adapters 位于 `packages/*`，所有可执行项目位于 `apps/*`。源码统一为 `src/*.ts`，构建后从 `dist/*.js` 运行并发布对应的 `*.d.ts` 类型声明。
+生产链路只有一种执行抽象：Agent Worker 创建 `AgentSession` 和 `AgentRun`，Harness 接收 `run.start`，调用 provider，并把事件与 opaque provider session 回传。Chat 和 Task 只是上游产品形态，不是 Harness 的两套执行模式。
 
-## 当前能力
+## 责任边界
 
-- Chat 与 Task 共用 `Session -> Run -> EventEnvelope`，Task 额外拥有 Attempt/trigger source。
-- `manual`、`event + filter`、`interval` triggers；trigger occurrence 幂等落 Task。
-- daemon 快速 ACK 后后台执行，支持 comment-style Task continuation。
-- 原子 JSON 持久化、daemon 重启恢复、每个 Task/Chat session 单 active run。
-- 独立 Node adapter-host 进程，manifest 动态加载 adapters，NDJSON JSON-RPC 调用/事件/取消。
-- canonical message/tool/usage/session/run events；final/analysis channel 分离；terminal exactly once。
-- Codex、Claude Code、CodeBuddy ACP、OpenCode 与 OpenClaw local adapters。
-- provider session 恢复、命令 probe、CLI 和契约测试。
+| 组件 | 持有 | 不持有 |
+|---|---|---|
+| 业务服务 | namespace 内的触发规则、父子任务、重试、投递策略 | provider 进程和恢复协议 |
+| Agent Worker | Agent、AgentSession、AgentRun、run lease 与生命周期 | Loop Task、IM 会话、Webhook 定义 |
+| Octo Harness | invocation、provider adapter、canonical events、本地可靠 outbox | Chat/Task/Attempt/Trigger 业务表 |
+| Channel Gateway | 外部事件归一化、Trigger Occurrence、IM delivery | AgentRun 生命周期 |
 
-这是可运行的架构基线，不是多节点生产调度器。SQLite (WAL) store 与本地 Agent Work outbox 假设单 daemon writer；生产环境应替换成分布式事务数据库、lease/fencing 和鉴权控制面。
+`namespace` 用来隔离业务语义，例如 `loop`、`autopilot`、`webhook`、`im`。稳定会话由 `(namespace, agent_id, session_key)` 唯一确定；`trigger_occurrence_id` 表示一次外部触发事实，并用于同一会话内的提交去重。
 
-本地 stdio 与跨云 WebSocket 共用上层 Agent 逻辑的目标架构、双向 JSON-RPC 样例、event ACK/重放和多节点 lease 设计见 [Transport And Multi-node](docs/09-transport-and-multinode.md)。该文档描述下一阶段设计，不代表当前代码已经具备跨云运行能力。
-
-## 项目结构
+## 代码结构
 
 ```text
 apps/
-  cli/                 Unix socket CLI
-  daemon/              durable control plane + worker
+  daemon/              Worker WSS Runtime、可靠 outbox、本地诊断 socket
+  cli/                 daemon 运维与本地 AgentRun 诊断
   adapter-host/        独立 provider host 进程
+installers/
+  macos/install.sh     macOS 一键安装 stage-0
+  windows/install.ps1  Windows 一键安装 stage-0
 packages/
-  octo-harness-protocol/            canonical event / invoke contract
-  octo-harness-core/                Chat/Task/Trigger/Run domain engine
-  octo-harness-daemon/              queue, scheduler, recovery
-  octo-harness-adapter-host/        host lifecycle + NDJSON RPC
-  octo-harness-adapter-sdk/         adapter helpers + subprocess runtime
-  octo-harness-acp-client/          CodeBuddy ACP JSON-RPC client
-  octo-harness-adapter-codex/       Codex provider adapter
-  octo-harness-adapter-claude-code/ Claude Code provider adapter
-  octo-harness-adapter-codebuddy/   CodeBuddy ACP adapter
-  octo-harness-adapter-opencode/    OpenCode provider adapter
-  octo-harness-adapter-openclaw/    OpenClaw local adapter
-config/adapters.json   adapter manifest
-test/                  contract and integration tests
+  octo-harness-protocol/            invoke / canonical event contract
+  octo-harness-core/                AgentSession / AgentRun reference engine
+  octo-harness-daemon/              单会话 FIFO、执行与恢复
+  octo-harness-adapter-host/        invocation lifecycle + NDJSON RPC
+  octo-harness-adapter-sdk/         adapter helpers
+  octo-harness-adapter-*/           provider adapters
+  octo-harness-cross-service/       launchd/systemd user/Task Scheduler 生命周期
 ```
 
-## 安装与验证
+Core 中的 SQLite `AgentSession`/`AgentRun` 是单机 reference profile 的诊断投影。接入 Agent Worker 时，Worker 数据库是云端唯一权威，Harness 的 `agent-work.db` 只保存尚未 durable ACK 的命令/事件，不能成为第二套控制面。
 
-要求 Node.js 20+。真实 provider 还需要相应 CLI 已安装并完成认证。
+## 一键安装
+
+面向最终用户的入口按平台拆分。两个位置参数固定为 `server-url`、`enrollment-token`；token 是短期、单次使用的设备 enrollment grant，不是 Human Session、`bf_` Bot key 或永久 Runtime Bearer token。
+
+程序与运行状态刻意分离。CLI 走 npm 全局安装，Harness Home 不保存程序版本：
+
+| 平台 | CLI / package | Harness Home |
+|---|---|---|
+| macOS | `npm install -g @mininglamp-oss/octo-harness`；shim 位于 `<npm prefix -g>/bin/octo-harness` | `~/.octo-harness/` |
+| Windows | `npm install -g @mininglamp-oss/octo-harness`；shim 位于 `<npm prefix -g>\octo-harness.cmd` | `%LOCALAPPDATA%\OctoHarness\` |
+
+安装器会验证全局 shim，并在需要时自动把 npm global bin 加入 macOS shell profile 或 Windows 当前用户 PATH，所以安装后可直接用 `octo-harness` 调试。Harness Home 只保存 profile、`runtime_id`、设备凭证、SQLite/outbox、PID/socket 和日志。升级或普通卸载 package 时保留它；`uninstall --purge --yes` 才删除身份与状态。
+
+### macOS
 
 ```bash
-cd octo-harness
+curl -fsSL https://im-test.deepminer.com.cn/octo-harness/install.sh \
+  | sh -s -- \
+      "https://im-test.deepminer.com.cn" \
+      "octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN"
+```
+
+### Windows PowerShell
+
+```powershell
+& ([scriptblock]::Create((irm https://im-test.deepminer.com.cn/octo-harness/install.ps1))) `
+  "https://im-test.deepminer.com.cn" `
+  "octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN"
+```
+
+命令成功后应达到以下状态：
+
+1. 检查 Node.js 24+ 与 npm；macOS 可用已有 Homebrew 安装 `node@24`，Windows 可用已有 `winget` 安装当前 Node LTS。
+2. stable 默认执行 `npm install -g @mininglamp-oss/octo-harness@latest`，beta 对应 npm `beta` tag，并确保 CLI shim 可从 PATH 直接调用。
+3. 同版本 CLI 从 stdin 消费一次性 token，创建或对账 profile 的永久 `runtime_id` 与设备凭证。
+4. CLI 通过用户级原生管理器安装自启动：macOS LaunchAgent、Windows 当前用户 Task Scheduler；service definition 使用绝对 Node 与 daemon 入口路径，不依赖 shell PATH。
+5. daemon 启动后，CLI 分别等待本地 IPC Ready 和云端 Runtime Online；任一步失败都返回非零。
+6. 重跑时先取得 Home 与 npm prefix 安装锁；若旧 CLI 已存在，先执行 `setup --prepare-update` drain/stop，再更新 npm package，最后由新 CLI repair/start。npm 更新失败会尝试 `setup --recover-update` 恢复旧 service；全过程不创建第二个 Runtime，也不覆盖已有身份和 durable outbox。
+
+把 token 直接放在位置参数里最适合 Web 页面生成“复制即安装”的一次性命令，但它会进入 shell/PowerShell 历史。更安全的人工安装方式是省略第二个参数，安装器会从 TTY/SecureString 隐藏读取 token：
+
+```bash
+curl -fsSL https://im-test.deepminer.com.cn/octo-harness/install.sh \
+  | sh -s -- "https://im-test.deepminer.com.cn"
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://im-test.deepminer.com.cn/octo-harness/install.ps1))) `
+  "https://im-test.deepminer.com.cn"
+```
+
+安装器源码、npm 发布合同、PATH 与提权边界见 [installers](installers/README.md)。它们是 stage-0，只负责 Node/npm 检查、全局安装和调用 `octo-harness setup`；凭证、service 与 readiness 状态机必须留在 TypeScript CLI。
+
+> 当前仓库尚未具备可公开发布的一键安装链路：`apps/cli` 还未实现真正的 `setup`，npm package 也尚未正式发布。现有脚本会在 setup 失败时返回非零，不会把“npm package 已安装”假装成“Runtime 已上线”。
+
+## 源码开发与验证
+
+要求 Node.js 24+。真实 provider 还要求对应 CLI 已安装并完成认证。
+
+```bash
 pnpm install
 pnpm build
 pnpm typecheck
@@ -55,158 +104,53 @@ pnpm lint
 pnpm test
 ```
 
-需要把当前 checkout 编译并链接为全局 `octo-harness` 命令时，执行
-`npm link --foreground-scripts`。本地 link、agent-worker 连接、Runtime token 与未来发布流程见
-[DEPLOYMENTS.md](DEPLOYMENTS.md)。
+测试使用 fake provider 和临时 SQLite，不调用真实模型。
 
-`pnpm test` 会先构建全部 workspace。测试不会调用真实模型；它使用测试内 adapter fixture、native event fixtures、真实 fake ACP 子进程、独立 adapter-host 进程和临时 SQLite store。
+## 启动 Runtime
 
-每个 adapter 的运行环境、认证、参数和完整教程统一收录在 [Packages And Adapter Guide](packages/README.md)，并可继续进入各 adapter package 的独立 README。
-
-## 启动 daemon
-
-终端 A：
+连接 Agent Worker 时，非敏感连接信息可放参数或环境变量；Runtime token 只允许通过环境变量注入：
 
 ```bash
+export OCTO_HARNESS_AGENT_WORK_URL=http://127.0.0.1:8092
+export OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN=dev-runtime-token
+export OCTO_HARNESS_AGENT_WORK_TENANT_ID=tenant-1
+export OCTO_HARNESS_AGENT_WORK_SUBJECT_ID=device-local-1
+export OCTO_HARNESS_AGENT_WORK_RUNTIME_NAME=octo-harness-local
 pnpm daemon
 ```
 
-默认状态位于 `~/.octo-harness/state.db`，socket 位于
-`~/.octo-harness/sockets/octo-harness-daemon.sock`。可显式隔离：
-
-```bash
-export OCTO_HARNESS_HOME=/absolute/path/to/runtime-state
-pnpm daemon
-```
-
-终端 B：
+本地运维命令：
 
 ```bash
 pnpm cli status
 pnpm cli adapter list
 pnpm cli adapter probe codex
+pnpm cli agent-session list
+pnpm cli agent-run list
+pnpm cli agent-run events <agent-run-id>
 ```
 
-## 最小 Task 示例
+这些命令只查看当前 daemon 的本地 reference/诊断投影。创建 AgentRun、reset AgentSession 或查询云端权威状态，应调用 Agent Worker API 或 `octo-cli harness agent-run ...`。
 
-以下示例使用 Codex adapter，需要先安装并登录 Codex CLI：
+## 会话恢复
 
-```bash
-pnpm cli agent create \
-  --name demo \
-  --adapter codex \
-  --workdir "$PWD" \
-  --sandbox read-only
+Harness 永远不生成业务 `session_key`。上游业务服务按统一规则生成：
 
-pnpm cli trigger create \
-  --name inspect-repo \
-  --kind manual \
-  --agent <agent-id> \
-  --title "Inspect repository" \
-  --instruction "Summarize this repository"
+- IM 群：`v1/<platform>/<endpoint_id>/group/<group_id>`
+- IM 私聊：`v1/<platform>/<endpoint_id>/dm/<user_id>`
+- Loop Task：`v1/task/<task_id>`
+- AutoPilot 单次节点：`v1/execution/<execution_id>/node/<node_instance_id>`
+- AutoPilot 长期节点：`v1/plan/<plan_id>/node/<node_id>`
+- Webhook subject：`v1/hook/<endpoint_id>/subject/<subject_id>`
+- Buddy conversation：`v1/workspace/<workspace_id>/conversation/<conversation_id>`
 
-pnpm cli trigger fire <trigger-id> \
-  --event-id manual-001 \
-  --payload '{"requestedBy":"local"}'
-```
-
-`trigger fire` 立即返回 `taskId/runId`。随后：
-
-```bash
-pnpm cli run wait <run-id>
-pnpm cli run events <run-id>
-pnpm cli task continue <task-id> \
-  --source-id comment-001 \
-  --instruction "Now focus on the test strategy"
-```
-
-第二次 Task attempt 复用同一个 harness/provider session，但获得新的 run ID 和独立 event seq。
-
-## Chat 示例
-
-```bash
-pnpm cli chat create --agent <agent-id> --title "Repository chat"
-pnpm cli chat send <session-id> --prompt "What is the architecture?"
-pnpm cli run wait <run-id>
-pnpm cli chat send <session-id> --prompt "Continue with failure modes"
-```
-
-Chat 没有伪造 Task/Attempt；它与 Task 只共享 Session/Run/Event 和 provider session binding。
-
-## Event 与 Interval Trigger
-
-事件 trigger：
-
-```bash
-pnpm cli trigger create \
-  --name main-changed \
-  --kind event \
-  --event-type repo.changed \
-  --filter '{"branch":"main"}' \
-  --agent <agent-id> \
-  --title "Review change" \
-  --instruction "Review the incoming repository change"
-
-pnpm cli event ingest \
-  --type repo.changed \
-  --event-id github-delivery-123 \
-  --payload '{"branch":"main","commit":"abc123"}'
-```
-
-Interval trigger：
-
-```bash
-pnpm cli trigger create \
-  --name periodic-check \
-  --kind interval \
-  --every-ms 60000 \
-  --agent <agent-id> \
-  --title "Periodic check" \
-  --instruction "Inspect current repository health"
-```
-
-## 真实 Provider Agent
-
-以下命令必须在 Octo Harness 仓库根目录执行，并且需要先在另一个终端运行 `pnpm daemon`。创建 Agent 只保存配置并检查 adapter 已加载，不会立即调用模型。
-
-```bash
-# Codex: default workspace-write sandbox
-pnpm cli agent create --name codex --adapter codex --workdir "$PWD" --sandbox read-only
-
-# Claude Code: unattended bypass by default; requires an externally isolated runtime
-pnpm cli agent create --name claude --adapter claude-code --workdir "$PWD"
-
-# CodeBuddy: ACP transport
-pnpm cli agent create --name codebuddy --adapter codebuddy --workdir "$PWD" --permission-mode dontAsk
-
-# OpenCode: model is often best made explicit
-pnpm cli agent create --name opencode --adapter opencode --workdir "$PWD" --model opencode/hy3-free
-
-# OpenClaw: one local CLI subprocess per invocation; no Gateway required
-pnpm cli agent create --name openclaw --adapter openclaw --provider-agent main --thinking medium
-```
-
-Claude Code 默认绕过 provider 权限确认以支持无人值守执行，必须由容器、VM 或等价的 Runtime 隔离限制文件系统、网络和凭证。Codex 的 `--dangerously-bypass-permissions` 与 OpenCode 的 `--auto-approve` 仍需显式打开；不要在没有外部 sandbox 的环境启用危险权限。
-
-取消执行：
-
-```bash
-pnpm cli run cancel <run-id> --reason user_cancelled
-```
+Provider 返回的 Codex thread ID、Claude session UUID 或 OpenCode session ID 存在 Worker 的 `AgentSession.provider_session` 中。下一次 `run.start` 将它放入 `InvokeRequest.providerSession.sessionId`；该字段对 Worker 与 Harness 都是 opaque。`/reset` 由 Worker 增加 session generation/provider epoch 并清空 provider session，下一轮 provider 创建新的 thread/session。
 
 ## 进一步阅读
 
 - [Architecture](docs/01-architecture.md)
-- [Current Modules And Transport Flow](docs/02-module-and-transport-flow.md)
-- [Pnpm Monorepo](docs/03-monorepo.md)
-- [Packages And Adapter Guide](packages/README.md)
+- [Module And Transport Flow](docs/02-module-and-transport-flow.md)
 - [Prompt And Workdir](docs/04-prompt-and-workdir.md)
 - [Provider Adapters](docs/05-provider-adapters.md)
-- [OpenClaw Local Adapter](docs/06-openclaw-local-adapter.md)
-- [Operations](docs/07-operations.md)
-- [Adapter 开发指南](docs/08-adapter-authoring.md)
 - [Transport And Multi-node](docs/09-transport-and-multinode.md)
-- [Protocol Schema And Codegen](docs/10-protocol-schema-codegen.md)
-- [Aily 多触发机制与 Octo Harness 统一 Blueprint](docs/11-aily-trigger-and-execution-review.html)
-- [Aily Task、Run 与 Agent 执行概念模型](docs/12-aily-task-agent-run-concept-model.md)
-- [Agent Work Runtime 模式](docs/13-agent-work-runtime.md)
+- [Agent Worker Runtime](docs/13-agent-work-runtime.md)

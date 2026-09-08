@@ -53,7 +53,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
       const envelope = JSON.parse(data.toString("utf8"));
       if (envelope.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
-        websocket.send(wire("context.append", { scope, facts: [fact(2, "second background")] }));
+		websocket.send(wire("context.append", { agent_id: "agent-1", scope, facts: [fact(2, "second background")] }));
         websocket.send(wire("runtime.command", {
           server_seq: 1,
           command_id: "command-e2e",
@@ -67,6 +67,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
       }
       if (envelope.type === "context.sync_request") {
         assert.equal(envelope.payload.limit, 40);
+        assert.equal(envelope.payload.agent_run_id, "run-e2e");
         websocket.send(wire("context.sync_result", {
           request_id: envelope.payload.request_id,
           scope,
@@ -316,7 +317,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
       const envelope = JSON.parse(data.toString("utf8"));
       if (envelope.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
-        websocket.send(wire("context.append", { scope, facts: [fact(1, "first"), fact(2, "second")] }));
+		websocket.send(wire("context.append", { agent_id: "agent-1", scope, facts: [fact(1, "first"), fact(2, "second")] }));
         sendStart(1);
         return;
       }
@@ -398,7 +399,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
     }
     const probe = contextStore.prepareSnapshot("run-authority-probe", executionEnvelope(
       "run-authority-probe", 6, "probe"
-    ).immutable_execution_input.content.channel_context);
+    ).agent_run_request.input.channel_context);
     assert.deepEqual(probe.facts.map(item => item.message_seq), [1, 2, 3, 4, 5]);
     contextStore.close();
 
@@ -447,6 +448,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
       if (envelope.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
         websocket.send(wire("context.append", {
+		  agent_id: "agent-1",
           scope,
           facts: [fact(1, "first background"), fact(2, "second background")]
         }));
@@ -485,7 +487,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
       }
       if (envelope.payload.run_id === "run-prior" && terminal && !secondSent) {
         secondSent = true;
-        websocket.send(wire("context.append", { scope, facts: [fact(4, "fourth background")] }));
+		websocket.send(wire("context.append", { agent_id: "agent-1", scope, facts: [fact(4, "fourth background")] }));
         const nextCommand = {
           server_seq: 2,
           command_id: "command-next",
@@ -521,7 +523,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
         if (!thirdSent) {
           thirdSent = true;
           setTimeout(() => {
-            websocket.send(wire("context.append", { scope, facts: [fact(6, "sixth background")] }));
+			websocket.send(wire("context.append", { agent_id: "agent-1", scope, facts: [fact(6, "sixth background")] }));
             websocket.send(wire("runtime.command", {
               server_seq: 3,
               command_id: "command-third",
@@ -639,7 +641,7 @@ test("runtime rejects a queued source generation after recovery advanced the eff
     through_seq: 1
   });
   const blocker = executionEnvelope("run-recovery-blocker", 2, "recovery trigger")
-    .immutable_execution_input.content.channel_context;
+    .agent_run_request.input.channel_context;
   contextStore.prepareSnapshot("run-recovery-blocker", blocker);
   contextStore.selectRecovery("run-recovery-blocker");
   contextStore.markSubmitted("run-recovery-blocker");
@@ -741,7 +743,7 @@ test("runtime close joins a waiting command before immediate restart and replay"
     through_seq: 1
   });
   const blocker = executionEnvelope("run-blocker", 2, "blocker trigger")
-    .immutable_execution_input.content.channel_context;
+    .agent_run_request.input.channel_context;
   contextStore.prepareSnapshot("run-blocker", blocker);
   contextStore.markSubmitted("run-blocker");
   contextStore.close();
@@ -871,7 +873,7 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
     through_seq: 1
   });
   const blocker = executionEnvelope("run-cancel-blocker", 2, "blocker trigger")
-    .immutable_execution_input.content.channel_context;
+    .agent_run_request.input.channel_context;
   contextStore.prepareSnapshot("run-cancel-blocker", blocker);
   contextStore.markSubmitted("run-cancel-blocker");
   contextStore.close();
@@ -1059,20 +1061,14 @@ function executionEnvelope(runId = "run-e2e", triggerSeq = 3, currentText = "tri
   return {
     schema_version: 1,
     run_id: runId,
-    harness_session_id: "session-e2e",
-    execution_request: {
-      id: `execution-${runId}`,
+    agent_session_id: "session-e2e",
+    agent_run_request: {
+      namespace: "im",
       agent_id: "agent-e2e",
       agent_revision_id: "revision-e2e",
-      source_type: "channel_message",
-      source_id: trigger.message_id
-    },
-    agent_revision: {
-      definition: { instructions: "Answer briefly." },
-      execution_profile: { adapter_type: "fake", workdir: process.cwd(), agent_config: {} }
-    },
-    immutable_execution_input: {
-      content: {
+      session_key: "v1/octo/endpoint-e2e/group/group-e2e",
+      trigger: { kind: "im.message", occurrence_id: `message/${trigger.message_id}` },
+      input: {
         parts: [{ type: "text", text: currentText }],
         channel_context: {
           scope,
@@ -1083,6 +1079,10 @@ function executionEnvelope(runId = "run-e2e", triggerSeq = 3, currentText = "tri
           trigger_fact: trigger
         }
       }
+    },
+    agent_revision: {
+      definition: { instructions: "Answer briefly." },
+      execution_profile: { default_adapter: "fake", workdir: process.cwd(), agent_config: {} }
     }
   };
 }

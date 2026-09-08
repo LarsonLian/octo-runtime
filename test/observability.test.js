@@ -71,7 +71,7 @@ test("operational logs redact credentials and restricted provider evidence is op
       params: {
         apiKey: "rpc-secret",
         adapterType: "codex",
-        request: { runId: "run-1", invocationId: "inv-1", sessionId: "session-1" }
+        request: { runId: "run-1", invocationId: "inv-1", agentSessionId: "session-1" }
       }
     }));
     logger.traceRpc("receive", JSON.stringify({
@@ -91,7 +91,7 @@ test("operational logs redact credentials and restricted provider evidence is op
     const receipt = await logger.observeProvider({
       runId: "run-1",
       invocationId: "inv-1",
-      sessionId: "session-1",
+      agentSessionId: "session-1",
       adapterType: "codex"
     }, {
       event: "provider.input",
@@ -197,7 +197,7 @@ test("unparseable URL-shaped carriers are omitted and mark provider capture inco
     const receipt = await logger.observeProvider({
       runId: "run-incomplete",
       invocationId: "inv-incomplete",
-      sessionId: "session-incomplete",
+      agentSessionId: "session-incomplete",
       adapterType: "codex"
     }, {
       event: "provider.input",
@@ -226,7 +226,7 @@ test("full provider output capture strips private reasoning even when an adapter
     await logger.observeProvider({
       runId: "run-private-output",
       invocationId: "inv-private-output",
-      sessionId: "session-private-output",
+      agentSessionId: "session-private-output",
       adapterType: "codex"
     }, {
       event: "provider.output",
@@ -270,7 +270,7 @@ test("strict provider capture fails closed on a symlinked log root", async t => 
       logger.observeProvider({
         runId: "run-strict",
         invocationId: "inv-strict",
-        sessionId: "session-strict",
+        agentSessionId: "session-strict",
         adapterType: "codex"
       }, {
         event: "provider.input",
@@ -305,7 +305,7 @@ test("strict provider capture fails closed on a symlinked target file", async t 
       logger.observeProvider({
         runId: "run-target-symlink",
         invocationId: "inv-target-symlink",
-        sessionId: "session-target-symlink",
+        agentSessionId: "session-target-symlink",
         adapterType: "codex"
       }, {
         event: "provider.input",
@@ -369,7 +369,7 @@ test("accepted capture records a same-id failed receipt and degraded status afte
     const receipt = await logger.observeProvider({
       runId: "run-eacces",
       invocationId: "inv-eacces",
-      sessionId: "session-eacces",
+      agentSessionId: "session-eacces",
       adapterType: "codex"
     }, {
       event: "provider.input",
@@ -402,7 +402,7 @@ test("strict provider capture reports ENOSPC before dispatch", async () => {
       logger.observeProvider({
         runId: "run-enospc",
         invocationId: "inv-enospc",
-        sessionId: "session-enospc",
+        agentSessionId: "session-enospc",
         adapterType: "codex"
       }, {
         event: "provider.input",
@@ -473,7 +473,7 @@ test("strict capture immediately observes startup capacity before provider dispa
       logger.observeProvider({
         runId: "run-startup-capacity",
         invocationId: "inv-startup-capacity",
-        sessionId: "session-startup-capacity",
+        agentSessionId: "session-startup-capacity",
         adapterType: "codex"
       }, {
         event: "provider.input",

@@ -164,6 +164,9 @@ export function assertChannelMessageFact(value: unknown): asserts value is Chann
 
 export function assertChannelContextAppend(value: unknown): asserts value is ChannelContextAppend {
   if (!isRecord(value)) throw new TypeError("channel context append must be an object");
+	if (typeof value.agent_id !== "string" || value.agent_id.length < 1 || value.agent_id.length > 96) {
+		throw new TypeError("channel context append.agent_id must contain 1..96 characters");
+	}
   assertChannelScope(value.scope);
   if (!Array.isArray(value.facts) || value.facts.length < 1 || value.facts.length > 100) {
     throw new TypeError("channel context append.facts must contain 1..100 facts");
@@ -235,7 +238,7 @@ export type EventEnvelope<TType extends CanonicalEventType = CanonicalEventType>
   id: string;
   seq: number;
   tsMs: number;
-  sessionId: string;
+  agentSessionId: string;
   runId: string;
 };
 
@@ -279,7 +282,7 @@ export function envelope<TType extends CanonicalEventType>(
     id: randomUUID(),
     seq,
     tsMs: Date.now(),
-    sessionId: run.sessionId,
+    agentSessionId: run.agentSessionId,
     runId: run.id,
     type: event.type,
     payload: event.payload ?? {}
@@ -340,7 +343,7 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
 /** Assert the execution identifiers and path fields that must be present before the Host calls an adapter. */
 export function assertInvokeRequest(request: unknown): asserts request is InvokeRequest {
   if (!isRecord(request)) throw new TypeError("InvokeRequest must be an object");
-  for (const key of ["invocationId", "sessionId", "runId", "prompt", "workdir"] as const) {
+  for (const key of ["invocationId", "agentSessionId", "runId", "prompt", "workdir"] as const) {
     if (typeof request[key] !== "string" || request[key].length === 0) {
       throw new TypeError(`InvokeRequest.${key} must be a non-empty string`);
     }

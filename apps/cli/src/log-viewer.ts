@@ -235,7 +235,7 @@ function viewerHtml(initialRunId?: string): string {
         "transport.connection.connecting": "WSS connecting", "transport.connection.opened": "Connection opened",
         "transport.connection.closed": "Connection closed", "transport.connection.failed": "Connection failed",
         "transport.message.received": "WSS message received", "transport.message.sent": "WSS message sent",
-        "chat_turn.received": "ChatTurn received", "chat_turn.dispatch.accepted": "ChatTurn accepted",
+        "agent_run.received": "AgentRun received", "agent_run.dispatch.accepted": "AgentRun accepted",
         "agent_work.command.received": "Agent Work command received", "adapter.selected": "Adapter selected",
         "adapter.invoke.started": "Adapter invocation started", "adapter.invoke.completed": "Adapter invocation completed",
         "adapter.invoke.failed": "Adapter invocation failed", "provider.input": "Provider input prepared",
@@ -296,7 +296,7 @@ function viewerHtml(initialRunId?: string): string {
           return item;
         }));
         // The daemon already returns only the selected Run plus records joined by
-        // explicit connection/chatTurn identity. Filtering by run_id here would
+        // explicit transport connection identity. Filtering by run_id here would
         // hide the pre-Run WSS handshake that operators need for reconstruction.
         const records = [...state.records.values(), ...state.canonical.values()]
           .sort((left, right) => text(left.ts).localeCompare(text(right.ts)))
@@ -308,9 +308,9 @@ function viewerHtml(initialRunId?: string): string {
           ["Run", selectedRun?.runId || state.runId], ["Status", selectedRun?.status],
           ["Duration", duration(selectedRun?.durationMs)],
           ["Stall", selectedRun?.stalled ? duration(selectedRun.stallMs) + " without an event" : "No"],
-          ["Session", selectedRun?.sessionId],
-          ["Conversation", conversation.title || conversation.channel || conversation.id],
-          ["ChatTurn", selectedRun?.chatTurnId], ["Invocation", selectedRun?.invocationId],
+          ["Agent Session", selectedRun?.agentSessionId],
+          ["Namespace", conversation.namespace], ["Session key", conversation.sessionKey],
+          ["Invocation", selectedRun?.invocationId],
           ["Adapter", selectedRun?.adapterType], ["Model", selectedRun?.model],
           ["Provider session", selectedRun?.providerSessionId], ["Started", selectedRun?.startedAt],
           ["Ended", selectedRun?.endedAt], ["Canonical events", selectedRun?.eventCount]

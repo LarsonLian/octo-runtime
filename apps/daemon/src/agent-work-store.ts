@@ -19,7 +19,7 @@ export interface OutboxRow {
 /** Input for creating or recovering an Agent Work run record. */
 export interface AgentWorkRunInput {
   runId: string;
-  sessionId?: string;
+  agentSessionId?: string;
   commandId: string;
   leaseId: string;
   fencingToken: number;
@@ -88,7 +88,7 @@ export class AgentWorkStore {
     db.exec(`
       CREATE TABLE IF NOT EXISTS runs (
         run_id TEXT PRIMARY KEY,
-        session_id TEXT,
+        agent_session_id TEXT,
         command_id TEXT NOT NULL UNIQUE,
         lease_id TEXT NOT NULL,
         fencing_token INTEGER NOT NULL,
@@ -174,14 +174,14 @@ export class AgentWorkStore {
    * refreshed — seq and the ACK watermarks are never reset. */
   upsertRun(input: AgentWorkRunInput): void {
     this.#db.prepare(
-      `INSERT INTO runs (run_id, session_id, command_id, lease_id, fencing_token, status, next_seq, received_through_seq, durable_through_seq, updated_at)
+      `INSERT INTO runs (run_id, agent_session_id, command_id, lease_id, fencing_token, status, next_seq, received_through_seq, durable_through_seq, updated_at)
        VALUES (?, ?, ?, ?, ?, 'running', 1, 0, 0, ?)
        ON CONFLICT(run_id) DO UPDATE SET
          lease_id = excluded.lease_id,
          fencing_token = excluded.fencing_token,
          status = 'running',
          updated_at = excluded.updated_at`
-    ).run(input.runId, input.sessionId ?? null, input.commandId, input.leaseId, input.fencingToken, Date.now());
+    ).run(input.runId, input.agentSessionId ?? null, input.commandId, input.leaseId, input.fencingToken, Date.now());
   }
 
   runExists(runId: string): boolean {
