@@ -23,7 +23,7 @@ apps/
   cli/                 daemon 运维与本地 AgentRun 诊断
   adapter-host/        独立 provider host 进程
 installers/
-  macos/install.sh     macOS 一键安装 stage-0
+  posix/install.sh     macOS/Linux 一键安装 stage-0
   windows/install.ps1  Windows 一键安装 stage-0
 packages/
   octo-harness-protocol/            invoke / canonical event contract
@@ -45,12 +45,12 @@ Core 中的 SQLite `AgentSession`/`AgentRun` 是单机 reference profile 的诊�
 
 | 平台 | CLI / package | Harness Home |
 |---|---|---|
-| macOS | `npm install -g @mininglamp-oss/octo-harness`；shim 位于 `<npm prefix -g>/bin/octo-harness` | `~/.octo-harness/` |
+| macOS / Linux | `npm install -g @mininglamp-oss/octo-harness`；shim 位于 `<npm prefix -g>/bin/octo-harness` | `~/.octo-harness/` |
 | Windows | `npm install -g @mininglamp-oss/octo-harness`；shim 位于 `<npm prefix -g>\octo-harness.cmd` | `%LOCALAPPDATA%\OctoHarness\` |
 
-安装器会验证全局 shim，并在需要时自动把 npm global bin 加入 macOS shell profile 或 Windows 当前用户 PATH，所以安装后可直接用 `octo-harness` 调试。Harness Home 只保存 profile、`runtime_id`、设备凭证、SQLite/outbox、PID/socket 和日志。升级或普通卸载 package 时保留它；未来的 `uninstall --purge --yes` 才会删除身份与状态，当前 CLI 尚未提供该命令。
+安装器会验证全局 shim，并在需要时自动把 npm global bin 加入 macOS/Linux shell profile 或 Windows 当前用户 PATH，所以安装后可直接用 `octo-harness` 调试。Harness Home 只保存 profile、`runtime_id`、设备凭证、SQLite/outbox、PID/socket 和日志。升级或普通卸载 package 时保留它；未来的 `uninstall --purge --yes` 才会删除身份与状态，当前 CLI 尚未提供该命令。
 
-### macOS
+### macOS / Linux
 
 ```bash
 curl -fsSL https://im-test.deepminer.com.cn/octo-harness/install.sh \
@@ -69,10 +69,10 @@ curl -fsSL https://im-test.deepminer.com.cn/octo-harness/install.sh \
 
 命令成功后应达到以下状态：
 
-1. 检查 Node.js 24+ 与 npm；macOS 可用已有 Homebrew 安装 `node@24`，Windows 可用已有 `winget` 安装当前 Node LTS。
+1. 检查 Node.js 24+ 与 npm；macOS/Linux 可用已有 Homebrew 安装 `node@24`，Windows 可用已有 `winget` 安装当前 Node LTS。Linux 不会自动使用 `sudo` 或添加第三方软件源。
 2. stable 默认执行 `npm install -g @mininglamp-oss/octo-harness@latest`，beta 对应 npm `beta` tag，并确保 CLI shim 可从 PATH 直接调用。
 3. 同版本 CLI 的 `login` 从 stdin 消费一次性 token，创建或对账选中 profile 唯一的永久 `runtime_id` 与设备凭证。
-4. CLI 通过用户级原生管理器安装自启动：macOS LaunchAgent、Windows 当前用户 Task Scheduler；service definition 使用绝对 Node 与 daemon 入口路径，不依赖 shell PATH。
+4. CLI 通过用户级原生管理器安装自启动：macOS LaunchAgent、Linux systemd user service、Windows 当前用户 Task Scheduler；service definition 使用绝对 Node 与 daemon 入口路径，不依赖 shell PATH。
 5. daemon 启动后，CLI 分别等待本地 IPC Ready 和云端 Runtime Online；任一步失败都返回非零。
 6. 重跑时先取得 Home 与 npm prefix 安装锁；若旧 CLI 已存在，先执行 `setup --prepare-update` drain/stop，再更新 npm package，最后由新 CLI `login` 对账并启动。npm 更新或更新后的 login 失败会尝试 `setup --recover-update` 恢复 service；全过程不创建第二个 Runtime，也不覆盖已有身份和 durable outbox。已有 identity 时可省略 token 重跑。
 

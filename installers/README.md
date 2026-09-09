@@ -4,7 +4,7 @@
 
 | 源文件 | 发布路径 | 平台 |
 |---|---|---|
-| `macos/install.sh` | `/octo-harness/install.sh` | macOS arm64/x64 |
+| `posix/install.sh` | `/octo-harness/install.sh` | macOS/Linux arm64/x64 |
 | `windows/install.ps1` | `/octo-harness/install.ps1` | Windows x64/arm64 |
 
 两个脚本都是轻量 stage-0。默认发行方式不是把程序复制进 Harness Home，也不维护 `versions/` 和 `current` 指针，而是使用机器上 Node.js 24+ 配套的 npm 全局安装：
@@ -18,7 +18,7 @@
 
 ## 程序与状态目录
 
-| 对象 | macOS | Windows |
+| 对象 | macOS / Linux | Windows |
 |---|---|---|
 | npm package | `<npm prefix -g>/lib/node_modules/@mininglamp-oss/octo-harness` | `<npm prefix -g>/node_modules/@mininglamp-oss/octo-harness` |
 | CLI shim | `<npm prefix -g>/bin/octo-harness` | `<npm prefix -g>\octo-harness.cmd` |
@@ -28,7 +28,7 @@ Harness Home 只保存唯一 profile、Home 级 `runtime_id`、设备凭证、SQ
 
 安装器使用 `npm prefix --global` 定位实际 shim。如果 shim 目录不在 PATH：
 
-- macOS 会加入当前进程，并幂等写入当前 shell 的 `.zprofile`、`.bash_profile` 或 `.profile`；
+- macOS/Linux 会加入当前进程，并幂等写入当前 shell 的 `.zprofile`、`.bash_profile` 或 `.profile`；
 - Windows 会加入当前进程，并写入当前用户级 PATH；
 - 安装完成后，当前命令以及新开的终端都应能直接运行 `octo-harness`。
 
@@ -52,6 +52,7 @@ Harness Home 只保存唯一 profile、Home 级 `runtime_id`、设备凭证、SQ
 运行时统一要求 Node.js 24 及以上，不支持 Deno/Bun，也不为旧 Node 保留兼容分支。
 
 - macOS 已有 Node.js 24+ 时直接复用；版本不足时，仅在已有 Homebrew 的前提下安装 `node@24`，不会替用户安装 Homebrew 或静默使用 `sudo`。
+- Linux 已有 Node.js 24+ 时直接复用；版本不足时可复用已有 Linuxbrew。否则明确提示用户通过可信发行版或版本管理器安装，不自动 `sudo`，也不注入第三方 apt/rpm 仓库。
 - Windows 版本不足时使用已有的 `winget` 安装当前 Node.js LTS；没有 `winget` 时明确失败并要求先安装 Node.js 24+。
 - `npm install -g` 是否需要管理员权限由用户自己的 npm prefix 决定。推荐使用当前 OS 用户可写的 Node/npm 安装；脚本不会自行提权，也不会把 daemon 注册成 root、LocalSystem 或 Windows SCM 服务。
 

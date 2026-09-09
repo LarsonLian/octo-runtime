@@ -9,35 +9,68 @@ import { join } from "node:path";
 
 const execute = promisify(execFile);
 const root = fileURLToPath(new URL("..", import.meta.url));
-const macInstallerPath = join(root, "installers/macos/install.sh");
+const posixInstallerPath = join(root, "installers/posix/install.sh");
 const windowsInstallerPath = join(root, "installers/windows/install.ps1");
 
-test("macOS installer exposes the public positional-argument contract without network access", async t => {
+test("POSIX installer exposes the macOS/Linux positional-argument contract without network access", async t => {
   if (process.platform === "win32") {
     t.skip("POSIX shell is not required on Windows");
     return;
   }
 
-  const help = await execute("sh", [macInstallerPath, "--help"]);
+  const help = await execute("sh", [posixInstallerPath, "--help"]);
+  assert.match(help.stdout, /current macOS or Linux user/);
   assert.match(help.stdout, /sh -s -- "https:\/\/SERVER" "octo_enroll_\.\.\."/);
 
   await assert.rejects(
-    execute("sh", [macInstallerPath, "http://server.invalid", "octo_enroll_test"]),
+    execute("sh", [posixInstallerPath, "http://server.invalid", "octo_enroll_test"]),
     error => error.code === 2 && /SERVER_URL must use HTTPS/.test(error.stderr)
   );
 });
 
+test("Linux installer fails clearly instead of elevating when Node.js 24 is unavailable", async t => {
+  if (process.platform === "win32") {
+    t.skip("POSIX shell is not required on Windows");
+    return;
+  }
+
+  const fixtureRoot = await mkdtemp(join(tmpdir(), "octo-linux-prerequisite-"));
+  const fakeBin = join(fixtureRoot, "bin");
+  await mkdir(fakeBin, { recursive: true });
+  for (const [name, contents] of Object.entries({
+    uname: "#!/bin/sh\nprintf 'Linux\\n'\n",
+    node: "#!/bin/sh\nprintf '22\\n'\n"
+  })) {
+    const target = join(fakeBin, name);
+    await writeFile(target, contents, "utf8");
+    await chmod(target, 0o755);
+  }
+
+  await assert.rejects(
+    execute("sh", [posixInstallerPath, "https://server.example", "octo_enroll_test"], {
+      env: {
+        ...process.env,
+        PATH: `${fakeBin}:/usr/bin:/bin`,
+        HOME: fixtureRoot
+      }
+    }),
+    error => error.code === 2 &&
+      /trusted distribution or version manager/.test(error.stderr) &&
+      /does not use sudo or add package repositories/.test(error.stderr)
+  );
+});
+
 test("installers use global npm, pass enrollment through stdin, and keep login in TypeScript", async () => {
-  const [macInstaller, windowsInstaller] = await Promise.all([
-    readFile(macInstallerPath, "utf8"),
+  const [posixInstaller, windowsInstaller] = await Promise.all([
+    readFile(posixInstallerPath, "utf8"),
     readFile(windowsInstallerPath, "utf8")
   ]);
 
-  assert.match(macInstaller, /npm install --global --no-audit --no-fund "\$NPM_SPEC"/);
+  assert.match(posixInstaller, /npm install --global --no-audit --no-fund "\$NPM_SPEC"/);
   assert.match(windowsInstaller, /install --global --no-audit --no-fund \$npmSpec/);
-  assert.match(macInstaller, /printf '%s\\n' "\$ENROLLMENT_TOKEN" \| "\$CLI"/);
+  assert.match(posixInstaller, /printf '%s\\n' "\$ENROLLMENT_TOKEN" \| "\$CLI"/);
   assert.match(windowsInstaller, /\$EnrollmentToken \| & \$cli @setupArguments/);
-  for (const source of [macInstaller, windowsInstaller]) {
+  for (const source of [posixInstaller, windowsInstaller]) {
     assert.match(source, /@mininglamp-oss\/octo-harness/);
     assert.match(source, /24/);
     assert.match(source, /--enroll-token-stdin/);
@@ -47,18 +80,18 @@ test("installers use global npm, pass enrollment through stdin, and keep login i
     assert.doesNotMatch(source, /OCTO_HARNESS_INSTALL_ROOT/);
     assert.doesNotMatch(source, /versions\//);
   }
-  assert.match(macInstaller, /--home "\$HARNESS_HOME"/);
+  assert.match(posixInstaller, /--home "\$HARNESS_HOME"/);
   assert.match(windowsInstaller, /"--home", \$HarnessHome/);
-  assert.match(macInstaller, /npm prefix --global/);
+  assert.match(posixInstaller, /npm prefix --global/);
   assert.match(windowsInstaller, /prefix --global/);
-  assert.match(macInstaller, /\.zprofile/);
+  assert.match(posixInstaller, /\.zprofile/);
   assert.match(windowsInstaller, /SetEnvironmentVariable\("Path"/);
-  assert.ok(macInstaller.indexOf("setup --prepare-update") < macInstaller.indexOf("npm install --global"));
+  assert.ok(posixInstaller.indexOf("setup --prepare-update") < posixInstaller.indexOf("npm install --global"));
   assert.ok(windowsInstaller.indexOf("setup --prepare-update") < windowsInstaller.indexOf("install --global"));
   assert.match(windowsInstaller, /Test-FullyQualifiedWindowsPath/);
 });
 
-test("macOS installer resolves npm global bin, persists PATH, and invokes login", async t => {
+test("Linux installer resolves npm global bin, persists PATH, and invokes login", async t => {
   if (process.platform === "win32") {
     t.skip("POSIX shell is not required on Windows");
     return;
@@ -78,7 +111,7 @@ test("macOS installer resolves npm global bin, persists PATH, and invokes login"
   ]);
 
   const executables = {
-    uname: "#!/bin/sh\nprintf 'Darwin\\n'\n",
+    uname: "#!/bin/sh\nprintf 'Linux\\n'\n",
     node: "#!/bin/sh\nprintf '24\\n'\n",
     npm: `#!/bin/sh
 printf '%s\\n' "$*" >> "$FAKE_NPM_LOG"
@@ -126,7 +159,7 @@ if [ "\${FAKE_LOGIN_FAIL:-0}" = "1" ]; then exit 7; fi
     FAKE_NPM_LOG: npmLog,
     FAKE_SETUP_LOG: setupLog
   };
-  await execute("sh", [macInstallerPath, "https://server.example", "octo_enroll_test"], {
+  await execute("sh", [posixInstallerPath, "https://server.example", "octo_enroll_test"], {
     env: installerEnvironment
   });
 
@@ -139,11 +172,11 @@ if [ "\${FAKE_LOGIN_FAIL:-0}" = "1" ]; then exit 7; fi
   const identityPath = join(harnessHome, "identity/runtime.json");
   await mkdir(join(harnessHome, "identity"), { recursive: true });
   await writeFile(identityPath, '{"schema_version":1,"runtime_id":"runtime-existing"}\n', "utf8");
-  await execute("sh", [macInstallerPath, "https://server.example"], { env: installerEnvironment });
+  await execute("sh", [posixInstallerPath, "https://server.example"], { env: installerEnvironment });
   assert.match(await readFile(setupLog, "utf8"), /LOGIN .*--enroll-token-stdin[\s\S]*\n\n$/);
 
   await assert.rejects(
-    execute("sh", [macInstallerPath, "https://server.example"], {
+    execute("sh", [posixInstallerPath, "https://server.example"], {
       env: { ...installerEnvironment, FAKE_LOGIN_FAIL: "1" }
     }),
     error => error.code === 2 && /Restored the service after the updated login failed/.test(error.stdout)
@@ -152,7 +185,7 @@ if [ "\${FAKE_LOGIN_FAIL:-0}" = "1" ]; then exit 7; fi
   assert.match(await readFile(join(userHome, ".zprofile"), "utf8"), new RegExp(npmPrefix.replaceAll("/", "\\/")));
 
   await assert.rejects(
-    execute("sh", [macInstallerPath, "https://server.example", "octo_enroll_test"], {
+    execute("sh", [posixInstallerPath, "https://server.example", "octo_enroll_test"], {
       env: { ...installerEnvironment, FAKE_NPM_FAIL: "1" }
     }),
     error => error.code === 9 && /Restored the previous service/.test(error.stdout)
@@ -161,19 +194,19 @@ if [ "\${FAKE_LOGIN_FAIL:-0}" = "1" ]; then exit 7; fi
 });
 
 test("installers attempt service recovery when npm update fails after drain", async () => {
-  const [macInstaller, windowsInstaller] = await Promise.all([
-    readFile(macInstallerPath, "utf8"),
+  const [posixInstaller, windowsInstaller] = await Promise.all([
+    readFile(posixInstallerPath, "utf8"),
     readFile(windowsInstallerPath, "utf8")
   ]);
 
-  for (const source of [macInstaller, windowsInstaller]) {
+  for (const source of [posixInstaller, windowsInstaller]) {
     assert.match(source, /--recover-update/);
     assert.ok(source.indexOf("--prepare-update") < source.indexOf("install --global"));
     assert.ok(source.indexOf("install --global") < source.lastIndexOf("--recover-update"));
   }
 });
 
-test("root README publishes separate macOS and Windows one-line commands", async () => {
+test("root README publishes POSIX and Windows one-line commands", async () => {
   const readme = await readFile(join(root, "README.md"), "utf8");
   assert.match(readme, /install\.sh[\s\\]+\| sh -s --/);
   assert.match(readme, /\[scriptblock\]::Create\(\(irm .*install\.ps1\)\)/);

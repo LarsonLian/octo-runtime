@@ -19,7 +19,7 @@ PREPARED_UPDATE=0
 
 usage() {
   cat <<'EOF'
-Install Octo Harness for the current macOS user.
+Install Octo Harness for the current macOS or Linux user.
 
 Usage:
   curl -fsSL https://SERVER/octo-harness/install.sh \
@@ -89,7 +89,11 @@ PROFILE=${OCTO_HARNESS_PROFILE:-default}
 HARNESS_HOME=${OCTO_HARNESS_HOME:-"$HOME/.octo-harness"}
 AGENT_WORK_URL=${OCTO_HARNESS_AGENT_WORK_URL:-}
 
-[ "$(uname -s)" = "Darwin" ] || die "this installer supports macOS only"
+PLATFORM=$(uname -s)
+case "$PLATFORM" in
+  Darwin|Linux) ;;
+  *) die "this installer supports macOS and Linux only" ;;
+esac
 case "$SERVER_URL" in
   https://*) ;;
   *) die "SERVER_URL must use HTTPS" ;;
@@ -145,7 +149,12 @@ ensure_node() {
     ""|*[!0-9]*) major=0 ;;
   esac
   if [ "$major" -lt "$MINIMUM_NODE_MAJOR" ]; then
-    command -v brew >/dev/null 2>&1 || die "Node.js 24+ is required. Install it first, or install Homebrew so this script can install node@24."
+    if ! command -v brew >/dev/null 2>&1; then
+      if [ "$PLATFORM" = "Linux" ]; then
+        die "Node.js 24+ is required. Install it with your trusted distribution or version manager; this installer does not use sudo or add package repositories."
+      fi
+      die "Node.js 24+ is required. Install it first, or install Homebrew so this script can install node@24."
+    fi
     info "Installing Node.js 24 with Homebrew"
     brew install node@24
     NODE_BIN_OVERRIDE="$(brew --prefix node@24)/bin"
@@ -186,7 +195,13 @@ persist_path_entry() {
 
   case "${SHELL:-}" in
     */zsh) shell_profile="$HOME/.zprofile" ;;
-    */bash) shell_profile="$HOME/.bash_profile" ;;
+    */bash)
+      if [ "$PLATFORM" = "Darwin" ]; then
+        shell_profile="$HOME/.bash_profile"
+      else
+        shell_profile="$HOME/.profile"
+      fi
+      ;;
     *) shell_profile="$HOME/.profile" ;;
   esac
   path_line="export PATH='$path_entry':\$PATH"
