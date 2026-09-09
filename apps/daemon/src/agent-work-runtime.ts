@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { hostname, platform, arch } from "node:os";
 import WebSocket from "ws";
 import type { AdapterHostRpcClient } from "@mininglamp-oss/octo-harness-adapter-host";
@@ -29,10 +30,17 @@ import {
   type PreparedChannelContextSnapshot
 } from "./channel-context-store.js";
 
-const PROTOCOL_VERSION = 1;
+const MIN_PROTOCOL_VERSION = 1;
+const MAX_PROTOCOL_VERSION = 1;
+const RUNTIME_VERSION = packageVersion();
 const DEFAULT_SEND_WINDOW = 32;
+const DEFAULT_MAX_CONCURRENT_RUNS = 3;
 const DEFAULT_SOFT_WATERMARK_BYTES = 512 * 1024 * 1024;
 const DEFAULT_HARD_WATERMARK_BYTES = 2 * 1024 * 1024 * 1024;
+const DEFAULT_RECONNECT_MIN_MS = 20_000;
+const DEFAULT_RECONNECT_MAX_MS = 60_000;
+const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
+const RECONNECT_STABLE_RESET_MS = 5 * 60_000;
 const DEFAULT_RECONCILE_MS = 5 * 60_000;
 const PUMP_POLL_MS = 50;
 const BACKPRESSURE_POLL_MS = 100;
@@ -57,6 +65,9 @@ export interface AgentWorkRuntimeOptions {
   runtimeName: string;
   fingerprint: string;
   reconnectMs?: number;
+  reconnectMaxMs?: number;
+  /** Maximum time to complete one WebSocket handshake. */
+  connectTimeoutMs?: number;
   /** Local outbox database path; defaults are resolved by the daemon. */
   storePath: string;
   /** Max number of events allowed in flight (unacked) per send window. */
@@ -64,9 +75,11 @@ export interface AgentWorkRuntimeOptions {
   /** Soft watermark: once reached, stop admitting new Runs and pause provider
    * reads to form backpressure. */
   softWatermarkBytes?: number;
-  /** Hard watermark: used only for high-priority alerting; unacked data is still
-   * not deleted. */
+  /** Hard watermark: reject new Runs and emit a high-priority error; unacked
+   * data is never deleted to recover capacity. */
   hardWatermarkBytes?: number;
+  /** Maximum provider invocations admitted concurrently on this device. */
+  maxConcurrentRuns?: number;
   reconcileMs?: number;
   channelContext?: ChannelContextRuntimeOptions;
 }
@@ -179,6 +192,7 @@ export class AgentWorkRuntime {
   #contextStore?: ChannelContextStore;
   #runtimeId = "";
   #socket?: WebSocket;
+  #connectingSocket?: WebSocket;
   #heartbeat?: NodeJS.Timeout;
   #reconcileTimer?: NodeJS.Timeout;
   #loop?: Promise<void>;
@@ -191,6 +205,10 @@ export class AgentWorkRuntime {
   // Attempts are process-lifetime diagnostics; connection ids identify one
   // concrete WSS session and are reset whenever that session closes.
   #connectionAttempt = 0;
+  #consecutiveReconnects = 0;
+  #reconnectReset?: NodeJS.Timeout;
+  #reconnectAbort?: AbortController;
+  #protocolVersion = MAX_PROTOCOL_VERSION;
   #connectionId?: string;
 
   constructor(
@@ -201,6 +219,15 @@ export class AgentWorkRuntime {
     this.#options = options;
     this.#host = host;
     this.#observability = observability;
+    if ((options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS) < 1) {
+      throw new Error("maxConcurrentRuns must be positive");
+    }
+    if ((options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS) < (options.reconnectMs ?? DEFAULT_RECONNECT_MIN_MS)) {
+      throw new Error("reconnectMaxMs must not be below reconnectMs");
+    }
+    if ((options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS) < 1) {
+      throw new Error("connectTimeoutMs must be positive");
+    }
   }
 
   /** Return operational state only. Endpoint credentials and message content are excluded. */
@@ -215,6 +242,9 @@ export class AgentWorkRuntime {
       runtimeId: this.#runtimeId || this.#options.runtimeId,
       activeRuns: this.#activeRuns.size,
       acceptingRuns: this.#acceptingRuns.size,
+      maxConcurrentRuns: this.#options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS,
+      runtimeVersion: RUNTIME_VERSION,
+      protocolVersion: this.#protocolVersion,
       lastAckedCommandSeq: store?.lastAckedCommandSeq ?? 0,
       outboxPendingBytes: store?.outboxBytes() ?? 0,
       outboxPending: store?.pendingCount() ?? 0,
@@ -252,20 +282,26 @@ export class AgentWorkRuntime {
       this.#adapterCapabilities.set(adapter.type, new Set(adapter.capabilities ?? []));
     }
     this.#store = AgentWorkStore.open(this.#options.storePath);
+    if (this.#store.quarantinedPath) {
+      this.#reportError(
+        "agent_work.store.corruption_quarantined",
+        "corrupt Agent Work database was quarantined and replaced",
+        new Error("SQLITE_CORRUPT"),
+        { quarantined_path: this.#store.quarantinedPath }
+      );
+    }
     if (this.#options.channelContext?.store === "sqlite") {
       this.#contextStore = ChannelContextStore.open(
         this.#options.channelContext.storePath,
         this.#options.channelContext
       );
     }
-    const registeredRuntimeId = await this.#register([...this.#adapterCapabilities.keys()]);
-    if (this.#options.runtimeId && this.#options.runtimeId !== registeredRuntimeId) {
-      throw new Error(
-        `Agent Work runtime registration returned ${registeredRuntimeId}, expected configured runtime ${this.#options.runtimeId}`
-      );
+    try {
+      await this.#registerAndConnect(epoch);
+    } catch (error) {
+      if (error instanceof RuntimeIdentityMismatchError) throw error;
+      this.#reportError("transport.connection.initial_failed", "initial Agent Work connection failed", error);
     }
-    this.#runtimeId = registeredRuntimeId;
-    await this.#connect();
     this.#loop = this.#readLoop(epoch);
     this.#pump = this.#senderLoop(epoch);
     const reconcileMs = this.#options.reconcileMs ?? DEFAULT_RECONCILE_MS;
@@ -295,6 +331,12 @@ export class AgentWorkRuntime {
     this.#lifecycleEpoch += 1;
     if (this.#heartbeat) clearInterval(this.#heartbeat);
     this.#heartbeat = undefined;
+    if (this.#reconnectReset) clearTimeout(this.#reconnectReset);
+    this.#reconnectReset = undefined;
+    this.#reconnectAbort?.abort(new RuntimeStoppingError());
+    this.#reconnectAbort = undefined;
+    this.#connectingSocket?.terminate();
+    this.#connectingSocket = undefined;
     if (this.#reconcileTimer) clearInterval(this.#reconcileTimer);
     this.#reconcileTimer = undefined;
     this.#kickSender();
@@ -340,7 +382,7 @@ export class AgentWorkRuntime {
     }
   }
 
-  async #register(adapterTypes: string[]): Promise<string> {
+  async #register(adapterTypes: string[], signal?: AbortSignal): Promise<{ runtimeId: string; protocolVersion: number }> {
     const contextStats = this.#contextStore?.stats();
     this.#log({
       level: "info",
@@ -360,8 +402,10 @@ export class AgentWorkRuntime {
           arch: arch(),
           hostname: hostname()
         },
-        runtime_version: "0.1.0",
-        protocol_version: PROTOCOL_VERSION,
+        runtime_version: RUNTIME_VERSION,
+        protocol_version: MAX_PROTOCOL_VERSION,
+        protocol_version_min: MIN_PROTOCOL_VERSION,
+        protocol_version_max: MAX_PROTOCOL_VERSION,
         capabilities: {
           adapters: adapterTypes,
           channel_context: {
@@ -377,9 +421,13 @@ export class AgentWorkRuntime {
             } : {})
           }
         }
-      })
+      }),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000)
     });
-    const body = await response.json() as { runtime?: { id?: string }; error?: { message?: string } };
+    const body = await response.json() as {
+      runtime?: { id?: string; protocol_version?: number };
+      error?: { message?: string };
+    };
     if (!response.ok || !body.runtime?.id) {
       throw new Error(`Agent Work runtime registration failed (${response.status}): ${body.error?.message ?? "invalid response"}`);
     }
@@ -390,10 +438,27 @@ export class AgentWorkRuntime {
       message: "local Agent Work runtime registered",
       data: { runtime_id: body.runtime.id, http_status: response.status }
     });
-    return body.runtime.id;
+    const protocolVersion = body.runtime.protocol_version ?? MAX_PROTOCOL_VERSION;
+    if (protocolVersion < MIN_PROTOCOL_VERSION || protocolVersion > MAX_PROTOCOL_VERSION) {
+      throw new Error(`Agent Work selected unsupported protocol ${protocolVersion}`);
+    }
+    return { runtimeId: body.runtime.id, protocolVersion };
   }
 
-  async #connect(): Promise<void> {
+  async #registerAndConnect(epoch: number, signal?: AbortSignal): Promise<void> {
+    const registration = await this.#register([...this.#adapterCapabilities.keys()], signal);
+    this.#assertCurrentLifecycle(epoch);
+    if (this.#options.runtimeId && this.#options.runtimeId !== registration.runtimeId) {
+      throw new RuntimeIdentityMismatchError(
+        `Agent Work runtime registration returned ${registration.runtimeId}, expected configured runtime ${this.#options.runtimeId}`
+      );
+    }
+    this.#runtimeId = registration.runtimeId;
+    this.#protocolVersion = registration.protocolVersion;
+    await this.#connect(epoch, signal);
+  }
+
+  async #connect(epoch: number, signal?: AbortSignal): Promise<void> {
     const url = new URL(`${stripSlash(this.#options.baseUrl)}/api/v1/runtime/connect`);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     const connectionId = `conn_wss_${randomUUID()}`;
@@ -409,33 +474,67 @@ export class AgentWorkRuntime {
       data: { connection_id: connectionId, reconnect_attempt: attempt, endpoint }
     });
     const socket = new WebSocket(url, { headers: this.#headers(false) });
+    this.#connectingSocket = socket;
     try {
       await new Promise<void>((resolve, reject) => {
-        const onOpen = (): void => {
+        const handshake: { timer?: NodeJS.Timeout } = {};
+        const cleanup = (): void => {
+          if (handshake.timer) clearTimeout(handshake.timer);
+          socket.off("open", onOpen);
           socket.off("error", onError);
+          socket.off("close", onClose);
+          signal?.removeEventListener("abort", onAbort);
+        };
+        const onOpen = (): void => {
+          cleanup();
           resolve();
         };
         const onError = (error: Error): void => {
-          socket.off("open", onOpen);
+          cleanup();
           reject(error);
+        };
+        const onClose = (): void => {
+          cleanup();
+          reject(new Error("Agent Work WebSocket closed before opening"));
+        };
+        const onAbort = (): void => {
+          cleanup();
+          socket.once("error", () => undefined);
+          socket.terminate();
+          reject(new RuntimeStoppingError());
         };
         socket.once("open", onOpen);
         socket.once("error", onError);
+        socket.once("close", onClose);
+        handshake.timer = setTimeout(() => {
+          cleanup();
+          socket.once("error", () => undefined);
+          socket.terminate();
+          reject(new Error("Agent Work WebSocket handshake timed out"));
+        }, this.#options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS);
+        signal?.addEventListener("abort", onAbort, { once: true });
+        if (signal?.aborted) onAbort();
       });
+      this.#assertCurrentLifecycle(epoch);
     } catch (error) {
-      this.#log({
-        level: "warn",
-        scope: "transport.wss",
-        event: "transport.connection.failed",
-        message: "Agent Work WebSocket connection failed",
-        data: {
-          connection_id: connectionId,
-          reconnect_attempt: attempt,
-          endpoint,
-          error: errorMessage(error)
-        }
-      });
+      if (!(error instanceof RuntimeStoppingError)) {
+        this.#log({
+          level: "warn",
+          scope: "transport.wss",
+          event: "transport.connection.failed",
+          message: "Agent Work WebSocket connection failed",
+          data: {
+            connection_id: connectionId,
+            reconnect_attempt: attempt,
+            endpoint,
+            error: errorMessage(error)
+          }
+        });
+      }
+      socket.terminate();
       throw error;
+    } finally {
+      if (this.#connectingSocket === socket) this.#connectingSocket = undefined;
     }
     this.#socket = socket;
     this.#connectionId = connectionId;
@@ -454,7 +553,9 @@ export class AgentWorkRuntime {
     this.#send("runtime.hello", {
       last_acked_command_seq: this.#store?.lastAckedCommandSeq ?? 0,
       active_run_ids: this.#store?.activeRunIds() ?? [],
-      runtime_version: "0.1.0"
+      runtime_version: RUNTIME_VERSION,
+      protocol_version_min: MIN_PROTOCOL_VERSION,
+      protocol_version_max: MAX_PROTOCOL_VERSION
     });
   }
 
@@ -475,18 +576,32 @@ export class AgentWorkRuntime {
       this.#connected = false;
       if (this.#heartbeat) clearInterval(this.#heartbeat);
       this.#heartbeat = undefined;
+      if (this.#reconnectReset) clearTimeout(this.#reconnectReset);
+      this.#reconnectReset = undefined;
       // No event loss on disconnect: clear the in-flight markers so reconnect
       // replays everything from the lowest unacked seq.
       this.#inFlight.clear();
       if (!this.#isCurrentLifecycle(epoch)) return;
       while (this.#isCurrentLifecycle(epoch) && !this.#socket) {
-        await delay(this.#options.reconnectMs ?? 1_000);
+        const reconnectAttempt = ++this.#consecutiveReconnects;
+        const reconnectDelay = reconnectDelayMs(
+          reconnectAttempt,
+          this.#options.reconnectMs ?? DEFAULT_RECONNECT_MIN_MS,
+          this.#options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS
+        );
+        const reconnectAbort = new AbortController();
+        this.#reconnectAbort = reconnectAbort;
         try {
-          await this.#connect();
+          await reconnectRuntimeDelay(reconnectDelay, reconnectAbort.signal);
+          this.#assertCurrentLifecycle(epoch);
+          await this.#registerAndConnect(epoch, reconnectAbort.signal);
         } catch (error) {
+          if (error instanceof RuntimeStoppingError || !this.#isCurrentLifecycle(epoch)) return;
           this.#reportError("transport.connection.reconnect_failed", "Agent Work WebSocket reconnect failed", error, {
             reconnect_attempt: this.#connectionAttempt
           });
+        } finally {
+          if (this.#reconnectAbort === reconnectAbort) this.#reconnectAbort = undefined;
         }
       }
     }
@@ -541,7 +656,7 @@ export class AgentWorkRuntime {
 
   async #receive(envelope: WireEnvelope, epoch: number): Promise<void> {
     if (!this.#isCurrentLifecycle(epoch)) return;
-    if (envelope.version !== PROTOCOL_VERSION) throw new Error(`unsupported Agent Work protocol ${envelope.version}`);
+    if (envelope.version !== this.#protocolVersion) throw new Error(`unsupported Agent Work protocol ${envelope.version}`);
     const envelopePayload = asRecord(envelope.payload);
     const commandPayload = envelope.type === "runtime.command" ? envelopePayload : undefined;
     // Transport traces carry routing and correlation fields, never the envelope
@@ -586,8 +701,13 @@ export class AgentWorkRuntime {
       // local Outbox must replay every row not covered by durable ACK.
       this.#store?.prepareReplayAfterReconnect();
       this.#connected = true;
+      if (this.#reconnectReset) clearTimeout(this.#reconnectReset);
+      this.#reconnectReset = setTimeout(() => {
+        if (this.#connected && this.#isCurrentLifecycle(epoch)) this.#consecutiveReconnects = 0;
+      }, RECONNECT_STABLE_RESET_MS);
+      this.#reconnectReset.unref();
       if (this.#heartbeat) clearInterval(this.#heartbeat);
-      this.#heartbeat = setInterval(() => this.#trySend("runtime.heartbeat", { runtime_version: "0.1.0" }), everyMs);
+      this.#heartbeat = setInterval(() => this.#trySend("runtime.heartbeat", { runtime_version: RUNTIME_VERSION }), everyMs);
       // Once the connection is ready, immediately drain the outbox (including
       // events backlogged during the disconnect).
       this.#kickSender();
@@ -755,9 +875,23 @@ export class AgentWorkRuntime {
         runId: command.run_id,
         data: { pending_bytes: pendingBytes, hard_watermark_bytes: hardWatermark }
       });
+      const error = { code: "OUTBOX_HARD_LIMIT", message: "local outbox above hard watermark" };
+      store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
+      this.#ackCommand(command, false, error);
+      return;
     }
     if (pendingBytes >= softWatermark) {
       const error = { code: "OUTBOX_BACKPRESSURE", message: "local outbox above soft watermark" };
+      store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
+      this.#ackCommand(command, false, error);
+      return;
+    }
+    const maxConcurrentRuns = this.#options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS;
+    if (this.#activeRuns.size + this.#acceptingRuns.size >= maxConcurrentRuns) {
+      const error = {
+        code: "RUNTIME_CAPACITY_EXCEEDED",
+        message: `local runtime concurrency limit ${maxConcurrentRuns} reached`
+      };
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
       return;
@@ -1178,7 +1312,7 @@ export class AgentWorkRuntime {
     if (!this.#socket || this.#socket.readyState !== WebSocket.OPEN) throw new Error("Agent Work runtime socket is not open");
     const envelopeId = `msg_${randomUUID()}`;
     this.#socket.send(JSON.stringify({
-      version: PROTOCOL_VERSION,
+      version: this.#protocolVersion,
       id: envelopeId,
       type,
       runtime_id: this.#runtimeId,
@@ -1482,8 +1616,15 @@ function contextEventFields(snapshot: PreparedChannelContextSnapshot): Record<st
 
 class RuntimeStoppingError extends Error {
   constructor() {
-    super("Agent Work runtime stopped while waiting for channel context cursor");
+    super("Agent Work runtime is stopping");
     this.name = "RuntimeStoppingError";
+  }
+}
+
+class RuntimeIdentityMismatchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RuntimeIdentityMismatchError";
   }
 }
 
@@ -1508,6 +1649,44 @@ function stripSlash(value: string): string {
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function reconnectRuntimeDelay(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(new RuntimeStoppingError());
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(new RuntimeStoppingError());
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** Full-jitter exponential backoff. The 20-second default first window spreads
+ * a 2,000-device reconnect wave to roughly the 100 connections/second target. */
+export function reconnectDelayMs(
+  attempt: number,
+  minimumMs = DEFAULT_RECONNECT_MIN_MS,
+  maximumMs = DEFAULT_RECONNECT_MAX_MS,
+  random = Math.random
+): number {
+  const exponent = Math.max(0, Math.min(30, Math.trunc(attempt) - 1));
+  const ceiling = Math.min(maximumMs, minimumMs * (2 ** exponent));
+  return Math.floor(Math.max(0, Math.min(0.999999999, random())) * ceiling);
+}
+
+function packageVersion(): string {
+  const metadata = JSON.parse(readFileSync(new URL("../../../package.json", import.meta.url), "utf8")) as {
+    version?: unknown;
+  };
+  if (typeof metadata.version !== "string" || !metadata.version.trim()) {
+    throw new Error("Octo Harness package version is missing");
+  }
+  return metadata.version;
 }
 
 function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {

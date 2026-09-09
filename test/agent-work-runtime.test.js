@@ -14,10 +14,11 @@ import {
   accumulateFinalText,
   mapExecutionEnvelope,
   mapRuntimeEvent,
+  reconnectDelayMs,
   renderDisplayExecutionInputPrompt,
   renderAgentRunInputPrompt
 } from "../apps/daemon/dist/agent-work-runtime.js";
-import { deferred, wire } from "./agent-work-runtime-fixture.js";
+import { deferred, waitFor, wire } from "./agent-work-runtime-fixture.js";
 
 const envelope = {
   schema_version: 1,
@@ -48,6 +49,12 @@ const envelope = {
     }
   }
 };
+
+test("reconnect delay uses capped full-jitter exponential backoff", () => {
+  assert.equal(reconnectDelayMs(1, 20_000, 60_000, () => 0.5), 10_000);
+  assert.equal(reconnectDelayMs(2, 20_000, 60_000, () => 0.5), 20_000);
+  assert.equal(reconnectDelayMs(20, 20_000, 60_000, () => 0.5), 30_000);
+});
 
 test("Agent Work envelope maps to a local adapter invocation with fixed cwd and resume", () => {
   const mapped = mapExecutionEnvelope(envelope);
@@ -153,10 +160,13 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     logLevel: "debug",
     component: "daemon"
   });
+  let registrationBody;
   let runtime;
 
   httpServer.on("request", async (request, response) => {
-    for await (const _chunk of request) { /* consume registration */ }
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    registrationBody = JSON.parse(body);
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { id: "runtime-observed" } }));
   });
@@ -222,6 +232,9 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
       terminal.promise,
       new Promise((_, reject) => setTimeout(() => reject(new Error("terminal timeout")), 3_000))
     ]);
+    assert.equal(registrationBody.runtime_version, "0.1.0");
+    assert.equal(registrationBody.protocol_version_min, 1);
+    assert.equal(registrationBody.protocol_version_max, 1);
     await runtime.close();
     runtime = undefined;
     const trace = await logger.query({ runId: "run-observed" });
@@ -290,3 +303,293 @@ test("a configured runtime ID still refreshes registration and rejects identity 
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("startup registration failure stays alive and every reconnect re-registers", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-reconnect-"));
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  let registrations = 0;
+  let connections = 0;
+  let runtime;
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume registration. */ }
+    registrations += 1;
+    response.writeHead(registrations === 1 ? 503 : 200, { "Content-Type": "application/json" });
+    response.end(registrations === 1
+      ? JSON.stringify({ error: { message: "worker restarting" } })
+      : JSON.stringify({ runtime: { id: "runtime-reconnect", protocol_version: 1 } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    connections += 1;
+    websocket.once("message", () => {
+      websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+      if (connections === 1) setTimeout(() => websocket.close(1012, "worker restart"), 10);
+    });
+  });
+
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    runtime = new AgentWorkRuntime({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      runtimeName: "runtime-reconnect",
+      fingerprint: "runtime:reconnect",
+      storePath: join(directory, "agent-work.db"),
+      reconnectMs: 5,
+      reconnectMaxMs: 5
+    }, {
+      list: async () => [],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() { yield { type: "run.finished", payload: {} }; }
+    });
+    await runtime.start();
+    await waitFor(() => registrations >= 3 && connections >= 2, 2_000);
+    assert.equal(runtime.status.connected, true);
+  } finally {
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("close cancels a pending reconnect backoff without late registration", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-close-backoff-"));
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  let registrations = 0;
+  let runtime;
+  let socket;
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume registration. */ }
+    registrations += 1;
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { id: "runtime-close-backoff", protocol_version: 1 } }));
+  });
+  httpServer.on("upgrade", (request, rawSocket, head) => {
+    wsServer.handleUpgrade(request, rawSocket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    socket = websocket;
+    websocket.once("message", () => websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 })));
+  });
+
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    runtime = new AgentWorkRuntime({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      runtimeName: "runtime-close-backoff",
+      fingerprint: "runtime:close-backoff",
+      storePath: join(directory, "agent-work.db"),
+      reconnectMs: 60_000,
+      reconnectMaxMs: 60_000
+    }, {
+      list: async () => [],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() { yield { type: "run.finished", payload: {} }; }
+    });
+    await runtime.start();
+    await waitFor(() => runtime.status.connected === true, 2_000);
+    socket.close(1012, "worker restart");
+    await waitFor(() => runtime.status.connected === false, 2_000);
+    const startedAt = Date.now();
+    await runtime.close();
+    assert.ok(Date.now() - startedAt < 500, "close waited for reconnect backoff");
+    await new Promise(resolve => setTimeout(resolve, 25));
+    assert.equal(registrations, 1);
+  } finally {
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a stalled WebSocket handshake times out and registration retries", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-handshake-timeout-"));
+  const httpServer = createServer();
+  const upgradedSockets = new Set();
+  let registrations = 0;
+  let runtime;
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume registration. */ }
+    registrations += 1;
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { id: "runtime-handshake-timeout", protocol_version: 1 } }));
+  });
+  httpServer.on("upgrade", (_request, socket) => {
+    upgradedSockets.add(socket);
+    socket.once("close", () => upgradedSockets.delete(socket));
+    // Deliberately leave the HTTP upgrade unanswered.
+  });
+
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    runtime = new AgentWorkRuntime({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      runtimeName: "runtime-handshake-timeout",
+      fingerprint: "runtime:handshake-timeout",
+      storePath: join(directory, "agent-work.db"),
+      reconnectMs: 5,
+      reconnectMaxMs: 5,
+      connectTimeoutMs: 10
+    }, {
+      list: async () => [],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() { yield { type: "run.finished", payload: {} }; }
+    });
+    await runtime.start();
+    await waitFor(() => registrations >= 2, 2_000);
+    assert.equal(runtime.status.connected, false);
+  } finally {
+    await runtime?.close();
+    for (const socket of upgradedSockets) socket.destroy();
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("hard outbox watermark rejects new work with a durable command receipt", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-hard-limit-"));
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  const rejection = deferred();
+  let runtime;
+  let invocations = 0;
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume registration. */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { id: "runtime-hard-limit", protocol_version: 1 } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    websocket.on("message", data => {
+      const frame = JSON.parse(data.toString("utf8"));
+      if (frame.type === "runtime.hello") {
+        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("runtime.command", runtimeCommand("hard", 1)));
+      } else if (frame.type === "command.ack" && frame.payload.command_id === "command-hard") {
+        rejection.resolve(frame.payload);
+      }
+    });
+  });
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    runtime = new AgentWorkRuntime({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      runtimeName: "runtime-hard-limit",
+      fingerprint: "runtime:hard-limit",
+      storePath: join(directory, "agent-work.db"),
+      hardWatermarkBytes: 0
+    }, {
+      list: async () => [],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() { invocations += 1; yield { type: "run.finished", payload: {} }; }
+    });
+    await runtime.start();
+    const ack = await rejection.promise;
+    assert.equal(ack.accepted, false);
+    assert.equal(ack.error.code, "OUTBOX_HARD_LIMIT");
+    assert.equal(invocations, 0);
+  } finally {
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("local runtime concurrency limit rejects a second provider invocation", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-capacity-"));
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  const firstStarted = deferred();
+  const releaseFirst = deferred();
+  const secondRejection = deferred();
+  let runtime;
+  let socket;
+  let invocations = 0;
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume registration. */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { id: "runtime-capacity", protocol_version: 1 } }));
+  });
+  httpServer.on("upgrade", (request, rawSocket, head) => {
+    wsServer.handleUpgrade(request, rawSocket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    socket = websocket;
+    websocket.on("message", data => {
+      const frame = JSON.parse(data.toString("utf8"));
+      if (frame.type === "runtime.hello") {
+        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("runtime.command", runtimeCommand("first", 1)));
+      } else if (frame.type === "command.ack" && frame.payload.command_id === "command-second") {
+        secondRejection.resolve(frame.payload);
+      }
+    });
+  });
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    runtime = new AgentWorkRuntime({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      runtimeName: "runtime-capacity",
+      fingerprint: "runtime:capacity",
+      storePath: join(directory, "agent-work.db"),
+      maxConcurrentRuns: 1
+    }, {
+      list: async () => [{ type: "codex", capabilities: [] }],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() {
+        invocations += 1;
+        firstStarted.resolve();
+        await releaseFirst.promise;
+        yield { type: "run.finished", payload: {} };
+      }
+    });
+    await runtime.start();
+    await firstStarted.promise;
+    socket.send(wire("runtime.command", runtimeCommand("second", 2)));
+    const ack = await secondRejection.promise;
+    assert.equal(ack.accepted, false);
+    assert.equal(ack.error.code, "RUNTIME_CAPACITY_EXCEEDED");
+    assert.equal(invocations, 1);
+    releaseFirst.resolve();
+  } finally {
+    releaseFirst.resolve();
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+function runtimeCommand(suffix, serverSeq) {
+  return {
+    server_seq: serverSeq,
+    command_id: `command-${suffix}`,
+    run_id: `run-${suffix}`,
+    type: "run.start",
+    payload: { ...envelope, run_id: `run-${suffix}` },
+    lease_id: `lease-${suffix}`,
+    fencing_token: serverSeq
+  };
+}

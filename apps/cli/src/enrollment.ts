@@ -4,6 +4,8 @@ import { arch, hostname, platform } from "node:os";
 import type { PendingEnrollment } from "./state.js";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
+const MIN_AGENT_WORK_PROTOCOL_VERSION = 1;
+const MAX_AGENT_WORK_PROTOCOL_VERSION = 1;
 export const RUNTIME_VERSION = packageVersion();
 
 export interface EnrollmentOptions {
@@ -81,7 +83,9 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
       name: options.runtimeName,
       device: { os: platform(), arch: arch(), hostname: hostname() },
       runtime_version: RUNTIME_VERSION,
-      protocol_version: 1,
+      protocol_version: MAX_AGENT_WORK_PROTOCOL_VERSION,
+      protocol_version_min: MIN_AGENT_WORK_PROTOCOL_VERSION,
+      protocol_version_max: MAX_AGENT_WORK_PROTOCOL_VERSION,
       capabilities: { adapters: [] }
     }),
     signal: AbortSignal.timeout(15_000)

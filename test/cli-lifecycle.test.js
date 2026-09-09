@@ -112,7 +112,11 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
       assert.ok(workProfile || request.headers.authorization === "Bearer octo_device_fixture_secret");
       assert.equal(request.headers["x-tenant-id"], undefined);
       assert.equal(request.headers["x-subject-id"], undefined);
-      assert.equal(JSON.parse(body).runtime_version, packageVersion);
+      const registration = JSON.parse(body);
+      assert.equal(registration.runtime_version, packageVersion);
+      assert.equal(registration.protocol_version, 1);
+      assert.equal(registration.protocol_version_min, 1);
+      assert.equal(registration.protocol_version_max, 1);
       response.writeHead(runtimeRegistrationCount === 1 ? 201 : 200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({ runtime: { id: workProfile ? "runtime-work" : "runtime-fixture" } }));
       return;
