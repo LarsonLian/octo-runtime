@@ -13,6 +13,7 @@ import { startDaemonServer } from "@mininglamp-oss/octo-harness-daemon-app";
 import { wire } from "./agent-work-runtime-fixture.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
+const packageVersion = JSON.parse(await readFile(join(root, "package.json"), "utf8")).version;
 
 class InMemoryServiceBackend {
   kind = "launchd-user";
@@ -111,6 +112,7 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
       assert.ok(workProfile || request.headers.authorization === "Bearer octo_device_fixture_secret");
       assert.equal(request.headers["x-tenant-id"], undefined);
       assert.equal(request.headers["x-subject-id"], undefined);
+      assert.equal(JSON.parse(body).runtime_version, packageVersion);
       response.writeHead(runtimeRegistrationCount === 1 ? 201 : 200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({ runtime: { id: workProfile ? "runtime-work" : "runtime-fixture" } }));
       return;

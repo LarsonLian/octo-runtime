@@ -56,7 +56,7 @@ model is invoked.
 
 ```bash
 # Terminal A
-pnpm daemon      # state at ~/.octo-harness/state.json (override with OCTO_HARNESS_HOME)
+pnpm daemon      # state at ~/.octo-harness/state.db (override with OCTO_HARNESS_HOME)
 
 # Terminal B
 pnpm cli status

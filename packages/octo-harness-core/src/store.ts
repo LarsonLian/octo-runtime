@@ -58,6 +58,7 @@ export interface Store {
   putAgentRun(run: AgentRun): void;
   getEvents(agentRunId: string): EventEnvelope[];
   appendEvent(event: EventEnvelope): boolean;
+  /** The callback is a synchronous critical section and must never return a Promise. */
   transaction<T>(fn: () => T): Promise<T>;
   close(): void;
 }
@@ -99,7 +100,9 @@ export class MemoryStore implements Store {
     this.#events.set(event.runId, stream);
     return true;
   }
-  transaction<T>(fn: () => T): Promise<T> { return Promise.resolve(fn()); }
+  transaction<T>(fn: () => T): Promise<T> {
+    return Promise.resolve(assertSynchronousTransactionResult(fn()));
+  }
   close(): void {}
 }
 
@@ -107,6 +110,7 @@ export class MemoryStore implements Store {
 export class SqliteStore implements Store {
   readonly #db: DatabaseSync;
   #depth = 0;
+  #savepoint = 0;
 
   private constructor(db: DatabaseSync) { this.#db = db; }
 
@@ -186,13 +190,25 @@ export class SqliteStore implements Store {
 
   transaction<T>(fn: () => T): Promise<T> {
     if (this.#depth > 0) {
+      const savepoint = `octo_nested_${++this.#savepoint}`;
+      this.#db.exec(`SAVEPOINT ${savepoint}`);
       this.#depth += 1;
-      try { return Promise.resolve(fn()); } finally { this.#depth -= 1; }
+      try {
+        const result = assertSynchronousTransactionResult(fn());
+        this.#db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+        return Promise.resolve(result);
+      } catch (error) {
+        this.#db.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+        this.#db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+        throw normalizedError(error);
+      } finally {
+        this.#depth -= 1;
+      }
     }
     this.#db.exec("BEGIN IMMEDIATE");
     this.#depth = 1;
     try {
-      const result = fn();
+      const result = assertSynchronousTransactionResult(fn());
       this.#db.exec("COMMIT");
       return Promise.resolve(result);
     } catch (error) {
@@ -224,4 +240,16 @@ export class SqliteStore implements Store {
     const json = (row as { json?: unknown } | undefined)?.json;
     return typeof json === "string" ? JSON.parse(json) as T : undefined;
   }
+}
+
+function assertSynchronousTransactionResult<T>(result: T): T {
+  if (result !== null && (typeof result === "object" || typeof result === "function") &&
+      "then" in result && typeof result.then === "function") {
+    throw new TypeError("Store.transaction callback must be synchronous");
+  }
+  return result;
+}
+
+function normalizedError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }

@@ -60,3 +60,21 @@ test("SqliteStore transaction rolls back all writes on error", async () => {
     store.close();
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test("SqliteStore nested transaction rolls back to a savepoint without aborting the outer transaction", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "oh-sqlite-savepoint-"));
+  try {
+    const store = SqliteStore.open(join(dir, "state.db"));
+    await store.transaction(() => {
+      store.putAgent({ id: "outer-before", name: "before", adapterType: "test", config: {} });
+      assert.throws(() => store.transaction(() => {
+        store.putAgent({ id: "inner", name: "inner", adapterType: "test", config: {} });
+        throw new Error("nested boom");
+      }), /nested boom/);
+      store.putAgent({ id: "outer-after", name: "after", adapterType: "test", config: {} });
+    });
+
+    assert.deepEqual(store.listAgents().map(agent => agent.id).sort(), ["outer-after", "outer-before"]);
+    store.close();
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
