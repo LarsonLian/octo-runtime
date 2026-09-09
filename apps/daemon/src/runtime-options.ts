@@ -206,7 +206,13 @@ function resolveAgentWorkOptions(
     },
     ...optionalNumber(args, ["--agent-work-send-window"], env.OCTO_HARNESS_AGENT_WORK_SEND_WINDOW, "sendWindow"),
     ...optionalNumber(args, ["--agent-work-soft-bytes"], env.OCTO_HARNESS_AGENT_WORK_SOFT_BYTES, "softWatermarkBytes"),
-    ...optionalNumber(args, ["--agent-work-hard-bytes"], env.OCTO_HARNESS_AGENT_WORK_HARD_BYTES, "hardWatermarkBytes")
+    ...optionalNumber(args, ["--agent-work-hard-bytes"], env.OCTO_HARNESS_AGENT_WORK_HARD_BYTES, "hardWatermarkBytes"),
+    ...optionalNumber(
+      args,
+      ["--agent-work-max-concurrent-runs"],
+      env.OCTO_HARNESS_AGENT_WORK_MAX_CONCURRENT_RUNS,
+      "maxConcurrentRuns"
+    )
   };
 }
 
@@ -274,6 +280,7 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[
     pushNumberOption(args, "--agent-work-send-window", paths.agentWork.sendWindow);
     pushNumberOption(args, "--agent-work-soft-bytes", paths.agentWork.softWatermarkBytes);
     pushNumberOption(args, "--agent-work-hard-bytes", paths.agentWork.hardWatermarkBytes);
+    pushNumberOption(args, "--agent-work-max-concurrent-runs", paths.agentWork.maxConcurrentRuns);
     pushNumberOption(args, "--channel-context-retention-ms", paths.agentWork.channelContext?.retentionMs);
     pushNumberOption(args, "--channel-context-snapshot-retention-ms", paths.agentWork.channelContext?.snapshotRetentionMs);
     pushNumberOption(args, "--channel-context-active-snapshot-timeout-ms", paths.agentWork.channelContext?.activeSnapshotTimeoutMs);

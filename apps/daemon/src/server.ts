@@ -32,6 +32,9 @@ export interface StartDaemonServerOptions {
   hostEntrypoint: string;
   logging?: ObservabilityConfiguration;
   agentWork?: AgentWorkRuntimeOptions;
+  /** Test/embedding hook. Production exits non-zero so the service manager
+   * restarts the whole daemon if the adapter-host becomes unusable. */
+  onFatal?: (error: Error) => void;
 }
 
 /** Non-secret process metadata returned by `status` and suitable for support output. */
@@ -90,7 +93,8 @@ export async function startDaemonServer({
   manifestPath,
   hostEntrypoint,
   logging,
-  agentWork
+  agentWork,
+  onFatal = () => process.exit(1)
 }: StartDaemonServerOptions): Promise<DaemonApplication> {
   // Construct observability before every other owned resource. Startup failures
   // are otherwise the most difficult failures to diagnose and would leave no
@@ -209,6 +213,19 @@ export async function startDaemonServer({
   const agentWorkRuntime = agentWork
     ? new AgentWorkRuntime(agentWork, hostProcess.client, observability)
     : undefined;
+  let shuttingDown = false;
+  hostProcess.child.once("exit", (code, signal) => {
+    if (shuttingDown) return;
+    const error = new Error(`adapter-host exited unexpectedly (${code ?? signal ?? "unknown"})`);
+    observability.log({
+      level: "error",
+      scope: "adapter-host.lifecycle",
+      event: "adapter_host.unexpected_exit",
+      message: "adapter-host exited unexpectedly; terminating daemon for service restart",
+      data: { exit_code: code, signal }
+    });
+    setImmediate(() => onFatal(error));
+  });
   const viewerIndex = new ViewerLogIndex(loggingConfiguration.directory);
   // HarnessDaemon events mark execution, rather than submission, boundaries.
   // A control request can therefore be acknowledged before `run.started` while
@@ -298,6 +315,7 @@ export async function startDaemonServer({
       }
     });
   } catch (error) {
+    shuttingDown = true;
     observability.log({
       level: "error",
       scope: "daemon.lifecycle",
@@ -325,6 +343,7 @@ export async function startDaemonServer({
     agentWorkRuntime,
     observability,
     async close(): Promise<void> {
+      shuttingDown = true;
       observability.log({
         level: "info",
         scope: "daemon.lifecycle",

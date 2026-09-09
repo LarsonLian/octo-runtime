@@ -287,12 +287,22 @@ export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TN
     cwd,
     env: { ...process.env, ...env },
     stdio: ["pipe", "pipe", "pipe"],
-    signal
+    detached: process.platform !== "win32"
   });
   const exitPromise = new Promise<ProcessExit>((resolve, reject) => {
     child.once("error", reject);
     child.once("close", (code, exitSignal) => resolve({ code, signal: exitSignal }));
   });
+  let killTimer: NodeJS.Timeout | undefined;
+  const abort = (): void => {
+    signalProcessTree(child, "SIGTERM");
+    killTimer ??= setTimeout(() => {
+      if (child.exitCode === null) signalProcessTree(child, "SIGKILL");
+    }, 1_000);
+    killTimer.unref();
+  };
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
   let stderr = "";
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk: string | Buffer) => {
@@ -302,20 +312,50 @@ export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TN
   // would incorrectly classify a synchronous write failure as dispatched.
   child.stdin.end(input, onInputWritten);
 
-  // One provider-native event per line; whether a parse failure is ignored is
-  // left to the specific adapter's parseLine.
-  for await (const line of createInterface({ input: child.stdout })) {
-    const event = parseLine(line);
-    if (event !== null) yield event;
-  }
+  let exited = false;
+  try {
+    // One provider-native event per line; whether a parse failure is ignored is
+    // left to the specific adapter's parseLine.
+    for await (const line of createInterface({ input: child.stdout })) {
+      const event = parseLine(line);
+      if (event !== null) yield event;
+    }
 
-  const exit = await exitPromise;
-  if (exit.code !== 0) {
-    throw new ProviderProcessError(
-      stderr.trim() || `${command} exited with ${exit.code ?? exit.signal}`,
-      exit
-    );
+    const exit = await exitPromise;
+    exited = true;
+    if (exit.code !== 0) {
+      throw new ProviderProcessError(
+        stderr.trim() || `${command} exited with ${exit.code ?? exit.signal}`,
+        exit
+      );
+    }
+  } finally {
+    signal?.removeEventListener("abort", abort);
+    if (!exited && child.exitCode === null) {
+      abort();
+      await Promise.race([
+        exitPromise.catch(() => undefined),
+        new Promise<void>(resolve => setTimeout(resolve, 1_000))
+      ]);
+      if (child.exitCode === null) signalProcessTree(child, "SIGKILL");
+    }
+    if (killTimer) clearTimeout(killTimer);
   }
+}
+
+function signalProcessTree(
+  child: ReturnType<typeof spawn>,
+  signal: NodeJS.Signals
+): void {
+  if (process.platform !== "win32" && child.pid !== undefined) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
+  }
+  child.kill(signal);
 }
 
 /** Raised when a provider subprocess exits non-zero; carries the exit code/signal alongside the captured stderr message. */

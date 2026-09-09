@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -268,4 +268,20 @@ test("reconcile prunes expired command receipts but keeps fresh ones", async () 
     assert.equal(store.getCommandReceipt("old"), undefined);
     assert.ok(store.getCommandReceipt("fresh"));
   });
+});
+
+test("corrupt Agent Work database is quarantined and replaced", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "oh-outbox-corrupt-"));
+  const file = join(dir, "agent-work.db");
+  try {
+    await writeFile(file, "this is not sqlite");
+    const store = AgentWorkStore.open(file);
+    assert.match(store.quarantinedPath, /agent-work\.db\.corrupt-\d+$/);
+    assert.equal((await readFile(store.quarantinedPath, "utf8")), "this is not sqlite");
+    store.recordCommandReceipt("after-recovery", 1, true);
+    assert.equal(store.getCommandReceipt("after-recovery").accepted, true);
+    store.close();
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

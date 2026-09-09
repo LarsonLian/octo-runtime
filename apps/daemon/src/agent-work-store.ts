@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { renameSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { openWalDatabase } from "@mininglamp-oss/octo-harness-core";
@@ -77,54 +77,36 @@ interface RunRow {
 export class AgentWorkStore {
   readonly #db: DatabaseSync;
   readonly #file: string;
+  readonly #quarantinedPath: string | undefined;
 
-  private constructor(db: DatabaseSync, file: string) {
+  private constructor(db: DatabaseSync, file: string, quarantinedPath?: string) {
     this.#db = db;
     this.#file = file;
+    this.#quarantinedPath = quarantinedPath;
   }
 
   static open(file: string): AgentWorkStore {
-    const db = openWalDatabase(file);
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS runs (
-        run_id TEXT PRIMARY KEY,
-        agent_session_id TEXT,
-        command_id TEXT NOT NULL UNIQUE,
-        lease_id TEXT NOT NULL,
-        fencing_token INTEGER NOT NULL,
-        status TEXT NOT NULL,
-        next_seq INTEGER NOT NULL DEFAULT 1,
-        received_through_seq INTEGER NOT NULL DEFAULT 0,
-        durable_through_seq INTEGER NOT NULL DEFAULT 0,
-        terminal_seq INTEGER,
-        updated_at INTEGER NOT NULL,
-        completed_at INTEGER
-      );
-      CREATE TABLE IF NOT EXISTS event_outbox (
-        run_id TEXT NOT NULL REFERENCES runs(run_id),
-        seq INTEGER NOT NULL,
-        event_id TEXT NOT NULL UNIQUE,
-        event_type TEXT NOT NULL,
-        payload_json TEXT NOT NULL,
-        payload_bytes INTEGER NOT NULL,
-        created_at INTEGER NOT NULL,
-        last_sent_at INTEGER,
-        send_attempts INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (run_id, seq)
-      );
-      CREATE INDEX IF NOT EXISTS outbox_send_order ON event_outbox(run_id, seq);
-      CREATE TABLE IF NOT EXISTS command_receipts (
-        command_id TEXT PRIMARY KEY,
-        server_seq INTEGER NOT NULL,
-        accepted INTEGER NOT NULL,
-        result_json TEXT,
-        expires_at INTEGER
-      );
-      CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-    `);
-    migrateRunSessionColumn(db);
-    return new AgentWorkStore(db, file);
+    let db: DatabaseSync | undefined;
+    try {
+      db = openWalDatabase(file);
+      initialize(db);
+      return new AgentWorkStore(db, file);
+    } catch (error) {
+      if (!isCorruptDatabase(error)) {
+        try { db?.close(); } catch { /* Preserve the original open/migration error. */ }
+        throw error;
+      }
+      try { db?.close(); } catch { /* A corrupt handle may not close cleanly. */ }
+      const quarantinedPath = quarantineDatabase(file);
+      const replacement = openWalDatabase(file);
+      initialize(replacement);
+      return new AgentWorkStore(replacement, file, quarantinedPath);
+    }
   }
+
+  /** Non-empty when open isolated a corrupt database. The quarantined file is
+   * retained for forensic recovery; callers should emit an operator alert. */
+  get quarantinedPath(): string | undefined { return this.#quarantinedPath; }
 
   getCommandReceipt(commandId: string): CommandReceipt | undefined {
     const row = this.#db.prepare(
@@ -401,6 +383,47 @@ export class AgentWorkStore {
   close(): void { this.#db.close(); }
 }
 
+function initialize(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS runs (
+      run_id TEXT PRIMARY KEY,
+      agent_session_id TEXT,
+      command_id TEXT NOT NULL UNIQUE,
+      lease_id TEXT NOT NULL,
+      fencing_token INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      next_seq INTEGER NOT NULL DEFAULT 1,
+      received_through_seq INTEGER NOT NULL DEFAULT 0,
+      durable_through_seq INTEGER NOT NULL DEFAULT 0,
+      terminal_seq INTEGER,
+      updated_at INTEGER NOT NULL,
+      completed_at INTEGER
+    );
+    CREATE TABLE IF NOT EXISTS event_outbox (
+      run_id TEXT NOT NULL REFERENCES runs(run_id),
+      seq INTEGER NOT NULL,
+      event_id TEXT NOT NULL UNIQUE,
+      event_type TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      payload_bytes INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      last_sent_at INTEGER,
+      send_attempts INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (run_id, seq)
+    );
+    CREATE INDEX IF NOT EXISTS outbox_send_order ON event_outbox(run_id, seq);
+    CREATE TABLE IF NOT EXISTS command_receipts (
+      command_id TEXT PRIMARY KEY,
+      server_seq INTEGER NOT NULL,
+      accepted INTEGER NOT NULL,
+      result_json TEXT,
+      expires_at INTEGER
+    );
+    CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  `);
+  migrateRunSessionColumn(db);
+}
+
 function migrateRunSessionColumn(db: DatabaseSync): void {
   const columns = new Set(
     (db.prepare("PRAGMA table_info(runs)").all() as Array<{ name: string }>).map(column => column.name)
@@ -418,6 +441,24 @@ function migrateRunSessionColumn(db: DatabaseSync): void {
     db.exec("ROLLBACK");
     throw error;
   }
+}
+
+function isCorruptDatabase(error: unknown): boolean {
+  const record = error as { code?: unknown; message?: unknown };
+  return record?.code === "SQLITE_CORRUPT" || record?.code === "SQLITE_NOTADB"
+    || /malformed|not a database|database disk image is malformed/i.test(String(record?.message ?? error));
+}
+
+function quarantineDatabase(file: string): string {
+  const quarantinedPath = `${file}.corrupt-${Date.now()}`;
+  for (const sidecar of ["", "-wal", "-shm"]) {
+    try {
+      renameSync(`${file}${sidecar}`, `${quarantinedPath}${sidecar}`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return quarantinedPath;
 }
 
 function fileBytes(path: string): number {

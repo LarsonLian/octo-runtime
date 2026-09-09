@@ -37,7 +37,8 @@ export async function spawnAdapterHost({
   const child = spawn(process.execPath, [entrypoint, "--manifest", manifest], {
     argv0: "octo-harness-adapter-host",
     env,
-    stdio: ["pipe", "pipe", "pipe"]
+    stdio: ["pipe", "pipe", "pipe"],
+    detached: process.platform !== "win32"
   });
   let stderr = "";
   child.stderr.setEncoding("utf8");
@@ -53,7 +54,7 @@ export async function spawnAdapterHost({
   try {
     await client.list();
   } catch (error) {
-    child.kill();
+    signalProcessTree(child, "SIGTERM");
     throw new Error(`${errorMessage(error)}${stderr ? `: ${stderr}` : ""}`, { cause: error });
   }
   return {
@@ -62,15 +63,27 @@ export async function spawnAdapterHost({
     async close(): Promise<void> {
       if (child.exitCode !== null) return;
       // Ask politely with SIGTERM, then escalate to SIGKILL if it has not exited within the grace window.
-      child.kill("SIGTERM");
+      signalProcessTree(child, "SIGTERM");
       await Promise.race([
         new Promise<void>(resolve => child.once("exit", () => resolve())),
         new Promise<void>(resolve => setTimeout(resolve, 1000))
       ]);
-      if (child.exitCode === null) child.kill("SIGKILL");
+      if (child.exitCode === null) signalProcessTree(child, "SIGKILL");
     },
     stderr: () => stderr
   };
+}
+
+function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
+  if (process.platform !== "win32" && child.pid !== undefined) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
+  }
+  child.kill(signal);
 }
 
 function errorMessage(error: unknown): string {

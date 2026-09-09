@@ -317,13 +317,25 @@ export class AcpClient {
   /** Terminate the subprocess: SIGTERM, then escalate to SIGKILL if it has not exited within one second. */
   async close(): Promise<void> {
     if (this.#child.exitCode !== null) return;
-    this.#child.kill("SIGTERM");
+    signalProcessTree(this.#child, "SIGTERM");
     await Promise.race([
       new Promise<void>(resolve => this.#child.once("exit", () => resolve())),
       new Promise<void>(resolve => setTimeout(resolve, 1000))
     ]);
-    if (this.#child.exitCode === null) this.#child.kill("SIGKILL");
+    if (this.#child.exitCode === null) signalProcessTree(this.#child, "SIGKILL");
   }
+}
+
+function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
+  if (process.platform !== "win32" && child.pid !== undefined) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
+  }
+  child.kill(signal);
 }
 
 /**
@@ -340,7 +352,10 @@ export function spawnAcpClient(options: SpawnAcpClientOptions): AcpClient {
     detached: process.platform !== "win32"
   });
   const client = new AcpClient({ child, permissionHandler });
-  signal?.addEventListener("abort", () => void client.close(), { once: true });
+  const abort = (): void => { void client.close(); };
+  if (signal?.aborted) abort();
+  else signal?.addEventListener("abort", abort, { once: true });
+  child.once("close", () => signal?.removeEventListener("abort", abort));
   return client;
 }
 

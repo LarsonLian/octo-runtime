@@ -82,3 +82,28 @@ test("daemon PID file enforces one process per Harness Home and is removed on cl
     await rm(home, { recursive: true, force: true });
   }
 });
+
+test("daemon requests a service restart when adapter-host exits unexpectedly", async () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const home = await mkdtemp(join(tmpdir(), "oh-host-"));
+  let fatalResolve;
+  const fatal = new Promise(resolve => { fatalResolve = resolve; });
+  const app = await startDaemonServer({
+    socketPath: join(home, "d.sock"),
+    storePath: join(home, "state.db"),
+    manifestPath: join(root, "test/fixtures/adapters.json"),
+    hostEntrypoint: join(root, "apps/adapter-host/dist/index.js"),
+    onFatal: fatalResolve
+  });
+  try {
+    assert.equal(app.hostProcess.child.kill("SIGKILL"), true);
+    const error = await Promise.race([
+      fatal,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("fatal callback timeout")), 2_000))
+    ]);
+    assert.match(error.message, /adapter-host exited unexpectedly/);
+  } finally {
+    await app.close();
+    await rm(home, { recursive: true, force: true });
+  }
+});
