@@ -39,3 +39,25 @@ test("same occurrence with changed input is rejected", async () => {
   await engine.submitAgentRun({ ...base, input: { prompt: "one" } });
   await assert.rejects(engine.submitAgentRun({ ...base, input: { prompt: "two" } }), /different AgentRun request/);
 });
+
+test("only one concurrent executeRun call can claim a queued AgentRun", async () => {
+  const host = new AdapterHost(); host.register(testAdapter);
+  const store = new MemoryStore(); const engine = new HarnessEngine({ store, host });
+  const agent = await engine.registerAgent({ name: "test", adapterType: "test" });
+  const submitted = await engine.submitAgentRun({
+    namespace: "loop",
+    agentId: agent.id,
+    sessionKey: "v1/task/concurrent",
+    trigger: { kind: "loop.task.manual", occurrenceId: "task-event/concurrent" },
+    input: { prompt: "Do once" }
+  });
+
+  const outcomes = await Promise.allSettled([
+    engine.executeRun(submitted.agentRun.id),
+    engine.executeRun(submitted.agentRun.id)
+  ]);
+
+  assert.equal(outcomes.filter(outcome => outcome.status === "fulfilled").length, 1);
+  assert.equal(outcomes.filter(outcome => outcome.status === "rejected").length, 1);
+  assert.equal(store.getEvents(submitted.agentRun.id).filter(item => item.type === "run.running").length, 1);
+});

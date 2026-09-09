@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { arch, hostname, platform } from "node:os";
 import type { PendingEnrollment } from "./state.js";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
+export const RUNTIME_VERSION = packageVersion();
 
 export interface EnrollmentOptions {
   serverUrl: string;
@@ -78,7 +80,7 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
     body: JSON.stringify({
       name: options.runtimeName,
       device: { os: platform(), arch: arch(), hostname: hostname() },
-      runtime_version: "0.1.0",
+      runtime_version: RUNTIME_VERSION,
       protocol_version: 1,
       capabilities: { adapters: [] }
     }),
@@ -98,6 +100,16 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
     tenantId: octoSpaceId,
     subjectId: ownerUserId
   };
+}
+
+function packageVersion(): string {
+  const metadata = JSON.parse(readFileSync(new URL("../../../package.json", import.meta.url), "utf8")) as {
+    version?: unknown;
+  };
+  if (typeof metadata.version !== "string" || !metadata.version.trim()) {
+    throw new Error("Octo Harness package version is missing");
+  }
+  return metadata.version;
 }
 
 async function responseObject(response: Response, name: string): Promise<Record<string, unknown>> {

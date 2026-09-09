@@ -132,17 +132,27 @@ export class HarnessEngine {
   }
 
   async executeRun(agentRunId: string): Promise<{ run: AgentRun; events: EventEnvelope[] }> {
-    const run = this.store.getAgentRun(agentRunId);
-    if (!run) throw new Error(`agent run not found: ${agentRunId}`);
-    if (!this.canExecute(run.id)) throw new Error(`agent run is not the executable session head: ${run.id}`);
-    const session = this.store.getAgentSession(run.agentSessionId);
-    if (!session) throw new Error(`agent session not found: ${run.agentSessionId}`);
-    const agent = this.store.getAgent(session.agentId);
-    if (!agent) throw new Error(`agent not found: ${session.agentId}`);
-
-    run.status = "running";
-    session.activeRunId = run.id;
+    let run!: AgentRun;
+    let session!: AgentSession;
+    let agent!: Agent;
+    // Claiming is one synchronous Store transaction. Do not move lookup or
+    // eligibility checks outside this critical section or make the callback async.
     await this.store.transaction(() => {
+      const candidate = this.store.getAgentRun(agentRunId);
+      if (!candidate) throw new Error(`agent run not found: ${agentRunId}`);
+      if (!this.canExecute(candidate.id)) {
+        throw new Error(`agent run is not the executable session head: ${candidate.id}`);
+      }
+      const candidateSession = this.store.getAgentSession(candidate.agentSessionId);
+      if (!candidateSession) throw new Error(`agent session not found: ${candidate.agentSessionId}`);
+      const candidateAgent = this.store.getAgent(candidateSession.agentId);
+      if (!candidateAgent) throw new Error(`agent not found: ${candidateSession.agentId}`);
+
+      candidate.status = "running";
+      candidateSession.activeRunId = candidate.id;
+      run = candidate;
+      session = candidateSession;
+      agent = candidateAgent;
       this.store.appendEvent(envelope(run, run.nextSeq++, { type: "run.running", payload: {} }));
       this.store.putAgentRun(run);
       this.store.putAgentSession(session);
