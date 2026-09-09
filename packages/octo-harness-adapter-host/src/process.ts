@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { AdapterHostRpcClient, type RpcTrace } from "./rpc.js";
+import type { HostedAdapterMetadata } from "./index.js";
 
 export interface SpawnAdapterHostOptions {
   entrypoint: string;
@@ -20,6 +21,7 @@ export interface SpawnAdapterHostOptions {
 export interface AdapterHostProcess {
   client: AdapterHostRpcClient;
   child: ChildProcessWithoutNullStreams;
+  adapters: HostedAdapterMetadata[];
   close(): Promise<void>;
   stderr(): string;
 }
@@ -61,8 +63,9 @@ export async function spawnAdapterHost({
     output: child.stdin,
     ...(trace ? { trace } : {})
   });
+  let adapters: HostedAdapterMetadata[];
   try {
-    await waitForReady(client.list(), readyTimeoutMs, signal);
+    adapters = await waitForReady(client.list(), readyTimeoutMs, signal);
   } catch (error) {
     client.close(error instanceof Error ? error : new Error(errorMessage(error)));
     await terminateProcessTree(child);
@@ -71,6 +74,7 @@ export async function spawnAdapterHost({
   return {
     client,
     child,
+    adapters,
     async close(): Promise<void> {
       await terminateProcessTree(child);
     },

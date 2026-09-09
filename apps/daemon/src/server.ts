@@ -194,7 +194,7 @@ export async function startDaemonServer({
   }
   let adapters: string[];
   try {
-    adapters = (await hostProcess.client.list()).map(adapter => adapter.type);
+    adapters = hostProcess.adapters.map(adapter => adapter.type);
   } catch (error) {
     await hostProcess.close();
     store.close();
@@ -262,13 +262,7 @@ export async function startDaemonServer({
           await replacement.close();
           throw new Error("adapter-host restart cancelled");
         }
-        let replacementAdapters: string[];
-        try {
-          replacementAdapters = (await replacement.client.list()).map(adapter => adapter.type);
-        } catch (error) {
-          await replacement.close();
-          throw error;
-        }
+        const replacementAdapters = replacement.adapters.map(adapter => adapter.type);
         if (shuttingDown || signal.aborted) {
           await replacement.close();
           throw new Error("adapter-host restart cancelled");
