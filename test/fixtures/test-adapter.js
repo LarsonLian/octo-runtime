@@ -1,6 +1,7 @@
 export const testAdapter = {
   metadata: { type: "test", capabilities: ["session.serialize", "tool.canonical"] },
   async *invoke(request) {
+    if (request.prompt === "wait-for-host-exit") await new Promise(() => {});
     await Promise.resolve();
     yield { type: "session.update", payload: { providerSession: { sessionId: `test:${request.agentSessionId}` } } };
     yield { type: "message.create", payload: { role: "assistant", status: "streaming" } };

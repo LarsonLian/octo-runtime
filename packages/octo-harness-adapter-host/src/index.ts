@@ -227,6 +227,7 @@ function errorCode(error: unknown): string | undefined {
 export {
   AdapterHostRpcClient,
   AdapterHostRpcServer,
+  type AdapterHostRpc,
   type RpcTrace,
   type RpcTraceDirection
 } from "./rpc.js";

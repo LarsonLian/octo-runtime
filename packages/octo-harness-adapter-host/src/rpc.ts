@@ -10,6 +10,14 @@ type RpcId = string | number | null;
 export type RpcTraceDirection = "send" | "receive";
 export type RpcTrace = (direction: RpcTraceDirection, frame: string) => void;
 
+/** Stable client contract used by daemon-owned host lifecycle wrappers. */
+export interface AdapterHostRpc {
+  list(): Promise<HostedAdapterMetadata[]>;
+  probe(adapterType: string): Promise<unknown>;
+  cancel(invocationId: string, reason?: string): Promise<{ cancelled: boolean }>;
+  invoke(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent>;
+}
+
 interface RpcMessage extends JsonRecord {
   jsonrpc: "2.0";
   id?: RpcId;
@@ -154,7 +162,7 @@ export class AdapterHostRpcServer {
 }
 
 /** The async client for AdapterHostRpcServer; it also reassembles invoke notifications back into an AsyncGenerator. */
-export class AdapterHostRpcClient {
+export class AdapterHostRpcClient implements AdapterHostRpc {
   readonly #send: (value: RpcMessage) => void;
   readonly #pending = new Map<string, Deferred<unknown>>();
   readonly #invocations = new Map<string, AsyncQueue<CanonicalEvent>>();

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { hostname, platform, arch } from "node:os";
 import WebSocket from "ws";
-import type { AdapterHostRpcClient } from "@mininglamp-oss/octo-harness-adapter-host";
+import type { AdapterHostRpc } from "@mininglamp-oss/octo-harness-adapter-host";
 import type { LocalObservability, LogInput } from "@mininglamp-oss/octo-harness-observability";
 import type {
   AgentConfig,
@@ -178,7 +178,7 @@ interface PendingContextSync {
  */
 export class AgentWorkRuntime {
   readonly #options: AgentWorkRuntimeOptions;
-  readonly #host: AdapterHostRpcClient;
+  readonly #host: AdapterHostRpc;
   // Observability is optional so the reusable runtime preserves compatibility
   // with existing embedders. When present, it replaces routine stderr output.
   readonly #observability?: LocalObservability;
@@ -218,7 +218,7 @@ export class AgentWorkRuntime {
 
   constructor(
     options: AgentWorkRuntimeOptions,
-    host: AdapterHostRpcClient,
+    host: AdapterHostRpc,
     observability?: LocalObservability
   ) {
     this.#options = options;

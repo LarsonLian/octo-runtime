@@ -17,8 +17,8 @@ import {
 import { HarnessDaemon } from "@mininglamp-oss/octo-harness-daemon";
 import {
   spawnAdapterHost,
+  type AdapterHostRpc,
   type AdapterHostProcess,
-  type AdapterHostRpcClient
 } from "@mininglamp-oss/octo-harness-adapter-host";
 import { AgentWorkRuntime, type AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
 import { ViewerLogIndex, viewerTraceSnapshot } from "./log-viewer.js";
@@ -32,9 +32,8 @@ export interface StartDaemonServerOptions {
   hostEntrypoint: string;
   logging?: ObservabilityConfiguration;
   agentWork?: AgentWorkRuntimeOptions;
-  /** Test/embedding hook. Production exits non-zero so the service manager
-   * restarts the whole daemon if the adapter-host becomes unusable. */
-  onFatal?: (error: Error) => void;
+  /** Test/embedding override for the capped adapter-host restart schedule. */
+  adapterHostRestartDelaysMs?: readonly number[];
 }
 
 /** Non-secret process metadata returned by `status` and suitable for support output. */
@@ -47,6 +46,8 @@ export interface DaemonRuntimeInfo {
   adapterHost: {
     pid: number | null;
     entrypoint: string;
+    state: "ready" | "restarting";
+    restartAttempt: number;
   };
   adapters: string[];
 }
@@ -64,6 +65,8 @@ const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled"]);
 const TERMINAL_EVENT_TYPES = new Set(["run.finished", "run.error", "run.stopped"]);
 const STREAM_POLL_MS = 25;
 const DEFAULT_DRAIN_TIMEOUT_MS = 30_000;
+const DEFAULT_ADAPTER_HOST_RESTART_DELAYS_MS = [1_000, 5_000, 10_000, 20_000] as const;
+const ADAPTER_HOST_STABLE_RESET_MS = 5 * 60_000;
 
 /** Everything the daemon owns for one process lifetime; `close()` tears the whole
  * stack down in the reverse order it was brought up and removes the socket file. */
@@ -94,8 +97,11 @@ export async function startDaemonServer({
   hostEntrypoint,
   logging,
   agentWork,
-  onFatal = () => process.exit(1)
+  adapterHostRestartDelaysMs = DEFAULT_ADAPTER_HOST_RESTART_DELAYS_MS
 }: StartDaemonServerOptions): Promise<DaemonApplication> {
+  if (adapterHostRestartDelaysMs.length === 0 || adapterHostRestartDelaysMs.some(delay => delay < 1)) {
+    throw new Error("adapterHostRestartDelaysMs must contain positive delays");
+  }
   // Construct observability before every other owned resource. Startup failures
   // are otherwise the most difficult failures to diagnose and would leave no
   // durable evidence.
@@ -152,20 +158,21 @@ export async function startDaemonServer({
     await observability.close();
     throw error;
   }
+  const spawnHost = (): Promise<AdapterHostProcess> => spawnAdapterHost({
+    entrypoint: hostEntrypoint,
+    manifest: manifestPath,
+    env: { ...process.env, ...observabilityEnvironment(loggingConfiguration) },
+    ...(loggingConfiguration.traceRpc ? {
+      trace: (direction, frame) => observability.traceRpc(direction, frame)
+    } : {})
+  });
   let hostProcess: AdapterHostProcess;
   try {
     // The adapter host writes its own component stream, but inherits the exact
     // same privacy, retention and capture policy as the daemon. RPC frames at
     // this boundary are recorded by the parent so request/response ordering is
     // preserved from the daemon's point of view.
-    hostProcess = await spawnAdapterHost({
-      entrypoint: hostEntrypoint,
-      manifest: manifestPath,
-      env: { ...process.env, ...observabilityEnvironment(loggingConfiguration) },
-      ...(loggingConfiguration.traceRpc ? {
-        trace: (direction, frame) => observability.traceRpc(direction, frame)
-      } : {})
-    });
+    hostProcess = await spawnHost();
   } catch (error) {
     store.close();
     await releasePid();
@@ -204,28 +211,128 @@ export async function startDaemonServer({
     manifestPath,
     adapterHost: {
       pid: hostProcess.child.pid ?? null,
-      entrypoint: hostEntrypoint
+      entrypoint: hostEntrypoint,
+      state: "ready",
+      restartAttempt: 0
     },
     adapters
   };
-  const engine = new HarnessEngine({ store, host: hostProcess.client });
-  const daemon = new HarnessDaemon({ engine, store });
-  const agentWorkRuntime = agentWork
-    ? new AgentWorkRuntime(agentWork, hostProcess.client, observability)
-    : undefined;
   let shuttingDown = false;
-  hostProcess.child.once("exit", (code, signal) => {
-    if (shuttingDown) return;
+  let hostRestartAttempt = 0;
+  let hostRestartAbort: AbortController | undefined;
+  let hostRestartTask: Promise<AdapterHostProcess> | undefined;
+  let hostStableReset: NodeJS.Timeout | undefined;
+  let hostReady: Promise<AdapterHostProcess> = Promise.resolve(hostProcess);
+  const host: AdapterHostRpc = {
+    list: async () => (await hostReady).client.list(),
+    probe: async adapterType => (await hostReady).client.probe(adapterType),
+    cancel: async (invocationId, reason) => (await hostReady).client.cancel(invocationId, reason),
+    async *invoke(adapterType, request) {
+      yield* (await hostReady).client.invoke(adapterType, request);
+    }
+  };
+
+  const restartAdapterHost = async (signal: AbortSignal): Promise<AdapterHostProcess> => {
+    while (!shuttingDown && !signal.aborted) {
+      const attempt = ++hostRestartAttempt;
+      const restartDelay = adapterHostRestartDelayMs(attempt, adapterHostRestartDelaysMs);
+      runtime.adapterHost.restartAttempt = attempt;
+      observability.log({
+        level: "warn",
+        scope: "adapter-host.lifecycle",
+        event: "adapter_host.restart_scheduled",
+        message: "adapter-host restart scheduled",
+        data: { restart_attempt: attempt, restart_delay_ms: restartDelay }
+      });
+      try {
+        await abortableDelay(restartDelay, signal);
+        const replacement = await spawnHost();
+        if (shuttingDown || signal.aborted) {
+          await replacement.close();
+          throw new Error("adapter-host restart cancelled");
+        }
+        let replacementAdapters: string[];
+        try {
+          replacementAdapters = (await replacement.client.list()).map(adapter => adapter.type);
+        } catch (error) {
+          await replacement.close();
+          throw error;
+        }
+        if (shuttingDown || signal.aborted) {
+          await replacement.close();
+          throw new Error("adapter-host restart cancelled");
+        }
+        hostProcess = replacement;
+        runtime.adapterHost.pid = replacement.child.pid ?? null;
+        runtime.adapterHost.state = "ready";
+        runtime.adapters = replacementAdapters;
+        monitorAdapterHost(replacement);
+        observability.log({
+          level: "info",
+          scope: "adapter-host.lifecycle",
+          event: "adapter_host.restarted",
+          message: "adapter-host restarted",
+          data: { adapter_host_pid: replacement.child.pid ?? null, restart_attempt: attempt }
+        });
+        hostStableReset = setTimeout(() => {
+          if (hostProcess === replacement && runtime.adapterHost.state === "ready") {
+            hostRestartAttempt = 0;
+            runtime.adapterHost.restartAttempt = 0;
+          }
+        }, ADAPTER_HOST_STABLE_RESET_MS);
+        hostStableReset.unref();
+        return replacement;
+      } catch (error) {
+        if (shuttingDown || signal.aborted) throw error;
+        observability.log({
+          level: "error",
+          scope: "adapter-host.lifecycle",
+          event: "adapter_host.restart_failed",
+          message: "adapter-host restart attempt failed",
+          data: { restart_attempt: attempt, error: errorMessage(error) }
+        });
+      }
+    }
+    throw new Error("adapter-host restart cancelled");
+  };
+
+  const handleAdapterHostExit = (
+    exited: AdapterHostProcess,
+    code: number | null,
+    signal: NodeJS.Signals | null
+  ): void => {
+    if (shuttingDown || exited !== hostProcess) return;
+    if (hostStableReset) clearTimeout(hostStableReset);
+    hostStableReset = undefined;
     const error = new Error(`adapter-host exited unexpectedly (${code ?? signal ?? "unknown"})`);
+    exited.client.close(error);
+    runtime.adapterHost.pid = null;
+    runtime.adapterHost.state = "restarting";
     observability.log({
       level: "error",
       scope: "adapter-host.lifecycle",
       event: "adapter_host.unexpected_exit",
-      message: "adapter-host exited unexpectedly; terminating daemon for service restart",
+      message: "adapter-host exited unexpectedly; restarting inside daemon",
       data: { exit_code: code, signal }
     });
-    setImmediate(() => onFatal(error));
-  });
+    const controller = new AbortController();
+    hostRestartAbort = controller;
+    const restart = restartAdapterHost(controller.signal);
+    hostRestartTask = restart;
+    hostReady = restart;
+    void restart.catch(() => undefined);
+  };
+
+  function monitorAdapterHost(process: AdapterHostProcess): void {
+    process.child.once("exit", (code, signal) => handleAdapterHostExit(process, code, signal));
+  }
+
+  monitorAdapterHost(hostProcess);
+  const engine = new HarnessEngine({ store, host });
+  const daemon = new HarnessDaemon({ engine, store });
+  const agentWorkRuntime = agentWork
+    ? new AgentWorkRuntime(agentWork, host, observability)
+    : undefined;
   const viewerIndex = new ViewerLogIndex(loggingConfiguration.directory);
   // HarnessDaemon events mark execution, rather than submission, boundaries.
   // A control request can therefore be acknowledged before `run.started` while
@@ -283,7 +390,7 @@ export async function startDaemonServer({
         socket,
         daemon,
         store,
-        host: hostProcess.client,
+        host,
         runtime,
         agentWorkRuntime,
         observability,
@@ -316,6 +423,8 @@ export async function startDaemonServer({
     });
   } catch (error) {
     shuttingDown = true;
+    hostRestartAbort?.abort();
+    if (hostStableReset) clearTimeout(hostStableReset);
     observability.log({
       level: "error",
       scope: "daemon.lifecycle",
@@ -338,12 +447,16 @@ export async function startDaemonServer({
     store,
     daemon,
     engine,
-    hostProcess,
+    get hostProcess(): AdapterHostProcess {
+      return hostProcess;
+    },
     runtime,
     agentWorkRuntime,
     observability,
     async close(): Promise<void> {
       shuttingDown = true;
+      hostRestartAbort?.abort();
+      if (hostStableReset) clearTimeout(hostStableReset);
       observability.log({
         level: "info",
         scope: "daemon.lifecycle",
@@ -353,6 +466,7 @@ export async function startDaemonServer({
       daemon.stop();
       await agentWorkRuntime?.close();
       await new Promise<void>(resolve => server.close(() => resolve()));
+      await hostRestartTask?.catch(() => undefined);
       await hostProcess.close();
       store.close();
       if (process.platform !== "win32") await rm(socketPath, { force: true });
@@ -387,7 +501,7 @@ async function handleRequestLine({
   socket: net.Socket;
   daemon: HarnessDaemon;
   store: Store;
-  host: AdapterHostRpcClient;
+  host: AdapterHostRpc;
   runtime: DaemonRuntimeInfo;
   agentWorkRuntime: AgentWorkRuntime | undefined;
   observability: LocalObservability;
@@ -532,6 +646,32 @@ async function writeSocketLine(socket: net.Socket, value: unknown): Promise<void
   });
 }
 
+function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(new Error("adapter-host restart cancelled"));
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(new Error("adapter-host restart cancelled"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** Capped staircase for repeated adapter-host crashes. The last delay repeats
+ * indefinitely so a local crash loop never exhausts the service-manager burst. */
+export function adapterHostRestartDelayMs(
+  attempt: number,
+  delays: readonly number[] = DEFAULT_ADAPTER_HOST_RESTART_DELAYS_MS
+): number {
+  if (delays.length === 0) throw new Error("adapter-host restart delays must not be empty");
+  const index = Math.max(0, Math.min(delays.length - 1, Math.trunc(attempt) - 1));
+  return delays[index] ?? delays[delays.length - 1];
+}
+
 /** Route a parsed request to the engine, daemon or store. Read-only queries hit
  * the store directly; anything that mutates run state or scheduling goes through
  * the daemon so queueing and background execution stay centralized. */
@@ -548,7 +688,7 @@ async function dispatch({
   request: DaemonRequest;
   daemon: HarnessDaemon;
   store: Store;
-  host: AdapterHostRpcClient;
+  host: AdapterHostRpc;
   runtime: DaemonRuntimeInfo;
   agentWorkRuntime: AgentWorkRuntime | undefined;
   observability: LocalObservability;
@@ -558,7 +698,7 @@ async function dispatch({
   switch (request.method) {
     case "status":
       return {
-        ready: true,
+        ready: runtime.adapterHost.state === "ready",
         pid: process.pid,
         ...runtime,
         logging: observability.status,

@@ -6,7 +6,10 @@ import { fileURLToPath } from "node:url";
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { startDaemonServer } from "@mininglamp-oss/octo-harness-daemon-app";
+import {
+  adapterHostRestartDelayMs,
+  startDaemonServer
+} from "@mininglamp-oss/octo-harness-daemon-app";
 
 const execute = promisify(execFile);
 
@@ -83,27 +86,56 @@ test("daemon PID file enforces one process per Harness Home and is removed on cl
   }
 });
 
-test("daemon requests a service restart when adapter-host exits unexpectedly", async () => {
+test("adapter-host restart delay follows a capped staircase", () => {
+  assert.deepEqual(
+    [1, 2, 3, 4, 5].map(attempt => adapterHostRestartDelayMs(attempt)),
+    [1_000, 5_000, 10_000, 20_000, 20_000]
+  );
+});
+
+test("daemon terminalizes in-flight work and restarts adapter-host without exiting", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const home = await mkdtemp(join(tmpdir(), "oh-host-"));
-  let fatalResolve;
-  const fatal = new Promise(resolve => { fatalResolve = resolve; });
   const app = await startDaemonServer({
     socketPath: join(home, "d.sock"),
     storePath: join(home, "state.db"),
     manifestPath: join(root, "test/fixtures/adapters.json"),
     hostEntrypoint: join(root, "apps/adapter-host/dist/index.js"),
-    onFatal: fatalResolve
+    adapterHostRestartDelaysMs: [10, 20, 40, 80]
   });
   try {
+    const agent = await app.engine.registerAgent({ name: "test", adapterType: "test" });
+    const submitted = await app.daemon.submitAgentRun({
+      namespace: "test",
+      agentId: agent.id,
+      sessionKey: "v1/adapter-host-restart",
+      trigger: { kind: "test", occurrenceId: "host-exit-1" },
+      input: { prompt: "wait-for-host-exit" }
+    });
+    await waitFor(() => app.daemon.status.activeRuns === 1);
+    const originalPid = app.hostProcess.child.pid;
     assert.equal(app.hostProcess.child.kill("SIGKILL"), true);
-    const error = await Promise.race([
-      fatal,
-      new Promise((_, reject) => setTimeout(() => reject(new Error("fatal callback timeout")), 2_000))
-    ]);
-    assert.match(error.message, /adapter-host exited unexpectedly/);
+    const terminal = await app.daemon.waitForRun(submitted.agentRunId);
+    assert.equal(terminal.run.status, "failed");
+    await waitFor(() => app.runtime.adapterHost.state === "ready" && app.hostProcess.child.pid !== originalPid);
+    assert.equal(app.runtime.adapterHost.restartAttempt, 1);
+    assert.deepEqual((await app.hostProcess.client.list()).map(adapter => adapter.type), ["test"]);
+    const firstReplacementPid = app.hostProcess.child.pid;
+    assert.equal(app.hostProcess.child.kill("SIGKILL"), true);
+    await waitFor(() => app.runtime.adapterHost.state === "restarting");
+    assert.equal(app.runtime.adapterHost.restartAttempt, 2);
+    await waitFor(() => app.runtime.adapterHost.state === "ready" && app.hostProcess.child.pid !== firstReplacementPid);
+    assert.equal(app.runtime.adapterHost.restartAttempt, 2);
   } finally {
     await app.close();
     await rm(home, { recursive: true, force: true });
   }
 });
+
+async function waitFor(predicate, timeoutMs = 2_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("condition not met before timeout");
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+}
