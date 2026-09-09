@@ -74,11 +74,19 @@ export function normalizeCodeBuddyUpdate(update: CodeBuddyUpdate): CanonicalEven
   return [];
 }
 
+function isTerminalToolStatus(status: unknown): boolean {
+  return typeof status === "string" && ["completed", "failed", "error", "cancelled", "canceled", "stopped"].includes(status.toLowerCase());
+}
+
+function isCancelledStopReason(reason: unknown): boolean {
+  return typeof reason === "string" && ["cancelled", "canceled", "interrupted", "aborted"].includes(reason.toLowerCase());
+}
+
 /**
  * Create a CodeBuddy adapter. Each invocation spawns an ACP client, initializes
  * the connection, then either loads the stored provider session or creates a
- * new one. The final `message.update`/`run.finished` terminals are synthesized
- * here because ACP prompt streams end silently rather than with a terminal.
+ * new one. The final message/run terminals are synthesized here because ACP
+ * prompt streams end silently rather than with a terminal.
  */
 export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, command = "codebuddy" }: { acpClientFactory?: typeof spawnAcpClient; command?: string } = {}) {
   return defineAdapter({
@@ -167,6 +175,9 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
         });
         try {
           let firstOutput = true;
+          let promptStopReason: string | undefined;
+          let promptFinishReason: string | undefined;
+          const activeToolIds = new Set<string>();
           for await (const update of client.prompt(session.id, prompt, {
             requestId: promptRequestId,
             params: promptParams,
@@ -191,6 +202,11 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
                 providerRequestId: String(promptRequestId)
               });
             }
+            if (update.type === "prompt_result") {
+              promptStopReason = update.stopReason;
+              promptFinishReason = update.finishReason;
+              continue;
+            }
             const events = normalizeCodeBuddyUpdate(update);
             const nativeType = typeof update.sessionUpdate === "string"
               ? update.sessionUpdate
@@ -204,7 +220,12 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
                 ...(update.model ? { model: update.model } : {})
               }
             });
-            for (const event of events) yield event;
+            for (const event of events) {
+              const toolID = typeof event.payload.id === "string" ? event.payload.id : undefined;
+              if (event.type === "tool_call.create" && toolID) activeToolIds.add(toolID);
+              if (event.type === "tool_call.update" && toolID && isTerminalToolStatus(event.payload.status)) activeToolIds.delete(toolID);
+              yield event;
+            }
           }
           // AcpClient.prompt completes only after the session/prompt response;
           // this is the protocol acknowledgement boundary.
@@ -214,18 +235,26 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
             providerSessionId: session.id,
             providerRequestId: String(promptRequestId)
           });
-          const completed: CanonicalEvent = {
+          const cancelled = isCancelledStopReason(promptStopReason);
+          if (cancelled) {
+            for (const id of activeToolIds) {
+              yield { type: "tool_call.update", payload: { id, status: "cancelled" } };
+            }
+          }
+          const terminalMessage: CanonicalEvent = {
             type: "message.update",
-            payload: { role: "assistant", status: "completed" }
+            payload: { role: "assistant", status: cancelled ? "stopped" : "completed" }
           };
-          observeProviderOutput(context, [completed], {
+          observeProviderOutput(context, [terminalMessage], {
             rpcMethod: "session/prompt",
             providerSessionId: session.id,
             providerRequestId: String(promptRequestId),
             native: { type: "session/prompt.response" }
           });
-          yield completed;
-          yield { type: "run.finished", payload: {} };
+          yield terminalMessage;
+          yield cancelled
+            ? { type: "run.stopped", payload: { reason: promptStopReason ?? "cancelled", ...(promptFinishReason ? { finishReason: promptFinishReason } : {}) } }
+            : { type: "run.finished", payload: {} };
         } catch (error) {
           observeBestEffort(context, {
             event: "provider.dispatch.failed",

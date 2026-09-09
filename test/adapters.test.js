@@ -665,3 +665,51 @@ test("only Codex declares append-only continuity recovery", () => {
   assert.equal(createClaudeCodeAdapter().metadata.capabilities.includes("session.resume_recovery"), false);
   assert.equal(createCodeBuddyAdapter().metadata.capabilities.includes("session.resume_recovery"), false);
 });
+
+test("CodeBuddy preserves a cancelled ACP prompt as an interrupted run", async () => {
+  let nextRequestId = 1;
+  const client = {
+    initialize: async () => {},
+    reserveRequestId: () => nextRequestId++,
+    request: async method => method === "session/new" ? { sessionId: "codebuddy-session" } : {},
+    async *prompt() {
+      yield { sessionUpdate: "agent_thought_chunk", content: { text: "checking sources" } };
+      yield { sessionUpdate: "tool_call", toolCallId: "fetch-1", name: "WebFetch", rawInput: { url: "https://example.com" } };
+      yield { type: "prompt_result", stopReason: "cancelled", finishReason: "tool_calls" };
+    },
+    close: async () => {}
+  };
+  const adapter = createCodeBuddyAdapter({ acpClientFactory: () => client });
+  const events = [];
+  for await (const event of adapter.invoke(request)) events.push(event);
+
+  assert.equal(events.some(event => event.type === "run.finished"), false);
+  assert.deepEqual(events.at(-1), {
+    type: "run.stopped",
+    payload: { reason: "cancelled", finishReason: "tool_calls" }
+  });
+  assert.ok(events.some(event => event.type === "tool_call.update"
+    && event.payload.id === "fetch-1"
+    && event.payload.status === "cancelled"));
+  assert.ok(events.some(event => event.type === "message.update" && event.payload.status === "stopped"));
+});
+
+test("CodeBuddy keeps an end_turn ACP prompt as a completed run", async () => {
+  let nextRequestId = 1;
+  const client = {
+    initialize: async () => {},
+    reserveRequestId: () => nextRequestId++,
+    request: async method => method === "session/new" ? { sessionId: "codebuddy-session" } : {},
+    async *prompt() {
+      yield { sessionUpdate: "agent_message_chunk", content: { text: "done" } };
+      yield { type: "prompt_result", stopReason: "end_turn", finishReason: "stop" };
+    },
+    close: async () => {}
+  };
+  const adapter = createCodeBuddyAdapter({ acpClientFactory: () => client });
+  const events = [];
+  for await (const event of adapter.invoke(request)) events.push(event);
+
+  assert.equal(events.at(-1).type, "run.finished");
+  assert.equal(events.some(event => event.type === "run.stopped"), false);
+});

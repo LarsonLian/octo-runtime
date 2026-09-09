@@ -13,6 +13,8 @@ export interface AcpUpdate extends JsonRecord {
   type?: string;
   usage?: JsonRecord;
   model?: string;
+  stopReason?: string;
+  finishReason?: string;
 }
 
 export interface SpawnAcpClientOptions {
@@ -264,8 +266,9 @@ export class AcpClient {
   /**
    * Send a prompt and stream the session's `session/update` events until the
    * turn completes. The `session/prompt` response is awaited concurrently: its
-   * terminal `usage`/`model` are pushed as a final synthetic update before the
-   * queue closes, or a rejection closes the queue with that error. The
+   * terminal `usage`/`model` and prompt stop reason are pushed as final
+   * synthetic updates before the queue closes, or a rejection closes the queue
+   * with that error. The
    * per-session queue is always removed in `finally`. The multi-hour timeout
    * covers long autonomous turns. `onWritten` observes only the outbound
    * `session/prompt` frame; completion of this generator implies the correlated
@@ -290,6 +293,11 @@ export class AcpClient {
       if (isRecord(value.usage)) {
         queue.push({ type: "usage", usage: value.usage, ...(typeof value.model === "string" ? { model: value.model } : {}) });
       }
+      queue.push({
+        type: "prompt_result",
+        ...(typeof value.stopReason === "string" ? { stopReason: value.stopReason } : {}),
+        ...(typeof value.finishReason === "string" ? { finishReason: value.finishReason } : {})
+      });
       queue.end();
     }).catch(error => queue.end(toError(error)));
 
