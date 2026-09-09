@@ -1686,9 +1686,10 @@ export function reconnectDelayMs(
   firstMs = DEFAULT_RECONNECT_FIRST_MS
 ): number {
   if (Math.trunc(attempt) <= 1) return firstMs;
-  const exponent = Math.max(0, Math.min(30, Math.trunc(attempt) - 2));
+  const exponent = Math.max(1, Math.min(30, Math.trunc(attempt) - 1));
   const ceiling = Math.min(maximumMs, minimumMs * (2 ** exponent));
-  return Math.floor(Math.max(0, Math.min(0.999999999, random())) * ceiling);
+  const jitterRange = Math.max(0, ceiling - minimumMs);
+  return minimumMs + Math.floor(Math.max(0, Math.min(0.999999999, random())) * jitterRange);
 }
 
 function packageVersion(): string {

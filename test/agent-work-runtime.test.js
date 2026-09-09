@@ -53,9 +53,11 @@ const envelope = {
 test("reconnect delay keeps one fast attempt before capped full-jitter backoff", () => {
   assert.equal(reconnectDelayMs(1, 20_000, 60_000, () => 0.5), 1_000);
   assert.equal(reconnectDelayMs(1, 20_000, 60_000, () => 0.5, 750), 750);
-  assert.equal(reconnectDelayMs(2, 20_000, 60_000, () => 0.5), 10_000);
-  assert.equal(reconnectDelayMs(3, 20_000, 60_000, () => 0.5), 20_000);
-  assert.equal(reconnectDelayMs(20, 20_000, 60_000, () => 0.5), 30_000);
+  assert.equal(reconnectDelayMs(2, 20_000, 60_000, () => 0), 20_000);
+  assert.equal(reconnectDelayMs(2, 20_000, 60_000, () => 0.5), 30_000);
+  assert.equal(reconnectDelayMs(2, 20_000, 60_000, () => 1), 39_999);
+  assert.equal(reconnectDelayMs(3, 20_000, 60_000, () => 0.5), 40_000);
+  assert.equal(reconnectDelayMs(20, 20_000, 60_000, () => 1), 59_999);
 });
 
 test("Agent Work envelope maps to a local adapter invocation with fixed cwd and resume", () => {
