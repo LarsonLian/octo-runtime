@@ -37,6 +37,7 @@ const DEFAULT_SEND_WINDOW = 32;
 const DEFAULT_MAX_CONCURRENT_RUNS = 3;
 const DEFAULT_SOFT_WATERMARK_BYTES = 512 * 1024 * 1024;
 const DEFAULT_HARD_WATERMARK_BYTES = 2 * 1024 * 1024 * 1024;
+const DEFAULT_RECONNECT_FIRST_MS = 1_000;
 const DEFAULT_RECONNECT_MIN_MS = 20_000;
 const DEFAULT_RECONNECT_MAX_MS = 60_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
@@ -64,7 +65,11 @@ export interface AgentWorkRuntimeOptions {
   runtimeId?: string;
   runtimeName: string;
   fingerprint: string;
+  /** Delay before the first reconnect attempt after a connected socket drops. */
+  reconnectFirstMs?: number;
+  /** Full-jitter backoff floor used from the second reconnect attempt onward. */
   reconnectMs?: number;
+  /** Full-jitter backoff ceiling used from the second reconnect attempt onward. */
   reconnectMaxMs?: number;
   /** Maximum time to complete one WebSocket handshake. */
   connectTimeoutMs?: number;
@@ -221,6 +226,9 @@ export class AgentWorkRuntime {
     this.#observability = observability;
     if ((options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS) < 1) {
       throw new Error("maxConcurrentRuns must be positive");
+    }
+    if ((options.reconnectFirstMs ?? DEFAULT_RECONNECT_FIRST_MS) < 1) {
+      throw new Error("reconnectFirstMs must be positive");
     }
     if ((options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS) < (options.reconnectMs ?? DEFAULT_RECONNECT_MIN_MS)) {
       throw new Error("reconnectMaxMs must not be below reconnectMs");
@@ -587,7 +595,9 @@ export class AgentWorkRuntime {
         const reconnectDelay = reconnectDelayMs(
           reconnectAttempt,
           this.#options.reconnectMs ?? DEFAULT_RECONNECT_MIN_MS,
-          this.#options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS
+          this.#options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS,
+          Math.random,
+          this.#options.reconnectFirstMs ?? DEFAULT_RECONNECT_FIRST_MS
         );
         const reconnectAbort = new AbortController();
         this.#reconnectAbort = reconnectAbort;
@@ -1666,15 +1676,17 @@ function reconnectRuntimeDelay(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-/** Full-jitter exponential backoff. The 20-second default first window spreads
- * a 2,000-device reconnect wave to roughly the 100 connections/second target. */
+/** Keep one fast recovery attempt for isolated network blips. If that fails,
+ * full-jitter exponential backoff spreads a fleet reconnect wave. */
 export function reconnectDelayMs(
   attempt: number,
   minimumMs = DEFAULT_RECONNECT_MIN_MS,
   maximumMs = DEFAULT_RECONNECT_MAX_MS,
-  random = Math.random
+  random = Math.random,
+  firstMs = DEFAULT_RECONNECT_FIRST_MS
 ): number {
-  const exponent = Math.max(0, Math.min(30, Math.trunc(attempt) - 1));
+  if (Math.trunc(attempt) <= 1) return firstMs;
+  const exponent = Math.max(0, Math.min(30, Math.trunc(attempt) - 2));
   const ceiling = Math.min(maximumMs, minimumMs * (2 ** exponent));
   return Math.floor(Math.max(0, Math.min(0.999999999, random())) * ceiling);
 }

@@ -50,9 +50,11 @@ const envelope = {
   }
 };
 
-test("reconnect delay uses capped full-jitter exponential backoff", () => {
-  assert.equal(reconnectDelayMs(1, 20_000, 60_000, () => 0.5), 10_000);
-  assert.equal(reconnectDelayMs(2, 20_000, 60_000, () => 0.5), 20_000);
+test("reconnect delay keeps one fast attempt before capped full-jitter backoff", () => {
+  assert.equal(reconnectDelayMs(1, 20_000, 60_000, () => 0.5), 1_000);
+  assert.equal(reconnectDelayMs(1, 20_000, 60_000, () => 0.5, 750), 750);
+  assert.equal(reconnectDelayMs(2, 20_000, 60_000, () => 0.5), 10_000);
+  assert.equal(reconnectDelayMs(3, 20_000, 60_000, () => 0.5), 20_000);
   assert.equal(reconnectDelayMs(20, 20_000, 60_000, () => 0.5), 30_000);
 });
 
@@ -339,6 +341,7 @@ test("startup registration failure stays alive and every reconnect re-registers"
       runtimeName: "runtime-reconnect",
       fingerprint: "runtime:reconnect",
       storePath: join(directory, "agent-work.db"),
+      reconnectFirstMs: 5,
       reconnectMs: 5,
       reconnectMaxMs: 5
     }, {
@@ -388,6 +391,7 @@ test("close cancels a pending reconnect backoff without late registration", asyn
       runtimeName: "runtime-close-backoff",
       fingerprint: "runtime:close-backoff",
       storePath: join(directory, "agent-work.db"),
+      reconnectFirstMs: 60_000,
       reconnectMs: 60_000,
       reconnectMaxMs: 60_000
     }, {
@@ -440,6 +444,7 @@ test("a stalled WebSocket handshake times out and registration retries", async (
       runtimeName: "runtime-handshake-timeout",
       fingerprint: "runtime:handshake-timeout",
       storePath: join(directory, "agent-work.db"),
+      reconnectFirstMs: 5,
       reconnectMs: 5,
       reconnectMaxMs: 5,
       connectTimeoutMs: 10

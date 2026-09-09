@@ -209,6 +209,24 @@ function resolveAgentWorkOptions(
     ...optionalNumber(args, ["--agent-work-hard-bytes"], env.OCTO_HARNESS_AGENT_WORK_HARD_BYTES, "hardWatermarkBytes"),
     ...optionalNumber(
       args,
+      ["--agent-work-reconnect-first-ms"],
+      env.OCTO_HARNESS_AGENT_WORK_RECONNECT_FIRST_MS,
+      "reconnectFirstMs"
+    ),
+    ...optionalNumber(
+      args,
+      ["--agent-work-reconnect-min-ms"],
+      env.OCTO_HARNESS_AGENT_WORK_RECONNECT_MIN_MS,
+      "reconnectMs"
+    ),
+    ...optionalNumber(
+      args,
+      ["--agent-work-reconnect-max-ms"],
+      env.OCTO_HARNESS_AGENT_WORK_RECONNECT_MAX_MS,
+      "reconnectMaxMs"
+    ),
+    ...optionalNumber(
+      args,
       ["--agent-work-max-concurrent-runs"],
       env.OCTO_HARNESS_AGENT_WORK_MAX_CONCURRENT_RUNS,
       "maxConcurrentRuns"
@@ -280,6 +298,9 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[
     pushNumberOption(args, "--agent-work-send-window", paths.agentWork.sendWindow);
     pushNumberOption(args, "--agent-work-soft-bytes", paths.agentWork.softWatermarkBytes);
     pushNumberOption(args, "--agent-work-hard-bytes", paths.agentWork.hardWatermarkBytes);
+    pushNumberOption(args, "--agent-work-reconnect-first-ms", paths.agentWork.reconnectFirstMs);
+    pushNumberOption(args, "--agent-work-reconnect-min-ms", paths.agentWork.reconnectMs);
+    pushNumberOption(args, "--agent-work-reconnect-max-ms", paths.agentWork.reconnectMaxMs);
     pushNumberOption(args, "--agent-work-max-concurrent-runs", paths.agentWork.maxConcurrentRuns);
     pushNumberOption(args, "--channel-context-retention-ms", paths.agentWork.channelContext?.retentionMs);
     pushNumberOption(args, "--channel-context-snapshot-retention-ms", paths.agentWork.channelContext?.snapshotRetentionMs);

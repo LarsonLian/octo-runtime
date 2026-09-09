@@ -166,6 +166,30 @@ test("managed Runtime binding ignores process-level endpoint and identity overri
   }
 });
 
+test("Agent Work reconnect timing is configurable and survives launcher argv serialization", async () => {
+  const home = await mkdtemp(join(tmpdir(), "oh-managed-reconnect-"));
+  try {
+    await writeManagedRuntime(home);
+    const paths = resolveDaemonRuntimePaths([
+      "--home", home,
+      "--agent-work-reconnect-first-ms", "750",
+      "--agent-work-reconnect-min-ms", "15000"
+    ], { OCTO_HARNESS_AGENT_WORK_RECONNECT_MAX_MS: "45000" });
+
+    assert.equal(paths.agentWork.reconnectFirstMs, 750);
+    assert.equal(paths.agentWork.reconnectMs, 15_000);
+    assert.equal(paths.agentWork.reconnectMaxMs, 45_000);
+    const args = daemonRuntimeArguments(paths);
+    assert.deepEqual(args.slice(args.indexOf("--agent-work-reconnect-first-ms")), [
+      "--agent-work-reconnect-first-ms", "750",
+      "--agent-work-reconnect-min-ms", "15000",
+      "--agent-work-reconnect-max-ms", "45000"
+    ]);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test("channel context rollout flags are independent and use a separate database", async () => {
   const home = await mkdtemp(join(tmpdir(), "oh-managed-context-"));
   try {
