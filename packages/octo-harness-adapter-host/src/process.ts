@@ -5,6 +5,10 @@ export interface SpawnAdapterHostOptions {
   entrypoint: string;
   manifest: string;
   env?: NodeJS.ProcessEnv;
+  /** Cancels readiness and terminates the complete child process group. */
+  signal?: AbortSignal;
+  /** Maximum time allowed for the initial RPC readiness handshake. */
+  readyTimeoutMs?: number;
   /**
    * Optional caller-owned wire observer. The daemon supplies a structured,
    * redacting trace sink; this helper deliberately does not infer tracing from
@@ -32,8 +36,14 @@ export async function spawnAdapterHost({
   entrypoint,
   manifest,
   env = process.env,
+  signal,
+  readyTimeoutMs = 15_000,
   trace
 }: SpawnAdapterHostOptions): Promise<AdapterHostProcess> {
+  if (signal?.aborted) throw new Error("adapter-host spawn cancelled");
+  if (!Number.isFinite(readyTimeoutMs) || readyTimeoutMs < 1) {
+    throw new Error("adapter-host readyTimeoutMs must be positive");
+  }
   const child = spawn(process.execPath, [entrypoint, "--manifest", manifest], {
     argv0: "octo-harness-adapter-host",
     env,
@@ -52,26 +62,65 @@ export async function spawnAdapterHost({
     ...(trace ? { trace } : {})
   });
   try {
-    await client.list();
+    await waitForReady(client.list(), readyTimeoutMs, signal);
   } catch (error) {
-    signalProcessTree(child, "SIGTERM");
+    client.close(error instanceof Error ? error : new Error(errorMessage(error)));
+    await terminateProcessTree(child);
     throw new Error(`${errorMessage(error)}${stderr ? `: ${stderr}` : ""}`, { cause: error });
   }
   return {
     client,
     child,
     async close(): Promise<void> {
-      if (child.exitCode !== null) return;
-      // Ask politely with SIGTERM, then escalate to SIGKILL if it has not exited within the grace window.
-      signalProcessTree(child, "SIGTERM");
-      await Promise.race([
-        new Promise<void>(resolve => child.once("exit", () => resolve())),
-        new Promise<void>(resolve => setTimeout(resolve, 1000))
-      ]);
-      if (child.exitCode === null) signalProcessTree(child, "SIGKILL");
+      await terminateProcessTree(child);
     },
     stderr: () => stderr
   };
+}
+
+function waitForReady<T>(operation: Promise<T>, timeoutMs: number, signal?: AbortSignal): Promise<T> {
+  if (signal?.aborted) return Promise.reject(new Error("adapter-host spawn cancelled"));
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      callback();
+    };
+    const onAbort = (): void => finish(() => reject(new Error("adapter-host spawn cancelled")));
+    const timer = setTimeout(
+      () => finish(() => reject(new Error(`adapter-host readiness timed out after ${timeoutMs}ms`))),
+      timeoutMs
+    );
+    signal?.addEventListener("abort", onAbort, { once: true });
+    operation.then(
+      value => finish(() => resolve(value)),
+      error => finish(() => reject(error instanceof Error ? error : new Error(errorMessage(error))))
+    );
+  });
+}
+
+async function terminateProcessTree(child: ChildProcessWithoutNullStreams): Promise<void> {
+  if (hasExited(child)) return;
+  signalProcessTree(child, "SIGTERM");
+  await waitForExit(child, 1_000);
+  if (hasExited(child)) return;
+  signalProcessTree(child, "SIGKILL");
+  await waitForExit(child, 1_000);
+}
+
+function hasExited(child: ChildProcessWithoutNullStreams): boolean {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
+async function waitForExit(child: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<void> {
+  if (hasExited(child)) return;
+  await Promise.race([
+    new Promise<void>(resolve => child.once("exit", () => resolve())),
+    new Promise<void>(resolve => setTimeout(resolve, timeoutMs))
+  ]);
 }
 
 function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {

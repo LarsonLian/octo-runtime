@@ -34,6 +34,8 @@ export interface StartDaemonServerOptions {
   agentWork?: AgentWorkRuntimeOptions;
   /** Test/embedding override for the capped adapter-host restart schedule. */
   adapterHostRestartDelaysMs?: readonly number[];
+  /** Maximum adapter-host RPC readiness handshake time. */
+  adapterHostReadyTimeoutMs?: number;
 }
 
 /** Non-secret process metadata returned by `status` and suitable for support output. */
@@ -97,9 +99,11 @@ export async function startDaemonServer({
   hostEntrypoint,
   logging,
   agentWork,
-  adapterHostRestartDelaysMs = DEFAULT_ADAPTER_HOST_RESTART_DELAYS_MS
+  adapterHostRestartDelaysMs = DEFAULT_ADAPTER_HOST_RESTART_DELAYS_MS,
+  adapterHostReadyTimeoutMs
 }: StartDaemonServerOptions): Promise<DaemonApplication> {
-  if (adapterHostRestartDelaysMs.length === 0 || adapterHostRestartDelaysMs.some(delay => delay < 1)) {
+  if (adapterHostRestartDelaysMs.length === 0 ||
+      adapterHostRestartDelaysMs.some(delay => !Number.isFinite(delay) || delay < 1)) {
     throw new Error("adapterHostRestartDelaysMs must contain positive delays");
   }
   // Construct observability before every other owned resource. Startup failures
@@ -158,10 +162,12 @@ export async function startDaemonServer({
     await observability.close();
     throw error;
   }
-  const spawnHost = (): Promise<AdapterHostProcess> => spawnAdapterHost({
+  const spawnHost = (signal?: AbortSignal): Promise<AdapterHostProcess> => spawnAdapterHost({
     entrypoint: hostEntrypoint,
     manifest: manifestPath,
     env: { ...process.env, ...observabilityEnvironment(loggingConfiguration) },
+    ...(signal ? { signal } : {}),
+    ...(adapterHostReadyTimeoutMs !== undefined ? { readyTimeoutMs: adapterHostReadyTimeoutMs } : {}),
     ...(loggingConfiguration.traceRpc ? {
       trace: (direction, frame) => observability.traceRpc(direction, frame)
     } : {})
@@ -222,13 +228,18 @@ export async function startDaemonServer({
   let hostRestartAbort: AbortController | undefined;
   let hostRestartTask: Promise<AdapterHostProcess> | undefined;
   let hostStableReset: NodeJS.Timeout | undefined;
-  let hostReady: Promise<AdapterHostProcess> = Promise.resolve(hostProcess);
+  const readyHost = (): AdapterHostProcess => {
+    if (runtime.adapterHost.state !== "ready") {
+      throw Object.assign(new Error("adapter-host is restarting"), { code: "ADAPTER_HOST_RESTARTING" });
+    }
+    return hostProcess;
+  };
   const host: AdapterHostRpc = {
-    list: async () => (await hostReady).client.list(),
-    probe: async adapterType => (await hostReady).client.probe(adapterType),
-    cancel: async (invocationId, reason) => (await hostReady).client.cancel(invocationId, reason),
+    list: async () => readyHost().client.list(),
+    probe: async adapterType => readyHost().client.probe(adapterType),
+    cancel: async (invocationId, reason) => readyHost().client.cancel(invocationId, reason),
     async *invoke(adapterType, request) {
-      yield* (await hostReady).client.invoke(adapterType, request);
+      yield* readyHost().client.invoke(adapterType, request);
     }
   };
 
@@ -246,7 +257,7 @@ export async function startDaemonServer({
       });
       try {
         await abortableDelay(restartDelay, signal);
-        const replacement = await spawnHost();
+        const replacement = await spawnHost(signal);
         if (shuttingDown || signal.aborted) {
           await replacement.close();
           throw new Error("adapter-host restart cancelled");
@@ -319,7 +330,6 @@ export async function startDaemonServer({
     hostRestartAbort = controller;
     const restart = restartAdapterHost(controller.signal);
     hostRestartTask = restart;
-    hostReady = restart;
     void restart.catch(() => undefined);
   };
 
@@ -434,6 +444,7 @@ export async function startDaemonServer({
     });
     daemon.stop();
     await agentWorkRuntime?.close();
+    await hostRestartTask?.catch(() => undefined);
     await hostProcess.close();
     store.close();
     if (process.platform !== "win32") await rm(socketPath, { force: true });
@@ -667,7 +678,9 @@ export function adapterHostRestartDelayMs(
   attempt: number,
   delays: readonly number[] = DEFAULT_ADAPTER_HOST_RESTART_DELAYS_MS
 ): number {
-  if (delays.length === 0) throw new Error("adapter-host restart delays must not be empty");
+  if (delays.length === 0 || delays.some(delay => !Number.isFinite(delay) || delay < 1)) {
+    throw new Error("adapter-host restart delays must contain positive values");
+  }
   const index = Math.max(0, Math.min(delays.length - 1, Math.trunc(attempt) - 1));
   return delays[index] ?? delays[delays.length - 1];
 }

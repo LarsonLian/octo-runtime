@@ -1,15 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   adapterHostRestartDelayMs,
   startDaemonServer
 } from "@mininglamp-oss/octo-harness-daemon-app";
+import { waitFor } from "./agent-work-runtime-fixture.js";
 
 const execute = promisify(execFile);
 
@@ -97,11 +99,11 @@ test("daemon terminalizes in-flight work and restarts adapter-host without exiti
   const root = fileURLToPath(new URL("..", import.meta.url));
   const home = await mkdtemp(join(tmpdir(), "oh-host-"));
   const app = await startDaemonServer({
-    socketPath: join(home, "d.sock"),
+    socketPath: join(home, "sockets", "octo-harness-daemon.sock"),
     storePath: join(home, "state.db"),
     manifestPath: join(root, "test/fixtures/adapters.json"),
     hostEntrypoint: join(root, "apps/adapter-host/dist/index.js"),
-    adapterHostRestartDelaysMs: [10, 20, 40, 80]
+    adapterHostRestartDelaysMs: [500, 100, 100, 100]
   });
   try {
     const agent = await app.engine.registerAgent({ name: "test", adapterType: "test" });
@@ -117,6 +119,21 @@ test("daemon terminalizes in-flight work and restarts adapter-host without exiti
     assert.equal(app.hostProcess.child.kill("SIGKILL"), true);
     const terminal = await app.daemon.waitForRun(submitted.agentRunId);
     assert.equal(terminal.run.status, "failed");
+    await waitFor(() => app.runtime.adapterHost.state === "restarting");
+    const restartingStatus = JSON.parse((await execute(
+      process.execPath, [join(root, "apps/cli/dist/index.js"), "status"],
+      { cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home } }
+    )).stdout);
+    assert.equal(restartingStatus.ready, false);
+    assert.equal(restartingStatus.adapterHost.state, "restarting");
+    const unavailable = await app.daemon.submitAgentRun({
+      namespace: "test",
+      agentId: agent.id,
+      sessionKey: "v1/adapter-host-restarting",
+      trigger: { kind: "test", occurrenceId: "host-exit-2" },
+      input: { prompt: "must-fail-while-restarting" }
+    });
+    assert.equal((await app.daemon.waitForRun(unavailable.agentRunId)).run.status, "failed");
     await waitFor(() => app.runtime.adapterHost.state === "ready" && app.hostProcess.child.pid !== originalPid);
     assert.equal(app.runtime.adapterHost.restartAttempt, 1);
     assert.deepEqual((await app.hostProcess.client.list()).map(adapter => adapter.type), ["test"]);
@@ -126,16 +143,85 @@ test("daemon terminalizes in-flight work and restarts adapter-host without exiti
     assert.equal(app.runtime.adapterHost.restartAttempt, 2);
     await waitFor(() => app.runtime.adapterHost.state === "ready" && app.hostProcess.child.pid !== firstReplacementPid);
     assert.equal(app.runtime.adapterHost.restartAttempt, 2);
+    const recoveredStatus = JSON.parse((await execute(
+      process.execPath, [join(root, "apps/cli/dist/index.js"), "status"],
+      { cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home } }
+    )).stdout);
+    assert.equal(recoveredStatus.ready, true);
+    assert.equal(recoveredStatus.adapterHost.state, "ready");
   } finally {
     await app.close();
     await rm(home, { recursive: true, force: true });
   }
 });
 
-async function waitFor(predicate, timeoutMs = 2_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() >= deadline) throw new Error("condition not met before timeout");
-    await new Promise(resolve => setTimeout(resolve, 5));
+test("adapter-host readiness timeout advances the restart staircase", async () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const home = await mkdtemp(join(tmpdir(), "oh-host-timeout-"));
+  const manifestPath = join(home, "adapters.json");
+  await writeFile(manifestPath, JSON.stringify({
+    version: 1,
+    adapters: [{
+      type: "test",
+      module: join(root, "test/fixtures/test-adapter.js"),
+      export: "testAdapter"
+    }]
+  }));
+  const app = await startDaemonServer({
+    socketPath: join(home, "d.sock"),
+    storePath: join(home, "state.db"),
+    manifestPath,
+    hostEntrypoint: join(root, "test/fixtures/restart-hanging-adapter-host.js"),
+    adapterHostRestartDelaysMs: [10, 10],
+    adapterHostReadyTimeoutMs: 500
+  });
+  try {
+    const originalPid = app.hostProcess.child.pid;
+    assert.equal(app.hostProcess.child.kill("SIGKILL"), true);
+    await waitFor(
+      () => app.runtime.adapterHost.state === "ready"
+        && app.runtime.adapterHost.restartAttempt === 2
+        && app.hostProcess.child.pid !== originalPid,
+      3_000
+    );
+    assert.equal(readFileSync(`${manifestPath}.host-attempt`, "utf8"), "3");
+  } finally {
+    await app.close();
+    await rm(home, { recursive: true, force: true });
   }
-}
+});
+
+test("daemon close cancels a hung adapter-host replacement handshake", async () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const home = await mkdtemp(join(tmpdir(), "oh-host-cancel-"));
+  const manifestPath = join(home, "adapters.json");
+  await writeFile(manifestPath, JSON.stringify({
+    version: 1,
+    adapters: [{
+      type: "test",
+      module: join(root, "test/fixtures/test-adapter.js"),
+      export: "testAdapter"
+    }]
+  }));
+  const app = await startDaemonServer({
+    socketPath: join(home, "d.sock"),
+    storePath: join(home, "state.db"),
+    manifestPath,
+    hostEntrypoint: join(root, "test/fixtures/restart-hanging-adapter-host.js"),
+    adapterHostRestartDelaysMs: [10],
+    adapterHostReadyTimeoutMs: 60_000
+  });
+  let closed = false;
+  try {
+    assert.equal(app.hostProcess.child.kill("SIGKILL"), true);
+    const attemptPath = `${manifestPath}.host-attempt`;
+    await waitFor(() => existsSync(attemptPath) && readFileSync(attemptPath, "utf8") === "2");
+    const startedAt = Date.now();
+    await app.close();
+    closed = true;
+    assert.ok(Date.now() - startedAt < 1_000, "daemon close waited for host readiness timeout");
+  } finally {
+    if (!closed) await app.close();
+    await rm(home, { recursive: true, force: true });
+  }
+});
