@@ -350,8 +350,7 @@ test("startup registration failure stays alive and every reconnect re-registers"
       async *invoke() { yield { type: "run.finished", payload: {} }; }
     });
     await runtime.start();
-    await waitFor(() => registrations >= 3 && connections >= 2, 2_000);
-    assert.equal(runtime.status.connected, true);
+    await waitFor(() => registrations >= 3 && connections >= 2 && runtime.status.connected === true, 2_000);
   } finally {
     await runtime?.close();
     for (const client of wsServer.clients) client.terminate();
