@@ -222,6 +222,33 @@ test("unparseable URL-shaped carriers are omitted and mark provider capture inco
   }
 });
 
+test("RPC correlation expires after its 24 hour TTL", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-correlation-ttl-"));
+  let now = new Date("2026-01-01T00:00:00.000Z");
+  const records = [];
+  const logger = new LocalObservability(options(directory, { fileLog: false }), {
+    now: () => now,
+    eventSink: record => records.push(record)
+  });
+  try {
+    logger.traceRpc("send", JSON.stringify({
+      id: 1,
+      method: "invoke",
+      params: { request: { runId: "run-expired", invocationId: "inv-expired" } }
+    }));
+    now = new Date("2026-01-02T01:00:00.000Z");
+    logger.traceRpc("receive", JSON.stringify({ id: 2, result: {} }));
+    logger.traceRpc("receive", JSON.stringify({ id: 1, result: {} }));
+    const response = records.at(-1);
+    assert.equal(response.event, "rpc.frame");
+    assert.equal(response.run_id, undefined);
+    assert.ok(records.some(record => record.event === "bus.correlation_gap"));
+  } finally {
+    await logger.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("full provider output capture strips private reasoning even when an adapter does not", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-private-output-"));
   const logger = new LocalObservability(options(directory, { captureProviderIo: "full" }));

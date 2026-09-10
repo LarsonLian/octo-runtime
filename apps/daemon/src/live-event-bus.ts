@@ -347,7 +347,7 @@ function estimatedJsonBytes(value: unknown, stopAfter = Number.MAX_SAFE_INTEGER)
   };
   try {
     JSON.stringify(value, (key, item: unknown) => {
-      if (key) add(jsonStringBytes(key) + 2);
+      if (key) add(jsonStringBytes(key) + 4);
       if (typeof item === "string") add(jsonStringBytes(item) + 2);
       else if (typeof item === "number" || typeof item === "bigint") add(String(item).length + 2);
       else if (typeof item === "boolean" || item === null) add(6);

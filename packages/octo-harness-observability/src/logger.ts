@@ -84,6 +84,7 @@ export class LocalObservability {
   #degradedReason?: string;
   #droppedRecords = 0;
   #pendingWrites = 0;
+  #correlationCapacityGaps = 0;
 
   constructor(options: ObservabilityOptions, dependencies: WriterDependencies = {}) {
     validateOptions(options, dependencies);
@@ -613,7 +614,10 @@ export class LocalObservability {
       });
       const oldest = oldestMap.keys().next().value;
       if (oldest) oldestMap.delete(oldest);
-      this.#emitCorrelationGap("capacity");
+      this.#correlationCapacityGaps += 1;
+      if (isPowerOfTwo(this.#correlationCapacityGaps)) {
+        this.#emitCorrelationGap("capacity", this.#correlationCapacityGaps);
+      }
     }
     map.delete(key);
     map.set(key, value);
@@ -745,8 +749,13 @@ function mergeDefined(base: RpcCorrelation | undefined, override: RpcCorrelation
     runId: override.runId ?? base?.runId,
     invocationId: override.invocationId ?? base?.invocationId,
     agentSessionId: override.agentSessionId ?? base?.agentSessionId,
-    adapterType: override.adapterType ?? base?.adapterType
+    adapterType: override.adapterType ?? base?.adapterType,
+    touchedAt: override.touchedAt ?? base?.touchedAt
   };
+}
+
+function isPowerOfTwo(value: number): boolean {
+  return value > 0 && Number.isInteger(Math.log2(value));
 }
 
 function optionalStringValue(value: unknown): string | undefined {
