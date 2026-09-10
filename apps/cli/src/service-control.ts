@@ -21,7 +21,7 @@ export interface ServiceControlOptions {
 
 export function resolveServiceControl(options: ServiceControlOptions = {}): {
   backend: ServiceBackend;
-  spec(paths: HarnessPaths, enabled?: boolean): ServiceSpec;
+  spec(paths: HarnessPaths, enabled?: boolean, daemonArgs?: string[]): ServiceSpec;
 } {
   const platform = options.platform ?? process.platform;
   const daemonEntrypoint = resolve(options.daemonEntrypoint
@@ -33,7 +33,7 @@ export function resolveServiceControl(options: ServiceControlOptions = {}): {
   });
   return {
     backend,
-    spec(paths: HarnessPaths, enabled = true): ServiceSpec {
+    spec(paths: HarnessPaths, enabled = true, daemonArgs: string[] = []): ServiceSpec {
       const output = platform === "win32"
         ? {}
         : {
@@ -44,7 +44,7 @@ export function resolveServiceControl(options: ServiceControlOptions = {}): {
         id: HARNESS_SERVICE_ID,
         description: "Octo Harness daemon",
         command: nodeExecutable,
-        args: [daemonEntrypoint, "--home", paths.home],
+        args: [daemonEntrypoint, "--home", paths.home, ...daemonArgs],
         workingDirectory: paths.home,
         enabled,
         restart: { policy: "on-failure", delaySeconds: 5, maxBurst: 5 },

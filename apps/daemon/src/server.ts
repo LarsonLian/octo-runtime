@@ -43,6 +43,10 @@ export interface StartDaemonServerOptions {
   storePath: string;
   manifestPath: string;
   hostEntrypoint: string;
+  /** Address used by the lazy HTTP/WebSocket inspector. */
+  inspectHost?: string;
+  /** Fixed inspector port. When omitted, a random port above 20000 is chosen. */
+  inspectPort?: number;
   logging?: ObservabilityConfiguration;
   /** Optional foreground-only sink for already-redacted operational records. */
   operationalSink?: (record: RecordEnvelope) => void;
@@ -110,6 +114,8 @@ export async function startDaemonServer({
   storePath,
   manifestPath,
   hostEntrypoint,
+  inspectHost,
+  inspectPort,
   logging,
   operationalSink,
   agentWork,
@@ -376,7 +382,13 @@ export async function startDaemonServer({
       adapters: runtime.adapters,
       lifecycle: daemon.status
     }),
-    runId => observability.query({ ...(runId ? { runId } : {}), includeSensitive: false, limit: 500 })
+    runId => observability.query({
+      ...(runId ? { runId } : {}),
+      includeSensitive: false,
+      limit: 500,
+      maxBytes: 2 * 1024 * 1024
+    }),
+    { host: inspectHost, port: inspectPort }
   );
   // HarnessDaemon events mark execution, rather than submission, boundaries.
   // A control request can therefore be acknowledged before `run.started` while

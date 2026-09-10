@@ -282,7 +282,7 @@ async function persistEnrollment(
 }
 
 async function prepareUpdate(context: CliContext): Promise<CommandResult> {
-  const spec = context.service.spec(context.paths);
+  const spec = await daemonServiceSpec(context);
   const current = await context.service.backend.inspect(spec);
   const wasRunning = ["running", "starting"].includes(current.state);
   if (wasRunning && context.flags.waitDrained === true) {
@@ -309,7 +309,7 @@ async function prepareUpdate(context: CliContext): Promise<CommandResult> {
 
 async function recoverUpdate(context: CliContext): Promise<CommandResult> {
   const journal = await readJsonFile<UpdateJournal>(context.paths.updateJournal);
-  const spec = context.service.spec(context.paths);
+  const spec = await daemonServiceSpec(context);
   await verifyServiceProgram(spec);
   await context.service.backend.install(spec);
   const shouldStart = context.flags.start === true && (journal?.service_was_running ?? true);
@@ -332,17 +332,22 @@ async function recoverUpdate(context: CliContext): Promise<CommandResult> {
 
 async function runDaemonCommand(context: CliContext, action: string | undefined): Promise<CommandResult> {
   const selected = action ?? "run";
+  if (!["run", "install"].includes(selected)
+    && (context.flags.inspectHost !== undefined || context.flags.inspectPort !== undefined)) {
+    throw new Error("--inspect-host and --inspect-port are valid with 'daemon run' or 'daemon install'");
+  }
   if (selected === "run") {
     const exitCode = await context.runForegroundDaemon([
       "--home", context.home,
       ...(context.flags.quiet === true ? [] : ["--console"]),
-      ...(context.flags.verbose === true ? ["--verbose"] : [])
+      ...(context.flags.verbose === true ? ["--verbose"] : []),
+      ...inspectDaemonArguments(inspectBindingFromFlags(context.flags))
     ]);
     return { streamed: true, exitCode: exitCode ?? 0 };
   }
   if (selected === "install") return installDaemonService(context);
   if (selected === "uninstall") return uninstallDaemonService(context);
-  const spec = context.service.spec(context.paths);
+  const spec = await daemonServiceSpec(context);
   if (selected === "status") {
     const service = await context.service.backend.inspect(spec);
     const application = await tryDaemonStatus(context.paths.socket);
@@ -395,13 +400,20 @@ async function installDaemonService(context: CliContext): Promise<CommandResult>
     await loadInstalledRuntime(context);
     const autostart = context.flags.noAutostart !== true;
 
-    const spec = context.service.spec(context.paths, autostart);
+    const homeConfiguration = await readJsonFile<HarnessHomeConfiguration>(context.paths.rootConfig);
+    assertHomeConfiguration(homeConfiguration);
+    if (!homeConfiguration) throw new Error("Harness Home config is missing; run octo-harness login first");
+    const inspectBinding = inspectBindingFromFlags(context.flags, homeConfiguration.inspect);
+    const spec = context.service.spec(context.paths, autostart, inspectDaemonArguments(inspectBinding));
     await verifyServiceProgram(spec);
     const probe = await context.service.backend.probe();
     if (!probe.supported) {
       throw new Error(`${probe.manager} is unavailable: ${probe.detail ?? "unsupported user session"}`);
     }
     await context.service.backend.install(spec);
+    if (inspectBinding) {
+      await writeJsonAtomic(context.paths.rootConfig, { ...homeConfiguration, inspect: inspectBinding });
+    }
     if (autostart) await context.service.backend.enable(spec);
     else await context.service.backend.disable(spec);
     return {
@@ -416,7 +428,7 @@ async function installDaemonService(context: CliContext): Promise<CommandResult>
 
 async function uninstallDaemonService(context: CliContext): Promise<CommandResult> {
   return withSetupLock(context.paths, async () => {
-    const spec = context.service.spec(context.paths);
+    const spec = await daemonServiceSpec(context);
     const before = await context.service.backend.inspect(spec);
     const application = await tryDaemonStatus(context.paths.socket);
     const managedProcessActive = ["running", "starting", "stopping"].includes(before.state);
@@ -488,7 +500,7 @@ async function runDoctor(context: CliContext): Promise<CommandResult> {
       `chmod 600 ${context.paths.credential}`
     ));
   }
-  const spec = context.service.spec(context.paths);
+  const spec = await daemonServiceSpec(context);
   const program = await pathCheck(spec.command, spec.args?.[0]);
   checks.push(check("service.program", program.ok, program.detail, "Rerun the installer to repair absolute program paths"));
   const probe = await context.service.backend.probe();
@@ -817,6 +829,45 @@ function optionalString(value: FlagValue | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+interface InspectBinding {
+  host: string;
+  port?: number;
+}
+
+function inspectBindingFromFlags(flags: Flags, fallback?: InspectBinding): InspectBinding | undefined {
+  if (flags.inspectHost === undefined && flags.inspectPort === undefined) return fallback;
+  const host = flags.inspectHost === undefined
+    ? fallback?.host ?? "127.0.0.1"
+    : requiredFlag(flags.inspectHost, "inspect-host").trim();
+  if (!host || /[\s/]/.test(host) || host.includes("://") || (host.includes(":") && net.isIP(host) !== 6)) {
+    throw new Error("--inspect-host must be a hostname or IP address without a scheme, path, or port");
+  }
+  const rawPort = flags.inspectPort === undefined ? undefined : requiredFlag(flags.inspectPort, "inspect-port");
+  const port = rawPort === undefined ? fallback?.port : Number(rawPort);
+  if (port !== undefined && (!Number.isSafeInteger(port) || port < 1 || port > 65_535)) {
+    throw new Error("--inspect-port must be an integer between 1 and 65535");
+  }
+  return { host, ...(port === undefined ? {} : { port }) };
+}
+
+function inspectDaemonArguments(binding: InspectBinding | undefined): string[] {
+  if (!binding) return [];
+  const args: string[] = [];
+  args.push("--inspect-host", binding.host);
+  if (binding.port !== undefined) args.push("--inspect-port", String(binding.port));
+  return args;
+}
+
+async function daemonServiceSpec(context: CliContext, enabled = true) {
+  const configuration = await readJsonFile<HarnessHomeConfiguration>(context.paths.rootConfig);
+  assertHomeConfiguration(configuration);
+  return context.service.spec(
+    context.paths,
+    enabled,
+    inspectDaemonArguments(configuration?.inspect)
+  );
+}
+
 function numericFlag(value: FlagValue | undefined, fallback: number): number {
   if (value === undefined) return fallback;
   const numeric = typeof value === "string" ? Number(value) : Number.NaN;
@@ -874,11 +925,12 @@ function helpText(group?: string): string {
   }
   if (group === "daemon") {
     return `Usage: octo-harness [--home PATH] daemon install|uninstall|run|start|stop|restart|status [options]\n\n` +
-      `  install [--no-autostart]\n` +
+      `  install [--no-autostart] [--inspect-host HOST] [--inspect-port PORT]\n` +
       `  uninstall [--force] [--timeout-ms MS]\n` +
-      `  run [--quiet] [--verbose]\n` +
+      `  run [--quiet] [--verbose] [--inspect-host HOST] [--inspect-port PORT]\n` +
       `  start [--wait-online] [--timeout-ms MS]\n` +
       `  stop|restart [--force] [--wait-online] [--timeout-ms MS]\n\n` +
+      `The inspector defaults to 127.0.0.1 and a random port from 20001 through 65535. Non-loopback hosts expose a capability-protected diagnostic endpoint.\n\n` +
       `Uninstall removes the native service but preserves Harness Home identity, credentials, databases, and logs.`;
   }
   if (group === "doctor") {

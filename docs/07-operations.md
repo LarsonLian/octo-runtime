@@ -25,6 +25,8 @@ pnpm cli events --run-id <agent-run-id>
 pnpm cli events --follow
 pnpm cli inspect
 pnpm cli inspect url
+pnpm cli daemon run --inspect-host 127.0.0.1 --inspect-port 23456
+pnpm cli daemon install --inspect-host 127.0.0.1 --inspect-port 23456
 pnpm cli agent-session list
 pnpm cli agent-run list
 pnpm cli agent-run get <agent-run-id>
@@ -37,6 +39,16 @@ Worker for the authoritative production lifecycle and complete trajectory.
 The live event sink is process-local and always applies credential redaction and
 private-reasoning removal. Sensitive RPC/provider persistence remains explicitly
 controlled by the trace and provider-capture settings.
+
+Inspect defaults to `127.0.0.1` and a random port in `20001–65535`. The daemon
+event ring is byte bounded; the browser independently caps event rows at 1000
+and retained event text at 2 MiB, while its recent AgentRuns index retains 100
+IDs without copying event payloads. `daemon run` consumes explicit
+`--inspect-host` / `--inspect-port` values directly. `daemon install` persists
+them in the native service definition and Harness Home. A non-loopback listener
+requires TLS and network access control supplied by the deployment; the
+capability URL alone is not transport security. Reverse proxies, WAFs and access
+logs must not record its `?token=...` query parameter.
 
 ## Health Signals
 

@@ -17,6 +17,14 @@ const app = await startDaemonServer({
 app.events.publish({ source: "provider-native", type: "provider.output", runId: "run-demo", payload: { model: "test", bytes: 128 } });
 app.events.publish({ source: "adapter-canonical", type: "tool_call.create", runId: "run-demo", payload: { name: "shell", status: "running" } });
 app.events.publish({ source: "host-canonical", type: "message.delta", runId: "run-demo", payload: { channel: "analysis", text: "Inspecting the workspace" } });
+for (let index = 0; index < 105; index++) {
+  app.events.publish({
+    source: "daemon",
+    type: "agent_run.updated",
+    runId: `run-recent-${String(index).padStart(3, "0")}`,
+    payload: { message: `Run ${index} emitted a recent event` }
+  });
+}
 const result = await callDaemon(socketPath, { method: "inspect.open" });
 process.stdout.write(`${result.url}\n`);
 

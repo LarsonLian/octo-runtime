@@ -633,6 +633,41 @@ test("query keeps the newest timestamps across component files before applying i
   }
 });
 
+test("query streams shards and skips an oversized log line", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-query-bounded-line-"));
+  const now = new Date(2026, 0, 10, 12, 0, 0);
+  const path = join(directory, "2026-01-10", "daemon.jsonl");
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${"x".repeat(2 * 1024 * 1024 + 1)}\n`);
+  await appendFile(path, `${JSON.stringify({ ts: now.toISOString(), event: "after.oversized" })}\n`);
+  const logger = new LocalObservability(options(directory), { now: () => now });
+  try {
+    const records = await logger.query();
+    assert.deepEqual(records.map(record => record.event), ["after.oversized"]);
+  } finally {
+    await logger.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("query bounds the retained result set by encoded bytes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-query-result-bytes-"));
+  const now = new Date(2026, 0, 10, 12, 0, 0);
+  const path = join(directory, "2026-01-10", "daemon.jsonl");
+  await mkdir(dirname(path), { recursive: true });
+  const oldest = JSON.stringify({ ts: "2026-01-10T12:00:01.000Z", event: "oldest", data: "x".repeat(900) });
+  const newest = JSON.stringify({ ts: "2026-01-10T12:00:02.000Z", event: "newest", data: "x".repeat(900) });
+  await writeFile(path, `${oldest}\n${newest}\n`);
+  const logger = new LocalObservability(options(directory), { now: () => now });
+  try {
+    const records = await logger.query({ limit: 500, maxBytes: Buffer.byteLength(newest) + 10 });
+    assert.deepEqual(records.map(record => record.event), ["newest"]);
+  } finally {
+    await logger.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("query propagates unreadable log files and marks observability degraded", async t => {
   if (process.platform === "win32" || process.getuid?.() === 0) {
     return t.skip("POSIX owner permission enforcement requires a non-root user");

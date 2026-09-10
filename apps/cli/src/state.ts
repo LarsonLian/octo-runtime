@@ -10,6 +10,10 @@ export interface HarnessHomeConfiguration {
   default_profile: string;
   enabled_profiles: string[];
   channel: "stable" | "beta";
+  inspect?: {
+    host: string;
+    port?: number;
+  };
 }
 
 export interface ProfileConfiguration {
@@ -169,7 +173,8 @@ export async function reconcileHomeConfiguration(
     schema_version: 1,
     default_profile: profile,
     enabled_profiles: [profile],
-    channel
+    channel,
+    ...(existing?.inspect ? { inspect: existing.inspect } : {})
   };
   await writeJsonAtomic(paths.rootConfig, value);
   return value;
@@ -183,6 +188,17 @@ export function assertHomeConfiguration(
     throw new Error("unsupported Harness Home config schema");
   }
   assertProfileName(configuration.default_profile);
+  if (configuration.inspect) {
+    if (typeof configuration.inspect.host !== "string" || !configuration.inspect.host.trim()) {
+      throw new Error("Harness Home inspect host is invalid");
+    }
+    if (configuration.inspect.port !== undefined
+      && (!Number.isSafeInteger(configuration.inspect.port)
+        || configuration.inspect.port < 1
+        || configuration.inspect.port > 65_535)) {
+      throw new Error("Harness Home inspect port is invalid");
+    }
+  }
   if (!Array.isArray(configuration.enabled_profiles) || configuration.enabled_profiles.length === 0) {
     throw new Error("Harness Home must contain at least one enabled profile");
   }
