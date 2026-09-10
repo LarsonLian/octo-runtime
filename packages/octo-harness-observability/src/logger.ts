@@ -313,6 +313,14 @@ export class LocalObservability {
     this.#rpcInvocations.clear();
   }
 
+  clearRpcCorrelationForRun(runId: string): void {
+    for (const map of [this.#rpcRequests, this.#rpcInvocations]) {
+      for (const [key, value] of map) {
+        if (value.runId === runId) map.delete(key);
+      }
+    }
+  }
+
   /** Run retention and capacity maintenance in writer order. */
   async cleanup(): Promise<void> {
     if (!this.#options.fileLog) return;
@@ -590,20 +598,42 @@ export class LocalObservability {
   }
 
   #rememberRpc(map: Map<string, RpcCorrelation>, key: string, value: RpcCorrelation): void {
-    if (!map.has(key) && map.size >= RPC_CORRELATION_MAX_ENTRIES) {
-      const oldest = map.keys().next().value;
-      if (oldest) map.delete(oldest);
+    if (!map.has(key) && this.#rpcRequests.size + this.#rpcInvocations.size >= RPC_CORRELATION_MAX_ENTRIES) {
+      const candidates = [this.#rpcRequests, this.#rpcInvocations];
+      const oldestMap = candidates.reduce((oldest, candidate) => {
+        const candidateTime = candidate.values().next().value?.touchedAt ?? Number.MAX_SAFE_INTEGER;
+        const oldestTime = oldest.values().next().value?.touchedAt ?? Number.MAX_SAFE_INTEGER;
+        return candidateTime < oldestTime ? candidate : oldest;
+      });
+      const oldest = oldestMap.keys().next().value;
+      if (oldest) oldestMap.delete(oldest);
+      this.#emitCorrelationGap("capacity");
     }
     map.delete(key);
     map.set(key, value);
   }
 
   #expireRpcCorrelation(now: number): void {
+    let expired = 0;
     for (const map of [this.#rpcRequests, this.#rpcInvocations]) {
       for (const [key, value] of map) {
-        if (value.touchedAt !== undefined && now - value.touchedAt > RPC_CORRELATION_TTL_MS) map.delete(key);
+        if (value.touchedAt !== undefined && now - value.touchedAt > RPC_CORRELATION_TTL_MS) {
+          map.delete(key);
+          expired += 1;
+        }
       }
     }
+    if (expired > 0) this.#emitCorrelationGap("ttl", expired);
+  }
+
+  #emitCorrelationGap(reason: "capacity" | "ttl", count = 1): void {
+    this.#eventSink?.(this.#record({
+      level: "warn",
+      scope: "live-event.bus",
+      event: "bus.correlation_gap",
+      message: "live event RPC correlation was evicted",
+      data: { reason, count }
+    }, "operational"));
   }
 }
 

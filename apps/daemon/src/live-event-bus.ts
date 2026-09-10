@@ -58,6 +58,8 @@ interface RingEntry {
   readonly seq: number;
   readonly runId?: string;
   readonly source: LiveEventSource;
+  readonly type: string;
+  readonly affectedSource?: LiveEventSource;
   readonly bytes: Buffer;
   pins: number;
   retired: boolean;
@@ -65,6 +67,7 @@ interface RingEntry {
 
 export interface LiveEventBusStats {
   retainedBytes: number;
+  controlBytes: number;
   retainedEvents: number;
   retiredEvents: number;
   subscribers: number;
@@ -85,6 +88,7 @@ export class LiveEventBus {
   #head = 0;
   #count = 0;
   #bytes = 0;
+  #controlBytes = 0;
   #nextSeq = 1;
   #subscribers = 0;
   #dropped = 0;
@@ -101,7 +105,7 @@ export class LiveEventBus {
     this.#maxSubscribers = positive(options.maxSubscribers, LIVE_EVENT_MAX_SUBSCRIBERS, "maxSubscribers");
     this.#controlReserveBytes = Math.min(
       positive(options.controlReserveBytes, LIVE_EVENT_CONTROL_RESERVE_BYTES, "controlReserveBytes"),
-      Math.floor(this.#maxBytes / 8)
+      Math.floor(this.#maxBytes / 2)
     );
     this.#slots = Array.from<RingEntry | undefined>({
       length: positive(options.maxSlots, LIVE_EVENT_MAX_SLOTS, "maxSlots")
@@ -111,6 +115,7 @@ export class LiveEventBus {
   get stats(): LiveEventBusStats {
     return {
       retainedBytes: this.#bytes,
+      controlBytes: this.#controlBytes,
       retainedEvents: this.#count,
       retiredEvents: this.#retired.size,
       subscribers: this.#subscribers,
@@ -134,8 +139,10 @@ export class LiveEventBus {
       ...(input.adapterType ? { adapter_type: input.adapterType } : {}),
       payload: redactPrivateReasoning(redactCredentials(input.payload))
     };
-    let bytes = encode(envelope);
-    if (bytes.byteLength > this.#maxFrameBytes) {
+    let bytes = encodeBounded(envelope, this.#maxFrameBytes);
+    if (!bytes) {
+      const byteLength = estimatedJsonBytes(envelope);
+      const sha256 = structuralDigest(envelope);
       envelope = {
         schema: "octo-harness.live-event/v1",
         local_seq: seq,
@@ -149,16 +156,24 @@ export class LiveEventBus {
         payload: {
           source: input.source,
           type: input.type,
-          byteLength: bytes.byteLength,
-          sha256: createHash("sha256").update(bytes).digest("hex")
+          byteLength,
+          sha256
         }
       };
       bytes = encode(envelope);
       this.#dropped += 1;
     }
-    const budget = envelope.source === "control"
-      ? this.#maxBytes
-      : this.#maxBytes - this.#controlReserveBytes;
+    const affectedSource = affectedSourceOf(envelope.payload);
+    if (envelope.source === "control") {
+      while (this.#controlBytes + bytes.byteLength > this.#controlReserveBytes && this.#count > 0) {
+        this.#evictOldest();
+      }
+      if (bytes.byteLength > this.#controlReserveBytes) {
+        this.#dropped += 1;
+        return false;
+      }
+    }
+    const budget = envelope.source === "control" ? this.#maxBytes : this.#maxBytes - this.#controlReserveBytes;
     while ((this.#count >= this.#slots.length || this.#bytes + bytes.byteLength > budget) && this.#count > 0) {
       this.#evictOldest();
     }
@@ -171,12 +186,15 @@ export class LiveEventBus {
       seq,
       runId: envelope.agent_run_id,
       source: envelope.source,
-      bytes: Buffer.from(bytes),
+      type: envelope.type,
+      ...(affectedSource ? { affectedSource } : {}),
+      bytes,
       pins: 0,
       retired: false
     };
     this.#count += 1;
     this.#bytes += bytes.byteLength;
+    if (envelope.source === "control") this.#controlBytes += bytes.byteLength;
     this.#wake();
     return true;
   }
@@ -200,6 +218,13 @@ export class LiveEventBus {
   }
 
   async *subscribe(filter: LiveEventFilter = {}, follow = false, signal?: AbortSignal): AsyncGenerator<LiveEventEnvelope> {
+    for await (const bytes of this.subscribeBytes(filter, follow, signal)) {
+      yield JSON.parse(bytes.toString("utf8")) as LiveEventEnvelope;
+    }
+  }
+
+  /** Yield the immutable ring frame directly so transports do not copy payloads. */
+  async *subscribeBytes(filter: LiveEventFilter = {}, follow = false, signal?: AbortSignal): AsyncGenerator<Buffer> {
     if (this.#subscribers >= this.#maxSubscribers) {
       throw Object.assign(new Error("live event subscriber limit reached"), { code: "BUS_SUBSCRIBER_LIMIT" });
     }
@@ -222,7 +247,7 @@ export class LiveEventBus {
             payload: { from_seq: cursor, to_seq: oldest }
           };
           cursor = oldest;
-          yield gap;
+          yield encode(gap);
           continue;
         }
         const entry = this.#find(cursor, filter, follow ? Number.MAX_SAFE_INTEGER : snapshotEnd);
@@ -230,7 +255,7 @@ export class LiveEventBus {
           cursor = entry.seq + 1;
           entry.pins += 1;
           try {
-            yield JSON.parse(entry.bytes.toString("utf8")) as LiveEventEnvelope;
+            yield entry.bytes;
           } finally {
             this.#release(entry);
           }
@@ -249,8 +274,8 @@ export class LiveEventBus {
     for (let offset = 0; offset < this.#count; offset++) {
       const entry = this.#slots[(this.#head + offset) % this.#slots.length];
       if (!entry || entry.seq < fromSeq || entry.seq > throughSeq) continue;
-      if (filter.runId && entry.runId !== filter.runId) continue;
-      if (filter.source && entry.source !== filter.source) continue;
+      if (filter.runId && entry.runId !== filter.runId && entry.type !== "bus.correlation_gap") continue;
+      if (filter.source && entry.source !== filter.source && entry.affectedSource !== filter.source) continue;
       return entry;
     }
     return undefined;
@@ -271,6 +296,7 @@ export class LiveEventBus {
       this.#retired.add(entry);
       return;
     }
+    if (entry.source === "control") this.#controlBytes -= entry.bytes.byteLength;
     this.#bytes -= entry.bytes.byteLength;
   }
 
@@ -278,6 +304,7 @@ export class LiveEventBus {
     entry.pins -= 1;
     if (entry.pins === 0 && entry.retired) {
       this.#retired.delete(entry);
+      if (entry.source === "control") this.#controlBytes -= entry.bytes.byteLength;
       this.#bytes -= entry.bytes.byteLength;
     }
   }
@@ -304,6 +331,80 @@ export class LiveEventBus {
   }
 }
 
+function encodeBounded(value: LiveEventEnvelope, maxBytes: number): Buffer | undefined {
+  const estimate = estimatedJsonBytes(value, maxBytes);
+  if (estimate > maxBytes) return undefined;
+  const encoded = encode(value);
+  return encoded.byteLength <= maxBytes ? encoded : undefined;
+}
+
+function estimatedJsonBytes(value: unknown, stopAfter = Number.MAX_SAFE_INTEGER): number {
+  let bytes = 0;
+  const add = (amount: number): void => {
+    bytes += amount;
+    if (bytes > stopAfter) throw OVERSIZE;
+  };
+  try {
+    JSON.stringify(value, (key, item: unknown) => {
+      if (key) add(jsonStringBytes(key) + 2);
+      if (typeof item === "string") add(jsonStringBytes(item) + 2);
+      else if (typeof item === "number" || typeof item === "bigint") add(String(item).length + 2);
+      else if (typeof item === "boolean" || item === null) add(6);
+      else if (typeof item === "object") add(4);
+      return item;
+    });
+  } catch (error) {
+    if (error !== OVERSIZE) return stopAfter + 1;
+  }
+  return bytes;
+}
+
+const OVERSIZE = new Error("oversize");
+
+function jsonStringBytes(value: string): number {
+  let bytes = 0;
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code === 0x22 || code === 0x5c || code <= 0x1f) bytes += code <= 0x1f ? 6 : 2;
+    else if (code <= 0x7f) bytes += 1;
+    else if (code <= 0x7ff) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff && index + 1 < value.length
+      && value.charCodeAt(index + 1) >= 0xdc00 && value.charCodeAt(index + 1) <= 0xdfff) {
+      bytes += 4;
+      index += 1;
+    } else if (code >= 0xd800 && code <= 0xdfff) bytes += 6;
+    else bytes += 3;
+  }
+  return bytes;
+}
+
+function structuralDigest(value: unknown): string {
+  const hash = createHash("sha256");
+  const visit = (item: unknown): void => {
+    if (Array.isArray(item)) {
+      hash.update("[");
+      for (const entry of item) visit(entry);
+      hash.update("]");
+    } else if (isRecord(item)) {
+      hash.update("{");
+      for (const [key, nested] of Object.entries(item)) {
+        hash.update(key);
+        visit(nested);
+      }
+      hash.update("}");
+    } else hash.update(String(item));
+  };
+  try { visit(value); } catch { hash.update("unavailable"); }
+  return hash.digest("hex");
+}
+
+function affectedSourceOf(payload: unknown): LiveEventSource | undefined {
+  if (!isRecord(payload) || typeof payload.affected_source !== "string") return undefined;
+  return (LIVE_EVENT_SOURCES as readonly string[]).includes(payload.affected_source)
+    ? payload.affected_source as LiveEventSource
+    : undefined;
+}
+
 function encode(value: LiveEventEnvelope): Buffer {
   try {
     return Buffer.from(JSON.stringify(value));
@@ -321,6 +422,7 @@ function encode(value: LiveEventEnvelope): Buffer {
 }
 
 function sourceForRecord(record: RecordEnvelope): LiveEventSource {
+  if (record.scope === "live-event.bus") return "control";
   if (record.scope === "adapter-host.rpc") return "adapter-rpc";
   if (record.scope === "provider.io") return "provider-native";
   if (record.scope === "transport.wss" || record.scope === "agent-work.delivery") return "worker";

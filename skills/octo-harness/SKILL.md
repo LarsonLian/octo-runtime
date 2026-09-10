@@ -18,7 +18,7 @@ Before a state-changing command, determine and state:
 
 One Harness Home holds one enabled profile, one local Runtime, one `system_id`, one `runtime_id`, one device credential, one WSS connection, and one durable outbox. Use separate Homes for distinct trusted profiles. Use separate OS accounts for mutually untrusted identities.
 
-Run `octo-harness help` and the relevant `octo-harness <group> --help` before relying on an option that may have changed. Normal successful output is JSON; errors go to stderr and return nonzero.
+Run `octo-harness help` and the relevant `octo-harness <group> --help` before relying on an option that may have changed. Normal successful output is JSON; `events` defaults to source-marked terminal lines (`--json` emits raw envelopes), and `inspect` prints its loopback URL. Errors go to stderr and return nonzero.
 
 ## Choose The Correct Workflow
 

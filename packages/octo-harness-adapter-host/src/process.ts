@@ -71,21 +71,23 @@ export async function spawnAdapterHost({
     const unavailable = (reason: string): void => {
       if (unavailableReported) return;
       unavailableReported = true;
-      observe({ source: "control", type: "adapter_observation.source_unavailable", payload: { reason } });
+      for (const affectedSource of ["adapter-canonical", "provider-native"]) {
+        observe({ source: "control", type: "adapter_observation.source_unavailable", payload: { reason, affected_source: affectedSource } });
+      }
     };
     observationPipe.setEncoding("utf8");
     observationPipe.on("data", (value: string | Buffer) => {
       buffered += value.toString();
       if (buffered.length > 512 * 1024) {
         buffered = "";
-        observe({ source: "control", type: "adapter_observation.dropped", payload: { reason: "buffer_limit" } });
+        observe({ source: "control", type: "adapter_observation.dropped", payload: { reason: "buffer_limit", affected_source: "adapter-canonical" } });
       }
       let newline = buffered.indexOf("\n");
       while (newline >= 0) {
         const line = buffered.slice(0, newline);
         buffered = buffered.slice(newline + 1);
         try { observe(JSON.parse(line) as unknown); } catch {
-          observe({ source: "control", type: "adapter_observation.dropped", payload: { reason: "invalid_json" } });
+          observe({ source: "control", type: "adapter_observation.dropped", payload: { reason: "invalid_json", affected_source: "adapter-canonical" } });
         }
         newline = buffered.indexOf("\n");
       }

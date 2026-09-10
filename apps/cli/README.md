@@ -80,7 +80,6 @@ octo-harness adapter list
 octo-harness adapter probe codex
 octo-harness logs path
 octo-harness logs query <agent-run-id>
-octo-harness logs query <agent-run-id> --follow
 octo-harness events --run-id <agent-run-id>
 octo-harness events --follow
 octo-harness inspect

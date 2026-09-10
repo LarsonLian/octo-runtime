@@ -264,6 +264,9 @@ export async function startDaemonServer({
           adapterType,
           payload: event
         });
+        if (["run.completed", "run.failed", "run.stopped"].includes(event.type)) {
+          observability.clearRpcCorrelationForRun(request.runId);
+        }
         yield event;
       }
     }
@@ -403,7 +406,9 @@ export async function startDaemonServer({
     });
   });
 
+  const connections = new Set<net.Socket>();
   const server = net.createServer(socket => {
+    connections.add(socket);
     // A connection id scopes transport evidence only. AgentRun, AgentSession and
     // invocation ids retain their domain meanings and may span other transports.
     const connectionId = `conn_${randomUUID()}`;
@@ -418,13 +423,16 @@ export async function startDaemonServer({
         local_path: socketPath
       }
     });
-    socket.once("close", () => observability.log({
-      level: "info",
-      scope: "transport.unix",
-      event: "transport.connection.closed",
-      message: "daemon control connection closed",
-      data: { connection_id: connectionId, transport: "unix" }
-    }));
+    socket.once("close", () => {
+      connections.delete(socket);
+      observability.log({
+        level: "info",
+        scope: "transport.unix",
+        event: "transport.connection.closed",
+        message: "daemon control connection closed",
+        data: { connection_id: connectionId, transport: "unix" }
+      });
+    });
     createInterface({ input: socket }).once("line", line => {
       void handleRequestLine({
         line,
@@ -513,6 +521,7 @@ export async function startDaemonServer({
       daemon.stop();
       await agentWorkRuntime?.close();
       await inspect.close();
+      for (const connection of connections) connection.destroy();
       await new Promise<void>(resolve => server.close(() => resolve()));
       await hostRestartTask?.catch(() => undefined);
       await hostProcess.close();
@@ -564,9 +573,7 @@ async function handleRequestLine({
     // Do not observe the observation query itself. The Viewer polls this method;
     // recording each poll would create an unbounded feedback loop and bury the
     // application events the operator is trying to inspect.
-    const logsItself = request.method !== "logs.query"
-      && request.method !== "logs.follow"
-      && request.method !== "events.subscribe";
+    const logsItself = request.method !== "logs.query" && request.method !== "events.subscribe";
     if (logsItself) {
       observability.log({
         level: "debug",
@@ -584,10 +591,6 @@ async function handleRequestLine({
     }
     if (request.method === "events.subscribe") {
       await streamLiveEvents({ request, socket, events });
-      return;
-    }
-    if (request.method === "logs.follow") {
-      await streamDurableLogs({ request, socket, observability });
       return;
     }
     const result = await dispatch({
@@ -654,62 +657,21 @@ async function streamLiveEvents({
   let count = 0;
   const controller = new AbortController();
   socket.once("close", () => controller.abort());
-  for await (const event of events.subscribe({ runId, source }, follow, controller.signal)) {
+  for await (const event of events.subscribeBytes({ runId, source }, follow, controller.signal)) {
     if (socket.destroyed) return;
-    await writeSocketLine(socket, { id: request.id, event });
+    await writeSocketEvent(socket, request.id, event);
     count += 1;
   }
   await writeSocketLine(socket, { id: request.id, result: { done: true, count, memory: events.stats } });
   socket.end();
 }
 
-async function streamDurableLogs({
-  request,
-  socket,
-  observability
-}: {
-  request: DaemonRequest;
-  socket: net.Socket;
-  observability: LocalObservability;
-}): Promise<void> {
-  const params = request.params ?? {};
-  const controller = new AbortController();
-  socket.once("close", () => controller.abort());
-  const seen = new Set<string>();
-  while (!controller.signal.aborted) {
-    const records = await observability.query({
-      runId: optionalString(params.runId),
-      invocationId: optionalString(params.invocationId),
-      includeSensitive: params.includeSensitive === true,
-      ...(typeof params.limit === "number" ? { limit: params.limit } : { limit: 5000 })
-    });
-    for (const record of records) {
-      const key = `${String(record.process_instance_id)}:${String(record.seq)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      await writeSocketLine(socket, { id: request.id, event: record });
-    }
-    while (seen.size > 5000) {
-      const oldest = seen.values().next().value;
-      if (!oldest) break;
-      seen.delete(oldest);
-    }
-    await waitForAbort(250, controller.signal);
+async function writeSocketEvent(socket: net.Socket, id: unknown, event: Buffer): Promise<void> {
+  const prefix = Buffer.from(`{"id":${JSON.stringify(id)},"event":`);
+  for (const chunk of [prefix, event, Buffer.from("}\n")]) {
+    if (socket.destroyed) return;
+    if (!socket.write(chunk)) await waitForDrain(socket, 5_000);
   }
-}
-
-function waitForAbort(ms: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.resolve();
-  return new Promise(resolve => {
-    const timer = setTimeout(done, ms);
-    const onAbort = (): void => done();
-    function done(): void {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
 }
 
 async function writeSocketLine(socket: net.Socket, value: unknown): Promise<void> {
@@ -895,7 +857,7 @@ function publishAdapterObservation(events: LiveEventBus, value: unknown): void {
     events.publish({
       source: "control",
       type: "adapter_observation.dropped",
-      payload: { count: value.droppedBefore }
+      payload: { count: value.droppedBefore, affected_source: value.source }
     });
   }
   if (value.source === "control" && typeof value.type === "string") {

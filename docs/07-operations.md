@@ -21,7 +21,6 @@ pnpm cli adapter list
 pnpm cli adapter probe opencode
 pnpm cli logs path
 pnpm cli logs query <agent-run-id>
-pnpm cli logs query <agent-run-id> --follow
 pnpm cli events --run-id <agent-run-id>
 pnpm cli events --follow
 pnpm cli inspect

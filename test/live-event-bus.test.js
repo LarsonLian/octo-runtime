@@ -17,6 +17,7 @@ test("LiveEventBus enforces byte, frame, slot, and subscriber bounds", async () 
   assert.deepEqual(redacted.payload, { visible: true });
   assert.ok(snapshot.some(event => event.type === "event.oversize_dropped"));
   assert.ok(bus.stats.droppedEvents >= 1);
+  assert.ok(bus.stats.controlBytes <= 512);
 
   const first = bus.subscribe({}, true);
   const pending = first.next();

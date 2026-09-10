@@ -146,12 +146,12 @@ async function dispatchCli(context: CliContext): Promise<CommandResult> {
   if (group === "inspect") {
     if (action !== undefined && action !== "url") throw new Error("unknown command; run octo-harness help");
     const result = await callDaemon<{ url: string }>(context.paths.socket, { method: "inspect.open" });
-    if (action !== "url" && context.flags.noOpen !== true) openBrowser(result.url);
+    if (action !== "url" && context.flags.noOpen !== true) await openBrowser(result.url);
     return { value: result.url };
   }
 
   const request = daemonRequest(group, action, id, context.flags);
-  if (request.method === "events.subscribe" || request.method === "logs.follow") {
+  if (request.method === "events.subscribe") {
     await streamDaemon(context.paths.socket, request, context.output, context.flags.json === true);
     return { streamed: true };
   }
@@ -523,7 +523,7 @@ function daemonRequest(group: string, action: string | undefined, id: string | u
   if (group === "logs" && action === "query") {
     const limit = optionalString(flags.limit);
     return {
-      method: flags.follow === true ? "logs.follow" : "logs.query",
+      method: "logs.query",
       params: {
         ...(id ? { runId: id } : {}),
         ...(optionalString(flags.invocation) ? { invocationId: optionalString(flags.invocation) } : {}),
@@ -609,9 +609,7 @@ async function streamDaemon(
     for await (const line of createLines(socket)) {
       const response = JSON.parse(line) as CliResponse;
       if (response.error) throw new Error(response.error.message ?? "daemon stream failed");
-      if (response.event !== undefined) {
-        output(request.method === "events.subscribe" ? formatLiveEvent(response.event, json) : JSON.stringify(response.event));
-      }
+      if (response.event !== undefined) output(formatLiveEvent(response.event, json));
       if (response.result !== undefined) {
         done = true;
         break;
@@ -893,7 +891,7 @@ function helpText(group?: string): string {
   }
   if (group === "logs") {
     return `Usage: octo-harness [--home PATH] logs path|query [RUN_ID] [options]\n\n` +
-      `  query [RUN_ID] [--invocation ID] [--limit N] [--sensitive] [--follow]\n` +
+      `  query [RUN_ID] [--invocation ID] [--limit N] [--sensitive]\n` +
       `Application data is read through daemon IPC; use doctor for service startup failures.`;
   }
   if (group === "events") {

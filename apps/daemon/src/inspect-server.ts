@@ -91,9 +91,9 @@ export class InspectServer {
       client.once("close", () => controller.abort());
       void (async () => {
         try {
-          for await (const event of this.#events.subscribe({ runId, source }, true, controller.signal)) {
+          for await (const event of this.#events.subscribeBytes({ runId, source }, true, controller.signal)) {
             if (client.readyState !== client.OPEN) break;
-            await sendWebSocketLine(client, JSON.stringify({ kind: "event", event }));
+            await sendWebSocketFrame(client, event);
           }
         } catch (error) {
           if (client.readyState === client.OPEN) client.close(1011, error instanceof Error ? error.message.slice(0, 100) : "stream failed");
@@ -117,6 +117,9 @@ export class InspectServer {
   }
 
   async close(): Promise<void> {
+    if (this.#opening) {
+      try { await this.#opening; } catch { /* A failed open owns no resources. */ }
+    }
     const server = this.#server;
     const websocket = this.#websocket;
     this.#server = undefined;
@@ -152,8 +155,7 @@ function isSource(value: string | undefined): value is LiveEventSource {
   return value !== undefined && (LIVE_EVENT_SOURCES as readonly string[]).includes(value);
 }
 
-async function sendWebSocketLine(client: WebSocket, value: string): Promise<void> {
-  const encoded = Buffer.from(value);
+async function sendWebSocketFrame(client: WebSocket, encoded: Buffer): Promise<void> {
   for (let offset = 0; offset < encoded.byteLength; offset += 16 * 1024) {
     const chunk = encoded.subarray(offset, Math.min(offset + 16 * 1024, encoded.byteLength));
     const fin = offset + chunk.byteLength >= encoded.byteLength;
@@ -170,7 +172,7 @@ function inspectHtml(): string {
   </style></head><body><header><strong>Octo Harness Inspect</strong><span class="state" id="state">connecting</span><span class="memory" id="memory"></span></header><main><aside><nav><button class="active" data-view="events">Events</button><button data-view="logs">Durable logs</button><button data-view="runtime">Runtime</button><button data-view="memory">Memory</button></nav><label>Run ID<input id="run" placeholder="all runs"></label><label>Source<select id="source"><option value="">all sources</option>${sourceOptions}</select></label></aside><ol class="view records" id="events"></ol><ol class="view records hidden" id="logs"></ol><pre class="view hidden" id="runtime"></pre><pre class="view hidden" id="memory-view"></pre></main><script>
   const token=location.hash.slice(1),run=document.querySelector('#run'),source=document.querySelector('#source'),state=document.querySelector('#state'),memory=document.querySelector('#memory'),events=document.querySelector('#events'),logs=document.querySelector('#logs'),runtime=document.querySelector('#runtime'),memoryView=document.querySelector('#memory-view');history.replaceState(null,'',location.pathname);let ws;
   function row(target,left,name,payload){const li=document.createElement('li');li.className='event';li.dataset.source=left;li.innerHTML='<span class="source"></span><span class="type"></span><span class="payload"></span>';li.children[0].textContent=left;li.children[1].textContent=name;li.children[2].textContent=JSON.stringify(payload);target.append(li);while(target.children.length>1000)target.firstChild.remove()}
-  function connect(){events.replaceChildren();const q=new URLSearchParams({token});if(run.value.trim())q.set('runId',run.value.trim());if(source.value)q.set('source',source.value);ws?.close();ws=new WebSocket('ws://'+location.host+'/events?'+q);ws.onopen=()=>state.textContent='live';ws.onclose=()=>state.textContent='closed';ws.onmessage=message=>{const body=JSON.parse(message.data);if(body.kind==='status'){memory.textContent=Math.round(body.memory.retainedBytes/1024)+' KiB · '+body.memory.retainedEvents+' events';runtime.textContent=JSON.stringify(body.status,null,2);memoryView.textContent=JSON.stringify(body.memory,null,2);return}row(events,body.event.source,body.event.type,body.event.payload)}}
+  function connect(){events.replaceChildren();const q=new URLSearchParams({token});if(run.value.trim())q.set('runId',run.value.trim());if(source.value)q.set('source',source.value);ws?.close();ws=new WebSocket('ws://'+location.host+'/events?'+q);ws.onopen=()=>state.textContent='live';ws.onclose=()=>state.textContent='closed';ws.onmessage=message=>{const body=JSON.parse(message.data);if(body.kind==='status'){memory.textContent=Math.round(body.memory.retainedBytes/1024)+' KiB · '+body.memory.retainedEvents+' events';runtime.textContent=JSON.stringify(body.status,null,2);memoryView.textContent=JSON.stringify(body.memory,null,2);return}row(events,body.source,body.type,body.payload)}}
   async function loadLogs(){const q=new URLSearchParams();if(run.value.trim())q.set('runId',run.value.trim());const response=await fetch('/api/logs?'+q,{headers:{Authorization:'Bearer '+token}});const body=await response.json();logs.replaceChildren();for(const item of body)row(logs,item.component||'log',item.event,item)}
   document.querySelectorAll('nav button').forEach(button=>button.onclick=()=>{document.querySelectorAll('nav button').forEach(item=>item.classList.toggle('active',item===button));document.querySelectorAll('.view').forEach(item=>item.classList.add('hidden'));document.querySelector('#'+(button.dataset.view==='memory'?'memory-view':button.dataset.view)).classList.remove('hidden');if(button.dataset.view==='logs')void loadLogs()});run.onchange=()=>{connect();void loadLogs()};source.onchange=connect;connect();
   </script></body></html>`;

@@ -4,7 +4,8 @@ export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 /** Provider-boundary capture policy. */
 export type ProviderIoCapture = "off" | "input" | "full";
 
-/** Restricted records require an explicit query opt-in. */
+/** Restricted records require explicit opt-in when read from durable logs.
+ * A caller-injected process-local event sink is a separate diagnostic boundary. */
 export type LogSensitivity = "operational" | "restricted";
 
 export interface ObservabilityConfiguration {
