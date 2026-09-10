@@ -23,7 +23,7 @@ import {
 } from "@mininglamp-oss/octo-harness-adapter-host";
 import { AgentWorkRuntime, type AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
 import { InspectServer } from "./inspect-server.js";
-import { LiveEventBus, type LiveEventSource } from "./live-event-bus.js";
+import { LIVE_EVENT_SOURCES, LiveEventBus, type LiveEventSource } from "./live-event-bus.js";
 
 export {
   LiveEventBus,
@@ -337,6 +337,7 @@ export async function startDaemonServer({
     hostStableReset = undefined;
     const error = new Error(`adapter-host exited unexpectedly (${code ?? signal ?? "unknown"})`);
     exited.client.close(error);
+    observability.clearRpcCorrelation();
     runtime.adapterHost.pid = null;
     runtime.adapterHost.state = "restarting";
     observability.log({
@@ -563,7 +564,9 @@ async function handleRequestLine({
     // Do not observe the observation query itself. The Viewer polls this method;
     // recording each poll would create an unbounded feedback loop and bury the
     // application events the operator is trying to inspect.
-    const logsItself = request.method !== "logs.query" && request.method !== "events.subscribe";
+    const logsItself = request.method !== "logs.query"
+      && request.method !== "logs.follow"
+      && request.method !== "events.subscribe";
     if (logsItself) {
       observability.log({
         level: "debug",
@@ -581,6 +584,10 @@ async function handleRequestLine({
     }
     if (request.method === "events.subscribe") {
       await streamLiveEvents({ request, socket, events });
+      return;
+    }
+    if (request.method === "logs.follow") {
+      await streamDurableLogs({ request, socket, observability });
       return;
     }
     const result = await dispatch({
@@ -654,6 +661,55 @@ async function streamLiveEvents({
   }
   await writeSocketLine(socket, { id: request.id, result: { done: true, count, memory: events.stats } });
   socket.end();
+}
+
+async function streamDurableLogs({
+  request,
+  socket,
+  observability
+}: {
+  request: DaemonRequest;
+  socket: net.Socket;
+  observability: LocalObservability;
+}): Promise<void> {
+  const params = request.params ?? {};
+  const controller = new AbortController();
+  socket.once("close", () => controller.abort());
+  const seen = new Set<string>();
+  while (!controller.signal.aborted) {
+    const records = await observability.query({
+      runId: optionalString(params.runId),
+      invocationId: optionalString(params.invocationId),
+      includeSensitive: params.includeSensitive === true,
+      ...(typeof params.limit === "number" ? { limit: params.limit } : { limit: 5000 })
+    });
+    for (const record of records) {
+      const key = `${String(record.process_instance_id)}:${String(record.seq)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await writeSocketLine(socket, { id: request.id, event: record });
+    }
+    while (seen.size > 5000) {
+      const oldest = seen.values().next().value;
+      if (!oldest) break;
+      seen.delete(oldest);
+    }
+    await waitForAbort(250, controller.signal);
+  }
+}
+
+function waitForAbort(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise(resolve => {
+    const timer = setTimeout(done, ms);
+    const onAbort = (): void => done();
+    function done(): void {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 async function writeSocketLine(socket: net.Socket, value: unknown): Promise<void> {
@@ -827,7 +883,7 @@ function optionalString(value: unknown): string | undefined {
 
 function optionalLiveEventSource(value: unknown): LiveEventSource | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== "string" || !["daemon", "adapter-rpc", "provider-native", "adapter-canonical", "host-canonical", "control"].includes(value)) {
+  if (typeof value !== "string" || !(LIVE_EVENT_SOURCES as readonly string[]).includes(value)) {
     throw new TypeError("source must be a supported live event source");
   }
   return value as LiveEventSource;
@@ -835,6 +891,17 @@ function optionalLiveEventSource(value: unknown): LiveEventSource | undefined {
 
 function publishAdapterObservation(events: LiveEventBus, value: unknown): void {
   if (!isRecord(value)) return;
+  if (typeof value.droppedBefore === "number" && value.droppedBefore > 0) {
+    events.publish({
+      source: "control",
+      type: "adapter_observation.dropped",
+      payload: { count: value.droppedBefore }
+    });
+  }
+  if (value.source === "control" && typeof value.type === "string") {
+    events.publish({ source: "control", type: value.type, payload: value.payload ?? {} });
+    return;
+  }
   if (value.source === "provider-native" && isRecord(value.record)) {
     events.publishRecord(value.record as RecordEnvelope, "provider-native");
     return;

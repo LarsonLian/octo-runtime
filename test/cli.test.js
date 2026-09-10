@@ -99,11 +99,16 @@ test("CLI exposes bounded events and daemon-owned loopback inspect", async () =>
     assert.ok(frames.some(frame => frame.source === "provider-native"));
     assert.ok(frames.some(frame => frame.source === "adapter-canonical"));
     assert.ok(frames.some(frame => frame.source === "host-canonical"));
-    assert.ok(frames.filter(frame => frame.runId === submitted.agentRunId).length > 0);
+    assert.ok(frames.filter(frame => frame.agent_run_id === submitted.agentRunId).length > 0);
 
     const inspected = await execute(process.execPath, [cli, "inspect", "url"], {
       cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home }
     });
+    const inspectedAgain = await Promise.all([
+      execute(process.execPath, [cli, "inspect", "url"], { cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home } }),
+      execute(process.execPath, [cli, "inspect", "url"], { cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home } })
+    ]);
+    assert.ok(inspectedAgain.every(result => result.stdout.trim() === inspected.stdout.trim()));
     const url = new URL(inspected.stdout.trim());
     assert.equal(url.hostname, "127.0.0.1");
     assert.ok(Number(url.port) >= 20_000);

@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
-import { redactCredentials, type RecordEnvelope } from "@mininglamp-oss/octo-harness-observability";
+import {
+  redactCredentials,
+  redactPrivateReasoning,
+  type RecordEnvelope
+} from "@mininglamp-oss/octo-harness-observability";
 
 export const LIVE_EVENT_MEMORY_BYTES = 6 * 1024 * 1024;
 export const LIVE_EVENT_MAX_FRAME_BYTES = 256 * 1024;
@@ -7,27 +11,47 @@ export const LIVE_EVENT_MAX_SLOTS = 8192;
 export const LIVE_EVENT_MAX_SUBSCRIBERS = 16;
 export const LIVE_EVENT_CONTROL_RESERVE_BYTES = 64 * 1024;
 
-export type LiveEventSource =
-  | "daemon"
-  | "adapter-rpc"
-  | "provider-native"
-  | "adapter-canonical"
-  | "host-canonical"
-  | "control";
+export const LIVE_EVENT_SOURCES = [
+  "daemon",
+  "provider-native",
+  "adapter-canonical",
+  "host-canonical",
+  "adapter-rpc",
+  "runtime",
+  "worker",
+  "control"
+] as const;
+export type LiveEventSource = typeof LIVE_EVENT_SOURCES[number];
 
 export interface LiveEventEnvelope {
-  seq: number;
-  ts: string;
+  schema: "octo-harness.live-event/v1";
+  local_seq: number;
+  occurred_at: string;
   source: LiveEventSource;
+  stage: string;
+  direction?: string;
   type: string;
-  runId?: string;
-  adapterType?: string;
+  agent_run_id?: string;
+  invocation_id?: string;
+  adapter_type?: string;
   payload: unknown;
 }
 
 export interface LiveEventFilter {
   runId?: string;
   source?: LiveEventSource;
+}
+
+export interface LiveEventInput {
+  source: LiveEventSource;
+  stage?: string;
+  direction?: string;
+  type: string;
+  runId?: string;
+  invocationId?: string;
+  adapterType?: string;
+  occurredAt?: string;
+  payload: unknown;
 }
 
 interface RingEntry {
@@ -95,26 +119,33 @@ export class LiveEventBus {
     };
   }
 
-  publish(input: Omit<LiveEventEnvelope, "seq" | "ts"> & { ts?: string }): boolean {
+  publish(input: LiveEventInput): boolean {
     const seq = this.#nextSeq++;
     let envelope: LiveEventEnvelope = {
-      seq,
-      ts: input.ts ?? new Date().toISOString(),
+      schema: "octo-harness.live-event/v1",
+      local_seq: seq,
+      occurred_at: input.occurredAt ?? new Date().toISOString(),
       source: input.source,
+      stage: input.stage ?? defaultStage(input.source),
+      ...(input.direction ? { direction: input.direction } : {}),
       type: input.type,
-      ...(input.runId ? { runId: input.runId } : {}),
-      ...(input.adapterType ? { adapterType: input.adapterType } : {}),
-      payload: redactCredentials(input.payload)
+      ...(input.runId ? { agent_run_id: input.runId } : {}),
+      ...(input.invocationId ? { invocation_id: input.invocationId } : {}),
+      ...(input.adapterType ? { adapter_type: input.adapterType } : {}),
+      payload: redactPrivateReasoning(redactCredentials(input.payload))
     };
     let bytes = encode(envelope);
     if (bytes.byteLength > this.#maxFrameBytes) {
       envelope = {
-        seq,
-        ts: envelope.ts,
+        schema: "octo-harness.live-event/v1",
+        local_seq: seq,
+        occurred_at: envelope.occurred_at,
         source: "control",
+        stage: "bus",
         type: "event.oversize_dropped",
-        ...(envelope.runId ? { runId: envelope.runId } : {}),
-        ...(envelope.adapterType ? { adapterType: envelope.adapterType } : {}),
+        ...(envelope.agent_run_id ? { agent_run_id: envelope.agent_run_id } : {}),
+        ...(envelope.invocation_id ? { invocation_id: envelope.invocation_id } : {}),
+        ...(envelope.adapter_type ? { adapter_type: envelope.adapter_type } : {}),
         payload: {
           source: input.source,
           type: input.type,
@@ -138,7 +169,7 @@ export class LiveEventBus {
     const tail = (this.#head + this.#count) % this.#slots.length;
     this.#slots[tail] = {
       seq,
-      runId: envelope.runId,
+      runId: envelope.agent_run_id,
       source: envelope.source,
       bytes: Buffer.from(bytes),
       pins: 0,
@@ -151,18 +182,20 @@ export class LiveEventBus {
   }
 
   publishRecord(record: RecordEnvelope, sourceOverride?: LiveEventSource): boolean {
-    const source: LiveEventSource = sourceOverride ?? (record.scope === "adapter-host.rpc"
-      ? "adapter-rpc"
-      : record.scope === "provider.io"
-        ? "provider-native"
-        : "daemon");
+    const source = sourceOverride ?? sourceForRecord(record);
+    const data = isRecord(record.data) ? record.data : {};
     return this.publish({
       source,
       type: record.event,
-      ts: record.ts,
+      stage: defaultStage(source),
+      direction: source === "adapter-rpc"
+        ? data.direction === "send" ? "daemon_to_host" : "host_to_daemon"
+        : undefined,
+      occurredAt: record.ts,
       runId: typeof record.run_id === "string" ? record.run_id : undefined,
+      invocationId: typeof record.invocation_id === "string" ? record.invocation_id : undefined,
       adapterType: typeof record.adapter_type === "string" ? record.adapter_type : undefined,
-      payload: record
+      payload: source === "adapter-rpc" && data.frame !== undefined ? data.frame : record
     });
   }
 
@@ -179,12 +212,14 @@ export class LiveEventBus {
         const oldest = this.#oldestSeq();
         if (cursor < oldest) {
           const gap: LiveEventEnvelope = {
-            seq: cursor,
-            ts: new Date().toISOString(),
+            schema: "octo-harness.live-event/v1",
+            local_seq: cursor,
+            occurred_at: new Date().toISOString(),
             source: "control",
+            stage: "bus",
             type: "bus.gap",
-            ...(filter.runId ? { runId: filter.runId } : {}),
-            payload: { fromSeq: cursor, toSeq: oldest }
+            ...(filter.runId ? { agent_run_id: filter.runId } : {}),
+            payload: { from_seq: cursor, to_seq: oldest }
           };
           cursor = oldest;
           yield gap;
@@ -274,13 +309,41 @@ function encode(value: LiveEventEnvelope): Buffer {
     return Buffer.from(JSON.stringify(value));
   } catch (error) {
     return Buffer.from(JSON.stringify({
-      seq: value.seq,
-      ts: value.ts,
+      schema: "octo-harness.live-event/v1",
+      local_seq: value.local_seq,
+      occurred_at: value.occurred_at,
       source: "control",
+      stage: "bus",
       type: "event.serialization_failed",
       payload: { error: error instanceof Error ? error.message : String(error) }
     } satisfies LiveEventEnvelope));
   }
+}
+
+function sourceForRecord(record: RecordEnvelope): LiveEventSource {
+  if (record.scope === "adapter-host.rpc") return "adapter-rpc";
+  if (record.scope === "provider.io") return "provider-native";
+  if (record.scope === "transport.wss" || record.scope === "agent-work.delivery") return "worker";
+  if (record.scope.startsWith("agent-work.") || record.scope.startsWith("adapter.")) return "runtime";
+  return "daemon";
+}
+
+function defaultStage(source: LiveEventSource): string {
+  const stages: Record<LiveEventSource, string> = {
+    daemon: "daemon",
+    "provider-native": "native",
+    "adapter-canonical": "canonical_pre_host",
+    "host-canonical": "canonical_post_host",
+    "adapter-rpc": "wire",
+    runtime: "runtime",
+    worker: "worker_transport",
+    control: "bus"
+  };
+  return stages[source];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function positive(value: number | undefined, fallback: number, name: string): number {

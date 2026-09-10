@@ -151,7 +151,7 @@ async function dispatchCli(context: CliContext): Promise<CommandResult> {
   }
 
   const request = daemonRequest(group, action, id, context.flags);
-  if (request.method === "events.subscribe") {
+  if (request.method === "events.subscribe" || request.method === "logs.follow") {
     await streamDaemon(context.paths.socket, request, context.output, context.flags.json === true);
     return { streamed: true };
   }
@@ -523,7 +523,7 @@ function daemonRequest(group: string, action: string | undefined, id: string | u
   if (group === "logs" && action === "query") {
     const limit = optionalString(flags.limit);
     return {
-      method: "logs.query",
+      method: flags.follow === true ? "logs.follow" : "logs.query",
       params: {
         ...(id ? { runId: id } : {}),
         ...(optionalString(flags.invocation) ? { invocationId: optionalString(flags.invocation) } : {}),
@@ -609,7 +609,9 @@ async function streamDaemon(
     for await (const line of createLines(socket)) {
       const response = JSON.parse(line) as CliResponse;
       if (response.error) throw new Error(response.error.message ?? "daemon stream failed");
-      if (response.event !== undefined) output(formatLiveEvent(response.event, json));
+      if (response.event !== undefined) {
+        output(request.method === "events.subscribe" ? formatLiveEvent(response.event, json) : JSON.stringify(response.event));
+      }
       if (response.result !== undefined) {
         done = true;
         break;
@@ -626,7 +628,7 @@ function formatLiveEvent(value: unknown, json: boolean): string {
   if (json || !record) return JSON.stringify(value);
   const source = typeof record.source === "string" ? record.source : "unknown";
   const type = typeof record.type === "string" ? record.type : "event";
-  const runId = typeof record.runId === "string" ? ` run=${record.runId}` : "";
+  const runId = typeof record.agent_run_id === "string" ? ` run=${record.agent_run_id}` : "";
   const color = process.stdout.isTTY ? sourceColor(source) : "";
   const reset = color ? "\u001b[0m" : "";
   return `${color}[${source}]${reset} ${type}${runId} ${JSON.stringify(record.payload)}`;
@@ -639,6 +641,8 @@ function sourceColor(source: string): string {
     "provider-native": "\u001b[33m",
     "adapter-canonical": "\u001b[34m",
     "host-canonical": "\u001b[32m",
+    runtime: "\u001b[37m",
+    worker: "\u001b[36m",
     control: "\u001b[31m"
   };
   return colors[source] ?? "\u001b[37m";
@@ -889,7 +893,7 @@ function helpText(group?: string): string {
   }
   if (group === "logs") {
     return `Usage: octo-harness [--home PATH] logs path|query [RUN_ID] [options]\n\n` +
-      `  query [RUN_ID] [--invocation ID] [--limit N] [--sensitive]\n` +
+      `  query [RUN_ID] [--invocation ID] [--limit N] [--sensitive] [--follow]\n` +
       `Application data is read through daemon IPC; use doctor for service startup failures.`;
   }
   if (group === "events") {

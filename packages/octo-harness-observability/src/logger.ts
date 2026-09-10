@@ -46,6 +46,8 @@ const WRITER_QUEUE_HARD_LIMIT = 4608;
 const DEFAULT_MAINTENANCE_INTERVAL_MS = 5 * 60 * 1000;
 const CAPACITY_OPERATIONAL_RATE_LIMIT = 100;
 const CAPACITY_OPERATIONAL_RATE_WINDOW_MS = 60 * 1000;
+const RPC_CORRELATION_MAX_ENTRIES = 4096;
+const RPC_CORRELATION_TTL_MS = 24 * 60 * 60 * 1000;
 
 interface RpcCorrelation {
   rpcId?: string;
@@ -54,6 +56,7 @@ interface RpcCorrelation {
   invocationId?: string;
   agentSessionId?: string;
   adapterType?: string;
+  touchedAt?: number;
 }
 
 /** Append-only writer shared by daemon, launcher, and adapter-host processes. */
@@ -304,6 +307,12 @@ export class LocalObservability {
     }
   }
 
+  /** Release adapter-process correlation state after a child exits or closes. */
+  clearRpcCorrelation(): void {
+    this.#rpcRequests.clear();
+    this.#rpcInvocations.clear();
+  }
+
   /** Run retention and capacity maintenance in writer order. */
   async cleanup(): Promise<void> {
     if (!this.#options.fileLog) return;
@@ -551,6 +560,8 @@ export class LocalObservability {
 
   #correlateRpc(direction: "send" | "receive", value: unknown): RpcCorrelation {
     if (!isObjectRecord(value)) return {};
+    const now = this.#now().getTime();
+    this.#expireRpcCorrelation(now);
     const params = isObjectRecord(value.params) ? value.params : {};
     const request = isObjectRecord(params.request) ? params.request : {};
     const result = isObjectRecord(value.result) ? value.result : {};
@@ -564,17 +575,35 @@ export class LocalObservability {
       runId: optionalStringValue(request.runId) ?? optionalStringValue(params.runId),
       invocationId,
       agentSessionId: optionalStringValue(request.agentSessionId) ?? optionalStringValue(params.agentSessionId),
-      adapterType: optionalStringValue(params.adapterType) ?? optionalStringValue(request.adapterType)
+      adapterType: optionalStringValue(params.adapterType) ?? optionalStringValue(request.adapterType),
+      touchedAt: now
     };
     if (rpcId) correlation = mergeDefined(this.#rpcRequests.get(rpcId), correlation);
     if (invocationId) correlation = mergeDefined(this.#rpcInvocations.get(invocationId), correlation);
-    if (direction === "send" && rpcId && value.method) this.#rpcRequests.set(rpcId, correlation);
+    if (direction === "send" && rpcId && value.method) this.#rememberRpc(this.#rpcRequests, rpcId, correlation);
     if (invocationId && (correlation.runId || correlation.agentSessionId || correlation.adapterType)) {
-      this.#rpcInvocations.set(invocationId, correlation);
+      this.#rememberRpc(this.#rpcInvocations, invocationId, correlation);
     }
     if (direction === "receive" && rpcId && ("result" in value || "error" in value)) this.#rpcRequests.delete(rpcId);
     if (value.method === "invoke.done" && invocationId) this.#rpcInvocations.delete(invocationId);
     return correlation;
+  }
+
+  #rememberRpc(map: Map<string, RpcCorrelation>, key: string, value: RpcCorrelation): void {
+    if (!map.has(key) && map.size >= RPC_CORRELATION_MAX_ENTRIES) {
+      const oldest = map.keys().next().value;
+      if (oldest) map.delete(oldest);
+    }
+    map.delete(key);
+    map.set(key, value);
+  }
+
+  #expireRpcCorrelation(now: number): void {
+    for (const map of [this.#rpcRequests, this.#rpcInvocations]) {
+      for (const [key, value] of map) {
+        if (value.touchedAt !== undefined && now - value.touchedAt > RPC_CORRELATION_TTL_MS) map.delete(key);
+      }
+    }
   }
 }
 

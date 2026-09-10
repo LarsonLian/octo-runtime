@@ -140,7 +140,7 @@ const withRestricted = await observability.query({
 });
 ```
 
-`traceRpc()` 仅在 `traceRpc=true` 时生效，并会跨 request/response 与 `invoke.done` 维护 Run/invocation correlation。`query()` 默认不读取 `evaluation/`。
+`traceRpc()` 的持久化仅在 `traceRpc=true` 时生效，并会跨 request/response 与 `invoke.done` 维护 Run/invocation correlation。daemon 显式注入的进程内 `eventSink` 是独立的临时诊断面：它可在持久化关闭时接收已脱 credential、已移除 private reasoning 的安全副本，供本机 `events`/`inspect` 使用；不写磁盘，也不属于普通 support output。correlation 索引最多各 4096 条、24 小时过期，并在 adapter-host 退出时清空。`query()` 默认不读取 `evaluation/`。
 
 ### 安装最小 crash reporter
 

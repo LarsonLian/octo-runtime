@@ -62,6 +62,22 @@ test("LiveEventBus filters snapshots without waiting and follows new matching ev
   await stream.return();
 });
 
+test("LiveEventBus emits the v1 envelope and strips private reasoning", async () => {
+  const bus = new LiveEventBus();
+  bus.publish({
+    source: "provider-native",
+    type: "provider.output",
+    runId: "run-safe",
+    payload: { exposure: "private_reasoning", reasoning: "secret chain", summary: "public answer" }
+  });
+  const values = [];
+  for await (const event of bus.subscribe()) values.push(event);
+  assert.equal(values[0].schema, "octo-harness.live-event/v1");
+  assert.equal(values[0].agent_run_id, "run-safe");
+  assert.doesNotMatch(JSON.stringify(values[0]), /secret chain/);
+  assert.match(JSON.stringify(values[0]), /public answer/);
+});
+
 test("LiveEventBus aborts an idle follower without leaking a subscriber", async () => {
   const bus = new LiveEventBus();
   const controller = new AbortController();

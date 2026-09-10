@@ -67,18 +67,31 @@ export async function spawnAdapterHost({
   const observationPipe = child.stdio[3] as Readable | null;
   if (observe && observationPipe) {
     let buffered = "";
+    let unavailableReported = false;
+    const unavailable = (reason: string): void => {
+      if (unavailableReported) return;
+      unavailableReported = true;
+      observe({ source: "control", type: "adapter_observation.source_unavailable", payload: { reason } });
+    };
     observationPipe.setEncoding("utf8");
     observationPipe.on("data", (value: string | Buffer) => {
       buffered += value.toString();
-      if (buffered.length > 512 * 1024) buffered = "";
+      if (buffered.length > 512 * 1024) {
+        buffered = "";
+        observe({ source: "control", type: "adapter_observation.dropped", payload: { reason: "buffer_limit" } });
+      }
       let newline = buffered.indexOf("\n");
       while (newline >= 0) {
         const line = buffered.slice(0, newline);
         buffered = buffered.slice(newline + 1);
-        try { observe(JSON.parse(line) as unknown); } catch { /* Observation loss must not affect RPC. */ }
+        try { observe(JSON.parse(line) as unknown); } catch {
+          observe({ source: "control", type: "adapter_observation.dropped", payload: { reason: "invalid_json" } });
+        }
         newline = buffered.indexOf("\n");
       }
     });
+    observationPipe.once("error", () => unavailable("pipe_error"));
+    observationPipe.once("end", () => unavailable("pipe_ended"));
   }
   const client = new AdapterHostRpcClient({
     input: child.stdout,
