@@ -62,7 +62,7 @@ printf '%s\n' 'octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN' | octo-harness \
   --home "$PWD/.tmp/harness-home" login \
   --server-url https://im-test.deepminer.com.cn \
   --agent-work-url http://127.0.0.1:8092 \
-  --enroll-token-stdin --no-install-service --no-start
+  --enroll-token-stdin
 
 octo-harness --home "$PWD/.tmp/harness-home" daemon run
 ```

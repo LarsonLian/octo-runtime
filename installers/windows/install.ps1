@@ -308,13 +308,9 @@ try {
     "--server-url", $ServerUrl,
     "--agent-work-url", "$($ServerUrl.TrimEnd('/'))/agent-worker",
     "--channel", $Channel,
-    "--enroll-token-stdin",
-    "--install-service",
-    "--autostart",
-    "--start",
-    "--wait-online"
+    "--enroll-token-stdin"
   )
-  Write-InstallerInfo "Logging in this device and reconciling the current-user service"
+  Write-InstallerInfo "Logging in this device"
   $EnrollmentToken | & $cli @setupArguments
   $loginExit = $LASTEXITCODE
   if ($loginExit -ne 0) {
@@ -327,6 +323,26 @@ try {
       }
     }
     Fail "octo-harness login failed (exit $loginExit); rerun this installer after correcting the reported problem"
+  }
+
+  Write-InstallerInfo "Installing the current-user daemon service"
+  & $cli --home $HarnessHome --profile $Profile daemon install
+  $serviceInstallExit = $LASTEXITCODE
+  if ($serviceInstallExit -ne 0) {
+    if ($PreparedUpdate) {
+      & $cli --home $HarnessHome --profile $Profile setup --recover-update --start
+    }
+    Fail "daemon service installation failed (exit $serviceInstallExit); run 'octo-harness daemon install' after correcting the reported problem"
+  }
+
+  Write-InstallerInfo "Starting the daemon and waiting for cloud readiness"
+  & $cli --home $HarnessHome --profile $Profile daemon start --wait-online
+  $daemonStartExit = $LASTEXITCODE
+  if ($daemonStartExit -ne 0) {
+    if ($PreparedUpdate) {
+      & $cli --home $HarnessHome --profile $Profile setup --recover-update --start
+    }
+    Fail "daemon startup failed (exit $daemonStartExit); run 'octo-harness daemon start --wait-online' after correcting the reported problem"
   }
 
   Write-InstallerInfo "Installation complete"

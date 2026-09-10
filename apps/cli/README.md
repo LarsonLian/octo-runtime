@@ -11,34 +11,27 @@
 
 macOS/Linux 默认 Home 是 `~/.octo-harness`，Windows 是 `%LOCALAPPDATA%\OctoHarness`。一个 Home 只绑定一个 profile 和一个 local Runtime；不同 profile 必须使用不同 Home，不同用户或互不信任的身份必须使用不同 OS account。
 
-## 登录与安装服务
+## 登录
 
 首次登录从 stdin 读取一次性 `octo_enroll_` grant：
 
 ```bash
 printf '%s\n' 'octo_enroll_...' | octo-harness login \
   --server-url https://im-test.deepminer.com.cn \
-  --enroll-token-stdin \
-  --wait-online
+  --enroll-token-stdin
 ```
 
-`login` 完成以下闭环：
+`login` 只完成 Runtime 身份闭环：
 
 1. 生成并持久化稳定 `system_id`，调用 Agent Worker `/api/v1/devices/enroll` 换取设备 credential。
 2. 使用设备 credential 调用 `/api/v1/runtime/register`，把返回的云端 `runtime_id` 原值写入本地 identity。
-3. 通过 `@mininglamp-oss/octo-harness-cross-service` 安装当前用户的 LaunchAgent、systemd user service 或 Windows Task Scheduler task。
-4. enable 并 start 服务，等待本地 IPC；传入 `--wait-online` 时继续等待所选 `runtime_id` 的 WSS Online。
 
-enrollment grant 和设备 credential 都不会进入 CLI argv、service definition 或输出。重复执行同一 profile 的 `login` 只对账身份与服务，不重新 enrollment。常用开关：
+enrollment grant 和设备 credential 都不会进入 CLI argv、service definition 或输出。重复执行同一 profile 的 `login` 只对账身份，不重新 enrollment。服务安装与启动必须显式使用 `daemon install` 和 `daemon start`。常用开关：
 
 ```text
 --agent-work-url URL    Worker 与 server origin 不同时显式指定
 --runtime-name NAME     首次注册显示名
 --channel stable|beta   记录安装 channel，默认 stable
---no-install-service    不安装服务；必须同时使用 --no-start
---no-autostart          安装但不启用登录自启
---no-start              不启动
---timeout-ms MS         readiness/drain 超时，1..600000
 ```
 
 `setup` 的普通模式暂时兼容 `login`。安装器还专用以下模式，不建议人工日常调用：
@@ -51,6 +44,8 @@ octo-harness setup --recover-update --start
 ## Daemon 生命周期
 
 ```bash
+octo-harness daemon install
+octo-harness daemon uninstall
 octo-harness daemon run
 octo-harness daemon start
 octo-harness daemon stop
@@ -58,8 +53,12 @@ octo-harness daemon restart
 octo-harness daemon status
 ```
 
+- `install` 把已完成 `login` 的 Harness Home 注册为当前用户的原生服务，也可重复执行以修复 definition drift；默认启用登录自启但不启动，可用 `--no-autostart` 禁用自启。
+- `uninstall` 同步停止并从原生服务管理器中真实删除服务：systemd user unit、macOS LaunchAgent 或 Windows 当前用户计划任务。默认先 drain，`--force` 跳过 drain；身份、credential、SQLite/outbox 和日志全部保留。
 - `run` 在前台运行并响应 `SIGINT`/`SIGTERM`；PID 文件保证一个 Home 只有一个 daemon。
-- `start` 只启动已安装的原生用户服务，不创建 detached 子进程。
+- `run` 默认在 stderr 输出彩色、脱敏的生命周期状态；`--quiet` 关闭终端输出，`--verbose`
+  显示详细 operational records 和完整启动异常堆栈。RPC/provider 敏感内容仍只进入受保护日志。
+- `start` 只启动已安装且已启用的原生用户服务，不创建 detached 子进程；`--wait-online` 会继续等待所选 `runtime_id` 的 WSS Online。
 - `stop`、`restart` 先通过 IPC 关闭新 Run 准入并等待活动 Run 完成，再操作原生服务；`--force` 跳过 drain。
 - 生命周期命令作用于整个 Home。daemon 只加载该 Home 的唯一 enabled profile、credential、`runtime_id`、WSS 和 outbox。
 - 锁屏不会结束已登录用户的服务；注销会结束 macOS LaunchAgent 和默认 Windows 用户任务。Linux 注销后是否继续取决于管理员是否启用 linger。

@@ -194,9 +194,7 @@ printf '%s\n' "$OCTO_ENROLL_TOKEN" | octo-harness \
   login \
   --server-url https://im-test.deepminer.com.cn \
   --agent-work-url https://im-test.deepminer.com.cn/agent-worker \
-  --enroll-token-stdin \
-  --no-install-service \
-  --no-start
+  --enroll-token-stdin
 
 unset OCTO_ENROLL_TOKEN
 ```
@@ -217,6 +215,25 @@ cd /Users/lvsijia/codex.mlamp.cn/agent-research/general-harness-research/octo-ha
 OCTO_HARNESS_DEV_HOME="$PWD/.tmp/harness-home"
 
 octo-harness --home "$OCTO_HARNESS_DEV_HOME" daemon run
+```
+
+前台进程默认使用 Node.js 内置 `styleText()` 在 stderr 显示脱敏的生命周期状态：
+
+```text
+✓ Daemon ready pid=12345
+✓ Local Agent Work runtime registered runtime=runtime_xxx
+● Agent Work WebSocket connection starting attempt=1
+✓ Agent Work WebSocket connection opened runtime=runtime_xxx attempt=1
+✓ Agent Work runtime is online runtime=runtime_xxx
+← Agent Work command received run=run_xxx type=run.start
+→ Run execution started run=run_xxx
+✓ Run execution completed run=run_xxx
+```
+
+需要完全静默时使用：
+
+```bash
+octo-harness --home "$OCTO_HARNESS_DEV_HOME" daemon run --quiet
 ```
 
 启动失败时默认只输出一行适合日常使用的错误，例如：
@@ -288,15 +305,8 @@ pnpm test
 只有前台联调稳定后才安装用户服务。已有 identity 时不需要再次输入 enrollment token：
 
 ```bash
-octo-harness \
-  --home "$OCTO_HARNESS_DEV_HOME" \
-  login \
-  --server-url https://im-test.deepminer.com.cn \
-  --agent-work-url https://im-test.deepminer.com.cn/agent-worker \
-  --install-service \
-  --autostart \
-  --start \
-  --wait-online
+octo-harness --home "$OCTO_HARNESS_DEV_HOME" daemon install
+octo-harness --home "$OCTO_HARNESS_DEV_HOME" daemon start --wait-online
 ```
 
 源码更新并 `pnpm build` 后重启服务：

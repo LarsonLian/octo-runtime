@@ -48,7 +48,7 @@ Core 中的 SQLite `AgentSession`/`AgentRun` 是单机 reference profile 的诊�
 | macOS / Linux | `npm install -g @mininglamp-oss/octo-harness`；shim 位于 `<npm prefix -g>/bin/octo-harness` | `~/.octo-harness/` |
 | Windows | `npm install -g @mininglamp-oss/octo-harness`；shim 位于 `<npm prefix -g>\octo-harness.cmd` | `%LOCALAPPDATA%\OctoHarness\` |
 
-安装器会验证全局 shim，并在需要时自动把 npm global bin 加入 macOS/Linux shell profile 或 Windows 当前用户 PATH，所以安装后可直接用 `octo-harness` 调试。Harness Home 只保存 profile、`runtime_id`、设备凭证、SQLite/outbox、PID/socket 和日志。升级或普通卸载 package 时保留它；未来的 `uninstall --purge --yes` 才会删除身份与状态，当前 CLI 尚未提供该命令。
+安装器会验证全局 shim，并在需要时自动把 npm global bin 加入 macOS/Linux shell profile 或 Windows 当前用户 PATH，所以安装后可直接用 `octo-harness` 调试。Harness Home 只保存 profile、`runtime_id`、设备凭证、SQLite/outbox、PID/socket 和日志。`octo-harness daemon uninstall` 会停止并真实删除原生用户服务定义，但保留这些数据；卸载 npm package 也不会删除 Harness Home。当前 CLI 不提供 purge 数据命令。
 
 ### macOS / Linux
 
@@ -71,10 +71,10 @@ curl -fsSL https://im-test.deepminer.com.cn/octo-harness/install.sh \
 
 1. 检查 Node.js 24+ 与 npm；macOS/Linux 可用已有 Homebrew 安装 `node@24`，Windows 可用已有 `winget` 安装当前 Node LTS。Linux 不会自动使用 `sudo` 或添加第三方软件源。
 2. stable 默认执行 `npm install -g @mininglamp-oss/octo-harness@latest`，beta 对应 npm `beta` tag，并确保 CLI shim 可从 PATH 直接调用。
-3. 同版本 CLI 的 `login` 从 stdin 消费一次性 token，创建或对账选中 profile 唯一的永久 `runtime_id` 与设备凭证。
-4. CLI 通过用户级原生管理器安装自启动：macOS LaunchAgent、Linux systemd user service、Windows 当前用户 Task Scheduler；service definition 使用绝对 Node 与 daemon 入口路径，不依赖 shell PATH。
-5. daemon 启动后，CLI 分别等待本地 IPC Ready 和云端 Runtime Online；任一步失败都返回非零。
-6. 重跑时先取得 Home 与 npm prefix 安装锁；若旧 CLI 已存在，先执行 `setup --prepare-update` drain/stop，再更新 npm package，最后由新 CLI `login` 对账并启动。npm 更新或更新后的 login 失败会尝试 `setup --recover-update` 恢复 service；全过程不创建第二个 Runtime，也不覆盖已有身份和 durable outbox。已有 identity 时可省略 token 重跑。
+3. 同版本 CLI 的 `login` 从 stdin 消费一次性 token，只创建或对账选中 profile 唯一的永久 `runtime_id` 与设备凭证。
+4. 安装器显式调用 `daemon install`，通过用户级原生管理器安装自启动：macOS LaunchAgent、Linux systemd user service、Windows 当前用户 Task Scheduler；service definition 使用绝对 Node 与 daemon 入口路径，不依赖 shell PATH。
+5. 安装器再调用 `daemon start --wait-online`；CLI 分别等待本地 IPC Ready 和云端 Runtime Online，任一步失败都返回非零。
+6. 重跑时先取得 Home 与 npm prefix 安装锁；若旧 CLI 已存在，先执行 `setup --prepare-update` drain/stop，再更新 npm package，最后由新 CLI 依次执行 login、install、start。npm 更新或更新后的流程失败会尝试 `setup --recover-update` 恢复 service；全过程不创建第二个 Runtime，也不覆盖已有身份和 durable outbox。已有 identity 时可省略 token 重跑。
 
 把 token 直接放在位置参数里最适合 Web 页面生成“复制即安装”的一次性命令，但它会进入 shell/PowerShell 历史。更安全的人工安装方式是省略第二个参数，安装器会从 TTY/SecureString 隐藏读取 token：
 
@@ -115,7 +115,7 @@ printf '%s\n' 'octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN' | pnpm cli -- \
   --home "$PWD/.tmp/harness-home" login \
   --server-url https://im-test.deepminer.com.cn \
   --agent-work-url http://127.0.0.1:8092 \
-  --enroll-token-stdin --no-install-service --no-start
+  --enroll-token-stdin
 
 pnpm daemon -- --home "$PWD/.tmp/harness-home"
 ```

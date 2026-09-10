@@ -7,7 +7,8 @@ import {
   DEFAULT_OBSERVABILITY_CONFIGURATION,
   LocalObservability,
   observabilityEnvironment,
-  type ObservabilityConfiguration
+  type ObservabilityConfiguration,
+  type RecordEnvelope
 } from "@mininglamp-oss/octo-harness-observability";
 import {
   HarnessEngine,
@@ -26,11 +27,15 @@ import { ViewerLogIndex, viewerTraceSnapshot } from "./log-viewer.js";
 export interface StartDaemonServerOptions {
   homePath?: string;
   pidPath?: string;
+  /** Enables the interactive console sink when launched in the foreground. */
+  consoleOutput?: boolean;
   socketPath: string;
   storePath: string;
   manifestPath: string;
   hostEntrypoint: string;
   logging?: ObservabilityConfiguration;
+  /** Optional foreground-only sink for already-redacted operational records. */
+  operationalSink?: (record: RecordEnvelope) => void;
   agentWork?: AgentWorkRuntimeOptions;
   /** Test/embedding override for the capped adapter-host restart schedule. */
   adapterHostRestartDelaysMs?: readonly number[];
@@ -98,6 +103,7 @@ export async function startDaemonServer({
   manifestPath,
   hostEntrypoint,
   logging,
+  operationalSink,
   agentWork,
   adapterHostRestartDelaysMs = DEFAULT_ADAPTER_HOST_RESTART_DELAYS_MS,
   adapterHostReadyTimeoutMs
@@ -113,7 +119,10 @@ export async function startDaemonServer({
     directory: join(dirname(storePath), "logs"),
     ...DEFAULT_OBSERVABILITY_CONFIGURATION
   };
-  const observability = new LocalObservability({ ...loggingConfiguration, component: "daemon" });
+  const observability = new LocalObservability(
+    { ...loggingConfiguration, component: "daemon" },
+    { operationalSink }
+  );
   observability.log({
     level: "info",
     scope: "daemon.lifecycle",
@@ -420,6 +429,9 @@ export async function startDaemonServer({
       event: "daemon.ready",
       message: "daemon ready",
       data: {
+        pid: process.pid,
+        home_path: homePath,
+        log_directory: loggingConfiguration.directory,
         socket_path: socketPath,
         adapter_host_pid: hostProcess.child.pid ?? null,
         adapters

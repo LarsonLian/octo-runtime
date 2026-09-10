@@ -136,6 +136,14 @@ case " $* " in
     printf 'RECOVER %s\\n' "$*" >> "$FAKE_SETUP_LOG"
     exit 0
     ;;
+  *" daemon install "*)
+    printf 'INSTALL %s\\n' "$*" >> "$FAKE_SETUP_LOG"
+    exit 0
+    ;;
+  *" daemon start --wait-online "*)
+    printf 'START %s\\n' "$*" >> "$FAKE_SETUP_LOG"
+    exit 0
+    ;;
 esac
 printf 'LOGIN %s\\n' "$*" >> "$FAKE_SETUP_LOG"
 IFS= read -r token
@@ -167,13 +175,16 @@ if [ "\${FAKE_LOGIN_FAIL:-0}" = "1" ]; then exit 7; fi
   const setupInvocation = await readFile(setupLog, "utf8");
   assert.match(setupInvocation, /PREPARE .*setup --prepare-update --wait-drained/);
   assert.match(setupInvocation, new RegExp(`LOGIN --home ${harnessHome.replaceAll("/", "\\/")} --profile default login`));
-  assert.match(setupInvocation, /--enroll-token-stdin --install-service --autostart --start --wait-online/);
+  assert.match(setupInvocation, /--enroll-token-stdin/);
+  assert.match(setupInvocation, /INSTALL .*daemon install/);
+  assert.match(setupInvocation, /START .*daemon start --wait-online/);
+  assert.doesNotMatch(setupInvocation, /--install-service|--no-install-service/);
   assert.match(setupInvocation, /octo_enroll_test/);
   const identityPath = join(harnessHome, "identity/runtime.json");
   await mkdir(join(harnessHome, "identity"), { recursive: true });
   await writeFile(identityPath, '{"schema_version":1,"runtime_id":"runtime-existing"}\n', "utf8");
   await execute("sh", [posixInstallerPath, "https://server.example"], { env: installerEnvironment });
-  assert.match(await readFile(setupLog, "utf8"), /LOGIN .*--enroll-token-stdin[\s\S]*\n\n$/);
+  assert.match(await readFile(setupLog, "utf8"), /LOGIN .*--enroll-token-stdin\n\nINSTALL .*daemon install\nSTART .*daemon start --wait-online\n$/);
 
   await assert.rejects(
     execute("sh", [posixInstallerPath, "https://server.example"], {

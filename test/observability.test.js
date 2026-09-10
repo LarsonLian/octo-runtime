@@ -49,13 +49,14 @@ test("local logs roll by calendar day, rotate by size and use owner-only permiss
 
 test("operational logs redact credentials and restricted provider evidence is opt-in to queries", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-sensitive-logs-"));
+  const operational = [];
   const logger = new LocalObservability(options(directory, {
     logLevel: "debug",
     verbose: true,
     traceRpc: true,
     captureProviderIo: "full",
     requireProviderCapture: true
-  }));
+  }), { operationalSink: record => operational.push(record) });
   try {
     logger.log({
       level: "info",
@@ -106,6 +107,8 @@ test("operational logs redact credentials and restricted provider evidence is op
     assert.equal(ordinary[0].data.Authorization, undefined);
     assert.equal(ordinary[0].data.nested.access_token, undefined);
     assert.equal(ordinary[0].data._redaction.redacted, true);
+    assert.deepEqual(operational.map(record => record.event), ["credentials.checked"]);
+    assert.doesNotMatch(JSON.stringify(operational), /must-not-leak|also-secret/);
 
     const sensitive = await logger.query({ runId: "run-1", includeSensitive: true });
     assert.ok(sensitive.some(record => record.event === "rpc.frame"));

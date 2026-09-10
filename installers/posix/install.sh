@@ -377,7 +377,7 @@ case "$SETUP_HELP" in
 esac
 SETUP_HELP=""
 
-info "Logging in this device and reconciling the current-user service"
+info "Logging in this device"
 if ! printf '%s\n' "$ENROLLMENT_TOKEN" | "$CLI" \
   --home "$HARNESS_HOME" \
   --profile "$PROFILE" \
@@ -385,11 +385,7 @@ if ! printf '%s\n' "$ENROLLMENT_TOKEN" | "$CLI" \
   --server-url "$SERVER_URL" \
   --agent-work-url "$AGENT_WORK_URL" \
   --channel "$CHANNEL" \
-  --enroll-token-stdin \
-  --install-service \
-  --autostart \
-  --start \
-  --wait-online; then
+  --enroll-token-stdin; then
   if [ "$PREPARED_UPDATE" -eq 1 ]; then
     if "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" setup --recover-update --start; then
       info "Restored the service after the updated login failed"
@@ -402,5 +398,21 @@ fi
 
 ENROLLMENT_TOKEN=""
 export ENROLLMENT_TOKEN
+info "Installing the current-user daemon service"
+if ! "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" daemon install; then
+  if [ "$PREPARED_UPDATE" -eq 1 ]; then
+    "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" setup --recover-update --start || true
+  fi
+  die "daemon service installation failed; run 'octo-harness daemon install' after correcting the reported problem"
+fi
+
+info "Starting the daemon and waiting for cloud readiness"
+if ! "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" daemon start --wait-online; then
+  if [ "$PREPARED_UPDATE" -eq 1 ]; then
+    "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" setup --recover-update --start || true
+  fi
+  die "daemon startup failed; run 'octo-harness daemon start --wait-online' after correcting the reported problem"
+fi
+
 info "Installation complete"
 info "Run: octo-harness --home '$HARNESS_HOME' --profile '$PROFILE' doctor"

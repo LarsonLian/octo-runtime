@@ -26,6 +26,7 @@ export function resolveDaemonRuntimePaths(
   return {
     homePath: home,
     pidPath: resolve(option(args, ["--pid-file"], env.OCTO_HARNESS_PID_FILE ?? join(home, "octo-daemon.pid"))),
+    consoleOutput: booleanOption(args, "--console", false),
     socketPath: resolve(option(
       args,
       ["--socket"],
@@ -256,6 +257,7 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[
   const args = [
     ...(paths.homePath ? ["--home", paths.homePath] : []),
     ...(paths.pidPath ? ["--pid-file", paths.pidPath] : []),
+    ...(paths.consoleOutput ? ["--console"] : []),
     "--socket", paths.socketPath,
     "--store", paths.storePath,
     "--manifest", paths.manifestPath,

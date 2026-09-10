@@ -5,6 +5,7 @@ import { resolveDaemonRuntimePaths } from "./runtime-options.js";
 import { startDaemonServer, type DaemonApplication } from "./server.js";
 import { installCrashReporter } from "@mininglamp-oss/octo-harness-observability";
 import { inspect } from "node:util";
+import { createDaemonConsoleOutput } from "./console-output.js";
 
 const runtimePaths = resolveDaemonRuntimePaths();
 const crashReporter = runtimePaths.logging?.fileLog
@@ -14,7 +15,12 @@ process.once("exit", () => crashReporter?.close());
 
 let app: DaemonApplication | undefined;
 try {
-  app = await startDaemonServer(runtimePaths);
+  app = await startDaemonServer({
+    ...runtimePaths,
+    operationalSink: runtimePaths.consoleOutput
+      ? createDaemonConsoleOutput({ verbose: runtimePaths.logging?.verbose })
+      : undefined
+  });
 } catch (error) {
   const verbose = process.argv.includes("--verbose");
   const message = error instanceof Error ? error.message : String(error);

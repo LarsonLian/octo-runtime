@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { access, stat } from "node:fs/promises";
 import net from "node:net";
 import { arch, hostname, platform as osPlatform, release } from "node:os";
-import type { ServiceBackend, ServiceStatus } from "@mininglamp-oss/octo-harness-cross-service";
+import type { ServiceBackend } from "@mininglamp-oss/octo-harness-cross-service";
 import {
   createPendingEnrollment,
   enrollRuntime,
@@ -76,16 +76,14 @@ interface CliContext {
 
 const DEFAULT_WAIT_MS = 30_000;
 const BOOLEAN_FLAGS = new Set([
-  "autostart",
   "enrollTokenStdin",
   "force",
   "help",
   "json",
   "noAutostart",
-  "noInstallService",
   "noOpen",
-  "noStart",
   "prepareUpdate",
+  "quiet",
   "recoverUpdate",
   "sensitive",
   "start",
@@ -223,39 +221,6 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
   }
 
   await reconcileHomeConfiguration(context.paths, context.profile, channel);
-  const installService = context.flags.noInstallService !== true;
-  const autostart = context.flags.noAutostart !== true;
-  const start = context.flags.noStart !== true;
-  const spec = context.service.spec(context.paths, autostart);
-  let serviceStatus: ServiceStatus | undefined;
-  if (installService) {
-    await verifyServiceProgram(spec);
-    const probe = await context.service.backend.probe();
-    if (!probe.supported) throw new Error(`${probe.manager} is unavailable: ${probe.detail ?? "unsupported user session"}`);
-    const previous = await context.service.backend.inspect(spec);
-    await context.service.backend.install(spec);
-    if (autostart) await context.service.backend.enable(spec);
-    else await context.service.backend.disable(spec);
-    if (start && enrolled && ["running", "starting"].includes(previous.state)) {
-      await callDaemon(context.paths.socket, {
-        method: "lifecycle.drain",
-        params: { timeoutMs: numericFlag(context.flags.timeoutMs, DEFAULT_WAIT_MS) }
-      });
-      await context.service.backend.restart(spec);
-    } else if (start) {
-      await context.service.backend.start(spec);
-    }
-    serviceStatus = await context.service.backend.inspect(spec);
-  } else if (start) {
-    throw new Error("--no-install-service requires --no-start; use 'daemon run' for foreground execution");
-  }
-
-  let readiness: Record<string, unknown> | undefined;
-  if (start && context.flags.waitOnline === true) {
-    readiness = await waitForDaemonOnline(context, identity, profileConfig);
-  } else if (start) {
-    readiness = await waitForDaemonReady(context, DEFAULT_WAIT_MS);
-  }
   await removeIfPresent(context.paths.updateJournal);
   return {
     value: {
@@ -263,9 +228,7 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
       enrolled,
       profile: context.profile,
       runtime_id: identity.runtime_id,
-      server_url: profileConfig.server_url,
-      service: serviceStatus,
-      readiness
+      server_url: profileConfig.server_url
     }
   };
 }
@@ -369,10 +332,13 @@ async function runDaemonCommand(context: CliContext, action: string | undefined)
   if (selected === "run") {
     const exitCode = await context.runForegroundDaemon([
       "--home", context.home,
+      ...(context.flags.quiet === true ? [] : ["--console"]),
       ...(context.flags.verbose === true ? ["--verbose"] : [])
     ]);
     return { streamed: true, exitCode: exitCode ?? 0 };
   }
+  if (selected === "install") return installDaemonService(context);
+  if (selected === "uninstall") return uninstallDaemonService(context);
   const spec = context.service.spec(context.paths);
   if (selected === "status") {
     const service = await context.service.backend.inspect(spec);
@@ -380,7 +346,7 @@ async function runDaemonCommand(context: CliContext, action: string | undefined)
     return { value: { service, application: application ?? { ready: false } } };
   }
   if (!["start", "stop", "restart"].includes(selected)) {
-    throw new Error("daemon action must be run, start, stop, restart, or status");
+    throw new Error("daemon action must be install, uninstall, run, start, stop, restart, or status");
   }
   if (selected === "stop") {
     if (context.flags.force !== true && await tryDaemonStatus(context.paths.socket)) {
@@ -393,6 +359,9 @@ async function runDaemonCommand(context: CliContext, action: string | undefined)
     await waitForDaemonStopped(context, numericFlag(context.flags.timeoutMs, 15_000));
     return { value: { ok: true, action: "stop", service: await context.service.backend.inspect(spec) } };
   }
+  const onlineRuntime = context.flags.waitOnline === true
+    ? await loadInstalledRuntime(context)
+    : undefined;
   await verifyServiceProgram(spec);
   if (selected === "restart") {
     if (context.flags.force !== true && await tryDaemonStatus(context.paths.socket)) {
@@ -405,7 +374,9 @@ async function runDaemonCommand(context: CliContext, action: string | undefined)
   } else {
     await context.service.backend.start(spec);
   }
-  const readiness = await waitForDaemonReady(context, numericFlag(context.flags.timeoutMs, DEFAULT_WAIT_MS));
+  const readiness = onlineRuntime
+    ? await waitForDaemonOnline(context, onlineRuntime.identity, onlineRuntime.profileConfig)
+    : await waitForDaemonReady(context, numericFlag(context.flags.timeoutMs, DEFAULT_WAIT_MS));
   return {
     value: {
       ok: true,
@@ -414,6 +385,85 @@ async function runDaemonCommand(context: CliContext, action: string | undefined)
       readiness
     }
   };
+}
+
+async function installDaemonService(context: CliContext): Promise<CommandResult> {
+  return withSetupLock(context.paths, async () => {
+    await loadInstalledRuntime(context);
+    const autostart = context.flags.noAutostart !== true;
+
+    const spec = context.service.spec(context.paths, autostart);
+    await verifyServiceProgram(spec);
+    const probe = await context.service.backend.probe();
+    if (!probe.supported) {
+      throw new Error(`${probe.manager} is unavailable: ${probe.detail ?? "unsupported user session"}`);
+    }
+    await context.service.backend.install(spec);
+    if (autostart) await context.service.backend.enable(spec);
+    else await context.service.backend.disable(spec);
+    return {
+      value: {
+        ok: true,
+        action: "install",
+        service: await context.service.backend.inspect(spec)
+      }
+    };
+  });
+}
+
+async function uninstallDaemonService(context: CliContext): Promise<CommandResult> {
+  return withSetupLock(context.paths, async () => {
+    const spec = context.service.spec(context.paths);
+    const before = await context.service.backend.inspect(spec);
+    const application = await tryDaemonStatus(context.paths.socket);
+    const managedProcessActive = ["running", "starting", "stopping"].includes(before.state);
+    if (context.flags.force !== true && application && managedProcessActive) {
+      await callDaemon(context.paths.socket, {
+        method: "lifecycle.drain",
+        params: { timeoutMs: numericFlag(context.flags.timeoutMs, DEFAULT_WAIT_MS) }
+      });
+    }
+    await context.service.backend.uninstall(spec);
+    if (application && managedProcessActive) {
+      await waitForDaemonStopped(context, numericFlag(context.flags.timeoutMs, 15_000));
+    }
+    return {
+      value: {
+        ok: true,
+        action: "uninstall",
+        service: await context.service.backend.inspect(spec),
+        data_preserved: true
+      }
+    };
+  });
+}
+
+async function loadInstalledRuntime(
+  context: CliContext
+): Promise<{ identity: RuntimeIdentity; profileConfig: ProfileConfiguration }> {
+  const homeConfiguration = await readJsonFile<HarnessHomeConfiguration>(context.paths.rootConfig);
+  if (!homeConfiguration) {
+    throw new Error(`Harness Home is not configured: ${context.home}; run octo-harness login first`);
+  }
+  assertHomeConfiguration(homeConfiguration);
+  assertSingleHomeProfile(homeConfiguration, context.profile);
+
+  const identity = await readJsonFile<RuntimeIdentity>(context.paths.identity);
+  if (!identity) throw new Error(`runtime identity is missing: ${context.paths.identity}; run octo-harness login first`);
+  validateIdentity(identity);
+
+  const profileConfig = await readJsonFile<ProfileConfiguration>(context.paths.profileConfig);
+  if (!profileConfig) throw new Error(`profile config is missing: ${context.paths.profileConfig}; run octo-harness login first`);
+  validateProfileConfiguration(profileConfig, context.profile);
+
+  const credential = await readJsonFile<RuntimeCredential>(context.paths.credential);
+  if (!credential || credential.schema_version !== 1 || !credential.issued_at) {
+    throw new Error(`runtime credential is missing or invalid: ${context.paths.credential}; run octo-harness login first`);
+  }
+  if (profileConfig.agent_work_url && !credential.access_token) {
+    throw new Error(`runtime access token is missing: ${context.paths.credential}; re-enroll this Harness Home`);
+  }
+  return { identity, profileConfig };
 }
 
 async function runDoctor(context: CliContext): Promise<CommandResult> {
@@ -446,7 +496,7 @@ async function runDoctor(context: CliContext): Promise<CommandResult> {
       "service.definition",
       service.state !== "not_installed" && service.drift.length === 0,
       `${service.state}; drift=${service.drift.join(",") || "none"}`,
-      "Run login again to reconcile the service definition"
+      "Run octo-harness daemon install to reconcile the service definition"
     ));
   }
   const application = await tryDaemonStatus(context.paths.socket);
@@ -799,9 +849,7 @@ function helpText(group?: string): string {
     return `Usage: octo-harness [--home PATH] [--profile NAME] login [options]\n\n` +
       `First login:\n` +
       `  --server-url URL --enroll-token-stdin [--agent-work-url URL]\n\n` +
-      `Reconcile the current user's Runtime:\n` +
-      `  --install-service --autostart --start --wait-online\n` +
-      `  --no-install-service --no-autostart --no-start\n\n` +
+      `Login only writes Runtime identity and credentials. Service lifecycle uses 'daemon install' and 'daemon start'.\n\n` +
       `Profiles are for trusted identities of the same OS user; use separate OS users/homes for isolation.`;
   }
   if (group === "setup") {
@@ -812,8 +860,13 @@ function helpText(group?: string): string {
       `  --recover-update [--start]`;
   }
   if (group === "daemon") {
-    return `Usage: octo-harness [--home PATH] daemon run|start|stop|restart|status [--force] [--timeout-ms MS] [--verbose]\n\n` +
-      `  --verbose  Print full startup error traces and enable verbose daemon diagnostics.`;
+    return `Usage: octo-harness [--home PATH] daemon install|uninstall|run|start|stop|restart|status [options]\n\n` +
+      `  install [--no-autostart]\n` +
+      `  uninstall [--force] [--timeout-ms MS]\n` +
+      `  run [--quiet] [--verbose]\n` +
+      `  start [--wait-online] [--timeout-ms MS]\n` +
+      `  stop|restart [--force] [--wait-online] [--timeout-ms MS]\n\n` +
+      `Uninstall removes the native service but preserves Harness Home identity, credentials, databases, and logs.`;
   }
   if (group === "doctor") {
     return `Usage: octo-harness [--home PATH] [--profile NAME] doctor\n\n` +
@@ -844,7 +897,7 @@ function helpText(group?: string): string {
     `Global: --home PATH; --profile NAME (login/doctor selection only); --verbose\n\n` +
     `  octo-harness login --help\n` +
     `  octo-harness setup --help\n` +
-    `  octo-harness daemon run|start|stop|restart|status\n` +
+    `  octo-harness daemon install|uninstall|run|start|stop|restart|status\n` +
     `  octo-harness doctor [--json]\n` +
     `  octo-harness status\n` +
     `  octo-harness adapter list|probe <type>\n` +

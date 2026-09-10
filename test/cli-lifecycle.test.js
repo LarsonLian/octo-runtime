@@ -153,15 +153,19 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
     const setup = await invoke([
       "login",
       "--server-url", serverUrl,
-      "--enroll-token-stdin",
-      "--wait-online",
-      "--timeout-ms", "5000"
+      "--enroll-token-stdin"
     ], { input: Readable.from(["octo_enroll_fixture\n"]) });
 
     assert.equal(setup.exitCode, 0);
     assert.equal(setup.value.enrolled, true);
     assert.equal(setup.value.runtime_id, "runtime-fixture");
-    assert.equal(setup.value.readiness.agentWork.connected, true);
+    assert.equal(setup.value.service, undefined);
+    assert.equal(backend.state, "not_installed");
+
+    const initialInstall = await invoke(["daemon", "install"]);
+    assert.equal(initialInstall.value.service.state, "stopped");
+    const initialStart = await invoke(["daemon", "start", "--wait-online", "--timeout-ms", "5000"]);
+    assert.equal(initialStart.value.readiness.agentWork.connected, true);
     assert.equal(backend.state, "running");
     assert.equal(backend.enabled, true);
     assert.equal(enrollmentCount, 1);
@@ -212,7 +216,7 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
     assert.equal(recovered.value.started, true);
     assert.equal(backend.state, "running");
 
-    const repeated = await invoke(["login", "--server-url", serverUrl, "--wait-online", "--timeout-ms", "5000"]);
+    const repeated = await invoke(["login", "--server-url", serverUrl]);
     assert.equal(repeated.value.enrolled, false);
     assert.equal(enrollmentCount, 1);
 
@@ -223,6 +227,30 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
     const started = await invoke(["daemon", "start", "--timeout-ms", "5000"]);
     assert.equal(started.value.action, "start");
     assert.equal(started.value.readiness.ready, true);
+
+    const uninstalled = await invoke(["daemon", "uninstall", "--timeout-ms", "5000"]);
+    assert.equal(uninstalled.value.action, "uninstall");
+    assert.equal(uninstalled.value.service.state, "not_installed");
+    assert.equal(uninstalled.value.data_preserved, true);
+    assert.equal(backend.state, "not_installed");
+    assert.equal(enrollmentCount, 1);
+    assert.equal(JSON.parse(await readFile(join(home, "identity/runtime.json"), "utf8")).runtime_id, "runtime-fixture");
+    assert.equal(
+      JSON.parse(await readFile(join(home, "credentials/runtime-token.json"), "utf8")).access_token,
+      "octo_device_fixture_secret"
+    );
+
+    const installed = await invoke(["daemon", "install"]);
+    assert.equal(installed.value.action, "install");
+    assert.equal(installed.value.service.state, "stopped");
+    assert.equal(installed.value.service.enabled, true);
+    assert.equal(backend.state, "stopped");
+    assert.equal(enrollmentCount, 1);
+
+    const startedOnline = await invoke(["daemon", "start", "--wait-online", "--timeout-ms", "5000"]);
+    assert.equal(startedOnline.value.action, "start");
+    assert.equal(startedOnline.value.service.state, "running");
+    assert.equal(startedOnline.value.readiness.agentWork.connected, true);
     await invoke(["daemon", "stop", "--timeout-ms", "5000"]);
 
     let foregroundArgs;
@@ -230,12 +258,17 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
       runForegroundDaemon: async args => { foregroundArgs = args; }
     });
     assert.equal(foreground.exitCode, 0);
-    assert.deepEqual(foregroundArgs, ["--home", home]);
+    assert.deepEqual(foregroundArgs, ["--home", home, "--console"]);
     const verboseForeground = await invoke(["--verbose", "daemon", "run"], {
       runForegroundDaemon: async args => { foregroundArgs = args; }
     });
     assert.equal(verboseForeground.exitCode, 0);
-    assert.deepEqual(foregroundArgs, ["--home", home, "--verbose"]);
+    assert.deepEqual(foregroundArgs, ["--home", home, "--console", "--verbose"]);
+    const quietForeground = await invoke(["daemon", "run", "--quiet"], {
+      runForegroundDaemon: async args => { foregroundArgs = args; }
+    });
+    assert.equal(quietForeground.exitCode, 0);
+    assert.deepEqual(foregroundArgs, ["--home", home]);
     const foregroundFailure = await invoke(["daemon", "run"], {
       runForegroundDaemon: async () => 23
     });
