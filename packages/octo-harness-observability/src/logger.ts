@@ -46,6 +46,8 @@ const WRITER_QUEUE_HARD_LIMIT = 4608;
 const DEFAULT_MAINTENANCE_INTERVAL_MS = 5 * 60 * 1000;
 const CAPACITY_OPERATIONAL_RATE_LIMIT = 100;
 const CAPACITY_OPERATIONAL_RATE_WINDOW_MS = 60 * 1000;
+const RPC_CORRELATION_MAX_ENTRIES = 4096;
+const RPC_CORRELATION_TTL_MS = 24 * 60 * 60 * 1000;
 
 interface RpcCorrelation {
   rpcId?: string;
@@ -54,6 +56,7 @@ interface RpcCorrelation {
   invocationId?: string;
   agentSessionId?: string;
   adapterType?: string;
+  touchedAt?: number;
 }
 
 /** Append-only writer shared by daemon, launcher, and adapter-host processes. */
@@ -63,11 +66,13 @@ export class LocalObservability {
   readonly #stderr: (line: string) => void;
   readonly #append: SecureAppender;
   readonly #operationalSink?: (record: RecordEnvelope) => void;
+  readonly #eventSink?: (record: RecordEnvelope) => void;
   readonly #processInstanceId = `proc_${randomUUID()}`;
   readonly #files = new Map<string, ActiveFile>();
   readonly #rpcRequests = new Map<string, RpcCorrelation>();
   readonly #rpcInvocations = new Map<string, RpcCorrelation>();
   readonly #maintenanceTimer?: NodeJS.Timeout;
+  readonly #correlationTimer?: NodeJS.Timeout;
   #tail: Promise<void>;
   #seq = 0;
   #closed = false;
@@ -79,6 +84,7 @@ export class LocalObservability {
   #degradedReason?: string;
   #droppedRecords = 0;
   #pendingWrites = 0;
+  #correlationCapacityGaps = 0;
 
   constructor(options: ObservabilityOptions, dependencies: WriterDependencies = {}) {
     validateOptions(options, dependencies);
@@ -87,6 +93,7 @@ export class LocalObservability {
     this.#stderr = dependencies.stderr ?? (line => process.stderr.write(`${line}\n`));
     this.#append = dependencies.append ?? appendSecure;
     this.#operationalSink = dependencies.operationalSink;
+    this.#eventSink = dependencies.eventSink;
     if (options.requireProviderCapture) assertStrictStorageCapabilities();
     // Startup maintenance is part of the serialized writer chain, so the first
     // append cannot race retention or capacity deletion.
@@ -97,6 +104,10 @@ export class LocalObservability {
     if (this.#options.fileLog && interval > 0) {
       this.#maintenanceTimer = setInterval(() => this.#scheduleMaintenance(), interval);
       this.#maintenanceTimer.unref();
+    }
+    if (this.#eventSink) {
+      this.#correlationTimer = setInterval(() => this.#expireRpcCorrelation(this.#now().getTime()), 5 * 60 * 1000);
+      this.#correlationTimer.unref();
     }
   }
 
@@ -117,9 +128,10 @@ export class LocalObservability {
   /** Enqueue an operational record without blocking its caller. */
   log(input: LogInput): void {
     if (LEVELS[input.level] < LEVELS[this.#options.logLevel]) return;
-    if (!this.#options.fileLog && !this.#operationalSink) return;
+    if (!this.#options.fileLog && !this.#operationalSink && !this.#eventSink) return;
     const record = this.#record(input, "operational");
     this.#operationalSink?.(record);
+    this.#eventSink?.(record);
     if (!this.#options.fileLog) return;
     this.#schedule(
       async () => { await this.#write(record, "operational", false); },
@@ -129,7 +141,8 @@ export class LocalObservability {
 
   /** Capture a credential-redacted daemon-to-host RPC frame. */
   traceRpc(direction: "send" | "receive", frame: string): void {
-    if (!this.#options.fileLog || !this.#options.traceRpc) return;
+    const persist = this.#options.fileLog && this.#options.traceRpc;
+    if (!persist && !this.#eventSink) return;
     let parsed: unknown;
     try {
       parsed = JSON.parse(frame) as unknown;
@@ -157,6 +170,8 @@ export class LocalObservability {
         excluded_credential_paths: redaction.excludedCredentialPaths
       }
     }, "restricted");
+    this.#eventSink?.(record);
+    if (!persist) return;
     this.#schedule(async () => { await this.#write(record, "rpc", false); }, true);
   }
 
@@ -168,7 +183,7 @@ export class LocalObservability {
       (isInput && this.#options.captureProviderIo !== "off")
       || (!isInput && this.#options.captureProviderIo === "full")
     );
-    if (!enabled) return { captureId, state: "disabled", complete: false };
+    if (!enabled && !this.#eventSink) return { captureId, state: "disabled", complete: false };
     if (this.#closed) throw traceCaptureError("writer_closed");
     const projection = observation.carrier ? projectCarrier(observation.carrier) : undefined;
     const observationRedaction = redactCredentialsWithMetadata(observation.data ?? {});
@@ -203,6 +218,8 @@ export class LocalObservability {
       complete,
       ...(projection ? { sha256: projection.sha256, byteLength: projection.byte_length } : {})
     };
+    this.#eventSink?.(record);
+    if (!enabled) return { captureId, state: "disabled", complete };
 
     if (this.#options.requireProviderCapture && isInput) {
       try {
@@ -296,6 +313,20 @@ export class LocalObservability {
     }
   }
 
+  /** Release adapter-process correlation state after a child exits or closes. */
+  clearRpcCorrelation(): void {
+    this.#rpcRequests.clear();
+    this.#rpcInvocations.clear();
+  }
+
+  clearRpcCorrelationForRun(runId: string): void {
+    for (const map of [this.#rpcRequests, this.#rpcInvocations]) {
+      for (const [key, value] of map) {
+        if (value.runId === runId) map.delete(key);
+      }
+    }
+  }
+
   /** Run retention and capacity maintenance in writer order. */
   async cleanup(): Promise<void> {
     if (!this.#options.fileLog) return;
@@ -314,6 +345,7 @@ export class LocalObservability {
   async close(): Promise<void> {
     this.#closed = true;
     if (this.#maintenanceTimer) clearInterval(this.#maintenanceTimer);
+    if (this.#correlationTimer) clearInterval(this.#correlationTimer);
     await this.flush();
   }
 
@@ -543,6 +575,8 @@ export class LocalObservability {
 
   #correlateRpc(direction: "send" | "receive", value: unknown): RpcCorrelation {
     if (!isObjectRecord(value)) return {};
+    const now = this.#now().getTime();
+    this.#expireRpcCorrelation(now);
     const params = isObjectRecord(value.params) ? value.params : {};
     const request = isObjectRecord(params.request) ? params.request : {};
     const result = isObjectRecord(value.result) ? value.result : {};
@@ -556,17 +590,60 @@ export class LocalObservability {
       runId: optionalStringValue(request.runId) ?? optionalStringValue(params.runId),
       invocationId,
       agentSessionId: optionalStringValue(request.agentSessionId) ?? optionalStringValue(params.agentSessionId),
-      adapterType: optionalStringValue(params.adapterType) ?? optionalStringValue(request.adapterType)
+      adapterType: optionalStringValue(params.adapterType) ?? optionalStringValue(request.adapterType),
+      touchedAt: now
     };
     if (rpcId) correlation = mergeDefined(this.#rpcRequests.get(rpcId), correlation);
     if (invocationId) correlation = mergeDefined(this.#rpcInvocations.get(invocationId), correlation);
-    if (direction === "send" && rpcId && value.method) this.#rpcRequests.set(rpcId, correlation);
+    if (direction === "send" && rpcId && value.method) this.#rememberRpc(this.#rpcRequests, rpcId, correlation);
     if (invocationId && (correlation.runId || correlation.agentSessionId || correlation.adapterType)) {
-      this.#rpcInvocations.set(invocationId, correlation);
+      this.#rememberRpc(this.#rpcInvocations, invocationId, correlation);
     }
     if (direction === "receive" && rpcId && ("result" in value || "error" in value)) this.#rpcRequests.delete(rpcId);
     if (value.method === "invoke.done" && invocationId) this.#rpcInvocations.delete(invocationId);
     return correlation;
+  }
+
+  #rememberRpc(map: Map<string, RpcCorrelation>, key: string, value: RpcCorrelation): void {
+    if (!map.has(key) && this.#rpcRequests.size + this.#rpcInvocations.size >= RPC_CORRELATION_MAX_ENTRIES) {
+      const candidates = [this.#rpcRequests, this.#rpcInvocations];
+      const oldestMap = candidates.reduce((oldest, candidate) => {
+        const candidateTime = candidate.values().next().value?.touchedAt ?? Number.MAX_SAFE_INTEGER;
+        const oldestTime = oldest.values().next().value?.touchedAt ?? Number.MAX_SAFE_INTEGER;
+        return candidateTime < oldestTime ? candidate : oldest;
+      });
+      const oldest = oldestMap.keys().next().value;
+      if (oldest) oldestMap.delete(oldest);
+      this.#correlationCapacityGaps += 1;
+      if (isPowerOfTwo(this.#correlationCapacityGaps)) {
+        this.#emitCorrelationGap("capacity", this.#correlationCapacityGaps);
+      }
+    }
+    map.delete(key);
+    map.set(key, value);
+  }
+
+  #expireRpcCorrelation(now: number): void {
+    let expired = 0;
+    for (const map of [this.#rpcRequests, this.#rpcInvocations]) {
+      for (const [key, value] of map) {
+        if (value.touchedAt !== undefined && now - value.touchedAt > RPC_CORRELATION_TTL_MS) {
+          map.delete(key);
+          expired += 1;
+        }
+      }
+    }
+    if (expired > 0) this.#emitCorrelationGap("ttl", expired);
+  }
+
+  #emitCorrelationGap(reason: "capacity" | "ttl", count = 1): void {
+    this.#eventSink?.(this.#record({
+      level: "warn",
+      scope: "live-event.bus",
+      event: "bus.correlation_gap",
+      message: "live event RPC correlation was evicted",
+      data: { reason, count }
+    }, "operational"));
   }
 }
 
@@ -618,7 +695,8 @@ function validateOptions(options: ObservabilityOptions, dependencies: WriterDepe
     ["now", dependencies.now],
     ["stderr", dependencies.stderr],
     ["append", dependencies.append],
-    ["operationalSink", dependencies.operationalSink]
+    ["operationalSink", dependencies.operationalSink],
+    ["eventSink", dependencies.eventSink]
   ] as const) {
     if (value !== undefined && typeof value !== "function") {
       throw new TypeError(`observability ${name} dependency must be a function`);
@@ -671,8 +749,13 @@ function mergeDefined(base: RpcCorrelation | undefined, override: RpcCorrelation
     runId: override.runId ?? base?.runId,
     invocationId: override.invocationId ?? base?.invocationId,
     agentSessionId: override.agentSessionId ?? base?.agentSessionId,
-    adapterType: override.adapterType ?? base?.adapterType
+    adapterType: override.adapterType ?? base?.adapterType,
+    touchedAt: override.touchedAt ?? base?.touchedAt
   };
+}
+
+function isPowerOfTwo(value: number): boolean {
+  return value > 0 && Number.isInteger(Math.log2(value));
 }
 
 function optionalStringValue(value: unknown): string | undefined {

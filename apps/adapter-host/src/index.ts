@@ -4,6 +4,7 @@
 // on stdio (the daemon-to-host transport). Kept separate from the daemon so
 // provider processes are isolated behind a process boundary.
 import { readFile } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -46,9 +47,41 @@ const crashReporter = logging.fileLog
 const manifestPath = resolve(process.argv[index + 1]);
 const rawManifest: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
 const manifest = parseManifest(rawManifest);
-const observability = new LocalObservability({ ...logging, component: "adapter-host" });
+const observationOutput = createWriteStream("/dev/null", { fd: 3, autoClose: false });
+let observationWritable = true;
+let observationDrops = 0;
+observationOutput.on("drain", () => { observationWritable = true; });
+observationOutput.on("error", () => { observationWritable = false; });
+const emitObservation = (value: unknown): void => {
+  if (!observationWritable) {
+    observationDrops += 1;
+    return;
+  }
+  try {
+    const line = `${JSON.stringify({ ...(asRecord(value, "observation")), droppedBefore: observationDrops })}\n`;
+    if (Buffer.byteLength(line) > 256 * 1024) {
+      observationDrops += 1;
+      return;
+    }
+    observationDrops = 0;
+    observationWritable = observationOutput.write(line);
+  } catch {
+    observationDrops += 1;
+  }
+};
+const observability = new LocalObservability(
+  { ...logging, component: "adapter-host" },
+  { eventSink: record => emitObservation({ source: "provider-native", record }) }
+);
 const host = new AdapterHost({
-  observe: (identity, observation) => observability.observeProvider(identity, observation)
+  observe: (identity, observation) => observability.observeProvider(identity, observation),
+  canonicalSink: (identity, event) => emitObservation({
+    source: "adapter-canonical",
+    type: event.type,
+    runId: identity.runId,
+    adapterType: identity.adapterType,
+    payload: event
+  })
 });
 
 for (const entry of manifest.adapters) {

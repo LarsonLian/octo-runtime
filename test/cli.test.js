@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import WebSocket from "ws";
 import {
   adapterHostRestartDelayMs,
   startDaemonServer
@@ -35,6 +36,9 @@ test("CLI exposes Runtime operations and unified AgentSession/AgentRun inspectio
     assert.deepEqual((await cli(["adapter", "list"])).map(adapter => adapter.type), ["test"]);
     assert.deepEqual(await cli(["agent-session", "list"]), []);
     assert.deepEqual(await cli(["agent-run", "list"]), []);
+    await assert.rejects(cli(["agent-run", "events", "missing"]), /unknown command/);
+    await assert.rejects(cli(["agent-run", "stream", "missing"]), /unknown command/);
+    await assert.rejects(cli(["logs", "open"]), /unknown command/);
     await assert.rejects(cli(["chat", "create", "--agent", "a-1"]), /unknown command/);
     await assert.rejects(cli(["task", "list"]), /unknown command/);
     await assert.rejects(cli(["trigger", "list"]), /unknown command/);
@@ -61,8 +65,85 @@ test("CLI command help is local and describes logs versus doctor", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const cli = join(root, "apps/cli/dist/index.js");
   const help = await execute(process.execPath, [cli, "logs", "--help"]);
-  assert.match(help.stdout, /logs path\|query\|open/);
+  assert.match(help.stdout, /logs path\|query/);
+  assert.doesNotMatch(help.stdout, /\|open/);
   assert.match(help.stdout, /use doctor for service startup failures/i);
+});
+
+test("CLI exposes bounded events and daemon-owned loopback inspect", async () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const home = await mkdtemp(join(tmpdir(), "oh-events-"));
+  const app = await startDaemonServer({
+    socketPath: join(home, "sockets", "octo-harness-daemon.sock"),
+    storePath: join(home, "state.db"),
+    manifestPath: join(root, "test/fixtures/adapters.json"),
+    hostEntrypoint: join(root, "apps/adapter-host/dist/index.js")
+  });
+  const cli = join(root, "apps/cli/dist/index.js");
+  try {
+    const agent = await app.engine.registerAgent({ name: "test", adapterType: "test" });
+    const submitted = await app.daemon.submitAgentRun({
+      namespace: "test",
+      agentId: agent.id,
+      sessionKey: "v1/events",
+      trigger: { kind: "test", occurrenceId: "events-1" },
+      input: { prompt: "emit events" }
+    });
+    await app.daemon.waitForRun(submitted.agentRunId);
+    const events = await execute(process.execPath, [cli, "events", "--json"], {
+      cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home }
+    });
+    const frames = events.stdout.trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
+    assert.ok(frames.some(frame => frame.type === "daemon.ready"));
+    assert.ok(frames.some(frame => frame.source === "adapter-rpc"));
+    assert.ok(frames.some(frame => frame.source === "provider-native"));
+    assert.ok(frames.some(frame => frame.source === "adapter-canonical"));
+    assert.ok(frames.some(frame => frame.source === "host-canonical"));
+    assert.ok(frames.filter(frame => frame.agent_run_id === submitted.agentRunId).length > 0);
+
+    const inspected = await execute(process.execPath, [cli, "inspect", "url"], {
+      cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home }
+    });
+    const inspectedAgain = await Promise.all([
+      execute(process.execPath, [cli, "inspect", "url"], { cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home } }),
+      execute(process.execPath, [cli, "inspect", "url"], { cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home } })
+    ]);
+    assert.ok(inspectedAgain.every(result => result.stdout.trim() === inspected.stdout.trim()));
+    const url = new URL(inspected.stdout.trim());
+    assert.equal(url.hostname, "127.0.0.1");
+    assert.ok(Number(url.port) >= 20_000);
+    assert.ok(url.hash.length > 10);
+    const response = await fetch(url);
+    assert.equal(response.status, 200);
+    const token = url.hash.slice(1);
+    const logsUrl = new URL("/api/logs", url);
+    assert.equal((await fetch(logsUrl)).status, 401);
+    const logsResponse = await fetch(logsUrl, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(logsResponse.status, 200);
+    assert.ok(Array.isArray(await logsResponse.json()));
+    const wsUrl = new URL("/events", url);
+    wsUrl.protocol = "ws:";
+    wsUrl.searchParams.set("token", token);
+    const client = new WebSocket(wsUrl, { origin: url.origin });
+    const message = await new Promise((resolve, reject) => {
+      client.once("message", value => resolve(JSON.parse(value.toString())));
+      client.once("error", reject);
+    });
+    assert.equal(message.kind, "status");
+    client.close();
+    await waitFor(() => app.events.stats.subscribers === 0);
+
+    const forbidden = new WebSocket(wsUrl, { origin: "http://127.0.0.1:1" });
+    const statusCode = await new Promise((resolve, reject) => {
+      forbidden.once("unexpected-response", (_request, invalid) => resolve(invalid.statusCode));
+      forbidden.once("open", () => reject(new Error("invalid origin opened inspect websocket")));
+      forbidden.once("error", () => undefined);
+    });
+    assert.equal(statusCode, 403);
+  } finally {
+    await app.close();
+    await rm(home, { recursive: true, force: true });
+  }
 });
 
 test("daemon PID file enforces one process per Harness Home and is removed on clean shutdown", async () => {

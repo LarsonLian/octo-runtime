@@ -13,6 +13,7 @@ export {
 export {
   redactCredentials,
   redactCredentialsWithMetadata,
+  redactPrivateReasoning,
   type RedactionResult
 } from "./redaction.js";
 export type {

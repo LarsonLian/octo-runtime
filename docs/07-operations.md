@@ -21,17 +21,22 @@ pnpm cli adapter list
 pnpm cli adapter probe opencode
 pnpm cli logs path
 pnpm cli logs query <agent-run-id>
-pnpm cli logs open --run <agent-run-id>
+pnpm cli events --run-id <agent-run-id>
+pnpm cli events --follow
+pnpm cli inspect
+pnpm cli inspect url
 pnpm cli agent-session list
 pnpm cli agent-run list
 pnpm cli agent-run get <agent-run-id>
-pnpm cli agent-run events <agent-run-id>
-pnpm cli agent-run stream <agent-run-id>
 pnpm cli agent-run cancel <agent-run-id> --reason operator_cancel
 ```
 
-The local AgentSession/AgentRun views are reference diagnostics. Query Worker for
-the authoritative production lifecycle.
+The local bounded event stream is non-durable and does not reconstruct a complete
+trajectory. Local AgentSession/AgentRun views are reference diagnostics. Query
+Worker for the authoritative production lifecycle and complete trajectory.
+The live event sink is process-local and always applies credential redaction and
+private-reasoning removal. Sensitive RPC/provider persistence remains explicitly
+controlled by the trace and provider-capture settings.
 
 ## Health Signals
 

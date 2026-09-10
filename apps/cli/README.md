@@ -80,18 +80,19 @@ octo-harness adapter list
 octo-harness adapter probe codex
 octo-harness logs path
 octo-harness logs query <agent-run-id>
-octo-harness logs open --run <agent-run-id>
+octo-harness events --run-id <agent-run-id>
+octo-harness events --follow
+octo-harness inspect
+octo-harness inspect url
 octo-harness agent-session list
 octo-harness agent-session get <agent-session-id>
 octo-harness agent-run list
 octo-harness agent-run get <agent-run-id>
-octo-harness agent-run events <agent-run-id>
 octo-harness agent-run wait <agent-run-id>
-octo-harness agent-run stream <agent-run-id>
 octo-harness agent-run cancel <agent-run-id>
 ```
 
-这些命令通过 Home 级 Unix socket 或 Windows named pipe 读取本地 reference/诊断投影。生产创建、reset、权威状态与 Human/Bot 授权仍由 Agent Worker / Octo Server API 或 `octo-cli harness` 负责。
+这些命令通过 Home 级 Unix socket 或 Windows named pipe 读取本地状态。`events` 默认输出约 6 MiB 有界内存中的当前快照并退出，只有 `--follow` 持续跟随；它不是完整 trajectory。`inspect` 由 daemon 懒启动且只绑定 `127.0.0.1`。生产创建、reset、权威状态、完整 trajectory 与 Human/Bot 授权仍由 Agent Worker / Octo Server API 或 `octo-cli harness` 负责。
 
 ## 状态目录
 
@@ -111,4 +112,4 @@ octo-harness agent-run cancel <agent-run-id>
 
 `octo-daemon.pid` 只保存十进制进程 PID；永久身份保存在 Home 级 `identity/runtime.json`。POSIX credential 文件以 `0600` 写入。npm package 的程序文件不放在 Harness Home。
 
-除帮助文本外，正常结果输出 JSON；错误输出到 stderr 并返回非零。`--help`、`login --help` 和 `daemon --help` 不依赖网络或已运行 daemon。
+除帮助文本外，普通命令的正常结果输出 JSON；面向终端的 `events` 默认输出带来源标记的行（`--json` 输出原始 envelope），`inspect`/`inspect url` 输出可直接打开的 URL。错误输出到 stderr 并返回非零。`--help`、`login --help` 和 `daemon --help` 不依赖网络或已运行 daemon。

@@ -18,7 +18,7 @@ Before a state-changing command, determine and state:
 
 One Harness Home holds one enabled profile, one local Runtime, one `system_id`, one `runtime_id`, one device credential, one WSS connection, and one durable outbox. Use separate Homes for distinct trusted profiles. Use separate OS accounts for mutually untrusted identities.
 
-Run `octo-harness help` and the relevant `octo-harness <group> --help` before relying on an option that may have changed. Normal successful output is JSON; errors go to stderr and return nonzero.
+Run `octo-harness help` and the relevant `octo-harness <group> --help` before relying on an option that may have changed. Normal successful output is JSON; `events` defaults to source-marked terminal lines (`--json` emits raw envelopes), and `inspect` prints its loopback URL. Errors go to stderr and return nonzero.
 
 ## Choose The Correct Workflow
 
@@ -77,12 +77,14 @@ octo-harness agent-session list
 octo-harness agent-session get SESSION_ID
 octo-harness agent-run list
 octo-harness agent-run get RUN_ID
-octo-harness agent-run events RUN_ID
 octo-harness agent-run wait RUN_ID
-octo-harness agent-run stream RUN_ID
+octo-harness events --run-id RUN_ID
+octo-harness events --follow
+octo-harness inspect
+octo-harness inspect url
 ```
 
-Use `logs query` for execution data and `logs open --no-open` when a headless log viewer is appropriate. Only use `--sensitive` when the user explicitly requests sensitive log fields and their disclosure is necessary.
+Use `logs query` for durable local log records. Use `events` for the current bounded in-memory snapshot and add `--follow` only for a live tail. Complete AgentRun trajectory belongs to `octo-cli`, not this skill. Only use `--sensitive` when the user explicitly requests sensitive log fields and their disclosure is necessary.
 
 `agent-run cancel RUN_ID` changes live execution state. Confirm the exact Run ID from current state and use it only under an explicit cancellation request.
 

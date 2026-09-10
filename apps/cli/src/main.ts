@@ -9,7 +9,7 @@ import {
   normalizeServerUrl,
   type EnrollmentResult
 } from "./enrollment.js";
-import { openBrowser, startLogViewer } from "./log-viewer.js";
+import { openBrowser } from "./browser.js";
 import { resolveServiceControl, verifyServiceProgram, type ServiceControlOptions } from "./service-control.js";
 import {
   defaultHarnessHome,
@@ -78,6 +78,7 @@ const DEFAULT_WAIT_MS = 30_000;
 const BOOLEAN_FLAGS = new Set([
   "enrollTokenStdin",
   "force",
+  "follow",
   "help",
   "json",
   "noAutostart",
@@ -142,14 +143,16 @@ async function dispatchCli(context: CliContext): Promise<CommandResult> {
   if (group === "setup") return runSetup(context, true);
   if (group === "daemon") return runDaemonCommand(context, action);
   if (group === "doctor") return runDoctor(context);
-  if (group === "logs" && action === "open") {
-    await runLogViewer(context);
-    return { streamed: true };
+  if (group === "inspect") {
+    if (action !== undefined && action !== "url") throw new Error("unknown command; run octo-harness help");
+    const result = await callDaemon<{ url: string }>(context.paths.socket, { method: "inspect.open" });
+    if (action !== "url" && context.flags.noOpen !== true) await openBrowser(result.url);
+    return { value: result.url };
   }
 
   const request = daemonRequest(group, action, id, context.flags);
-  if (request.method === "agent_run.stream") {
-    await streamDaemon(context.paths.socket, request, context.output);
+  if (request.method === "events.subscribe") {
+    await streamDaemon(context.paths.socket, request, context.output, context.flags.json === true);
     return { streamed: true };
   }
   return { value: await callDaemon(context.paths.socket, request) };
@@ -538,20 +541,21 @@ function daemonRequest(group: string, action: string | undefined, id: string | u
       ? { method: "agent_session.list" }
       : { method: "agent_session.get", params: { agentSessionId: required(id, "agent-session-id") } };
   }
-  if (group === "agent-run" && action && ["list", "get", "events", "wait"].includes(action)) {
+  if (group === "events") {
+    if (action !== undefined) throw new Error("events accepts filters as flags, not positional arguments");
+    return {
+      method: "events.subscribe",
+      params: {
+        ...(optionalString(flags.runId) ? { runId: optionalString(flags.runId) } : {}),
+        ...(optionalString(flags.source) ? { source: optionalString(flags.source) } : {}),
+        follow: flags.follow === true
+      }
+    };
+  }
+  if (group === "agent-run" && action && ["list", "get", "wait"].includes(action)) {
     return action === "list"
       ? { method: "agent_run.list" }
       : { method: `agent_run.${action}`, params: { agentRunId: required(id, "agent-run-id") } };
-  }
-  if (group === "agent-run" && action === "stream") {
-    const fromSeq = optionalString(flags.fromSeq);
-    return {
-      method: "agent_run.stream",
-      params: {
-        agentRunId: required(id, "agent-run-id"),
-        ...(fromSeq ? { fromSeq: Number(fromSeq) } : {})
-      }
-    };
   }
   if (group === "agent-run" && action === "cancel") {
     return {
@@ -592,7 +596,12 @@ export async function callDaemon<T = unknown>(socketPath: string, request: CliRe
   return response.result as T;
 }
 
-async function streamDaemon(socketPath: string, request: CliRequest, output: (value: string) => void): Promise<void> {
+async function streamDaemon(
+  socketPath: string,
+  request: CliRequest,
+  output: (value: string) => void,
+  json: boolean
+): Promise<void> {
   const socket = await connectDaemon(socketPath);
   socket.write(`${JSON.stringify({ id: randomUUID(), ...request })}\n`);
   let done = false;
@@ -600,9 +609,8 @@ async function streamDaemon(socketPath: string, request: CliRequest, output: (va
     for await (const line of createLines(socket)) {
       const response = JSON.parse(line) as CliResponse;
       if (response.error) throw new Error(response.error.message ?? "daemon stream failed");
-      if (response.event !== undefined) output(JSON.stringify({ kind: "event", event: response.event }));
+      if (response.event !== undefined) output(formatLiveEvent(response.event, json));
       if (response.result !== undefined) {
-        output(JSON.stringify({ kind: "done", result: response.result }));
         done = true;
         break;
       }
@@ -613,24 +621,29 @@ async function streamDaemon(socketPath: string, request: CliRequest, output: (va
   }
 }
 
-async function runLogViewer(context: CliContext): Promise<void> {
-  const runId = optionalString(context.flags.run);
-  const host = optionalString(context.flags.host) ?? "127.0.0.1";
-  const portValue = optionalString(context.flags.port);
-  const viewer = await startLogViewer({
-    host,
-    port: portValue ? Number(portValue) : 0,
-    ...(runId ? { initialRunId: runId } : {}),
-    query: options => callDaemon(context.paths.socket, { method: "logs.viewer", params: { ...options } })
-  });
-  context.output(JSON.stringify({ url: viewer.url, pid: process.pid }));
-  if (context.flags.noOpen !== true) openBrowser(viewer.url);
-  await new Promise<void>(resolveStop => {
-    const stop = (): void => resolveStop();
-    process.once("SIGINT", stop);
-    process.once("SIGTERM", stop);
-  });
-  await viewer.close();
+function formatLiveEvent(value: unknown, json: boolean): string {
+  const record = objectValue(value);
+  if (json || !record) return JSON.stringify(value);
+  const source = typeof record.source === "string" ? record.source : "unknown";
+  const type = typeof record.type === "string" ? record.type : "event";
+  const runId = typeof record.agent_run_id === "string" ? ` run=${record.agent_run_id}` : "";
+  const color = process.stdout.isTTY ? sourceColor(source) : "";
+  const reset = color ? "\u001b[0m" : "";
+  return `${color}[${source}]${reset} ${type}${runId} ${JSON.stringify(record.payload)}`;
+}
+
+function sourceColor(source: string): string {
+  const colors: Record<string, string> = {
+    daemon: "\u001b[36m",
+    "adapter-rpc": "\u001b[35m",
+    "provider-native": "\u001b[33m",
+    "adapter-canonical": "\u001b[34m",
+    "host-canonical": "\u001b[32m",
+    runtime: "\u001b[37m",
+    worker: "\u001b[36m",
+    control: "\u001b[31m"
+  };
+  return colors[source] ?? "\u001b[37m";
 }
 
 async function waitForDaemonReady(context: CliContext, timeoutMs: number): Promise<Record<string, unknown>> {
@@ -877,10 +890,17 @@ function helpText(group?: string): string {
       `Reads the daemon's local application status over IPC. Use 'daemon status' to include native service state.`;
   }
   if (group === "logs") {
-    return `Usage: octo-harness [--home PATH] logs path|query|open [RUN_ID] [options]\n\n` +
+    return `Usage: octo-harness [--home PATH] logs path|query [RUN_ID] [options]\n\n` +
       `  query [RUN_ID] [--invocation ID] [--limit N] [--sensitive]\n` +
-      `  open [--run RUN_ID] [--host 127.0.0.1] [--port N] [--no-open]\n\n` +
       `Application data is read through daemon IPC; use doctor for service startup failures.`;
+  }
+  if (group === "events") {
+    return `Usage: octo-harness [--home PATH] events [--follow] [--run-id ID] [--source SOURCE] [--json]\n\n` +
+      `Reads the daemon's bounded in-memory event stream. The default prints the retained snapshot and exits.`;
+  }
+  if (group === "inspect") {
+    return `Usage: octo-harness [--home PATH] inspect [url] [--no-open]\n\n` +
+      `Starts the daemon-owned loopback inspector lazily. 'inspect url' prints its capability URL without opening a browser.`;
   }
   if (group === "adapter") {
     return `Usage: octo-harness [--home PATH] adapter list|probe <adapter-type>`;
@@ -889,8 +909,7 @@ function helpText(group?: string): string {
     return `Usage: octo-harness [--home PATH] agent-session list|get <agent-session-id>`;
   }
   if (group === "agent-run") {
-    return `Usage: octo-harness [--home PATH] agent-run list|get|events|wait|stream|cancel [agent-run-id] [options]\n\n` +
-      `  stream <agent-run-id> [--from-seq N]\n` +
+    return `Usage: octo-harness [--home PATH] agent-run list|get|wait|cancel [agent-run-id] [options]\n\n` +
       `  cancel <agent-run-id> [--reason TEXT]`;
   }
   return `Octo Harness CLI\n\n` +
@@ -901,9 +920,11 @@ function helpText(group?: string): string {
     `  octo-harness doctor [--json]\n` +
     `  octo-harness status\n` +
     `  octo-harness adapter list|probe <type>\n` +
-    `  octo-harness logs path|query|open [RUN_ID]\n` +
+    `  octo-harness logs path|query [RUN_ID]\n` +
+    `  octo-harness events [--follow] [--run-id ID] [--source SOURCE]\n` +
+    `  octo-harness inspect [url]\n` +
     `  octo-harness agent-session list|get ID\n` +
-    `  octo-harness agent-run list|get|events|wait|stream|cancel ID`;
+    `  octo-harness agent-run list|get|wait|cancel ID`;
 }
 
 export function runtimeFingerprint(): string {

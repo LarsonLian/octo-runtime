@@ -1,4 +1,5 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import type { Readable, Writable } from "node:stream";
 import { AdapterHostRpcClient, type RpcTrace } from "./rpc.js";
 import type { HostedAdapterMetadata } from "./index.js";
 
@@ -16,11 +17,15 @@ export interface SpawnAdapterHostOptions {
    * environment variables or write raw RPC frames to stderr.
    */
   trace?: RpcTrace;
+  /** Receives bounded observation frames from the child process's fd 3. */
+  observe?: (frame: unknown) => void;
 }
+
+type HostedChild = ChildProcessByStdio<Writable, Readable, Readable>;
 
 export interface AdapterHostProcess {
   client: AdapterHostRpcClient;
-  child: ChildProcessWithoutNullStreams;
+  child: HostedChild;
   adapters: HostedAdapterMetadata[];
   close(): Promise<void>;
   stderr(): string;
@@ -40,7 +45,8 @@ export async function spawnAdapterHost({
   env = process.env,
   signal,
   readyTimeoutMs = 15_000,
-  trace
+  trace,
+  observe
 }: SpawnAdapterHostOptions): Promise<AdapterHostProcess> {
   if (signal?.aborted) throw new Error("adapter-host spawn cancelled");
   if (!Number.isFinite(readyTimeoutMs) || readyTimeoutMs < 1) {
@@ -49,7 +55,7 @@ export async function spawnAdapterHost({
   const child = spawn(process.execPath, [entrypoint, "--manifest", manifest], {
     argv0: "octo-harness-adapter-host",
     env,
-    stdio: ["pipe", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe", "pipe"],
     detached: process.platform !== "win32"
   });
   let stderr = "";
@@ -58,6 +64,37 @@ export async function spawnAdapterHost({
     // Keep only the tail so a chatty child cannot grow this buffer unbounded.
     stderr = (stderr + value.toString()).slice(-8192);
   });
+  const observationPipe = child.stdio[3] as Readable | null;
+  if (observe && observationPipe) {
+    let buffered = "";
+    let unavailableReported = false;
+    const unavailable = (reason: string): void => {
+      if (unavailableReported) return;
+      unavailableReported = true;
+      for (const affectedSource of ["adapter-canonical", "provider-native"]) {
+        observe({ source: "control", type: "adapter_observation.source_unavailable", payload: { reason, affected_source: affectedSource } });
+      }
+    };
+    observationPipe.setEncoding("utf8");
+    observationPipe.on("data", (value: string | Buffer) => {
+      buffered += value.toString();
+      if (buffered.length > 512 * 1024) {
+        buffered = "";
+        observe({ source: "control", type: "adapter_observation.dropped", payload: { reason: "buffer_limit", affected_source: "adapter-canonical" } });
+      }
+      let newline = buffered.indexOf("\n");
+      while (newline >= 0) {
+        const line = buffered.slice(0, newline);
+        buffered = buffered.slice(newline + 1);
+        try { observe(JSON.parse(line) as unknown); } catch {
+          observe({ source: "control", type: "adapter_observation.dropped", payload: { reason: "invalid_json", affected_source: "adapter-canonical" } });
+        }
+        newline = buffered.indexOf("\n");
+      }
+    });
+    observationPipe.once("error", () => unavailable("pipe_error"));
+    observationPipe.once("end", () => unavailable("pipe_ended"));
+  }
   const client = new AdapterHostRpcClient({
     input: child.stdout,
     output: child.stdin,
@@ -106,7 +143,7 @@ function waitForReady<T>(operation: Promise<T>, timeoutMs: number, signal?: Abor
   });
 }
 
-async function terminateProcessTree(child: ChildProcessWithoutNullStreams): Promise<void> {
+async function terminateProcessTree(child: HostedChild): Promise<void> {
   if (hasExited(child)) return;
   signalProcessTree(child, "SIGTERM");
   await waitForExit(child, 1_000);
@@ -115,11 +152,11 @@ async function terminateProcessTree(child: ChildProcessWithoutNullStreams): Prom
   await waitForExit(child, 1_000);
 }
 
-function hasExited(child: ChildProcessWithoutNullStreams): boolean {
+function hasExited(child: HostedChild): boolean {
   return child.exitCode !== null || child.signalCode !== null;
 }
 
-async function waitForExit(child: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<void> {
+async function waitForExit(child: HostedChild, timeoutMs: number): Promise<void> {
   if (hasExited(child)) return;
   await Promise.race([
     new Promise<void>(resolve => child.once("exit", () => resolve())),
@@ -127,7 +164,7 @@ async function waitForExit(child: ChildProcessWithoutNullStreams, timeoutMs: num
   ]);
 }
 
-function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
+function signalProcessTree(child: HostedChild, signal: NodeJS.Signals): void {
   if (process.platform !== "win32" && child.pid !== undefined) {
     try {
       process.kill(-child.pid, signal);

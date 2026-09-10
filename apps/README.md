@@ -24,6 +24,12 @@ status and cancellation. Local commands only inspect the current daemon:
 pnpm cli status
 pnpm cli adapter list
 pnpm cli logs query <agent-run-id>
+pnpm cli events --run-id <agent-run-id>
+pnpm cli events --follow
+pnpm cli inspect
+pnpm cli inspect url
 pnpm cli agent-session list
-pnpm cli agent-run events <agent-run-id>
 ```
+
+The bounded `events` stream is process-local and non-durable. Complete AgentRun
+trajectory remains an Agent Worker / `octo-cli harness` concern.
