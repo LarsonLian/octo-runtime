@@ -28,6 +28,10 @@ try {
       page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
       await page.goto(url, { waitUntil: "networkidle" });
       await page.locator("#events .event").first().waitFor();
+      await page.reload({ waitUntil: "networkidle" });
+      await page.locator("#events .event").first().waitFor();
+      assert.equal(await page.locator("#state").textContent(), "live");
+      assert.equal(await page.locator("#auth").isVisible(), false);
       assert.equal(await page.locator('nav button[data-view="events"]').getAttribute("class"), "active");
       await page.locator('nav button[data-view="logs"]').click();
       await page.locator("#logs .event").first().waitFor();
@@ -41,6 +45,19 @@ try {
       await page.screenshot({ path: `/tmp/octo-inspect-${name}.png`, fullPage: true });
       await page.close();
     }
+    const authPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await authPage.goto(new URL(url).origin, { waitUntil: "domcontentloaded" });
+    await authPage.locator("#auth.visible").waitFor();
+    assert.match(await authPage.locator("#auth-message").textContent(), /token/i);
+    const authBox = await authPage.locator("#auth").boundingBox();
+    const mainBox = await authPage.locator("main").boundingBox();
+    assert.ok(authBox && mainBox && authBox.y + authBox.height <= mainBox.y);
+    await authPage.screenshot({ path: "/tmp/octo-inspect-auth.png", fullPage: true });
+    await authPage.locator("#token").fill(url);
+    await authPage.locator('#auth button[type="submit"]').click();
+    await authPage.locator("#events .event").first().waitFor();
+    assert.equal(await authPage.locator("#state").textContent(), "live");
+    await authPage.close();
   } finally {
     await browser.close();
   }
