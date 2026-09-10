@@ -61,6 +61,13 @@ test("daemon runtime keeps all local paths under one supplied Harness Home", () 
   assert.equal(paths.storePath, resolve(unmanagedHome, "state.db"));
 });
 
+test("foreground console output survives launcher argv serialization", () => {
+  const paths = resolveDaemonRuntimePaths(["--home", unmanagedHome, "--console"], {});
+
+  assert.equal(paths.consoleOutput, true);
+  assert.ok(daemonRuntimeArguments(paths).includes("--console"));
+});
+
 test("daemon runtime argv uses explicit options and normalizes the legacy host alias", () => {
   const paths = resolveDaemonRuntimePaths([
     "--socket", "runtime/custom.sock",

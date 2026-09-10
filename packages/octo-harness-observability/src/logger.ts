@@ -62,6 +62,7 @@ export class LocalObservability {
   readonly #now: () => Date;
   readonly #stderr: (line: string) => void;
   readonly #append: SecureAppender;
+  readonly #operationalSink?: (record: RecordEnvelope) => void;
   readonly #processInstanceId = `proc_${randomUUID()}`;
   readonly #files = new Map<string, ActiveFile>();
   readonly #rpcRequests = new Map<string, RpcCorrelation>();
@@ -85,6 +86,7 @@ export class LocalObservability {
     this.#now = dependencies.now ?? (() => new Date());
     this.#stderr = dependencies.stderr ?? (line => process.stderr.write(`${line}\n`));
     this.#append = dependencies.append ?? appendSecure;
+    this.#operationalSink = dependencies.operationalSink;
     if (options.requireProviderCapture) assertStrictStorageCapabilities();
     // Startup maintenance is part of the serialized writer chain, so the first
     // append cannot race retention or capacity deletion.
@@ -114,8 +116,11 @@ export class LocalObservability {
 
   /** Enqueue an operational record without blocking its caller. */
   log(input: LogInput): void {
-    if (!this.#options.fileLog || LEVELS[input.level] < LEVELS[this.#options.logLevel]) return;
+    if (LEVELS[input.level] < LEVELS[this.#options.logLevel]) return;
+    if (!this.#options.fileLog && !this.#operationalSink) return;
     const record = this.#record(input, "operational");
+    this.#operationalSink?.(record);
+    if (!this.#options.fileLog) return;
     this.#schedule(
       async () => { await this.#write(record, "operational", false); },
       input.level === "trace" || input.level === "debug"
@@ -612,7 +617,8 @@ function validateOptions(options: ObservabilityOptions, dependencies: WriterDepe
   for (const [name, value] of [
     ["now", dependencies.now],
     ["stderr", dependencies.stderr],
-    ["append", dependencies.append]
+    ["append", dependencies.append],
+    ["operationalSink", dependencies.operationalSink]
   ] as const) {
     if (value !== undefined && typeof value !== "function") {
       throw new TypeError(`observability ${name} dependency must be a function`);

@@ -31,6 +31,7 @@ export type {
   ProviderIoCapture,
   ProviderObservation,
   QueryLogOptions,
+  RecordEnvelope,
   StoredLogRecord,
   WriterDependencies
 } from "./types.js";

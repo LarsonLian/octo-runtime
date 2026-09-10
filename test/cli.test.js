@@ -92,7 +92,7 @@ test("daemon PID file enforces one process per Harness Home and is removed on cl
     const verbose = await execute(process.execPath, [cli, "--verbose", "--home", home, "daemon", "run"])
       .then(() => undefined, error => error);
     assert.equal(verbose.code, 1);
-    assert.match(verbose.stderr, /^Error: Octo Harness daemon is already running with pid \d+/);
+    assert.match(verbose.stderr, /Error: Octo Harness daemon is already running with pid \d+/);
     assert.match(verbose.stderr, /\n\s+at /);
   } finally {
     await app.close();

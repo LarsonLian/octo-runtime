@@ -145,5 +145,7 @@ export interface WriterDependencies {
   now?: () => Date;
   stderr?: (line: string) => void;
   append?: SecureAppender;
+  /** Receives credential-redacted operational records for an optional UI sink. */
+  operationalSink?: (record: RecordEnvelope) => void;
   maintenanceIntervalMs?: number;
 }

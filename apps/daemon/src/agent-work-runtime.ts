@@ -720,6 +720,17 @@ export class AgentWorkRuntime {
       // local Outbox must replay every row not covered by durable ACK.
       this.#store?.prepareReplayAfterReconnect();
       this.#connected = true;
+      this.#log({
+        level: "info",
+        scope: "agent-work.runtime",
+        event: "agent_work.runtime.ready",
+        message: "Agent Work runtime is online",
+        data: {
+          runtime_id: this.#runtimeId,
+          heartbeat_every_ms: everyMs,
+          connection_id: this.#connectionId
+        }
+      });
       if (this.#reconnectReset) clearTimeout(this.#reconnectReset);
       this.#reconnectReset = setTimeout(() => {
         if (this.#connected && this.#isCurrentLifecycle(epoch)) this.#consecutiveReconnects = 0;
