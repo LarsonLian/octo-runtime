@@ -103,6 +103,9 @@ export interface ExecutionEnvelope {
   schema_version: number;
   run_id: string;
   agent_session_id: string;
+  session_generation?: number;
+  provider_epoch?: number;
+  continuity_mode?: "continue" | "fresh";
   provider_session?: ProviderSession;
   agent_run_request: {
     namespace: string;
@@ -113,6 +116,12 @@ export interface ExecutionEnvelope {
     input: Record<string, unknown>;
     execution_policy?: Record<string, unknown>;
     trace?: Record<string, unknown>;
+    session_policy?: {
+      mode: "continue" | "fresh";
+      expected_generation?: number;
+      cancel_active?: boolean;
+      admission?: "queue_after_active" | "reject_if_active";
+    };
   };
   agent_revision: {
     definition?: Record<string, unknown>;
@@ -1419,6 +1428,21 @@ export function mapExecutionEnvelope(
   if (!envelope?.run_id || !envelope.agent_session_id || !envelope.agent_revision || !envelope.agent_run_request?.input) {
     throw new TypeError("execution envelope is missing run/session/revision/agent run request");
   }
+  if (envelope.session_generation !== undefined
+    && (!Number.isSafeInteger(envelope.session_generation) || envelope.session_generation < 1)) {
+    throw new TypeError("execution envelope session_generation must be a positive safe integer");
+  }
+  if (envelope.provider_epoch !== undefined
+    && (!Number.isSafeInteger(envelope.provider_epoch) || envelope.provider_epoch < 1)) {
+    throw new TypeError("execution envelope provider_epoch must be a positive safe integer");
+  }
+  if (envelope.continuity_mode !== undefined
+    && envelope.continuity_mode !== "continue" && envelope.continuity_mode !== "fresh") {
+    throw new TypeError("execution envelope continuity_mode must be continue or fresh");
+  }
+  if (envelope.continuity_mode === "fresh" && envelope.provider_session) {
+    throw new TypeError("fresh execution envelope must not carry provider_session");
+  }
   const profile = asRecord(envelope.agent_revision.execution_profile);
   const definition = asRecord(envelope.agent_revision.definition);
   const adapterType = executionAdapterType(envelope);
@@ -1438,6 +1462,9 @@ export function mapExecutionEnvelope(
     triggerKind: envelope.agent_run_request.trigger.kind,
     triggerOccurrenceId: envelope.agent_run_request.trigger.occurrence_id,
     input: content,
+    ...(envelope.session_generation === undefined ? {} : { sessionGeneration: envelope.session_generation }),
+    ...(envelope.provider_epoch === undefined ? {} : { providerEpoch: envelope.provider_epoch }),
+    ...(envelope.continuity_mode === undefined ? {} : { continuityMode: envelope.continuity_mode }),
     ...(contextSnapshot ? { contextSnapshot: contextSnapshot.ref } : {})
   };
   return {
@@ -1446,6 +1473,9 @@ export function mapExecutionEnvelope(
       invocationId: `invoke_${randomUUID()}`,
       agentSessionId: envelope.agent_session_id,
       runId: envelope.run_id,
+      ...(envelope.session_generation === undefined ? {} : { sessionGeneration: envelope.session_generation }),
+      ...(envelope.provider_epoch === undefined ? {} : { providerEpoch: envelope.provider_epoch }),
+      ...(envelope.continuity_mode === undefined ? {} : { continuityMode: envelope.continuity_mode }),
       prompt: displayPrompt,
       ...(contextSnapshot ? {
         modelInput: composeProviderModelInput(

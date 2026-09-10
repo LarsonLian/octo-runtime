@@ -16,6 +16,9 @@ Agent Worker --event.ack(received/durable)--> apps/daemon
 
 - `agent_session_id` -> `agentSessionId`
 - `run_id` -> `runId`
+- `session_generation` -> `sessionGeneration`
+- `provider_epoch` -> `providerEpoch`
+- `continuity_mode` -> `continuityMode`
 - `provider_session` -> `providerSession`
 - `agent_run_request.input` -> prompt/model input
 - `agent_revision.execution_profile` -> adapter、workdir、agent config
@@ -45,6 +48,12 @@ Canonical terminal 映射：
 Provider resume 数据来自 Worker 的 AgentSession。以 Codex 为例，`providerSession.sessionId` 是 thread ID，adapter 把它交给 provider 的 resume 参数。Provider 首次创建或 resume 后产生的 `session.update` 经事件流回写 Worker。
 
 Worker reset 增加 generation/epochs 并清空 provider session。reset 后的第一条 run.start 不包含 resume 数据，因此 provider 创建新 thread。Harness 不生成业务 session key，也不在本地决定 reset。
+
+Continue 与 Fresh Start 都创建新的 AgentRun。Continue 可以携带上一轮
+`provider_session`，adapter 再通过 `session.update.providerSession.resumeOutcome`
+报告真实的 `resumed`、`fresh_fallback` 或 `compacted` 结果；Fresh Start 的
+execution envelope 禁止携带 `provider_session`，daemon 会对违反该不变量的命令
+fail closed，避免旧 provider thread 污染新 generation。
 
 ## Channel Context
 

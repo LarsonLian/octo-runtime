@@ -411,6 +411,21 @@
           "type": "string"
         },
         "runId": { "description": "Run identifier for this execution.", "type": "string" },
+        "sessionGeneration": {
+          "description": "Worker-owned AgentSession generation that fences stale continuity updates.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "providerEpoch": {
+          "description": "Worker-owned provider binding epoch for this Run.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "continuityMode": {
+          "description": "Caller continuity intent. Fresh invocations must not carry providerSession.",
+          "type": "string",
+          "enum": ["continue", "fresh"]
+        },
         "prompt": {
           "description": "Display-safe current request or task description. It excludes hidden channel context and provider control parameters.",
           "type": "string"

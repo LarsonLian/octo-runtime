@@ -24,6 +24,9 @@ const envelope = {
   schema_version: 1,
   run_id: "run-1",
   agent_session_id: "chat-1",
+  session_generation: 7,
+  provider_epoch: 3,
+  continuity_mode: "continue",
   provider_session: { sessionId: "thread-previous", resumable: true },
   agent_run_request: {
     namespace: "im",
@@ -64,12 +67,34 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
   const mapped = mapExecutionEnvelope(envelope);
   assert.equal(mapped.adapterType, "codex");
   assert.equal(mapped.request.agentSessionId, "chat-1");
+  assert.equal(mapped.request.sessionGeneration, 7);
+  assert.equal(mapped.request.providerEpoch, 3);
+  assert.equal(mapped.request.continuityMode, "continue");
   assert.equal(mapped.request.workdir, "/workspace/project");
   assert.equal(mapped.request.providerSession.sessionId, "thread-previous");
   assert.equal(mapped.request.agentConfig.sandbox, "workspace-write");
   assert.match(mapped.request.prompt, /\[Recent group messages\]/);
   assert.match(mapped.request.prompt, /\[Quoted message from Ada\]/);
   assert.match(mapped.request.prompt, /\[Current message\]\nFix the test/);
+});
+
+test("fresh execution never reaches an adapter with a provider session", () => {
+  const fresh = {
+    ...envelope,
+    continuity_mode: "fresh",
+    provider_session: undefined,
+    agent_run_request: {
+      ...envelope.agent_run_request,
+      session_policy: { mode: "fresh", expected_generation: 6, cancel_active: true }
+    }
+  };
+  const mapped = mapExecutionEnvelope(fresh);
+  assert.equal(mapped.request.continuityMode, "fresh");
+  assert.equal(mapped.request.providerSession, undefined);
+  assert.throws(
+    () => mapExecutionEnvelope({ ...fresh, provider_session: { sessionId: "stale-thread" } }),
+    /fresh execution envelope must not carry provider_session/
+  );
 });
 
 test("execution envelope rejects legacy adapter_type without default_adapter", () => {
