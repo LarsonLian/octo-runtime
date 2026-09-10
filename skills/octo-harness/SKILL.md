@@ -77,12 +77,14 @@ octo-harness agent-session list
 octo-harness agent-session get SESSION_ID
 octo-harness agent-run list
 octo-harness agent-run get RUN_ID
-octo-harness agent-run events RUN_ID
 octo-harness agent-run wait RUN_ID
-octo-harness agent-run stream RUN_ID
+octo-harness events --run-id RUN_ID
+octo-harness events --follow
+octo-harness inspect
+octo-harness inspect url
 ```
 
-Use `logs query` for execution data and `logs open --no-open` when a headless log viewer is appropriate. Only use `--sensitive` when the user explicitly requests sensitive log fields and their disclosure is necessary.
+Use `logs query` for durable local log records. Use `events` for the current bounded in-memory snapshot and add `--follow` only for a live tail. Complete AgentRun trajectory belongs to `octo-cli`, not this skill. Only use `--sensitive` when the user explicitly requests sensitive log fields and their disclosure is necessary.
 
 `agent-run cancel RUN_ID` changes live execution state. Confirm the exact Run ID from current state and use it only under an explicit cancellation request.
 

@@ -130,10 +130,13 @@ pnpm cli adapter list
 pnpm cli adapter probe codex
 pnpm cli agent-session list
 pnpm cli agent-run list
-pnpm cli agent-run events <agent-run-id>
+pnpm cli events --run-id <agent-run-id>
+pnpm cli events --follow
+pnpm cli inspect
+pnpm cli inspect url
 ```
 
-这些命令只查看当前 daemon 的本地 reference/诊断投影。创建 AgentRun、reset AgentSession 或查询云端权威状态，应调用 Agent Worker API 或 `octo-cli harness agent-run ...`。
+`events` 直接读取 daemon 中约 6 MiB 的有界内存事件流，默认输出当前保留快照后退出，`--follow` 才持续跟随；它不读取 SQLite，也不等同于完整 AgentRun trajectory。`inspect` 懒启动 daemon 自有的 Web 页面，只监听 `127.0.0.1` 的随机高端口。创建 AgentRun、reset AgentSession、查询云端权威状态或获取完整 trajectory，应调用 Agent Worker API 或 `octo-cli harness agent-run ...`。
 
 ## 会话恢复
 

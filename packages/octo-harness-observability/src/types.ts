@@ -147,5 +147,7 @@ export interface WriterDependencies {
   append?: SecureAppender;
   /** Receives credential-redacted operational records for an optional UI sink. */
   operationalSink?: (record: RecordEnvelope) => void;
+  /** Receives every credential/redaction-safe record for a bounded live stream. */
+  eventSink?: (record: RecordEnvelope) => void;
   maintenanceIntervalMs?: number;
 }

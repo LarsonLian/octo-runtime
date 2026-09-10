@@ -63,6 +63,7 @@ export class LocalObservability {
   readonly #stderr: (line: string) => void;
   readonly #append: SecureAppender;
   readonly #operationalSink?: (record: RecordEnvelope) => void;
+  readonly #eventSink?: (record: RecordEnvelope) => void;
   readonly #processInstanceId = `proc_${randomUUID()}`;
   readonly #files = new Map<string, ActiveFile>();
   readonly #rpcRequests = new Map<string, RpcCorrelation>();
@@ -87,6 +88,7 @@ export class LocalObservability {
     this.#stderr = dependencies.stderr ?? (line => process.stderr.write(`${line}\n`));
     this.#append = dependencies.append ?? appendSecure;
     this.#operationalSink = dependencies.operationalSink;
+    this.#eventSink = dependencies.eventSink;
     if (options.requireProviderCapture) assertStrictStorageCapabilities();
     // Startup maintenance is part of the serialized writer chain, so the first
     // append cannot race retention or capacity deletion.
@@ -117,9 +119,10 @@ export class LocalObservability {
   /** Enqueue an operational record without blocking its caller. */
   log(input: LogInput): void {
     if (LEVELS[input.level] < LEVELS[this.#options.logLevel]) return;
-    if (!this.#options.fileLog && !this.#operationalSink) return;
+    if (!this.#options.fileLog && !this.#operationalSink && !this.#eventSink) return;
     const record = this.#record(input, "operational");
     this.#operationalSink?.(record);
+    this.#eventSink?.(record);
     if (!this.#options.fileLog) return;
     this.#schedule(
       async () => { await this.#write(record, "operational", false); },
@@ -129,7 +132,8 @@ export class LocalObservability {
 
   /** Capture a credential-redacted daemon-to-host RPC frame. */
   traceRpc(direction: "send" | "receive", frame: string): void {
-    if (!this.#options.fileLog || !this.#options.traceRpc) return;
+    const persist = this.#options.fileLog && this.#options.traceRpc;
+    if (!persist && !this.#eventSink) return;
     let parsed: unknown;
     try {
       parsed = JSON.parse(frame) as unknown;
@@ -157,6 +161,8 @@ export class LocalObservability {
         excluded_credential_paths: redaction.excludedCredentialPaths
       }
     }, "restricted");
+    this.#eventSink?.(record);
+    if (!persist) return;
     this.#schedule(async () => { await this.#write(record, "rpc", false); }, true);
   }
 
@@ -168,7 +174,7 @@ export class LocalObservability {
       (isInput && this.#options.captureProviderIo !== "off")
       || (!isInput && this.#options.captureProviderIo === "full")
     );
-    if (!enabled) return { captureId, state: "disabled", complete: false };
+    if (!enabled && !this.#eventSink) return { captureId, state: "disabled", complete: false };
     if (this.#closed) throw traceCaptureError("writer_closed");
     const projection = observation.carrier ? projectCarrier(observation.carrier) : undefined;
     const observationRedaction = redactCredentialsWithMetadata(observation.data ?? {});
@@ -203,6 +209,8 @@ export class LocalObservability {
       complete,
       ...(projection ? { sha256: projection.sha256, byteLength: projection.byte_length } : {})
     };
+    this.#eventSink?.(record);
+    if (!enabled) return { captureId, state: "disabled", complete };
 
     if (this.#options.requireProviderCapture && isInput) {
       try {
@@ -618,7 +626,8 @@ function validateOptions(options: ObservabilityOptions, dependencies: WriterDepe
     ["now", dependencies.now],
     ["stderr", dependencies.stderr],
     ["append", dependencies.append],
-    ["operationalSink", dependencies.operationalSink]
+    ["operationalSink", dependencies.operationalSink],
+    ["eventSink", dependencies.eventSink]
   ] as const) {
     if (value !== undefined && typeof value !== "function") {
       throw new TypeError(`observability ${name} dependency must be a function`);

@@ -45,6 +45,8 @@ export interface AdapterHostOptions {
    * dispatch before sensitive provider input leaves the process.
    */
   observe?: (identity: ObservationIdentity, observation: ProviderObservation) => Promise<CaptureReceipt>;
+  /** Receives adapter output after schema validation and before host correction. */
+  canonicalSink?: (identity: ObservationIdentity, event: CanonicalEvent) => void;
 }
 
 interface MessageState {
@@ -65,6 +67,7 @@ export class AdapterHost {
   readonly #adapters = new Map<string, HostedAdapter>();
   readonly #active = new Map<string, AbortController>();
   readonly #observe: NonNullable<AdapterHostOptions["observe"]>;
+  readonly #canonicalSink?: AdapterHostOptions["canonicalSink"];
 
   constructor(options: AdapterHostOptions = {}) {
     // A disabled receipt keeps observability additive: existing embeddings and
@@ -74,6 +77,7 @@ export class AdapterHost {
       state: "disabled",
       complete: false
     }));
+    this.#canonicalSink = options.canonicalSink;
   }
 
   /** Register an adapter by `metadata.type`; the same type cannot be overwritten twice. */
@@ -157,6 +161,12 @@ export class AdapterHost {
     try {
       for await (const event of adapter.invoke({ ...request, signal: controller.signal }, context)) {
         assertCanonicalEvent(event);
+        this.#canonicalSink?.({
+          runId: request.runId,
+          invocationId: request.invocationId,
+          agentSessionId: request.agentSessionId,
+          adapterType
+        }, event);
         if (terminal) throw new Error(`${adapterType} emitted after terminal event`);
         if (isTerminal(event)) terminal = event;
         else {

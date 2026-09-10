@@ -22,7 +22,17 @@ import {
   type AdapterHostProcess,
 } from "@mininglamp-oss/octo-harness-adapter-host";
 import { AgentWorkRuntime, type AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
-import { ViewerLogIndex, viewerTraceSnapshot } from "./log-viewer.js";
+import { InspectServer } from "./inspect-server.js";
+import { LiveEventBus, type LiveEventSource } from "./live-event-bus.js";
+
+export {
+  LiveEventBus,
+  LIVE_EVENT_MAX_FRAME_BYTES,
+  LIVE_EVENT_MAX_SLOTS,
+  LIVE_EVENT_MAX_SUBSCRIBERS,
+  LIVE_EVENT_CONTROL_RESERVE_BYTES,
+  LIVE_EVENT_MEMORY_BYTES
+} from "./live-event-bus.js";
 
 export interface StartDaemonServerOptions {
   homePath?: string;
@@ -68,9 +78,6 @@ interface DaemonRequest {
 // Terminal sets are intentionally duplicated across protocol/engine/daemon/server;
 // keep them in sync. Here they let the streamer stop on either a terminal event or
 // a terminal run status.
-const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled"]);
-const TERMINAL_EVENT_TYPES = new Set(["run.finished", "run.error", "run.stopped"]);
-const STREAM_POLL_MS = 25;
 const DEFAULT_DRAIN_TIMEOUT_MS = 30_000;
 const DEFAULT_ADAPTER_HOST_RESTART_DELAYS_MS = [1_000, 5_000, 10_000, 20_000] as const;
 const ADAPTER_HOST_STABLE_RESET_MS = 5 * 60_000;
@@ -86,6 +93,7 @@ export interface DaemonApplication {
   runtime: DaemonRuntimeInfo;
   agentWorkRuntime?: AgentWorkRuntime;
   observability: LocalObservability;
+  events: LiveEventBus;
   close(): Promise<void>;
 }
 
@@ -119,9 +127,10 @@ export async function startDaemonServer({
     directory: join(dirname(storePath), "logs"),
     ...DEFAULT_OBSERVABILITY_CONFIGURATION
   };
+  const events = new LiveEventBus();
   const observability = new LocalObservability(
     { ...loggingConfiguration, component: "daemon" },
-    { operationalSink }
+    { operationalSink, eventSink: record => events.publishRecord(record) }
   );
   observability.log({
     level: "info",
@@ -177,9 +186,8 @@ export async function startDaemonServer({
     env: { ...process.env, ...observabilityEnvironment(loggingConfiguration) },
     ...(signal ? { signal } : {}),
     ...(adapterHostReadyTimeoutMs !== undefined ? { readyTimeoutMs: adapterHostReadyTimeoutMs } : {}),
-    ...(loggingConfiguration.traceRpc ? {
-      trace: (direction, frame) => observability.traceRpc(direction, frame)
-    } : {})
+    trace: (direction, frame) => observability.traceRpc(direction, frame),
+    observe: frame => publishAdapterObservation(events, frame)
   });
   let hostProcess: AdapterHostProcess;
   try {
@@ -248,7 +256,16 @@ export async function startDaemonServer({
     probe: async adapterType => readyHost().client.probe(adapterType),
     cancel: async (invocationId, reason) => readyHost().client.cancel(invocationId, reason),
     async *invoke(adapterType, request) {
-      yield* readyHost().client.invoke(adapterType, request);
+      for await (const event of readyHost().client.invoke(adapterType, request)) {
+        events.publish({
+          source: "host-canonical",
+          type: event.type,
+          runId: request.runId,
+          adapterType,
+          payload: event
+        });
+        yield event;
+      }
     }
   };
 
@@ -346,7 +363,17 @@ export async function startDaemonServer({
   const agentWorkRuntime = agentWork
     ? new AgentWorkRuntime(agentWork, host, observability)
     : undefined;
-  const viewerIndex = new ViewerLogIndex(loggingConfiguration.directory);
+  const inspect = new InspectServer(
+    events,
+    () => ({
+      ready: runtime.adapterHost.state === "ready",
+      pid: process.pid,
+      adapterHost: runtime.adapterHost,
+      adapters: runtime.adapters,
+      lifecycle: daemon.status
+    }),
+    runId => observability.query({ ...(runId ? { runId } : {}), includeSensitive: false, limit: 500 })
+  );
   // HarnessDaemon events mark execution, rather than submission, boundaries.
   // A control request can therefore be acknowledged before `run.started` while
   // the resulting Run still remains correlated by its stable runId.
@@ -407,7 +434,8 @@ export async function startDaemonServer({
         runtime,
         agentWorkRuntime,
         observability,
-        viewerIndex,
+        events,
+        inspect,
         connectionId
       });
     });
@@ -470,6 +498,7 @@ export async function startDaemonServer({
     runtime,
     agentWorkRuntime,
     observability,
+    events,
     async close(): Promise<void> {
       shuttingDown = true;
       hostRestartAbort?.abort();
@@ -482,6 +511,7 @@ export async function startDaemonServer({
       });
       daemon.stop();
       await agentWorkRuntime?.close();
+      await inspect.close();
       await new Promise<void>(resolve => server.close(() => resolve()));
       await hostRestartTask?.catch(() => undefined);
       await hostProcess.close();
@@ -499,7 +529,7 @@ export async function startDaemonServer({
   };
 }
 
-/** Handle one request line. `run.stream` keeps the socket open and pushes many
+/** Handle one request line. `events.subscribe` keeps the socket open and pushes many
  * lines; every other method sends a single `{ id, result }` (or `{ id, error }`)
  * and ends the socket. Errors carry an optional errno-style `code`. */
 async function handleRequestLine({
@@ -511,7 +541,8 @@ async function handleRequestLine({
   runtime,
   agentWorkRuntime,
   observability,
-  viewerIndex,
+  events,
+  inspect,
   connectionId
 }: {
   line: string;
@@ -522,7 +553,8 @@ async function handleRequestLine({
   runtime: DaemonRuntimeInfo;
   agentWorkRuntime: AgentWorkRuntime | undefined;
   observability: LocalObservability;
-  viewerIndex: ViewerLogIndex;
+  events: LiveEventBus;
+  inspect: InspectServer;
   connectionId: string;
 }): Promise<void> {
   let request: DaemonRequest | undefined;
@@ -531,7 +563,7 @@ async function handleRequestLine({
     // Do not observe the observation query itself. The Viewer polls this method;
     // recording each poll would create an unbounded feedback loop and bury the
     // application events the operator is trying to inspect.
-    const logsItself = request.method !== "logs.query" && request.method !== "logs.viewer";
+    const logsItself = request.method !== "logs.query" && request.method !== "events.subscribe";
     if (logsItself) {
       observability.log({
         level: "debug",
@@ -547,12 +579,12 @@ async function handleRequestLine({
         }
       });
     }
-    if (request.method === "agent_run.stream") {
-      await streamRunEvents({ request, socket, store, observability, connectionId });
+    if (request.method === "events.subscribe") {
+      await streamLiveEvents({ request, socket, events });
       return;
     }
     const result = await dispatch({
-      request, daemon, store, host, runtime, agentWorkRuntime, observability, viewerIndex
+      request, daemon, store, host, runtime, agentWorkRuntime, observability, inspect, events
     });
     const resultRecord = isRecord(result) ? result : {};
     const resultAgent = isRecord(resultRecord.agent) ? resultRecord.agent : undefined;
@@ -596,70 +628,65 @@ async function handleRequestLine({
 }
 
 /**
- * Tail an AgentRun's events over the socket. Polls the store, emitting each event with
- * `seq >= fromSeq` in order, then a terminal `{ done, run, nextSeq }` once a
- * terminal event or terminal run status is observed. `nextSeq` lets a client
- * resume without gaps. Stops early if the client disconnects.
+ * Emit the currently retained in-memory event snapshot and optionally follow it.
+ * No SQLite query is involved; a disconnected client owns no queued payloads.
  */
-async function streamRunEvents({
+async function streamLiveEvents({
   request,
   socket,
-  store,
-  observability,
-  connectionId
+  events
 }: {
   request: DaemonRequest;
   socket: net.Socket;
-  store: Store;
-  observability: LocalObservability;
-  connectionId: string;
+  events: LiveEventBus;
 }): Promise<void> {
   const params = request.params ?? {};
-  const runId = requiredString(params.agentRunId, "agentRunId");
-  let nextSeq = positiveInteger(params.fromSeq, "fromSeq", 1);
-  if (!store.getAgentRun(runId)) throw new Error(`agent run not found: ${runId}`);
-
-  while (!socket.destroyed) {
-    for (const event of store.getEvents(runId)) {
-      if (event.seq < nextSeq) continue;
-      await writeSocketLine(socket, { id: request.id, event });
-      observability.log({
-        level: "debug",
-        scope: "run.stream",
-        event: "run.event.streamed",
-        message: "run event streamed to control client",
-        runId,
-        data: { connection_id: connectionId, event_type: event.type, event_seq: event.seq }
-      });
-      nextSeq = event.seq + 1;
-      if (TERMINAL_EVENT_TYPES.has(event.type)) {
-        await writeSocketLine(socket, {
-          id: request.id,
-          result: { done: true, run: store.getAgentRun(runId), nextSeq }
-        });
-        socket.end();
-        return;
-      }
-    }
-
-    const run = store.getAgentRun(runId);
-    if (!run) throw new Error(`agent run not found: ${runId}`);
-    if (TERMINAL_RUN_STATUSES.has(run.status)) {
-      await writeSocketLine(socket, { id: request.id, result: { done: true, run, nextSeq } });
-      socket.end();
-      return;
-    }
-    await new Promise<void>(resolve => setTimeout(resolve, STREAM_POLL_MS));
+  const runId = optionalString(params.runId);
+  const source = optionalLiveEventSource(params.source);
+  const follow = params.follow === true;
+  let count = 0;
+  const controller = new AbortController();
+  socket.once("close", () => controller.abort());
+  for await (const event of events.subscribe({ runId, source }, follow, controller.signal)) {
+    if (socket.destroyed) return;
+    await writeSocketLine(socket, { id: request.id, event });
+    count += 1;
   }
+  await writeSocketLine(socket, { id: request.id, result: { done: true, count, memory: events.stats } });
+  socket.end();
 }
 
 async function writeSocketLine(socket: net.Socket, value: unknown): Promise<void> {
   if (socket.destroyed) return;
-  await new Promise<void>((resolve, reject) => {
-    socket.write(`${JSON.stringify(value)}\n`, error => {
-      if (error) reject(error);
-      else resolve();
-    });
+  const encoded = Buffer.from(`${JSON.stringify(value)}\n`);
+  for (let offset = 0; offset < encoded.byteLength; offset += 16 * 1024) {
+    if (socket.destroyed) return;
+    const chunk = encoded.subarray(offset, Math.min(offset + 16 * 1024, encoded.byteLength));
+    const writable = socket.write(chunk);
+    if (!writable) await waitForDrain(socket, 5_000);
+  }
+}
+
+function waitForDrain(socket: net.Socket, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      socket.off("drain", onDrain);
+      socket.off("error", onError);
+      socket.off("close", onClose);
+    };
+    const onDrain = (): void => { cleanup(); resolve(); };
+    const onError = (error: Error): void => { cleanup(); reject(error); };
+    const onClose = (): void => { cleanup(); reject(new Error("daemon event client disconnected")); };
+    const timer = setTimeout(() => {
+      cleanup();
+      socket.destroy();
+      reject(Object.assign(new Error("daemon event client drain timed out"), { code: "EVENT_DRAIN_TIMEOUT" }));
+    }, timeoutMs);
+    timer.unref();
+    socket.once("drain", onDrain);
+    socket.once("error", onError);
+    socket.once("close", onClose);
   });
 }
 
@@ -702,7 +729,8 @@ async function dispatch({
   runtime,
   agentWorkRuntime,
   observability,
-  viewerIndex
+  inspect,
+  events
 }: {
   request: DaemonRequest;
   daemon: HarnessDaemon;
@@ -711,7 +739,8 @@ async function dispatch({
   runtime: DaemonRuntimeInfo;
   agentWorkRuntime: AgentWorkRuntime | undefined;
   observability: LocalObservability;
-  viewerIndex: ViewerLogIndex;
+  inspect: InspectServer;
+  events: LiveEventBus;
 }): Promise<unknown> {
   const params = request.params ?? {};
   switch (request.method) {
@@ -723,6 +752,7 @@ async function dispatch({
         logging: observability.status,
         agentWork: agentWorkRuntime?.status ?? { enabled: false },
         lifecycle: daemon.status,
+        events: events.stats,
         counts: {
           agentSessions: store.listAgentSessions().length,
           agentRuns: store.listAgentRuns().length
@@ -753,8 +783,8 @@ async function dispatch({
         includeSensitive: params.includeSensitive === true,
         ...(typeof params.limit === "number" ? { limit: params.limit } : {})
       });
-    case "logs.viewer":
-      return viewerTraceSnapshot({ store, index: viewerIndex, params });
+    case "inspect.open":
+      return { url: await inspect.open() };
     case "adapter.list":
       return host.list();
     case "adapter.probe":
@@ -767,8 +797,6 @@ async function dispatch({
       return store.listAgentRuns();
     case "agent_run.get":
       return store.getAgentRun(requiredString(params.agentRunId, "agentRunId")) ?? null;
-    case "agent_run.events":
-      return store.getEvents(requiredString(params.agentRunId, "agentRunId"));
     case "agent_run.wait":
       return daemon.waitForRun(requiredString(params.agentRunId, "agentRunId"));
     case "agent_run.cancel":
@@ -795,6 +823,30 @@ function requiredString(value: unknown, name: string): string {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function optionalLiveEventSource(value: unknown): LiveEventSource | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !["daemon", "adapter-rpc", "provider-native", "adapter-canonical", "host-canonical", "control"].includes(value)) {
+    throw new TypeError("source must be a supported live event source");
+  }
+  return value as LiveEventSource;
+}
+
+function publishAdapterObservation(events: LiveEventBus, value: unknown): void {
+  if (!isRecord(value)) return;
+  if (value.source === "provider-native" && isRecord(value.record)) {
+    events.publishRecord(value.record as RecordEnvelope, "provider-native");
+    return;
+  }
+  if (value.source !== "adapter-canonical" || typeof value.type !== "string") return;
+  events.publish({
+    source: "adapter-canonical",
+    type: value.type,
+    runId: optionalString(value.runId),
+    adapterType: optionalString(value.adapterType),
+    payload: value.payload
+  });
 }
 
 function positiveInteger(value: unknown, name: string, fallback: number): number {
