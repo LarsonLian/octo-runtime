@@ -264,7 +264,7 @@ export async function startDaemonServer({
           adapterType,
           payload: event
         });
-        if (["run.completed", "run.failed", "run.stopped"].includes(event.type)) {
+        if (["run.finished", "run.error", "run.stopped"].includes(event.type)) {
           observability.clearRpcCorrelationForRun(request.runId);
         }
         yield event;
@@ -668,10 +668,19 @@ async function streamLiveEvents({
 
 async function writeSocketEvent(socket: net.Socket, id: unknown, event: Buffer): Promise<void> {
   const prefix = Buffer.from(`{"id":${JSON.stringify(id)},"event":`);
-  for (const chunk of [prefix, event, Buffer.from("}\n")]) {
+  const parts = [prefix, ...bufferChunks(event, 16 * 1024), Buffer.from("}\n")];
+  for (const chunk of parts) {
     if (socket.destroyed) return;
     if (!socket.write(chunk)) await waitForDrain(socket, 5_000);
   }
+}
+
+function bufferChunks(value: Buffer, size: number): Buffer[] {
+  const chunks: Buffer[] = [];
+  for (let offset = 0; offset < value.byteLength; offset += size) {
+    chunks.push(value.subarray(offset, Math.min(offset + size, value.byteLength)));
+  }
+  return chunks;
 }
 
 async function writeSocketLine(socket: net.Socket, value: unknown): Promise<void> {

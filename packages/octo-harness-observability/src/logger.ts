@@ -72,6 +72,7 @@ export class LocalObservability {
   readonly #rpcRequests = new Map<string, RpcCorrelation>();
   readonly #rpcInvocations = new Map<string, RpcCorrelation>();
   readonly #maintenanceTimer?: NodeJS.Timeout;
+  readonly #correlationTimer?: NodeJS.Timeout;
   #tail: Promise<void>;
   #seq = 0;
   #closed = false;
@@ -102,6 +103,10 @@ export class LocalObservability {
     if (this.#options.fileLog && interval > 0) {
       this.#maintenanceTimer = setInterval(() => this.#scheduleMaintenance(), interval);
       this.#maintenanceTimer.unref();
+    }
+    if (this.#eventSink) {
+      this.#correlationTimer = setInterval(() => this.#expireRpcCorrelation(this.#now().getTime()), 5 * 60 * 1000);
+      this.#correlationTimer.unref();
     }
   }
 
@@ -339,6 +344,7 @@ export class LocalObservability {
   async close(): Promise<void> {
     this.#closed = true;
     if (this.#maintenanceTimer) clearInterval(this.#maintenanceTimer);
+    if (this.#correlationTimer) clearInterval(this.#correlationTimer);
     await this.flush();
   }
 

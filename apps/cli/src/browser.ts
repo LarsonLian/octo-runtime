@@ -7,9 +7,9 @@ export function openBrowser(url: string): Promise<void> {
   const child = spawn(command, args, { detached: true, stdio: "ignore" });
   return new Promise((resolve, reject) => {
     child.once("error", reject);
-    child.once("spawn", () => {
-      child.unref();
-      resolve();
+    child.once("exit", (code, signal) => {
+      if (code === 0) resolve();
+      else reject(new Error(`browser opener failed (${code ?? signal ?? "unknown"})`));
     });
   });
 }

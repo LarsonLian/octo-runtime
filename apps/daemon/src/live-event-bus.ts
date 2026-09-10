@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   redactCredentials,
   redactPrivateReasoning,
@@ -126,6 +125,7 @@ export class LiveEventBus {
 
   publish(input: LiveEventInput): boolean {
     const seq = this.#nextSeq++;
+    const payloadWithinLimit = estimatedJsonBytes(input.payload, this.#maxFrameBytes) <= this.#maxFrameBytes;
     let envelope: LiveEventEnvelope = {
       schema: "octo-harness.live-event/v1",
       local_seq: seq,
@@ -137,12 +137,12 @@ export class LiveEventBus {
       ...(input.runId ? { agent_run_id: input.runId } : {}),
       ...(input.invocationId ? { invocation_id: input.invocationId } : {}),
       ...(input.adapterType ? { adapter_type: input.adapterType } : {}),
-      payload: redactPrivateReasoning(redactCredentials(input.payload))
+      payload: payloadWithinLimit
+        ? redactPrivateReasoning(redactCredentials(input.payload))
+        : null
     };
-    let bytes = encodeBounded(envelope, this.#maxFrameBytes);
+    let bytes = payloadWithinLimit ? encodeBounded(envelope, this.#maxFrameBytes) : undefined;
     if (!bytes) {
-      const byteLength = estimatedJsonBytes(envelope);
-      const sha256 = structuralDigest(envelope);
       envelope = {
         schema: "octo-harness.live-event/v1",
         local_seq: seq,
@@ -154,10 +154,10 @@ export class LiveEventBus {
         ...(envelope.invocation_id ? { invocation_id: envelope.invocation_id } : {}),
         ...(envelope.adapter_type ? { adapter_type: envelope.adapter_type } : {}),
         payload: {
-          source: input.source,
+          affected_source: input.source,
           type: input.type,
-          byteLength,
-          sha256
+          byte_length_at_least: this.#maxFrameBytes + 1,
+          digest: "omitted_to_preserve_memory_bound"
         }
       };
       bytes = encode(envelope);
@@ -168,7 +168,8 @@ export class LiveEventBus {
       while (this.#controlBytes + bytes.byteLength > this.#controlReserveBytes && this.#count > 0) {
         this.#evictOldest();
       }
-      if (bytes.byteLength > this.#controlReserveBytes) {
+      if (bytes.byteLength > this.#controlReserveBytes
+        || this.#controlBytes + bytes.byteLength > this.#controlReserveBytes) {
         this.#dropped += 1;
         return false;
       }
@@ -376,26 +377,6 @@ function jsonStringBytes(value: string): number {
     else bytes += 3;
   }
   return bytes;
-}
-
-function structuralDigest(value: unknown): string {
-  const hash = createHash("sha256");
-  const visit = (item: unknown): void => {
-    if (Array.isArray(item)) {
-      hash.update("[");
-      for (const entry of item) visit(entry);
-      hash.update("]");
-    } else if (isRecord(item)) {
-      hash.update("{");
-      for (const [key, nested] of Object.entries(item)) {
-        hash.update(key);
-        visit(nested);
-      }
-      hash.update("}");
-    } else hash.update(String(item));
-  };
-  try { visit(value); } catch { hash.update("unavailable"); }
-  return hash.digest("hex");
 }
 
 function affectedSourceOf(payload: unknown): LiveEventSource | undefined {
