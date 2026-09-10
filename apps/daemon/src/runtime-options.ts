@@ -43,6 +43,8 @@ export function resolveDaemonRuntimePaths(
       ["--adapter-host", "--host-entrypoint"],
       env.OCTO_HARNESS_ADAPTER_HOST ?? fileURLToPath(new URL("../../adapter-host/dist/index.js", import.meta.url))
     )),
+    inspectHost: option(args, ["--inspect-host"], env.OCTO_HARNESS_INSPECT_HOST ?? "127.0.0.1"),
+    ...optionalPort(args, ["--inspect-port"], env.OCTO_HARNESS_INSPECT_PORT, "inspectPort"),
     logging: resolveLoggingOptions(args, env, home),
     ...(selectedAgentWork ? { agentWork: selectedAgentWork } : {})
   };
@@ -263,6 +265,8 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[
     "--manifest", paths.manifestPath,
     "--adapter-host", paths.hostEntrypoint
   ];
+  if (paths.inspectHost) args.push("--inspect-host", paths.inspectHost);
+  pushNumberOption(args, "--inspect-port", paths.inspectPort);
   if (paths.logging) {
     // Pass the fully resolved policy to the child instead of letting it consult a
     // potentially different environment after the launcher has started.
@@ -318,6 +322,21 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[
 
 function pushNumberOption(args: string[], name: string, value: number | undefined): void {
   if (value !== undefined) args.push(name, String(value));
+}
+
+function optionalPort(
+  args: string[],
+  names: string[],
+  fallback: string | undefined,
+  key: string
+): Record<string, number> {
+  const raw = optionalOption(args, names, fallback);
+  if (raw === undefined) return {};
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1 || value > 65_535) {
+    throw new Error(`${names[0]} must be an integer between 1 and 65535`);
+  }
+  return { [key]: value };
 }
 
 function booleanOption(args: string[], name: string, fallback: boolean): boolean {

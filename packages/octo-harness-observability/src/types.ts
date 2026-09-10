@@ -103,6 +103,7 @@ export interface QueryLogOptions {
   invocationId?: string;
   includeSensitive?: boolean;
   limit?: number;
+  maxBytes?: number;
 }
 
 export interface StoredLogRecord extends Record<string, unknown> {

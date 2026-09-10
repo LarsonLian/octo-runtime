@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {
   appendSecure,
@@ -43,6 +44,9 @@ import type {
 const LEVELS: Record<LogLevel, number> = { trace: 10, debug: 20, info: 30, warn: 40, error: 50 };
 const WRITER_QUEUE_SOFT_LIMIT = 4096;
 const WRITER_QUEUE_HARD_LIMIT = 4608;
+const MAX_QUERY_LINE_BYTES = 2 * 1024 * 1024;
+const DEFAULT_QUERY_RESULT_BYTES = 16 * 1024 * 1024;
+const MAX_QUERY_RESULT_BYTES = 64 * 1024 * 1024;
 const DEFAULT_MAINTENANCE_INTERVAL_MS = 5 * 60 * 1000;
 const CAPACITY_OPERATIONAL_RATE_LIMIT = 100;
 const CAPACITY_OPERATIONAL_RATE_WINDOW_MS = 60 * 1000;
@@ -282,31 +286,39 @@ export class LocalObservability {
       const limit = Number.isSafeInteger(requestedLimit) && requestedLimit > 0
         ? Math.min(requestedLimit, 5000)
         : 500;
+      const requestedMaxBytes = options.maxBytes ?? DEFAULT_QUERY_RESULT_BYTES;
+      const maxBytes = Number.isSafeInteger(requestedMaxBytes) && requestedMaxBytes > 0
+        ? Math.min(requestedMaxBytes, MAX_QUERY_RESULT_BYTES)
+        : DEFAULT_QUERY_RESULT_BYTES;
       const files = (await collectLogFiles(this.#options.directory))
         .filter(file => options.includeSensitive === true || file.category !== "evaluation")
         .sort((left, right) => left.path.localeCompare(right.path));
-      const records: StoredLogRecord[] = [];
+      const records: SizedStoredLogRecord[] = [];
+      let retainedBytes = 0;
       for (const file of files) {
-        let content: string;
         try {
-          content = await readFile(file.path, "utf8");
+          for await (const line of readBoundedLogLines(file.path)) {
+            try {
+              const value = JSON.parse(line) as StoredLogRecord;
+              if (options.runId && value.run_id !== options.runId) continue;
+              if (options.invocationId && value.invocation_id !== options.invocationId) continue;
+              retainedBytes = insertNewestRecord(
+                records,
+                { value, bytes: Buffer.byteLength(line) },
+                limit,
+                maxBytes,
+                retainedBytes
+              );
+            } catch {
+              // A concurrently appended trailing line becomes visible on the next query.
+            }
+          }
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
           throw error;
         }
-        for (const line of content.split(/\r?\n/)) {
-          if (!line) continue;
-          try {
-            const value = JSON.parse(line) as StoredLogRecord;
-            if (options.runId && value.run_id !== options.runId) continue;
-            if (options.invocationId && value.invocation_id !== options.invocationId) continue;
-            insertNewestRecord(records, value, limit);
-          } catch {
-            // A concurrently appended trailing line becomes visible on the next query.
-          }
-        }
       }
-      return records;
+      return records.map(record => record.value);
     } catch (error) {
       this.#degrade(error);
       throw error;
@@ -704,16 +716,60 @@ function validateOptions(options: ObservabilityOptions, dependencies: WriterDepe
   }
 }
 
-function insertNewestRecord(records: StoredLogRecord[], value: StoredLogRecord, limit: number): void {
+interface SizedStoredLogRecord {
+  value: StoredLogRecord;
+  bytes: number;
+}
+
+function insertNewestRecord(
+  records: SizedStoredLogRecord[],
+  record: SizedStoredLogRecord,
+  limit: number,
+  maxBytes: number,
+  retainedBytes: number
+): number {
+  if (record.bytes > maxBytes) return retainedBytes;
   let low = 0;
   let high = records.length;
   while (low < high) {
     const middle = (low + high) >>> 1;
-    if (compareStoredRecords(records[middle], value) <= 0) low = middle + 1;
+    if (compareStoredRecords(records[middle].value, record.value) <= 0) low = middle + 1;
     else high = middle;
   }
-  records.splice(low, 0, value);
-  if (records.length > limit) records.shift();
+  records.splice(low, 0, record);
+  retainedBytes += record.bytes;
+  while (records.length > limit || retainedBytes > maxBytes) {
+    retainedBytes -= records.shift()?.bytes ?? 0;
+  }
+  return retainedBytes;
+}
+
+async function* readBoundedLogLines(path: string): AsyncGenerator<string> {
+  let buffer = "";
+  let discardingOversizedLine = false;
+  const stream = createReadStream(path, { encoding: "utf8", highWaterMark: 64 * 1024 });
+  for await (const chunk of stream as AsyncIterable<string>) {
+    let text = chunk;
+    if (discardingOversizedLine) {
+      const newline = text.indexOf("\n");
+      if (newline < 0) continue;
+      text = text.slice(newline + 1);
+      discardingOversizedLine = false;
+    }
+    buffer += text;
+    let newline = buffer.indexOf("\n");
+    while (newline >= 0) {
+      const line = buffer.slice(0, newline).replace(/\r$/, "");
+      buffer = buffer.slice(newline + 1);
+      if (line && Buffer.byteLength(line) <= MAX_QUERY_LINE_BYTES) yield line;
+      newline = buffer.indexOf("\n");
+    }
+    if (Buffer.byteLength(buffer) > MAX_QUERY_LINE_BYTES) {
+      buffer = "";
+      discardingOversizedLine = true;
+    }
+  }
+  if (!discardingOversizedLine && buffer) yield buffer;
 }
 
 function compareStoredRecords(left: StoredLogRecord, right: StoredLogRecord): number {

@@ -7,11 +7,14 @@ import { fileURLToPath } from "node:url";
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import net from "node:net";
 import WebSocket from "ws";
 import {
   adapterHostRestartDelayMs,
+  LiveEventBus,
   startDaemonServer
 } from "@mininglamp-oss/octo-harness-daemon-app";
+import { InspectServer } from "../apps/daemon/dist/inspect-server.js";
 import { waitFor } from "./agent-work-runtime-fixture.js";
 
 const execute = promisify(execFile);
@@ -111,11 +114,16 @@ test("CLI exposes bounded events and daemon-owned loopback inspect", async () =>
     assert.ok(inspectedAgain.every(result => result.stdout.trim() === inspected.stdout.trim()));
     const url = new URL(inspected.stdout.trim());
     assert.equal(url.hostname, "127.0.0.1");
-    assert.ok(Number(url.port) >= 20_000);
-    assert.ok(url.hash.length > 10);
+    assert.ok(Number(url.port) > 20_000);
+    assert.ok((url.searchParams.get("token") ?? "").length > 10);
     const response = await fetch(url);
     assert.equal(response.status, 200);
-    const token = url.hash.slice(1);
+    const html = await response.text();
+    assert.match(html, /DOM_BYTES=2\*1024\*1024/);
+    assert.match(html, /MAX_RUNS=100/);
+    assert.match(html, /Provider 原生事件/);
+    const token = url.searchParams.get("token");
+    assert.ok(token);
     const logsUrl = new URL("/api/logs", url);
     assert.equal((await fetch(logsUrl)).status, 401);
     const logsResponse = await fetch(logsUrl, { headers: { Authorization: `Bearer ${token}` } });
@@ -145,6 +153,79 @@ test("CLI exposes bounded events and daemon-owned loopback inspect", async () =>
     await rm(home, { recursive: true, force: true });
   }
 });
+
+test("inspect honors an explicit wildcard host and fixed port", async () => {
+  const port = await unusedLoopbackPort();
+  const inspect = new InspectServer(
+    new LiveEventBus(),
+    () => ({ ready: true }),
+    async () => [{ message: "x".repeat(3 * 1024 * 1024) }],
+    {
+    host: "0.0.0.0",
+    port
+    }
+  );
+  try {
+    const advertised = new URL(await inspect.open());
+    assert.equal(advertised.hostname, "0.0.0.0");
+    assert.equal(Number(advertised.port), port);
+    advertised.hostname = "127.0.0.1";
+    assert.equal((await fetch(advertised)).status, 200);
+    const token = advertised.searchParams.get("token");
+    assert.ok(token);
+    const logs = await fetch(new URL("/api/logs", advertised), {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(logs.headers.get("x-octo-truncated"), "true");
+    assert.deepEqual(await logs.json(), []);
+  } finally {
+    await inspect.close();
+  }
+});
+
+test("inspect permits only one log query at a time", async () => {
+  let releaseLogs;
+  const waiting = new Promise(resolve => { releaseLogs = resolve; });
+  let queryStarted;
+  const started = new Promise(resolve => { queryStarted = resolve; });
+  const inspect = new InspectServer(
+    new LiveEventBus(),
+    () => ({ ready: true }),
+    async () => {
+      queryStarted();
+      await waiting;
+      return [];
+    }
+  );
+  try {
+    const advertised = new URL(await inspect.open());
+    const token = advertised.searchParams.get("token");
+    assert.ok(token);
+    const logsUrl = new URL("/api/logs", advertised);
+    const first = fetch(logsUrl, { headers: { Authorization: `Bearer ${token}` } });
+    await started;
+    const second = await fetch(logsUrl, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(second.status, 429);
+    assert.equal(second.headers.get("retry-after"), "1");
+    releaseLogs();
+    assert.equal((await first).status, 200);
+  } finally {
+    releaseLogs?.();
+    await inspect.close();
+  }
+});
+
+async function unusedLoopbackPort() {
+  const server = net.createServer();
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("test listener has no TCP port");
+  await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  return address.port;
+}
 
 test("daemon PID file enforces one process per Harness Home and is removed on clean shutdown", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));

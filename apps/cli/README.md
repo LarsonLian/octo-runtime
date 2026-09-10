@@ -84,6 +84,8 @@ octo-harness events --run-id <agent-run-id>
 octo-harness events --follow
 octo-harness inspect
 octo-harness inspect url
+octo-harness daemon run --inspect-host 127.0.0.1 --inspect-port 23456
+octo-harness daemon install --inspect-host 127.0.0.1 --inspect-port 23456
 octo-harness agent-session list
 octo-harness agent-session get <agent-session-id>
 octo-harness agent-run list
@@ -92,7 +94,9 @@ octo-harness agent-run wait <agent-run-id>
 octo-harness agent-run cancel <agent-run-id>
 ```
 
-这些命令通过 Home 级 Unix socket 或 Windows named pipe 读取本地状态。`events` 默认输出约 6 MiB 有界内存中的当前快照并退出，只有 `--follow` 持续跟随；它不是完整 trajectory。`inspect` 由 daemon 懒启动且只绑定 `127.0.0.1`。生产创建、reset、权威状态、完整 trajectory 与 Human/Bot 授权仍由 Agent Worker / Octo Server API 或 `octo-cli harness` 负责。
+这些命令通过 Home 级 Unix socket 或 Windows named pipe 读取本地状态。`events` 默认输出约 6 MiB 有界内存中的当前快照并退出，只有 `--follow` 持续跟随；它不是完整 trajectory。`inspect` 由 daemon 懒启动，默认绑定 `127.0.0.1` 和 `20001–65535` 随机端口。页面事件 DOM 上限为 2 MiB/1000 行，AgentRuns 上限为最近 100 个。生产创建、reset、权威状态、完整 trajectory 与 Human/Bot 授权仍由 Agent Worker / Octo Server API 或 `octo-cli harness` 负责。
+
+`daemon run` 直接接收 `--inspect-host` / `--inspect-port`；原生服务在 `daemon install` 时把这两个可选参数固化到 systemd、launchd 或 Windows 服务定义和 Harness Home。非回环绑定需要部署方提供 TLS 和网络访问控制；代理日志不得记录 capability 的 `?token=...` query。
 
 ## 状态目录
 

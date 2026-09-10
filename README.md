@@ -134,9 +134,15 @@ pnpm cli events --run-id <agent-run-id>
 pnpm cli events --follow
 pnpm cli inspect
 pnpm cli inspect url
+# foreground daemon: optional explicit inspect binding
+pnpm cli daemon run --inspect-host 127.0.0.1 --inspect-port 23456
+# native service: persist the binding in the installed service definition
+pnpm cli daemon install --inspect-host 127.0.0.1 --inspect-port 23456
 ```
 
-`events` 直接读取 daemon 中约 6 MiB 的有界内存事件流，默认输出当前保留快照后退出，`--follow` 才持续跟随；它不读取 SQLite，也不等同于完整 AgentRun trajectory。`inspect` 懒启动 daemon 自有的 Web 页面，只监听 `127.0.0.1` 的随机高端口。创建 AgentRun、reset AgentSession、查询云端权威状态或获取完整 trajectory，应调用 Agent Worker API 或 `octo-cli harness agent-run ...`。
+`events` 直接读取 daemon 中约 6 MiB 的有界内存事件流，默认输出当前保留快照后退出，`--follow` 才持续跟随；它不读取 SQLite，也不等同于完整 AgentRun trajectory。`inspect` 懒启动 daemon 自有的 Web 页面，默认监听 `127.0.0.1` 的 `20001–65535` 随机端口。页面事件 DOM 受 2 MiB/1000 行双重上限约束，AgentRuns 仅保留最近有消息的 100 个。创建 AgentRun、reset AgentSession、查询云端权威状态或获取完整 trajectory，应调用 Agent Worker API 或 `octo-cli harness agent-run ...`。
+
+显式 `--inspect-host` 可以用于云主机或容器；`daemon run` 直接使用参数，原生服务则在 `daemon install` 时把参数写入服务定义和 Harness Home，供后续 status/restart/update recovery 复用。监听非回环地址会暴露诊断接口，部署方必须提供 TLS 和网络访问控制，不能只依赖 URL 中的 Capability token。Capability 使用 `?token=...` 传入；反向代理、WAF 与 access log 必须禁止记录该 query 参数。
 
 ## 会话恢复
 

@@ -25,7 +25,8 @@ class InMemoryServiceBackend {
     return { supported: true, manager: this.kind, detail: "in-memory test manager" };
   }
 
-  async inspect() {
+  async inspect(spec) {
+    this.inspectedSpec = spec;
     return {
       manager: this.kind,
       state: this.state,
@@ -212,6 +213,7 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
     const prepared = await invoke(["setup", "--prepare-update", "--wait-drained", "--timeout-ms", "5000"]);
     assert.equal(prepared.value.service_was_running, true);
     assert.equal(backend.state, "stopped");
+    assert.deepEqual(backend.spec.args.slice(-2), ["--home", home]);
     const recovered = await invoke(["setup", "--recover-update", "--start"]);
     assert.equal(recovered.value.started, true);
     assert.equal(backend.state, "running");
@@ -240,11 +242,24 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
       "octo_device_fixture_secret"
     );
 
-    const installed = await invoke(["daemon", "install"]);
+    const installed = await invoke([
+      "daemon", "install", "--inspect-host", "10.20.30.40", "--inspect-port", "23456"
+    ]);
     assert.equal(installed.value.action, "install");
     assert.equal(installed.value.service.state, "stopped");
     assert.equal(installed.value.service.enabled, true);
     assert.equal(backend.state, "stopped");
+    assert.deepEqual(backend.spec.args.slice(-4), [
+      "--inspect-host", "10.20.30.40", "--inspect-port", "23456"
+    ]);
+    assert.deepEqual(
+      JSON.parse(await readFile(join(home, "config.json"), "utf8")).inspect,
+      { host: "10.20.30.40", port: 23_456 }
+    );
+    await invoke(["daemon", "status"]);
+    assert.deepEqual(backend.inspectedSpec.args.slice(-4), [
+      "--inspect-host", "10.20.30.40", "--inspect-port", "23456"
+    ]);
     assert.equal(enrollmentCount, 1);
 
     const startedOnline = await invoke(["daemon", "start", "--wait-online", "--timeout-ms", "5000"]);
@@ -259,6 +274,19 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
     });
     assert.equal(foreground.exitCode, 0);
     assert.deepEqual(foregroundArgs, ["--home", home, "--console"]);
+    const inspectForeground = await invoke([
+      "daemon", "run", "--inspect-host", "10.20.30.40", "--inspect-port", "23456"
+    ], {
+      runForegroundDaemon: async args => { foregroundArgs = args; }
+    });
+    assert.equal(inspectForeground.exitCode, 0);
+    assert.deepEqual(foregroundArgs, [
+      "--home", home, "--console", "--inspect-host", "10.20.30.40", "--inspect-port", "23456"
+    ]);
+    await assert.rejects(
+      invoke(["daemon", "start", "--inspect-port", "23456"]),
+      /valid with 'daemon run' or 'daemon install'/
+    );
     const verboseForeground = await invoke(["--verbose", "daemon", "run"], {
       runForegroundDaemon: async args => { foregroundArgs = args; }
     });
