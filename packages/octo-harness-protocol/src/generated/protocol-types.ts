@@ -494,6 +494,18 @@ export interface InvokeRequestWire {
    */
   runId: string;
   /**
+   * Worker-owned AgentSession generation that fences stale continuity updates.
+   */
+  sessionGeneration?: number;
+  /**
+   * Worker-owned provider binding epoch for this Run.
+   */
+  providerEpoch?: number;
+  /**
+   * Caller continuity intent. Fresh invocations must not carry providerSession.
+   */
+  continuityMode?: "continue" | "fresh";
+  /**
    * Display-safe current request or task description. It excludes hidden channel context and provider control parameters.
    */
   prompt: string;
