@@ -81,6 +81,19 @@ test("daemon PID file enforces one process per Harness Home and is removed on cl
   try {
     assert.equal((await readFile(pidPath, "utf8")).trim(), String(process.pid));
     await assert.rejects(startDaemonServer(options), /already running/);
+
+    const cli = join(root, "apps/cli/dist/index.js");
+    const concise = await execute(process.execPath, [cli, "--home", home, "daemon", "run"])
+      .then(() => undefined, error => error);
+    assert.equal(concise.code, 1);
+    assert.match(concise.stderr, /^❌ Octo Harness daemon is already running with pid \d+\n$/);
+    assert.doesNotMatch(concise.stderr, /\n\s+at /);
+
+    const verbose = await execute(process.execPath, [cli, "--verbose", "--home", home, "daemon", "run"])
+      .then(() => undefined, error => error);
+    assert.equal(verbose.code, 1);
+    assert.match(verbose.stderr, /^Error: Octo Harness daemon is already running with pid \d+/);
+    assert.match(verbose.stderr, /\n\s+at /);
   } finally {
     await app.close();
     await assert.rejects(access(pidPath), error => error.code === "ENOENT");

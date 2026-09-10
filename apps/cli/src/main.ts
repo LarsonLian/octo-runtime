@@ -75,6 +75,24 @@ interface CliContext {
 }
 
 const DEFAULT_WAIT_MS = 30_000;
+const BOOLEAN_FLAGS = new Set([
+  "autostart",
+  "enrollTokenStdin",
+  "force",
+  "help",
+  "json",
+  "noAutostart",
+  "noInstallService",
+  "noOpen",
+  "noStart",
+  "prepareUpdate",
+  "recoverUpdate",
+  "sensitive",
+  "start",
+  "verbose",
+  "waitDrained",
+  "waitOnline"
+]);
 
 export async function runCli(args: string[], dependencies: CliDependencies = {}): Promise<number> {
   const normalizedArgs = [...args];
@@ -349,7 +367,10 @@ async function recoverUpdate(context: CliContext): Promise<CommandResult> {
 async function runDaemonCommand(context: CliContext, action: string | undefined): Promise<CommandResult> {
   const selected = action ?? "run";
   if (selected === "run") {
-    const exitCode = await context.runForegroundDaemon(["--home", context.home]);
+    const exitCode = await context.runForegroundDaemon([
+      "--home", context.home,
+      ...(context.flags.verbose === true ? ["--verbose"] : [])
+    ]);
     return { streamed: true, exitCode: exitCode ?? 0 };
   }
   const spec = context.service.spec(context.paths);
@@ -710,6 +731,10 @@ function parseArguments(args: string[]): { flags: Flags; positionals: string[] }
       continue;
     }
     const key = argument.slice(2).replace(/-([a-z])/g, (_match: string, character: string) => character.toUpperCase());
+    if (BOOLEAN_FLAGS.has(key)) {
+      flags[key] = true;
+      continue;
+    }
     const next = args[index + 1];
     flags[key] = next && !next.startsWith("--") ? args[++index] : true;
   }
@@ -787,7 +812,8 @@ function helpText(group?: string): string {
       `  --recover-update [--start]`;
   }
   if (group === "daemon") {
-    return `Usage: octo-harness [--home PATH] daemon run|start|stop|restart|status [--force] [--timeout-ms MS]`;
+    return `Usage: octo-harness [--home PATH] daemon run|start|stop|restart|status [--force] [--timeout-ms MS] [--verbose]\n\n` +
+      `  --verbose  Print full startup error traces and enable verbose daemon diagnostics.`;
   }
   if (group === "doctor") {
     return `Usage: octo-harness [--home PATH] [--profile NAME] doctor\n\n` +
@@ -815,7 +841,7 @@ function helpText(group?: string): string {
       `  cancel <agent-run-id> [--reason TEXT]`;
   }
   return `Octo Harness CLI\n\n` +
-    `Global: --home PATH; --profile NAME (login/doctor selection only)\n\n` +
+    `Global: --home PATH; --profile NAME (login/doctor selection only); --verbose\n\n` +
     `  octo-harness login --help\n` +
     `  octo-harness setup --help\n` +
     `  octo-harness daemon run|start|stop|restart|status\n` +

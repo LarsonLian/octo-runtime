@@ -231,6 +231,11 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
     });
     assert.equal(foreground.exitCode, 0);
     assert.deepEqual(foregroundArgs, ["--home", home]);
+    const verboseForeground = await invoke(["--verbose", "daemon", "run"], {
+      runForegroundDaemon: async args => { foregroundArgs = args; }
+    });
+    assert.equal(verboseForeground.exitCode, 0);
+    assert.deepEqual(foregroundArgs, ["--home", home, "--verbose"]);
     const foregroundFailure = await invoke(["daemon", "run"], {
       runForegroundDaemon: async () => 23
     });
