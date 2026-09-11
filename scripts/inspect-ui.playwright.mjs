@@ -24,7 +24,11 @@ try {
     ]) {
       const page = await browser.newPage({ viewport });
       const errors = [];
+      let websocketCount = 0;
+      let logRequestCount = 0;
       page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
+      page.on("websocket", () => { websocketCount += 1; });
+      page.on("request", request => { if (new URL(request.url()).pathname === "/api/logs") logRequestCount += 1; });
       await page.goto(url, { waitUntil: "networkidle" });
       await page.locator("#events .event").first().waitFor();
       assert.ok(await page.locator("#events").evaluate(element =>
@@ -32,16 +36,29 @@ try {
       ));
       assert.equal(await page.locator("#run-list .run-item").count(), 100);
       assert.match(await page.locator("#run-list .run-item").first().textContent(), /run-recent-104/);
+      const retainedEventCount = await page.locator("#events .event").count();
+      await page.locator("#run-list .run-item").first().locator("button").click();
+      assert.equal(await page.locator("#events .event").count(), retainedEventCount);
+      assert.equal(await page.locator("#events .event:visible").count(), 1);
+      assert.equal(websocketCount, 1);
+      await page.locator("#run").fill("");
+      assert.equal(await page.locator("#events .event:visible").count(), retainedEventCount);
+      await page.locator("#source").selectOption("provider-native");
+      const visibleProviderEvents = await page.locator("#events .event:visible").count();
+      assert.ok(visibleProviderEvents > 0 && visibleProviderEvents < retainedEventCount);
+      assert.equal(websocketCount, 1);
+      await page.locator("#source").selectOption("");
       await page.locator("#events .event").first().locator(".event-line").click();
       assert.equal(await page.locator("#events .event").first().locator(".detail").isVisible(), true);
       assert.equal(await page.locator("#events .event").first().locator(".event-line").getAttribute("aria-expanded"), "true");
       assert.match(await page.locator("#events .event").first().locator(".detail").textContent(), /"schema"/);
-      await page.locator("#about").click();
-      assert.equal(await page.locator("#drawer").isVisible(), true);
-      assert.equal(await page.evaluate(() => document.activeElement?.id), "drawer-close");
-      assert.match(await page.locator("#drawer").textContent(), /Provider 原生事件/);
-      await page.locator("#drawer-close").click();
-      assert.equal(await page.evaluate(() => document.activeElement?.id), "about");
+      await page.locator("#source-help").click();
+      await page.waitForURL(/\/help$/);
+      assert.match(await page.locator("main").textContent(), /Provider 产生、尚未规范化/);
+      await page.screenshot({ path: `/tmp/octo-inspect-${name}-help.png`, fullPage: true });
+      await page.goBack({ waitUntil: "networkidle" });
+      await page.locator("#events .event").first().waitFor();
+      assert.equal(await page.locator("#state").textContent(), "实时");
       await page.screenshot({ path: `/tmp/octo-inspect-${name}-events.png`, fullPage: true });
       await page.reload({ waitUntil: "networkidle" });
       await page.locator("#events .event").first().waitFor();
@@ -50,6 +67,9 @@ try {
       assert.equal(await page.locator('nav button[data-view="events"]').getAttribute("class"), "active");
       await page.locator('nav button[data-view="logs"]').click();
       await page.locator("#logs .event").first().waitFor();
+      await page.locator("#run-list .run-item").first().locator("button").click();
+      assert.equal(logRequestCount, 1);
+      assert.equal(websocketCount, 3);
       await page.locator('nav button[data-view="runtime"]').click();
       assert.match(await page.locator("#runtime").textContent(), /adapterHost/);
       await page.locator('nav button[data-view="memory"]').click();
