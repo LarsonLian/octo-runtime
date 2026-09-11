@@ -122,6 +122,10 @@ test("CLI exposes bounded events and daemon-owned loopback inspect", async () =>
     assert.match(html, /DOM_BYTES=2\*1024\*1024/);
     assert.match(html, /MAX_RUNS=100/);
     assert.match(html, /Provider 原生事件/);
+    assert.doesNotMatch(html, /典型链路/);
+    const helpResponse = await fetch(new URL("/help", url));
+    assert.equal(helpResponse.status, 200);
+    assert.match(await helpResponse.text(), /Inspect 事件来源/);
     const token = url.searchParams.get("token");
     assert.ok(token);
     const logsUrl = new URL("/api/logs", url);
