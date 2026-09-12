@@ -119,7 +119,7 @@ export async function* runCodexAppServerTurn({
   context?: AdapterInvocationContext;
 }): AsyncGenerator<CanonicalEvent> {
   const requestTimeoutMs = appServerRequestTimeout(request);
-  const client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, request.signal);
+  let client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, request.signal);
   let terminal = false;
   let turnProviderRequestId: string | undefined;
 
@@ -127,20 +127,20 @@ export async function* runCodexAppServerTurn({
     throwIfAborted(request.signal);
 
     // Phase 1: negotiate the experimental app-server API first; no thread request is sent until initialize completes.
-    await client.request("initialize", {
-      clientInfo: {
-        name: "@mininglamp-oss/octo-harness-adapter-codex",
-        version: "0.1.0"
-      },
-      capabilities: {
-        experimentalApi: true,
-        requestAttestation: false,
-        optOutNotificationMethods: [
-          "mcpServer/startupStatus/updated",
-          "remoteControl/status/changed"
-        ]
-      }
-    });
+    try {
+      await initializeClient(client);
+    } catch (error) {
+      if (!isInitializeTimeout(error) || request.signal?.aborted) throw error;
+      observeBestEffort(context, {
+        event: "provider.dispatch.failed",
+        rpcMethod: "initialize",
+        data: { error: error instanceof Error ? error.message : String(error), retrying: true }
+      });
+      await client.close();
+      throwIfAborted(request.signal);
+      client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, request.signal);
+      await initializeClient(client);
+    }
     client.notify("initialized");
 
     // Phase 2: providerSession.sessionId is the Codex thread ID, kept opaque to the Core.
@@ -300,10 +300,31 @@ export async function* runCodexAppServerTurn({
       }
     }
   } finally {
-    // close() handles RPC/stdio/process; spec.cleanup handles the shadow CODEX_HOME.
+    // close() handles RPC/stdio/process; spec.cleanup handles any caller-owned resources.
     await client.close();
     await spec.cleanup?.();
   }
+}
+
+function initializeClient(client: CodexAppServerClient): Promise<unknown> {
+  return client.request("initialize", {
+    clientInfo: {
+      name: "@mininglamp-oss/octo-harness-adapter-codex",
+      version: "0.1.0"
+    },
+    capabilities: {
+      experimentalApi: true,
+      requestAttestation: false,
+      optOutNotificationMethods: [
+        "mcpServer/startupStatus/updated",
+        "remoteControl/status/changed"
+      ]
+    }
+  });
+}
+
+function isInitializeTimeout(error: unknown): boolean {
+  return error instanceof Error && /^codex app-server initialize timed out after \d+ms$/.test(error.message);
 }
 
 /**
@@ -471,14 +492,10 @@ export class CodexEventNormalizer {
         ];
       case "error": {
         if (params.willRetry === true) return [];
-        const error = recordValue(params.error);
-        return [
-          ...this.#finishActiveStep("failed", "error"),
-          {
-            type: "run.error",
-            payload: { message: stringValue(error?.message) || "Codex turn failed" }
-          }
-        ];
+        // ErrorNotification is an in-turn diagnostic. Codex may still recover
+        // after a failed tool and emit more items; turn/completed is the only
+        // authoritative turn terminal.
+        return this.#finishActiveStep("failed", "error");
       }
       default: {
         if (isToolArgsDeltaMethod(native.method)) {
@@ -629,7 +646,7 @@ class CodexAppServerClient {
         turnId: this.#activeTurnId
       }, 1_000).catch(() => undefined);
     }
-    this.#abortTimer = setTimeout(() => this.#child.kill("SIGTERM"), 250);
+    this.#abortTimer = setTimeout(() => signalProcessTree(this.#child, "SIGTERM"), 250);
     this.#abortTimer.unref?.();
   };
 
@@ -746,9 +763,9 @@ class CodexAppServerClient {
     if (this.#exited) return;
     this.#child.stdin.end();
     if (await waitForExit(this.#exitPromise, APP_SERVER_CLOSE_GRACE_MS)) return;
-    this.#child.kill("SIGTERM");
+    signalProcessTree(this.#child, "SIGTERM");
     if (await waitForExit(this.#exitPromise, APP_SERVER_KILL_GRACE_MS)) return;
-    this.#child.kill("SIGKILL");
+    signalProcessTree(this.#child, "SIGKILL");
   }
 
   errorMessage(error: unknown): string {
@@ -939,12 +956,29 @@ function defaultSpawn(
   args: readonly string[],
   options: { cwd: string; env: NodeJS.ProcessEnv }
 ): ChildProcessWithoutNullStreams {
-  return spawn(command, [...args], {
+  const child = spawn(command, [...args], {
     cwd: options.cwd,
     env: options.env,
     stdio: ["pipe", "pipe", "pipe"],
+    detached: process.platform !== "win32",
     windowsHide: process.platform === "win32"
   });
+  if (process.platform !== "win32") isolatedProcessGroups.add(child);
+  return child;
+}
+
+const isolatedProcessGroups = new WeakSet<ChildProcessWithoutNullStreams>();
+
+function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
+  if (isolatedProcessGroups.has(child) && child.pid !== undefined) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
+  }
+  child.kill(signal);
 }
 
 /** Shared params for thread/start and thread/resume; the permission policy is fixed at the thread level. */

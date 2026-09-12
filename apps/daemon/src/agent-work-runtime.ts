@@ -917,15 +917,6 @@ export class AgentWorkRuntime {
       return;
     }
     const maxConcurrentRuns = this.#options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS;
-    if (this.#activeRuns.size + this.#acceptingRuns.size >= maxConcurrentRuns) {
-      const error = {
-        code: "RUNTIME_CAPACITY_EXCEEDED",
-        message: `local runtime concurrency limit ${maxConcurrentRuns} reached`
-      };
-      store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
-      this.#ackCommand(command, false, error);
-      return;
-    }
     const controller = new AbortController();
     this.#acceptingCommandIds.add(command.command_id);
     this.#acceptingRuns.set(command.run_id, {
@@ -934,6 +925,18 @@ export class AgentWorkRuntime {
       controller
     });
     try {
+      // Capacity is transient. Keep the command cancellable and reserve slots in
+      // arrival order instead of persisting a terminal rejection that the
+      // control plane cannot safely replay.
+      while (this.#isCurrentLifecycle(epoch)) {
+        throwIfAcceptingAborted(controller.signal);
+        const position = [...this.#acceptingRuns.keys()].indexOf(command.run_id);
+        const available = Math.max(0, maxConcurrentRuns - this.#activeRuns.size);
+        if (position >= 0 && position < available) break;
+        await abortableDelay(CONTEXT_BUSY_POLL_MS, controller.signal);
+      }
+      this.#assertCurrentLifecycle(epoch);
+
       let request: InvokeRequest;
       let adapterType: string;
       let agentSessionId: string;
@@ -1063,14 +1066,19 @@ export class AgentWorkRuntime {
     if (!this.#adapterCapabilities.get(adapterType)?.has("session.serialize")) {
       throw new Error(`adapter ${adapterType} lacks session.serialize required by append-only channel context`);
     }
-    if (!this.#adapterCapabilities.get(adapterType)?.has("session.resume_recovery")) {
-      throw new Error(`adapter ${adapterType} lacks session.resume_recovery required by append-only channel context`);
-    }
     if (contextStore.needsSync(descriptor.scope)) await this.#requestContextSync(runId, descriptor, signal);
     while (this.#isCurrentLifecycle(epoch)) {
       throwIfAcceptingAborted(signal);
       try {
-        return contextStore.prepareSnapshot(runId, descriptor);
+        const snapshot = contextStore.prepareSnapshot(runId, descriptor);
+        // A resumable provider without same-turn recovery cannot safely consume
+        // only a delta if its saved session has disappeared. Start it cold with
+        // the bounded recovery projection instead of rejecting the whole Run.
+        if (envelope.provider_session
+          && !this.#adapterCapabilities.get(adapterType)?.has("session.resume_recovery")) {
+          return contextStore.selectRecovery(runId);
+        }
+        return snapshot;
       } catch (error) {
         if (!(error instanceof ChannelContextConsumerBusyError)) throw error;
         await abortableDelay(CONTEXT_BUSY_POLL_MS, signal);
@@ -1157,9 +1165,10 @@ export class AgentWorkRuntime {
     const store = this.#store;
     if (!store) return;
     let finalText = "";
-    let completed = false;
+    let terminal = false;
     let contextSnapshot = this.#contextStore?.markSubmitted(command.run_id);
     let started = false;
+    let recoverySessionReported = false;
     // Keep execution, invocation, business namespace, and trigger occurrence
     // as distinct correlation domains.
     this.#log({
@@ -1186,13 +1195,21 @@ export class AgentWorkRuntime {
       this.#kickSender();
     };
     try {
-      for await (const event of this.#host.invoke(adapterType, request)) {
+      for await (const providerEvent of this.#host.invoke(adapterType, request)) {
+        let event = providerEvent;
         if (event.type === "run.running" || event.type === "run.queued") continue;
         if (contextSnapshot && selectsRecoveryInput(event)) {
           if (started && contextSnapshot.selectedVariant !== "recovery") {
             throw new Error("provider selected channel context recovery after run.started was persisted");
           }
           contextSnapshot = this.#contextStore?.selectRecovery(command.run_id) ?? contextSnapshot;
+        }
+        if (contextSnapshot?.selectedVariant === "recovery"
+          && !recoverySessionReported
+          && event.type === "session.update"
+          && stringValue(asRecord(event.payload.providerSession).sessionId)) {
+          event = recoverySessionUpdate(event);
+          recoverySessionReported = true;
         }
         appendStarted();
         finalText = accumulateFinalText(finalText, event);
@@ -1215,14 +1232,14 @@ export class AgentWorkRuntime {
         // reach durable storage and close out under sustained backpressure.
         if (!TERMINAL_OUTBOX_TYPES.has(mapped.type)) await this.#awaitOutboxCapacity(command.run_id);
         store.allocateAndAppend(command.run_id, mapped.type, mapped.payload);
-        completed ||= event.type === "run.finished";
+        terminal ||= TERMINAL_OUTBOX_TYPES.has(mapped.type);
         this.#kickSender();
       }
       this.#log({
-        level: completed ? "info" : "warn",
+        level: terminal ? "info" : "warn",
         scope: "adapter.invoke",
-        event: completed ? "adapter.invoke.completed" : "adapter.invoke.ended_without_terminal",
-        message: completed ? "adapter invocation completed" : "adapter invocation ended without a terminal event",
+        event: terminal ? "adapter.invoke.completed" : "adapter.invoke.ended_without_terminal",
+        message: terminal ? "adapter invocation completed" : "adapter invocation ended without a terminal event",
         runId: command.run_id,
         invocationId: request.invocationId,
         agentSessionId: request.agentSessionId,
@@ -1255,7 +1272,7 @@ export class AgentWorkRuntime {
       }
     } finally {
       // Success remains submitted until the terminal outbox row receives a durable ACK.
-      if (!completed) this.#contextStore?.markFailed(command.run_id);
+      if (!terminal) this.#contextStore?.markFailed(command.run_id);
       this.#activeRuns.delete(command.run_id);
     }
   }
@@ -1501,7 +1518,9 @@ export function mapExecutionEnvelope(
       workdir,
       appendInstructions: stringValue(definition.instructions) ?? "",
       context,
-      ...(envelope.provider_session ? { providerSession: envelope.provider_session } : {}),
+      ...(envelope.provider_session && contextSnapshot?.selectedVariant !== "recovery"
+        ? { providerSession: envelope.provider_session }
+        : {}),
       agentConfig: { ...agentConfig, workdir }
     }
   };
@@ -1645,6 +1664,28 @@ function selectsRecoveryInput(event: CanonicalEvent): boolean {
   const providerSession = asRecord(event.payload.providerSession);
   return providerSession.resumeOutcome === "fresh_fallback"
     && providerSession.contextInputVariant === "recovery";
+}
+
+/** Mark a preselected cold session so Agent Worker advances the context epoch
+ * exactly as it does for a provider-reported resume fallback. */
+function recoverySessionUpdate(
+  event: Extract<CanonicalEvent, { type: "session.update" }>
+): Extract<CanonicalEvent, { type: "session.update" }> {
+  const providerSession = asRecord(event.payload.providerSession);
+  const sessionId = stringValue(providerSession.sessionId);
+  if (!sessionId) return event;
+  return {
+    type: "session.update",
+    payload: {
+      ...event.payload,
+      providerSession: {
+        ...providerSession,
+        sessionId,
+        resumeOutcome: "fresh_fallback",
+        contextInputVariant: "recovery"
+      }
+    }
+  };
 }
 
 function contextEventFields(snapshot: PreparedChannelContextSnapshot): Record<string, unknown> {

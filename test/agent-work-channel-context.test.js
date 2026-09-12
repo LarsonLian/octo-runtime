@@ -978,13 +978,15 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
   }
 });
 
-test("append-only channel context fails closed without continuity recovery", async () => {
+test("append-only channel context cold-starts an adapter without continuity recovery", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-channel-runtime-capability-"));
   const httpServer = createServer();
   const wsServer = new WebSocketServer({ noServer: true });
-  const rejected = deferred();
+  const accepted = deferred();
+  const completed = deferred();
+  const emitted = [];
   let runtime;
-  let invocationCount = 0;
+  let providerRequest;
 
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
@@ -999,18 +1001,40 @@ test("append-only channel context fails closed without continuity recovery", asy
       const envelope = JSON.parse(data.toString("utf8"));
       if (envelope.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        const payload = executionEnvelope("run-stateless", 2, "current message");
+        payload.provider_session = { sessionId: "stale-provider-session", resumable: true };
         websocket.send(wire("runtime.command", {
           server_seq: 1,
           command_id: "command-stateless",
           run_id: "run-stateless",
           type: "run.start",
-          payload: executionEnvelope("run-stateless"),
+          payload,
           lease_id: "lease-stateless",
           fencing_token: 1
         }));
       }
+      if (envelope.type === "context.sync_request") {
+        websocket.send(wire("context.sync_result", {
+          request_id: envelope.payload.request_id,
+          scope,
+          facts: [fact(1, "background message")],
+          completeness: "complete",
+          through_seq: 1
+        }));
+      }
       if (envelope.type === "command.ack" && envelope.payload.command_id === "command-stateless") {
-        rejected.resolve(envelope.payload);
+        accepted.resolve(envelope.payload);
+      }
+      if (envelope.type === "run.event_batch") {
+        emitted.push(...envelope.payload.events);
+        const terminal = envelope.payload.events.find(event => event.type === "run.completed");
+        websocket.send(wire("event.ack", {
+          run_id: envelope.payload.run_id,
+          received_through_seq: envelope.payload.last_seq,
+          durable_through_seq: envelope.payload.last_seq,
+          ...(terminal ? terminalGrant(terminal) : {})
+        }));
+        if (terminal) completed.resolve();
       }
     });
   });
@@ -1021,8 +1045,10 @@ test("append-only channel context fails closed without continuity recovery", asy
     const host = {
       list: async () => [{ type: "fake", capabilities: ["session.serialize"] }],
       cancel: async () => ({ cancelled: true }),
-      async *invoke() {
-        invocationCount += 1;
+      async *invoke(_adapterType, request) {
+        providerRequest = request;
+        yield { type: "session.update", payload: { providerSession: { sessionId: "new-provider-session", resumable: true } } };
+        yield { type: "message.delta", payload: { channel: "final", text: "done" } };
         yield { type: "run.finished", payload: {} };
       }
     };
@@ -1038,15 +1064,23 @@ test("append-only channel context fails closed without continuity recovery", asy
         store: "sqlite",
         projection: "delta",
         providerPersistence: "append_only",
-        storePath: join(directory, "channel-context.db")
+        storePath: join(directory, "channel-context.db"),
+        syncTimeoutMs: 1_000
       }
     }, host);
     await runtime.start();
-    const ack = await withTimeout(rejected.promise, 3_000, "stateless adapter rejection timeout");
-    assert.equal(ack.accepted, false);
-    assert.equal(ack.error.code, "INVALID_EXECUTION_ENVELOPE");
-    assert.match(ack.error.message, /lacks session\.resume_recovery/);
-    assert.equal(invocationCount, 0);
+    const ack = await withTimeout(accepted.promise, 3_000, "cold-start adapter acceptance timeout");
+    await withTimeout(completed.promise, 3_000, "cold-start adapter completion timeout");
+    assert.equal(ack.accepted, true);
+    assert.equal(providerRequest.providerSession, undefined);
+    assert.match(providerRequest.modelInput, /background message/);
+    const session = emitted.find(event => event.type === "session.update");
+    assert.equal(session.payload.providerSession.resumeOutcome, "fresh_fallback");
+    assert.equal(session.payload.providerSession.contextInputVariant, "recovery");
+    const terminal = emitted.find(event => event.type === "run.completed");
+    assert.equal(terminal.payload.context_input_variant, "recovery");
+    assert.equal(terminal.payload.context_source_session_generation, 1);
+    assert.equal(terminal.payload.context_session_generation, 2);
   } finally {
     await runtime?.close();
     for (const client of wsServer.clients) client.terminate();

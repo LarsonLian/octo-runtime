@@ -7,6 +7,10 @@ import {
   observeProviderOutput
 } from "../packages/octo-harness-adapter-sdk/dist/index.js";
 import { createCodeBuddyAdapter } from "@mininglamp-oss/octo-harness-adapter-codebuddy";
+import { createAcpAdapter, normalizeAcpUpdate } from "@mininglamp-oss/octo-harness-adapter-acp";
+import { hermesAdapter } from "@mininglamp-oss/octo-harness-adapter-hermes";
+import { kiroAdapter } from "@mininglamp-oss/octo-harness-adapter-kiro";
+import { kimiCodeAdapter } from "@mininglamp-oss/octo-harness-adapter-kimi-code";
 import {
   buildCodexCommand,
   CodexEventNormalizer,
@@ -133,6 +137,40 @@ test("Codex native events map to session/message/usage/terminal", () => {
   );
 });
 
+test("Codex waits for turn/completed after a non-retry error so ReAct can recover", () => {
+  const normalizer = new CodexEventNormalizer();
+  normalizer.normalize({
+    method: "turn/started", params: { turn: { id: "turn-recovery", status: "inProgress" } }
+  });
+  normalizer.normalize({
+    method: "item/started",
+    params: { turnId: "turn-recovery", item: { type: "reasoning", id: "reasoning-before-error" } }
+  });
+
+  const diagnostic = normalizer.normalize({
+    method: "error",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-recovery",
+      willRetry: false,
+      error: { message: "tool execution failed" }
+    }
+  });
+  assert.deepEqual(diagnostic.map(event => event.type), ["model_step.finished"]);
+  assert.equal(diagnostic.some(event => event.type === "run.error"), false);
+
+  const recovery = normalizer.normalize({
+    method: "item/started",
+    params: { turnId: "turn-recovery", item: { type: "reasoning", id: "reasoning-after-error" } }
+  });
+  assert.equal(recovery[0].type, "model_step.started");
+  assert.equal(recovery[0].payload.stepId, "codex:turn-recovery:round:2");
+  assert.deepEqual(
+    normalizer.normalize({ method: "turn/completed", params: { turn: { id: "turn-recovery", status: "completed" } } }).at(-1),
+    { type: "run.finished", payload: {} }
+  );
+});
+
 test("Codex reasoning and plan deltas are emitted immediately with explicit exposure provenance", () => {
   const cases = [
     ["item/reasoning/summaryTextDelta", "public_summary"],
@@ -241,7 +279,7 @@ test("Codex command starts app-server over stdio", async () => {
   const command = await buildCodexCommand(request);
   assert.deepEqual(command.args, ["app-server", "--listen", "stdio://"]);
   assert.equal(command.cwd, request.workdir);
-  assert.equal(typeof command.env.CODEX_HOME, "string");
+  assert.equal(command.env.CODEX_HOME, process.env.CODEX_HOME ?? join(process.env.HOME, ".codex"));
   await command.cleanup();
 });
 
@@ -712,4 +750,94 @@ test("CodeBuddy keeps an end_turn ACP prompt as a completed run", async () => {
 
   assert.equal(events.at(-1).type, "run.finished");
   assert.equal(events.some(event => event.type === "run.stopped"), false);
+});
+
+test("generic ACP adapters keep a failed tool local and accept the prompt response as the run terminal", async () => {
+  let nextRequestId = 1;
+  let spawnOptions;
+  const client = {
+    initialize: async () => {},
+    reserveRequestId: () => nextRequestId++,
+    request: async method => method === "session/new" ? { sessionId: "acp-session" } : {},
+    async *prompt() {
+      yield { sessionUpdate: "tool_call", toolCallId: "tool-failed", name: "shell", rawInput: { command: "false" } };
+      yield { sessionUpdate: "tool_call_update", toolCallId: "tool-failed", status: "failed", rawOutput: "exit 1" };
+      yield { sessionUpdate: "agent_thought_chunk", content: { text: "trying another approach" } };
+      yield { sessionUpdate: "agent_message_chunk", content: { text: "recovered" } };
+      yield { type: "prompt_result", stopReason: "end_turn" };
+    },
+    cancel: () => {},
+    close: async () => {}
+  };
+  const adapter = createAcpAdapter(
+    { type: "fixture-acp", provider: "fixture-acp", command: "fixture", args: ["acp"] },
+    { acpClientFactory: options => { spawnOptions = options; return client; } }
+  );
+  const events = [];
+  for await (const event of adapter.invoke({
+    ...request,
+    agentConfig: { model: "fixture-model", autoApprove: true }
+  })) events.push(event);
+
+  assert.equal(spawnOptions.permissionHandler({
+    options: [
+      { optionId: "reject", kind: "reject_once" },
+      { optionId: "allow", kind: "allow_once" }
+    ]
+  }).outcome.optionId, "allow");
+  assert.deepEqual(events.filter(event => event.type.startsWith("run.")), [
+    { type: "run.finished", payload: {} }
+  ]);
+  assert.ok(events.some(event => event.type === "tool_call.update"
+    && event.payload.id === "tool-failed"
+    && event.payload.status === "failed"));
+  assert.ok(events.some(event => event.type === "message.delta" && event.payload.text === "recovered"));
+});
+
+test("Hermes, Kiro, and Kimi Code expose distinct ACP adapter types", () => {
+  assert.deepEqual(
+    [hermesAdapter.metadata.type, kiroAdapter.metadata.type, kimiCodeAdapter.metadata.type],
+    ["hermes", "kiro", "kimi-code"]
+  );
+  assert.equal(normalizeAcpUpdate({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "tool-1",
+    status: "failed"
+  }, "fixture")[0].type, "tool_call.update");
+});
+
+test("generic ACP cancellation sends session/cancel and converges to run.stopped", async () => {
+  let nextRequestId = 1;
+  let releasePrompt;
+  const promptCancelled = new Promise(resolve => { releasePrompt = resolve; });
+  const calls = [];
+  const client = {
+    initialize: async () => {},
+    reserveRequestId: () => nextRequestId++,
+    request: async method => method === "session/new" ? { sessionId: "cancel-session" } : {},
+    async *prompt() {
+      yield { sessionUpdate: "agent_thought_chunk", content: { text: "working" } };
+      await promptCancelled;
+      yield { type: "prompt_result", stopReason: "cancelled" };
+    },
+    cancel: sessionId => {
+      calls.push(["cancel", sessionId]);
+      releasePrompt?.();
+    },
+    close: async () => { calls.push(["close"]); }
+  };
+  const controller = new AbortController();
+  const adapter = createAcpAdapter(
+    { type: "fixture-acp", provider: "fixture-acp", command: "fixture" },
+    { acpClientFactory: () => client }
+  );
+  const events = [];
+  for await (const event of adapter.invoke({ ...request, signal: controller.signal })) {
+    events.push(event);
+    if (event.type === "message.delta") controller.abort("user_stop");
+  }
+
+  assert.deepEqual(calls, [["cancel", "cancel-session"], ["close"]]);
+  assert.equal(events.filter(event => event.type.startsWith("run.")).length, 1);
+  assert.deepEqual(events.at(-1), { type: "run.stopped", payload: { reason: "cancelled" } });
 });

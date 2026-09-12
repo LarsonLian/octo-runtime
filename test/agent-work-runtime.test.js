@@ -147,6 +147,35 @@ test("frozen channel context uses modelInput while prompt remains display-safe",
   assert.equal(renderDisplayExecutionInputPrompt(envelope.agent_run_request.input), mapped.request.prompt);
 });
 
+test("a recovery channel snapshot starts without the stale provider session", () => {
+  const recoverySnapshot = {
+    ref: {
+      snapshot_id: "ctx-recovery",
+      scope_key: "scope-1",
+      consumer_key: "consumer-1",
+      session_generation: 8,
+      source_session_generation: 7,
+      trigger_message_id: "message-current",
+      serializer_version: "channel-context-jsonl-v2",
+      rendered_sha256: "a".repeat(64),
+      completeness: "complete",
+      recovery_rendered_sha256: "b".repeat(64),
+      recovery_completeness: "complete"
+    },
+    facts: [],
+    renderedText: "delta-only",
+    recoveryFacts: [],
+    recoveryRenderedText: "full-recovery-context",
+    recoveryCompleteness: "complete",
+    selectedVariant: "recovery",
+    state: "prepared"
+  };
+  const mapped = mapExecutionEnvelope(envelope, recoverySnapshot);
+  assert.equal(mapped.request.providerSession, undefined);
+  assert.match(mapped.request.modelInput, /full-recovery-context/);
+  assert.doesNotMatch(mapped.request.modelInput, /delta-only/);
+});
+
 test("runtime terminal mapping carries the assembled final answer", () => {
   assert.deepEqual(mapRuntimeEvent({ type: "run.finished", payload: {} }, "done"), {
     type: "run.completed",
@@ -545,13 +574,15 @@ test("hard outbox watermark rejects new work with a durable command receipt", as
   }
 });
 
-test("local runtime concurrency limit rejects a second provider invocation", async () => {
+test("local runtime concurrency limit queues a second provider invocation", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-capacity-"));
   const httpServer = createServer();
   const wsServer = new WebSocketServer({ noServer: true });
   const firstStarted = deferred();
   const releaseFirst = deferred();
-  const secondRejection = deferred();
+  const firstAccepted = deferred();
+  const secondAccepted = deferred();
+  const secondStarted = deferred();
   let runtime;
   let socket;
   let invocations = 0;
@@ -570,8 +601,10 @@ test("local runtime concurrency limit rejects a second provider invocation", asy
       if (frame.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
         websocket.send(wire("runtime.command", runtimeCommand("first", 1)));
+      } else if (frame.type === "command.ack" && frame.payload.command_id === "command-first") {
+        firstAccepted.resolve(frame.payload);
       } else if (frame.type === "command.ack" && frame.payload.command_id === "command-second") {
-        secondRejection.resolve(frame.payload);
+        secondAccepted.resolve(frame.payload);
       }
     });
   });
@@ -590,19 +623,26 @@ test("local runtime concurrency limit rejects a second provider invocation", asy
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         invocations += 1;
-        firstStarted.resolve();
-        await releaseFirst.promise;
+        if (invocations === 1) {
+          firstStarted.resolve();
+          await releaseFirst.promise;
+        } else {
+          secondStarted.resolve();
+        }
         yield { type: "run.finished", payload: {} };
       }
     });
     await runtime.start();
     await firstStarted.promise;
+    assert.equal((await firstAccepted.promise).accepted, true);
     socket.send(wire("runtime.command", runtimeCommand("second", 2)));
-    const ack = await secondRejection.promise;
-    assert.equal(ack.accepted, false);
-    assert.equal(ack.error.code, "RUNTIME_CAPACITY_EXCEEDED");
+    await new Promise(resolve => setTimeout(resolve, 75));
     assert.equal(invocations, 1);
     releaseFirst.resolve();
+    await secondStarted.promise;
+    const ack = await secondAccepted.promise;
+    assert.equal(ack.accepted, true);
+    assert.equal(invocations, 2);
   } finally {
     releaseFirst.resolve();
     await runtime?.close();

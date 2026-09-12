@@ -1,11 +1,10 @@
 /**
  * Assembly entry point for the Codex adapter.
  *
- * This file only handles "how to prepare one invocation": constructing an
- * isolated CODEX_HOME, declaring adapter metadata, and delegating execution to
- * the app-server transport. The JSON-RPC state machine, native event parsing and
- * subprocess lifecycle live in app-server.ts, so the entry layer does not also
- * carry protocol logic.
+ * This file only handles "how to prepare one invocation": selecting the real
+ * CODEX_HOME, declaring adapter metadata, and delegating execution to the
+ * app-server transport. Per-run developer instructions travel in native thread
+ * params, so app-server sees the complete state database and plugin runtime.
  */
 import { defineAdapter, probeCommand, type AdapterInvocationContext, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { parse, stringify } from "smol-toml";
@@ -61,7 +60,10 @@ async function linkOptional(
 }
 
 /**
- * Construct a shadow CODEX_HOME for a single invocation.
+ * Construct a shadow CODEX_HOME for compatibility tests and callers that need
+ * a standalone config overlay. Production app-server invocations intentionally
+ * do not use it: current Codex versions keep startup state databases in HOME,
+ * and a partial shadow triggers state backfill and lock waits.
  *
  * Design goals:
  * 1. harness instructions affect only this turn and never rewrite the user's
@@ -105,21 +107,22 @@ export async function createCodexInvocationHome(
  *
  * The user prompt never appears in argv; it is written to stdin later via
  * turn/start. The parent process environment is inherited whole and only
- * CODEX_HOME is replaced, so PATH, provider tokens and other runtime config stay
- * available.
+ * The complete real CODEX_HOME is reused. Per-run instructions are sent through
+ * thread/start or thread/resume `developerInstructions`, never written to the
+ * user's config.toml.
  */
 export async function buildCodexCommand(
   req: InvokeRequest,
   command = "codex",
   appServerArgs = buildCodexAppServerArgs()
 ): Promise<CodexAppServerCommand> {
-  const privateHome = await createCodexInvocationHome(req.appendInstructions);
+  const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
   return {
     command,
     args: [...appServerArgs],
     cwd: req.workdir,
-    env: { ...process.env, CODEX_HOME: privateHome.home },
-    cleanup: privateHome.cleanup
+    env: { ...process.env, CODEX_HOME: codexHome },
+    cleanup: async () => undefined
   };
 }
 

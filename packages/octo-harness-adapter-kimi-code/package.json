@@ -1,0 +1,10 @@
+{
+  "name": "@mininglamp-oss/octo-harness-adapter-kimi-code",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "dependencies": { "@mininglamp-oss/octo-harness-adapter-acp": "workspace:*" },
+  "scripts": { "build": "tsc -p tsconfig.json" }
+}

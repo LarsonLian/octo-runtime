@@ -53,7 +53,7 @@ sequenceDiagram
 2. **权威 session 延迟上报**。仅当 `turn/start` 真正成功、本轮确实可执行时，才向 Core 上报 `session.update`，以避免 Core 保存下一个「thread 存在但无法执行」的无效 ID。
 3. **终态唯一**。`turn/completed` 映射为 `run.finished` / `run.error` / `run.stopped`；进程异常退出或被取消时，适配器均兜底为单一干净终态，此后到达的 provider 事件一律丢弃。
 4. **审批自动应答**。对 Codex 反向发来的命令执行、文件修改审批请求，适配器一律回应 `accept`（对应 `approvalPolicy: never` 的无人值守语义）；对未知的反向请求回应 JSON-RPC `-32601`，避免 Codex 持续阻塞等待。该 accept 不构成安全边界（见下文）。
-5. **shadow CODEX_HOME**。每轮复制一份临时 `config.toml`，仅覆盖本轮的 `developer_instructions`，而 `auth.json` / `sessions` / `skills` / `rules` 通过 symlink 复用真实 HOME。这是配置层面的覆盖，而非文件系统隔离——symlink 是活别名，写入会落到真实目录。
+5. **完整 CODEX_HOME**。app-server 直接复用真实 HOME，避免残缺 shadow HOME 触发 `state_5.sqlite` backfill 与并发锁等待。本轮私有控制指令只通过原生 `thread/start` / `thread/resume.developerInstructions` 传入，不修改用户的 `config.toml`。
 
 ## 使用
 

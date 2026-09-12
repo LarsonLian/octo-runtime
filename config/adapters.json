@@ -4,6 +4,9 @@
     { "type": "codex", "module": "@mininglamp-oss/octo-harness-adapter-codex", "export": "codexAdapter" },
     { "type": "claude-code", "module": "@mininglamp-oss/octo-harness-adapter-claude-code", "export": "claudeCodeAdapter" },
     { "type": "codebuddy", "module": "@mininglamp-oss/octo-harness-adapter-codebuddy", "export": "codebuddyAdapter" },
+    { "type": "hermes", "module": "@mininglamp-oss/octo-harness-adapter-hermes", "export": "hermesAdapter" },
+    { "type": "kiro", "module": "@mininglamp-oss/octo-harness-adapter-kiro", "export": "kiroAdapter" },
+    { "type": "kimi-code", "module": "@mininglamp-oss/octo-harness-adapter-kimi-code", "export": "kimiCodeAdapter" },
     { "type": "opencode", "module": "@mininglamp-oss/octo-harness-adapter-opencode", "export": "opencodeAdapter" },
     { "type": "openclaw", "module": "@mininglamp-oss/octo-harness-adapter-openclaw", "export": "openclawAdapter" }
   ]
