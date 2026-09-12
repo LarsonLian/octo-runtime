@@ -160,6 +160,7 @@ interface AcceptingRun {
   commandId: string;
   serverSeq: number;
   controller: AbortController;
+  acknowledged: boolean;
 }
 
 interface PendingContextSync {
@@ -884,7 +885,18 @@ export class AgentWorkRuntime {
     }
     // A replay while the first handler waits must join the in-flight
     // admission attempt before evaluating mutable capacity constraints.
-    if (this.#acceptingCommandIds.has(command.command_id) || this.#acceptingRuns.has(command.run_id)) return;
+    if (this.#acceptingCommandIds.has(command.command_id) || this.#acceptingRuns.has(command.run_id)) {
+      // The control plane retries unacknowledged commands while a FIFO entry
+      // can legitimately wait longer than its delivery timeout. Confirm that
+      // the existing local admission owns the command; its original handler
+      // remains responsible for validation, durable receipt, and execution.
+      const accepting = this.#acceptingRuns.get(command.run_id);
+      if (accepting && accepting.commandId === command.command_id && !accepting.acknowledged) {
+        accepting.acknowledged = true;
+        this.#ackCommand(command, true);
+      }
+      return;
+    }
     if (this.#draining) {
       const error = { code: "RUNTIME_DRAINING", message: "runtime is draining for a service operation" };
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
@@ -919,24 +931,14 @@ export class AgentWorkRuntime {
     const maxConcurrentRuns = this.#options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS;
     const controller = new AbortController();
     this.#acceptingCommandIds.add(command.command_id);
-    this.#acceptingRuns.set(command.run_id, {
+    const accepting: AcceptingRun = {
       commandId: command.command_id,
       serverSeq: command.server_seq,
-      controller
-    });
+      controller,
+      acknowledged: false
+    };
+    this.#acceptingRuns.set(command.run_id, accepting);
     try {
-      // Capacity is transient. Keep the command cancellable and reserve slots in
-      // arrival order instead of persisting a terminal rejection that the
-      // control plane cannot safely replay.
-      while (this.#isCurrentLifecycle(epoch)) {
-        throwIfAcceptingAborted(controller.signal);
-        const position = [...this.#acceptingRuns.keys()].indexOf(command.run_id);
-        const available = Math.max(0, maxConcurrentRuns - this.#activeRuns.size);
-        if (position >= 0 && position < available) break;
-        await abortableDelay(CONTEXT_BUSY_POLL_MS, controller.signal);
-      }
-      this.#assertCurrentLifecycle(epoch);
-
       let request: InvokeRequest;
       let adapterType: string;
       let agentSessionId: string;
@@ -1021,6 +1023,17 @@ export class AgentWorkRuntime {
         this.#ackCommand(command, false, failure);
         return;
       }
+      // Freeze the command's context before it waits for provider capacity.
+      // Otherwise a faster sibling Run can advance the consumer generation and
+      // turn a valid fan-out command into a stale-context rejection in the queue.
+      while (this.#isCurrentLifecycle(epoch)) {
+        throwIfAcceptingAborted(controller.signal);
+        const position = [...this.#acceptingRuns.keys()].indexOf(command.run_id);
+        const available = Math.max(0, maxConcurrentRuns - this.#activeRuns.size);
+        if (position >= 0 && position < available) break;
+        await abortableDelay(CONTEXT_BUSY_POLL_MS, controller.signal);
+      }
+      this.#assertCurrentLifecycle(epoch);
       store.upsertRun({
         runId: command.run_id,
         agentSessionId,
@@ -1034,7 +1047,7 @@ export class AgentWorkRuntime {
         leaseId,
         fencingToken
       });
-      this.#ackCommand(command, true);
+      if (!accepting.acknowledged) this.#ackCommand(command, true);
       const execution = this.#execute(command, adapterType, request);
       this.#executionTasks.add(execution);
       void execution.finally(() => this.#executionTasks.delete(execution));

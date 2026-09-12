@@ -582,7 +582,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
     }, host);
     await runtime.start();
     await withTimeout(priorAckReleased.promise, 3_000, "prior ACK release timeout");
-    assert.deepEqual(observedBeforePriorAck, { secondAckSeen: false, secondInvokeSeen: false });
+    assert.deepEqual(observedBeforePriorAck, { secondAckSeen: true, secondInvokeSeen: false });
     await withTimeout(secondCommandAcked.promise, 3_000, "second command ACK timeout");
     await withTimeout(secondTerminalAcked.promise, 3_000, "second terminal timeout");
     await withTimeout(thirdTerminalAcked.promise, 3_000, "third terminal timeout");
@@ -645,6 +645,7 @@ test("runtime rejects a queued source generation after recovery advanced the eff
   contextStore.prepareSnapshot("run-recovery-blocker", blocker);
   contextStore.selectRecovery("run-recovery-blocker");
   contextStore.markSubmitted("run-recovery-blocker");
+  assert.equal(contextStore.commitSnapshot("run-recovery-blocker").committed, true);
   contextStore.close();
 
   httpServer.on("request", async (request, response) => {
@@ -712,7 +713,7 @@ test("runtime rejects a queued source generation after recovery advanced the eff
       latest_generation: 2
     });
     assert.equal(invocationCount, 0);
-    assert.equal(runtime.status.channelContext.activeSnapshots, 1);
+    assert.equal(runtime.status.channelContext.activeSnapshots, 0);
   } finally {
     await runtime?.close();
     for (const client of wsServer.clients) client.terminate();

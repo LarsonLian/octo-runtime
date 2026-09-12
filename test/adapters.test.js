@@ -752,6 +752,101 @@ test("CodeBuddy keeps an end_turn ACP prompt as a completed run", async () => {
   assert.equal(events.some(event => event.type === "run.stopped"), false);
 });
 
+test("generic ACP adapters expose a model step when the provider only sends public answer chunks", async () => {
+  let nextRequestId = 1;
+  const client = {
+    initialize: async () => {},
+    reserveRequestId: () => nextRequestId++,
+    request: async method => method === "session/new" ? { sessionId: "acp-session" } : {},
+    async *prompt() {
+      yield { sessionUpdate: "agent_message_chunk", content: { text: "done" } };
+      yield { type: "prompt_result", stopReason: "end_turn" };
+    },
+    cancel: () => {},
+    close: async () => {}
+  };
+  const adapter = createAcpAdapter(
+    { type: "fixture-acp", provider: "fixture-acp", command: "fixture" },
+    { acpClientFactory: () => client }
+  );
+  const events = [];
+  for await (const event of adapter.invoke(request)) events.push(event);
+
+  assert.deepEqual(events.filter(event => event.type.startsWith("model_step.")), [
+    { type: "model_step.started", payload: { stepId: "fixture-acp:step:1" } },
+    {
+      type: "model_step.finished",
+      payload: {
+        stepId: "fixture-acp:step:1",
+        status: "completed",
+        finishReason: "end_turn",
+        publicText: "done"
+      }
+    }
+  ]);
+  assert.ok(events.some(event => event.type === "message.delta"
+    && event.payload.text === "done"
+    && event.payload.stepId === "fixture-acp:step:1"));
+  assert.equal(events.at(-1).type, "run.finished");
+});
+
+test("generic ACP adapters recover public text carried by the prompt response", async () => {
+  let nextRequestId = 1;
+  const client = {
+    initialize: async () => {},
+    reserveRequestId: () => nextRequestId++,
+    request: async method => method === "session/new" ? { sessionId: "acp-session" } : {},
+    async *prompt() {
+      yield { type: "prompt_result", stopReason: "end_turn", output: { text: "response fallback" } };
+    },
+    cancel: () => {},
+    close: async () => {}
+  };
+  const adapter = createAcpAdapter(
+    { type: "fixture-acp", provider: "fixture-acp", command: "fixture" },
+    { acpClientFactory: () => client }
+  );
+  const events = [];
+  for await (const event of adapter.invoke(request)) events.push(event);
+
+  assert.ok(events.some(event => event.type === "message.delta"
+    && event.payload.text === "response fallback"
+    && event.payload.stepId === "fixture-acp:step:1"));
+  assert.ok(events.some(event => event.type === "model_step.finished"
+    && event.payload.publicText === "response fallback"));
+  assert.equal(events.at(-1).type, "run.finished");
+});
+
+test("generic ACP adapters reject an empty end_turn instead of reporting a false success", async () => {
+  let nextRequestId = 1;
+  const client = {
+    initialize: async () => {},
+    reserveRequestId: () => nextRequestId++,
+    request: async method => method === "session/new" ? { sessionId: "acp-session" } : {},
+    async *prompt() {
+      yield { type: "prompt_result", stopReason: "end_turn" };
+    },
+    cancel: () => {},
+    close: async () => {}
+  };
+  const adapter = createAcpAdapter(
+    { type: "fixture-acp", provider: "fixture-acp", command: "fixture" },
+    { acpClientFactory: () => client }
+  );
+  const events = [];
+  for await (const event of adapter.invoke(request)) events.push(event);
+
+  assert.deepEqual(events.at(-2), { type: "message.update", payload: { role: "assistant", status: "failed" } });
+  assert.deepEqual(events.at(-1), {
+    type: "run.error",
+    payload: {
+      code: "ACP_NO_FINAL_OUTPUT",
+      message: "fixture-acp completed without assistant output",
+      adapterType: "fixture-acp"
+    }
+  });
+});
+
 test("generic ACP adapters keep a failed tool local and accept the prompt response as the run terminal", async () => {
   let nextRequestId = 1;
   let spawnOptions;
@@ -791,7 +886,34 @@ test("generic ACP adapters keep a failed tool local and accept the prompt respon
   assert.ok(events.some(event => event.type === "tool_call.update"
     && event.payload.id === "tool-failed"
     && event.payload.status === "failed"));
-  assert.ok(events.some(event => event.type === "message.delta" && event.payload.text === "recovered"));
+  assert.ok(events.some(event => event.type === "message.delta"
+    && event.payload.text === "trying another approach"
+    && event.payload.stepId === "fixture-acp:step:2"
+    && event.payload.messageId === "fixture-acp:step:2:reasoning"));
+  assert.ok(events.some(event => event.type === "message.delta"
+    && event.payload.text === "recovered"
+    && event.payload.stepId === "fixture-acp:step:2"));
+  assert.deepEqual(events.filter(event => event.type.startsWith("model_step.")), [
+    { type: "model_step.started", payload: { stepId: "fixture-acp:step:1" } },
+    {
+      type: "model_step.finished",
+      payload: {
+        stepId: "fixture-acp:step:1",
+        status: "completed",
+        finishReason: "tool-calls"
+      }
+    },
+    { type: "model_step.started", payload: { stepId: "fixture-acp:step:2" } },
+    {
+      type: "model_step.finished",
+      payload: {
+        stepId: "fixture-acp:step:2",
+        status: "completed",
+        finishReason: "end_turn",
+        publicText: "recovered"
+      }
+    }
+  ]);
 });
 
 test("Hermes, Kiro, and Kimi Code expose distinct ACP adapter types", () => {
@@ -839,5 +961,13 @@ test("generic ACP cancellation sends session/cancel and converges to run.stopped
 
   assert.deepEqual(calls, [["cancel", "cancel-session"], ["close"]]);
   assert.equal(events.filter(event => event.type.startsWith("run.")).length, 1);
+  assert.deepEqual(events.filter(event => event.type === "model_step.finished"), [{
+    type: "model_step.finished",
+    payload: {
+      stepId: "fixture-acp:step:1",
+      status: "stopped",
+      finishReason: "cancelled"
+    }
+  }]);
   assert.deepEqual(events.at(-1), { type: "run.stopped", payload: { reason: "cancelled" } });
 });

@@ -638,10 +638,13 @@ test("local runtime concurrency limit queues a second provider invocation", asyn
     socket.send(wire("runtime.command", runtimeCommand("second", 2)));
     await new Promise(resolve => setTimeout(resolve, 75));
     assert.equal(invocations, 1);
+    // A control-plane retry must be acknowledged while the original handler
+    // remains queued; otherwise long first Runs can make the server reject it.
+    socket.send(wire("runtime.command", runtimeCommand("second", 2)));
+    assert.equal((await secondAccepted.promise).accepted, true);
+    assert.equal(invocations, 1);
     releaseFirst.resolve();
     await secondStarted.promise;
-    const ack = await secondAccepted.promise;
-    assert.equal(ack.accepted, true);
     assert.equal(invocations, 2);
   } finally {
     releaseFirst.resolve();

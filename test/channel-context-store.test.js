@@ -175,7 +175,7 @@ test("serializer upgrade replays an existing v1 snapshot without rewriting bytes
   });
 });
 
-test("a recovery generation makes a queued source-generation snapshot stale", async () => {
+test("only a committed recovery generation makes a queued source-generation snapshot stale", async () => {
   await withStore("oh-channel-stale-generation", async store => {
     store.applySyncResult({
       request_id: "sync-stale-generation",
@@ -188,12 +188,32 @@ test("a recovery generation makes a queued source-generation snapshot stale", as
     assert.equal(recovery.ref.session_generation, 2);
     store.markSubmitted("run-recovery");
     assert.equal(store.prepareSnapshot("run-recovery", descriptor(2)).ref.snapshot_id, recovery.ref.snapshot_id);
+    assert.equal(store.commitSnapshot("run-recovery").committed, true);
     assert.throws(
       () => store.prepareSnapshot("run-stale-queued", descriptor(3)),
       error => error?.name === "ChannelContextStaleGenerationError"
         && error.requestedGeneration === 1
         && error.latestGeneration === 2
     );
+  });
+});
+
+test("a failed recovery does not advance generation authority", async () => {
+  await withStore("oh-channel-failed-recovery-generation", async store => {
+    store.applySyncResult({
+      request_id: "sync-failed-recovery-generation",
+      scope,
+      completeness: "complete",
+      facts: [fact(1)]
+    });
+    store.prepareSnapshot("run-failed-recovery", descriptor(2));
+    store.selectRecovery("run-failed-recovery");
+    store.markSubmitted("run-failed-recovery");
+    store.markFailed("run-failed-recovery");
+
+    const retry = store.prepareSnapshot("run-after-failed-recovery", descriptor(3));
+    assert.equal(retry.ref.session_generation, 1);
+    assert.equal(retry.selectedVariant, "primary");
   });
 });
 

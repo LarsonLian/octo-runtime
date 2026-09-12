@@ -294,6 +294,7 @@ export class AcpClient {
         queue.push({ type: "usage", usage: value.usage, ...(typeof value.model === "string" ? { model: value.model } : {}) });
       }
       queue.push({
+        ...value,
         type: "prompt_result",
         ...(typeof value.stopReason === "string" ? { stopReason: value.stopReason } : {}),
         ...(typeof value.finishReason === "string" ? { finishReason: value.finishReason } : {})

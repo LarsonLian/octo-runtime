@@ -762,9 +762,10 @@ export class ChannelContextStore {
     return undefined;
   }
 
-  /** Guard generation monotonicity: throw StaleGeneration if any consumer row or
-   * other run's snapshot for this consumer already sits above `allowedGeneration`.
-   * Prevents a late/stale command from reviving an obsolete cursor. */
+  /** Guard generation monotonicity. An in-flight higher generation serializes
+   * the consumer until its terminal ACK decides the outcome. Only a committed
+   * snapshot (or its advanced consumer row) makes an older command stale; a
+   * failed recovery must not permanently advance local generation authority. */
   #assertCurrentGeneration(
     scopeKey: string,
     consumerKey: string,
@@ -772,15 +773,23 @@ export class ChannelContextStore {
     allowedGeneration: number,
     runId: string
   ): void {
+    const active = this.#db.prepare(
+      `SELECT run_id FROM channel_context_snapshots
+       WHERE scope_key = ? AND consumer_key = ? AND run_id <> ?
+         AND effective_session_generation > ? AND state IN ('prepared', 'submitted')
+       ORDER BY effective_session_generation DESC LIMIT 1`
+    ).get(scopeKey, consumerKey, runId, allowedGeneration) as { run_id: string } | undefined;
+    if (active) throw new ChannelContextConsumerBusyError(active.run_id);
+
     const row = this.#db.prepare(
       `SELECT MAX(generation) AS latest_generation FROM (
          SELECT session_generation AS generation
          FROM channel_context_consumers
-         WHERE scope_key = ? AND consumer_key = ?
+         WHERE scope_key = ? AND consumer_key = ? AND version > 0
          UNION ALL
          SELECT effective_session_generation AS generation
          FROM channel_context_snapshots
-         WHERE scope_key = ? AND consumer_key = ? AND run_id <> ?
+         WHERE scope_key = ? AND consumer_key = ? AND run_id <> ? AND state = 'committed'
        )`
     ).get(scopeKey, consumerKey, scopeKey, consumerKey, runId) as {
       latest_generation: number | null;

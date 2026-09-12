@@ -87,6 +87,116 @@ export function normalizeAcpUpdate(update: StandardAcpUpdate, provider: string):
   return [];
 }
 
+const MAX_STEP_PUBLIC_TEXT_CHARS = 1_000;
+
+/**
+ * ACP standardizes the stream envelope but does not require providers to emit
+ * public thought chunks or model-round boundaries. Reconstruct conservative
+ * round boundaries from tool lifecycles and retain only already-public answer
+ * text as the card fallback when a provider exposes no reasoning.
+ */
+class AcpTurnNormalizer {
+  readonly #provider: string;
+  readonly #activeTools = new Set<string>();
+  #stepNumber = 0;
+  #stepId?: string;
+  #stepHasTool = false;
+  #stepPublicText = "";
+  #toolsCompleted = false;
+
+  constructor(provider: string) {
+    this.#provider = provider;
+  }
+
+  normalize(update: StandardAcpUpdate): CanonicalEvent[] {
+    const nativeType = update.sessionUpdate ?? update.type;
+    const normalized = normalizeAcpUpdate(update, this.#provider);
+    const semantic = normalized.some(event => event.type.startsWith("message.") || event.type.startsWith("tool_call."));
+    if (!semantic) return normalized;
+
+    const startsModelOutput = nativeType === "agent_message_chunk"
+      || nativeType === "agent_thought_chunk"
+      || nativeType === "tool_call";
+    const events: CanonicalEvent[] = [];
+    if (startsModelOutput && this.#toolsCompleted) events.push(...this.#finishStep("tool-calls", "completed"));
+    events.push(...this.#ensureStep());
+
+    const stepId = this.#stepId;
+    for (const event of normalized) {
+      if (event.type === "message.delta") {
+        events.push({
+          ...event,
+          payload: {
+            ...event.payload,
+            ...(stepId ? { stepId } : {}),
+            ...(stepId && event.payload.channel === "analysis" ? { messageId: `${stepId}:reasoning` } : {})
+          }
+        });
+        if (event.payload.channel !== "analysis") this.#appendPublicText(event.payload.text);
+        continue;
+      }
+      const toolId = stringField(event.payload, "id");
+      if (event.type === "tool_call.create" && toolId) {
+        events.push({ ...event, payload: { ...event.payload, ...(stepId ? { stepId } : {}) } });
+        this.#activeTools.add(toolId);
+        this.#stepHasTool = true;
+        this.#toolsCompleted = false;
+        continue;
+      }
+      if (event.type === "tool_call.update" && toolId && isTerminalToolStatus(event.payload.status)) {
+        events.push({ ...event, payload: { ...event.payload, ...(stepId ? { stepId } : {}) } });
+        this.#activeTools.delete(toolId);
+        if (this.#stepHasTool && this.#activeTools.size === 0) this.#toolsCompleted = true;
+        continue;
+      }
+      if (event.type === "tool_call.update") {
+        events.push({ ...event, payload: { ...event.payload, ...(stepId ? { stepId } : {}) } });
+        continue;
+      }
+      events.push(event);
+    }
+    return events;
+  }
+
+  finish(finishReason: string | undefined, status: string): CanonicalEvent[] {
+    const reason = this.#stepHasTool && this.#stepPublicText.length === 0
+      ? "tool-calls"
+      : finishReason ?? "end_turn";
+    return this.#finishStep(reason, status);
+  }
+
+  #ensureStep(): CanonicalEvent[] {
+    if (this.#stepId) return [];
+    this.#stepId = `${this.#provider}:step:${++this.#stepNumber}`;
+    return [{ type: "model_step.started", payload: { stepId: this.#stepId } }];
+  }
+
+  #finishStep(finishReason: string, status: string): CanonicalEvent[] {
+    if (!this.#stepId) return [];
+    const event: CanonicalEvent = {
+      type: "model_step.finished",
+      payload: {
+        stepId: this.#stepId,
+        status,
+        finishReason,
+        ...(this.#stepPublicText ? { publicText: this.#stepPublicText } : {})
+      }
+    };
+    this.#stepId = undefined;
+    this.#stepHasTool = false;
+    this.#stepPublicText = "";
+    this.#toolsCompleted = false;
+    return [event];
+  }
+
+  #appendPublicText(value: unknown): void {
+    if (typeof value !== "string" || !value) return;
+    const remaining = MAX_STEP_PUBLIC_TEXT_CHARS - Array.from(this.#stepPublicText).length;
+    if (remaining <= 0) return;
+    this.#stepPublicText += Array.from(value).slice(0, remaining).join("");
+  }
+}
+
 export function createAcpAdapter(
   definition: AcpAdapterDefinition,
   { acpClientFactory = spawnAcpClient, command = definition.command }: {
@@ -159,7 +269,10 @@ export function createAcpAdapter(
         let firstOutput = true;
         let stopReason: string | undefined;
         let finishReason: string | undefined;
+        let promptResultPublicText: string | undefined;
+        let producedFinalOutput = false;
         const activeTools = new Set<string>();
+        const turn = new AcpTurnNormalizer(definition.provider);
         try {
           for await (const update of client.prompt(sessionId, prompt, {
             requestId: promptRequestId,
@@ -178,10 +291,11 @@ export function createAcpAdapter(
             if (update.type === "prompt_result") {
               stopReason = update.stopReason;
               finishReason = update.finishReason;
+              promptResultPublicText = promptResultText(update);
               continue;
             }
             const standardUpdate = update as StandardAcpUpdate;
-            const events = normalizeAcpUpdate(standardUpdate, definition.provider);
+            const events = turn.normalize(standardUpdate);
             observeProviderOutput(context, events, {
               rpcMethod: "session/update",
               providerSessionId: sessionId,
@@ -193,6 +307,12 @@ export function createAcpAdapter(
             });
             for (const event of events) {
               const id = stringField(event.payload, "id");
+              if (event.type === "message.delta"
+                && event.payload.channel !== "analysis"
+                && typeof event.payload.text === "string"
+                && event.payload.text.length > 0) {
+                producedFinalOutput = true;
+              }
               if (event.type === "tool_call.create" && id) activeTools.add(id);
               if (event.type === "tool_call.update" && id && isTerminalToolStatus(event.payload.status)) activeTools.delete(id);
               yield event;
@@ -205,9 +325,33 @@ export function createAcpAdapter(
         }
 
         const cancelled = request.signal?.aborted || isCancelledStopReason(stopReason);
+        if (!cancelled && !producedFinalOutput && promptResultPublicText) {
+          const fallbackEvents = turn.normalize({
+            type: "prompt_result",
+            sessionUpdate: "agent_message_chunk",
+            content: { text: promptResultPublicText }
+          });
+          for (const event of fallbackEvents) yield event;
+          producedFinalOutput = true;
+        }
         if (cancelled) {
           for (const id of activeTools) yield { type: "tool_call.update", payload: { id, status: "cancelled" } };
         }
+        if (!cancelled && !producedFinalOutput) {
+          for (const event of turn.finish("no-final-output", "failed")) yield event;
+          yield { type: "message.update", payload: { role: "assistant", status: "failed" } };
+          terminal = true;
+          yield {
+            type: "run.error",
+            payload: {
+              code: "ACP_NO_FINAL_OUTPUT",
+              message: `${definition.provider} completed without assistant output`,
+              adapterType: definition.type
+            }
+          };
+          return;
+        }
+        for (const event of turn.finish(stopReason ?? finishReason, cancelled ? "stopped" : "completed")) yield event;
         yield { type: "message.update", payload: { role: "assistant", status: cancelled ? "stopped" : "completed" } };
         terminal = true;
         yield cancelled
@@ -286,6 +430,15 @@ function contentText(value: unknown): string | undefined {
     .map(item => typeof item.text === "string" ? item.text : "")
     .join("");
   return text || undefined;
+}
+
+function promptResultText(update: StandardAcpUpdate): string | undefined {
+  for (const value of [update.text, update.content, update.output, update.response, update.message]) {
+    if (typeof value === "string" && value) return value;
+    const text = contentText(value);
+    if (text) return text;
+  }
+  return undefined;
 }
 
 function isTerminalToolStatus(status: unknown): boolean {
