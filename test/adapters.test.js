@@ -790,6 +790,49 @@ test("generic ACP adapters expose a model step when the provider only sends publ
   assert.equal(events.at(-1).type, "run.finished");
 });
 
+test("generic ACP adapters leave model and authentication ownership to the provider", async () => {
+  let nextRequestId = 1;
+  let newSessionParams;
+  const client = {
+    initialize: async () => {},
+    reserveRequestId: () => nextRequestId++,
+    request: async (method, params) => {
+      if (method === "session/new") {
+        newSessionParams = params;
+        return { sessionId: "provider-session", model: "provider-owned-model" };
+      }
+      return {};
+    },
+    async *prompt() {
+      yield { sessionUpdate: "agent_message_chunk", content: { text: "done" } };
+      yield { type: "prompt_result", stopReason: "end_turn" };
+    },
+    cancel: () => {},
+    close: async () => {}
+  };
+  const adapter = createAcpAdapter(
+    { type: "fixture-acp", provider: "fixture-acp", command: "fixture" },
+    { acpClientFactory: () => client }
+  );
+  const events = [];
+  for await (const event of adapter.invoke({
+    ...request,
+    agentConfig: { model: "harness-must-not-select-this", autoApprove: true }
+  })) events.push(event);
+
+  assert.deepEqual(newSessionParams, { cwd: request.workdir, mcpServers: [] });
+  assert.deepEqual(events.find(event => event.type === "session.update"), {
+    type: "session.update",
+    payload: {
+      providerSession: {
+        sessionId: "provider-session",
+        resumable: true,
+        model: "provider-owned-model"
+      }
+    }
+  });
+});
+
 test("generic ACP adapters recover public text carried by the prompt response", async () => {
   let nextRequestId = 1;
   const client = {

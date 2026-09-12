@@ -234,10 +234,11 @@ export function createAcpAdapter(
       try {
         await client.initialize({ protocolVersion: definition.protocolVersion ?? 1 });
         const requestedSessionId = request.providerSession?.sessionId;
+        let providerModel: string | undefined;
         const sessionMethod = requestedSessionId ? "session/load" : "session/new";
         const sessionParams = requestedSessionId
           ? acpLoadSessionParams(requestedSessionId, { cwd: request.workdir })
-          : acpNewSessionParams({ cwd: request.workdir, model: request.agentConfig?.model });
+          : acpNewSessionParams({ cwd: request.workdir });
         const sessionRequestId = client.reserveRequestId();
         await observeInput(context, sessionMethod, sessionParams, sessionRequestId, requestedSessionId);
         try {
@@ -247,6 +248,7 @@ export function createAcpAdapter(
             onWritten: () => observeWritten(context, sessionMethod, sessionRequestId, requestedSessionId)
           });
           sessionId = requestedSessionId ?? stringField(result, "sessionId");
+          providerModel = stringField(result, "model");
           if (!sessionId) throw new Error("ACP session/new returned no sessionId");
           observeAcknowledged(context, sessionMethod, sessionRequestId, sessionId);
         } catch (error) {
@@ -256,7 +258,13 @@ export function createAcpAdapter(
 
         yield {
           type: "session.update",
-          payload: { providerSession: { sessionId, resumable: true, model: request.agentConfig?.model } }
+          payload: {
+            providerSession: {
+              sessionId,
+              resumable: true,
+              ...(providerModel ? { model: providerModel } : {})
+            }
+          }
         };
         yield { type: "message.create", payload: { role: "assistant", status: "streaming" } };
 
