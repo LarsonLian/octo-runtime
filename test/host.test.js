@@ -141,6 +141,30 @@ test("host cancellation aborts provider and emits stopped once", async () => {
   assert.equal(events.filter(item => item.type.startsWith("run.")).length, 1);
 });
 
+test("host shutdown aborts every active provider invocation before returning", async () => {
+  const host = new AdapterHost();
+  let aborted = 0;
+  host.register({ metadata: { type: "slow", capabilities: [] }, async *invoke(req) {
+    yield { type: "message.create", payload: {} };
+    await new Promise((_, reject) => req.signal.addEventListener("abort", () => {
+      aborted += 1;
+      reject(new Error("aborted"));
+    }, { once: true }));
+  } });
+  const invocations = ["shutdown-1", "shutdown-2"].map(invocationId => (async () => {
+    const events = [];
+    for await (const event of host.invoke("slow", { ...request, invocationId })) events.push(event);
+    return events;
+  })());
+  await new Promise(resolve => setImmediate(resolve));
+
+  await host.shutdown("parent disconnected");
+  const results = await Promise.all(invocations);
+
+  assert.equal(aborted, 2);
+  assert.deepEqual(results.map(events => events.at(-1).type), ["run.stopped", "run.stopped"]);
+});
+
 test("separate adapter-host process loads manifest and streams events", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const processHost = await spawnAdapterHost({ entrypoint: `${root}/apps/adapter-host/dist/index.js`, manifest: `${root}/test/fixtures/adapters.json` });

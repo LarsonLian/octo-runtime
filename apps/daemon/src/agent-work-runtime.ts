@@ -570,7 +570,14 @@ export class AgentWorkRuntime {
     });
     this.#send("runtime.hello", {
       last_acked_command_seq: this.#store?.lastAckedCommandSeq ?? 0,
-      active_run_ids: this.#store?.activeRunIds() ?? [],
+      // A persisted non-terminal row does not prove that a provider invocation
+      // survived a process restart. Only live in-memory work and terminal rows
+      // awaiting durable ACK are still owned by this Runtime connection.
+      active_run_ids: [...new Set([
+        ...this.#activeRuns.keys(),
+        ...this.#acceptingRuns.keys(),
+        ...(this.#store?.pendingTerminalAckRunIds() ?? [])
+      ])],
       runtime_version: RUNTIME_VERSION,
       protocol_version_min: MIN_PROTOCOL_VERSION,
       protocol_version_max: MAX_PROTOCOL_VERSION

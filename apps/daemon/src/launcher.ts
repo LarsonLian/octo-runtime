@@ -39,8 +39,10 @@ const forward = (signal: NodeJS.Signals): void => {
 };
 const forwardSigint = (): void => forward("SIGINT");
 const forwardSigterm = (): void => forward("SIGTERM");
+const forwardSighup = (): void => forward("SIGHUP");
 process.once("SIGINT", forwardSigint);
 process.once("SIGTERM", forwardSigterm);
+process.once("SIGHUP", forwardSighup);
 
 let result: { code: number | null; signal: NodeJS.Signals | null };
 try {
@@ -61,6 +63,7 @@ try {
 }
 process.removeListener("SIGINT", forwardSigint);
 process.removeListener("SIGTERM", forwardSigterm);
+process.removeListener("SIGHUP", forwardSighup);
 
 if (result.code !== null) {
   process.exitCode = result.code;

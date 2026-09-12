@@ -135,13 +135,16 @@ let stopping = false;
 const stop = (): void => {
   if (stopping) return;
   stopping = true;
-  void observability.close().then(
+  void host.shutdown().then(() => observability.close()).then(
     () => process.exit(0),
     () => process.exit(1)
   );
 };
 process.once("SIGINT", stop);
 process.once("SIGTERM", stop);
+process.once("SIGHUP", stop);
+process.stdin.once("end", stop);
+process.stdin.once("close", stop);
 process.once("exit", () => crashReporter?.close());
 
 /** Parse and validate the on-disk manifest. Only version 1 is supported; each

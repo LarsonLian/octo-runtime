@@ -454,6 +454,10 @@ export function createJsonCliAdapter<TNative = Record<string, unknown>>(
             terminal ||= isTerminal(event);
             yield event;
           }
+          // A provider-native semantic terminal is authoritative. Stop reading
+          // here so the subprocess generator enters its cleanup path even when
+          // the CLI leaves watchers or other handles alive after completing.
+          if (terminal) break;
         }
         if (!terminal) {
           const events = onSuccess?.(request) ?? [];

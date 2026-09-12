@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  createJsonCliAdapter,
   observeBestEffort,
   observeProviderOutput
 } from "../packages/octo-harness-adapter-sdk/dist/index.js";
@@ -541,6 +542,34 @@ test("OpenCode preserves model rounds and associates their reasoning, tools, and
     },
     { type: "usage.update", payload: { input: 10, cost: undefined, stepId: "message-1" } }
   ]);
+  assert.deepEqual(normalizeOpenCodeEvent({
+    type: "step_finish", timestamp: 1_788_793_003_000,
+    part: { type: "step-finish", messageID: "message-2", reason: "stop", tokens: { output: 4 } }
+  }), [
+    {
+      type: "model_step.finished",
+      payload: { stepId: "message-2", status: "completed", finishReason: "stop", endedAtMs: 1_788_793_003_000 }
+    },
+    { type: "usage.update", payload: { output: 4, cost: undefined, stepId: "message-2" } },
+    { type: "run.finished", payload: {} }
+  ]);
+});
+
+test("JSON CLI adapters reap a provider that stays alive after a semantic terminal", async () => {
+  const adapter = createJsonCliAdapter({
+    metadata: { type: "semantic-terminal", capabilities: [] },
+    buildCommand: () => ({
+      command: process.execPath,
+      args: ["-e", "console.log(JSON.stringify({done:true}));setInterval(()=>{},1000)"]
+    }),
+    normalize: native => native.done ? [{ type: "run.finished", payload: {} }] : []
+  });
+  const events = [];
+  const startedAt = Date.now();
+  for await (const event of adapter.invoke(request)) events.push(event);
+
+  assert.equal(events.at(-1).type, "run.finished");
+  assert.ok(Date.now() - startedAt < 2_000);
 });
 
 test("OpenCode always requests reasoning JSON and tool approval, maps thinking to variant, and resumes a provider session", async () => {

@@ -160,6 +160,7 @@ export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEv
   }
   if (native.type === "step_finish" || part.type === "step-finish") {
     events.push({ type: "usage.update", payload: { ...(part.tokens ?? native.usage ?? {}), cost: part.cost, ...(stepId ? { stepId } : {}) } });
+    if (part.reason === "stop") events.push({ type: "run.finished", payload: {} });
   }
   if (native.type === "error") events.push({ type: "run.error", payload: { message: native.error?.data?.message ?? native.error?.message ?? "OpenCode failed", providerError: native.error } });
   return events;

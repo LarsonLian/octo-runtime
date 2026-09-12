@@ -219,6 +219,24 @@ export class AdapterHost {
     controller.abort(reason);
     return true;
   }
+
+  /** Abort every invocation and wait briefly for adapter cleanup to reap its
+   * provider processes. Used when the RPC parent disappears or shuts down. */
+  async shutdown(reason = "adapter host shutdown", timeoutMs = 2_500): Promise<void> {
+    for (const controller of this.#active.values()) controller.abort(reason);
+    if (this.#active.size === 0) return;
+    const deadline = Date.now() + timeoutMs;
+    await new Promise<void>(resolve => {
+      const check = (): void => {
+        if (this.#active.size === 0 || Date.now() >= deadline) {
+          resolve();
+          return;
+        }
+        setTimeout(check, 10);
+      };
+      check();
+    });
+  }
 }
 
 function errorMessage(error: unknown): string {

@@ -18,6 +18,7 @@ import {
   renderDisplayExecutionInputPrompt,
   renderAgentRunInputPrompt
 } from "../apps/daemon/dist/agent-work-runtime.js";
+import { AgentWorkStore } from "../apps/daemon/dist/agent-work-store.js";
 import { deferred, waitFor, wire } from "./agent-work-runtime-fixture.js";
 
 const envelope = {
@@ -61,6 +62,62 @@ test("reconnect delay keeps one fast attempt before capped full-jitter backoff",
   assert.equal(reconnectDelayMs(2, 20_000, 60_000, () => 1), 39_999);
   assert.equal(reconnectDelayMs(3, 20_000, 60_000, () => 0.5), 40_000);
   assert.equal(reconnectDelayMs(20, 20_000, 60_000, () => 1), 59_999);
+});
+
+test("process restart hello excludes stale non-terminal runs but retains pending terminal delivery", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-restart-ownership-"));
+  const storePath = join(directory, "agent-work.db");
+  const persisted = AgentWorkStore.open(storePath);
+  persisted.upsertRun({ runId: "run-stale", commandId: "command-stale", leaseId: "lease-stale", fencingToken: 1 });
+  persisted.allocateAndAppend("run-stale", "run.started", {});
+  persisted.upsertRun({ runId: "run-terminal", commandId: "command-terminal", leaseId: "lease-terminal", fencingToken: 2 });
+  persisted.allocateAndAppend("run-terminal", "run.completed", { text: "done" });
+  persisted.close();
+
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  const helloReceived = deferred();
+  let runtime;
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume registration. */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { id: "runtime-restart-ownership", protocol_version: 1 } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    websocket.on("message", data => {
+      const frame = JSON.parse(data.toString("utf8"));
+      if (frame.type !== "runtime.hello") return;
+      helloReceived.resolve(frame.payload);
+      websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+    });
+  });
+
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    runtime = new AgentWorkRuntime({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      runtimeName: "runtime-restart-ownership",
+      fingerprint: "runtime:restart-ownership",
+      storePath
+    }, {
+      list: async () => [],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() { yield { type: "run.finished", payload: {} }; }
+    });
+    await runtime.start();
+    assert.deepEqual((await helloReceived.promise).active_run_ids, ["run-terminal"]);
+  } finally {
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("Agent Work envelope maps to a local adapter invocation with fixed cwd and resume", () => {
