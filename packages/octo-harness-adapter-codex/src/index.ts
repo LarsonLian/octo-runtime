@@ -111,18 +111,18 @@ export async function createCodexInvocationHome(
  * thread/start or thread/resume `developerInstructions`, never written to the
  * user's config.toml.
  */
-export async function buildCodexCommand(
+export function buildCodexCommand(
   req: InvokeRequest,
   command = "codex",
   appServerArgs = buildCodexAppServerArgs()
-): Promise<CodexAppServerCommand> {
+): CodexAppServerCommand {
   const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
   return {
     command,
     args: [...appServerArgs],
     cwd: req.workdir,
     env: { ...process.env, CODEX_HOME: codexHome },
-    cleanup: async () => undefined
+    cleanup: () => undefined
   };
 }
 
@@ -157,7 +157,7 @@ export function createCodexAdapter({
     async *invoke(request: InvokeRequest, context?: AdapterInvocationContext) {
       // The transport owns cleanup as well as observation ordering, so the
       // shadow home cannot be deleted while its final RPC is still in flight.
-      const spec = await buildCodexCommand(request, command, appServerArgs);
+      const spec = buildCodexCommand(request, command, appServerArgs);
       yield* runCodexAppServerTurn({ request, spec, context, ...(spawnFn ? { spawnFn } : {}) });
     }
   });

@@ -215,7 +215,6 @@ export function createAcpAdapter(
           : { type: "run.finished", payload: {} };
       } catch (error) {
         if (!terminal && request.signal?.aborted) {
-          terminal = true;
           yield { type: "run.stopped", payload: { reason: String(request.signal.reason ?? "cancelled") } };
         } else {
           throw error;
