@@ -66,31 +66,63 @@ flowchart LR
 5. **普通日志不阻塞业务**：writer 使用有界异步队列；压力下先丢弃 debug/trace 并通过 `status.droppedRecords` 暴露。
 6. **strict capture fail closed**：启用 `requireProviderCapture` 后，`provider.input` 必须安全写入并 fsync 文件及目录，成功后才允许 adapter dispatch。
 
-### Inspect 的 Event 与 Direction
+### Inspect 的事件建模：stage + direction
 
-Inspect 的主视图只回答两个问题：**发生了什么 Event**，以及它沿哪个 **Direction** 流动。这里的 direction 是 Viewer 从原始记录投影出的展示字段，不要求扩展底层事件维度；`source/stage` 继续保留在展开后的诊断元数据中，不作为默认分组、排序或中文标签。
+Inspect 的每个事件信封用两个一等字段定位：
 
-| Direction | 界面名称 | 定义 | 典型 Event |
-|---|---|---|---|
-| `agent_to_provider` | 发往 Provider | Agent Worker 发起的执行请求，经 Runtime、Adapter Host 和 Adapter 送往 Provider | `runtime.command`、`invoke`、`provider.input`、`provider.dispatch.written` |
-| `provider_to_agent` | 返回 Agent | Provider 的确认、流式输出、工具事件和终态，经 Adapter、Host、Runtime 返回 Agent Worker | `provider.output.first`、`message.delta`、`tool_call.create`、`run.completed` |
+- **stage**：`组件.修饰` 形式的点分字符串，回答"这帧数据在哪个观测点、以什么形态产生"。组件段来自固定枚举（`daemon / worker / runtime / wire / adapter / host`），修饰段自由扩展（`bootstrap / transport / dispatch / outbox / native / canonical`），新增形态不需要改协议。
+- **direction**：`inbound`（Agent → Provider 方向）或 `outbound`（Provider → Agent 方向），在包装信封时直接标注，不靠事后推导。**一个信封只代表一个方向的流动**；同一观测点看到双向时产生两个信封（同 stage、反 direction），靠 `runId + invocationId` 自动成对。
+
+`type` 只回答"发生了什么"，**不保证全局唯一**——同一个 `message.delta` 会出现在多个 stage 上，`stage + type` 组合才是完整标识。前端过滤就是 stage 字符串前缀/后缀匹配：`startsWith("adapter.")` 看 adapter 的一切，`endsWith(".native")` 看所有原生帧。
+
+#### 当前支持的 stage × direction 组合（入站 → 出站顺序）
+
+| # | stage | direction | 具体含义 | 典型 type |
+|---|---|---|---|---|
+| 1 | `daemon.bootstrap` | `inbound` | daemon 进程拉起：进程 cwd、config 路径、profile、版本（启动一次） | `runtime.started` |
+| 2 | `worker.transport` | `inbound` | WSS 连接建立，控制面命令帧到达 daemon | `command.received`（`run.start` / `run.cancel`） |
+| 3 | `runtime.dispatch` | `inbound` | Run 受理：command receipt 幂等检查、水位/去重、选定 adapter；**本 Run 的 workdir、adapterType、agent_revision_id 在此可见** | `agent_run.received`、`adapter.selected` |
+| 4 | `wire.daemon_host` | `inbound` | daemon → adapter-host 的 stdio RPC 帧 | `invoke`、`cancel`、`probe` |
+| 5 | `adapter.native` | `inbound` | 请求已构造并写入 provider 本地协议边界（子进程 stdin / socket / SDK） | `provider.input`、`provider.dispatch.written`、`provider.dispatch.acknowledged`、`provider.dispatch.failed` |
+| 6 | `adapter.native` | `outbound` | provider 原生输出到达 adapter 边界 | `provider.output.first`、`provider.output` |
+| 7 | `adapter.canonical` | `outbound` | adapter 映射后的 canonical 事件（Host 修正前） | `message.delta` 等 canonical 枚举（见下表） |
+| 8 | `host.canonical` | `outbound` | Host 生命周期修正后的 canonical 事件（补 `message.create`、稳定 `messageId`、兜底终态） | 同上 |
+| 9 | `wire.daemon_host` | `outbound` | host → daemon 的 RPC 帧 | `invoke.event`、`invoke.done` |
+| 10 | `runtime.outbox` | `outbound` | 事件写入 SQLite Outbox、组成 `run.event_batch`；终态在此映射为 Agent Work 词汇 | `run.started`、`run.completed`、`run.failed`、`run.cancelled` |
+| 11 | `worker.transport` | `outbound` | `run.event_batch` 经 WSS 投递 Worker 并等待 durable ACK | `transport.message.sent`、`event.ack`、`event.nack` |
 
 ```mermaid
 flowchart LR
-    Agent[Agent Worker] -->|agent_to_provider<br/>执行请求| Provider[Provider]
-    Provider -->|provider_to_agent<br/>流式事件与终态| Agent
+    subgraph IN["入站 inbound（Agent → Provider）"]
+        B["1 daemon.bootstrap<br/>runtime.started"] --> W1["2 worker.transport<br/>command.received"]
+        W1 --> R1["3 runtime.dispatch<br/>agent_run.received / adapter.selected"]
+        R1 --> X1["4 wire.daemon_host<br/>invoke"]
+        X1 --> A1["5 adapter.native<br/>provider.input → dispatch.written"]
+    end
+    subgraph OUT["出站 outbound（Provider → Agent）"]
+        A2["6 adapter.native<br/>provider.output.first / output"] --> A3["7 adapter.canonical<br/>message.delta 等"]
+        A3 --> H1["8 host.canonical<br/>Host 修正后"]
+        H1 --> X2["9 wire.daemon_host<br/>invoke.event / invoke.done"]
+        X2 --> R2["10 runtime.outbox<br/>run.started / completed"]
+        R2 --> W2["11 worker.transport<br/>run.event_batch → ACK"]
+    end
+    A1 ==>|"provider 执行"| A2
 ```
 
-界面每行默认展示 `direction + event type + 中文名称 + 简短解释`：
+排障时 stage 链的**断点位置**即故障段：停在 5 之前是投递问题；有 5 没 6 是"已投递但 provider 无响应"；有 9 没 8 说明故障在 RPC 解包或 daemon 队列；有 8 没 10 说明故障在事件映射、Outbox 或 Worker 投递。
 
-| Direction | Event type | 中文名称 | 简短解释 |
-|---|---|---|---|
-| `agent_to_provider` | `provider.dispatch.written` | 已写入 Provider | 请求 bytes 已经写到 Provider 的本地协议边界 |
-| `provider_to_agent` | `provider.output.first` | Provider 首个输出 | Provider 已经开始返回本次调用的内容 |
-| `provider_to_agent` | `message.delta` | 消息增量 | 一段经过 Host 规整、可继续投递的流式文本 |
-| `provider_to_agent` | `run.completed` | 执行成功完成 | Runtime 已把正常终态映射为 Agent Work 事件 |
+界面每行默认展示 `direction + stage + type + 中文名称 + 简短解释`：
 
-同一业务事件可能同时出现在 `adapter-rpc`、`adapter-canonical` 和 `host-canonical` 诊断副本中。默认视图只选取一个语义副本：调用方向优先使用 `provider-native` 里程碑，返回方向优先使用 `host-canonical`；其他 source 仅在排查跨进程或 Host 修正问题时展开。
+| direction | stage | type | 中文名称 | 简短解释 |
+|---|---|---|---|---|
+| `inbound` | `adapter.native` | `provider.dispatch.written` | 已写入 Provider | 请求 bytes 已经写到 Provider 的本地协议边界 |
+| `outbound` | `adapter.native` | `provider.output.first` | Provider 首个输出 | Provider 已经开始返回本次调用的内容 |
+| `outbound` | `host.canonical` | `message.delta` | 消息增量 | 一段经过 Host 规整、可继续投递的流式文本 |
+| `outbound` | `runtime.outbox` | `run.completed` | 执行成功完成 | Runtime 已把正常终态映射为 Agent Work 事件 |
+
+同一业务事件可能同时出现在多个 stage 的观测副本中（如 `adapter.canonical`、`host.canonical`、`wire.daemon_host`）。默认视图只选取一个语义副本：**入站优先 `adapter.native` 里程碑，出站优先 `host.canonical`**；其他 stage 仅在排查跨进程或 Host 修正问题时展开。
+
+> 迁移说明：本建模替代旧的 `source` 单一字符串。对应关系为 `provider-native → adapter.native`、`adapter-canonical → adapter.canonical`、`host-canonical → host.canonical`、`adapter-rpc → wire.daemon_host`（方向由帧的 send/receive 决定）、`transport.wss / agent-work.delivery → worker.transport`、`agent-work.* / adapter.* → runtime.dispatch / runtime.outbox`。旧 `agent_to_provider / provider_to_agent` 两个 direction 值分别对应 `inbound / outbound`。
 
 #### provider-native 类型与界面名称
 
