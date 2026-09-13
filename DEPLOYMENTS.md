@@ -75,7 +75,7 @@ octo-harness status
 
 `status.agentWork.connected` 应为 `true`，并返回 login 已写入的 `runtimeId`。daemon 从
 Harness Home 读取 server URL、Runtime ID 和受保护的 device credential；service argv 与
-环境变量都不携带 secret。一个 Home 只运行一个 daemon、一个 enabled profile 和一个 local Runtime，并持有唯一 `system_id`、credential、WSS 和 outbox。不同 profile 使用不同 Home；不同人或互不信任的身份必须使用不同 OS account。
+环境变量都不携带 secret。一个 Home 只运行一个 daemon，但可自动发现多个 profile；各 profile 独立持有 `system_id`、credential、WSS 和 outbox，并共享一个 adapter-host。不同人或互不信任的身份必须使用不同 OS account。
 
 ## 3. Token 约定
 

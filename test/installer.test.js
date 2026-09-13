@@ -26,6 +26,20 @@ test("POSIX installer exposes the macOS/Linux positional-argument contract witho
     execute("sh", [posixInstallerPath, "http://server.invalid", "octo_enroll_test"]),
     error => error.code === 2 && /SERVER_URL must use HTTPS/.test(error.stderr)
   );
+
+  await assert.rejects(
+    execute("sh", [posixInstallerPath, "https://server.invalid", "octo_enroll_test"], {
+      env: { ...process.env, OCTO_HARNESS_PROFILE: ".." }
+    }),
+    error => error.code === 2 && /must start with a letter or digit/.test(error.stderr)
+  );
+
+  await assert.rejects(
+    execute("sh", [posixInstallerPath, "https://server.invalid", "octo_enroll_test"], {
+      env: { ...process.env, OCTO_HARNESS_PROFILE: "logs" }
+    }),
+    error => error.code === 2 && /conflicts with Harness Home infrastructure/.test(error.stderr)
+  );
 });
 
 test("Linux installer fails clearly instead of elevating when Node.js 24 is unavailable", async t => {
@@ -89,6 +103,8 @@ test("installers use global npm, pass enrollment through stdin, and keep login i
   assert.ok(posixInstaller.indexOf("setup --prepare-update") < posixInstaller.indexOf("npm install --global"));
   assert.ok(windowsInstaller.indexOf("setup --prepare-update") < windowsInstaller.indexOf("install --global"));
   assert.match(windowsInstaller, /Test-FullyQualifiedWindowsPath/);
+  assert.match(windowsInstaller, /\^\[A-Za-z0-9\]\[A-Za-z0-9\._-\]\{0,63\}\$/);
+  assert.match(windowsInstaller, /Profile\.ToLowerInvariant\(\).*"logs"/s);
 });
 
 test("Linux installer resolves npm global bin, persists PATH, and invokes login", async t => {

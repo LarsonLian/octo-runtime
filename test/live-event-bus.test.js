@@ -49,11 +49,14 @@ test("LiveEventBus keeps a pinned frame bounded and releases retired storage", a
 
 test("LiveEventBus filters snapshots without waiting and follows new matching events", async () => {
   const bus = new LiveEventBus();
-  bus.publish({ source: "daemon", type: "one", runId: "run-a", payload: {} });
-  bus.publish({ source: "adapter-rpc", type: "two", runId: "run-b", payload: {} });
+  bus.publish({ source: "daemon", type: "one", profile: "default", runId: "run-a", payload: {} });
+  bus.publish({ source: "adapter-rpc", type: "two", profile: "work", runId: "run-b", payload: {} });
   const snapshot = [];
   for await (const event of bus.subscribe({ runId: "run-b" })) snapshot.push(event);
   assert.deepEqual(snapshot.map(event => event.type), ["two"]);
+  const workSnapshot = [];
+  for await (const event of bus.subscribe({ profile: "work" })) workSnapshot.push(event);
+  assert.deepEqual(workSnapshot.map(event => [event.profile, event.type]), [["work", "two"]]);
 
   const stream = bus.subscribe({ source: "host-canonical" }, true);
   const pending = stream.next();

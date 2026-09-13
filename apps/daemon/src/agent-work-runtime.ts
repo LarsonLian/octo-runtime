@@ -34,7 +34,7 @@ const MIN_PROTOCOL_VERSION = 1;
 const MAX_PROTOCOL_VERSION = 1;
 const RUNTIME_VERSION = packageVersion();
 const DEFAULT_SEND_WINDOW = 32;
-const DEFAULT_MAX_CONCURRENT_RUNS = 3;
+export const DEFAULT_MAX_CONCURRENT_RUNS = 3;
 const DEFAULT_SOFT_WATERMARK_BYTES = 512 * 1024 * 1024;
 const DEFAULT_HARD_WATERMARK_BYTES = 2 * 1024 * 1024 * 1024;
 const DEFAULT_RECONNECT_FIRST_MS = 1_000;
@@ -87,6 +87,10 @@ export interface AgentWorkRuntimeOptions {
   maxConcurrentRuns?: number;
   reconcileMs?: number;
   channelContext?: ChannelContextRuntimeOptions;
+}
+
+export interface RunAdmission {
+  acquire(signal: AbortSignal): Promise<() => void>;
 }
 
 /** Controls local persistence and projection of channel context presented to a provider. */
@@ -192,6 +196,7 @@ export class AgentWorkRuntime {
   // Observability is optional so the reusable runtime preserves compatibility
   // with existing embedders. When present, it replaces routine stderr output.
   readonly #observability?: LocalObservability;
+  readonly #runAdmission?: RunAdmission;
   readonly #activeRuns = new Map<string, ActiveRun>();
   readonly #acceptingCommandIds = new Set<string>();
   readonly #acceptingRuns = new Map<string, AcceptingRun>();
@@ -229,11 +234,13 @@ export class AgentWorkRuntime {
   constructor(
     options: AgentWorkRuntimeOptions,
     host: AdapterHostRpc,
-    observability?: LocalObservability
+    observability?: LocalObservability,
+    runAdmission?: RunAdmission
   ) {
     this.#options = options;
     this.#host = host;
     this.#observability = observability;
+    this.#runAdmission = runAdmission;
     if ((options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS) < 1) {
       throw new Error("maxConcurrentRuns must be positive");
     }
@@ -945,6 +952,8 @@ export class AgentWorkRuntime {
       acknowledged: false
     };
     this.#acceptingRuns.set(command.run_id, accepting);
+    let releaseAdmission: (() => void) | undefined;
+    let admissionHandedOff = false;
     try {
       let request: InvokeRequest;
       let adapterType: string;
@@ -1041,6 +1050,8 @@ export class AgentWorkRuntime {
         await abortableDelay(CONTEXT_BUSY_POLL_MS, controller.signal);
       }
       this.#assertCurrentLifecycle(epoch);
+      releaseAdmission = await this.#runAdmission?.acquire(controller.signal);
+      this.#assertCurrentLifecycle(epoch);
       store.upsertRun({
         runId: command.run_id,
         agentSessionId,
@@ -1055,10 +1066,12 @@ export class AgentWorkRuntime {
         fencingToken
       });
       if (!accepting.acknowledged) this.#ackCommand(command, true);
-      const execution = this.#execute(command, adapterType, request);
+      const execution = this.#execute(command, adapterType, request, releaseAdmission);
+      admissionHandedOff = true;
       this.#executionTasks.add(execution);
       void execution.finally(() => this.#executionTasks.delete(execution));
     } finally {
+      if (!admissionHandedOff) releaseAdmission?.();
       this.#acceptingCommandIds.delete(command.command_id);
       if (this.#acceptingRuns.get(command.run_id)?.controller === controller) {
         this.#acceptingRuns.delete(command.run_id);
@@ -1181,7 +1194,12 @@ export class AgentWorkRuntime {
     if (!this.#isCurrentLifecycle(epoch)) throw new RuntimeStoppingError();
   }
 
-  async #execute(command: RuntimeCommand, adapterType: string, request: InvokeRequest): Promise<void> {
+  async #execute(
+    command: RuntimeCommand,
+    adapterType: string,
+    request: InvokeRequest,
+    releaseAdmission?: () => void
+  ): Promise<void> {
     const store = this.#store;
     if (!store) return;
     let finalText = "";
@@ -1294,6 +1312,7 @@ export class AgentWorkRuntime {
       // Success remains submitted until the terminal outbox row receives a durable ACK.
       if (!terminal) this.#contextStore?.markFailed(command.run_id);
       this.#activeRuns.delete(command.run_id);
+      releaseAdmission?.();
     }
   }
 
@@ -1426,7 +1445,10 @@ export class AgentWorkRuntime {
   }
 
   #log(input: LogInput): void {
-    this.#observability?.log(input);
+    this.#observability?.log({
+      ...input,
+      data: { ...input.data, ...(this.#options.profile ? { profile: this.#options.profile } : {}) }
+    });
   }
 
   /**
@@ -1449,7 +1471,11 @@ export class AgentWorkRuntime {
       scope: "agent-work.runtime",
       event,
       message,
-      data: { ...data, error: errorMessage(error) }
+      data: {
+        ...data,
+        ...(this.#options.profile ? { profile: this.#options.profile } : {}),
+        error: errorMessage(error)
+      }
     });
   }
 }

@@ -4,7 +4,8 @@ export const hermesAdapter = createAcpAdapter({
   type: "hermes",
   provider: "hermes",
   command: "hermes",
-  args: ["acp"]
+  args: ["acp"],
+  emptyLoadResultMeansMissing: true
 });
 
 export default hermesAdapter;

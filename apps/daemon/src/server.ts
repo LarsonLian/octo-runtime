@@ -21,7 +21,8 @@ import {
   type AdapterHostRpc,
   type AdapterHostProcess,
 } from "@mininglamp-oss/octo-harness-adapter-host";
-import { AgentWorkRuntime, type AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
+import type { AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
+import { AgentWorkSupervisor } from "./agent-work-supervisor.js";
 import { InspectServer } from "./inspect-server.js";
 import { LIVE_EVENT_SOURCES, LiveEventBus, type LiveEventSource } from "./live-event-bus.js";
 
@@ -50,6 +51,9 @@ export interface StartDaemonServerOptions {
   logging?: ObservabilityConfiguration;
   /** Optional foreground-only sink for already-redacted operational records. */
   operationalSink?: (record: RecordEnvelope) => void;
+  /** Enabled managed profiles. All runtimes share this daemon and adapter host. */
+  agentWorks?: AgentWorkRuntimeOptions[];
+  /** Compatibility input for embedders that configure one unmanaged runtime. */
   agentWork?: AgentWorkRuntimeOptions;
   /** Test/embedding override for the capped adapter-host restart schedule. */
   adapterHostRestartDelaysMs?: readonly number[];
@@ -95,7 +99,7 @@ export interface DaemonApplication {
   engine: HarnessEngine;
   hostProcess: AdapterHostProcess;
   runtime: DaemonRuntimeInfo;
-  agentWorkRuntime?: AgentWorkRuntime;
+  agentWorkSupervisor?: AgentWorkSupervisor;
   observability: LocalObservability;
   events: LiveEventBus;
   close(): Promise<void>;
@@ -118,6 +122,7 @@ export async function startDaemonServer({
   inspectPort,
   logging,
   operationalSink,
+  agentWorks,
   agentWork,
   adapterHostRestartDelaysMs = DEFAULT_ADAPTER_HOST_RESTART_DELAYS_MS,
   adapterHostReadyTimeoutMs
@@ -370,8 +375,9 @@ export async function startDaemonServer({
   monitorAdapterHost(hostProcess);
   const engine = new HarnessEngine({ store, host });
   const daemon = new HarnessDaemon({ engine, store });
-  const agentWorkRuntime = agentWork
-    ? new AgentWorkRuntime(agentWork, host, observability)
+  const configuredAgentWorks = agentWorks ?? (agentWork ? [agentWork] : []);
+  const agentWorkSupervisor = configuredAgentWorks.length > 0
+    ? new AgentWorkSupervisor(configuredAgentWorks, host, observability)
     : undefined;
   const inspect = new InspectServer(
     events,
@@ -380,6 +386,7 @@ export async function startDaemonServer({
       pid: process.pid,
       adapterHost: runtime.adapterHost,
       adapters: runtime.adapters,
+      agentWork: agentWorkSupervisor?.status ?? { enabled: false, runtimes: [] },
       lifecycle: daemon.status
     }),
     runId => observability.query({
@@ -453,7 +460,7 @@ export async function startDaemonServer({
         store,
         host,
         runtime,
-        agentWorkRuntime,
+        agentWorkSupervisor,
         observability,
         events,
         inspect,
@@ -471,7 +478,7 @@ export async function startDaemonServer({
     // The Unix socket is the only local access boundary for the control plane;
     // 0600 restricts it to the current host account (there is no RBAC above it).
     if (process.platform !== "win32") await chmod(socketPath, 0o600);
-    await agentWorkRuntime?.start();
+    await agentWorkSupervisor?.start();
     observability.log({
       level: "info",
       scope: "daemon.lifecycle",
@@ -498,7 +505,7 @@ export async function startDaemonServer({
       data: { error: errorMessage(error) }
     });
     daemon.stop();
-    await agentWorkRuntime?.close();
+    await agentWorkSupervisor?.close();
     await hostRestartTask?.catch(() => undefined);
     await hostProcess.close();
     store.close();
@@ -517,7 +524,7 @@ export async function startDaemonServer({
       return hostProcess;
     },
     runtime,
-    agentWorkRuntime,
+    agentWorkSupervisor,
     observability,
     events,
     async close(): Promise<void> {
@@ -531,7 +538,7 @@ export async function startDaemonServer({
         message: "daemon stopping"
       });
       daemon.stop();
-      await agentWorkRuntime?.close();
+      await agentWorkSupervisor?.close();
       await inspect.close();
       for (const connection of connections) connection.destroy();
       await new Promise<void>(resolve => server.close(() => resolve()));
@@ -561,7 +568,7 @@ async function handleRequestLine({
   store,
   host,
   runtime,
-  agentWorkRuntime,
+  agentWorkSupervisor,
   observability,
   events,
   inspect,
@@ -573,7 +580,7 @@ async function handleRequestLine({
   store: Store;
   host: AdapterHostRpc;
   runtime: DaemonRuntimeInfo;
-  agentWorkRuntime: AgentWorkRuntime | undefined;
+  agentWorkSupervisor: AgentWorkSupervisor | undefined;
   observability: LocalObservability;
   events: LiveEventBus;
   inspect: InspectServer;
@@ -606,7 +613,7 @@ async function handleRequestLine({
       return;
     }
     const result = await dispatch({
-      request, daemon, store, host, runtime, agentWorkRuntime, observability, inspect, events
+      request, daemon, store, host, runtime, agentWorkSupervisor, observability, inspect, events
     });
     const resultRecord = isRecord(result) ? result : {};
     const resultAgent = isRecord(resultRecord.agent) ? resultRecord.agent : undefined;
@@ -766,7 +773,7 @@ async function dispatch({
   store,
   host,
   runtime,
-  agentWorkRuntime,
+  agentWorkSupervisor,
   observability,
   inspect,
   events
@@ -776,7 +783,7 @@ async function dispatch({
   store: Store;
   host: AdapterHostRpc;
   runtime: DaemonRuntimeInfo;
-  agentWorkRuntime: AgentWorkRuntime | undefined;
+  agentWorkSupervisor: AgentWorkSupervisor | undefined;
   observability: LocalObservability;
   inspect: InspectServer;
   events: LiveEventBus;
@@ -789,7 +796,7 @@ async function dispatch({
         pid: process.pid,
         ...runtime,
         logging: observability.status,
-        agentWork: agentWorkRuntime?.status ?? { enabled: false },
+        agentWork: agentWorkSupervisor?.status ?? { enabled: false, runtimes: [] },
         lifecycle: daemon.status,
         events: events.stats,
         counts: {
@@ -800,15 +807,15 @@ async function dispatch({
     case "lifecycle.drain": {
       const timeoutMs = positiveInteger(params.timeoutMs, "timeoutMs", DEFAULT_DRAIN_TIMEOUT_MS);
       daemon.beginDrain();
-      agentWorkRuntime?.beginDrain();
+      agentWorkSupervisor?.beginDrain();
       await Promise.all([
         daemon.waitForDrained(timeoutMs),
-        ...(agentWorkRuntime ? [agentWorkRuntime.waitForDrained(timeoutMs)] : [])
+        ...(agentWorkSupervisor ? [agentWorkSupervisor.waitForDrained(timeoutMs)] : [])
       ]);
       return {
         drained: true,
         local: daemon.status,
-        agentWork: agentWorkRuntime?.status ?? { enabled: false }
+        agentWork: agentWorkSupervisor?.status ?? { enabled: false, runtimes: [] }
       };
     }
     case "logs.path":

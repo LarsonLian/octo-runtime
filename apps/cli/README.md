@@ -9,7 +9,7 @@
 --profile NAME    选择 profile，默认 default
 ```
 
-macOS/Linux 默认 Home 是 `~/.octo-harness`，Windows 是 `%LOCALAPPDATA%\OctoHarness`。一个 Home 只绑定一个 profile 和一个 local Runtime；不同 profile 必须使用不同 Home，不同用户或互不信任的身份必须使用不同 OS account。
+macOS/Linux 默认 Home 是 `~/.octo-harness`，Windows 是 `%LOCALAPPDATA%\OctoHarness`。一个 Home 运行一个 daemon，并可包含多个 profile；每个 profile 独立保存 Runtime 身份、credential、WSS、outbox 与 channel context。不同 OS 用户或互不信任的身份仍必须使用不同 OS account。
 
 ## 登录
 
@@ -60,7 +60,7 @@ octo-harness daemon status
   显示详细 operational records 和完整启动异常堆栈。RPC/provider 敏感内容仍只进入受保护日志。
 - `start` 只启动已安装且已启用的原生用户服务，不创建 detached 子进程；`--wait-online` 会继续等待所选 `runtime_id` 的 WSS Online。
 - `stop`、`restart` 先通过 IPC 关闭新 Run 准入并等待活动 Run 完成，再操作原生服务；`--force` 跳过 drain。
-- 生命周期命令作用于整个 Home。daemon 只加载该 Home 的唯一 enabled profile、credential、`runtime_id`、WSS 和 outbox。
+- 生命周期命令作用于整个 Home。daemon 自动发现 Home 下包含合法 `config.json` 的 profile，并由一个 supervisor 管理各自的 credential、`runtime_id`、WSS 和 outbox。
 - 锁屏不会结束已登录用户的服务；注销会结束 macOS LaunchAgent 和默认 Windows 用户任务。Linux 注销后是否继续取决于管理员是否启用 linger。
 
 ## Doctor
@@ -94,7 +94,7 @@ octo-harness agent-run wait <agent-run-id>
 octo-harness agent-run cancel <agent-run-id>
 ```
 
-这些命令通过 Home 级 Unix socket 或 Windows named pipe 读取本地状态。`events` 默认输出约 6 MiB 有界内存中的当前快照并退出，只有 `--follow` 持续跟随；它不是完整 trajectory。`inspect` 由 daemon 懒启动，默认绑定 `127.0.0.1` 和 `20001–65535` 随机端口。页面事件 DOM 上限为 2 MiB/1000 行，AgentRuns 上限为最近 100 个。生产创建、reset、权威状态、完整 trajectory 与 Human/Bot 授权仍由 Agent Worker / Octo Server API 或 `octo-cli harness` 负责。
+这些命令通过 Home 级 Unix socket 或 Windows named pipe 读取本地状态。`events` 默认输出约 6 MiB 有界内存中的当前快照并退出，只有 `--follow` 持续跟随；它不是完整 trajectory。`inspect` 由 daemon 懒启动，默认绑定 `127.0.0.1` 和 `20001–65535` 随机端口。Inspector 默认展示本机全量数据，页面内可按 profile 过滤 Runs、Events 与 Logs，并在浏览器 `localStorage` 中记住所选 profile。页面事件 DOM 上限为 2 MiB/1000 行，AgentRuns 上限为最近 100 个。生产创建、reset、权威状态、完整 trajectory 与 Human/Bot 授权仍由 Agent Worker / Octo Server API 或 `octo-cli harness` 负责。
 
 `daemon run` 直接接收 `--inspect-host` / `--inspect-port`；原生服务在 `daemon install` 时把这两个可选参数固化到 systemd、launchd 或 Windows 服务定义和 Harness Home。非回环绑定需要部署方提供 TLS 和网络访问控制；代理日志不得记录 capability 的 `?token=...` query。
 
@@ -104,16 +104,16 @@ octo-harness agent-run cancel <agent-run-id>
 <home>/config.json
 <home>/octo-daemon.pid
 <home>/sockets/octo-harness-daemon.sock       # POSIX
-<home>/profiles/<profile>/config.json
-<home>/identity/runtime.json
-<home>/credentials/runtime-token.json
-<home>/agent-work.db
-<home>/channel-context.db
+<home>/<profile>/config.json
+<home>/<profile>/identity/runtime.json
+<home>/<profile>/credentials/runtime-token.json
+<home>/<profile>/agent-work.db
+<home>/<profile>/channel-context.db
 <home>/logs/
 ```
 
-一个 Harness Home 只允许一个 daemon、一个 enabled profile、一个 `system_id`、一个 `runtime_id`、一份 credential 和一条 Runtime WSS。不同 profile 或身份必须使用不同 `--home`。
+一个 Harness Home 只允许一个 daemon 和一个 adapter-host。profile 目录无需在 Home 配置中注册或启用；每个合法 profile 都拥有独立 `system_id`、`runtime_id`、credential 和 Runtime WSS，共享机器级 provider 并发额度。
 
-`octo-daemon.pid` 只保存十进制进程 PID；永久身份保存在 Home 级 `identity/runtime.json`。POSIX credential 文件以 `0600` 写入。npm package 的程序文件不放在 Harness Home。
+`octo-daemon.pid` 只保存十进制进程 PID；永久身份保存在 profile 级 `identity/runtime.json`。POSIX credential 文件以 `0600` 写入。npm package 的程序文件不放在 Harness Home。旧版 Home 根目录 identity/token/DB 会在停机后的下一次 `login/setup` 中迁入 `default/`，被覆盖的旧副本保存在 `run/profile-layout-v1-backup/`。
 
 除帮助文本外，普通命令的正常结果输出 JSON；面向终端的 `events` 默认输出带来源标记的行（`--json` 输出原始 envelope），`inspect`/`inspect url` 输出可直接打开的 URL。错误输出到 stderr 并返回非零。`--help`、`login --help` 和 `daemon --help` 不依赖网络或已运行 daemon。

@@ -862,6 +862,55 @@ test("generic ACP adapters leave model and authentication ownership to the provi
   });
 });
 
+test("generic ACP adapters start fresh when session/load reports a missing session", async () => {
+  let nextRequestId = 1;
+  const requests = [];
+  let promptInput;
+  const client = {
+    initialize: async () => {},
+    reserveRequestId: () => nextRequestId++,
+    request: async (method, params) => {
+      requests.push({ method, params });
+      return method === "session/load" ? {} : { sessionId: "fresh-session", model: "provider-model" };
+    },
+    async *prompt(sessionId, input) {
+      promptInput = { sessionId, input };
+      yield { sessionUpdate: "agent_message_chunk", content: { text: "recovered" } };
+      yield { type: "prompt_result", stopReason: "end_turn" };
+    },
+    cancel: () => {},
+    close: async () => {}
+  };
+  const adapter = createAcpAdapter(
+    { type: "fixture-acp", provider: "fixture-acp", command: "fixture", emptyLoadResultMeansMissing: true },
+    { acpClientFactory: () => client }
+  );
+  const events = [];
+  for await (const event of adapter.invoke({
+    ...request,
+    providerSession: { sessionId: "missing-session" },
+    modelInput: "delta input",
+    freshFallbackModelInput: "recovery input"
+  })) events.push(event);
+
+  assert.deepEqual(requests.map(item => item.method), ["session/load", "session/new"]);
+  assert.deepEqual(promptInput, { sessionId: "fresh-session", input: "recovery input\n\nCONTROL" });
+  assert.deepEqual(events.find(event => event.type === "session.update"), {
+    type: "session.update",
+    payload: {
+      providerSession: {
+        sessionId: "fresh-session",
+        resumable: true,
+        resumeOutcome: "fresh_fallback",
+        resumeFallback: "session_load_not_found",
+        contextInputVariant: "recovery",
+        model: "provider-model"
+      }
+    }
+  });
+  assert.equal(events.at(-1).type, "run.finished");
+});
+
 test("generic ACP adapters recover public text carried by the prompt response", async () => {
   let nextRequestId = 1;
   const client = {

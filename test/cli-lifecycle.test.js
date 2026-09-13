@@ -139,7 +139,8 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
   const dependencies = {
     backend,
     output: value => output.push(value),
-    daemonEntrypoint: join(root, "apps/daemon/dist/launcher.js")
+    daemonEntrypoint: join(root, "apps/daemon/dist/launcher.js"),
+    environment: { PATH: "/test/provider/bin:/usr/bin:/bin" }
   };
   const invoke = async (args, extra = {}) => {
     output.length = 0;
@@ -169,46 +170,54 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
     assert.equal(initialStart.value.readiness.agentWork.connected, true);
     assert.equal(backend.state, "running");
     assert.equal(backend.enabled, true);
+    assert.deepEqual(backend.spec.environment, { PATH: "/test/provider/bin:/usr/bin:/bin" });
     assert.equal(enrollmentCount, 1);
     assert.ok(runtimeRegistrationCount >= 2);
     assert.doesNotMatch(JSON.stringify(backend.spec), /octo_enroll_fixture|octo_device_fixture_secret/);
     assert.doesNotMatch(setup.output, /octo_enroll_fixture|octo_device_fixture_secret/);
 
-    const identity = JSON.parse(await readFile(join(home, "identity/runtime.json"), "utf8"));
-    const credential = JSON.parse(await readFile(join(home, "credentials/runtime-token.json"), "utf8"));
+    const identity = JSON.parse(await readFile(join(home, "default/identity/runtime.json"), "utf8"));
+    const credential = JSON.parse(await readFile(join(home, "default/credentials/runtime-token.json"), "utf8"));
     assert.equal(identity.runtime_id, "runtime-fixture");
     assert.match(identity.system_id, /^system_/);
     assert.equal(credential.access_token, "octo_device_fixture_secret");
     if (process.platform !== "win32") {
-      assert.equal((await stat(join(home, "credentials/runtime-token.json"))).mode & 0o077, 0);
+      assert.equal((await stat(join(home, "default/credentials/runtime-token.json"))).mode & 0o077, 0);
     }
 
     const status = await invoke(["daemon", "status"]);
     assert.equal(status.value.service.state, "running");
     assert.equal(status.value.application.lifecycle.draining, false);
-    assert.equal(status.value.application.agentWork.runtimeId, identity.runtime_id);
+    assert.equal(status.value.application.agentWork.runtimes[0].runtimeId, identity.runtime_id);
 
     const doctor = await invoke(["doctor"]);
     assert.equal(doctor.exitCode, 0);
     assert.equal(doctor.value.ok, true);
 
-    await assert.rejects(
-      invoke([
-        "--profile", "work",
-        "login",
-        "--server-url", serverUrl,
-        "--enroll-token-stdin"
-      ], { input: Readable.from(["octo_enroll_work\n"]) }),
-      /already bound to profile default/
-    );
-    assert.equal(enrollmentCount, 1);
+    const workSetup = await invoke([
+      "--profile", "work",
+      "login",
+      "--server-url", serverUrl,
+      "--enroll-token-stdin"
+    ], { input: Readable.from(["octo_enroll_work\n"]) });
+    assert.equal(workSetup.value.runtime_id, "runtime-work");
+    assert.equal(enrollmentCount, 2);
     const rootConfig = JSON.parse(await readFile(join(home, "config.json"), "utf8"));
-    assert.deepEqual(rootConfig.enabled_profiles, ["default"]);
+    assert.equal(rootConfig.default_profile, "default");
+    assert.equal(rootConfig.enabled_profiles, undefined);
+    assert.equal(
+      JSON.parse(await readFile(join(home, "work/identity/runtime.json"), "utf8")).runtime_id,
+      "runtime-work"
+    );
     assert.doesNotMatch(JSON.stringify(backend.spec), /octo_device_fixture_secret/);
 
     const restarted = await invoke(["daemon", "restart", "--timeout-ms", "5000"]);
     assert.equal(restarted.value.action, "restart");
     assert.equal(restarted.value.readiness.ready, true);
+    assert.deepEqual(
+      restarted.value.readiness.agentWork.runtimes.map(runtime => runtime.profile).sort(),
+      ["default", "work"]
+    );
 
     const prepared = await invoke(["setup", "--prepare-update", "--wait-drained", "--timeout-ms", "5000"]);
     assert.equal(prepared.value.service_was_running, true);
@@ -220,7 +229,7 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
 
     const repeated = await invoke(["login", "--server-url", serverUrl]);
     assert.equal(repeated.value.enrolled, false);
-    assert.equal(enrollmentCount, 1);
+    assert.equal(enrollmentCount, 2);
 
     const stopped = await invoke(["daemon", "stop", "--timeout-ms", "5000"]);
     assert.equal(stopped.value.service.state, "stopped");
@@ -235,10 +244,10 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
     assert.equal(uninstalled.value.service.state, "not_installed");
     assert.equal(uninstalled.value.data_preserved, true);
     assert.equal(backend.state, "not_installed");
-    assert.equal(enrollmentCount, 1);
-    assert.equal(JSON.parse(await readFile(join(home, "identity/runtime.json"), "utf8")).runtime_id, "runtime-fixture");
+    assert.equal(enrollmentCount, 2);
+    assert.equal(JSON.parse(await readFile(join(home, "default/identity/runtime.json"), "utf8")).runtime_id, "runtime-fixture");
     assert.equal(
-      JSON.parse(await readFile(join(home, "credentials/runtime-token.json"), "utf8")).access_token,
+      JSON.parse(await readFile(join(home, "default/credentials/runtime-token.json"), "utf8")).access_token,
       "octo_device_fixture_secret"
     );
 
@@ -260,7 +269,7 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
     assert.deepEqual(backend.inspectedSpec.args.slice(-4), [
       "--inspect-host", "10.20.30.40", "--inspect-port", "23456"
     ]);
-    assert.equal(enrollmentCount, 1);
+    assert.equal(enrollmentCount, 2);
 
     const startedOnline = await invoke(["daemon", "start", "--wait-online", "--timeout-ms", "5000"]);
     assert.equal(startedOnline.value.action, "start");

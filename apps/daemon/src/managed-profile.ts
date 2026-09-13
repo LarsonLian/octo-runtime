@@ -1,11 +1,24 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
+
+const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const RESERVED_PROFILE_NAMES = new Set([
+  "config.json",
+  "credentials",
+  "identity",
+  "logs",
+  "octo-daemon.pid",
+  "profiles",
+  "run",
+  "setup",
+  "sockets",
+  "state.db"
+]);
 
 interface HarnessHomeConfiguration {
   schema_version?: unknown;
   default_profile?: unknown;
-  enabled_profiles?: unknown;
 }
 
 interface ProfileConfiguration {
@@ -28,40 +41,40 @@ interface RuntimeCredential {
   access_token?: unknown;
 }
 
-/** Load the Home-bound Runtime. Secrets never enter service definitions or argv. */
-export function loadManagedAgentWork(
+/** Load every enabled Home-bound Runtime. Secrets never enter service definitions or argv. */
+export function loadManagedAgentWorks(
   home: string,
   requestedProfile?: string
-): AgentWorkRuntimeOptions | undefined {
+): AgentWorkRuntimeOptions[] | undefined {
   const root = readJsonOptional<HarnessHomeConfiguration>(join(home, "config.json"));
   if (!root) return undefined;
   if (root.schema_version !== 1) throw new Error("unsupported Harness Home config schema");
   const defaultProfile = requiredString(root.default_profile, "default_profile");
-  const enabledProfiles = profileList(root.enabled_profiles);
-  if (enabledProfiles.length !== 1 || enabledProfiles[0] !== defaultProfile) {
-    throw new Error("Harness Home must contain exactly one enabled profile");
+  const profiles = discoverProfiles(home);
+  if (!profiles.includes(defaultProfile)) throw new Error(`default profile ${defaultProfile} is missing`);
+  if (requestedProfile && !profiles.includes(requestedProfile)) {
+    throw new Error(`managed profile ${requestedProfile} does not exist in this Harness Home`);
   }
-  if (!enabledProfiles.includes(defaultProfile)) {
-    throw new Error("Harness Home default profile must be enabled");
-  }
-  if (requestedProfile && !enabledProfiles.includes(requestedProfile)) {
-    throw new Error(`managed profile ${requestedProfile} is not enabled in this Harness Home`);
-  }
-  return loadManagedProfile(home, defaultProfile);
+  const orderedProfiles = [defaultProfile, ...profiles.filter(profile => profile !== defaultProfile)];
+  const runtimes = orderedProfiles
+    .map(profile => loadManagedProfile(home, profile))
+    .filter((runtime): runtime is AgentWorkRuntimeOptions => runtime !== undefined);
+  assertUniqueRuntimeBindings(runtimes);
+  return runtimes;
 }
 
 function loadManagedProfile(home: string, profile: string): AgentWorkRuntimeOptions | undefined {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(profile)) {
+  if (!isProfileName(profile)) {
     throw new Error(`Harness Home profile is invalid: ${profile}`);
   }
-  const profileRoot = join(home, "profiles", profile);
+  const profileRoot = join(home, profile);
   const config = readJsonRequired<ProfileConfiguration>(join(profileRoot, "config.json"));
-  const identity = readJsonRequired<RuntimeIdentity>(join(home, "identity", "runtime.json"));
+  const identity = readJsonRequired<RuntimeIdentity>(join(profileRoot, "identity", "runtime.json"));
   if (config.schema_version !== 1 || config.profile !== profile) throw new Error(`managed profile ${profile} is invalid`);
   if (identity.schema_version !== 1) throw new Error(`managed Runtime identity for ${profile} is invalid`);
   const baseUrl = optionalString(config.agent_work_url);
   if (!baseUrl) return undefined;
-  const credential = readJsonRequired<RuntimeCredential>(join(home, "credentials", "runtime-token.json"));
+  const credential = readJsonRequired<RuntimeCredential>(join(profileRoot, "credentials", "runtime-token.json"));
   if (credential.schema_version !== 1) throw new Error(`managed Runtime credential for ${profile} is invalid`);
   return {
     profile,
@@ -70,27 +83,40 @@ function loadManagedProfile(home: string, profile: string): AgentWorkRuntimeOpti
     runtimeId: requiredString(identity.runtime_id, "runtime_id"),
     runtimeName: optionalString(config.runtime_name) ?? "octo-harness-local",
     fingerprint: requiredString(identity.system_id, "system_id"),
-    storePath: join(home, "agent-work.db"),
+    storePath: join(profileRoot, "agent-work.db"),
     channelContext: {
       store: "sqlite",
       projection: "delta",
       providerPersistence: "append_only",
-      storePath: join(home, "channel-context.db")
+      storePath: join(profileRoot, "channel-context.db")
     }
   };
 }
 
-function profileList(value: unknown): string[] {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new Error("managed enabled_profiles must contain at least one profile");
-  }
-  const profiles = value.map((profile, index) => requiredString(profile, `enabled_profiles[${index}]`));
-  for (const profile of profiles) {
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(profile)) {
-      throw new Error(`managed enabled profile is invalid: ${profile}`);
+function assertUniqueRuntimeBindings(runtimes: AgentWorkRuntimeOptions[]): void {
+  const bindings = new Map<string, string>();
+  for (const runtime of runtimes) {
+    if (!runtime.runtimeId) continue;
+    const binding = `${new URL(runtime.baseUrl).toString()}\u0000${runtime.runtimeId}`;
+    const existing = bindings.get(binding);
+    if (existing) {
+      throw new Error(`profiles ${existing} and ${runtime.profile} use the same Agent Work Runtime binding`);
     }
+    bindings.set(binding, runtime.profile ?? "default");
   }
-  return [...new Set(profiles)];
+}
+
+function discoverProfiles(home: string): string[] {
+  return readdirSync(home, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name)
+    .filter(isProfileName)
+    .filter(profile => existsSync(join(home, profile, "config.json")))
+    .sort();
+}
+
+function isProfileName(profile: string): boolean {
+  return PROFILE_NAME.test(profile) && !RESERVED_PROFILE_NAMES.has(profile.toLowerCase());
 }
 
 function readJsonOptional<T>(path: string): T | undefined {

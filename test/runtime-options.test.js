@@ -10,34 +10,32 @@ import {
 
 const unmanagedHome = resolve(".tmp/runtime-options-unmanaged-home");
 
-async function writeManagedRuntime(home) {
-  const profileRoot = join(home, "profiles", "default");
-  await mkdir(profileRoot, { recursive: true });
-  await mkdir(join(home, "identity"), { recursive: true });
-  await mkdir(join(home, "credentials"), { recursive: true });
-  await writeFile(join(home, "config.json"), JSON.stringify({
+async function writeManagedRuntime(home, profile = "default") {
+  const profileRoot = join(home, profile);
+  await mkdir(join(profileRoot, "identity"), { recursive: true });
+  await mkdir(join(profileRoot, "credentials"), { recursive: true });
+  if (profile === "default") await writeFile(join(home, "config.json"), JSON.stringify({
     schema_version: 1,
     default_profile: "default",
-    enabled_profiles: ["default"],
     channel: "stable"
   }));
   await writeFile(join(profileRoot, "config.json"), JSON.stringify({
     schema_version: 1,
-    profile: "default",
+    profile,
     server_url: "https://server.example",
     agent_work_url: "https://worker.example",
-    runtime_name: "runtime default"
+    runtime_name: `runtime ${profile}`
   }));
-  await writeFile(join(home, "identity/runtime.json"), JSON.stringify({
+  await writeFile(join(profileRoot, "identity/runtime.json"), JSON.stringify({
     schema_version: 1,
-    runtime_id: "runtime-default",
-    credential_id: "credential-default",
-    system_id: "system-default",
+    runtime_id: `runtime-${profile}`,
+    credential_id: `credential-${profile}`,
+    system_id: `system-${profile}`,
     enrolled_at: new Date().toISOString()
   }));
-  await writeFile(join(home, "credentials/runtime-token.json"), JSON.stringify({
+  await writeFile(join(profileRoot, "credentials/runtime-token.json"), JSON.stringify({
     schema_version: 1,
-    access_token: "device-token-default",
+    access_token: `device-token-${profile}`,
     issued_at: new Date().toISOString()
   }));
 }
@@ -186,11 +184,12 @@ test("managed Runtime binding ignores process-level endpoint and identity overri
       "--agent-work-fingerprint", "linked:fingerprint"
     ], { OCTO_HARNESS_AGENT_WORK_URL: "http://ignored:8092" });
 
-    assert.equal(paths.agentWork.baseUrl, "https://worker.example");
-    assert.equal(paths.agentWork.token, "device-token-default");
-    assert.equal(paths.agentWork.runtimeId, "runtime-default");
-    assert.equal(paths.agentWork.runtimeName, "linked-runtime");
-    assert.equal(paths.agentWork.fingerprint, "system-default");
+    const runtime = paths.agentWorks[0];
+    assert.equal(runtime.baseUrl, "https://worker.example");
+    assert.equal(runtime.token, "device-token-default");
+    assert.equal(runtime.runtimeId, "runtime-default");
+    assert.equal(runtime.runtimeName, "linked-runtime");
+    assert.equal(runtime.fingerprint, "system-default");
     const args = daemonRuntimeArguments(paths);
     assert.ok(args.includes("--agent-work-url"));
     assert.ok(args.includes("https://worker.example"));
@@ -211,9 +210,9 @@ test("Agent Work reconnect timing is configurable and survives launcher argv ser
       "--agent-work-reconnect-min-ms", "15000"
     ], { OCTO_HARNESS_AGENT_WORK_RECONNECT_MAX_MS: "45000" });
 
-    assert.equal(paths.agentWork.reconnectFirstMs, 750);
-    assert.equal(paths.agentWork.reconnectMs, 15_000);
-    assert.equal(paths.agentWork.reconnectMaxMs, 45_000);
+    assert.equal(paths.agentWorks[0].reconnectFirstMs, 750);
+    assert.equal(paths.agentWorks[0].reconnectMs, 15_000);
+    assert.equal(paths.agentWorks[0].reconnectMaxMs, 45_000);
     const args = daemonRuntimeArguments(paths);
     assert.deepEqual(args.slice(args.indexOf("--agent-work-reconnect-first-ms")), [
       "--agent-work-reconnect-first-ms", "750",
@@ -239,7 +238,7 @@ test("channel context rollout flags are independent and use a separate database"
     "--channel-context-active-snapshot-timeout-ms", "86400000",
     "--channel-context-max-projected-messages", "25"
     ], {});
-    assert.deepEqual(paths.agentWork.channelContext, {
+    assert.deepEqual(paths.agentWorks[0].channelContext, {
       store: "sqlite",
       projection: "delta",
       providerPersistence: "append_only",
@@ -258,40 +257,39 @@ test("channel context rollout flags are independent and use a separate database"
   }
 });
 
-test("managed Home loads exactly one Runtime without putting its credential in argv", async () => {
+test("managed Home discovers multiple profile Runtimes without putting credentials in argv", async () => {
   const home = await mkdtemp(join(tmpdir(), "oh-managed-profiles-"));
   try {
-    await writeFile(join(home, "config.json"), JSON.stringify({
-      schema_version: 1,
-      default_profile: "default",
-      enabled_profiles: ["default"],
-      channel: "stable"
-    }));
     await writeManagedRuntime(home);
+    await writeManagedRuntime(home, "work");
 
-    const paths = resolveDaemonRuntimePaths(["--home", home], {});
+    const paths = resolveDaemonRuntimePaths([
+      "--home", home,
+      "--agent-work-runtime-name", "shared machine runtime",
+      "--agent-work-reconnect-first-ms", "725",
+      "--agent-work-max-concurrent-runs", "5"
+    ], {});
     assert.deepEqual(
-      [paths.agentWork.profile, paths.agentWork.runtimeId, paths.agentWork.fingerprint],
-      ["default", "runtime-default", "system-default"]
+      paths.agentWorks.map(runtime => [runtime.profile, runtime.runtimeId, runtime.fingerprint]),
+      [
+        ["default", "runtime-default", "system-default"],
+        ["work", "runtime-work", "system-work"]
+      ]
     );
     const args = daemonRuntimeArguments(paths);
     assert.ok(!args.includes("device-token-default"));
+    assert.ok(!args.includes("device-token-work"));
     assert.deepEqual(args.slice(0, 2), ["--home", home]);
+    assert.equal(args[args.indexOf("--agent-work-runtime-name") + 1], "shared machine runtime");
+    assert.equal(args[args.indexOf("--agent-work-reconnect-first-ms") + 1], "725");
+    assert.equal(args[args.indexOf("--agent-work-max-concurrent-runs") + 1], "5");
+    assert.ok(!args.includes("--agent-work-url"));
+    assert.ok(!args.includes("--agent-work-db"));
+    assert.ok(!args.includes("--channel-context-db"));
 
     assert.throws(
-      () => resolveDaemonRuntimePaths(["--home", home, "--profile", "work"], {}),
-      /managed profile work is not enabled/
-    );
-
-    await writeFile(join(home, "config.json"), JSON.stringify({
-      schema_version: 1,
-      default_profile: "default",
-      enabled_profiles: ["default", "work"],
-      channel: "stable"
-    }));
-    assert.throws(
-      () => resolveDaemonRuntimePaths(["--home", home], {}),
-      /exactly one enabled profile/
+      () => resolveDaemonRuntimePaths(["--home", home, "--profile", "missing"], {}),
+      /managed profile missing does not exist/
     );
   } finally {
     await rm(home, { recursive: true, force: true });

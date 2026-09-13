@@ -157,15 +157,22 @@ $ServerUrl = $ServerUrl.TrimEnd("/")
 if ($Channel -notin @("stable", "beta")) {
   Fail "OCTO_HARNESS_CHANNEL must be stable or beta"
 }
-if ($Profile -notmatch "^[A-Za-z0-9._-]+$") {
-  Fail "OCTO_HARNESS_PROFILE contains unsupported characters"
+if ($Profile -notmatch "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$") {
+  Fail "OCTO_HARNESS_PROFILE must start with a letter or digit, use only supported characters, and not exceed 64 characters"
+}
+if ($Profile.ToLowerInvariant() -in @("config.json", "credentials", "identity", "logs", "octo-daemon.pid", "profiles", "run", "setup", "sockets", "state.db")) {
+  Fail "OCTO_HARNESS_PROFILE conflicts with Harness Home infrastructure"
 }
 if (-not (Test-FullyQualifiedWindowsPath $HarnessHome)) {
   Fail "OCTO_HARNESS_HOME must be an absolute path"
 }
 
-$profileIdentity = Join-Path $HarnessHome "identity\runtime.json"
-if (-not $EnrollmentToken -and -not (Test-Path -LiteralPath $profileIdentity -PathType Leaf)) {
+$profileIdentity = Join-Path $HarnessHome "$Profile\identity\runtime.json"
+$legacyProfileIdentity = Join-Path $HarnessHome "identity\runtime.json"
+$hasExistingIdentity = (Test-Path -LiteralPath $profileIdentity -PathType Leaf) -or
+  ($Profile.Equals("default", [StringComparison]::OrdinalIgnoreCase) -and
+    (Test-Path -LiteralPath $legacyProfileIdentity -PathType Leaf))
+if (-not $EnrollmentToken -and -not $hasExistingIdentity) {
   $secureToken = Read-Host "Enrollment token" -AsSecureString
   $tokenPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
   try {
@@ -174,7 +181,7 @@ if (-not $EnrollmentToken -and -not (Test-Path -LiteralPath $profileIdentity -Pa
     [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($tokenPointer)
   }
 }
-if (-not $EnrollmentToken -and -not (Test-Path -LiteralPath $profileIdentity -PathType Leaf)) {
+if (-not $EnrollmentToken -and -not $hasExistingIdentity) {
   Fail "EnrollmentToken must not be empty on first install"
 }
 
@@ -210,6 +217,9 @@ try {
       $homeHasRuntime = $true
       break
     }
+  }
+  if (Test-Path -LiteralPath (Join-Path $HarnessHome $Profile)) {
+    $homeHasRuntime = $true
   }
 
   New-Item -ItemType Directory -Path $HarnessHome -Force | Out-Null

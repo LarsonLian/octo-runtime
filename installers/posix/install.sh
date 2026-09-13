@@ -118,15 +118,27 @@ case "$CHANNEL" in
   *) die "OCTO_HARNESS_CHANNEL must be stable or beta" ;;
 esac
 case "$PROFILE" in
-  ""|*[!A-Za-z0-9._-]*) die "OCTO_HARNESS_PROFILE contains unsupported characters" ;;
+  ""|[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*) die "OCTO_HARNESS_PROFILE must start with a letter or digit and contain only letters, digits, dot, underscore, or hyphen" ;;
+esac
+[ "${#PROFILE}" -le 64 ] || die "OCTO_HARNESS_PROFILE must not exceed 64 characters"
+profile_key=$(printf '%s' "$PROFILE" | tr '[:upper:]' '[:lower:]')
+case "$profile_key" in
+  config.json|credentials|identity|logs|octo-daemon.pid|profiles|run|setup|sockets|state.db)
+    die "OCTO_HARNESS_PROFILE conflicts with Harness Home infrastructure"
+    ;;
 esac
 case "$HARNESS_HOME" in
   /*) ;;
   *) die "OCTO_HARNESS_HOME must be an absolute path" ;;
 esac
 
-PROFILE_IDENTITY="$HARNESS_HOME/identity/runtime.json"
-if [ -z "$ENROLLMENT_TOKEN" ] && [ ! -f "$PROFILE_IDENTITY" ]; then
+PROFILE_IDENTITY="$HARNESS_HOME/$PROFILE/identity/runtime.json"
+LEGACY_PROFILE_IDENTITY="$HARNESS_HOME/identity/runtime.json"
+HAS_EXISTING_IDENTITY=0
+if [ -f "$PROFILE_IDENTITY" ] || { [ "$PROFILE" = "default" ] && [ -f "$LEGACY_PROFILE_IDENTITY" ]; }; then
+  HAS_EXISTING_IDENTITY=1
+fi
+if [ -z "$ENROLLMENT_TOKEN" ] && [ "$HAS_EXISTING_IDENTITY" -eq 0 ]; then
   [ -r /dev/tty ] || die "no enrollment token was provided and no terminal is available"
   printf 'Enrollment token: ' > /dev/tty
   stty -echo < /dev/tty
@@ -136,7 +148,7 @@ if [ -z "$ENROLLMENT_TOKEN" ] && [ ! -f "$PROFILE_IDENTITY" ]; then
   TTY_ECHO_DISABLED=0
   printf '\n' > /dev/tty
 fi
-[ -n "$ENROLLMENT_TOKEN" ] || [ -f "$PROFILE_IDENTITY" ] || die "enrollment token must not be empty on first install"
+[ -n "$ENROLLMENT_TOKEN" ] || [ "$HAS_EXISTING_IDENTITY" -eq 1 ] || die "enrollment token must not be empty on first install"
 
 node_major() {
   command -v node >/dev/null 2>&1 || return 1
@@ -286,6 +298,9 @@ for runtime_marker in config.json profiles state.db agent-work.db octo-daemon.pi
     break
   fi
 done
+if [ -d "$HARNESS_HOME/$PROFILE" ]; then
+  HOME_HAS_RUNTIME=1
+fi
 
 mkdir -p "$HARNESS_HOME/run" "$NPM_PREFIX"
 chmod 700 "$HARNESS_HOME" "$HARNESS_HOME/run"

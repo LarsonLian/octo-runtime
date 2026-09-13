@@ -30,6 +30,7 @@ export interface LiveEventEnvelope {
   stage: string;
   direction?: string;
   type: string;
+  profile?: string;
   agent_run_id?: string;
   invocation_id?: string;
   adapter_type?: string;
@@ -39,6 +40,7 @@ export interface LiveEventEnvelope {
 export interface LiveEventFilter {
   runId?: string;
   source?: LiveEventSource;
+  profile?: string;
 }
 
 export interface LiveEventInput {
@@ -46,6 +48,7 @@ export interface LiveEventInput {
   stage?: string;
   direction?: string;
   type: string;
+  profile?: string;
   runId?: string;
   invocationId?: string;
   adapterType?: string;
@@ -58,6 +61,7 @@ interface RingEntry {
   readonly runId?: string;
   readonly source: LiveEventSource;
   readonly type: string;
+  readonly profile?: string;
   readonly affectedSource?: LiveEventSource;
   readonly bytes: Buffer;
   pins: number;
@@ -134,6 +138,7 @@ export class LiveEventBus {
       stage: input.stage ?? defaultStage(input.source),
       ...(input.direction ? { direction: input.direction } : {}),
       type: input.type,
+      ...(input.profile ? { profile: input.profile } : {}),
       ...(input.runId ? { agent_run_id: input.runId } : {}),
       ...(input.invocationId ? { invocation_id: input.invocationId } : {}),
       ...(input.adapterType ? { adapter_type: input.adapterType } : {}),
@@ -150,6 +155,7 @@ export class LiveEventBus {
         source: "control",
         stage: "bus",
         type: "event.oversize_dropped",
+        ...(envelope.profile ? { profile: envelope.profile } : {}),
         ...(envelope.agent_run_id ? { agent_run_id: envelope.agent_run_id } : {}),
         ...(envelope.invocation_id ? { invocation_id: envelope.invocation_id } : {}),
         ...(envelope.adapter_type ? { adapter_type: envelope.adapter_type } : {}),
@@ -188,6 +194,7 @@ export class LiveEventBus {
       runId: envelope.agent_run_id,
       source: envelope.source,
       type: envelope.type,
+      ...(envelope.profile ? { profile: envelope.profile } : {}),
       ...(affectedSource ? { affectedSource } : {}),
       bytes,
       pins: 0,
@@ -206,6 +213,7 @@ export class LiveEventBus {
     return this.publish({
       source,
       type: record.event,
+      profile: typeof data.profile === "string" ? data.profile : undefined,
       stage: defaultStage(source),
       direction: source === "adapter-rpc"
         ? data.direction === "send" ? "daemon_to_host" : "host_to_daemon"
@@ -244,6 +252,7 @@ export class LiveEventBus {
             source: "control",
             stage: "bus",
             type: "bus.gap",
+            ...(filter.profile ? { profile: filter.profile } : {}),
             ...(filter.runId ? { agent_run_id: filter.runId } : {}),
             payload: { from_seq: cursor, to_seq: oldest }
           };
@@ -277,6 +286,7 @@ export class LiveEventBus {
       if (!entry || entry.seq < fromSeq || entry.seq > throughSeq) continue;
       if (filter.runId && entry.runId !== filter.runId && entry.type !== "bus.correlation_gap") continue;
       if (filter.source && entry.source !== filter.source && entry.affectedSource !== filter.source) continue;
+      if (filter.profile && entry.profile !== filter.profile) continue;
       return entry;
     }
     return undefined;

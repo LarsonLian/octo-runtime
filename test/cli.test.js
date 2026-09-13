@@ -121,6 +121,8 @@ test("CLI exposes bounded events and daemon-owned loopback inspect", async () =>
     const html = await response.text();
     assert.match(html, /DOM_BYTES=2\*1024\*1024/);
     assert.match(html, /MAX_RUNS=100/);
+    assert.match(html, /id="profile"/);
+    assert.match(html, /localStorage\.setItem\(profileKey/);
     assert.match(html, /Provider 原生事件/);
     assert.doesNotMatch(html, /典型链路/);
     const helpResponse = await fetch(new URL("/help", url));

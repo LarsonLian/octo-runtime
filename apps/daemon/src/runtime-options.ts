@@ -7,7 +7,8 @@ import {
   type ObservabilityConfiguration
 } from "@mininglamp-oss/octo-harness-observability";
 import type { StartDaemonServerOptions } from "./server.js";
-import { loadManagedAgentWork } from "./managed-profile.js";
+import type { AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
+import { loadManagedAgentWorks } from "./managed-profile.js";
 
 /**
  * Resolve all daemon runtime paths and options from CLI args and env, defaulting
@@ -21,8 +22,12 @@ export function resolveDaemonRuntimePaths(
 ): StartDaemonServerOptions {
   const home = resolve(option(args, ["--home"], env.OCTO_HARNESS_HOME ?? defaultHarnessHome(env)));
   const requestedProfile = optionalOption(args, ["--profile"], undefined);
-  const managed = loadManagedAgentWork(home, requestedProfile);
-  const selectedAgentWork = resolveAgentWorkOptions(args, env, home, managed);
+  const managed = loadManagedAgentWorks(home, requestedProfile);
+  const selectedAgentWorks = managed === undefined
+    ? optionalAgentWorks(resolveAgentWorkOptions(args, env, home, undefined))
+    : managed
+        .map(runtime => resolveAgentWorkOptions(args, env, home, runtime))
+        .filter((runtime): runtime is AgentWorkRuntimeOptions => runtime !== undefined);
   return {
     homePath: home,
     pidPath: resolve(option(args, ["--pid-file"], env.OCTO_HARNESS_PID_FILE ?? join(home, "octo-daemon.pid"))),
@@ -46,7 +51,7 @@ export function resolveDaemonRuntimePaths(
     inspectHost: option(args, ["--inspect-host"], env.OCTO_HARNESS_INSPECT_HOST ?? "127.0.0.1"),
     ...optionalPort(args, ["--inspect-port"], env.OCTO_HARNESS_INSPECT_PORT, "inspectPort"),
     logging: resolveLoggingOptions(args, env, home),
-    ...(selectedAgentWork ? { agentWork: selectedAgentWork } : {})
+    ...(selectedAgentWorks.length ? { agentWorks: selectedAgentWorks } : {})
   };
 }
 
@@ -149,8 +154,8 @@ function resolveAgentWorkOptions(
   args: string[],
   env: NodeJS.ProcessEnv,
   home: string,
-  managed: StartDaemonServerOptions["agentWork"]
-): StartDaemonServerOptions["agentWork"] {
+  managed: AgentWorkRuntimeOptions | undefined
+): AgentWorkRuntimeOptions | undefined {
   const baseUrl = managed?.baseUrl ?? optionalOption(args, ["--agent-work-url"], env.OCTO_HARNESS_AGENT_WORK_URL);
   if (!baseUrl) return undefined;
   const token = managed?.token;
@@ -237,6 +242,10 @@ function resolveAgentWorkOptions(
   };
 }
 
+function optionalAgentWorks(runtime: AgentWorkRuntimeOptions | undefined): AgentWorkRuntimeOptions[] {
+  return runtime ? [runtime] : [];
+}
+
 function optionalNumber(
   args: string[],
   names: string[],
@@ -289,35 +298,48 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[
     }
     if (paths.logging.requireProviderCapture) args.push("--require-provider-capture");
   }
-  if (paths.agentWork) {
+  const serializedRuntime = paths.agentWork ?? (paths.agentWorks?.length === 1 ? paths.agentWorks[0] : undefined);
+  const commonRuntime = serializedRuntime ?? paths.agentWorks?.[0];
+  if (serializedRuntime) {
     args.push(
-      "--agent-work-url", paths.agentWork.baseUrl,
-      "--agent-work-runtime-name", paths.agentWork.runtimeName,
-      "--agent-work-fingerprint", paths.agentWork.fingerprint,
-      "--agent-work-db", paths.agentWork.storePath,
-      "--channel-context-store", paths.agentWork.channelContext?.store ?? "sqlite",
-      "--channel-context-projection", paths.agentWork.channelContext?.projection ?? "delta",
-      "--channel-context-provider-persistence", paths.agentWork.channelContext?.providerPersistence ?? "append_only",
-      "--channel-context-db", paths.agentWork.channelContext?.storePath ?? resolve("channel-context.db")
+      "--agent-work-url", serializedRuntime.baseUrl,
+      "--agent-work-runtime-name", serializedRuntime.runtimeName,
+      "--agent-work-fingerprint", serializedRuntime.fingerprint,
+      "--agent-work-db", serializedRuntime.storePath,
+      "--channel-context-store", serializedRuntime.channelContext?.store ?? "sqlite",
+      "--channel-context-projection", serializedRuntime.channelContext?.projection ?? "delta",
+      "--channel-context-provider-persistence", serializedRuntime.channelContext?.providerPersistence ?? "append_only",
+      "--channel-context-db", serializedRuntime.channelContext?.storePath ?? resolve("channel-context.db")
     );
-    if (paths.agentWork.runtimeId) args.push("--agent-work-runtime-id", paths.agentWork.runtimeId);
-    pushNumberOption(args, "--agent-work-send-window", paths.agentWork.sendWindow);
-    pushNumberOption(args, "--agent-work-soft-bytes", paths.agentWork.softWatermarkBytes);
-    pushNumberOption(args, "--agent-work-hard-bytes", paths.agentWork.hardWatermarkBytes);
-    pushNumberOption(args, "--agent-work-reconnect-first-ms", paths.agentWork.reconnectFirstMs);
-    pushNumberOption(args, "--agent-work-reconnect-min-ms", paths.agentWork.reconnectMs);
-    pushNumberOption(args, "--agent-work-reconnect-max-ms", paths.agentWork.reconnectMaxMs);
-    pushNumberOption(args, "--agent-work-max-concurrent-runs", paths.agentWork.maxConcurrentRuns);
-    pushNumberOption(args, "--channel-context-retention-ms", paths.agentWork.channelContext?.retentionMs);
-    pushNumberOption(args, "--channel-context-snapshot-retention-ms", paths.agentWork.channelContext?.snapshotRetentionMs);
-    pushNumberOption(args, "--channel-context-active-snapshot-timeout-ms", paths.agentWork.channelContext?.activeSnapshotTimeoutMs);
-    pushNumberOption(args, "--channel-context-max-scope-messages", paths.agentWork.channelContext?.maxMessagesPerScope);
-    pushNumberOption(args, "--channel-context-max-projected-messages", paths.agentWork.channelContext?.maxProjectedMessages);
-    pushNumberOption(args, "--channel-context-max-projected-bytes", paths.agentWork.channelContext?.maxProjectedBytes);
-    pushNumberOption(args, "--channel-context-sync-timeout-ms", paths.agentWork.channelContext?.syncTimeoutMs);
+    if (serializedRuntime.runtimeId) args.push("--agent-work-runtime-id", serializedRuntime.runtimeId);
+  } else if (commonRuntime) {
+    args.push(
+      "--agent-work-runtime-name", commonRuntime.runtimeName,
+      "--channel-context-store", commonRuntime.channelContext?.store ?? "sqlite",
+      "--channel-context-projection", commonRuntime.channelContext?.projection ?? "delta",
+      "--channel-context-provider-persistence", commonRuntime.channelContext?.providerPersistence ?? "append_only"
+    );
   }
+  if (commonRuntime) pushAgentWorkTuningArguments(args, commonRuntime);
   // Managed credentials are reloaded from --home and never serialized to argv.
   return args;
+}
+
+function pushAgentWorkTuningArguments(args: string[], runtime: AgentWorkRuntimeOptions): void {
+  pushNumberOption(args, "--agent-work-send-window", runtime.sendWindow);
+  pushNumberOption(args, "--agent-work-soft-bytes", runtime.softWatermarkBytes);
+  pushNumberOption(args, "--agent-work-hard-bytes", runtime.hardWatermarkBytes);
+  pushNumberOption(args, "--agent-work-reconnect-first-ms", runtime.reconnectFirstMs);
+  pushNumberOption(args, "--agent-work-reconnect-min-ms", runtime.reconnectMs);
+  pushNumberOption(args, "--agent-work-reconnect-max-ms", runtime.reconnectMaxMs);
+  pushNumberOption(args, "--agent-work-max-concurrent-runs", runtime.maxConcurrentRuns);
+  pushNumberOption(args, "--channel-context-retention-ms", runtime.channelContext?.retentionMs);
+  pushNumberOption(args, "--channel-context-snapshot-retention-ms", runtime.channelContext?.snapshotRetentionMs);
+  pushNumberOption(args, "--channel-context-active-snapshot-timeout-ms", runtime.channelContext?.activeSnapshotTimeoutMs);
+  pushNumberOption(args, "--channel-context-max-scope-messages", runtime.channelContext?.maxMessagesPerScope);
+  pushNumberOption(args, "--channel-context-max-projected-messages", runtime.channelContext?.maxProjectedMessages);
+  pushNumberOption(args, "--channel-context-max-projected-bytes", runtime.channelContext?.maxProjectedBytes);
+  pushNumberOption(args, "--channel-context-sync-timeout-ms", runtime.channelContext?.syncTimeoutMs);
 }
 
 function pushNumberOption(args: string[], name: string, value: number | undefined): void {

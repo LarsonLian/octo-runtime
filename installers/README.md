@@ -24,7 +24,7 @@
 | CLI shim | `<npm prefix -g>/bin/octo-harness` | `<npm prefix -g>\octo-harness.cmd` |
 | Harness Home | `~/.octo-harness/` | `%LOCALAPPDATA%\OctoHarness\` |
 
-Harness Home 只保存唯一 profile、Home 级 `runtime_id`、设备凭证、SQLite/outbox、PID/socket 和日志。它不是程序安装目录；npm 更新或卸载 package 不得顺带删除身份和状态。未来的显式 `octo-harness uninstall --purge --yes` 才允许清理 Harness Home；当前 CLI 尚未提供 purge 命令。
+Harness Home 保存一个 daemon 的 PID/socket/共享日志，以及多个 profile 各自的 `runtime_id`、设备凭证和 SQLite/outbox。它不是程序安装目录；npm 更新或卸载 package 不得顺带删除身份和状态。未来的显式 `octo-harness uninstall --purge --yes` 才允许清理 Harness Home；当前 CLI 尚未提供 purge 命令。
 
 安装器使用 `npm prefix --global` 定位实际 shim。如果 shim 目录不在 PATH：
 
@@ -62,7 +62,7 @@ stage-0 在改动全局 package 前，同时持有 Harness Home installer lock �
 
 如果 Home 已有 config/profile/DB/PID/socket 等 Runtime 标记，但当前 npm prefix 找不到可用 CLI，脚本必须 fail-closed，不能把“shim 丢失或 prefix 已迁移”误判为首次安装。早于 `--prepare-update` / `--recover-update` 合同的开发版或 `npm link` 不支持自动迁移：先人工停止其前台 daemon、移除旧 link，再重跑 installer。首个正式一键安装版本必须已经实现这两个 setup 模式，此后版本才能自动更新。
 
-package 更新完成后，新 CLI 再运行完整 `login`。CLI 以 Harness Home 为粒度持有状态事务锁，并保证已有 `runtime_id` 不重新 enrollment、凭证和 durable outbox 不被覆盖、service spec 被幂等对账。已有 identity 的 profile 重跑 installer 时可以省略 token；首次安装或 enrollment 尚未完成时仍必须提供 token。同一 Home 只绑定一个 profile 和一个 local Runtime；不同 profile 使用不同 Home，不同人员或互不信任的身份必须使用独立 OS account，各 OS 用户也应使用自己可写的 npm prefix。
+package 更新完成后，新 CLI 再运行完整 `login`。CLI 以 Harness Home 为粒度持有状态事务锁，并保证已有 `runtime_id` 不重新 enrollment、凭证和 durable outbox 不被覆盖、service spec 被幂等对账。已有 identity 的 profile 重跑 installer 时可以省略 token；首次安装或 enrollment 尚未完成时仍必须提供 token。同一 Home 可直接新增 profile，仍只安装一个 local daemon；不同人员或互不信任的身份必须使用独立 OS account，各 OS 用户也应使用自己可写的 npm prefix。
 
 npm 的全局更新不是项目自维护的原子 A/B 版本切换。npm install 在 prepare-update 后失败时，stage-0 会尝试调用仍可用的 CLI 执行 `setup --recover-update --start` 恢复 service；若 npm 已破坏 CLI，则明确提示先修复 package 再执行 recovery。新 package 安装成功但 login/readiness 失败时也会尝试恢复 service，但当前不会自动安装上一 npm 版本；固定版本回滚仍需按发布 runbook 人工执行。不能宣称存在尚未实现的 `versions/current` 或自动 package rollback。
 

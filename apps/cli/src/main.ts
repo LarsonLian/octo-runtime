@@ -14,8 +14,8 @@ import { resolveServiceControl, verifyServiceProgram, type ServiceControlOptions
 import {
   defaultHarnessHome,
   assertHomeConfiguration,
-  assertSingleHomeProfile,
   harnessPaths,
+  migrateLegacyProfileLayout,
   prepareHarnessDirectories,
   readJsonFile,
   reconcileHomeConfiguration,
@@ -162,16 +162,25 @@ async function runSetup(context: CliContext, allowUpdateModes: boolean): Promise
   return withSetupLock(context.paths, async () => {
     const homeConfiguration = await readJsonFile<HarnessHomeConfiguration>(context.paths.rootConfig);
     assertHomeConfiguration(homeConfiguration);
-    assertSingleHomeProfile(homeConfiguration, context.profile);
-    await prepareHarnessDirectories(context.paths);
     if (!allowUpdateModes && (context.flags.prepareUpdate === true || context.flags.recoverUpdate === true)) {
       throw new Error("installer update modes belong to 'octo-harness setup', not login");
     }
     if (context.flags.prepareUpdate === true && context.flags.recoverUpdate === true) {
       throw new Error("--prepare-update and --recover-update are mutually exclusive setup modes");
     }
-    if (context.flags.prepareUpdate === true) return prepareUpdate(context);
-    if (context.flags.recoverUpdate === true) return recoverUpdate(context);
+    if (context.flags.prepareUpdate === true) {
+      await prepareHarnessDirectories(context.paths);
+      return prepareUpdate(context);
+    }
+    if (context.flags.recoverUpdate === true) {
+      await prepareHarnessDirectories(context.paths);
+      return recoverUpdate(context);
+    }
+    await migrateLegacyProfileLayout(
+      context.paths,
+      Boolean(await tryDaemonStatus(context.paths.socket))
+    );
+    await prepareHarnessDirectories(context.paths);
     return reconcileSetup(context);
   });
 }
@@ -461,8 +470,6 @@ async function loadInstalledRuntime(
     throw new Error(`Harness Home is not configured: ${context.home}; run octo-harness login first`);
   }
   assertHomeConfiguration(homeConfiguration);
-  assertSingleHomeProfile(homeConfiguration, context.profile);
-
   const identity = await readJsonFile<RuntimeIdentity>(context.paths.identity);
   if (!identity) throw new Error(`runtime identity is missing: ${context.paths.identity}; run octo-harness login first`);
   validateIdentity(identity);
@@ -965,7 +972,7 @@ function helpText(group?: string): string {
       `  cancel <agent-run-id> [--reason TEXT]`;
   }
   return `Octo Harness CLI\n\n` +
-    `Global: --home PATH; --profile NAME (login/doctor selection only); --verbose\n\n` +
+    `Global: --home PATH; --profile NAME (login/setup/doctor selection only); --verbose\n\n` +
     `  octo-harness login --help\n` +
     `  octo-harness setup --help\n` +
     `  octo-harness daemon install|uninstall|run|start|stop|restart|status\n` +

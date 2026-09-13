@@ -17,6 +17,7 @@ export interface ServiceControlOptions {
   nodeExecutable?: string;
   systemHome?: string;
   platform?: NodeJS.Platform;
+  environment?: NodeJS.ProcessEnv;
 }
 
 export function resolveServiceControl(options: ServiceControlOptions = {}): {
@@ -24,6 +25,7 @@ export function resolveServiceControl(options: ServiceControlOptions = {}): {
   spec(paths: HarnessPaths, enabled?: boolean, daemonArgs?: string[]): ServiceSpec;
 } {
   const platform = options.platform ?? process.platform;
+  const environment = options.environment ?? process.env;
   const daemonEntrypoint = resolve(options.daemonEntrypoint
     ?? fileURLToPath(new URL("../../daemon/dist/launcher.js", import.meta.url)));
   const nodeExecutable = resolve(options.nodeExecutable ?? process.execPath);
@@ -46,6 +48,9 @@ export function resolveServiceControl(options: ServiceControlOptions = {}): {
         command: nodeExecutable,
         args: [daemonEntrypoint, "--home", paths.home, ...daemonArgs],
         workingDirectory: paths.home,
+        ...(environment.PATH || environment.Path
+          ? { environment: { PATH: environment.PATH ?? environment.Path ?? "" } }
+          : {}),
         enabled,
         restart: { policy: "on-failure", delaySeconds: 5, maxBurst: 5 },
         timeoutStopSeconds: 45,

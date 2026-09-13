@@ -1,14 +1,25 @@
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { access, chmod, mkdir, open, readFile, rename, rm, rmdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const RESERVED_PROFILE_NAMES = new Set([
+  "config.json",
+  "credentials",
+  "identity",
+  "logs",
+  "octo-daemon.pid",
+  "profiles",
+  "run",
+  "setup",
+  "sockets",
+  "state.db"
+]);
 
 export interface HarnessHomeConfiguration {
   schema_version: 1;
   default_profile: string;
-  enabled_profiles: string[];
   channel: "stable" | "beta";
   inspect?: {
     host: string;
@@ -91,15 +102,15 @@ export function defaultHarnessHome(
 export function harnessPaths(home: string, profile: string): HarnessPaths {
   assertProfileName(profile);
   const absoluteHome = resolve(home);
-  const profileRoot = join(absoluteHome, "profiles", profile);
+  const profileRoot = join(absoluteHome, profile);
   return {
     home: absoluteHome,
     rootConfig: join(absoluteHome, "config.json"),
     profileRoot,
     profileConfig: join(profileRoot, "config.json"),
-    identity: join(absoluteHome, "identity", "runtime.json"),
-    credential: join(absoluteHome, "credentials", "runtime-token.json"),
-    pendingEnrollment: join(absoluteHome, "setup", "pending-enrollment.json"),
+    identity: join(profileRoot, "identity", "runtime.json"),
+    credential: join(profileRoot, "credentials", "runtime-token.json"),
+    pendingEnrollment: join(profileRoot, "setup", "pending-enrollment.json"),
     updateJournal: join(absoluteHome, "run", "update.json"),
     setupLock: join(absoluteHome, "run", "setup.lock"),
     pid: join(absoluteHome, "octo-daemon.pid"),
@@ -114,6 +125,9 @@ export function assertProfileName(profile: string): void {
   if (!PROFILE_NAME.test(profile)) {
     throw new Error("--profile must contain only letters, digits, dot, underscore, or hyphen (maximum 64 characters)");
   }
+  if (RESERVED_PROFILE_NAMES.has(profile.toLowerCase())) {
+    throw new Error(`--profile conflicts with Harness Home infrastructure: ${profile}`);
+  }
 }
 
 export async function prepareHarnessDirectories(paths: HarnessPaths): Promise<void> {
@@ -127,6 +141,53 @@ export async function prepareHarnessDirectories(paths: HarnessPaths): Promise<vo
     secureDirectory(dirname(paths.credential)),
     secureDirectory(dirname(paths.pendingEnrollment))
   ]);
+}
+
+/** Upgrade the former Home-global Runtime files and profiles/<name> layout. */
+export async function migrateLegacyProfileLayout(paths: HarnessPaths, daemonRunning = false): Promise<boolean> {
+  const legacyProfileRoot = join(paths.home, "profiles", basename(paths.profileRoot));
+  const legacyGlobalFiles = basename(paths.profileRoot) === "default"
+    ? [
+        [join(paths.home, "identity", "runtime.json"), paths.identity],
+        [join(paths.home, "credentials", "runtime-token.json"), paths.credential],
+        [join(paths.home, "setup", "pending-enrollment.json"), paths.pendingEnrollment],
+        ...["agent-work.db", "agent-work.db-wal", "agent-work.db-shm"].map(name => [join(paths.home, name), join(paths.profileRoot, name)]),
+        ...["channel-context.db", "channel-context.db-wal", "channel-context.db-shm"].map(name => [join(paths.home, name), join(paths.profileRoot, name)])
+      ]
+    : [];
+  const hasLegacyProfile = await pathExists(legacyProfileRoot);
+  const hasLegacyGlobal = (await Promise.all(legacyGlobalFiles.map(([source]) => pathExists(source)))).some(Boolean);
+  if (!hasLegacyProfile && !hasLegacyGlobal) return false;
+  if (daemonRunning) throw new Error("stop the daemon before migrating the legacy profile layout");
+
+  const backupRoot = join(paths.home, "run", "profile-layout-v1-backup", basename(paths.profileRoot));
+  await secureDirectory(dirname(paths.profileRoot));
+  if (hasLegacyProfile) {
+    if (await pathExists(paths.profileRoot)) {
+      await moveToBackup(legacyProfileRoot, join(backupRoot, "nested-profile"));
+    } else {
+      await rename(legacyProfileRoot, paths.profileRoot);
+    }
+  }
+  await secureDirectory(paths.profileRoot);
+  for (const [source, target] of legacyGlobalFiles) {
+    if (!await pathExists(source)) continue;
+    if (await pathExists(target)) {
+      await moveToBackup(target, join(backupRoot, "overridden", target.slice(paths.profileRoot.length + 1)));
+    }
+    await secureDirectory(dirname(target));
+    await rename(source, target);
+  }
+  for (const directory of [join(paths.home, "identity"), join(paths.home, "credentials"), join(paths.home, "setup"), join(paths.home, "profiles")]) {
+    await removeEmptyDirectory(directory);
+  }
+  await writeJsonAtomic(join(paths.home, "run", "profile-layout-v1.json"), {
+    schema_version: 1,
+    profile: basename(paths.profileRoot),
+    migrated_at: new Date().toISOString(),
+    backup: backupRoot
+  });
+  return true;
 }
 
 export async function readJsonFile<T>(path: string): Promise<T | undefined> {
@@ -168,11 +229,9 @@ export async function reconcileHomeConfiguration(
 ): Promise<HarnessHomeConfiguration> {
   const existing = await readJsonFile<HarnessHomeConfiguration>(paths.rootConfig);
   assertHomeConfiguration(existing);
-  assertSingleHomeProfile(existing, profile);
   const value: HarnessHomeConfiguration = {
     schema_version: 1,
-    default_profile: profile,
-    enabled_profiles: [profile],
+    default_profile: existing?.default_profile ?? profile,
     channel,
     ...(existing?.inspect ? { inspect: existing.inspect } : {})
   };
@@ -199,34 +258,35 @@ export function assertHomeConfiguration(
       throw new Error("Harness Home inspect port is invalid");
     }
   }
-  if (!Array.isArray(configuration.enabled_profiles) || configuration.enabled_profiles.length === 0) {
-    throw new Error("Harness Home must contain at least one enabled profile");
-  }
-  for (const profile of configuration.enabled_profiles) assertProfileName(profile);
-  if (!configuration.enabled_profiles.includes(configuration.default_profile)) {
-    throw new Error("Harness Home default profile must be enabled");
-  }
-  if (configuration.enabled_profiles.length !== 1) {
-    throw new Error("Harness Home must contain exactly one enabled profile");
-  }
-}
-
-export function assertSingleHomeProfile(
-  configuration: HarnessHomeConfiguration | undefined,
-  requestedProfile: string
-): void {
-  assertHomeConfiguration(configuration);
-  if (!configuration) return;
-  if (configuration.default_profile !== requestedProfile || configuration.enabled_profiles[0] !== requestedProfile) {
-    throw new Error(
-      `Harness Home is already bound to profile ${configuration.default_profile}; use a different --home for ${requestedProfile}`
-    );
-  }
 }
 
 async function secureDirectory(path: string): Promise<void> {
   await mkdir(path, { recursive: true, mode: 0o700 });
   if (process.platform !== "win32") await chmod(path, 0o700);
+}
+
+async function moveToBackup(source: string, target: string): Promise<void> {
+  if (await pathExists(target)) throw new Error(`profile migration backup already exists: ${target}`);
+  await secureDirectory(dirname(target));
+  await rename(source, target);
+}
+
+async function removeEmptyDirectory(path: string): Promise<void> {
+  try {
+    await rmdir(path);
+  } catch (error) {
+    if (!isNodeError(error, "ENOENT") && !isNodeError(error, "ENOTEMPTY")) throw error;
+  }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch (error) {
+    if (isNodeError(error, "ENOENT")) return false;
+    throw error;
+  }
 }
 
 async function writeFileAtomic(path: string, value: string): Promise<void> {

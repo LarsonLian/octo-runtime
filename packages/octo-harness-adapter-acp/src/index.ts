@@ -1,5 +1,6 @@
 import {
   defineAdapter,
+  freshFallbackInputText,
   observeBestEffort,
   observeProviderOutput,
   probeCommand,
@@ -25,6 +26,7 @@ export interface AcpAdapterDefinition {
   args?: readonly string[] | ((request: InvokeRequest) => readonly string[]);
   capabilities?: readonly string[];
   protocolVersion?: string | number;
+  emptyLoadResultMeansMissing?: boolean;
 }
 
 export interface StandardAcpUpdate extends AcpUpdate {
@@ -235,24 +237,52 @@ export function createAcpAdapter(
         await client.initialize({ protocolVersion: definition.protocolVersion ?? 1 });
         const requestedSessionId = request.providerSession?.sessionId;
         let providerModel: string | undefined;
-        const sessionMethod = requestedSessionId ? "session/load" : "session/new";
-        const sessionParams = requestedSessionId
+        let resumeFallback: string | undefined;
+        let sessionMethod = requestedSessionId ? "session/load" : "session/new";
+        let sessionParams = requestedSessionId
           ? acpLoadSessionParams(requestedSessionId, { cwd: request.workdir })
           : acpNewSessionParams({ cwd: request.workdir });
-        const sessionRequestId = client.reserveRequestId();
+        let sessionRequestId = client.reserveRequestId();
         await observeInput(context, sessionMethod, sessionParams, sessionRequestId, requestedSessionId);
         try {
-          const result = await client.request<JsonRecord>(sessionMethod, sessionParams, {
+          let result = await client.request<JsonRecord | null>(sessionMethod, sessionParams, {
             requestId: sessionRequestId,
             ...(requestedSessionId ? { timeoutMs: 600_000 } : {}),
             onWritten: () => observeWritten(context, sessionMethod, sessionRequestId, requestedSessionId)
           });
-          sessionId = requestedSessionId ?? stringField(result, "sessionId");
-          providerModel = stringField(result, "model");
+          const initialSessionId = requestedSessionId ?? (isRecord(result) ? stringField(result, "sessionId") : undefined);
+          if (!initialSessionId) throw new Error("ACP session/new returned no sessionId");
+          observeAcknowledged(context, sessionMethod, sessionRequestId, initialSessionId);
+          const missingLoadedSession = requestedSessionId && (
+            result === null
+            || (definition.emptyLoadResultMeansMissing === true && isRecord(result) && Object.keys(result).length === 0)
+          );
+          if (missingLoadedSession) {
+            resumeFallback = "session_load_not_found";
+            sessionMethod = "session/new";
+            sessionParams = acpNewSessionParams({ cwd: request.workdir });
+            sessionRequestId = client.reserveRequestId();
+            await observeInput(context, sessionMethod, sessionParams, sessionRequestId);
+            result = await client.request<JsonRecord>(sessionMethod, sessionParams, {
+              requestId: sessionRequestId,
+              onWritten: () => observeWritten(context, sessionMethod, sessionRequestId)
+            });
+            const freshSessionId = stringField(result, "sessionId");
+            if (!freshSessionId) throw new Error("ACP session/new returned no sessionId");
+            observeAcknowledged(context, sessionMethod, sessionRequestId, freshSessionId);
+          }
+          const sessionResult = isRecord(result) ? result : {};
+          sessionId = resumeFallback ? stringField(sessionResult, "sessionId") : requestedSessionId ?? stringField(sessionResult, "sessionId");
+          providerModel = stringField(sessionResult, "model");
           if (!sessionId) throw new Error("ACP session/new returned no sessionId");
-          observeAcknowledged(context, sessionMethod, sessionRequestId, sessionId);
         } catch (error) {
-          observeFailed(context, sessionMethod, sessionRequestId, requestedSessionId, error);
+          observeFailed(
+            context,
+            sessionMethod,
+            sessionRequestId,
+            sessionMethod === "session/load" ? requestedSessionId : undefined,
+            error
+          );
           throw error;
         }
 
@@ -262,15 +292,21 @@ export function createAcpAdapter(
             providerSession: {
               sessionId,
               resumable: true,
+              ...(resumeFallback ? {
+                resumeOutcome: "fresh_fallback",
+                resumeFallback,
+                contextInputVariant: request.freshFallbackModelInput ? "recovery" : "primary"
+              } : {}),
               ...(providerModel ? { model: providerModel } : {})
             }
           }
         };
         yield { type: "message.create", payload: { role: "assistant", status: "streaming" } };
 
+        const input = resumeFallback ? freshFallbackInputText(request) : providerInputText(request);
         const prompt = request.appendInstructions
-          ? `${providerInputText(request)}\n\n${request.appendInstructions}`
-          : providerInputText(request);
+          ? `${input}\n\n${request.appendInstructions}`
+          : input;
         const promptParams = acpPromptParams(sessionId, prompt);
         const promptRequestId = client.reserveRequestId();
         await observeInput(context, "session/prompt", promptParams, promptRequestId, sessionId);
