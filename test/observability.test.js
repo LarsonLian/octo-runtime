@@ -72,7 +72,12 @@ test("operational logs redact credentials and restricted provider evidence is op
       params: {
         apiKey: "rpc-secret",
         adapterType: "codex",
-        request: { runId: "run-1", invocationId: "inv-1", agentSessionId: "session-1" }
+        request: {
+          runId: "run-1",
+          invocationId: "inv-1",
+          agentSessionId: "session-1",
+          context: { profile: "work", runtimeId: "runtime-work" }
+        }
       }
     }));
     logger.traceRpc("receive", JSON.stringify({
@@ -90,6 +95,8 @@ test("operational logs redact credentials and restricted provider evidence is op
       }
     }));
     const receipt = await logger.observeProvider({
+      profile: "work",
+      runtimeId: "runtime-work",
       runId: "run-1",
       invocationId: "inv-1",
       agentSessionId: "session-1",
@@ -112,12 +119,16 @@ test("operational logs redact credentials and restricted provider evidence is op
 
     const sensitive = await logger.query({ runId: "run-1", includeSensitive: true });
     assert.ok(sensitive.some(record => record.event === "rpc.frame"));
+    assert.ok(sensitive.filter(record => record.event === "rpc.frame")
+      .every(record => record.profile === "work" && record.runtime_id === "runtime-work"));
     assert.doesNotMatch(JSON.stringify(sensitive), /private-chain-of-thought-must-not-be-stored/);
     const reasoningFrame = sensitive.find(record =>
       record.event === "rpc.frame" && record.data.frame?.params?.event?.payload?.body_omitted === true
     );
     assert.equal(reasoningFrame.data.frame.params.event.payload.text, undefined);
     const provider = sensitive.find(record => record.event === "provider.input");
+    assert.equal(provider.profile, "work");
+    assert.equal(provider.runtime_id, "runtime-work");
     assert.equal(provider.adapter_type, "codex");
     assert.equal(provider.data.projection.content.prompt, "evaluate this exact prompt");
     assert.equal(provider.data.projection.content.authToken, undefined);

@@ -66,9 +66,14 @@ test("host gives adapters a provider observation context with full invocation id
   });
 
   const events = [];
-  for await (const event of host.invoke("observed", request)) events.push(event);
+  for await (const event of host.invoke("observed", {
+    ...request,
+    context: { profile: "work", runtimeId: "runtime-work" }
+  })) events.push(event);
   assert.equal(events.at(-1).type, "run.finished");
   assert.deepEqual(observations[0].identity, {
+    profile: "work",
+    runtimeId: "runtime-work",
     runId: "r",
     invocationId: "inv-host",
     agentSessionId: "s",

@@ -691,6 +691,11 @@ export class AgentWorkRuntime {
   async #receive(envelope: WireEnvelope, epoch: number): Promise<void> {
     if (!this.#isCurrentLifecycle(epoch)) return;
     if (envelope.version !== this.#protocolVersion) throw new Error(`unsupported Agent Work protocol ${envelope.version}`);
+    if (envelope.runtime_id && envelope.runtime_id !== this.#runtimeId) {
+      throw new RuntimeIdentityMismatchError(
+        `Agent Work message targeted runtime ${envelope.runtime_id}, expected ${this.#runtimeId}`
+      );
+    }
     const envelopePayload = asRecord(envelope.payload);
     const commandPayload = envelope.type === "runtime.command" ? envelopePayload : undefined;
     // Transport traces carry routing and correlation fields, never the envelope
@@ -976,7 +981,10 @@ export class AgentWorkRuntime {
         this.#assertCurrentLifecycle(epoch);
         const mapped = mapExecutionEnvelope(executionEnvelope, contextSnapshot);
         request = mapped.request;
+        // The authenticated Runtime connection owns this mapping. Never trust
+        // an AgentRun payload to self-report its local profile.
         if (this.#options.profile) request.context.profile = this.#options.profile;
+        request.context.runtimeId = this.#runtimeId;
         adapterType = mapped.adapterType;
         agentSessionId = request.agentSessionId;
         const trigger = executionEnvelope.agent_run_request.trigger;
@@ -1451,7 +1459,8 @@ export class AgentWorkRuntime {
   #log(input: LogInput): void {
     this.#observability?.log({
       ...input,
-      profile: input.profile ?? this.#options.profile,
+      profile: this.#options.profile,
+      runtimeId: this.#runtimeId || this.#options.runtimeId,
       data: { ...input.data, ...(this.#options.profile ? { profile: this.#options.profile } : {}) }
     });
   }

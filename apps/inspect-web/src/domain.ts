@@ -28,6 +28,7 @@ export interface InspectRecord {
   direction: string;
   type: string;
   profile: string;
+  runtimeId: string;
   sessionId: string;
   runId: string;
   invocationId: string;
@@ -68,6 +69,7 @@ export function normalizeEvent(value: Record<string, unknown>, raw: string): Ins
     direction: normalizeDirection(stringValue(value.direction) || stringValue(data.direction)),
     type,
     profile: stringValue(value.profile),
+    runtimeId: stringValue(value.runtime_id),
     sessionId: firstString(value.agent_session_id, value.session_id, payload.agent_session_id, payload.session_id, data.agent_session_id, data.session_id),
     runId: stringValue(value.agent_run_id),
     invocationId: firstString(value.invocation_id, payload.invocation_id, data.invocation_id),
@@ -94,7 +96,8 @@ export function normalizeLog(value: Record<string, unknown>, index: number): Ins
     stage: stringValue(value.scope) || stringValue(value.component) || "log",
     direction: normalizeDirection(stringValue(data.direction)),
     type,
-    profile: stringValue(data.profile),
+    profile: stringValue(value.profile) || stringValue(data.profile),
+    runtimeId: stringValue(value.runtime_id) || stringValue(data.runtime_id),
     sessionId: firstString(value.agent_session_id, data.agent_session_id, data.session_id),
     runId: stringValue(value.run_id),
     invocationId: firstString(value.invocation_id, data.invocation_id),

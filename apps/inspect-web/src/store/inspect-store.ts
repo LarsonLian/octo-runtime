@@ -125,6 +125,7 @@ export class InspectStore {
       [...new Set(this.#snapshot.events.map(select).filter(Boolean))];
     return {
       profile: values(event => event.profile),
+      runtime_id: values(event => event.runtimeId),
       source: EVENT_SOURCES,
       stage: values(event => event.stage),
       direction: ["inbound", "outbound"],

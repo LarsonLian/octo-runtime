@@ -79,6 +79,7 @@ const host = new AdapterHost({
     source: "adapter-canonical",
     type: event.type,
     profile: identity.profile,
+    runtimeId: identity.runtimeId,
     runId: identity.runId,
     agentSessionId: identity.agentSessionId,
     invocationId: identity.invocationId,

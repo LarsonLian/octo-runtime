@@ -86,6 +86,7 @@ test("LiveEventBus emits the v1 envelope and strips private reasoning", async ()
     source: "provider-native",
     type: "provider.output",
     profile: "work",
+    runtimeId: "runtime-work",
     runId: "run-safe",
     agentSessionId: "session-safe",
     invocationId: "invoke-safe",
@@ -99,6 +100,7 @@ test("LiveEventBus emits the v1 envelope and strips private reasoning", async ()
   assert.equal(values[0].stage, "adapter.native");
   assert.equal(values[0].direction, "outbound");
   assert.equal(values[0].profile, "work");
+  assert.equal(values[0].runtime_id, "runtime-work");
   assert.equal(values[0].agent_run_id, "run-safe");
   assert.equal(values[0].agent_session_id, "session-safe");
   assert.equal(values[0].invocation_id, "invoke-safe");
@@ -123,6 +125,7 @@ test("LiveEventBus maps observability records to canonical stages, directions, a
     seq: 1,
     sensitivity: "restricted",
     profile: "work",
+    runtime_id: "runtime-work",
     run_id: "run-rpc",
     agent_session_id: "session-rpc",
     invocation_id: "invoke-rpc",
@@ -138,8 +141,8 @@ test("LiveEventBus maps observability records to canonical stages, directions, a
     ["wire.daemon_host", "outbound"]
   ]);
   assert.deepEqual(
-    values.map(event => [event.profile, event.agent_run_id, event.agent_session_id, event.invocation_id, event.adapter_type]),
-    Array.from({ length: 2 }, () => ["work", "run-rpc", "session-rpc", "invoke-rpc", "codebuddy"])
+    values.map(event => [event.profile, event.runtime_id, event.agent_run_id, event.agent_session_id, event.invocation_id, event.adapter_type]),
+    Array.from({ length: 2 }, () => ["work", "runtime-work", "run-rpc", "session-rpc", "invoke-rpc", "codebuddy"])
   );
   assert.deepEqual(values.map(event => event.duration_ms), [17.25, 17.25]);
 });

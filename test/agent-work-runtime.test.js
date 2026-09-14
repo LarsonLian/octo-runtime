@@ -356,6 +356,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     assert.equal(registrationBody.protocol_version_min, 1);
     assert.equal(registrationBody.protocol_version_max, 1);
     assert.equal(invokedRequest.context.profile, "work");
+    assert.equal(invokedRequest.context.runtimeId, "runtime-observed");
     await runtime.close();
     runtime = undefined;
     const trace = await logger.query({ runId: "run-observed" });
@@ -366,6 +367,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
       && Number.isInteger(record.duration_ms)
       && record.duration_ms >= 0));
     assert.ok(trace.every(record => record.profile === "work"));
+    assert.ok(trace.every(record => record.runtime_id === "runtime-observed"));
     assert.ok(trace.some(record => record.event === "transport.message.received" && record.data.frame_type === "runtime.command"));
     const all = await logger.query({ limit: 500 });
     const opened = all.find(record => record.event === "transport.connection.opened" && record.scope === "transport.wss");

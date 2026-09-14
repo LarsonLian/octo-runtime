@@ -34,6 +34,7 @@ export interface LogInput {
   message: string;
   data?: Record<string, unknown>;
   profile?: string;
+  runtimeId?: string;
   runId?: string;
   invocationId?: string;
   agentSessionId?: string;
@@ -75,6 +76,7 @@ export interface AdapterInvocationContext {
 
 export interface ObservationIdentity {
   profile?: string;
+  runtimeId?: string;
   runId: string;
   invocationId: string;
   agentSessionId: string;
@@ -127,6 +129,7 @@ export interface RecordEnvelope extends Record<string, unknown> {
   seq: number;
   sensitivity: LogSensitivity;
   profile?: string;
+  runtime_id?: string;
   run_id?: string;
   agent_session_id?: string;
   invocation_id?: string;

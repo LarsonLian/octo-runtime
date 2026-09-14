@@ -57,6 +57,7 @@ interface RpcCorrelation {
   rpcId?: string;
   rpcMethod?: string;
   profile?: string;
+  runtimeId?: string;
   runId?: string;
   invocationId?: string;
   agentSessionId?: string;
@@ -163,6 +164,7 @@ export class LocalObservability {
       event: "rpc.frame",
       message: `adapter-host RPC ${direction}`,
       profile: correlation.profile,
+      runtimeId: correlation.runtimeId,
       runId: correlation.runId,
       invocationId: correlation.invocationId,
       agentSessionId: correlation.agentSessionId,
@@ -201,6 +203,7 @@ export class LocalObservability {
       event: observation.event,
       message: providerObservationMessage(observation.event),
       profile: identity.profile,
+      runtimeId: identity.runtimeId,
       runId: identity.runId,
       invocationId: identity.invocationId,
       agentSessionId: identity.agentSessionId,
@@ -379,6 +382,7 @@ export class LocalObservability {
       seq: ++this.#seq,
       sensitivity,
       ...(input.profile ? { profile: input.profile } : {}),
+      ...(input.runtimeId ? { runtime_id: input.runtimeId } : {}),
       ...(input.runId ? { run_id: input.runId } : {}),
       ...(input.invocationId ? { invocation_id: input.invocationId } : {}),
       ...(input.agentSessionId ? { agent_session_id: input.agentSessionId } : {}),
@@ -557,6 +561,7 @@ export class LocalObservability {
       event: "capture.receipt",
       message: `provider capture ${state}`,
       profile: identity.profile,
+      runtimeId: identity.runtimeId,
       runId: identity.runId,
       invocationId: identity.invocationId,
       agentSessionId: identity.agentSessionId,
@@ -607,6 +612,7 @@ export class LocalObservability {
       rpcId,
       rpcMethod: optionalStringValue(value.method),
       profile: optionalStringValue(context.profile),
+      runtimeId: optionalStringValue(context.runtimeId),
       runId: optionalStringValue(request.runId) ?? optionalStringValue(params.runId),
       invocationId,
       agentSessionId: optionalStringValue(request.agentSessionId) ?? optionalStringValue(params.agentSessionId),
@@ -810,6 +816,8 @@ function mergeDefined(base: RpcCorrelation | undefined, override: RpcCorrelation
   return {
     rpcId: override.rpcId ?? base?.rpcId,
     rpcMethod: override.rpcMethod ?? base?.rpcMethod,
+    profile: override.profile ?? base?.profile,
+    runtimeId: override.runtimeId ?? base?.runtimeId,
     runId: override.runId ?? base?.runId,
     invocationId: override.invocationId ?? base?.invocationId,
     agentSessionId: override.agentSessionId ?? base?.agentSessionId,

@@ -330,6 +330,7 @@ function EventDetail({ record, onQuickFilter }: {
       <div className="context-grid">
         <ContextPanel title="请求上下文" entries={[
           ["Profile", record.profile],
+          ["Runtime", record.runtimeId],
           ["Adapter", record.adapterType],
           ["Source", record.source]
         ]} />

@@ -106,6 +106,7 @@ export class AdapterHost {
     const context: AdapterInvocationContext = {
       observe: observation => this.#observe({
         ...(typeof request.context?.profile === "string" ? { profile: request.context.profile } : {}),
+        ...(typeof request.context?.runtimeId === "string" ? { runtimeId: request.context.runtimeId } : {}),
         runId: request.runId,
         invocationId: request.invocationId,
         agentSessionId: request.agentSessionId,
@@ -164,6 +165,7 @@ export class AdapterHost {
         assertCanonicalEvent(event);
         this.#canonicalSink?.({
           ...(typeof request.context?.profile === "string" ? { profile: request.context.profile } : {}),
+          ...(typeof request.context?.runtimeId === "string" ? { runtimeId: request.context.runtimeId } : {}),
           runId: request.runId,
           invocationId: request.invocationId,
           agentSessionId: request.agentSessionId,

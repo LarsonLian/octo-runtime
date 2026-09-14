@@ -32,6 +32,7 @@ export interface LiveEventEnvelope {
   direction: LiveEventDirection;
   type: string;
   profile?: string;
+  runtime_id?: string;
   agent_run_id?: string;
   agent_session_id?: string;
   invocation_id?: string;
@@ -52,6 +53,7 @@ export interface LiveEventInput {
   direction?: string;
   type: string;
   profile?: string;
+  runtimeId?: string;
   runId?: string;
   agentSessionId?: string;
   invocationId?: string;
@@ -146,6 +148,7 @@ export class LiveEventBus {
       direction,
       type: input.type,
       ...(input.profile ? { profile: input.profile } : {}),
+      ...(input.runtimeId ? { runtime_id: input.runtimeId } : {}),
       ...(input.runId ? { agent_run_id: input.runId } : {}),
       ...(input.agentSessionId ? { agent_session_id: input.agentSessionId } : {}),
       ...(input.invocationId ? { invocation_id: input.invocationId } : {}),
@@ -166,6 +169,7 @@ export class LiveEventBus {
         direction: envelope.direction,
         type: "event.oversize_dropped",
         ...(envelope.profile ? { profile: envelope.profile } : {}),
+        ...(envelope.runtime_id ? { runtime_id: envelope.runtime_id } : {}),
         ...(envelope.agent_run_id ? { agent_run_id: envelope.agent_run_id } : {}),
         ...(envelope.agent_session_id ? { agent_session_id: envelope.agent_session_id } : {}),
         ...(envelope.invocation_id ? { invocation_id: envelope.invocation_id } : {}),
@@ -226,6 +230,7 @@ export class LiveEventBus {
       source,
       type: record.event,
       profile: stringField(record.profile) ?? stringField(data.profile),
+      runtimeId: stringField(record.runtime_id) ?? stringField(data.runtime_id),
       stage: stageForRecord(record, source),
       direction: stringField(data.direction),
       occurredAt: record.ts,
@@ -427,6 +432,7 @@ function encode(value: LiveEventEnvelope): Buffer {
       direction: value.direction,
       type: "event.serialization_failed",
       ...(value.profile ? { profile: value.profile } : {}),
+      ...(value.runtime_id ? { runtime_id: value.runtime_id } : {}),
       ...(value.agent_run_id ? { agent_run_id: value.agent_run_id } : {}),
       ...(value.agent_session_id ? { agent_session_id: value.agent_session_id } : {}),
       ...(value.invocation_id ? { invocation_id: value.invocation_id } : {}),

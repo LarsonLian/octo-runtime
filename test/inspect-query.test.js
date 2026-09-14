@@ -13,6 +13,7 @@ const record = {
   direction: "outbound",
   type: "provider.output",
   profile: "work",
+  runtimeId: "runtime-work",
   sessionId: "session-456",
   runId: "run-123",
   invocationId: "invocation-789",
@@ -28,6 +29,7 @@ const record = {
 
 test("inspect QL evaluates comparisons, precedence, and parentheses", () => {
   assert.equal(compileQuery("adapter_type=codebuddy").predicate(record), true);
+  assert.equal(compileQuery("runtime_id=runtime-work").predicate(record), true);
   assert.equal(compileQuery("source!=daemon").predicate(record), true);
   assert.equal(compileQuery("stage=adapter.native and direction=outbound").predicate(record), true);
   assert.equal(compileQuery("session_id~=456 and status=ok").predicate(record), true);
@@ -51,6 +53,7 @@ test("inspect event normalization extracts table fields without inventing diagno
     direction: "daemon_to_host",
     type: "invocation.failed",
     profile: "work",
+    runtime_id: "runtime-work",
     agent_run_id: "run-9",
     agent_session_id: "session-9",
     invocation_id: "inv-9",
@@ -63,6 +66,7 @@ test("inspect event normalization extracts table fields without inventing diagno
   };
   const normalized = normalizeEvent(value, JSON.stringify(value));
   assert.equal(normalized.direction, "inbound");
+  assert.equal(normalized.runtimeId, "runtime-work");
   assert.equal(normalized.sessionId, "session-9");
   assert.equal(normalized.durationMs, 1684);
   assert.equal(normalized.status, "error");
@@ -88,7 +92,7 @@ test("inspect QL returns useful syntax errors", () => {
 });
 
 test("inspect QL completes fields, operators, values, and logical operators", () => {
-  const values = { adapter_type: ["codex", "codebuddy"] };
+  const values = { adapter_type: ["codex", "codebuddy"], runtime_id: ["runtime-work"] };
   assert.deepEqual(
     queryCompletions("adap", 4, values).map(item => item.label),
     ["adapter_type"]
@@ -104,5 +108,9 @@ test("inspect QL completes fields, operators, values, and logical operators", ()
   assert.deepEqual(
     queryCompletions("adapter_type=codebuddy ", 23, values).map(item => item.label),
     ["and", "or"]
+  );
+  assert.deepEqual(
+    queryCompletions("runtime_id=runtime-w", 20, values).map(item => item.label),
+    ["runtime-work"]
   );
 });

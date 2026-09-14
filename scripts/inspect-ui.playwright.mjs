@@ -48,6 +48,11 @@ try {
       assert.ok(await page.locator("[data-index]").count() < 60);
       assert.equal(websocketCount, 1);
 
+      await page.locator("#query").fill("runtime_id=runtime-online-test");
+      await page.locator("[data-index]").first().waitFor();
+      assert.equal(websocketCount, 1);
+      await page.getByRole("button", { name: "重置" }).click();
+
       await page.getByRole("button", { name: "暂停接收" }).click();
       await waitForPaused(page);
       const pausedSeq = await sequenceNumber(page);
@@ -87,6 +92,7 @@ try {
       await waitForPaused(page);
       assert.equal(await row.locator(":scope > [role=button]").getAttribute("aria-expanded"), "true");
       assert.match(await row.locator(".json-panel pre").textContent(), /"schema"/);
+      assert.match(await row.locator(".context-grid").textContent(), /Runtime.*runtime-online-test/s);
       const jsonMetrics = await row.locator(".json-panel pre").evaluate(element => ({
         height: element.getBoundingClientRect().height,
         scrollHeight: element.scrollHeight,

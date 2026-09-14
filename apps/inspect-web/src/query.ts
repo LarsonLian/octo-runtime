@@ -2,6 +2,7 @@ import type { InspectRecord } from "./domain";
 
 export const QUERY_FIELDS = [
   "profile",
+  "runtime_id",
   "source",
   "stage",
   "direction",
@@ -108,7 +109,7 @@ export function queryCompletions(
       kind: "field"
     }));
   }
-  const valueMatch = prefix.match(/\b(profile|source|stage|direction|type|adapter_type|session_id|agent_run_id|invocation_id|status)\s*(?:=|!=|~=)\s*([\w.\-:/]*)$/i);
+  const valueMatch = prefix.match(/\b(profile|runtime_id|source|stage|direction|type|adapter_type|session_id|agent_run_id|invocation_id|status)\s*(?:=|!=|~=)\s*([\w.\-:/]*)$/i);
   if (valueMatch) {
     const field = valueMatch[1].toLowerCase() as QueryField;
     const partial = valueMatch[2] ?? "";
@@ -117,7 +118,7 @@ export function queryCompletions(
       .slice(0, 12)
       .map(value => ({ label: value, insert: value, from: cursor - partial.length, to: cursor, kind: "value" }));
   }
-  const operatorMatch = prefix.match(/\b(profile|source|stage|direction|type|adapter_type|session_id|agent_run_id|invocation_id|status)\s*([!~=]*)$/i);
+  const operatorMatch = prefix.match(/\b(profile|runtime_id|source|stage|direction|type|adapter_type|session_id|agent_run_id|invocation_id|status)\s*([!~=]*)$/i);
   if (operatorMatch) {
     const partial = operatorMatch[2] ?? "";
     return ["=", "!=", "~="].filter(operator => operator.startsWith(partial)).map(operator => ({
@@ -181,6 +182,7 @@ function comparison(field: QueryField, operator: string, expected: string): Pred
 function fieldValue(record: InspectRecord, field: QueryField): string {
   switch (field) {
     case "profile": return record.profile;
+    case "runtime_id": return record.runtimeId;
     case "source": return record.source;
     case "stage": return record.stage;
     case "direction": return record.direction;

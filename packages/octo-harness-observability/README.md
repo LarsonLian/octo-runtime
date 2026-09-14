@@ -73,7 +73,7 @@ Inspect 的每个事件信封用两个一等字段定位：
 - **stage**：`组件.修饰` 形式的点分字符串，回答"这帧数据在哪个观测点、以什么形态产生"。组件段来自固定枚举（`daemon / worker / runtime / wire / adapter / host`），修饰段自由扩展（`bootstrap / transport / dispatch / outbox / native / canonical`），新增形态不需要改协议。
 - **direction**：`inbound`（Agent → Provider 方向）或 `outbound`（Provider → Agent 方向），在包装信封时直接标注，不靠事后推导。**一个信封只代表一个方向的流动**；同一观测点看到双向时产生两个信封（同 stage、反 direction），靠 `runId + invocationId` 自动成对。
 
-统一实时信封的顶层固定字段为 `schema / local_seq / occurred_at / source / stage / direction / type`；已知的关联身份也必须位于顶层，使用 `profile / agent_run_id / agent_session_id / invocation_id / adapter_type`。只有聚合或生命周期事件且生产者拥有可靠起点时，才在顶层写入可选的 `duration_ms`；生命周期耗时使用单调时钟计算，Provider 原始 frame、delta 和 EventBus 接收时间都不能用来猜测耗时。`payload` 只承载事件内容，Viewer 不应依赖从 payload 反向猜测这些身份。兼容入口可以接收旧方向名，但 EventBus 输出只使用 `inbound / outbound`。
+统一实时信封的顶层固定字段为 `schema / local_seq / occurred_at / source / stage / direction / type`；已知的关联身份也必须位于顶层，使用 `profile / runtime_id / agent_run_id / agent_session_id / invocation_id / adapter_type`。多 profile daemon 根据接收 AgentRun 的已认证 Runtime 连接，以本地 `runtime_id -> profile` 绑定填充这两个字段，不信任业务 payload 自报 profile。只有聚合或生命周期事件且生产者拥有可靠起点时，才在顶层写入可选的 `duration_ms`；生命周期耗时使用单调时钟计算，Provider 原始 frame、delta 和 EventBus 接收时间都不能用来猜测耗时。`payload` 只承载事件内容，Viewer 不应依赖从 payload 反向猜测这些身份。兼容入口可以接收旧方向名，但 EventBus 输出只使用 `inbound / outbound`。
 
 `type` 只回答"发生了什么"，**不保证全局唯一**——同一个 `message.delta` 会出现在多个 stage 上，`stage + type` 组合才是完整标识。前端过滤就是 stage 字符串前缀/后缀匹配：`startsWith("adapter.")` 看 adapter 的一切，`endsWith(".native")` 看所有原生帧。
 
