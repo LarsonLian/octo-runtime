@@ -1,0 +1,21 @@
+{
+  "fixed": [
+    [
+      "@mininglamp-oss/octo-harness",
+      "@mininglamp-oss/octo-harness-core",
+      "@mininglamp-oss/octo-harness-protocol",
+      "@mininglamp-oss/octo-harness-daemon",
+      "@mininglamp-oss/octo-harness-adapter-host",
+      "@mininglamp-oss/octo-harness-observability",
+      "@mininglamp-oss/octo-harness-cross-service",
+      "@mininglamp-oss/octo-harness-adapter-host-app",
+      "@mininglamp-oss/octo-harness-cli",
+      "@mininglamp-oss/octo-harness-daemon-app"
+    ]
+  ],
+  "updateInternalDependencies": "patch",
+  "privatePackages": {
+    "version": true,
+    "tag": false
+  }
+}

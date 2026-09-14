@@ -103,7 +103,7 @@ test("installers use global npm, pass enrollment through stdin, and keep login i
   assert.ok(posixInstaller.indexOf("setup --prepare-update") < posixInstaller.indexOf("npm install --global"));
   assert.ok(windowsInstaller.indexOf("setup --prepare-update") < windowsInstaller.indexOf("install --global"));
   assert.match(windowsInstaller, /Test-FullyQualifiedWindowsPath/);
-  assert.match(windowsInstaller, /\^\[A-Za-z0-9\]\[A-Za-z0-9\._-\]\{0,63\}\$/);
+  assert.match(windowsInstaller, /\^\[A-Za-z0-9\]\[A-Za-z0-9\._-\]\{0,127\}\$/);
   assert.match(windowsInstaller, /Profile\.ToLowerInvariant\(\).*"logs"/s);
 });
 

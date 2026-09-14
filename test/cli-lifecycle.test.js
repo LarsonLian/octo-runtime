@@ -194,19 +194,21 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
     assert.equal(doctor.exitCode, 0);
     assert.equal(doctor.value.ok, true);
 
+    const workProfile = "tenant-work-user";
     const workSetup = await invoke([
-      "--profile", "work",
-      "login",
+      "setup",
+      `--profile=${workProfile}`,
       "--server-url", serverUrl,
       "--enroll-token-stdin"
     ], { input: Readable.from(["octo_enroll_work\n"]) });
+    assert.equal(workSetup.value.profile, workProfile);
     assert.equal(workSetup.value.runtime_id, "runtime-work");
     assert.equal(enrollmentCount, 2);
     const rootConfig = JSON.parse(await readFile(join(home, "config.json"), "utf8"));
     assert.equal(rootConfig.default_profile, "default");
     assert.equal(rootConfig.enabled_profiles, undefined);
     assert.equal(
-      JSON.parse(await readFile(join(home, "work/identity/runtime.json"), "utf8")).runtime_id,
+      JSON.parse(await readFile(join(home, `${workProfile}/identity/runtime.json`), "utf8")).runtime_id,
       "runtime-work"
     );
     assert.doesNotMatch(JSON.stringify(backend.spec), /octo_device_fixture_secret/);
@@ -216,7 +218,7 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
     assert.equal(restarted.value.readiness.ready, true);
     assert.deepEqual(
       restarted.value.readiness.agentWork.runtimes.map(runtime => runtime.profile).sort(),
-      ["default", "work"]
+      ["default", workProfile]
     );
 
     const prepared = await invoke(["setup", "--prepare-update", "--wait-drained", "--timeout-ms", "5000"]);
@@ -294,7 +296,7 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
     ]);
     await assert.rejects(
       invoke(["daemon", "start", "--inspect-port", "23456"]),
-      /valid with 'daemon run' or 'daemon install'/
+      /unknown option '--inspect-port'/
     );
     const verboseForeground = await invoke(["--verbose", "daemon", "run"], {
       runForegroundDaemon: async args => { foregroundArgs = args; }

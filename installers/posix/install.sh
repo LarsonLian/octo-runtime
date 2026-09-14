@@ -120,7 +120,7 @@ esac
 case "$PROFILE" in
   ""|[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*) die "OCTO_HARNESS_PROFILE must start with a letter or digit and contain only letters, digits, dot, underscore, or hyphen" ;;
 esac
-[ "${#PROFILE}" -le 64 ] || die "OCTO_HARNESS_PROFILE must not exceed 64 characters"
+[ "${#PROFILE}" -le 128 ] || die "OCTO_HARNESS_PROFILE must not exceed 128 characters"
 profile_key=$(printf '%s' "$PROFILE" | tr '[:upper:]' '[:lower:]')
 case "$profile_key" in
   config.json|credentials|identity|logs|octo-daemon.pid|profiles|run|setup|sockets|state.db)

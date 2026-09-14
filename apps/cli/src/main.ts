@@ -2,11 +2,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { access, stat } from "node:fs/promises";
 import net from "node:net";
 import { arch, hostname, platform as osPlatform, release } from "node:os";
+import { Argument, Command, CommanderError } from "commander";
 import type { ServiceBackend } from "@mininglamp-oss/octo-harness-cross-service";
 import {
   createPendingEnrollment,
   enrollRuntime,
   normalizeServerUrl,
+  RUNTIME_VERSION,
   type EnrollmentResult
 } from "./enrollment.js";
 import { openBrowser } from "./browser.js";
@@ -75,32 +77,16 @@ interface CliContext {
 }
 
 const DEFAULT_WAIT_MS = 30_000;
-const BOOLEAN_FLAGS = new Set([
-  "enrollTokenStdin",
-  "force",
-  "follow",
-  "help",
-  "json",
-  "noAutostart",
-  "noOpen",
-  "prepareUpdate",
-  "quiet",
-  "recoverUpdate",
-  "sensitive",
-  "start",
-  "verbose",
-  "waitDrained",
-  "waitOnline"
-]);
-
 export async function runCli(args: string[], dependencies: CliDependencies = {}): Promise<number> {
   const normalizedArgs = [...args];
   if (normalizedArgs[0] === "--") normalizedArgs.shift();
-  const { positionals, flags } = parseArguments(normalizedArgs);
+  const output = dependencies.output ?? (value => process.stdout.write(`${value}\n`));
+  const parsed = await parseCliArguments(normalizedArgs, output);
+  if (!parsed) return 0;
+  const { positionals, flags } = parsed;
   const profile = optionalString(flags.profile) ?? "default";
   const home = optionalString(flags.home) ?? defaultHarnessHome(dependencies.env, dependencies.platform);
   const paths = harnessPaths(home, profile);
-  const output = dependencies.output ?? (value => process.stdout.write(`${value}\n`));
   const context: CliContext = {
     home: paths.home,
     profile,
@@ -136,11 +122,9 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
 
 async function dispatchCli(context: CliContext): Promise<CommandResult> {
   const [group, action, id] = context.positionals;
-  if (!group || group === "help" || context.flags.help === true) {
-    return { value: helpText(group === "help" ? action : group) };
-  }
   if (group === "login") return runSetup(context, false);
   if (group === "setup") return runSetup(context, true);
+  if (group === "version") return { value: RUNTIME_VERSION };
   if (group === "daemon") return runDaemonCommand(context, action);
   if (group === "doctor") return runDoctor(context);
   if (group === "inspect") {
@@ -341,10 +325,6 @@ async function recoverUpdate(context: CliContext): Promise<CommandResult> {
 
 async function runDaemonCommand(context: CliContext, action: string | undefined): Promise<CommandResult> {
   const selected = action ?? "run";
-  if (!["run", "install"].includes(selected)
-    && (context.flags.inspectHost !== undefined || context.flags.inspectPort !== undefined)) {
-    throw new Error("--inspect-host and --inspect-port are valid with 'daemon run' or 'daemon install'");
-  }
   if (selected === "run") {
     const exitCode = await context.runForegroundDaemon([
       "--home", context.home,
@@ -803,24 +783,193 @@ function check(id: string, ok: boolean, detail: string, remediation: string): Re
   return { id, ok, detail, ...(ok ? {} : { remediation }) };
 }
 
-function parseArguments(args: string[]): { flags: Flags; positionals: string[] } {
-  const flags: Flags = {};
-  const positionals: string[] = [];
-  for (let index = 0; index < args.length; index++) {
-    const argument = args[index];
-    if (!argument.startsWith("--")) {
-      positionals.push(argument);
-      continue;
-    }
-    const key = argument.slice(2).replace(/-([a-z])/g, (_match: string, character: string) => character.toUpperCase());
-    if (BOOLEAN_FLAGS.has(key)) {
-      flags[key] = true;
-      continue;
-    }
-    const next = args[index + 1];
-    flags[key] = next && !next.startsWith("--") ? args[++index] : true;
+async function parseCliArguments(
+  args: string[],
+  output: (value: string) => void
+): Promise<{ flags: Flags; positionals: string[] } | undefined> {
+  let parsed: { flags: Flags; positionals: string[] } | undefined;
+  const program = new Command()
+    .name("octo-harness")
+    .description("Provider-neutral local Agent Runtime")
+    .addHelpCommand("help [command]", "display help for command")
+    .version(RUNTIME_VERSION, "-V, --version", "display the Octo Harness version")
+    .option("--home <path>", "Harness Home state directory")
+    .option("--profile <name>", "profile selected by login, setup, doctor, and online readiness", "default")
+    .option("--verbose", "enable verbose foreground diagnostics")
+    .showHelpAfterError()
+    .allowExcessArguments(false)
+    .configureHelp({ showGlobalOptions: true, sortOptions: true, sortSubcommands: true })
+    .configureOutput({
+      writeOut: value => output(value.trimEnd()),
+      writeErr: () => undefined
+    })
+    .exitOverride();
+
+  const select = (command: Command, positionals: string[]): Command => command
+    .allowExcessArguments(false)
+    .action(() => {
+      parsed = {
+        flags: command.optsWithGlobals(),
+        positionals: [
+          ...positionals,
+          ...command.processedArgs.filter((value): value is string => typeof value === "string")
+        ]
+      };
+    });
+  const showParentHelp = (command: Command): void => {
+    command.action(() => command.outputHelp());
+  };
+  const addEnrollmentOptions = (command: Command): Command => command
+    .option("--server-url <url>", "Octo server origin")
+    .option("--agent-work-url <url>", "Agent Worker origin when different from the server")
+    .option("--runtime-name <name>", "Runtime display name")
+    .option("--channel <channel>", "installation channel: stable or beta")
+    .option("--enroll-token-stdin", "read the one-time enrollment token from stdin");
+  const addTimeout = (command: Command): Command => command
+    .option("--timeout-ms <milliseconds>", "operation timeout in milliseconds");
+  const addInspectBinding = (command: Command): Command => command
+    .option("--inspect-host <host>", "inspector bind hostname or IP address")
+    .option("--inspect-port <port>", "inspector bind port");
+
+  const login = addEnrollmentOptions(program.command("login").description("Enroll or reconcile one Runtime profile"))
+    .addHelpText("after", "\nService lifecycle is managed separately with 'daemon install' and 'daemon start'.");
+  select(login, ["login"]);
+
+  const setup = addEnrollmentOptions(program.command("setup").description("Run login compatibility and installer update flows"))
+    .option("--prepare-update", "drain and stop before an installer update")
+    .option("--wait-drained", "wait for active Runs while preparing an update")
+    .option("--recover-update", "repair service state after an interrupted update")
+    .option("--start", "start the service after update recovery");
+  addTimeout(setup);
+  select(setup, ["setup"]);
+
+  const daemon = program.command("daemon").description("Manage the native user daemon service");
+  showParentHelp(daemon);
+  select(
+    addInspectBinding(daemon.command("install").description("Install or reconcile the native user service"))
+      .option("--no-autostart", "do not enable login-time startup"),
+    ["daemon", "install"]
+  );
+  select(
+    addTimeout(daemon.command("uninstall").description("Remove the service while preserving Harness Home"))
+      .option("--force", "skip graceful drain"),
+    ["daemon", "uninstall"]
+  );
+  select(
+    addInspectBinding(daemon.command("run").description("Run the daemon in the foreground"))
+      .option("--quiet", "disable foreground console output"),
+    ["daemon", "run"]
+  );
+  select(
+    addTimeout(daemon.command("start").description("Start the installed service"))
+      .option("--wait-online", "wait for the selected profile Runtime to become cloud-online"),
+    ["daemon", "start"]
+  );
+  select(
+    addTimeout(daemon.command("stop").description("Drain and stop the installed service"))
+      .option("--force", "skip graceful drain"),
+    ["daemon", "stop"]
+  );
+  select(
+    addTimeout(daemon.command("restart").description("Drain and restart the installed service"))
+      .option("--force", "skip graceful drain")
+      .option("--wait-online", "wait for the selected profile Runtime to become cloud-online"),
+    ["daemon", "restart"]
+  );
+  select(daemon.command("status").description("Show native service and daemon application status"), ["daemon", "status"]);
+
+  select(
+    program.command("doctor")
+      .description("Check profile, service, daemon, and cloud connectivity")
+      .option("--json", "emit JSON output"),
+    ["doctor"]
+  );
+  select(program.command("status").description("Read daemon application status over local IPC"), ["status"]);
+  select(program.command("version").description("Display the Octo Harness package version"), ["version"]);
+
+  const logs = program.command("logs")
+    .description("Inspect durable local operational logs")
+    .addHelpText("after", "\nApplication data is read through daemon IPC; use doctor for service startup failures.");
+  showParentHelp(logs);
+  select(logs.command("path").description("Print the protected log directory"), ["logs", "path"]);
+  select(
+    logs.command("query")
+      .description("Query durable logs")
+      .argument("[run-id]", "Agent Run ID")
+      .option("--invocation <id>", "provider invocation ID")
+      .option("--limit <count>", "maximum number of records")
+      .option("--sensitive", "include explicitly captured sensitive evidence"),
+    ["logs", "query"]
+  );
+
+  select(
+    program.command("events")
+      .description("Read the daemon's bounded in-memory event stream")
+      .option("--follow", "continue following new events")
+      .option("--run-id <id>", "filter by Agent Run ID")
+      .option("--source <source>", "filter by event source")
+      .option("--json", "emit raw event envelopes"),
+    ["events"]
+  );
+  select(
+    program.command("inspect")
+      .description("Open the daemon-owned diagnostic inspector")
+      .addArgument(new Argument("[mode]", "use 'url' to print without opening").choices(["url"]))
+      .option("--no-open", "print the inspector URL without opening a browser"),
+    ["inspect"]
+  );
+
+  const adapter = program.command("adapter").description("Inspect configured provider adapters");
+  showParentHelp(adapter);
+  select(adapter.command("list").description("List configured adapters"), ["adapter", "list"]);
+  select(
+    adapter.command("probe").description("Probe one configured adapter").argument("<adapter-type>", "adapter type"),
+    ["adapter", "probe"]
+  );
+
+  const agentSession = program.command("agent-session").description("Inspect reference AgentSessions");
+  showParentHelp(agentSession);
+  select(agentSession.command("list").description("List AgentSessions"), ["agent-session", "list"]);
+  select(
+    agentSession.command("get").description("Get one AgentSession").argument("<agent-session-id>", "AgentSession ID"),
+    ["agent-session", "get"]
+  );
+
+  const agentRun = program.command("agent-run").description("Inspect and operate reference AgentRuns");
+  showParentHelp(agentRun);
+  select(agentRun.command("list").description("List AgentRuns"), ["agent-run", "list"]);
+  for (const action of ["get", "wait"] as const) {
+    select(
+      agentRun.command(action).description(`${action === "get" ? "Get" : "Wait for"} one AgentRun`)
+        .argument("<agent-run-id>", "AgentRun ID"),
+      ["agent-run", action]
+    );
   }
-  return { flags, positionals };
+  select(
+    agentRun.command("cancel")
+      .description("Cancel one AgentRun")
+      .argument("<agent-run-id>", "AgentRun ID")
+      .option("--reason <text>", "cancellation reason"),
+    ["agent-run", "cancel"]
+  );
+
+  if (args.length === 0) {
+    program.outputHelp();
+    return undefined;
+  }
+  try {
+    await program.parseAsync(args, { from: "user" });
+  } catch (error) {
+    if (error instanceof CommanderError && [
+      "commander.help",
+      "commander.helpDisplayed",
+      "commander.version"
+    ].includes(error.code)) {
+      return undefined;
+    }
+    throw new Error(error instanceof Error ? error.message : String(error), { cause: error });
+  }
+  return parsed;
 }
 
 function required(value: FlagValue | string | undefined, name: string): string {
@@ -913,77 +1062,6 @@ function selectedRuntimeStatus(
   return runtimes
     .map(objectValue)
     .find(status => status?.runtimeId === runtimeId);
-}
-
-function helpText(group?: string): string {
-  if (group === "login") {
-    return `Usage: octo-harness [--home PATH] [--profile NAME] login [options]\n\n` +
-      `First login:\n` +
-      `  --server-url URL --enroll-token-stdin [--agent-work-url URL]\n\n` +
-      `Login only writes Runtime identity and credentials. Service lifecycle uses 'daemon install' and 'daemon start'.\n\n` +
-      `Profiles are for trusted identities of the same OS user; use separate OS users/homes for isolation.`;
-  }
-  if (group === "setup") {
-    return `Usage: octo-harness [--home PATH] [--profile NAME] setup [options]\n\n` +
-      `Compatibility: normal setup is equivalent to login.\n\n` +
-      `Installer-only update modes:\n` +
-      `  --prepare-update [--wait-drained] [--timeout-ms MS]\n` +
-      `  --recover-update [--start]`;
-  }
-  if (group === "daemon") {
-    return `Usage: octo-harness [--home PATH] daemon install|uninstall|run|start|stop|restart|status [options]\n\n` +
-      `  install [--no-autostart] [--inspect-host HOST] [--inspect-port PORT]\n` +
-      `  uninstall [--force] [--timeout-ms MS]\n` +
-      `  run [--quiet] [--verbose] [--inspect-host HOST] [--inspect-port PORT]\n` +
-      `  start [--wait-online] [--timeout-ms MS]\n` +
-      `  stop|restart [--force] [--wait-online] [--timeout-ms MS]\n\n` +
-      `The inspector defaults to 127.0.0.1 and a random port from 20001 through 65535. Non-loopback hosts expose a capability-protected diagnostic endpoint.\n\n` +
-      `Uninstall removes the native service but preserves Harness Home identity, credentials, databases, and logs.`;
-  }
-  if (group === "doctor") {
-    return `Usage: octo-harness [--home PATH] [--profile NAME] doctor\n\n` +
-      `Checks Node.js, profile identity and credential protection, the native user service, daemon IPC, and cloud connection.`;
-  }
-  if (group === "status") {
-    return `Usage: octo-harness [--home PATH] status\n\n` +
-      `Reads the daemon's local application status over IPC. Use 'daemon status' to include native service state.`;
-  }
-  if (group === "logs") {
-    return `Usage: octo-harness [--home PATH] logs path|query [RUN_ID] [options]\n\n` +
-      `  query [RUN_ID] [--invocation ID] [--limit N] [--sensitive]\n` +
-      `Application data is read through daemon IPC; use doctor for service startup failures.`;
-  }
-  if (group === "events") {
-    return `Usage: octo-harness [--home PATH] events [--follow] [--run-id ID] [--source SOURCE] [--json]\n\n` +
-      `Reads the daemon's bounded in-memory event stream. The default prints the retained snapshot and exits.`;
-  }
-  if (group === "inspect") {
-    return `Usage: octo-harness [--home PATH] inspect [url] [--no-open]\n\n` +
-      `Starts the daemon-owned loopback inspector lazily. 'inspect url' prints its capability URL without opening a browser.`;
-  }
-  if (group === "adapter") {
-    return `Usage: octo-harness [--home PATH] adapter list|probe <adapter-type>`;
-  }
-  if (group === "agent-session") {
-    return `Usage: octo-harness [--home PATH] agent-session list|get <agent-session-id>`;
-  }
-  if (group === "agent-run") {
-    return `Usage: octo-harness [--home PATH] agent-run list|get|wait|cancel [agent-run-id] [options]\n\n` +
-      `  cancel <agent-run-id> [--reason TEXT]`;
-  }
-  return `Octo Harness CLI\n\n` +
-    `Global: --home PATH; --profile NAME (login/setup/doctor selection only); --verbose\n\n` +
-    `  octo-harness login --help\n` +
-    `  octo-harness setup --help\n` +
-    `  octo-harness daemon install|uninstall|run|start|stop|restart|status\n` +
-    `  octo-harness doctor [--json]\n` +
-    `  octo-harness status\n` +
-    `  octo-harness adapter list|probe <type>\n` +
-    `  octo-harness logs path|query [RUN_ID]\n` +
-    `  octo-harness events [--follow] [--run-id ID] [--source SOURCE]\n` +
-    `  octo-harness inspect [url]\n` +
-    `  octo-harness agent-session list|get ID\n` +
-    `  octo-harness agent-run list|get|wait|cancel ID`;
 }
 
 export function runtimeFingerprint(): string {

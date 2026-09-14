@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
@@ -347,7 +347,8 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
       terminal.promise,
       new Promise((_, reject) => setTimeout(() => reject(new Error("terminal timeout")), 3_000))
     ]);
-    assert.equal(registrationBody.runtime_version, "0.1.0");
+    const packageVersion = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")).version;
+    assert.equal(registrationBody.runtime_version, packageVersion);
     assert.equal(registrationBody.protocol_version_min, 1);
     assert.equal(registrationBody.protocol_version_max, 1);
     await runtime.close();

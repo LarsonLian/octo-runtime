@@ -6,8 +6,8 @@
   "types": "./dist/index.d.ts",
   "files": ["dist"],
   "dependencies": {
-    "@mininglamp-oss/octo-harness-acp-client": "workspace:*",
-    "@mininglamp-oss/octo-harness-adapter-sdk": "workspace:*"
+    "@mininglamp-oss/octo-harness-acp-client": "workspace:^",
+    "@mininglamp-oss/octo-harness-adapter-sdk": "workspace:^"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json"

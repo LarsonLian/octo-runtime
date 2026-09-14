@@ -5,6 +5,6 @@
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": ["dist"],
-  "dependencies": { "@mininglamp-oss/octo-harness-adapter-acp": "workspace:*" },
+  "dependencies": { "@mininglamp-oss/octo-harness-adapter-acp": "workspace:^" },
   "scripts": { "build": "tsc -p tsconfig.json" }
 }

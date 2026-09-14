@@ -39,12 +39,14 @@ test("CLI exposes Runtime operations and unified AgentSession/AgentRun inspectio
     assert.deepEqual((await cli(["adapter", "list"])).map(adapter => adapter.type), ["test"]);
     assert.deepEqual(await cli(["agent-session", "list"]), []);
     assert.deepEqual(await cli(["agent-run", "list"]), []);
-    await assert.rejects(cli(["agent-run", "events", "missing"]), /unknown command/);
-    await assert.rejects(cli(["agent-run", "stream", "missing"]), /unknown command/);
-    await assert.rejects(cli(["logs", "open"]), /unknown command/);
-    await assert.rejects(cli(["chat", "create", "--agent", "a-1"]), /unknown command/);
-    await assert.rejects(cli(["task", "list"]), /unknown command/);
-    await assert.rejects(cli(["trigger", "list"]), /unknown command/);
+    const invalidCommand = /unknown command|unknown option|too many arguments/;
+    await assert.rejects(cli(["agent-run", "events", "missing"]), invalidCommand);
+    await assert.rejects(cli(["agent-run", "stream", "missing"]), invalidCommand);
+    await assert.rejects(cli(["logs", "open"]), invalidCommand);
+    await assert.rejects(cli(["chat", "create", "--agent", "a-1"]), invalidCommand);
+    await assert.rejects(cli(["task", "list"]), invalidCommand);
+    await assert.rejects(cli(["trigger", "list"]), invalidCommand);
+    await assert.rejects(cli(["status", "--unknown-option"]), /unknown option/);
   } finally {
     await app.close();
     await rm(home, { recursive: true, force: true });
@@ -68,9 +70,24 @@ test("CLI command help is local and describes logs versus doctor", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const cli = join(root, "apps/cli/dist/index.js");
   const help = await execute(process.execPath, [cli, "logs", "--help"]);
-  assert.match(help.stdout, /logs path\|query/);
+  assert.match(help.stdout, /Usage: octo-harness logs/);
+  assert.match(help.stdout, /Commands:\n\s+path\s+Print the protected log directory/);
+  assert.match(help.stdout, /query \[options\] \[run-id\]/);
   assert.doesNotMatch(help.stdout, /\|open/);
   assert.match(help.stdout, /use doctor for service startup failures/i);
+  const setupHelp = await execute(process.execPath, [cli, "setup", "--help"]);
+  assert.match(setupHelp.stdout, /--profile <name>/);
+  assert.match(setupHelp.stdout, /--prepare-update/);
+  const setupHelpCommand = await execute(process.execPath, [cli, "help", "setup"]);
+  assert.equal(setupHelpCommand.stdout, setupHelp.stdout);
+});
+
+test("CLI reports the published root package version through command and flag", async () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const cli = join(root, "apps/cli/dist/index.js");
+  const expected = `${JSON.parse(await readFile(join(root, "package.json"), "utf8")).version}\n`;
+  assert.equal((await execute(process.execPath, [cli, "version"])).stdout, expected);
+  assert.equal((await execute(process.execPath, [cli, "--version"])).stdout, expected);
 });
 
 test("CLI exposes bounded events and daemon-owned loopback inspect", async () => {

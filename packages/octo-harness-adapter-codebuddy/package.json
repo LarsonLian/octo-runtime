@@ -4,8 +4,8 @@
   "type": "module",
   "exports": "./dist/index.js",
   "dependencies": {
-    "@mininglamp-oss/octo-harness-acp-client": "workspace:*",
-    "@mininglamp-oss/octo-harness-adapter-sdk": "workspace:*"
+    "@mininglamp-oss/octo-harness-acp-client": "workspace:^",
+    "@mininglamp-oss/octo-harness-adapter-sdk": "workspace:^"
   },
   "types": "./dist/index.d.ts",
   "files": [

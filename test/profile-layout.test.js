@@ -13,6 +13,10 @@ import {
 
 test("direct profile names cannot collide with Harness Home infrastructure", () => {
   assert.doesNotThrow(() => assertProfileName("space-spade-user"));
+  assert.doesNotThrow(() => assertProfileName(
+    "123e4567-e89b-12d3-a456-426614174000-123e4567-e89b-12d3-a456-426614174001"
+  ));
+  assert.throws(() => assertProfileName("x".repeat(129)), /maximum 128 characters/);
   assert.throws(() => assertProfileName("logs"), /conflicts with Harness Home infrastructure/);
   assert.throws(() => assertProfileName("STATE.DB"), /conflicts with Harness Home infrastructure/);
 });
