@@ -27,7 +27,6 @@ pnpm cli logs query <agent-run-id>
 pnpm cli events --run-id <agent-run-id>
 pnpm cli events --follow
 pnpm cli inspect
-pnpm cli inspect url
 pnpm cli agent-session list
 ```
 

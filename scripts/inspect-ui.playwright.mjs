@@ -20,7 +20,8 @@ try {
   const browser = await chromium.launch({ headless: true });
   try {
     for (const [name, viewport] of [
-      ["desktop", { width: 1440, height: 900 }]
+      ["desktop", { width: 1440, height: 900 }],
+      ["mobile", { width: 390, height: 844 }]
     ]) {
       const page = await browser.newPage({ viewport });
       const errors = [];
@@ -29,69 +30,76 @@ try {
       page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
       page.on("websocket", () => { websocketCount += 1; });
       page.on("request", request => { if (new URL(request.url()).pathname === "/api/logs") logRequestCount += 1; });
-      await page.goto(url, { waitUntil: "networkidle" });
-      await page.locator("#events .event").first().waitFor();
-      assert.ok(await page.locator("#events").evaluate(element =>
-        element.scrollHeight - element.scrollTop - element.clientHeight < 2
-      ));
-      assert.equal(await page.locator("#run-list .run-item").count(), 100);
-      assert.match(await page.locator("#run-list .run-item").first().textContent(), /run-recent-104/);
-      const retainedEventCount = await page.locator("#events .event").count();
-      await page.locator("#run-list .run-item").first().locator("button").click();
-      assert.equal(await page.locator("#events .event").count(), retainedEventCount);
-      assert.equal(await page.locator("#events .event:visible").count(), 1);
+      await page.goto(url, { waitUntil: "domcontentloaded" });
+      await page.getByText("WS 已连接", { exact: true }).waitFor();
+      await page.locator("[data-index]").first().waitFor();
+
+      const firstSeq = await sequenceNumber(page);
+      await page.waitForTimeout(750);
+      const nextSeq = await sequenceNumber(page);
+      assert.ok(nextSeq > firstSeq, `expected newest sequence to increase: ${firstSeq} -> ${nextSeq}`);
+      assert.ok(await page.locator("[data-index]").count() < 60);
       assert.equal(websocketCount, 1);
-      await page.locator("#run").fill("");
-      assert.equal(await page.locator("#events .event:visible").count(), retainedEventCount);
-      await page.locator("#source").selectOption("provider-native");
-      const visibleProviderEvents = await page.locator("#events .event:visible").count();
-      assert.ok(visibleProviderEvents > 0 && visibleProviderEvents < retainedEventCount);
+
+      await page.locator("#query").fill("adapter_type=claude_worker");
+      await page.getByText("claude_worker", { exact: true }).first().waitFor();
       assert.equal(websocketCount, 1);
-      await page.locator("#source").selectOption("");
-      await page.locator("#events .event").first().locator(".event-line").click();
-      assert.equal(await page.locator("#events .event").first().locator(".detail").isVisible(), true);
-      assert.equal(await page.locator("#events .event").first().locator(".event-line").getAttribute("aria-expanded"), "true");
-      assert.match(await page.locator("#events .event").first().locator(".detail").textContent(), /"schema"/);
-      await page.locator("#source-help").click();
-      await page.waitForURL(/\/help$/);
-      assert.match(await page.locator("main").textContent(), /Provider 产生、尚未规范化/);
-      await page.screenshot({ path: `/tmp/octo-inspect-${name}-help.png`, fullPage: true });
-      await page.goBack({ waitUntil: "networkidle" });
-      await page.locator("#events .event").first().waitFor();
-      assert.equal(await page.locator("#state").textContent(), "实时");
+      await page.getByRole("button", { name: /仅看异常/ }).click();
+      await page.getByText("invocation.failed", { exact: true }).waitFor();
+      assert.equal(websocketCount, 1);
+      await page.getByRole("button", { name: "重置" }).click();
+      await page.locator("#query").fill("type=invocation.failed");
+      await page.getByText("invocation.failed", { exact: true }).waitFor();
+
+      const row = page.locator("[data-index]").first();
+      await row.locator(":scope > [role=button]").click();
+      assert.equal(await row.locator(":scope > [role=button]").getAttribute("aria-expanded"), "true");
+      assert.match(await row.locator(".json-panel pre").textContent(), /"schema"/);
+      assert.equal(await row.getByRole("button", { name: "重放 Invocation（无实现）" }).isDisabled(), true);
+      assert.equal(await row.getByRole("button", { name: "复制 cURL / RPC（无实现）" }).isDisabled(), true);
+      await row.getByRole("button", { name: "仅看此类事件" }).click();
+      assert.match(await page.locator("#query").getAttribute("value") ?? "", /^type=/);
+      await row.getByRole("button", { name: "过滤此次 AgentRun" }).click();
+      assert.match(await page.locator("#query").getAttribute("value") ?? "", /^agent_run_id=/);
+      await row.getByRole("button", { name: "过滤此次 AgentSession" }).click();
+      assert.match(await page.locator("#query").getAttribute("value") ?? "", /^session_id=/);
+      await row.getByRole("button", { name: "过滤当前 Stage" }).click();
+      assert.match(await page.locator("#query").getAttribute("value") ?? "", /^stage=/);
+
+      if (name === "desktop") {
+        await page.getByRole("button", { name: "帮助文档" }).click();
+        assert.match(await page.getByRole("dialog").textContent(), /Provider 产生、尚未规范化/);
+        await page.screenshot({ path: `/tmp/octo-inspect-${name}-help.png`, fullPage: true });
+        await page.getByRole("button", { name: "关闭" }).click();
+      }
       await page.screenshot({ path: `/tmp/octo-inspect-${name}-events.png`, fullPage: true });
-      await page.reload({ waitUntil: "networkidle" });
-      await page.locator("#events .event").first().waitFor();
-      assert.equal(await page.locator("#state").textContent(), "实时");
-      assert.equal(await page.locator("#auth").isVisible(), false);
-      assert.equal(await page.locator('nav button[data-view="events"]').getAttribute("class"), "active");
-      await page.locator('nav button[data-view="logs"]').click();
-      await page.locator("#logs .event").first().waitFor();
-      await page.locator("#run-list .run-item").first().locator("button").click();
+
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.getByText("WS 已连接", { exact: true }).waitFor();
+      await page.getByRole("tab", { name: "持久日志" }).click();
+      await page.getByText("daemon.ready", { exact: true }).waitFor();
       assert.equal(logRequestCount, 1);
-      assert.equal(websocketCount, 3);
-      await page.locator('nav button[data-view="runtime"]').click();
-      assert.match(await page.locator("#runtime").textContent(), /adapterHost/);
-      await page.locator('nav button[data-view="memory"]').click();
-      assert.match(await page.locator("#memory-view").textContent(), /browserDomBudgetBytes/);
+      assert.equal(websocketCount, 2);
+      await page.getByRole("tab", { name: "运行时" }).click();
+      assert.match(await page.locator(".json-view pre").textContent(), /adapterHost/);
+      await page.getByRole("tab", { name: "内存" }).click();
+      assert.match(await page.locator(".json-view pre").textContent(), /browserEventBytes/);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
       assert.equal(overflow, false);
       assert.deepEqual(errors, []);
       await page.screenshot({ path: `/tmp/octo-inspect-${name}.png`, fullPage: true });
       await page.close();
     }
+
     const authPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     await authPage.goto(new URL(url).origin, { waitUntil: "domcontentloaded" });
-    await authPage.locator("#auth.visible").waitFor();
-    assert.match(await authPage.locator("#auth-message").textContent(), /token/i);
-    const authBox = await authPage.locator("#auth").boundingBox();
+    await authPage.getByText(/需要 Capability Token/).waitFor();
+    const authBox = await authPage.locator("form").boundingBox();
     const mainBox = await authPage.locator("main").boundingBox();
     assert.ok(authBox && mainBox && authBox.y + authBox.height <= mainBox.y);
-    await authPage.screenshot({ path: "/tmp/octo-inspect-auth.png", fullPage: true });
-    await authPage.locator("#token").fill(url);
-    await authPage.locator('#auth button[type="submit"]').click();
-    await authPage.locator("#events .event").first().waitFor();
-    assert.equal(await authPage.locator("#state").textContent(), "实时");
+    await authPage.getByLabel("Capability token").fill(url);
+    await authPage.getByRole("button", { name: "连接" }).click();
+    await authPage.getByText("WS 已连接", { exact: true }).waitFor();
     await authPage.close();
   } finally {
     await browser.close();
@@ -99,4 +107,9 @@ try {
 } finally {
   server.kill("SIGTERM");
   await new Promise(resolve => server.once("exit", resolve));
+}
+
+async function sequenceNumber(page) {
+  const text = await page.locator("[data-index] .sequence-cell b").first().textContent();
+  return Number((text ?? "").replace("#", ""));
 }

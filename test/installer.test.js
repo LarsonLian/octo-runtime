@@ -83,13 +83,12 @@ test("installers use global npm, pass enrollment through stdin, and keep login i
   assert.match(posixInstaller, /npm install --global --no-audit --no-fund "\$NPM_SPEC"/);
   assert.match(windowsInstaller, /install --global --no-audit --no-fund \$npmSpec/);
   assert.match(posixInstaller, /printf '%s\\n' "\$ENROLLMENT_TOKEN" \| "\$CLI"/);
-  assert.match(windowsInstaller, /\$EnrollmentToken \| & \$cli @setupArguments/);
+  assert.match(windowsInstaller, /\$EnrollmentToken \| & \$cli @loginArguments/);
   for (const source of [posixInstaller, windowsInstaller]) {
     assert.match(source, /@mininglamp-oss\/octo-harness/);
     assert.match(source, /24/);
     assert.match(source, /--enroll-token-stdin/);
     assert.match(source, /login --help/);
-    assert.match(source, /setup --help/);
     assert.doesNotMatch(source, /--token[= ]/);
     assert.doesNotMatch(source, /OCTO_HARNESS_INSTALL_ROOT/);
     assert.doesNotMatch(source, /versions\//);
@@ -100,8 +99,8 @@ test("installers use global npm, pass enrollment through stdin, and keep login i
   assert.match(windowsInstaller, /prefix --global/);
   assert.match(posixInstaller, /\.zprofile/);
   assert.match(windowsInstaller, /SetEnvironmentVariable\("Path"/);
-  assert.ok(posixInstaller.indexOf("setup --prepare-update") < posixInstaller.indexOf("npm install --global"));
-  assert.ok(windowsInstaller.indexOf("setup --prepare-update") < windowsInstaller.indexOf("install --global"));
+  assert.ok(posixInstaller.indexOf("login --prepare-update") < posixInstaller.indexOf("npm install --global"));
+  assert.ok(windowsInstaller.indexOf("login --prepare-update") < windowsInstaller.indexOf("install --global"));
   assert.match(windowsInstaller, /Test-FullyQualifiedWindowsPath/);
   assert.match(windowsInstaller, /\^\[A-Za-z0-9\]\[A-Za-z0-9\._-\]\{0,63\}\$/);
   assert.match(windowsInstaller, /Profile\.ToLowerInvariant\(\).*"logs"/s);
@@ -136,19 +135,15 @@ if [ "$1" = "install" ] && [ "\${FAKE_NPM_FAIL:-0}" = "1" ]; then exit 9; fi
 `,
     "octo-harness": `#!/bin/sh
 if [ "$1" = "login" ] && [ "$2" = "--help" ]; then
-  printf '%s\\n' 'login --enroll-token-stdin'
-  exit 0
-fi
-if [ "$1" = "setup" ] && [ "$2" = "--help" ]; then
-  printf '%s\\n' 'setup --prepare-update --recover-update'
+  printf '%s\\n' 'login --enroll-token-stdin --prepare-update --recover-update'
   exit 0
 fi
 case " $* " in
-  *" setup --prepare-update --wait-drained "*)
+  *" login --prepare-update --wait-drained "*)
     printf 'PREPARE %s\\n' "$*" > "$FAKE_SETUP_LOG"
     exit 0
     ;;
-  *" setup --recover-update --start "*)
+  *" login --recover-update --start "*)
     printf 'RECOVER %s\\n' "$*" >> "$FAKE_SETUP_LOG"
     exit 0
     ;;
@@ -189,7 +184,7 @@ if [ "\${FAKE_LOGIN_FAIL:-0}" = "1" ]; then exit 7; fi
 
   assert.match(await readFile(npmLog, "utf8"), /install --global --no-audit --no-fund @mininglamp-oss\/octo-harness@latest/);
   const setupInvocation = await readFile(setupLog, "utf8");
-  assert.match(setupInvocation, /PREPARE .*setup --prepare-update --wait-drained/);
+  assert.match(setupInvocation, /PREPARE .*login --prepare-update --wait-drained/);
   assert.match(setupInvocation, new RegExp(`LOGIN --home ${harnessHome.replaceAll("/", "\\/")} --profile default login`));
   assert.match(setupInvocation, /--enroll-token-stdin/);
   assert.match(setupInvocation, /INSTALL .*daemon install/);
@@ -208,7 +203,7 @@ if [ "\${FAKE_LOGIN_FAIL:-0}" = "1" ]; then exit 7; fi
     }),
     error => error.code === 2 && /Restored the service after the updated login failed/.test(error.stdout)
   );
-  assert.match(await readFile(setupLog, "utf8"), /RECOVER .*setup --recover-update --start/);
+  assert.match(await readFile(setupLog, "utf8"), /RECOVER .*login --recover-update --start/);
   assert.match(await readFile(join(userHome, ".zprofile"), "utf8"), new RegExp(npmPrefix.replaceAll("/", "\\/")));
 
   await assert.rejects(
@@ -217,7 +212,7 @@ if [ "\${FAKE_LOGIN_FAIL:-0}" = "1" ]; then exit 7; fi
     }),
     error => error.code === 9 && /Restored the previous service/.test(error.stdout)
   );
-  assert.match(await readFile(setupLog, "utf8"), /RECOVER .*setup --recover-update --start/);
+  assert.match(await readFile(setupLog, "utf8"), /RECOVER .*login --recover-update --start/);
 });
 
 test("installers attempt service recovery when npm update fails after drain", async () => {
@@ -227,9 +222,9 @@ test("installers attempt service recovery when npm update fails after drain", as
   ]);
 
   for (const source of [posixInstaller, windowsInstaller]) {
-    assert.match(source, /--recover-update/);
-    assert.ok(source.indexOf("--prepare-update") < source.indexOf("install --global"));
-    assert.ok(source.indexOf("install --global") < source.lastIndexOf("--recover-update"));
+    assert.match(source, /login --recover-update/);
+    assert.ok(source.indexOf("login --prepare-update") < source.indexOf("install --global"));
+    assert.ok(source.indexOf("install --global") < source.lastIndexOf("login --recover-update"));
   }
 });
 

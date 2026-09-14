@@ -75,7 +75,7 @@ class InMemoryServiceBackend {
   }
 }
 
-test("setup and service CLI complete enrollment, online readiness, lifecycle, doctor, and update recovery", async () => {
+test("login and service CLI complete enrollment, online readiness, lifecycle, doctor, and update recovery", async () => {
   const home = await mkdtemp(process.platform === "win32"
     ? join(tmpdir(), "oh-cli-lifecycle-")
     : "/tmp/oh-cli-");
@@ -219,11 +219,11 @@ test("setup and service CLI complete enrollment, online readiness, lifecycle, do
       ["default", "work"]
     );
 
-    const prepared = await invoke(["setup", "--prepare-update", "--wait-drained", "--timeout-ms", "5000"]);
+    const prepared = await invoke(["login", "--prepare-update", "--wait-drained", "--timeout-ms", "5000"]);
     assert.equal(prepared.value.service_was_running, true);
     assert.equal(backend.state, "stopped");
     assert.deepEqual(backend.spec.args.slice(-2), ["--home", home]);
-    const recovered = await invoke(["setup", "--recover-update", "--start"]);
+    const recovered = await invoke(["login", "--recover-update", "--start"]);
     assert.equal(recovered.value.started, true);
     assert.equal(backend.state, "running");
 

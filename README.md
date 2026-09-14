@@ -74,7 +74,7 @@ curl -fsSL https://im-test.deepminer.com.cn/octo-harness/install.sh \
 3. 同版本 CLI 的 `login` 从 stdin 消费一次性 token，只创建或对账选中 profile 唯一的永久 `runtime_id` 与设备凭证。
 4. 安装器显式调用 `daemon install`，通过用户级原生管理器安装自启动：macOS LaunchAgent、Linux systemd user service、Windows 当前用户 Task Scheduler；service definition 使用绝对 Node 与 daemon 入口路径，不依赖 shell PATH。
 5. 安装器再调用 `daemon start --wait-online`；CLI 分别等待本地 IPC Ready 和云端 Runtime Online，任一步失败都返回非零。
-6. 重跑时先取得 Home 与 npm prefix 安装锁；若旧 CLI 已存在，先执行 `setup --prepare-update` drain/stop，再更新 npm package，最后由新 CLI 依次执行 login、install、start。npm 更新或更新后的流程失败会尝试 `setup --recover-update` 恢复 service；全过程不创建第二个 Runtime，也不覆盖已有身份和 durable outbox。已有 identity 时可省略 token 重跑。
+6. 重跑时先取得 Home 与 npm prefix 安装锁；若旧 CLI 已存在，先执行 `login --prepare-update` drain/stop，再更新 npm package，最后由新 CLI 依次执行 login、install、start。npm 更新或更新后的流程失败会尝试 `login --recover-update` 恢复 service；全过程不创建第二个 Runtime，也不覆盖已有身份和 durable outbox。已有 identity 时可省略 token 重跑。
 
 把 token 直接放在位置参数里最适合 Web 页面生成“复制即安装”的一次性命令，但它会进入 shell/PowerShell 历史。更安全的人工安装方式是省略第二个参数，安装器会从 TTY/SecureString 隐藏读取 token：
 
@@ -133,14 +133,13 @@ pnpm cli agent-run list
 pnpm cli events --run-id <agent-run-id>
 pnpm cli events --follow
 pnpm cli inspect
-pnpm cli inspect url
 # foreground daemon: optional explicit inspect binding
 pnpm cli daemon run --inspect-host 127.0.0.1 --inspect-port 23456
 # native service: persist the binding in the installed service definition
 pnpm cli daemon install --inspect-host 127.0.0.1 --inspect-port 23456
 ```
 
-`events` 直接读取 daemon 中约 6 MiB 的有界内存事件流，默认输出当前保留快照后退出，`--follow` 才持续跟随；它不读取 SQLite，也不等同于完整 AgentRun trajectory。`inspect` 懒启动 daemon 自有的 Web 页面，默认监听 `127.0.0.1` 的 `20001–65535` 随机端口。页面事件 DOM 受 2 MiB/1000 行双重上限约束，AgentRuns 仅保留最近有消息的 100 个。创建 AgentRun、reset AgentSession、查询云端权威状态或获取完整 trajectory，应调用 Agent Worker API 或 `octo-cli harness agent-run ...`。
+`events` 直接读取 daemon 中约 6 MiB 的有界内存事件流，默认输出当前保留快照后退出，`--follow` 才持续跟随；它不读取 SQLite，也不等同于完整 AgentRun trajectory。daemon 启动时即监听 Inspect HTTP/WS 端口，即使没有浏览器连接也保持端口可用于容器或云镜像映射；此时 WS 订阅者为零，只有有界事件 ring 常驻。`inspect` 只读取并输出带 Capability token 的地址，不打开浏览器。页面使用 React SPA 和 TanStack Virtual，在浏览器中按最新优先保留最多 6000 条或约 6 MiB 事件，实际只渲染可见行。QL 支持 `profile`、`source`、`stage`、`direction`、`type`、`adapter_type`、`session_id`、`agent_run_id`、`invocation_id`、`status`，以及 `=`、`!=`、`~=`、`and`、`or`。创建 AgentRun、reset AgentSession、查询云端权威状态或获取完整 trajectory，应调用 Agent Worker API 或 `octo-cli harness agent-run ...`。
 
 显式 `--inspect-host` 可以用于云主机或容器；`daemon run` 直接使用参数，原生服务则在 `daemon install` 时把参数写入服务定义和 Harness Home，供后续 status/restart/update recovery 复用。监听非回环地址会暴露诊断接口，部署方必须提供 TLS 和网络访问控制，不能只依赖 URL 中的 Capability token。Capability 使用 `?token=...` 传入；反向代理、WAF 与 access log 必须禁止记录该 query 参数。
 

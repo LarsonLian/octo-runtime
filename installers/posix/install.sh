@@ -320,21 +320,21 @@ elif [ -f "$CLI_ENTRYPOINT" ]; then
 fi
 
 if [ -n "$EXISTING_CLI_MODE" ]; then
-  if ! EXISTING_SETUP_HELP=$(run_existing_cli setup --help 2>&1); then
-    die "the installed CLI cannot describe its setup contract; no npm files were changed"
+  if ! EXISTING_LOGIN_HELP=$(run_existing_cli login --help 2>&1); then
+    die "the installed CLI cannot describe its login contract; no npm files were changed"
   fi
-  case "$EXISTING_SETUP_HELP" in
+  case "$EXISTING_LOGIN_HELP" in
     *--prepare-update*--recover-update*|*--recover-update*--prepare-update*) ;;
     *)
       die "the installed CLI predates safe updates. Stop its foreground daemon, remove any legacy npm link, then rerun this installer"
       ;;
   esac
-  EXISTING_SETUP_HELP=""
+  EXISTING_LOGIN_HELP=""
   info "Draining the existing daemon before updating the npm package"
   if ! run_existing_cli \
     --home "$HARNESS_HOME" \
     --profile "$PROFILE" \
-    setup --prepare-update --wait-drained; then
+    login --prepare-update --wait-drained; then
     die "the installed CLI could not prepare a safe package update; no npm files were changed"
   fi
   PREPARED_UPDATE=1
@@ -356,10 +356,10 @@ else
     if run_existing_cli \
       --home "$HARNESS_HOME" \
       --profile "$PROFILE" \
-      setup --recover-update --start; then
+      login --recover-update --start; then
       info "Restored the previous service after the failed npm update"
     else
-      printf '%s\n' "[octo-harness] ERROR: automatic service recovery failed; repair the npm package, then run 'octo-harness setup --recover-update --start'" >&2
+      printf '%s\n' "[octo-harness] ERROR: automatic service recovery failed; repair the npm package, then run 'octo-harness login --recover-update --start'" >&2
     fi
   fi
   exit "$npm_status"
@@ -378,19 +378,15 @@ case "$LOGIN_HELP" in
   *--enroll-token-stdin*) ;;
   *) die "the installed login command is missing --enroll-token-stdin" ;;
 esac
-LOGIN_HELP=""
-if ! SETUP_HELP=$("$CLI" setup --help 2>&1); then
-  die "the installed package does not provide the installer update contract"
-fi
-case "$SETUP_HELP" in
+case "$LOGIN_HELP" in
   *--prepare-update*) ;;
-  *) die "the installed setup command is missing --prepare-update" ;;
+  *) die "the installed login command is missing --prepare-update" ;;
 esac
-case "$SETUP_HELP" in
+case "$LOGIN_HELP" in
   *--recover-update*) ;;
-  *) die "the installed setup command is missing --recover-update" ;;
+  *) die "the installed login command is missing --recover-update" ;;
 esac
-SETUP_HELP=""
+LOGIN_HELP=""
 
 info "Logging in this device"
 if ! printf '%s\n' "$ENROLLMENT_TOKEN" | "$CLI" \
@@ -402,10 +398,10 @@ if ! printf '%s\n' "$ENROLLMENT_TOKEN" | "$CLI" \
   --channel "$CHANNEL" \
   --enroll-token-stdin; then
   if [ "$PREPARED_UPDATE" -eq 1 ]; then
-    if "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" setup --recover-update --start; then
+    if "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" login --recover-update --start; then
       info "Restored the service after the updated login failed"
     else
-      printf '%s\n' "[octo-harness] ERROR: service recovery also failed; repair the package, then run 'octo-harness setup --recover-update --start'" >&2
+      printf '%s\n' "[octo-harness] ERROR: service recovery also failed; repair the package, then run 'octo-harness login --recover-update --start'" >&2
     fi
   fi
   die "octo-harness login failed; rerun this installer after correcting the reported problem"
@@ -416,7 +412,7 @@ export ENROLLMENT_TOKEN
 info "Installing the current-user daemon service"
 if ! "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" daemon install; then
   if [ "$PREPARED_UPDATE" -eq 1 ]; then
-    "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" setup --recover-update --start || true
+    "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" login --recover-update --start || true
   fi
   die "daemon service installation failed; run 'octo-harness daemon install' after correcting the reported problem"
 fi
@@ -424,7 +420,7 @@ fi
 info "Starting the daemon and waiting for cloud readiness"
 if ! "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" daemon start --wait-online; then
   if [ "$PREPARED_UPDATE" -eq 1 ]; then
-    "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" setup --recover-update --start || true
+    "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" login --recover-update --start || true
   fi
   die "daemon startup failed; run 'octo-harness daemon start --wait-online' after correcting the reported problem"
 fi

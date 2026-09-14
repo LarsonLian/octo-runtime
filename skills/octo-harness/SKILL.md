@@ -81,7 +81,6 @@ octo-harness agent-run wait RUN_ID
 octo-harness events --run-id RUN_ID
 octo-harness events --follow
 octo-harness inspect
-octo-harness inspect url
 ```
 
 Use `logs query` for durable local log records. Use `events` for the current bounded in-memory snapshot and add `--follow` only for a live tail. Complete AgentRun trajectory belongs to `octo-cli`, not this skill. Only use `--sensitive` when the user explicitly requests sensitive log fields and their disclosure is necessary.
@@ -132,7 +131,7 @@ Publishing or installer rollout is a separate external mutation. Read the deploy
 Match verification to the operation:
 
 - build/link: check command resolution, resolved symlink target, and `octo-harness help`;
-- enrollment/service setup: run `doctor`, `daemon status`, and when requested verify the selected Runtime is online;
+- enrollment/service login: run `doctor`, `daemon status`, and when requested verify the selected Runtime is online;
 - adapter issue: run `adapter list` and probe only the affected adapter;
 - Run issue: capture the Run state, canonical events, and scoped logs without exposing credentials or unnecessary sensitive fields.
 

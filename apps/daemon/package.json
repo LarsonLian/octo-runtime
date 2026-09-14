@@ -29,6 +29,7 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@mininglamp-oss/octo-harness-inspect-web": "workspace:*",
     "@types/ws": "^8.18.1"
   },
   "types": "./dist/server.d.ts"

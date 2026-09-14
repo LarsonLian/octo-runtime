@@ -9,7 +9,6 @@ import {
   normalizeServerUrl,
   type EnrollmentResult
 } from "./enrollment.js";
-import { openBrowser } from "./browser.js";
 import { resolveServiceControl, verifyServiceProgram, type ServiceControlOptions } from "./service-control.js";
 import {
   defaultHarnessHome,
@@ -82,7 +81,6 @@ const BOOLEAN_FLAGS = new Set([
   "help",
   "json",
   "noAutostart",
-  "noOpen",
   "prepareUpdate",
   "quiet",
   "recoverUpdate",
@@ -139,14 +137,14 @@ async function dispatchCli(context: CliContext): Promise<CommandResult> {
   if (!group || group === "help" || context.flags.help === true) {
     return { value: helpText(group === "help" ? action : group) };
   }
-  if (group === "login") return runSetup(context, false);
-  if (group === "setup") return runSetup(context, true);
+  if (group === "login") return runLogin(context);
   if (group === "daemon") return runDaemonCommand(context, action);
   if (group === "doctor") return runDoctor(context);
   if (group === "inspect") {
-    if (action !== undefined && action !== "url") throw new Error("unknown command; run octo-harness help");
-    const result = await callDaemon<{ url: string }>(context.paths.socket, { method: "inspect.open" });
-    if (action !== "url" && context.flags.noOpen !== true) await openBrowser(result.url);
+    if (action !== undefined || context.flags.noOpen !== undefined) {
+      throw new Error("unknown command; run octo-harness help");
+    }
+    const result = await callDaemon<{ url: string }>(context.paths.socket, { method: "inspect.info" });
     return { value: result.url };
   }
 
@@ -158,15 +156,12 @@ async function dispatchCli(context: CliContext): Promise<CommandResult> {
   return { value: await callDaemon(context.paths.socket, request) };
 }
 
-async function runSetup(context: CliContext, allowUpdateModes: boolean): Promise<CommandResult> {
+async function runLogin(context: CliContext): Promise<CommandResult> {
   return withSetupLock(context.paths, async () => {
     const homeConfiguration = await readJsonFile<HarnessHomeConfiguration>(context.paths.rootConfig);
     assertHomeConfiguration(homeConfiguration);
-    if (!allowUpdateModes && (context.flags.prepareUpdate === true || context.flags.recoverUpdate === true)) {
-      throw new Error("installer update modes belong to 'octo-harness setup', not login");
-    }
     if (context.flags.prepareUpdate === true && context.flags.recoverUpdate === true) {
-      throw new Error("--prepare-update and --recover-update are mutually exclusive setup modes");
+      throw new Error("--prepare-update and --recover-update are mutually exclusive update modes");
     }
     if (context.flags.prepareUpdate === true) {
       await prepareHarnessDirectories(context.paths);
@@ -920,15 +915,11 @@ function helpText(group?: string): string {
     return `Usage: octo-harness [--home PATH] [--profile NAME] login [options]\n\n` +
       `First login:\n` +
       `  --server-url URL --enroll-token-stdin [--agent-work-url URL]\n\n` +
-      `Login only writes Runtime identity and credentials. Service lifecycle uses 'daemon install' and 'daemon start'.\n\n` +
-      `Profiles are for trusted identities of the same OS user; use separate OS users/homes for isolation.`;
-  }
-  if (group === "setup") {
-    return `Usage: octo-harness [--home PATH] [--profile NAME] setup [options]\n\n` +
-      `Compatibility: normal setup is equivalent to login.\n\n` +
       `Installer-only update modes:\n` +
       `  --prepare-update [--wait-drained] [--timeout-ms MS]\n` +
-      `  --recover-update [--start]`;
+      `  --recover-update [--start]\n\n` +
+      `Login only writes Runtime identity and credentials. Service lifecycle uses 'daemon install' and 'daemon start'.\n\n` +
+      `Profiles are for trusted identities of the same OS user; use separate OS users/homes for isolation.`;
   }
   if (group === "daemon") {
     return `Usage: octo-harness [--home PATH] daemon install|uninstall|run|start|stop|restart|status [options]\n\n` +
@@ -958,8 +949,8 @@ function helpText(group?: string): string {
       `Reads the daemon's bounded in-memory event stream. The default prints the retained snapshot and exits.`;
   }
   if (group === "inspect") {
-    return `Usage: octo-harness [--home PATH] inspect [url] [--no-open]\n\n` +
-      `Starts the daemon-owned loopback inspector lazily. 'inspect url' prints its capability URL without opening a browser.`;
+    return `Usage: octo-harness [--home PATH] inspect\n\n` +
+      `Prints the address of the daemon-owned inspector, which listens for the full daemon lifetime.`;
   }
   if (group === "adapter") {
     return `Usage: octo-harness [--home PATH] adapter list|probe <adapter-type>`;
@@ -972,16 +963,15 @@ function helpText(group?: string): string {
       `  cancel <agent-run-id> [--reason TEXT]`;
   }
   return `Octo Harness CLI\n\n` +
-    `Global: --home PATH; --profile NAME (login/setup/doctor selection only); --verbose\n\n` +
+    `Global: --home PATH; --profile NAME (login/doctor selection only); --verbose\n\n` +
     `  octo-harness login --help\n` +
-    `  octo-harness setup --help\n` +
     `  octo-harness daemon install|uninstall|run|start|stop|restart|status\n` +
     `  octo-harness doctor [--json]\n` +
     `  octo-harness status\n` +
     `  octo-harness adapter list|probe <type>\n` +
     `  octo-harness logs path|query [RUN_ID]\n` +
     `  octo-harness events [--follow] [--run-id ID] [--source SOURCE]\n` +
-    `  octo-harness inspect [url]\n` +
+    `  octo-harness inspect\n` +
     `  octo-harness agent-session list|get ID\n` +
     `  octo-harness agent-run list|get|wait|cancel ID`;
 }

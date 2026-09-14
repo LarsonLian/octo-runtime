@@ -104,12 +104,24 @@ test("CLI exposes bounded events and daemon-owned loopback inspect", async () =>
     assert.ok(frames.some(frame => frame.source === "host-canonical"));
     assert.ok(frames.filter(frame => frame.agent_run_id === submitted.agentRunId).length > 0);
 
-    const inspected = await execute(process.execPath, [cli, "inspect", "url"], {
+    const inspected = await execute(process.execPath, [cli, "inspect"], {
       cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home }
     });
+    await assert.rejects(
+      execute(process.execPath, [cli, "inspect", "url"], {
+        cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home }
+      }),
+      /unknown command/
+    );
+    await assert.rejects(
+      execute(process.execPath, [cli, "inspect", "--no-open"], {
+        cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home }
+      }),
+      /unknown command/
+    );
     const inspectedAgain = await Promise.all([
-      execute(process.execPath, [cli, "inspect", "url"], { cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home } }),
-      execute(process.execPath, [cli, "inspect", "url"], { cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home } })
+      execute(process.execPath, [cli, "inspect"], { cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home } }),
+      execute(process.execPath, [cli, "inspect"], { cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home } })
     ]);
     assert.ok(inspectedAgain.every(result => result.stdout.trim() === inspected.stdout.trim()));
     const url = new URL(inspected.stdout.trim());
@@ -119,15 +131,16 @@ test("CLI exposes bounded events and daemon-owned loopback inspect", async () =>
     const response = await fetch(url);
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.match(html, /DOM_BYTES=2\*1024\*1024/);
-    assert.match(html, /MAX_RUNS=100/);
-    assert.match(html, /id="profile"/);
-    assert.match(html, /localStorage\.setItem\(profileKey/);
-    assert.match(html, /Provider 原生事件/);
-    assert.doesNotMatch(html, /典型链路/);
+    assert.match(html, /id="root"/);
+    const scriptPath = html.match(/src="([^"]+\.js)"/)?.[1];
+    assert.ok(scriptPath);
+    const scriptResponse = await fetch(new URL(scriptPath, url));
+    assert.equal(scriptResponse.status, 200);
+    assert.match(scriptResponse.headers.get("content-type") ?? "", /javascript/);
+    assert.match(scriptResponse.headers.get("cache-control") ?? "", /immutable/);
     const helpResponse = await fetch(new URL("/help", url));
     assert.equal(helpResponse.status, 200);
-    assert.match(await helpResponse.text(), /Inspect 事件来源/);
+    assert.match(await helpResponse.text(), /id="root"/);
     const token = url.searchParams.get("token");
     assert.ok(token);
     const logsUrl = new URL("/api/logs", url);
@@ -154,6 +167,15 @@ test("CLI exposes bounded events and daemon-owned loopback inspect", async () =>
       forbidden.once("error", () => undefined);
     });
     assert.equal(statusCode, 403);
+
+    const invalidTokenUrl = new URL(wsUrl);
+    invalidTokenUrl.searchParams.set("token", "invalid");
+    const invalidToken = new WebSocket(invalidTokenUrl, { origin: url.origin });
+    const closeCode = await new Promise((resolve, reject) => {
+      invalidToken.once("close", resolve);
+      invalidToken.once("error", reject);
+    });
+    assert.equal(closeCode, 4401);
   } finally {
     await app.close();
     await rm(home, { recursive: true, force: true });
@@ -172,7 +194,7 @@ test("inspect honors an explicit wildcard host and fixed port", async () => {
     }
   );
   try {
-    const advertised = new URL(await inspect.open());
+    const advertised = new URL((await inspect.start()).url);
     assert.equal(advertised.hostname, "0.0.0.0");
     assert.equal(Number(advertised.port), port);
     advertised.hostname = "127.0.0.1";
@@ -204,7 +226,7 @@ test("inspect permits only one log query at a time", async () => {
     }
   );
   try {
-    const advertised = new URL(await inspect.open());
+    const advertised = new URL((await inspect.start()).url);
     const token = advertised.searchParams.get("token");
     assert.ok(token);
     const logsUrl = new URL("/api/logs", advertised);

@@ -44,7 +44,7 @@ export interface StartDaemonServerOptions {
   storePath: string;
   manifestPath: string;
   hostEntrypoint: string;
-  /** Address used by the lazy HTTP/WebSocket inspector. */
+  /** Address used by the daemon-owned HTTP/WebSocket inspector. */
   inspectHost?: string;
   /** Fixed inspector port. When omitted, a random port above 20000 is chosen. */
   inspectPort?: number;
@@ -470,6 +470,7 @@ export async function startDaemonServer({
   });
 
   try {
+    const inspectInfo = await inspect.start();
     await daemon.recover();
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
@@ -490,7 +491,8 @@ export async function startDaemonServer({
         log_directory: loggingConfiguration.directory,
         socket_path: socketPath,
         adapter_host_pid: hostProcess.child.pid ?? null,
-        adapters
+        adapters,
+        inspect: { host: inspectInfo.host, port: inspectInfo.port }
       }
     });
   } catch (error) {
@@ -506,6 +508,7 @@ export async function startDaemonServer({
     });
     daemon.stop();
     await agentWorkSupervisor?.close();
+    await inspect.close();
     await hostRestartTask?.catch(() => undefined);
     await hostProcess.close();
     store.close();
@@ -829,8 +832,11 @@ async function dispatch({
         includeSensitive: params.includeSensitive === true,
         ...(typeof params.limit === "number" ? { limit: params.limit } : {})
       });
-    case "inspect.open":
-      return { url: await inspect.open() };
+    case "inspect.info": {
+      const info = inspect.info;
+      if (!info) throw new Error("inspect server is not listening");
+      return info;
+    }
     case "adapter.list":
       return host.list();
     case "adapter.probe":

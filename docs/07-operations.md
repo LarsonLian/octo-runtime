@@ -24,7 +24,6 @@ pnpm cli logs query <agent-run-id>
 pnpm cli events --run-id <agent-run-id>
 pnpm cli events --follow
 pnpm cli inspect
-pnpm cli inspect url
 pnpm cli daemon run --inspect-host 127.0.0.1 --inspect-port 23456
 pnpm cli daemon install --inspect-host 127.0.0.1 --inspect-port 23456
 pnpm cli agent-session list
@@ -40,10 +39,16 @@ The live event sink is process-local and always applies credential redaction and
 private-reasoning removal. Sensitive RPC/provider persistence remains explicitly
 controlled by the trace and provider-capture settings.
 
-Inspect defaults to `127.0.0.1` and a random port in `20001–65535`. The daemon
-event ring is byte bounded; the browser independently caps event rows at 1000
-and retained event text at 2 MiB, while its recent AgentRuns index retains 100
-IDs without copying event payloads. `daemon run` consumes explicit
+Inspect starts with the daemon and defaults to `127.0.0.1` and a random port in
+`20001–65535`. It keeps listening even with no browser connected so container and
+cloud-image port mappings remain stable. With no WebSocket client there are zero
+subscribers; only the byte-bounded daemon event ring remains resident. The
+`inspect` command only prints the daemon-owned capability URL. The React SPA
+independently retains at most 6000 events or about 6 MiB, prepends the newest frames, and uses TanStack Virtual
+to render only visible rows; its recent AgentRuns index retains 100 IDs without
+copying event payloads. Changing the local QL filter never reconnects the socket.
+After a disconnect the browser retries after 1, 2, 5, 10 and 30 seconds, then
+stops until manual retry. `daemon run` consumes explicit
 `--inspect-host` / `--inspect-port` values directly. `daemon install` persists
 them in the native service definition and Harness Home. A non-loopback listener
 requires TLS and network access control supplied by the deployment; the

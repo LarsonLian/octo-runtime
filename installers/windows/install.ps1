@@ -241,15 +241,15 @@ try {
   }
 
   if ($existingCliCommand) {
-    $existingSetupHelp = (& $existingCliCommand @existingCliPrefixArguments setup --help 2>&1 | Out-String)
+    $existingLoginHelp = (& $existingCliCommand @existingCliPrefixArguments login --help 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0) {
-      Fail "the installed CLI cannot describe its setup contract; no npm files were changed"
+      Fail "the installed CLI cannot describe its login contract; no npm files were changed"
     }
-    if ($existingSetupHelp -notmatch "--prepare-update" -or $existingSetupHelp -notmatch "--recover-update") {
+    if ($existingLoginHelp -notmatch "--prepare-update" -or $existingLoginHelp -notmatch "--recover-update") {
       Fail "the installed CLI predates safe updates. Stop its foreground daemon, remove any legacy npm link, then rerun this installer"
     }
     Write-InstallerInfo "Draining the existing daemon before updating the npm package"
-    & $existingCliCommand @existingCliPrefixArguments --home $HarnessHome --profile $Profile setup --prepare-update --wait-drained
+    & $existingCliCommand @existingCliPrefixArguments --home $HarnessHome --profile $Profile login --prepare-update --wait-drained
     if ($LASTEXITCODE -ne 0) {
       Fail "the installed CLI could not prepare a safe package update; no npm files were changed"
     }
@@ -279,14 +279,14 @@ try {
         }
       }
       if ($recoveryCliCommand) {
-        & $recoveryCliCommand @recoveryCliPrefixArguments --home $HarnessHome --profile $Profile setup --recover-update --start
+        & $recoveryCliCommand @recoveryCliPrefixArguments --home $HarnessHome --profile $Profile login --recover-update --start
         if ($LASTEXITCODE -eq 0) {
           Write-InstallerInfo "Restored the previous service after the failed npm update"
         } else {
-          Write-Warning "Automatic service recovery failed; repair the npm package, then run 'octo-harness setup --recover-update --start'"
+          Write-Warning "Automatic service recovery failed; repair the npm package, then run 'octo-harness login --recover-update --start'"
         }
       } else {
-        Write-Warning "Automatic service recovery could not find a CLI; repair the npm package, then run 'octo-harness setup --recover-update --start'"
+        Write-Warning "Automatic service recovery could not find a CLI; repair the npm package, then run 'octo-harness login --recover-update --start'"
       }
     }
     Fail "npm install failed (exit $npmInstallExit)"
@@ -301,17 +301,13 @@ try {
   if ($LASTEXITCODE -ne 0) {
     Fail "the installed package does not provide 'octo-harness login'"
   }
-  if ($loginHelp -notmatch "--enroll-token-stdin") {
-    Fail "the installed login command does not implement secure enrollment"
-  }
-  $setupHelp = (& $cli setup --help 2>&1 | Out-String)
-  if ($LASTEXITCODE -ne 0 -or
-      $setupHelp -notmatch "--prepare-update" -or
-      $setupHelp -notmatch "--recover-update") {
-    Fail "the installed package does not implement the installer update contract"
+  if ($loginHelp -notmatch "--enroll-token-stdin" -or
+      $loginHelp -notmatch "--prepare-update" -or
+      $loginHelp -notmatch "--recover-update") {
+    Fail "the installed login command does not implement secure enrollment and the installer update contract"
   }
 
-  $setupArguments = @(
+  $loginArguments = @(
     "--home", $HarnessHome,
     "--profile", $Profile,
     "login",
@@ -321,15 +317,15 @@ try {
     "--enroll-token-stdin"
   )
   Write-InstallerInfo "Logging in this device"
-  $EnrollmentToken | & $cli @setupArguments
+  $EnrollmentToken | & $cli @loginArguments
   $loginExit = $LASTEXITCODE
   if ($loginExit -ne 0) {
     if ($PreparedUpdate) {
-      & $cli --home $HarnessHome --profile $Profile setup --recover-update --start
+      & $cli --home $HarnessHome --profile $Profile login --recover-update --start
       if ($LASTEXITCODE -eq 0) {
         Write-InstallerInfo "Restored the service after the updated login failed"
       } else {
-        Write-Warning "Service recovery also failed; repair the package, then run 'octo-harness setup --recover-update --start'"
+        Write-Warning "Service recovery also failed; repair the package, then run 'octo-harness login --recover-update --start'"
       }
     }
     Fail "octo-harness login failed (exit $loginExit); rerun this installer after correcting the reported problem"
@@ -340,7 +336,7 @@ try {
   $serviceInstallExit = $LASTEXITCODE
   if ($serviceInstallExit -ne 0) {
     if ($PreparedUpdate) {
-      & $cli --home $HarnessHome --profile $Profile setup --recover-update --start
+      & $cli --home $HarnessHome --profile $Profile login --recover-update --start
     }
     Fail "daemon service installation failed (exit $serviceInstallExit); run 'octo-harness daemon install' after correcting the reported problem"
   }
@@ -350,7 +346,7 @@ try {
   $daemonStartExit = $LASTEXITCODE
   if ($daemonStartExit -ne 0) {
     if ($PreparedUpdate) {
-      & $cli --home $HarnessHome --profile $Profile setup --recover-update --start
+      & $cli --home $HarnessHome --profile $Profile login --recover-update --start
     }
     Fail "daemon startup failed (exit $daemonStartExit); run 'octo-harness daemon start --wait-online' after correcting the reported problem"
   }

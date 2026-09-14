@@ -34,11 +34,11 @@ enrollment grant 和设备 credential 都不会进入 CLI argv、service definit
 --channel stable|beta   记录安装 channel，默认 stable
 ```
 
-`setup` 的普通模式暂时兼容 `login`。安装器还专用以下模式，不建议人工日常调用：
+安装器还专用以下更新模式，不建议人工日常调用：
 
 ```bash
-octo-harness setup --prepare-update --wait-drained
-octo-harness setup --recover-update --start
+octo-harness login --prepare-update --wait-drained
+octo-harness login --recover-update --start
 ```
 
 ## Daemon 生命周期
@@ -83,7 +83,6 @@ octo-harness logs query <agent-run-id>
 octo-harness events --run-id <agent-run-id>
 octo-harness events --follow
 octo-harness inspect
-octo-harness inspect url
 octo-harness daemon run --inspect-host 127.0.0.1 --inspect-port 23456
 octo-harness daemon install --inspect-host 127.0.0.1 --inspect-port 23456
 octo-harness agent-session list
@@ -94,7 +93,7 @@ octo-harness agent-run wait <agent-run-id>
 octo-harness agent-run cancel <agent-run-id>
 ```
 
-这些命令通过 Home 级 Unix socket 或 Windows named pipe 读取本地状态。`events` 默认输出约 6 MiB 有界内存中的当前快照并退出，只有 `--follow` 持续跟随；它不是完整 trajectory。`inspect` 由 daemon 懒启动，默认绑定 `127.0.0.1` 和 `20001–65535` 随机端口。Inspector 默认展示本机全量数据，页面内可按 profile 过滤 Runs、Events 与 Logs，并在浏览器 `localStorage` 中记住所选 profile。页面事件 DOM 上限为 2 MiB/1000 行，AgentRuns 上限为最近 100 个。生产创建、reset、权威状态、完整 trajectory 与 Human/Bot 授权仍由 Agent Worker / Octo Server API 或 `octo-cli harness` 负责。
+这些命令通过 Home 级 Unix socket 或 Windows named pipe 读取本地状态。`events` 默认输出约 6 MiB 有界内存中的当前快照并退出，只有 `--follow` 持续跟随；它不是完整 trajectory。Inspect HTTP/WS 端口随 daemon 启动并持续监听，默认绑定 `127.0.0.1` 和 `20001–65535` 随机端口；没有浏览器时不会创建 WS 订阅者。`inspect` 只输出 IP、端口与 Capability token 地址。Inspector 使用 React SPA 和虚拟列表，浏览器按最新优先保留最多 6000 条或约 6 MiB 事件；QL 和列筛选只操作现有列表与后续实时事件，不会重建 WS。生产创建、reset、权威状态、完整 trajectory 与 Human/Bot 授权仍由 Agent Worker / Octo Server API 或 `octo-cli harness` 负责。
 
 `daemon run` 直接接收 `--inspect-host` / `--inspect-port`；原生服务在 `daemon install` 时把这两个可选参数固化到 systemd、launchd 或 Windows 服务定义和 Harness Home。非回环绑定需要部署方提供 TLS 和网络访问控制；代理日志不得记录 capability 的 `?token=...` query。
 
@@ -114,6 +113,6 @@ octo-harness agent-run cancel <agent-run-id>
 
 一个 Harness Home 只允许一个 daemon 和一个 adapter-host。profile 目录无需在 Home 配置中注册或启用；每个合法 profile 都拥有独立 `system_id`、`runtime_id`、credential 和 Runtime WSS，共享机器级 provider 并发额度。
 
-`octo-daemon.pid` 只保存十进制进程 PID；永久身份保存在 profile 级 `identity/runtime.json`。POSIX credential 文件以 `0600` 写入。npm package 的程序文件不放在 Harness Home。旧版 Home 根目录 identity/token/DB 会在停机后的下一次 `login/setup` 中迁入 `default/`，被覆盖的旧副本保存在 `run/profile-layout-v1-backup/`。
+`octo-daemon.pid` 只保存十进制进程 PID；永久身份保存在 profile 级 `identity/runtime.json`。POSIX credential 文件以 `0600` 写入。npm package 的程序文件不放在 Harness Home。旧版 Home 根目录 identity/token/DB 会在停机后的下一次 `login` 中迁入 `default/`，被覆盖的旧副本保存在 `run/profile-layout-v1-backup/`。
 
-除帮助文本外，普通命令的正常结果输出 JSON；面向终端的 `events` 默认输出带来源标记的行（`--json` 输出原始 envelope），`inspect`/`inspect url` 输出可直接打开的 URL。错误输出到 stderr 并返回非零。`--help`、`login --help` 和 `daemon --help` 不依赖网络或已运行 daemon。
+除帮助文本外，普通命令的正常结果输出 JSON；面向终端的 `events` 默认输出带来源标记的行（`--json` 输出原始 envelope），`inspect` 输出可直接打开的 URL。错误输出到 stderr 并返回非零。`--help` 和 `login --help` 不依赖网络或已运行 daemon。

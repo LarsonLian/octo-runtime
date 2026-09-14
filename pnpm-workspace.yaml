@@ -2,6 +2,9 @@ packages:
   - "apps/*"
   - "packages/*"
 
+allowBuilds:
+  esbuild: true
+
 linkWorkspacePackages: true
 preferWorkspacePackages: true
 saveWorkspaceProtocol: true
