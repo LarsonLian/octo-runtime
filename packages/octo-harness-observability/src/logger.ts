@@ -56,6 +56,7 @@ const RPC_CORRELATION_TTL_MS = 24 * 60 * 60 * 1000;
 interface RpcCorrelation {
   rpcId?: string;
   rpcMethod?: string;
+  profile?: string;
   runId?: string;
   invocationId?: string;
   agentSessionId?: string;
@@ -161,6 +162,7 @@ export class LocalObservability {
       scope: "adapter-host.rpc",
       event: "rpc.frame",
       message: `adapter-host RPC ${direction}`,
+      profile: correlation.profile,
       runId: correlation.runId,
       invocationId: correlation.invocationId,
       agentSessionId: correlation.agentSessionId,
@@ -198,6 +200,7 @@ export class LocalObservability {
       scope: "provider.io",
       event: observation.event,
       message: providerObservationMessage(observation.event),
+      profile: identity.profile,
       runId: identity.runId,
       invocationId: identity.invocationId,
       agentSessionId: identity.agentSessionId,
@@ -375,10 +378,12 @@ export class LocalObservability {
       process_instance_id: this.#processInstanceId,
       seq: ++this.#seq,
       sensitivity,
+      ...(input.profile ? { profile: input.profile } : {}),
       ...(input.runId ? { run_id: input.runId } : {}),
       ...(input.invocationId ? { invocation_id: input.invocationId } : {}),
       ...(input.agentSessionId ? { agent_session_id: input.agentSessionId } : {}),
       ...(input.adapterType ? { adapter_type: input.adapterType } : {}),
+      ...(input.durationMs !== undefined ? { duration_ms: input.durationMs } : {}),
       ...(data ? { data } : {})
     };
   }
@@ -551,6 +556,7 @@ export class LocalObservability {
       scope: "provider.io",
       event: "capture.receipt",
       message: `provider capture ${state}`,
+      profile: identity.profile,
       runId: identity.runId,
       invocationId: identity.invocationId,
       agentSessionId: identity.agentSessionId,
@@ -591,6 +597,7 @@ export class LocalObservability {
     this.#expireRpcCorrelation(now);
     const params = isObjectRecord(value.params) ? value.params : {};
     const request = isObjectRecord(params.request) ? params.request : {};
+    const context = isObjectRecord(request.context) ? request.context : {};
     const result = isObjectRecord(value.result) ? value.result : {};
     const rpcId = typeof value.id === "string" || typeof value.id === "number" ? String(value.id) : undefined;
     const invocationId = optionalStringValue(request.invocationId)
@@ -599,6 +606,7 @@ export class LocalObservability {
     let correlation: RpcCorrelation = {
       rpcId,
       rpcMethod: optionalStringValue(value.method),
+      profile: optionalStringValue(context.profile),
       runId: optionalStringValue(request.runId) ?? optionalStringValue(params.runId),
       invocationId,
       agentSessionId: optionalStringValue(request.agentSessionId) ?? optionalStringValue(params.agentSessionId),

@@ -48,7 +48,7 @@ export interface RunSummary {
   occurredAt: string;
 }
 
-export type ConnectionState = "connecting" | "live" | "disconnected" | "auth-required";
+export type ConnectionState = "connecting" | "live" | "paused" | "disconnected" | "auth-required";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -136,8 +136,8 @@ function firstNumber(...values: unknown[]): number | undefined {
 
 function normalizeDirection(value: string): string {
   const normalized = value.toLowerCase();
-  if (normalized === "outbound" || normalized === "send" || normalized === "daemon_to_host") return "outbound";
-  if (normalized === "inbound" || normalized === "receive" || normalized === "host_to_daemon") return "inbound";
+  if (normalized === "outbound" || normalized === "provider_to_agent" || normalized === "host_to_daemon") return "outbound";
+  if (normalized === "inbound" || normalized === "agent_to_provider" || normalized === "daemon_to_host") return "inbound";
   return value;
 }
 

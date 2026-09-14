@@ -15,29 +15,38 @@ const app = await startDaemonServer({
   hostEntrypoint: join(root, "apps/adapter-host/dist/index.js")
 });
 const adapters = ["codebuddy", "claude_worker", "codex"];
-const stages = ["adapter.native", "adapter.canonical", "host.canonical", "runtime.dispatch"];
-const directions = ["outbound", "inbound"];
+const eventShapes = [
+  { source: "provider-native", stage: "adapter.native", direction: "inbound" },
+  { source: "adapter-canonical", stage: "adapter.canonical", direction: "outbound" },
+  { source: "host-canonical", stage: "host.canonical", direction: "outbound" },
+  { source: "runtime", stage: "runtime.dispatch", direction: "inbound" }
+];
 for (let index = 0; index < 116; index++) {
   const isError = index === 112;
   const isWarning = index === 108;
+  const shape = eventShapes[index % eventShapes.length];
   app.events.publish({
-    source: index % 3 === 0 ? "provider-native" : index % 3 === 1 ? "adapter-canonical" : "host-canonical",
-    stage: stages[index % stages.length],
-    direction: directions[index % directions.length],
+    ...shape,
     type: isError ? "invocation.failed" : isWarning ? "transport.retry" : index % 4 === 0 ? "message.delta" : "agent_run.updated",
     profile: "online-test",
     runId: `run-recent-${String(index).padStart(3, "0")}`,
+    agentSessionId: `asess-${String(Math.floor(index / 4)).padStart(4, "0")}`,
     invocationId: `inv-${String(index).padStart(4, "0")}`,
     adapterType: adapters[index % adapters.length],
+    durationMs: isError ? 1_684 : 28 + (index % 12) * 41,
     payload: {
-      agent_session_id: `asess-${String(Math.floor(index / 4)).padStart(4, "0")}`,
-      duration_ms: isError ? 1_684 : 28 + (index % 12) * 41,
       status: isError ? "failed" : isWarning ? "warning" : "ok",
       message: isError
         ? "Provider invocation failed while reading the response stream"
         : isWarning
           ? "Transport retry scheduled after a transient timeout"
-          : `Run ${index} emitted a recent event`
+          : `Run ${index} emitted a recent event`,
+      ...(isError ? {
+        raw_payload: Array.from({ length: 80 }, (_, line) => ({
+          line,
+          content: `Diagnostic payload line ${line}: provider stream terminated before its canonical terminal frame`
+        }))
+      } : {})
     }
   });
 }
@@ -47,18 +56,17 @@ process.stdout.write(`${result.url}\n`);
 let liveIndex = 116;
 const liveTimer = setInterval(() => {
   const index = liveIndex++;
+  const shape = eventShapes[index % eventShapes.length];
   app.events.publish({
-    source: index % 2 === 0 ? "provider-native" : "adapter-canonical",
-    stage: stages[index % stages.length],
-    direction: directions[index % directions.length],
+    ...shape,
     type: index % 7 === 0 ? "tool_call.completed" : "message.delta",
     profile: "online-test",
     runId: `run-live-${String(Math.floor(index / 6)).padStart(3, "0")}`,
+    agentSessionId: `asess-live-${String(Math.floor(index / 12)).padStart(3, "0")}`,
     invocationId: `inv-${String(index).padStart(4, "0")}`,
     adapterType: adapters[index % adapters.length],
+    durationMs: 18 + (index % 9) * 37,
     payload: {
-      agent_session_id: `asess-live-${String(Math.floor(index / 12)).padStart(3, "0")}`,
-      duration_ms: 18 + (index % 9) * 37,
       status: "ok",
       message: `Streaming frame ${index} received from the local daemon`
     }

@@ -66,20 +66,82 @@ test("LiveEventBus filters snapshots without waiting and follows new matching ev
   await stream.return();
 });
 
+test("LiveEventBus can follow from the current tail without replaying its snapshot", async () => {
+  const bus = new LiveEventBus();
+  bus.publish({ source: "daemon", type: "before-pause", payload: {} });
+  const controller = new AbortController();
+  const stream = bus.subscribeBytes({}, true, controller.signal, false);
+  const pending = stream.next();
+  bus.publish({ source: "daemon", type: "after-resume", payload: {} });
+  const result = await pending;
+  assert.equal(JSON.parse(result.value.toString("utf8")).type, "after-resume");
+  controller.abort();
+  await stream.return();
+  assert.equal(bus.stats.subscribers, 0);
+});
+
 test("LiveEventBus emits the v1 envelope and strips private reasoning", async () => {
   const bus = new LiveEventBus();
   bus.publish({
     source: "provider-native",
     type: "provider.output",
+    profile: "work",
     runId: "run-safe",
+    agentSessionId: "session-safe",
+    invocationId: "invoke-safe",
+    adapterType: "codebuddy",
+    durationMs: 312.5,
     payload: { exposure: "private_reasoning", reasoning: "secret chain", summary: "public answer" }
   });
   const values = [];
   for await (const event of bus.subscribe()) values.push(event);
   assert.equal(values[0].schema, "octo-harness.live-event/v1");
+  assert.equal(values[0].stage, "adapter.native");
+  assert.equal(values[0].direction, "outbound");
+  assert.equal(values[0].profile, "work");
   assert.equal(values[0].agent_run_id, "run-safe");
+  assert.equal(values[0].agent_session_id, "session-safe");
+  assert.equal(values[0].invocation_id, "invoke-safe");
+  assert.equal(values[0].adapter_type, "codebuddy");
+  assert.equal(values[0].duration_ms, 312.5);
   assert.doesNotMatch(JSON.stringify(values[0]), /secret chain/);
   assert.match(JSON.stringify(values[0]), /public answer/);
+});
+
+test("LiveEventBus maps observability records to canonical stages, directions, and identity headers", async () => {
+  const bus = new LiveEventBus();
+  const base = {
+    schema_version: 1,
+    ts: "2026-09-15T00:00:00.000Z",
+    level: "trace",
+    component: "daemon",
+    scope: "adapter-host.rpc",
+    event: "rpc.frame",
+    message: "adapter-host RPC",
+    pid: 42,
+    process_instance_id: "proc-test",
+    seq: 1,
+    sensitivity: "restricted",
+    profile: "work",
+    run_id: "run-rpc",
+    agent_session_id: "session-rpc",
+    invocation_id: "invoke-rpc",
+    adapter_type: "codebuddy",
+    duration_ms: 17.25
+  };
+  bus.publishRecord({ ...base, data: { direction: "send", frame: { method: "invoke" } } });
+  bus.publishRecord({ ...base, seq: 2, data: { direction: "receive", frame: { method: "invoke.event" } } });
+  const values = [];
+  for await (const event of bus.subscribe()) values.push(event);
+  assert.deepEqual(values.map(event => [event.stage, event.direction]), [
+    ["wire.daemon_host", "inbound"],
+    ["wire.daemon_host", "outbound"]
+  ]);
+  assert.deepEqual(
+    values.map(event => [event.profile, event.agent_run_id, event.agent_session_id, event.invocation_id, event.adapter_type]),
+    Array.from({ length: 2 }, () => ["work", "run-rpc", "session-rpc", "invoke-rpc", "codebuddy"])
+  );
+  assert.deepEqual(values.map(event => event.duration_ms), [17.25, 17.25]);
 });
 
 test("LiveEventBus aborts an idle follower without leaking a subscriber", async () => {

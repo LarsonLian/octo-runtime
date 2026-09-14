@@ -167,6 +167,16 @@ button:disabled {
   color: #92400e;
 }
 
+.connection-badge--paused {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.connection-badge--paused > i {
+  background: #94a3b8;
+}
+
 .connection-badge--connecting > i {
   background: #f59e0b;
 }
@@ -245,7 +255,7 @@ button:disabled {
   padding: 0 8px;
   color: #334155;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .stream-control button:hover,
@@ -331,7 +341,11 @@ button:disabled {
 
 .filter-bar {
   z-index: 20;
+  display: flex;
   flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
   border-bottom: 1px solid #e2e8f0;
   background: #fff;
   padding: 8px 16px;
@@ -340,6 +354,7 @@ button:disabled {
 
 .filter-row {
   display: flex;
+  width: 100%;
   min-width: 0;
   align-items: center;
   gap: 10px;
@@ -414,7 +429,7 @@ button:disabled {
   padding: 0 9px;
   color: #475569;
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .quick-filters button i {
@@ -551,7 +566,7 @@ button:disabled {
   padding: 5px 10px;
   color: #475569;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   user-select: none;
 }
 
@@ -664,6 +679,16 @@ button:disabled {
   font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+.sequence-cell b {
+  font-weight: 500;
+}
+
+.event-item--new .sequence-cell b,
+.event-item--warning .sequence-cell b,
+.event-item--error .sequence-cell b {
+  font-weight: 700;
+}
+
 .row-chevron {
   width: 15px;
   height: 15px;
@@ -693,12 +718,12 @@ button:disabled {
   align-items: center;
   gap: 6px;
   overflow: hidden;
-  border: 1px solid #c7d2fe;
+  border: 1px solid var(--badge-border, #cbd5e1);
   border-radius: 3px;
-  background: #eef2ff99;
+  background: var(--badge-background, #f8fafc);
   padding: 3px 6px;
-  color: #3730a3;
-  font: 600 10.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--badge-color, #334155);
+  font: 500 10.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -709,17 +734,63 @@ button:disabled {
   height: 6px;
   flex: 0 0 6px;
   border-radius: 50%;
-  background: #6366f1;
+  background: var(--badge-dot, #64748b);
+}
+
+.stage-badge--adapter {
+  --badge-background: #eef2ff;
+  --badge-border: #c7d2fe;
+  --badge-color: #3730a3;
+  --badge-dot: #6366f1;
+}
+
+.stage-badge--wire {
+  --badge-background: #f0f9ff;
+  --badge-border: #bae6fd;
+  --badge-color: #075985;
+  --badge-dot: #0ea5e9;
+}
+
+.stage-badge--host {
+  --badge-background: #ecfdf5;
+  --badge-border: #a7f3d0;
+  --badge-color: #065f46;
+  --badge-dot: #10b981;
+}
+
+.stage-badge--runtime {
+  --badge-background: #fffbeb;
+  --badge-border: #fde68a;
+  --badge-color: #92400e;
+  --badge-dot: #f59e0b;
+}
+
+.stage-badge--outbox {
+  --badge-background: #f0fdfa;
+  --badge-border: #99f6e4;
+  --badge-color: #115e59;
+  --badge-dot: #14b8a6;
+}
+
+.stage-badge--system {
+  --badge-background: #f1f5f9;
+  --badge-border: #cbd5e1;
+  --badge-color: #334155;
+  --badge-dot: #64748b;
+}
+
+.stage-badge--unknown {
+  --badge-background: #fff1f2;
+  --badge-border: #fecdd3;
+  --badge-color: #9f1239;
+  --badge-dot: #f43f5e;
 }
 
 .adapter-badge {
-  border-color: #e2e8f0;
-  background: #f8fafc;
-  color: #334155;
-}
-
-.adapter-badge i {
-  background: #818cf8;
+  --badge-background: #f8fafc;
+  --badge-border: #e2e8f0;
+  --badge-color: #334155;
+  --badge-dot: #94a3b8;
 }
 
 .direction-badge {
@@ -770,7 +841,7 @@ button:disabled {
   overflow: hidden;
   max-width: 44%;
   color: #1e293b;
-  font: 650 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: 600 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -820,10 +891,14 @@ button:disabled {
   height: 11px;
 }
 
-.event-time,
+.event-time {
+  color: #475569;
+  font: 400 10.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 .duration {
   color: #475569;
-  font: 600 10.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: 500 10.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .duration--fast {
@@ -884,7 +959,7 @@ button:disabled {
   padding: 0 8px;
   color: #475569;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .detail-copy:hover,
@@ -919,7 +994,7 @@ button:disabled {
   margin-bottom: 6px;
   color: #334155;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .context-panel > div {
@@ -1027,8 +1102,8 @@ button:disabled {
 }
 
 .json-panel pre {
-  max-height: 210px;
-  overflow: auto;
+  max-height: none;
+  overflow-x: auto;
   margin: 0;
   padding: 7px 0;
   color: #dbeafe;
@@ -1334,7 +1409,7 @@ button:disabled {
   }
 
   .view-tabs {
-    max-width: calc(100vw - 122px);
+    max-width: calc(100vw - 18px);
     overflow-x: auto;
   }
 

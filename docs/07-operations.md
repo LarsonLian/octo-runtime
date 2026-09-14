@@ -47,6 +47,9 @@ subscribers; only the byte-bounded daemon event ring remains resident. The
 independently retains at most 6000 events or about 6 MiB, prepends the newest frames, and uses TanStack Virtual
 to render only visible rows; its recent AgentRuns index retains 100 IDs without
 copying event payloads. Changing the local QL filter never reconnects the socket.
+Pausing, scrolling away from the top, or expanding an event closes the current
+WebSocket and freezes the view. Resume follows from the daemon ring's current
+tail, intentionally skipping frames emitted during the pause.
 After a disconnect the browser retries after 1, 2, 5, 10 and 30 seconds, then
 stops until manual retry. `daemon run` consumes explicit
 `--inspect-host` / `--inspect-port` values directly. `daemon install` persists

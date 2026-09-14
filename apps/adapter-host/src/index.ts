@@ -78,7 +78,10 @@ const host = new AdapterHost({
   canonicalSink: (identity, event) => emitObservation({
     source: "adapter-canonical",
     type: event.type,
+    profile: identity.profile,
     runId: identity.runId,
+    agentSessionId: identity.agentSessionId,
+    invocationId: identity.invocationId,
     adapterType: identity.adapterType,
     payload: event
   })

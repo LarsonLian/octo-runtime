@@ -191,7 +191,7 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
     const token = context.flags.enrollTokenStdin === true
       ? await readEnrollmentToken(context.input)
       : undefined;
-    if (!token) throw new Error("first setup requires --enroll-token-stdin");
+    if (!token) throw new Error("first login requires --enroll-token-stdin");
     const runtimeName = optionalString(context.flags.runtimeName) ?? (hostname() || "Octo Harness Runtime");
     let pending = await readJsonFile<PendingEnrollment>(context.paths.pendingEnrollment);
     if (pending && pending.server_url !== serverUrl) {

@@ -270,8 +270,13 @@ export async function startDaemonServer({
       for await (const event of readyHost().client.invoke(adapterType, request)) {
         events.publish({
           source: "host-canonical",
+          stage: "host.canonical",
+          direction: "outbound",
           type: event.type,
+          profile: optionalString(request.context?.profile),
           runId: request.runId,
+          agentSessionId: request.agentSessionId,
+          invocationId: request.invocationId,
           adapterType,
           payload: event
         });
@@ -905,8 +910,13 @@ function publishAdapterObservation(events: LiveEventBus, value: unknown): void {
   if (value.source !== "adapter-canonical" || typeof value.type !== "string") return;
   events.publish({
     source: "adapter-canonical",
+    stage: "adapter.canonical",
+    direction: "outbound",
     type: value.type,
+    profile: optionalString(value.profile),
     runId: optionalString(value.runId),
+    agentSessionId: optionalString(value.agentSessionId),
+    invocationId: optionalString(value.invocationId),
     adapterType: optionalString(value.adapterType),
     payload: value.payload
   });

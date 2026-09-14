@@ -277,6 +277,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
   });
   let registrationBody;
   let runtime;
+  let invokedRequest;
 
   httpServer.on("request", async (request, response) => {
     let body = "";
@@ -331,7 +332,10 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     const host = {
       list: async () => [{ type: "codex", capabilities: [] }],
       cancel: async () => ({ cancelled: true }),
-      async *invoke() { yield { type: "run.finished", payload: {} }; }
+      async *invoke(_adapterType, request) {
+        invokedRequest = request;
+        yield { type: "run.finished", payload: {} };
+      }
     };
     runtime = new AgentWorkRuntime({
       baseUrl: `http://127.0.0.1:${address.port}`,
@@ -340,6 +344,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
       subjectId: "device-observed",
       runtimeName: "runtime-observed",
       fingerprint: "runtime:observed",
+      profile: "work",
       storePath: join(directory, "agent-work.db")
     }, host, logger);
     await runtime.start();
@@ -350,12 +355,17 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     assert.equal(registrationBody.runtime_version, "0.1.0");
     assert.equal(registrationBody.protocol_version_min, 1);
     assert.equal(registrationBody.protocol_version_max, 1);
+    assert.equal(invokedRequest.context.profile, "work");
     await runtime.close();
     runtime = undefined;
     const trace = await logger.query({ runId: "run-observed" });
     assert.ok(trace.some(record => record.event === "agent_run.received" && record.data.trigger_occurrence_id === "message/observed"));
     assert.ok(trace.some(record => record.event === "adapter.selected" && record.adapter_type === "codex"));
     assert.ok(trace.some(record => record.event === "adapter.invoke.started" && record.invocation_id));
+    assert.ok(trace.some(record => record.event === "adapter.invoke.completed"
+      && Number.isInteger(record.duration_ms)
+      && record.duration_ms >= 0));
+    assert.ok(trace.every(record => record.profile === "work"));
     assert.ok(trace.some(record => record.event === "transport.message.received" && record.data.frame_type === "runtime.command"));
     const all = await logger.query({ limit: 500 });
     const opened = all.find(record => record.event === "transport.connection.opened" && record.scope === "transport.wss");

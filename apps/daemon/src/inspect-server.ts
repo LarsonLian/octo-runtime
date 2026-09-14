@@ -134,12 +134,18 @@ export class InspectServer {
       const runId = url.searchParams.get("runId") || undefined;
       const sourceValue = url.searchParams.get("source") || undefined;
       const source = isSource(sourceValue) ? sourceValue : undefined;
+      const replaySnapshot = url.searchParams.get("replay") !== "0";
       client.send(JSON.stringify({ kind: "status", status: this.#status(), memory: this.#events.stats }));
       const controller = new AbortController();
       client.once("close", () => controller.abort());
       void (async () => {
         try {
-          for await (const event of this.#events.subscribeBytes({ runId, source }, true, controller.signal)) {
+          for await (const event of this.#events.subscribeBytes(
+            { runId, source },
+            true,
+            controller.signal,
+            replaySnapshot
+          )) {
             if (client.readyState !== client.OPEN) break;
             await sendWebSocketFrame(client, event);
           }

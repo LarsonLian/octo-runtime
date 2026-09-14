@@ -93,7 +93,7 @@ octo-harness agent-run wait <agent-run-id>
 octo-harness agent-run cancel <agent-run-id>
 ```
 
-这些命令通过 Home 级 Unix socket 或 Windows named pipe 读取本地状态。`events` 默认输出约 6 MiB 有界内存中的当前快照并退出，只有 `--follow` 持续跟随；它不是完整 trajectory。Inspect HTTP/WS 端口随 daemon 启动并持续监听，默认绑定 `127.0.0.1` 和 `20001–65535` 随机端口；没有浏览器时不会创建 WS 订阅者。`inspect` 只输出 IP、端口与 Capability token 地址。Inspector 使用 React SPA 和虚拟列表，浏览器按最新优先保留最多 6000 条或约 6 MiB 事件；QL 和列筛选只操作现有列表与后续实时事件，不会重建 WS。生产创建、reset、权威状态、完整 trajectory 与 Human/Bot 授权仍由 Agent Worker / Octo Server API 或 `octo-cli harness` 负责。
+这些命令通过 Home 级 Unix socket 或 Windows named pipe 读取本地状态。`events` 默认输出约 6 MiB 有界内存中的当前快照并退出，只有 `--follow` 持续跟随；它不是完整 trajectory。Inspect HTTP/WS 端口随 daemon 启动并持续监听，默认绑定 `127.0.0.1` 和 `20001–65535` 随机端口；没有浏览器时不会创建 WS 订阅者。`inspect` 只输出 IP、端口与 Capability token 地址。Inspector 使用 React SPA 和虚拟列表，浏览器按最新优先保留最多 6000 条或约 6 MiB 事件；QL 和列筛选只操作现有列表与后续实时事件，不会重建 WS。暂停接收、滚离顶部或展开事件会关闭当前 WS 并固定视图；恢复时从 daemon ring 当前尾部继续，不补回暂停期间的事件。生产创建、reset、权威状态、完整 trajectory 与 Human/Bot 授权仍由 Agent Worker / Octo Server API 或 `octo-cli harness` 负责。
 
 `daemon run` 直接接收 `--inspect-host` / `--inspect-port`；原生服务在 `daemon install` 时把这两个可选参数固化到 systemd、launchd 或 Windows 服务定义和 Harness Home。非回环绑定需要部署方提供 TLS 和网络访问控制；代理日志不得记录 capability 的 `?token=...` query。
 

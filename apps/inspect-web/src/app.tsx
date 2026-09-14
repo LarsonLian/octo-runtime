@@ -42,6 +42,7 @@ const VIEWS: Array<{ name: ViewName; label: string; icon: typeof Activity }> = [
 ];
 
 const EMPTY_COLUMN_FILTERS: ColumnFilters = { stage: "", direction: "", adapter: "" };
+type PauseReason = "manual" | "scroll" | "expand";
 
 export function App() {
   const store = useMemo(() => new InspectStore(), []);
@@ -54,7 +55,7 @@ export function App() {
   const [token, setToken] = useState(initialCapabilityToken);
   const [tokenInput, setTokenInput] = useState(token);
   const [view, setView] = useState<ViewName>("events");
-  const [lockTop, setLockTop] = useState(true);
+  const [pauseReason, setPauseReason] = useState<PauseReason>();
   const [onlyErrors, setOnlyErrors] = useState(false);
   const [columnFilters, setColumnFilters] = useState<ColumnFilters>(EMPTY_COLUMN_FILTERS);
   const [helpOpen, setHelpOpen] = useState(() => location.pathname === "/help");
@@ -90,6 +91,7 @@ export function App() {
     store.setLogs([]);
     setLogsState("idle");
     setView("events");
+    setPauseReason(undefined);
     setTokenInput(parsed);
     setToken(parsed);
   };
@@ -100,8 +102,16 @@ export function App() {
     setColumnFilters(EMPTY_COLUMN_FILTERS);
   };
 
-  const sourceRecords = view === "logs" ? snapshot.filteredLogs : snapshot.filteredEvents;
-  const visibleRecords = filterRecords(sourceRecords, onlyErrors, columnFilters);
+  const pauseStream = (reason: PauseReason): void => {
+    if (!pauseReason) transport.pause();
+    setPauseReason(current => reason === "expand" && current === "scroll" ? reason : current ?? reason);
+  };
+  const resumeStream = (): void => {
+    setPauseReason(undefined);
+    transport.resume();
+  };
+  const sourceRecords = view === "logs" ? snapshot.logs : snapshot.filteredEvents;
+  const visibleRecords = filterRecords(sourceRecords, view === "events" && onlyErrors, columnFilters);
   const errorCount = snapshot.events.filter(record => record.status === "error").length;
   const wsUrl = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/events`;
   const serverBytes = typeof snapshot.serverMemory.retainedBytes === "number" ? snapshot.serverMemory.retainedBytes : 0;
@@ -134,10 +144,15 @@ export function App() {
               <span><em>已缓存:</em> <b>{snapshot.events.length.toLocaleString()} 条</b></span>
             </div>
             <div className="stream-control">
-              <button type="button" aria-pressed={!lockTop} onClick={() => setLockTop(value => !value)}>
+              <button
+                type="button"
+                aria-label={pauseReason ? "恢复接收" : "暂停接收"}
+                aria-pressed={Boolean(pauseReason)}
+                onClick={() => pauseReason ? resumeStream() : pauseStream("manual")}
+              >
                 <span className={cn("stream-dot", snapshot.connection === "live" && "stream-dot--live")} />
-                {lockTop ? <Pause /> : <Play />}
-                <span>{lockTop ? "暂停置顶" : "恢复置顶"}</span>
+                {pauseReason ? <Play /> : <Pause />}
+                <span>{pauseReason ? "恢复接收" : "暂停接收"}</span>
               </button>
               <span title="达到队列上限时淘汰最旧事件">上限 6,000 条 (自动环形淘汰)</span>
             </div>
@@ -171,21 +186,21 @@ export function App() {
         )}
 
         <section className="filter-bar">
-          <div className="filter-row">
-            <div className="view-tabs" role="tablist" aria-label="Inspect 数据视图">
-              {VIEWS.map(item => (
-                <button
-                  key={item.name}
-                  type="button"
-                  role="tab"
-                  aria-selected={view === item.name}
-                  onClick={() => selectView(item.name)}
-                >
-                  <item.icon />{item.label}
-                </button>
-              ))}
-            </div>
-            {(view === "events" || view === "logs") && (
+          <div className="view-tabs" role="tablist" aria-label="Inspect 数据视图">
+            {VIEWS.map(item => (
+              <button
+                key={item.name}
+                type="button"
+                role="tab"
+                aria-selected={view === item.name}
+                onClick={() => selectView(item.name)}
+              >
+                <item.icon />{item.label}
+              </button>
+            ))}
+          </div>
+          {view === "events" && (
+            <div className="filter-row">
               <div className="query-wrap">
                 <QueryInput
                   value={snapshot.query}
@@ -194,17 +209,17 @@ export function App() {
                   onChange={query => store.setQuery(query)}
                 />
               </div>
-            )}
-            <div className="quick-filters">
-              <button type="button" className={!onlyErrors ? "quick-filter--active" : ""} onClick={() => setOnlyErrors(false)}>
-                <i className="all-dot" />全部 ({sourceRecords.length.toLocaleString()})
-              </button>
-              <button type="button" className={cn("quick-filter--error", onlyErrors && "quick-filter--selected")} onClick={() => setOnlyErrors(true)}>
-                <i />仅看异常 ({sourceRecords.filter(record => record.status === "error").length.toLocaleString()})
-              </button>
-              <button type="button" className="reset-action" onClick={resetFilters}><RotateCcw />重置</button>
+              <div className="quick-filters">
+                <button type="button" className={!onlyErrors ? "quick-filter--active" : ""} onClick={() => setOnlyErrors(false)}>
+                  <i className="all-dot" />全部 ({sourceRecords.length.toLocaleString()})
+                </button>
+                <button type="button" className={cn("quick-filter--error", onlyErrors && "quick-filter--selected")} onClick={() => setOnlyErrors(true)}>
+                  <i />仅看异常 ({sourceRecords.filter(record => record.status === "error").length.toLocaleString()})
+                </button>
+                <button type="button" className="reset-action" onClick={resetFilters}><RotateCcw />重置</button>
+              </div>
             </div>
-          </div>
+          )}
         </section>
 
         <main className="workspace">
@@ -212,9 +227,12 @@ export function App() {
             <EventStream
               records={visibleRecords}
               allRecords={sourceRecords}
-              lockTop={lockTop}
+              paused={Boolean(pauseReason)}
+              pauseReason={pauseReason}
               live={snapshot.connection === "live"}
               filters={columnFilters}
+              onPause={pauseStream}
+              onResume={resumeStream}
               onFiltersChange={setColumnFilters}
               onQuickFilter={(field, value) => store.setQuery(`${field}="${value.replaceAll('"', '\\"')}"`)}
             />
@@ -227,9 +245,11 @@ export function App() {
             <EventStream
               records={visibleRecords}
               allRecords={sourceRecords}
-              lockTop={false}
+              paused={false}
               live={false}
               filters={columnFilters}
+              onPause={() => undefined}
+              onResume={() => undefined}
               onFiltersChange={setColumnFilters}
               onQuickFilter={(field, value) => store.setQuery(`${field}="${value.replaceAll('"', '\\"')}"`)}
             />
@@ -282,7 +302,7 @@ function ConnectionState({ state, message, url }: { state: string; message: stri
   return (
     <span className={cn("connection-badge", `connection-badge--${state}`)} title={message}>
       <i />
-      <b>{state === "live" ? "WS 已连接" : state === "connecting" ? "WS 连接中" : "WS 已断开"}</b>
+      <b>{state === "live" ? "WS 已连接" : state === "connecting" ? "WS 连接中" : state === "paused" ? "WS 已暂停" : "WS 已断开"}</b>
       <em>·</em>
       <span>{url}</span>
     </span>

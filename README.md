@@ -139,7 +139,7 @@ pnpm cli daemon run --inspect-host 127.0.0.1 --inspect-port 23456
 pnpm cli daemon install --inspect-host 127.0.0.1 --inspect-port 23456
 ```
 
-`events` 直接读取 daemon 中约 6 MiB 的有界内存事件流，默认输出当前保留快照后退出，`--follow` 才持续跟随；它不读取 SQLite，也不等同于完整 AgentRun trajectory。daemon 启动时即监听 Inspect HTTP/WS 端口，即使没有浏览器连接也保持端口可用于容器或云镜像映射；此时 WS 订阅者为零，只有有界事件 ring 常驻。`inspect` 只读取并输出带 Capability token 的地址，不打开浏览器。页面使用 React SPA 和 TanStack Virtual，在浏览器中按最新优先保留最多 6000 条或约 6 MiB 事件，实际只渲染可见行。QL 支持 `profile`、`source`、`stage`、`direction`、`type`、`adapter_type`、`session_id`、`agent_run_id`、`invocation_id`、`status`，以及 `=`、`!=`、`~=`、`and`、`or`。创建 AgentRun、reset AgentSession、查询云端权威状态或获取完整 trajectory，应调用 Agent Worker API 或 `octo-cli harness agent-run ...`。
+`events` 直接读取 daemon 中约 6 MiB 的有界内存事件流，默认输出当前保留快照后退出，`--follow` 才持续跟随；它不读取 SQLite，也不等同于完整 AgentRun trajectory。daemon 启动时即监听 Inspect HTTP/WS 端口，即使没有浏览器连接也保持端口可用于容器或云镜像映射；此时 WS 订阅者为零，只有有界事件 ring 常驻。`inspect` 只读取并输出带 Capability token 的地址，不打开浏览器。页面使用 React SPA 和 TanStack Virtual，在浏览器中按最新优先保留最多 6000 条或约 6 MiB 事件，实际只渲染可见行。手动暂停、滚离顶部或展开事件都会关闭当前 WS 并固定视图；恢复时从 daemon ring 的当前尾部继续，不补回暂停期间的事件。QL 支持 `profile`、`source`、`stage`、`direction`、`type`、`adapter_type`、`session_id`、`agent_run_id`、`invocation_id`、`status`，以及 `=`、`!=`、`~=`、`and`、`or`。创建 AgentRun、reset AgentSession、查询云端权威状态或获取完整 trajectory，应调用 Agent Worker API 或 `octo-cli harness agent-run ...`。
 
 显式 `--inspect-host` 可以用于云主机或容器；`daemon run` 直接使用参数，原生服务则在 `daemon install` 时把参数写入服务定义和 Harness Home，供后续 status/restart/update recovery 复用。监听非回环地址会暴露诊断接口，部署方必须提供 TLS 和网络访问控制，不能只依赖 URL 中的 Capability token。Capability 使用 `?token=...` 传入；反向代理、WAF 与 access log 必须禁止记录该 query 参数。
 

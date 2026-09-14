@@ -105,6 +105,7 @@ export class AdapterHost {
     // input to another Run while still letting it describe transport details.
     const context: AdapterInvocationContext = {
       observe: observation => this.#observe({
+        ...(typeof request.context?.profile === "string" ? { profile: request.context.profile } : {}),
         runId: request.runId,
         invocationId: request.invocationId,
         agentSessionId: request.agentSessionId,
@@ -162,6 +163,7 @@ export class AdapterHost {
       for await (const event of adapter.invoke({ ...request, signal: controller.signal }, context)) {
         assertCanonicalEvent(event);
         this.#canonicalSink?.({
+          ...(typeof request.context?.profile === "string" ? { profile: request.context.profile } : {}),
           runId: request.runId,
           invocationId: request.invocationId,
           agentSessionId: request.agentSessionId,

@@ -976,6 +976,7 @@ export class AgentWorkRuntime {
         this.#assertCurrentLifecycle(epoch);
         const mapped = mapExecutionEnvelope(executionEnvelope, contextSnapshot);
         request = mapped.request;
+        if (this.#options.profile) request.context.profile = this.#options.profile;
         adapterType = mapped.adapterType;
         agentSessionId = request.agentSessionId;
         const trigger = executionEnvelope.agent_run_request.trigger;
@@ -1207,6 +1208,7 @@ export class AgentWorkRuntime {
     let contextSnapshot = this.#contextStore?.markSubmitted(command.run_id);
     let started = false;
     let recoverySessionReported = false;
+    const invocationStartedAt = process.hrtime.bigint();
     // Keep execution, invocation, business namespace, and trigger occurrence
     // as distinct correlation domains.
     this.#log({
@@ -1281,7 +1283,8 @@ export class AgentWorkRuntime {
         runId: command.run_id,
         invocationId: request.invocationId,
         agentSessionId: request.agentSessionId,
-        adapterType
+        adapterType,
+        durationMs: elapsedMilliseconds(invocationStartedAt)
       });
     } catch (error) {
       this.#log({
@@ -1293,6 +1296,7 @@ export class AgentWorkRuntime {
         invocationId: request.invocationId,
         agentSessionId: request.agentSessionId,
         adapterType,
+        durationMs: elapsedMilliseconds(invocationStartedAt),
         data: { error: errorMessage(error) }
       });
       try {
@@ -1447,6 +1451,7 @@ export class AgentWorkRuntime {
   #log(input: LogInput): void {
     this.#observability?.log({
       ...input,
+      profile: input.profile ?? this.#options.profile,
       data: { ...input.data, ...(this.#options.profile ? { profile: this.#options.profile } : {}) }
     });
   }
@@ -1471,6 +1476,7 @@ export class AgentWorkRuntime {
       scope: "agent-work.runtime",
       event,
       message,
+      profile: this.#options.profile,
       data: {
         ...data,
         ...(this.#options.profile ? { profile: this.#options.profile } : {}),
@@ -1478,6 +1484,10 @@ export class AgentWorkRuntime {
       }
     });
   }
+}
+
+function elapsedMilliseconds(startedAt: bigint): number {
+  return Math.max(0, Math.round(Number(process.hrtime.bigint() - startedAt) / 1_000_000));
 }
 
 /** Accumulate the final-channel assistant text across message events so the

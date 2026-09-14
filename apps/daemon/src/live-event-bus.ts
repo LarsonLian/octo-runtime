@@ -21,6 +21,7 @@ export const LIVE_EVENT_SOURCES = [
   "control"
 ] as const;
 export type LiveEventSource = typeof LIVE_EVENT_SOURCES[number];
+export type LiveEventDirection = "inbound" | "outbound";
 
 export interface LiveEventEnvelope {
   schema: "octo-harness.live-event/v1";
@@ -28,12 +29,14 @@ export interface LiveEventEnvelope {
   occurred_at: string;
   source: LiveEventSource;
   stage: string;
-  direction?: string;
+  direction: LiveEventDirection;
   type: string;
   profile?: string;
   agent_run_id?: string;
+  agent_session_id?: string;
   invocation_id?: string;
   adapter_type?: string;
+  duration_ms?: number;
   payload: unknown;
 }
 
@@ -50,8 +53,10 @@ export interface LiveEventInput {
   type: string;
   profile?: string;
   runId?: string;
+  agentSessionId?: string;
   invocationId?: string;
   adapterType?: string;
+  durationMs?: number;
   occurredAt?: string;
   payload: unknown;
 }
@@ -130,18 +135,22 @@ export class LiveEventBus {
   publish(input: LiveEventInput): boolean {
     const seq = this.#nextSeq++;
     const payloadWithinLimit = estimatedJsonBytes(input.payload, this.#maxFrameBytes) <= this.#maxFrameBytes;
+    const stage = input.stage ?? defaultStage(input.source, input.type);
+    const direction = normalizeDirection(input.direction, input.source, input.type, stage);
     let envelope: LiveEventEnvelope = {
       schema: "octo-harness.live-event/v1",
       local_seq: seq,
       occurred_at: input.occurredAt ?? new Date().toISOString(),
       source: input.source,
-      stage: input.stage ?? defaultStage(input.source),
-      ...(input.direction ? { direction: input.direction } : {}),
+      stage,
+      direction,
       type: input.type,
       ...(input.profile ? { profile: input.profile } : {}),
       ...(input.runId ? { agent_run_id: input.runId } : {}),
+      ...(input.agentSessionId ? { agent_session_id: input.agentSessionId } : {}),
       ...(input.invocationId ? { invocation_id: input.invocationId } : {}),
       ...(input.adapterType ? { adapter_type: input.adapterType } : {}),
+      ...(input.durationMs !== undefined ? { duration_ms: input.durationMs } : {}),
       payload: payloadWithinLimit
         ? redactPrivateReasoning(redactCredentials(input.payload))
         : null
@@ -153,12 +162,15 @@ export class LiveEventBus {
         local_seq: seq,
         occurred_at: envelope.occurred_at,
         source: "control",
-        stage: "bus",
+        stage: "daemon.bus",
+        direction: envelope.direction,
         type: "event.oversize_dropped",
         ...(envelope.profile ? { profile: envelope.profile } : {}),
         ...(envelope.agent_run_id ? { agent_run_id: envelope.agent_run_id } : {}),
+        ...(envelope.agent_session_id ? { agent_session_id: envelope.agent_session_id } : {}),
         ...(envelope.invocation_id ? { invocation_id: envelope.invocation_id } : {}),
         ...(envelope.adapter_type ? { adapter_type: envelope.adapter_type } : {}),
+        ...(envelope.duration_ms !== undefined ? { duration_ms: envelope.duration_ms } : {}),
         payload: {
           affected_source: input.source,
           type: input.type,
@@ -213,15 +225,15 @@ export class LiveEventBus {
     return this.publish({
       source,
       type: record.event,
-      profile: typeof data.profile === "string" ? data.profile : undefined,
-      stage: defaultStage(source),
-      direction: source === "adapter-rpc"
-        ? data.direction === "send" ? "daemon_to_host" : "host_to_daemon"
-        : undefined,
+      profile: stringField(record.profile) ?? stringField(data.profile),
+      stage: stageForRecord(record, source),
+      direction: stringField(data.direction),
       occurredAt: record.ts,
-      runId: typeof record.run_id === "string" ? record.run_id : undefined,
-      invocationId: typeof record.invocation_id === "string" ? record.invocation_id : undefined,
-      adapterType: typeof record.adapter_type === "string" ? record.adapter_type : undefined,
+      runId: stringField(record.run_id),
+      agentSessionId: stringField(record.agent_session_id),
+      invocationId: stringField(record.invocation_id),
+      adapterType: stringField(record.adapter_type),
+      durationMs: numberField(record.duration_ms) ?? numberField(data.duration_ms),
       payload: source === "adapter-rpc" && data.frame !== undefined ? data.frame : record
     });
   }
@@ -233,12 +245,17 @@ export class LiveEventBus {
   }
 
   /** Yield the immutable ring frame directly so transports do not copy payloads. */
-  async *subscribeBytes(filter: LiveEventFilter = {}, follow = false, signal?: AbortSignal): AsyncGenerator<Buffer> {
+  async *subscribeBytes(
+    filter: LiveEventFilter = {},
+    follow = false,
+    signal?: AbortSignal,
+    replaySnapshot = true
+  ): AsyncGenerator<Buffer> {
     if (this.#subscribers >= this.#maxSubscribers) {
       throw Object.assign(new Error("live event subscriber limit reached"), { code: "BUS_SUBSCRIBER_LIMIT" });
     }
     this.#subscribers += 1;
-    let cursor = this.#oldestSeq();
+    let cursor = replaySnapshot ? this.#oldestSeq() : this.#nextSeq;
     const snapshotEnd = this.#nextSeq - 1;
     try {
       while (true) {
@@ -250,7 +267,8 @@ export class LiveEventBus {
             local_seq: cursor,
             occurred_at: new Date().toISOString(),
             source: "control",
-            stage: "bus",
+            stage: "daemon.bus",
+            direction: "inbound",
             type: "bus.gap",
             ...(filter.profile ? { profile: filter.profile } : {}),
             ...(filter.runId ? { agent_run_id: filter.runId } : {}),
@@ -405,8 +423,15 @@ function encode(value: LiveEventEnvelope): Buffer {
       local_seq: value.local_seq,
       occurred_at: value.occurred_at,
       source: "control",
-      stage: "bus",
+      stage: "daemon.bus",
+      direction: value.direction,
       type: "event.serialization_failed",
+      ...(value.profile ? { profile: value.profile } : {}),
+      ...(value.agent_run_id ? { agent_run_id: value.agent_run_id } : {}),
+      ...(value.agent_session_id ? { agent_session_id: value.agent_session_id } : {}),
+      ...(value.invocation_id ? { invocation_id: value.invocation_id } : {}),
+      ...(value.adapter_type ? { adapter_type: value.adapter_type } : {}),
+      ...(value.duration_ms !== undefined ? { duration_ms: value.duration_ms } : {}),
       payload: { error: error instanceof Error ? error.message : String(error) }
     } satisfies LiveEventEnvelope));
   }
@@ -421,18 +446,51 @@ function sourceForRecord(record: RecordEnvelope): LiveEventSource {
   return "daemon";
 }
 
-function defaultStage(source: LiveEventSource): string {
+function defaultStage(source: LiveEventSource, type = ""): string {
   const stages: Record<LiveEventSource, string> = {
-    daemon: "daemon",
-    "provider-native": "native",
-    "adapter-canonical": "canonical_pre_host",
-    "host-canonical": "canonical_post_host",
-    "adapter-rpc": "wire",
-    runtime: "runtime",
-    worker: "worker_transport",
-    control: "bus"
+    daemon: "daemon.bootstrap",
+    "provider-native": "adapter.native",
+    "adapter-canonical": "adapter.canonical",
+    "host-canonical": "host.canonical",
+    "adapter-rpc": "wire.daemon_host",
+    runtime: type.startsWith("run.") ? "runtime.outbox" : "runtime.dispatch",
+    worker: "worker.transport",
+    control: "daemon.bus"
   };
   return stages[source];
+}
+
+function stageForRecord(record: RecordEnvelope, source: LiveEventSource): string {
+  if (source === "runtime") {
+    return record.scope === "agent-work.outbox" ? "runtime.outbox" : "runtime.dispatch";
+  }
+  if (source === "daemon" && record.scope !== "daemon.lifecycle") return "daemon.runtime";
+  return defaultStage(source, record.event);
+}
+
+function normalizeDirection(
+  value: string | undefined,
+  source: LiveEventSource,
+  type: string,
+  stage: string
+): LiveEventDirection {
+  if (value === "inbound" || value === "agent_to_provider" || value === "daemon_to_host") return "inbound";
+  if (value === "outbound" || value === "provider_to_agent" || value === "host_to_daemon") return "outbound";
+  if (value === "send") return source === "adapter-rpc" ? "inbound" : "outbound";
+  if (value === "receive") return source === "adapter-rpc" ? "outbound" : "inbound";
+  if (source === "adapter-canonical" || source === "host-canonical") return "outbound";
+  if (source === "provider-native") return type.startsWith("provider.output") ? "outbound" : "inbound";
+  if (source === "worker") return type === "command.received" ? "inbound" : "outbound";
+  if (stage === "runtime.outbox") return "outbound";
+  return "inbound";
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function numberField(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

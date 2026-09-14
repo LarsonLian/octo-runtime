@@ -33,10 +33,12 @@ export interface LogInput {
   event: string;
   message: string;
   data?: Record<string, unknown>;
+  profile?: string;
   runId?: string;
   invocationId?: string;
   agentSessionId?: string;
   adapterType?: string;
+  durationMs?: number;
 }
 
 export interface ProviderCarrierBytes {
@@ -72,6 +74,7 @@ export interface AdapterInvocationContext {
 }
 
 export interface ObservationIdentity {
+  profile?: string;
   runId: string;
   invocationId: string;
   agentSessionId: string;
@@ -123,6 +126,12 @@ export interface RecordEnvelope extends Record<string, unknown> {
   process_instance_id: string;
   seq: number;
   sensitivity: LogSensitivity;
+  profile?: string;
+  run_id?: string;
+  agent_session_id?: string;
+  invocation_id?: string;
+  adapter_type?: string;
+  duration_ms?: number;
 }
 
 export interface ActiveFile {

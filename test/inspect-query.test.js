@@ -52,17 +52,17 @@ test("inspect event normalization extracts table fields without inventing diagno
     type: "invocation.failed",
     profile: "work",
     agent_run_id: "run-9",
+    agent_session_id: "session-9",
     invocation_id: "inv-9",
     adapter_type: "codebuddy",
     payload: {
-      agent_session_id: "session-9",
       duration_ms: 1684,
       status: "failed",
       message: "Provider stream failed"
     }
   };
   const normalized = normalizeEvent(value, JSON.stringify(value));
-  assert.equal(normalized.direction, "outbound");
+  assert.equal(normalized.direction, "inbound");
   assert.equal(normalized.sessionId, "session-9");
   assert.equal(normalized.durationMs, 1684);
   assert.equal(normalized.status, "error");
