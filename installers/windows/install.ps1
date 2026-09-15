@@ -312,7 +312,7 @@ try {
     "--profile", $Profile,
     "login",
     "--server-url", $ServerUrl,
-    "--agent-work-url", "$($ServerUrl.TrimEnd('/'))/agent-worker",
+    "--agent-work-url", "$($ServerUrl.TrimEnd('/'))/agentworker",
     "--channel", $Channel,
     "--enroll-token-stdin"
   )

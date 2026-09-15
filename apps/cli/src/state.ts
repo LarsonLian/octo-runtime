@@ -55,14 +55,6 @@ export interface RuntimeCredential {
   expires_at?: string;
 }
 
-export interface PendingEnrollment {
-  schema_version: 1;
-  attempt_id: string;
-  system_id: string;
-  server_url: string;
-  created_at: string;
-}
-
 export interface UpdateJournal {
   schema_version: 1;
   phase: "prepared" | "recovered";
@@ -79,7 +71,6 @@ export interface HarnessPaths {
   profileConfig: string;
   identity: string;
   credential: string;
-  pendingEnrollment: string;
   updateJournal: string;
   setupLock: string;
   pid: string;
@@ -110,7 +101,6 @@ export function harnessPaths(home: string, profile: string): HarnessPaths {
     profileConfig: join(profileRoot, "config.json"),
     identity: join(profileRoot, "identity", "runtime.json"),
     credential: join(profileRoot, "credentials", "runtime-token.json"),
-    pendingEnrollment: join(profileRoot, "setup", "pending-enrollment.json"),
     updateJournal: join(absoluteHome, "run", "update.json"),
     setupLock: join(absoluteHome, "run", "setup.lock"),
     pid: join(absoluteHome, "octo-daemon.pid"),
@@ -138,8 +128,7 @@ export async function prepareHarnessDirectories(paths: HarnessPaths): Promise<vo
     secureDirectory(paths.logs),
     secureDirectory(dirname(paths.profileConfig)),
     secureDirectory(dirname(paths.identity)),
-    secureDirectory(dirname(paths.credential)),
-    secureDirectory(dirname(paths.pendingEnrollment))
+    secureDirectory(dirname(paths.credential))
   ]);
 }
 
@@ -150,7 +139,6 @@ export async function migrateLegacyProfileLayout(paths: HarnessPaths, daemonRunn
     ? [
         [join(paths.home, "identity", "runtime.json"), paths.identity],
         [join(paths.home, "credentials", "runtime-token.json"), paths.credential],
-        [join(paths.home, "setup", "pending-enrollment.json"), paths.pendingEnrollment],
         ...["agent-work.db", "agent-work.db-wal", "agent-work.db-shm"].map(name => [join(paths.home, name), join(paths.profileRoot, name)]),
         ...["channel-context.db", "channel-context.db-wal", "channel-context.db-shm"].map(name => [join(paths.home, name), join(paths.profileRoot, name)])
       ]

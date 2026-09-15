@@ -10,8 +10,8 @@ Octo 线上测试环境完成真实链路调试。
 - 本地开发的是设备侧 Harness。Human 身份、Space membership 和 enrollment grant 由
   依赖 `octo-auth` 的 Agent Worker 验证，Harness 不自行实现或绕过 Human 鉴权。
 - 测试环境的 Agent Worker 公网基址固定为
-  `https://im-test.deepminer.com.cn/agent-worker`。Octo Web/Nginx 去掉
-  `/agent-worker` 前缀后，再转发给 Worker 原生 `/api/v1/*` 接口。
+  `https://im-test.deepminer.com.cn/agentworker`。Octo Web/Nginx 去掉
+  `/agentworker` 前缀后，再转发给 Worker 原生 `/api/v1/*` 接口。
 - 开发时使用独立 Harness Home，避免覆盖正式安装产生的 Runtime 身份、credential、
   SQLite outbox、PID、socket 和日志。
 - enrollment token、device credential、Human token 和 provider token 都不能写入 Git、
@@ -23,18 +23,18 @@ Octo 线上测试环境完成真实链路调试。
 
 ```text
 Octo Web
-  -> POST /agent-worker/api/v1/device_enrollments
+  -> POST /agentworker/api/v1/device_enrollments
   -> octo-auth 验证 Human Token 与 X-Space-ID
   -> 返回短期、单次 octo_enroll_ token
 
 octo-harness login
-  -> POST /agent-worker/api/v1/devices/enroll
+  -> POST /agentworker/api/v1/devices/enroll
   -> 使用 octo_enroll_ 换取 octo_device_ credential
-  -> POST /agent-worker/api/v1/runtime/register
+  -> POST /agentworker/api/v1/runtime/register
   -> 持久化 runtime_id 与 device credential
 
 octo-harness daemon
-  -> WSS /agent-worker/api/v1/runtime/connect
+  -> WSS /agentworker/api/v1/runtime/connect
   -> 接收 run.start/run.cancel
   -> 调用本机 Provider CLI
   -> 回传 canonical events
@@ -142,14 +142,14 @@ curl -fsSL https://im-test.deepminer.com.cn/octo-harness/install.sh \
 
 无 credential 探测 Worker 路由时，应得到 Worker 的 JSON 鉴权/参数错误。若返回
 `404`、`405` 或 `Content-Type: text/html`，说明请求落入了旧 Web SPA fallback，
-`/agent-worker` 代理尚未部署或没有生效。
+`/agentworker/api` 代理尚未部署或没有生效。
 
 ```bash
 curl -i \
   -X POST \
   -H 'Content-Type: application/json' \
   --data '{}' \
-  https://im-test.deepminer.com.cn/agent-worker/api/v1/devices/enroll
+  https://im-test.deepminer.com.cn/agentworker/api/v1/devices/enroll
 ```
 
 Octo Web 部署必须满足：
@@ -161,15 +161,15 @@ AGENT_WORKER_API_URL=http://<test-agent-worker-service>:8092
 Nginx 必须发布以下能力：
 
 - `/octo-harness/install.sh` 和 `/octo-harness/install.ps1` 返回当前版本安装器；
-- `/agent-worker/*` 去掉公开前缀后转发到 Agent Worker；
-- `/agent-worker/api/v1/runtime/connect` 支持 WebSocket Upgrade。
+- `/agentworker/*` 去掉公开前缀后转发到 Agent Worker；
+- `/agentworker/api/v1/runtime/connect` 支持 WebSocket Upgrade。
 
 ### 当前测试环境状态
 
 2026-09-10 实测：
 
 - `/octo-harness/install.sh` 返回 Octo Web HTML，不是 shell 安装器；
-- `/agent-worker/api/v1/*` 返回 HTML/405，未进入 Agent Worker。
+- `/agentworker/api/v1/*` 返回 HTML/405，未进入 Agent Worker。
 
 因此当前可以完成本地 build 和 link，但在部署新版 `octo-web`、配置
 `AGENT_WORKER_API_URL` 并暴露 Agent Worker 前，不能完成线上 Runtime 注册和 WSS
@@ -193,14 +193,14 @@ printf '%s\n' "$OCTO_ENROLL_TOKEN" | octo-harness \
   --home "$OCTO_HARNESS_DEV_HOME" \
   login \
   --server-url https://im-test.deepminer.com.cn \
-  --agent-work-url https://im-test.deepminer.com.cn/agent-worker \
+  --agent-work-url https://im-test.deepminer.com.cn/agentworker \
   --enroll-token-stdin
 
 unset OCTO_ENROLL_TOKEN
 ```
 
-`--agent-work-url` 不能省略。CLI 自身省略该参数时会回退到 `--server-url`，从而请求
-错误的根路径 `/api/v1/*`；测试环境要求经过 `/agent-worker` facade。
+同域部署时可以省略 `--agent-work-url`，CLI 默认使用
+`SERVER_URL/agentworker`；只有 Worker 使用其他 origin 或路径时才需要显式覆盖。
 
 首次登录成功后，该 Home 已绑定 server、Agent Worker、`system_id`、`runtime_id` 和
 device credential。不要用同一个 Home 切换到另一个 Worker 或另一个身份；需要隔离时使用
@@ -340,7 +340,7 @@ link 不会直接执行 TypeScript 源码。重新运行 `pnpm build`，并重�
 当前 Home 仍绑定本地 Agent Worker。线上调试应使用：
 
 ```text
-https://im-test.deepminer.com.cn/agent-worker
+https://im-test.deepminer.com.cn/agentworker
 ```
 
 不要覆盖已有身份；使用新的 `.tmp/harness-home` 和新的 enrollment token。
@@ -348,7 +348,7 @@ https://im-test.deepminer.com.cn/agent-worker
 ### 登录返回 404、405 或 HTML
 
 检查是否传入了完整的 `--agent-work-url`，然后执行第 6 节的线上 readiness 检查。若
-`/agent-worker/*` 仍返回 SPA HTML，需要先修复测试环境部署，不是重复 npm link。
+`/agentworker/api/*` 仍返回 SPA HTML，需要先修复测试环境部署，不是重复 npm link。
 
 ### profile 已绑定另一个 server/Worker
 
@@ -392,5 +392,5 @@ Home；先停止 daemon，并确认该测试 Runtime 不再需要。需要撤销
 - [DEPLOYMENTS.md](DEPLOYMENTS.md)：本地 link、连接 Worker 和 npm 发布约定
 - [apps/cli/README.md](apps/cli/README.md)：CLI、service、doctor 和诊断命令
 - [docs/13-agent-work-runtime.md](docs/13-agent-work-runtime.md)：Agent Worker Runtime 协议
-- `../octo-web/nginx.conf.template`：测试环境 `/agent-worker` 反向代理
+- `../octo-web/nginx.conf.template`：测试环境 `/agentworker/api` 反向代理
 - `../octo-agent-worker/docs/01-http-api.md`：enrollment、register 和业务 API

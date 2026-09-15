@@ -89,10 +89,16 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
   worker.on("request", async (request, response) => {
     let body = "";
     for await (const chunk of request) body += chunk;
-    if (request.method === "POST" && request.url === "/api/v1/devices/enroll") {
+    if (request.method === "POST" && [
+      "/agentworker/api/v1/devices/enroll",
+      "/custom-worker/api/v1/devices/enroll"
+    ].includes(request.url)) {
       enrollmentCount += 1;
       const workProfile = request.headers.authorization === "Bearer octo_enroll_work";
       assert.ok(workProfile || request.headers.authorization === "Bearer octo_enroll_fixture");
+      assert.equal(request.url, workProfile
+        ? "/custom-worker/api/v1/devices/enroll"
+        : "/agentworker/api/v1/devices/enroll");
       assert.match(body, /"system_id":"system_/);
       response.writeHead(201, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       response.end(JSON.stringify({
@@ -107,10 +113,16 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
       }));
       return;
     }
-    if (request.method === "POST" && request.url === "/api/v1/runtime/register") {
+    if (request.method === "POST" && [
+      "/agentworker/api/v1/runtime/register",
+      "/custom-worker/api/v1/runtime/register"
+    ].includes(request.url)) {
       runtimeRegistrationCount += 1;
       const workProfile = request.headers.authorization === "Bearer octo_device_work_secret";
       assert.ok(workProfile || request.headers.authorization === "Bearer octo_device_fixture_secret");
+      assert.equal(request.url, workProfile
+        ? "/custom-worker/api/v1/runtime/register"
+        : "/agentworker/api/v1/runtime/register");
       assert.equal(request.headers["x-tenant-id"], undefined);
       assert.equal(request.headers["x-subject-id"], undefined);
       const registration = JSON.parse(body);
@@ -198,6 +210,7 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
       "--profile", "work",
       "login",
       "--server-url", serverUrl,
+      "--agent-work-url", `${serverUrl}/custom-worker`,
       "--enroll-token-stdin"
     ], { input: Readable.from(["octo_enroll_work\n"]) });
     assert.equal(workSetup.value.runtime_id, "runtime-work");

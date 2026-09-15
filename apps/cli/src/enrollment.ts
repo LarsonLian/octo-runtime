@@ -1,7 +1,5 @@
-import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { arch, hostname, platform } from "node:os";
-import type { PendingEnrollment } from "./state.js";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const MIN_AGENT_WORK_PROTOCOL_VERSION = 1;
@@ -13,7 +11,7 @@ export interface EnrollmentOptions {
   enrollmentToken: string;
   profile: string;
   runtimeName: string;
-  pending: PendingEnrollment;
+  systemId: string;
   agentWorkUrl?: string;
   fetchImplementation?: typeof fetch;
 }
@@ -31,20 +29,10 @@ export interface EnrollmentResult {
   expiresAt?: string;
 }
 
-export function createPendingEnrollment(serverUrl: string): PendingEnrollment {
-  return {
-    schema_version: 1,
-    attempt_id: randomUUID(),
-    system_id: `system_${randomUUID()}`,
-    server_url: normalizeServerUrl(serverUrl),
-    created_at: new Date().toISOString()
-  };
-}
-
 export async function enrollRuntime(options: EnrollmentOptions): Promise<EnrollmentResult> {
   const fetchImplementation = options.fetchImplementation ?? fetch;
   const serverUrl = normalizeServerUrl(options.serverUrl);
-  const agentWorkUrl = normalizeServerUrl(options.agentWorkUrl ?? serverUrl);
+  const agentWorkUrl = normalizeServerUrl(options.agentWorkUrl ?? `${serverUrl}/agentworker`);
   const enrollmentResponse = await fetchImplementation(`${agentWorkUrl}/api/v1/devices/enroll`, {
     method: "POST",
     redirect: "error",
@@ -52,10 +40,9 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
       Authorization: `Bearer ${options.enrollmentToken}`,
       "Content-Type": "application/json",
       Accept: "application/json",
-      "Cache-Control": "no-store",
-      "Idempotency-Key": options.pending.attempt_id
+      "Cache-Control": "no-store"
     },
-    body: JSON.stringify({ system_id: options.pending.system_id }),
+    body: JSON.stringify({ system_id: options.systemId }),
     signal: AbortSignal.timeout(15_000)
   });
   const enrolled = await responseObject(enrollmentResponse, "device enrollment");

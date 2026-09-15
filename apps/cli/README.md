@@ -29,7 +29,7 @@ printf '%s\n' 'octo_enroll_...' | octo-harness login \
 enrollment grant 和设备 credential 都不会进入 CLI argv、service definition 或输出。重复执行同一 profile 的 `login` 只对账身份，不重新 enrollment。服务安装与启动必须显式使用 `daemon install` 和 `daemon start`。常用开关：
 
 ```text
---agent-work-url URL    Worker 与 server origin 不同时显式指定
+--agent-work-url URL    覆盖 Worker 基址；默认使用 SERVER_URL/agentworker
 --runtime-name NAME     首次注册显示名
 --channel stable|beta   记录安装 channel，默认 stable
 ```

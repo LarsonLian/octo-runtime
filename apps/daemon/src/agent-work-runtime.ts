@@ -1599,12 +1599,12 @@ function executionAdapterType(envelope: ExecutionEnvelope): string {
 }
 
 function httpEndpointMetadata(baseUrl: string): Record<string, string> {
-  const url = new URL(baseUrl);
+  const url = new URL(`${stripSlash(baseUrl)}/api/v1/runtime/register`);
   return {
     scheme: url.protocol.slice(0, -1),
     host: url.hostname,
     port: url.port || (url.protocol === "https:" ? "443" : "80"),
-    path: "/api/v1/runtime/register"
+    path: url.pathname
   };
 }
 

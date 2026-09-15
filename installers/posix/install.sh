@@ -32,7 +32,7 @@ Environment overrides:
   OCTO_HARNESS_PROFILE       profile name (default: default)
   OCTO_HARNESS_HOME          state directory (default: ~/.octo-harness)
   OCTO_HARNESS_NPM_SPEC      npm package spec used instead of the channel default
-  OCTO_HARNESS_AGENT_WORK_URL  Agent Worker base (default: SERVER_URL/agent-worker)
+  OCTO_HARNESS_AGENT_WORK_URL  Agent Worker base (default: SERVER_URL/agentworker)
 EOF
 }
 
@@ -104,7 +104,7 @@ esac
 while [ "${SERVER_URL%/}" != "$SERVER_URL" ]; do
   SERVER_URL=${SERVER_URL%/}
 done
-[ -n "$AGENT_WORK_URL" ] || AGENT_WORK_URL="$SERVER_URL/agent-worker"
+[ -n "$AGENT_WORK_URL" ] || AGENT_WORK_URL="$SERVER_URL/agentworker"
 case "${SERVER_URL#https://}" in
   ""|/*) die "SERVER_URL must include a host" ;;
 esac

@@ -4,7 +4,6 @@ import net from "node:net";
 import { arch, hostname, platform as osPlatform, release } from "node:os";
 import type { ServiceBackend } from "@mininglamp-oss/octo-harness-cross-service";
 import {
-  createPendingEnrollment,
   enrollRuntime,
   normalizeServerUrl,
   type EnrollmentResult
@@ -23,7 +22,6 @@ import {
   writeJsonAtomic,
   type HarnessHomeConfiguration,
   type HarnessPaths,
-  type PendingEnrollment,
   type ProfileConfiguration,
   type RuntimeCredential,
   type RuntimeIdentity,
@@ -185,33 +183,33 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
   let identity = await readJsonFile<RuntimeIdentity>(context.paths.identity);
   let profileConfig = await readJsonFile<ProfileConfiguration>(context.paths.profileConfig);
   let enrolled = false;
+  const enrollmentToken = context.flags.enrollTokenStdin === true
+    ? await readEnrollmentToken(context.input)
+    : undefined;
 
-  if (!identity) {
-    const serverUrl = normalizeServerUrl(requiredFlag(context.flags.serverUrl, "server-url"));
-    const token = context.flags.enrollTokenStdin === true
-      ? await readEnrollmentToken(context.input)
-      : undefined;
-    if (!token) throw new Error("first login requires --enroll-token-stdin");
-    const runtimeName = optionalString(context.flags.runtimeName) ?? (hostname() || "Octo Harness Runtime");
-    let pending = await readJsonFile<PendingEnrollment>(context.paths.pendingEnrollment);
-    if (pending && pending.server_url !== serverUrl) {
-      throw new Error("pending enrollment belongs to a different server; verify the earlier attempt before removing it");
-    }
-    if (pending && (pending.schema_version !== 1 || !pending.attempt_id || !pending.system_id)) {
-      throw new Error("pending enrollment is invalid; remove it before starting a fresh enrollment");
-    }
-    pending ??= createPendingEnrollment(serverUrl);
-    await writeJsonAtomic(context.paths.pendingEnrollment, pending);
+  if (!identity || enrollmentToken) {
+    if (identity) validateIdentity(identity);
+    const requestedServerUrl = optionalString(context.flags.serverUrl) ?? profileConfig?.server_url;
+    if (!requestedServerUrl) throw new Error("first login requires --server-url");
+    if (!enrollmentToken) throw new Error("first login requires --enroll-token-stdin");
+    const serverUrl = normalizeServerUrl(requestedServerUrl);
+    const runtimeName = optionalString(context.flags.runtimeName)
+      ?? profileConfig?.runtime_name
+      ?? (hostname() || "Octo Harness Runtime");
+    const systemId = identity?.system_id ?? `system_${randomUUID()}`;
     const result = await enrollRuntime({
       serverUrl,
-      enrollmentToken: token,
+      enrollmentToken,
       profile: context.profile,
       runtimeName,
-      pending,
-      agentWorkUrl: optionalString(context.flags.agentWorkUrl),
+      systemId,
+      agentWorkUrl: optionalString(context.flags.agentWorkUrl) ?? profileConfig?.agent_work_url,
       fetchImplementation: context.fetchImplementation
     });
-    ({ identity, profileConfig } = await persistEnrollment(context, pending, result, runtimeName));
+    if (identity && result.runtimeId !== identity.runtime_id) {
+      throw new Error("re-enrollment returned a different runtime for the existing system identity");
+    }
+    ({ identity, profileConfig } = await persistEnrollment(context, serverUrl, systemId, result, runtimeName));
     enrolled = true;
   } else {
     validateIdentity(identity);
@@ -242,7 +240,8 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
 
 async function persistEnrollment(
   context: CliContext,
-  pending: PendingEnrollment,
+  serverUrl: string,
+  systemId: string,
   result: EnrollmentResult,
   runtimeName: string
 ): Promise<{ identity: RuntimeIdentity; profileConfig: ProfileConfiguration }> {
@@ -255,7 +254,7 @@ async function persistEnrollment(
     schema_version: 1,
     runtime_id: result.runtimeId,
     credential_id: result.credentialId,
-    system_id: pending.system_id,
+    system_id: systemId,
     ...(result.deviceId ? { device_id: result.deviceId } : {}),
     ...(result.workspaceId ? { workspace_id: result.workspaceId } : {}),
     ...(result.octoSpaceId ? { octo_space_id: result.octoSpaceId } : {}),
@@ -264,7 +263,7 @@ async function persistEnrollment(
   const profileConfig: ProfileConfiguration = {
     schema_version: 1,
     profile: context.profile,
-    server_url: pending.server_url,
+    server_url: serverUrl,
     ...(agentWorkUrl ? { agent_work_url: agentWorkUrl } : {}),
     ...(result.tenantId ? { tenant_id: result.tenantId } : {}),
     ...(result.subjectId ? { subject_id: result.subjectId } : {}),
@@ -276,12 +275,10 @@ async function persistEnrollment(
     issued_at: now,
     ...(result.expiresAt ? { expires_at: result.expiresAt } : {})
   };
-  // Identity is the commit marker. Until it lands, the pending enrollment can
-  // be retried idempotently after any interrupted file write.
+  // Identity is written last so incomplete local state is never treated as enrolled.
   await writeJsonAtomic(context.paths.credential, credential);
   await writeJsonAtomic(context.paths.profileConfig, profileConfig);
   await writeJsonAtomic(context.paths.identity, identity);
-  await removeIfPresent(context.paths.pendingEnrollment);
   return { identity, profileConfig };
 }
 
@@ -915,6 +912,7 @@ function helpText(group?: string): string {
     return `Usage: octo-harness [--home PATH] [--profile NAME] login [options]\n\n` +
       `First login:\n` +
       `  --server-url URL --enroll-token-stdin [--agent-work-url URL]\n\n` +
+      `  --agent-work-url defaults to SERVER_URL/agentworker.\n\n` +
       `Installer-only update modes:\n` +
       `  --prepare-update [--wait-drained] [--timeout-ms MS]\n` +
       `  --recover-update [--start]\n\n` +
