@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { arch, hostname, platform } from "node:os";
+import { assertProfileName } from "./state.js";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const MIN_AGENT_WORK_PROTOCOL_VERSION = 1;
@@ -19,6 +20,7 @@ export interface EnrollmentOptions {
 }
 
 export interface EnrollmentResult {
+  profile: string;
   runtimeId: string;
   credentialId: string;
   accessToken?: string;
@@ -29,6 +31,7 @@ export interface EnrollmentResult {
 }
 
 export async function enrollRuntime(options: EnrollmentOptions): Promise<EnrollmentResult> {
+  assertProfileName(options.profile);
   const fetchImplementation = options.fetchImplementation ?? fetch;
   const serverUrl = normalizeServerUrl(options.serverUrl);
   const agentWorkUrl = normalizeServerUrl(options.agentWorkUrl ?? `${serverUrl}/agentworker`);
@@ -42,7 +45,7 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
       Accept: "application/json",
       "Cache-Control": "no-store"
     },
-    body: JSON.stringify({ machine_id: options.machineId, ...(options.runtimeId ? { runtime_id: options.runtimeId } : {}) }),
+    body: JSON.stringify({ profile: options.profile, machine_id: options.machineId, ...(options.runtimeId ? { runtime_id: options.runtimeId } : {}) }),
     signal: AbortSignal.timeout(15_000)
   });
   const enrolled = await responseObject(enrollmentResponse, "runtime enrollment");
@@ -57,6 +60,7 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
     throw new Error("runtime enrollment response is missing credential or Octo binding");
   }
   if (options.runtimeId && enrolledRuntimeId !== options.runtimeId) throw new Error("enrollment returned a different Runtime identity");
+  if (enrolledRuntime?.profile !== options.profile) throw new Error("runtime enrollment returned a different or missing profile");
 
   const registerResponse = await fetchImplementation(`${agentWorkUrl}/api/v1/runtime/register`, {
     method: "POST",
@@ -68,6 +72,7 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
       "Cache-Control": "no-store"
     },
     body: JSON.stringify({
+      profile: options.profile,
       name: options.runtimeName,
       device: { os: platform(), arch: arch(), hostname: hostname() },
       runtime_version: RUNTIME_VERSION,
@@ -83,7 +88,9 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
   const runtimeId = stringValue(runtime?.id);
   if (!runtimeId) throw new Error("Runtime registration response is missing runtime.id");
   if (runtimeId !== enrolledRuntimeId) throw new Error("Runtime registration changed the enrolled identity");
+  if (runtime?.profile !== options.profile) throw new Error("Runtime registration changed or omitted the enrolled profile");
   return {
+    profile: options.profile,
     runtimeId,
     credentialId,
     accessToken: runtimeToken,

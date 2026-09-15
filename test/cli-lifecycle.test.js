@@ -100,9 +100,11 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
         ? "/custom-worker/api/v1/runtimes/enroll"
         : "/agentworker/api/v1/runtimes/enroll");
       assert.match(body, /"machine_id":"machine_/);
+      assert.equal(JSON.parse(body).profile, workProfile ? "work" : "default");
       response.writeHead(201, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       response.end(JSON.stringify({
         runtime: {
+          profile: workProfile ? "work" : "default",
           id: workProfile ? "runtime-work" : "runtime-fixture",
           octo_space_id: workProfile ? "space-work" : "space-fixture",
           owner_ref: workProfile ? "uid:user-work" : "uid:user-fixture"
@@ -126,12 +128,13 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
       assert.equal(request.headers["x-tenant-id"], undefined);
       assert.equal(request.headers["x-subject-id"], undefined);
       const registration = JSON.parse(body);
+      assert.equal(registration.profile, workProfile ? "work" : "default");
       assert.equal(registration.runtime_version, packageVersion);
       assert.equal(registration.protocol_version, 1);
       assert.equal(registration.protocol_version_min, 1);
       assert.equal(registration.protocol_version_max, 1);
       response.writeHead(runtimeRegistrationCount === 1 ? 201 : 200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ runtime: { id: workProfile ? "runtime-work" : "runtime-fixture" } }));
+      response.end(JSON.stringify({ runtime: { profile: workProfile ? "work" : "default", id: workProfile ? "runtime-work" : "runtime-fixture" } }));
       return;
     }
     response.writeHead(404).end();

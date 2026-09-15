@@ -60,7 +60,7 @@ const TERMINAL_OUTBOX_TYPES = new Set(["run.completed", "run.failed", "run.cance
  */
 export interface AgentWorkRuntimeOptions {
   /** Trusted local profile label; never used as an authorization claim. */
-  profile?: string;
+  profile: string;
   baseUrl: string;
   token: string;
   runtimeId?: string;
@@ -240,6 +240,9 @@ export class AgentWorkRuntime {
     observability?: LocalObservability,
     runAdmission?: RunAdmission
   ) {
+    if (typeof options.profile !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(options.profile)) {
+      throw new Error("Agent Work Runtime requires a valid Harness profile of 1-128 characters");
+    }
     this.#options = options;
     this.#host = host;
     this.#observability = observability;
@@ -428,6 +431,7 @@ export class AgentWorkRuntime {
       method: "POST",
       headers: this.#headers(true),
       body: JSON.stringify({
+        profile: this.#options.profile,
         name: this.#options.runtimeName,
         device: {
           os: platform(),
@@ -466,11 +470,17 @@ export class AgentWorkRuntime {
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000)
     });
     const body = await response.json() as {
-      runtime?: { id?: string; protocol_version?: number };
-      error?: { message?: string };
+      runtime?: { id?: string; profile?: string; protocol_version?: number };
+      error?: { message?: string; code?: string; details?: { reason_code?: string } };
     };
+    if (body.error?.code === "RUNTIME_PROFILE_MISMATCH" || body.error?.details?.reason_code === "RUNTIME_PROFILE_MISMATCH") {
+      throw new RuntimeIdentityMismatchError("Agent Work profile does not match the enrolled Runtime");
+    }
     if (!response.ok || !body.runtime?.id) {
       throw new Error(`Agent Work runtime registration failed (${response.status}): ${body.error?.message ?? "invalid response"}`);
+    }
+    if (body.runtime.profile !== this.#options.profile) {
+      throw new RuntimeIdentityMismatchError("Agent Work runtime registration returned a different or missing profile");
     }
     this.#log({
       level: "info",

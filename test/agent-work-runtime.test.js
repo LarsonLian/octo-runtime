@@ -81,7 +81,7 @@ test("process restart hello excludes stale non-terminal runs but retains pending
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { id: "runtime-restart-ownership", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-restart-ownership", protocol_version: 1 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -99,6 +99,7 @@ test("process restart hello excludes stale non-terminal runs but retains pending
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-restart-ownership",
@@ -283,7 +284,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     for await (const chunk of request) body += chunk;
     registrationBody = JSON.parse(body);
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { id: "runtime-observed" } }));
+    response.end(JSON.stringify({ runtime: { profile: "work", id: "runtime-observed" } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -400,7 +401,7 @@ test("a configured runtime ID still refreshes registration and rejects identity 
     for await (const _chunk of request) { /* Consume the registration body. */ }
     registrationCount += 1;
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { id: "runtime-actual" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-actual" } }));
   });
 
   try {
@@ -412,6 +413,7 @@ test("a configured runtime ID still refreshes registration and rejects identity 
       async *invoke() { yield { type: "run.finished", payload: {} }; }
     };
     runtime = new AgentWorkRuntime({
+      profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       tenantId: "tenant-identity",
@@ -445,7 +447,7 @@ test("startup registration failure stays alive and every reconnect re-registers"
     response.writeHead(registrations === 1 ? 503 : 200, { "Content-Type": "application/json" });
     response.end(registrations === 1
       ? JSON.stringify({ error: { message: "worker restarting" } })
-      : JSON.stringify({ runtime: { id: "runtime-reconnect", protocol_version: 1 } }));
+      : JSON.stringify({ runtime: { profile: "default", id: "runtime-reconnect", protocol_version: 1 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -462,6 +464,7 @@ test("startup registration failure stays alive and every reconnect re-registers"
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-reconnect",
@@ -496,7 +499,7 @@ test("close cancels a pending reconnect backoff without late registration", asyn
     for await (const _chunk of request) { /* Consume registration. */ }
     registrations += 1;
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { id: "runtime-close-backoff", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-close-backoff", protocol_version: 1 } }));
   });
   httpServer.on("upgrade", (request, rawSocket, head) => {
     wsServer.handleUpgrade(request, rawSocket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -510,6 +513,7 @@ test("close cancels a pending reconnect backoff without late registration", asyn
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-close-backoff",
@@ -550,7 +554,7 @@ test("a stalled WebSocket handshake times out and registration retries", async (
     for await (const _chunk of request) { /* Consume registration. */ }
     registrations += 1;
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { id: "runtime-handshake-timeout", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-handshake-timeout", protocol_version: 1 } }));
   });
   httpServer.on("upgrade", (_request, socket) => {
     upgradedSockets.add(socket);
@@ -562,6 +566,7 @@ test("a stalled WebSocket handshake times out and registration retries", async (
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-handshake-timeout",
@@ -596,7 +601,7 @@ test("hard outbox watermark rejects new work with a durable command receipt", as
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { id: "runtime-hard-limit", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-hard-limit", protocol_version: 1 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -616,6 +621,7 @@ test("hard outbox watermark rejects new work with a durable command receipt", as
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-hard-limit",
@@ -655,7 +661,7 @@ test("local runtime concurrency limit queues a second provider invocation", asyn
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { id: "runtime-capacity", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-capacity", protocol_version: 1 } }));
   });
   httpServer.on("upgrade", (request, rawSocket, head) => {
     wsServer.handleUpgrade(request, rawSocket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -678,6 +684,7 @@ test("local runtime concurrency limit queues a second provider invocation", asyn
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-capacity",

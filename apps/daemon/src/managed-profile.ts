@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
 
-const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const RESERVED_PROFILE_NAMES = new Set([
   "config.json",
   "credentials",
@@ -33,6 +33,7 @@ interface ProfileConfiguration {
 
 interface RuntimeIdentity {
   schema_version?: unknown;
+  profile?: unknown;
   runtime_id?: unknown;
 }
 
@@ -71,7 +72,7 @@ function loadManagedProfile(home: string, profile: string): AgentWorkRuntimeOpti
   const config = readJsonRequired<ProfileConfiguration>(join(profileRoot, "config.json"));
   const identity = readJsonRequired<RuntimeIdentity>(join(profileRoot, "identity", "runtime.json"));
   if (config.schema_version !== 1 || config.profile !== profile) throw new Error(`managed profile ${profile} is invalid`);
-  if (identity.schema_version !== 1) throw new Error(`managed Runtime identity for ${profile} is invalid`);
+  if (identity.schema_version !== 1 || identity.profile !== profile) throw new Error(`managed Runtime identity for ${profile} is invalid`);
   const baseUrl = optionalString(config.agent_work_url);
   if (!baseUrl) return undefined;
   const credential = readJsonRequired<RuntimeCredential>(join(profileRoot, "credentials", "runtime-token.json"));

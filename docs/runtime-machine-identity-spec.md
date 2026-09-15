@@ -17,6 +17,7 @@ name lists with provider objects.
 
 ## Contract
 
-Exchange octo_enroll_ at POST /api/v1/runtimes/enroll using machine_id and optional runtime_id plus X-Runtime-Token.
+Exchange octo_enroll_ at POST /api/v1/runtimes/enroll using machine_id, required profile (1-128 characters), and optional runtime_id plus X-Runtime-Token. Retries/renewals must match the enrolled profile exactly.
 The response contains runtime and credential; use the octo_runtime_ credential to refresh registration and connect.
+Registration also requires profile. Store the returned profile in the identity binding and reject local/server mismatches rather than upgrading old identities. This subsequent breaking change uses branch `feat/runtime-profile`.
 Keep <home>/<profile>/identity/runtime.json and <home>/<profile>/credentials/runtime-token.json separate from the Home-global machine label.

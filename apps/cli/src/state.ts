@@ -3,7 +3,7 @@ import { access, chmod, mkdir, open, readFile, rename, rm, rmdir } from "node:fs
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
-const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const RESERVED_PROFILE_NAMES = new Set([
   "config.json",
   "credentials",
@@ -40,6 +40,7 @@ export interface ProfileConfiguration {
 
 export interface RuntimeIdentity {
   schema_version: 1;
+  profile: string;
   runtime_id: string;
   credential_id: string;
   octo_space_id?: string;
@@ -132,8 +133,8 @@ export async function ensureMachineIdentity(paths: HarnessPaths): Promise<Machin
 }
 
 export function assertProfileName(profile: string): void {
-  if (!PROFILE_NAME.test(profile)) {
-    throw new Error("--profile must contain only letters, digits, dot, underscore, or hyphen (maximum 64 characters)");
+  if (typeof profile !== "string" || !PROFILE_NAME.test(profile)) {
+    throw new Error("--profile must start with a letter or digit and contain only letters, digits, dot, underscore, or hyphen (maximum 128 characters)");
   }
   if (RESERVED_PROFILE_NAMES.has(profile.toLowerCase())) {
     throw new Error(`--profile conflicts with Harness Home infrastructure: ${profile}`);

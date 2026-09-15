@@ -17,6 +17,15 @@ test("direct profile names cannot collide with Harness Home infrastructure", () 
   assert.throws(() => assertProfileName("STATE.DB"), /conflicts with Harness Home infrastructure/);
 });
 
+test("profile labels accept exactly 1-128 characters", () => {
+  for (const profile of ["a", "work.dev_1-2", "a".repeat(128)]) {
+    assert.doesNotThrow(() => assertProfileName(profile));
+  }
+  for (const profile of ["", "a".repeat(129), "../work", "work/name", " work", "work ", ".work", "a\n"]) {
+    assert.throws(() => assertProfileName(profile), /--profile/);
+  }
+});
+
 test("legacy Home-global Runtime state migrates into default without losing the older profile copy", async () => {
   const home = await mkdtemp(join(tmpdir(), "oh-profile-layout-"));
   const paths = harnessPaths(home, "default");

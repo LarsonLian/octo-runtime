@@ -158,10 +158,10 @@ function resolveAgentWorkOptions(
 ): AgentWorkRuntimeOptions | undefined {
   const baseUrl = managed?.baseUrl ?? optionalOption(args, ["--agent-work-url"], env.OCTO_HARNESS_AGENT_WORK_URL);
   if (!baseUrl) return undefined;
-  const token = managed?.token;
-  if (!token) throw new Error("Agent Work Runtime credential is missing from the managed Harness Home");
+  if (!managed?.token) throw new Error("Agent Work Runtime credential is missing from the managed Harness Home");
+  const token = managed.token;
   return {
-    ...(managed?.profile ? { profile: managed.profile } : {}),
+    profile: managed.profile,
     baseUrl,
     token,
     runtimeId: managed?.runtimeId ?? optionalOption(args, ["--agent-work-runtime-id"], env.OCTO_HARNESS_AGENT_WORK_RUNTIME_ID),

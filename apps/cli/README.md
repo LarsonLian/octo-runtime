@@ -24,7 +24,7 @@ printf '%s\n' 'octo_enroll_...' | octo-harness login \
 `login` 只完成 Runtime 身份闭环：
 
 1. Persist one Home-global `machine_id` in `machine.json`, shared by every profile.
-2. Exchange an enrollment grant at `/api/v1/runtimes/enroll` for a server-assigned `runtime_id` and directly bound `octo_runtime_` credential; refresh capabilities at `/api/v1/runtime/register` and save the returned identity.
+2. Exchange an enrollment grant at `/api/v1/runtimes/enroll` with the selected `profile` for a server-assigned `runtime_id` and directly bound `octo_runtime_` credential; refresh capabilities at `/api/v1/runtime/register` with that same profile and save the returned identity.
 
 `machine_id` is an untrusted installation grouping label, not a hardware proof or a unique Runtime key. New profiles get distinct Runtime IDs even within the same Space. Renewal uses the saved Runtime ID and credential, and cannot change the trusted server or Worker endpoint.
 
@@ -114,7 +114,7 @@ octo-harness agent-run cancel <agent-run-id>
 <home>/logs/
 ```
 
-One Harness Home runs one daemon and adapter-host. Each discovered profile has its own server-assigned `runtime_id`, credential, and WSS connection, while sharing the Home-global `machine_id` and provider concurrency limits.
+One Harness Home runs one daemon and adapter-host. Each discovered profile has its own server-assigned `runtime_id`, credential, and WSS connection, while sharing the Home-global `machine_id` and provider concurrency limits. Profile names allow 1-128 characters. The identity file must include the exact bound profile; identities without it are unsupported and require fresh enrollment after the Worker database reset.
 
 `octo-daemon.pid` contains only a process PID. Profile identity is stored in `identity/runtime.json`; POSIX credentials use mode `0600`. Existing `system_id`/`device_id` identities are unsupported after this breaking reset: freshly enroll profiles against the recreated Worker database. Program files do not live inside Harness Home.
 

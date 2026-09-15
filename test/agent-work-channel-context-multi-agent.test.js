@@ -27,7 +27,7 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* Consume the registration body. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { id: "runtime-multi-agent" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-multi-agent" } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -120,6 +120,7 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
       }
     };
     runtime = new AgentWorkRuntime({
+      profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       tenantId: "tenant-e2e",

@@ -29,6 +29,7 @@ async function writeManagedRuntime(home, profile = "default") {
   await writeFile(join(profileRoot, "identity/runtime.json"), JSON.stringify({
     schema_version: 1,
     runtime_id: `runtime-${profile}`,
+    profile,
     credential_id: `credential-${profile}`,
     enrolled_at: new Date().toISOString()
   }));
@@ -38,6 +39,22 @@ async function writeManagedRuntime(home, profile = "default") {
     issued_at: new Date().toISOString()
   }));
 }
+
+test("managed Runtime requires the bound profile and discovers 128-character names", async () => {
+  const home = await mkdtemp(join(tmpdir(), "oh-managed-profile-binding-"));
+  const profile = "a".repeat(128);
+  try {
+    await writeManagedRuntime(home);
+    await writeManagedRuntime(home, profile);
+    assert.deepEqual(resolveDaemonRuntimePaths(["--home", home], {}).agentWorks.map(runtime => runtime.profile), ["default", profile]);
+    for (const wrong of [undefined, "other"]) {
+      await writeFile(join(home, profile, "identity/runtime.json"), JSON.stringify({ schema_version: 1, runtime_id: "runtime_fixture", profile: wrong }));
+      assert.throws(() => resolveDaemonRuntimePaths(["--home", home], {}), /managed Runtime identity.*invalid/);
+    }
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
 
 test("daemon runtime options resolve environment defaults to absolute paths", () => {
   const home = resolve(".tmp/runtime-home");

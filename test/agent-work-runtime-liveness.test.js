@@ -31,7 +31,7 @@ async function startFixture(t, { silentFirst = false, welcomeOnFirst = true } = 
     for await (const _chunk of request) { /* Consume registration. */ }
     state.registrations += 1;
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { id: "runtime-liveness", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-liveness", protocol_version: 1 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket));
@@ -57,6 +57,7 @@ async function startFixture(t, { silentFirst = false, welcomeOnFirst = true } = 
   await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
   const address = httpServer.address();
   runtime = new AgentWorkRuntime({
+    profile: "default",
     baseUrl: `http://127.0.0.1:${address.port}`,
     token: "runtime-token",
     runtimeId: "runtime-liveness",
@@ -100,11 +101,58 @@ test("inbound heartbeat ACKs reset the watchdog and shutdown cancels it", async 
 test("receive timeout rejects non-positive or non-finite values", () => {
   for (const receiveTimeoutMs of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
     assert.throws(() => new AgentWorkRuntime({
+      profile: "default",
       baseUrl: "https://im-test.deepminer.com.cn/agentworker",
       token: "runtime-token",
       runtimeName: "runtime-liveness",
       storePath: "unused.db",
       receiveTimeoutMs
     }, host), /receiveTimeoutMs must be finite and positive/);
+  }
+});
+
+test("Agent Work Runtime requires an explicit valid profile", () => {
+  for (const profile of [undefined, null, 123, "", "a/b", "a\n", "a".repeat(129)]) {
+    assert.throws(() => new AgentWorkRuntime({
+      profile, baseUrl: "http://localhost:3000", token: "runtime-token",
+      runtimeName: "MacBook", storePath: "unused.db"
+    }, host), /valid Harness profile/);
+  }
+});
+
+test("missing, mismatched or rejected server profiles fail before WSS and do not retry", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-profile-drift-"));
+  try {
+    for (const result of [
+      { status: 200, body: { runtime: { id: "runtime-fixture" } } },
+      { status: 200, body: { runtime: { id: "runtime-fixture", profile: "Work" } } },
+      { status: 409, body: { error: { code: "CONFLICT", details: { reason_code: "RUNTIME_PROFILE_MISMATCH" } } } }
+    ]) {
+      let registrations = 0;
+      const server = createServer(async (request, response) => {
+        let body = "";
+        for await (const chunk of request) body += chunk;
+        assert.equal(JSON.parse(body).profile, "work");
+        registrations++;
+        response.writeHead(result.status, { "Content-Type": "application/json" });
+        response.end(JSON.stringify(result.body));
+      });
+      server.on("upgrade", () => assert.fail("profile drift must not open WSS"));
+      await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+      const runtime = new AgentWorkRuntime({
+        profile: "work", baseUrl: `http://127.0.0.1:${server.address().port}`,
+        token: "runtime-token", runtimeName: "MacBook", storePath: join(directory, "agent-work.db")
+      }, host);
+      try {
+        await assert.rejects(runtime.start(), /profile/);
+        assert.equal(runtime.status.connected, false);
+        assert.equal(registrations, 1);
+      } finally {
+        await runtime.close();
+        await new Promise(resolve => server.close(resolve));
+      }
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });

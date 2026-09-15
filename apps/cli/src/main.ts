@@ -190,7 +190,7 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
 
   if (!identity || enrollmentToken) {
     if (identity) {
-      validateIdentity(identity);
+      validateIdentity(identity, context.profile);
       if (!profileConfig) throw new Error(`profile config is missing: ${context.paths.profileConfig}`);
       validateProfileConfiguration(profileConfig, context.profile);
       const requestedServer = optionalString(context.flags.serverUrl);
@@ -227,7 +227,7 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
     ({ identity, profileConfig } = await persistEnrollment(context, serverUrl, result, runtimeName));
     enrolled = true;
   } else {
-    validateIdentity(identity);
+    validateIdentity(identity, context.profile);
     if (!profileConfig) throw new Error(`profile config is missing: ${context.paths.profileConfig}`);
     validateProfileConfiguration(profileConfig, context.profile);
     const requestedServer = optionalString(context.flags.serverUrl);
@@ -266,6 +266,7 @@ async function persistEnrollment(
   }
   const identity: RuntimeIdentity = {
     schema_version: 1,
+    profile: result.profile,
     runtime_id: result.runtimeId,
     credential_id: result.credentialId,
     ...(result.octoSpaceId ? { octo_space_id: result.octoSpaceId } : {}),
@@ -476,7 +477,7 @@ async function loadInstalledRuntime(
   assertHomeConfiguration(homeConfiguration);
   const identity = await readJsonFile<RuntimeIdentity>(context.paths.identity);
   if (!identity) throw new Error(`runtime identity is missing: ${context.paths.identity}; run octo-harness login first`);
-  validateIdentity(identity);
+  validateIdentity(identity, context.profile);
 
   const profileConfig = await readJsonFile<ProfileConfiguration>(context.paths.profileConfig);
   if (!profileConfig) throw new Error(`profile config is missing: ${context.paths.profileConfig}; run octo-harness login first`);
@@ -772,8 +773,8 @@ async function readEnrollmentToken(input: NodeJS.ReadableStream): Promise<string
   return value;
 }
 
-function validateIdentity(value: RuntimeIdentity): void {
-  if (value.schema_version !== 1 || !value.runtime_id || !value.credential_id || "system_id" in value || "device_id" in value) {
+function validateIdentity(value: RuntimeIdentity, profile: string): void {
+  if (value.schema_version !== 1 || value.profile !== profile || !value.runtime_id || !value.credential_id || "system_id" in value || "device_id" in value) {
     throw new Error("runtime identity is invalid; refusing automatic re-enrollment");
   }
 }

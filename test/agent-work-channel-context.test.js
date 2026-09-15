@@ -42,7 +42,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
       for await (const chunk of request) chunks.push(chunk);
       registration = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ runtime: { id: "runtime-e2e" } }));
+      response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-e2e" } }));
     })();
   });
   httpServer.on("upgrade", (request, socket, head) => {
@@ -103,6 +103,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
       }
     };
     runtime = new AgentWorkRuntime({
+      profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       tenantId: "tenant-e2e",
@@ -161,7 +162,7 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { id: "runtime-reject" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-reject" } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -242,6 +243,7 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
       }
     };
     runtime = new AgentWorkRuntime({
+      profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       tenantId: "tenant-e2e",
@@ -296,7 +298,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { id: "runtime-authority" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-authority" } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -370,6 +372,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
       }
     };
     runtime = new AgentWorkRuntime({
+      profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       tenantId: "tenant-e2e",
@@ -434,7 +437,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { id: "runtime-ordered" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-ordered" } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -562,6 +565,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
       }
     };
     runtime = new AgentWorkRuntime({
+      profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       tenantId: "tenant-e2e",
@@ -647,7 +651,7 @@ test("runtime rejects a queued source generation after recovery advanced the eff
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { id: "runtime-stale-generation" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-stale-generation" } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -685,6 +689,7 @@ test("runtime rejects a queued source generation after recovery advanced the eff
       }
     };
     runtime = new AgentWorkRuntime({
+      profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       tenantId: "tenant-e2e",
@@ -747,7 +752,7 @@ test("runtime close joins a waiting command before immediate restart and replay"
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { id: "runtime-close-wait" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-close-wait" } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -797,6 +802,7 @@ test("runtime close joins a waiting command before immediate restart and replay"
       }
     };
     runtime = new AgentWorkRuntime({
+      profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       tenantId: "tenant-e2e",
@@ -885,7 +891,7 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { id: "runtime-cancel-wait" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-cancel-wait" } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -937,6 +943,7 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
       }
     };
     runtime = new AgentWorkRuntime({
+      profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       tenantId: "tenant-e2e",
@@ -985,7 +992,7 @@ test("append-only channel context cold-starts an adapter without continuity reco
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { id: "runtime-capability" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-capability" } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -1047,6 +1054,7 @@ test("append-only channel context cold-starts an adapter without continuity reco
       }
     };
     runtime = new AgentWorkRuntime({
+      profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       tenantId: "tenant-e2e",
