@@ -41,6 +41,7 @@ const DEFAULT_RECONNECT_FIRST_MS = 1_000;
 const DEFAULT_RECONNECT_MIN_MS = 20_000;
 const DEFAULT_RECONNECT_MAX_MS = 60_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
+const DEFAULT_RECEIVE_TIMEOUT_MS = 60_000;
 const RECONNECT_STABLE_RESET_MS = 5 * 60_000;
 const DEFAULT_RECONCILE_MS = 5 * 60_000;
 const PUMP_POLL_MS = 50;
@@ -73,6 +74,8 @@ export interface AgentWorkRuntimeOptions {
   reconnectMaxMs?: number;
   /** Maximum time to complete one WebSocket handshake. */
   connectTimeoutMs?: number;
+  /** Maximum silence from the server before terminating and reconnecting. */
+  receiveTimeoutMs?: number;
   /** Local outbox database path; defaults are resolved by the daemon. */
   storePath: string;
   /** Max number of events allowed in flight (unacked) per send window. */
@@ -252,6 +255,10 @@ export class AgentWorkRuntime {
     }
     if ((options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS) < 1) {
       throw new Error("connectTimeoutMs must be positive");
+    }
+    const receiveTimeoutMs = options.receiveTimeoutMs ?? DEFAULT_RECEIVE_TIMEOUT_MS;
+    if (!Number.isFinite(receiveTimeoutMs) || receiveTimeoutMs < 1) {
+      throw new Error("receiveTimeoutMs must be finite and positive");
     }
   }
 
@@ -644,7 +651,9 @@ export class AgentWorkRuntime {
   #waitForDisconnect(socket: WebSocket, epoch: number): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       let settled = false;
+      let receiveTimer: NodeJS.Timeout | undefined;
       const cleanup = (): void => {
+        if (receiveTimer) clearTimeout(receiveTimer);
         socket.off("message", onMessage);
         socket.off("close", onClose);
         socket.off("error", onError);
@@ -656,7 +665,16 @@ export class AgentWorkRuntime {
         if (error) reject(error);
         else resolve();
       };
+      const resetReceiveTimeout = (): void => {
+        if (receiveTimer) clearTimeout(receiveTimer);
+        receiveTimer = setTimeout(() => {
+          socket.terminate();
+          settle(new Error("Agent Work WebSocket server receive timed out"));
+        }, this.#options.receiveTimeoutMs ?? DEFAULT_RECEIVE_TIMEOUT_MS);
+        receiveTimer.unref();
+      };
       const onMessage = (data: WebSocket.RawData): void => {
+        resetReceiveTimeout();
         const handler = (async () => {
           const envelope = JSON.parse(rawDataText(data)) as WireEnvelope;
           await this.#receive(envelope, epoch);
@@ -685,6 +703,7 @@ export class AgentWorkRuntime {
       socket.on("message", onMessage);
       socket.once("close", onClose);
       socket.once("error", onError);
+      resetReceiveTimeout();
     });
   }
 
