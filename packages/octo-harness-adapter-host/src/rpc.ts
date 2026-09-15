@@ -107,7 +107,7 @@ export class AdapterHostRpcServer {
     const { id = null, method, params = {} } = message;
     try {
       if (method === "list") {
-        this.#send({ jsonrpc: "2.0", id, result: this.#host.list() });
+        this.#send({ jsonrpc: "2.0", id, result: await this.#host.describe() });
         return;
       }
       if (method === "probe") {

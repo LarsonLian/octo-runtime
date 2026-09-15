@@ -33,8 +33,8 @@ export interface ProfileConfiguration {
   profile: string;
   server_url: string;
   agent_work_url?: string;
-  tenant_id?: string;
-  subject_id?: string;
+  octo_space_id?: string;
+  owner_ref?: string;
   runtime_name: string;
 }
 
@@ -43,6 +43,7 @@ export interface RuntimeIdentity {
   runtime_id: string;
   credential_id: string;
   octo_space_id?: string;
+  owner_ref?: string;
   enrolled_at: string;
 }
 

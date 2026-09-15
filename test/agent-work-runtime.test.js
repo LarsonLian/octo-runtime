@@ -329,7 +329,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "codex", capabilities: [] }],
+      list: async () => [{ type: "codex", capabilities: [], providerVersion: "1.2.3", providerPath: "/test/codex", available: true }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         invokedRequest = request;
@@ -353,6 +353,10 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     assert.equal(registrationBody.runtime_version, "0.1.0");
     assert.equal(registrationBody.protocol_version_min, 1);
     assert.equal(registrationBody.protocol_version_max, 1);
+    assert.deepEqual(registrationBody.capabilities.adapters, [{
+      provider_type: "codex", provider_version: "1.2.3", provider_path: "/test/codex",
+      available: true, unavailable_reason: null, capabilities: []
+    }]);
     assert.equal(invokedRequest.context.profile, "work");
     assert.equal(invokedRequest.context.runtimeId, "runtime-observed");
     await runtime.close();

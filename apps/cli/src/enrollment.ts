@@ -23,9 +23,8 @@ export interface EnrollmentResult {
   credentialId: string;
   accessToken?: string;
   octoSpaceId?: string;
+  ownerRef?: string;
   agentWorkUrl?: string;
-  tenantId?: string;
-  subjectId?: string;
   expiresAt?: string;
 }
 
@@ -52,9 +51,9 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
   const runtimeToken = stringValue(credential?.token);
   const enrolledRuntimeId = stringValue(enrolledRuntime?.id);
   const octoSpaceId = stringValue(enrolledRuntime?.octo_space_id);
-  const ownerUserId = stringValue(enrolledRuntime?.owner_user_id);
+  const ownerRef = stringValue(enrolledRuntime?.owner_ref);
   const credentialId = stringValue(credential?.id);
-  if (!runtimeToken || !enrolledRuntimeId || !octoSpaceId || !ownerUserId || !credentialId) {
+  if (!runtimeToken || !enrolledRuntimeId || !octoSpaceId || !ownerRef || !/^(uid|org):[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/.test(ownerRef) || !credentialId) {
     throw new Error("runtime enrollment response is missing credential or Octo binding");
   }
   if (options.runtimeId && enrolledRuntimeId !== options.runtimeId) throw new Error("enrollment returned a different Runtime identity");
@@ -90,8 +89,7 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
     accessToken: runtimeToken,
     octoSpaceId,
     agentWorkUrl,
-    tenantId: octoSpaceId,
-    subjectId: ownerUserId
+    ownerRef
   };
 }
 

@@ -1,5 +1,9 @@
 # Runtime and Machine Identity
 
+The subsequent [owner/provider contract](runtime-owner-provider-contract.md)
+replaces Runtime tenant/subject fields with octo_space_id/owner_ref and adapter
+name lists with provider objects.
+
 - Breaking reset only; no legacy identity compatibility is required.
 - Each profile stores the server-generated runtime_id and credential_id. Remove system_id and device_id.
 - Persist one machine_id in <home>/machine.json, shared across all profiles. This is an untrusted installation grouping label, never an authentication key.

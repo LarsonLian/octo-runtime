@@ -26,8 +26,8 @@ interface ProfileConfiguration {
   schema_version?: unknown;
   profile?: unknown;
   agent_work_url?: unknown;
-  tenant_id?: unknown;
-  subject_id?: unknown;
+  octo_space_id?: unknown;
+  owner_ref?: unknown;
   runtime_name?: unknown;
 }
 

@@ -261,14 +261,15 @@ async function persistEnrollment(
 ): Promise<{ identity: RuntimeIdentity; profileConfig: ProfileConfiguration }> {
   const now = new Date().toISOString();
   const agentWorkUrl = result.agentWorkUrl ? normalizeServerUrl(result.agentWorkUrl) : undefined;
-  if (agentWorkUrl && (!result.tenantId || !result.subjectId || !result.accessToken)) {
-    throw new Error("Agent Work enrollment requires agent_work_url, tenant_id, subject_id, and runtime access token together");
+  if (agentWorkUrl && (!result.octoSpaceId || !result.ownerRef || !result.accessToken)) {
+    throw new Error("Agent Work enrollment requires agent_work_url, octo_space_id, owner_ref, and runtime access token together");
   }
   const identity: RuntimeIdentity = {
     schema_version: 1,
     runtime_id: result.runtimeId,
     credential_id: result.credentialId,
     ...(result.octoSpaceId ? { octo_space_id: result.octoSpaceId } : {}),
+    ...(result.ownerRef ? { owner_ref: result.ownerRef } : {}),
     enrolled_at: now
   };
   const profileConfig: ProfileConfiguration = {
@@ -276,8 +277,8 @@ async function persistEnrollment(
     profile: context.profile,
     server_url: serverUrl,
     ...(agentWorkUrl ? { agent_work_url: agentWorkUrl } : {}),
-    ...(result.tenantId ? { tenant_id: result.tenantId } : {}),
-    ...(result.subjectId ? { subject_id: result.subjectId } : {}),
+    ...(result.octoSpaceId ? { octo_space_id: result.octoSpaceId } : {}),
+    ...(result.ownerRef ? { owner_ref: result.ownerRef } : {}),
     runtime_name: runtimeName
   };
   const credential: RuntimeCredential = {

@@ -120,7 +120,7 @@ printf '%s\n' 'octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN' | pnpm cli -- \
 pnpm daemon -- --home "$PWD/.tmp/harness-home"
 ```
 
-The daemon reads each profile's `octo_runtime_` credential from its protected file. Worker derives `runtime_id`, `octo_space_id`, and `owner_user_id` from that credential. Each profile has a distinct Runtime identity; all profiles share `<home>/machine.json`, whose `machine_id` is only an untrusted installation grouping label. One Home runs one daemon and adapter-host. Mutually untrusted users must use separate OS accounts.
+The daemon reads each profile's `octo_runtime_` credential from its protected file. Worker derives `runtime_id`, `octo_space_id`, and `owner_ref` (`uid:alice` or `org:engineering`) from that credential. Each profile has a distinct Runtime identity; all profiles share `<home>/machine.json`, whose `machine_id` is only an untrusted installation grouping label. One Home runs one daemon and adapter-host. Mutually untrusted users must use separate OS accounts. See [Runtime owners and provider discovery](docs/runtime-owner-provider-contract.md) for enrollment authorization and adapter object fields.
 
 本地运维命令：
 

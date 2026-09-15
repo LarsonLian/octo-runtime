@@ -1,6 +1,8 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
+import { delimiter, isAbsolute, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { access } from "node:fs/promises";
+import { access, stat } from "node:fs/promises";
 import { constants } from "node:fs";
 import {
   isTerminal,
@@ -37,6 +39,7 @@ export interface AdapterMetadata {
 export interface ProbeResult {
   available: boolean;
   command: string;
+  version?: string | null;
   reason?: string;
 }
 
@@ -504,13 +507,30 @@ function providerOutputMetadata(value: unknown): ProviderOutputMetadata {
  * Returns the first executable match, else `command_not_found`.
  */
 export async function probeCommand(command: string, { env = process.env }: { env?: NodeJS.ProcessEnv } = {}): Promise<ProbeResult> {
-  const candidates = command.includes("/")
+  const candidates = isAbsolute(command) || command.includes("/") || command.includes("\\")
     ? [command]
-    : (env.PATH ?? "").split(process.platform === "win32" ? ";" : ":").map(directory => `${directory}/${command}`);
+    : (env.PATH ?? "").split(delimiter).flatMap(directory => {
+        const extensions = process.platform === "win32" && !/\.[^\\/]+$/.test(command)
+          ? ["", ...(env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";")]
+          : [""];
+        return extensions.map(extension => resolve(directory, command + extension));
+      });
   for (const candidate of candidates) {
     try {
       await access(candidate, constants.X_OK);
-      return { available: true, command: candidate };
+      if (!(await stat(candidate)).isFile()) continue;
+      let version: string | null = null;
+      try {
+        const { stdout } = await promisify(execFile)(resolve(candidate), ["--version"], {
+          env, timeout: 2_000, maxBuffer: 4096, windowsHide: true
+        });
+        const output = stdout.trim();
+        // Keep a version label, not arbitrary CLI banners or diagnostics.
+        version = output.match(/(?:^|\s)v?(\d+\.\d+(?:\.\d+)?(?:[-+][A-Za-z0-9.-]+)?)(?=\s|$)/)?.[1] ?? null;
+      } catch {
+        // Executable availability does not imply support for --version.
+      }
+      return { available: true, command: resolve(candidate), version };
     } catch {
       // Current candidate is not executable; keep scanning the next PATH entry.
     }

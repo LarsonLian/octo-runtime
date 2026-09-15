@@ -25,6 +25,8 @@ Octo 线上测试环境完成真实链路调试。
 Octo Web
   -> POST /agentworker/api/v1/runtime_enrollments
   -> octo-auth 验证 Human Token 与 X-Space-ID
+  -> 无需请求体，服务端从已验证 UID 生成 owner_ref
+  -> 可选请求体 {"kind":"cloud"}，kind 不传默认 local，不影响归属
   -> 返回短期、单次 octo_enroll_ token
 
 octo-harness login
@@ -206,6 +208,12 @@ After first login, the profile is bound to its trusted server, Agent Worker,
 server-assigned `runtime_id`, and protected Runtime credential. Profiles share
 the Home-global `machine_id` but not credentials or Runtime IDs. Use a new
 profile for another binding; mutually untrusted users need separate OS accounts.
+
+Runtime identity/configuration uses `octo_space_id` and `owner_ref` (for example
+`uid:alice` or `org:engineering`), not `tenant_id` / `subject_id`. Human grant
+ownership is derived from octo-auth, never from a request body. The daemon publishes
+provider objects containing type, installed version/path, availability, and
+adapter capabilities. See [the breaking owner/provider contract](docs/runtime-owner-provider-contract.md).
 
 ## 8. 前台启动和调试 daemon
 

@@ -57,7 +57,7 @@ test("re-enrollment reuses the Runtime and proves ownership with its credential"
           runtime: {
             id: "runtime_fixture",
             octo_space_id: "space_fixture",
-            owner_user_id: "user_fixture"
+            owner_ref: "uid:user_fixture"
           },
           credential: {
             id: `credential_${enrollmentCount}`,
@@ -99,6 +99,12 @@ test("re-enrollment reuses the Runtime and proves ownership with its credential"
     assert.equal(machineIds[0], machineIds[1]);
     assert.equal("system_id" in secondIdentity, false);
     assert.equal("device_id" in secondIdentity, false);
+    assert.equal(secondIdentity.owner_ref, "uid:user_fixture");
+    const configuration = JSON.parse(await readFile(join(home, profile, "config.json"), "utf8"));
+    assert.equal(configuration.octo_space_id, "space_fixture");
+    assert.equal(configuration.owner_ref, "uid:user_fixture");
+    assert.equal("tenant_id" in configuration, false);
+    assert.equal("subject_id" in configuration, false);
     const machine = JSON.parse(await readFile(join(home, "machine.json"), "utf8"));
     assert.equal(machine.machine_id, machineIds[0]);
     assert.equal(secondIdentity.runtime_id, firstIdentity.runtime_id);
@@ -140,7 +146,7 @@ test("failed enrollment and process retry preserve the Home machine label", asyn
       if (String(input).endsWith("/runtimes/enroll")) {
         machineIds.push(JSON.parse(init.body).machine_id);
         if (machineIds.length === 1) return Response.json({ error: { code: "UNAVAILABLE" } }, { status: 503 });
-        return Response.json({ runtime: { id: "runtime_fixture", octo_space_id: "space_fixture", owner_user_id: "user_fixture" },
+        return Response.json({ runtime: { id: "runtime_fixture", octo_space_id: "space_fixture", owner_ref: "uid:user_fixture" },
           credential: { id: "credential_fixture", token: "runtime_token_fixture" } });
       }
       return Response.json({ runtime: { id: "runtime_fixture" } });
@@ -163,7 +169,7 @@ test("profiles share a machine label but have separate Runtime identities; ordin
     if (String(input).endsWith("/runtimes/enroll")) {
       enrollmentCount++;
       machineIds.push(JSON.parse(init.body).machine_id);
-      return Response.json({ runtime: { id: `runtime_${enrollmentCount}`, octo_space_id: "space_fixture", owner_user_id: "user_fixture" },
+      return Response.json({ runtime: { id: `runtime_${enrollmentCount}`, octo_space_id: "space_fixture", owner_ref: "uid:user_fixture" },
         credential: { id: `credential_${enrollmentCount}`, token: `runtime_token_${enrollmentCount}` } });
     }
     return Response.json({ runtime: { id: `runtime_${enrollmentCount}` } });

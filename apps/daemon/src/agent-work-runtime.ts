@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { hostname, platform, arch } from "node:os";
 import WebSocket from "ws";
-import type { AdapterHostRpc } from "@mininglamp-oss/octo-harness-adapter-host";
+import type { AdapterHostRpc, HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
 import type { LocalObservability, LogInput } from "@mininglamp-oss/octo-harness-observability";
 import type {
   AgentConfig,
@@ -205,6 +205,7 @@ export class AgentWorkRuntime {
   readonly #messageHandlers = new Set<Promise<void>>();
   readonly #executionTasks = new Set<Promise<void>>();
   readonly #adapterCapabilities = new Map<string, Set<string>>();
+  #adapters: HostedAdapterMetadata[] = [];
   /** `${runId}:${seq}` already sent on this connection and awaiting ACK; cleared
    * on reconnect so the sender replays them. */
   readonly #inFlight = new Set<string>();
@@ -309,6 +310,7 @@ export class AgentWorkRuntime {
     const epoch = ++this.#lifecycleEpoch;
     this.#adapterCapabilities.clear();
     const adapters = await this.#host.list();
+    this.#adapters = adapters;
     for (const adapter of adapters) {
       this.#adapterCapabilities.set(adapter.type, new Set(adapter.capabilities ?? []));
     }
@@ -437,7 +439,16 @@ export class AgentWorkRuntime {
         protocol_version_min: MIN_PROTOCOL_VERSION,
         protocol_version_max: MAX_PROTOCOL_VERSION,
         capabilities: {
-          adapters: adapterTypes,
+          adapters: this.#adapters.map(adapter => ({
+            provider_type: adapter.type,
+            provider_version: adapter.providerVersion ?? null,
+            provider_path: adapter.providerPath ?? null,
+            available: adapter.available === true,
+            unavailable_reason: adapter.available === true ? null : adapter.unavailableReason ?? "probe_missing",
+            capabilities: adapter.capabilities,
+            ...(adapter.processModel ? { process_model: adapter.processModel } : {}),
+            ...(adapter.transport ? { transport: adapter.transport } : {})
+          })),
           channel_context: {
             protocol_version: 1,
             store: this.#options.channelContext?.store ?? "memory",

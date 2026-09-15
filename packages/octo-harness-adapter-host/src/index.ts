@@ -19,6 +19,12 @@ import type {
 export interface HostedAdapterMetadata {
   type: string;
   capabilities: string[];
+  processModel?: string;
+  transport?: string;
+  providerVersion?: string | null;
+  providerPath?: string | null;
+  available?: boolean;
+  unavailableReason?: string | null;
 }
 
 /**
@@ -89,6 +95,39 @@ export class AdapterHost {
   /** List registered adapters, for Agent registration and control-plane display. */
   list(): HostedAdapterMetadata[] {
     return [...this.#adapters.values()].map(adapter => adapter.metadata);
+  }
+
+  /** Report installed provider identity separately from adapter registration. */
+  async describe(): Promise<HostedAdapterMetadata[]> {
+    return Promise.all([...this.#adapters.values()].map(async adapter => {
+      let probe: Record<string, unknown> = {};
+      let unavailableReason: string | null = adapter.probe ? "probe_invalid" : "probe_missing";
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const result: unknown = await Promise.race([
+          Promise.resolve().then(() => adapter.probe?.()),
+          new Promise<undefined>(resolve => { timer = setTimeout(() => {
+            unavailableReason = "probe_timeout";
+            resolve(undefined);
+          }, 3_000); })
+        ]);
+        if (result && typeof result === "object") probe = result as Record<string, unknown>;
+        if (probe.available === false) unavailableReason = typeof probe.reason === "string" ? probe.reason : "provider_unavailable";
+      } catch {
+        unavailableReason = "probe_failed";
+        // A failed probe must not make the whole adapter host unavailable.
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+      const available = probe.available === true && typeof probe.command === "string" && probe.command.length > 0;
+      return {
+        ...adapter.metadata,
+        available,
+        unavailableReason: available ? null : unavailableReason,
+        providerPath: available ? probe.command as string : null,
+        providerVersion: typeof probe.version === "string" ? probe.version : null
+      };
+    }));
   }
 
   /** Invoke an adapter and emit lifecycle-corrected canonical events upstream. */
