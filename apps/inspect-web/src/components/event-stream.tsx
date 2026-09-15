@@ -14,6 +14,7 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { InspectRecord } from "../domain";
 import { cn } from "../lib/utils";
+import { Tooltip } from "./ui/tooltip";
 
 export interface ColumnFilters {
   stage: string;
@@ -282,12 +283,26 @@ function stageTone(value: string): string {
 
 function DirectionBadge({ value }: { value: string }) {
   if (value === "inbound") {
-    return <span className="direction-badge direction-badge--in" title="入站 (inbound)"><ArrowDownToLine /></span>;
+    const label = "inbound · Agent → Provider";
+    return (
+      <Tooltip label={label} className="direction-tooltip-trigger">
+        <span className="direction-badge direction-badge--in" role="img" aria-label={label} tabIndex={0}><ArrowDownToLine /></span>
+      </Tooltip>
+    );
   }
   if (value === "outbound") {
-    return <span className="direction-badge direction-badge--out" title="出站 (outbound)"><ArrowUpFromLine /></span>;
+    const label = "outbound · Provider → Agent";
+    return (
+      <Tooltip label={label} className="direction-tooltip-trigger">
+        <span className="direction-badge direction-badge--out" role="img" aria-label={label} tabIndex={0}><ArrowUpFromLine /></span>
+      </Tooltip>
+    );
   }
-  return <span className="direction-badge direction-badge--unknown" title="未知流向">-</span>;
+  return (
+    <Tooltip label="unknown · 未知流向" className="direction-tooltip-trigger">
+      <span className="direction-badge direction-badge--unknown" role="img" aria-label="unknown · 未知流向" tabIndex={0}>-</span>
+    </Tooltip>
+  );
 }
 
 function Identifier({ value, className }: { value: string; className?: string }) {

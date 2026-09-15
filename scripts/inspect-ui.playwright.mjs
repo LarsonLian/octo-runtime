@@ -41,6 +41,13 @@ try {
       assert.ok(stageColors.size >= 4, `expected stage category colors, got ${[...stageColors].join(", ")}`);
       assert.equal(adapterColors.size, 1, `expected a fixed adapter color, got ${[...adapterColors].join(", ")}`);
 
+      const inboundBadge = page.locator(".direction-badge--in").first();
+      await inboundBadge.hover();
+      await page.getByRole("tooltip", { name: "inbound · Agent → Provider" }).waitFor();
+      const outboundBadge = page.locator(".direction-badge--out").first();
+      await outboundBadge.hover();
+      await page.getByRole("tooltip", { name: "outbound · Provider → Agent" }).waitFor();
+
       const firstSeq = await sequenceNumber(page);
       await page.waitForTimeout(750);
       const nextSeq = await sequenceNumber(page);
@@ -119,7 +126,10 @@ try {
 
       if (name === "desktop") {
         await page.getByRole("button", { name: "帮助文档" }).click();
-        assert.match(await page.getByRole("dialog").textContent(), /Provider 产生、尚未规范化/);
+        const helpText = await page.getByRole("dialog").textContent();
+        assert.match(helpText, /Provider 产生、尚未规范化/);
+        assert.match(helpText, /inboundAgent → Provider.*runtime\.dispatch.*provider input \/ dispatch/s);
+        assert.match(helpText, /outboundProvider → Agent.*adapter\.canonical.*runtime\.outbox/s);
         await page.screenshot({ path: `/tmp/octo-inspect-${name}-help.png`, fullPage: true });
         await page.getByRole("button", { name: "关闭" }).click();
       }

@@ -1,6 +1,8 @@
 import {
   Activity,
   AlertCircle,
+  ArrowDownToLine,
+  ArrowUpFromLine,
   CircleHelp,
   Cpu,
   Database,
@@ -344,6 +346,33 @@ function HelpDialog({ onClose }: { onClose(): void }) {
         <div>
           <p>Events 是 daemon 内存中的实时有界诊断流；Logs 是写入磁盘的持久运行记录，两者都不是 AgentRun 的完整业务轨迹。</p>
           <code>provider-native → adapter-canonical → host-canonical</code>
+          <section className="direction-guide" aria-labelledby="direction-guide-title">
+            <h3 id="direction-guide-title">流向与阶段</h3>
+            <p>流向属于每一条事件信封，必须和 stage 一起看；同一 stage 可以同时出现 inbound 和 outbound。</p>
+            <div className="direction-guide__lanes">
+              <div className="direction-guide__lane direction-guide__lane--in">
+                <header><ArrowDownToLine /><strong>inbound</strong><span>Agent → Provider</span></header>
+                <ul>
+                  <li><b>daemon.bootstrap</b><span>daemon 启动</span></li>
+                  <li><b>worker.transport</b><span>command.received</span></li>
+                  <li><b>runtime.dispatch</b><span>Run 受理与选择 Adapter</span></li>
+                  <li><b>wire.daemon_host</b><span>invoke / cancel / probe</span></li>
+                  <li><b>adapter.native</b><span>provider input / dispatch</span></li>
+                </ul>
+              </div>
+              <div className="direction-guide__lane direction-guide__lane--out">
+                <header><ArrowUpFromLine /><strong>outbound</strong><span>Provider → Agent</span></header>
+                <ul>
+                  <li><b>adapter.native</b><span>provider output</span></li>
+                  <li><b>adapter.canonical</b><span>Adapter 规范化输出</span></li>
+                  <li><b>host.canonical</b><span>Host 校验后输出</span></li>
+                  <li><b>wire.daemon_host</b><span>invoke.event / invoke.done</span></li>
+                  <li><b>runtime.outbox</b><span>Run 事件写入 Outbox</span></li>
+                  <li><b>worker.transport</b><span>event batch / ACK / NACK</span></li>
+                </ul>
+              </div>
+            </div>
+          </section>
           <dl>
             <dt>adapter-rpc</dt><dd>daemon 与 adapter-host 之间经过凭据脱敏的 RPC 帧。</dd>
             <dt>provider-native</dt><dd>Provider 产生、尚未规范化的原生事件。</dd>

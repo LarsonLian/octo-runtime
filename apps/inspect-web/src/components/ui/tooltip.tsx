@@ -1,12 +1,13 @@
 import { Fragment, type ReactNode } from "react";
+import { cn } from "../../lib/utils";
 
 export function TooltipProvider({ children }: { children: ReactNode }) {
   return <Fragment>{children}</Fragment>;
 }
 
-export function Tooltip({ label, children }: { label: string; children: ReactNode }) {
+export function Tooltip({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
   return (
-    <span className="group relative inline-flex">
+    <span className={cn("group relative inline-flex", className)}>
       {children}
       <span
         role="tooltip"

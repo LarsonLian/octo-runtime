@@ -805,6 +805,10 @@ button:disabled {
   color: #4338ca;
 }
 
+.direction-tooltip-trigger {
+  justify-self: center;
+}
+
 .direction-badge svg {
   width: 14px;
   height: 14px;
@@ -1328,6 +1332,89 @@ button:disabled {
 
 .help-dialog dd {
   margin: 0;
+}
+
+.direction-guide {
+  margin: 14px 0 16px;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 12px 0;
+}
+
+.direction-guide h3 {
+  margin: 0;
+  color: #1e293b;
+  font-size: 12px;
+}
+
+.direction-guide > p {
+  margin: 3px 0 10px;
+  font-size: 11px;
+}
+
+.direction-guide__lanes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.direction-guide__lane + .direction-guide__lane {
+  border-left: 1px solid #e2e8f0;
+  padding-left: 16px;
+}
+
+.direction-guide__lane header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 7px;
+  color: #0369a1;
+}
+
+.direction-guide__lane--out header {
+  color: #4338ca;
+}
+
+.direction-guide__lane header svg {
+  width: 14px;
+  height: 14px;
+}
+
+.direction-guide__lane header strong {
+  font: 600 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.direction-guide__lane header span {
+  color: #64748b;
+  font-size: 10px;
+}
+
+.direction-guide__lane ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.direction-guide__lane li {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 10.5px;
+}
+
+.direction-guide__lane li b {
+  flex: 0 0 auto;
+  color: #334155;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 500;
+}
+
+.direction-guide__lane li span {
+  min-width: 0;
+  color: #64748b;
 }
 
 @media (max-width: 1260px) {
