@@ -8,6 +8,7 @@ const RESERVED_PROFILE_NAMES = new Set([
   "config.json",
   "credentials",
   "identity",
+  "machine.json",
   "logs",
   "octo-daemon.pid",
   "profiles",
@@ -41,11 +42,13 @@ export interface RuntimeIdentity {
   schema_version: 1;
   runtime_id: string;
   credential_id: string;
-  system_id: string;
-  device_id?: string;
-  workspace_id?: string;
   octo_space_id?: string;
   enrolled_at: string;
+}
+
+export interface MachineIdentity {
+  schema_version: 1;
+  machine_id: string;
 }
 
 export interface RuntimeCredential {
@@ -67,6 +70,7 @@ export interface UpdateJournal {
 export interface HarnessPaths {
   home: string;
   rootConfig: string;
+  machine: string;
   profileRoot: string;
   profileConfig: string;
   identity: string;
@@ -97,6 +101,7 @@ export function harnessPaths(home: string, profile: string): HarnessPaths {
   return {
     home: absoluteHome,
     rootConfig: join(absoluteHome, "config.json"),
+    machine: join(absoluteHome, "machine.json"),
     profileRoot,
     profileConfig: join(profileRoot, "config.json"),
     identity: join(profileRoot, "identity", "runtime.json"),
@@ -109,6 +114,20 @@ export function harnessPaths(home: string, profile: string): HarnessPaths {
       : join(absoluteHome, "sockets", "octo-harness-daemon.sock"),
     logs: join(absoluteHome, "logs")
   };
+}
+
+/** Call under the Home setup lock; this label is shared by all profiles, not an authentication key. */
+export async function ensureMachineIdentity(paths: HarnessPaths): Promise<MachineIdentity> {
+  const existing = await readJsonFile<MachineIdentity>(paths.machine);
+  if (existing !== undefined) {
+    if (!existing || existing.schema_version !== 1 || !/^machine_[0-9a-f-]{36}$/.test(existing.machine_id)) {
+      throw new Error(`invalid machine identity: ${paths.machine}`);
+    }
+    return existing;
+  }
+  const machine: MachineIdentity = { schema_version: 1, machine_id: `machine_${randomUUID()}` };
+  await writeJsonAtomic(paths.machine, machine);
+  return machine;
 }
 
 export function assertProfileName(profile: string): void {

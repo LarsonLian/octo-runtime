@@ -125,7 +125,6 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
       tenantId: "tenant-e2e",
       subjectId: "device-e2e",
       runtimeName: "runtime-multi-agent",
-      fingerprint: "runtime:multi-agent",
       storePath: join(directory, "agent-work.db"),
       channelContext: {
         store: "sqlite",

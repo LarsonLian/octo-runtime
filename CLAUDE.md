@@ -39,7 +39,7 @@ services and must not be introduced into Harness persistence or APIs.
 - Events are ordered/deduplicated by `(runId, seq)`.
 - A run emits exactly one terminal event.
 - Workdir is a cwd, not a security boundary.
-- Runtime device credentials are stored only in the owner-protected Harness
+- Runtime credentials are stored only in the owner-protected Harness
   Home credential file (POSIX mode 0600); they never enter argv, service
   definitions, environment variables, logs, or provider input.
 

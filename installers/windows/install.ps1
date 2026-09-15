@@ -160,7 +160,7 @@ if ($Channel -notin @("stable", "beta")) {
 if ($Profile -notmatch "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$") {
   Fail "OCTO_HARNESS_PROFILE must start with a letter or digit, use only supported characters, and not exceed 64 characters"
 }
-if ($Profile.ToLowerInvariant() -in @("config.json", "credentials", "identity", "logs", "octo-daemon.pid", "profiles", "run", "setup", "sockets", "state.db")) {
+if ($Profile.ToLowerInvariant() -in @("config.json", "credentials", "identity", "machine.json", "logs", "octo-daemon.pid", "profiles", "run", "setup", "sockets", "state.db")) {
   Fail "OCTO_HARNESS_PROFILE conflicts with Harness Home infrastructure"
 }
 if (-not (Test-FullyQualifiedWindowsPath $HarnessHome)) {

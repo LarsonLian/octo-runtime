@@ -90,26 +90,26 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
     let body = "";
     for await (const chunk of request) body += chunk;
     if (request.method === "POST" && [
-      "/agentworker/api/v1/devices/enroll",
-      "/custom-worker/api/v1/devices/enroll"
+      "/agentworker/api/v1/runtimes/enroll",
+      "/custom-worker/api/v1/runtimes/enroll"
     ].includes(request.url)) {
       enrollmentCount += 1;
       const workProfile = request.headers.authorization === "Bearer octo_enroll_work";
       assert.ok(workProfile || request.headers.authorization === "Bearer octo_enroll_fixture");
       assert.equal(request.url, workProfile
-        ? "/custom-worker/api/v1/devices/enroll"
-        : "/agentworker/api/v1/devices/enroll");
-      assert.match(body, /"system_id":"system_/);
+        ? "/custom-worker/api/v1/runtimes/enroll"
+        : "/agentworker/api/v1/runtimes/enroll");
+      assert.match(body, /"machine_id":"machine_/);
       response.writeHead(201, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       response.end(JSON.stringify({
-        device: {
-          id: workProfile ? "device-work" : "device-fixture",
+        runtime: {
+          id: workProfile ? "runtime-work" : "runtime-fixture",
           octo_space_id: workProfile ? "space-work" : "space-fixture",
           owner_user_id: workProfile ? "user-work" : "user-fixture"
         },
         credential: workProfile
-          ? { id: "credential-work", token: "octo_device_work_secret" }
-          : { id: "credential-fixture", token: "octo_device_fixture_secret" }
+          ? { id: "credential-work", token: "octo_runtime_work_secret" }
+          : { id: "credential-fixture", token: "octo_runtime_fixture_secret" }
       }));
       return;
     }
@@ -118,8 +118,8 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
       "/custom-worker/api/v1/runtime/register"
     ].includes(request.url)) {
       runtimeRegistrationCount += 1;
-      const workProfile = request.headers.authorization === "Bearer octo_device_work_secret";
-      assert.ok(workProfile || request.headers.authorization === "Bearer octo_device_fixture_secret");
+      const workProfile = request.headers.authorization === "Bearer octo_runtime_work_secret";
+      assert.ok(workProfile || request.headers.authorization === "Bearer octo_runtime_fixture_secret");
       assert.equal(request.url, workProfile
         ? "/custom-worker/api/v1/runtime/register"
         : "/agentworker/api/v1/runtime/register");
@@ -185,14 +185,16 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
     assert.deepEqual(backend.spec.environment, { PATH: "/test/provider/bin:/usr/bin:/bin" });
     assert.equal(enrollmentCount, 1);
     assert.ok(runtimeRegistrationCount >= 2);
-    assert.doesNotMatch(JSON.stringify(backend.spec), /octo_enroll_fixture|octo_device_fixture_secret/);
-    assert.doesNotMatch(setup.output, /octo_enroll_fixture|octo_device_fixture_secret/);
+    assert.doesNotMatch(JSON.stringify(backend.spec), /octo_enroll_fixture|octo_runtime_fixture_secret/);
+    assert.doesNotMatch(setup.output, /octo_enroll_fixture|octo_runtime_fixture_secret/);
 
     const identity = JSON.parse(await readFile(join(home, "default/identity/runtime.json"), "utf8"));
     const credential = JSON.parse(await readFile(join(home, "default/credentials/runtime-token.json"), "utf8"));
     assert.equal(identity.runtime_id, "runtime-fixture");
-    assert.match(identity.system_id, /^system_/);
-    assert.equal(credential.access_token, "octo_device_fixture_secret");
+    assert.equal("system_id" in identity, false);
+    assert.equal("device_id" in identity, false);
+    assert.match(JSON.parse(await readFile(join(home, "machine.json"), "utf8")).machine_id, /^machine_/);
+    assert.equal(credential.access_token, "octo_runtime_fixture_secret");
     if (process.platform !== "win32") {
       assert.equal((await stat(join(home, "default/credentials/runtime-token.json"))).mode & 0o077, 0);
     }
@@ -222,7 +224,7 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
       JSON.parse(await readFile(join(home, "work/identity/runtime.json"), "utf8")).runtime_id,
       "runtime-work"
     );
-    assert.doesNotMatch(JSON.stringify(backend.spec), /octo_device_fixture_secret/);
+    assert.doesNotMatch(JSON.stringify(backend.spec), /octo_runtime_fixture_secret/);
 
     const restarted = await invoke(["daemon", "restart", "--timeout-ms", "5000"]);
     assert.equal(restarted.value.action, "restart");
@@ -261,7 +263,7 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
     assert.equal(JSON.parse(await readFile(join(home, "default/identity/runtime.json"), "utf8")).runtime_id, "runtime-fixture");
     assert.equal(
       JSON.parse(await readFile(join(home, "default/credentials/runtime-token.json"), "utf8")).access_token,
-      "octo_device_fixture_secret"
+      "octo_runtime_fixture_secret"
     );
 
     const installed = await invoke([

@@ -11,7 +11,9 @@ export interface EnrollmentOptions {
   enrollmentToken: string;
   profile: string;
   runtimeName: string;
-  systemId: string;
+  machineId: string;
+  runtimeId?: string;
+  runtimeToken?: string;
   agentWorkUrl?: string;
   fetchImplementation?: typeof fetch;
 }
@@ -20,8 +22,6 @@ export interface EnrollmentResult {
   runtimeId: string;
   credentialId: string;
   accessToken?: string;
-  deviceId?: string;
-  workspaceId?: string;
   octoSpaceId?: string;
   agentWorkUrl?: string;
   tenantId?: string;
@@ -33,35 +33,37 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
   const fetchImplementation = options.fetchImplementation ?? fetch;
   const serverUrl = normalizeServerUrl(options.serverUrl);
   const agentWorkUrl = normalizeServerUrl(options.agentWorkUrl ?? `${serverUrl}/agentworker`);
-  const enrollmentResponse = await fetchImplementation(`${agentWorkUrl}/api/v1/devices/enroll`, {
+  const enrollmentResponse = await fetchImplementation(`${agentWorkUrl}/api/v1/runtimes/enroll`, {
     method: "POST",
     redirect: "error",
     headers: {
       Authorization: `Bearer ${options.enrollmentToken}`,
+      ...(options.runtimeToken ? { "X-Runtime-Token": options.runtimeToken } : {}),
       "Content-Type": "application/json",
       Accept: "application/json",
       "Cache-Control": "no-store"
     },
-    body: JSON.stringify({ system_id: options.systemId }),
+    body: JSON.stringify({ machine_id: options.machineId, ...(options.runtimeId ? { runtime_id: options.runtimeId } : {}) }),
     signal: AbortSignal.timeout(15_000)
   });
-  const enrolled = await responseObject(enrollmentResponse, "device enrollment");
-  const device = objectValue(enrolled.device);
+  const enrolled = await responseObject(enrollmentResponse, "runtime enrollment");
+  const enrolledRuntime = objectValue(enrolled.runtime);
   const credential = objectValue(enrolled.credential);
-  const deviceToken = stringValue(credential?.token);
-  const deviceId = stringValue(device?.id);
-  const octoSpaceId = stringValue(device?.octo_space_id);
-  const ownerUserId = stringValue(device?.owner_user_id);
+  const runtimeToken = stringValue(credential?.token);
+  const enrolledRuntimeId = stringValue(enrolledRuntime?.id);
+  const octoSpaceId = stringValue(enrolledRuntime?.octo_space_id);
+  const ownerUserId = stringValue(enrolledRuntime?.owner_user_id);
   const credentialId = stringValue(credential?.id);
-  if (!deviceToken || !deviceId || !octoSpaceId || !ownerUserId || !credentialId) {
-    throw new Error("device enrollment response is missing credential or Octo binding");
+  if (!runtimeToken || !enrolledRuntimeId || !octoSpaceId || !ownerUserId || !credentialId) {
+    throw new Error("runtime enrollment response is missing credential or Octo binding");
   }
+  if (options.runtimeId && enrolledRuntimeId !== options.runtimeId) throw new Error("enrollment returned a different Runtime identity");
 
   const registerResponse = await fetchImplementation(`${agentWorkUrl}/api/v1/runtime/register`, {
     method: "POST",
     redirect: "error",
     headers: {
-      Authorization: `Bearer ${deviceToken}`,
+      Authorization: `Bearer ${runtimeToken}`,
       "Content-Type": "application/json",
       Accept: "application/json",
       "Cache-Control": "no-store"
@@ -81,11 +83,11 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
   const runtime = objectValue(registered.runtime);
   const runtimeId = stringValue(runtime?.id);
   if (!runtimeId) throw new Error("Runtime registration response is missing runtime.id");
+  if (runtimeId !== enrolledRuntimeId) throw new Error("Runtime registration changed the enrolled identity");
   return {
     runtimeId,
     credentialId,
-    accessToken: deviceToken,
-    deviceId,
+    accessToken: runtimeToken,
     octoSpaceId,
     agentWorkUrl,
     tenantId: octoSpaceId,

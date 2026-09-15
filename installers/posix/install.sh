@@ -123,7 +123,7 @@ esac
 [ "${#PROFILE}" -le 64 ] || die "OCTO_HARNESS_PROFILE must not exceed 64 characters"
 profile_key=$(printf '%s' "$PROFILE" | tr '[:upper:]' '[:lower:]')
 case "$profile_key" in
-  config.json|credentials|identity|logs|octo-daemon.pid|profiles|run|setup|sockets|state.db)
+  config.json|credentials|identity|machine.json|logs|octo-daemon.pid|profiles|run|setup|sockets|state.db)
     die "OCTO_HARNESS_PROFILE conflicts with Harness Home infrastructure"
     ;;
 esac

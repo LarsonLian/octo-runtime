@@ -120,7 +120,7 @@ printf '%s\n' 'octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN' | pnpm cli -- \
 pnpm daemon -- --home "$PWD/.tmp/harness-home"
 ```
 
-daemon 从各 profile 的 mode 0600 credential 文件读取 `octo_device_`，注册和 WSS 都只发送对应 Bearer。`octo_space_id`、`owner_user_id` 和 `system_id` 由 Worker 反查，不能通过 CLI 参数或 Header 声明。一个 Home 只运行一个 daemon 和一个 adapter-host，但可承载多个独立 local Runtime；不可信用户必须使用不同 OS account。
+The daemon reads each profile's `octo_runtime_` credential from its protected file. Worker derives `runtime_id`, `octo_space_id`, and `owner_user_id` from that credential. Each profile has a distinct Runtime identity; all profiles share `<home>/machine.json`, whose `machine_id` is only an untrusted installation grouping label. One Home runs one daemon and adapter-host. Mutually untrusted users must use separate OS accounts.
 
 本地运维命令：
 

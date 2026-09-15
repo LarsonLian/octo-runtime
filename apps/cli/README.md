@@ -23,8 +23,10 @@ printf '%s\n' 'octo_enroll_...' | octo-harness login \
 
 `login` 只完成 Runtime 身份闭环：
 
-1. 生成并持久化稳定 `system_id`，调用 Agent Worker `/api/v1/devices/enroll` 换取设备 credential。
-2. 使用设备 credential 调用 `/api/v1/runtime/register`，把返回的云端 `runtime_id` 原值写入本地 identity。
+1. Persist one Home-global `machine_id` in `machine.json`, shared by every profile.
+2. Exchange an enrollment grant at `/api/v1/runtimes/enroll` for a server-assigned `runtime_id` and directly bound `octo_runtime_` credential; refresh capabilities at `/api/v1/runtime/register` and save the returned identity.
+
+`machine_id` is an untrusted installation grouping label, not a hardware proof or a unique Runtime key. New profiles get distinct Runtime IDs even within the same Space. Renewal uses the saved Runtime ID and credential, and cannot change the trusted server or Worker endpoint.
 
 enrollment grant 和设备 credential 都不会进入 CLI argv、service definition 或输出。重复执行同一 profile 的 `login` 只对账身份，不重新 enrollment。服务安装与启动必须显式使用 `daemon install` 和 `daemon start`。常用开关：
 
@@ -101,6 +103,7 @@ octo-harness agent-run cancel <agent-run-id>
 
 ```text
 <home>/config.json
+<home>/machine.json                         # shared installation grouping label
 <home>/octo-daemon.pid
 <home>/sockets/octo-harness-daemon.sock       # POSIX
 <home>/<profile>/config.json
@@ -111,8 +114,8 @@ octo-harness agent-run cancel <agent-run-id>
 <home>/logs/
 ```
 
-一个 Harness Home 只允许一个 daemon 和一个 adapter-host。profile 目录无需在 Home 配置中注册或启用；每个合法 profile 都拥有独立 `system_id`、`runtime_id`、credential 和 Runtime WSS，共享机器级 provider 并发额度。
+One Harness Home runs one daemon and adapter-host. Each discovered profile has its own server-assigned `runtime_id`, credential, and WSS connection, while sharing the Home-global `machine_id` and provider concurrency limits.
 
-`octo-daemon.pid` 只保存十进制进程 PID；永久身份保存在 profile 级 `identity/runtime.json`。POSIX credential 文件以 `0600` 写入。npm package 的程序文件不放在 Harness Home。旧版 Home 根目录 identity/token/DB 会在停机后的下一次 `login` 中迁入 `default/`，被覆盖的旧副本保存在 `run/profile-layout-v1-backup/`。
+`octo-daemon.pid` contains only a process PID. Profile identity is stored in `identity/runtime.json`; POSIX credentials use mode `0600`. Existing `system_id`/`device_id` identities are unsupported after this breaking reset: freshly enroll profiles against the recreated Worker database. Program files do not live inside Harness Home.
 
 除帮助文本外，普通命令的正常结果输出 JSON；面向终端的 `events` 默认输出带来源标记的行（`--json` 输出原始 envelope），`inspect` 输出可直接打开的 URL。错误输出到 stderr 并返回非零。`--help` 和 `login --help` 不依赖网络或已运行 daemon。

@@ -75,12 +75,12 @@ octo-harness status
 
 `status.agentWork.connected` 应为 `true`，并返回 login 已写入的 `runtimeId`。daemon 从
 Harness Home 读取 server URL、Runtime ID 和受保护的 device credential；service argv 与
-环境变量都不携带 secret。一个 Home 只运行一个 daemon，但可自动发现多个 profile；各 profile 独立持有 `system_id`、credential、WSS 和 outbox，并共享一个 adapter-host。不同人或互不信任的身份必须使用不同 OS account。
+Environment variables do not carry secrets. One Home discovers multiple profiles with separate `runtime_id`, credential, WSS, and outbox, sharing one adapter-host and one Home-global `machine_id`. The machine label is not an authentication key. Mutually untrusted users require separate OS accounts.
 
 ## 3. Token 约定
 
 凭证交换是单向的：Human token 只用于创建短期 enrollment，`octo_enroll_` 只用于一次
-设备注册，最终 `octo_device_` 只保存在 Worker hash 与 Harness mode 0600 文件中。它不能用
+设备注册，最终 `octo_runtime_` 只保存在 Worker hash 与 Harness mode 0600 文件中。它不能用
 以下凭证代替：
 
 - `INTERNAL_CREDENTIALS_JSON` 中任一 namespace-scoped service token：agent-worker 业务执行 API 的凭证；

@@ -170,11 +170,6 @@ function resolveAgentWorkOptions(
       ["--agent-work-runtime-name"],
       env.OCTO_HARNESS_AGENT_WORK_RUNTIME_NAME ?? managed?.runtimeName
     ) ?? "octo-harness-local",
-    fingerprint: managed?.fingerprint ?? optionalOption(
-      args,
-      ["--agent-work-fingerprint"],
-      env.OCTO_HARNESS_AGENT_WORK_FINGERPRINT
-    ) ?? `octo-harness:${process.platform}:${process.arch}`,
     storePath: resolve(optionalOption(
       args,
       ["--agent-work-db"],
@@ -304,7 +299,6 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[
     args.push(
       "--agent-work-url", serializedRuntime.baseUrl,
       "--agent-work-runtime-name", serializedRuntime.runtimeName,
-      "--agent-work-fingerprint", serializedRuntime.fingerprint,
       "--agent-work-db", serializedRuntime.storePath,
       "--channel-context-store", serializedRuntime.channelContext?.store ?? "sqlite",
       "--channel-context-projection", serializedRuntime.channelContext?.projection ?? "delta",

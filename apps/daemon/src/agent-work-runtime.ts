@@ -65,7 +65,6 @@ export interface AgentWorkRuntimeOptions {
   token: string;
   runtimeId?: string;
   runtimeName: string;
-  fingerprint: string;
   /** Delay before the first reconnect attempt after a connected socket drops. */
   reconnectFirstMs?: number;
   /** Full-jitter backoff floor used from the second reconnect attempt onward. */
@@ -429,7 +428,6 @@ export class AgentWorkRuntime {
       body: JSON.stringify({
         name: this.#options.runtimeName,
         device: {
-          fingerprint: this.#options.fingerprint,
           os: platform(),
           arch: arch(),
           hostname: hostname()

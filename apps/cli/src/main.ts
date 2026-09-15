@@ -11,6 +11,7 @@ import {
 import { resolveServiceControl, verifyServiceProgram, type ServiceControlOptions } from "./service-control.js";
 import {
   defaultHarnessHome,
+  ensureMachineIdentity,
   assertHomeConfiguration,
   harnessPaths,
   migrateLegacyProfileLayout,
@@ -188,7 +189,17 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
     : undefined;
 
   if (!identity || enrollmentToken) {
-    if (identity) validateIdentity(identity);
+    if (identity) {
+      validateIdentity(identity);
+      if (!profileConfig) throw new Error(`profile config is missing: ${context.paths.profileConfig}`);
+      validateProfileConfiguration(profileConfig, context.profile);
+      const requestedServer = optionalString(context.flags.serverUrl);
+      const requestedWorker = optionalString(context.flags.agentWorkUrl);
+      if ((requestedServer && normalizeServerUrl(requestedServer) !== profileConfig.server_url) ||
+          (requestedWorker && normalizeServerUrl(requestedWorker) !== profileConfig.agent_work_url)) {
+        throw new Error("existing Runtime renewal must use its trusted server and Agent Worker; use another profile for a different endpoint");
+      }
+    }
     const requestedServerUrl = optionalString(context.flags.serverUrl) ?? profileConfig?.server_url;
     if (!requestedServerUrl) throw new Error("first login requires --server-url");
     if (!enrollmentToken) throw new Error("first login requires --enroll-token-stdin");
@@ -196,20 +207,24 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
     const runtimeName = optionalString(context.flags.runtimeName)
       ?? profileConfig?.runtime_name
       ?? (hostname() || "Octo Harness Runtime");
-    const systemId = identity?.system_id ?? `system_${randomUUID()}`;
+    const machine = await ensureMachineIdentity(context.paths);
+    const credential = identity ? await readJsonFile<RuntimeCredential>(context.paths.credential) : undefined;
+    if (identity && !credential?.access_token) throw new Error("existing profile re-enrollment requires its Runtime credential");
     const result = await enrollRuntime({
       serverUrl,
       enrollmentToken,
       profile: context.profile,
       runtimeName,
-      systemId,
+      machineId: machine.machine_id,
+      runtimeId: identity?.runtime_id,
+      runtimeToken: credential?.access_token,
       agentWorkUrl: optionalString(context.flags.agentWorkUrl) ?? profileConfig?.agent_work_url,
       fetchImplementation: context.fetchImplementation
     });
     if (identity && result.runtimeId !== identity.runtime_id) {
-      throw new Error("re-enrollment returned a different runtime for the existing system identity");
+      throw new Error("re-enrollment returned a different runtime for the existing profile identity");
     }
-    ({ identity, profileConfig } = await persistEnrollment(context, serverUrl, systemId, result, runtimeName));
+    ({ identity, profileConfig } = await persistEnrollment(context, serverUrl, result, runtimeName));
     enrolled = true;
   } else {
     validateIdentity(identity);
@@ -241,7 +256,6 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
 async function persistEnrollment(
   context: CliContext,
   serverUrl: string,
-  systemId: string,
   result: EnrollmentResult,
   runtimeName: string
 ): Promise<{ identity: RuntimeIdentity; profileConfig: ProfileConfiguration }> {
@@ -254,9 +268,6 @@ async function persistEnrollment(
     schema_version: 1,
     runtime_id: result.runtimeId,
     credential_id: result.credentialId,
-    system_id: systemId,
-    ...(result.deviceId ? { device_id: result.deviceId } : {}),
-    ...(result.workspaceId ? { workspace_id: result.workspaceId } : {}),
     ...(result.octoSpaceId ? { octo_space_id: result.octoSpaceId } : {}),
     enrolled_at: now
   };
@@ -761,7 +772,7 @@ async function readEnrollmentToken(input: NodeJS.ReadableStream): Promise<string
 }
 
 function validateIdentity(value: RuntimeIdentity): void {
-  if (value.schema_version !== 1 || !value.runtime_id || !value.credential_id || !value.system_id) {
+  if (value.schema_version !== 1 || !value.runtime_id || !value.credential_id || "system_id" in value || "device_id" in value) {
     throw new Error("runtime identity is invalid; refusing automatic re-enrollment");
   }
 }

@@ -109,7 +109,6 @@ test("Agent Work channel context sync becomes one provider turn and commits only
       subjectId: "device-e2e",
       runtimeId: "runtime-e2e",
       runtimeName: "runtime-e2e",
-      fingerprint: "runtime:e2e",
       storePath: join(directory, "agent-work.db"),
       channelContext: {
         store: "sqlite",
@@ -248,7 +247,6 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
       tenantId: "tenant-e2e",
       subjectId: "device-e2e",
       runtimeName: "runtime-reject",
-      fingerprint: "runtime:reject",
       storePath: outboxPath,
       channelContext: {
         store: "sqlite",
@@ -377,7 +375,6 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
       tenantId: "tenant-e2e",
       subjectId: "device-e2e",
       runtimeName: "runtime-authority",
-      fingerprint: "runtime:authority",
       storePath: outboxPath,
       channelContext: {
         store: "sqlite",
@@ -570,7 +567,6 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
       tenantId: "tenant-e2e",
       subjectId: "device-e2e",
       runtimeName: "runtime-ordered",
-      fingerprint: "runtime:ordered",
       storePath: join(directory, "agent-work.db"),
       channelContext: {
         store: "sqlite",
@@ -694,7 +690,6 @@ test("runtime rejects a queued source generation after recovery advanced the eff
       tenantId: "tenant-e2e",
       subjectId: "device-e2e",
       runtimeName: "runtime-stale-generation",
-      fingerprint: "runtime:stale-generation",
       storePath: join(directory, "agent-work.db"),
       channelContext: {
         store: "sqlite",
@@ -807,7 +802,6 @@ test("runtime close joins a waiting command before immediate restart and replay"
       tenantId: "tenant-e2e",
       subjectId: "device-e2e",
       runtimeName: "runtime-close-wait",
-      fingerprint: "runtime:close-wait",
       storePath: join(directory, "agent-work.db"),
       channelContext: {
         store: "sqlite",
@@ -948,7 +942,6 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
       tenantId: "tenant-e2e",
       subjectId: "device-e2e",
       runtimeName: "runtime-cancel-wait",
-      fingerprint: "runtime:cancel-wait",
       storePath: outboxPath,
       channelContext: {
         store: "sqlite",
@@ -1059,7 +1052,6 @@ test("append-only channel context cold-starts an adapter without continuity reco
       tenantId: "tenant-e2e",
       subjectId: "device-e2e",
       runtimeName: "runtime-capability",
-      fingerprint: "runtime:capability",
       storePath: join(directory, "agent-work.db"),
       channelContext: {
         store: "sqlite",

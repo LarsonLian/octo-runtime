@@ -72,7 +72,7 @@ export class AgentWorkSupervisor {
   }
 }
 
-class SharedRunAdmission implements RunAdmission {
+export class SharedRunAdmission implements RunAdmission {
   readonly limit: number;
   #active = 0;
   readonly #waiters: Array<{
@@ -92,7 +92,7 @@ class SharedRunAdmission implements RunAdmission {
   }
 
   acquire(signal: AbortSignal): Promise<() => void> {
-    if (signal.aborted) return Promise.reject(signal.reason);
+    if (signal.aborted) return Promise.reject(new Error("Run admission aborted", { cause: signal.reason }));
     return new Promise((resolve, reject) => {
       const waiter = {
         resolve,
@@ -101,7 +101,7 @@ class SharedRunAdmission implements RunAdmission {
         onAbort: (): void => {
           const index = this.#waiters.indexOf(waiter);
           if (index >= 0) this.#waiters.splice(index, 1);
-          reject(signal.reason);
+          reject(new Error("Run admission aborted", { cause: signal.reason }));
         }
       };
       signal.addEventListener("abort", waiter.onAbort, { once: true });

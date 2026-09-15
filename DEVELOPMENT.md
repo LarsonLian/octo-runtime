@@ -23,13 +23,13 @@ Octo 线上测试环境完成真实链路调试。
 
 ```text
 Octo Web
-  -> POST /agentworker/api/v1/device_enrollments
+  -> POST /agentworker/api/v1/runtime_enrollments
   -> octo-auth 验证 Human Token 与 X-Space-ID
   -> 返回短期、单次 octo_enroll_ token
 
 octo-harness login
-  -> POST /agentworker/api/v1/devices/enroll
-  -> 使用 octo_enroll_ 换取 octo_device_ credential
+  -> POST /agentworker/api/v1/runtimes/enroll
+  -> 使用 octo_enroll_ 换取 octo_runtime_ credential
   -> POST /agentworker/api/v1/runtime/register
   -> 持久化 runtime_id 与 device credential
 
@@ -46,7 +46,7 @@ octo-harness daemon
 |---|---|
 | Octo Human Token | Web 创建 enrollment grant，由 `octo-auth` 验证 |
 | `octo_enroll_...` | 单次设备 enrollment，使用后失效 |
-| `octo_device_...` | Runtime register/WSS，由 Harness 保存在 mode `0600` 文件中 |
+| `octo_runtime_...` | Runtime register/WSS，由 Harness 保存在 mode `0600` 文件中 |
 | Provider credential | Codex、Claude Code、CodeBuddy 等 CLI 自己管理的模型凭证 |
 
 ## 3. 环境要求
@@ -149,7 +149,7 @@ curl -i \
   -X POST \
   -H 'Content-Type: application/json' \
   --data '{}' \
-  https://im-test.deepminer.com.cn/agentworker/api/v1/devices/enroll
+  https://im-test.deepminer.com.cn/agentworker/api/v1/runtimes/enroll
 ```
 
 Octo Web 部署必须满足：
@@ -202,9 +202,10 @@ unset OCTO_ENROLL_TOKEN
 同域部署时可以省略 `--agent-work-url`，CLI 默认使用
 `SERVER_URL/agentworker`；只有 Worker 使用其他 origin 或路径时才需要显式覆盖。
 
-首次登录成功后，该 Home 已绑定 server、Agent Worker、`system_id`、`runtime_id` 和
-device credential。不要用同一个 Home 切换到另一个 Worker 或另一个身份；需要隔离时使用
-新的 `--home`。
+After first login, the profile is bound to its trusted server, Agent Worker,
+server-assigned `runtime_id`, and protected Runtime credential. Profiles share
+the Home-global `machine_id` but not credentials or Runtime IDs. Use a new
+profile for another binding; mutually untrusted users need separate OS accounts.
 
 ## 8. 前台启动和调试 daemon
 
@@ -352,8 +353,8 @@ https://im-test.deepminer.com.cn/agentworker
 
 ### profile 已绑定另一个 server/Worker
 
-一个 Home 只允许一个 enabled profile 和一个 Runtime 身份。为新的测试身份选择新的
-`--home`，不要手工复制或修改 credential 文件。
+A Home may hold multiple trusted profiles, each with its own Runtime identity.
+Use a new `--profile` for another binding; do not copy or modify credential files.
 
 ### Runtime 没有 Online
 

@@ -102,7 +102,6 @@ test("process restart hello excludes stale non-terminal runs but retains pending
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-restart-ownership",
-      fingerprint: "runtime:restart-ownership",
       storePath
     }, {
       list: async () => [],
@@ -343,7 +342,6 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
       tenantId: "tenant-observed",
       subjectId: "device-observed",
       runtimeName: "runtime-observed",
-      fingerprint: "runtime:observed",
       profile: "work",
       storePath: join(directory, "agent-work.db")
     }, host, logger);
@@ -416,7 +414,6 @@ test("a configured runtime ID still refreshes registration and rejects identity 
       subjectId: "device-identity",
       runtimeId: "runtime-expected",
       runtimeName: "runtime-identity",
-      fingerprint: "runtime:identity",
       storePath: join(directory, "agent-work.db")
     }, host);
     await assert.rejects(
@@ -464,7 +461,6 @@ test("startup registration failure stays alive and every reconnect re-registers"
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-reconnect",
-      fingerprint: "runtime:reconnect",
       storePath: join(directory, "agent-work.db"),
       reconnectFirstMs: 5,
       reconnectMs: 5,
@@ -513,7 +509,6 @@ test("close cancels a pending reconnect backoff without late registration", asyn
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-close-backoff",
-      fingerprint: "runtime:close-backoff",
       storePath: join(directory, "agent-work.db"),
       reconnectFirstMs: 60_000,
       reconnectMs: 60_000,
@@ -566,7 +561,6 @@ test("a stalled WebSocket handshake times out and registration retries", async (
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-handshake-timeout",
-      fingerprint: "runtime:handshake-timeout",
       storePath: join(directory, "agent-work.db"),
       reconnectFirstMs: 5,
       reconnectMs: 5,
@@ -621,7 +615,6 @@ test("hard outbox watermark rejects new work with a durable command receipt", as
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-hard-limit",
-      fingerprint: "runtime:hard-limit",
       storePath: join(directory, "agent-work.db"),
       hardWatermarkBytes: 0
     }, {
@@ -684,7 +677,6 @@ test("local runtime concurrency limit queues a second provider invocation", asyn
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-capacity",
-      fingerprint: "runtime:capacity",
       storePath: join(directory, "agent-work.db"),
       maxConcurrentRuns: 1
     }, {

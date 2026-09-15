@@ -7,6 +7,7 @@ const RESERVED_PROFILE_NAMES = new Set([
   "config.json",
   "credentials",
   "identity",
+  "machine.json",
   "logs",
   "octo-daemon.pid",
   "profiles",
@@ -33,7 +34,6 @@ interface ProfileConfiguration {
 interface RuntimeIdentity {
   schema_version?: unknown;
   runtime_id?: unknown;
-  system_id?: unknown;
 }
 
 interface RuntimeCredential {
@@ -82,7 +82,6 @@ function loadManagedProfile(home: string, profile: string): AgentWorkRuntimeOpti
     token: requiredString(credential.access_token, "access_token"),
     runtimeId: requiredString(identity.runtime_id, "runtime_id"),
     runtimeName: optionalString(config.runtime_name) ?? "octo-harness-local",
-    fingerprint: requiredString(identity.system_id, "system_id"),
     storePath: join(profileRoot, "agent-work.db"),
     channelContext: {
       store: "sqlite",

@@ -61,7 +61,6 @@ async function startFixture(t, { silentFirst = false, welcomeOnFirst = true } = 
     token: "runtime-token",
     runtimeId: "runtime-liveness",
     runtimeName: "runtime-liveness",
-    fingerprint: "runtime:liveness",
     storePath: join(directory, "agent-work.db"),
     receiveTimeoutMs: 100,
     reconnectFirstMs: 5,
@@ -104,7 +103,6 @@ test("receive timeout rejects non-positive or non-finite values", () => {
       baseUrl: "https://im-test.deepminer.com.cn/agentworker",
       token: "runtime-token",
       runtimeName: "runtime-liveness",
-      fingerprint: "runtime:liveness",
       storePath: "unused.db",
       receiveTimeoutMs
     }, host), /receiveTimeoutMs must be finite and positive/);

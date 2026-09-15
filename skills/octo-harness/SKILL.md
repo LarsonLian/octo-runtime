@@ -16,7 +16,7 @@ Before a state-changing command, determine and state:
 - the profile for `login` or `doctor`, if it is not `default`;
 - whether the daemon runs in the foreground or through the native user service.
 
-One Harness Home holds one enabled profile, one local Runtime, one `system_id`, one `runtime_id`, one device credential, one WSS connection, and one durable outbox. Use separate Homes for distinct trusted profiles. Use separate OS accounts for mutually untrusted identities.
+One Harness Home runs one daemon and adapter-host and can contain multiple trusted profiles. Each profile owns a server-assigned `runtime_id`, Runtime credential, WSS connection, and durable outbox. All profiles share `<home>/machine.json`; its `machine_id` is an untrusted installation grouping label, never ownership proof or a unique Runtime key. Use separate OS accounts for mutually untrusted identities.
 
 Run `octo-harness help` and the relevant `octo-harness <group> --help` before relying on an option that may have changed. Normal successful output is JSON; `events` defaults to source-marked terminal lines (`--json` emits raw envelopes), and `inspect` prints its loopback URL. Errors go to stderr and return nonzero.
 
@@ -48,7 +48,9 @@ printf '%s\n' 'octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN' | octo-harness login \
 
 When Worker and Octo Web use different origins, pass `--agent-work-url`. For source debugging without a native service, follow the current `login --help` flags and run `octo-harness --home PATH daemon run` in the foreground.
 
-Never print or copy `<home>/credentials/runtime-token.json`. The final `octo_device_` credential belongs only in the protected Harness Home file and Worker-side hash. It is not interchangeable with service, provider, Human, or bot credentials.
+Never print or copy `<home>/<profile>/credentials/runtime-token.json`. The final `octo_runtime_` credential binds directly to the Runtime and belongs only in its protected profile file and Worker-side hash. It is not interchangeable with service, provider, Human, or bot credentials.
+
+Ordinary login reuses the saved Runtime without enrollment. Renewal with a fresh grant must use the existing trusted server and Worker and prove possession of the saved Runtime credential. Use a new profile for a different binding. Legacy `system_id`/`device_id` identities require fresh enrollment after the breaking Worker database reset; do not attempt a compatibility migration.
 
 ### Manage The Daemon
 

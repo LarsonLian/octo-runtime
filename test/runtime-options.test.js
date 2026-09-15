@@ -30,7 +30,6 @@ async function writeManagedRuntime(home, profile = "default") {
     schema_version: 1,
     runtime_id: `runtime-${profile}`,
     credential_id: `credential-${profile}`,
-    system_id: `system-${profile}`,
     enrolled_at: new Date().toISOString()
   }));
   await writeFile(join(profileRoot, "credentials/runtime-token.json"), JSON.stringify({
@@ -189,7 +188,7 @@ test("managed Runtime binding ignores process-level endpoint and identity overri
     assert.equal(runtime.token, "device-token-default");
     assert.equal(runtime.runtimeId, "runtime-default");
     assert.equal(runtime.runtimeName, "linked-runtime");
-    assert.equal(runtime.fingerprint, "system-default");
+    assert.equal("fingerprint" in runtime, false);
     const args = daemonRuntimeArguments(paths);
     assert.ok(args.includes("--agent-work-url"));
     assert.ok(args.includes("https://worker.example"));
@@ -270,10 +269,10 @@ test("managed Home discovers multiple profile Runtimes without putting credentia
       "--agent-work-max-concurrent-runs", "5"
     ], {});
     assert.deepEqual(
-      paths.agentWorks.map(runtime => [runtime.profile, runtime.runtimeId, runtime.fingerprint]),
+      paths.agentWorks.map(runtime => [runtime.profile, runtime.runtimeId]),
       [
-        ["default", "runtime-default", "system-default"],
-        ["work", "runtime-work", "system-work"]
+        ["default", "runtime-default"],
+        ["work", "runtime-work"]
       ]
     );
     const args = daemonRuntimeArguments(paths);
