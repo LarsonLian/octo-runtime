@@ -57,7 +57,7 @@ function openClawIsolationConfig(agentId = "octo-openclaw-runner") {
             workspace: "/managed/openclaw-runner",
             contextInjection: "never",
             skills: [],
-            tools: { deny: ["group:memory"] },
+            tools: { deny: ["group:memory", "ask_user"] },
             memory: { search: { rememberAcrossConversations: false } }
           }
         }
@@ -1012,6 +1012,38 @@ test("OpenClaw Gateway adapter fails before session creation when isolation conf
 
   assert.deepEqual(requests, ["config.get"]);
   assert.match(events.at(-1).payload.message, /skipBootstrap must be true/);
+});
+
+test("OpenClaw Gateway adapter rejects a runner that can pause on ask_user", async () => {
+  const requests = [];
+  const drifted = openClawIsolationConfig();
+  drifted.config.agents.entries["octo-openclaw-runner"].tools.deny = ["group:memory"];
+  const client = {
+    connect: async () => openClawGatewayHello(),
+    onEvent() { return () => {}; },
+    async request(method) {
+      requests.push(method);
+      if (method === "config.get") return drifted;
+      throw new Error(`unexpected request ${method}`);
+    },
+    close: async () => {}
+  };
+  const events = [];
+  for await (const event of createOpenClawAdapter({ clientFactory: () => client }).invoke({
+    ...request,
+    agentConfig: {
+      providerOptions: {
+        OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
+        OPENCLAW_GATEWAY_TOKEN: "token",
+        OPENCLAW_GATEWAY_DEVICE_ID: "device",
+        OPENCLAW_GATEWAY_PUBLIC_KEY: "public",
+        OPENCLAW_GATEWAY_PRIVATE_KEY: "private"
+      }
+    }
+  })) events.push(event);
+
+  assert.deepEqual(requests, ["config.get"]);
+  assert.match(events.at(-1).payload.message, /ask_user must be denied for unattended runs/);
 });
 
 test("OpenClaw Gateway adapter refuses success when agent.wait confirms a different terminal", async () => {

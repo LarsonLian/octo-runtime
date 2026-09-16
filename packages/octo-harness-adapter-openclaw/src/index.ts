@@ -404,6 +404,9 @@ function assertRuntimeIsolationConfig(value: unknown, invocation: OpenClawGatewa
   if (!Array.isArray(tools?.deny) || !tools.deny.includes("group:memory")) {
     throw new Error("OpenClaw Gateway isolation drift: memory tools must be denied");
   }
+  if (!tools.deny.includes("ask_user")) {
+    throw new Error("OpenClaw Gateway isolation drift: ask_user must be denied for unattended runs");
+  }
   if (search?.rememberAcrossConversations !== false) {
     throw new Error("OpenClaw Gateway isolation drift: cross-conversation memory must be disabled");
   }

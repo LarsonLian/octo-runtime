@@ -804,7 +804,9 @@ async function initializeOpenClawAdapter(
               workspace: configuration.workspace,
               skills: [],
               contextInjection: "never",
-              tools: { deny: ["group:memory"] },
+              // Harness invocations are unattended. OpenClaw's ask_user runtime
+              // pauses only on OpenClaw surfaces, which Octo cannot answer.
+              tools: { deny: ["group:memory", "ask_user"] },
               memory: { search: { rememberAcrossConversations: false } }
             }
           }

@@ -5,7 +5,7 @@ Octo Harness 的 OpenClaw Gateway adapter。每次 invocation 创建一条已认
 ## Runtime Contract
 
 - 一次 AgentRun 一条 WebSocket、一个唯一 OpenClaw session key。
-- 每次 Run 先用 `config.get` 验证 Gateway/runner 隔离配置，发现漂移时不创建 session。
+- 每次 Run 先用 `config.get` 验证 Gateway/runner 隔离配置，发现漂移时不创建 session；runner 必须禁用只能由 OpenClaw 交互界面回答的原生 `ask_user`。
 - `sessions.create.cwd` 使用 `InvokeRequest.workdir`；`agent` RPC 不传 `cwd`。
 - 调用 `sessions.messages.subscribe` 后再发起 `agent`，否则 Gateway 可能只返回最终 RPC JSON 而不推送完整增量流。
 - user input 进入 `message`，Harness 控制上下文进入 `extraSystemPrompt`。

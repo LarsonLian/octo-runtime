@@ -181,7 +181,7 @@ test("OpenClaw setup requires login, stores secrets separately, and initializes 
     assert.equal(patch.agents.defaults.skipBootstrap, true);
     assert.deepEqual(patch.agents.entries["octo-runner-run-fixture"].skills, []);
     assert.equal(patch.agents.entries["octo-runner-run-fixture"].contextInjection, "never");
-    assert.deepEqual(patch.agents.entries["octo-runner-run-fixture"].tools.deny, ["group:memory"]);
+    assert.deepEqual(patch.agents.entries["octo-runner-run-fixture"].tools.deny, ["group:memory", "ask_user"]);
     assert.deepEqual(await readdir(profile.adapters.openclaw.workspace), []);
     if (process.platform !== "win32") {
       assert.equal((await stat(profile.adapters.openclaw.workspace)).mode & 0o222, 0);

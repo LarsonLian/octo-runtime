@@ -34,8 +34,10 @@ Runner 设置包括：
 - Gateway 级 `agents.defaults.skipBootstrap: true`
 - `contextInjection: "never"`
 - `skills: []`
-- `tools.deny: ["group:memory"]`
+- `tools.deny: ["group:memory", "ask_user"]`
 - `memory.search.rememberAcrossConversations: false`
+
+Harness 的 OpenClaw invocation 是无人值守执行，不能消费只投递到 OpenClaw Control UI/TUI 的结构化问题。因此专用 runner 必须禁用 OpenClaw 原生 `ask_user`；需要澄清时应由 Harness 自己的 canonical interaction 通道承载。在该通道接入 OpenClaw adapter 前，禁止原生工具可避免 AgentRun 挂起等待另一个页面里的选择。
 
 OpenClaw 2026.9.4 没有 per-agent 或 per-session 的 `skipBootstrap`，因此第一项会影响同一 Gateway 上的所有 agents。严格隔离部署应为 Octo 使用专用 Gateway；共享 Gateway 必须显式接受这个影响。本地 Gateway 的空壳 workspace 会清除 OpenClaw 生成的 bootstrap 文件，再设为 `0555`；符号链接会被拒绝。远程目录的只读权限无法由本机 CLI 强制，必须由 Gateway 主机的 owner/service manager 落实。
 
