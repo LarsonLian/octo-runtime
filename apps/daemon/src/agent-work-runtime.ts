@@ -1161,19 +1161,23 @@ export class AgentWorkRuntime {
     // Reliable trigger path repairs a dropped best-effort append before selection.
 	contextStore.append({ agent_id: envelope.agent_run_request.agent_id, scope: descriptor.scope, facts: [descriptor.trigger_fact] });
     if (!this.#usesAppendOnlyDelta()) return undefined;
-    if (!this.#adapterCapabilities.get(adapterType)?.has("session.serialize")) {
-      throw new Error(`adapter ${adapterType} lacks session.serialize required by append-only channel context`);
-    }
+    const adapterCapabilities = this.#adapterCapabilities.get(adapterType);
     if (contextStore.needsSync(descriptor.scope)) await this.#requestContextSync(runId, descriptor, signal);
     while (this.#isCurrentLifecycle(epoch)) {
       throwIfAcceptingAborted(signal);
       try {
         const snapshot = contextStore.prepareSnapshot(runId, descriptor);
+        // A provider with no serializable session starts cold on every turn.
+        // Give it the bounded full projection without promoting the context
+        // generation, because no previously resumed session became invalid.
+        if (!adapterCapabilities?.has("session.serialize")) {
+          return contextStore.selectColdProjection(runId);
+        }
         // A resumable provider without same-turn recovery cannot safely consume
         // only a delta if its saved session has disappeared. Start it cold with
         // the bounded recovery projection instead of rejecting the whole Run.
         if (envelope.provider_session
-          && !this.#adapterCapabilities.get(adapterType)?.has("session.resume_recovery")) {
+          && !adapterCapabilities.has("session.resume_recovery")) {
           return contextStore.selectRecovery(runId);
         }
         return snapshot;
@@ -1309,6 +1313,7 @@ export class AgentWorkRuntime {
           contextSnapshot = this.#contextStore?.selectRecovery(command.run_id) ?? contextSnapshot;
         }
         if (contextSnapshot?.selectedVariant === "recovery"
+          && contextSnapshot.ref.source_session_generation !== undefined
           && !recoverySessionReported
           && event.type === "session.update"
           && stringValue(asRecord(event.payload.providerSession).sessionId)) {

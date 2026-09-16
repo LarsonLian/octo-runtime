@@ -1091,6 +1091,119 @@ test("append-only channel context cold-starts an adapter without continuity reco
   }
 });
 
+test("append-only channel context accepts an adapter without serialized sessions", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-channel-runtime-stateless-"));
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  const accepted = deferred();
+  const completed = deferred();
+  const emitted = [];
+  let runtime;
+  let providerRequest;
+
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* consume registration body */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-stateless" } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    websocket.on("message", data => {
+      const envelope = JSON.parse(data.toString("utf8"));
+      if (envelope.type === "runtime.hello") {
+        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("runtime.command", {
+          server_seq: 1,
+          command_id: "command-stateless",
+          run_id: "run-stateless",
+          type: "run.start",
+          payload: executionEnvelope("run-stateless", 2, "current message"),
+          lease_id: "lease-stateless",
+          fencing_token: 1
+        }));
+      }
+      if (envelope.type === "context.sync_request") {
+        websocket.send(wire("context.sync_result", {
+          request_id: envelope.payload.request_id,
+          scope,
+          facts: [fact(1, "background message")],
+          completeness: "complete",
+          through_seq: 1
+        }));
+      }
+      if (envelope.type === "command.ack" && envelope.payload.command_id === "command-stateless") {
+        accepted.resolve(envelope.payload);
+      }
+      if (envelope.type === "run.event_batch") {
+        emitted.push(...envelope.payload.events);
+        const terminal = envelope.payload.events.find(event => event.type === "run.completed");
+        websocket.send(wire("event.ack", {
+          run_id: envelope.payload.run_id,
+          received_through_seq: envelope.payload.last_seq,
+          durable_through_seq: envelope.payload.last_seq,
+          ...(terminal ? terminalGrant(terminal) : {})
+        }));
+        if (terminal) completed.resolve();
+      }
+    });
+  });
+
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    const host = {
+      list: async () => [{ type: "fake", capabilities: ["tool.canonical"] }],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke(_adapterType, request) {
+        providerRequest = request;
+        yield {
+          type: "session.update",
+          payload: { providerSession: { sessionId: "ephemeral-provider-session", resumable: false } }
+        };
+        yield { type: "message.delta", payload: { channel: "final", text: "done" } };
+        yield { type: "run.finished", payload: {} };
+      }
+    };
+    runtime = new AgentWorkRuntime({
+      profile: "default",
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      tenantId: "tenant-e2e",
+      subjectId: "device-e2e",
+      runtimeName: "runtime-stateless",
+      storePath: join(directory, "agent-work.db"),
+      channelContext: {
+        store: "sqlite",
+        projection: "delta",
+        providerPersistence: "append_only",
+        storePath: join(directory, "channel-context.db"),
+        syncTimeoutMs: 1_000
+      }
+    }, host);
+    await runtime.start();
+    const ack = await withTimeout(accepted.promise, 3_000, "stateless adapter acceptance timeout");
+    await withTimeout(completed.promise, 3_000, "stateless adapter completion timeout");
+    assert.equal(ack.accepted, true);
+    assert.equal(providerRequest.providerSession, undefined);
+    assert.match(providerRequest.modelInput, /background message/);
+    const session = emitted.find(event => event.type === "session.update");
+    assert.equal(session.payload.providerSession.resumeOutcome, undefined);
+    assert.equal(session.payload.providerSession.contextInputVariant, undefined);
+    const terminal = emitted.find(event => event.type === "run.completed");
+    assert.equal(terminal.payload.context_input_variant, "recovery");
+    assert.equal(terminal.payload.context_source_session_generation, undefined);
+    assert.equal(terminal.payload.context_session_generation, 1);
+  } finally {
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 function executionEnvelope(runId = "run-e2e", triggerSeq = 3, currentText = "trigger current", generation = 1) {
   const trigger = fact(triggerSeq, currentText);
   return {
