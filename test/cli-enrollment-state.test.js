@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { WebSocketServer } from "ws";
 import { runCli } from "../apps/cli/dist/main.js";
+import { defaultOpenClawRunnerAgentId } from "../apps/cli/dist/state.js";
 import { enrollRuntime } from "../apps/cli/dist/enrollment.js";
 
 async function assertAbsent(path) {
@@ -40,6 +41,21 @@ test("failed enrollment leaves no pending or profile identity state", async () =
   } finally {
     await rm(home, { recursive: true, force: true });
   }
+});
+
+test("OpenClaw default runner ids are stable, Runtime-scoped, and valid", () => {
+  assert.equal(
+    defaultOpenClawRunnerAgentId("runtime_3ba433ec-3c85-42af-a107-238807b63f19"),
+    "octo-runner-run-3ba433ec-3c85-42af-a107-238807b63f19"
+  );
+
+  const normalized = defaultOpenClawRunnerAgentId("runtime_Work.With.Dots");
+  assert.match(normalized, /^octo-runner-run-work-with-dots-[0-9a-f]{10}$/);
+  assert.notEqual(normalized, defaultOpenClawRunnerAgentId("runtime_work-with-dots"));
+
+  const long = defaultOpenClawRunnerAgentId(`runtime_${"a".repeat(128)}`);
+  assert.match(long, /^[a-z0-9_][a-z0-9_-]{0,63}$/);
+  assert.equal(long.length, 64);
 });
 
 test("OpenClaw setup requires login, stores secrets separately, and initializes an isolated runner in one command", async t => {
@@ -145,7 +161,10 @@ test("OpenClaw setup requires login, stores secrets separately, and initializes 
     const credentialPath = join(home, "default/credentials/openclaw-gateway.json");
     const credential = JSON.parse(await readFile(credentialPath, "utf8"));
     assert.equal(profile.adapters.openclaw.gateway_url, `ws://127.0.0.1:${address.port}/`);
-    assert.equal(profile.adapters.openclaw.agent_id, "octo-openclaw-runner");
+    assert.equal(profile.adapters.openclaw.agent_id, "octo-runner-run-fixture");
+    assert.equal(profile.adapters.openclaw.workspace, join(
+      home, "default/adapters/openclaw/octo-runner-run-fixture.workspace"
+    ));
     assert.equal(JSON.stringify(profile).includes("gateway-token"), false);
     assert.equal(credential.access_token, rotatedGatewayToken);
     assert.match(credential.device_id, /^[0-9a-f]{64}$/);
@@ -160,9 +179,9 @@ test("OpenClaw setup requires login, stores secrets separately, and initializes 
     }
     const patch = JSON.parse(configPatch.raw);
     assert.equal(patch.agents.defaults.skipBootstrap, true);
-    assert.deepEqual(patch.agents.entries["octo-openclaw-runner"].skills, []);
-    assert.equal(patch.agents.entries["octo-openclaw-runner"].contextInjection, "never");
-    assert.deepEqual(patch.agents.entries["octo-openclaw-runner"].tools.deny, ["group:memory"]);
+    assert.deepEqual(patch.agents.entries["octo-runner-run-fixture"].skills, []);
+    assert.equal(patch.agents.entries["octo-runner-run-fixture"].contextInjection, "never");
+    assert.deepEqual(patch.agents.entries["octo-runner-run-fixture"].tools.deny, ["group:memory"]);
     assert.deepEqual(await readdir(profile.adapters.openclaw.workspace), []);
     if (process.platform !== "win32") {
       assert.equal((await stat(profile.adapters.openclaw.workspace)).mode & 0o222, 0);
@@ -177,11 +196,25 @@ test("OpenClaw setup requires login, stores secrets separately, and initializes 
     const profileAfterRelogin = JSON.parse(await readFile(join(home, "default/config.json"), "utf8"));
     assert.deepEqual(profileAfterRelogin.adapters, profile.adapters);
 
+    profileAfterRelogin.adapters.openclaw.agent_id = "octo-openclaw-runner";
+    profileAfterRelogin.adapters.openclaw.workspace = join(home, "default/adapters/openclaw/octo-runner.workspace");
+    profileAfterRelogin.adapters.openclaw.execution.provider_agent_id = "octo-openclaw-runner";
+    profileAfterRelogin.adapters.openclaw.execution.provider_options.OPENCLAW_RUNNER_WORKSPACE = profileAfterRelogin.adapters.openclaw.workspace;
+    profileAfterRelogin.adapters.openclaw.execution.managed_workspace.path = profileAfterRelogin.adapters.openclaw.workspace;
+    await writeFile(join(home, "default/config.json"), JSON.stringify(profileAfterRelogin));
+
     const setupOutput = [];
     await runCli(["--home", home, "--profile", "default", "adapter", "setup", "openclaw"], {
       output: value => setupOutput.push(JSON.parse(value))
     });
     assert.equal(setupOutput[0].configured, false);
+    assert.equal(setupOutput[0].agent_id, "octo-runner-run-fixture");
+    const migratedProfile = JSON.parse(await readFile(join(home, "default/config.json"), "utf8"));
+    assert.equal(migratedProfile.adapters.openclaw.agent_id, "octo-runner-run-fixture");
+    assert.equal(migratedProfile.adapters.openclaw.execution.provider_agent_id, "octo-runner-run-fixture");
+    assert.equal(migratedProfile.adapters.openclaw.workspace, profile.adapters.openclaw.workspace);
+    assert.equal(migratedProfile.adapters.openclaw.execution.provider_options.OPENCLAW_RUNNER_WORKSPACE, profile.adapters.openclaw.workspace);
+    assert.equal(migratedProfile.adapters.openclaw.execution.managed_workspace.path, profile.adapters.openclaw.workspace);
     const rotatedCredential = JSON.parse(await readFile(credentialPath, "utf8"));
     assert.equal(rotatedCredential.access_token, rotatedGatewayToken);
     assert.equal(rotatedCredential.provider_options.OPENCLAW_GATEWAY_TOKEN, rotatedGatewayToken);

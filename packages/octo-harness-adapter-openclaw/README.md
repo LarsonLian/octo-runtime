@@ -27,7 +27,7 @@ printf '%s' "$OPENCLAW_GATEWAY_TOKEN" | \
 octo-harness --profile <profile> adapter setup openclaw
 ```
 
-首次 `setup` 同时保存连接配置并创建默认 `octo-openclaw-runner`；后续无参数 `setup` 幂等检查和修复现有状态。它清空并冻结本地空壳 workspace，关闭 OpenClaw workspace context、skills 和 memory access，并设置 Gateway 级 `agents.defaults.skipBootstrap=true`，防止 OpenClaw 在 `InvokeRequest.workdir` 创建 `.git` 和默认 workspace 文件。OpenClaw 2026.9.4 没有对应的 per-agent 开关，因此共享 Gateway 上的其他 agents 也会受影响；严格部署应使用 Octo 专用 Gateway。本地 workspace 必须位于 profile 受管目录内，并在 daemon readiness 时复检为空且只读。远程 Gateway 需要 `wss://` 和显式 `--workspace`，目录只读权限由远程 owner 管理。
+首次 `setup` 从已经完成 login 的 Runtime identity 读取唯一 `runtime_id`，创建默认 `octo-runner-run-<runtime UUID>` 及同名只读空 workspace。profile 只用于定位登录态，不参与 runner 命名；不同 profile 的 Runtime ID 不同，因此同一 Gateway 上各自拥有独立 runner 和 workspace，而一个 Runtime 下的多个 Octo Agent 仍复用一个 runner。非标准或超长 Runtime ID 会规范化并附加短哈希，以满足 OpenClaw 的 64 字符限制。显式 `--agent-id` 可覆盖默认值；旧版本地固定默认 ID、曾使用的 profile 派生 ID 和 workspace 会在后续 setup 时一起迁移，且不会删除旧 agent 或旧目录。远程旧配置必须显式提供新的 ID 和 workspace。后续无参数 `setup` 幂等检查和修复现有状态。它清空并冻结本地空壳 workspace，关闭 OpenClaw workspace context、skills 和 memory access，并设置 Gateway 级 `agents.defaults.skipBootstrap=true`，防止 OpenClaw 在 `InvokeRequest.workdir` 创建 `.git` 和默认 workspace 文件。OpenClaw 2026.9.4 没有对应的 per-agent 开关，因此共享 Gateway 上的其他 agents 也会受影响；严格部署应使用 Octo 专用 Gateway。本地 workspace 必须位于 profile 受管目录内，并在 daemon readiness 时复检为空且只读。远程 Gateway 需要 `wss://` 和显式 `--workspace`，目录只读权限由远程 owner 管理。
 
 Agent revision 仍提供 `providerAgent`、`model`、`thinking` 和 `timeoutSeconds`。Gateway URL/token/device identity 通过 profile 的通用 adapter execution/credential manifest 注入，不从 AgentRevision 或进程环境获取；daemon 不包含 OpenClaw 专用 option 映射。
 

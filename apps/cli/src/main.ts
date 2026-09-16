@@ -17,9 +17,11 @@ import {
 import { resolveServiceControl, verifyServiceProgram, type ServiceControlOptions } from "./service-control.js";
 import {
   defaultHarnessHome,
+  defaultOpenClawRunnerAgentId,
   ensureMachineIdentity,
   assertHomeConfiguration,
   harnessPaths,
+  isValidOpenClawAgentId,
   migrateLegacyProfileLayout,
   prepareHarnessDirectories,
   readJsonFile,
@@ -80,6 +82,7 @@ interface CliContext {
 }
 
 const DEFAULT_WAIT_MS = 30_000;
+const LEGACY_OPENCLAW_RUNNER_AGENT_ID = "octo-openclaw-runner";
 const BOOLEAN_FLAGS = new Set([
   "enrollTokenStdin",
   "force",
@@ -512,10 +515,10 @@ async function runOpenClawAdapterCommand(context: CliContext, action: string | u
   }
   assertExplicitSetupProfile(context);
   return withSetupLock(context.paths, async () => {
-    const { profileConfig } = await loadInstalledRuntime(context);
+    const { identity, profileConfig } = await loadInstalledRuntime(context);
     await prepareHarnessDirectories(context.paths);
     return action === "configure"
-      ? configureOpenClawAdapter(context, profileConfig)
+      ? configureOpenClawAdapter(context, identity, profileConfig)
       : initializeOpenClawAdapter(context, profileConfig);
   });
 }
@@ -526,7 +529,9 @@ async function runAdapterSetupCommand(context: CliContext, adapterType: string |
   }
   assertExplicitSetupProfile(context);
   return withSetupLock(context.paths, async () => {
-    let { profileConfig } = await loadInstalledRuntime(context);
+    const installed = await loadInstalledRuntime(context);
+    const { identity } = installed;
+    let { profileConfig } = installed;
     await prepareHarnessDirectories(context.paths);
     const configureRequested = [
       context.flags.gatewayUrl,
@@ -538,10 +543,13 @@ async function runAdapterSetupCommand(context: CliContext, adapterType: string |
       if (!configureRequested) {
         throw new Error("first OpenClaw setup requires --gateway-url URL and --token-stdin");
       }
-      await configureOpenClawAdapter(context, profileConfig);
+      await configureOpenClawAdapter(context, identity, profileConfig);
       const configured = await readJsonFile<ProfileConfiguration>(context.paths.profileConfig);
       if (!configured) throw new Error("OpenClaw setup could not reload the saved profile configuration");
       profileConfig = configured;
+    }
+    if (context.flags.agentId === undefined) {
+      profileConfig = await migrateLegacyOpenClawRunnerConfiguration(context, identity, profileConfig);
     }
     const initialized = await initializeOpenClawAdapter(context, profileConfig);
     return {
@@ -562,14 +570,19 @@ function assertExplicitSetupProfile(context: CliContext): void {
 
 async function configureOpenClawAdapter(
   context: CliContext,
+  runtimeIdentity: RuntimeIdentity,
   profileConfig: ProfileConfiguration
 ): Promise<CommandResult> {
   const gatewayUrl = normalizeOpenClawGatewayUrl(requiredFlag(context.flags.gatewayUrl, "gateway-url"));
   if (context.flags.tokenStdin !== true) throw new Error("OpenClaw configuration requires --token-stdin");
   const token = await readSecret(context.input, "OpenClaw Gateway token");
-  const agentId = optionalString(context.flags.agentId) ?? profileConfig.adapters?.openclaw?.agent_id ?? "octo-openclaw-runner";
-  if (!/^[a-z0-9][a-z0-9-]{0,127}$/.test(agentId)) {
-    throw new Error("--agent-id must contain lowercase letters, digits, or hyphens");
+  const configuredAgentId = profileConfig.adapters?.openclaw?.agent_id;
+  const agentId = optionalString(context.flags.agentId)
+    ?? (configuredAgentId && !isDeprecatedOpenClawRunnerAgentId(configuredAgentId)
+      ? configuredAgentId
+      : defaultOpenClawRunnerAgentId(runtimeIdentity.runtime_id));
+  if (!isValidOpenClawAgentId(agentId)) {
+    throw new Error("--agent-id must be 1-64 characters and contain lowercase letters, digits, underscores, or hyphens");
   }
   const url = new URL(gatewayUrl);
   const localGateway = isLoopbackHost(url.hostname);
@@ -577,7 +590,7 @@ async function configureOpenClawAdapter(
   if (!localGateway && !requestedWorkspace) {
     throw new Error("remote OpenClaw Gateway configuration requires --workspace with a path on the Gateway host");
   }
-  const localWorkspaceRoot = resolve(context.paths.profileRoot, "adapters", "openclaw");
+  const localWorkspaceRoot = context.paths.openclawRoot;
   if (localGateway && requestedWorkspace) {
     const candidate = resolve(requestedWorkspace);
     const relativeWorkspace = relative(localWorkspaceRoot, candidate);
@@ -587,7 +600,7 @@ async function configureOpenClawAdapter(
   }
   const workspace = requestedWorkspace
     ? (localGateway ? resolve(requestedWorkspace) : requestedWorkspace)
-    : context.paths.openclawWorkspace;
+    : join(localWorkspaceRoot, `${agentId}.workspace`);
   const existingCredential = await readJsonFile<OpenClawGatewayCredential>(context.paths.openclawCredential);
   const identity = existingCredential?.schema_version === 1
     ? {
@@ -651,6 +664,61 @@ async function configureOpenClawAdapter(
       next: `octo-harness --profile ${context.profile} adapter setup openclaw`
     }
   };
+}
+
+async function migrateLegacyOpenClawRunnerConfiguration(
+  context: CliContext,
+  runtimeIdentity: RuntimeIdentity,
+  profileConfig: ProfileConfiguration
+): Promise<ProfileConfiguration> {
+  const openclaw = profileConfig.adapters?.openclaw;
+  if (!openclaw) return profileConfig;
+
+  const agentId = defaultOpenClawRunnerAgentId(runtimeIdentity.runtime_id);
+  const legacyWorkspace = resolve(context.paths.openclawRoot, "octo-runner.workspace");
+  const localGateway = isLoopbackHost(new URL(openclaw.gateway_url).hostname);
+  const hasDeprecatedAgentId = isDeprecatedOpenClawRunnerAgentId(openclaw.agent_id);
+  const hasLegacyLocalWorkspace = localGateway && resolve(openclaw.workspace) === legacyWorkspace;
+  if (!hasDeprecatedAgentId
+      && !(openclaw.agent_id === agentId && hasLegacyLocalWorkspace)) return profileConfig;
+  if (!localGateway) {
+    throw new Error("remote OpenClaw legacy runner migration requires setup with explicit --agent-id and a new --workspace");
+  }
+
+  const workspace = join(context.paths.openclawRoot, `${agentId}.workspace`);
+  const migrated: ProfileConfiguration = {
+    ...profileConfig,
+    adapters: {
+      ...profileConfig.adapters,
+      openclaw: {
+        ...openclaw,
+        agent_id: agentId,
+        workspace,
+        execution: {
+          ...openclaw.execution,
+          provider_agent_id: agentId,
+          provider_options: {
+            ...openclaw.execution.provider_options,
+            [OPENCLAW_PROVIDER_OPTIONS.workspace]: workspace
+          },
+          managed_workspace: openclaw.execution.managed_workspace
+            ? {
+                ...openclaw.execution.managed_workspace,
+                path: workspace
+              }
+            : undefined
+        }
+      }
+    }
+  };
+  await writeJsonAtomic(context.paths.profileConfig, migrated);
+  return migrated;
+}
+
+function isDeprecatedOpenClawRunnerAgentId(agentId: string): boolean {
+  return agentId === LEGACY_OPENCLAW_RUNNER_AGENT_ID
+    || agentId.startsWith(`${LEGACY_OPENCLAW_RUNNER_AGENT_ID}-`)
+    || (agentId.startsWith("octo-runner-") && !agentId.startsWith("octo-runner-run-"));
 }
 
 async function initializeOpenClawAdapter(

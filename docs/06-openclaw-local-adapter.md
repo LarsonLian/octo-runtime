@@ -19,11 +19,11 @@ printf '%s' "$OPENCLAW_GATEWAY_TOKEN" | \
 printf '%s' "$OPENCLAW_GATEWAY_TOKEN" | \
   octo-harness --profile <profile> adapter setup openclaw \
     --gateway-url wss://gateway.example.com \
-    --workspace /var/lib/octo/openclaw/octo-openclaw-runner.workspace \
+    --workspace /var/lib/octo/openclaw/octo-runner-run-<runtime-uuid>.workspace \
     --token-stdin
 ```
 
-首次 `setup` 在同一条命令中完成两个内部阶段：先把 URL、agent id、workspace 和通用 adapter execution manifest 保存到 profile config，并把 token、device identity 和后续获得的 device token 单独保存到 profile credential 文件；随后连接 Gateway、检查协议能力并创建默认名为 `octo-openclaw-runner` 的专用 agent。daemon 只解析通用 manifest，不包含 OpenClaw option key 分支；重新 login 会保留 adapter 配置。已有配置时可以不带参数幂等重跑：
+首次 `setup` 在同一条命令中完成两个内部阶段：先从已经完成 login 的 Runtime identity 读取唯一 `runtime_id`，生成默认 `octo-runner-run-<runtime UUID>` Agent ID 及同名只读空 workspace；再把 URL、agent id、workspace 和通用 adapter execution manifest 保存到 profile config，并把 token、OpenClaw device identity 和后续获得的 device token 单独保存到 profile credential 文件；最后连接 Gateway、检查协议能力并创建专用 Agent。profile 只负责定位已登录 Runtime，不参与 runner 命名；不同 profile 拥有不同 `runtime_id`，因此同一 Gateway 上的 runner 和 workspace 自然隔离。非标准或超长 runtime ID 会规范化并附加短哈希以满足 OpenClaw 的 64 字符限制；显式 `--agent-id` 仍可覆盖默认值。旧版本地固定默认值、曾使用的 profile 派生 ID 及旧 workspace 会在下次无覆盖的 `setup` 中迁移，但不会删除 Gateway 上的旧 agent 或本地旧目录。远程旧配置必须显式提供新的 `--agent-id` 和 `--workspace`。daemon 只解析通用 manifest，不包含 OpenClaw option key 分支；重新 login 会保留相同 Runtime 的 adapter 配置。已有配置时可以不带参数幂等重跑：
 
 ```bash
 octo-harness --profile <profile> adapter setup openclaw
