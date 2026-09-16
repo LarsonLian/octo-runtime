@@ -1,562 +1,643 @@
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { access, chmod, open, readdir, stat, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { createInterface } from "node:readline";
-import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { defineAdapter, observeBestEffort, observeProviderOutput, probeCommand, providerInputText, type AdapterInvocationContext, type CanonicalEvent, type InvokeRequest, type ProviderCarrier } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import {
-  normalizeOpenClawFrame,
-  OpenClawTranscriptNormalizer,
-  tryParseOpenClawEvent,
-  tryParseOpenClawFinalBlob,
-  tryParseOpenClawTranscriptLine,
-  usagePayload,
-  type OpenClawFinalFrame,
-  type OpenClawTranscriptFrame
-} from "./parser.js";
+  defineAdapter,
+  observeBestEffort,
+  observeProviderOutput,
+  providerInputText,
+  type AdapterInvocationContext,
+  type CanonicalEvent,
+  type InvokeRequest,
+  type ProviderCarrier
+} from "@mininglamp-oss/octo-harness-adapter-sdk";
+import {
+  OpenClawGatewayClient,
+  type OpenClawDeviceIdentity,
+  type OpenClawGatewayEvent,
+  type OpenClawGatewayOptions
+} from "./gateway.js";
 
-/** Cap retained stderr so a chatty process cannot grow the buffer without bound; only the tail feeds the failure message. */
-const STDERR_LIMIT = 64 * 1024;
-const TRANSCRIPT_POLL_MS = 100;
-const TRANSCRIPT_READ_BYTES = 256 * 1024;
+type JsonRecord = Record<string, unknown>;
 
-interface OpenClawCommandSpec {
-  command: string;
-  args: string[];
-  cwd: string;
-  env: NodeJS.ProcessEnv;
-  providerSessionId: string;
-  providerAgentId?: string;
-  stateDir: string;
-  messageFile: string;
-  /** Final argv plus the message-file content that OpenClaw will consume. */
+export const OPENCLAW_PROVIDER_OPTIONS = {
+  url: "OPENCLAW_GATEWAY_URL",
+  token: "OPENCLAW_GATEWAY_TOKEN",
+  deviceId: "OPENCLAW_GATEWAY_DEVICE_ID",
+  publicKey: "OPENCLAW_GATEWAY_PUBLIC_KEY",
+  privateKey: "OPENCLAW_GATEWAY_PRIVATE_KEY",
+  agentId: "OPENCLAW_AGENT_ID",
+  workspace: "OPENCLAW_RUNNER_WORKSPACE"
+} as const;
+
+export interface OpenClawGatewayInvocation {
+  gateway: OpenClawGatewayOptions;
+  agentId: string;
+  runnerWorkspace?: string;
+  sessionKey: string;
+  requestId: string;
+  reconciliationDeadlineAt: number;
+  createParams: JsonRecord;
+  agentParams: JsonRecord;
   providerInput: ProviderCarrier;
-  cleanup: () => Promise<void>;
 }
 
-interface ProcessExit {
-  code: number | null;
-  signal: NodeJS.Signals | null;
+function asRecord(value: unknown): JsonRecord | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : undefined;
 }
 
-interface OpenClawTranscriptCursor {
-  stateDir: string;
-  sessionId: string;
-  providerAgentId?: string;
-  path?: string;
-  offset: number;
-  pending: Buffer;
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-type OpenClawOutput =
-  | { source: "stdout"; line: string }
-  | { source: "transcript"; frame: OpenClawTranscriptFrame };
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, milliseconds));
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-/** Locate a session transcript without trusting provider-controlled ids as path segments. */
-async function findTranscriptPath(cursor: OpenClawTranscriptCursor): Promise<string | undefined> {
-  const agentsDir = join(cursor.stateDir, "agents");
-  let agents;
-  try {
-    agents = (await readdir(agentsDir, { withFileTypes: true }))
-      .filter(entry => entry.isDirectory())
-      .map(entry => entry.name);
-  } catch {
-    return undefined;
-  }
-  if (cursor.providerAgentId) {
-    agents.sort((left, right) => Number(right === cursor.providerAgentId) - Number(left === cursor.providerAgentId));
-  }
-  const target = `${cursor.sessionId}.jsonl`;
-  for (const agent of agents) {
-    const sessionsDir = join(agentsDir, agent, "sessions");
-    try {
-      const entries = await readdir(sessionsDir, { withFileTypes: true });
-      if (entries.some(entry => entry.isFile() && entry.name === target)) return join(sessionsDir, target);
-    } catch {
-      // The agent may not have created its sessions directory yet.
-    }
-  }
-  return undefined;
+function option(req: InvokeRequest, key: string): string | undefined {
+  return nonEmptyString(req.agentConfig.providerOptions?.[key]);
 }
 
-/** Snapshot the existing transcript length so resumed sessions never replay history from earlier invocations. */
-async function createTranscriptCursor(spec: OpenClawCommandSpec): Promise<OpenClawTranscriptCursor> {
-  const cursor: OpenClawTranscriptCursor = {
-    stateDir: spec.stateDir,
-    sessionId: spec.providerSessionId,
-    providerAgentId: spec.providerAgentId,
-    offset: 0,
-    pending: Buffer.alloc(0)
-  };
-  cursor.path = await findTranscriptPath(cursor);
-  if (cursor.path) {
-    try { cursor.offset = (await stat(cursor.path)).size; } catch { cursor.path = undefined; }
-  }
-  return cursor;
+function requiredOption(req: InvokeRequest, key: string): string {
+  const value = option(req, key);
+  if (!value) throw new Error(`OpenClaw adapter is not configured: missing ${key}`);
+  return value;
 }
 
-/** Read complete, newly appended UTF-8 JSONL records while retaining a partial trailing line as bytes. */
-async function readTranscriptLines(cursor: OpenClawTranscriptCursor, flush = false): Promise<string[]> {
-  cursor.path ??= await findTranscriptPath(cursor);
-  if (!cursor.path) return [];
-  let size: number;
-  try { size = (await stat(cursor.path)).size; } catch { return []; }
-  if (size < cursor.offset) {
-    cursor.offset = 0;
-    cursor.pending = Buffer.alloc(0);
-  }
-  const lines: string[] = [];
-  while (cursor.offset < size) {
-    const length = Math.min(size - cursor.offset, TRANSCRIPT_READ_BYTES);
-    const buffer = Buffer.allocUnsafe(length);
-    const handle = await open(cursor.path, "r");
-    try {
-      const { bytesRead } = await handle.read(buffer, 0, length, cursor.offset);
-      if (bytesRead === 0) break;
-      cursor.offset += bytesRead;
-      cursor.pending = Buffer.concat([cursor.pending, buffer.subarray(0, bytesRead)]);
-    } finally {
-      await handle.close();
-    }
-    let newline = cursor.pending.indexOf(0x0a);
-    while (newline >= 0) {
-      const line = cursor.pending.subarray(0, newline).toString("utf8").trimEnd();
-      cursor.pending = cursor.pending.subarray(newline + 1);
-      if (line) lines.push(line);
-      newline = cursor.pending.indexOf(0x0a);
-    }
-  }
-  if (flush && cursor.pending.length > 0) {
-    const line = cursor.pending.toString("utf8").trim();
-    cursor.pending = Buffer.alloc(0);
-    if (line) lines.push(line);
-  }
-  return lines;
-}
-
-async function* tailOpenClawTranscript(
-  cursor: OpenClawTranscriptCursor,
-  processClosed: () => boolean
-): AsyncGenerator<OpenClawTranscriptFrame> {
-  // Give legacy OpenClaw versions a chance to identify their native stdout
-  // stream before consulting the durable transcript fallback.
-  await delay(TRANSCRIPT_POLL_MS);
-  while (true) {
-    for (const line of await readTranscriptLines(cursor)) {
-      const frame = tryParseOpenClawTranscriptLine(line);
-      if (frame) yield frame;
-    }
-    if (processClosed()) {
-      for (const line of await readTranscriptLines(cursor, true)) {
-        const frame = tryParseOpenClawTranscriptLine(line);
-        if (frame) yield frame;
-      }
-      return;
-    }
-    await delay(TRANSCRIPT_POLL_MS);
-  }
-}
-
-/** Merge stdout and transcript sources without losing a pending read from either iterator. */
-async function* openClawOutput(
-  stdout: AsyncIterable<string>,
-  transcript: AsyncIterable<OpenClawTranscriptFrame>
-): AsyncGenerator<OpenClawOutput> {
-  const stdoutIterator = stdout[Symbol.asyncIterator]();
-  const transcriptIterator = transcript[Symbol.asyncIterator]();
-  let stdoutNext: Promise<{ source: "stdout"; result: IteratorResult<string> }> | undefined =
-    stdoutIterator.next().then(result => ({ source: "stdout", result }));
-  let transcriptNext: Promise<{ source: "transcript"; result: IteratorResult<OpenClawTranscriptFrame> }> | undefined =
-    transcriptIterator.next().then(result => ({ source: "transcript", result }));
-  while (stdoutNext || transcriptNext) {
-    const next = await Promise.race([stdoutNext, transcriptNext].filter(value => value !== undefined));
-    if (next.source === "stdout") {
-      if (next.result.done) stdoutNext = undefined;
-      else {
-        stdoutNext = stdoutIterator.next().then(result => ({ source: "stdout", result }));
-        yield { source: "stdout", line: next.result.value };
-      }
-    } else if (next.result.done) transcriptNext = undefined;
-    else {
-      transcriptNext = transcriptIterator.next().then(result => ({ source: "transcript", result }));
-      yield { source: "transcript", frame: next.result.value };
-    }
-  }
-}
-
-/** Compose the OpenClaw prompt, prefixing harness instructions in labeled sections so the local agent can distinguish them from the user request. */
+/** The Gateway has a real system-prompt channel, so user content and Harness instructions remain separate. */
 export function composeOpenClawPrompt(req: InvokeRequest): string {
-  const input = providerInputText(req);
-  if (!req.appendInstructions) return input;
-  return `[Harness Instructions]\n${req.appendInstructions}\n\n[User Request]\n${input}`;
+  return providerInputText(req);
 }
 
-/** Return the first accessible directory among the candidates, falling back to the current working directory. */
-async function existingDirectory(candidates: Array<string | undefined>): Promise<string> {
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    try { await access(candidate); return candidate; } catch {
-      // Skip a candidate that does not exist and keep trying; ultimately fall back to the current directory.
-    }
-  }
-  return process.cwd();
-}
-
-/**
- * Build the OpenClaw CLI argv, env and stdin for one invocation.
- *
- * The prompt is written to a private `--message-file` rather than passed on the
- * command line. A provider session id is generated when none is resumed, so the
- * local session is addressable. The chosen `cwd` is the first existing of the
- * configured state/config dirs, then $HOME, so OpenClaw finds its local state.
- * The observation carrier includes the file body, not just its ephemeral path,
- * because the file contents are the provider-visible model input.
- */
-export async function buildOpenClawCommand(
-  req: InvokeRequest,
-  command = "openclaw",
-  commandArgsPrefix: string[] = [],
-  extraEnv: NodeJS.ProcessEnv = {}
-): Promise<OpenClawCommandSpec> {
-  const directory = await mkdtemp(join(tmpdir(), "octo-harness-openclaw-message-"));
-  await chmod(directory, 0o700).catch(() => {});
-  const messageFile = join(directory, "message.txt");
-  await writeFile(messageFile, composeOpenClawPrompt(req), { encoding: "utf8", mode: 0o600 });
-  await chmod(messageFile, 0o600).catch(() => {});
-
-  const providerSessionId = req.providerSession?.sessionId ?? `octo-harness-${randomUUID()}`;
-  const configuredAgent = req.agentConfig.providerOptions?.OPENCLAW_AGENT_ID;
-  const providerAgentId = req.agentConfig.providerAgentId ??
-    (typeof configuredAgent === "string" ? configuredAgent : undefined);
-  const args = [...commandArgsPrefix, "agent", "--local", "--json", "--session-id", providerSessionId];
-  if (providerAgentId) args.push("--agent", providerAgentId);
-  if (req.agentConfig?.model) args.push("--model", req.agentConfig.model);
-  const thinkingLevel = typeof req.agentConfig.thinking === "string" ? req.agentConfig.thinking : undefined;
-  if (thinkingLevel) args.push("--thinking", thinkingLevel);
-  const timeoutSeconds = req.agentConfig.timeoutSeconds;
-  if (Number.isFinite(timeoutSeconds) && (timeoutSeconds ?? 0) > 0) {
-    args.push("--timeout", String(timeoutSeconds));
-  }
-  args.push("--message-file", messageFile);
-
-  const env = { ...extraEnv };
-  if (req.agentConfig?.openclawConfigPath) env.OPENCLAW_CONFIG_PATH = req.agentConfig.openclawConfigPath;
-  if (req.agentConfig?.openclawStateDir) env.OPENCLAW_STATE_DIR = req.agentConfig.openclawStateDir;
-  const effectiveEnv = { ...process.env, ...env };
-  const stateDir = effectiveEnv.OPENCLAW_STATE_DIR ?? join(effectiveEnv.HOME || homedir(), ".openclaw");
-  const cwd = await existingDirectory([
-    effectiveEnv.OPENCLAW_STATE_DIR,
-    effectiveEnv.OPENCLAW_CONFIG_PATH ? dirname(effectiveEnv.OPENCLAW_CONFIG_PATH) : undefined,
-    effectiveEnv.HOME || homedir(),
-    process.cwd()
-  ]);
-
+export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGatewayInvocation {
+  const gatewayUrl = requiredOption(req, OPENCLAW_PROVIDER_OPTIONS.url);
+  const token = requiredOption(req, OPENCLAW_PROVIDER_OPTIONS.token);
+  const device: OpenClawDeviceIdentity = {
+    deviceId: requiredOption(req, OPENCLAW_PROVIDER_OPTIONS.deviceId),
+    publicKey: requiredOption(req, OPENCLAW_PROVIDER_OPTIONS.publicKey),
+    privateKey: requiredOption(req, OPENCLAW_PROVIDER_OPTIONS.privateKey)
+  };
+  const configuredAgent = option(req, OPENCLAW_PROVIDER_OPTIONS.agentId);
+  const agentId = req.agentConfig.providerAgentId ?? configuredAgent ?? "octo-openclaw-runner";
+  const runnerWorkspace = option(req, OPENCLAW_PROVIDER_OPTIONS.workspace);
+  const sessionKey = `agent:${agentId}:octo-run:${req.runId}:${randomUUID()}`;
+  const requestId = `octo-harness-${req.runId}-${randomUUID()}`;
+  const message = composeOpenClawPrompt(req);
+  const timeout = finiteNumber(req.agentConfig.timeoutSeconds);
+  const model = nonEmptyString(req.agentConfig.model);
+  const thinking = nonEmptyString(req.agentConfig.thinking);
+  const timeoutMilliseconds = timeout && timeout > 0 ? timeout * 1_000 : 30 * 60_000;
+  const reconciliationGraceMilliseconds = Math.min(30_000, timeoutMilliseconds * 0.1);
+  const createParams: JsonRecord = {
+    key: sessionKey,
+    agentId,
+    cwd: req.workdir,
+    idempotencyKey: `${requestId}-session`,
+    ...(model ? { model } : {}),
+    ...(thinking ? { thinkingLevel: thinking } : {})
+  };
+  const agentParams: JsonRecord = {
+    message,
+    agentId,
+    sessionKey,
+    deliver: false,
+    promptMode: "minimal",
+    idempotencyKey: requestId,
+    ...(req.appendInstructions ? { extraSystemPrompt: req.appendInstructions } : {}),
+    ...(model ? { model } : {}),
+    ...(thinking ? { thinking } : {}),
+    ...(timeout === undefined ? {} : { timeout: Math.max(0, Math.floor(timeout)) })
+  };
   return {
-    command,
-    args,
-    cwd,
-    env,
-    providerSessionId,
-    providerAgentId,
-    stateDir,
-    messageFile,
+    gateway: { url: gatewayUrl, token, device },
+    agentId,
+    ...(runnerWorkspace ? { runnerWorkspace } : {}),
+    sessionKey,
+    requestId,
+    reconciliationDeadlineAt: Date.now() + timeoutMilliseconds + reconciliationGraceMilliseconds,
+    createParams,
+    agentParams,
     providerInput: {
       kind: "json_params",
       content: {
-        command,
-        args,
-        cwd,
-        message: composeOpenClawPrompt(req),
-        session_id: providerSessionId,
-        agent_id: providerAgentId,
-        model: req.agentConfig?.model,
-        thinking: req.agentConfig?.thinking
+        operations: [
+          { method: "config.get", params: {} },
+          { method: "sessions.create", params: createParams },
+          { method: "sessions.messages.subscribe", params: { key: sessionKey, agentId } },
+          { method: "agent", params: agentParams }
+        ],
+        // Authentication is deliberately absent from the captured provider carrier.
+        gatewayUrl
       }
-    },
-    cleanup: () => rm(directory, { recursive: true, force: true })
+    }
   };
 }
 
-/** Build a session.update event carrying the provider session (and optional agent) id for replay on the next invocation. */
-function sessionEvent(sessionId: string, providerAgentId?: string): CanonicalEvent {
+interface EventQueueItem {
+  event?: OpenClawGatewayEvent;
+  error?: Error;
+  done?: true;
+  result?: unknown;
+}
+
+class EventQueue {
+  readonly #items: EventQueueItem[] = [];
+  readonly #waiters: Array<(value: EventQueueItem) => void> = [];
+
+  push(value: EventQueueItem): void {
+    const waiter = this.#waiters.shift();
+    if (waiter) waiter(value);
+    else this.#items.push(value);
+  }
+
+  next(): Promise<EventQueueItem> {
+    const value = this.#items.shift();
+    return value ? Promise.resolve(value) : new Promise(resolve => this.#waiters.push(resolve));
+  }
+}
+
+interface StreamState {
+  lastSeq: number;
+  assistantText: string;
+  reasoningText: string;
+  stepStarted: boolean;
+  stepFinished: boolean;
+}
+
+function snapshotDelta(previous: string, next: string): { delta?: string; replacement?: string } {
+  if (next === previous) return {};
+  if (next.startsWith(previous)) return { delta: next.slice(previous.length) };
+  return { replacement: next };
+}
+
+function usageEvent(data: JsonRecord): CanonicalEvent | undefined {
+  const inputTokens = finiteNumber(data.inputTokens ?? data.input ?? data.promptTokens);
+  const outputTokens = finiteNumber(data.outputTokens ?? data.output ?? data.completionTokens ?? data.tokens);
+  if (inputTokens === undefined && outputTokens === undefined) return undefined;
   return {
-    type: "session.update",
+    type: "usage.update",
     payload: {
-      providerSession: {
-        sessionId,
-        resumable: true,
-        ...(providerAgentId ? { agentId: providerAgentId } : {})
-      }
+      inputTokens: inputTokens ?? 0,
+      outputTokens: outputTokens ?? 0,
+      ...(nonEmptyString(data.provider) ? { provider: data.provider } : {}),
+      ...(nonEmptyString(data.model) ? { model: data.model } : {})
     }
   };
 }
 
-/** Pick the most informative failure text: trimmed stderr, else the spawn error, else a synthesized exit-status message. */
-function failureMessage(spec: OpenClawCommandSpec, exit: ProcessExit, spawnError: Error | undefined, stderr: string): string {
-  return stderr.trim() || spawnError?.message ||
-    `${spec.command} exited with ${exit.code ?? exit.signal ?? "an unknown status"}`;
-}
-
-/** Serialize a usage frame to its canonical payload JSON, used to suppress emitting a duplicate usage.update. */
-function usageKey(frame: { inputTokens: number; outputTokens: number; provider?: string; model?: string }): string {
-  return JSON.stringify(usagePayload(frame));
-}
-
-/**
- * Run one OpenClaw subprocess and stream canonical events.
- *
- * OpenClaw writes incremental model/tool records to its session transcript and
- * emits a trailing stdout "final blob" (which may span several lines and is
- * reassembled here). Older native stdout event streams remain supported.
- * Reconciliation quirks:
- * - the final blob's text is authoritative, so only its suffix beyond the
- *   already-streamed text is emitted, avoiding duplicated output;
- * - usage is emitted once, de-duplicated against the last streamed usage;
- * - abort/failure is decided after the stream closes so the exit code, an
- *   explicit cancel/failure frame and the abort signal are all considered,
- *   yielding exactly one run.stopped / run.error / run.finished terminal.
- */
-async function* invokeOpenClaw(
-  req: InvokeRequest,
-  spec: OpenClawCommandSpec,
-  context?: AdapterInvocationContext
-): AsyncGenerator<CanonicalEvent> {
-  yield sessionEvent(spec.providerSessionId, spec.providerAgentId);
-  yield { type: "message.create", payload: { role: "assistant", status: "streaming", channel: "final" } };
-
-  const transcriptCursor = await createTranscriptCursor(spec);
-  const child = spawn(spec.command, spec.args, {
-    cwd: spec.cwd,
-    env: { ...process.env, ...spec.env },
-    stdio: ["ignore", "pipe", "pipe"],
-    signal: req.signal
-  });
-  child.once("spawn", () => {
-    // With an argv/message-file CLI there is no request response. Successful
-    // spawn is the strongest available dispatch-written boundary; it does not
-    // prove that OpenClaw opened or parsed the message file.
-    observeBestEffort(context, {
-      event: "provider.dispatch.written",
-      rpcMethod: "process.argv",
-      providerSessionId: spec.providerSessionId,
-      data: { pid: child.pid ?? null }
-    });
-  });
-  let spawnError: Error | undefined;
-  let processClosed = false;
-  const exitPromise = new Promise<ProcessExit>(resolve => {
-    child.once("error", error => { spawnError = error; });
-    child.once("close", (code, signal) => {
-      processClosed = true;
-      resolve({ code, signal });
-    });
-  });
-  let stderr = "";
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", chunk => { stderr = `${stderr}${chunk}`.slice(-STDERR_LIMIT); });
-
-  let accumulatedText = "";
-  let finalFrame: OpenClawFinalFrame | null = null;
-  let failure: string | undefined;
-  let cancelled: string | undefined;
-  let blobLines: string[] = [];
-  let lastUsage: string | undefined;
-  let reportedSessionId = spec.providerSessionId;
-  let firstOutput = true;
-  let sawNativeStream = false;
-  let sawTranscript = false;
-  const transcriptNormalizer = new OpenClawTranscriptNormalizer();
-
-  const observeFirstOutput = (rpcMethod: string) => {
-    if (!firstOutput) return;
-    firstOutput = false;
-    observeBestEffort(context, {
-      event: "provider.output.first",
-      rpcMethod,
-      providerSessionId: reportedSessionId
-    });
+function normalizeGatewayAgentEvent(payload: unknown, state: StreamState): CanonicalEvent[] {
+  const native = asRecord(payload);
+  const seq = finiteNumber(native?.seq);
+  const stream = nonEmptyString(native?.stream);
+  const data = asRecord(native?.data);
+  if (!native || seq === undefined || !Number.isSafeInteger(seq) || seq <= state.lastSeq || !stream || !data) return [];
+  state.lastSeq = seq;
+  const events: CanonicalEvent[] = [];
+  const stepId = `openclaw:${nonEmptyString(native.runId) ?? "run"}`;
+  const ensureStep = () => {
+    if (state.stepStarted) return;
+    state.stepStarted = true;
+    events.push({ type: "model_step.started", payload: { stepId } });
   };
 
-  const stdout = createInterface({ input: child.stdout });
-  const transcript = tailOpenClawTranscript(transcriptCursor, () => processClosed);
-  for await (const output of openClawOutput(stdout, transcript)) {
-    if (output.source === "transcript") {
-      if (sawNativeStream) continue;
-      sawTranscript = true;
-      observeFirstOutput("session.transcript");
-      const events = transcriptNormalizer.normalize(output.frame);
-      for (const event of events) {
-        if (event.type === "message.delta" && event.payload.channel === "final" && typeof event.payload.text === "string") {
-          accumulatedText += event.payload.text;
+  if (stream === "lifecycle") {
+    const phase = nonEmptyString(data.phase);
+    if (phase === "start") ensureStep();
+    if ((phase === "end" || phase === "error") && state.stepStarted && !state.stepFinished) {
+      state.stepFinished = true;
+      const finishReason = nonEmptyString(data.stopReason);
+      events.push({
+        type: "model_step.finished",
+        payload: {
+          stepId,
+          status: phase === "error" ? "failed" : data.aborted === true ? "cancelled" : "completed",
+          ...(finishReason ? { finishReason } : {})
         }
-      }
-      observeProviderOutput(context, events, {
-        rpcMethod: "session.transcript",
-        providerSessionId: reportedSessionId,
-        native: { type: `transcript.${output.frame.kind}` }
       });
-      for (const event of events) yield event;
-      continue;
     }
-    const line = output.line;
-    observeFirstOutput("process.stdout");
-    const frame = tryParseOpenClawEvent(line);
-    if (!frame) {
-      // A non-event line may be the final blob: either a compact single line, or a multi-line object we accumulate until it parses.
-      const compactFinal = tryParseOpenClawFinalBlob(line);
-      if (compactFinal) finalFrame = compactFinal;
-      else if (blobLines.length > 0 || line.trim() === "{") {
-        blobLines.push(line);
-        const completedBlob = tryParseOpenClawFinalBlob(blobLines.join("\n"));
-        if (completedBlob) {
-          finalFrame = completedBlob;
-          blobLines = [];
-        }
-      }
-      continue;
-    }
-    // A runtime either streams native NDJSON or exposes the same information
-    // through its transcript. Whichever source produces structured events
-    // first becomes authoritative for this invocation.
-    if (sawTranscript && frame.kind !== "failure" && frame.kind !== "cancelled") continue;
-    sawNativeStream = true;
-    if (frame.kind === "failure") { failure ??= frame.message; continue; }
-    if (frame.kind === "cancelled") { cancelled ??= frame.message; continue; }
-    if (frame.kind === "text") {
-      accumulatedText += frame.text;
-      if (frame.sessionId && frame.sessionId !== reportedSessionId) {
-        reportedSessionId = frame.sessionId;
-        yield sessionEvent(frame.sessionId, spec.providerAgentId);
-      }
-    }
-    if (frame.kind === "usage") lastUsage = usageKey(frame);
-    const events = normalizeOpenClawFrame(frame);
-    observeProviderOutput(context, events, {
-      rpcMethod: "process.stdout",
-      providerSessionId: reportedSessionId,
-      native: {
-        type: frame.kind,
-        ...(frame.kind === "usage" && frame.provider ? { provider: frame.provider } : {}),
-        ...(frame.kind === "usage" && frame.model ? { model: frame.model } : {})
-      }
-    });
-    for (const event of events) yield event;
+    return events;
   }
 
-  const exit = await exitPromise;
-  if (!finalFrame && blobLines.length > 0) finalFrame = tryParseOpenClawFinalBlob(blobLines.join("\n"));
-  if (finalFrame?.sessionId && finalFrame.sessionId !== reportedSessionId) {
-    yield sessionEvent(finalFrame.sessionId, spec.providerAgentId);
+  ensureStep();
+  if (stream === "assistant" && typeof data.text === "string") {
+    const change = snapshotDelta(state.assistantText, data.text);
+    state.assistantText = data.text;
+    if (change.delta) events.push({ type: "message.delta", payload: { text: change.delta, channel: "final" } });
+    if (change.replacement !== undefined) {
+      events.push({ type: "message.update", payload: { role: "assistant", status: "streaming", text: change.replacement, channel: "final" } });
+    }
+  } else if (stream === "thinking" && typeof data.text === "string") {
+    const change = snapshotDelta(state.reasoningText, data.text);
+    state.reasoningText = data.text;
+    const text = change.delta ?? change.replacement;
+    if (text) {
+      events.push({
+        type: change.replacement === undefined ? "message.delta" : "message.update",
+        payload: {
+          role: "assistant",
+          status: "streaming",
+          text,
+          channel: "analysis",
+          exposure: "public_reasoning",
+          provenance: { provider: "openclaw", nativeEvent: "gateway.agent.thinking" }
+        }
+      });
+    }
+  } else if (stream === "tool") {
+    const phase = nonEmptyString(data.phase);
+    const id = nonEmptyString(data.toolCallId) ?? "tool";
+    if (phase === "start") {
+      events.push({ type: "tool_call.create", payload: { id, name: nonEmptyString(data.name) ?? "tool", args: asRecord(data.args) ?? {} } });
+    } else if (phase === "update") {
+      events.push({ type: "tool_call.update", payload: { id, status: "running", output: data.result ?? data.partialResult } });
+    } else if (phase === "result") {
+      events.push({ type: "tool_call.update", payload: { id, status: data.isError === true ? "error" : "completed", output: data.result } });
+    }
+  } else if (stream === "item" && data.kind === "preamble" && typeof data.progressText === "string") {
+    events.push({
+      type: "message.delta",
+      payload: {
+        text: data.progressText,
+        channel: "analysis",
+        exposure: "public_summary",
+        provenance: { provider: "openclaw", nativeEvent: "gateway.agent.item" }
+      }
+    });
+  } else if (stream === "usage") {
+    const event = usageEvent(data);
+    if (event) events.push(event);
   }
-  if (finalFrame?.text) {
-    // The final blob text is authoritative; emit only the suffix beyond what was already streamed so text is not duplicated.
-    if (finalFrame.text.startsWith(accumulatedText)) {
-      const suffix = finalFrame.text.slice(accumulatedText.length);
-      if (suffix) {
-        const event: CanonicalEvent = { type: "message.delta", payload: { text: suffix, channel: "final" } };
-        observeProviderOutput(context, [event], {
-          rpcMethod: "process.stdout",
-          providerSessionId: finalFrame.sessionId ?? reportedSessionId,
-          native: {
-            type: finalFrame.kind,
-            ...(finalFrame.provider ? { provider: finalFrame.provider } : {}),
-            ...(finalFrame.model ? { model: finalFrame.model } : {})
+  return events;
+}
+
+function terminalState(payload: unknown): "completed" | "failed" | "cancelled" | undefined {
+  const native = asRecord(payload);
+  if (native?.stream !== "lifecycle") return undefined;
+  const data = asRecord(native.data);
+  const phase = nonEmptyString(data?.phase);
+  if (phase === "error") return data?.aborted === true ? "cancelled" : "failed";
+  if (phase === "end") return data?.aborted === true ? "cancelled" : "completed";
+  return undefined;
+}
+
+function terminalError(payload: unknown): string {
+  return nonEmptyString(asRecord(asRecord(payload)?.data)?.error) ?? "OpenClaw Gateway agent run failed";
+}
+
+async function waitForConfirmedTerminal(
+  client: OpenClawGatewayClientLike,
+  runId: string,
+  expected: "completed" | "failed" | "cancelled",
+  deadlineAt: number
+): Promise<void> {
+  while (Date.now() < deadlineAt) {
+    const waitMs = Math.max(1, Math.min(30_000, deadlineAt - Date.now()));
+    const result = asRecord(await client.request("agent.wait", { runId, timeoutMs: waitMs }, { timeoutMs: waitMs + 2_000 }));
+    const status = nonEmptyString(result?.status);
+    const stopReason = nonEmptyString(result?.stopReason);
+    const endedAt = finiteNumber(result?.endedAt);
+    const cancelled = endedAt !== undefined && (stopReason === "aborted" || stopReason === "restart");
+    const actual = cancelled
+      ? "cancelled"
+      : status === "ok"
+        ? "completed"
+        : status === "error" || (status === "timeout" && endedAt !== undefined)
+          ? "failed"
+          : undefined;
+    if (actual === expected) return;
+    if (!actual && (status === "pending" || status === "timeout")) {
+      await new Promise<void>(resolve => setTimeout(resolve, Math.min(250, Math.max(0, deadlineAt - Date.now()))));
+      continue;
+    }
+    const error = nonEmptyString(result?.error);
+    throw new Error(error
+      ? `OpenClaw Gateway confirmed ${actual ?? status ?? "unknown"}, not ${expected}: ${error}`
+      : `OpenClaw Gateway confirmed ${actual ?? status ?? "unknown"}, not ${expected}`);
+  }
+  throw new Error(`OpenClaw Gateway did not confirm ${expected} before the invocation deadline`);
+}
+
+function normalizeFinalResponse(value: unknown, state: StreamState): {
+  events: CanonicalEvent[];
+  terminal?: "completed" | "failed" | "cancelled";
+  error?: string;
+} {
+  const response = asRecord(value);
+  const result = asRecord(response?.result);
+  const meta = asRecord(result?.meta);
+  const agentMeta = asRecord(meta?.agentMeta);
+  const events: CanonicalEvent[] = [];
+  const payloads = Array.isArray(result?.payloads) ? result.payloads : [];
+  const finalText = payloads
+    .map(item => nonEmptyString(asRecord(item)?.text) ?? "")
+    .filter(Boolean)
+    .join("\n");
+  const ensureStep = () => {
+    if (state.stepStarted) return;
+    state.stepStarted = true;
+    events.push({ type: "model_step.started", payload: { stepId: `openclaw:${nonEmptyString(response?.runId) ?? "run"}` } });
+  };
+  if (finalText) {
+    ensureStep();
+    const change = snapshotDelta(state.assistantText, finalText);
+    state.assistantText = finalText;
+    if (change.delta) events.push({ type: "message.delta", payload: { text: change.delta, channel: "final" } });
+    if (change.replacement !== undefined) {
+      events.push({ type: "message.update", payload: { role: "assistant", status: "streaming", text: change.replacement, channel: "final" } });
+    }
+  }
+  const usage = asRecord(agentMeta?.usage);
+  const usageUpdate = usageEvent({
+    inputTokens: usage?.input,
+    outputTokens: usage?.output,
+    provider: agentMeta?.provider,
+    model: agentMeta?.model
+  });
+  if (usageUpdate) events.push(usageUpdate);
+
+  const status = nonEmptyString(response?.status);
+  const terminal = status === "ok" ? (meta?.aborted === true ? "cancelled" : "completed") : status ? "failed" : undefined;
+  if (terminal && !state.stepFinished) {
+    ensureStep();
+    state.stepFinished = true;
+    events.push({
+      type: "model_step.finished",
+      payload: {
+        stepId: `openclaw:${nonEmptyString(response?.runId) ?? "run"}`,
+        status: terminal === "cancelled" ? "cancelled" : terminal === "failed" ? "failed" : "completed",
+        ...(nonEmptyString(meta?.stopReason) ? { finishReason: nonEmptyString(meta?.stopReason) } : {})
+      }
+    });
+  }
+  return {
+    events,
+    terminal,
+    ...(terminal === "failed" ? { error: nonEmptyString(response?.summary) ?? "OpenClaw Gateway agent run failed" } : {})
+  };
+}
+
+function assertRuntimeGatewayContract(value: unknown): void {
+  const hello = asRecord(value);
+  const features = asRecord(hello?.features);
+  const methods = Array.isArray(features?.methods) ? features.methods : [];
+  const events = Array.isArray(features?.events) ? features.events : [];
+  if (hello?.protocol !== 4) throw new Error(`unsupported OpenClaw Gateway protocol: ${String(hello?.protocol)}`);
+  for (const method of ["config.get", "sessions.create", "sessions.messages.subscribe", "agent", "agent.wait", "sessions.abort"]) {
+    if (!methods.includes(method)) throw new Error(`OpenClaw Gateway does not advertise required method ${method}`);
+  }
+  if (!events.includes("agent")) throw new Error("OpenClaw Gateway does not advertise the agent event stream");
+}
+
+function assertRuntimeIsolationConfig(value: unknown, invocation: OpenClawGatewayInvocation): void {
+  const snapshot = asRecord(value);
+  const config = asRecord(snapshot?.config) ?? snapshot;
+  const agents = asRecord(config?.agents);
+  const defaults = asRecord(agents?.defaults);
+  const entries = asRecord(agents?.entries);
+  const agent = asRecord(entries?.[invocation.agentId]);
+  const tools = asRecord(agent?.tools);
+  const memory = asRecord(agent?.memory);
+  const search = asRecord(memory?.search);
+  const expectedWorkspace = invocation.runnerWorkspace;
+  if (defaults?.skipBootstrap !== true) throw new Error("OpenClaw Gateway isolation drift: agents.defaults.skipBootstrap must be true");
+  if (!agent) throw new Error(`OpenClaw Gateway isolation drift: agent ${invocation.agentId} is missing`);
+  if (agent.contextInjection !== "never") throw new Error("OpenClaw Gateway isolation drift: contextInjection must be never");
+  if (!Array.isArray(agent.skills) || agent.skills.length !== 0) throw new Error("OpenClaw Gateway isolation drift: skills must be empty");
+  if (!Array.isArray(tools?.deny) || !tools.deny.includes("group:memory")) {
+    throw new Error("OpenClaw Gateway isolation drift: memory tools must be denied");
+  }
+  if (search?.rememberAcrossConversations !== false) {
+    throw new Error("OpenClaw Gateway isolation drift: cross-conversation memory must be disabled");
+  }
+  if (expectedWorkspace && nonEmptyString(agent.workspace) !== expectedWorkspace) {
+    throw new Error("OpenClaw Gateway isolation drift: runner workspace does not match the profile configuration");
+  }
+}
+
+export interface OpenClawGatewayClientLike {
+  connect(): Promise<unknown>;
+  onEvent(listener: (event: OpenClawGatewayEvent) => void): () => void;
+  request(method: string, params: JsonRecord, options?: {
+    expectFinal?: boolean;
+    timeoutMs?: number | null;
+    signal?: AbortSignal;
+    onAccepted?: (value: unknown) => void;
+  }): Promise<unknown>;
+  close(): Promise<void>;
+}
+
+type GatewayClientFactory = (options: OpenClawGatewayOptions) => OpenClawGatewayClientLike;
+
+async function* invokeOpenClawGateway(
+  req: InvokeRequest,
+  invocation: OpenClawGatewayInvocation,
+  context: AdapterInvocationContext | undefined,
+  clientFactory: GatewayClientFactory
+): AsyncGenerator<CanonicalEvent> {
+  const client = clientFactory(invocation.gateway);
+  const queue = new EventQueue();
+  let acceptedRunId = invocation.requestId;
+  let agentAccepted = false;
+  let providerSessionKey = invocation.sessionKey;
+  const unsubscribe = client.onEvent(event => queue.push({ event }));
+  const state: StreamState = { lastSeq: -1, assistantText: "", reasoningText: "", stepStarted: false, stepFinished: false };
+  let terminal: "completed" | "failed" | "cancelled" | undefined;
+
+  try {
+    const hello = await client.connect();
+    assertRuntimeGatewayContract(hello);
+    await client.request("config.get", {}, { timeoutMs: 10_000, signal: req.signal })
+      .then(value => assertRuntimeIsolationConfig(value, invocation));
+    const created = asRecord(await client.request("sessions.create", invocation.createParams, {
+      timeoutMs: 30_000,
+      signal: req.signal
+    }));
+    providerSessionKey = nonEmptyString(created?.key) ?? invocation.sessionKey;
+    invocation.agentParams.sessionKey = providerSessionKey;
+    await client.request("sessions.messages.subscribe", {
+      key: providerSessionKey,
+      agentId: invocation.agentId
+    }, { timeoutMs: 10_000, signal: req.signal });
+    yield {
+      type: "session.update",
+      payload: { providerSession: { sessionId: providerSessionKey, resumable: false, agentId: invocation.agentId } }
+    };
+    yield { type: "message.create", payload: { role: "assistant", status: "streaming", channel: "final" } };
+
+    const request = client.request("agent", invocation.agentParams, {
+      expectFinal: true,
+      timeoutMs: null,
+      signal: req.signal,
+      onAccepted: value => {
+        agentAccepted = true;
+        const runId = nonEmptyString(asRecord(value)?.runId);
+        if (runId) acceptedRunId = runId;
+        observeBestEffort(context, {
+          event: "provider.dispatch.written",
+          rpcMethod: "gateway.agent",
+          providerSessionId: providerSessionKey,
+          providerRequestId: acceptedRunId
+        });
+      }
+    });
+    void request.then(result => queue.push({ done: true, result }), error => queue.push({ error: error instanceof Error ? error : new Error(String(error)) }));
+
+    while (!terminal) {
+      const item = await queue.next();
+      if (item.error) throw item.error;
+      if (item.done) {
+        const reconciled = normalizeFinalResponse(item.result, state);
+        observeProviderOutput(context, reconciled.events, {
+          rpcMethod: "gateway.agent.final",
+          providerSessionId: providerSessionKey,
+          providerRequestId: acceptedRunId,
+          native: { type: "agent.final" }
+        });
+        for (const event of reconciled.events) yield event;
+        terminal = reconciled.terminal;
+        if (terminal === "failed") throw new Error(reconciled.error);
+        break;
+      }
+      if (!item.event || item.event.event !== "agent") continue;
+      const native = asRecord(item.event.payload);
+      const runId = nonEmptyString(native?.runId);
+      if (!runId || (runId !== acceptedRunId && runId !== invocation.requestId)) continue;
+      const incomingSeq = finiteNumber(native?.seq);
+      if (incomingSeq !== undefined && state.lastSeq >= 0 && incomingSeq > state.lastSeq + 1) {
+        observeBestEffort(context, {
+          event: "provider.output",
+          rpcMethod: "gateway.event.agent",
+          providerSessionId: providerSessionKey,
+          providerRequestId: runId,
+          data: {
+            diagnostic: {
+              type: "sequence_gap",
+              expectedSeq: state.lastSeq + 1,
+              receivedSeq: incomingSeq
+            }
           }
         });
-        yield event;
+      }
+      const events = normalizeGatewayAgentEvent(item.event.payload, state);
+      observeProviderOutput(context, events, {
+        rpcMethod: "gateway.event.agent",
+        providerSessionId: providerSessionKey,
+        providerRequestId: runId,
+        native: { type: nonEmptyString(native?.stream) }
+      });
+      for (const event of events) yield event;
+      terminal = terminalState(item.event.payload);
+      if (terminal) {
+        await waitForConfirmedTerminal(client, runId, terminal, invocation.reconciliationDeadlineAt);
+        if (terminal === "failed") throw new Error(terminalError(item.event.payload));
       }
     }
-    accumulatedText = finalFrame.text;
-  }
-  if (finalFrame && (finalFrame.inputTokens > 0 || finalFrame.outputTokens > 0)) {
-    const key = usageKey(finalFrame);
-    if (key !== lastUsage) {
-      const event: CanonicalEvent = { type: "usage.update", payload: usagePayload(finalFrame) };
-      observeProviderOutput(context, [event], {
-        rpcMethod: "process.stdout",
-        providerSessionId: finalFrame.sessionId ?? reportedSessionId,
-        native: {
-          type: finalFrame.kind,
-          ...(finalFrame.provider ? { provider: finalFrame.provider } : {}),
-          ...(finalFrame.model ? { model: finalFrame.model } : {})
-        }
-      });
-      yield event;
-    }
-  }
 
-  if (req.signal?.aborted || cancelled || finalFrame?.aborted) {
-    yield { type: "message.update", payload: { role: "assistant", status: "stopped", text: accumulatedText, channel: "final" } };
-    yield { type: "run.stopped", payload: { reason: String(req.signal?.reason ?? cancelled ?? "openclaw_aborted") } };
-    return;
-  }
-  if (failure || spawnError || exit.code !== 0) {
-    const message = failure ?? failureMessage(spec, exit, spawnError, stderr);
-    yield { type: "message.update", payload: { role: "assistant", status: "failed", text: accumulatedText, channel: "final" } };
-    const event: CanonicalEvent = { type: "run.error", payload: { message, adapterType: "openclaw", exit } };
-    observeProviderOutput(context, [event], {
-      rpcMethod: "process.stdout",
-      providerSessionId: finalFrame?.sessionId ?? reportedSessionId,
-      native: { type: failure ? "failure" : "process.exit" }
+    if (req.signal?.aborted || terminal === "cancelled") {
+      yield { type: "message.update", payload: { role: "assistant", status: "stopped", text: state.assistantText, channel: "final" } };
+      yield { type: "run.stopped", payload: { reason: String(req.signal?.reason ?? "openclaw_aborted") } };
+      return;
+    }
+    if (terminal !== "completed") throw new Error("OpenClaw Gateway stream ended without a terminal lifecycle event");
+    yield { type: "message.update", payload: { role: "assistant", status: "completed", text: state.assistantText, channel: "final" } };
+    yield { type: "run.finished", payload: {} };
+  } catch (error) {
+    if (req.signal?.aborted) {
+      if (!agentAccepted) {
+        yield { type: "message.update", payload: { role: "assistant", status: "stopped", text: state.assistantText, channel: "final" } };
+        yield { type: "run.stopped", payload: { reason: String(req.signal.reason ?? "openclaw_aborted_before_dispatch") } };
+        return;
+      }
+      let recoveryClient: OpenClawGatewayClientLike | undefined;
+      try {
+        const abortParams = { key: providerSessionKey, runId: acceptedRunId, agentId: invocation.agentId };
+        let controlClient = client;
+        try {
+          await controlClient.request("sessions.abort", abortParams, { timeoutMs: 5_000 });
+        } catch {
+          recoveryClient = clientFactory(invocation.gateway);
+          assertRuntimeGatewayContract(await recoveryClient.connect());
+          controlClient = recoveryClient;
+          await controlClient.request("sessions.abort", abortParams, { timeoutMs: 5_000 });
+        }
+        await waitForConfirmedTerminal(
+          controlClient,
+          acceptedRunId,
+          "cancelled",
+          Date.now() + 30_000
+        );
+        yield { type: "message.update", payload: { role: "assistant", status: "stopped", text: state.assistantText, channel: "final" } };
+        yield { type: "run.stopped", payload: { reason: String(req.signal.reason ?? "openclaw_aborted") } };
+      } catch (abortError) {
+        const message = abortError instanceof Error ? abortError.message : "OpenClaw Gateway abort confirmation failed";
+        yield { type: "message.update", payload: { role: "assistant", status: "failed", text: state.assistantText, channel: "final" } };
+        yield { type: "run.error", payload: { message, adapterType: "openclaw" } };
+      } finally {
+        await recoveryClient?.close();
+      }
+      return;
+    }
+    let message = error instanceof Error ? error.message : String(error);
+    if (agentAccepted && terminal !== "failed" && terminal !== "cancelled") {
+      const recoveryClient = clientFactory(invocation.gateway);
+      try {
+        assertRuntimeGatewayContract(await recoveryClient.connect());
+        await waitForConfirmedTerminal(recoveryClient, acceptedRunId, "completed", invocation.reconciliationDeadlineAt);
+        yield { type: "message.update", payload: { role: "assistant", status: "completed", text: state.assistantText, channel: "final" } };
+        yield { type: "run.finished", payload: {} };
+        return;
+      } catch (recoveryError) {
+        const detail = recoveryError instanceof Error ? recoveryError.message : "unknown reconciliation failure";
+        message = `${message}; reconnect reconciliation failed: ${detail}`;
+      } finally {
+        await recoveryClient.close();
+      }
+    }
+    observeBestEffort(context, {
+      event: "provider.dispatch.failed",
+      rpcMethod: "gateway.agent",
+      providerSessionId: providerSessionKey,
+      providerRequestId: acceptedRunId,
+      data: { error: message }
     });
-    yield event;
-    return;
+    yield { type: "message.update", payload: { role: "assistant", status: "failed", text: state.assistantText, channel: "final" } };
+    yield { type: "run.error", payload: { message, adapterType: "openclaw" } };
+  } finally {
+    unsubscribe();
+    await client.close();
   }
-  const completed: CanonicalEvent = {
-    type: "message.update",
-    payload: { role: "assistant", status: "completed", text: accumulatedText, channel: "final" }
-  };
-  observeProviderOutput(context, [completed], {
-    rpcMethod: "process.stdout",
-    providerSessionId: finalFrame?.sessionId ?? reportedSessionId,
-    native: { type: finalFrame?.kind ?? "process.exit" }
-  });
-  yield completed;
-  yield { type: "run.finished", payload: {} };
 }
 
-/** Create an OpenClaw adapter that drives the local `openclaw agent` CLI; each invocation is an isolated subprocess with its own message file. */
-export function createOpenClawAdapter({ command = "openclaw", commandArgsPrefix = [], env = {} }: { command?: string; commandArgsPrefix?: string[]; env?: NodeJS.ProcessEnv } = {}) {
+export function createOpenClawAdapter(
+  { clientFactory = options => new OpenClawGatewayClient(options) }: { clientFactory?: GatewayClientFactory } = {}
+) {
   return defineAdapter({
     metadata: {
       type: "openclaw",
-      processModel: "subprocess-per-invocation",
-      transport: "stdio-json",
-      capabilities: ["session.serialize", "tool.canonical"]
+      processModel: "websocket-per-invocation",
+      transport: "openclaw-gateway-rpc",
+      capabilities: ["tool.canonical"]
     },
-    probe: () => probeCommand(command, { env: { ...process.env, ...env } }),
+    probe: () => Promise.resolve({ available: true, command: "openclaw-gateway" }),
     async *invoke(req: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
-      const spec = await buildOpenClawCommand(req, command, commandArgsPrefix, env);
-      try {
-        // Capture must complete before spawn: strict mode must never dispatch
-        // provider-visible input for which no durable evaluation record exists.
-        await context?.observe({
-          event: "provider.input",
-          rpcMethod: "process.argv",
-          providerSessionId: spec.providerSessionId,
-          carrier: spec.providerInput
-        });
-        yield* invokeOpenClaw(req, spec, context);
-      }
-      catch (error) {
-        observeBestEffort(context, {
-          event: "provider.dispatch.failed",
-          rpcMethod: "process.argv",
-          providerSessionId: spec.providerSessionId,
-          data: { error: error instanceof Error ? error.message : String(error) }
-        });
-        throw error;
-      }
-      finally { await spec.cleanup(); }
+      const invocation = buildOpenClawGatewayInvocation(req);
+      await context?.observe({
+        event: "provider.input",
+        rpcMethod: "gateway.config.get+sessions.create+messages.subscribe+agent",
+        providerSessionId: invocation.sessionKey,
+        providerRequestId: invocation.requestId,
+        carrier: invocation.providerInput
+      });
+      yield* invokeOpenClawGateway(req, invocation, context, clientFactory);
     }
   });
 }
 
+export {
+  OpenClawGatewayClient,
+  createOpenClawDeviceIdentity,
+  type OpenClawDeviceIdentity,
+  type OpenClawGatewayEvent,
+  type OpenClawGatewayOptions
+} from "./gateway.js";
 export {
   normalizeOpenClawFrame,
   OpenClawTranscriptNormalizer,

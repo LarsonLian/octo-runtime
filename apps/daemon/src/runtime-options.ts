@@ -170,6 +170,7 @@ function resolveAgentWorkOptions(
       ["--agent-work-runtime-name"],
       env.OCTO_HARNESS_AGENT_WORK_RUNTIME_NAME ?? managed?.runtimeName
     ) ?? "octo-harness-local",
+    ...(managed?.adapterConfigurations ? { adapterConfigurations: managed.adapterConfigurations } : {}),
     storePath: resolve(optionalOption(
       args,
       ["--agent-work-db"],

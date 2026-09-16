@@ -114,6 +114,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@mininglamp-oss/octo-harness-adapter-openclaw':
+        specifier: workspace:*
+        version: link:../../packages/octo-harness-adapter-openclaw
       '@mininglamp-oss/octo-harness-cross-service':
         specifier: workspace:*
         version: link:../../packages/octo-harness-cross-service
@@ -268,6 +271,13 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-harness-adapter-sdk
+      ws:
+        specifier: ^8.18.3
+        version: 8.21.3
+    devDependencies:
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
 
   packages/octo-harness-adapter-opencode:
     dependencies:

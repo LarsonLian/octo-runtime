@@ -65,6 +65,11 @@ export interface AgentWorkRuntimeOptions {
   token: string;
   runtimeId?: string;
   runtimeName: string;
+  /** Profile-local adapter configuration. Secrets never come from AgentRevision or service argv. */
+  adapterConfigurations?: Record<string, {
+    providerAgentId?: string;
+    providerOptions: Record<string, string>;
+  }>;
   /** Delay before the first reconnect attempt after a connected socket drops. */
   reconnectFirstMs?: number;
   /** Full-jitter backoff floor used from the second reconnect attempt onward. */
@@ -1024,6 +1029,19 @@ export class AgentWorkRuntime {
         if (this.#options.profile) request.context.profile = this.#options.profile;
         request.context.runtimeId = this.#runtimeId;
         adapterType = mapped.adapterType;
+        const adapterConfiguration = this.#options.adapterConfigurations?.[adapterType];
+        if (adapterConfiguration) {
+          request.agentConfig = {
+            ...request.agentConfig,
+            ...(adapterConfiguration.providerAgentId
+              ? { providerAgentId: adapterConfiguration.providerAgentId }
+              : {}),
+            providerOptions: {
+              ...request.agentConfig.providerOptions,
+              ...adapterConfiguration.providerOptions
+            }
+          };
+        }
         agentSessionId = request.agentSessionId;
         const trigger = executionEnvelope.agent_run_request.trigger;
         this.#log({
