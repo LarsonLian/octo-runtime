@@ -54,6 +54,7 @@ console.log(stored.seq, isTerminal(event));
 以下两个细节属于正式契约，需特别注意：
 
 - **工具输入是契约，而非 UI 推导字段**：完整输入位于 `tool_call.create.payload.args`；分片型 provider 先发送空 `args`，再按同一 `id` 发送多个 `tool_call.delta.argsDelta`，消费方须按顺序拼接 JSON 片段、完整后仅解析一次。`tool_call.update` 仅负责收尾，不能以其 output 反推输入。
+- **消息 channel 表达用途，不表达 Provider 名称**：`analysis` 是推理类内容，必须继续经过 `exposure` 授权；`commentary` 是 Run 执行期间可公开的过程播报，可以进入进度卡但绝不能进入最终答案；`final` 是答案内容候选，只有 Run 收敛到 `run.finished` 后才允许作为最终正文交付。`message.update` 只结束一个 message item，不代表 Run 已结束。
 - **`channel=analysis` 不等同于可公开**：仅当 `exposure` 明确为 `public_reasoning` / `public_summary` / `public_plan` 时方可进入公开展示；缺失、`unknown`、`private_reasoning` 一律视为不可公开——不应仅依据 `channel=analysis` 判断。
 - **模型轮次与内容分离**：`model_step.started/finished` 描述一次 provider 模型轮次的边界；同轮的 message/tool 通过 `stepId` 关联。它用于过程时间轴和聚合，不替代最终 `channel=final` 正文。
 

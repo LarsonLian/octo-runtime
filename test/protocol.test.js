@@ -61,6 +61,19 @@ test("analysis exposure defaults closed and public classifications require prove
   );
 });
 
+test("canonical message channels distinguish reasoning, progress, and answer content", () => {
+  for (const channel of ["analysis", "commentary", "final"]) {
+    const payload = channel === "analysis"
+      ? { channel, exposure: "public_summary", provenance: { provider: "test", nativeEvent: "summary" } }
+      : { channel };
+    assert.doesNotThrow(() => assertCanonicalEvent({ type: "message.update", payload }));
+  }
+  assert.throws(
+    () => assertCanonicalEvent({ type: "message.update", payload: { channel: "provider-specific" } }),
+    /payload\.channel/
+  );
+});
+
 test("model step lifecycle requires stable identity and valid timestamps", () => {
   assert.doesNotThrow(() => assertCanonicalEvent({
     type: "model_step.started",

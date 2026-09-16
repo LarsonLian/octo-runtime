@@ -14,7 +14,7 @@
 
 ## Native Event Mapping
 
-Codex：`thread.started -> session.update`，agent message item -> message delta，command/tool item -> tool lifecycle，`turn.completed -> usage + message.update + run.finished`。
+Codex：`thread.started -> session.update`；agent message 的原生 `phase=commentary` 归一为 `channel=commentary`，`phase=final_answer` 归一为 `channel=final`；reasoning/plan 分别按授权级别进入 `channel=analysis`；command/tool item -> tool lifecycle；`turn.completed -> usage + run.finished`。下游只消费这些 canonical 字段，不读取 Codex 原生 phase。
 
 Claude Code：system init -> session update，assistant content blocks -> text/tool create events，user tool result blocks -> tool update，result -> usage/message terminal/run terminal。
 

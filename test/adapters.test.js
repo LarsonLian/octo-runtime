@@ -138,6 +138,61 @@ test("Codex native events map to session/message/usage/terminal", () => {
   );
 });
 
+test("Codex maps commentary separately from the final answer and keeps its tools in the same model step", () => {
+  const normalizer = new CodexEventNormalizer();
+  normalizer.normalize({
+    method: "turn/started", params: { turn: { id: "turn-commentary", status: "inProgress" } }
+  });
+
+  const started = normalizer.normalize({
+    method: "item/started",
+    params: {
+      turnId: "turn-commentary",
+      item: { type: "agentMessage", id: "progress-1", phase: "commentary" }
+    }
+  });
+  assert.deepEqual(started.map(event => event.type), ["model_step.started", "message.create"]);
+  assert.equal(started[1].payload.channel, "commentary");
+
+  assert.deepEqual(normalizer.normalize({
+    method: "item/agentMessage/delta",
+    params: { turnId: "turn-commentary", itemId: "progress-1", delta: "先检查目录" }
+  })[0].payload, {
+    text: "先检查目录", channel: "commentary", messageId: "progress-1",
+    stepId: "codex:turn-commentary:round:1"
+  });
+
+  const completed = normalizer.normalize({
+    method: "item/completed",
+    params: {
+      turnId: "turn-commentary",
+      item: { type: "agentMessage", id: "progress-1", phase: "commentary", text: "先检查目录" }
+    }
+  });
+  assert.deepEqual(completed.map(event => event.type), ["message.update"]);
+  assert.equal(completed[0].payload.channel, "commentary");
+
+  const tool = normalizer.normalize({
+    method: "item/started",
+    params: {
+      turnId: "turn-commentary",
+      item: { type: "commandExecution", id: "tool-1", command: "pwd", status: "inProgress" }
+    }
+  });
+  assert.deepEqual(tool.map(event => event.type), ["tool_call.create", "model_step.finished"]);
+  assert.equal(tool[0].payload.stepId, "codex:turn-commentary:round:1");
+
+  const answer = normalizer.normalize({
+    method: "item/started",
+    params: {
+      turnId: "turn-commentary",
+      item: { type: "agentMessage", id: "answer-1", phase: "final_answer" }
+    }
+  });
+  assert.equal(answer[1].payload.channel, "final");
+  assert.equal(answer[1].payload.stepId, "codex:turn-commentary:round:2");
+});
+
 test("Codex waits for turn/completed after a non-retry error so ReAct can recover", () => {
   const normalizer = new CodexEventNormalizer();
   normalizer.normalize({

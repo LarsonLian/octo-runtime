@@ -254,6 +254,10 @@ test("final answer accumulator replaces snapshots and appends deltas", () => {
     type: "message.delta",
     payload: { channel: "analysis", text: "private reasoning" }
   });
+  text = accumulateFinalText(text, {
+    type: "message.update",
+    payload: { channel: "commentary", text: "public progress update" }
+  });
   assert.equal(text, "complete answer");
 });
 
