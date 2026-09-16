@@ -43,3 +43,4 @@ tmp/
 Thumbs.db
 .idea/
 .vscode/
+.run/
