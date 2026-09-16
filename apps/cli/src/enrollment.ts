@@ -34,8 +34,8 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
   assertProfileName(options.profile);
   const fetchImplementation = options.fetchImplementation ?? fetch;
   const serverUrl = normalizeServerUrl(options.serverUrl);
-  const agentWorkUrl = normalizeServerUrl(options.agentWorkUrl ?? `${serverUrl}/agentworker`);
-  const enrollmentResponse = await fetchImplementation(`${agentWorkUrl}/api/v1/runtimes/enroll`, {
+  const agentWorkUrl = normalizeServerUrl(options.agentWorkUrl ?? `${serverUrl}/agentworker/api`);
+  const enrollmentResponse = await fetchImplementation(`${agentWorkUrl}/v1/runtimes/enroll`, {
     method: "POST",
     redirect: "error",
     headers: {
@@ -62,7 +62,7 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
   if (options.runtimeId && enrolledRuntimeId !== options.runtimeId) throw new Error("enrollment returned a different Runtime identity");
   if (enrolledRuntime?.profile !== options.profile) throw new Error("runtime enrollment returned a different or missing profile");
 
-  const registerResponse = await fetchImplementation(`${agentWorkUrl}/api/v1/runtime/register`, {
+  const registerResponse = await fetchImplementation(`${agentWorkUrl}/v1/runtime/register`, {
     method: "POST",
     redirect: "error",
     headers: {

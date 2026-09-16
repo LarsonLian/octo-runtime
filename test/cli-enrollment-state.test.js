@@ -47,7 +47,7 @@ test("re-enrollment reuses the Runtime and proves ownership with its credential"
   let enrollmentCount = 0;
   const fetchImplementation = async (input, init) => {
     const url = String(input);
-    if (url.endsWith("/api/v1/runtimes/enroll")) {
+    if (url.endsWith("/v1/runtimes/enroll")) {
       enrollmentCount += 1;
       const body = JSON.parse(String(init?.body));
       assert.equal(body.profile, profile);
@@ -69,7 +69,7 @@ test("re-enrollment reuses the Runtime and proves ownership with its credential"
         }
       });
     }
-    if (url.endsWith("/api/v1/runtime/register")) {
+    if (url.endsWith("/v1/runtime/register")) {
       assert.equal(JSON.parse(init.body).profile, profile);
       return Response.json({ data: { runtime: { profile, id: "runtime_fixture" } } });
     }
@@ -106,6 +106,7 @@ test("re-enrollment reuses the Runtime and proves ownership with its credential"
     assert.equal(secondIdentity.owner_ref, "uid:user_fixture");
     assert.equal(secondIdentity.profile, profile);
     const configuration = JSON.parse(await readFile(join(home, profile, "config.json"), "utf8"));
+    assert.equal(configuration.agent_work_url, "https://im-test.deepminer.com.cn/agentworker/api");
     assert.equal(configuration.octo_space_id, "space_fixture");
     assert.equal(configuration.owner_ref, "uid:user_fixture");
     assert.equal("tenant_id" in configuration, false);
@@ -123,6 +124,38 @@ test("re-enrollment reuses the Runtime and proves ownership with its credential"
   } finally {
     await rm(home, { recursive: true, force: true });
   }
+});
+
+test("explicit Agent Worker API root appends only native /v1 routes", async () => {
+  const urls = [];
+  await enrollRuntime({
+    serverUrl: "http://localhost:3000",
+    agentWorkUrl: "http://127.0.0.1:8092",
+    enrollmentToken: "octo_enroll_fixture",
+    profile: "default",
+    runtimeName: "MacBook",
+    machineId: "machine_fixture",
+    fetchImplementation: async input => {
+      urls.push(String(input));
+      if (urls.length === 1) {
+        return Response.json({
+          runtime: {
+            id: "runtime_fixture",
+            profile: "default",
+            octo_space_id: "space_fixture",
+            owner_ref: "uid:user_fixture"
+          },
+          credential: { id: "credential_fixture", token: "octo_runtime_fixture" }
+        });
+      }
+      return Response.json({ runtime: { id: "runtime_fixture", profile: "default" } });
+    }
+  });
+
+  assert.deepEqual(urls, [
+    "http://127.0.0.1:8092/v1/runtimes/enroll",
+    "http://127.0.0.1:8092/v1/runtime/register"
+  ]);
 });
 
 test("invalid machine state is rejected without overwriting it or enrolling", async () => {

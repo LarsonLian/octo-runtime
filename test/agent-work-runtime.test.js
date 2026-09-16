@@ -378,7 +378,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
       scheme: "ws",
       host: "127.0.0.1",
       port: String(address.port),
-      path: "/api/v1/runtime/connect"
+      path: "/v1/runtime/connect"
     });
     const serialized = JSON.stringify(all);
     assert.doesNotMatch(serialized, /runtime-token-must-not-leak|Fix the test/);

@@ -427,7 +427,7 @@ export class AgentWorkRuntime {
       message: "registering local Agent Work runtime",
       data: { endpoint: httpEndpointMetadata(this.#options.baseUrl), adapter_types: adapterTypes }
     });
-    const response = await fetch(`${stripSlash(this.#options.baseUrl)}/api/v1/runtime/register`, {
+    const response = await fetch(`${stripSlash(this.#options.baseUrl)}/v1/runtime/register`, {
       method: "POST",
       headers: this.#headers(true),
       body: JSON.stringify({
@@ -510,7 +510,7 @@ export class AgentWorkRuntime {
   }
 
   async #connect(epoch: number, signal?: AbortSignal): Promise<void> {
-    const url = new URL(`${stripSlash(this.#options.baseUrl)}/api/v1/runtime/connect`);
+    const url = new URL(`${stripSlash(this.#options.baseUrl)}/v1/runtime/connect`);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     const connectionId = `conn_wss_${randomUUID()}`;
     const attempt = ++this.#connectionAttempt;
@@ -1637,7 +1637,7 @@ function executionAdapterType(envelope: ExecutionEnvelope): string {
 }
 
 function httpEndpointMetadata(baseUrl: string): Record<string, string> {
-  const url = new URL(`${stripSlash(baseUrl)}/api/v1/runtime/register`);
+  const url = new URL(`${stripSlash(baseUrl)}/v1/runtime/register`);
   return {
     scheme: url.protocol.slice(0, -1),
     host: url.hostname,

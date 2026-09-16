@@ -9,9 +9,9 @@ Octo 线上测试环境完成真实链路调试。
   `https://im-test.deepminer.com.cn/`。
 - 本地开发的是设备侧 Harness。Human 身份、Space membership 和 enrollment grant 由
   依赖 `octo-auth` 的 Agent Worker 验证，Harness 不自行实现或绕过 Human 鉴权。
-- 测试环境的 Agent Worker 公网基址固定为
-  `https://im-test.deepminer.com.cn/agentworker`。Octo Web/Nginx 去掉
-  `/agentworker` 前缀后，再转发给 Worker 原生 `/api/v1/*` 接口。
+- 测试环境的 Agent Worker API 根地址固定为
+  `https://im-test.deepminer.com.cn/agentworker/api`。Octo Web/Nginx 去掉
+  `/agentworker/api` 前缀后，再转发给 Worker 原生 `/v1/*` 接口。
 - 开发时使用独立 Harness Home，避免覆盖正式安装产生的 Runtime 身份、credential、
   SQLite outbox、PID、socket 和日志。
 - enrollment token、device credential、Human token 和 provider token 都不能写入 Git、
@@ -195,14 +195,14 @@ printf '%s\n' "$OCTO_ENROLL_TOKEN" | octo-harness \
   --home "$OCTO_HARNESS_DEV_HOME" \
   login \
   --server-url https://im-test.deepminer.com.cn \
-  --agent-work-url https://im-test.deepminer.com.cn/agentworker \
+  --agent-work-url https://im-test.deepminer.com.cn/agentworker/api \
   --enroll-token-stdin
 
 unset OCTO_ENROLL_TOKEN
 ```
 
 同域部署时可以省略 `--agent-work-url`，CLI 默认使用
-`SERVER_URL/agentworker`；只有 Worker 使用其他 origin 或路径时才需要显式覆盖。
+`SERVER_URL/agentworker/api`；只有 Worker 使用其他 origin 或 API 根路径时才需要显式覆盖。
 
 After first login, the profile is bound to its trusted server, Agent Worker,
 server-assigned `runtime_id`, and protected Runtime credential. Profiles share

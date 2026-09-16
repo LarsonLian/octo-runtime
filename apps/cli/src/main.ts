@@ -925,7 +925,7 @@ function helpText(group?: string): string {
     return `Usage: octo-harness [--home PATH] [--profile NAME] login [options]\n\n` +
       `First login:\n` +
       `  --server-url URL --enroll-token-stdin [--agent-work-url URL]\n\n` +
-      `  --agent-work-url defaults to SERVER_URL/agentworker.\n\n` +
+      `  --agent-work-url is the Worker API root and defaults to SERVER_URL/agentworker/api.\n\n` +
       `Installer-only update modes:\n` +
       `  --prepare-update [--wait-drained] [--timeout-ms MS]\n` +
       `  --recover-update [--start]\n\n` +

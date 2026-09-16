@@ -215,7 +215,7 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
       "--profile", "work",
       "login",
       "--server-url", serverUrl,
-      "--agent-work-url", `${serverUrl}/custom-worker`,
+      "--agent-work-url", `${serverUrl}/custom-worker/api`,
       "--enroll-token-stdin"
     ], { input: Readable.from(["octo_enroll_work\n"]) });
     assert.equal(workSetup.value.runtime_id, "runtime-work");

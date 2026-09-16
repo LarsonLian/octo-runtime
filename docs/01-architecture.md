@@ -59,7 +59,7 @@ Task 的业务状态不能复制 AgentRun 状态。Loop 可把 Run 完成投影�
 
 ## Reset 与恢复
 
-`POST /api/v1/agent_session/reset` 由 Worker 执行：
+`POST /v1/agent_session/reset` 由 Worker 执行：
 
 1. 校验 expected generation。
 2. 增加 generation、provider epoch 和 context epoch。

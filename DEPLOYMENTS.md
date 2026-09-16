@@ -45,7 +45,7 @@ npm unlink --global @mininglamp-oss/octo-harness
 ## 2. 连接 octo-agent-worker
 
 `octo-harness login` 先以 `octo_enroll_` 向 agent-worker 换取设备凭证，再调用
-`/api/v1/runtime/register`。先启动依赖 `octo-auth` 的 agent-worker：
+`/v1/runtime/register`。先启动依赖 `octo-auth` 的 agent-worker：
 
 ```bash
 cd ../octo-agent-worker
@@ -55,7 +55,7 @@ cp .env.example .env
 ```
 
 使用 Octo Web 生成的一次性 token 完成源码 profile；`server-url` 是 Octo Web 来源，
-`agent-work-url` 是本机 Worker 调试地址：
+`agent-work-url` 是 Worker API 根地址；直连本机 Worker 时不带网关的 `/api` 前缀：
 
 ```bash
 printf '%s\n' 'octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN' | octo-harness \

@@ -24,14 +24,14 @@ printf '%s\n' 'octo_enroll_...' | octo-harness login \
 `login` 只完成 Runtime 身份闭环：
 
 1. Persist one Home-global `machine_id` in `machine.json`, shared by every profile.
-2. Exchange an enrollment grant at `/api/v1/runtimes/enroll` with the selected `profile` for a server-assigned `runtime_id` and directly bound `octo_runtime_` credential; refresh capabilities at `/api/v1/runtime/register` with that same profile and save the returned identity.
+2. Exchange an enrollment grant at `/v1/runtimes/enroll` with the selected `profile` for a server-assigned `runtime_id` and directly bound `octo_runtime_` credential; refresh capabilities at `/v1/runtime/register` with that same profile and save the returned identity.
 
 `machine_id` is an untrusted installation grouping label, not a hardware proof or a unique Runtime key. New profiles get distinct Runtime IDs even within the same Space. Renewal uses the saved Runtime ID and credential, and cannot change the trusted server or Worker endpoint.
 
 enrollment grant 和设备 credential 都不会进入 CLI argv、service definition 或输出。重复执行同一 profile 的 `login` 只对账身份，不重新 enrollment。服务安装与启动必须显式使用 `daemon install` 和 `daemon start`。常用开关：
 
 ```text
---agent-work-url URL    覆盖 Worker 基址；默认使用 SERVER_URL/agentworker
+--agent-work-url URL    覆盖 Worker API 根地址；默认使用 SERVER_URL/agentworker/api
 --runtime-name NAME     首次注册显示名
 --channel stable|beta   记录安装 channel，默认 stable
 ```
