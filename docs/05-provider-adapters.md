@@ -41,7 +41,7 @@ OpenClaw：adapter 先用 `config.get` 验证隔离配置，再用 `sessions.cre
 - CodeBuddy：ACP session `a370c065-...`，analysis/final chunks 和 run.finished。
 - OpenCode：使用 `opencode/hy3-free`，session `ses_fb9185921ffe...`，有 usage 和 run.finished。
 
-OpenClaw Gateway adapter 使用 fake Gateway 完成 RPC、runId 隔离、seq 去重、tool、session、最终响应回退和取消契约测试。本机 `OpenClaw 2026.9.4` 已用真实 `anthropic/tencent/glm-5.3` 验证 protocol v4 认证、`sessions.create.cwd`、`sessions.messages.subscribe`、assistant/tool/usage/lifecycle 增量和 `run.finished`；工具返回的 cwd 等于 `InvokeRequest.workdir`。该模型当前不接受 `thinking=medium`，未配置 thinking 时 smoke test 成功。`adapter openclaw init` 必须设置 Gateway 级 `agents.defaults.skipBootstrap=true`，否则 OpenClaw 会污染新的 Harness workdir；共享 Gateway 应改用 Octo 专用实例。此本机验证仍不能替代从线上 Agent Work 触发的端到端验收。
+OpenClaw Gateway adapter 使用 fake Gateway 完成 RPC、runId 隔离、seq 去重、tool、session、最终响应回退和取消契约测试。本机 `OpenClaw 2026.9.4` 已用真实 `anthropic/tencent/glm-5.3` 验证 protocol v4 认证、`sessions.create.cwd`、`sessions.messages.subscribe`、assistant/tool/usage/lifecycle 增量和 `run.finished`；工具返回的 cwd 等于 `InvokeRequest.workdir`。该模型当前不接受 `thinking=medium`，未配置 thinking 时 smoke test 成功。`adapter setup openclaw` 必须设置 Gateway 级 `agents.defaults.skipBootstrap=true`，否则 OpenClaw 会污染新的 Harness workdir；共享 Gateway 应改用 Octo 专用实例。此本机验证仍不能替代从线上 Agent Work 触发的端到端验收。
 
 这证明当前机器上的真实 wire shape 可被 parser 消费；不是未来版本兼容承诺。升级 provider 后先运行 tests，再做一个只读 live smoke test。
 

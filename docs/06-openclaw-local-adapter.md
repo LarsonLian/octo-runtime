@@ -4,30 +4,32 @@
 
 ## 前置配置
 
-OpenClaw 配置绑定在已登录的 Harness profile 上，因此必须先完成 `octo-harness login`。Gateway token 从 stdin 读取，不进入命令参数、profile config 或日志。
+OpenClaw 配置绑定在已登录的 Harness profile 上，因此必须先完成 `octo-harness login`，并在 `setup` 时显式传入 `--profile`。省略 profile 或指定尚未登录的 profile 都会 fail closed。Gateway token 从 stdin 读取，不进入命令参数、profile config 或日志。
 
 ```bash
 printf '%s' "$OPENCLAW_GATEWAY_TOKEN" | \
-  octo-harness --profile <profile> adapter openclaw configure \
+  octo-harness --profile <profile> adapter setup openclaw \
     --gateway-url ws://127.0.0.1:18789 \
     --token-stdin
-
-octo-harness --profile <profile> adapter openclaw init
 ```
 
 远程 Gateway 必须使用 `wss://`，并显式传入 Gateway 主机上的空壳 workspace：
 
 ```bash
 printf '%s' "$OPENCLAW_GATEWAY_TOKEN" | \
-  octo-harness --profile <profile> adapter openclaw configure \
+  octo-harness --profile <profile> adapter setup openclaw \
     --gateway-url wss://gateway.example.com \
     --workspace /var/lib/octo/openclaw/octo-openclaw-runner.workspace \
     --token-stdin
 ```
 
-`configure` 保存 URL、agent id、workspace 和通用 adapter execution manifest 到 profile config，并把 token、device identity 和后续获得的 device token 单独保存到 profile credential 文件。daemon 只解析通用 manifest，不包含 OpenClaw option key 分支；重新 login 会保留 adapter 配置。
+首次 `setup` 在同一条命令中完成两个内部阶段：先把 URL、agent id、workspace 和通用 adapter execution manifest 保存到 profile config，并把 token、device identity 和后续获得的 device token 单独保存到 profile credential 文件；随后连接 Gateway、检查协议能力并创建默认名为 `octo-openclaw-runner` 的专用 agent。daemon 只解析通用 manifest，不包含 OpenClaw option key 分支；重新 login 会保留 adapter 配置。已有配置时可以不带参数幂等重跑：
 
-`init` 连接 Gateway、检查协议能力、创建默认名为 `octo-openclaw-runner` 的专用 agent，并设置：
+```bash
+octo-harness --profile <profile> adapter setup openclaw
+```
+
+Runner 设置包括：
 
 - Gateway 级 `agents.defaults.skipBootstrap: true`
 - `contextInjection: "never"`

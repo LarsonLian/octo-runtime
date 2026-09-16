@@ -145,6 +145,8 @@ async function dispatchCli(context: CliContext): Promise<CommandResult> {
     return { value: helpText(group === "help" ? action : group) };
   }
   if (group === "login") return runLogin(context);
+  if (group === "adapter" && action === "setup") return runAdapterSetupCommand(context, id);
+  // Compatibility for the pre-setup command shape. It is intentionally absent from help output.
   if (group === "adapter" && action === "openclaw") return runOpenClawAdapterCommand(context, id);
   if (group === "daemon") return runDaemonCommand(context, action);
   if (group === "doctor") return runDoctor(context);
@@ -508,6 +510,7 @@ async function runOpenClawAdapterCommand(context: CliContext, action: string | u
   if (action !== "configure" && action !== "init") {
     throw new Error("unknown OpenClaw adapter command; use configure or init");
   }
+  assertExplicitSetupProfile(context);
   return withSetupLock(context.paths, async () => {
     const { profileConfig } = await loadInstalledRuntime(context);
     await prepareHarnessDirectories(context.paths);
@@ -515,6 +518,46 @@ async function runOpenClawAdapterCommand(context: CliContext, action: string | u
       ? configureOpenClawAdapter(context, profileConfig)
       : initializeOpenClawAdapter(context, profileConfig);
   });
+}
+
+async function runAdapterSetupCommand(context: CliContext, adapterType: string | undefined): Promise<CommandResult> {
+  if (adapterType !== "openclaw") {
+    throw new Error(`adapter setup is not supported for ${adapterType ?? "a missing adapter type"}`);
+  }
+  assertExplicitSetupProfile(context);
+  return withSetupLock(context.paths, async () => {
+    let { profileConfig } = await loadInstalledRuntime(context);
+    await prepareHarnessDirectories(context.paths);
+    const configureRequested = [
+      context.flags.gatewayUrl,
+      context.flags.tokenStdin,
+      context.flags.agentId,
+      context.flags.workspace
+    ].some(value => value !== undefined);
+    if (!profileConfig.adapters?.openclaw || configureRequested) {
+      if (!configureRequested) {
+        throw new Error("first OpenClaw setup requires --gateway-url URL and --token-stdin");
+      }
+      await configureOpenClawAdapter(context, profileConfig);
+      const configured = await readJsonFile<ProfileConfiguration>(context.paths.profileConfig);
+      if (!configured) throw new Error("OpenClaw setup could not reload the saved profile configuration");
+      profileConfig = configured;
+    }
+    const initialized = await initializeOpenClawAdapter(context, profileConfig);
+    return {
+      ...initialized,
+      value: {
+        ...(objectValue(initialized.value) ?? {}),
+        configured: configureRequested
+      }
+    };
+  });
+}
+
+function assertExplicitSetupProfile(context: CliContext): void {
+  if (!optionalString(context.flags.profile)) {
+    throw new Error("adapter setup requires an explicit --profile that has completed login");
+  }
 }
 
 async function configureOpenClawAdapter(
@@ -605,7 +648,7 @@ async function configureOpenClawAdapter(
       agent_id: agentId,
       workspace,
       credential: "stored separately",
-      next: `octo-harness --profile ${context.profile} adapter openclaw init`
+      next: `octo-harness --profile ${context.profile} adapter setup openclaw`
     }
   };
 }
@@ -615,7 +658,7 @@ async function initializeOpenClawAdapter(
   profileConfig: ProfileConfiguration
 ): Promise<CommandResult> {
   const configuration = profileConfig.adapters?.openclaw;
-  if (!configuration) throw new Error("OpenClaw adapter is not configured; run adapter openclaw configure first");
+  if (!configuration) throw new Error("OpenClaw adapter is not configured; run adapter setup openclaw with Gateway options first");
   const credential = await readJsonFile<OpenClawGatewayCredential>(context.paths.openclawCredential);
   if (!credential || credential.schema_version !== 1 || !credential.access_token || !credential.device_id || !credential.public_key || !credential.private_key) {
     throw new Error(`OpenClaw Gateway credential is missing or invalid: ${context.paths.openclawCredential}`);
@@ -1275,10 +1318,11 @@ function helpText(group?: string): string {
       `Prints the address of the daemon-owned inspector, which listens for the full daemon lifetime.`;
   }
   if (group === "adapter") {
-    return `Usage: octo-harness [--home PATH] [--profile NAME] adapter list|probe <adapter-type>\n` +
-      `       octo-harness [--home PATH] [--profile NAME] adapter openclaw configure --gateway-url URL --token-stdin [--agent-id ID] [--workspace PATH]\n` +
-      `       octo-harness [--home PATH] [--profile NAME] adapter openclaw init\n\n` +
-      `OpenClaw configuration requires an existing logged-in Harness profile. Tokens are read from stdin and stored separately from profile config.`;
+    return `Usage: octo-harness [--home PATH] [--profile NAME] adapter list\n` +
+      `       octo-harness [--home PATH] [--profile NAME] adapter probe <adapter-type>\n` +
+      `       octo-harness [--home PATH] --profile NAME adapter setup openclaw [--gateway-url URL --token-stdin] [--agent-id ID] [--workspace PATH]\n\n` +
+      `Only OpenClaw currently needs setup. Its first setup saves the connection and initializes the runner; later setup calls reconcile saved state.\n` +
+      `Setup requires an explicit, already logged-in Harness profile. Tokens are read from stdin and stored separately from profile config.`;
   }
   if (group === "agent-session") {
     return `Usage: octo-harness [--home PATH] agent-session list|get <agent-session-id>`;
@@ -1293,8 +1337,9 @@ function helpText(group?: string): string {
     `  octo-harness daemon install|uninstall|run|start|stop|restart|status\n` +
     `  octo-harness doctor [--json]\n` +
     `  octo-harness status\n` +
-    `  octo-harness adapter list|probe <type>\n` +
-    `  octo-harness adapter openclaw configure|init\n` +
+    `  octo-harness adapter list\n` +
+    `  octo-harness adapter probe <type>\n` +
+    `  octo-harness adapter setup openclaw\n` +
     `  octo-harness logs path|query [RUN_ID]\n` +
     `  octo-harness events [--follow] [--run-id ID] [--source SOURCE]\n` +
     `  octo-harness inspect\n` +

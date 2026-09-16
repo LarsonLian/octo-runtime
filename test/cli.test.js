@@ -71,6 +71,14 @@ test("CLI command help is local and describes logs versus doctor", async () => {
   assert.match(help.stdout, /logs path\|query/);
   assert.doesNotMatch(help.stdout, /\|open/);
   assert.match(help.stdout, /use doctor for service startup failures/i);
+  const adapterHelp = await execute(process.execPath, [cli, "adapter", "--help"]);
+  assert.match(adapterHelp.stdout, /adapter setup openclaw/);
+  assert.match(adapterHelp.stdout, /Only OpenClaw currently needs setup/);
+  assert.doesNotMatch(adapterHelp.stdout, /openclaw configure|openclaw init/);
+  await assert.rejects(
+    execute(process.execPath, [cli, "adapter", "setup", "codex"]),
+    /adapter setup is not supported for codex/
+  );
 });
 
 test("CLI exposes bounded events and daemon-owned loopback inspect", async () => {
