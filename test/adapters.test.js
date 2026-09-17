@@ -12,7 +12,6 @@ import {
 import { createCodeBuddyAdapter } from "@mininglamp-oss/octo-harness-adapter-codebuddy";
 import { createAcpAdapter, normalizeAcpUpdate } from "@mininglamp-oss/octo-harness-adapter-acp";
 import { hermesAdapter } from "@mininglamp-oss/octo-harness-adapter-hermes";
-import { kiroAdapter } from "@mininglamp-oss/octo-harness-adapter-kiro";
 import { kimiCodeAdapter } from "@mininglamp-oss/octo-harness-adapter-kimi-code";
 import {
   buildCodexCommand,
@@ -1586,10 +1585,10 @@ test("generic ACP adapters keep a failed tool local and accept the prompt respon
   ]);
 });
 
-test("Hermes, Kiro, and Kimi Code expose distinct ACP adapter types", () => {
+test("Hermes and Kimi Code expose distinct ACP adapter types", () => {
   assert.deepEqual(
-    [hermesAdapter.metadata.type, kiroAdapter.metadata.type, kimiCodeAdapter.metadata.type],
-    ["hermes", "kiro", "kimi-code"]
+    [hermesAdapter.metadata.type, kimiCodeAdapter.metadata.type],
+    ["hermes", "kimi-code"]
   );
   assert.equal(normalizeAcpUpdate({
     sessionUpdate: "tool_call_update",
