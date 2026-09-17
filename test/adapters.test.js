@@ -828,7 +828,9 @@ test("OpenClaw Gateway client authenticates, handles accepted/final responses, a
   const address = server.address();
   assert.notEqual(typeof address, "string");
   const requests = [];
-  server.on("connection", socket => {
+  let connectionRequestId;
+  server.on("connection", (socket, request) => {
+    connectionRequestId = request.headers["x-request-id"];
     socket.send(JSON.stringify({ type: "event", event: "connect.challenge", payload: { nonce: "fixture-nonce", ts: Date.now() } }));
     socket.on("message", data => {
       const frame = JSON.parse(Buffer.from(data).toString("utf8"));
@@ -856,6 +858,7 @@ test("OpenClaw Gateway client authenticates, handles accepted/final responses, a
   });
   t.after(() => client.close());
   assert.equal((await client.connect()).protocol, 4);
+  assert.match(connectionRequestId, /^req_[0-9a-f-]{36}$/);
 
   const abort = new AbortController();
   const pending = client.request("never", {}, { signal: abort.signal });

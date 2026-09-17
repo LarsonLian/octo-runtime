@@ -968,6 +968,7 @@ function daemonRequest(group: string, action: string | undefined, id: string | u
     return {
       method: "logs.query",
       params: {
+        ...(optionalString(flags.requestId) ? { requestId: optionalString(flags.requestId) } : {}),
         ...(id ? { runId: id } : {}),
         ...(optionalString(flags.invocation) ? { invocationId: optionalString(flags.invocation) } : {}),
         ...(limit ? { limit: Number(limit) } : {}),
@@ -1376,7 +1377,7 @@ function helpText(group?: string): string {
   }
   if (group === "logs") {
     return `Usage: octo-harness [--home PATH] logs path|query [RUN_ID] [options]\n\n` +
-      `  query [RUN_ID] [--invocation ID] [--limit N] [--sensitive]\n` +
+      `  query [RUN_ID] [--request-id ID] [--invocation ID] [--limit N] [--sensitive]\n` +
       `Application data is read through daemon IPC; use doctor for service startup failures.`;
   }
   if (group === "events") {

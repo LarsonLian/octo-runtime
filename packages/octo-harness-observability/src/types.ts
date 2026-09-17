@@ -33,6 +33,7 @@ export interface LogInput {
   event: string;
   message: string;
   data?: Record<string, unknown>;
+  requestId?: string;
   profile?: string;
   runtimeId?: string;
   runId?: string;
@@ -104,6 +105,7 @@ export interface ObservabilityStatus {
 }
 
 export interface QueryLogOptions {
+  requestId?: string;
   runId?: string;
   invocationId?: string;
   includeSensitive?: boolean;
@@ -128,6 +130,7 @@ export interface RecordEnvelope extends Record<string, unknown> {
   process_instance_id: string;
   seq: number;
   sensitivity: LogSensitivity;
+  request_id?: string;
   profile?: string;
   runtime_id?: string;
   run_id?: string;

@@ -833,6 +833,7 @@ async function dispatch({
       // Sensitive provider/RPC streams remain opt-in even though this control
       // socket is local. Callers must explicitly cross the privacy boundary.
       return observability.query({
+        requestId: optionalString(params.requestId),
         runId: optionalString(params.runId),
         invocationId: optionalString(params.invocationId),
         includeSensitive: params.includeSensitive === true,

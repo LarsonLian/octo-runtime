@@ -29,9 +29,9 @@ test("failed enrollment leaves no pending or profile identity state", async () =
         input: Readable.from(["octo_enroll_invalid\n"]),
         fetchImplementation: async () => new Response(JSON.stringify({
           error: { code: "ENROLLMENT_INVALID", message: "invalid enrollment" }
-        }), { status: 401, headers: { "Content-Type": "application/json" } })
+        }), { status: 401, headers: { "Content-Type": "application/json", "X-Request-Id": "req-worker-rejected" } })
       }),
-      /ENROLLMENT_INVALID/
+      /ENROLLMENT_INVALID.*request_id=req-worker-rejected/
     );
 
     await assertAbsent(join(home, profile, "setup", "pending-enrollment.json"));
@@ -323,6 +323,7 @@ test("re-enrollment reuses the Runtime and proves ownership with its credential"
 
 test("explicit Agent Worker API root appends only native /v1 routes", async () => {
   const urls = [];
+  const requestIds = [];
   await enrollRuntime({
     serverUrl: "http://localhost:3000",
     agentWorkUrl: "http://127.0.0.1:8092",
@@ -330,8 +331,9 @@ test("explicit Agent Worker API root appends only native /v1 routes", async () =
     profile: "default",
     runtimeName: "MacBook",
     machineId: "machine_fixture",
-    fetchImplementation: async input => {
+    fetchImplementation: async (input, init) => {
       urls.push(String(input));
+      requestIds.push(init.headers["X-Request-Id"]);
       if (urls.length === 1) {
         return Response.json({
           runtime: {
@@ -351,6 +353,8 @@ test("explicit Agent Worker API root appends only native /v1 routes", async () =
     "http://127.0.0.1:8092/v1/runtimes/enroll",
     "http://127.0.0.1:8092/v1/runtime/register"
   ]);
+  assert.equal(new Set(requestIds).size, 2);
+  assert.ok(requestIds.every(requestId => /^req_[0-9a-f-]{36}$/.test(requestId)));
 });
 
 test("invalid machine state is rejected without overwriting it or enrolling", async () => {

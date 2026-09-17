@@ -44,6 +44,7 @@ const CLIENT_MODE = "cli";
 const CLIENT_PLATFORM = process.platform === "darwin" ? "macos" : process.platform;
 const CLIENT_DEVICE_FAMILY = "desktop";
 const REQUESTED_SCOPES = ["operator.read", "operator.write", "operator.admin"];
+const REQUEST_ID_HEADER = "X-Request-Id";
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -64,6 +65,11 @@ function errorFromFrame(frame: GatewayFrame): Error {
   const requestId = typeof details?.requestId === "string" ? ` (pairing request ${details.requestId})` : "";
   const code = typeof native?.code === "string" ? ` [${native.code}]` : "";
   return new Error(`${message}${requestId}${code}`);
+}
+
+function withRequestId(error: Error, requestId: string): Error {
+  if (error.message.includes("request_id=")) return error;
+  return new Error(`${error.message} (request_id=${requestId})`, { cause: error });
 }
 
 function publicKeyRaw(publicKey: string): Buffer {
@@ -112,6 +118,7 @@ export class OpenClawGatewayClient {
   #socket?: WebSocket;
   #hello?: OpenClawGatewayHello;
   #connectPromise?: Promise<OpenClawGatewayHello>;
+  #connectionRequestId?: string;
 
   constructor(options: OpenClawGatewayOptions) {
     this.#options = options;
@@ -132,11 +139,18 @@ export class OpenClawGatewayClient {
   }
 
   async #open(): Promise<OpenClawGatewayHello> {
-    const socket = new WebSocket(this.#options.url, { maxPayload: 25 * 1024 * 1024 });
+    const requestId = `req_${randomUUID()}`;
+    this.#connectionRequestId = requestId;
+    const socket = new WebSocket(this.#options.url, {
+      headers: { [REQUEST_ID_HEADER]: requestId },
+      maxPayload: 25 * 1024 * 1024
+    });
     this.#socket = socket;
     socket.on("message", data => this.#onMessage(messageText(data)));
-    socket.on("close", (code, reason) => this.#failPending(new Error(`OpenClaw Gateway closed (${code}): ${reason.toString()}`)));
-    socket.on("error", error => this.#failPending(error));
+    socket.on("close", (code, reason) => this.#failPending(withRequestId(
+      new Error(`OpenClaw Gateway closed (${code}): ${reason.toString()}`), requestId
+    )));
+    socket.on("error", error => this.#failPending(withRequestId(error, requestId)));
 
     const timeoutMs = this.#options.connectTimeoutMs ?? 10_000;
     return new Promise<OpenClawGatewayHello>((resolve, reject) => {
@@ -151,7 +165,7 @@ export class OpenClawGatewayClient {
         socket.off("close", onHandshakeClose);
         if (error) {
           if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) socket.terminate();
-          reject(error);
+          reject(withRequestId(error, requestId));
         }
         else resolve(hello!);
       };
@@ -279,7 +293,9 @@ export class OpenClawGatewayClient {
     try {
       frame = JSON.parse(text) as GatewayFrame;
     } catch {
-      const error = new Error("OpenClaw Gateway sent malformed JSON");
+      const error = this.#connectionRequestId
+        ? withRequestId(new Error("OpenClaw Gateway sent malformed JSON"), this.#connectionRequestId)
+        : new Error("OpenClaw Gateway sent malformed JSON");
       this.#failPending(error);
       this.#socket?.close(1002, "malformed JSON");
       return;

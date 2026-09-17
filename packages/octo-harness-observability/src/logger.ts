@@ -306,6 +306,7 @@ export class LocalObservability {
           for await (const line of readBoundedLogLines(file.path)) {
             try {
               const value = JSON.parse(line) as StoredLogRecord;
+              if (options.requestId && value.request_id !== options.requestId) continue;
               if (options.runId && value.run_id !== options.runId) continue;
               if (options.invocationId && value.invocation_id !== options.invocationId) continue;
               retainedBytes = insertNewestRecord(
@@ -381,6 +382,7 @@ export class LocalObservability {
       process_instance_id: this.#processInstanceId,
       seq: ++this.#seq,
       sensitivity,
+      ...(input.requestId ? { request_id: input.requestId } : {}),
       ...(input.profile ? { profile: input.profile } : {}),
       ...(input.runtimeId ? { runtime_id: input.runtimeId } : {}),
       ...(input.runId ? { run_id: input.runId } : {}),

@@ -3,7 +3,13 @@ import { readFileSync } from "node:fs";
 import { hostname, platform, arch } from "node:os";
 import WebSocket from "ws";
 import type { AdapterHostRpc, HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
-import type { LocalObservability, LogInput } from "@mininglamp-oss/octo-harness-observability";
+import {
+  REQUEST_ID_HEADER,
+  createRequestId,
+  responseRequestId,
+  type LocalObservability,
+  type LogInput
+} from "@mininglamp-oss/octo-harness-observability";
 import type {
   AgentConfig,
   CanonicalEvent,
@@ -425,80 +431,132 @@ export class AgentWorkRuntime {
 
   async #register(adapterTypes: string[], signal?: AbortSignal): Promise<{ runtimeId: string; protocolVersion: number }> {
     const contextStats = this.#contextStore?.stats();
+    const sentRequestId = createRequestId();
     this.#log({
       level: "info",
       scope: "agent-work.registration",
       event: "agent_work.registration.started",
       message: "registering local Agent Work runtime",
+      requestId: sentRequestId,
       data: { endpoint: httpEndpointMetadata(this.#options.baseUrl), adapter_types: adapterTypes }
     });
-    const response = await fetch(`${stripSlash(this.#options.baseUrl)}/v1/runtime/register`, {
-      method: "POST",
-      headers: this.#headers(true),
-      body: JSON.stringify({
-        profile: this.#options.profile,
-        name: this.#options.runtimeName,
-        device: {
-          os: platform(),
-          arch: arch(),
-          hostname: hostname()
-        },
-        runtime_version: RUNTIME_VERSION,
-        protocol_version: MAX_PROTOCOL_VERSION,
-        protocol_version_min: MIN_PROTOCOL_VERSION,
-        protocol_version_max: MAX_PROTOCOL_VERSION,
-        capabilities: {
-          adapters: this.#adapters.map(adapter => ({
-            provider_type: adapter.type,
-            provider_version: adapter.providerVersion ?? null,
-            provider_path: adapter.providerPath ?? null,
-            available: adapter.available === true,
-            unavailable_reason: adapter.available === true ? null : adapter.unavailableReason ?? "probe_missing",
-            capabilities: adapter.capabilities,
-            ...(adapter.processModel ? { process_model: adapter.processModel } : {}),
-            ...(adapter.transport ? { transport: adapter.transport } : {})
-          })),
-          channel_context: {
-            protocol_version: 1,
-            store: this.#options.channelContext?.store ?? "memory",
-            projection: this.#options.channelContext?.projection ?? "window",
-            provider_persistence: this.#options.channelContext?.providerPersistence ?? "append_only",
-            ...(contextStats ? {
-              serializer_version: contextStats.serializerVersion,
-              message_retention_ms: contextStats.retentionMs,
-              snapshot_retention_ms: contextStats.snapshotRetentionMs,
-              active_snapshot_timeout_ms: contextStats.activeSnapshotTimeoutMs
-            } : {})
+    let response: Response;
+    try {
+      response = await fetch(`${stripSlash(this.#options.baseUrl)}/v1/runtime/register`, {
+        method: "POST",
+        headers: this.#headers(true, sentRequestId),
+        body: JSON.stringify({
+          profile: this.#options.profile,
+          name: this.#options.runtimeName,
+          device: {
+            os: platform(),
+            arch: arch(),
+            hostname: hostname()
+          },
+          runtime_version: RUNTIME_VERSION,
+          protocol_version: MAX_PROTOCOL_VERSION,
+          protocol_version_min: MIN_PROTOCOL_VERSION,
+          protocol_version_max: MAX_PROTOCOL_VERSION,
+          capabilities: {
+            adapters: this.#adapters.map(adapter => ({
+              provider_type: adapter.type,
+              provider_version: adapter.providerVersion ?? null,
+              provider_path: adapter.providerPath ?? null,
+              available: adapter.available === true,
+              unavailable_reason: adapter.available === true ? null : adapter.unavailableReason ?? "probe_missing",
+              capabilities: adapter.capabilities,
+              ...(adapter.processModel ? { process_model: adapter.processModel } : {}),
+              ...(adapter.transport ? { transport: adapter.transport } : {})
+            })),
+            channel_context: {
+              protocol_version: 1,
+              store: this.#options.channelContext?.store ?? "memory",
+              projection: this.#options.channelContext?.projection ?? "window",
+              provider_persistence: this.#options.channelContext?.providerPersistence ?? "append_only",
+              ...(contextStats ? {
+                serializer_version: contextStats.serializerVersion,
+                message_retention_ms: contextStats.retentionMs,
+                snapshot_retention_ms: contextStats.snapshotRetentionMs,
+                active_snapshot_timeout_ms: contextStats.activeSnapshotTimeoutMs
+              } : {})
+            }
           }
-        }
-      }),
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000)
-    });
-    const body = await response.json() as {
+        }),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000)
+      });
+    } catch (error) {
+      this.#log({
+        level: "error",
+        scope: "agent-work.registration",
+        event: "agent_work.registration.failed",
+        message: "Agent Work runtime registration request failed",
+        requestId: sentRequestId,
+        data: { endpoint: httpEndpointMetadata(this.#options.baseUrl), error: errorMessage(error) }
+      });
+      throw error;
+    }
+    const requestId = responseRequestId(response, sentRequestId);
+    let body: {
       runtime?: { id?: string; profile?: string; protocol_version?: number };
       error?: { message?: string; code?: string; details?: { reason_code?: string } };
     };
+    try {
+      body = await response.json() as typeof body;
+    } catch (error) {
+      this.#log({
+        level: "error",
+        scope: "agent-work.registration",
+        event: "agent_work.registration.failed",
+        message: "Agent Work runtime registration returned invalid JSON",
+        requestId,
+        data: { endpoint: httpEndpointMetadata(this.#options.baseUrl), http_status: response.status, error: errorMessage(error) }
+      });
+      throw new Error(`Agent Work runtime registration returned invalid JSON (request_id=${requestId})`, { cause: error });
+    }
+    const rejectRegistration = (error: Error, message: string): never => {
+      this.#log({
+        level: "error",
+        scope: "agent-work.registration",
+        event: "agent_work.registration.failed",
+        message,
+        requestId,
+        data: { endpoint: httpEndpointMetadata(this.#options.baseUrl), http_status: response.status, error: error.message }
+      });
+      throw error;
+    };
     if (body.error?.code === "RUNTIME_PROFILE_MISMATCH" || body.error?.details?.reason_code === "RUNTIME_PROFILE_MISMATCH") {
-      throw new RuntimeIdentityMismatchError("Agent Work profile does not match the enrolled Runtime");
+      rejectRegistration(
+        new RuntimeIdentityMismatchError(`Agent Work profile does not match the enrolled Runtime (request_id=${requestId})`),
+        "Agent Work runtime registration profile was rejected"
+      );
     }
-    if (!response.ok || !body.runtime?.id) {
-      throw new Error(`Agent Work runtime registration failed (${response.status}): ${body.error?.message ?? "invalid response"}`);
+    const registeredRuntime = body.runtime;
+    if (!response.ok || !registeredRuntime?.id) {
+      const error = new Error(`Agent Work runtime registration failed (${response.status}, request_id=${requestId}): ${body.error?.message ?? "invalid response"}`);
+      return rejectRegistration(error, "Agent Work runtime registration was rejected");
     }
-    if (body.runtime.profile !== this.#options.profile) {
-      throw new RuntimeIdentityMismatchError("Agent Work runtime registration returned a different or missing profile");
+    if (registeredRuntime.profile !== this.#options.profile) {
+      rejectRegistration(
+        new RuntimeIdentityMismatchError(`Agent Work runtime registration returned a different or missing profile (request_id=${requestId})`),
+        "Agent Work runtime registration returned an unexpected profile"
+      );
+    }
+    const protocolVersion = registeredRuntime.protocol_version ?? MAX_PROTOCOL_VERSION;
+    if (protocolVersion < MIN_PROTOCOL_VERSION || protocolVersion > MAX_PROTOCOL_VERSION) {
+      rejectRegistration(
+        new Error(`Agent Work selected unsupported protocol ${protocolVersion} (request_id=${requestId})`),
+        "Agent Work runtime registration selected an unsupported protocol"
+      );
     }
     this.#log({
       level: "info",
       scope: "agent-work.registration",
       event: "agent_work.registration.completed",
       message: "local Agent Work runtime registered",
-      data: { runtime_id: body.runtime.id, http_status: response.status }
+      requestId,
+      data: { runtime_id: registeredRuntime.id, http_status: response.status }
     });
-    const protocolVersion = body.runtime.protocol_version ?? MAX_PROTOCOL_VERSION;
-    if (protocolVersion < MIN_PROTOCOL_VERSION || protocolVersion > MAX_PROTOCOL_VERSION) {
-      throw new Error(`Agent Work selected unsupported protocol ${protocolVersion}`);
-    }
-    return { runtimeId: body.runtime.id, protocolVersion };
+    return { runtimeId: registeredRuntime.id, protocolVersion };
   }
 
   async #registerAndConnect(epoch: number, signal?: AbortSignal): Promise<void> {
@@ -518,6 +576,7 @@ export class AgentWorkRuntime {
     const url = new URL(`${stripSlash(this.#options.baseUrl)}/v1/runtime/connect`);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     const connectionId = `conn_wss_${randomUUID()}`;
+    const requestId = createRequestId();
     const attempt = ++this.#connectionAttempt;
     // Endpoint metadata is intentionally reconstructed from URL components. Do
     // not record the original URL: it may contain userinfo or query credentials.
@@ -527,9 +586,10 @@ export class AgentWorkRuntime {
       scope: "transport.wss",
       event: "transport.connection.connecting",
       message: "Agent Work WebSocket connection starting",
+      requestId,
       data: { connection_id: connectionId, reconnect_attempt: attempt, endpoint }
     });
-    const socket = new WebSocket(url, { headers: this.#headers(false) });
+    const socket = new WebSocket(url, { headers: this.#headers(false, requestId) });
     this.#connectingSocket = socket;
     try {
       await new Promise<void>((resolve, reject) => {
@@ -579,6 +639,7 @@ export class AgentWorkRuntime {
           scope: "transport.wss",
           event: "transport.connection.failed",
           message: "Agent Work WebSocket connection failed",
+          requestId,
           data: {
             connection_id: connectionId,
             reconnect_attempt: attempt,
@@ -599,6 +660,7 @@ export class AgentWorkRuntime {
       scope: "transport.wss",
       event: "transport.connection.opened",
       message: "Agent Work WebSocket connection opened",
+      requestId,
       data: {
         connection_id: connectionId,
         reconnect_attempt: attempt,
@@ -1510,9 +1572,10 @@ export class AgentWorkRuntime {
     }
   }
 
-  #headers(json: boolean): Record<string, string> {
+  #headers(json: boolean, requestId: string): Record<string, string> {
     return {
       Authorization: `Bearer ${this.#options.token}`,
+      [REQUEST_ID_HEADER]: requestId,
       ...(json ? { "Content-Type": "application/json" } : {})
     };
   }

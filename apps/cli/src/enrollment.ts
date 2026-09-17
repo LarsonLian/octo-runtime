@@ -1,5 +1,10 @@
 import { readFileSync } from "node:fs";
 import { arch, hostname, platform } from "node:os";
+import {
+  REQUEST_ID_HEADER,
+  createRequestId,
+  responseRequestId
+} from "@mininglamp-oss/octo-harness-observability";
 import { assertProfileName } from "./state.js";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -35,7 +40,7 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
   const fetchImplementation = options.fetchImplementation ?? fetch;
   const serverUrl = normalizeServerUrl(options.serverUrl);
   const agentWorkUrl = normalizeServerUrl(options.agentWorkUrl ?? `${serverUrl}/agentworker/api`);
-  const enrollmentResponse = await fetchImplementation(`${agentWorkUrl}/v1/runtimes/enroll`, {
+  const { value: enrolled, requestId: enrollmentRequestId } = await requestObject(fetchImplementation, `${agentWorkUrl}/v1/runtimes/enroll`, "runtime enrollment", {
     method: "POST",
     redirect: "error",
     headers: {
@@ -48,7 +53,6 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
     body: JSON.stringify({ profile: options.profile, machine_id: options.machineId, ...(options.runtimeId ? { runtime_id: options.runtimeId } : {}) }),
     signal: AbortSignal.timeout(15_000)
   });
-  const enrolled = await responseObject(enrollmentResponse, "runtime enrollment");
   const enrolledRuntime = objectValue(enrolled.runtime);
   const credential = objectValue(enrolled.credential);
   const runtimeToken = stringValue(credential?.token);
@@ -57,12 +61,12 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
   const ownerRef = stringValue(enrolledRuntime?.owner_ref);
   const credentialId = stringValue(credential?.id);
   if (!runtimeToken || !enrolledRuntimeId || !octoSpaceId || !ownerRef || !/^(uid|org):[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/.test(ownerRef) || !credentialId) {
-    throw new Error("runtime enrollment response is missing credential or Octo binding");
+    throw new Error(`runtime enrollment response is missing credential or Octo binding (request_id=${enrollmentRequestId})`);
   }
-  if (options.runtimeId && enrolledRuntimeId !== options.runtimeId) throw new Error("enrollment returned a different Runtime identity");
-  if (enrolledRuntime?.profile !== options.profile) throw new Error("runtime enrollment returned a different or missing profile");
+  if (options.runtimeId && enrolledRuntimeId !== options.runtimeId) throw new Error(`enrollment returned a different Runtime identity (request_id=${enrollmentRequestId})`);
+  if (enrolledRuntime?.profile !== options.profile) throw new Error(`runtime enrollment returned a different or missing profile (request_id=${enrollmentRequestId})`);
 
-  const registerResponse = await fetchImplementation(`${agentWorkUrl}/v1/runtime/register`, {
+  const { value: registered, requestId: registrationRequestId } = await requestObject(fetchImplementation, `${agentWorkUrl}/v1/runtime/register`, "Runtime registration", {
     method: "POST",
     redirect: "error",
     headers: {
@@ -83,12 +87,11 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
     }),
     signal: AbortSignal.timeout(15_000)
   });
-  const registered = await responseObject(registerResponse, "Runtime registration");
   const runtime = objectValue(registered.runtime);
   const runtimeId = stringValue(runtime?.id);
-  if (!runtimeId) throw new Error("Runtime registration response is missing runtime.id");
-  if (runtimeId !== enrolledRuntimeId) throw new Error("Runtime registration changed the enrolled identity");
-  if (runtime?.profile !== options.profile) throw new Error("Runtime registration changed or omitted the enrolled profile");
+  if (!runtimeId) throw new Error(`Runtime registration response is missing runtime.id (request_id=${registrationRequestId})`);
+  if (runtimeId !== enrolledRuntimeId) throw new Error(`Runtime registration changed the enrolled identity (request_id=${registrationRequestId})`);
+  if (runtime?.profile !== options.profile) throw new Error(`Runtime registration changed or omitted the enrolled profile (request_id=${registrationRequestId})`);
   return {
     profile: options.profile,
     runtimeId,
@@ -110,17 +113,40 @@ function packageVersion(): string {
   return metadata.version;
 }
 
-async function responseObject(response: Response, name: string): Promise<Record<string, unknown>> {
+async function requestObject(
+  fetchImplementation: typeof fetch,
+  url: string,
+  name: string,
+  init: RequestInit
+): Promise<{ value: Record<string, unknown>; requestId: string }> {
+  const requestId = createRequestId();
+  const headers = { ...(init.headers as Record<string, string> | undefined), [REQUEST_ID_HEADER]: requestId };
+  let response: Response;
+  try {
+    response = await fetchImplementation(url, { ...init, headers });
+  } catch (error) {
+    throw new Error(`${name} request failed (request_id=${requestId})`, { cause: error });
+  }
+  const responseId = responseRequestId(response, requestId);
+  return { value: await responseObject(response, name, responseId), requestId: responseId };
+}
+
+async function responseObject(response: Response, name: string, requestId: string): Promise<Record<string, unknown>> {
   const text = await response.text();
   if (Buffer.byteLength(text) > MAX_RESPONSE_BYTES) {
-    throw new Error(`${name} response exceeds ${MAX_RESPONSE_BYTES} bytes`);
+    throw new Error(`${name} response exceeds ${MAX_RESPONSE_BYTES} bytes (request_id=${requestId})`);
   }
-  const decoded = parseObject(text, `${name} response`);
+  let decoded: Record<string, unknown>;
+  try {
+    decoded = parseObject(text, `${name} response`);
+  } catch (error) {
+    throw new Error(`invalid ${name} response (request_id=${requestId})`, { cause: error });
+  }
   if (!response.ok) {
     const error = objectValue(decoded.error);
     const message = stringValue(error?.message) ?? stringValue(decoded.error) ?? response.statusText;
     const code = stringValue(error?.code);
-    throw new Error(`${name} failed (${response.status}${code ? ` ${code}` : ""}): ${bounded(message)}`);
+    throw new Error(`${name} failed (${response.status}${code ? ` ${code}` : ""}, request_id=${requestId}): ${bounded(message)}`);
   }
   return objectValue(decoded.data) ?? decoded;
 }
