@@ -858,7 +858,7 @@ test("OpenClaw Gateway client authenticates, handles accepted/final responses, a
   });
   t.after(() => client.close());
   assert.equal((await client.connect()).protocol, 4);
-  assert.match(connectionRequestId, /^req_[0-9a-f-]{36}$/);
+  assert.match(connectionRequestId, /^req_[0-9a-f]{32}$/);
 
   const abort = new AbortController();
   const pending = client.request("never", {}, { signal: abort.signal });

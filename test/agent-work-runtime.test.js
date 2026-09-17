@@ -362,8 +362,8 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     assert.equal(registrationBody.runtime_version, "0.1.0");
     assert.equal(registrationBody.protocol_version_min, 1);
     assert.equal(registrationBody.protocol_version_max, 1);
-    assert.match(registrationRequestId, /^req_[0-9a-f-]{36}$/);
-    assert.match(connectionRequestId, /^req_[0-9a-f-]{36}$/);
+    assert.match(registrationRequestId, /^req_[0-9a-f]{32}$/);
+    assert.match(connectionRequestId, /^req_[0-9a-f]{32}$/);
     assert.notEqual(registrationRequestId, connectionRequestId);
     assert.deepEqual(registrationBody.capabilities.adapters, [{
       provider_type: "codex", provider_version: "1.2.3", provider_path: "/test/codex",

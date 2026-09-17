@@ -139,7 +139,7 @@ export class OpenClawGatewayClient {
   }
 
   async #open(): Promise<OpenClawGatewayHello> {
-    const requestId = `req_${randomUUID()}`;
+    const requestId = `req_${randomUUID().replaceAll("-", "")}`;
     this.#connectionRequestId = requestId;
     const socket = new WebSocket(this.#options.url, {
       headers: { [REQUEST_ID_HEADER]: requestId },

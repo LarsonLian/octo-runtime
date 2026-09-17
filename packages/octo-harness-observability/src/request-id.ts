@@ -5,7 +5,7 @@ const MAX_REQUEST_ID_LENGTH = 128;
 
 /** Mint a log-safe id suitable for HTTP and WebSocket handshake correlation. */
 export function createRequestId(): string {
-  return `req_${randomUUID()}`;
+  return `req_${randomUUID().replaceAll("-", "")}`;
 }
 
 /** Accept only visible ASCII so remote response headers cannot inject logs. */

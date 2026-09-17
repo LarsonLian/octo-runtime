@@ -354,7 +354,7 @@ test("explicit Agent Worker API root appends only native /v1 routes", async () =
     "http://127.0.0.1:8092/v1/runtime/register"
   ]);
   assert.equal(new Set(requestIds).size, 2);
-  assert.ok(requestIds.every(requestId => /^req_[0-9a-f-]{36}$/.test(requestId)));
+  assert.ok(requestIds.every(requestId => /^req_[0-9a-f]{32}$/.test(requestId)));
 });
 
 test("invalid machine state is rejected without overwriting it or enrolling", async () => {
