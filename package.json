@@ -13,7 +13,6 @@
     "apps/cli/dist/**/*.js",
     "apps/cli/README.md",
     "apps/daemon/dist/**/*.js",
-    "apps/daemon/dist/inspect-ui",
     "config/adapters.json",
     "DEPLOYMENTS.md"
   ],

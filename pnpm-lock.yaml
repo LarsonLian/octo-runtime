@@ -247,6 +247,30 @@ importers:
 
   packages/octo-harness-adapter-host:
     dependencies:
+      '@mininglamp-oss/octo-harness-adapter-claude-code':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-claude-code
+      '@mininglamp-oss/octo-harness-adapter-codebuddy':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-codebuddy
+      '@mininglamp-oss/octo-harness-adapter-codex':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-codex
+      '@mininglamp-oss/octo-harness-adapter-hermes':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-hermes
+      '@mininglamp-oss/octo-harness-adapter-kimi-code':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-kimi-code
+      '@mininglamp-oss/octo-harness-adapter-openclaw':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-openclaw
+      '@mininglamp-oss/octo-harness-adapter-opencode':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-opencode
+      '@mininglamp-oss/octo-harness-adapter-zcode-gui':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-zcode-gui
       '@mininglamp-oss/octo-harness-observability':
         specifier: workspace:*
         version: link:../octo-harness-observability
@@ -304,9 +328,25 @@ importers:
 
   packages/octo-harness-daemon:
     dependencies:
+      '@mininglamp-oss/octo-harness-adapter-host':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-host
       '@mininglamp-oss/octo-harness-core':
         specifier: workspace:*
         version: link:../octo-harness-core
+      '@mininglamp-oss/octo-harness-observability':
+        specifier: workspace:*
+        version: link:../octo-harness-observability
+      '@mininglamp-oss/octo-harness-protocol':
+        specifier: workspace:*
+        version: link:../octo-harness-protocol
+      ws:
+        specifier: ^8.18.3
+        version: 8.21.3
+    devDependencies:
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
 
   packages/octo-harness-observability:
     dependencies:

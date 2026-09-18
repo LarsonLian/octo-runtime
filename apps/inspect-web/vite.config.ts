@@ -9,7 +9,7 @@ export default defineConfig({
     alias: { "@": resolve(import.meta.dirname, "src") }
   },
   build: {
-    outDir: "../daemon/dist/inspect-ui",
+    outDir: "../../packages/octo-harness-daemon/dist/inspect-ui",
     emptyOutDir: true,
     sourcemap: false,
     target: "es2022"
