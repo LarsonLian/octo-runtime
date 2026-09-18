@@ -29,9 +29,6 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-kimi-code':
         specifier: workspace:*
         version: link:packages/octo-harness-adapter-kimi-code
-      '@mininglamp-oss/octo-harness-adapter-kiro':
-        specifier: workspace:*
-        version: link:packages/octo-harness-adapter-kiro
       '@mininglamp-oss/octo-harness-adapter-openclaw':
         specifier: workspace:*
         version: link:packages/octo-harness-adapter-openclaw
@@ -99,9 +96,6 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-kimi-code':
         specifier: workspace:*
         version: link:../../packages/octo-harness-adapter-kimi-code
-      '@mininglamp-oss/octo-harness-adapter-kiro':
-        specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-kiro
       '@mininglamp-oss/octo-harness-adapter-openclaw':
         specifier: workspace:*
         version: link:../../packages/octo-harness-adapter-openclaw
@@ -114,6 +108,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@mininglamp-oss/octo-harness-adapter-openclaw':
+        specifier: workspace:*
+        version: link:../../packages/octo-harness-adapter-openclaw
       '@mininglamp-oss/octo-harness-cross-service':
         specifier: workspace:*
         version: link:../../packages/octo-harness-cross-service
@@ -257,17 +254,18 @@ importers:
         specifier: workspace:*
         version: link:../octo-harness-adapter-acp
 
-  packages/octo-harness-adapter-kiro:
-    dependencies:
-      '@mininglamp-oss/octo-harness-adapter-acp':
-        specifier: workspace:*
-        version: link:../octo-harness-adapter-acp
-
   packages/octo-harness-adapter-openclaw:
     dependencies:
       '@mininglamp-oss/octo-harness-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-harness-adapter-sdk
+      ws:
+        specifier: ^8.18.3
+        version: 8.21.3
+    devDependencies:
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
 
   packages/octo-harness-adapter-opencode:
     dependencies:

@@ -1,97 +1,90 @@
-# 06 OpenClaw Local Adapter
+# 06 OpenClaw Gateway Adapter
 
-`openclaw` adapter 是 local-only 实现。它参考 Aily `adapter-oc-local` 的 local transport，但没有复制 Gateway 管理、插件同步和 Aily skill materialization：每次 Octo Harness invocation 都启动一个 `openclaw agent --local` 子进程，结束后回收进程和临时 prompt 文件。
+`openclaw` adapter 通过 OpenClaw Gateway 的公开 WebSocket protocol v4 执行 AgentRun。它不再启动 `openclaw agent --local`，也不读取 OpenClaw session transcript。Gateway 的 `agent` server-push events 是过程流，Octo canonical events 是上层唯一合同。
+
+## 前置配置
+
+OpenClaw 配置绑定在已登录的 Harness profile 上，因此必须先完成 `octo-harness login`，并在 `setup` 时显式传入 `--profile`。省略 profile 或指定尚未登录的 profile 都会 fail closed。Gateway token 从 stdin 读取，不进入命令参数、profile config 或日志。
+
+```bash
+printf '%s' "$OPENCLAW_GATEWAY_TOKEN" | \
+  octo-harness --profile <profile> adapter setup openclaw \
+    --gateway-url ws://127.0.0.1:18789 \
+    --token-stdin
+```
+
+远程 Gateway 必须使用 `wss://`，并显式传入 Gateway 主机上的空壳 workspace：
+
+```bash
+printf '%s' "$OPENCLAW_GATEWAY_TOKEN" | \
+  octo-harness --profile <profile> adapter setup openclaw \
+    --gateway-url wss://gateway.example.com \
+    --workspace /var/lib/octo/openclaw/octo-runner-run-<runtime-uuid>.workspace \
+    --token-stdin
+```
+
+首次 `setup` 在同一条命令中完成两个内部阶段：先从已经完成 login 的 Runtime identity 读取唯一 `runtime_id`，生成默认 `octo-runner-run-<runtime UUID>` Agent ID 及同名只读空 workspace；再把 URL、agent id、workspace 和通用 adapter execution manifest 保存到 profile config，并把 token、OpenClaw device identity 和后续获得的 device token 单独保存到 profile credential 文件；最后连接 Gateway、检查协议能力并创建专用 Agent。profile 只负责定位已登录 Runtime，不参与 runner 命名；不同 profile 拥有不同 `runtime_id`，因此同一 Gateway 上的 runner 和 workspace 自然隔离。非标准或超长 runtime ID 会规范化并附加短哈希以满足 OpenClaw 的 64 字符限制；显式 `--agent-id` 仍可覆盖默认值。旧版本地固定默认值、曾使用的 profile 派生 ID 及旧 workspace 会在下次无覆盖的 `setup` 中迁移，但不会删除 Gateway 上的旧 agent 或本地旧目录。远程旧配置必须显式提供新的 `--agent-id` 和 `--workspace`。daemon 只解析通用 manifest，不包含 OpenClaw option key 分支；重新 login 会保留相同 Runtime 的 adapter 配置。已有配置时可以不带参数幂等重跑：
+
+```bash
+octo-harness --profile <profile> adapter setup openclaw
+```
+
+Runner 设置包括：
+
+- Gateway 级 `agents.defaults.skipBootstrap: true`
+- `contextInjection: "never"`
+- `skills: []`
+- `tools.deny: ["group:memory", "ask_user"]`
+- `memory.search.rememberAcrossConversations: false`
+
+Harness 的 OpenClaw invocation 是无人值守执行，不能消费只投递到 OpenClaw Control UI/TUI 的结构化问题。因此专用 runner 必须禁用 OpenClaw 原生 `ask_user`；需要澄清时应由 Harness 自己的 canonical interaction 通道承载。在该通道接入 OpenClaw adapter 前，禁止原生工具可避免 AgentRun 挂起等待另一个页面里的选择。
+
+OpenClaw 2026.9.4 没有 per-agent 或 per-session 的 `skipBootstrap`，因此第一项会影响同一 Gateway 上的所有 agents。严格隔离部署应为 Octo 使用专用 Gateway；共享 Gateway 必须显式接受这个影响。本地 Gateway 的空壳 workspace 会清除 OpenClaw 生成的 bootstrap 文件，再设为 `0555`；符号链接会被拒绝。远程目录的只读权限无法由本机 CLI 强制，必须由 Gateway 主机的 owner/service manager 落实。
+
+本地自定义 `--workspace` 只能位于当前 profile 的 `adapters/openclaw/` 受管目录内；daemon 启动时再次校验 realpath、空目录和只读 mode。每次 Run 在创建 session 前还会通过 `config.get` 校验 Gateway 的 `skipBootstrap` 以及 runner 的 context、skills、memory 和 workspace 配置，配置漂移时 fail closed。
 
 ## Invocation Lifecycle
 
 ```text
 InvokeRequest
-  -> mint/reuse providerSession.sessionId
-  -> compose control instructions + user request
-  -> write mode 0600 temporary message file
-  -> spawn openclaw agent --local --json --session-id ... --message-file ...
-  -> tail newly appended session transcript records while parsing stdout
-  -> emit canonical session/model-step/reasoning/message/tool/usage/run events
-  -> reconcile the optional pretty-printed final JSON blob
-  -> remove temporary directory
+  -> open one authenticated WebSocket
+  -> verify protocol=4 and advertised methods/events
+  -> config.get and verify the runner isolation contract
+  -> sessions.create(key, agentId, cwd=InvokeRequest.workdir)
+  -> sessions.messages.subscribe(key, agentId)
+  -> agent(sessionKey, message, extraSystemPrompt, model, thinking)
+  -> route event:"agent" by runId and deduplicate by seq
+  -> require agent.wait to confirm the lifecycle terminal
+  -> emit one canonical run terminal
+  -> close WebSocket
 ```
 
-adapter 不连接 `ws://127.0.0.1:<gateway-port>`，不执行 `openclaw gateway install/restart`，也不要求常驻 Gateway。`adapter probe openclaw` 只检查 `openclaw` 可执行文件。
+工作目录必须通过 `sessions.create.cwd` 设置。OpenClaw 2026.9.4 会拒绝普通 operator 在 `agent` RPC 中传 `cwd`，该字段只保留给 plugin-owned subagent run。Adapter 因此先创建一次性 session，显式调用 `sessions.messages.subscribe` 打开该 session 的完整消息流，再调用不带 `cwd` 的 `agent` RPC。只连接 WS 或只调用 `sessions.subscribe` 不会得到完整的 assistant/thinking/tool/lifecycle 增量。`agents.defaults.skipBootstrap=true` 阻止 OpenClaw 在这个真实 cwd 自动创建 `.git` 和默认 workspace 文件。
 
-## Session Continuity
+每个 Octo AgentRun 使用唯一 OpenClaw session key。这样同一 WebSocket 内不会混淆其他 Run 的事件，也不会把 OpenClaw transcript 当成 Octo 的 conversation 或 memory 权威。OpenClaw 当前只允许 Control UI 创建 incognito session，所以 operator RPC 创建的内部 session 仍可能被 Gateway 持久化；隔离保证来自唯一 session、禁用 runner memory 和 Octo 自己注入的冻结上下文，不等于 OpenClaw state dir 零落盘。
 
-首次 invocation 生成 `octo-harness-<uuid>`，并立即上报：
+## Event Mapping
 
-```json
-{
-  "type": "session.update",
-  "payload": {
-    "providerSession": {
-      "sessionId": "octo-harness-...",
-      "resumable": true,
-      "agentId": "main"
-    }
-  }
-}
-```
-
-Core 把这个 opaque provider session 保存到 Harness Session。Chat 下一轮或 Task continuation 再把它放入 `InvokeRequest.providerSession`，adapter 仍传相同的 `--session-id`。OpenClaw 自己负责读取 state dir 中的 session JSONL；Octo Harness 不把 transcript 复制到 workdir。
-
-## Prompt And Workdir
-
-OpenClaw local CLI 没有独立的 system-prompt 参数。adapter 因而把两类内容明确分段后放入同一个临时文件：
-
-```text
-[Harness Instructions]
-<daemon-owned context and per-turn control>
-
-[User Request]
-<user prompt>
-```
-
-这是一种兼容投影，不等价于模型 API 的 system role。临时目录尽量设为 `0700`，文件设为 `0600`，prompt 不进入 argv，invocation 完成或失败后都会清理。
-
-cwd 与 Aily local 路径保持相同方向：优先 `OPENCLAW_STATE_DIR`，其次 `OPENCLAW_CONFIG_PATH` 所在目录，再到 `HOME`。原因是 OpenClaw 的 agent workspace、plugin 和相对路径由 OpenClaw 配置管理；Octo Harness Agent 的 `workdir` 不应偷偷改写 OpenClaw 的 state root。要让 OpenClaw 操作某个代码目录，应在相应 OpenClaw agent 配置中设置 workspace。
-
-## Native Event Mapping
-
-| OpenClaw output | Canonical event |
+| OpenClaw Gateway event | Canonical event |
 |---|---|
-| transcript assistant record | `model_step.started/finished` |
-| transcript `thinking` block | `message.delta(channel=analysis, exposure=public_reasoning)` |
-| transcript `toolCall` block | `tool_call.create` with the assistant `stepId` |
-| transcript `toolResult` message | `tool_call.update` with the originating `stepId` and provider duration |
-| `text` | `message.delta(channel=final)` |
-| `tool_use` | `tool_call.create` |
-| `tool_result` | `tool_call.update(completed/error)` |
-| `step_finish.usage` | `usage.update` |
-| final blob `meta.agentMeta.sessionId` | `session.update` when changed |
-| final blob `payloads[].text` | reconcile missing delta, then `message.update` |
-| clean exit | `run.finished` |
-| provider error/non-zero exit | `run.error` |
-| host abort/lifecycle cancelled | `run.stopped` |
+| `lifecycle.start` | `model_step.started` |
+| cumulative `assistant.text` | deduplicated `message.delta` / replacement `message.update` |
+| cumulative `thinking.text` | analysis `message.delta` / `message.update` |
+| `tool.start/update/result` | `tool_call.create/update` |
+| `item.preamble` | analysis `message.delta` |
+| `usage` | `usage.update` |
+| `lifecycle.end` | `model_step.finished` then `run.finished` |
+| `lifecycle.error` or RPC failure | `run.error` |
+| Harness abort | `sessions.abort` then `run.stopped` |
 
-OpenClaw 2026.x 的 `--json` stdout 可能是逐行 NDJSON，也可能只在尾部给一个多行 JSON result blob。后者不会携带工具过程，因此 adapter 在启动前记录当前 session JSONL 的文件偏移，运行期间只读取新增记录；resume 不会重放前几轮历史。parser 用最终 blob 校正缺失的文本和总 usage。旧版若先输出原生 NDJSON，则以 stdout 为过程事件源并忽略 transcript，避免重复。
+未知 event 和未知 stream 被忽略；已知 stream 的附加字段不会导致失败。事件只按已接受的 `runId` 消费，并按单调 `seq` 去重，其他 Run 的帧不会进入当前 canonical 流。seq 跳号会写入 provider observation。lifecycle 终态只有在 `agent.wait` 返回匹配的确定终态后才映射为 canonical terminal；连接中断后 adapter 会新建认证连接并在 invocation deadline 内持续处理 `pending`/非终态 `timeout`，用同一 runId 对账且不伪造缺失 delta。OpenClaw 2026.9.4 的取消确认为 `status=timeout`、`endedAt` 已设置且 `stopReason=aborted`；agent 尚未 accepted 时取消不会发送无效 abort。
 
-`--thinking` 控制 OpenClaw 的 thinking level。OpenClaw 明文落入 transcript 的 `thinking` block 映射为带 provider provenance 的 `public_reasoning`，并与同一 assistant record 的工具调用共享 `stepId`；adapter 不读取 `thinkingSignature`，provider 未写出明文 thinking 时也不伪造内容。
+## Compatibility Boundary
 
-## Runtime Configuration
+Adapter 不导入 OpenClaw 内部 package，不安装 OpenClaw plugin，也不依赖 transcript 文件布局。它只依赖 Gateway protocol v4 公共能力：`config.get`、`sessions.create`、`sessions.messages.subscribe`、`agent`、`agent.wait`、`sessions.abort` 和 `agent` event。连接后会检查 `hello-ok.features`；协议版本或必需能力不匹配时 fail closed。
 
-先确认本机命令可用：
+这比内置 plugin ABI 的升级耦合更小，但不是“任意 OpenClaw 版本都兼容”。升级 Gateway 后必须运行 contract tests，并在真实测试 Gateway 做一次只读 smoke test。当前实测基线为 OpenClaw `2026.9.4`。
 
-```bash
-pnpm cli adapter probe openclaw
-```
+## Online Verification
 
-Agent Worker 的 revision 将 `default_adapter=openclaw` 与 `providerAgent=main`
-下发给 Runtime；`model`、`thinking`、`timeoutSeconds` 可选。OpenClaw 的认证、
-provider 和 agent workspace 仍由 OpenClaw 自己的配置负责。IM、Loop、AutoPilot 与
-Webhook 都提交同一种 AgentRun，上层不需要 OpenClaw 专用业务分支。
-
-## Deliberate Limits
-
-- 不实现 Gateway/WS transport、device auth、Gateway reconnect 或 plugin sync。
-- 不从 Octo Harness workdir 注入 skills；skills 是 OpenClaw agent 配置能力，不是 Run 汇报协议。
-- 不实现 session fork 文件复制；当前只声明 `session.serialize`，不声明 `session.fork`。
-- 当前进程取消依赖 Node `AbortSignal` 终止 CLI；生产环境应升级为进程组终止和分级 `SIGTERM/SIGKILL` 回收。
-- 契约测试使用 fake OpenClaw，不调用真实模型。2026-09-08 本机 `OpenClaw 2026.7.1-2` 完成真实 Harness Run 验证，覆盖两轮 model step、公开 reasoning、`exec` tool lifecycle、final text 和 usage。
+本仓库依赖 octo-auth，端到端验证必须从线上测试环境 `https://im-test.deepminer.com.cn/` 触发真实 AgentRun。当前 profile Runtime 已完成 octo-auth enrollment 并在线连接 Agent Work；尚未从 IM 页面触发 OpenClaw AgentRun。单元测试和本地 Gateway smoke test只覆盖协议、cwd、事件隔离和失败收敛，不能替代 IM、审计和卡片终态的全链路验收。

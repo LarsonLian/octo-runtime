@@ -7,6 +7,7 @@ import type {
   ChannelScope,
   ContextSyncResult,
   InvokeRequestWire,
+  MessageChannel,
   MessageExposure,
   ModelStepFinishedPayload,
   ModelStepStartedPayload,
@@ -251,6 +252,11 @@ export const MESSAGE_EXPOSURES: ReadonlySet<MessageExposure> = new Set([
   "private_reasoning",
   "unknown"
 ]);
+export const MESSAGE_CHANNELS: ReadonlySet<MessageChannel> = new Set([
+  "analysis",
+  "commentary",
+  "final"
+]);
 
 /**
  * Capability names an adapter may declare. A capability describes a real
@@ -300,8 +306,12 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
     throw new TypeError("event.payload must be an object");
   }
   const payload = isRecord(event.payload) ? event.payload : {};
-  if (event.type.startsWith("message.") && payload.channel === "analysis") {
-    assertAnalysisExposure(payload);
+  if (event.type.startsWith("message.")) {
+    if (payload.channel !== undefined
+      && (typeof payload.channel !== "string" || !MESSAGE_CHANNELS.has(payload.channel as MessageChannel))) {
+      throw new TypeError("message event payload.channel must be analysis, commentary, or final when present");
+    }
+    if (payload.channel === "analysis") assertAnalysisExposure(payload);
   }
   if (event.type === "model_step.started" || event.type === "model_step.finished") {
     requireEventString(payload, "stepId", event.type);

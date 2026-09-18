@@ -5,12 +5,12 @@
  */
 
 /**
- * Assistant output channel. analysis identifies reasoning-class content whose exposure must be authorized separately; final is user-facing output.
+ * Provider-neutral assistant output channel. analysis is reasoning-class content gated by exposure; commentary is public in-run progress; final is answer content delivered only after the Run reaches a completed terminal state.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "MessageChannel".
  */
-export type MessageChannel = "analysis" | "final";
+export type MessageChannel = "analysis" | "commentary" | "final";
 /**
  * Adapter-authenticated classification of analysis content. public_reasoning, public_summary, and public_plan may enter a public Presentation; missing values are unknown.
  *

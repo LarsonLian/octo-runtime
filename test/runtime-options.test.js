@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -52,6 +52,73 @@ test("managed Runtime requires the bound profile and discovers 128-character nam
       assert.throws(() => resolveDaemonRuntimePaths(["--home", home], {}), /managed Runtime identity.*invalid/);
     }
   } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("managed profile loads OpenClaw adapter credentials without serializing them into service argv", async () => {
+  const home = await mkdtemp(join(tmpdir(), "oh-managed-openclaw-"));
+  const workspace = join(home, "default/adapters/openclaw/octo-runner.workspace");
+  try {
+    await writeManagedRuntime(home);
+    const configPath = join(home, "default/config.json");
+    const config = JSON.parse(await import("node:fs/promises").then(module => module.readFile(configPath, "utf8")));
+    config.adapters = {
+      openclaw: {
+        schema_version: 1,
+        gateway_url: "ws://127.0.0.1:18789/",
+        agent_id: "octo-openclaw-runner",
+        workspace: join(home, "default/adapters/openclaw/octo-runner.workspace"),
+        credential_ref: "credentials/openclaw-gateway.json",
+        execution: {
+          provider_agent_id: "octo-openclaw-runner",
+          provider_options: {
+            OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
+            OPENCLAW_RUNNER_WORKSPACE: workspace
+          },
+          credential_ref: "credentials/openclaw-gateway.json",
+          managed_workspace: {
+            path: workspace,
+            root: "adapters/openclaw",
+            active_when_url: "ws://127.0.0.1:18789/",
+            require_empty: true,
+            require_read_only: true
+          }
+        }
+      }
+    };
+    await writeFile(configPath, JSON.stringify(config));
+    await writeFile(join(home, "default/credentials/openclaw-gateway.json"), JSON.stringify({
+      schema_version: 1,
+      access_token: "gateway-secret",
+      device_id: "device-id",
+      public_key: "public-key",
+      private_key: "private-key",
+      issued_at: new Date().toISOString(),
+      provider_options: {
+        OPENCLAW_GATEWAY_TOKEN: "gateway-secret",
+        OPENCLAW_GATEWAY_DEVICE_ID: "device-id",
+        OPENCLAW_GATEWAY_PUBLIC_KEY: "public-key",
+        OPENCLAW_GATEWAY_PRIVATE_KEY: "private-key"
+      }
+    }));
+    await mkdir(workspace, { recursive: true });
+    if (process.platform !== "win32") await chmod(workspace, 0o555);
+
+    const paths = resolveDaemonRuntimePaths(["--home", home], {});
+    assert.equal(paths.agentWorks[0].adapterConfigurations.openclaw.providerOptions.OPENCLAW_GATEWAY_TOKEN, "gateway-secret");
+    assert.equal(paths.agentWorks[0].adapterConfigurations.openclaw.providerOptions.OPENCLAW_RUNNER_WORKSPACE, workspace);
+    assert.equal(paths.agentWorks[0].adapterConfigurations.openclaw.providerAgentId, "octo-openclaw-runner");
+    assert.equal(daemonRuntimeArguments(paths).includes("gateway-secret"), false);
+    if (process.platform !== "win32") {
+      await chmod(workspace, 0o755);
+      assert.throws(() => resolveDaemonRuntimePaths(["--home", home], {}), /workspace must be read-only/);
+    }
+    await writeFile(join(workspace, "unexpected.txt"), "unexpected");
+    if (process.platform !== "win32") await chmod(workspace, 0o555);
+    assert.throws(() => resolveDaemonRuntimePaths(["--home", home], {}), /workspace must be empty/);
+  } finally {
+    if (process.platform !== "win32") await chmod(workspace, 0o755).catch(() => undefined);
     await rm(home, { recursive: true, force: true });
   }
 });

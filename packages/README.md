@@ -25,7 +25,6 @@ Agent Worker run.start
 | `octo-harness-adapter-codebuddy` | CodeBuddy ACP mapping |
 | `octo-harness-adapter-acp` | Shared ACP lifecycle and canonical mapping |
 | `octo-harness-adapter-hermes` | Hermes Agent ACP mapping |
-| `octo-harness-adapter-kiro` | Kiro CLI ACP mapping |
 | `octo-harness-adapter-kimi-code` | Kimi Code CLI ACP mapping |
 | `octo-harness-adapter-opencode` | OpenCode mapping |
 | `octo-harness-adapter-openclaw` | OpenClaw local mapping |

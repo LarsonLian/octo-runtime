@@ -487,6 +487,33 @@ export class ChannelContextStore {
     }
   }
 
+  /** Select the bounded cold projection for an adapter that never resumes a
+   * provider session. Unlike resume fallback, this keeps the current consumer
+   * generation: there was no failed provider session to invalidate, and every
+   * later turn will independently select the same full-history projection. */
+  selectColdProjection(runId: string): PreparedChannelContextSnapshot {
+    this.#db.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.#snapshotForRun(runId);
+      if (!row) throw new Error(`channel context snapshot not found for run ${runId}`);
+      if (row.selected_variant === "recovery") {
+        this.#db.exec("COMMIT");
+        return snapshotFromRow(row);
+      }
+      if (row.state !== "prepared" && row.state !== "submitted") {
+        throw new Error(`channel context snapshot cannot select cold projection from state ${row.state}`);
+      }
+      this.#db.prepare(
+        "UPDATE channel_context_snapshots SET selected_variant = 'recovery' WHERE snapshot_id = ?"
+      ).run(row.snapshot_id);
+      this.#db.exec("COMMIT");
+      return this.getSnapshot(runId)!;
+    } catch (error) {
+      this.#db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   /** Mark a prepared snapshot as submitted once its run.started has been enqueued;
    * the consumer cursor is not advanced until commit. No-op if not `prepared`. */
   markSubmitted(runId: string): PreparedChannelContextSnapshot | undefined {

@@ -1,9 +1,12 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { access, chmod, mkdir, open, readFile, rename, rm, rmdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const OPENCLAW_RUNNER_AGENT_ID_PREFIX = "octo-runner-run-";
+const OPENCLAW_AGENT_ID_MAX_LENGTH = 64;
+const OPENCLAW_AGENT_ID = /^[a-z0-9_][a-z0-9_-]{0,63}$/;
 const RESERVED_PROFILE_NAMES = new Set([
   "config.json",
   "credentials",
@@ -36,6 +39,41 @@ export interface ProfileConfiguration {
   octo_space_id?: string;
   owner_ref?: string;
   runtime_name: string;
+  adapters?: {
+    openclaw?: OpenClawAdapterConfiguration;
+  };
+}
+
+export interface OpenClawAdapterConfiguration {
+  schema_version: 1;
+  gateway_url: string;
+  agent_id: string;
+  workspace: string;
+  credential_ref: "credentials/openclaw-gateway.json";
+  execution: AdapterExecutionConfiguration;
+}
+
+export interface AdapterExecutionConfiguration {
+  provider_agent_id?: string;
+  provider_options: Record<string, string>;
+  credential_ref?: string;
+  managed_workspace?: {
+    path: string;
+    root: string;
+    active_when_url?: string;
+    require_empty?: boolean;
+    require_read_only?: boolean;
+  };
+}
+
+export interface OpenClawGatewayCredential {
+  schema_version: 1;
+  access_token: string;
+  device_id: string;
+  public_key: string;
+  private_key: string;
+  issued_at: string;
+  provider_options: Record<string, string>;
 }
 
 export interface RuntimeIdentity {
@@ -77,6 +115,8 @@ export interface HarnessPaths {
   profileConfig: string;
   identity: string;
   credential: string;
+  openclawCredential: string;
+  openclawRoot: string;
   updateJournal: string;
   setupLock: string;
   pid: string;
@@ -108,6 +148,8 @@ export function harnessPaths(home: string, profile: string): HarnessPaths {
     profileConfig: join(profileRoot, "config.json"),
     identity: join(profileRoot, "identity", "runtime.json"),
     credential: join(profileRoot, "credentials", "runtime-token.json"),
+    openclawCredential: join(profileRoot, "credentials", "openclaw-gateway.json"),
+    openclawRoot: join(profileRoot, "adapters", "openclaw"),
     updateJournal: join(absoluteHome, "run", "update.json"),
     setupLock: join(absoluteHome, "run", "setup.lock"),
     pid: join(absoluteHome, "octo-daemon.pid"),
@@ -116,6 +158,28 @@ export function harnessPaths(home: string, profile: string): HarnessPaths {
       : join(absoluteHome, "sockets", "octo-harness-daemon.sock"),
     logs: join(absoluteHome, "logs")
   };
+}
+
+export function defaultOpenClawRunnerAgentId(runtimeId: string): string {
+  const identity = runtimeId.startsWith("runtime_") ? runtimeId.slice("runtime_".length) : runtimeId;
+  const direct = `${OPENCLAW_RUNNER_AGENT_ID_PREFIX}${identity}`;
+  if (isValidOpenClawAgentId(direct)) return direct;
+
+  const slug = identity
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const digest = createHash("sha256").update(runtimeId).digest("hex").slice(0, 10);
+  const maxSlugLength = OPENCLAW_AGENT_ID_MAX_LENGTH
+    - OPENCLAW_RUNNER_AGENT_ID_PREFIX.length
+    - digest.length
+    - 1;
+  const shortenedSlug = slug.slice(0, maxSlugLength).replace(/-+$/g, "");
+  return `${OPENCLAW_RUNNER_AGENT_ID_PREFIX}${shortenedSlug}-${digest}`;
+}
+
+export function isValidOpenClawAgentId(value: string): boolean {
+  return OPENCLAW_AGENT_ID.test(value);
 }
 
 /** Call under the Home setup lock; this label is shared by all profiles, not an authentication key. */
@@ -149,7 +213,8 @@ export async function prepareHarnessDirectories(paths: HarnessPaths): Promise<vo
     secureDirectory(paths.logs),
     secureDirectory(dirname(paths.profileConfig)),
     secureDirectory(dirname(paths.identity)),
-    secureDirectory(dirname(paths.credential))
+    secureDirectory(dirname(paths.credential)),
+    secureDirectory(paths.openclawRoot)
   ]);
 }
 

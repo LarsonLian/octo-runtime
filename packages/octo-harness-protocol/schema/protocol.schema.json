@@ -8,9 +8,9 @@
   "definitions": {
     "MessageChannel": {
       "title": "MessageChannel",
-      "description": "Assistant output channel. analysis identifies reasoning-class content whose exposure must be authorized separately; final is user-facing output.",
+      "description": "Provider-neutral assistant output channel. analysis is reasoning-class content gated by exposure; commentary is public in-run progress; final is answer content delivered only after the Run reaches a completed terminal state.",
       "type": "string",
-      "enum": ["analysis", "final"]
+      "enum": ["analysis", "commentary", "final"]
     },
     "MessageExposure": {
       "title": "MessageExposure",

@@ -254,6 +254,10 @@ test("final answer accumulator replaces snapshots and appends deltas", () => {
     type: "message.delta",
     payload: { channel: "analysis", text: "private reasoning" }
   });
+  text = accumulateFinalText(text, {
+    type: "message.update",
+    payload: { channel: "commentary", text: "public progress update" }
+  });
   assert.equal(text, "complete answer");
 });
 
@@ -276,6 +280,8 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     component: "daemon"
   });
   let registrationBody;
+  let registrationRequestId;
+  let connectionRequestId;
   let runtime;
   let invokedRequest;
 
@@ -283,10 +289,12 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     let body = "";
     for await (const chunk of request) body += chunk;
     registrationBody = JSON.parse(body);
-    response.writeHead(200, { "Content-Type": "application/json" });
+    registrationRequestId = request.headers["x-request-id"];
+    response.writeHead(200, { "Content-Type": "application/json", "X-Request-Id": registrationRequestId });
     response.end(JSON.stringify({ runtime: { profile: "work", id: "runtime-observed" } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
+    connectionRequestId = request.headers["x-request-id"];
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
   });
   wsServer.on("connection", websocket => {
@@ -354,6 +362,9 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     assert.equal(registrationBody.runtime_version, "0.1.0");
     assert.equal(registrationBody.protocol_version_min, 1);
     assert.equal(registrationBody.protocol_version_max, 1);
+    assert.match(registrationRequestId, /^req_[0-9a-f]{32}$/);
+    assert.match(connectionRequestId, /^req_[0-9a-f]{32}$/);
+    assert.notEqual(registrationRequestId, connectionRequestId);
     assert.deepEqual(registrationBody.capabilities.adapters, [{
       provider_type: "codex", provider_version: "1.2.3", provider_path: "/test/codex",
       available: true, unavailable_reason: null, capabilities: []
@@ -374,6 +385,12 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     assert.ok(trace.some(record => record.event === "transport.message.received" && record.data.frame_type === "runtime.command"));
     const all = await logger.query({ limit: 500 });
     const opened = all.find(record => record.event === "transport.connection.opened" && record.scope === "transport.wss");
+    assert.equal(opened.request_id, connectionRequestId);
+    assert.ok(all.some(record => record.event === "agent_work.registration.completed"
+      && record.request_id === registrationRequestId));
+    const registrationTrace = await logger.query({ requestId: registrationRequestId });
+    assert.ok(registrationTrace.length >= 2);
+    assert.ok(registrationTrace.every(record => record.request_id === registrationRequestId));
     assert.deepEqual(opened.data.endpoint, {
       scheme: "ws",
       host: "127.0.0.1",

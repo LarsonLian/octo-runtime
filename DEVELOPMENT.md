@@ -146,6 +146,14 @@ curl -fsSL https://im-test.deepminer.com.cn/octo-harness/install.sh \
 `404`、`405` 或 `Content-Type: text/html`，说明请求落入了旧 Web SPA fallback，
 `/agentworker/api` 代理尚未部署或没有生效。
 
+### Request ID 排障
+
+Harness 对 enrollment、Runtime registration 和 WebSocket Upgrade 请求发送
+`X-Request-Id`。Daemon 结构化日志将同一值写入顶层 `request_id`，HTTP 失败信息也会
+带上该值。可使用 `octo-harness logs query --request-id <ID>` 查询一次请求的本地记录，
+再用同一 ID 对照 Agent Worker / 网关日志。外部返回的 request id 仅接受最长 128 字节的
+可见 ASCII，避免把不可信 Header 原样写入日志。
+
 ```bash
 curl -i \
   -X POST \

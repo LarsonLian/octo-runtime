@@ -18,6 +18,7 @@ import type {
 export type {
   CanonicalEvent,
   InvokeRequest,
+  MessageChannel,
   MessageExposure,
   MessageProvenance
 } from "@mininglamp-oss/octo-harness-protocol";

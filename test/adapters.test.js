@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile, stat } from "node:fs/promises";
+import { once } from "node:events";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { WebSocketServer } from "ws";
 import {
   createJsonCliAdapter,
   observeBestEffort,
@@ -10,7 +12,6 @@ import {
 import { createCodeBuddyAdapter } from "@mininglamp-oss/octo-harness-adapter-codebuddy";
 import { createAcpAdapter, normalizeAcpUpdate } from "@mininglamp-oss/octo-harness-adapter-acp";
 import { hermesAdapter } from "@mininglamp-oss/octo-harness-adapter-hermes";
-import { kiroAdapter } from "@mininglamp-oss/octo-harness-adapter-kiro";
 import { kimiCodeAdapter } from "@mininglamp-oss/octo-harness-adapter-kimi-code";
 import {
   buildCodexCommand,
@@ -27,7 +28,10 @@ import {
 } from "@mininglamp-oss/octo-harness-adapter-claude-code";
 import { buildOpenCodeCommand, normalizeOpenCodeEvent } from "@mininglamp-oss/octo-harness-adapter-opencode";
 import {
-  buildOpenClawCommand,
+  buildOpenClawGatewayInvocation,
+  createOpenClawDeviceIdentity,
+  createOpenClawAdapter,
+  OpenClawGatewayClient,
   OpenClawTranscriptNormalizer,
   tryParseOpenClawEvent,
   tryParseOpenClawFinalBlob,
@@ -35,6 +39,31 @@ import {
 } from "@mininglamp-oss/octo-harness-adapter-openclaw";
 
 const request = { invocationId: "inv-1", agentSessionId: "session-1", runId: "run-1", prompt: "work", workdir: process.cwd(), context: {}, appendInstructions: "CONTROL", agentConfig: {} };
+
+const openClawGatewayMethods = ["config.get", "sessions.create", "sessions.messages.subscribe", "agent", "agent.wait", "sessions.abort"];
+
+function openClawGatewayHello() {
+  return { type: "hello-ok", protocol: 4, features: { methods: openClawGatewayMethods, events: ["agent"] } };
+}
+
+function openClawIsolationConfig(agentId = "octo-openclaw-runner") {
+  return {
+    config: {
+      agents: {
+        defaults: { skipBootstrap: true },
+        entries: {
+          [agentId]: {
+            workspace: "/managed/openclaw-runner",
+            contextInjection: "never",
+            skills: [],
+            tools: { deny: ["group:memory", "ask_user"] },
+            memory: { search: { rememberAcrossConversations: false } }
+          }
+        }
+      }
+    }
+  };
+}
 
 test("best-effort observations handle rejection and provider output excludes private reasoning", async () => {
   observeBestEffort({
@@ -136,6 +165,61 @@ test("Codex native events map to session/message/usage/terminal", () => {
     normalizeCodexEvent({ method: "turn/completed", params: { turn: { status: "completed" } } }).map(x => x.type),
     ["run.finished"]
   );
+});
+
+test("Codex maps commentary separately from the final answer and keeps its tools in the same model step", () => {
+  const normalizer = new CodexEventNormalizer();
+  normalizer.normalize({
+    method: "turn/started", params: { turn: { id: "turn-commentary", status: "inProgress" } }
+  });
+
+  const started = normalizer.normalize({
+    method: "item/started",
+    params: {
+      turnId: "turn-commentary",
+      item: { type: "agentMessage", id: "progress-1", phase: "commentary" }
+    }
+  });
+  assert.deepEqual(started.map(event => event.type), ["model_step.started", "message.create"]);
+  assert.equal(started[1].payload.channel, "commentary");
+
+  assert.deepEqual(normalizer.normalize({
+    method: "item/agentMessage/delta",
+    params: { turnId: "turn-commentary", itemId: "progress-1", delta: "先检查目录" }
+  })[0].payload, {
+    text: "先检查目录", channel: "commentary", messageId: "progress-1",
+    stepId: "codex:turn-commentary:round:1"
+  });
+
+  const completed = normalizer.normalize({
+    method: "item/completed",
+    params: {
+      turnId: "turn-commentary",
+      item: { type: "agentMessage", id: "progress-1", phase: "commentary", text: "先检查目录" }
+    }
+  });
+  assert.deepEqual(completed.map(event => event.type), ["message.update"]);
+  assert.equal(completed[0].payload.channel, "commentary");
+
+  const tool = normalizer.normalize({
+    method: "item/started",
+    params: {
+      turnId: "turn-commentary",
+      item: { type: "commandExecution", id: "tool-1", command: "pwd", status: "inProgress" }
+    }
+  });
+  assert.deepEqual(tool.map(event => event.type), ["tool_call.create", "model_step.finished"]);
+  assert.equal(tool[0].payload.stepId, "codex:turn-commentary:round:1");
+
+  const answer = normalizer.normalize({
+    method: "item/started",
+    params: {
+      turnId: "turn-commentary",
+      item: { type: "agentMessage", id: "answer-1", phase: "final_answer" }
+    }
+  });
+  assert.equal(answer[1].payload.channel, "final");
+  assert.equal(answer[1].payload.stepId, "codex:turn-commentary:round:2");
 });
 
 test("Codex waits for turn/completed after a non-retry error so ReAct can recover", () => {
@@ -679,27 +763,28 @@ test("control instructions use private provider-native carriers", async () => {
   const codex = await createCodexInvocationHome("CONTROL", {});
   assert.match(await readFile(`${codex.home}/config.toml`, "utf8"), /CONTROL/); await codex.cleanup();
 
-  const openclaw = await buildOpenClawCommand({
+  const openclaw = buildOpenClawGatewayInvocation({
     ...request,
-    agentConfig: { providerAgentId: "main", model: "provider/model", thinking: "medium", timeoutSeconds: 30 }
+    agentConfig: {
+      providerAgentId: "octo-openclaw-runner", model: "provider/model", thinking: "medium", timeoutSeconds: 30,
+      providerOptions: {
+        OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
+        OPENCLAW_GATEWAY_TOKEN: "SECRET_TOKEN",
+        OPENCLAW_GATEWAY_DEVICE_ID: "device-1",
+        OPENCLAW_GATEWAY_PUBLIC_KEY: "public-key",
+        OPENCLAW_GATEWAY_PRIVATE_KEY: "private-key"
+      }
+    }
   });
-  const openclawPrompt = await readFile(openclaw.messageFile, "utf8");
-  assert.match(openclawPrompt, /^\[Harness Instructions\]\nCONTROL/);
-  assert.match(openclawPrompt, /\[User Request\]\nwork$/);
-  assert.equal(openclaw.args.includes(openclawPrompt), false);
-  assert.deepEqual(openclaw.args.slice(0, 6), ["agent", "--local", "--json", "--session-id", openclaw.providerSessionId, "--agent"]);
-  if (process.platform !== "win32") assert.equal((await stat(openclaw.messageFile)).mode & 0o777, 0o600);
-  const openclawMessageFile = openclaw.messageFile;
-  await openclaw.cleanup();
-  await assert.rejects(readFile(openclawMessageFile, "utf8"));
-
-  const resumedOpenClaw = await buildOpenClawCommand({
-    ...request,
-    providerSession: { sessionId: "openclaw-session-existing" }
-  });
-  assert.equal(resumedOpenClaw.providerSessionId, "openclaw-session-existing");
-  assert.equal(resumedOpenClaw.args[resumedOpenClaw.args.indexOf("--session-id") + 1], "openclaw-session-existing");
-  await resumedOpenClaw.cleanup();
+  assert.equal(openclaw.agentParams.message, "work");
+  assert.equal(openclaw.agentParams.extraSystemPrompt, "CONTROL");
+  assert.equal(openclaw.agentParams.cwd, undefined);
+  assert.equal(openclaw.agentParams.promptMode, "minimal");
+  assert.equal(openclaw.createParams.cwd, request.workdir);
+  assert.equal(openclaw.createParams.model, "provider/model");
+  assert.equal(openclaw.createParams.thinkingLevel, "medium");
+  assert.equal(JSON.stringify(openclaw.providerInput).includes("SECRET_TOKEN"), false);
+  assert.match(openclaw.sessionKey, /^agent:octo-openclaw-runner:octo-run:run-1:/);
 });
 
 test("text adapters prefer the exact modelInput over the display prompt", async () => {
@@ -720,11 +805,477 @@ test("text adapters prefer the exact modelInput over the display prompt", async 
   assert.equal(opencode.providerInput.content.user_input, opencode.args.at(-1));
   await opencode.cleanup();
 
-  const openclaw = await buildOpenClawCommand(modelRequest);
-  const openclawInput = await readFile(openclaw.messageFile, "utf8");
-  assert.match(openclawInput, /\[User Request\]\nMODEL_INPUT_OK$/);
-  assert.equal(openclaw.providerInput.content.message, openclawInput);
-  await openclaw.cleanup();
+  const openclaw = buildOpenClawGatewayInvocation({
+    ...modelRequest,
+    agentConfig: {
+      providerOptions: {
+        OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
+        OPENCLAW_GATEWAY_TOKEN: "token",
+        OPENCLAW_GATEWAY_DEVICE_ID: "device",
+        OPENCLAW_GATEWAY_PUBLIC_KEY: "public",
+        OPENCLAW_GATEWAY_PRIVATE_KEY: "private"
+      }
+    }
+  });
+  assert.equal(openclaw.agentParams.message, "MODEL_INPUT_OK");
+  assert.equal(openclaw.providerInput.content.operations[3].params.message, "MODEL_INPUT_OK");
+});
+
+test("OpenClaw Gateway client authenticates, handles accepted/final responses, aborts, and rejects malformed JSON", async t => {
+  const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  await once(server, "listening");
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const address = server.address();
+  assert.notEqual(typeof address, "string");
+  const requests = [];
+  let connectionRequestId;
+  server.on("connection", (socket, request) => {
+    connectionRequestId = request.headers["x-request-id"];
+    socket.send(JSON.stringify({ type: "event", event: "connect.challenge", payload: { nonce: "fixture-nonce", ts: Date.now() } }));
+    socket.on("message", data => {
+      const frame = JSON.parse(Buffer.from(data).toString("utf8"));
+      requests.push(frame);
+      if (frame.method === "connect") {
+        assert.equal(frame.params.auth.token, "fixture-token");
+        assert.match(frame.params.device.signature, /^[A-Za-z0-9_-]+$/);
+        socket.send(JSON.stringify({
+          type: "res", id: frame.id, ok: true,
+          payload: { type: "hello-ok", protocol: 4, features: { methods: [], events: [] } }
+        }));
+      } else if (frame.method === "stream") {
+        socket.send(JSON.stringify({ type: "res", id: frame.id, ok: true, payload: { status: "accepted", runId: "run-fixture" } }));
+        socket.send(JSON.stringify({ type: "res", id: frame.id, ok: true, payload: { status: "ok", runId: "run-fixture" } }));
+      } else if (frame.method === "malformed") {
+        socket.send("{");
+      }
+    });
+  });
+
+  const client = new OpenClawGatewayClient({
+    url: `ws://127.0.0.1:${address.port}`,
+    token: "fixture-token",
+    device: createOpenClawDeviceIdentity()
+  });
+  t.after(() => client.close());
+  assert.equal((await client.connect()).protocol, 4);
+  assert.match(connectionRequestId, /^req_[0-9a-f]{32}$/);
+
+  const abort = new AbortController();
+  const pending = client.request("never", {}, { signal: abort.signal });
+  abort.abort();
+  await assert.rejects(pending, /request never aborted/);
+
+  const accepted = [];
+  assert.deepEqual(await client.request("stream", {}, {
+    expectFinal: true,
+    onAccepted: value => accepted.push(value)
+  }), { status: "ok", runId: "run-fixture" });
+  assert.deepEqual(accepted, [{ status: "accepted", runId: "run-fixture" }]);
+
+  await assert.rejects(client.request("malformed", {}), /malformed JSON/);
+  assert.deepEqual(requests.map(frame => frame.method), ["connect", "never", "stream", "malformed"]);
+});
+
+test("OpenClaw Gateway adapter isolates run events, deduplicates seq, and streams tools", async () => {
+  let listener = () => {};
+  const requests = [];
+  const observations = [];
+  const client = {
+    connect: async () => openClawGatewayHello(),
+    onEvent(next) { listener = next; return () => { listener = () => {}; }; },
+    async request(method, params, options = {}) {
+      requests.push({ method, params });
+      if (method === "config.get") return openClawIsolationConfig();
+      if (method === "sessions.create") return { ok: true, key: params.key, sessionId: "gateway-session" };
+      if (method === "agent.wait") return { status: "ok", runId: params.runId };
+      if (method !== "agent") return { status: "completed" };
+      const runId = params.idempotencyKey;
+      options.onAccepted?.({ status: "accepted", runId });
+      listener({ event: "agent", payload: { runId: "another-run", seq: 1, stream: "assistant", data: { text: "LEAK" } } });
+      listener({ event: "agent", payload: { runId, seq: 1, stream: "lifecycle", data: { phase: "start" } } });
+      listener({ event: "agent", payload: { runId, seq: 2, stream: "assistant", data: { text: "hel" } } });
+      listener({ event: "agent", payload: { runId, seq: 2, stream: "assistant", data: { text: "duplicate" } } });
+      listener({ event: "agent", payload: { runId, seq: 3, stream: "tool", data: { phase: "start", toolCallId: "tool-1", name: "exec", args: { command: "pwd" } } } });
+      listener({ event: "agent", payload: { runId, seq: 4, stream: "tool", data: { phase: "result", toolCallId: "tool-1", name: "exec", result: "ok", isError: false } } });
+      listener({ event: "agent", payload: { runId, seq: 5, stream: "assistant", data: { text: "hello" } } });
+      listener({ event: "agent", payload: { runId, seq: 7, stream: "lifecycle", data: { phase: "end", stopReason: "stop" } } });
+      return { status: "ok" };
+    },
+    close: async () => {}
+  };
+  const adapter = createOpenClawAdapter({ clientFactory: () => client });
+  const events = [];
+  for await (const event of adapter.invoke({
+    ...request,
+    agentConfig: {
+      providerOptions: {
+        OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
+        OPENCLAW_GATEWAY_TOKEN: "token",
+        OPENCLAW_GATEWAY_DEVICE_ID: "device",
+        OPENCLAW_GATEWAY_PUBLIC_KEY: "public",
+        OPENCLAW_GATEWAY_PRIVATE_KEY: "private"
+      }
+    }
+  }, { observe: async observation => { observations.push(observation); } })) events.push(event);
+
+  assert.equal(events.some(event => JSON.stringify(event).includes("LEAK")), false);
+  assert.equal(events.filter(event => event.type === "message.delta" && event.payload.channel === "final").map(event => event.payload.text).join(""), "hello");
+  assert.deepEqual(events.filter(event => event.type.startsWith("tool_call.")).map(event => event.type), ["tool_call.create", "tool_call.update"]);
+  assert.equal(events.at(-1).type, "run.finished");
+  assert.deepEqual(requests.slice(0, 4).map(entry => entry.method), ["config.get", "sessions.create", "sessions.messages.subscribe", "agent"]);
+  assert.equal(requests[1].params.cwd, request.workdir);
+  assert.equal(requests[3].params.cwd, undefined);
+  assert.ok(requests.some(entry => entry.method === "agent.wait"));
+  assert.deepEqual(observations.find(observation => observation.data?.diagnostic)?.data.diagnostic, {
+    type: "sequence_gap", expectedSeq: 6, receivedSeq: 7
+  });
+});
+
+test("OpenClaw Gateway adapter reconciles a final RPC result when live events are absent", async () => {
+  const requests = [];
+  const client = {
+    connect: async () => openClawGatewayHello(),
+    onEvent() { return () => {}; },
+    async request(method, params, options = {}) {
+      requests.push({ method, params });
+      if (method === "config.get") return openClawIsolationConfig();
+      if (method === "sessions.create") return { ok: true, key: params.key };
+      if (method === "sessions.messages.subscribe") return { status: "subscribed" };
+      if (method === "agent") {
+        options.onAccepted?.({ status: "accepted", runId: params.idempotencyKey });
+        return {
+          runId: params.idempotencyKey,
+          status: "ok",
+          summary: "completed",
+          result: {
+            payloads: [{ text: "fallback result" }],
+            meta: {
+              aborted: false,
+              stopReason: "stop",
+              agentMeta: { provider: "anthropic", model: "tencent/glm-5.3", usage: { input: 3, output: 2 } }
+            }
+          }
+        };
+      }
+      return { status: "completed" };
+    },
+    close: async () => {}
+  };
+  const adapter = createOpenClawAdapter({ clientFactory: () => client });
+  const events = [];
+  for await (const event of adapter.invoke({
+    ...request,
+    agentConfig: {
+      providerOptions: {
+        OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
+        OPENCLAW_GATEWAY_TOKEN: "token",
+        OPENCLAW_GATEWAY_DEVICE_ID: "device",
+        OPENCLAW_GATEWAY_PUBLIC_KEY: "public",
+        OPENCLAW_GATEWAY_PRIVATE_KEY: "private"
+      }
+    }
+  })) events.push(event);
+
+  assert.deepEqual(requests.slice(0, 4).map(entry => entry.method), ["config.get", "sessions.create", "sessions.messages.subscribe", "agent"]);
+  assert.equal(events.filter(event => event.type === "message.delta").map(event => event.payload.text).join(""), "fallback result");
+  assert.deepEqual(events.find(event => event.type === "usage.update")?.payload, {
+    inputTokens: 3, outputTokens: 2, provider: "anthropic", model: "tencent/glm-5.3"
+  });
+  assert.equal(events.at(-1).type, "run.finished");
+});
+
+test("OpenClaw Gateway adapter fails before session creation when isolation config drifts", async () => {
+  const requests = [];
+  const drifted = openClawIsolationConfig();
+  drifted.config.agents.defaults.skipBootstrap = false;
+  const client = {
+    connect: async () => openClawGatewayHello(),
+    onEvent() { return () => {}; },
+    async request(method) {
+      requests.push(method);
+      if (method === "config.get") return drifted;
+      throw new Error(`unexpected request ${method}`);
+    },
+    close: async () => {}
+  };
+  const events = [];
+  for await (const event of createOpenClawAdapter({ clientFactory: () => client }).invoke({
+    ...request,
+    agentConfig: {
+      providerOptions: {
+        OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
+        OPENCLAW_GATEWAY_TOKEN: "token",
+        OPENCLAW_GATEWAY_DEVICE_ID: "device",
+        OPENCLAW_GATEWAY_PUBLIC_KEY: "public",
+        OPENCLAW_GATEWAY_PRIVATE_KEY: "private"
+      }
+    }
+  })) events.push(event);
+
+  assert.deepEqual(requests, ["config.get"]);
+  assert.match(events.at(-1).payload.message, /skipBootstrap must be true/);
+});
+
+test("OpenClaw Gateway adapter rejects a runner that can pause on ask_user", async () => {
+  const requests = [];
+  const drifted = openClawIsolationConfig();
+  drifted.config.agents.entries["octo-openclaw-runner"].tools.deny = ["group:memory"];
+  const client = {
+    connect: async () => openClawGatewayHello(),
+    onEvent() { return () => {}; },
+    async request(method) {
+      requests.push(method);
+      if (method === "config.get") return drifted;
+      throw new Error(`unexpected request ${method}`);
+    },
+    close: async () => {}
+  };
+  const events = [];
+  for await (const event of createOpenClawAdapter({ clientFactory: () => client }).invoke({
+    ...request,
+    agentConfig: {
+      providerOptions: {
+        OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
+        OPENCLAW_GATEWAY_TOKEN: "token",
+        OPENCLAW_GATEWAY_DEVICE_ID: "device",
+        OPENCLAW_GATEWAY_PUBLIC_KEY: "public",
+        OPENCLAW_GATEWAY_PRIVATE_KEY: "private"
+      }
+    }
+  })) events.push(event);
+
+  assert.deepEqual(requests, ["config.get"]);
+  assert.match(events.at(-1).payload.message, /ask_user must be denied for unattended runs/);
+});
+
+test("OpenClaw Gateway adapter refuses success when agent.wait confirms a different terminal", async () => {
+  let listener = () => {};
+  const client = {
+    connect: async () => openClawGatewayHello(),
+    onEvent(next) { listener = next; return () => {}; },
+    async request(method, params, options = {}) {
+      if (method === "config.get") return openClawIsolationConfig();
+      if (method === "sessions.create") return { key: params.key };
+      if (method === "sessions.messages.subscribe") return { status: "subscribed" };
+      if (method === "agent.wait") return { runId: params.runId, status: "error", endedAt: Date.now(), error: "failed" };
+      if (method === "agent") {
+        const runId = params.idempotencyKey;
+        options.onAccepted?.({ status: "accepted", runId });
+        listener({ event: "agent", payload: { runId, seq: 1, stream: "lifecycle", data: { phase: "start" } } });
+        listener({ event: "agent", payload: { runId, seq: 2, stream: "lifecycle", data: { phase: "end", stopReason: "stop" } } });
+        return { status: "ok" };
+      }
+      return {};
+    },
+    close: async () => {}
+  };
+  const events = [];
+  for await (const event of createOpenClawAdapter({ clientFactory: () => client }).invoke({
+    ...request,
+    agentConfig: {
+      providerOptions: {
+        OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
+        OPENCLAW_GATEWAY_TOKEN: "token",
+        OPENCLAW_GATEWAY_DEVICE_ID: "device",
+        OPENCLAW_GATEWAY_PUBLIC_KEY: "public",
+        OPENCLAW_GATEWAY_PRIVATE_KEY: "private"
+      }
+    }
+  })) events.push(event);
+
+  assert.equal(events.some(event => event.type === "run.finished"), false);
+  assert.match(events.at(-1).payload.message, /confirmed failed, not completed/);
+});
+
+test("OpenClaw Gateway adapter confirms abort before emitting run.stopped", async () => {
+  let listener = () => {};
+  const controller = new AbortController();
+  const requests = [];
+  const client = {
+    connect: async () => openClawGatewayHello(),
+    onEvent(next) { listener = next; return () => {}; },
+    request(method, params, options = {}) {
+      requests.push(method);
+      if (method === "config.get") return Promise.resolve(openClawIsolationConfig());
+      if (method === "sessions.create") return Promise.resolve({ key: params.key });
+      if (method === "sessions.messages.subscribe") return Promise.resolve({ status: "subscribed" });
+      if (method === "sessions.abort") return Promise.resolve({ aborted: true });
+      if (method === "agent.wait") {
+        return Promise.resolve({ runId: params.runId, status: "timeout", endedAt: Date.now(), stopReason: "aborted" });
+      }
+      if (method === "agent") {
+        const runId = params.idempotencyKey;
+        options.onAccepted?.({ status: "accepted", runId });
+        listener({ event: "agent", payload: { runId, seq: 1, stream: "lifecycle", data: { phase: "start" } } });
+        setImmediate(() => controller.abort("test-cancel"));
+        return new Promise((resolve, reject) => {
+          options.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        });
+      }
+      return Promise.resolve({});
+    },
+    close: async () => {}
+  };
+  const events = [];
+  for await (const event of createOpenClawAdapter({ clientFactory: () => client }).invoke({
+    ...request,
+    signal: controller.signal,
+    agentConfig: {
+      providerOptions: {
+        OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
+        OPENCLAW_GATEWAY_TOKEN: "token",
+        OPENCLAW_GATEWAY_DEVICE_ID: "device",
+        OPENCLAW_GATEWAY_PUBLIC_KEY: "public",
+        OPENCLAW_GATEWAY_PRIVATE_KEY: "private"
+      }
+    }
+  })) events.push(event);
+
+  assert.deepEqual(requests.slice(-2), ["sessions.abort", "agent.wait"]);
+  assert.equal(events.at(-1).type, "run.stopped");
+  assert.equal(events.some(event => event.type === "run.finished"), false);
+});
+
+test("OpenClaw Gateway adapter stops without abort RPC when cancelled before agent acceptance", async () => {
+  const controller = new AbortController();
+  controller.abort("cancel-before-dispatch");
+  const requests = [];
+  const client = {
+    connect: async () => openClawGatewayHello(),
+    onEvent() { return () => {}; },
+    async request(method) {
+      requests.push(method);
+      if (method === "config.get") throw new Error("aborted");
+      throw new Error(`unexpected request ${method}`);
+    },
+    close: async () => {}
+  };
+  const events = [];
+  for await (const event of createOpenClawAdapter({ clientFactory: () => client }).invoke({
+    ...request,
+    signal: controller.signal,
+    agentConfig: {
+      providerOptions: {
+        OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
+        OPENCLAW_GATEWAY_TOKEN: "token",
+        OPENCLAW_GATEWAY_DEVICE_ID: "device",
+        OPENCLAW_GATEWAY_PUBLIC_KEY: "public",
+        OPENCLAW_GATEWAY_PRIVATE_KEY: "private"
+      }
+    }
+  })) events.push(event);
+
+  assert.deepEqual(requests, ["config.get"]);
+  assert.equal(events.at(-1).type, "run.stopped");
+  assert.equal(events.some(event => event.type === "run.error"), false);
+});
+
+test("OpenClaw Gateway adapter reconnects and reconciles an accepted run after socket loss", async () => {
+  let listener = () => {};
+  let factoryCalls = 0;
+  let waitCalls = 0;
+  const hello = openClawGatewayHello();
+  const primary = {
+    connect: async () => hello,
+    onEvent(next) { listener = next; return () => { listener = () => {}; }; },
+    async request(method, params, options = {}) {
+      if (method === "config.get") return openClawIsolationConfig();
+      if (method === "sessions.create") return { key: params.key };
+      if (method === "sessions.messages.subscribe") return { status: "subscribed" };
+      if (method === "agent") {
+        options.onAccepted?.({ status: "accepted", runId: params.idempotencyKey });
+        throw new Error("OpenClaw Gateway closed (1006)");
+      }
+      return {};
+    },
+    close: async () => {}
+  };
+  const recovery = {
+    connect: async () => hello,
+    onEvent() { return () => {}; },
+    async request(method, params) {
+      assert.equal(method, "agent.wait");
+      waitCalls += 1;
+      if (waitCalls === 1) return { runId: params.runId, status: "timeout" };
+      if (waitCalls === 2) return { runId: params.runId, status: "pending" };
+      return { runId: params.runId, status: "ok", endedAt: Date.now(), stopReason: "stop" };
+    },
+    close: async () => {}
+  };
+  const adapter = createOpenClawAdapter({
+    clientFactory: () => factoryCalls++ === 0 ? primary : recovery
+  });
+  const events = [];
+  for await (const event of adapter.invoke({
+    ...request,
+    agentConfig: {
+      providerOptions: {
+        OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
+        OPENCLAW_GATEWAY_TOKEN: "token",
+        OPENCLAW_GATEWAY_DEVICE_ID: "device",
+        OPENCLAW_GATEWAY_PUBLIC_KEY: "public",
+        OPENCLAW_GATEWAY_PRIVATE_KEY: "private"
+      }
+    }
+  })) events.push(event);
+
+  assert.equal(factoryCalls, 2);
+  assert.equal(waitCalls, 3);
+  assert.equal(events.at(-1).type, "run.finished");
+  assert.equal(events.some(event => event.type === "run.error"), false);
+});
+
+test("OpenClaw Gateway adapter fails reconciliation when non-terminal timeouts reach the invocation deadline", async () => {
+  let factoryCalls = 0;
+  let waitCalls = 0;
+  const hello = openClawGatewayHello();
+  const primary = {
+    connect: async () => hello,
+    onEvent() { return () => {}; },
+    async request(method, params, options = {}) {
+      if (method === "config.get") return openClawIsolationConfig();
+      if (method === "sessions.create") return { key: params.key };
+      if (method === "sessions.messages.subscribe") return { status: "subscribed" };
+      if (method === "agent") {
+        options.onAccepted?.({ status: "accepted", runId: params.idempotencyKey });
+        throw new Error("OpenClaw Gateway closed (1006)");
+      }
+      return {};
+    },
+    close: async () => {}
+  };
+  const recovery = {
+    connect: async () => hello,
+    onEvent() { return () => {}; },
+    async request(method, params) {
+      assert.equal(method, "agent.wait");
+      waitCalls += 1;
+      return { runId: params.runId, status: "timeout" };
+    },
+    close: async () => {}
+  };
+  const events = [];
+  for await (const event of createOpenClawAdapter({
+    clientFactory: () => factoryCalls++ === 0 ? primary : recovery
+  }).invoke({
+    ...request,
+    agentConfig: {
+      timeoutSeconds: 0.2,
+      providerOptions: {
+        OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
+        OPENCLAW_GATEWAY_TOKEN: "token",
+        OPENCLAW_GATEWAY_DEVICE_ID: "device",
+        OPENCLAW_GATEWAY_PUBLIC_KEY: "public",
+        OPENCLAW_GATEWAY_PRIVATE_KEY: "private"
+      }
+    }
+  })) events.push(event);
+
+  assert.equal(factoryCalls, 2);
+  assert.ok(waitCalls >= 1);
+  assert.equal(events.at(-1).type, "run.error");
+  assert.match(events.at(-1).payload.message, /invocation deadline/);
+  assert.equal(events.some(event => event.type === "run.finished"), false);
 });
 
 test("only Codex declares append-only continuity recovery", () => {
@@ -1037,10 +1588,10 @@ test("generic ACP adapters keep a failed tool local and accept the prompt respon
   ]);
 });
 
-test("Hermes, Kiro, and Kimi Code expose distinct ACP adapter types", () => {
+test("Hermes and Kimi Code expose distinct ACP adapter types", () => {
   assert.deepEqual(
-    [hermesAdapter.metadata.type, kiroAdapter.metadata.type, kimiCodeAdapter.metadata.type],
-    ["hermes", "kiro", "kimi-code"]
+    [hermesAdapter.metadata.type, kimiCodeAdapter.metadata.type],
+    ["hermes", "kimi-code"]
   );
   assert.equal(normalizeAcpUpdate({
     sessionUpdate: "tool_call_update",

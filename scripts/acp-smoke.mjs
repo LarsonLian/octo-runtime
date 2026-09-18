@@ -3,12 +3,11 @@
 const adapterType = process.argv[2];
 const adapters = {
   hermes: async () => (await import("@mininglamp-oss/octo-harness-adapter-hermes")).hermesAdapter,
-  kiro: async () => (await import("@mininglamp-oss/octo-harness-adapter-kiro")).kiroAdapter,
   "kimi-code": async () => (await import("@mininglamp-oss/octo-harness-adapter-kimi-code")).kimiCodeAdapter
 };
 
 if (!adapters[adapterType]) {
-  console.error("usage: node scripts/acp-smoke.mjs <hermes|kiro|kimi-code>");
+  console.error("usage: node scripts/acp-smoke.mjs <hermes|kimi-code>");
   process.exit(2);
 }
 

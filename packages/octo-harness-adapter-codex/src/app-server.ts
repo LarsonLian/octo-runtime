@@ -27,6 +27,7 @@ import {
   type AdapterInvocationContext,
   type CanonicalEvent,
   type InvokeRequest,
+  type MessageChannel,
   type MessageExposure
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
 
@@ -430,6 +431,7 @@ export class CodexEventNormalizer {
   #activeStepId?: string;
   #toolBatchStepId?: string;
   readonly #itemSteps = new Map<string, string>();
+  readonly #itemChannels = new Map<string, MessageChannel>();
 
   normalize(native: CodexAppServerNotification): CanonicalEvent[] {
     const params = native.params ?? {};
@@ -462,7 +464,7 @@ export class CodexEventNormalizer {
         this.#beginTurn(params);
         return [];
       case "item/agentMessage/delta":
-        return textDelta(params, "final", undefined, undefined, this.#stepFor(params));
+        return textDelta(params, this.#channelFor(params), undefined, undefined, this.#stepFor(params));
       case "item/reasoning/summaryTextDelta":
         return textDelta(params, "analysis", "public_summary", "item/reasoning/summaryTextDelta", this.#stepFor(params));
       case "item/reasoning/textDelta":
@@ -520,6 +522,7 @@ export class CodexEventNormalizer {
     this.#activeStepId = undefined;
     this.#toolBatchStepId = undefined;
     this.#itemSteps.clear();
+    this.#itemChannels.clear();
   }
 
   #itemStarted(params: JsonRecord): CanonicalEvent[] {
@@ -548,7 +551,10 @@ export class CodexEventNormalizer {
     if (type !== "reasoning" && type !== "plan" && type !== "agentMessage") return [];
     this.#toolBatchStepId = undefined;
     const started = this.#ensureActiveStep(params);
-    if (id) this.#itemSteps.set(id, started.stepId);
+    if (id) {
+      this.#itemSteps.set(id, started.stepId);
+      if (type === "agentMessage") this.#itemChannels.set(id, agentMessageChannel(item));
+    }
     return [...started.events, ...itemStartedEvents(item, started.stepId)];
   }
 
@@ -557,8 +563,10 @@ export class CodexEventNormalizer {
     if (!item) return [];
     const id = stringValue(item.id);
     const stepId = id ? this.#itemSteps.get(id) : undefined;
-    const events = itemCompletedEvents(item, stepId);
-    if (stringValue(item.type) === "agentMessage" && stepId === this.#activeStepId) {
+    const channel = id ? this.#itemChannels.get(id) : undefined;
+    const events = itemCompletedEvents(item, stepId, channel);
+    if (stringValue(item.type) === "agentMessage" && (channel ?? agentMessageChannel(item)) === "final"
+      && stepId === this.#activeStepId) {
       events.push(...this.#finishActiveStep("completed", "stop"));
     }
     return events;
@@ -589,6 +597,11 @@ export class CodexEventNormalizer {
   #stepFor(params: JsonRecord): string | undefined {
     const id = itemId(params);
     return id ? this.#itemSteps.get(id) : undefined;
+  }
+
+  #channelFor(params: JsonRecord): MessageChannel {
+    const id = itemId(params);
+    return id ? this.#itemChannels.get(id) ?? "final" : "final";
   }
 }
 
@@ -1062,7 +1075,7 @@ function appServerRequestTimeout(request: InvokeRequest): number {
  */
 function textDelta(
   params: JsonRecord,
-  channel: "analysis" | "final",
+  channel: MessageChannel,
   exposure?: MessageExposure,
   nativeEvent?: string,
   stepId?: string
@@ -1109,10 +1122,11 @@ function itemStartedEvents(item: JsonRecord | undefined, stepId?: string): Canon
   const type = stringValue(item.type);
   const id = stringValue(item.id);
   if (type === "agentMessage") {
+    const channel = agentMessageChannel(item);
     return [{
       type: "message.create",
       payload: {
-        role: "assistant", status: "streaming", channel: "final",
+        role: "assistant", status: "streaming", channel,
         ...(id ? { messageId: id } : {}), ...(stepId ? { stepId } : {})
       }
     }];
@@ -1140,17 +1154,22 @@ function itemStartedEvents(item: JsonRecord | undefined, stepId?: string): Canon
 }
 
 /** item completed closes the corresponding message/tool lifecycle and attaches the provider's final snapshot. */
-function itemCompletedEvents(item: JsonRecord | undefined, stepId?: string): CanonicalEvent[] {
+function itemCompletedEvents(
+  item: JsonRecord | undefined,
+  stepId?: string,
+  knownChannel?: MessageChannel
+): CanonicalEvent[] {
   if (!item) return [];
   const type = stringValue(item.type);
   const id = stringValue(item.id);
   if (type === "agentMessage") {
+    const channel = knownChannel ?? agentMessageChannel(item);
     return [{
       type: "message.update",
       payload: {
         role: "assistant",
         status: "completed",
-        channel: "final",
+        channel,
         ...(id ? { messageId: id } : {}),
         ...(stepId ? { stepId } : {}),
         ...(stringValue(item.text) ? { text: stringValue(item.text) } : {})
@@ -1188,6 +1207,12 @@ function itemCompletedEvents(item: JsonRecord | undefined, stepId?: string): Can
       ...(typeof item.exitCode === "number" ? { exitCode: item.exitCode } : {})
     }
   }];
+}
+
+// Codex exposes its UI phase on agentMessage items. Normalize that provider
+// detail here so every downstream consumer sees only the shared channel model.
+function agentMessageChannel(item: JsonRecord | undefined): MessageChannel {
+  return stringValue(item?.phase) === "commentary" ? "commentary" : "final";
 }
 
 /** One-to-one mapping from a Codex turn terminal to an Octo Harness run terminal. */
