@@ -47,6 +47,71 @@ export interface MessageProvenance {
   nativeEvent: string;
 }
 /**
+ * A catalog-controlled recovery action. Clients render labelKey and must not execute arbitrary commands from this object.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "FailureAction".
+ */
+export interface FailureAction {
+  type:
+    | "retry"
+    | "retry_later"
+    | "update_credentials"
+    | "change_model"
+    | "check_runtime"
+    | "install_dependency"
+    | "fix_permissions"
+    | "contact_admin";
+  labelKey: string;
+}
+/**
+ * Low-cardinality component identity. It intentionally excludes hostnames, paths, accounts, and tenant data.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "FailureSource".
+ */
+export interface FailureSource {
+  component: "octo-harness" | "octo-agent-worker";
+  adapter?: string;
+}
+/**
+ * Sanitized machine-readable root cause. Raw stderr, response bodies, paths, and credentials are forbidden.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "FailureCause".
+ */
+export interface FailureCause {
+  reasonCode: string;
+  httpStatus?: number;
+}
+/**
+ * Versioned, safe failure fact shared by Harness, Worker, and channel projectors. Public codes are immutable catalog identifiers; dynamic diagnostics stay outside this object.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "FailureEnvelope".
+ */
+export interface FailureEnvelope {
+  schemaVersion: 1;
+  code: string;
+  reasonCode: string;
+  category: string;
+  stage: string;
+  messageKey: string;
+  /**
+   * Catalog-allowlisted presentation parameters only.
+   */
+  params: {
+    [k: string]: string | number | boolean;
+  };
+  retryable: boolean;
+  retryAfterMs?: number;
+  action: FailureAction;
+  diagnosticId: string;
+  source: FailureSource;
+  cause?: FailureCause;
+  occurredAt: string;
+}
+/**
  * Provider-owned session resume data. Core treats sessionId and adapter extension fields as opaque.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -175,6 +240,7 @@ export interface CanonicalEventPayload {
    * Human-readable diagnostic message.
    */
   message?: string;
+  failure?: FailureEnvelope;
   [k: string]: unknown;
 }
 /**

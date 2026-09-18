@@ -22,7 +22,8 @@ import type {
 import {
   assertChannelContextAppend,
   assertChannelContextDescriptor,
-  assertContextSyncResult
+  assertContextSyncResult,
+  failurePayload
 } from "@mininglamp-oss/octo-harness-protocol";
 import { AgentWorkStore } from "./agent-work-store.js";
 import type { OutboxRow } from "./agent-work-store.js";
@@ -1022,7 +1023,10 @@ export class AgentWorkRuntime {
       return;
     }
     if (this.#draining) {
-      const error = { code: "RUNTIME_DRAINING", message: "runtime is draining for a service operation" };
+      const error = failurePayload({ code: "RUNTIME_DRAINING" }, {
+        stage: "runtime.command.accept",
+        defaultDomain: "runtime"
+      });
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
       return;
@@ -1041,13 +1045,19 @@ export class AgentWorkRuntime {
         runId: command.run_id,
         data: { pending_bytes: pendingBytes, hard_watermark_bytes: hardWatermark }
       });
-      const error = { code: "OUTBOX_HARD_LIMIT", message: "local outbox above hard watermark" };
+      const error = failurePayload({ code: "OUTBOX_HARD_LIMIT" }, {
+        stage: "runtime.command.accept",
+        defaultDomain: "runtime"
+      });
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
       return;
     }
     if (pendingBytes >= softWatermark) {
-      const error = { code: "OUTBOX_BACKPRESSURE", message: "local outbox above soft watermark" };
+      const error = failurePayload({ code: "OUTBOX_BACKPRESSURE" }, {
+        stage: "runtime.command.accept",
+        defaultDomain: "runtime"
+      });
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
       return;
@@ -1433,8 +1443,14 @@ export class AgentWorkRuntime {
       try {
         appendStarted();
         const payload = {
-          code: "ADAPTER_INVOCATION_FAILED",
-          message: errorMessage(error),
+          ...failurePayload(Object.assign(error instanceof Error ? error : new Error(errorMessage(error)), {
+            code: (error as NodeJS.ErrnoException)?.code ?? "ADAPTER_INVOCATION_FAILED",
+            adapterType
+          }), {
+            stage: "adapter.invoke",
+            defaultDomain: "adapter",
+            source: { component: "octo-harness", adapter: adapterType }
+          }),
           text: finalText
         };
         if (contextSnapshot) Object.assign(payload, contextEventFields(contextSnapshot));
@@ -1807,7 +1823,21 @@ export function mapRuntimeEvent(event: CanonicalEvent, finalText: string): { typ
     case "run.finished":
       return { type: "run.completed", payload: { ...event.payload, text: terminalText } };
     case "run.error":
-      return { type: "run.failed", payload: { code: "PROVIDER_ERROR", ...event.payload, text: terminalText } };
+      return {
+        type: "run.failed",
+        payload: {
+          ...failurePayload({ code: "PROVIDER_ERROR", ...event.payload }, {
+            stage: "provider.invoke",
+            defaultDomain: "provider",
+            preserveExisting: true,
+            source: {
+              component: "octo-harness",
+              ...(stringValue(event.payload.adapterType) ? { adapter: stringValue(event.payload.adapterType) } : {})
+            }
+          }),
+          text: terminalText
+        }
+      };
     case "run.stopped":
       return { type: "run.cancelled", payload: { ...event.payload, text: terminalText } };
     default:

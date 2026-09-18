@@ -11,7 +11,9 @@ test("host holds terminal until adapter stream cleanup succeeds", async () => {
   host.register({ metadata: { type: "bad", capabilities: [] }, async *invoke() { yield { type: "run.finished", payload: {} }; throw new Error("cleanup failed"); } });
   const events = []; for await (const event of host.invoke("bad", request)) events.push(event);
   assert.deepEqual(events.map(x => x.type), ["run.error"]);
-  assert.match(events[0].payload.message, /cleanup failed/);
+  assert.equal(events[0].payload.failure.code, "OH-ADP-3004");
+  assert.equal(events[0].payload.failure.stage, "adapter.invoke");
+  assert.doesNotMatch(JSON.stringify(events[0]), /cleanup failed/);
 });
 
 test("host synthesizes stopped when adapter exits without terminal", async () => {
@@ -42,6 +44,31 @@ test("host preserves a strict trace capture error code in its synthesized termin
   for await (const event of host.invoke("capture-failure", request)) events.push(event);
   assert.equal(events.at(-1).type, "run.error");
   assert.equal(events.at(-1).payload.code, "trace_capture_failed");
+  assert.equal(events.at(-1).payload.failure.code, "OH-ADP-3004");
+});
+
+test("host classifies and redacts adapter-provided provider failures", async () => {
+  const host = new AdapterHost();
+  host.register({
+    metadata: { type: "provider-fixture", capabilities: [] },
+    async *invoke() {
+      yield {
+        type: "run.error",
+        payload: {
+          code: "invalid_api_key",
+          message: "Authorization: Bearer provider-secret",
+          providerError: { status: 401, token: "provider-secret" }
+        }
+      };
+    }
+  });
+
+  const events = [];
+  for await (const event of host.invoke("provider-fixture", request)) events.push(event);
+  assert.equal(events.at(-1).payload.code, "invalid_api_key");
+  assert.equal(events.at(-1).payload.failure.code, "OH-PRV-4001");
+  assert.equal(events.at(-1).payload.failure.source.adapter, "provider-fixture");
+  assert.doesNotMatch(JSON.stringify(events), /provider-secret|Authorization|providerError/);
 });
 
 test("host gives adapters a provider observation context with full invocation identity", async () => {

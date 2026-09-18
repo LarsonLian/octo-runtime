@@ -241,6 +241,26 @@ test("runtime terminal mapping carries the assembled final answer", () => {
   assert.equal(mapRuntimeEvent({ type: "run.stopped", payload: { reason: "cancelled" } }, "").type, "run.cancelled");
 });
 
+test("runtime failure mapping preserves legacy fields and adds a safe failure envelope", () => {
+  const mapped = mapRuntimeEvent({
+    type: "run.error",
+    payload: {
+      code: "model_not_found",
+      message: "model missing; Authorization: Bearer secret-canary",
+      providerError: { status: 404, token: "secret-canary" },
+      adapterType: "codex"
+    }
+  }, "partial answer");
+
+  assert.equal(mapped.type, "run.failed");
+  assert.equal(mapped.payload.code, "model_not_found");
+  assert.equal(mapped.payload.text, "partial answer");
+  assert.equal(mapped.payload.failure.code, "OH-PRV-4003");
+  assert.equal(mapped.payload.failure.reasonCode, "PROVIDER_MODEL_NOT_FOUND");
+  assert.equal(mapped.payload.failure.source.adapter, "codex");
+  assert.doesNotMatch(JSON.stringify(mapped), /secret-canary|Authorization|providerError/);
+});
+
 test("final answer accumulator replaces snapshots and appends deltas", () => {
   let text = accumulateFinalText("", {
     type: "message.delta",
@@ -653,6 +673,9 @@ test("hard outbox watermark rejects new work with a durable command receipt", as
     const ack = await rejection.promise;
     assert.equal(ack.accepted, false);
     assert.equal(ack.error.code, "OUTBOX_HARD_LIMIT");
+    assert.equal(ack.error.failure.code, "OH-RUN-2003");
+    assert.equal(ack.error.failure.reasonCode, "OUTBOX_HARD_LIMIT");
+    assert.equal(ack.error.failure.stage, "runtime.command.accept");
     assert.equal(invocations, 0);
   } finally {
     await runtime?.close();
