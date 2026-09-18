@@ -106,6 +106,50 @@ pnpm test
 
 测试使用 fake provider 和临时 SQLite，不调用真实模型。
 
+## ZCode GUI Adapter
+
+`zcode-gui` adapter 不连接或注入已运行的 Electron GUI，而是直接启动 ZCode Desktop 随附的
+`zcode.cjs app-server --stdio`。从 [ZCode 官方安装页](https://zcode.z.ai/cn/docs/install)
+下载并安装桌面应用，随后完成一次 ZCode CLI 登录和模型配置：
+
+```bash
+# macOS 默认安装位置
+node /Applications/ZCode.app/Contents/Resources/glm/zcode.cjs --version
+node /Applications/ZCode.app/Contents/Resources/glm/zcode.cjs login
+
+# PATH 上已安装 zcode 时
+zcode --version
+zcode login
+```
+
+adapter 按 `ZCODE_BIN`、PATH、平台默认桌面安装目录的顺序发现 CLI。非标准位置需要把绝对路径
+写入 daemon service 的环境，而不只是当前交互 shell：
+
+```bash
+export ZCODE_BIN=/absolute/path/to/zcode.cjs
+pnpm cli adapter probe zcode-gui
+```
+
+ZCode CLI 的模型 provider 配置位于 `~/.zcode/cli/config.json`，应由 `zcode login` 维护，
+不要从 GUI 配置手工复制或提交 API key。Agent revision 使用 `adapter_type: "zcode-gui"`，
+并可配置：
+
+```json
+{
+  "permissionMode": "build",
+  "autoApprove": false,
+  "providerOptions": {
+    "appServerRequestTimeoutMs": 30000
+  }
+}
+```
+
+默认工具授权 fail-closed。只有显式设置 `autoApprove: true`、
+`dangerouslyBypassPermissions: true` 或 `permissionMode: "yolo"` 才会自动允许 ZCode 工具请求。
+adapter 不感知 `octo-auth`；Human/Runtime 身份与 AgentRun 授权由 Agent Worker 完成，daemon 只消费
+既有 WSS Runtime 协议下发的已授权命令。完整协议、进程与安全边界见
+[ZCode GUI Adapter](packages/octo-harness-adapter-zcode-gui/README.md)。
+
 ## 启动 Runtime
 
 源码调试也先走 enrollment。下面示例让 Octo Human 身份由测试环境验证，同时把 Runtime 注册到本机 Agent Worker；一次性 token 通过 stdin 传递：

@@ -9,6 +9,7 @@
 | [`codebuddy`](../packages/octo-harness-adapter-codebuddy/README.md) | ACP JSON-RPC stdio | `session/load` | not declared | `acceptEdits` + deny fallback |
 | [`opencode`](../packages/octo-harness-adapter-opencode/README.md) | `opencode run --format json --thinking --auto` | `--session <id>` | not exposed | adapter always auto-approves |
 | [`openclaw`](../packages/octo-harness-adapter-openclaw/README.md) | Gateway WS protocol v4 RPC + events | isolated session per AgentRun | not exposed | dedicated OpenClaw agent policy |
+| [`zcode-gui`](../packages/octo-harness-adapter-zcode-gui/README.md) | ZCode private NDJSON RPC stdio | `session/resume`，失败 fresh fallback | not exposed | `build` fail-closed；显式 auto-approve / `yolo` |
 
 上层按 capability 做决策，不按 adapter type 写分支。虽然 Codex、Claude Code 和 OpenCode 原生 transport 可 fork，当前 host 没有 fork RPC，因此 adapters 不声明 `session.fork`；新增完整 host/daemon/CLI 流程后才能打开该 capability。
 
