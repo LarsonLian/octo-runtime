@@ -238,10 +238,21 @@ test("root README publishes POSIX and Windows one-line commands", async () => {
   assert.doesNotMatch(readme, /~\/\.local\/share\/octo-harness/);
 });
 
-test("published root package requires Node.js 24 or newer", async () => {
-  const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+test("published root package requires Node.js 24 and excludes compiler metadata", async () => {
+  const [packageJson, tsconfig] = await Promise.all([
+    readFile(join(root, "package.json"), "utf8").then(JSON.parse),
+    readFile(join(root, "tsconfig.base.json"), "utf8").then(JSON.parse)
+  ]);
   assert.equal(packageJson.engines?.node, ">=24");
   assert.ok(packageJson.files.includes("apps/cli/README.md"));
+  assert.ok(packageJson.files.includes("apps/cli/dist/**/*.js"));
+  assert.ok(packageJson.files.includes("apps/daemon/dist/**/*.js"));
+  assert.ok(packageJson.files.includes("apps/adapter-host/dist/**/*.js"));
+  assert.ok(!packageJson.files.includes("apps/cli/dist"));
+  assert.ok(!packageJson.files.includes("apps/daemon/dist"));
+  assert.ok(!packageJson.files.includes("apps/adapter-host/dist"));
+  assert.equal(tsconfig.compilerOptions.sourceMap, false);
+  assert.equal(tsconfig.compilerOptions.declarationMap, false);
 });
 
 test("Windows installer parses when PowerShell is available", async t => {

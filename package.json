@@ -9,10 +9,11 @@
     "octo-harness-daemon": "apps/daemon/dist/launcher.js"
   },
   "files": [
-    "apps/adapter-host/dist",
-    "apps/cli/dist",
+    "apps/adapter-host/dist/**/*.js",
+    "apps/cli/dist/**/*.js",
     "apps/cli/README.md",
-    "apps/daemon/dist",
+    "apps/daemon/dist/**/*.js",
+    "apps/daemon/dist/inspect-ui",
     "config/adapters.json",
     "DEPLOYMENTS.md"
   ],
@@ -22,6 +23,8 @@
     "url": "git+ssh://git@codex.mlamp.cn/dmwork/octo-harness/octo-harness.git"
   },
   "scripts": {
+    "clean": "node scripts/clean-dist.mjs",
+    "prebuild": "pnpm run clean",
     "test": "pnpm build && node --test",
     "cli": "pnpm build && node apps/cli/dist/index.js",
     "daemon": "pnpm build && node apps/daemon/dist/launcher.js",
