@@ -1,6 +1,7 @@
 import {
   assertCanonicalEvent,
   assertInvokeRequest,
+  failurePayload,
   isTerminal,
   type CanonicalEvent,
   type InvokeRequest,
@@ -200,8 +201,18 @@ export class AdapterHost {
     };
 
     try {
-      for await (const event of adapter.invoke({ ...request, signal: controller.signal }, context)) {
-        assertCanonicalEvent(event);
+      for await (const adapterEvent of adapter.invoke({ ...request, signal: controller.signal }, context)) {
+        assertCanonicalEvent(adapterEvent);
+        const event: CanonicalEvent = adapterEvent.type === "run.error"
+          ? {
+              type: "run.error",
+              payload: failurePayload(adapterEvent.payload, {
+                stage: "provider.invoke",
+                defaultDomain: "provider",
+                source: { component: "octo-harness", adapter: adapterType }
+              })
+            }
+          : adapterEvent;
         this.#canonicalSink?.({
           ...(typeof request.context?.profile === "string" ? { profile: request.context.profile } : {}),
           ...(typeof request.context?.runtimeId === "string" ? { runtimeId: request.context.runtimeId } : {}),
@@ -230,16 +241,20 @@ export class AdapterHost {
       if (controller.signal.aborted) {
         yield { type: "run.stopped", payload: { reason: String(controller.signal.reason ?? "cancelled") } };
       } else if (terminal?.type === "run.error") {
-        yield { ...terminal, payload: { ...terminal.payload, cleanupError: errorMessage(error) } };
+        yield terminal;
       } else {
         const code = errorCode(error);
         yield {
           type: "run.error",
-          payload: {
+          payload: failurePayload({
             message: errorMessage(error),
             adapterType,
             ...(code ? { code } : {})
-          }
+          }, {
+            stage: "adapter.invoke",
+            defaultDomain: "adapter",
+            source: { component: "octo-harness", adapter: adapterType }
+          })
         };
       }
     } finally {

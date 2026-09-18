@@ -13,7 +13,8 @@ import type {
   ModelStepStartedPayload,
   ToolCallCreatePayload,
   ToolCallDeltaPayload,
-  ToolCallUpdatePayload
+  ToolCallUpdatePayload,
+  FailureEnvelope
 } from "./generated/protocol-types.js";
 
 // The data-shape types are generated from schema/protocol.schema.json (see
@@ -32,6 +33,10 @@ export type {
   ToolCallCreatePayload,
   ToolCallDeltaPayload,
   ToolCallUpdatePayload,
+  FailureAction,
+  FailureSource,
+  FailureCause,
+  FailureEnvelope,
   ChannelScope,
   ChannelMessagePart,
   ChannelMessageSender,
@@ -46,6 +51,16 @@ export type {
   RunIdentity,
   InvokeRequestWire
 } from "./generated/protocol-types.js";
+export {
+  FAILURE_CATALOG,
+  classifyFailure,
+  failureMessage,
+  failurePayload,
+  isFailureEnvelope,
+  type FailureClassificationContext,
+  type FailureDomain,
+  type PublicFailureCode
+} from "./failure.js";
 import type { RunIdentity } from "./generated/protocol-types.js";
 
 /**
@@ -306,6 +321,9 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
     throw new TypeError("event.payload must be an object");
   }
   const payload = isRecord(event.payload) ? event.payload : {};
+  if (event.type === "run.error" && payload.failure !== undefined) {
+    assertFailureEnvelope(payload.failure);
+  }
   if (event.type.startsWith("message.")) {
     if (payload.channel !== undefined
       && (typeof payload.channel !== "string" || !MESSAGE_CHANNELS.has(payload.channel as MessageChannel))) {
@@ -347,6 +365,38 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
   if (event.type === "tool_call.update") {
     requireEventString(payload, "id", event.type);
     requireEventString(payload, "status", event.type);
+  }
+}
+
+/** Validate a structured failure at the dynamic adapter boundary. */
+export function assertFailureEnvelope(value: unknown): asserts value is FailureEnvelope {
+  if (!isRecord(value)) throw new TypeError("failure must be an object");
+  if (value.schemaVersion !== 1) throw new TypeError("failure.schemaVersion must be 1");
+  if (typeof value.code !== "string" || !/^OH-[A-Z]{3}-\d{4}$/.test(value.code)) {
+    throw new TypeError("failure.code must be a global OH error code");
+  }
+  for (const key of ["reasonCode", "category", "stage", "messageKey", "diagnosticId", "occurredAt"] as const) {
+    if (typeof value[key] !== "string" || value[key].length === 0) {
+      throw new TypeError(`failure.${key} must be a non-empty string`);
+    }
+  }
+  if (!/^diag_[0-9a-f]{32}$/.test(value.diagnosticId as string)) {
+    throw new TypeError("failure.diagnosticId must be a non-identifying diagnostic ID");
+  }
+  if (Number.isNaN(Date.parse(value.occurredAt as string))) throw new TypeError("failure.occurredAt must be an ISO timestamp");
+  if (!isRecord(value.params)) throw new TypeError("failure.params must be an object");
+  if (typeof value.retryable !== "boolean") throw new TypeError("failure.retryable must be a boolean");
+  if (value.retryAfterMs !== undefined && (!Number.isSafeInteger(value.retryAfterMs) || Number(value.retryAfterMs) < 0)) {
+    throw new TypeError("failure.retryAfterMs must be a non-negative safe integer");
+  }
+  if (!isRecord(value.action) || typeof value.action.type !== "string" || typeof value.action.labelKey !== "string") {
+    throw new TypeError("failure.action must be a catalog action");
+  }
+  if (!isRecord(value.source) || (value.source.component !== "octo-harness" && value.source.component !== "octo-agent-worker")) {
+    throw new TypeError("failure.source.component must be an approved failure producer");
+  }
+  if (value.cause !== undefined && (!isRecord(value.cause) || typeof value.cause.reasonCode !== "string")) {
+    throw new TypeError("failure.cause must contain reasonCode");
   }
 }
 

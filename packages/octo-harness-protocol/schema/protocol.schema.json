@@ -29,6 +29,69 @@
         "nativeEvent": { "description": "Provider-native event type that was normalized.", "type": "string" }
       }
     },
+    "FailureAction": {
+      "title": "FailureAction",
+      "description": "A catalog-controlled recovery action. Clients render labelKey and must not execute arbitrary commands from this object.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "labelKey"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["retry", "retry_later", "update_credentials", "change_model", "check_runtime", "install_dependency", "fix_permissions", "contact_admin"]
+        },
+        "labelKey": { "type": "string", "minLength": 1 }
+      }
+    },
+    "FailureSource": {
+      "title": "FailureSource",
+      "description": "Low-cardinality component identity. It intentionally excludes hostnames, paths, accounts, and tenant data.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component"],
+      "properties": {
+        "component": { "type": "string", "enum": ["octo-harness", "octo-agent-worker"] },
+        "adapter": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "FailureCause": {
+      "title": "FailureCause",
+      "description": "Sanitized machine-readable root cause. Raw stderr, response bodies, paths, and credentials are forbidden.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reasonCode"],
+      "properties": {
+        "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "httpStatus": { "type": "integer", "minimum": 100, "maximum": 599 }
+      }
+    },
+    "FailureEnvelope": {
+      "title": "FailureEnvelope",
+      "description": "Versioned, safe failure fact shared by Harness, Worker, and channel projectors. Public codes are immutable catalog identifiers; dynamic diagnostics stay outside this object.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "code", "reasonCode", "category", "stage", "messageKey", "params", "retryable", "action", "diagnosticId", "source", "occurredAt"],
+      "properties": {
+        "schemaVersion": { "type": "integer", "const": 1 },
+        "code": { "type": "string", "pattern": "^OH-[A-Z]{3}-[0-9]{4}$" },
+        "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "category": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "stage": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "messageKey": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "params": {
+          "type": "object",
+          "description": "Catalog-allowlisted presentation parameters only.",
+          "additionalProperties": { "type": ["string", "number", "boolean"] }
+        },
+        "retryable": { "type": "boolean" },
+        "retryAfterMs": { "type": "integer", "minimum": 0 },
+        "action": { "$ref": "#/definitions/FailureAction" },
+        "diagnosticId": { "type": "string", "pattern": "^diag_[0-9a-f]{32}$" },
+        "source": { "$ref": "#/definitions/FailureSource" },
+        "cause": { "$ref": "#/definitions/FailureCause" },
+        "occurredAt": { "type": "string", "format": "date-time" }
+      }
+    },
     "ProviderSession": {
       "title": "ProviderSession",
       "description": "Provider-owned session resume data. Core treats sessionId and adapter extension fields as opaque.",
@@ -114,7 +177,8 @@
         "status": { "description": "Tool call or run status identifier.", "type": "string" },
         "text": { "description": "Text delta or complete text.", "type": "string" },
         "reason": { "description": "Termination or error reason.", "type": "string" },
-        "message": { "description": "Human-readable diagnostic message.", "type": "string" }
+        "message": { "description": "Human-readable diagnostic message.", "type": "string" },
+        "failure": { "$ref": "#/definitions/FailureEnvelope" }
       }
     },
     "ModelStepStartedPayload": {
