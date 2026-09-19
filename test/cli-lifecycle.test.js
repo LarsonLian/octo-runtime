@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { runCli } from "../apps/cli/dist/main.js";
 import { resolveDaemonRuntimePaths } from "../apps/daemon/dist/runtime-options.js";
-import { startDaemonServer } from "@mininglamp-oss/octo-harness-daemon-app";
+import { collectRuntimeDeviceInfo, startDaemonServer } from "@mininglamp-oss/octo-harness-daemon-app";
 import { wire } from "./agent-work-runtime-fixture.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -129,6 +129,7 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
       assert.equal(request.headers["x-subject-id"], undefined);
       const registration = JSON.parse(body);
       assert.equal(registration.profile, workProfile ? "work" : "default");
+      assert.deepEqual(registration.device, collectRuntimeDeviceInfo());
       assert.equal(registration.runtime_version, packageVersion);
       assert.equal(registration.protocol_version, 1);
       assert.equal(registration.protocol_version_min, 1);

@@ -19,6 +19,7 @@ import {
   renderAgentRunInputPrompt
 } from "../apps/daemon/dist/agent-work-runtime.js";
 import { AgentWorkStore } from "../apps/daemon/dist/agent-work-store.js";
+import { collectRuntimeDeviceInfo } from "../apps/daemon/dist/server.js";
 import { deferred, waitFor, wire } from "./agent-work-runtime-fixture.js";
 
 const envelope = {
@@ -380,6 +381,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
       new Promise((_, reject) => setTimeout(() => reject(new Error("terminal timeout")), 3_000))
     ]);
     assert.equal(registrationBody.runtime_version, "0.1.0");
+    assert.deepEqual(registrationBody.device, collectRuntimeDeviceInfo());
     assert.equal(registrationBody.protocol_version_min, 1);
     assert.equal(registrationBody.protocol_version_max, 1);
     assert.match(registrationRequestId, /^req_[0-9a-f]{32}$/);

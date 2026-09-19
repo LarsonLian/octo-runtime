@@ -59,6 +59,16 @@ selects the server-side Runtime kind. Harness metadata registration does not
 rewrite it, so a cloud Runtime remains cloud after login/reconnect. Re-enrollment
 requires a grant with matching kind.
 
+## Device Metadata
+
+Runtime registration reports display-ready, non-authoritative device metadata.
+`device.os` includes the product/distribution version and kernel release when
+available, while `device.arch` includes the machine architecture and CPU model.
+For example, a macOS Runtime may report `macOS 26.0.1 (Darwin 25.0.0)` and
+`arm64 / Apple M3 Pro`. The CLI enrollment check and daemon reconnect use the
+same collector. Each value remains within the Worker's existing 64-character
+limit; identity and authorization must never depend on these fields.
+
 ## Adapter Objects
 
 The daemon reports provider objects rather than names:

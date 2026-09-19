@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { hostname, platform, arch } from "node:os";
 import WebSocket from "ws";
 import type { AdapterHostRpc, HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
 import {
@@ -27,6 +26,7 @@ import {
 } from "@mininglamp-oss/octo-harness-protocol";
 import { AgentWorkStore } from "./agent-work-store.js";
 import type { OutboxRow } from "./agent-work-store.js";
+import { collectRuntimeDeviceInfo } from "./device-info.js";
 import {
   ChannelContextStore,
   ChannelContextConsumerBusyError,
@@ -449,11 +449,7 @@ export class AgentWorkRuntime {
         body: JSON.stringify({
           profile: this.#options.profile,
           name: this.#options.runtimeName,
-          device: {
-            os: platform(),
-            arch: arch(),
-            hostname: hostname()
-          },
+          device: collectRuntimeDeviceInfo(),
           runtime_version: RUNTIME_VERSION,
           protocol_version: MAX_PROTOCOL_VERSION,
           protocol_version_min: MIN_PROTOCOL_VERSION,
