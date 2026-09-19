@@ -55,6 +55,30 @@ sequenceDiagram
 4. **审批自动应答**。对 Codex 反向发来的命令执行、文件修改审批请求，适配器一律回应 `accept`（对应 `approvalPolicy: never` 的无人值守语义）；对未知的反向请求回应 JSON-RPC `-32601`，避免 Codex 持续阻塞等待。该 accept 不构成安全边界（见下文）。
 5. **完整 CODEX_HOME**。app-server 直接复用真实 HOME，避免残缺 shadow HOME 触发 `state_5.sqlite` backfill 与并发锁等待。本轮私有控制指令只通过原生 `thread/start` / `thread/resume.developerInstructions` 传入，不修改用户的 `config.toml`。
 
+## 桌面 GUI / computer use 能力
+
+`computer_use`（看屏幕 / 点击 / 输入）这类桌面 GUI 能力**不属于 codex 二进制本身**，也不是云端调用。它由本机安装的 **ChatGPT.app 作为 provisioner** 写入共享的 `~/.codex`（`CODEX_HOME`），任何读取该 HOME 的 codex 二进制（npm CLI 或 ChatGPT 内置版）都会继承这一能力。已实测：npm CLI 与内置版的 `features list` / `plugin list` 完全一致，自起的 `codex exec` 进程也能驱动 computer use，无需桌面应用编排。
+
+provisioning 的具体形态：
+
+- `[mcp_servers.node_repl]`：`cua_repl`，command 指向 `/Applications/ChatGPT.app/.../cua_node/bin/node_repl`（**绝对路径**）。
+- `[mcp_servers.computer-use]`：command 是 `./Codex Computer Use.app/.../SkyComputerUseClient mcp`（**相对路径**，按 `CODEX_HOME` 解析），该 helper.app 持有 macOS TCC（屏幕录制 / 辅助功能）授权。
+- `openai-bundled` marketplace 里的 computer-use / browser 等插件。
+
+因此启用条件是一条依赖链：
+
+1. **本机安装并运行过 ChatGPT.app**，让它把上述 MCP server / 插件写进 `~/.codex`，并在系统「隐私与安全性」里授予 helper 屏幕录制 / 辅助功能权限（TCC 绑定到 helper.app bundle，一台设备授权一次即可复用）。
+2. **能力已 provisioning / 开启**（config 中相应条目存在）。
+3. **adapter 侧放行**——本适配器已默认满足：`buildCodexCommand` 复用真实 `CODEX_HOME`、`app-server.ts` 保持 `approvalPolicy: "never"` 且不禁用任何 MCP server，`mcpToolCall` 事件已被 normalizer 统一映射为 `mcp__<server>__<tool>`。所以无需额外运行时开关，cua / computer-use 的工具调用会像普通 MCP 工具一样透传给上层。
+
+`createCodexAdapter` 在创建时用 `detectComputerUseProvisioningSync` 检查将要使用的 `CODEX_HOME`：若 computer use 已 provisioning 且启用，就在 `metadata.capabilities` 里加上 `tool.computer_use`（常量 `COMPUTER_USE_CAPABILITY`）。这条 capability 走 `host.list()` 进入 Agent Work Runtime 的能力集合（Runtime 在 `start()` 时快照，而非每个 run 重查），因此 Agent Worker 能据此知道该节点是否具备 computer use；控制面的 `describe()` 展示也会带上它（同一份 metadata）。检测在**每次 adapter-host 进程启动 / 注册时**跑一次——与 `list()` 快照的时机一致，不落任何持久化、不上云。若节点上后来才安装 / 开启 ChatGPT.app，重启 adapter-host 即可重新探测。
+
+关键约束：
+
+- **必须使用真实 `CODEX_HOME`**。`[mcp_servers.computer-use].command` 是按 `CODEX_HOME` 解析的相对路径，一旦走 shadow HOME（临时目录），该相对路径失效，computer use 直接不可用。这也是 production 不使用 `createCodexInvocationHome` 的又一原因。
+- **能力传递性依赖 ChatGPT.app 存在**。`node_repl` 指向 `/Applications/ChatGPT.app/...`；卸载 ChatGPT.app 后即使保留 config 也会失效。
+- **`probe` 只查 codex 可执行文件**，probe 通过并不代表 computer use 可用。用导出的 `detectComputerUseProvisioning(env)` 对将要使用的同一 `CODEX_HOME` 做检查：它读取 `config.toml`，收集 `computer-use` / `node_repl` 这两个由 ChatGPT.app 写入的 MCP server，返回 `{ available, codexHome, servers, reason? }`。`available` 为「至少一个相关 server 存在且未被显式 `enabled = false` 关闭」；`reason` 为 `config_missing` / `mcp_server_absent` / `mcp_server_disabled`，便于在开跑前给出「先安装 / 启动 ChatGPT.app」或「computer-use 已 provisioning 但被禁用」而非 turn 中静默的 tool-not-found。检查停留在配置层：`computer-use` 的 command 是 Codex 按 provider 内部基准目录解析的相对路径（实测落在 `<CODEX_HOME>/computer-use/…` 而非 `<CODEX_HOME>` 下），因此 helper 原样报告声明的 `command` / `cwd`，不猜绝对路径去 stat。
+
 ## 使用
 
 前置条件：Node.js 20+、pnpm，以及 PATH 上一个已登录的 Codex CLI。
