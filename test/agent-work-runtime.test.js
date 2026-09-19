@@ -536,6 +536,104 @@ test("startup registration failure stays alive and every reconnect re-registers"
   }
 });
 
+test("rejected runtime credentials stop after the configured failure budget", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-auth-rejected-"));
+  const httpServer = createServer();
+  let registrations = 0;
+  let runtime;
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume registration. */ }
+    registrations += 1;
+    response.writeHead(401, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ error: { code: "UNAUTHORIZED", message: "invalid runtime credential" } }));
+  });
+
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    runtime = new AgentWorkRuntime({
+      profile: "default",
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "rejected-runtime-token",
+      runtimeName: "runtime-auth-rejected",
+      storePath: join(directory, "agent-work.db"),
+      reconnectFirstMs: 5,
+      reconnectMs: 5,
+      reconnectMaxMs: 5,
+      credentialFailureLimit: 3
+    }, {
+      list: async () => [],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() { yield { type: "run.finished", payload: {} }; }
+    });
+    await runtime.start();
+    await waitFor(() => runtime.status.connectionState === "action_required", 2_000);
+    assert.equal(registrations, 3);
+    assert.equal(runtime.status.connected, false);
+    assert.equal(runtime.status.actionRequired, true);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(registrations, 3);
+  } finally {
+    await runtime?.close();
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("connectivity notification interrupts a long reconnect backoff with bounded jitter", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-fast-recovery-"));
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  let connections = 0;
+  let runtime;
+  let firstSocket;
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume registration. */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-fast-recovery", protocol_version: 1 } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    connections += 1;
+    if (connections === 1) firstSocket = websocket;
+    websocket.once("message", () => websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 })));
+  });
+
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    runtime = new AgentWorkRuntime({
+      profile: "default",
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      runtimeName: "runtime-fast-recovery",
+      storePath: join(directory, "agent-work.db"),
+      reconnectFirstMs: 60_000,
+      reconnectMs: 60_000,
+      reconnectMaxMs: 60_000,
+      recoveryJitterMaxMs: 5
+    }, {
+      list: async () => [],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() { yield { type: "run.finished", payload: {} }; }
+    });
+    await runtime.start();
+    await waitFor(() => runtime.status.connectionState === "online", 2_000);
+    firstSocket.close(1012, "network changed");
+    await waitFor(() => runtime.status.connectionState === "backing_off", 2_000);
+    runtime.notifyConnectivityChanged("network_change");
+    await waitFor(() => connections === 2 && runtime.status.connectionState === "online", 2_000);
+  } finally {
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("runtime goaway delays and spreads the next reconnect", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-goaway-"));
   const httpServer = createServer();

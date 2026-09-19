@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { networkInterfaces } from "node:os";
 import WebSocket from "ws";
 import type { AdapterHostRpc, HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
 import {
@@ -50,6 +51,9 @@ const DEFAULT_RECONNECT_MAX_MS = 60_000;
 const MAX_SERVER_RECONNECT_JITTER_MS = 20_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_RECEIVE_TIMEOUT_MS = 60_000;
+const DEFAULT_RECOVERY_PROBE_MS = 5_000;
+const DEFAULT_RECOVERY_JITTER_MAX_MS = 2_000;
+const DEFAULT_CREDENTIAL_FAILURE_LIMIT = 3;
 const RECONNECT_STABLE_RESET_MS = 5 * 60_000;
 const DEFAULT_RECONCILE_MS = 5 * 60_000;
 const PUMP_POLL_MS = 50;
@@ -90,6 +94,12 @@ export interface AgentWorkRuntimeOptions {
   connectTimeoutMs?: number;
   /** Maximum silence from the server before terminating and reconnecting. */
   receiveTimeoutMs?: number;
+  /** Interval used to detect system resume and local network-address changes. */
+  recoveryProbeMs?: number;
+  /** Maximum full jitter applied to a resume/network-change fast reconnect. */
+  recoveryJitterMaxMs?: number;
+  /** Consecutive 401/403 registrations allowed before operator action is required. */
+  credentialFailureLimit?: number;
   /** Local outbox database path; defaults are resolved by the daemon. */
   storePath: string;
   /** Max number of events allowed in flight (unacked) per send window. */
@@ -105,6 +115,16 @@ export interface AgentWorkRuntimeOptions {
   reconcileMs?: number;
   channelContext?: ChannelContextRuntimeOptions;
 }
+
+export type RuntimeConnectionState =
+  | "stopped"
+  | "starting"
+  | "registering"
+  | "connecting"
+  | "awaiting_welcome"
+  | "online"
+  | "backing_off"
+  | "action_required";
 
 export interface RunAdmission {
   acquire(signal: AbortSignal): Promise<() => void>;
@@ -247,7 +267,14 @@ export class AgentWorkRuntime {
   #consecutiveReconnects = 0;
   #reconnectReset?: NodeJS.Timeout;
   #reconnectAbort?: AbortController;
+  #recoveryProbe?: NodeJS.Timeout;
+  #lastRecoveryProbeAt = 0;
+  #networkFingerprint = "";
+  #fastRecoveryReason?: "network_change" | "system_resume";
   #serverReconnectAfterMs?: number;
+  #serverReconnectProtected = false;
+  #connectionState: RuntimeConnectionState = "stopped";
+  #credentialFailures = 0;
   #protocolVersion = MAX_PROTOCOL_VERSION;
   #connectionId?: string;
 
@@ -280,6 +307,18 @@ export class AgentWorkRuntime {
     if (!Number.isFinite(receiveTimeoutMs) || receiveTimeoutMs < 1) {
       throw new Error("receiveTimeoutMs must be finite and positive");
     }
+    const recoveryProbeMs = options.recoveryProbeMs ?? DEFAULT_RECOVERY_PROBE_MS;
+    if (!Number.isFinite(recoveryProbeMs) || recoveryProbeMs < 100) {
+      throw new Error("recoveryProbeMs must be finite and at least 100ms");
+    }
+    const recoveryJitterMaxMs = options.recoveryJitterMaxMs ?? DEFAULT_RECOVERY_JITTER_MAX_MS;
+    if (!Number.isFinite(recoveryJitterMaxMs) || recoveryJitterMaxMs < 1) {
+      throw new Error("recoveryJitterMaxMs must be finite and positive");
+    }
+    const credentialFailureLimit = options.credentialFailureLimit ?? DEFAULT_CREDENTIAL_FAILURE_LIMIT;
+    if (!Number.isSafeInteger(credentialFailureLimit) || credentialFailureLimit < 1 || credentialFailureLimit > 100) {
+      throw new Error("credentialFailureLimit must be an integer between 1 and 100");
+    }
   }
 
   /** Return operational state only. Endpoint credentials and message content are excluded. */
@@ -290,6 +329,8 @@ export class AgentWorkRuntime {
       enabled: true,
       ...(this.#options.profile ? { profile: this.#options.profile } : {}),
       connected: this.#connected,
+      connectionState: this.#connectionState,
+      actionRequired: this.#connectionState === "action_required",
       draining: this.#draining,
       runtimeId: this.#runtimeId || this.#options.runtimeId,
       activeRuns: this.#activeRuns.size,
@@ -327,6 +368,9 @@ export class AgentWorkRuntime {
     if (!this.#stopped) return;
     this.#stopped = false;
     this.#draining = false;
+    this.#connectionState = "starting";
+    this.#credentialFailures = 0;
+    this.#serverReconnectProtected = false;
     const epoch = ++this.#lifecycleEpoch;
     this.#adapterCapabilities.clear();
     const adapters = await this.#host.list();
@@ -349,13 +393,24 @@ export class AgentWorkRuntime {
         this.#options.channelContext
       );
     }
+    this.#startRecoveryProbe(epoch);
     try {
       await this.#registerAndConnect(epoch);
     } catch (error) {
       if (error instanceof RuntimeIdentityMismatchError) throw error;
+      if (error instanceof RuntimeCredentialRejectedError
+        && error.attempt >= (this.#options.credentialFailureLimit ?? DEFAULT_CREDENTIAL_FAILURE_LIMIT)) {
+        this.#connectionState = "action_required";
+        this.#reportError(
+          "agent_work.registration.action_required",
+          "Agent Work runtime credential requires operator action",
+          error,
+          { http_status: error.status, consecutive_failures: error.attempt }
+        );
+      }
       this.#reportError("transport.connection.initial_failed", "initial Agent Work connection failed", error);
     }
-    this.#loop = this.#readLoop(epoch);
+    this.#loop = this.#connectionState === "action_required" ? Promise.resolve() : this.#readLoop(epoch);
     this.#pump = this.#senderLoop(epoch);
     const reconcileMs = this.#options.reconcileMs ?? DEFAULT_RECONCILE_MS;
     this.#reconcileTimer = setInterval(() => {
@@ -381,6 +436,7 @@ export class AgentWorkRuntime {
     if (this.#stopped && !this.#store) return;
     this.#stopped = true;
     this.#draining = true;
+    this.#connectionState = "stopped";
     this.#lifecycleEpoch += 1;
     if (this.#heartbeat) clearInterval(this.#heartbeat);
     this.#heartbeat = undefined;
@@ -388,6 +444,8 @@ export class AgentWorkRuntime {
     this.#reconnectReset = undefined;
     this.#reconnectAbort?.abort(new RuntimeStoppingError());
     this.#reconnectAbort = undefined;
+    if (this.#recoveryProbe) clearInterval(this.#recoveryProbe);
+    this.#recoveryProbe = undefined;
     this.#connectingSocket?.terminate();
     this.#connectingSocket = undefined;
     if (this.#reconcileTimer) clearInterval(this.#reconcileTimer);
@@ -423,6 +481,12 @@ export class AgentWorkRuntime {
     this.#draining = true;
   }
 
+  /** Host applications can call this from native resume/network callbacks. The
+   * runtime also performs a portable event-loop and interface-address probe. */
+  notifyConnectivityChanged(reason: "network_change" | "system_resume" = "network_change"): void {
+    this.#requestFastRecovery(reason);
+  }
+
   async waitForDrained(timeoutMs: number): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (this.#acceptingRuns.size > 0 || this.#activeRuns.size > 0) {
@@ -436,6 +500,7 @@ export class AgentWorkRuntime {
   }
 
   async #register(adapterTypes: string[], signal?: AbortSignal): Promise<{ runtimeId: string; protocolVersion: number }> {
+    this.#connectionState = "registering";
     const contextStats = this.#contextStore?.stats();
     const sentRequestId = createRequestId();
     this.#log({
@@ -534,6 +599,13 @@ export class AgentWorkRuntime {
     }
     const registeredRuntime = body.runtime;
     if (!response.ok || !registeredRuntime?.id) {
+      if (response.status === 401 || response.status === 403) {
+        this.#credentialFailures += 1;
+        return rejectRegistration(
+          new RuntimeCredentialRejectedError(response.status, this.#credentialFailures),
+          "Agent Work runtime credential was rejected"
+        );
+      }
       const error = new Error(`Agent Work runtime registration failed (${response.status}, request_id=${requestId}): ${body.error?.message ?? "invalid response"}`);
       return rejectRegistration(error, "Agent Work runtime registration was rejected");
     }
@@ -558,6 +630,7 @@ export class AgentWorkRuntime {
       requestId,
       data: { runtime_id: registeredRuntime.id, http_status: response.status }
     });
+    this.#credentialFailures = 0;
     return { runtimeId: registeredRuntime.id, protocolVersion };
   }
 
@@ -575,6 +648,7 @@ export class AgentWorkRuntime {
   }
 
   async #connect(epoch: number, signal?: AbortSignal): Promise<void> {
+    this.#connectionState = "connecting";
     const url = new URL(`${stripSlash(this.#options.baseUrl)}/v1/runtime/connect`);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     const connectionId = `conn_wss_${randomUUID()}`;
@@ -619,7 +693,7 @@ export class AgentWorkRuntime {
           cleanup();
           socket.once("error", () => undefined);
           socket.terminate();
-          reject(new RuntimeStoppingError());
+          reject(abortError(signal));
         };
         socket.once("open", onOpen);
         socket.once("error", onError);
@@ -656,6 +730,7 @@ export class AgentWorkRuntime {
       if (this.#connectingSocket === socket) this.#connectingSocket = undefined;
     }
     this.#socket = socket;
+    this.#connectionState = "awaiting_welcome";
     this.#connectionId = connectionId;
     this.#log({
       level: "info",
@@ -714,13 +789,17 @@ export class AgentWorkRuntime {
       this.#serverReconnectAfterMs = undefined;
       while (this.#isCurrentLifecycle(epoch) && !this.#socket) {
         const reconnectAttempt = ++this.#consecutiveReconnects;
-        const clientReconnectDelay = reconnectDelayMs(
-          reconnectAttempt,
-          this.#options.reconnectMs ?? DEFAULT_RECONNECT_MIN_MS,
-          this.#options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS,
-          Math.random,
-          this.#options.reconnectFirstMs ?? DEFAULT_RECONNECT_FIRST_MS
-        );
+        const fastRecoveryReason = this.#fastRecoveryReason;
+        this.#fastRecoveryReason = undefined;
+        const clientReconnectDelay = fastRecoveryReason
+          ? Math.floor(Math.random() * (this.#options.recoveryJitterMaxMs ?? DEFAULT_RECOVERY_JITTER_MAX_MS))
+          : reconnectDelayMs(
+            reconnectAttempt,
+            this.#options.reconnectMs ?? DEFAULT_RECONNECT_MIN_MS,
+            this.#options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS,
+            Math.random,
+            this.#options.reconnectFirstMs ?? DEFAULT_RECONNECT_FIRST_MS
+          );
         const reconnectDelay = reconnectDelayWithServerHintMs(
           clientReconnectDelay,
           serverReconnectAfterMs,
@@ -729,12 +808,26 @@ export class AgentWorkRuntime {
         serverReconnectAfterMs = undefined;
         const reconnectAbort = new AbortController();
         this.#reconnectAbort = reconnectAbort;
+        this.#connectionState = "backing_off";
         try {
           await reconnectRuntimeDelay(reconnectDelay, reconnectAbort.signal);
+          this.#serverReconnectProtected = false;
           this.#assertCurrentLifecycle(epoch);
           await this.#registerAndConnect(epoch, reconnectAbort.signal);
         } catch (error) {
           if (error instanceof RuntimeStoppingError || !this.#isCurrentLifecycle(epoch)) return;
+          if (error instanceof RuntimeRecoverySignal) continue;
+          if (error instanceof RuntimeCredentialRejectedError
+            && error.attempt >= (this.#options.credentialFailureLimit ?? DEFAULT_CREDENTIAL_FAILURE_LIMIT)) {
+            this.#connectionState = "action_required";
+            this.#reportError(
+              "agent_work.registration.action_required",
+              "Agent Work runtime credential requires operator action",
+              error,
+              { http_status: error.status, consecutive_failures: error.attempt }
+            );
+            return;
+          }
           this.#reportError("transport.connection.reconnect_failed", "Agent Work WebSocket reconnect failed", error, {
             reconnect_attempt: this.#connectionAttempt
           });
@@ -743,6 +836,38 @@ export class AgentWorkRuntime {
         }
       }
     }
+  }
+
+  #startRecoveryProbe(epoch: number): void {
+    const intervalMs = this.#options.recoveryProbeMs ?? DEFAULT_RECOVERY_PROBE_MS;
+    this.#lastRecoveryProbeAt = Date.now();
+    this.#networkFingerprint = localNetworkFingerprint();
+    this.#recoveryProbe = setInterval(() => {
+      if (!this.#isCurrentLifecycle(epoch)) return;
+      const now = Date.now();
+      const elapsed = now - this.#lastRecoveryProbeAt;
+      this.#lastRecoveryProbeAt = now;
+      const fingerprint = localNetworkFingerprint();
+      if (elapsed > intervalMs * 3) this.#requestFastRecovery("system_resume");
+      else if (fingerprint !== this.#networkFingerprint) this.#requestFastRecovery("network_change");
+      this.#networkFingerprint = fingerprint;
+    }, intervalMs);
+    this.#recoveryProbe.unref();
+  }
+
+  #requestFastRecovery(reason: "network_change" | "system_resume"): void {
+    if (this.#stopped || this.#connectionState === "action_required" || this.#serverReconnectProtected) return;
+    this.#fastRecoveryReason = reason;
+    this.#log({
+      level: "info",
+      scope: "transport.wss",
+      event: "transport.connection.fast_recovery_requested",
+      message: "Agent Work connectivity changed; scheduling a fast reconnect",
+      data: { reason, connection_state: this.#connectionState }
+    });
+    this.#reconnectAbort?.abort(new RuntimeRecoverySignal(reason));
+    this.#connectingSocket?.terminate();
+    this.#socket?.terminate();
   }
 
   #waitForDisconnect(socket: WebSocket, epoch: number): Promise<void> {
@@ -856,6 +981,7 @@ export class AgentWorkRuntime {
       // local Outbox must replay every row not covered by durable ACK.
       this.#store?.prepareReplayAfterReconnect();
       this.#connected = true;
+      this.#connectionState = "online";
       this.#log({
         level: "info",
         scope: "agent-work.runtime",
@@ -886,6 +1012,7 @@ export class AgentWorkRuntime {
         throw new Error("Agent Work runtime.goaway requires a positive retry_after_ms");
       }
       this.#serverReconnectAfterMs = retryAfterMs;
+      this.#serverReconnectProtected = true;
       this.#connected = false;
       this.#log({
         level: "info",
@@ -2014,6 +2141,20 @@ class RuntimeIdentityMismatchError extends Error {
   }
 }
 
+class RuntimeCredentialRejectedError extends Error {
+  constructor(readonly status: number, readonly attempt: number) {
+    super(`Agent Work runtime credential was rejected (${status}); consecutive failure ${attempt}`);
+    this.name = "RuntimeCredentialRejectedError";
+  }
+}
+
+class RuntimeRecoverySignal extends Error {
+  constructor(readonly reason: "network_change" | "system_resume") {
+    super(`Agent Work fast recovery requested after ${reason}`);
+    this.name = "RuntimeRecoverySignal";
+  }
+}
+
 class AcceptingRunCancelledError extends Error {
   constructor() {
     super("run cancelled before provider invocation");
@@ -2045,7 +2186,7 @@ function delay(ms: number): Promise<void> {
 }
 
 function reconnectRuntimeDelay(ms: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.reject(new RuntimeStoppingError());
+  if (signal.aborted) return Promise.reject(abortError(signal));
   return new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
       signal.removeEventListener("abort", onAbort);
@@ -2053,10 +2194,23 @@ function reconnectRuntimeDelay(ms: number, signal: AbortSignal): Promise<void> {
     }, ms);
     const onAbort = (): void => {
       clearTimeout(timer);
-      reject(new RuntimeStoppingError());
+      reject(abortError(signal));
     };
     signal.addEventListener("abort", onAbort, { once: true });
   });
+}
+
+function abortError(signal?: AbortSignal): Error {
+  return signal?.reason instanceof Error ? signal.reason : new RuntimeStoppingError();
+}
+
+function localNetworkFingerprint(): string {
+  return Object.entries(networkInterfaces())
+    .flatMap(([name, addresses]) => (addresses ?? [])
+      .filter(address => !address.internal)
+      .map(address => `${name}:${address.family}:${address.address}:${address.scopeid ?? 0}`))
+    .sort()
+    .join("|");
 }
 
 /** Keep one fast recovery attempt for isolated network blips. If that fails,
