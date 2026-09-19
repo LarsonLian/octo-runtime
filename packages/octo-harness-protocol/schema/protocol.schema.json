@@ -131,7 +131,10 @@
       "properties": {
         "firstFrameTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 1800000 },
         "modelIdleTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 3600000 },
+        "modelIdleWarningMs": { "type": "integer", "minimum": 100, "maximum": 3600000 },
+        "modelIdlePolicy": { "type": "string", "enum": ["observe", "enforce"] },
         "toolTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 86400000 },
+        "toolWallTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 86400000 },
         "runTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 86400000 },
         "cancelGraceMs": { "type": "integer", "minimum": 100, "maximum": 60000 },
         "enforcement": { "type": "string", "enum": ["observe", "enforce"] }

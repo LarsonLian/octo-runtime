@@ -90,13 +90,15 @@ export function failurePayload(
     : classifyFailure(input, context);
   const timeoutStage = safeTimeoutStage(record.timeoutStage);
   const timeoutMs = safeTimeoutMs(record.timeoutMs);
+  const timeoutReason = typeof record.timeoutReason === "string" && ["first_frame", "model_silence", "tool_idle", "tool_deadline", "run_deadline", "cleanup_timeout", "rpc_timeout"].includes(record.timeoutReason) ? record.timeoutReason : undefined;
   const failure = timeoutStage || timeoutMs !== undefined
     ? {
         ...classified,
         params: {
           ...classified.params,
           ...(timeoutStage ? { timeoutStage } : {}),
-          ...(timeoutMs === undefined ? {} : { timeoutMs })
+          ...(timeoutMs === undefined ? {} : { timeoutMs }),
+          ...(timeoutReason ? { timeoutReason } : {})
         }
       }
     : classified;
@@ -122,7 +124,7 @@ function diagnosticIdFromRunId(runId: string | undefined): string | undefined {
 }
 
 function safeTimeoutStage(value: unknown): string | undefined {
-  return typeof value === "string" && ["starting", "model_active", "tool_active"].includes(value)
+  return typeof value === "string" && ["starting", "model_active", "tool_active", "run_deadline", "cleanup", "rpc"].includes(value)
     ? value
     : undefined;
 }

@@ -203,7 +203,7 @@ test("host watchdog fails a provider that never emits its first protocol frame",
   assert.equal(events.at(-1).payload.failure.code, "OH-ADP-3006");
   assert.equal(events.at(-1).payload.failure.stage, "adapter.invoke");
   assert.equal(events.at(-1).payload.failure.diagnosticId, "diag_35c4ffc5db9940c9be7ce3a894819ae3");
-  assert.deepEqual(events.at(-1).payload.failure.params, { timeoutStage: "starting", timeoutMs: 100 });
+  assert.deepEqual(events.at(-1).payload.failure.params, { timeoutStage: "starting", timeoutMs: 100, timeoutReason: "first_frame" });
 });
 
 test("host watchdog uses the tool budget while a canonical tool call is open", async () => {
@@ -232,7 +232,7 @@ test("host watchdog uses the tool budget while a canonical tool call is open", a
   assert.deepEqual(events.slice(0, 2).map(event => event.type), ["model_step.started", "tool_call.create"]);
   assert.equal(events.at(-1).type, "run.error");
   assert.equal(events.at(-1).payload.failure.reasonCode, "ADAPTER_TIMEOUT");
-  assert.deepEqual(events.at(-1).payload.failure.params, { timeoutStage: "tool_active", timeoutMs: 100 });
+  assert.deepEqual(events.at(-1).payload.failure.params, { timeoutStage: "tool_active", timeoutMs: 100, timeoutReason: "tool_idle" });
 });
 
 test("host shutdown aborts every active provider invocation before returning", async () => {

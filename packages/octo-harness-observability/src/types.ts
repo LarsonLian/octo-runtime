@@ -73,6 +73,14 @@ export interface ProviderObservation {
 
 export interface AdapterInvocationContext {
   observe(observation: ProviderObservation): Promise<CaptureReceipt>;
+  /** Synchronous control path; independent of lossy observation/log transport. */
+  reportActivity?(activity: ProviderActivity): void;
+}
+
+export interface ProviderActivity {
+  kind: "turn_started" | "turn_progress" | "transport_response" | "retry_notice";
+  method: "turn_start" | "text_delta" | "tool_delta" | "item_lifecycle" | "usage" | "rpc_response" | "retry";
+  toolCallId?: string;
 }
 
 export interface ObservationIdentity {

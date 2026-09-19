@@ -7,6 +7,7 @@ import type {
   ChannelScope,
   ContextSyncResult,
   InvokeRequestWire,
+  RuntimeLimits,
   MessageChannel,
   MessageExposure,
   ModelStepFinishedPayload,
@@ -404,6 +405,7 @@ export function assertFailureEnvelope(value: unknown): asserts value is FailureE
 /** Assert the execution identifiers and path fields that must be present before the Host calls an adapter. */
 export function assertInvokeRequest(request: unknown): asserts request is InvokeRequest {
   if (!isRecord(request)) throw new TypeError("InvokeRequest must be an object");
+  if (request.runtimeLimits !== undefined) assertRuntimeLimits(request.runtimeLimits);
   for (const key of ["invocationId", "agentSessionId", "runId", "prompt", "workdir"] as const) {
     if (typeof request[key] !== "string" || request[key].length === 0) {
       throw new TypeError(`InvokeRequest.${key} must be a non-empty string`);
@@ -416,6 +418,24 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
   if (request.freshFallbackModelInput !== undefined
     && (typeof request.freshFallbackModelInput !== "string" || request.freshFallbackModelInput.length === 0)) {
     throw new TypeError("InvokeRequest.freshFallbackModelInput must be a non-empty string when present");
+  }
+}
+
+export function assertRuntimeLimits(value: unknown): asserts value is RuntimeLimits {
+  if (!isRecord(value)) throw new TypeError("runtimeLimits must be an object");
+  const bounds: Record<string, number> = {
+    firstFrameTimeoutMs: 1_800_000, modelIdleTimeoutMs: 3_600_000, modelIdleWarningMs: 3_600_000,
+    toolTimeoutMs: 86_400_000, toolWallTimeoutMs: 86_400_000, runTimeoutMs: 86_400_000, cancelGraceMs: 60_000
+  };
+  for (const [key, setting] of Object.entries(value)) {
+    if (key === "enforcement" || key === "modelIdlePolicy") {
+      if (setting !== "enforce" && setting !== "observe") throw new TypeError(`invalid runtimeLimits.${key}`);
+    } else if (!(key in bounds) || typeof setting !== "number" || !Number.isSafeInteger(setting) || setting < 100 || setting > bounds[key]) {
+      throw new TypeError(`invalid runtimeLimits.${key}`);
+    }
+  }
+  if (value.enforcement === "observe" && ["modelIdlePolicy", "modelIdleWarningMs", "toolWallTimeoutMs"].some(key => value[key] !== undefined)) {
+    throw new TypeError("legacy enforcement=observe cannot be combined with watchdog v2 settings; use modelIdlePolicy=observe with enforcement=enforce");
   }
 }
 

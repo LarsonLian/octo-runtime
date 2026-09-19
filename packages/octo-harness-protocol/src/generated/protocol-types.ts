@@ -149,7 +149,10 @@ export interface ProviderSession {
 export interface RuntimeLimits {
   firstFrameTimeoutMs?: number;
   modelIdleTimeoutMs?: number;
+  modelIdleWarningMs?: number;
+  modelIdlePolicy?: "observe" | "enforce";
   toolTimeoutMs?: number;
+  toolWallTimeoutMs?: number;
   runTimeoutMs?: number;
   cancelGraceMs?: number;
   enforcement?: "observe" | "enforce";

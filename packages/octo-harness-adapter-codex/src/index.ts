@@ -280,7 +280,7 @@ export function createCodexAdapter({
   env?: NodeJS.ProcessEnv;
 } = {}) {
   // Thread serialization and same-turn fresh fallback are end-to-end supported.
-  const capabilities = ["session.serialize", "session.resume_recovery"];
+  const capabilities = ["session.serialize", "session.resume_recovery", "activity.turn-progress"];
   if (detectComputerUseProvisioningSync(env).available) capabilities.push(COMPUTER_USE_CAPABILITY);
   return defineAdapter({
     metadata: {

@@ -157,6 +157,9 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
         runtime_limits: {
           first_frame_timeout_ms: 60_000,
           model_idle_timeout_ms: 120_000,
+          model_idle_policy: "observe",
+          model_idle_warning_ms: 100_000,
+          tool_wall_timeout_ms: 900_000,
           tool_timeout_ms: 600_000,
           run_timeout_ms: 1_800_000,
           cancel_grace_ms: 1_000,
@@ -176,6 +179,9 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
   assert.deepEqual(mapped.request.runtimeLimits, {
     firstFrameTimeoutMs: 60_000,
     modelIdleTimeoutMs: 120_000,
+    modelIdlePolicy: "observe",
+    modelIdleWarningMs: 100_000,
+    toolWallTimeoutMs: 900_000,
     toolTimeoutMs: 600_000,
     runTimeoutMs: 1_800_000,
     cancelGraceMs: 1_000,

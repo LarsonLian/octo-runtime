@@ -5,7 +5,6 @@ import {
   isTerminal,
   type CanonicalEvent,
   type InvokeRequest,
-  type RuntimeLimits,
   type MessageChannel,
   type MessageExposure,
   type MessageProvenance
@@ -16,6 +15,7 @@ import type {
   ObservationIdentity,
   ProviderObservation
 } from "@mininglamp-oss/octo-harness-observability";
+import { InvocationWatchdog, AdapterWatchdogTimeoutError, WATCHDOG_CAPABILITY, ACTIVITY_CAPABILITY, type WatchdogDiagnostic } from "./watchdog.js";
 
 /** Provider-neutral metadata the Host uses for registration and capability discovery. */
 export interface HostedAdapterMetadata {
@@ -55,6 +55,7 @@ export interface AdapterHostOptions {
   observe?: (identity: ObservationIdentity, observation: ProviderObservation) => Promise<CaptureReceipt>;
   /** Receives adapter output after schema validation and before host correction. */
   canonicalSink?: (identity: ObservationIdentity, event: CanonicalEvent) => void;
+  diagnosticSink?: (identity: ObservationIdentity, diagnostic: WatchdogDiagnostic) => void;
 }
 
 interface MessageState {
@@ -66,15 +67,6 @@ interface MessageState {
   provenance?: MessageProvenance;
 }
 
-const DEFAULT_RUNTIME_LIMITS: Required<RuntimeLimits> = {
-  firstFrameTimeoutMs: 60_000,
-  modelIdleTimeoutMs: 300_000,
-  toolTimeoutMs: 600_000,
-  runTimeoutMs: 1_800_000,
-  cancelGraceMs: 1_000,
-  enforcement: "enforce"
-};
-
 /**
  * The in-process registry and lifecycle gatekeeper for adapters.
  * It validates plugin input/output, fills in the message lifecycle, guarantees
@@ -85,6 +77,7 @@ export class AdapterHost {
   readonly #active = new Map<string, AbortController>();
   readonly #observe: NonNullable<AdapterHostOptions["observe"]>;
   readonly #canonicalSink?: AdapterHostOptions["canonicalSink"];
+  readonly #diagnosticSink?: AdapterHostOptions["diagnosticSink"];
 
   constructor(options: AdapterHostOptions = {}) {
     // A disabled receipt keeps observability additive: existing embeddings and
@@ -95,6 +88,7 @@ export class AdapterHost {
       complete: false
     }));
     this.#canonicalSink = options.canonicalSink;
+    this.#diagnosticSink = options.diagnosticSink;
   }
 
   /** Register an adapter by `metadata.type`; the same type cannot be overwritten twice. */
@@ -105,7 +99,7 @@ export class AdapterHost {
 
   /** List registered adapters, for Agent registration and control-plane display. */
   list(): HostedAdapterMetadata[] {
-    return [...this.#adapters.values()].map(adapter => adapter.metadata);
+    return [...this.#adapters.values()].map(adapter => ({ ...adapter.metadata, capabilities: [...new Set([...adapter.metadata.capabilities, WATCHDOG_CAPABILITY])] }));
   }
 
   /** Report installed provider identity separately from adapter registration. */
@@ -133,6 +127,7 @@ export class AdapterHost {
       const available = probe.available === true && typeof probe.command === "string" && probe.command.length > 0;
       return {
         ...adapter.metadata,
+        capabilities: [...new Set([...adapter.metadata.capabilities, WATCHDOG_CAPABILITY])],
         available,
         unavailableReason: available ? null : unavailableReason,
         providerPath: available ? probe.command as string : null,
@@ -149,23 +144,30 @@ export class AdapterHost {
     const controller = new AbortController();
     this.#active.set(request.invocationId, controller);
     let terminal: CanonicalEvent | undefined;
-    const runtimeLimits = normalizeRuntimeLimits(request.runtimeLimits);
-    const invocationStartedAt = Date.now();
-    let watchdogPhase: "starting" | "model_active" | "tool_active" = "starting";
-    const openTools = new Set<string>();
+    const identity: ObservationIdentity = {
+      ...(typeof request.context?.profile === "string" ? { profile: request.context.profile } : {}),
+      ...(typeof request.context?.runtimeId === "string" ? { runtimeId: request.context.runtimeId } : {}),
+      runId: request.runId, invocationId: request.invocationId, agentSessionId: request.agentSessionId, adapterType
+    };
+    const watchdog = new InvocationWatchdog(request.runtimeLimits, controller,
+      adapter.metadata.capabilities.includes(ACTIVITY_CAPABILITY),
+      diagnostic => this.#diagnosticSink?.(identity, {
+        ...diagnostic,
+        data: { ...diagnostic.data, agentRevisionId: request.context?.agentRevisionId }
+      }));
+    let iterator: AsyncIterator<CanonicalEvent> | undefined;
+    let cleanup: Promise<unknown> | undefined;
+    const closeIterator = (): Promise<unknown> => cleanup ??= Promise.resolve().then(() => iterator?.return?.()).catch(() => undefined);
+    // The timer can fire while a consumer is paused at yield.
+    const onAbort = () => { void closeIterator(); };
+    controller.signal.addEventListener("abort", onAbort, { once: true });
     const messages = new Map<string, MessageState>();
     // Correlation fields come from the validated host request, never from the
     // adapter. This prevents a plugin from accidentally attributing sensitive
     // input to another Run while still letting it describe transport details.
     const context: AdapterInvocationContext = {
-      observe: observation => this.#observe({
-        ...(typeof request.context?.profile === "string" ? { profile: request.context.profile } : {}),
-        ...(typeof request.context?.runtimeId === "string" ? { runtimeId: request.context.runtimeId } : {}),
-        runId: request.runId,
-        invocationId: request.invocationId,
-        agentSessionId: request.agentSessionId,
-        adapterType
-      }, observation)
+      observe: observation => this.#observe(identity, observation),
+      reportActivity: activity => watchdog.activity(activity)
     };
 
     // A provider may emit only deltas; here the host fills in the message lifecycle and stabilizes the messageId.
@@ -215,18 +217,14 @@ export class AdapterHost {
     };
 
     try {
-      const iterator = adapter.invoke({ ...request, signal: controller.signal }, context)[Symbol.asyncIterator]();
+      iterator = adapter.invoke({ ...request, signal: controller.signal }, context)[Symbol.asyncIterator]();
       while (true) {
-        const phaseBudgetMs = watchdogPhase === "starting"
-          ? runtimeLimits.firstFrameTimeoutMs
-          : watchdogPhase === "tool_active"
-            ? runtimeLimits.toolTimeoutMs
-            : runtimeLimits.modelIdleTimeoutMs;
-        const runRemainingMs = runtimeLimits.runTimeoutMs - (Date.now() - invocationStartedAt);
-        const budgetMs = Math.max(1, Math.min(phaseBudgetMs, runRemainingMs));
-        const next = runtimeLimits.enforcement === "enforce"
-          ? await nextWithWatchdog(iterator, budgetMs, watchdogPhase, runtimeLimits.cancelGraceMs, controller)
-          : await iterator.next();
+        if (controller.signal.aborted) throw controller.signal.reason;
+        const pendingNext = iterator.next();
+        const next = terminal
+          ? await withCleanupDeadline(pendingNext, watchdog.limits.cancelGraceMs, controller)
+          : await waitForNext(pendingNext, controller.signal);
+        if (controller.signal.aborted) throw controller.signal.reason;
         if (next.done) break;
         const adapterEvent = next.value;
         assertCanonicalEvent(adapterEvent);
@@ -241,7 +239,7 @@ export class AdapterHost {
               })
             }
           : adapterEvent;
-        watchdogPhase = updateWatchdogPhase(event, openTools);
+        watchdog.canonical(event);
         this.#canonicalSink?.({
           ...(typeof request.context?.profile === "string" ? { profile: request.context.profile } : {}),
           ...(typeof request.context?.runtimeId === "string" ? { runtimeId: request.context.runtimeId } : {}),
@@ -265,10 +263,14 @@ export class AdapterHost {
       const messageStatus = terminal.type === "run.finished" ? "completed" : terminal.type === "run.error" ? "failed" : "stopped";
       for (const event of closeMessages(messageStatus)) yield event;
       yield terminal;
-    } catch (error) {
-      const watchdogTimeout = error instanceof AdapterWatchdogTimeoutError;
-      for (const event of closeMessages(controller.signal.aborted && !watchdogTimeout ? "stopped" : "failed")) yield event;
-      if (controller.signal.aborted && !watchdogTimeout) {
+    } catch (caught) {
+      const error = controller.signal.reason instanceof AdapterWatchdogTimeoutError ? controller.signal.reason : caught;
+      const userCancelled = controller.signal.aborted && !(controller.signal.reason instanceof AdapterWatchdogTimeoutError);
+      watchdog.dispose();
+      if (!controller.signal.aborted) controller.abort(error);
+      await boundedCleanup(closeIterator(), watchdog.limits.cancelGraceMs);
+      for (const event of closeMessages(userCancelled ? "stopped" : "failed")) yield event;
+      if (userCancelled) {
         yield { type: "run.stopped", payload: { reason: String(controller.signal.reason ?? "cancelled") } };
       } else if (terminal?.type === "run.error") {
         yield terminal;
@@ -290,6 +292,10 @@ export class AdapterHost {
         };
       }
     } finally {
+      watchdog.finish();
+      if (!terminal && !controller.signal.aborted) controller.abort("consumer closed");
+      await boundedCleanup(closeIterator(), watchdog.limits.cancelGraceMs);
+      controller.signal.removeEventListener("abort", onAbort);
       this.#active.delete(request.invocationId);
     }
   }
@@ -342,80 +348,40 @@ function errorCode(error: unknown): string | undefined {
     : undefined;
 }
 
-function normalizeRuntimeLimits(value: RuntimeLimits | undefined): Required<RuntimeLimits> {
-  return {
-    firstFrameTimeoutMs: value?.firstFrameTimeoutMs ?? DEFAULT_RUNTIME_LIMITS.firstFrameTimeoutMs,
-    modelIdleTimeoutMs: value?.modelIdleTimeoutMs ?? DEFAULT_RUNTIME_LIMITS.modelIdleTimeoutMs,
-    toolTimeoutMs: value?.toolTimeoutMs ?? DEFAULT_RUNTIME_LIMITS.toolTimeoutMs,
-    runTimeoutMs: value?.runTimeoutMs ?? DEFAULT_RUNTIME_LIMITS.runTimeoutMs,
-    cancelGraceMs: value?.cancelGraceMs ?? DEFAULT_RUNTIME_LIMITS.cancelGraceMs,
-    enforcement: value?.enforcement ?? DEFAULT_RUNTIME_LIMITS.enforcement
-  };
-}
-
-function updateWatchdogPhase(
-  event: CanonicalEvent,
-  openTools: Set<string>
-): "model_active" | "tool_active" {
-  const toolID = typeof event.payload.toolCallId === "string"
-    ? event.payload.toolCallId
-    : typeof event.payload.id === "string"
-      ? event.payload.id
-    : typeof event.payload.itemId === "string"
-      ? event.payload.itemId
-      : "tool";
-  if (event.type === "tool_call.create") openTools.add(toolID);
-  if (event.type === "tool_call.update" && ["completed", "failed", "cancelled", "stopped"].includes(String(event.payload.status))) {
-    openTools.delete(toolID);
-  }
-  return openTools.size > 0 ? "tool_active" : "model_active";
-}
-
-async function nextWithWatchdog(
-  iterator: AsyncIterator<CanonicalEvent>,
-  timeoutMs: number,
-  phase: "starting" | "model_active" | "tool_active",
-  cancelGraceMs: number,
-  controller: AbortController
-): Promise<IteratorResult<CanonicalEvent>> {
-  let timer: NodeJS.Timeout | undefined;
+async function waitForNext<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+  let onAbort: () => void = () => {};
   try {
-    return await Promise.race([
-      iterator.next(),
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          const error = new AdapterWatchdogTimeoutError(phase, timeoutMs);
-          reject(error);
-          controller.abort(error);
-        }, timeoutMs);
-        timer.unref?.();
-      })
-    ]);
-  } catch (error) {
-    if (error instanceof AdapterWatchdogTimeoutError) {
-      await Promise.race([
-        Promise.resolve(iterator.return?.()).catch(() => undefined),
-        new Promise<void>(resolve => setTimeout(resolve, cancelGraceMs))
-      ]);
-    }
-    throw error;
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+    return await Promise.race([pending, new Promise<never>((_resolve, reject) => {
+      onAbort = () => reject(signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason ?? "cancelled")));
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    })]);
+  } finally { signal.removeEventListener("abort", onAbort); }
 }
 
-class AdapterWatchdogTimeoutError extends Error {
-  readonly code = "ADAPTER_TIMEOUT";
+async function boundedCleanup(cleanup: Promise<unknown>, graceMs: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([cleanup, new Promise<void>(resolve => { timer = setTimeout(resolve, graceMs); })]);
+  } finally { if (timer) clearTimeout(timer); }
+}
 
-  constructor(readonly timeoutStage: string, readonly timeoutMs: number) {
-    super(`adapter protocol activity exceeded the ${timeoutStage} budget`);
-    this.name = "AdapterWatchdogTimeoutError";
-  }
+async function withCleanupDeadline<T>(pending: Promise<T>, graceMs: number, controller: AbortController): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([pending, new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        const error = new AdapterWatchdogTimeoutError("cleanup", graceMs, "cleanup_timeout");
+        reject(error);
+        controller.abort(error);
+      }, graceMs);
+    })]);
+  } finally { if (timer) clearTimeout(timer); }
 }
 
 function watchdogFailureDetails(error: unknown): Record<string, unknown> {
   return error instanceof AdapterWatchdogTimeoutError
-    ? { timeoutStage: error.timeoutStage, timeoutMs: error.timeoutMs }
+    ? { timeoutStage: error.timeoutStage, timeoutMs: error.timeoutMs, timeoutReason: error.timeoutReason, watchdog: error.evidence }
     : {};
 }
 

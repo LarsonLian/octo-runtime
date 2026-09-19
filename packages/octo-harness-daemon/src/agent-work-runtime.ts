@@ -2254,7 +2254,10 @@ function mapExecutionRuntimeLimits(value: unknown): Record<string, unknown> {
   for (const [source, target] of [
     ["first_frame_timeout_ms", "firstFrameTimeoutMs"],
     ["model_idle_timeout_ms", "modelIdleTimeoutMs"],
+    ["model_idle_warning_ms", "modelIdleWarningMs"],
+    ["model_idle_policy", "modelIdlePolicy"],
     ["tool_timeout_ms", "toolTimeoutMs"],
+    ["tool_wall_timeout_ms", "toolWallTimeoutMs"],
     ["run_timeout_ms", "runTimeoutMs"],
     ["cancel_grace_ms", "cancelGraceMs"],
     ["enforcement", "enforcement"]

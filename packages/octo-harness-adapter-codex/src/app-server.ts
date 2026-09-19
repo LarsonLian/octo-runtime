@@ -120,7 +120,7 @@ export async function* runCodexAppServerTurn({
   context?: AdapterInvocationContext;
 }): AsyncGenerator<CanonicalEvent> {
   const requestTimeoutMs = appServerRequestTimeout(request);
-  let client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, request.signal);
+  let client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, request.signal, context);
   let terminal = false;
   let turnProviderRequestId: string | undefined;
 
@@ -139,7 +139,7 @@ export async function* runCodexAppServerTurn({
       });
       await client.close();
       throwIfAborted(request.signal);
-      client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, request.signal);
+      client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, request.signal, context);
       await initializeClient(client);
     }
     client.notify("initialized");
@@ -218,6 +218,7 @@ export async function* runCodexAppServerTurn({
 
     const turnId = extractTurnId(turnResult);
     if (turnId) client.setActiveTurn(turnId);
+    context?.reportActivity?.({ kind: "turn_started", method: "turn_start" });
 
     // Must come after turn/start: otherwise the Core would persist a provider session that cannot be executed.
     yield {
@@ -634,6 +635,8 @@ class CodexAppServerClient {
   #terminal = false;
   #activeThreadId?: string;
   #activeTurnId?: string;
+  #lastUsage = -1;
+  readonly #seenItems = new Set<string>();
   #abortTimer?: NodeJS.Timeout;
 
   /**
@@ -667,7 +670,8 @@ class CodexAppServerClient {
     spec: CodexAppServerCommand,
     spawnFn: CodexAppServerSpawn,
     requestTimeoutMs: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    readonly context?: AdapterInvocationContext
   ) {
     this.#requestTimeoutMs = requestTimeoutMs;
     this.#signal = signal;
@@ -725,7 +729,9 @@ class CodexAppServerClient {
       // Register pending before writing stdin, so a synchronous reply from a test server/local process cannot arrive first.
       const timer = setTimeout(() => {
         if (!this.#pending.delete(id)) return;
-        reject(new Error(`codex app-server ${method} timed out after ${timeoutMs}ms`));
+        reject(Object.assign(new Error(`codex app-server ${method} timed out after ${timeoutMs}ms`), {
+          code: "RPC_TIMEOUT", timeoutStage: "rpc", timeoutReason: "rpc_timeout", timeoutMs
+        }));
       }, timeoutMs);
       this.#pending.set(id, { method, resolve, reject, timer });
       // onWritten is deliberately passed through to #write instead of running
@@ -810,6 +816,7 @@ class CodexAppServerClient {
     }
     const params = recordValue(message.params) ?? {};
     if (!this.#acceptNotification(params)) return;
+    this.#reportNotificationActivity(method, params);
     for (const event of this.#normalizer.normalize({ method, params })) {
       this.#queue.push(event);
       if (isTerminalEvent(event)) {
@@ -825,6 +832,7 @@ class CodexAppServerClient {
     if (!pending) return;
     this.#pending.delete(id);
     clearTimeout(pending.timer);
+    this.context?.reportActivity?.({ kind: "transport_response", method: "rpc_response" });
     const error = recordValue(message.error);
     if (error) {
       pending.reject(new CodexAppServerRpcError(
@@ -886,7 +894,43 @@ class CodexAppServerClient {
     // During initialize there is no active thread yet, so global notifications are allowed; afterward other threads are filtered out.
     if (!this.#activeThreadId) return true;
     const threadId = stringValue(params.threadId);
-    return !threadId || threadId === this.#activeThreadId;
+    if (threadId && threadId !== this.#activeThreadId) return false;
+    const turnId = notificationTurnId(params);
+    return !this.#activeTurnId || !turnId || turnId === this.#activeTurnId;
+  }
+
+  #reportNotificationActivity(method: string, params: JsonRecord): void {
+    if (this.#terminal || !this.#activeThreadId) return;
+    const turnId = notificationTurnId(params);
+    if (!this.#activeTurnId && method === "turn/started" && turnId) this.setActiveTurn(turnId);
+    if (!this.#activeTurnId) return;
+    // Progress must belong to this turn. Thread-scoped token usage is a
+    // documented exception and is accepted only when its total advances.
+    if (turnId !== this.#activeTurnId && method !== "thread/tokenUsage/updated") return;
+    if (method === "error" && params.willRetry === true) {
+      this.context?.reportActivity?.({ kind: "retry_notice", method: "retry" });
+    } else if (method === "thread/tokenUsage/updated") {
+      if (stringValue(params.threadId) !== this.#activeThreadId) return;
+      const total = recordValue(recordValue(params.tokenUsage)?.total);
+      const tokens = numberValue(total?.totalTokens);
+      if (tokens !== undefined && Number.isSafeInteger(tokens) && tokens > this.#lastUsage) {
+        this.#lastUsage = tokens;
+        this.context?.reportActivity?.({ kind: "turn_progress", method: "usage" });
+      }
+    } else if (["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/reasoning/textDelta", "item/plan/delta"].includes(method) && stringValue(params.delta)) {
+      this.context?.reportActivity?.({ kind: "turn_progress", method: "text_delta" });
+    } else if ((["item/commandExecution/outputDelta", "item/fileChange/outputDelta"].includes(method) || isToolArgsDeltaMethod(method)) && stringValue(params.delta) && itemId(params)) {
+      this.context?.reportActivity?.({ kind: "turn_progress", method: "tool_delta", toolCallId: itemId(params) });
+    } else if (method === "item/started" || method === "item/completed") {
+      const item = recordValue(params.item);
+      const id = stringValue(item?.id);
+      if (!id || !item || !(["agentMessage", "reasoning", "plan"].includes(stringValue(item.type)) || toolDescriptor(item))) return;
+      const key = `${method}:${id}`;
+      if (this.#seenItems.has(key)) return;
+      if (this.#seenItems.size >= 4096) this.#seenItems.delete(this.#seenItems.values().next().value!);
+      this.#seenItems.add(key);
+      this.context?.reportActivity?.({ kind: "turn_progress", method: "item_lifecycle", ...(toolDescriptor(item) ? { toolCallId: id } : {}) });
+    }
   }
 
   #handleProcessError(error: Error): void {
