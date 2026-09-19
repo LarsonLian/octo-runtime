@@ -350,7 +350,9 @@ test("managed Home discovers multiple profile Runtimes without putting credentia
       "--home", home,
       "--agent-work-runtime-name", "shared machine runtime",
       "--agent-work-reconnect-first-ms", "725",
-      "--agent-work-max-concurrent-runs", "5"
+      "--agent-work-max-concurrent-runs", "5",
+      "--agent-work-minimum-free-bytes", "1048576",
+      "--agent-work-disk-check-ms", "15000"
     ], {});
     assert.deepEqual(
       paths.agentWorks.map(runtime => [runtime.profile, runtime.runtimeId]),
@@ -366,6 +368,8 @@ test("managed Home discovers multiple profile Runtimes without putting credentia
     assert.equal(args[args.indexOf("--agent-work-runtime-name") + 1], "shared machine runtime");
     assert.equal(args[args.indexOf("--agent-work-reconnect-first-ms") + 1], "725");
     assert.equal(args[args.indexOf("--agent-work-max-concurrent-runs") + 1], "5");
+    assert.equal(args[args.indexOf("--agent-work-minimum-free-bytes") + 1], "1048576");
+    assert.equal(args[args.indexOf("--agent-work-disk-check-ms") + 1], "15000");
     assert.ok(!args.includes("--agent-work-url"));
     assert.ok(!args.includes("--agent-work-db"));
     assert.ok(!args.includes("--channel-context-db"));

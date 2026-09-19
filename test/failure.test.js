@@ -23,6 +23,7 @@ test("global failure classifier covers runtime admission and adapter roots", () 
   const cases = [
     [{ code: "RUNTIME_DRAINING" }, "runtime", "OH-RUN-2002", "RUNTIME_DRAINING"],
     [{ code: "OUTBOX_HARD_LIMIT" }, "runtime", "OH-RUN-2003", "OUTBOX_HARD_LIMIT"],
+    [{ code: "LOCAL_STORE_FULL" }, "runtime", "OH-RUN-2008", "LOCAL_STORE_FULL"],
     [Object.assign(new Error("spawn failed"), { code: "ENOENT" }), "adapter", "OH-ADP-3002", "ENOENT"],
     [Object.assign(new Error("spawn failed"), { code: "EPERM" }), "adapter", "OH-ADP-3003", "EPERM"],
     [Object.assign(new Error("spawn failed"), { code: "EACCES" }), "adapter", "OH-ADP-3003", "EACCES"],

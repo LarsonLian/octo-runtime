@@ -965,6 +965,134 @@ test("hard outbox watermark rejects new work with a durable command receipt", as
   }
 });
 
+test("low disk preflight stays connected, reports health and rejects new work", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-low-disk-"));
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  const helloReceived = deferred();
+  const healthReceived = deferred();
+  const rejection = deferred();
+  let runtime;
+  let commandSent = false;
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume registration. */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-low-disk", protocol_version: 1 } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    websocket.on("message", data => {
+      const frame = JSON.parse(data.toString("utf8"));
+      if (frame.type === "runtime.hello") {
+        helloReceived.resolve(frame.payload);
+        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000, authoritative_terminal_runs: [] }));
+      } else if (frame.type === "runtime.health") {
+        healthReceived.resolve(frame.payload);
+        if (!commandSent) {
+          commandSent = true;
+          websocket.send(wire("runtime.command", runtimeCommand("low-disk", 1)));
+        }
+      } else if (frame.type === "command.ack" && frame.payload.command_id === "command-low-disk") {
+        rejection.resolve(frame.payload);
+      }
+    });
+  });
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    runtime = new AgentWorkRuntime({
+      profile: "default",
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      runtimeName: "runtime-low-disk",
+      storePath: join(directory, "agent-work.db"),
+      minimumFreeBytes: Number.MAX_SAFE_INTEGER
+    }, {
+      list: async () => [],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() { throw new Error("low disk work must not start"); }
+    });
+    await runtime.start();
+    const hello = await helloReceived.promise;
+    const health = await healthReceived.promise;
+    const ack = await rejection.promise;
+    assert.equal(hello.store_health.state, "low_disk");
+    assert.equal(hello.store_health.accepting_new_runs, false);
+    assert.equal(health.state, "low_disk");
+    assert.equal(health.accepting_new_runs, false);
+    assert.equal(ack.accepted, false);
+    assert.equal(ack.error.code, "LOCAL_STORE_FULL");
+    assert.equal(ack.error.failure.code, "OH-RUN-2008");
+    assert.equal(runtime.status.storeHealth.state, "low_disk");
+    assert.equal(runtime.status.connected, true);
+  } finally {
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("store open failure keeps the control plane online with migration_failed health", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-store-failed-"));
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  const helloReceived = deferred();
+  const healthReceived = deferred();
+  let runtime;
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume registration. */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-store-failed", protocol_version: 1 } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    websocket.on("message", data => {
+      const frame = JSON.parse(data.toString("utf8"));
+      if (frame.type === "runtime.hello") {
+        helloReceived.resolve(frame.payload);
+        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000, authoritative_terminal_runs: [] }));
+      } else if (frame.type === "runtime.health") {
+        healthReceived.resolve(frame.payload);
+      }
+    });
+  });
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    runtime = new AgentWorkRuntime({
+      profile: "default",
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      runtimeName: "runtime-store-failed",
+      storePath: directory
+    }, {
+      list: async () => [],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() { throw new Error("store unavailable work must not start"); }
+    });
+    await runtime.start();
+    const hello = await helloReceived.promise;
+    const health = await healthReceived.promise;
+    assert.equal(hello.store_health.state, "migration_failed");
+    assert.equal(hello.store_health.accepting_new_runs, false);
+    assert.equal(health.state, "migration_failed");
+    assert.equal(runtime.status.connected, true);
+    assert.equal(runtime.status.storeHealth.state, "migration_failed");
+  } finally {
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("missing provider configuration rejects work with a durable catalog failure", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-provider-missing-"));
   const storePath = join(directory, "agent-work.db");

@@ -213,6 +213,18 @@ function resolveAgentWorkOptions(
     ...optionalNumber(args, ["--agent-work-hard-bytes"], env.OCTO_HARNESS_AGENT_WORK_HARD_BYTES, "hardWatermarkBytes"),
     ...optionalNumber(
       args,
+      ["--agent-work-minimum-free-bytes"],
+      env.OCTO_HARNESS_AGENT_WORK_MINIMUM_FREE_BYTES,
+      "minimumFreeBytes"
+    ),
+    ...optionalNumber(
+      args,
+      ["--agent-work-disk-check-ms"],
+      env.OCTO_HARNESS_AGENT_WORK_DISK_CHECK_MS,
+      "diskCheckMs"
+    ),
+    ...optionalNumber(
+      args,
       ["--agent-work-reconnect-first-ms"],
       env.OCTO_HARNESS_AGENT_WORK_RECONNECT_FIRST_MS,
       "reconnectFirstMs"
@@ -324,6 +336,8 @@ function pushAgentWorkTuningArguments(args: string[], runtime: AgentWorkRuntimeO
   pushNumberOption(args, "--agent-work-send-window", runtime.sendWindow);
   pushNumberOption(args, "--agent-work-soft-bytes", runtime.softWatermarkBytes);
   pushNumberOption(args, "--agent-work-hard-bytes", runtime.hardWatermarkBytes);
+  pushNumberOption(args, "--agent-work-minimum-free-bytes", runtime.minimumFreeBytes);
+  pushNumberOption(args, "--agent-work-disk-check-ms", runtime.diskCheckMs);
   pushNumberOption(args, "--agent-work-reconnect-first-ms", runtime.reconnectFirstMs);
   pushNumberOption(args, "--agent-work-reconnect-min-ms", runtime.reconnectMs);
   pushNumberOption(args, "--agent-work-reconnect-max-ms", runtime.reconnectMaxMs);

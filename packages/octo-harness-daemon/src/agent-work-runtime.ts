@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { mkdir, statfs } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
+import { dirname } from "node:path";
 import WebSocket from "ws";
 import type { AdapterHostRpc, HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
 import {
@@ -56,6 +58,8 @@ const DEFAULT_RECOVERY_JITTER_MAX_MS = 2_000;
 const DEFAULT_CREDENTIAL_FAILURE_LIMIT = 3;
 const RECONNECT_STABLE_RESET_MS = 5 * 60_000;
 const DEFAULT_RECONCILE_MS = 5 * 60_000;
+const DEFAULT_MINIMUM_FREE_BYTES = 512 * 1024 * 1024;
+const DEFAULT_DISK_CHECK_MS = 30_000;
 const PUMP_POLL_MS = 50;
 const DEFAULT_NACK_RETRY_MS = 1_000;
 const MAX_NACK_RETRY_MS = 30_000;
@@ -102,6 +106,10 @@ export interface AgentWorkRuntimeOptions {
   credentialFailureLimit?: number;
   /** Local outbox database path; defaults are resolved by the daemon. */
   storePath: string;
+  /** Refuse new Runs below this filesystem free-space threshold. */
+  minimumFreeBytes?: number;
+  /** Interval for detecting disk-space recovery without a daemon restart. */
+  diskCheckMs?: number;
   /** Max number of events allowed in flight (unacked) per send window. */
   sendWindow?: number;
   /** Soft watermark: once reached, stop admitting new Runs and pause provider
@@ -125,6 +133,21 @@ export type RuntimeConnectionState =
   | "online"
   | "backing_off"
   | "action_required";
+
+export type RuntimeStoreHealthState =
+  | "healthy"
+  | "low_disk"
+  | "full"
+  | "corrupt_quarantined"
+  | "migration_failed";
+
+interface RuntimeStoreHealth {
+  state: RuntimeStoreHealthState;
+  acceptingNewRuns: boolean;
+  freeBytes: number;
+  minimumFreeBytes: number;
+  errorCode?: string;
+}
 
 export interface RunAdmission {
   acquire(signal: AbortSignal): Promise<() => void>;
@@ -255,6 +278,7 @@ export class AgentWorkRuntime {
   #connectingSocket?: WebSocket;
   #heartbeat?: NodeJS.Timeout;
   #reconcileTimer?: NodeJS.Timeout;
+  #diskTimer?: NodeJS.Timeout;
   #loop?: Promise<void>;
   #pump?: Promise<void>;
   #senderKick?: () => void;
@@ -278,6 +302,8 @@ export class AgentWorkRuntime {
   #credentialFailures = 0;
   #protocolVersion = MAX_PROTOCOL_VERSION;
   #connectionId?: string;
+  #storeQuarantined = false;
+  #storeHealth: RuntimeStoreHealth;
 
   constructor(
     options: AgentWorkRuntimeOptions,
@@ -292,6 +318,20 @@ export class AgentWorkRuntime {
     this.#host = host;
     this.#observability = observability;
     this.#runAdmission = runAdmission;
+    const minimumFreeBytes = options.minimumFreeBytes ?? DEFAULT_MINIMUM_FREE_BYTES;
+    if (!Number.isSafeInteger(minimumFreeBytes) || minimumFreeBytes < 0) {
+      throw new Error("minimumFreeBytes must be a non-negative safe integer");
+    }
+    const diskCheckMs = options.diskCheckMs ?? DEFAULT_DISK_CHECK_MS;
+    if (!Number.isFinite(diskCheckMs) || diskCheckMs < 100) {
+      throw new Error("diskCheckMs must be finite and at least 100ms");
+    }
+    this.#storeHealth = {
+      state: "healthy",
+      acceptingNewRuns: false,
+      freeBytes: 0,
+      minimumFreeBytes
+    };
     if ((options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS) < 1) {
       throw new Error("maxConcurrentRuns must be positive");
     }
@@ -345,6 +385,13 @@ export class AgentWorkRuntime {
       outboxOldestAgeMs: store?.oldestUnackedAgeMs() ?? null,
       dbBytes: store?.dbBytes() ?? 0,
       walBytes: store?.walBytes() ?? 0,
+      storeHealth: {
+        state: this.#storeHealth.state,
+        acceptingNewRuns: this.#storeHealth.acceptingNewRuns,
+        freeBytes: this.#storeHealth.freeBytes,
+        minimumFreeBytes: this.#storeHealth.minimumFreeBytes,
+        errorCode: this.#storeHealth.errorCode ?? null
+      },
       channelContext: {
         store: this.#options.channelContext?.store ?? "memory",
         projection: this.#options.channelContext?.projection ?? "window",
@@ -379,15 +426,7 @@ export class AgentWorkRuntime {
     for (const adapter of adapters) {
       this.#adapterCapabilities.set(adapter.type, new Set(adapter.capabilities ?? []));
     }
-    this.#store = AgentWorkStore.open(this.#options.storePath);
-    if (this.#store.quarantinedPath) {
-      this.#reportError(
-        "agent_work.store.corruption_quarantined",
-        "corrupt Agent Work database was quarantined and replaced",
-        new Error("SQLITE_CORRUPT"),
-        { quarantined_path: this.#store.quarantinedPath }
-      );
-    }
+    await this.#openStore();
     if (this.#options.channelContext?.store === "sqlite") {
       this.#contextStore = ChannelContextStore.open(
         this.#options.channelContext.storePath,
@@ -395,6 +434,7 @@ export class AgentWorkRuntime {
       );
     }
     this.#startRecoveryProbe(epoch);
+    this.#startDiskProbe(epoch);
     try {
       await this.#registerAndConnect(epoch);
     } catch (error) {
@@ -424,6 +464,7 @@ export class AgentWorkRuntime {
         ]);
         this.#contextStore?.reconcile(Date.now(), protectedRunIds);
       } catch (error) {
+        this.#markStoreUnavailable(error);
         this.#reportError("agent_work.outbox.reconcile_failed", "Agent Work outbox reconcile failed", error);
       }
     }, reconcileMs);
@@ -447,6 +488,8 @@ export class AgentWorkRuntime {
     this.#reconnectAbort = undefined;
     if (this.#recoveryProbe) clearInterval(this.#recoveryProbe);
     this.#recoveryProbe = undefined;
+    if (this.#diskTimer) clearInterval(this.#diskTimer);
+    this.#diskTimer = undefined;
     this.#connectingSocket?.terminate();
     this.#connectingSocket = undefined;
     if (this.#reconcileTimer) clearInterval(this.#reconcileTimer);
@@ -752,14 +795,11 @@ export class AgentWorkRuntime {
       // A persisted non-terminal row does not prove that a provider invocation
       // survived a process restart. Only live in-memory work and terminal rows
       // awaiting durable ACK are still owned by this Runtime connection.
-      active_run_ids: [...new Set([
-        ...this.#activeRuns.keys(),
-        ...this.#acceptingRuns.keys(),
-        ...(this.#store?.pendingTerminalAckRunIds() ?? [])
-      ])],
+      active_run_ids: this.#activeRunIds(),
       runtime_version: RUNTIME_VERSION,
       protocol_version_min: MIN_PROTOCOL_VERSION,
-      protocol_version_max: MAX_PROTOCOL_VERSION
+      protocol_version_max: MAX_PROTOCOL_VERSION,
+      store_health: this.#storeHealthPayload()
     });
   }
 
@@ -857,6 +897,124 @@ export class AgentWorkRuntime {
     this.#recoveryProbe.unref();
   }
 
+  async #openStore(): Promise<void> {
+    try {
+      if (this.#storeHealth.state === "migration_failed") {
+        this.#storeHealth = { ...this.#storeHealth, state: "healthy", acceptingNewRuns: false, errorCode: undefined };
+      }
+      await mkdir(dirname(this.#options.storePath), { recursive: true });
+      await this.#refreshDiskHealth(false);
+      this.#store = AgentWorkStore.open(this.#options.storePath);
+      this.#storeQuarantined = this.#store.quarantinedPath !== undefined;
+      if (this.#storeQuarantined) {
+        const belowMinimum = this.#storeHealth.freeBytes < this.#storeHealth.minimumFreeBytes;
+        this.#storeHealth = {
+          ...this.#storeHealth,
+          state: belowMinimum ? "low_disk" : "corrupt_quarantined",
+          acceptingNewRuns: !belowMinimum,
+          errorCode: belowMinimum ? "LOCAL_STORE_FULL" : "SQLITE_CORRUPT"
+        };
+        this.#reportError(
+          "agent_work.store.corruption_quarantined",
+          "corrupt Agent Work database was quarantined and replaced",
+          new Error("SQLITE_CORRUPT"),
+          { quarantined_path: this.#store.quarantinedPath }
+        );
+      } else if (this.#storeHealth.state !== "low_disk") {
+        this.#storeHealth = { ...this.#storeHealth, state: "healthy", acceptingNewRuns: true, errorCode: undefined };
+      }
+    } catch (error) {
+      this.#store = undefined;
+      this.#storeHealth = {
+        ...this.#storeHealth,
+        state: "migration_failed",
+        acceptingNewRuns: false,
+        errorCode: storageErrorCode(error)
+      };
+      this.#reportError("agent_work.store.open_failed", "Agent Work store failed to open", error, {
+        error_code: this.#storeHealth.errorCode
+      });
+    }
+  }
+
+  #startDiskProbe(epoch: number): void {
+    const intervalMs = this.#options.diskCheckMs ?? DEFAULT_DISK_CHECK_MS;
+    this.#diskTimer = setInterval(() => {
+      void this.#refreshDiskHealth(true).catch(error => {
+        this.#reportError("agent_work.store.disk_probe_failed", "Agent Work disk probe failed", error);
+      });
+    }, intervalMs);
+    this.#diskTimer.unref();
+    if (!this.#isCurrentLifecycle(epoch)) {
+      clearInterval(this.#diskTimer);
+      this.#diskTimer = undefined;
+    }
+  }
+
+  async #refreshDiskHealth(notify: boolean): Promise<void> {
+    if (this.#storeHealth.state === "migration_failed") return;
+    const stats = await statfs(dirname(this.#options.storePath), { bigint: true });
+    const freeBytes = Number(
+      stats.bavail * stats.bsize > BigInt(Number.MAX_SAFE_INTEGER)
+        ? BigInt(Number.MAX_SAFE_INTEGER)
+        : stats.bavail * stats.bsize
+    );
+    const previous = this.#storeHealth;
+    const belowMinimum = freeBytes < previous.minimumFreeBytes;
+    const state: RuntimeStoreHealthState = belowMinimum
+      ? (previous.state === "full" ? "full" : "low_disk")
+      : (this.#storeQuarantined ? "corrupt_quarantined" : "healthy");
+    this.#storeHealth = {
+      state,
+      acceptingNewRuns: !belowMinimum && this.#store !== undefined,
+      freeBytes,
+      minimumFreeBytes: previous.minimumFreeBytes,
+      ...(state === "full" ? { errorCode: "LOCAL_STORE_FULL" } : {}),
+      ...(state === "corrupt_quarantined" ? { errorCode: "SQLITE_CORRUPT" } : {})
+    };
+    if (notify && !sameStoreHealth(previous, this.#storeHealth)) this.#sendRuntimeHealth();
+  }
+
+  #markStoreUnavailable(error: unknown): boolean {
+    if (!isStorageCapacityError(error)) return false;
+    this.#storeHealth = {
+      ...this.#storeHealth,
+      state: "full",
+      acceptingNewRuns: false,
+      errorCode: storageErrorCode(error)
+    };
+    this.#reportError("agent_work.store.full", "Agent Work store cannot persist more data", error, {
+      error_code: this.#storeHealth.errorCode,
+      free_bytes: this.#storeHealth.freeBytes
+    });
+    this.#sendRuntimeHealth();
+    return true;
+  }
+
+  #storeHealthPayload(): Record<string, unknown> {
+    return {
+      state: this.#storeHealth.state,
+      accepting_new_runs: this.#storeHealth.acceptingNewRuns,
+      free_bytes: this.#storeHealth.freeBytes,
+      minimum_free_bytes: this.#storeHealth.minimumFreeBytes,
+      ...(this.#storeHealth.errorCode ? { error_code: this.#storeHealth.errorCode } : {}),
+      active_run_ids: this.#activeRunIds()
+    };
+  }
+
+  #activeRunIds(): string[] {
+    return [...new Set([
+      ...this.#activeRuns.keys(),
+      ...this.#acceptingRuns.keys(),
+      ...(this.#store?.pendingTerminalAckRunIds() ?? [])
+    ])];
+  }
+
+  #sendRuntimeHealth(): void {
+    if (!this.#connected) return;
+    this.#trySend("runtime.health", this.#storeHealthPayload());
+  }
+
   #requestFastRecovery(reason: "network_change" | "system_resume"): void {
     if (this.#stopped || this.#connectionState === "action_required" || this.#serverReconnectProtected) return;
     this.#fastRecoveryReason = reason;
@@ -903,6 +1061,7 @@ export class AgentWorkRuntime {
           const envelope = JSON.parse(rawDataText(data)) as WireEnvelope;
           await this.#receive(envelope, epoch);
         })().catch((error: unknown) => {
+          if (this.#markStoreUnavailable(error)) return;
           socket.terminate();
           settle(error instanceof Error ? error : new Error(String(error)));
         });
@@ -1003,9 +1162,15 @@ export class AgentWorkRuntime {
       this.#reconnectReset.unref();
       if (this.#heartbeat) clearInterval(this.#heartbeat);
       this.#heartbeat = setInterval(() => this.#trySend("runtime.heartbeat", { runtime_version: RUNTIME_VERSION }), everyMs);
+      this.#sendRuntimeHealth();
       // Once the connection is ready, immediately drain the outbox (including
       // events backlogged during the disconnect).
       this.#kickSender();
+      return;
+    }
+    if (envelope.type === "runtime.health_ack") {
+      const payload = asRecord(envelope.payload);
+      await this.#applyAuthoritativeTerminalRuns(payload.authoritative_terminal_runs, "runtime.health_ack");
       return;
     }
     if (envelope.type === "runtime.goaway") {
@@ -1141,16 +1306,16 @@ export class AgentWorkRuntime {
     }
   }
 
-  async #applyAuthoritativeTerminalRuns(value: unknown): Promise<void> {
+  async #applyAuthoritativeTerminalRuns(value: unknown, source = "runtime.welcome"): Promise<void> {
     if (value === undefined) return;
-    if (!Array.isArray(value)) throw new Error("runtime.welcome authoritative_terminal_runs must be an array");
+    if (!Array.isArray(value)) throw new Error(`${source} authoritative_terminal_runs must be an array`);
     for (const item of value) {
       const authority = asRecord(item);
       const runId = stringValue(authority.run_id);
       const status = stringValue(authority.status);
       const terminalEventId = stringValue(authority.terminal_event_id);
       if (!runId || !status || !["completed", "failed", "cancelled"].includes(status)) {
-        throw new Error("runtime.welcome contains an invalid authoritative terminal run");
+        throw new Error(`${source} contains an invalid authoritative terminal run`);
       }
       this.#authoritativeTerminalRuns.add(runId);
       const accepting = this.#acceptingRuns.get(runId);
@@ -1195,8 +1360,6 @@ export class AgentWorkRuntime {
         server_seq: command.server_seq
       }
     });
-    const store = this.#store;
-    if (!store) throw new Error("Agent Work runtime store is not open");
     if (command.type === "run.cancel") {
       const active = this.#activeRuns.get(command.run_id);
       if (active) {
@@ -1207,7 +1370,7 @@ export class AgentWorkRuntime {
       const accepting = this.#acceptingRuns.get(command.run_id);
       if (accepting) {
         const failure = { code: "RUN_CANCELLED_BEFORE_START", message: "run cancelled while waiting for admission" };
-        store.recordCommandReceipt(accepting.commandId, accepting.serverSeq, false, failure);
+        this.#store?.recordCommandReceipt(accepting.commandId, accepting.serverSeq, false, failure);
         this.#contextStore?.markFailed(command.run_id);
         accepting.controller.abort(new AcceptingRunCancelledError());
         this.#ackCommand(command, true);
@@ -1219,6 +1382,16 @@ export class AgentWorkRuntime {
     }
     if (command.type !== "run.start") {
       this.#ackCommand(command, false, { code: "UNSUPPORTED_COMMAND", message: command.type });
+      return;
+    }
+    const store = this.#store;
+    if (!store) {
+      const error = failurePayload({ code: "LOCAL_STORE_UNAVAILABLE" }, {
+        stage: "runtime.command.accept",
+        defaultDomain: "runtime"
+      });
+      this.#ackCommand(command, false, error);
+      this.#sendRuntimeHealth();
       return;
     }
     // Idempotent across restart: a repeated command_id replays the saved receipt
@@ -1253,6 +1426,19 @@ export class AgentWorkRuntime {
       });
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
+      return;
+    }
+    if (!this.#storeHealth.acceptingNewRuns) {
+      const code = this.#storeHealth.state === "low_disk" || this.#storeHealth.state === "full"
+        ? "LOCAL_STORE_FULL"
+        : "LOCAL_STORE_UNAVAILABLE";
+      const error = failurePayload({ code }, {
+        stage: "runtime.command.accept",
+        defaultDomain: "runtime"
+      });
+      store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
+      this.#ackCommand(command, false, error);
+      this.#sendRuntimeHealth();
       return;
     }
     // Soft-watermark backpressure: reject new Runs so the existing outbox drains
@@ -1675,6 +1861,7 @@ export class AgentWorkRuntime {
       });
     } catch (error) {
       if (this.#authoritativeTerminalRuns.has(command.run_id)) return;
+      if (this.#markStoreUnavailable(error)) return;
       this.#log({
         level: "error",
         scope: "adapter.invoke",
@@ -1704,6 +1891,7 @@ export class AgentWorkRuntime {
         store.allocateAndAppend(command.run_id, "run.failed", payload);
         this.#kickSender();
       } catch (appendError) {
+        this.#markStoreUnavailable(appendError);
         this.#reportError("agent_work.outbox.failure_record_failed", "failed to record run failure", appendError, { run_id: command.run_id });
       }
     } finally {
@@ -1732,37 +1920,43 @@ export class AgentWorkRuntime {
     const window = this.#options.sendWindow ?? DEFAULT_SEND_WINDOW;
     while (this.#isCurrentLifecycle(epoch)) {
       const store = this.#store;
-      if (store && this.#connected && this.#socket?.readyState === WebSocket.OPEN) {
-        const now = Date.now();
-        const rows = store.listSendable(window).filter(row => {
-          const retry = this.#nackBackoff.get(row.runId);
-          return (!retry || retry.retryAt <= now) && !this.#inFlight.has(`${row.runId}:${row.seq}`);
-        });
-        for (const batch of coalesceBatches(rows)) {
-          if (this.#socket?.readyState !== WebSocket.OPEN) break;
-          try {
-            this.#send("run.event_batch", {
-              run_id: batch.runId,
-              first_seq: batch.events[0].seq,
-              last_seq: batch.events[batch.events.length - 1].seq,
-              events: batch.events.map(row => ({
-                event_id: row.eventId,
-                run_id: row.runId,
-                seq: row.seq,
-                type: row.eventType,
-                payload: row.payload,
-                lease_id: row.leaseId,
-                fencing_token: row.fencingToken,
-                occurred_at: new Date(row.createdAt).toISOString()
-              }))
-            }, batch.events[batch.events.length - 1].seq);
-          } catch {
-            break;
+      try {
+        if (store && this.#connected && this.#socket?.readyState === WebSocket.OPEN) {
+          const now = Date.now();
+          const rows = store.listSendable(window).filter(row => {
+            const retry = this.#nackBackoff.get(row.runId);
+            return (!retry || retry.retryAt <= now) && !this.#inFlight.has(`${row.runId}:${row.seq}`);
+          });
+          for (const batch of coalesceBatches(rows)) {
+            if (this.#socket?.readyState !== WebSocket.OPEN) break;
+            try {
+              this.#send("run.event_batch", {
+                run_id: batch.runId,
+                first_seq: batch.events[0].seq,
+                last_seq: batch.events[batch.events.length - 1].seq,
+                events: batch.events.map(row => ({
+                  event_id: row.eventId,
+                  run_id: row.runId,
+                  seq: row.seq,
+                  type: row.eventType,
+                  payload: row.payload,
+                  lease_id: row.leaseId,
+                  fencing_token: row.fencingToken,
+                  occurred_at: new Date(row.createdAt).toISOString()
+                }))
+              }, batch.events[batch.events.length - 1].seq);
+            } catch {
+              break;
+            }
+            for (const row of batch.events) {
+              this.#inFlight.add(`${row.runId}:${row.seq}`);
+              store.markSent(row.runId, row.seq);
+            }
           }
-          for (const row of batch.events) {
-            this.#inFlight.add(`${row.runId}:${row.seq}`);
-            store.markSent(row.runId, row.seq);
-          }
+        }
+      } catch (error) {
+        if (!this.#markStoreUnavailable(error)) {
+          this.#reportError("agent_work.outbox.sender_failed", "Agent Work outbox sender failed", error);
         }
       }
       await this.#waitKick(PUMP_POLL_MS);
@@ -2346,6 +2540,24 @@ function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function storageErrorCode(error: unknown): string {
+  const code = (error as NodeJS.ErrnoException)?.code;
+  return typeof code === "string" && code.length > 0 ? code : "LOCAL_STORE_UNAVAILABLE";
+}
+
+function isStorageCapacityError(error: unknown): boolean {
+  const code = storageErrorCode(error);
+  return code === "ENOSPC" || code === "EDQUOT" || code === "SQLITE_FULL"
+    || /database or disk is full|no space left on device|disk quota exceeded/i.test(errorMessage(error));
+}
+
+function sameStoreHealth(left: RuntimeStoreHealth, right: RuntimeStoreHealth): boolean {
+  return left.state === right.state
+    && left.acceptingNewRuns === right.acceptingNewRuns
+    && left.minimumFreeBytes === right.minimumFreeBytes
+    && left.errorCode === right.errorCode;
 }
 
 interface EventBatch {

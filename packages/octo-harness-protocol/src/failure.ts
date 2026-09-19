@@ -26,6 +26,7 @@ interface CatalogEntry {
 export const FAILURE_CATALOG = Object.freeze({
   "OH-RUN-2002": entry("runtime_admission", "运行环境正在维护，本轮任务未启动，请稍后重试。", "error.runtime.draining", true, "retry_later", 30_000),
   "OH-RUN-2003": entry("runtime_capacity", "运行环境当前繁忙，暂时无法接收新任务。", "error.runtime.capacity", true, "retry_later", 30_000),
+  "OH-RUN-2008": entry("runtime_local_store", "运行设备存储异常，本轮任务已安全结束。", "error.runtime.local_store", true, "check_runtime"),
   "OH-ADP-3002": entry("adapter_dependency", "未找到 Agent 命令或必要程序。", "error.adapter.command_not_found", false, "install_dependency"),
   "OH-ADP-3003": entry("adapter_permission", "Agent 进程没有访问所需资源的权限。", "error.adapter.permission_denied", false, "fix_permissions"),
   "OH-ADP-3004": entry("adapter_invocation", "Agent 适配器启动或执行失败。", "error.adapter.invocation_failed", false, "contact_admin"),
@@ -208,6 +209,9 @@ function classify(evidence: FailureEvidence, defaultDomain: FailureDomain): { co
   if (explicit === "RUNTIME_DRAINING") return result("OH-RUN-2002", "RUNTIME_DRAINING");
   if (["OUTBOX_HARD_LIMIT", "OUTBOX_BACKPRESSURE", "RUNTIME_CAPACITY_EXHAUSTED"].includes(explicit ?? "")) {
     return result("OH-RUN-2003", explicit ?? "RUNTIME_CAPACITY_EXHAUSTED");
+  }
+  if (["LOCAL_STORE_FULL", "LOCAL_STORE_UNAVAILABLE"].includes(explicit ?? "")) {
+    return result("OH-RUN-2008", explicit ?? "LOCAL_STORE_UNAVAILABLE");
   }
   if (explicit === "ENOENT" || text.includes("command not found") || text.includes("executable not found")) {
     return result("OH-ADP-3002", explicit === "ENOENT" ? "ENOENT" : "COMMAND_NOT_FOUND");
