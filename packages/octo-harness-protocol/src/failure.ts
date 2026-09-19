@@ -38,6 +38,7 @@ export const FAILURE_CATALOG = Object.freeze({
   "OH-PRV-4005": entry("provider_rate_limit", "模型服务请求过于频繁，请稍后重试。", "error.provider.rate_limited", true, "retry_later", 30_000),
   "OH-PRV-4006": entry("provider_availability", "模型服务暂时不可用。", "error.provider.unavailable", true, "retry_later", 30_000),
   "OH-PRV-4007": entry("provider_client_policy", "当前授权方式不允许此客户端调用。", "error.provider.client_not_allowed", false, "update_credentials"),
+  "OH-PRV-4008": entry("provider_configuration", "此 Agent 绑定的 Provider 配置已被删除或不可用。", "error.provider.configuration_missing", false, "change_model"),
   "OH-PRV-4099": entry("provider_unknown", "模型服务调用失败，暂时无法识别具体原因。", "error.provider.unknown", true, "retry"),
   "OH-SYS-9001": entry("system_unknown", "系统发生未知错误。", "error.system.unknown", true, "retry")
 } satisfies Record<string, CatalogEntry>);
@@ -192,6 +193,10 @@ function classify(evidence: FailureEvidence, defaultDomain: FailureDomain): { co
   }
   if (isProtocolFailure(explicit, text)) return result("OH-ADP-3005", "ADAPTER_PROTOCOL_ERROR");
   if (isAdapterTimeout(explicit, text, defaultDomain)) return result("OH-ADP-3006", "ADAPTER_TIMEOUT");
+
+  if (explicit === "PROVIDER_CONFIG_MISSING" || containsAny(text, ["provider_config_missing", "provider configuration missing"])) {
+    return result("OH-PRV-4008", "PROVIDER_CONFIG_MISSING");
+  }
 
   const status = evidence.httpStatus;
   if (status === 401 || containsAny(text, ["invalid_api_key", "invalid api key", "token_expired", "unauthorized"])) {

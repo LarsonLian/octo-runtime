@@ -1140,6 +1140,7 @@ export class AgentWorkRuntime {
         fencingToken = requiredSafeInteger(command.fencing_token, "run.start fencing_token");
         const executionEnvelope = command.payload as ExecutionEnvelope;
         const adapterTypeForContext = executionAdapterType(executionEnvelope);
+        this.#assertAdapterAvailable(adapterTypeForContext);
         const contextSnapshot = await this.#prepareChannelContext(
           command.run_id,
           executionEnvelope,
@@ -1226,7 +1227,13 @@ export class AgentWorkRuntime {
               requested_generation: error.requestedGeneration,
               latest_generation: error.latestGeneration
             }
-          : { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) };
+          : error instanceof ProviderConfigurationMissingError
+            ? failurePayload({ code: "PROVIDER_CONFIG_MISSING" }, {
+                stage: "provider.configuration",
+                defaultDomain: "provider",
+                source: { component: "octo-harness", adapter: error.adapterType }
+              })
+            : { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) };
         store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
         this.#ackCommand(command, false, failure);
         return;
@@ -1268,6 +1275,15 @@ export class AgentWorkRuntime {
       if (this.#acceptingRuns.get(command.run_id)?.controller === controller) {
         this.#acceptingRuns.delete(command.run_id);
       }
+    }
+  }
+
+  #assertAdapterAvailable(adapterType: string): void {
+    const adapter = this.#adapters.find(candidate => candidate.type === adapterType);
+    // An empty capability list is retained for legacy embedders. Production
+    // daemon startup always reports discovered adapters.
+    if (this.#adapters.length > 0 && (!adapter || adapter.available === false)) {
+      throw new ProviderConfigurationMissingError(adapterType);
     }
   }
 
@@ -2002,6 +2018,13 @@ class AcceptingRunCancelledError extends Error {
   constructor() {
     super("run cancelled before provider invocation");
     this.name = "AcceptingRunCancelledError";
+  }
+}
+
+class ProviderConfigurationMissingError extends Error {
+  constructor(readonly adapterType: string) {
+    super(`Provider configuration is unavailable for adapter ${adapterType}`);
+    this.name = "ProviderConfigurationMissingError";
   }
 }
 

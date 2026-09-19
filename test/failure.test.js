@@ -48,6 +48,7 @@ test("global failure classifier distinguishes provider authentication, quota, ra
     [{ status: 503 }, "OH-PRV-4006"],
     [{ message: "upstream timed out" }, "OH-PRV-4006"],
     [{ code: "official_clients_only" }, "OH-PRV-4007"],
+    [{ code: "PROVIDER_CONFIG_MISSING" }, "OH-PRV-4008"],
     [{ message: "new provider failure" }, "OH-PRV-4099"]
   ];
   for (const [input, code] of cases) assert.equal(classify(input).code, code);

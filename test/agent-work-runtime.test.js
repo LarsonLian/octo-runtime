@@ -761,6 +761,69 @@ test("hard outbox watermark rejects new work with a durable command receipt", as
   }
 });
 
+test("missing provider configuration rejects work with a durable catalog failure", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-provider-missing-"));
+  const storePath = join(directory, "agent-work.db");
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  const rejection = deferred();
+  let runtime;
+  let invocations = 0;
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume registration. */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-provider-missing", protocol_version: 1 } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    websocket.on("message", data => {
+      const frame = JSON.parse(data.toString("utf8"));
+      if (frame.type === "runtime.hello") {
+        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("runtime.command", runtimeCommand("provider-missing", 1)));
+      } else if (frame.type === "command.ack" && frame.payload.command_id === "command-provider-missing") {
+        rejection.resolve(frame.payload);
+      }
+    });
+  });
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    runtime = new AgentWorkRuntime({
+      profile: "default",
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      runtimeName: "runtime-provider-missing",
+      storePath
+    }, {
+      list: async () => [{ type: "other", capabilities: [], available: true }],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() { invocations += 1; yield { type: "run.finished", payload: {} }; }
+    });
+    await runtime.start();
+    const ack = await rejection.promise;
+    assert.equal(ack.accepted, false);
+    assert.equal(ack.error.code, "PROVIDER_CONFIG_MISSING");
+    assert.equal(ack.error.failure.code, "OH-PRV-4008");
+    assert.equal(ack.error.failure.retryable, false);
+    assert.equal(ack.error.failure.action.type, "change_model");
+    assert.equal(invocations, 0);
+    await runtime.close();
+    runtime = undefined;
+    const store = AgentWorkStore.open(storePath);
+    assert.equal(store.getCommandReceipt("command-provider-missing")?.error?.failure?.code, "OH-PRV-4008");
+    store.close();
+  } finally {
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("event nack releases the send window and retries from the requested sequence", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-event-nack-"));
   const httpServer = createServer();
