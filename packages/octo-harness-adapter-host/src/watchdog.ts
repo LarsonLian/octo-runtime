@@ -23,7 +23,7 @@ export function normalizeRuntimeLimits(value: RuntimeLimits | undefined): Effect
 export type WatchdogPhase = "starting" | "model_active" | "tool_active" | "cancelling" | "terminal";
 export type WatchdogReason = "first_frame" | "model_silence" | "tool_idle" | "tool_deadline" | "run_deadline" | "cleanup_timeout";
 export interface WatchdogDiagnostic {
-  event: "started" | "model_silence" | "progress_resumed" | "timeout" | "finished";
+  event: "started" | "activity" | "model_silence" | "progress_resumed" | "timeout" | "finished";
   data: Record<string, unknown>;
 }
 export interface WatchdogClock {
@@ -54,6 +54,9 @@ export class InvocationWatchdog {
   #lastMethod = "none";
   #retryCount = 0;
   #warned = false;
+  #activityLoggedAt = -Infinity;
+  #finished = false;
+  #terminalSnapshot?: Record<string, unknown>;
   #cancelTimer?: () => void;
   #unsubscribe: () => void;
 
@@ -84,6 +87,10 @@ export class InvocationWatchdog {
     } else if (activity.kind === "turn_progress") {
       this.#progress(activity.toolCallId);
     } else if (activity.kind === "retry_notice") this.#retryCount++;
+    if (this.time.now() - this.#activityLoggedAt >= 1000) {
+      this.#activityLoggedAt = this.time.now();
+      this.#emit("activity");
+    }
     this.#arm();
   }
 
@@ -92,7 +99,14 @@ export class InvocationWatchdog {
     const now = this.time.now();
     this.#maxCanonicalGapMs = Math.max(this.#maxCanonicalGapMs, now - this.#canonicalAt);
     this.#canonicalAt = now;
-    if (isTerminal(event)) { this.finish(); return; }
+    if (isTerminal(event)) {
+      this.#terminalSnapshot = this.snapshot();
+      this.#phase = "terminal";
+      this.dispose();
+      return;
+    }
+    // Session establishment and usage bookkeeping are not the first turn frame.
+    if (this.#phase === "starting" && (event.type === "session.update" || event.type === "usage.update")) return;
     const rawID = event.payload.toolCallId ?? event.payload.id ?? event.payload.itemId;
     const id = typeof rawID === "string" ? rawID : "tool";
     if (event.type === "tool_call.create" && !this.#tools.has(id)) {
@@ -132,9 +146,10 @@ export class InvocationWatchdog {
     };
   }
 
-  finish(): void {
-    if (this.#phase === "terminal") return;
-    this.#emit("finished");
+  finish(outcome = "stopped"): void {
+    if (this.#finished) return;
+    this.#finished = true;
+    this.#emit("finished", { ...this.#terminalSnapshot, outcome });
     this.#phase = "terminal";
     this.dispose();
   }
@@ -193,9 +208,14 @@ export class InvocationWatchdog {
 }
 
 export class AdapterWatchdogTimeoutError extends Error {
-  readonly code = "ADAPTER_TIMEOUT";
+  readonly code: string;
   constructor(readonly timeoutStage: string, readonly timeoutMs: number, readonly timeoutReason: WatchdogReason, readonly evidence: Record<string, unknown> = {}) {
     super(`adapter watchdog exceeded ${timeoutReason} budget`);
     this.name = "AdapterWatchdogTimeoutError";
+    this.code = {
+      first_frame: "ADAPTER_FIRST_FRAME_TIMEOUT", model_silence: "ADAPTER_MODEL_IDLE_TIMEOUT",
+      tool_idle: "ADAPTER_TOOL_IDLE_TIMEOUT", tool_deadline: "ADAPTER_TOOL_DEADLINE",
+      run_deadline: "ADAPTER_RUN_DEADLINE", cleanup_timeout: "ADAPTER_CLEANUP_TIMEOUT"
+    }[timeoutReason];
   }
 }

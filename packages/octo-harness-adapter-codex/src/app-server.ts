@@ -296,7 +296,10 @@ export async function* runCodexAppServerTurn({
           payload: {
             message: client.errorMessage(error),
             adapterType: "codex",
-            ...(code ? { code } : {})
+            ...(code ? { code } : {}),
+            ...(code === "RPC_TIMEOUT" ? {
+              timeoutStage: "rpc", timeoutReason: "rpc_timeout", timeoutMs: requestTimeoutMs
+            } : {})
           }
         };
       }

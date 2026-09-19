@@ -208,7 +208,9 @@ export async function startDaemonServer({
     await observability.close();
     throw error;
   }
+  let watchdogMetrics: { capturedAt: number; series: unknown } | undefined;
   const spawnHost = async (signal?: AbortSignal): Promise<AdapterHostProcess> => {
+    watchdogMetrics = undefined;
     const spawned = await spawnAdapterHost({
       entrypoint: hostEntrypoint,
       manifest: manifestPath,
@@ -216,7 +218,11 @@ export async function startDaemonServer({
       ...(signal ? { signal } : {}),
       ...(adapterHostReadyTimeoutMs !== undefined ? { readyTimeoutMs: adapterHostReadyTimeoutMs } : {}),
       trace: (direction, frame) => observability.traceRpc(direction, frame),
-      observe: frame => publishAdapterObservation(events, frame)
+      observe: frame => {
+        if (isRecord(frame) && frame.source === "control" && frame.type === "watchdog.metrics") {
+          watchdogMetrics = { capturedAt: Date.now(), series: frame.payload };
+        } else publishAdapterObservation(events, frame);
+      }
     });
     await invocationManifest.setAdapterHost(spawned.child.pid, hostEntrypoint);
     return spawned;
@@ -436,6 +442,7 @@ export async function startDaemonServer({
     pid: process.pid,
     adapterHost: runtime.adapterHost,
     adapters: runtime.adapters,
+    watchdogMetrics,
     agentWork: agentWorkSupervisor?.status ?? { enabled: false, runtimes: [] },
     lifecycle: daemon.status
   });
@@ -976,8 +983,8 @@ function publishAdapterObservation(events: LiveEventBus, value: unknown): void {
     events.publish({ source: "control", type: value.type, payload: value.payload ?? {} });
     return;
   }
-  if (value.source === "provider-native" && isRecord(value.record)) {
-    events.publishRecord(value.record as RecordEnvelope, "provider-native");
+  if ((value.source === "provider-native" || value.source === "provider-activity") && isRecord(value.record)) {
+    events.publishRecord(value.record as RecordEnvelope, value.source);
     return;
   }
   if (value.source !== "adapter-canonical" || typeof value.type !== "string") return;

@@ -13,6 +13,7 @@ export const LIVE_EVENT_CONTROL_RESERVE_BYTES = 64 * 1024;
 export const LIVE_EVENT_SOURCES = [
   "daemon",
   "provider-native",
+  "provider-activity",
   "adapter-canonical",
   "host-canonical",
   "adapter-rpc",
@@ -447,6 +448,7 @@ function sourceForRecord(record: RecordEnvelope): LiveEventSource {
   if (record.scope === "live-event.bus") return "control";
   if (record.scope === "adapter-host.rpc") return "adapter-rpc";
   if (record.scope === "provider.io") return "provider-native";
+  if (record.scope === "adapter.watchdog") return "provider-activity";
   if (record.scope === "transport.wss" || record.scope === "agent-work.delivery") return "worker";
   if (record.scope.startsWith("agent-work.") || record.scope.startsWith("adapter.")) return "runtime";
   return "daemon";
@@ -456,6 +458,7 @@ function defaultStage(source: LiveEventSource, type = ""): string {
   const stages: Record<LiveEventSource, string> = {
     daemon: "daemon.bootstrap",
     "provider-native": "adapter.native",
+    "provider-activity": "adapter.activity",
     "adapter-canonical": "adapter.canonical",
     "host-canonical": "host.canonical",
     "adapter-rpc": "wire.daemon_host",
@@ -484,7 +487,7 @@ function normalizeDirection(
   if (value === "outbound" || value === "provider_to_agent" || value === "host_to_daemon") return "outbound";
   if (value === "send") return source === "adapter-rpc" ? "inbound" : "outbound";
   if (value === "receive") return source === "adapter-rpc" ? "outbound" : "inbound";
-  if (source === "adapter-canonical" || source === "host-canonical") return "outbound";
+  if (source === "adapter-canonical" || source === "host-canonical" || source === "provider-activity") return "outbound";
   if (source === "provider-native") return type.startsWith("provider.output") ? "outbound" : "inbound";
   if (source === "worker") return type === "command.received" ? "inbound" : "outbound";
   if (stage === "runtime.outbox") return "outbound";

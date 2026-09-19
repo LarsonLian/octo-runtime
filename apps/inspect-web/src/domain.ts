@@ -1,6 +1,7 @@
 export const EVENT_SOURCES = [
   "daemon",
   "provider-native",
+  "provider-activity",
   "adapter-canonical",
   "host-canonical",
   "adapter-rpc",
@@ -12,6 +13,7 @@ export const EVENT_SOURCES = [
 export const SOURCE_LABELS: Record<string, string> = {
   daemon: "守护进程",
   "provider-native": "Provider 原生",
+  "provider-activity": "Provider 活性",
   "adapter-canonical": "Adapter 规范化",
   "host-canonical": "Host 校验后",
   "adapter-rpc": "适配器 RPC",

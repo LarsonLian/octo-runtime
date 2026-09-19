@@ -34,6 +34,13 @@ export const FAILURE_CATALOG = Object.freeze({
   "OH-ADP-3004": entry("adapter_invocation", "Agent 适配器启动或执行失败。", "error.adapter.invocation_failed", false, "contact_admin"),
   "OH-ADP-3005": entry("adapter_protocol", "Agent 返回了无法识别的协议数据。", "error.adapter.protocol_invalid", false, "contact_admin"),
   "OH-ADP-3006": entry("adapter_timeout", "Agent 响应超时。", "error.adapter.timeout", true, "retry"),
+  "OH-ADP-3007": entry("adapter_start_timeout", "Agent 启动等待超时。", "error.adapter.first_frame_timeout", true, "retry"),
+  "OH-ADP-3008": entry("adapter_model_idle", "Agent 长时间没有新的执行进展，任务已停止。", "error.adapter.model_idle_timeout", true, "retry"),
+  "OH-ADP-3009": entry("adapter_tool_idle", "工具长时间没有新的执行进展，任务已停止。", "error.adapter.tool_idle_timeout", true, "retry"),
+  "OH-ADP-3010": entry("adapter_tool_deadline", "工具执行已达到单次运行时限。", "error.adapter.tool_deadline", true, "retry"),
+  "OH-ADP-3011": entry("adapter_run_deadline", "任务已达到总运行时限。", "error.adapter.run_deadline", true, "retry"),
+  "OH-ADP-3012": entry("adapter_cleanup_timeout", "Agent 结束清理超时，请检查运行环境。", "error.adapter.cleanup_timeout", false, "check_runtime"),
+  "OH-ADP-3013": entry("adapter_rpc_timeout", "Agent 协议请求响应超时。", "error.adapter.rpc_timeout", true, "check_runtime"),
   "OH-PRV-4001": entry("provider_authentication", "模型服务凭据无效或已失效。", "error.provider.credentials_invalid", false, "update_credentials"),
   "OH-PRV-4002": entry("provider_authorization", "当前账号无权使用所选模型或组织。", "error.provider.permission_denied", false, "contact_admin"),
   "OH-PRV-4003": entry("provider_model", "所选模型不存在或当前不可用。", "error.provider.model_not_found", false, "change_model"),
@@ -60,7 +67,7 @@ export function classifyFailure(input: unknown, context: FailureClassificationCo
     category: catalog.category,
     stage: context.stage,
     messageKey: catalog.messageKey,
-    params: {},
+    params: timeoutConfiguration(classification.code, context.source?.adapter),
     retryable: catalog.retryable,
     ...(catalog.retryAfterMs === undefined ? {} : { retryAfterMs: catalog.retryAfterMs }),
     action: catalog.action,
@@ -88,9 +95,13 @@ export function failurePayload(
   const classified = existing
     ? runDiagnosticId === undefined ? existing : { ...existing, diagnosticId: runDiagnosticId }
     : classifyFailure(input, context);
-  const timeoutStage = safeTimeoutStage(record.timeoutStage);
-  const timeoutMs = safeTimeoutMs(record.timeoutMs);
-  const timeoutReason = typeof record.timeoutReason === "string" && ["first_frame", "model_silence", "tool_idle", "tool_deadline", "run_deadline", "cleanup_timeout", "rpc_timeout"].includes(record.timeoutReason) ? record.timeoutReason : undefined;
+  // Adapters may already have normalized a failure; revalidate only the safe
+  // timeout fields so Host normalization does not erase their evidence.
+  const upstreamParams = asRecord(asRecord(record.failure)?.params) ?? {};
+  const timeoutStage = safeTimeoutStage(record.timeoutStage ?? upstreamParams.timeoutStage);
+  const timeoutMs = safeTimeoutMs(record.timeoutMs ?? upstreamParams.timeoutMs);
+  const reason = record.timeoutReason ?? upstreamParams.timeoutReason;
+  const timeoutReason = typeof reason === "string" && ["first_frame", "model_silence", "tool_idle", "tool_deadline", "run_deadline", "cleanup_timeout", "rpc_timeout"].includes(reason) ? reason : undefined;
   const failure = timeoutStage || timeoutMs !== undefined
     ? {
         ...classified,
@@ -98,7 +109,8 @@ export function failurePayload(
           ...classified.params,
           ...(timeoutStage ? { timeoutStage } : {}),
           ...(timeoutMs === undefined ? {} : { timeoutMs }),
-          ...(timeoutReason ? { timeoutReason } : {})
+          ...(timeoutReason ? { timeoutReason } : {}),
+          ...safeWatchdogEvidence(record.watchdog ?? upstreamParams)
         }
       }
     : classified;
@@ -127,6 +139,28 @@ function safeTimeoutStage(value: unknown): string | undefined {
   return typeof value === "string" && ["starting", "model_active", "tool_active", "run_deadline", "cleanup", "rpc"].includes(value)
     ? value
     : undefined;
+}
+
+function timeoutConfiguration(code: string, adapter?: string): Record<string, string> {
+  const fields: Record<string, string> = {
+    "OH-ADP-3007": "first_frame_timeout_ms", "OH-ADP-3008": "model_idle_timeout_ms",
+    "OH-ADP-3009": "tool_timeout_ms", "OH-ADP-3010": "tool_wall_timeout_ms",
+    "OH-ADP-3011": "run_timeout_ms", "OH-ADP-3012": "cancel_grace_ms"
+  };
+  if (fields[code]) return { configParameter: `execution_profile.runtime_limits.${fields[code]}` };
+  if (code === "OH-ADP-3013" && adapter === "codex") return { configParameter: "execution_profile.agent_config.providerOptions.appServerRequestTimeoutMs" };
+  return {};
+}
+
+function safeWatchdogEvidence(value: unknown): Record<string, unknown> {
+  const input = asRecord(value) ?? {};
+  const result: Record<string, unknown> = {};
+  for (const key of ["elapsedMs", "phaseAgeMs", "lastCanonicalAgeMs", "lastProgressAgeMs", "lastTransportAgeMs", "openToolCount", "retryCount"]) {
+    const v = input[key];
+    if (typeof v === "number" && Number.isSafeInteger(v) && v >= 0 && v <= 86_400_000) result[key] = v;
+  }
+  if (input.activitySupport === "native_progress" || input.activitySupport === "canonical_only") result.activitySupport = input.activitySupport;
+  return result;
 }
 
 function safeTimeoutMs(value: unknown): number | undefined {
@@ -224,6 +258,12 @@ function failureEvidence(input: unknown): FailureEvidence {
 function classify(evidence: FailureEvidence, defaultDomain: FailureDomain): { code: PublicFailureCode; reasonCode: string } {
   const text = evidence.fingerprint;
   const explicit = evidence.explicitCode?.toUpperCase();
+  const timeouts: Record<string, PublicFailureCode> = {
+    ADAPTER_FIRST_FRAME_TIMEOUT: "OH-ADP-3007", ADAPTER_MODEL_IDLE_TIMEOUT: "OH-ADP-3008",
+    ADAPTER_TOOL_IDLE_TIMEOUT: "OH-ADP-3009", ADAPTER_TOOL_DEADLINE: "OH-ADP-3010",
+    ADAPTER_RUN_DEADLINE: "OH-ADP-3011", ADAPTER_CLEANUP_TIMEOUT: "OH-ADP-3012", RPC_TIMEOUT: "OH-ADP-3013"
+  };
+  if (explicit && timeouts[explicit]) return result(timeouts[explicit], explicit);
   if (explicit === "RUNTIME_DRAINING") return result("OH-RUN-2002", "RUNTIME_DRAINING");
   if (["OUTBOX_HARD_LIMIT", "OUTBOX_BACKPRESSURE", "RUNTIME_CAPACITY_EXHAUSTED"].includes(explicit ?? "")) {
     return result("OH-RUN-2003", explicit ?? "RUNTIME_CAPACITY_EXHAUSTED");

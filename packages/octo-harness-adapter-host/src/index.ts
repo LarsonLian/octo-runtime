@@ -75,6 +75,7 @@ interface MessageState {
 export class AdapterHost {
   readonly #adapters = new Map<string, HostedAdapter>();
   readonly #active = new Map<string, AbortController>();
+  readonly #acceptedTerminals = new Set<string>();
   readonly #observe: NonNullable<AdapterHostOptions["observe"]>;
   readonly #canonicalSink?: AdapterHostOptions["canonicalSink"];
   readonly #diagnosticSink?: AdapterHostOptions["diagnosticSink"];
@@ -144,6 +145,7 @@ export class AdapterHost {
     const controller = new AbortController();
     this.#active.set(request.invocationId, controller);
     let terminal: CanonicalEvent | undefined;
+    let outcome = "stopped";
     const identity: ObservationIdentity = {
       ...(typeof request.context?.profile === "string" ? { profile: request.context.profile } : {}),
       ...(typeof request.context?.runtimeId === "string" ? { runtimeId: request.context.runtimeId } : {}),
@@ -157,7 +159,9 @@ export class AdapterHost {
       }));
     let iterator: AsyncIterator<CanonicalEvent> | undefined;
     let cleanup: Promise<unknown> | undefined;
+    let cleanupWait: Promise<void> | undefined;
     const closeIterator = (): Promise<unknown> => cleanup ??= Promise.resolve().then(() => iterator?.return?.()).catch(() => undefined);
+    const waitCleanup = (): Promise<void> => cleanupWait ??= boundedCleanup(closeIterator(), watchdog.limits.cancelGraceMs);
     // The timer can fire while a consumer is paused at yield.
     const onAbort = () => { void closeIterator(); };
     controller.signal.addEventListener("abort", onAbort, { once: true });
@@ -249,7 +253,11 @@ export class AdapterHost {
           adapterType
         }, event);
         if (terminal) throw new Error(`${adapterType} emitted after terminal event`);
-        if (isTerminal(event)) terminal = event;
+        if (isTerminal(event)) {
+          terminal = event;
+          // A later user cancellation cannot replace an accepted provider terminal.
+          this.#acceptedTerminals.add(request.invocationId);
+        }
         else {
           if (event.type === "model_step.finished") {
             for (const closed of closeMessages(event.payload.status, event.payload.stepId)) yield closed;
@@ -261,14 +269,19 @@ export class AdapterHost {
       }
       terminal ??= { type: "run.stopped", payload: { reason: "adapter_stream_ended" } };
       const messageStatus = terminal.type === "run.finished" ? "completed" : terminal.type === "run.error" ? "failed" : "stopped";
+      outcome = messageStatus;
       for (const event of closeMessages(messageStatus)) yield event;
       yield terminal;
     } catch (caught) {
       const error = controller.signal.reason instanceof AdapterWatchdogTimeoutError ? controller.signal.reason : caught;
       const userCancelled = controller.signal.aborted && !(controller.signal.reason instanceof AdapterWatchdogTimeoutError);
+      outcome = userCancelled ? "stopped" : "failed";
+      if (error instanceof AdapterWatchdogTimeoutError && error.timeoutReason === "cleanup_timeout") {
+        try { this.#diagnosticSink?.(identity, { event: "timeout", data: { ...watchdog.snapshot(), timeoutReason: error.timeoutReason, timeoutMs: error.timeoutMs } }); } catch { /* best effort */ }
+      }
       watchdog.dispose();
       if (!controller.signal.aborted) controller.abort(error);
-      await boundedCleanup(closeIterator(), watchdog.limits.cancelGraceMs);
+      await waitCleanup();
       for (const event of closeMessages(userCancelled ? "stopped" : "failed")) yield event;
       if (userCancelled) {
         yield { type: "run.stopped", payload: { reason: String(controller.signal.reason ?? "cancelled") } };
@@ -292,11 +305,12 @@ export class AdapterHost {
         };
       }
     } finally {
-      watchdog.finish();
+      watchdog.finish(outcome);
       if (!terminal && !controller.signal.aborted) controller.abort("consumer closed");
-      await boundedCleanup(closeIterator(), watchdog.limits.cancelGraceMs);
+      await waitCleanup();
       controller.signal.removeEventListener("abort", onAbort);
       this.#active.delete(request.invocationId);
+      this.#acceptedTerminals.delete(request.invocationId);
     }
   }
 
@@ -311,7 +325,7 @@ export class AdapterHost {
   /** Abort an active invocation; returns false when that invocation no longer exists or has already ended. */
   cancel(invocationId: string, reason = "cancelled"): boolean {
     const controller = this.#active.get(invocationId);
-    if (!controller) return false;
+    if (!controller || this.#acceptedTerminals.has(invocationId)) return false;
     controller.abort(reason);
     return true;
   }

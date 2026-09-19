@@ -31,6 +31,43 @@ function fixture(limits = {}, native = true) {
 const started = { kind: "turn_started", method: "turn_start" };
 const progress = { kind: "turn_progress", method: "text_delta" };
 
+test("late user cancellation cannot replace a terminal during cleanup", { timeout: 2000 }, async () => {
+  const host = new AdapterHost();
+  let release, markCleaning;
+  const cleaning = new Promise(resolve => { markCleaning = resolve; });
+  const cleanup = new Promise(resolve => { release = resolve; });
+  host.register({ metadata: { type: "terminal-race", capabilities: [] }, async *invoke() {
+    yield { type: "run.finished", payload: {} };
+    markCleaning(); await cleanup;
+  } });
+  const stream = host.invoke("terminal-race", { ...request, invocationId: "terminal-race" });
+  const pending = stream.next();
+  await Promise.race([cleaning, pending.then(() => assert.fail("terminal delivered before cleanup"))]);
+  assert.equal(host.cancel("terminal-race"), false);
+  release();
+  assert.equal((await pending).value.type, "run.finished");
+  await stream.next();
+});
+
+test("session and usage records cannot escape startup deadline", () => {
+  const f = fixture({ firstFrameTimeoutMs: 100 });
+  f.tick(50); f.watchdog.canonical({ type: "session.update", payload: {} });
+  f.watchdog.canonical({ type: "usage.update", payload: {} });
+  f.tick(50);
+  assert.equal(f.controller.signal.reason.timeoutReason, "first_frame");
+});
+
+test("terminal freezes timers but completion metrics wait for cleanup outcome", () => {
+  const f = fixture(); f.watchdog.activity(started); f.tick(10);
+  f.watchdog.canonical({ type: "run.finished", payload: {} });
+  assert.equal(f.records.filter(x => x.event === "finished").length, 0);
+  f.tick(10000); f.watchdog.finish("failed"); f.watchdog.finish("completed");
+  const records = f.records.filter(x => x.event === "finished");
+  assert.equal(records.length, 1);
+  assert.equal(records[0].data.outcome, "failed");
+  assert.equal(records[0].data.elapsedMs, 10);
+});
+
 test("run default is one hour and a revision may extend it to two hours", () => {
   for (const [limits, deadline] of [[{},3_600_000],[{runTimeoutMs:7_200_000},7_200_000]]) {
     const f=fixture({...limits,modelIdlePolicy:"observe"}); f.watchdog.activity(started);

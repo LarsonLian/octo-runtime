@@ -199,11 +199,15 @@ test("host watchdog fails a provider that never emits its first protocol frame",
     }
   })) events.push(event);
   assert.equal(events.at(-1).type, "run.error");
-  assert.equal(events.at(-1).payload.code, "ADAPTER_TIMEOUT");
-  assert.equal(events.at(-1).payload.failure.code, "OH-ADP-3006");
+  assert.equal(events.at(-1).payload.code, "ADAPTER_FIRST_FRAME_TIMEOUT");
+  assert.equal(events.at(-1).payload.failure.code, "OH-ADP-3007");
   assert.equal(events.at(-1).payload.failure.stage, "adapter.invoke");
   assert.equal(events.at(-1).payload.failure.diagnosticId, "diag_35c4ffc5db9940c9be7ce3a894819ae3");
-  assert.deepEqual(events.at(-1).payload.failure.params, { timeoutStage: "starting", timeoutMs: 100, timeoutReason: "first_frame" });
+  const params = events.at(-1).payload.failure.params;
+  assert.equal(params.timeoutStage, "starting");
+  assert.equal(params.timeoutMs, 100);
+  assert.equal(params.timeoutReason, "first_frame");
+  assert.equal(params.configParameter, "execution_profile.runtime_limits.first_frame_timeout_ms");
 });
 
 test("host watchdog uses the tool budget while a canonical tool call is open", async () => {
@@ -231,8 +235,12 @@ test("host watchdog uses the tool budget while a canonical tool call is open", a
   })) events.push(event);
   assert.deepEqual(events.slice(0, 2).map(event => event.type), ["model_step.started", "tool_call.create"]);
   assert.equal(events.at(-1).type, "run.error");
-  assert.equal(events.at(-1).payload.failure.reasonCode, "ADAPTER_TIMEOUT");
-  assert.deepEqual(events.at(-1).payload.failure.params, { timeoutStage: "tool_active", timeoutMs: 100, timeoutReason: "tool_idle" });
+  assert.equal(events.at(-1).payload.failure.reasonCode, "ADAPTER_TOOL_IDLE_TIMEOUT");
+  assert.equal(events.at(-1).payload.failure.code, "OH-ADP-3009");
+  const params = events.at(-1).payload.failure.params;
+  assert.equal(params.timeoutStage, "tool_active");
+  assert.equal(params.timeoutMs, 100);
+  assert.equal(params.timeoutReason, "tool_idle");
 });
 
 test("host shutdown aborts every active provider invocation before returning", async () => {
@@ -261,13 +269,21 @@ test("host shutdown aborts every active provider invocation before returning", a
 
 test("separate adapter-host process loads manifest and streams events", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
-  const processHost = await spawnAdapterHost({ entrypoint: `${root}/apps/adapter-host/dist/index.js`, manifest: `${root}/test/fixtures/adapters.json` });
+  const observations = [];
+  const processHost = await spawnAdapterHost({ entrypoint: `${root}/apps/adapter-host/dist/index.js`, manifest: `${root}/test/fixtures/adapters.json`, observe: frame => observations.push(frame) });
   try {
     assert.equal(processHost.child.spawnargs[0], "octo-harness-adapter-host");
     assert.equal(processHost.adapters.some(item => item.type === "test"), true);
     assert.equal((await processHost.client.list()).some(item => item.type === "test"), true);
     const events = []; for await (const event of processHost.client.invoke("test", { ...request, invocationId: "rpc-inv" })) events.push(event);
     assert.equal(events.at(-1).type, "run.finished");
+    // FD3 is independent of RPC stdout; allow its terminal snapshot to arrive.
+    for (let i = 0; i < 50 && !observations.some(x => x.type === "watchdog.metrics"); i++) await new Promise(resolve => setTimeout(resolve, 10));
+    const started = observations.find(x => x.source === "provider-activity" && x.record?.event === "watchdog.started");
+    assert.equal(started.record.data.effectiveLimits.runTimeoutMs, 3600000);
+    assert.equal(started.record.data.effectiveLimits.modelIdleTimeoutMs, 300000);
+    const snapshot = observations.find(x => x.type === "watchdog.metrics");
+    assert.equal(snapshot.payload.find(x => x.name === "outcomes_total").labels.outcome, "completed");
   } finally { await processHost.close(); }
 });
 
