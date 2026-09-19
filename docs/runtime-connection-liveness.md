@@ -20,6 +20,6 @@ unacknowledged outbox events retain the existing replay behavior.
 Worker database stale detection is independent of this local watchdog. With a
 120-second persistence interval and 300-second DB stale TTL, healthy replicas
 can continue to use persisted readiness between heartbeat writes. If reconnect
-never succeeds after a Worker pod failure, DB stale cleanup is delayed until
+never succeeds after a Worker service-instance failure, DB stale cleanup is delayed until
 the stale TTL and reconciliation schedule permit it. All Worker replicas must
 use consistent presence settings.
