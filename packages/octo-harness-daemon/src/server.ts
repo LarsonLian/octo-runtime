@@ -23,6 +23,7 @@ import {
 } from "@mininglamp-oss/octo-harness-adapter-host";
 import type { AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
 import { AgentWorkSupervisor } from "./agent-work-supervisor.js";
+import { createDiagnosticBundle } from "./diagnostic-bundle.js";
 import { InspectServer } from "./inspect-server.js";
 import { LIVE_EVENT_SOURCES, LiveEventBus, type LiveEventSource } from "./live-event-bus.js";
 import { InvocationManifest } from "./invocation-manifest.js";
@@ -429,23 +430,32 @@ export async function startDaemonServer({
   const agentWorkSupervisor = configuredAgentWorks.length > 0
     ? new AgentWorkSupervisor(configuredAgentWorks, host, observability)
     : undefined;
+  const inspectStatus = (): Record<string, unknown> => ({
+    ready: runtime.adapterHost.state === "ready",
+    pid: process.pid,
+    adapterHost: runtime.adapterHost,
+    adapters: runtime.adapters,
+    agentWork: agentWorkSupervisor?.status ?? { enabled: false, runtimes: [] },
+    lifecycle: daemon.status
+  });
+  const diagnosticBundle = async (): Promise<unknown> => createDiagnosticBundle(
+    inspectStatus(),
+    await observability.query({
+      includeSensitive: false,
+      limit: 500,
+      maxBytes: 2 * 1024 * 1024
+    })
+  );
   const inspect = new InspectServer(
     events,
-    () => ({
-      ready: runtime.adapterHost.state === "ready",
-      pid: process.pid,
-      adapterHost: runtime.adapterHost,
-      adapters: runtime.adapters,
-      agentWork: agentWorkSupervisor?.status ?? { enabled: false, runtimes: [] },
-      lifecycle: daemon.status
-    }),
+    inspectStatus,
     runId => observability.query({
       ...(runId ? { runId } : {}),
       includeSensitive: false,
       limit: 500,
       maxBytes: 2 * 1024 * 1024
     }),
-    { host: inspectHost, port: inspectPort }
+    { host: inspectHost, port: inspectPort, diagnostics: diagnosticBundle }
   );
   // HarnessDaemon events mark execution, rather than submission, boundaries.
   // A control request can therefore be acknowledged before `run.started` while
@@ -647,7 +657,9 @@ async function handleRequestLine({
     // Do not observe the observation query itself. The Viewer polls this method;
     // recording each poll would create an unbounded feedback loop and bury the
     // application events the operator is trying to inspect.
-    const logsItself = request.method !== "logs.query" && request.method !== "events.subscribe";
+    const logsItself = request.method !== "logs.query" &&
+      request.method !== "diagnostics.bundle" &&
+      request.method !== "events.subscribe";
     if (logsItself) {
       observability.log({
         level: "debug",
@@ -885,6 +897,18 @@ async function dispatch({
         includeSensitive: params.includeSensitive === true,
         ...(typeof params.limit === "number" ? { limit: params.limit } : {})
       });
+    case "diagnostics.bundle":
+      return createDiagnosticBundle(
+        {
+          ready: runtime.adapterHost.state === "ready",
+          pid: process.pid,
+          adapterHost: runtime.adapterHost,
+          adapters: runtime.adapters,
+          agentWork: agentWorkSupervisor?.status ?? { enabled: false, runtimes: [] },
+          lifecycle: daemon.status
+        },
+        await observability.query({ includeSensitive: false, limit: 500, maxBytes: 2 * 1024 * 1024 })
+      );
     case "inspect.info": {
       const info = inspect.info;
       if (!info) throw new Error("inspect server is not listening");

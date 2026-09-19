@@ -5,6 +5,7 @@ export * from "./agent-work-store.js";
 export * from "./agent-work-supervisor.js";
 export * from "./channel-context-store.js";
 export * from "./device-info.js";
+export * from "./diagnostic-bundle.js";
 export * from "./inspect-server.js";
 export * from "./live-event-bus.js";
 export * from "./managed-profile.js";

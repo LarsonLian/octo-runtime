@@ -15,6 +15,7 @@ const INSPECT_ASSET_ROOT = resolve(fileURLToPath(new URL("./inspect-ui/", import
 export interface InspectServerOptions {
   host?: string;
   port?: number;
+  diagnostics?: () => Promise<unknown>;
 }
 
 export interface InspectServerInfo {
@@ -29,6 +30,7 @@ export class InspectServer {
   readonly #logs: (runId?: string) => Promise<unknown>;
   readonly #host: string;
   readonly #port?: number;
+  readonly #diagnostics?: () => Promise<unknown>;
   #server?: Server;
   #websocket?: WebSocketServer;
   #info?: InspectServerInfo;
@@ -46,6 +48,7 @@ export class InspectServer {
     this.#logs = logs;
     this.#host = options.host ?? DEFAULT_HOST;
     this.#port = options.port;
+    this.#diagnostics = options.diagnostics;
     if (!this.#host.trim()) throw new Error("inspect host cannot be empty");
     if (this.#port !== undefined && (!Number.isSafeInteger(this.#port) || this.#port < 1 || this.#port > 65_535)) {
       throw new Error("inspect port must be an integer between 1 and 65535");
@@ -77,6 +80,24 @@ export class InspectServer {
         return;
       }
       const url = new URL(request.url ?? "/", `http://${authority}`);
+      if (request.method === "GET" && url.pathname === "/api/diagnostics") {
+        if (request.headers.authorization !== `Bearer ${capability}`) {
+          response.writeHead(401, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "unauthorized" }));
+          return;
+        }
+        if (!this.#diagnostics) {
+          response.writeHead(404, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "not available" }));
+          return;
+        }
+        void this.#diagnostics().then(bundle => {
+          response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+          response.end(JSON.stringify(bundle));
+        }).catch(error => {
+          response.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
+          response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+        });
+        return;
+      }
       if (request.method === "GET" && url.pathname === "/api/logs") {
         if (request.headers.authorization !== `Bearer ${capability}`) {
           response.writeHead(401, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "unauthorized" }));

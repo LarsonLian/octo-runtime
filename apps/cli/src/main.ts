@@ -962,6 +962,7 @@ async function runDoctor(context: CliContext): Promise<CommandResult> {
 
 function daemonRequest(group: string, action: string | undefined, id: string | undefined, flags: Flags): CliRequest {
   if (group === "status") return { method: "status" };
+  if (group === "diagnostics" && action === undefined) return { method: "diagnostics.bundle" };
   if (group === "logs" && action === "path") return { method: "logs.path" };
   if (group === "logs" && action === "query") {
     const limit = optionalString(flags.limit);
@@ -1380,6 +1381,10 @@ function helpText(group?: string): string {
       `  query [RUN_ID] [--request-id ID] [--invocation ID] [--limit N] [--sensitive]\n` +
       `Application data is read through daemon IPC; use doctor for service startup failures.`;
   }
+  if (group === "diagnostics") {
+    return `Usage: octo-harness [--home PATH] diagnostics\n\n` +
+      `Builds a metadata-only support bundle. It excludes credentials, prompts, model output, tool I/O, provider I/O, outbox payloads, and filesystem paths.`;
+  }
   if (group === "events") {
     return `Usage: octo-harness [--home PATH] events [--follow] [--run-id ID] [--source SOURCE] [--json]\n\n` +
       `Reads the daemon's bounded in-memory event stream. The default prints the retained snapshot and exits.`;
@@ -1408,6 +1413,7 @@ function helpText(group?: string): string {
     `  octo-harness daemon install|uninstall|run|start|stop|restart|status\n` +
     `  octo-harness doctor [--json]\n` +
     `  octo-harness status\n` +
+    `  octo-harness diagnostics\n` +
     `  octo-harness adapter list\n` +
     `  octo-harness adapter probe <type>\n` +
     `  octo-harness adapter setup openclaw\n` +

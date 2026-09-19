@@ -156,6 +156,19 @@ test("CLI exposes bounded events and daemon-owned loopback inspect", async () =>
     const logsResponse = await fetch(logsUrl, { headers: { Authorization: `Bearer ${token}` } });
     assert.equal(logsResponse.status, 200);
     assert.ok(Array.isArray(await logsResponse.json()));
+    const diagnosticsUrl = new URL("/api/diagnostics", url);
+    assert.equal((await fetch(diagnosticsUrl)).status, 401);
+    const diagnosticsResponse = await fetch(diagnosticsUrl, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(diagnosticsResponse.status, 200);
+    const diagnostics = await diagnosticsResponse.json();
+    assert.equal(diagnostics.schema, "octo-harness.diagnostic-bundle/v1");
+    assert.equal(diagnostics.dataClass, "metadata_only");
+    const cliDiagnostics = JSON.parse((await execute(process.execPath, [cli, "diagnostics"], {
+      cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home }
+    })).stdout);
+    assert.equal(cliDiagnostics.schema, "octo-harness.diagnostic-bundle/v1");
     const wsUrl = new URL("/events", url);
     wsUrl.protocol = "ws:";
     wsUrl.searchParams.set("token", token);
