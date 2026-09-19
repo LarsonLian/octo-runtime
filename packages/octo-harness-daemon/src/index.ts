@@ -8,4 +8,5 @@ export * from "./device-info.js";
 export * from "./diagnostic-bundle.js";
 export * from "./inspect-server.js";
 export * from "./live-event-bus.js";
+export * from "./local-metrics.js";
 export * from "./managed-profile.js";

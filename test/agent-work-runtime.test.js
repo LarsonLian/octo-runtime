@@ -649,6 +649,9 @@ test("connectivity notification interrupts a long reconnect backoff with bounded
     await waitFor(() => runtime.status.connectionState === "backing_off", 2_000);
     runtime.notifyConnectivityChanged("network_change");
     await waitFor(() => connections === 2 && runtime.status.connectionState === "online", 2_000);
+    assert.equal(runtime.status.lastRecoveryTrigger, "network_change");
+    assert.equal(typeof runtime.status.lastRecoveryDurationMs, "number");
+    assert.ok(runtime.status.lastRecoveryDurationMs >= 0);
   } finally {
     await runtime?.close();
     for (const client of wsServer.clients) client.terminate();

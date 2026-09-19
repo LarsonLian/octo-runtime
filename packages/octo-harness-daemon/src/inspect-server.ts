@@ -16,6 +16,7 @@ export interface InspectServerOptions {
   host?: string;
   port?: number;
   diagnostics?: () => Promise<unknown>;
+  metrics?: () => string;
 }
 
 export interface InspectServerInfo {
@@ -31,6 +32,7 @@ export class InspectServer {
   readonly #host: string;
   readonly #port?: number;
   readonly #diagnostics?: () => Promise<unknown>;
+  readonly #metrics?: () => string;
   #server?: Server;
   #websocket?: WebSocketServer;
   #info?: InspectServerInfo;
@@ -49,6 +51,7 @@ export class InspectServer {
     this.#host = options.host ?? DEFAULT_HOST;
     this.#port = options.port;
     this.#diagnostics = options.diagnostics;
+    this.#metrics = options.metrics;
     if (!this.#host.trim()) throw new Error("inspect host cannot be empty");
     if (this.#port !== undefined && (!Number.isSafeInteger(this.#port) || this.#port < 1 || this.#port > 65_535)) {
       throw new Error("inspect port must be an integer between 1 and 65535");
@@ -80,6 +83,19 @@ export class InspectServer {
         return;
       }
       const url = new URL(request.url ?? "/", `http://${authority}`);
+      if (request.method === "GET" && url.pathname === "/api/metrics") {
+        if (request.headers.authorization !== `Bearer ${capability}`) {
+          response.writeHead(401, { "Content-Type": "text/plain; charset=utf-8" }).end("unauthorized\n");
+          return;
+        }
+        if (!this.#metrics) {
+          response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }).end("not available\n");
+          return;
+        }
+        response.writeHead(200, { "Content-Type": "text/plain; version=0.0.4; charset=utf-8" });
+        response.end(this.#metrics());
+        return;
+      }
       if (request.method === "GET" && url.pathname === "/api/diagnostics") {
         if (request.headers.authorization !== `Bearer ${capability}`) {
           response.writeHead(401, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "unauthorized" }));

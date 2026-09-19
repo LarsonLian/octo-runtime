@@ -49,6 +49,12 @@ paths. The inspect server exposes the same bundle at `/api/diagnostics` behind
 the capability token. Provider I/O remains a separate restricted capture path
 and is never added to this bundle.
 
+The capability-protected `/api/metrics` endpoint exposes local Runtime
+connection state, latest recovery duration, outbox watermarks, and store
+health. Its `profile` label is intentionally local and high-cardinality; do not
+send this endpoint directly to a central metrics store. A management layer must
+aggregate by bounded state, trigger, outcome, and health labels first.
+
 Inspect starts with the daemon and defaults to `127.0.0.1` and a random port in
 `20001–65535`. It keeps listening even with no browser connected so container and
 cloud-image port mappings remain stable. With no WebSocket client there are zero

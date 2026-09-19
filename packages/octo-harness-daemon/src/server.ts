@@ -25,6 +25,7 @@ import type { AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
 import { AgentWorkSupervisor } from "./agent-work-supervisor.js";
 import { createDiagnosticBundle } from "./diagnostic-bundle.js";
 import { InspectServer } from "./inspect-server.js";
+import { renderLocalMetrics } from "./local-metrics.js";
 import { LIVE_EVENT_SOURCES, LiveEventBus, type LiveEventSource } from "./live-event-bus.js";
 import { InvocationManifest } from "./invocation-manifest.js";
 
@@ -455,7 +456,7 @@ export async function startDaemonServer({
       limit: 500,
       maxBytes: 2 * 1024 * 1024
     }),
-    { host: inspectHost, port: inspectPort, diagnostics: diagnosticBundle }
+    { host: inspectHost, port: inspectPort, diagnostics: diagnosticBundle, metrics: () => renderLocalMetrics(inspectStatus()) }
   );
   // HarnessDaemon events mark execution, rather than submission, boundaries.
   // A control request can therefore be acknowledged before `run.started` while

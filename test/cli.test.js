@@ -169,6 +169,11 @@ test("CLI exposes bounded events and daemon-owned loopback inspect", async () =>
       cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home }
     })).stdout);
     assert.equal(cliDiagnostics.schema, "octo-harness.diagnostic-bundle/v1");
+    const metricsUrl = new URL("/api/metrics", url);
+    assert.equal((await fetch(metricsUrl)).status, 401);
+    const metricsResponse = await fetch(metricsUrl, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(metricsResponse.status, 200);
+    assert.match(await metricsResponse.text(), /octo_harness_runtime_connection_state/);
     const wsUrl = new URL("/events", url);
     wsUrl.protocol = "ws:";
     wsUrl.searchParams.set("token", token);

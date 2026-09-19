@@ -8,6 +8,7 @@ const STATUS_KEYS = new Set([
   "ready", "pid", "state", "restartAttempt", "enabled", "connected",
   "totalProfiles", "connectedProfiles", "activeRuns", "maxConcurrentRuns",
   "profile", "connectionState", "actionRequired", "draining", "runtimeId",
+  "lastRecoveryDurationMs", "lastRecoveryTrigger",
   "acceptingRuns", "runtimeVersion", "protocolVersion", "lastAckedCommandSeq",
   "outboxPendingBytes", "outboxPending", "outboxOldestAgeMs", "dbBytes",
   "walBytes", "storeHealth", "channelContext", "acceptingNewRuns", "freeBytes",

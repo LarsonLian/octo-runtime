@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, statfs } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
+import { performance } from "node:perf_hooks";
 import { dirname } from "node:path";
 import WebSocket from "ws";
 import type { AdapterHostRpc, HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
@@ -299,6 +300,10 @@ export class AgentWorkRuntime {
   #serverReconnectAfterMs?: number;
   #serverReconnectProtected = false;
   #connectionState: RuntimeConnectionState = "stopped";
+  #recoveryStartedAt?: number;
+  #recoveryTrigger?: "transport" | "server_goaway" | "network_change" | "system_resume";
+  #lastRecoveryDurationMs?: number;
+  #lastRecoveryTrigger?: "transport" | "server_goaway" | "network_change" | "system_resume";
   #credentialFailures = 0;
   #protocolVersion = MAX_PROTOCOL_VERSION;
   #connectionId?: string;
@@ -371,6 +376,8 @@ export class AgentWorkRuntime {
       ...(this.#options.profile ? { profile: this.#options.profile } : {}),
       connected: this.#connected,
       connectionState: this.#connectionState,
+      lastRecoveryDurationMs: this.#lastRecoveryDurationMs ?? null,
+      lastRecoveryTrigger: this.#lastRecoveryTrigger ?? null,
       actionRequired: this.#connectionState === "action_required",
       draining: this.#draining,
       runtimeId: this.#runtimeId || this.#options.runtimeId,
@@ -806,6 +813,7 @@ export class AgentWorkRuntime {
   async #readLoop(epoch: number): Promise<void> {
     while (this.#isCurrentLifecycle(epoch)) {
       const socket = this.#socket;
+      const wasConnected = this.#connected;
       if (socket) {
         try {
           await this.#waitForDisconnect(socket, epoch);
@@ -818,6 +826,9 @@ export class AgentWorkRuntime {
         this.#connectionId = undefined;
       }
       this.#connected = false;
+      if (socket && wasConnected) {
+        this.#beginRecovery(this.#serverReconnectProtected ? "server_goaway" : "transport");
+      }
       if (this.#heartbeat) clearInterval(this.#heartbeat);
       this.#heartbeat = undefined;
       if (this.#reconnectReset) clearTimeout(this.#reconnectReset);
@@ -1018,6 +1029,7 @@ export class AgentWorkRuntime {
   #requestFastRecovery(reason: "network_change" | "system_resume"): void {
     if (this.#stopped || this.#connectionState === "action_required" || this.#serverReconnectProtected) return;
     this.#fastRecoveryReason = reason;
+    this.#beginRecovery(reason);
     this.#log({
       level: "info",
       scope: "transport.wss",
@@ -1144,6 +1156,12 @@ export class AgentWorkRuntime {
       this.#store?.prepareReplayAfterReconnect();
       this.#connected = true;
       this.#connectionState = "online";
+      if (this.#recoveryStartedAt !== undefined) {
+        this.#lastRecoveryDurationMs = Math.max(0, performance.now() - this.#recoveryStartedAt);
+        this.#lastRecoveryTrigger = this.#recoveryTrigger ?? "transport";
+        this.#recoveryStartedAt = undefined;
+        this.#recoveryTrigger = undefined;
+      }
       this.#log({
         level: "info",
         scope: "agent-work.runtime",
@@ -1304,6 +1322,11 @@ export class AgentWorkRuntime {
       const payload = asRecord(envelope.payload);
       throw new Error(`Agent Work protocol error ${String(payload.code)}: ${String(payload.message)}`);
     }
+  }
+
+  #beginRecovery(trigger: "transport" | "server_goaway" | "network_change" | "system_resume"): void {
+    if (this.#recoveryStartedAt === undefined) this.#recoveryStartedAt = performance.now();
+    if (trigger !== "transport" || !this.#recoveryTrigger) this.#recoveryTrigger = trigger;
   }
 
   async #applyAuthoritativeTerminalRuns(value: unknown, source = "runtime.welcome"): Promise<void> {
