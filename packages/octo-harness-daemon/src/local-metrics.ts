@@ -5,7 +5,11 @@ const CONNECTION_STATES = new Set([
 const STORE_STATES = new Set([
   "healthy", "low_disk", "full", "corrupt_quarantined", "migration_failed"
 ]);
-const RECOVERY_TRIGGERS = new Set(["transport", "server_goaway", "network_change", "system_resume"]);
+const RECOVERY_TRIGGERS = new Set(["transport", "server_goaway", "network_change", "system_resume", "clock_change"]);
+const CONNECTION_REASONS = new Set([
+  "none", "transport", "receive_timeout", "dns", "tls", "auth", "server_goaway",
+  "network_change", "system_resume", "clock_change"
+]);
 
 /** Render local-only metrics from the daemon's already bounded status view. */
 export function renderLocalMetrics(status: unknown): string {
@@ -28,7 +32,8 @@ export function renderLocalMetrics(status: unknown): string {
     const runtime = record(item);
     const profile = label(string(runtime.profile) || "unknown");
     const connectionState = bounded(string(runtime.connectionState), CONNECTION_STATES, "unknown");
-    lines.push(`octo_harness_runtime_connection_state{profile="${profile}",state="${connectionState}"} 1`);
+    const connectionReason = bounded(string(runtime.connectionReason), CONNECTION_REASONS, "transport");
+    lines.push(`octo_harness_runtime_connection_state{profile="${profile}",state="${connectionState}",reason="${connectionReason}"} 1`);
     const recoveryDurationMs = number(runtime.lastRecoveryDurationMs);
     if (recoveryDurationMs !== undefined && recoveryDurationMs >= 0) {
       const trigger = bounded(string(runtime.lastRecoveryTrigger), RECOVERY_TRIGGERS, "transport");

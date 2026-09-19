@@ -12,6 +12,8 @@ import {
 import {
   AgentWorkRuntime,
   accumulateFinalText,
+  clockChanged,
+  connectionFailureReason,
   mapExecutionEnvelope,
   mapRuntimeEvent,
   reconnectDelayMs,
@@ -72,6 +74,19 @@ test("server reconnect hint is a jittered floor", () => {
   assert.equal(reconnectDelayWithServerHintMs(1_000, 5_000, () => 0.5), 7_500);
   assert.equal(reconnectDelayWithServerHintMs(30_000, 5_000, () => 1), 34_999);
   assert.equal(reconnectDelayWithServerHintMs(1_000, 60_000, () => 1), 79_999);
+});
+
+test("connection failures retain stable bounded reasons", () => {
+  assert.equal(connectionFailureReason(Object.assign(new Error("lookup failed"), { code: "ENOTFOUND" })), "dns");
+  assert.equal(connectionFailureReason(Object.assign(new Error("certificate rejected"), { code: "CERT_HAS_EXPIRED" })), "tls");
+  assert.equal(connectionFailureReason(new Error("Agent Work WebSocket server receive timed out")), "receive_timeout");
+  assert.equal(connectionFailureReason(new Error("socket closed")), "transport");
+});
+
+test("clock change detection compares wall and monotonic elapsed time", () => {
+  assert.equal(clockChanged(5_000, 5_010, 1_000), false);
+  assert.equal(clockChanged(65_000, 5_000, 10_000), true);
+  assert.equal(clockChanged(Number.NaN, 5_000, 10_000), false);
 });
 
 test("process restart hello excludes stale non-terminal runs but retains pending terminal delivery", async () => {
@@ -593,6 +608,7 @@ test("rejected runtime credentials stop after the configured failure budget", as
     await runtime.start();
     await waitFor(() => runtime.status.connectionState === "action_required", 2_000);
     assert.equal(registrations, 3);
+    assert.equal(runtime.status.connectionReason, "auth");
     assert.equal(runtime.status.connected, false);
     assert.equal(runtime.status.actionRequired, true);
     await new Promise(resolve => setTimeout(resolve, 30));

@@ -99,7 +99,7 @@ export interface AgentWorkRuntimeOptions {
   connectTimeoutMs?: number;
   /** Maximum silence from the server before terminating and reconnecting. */
   receiveTimeoutMs?: number;
-  /** Interval used to detect system resume and local network-address changes. */
+  /** Interval used to detect system resume, wall-clock corrections and local network-address changes. */
   recoveryProbeMs?: number;
   /** Maximum full jitter applied to a resume/network-change fast reconnect. */
   recoveryJitterMaxMs?: number;
@@ -134,6 +134,20 @@ export type RuntimeConnectionState =
   | "online"
   | "backing_off"
   | "action_required";
+
+export type RuntimeConnectionReason =
+  | "none"
+  | "transport"
+  | "receive_timeout"
+  | "dns"
+  | "tls"
+  | "auth"
+  | "server_goaway"
+  | "network_change"
+  | "system_resume"
+  | "clock_change";
+
+type RuntimeRecoveryTrigger = "transport" | "server_goaway" | "network_change" | "system_resume" | "clock_change";
 
 export type RuntimeStoreHealthState =
   | "healthy"
@@ -295,15 +309,17 @@ export class AgentWorkRuntime {
   #reconnectAbort?: AbortController;
   #recoveryProbe?: NodeJS.Timeout;
   #lastRecoveryProbeAt = 0;
+  #lastRecoveryProbeMonotonicAt = 0;
   #networkFingerprint = "";
-  #fastRecoveryReason?: "network_change" | "system_resume";
+  #fastRecoveryReason?: "network_change" | "system_resume" | "clock_change";
   #serverReconnectAfterMs?: number;
   #serverReconnectProtected = false;
   #connectionState: RuntimeConnectionState = "stopped";
+  #connectionReason: RuntimeConnectionReason = "none";
   #recoveryStartedAt?: number;
-  #recoveryTrigger?: "transport" | "server_goaway" | "network_change" | "system_resume";
+  #recoveryTrigger?: RuntimeRecoveryTrigger;
   #lastRecoveryDurationMs?: number;
-  #lastRecoveryTrigger?: "transport" | "server_goaway" | "network_change" | "system_resume";
+  #lastRecoveryTrigger?: RuntimeRecoveryTrigger;
   #credentialFailures = 0;
   #protocolVersion = MAX_PROTOCOL_VERSION;
   #connectionId?: string;
@@ -376,6 +392,7 @@ export class AgentWorkRuntime {
       ...(this.#options.profile ? { profile: this.#options.profile } : {}),
       connected: this.#connected,
       connectionState: this.#connectionState,
+      connectionReason: this.#connectionReason,
       lastRecoveryDurationMs: this.#lastRecoveryDurationMs ?? null,
       lastRecoveryTrigger: this.#lastRecoveryTrigger ?? null,
       actionRequired: this.#connectionState === "action_required",
@@ -445,10 +462,12 @@ export class AgentWorkRuntime {
     try {
       await this.#registerAndConnect(epoch);
     } catch (error) {
+      this.#connectionReason = connectionFailureReason(error);
       if (error instanceof RuntimeIdentityMismatchError) throw error;
       if (error instanceof RuntimeCredentialRejectedError
         && error.attempt >= (this.#options.credentialFailureLimit ?? DEFAULT_CREDENTIAL_FAILURE_LIMIT)) {
         this.#connectionState = "action_required";
+        this.#connectionReason = "auth";
         this.#reportError(
           "agent_work.registration.action_required",
           "Agent Work runtime credential requires operator action",
@@ -818,6 +837,7 @@ export class AgentWorkRuntime {
         try {
           await this.#waitForDisconnect(socket, epoch);
         } catch (error) {
+          this.#connectionReason = connectionFailureReason(error);
           this.#reportError("transport.connection.error", "Agent Work WebSocket connection failed", error, {
             connection_id: this.#connectionId
           });
@@ -827,7 +847,9 @@ export class AgentWorkRuntime {
       }
       this.#connected = false;
       if (socket && wasConnected) {
-        this.#beginRecovery(this.#serverReconnectProtected ? "server_goaway" : "transport");
+        const trigger = this.#serverReconnectProtected ? "server_goaway" : "transport";
+        this.#beginRecovery(trigger);
+        if (this.#connectionReason === "none") this.#connectionReason = trigger;
       }
       if (this.#heartbeat) clearInterval(this.#heartbeat);
       this.#heartbeat = undefined;
@@ -868,11 +890,13 @@ export class AgentWorkRuntime {
           this.#assertCurrentLifecycle(epoch);
           await this.#registerAndConnect(epoch, reconnectAbort.signal);
         } catch (error) {
+          this.#connectionReason = connectionFailureReason(error);
           if (error instanceof RuntimeStoppingError || !this.#isCurrentLifecycle(epoch)) return;
           if (error instanceof RuntimeRecoverySignal) continue;
           if (error instanceof RuntimeCredentialRejectedError
             && error.attempt >= (this.#options.credentialFailureLimit ?? DEFAULT_CREDENTIAL_FAILURE_LIMIT)) {
             this.#connectionState = "action_required";
+            this.#connectionReason = "auth";
             this.#reportError(
               "agent_work.registration.action_required",
               "Agent Work runtime credential requires operator action",
@@ -894,14 +918,19 @@ export class AgentWorkRuntime {
   #startRecoveryProbe(epoch: number): void {
     const intervalMs = this.#options.recoveryProbeMs ?? DEFAULT_RECOVERY_PROBE_MS;
     this.#lastRecoveryProbeAt = Date.now();
+    this.#lastRecoveryProbeMonotonicAt = performance.now();
     this.#networkFingerprint = localNetworkFingerprint();
     this.#recoveryProbe = setInterval(() => {
       if (!this.#isCurrentLifecycle(epoch)) return;
       const now = Date.now();
+      const monotonicNow = performance.now();
       const elapsed = now - this.#lastRecoveryProbeAt;
+      const monotonicElapsed = monotonicNow - this.#lastRecoveryProbeMonotonicAt;
       this.#lastRecoveryProbeAt = now;
+      this.#lastRecoveryProbeMonotonicAt = monotonicNow;
       const fingerprint = localNetworkFingerprint();
-      if (elapsed > intervalMs * 3) this.#requestFastRecovery("system_resume");
+      if (clockChanged(elapsed, monotonicElapsed, intervalMs * 2)) this.#requestFastRecovery("clock_change");
+      else if (monotonicElapsed > intervalMs * 3) this.#requestFastRecovery("system_resume");
       else if (fingerprint !== this.#networkFingerprint) this.#requestFastRecovery("network_change");
       this.#networkFingerprint = fingerprint;
     }, intervalMs);
@@ -1026,9 +1055,10 @@ export class AgentWorkRuntime {
     this.#trySend("runtime.health", this.#storeHealthPayload());
   }
 
-  #requestFastRecovery(reason: "network_change" | "system_resume"): void {
+  #requestFastRecovery(reason: "network_change" | "system_resume" | "clock_change"): void {
     if (this.#stopped || this.#connectionState === "action_required" || this.#serverReconnectProtected) return;
     this.#fastRecoveryReason = reason;
+    this.#connectionReason = reason;
     this.#beginRecovery(reason);
     this.#log({
       level: "info",
@@ -1156,6 +1186,7 @@ export class AgentWorkRuntime {
       this.#store?.prepareReplayAfterReconnect();
       this.#connected = true;
       this.#connectionState = "online";
+      this.#connectionReason = "none";
       if (this.#recoveryStartedAt !== undefined) {
         this.#lastRecoveryDurationMs = Math.max(0, performance.now() - this.#recoveryStartedAt);
         this.#lastRecoveryTrigger = this.#recoveryTrigger ?? "transport";
@@ -1200,6 +1231,7 @@ export class AgentWorkRuntime {
       this.#serverReconnectAfterMs = retryAfterMs;
       this.#serverReconnectProtected = true;
       this.#connected = false;
+      this.#connectionReason = "server_goaway";
       this.#log({
         level: "info",
         scope: "transport.wss",
@@ -1324,7 +1356,7 @@ export class AgentWorkRuntime {
     }
   }
 
-  #beginRecovery(trigger: "transport" | "server_goaway" | "network_change" | "system_resume"): void {
+  #beginRecovery(trigger: RuntimeRecoveryTrigger): void {
     if (this.#recoveryStartedAt === undefined) this.#recoveryStartedAt = performance.now();
     if (trigger !== "transport" || !this.#recoveryTrigger) this.#recoveryTrigger = trigger;
   }
@@ -2434,7 +2466,7 @@ class RuntimeCredentialRejectedError extends Error {
 }
 
 class RuntimeRecoverySignal extends Error {
-  constructor(readonly reason: "network_change" | "system_resume") {
+  constructor(readonly reason: "network_change" | "system_resume" | "clock_change") {
     super(`Agent Work fast recovery requested after ${reason}`);
     this.name = "RuntimeRecoverySignal";
   }
@@ -2534,6 +2566,29 @@ export function reconnectDelayWithServerHintMs(
   const floor = Math.max(clientDelayMs, serverRetryAfterMs);
   const jitterRange = Math.min(serverRetryAfterMs, MAX_SERVER_RECONNECT_JITTER_MS);
   return floor + Math.floor(Math.max(0, Math.min(0.999999999, random())) * jitterRange);
+}
+
+/** Stable transport reason used by status, local metrics and support bundles. */
+export function connectionFailureReason(error: unknown): RuntimeConnectionReason {
+  if (error instanceof RuntimeCredentialRejectedError) return "auth";
+  const code = typeof (error as NodeJS.ErrnoException | undefined)?.code === "string"
+    ? (error as NodeJS.ErrnoException).code ?? ""
+    : "";
+  if (["ENOTFOUND", "EAI_AGAIN", "EAI_FAIL", "EAI_NODATA"].includes(code)) return "dns";
+  if (code.startsWith("ERR_TLS_") || code.startsWith("CERT_") || [
+    "DEPTH_ZERO_SELF_SIGNED_CERT", "SELF_SIGNED_CERT_IN_CHAIN", "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+    "ERR_SSL_WRONG_VERSION_NUMBER"
+  ].includes(code)) return "tls";
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  if (message.includes("receive timed out") || message.includes("receive timeout")) return "receive_timeout";
+  return "transport";
+}
+
+/** Compare wall and monotonic elapsed time so a clock correction is not
+ * mistaken for an ordinary event-loop delay or device resume. */
+export function clockChanged(wallElapsedMs: number, monotonicElapsedMs: number, thresholdMs: number): boolean {
+  if (![wallElapsedMs, monotonicElapsedMs, thresholdMs].every(Number.isFinite) || thresholdMs < 0) return false;
+  return Math.abs(wallElapsedMs - monotonicElapsedMs) > thresholdMs;
 }
 
 function packageVersion(): string {

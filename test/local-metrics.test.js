@@ -8,6 +8,7 @@ test("local metrics expose bounded Runtime recovery and storage state", () => {
       runtimes: [{
         profile: "work\"profile",
         connectionState: "online",
+        connectionReason: "none",
         lastRecoveryDurationMs: 1250,
         lastRecoveryTrigger: "network_change",
         outboxOldestAgeMs: 2500,
@@ -17,7 +18,7 @@ test("local metrics expose bounded Runtime recovery and storage state", () => {
       }]
     }
   });
-  assert.match(output, /runtime_connection_state\{profile="work\\"profile",state="online"\} 1/);
+  assert.match(output, /runtime_connection_state\{profile="work\\"profile",state="online",reason="none"\} 1/);
   assert.match(output, /runtime_recovery_seconds\{profile="work\\"profile",trigger="network_change",outcome="online"\} 1.25/);
   assert.match(output, /outbox_oldest_seconds\{profile="work\\"profile",kind="event"\} 2.5/);
   assert.match(output, /outbox_pending_bytes\{profile="work\\"profile",kind="event"\} 4096/);
