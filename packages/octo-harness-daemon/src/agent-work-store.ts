@@ -70,7 +70,8 @@ interface RunRow {
  *
  * Each event is allocated a seq and written to the outbox inside a transaction
  * (the local durability point) before the sender transmits it; rows are deleted
- * only after a cloud ACK. ACKs are cumulative: one `event.ack{run_id, seq}` means
+ * only after a cloud ACK or explicit authoritative terminal reconciliation.
+ * ACKs are cumulative: one `event.ack{run_id, seq}` means
  * the run is durable through seq, so keeping the existing wire shape stays
  * forward-compatible with cumulative ACK. Unacked events are never deleted by time.
  */
@@ -184,6 +185,21 @@ export class AgentWorkStore {
     return this.#db.prepare(
       "SELECT run_id FROM runs WHERE terminal_seq IS NOT NULL AND durable_through_seq < terminal_seq"
     ).all().map(row => (row as { run_id: string }).run_id);
+  }
+
+  /** Remove local execution state only after the Worker returns an explicit
+   * authoritative terminal fact during reconnect reconciliation. */
+  discardAuthoritativelyTerminalRun(runId: string): boolean {
+    this.#db.exec("BEGIN IMMEDIATE");
+    try {
+      this.#db.prepare("DELETE FROM event_outbox WHERE run_id = ?").run(runId);
+      const result = this.#db.prepare("DELETE FROM runs WHERE run_id = ?").run(runId);
+      this.#db.exec("COMMIT");
+      return result.changes > 0;
+    } catch (error) {
+      this.#db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   /** Allocate the next seq, mint a stable event_id and append to the outbox in one

@@ -237,6 +237,7 @@ export class AgentWorkRuntime {
   readonly #activeRuns = new Map<string, ActiveRun>();
   readonly #acceptingCommandIds = new Set<string>();
   readonly #acceptingRuns = new Map<string, AcceptingRun>();
+  readonly #authoritativeTerminalRuns = new Set<string>();
   readonly #messageHandlers = new Set<Promise<void>>();
   readonly #executionTasks = new Set<Promise<void>>();
   readonly #adapterCapabilities = new Map<string, Set<string>>();
@@ -474,6 +475,7 @@ export class AgentWorkRuntime {
     this.#contextStore = undefined;
     this.#acceptingCommandIds.clear();
     this.#acceptingRuns.clear();
+    this.#authoritativeTerminalRuns.clear();
   }
 
   /** Reject future run.start commands while allowing cancellation and replay. */
@@ -976,6 +978,7 @@ export class AgentWorkRuntime {
     if (envelope.type === "runtime.welcome") {
       const payload = asRecord(envelope.payload);
       const everyMs = typeof payload.heartbeat_every_ms === "number" ? payload.heartbeat_every_ms : 30_000;
+      await this.#applyAuthoritativeTerminalRuns(payload.authoritative_terminal_runs);
       // received ACK only proves that the previous Worker process held the
       // batch in memory. A new socket may point at a restarted Worker, so the
       // local Outbox must replay every row not covered by durable ACK.
@@ -1135,6 +1138,45 @@ export class AgentWorkRuntime {
     if (envelope.type === "error") {
       const payload = asRecord(envelope.payload);
       throw new Error(`Agent Work protocol error ${String(payload.code)}: ${String(payload.message)}`);
+    }
+  }
+
+  async #applyAuthoritativeTerminalRuns(value: unknown): Promise<void> {
+    if (value === undefined) return;
+    if (!Array.isArray(value)) throw new Error("runtime.welcome authoritative_terminal_runs must be an array");
+    for (const item of value) {
+      const authority = asRecord(item);
+      const runId = stringValue(authority.run_id);
+      const status = stringValue(authority.status);
+      const terminalEventId = stringValue(authority.terminal_event_id);
+      if (!runId || !status || !["completed", "failed", "cancelled"].includes(status)) {
+        throw new Error("runtime.welcome contains an invalid authoritative terminal run");
+      }
+      this.#authoritativeTerminalRuns.add(runId);
+      const accepting = this.#acceptingRuns.get(runId);
+      accepting?.controller.abort(new AuthoritativeTerminalRunError(runId, status));
+      const active = this.#activeRuns.get(runId);
+      if (active) {
+        await this.#host.cancel(active.invocationId, `authoritative server terminal: ${status}`).catch(error => {
+          this.#reportError("adapter.invoke.authoritative_cancel_failed", "failed to cancel an authoritatively terminal invocation", error, {
+            run_id: runId,
+            authoritative_status: status,
+            authoritative_terminal_event_id: terminalEventId ?? "unavailable"
+          });
+        });
+      }
+      this.#store?.discardAuthoritativelyTerminalRun(runId);
+      this.#contextStore?.markFailed(runId);
+      this.#log({
+        level: "warn",
+        scope: "agent-work.reconciliation",
+        event: "agent_run.authoritative_terminal_applied",
+        message: "stopped local execution after authoritative server terminal",
+        runId,
+        invocationId: active?.invocationId,
+        data: { authoritative_status: status, authoritative_terminal_event_id: terminalEventId ?? "unavailable" }
+      });
+      if (!active && !accepting) this.#authoritativeTerminalRuns.delete(runId);
     }
   }
 
@@ -1336,6 +1378,10 @@ export class AgentWorkRuntime {
           this.#contextStore?.markFailed(command.run_id);
           return;
         }
+        if (error instanceof AuthoritativeTerminalRunError) {
+          this.#contextStore?.markFailed(command.run_id);
+          return;
+        }
         if (error instanceof AcceptingRunCancelledError) {
           this.#contextStore?.markFailed(command.run_id);
           const failure = store.getCommandReceipt(command.command_id)?.error
@@ -1402,6 +1448,7 @@ export class AgentWorkRuntime {
       if (this.#acceptingRuns.get(command.run_id)?.controller === controller) {
         this.#acceptingRuns.delete(command.run_id);
       }
+      if (!this.#activeRuns.has(command.run_id)) this.#authoritativeTerminalRuns.delete(command.run_id);
     }
   }
 
@@ -1574,6 +1621,7 @@ export class AgentWorkRuntime {
     };
     try {
       for await (const providerEvent of this.#host.invoke(adapterType, request)) {
+        if (this.#authoritativeTerminalRuns.has(command.run_id)) break;
         let event = providerEvent;
         if (event.type === "run.running" || event.type === "run.queued") continue;
         if (contextSnapshot && selectsRecoveryInput(event)) {
@@ -1626,6 +1674,7 @@ export class AgentWorkRuntime {
         durationMs: elapsedMilliseconds(invocationStartedAt)
       });
     } catch (error) {
+      if (this.#authoritativeTerminalRuns.has(command.run_id)) return;
       this.#log({
         level: "error",
         scope: "adapter.invoke",
@@ -1661,6 +1710,7 @@ export class AgentWorkRuntime {
       // Success remains submitted until the terminal outbox row receives a durable ACK.
       if (!terminal) this.#contextStore?.markFailed(command.run_id);
       this.#activeRuns.delete(command.run_id);
+      this.#authoritativeTerminalRuns.delete(command.run_id);
       releaseAdmission?.();
     }
   }
@@ -2152,6 +2202,13 @@ class RuntimeRecoverySignal extends Error {
   constructor(readonly reason: "network_change" | "system_resume") {
     super(`Agent Work fast recovery requested after ${reason}`);
     this.name = "RuntimeRecoverySignal";
+  }
+}
+
+class AuthoritativeTerminalRunError extends Error {
+  constructor(readonly runId: string, readonly status: string) {
+    super(`Run ${runId} is already authoritatively ${status}`);
+    this.name = "AuthoritativeTerminalRunError";
   }
 }
 

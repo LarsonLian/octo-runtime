@@ -634,6 +634,88 @@ test("connectivity notification interrupts a long reconnect backoff with bounded
   }
 });
 
+test("reconnect terminal authority cancels local execution and discards its outbox", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-terminal-authority-"));
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  const providerRelease = deferred();
+  const cancelled = deferred();
+  let connections = 0;
+  let runtime;
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume registration. */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-terminal-authority", protocol_version: 1 } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    connections += 1;
+    const connectionNumber = connections;
+    websocket.on("message", data => {
+      const frame = JSON.parse(data.toString("utf8"));
+      if (frame.type === "runtime.hello" && connectionNumber === 1) {
+        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000, authoritative_terminal_runs: [] }));
+        websocket.send(wire("runtime.command", runtimeCommand("authority", 1)));
+      } else if (frame.type === "run.event_batch" && connectionNumber === 1) {
+        websocket.close(1012, "worker restarted after committing terminal");
+      } else if (frame.type === "runtime.hello" && connectionNumber === 2) {
+        assert.ok(frame.payload.active_run_ids.includes("run-authority"));
+        websocket.send(wire("runtime.welcome", {
+          heartbeat_every_ms: 60_000,
+          authoritative_terminal_runs: [{
+            run_id: "run-authority",
+            status: "failed",
+            terminal_event_id: "event-server-terminal"
+          }]
+        }));
+      }
+    });
+  });
+
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    runtime = new AgentWorkRuntime({
+      profile: "default",
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      runtimeName: "runtime-terminal-authority",
+      storePath: join(directory, "agent-work.db"),
+      reconnectFirstMs: 5,
+      reconnectMs: 5,
+      reconnectMaxMs: 5
+    }, {
+      list: async () => [],
+      cancel: async (_invocationId, reason) => {
+        assert.match(reason, /authoritative server terminal: failed/);
+        providerRelease.resolve();
+        cancelled.resolve();
+        return { cancelled: true };
+      },
+      async *invoke() {
+        yield { type: "message.delta", payload: { text: "partial local output" } };
+        await providerRelease.promise;
+      }
+    });
+    await runtime.start();
+    await Promise.race([
+      cancelled.promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("authoritative cancellation timeout")), 2_000))
+    ]);
+    await waitFor(() => runtime.status.activeRuns === 0 && runtime.status.outboxPending === 0, 2_000);
+    assert.equal(runtime.status.connectionState, "online");
+  } finally {
+    providerRelease.resolve();
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("runtime goaway delays and spreads the next reconnect", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-goaway-"));
   const httpServer = createServer();

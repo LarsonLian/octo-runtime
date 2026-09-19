@@ -138,6 +138,20 @@ test("terminal event stays active until its seq is durably acknowledged", async 
   });
 });
 
+test("authoritative server terminal discards local run and pending outbox atomically", async () => {
+  await withStore("authoritative-terminal", store => {
+    store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });
+    store.allocateAndAppend("r1", "run.started", {});
+    store.allocateAndAppend("r1", "message.delta", { text: "local work" });
+    assert.equal(store.pendingCount(), 2);
+
+    assert.equal(store.discardAuthoritativelyTerminalRun("r1"), true);
+    assert.equal(store.pendingCount(), 0);
+    assert.deepEqual(store.activeRunIds(), []);
+    assert.equal(store.discardAuthoritativelyTerminalRun("r1"), false);
+  });
+});
+
 test("durable ACK inspection validates bounds and leaves terminal replayable across restart", async () => {
   const dir = await mkdtemp(join(tmpdir(), "oh-outbox-inspect-"));
   const file = join(dir, "agent-work.db");
