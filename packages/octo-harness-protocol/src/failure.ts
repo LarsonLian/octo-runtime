@@ -7,6 +7,8 @@ export interface FailureClassificationContext {
   stage: string;
   source?: FailureSource;
   defaultDomain: FailureDomain;
+  /** Agent Work Run identity; standard arun IDs deterministically own the diagnostic UUID. */
+  runId?: string;
   diagnosticId?: string;
   occurredAt?: string;
   /** Only trusted downstream boundaries may retain a previously validated envelope. */
@@ -62,7 +64,7 @@ export function classifyFailure(input: unknown, context: FailureClassificationCo
     retryable: catalog.retryable,
     ...(catalog.retryAfterMs === undefined ? {} : { retryAfterMs: catalog.retryAfterMs }),
     action: catalog.action,
-    diagnosticId: context.diagnosticId ?? `diag_${randomUUID().replaceAll("-", "")}`,
+    diagnosticId: diagnosticIdForContext(context),
     source: context.source ?? { component: "octo-harness" },
     cause: {
       reasonCode: classification.reasonCode,
@@ -82,7 +84,10 @@ export function failurePayload(
 ): Record<string, unknown> & { failure: FailureEnvelope } {
   const record = asRecord(input) ?? {};
   const existing = context.preserveExisting && isFailureEnvelope(record.failure) ? record.failure : undefined;
-  const classified = existing ?? classifyFailure(input, context);
+  const runDiagnosticId = diagnosticIdFromRunId(context.runId);
+  const classified = existing
+    ? runDiagnosticId === undefined ? existing : { ...existing, diagnosticId: runDiagnosticId }
+    : classifyFailure(input, context);
   const timeoutStage = safeTimeoutStage(record.timeoutStage);
   const timeoutMs = safeTimeoutMs(record.timeoutMs);
   const failure = timeoutStage || timeoutMs !== undefined
@@ -103,6 +108,17 @@ export function failurePayload(
     ...(adapterType ? { adapterType } : {}),
     failure
   };
+}
+
+function diagnosticIdForContext(context: FailureClassificationContext): string {
+  return diagnosticIdFromRunId(context.runId)
+    ?? context.diagnosticId
+    ?? `diag_${randomUUID().replaceAll("-", "")}`;
+}
+
+function diagnosticIdFromRunId(runId: string | undefined): string | undefined {
+  const match = /^arun_([0-9a-f]{32})$/.exec(runId ?? "");
+  return match ? `diag_${match[1]}` : undefined;
 }
 
 function safeTimeoutStage(value: unknown): string | undefined {

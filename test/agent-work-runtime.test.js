@@ -25,6 +25,8 @@ import { AgentWorkStore } from "../apps/daemon/dist/agent-work-store.js";
 import { collectRuntimeDeviceInfo } from "../apps/daemon/dist/server.js";
 import { deferred, waitFor, wire } from "./agent-work-runtime-fixture.js";
 
+const TEST_AGENT_RUN_ID = "arun_35c4ffc5db9940c9be7ce3a894819ae3";
+
 const envelope = {
   schema_version: 1,
   run_id: "run-1",
@@ -283,11 +285,11 @@ test("a recovery channel snapshot starts without the stale provider session", ()
 });
 
 test("runtime terminal mapping carries the assembled final answer", () => {
-  assert.deepEqual(mapRuntimeEvent({ type: "run.finished", payload: {} }, "done"), {
+  assert.deepEqual(mapRuntimeEvent({ type: "run.finished", payload: {} }, "done", TEST_AGENT_RUN_ID), {
     type: "run.completed",
     payload: { text: "done" }
   });
-  assert.equal(mapRuntimeEvent({ type: "run.stopped", payload: { reason: "cancelled" } }, "").type, "run.cancelled");
+  assert.equal(mapRuntimeEvent({ type: "run.stopped", payload: { reason: "cancelled" } }, "", TEST_AGENT_RUN_ID).type, "run.cancelled");
 });
 
 test("runtime failure mapping preserves legacy fields and adds a safe failure envelope", () => {
@@ -299,7 +301,7 @@ test("runtime failure mapping preserves legacy fields and adds a safe failure en
       providerError: { status: 404, token: "secret-canary" },
       adapterType: "codex"
     }
-  }, "partial answer");
+  }, "partial answer", TEST_AGENT_RUN_ID);
 
   assert.equal(mapped.type, "run.failed");
   assert.equal(mapped.payload.code, "model_not_found");
@@ -307,6 +309,7 @@ test("runtime failure mapping preserves legacy fields and adds a safe failure en
   assert.equal(mapped.payload.failure.code, "OH-PRV-4003");
   assert.equal(mapped.payload.failure.reasonCode, "PROVIDER_MODEL_NOT_FOUND");
   assert.equal(mapped.payload.failure.source.adapter, "codex");
+  assert.equal(mapped.payload.failure.diagnosticId, "diag_35c4ffc5db9940c9be7ce3a894819ae3");
   assert.doesNotMatch(JSON.stringify(mapped), /secret-canary|Authorization|providerError/);
 });
 
@@ -331,7 +334,7 @@ test("final answer accumulator replaces snapshots and appends deltas", () => {
 });
 
 test("terminal mapping uses provider terminal text when no message frame carried final text", () => {
-  assert.deepEqual(mapRuntimeEvent({ type: "run.finished", payload: { text: "provider answer" } }, ""), {
+  assert.deepEqual(mapRuntimeEvent({ type: "run.finished", payload: { text: "provider answer" } }, "", TEST_AGENT_RUN_ID), {
     type: "run.completed",
     payload: { text: "provider answer" }
   });

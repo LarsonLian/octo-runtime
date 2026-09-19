@@ -236,6 +236,7 @@ export class AdapterHost {
               payload: failurePayload(adapterEvent.payload, {
                 stage: "provider.invoke",
                 defaultDomain: "provider",
+                runId: request.runId,
                 source: { component: "octo-harness", adapter: adapterType }
               })
             }
@@ -283,6 +284,7 @@ export class AdapterHost {
           }, {
             stage: "adapter.invoke",
             defaultDomain: "adapter",
+            runId: request.runId,
             source: { component: "octo-harness", adapter: adapterType }
           })
         };

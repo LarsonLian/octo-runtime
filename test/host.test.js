@@ -4,7 +4,13 @@ import { fileURLToPath } from "node:url";
 import { PassThrough } from "node:stream";
 import { AdapterHost, AdapterHostRpcClient, AdapterHostRpcServer, spawnAdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 
-const request = { invocationId: "inv-host", agentSessionId: "s", runId: "r", prompt: "p", workdir: process.cwd() };
+const request = {
+  invocationId: "inv-host",
+  agentSessionId: "s",
+  runId: "arun_35c4ffc5db9940c9be7ce3a894819ae3",
+  prompt: "p",
+  workdir: process.cwd()
+};
 
 test("host holds terminal until adapter stream cleanup succeeds", async () => {
   const host = new AdapterHost();
@@ -101,7 +107,7 @@ test("host gives adapters a provider observation context with full invocation id
   assert.deepEqual(observations[0].identity, {
     profile: "work",
     runtimeId: "runtime-work",
-    runId: "r",
+    runId: request.runId,
     invocationId: "inv-host",
     agentSessionId: "s",
     adapterType: "observed"
@@ -196,6 +202,7 @@ test("host watchdog fails a provider that never emits its first protocol frame",
   assert.equal(events.at(-1).payload.code, "ADAPTER_TIMEOUT");
   assert.equal(events.at(-1).payload.failure.code, "OH-ADP-3006");
   assert.equal(events.at(-1).payload.failure.stage, "adapter.invoke");
+  assert.equal(events.at(-1).payload.failure.diagnosticId, "diag_35c4ffc5db9940c9be7ce3a894819ae3");
   assert.deepEqual(events.at(-1).payload.failure.params, { timeoutStage: "starting", timeoutMs: 100 });
 });
 

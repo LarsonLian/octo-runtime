@@ -1443,7 +1443,8 @@ export class AgentWorkRuntime {
     if (!store) {
       const error = failurePayload({ code: "LOCAL_STORE_UNAVAILABLE" }, {
         stage: "runtime.command.accept",
-        defaultDomain: "runtime"
+        defaultDomain: "runtime",
+        runId: command.run_id
       });
       this.#ackCommand(command, false, error);
       this.#sendRuntimeHealth();
@@ -1477,7 +1478,8 @@ export class AgentWorkRuntime {
     if (this.#draining) {
       const error = failurePayload({ code: "RUNTIME_DRAINING" }, {
         stage: "runtime.command.accept",
-        defaultDomain: "runtime"
+        defaultDomain: "runtime",
+        runId: command.run_id
       });
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
@@ -1489,7 +1491,8 @@ export class AgentWorkRuntime {
         : "LOCAL_STORE_UNAVAILABLE";
       const error = failurePayload({ code }, {
         stage: "runtime.command.accept",
-        defaultDomain: "runtime"
+        defaultDomain: "runtime",
+        runId: command.run_id
       });
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
@@ -1512,7 +1515,8 @@ export class AgentWorkRuntime {
       });
       const error = failurePayload({ code: "OUTBOX_HARD_LIMIT" }, {
         stage: "runtime.command.accept",
-        defaultDomain: "runtime"
+        defaultDomain: "runtime",
+        runId: command.run_id
       });
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
@@ -1521,7 +1525,8 @@ export class AgentWorkRuntime {
     if (pendingBytes >= softWatermark) {
       const error = failurePayload({ code: "OUTBOX_BACKPRESSURE" }, {
         stage: "runtime.command.accept",
-        defaultDomain: "runtime"
+        defaultDomain: "runtime",
+        runId: command.run_id
       });
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
@@ -1645,6 +1650,7 @@ export class AgentWorkRuntime {
             ? failurePayload({ code: "PROVIDER_CONFIG_MISSING" }, {
                 stage: "provider.configuration",
                 defaultDomain: "provider",
+                runId: command.run_id,
                 source: { component: "octo-harness", adapter: error.adapterType }
               })
             : { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) };
@@ -1881,7 +1887,7 @@ export class AgentWorkRuntime {
         }
         appendStarted();
         finalText = accumulateFinalText(finalText, event);
-        const mapped = mapRuntimeEvent(event, finalText);
+        const mapped = mapRuntimeEvent(event, finalText, command.run_id);
         this.#log({
           level: "debug",
           scope: "adapter.invoke",
@@ -1938,6 +1944,7 @@ export class AgentWorkRuntime {
           }), {
             stage: "adapter.invoke",
             defaultDomain: "adapter",
+            runId: command.run_id,
             source: { component: "octo-harness", adapter: adapterType }
           }),
           text: finalText
@@ -2336,7 +2343,7 @@ function rawDataText(data: WebSocket.RawData): string {
 /** Translate a canonical event into an outbox wire event: terminal run states are
  * renamed to the Agent Work vocabulary (completed/failed/cancelled) and carry the
  * accumulated final text; all other events pass through unchanged. */
-export function mapRuntimeEvent(event: CanonicalEvent, finalText: string): { type: string; payload: Record<string, unknown> } {
+export function mapRuntimeEvent(event: CanonicalEvent, finalText: string, runId: string): { type: string; payload: Record<string, unknown> } {
 	const terminalText = finalText || stringValue(event.payload.text) || "";
   switch (event.type) {
     case "run.finished":
@@ -2348,6 +2355,7 @@ export function mapRuntimeEvent(event: CanonicalEvent, finalText: string): { typ
           ...failurePayload({ code: "PROVIDER_ERROR", ...event.payload }, {
             stage: "provider.invoke",
             defaultDomain: "provider",
+            runId,
             preserveExisting: true,
             source: {
               component: "octo-harness",
