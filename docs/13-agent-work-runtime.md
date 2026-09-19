@@ -68,6 +68,35 @@ Channel Gateway 持有原始 IM 事件与 delivery；Worker 可以在 run.start 
 
 ## 配置
 
+### Agent 执行超时
+
+在 AgentRevision 的 `execution_profile.runtime_limits` 中配置超时，单位为毫秒。
+daemon 将这些字段映射为 `InvokeRequest.runtimeLimits`，由 adapter-host 执行。
+未配置 `model_idle_timeout_ms` 时，默认值为 **300000（300 秒）**，所有 adapter 共用；
+建议 Agent 显式配置 **600000（600 秒）**，尤其是 Codex 编码、生成大文件等可能长时间无输出的任务。
+
+```json
+{
+  "execution_profile": {
+    "runtime_limits": {
+      "model_idle_timeout_ms": 600000
+    }
+  }
+}
+```
+
+以上为局部配置示例，应合并到完整 execution profile，保留 adapter、workdir 等字段。
+该参数限制模型阶段连续未收到下一条 canonical event 的时长，不是整个任务的运行时长。
+未显式覆盖的其他默认值为：启动等待 60 秒、工具阶段静默 600 秒、整个任务 1800 秒、
+取消清理等待 1 秒、`enforcement: "enforce"`。收到事件不会延长整个任务的时限。
+不要用 `enforcement: "observe"` 代替延长模型静默预算：当前实现会跳过整套 watchdog。
+
+显式配置优先于 Host 默认值，因此已有的 `model_idle_timeout_ms: 120000` 不会自动变成 300 秒。
+通过新 AgentRevision 发布配置，并确认目标 session 后续 run 使用该 revision；
+已有 invocation 保留启动时的配置。修改 Host 默认值需重新构建并重启 adapter-host 后生效。
+
+### Runtime 连接
+
 ```bash
 export OCTO_HARNESS_AGENT_WORK_URL=http://127.0.0.1:8092
 export OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN=dev-runtime-token

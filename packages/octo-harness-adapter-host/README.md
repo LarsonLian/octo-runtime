@@ -81,6 +81,12 @@ await host.close();
 
 ## 约束与注意事项
 
+模型阶段的 canonical 事件静默时限默认是 **300 秒**（`modelIdleTimeoutMs: 300_000`）。
+Agent 建议通过 `execution_profile.runtime_limits.model_idle_timeout_ms: 600000` 显式配置为
+**600 秒**；daemon 映射后传入 Host 的 `InvokeRequest.runtimeLimits.modelIdleTimeoutMs`。
+显式值优先，未覆盖的字段使用各自默认值。完整配置与生效范围见
+[Agent 执行超时](../../docs/13-agent-work-runtime.md#agent-执行超时)。
+
 - **独立进程并非安全沙箱**：同一宿主内的多个适配器仍共享同一 Node.js 进程与宿主账号。强隔离需依赖容器、独立系统用户或“一适配器一进程”。
 - **同类型适配器不可重复注册**：`register` 对重复的 `metadata.type` 直接抛错。
 - **`probe` 仅做能力探测**：未实现 `probe` 的适配器返回“未校验但可用”，不代表 provider 实际可运行。

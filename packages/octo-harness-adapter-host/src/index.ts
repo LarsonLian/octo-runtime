@@ -68,7 +68,7 @@ interface MessageState {
 
 const DEFAULT_RUNTIME_LIMITS: Required<RuntimeLimits> = {
   firstFrameTimeoutMs: 60_000,
-  modelIdleTimeoutMs: 120_000,
+  modelIdleTimeoutMs: 300_000,
   toolTimeoutMs: 600_000,
   runTimeoutMs: 1_800_000,
   cancelGraceMs: 1_000,
