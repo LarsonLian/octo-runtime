@@ -15,6 +15,7 @@ import {
   mapExecutionEnvelope,
   mapRuntimeEvent,
   reconnectDelayMs,
+  reconnectDelayWithServerHintMs,
   renderDisplayExecutionInputPrompt,
   renderAgentRunInputPrompt
 } from "../apps/daemon/dist/agent-work-runtime.js";
@@ -63,6 +64,14 @@ test("reconnect delay keeps one fast attempt before capped full-jitter backoff",
   assert.equal(reconnectDelayMs(2, 20_000, 60_000, () => 1), 39_999);
   assert.equal(reconnectDelayMs(3, 20_000, 60_000, () => 0.5), 40_000);
   assert.equal(reconnectDelayMs(20, 20_000, 60_000, () => 1), 59_999);
+});
+
+test("server reconnect hint is a jittered floor", () => {
+  assert.equal(reconnectDelayWithServerHintMs(1_000, undefined, () => 0.5), 1_000);
+  assert.equal(reconnectDelayWithServerHintMs(1_000, 5_000, () => 0), 5_000);
+  assert.equal(reconnectDelayWithServerHintMs(1_000, 5_000, () => 0.5), 7_500);
+  assert.equal(reconnectDelayWithServerHintMs(30_000, 5_000, () => 1), 34_999);
+  assert.equal(reconnectDelayWithServerHintMs(1_000, 60_000, () => 1), 79_999);
 });
 
 test("process restart hello excludes stale non-terminal runs but retains pending terminal delivery", async () => {
@@ -518,6 +527,70 @@ test("startup registration failure stays alive and every reconnect re-registers"
     });
     await runtime.start();
     await waitFor(() => registrations >= 3 && connections >= 2 && runtime.status.connected === true, 2_000);
+  } finally {
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("runtime goaway delays and spreads the next reconnect", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-goaway-"));
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  const reconnected = deferred();
+  let connections = 0;
+  let goawayAt = 0;
+  let runtime;
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume registration. */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-goaway", protocol_version: 1 } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    connections += 1;
+    websocket.once("message", () => {
+      websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+      if (connections === 1) {
+        setTimeout(() => {
+          goawayAt = Date.now();
+          websocket.send(wire("runtime.goaway", { reason: "worker_draining", retry_after_ms: 80 }));
+        }, 5);
+      } else {
+        reconnected.resolve(Date.now());
+      }
+    });
+  });
+
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    runtime = new AgentWorkRuntime({
+      profile: "default",
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      runtimeName: "runtime-goaway",
+      storePath: join(directory, "agent-work.db"),
+      reconnectFirstMs: 1,
+      reconnectMs: 1,
+      reconnectMaxMs: 1
+    }, {
+      list: async () => [],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() { yield { type: "run.finished", payload: {} }; }
+    });
+    await runtime.start();
+    const reconnectedAt = await Promise.race([
+      reconnected.promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("goaway reconnect timeout")), 2_000))
+    ]);
+    assert.ok(goawayAt > 0);
+    assert.ok(reconnectedAt - goawayAt >= 80, `reconnected after ${reconnectedAt - goawayAt}ms`);
   } finally {
     await runtime?.close();
     for (const client of wsServer.clients) client.terminate();

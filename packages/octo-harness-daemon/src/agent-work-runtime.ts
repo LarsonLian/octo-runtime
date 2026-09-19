@@ -47,6 +47,7 @@ const DEFAULT_HARD_WATERMARK_BYTES = 2 * 1024 * 1024 * 1024;
 const DEFAULT_RECONNECT_FIRST_MS = 1_000;
 const DEFAULT_RECONNECT_MIN_MS = 20_000;
 const DEFAULT_RECONNECT_MAX_MS = 60_000;
+const MAX_SERVER_RECONNECT_JITTER_MS = 20_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_RECEIVE_TIMEOUT_MS = 60_000;
 const RECONNECT_STABLE_RESET_MS = 5 * 60_000;
@@ -246,6 +247,7 @@ export class AgentWorkRuntime {
   #consecutiveReconnects = 0;
   #reconnectReset?: NodeJS.Timeout;
   #reconnectAbort?: AbortController;
+  #serverReconnectAfterMs?: number;
   #protocolVersion = MAX_PROTOCOL_VERSION;
   #connectionId?: string;
 
@@ -708,15 +710,23 @@ export class AgentWorkRuntime {
       this.#inFlight.clear();
       this.#nackBackoff.clear();
       if (!this.#isCurrentLifecycle(epoch)) return;
+      let serverReconnectAfterMs = this.#serverReconnectAfterMs;
+      this.#serverReconnectAfterMs = undefined;
       while (this.#isCurrentLifecycle(epoch) && !this.#socket) {
         const reconnectAttempt = ++this.#consecutiveReconnects;
-        const reconnectDelay = reconnectDelayMs(
+        const clientReconnectDelay = reconnectDelayMs(
           reconnectAttempt,
           this.#options.reconnectMs ?? DEFAULT_RECONNECT_MIN_MS,
           this.#options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS,
           Math.random,
           this.#options.reconnectFirstMs ?? DEFAULT_RECONNECT_FIRST_MS
         );
+        const reconnectDelay = reconnectDelayWithServerHintMs(
+          clientReconnectDelay,
+          serverReconnectAfterMs,
+          Math.random
+        );
+        serverReconnectAfterMs = undefined;
         const reconnectAbort = new AbortController();
         this.#reconnectAbort = reconnectAbort;
         try {
@@ -867,6 +877,28 @@ export class AgentWorkRuntime {
       // Once the connection is ready, immediately drain the outbox (including
       // events backlogged during the disconnect).
       this.#kickSender();
+      return;
+    }
+    if (envelope.type === "runtime.goaway") {
+      const payload = asRecord(envelope.payload);
+      const retryAfterMs = Number(payload.retry_after_ms);
+      if (!Number.isSafeInteger(retryAfterMs) || retryAfterMs < 1 || retryAfterMs > 2_147_483_647) {
+        throw new Error("Agent Work runtime.goaway requires a positive retry_after_ms");
+      }
+      this.#serverReconnectAfterMs = retryAfterMs;
+      this.#connected = false;
+      this.#log({
+        level: "info",
+        scope: "transport.wss",
+        event: "transport.connection.goaway",
+        message: "Agent Work server requested a delayed reconnect",
+        data: {
+          connection_id: this.#connectionId,
+          reason: stringValue(payload.reason),
+          retry_after_ms: retryAfterMs
+        }
+      });
+      this.#socket?.close(1012, "worker draining");
       return;
     }
     if (envelope.type === "runtime.command") {
@@ -2018,6 +2050,21 @@ export function reconnectDelayMs(
   const ceiling = Math.min(maximumMs, minimumMs * (2 ** exponent));
   const jitterRange = Math.max(0, ceiling - minimumMs);
   return minimumMs + Math.floor(Math.max(0, Math.min(0.999999999, random())) * jitterRange);
+}
+
+/** A server drain hint is a reconnect floor, not an exact fleet-wide deadline.
+ * Add bounded jitter so a large Runtime population does not reconnect together. */
+export function reconnectDelayWithServerHintMs(
+  clientDelayMs: number,
+  serverRetryAfterMs: number | undefined,
+  random = Math.random
+): number {
+  if (typeof serverRetryAfterMs !== "number" || !Number.isSafeInteger(serverRetryAfterMs) || serverRetryAfterMs < 1) {
+    return clientDelayMs;
+  }
+  const floor = Math.max(clientDelayMs, serverRetryAfterMs);
+  const jitterRange = Math.min(serverRetryAfterMs, MAX_SERVER_RECONNECT_JITTER_MS);
+  return floor + Math.floor(Math.max(0, Math.min(0.999999999, random())) * jitterRange);
 }
 
 function packageVersion(): string {
