@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { arch, hostname, platform } from "node:os";
+import { collectRuntimeDeviceInfo } from "@mininglamp-oss/octo-harness-daemon-app";
 import {
   REQUEST_ID_HEADER,
   createRequestId,
@@ -78,7 +78,7 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
     body: JSON.stringify({
       profile: options.profile,
       name: options.runtimeName,
-      device: { os: platform(), arch: arch(), hostname: hostname() },
+      device: collectRuntimeDeviceInfo(),
       runtime_version: RUNTIME_VERSION,
       protocol_version: MAX_AGENT_WORK_PROTOCOL_VERSION,
       protocol_version_min: MIN_AGENT_WORK_PROTOCOL_VERSION,
