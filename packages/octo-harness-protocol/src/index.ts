@@ -27,6 +27,7 @@ export type {
   MessageProvenance,
   ProviderSession,
   AgentConfig,
+  RuntimeLimits,
   CanonicalEventPayload,
   ModelStepStartedPayload,
   ModelStepFinishedPayload,

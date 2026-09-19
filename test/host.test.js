@@ -173,6 +173,61 @@ test("host cancellation aborts provider and emits stopped once", async () => {
   assert.equal(events.filter(item => item.type.startsWith("run.")).length, 1);
 });
 
+test("host watchdog fails a provider that never emits its first protocol frame", async () => {
+  const host = new AdapterHost();
+  host.register({
+    metadata: { type: "silent-start", capabilities: [] },
+    async *invoke() { await new Promise(() => {}); }
+  });
+  const events = [];
+  for await (const event of host.invoke("silent-start", {
+    ...request,
+    invocationId: "watchdog-start",
+    runtimeLimits: {
+      firstFrameTimeoutMs: 100,
+      modelIdleTimeoutMs: 10_000,
+      toolTimeoutMs: 10_000,
+      runTimeoutMs: 10_000,
+      cancelGraceMs: 100,
+      enforcement: "enforce"
+    }
+  })) events.push(event);
+  assert.equal(events.at(-1).type, "run.error");
+  assert.equal(events.at(-1).payload.code, "ADAPTER_TIMEOUT");
+  assert.equal(events.at(-1).payload.failure.code, "OH-ADP-3006");
+  assert.equal(events.at(-1).payload.failure.stage, "adapter.invoke");
+  assert.deepEqual(events.at(-1).payload.failure.params, { timeoutStage: "starting", timeoutMs: 100 });
+});
+
+test("host watchdog uses the tool budget while a canonical tool call is open", async () => {
+  const host = new AdapterHost();
+  host.register({
+    metadata: { type: "silent-tool", capabilities: [] },
+    async *invoke() {
+      yield { type: "model_step.started", payload: { stepId: "step-1" } };
+      yield { type: "tool_call.create", payload: { id: "tool-1", name: "exec", args: {}, status: "running" } };
+      await new Promise(() => {});
+    }
+  });
+  const events = [];
+  for await (const event of host.invoke("silent-tool", {
+    ...request,
+    invocationId: "watchdog-tool",
+    runtimeLimits: {
+      firstFrameTimeoutMs: 1_000,
+      modelIdleTimeoutMs: 10_000,
+      toolTimeoutMs: 100,
+      runTimeoutMs: 10_000,
+      cancelGraceMs: 100,
+      enforcement: "enforce"
+    }
+  })) events.push(event);
+  assert.deepEqual(events.slice(0, 2).map(event => event.type), ["model_step.started", "tool_call.create"]);
+  assert.equal(events.at(-1).type, "run.error");
+  assert.equal(events.at(-1).payload.failure.reasonCode, "ADAPTER_TIMEOUT");
+  assert.deepEqual(events.at(-1).payload.failure.params, { timeoutStage: "tool_active", timeoutMs: 100 });
+});
+
 test("host shutdown aborts every active provider invocation before returning", async () => {
   const host = new AdapterHost();
   let aborted = 0;

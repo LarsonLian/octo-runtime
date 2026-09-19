@@ -131,7 +131,23 @@ test("process restart hello excludes stale non-terminal runs but retains pending
 });
 
 test("Agent Work envelope maps to a local adapter invocation with fixed cwd and resume", () => {
-  const mapped = mapExecutionEnvelope(envelope);
+  const mapped = mapExecutionEnvelope({
+    ...envelope,
+    agent_revision: {
+      ...envelope.agent_revision,
+      execution_profile: {
+        ...envelope.agent_revision.execution_profile,
+        runtime_limits: {
+          first_frame_timeout_ms: 60_000,
+          model_idle_timeout_ms: 120_000,
+          tool_timeout_ms: 600_000,
+          run_timeout_ms: 1_800_000,
+          cancel_grace_ms: 1_000,
+          enforcement: "enforce"
+        }
+      }
+    }
+  });
   assert.equal(mapped.adapterType, "codex");
   assert.equal(mapped.request.agentSessionId, "chat-1");
   assert.equal(mapped.request.sessionGeneration, 7);
@@ -140,6 +156,14 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
   assert.equal(mapped.request.workdir, "/workspace/project");
   assert.equal(mapped.request.providerSession.sessionId, "thread-previous");
   assert.equal(mapped.request.agentConfig.sandbox, "workspace-write");
+  assert.deepEqual(mapped.request.runtimeLimits, {
+    firstFrameTimeoutMs: 60_000,
+    modelIdleTimeoutMs: 120_000,
+    toolTimeoutMs: 600_000,
+    runTimeoutMs: 1_800_000,
+    cancelGraceMs: 1_000,
+    enforcement: "enforce"
+  });
   assert.match(mapped.request.prompt, /\[Recent group messages\]/);
   assert.match(mapped.request.prompt, /\[Quoted message from Ada\]/);
   assert.match(mapped.request.prompt, /\[Current message\]\nFix the test/);

@@ -141,6 +141,20 @@ export interface ProviderSession {
   [k: string]: unknown;
 }
 /**
+ * Harness-owned phase-aware invocation watchdog budgets.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "RuntimeLimits".
+ */
+export interface RuntimeLimits {
+  firstFrameTimeoutMs?: number;
+  modelIdleTimeoutMs?: number;
+  toolTimeoutMs?: number;
+  runTimeoutMs?: number;
+  cancelGraceMs?: number;
+  enforcement?: "observe" | "enforce";
+}
+/**
  * Persisted agent configuration. Adapters interpret provider-specific extensions while Core only stores and forwards them.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -597,5 +611,6 @@ export interface InvokeRequestWire {
    */
   context: Record<string, unknown>;
   providerSession?: ProviderSession;
+  runtimeLimits?: RuntimeLimits;
   agentConfig: AgentConfig;
 }

@@ -81,7 +81,19 @@ export function failurePayload(
 ): Record<string, unknown> & { failure: FailureEnvelope } {
   const record = asRecord(input) ?? {};
   const existing = context.preserveExisting && isFailureEnvelope(record.failure) ? record.failure : undefined;
-  const failure = existing ?? classifyFailure(input, context);
+  const classified = existing ?? classifyFailure(input, context);
+  const timeoutStage = safeTimeoutStage(record.timeoutStage);
+  const timeoutMs = safeTimeoutMs(record.timeoutMs);
+  const failure = timeoutStage || timeoutMs !== undefined
+    ? {
+        ...classified,
+        params: {
+          ...classified.params,
+          ...(timeoutStage ? { timeoutStage } : {}),
+          ...(timeoutMs === undefined ? {} : { timeoutMs })
+        }
+      }
+    : classified;
   const adapterType = safeAdapterType(record.adapterType) ?? failure.source.adapter;
   const legacyCode = safeReasonCode(record.code) ?? failure.reasonCode;
   return {
@@ -90,6 +102,18 @@ export function failurePayload(
     ...(adapterType ? { adapterType } : {}),
     failure
   };
+}
+
+function safeTimeoutStage(value: unknown): string | undefined {
+  return typeof value === "string" && ["starting", "model_active", "tool_active"].includes(value)
+    ? value
+    : undefined;
+}
+
+function safeTimeoutMs(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 86_400_000
+    ? value
+    : undefined;
 }
 
 export function failureMessage(code: string): string {

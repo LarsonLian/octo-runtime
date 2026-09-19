@@ -123,6 +123,20 @@
         }
       }
     },
+    "RuntimeLimits": {
+      "title": "RuntimeLimits",
+      "description": "Harness-owned phase-aware invocation watchdog budgets.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "firstFrameTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 1800000 },
+        "modelIdleTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 3600000 },
+        "toolTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 86400000 },
+        "runTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 86400000 },
+        "cancelGraceMs": { "type": "integer", "minimum": 100, "maximum": 60000 },
+        "enforcement": { "type": "string", "enum": ["observe", "enforce"] }
+      }
+    },
     "AgentConfig": {
       "title": "AgentConfig",
       "description": "Persisted agent configuration. Adapters interpret provider-specific extensions while Core only stores and forwards them.",
@@ -518,6 +532,7 @@
           "tsType": "Record<string, unknown>"
         },
         "providerSession": { "$ref": "#/definitions/ProviderSession" },
+        "runtimeLimits": { "$ref": "#/definitions/RuntimeLimits" },
         "agentConfig": { "$ref": "#/definitions/AgentConfig" }
       }
     }

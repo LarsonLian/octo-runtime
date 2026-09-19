@@ -5,6 +5,7 @@ import {
   isTerminal,
   type CanonicalEvent,
   type InvokeRequest,
+  type RuntimeLimits,
   type MessageChannel,
   type MessageExposure,
   type MessageProvenance
@@ -64,6 +65,15 @@ interface MessageState {
   exposure?: MessageExposure;
   provenance?: MessageProvenance;
 }
+
+const DEFAULT_RUNTIME_LIMITS: Required<RuntimeLimits> = {
+  firstFrameTimeoutMs: 60_000,
+  modelIdleTimeoutMs: 120_000,
+  toolTimeoutMs: 600_000,
+  runTimeoutMs: 1_800_000,
+  cancelGraceMs: 1_000,
+  enforcement: "enforce"
+};
 
 /**
  * The in-process registry and lifecycle gatekeeper for adapters.
@@ -139,6 +149,10 @@ export class AdapterHost {
     const controller = new AbortController();
     this.#active.set(request.invocationId, controller);
     let terminal: CanonicalEvent | undefined;
+    const runtimeLimits = normalizeRuntimeLimits(request.runtimeLimits);
+    const invocationStartedAt = Date.now();
+    let watchdogPhase: "starting" | "model_active" | "tool_active" = "starting";
+    const openTools = new Set<string>();
     const messages = new Map<string, MessageState>();
     // Correlation fields come from the validated host request, never from the
     // adapter. This prevents a plugin from accidentally attributing sensitive
@@ -201,7 +215,20 @@ export class AdapterHost {
     };
 
     try {
-      for await (const adapterEvent of adapter.invoke({ ...request, signal: controller.signal }, context)) {
+      const iterator = adapter.invoke({ ...request, signal: controller.signal }, context)[Symbol.asyncIterator]();
+      while (true) {
+        const phaseBudgetMs = watchdogPhase === "starting"
+          ? runtimeLimits.firstFrameTimeoutMs
+          : watchdogPhase === "tool_active"
+            ? runtimeLimits.toolTimeoutMs
+            : runtimeLimits.modelIdleTimeoutMs;
+        const runRemainingMs = runtimeLimits.runTimeoutMs - (Date.now() - invocationStartedAt);
+        const budgetMs = Math.max(1, Math.min(phaseBudgetMs, runRemainingMs));
+        const next = runtimeLimits.enforcement === "enforce"
+          ? await nextWithWatchdog(iterator, budgetMs, watchdogPhase, runtimeLimits.cancelGraceMs, controller)
+          : await iterator.next();
+        if (next.done) break;
+        const adapterEvent = next.value;
         assertCanonicalEvent(adapterEvent);
         const event: CanonicalEvent = adapterEvent.type === "run.error"
           ? {
@@ -213,6 +240,7 @@ export class AdapterHost {
               })
             }
           : adapterEvent;
+        watchdogPhase = updateWatchdogPhase(event, openTools);
         this.#canonicalSink?.({
           ...(typeof request.context?.profile === "string" ? { profile: request.context.profile } : {}),
           ...(typeof request.context?.runtimeId === "string" ? { runtimeId: request.context.runtimeId } : {}),
@@ -237,8 +265,9 @@ export class AdapterHost {
       for (const event of closeMessages(messageStatus)) yield event;
       yield terminal;
     } catch (error) {
-      for (const event of closeMessages(controller.signal.aborted ? "stopped" : "failed")) yield event;
-      if (controller.signal.aborted) {
+      const watchdogTimeout = error instanceof AdapterWatchdogTimeoutError;
+      for (const event of closeMessages(controller.signal.aborted && !watchdogTimeout ? "stopped" : "failed")) yield event;
+      if (controller.signal.aborted && !watchdogTimeout) {
         yield { type: "run.stopped", payload: { reason: String(controller.signal.reason ?? "cancelled") } };
       } else if (terminal?.type === "run.error") {
         yield terminal;
@@ -249,7 +278,8 @@ export class AdapterHost {
           payload: failurePayload({
             message: errorMessage(error),
             adapterType,
-            ...(code ? { code } : {})
+            ...(code ? { code } : {}),
+            ...watchdogFailureDetails(error)
           }, {
             stage: "adapter.invoke",
             defaultDomain: "adapter",
@@ -308,6 +338,83 @@ function errorCode(error: unknown): string | undefined {
     && typeof error.code === "string"
     ? error.code
     : undefined;
+}
+
+function normalizeRuntimeLimits(value: RuntimeLimits | undefined): Required<RuntimeLimits> {
+  return {
+    firstFrameTimeoutMs: value?.firstFrameTimeoutMs ?? DEFAULT_RUNTIME_LIMITS.firstFrameTimeoutMs,
+    modelIdleTimeoutMs: value?.modelIdleTimeoutMs ?? DEFAULT_RUNTIME_LIMITS.modelIdleTimeoutMs,
+    toolTimeoutMs: value?.toolTimeoutMs ?? DEFAULT_RUNTIME_LIMITS.toolTimeoutMs,
+    runTimeoutMs: value?.runTimeoutMs ?? DEFAULT_RUNTIME_LIMITS.runTimeoutMs,
+    cancelGraceMs: value?.cancelGraceMs ?? DEFAULT_RUNTIME_LIMITS.cancelGraceMs,
+    enforcement: value?.enforcement ?? DEFAULT_RUNTIME_LIMITS.enforcement
+  };
+}
+
+function updateWatchdogPhase(
+  event: CanonicalEvent,
+  openTools: Set<string>
+): "model_active" | "tool_active" {
+  const toolID = typeof event.payload.toolCallId === "string"
+    ? event.payload.toolCallId
+    : typeof event.payload.id === "string"
+      ? event.payload.id
+    : typeof event.payload.itemId === "string"
+      ? event.payload.itemId
+      : "tool";
+  if (event.type === "tool_call.create") openTools.add(toolID);
+  if (event.type === "tool_call.update" && ["completed", "failed", "cancelled", "stopped"].includes(String(event.payload.status))) {
+    openTools.delete(toolID);
+  }
+  return openTools.size > 0 ? "tool_active" : "model_active";
+}
+
+async function nextWithWatchdog(
+  iterator: AsyncIterator<CanonicalEvent>,
+  timeoutMs: number,
+  phase: "starting" | "model_active" | "tool_active",
+  cancelGraceMs: number,
+  controller: AbortController
+): Promise<IteratorResult<CanonicalEvent>> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      iterator.next(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          const error = new AdapterWatchdogTimeoutError(phase, timeoutMs);
+          reject(error);
+          controller.abort(error);
+        }, timeoutMs);
+        timer.unref?.();
+      })
+    ]);
+  } catch (error) {
+    if (error instanceof AdapterWatchdogTimeoutError) {
+      await Promise.race([
+        Promise.resolve(iterator.return?.()).catch(() => undefined),
+        new Promise<void>(resolve => setTimeout(resolve, cancelGraceMs))
+      ]);
+    }
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+class AdapterWatchdogTimeoutError extends Error {
+  readonly code = "ADAPTER_TIMEOUT";
+
+  constructor(readonly timeoutStage: string, readonly timeoutMs: number) {
+    super(`adapter protocol activity exceeded the ${timeoutStage} budget`);
+    this.name = "AdapterWatchdogTimeoutError";
+  }
+}
+
+function watchdogFailureDetails(error: unknown): Record<string, unknown> {
+  return error instanceof AdapterWatchdogTimeoutError
+    ? { timeoutStage: error.timeoutStage, timeoutMs: error.timeoutMs }
+    : {};
 }
 
 export {

@@ -1932,6 +1932,7 @@ export function mapExecutionEnvelope(
   const definition = asRecord(envelope.agent_revision.definition);
   const adapterType = executionAdapterType(envelope);
   const agentConfig = asRecord(profile.agent_config) as AgentConfig;
+  const runtimeLimits = mapExecutionRuntimeLimits(profile.runtime_limits);
   const workdir = stringValue(profile.workdir) ?? stringValue(agentConfig.workdir);
   if (!workdir) throw new TypeError("execution_profile.workdir is required for a local runtime");
   const content = envelope.agent_run_request.input;
@@ -1978,6 +1979,7 @@ export function mapExecutionEnvelope(
       ...(envelope.provider_session && contextSnapshot?.selectedVariant !== "recovery"
         ? { providerSession: envelope.provider_session }
         : {}),
+      ...(Object.keys(runtimeLimits).length > 0 ? { runtimeLimits } : {}),
       agentConfig: { ...agentConfig, workdir }
     }
   };
@@ -1988,6 +1990,22 @@ function executionAdapterType(envelope: ExecutionEnvelope): string {
   const adapterType = stringValue(profile.default_adapter);
   if (!adapterType) throw new Error("agent_revision.execution_profile.default_adapter is required");
   return adapterType;
+}
+
+function mapExecutionRuntimeLimits(value: unknown): Record<string, unknown> {
+  const limits = asRecord(value);
+  const mapped: Record<string, unknown> = {};
+  for (const [source, target] of [
+    ["first_frame_timeout_ms", "firstFrameTimeoutMs"],
+    ["model_idle_timeout_ms", "modelIdleTimeoutMs"],
+    ["tool_timeout_ms", "toolTimeoutMs"],
+    ["run_timeout_ms", "runTimeoutMs"],
+    ["cancel_grace_ms", "cancelGraceMs"],
+    ["enforcement", "enforcement"]
+  ] as const) {
+    if (limits[source] !== undefined) mapped[target] = limits[source];
+  }
+  return mapped;
 }
 
 function httpEndpointMetadata(baseUrl: string): Record<string, string> {
