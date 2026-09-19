@@ -25,6 +25,7 @@ import type { AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
 import { AgentWorkSupervisor } from "./agent-work-supervisor.js";
 import { InspectServer } from "./inspect-server.js";
 import { LIVE_EVENT_SOURCES, LiveEventBus, type LiveEventSource } from "./live-event-bus.js";
+import { InvocationManifest } from "./invocation-manifest.js";
 
 export {
   LiveEventBus,
@@ -151,6 +152,8 @@ export async function startDaemonServer({
     data: { socket_path: socketPath, store_path: storePath, manifest_path: manifestPath }
   });
   let releasePid = (): Promise<void> => Promise.resolve();
+  let invocationManifest: InvocationManifest;
+  const invocationManifestPath = join(homePath ?? dirname(storePath), "run", "invocations.json");
   try {
     if (pidPath) releasePid = await acquirePidFile(pidPath);
     if (process.platform !== "win32") {
@@ -162,6 +165,17 @@ export async function startDaemonServer({
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
+    }
+    const openedManifest = await InvocationManifest.open(invocationManifestPath);
+    invocationManifest = openedManifest.manifest;
+    if (openedManifest.reap.found) {
+      observability.log({
+        level: openedManifest.reap.reaped ? "warn" : "info",
+        scope: "adapter-host.lifecycle",
+        event: openedManifest.reap.reaped ? "adapter_host.orphan_reaped" : "adapter_host.orphan_manifest_cleared",
+        message: openedManifest.reap.reaped ? "reaped orphaned adapter-host process group" : "cleared stale invocation manifest",
+        data: { pid: openedManifest.reap.pid, reason: openedManifest.reap.reason }
+      });
     }
   } catch (error) {
     observability.log({
@@ -180,6 +194,7 @@ export async function startDaemonServer({
   try {
     store = SqliteStore.open(storePath);
   } catch (error) {
+    await invocationManifest.close();
     await releasePid();
     observability.log({
       level: "error",
@@ -191,15 +206,19 @@ export async function startDaemonServer({
     await observability.close();
     throw error;
   }
-  const spawnHost = (signal?: AbortSignal): Promise<AdapterHostProcess> => spawnAdapterHost({
-    entrypoint: hostEntrypoint,
-    manifest: manifestPath,
-    env: { ...process.env, ...observabilityEnvironment(loggingConfiguration) },
-    ...(signal ? { signal } : {}),
-    ...(adapterHostReadyTimeoutMs !== undefined ? { readyTimeoutMs: adapterHostReadyTimeoutMs } : {}),
-    trace: (direction, frame) => observability.traceRpc(direction, frame),
-    observe: frame => publishAdapterObservation(events, frame)
-  });
+  const spawnHost = async (signal?: AbortSignal): Promise<AdapterHostProcess> => {
+    const spawned = await spawnAdapterHost({
+      entrypoint: hostEntrypoint,
+      manifest: manifestPath,
+      env: { ...process.env, ...observabilityEnvironment(loggingConfiguration) },
+      ...(signal ? { signal } : {}),
+      ...(adapterHostReadyTimeoutMs !== undefined ? { readyTimeoutMs: adapterHostReadyTimeoutMs } : {}),
+      trace: (direction, frame) => observability.traceRpc(direction, frame),
+      observe: frame => publishAdapterObservation(events, frame)
+    });
+    await invocationManifest.setAdapterHost(spawned.child.pid, hostEntrypoint);
+    return spawned;
+  };
   let hostProcess: AdapterHostProcess;
   try {
     // The adapter host writes its own component stream, but inherits the exact
@@ -209,6 +228,7 @@ export async function startDaemonServer({
     hostProcess = await spawnHost();
   } catch (error) {
     store.close();
+    await invocationManifest.close();
     await releasePid();
     observability.log({
       level: "error",
@@ -225,6 +245,7 @@ export async function startDaemonServer({
     adapters = hostProcess.adapters.map(adapter => adapter.type);
   } catch (error) {
     await hostProcess.close();
+    await invocationManifest.close();
     store.close();
     await releasePid();
     observability.log({
@@ -267,8 +288,14 @@ export async function startDaemonServer({
     probe: async adapterType => readyHost().client.probe(adapterType),
     cancel: async (invocationId, reason) => readyHost().client.cancel(invocationId, reason),
     async *invoke(adapterType, request) {
-      for await (const event of readyHost().client.invoke(adapterType, request)) {
-        events.publish({
+      await invocationManifest.begin({
+        invocationId: request.invocationId,
+        runId: request.runId,
+        adapterType
+      });
+      try {
+        for await (const event of readyHost().client.invoke(adapterType, request)) {
+          events.publish({
           source: "host-canonical",
           stage: "host.canonical",
           direction: "outbound",
@@ -281,10 +308,26 @@ export async function startDaemonServer({
           adapterType,
           payload: event
         });
-        if (["run.finished", "run.error", "run.stopped"].includes(event.type)) {
-          observability.clearRpcCorrelationForRun(request.runId);
+          if (["run.finished", "run.error", "run.stopped"].includes(event.type)) {
+            observability.clearRpcCorrelationForRun(request.runId);
+          }
+          yield event;
         }
-        yield event;
+      } finally {
+        try {
+          await invocationManifest.end(request.invocationId);
+        } catch (error) {
+          observability.log({
+            level: "error",
+            scope: "adapter-host.lifecycle",
+            event: "invocation_manifest.cleanup_failed",
+            message: "failed to remove completed invocation from the manifest",
+            runId: request.runId,
+            invocationId: request.invocationId,
+            adapterType,
+            data: { error: errorMessage(error) }
+          });
+        }
       }
     }
   };
@@ -360,6 +403,7 @@ export async function startDaemonServer({
     observability.clearRpcCorrelation();
     runtime.adapterHost.pid = null;
     runtime.adapterHost.state = "restarting";
+    void invocationManifest.setAdapterHost(undefined, hostEntrypoint).catch(() => undefined);
     observability.log({
       level: "error",
       scope: "adapter-host.lifecycle",
@@ -517,6 +561,7 @@ export async function startDaemonServer({
     await inspect.close();
     await hostRestartTask?.catch(() => undefined);
     await hostProcess.close();
+    await invocationManifest.close();
     store.close();
     if (process.platform !== "win32") await rm(socketPath, { force: true });
     await releasePid();
@@ -553,6 +598,7 @@ export async function startDaemonServer({
       await new Promise<void>(resolve => server.close(() => resolve()));
       await hostRestartTask?.catch(() => undefined);
       await hostProcess.close();
+      await invocationManifest.close();
       store.close();
       if (process.platform !== "win32") await rm(socketPath, { force: true });
       await releasePid();
