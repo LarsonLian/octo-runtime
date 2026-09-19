@@ -688,6 +688,88 @@ test("hard outbox watermark rejects new work with a durable command receipt", as
   }
 });
 
+test("event nack releases the send window and retries from the requested sequence", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-event-nack-"));
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  const retried = deferred();
+  let runtime;
+  let firstBatch;
+  let connectionCount = 0;
+  let batchCount = 0;
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume registration. */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-event-nack", protocol_version: 1 } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    connectionCount += 1;
+    websocket.on("message", data => {
+      const frame = JSON.parse(data.toString("utf8"));
+      if (frame.type === "runtime.hello") {
+        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("runtime.command", runtimeCommand("event-nack", 1)));
+        return;
+      }
+      if (frame.type !== "run.event_batch") return;
+      batchCount += 1;
+      if (!firstBatch) {
+        firstBatch = frame.payload;
+        websocket.send(wire("event.nack", {
+          run_id: frame.payload.run_id,
+          code: "WORKER_BUFFER_SATURATED",
+          resume_from_seq: frame.payload.first_seq,
+          retry_after_ms: 25
+        }));
+        return;
+      }
+      websocket.send(wire("event.ack", {
+        run_id: frame.payload.run_id,
+        received_through_seq: frame.payload.last_seq,
+        durable_through_seq: 0
+      }));
+      retried.resolve(frame.payload);
+    });
+  });
+
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    runtime = new AgentWorkRuntime({
+      profile: "default",
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      runtimeName: "runtime-event-nack",
+      storePath: join(directory, "agent-work.db")
+    }, {
+      list: async () => [{ type: "codex", capabilities: [] }],
+      cancel: async () => ({ cancelled: true }),
+      async *invoke() { yield { type: "run.finished", payload: {} }; }
+    });
+    await runtime.start();
+    const secondBatch = await Promise.race([
+      retried.promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("event batch retry timeout")), 2_000))
+    ]);
+    assert.equal(connectionCount, 1);
+    assert.equal(batchCount, 2);
+    assert.equal(secondBatch.first_seq, firstBatch.first_seq);
+    assert.deepEqual(
+      secondBatch.events.map(event => event.event_id),
+      firstBatch.events.map(event => event.event_id)
+    );
+  } finally {
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("local runtime concurrency limit queues a second provider invocation", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-capacity-"));
   const httpServer = createServer();

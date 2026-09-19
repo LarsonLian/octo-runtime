@@ -52,6 +52,8 @@ const DEFAULT_RECEIVE_TIMEOUT_MS = 60_000;
 const RECONNECT_STABLE_RESET_MS = 5 * 60_000;
 const DEFAULT_RECONCILE_MS = 5 * 60_000;
 const PUMP_POLL_MS = 50;
+const DEFAULT_NACK_RETRY_MS = 1_000;
+const MAX_NACK_RETRY_MS = 30_000;
 const BACKPRESSURE_POLL_MS = 100;
 const DEFAULT_CONTEXT_SYNC_TIMEOUT_MS = 3_000;
 const DEFAULT_CONTEXT_SYNC_LIMIT = 40;
@@ -221,6 +223,7 @@ export class AgentWorkRuntime {
   /** `${runId}:${seq}` already sent on this connection and awaiting ACK; cleared
    * on reconnect so the sender replays them. */
   readonly #inFlight = new Set<string>();
+  readonly #nackBackoff = new Map<string, { attempt: number; retryAt: number }>();
   readonly #pendingContextSyncs = new Map<string, PendingContextSync>();
   readonly #latestContextSyncByScope = new Map<string, string>();
   #store?: AgentWorkStore;
@@ -703,6 +706,7 @@ export class AgentWorkRuntime {
       // No event loss on disconnect: clear the in-flight markers so reconnect
       // replays everything from the lowest unacked seq.
       this.#inFlight.clear();
+      this.#nackBackoff.clear();
       if (!this.#isCurrentLifecycle(epoch)) return;
       while (this.#isCurrentLifecycle(epoch) && !this.#socket) {
         const reconnectAttempt = ++this.#consecutiveReconnects;
@@ -887,6 +891,7 @@ export class AgentWorkRuntime {
           for (const key of [...this.#inFlight]) {
             if (key.startsWith(prefix) && Number(key.slice(prefix.length)) <= received) this.#inFlight.delete(key);
           }
+          this.#nackBackoff.delete(runId);
         }
         // durable_through_seq: aggregated state committed cloud-side — only now
         // may confirmed outbox rows be deleted.
@@ -933,17 +938,39 @@ export class AgentWorkRuntime {
       return;
     }
     if (envelope.type === "event.nack") {
-      // Peer asked us to pause and resume from a known-good seq; the sender
-      // reloads from listSendable on the next kick, so just log and continue.
       const payload = asRecord(envelope.payload);
+      const runId = stringValue(payload.run_id);
+      const resumeFromSeq = Number(payload.resume_from_seq);
+      if (!runId || !Number.isSafeInteger(resumeFromSeq) || resumeFromSeq < 1) {
+        throw new Error("Agent Work event.nack requires run_id and a positive resume_from_seq");
+      }
+      const prefix = `${runId}:`;
+      for (const key of [...this.#inFlight]) {
+        if (key.startsWith(prefix) && Number(key.slice(prefix.length)) >= resumeFromSeq) this.#inFlight.delete(key);
+      }
+      const previous = this.#nackBackoff.get(runId);
+      const attempt = (previous?.attempt ?? 0) + 1;
+      const suggestedRetryMs = Number(payload.retry_after_ms);
+      const baseRetryMs = Number.isFinite(suggestedRetryMs) && suggestedRetryMs > 0
+        ? Math.trunc(suggestedRetryMs)
+        : DEFAULT_NACK_RETRY_MS;
+      const retryMs = Math.min(MAX_NACK_RETRY_MS, baseRetryMs * (2 ** Math.min(attempt - 1, 10)));
+      this.#nackBackoff.set(runId, { attempt, retryAt: Date.now() + retryMs });
       this.#log({
         level: "warn",
         scope: "agent-work.delivery",
         event: "agent_work.event.nack",
         message: "Agent Work event batch was rejected",
-        runId: stringValue(payload.run_id),
-        data: { code: payload.code, resume_from_seq: payload.resume_from_seq, connection_id: this.#connectionId }
+        runId,
+        data: {
+          code: payload.code,
+          resume_from_seq: resumeFromSeq,
+          retry_after_ms: retryMs,
+          retry_attempt: attempt,
+          connection_id: this.#connectionId
+        }
       });
+      this.#kickSender();
       return;
     }
     if (envelope.type === "error") {
@@ -1481,7 +1508,11 @@ export class AgentWorkRuntime {
     while (this.#isCurrentLifecycle(epoch)) {
       const store = this.#store;
       if (store && this.#connected && this.#socket?.readyState === WebSocket.OPEN) {
-        const rows = store.listSendable(window).filter(row => !this.#inFlight.has(`${row.runId}:${row.seq}`));
+        const now = Date.now();
+        const rows = store.listSendable(window).filter(row => {
+          const retry = this.#nackBackoff.get(row.runId);
+          return (!retry || retry.retryAt <= now) && !this.#inFlight.has(`${row.runId}:${row.seq}`);
+        });
         for (const batch of coalesceBatches(rows)) {
           if (this.#socket?.readyState !== WebSocket.OPEN) break;
           try {
