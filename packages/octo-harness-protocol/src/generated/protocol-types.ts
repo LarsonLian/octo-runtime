@@ -25,6 +25,20 @@ export type MessageExposure = "public_reasoning" | "public_summary" | "public_pl
  * via the `definition` "ContextSyncResult".
  */
 export type ContextSyncResult = ContextSyncResult1;
+/**
+ * Provider-neutral per-invocation MCP server definition.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "McpServer".
+ */
+export type McpServer = McpStdioServer | McpStreamableHttpServer;
+/**
+ * Named MCP servers frozen for one invocation.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "McpServers".
+ */
+export type McpServers = Record<string, McpServer>;
 
 /**
  * Serializable data shapes for the Octo Harness NDJSON protocol. Runtime behavior remains hand-written in src/index.ts, and this schema is the source of truth for generated TypeScript types.
@@ -558,6 +572,39 @@ export interface ContextCommitResult {
     "already_committed" | "snapshot_not_found" | "snapshot_not_submitted" | "consumer_advanced" | "snapshot_failed";
 }
 /**
+ * A per-invocation MCP server launched as a child process by the provider.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "McpStdioServer".
+ */
+export interface McpStdioServer {
+  type: "stdio";
+  command: string;
+  /**
+   * @maxItems 128
+   */
+  args?: string[];
+  env?: Record<string, string>;
+  cwd?: string;
+  required?: boolean;
+  startupTimeoutMs?: number;
+  toolTimeoutMs?: number;
+}
+/**
+ * A per-invocation Streamable HTTP MCP endpoint. Header values are sensitive and must never enter logs or canonical events.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "McpStreamableHttpServer".
+ */
+export interface McpStreamableHttpServer {
+  type: "streamable_http";
+  url: string;
+  headers?: Record<string, string>;
+  required?: boolean;
+  startupTimeoutMs?: number;
+  toolTimeoutMs?: number;
+}
+/**
  * Serializable execution request sent from Core to Adapter Host. AbortSignal is added in src/index.ts because it cannot cross a process boundary.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -613,6 +660,7 @@ export interface InvokeRequestWire {
    * Structured Harness context for prompts, auditing, and future transports.
    */
   context: Record<string, unknown>;
+  mcpServers?: McpServers;
   providerSession?: ProviderSession;
   runtimeLimits?: RuntimeLimits;
   agentConfig: AgentConfig;

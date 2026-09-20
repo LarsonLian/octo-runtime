@@ -15,7 +15,8 @@ import type {
   ToolCallCreatePayload,
   ToolCallDeltaPayload,
   ToolCallUpdatePayload,
-  FailureEnvelope
+  FailureEnvelope,
+  McpServers
 } from "./generated/protocol-types.js";
 
 // The data-shape types are generated from schema/protocol.schema.json (see
@@ -50,6 +51,10 @@ export type {
   ChannelContextDescriptor,
   ChannelContextSnapshotRef,
   ContextCommitResult,
+  McpStdioServer,
+  McpStreamableHttpServer,
+  McpServer,
+  McpServers,
   RunIdentity,
   InvokeRequestWire
 } from "./generated/protocol-types.js";
@@ -286,7 +291,8 @@ export const capabilities = Object.freeze({
   SESSION_FORK: "session.fork",
   MESSAGE_APPEND: "message.append",
   TOOL_CANONICAL: "tool.canonical",
-  REATTACH: "run.reattach"
+  REATTACH: "run.reattach",
+  MCP_DYNAMIC: "tool.mcp.dynamic"
 } as const);
 
 /**
@@ -406,6 +412,7 @@ export function assertFailureEnvelope(value: unknown): asserts value is FailureE
 export function assertInvokeRequest(request: unknown): asserts request is InvokeRequest {
   if (!isRecord(request)) throw new TypeError("InvokeRequest must be an object");
   if (request.runtimeLimits !== undefined) assertRuntimeLimits(request.runtimeLimits);
+  if (request.mcpServers !== undefined) assertMcpServers(request.mcpServers);
   for (const key of ["invocationId", "agentSessionId", "runId", "prompt", "workdir"] as const) {
     if (typeof request[key] !== "string" || request[key].length === 0) {
       throw new TypeError(`InvokeRequest.${key} must be a non-empty string`);
@@ -418,6 +425,80 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
   if (request.freshFallbackModelInput !== undefined
     && (typeof request.freshFallbackModelInput !== "string" || request.freshFallbackModelInput.length === 0)) {
     throw new TypeError("InvokeRequest.freshFallbackModelInput must be a non-empty string when present");
+  }
+}
+
+/** Validate dynamic MCP configuration before any value reaches a provider process. */
+export function assertMcpServers(value: unknown): asserts value is McpServers {
+  if (!isRecord(value)) throw new TypeError("mcpServers must be an object");
+  const entries = Object.entries(value);
+  if (entries.length > 32) throw new TypeError("mcpServers must not contain more than 32 servers");
+  for (const [name, server] of entries) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) {
+      throw new TypeError("mcpServers contains an invalid server name");
+    }
+    if (!isRecord(server)) throw new TypeError(`mcpServers.${name} must be an object`);
+    const allowed = server.type === "stdio"
+      ? new Set(["type", "command", "args", "env", "cwd", "required", "startupTimeoutMs", "toolTimeoutMs"])
+      : server.type === "streamable_http"
+        ? new Set(["type", "url", "headers", "required", "startupTimeoutMs", "toolTimeoutMs"])
+        : undefined;
+    if (!allowed) throw new TypeError(`mcpServers.${name}.type is unsupported`);
+    for (const key of Object.keys(server)) {
+      if (!allowed.has(key)) throw new TypeError(`mcpServers.${name}.${key} is unsupported`);
+    }
+    if (server.type === "stdio") {
+      requireNonEmptyString(server, "command", `mcpServers.${name}`);
+      assertStringArray(server.args, `mcpServers.${name}.args`, 128);
+      assertStringRecord(server.env, `mcpServers.${name}.env`, 128);
+      if (server.cwd !== undefined && (typeof server.cwd !== "string" || server.cwd.length === 0)) {
+        throw new TypeError(`mcpServers.${name}.cwd must be a non-empty string when present`);
+      }
+    } else {
+      requireNonEmptyString(server, "url", `mcpServers.${name}`);
+      let parsed: URL;
+      try {
+        parsed = new URL(server.url as string);
+      } catch {
+        throw new TypeError(`mcpServers.${name}.url must be an absolute HTTP URL`);
+      }
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        throw new TypeError(`mcpServers.${name}.url must be an absolute HTTP URL`);
+      }
+      assertStringRecord(server.headers, `mcpServers.${name}.headers`, 64);
+    }
+    if (server.required !== undefined && typeof server.required !== "boolean") {
+      throw new TypeError(`mcpServers.${name}.required must be boolean when present`);
+    }
+    assertMcpTimeout(server.startupTimeoutMs, `mcpServers.${name}.startupTimeoutMs`, 300_000);
+    assertMcpTimeout(server.toolTimeoutMs, `mcpServers.${name}.toolTimeoutMs`, 3_600_000);
+  }
+}
+
+function requireNonEmptyString(value: Record<string, unknown>, key: string, path: string): void {
+  if (typeof value[key] !== "string" || value[key].length === 0) {
+    throw new TypeError(`${path}.${key} must be a non-empty string`);
+  }
+}
+
+function assertStringArray(value: unknown, path: string, limit: number): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.length > limit || value.some(item => typeof item !== "string")) {
+    throw new TypeError(`${path} must be an array of strings`);
+  }
+}
+
+function assertStringRecord(value: unknown, path: string, limit: number): void {
+  if (value === undefined) return;
+  if (!isRecord(value) || Object.keys(value).length > limit || Object.values(value).some(item => typeof item !== "string")) {
+    throw new TypeError(`${path} must be a string map`);
+  }
+}
+
+function assertMcpTimeout(value: unknown, path: string, maximum: number): void {
+  if (value === undefined) return;
+  if (!Number.isSafeInteger(value) || Number(value) < 100 || Number(value) > maximum) {
+    throw new TypeError(`${path} is out of range`);
   }
 }
 
