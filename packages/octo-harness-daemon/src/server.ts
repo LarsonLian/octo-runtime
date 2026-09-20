@@ -105,6 +105,8 @@ export interface DaemonApplication {
   agentWorkSupervisor?: AgentWorkSupervisor;
   observability: LocalObservability;
   events: LiveEventBus;
+  /** Inspector 的完整访问地址（含一次性 capability token；仅内存，不落日志）。 */
+  inspectUrl?: string;
   close(): Promise<void>;
 }
 
@@ -538,8 +540,11 @@ export async function startDaemonServer({
     });
   });
 
+  // inspectInfo 提升出 try 作用域，供 return 暴露完整地址（含 token）。
+  let inspectUrl: string | undefined;
   try {
     const inspectInfo = await inspect.start();
+    inspectUrl = inspectInfo.url;
     await daemon.recover();
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
@@ -600,6 +605,8 @@ export async function startDaemonServer({
     agentWorkSupervisor,
     observability,
     events,
+    // 完整 inspect 地址（含 token）只走内存返回给 embedder，日志里仍是脱敏版。
+    inspectUrl,
     async close(): Promise<void> {
       shuttingDown = true;
       hostRestartAbort?.abort();
