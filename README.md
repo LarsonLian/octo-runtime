@@ -2,14 +2,14 @@
 
 Octo Harness 是 provider-neutral 的本地 Agent Runtime。它把 Codex、Claude Code、CodeBuddy、OpenCode 和 OpenClaw local 统一成一套 invocation 与 canonical event 协议，但不拥有 IM、Loop、AutoPilot、Webhook 等业务的任务模型或调度状态。
 
-生产链路只有一种执行抽象：Agent Worker 创建 `AgentSession` 和 `AgentRun`，Harness 接收 `run.start`，调用 provider，并把事件与 opaque provider session 回传。Chat 和 Task 只是上游产品形态，不是 Harness 的两套执行模式。
+生产链路只有一种执行抽象：Agent Worker 创建 `AgentSession` 和 `AgentRun`，并在 Worker 内用统一 Coordination Ledger 组织 Team/Delegation/Mailbox；Harness 只接收 `run.start`，调用 provider，并把事件与 opaque provider session 回传。Buddy、IM 和 Loop 只是上游产品形态，不是 Harness 的多套执行或协调模式。
 
 ## 责任边界
 
 | 组件 | 持有 | 不持有 |
 |---|---|---|
 | 业务服务 | namespace 内的触发规则、父子任务、重试、投递策略 | provider 进程和恢复协议 |
-| Agent Worker | Agent、AgentSession、AgentRun、run lease 与生命周期 | Loop Task、IM 会话、Webhook 定义 |
+| Agent Worker | Agent/Team、Delegation/Mailbox、AgentSession/AgentRun、run graph、lease 与生命周期 | Loop Task、IM 会话/消息、Webhook 定义、产品 delivery |
 | Octo Harness | invocation、provider adapter、canonical events、本地可靠 outbox | Chat/Task/Attempt/Trigger 业务表 |
 | Channel Gateway | 外部事件归一化、Trigger Occurrence、IM delivery | AgentRun 生命周期 |
 
