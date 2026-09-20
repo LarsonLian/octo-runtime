@@ -561,7 +561,7 @@ export async function startDaemonServer({
         socket_path: socketPath,
         adapter_host_pid: hostProcess.child.pid ?? null,
         adapters,
-        inspect: { host: inspectInfo.host, port: inspectInfo.port }
+        inspect: { host: inspectInfo.host, port: inspectInfo.port, url: inspectInfo.url }
       }
     });
   } catch (error) {
