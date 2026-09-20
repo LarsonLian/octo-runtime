@@ -21,6 +21,7 @@ import {
   type InvokeRequest,
   type MessageExposure
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { capabilities } from "@mininglamp-oss/octo-harness-protocol";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -84,6 +85,23 @@ export async function buildClaudeCommand(
   // The control prompt goes through Claude's dedicated file argument while the
   // user prompt is still fed via stdin, so the two never get conflated.
   await writeFile(promptFile, req.appendInstructions, { mode: 0o600 });
+  if (req.mcpServers && Object.keys(req.mcpServers).length > 0) {
+    const mcpFile = join(directory, "mcp.json");
+    const mcpServers = Object.fromEntries(Object.entries(req.mcpServers).map(([name, server]) => [
+      name,
+      server.type === "stdio"
+        ? {
+            type: "stdio",
+            command: server.command,
+            ...(server.args ? { args: server.args } : {}),
+            ...(server.env ? { env: server.env } : {}),
+            ...(server.cwd ? { cwd: server.cwd } : {})
+          }
+        : { type: "http", url: server.url, ...(server.headers ? { headers: server.headers } : {}) }
+    ]));
+    await writeFile(mcpFile, JSON.stringify({ mcpServers }), { mode: 0o600 });
+    commandArgsPrefix = [...commandArgsPrefix, "--mcp-config", mcpFile, "--strict-mcp-config"];
+  }
   // Only --include-partial-messages produces thinking/text/input_json deltas;
   // plain stream-json still delivers whole assistant blocks, which cannot
   // satisfy the local Chat's real-time streaming requirement.
@@ -430,7 +448,7 @@ export function createClaudeCodeAdapter({
   return defineAdapter({
     metadata: {
       type: "claude-code",
-      capabilities: ["session.serialize", "tool.canonical"],
+      capabilities: ["session.serialize", "tool.canonical", capabilities.MCP_DYNAMIC],
       processModel: "subprocess-per-invocation",
       transport: "ndjson/stdio"
     },
