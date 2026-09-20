@@ -1,6 +1,7 @@
 import {
   assertCanonicalEvent,
   assertInvokeRequest,
+  capabilities,
   failurePayload,
   isTerminal,
   type CanonicalEvent,
@@ -142,6 +143,10 @@ export class AdapterHost {
     assertInvokeRequest(request);
     const adapter = this.#adapters.get(adapterType);
     if (!adapter) throw new Error(`unknown adapter: ${adapterType}`);
+    if (request.mcpServers && Object.keys(request.mcpServers).length > 0
+      && !adapter.metadata.capabilities.includes(capabilities.MCP_DYNAMIC)) {
+      throw new Error(`adapter ${adapterType} does not support dynamic MCP configuration`);
+    }
     const controller = new AbortController();
     this.#active.set(request.invocationId, controller);
     let terminal: CanonicalEvent | undefined;
