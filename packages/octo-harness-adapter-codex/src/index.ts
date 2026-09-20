@@ -7,7 +7,7 @@
  * params, so app-server sees the complete state database and plugin runtime.
  */
 import { defineAdapter, probeCommand, type AdapterInvocationContext, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { capabilities, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
+import { capabilities, type InteractionResponse, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
 import { parse, stringify } from "smol-toml";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
@@ -17,7 +17,8 @@ import {
   buildCodexAppServerArgs,
   runCodexAppServerTurn,
   type CodexAppServerCommand,
-  type CodexAppServerSpawn
+  type CodexAppServerSpawn,
+  type CodexInteractionResponder
 } from "./app-server.js";
 
 export {
@@ -29,7 +30,8 @@ export {
   runCodexAppServerTurn,
   type CodexAppServerCommand,
   type CodexAppServerNotification,
-  type CodexAppServerSpawn
+  type CodexAppServerSpawn,
+  type CodexInteractionResponder
 } from "./app-server.js";
 
 /** Read an optional resource; only ENOENT is ignored, permission and I/O errors must surface to the caller. */
@@ -343,8 +345,15 @@ export function createCodexAdapter({
   env?: NodeJS.ProcessEnv;
 } = {}) {
   // Thread serialization and same-turn fresh fallback are end-to-end supported.
-  const adapterCapabilities = ["session.serialize", "session.resume_recovery", "activity.turn-progress", capabilities.MCP_DYNAMIC];
+  const adapterCapabilities = [
+    "session.serialize",
+    "session.resume_recovery",
+    "activity.turn-progress",
+    capabilities.MCP_DYNAMIC,
+    capabilities.INTERACTION_RESPONSE
+  ];
   if (detectComputerUseProvisioningSync(env).available) adapterCapabilities.push(COMPUTER_USE_CAPABILITY);
+  const interactionResponders = new Map<string, CodexInteractionResponder>();
   return defineAdapter({
     metadata: {
       type: "codex",
@@ -353,11 +362,39 @@ export function createCodexAdapter({
       transport: "json-rpc-2.0/stdio"
     },
     probe: () => probeCommand(command),
+    async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
+      const responder = interactionResponders.get(invocationId);
+      if (!responder) throw new Error(`no active Codex interaction invocation: ${invocationId}`);
+      await responder(response);
+    },
     async *invoke(request: InvokeRequest, context?: AdapterInvocationContext) {
+      if (interactionResponders.has(request.invocationId)) {
+        throw new Error(`duplicate active Codex invocation: ${request.invocationId}`);
+      }
       // The transport owns cleanup as well as observation ordering, so the
       // shadow home cannot be deleted while its final RPC is still in flight.
       const spec = buildCodexCommand(request, command, appServerArgs, env);
-      yield* runCodexAppServerTurn({ request, spec, context, ...(spawnFn ? { spawnFn } : {}) });
+      let activeResponder: CodexInteractionResponder | undefined;
+      const onInteractionResponder = (responder: CodexInteractionResponder | undefined): void => {
+        if (responder) {
+          activeResponder = responder;
+          interactionResponders.set(request.invocationId, responder);
+        } else if (!activeResponder || interactionResponders.get(request.invocationId) === activeResponder) {
+          interactionResponders.delete(request.invocationId);
+          activeResponder = undefined;
+        }
+      };
+      try {
+        yield* runCodexAppServerTurn({
+          request,
+          spec,
+          context,
+          onInteractionResponder,
+          ...(spawnFn ? { spawnFn } : {})
+        });
+      } finally {
+        onInteractionResponder(undefined);
+      }
     }
   });
 }

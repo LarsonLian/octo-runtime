@@ -84,6 +84,7 @@ test("Codex preserves the real home and does not rewrite config.toml", async () 
 test("Codex advertises dynamic MCP support", () => {
   const adapter = createCodexAdapter({ command: "codex-test", env: {} });
   assert.ok(adapter.metadata.capabilities.includes(capabilities.MCP_DYNAMIC));
+  assert.ok(adapter.metadata.capabilities.includes(capabilities.INTERACTION_RESPONSE));
 });
 
 test("Codex routes untrusted MCP approval through the non-interactive responder", async () => {
@@ -103,4 +104,85 @@ test("Codex routes untrusted MCP approval through the non-interactive responder"
   assert.equal(events.at(-1)?.type, "run.finished");
   assert.ok(events.some(event => event.type === "tool_call.update"
     && event.payload.status === "completed"));
+});
+
+test("Codex routes durable interaction responses back to native app-server requests", async () => {
+  const adapter = createCodexAdapter({
+    command: process.execPath,
+    appServerArgs: [fileURLToPath(new URL("../test-support/fake-codex-interaction.mjs", import.meta.url))]
+  });
+  const invocationId = "invoke-interaction";
+  const events = [];
+
+  for await (const event of adapter.invoke({
+    ...request,
+    invocationId,
+    runId: "run-interaction",
+    agentSessionId: "session-interaction",
+    mcpServers: undefined,
+    agentConfig: { autoApprove: false }
+  })) {
+    events.push(event);
+    if (event.type !== "interaction.requested") continue;
+
+    await assert.rejects(
+      adapter.respondInteraction("other-invocation", {
+        interactionId: event.payload.interactionId,
+        outcome: "accepted"
+      }),
+      /no active Codex interaction invocation/
+    );
+    await assert.rejects(
+      adapter.respondInteraction(invocationId, {
+        interactionId: "missing-interaction",
+        outcome: "accepted"
+      }),
+      /unknown codex interaction/
+    );
+
+    if (event.payload.kind === "approval") {
+      assert.equal(event.payload.request.command, "pnpm add example");
+      await adapter.respondInteraction(invocationId, {
+        interactionId: event.payload.interactionId,
+        outcome: "accepted"
+      });
+    } else if (event.payload.kind === "elicitation") {
+      assert.equal(event.payload.request.title, "Verify account");
+      assert.doesNotMatch(JSON.stringify(event.payload.request), /provider-secret|challenge|_meta/);
+      await adapter.respondInteraction(invocationId, {
+        interactionId: event.payload.interactionId,
+        outcome: "answered",
+        value: { account: "verified" }
+      });
+    } else {
+      assert.equal(event.payload.request.questions[0].id, "language");
+      await adapter.respondInteraction(invocationId, {
+        interactionId: event.payload.interactionId,
+        outcome: "answered",
+        value: { language: "TypeScript" }
+      });
+    }
+
+    await assert.rejects(
+      adapter.respondInteraction(invocationId, {
+        interactionId: event.payload.interactionId,
+        outcome: "accepted"
+      }),
+      /unknown codex interaction/
+    );
+  }
+
+  assert.deepEqual(events.filter(event => event.type === "interaction.requested").map(event => event.payload.kind), [
+    "approval",
+    "elicitation",
+    "question"
+  ]);
+  assert.equal(events.at(-1)?.type, "run.finished");
+  await assert.rejects(
+    adapter.respondInteraction(invocationId, {
+      interactionId: "after-terminal",
+      outcome: "accepted"
+    }),
+    /no active Codex interaction invocation/
+  );
 });

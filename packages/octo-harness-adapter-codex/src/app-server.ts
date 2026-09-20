@@ -18,6 +18,7 @@
  *   close()/finally.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 import {
   freshFallbackInputText,
@@ -30,6 +31,7 @@ import {
   type MessageChannel,
   type MessageExposure
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import type { InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
 
 const APP_SERVER_REQUEST_TIMEOUT_MS = 30_000;
 const APP_SERVER_CLOSE_GRACE_MS = 500;
@@ -47,6 +49,15 @@ interface PendingRequest {
   reject: (reason: Error) => void;
   timer: NodeJS.Timeout;
 }
+
+interface PendingInteraction {
+  rpcId: RpcId;
+  method: string;
+  params: JsonRecord;
+  responding: boolean;
+}
+
+export type CodexInteractionResponder = (response: InteractionResponse) => Promise<void>;
 
 interface ProcessExit {
   code: number | null;
@@ -112,15 +123,19 @@ export async function* runCodexAppServerTurn({
   request,
   spec,
   spawnFn = defaultSpawn,
-  context
+  context,
+  onInteractionResponder
 }: {
   request: InvokeRequest;
   spec: CodexAppServerCommand;
   spawnFn?: CodexAppServerSpawn;
   context?: AdapterInvocationContext;
+  onInteractionResponder?: (responder: CodexInteractionResponder | undefined) => void;
 }): AsyncGenerator<CanonicalEvent> {
   const requestTimeoutMs = appServerRequestTimeout(request);
-  let client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, request.signal, context);
+  const interactive = request.agentConfig.autoApprove === false;
+  let client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, interactive, request.signal, context);
+  onInteractionResponder?.(response => client.respondInteraction(response));
   let terminal = false;
   let turnProviderRequestId: string | undefined;
 
@@ -137,9 +152,11 @@ export async function* runCodexAppServerTurn({
         rpcMethod: "initialize",
         data: { error: error instanceof Error ? error.message : String(error), retrying: true }
       });
+      onInteractionResponder?.(undefined);
       await client.close();
       throwIfAborted(request.signal);
-      client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, request.signal, context);
+      client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, interactive, request.signal, context);
+      onInteractionResponder?.(response => client.respondInteraction(response));
       await initializeClient(client);
     }
     client.notify("initialized");
@@ -306,6 +323,7 @@ export async function* runCodexAppServerTurn({
     }
   } finally {
     // close() handles RPC/stdio/process; spec.cleanup handles any caller-owned resources.
+    onInteractionResponder?.(undefined);
     await client.close();
     await spec.cleanup?.();
   }
@@ -609,6 +627,221 @@ export class CodexEventNormalizer {
   }
 }
 
+function interactionKind(method: string): "approval" | "question" | "elicitation" | undefined {
+  switch (method) {
+    case "item/commandExecution/requestApproval":
+    case "execCommandApproval":
+    case "item/fileChange/requestApproval":
+    case "applyPatchApproval":
+    case "item/permissions/requestApproval":
+      return "approval";
+    case "item/tool/requestUserInput":
+      return "question";
+    case "mcpServer/elicitation/request":
+      return "elicitation";
+    default:
+      return undefined;
+  }
+}
+
+/** Keep provider-owned request ids opaque while producing a short, ASCII database key. */
+function codexInteractionId(id: RpcId): string {
+  if (typeof id === "number") return `codex:n:${id}`;
+  return `codex:s:${createHash("sha256").update(id).digest("hex")}`;
+}
+
+function automaticServerRequestResult(method: string, params: JsonRecord): unknown {
+  switch (method) {
+    case "item/commandExecution/requestApproval":
+    case "item/fileChange/requestApproval":
+      return { decision: "accept" };
+    case "execCommandApproval":
+    case "applyPatchApproval":
+      return { decision: "approved" };
+    case "item/permissions/requestApproval":
+      return { permissions: requestedPermissionGrant(params), scope: "turn" };
+    case "mcpServer/elicitation/request":
+      return { action: "accept", content: null, _meta: null };
+    default:
+      return undefined;
+  }
+}
+
+function displaySafeInteractionRequest(method: string, params: JsonRecord): JsonRecord {
+  const request: JsonRecord = { provider: "codex", method };
+  for (const key of ["itemId", "approvalId", "reason", "command", "cwd", "grantRoot"] as const) {
+    if (params[key] !== undefined && params[key] !== null) request[key] = boundedJson(params[key]);
+  }
+
+  if (method === "execCommandApproval" && Array.isArray(params.command)) {
+    request.command = boundedJson(params.command);
+  }
+  if (method === "applyPatchApproval") {
+    const changes = recordValue(params.fileChanges);
+    if (changes) request.files = Object.keys(changes).slice(0, 100).map(value => boundedString(value));
+  }
+  if (method === "item/permissions/requestApproval") {
+    request.permissions = boundedJson(params.permissions);
+  }
+  if (method === "item/tool/requestUserInput") {
+    request.questions = Array.isArray(params.questions)
+      ? params.questions.slice(0, 50).map(question => {
+        const value = recordValue(question) ?? {};
+        return {
+          id: boundedString(value.id),
+          header: boundedString(value.header),
+          question: boundedString(value.question),
+          isOther: value.isOther === true,
+          isSecret: value.isSecret === true,
+          options: Array.isArray(value.options)
+            ? value.options.slice(0, 50).map(option => {
+              const entry = recordValue(option) ?? {};
+              return { label: boundedString(entry.label), description: boundedString(entry.description) };
+            })
+            : null
+        };
+      })
+      : [];
+  }
+  if (method === "mcpServer/elicitation/request") {
+    for (const key of ["serverName", "mode", "title", "description", "message", "url"] as const) {
+      if (params[key] !== undefined && params[key] !== null) request[key] = boundedString(params[key]);
+    }
+    if (params.requestedSchema !== undefined) request.requestedSchema = boundedJson(params.requestedSchema);
+    // Provider `_meta` and user-verification challenges are deliberately not projected.
+  }
+  return request;
+}
+
+function providerInteractionReply(pending: PendingInteraction, response: InteractionResponse): JsonRecord {
+  const { method, params } = pending;
+  switch (method) {
+    case "item/commandExecution/requestApproval":
+    case "item/fileChange/requestApproval":
+      return { result: { decision: approvalDecision(response, false) } };
+    case "execCommandApproval":
+    case "applyPatchApproval":
+      return { result: { decision: approvalDecision(response, true) } };
+    case "item/permissions/requestApproval": {
+      requireApprovalOutcome(response);
+      return {
+        result: {
+          permissions: response.outcome === "accepted" ? requestedPermissionGrant(params) : {},
+          scope: "turn"
+        }
+      };
+    }
+    case "mcpServer/elicitation/request":
+      if (response.outcome === "declined" || response.outcome === "cancelled") {
+        return { result: { action: response.outcome === "declined" ? "decline" : "cancel", content: null, _meta: null } };
+      }
+      if (response.outcome !== "accepted" && response.outcome !== "answered") {
+        throw new Error("unsupported elicitation outcome");
+      }
+      return { result: { action: "accept", content: jsonValue(response.value), _meta: null } };
+    case "item/tool/requestUserInput":
+      if (response.outcome === "declined" || response.outcome === "cancelled") {
+        return {
+          error: {
+            code: -32001,
+            message: response.outcome === "declined" ? "user declined input" : "user cancelled input"
+          }
+        };
+      }
+      if (response.outcome !== "answered") {
+        throw new Error(`request_user_input requires answered outcome, received: ${response.outcome}`);
+      }
+      return { result: { answers: questionAnswers(params, response.value) } };
+    default:
+      throw new Error(`unsupported codex interaction method: ${method}`);
+  }
+}
+
+function requireApprovalOutcome(response: InteractionResponse): void {
+  if (response.outcome === "answered") {
+    throw new Error("approval interaction does not accept answered outcome");
+  }
+}
+
+function approvalDecision(response: InteractionResponse, legacy: boolean): unknown {
+  requireApprovalOutcome(response);
+  if (legacy) {
+    if (response.outcome === "accepted") return "approved";
+    if (response.outcome === "cancelled") return "abort";
+    return { denied: { rejection: responseReason(response.value) } };
+  }
+  if (response.outcome === "accepted") return "accept";
+  return response.outcome === "cancelled" ? "cancel" : "decline";
+}
+
+function requestedPermissionGrant(params: JsonRecord): JsonRecord {
+  const requested = recordValue(params.permissions);
+  if (!requested) return {};
+  return {
+    ...(recordValue(requested.network) ? { network: requested.network } : {}),
+    ...(recordValue(requested.fileSystem) ? { fileSystem: requested.fileSystem } : {})
+  };
+}
+
+function questionAnswers(params: JsonRecord, value: unknown): JsonRecord {
+  const outer = recordValue(value);
+  const source = recordValue(outer?.answers) ?? outer;
+  if (!source) throw new TypeError("request_user_input response value must be an answer object");
+  const questions = Array.isArray(params.questions) ? params.questions : [];
+  const entries: Array<[string, { answers: string[] }]> = [];
+  for (const question of questions) {
+    const id = stringValue(recordValue(question)?.id);
+    if (!id) continue;
+    const raw = source[id];
+    const wrapped = recordValue(raw);
+    const answers = typeof raw === "string"
+      ? [raw]
+      : Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string")
+        : Array.isArray(wrapped?.answers)
+          ? wrapped.answers.filter((item): item is string => typeof item === "string")
+          : [];
+    if (answers.length === 0) throw new TypeError(`missing answer for Codex question: ${id}`);
+    entries.push([id, { answers }]);
+  }
+  if (entries.length === 0) throw new TypeError("request_user_input contained no answerable questions");
+  return Object.fromEntries(entries);
+}
+
+function responseReason(value: unknown): string {
+  if (typeof value === "string" && value.trim()) return boundedString(value, 1_000);
+  const reason = stringValue(recordValue(value)?.reason);
+  return reason ? boundedString(reason, 1_000) : "declined by user";
+}
+
+function jsonValue(value: unknown): unknown {
+  if (value === undefined) return null;
+  try {
+    const encoded = JSON.stringify(value);
+    if (encoded === undefined) throw new TypeError("value is not JSON serializable");
+    return JSON.parse(encoded) as unknown;
+  } catch (error) {
+    throw new TypeError("interaction response value must be JSON serializable", { cause: error });
+  }
+}
+
+function boundedString(value: unknown, limit = 8_192): string {
+  const text = typeof value === "string" ? value : "";
+  return text.length <= limit ? text : `${text.slice(0, limit)}...[truncated]`;
+}
+
+function boundedJson(value: unknown, depth = 0): unknown {
+  if (value === null || typeof value === "boolean" || typeof value === "number") return value;
+  if (typeof value === "string") return boundedString(value);
+  if (depth >= 6) return "[truncated]";
+  if (Array.isArray(value)) return value.slice(0, 100).map(item => boundedJson(item, depth + 1));
+  const record = recordValue(value);
+  if (!record) return boundedString(value);
+  return Object.fromEntries(Object.entries(record).slice(0, 100).map(([key, item]) => [
+    boundedString(key, 256),
+    boundedJson(item, depth + 1)
+  ]));
+}
+
 /**
  * JSON-RPC client for a single invocation, backed by a single app-server subprocess.
  *
@@ -626,7 +859,9 @@ class CodexAppServerClient {
   readonly #queue = new AsyncEventQueue<CanonicalEvent>();
   readonly #normalizer = new CodexEventNormalizer();
   readonly #pending = new Map<RpcId, PendingRequest>();
+  readonly #interactions = new Map<string, PendingInteraction>();
   readonly #requestTimeoutMs: number;
+  readonly #interactive: boolean;
   readonly #signal?: AbortSignal;
   readonly #exitPromise: Promise<ProcessExit>;
   #resolveExit: (exit: ProcessExit) => void = () => undefined;
@@ -658,6 +893,7 @@ class CodexAppServerClient {
       type: "run.stopped",
       payload: { reason: String(this.#signal?.reason ?? "cancelled") }
     });
+    this.#interactions.clear();
     this.#queue.close();
     if (this.#activeThreadId && this.#activeTurnId) {
       void this.request("turn/interrupt", {
@@ -673,10 +909,12 @@ class CodexAppServerClient {
     spec: CodexAppServerCommand,
     spawnFn: CodexAppServerSpawn,
     requestTimeoutMs: number,
+    interactive: boolean,
     signal?: AbortSignal,
     readonly context?: AdapterInvocationContext
   ) {
     this.#requestTimeoutMs = requestTimeoutMs;
+    this.#interactive = interactive;
     this.#signal = signal;
     this.#exitPromise = new Promise(resolve => {
       this.#resolveExit = resolve;
@@ -708,6 +946,41 @@ class CodexAppServerClient {
 
   events(): AsyncIterable<CanonicalEvent> {
     return this.#queue;
+  }
+
+  /** Resume one provider reverse request after the durable Worker response reaches this invocation. */
+  respondInteraction(response: InteractionResponse): Promise<void> {
+    if (this.#closed || this.#exited || this.#terminal) {
+      return Promise.reject(new Error("codex interaction is no longer active"));
+    }
+    const pending = this.#interactions.get(response.interactionId);
+    if (!pending) {
+      return Promise.reject(new Error(`unknown codex interaction: ${response.interactionId}`));
+    }
+    if (pending.responding) {
+      return Promise.reject(new Error(`codex interaction response is already in flight: ${response.interactionId}`));
+    }
+
+    let reply: JsonRecord;
+    try {
+      reply = providerInteractionReply(pending, response);
+    } catch (error) {
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+    }
+    pending.responding = true;
+    return new Promise((resolve, reject) => {
+      this.#write(
+        { jsonrpc: "2.0", id: pending.rpcId, ...reply },
+        error => {
+          pending.responding = false;
+          reject(error);
+        },
+        () => {
+          this.#interactions.delete(response.interactionId);
+          resolve();
+        }
+      );
+    });
   }
 
   exit(): Promise<ProcessExit> {
@@ -782,6 +1055,7 @@ class CodexAppServerClient {
     if (this.#abortTimer) clearTimeout(this.#abortTimer);
     this.#reader.close();
     this.#rejectPending(new Error("codex app-server closed"));
+    this.#interactions.clear();
     if (this.#exited) return;
     this.#child.stdin.end();
     if (await waitForExit(this.#exitPromise, APP_SERVER_CLOSE_GRACE_MS)) return;
@@ -814,7 +1088,7 @@ class CodexAppServerClient {
     const method = stringValue(message.method);
     if (!method) return;
     if (id !== undefined) {
-      this.#handleServerRequest(id, method);
+      this.#handleServerRequest(id, method, recordValue(message.params) ?? {});
       return;
     }
     const params = recordValue(message.params) ?? {};
@@ -824,6 +1098,7 @@ class CodexAppServerClient {
       this.#queue.push(event);
       if (isTerminalEvent(event)) {
         this.#terminal = true;
+        this.#interactions.clear();
         this.#queue.close();
       }
     }
@@ -849,30 +1124,62 @@ class CodexAppServerClient {
     pending.resolve(message.result);
   }
 
-  #handleServerRequest(id: RpcId, method: string): void {
-    // The current adapter uses non-interactive run semantics: approval is backstopped by the sandbox boundary, not forwarded to a UI.
-    switch (method) {
-      case "item/commandExecution/requestApproval":
-      case "execCommandApproval":
-      case "item/fileChange/requestApproval":
-      case "applyPatchApproval":
-        this.#respond(id, { decision: "accept" });
+  #handleServerRequest(id: RpcId, method: string, params: JsonRecord): void {
+    if (!this.#interactive) {
+      const automatic = automaticServerRequestResult(method, params);
+      if (automatic !== undefined) {
+        this.#respond(id, automatic);
         return;
-      case "mcpServer/elicitation/request":
-        this.#respond(id, { action: "accept", content: null, _meta: null });
-        return;
-      default:
-        // Unknown server requests must be answered with an error, otherwise Codex waits forever on that JSON-RPC ID.
-        this.#write({
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32601, message: `unhandled server request: ${method}` }
-        });
+      }
+      this.#rejectServerRequest(id, method);
+      return;
     }
+
+    const kind = interactionKind(method);
+    if (!kind) {
+      this.#rejectServerRequest(id, method);
+      return;
+    }
+    if (this.#terminal || this.#closed || this.#exited) {
+      this.#write({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32000, message: "invocation is no longer active" }
+      });
+      return;
+    }
+
+    const interactionId = codexInteractionId(id);
+    if (this.#interactions.has(interactionId)) {
+      this.#write({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32600, message: "duplicate provider interaction id" }
+      });
+      return;
+    }
+    this.#interactions.set(interactionId, { rpcId: id, method, params, responding: false });
+    this.#queue.push({
+      type: "interaction.requested",
+      payload: {
+        interactionId,
+        kind,
+        request: displaySafeInteractionRequest(method, params)
+      }
+    });
   }
 
   #respond(id: RpcId, result: unknown): void {
     this.#write({ jsonrpc: "2.0", id, result });
+  }
+
+  #rejectServerRequest(id: RpcId, method: string): void {
+    // Unknown server requests must be answered with an error, otherwise Codex waits forever on that JSON-RPC ID.
+    this.#write({
+      jsonrpc: "2.0",
+      id,
+      error: { code: -32601, message: `unhandled server request: ${method}` }
+    });
   }
 
   #write(
@@ -884,7 +1191,13 @@ class CodexAppServerClient {
       onError?.(new Error("codex app-server is closed"));
       return;
     }
-    const line = `${JSON.stringify(message)}\n`;
+    let line: string;
+    try {
+      line = `${JSON.stringify(message)}\n`;
+    } catch (error) {
+      onError?.(error instanceof Error ? error : new Error(String(error)));
+      return;
+    }
     this.#child.stdin.write(line, error => {
       // Writable completion means local acceptance of the bytes. Only a later
       // frame with the same JSON-RPC id can acknowledge a request.
@@ -938,6 +1251,7 @@ class CodexAppServerClient {
 
   #handleProcessError(error: Error): void {
     this.#rejectPending(error);
+    this.#interactions.clear();
     if (!this.#closing && !this.#terminal) this.#queue.fail(error);
   }
 
@@ -947,6 +1261,7 @@ class CodexAppServerClient {
     this.#resolveExit(exit);
     const error = new CodexAppServerProcessError(this.processErrorMessage(exit), exit);
     this.#rejectPending(error);
+    this.#interactions.clear();
     if (!this.#closing && !this.#terminal) this.#queue.fail(error);
   }
 
