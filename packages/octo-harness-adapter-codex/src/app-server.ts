@@ -1048,7 +1048,9 @@ function threadParams(request: InvokeRequest, extra: JsonRecord): JsonRecord {
     cwd: request.workdir,
     ...(request.agentConfig.model ? { model: request.agentConfig.model } : {}),
     sandbox: codexSandbox(request),
-    approvalPolicy: "never",
+    // Dynamic MCP tools are untrusted until Codex asks the client to approve them. `never`
+    // rejects those calls before the existing reverse-request handler can answer them.
+    approvalPolicy: "untrusted",
     developerInstructions: request.appendInstructions
   };
 }

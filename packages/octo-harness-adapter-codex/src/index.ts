@@ -187,8 +187,9 @@ function resolveCodexHome(env: NodeJS.ProcessEnv): string {
  * calls. The ChatGPT.app acts as a provisioner: it writes local MCP servers — `computer-use`
  * (a `Codex Computer Use.app` helper holding the OS TCC grants) and `node_repl` (`cua_repl`) —
  * into the shared `~/.codex`, and any codex binary reading that home inherits the capability. The
- * Harness codex adapter already reuses the real CODEX_HOME, keeps `approvalPolicy: "never"` and
- * does not strip MCP servers, so no runtime toggle is needed; this helper only reports whether the
+ * Harness codex adapter already reuses the real CODEX_HOME, routes untrusted-tool approvals through
+ * its non-interactive response handler and does not strip MCP servers, so no runtime toggle is
+ * needed; this helper only reports whether the
  * provisioning is present and enabled, so a caller can surface a clear "install/run ChatGPT.app
  * first" message instead of a silent tool-not-found at turn time.
  *

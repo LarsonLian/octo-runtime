@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   buildCodexCommand,
@@ -83,4 +84,23 @@ test("Codex preserves the real home and does not rewrite config.toml", async () 
 test("Codex advertises dynamic MCP support", () => {
   const adapter = createCodexAdapter({ command: "codex-test", env: {} });
   assert.ok(adapter.metadata.capabilities.includes(capabilities.MCP_DYNAMIC));
+});
+
+test("Codex routes untrusted MCP approval through the non-interactive responder", async () => {
+  const adapter = createCodexAdapter({
+    command: process.execPath,
+    appServerArgs: [fileURLToPath(new URL("../test-support/fake-codex-mcp-approval.mjs", import.meta.url))]
+  });
+  const events = [];
+
+  for await (const event of adapter.invoke({
+    ...request,
+    mcpServers: undefined
+  })) {
+    events.push(event);
+  }
+
+  assert.equal(events.at(-1)?.type, "run.finished");
+  assert.ok(events.some(event => event.type === "tool_call.update"
+    && event.payload.status === "completed"));
 });

@@ -52,7 +52,7 @@ sequenceDiagram
 1. **会话续跑与自动降级**。`providerSession.sessionId` 即 Codex 的 thread ID，Core 仅将其作为不透明字符串保存。携带该 ID 时优先 `thread/resume` 续接上一轮会话；若 resume 报错，或 resume 成功但在 `turn/start` 时才发现 thread 已丢失，适配器会自动新建 thread 重试一次，并在 session 中记录低基数的降级原因（`resume_rejected` / `rollout_path_missing` / `turn_start_thread_not_found`），不会将整轮直接判定为失败。
 2. **权威 session 延迟上报**。仅当 `turn/start` 真正成功、本轮确实可执行时，才向 Core 上报 `session.update`，以避免 Core 保存下一个「thread 存在但无法执行」的无效 ID。
 3. **终态唯一**。`turn/completed` 映射为 `run.finished` / `run.error` / `run.stopped`；进程异常退出或被取消时，适配器均兜底为单一干净终态，此后到达的 provider 事件一律丢弃。
-4. **审批自动应答**。对 Codex 反向发来的命令执行、文件修改审批请求，适配器一律回应 `accept`（对应 `approvalPolicy: never` 的无人值守语义）；对未知的反向请求回应 JSON-RPC `-32601`，避免 Codex 持续阻塞等待。该 accept 不构成安全边界（见下文）。
+4. **审批自动应答**。线程使用 `approvalPolicy: untrusted`，让未信任的命令、文件修改与动态 MCP 工具进入 Codex 的反向审批协议；适配器对命令执行、文件修改审批请求一律回应 `accept`，对 MCP elicitation 回应 `accept`，对未知的反向请求回应 JSON-RPC `-32601`，避免 Codex 持续阻塞等待。不能使用 `approvalPolicy: never`：新版 Codex 会在发出反向请求前直接拒绝需要审批的 MCP 工具。该 accept 不构成安全边界（见下文）。
 5. **完整 CODEX_HOME**。app-server 直接复用真实 HOME，避免残缺 shadow HOME 触发 `state_5.sqlite` backfill 与并发锁等待。本轮私有控制指令只通过原生 `thread/start` / `thread/resume.developerInstructions` 传入，不修改用户的 `config.toml`。
 
 ## 桌面 GUI / computer use 能力
@@ -69,7 +69,7 @@ provisioning 的具体形态：
 
 1. **本机安装并运行过 ChatGPT.app**，让它把上述 MCP server / 插件写进 `~/.codex`，并在系统「隐私与安全性」里授予 helper 屏幕录制 / 辅助功能权限（TCC 绑定到 helper.app bundle，一台设备授权一次即可复用）。
 2. **能力已 provisioning / 开启**（config 中相应条目存在）。
-3. **adapter 侧放行**——本适配器已默认满足：`buildCodexCommand` 复用真实 `CODEX_HOME`、`app-server.ts` 保持 `approvalPolicy: "never"` 且不禁用任何 MCP server，`mcpToolCall` 事件已被 normalizer 统一映射为 `mcp__<server>__<tool>`。所以无需额外运行时开关，cua / computer-use 的工具调用会像普通 MCP 工具一样透传给上层。
+3. **adapter 侧放行**——本适配器已默认满足：`buildCodexCommand` 复用真实 `CODEX_HOME`、`app-server.ts` 使用 `approvalPolicy: "untrusted"` 并自动接受受支持的反向审批请求，且不禁用任何 MCP server；`mcpToolCall` 事件已被 normalizer 统一映射为 `mcp__<server>__<tool>`。所以无需额外运行时开关，cua / computer-use 的工具调用会像普通 MCP 工具一样透传给上层。
 
 `createCodexAdapter` 在创建时用 `detectComputerUseProvisioningSync` 检查将要使用的 `CODEX_HOME`：若 computer use 已 provisioning 且启用，就在 `metadata.capabilities` 里加上 `tool.computer_use`（常量 `COMPUTER_USE_CAPABILITY`）。这条 capability 走 `host.list()` 进入 Agent Work Runtime 的能力集合（Runtime 在 `start()` 时快照，而非每个 run 重查），因此 Agent Worker 能据此知道该节点是否具备 computer use；控制面的 `describe()` 展示也会带上它（同一份 metadata）。检测在**每次 adapter-host 进程启动 / 注册时**跑一次——与 `list()` 快照的时机一致，不落任何持久化、不上云。若节点上后来才安装 / 开启 ChatGPT.app，重启 adapter-host 即可重新探测。
 
