@@ -198,6 +198,23 @@
         "failure": { "$ref": "#/definitions/FailureEnvelope" }
       }
     },
+    "InteractionRequestedPayload": {
+      "title": "InteractionRequestedPayload",
+      "description": "Provider-neutral request that pauses one active invocation until an interaction response is returned through the Adapter Host.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interactionId", "kind", "request"],
+      "properties": {
+        "interactionId": { "description": "Stable invocation-scoped interaction identifier.", "type": "string", "minLength": 1, "maxLength": 191 },
+        "kind": { "type": "string", "enum": ["approval", "question", "elicitation"] },
+        "request": {
+          "description": "Display-safe provider request projected for the responding product.",
+          "type": "object",
+          "additionalProperties": true,
+          "tsType": "Record<string, unknown>"
+        }
+      }
+    },
     "ModelStepStartedPayload": {
       "title": "ModelStepStartedPayload",
       "description": "Starts one provider model round. A round may contain public reasoning, tool calls, and text output.",

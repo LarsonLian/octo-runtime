@@ -295,6 +295,7 @@ export async function startDaemonServer({
     list: async () => readyHost().client.list(),
     probe: async adapterType => readyHost().client.probe(adapterType),
     cancel: async (invocationId, reason) => readyHost().client.cancel(invocationId, reason),
+    respondInteraction: async (invocationId, response) => readyHost().client.respondInteraction(invocationId, response),
     async *invoke(adapterType, request) {
       await invocationManifest.begin({
         invocationId: request.invocationId,

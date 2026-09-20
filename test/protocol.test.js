@@ -5,8 +5,31 @@ import {
   assertChannelContextAppend,
   assertChannelContextDescriptor,
   assertContextSyncResult,
+  assertInteractionResponse,
   messageExposure
 } from "../packages/octo-harness-protocol/dist/index.js";
+
+test("interaction contracts require a stable request id and bounded response outcome", () => {
+  assert.doesNotThrow(() => assertCanonicalEvent({
+    type: "interaction.requested",
+    payload: {
+      interactionId: "approval-1",
+      kind: "approval",
+      request: { title: "Run tests", command: "pnpm test" }
+    }
+  }));
+  assert.doesNotThrow(() => assertInteractionResponse({
+    interactionId: "approval-1", outcome: "accepted"
+  }));
+  assert.throws(
+    () => assertCanonicalEvent({ type: "interaction.requested", payload: { kind: "approval", request: {} } }),
+    /payload\.interactionId/
+  );
+  assert.throws(
+    () => assertInteractionResponse({ interactionId: "approval-1", outcome: "maybe" }),
+    /outcome is unsupported/
+  );
+});
 
 test("analysis exposure defaults closed and public classifications require provenance", () => {
   const legacy = {

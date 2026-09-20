@@ -10,6 +10,7 @@ import type {
   RuntimeLimits,
   MessageChannel,
   MessageExposure,
+  InteractionRequestedPayload,
   ModelStepFinishedPayload,
   ModelStepStartedPayload,
   ToolCallCreatePayload,
@@ -31,6 +32,7 @@ export type {
   AgentConfig,
   RuntimeLimits,
   CanonicalEventPayload,
+  InteractionRequestedPayload,
   ModelStepStartedPayload,
   ModelStepFinishedPayload,
   ToolCallCreatePayload,
@@ -93,6 +95,7 @@ export const CANONICAL_EVENT_TYPES = [
   "message.create", "message.delta", "message.update",
   "tool_call.create", "tool_call.delta", "tool_call.update",
   "surface.create", "surface.delta", "surface.update",
+  "interaction.requested",
   "run.queued", "run.running",
   ...TERMINAL_EVENT_TYPES
 ] as const;
@@ -103,6 +106,7 @@ export type CanonicalEventType = (typeof CANONICAL_EVENT_TYPES)[number];
 export type CanonicalPayloadFor<TType extends CanonicalEventType> =
   TType extends "model_step.started" ? CanonicalEventPayload & ModelStepStartedPayload
     : TType extends "model_step.finished" ? CanonicalEventPayload & ModelStepFinishedPayload
+      : TType extends "interaction.requested" ? CanonicalEventPayload & InteractionRequestedPayload
       : TType extends "tool_call.create" ? CanonicalEventPayload & ToolCallCreatePayload
     : TType extends "tool_call.delta" ? CanonicalEventPayload & ToolCallDeltaPayload
       : TType extends "tool_call.update" ? CanonicalEventPayload & ToolCallUpdatePayload
@@ -124,6 +128,16 @@ export type CanonicalEvent<TType extends CanonicalEventType = CanonicalEventType
 export interface InvokeRequest extends InvokeRequestWire {
   /** Fired when the Host cancels the invocation; the adapter should propagate it to the subprocess or a protocol cancel. */
   signal?: AbortSignal;
+}
+
+export const INTERACTION_RESPONSE_OUTCOMES = ["accepted", "declined", "answered", "cancelled"] as const;
+export type InteractionResponseOutcome = (typeof INTERACTION_RESPONSE_OUTCOMES)[number];
+
+/** Opaque answer carrier routed back to the provider request that emitted an interaction. */
+export interface InteractionResponse {
+  interactionId: string;
+  outcome: InteractionResponseOutcome;
+  value?: unknown;
 }
 
 /** Provider adapters must use this accessor so hidden context is sent exactly once when present. */
@@ -292,7 +306,8 @@ export const capabilities = Object.freeze({
   MESSAGE_APPEND: "message.append",
   TOOL_CANONICAL: "tool.canonical",
   REATTACH: "run.reattach",
-  MCP_DYNAMIC: "tool.mcp.dynamic"
+  MCP_DYNAMIC: "tool.mcp.dynamic",
+  INTERACTION_RESPONSE: "interaction.response"
 } as const);
 
 /**
@@ -373,6 +388,25 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
   if (event.type === "tool_call.update") {
     requireEventString(payload, "id", event.type);
     requireEventString(payload, "status", event.type);
+  }
+  if (event.type === "interaction.requested") {
+    requireEventString(payload, "interactionId", event.type);
+    if (payload.kind !== "approval" && payload.kind !== "question" && payload.kind !== "elicitation") {
+      throw new TypeError("interaction.requested payload.kind is unsupported");
+    }
+    if (!isRecord(payload.request)) throw new TypeError("interaction.requested payload.request must be an object");
+  }
+}
+
+/** Validate a response before it crosses the process or provider boundary. */
+export function assertInteractionResponse(value: unknown): asserts value is InteractionResponse {
+  if (!isRecord(value)) throw new TypeError("interaction response must be an object");
+  if (typeof value.interactionId !== "string" || value.interactionId.length === 0 || value.interactionId.length > 191) {
+    throw new TypeError("interaction response interactionId must be 1-191 characters");
+  }
+  if (typeof value.outcome !== "string"
+    || !(INTERACTION_RESPONSE_OUTCOMES as readonly string[]).includes(value.outcome)) {
+    throw new TypeError("interaction response outcome is unsupported");
   }
 }
 

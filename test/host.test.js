@@ -309,3 +309,45 @@ test("RPC trace observes every client frame without changing the wire", async ()
   clientToServer.end();
   serverToClient.end();
 });
+
+test("RPC interaction responses resume the same active invocation", async () => {
+  const clientToServer = new PassThrough();
+  const serverToClient = new PassThrough();
+  const host = new AdapterHost();
+  let resume;
+  const response = new Promise(resolve => { resume = resolve; });
+  host.register({
+    metadata: { type: "interactive", capabilities: ["interaction.response"] },
+    async *invoke(invocation) {
+      yield {
+        type: "interaction.requested",
+        payload: { interactionId: "approval-1", kind: "approval", request: { title: "Proceed?" } }
+      };
+      const answer = await response;
+      yield { type: "message.create", payload: { channel: "final", text: answer.outcome } };
+      yield { type: "run.finished", payload: {} };
+    },
+    async respondInteraction(invocationId, answer) {
+      assert.equal(invocationId, "rpc-interactive");
+      resume(answer);
+    }
+  });
+  new AdapterHostRpcServer({ host, output: serverToClient }).listen(clientToServer);
+  const client = new AdapterHostRpcClient({ input: serverToClient, output: clientToServer });
+
+  const iterator = client.invoke("interactive", { ...request, invocationId: "rpc-interactive" });
+  assert.equal((await iterator.next()).value.type, "interaction.requested");
+  await assert.rejects(
+    client.respondInteraction("wrong-invocation", { interactionId: "approval-1", outcome: "accepted" }),
+    /invocation is not active/
+  );
+  await client.respondInteraction("rpc-interactive", { interactionId: "approval-1", outcome: "accepted" });
+  const remaining = [];
+  for await (const event of iterator) remaining.push(event);
+  assert.deepEqual(remaining.map(event => event.type), ["message.create", "message.update", "run.finished"]);
+  assert.equal(remaining[0].payload.text, "accepted");
+
+  client.close();
+  clientToServer.end();
+  serverToClient.end();
+});

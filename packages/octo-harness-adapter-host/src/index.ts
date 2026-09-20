@@ -1,10 +1,12 @@
 import {
   assertCanonicalEvent,
+  assertInteractionResponse,
   assertInvokeRequest,
   capabilities,
   failurePayload,
   isTerminal,
   type CanonicalEvent,
+  type InteractionResponse,
   type InvokeRequest,
   type MessageChannel,
   type MessageExposure,
@@ -44,6 +46,8 @@ export interface HostedAdapter {
    * supported path for recording provider input and dispatch milestones.
    */
   invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncIterable<CanonicalEvent>;
+  /** Resume a provider request that paused this exact active invocation. */
+  respondInteraction?(invocationId: string, response: InteractionResponse): Promise<void>;
 }
 
 /** Host-owned dependencies used to attach trusted identity to plugin observations. */
@@ -76,6 +80,7 @@ interface MessageState {
 export class AdapterHost {
   readonly #adapters = new Map<string, HostedAdapter>();
   readonly #active = new Map<string, AbortController>();
+  readonly #activeAdapters = new Map<string, HostedAdapter>();
   readonly #acceptedTerminals = new Set<string>();
   readonly #observe: NonNullable<AdapterHostOptions["observe"]>;
   readonly #canonicalSink?: AdapterHostOptions["canonicalSink"];
@@ -149,6 +154,7 @@ export class AdapterHost {
     }
     const controller = new AbortController();
     this.#active.set(request.invocationId, controller);
+    this.#activeAdapters.set(request.invocationId, adapter);
     let terminal: CanonicalEvent | undefined;
     let outcome = "stopped";
     const identity: ObservationIdentity = {
@@ -315,6 +321,7 @@ export class AdapterHost {
       await waitCleanup();
       controller.signal.removeEventListener("abort", onAbort);
       this.#active.delete(request.invocationId);
+      this.#activeAdapters.delete(request.invocationId);
       this.#acceptedTerminals.delete(request.invocationId);
     }
   }
@@ -333,6 +340,22 @@ export class AdapterHost {
     if (!controller || this.#acceptedTerminals.has(invocationId)) return false;
     controller.abort(reason);
     return true;
+  }
+
+  /** Route an answer only to the adapter instance that owns the active invocation. */
+  async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
+    assertInteractionResponse(response);
+    const adapter = this.#activeAdapters.get(invocationId);
+    if (!adapter || this.#acceptedTerminals.has(invocationId)) {
+      throw new Error(`invocation is not active: ${invocationId}`);
+    }
+    if (!adapter.respondInteraction) {
+      throw new Error(`adapter does not support interaction responses: ${adapter.metadata.type}`);
+    }
+    if (!adapter.metadata.capabilities.includes(capabilities.INTERACTION_RESPONSE)) {
+      throw new Error(`adapter did not declare interaction response capability: ${adapter.metadata.type}`);
+    }
+    await adapter.respondInteraction(invocationId, response);
   }
 
   /** Abort every invocation and wait briefly for adapter cleanup to reap its

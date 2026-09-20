@@ -275,6 +275,23 @@ export interface CanonicalEventPayload {
   [k: string]: unknown;
 }
 /**
+ * Provider-neutral request that pauses one active invocation until an interaction response is returned through the Adapter Host.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "InteractionRequestedPayload".
+ */
+export interface InteractionRequestedPayload {
+  /**
+   * Stable invocation-scoped interaction identifier.
+   */
+  interactionId: string;
+  kind: "approval" | "question" | "elicitation";
+  /**
+   * Display-safe provider request projected for the responding product.
+   */
+  request: Record<string, unknown>;
+}
+/**
  * Starts one provider model round. A round may contain public reasoning, tool calls, and text output.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema

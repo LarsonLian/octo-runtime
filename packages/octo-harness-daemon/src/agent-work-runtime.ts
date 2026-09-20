@@ -19,6 +19,7 @@ import type {
   ChannelContextDescriptor,
   ContextSyncRequest,
   ContextSyncResult,
+  InteractionResponse,
   InvokeRequest,
   McpServers,
   ProviderSession
@@ -27,6 +28,7 @@ import {
   assertChannelContextAppend,
   assertChannelContextDescriptor,
   assertContextSyncResult,
+  assertInteractionResponse,
   assertMcpServers,
   failurePayload
 } from "@mininglamp-oss/octo-harness-protocol";
@@ -214,7 +216,7 @@ interface RuntimeCommand {
   server_seq: number;
   command_id: string;
   run_id: string;
-  type: "run.start" | "run.cancel" | "run.steer";
+  type: "run.start" | "run.cancel" | "run.steer" | "interaction.respond";
   payload: unknown;
   lease_id: string;
   fencing_token: number;
@@ -1417,6 +1419,47 @@ export class AgentWorkRuntime {
         server_seq: command.server_seq
       }
     });
+    if (command.type === "interaction.respond") {
+      const store = this.#store;
+      if (!store) {
+        this.#ackCommand(command, false, { code: "LOCAL_STORE_UNAVAILABLE" });
+        return;
+      }
+      const receipt = store.getCommandReceipt(command.command_id);
+      if (receipt) {
+        this.#ackCommand(command, receipt.accepted, receipt.error);
+        return;
+      }
+      const active = this.#activeRuns.get(command.run_id);
+      const reject = (code: string, message: string): void => {
+        const error = { code, message };
+        store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
+        this.#ackCommand(command, false, error);
+      };
+      if (!active) {
+        reject("RUN_NOT_ACTIVE", "interaction response requires an active invocation");
+        return;
+      }
+      if (command.lease_id !== active.leaseId || command.fencing_token !== active.fencingToken) {
+        reject("STALE_COMMAND_FENCE", "interaction response does not own the active run lease");
+        return;
+      }
+      try {
+        const payload = asRecord(command.payload);
+        const response: InteractionResponse = {
+          interactionId: requiredString(payload.interaction_id, "interaction.respond interaction_id"),
+          outcome: requiredString(payload.outcome, "interaction.respond outcome") as InteractionResponse["outcome"],
+          ...(Object.hasOwn(payload, "value") ? { value: payload.value } : {})
+        };
+        assertInteractionResponse(response);
+        await this.#host.respondInteraction(active.invocationId, response);
+        store.recordCommandReceipt(command.command_id, command.server_seq, true);
+        this.#ackCommand(command, true);
+      } catch (error) {
+        reject("INTERACTION_RESPONSE_REJECTED", errorMessage(error));
+      }
+      return;
+    }
     if (command.type === "run.cancel") {
       const active = this.#activeRuns.get(command.run_id);
       if (active) {

@@ -536,6 +536,146 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
   }
 });
 
+test("interaction response commands are fenced, receipt-deduplicated, and rejected after terminal", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-interaction-"));
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  const completed = deferred();
+  const responseReceived = deferred();
+  let runtime;
+  let responseCalls = 0;
+  const interactionCommand = (id, seq, fencingToken = 7) => ({
+    server_seq: seq,
+    command_id: id,
+    run_id: "run-interaction",
+    type: "interaction.respond",
+    payload: { interaction_id: "approval-1", outcome: "accepted" },
+    lease_id: "lease-interaction",
+    fencing_token: fencingToken
+  });
+
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume registration. */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-interaction", protocol_version: 1 } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    let requested = false;
+    let validAckCount = 0;
+    websocket.on("message", data => {
+      const frame = JSON.parse(data.toString("utf8"));
+      if (frame.type === "runtime.hello") {
+        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("runtime.command", {
+          server_seq: 1,
+          command_id: "command-interaction-start",
+          run_id: "run-interaction",
+          type: "run.start",
+          payload: {
+            ...envelope,
+            run_id: "run-interaction",
+            agent_session_id: "session-interaction",
+            agent_run_request: {
+              ...envelope.agent_run_request,
+              trigger: { kind: "im.message", occurrence_id: "message/interaction" }
+            },
+            agent_revision: {
+              ...envelope.agent_revision,
+              execution_profile: {
+                default_adapter: "interactive",
+                workdir: process.cwd(),
+                agent_config: {}
+              }
+            }
+          },
+          lease_id: "lease-interaction",
+          fencing_token: 7
+        }));
+        return;
+      }
+      if (frame.type === "run.event_batch") {
+        const events = frame.payload.events;
+        const last = events.at(-1);
+        websocket.send(wire("event.ack", {
+          run_id: "run-interaction",
+          received_through_seq: last.seq,
+          durable_through_seq: last.seq
+        }));
+        if (!requested && events.some(event => event.type === "interaction.requested")) {
+          requested = true;
+          websocket.send(wire("runtime.command", interactionCommand("command-interaction-stale", 2, 6)));
+        }
+        if (events.some(event => event.type === "run.completed")) {
+          setTimeout(() => websocket.send(wire("runtime.command", interactionCommand("command-interaction-late", 4))), 20);
+        }
+        return;
+      }
+      if (frame.type !== "command.ack") return;
+      const ack = frame.payload;
+      if (ack.command_id === "command-interaction-stale") {
+        assert.equal(ack.accepted, false);
+        assert.equal(ack.error.code, "STALE_COMMAND_FENCE");
+        websocket.send(wire("runtime.command", interactionCommand("command-interaction-valid", 3)));
+      } else if (ack.command_id === "command-interaction-valid") {
+        assert.equal(ack.accepted, true);
+        validAckCount += 1;
+        if (validAckCount === 1) websocket.send(wire("runtime.command", interactionCommand("command-interaction-valid", 3)));
+      } else if (ack.command_id === "command-interaction-late") {
+        assert.equal(ack.accepted, false);
+        assert.equal(ack.error.code, "RUN_NOT_ACTIVE");
+        completed.resolve();
+      }
+    });
+  });
+
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    const host = {
+      list: async () => [{ type: "interactive", capabilities: ["interaction.response"], available: true }],
+      cancel: async () => ({ cancelled: true }),
+      async respondInteraction(invocationId, response) {
+        responseCalls += 1;
+        assert.match(invocationId, /^invoke_/);
+        assert.deepEqual(response, { interactionId: "approval-1", outcome: "accepted" });
+        responseReceived.resolve();
+      },
+      async *invoke() {
+        yield {
+          type: "interaction.requested",
+          payload: { interactionId: "approval-1", kind: "approval", request: { title: "Proceed?" } }
+        };
+        await responseReceived.promise;
+        yield { type: "run.finished", payload: {} };
+      }
+    };
+    runtime = new AgentWorkRuntime({
+      profile: "default",
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      tenantId: "tenant-interaction",
+      subjectId: "device-interaction",
+      runtimeName: "runtime-interaction",
+      storePath: join(directory, "agent-work.db")
+    }, host);
+    await runtime.start();
+    await Promise.race([
+      completed.promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("interaction command timeout")), 5_000))
+    ]);
+    assert.equal(responseCalls, 1);
+  } finally {
+    await runtime?.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("a configured runtime ID still refreshes registration and rejects identity drift", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-identity-"));
   const httpServer = createServer();
