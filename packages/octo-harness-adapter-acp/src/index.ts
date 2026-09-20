@@ -43,6 +43,60 @@ export interface StandardAcpUpdate extends AcpUpdate {
   status?: string;
 }
 
+export interface AcpModelSelectionRequest {
+  method: "session/set_config_option" | "session/set_model";
+  params: JsonRecord;
+}
+
+/** Resolve the model-selection RPC advertised by an ACP session response. */
+export function acpModelSelectionRequest(
+  session: JsonRecord,
+  sessionId: string,
+  requestedModel: string
+): AcpModelSelectionRequest | undefined {
+  const modelOption = arrayField(session, "configOptions").map(recordValue).find(option =>
+    stringField(option, "id") === "model" || stringField(option, "category") === "model"
+  );
+  if (modelOption) {
+    const available = arrayField(modelOption, "options")
+      .map(value => stringField(recordValue(value), "value"))
+      .filter((value): value is string => value !== undefined);
+    assertAdvertisedModel(requestedModel, available);
+    if (stringField(modelOption, "currentValue") === requestedModel) return undefined;
+    return {
+      method: "session/set_config_option",
+      params: { sessionId, configId: stringField(modelOption, "id") ?? "model", value: requestedModel }
+    };
+  }
+
+  const models = recordValue(session.models);
+  if (Object.keys(models).length > 0) {
+    const available = arrayField(models, "availableModels")
+      .map(value => stringField(recordValue(value), "modelId"))
+      .filter((value): value is string => value !== undefined);
+    assertAdvertisedModel(requestedModel, available);
+    if (stringField(models, "currentModelId") === requestedModel) return undefined;
+    return { method: "session/set_model", params: { sessionId, modelId: requestedModel } };
+  }
+
+  throw new Error("ACP provider does not advertise per-session model selection");
+}
+
+function assertAdvertisedModel(requestedModel: string, available: string[]): void {
+  if (available.length > 0 && !available.includes(requestedModel)) {
+    throw new Error(`ACP provider does not offer model ${requestedModel}`);
+  }
+}
+
+function sessionModel(session: JsonRecord): string | undefined {
+  const modelOption = arrayField(session, "configOptions").map(recordValue).find(option =>
+    stringField(option, "id") === "model" || stringField(option, "category") === "model"
+  );
+  return stringField(modelOption ?? {}, "currentValue")
+    ?? stringField(recordValue(session.models), "currentModelId")
+    ?? stringField(session, "model");
+}
+
 export function normalizeAcpUpdate(update: StandardAcpUpdate, provider: string): CanonicalEvent[] {
   const type = update.sessionUpdate ?? update.type;
   if (type === "agent_message_chunk" || type === "agent_thought_chunk") {
@@ -243,6 +297,7 @@ export function createAcpAdapter(
           ? acpLoadSessionParams(requestedSessionId, { cwd: request.workdir })
           : acpNewSessionParams({ cwd: request.workdir });
         let sessionRequestId = client.reserveRequestId();
+        let sessionResult: JsonRecord = {};
         await observeInput(context, sessionMethod, sessionParams, sessionRequestId, requestedSessionId);
         try {
           let result = await client.request<JsonRecord | null>(sessionMethod, sessionParams, {
@@ -271,9 +326,8 @@ export function createAcpAdapter(
             if (!freshSessionId) throw new Error("ACP session/new returned no sessionId");
             observeAcknowledged(context, sessionMethod, sessionRequestId, freshSessionId);
           }
-          const sessionResult = isRecord(result) ? result : {};
+          sessionResult = isRecord(result) ? result : {};
           sessionId = resumeFallback ? stringField(sessionResult, "sessionId") : requestedSessionId ?? stringField(sessionResult, "sessionId");
-          providerModel = stringField(sessionResult, "model");
           if (!sessionId) throw new Error("ACP session/new returned no sessionId");
         } catch (error) {
           observeFailed(
@@ -284,6 +338,27 @@ export function createAcpAdapter(
             error
           );
           throw error;
+        }
+        const requestedModel = nonEmptyString(request.agentConfig?.model);
+        if (requestedModel) {
+          const selection = acpModelSelectionRequest(sessionResult, sessionId, requestedModel);
+          if (selection) {
+            const selectionRequestId = client.reserveRequestId();
+            await observeInput(context, selection.method, selection.params, selectionRequestId, sessionId);
+            try {
+              await client.request(selection.method, selection.params, {
+                requestId: selectionRequestId,
+                onWritten: () => observeWritten(context, selection.method, selectionRequestId, sessionId)
+              });
+              observeAcknowledged(context, selection.method, selectionRequestId, sessionId);
+            } catch (error) {
+              observeFailed(context, selection.method, selectionRequestId, sessionId, error);
+              throw error;
+            }
+          }
+          providerModel = requestedModel;
+        } else {
+          providerModel = sessionModel(sessionResult);
         }
 
         yield {
@@ -511,6 +586,18 @@ function allowPermission(params: JsonRecord): JsonRecord {
 
 function isRecord(value: unknown): value is JsonRecord {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function recordValue(value: unknown): JsonRecord {
+  return isRecord(value) ? value : {};
+}
+
+function arrayField(value: JsonRecord, key: string): unknown[] {
+  return Array.isArray(value[key]) ? value[key] : [];
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function stringField(value: JsonRecord, key: string): string | undefined {

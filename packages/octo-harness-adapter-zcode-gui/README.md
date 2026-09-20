@@ -68,3 +68,9 @@ Agent revision 的 execution profile 使用 `adapter_type: "zcode-gui"`。常用
 ```
 
 无人值守写操作必须由 Agent revision 明确开启，例如 `autoApprove: true`；`workdir` 和 permission 回包都不是安全沙箱，生产节点仍需使用独立 OS 用户、容器或 VM 限制文件、网络和凭据范围。
+
+## 模型配置与环境变量
+
+当前 `zcode-gui` **不支持** Revision 级 `execution_profile.agent_config.model`。实测版本的 app-server `session/create` 只接受 workspace/mode，CLI 虽可在交互会话中使用 `/model`，但没有已验证的 app-server 选模 RPC。管理端因此禁用该字段，API 也拒绝为此 adapter 保存非空模型值；执行时使用 ZCode 登录态/配置中的默认模型。
+
+`ZCODE_BIN` 仅用于指定 `zcode.cjs` 的路径，不是模型变量。当前没有确认到可供 daemon 按 Agent 覆盖模型的 ZCode 环境变量。后续只有在 ZCode app-server 提供稳定的 per-session/per-turn 选模协议并补充 contract test 后，才能把此项改为支持。

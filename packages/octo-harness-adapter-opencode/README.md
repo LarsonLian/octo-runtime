@@ -77,6 +77,12 @@ session ID 并通过 `--session` 恢复。
 
 实际命令形态：首次 turn 为 `opencode run --format json --thinking --auto [--model …] [--variant …] <prompt>`；后续 turn 会附加 `--session <provider-session-id>` 以恢复会话。Adapter 无条件传入 `--thinking`，确保 reasoning block 写入 JSON stdout；无条件传入 `--auto`，避免无人值守调用停在权限确认；可选的 `--variant` 只控制 provider-specific reasoning 档位。
 
+## 模型配置与环境变量
+
+Agent Revision 使用 `execution_profile.agent_config.model`，adapter 每轮映射为 `--model provider/model`，包括 `--session` 恢复路径。值必须使用 OpenCode 的完整 `provider_id/model_id` 形式；未设置时使用 OpenCode 配置中的 `model`。
+
+OpenCode 没有固定的专用默认模型环境变量。`OPENCODE_CONFIG` 可指定配置文件，`OPENCODE_CONFIG_CONTENT` 可直接注入 JSON 配置；用户也可以在配置中用 `{env:NAME}` 引用任意自定义变量。Adapter 本身已使用 `OPENCODE_CONFIG_CONTENT` 合并 instructions，并用显式 `--model` 选择 Revision 模型。参考 [OpenCode configuration](https://dev.opencode.ai/docs/config/)。
+
 ## 约束与注意事项
 
 - **`--auto` 具有危险性且由此 adapter 强制开启**：provider 会自动批准未被显式拒绝的权限（可直接修改文件）。因此只能把该 adapter 部署在受控 workdir 与具备外部隔离的节点上。

@@ -119,6 +119,21 @@ Agent revision 的 `execution_profile.agent_config` 提供 `workdir`、`model`�
 
 `summary` 默认显式传入 `auto`：仅设置 `effort` 并不保证 app-server 回吐 reasoning summary，不显式请求可能只得到空的 analysis。该字段仅控制 provider 是否采集，不代表内容一定对用户可见。
 
+## 模型配置与环境变量
+
+Agent Revision 统一使用 `execution_profile.agent_config.model`。本 adapter 会把该值同时传给 app-server 的 `thread/start.model` 和每一轮的 `turn/start.model`，所以新会话与续跑会话都会按当前 Revision 重新选模。例如：
+
+```json
+{
+  "default_adapter": "codex",
+  "agent_config": { "model": "tencent/glm-5.3" }
+}
+```
+
+`tencent/glm-5.3` 必须是当前 Runtime 的 Codex 配置能够解析的模型名；adapter 不创建 provider，也不改写 provider catalog。未设置 `model` 时使用 Codex 自身默认值。
+
+Codex 没有专用的“默认模型环境变量”。默认模型来自 `$CODEX_HOME/config.toml` 的 `model`，`CODEX_HOME` 只负责选择配置/认证目录；自定义 provider 的密钥环境变量名称由 `model_providers.<id>.env_key` 配置决定。Adapter 设置的 app-server `model` 优先于配置文件默认值。参考 [Codex configuration reference](https://developers.openai.com/codex/config-reference)。
+
 ## 约束与注意事项
 
 - **workdir 不是沙箱**。真正的文件与网络边界由 Codex 自身 sandbox 叠加外部隔离（容器 / VM / 独立用户）决定。`danger-full-access` 仅应在已具备外部隔离的执行节点上使用。
