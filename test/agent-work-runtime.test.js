@@ -192,6 +192,54 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
   assert.match(mapped.request.prompt, /\[Current message\]\nFix the test/);
 });
 
+test("Agent Work envelope maps a validated immutable MCP plan without exposing it in context", () => {
+  const mcpServers = {
+    team: {
+      type: "streamable_http",
+      url: "https://worker.example.test/mcp/team",
+      headers: { Authorization: "Bearer run-scoped" },
+      required: true,
+      toolTimeoutMs: 120_000
+    },
+    local: {
+      type: "stdio",
+      command: "node",
+      args: ["server.mjs"],
+      env: { MODE: "test" }
+    }
+  };
+  const source = {
+    ...envelope,
+    agent_revision: {
+      ...envelope.agent_revision,
+      execution_profile: { ...envelope.agent_revision.execution_profile, mcp_servers: mcpServers }
+    }
+  };
+
+  const mapped = mapExecutionEnvelope(source);
+  assert.deepEqual(mapped.request.mcpServers, mcpServers);
+  assert.notEqual(mapped.request.mcpServers, mcpServers);
+  assert.equal(mapped.request.context.mcpServers, undefined);
+  mapped.request.mcpServers.team.headers.Authorization = "changed";
+  assert.equal(mcpServers.team.headers.Authorization, "Bearer run-scoped");
+});
+
+test("Agent Work envelope omits empty MCP plans and rejects malformed plans", () => {
+  const withPlan = mcpServers => mapExecutionEnvelope({
+    ...envelope,
+    agent_revision: {
+      ...envelope.agent_revision,
+      execution_profile: { ...envelope.agent_revision.execution_profile, mcp_servers: mcpServers }
+    }
+  });
+
+  assert.equal(withPlan({}).request.mcpServers, undefined);
+  assert.throws(
+    () => withPlan({ team: { type: "streamable_http", url: "file:///tmp/mcp" } }),
+    /absolute HTTP URL/
+  );
+});
+
 test("fresh execution never reaches an adapter with a provider session", () => {
   const fresh = {
     ...envelope,

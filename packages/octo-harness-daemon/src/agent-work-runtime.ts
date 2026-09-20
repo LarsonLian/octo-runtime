@@ -20,12 +20,14 @@ import type {
   ContextSyncRequest,
   ContextSyncResult,
   InvokeRequest,
+  McpServers,
   ProviderSession
 } from "@mininglamp-oss/octo-harness-protocol";
 import {
   assertChannelContextAppend,
   assertChannelContextDescriptor,
   assertContextSyncResult,
+  assertMcpServers,
   failurePayload
 } from "@mininglamp-oss/octo-harness-protocol";
 import { AgentWorkStore } from "./agent-work-store.js";
@@ -2189,6 +2191,7 @@ export function mapExecutionEnvelope(
   const adapterType = executionAdapterType(envelope);
   const agentConfig = asRecord(profile.agent_config) as AgentConfig;
   const runtimeLimits = mapExecutionRuntimeLimits(profile.runtime_limits);
+  const mcpServers = mapExecutionMcpServers(profile.mcp_servers);
   const workdir = stringValue(profile.workdir) ?? stringValue(agentConfig.workdir);
   if (!workdir) throw new TypeError("execution_profile.workdir is required for a local runtime");
   const content = envelope.agent_run_request.input;
@@ -2232,6 +2235,7 @@ export function mapExecutionEnvelope(
       workdir,
       appendInstructions: stringValue(definition.instructions) ?? "",
       context,
+      ...(mcpServers ? { mcpServers } : {}),
       ...(envelope.provider_session && contextSnapshot?.selectedVariant !== "recovery"
         ? { providerSession: envelope.provider_session }
         : {}),
@@ -2239,6 +2243,15 @@ export function mapExecutionEnvelope(
       agentConfig: { ...agentConfig, workdir }
     }
   };
+}
+
+function mapExecutionMcpServers(value: unknown): McpServers | undefined {
+  if (value === undefined || value === null) return undefined;
+  assertMcpServers(value);
+  if (Object.keys(value).length === 0) return undefined;
+  // The execution envelope remains an immutable dispatch fact. Clone the
+  // validated scalar-only contract before adapter-specific materialization.
+  return structuredClone(value);
 }
 
 function executionAdapterType(envelope: ExecutionEnvelope): string {
