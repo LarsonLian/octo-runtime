@@ -7,6 +7,7 @@
  * params, so app-server sees the complete state database and plugin runtime.
  */
 import { defineAdapter, probeCommand, type AdapterInvocationContext, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { capabilities, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
 import { parse, stringify } from "smol-toml";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
@@ -240,16 +241,77 @@ export function detectComputerUseProvisioningSync(
 export function buildCodexCommand(
   req: InvokeRequest,
   command = "codex",
-  appServerArgs = buildCodexAppServerArgs()
+  appServerArgs = buildCodexAppServerArgs(),
+  env: NodeJS.ProcessEnv = process.env
 ): CodexAppServerCommand {
-  const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
+  const codexHome = env.CODEX_HOME || join(homedir(), ".codex");
+  const mcp = codexMcpOverrides(req.mcpServers, env);
   return {
     command,
-    args: [...appServerArgs],
+    args: [...appServerArgs, ...mcp.args],
     cwd: req.workdir,
-    env: { ...process.env, CODEX_HOME: codexHome },
+    env: { ...env, ...mcp.env, CODEX_HOME: codexHome },
     cleanup: () => undefined
   };
+}
+
+/** Build process-local Codex config overrides without placing secret values in argv. */
+export function codexMcpOverrides(
+  servers: McpServers | undefined,
+  inheritedEnv: NodeJS.ProcessEnv = process.env
+): { args: string[]; env: NodeJS.ProcessEnv } {
+  if (!servers || Object.keys(servers).length === 0) return { args: [], env: {} };
+  const env: NodeJS.ProcessEnv = {};
+  const forwarded = new Map<string, string>();
+  const configured: Record<string, Record<string, unknown>> = {};
+
+  Object.entries(servers).forEach(([name, server], serverIndex) => {
+    const entry: Record<string, unknown> = {};
+    if (server.type === "stdio") {
+      entry.command = server.command;
+      if (server.args) entry.args = server.args;
+      if (server.cwd) entry.cwd = server.cwd;
+      if (server.env) {
+        for (const [key, value] of Object.entries(server.env)) {
+          const prior = forwarded.get(key);
+          if (prior !== undefined && prior !== value) {
+            throw new Error(`dynamic MCP stdio environment variable ${key} has conflicting values`);
+          }
+          forwarded.set(key, value);
+          env[key] = value;
+        }
+        entry.env_vars = Object.keys(server.env);
+      }
+    } else {
+      entry.url = server.url;
+      const headerVariables: Record<string, string> = {};
+      Object.entries(server.headers ?? {}).forEach(([header, value], headerIndex) => {
+        const variable = `OCTO_HARNESS_MCP_${serverIndex}_HEADER_${headerIndex}`;
+        env[variable] = value;
+        headerVariables[header] = variable;
+      });
+      if (Object.keys(headerVariables).length > 0) entry.env_http_headers = headerVariables;
+    }
+    if (server.required !== undefined) entry.required = server.required;
+    if (server.startupTimeoutMs !== undefined) entry.startup_timeout_sec = server.startupTimeoutMs / 1000;
+    if (server.toolTimeoutMs !== undefined) entry.tool_timeout_sec = server.toolTimeoutMs / 1000;
+    configured[name] = entry;
+  });
+
+  // Do not copy inherited values into the returned overlay. buildCodexCommand
+  // merges this object on top of inheritedEnv exactly once.
+  void inheritedEnv;
+  return { args: ["-c", `mcp_servers=${tomlValue(configured)}`], env };
+}
+
+function tomlValue(value: unknown): string {
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return `[${value.map(tomlValue).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value).map(([key, item]) => `${JSON.stringify(key)}=${tomlValue(item)}`).join(",")}}`;
+  }
+  throw new TypeError("unsupported Codex MCP config value");
 }
 
 /**
@@ -280,12 +342,12 @@ export function createCodexAdapter({
   env?: NodeJS.ProcessEnv;
 } = {}) {
   // Thread serialization and same-turn fresh fallback are end-to-end supported.
-  const capabilities = ["session.serialize", "session.resume_recovery", "activity.turn-progress"];
-  if (detectComputerUseProvisioningSync(env).available) capabilities.push(COMPUTER_USE_CAPABILITY);
+  const adapterCapabilities = ["session.serialize", "session.resume_recovery", "activity.turn-progress", capabilities.MCP_DYNAMIC];
+  if (detectComputerUseProvisioningSync(env).available) adapterCapabilities.push(COMPUTER_USE_CAPABILITY);
   return defineAdapter({
     metadata: {
       type: "codex",
-      capabilities,
+      capabilities: adapterCapabilities,
       processModel: "subprocess-per-invocation",
       transport: "json-rpc-2.0/stdio"
     },
@@ -293,7 +355,7 @@ export function createCodexAdapter({
     async *invoke(request: InvokeRequest, context?: AdapterInvocationContext) {
       // The transport owns cleanup as well as observation ordering, so the
       // shadow home cannot be deleted while its final RPC is still in flight.
-      const spec = buildCodexCommand(request, command, appServerArgs);
+      const spec = buildCodexCommand(request, command, appServerArgs, env);
       yield* runCodexAppServerTurn({ request, spec, context, ...(spawnFn ? { spawnFn } : {}) });
     }
   });
