@@ -1337,7 +1337,21 @@ function toolDescriptor(item: JsonRecord): { id: string; name: string; args: Jso
 function toolStatus(item: JsonRecord): string {
   const status = stringValue(item.status);
   if (status === "inProgress") return "running";
+  if (status === "failed" && isRipgrepNoMatch(item)) return "completed";
   return status || "completed";
+}
+
+/** ripgrep uses exit 1 for a successful search with no matches, not an execution error. */
+function isRipgrepNoMatch(item: JsonRecord): boolean {
+  if (stringValue(item.type) !== "commandExecution" || item.exitCode !== 1) return false;
+  if (stringValue(item.aggregatedOutput).trim() !== "") return false;
+
+  let command = stringValue(item.command).trim();
+  const wrapped = command.match(/^(?:\S+\/)?(?:sh|bash|zsh)\s+-\S*c\s+(["'])([\s\S]*)\1$/);
+  if (wrapped) command = wrapped[2].trim();
+
+  const finalCommand = command.split("&&").at(-1)?.trim() ?? "";
+  return /^(?:command\s+)?(?:[^\s"'`]+\/)?rg(?:\s|$)/.test(finalCommand);
 }
 
 /** Extract compact output for common tools; other tools keep the full item as a forward-compatible fallback. */
