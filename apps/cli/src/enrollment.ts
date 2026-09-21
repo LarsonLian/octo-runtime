@@ -30,12 +30,26 @@ export interface EnrollmentResult {
   credentialId: string;
   accessToken?: string;
   octoSpaceId?: string;
-  ownerRef?: string;
   agentWorkUrl?: string;
   expiresAt?: string;
 }
 
 export async function enrollRuntime(options: EnrollmentOptions): Promise<EnrollmentResult> {
+  const result = await exchangeRuntimeEnrollment(options);
+  await registerEnrolledRuntime(options, result);
+  return result;
+}
+
+export async function exchangeRuntimeEnrollment(options: EnrollmentOptions): Promise<EnrollmentResult> {
+  try {
+    return await exchangeRuntimeEnrollmentOnce(options);
+  } catch (error) {
+    if (!options.runtimeId || !options.runtimeToken || !isInvalidRuntimeRenewal(error)) throw error;
+    return exchangeRuntimeEnrollmentOnce({ ...options, runtimeId: undefined, runtimeToken: undefined });
+  }
+}
+
+async function exchangeRuntimeEnrollmentOnce(options: EnrollmentOptions): Promise<EnrollmentResult> {
   assertProfileName(options.profile);
   const fetchImplementation = options.fetchImplementation ?? fetch;
   const serverUrl = normalizeServerUrl(options.serverUrl);
@@ -58,19 +72,33 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
   const runtimeToken = stringValue(credential?.token);
   const enrolledRuntimeId = stringValue(enrolledRuntime?.id);
   const octoSpaceId = stringValue(enrolledRuntime?.octo_space_id);
-  const ownerRef = stringValue(enrolledRuntime?.owner_ref);
   const credentialId = stringValue(credential?.id);
-  if (!runtimeToken || !enrolledRuntimeId || !octoSpaceId || !ownerRef || !/^(uid|org):[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/.test(ownerRef) || !credentialId) {
-    throw new Error(`runtime enrollment response is missing credential or Octo binding (request_id=${enrollmentRequestId})`);
+  if (!runtimeToken || !enrolledRuntimeId || !credentialId) {
+    throw new Error(`runtime enrollment response is missing credential or Runtime identity (request_id=${enrollmentRequestId})`);
   }
   if (options.runtimeId && enrolledRuntimeId !== options.runtimeId) throw new Error(`enrollment returned a different Runtime identity (request_id=${enrollmentRequestId})`);
   if (enrolledRuntime?.profile !== options.profile) throw new Error(`runtime enrollment returned a different or missing profile (request_id=${enrollmentRequestId})`);
 
+  return {
+    profile: options.profile,
+    runtimeId: enrolledRuntimeId,
+    credentialId,
+    accessToken: runtimeToken,
+    octoSpaceId,
+    agentWorkUrl
+  };
+}
+
+export async function registerEnrolledRuntime(options: EnrollmentOptions, enrollment: EnrollmentResult): Promise<void> {
+  assertProfileName(options.profile);
+  const fetchImplementation = options.fetchImplementation ?? fetch;
+  const agentWorkUrl = normalizeServerUrl(enrollment.agentWorkUrl ?? options.agentWorkUrl ?? `${normalizeServerUrl(options.serverUrl)}/agentworker/api`);
+  if (!enrollment.accessToken) throw new Error("Runtime registration requires an enrolled Runtime credential");
   const { value: registered, requestId: registrationRequestId } = await requestObject(fetchImplementation, `${agentWorkUrl}/v1/runtime/register`, "Runtime registration", {
     method: "POST",
     redirect: "error",
     headers: {
-      Authorization: `Bearer ${runtimeToken}`,
+      Authorization: `Bearer ${enrollment.accessToken}`,
       "Content-Type": "application/json",
       Accept: "application/json",
       "Cache-Control": "no-store"
@@ -90,17 +118,8 @@ export async function enrollRuntime(options: EnrollmentOptions): Promise<Enrollm
   const runtime = objectValue(registered.runtime);
   const runtimeId = stringValue(runtime?.id);
   if (!runtimeId) throw new Error(`Runtime registration response is missing runtime.id (request_id=${registrationRequestId})`);
-  if (runtimeId !== enrolledRuntimeId) throw new Error(`Runtime registration changed the enrolled identity (request_id=${registrationRequestId})`);
+  if (runtimeId !== enrollment.runtimeId) throw new Error(`Runtime registration changed the enrolled identity (request_id=${registrationRequestId})`);
   if (runtime?.profile !== options.profile) throw new Error(`Runtime registration changed or omitted the enrolled profile (request_id=${registrationRequestId})`);
-  return {
-    profile: options.profile,
-    runtimeId,
-    credentialId,
-    accessToken: runtimeToken,
-    octoSpaceId,
-    agentWorkUrl,
-    ownerRef
-  };
 }
 
 function packageVersion(): string {
@@ -146,9 +165,34 @@ async function responseObject(response: Response, name: string, requestId: strin
     const error = objectValue(decoded.error);
     const message = stringValue(error?.message) ?? stringValue(decoded.error) ?? response.statusText;
     const code = stringValue(error?.code);
-    throw new Error(`${name} failed (${response.status}${code ? ` ${code}` : ""}, request_id=${requestId}): ${bounded(message)}`);
+    const details = objectValue(error?.details);
+    const reasonCode = stringValue(details?.reason_code);
+    throw new HttpResponseError(
+      `${name} failed (${response.status}${code ? ` ${code}` : ""}, request_id=${requestId}): ${bounded(message)}`,
+      response.status,
+      code,
+      reasonCode
+    );
   }
   return objectValue(decoded.data) ?? decoded;
+}
+
+class HttpResponseError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+    readonly reasonCode?: string
+  ) {
+    super(message);
+    this.name = "HttpResponseError";
+  }
+}
+
+function isInvalidRuntimeRenewal(error: unknown): boolean {
+  return error instanceof HttpResponseError &&
+    error.status === 401 &&
+    error.reasonCode === "ENROLLMENT_INVALID";
 }
 
 export function normalizeServerUrl(raw: string): string {

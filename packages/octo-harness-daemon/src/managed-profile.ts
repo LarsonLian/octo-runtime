@@ -27,7 +27,6 @@ interface ProfileConfiguration {
   profile?: unknown;
   agent_work_url?: unknown;
   octo_space_id?: unknown;
-  owner_ref?: unknown;
   runtime_name?: unknown;
   adapters?: unknown;
 }

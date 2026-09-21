@@ -25,8 +25,9 @@ Octo 线上测试环境完成真实链路调试。
 Octo Web
   -> POST /agentworker/api/v1/runtime_enrollments
   -> octo-auth 验证 Human Token 与 X-Space-ID
-  -> 无需请求体，服务端从已验证 UID 生成 owner_ref
-  -> 可选请求体 {"kind":"cloud"}，kind 不传默认 local，不影响归属
+  -> 可选请求体 {"kind":"local","owner_subject_type":"user"}
+  -> user 的 owner_subject_id 由服务端从已验证 UID 推导，不由客户端传入
+  -> kind 不传默认 local；organization 归属需要显式 owner_subject_id
   -> 返回短期、单次 octo_enroll_ token
 
 octo-harness login
@@ -212,16 +213,25 @@ unset OCTO_ENROLL_TOKEN
 同域部署时可以省略 `--agent-work-url`，CLI 默认使用
 `SERVER_URL/agentworker/api`；只有 Worker 使用其他 origin 或 API 根路径时才需要显式覆盖。
 
-After first login, the profile is bound to its trusted server, Agent Worker,
-server-assigned `runtime_id`, and protected Runtime credential. Profiles share
-the Home-global `machine_id` but not credentials or Runtime IDs. Use a new
-profile for another binding; mutually untrusted users need separate OS accounts.
+After first login, the profile stores its server, Agent Worker, server-assigned
+`runtime_id`, and protected Runtime credential. A fresh enrollment token may
+update the profile's server/Worker URL; Harness presents the existing Runtime ID
+and credential to the new endpoint, so the Worker can preserve the Runtime while
+issuing a new enrollment and credential. The URL is replaced only after that
+credential-proven renewal succeeds. If the Worker explicitly reports that the
+old Runtime credential is no longer valid (for example after a destructive test
+database reset), Harness retries the still-fresh enrollment once without the
+stale binding and replaces its local Runtime identity. Profiles share the
+Home-global `machine_id` but not credentials or Runtime IDs. Mutually untrusted
+users need separate OS accounts.
 
-Runtime identity/configuration uses `octo_space_id` and `owner_ref` (for example
-`uid:alice` or `org:engineering`), not `tenant_id` / `subject_id`. Human grant
-ownership is derived from octo-auth, never from a request body. The daemon publishes
-provider objects containing type, installed version/path, availability, and
-adapter capabilities. See [the breaking owner/provider contract](docs/runtime-owner-provider-contract.md).
+Runtime identity/configuration persists `runtime_id`, `credential_id`, and optional
+`octo_space_id`; it does not persist `owner_subject_type`, `owner_subject_id`, or
+`created_by_octo_uid`. Those fields are owned by Agent Worker for authorization and
+audit. Human user ownership is derived from octo-auth, never from a client-supplied
+subject ID. The daemon publishes provider objects containing type, installed
+version/path, availability, and adapter capabilities. See
+[the breaking owner/provider contract](docs/runtime-owner-provider-contract.md).
 
 ## 8. 前台启动和调试 daemon
 
@@ -369,8 +379,12 @@ https://im-test.deepminer.com.cn/agentworker
 
 ### profile 已绑定另一个 server/Worker
 
-A Home may hold multiple trusted profiles, each with its own Runtime identity.
-Use a new `--profile` for another binding; do not copy or modify credential files.
+A fresh enrollment token can move the same profile to a replacement URL. Harness
+sends the existing Runtime ID and credential to the explicitly requested endpoint;
+the endpoint must recognize them and return the same Runtime ID. On success the
+new URL and rotated credential replace the old local values. Use a new `--profile`
+only when a separate Runtime identity is required; do not copy or modify credential
+files.
 
 ### Runtime 没有 Online
 
