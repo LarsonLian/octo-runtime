@@ -1,6 +1,6 @@
 # Architecture
 
-Octo Harness is a provider-neutral execution runtime. Agent Worker is the control-plane authority for `AgentSession` and `AgentRun`; Harness maps a leased run to one provider invocation and streams canonical events back.
+Octo Harness is a provider-neutral execution runtime. Agent Worker is the control-plane authority for Agent/Team coordination, `AgentSession`, and `AgentRun`; Harness maps a leased run to one provider invocation and streams canonical events back. Product Task, Conversation, projection, and delivery state remain outside both Worker coordination and Harness.
 
 ## Invariants
 

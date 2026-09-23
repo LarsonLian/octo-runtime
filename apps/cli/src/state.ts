@@ -37,7 +37,6 @@ export interface ProfileConfiguration {
   server_url: string;
   agent_work_url?: string;
   octo_space_id?: string;
-  owner_ref?: string;
   runtime_name: string;
   adapters?: {
     openclaw?: OpenClawAdapterConfiguration;
@@ -82,7 +81,6 @@ export interface RuntimeIdentity {
   runtime_id: string;
   credential_id: string;
   octo_space_id?: string;
-  owner_ref?: string;
   enrolled_at: string;
 }
 

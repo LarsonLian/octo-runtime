@@ -6,9 +6,9 @@ Octo Harness 的 Codex 适配器：将本地 Codex CLI 接入统一的适配器�
 
 Codex 采用自有的会话（thread）概念与一套双向 JSON-RPC 协议，与其他 provider 差异显著；在一轮执行过程中，它会反向发起命令执行与补丁应用的审批请求，调用方必须应答，否则执行将持续阻塞。此外，上一轮会话的续跑、会话文件缺失的恢复、以及异常退出的收尾，都需要专门处理。
 
-本适配器将上述差异收敛在自身边界内。它对每次调用启动一个 `codex app-server` 子进程，主动完成 `initialize → thread → turn` 握手，将 Codex 的原生事件翻译为 Octo Harness 的统一 `CanonicalEvent`，并自动应答 Codex 发来的审批与交互请求。上层始终得到格式统一、仅含单一终态的事件流，领域核心无需针对 Codex 编写任何分支逻辑。
+本适配器将上述差异收敛在自身边界内。它对每次调用启动一个 `codex app-server` 子进程，主动完成 `initialize → thread → turn` 握手，并将 Codex 的原生事件翻译为 Octo Harness 的统一 `CanonicalEvent`。默认模式保持无人值守兼容，自动应答受支持的审批与 elicitation；当 `agentConfig.autoApprove` 显式设为 `false` 时，适配器发布 `interaction.requested`，等待 Worker 的 durable response，再恢复同一个 provider JSON-RPC 请求。上层始终得到格式统一、仅含单一终态的事件流，领域核心无需针对 Codex 编写任何分支逻辑。
 
-适配器仅负责协议翻译，不涉及排队、Trigger、Chat/Task 持久化，也不做跨节点调度或人工权限确认。
+适配器仅负责协议翻译和当前 invocation 内的原生请求恢复，不涉及排队、Trigger、Chat/Task 持久化，也不承担跨节点调度或人工权限决策；这些权威状态都在 Agent Worker。
 
 ## 工作原理
 
@@ -40,7 +40,13 @@ sequenceDiagram
         A-->>Host: CanonicalEvent
         opt Codex 反向请求
             C->>A: requestApproval / elicitation
-            A-->>C: 自动 accept
+            alt autoApprove 未显式设为 false
+                A-->>C: 自动 accept
+            else durable interaction
+                A-->>Host: interaction.requested
+                Host-->>A: interaction.respond
+                A-->>C: provider 原生 response
+            end
         end
     end
     A-->>Host: run.finished | run.error | run.stopped
@@ -52,7 +58,7 @@ sequenceDiagram
 1. **会话续跑与自动降级**。`providerSession.sessionId` 即 Codex 的 thread ID，Core 仅将其作为不透明字符串保存。携带该 ID 时优先 `thread/resume` 续接上一轮会话；若 resume 报错，或 resume 成功但在 `turn/start` 时才发现 thread 已丢失，适配器会自动新建 thread 重试一次，并在 session 中记录低基数的降级原因（`resume_rejected` / `rollout_path_missing` / `turn_start_thread_not_found`），不会将整轮直接判定为失败。
 2. **权威 session 延迟上报**。仅当 `turn/start` 真正成功、本轮确实可执行时，才向 Core 上报 `session.update`，以避免 Core 保存下一个「thread 存在但无法执行」的无效 ID。
 3. **终态唯一**。`turn/completed` 映射为 `run.finished` / `run.error` / `run.stopped`；进程异常退出或被取消时，适配器均兜底为单一干净终态，此后到达的 provider 事件一律丢弃。
-4. **审批自动应答**。对 Codex 反向发来的命令执行、文件修改审批请求，适配器一律回应 `accept`（对应 `approvalPolicy: never` 的无人值守语义）；对未知的反向请求回应 JSON-RPC `-32601`，避免 Codex 持续阻塞等待。该 accept 不构成安全边界（见下文）。
+4. **审批与 durable interaction**。线程使用 `approvalPolicy: untrusted`，让未信任的命令、文件修改与动态 MCP 工具进入 Codex 的反向审批协议。为兼容既有无人值守运行，`autoApprove` 未配置或为 `true` 时继续自动应答受支持的命令、文件、权限和 MCP elicitation；显式设为 `false` 时，命令/文件/权限审批、MCP elicitation 和 `request_user_input` 会投影为 `interaction.requested`，并通过 `interaction.response` capability 将 Worker 的 durable response 精确路由回原 invocation。provider `_meta` 与 verification challenge 不进入展示投影；未知反向请求仍回应 JSON-RPC `-32601`。不能使用 `approvalPolicy: never`：新版 Codex 会在发出反向请求前直接拒绝需要审批的 MCP 工具。自动 accept 不构成安全边界（见下文）。
 5. **完整 CODEX_HOME**。app-server 直接复用真实 HOME，避免残缺 shadow HOME 触发 `state_5.sqlite` backfill 与并发锁等待。本轮私有控制指令只通过原生 `thread/start` / `thread/resume.developerInstructions` 传入，不修改用户的 `config.toml`。
 
 ## 桌面 GUI / computer use 能力
@@ -69,7 +75,7 @@ provisioning 的具体形态：
 
 1. **本机安装并运行过 ChatGPT.app**，让它把上述 MCP server / 插件写进 `~/.codex`，并在系统「隐私与安全性」里授予 helper 屏幕录制 / 辅助功能权限（TCC 绑定到 helper.app bundle，一台设备授权一次即可复用）。
 2. **能力已 provisioning / 开启**（config 中相应条目存在）。
-3. **adapter 侧放行**——本适配器已默认满足：`buildCodexCommand` 复用真实 `CODEX_HOME`、`app-server.ts` 保持 `approvalPolicy: "never"` 且不禁用任何 MCP server，`mcpToolCall` 事件已被 normalizer 统一映射为 `mcp__<server>__<tool>`。所以无需额外运行时开关，cua / computer-use 的工具调用会像普通 MCP 工具一样透传给上层。
+3. **adapter 侧放行**——本适配器已默认满足：`buildCodexCommand` 复用真实 `CODEX_HOME`、`app-server.ts` 使用 `approvalPolicy: "untrusted"`，且不禁用任何 MCP server；默认自动接受受支持的反向审批，`autoApprove: false` 则交给 Worker durable interaction。`mcpToolCall` 事件已被 normalizer 统一映射为 `mcp__<server>__<tool>`。所以默认无需额外运行时开关，cua / computer-use 的工具调用会像普通 MCP 工具一样透传给上层。
 
 `createCodexAdapter` 在创建时用 `detectComputerUseProvisioningSync` 检查将要使用的 `CODEX_HOME`：若 computer use 已 provisioning 且启用，就在 `metadata.capabilities` 里加上 `tool.computer_use`（常量 `COMPUTER_USE_CAPABILITY`）。这条 capability 走 `host.list()` 进入 Agent Work Runtime 的能力集合（Runtime 在 `start()` 时快照，而非每个 run 重查），因此 Agent Worker 能据此知道该节点是否具备 computer use；控制面的 `describe()` 展示也会带上它（同一份 metadata）。检测在**每次 adapter-host 进程启动 / 注册时**跑一次——与 `list()` 快照的时机一致，不落任何持久化、不上云。若节点上后来才安装 / 开启 ChatGPT.app，重启 adapter-host 即可重新探测。
 
@@ -113,11 +119,27 @@ Agent revision 的 `execution_profile.agent_config` 提供 `workdir`、`model`�
 | `model` | 传给 thread 与 turn | 由 Codex 配置决定 |
 | `thinking` | 映射为 turn 的 `effort`；`disabled` 兼容映射为 `low` | 由 Codex 配置决定 |
 | `sandbox` | `read-only` / `workspace-write` / `danger-full-access` | `workspace-write` |
+| `autoApprove` | 显式为 `false` 时启用 Worker durable interaction；未配置或为 `true` 时兼容既有自动应答 | 自动应答 |
 | `dangerouslyBypassPermissions` | 为 `true` 时强制 sandbox 为 `danger-full-access`，优先级高于 `sandbox` | `false` |
 | `providerOptions.reasoningSummary` | reasoning summary 采集偏好 `auto/concise/detailed/none` | `auto`（`thinking:disabled` 时为 `none`） |
 | `providerOptions.appServerRequestTimeoutMs` | 单个 RPC 的超时 | `30000` |
 
 `summary` 默认显式传入 `auto`：仅设置 `effort` 并不保证 app-server 回吐 reasoning summary，不显式请求可能只得到空的 analysis。该字段仅控制 provider 是否采集，不代表内容一定对用户可见。
+
+## 模型配置与环境变量
+
+Agent Revision 统一使用 `execution_profile.agent_config.model`。本 adapter 会把该值同时传给 app-server 的 `thread/start.model` 和每一轮的 `turn/start.model`，所以新会话与续跑会话都会按当前 Revision 重新选模。例如：
+
+```json
+{
+  "default_adapter": "codex",
+  "agent_config": { "model": "tencent/glm-5.3" }
+}
+```
+
+`tencent/glm-5.3` 必须是当前 Runtime 的 Codex 配置能够解析的模型名；adapter 不创建 provider，也不改写 provider catalog。未设置 `model` 时使用 Codex 自身默认值。
+
+Codex 没有专用的“默认模型环境变量”。默认模型来自 `$CODEX_HOME/config.toml` 的 `model`，`CODEX_HOME` 只负责选择配置/认证目录；自定义 provider 的密钥环境变量名称由 `model_providers.<id>.env_key` 配置决定。Adapter 设置的 app-server `model` 优先于配置文件默认值。参考 [Codex configuration reference](https://developers.openai.com/codex/config-reference)。
 
 ## 约束与注意事项
 

@@ -4,19 +4,20 @@ This contract is a breaking reset. There is no legacy schema or string-adapter
 upgrade support. The Worker owns fresh-schema creation; never reset Octo/auth
 or Gateway databases as part of a Runtime reset.
 
-## Profile Binding
+## Local Binding
 
-Each profile persists `runtime_id`, `credential_id`, `octo_space_id`, and
-`owner_ref` in `identity/runtime.json`. Profile configuration uses
-`octo_space_id` and `owner_ref`, not `tenant_id` or `subject_id`. Credentials
-remain in the protected credential file.
+Each profile persists `runtime_id`, `credential_id`, and optional `octo_space_id`
+in `identity/runtime.json`. Credentials remain in the protected credential file.
+Harness deliberately does not persist `owner_subject_type`, `owner_subject_id`,
+or `created_by_octo_uid`: Worker binds those fields to the Runtime credential and
+uses them for authorization and audit. They are not required to register or
+connect a Runtime.
 
-Examples: `uid:alice`, `uid:cec02bd6ad8f4d29bf84e7a7e8e35b54`,
-`org:engineering`. Space is the tenant isolation boundary; owner is a separate
-user/organization reference. An owner may have many Runtimes, and one Home
-installation's `machine_id` may be shared by many profile Runtimes.
+Space is the tenant isolation boundary; owner is a separate user/organization
+subject. An owner may have many Runtimes, and one Home installation's
+`machine_id` may be shared by many profile Runtimes.
 
-## Profile Binding
+## Profile Name Binding
 
 The breaking `feat/runtime-profile` contract requires `profile` on both
 `POST /v1/runtimes/enroll` and `POST /v1/runtime/register`. Harness sends the
@@ -40,24 +41,21 @@ No compatibility upgrade is shipped: use a fresh local Worker schema and fresh
 profile identities/credentials. Preserve Home-global machine identity, and
 do not reset Octo/auth or Gateway databases.
 
-No `created_by_uid` or initial enrollment pointer is added; operation history
-will belong to a future audit table. An enrollment's authorized owner is
-server-controlled. Human enrollment requires a JSON body containing
-`{"owner":{"type":"user"}}` and derives
-`uid:{verified UID}` from octo-auth; it ignores any client ownership assertions.
-Until Octo provides organization authority, the service and credential model
-can carry verified organization grants without treating Space membership as
-organization permission. Re-enrollment cannot change an existing Runtime's
-Space or owner.
+An enrollment's authorized owner is server-controlled.
+`POST /v1/runtime_enrollments` accepts optional `kind` and
+`owner_subject_type`.
+Missing `owner_subject_type` defaults to `user`; for a user owner,
+`owner_subject_id` must be omitted and Worker derives it from the verified Octo
+UID. Organization ownership requires an explicit `owner_subject_id`. Worker
+always derives `created_by_octo_uid` from the verified user. Re-enrollment cannot
+change an existing Runtime's Space or owner.
 
-Missing owner/type returns `400 VALIDATION_ERROR`; other owner types return
-the same code with `details.reason_code=OWNER_TYPE_NOT_SUPPORTED`.
-
-The human issuer may send `{"kind":"cloud","owner":{"type":"user"}}` to
-`POST /v1/runtime_enrollments`; missing kind defaults to `local`. The enrollment
-selects the server-side Runtime kind. Harness metadata registration does not
-rewrite it, so a cloud Runtime remains cloud after login/reconnect. Re-enrollment
-requires a grant with matching kind.
+The human issuer may send
+`{"kind":"cloud","owner_subject_type":"organization","owner_subject_id":"engineering"}`
+to `POST /v1/runtime_enrollments`; missing kind defaults to `local`. The
+enrollment selects the server-side Runtime kind. Harness metadata registration
+does not rewrite it, so a cloud Runtime remains cloud after login/reconnect.
+Re-enrollment requires a grant with matching kind.
 
 ## Device Metadata
 

@@ -4,7 +4,13 @@ import { fileURLToPath } from "node:url";
 import { PassThrough } from "node:stream";
 import { AdapterHost, AdapterHostRpcClient, AdapterHostRpcServer, spawnAdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 
-const request = { invocationId: "inv-host", agentSessionId: "s", runId: "r", prompt: "p", workdir: process.cwd() };
+const request = {
+  invocationId: "inv-host",
+  agentSessionId: "s",
+  runId: "arun_35c4ffc5db9940c9be7ce3a894819ae3",
+  prompt: "p",
+  workdir: process.cwd()
+};
 
 test("host holds terminal until adapter stream cleanup succeeds", async () => {
   const host = new AdapterHost();
@@ -101,7 +107,7 @@ test("host gives adapters a provider observation context with full invocation id
   assert.deepEqual(observations[0].identity, {
     profile: "work",
     runtimeId: "runtime-work",
-    runId: "r",
+    runId: request.runId,
     invocationId: "inv-host",
     agentSessionId: "s",
     adapterType: "observed"
@@ -193,10 +199,15 @@ test("host watchdog fails a provider that never emits its first protocol frame",
     }
   })) events.push(event);
   assert.equal(events.at(-1).type, "run.error");
-  assert.equal(events.at(-1).payload.code, "ADAPTER_TIMEOUT");
-  assert.equal(events.at(-1).payload.failure.code, "OH-ADP-3006");
+  assert.equal(events.at(-1).payload.code, "ADAPTER_FIRST_FRAME_TIMEOUT");
+  assert.equal(events.at(-1).payload.failure.code, "OH-ADP-3007");
   assert.equal(events.at(-1).payload.failure.stage, "adapter.invoke");
-  assert.deepEqual(events.at(-1).payload.failure.params, { timeoutStage: "starting", timeoutMs: 100 });
+  assert.equal(events.at(-1).payload.failure.diagnosticId, "diag_35c4ffc5db9940c9be7ce3a894819ae3");
+  const params = events.at(-1).payload.failure.params;
+  assert.equal(params.timeoutStage, "starting");
+  assert.equal(params.timeoutMs, 100);
+  assert.equal(params.timeoutReason, "first_frame");
+  assert.equal(params.configParameter, "execution_profile.runtime_limits.first_frame_timeout_ms");
 });
 
 test("host watchdog uses the tool budget while a canonical tool call is open", async () => {
@@ -224,8 +235,12 @@ test("host watchdog uses the tool budget while a canonical tool call is open", a
   })) events.push(event);
   assert.deepEqual(events.slice(0, 2).map(event => event.type), ["model_step.started", "tool_call.create"]);
   assert.equal(events.at(-1).type, "run.error");
-  assert.equal(events.at(-1).payload.failure.reasonCode, "ADAPTER_TIMEOUT");
-  assert.deepEqual(events.at(-1).payload.failure.params, { timeoutStage: "tool_active", timeoutMs: 100 });
+  assert.equal(events.at(-1).payload.failure.reasonCode, "ADAPTER_TOOL_IDLE_TIMEOUT");
+  assert.equal(events.at(-1).payload.failure.code, "OH-ADP-3009");
+  const params = events.at(-1).payload.failure.params;
+  assert.equal(params.timeoutStage, "tool_active");
+  assert.equal(params.timeoutMs, 100);
+  assert.equal(params.timeoutReason, "tool_idle");
 });
 
 test("host shutdown aborts every active provider invocation before returning", async () => {
@@ -254,13 +269,21 @@ test("host shutdown aborts every active provider invocation before returning", a
 
 test("separate adapter-host process loads manifest and streams events", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
-  const processHost = await spawnAdapterHost({ entrypoint: `${root}/apps/adapter-host/dist/index.js`, manifest: `${root}/test/fixtures/adapters.json` });
+  const observations = [];
+  const processHost = await spawnAdapterHost({ entrypoint: `${root}/apps/adapter-host/dist/index.js`, manifest: `${root}/test/fixtures/adapters.json`, observe: frame => observations.push(frame) });
   try {
     assert.equal(processHost.child.spawnargs[0], "octo-harness-adapter-host");
     assert.equal(processHost.adapters.some(item => item.type === "test"), true);
     assert.equal((await processHost.client.list()).some(item => item.type === "test"), true);
     const events = []; for await (const event of processHost.client.invoke("test", { ...request, invocationId: "rpc-inv" })) events.push(event);
     assert.equal(events.at(-1).type, "run.finished");
+    // FD3 is independent of RPC stdout; allow its terminal snapshot to arrive.
+    for (let i = 0; i < 50 && !observations.some(x => x.type === "watchdog.metrics"); i++) await new Promise(resolve => setTimeout(resolve, 10));
+    const started = observations.find(x => x.source === "provider-activity" && x.record?.event === "watchdog.started");
+    assert.equal(started.record.data.effectiveLimits.runTimeoutMs, 3600000);
+    assert.equal(started.record.data.effectiveLimits.modelIdleTimeoutMs, 300000);
+    const snapshot = observations.find(x => x.type === "watchdog.metrics");
+    assert.equal(snapshot.payload.find(x => x.name === "outcomes_total").labels.outcome, "completed");
   } finally { await processHost.close(); }
 });
 
@@ -282,6 +305,48 @@ test("RPC trace observes every client frame without changing the wire", async ()
     { jsonrpc: "2.0", id: JSON.parse(traced[0].frame).id, method: "list", params: {} },
     { jsonrpc: "2.0", id: JSON.parse(traced[0].frame).id, result: [] }
   ]);
+  client.close();
+  clientToServer.end();
+  serverToClient.end();
+});
+
+test("RPC interaction responses resume the same active invocation", async () => {
+  const clientToServer = new PassThrough();
+  const serverToClient = new PassThrough();
+  const host = new AdapterHost();
+  let resume;
+  const response = new Promise(resolve => { resume = resolve; });
+  host.register({
+    metadata: { type: "interactive", capabilities: ["interaction.response"] },
+    async *invoke(invocation) {
+      yield {
+        type: "interaction.requested",
+        payload: { interactionId: "approval-1", kind: "approval", request: { title: "Proceed?" } }
+      };
+      const answer = await response;
+      yield { type: "message.create", payload: { channel: "final", text: answer.outcome } };
+      yield { type: "run.finished", payload: {} };
+    },
+    async respondInteraction(invocationId, answer) {
+      assert.equal(invocationId, "rpc-interactive");
+      resume(answer);
+    }
+  });
+  new AdapterHostRpcServer({ host, output: serverToClient }).listen(clientToServer);
+  const client = new AdapterHostRpcClient({ input: serverToClient, output: clientToServer });
+
+  const iterator = client.invoke("interactive", { ...request, invocationId: "rpc-interactive" });
+  assert.equal((await iterator.next()).value.type, "interaction.requested");
+  await assert.rejects(
+    client.respondInteraction("wrong-invocation", { interactionId: "approval-1", outcome: "accepted" }),
+    /invocation is not active/
+  );
+  await client.respondInteraction("rpc-interactive", { interactionId: "approval-1", outcome: "accepted" });
+  const remaining = [];
+  for await (const event of iterator) remaining.push(event);
+  assert.deepEqual(remaining.map(event => event.type), ["message.create", "message.update", "run.finished"]);
+  assert.equal(remaining[0].payload.text, "accepted");
+
   client.close();
   clientToServer.end();
   serverToClient.end();

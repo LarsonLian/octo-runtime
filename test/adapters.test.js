@@ -10,7 +10,7 @@ import {
   observeProviderOutput
 } from "../packages/octo-harness-adapter-sdk/dist/index.js";
 import { createCodeBuddyAdapter } from "@mininglamp-oss/octo-harness-adapter-codebuddy";
-import { createAcpAdapter, normalizeAcpUpdate } from "@mininglamp-oss/octo-harness-adapter-acp";
+import { acpModelSelectionRequest, createAcpAdapter, normalizeAcpUpdate } from "@mininglamp-oss/octo-harness-adapter-acp";
 import { hermesAdapter } from "@mininglamp-oss/octo-harness-adapter-hermes";
 import { kimiCodeAdapter } from "@mininglamp-oss/octo-harness-adapter-kimi-code";
 import {
@@ -1370,16 +1370,22 @@ test("generic ACP adapters expose a model step when the provider only sends publ
   assert.equal(events.at(-1).type, "run.finished");
 });
 
-test("generic ACP adapters leave model and authentication ownership to the provider", async () => {
+test("generic ACP adapters select a requested model through standard config options", async () => {
   let nextRequestId = 1;
-  let newSessionParams;
+  const requests = [];
   const client = {
     initialize: async () => {},
     reserveRequestId: () => nextRequestId++,
     request: async (method, params) => {
+      requests.push({ method, params });
       if (method === "session/new") {
-        newSessionParams = params;
-        return { sessionId: "provider-session", model: "provider-owned-model" };
+        return {
+          sessionId: "provider-session",
+          configOptions: [{ id: "model", category: "model", currentValue: "default-model", options: [
+            { value: "default-model", name: "Default" },
+            { value: "requested-model", name: "Requested" }
+          ] }]
+        };
       }
       return {};
     },
@@ -1397,20 +1403,39 @@ test("generic ACP adapters leave model and authentication ownership to the provi
   const events = [];
   for await (const event of adapter.invoke({
     ...request,
-    agentConfig: { model: "harness-must-not-select-this", autoApprove: true }
+    agentConfig: { model: "requested-model", autoApprove: true }
   })) events.push(event);
 
-  assert.deepEqual(newSessionParams, { cwd: request.workdir, mcpServers: [] });
+  assert.deepEqual(requests.slice(0, 2), [
+    { method: "session/new", params: { cwd: request.workdir, mcpServers: [] } },
+    { method: "session/set_config_option", params: { sessionId: "provider-session", configId: "model", value: "requested-model" } }
+  ]);
   assert.deepEqual(events.find(event => event.type === "session.update"), {
     type: "session.update",
     payload: {
       providerSession: {
         sessionId: "provider-session",
         resumable: true,
-        model: "provider-owned-model"
+        model: "requested-model"
       }
     }
   });
+});
+
+test("generic ACP model selection supports legacy model state and rejects unavailable models", () => {
+  const session = {
+    models: {
+      currentModelId: "custom:default",
+      availableModels: [{ modelId: "custom:default" }, { modelId: "custom:tencent/glm-5.3" }]
+    }
+  };
+  assert.deepEqual(acpModelSelectionRequest(session, "session-1", "custom:tencent/glm-5.3"), {
+    method: "session/set_model",
+    params: { sessionId: "session-1", modelId: "custom:tencent/glm-5.3" }
+  });
+  assert.equal(acpModelSelectionRequest(session, "session-1", "custom:default"), undefined);
+  assert.throws(() => acpModelSelectionRequest(session, "session-1", "missing"), /does not offer model missing/);
+  assert.throws(() => acpModelSelectionRequest({}, "session-1", "missing"), /does not advertise/);
 });
 
 test("generic ACP adapters start fresh when session/load reports a missing session", async () => {
@@ -1543,7 +1568,7 @@ test("generic ACP adapters keep a failed tool local and accept the prompt respon
   const events = [];
   for await (const event of adapter.invoke({
     ...request,
-    agentConfig: { model: "fixture-model", autoApprove: true }
+    agentConfig: { autoApprove: true }
   })) events.push(event);
 
   assert.equal(spawnOptions.permissionHandler({

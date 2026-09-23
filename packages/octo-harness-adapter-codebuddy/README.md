@@ -82,6 +82,12 @@ adapter 不创建 Chat、Task 或 Trigger。
 
 恢复会话经由 `session/load`，不会重设 model——原会话自行保留模型上下文。
 
+## 模型配置与环境变量
+
+Agent Revision 使用 `execution_profile.agent_config.model`。新建 provider session 时，adapter 把该值放入 ACP `session/new.model`；例如 `"model": "glm-5.3"`。恢复已有 session 时 CodeBuddy 当前协议路径没有再次选模，因此 Revision 改模后需要 `/reset` 或新建 Harness session 才能保证生效。
+
+本机验证的 CodeBuddy CLI 支持 `--model <model>`，但 adapter 使用 ACP，不走该 CLI 参数。当前没有确认到 CodeBuddy 的专用默认模型环境变量；adapter 也不会猜测或设置一个环境变量。未配置时使用 CodeBuddy 自身设置中的默认模型，实际可用模型名由当前登录账号和 CodeBuddy 版本决定。
+
 ## 约束与注意事项
 
 - **prompt 拼接为单条 ACP text**：用户 prompt 与 daemon 的 `appendInstructions` 以两个换行拼接后作为单条 text content 发出，并非独立的 system role。若需更强的 prompt 隔离，应扩展 ACP 初始化，而非将控制协议隐藏于 workdir。

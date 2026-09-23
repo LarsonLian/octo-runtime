@@ -25,6 +25,8 @@ import { AgentWorkStore } from "../apps/daemon/dist/agent-work-store.js";
 import { collectRuntimeDeviceInfo } from "../apps/daemon/dist/server.js";
 import { deferred, waitFor, wire } from "./agent-work-runtime-fixture.js";
 
+const TEST_AGENT_RUN_ID = "arun_35c4ffc5db9940c9be7ce3a894819ae3";
+
 const envelope = {
   schema_version: 1,
   run_id: "run-1",
@@ -155,6 +157,9 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
         runtime_limits: {
           first_frame_timeout_ms: 60_000,
           model_idle_timeout_ms: 120_000,
+          model_idle_policy: "observe",
+          model_idle_warning_ms: 100_000,
+          tool_wall_timeout_ms: 900_000,
           tool_timeout_ms: 600_000,
           run_timeout_ms: 1_800_000,
           cancel_grace_ms: 1_000,
@@ -174,6 +179,9 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
   assert.deepEqual(mapped.request.runtimeLimits, {
     firstFrameTimeoutMs: 60_000,
     modelIdleTimeoutMs: 120_000,
+    modelIdlePolicy: "observe",
+    modelIdleWarningMs: 100_000,
+    toolWallTimeoutMs: 900_000,
     toolTimeoutMs: 600_000,
     runTimeoutMs: 1_800_000,
     cancelGraceMs: 1_000,
@@ -182,6 +190,54 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
   assert.match(mapped.request.prompt, /\[Recent group messages\]/);
   assert.match(mapped.request.prompt, /\[Quoted message from Ada\]/);
   assert.match(mapped.request.prompt, /\[Current message\]\nFix the test/);
+});
+
+test("Agent Work envelope maps a validated immutable MCP plan without exposing it in context", () => {
+  const mcpServers = {
+    team: {
+      type: "streamable_http",
+      url: "https://worker.example.test/mcp/team",
+      headers: { Authorization: "Bearer run-scoped" },
+      required: true,
+      toolTimeoutMs: 120_000
+    },
+    local: {
+      type: "stdio",
+      command: "node",
+      args: ["server.mjs"],
+      env: { MODE: "test" }
+    }
+  };
+  const source = {
+    ...envelope,
+    agent_revision: {
+      ...envelope.agent_revision,
+      execution_profile: { ...envelope.agent_revision.execution_profile, mcp_servers: mcpServers }
+    }
+  };
+
+  const mapped = mapExecutionEnvelope(source);
+  assert.deepEqual(mapped.request.mcpServers, mcpServers);
+  assert.notEqual(mapped.request.mcpServers, mcpServers);
+  assert.equal(mapped.request.context.mcpServers, undefined);
+  mapped.request.mcpServers.team.headers.Authorization = "changed";
+  assert.equal(mcpServers.team.headers.Authorization, "Bearer run-scoped");
+});
+
+test("Agent Work envelope omits empty MCP plans and rejects malformed plans", () => {
+  const withPlan = mcpServers => mapExecutionEnvelope({
+    ...envelope,
+    agent_revision: {
+      ...envelope.agent_revision,
+      execution_profile: { ...envelope.agent_revision.execution_profile, mcp_servers: mcpServers }
+    }
+  });
+
+  assert.equal(withPlan({}).request.mcpServers, undefined);
+  assert.throws(
+    () => withPlan({ team: { type: "streamable_http", url: "file:///tmp/mcp" } }),
+    /absolute HTTP URL/
+  );
 });
 
 test("fresh execution never reaches an adapter with a provider session", () => {
@@ -283,11 +339,11 @@ test("a recovery channel snapshot starts without the stale provider session", ()
 });
 
 test("runtime terminal mapping carries the assembled final answer", () => {
-  assert.deepEqual(mapRuntimeEvent({ type: "run.finished", payload: {} }, "done"), {
+  assert.deepEqual(mapRuntimeEvent({ type: "run.finished", payload: {} }, "done", TEST_AGENT_RUN_ID), {
     type: "run.completed",
     payload: { text: "done" }
   });
-  assert.equal(mapRuntimeEvent({ type: "run.stopped", payload: { reason: "cancelled" } }, "").type, "run.cancelled");
+  assert.equal(mapRuntimeEvent({ type: "run.stopped", payload: { reason: "cancelled" } }, "", TEST_AGENT_RUN_ID).type, "run.cancelled");
 });
 
 test("runtime failure mapping preserves legacy fields and adds a safe failure envelope", () => {
@@ -299,7 +355,7 @@ test("runtime failure mapping preserves legacy fields and adds a safe failure en
       providerError: { status: 404, token: "secret-canary" },
       adapterType: "codex"
     }
-  }, "partial answer");
+  }, "partial answer", TEST_AGENT_RUN_ID);
 
   assert.equal(mapped.type, "run.failed");
   assert.equal(mapped.payload.code, "model_not_found");
@@ -307,6 +363,7 @@ test("runtime failure mapping preserves legacy fields and adds a safe failure en
   assert.equal(mapped.payload.failure.code, "OH-PRV-4003");
   assert.equal(mapped.payload.failure.reasonCode, "PROVIDER_MODEL_NOT_FOUND");
   assert.equal(mapped.payload.failure.source.adapter, "codex");
+  assert.equal(mapped.payload.failure.diagnosticId, "diag_35c4ffc5db9940c9be7ce3a894819ae3");
   assert.doesNotMatch(JSON.stringify(mapped), /secret-canary|Authorization|providerError/);
 });
 
@@ -331,7 +388,7 @@ test("final answer accumulator replaces snapshots and appends deltas", () => {
 });
 
 test("terminal mapping uses provider terminal text when no message frame carried final text", () => {
-  assert.deepEqual(mapRuntimeEvent({ type: "run.finished", payload: { text: "provider answer" } }, ""), {
+  assert.deepEqual(mapRuntimeEvent({ type: "run.finished", payload: { text: "provider answer" } }, "", TEST_AGENT_RUN_ID), {
     type: "run.completed",
     payload: { text: "provider answer" }
   });
@@ -472,6 +529,146 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
   } finally {
     await runtime?.close();
     await logger.close();
+    for (const client of wsServer.clients) client.terminate();
+    await new Promise(resolve => wsServer.close(() => resolve()));
+    await new Promise(resolve => httpServer.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("interaction response commands are fenced, receipt-deduplicated, and rejected after terminal", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-interaction-"));
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ noServer: true });
+  const completed = deferred();
+  const responseReceived = deferred();
+  let runtime;
+  let responseCalls = 0;
+  const interactionCommand = (id, seq, fencingToken = 7) => ({
+    server_seq: seq,
+    command_id: id,
+    run_id: "run-interaction",
+    type: "interaction.respond",
+    payload: { interaction_id: "approval-1", outcome: "accepted" },
+    lease_id: "lease-interaction",
+    fencing_token: fencingToken
+  });
+
+  httpServer.on("request", async (request, response) => {
+    for await (const _chunk of request) { /* Consume registration. */ }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-interaction", protocol_version: 1 } }));
+  });
+  httpServer.on("upgrade", (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
+  });
+  wsServer.on("connection", websocket => {
+    let requested = false;
+    let validAckCount = 0;
+    websocket.on("message", data => {
+      const frame = JSON.parse(data.toString("utf8"));
+      if (frame.type === "runtime.hello") {
+        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("runtime.command", {
+          server_seq: 1,
+          command_id: "command-interaction-start",
+          run_id: "run-interaction",
+          type: "run.start",
+          payload: {
+            ...envelope,
+            run_id: "run-interaction",
+            agent_session_id: "session-interaction",
+            agent_run_request: {
+              ...envelope.agent_run_request,
+              trigger: { kind: "im.message", occurrence_id: "message/interaction" }
+            },
+            agent_revision: {
+              ...envelope.agent_revision,
+              execution_profile: {
+                default_adapter: "interactive",
+                workdir: process.cwd(),
+                agent_config: {}
+              }
+            }
+          },
+          lease_id: "lease-interaction",
+          fencing_token: 7
+        }));
+        return;
+      }
+      if (frame.type === "run.event_batch") {
+        const events = frame.payload.events;
+        const last = events.at(-1);
+        websocket.send(wire("event.ack", {
+          run_id: "run-interaction",
+          received_through_seq: last.seq,
+          durable_through_seq: last.seq
+        }));
+        if (!requested && events.some(event => event.type === "interaction.requested")) {
+          requested = true;
+          websocket.send(wire("runtime.command", interactionCommand("command-interaction-stale", 2, 6)));
+        }
+        if (events.some(event => event.type === "run.completed")) {
+          setTimeout(() => websocket.send(wire("runtime.command", interactionCommand("command-interaction-late", 4))), 20);
+        }
+        return;
+      }
+      if (frame.type !== "command.ack") return;
+      const ack = frame.payload;
+      if (ack.command_id === "command-interaction-stale") {
+        assert.equal(ack.accepted, false);
+        assert.equal(ack.error.code, "STALE_COMMAND_FENCE");
+        websocket.send(wire("runtime.command", interactionCommand("command-interaction-valid", 3)));
+      } else if (ack.command_id === "command-interaction-valid") {
+        assert.equal(ack.accepted, true);
+        validAckCount += 1;
+        if (validAckCount === 1) websocket.send(wire("runtime.command", interactionCommand("command-interaction-valid", 3)));
+      } else if (ack.command_id === "command-interaction-late") {
+        assert.equal(ack.accepted, false);
+        assert.equal(ack.error.code, "RUN_NOT_ACTIVE");
+        completed.resolve();
+      }
+    });
+  });
+
+  try {
+    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const address = httpServer.address();
+    const host = {
+      list: async () => [{ type: "interactive", capabilities: ["interaction.response"], available: true }],
+      cancel: async () => ({ cancelled: true }),
+      async respondInteraction(invocationId, response) {
+        responseCalls += 1;
+        assert.match(invocationId, /^invoke_/);
+        assert.deepEqual(response, { interactionId: "approval-1", outcome: "accepted" });
+        responseReceived.resolve();
+      },
+      async *invoke() {
+        yield {
+          type: "interaction.requested",
+          payload: { interactionId: "approval-1", kind: "approval", request: { title: "Proceed?" } }
+        };
+        await responseReceived.promise;
+        yield { type: "run.finished", payload: {} };
+      }
+    };
+    runtime = new AgentWorkRuntime({
+      profile: "default",
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      token: "runtime-token",
+      tenantId: "tenant-interaction",
+      subjectId: "device-interaction",
+      runtimeName: "runtime-interaction",
+      storePath: join(directory, "agent-work.db")
+    }, host);
+    await runtime.start();
+    await Promise.race([
+      completed.promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("interaction command timeout")), 5_000))
+    ]);
+    assert.equal(responseCalls, 1);
+  } finally {
+    await runtime?.close();
     for (const client of wsServer.clients) client.terminate();
     await new Promise(resolve => wsServer.close(() => resolve()));
     await new Promise(resolve => httpServer.close(() => resolve()));

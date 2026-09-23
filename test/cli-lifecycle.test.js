@@ -107,7 +107,9 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
           profile: workProfile ? "work" : "default",
           id: workProfile ? "runtime-work" : "runtime-fixture",
           octo_space_id: workProfile ? "space-work" : "space-fixture",
-          owner_ref: workProfile ? "uid:user-work" : "uid:user-fixture"
+          owner_subject_type: "user",
+          owner_subject_id: workProfile ? "user-work" : "user-fixture",
+          created_by_octo_uid: workProfile ? "user-work" : "user-fixture"
         },
         credential: workProfile
           ? { id: "credential-work", token: "octo_runtime_work_secret" }

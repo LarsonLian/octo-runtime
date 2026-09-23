@@ -105,6 +105,8 @@ export interface DaemonApplication {
   agentWorkSupervisor?: AgentWorkSupervisor;
   observability: LocalObservability;
   events: LiveEventBus;
+  /** Inspector 的完整访问地址（含一次性 capability token；仅内存，不落日志）。 */
+  inspectUrl?: string;
   close(): Promise<void>;
 }
 
@@ -208,7 +210,9 @@ export async function startDaemonServer({
     await observability.close();
     throw error;
   }
+  let watchdogMetrics: { capturedAt: number; series: unknown } | undefined;
   const spawnHost = async (signal?: AbortSignal): Promise<AdapterHostProcess> => {
+    watchdogMetrics = undefined;
     const spawned = await spawnAdapterHost({
       entrypoint: hostEntrypoint,
       manifest: manifestPath,
@@ -216,7 +220,11 @@ export async function startDaemonServer({
       ...(signal ? { signal } : {}),
       ...(adapterHostReadyTimeoutMs !== undefined ? { readyTimeoutMs: adapterHostReadyTimeoutMs } : {}),
       trace: (direction, frame) => observability.traceRpc(direction, frame),
-      observe: frame => publishAdapterObservation(events, frame)
+      observe: frame => {
+        if (isRecord(frame) && frame.source === "control" && frame.type === "watchdog.metrics") {
+          watchdogMetrics = { capturedAt: Date.now(), series: frame.payload };
+        } else publishAdapterObservation(events, frame);
+      }
     });
     await invocationManifest.setAdapterHost(spawned.child.pid, hostEntrypoint);
     return spawned;
@@ -289,6 +297,7 @@ export async function startDaemonServer({
     list: async () => readyHost().client.list(),
     probe: async adapterType => readyHost().client.probe(adapterType),
     cancel: async (invocationId, reason) => readyHost().client.cancel(invocationId, reason),
+    respondInteraction: async (invocationId, response) => readyHost().client.respondInteraction(invocationId, response),
     async *invoke(adapterType, request) {
       await invocationManifest.begin({
         invocationId: request.invocationId,
@@ -436,6 +445,7 @@ export async function startDaemonServer({
     pid: process.pid,
     adapterHost: runtime.adapterHost,
     adapters: runtime.adapters,
+    watchdogMetrics,
     agentWork: agentWorkSupervisor?.status ?? { enabled: false, runtimes: [] },
     lifecycle: daemon.status
   });
@@ -530,8 +540,11 @@ export async function startDaemonServer({
     });
   });
 
+  // inspectInfo 提升出 try 作用域，供 return 暴露完整地址（含 token）。
+  let inspectUrl: string | undefined;
   try {
     const inspectInfo = await inspect.start();
+    inspectUrl = inspectInfo.url;
     await daemon.recover();
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
@@ -553,7 +566,7 @@ export async function startDaemonServer({
         socket_path: socketPath,
         adapter_host_pid: hostProcess.child.pid ?? null,
         adapters,
-        inspect: { host: inspectInfo.host, port: inspectInfo.port }
+        inspect: { host: inspectInfo.host, port: inspectInfo.port, url: inspectInfo.url }
       }
     });
   } catch (error) {
@@ -592,6 +605,8 @@ export async function startDaemonServer({
     agentWorkSupervisor,
     observability,
     events,
+    // 完整 inspect 地址（含 token）只走内存返回给 embedder，日志里仍是脱敏版。
+    inspectUrl,
     async close(): Promise<void> {
       shuttingDown = true;
       hostRestartAbort?.abort();
@@ -976,8 +991,8 @@ function publishAdapterObservation(events: LiveEventBus, value: unknown): void {
     events.publish({ source: "control", type: value.type, payload: value.payload ?? {} });
     return;
   }
-  if (value.source === "provider-native" && isRecord(value.record)) {
-    events.publishRecord(value.record as RecordEnvelope, "provider-native");
+  if ((value.source === "provider-native" || value.source === "provider-activity") && isRecord(value.record)) {
+    events.publishRecord(value.record as RecordEnvelope, value.source);
     return;
   }
   if (value.source !== "adapter-canonical" || typeof value.type !== "string") return;

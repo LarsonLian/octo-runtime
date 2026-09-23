@@ -17,7 +17,7 @@ test("provider discovery reports real executable path/version, not adapter versi
     const host = new AdapterHost();
     host.register({ metadata: { type: "codex", capabilities: ["session.serialize"] },
       probe: () => probeCommand(command), async *invoke() {} });
-    assert.deepEqual(await host.describe(), [{ type: "codex", capabilities: ["session.serialize"],
+    assert.deepEqual(await host.describe(), [{ type: "codex", capabilities: ["session.serialize", "runtime.watchdog.v2"],
       available: true, providerPath: command, providerVersion: "1.2.3", unavailableReason: null }]);
     await mkdir(join(directory, "not-a-command"));
     assert.equal((await probeCommand(join(directory, "not-a-command"))).available, false);

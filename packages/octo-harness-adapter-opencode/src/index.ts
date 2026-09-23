@@ -5,6 +5,7 @@
  * permissions are always auto-approved.
  */
 import { createJsonCliAdapter, probeCommand, providerInputText, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { capabilities, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -64,6 +65,10 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
     : [];
   // Inject harness context via a temporary instructions file, without rewriting the user's existing OpenCode config.
   inline.instructions = [...configuredInstructions, instructions];
+  if (req.mcpServers && Object.keys(req.mcpServers).length > 0) {
+    const configuredMcp = isRecord(inline.mcp) ? inline.mcp : {};
+    inline.mcp = { ...configuredMcp, ...openCodeMcpConfig(req.mcpServers) };
+  }
   // Reasoning output and non-interactive tool approval are mandatory parts of
   // this adapter's provider contract.
   const args = ["run", "--format", "json", "--thinking", "--auto"];
@@ -86,7 +91,7 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
         cwd: req.workdir,
         user_input: providerInputText(req),
         instructions: req.appendInstructions,
-        inline_config: inline
+        inline_config: redactOpenCodeInlineConfig(inline)
       }
     },
     cleanup: () => rm(directory, { recursive: true, force: true })
@@ -190,10 +195,49 @@ function providerTimestamp(value: unknown): number | undefined {
  */
 export function createOpenCodeAdapter({ command = "opencode" }: { command?: string } = {}) {
   return createJsonCliAdapter<OpenCodeNativeEvent>({
-    metadata: { type: "opencode", capabilities: ["session.serialize", "tool.canonical"] },
+    metadata: { type: "opencode", capabilities: ["session.serialize", "tool.canonical", capabilities.MCP_DYNAMIC] },
     probe: () => probeCommand(command), buildCommand: req => buildOpenCodeCommand(req, command), normalize: normalizeOpenCodeEvent,
     onSuccess: () => [{ type: "message.update", payload: { role: "assistant", status: "completed" } }, { type: "run.finished", payload: {} }]
   });
+}
+
+/** Convert the canonical transport-neutral shape to OpenCode's native config. */
+export function openCodeMcpConfig(servers: McpServers): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(servers).map(([name, server]) => [
+    name,
+    server.type === "stdio"
+      ? {
+          type: "local",
+          command: [server.command, ...(server.args ?? [])],
+          ...(server.cwd ? { cwd: server.cwd } : {}),
+          ...(server.env ? { environment: server.env } : {}),
+          enabled: true,
+          ...(server.toolTimeoutMs ? { timeout: server.toolTimeoutMs } : {})
+        }
+      : {
+          type: "remote",
+          url: server.url,
+          ...(server.headers ? { headers: server.headers } : {}),
+          oauth: false,
+          enabled: true,
+          ...(server.toolTimeoutMs ? { timeout: server.toolTimeoutMs } : {})
+        }
+  ]));
+}
+
+function redactOpenCodeInlineConfig(inline: Record<string, unknown>): Record<string, unknown> {
+  const redacted = structuredClone(inline);
+  const mcp = isRecord(redacted.mcp) ? redacted.mcp : {};
+  for (const serverValue of Object.values(mcp)) {
+    if (!isRecord(serverValue)) continue;
+    if (isRecord(serverValue.headers)) {
+      serverValue.headers = Object.fromEntries(Object.keys(serverValue.headers).map(key => [key, "[REDACTED]"]));
+    }
+    if (isRecord(serverValue.environment)) {
+      serverValue.environment = Object.fromEntries(Object.keys(serverValue.environment).map(key => [key, "[REDACTED]"]));
+    }
+  }
+  return redacted;
 }
 
 export const opencodeAdapter = createOpenCodeAdapter();

@@ -68,6 +68,42 @@ Channel Gateway 持有原始 IM 事件与 delivery；Worker 可以在 run.start 
 
 ## 配置
 
+### Agent 执行超时
+
+在 AgentRevision 的 `execution_profile.runtime_limits` 中配置超时，单位为毫秒。
+daemon 将这些字段映射为 `InvokeRequest.runtimeLimits`，由 adapter-host 执行。
+未配置 `model_idle_timeout_ms` 时，默认值为 **300000（300 秒）**，所有 adapter 共用；
+建议 Agent 显式配置 **600000（600 秒）**，尤其是 Codex 编码、生成大文件等可能长时间无输出的任务。
+
+```json
+{
+  "execution_profile": {
+    "runtime_limits": {
+      "model_idle_timeout_ms": 600000
+    }
+  }
+}
+```
+
+以上为局部配置示例，应合并到完整 execution profile，保留 adapter、workdir 等字段。
+该参数限制模型阶段连续未收到下一条 canonical event 的时长，不是整个任务的运行时长。
+未显式覆盖的其他默认值为：启动等待 60 秒、工具阶段静默 600 秒、整个任务 3600 秒、
+取消清理等待 1 秒、`enforcement: "enforce"`。收到事件不会延长整个任务的时限。
+`run_timeout_ms` 可由 AgentRevision 覆盖，允许 100–86400000 毫秒（最多 24 小时）。
+不要用旧 `enforcement: "observe"` 代替延长预算：它为兼容历史配置仍跳过整套 watchdog。
+新 `model_idle_policy: "observe"` 仅关闭模型静默取消，总时限和工具时限始终执行。
+默认策略为 `enforce`；`model_idle_warning_ms` 默认 120000，在持续无进展时只告警一次，
+真实进展恢复后可再次告警。`tool_wall_timeout_ms` 可选，用于限制每次工具执行的总耗时，输出不能续期。
+新策略需 Runtime 的 adapter 能力包含 `runtime.watchdog.v2`。旧全局 observe 不能与新字段混用。
+Codex 原生进展在归一化之前报告；仅 RPC 有响应、重试通知或重复 usage 不延长模型预算。
+其他 adapter 暂按 canonical 进展回退。诊断活动不会生成伪造的用户消息。
+
+显式配置优先于 Host 默认值，因此已有的 `model_idle_timeout_ms: 120000` 不会自动变成 300 秒。
+通过新 AgentRevision 发布配置，并确认目标 session 后续 run 使用该 revision；
+已有 invocation 保留启动时的配置。修改 Host 默认值需重新构建并重启 adapter-host 后生效。
+
+### Runtime 连接
+
 ```bash
 export OCTO_HARNESS_AGENT_WORK_URL=http://127.0.0.1:8092
 export OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN=dev-runtime-token

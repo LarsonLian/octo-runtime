@@ -10,8 +10,9 @@ import {
   createOpenClawDeviceIdentity
 } from "@mininglamp-oss/octo-harness-adapter-openclaw";
 import {
-  enrollRuntime,
+  exchangeRuntimeEnrollment,
   normalizeServerUrl,
+  registerEnrolledRuntime,
   type EnrollmentResult
 } from "./enrollment.js";
 import { resolveServiceControl, verifyServiceProgram, type ServiceControlOptions } from "./service-control.js";
@@ -207,24 +208,25 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
       validateIdentity(identity, context.profile);
       if (!profileConfig) throw new Error(`profile config is missing: ${context.paths.profileConfig}`);
       validateProfileConfiguration(profileConfig, context.profile);
-      const requestedServer = optionalString(context.flags.serverUrl);
-      const requestedWorker = optionalString(context.flags.agentWorkUrl);
-      if ((requestedServer && normalizeServerUrl(requestedServer) !== profileConfig.server_url) ||
-          (requestedWorker && normalizeServerUrl(requestedWorker) !== profileConfig.agent_work_url)) {
-        throw new Error("existing Runtime renewal must use its trusted server and Agent Worker; use another profile for a different endpoint");
-      }
     }
     const requestedServerUrl = optionalString(context.flags.serverUrl) ?? profileConfig?.server_url;
     if (!requestedServerUrl) throw new Error("first login requires --server-url");
     if (!enrollmentToken) throw new Error("first login requires --enroll-token-stdin");
     const serverUrl = normalizeServerUrl(requestedServerUrl);
+    const requestedAgentWorkUrl = optionalString(context.flags.agentWorkUrl);
+    const serverChanged = Boolean(identity && profileConfig && serverUrl !== profileConfig.server_url);
+    const agentWorkUrl = requestedAgentWorkUrl
+      ?? (serverChanged ? undefined : profileConfig?.agent_work_url);
+    const resolvedAgentWorkUrl = normalizeServerUrl(agentWorkUrl ?? `${serverUrl}/agentworker/api`);
     const runtimeName = optionalString(context.flags.runtimeName)
       ?? profileConfig?.runtime_name
       ?? (hostname() || "Octo Harness Runtime");
     const machine = await ensureMachineIdentity(context.paths);
     const credential = identity ? await readJsonFile<RuntimeCredential>(context.paths.credential) : undefined;
-    if (identity && !credential?.access_token) throw new Error("existing profile re-enrollment requires its Runtime credential");
-    const result = await enrollRuntime({
+    if (identity && !credential?.access_token) {
+      throw new Error("existing profile re-enrollment requires its Runtime credential");
+    }
+    const enrollmentOptions = {
       serverUrl,
       enrollmentToken,
       profile: context.profile,
@@ -232,13 +234,14 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
       machineId: machine.machine_id,
       runtimeId: identity?.runtime_id,
       runtimeToken: credential?.access_token,
-      agentWorkUrl: optionalString(context.flags.agentWorkUrl) ?? profileConfig?.agent_work_url,
+      agentWorkUrl: resolvedAgentWorkUrl,
       fetchImplementation: context.fetchImplementation
-    });
-    if (identity && result.runtimeId !== identity.runtime_id) {
-      throw new Error("re-enrollment returned a different runtime for the existing profile identity");
-    }
+    };
+    const result = await exchangeRuntimeEnrollment(enrollmentOptions);
+    // Enrollment already created the durable Runtime identity and credential.
+    // Persist them before registration so a retry can prove and reuse that identity.
     ({ identity, profileConfig } = await persistEnrollment(context, serverUrl, result, runtimeName));
+    await registerEnrolledRuntime(enrollmentOptions, result);
     enrolled = true;
   } else {
     validateIdentity(identity, context.profile);
@@ -276,8 +279,8 @@ async function persistEnrollment(
   const now = new Date().toISOString();
   const previousProfileConfig = await readJsonFile<ProfileConfiguration>(context.paths.profileConfig);
   const agentWorkUrl = result.agentWorkUrl ? normalizeServerUrl(result.agentWorkUrl) : undefined;
-  if (agentWorkUrl && (!result.octoSpaceId || !result.ownerRef || !result.accessToken)) {
-    throw new Error("Agent Work enrollment requires agent_work_url, octo_space_id, owner_ref, and runtime access token together");
+  if (agentWorkUrl && !result.accessToken) {
+    throw new Error("Agent Work enrollment requires agent_work_url and runtime access token together");
   }
   const identity: RuntimeIdentity = {
     schema_version: 1,
@@ -285,7 +288,6 @@ async function persistEnrollment(
     runtime_id: result.runtimeId,
     credential_id: result.credentialId,
     ...(result.octoSpaceId ? { octo_space_id: result.octoSpaceId } : {}),
-    ...(result.ownerRef ? { owner_ref: result.ownerRef } : {}),
     enrolled_at: now
   };
   const profileConfig: ProfileConfiguration = {
@@ -294,7 +296,6 @@ async function persistEnrollment(
     server_url: serverUrl,
     ...(agentWorkUrl ? { agent_work_url: agentWorkUrl } : {}),
     ...(result.octoSpaceId ? { octo_space_id: result.octoSpaceId } : {}),
-    ...(result.ownerRef ? { owner_ref: result.ownerRef } : {}),
     runtime_name: runtimeName,
     ...(previousProfileConfig?.adapters ? { adapters: previousProfileConfig.adapters } : {})
   };

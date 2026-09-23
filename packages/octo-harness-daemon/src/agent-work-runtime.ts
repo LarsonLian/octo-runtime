@@ -19,13 +19,17 @@ import type {
   ChannelContextDescriptor,
   ContextSyncRequest,
   ContextSyncResult,
+  InteractionResponse,
   InvokeRequest,
+  McpServers,
   ProviderSession
 } from "@mininglamp-oss/octo-harness-protocol";
 import {
   assertChannelContextAppend,
   assertChannelContextDescriptor,
   assertContextSyncResult,
+  assertInteractionResponse,
+  assertMcpServers,
   failurePayload
 } from "@mininglamp-oss/octo-harness-protocol";
 import { AgentWorkStore } from "./agent-work-store.js";
@@ -212,7 +216,7 @@ interface RuntimeCommand {
   server_seq: number;
   command_id: string;
   run_id: string;
-  type: "run.start" | "run.cancel" | "run.steer";
+  type: "run.start" | "run.cancel" | "run.steer" | "interaction.respond";
   payload: unknown;
   lease_id: string;
   fencing_token: number;
@@ -1415,6 +1419,47 @@ export class AgentWorkRuntime {
         server_seq: command.server_seq
       }
     });
+    if (command.type === "interaction.respond") {
+      const store = this.#store;
+      if (!store) {
+        this.#ackCommand(command, false, { code: "LOCAL_STORE_UNAVAILABLE" });
+        return;
+      }
+      const receipt = store.getCommandReceipt(command.command_id);
+      if (receipt) {
+        this.#ackCommand(command, receipt.accepted, receipt.error);
+        return;
+      }
+      const active = this.#activeRuns.get(command.run_id);
+      const reject = (code: string, message: string): void => {
+        const error = { code, message };
+        store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
+        this.#ackCommand(command, false, error);
+      };
+      if (!active) {
+        reject("RUN_NOT_ACTIVE", "interaction response requires an active invocation");
+        return;
+      }
+      if (command.lease_id !== active.leaseId || command.fencing_token !== active.fencingToken) {
+        reject("STALE_COMMAND_FENCE", "interaction response does not own the active run lease");
+        return;
+      }
+      try {
+        const payload = asRecord(command.payload);
+        const response: InteractionResponse = {
+          interactionId: requiredString(payload.interaction_id, "interaction.respond interaction_id"),
+          outcome: requiredString(payload.outcome, "interaction.respond outcome") as InteractionResponse["outcome"],
+          ...(Object.hasOwn(payload, "value") ? { value: payload.value } : {})
+        };
+        assertInteractionResponse(response);
+        await this.#host.respondInteraction(active.invocationId, response);
+        store.recordCommandReceipt(command.command_id, command.server_seq, true);
+        this.#ackCommand(command, true);
+      } catch (error) {
+        reject("INTERACTION_RESPONSE_REJECTED", errorMessage(error));
+      }
+      return;
+    }
     if (command.type === "run.cancel") {
       const active = this.#activeRuns.get(command.run_id);
       if (active) {
@@ -1443,7 +1488,8 @@ export class AgentWorkRuntime {
     if (!store) {
       const error = failurePayload({ code: "LOCAL_STORE_UNAVAILABLE" }, {
         stage: "runtime.command.accept",
-        defaultDomain: "runtime"
+        defaultDomain: "runtime",
+        runId: command.run_id
       });
       this.#ackCommand(command, false, error);
       this.#sendRuntimeHealth();
@@ -1477,7 +1523,8 @@ export class AgentWorkRuntime {
     if (this.#draining) {
       const error = failurePayload({ code: "RUNTIME_DRAINING" }, {
         stage: "runtime.command.accept",
-        defaultDomain: "runtime"
+        defaultDomain: "runtime",
+        runId: command.run_id
       });
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
@@ -1489,7 +1536,8 @@ export class AgentWorkRuntime {
         : "LOCAL_STORE_UNAVAILABLE";
       const error = failurePayload({ code }, {
         stage: "runtime.command.accept",
-        defaultDomain: "runtime"
+        defaultDomain: "runtime",
+        runId: command.run_id
       });
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
@@ -1512,7 +1560,8 @@ export class AgentWorkRuntime {
       });
       const error = failurePayload({ code: "OUTBOX_HARD_LIMIT" }, {
         stage: "runtime.command.accept",
-        defaultDomain: "runtime"
+        defaultDomain: "runtime",
+        runId: command.run_id
       });
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
@@ -1521,7 +1570,8 @@ export class AgentWorkRuntime {
     if (pendingBytes >= softWatermark) {
       const error = failurePayload({ code: "OUTBOX_BACKPRESSURE" }, {
         stage: "runtime.command.accept",
-        defaultDomain: "runtime"
+        defaultDomain: "runtime",
+        runId: command.run_id
       });
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
@@ -1645,6 +1695,7 @@ export class AgentWorkRuntime {
             ? failurePayload({ code: "PROVIDER_CONFIG_MISSING" }, {
                 stage: "provider.configuration",
                 defaultDomain: "provider",
+                runId: command.run_id,
                 source: { component: "octo-harness", adapter: error.adapterType }
               })
             : { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) };
@@ -1881,7 +1932,7 @@ export class AgentWorkRuntime {
         }
         appendStarted();
         finalText = accumulateFinalText(finalText, event);
-        const mapped = mapRuntimeEvent(event, finalText);
+        const mapped = mapRuntimeEvent(event, finalText, command.run_id);
         this.#log({
           level: "debug",
           scope: "adapter.invoke",
@@ -1938,6 +1989,7 @@ export class AgentWorkRuntime {
           }), {
             stage: "adapter.invoke",
             defaultDomain: "adapter",
+            runId: command.run_id,
             source: { component: "octo-harness", adapter: adapterType }
           }),
           text: finalText
@@ -2182,6 +2234,7 @@ export function mapExecutionEnvelope(
   const adapterType = executionAdapterType(envelope);
   const agentConfig = asRecord(profile.agent_config) as AgentConfig;
   const runtimeLimits = mapExecutionRuntimeLimits(profile.runtime_limits);
+  const mcpServers = mapExecutionMcpServers(profile.mcp_servers);
   const workdir = stringValue(profile.workdir) ?? stringValue(agentConfig.workdir);
   if (!workdir) throw new TypeError("execution_profile.workdir is required for a local runtime");
   const content = envelope.agent_run_request.input;
@@ -2225,6 +2278,7 @@ export function mapExecutionEnvelope(
       workdir,
       appendInstructions: stringValue(definition.instructions) ?? "",
       context,
+      ...(mcpServers ? { mcpServers } : {}),
       ...(envelope.provider_session && contextSnapshot?.selectedVariant !== "recovery"
         ? { providerSession: envelope.provider_session }
         : {}),
@@ -2232,6 +2286,15 @@ export function mapExecutionEnvelope(
       agentConfig: { ...agentConfig, workdir }
     }
   };
+}
+
+function mapExecutionMcpServers(value: unknown): McpServers | undefined {
+  if (value === undefined || value === null) return undefined;
+  assertMcpServers(value);
+  if (Object.keys(value).length === 0) return undefined;
+  // The execution envelope remains an immutable dispatch fact. Clone the
+  // validated scalar-only contract before adapter-specific materialization.
+  return structuredClone(value);
 }
 
 function executionAdapterType(envelope: ExecutionEnvelope): string {
@@ -2247,7 +2310,10 @@ function mapExecutionRuntimeLimits(value: unknown): Record<string, unknown> {
   for (const [source, target] of [
     ["first_frame_timeout_ms", "firstFrameTimeoutMs"],
     ["model_idle_timeout_ms", "modelIdleTimeoutMs"],
+    ["model_idle_warning_ms", "modelIdleWarningMs"],
+    ["model_idle_policy", "modelIdlePolicy"],
     ["tool_timeout_ms", "toolTimeoutMs"],
+    ["tool_wall_timeout_ms", "toolWallTimeoutMs"],
     ["run_timeout_ms", "runTimeoutMs"],
     ["cancel_grace_ms", "cancelGraceMs"],
     ["enforcement", "enforcement"]
@@ -2336,7 +2402,7 @@ function rawDataText(data: WebSocket.RawData): string {
 /** Translate a canonical event into an outbox wire event: terminal run states are
  * renamed to the Agent Work vocabulary (completed/failed/cancelled) and carry the
  * accumulated final text; all other events pass through unchanged. */
-export function mapRuntimeEvent(event: CanonicalEvent, finalText: string): { type: string; payload: Record<string, unknown> } {
+export function mapRuntimeEvent(event: CanonicalEvent, finalText: string, runId: string): { type: string; payload: Record<string, unknown> } {
 	const terminalText = finalText || stringValue(event.payload.text) || "";
   switch (event.type) {
     case "run.finished":
@@ -2348,6 +2414,7 @@ export function mapRuntimeEvent(event: CanonicalEvent, finalText: string): { typ
           ...failurePayload({ code: "PROVIDER_ERROR", ...event.payload }, {
             stage: "provider.invoke",
             defaultDomain: "provider",
+            runId,
             preserveExisting: true,
             source: {
               component: "octo-harness",

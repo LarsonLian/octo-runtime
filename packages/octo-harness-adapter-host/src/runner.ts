@@ -8,6 +8,7 @@ import { createWriteStream } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { WatchdogMetrics } from "./watchdog-metrics.js";
 import {
   AdapterHost,
   AdapterHostRpcServer,
@@ -71,10 +72,25 @@ const emitObservation = (value: unknown): void => {
 };
 const observability = new LocalObservability(
   { ...logging, component: "adapter-host" },
-  { eventSink: record => emitObservation({ source: "provider-native", record }) }
+  { eventSink: record => emitObservation({ source: record.scope === "adapter.watchdog" ? "provider-activity" : "provider-native", record }) }
 );
+const watchdogMetrics = new WatchdogMetrics();
+const publishWatchdogMetrics = (): void => emitObservation({ source: "control", type: "watchdog.metrics", payload: watchdogMetrics.snapshot() });
+const metricsTimer = setInterval(publishWatchdogMetrics, 5000);
+metricsTimer.unref();
 const host = new AdapterHost({
   observe: (identity, observation) => observability.observeProvider(identity, observation),
+  diagnosticSink: (identity, diagnostic) => {
+    watchdogMetrics.record(identity.adapterType ?? "other", diagnostic);
+    if (diagnostic.event === "timeout" || diagnostic.event === "finished") publishWatchdogMetrics();
+    observability.log({
+      ...identity,
+      level: diagnostic.event === "timeout" || diagnostic.event === "model_silence" ? "warn" : "info",
+      scope: "adapter.watchdog", event: `watchdog.${diagnostic.event}`,
+      message: "adapter watchdog diagnostic",
+      data: { ...diagnostic.data, watchdogVersion: 2 }
+    });
+  },
   canonicalSink: (identity, event) => emitObservation({
     source: "adapter-canonical",
     type: event.type,

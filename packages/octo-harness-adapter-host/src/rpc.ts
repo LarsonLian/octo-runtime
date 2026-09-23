@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
-import type { CanonicalEvent, InvokeRequest } from "@mininglamp-oss/octo-harness-protocol";
+import type { CanonicalEvent, InteractionResponse, InvokeRequest } from "@mininglamp-oss/octo-harness-protocol";
 import type { AdapterHost, HostedAdapterMetadata } from "./index.js";
 
 type JsonRecord = Record<string, unknown>;
@@ -15,6 +15,7 @@ export interface AdapterHostRpc {
   list(): Promise<HostedAdapterMetadata[]>;
   probe(adapterType: string): Promise<unknown>;
   cancel(invocationId: string, reason?: string): Promise<{ cancelled: boolean }>;
+  respondInteraction(invocationId: string, response: InteractionResponse): Promise<void>;
   invoke(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent>;
 }
 
@@ -127,6 +128,14 @@ export class AdapterHostRpcServer {
         });
         return;
       }
+      if (method === "interaction.respond") {
+        await this.#host.respondInteraction(
+          requiredString(params.invocationId, "invocationId"),
+          params.response as InteractionResponse
+        );
+        this.#send({ jsonrpc: "2.0", id, result: {} });
+        return;
+      }
       if (method === "invoke") {
         const request = params.request as InvokeRequest;
         const adapterType = requiredString(params.adapterType, "adapterType");
@@ -234,6 +243,10 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
 
   cancel(invocationId: string, reason?: string): Promise<{ cancelled: boolean }> {
     return this.request("cancel", { invocationId, reason });
+  }
+
+  async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
+    await this.request("interaction.respond", { invocationId, response });
   }
 
   /** Await the invoke ACK first, then keep yielding this invocation's event notifications until done. */

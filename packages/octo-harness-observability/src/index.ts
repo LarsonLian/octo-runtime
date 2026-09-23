@@ -37,6 +37,7 @@ export type {
   ProviderCarrierJson,
   ProviderIoCapture,
   ProviderObservation,
+  ProviderActivity,
   QueryLogOptions,
   RecordEnvelope,
   StoredLogRecord,

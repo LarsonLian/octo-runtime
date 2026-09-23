@@ -131,7 +131,10 @@
       "properties": {
         "firstFrameTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 1800000 },
         "modelIdleTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 3600000 },
+        "modelIdleWarningMs": { "type": "integer", "minimum": 100, "maximum": 3600000 },
+        "modelIdlePolicy": { "type": "string", "enum": ["observe", "enforce"] },
         "toolTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 86400000 },
+        "toolWallTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 86400000 },
         "runTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 86400000 },
         "cancelGraceMs": { "type": "integer", "minimum": 100, "maximum": 60000 },
         "enforcement": { "type": "string", "enum": ["observe", "enforce"] }
@@ -193,6 +196,23 @@
         "reason": { "description": "Termination or error reason.", "type": "string" },
         "message": { "description": "Human-readable diagnostic message.", "type": "string" },
         "failure": { "$ref": "#/definitions/FailureEnvelope" }
+      }
+    },
+    "InteractionRequestedPayload": {
+      "title": "InteractionRequestedPayload",
+      "description": "Provider-neutral request that pauses one active invocation until an interaction response is returned through the Adapter Host.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interactionId", "kind", "request"],
+      "properties": {
+        "interactionId": { "description": "Stable invocation-scoped interaction identifier.", "type": "string", "minLength": 1, "maxLength": 191 },
+        "kind": { "type": "string", "enum": ["approval", "question", "elicitation"] },
+        "request": {
+          "description": "Display-safe provider request projected for the responding product.",
+          "type": "object",
+          "additionalProperties": true,
+          "tsType": "Record<string, unknown>"
+        }
       }
     },
     "ModelStepStartedPayload": {
@@ -464,6 +484,65 @@
         "reason": { "type": "string", "enum": ["already_committed", "snapshot_not_found", "snapshot_not_submitted", "consumer_advanced", "snapshot_failed"] }
       }
     },
+    "McpStdioServer": {
+      "title": "McpStdioServer",
+      "description": "A per-invocation MCP server launched as a child process by the provider.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "command"],
+      "properties": {
+        "type": { "const": "stdio" },
+        "command": { "type": "string", "minLength": 1 },
+        "args": { "type": "array", "items": { "type": "string" }, "maxItems": 128 },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "maxProperties": 128,
+          "tsType": "Record<string, string>"
+        },
+        "cwd": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "startupTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 300000 },
+        "toolTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 3600000 }
+      }
+    },
+    "McpStreamableHttpServer": {
+      "title": "McpStreamableHttpServer",
+      "description": "A per-invocation Streamable HTTP MCP endpoint. Header values are sensitive and must never enter logs or canonical events.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "url"],
+      "properties": {
+        "type": { "const": "streamable_http" },
+        "url": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "maxProperties": 64,
+          "tsType": "Record<string, string>"
+        },
+        "required": { "type": "boolean" },
+        "startupTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 300000 },
+        "toolTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 3600000 }
+      }
+    },
+    "McpServer": {
+      "title": "McpServer",
+      "description": "Provider-neutral per-invocation MCP server definition.",
+      "oneOf": [
+        { "$ref": "#/definitions/McpStdioServer" },
+        { "$ref": "#/definitions/McpStreamableHttpServer" }
+      ]
+    },
+    "McpServers": {
+      "title": "McpServers",
+      "description": "Named MCP servers frozen for one invocation.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+      "additionalProperties": { "$ref": "#/definitions/McpServer" },
+      "maxProperties": 32,
+      "tsType": "Record<string, McpServer>"
+    },
     "InvokeRequestWire": {
       "title": "InvokeRequestWire",
       "description": "Serializable execution request sent from Core to Adapter Host. AbortSignal is added in src/index.ts because it cannot cross a process boundary.",
@@ -531,6 +610,7 @@
           "additionalProperties": true,
           "tsType": "Record<string, unknown>"
         },
+        "mcpServers": { "$ref": "#/definitions/McpServers" },
         "providerSession": { "$ref": "#/definitions/ProviderSession" },
         "runtimeLimits": { "$ref": "#/definitions/RuntimeLimits" },
         "agentConfig": { "$ref": "#/definitions/AgentConfig" }

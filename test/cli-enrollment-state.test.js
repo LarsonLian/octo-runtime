@@ -43,6 +43,70 @@ test("failed enrollment leaves no pending or profile identity state", async () =
   }
 });
 
+test("registration failure preserves the enrolled identity for a credential-proven retry", async () => {
+  const home = await mkdtemp(join(tmpdir(), "oh-enrollment-register-retry-"));
+  const args = [
+    "--home", home,
+    "--profile", "default",
+    "login",
+    "--server-url", "https://im-test.deepminer.com.cn",
+    "--enroll-token-stdin"
+  ];
+  let enrollmentCount = 0;
+  let registrationCount = 0;
+  const fetchImplementation = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/v1/runtimes/enroll")) {
+      enrollmentCount++;
+      const body = JSON.parse(init.body);
+      if (enrollmentCount === 1) {
+        assert.equal(body.runtime_id, undefined);
+        assert.equal(init.headers["X-Runtime-Token"], undefined);
+      } else {
+        assert.equal(body.runtime_id, "runtime_original");
+        assert.equal(init.headers["X-Runtime-Token"], "runtime_token_1");
+      }
+      return Response.json({
+        runtime: { id: "runtime_original", profile: "default", octo_space_id: "space_fixture" },
+        credential: { id: `credential_${enrollmentCount}`, token: `runtime_token_${enrollmentCount}` }
+      });
+    }
+    if (url.endsWith("/v1/runtime/register")) {
+      registrationCount++;
+      if (registrationCount === 1) {
+        return Response.json({ error: { code: "UNAVAILABLE", message: "worker restarting" } }, { status: 503 });
+      }
+      assert.equal(init.headers.Authorization, "Bearer runtime_token_2");
+      return Response.json({ runtime: { id: "runtime_original", profile: "default" } });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+
+  try {
+    await assert.rejects(runCli(args, {
+      input: Readable.from(["octo_enroll_first\n"]), output: () => undefined, fetchImplementation
+    }), /Runtime registration failed/);
+
+    const identityAfterFailure = JSON.parse(await readFile(join(home, "default/identity/runtime.json"), "utf8"));
+    const credentialAfterFailure = JSON.parse(await readFile(join(home, "default/credentials/runtime-token.json"), "utf8"));
+    assert.equal(identityAfterFailure.runtime_id, "runtime_original");
+    assert.equal(identityAfterFailure.credential_id, "credential_1");
+    assert.equal(credentialAfterFailure.access_token, "runtime_token_1");
+
+    await runCli(args, {
+      input: Readable.from(["octo_enroll_second\n"]), output: () => undefined, fetchImplementation
+    });
+
+    const identityAfterRetry = JSON.parse(await readFile(join(home, "default/identity/runtime.json"), "utf8"));
+    assert.equal(identityAfterRetry.runtime_id, "runtime_original");
+    assert.equal(identityAfterRetry.credential_id, "credential_2");
+    assert.equal(enrollmentCount, 2);
+    assert.equal(registrationCount, 2);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test("OpenClaw default runner ids are stable, Runtime-scoped, and valid", () => {
   assert.equal(
     defaultOpenClawRunnerAgentId("runtime_3ba433ec-3c85-42af-a107-238807b63f19"),
@@ -107,7 +171,14 @@ test("OpenClaw setup requires login, stores secrets separately, and initializes 
     if (String(input).endsWith("/v1/runtimes/enroll")) {
       return Response.json({
         data: {
-          runtime: { id: "runtime_fixture", profile: "default", octo_space_id: "space_fixture", owner_ref: "uid:user_fixture" },
+          runtime: {
+            id: "runtime_fixture",
+            profile: "default",
+            octo_space_id: "space_fixture",
+            owner_subject_type: "user",
+            owner_subject_id: "user_fixture",
+            created_by_octo_uid: "user_fixture"
+          },
           credential: { id: "credential_fixture", token: "runtime-token" }
         }
       });
@@ -255,7 +326,9 @@ test("re-enrollment reuses the Runtime and proves ownership with its credential"
             profile,
             id: "runtime_fixture",
             octo_space_id: "space_fixture",
-            owner_ref: "uid:user_fixture"
+            owner_subject_type: "user",
+            owner_subject_id: "user_fixture",
+            created_by_octo_uid: "user_fixture"
           },
           credential: {
             id: `credential_${enrollmentCount}`,
@@ -298,24 +371,148 @@ test("re-enrollment reuses the Runtime and proves ownership with its credential"
     assert.equal(machineIds[0], machineIds[1]);
     assert.equal("system_id" in secondIdentity, false);
     assert.equal("device_id" in secondIdentity, false);
-    assert.equal(secondIdentity.owner_ref, "uid:user_fixture");
+    assert.equal("owner_subject_type" in secondIdentity, false);
+    assert.equal("owner_subject_id" in secondIdentity, false);
+    assert.equal("created_by_octo_uid" in secondIdentity, false);
     assert.equal(secondIdentity.profile, profile);
     const configuration = JSON.parse(await readFile(join(home, profile, "config.json"), "utf8"));
     assert.equal(configuration.agent_work_url, "https://im-test.deepminer.com.cn/agentworker/api");
     assert.equal(configuration.octo_space_id, "space_fixture");
-    assert.equal(configuration.owner_ref, "uid:user_fixture");
+    assert.equal("owner_subject_type" in configuration, false);
+    assert.equal("owner_subject_id" in configuration, false);
+    assert.equal("created_by_octo_uid" in configuration, false);
     assert.equal("tenant_id" in configuration, false);
     assert.equal("subject_id" in configuration, false);
     const machine = JSON.parse(await readFile(join(home, "machine.json"), "utf8"));
     assert.equal(machine.machine_id, machineIds[0]);
     assert.equal(secondIdentity.runtime_id, firstIdentity.runtime_id);
     assert.equal(secondIdentity.credential_id, "credential_2");
-    for (const flag of ["--server-url", "--agent-work-url"]) {
-      await assert.rejects(runCli([...args, flag, "https://untrusted.example"], {
-        input: Readable.from(["octo_enroll_third\n"]), output: () => undefined,
-        fetchImplementation: async () => { assert.fail("must not send credentials to an untrusted endpoint"); }
-      }), /trusted server and Agent Worker/);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("a fresh enrollment token updates the endpoint while preserving the existing Runtime", async () => {
+  const home = await mkdtemp(join(tmpdir(), "oh-reenrollment-rebind-"));
+  const profile = "default";
+  let enrollmentCount = 0;
+  const machineIds = [];
+  const fetchImplementation = async (input, init) => {
+    const url = String(input);
+    const isEnrollment = url.endsWith("/v1/runtimes/enroll");
+    if (isEnrollment) {
+      enrollmentCount++;
+      const body = JSON.parse(init.body);
+      machineIds.push(body.machine_id);
+      assert.equal(body.runtime_id, enrollmentCount === 1 ? undefined : "runtime_original");
+      assert.equal(init.headers["X-Runtime-Token"], enrollmentCount === 1 ? undefined : "runtime_token_old");
+      const expectedBase = enrollmentCount === 1 ? "http://localhost:8091" : "http://localhost:3000";
+      assert.equal(url, `${expectedBase}/agentworker/api/v1/runtimes/enroll`);
+      return Response.json({
+        runtime: {
+          id: "runtime_original",
+          profile,
+          octo_space_id: "space_fixture"
+        },
+        credential: {
+          id: enrollmentCount === 1 ? "credential_old" : "credential_new",
+          token: enrollmentCount === 1 ? "runtime_token_old" : "runtime_token_new"
+        }
+      });
     }
+    if (url.endsWith("/v1/runtime/register")) {
+      const expectedBase = enrollmentCount === 1 ? "http://localhost:8091" : "http://localhost:3000";
+      assert.equal(url, `${expectedBase}/agentworker/api/v1/runtime/register`);
+      return Response.json({ runtime: { id: "runtime_original", profile } });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+
+  try {
+    const common = ["--home", home, "--profile", profile, "login"];
+    await runCli([...common, "--server-url", "http://localhost:8091", "--enroll-token-stdin"], {
+      input: Readable.from(["octo_enroll_old\n"]), output: () => undefined, fetchImplementation
+    });
+    await runCli([...common, "--server-url", "http://localhost:3000", "--enroll-token-stdin"], {
+      input: Readable.from(["octo_enroll_new\n"]), output: () => undefined, fetchImplementation
+    });
+
+    const identity = JSON.parse(await readFile(join(home, profile, "identity/runtime.json"), "utf8"));
+    const configuration = JSON.parse(await readFile(join(home, profile, "config.json"), "utf8"));
+    const credential = JSON.parse(await readFile(join(home, profile, "credentials/runtime-token.json"), "utf8"));
+    assert.equal(identity.runtime_id, "runtime_original");
+    assert.equal(identity.credential_id, "credential_new");
+    assert.equal(credential.access_token, "runtime_token_new");
+    assert.equal(configuration.server_url, "http://localhost:3000");
+    assert.equal(configuration.agent_work_url, "http://localhost:3000/agentworker/api");
+    assert.equal(machineIds[0], machineIds[1]);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("a fresh enrollment replaces stale local Runtime state after the Worker loses it", async () => {
+  const home = await mkdtemp(join(tmpdir(), "oh-reenrollment-stale-runtime-"));
+  const profile = "default";
+  let enrollmentCalls = 0;
+  const enrollmentTokens = [];
+  const fetchImplementation = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/v1/runtimes/enroll")) {
+      enrollmentCalls++;
+      const body = JSON.parse(init.body);
+      enrollmentTokens.push(init.headers.Authorization);
+      if (enrollmentCalls === 1) {
+        assert.equal(body.runtime_id, undefined);
+        return Response.json({
+          runtime: { id: "runtime_stale", profile, octo_space_id: "space_fixture" },
+          credential: { id: "credential_stale", token: "runtime_token_stale" }
+        });
+      }
+      if (enrollmentCalls === 2) {
+        assert.equal(body.runtime_id, "runtime_stale");
+        assert.equal(init.headers["X-Runtime-Token"], "runtime_token_stale");
+        return Response.json({
+          error: {
+            code: "AUTH_REQUIRED",
+            message: "invalid or expired runtime enrollment",
+            details: { reason_code: "ENROLLMENT_INVALID" }
+          }
+        }, { status: 401 });
+      }
+      assert.equal(body.runtime_id, undefined);
+      assert.equal(init.headers["X-Runtime-Token"], undefined);
+      return Response.json({
+        runtime: { id: "runtime_recovered", profile, octo_space_id: "space_fixture" },
+        credential: { id: "credential_recovered", token: "runtime_token_recovered" }
+      });
+    }
+    if (url.endsWith("/v1/runtime/register")) {
+      const expectedRuntime = enrollmentCalls === 1 ? "runtime_stale" : "runtime_recovered";
+      return Response.json({ runtime: { id: expectedRuntime, profile } });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+
+  try {
+    const common = ["--home", home, "--profile", profile, "login", "--server-url", "http://localhost:8091", "--enroll-token-stdin"];
+    await runCli(common, {
+      input: Readable.from(["octo_enroll_initial\n"]), output: () => undefined, fetchImplementation
+    });
+    await runCli(common, {
+      input: Readable.from(["octo_enroll_fresh\n"]), output: () => undefined, fetchImplementation
+    });
+
+    const identity = JSON.parse(await readFile(join(home, profile, "identity/runtime.json"), "utf8"));
+    const credential = JSON.parse(await readFile(join(home, profile, "credentials/runtime-token.json"), "utf8"));
+    assert.equal(identity.runtime_id, "runtime_recovered");
+    assert.equal(identity.credential_id, "credential_recovered");
+    assert.equal(credential.access_token, "runtime_token_recovered");
+    assert.deepEqual(enrollmentTokens, [
+      "Bearer octo_enroll_initial",
+      "Bearer octo_enroll_fresh",
+      "Bearer octo_enroll_fresh"
+    ]);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -340,7 +537,9 @@ test("explicit Agent Worker API root appends only native /v1 routes", async () =
             id: "runtime_fixture",
             profile: "default",
             octo_space_id: "space_fixture",
-            owner_ref: "uid:user_fixture"
+            owner_subject_type: "user",
+            owner_subject_id: "user_fixture",
+            created_by_octo_uid: "user_fixture"
           },
           credential: { id: "credential_fixture", token: "octo_runtime_fixture" }
         });
@@ -383,7 +582,7 @@ test("failed enrollment and process retry preserve the Home machine label", asyn
       if (String(input).endsWith("/runtimes/enroll")) {
         machineIds.push(JSON.parse(init.body).machine_id);
         if (machineIds.length === 1) return Response.json({ error: { code: "UNAVAILABLE" } }, { status: 503 });
-        return Response.json({ runtime: { profile: "default", id: "runtime_fixture", octo_space_id: "space_fixture", owner_ref: "uid:user_fixture" },
+        return Response.json({ runtime: { profile: "default", id: "runtime_fixture", octo_space_id: "space_fixture" },
           credential: { id: "credential_fixture", token: "runtime_token_fixture" } });
       }
       return Response.json({ runtime: { profile: "default", id: "runtime_fixture" } });
@@ -406,7 +605,7 @@ test("profiles share a machine label but have separate Runtime identities; ordin
     if (String(input).endsWith("/runtimes/enroll")) {
       enrollmentCount++;
       machineIds.push(JSON.parse(init.body).machine_id);
-      return Response.json({ runtime: { profile: JSON.parse(init.body).profile, id: `runtime_${enrollmentCount}`, octo_space_id: "space_fixture", owner_ref: "uid:user_fixture" },
+      return Response.json({ runtime: { profile: JSON.parse(init.body).profile, id: `runtime_${enrollmentCount}`, octo_space_id: "space_fixture" },
         credential: { id: `credential_${enrollmentCount}`, token: `runtime_token_${enrollmentCount}` } });
     }
     return Response.json({ runtime: { profile: JSON.parse(init.body).profile, id: `runtime_${enrollmentCount}` } });
@@ -443,7 +642,7 @@ test("enrollment and registration require the exact returned profile", async () 
           return Response.json({
             runtime: {
               id: "runtime_fixture", profile: (calls === 1 ? stage === "enroll" : stage === "register") ? returnedProfile : "work",
-              octo_space_id: "space_fixture", owner_ref: "uid:user_fixture"
+              octo_space_id: "space_fixture"
             }, credential: { id: "credential_fixture", token: "octo_runtime_fixture" }
           });
         }
@@ -462,7 +661,7 @@ test("login persists a 128-character profile and rejects missing or mismatched i
       input: Readable.from(["octo_enroll_fixture\n"]), output: () => undefined,
       fetchImplementation: async (_input, init) => {
         assert.equal(JSON.parse(init.body).profile, profile);
-        return Response.json({ runtime: { id: "runtime_fixture", profile, octo_space_id: "space_fixture", owner_ref: "uid:user_fixture" },
+        return Response.json({ runtime: { id: "runtime_fixture", profile, octo_space_id: "space_fixture" },
           credential: { id: "credential_fixture", token: "octo_runtime_fixture" } });
       }
     });

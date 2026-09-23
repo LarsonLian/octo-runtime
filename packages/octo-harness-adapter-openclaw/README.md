@@ -31,6 +31,12 @@ octo-harness --profile <profile> adapter setup openclaw
 
 Agent revision 仍提供 `providerAgent`、`model`、`thinking` 和 `timeoutSeconds`。Gateway URL/token/device identity 通过 profile 的通用 adapter execution/credential manifest 注入，不从 AgentRevision 或进程环境获取；daemon 不包含 OpenClaw 专用 option 映射。
 
+## 模型配置与环境变量
+
+Agent Revision 使用 `execution_profile.agent_config.model`，值采用 OpenClaw 的 `provider/model` 格式。Adapter 会在每次调用中同时写入 `sessions.create.model` 和 `agent.model`，因此不依赖旧 session 的默认模型；未设置时由 Gateway 的 agent/defaults 配置选择。
+
+本 adapter 不从进程环境读取 OpenClaw 模型或连接信息。`OPENCLAW_GATEWAY_URL`、`OPENCLAW_GATEWAY_TOKEN`、`OPENCLAW_GATEWAY_DEVICE_ID`、`OPENCLAW_GATEWAY_PUBLIC_KEY`、`OPENCLAW_GATEWAY_PRIVATE_KEY`、`OPENCLAW_AGENT_ID`、`OPENCLAW_RUNNER_WORKSPACE` 是 `agentConfig.providerOptions` 的 manifest key，不是 shell 环境变量。连接凭据由 Harness profile 注入，Revision 只保存模型等非密钥配置。参考 [OpenClaw agent CLI](https://docs.openclaw.ai/cli/agent)。
+
 ## Compatibility
 
 生产实现不使用 OpenClaw plugin 或内部模块，只绑定 Gateway protocol v4 advertised capabilities。当前实测基线是 OpenClaw `2026.9.4`。Gateway 升级后应运行 contract tests 和真实 Gateway smoke test；协议版本或必需 method/event 缺失时 adapter fail closed。

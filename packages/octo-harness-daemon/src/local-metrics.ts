@@ -46,8 +46,36 @@ export function renderLocalMetrics(status: unknown): string {
     const storeState = bounded(string(storeHealth.state), STORE_STATES, "migration_failed");
     lines.push(`octo_harness_store_health{profile="${profile}",state="${storeState}"} 1`);
   }
+  const watchdog = record(root.watchdogMetrics);
+  const capturedAt = number(watchdog.capturedAt);
+  if (capturedAt !== undefined) {
+    lines.push("# TYPE octo_harness_watchdog_snapshot_age_seconds gauge");
+    lines.push(`octo_harness_watchdog_snapshot_age_seconds ${Math.max(0, Date.now() - capturedAt) / 1000}`);
+  }
+  for (const [name, type] of Object.entries(WATCHDOG_TYPES)) lines.push(`# TYPE octo_harness_watchdog_${name} ${type}`);
+  const series = Array.isArray(watchdog.series) ? watchdog.series.slice(0, 2048) : [];
+  for (const item of series) {
+    const row = record(item);
+    const name = string(row.name);
+    const value = number(row.value);
+    if (!WATCHDOG_NAMES.has(name) || value === undefined || value < 0) continue;
+    const dimensions = record(row.labels);
+    const entries = Object.entries(dimensions);
+    if (!entries.length || entries.some(([key, val]) => !WATCHDOG_LABELS[key]?.has(string(val)))) continue;
+    const labels = entries.map(([key, val]) => `${key}="${string(val)}"`).join(",");
+    lines.push(`octo_harness_watchdog_${name}{${labels}} ${value}`);
+  }
   return `${lines.join("\n")}\n`;
 }
+
+const WATCHDOG_TYPES = { invocations_total: "counter", active: "gauge", outcomes_total: "counter", model_silence_warnings_total: "counter", timeouts_total: "counter", max_gap_seconds: "histogram" };
+const WATCHDOG_NAMES = new Set(["invocations_total", "active", "outcomes_total", "model_silence_warnings_total", "timeouts_total", "max_gap_seconds_bucket", "max_gap_seconds_sum", "max_gap_seconds_count"]);
+const WATCHDOG_LABELS: Record<string, ReadonlySet<string>> = {
+  adapter: new Set(["codex", "claude-code", "codebuddy", "kimi-code", "opencode", "other"]),
+  policy: new Set(["observe", "enforce"]), outcome: new Set(["completed", "failed", "stopped"]),
+  reason: new Set(["first_frame", "model_silence", "tool_idle", "tool_deadline", "run_deadline", "cleanup_timeout"]),
+  kind: new Set(["canonical", "progress"]), le: new Set(["1", "5", "30", "120", "300", "600", "3600", "+Inf"])
+};
 
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)

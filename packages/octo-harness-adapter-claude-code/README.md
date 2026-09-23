@@ -92,6 +92,12 @@ claude --print --input-format text --output-format stream-json --verbose \
 
 control 指令经 `0600` 临时文件（`--append-system-prompt-file`）传入，用户 prompt 经 stdin 传入，两者互不混淆；临时文件在调用的 `finally` 阶段清理。适配器不传 `--disallowedTools`，保留 Claude 完整工具目录。
 
+## 模型配置与环境变量
+
+Agent Revision 使用 `execution_profile.agent_config.model`，adapter 在每次启动 `claude --print` 时映射为 `--model <value>`，新会话与 `--resume` 会话都生效。值可以是 CLI 支持的别名（如 `sonnet`）或完整模型名；未设置时交由 Claude Code settings 决定。
+
+Claude Code 的默认模型环境变量是 `ANTHROPIC_MODEL`，网关地址常用 `ANTHROPIC_BASE_URL`。本 adapter 不主动写这些变量，只继承 daemon 的进程环境；显式的 `agent_config.model` 通过 `--model` 传入，优先于 settings 和 `ANTHROPIC_MODEL`。参考 [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference)。
+
 ## 约束与注意事项
 
 - **workdir 不是沙箱，默认 bypass 更不是**。默认绕过权限意味着可执行 shell、修改 workdir、访问该 OS 用户可触及的一切资源。生产环境必须使用容器 / VM / 独立用户实现真正隔离，否则不得运行不可信任务。若需保守执行，可显式选择 `dontAsk`，但缺少 Claude allow rules 的工具会被直接拒绝。

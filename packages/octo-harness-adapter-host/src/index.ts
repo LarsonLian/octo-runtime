@@ -1,11 +1,13 @@
 import {
   assertCanonicalEvent,
+  assertInteractionResponse,
   assertInvokeRequest,
+  capabilities,
   failurePayload,
   isTerminal,
   type CanonicalEvent,
+  type InteractionResponse,
   type InvokeRequest,
-  type RuntimeLimits,
   type MessageChannel,
   type MessageExposure,
   type MessageProvenance
@@ -16,6 +18,7 @@ import type {
   ObservationIdentity,
   ProviderObservation
 } from "@mininglamp-oss/octo-harness-observability";
+import { InvocationWatchdog, AdapterWatchdogTimeoutError, WATCHDOG_CAPABILITY, ACTIVITY_CAPABILITY, type WatchdogDiagnostic } from "./watchdog.js";
 
 /** Provider-neutral metadata the Host uses for registration and capability discovery. */
 export interface HostedAdapterMetadata {
@@ -43,6 +46,8 @@ export interface HostedAdapter {
    * supported path for recording provider input and dispatch milestones.
    */
   invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncIterable<CanonicalEvent>;
+  /** Resume a provider request that paused this exact active invocation. */
+  respondInteraction?(invocationId: string, response: InteractionResponse): Promise<void>;
 }
 
 /** Host-owned dependencies used to attach trusted identity to plugin observations. */
@@ -55,6 +60,7 @@ export interface AdapterHostOptions {
   observe?: (identity: ObservationIdentity, observation: ProviderObservation) => Promise<CaptureReceipt>;
   /** Receives adapter output after schema validation and before host correction. */
   canonicalSink?: (identity: ObservationIdentity, event: CanonicalEvent) => void;
+  diagnosticSink?: (identity: ObservationIdentity, diagnostic: WatchdogDiagnostic) => void;
 }
 
 interface MessageState {
@@ -66,15 +72,6 @@ interface MessageState {
   provenance?: MessageProvenance;
 }
 
-const DEFAULT_RUNTIME_LIMITS: Required<RuntimeLimits> = {
-  firstFrameTimeoutMs: 60_000,
-  modelIdleTimeoutMs: 120_000,
-  toolTimeoutMs: 600_000,
-  runTimeoutMs: 1_800_000,
-  cancelGraceMs: 1_000,
-  enforcement: "enforce"
-};
-
 /**
  * The in-process registry and lifecycle gatekeeper for adapters.
  * It validates plugin input/output, fills in the message lifecycle, guarantees
@@ -83,8 +80,11 @@ const DEFAULT_RUNTIME_LIMITS: Required<RuntimeLimits> = {
 export class AdapterHost {
   readonly #adapters = new Map<string, HostedAdapter>();
   readonly #active = new Map<string, AbortController>();
+  readonly #activeAdapters = new Map<string, HostedAdapter>();
+  readonly #acceptedTerminals = new Set<string>();
   readonly #observe: NonNullable<AdapterHostOptions["observe"]>;
   readonly #canonicalSink?: AdapterHostOptions["canonicalSink"];
+  readonly #diagnosticSink?: AdapterHostOptions["diagnosticSink"];
 
   constructor(options: AdapterHostOptions = {}) {
     // A disabled receipt keeps observability additive: existing embeddings and
@@ -95,6 +95,7 @@ export class AdapterHost {
       complete: false
     }));
     this.#canonicalSink = options.canonicalSink;
+    this.#diagnosticSink = options.diagnosticSink;
   }
 
   /** Register an adapter by `metadata.type`; the same type cannot be overwritten twice. */
@@ -105,7 +106,7 @@ export class AdapterHost {
 
   /** List registered adapters, for Agent registration and control-plane display. */
   list(): HostedAdapterMetadata[] {
-    return [...this.#adapters.values()].map(adapter => adapter.metadata);
+    return [...this.#adapters.values()].map(adapter => ({ ...adapter.metadata, capabilities: [...new Set([...adapter.metadata.capabilities, WATCHDOG_CAPABILITY])] }));
   }
 
   /** Report installed provider identity separately from adapter registration. */
@@ -133,6 +134,7 @@ export class AdapterHost {
       const available = probe.available === true && typeof probe.command === "string" && probe.command.length > 0;
       return {
         ...adapter.metadata,
+        capabilities: [...new Set([...adapter.metadata.capabilities, WATCHDOG_CAPABILITY])],
         available,
         unavailableReason: available ? null : unavailableReason,
         providerPath: available ? probe.command as string : null,
@@ -146,26 +148,41 @@ export class AdapterHost {
     assertInvokeRequest(request);
     const adapter = this.#adapters.get(adapterType);
     if (!adapter) throw new Error(`unknown adapter: ${adapterType}`);
+    if (request.mcpServers && Object.keys(request.mcpServers).length > 0
+      && !adapter.metadata.capabilities.includes(capabilities.MCP_DYNAMIC)) {
+      throw new Error(`adapter ${adapterType} does not support dynamic MCP configuration`);
+    }
     const controller = new AbortController();
     this.#active.set(request.invocationId, controller);
+    this.#activeAdapters.set(request.invocationId, adapter);
     let terminal: CanonicalEvent | undefined;
-    const runtimeLimits = normalizeRuntimeLimits(request.runtimeLimits);
-    const invocationStartedAt = Date.now();
-    let watchdogPhase: "starting" | "model_active" | "tool_active" = "starting";
-    const openTools = new Set<string>();
+    let outcome = "stopped";
+    const identity: ObservationIdentity = {
+      ...(typeof request.context?.profile === "string" ? { profile: request.context.profile } : {}),
+      ...(typeof request.context?.runtimeId === "string" ? { runtimeId: request.context.runtimeId } : {}),
+      runId: request.runId, invocationId: request.invocationId, agentSessionId: request.agentSessionId, adapterType
+    };
+    const watchdog = new InvocationWatchdog(request.runtimeLimits, controller,
+      adapter.metadata.capabilities.includes(ACTIVITY_CAPABILITY),
+      diagnostic => this.#diagnosticSink?.(identity, {
+        ...diagnostic,
+        data: { ...diagnostic.data, agentRevisionId: request.context?.agentRevisionId }
+      }));
+    let iterator: AsyncIterator<CanonicalEvent> | undefined;
+    let cleanup: Promise<unknown> | undefined;
+    let cleanupWait: Promise<void> | undefined;
+    const closeIterator = (): Promise<unknown> => cleanup ??= Promise.resolve().then(() => iterator?.return?.()).catch(() => undefined);
+    const waitCleanup = (): Promise<void> => cleanupWait ??= boundedCleanup(closeIterator(), watchdog.limits.cancelGraceMs);
+    // The timer can fire while a consumer is paused at yield.
+    const onAbort = () => { void closeIterator(); };
+    controller.signal.addEventListener("abort", onAbort, { once: true });
     const messages = new Map<string, MessageState>();
     // Correlation fields come from the validated host request, never from the
     // adapter. This prevents a plugin from accidentally attributing sensitive
     // input to another Run while still letting it describe transport details.
     const context: AdapterInvocationContext = {
-      observe: observation => this.#observe({
-        ...(typeof request.context?.profile === "string" ? { profile: request.context.profile } : {}),
-        ...(typeof request.context?.runtimeId === "string" ? { runtimeId: request.context.runtimeId } : {}),
-        runId: request.runId,
-        invocationId: request.invocationId,
-        agentSessionId: request.agentSessionId,
-        adapterType
-      }, observation)
+      observe: observation => this.#observe(identity, observation),
+      reportActivity: activity => watchdog.activity(activity)
     };
 
     // A provider may emit only deltas; here the host fills in the message lifecycle and stabilizes the messageId.
@@ -215,18 +232,14 @@ export class AdapterHost {
     };
 
     try {
-      const iterator = adapter.invoke({ ...request, signal: controller.signal }, context)[Symbol.asyncIterator]();
+      iterator = adapter.invoke({ ...request, signal: controller.signal }, context)[Symbol.asyncIterator]();
       while (true) {
-        const phaseBudgetMs = watchdogPhase === "starting"
-          ? runtimeLimits.firstFrameTimeoutMs
-          : watchdogPhase === "tool_active"
-            ? runtimeLimits.toolTimeoutMs
-            : runtimeLimits.modelIdleTimeoutMs;
-        const runRemainingMs = runtimeLimits.runTimeoutMs - (Date.now() - invocationStartedAt);
-        const budgetMs = Math.max(1, Math.min(phaseBudgetMs, runRemainingMs));
-        const next = runtimeLimits.enforcement === "enforce"
-          ? await nextWithWatchdog(iterator, budgetMs, watchdogPhase, runtimeLimits.cancelGraceMs, controller)
-          : await iterator.next();
+        if (controller.signal.aborted) throw controller.signal.reason;
+        const pendingNext = iterator.next();
+        const next = terminal
+          ? await withCleanupDeadline(pendingNext, watchdog.limits.cancelGraceMs, controller)
+          : await waitForNext(pendingNext, controller.signal);
+        if (controller.signal.aborted) throw controller.signal.reason;
         if (next.done) break;
         const adapterEvent = next.value;
         assertCanonicalEvent(adapterEvent);
@@ -236,11 +249,12 @@ export class AdapterHost {
               payload: failurePayload(adapterEvent.payload, {
                 stage: "provider.invoke",
                 defaultDomain: "provider",
+                runId: request.runId,
                 source: { component: "octo-harness", adapter: adapterType }
               })
             }
           : adapterEvent;
-        watchdogPhase = updateWatchdogPhase(event, openTools);
+        watchdog.canonical(event);
         this.#canonicalSink?.({
           ...(typeof request.context?.profile === "string" ? { profile: request.context.profile } : {}),
           ...(typeof request.context?.runtimeId === "string" ? { runtimeId: request.context.runtimeId } : {}),
@@ -250,7 +264,11 @@ export class AdapterHost {
           adapterType
         }, event);
         if (terminal) throw new Error(`${adapterType} emitted after terminal event`);
-        if (isTerminal(event)) terminal = event;
+        if (isTerminal(event)) {
+          terminal = event;
+          // A later user cancellation cannot replace an accepted provider terminal.
+          this.#acceptedTerminals.add(request.invocationId);
+        }
         else {
           if (event.type === "model_step.finished") {
             for (const closed of closeMessages(event.payload.status, event.payload.stepId)) yield closed;
@@ -262,12 +280,21 @@ export class AdapterHost {
       }
       terminal ??= { type: "run.stopped", payload: { reason: "adapter_stream_ended" } };
       const messageStatus = terminal.type === "run.finished" ? "completed" : terminal.type === "run.error" ? "failed" : "stopped";
+      outcome = messageStatus;
       for (const event of closeMessages(messageStatus)) yield event;
       yield terminal;
-    } catch (error) {
-      const watchdogTimeout = error instanceof AdapterWatchdogTimeoutError;
-      for (const event of closeMessages(controller.signal.aborted && !watchdogTimeout ? "stopped" : "failed")) yield event;
-      if (controller.signal.aborted && !watchdogTimeout) {
+    } catch (caught) {
+      const error = controller.signal.reason instanceof AdapterWatchdogTimeoutError ? controller.signal.reason : caught;
+      const userCancelled = controller.signal.aborted && !(controller.signal.reason instanceof AdapterWatchdogTimeoutError);
+      outcome = userCancelled ? "stopped" : "failed";
+      if (error instanceof AdapterWatchdogTimeoutError && error.timeoutReason === "cleanup_timeout") {
+        try { this.#diagnosticSink?.(identity, { event: "timeout", data: { ...watchdog.snapshot(), timeoutReason: error.timeoutReason, timeoutMs: error.timeoutMs } }); } catch { /* best effort */ }
+      }
+      watchdog.dispose();
+      if (!controller.signal.aborted) controller.abort(error);
+      await waitCleanup();
+      for (const event of closeMessages(userCancelled ? "stopped" : "failed")) yield event;
+      if (userCancelled) {
         yield { type: "run.stopped", payload: { reason: String(controller.signal.reason ?? "cancelled") } };
       } else if (terminal?.type === "run.error") {
         yield terminal;
@@ -283,12 +310,19 @@ export class AdapterHost {
           }, {
             stage: "adapter.invoke",
             defaultDomain: "adapter",
+            runId: request.runId,
             source: { component: "octo-harness", adapter: adapterType }
           })
         };
       }
     } finally {
+      watchdog.finish(outcome);
+      if (!terminal && !controller.signal.aborted) controller.abort("consumer closed");
+      await waitCleanup();
+      controller.signal.removeEventListener("abort", onAbort);
       this.#active.delete(request.invocationId);
+      this.#activeAdapters.delete(request.invocationId);
+      this.#acceptedTerminals.delete(request.invocationId);
     }
   }
 
@@ -303,9 +337,25 @@ export class AdapterHost {
   /** Abort an active invocation; returns false when that invocation no longer exists or has already ended. */
   cancel(invocationId: string, reason = "cancelled"): boolean {
     const controller = this.#active.get(invocationId);
-    if (!controller) return false;
+    if (!controller || this.#acceptedTerminals.has(invocationId)) return false;
     controller.abort(reason);
     return true;
+  }
+
+  /** Route an answer only to the adapter instance that owns the active invocation. */
+  async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
+    assertInteractionResponse(response);
+    const adapter = this.#activeAdapters.get(invocationId);
+    if (!adapter || this.#acceptedTerminals.has(invocationId)) {
+      throw new Error(`invocation is not active: ${invocationId}`);
+    }
+    if (!adapter.respondInteraction) {
+      throw new Error(`adapter does not support interaction responses: ${adapter.metadata.type}`);
+    }
+    if (!adapter.metadata.capabilities.includes(capabilities.INTERACTION_RESPONSE)) {
+      throw new Error(`adapter did not declare interaction response capability: ${adapter.metadata.type}`);
+    }
+    await adapter.respondInteraction(invocationId, response);
   }
 
   /** Abort every invocation and wait briefly for adapter cleanup to reap its
@@ -340,80 +390,40 @@ function errorCode(error: unknown): string | undefined {
     : undefined;
 }
 
-function normalizeRuntimeLimits(value: RuntimeLimits | undefined): Required<RuntimeLimits> {
-  return {
-    firstFrameTimeoutMs: value?.firstFrameTimeoutMs ?? DEFAULT_RUNTIME_LIMITS.firstFrameTimeoutMs,
-    modelIdleTimeoutMs: value?.modelIdleTimeoutMs ?? DEFAULT_RUNTIME_LIMITS.modelIdleTimeoutMs,
-    toolTimeoutMs: value?.toolTimeoutMs ?? DEFAULT_RUNTIME_LIMITS.toolTimeoutMs,
-    runTimeoutMs: value?.runTimeoutMs ?? DEFAULT_RUNTIME_LIMITS.runTimeoutMs,
-    cancelGraceMs: value?.cancelGraceMs ?? DEFAULT_RUNTIME_LIMITS.cancelGraceMs,
-    enforcement: value?.enforcement ?? DEFAULT_RUNTIME_LIMITS.enforcement
-  };
-}
-
-function updateWatchdogPhase(
-  event: CanonicalEvent,
-  openTools: Set<string>
-): "model_active" | "tool_active" {
-  const toolID = typeof event.payload.toolCallId === "string"
-    ? event.payload.toolCallId
-    : typeof event.payload.id === "string"
-      ? event.payload.id
-    : typeof event.payload.itemId === "string"
-      ? event.payload.itemId
-      : "tool";
-  if (event.type === "tool_call.create") openTools.add(toolID);
-  if (event.type === "tool_call.update" && ["completed", "failed", "cancelled", "stopped"].includes(String(event.payload.status))) {
-    openTools.delete(toolID);
-  }
-  return openTools.size > 0 ? "tool_active" : "model_active";
-}
-
-async function nextWithWatchdog(
-  iterator: AsyncIterator<CanonicalEvent>,
-  timeoutMs: number,
-  phase: "starting" | "model_active" | "tool_active",
-  cancelGraceMs: number,
-  controller: AbortController
-): Promise<IteratorResult<CanonicalEvent>> {
-  let timer: NodeJS.Timeout | undefined;
+async function waitForNext<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+  let onAbort: () => void = () => {};
   try {
-    return await Promise.race([
-      iterator.next(),
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          const error = new AdapterWatchdogTimeoutError(phase, timeoutMs);
-          reject(error);
-          controller.abort(error);
-        }, timeoutMs);
-        timer.unref?.();
-      })
-    ]);
-  } catch (error) {
-    if (error instanceof AdapterWatchdogTimeoutError) {
-      await Promise.race([
-        Promise.resolve(iterator.return?.()).catch(() => undefined),
-        new Promise<void>(resolve => setTimeout(resolve, cancelGraceMs))
-      ]);
-    }
-    throw error;
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+    return await Promise.race([pending, new Promise<never>((_resolve, reject) => {
+      onAbort = () => reject(signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason ?? "cancelled")));
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    })]);
+  } finally { signal.removeEventListener("abort", onAbort); }
 }
 
-class AdapterWatchdogTimeoutError extends Error {
-  readonly code = "ADAPTER_TIMEOUT";
+async function boundedCleanup(cleanup: Promise<unknown>, graceMs: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([cleanup, new Promise<void>(resolve => { timer = setTimeout(resolve, graceMs); })]);
+  } finally { if (timer) clearTimeout(timer); }
+}
 
-  constructor(readonly timeoutStage: string, readonly timeoutMs: number) {
-    super(`adapter protocol activity exceeded the ${timeoutStage} budget`);
-    this.name = "AdapterWatchdogTimeoutError";
-  }
+async function withCleanupDeadline<T>(pending: Promise<T>, graceMs: number, controller: AbortController): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([pending, new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        const error = new AdapterWatchdogTimeoutError("cleanup", graceMs, "cleanup_timeout");
+        reject(error);
+        controller.abort(error);
+      }, graceMs);
+    })]);
+  } finally { if (timer) clearTimeout(timer); }
 }
 
 function watchdogFailureDetails(error: unknown): Record<string, unknown> {
   return error instanceof AdapterWatchdogTimeoutError
-    ? { timeoutStage: error.timeoutStage, timeoutMs: error.timeoutMs }
+    ? { timeoutStage: error.timeoutStage, timeoutMs: error.timeoutMs, timeoutReason: error.timeoutReason, watchdog: error.evidence }
     : {};
 }
 

@@ -7,14 +7,17 @@ import type {
   ChannelScope,
   ContextSyncResult,
   InvokeRequestWire,
+  RuntimeLimits,
   MessageChannel,
   MessageExposure,
+  InteractionRequestedPayload,
   ModelStepFinishedPayload,
   ModelStepStartedPayload,
   ToolCallCreatePayload,
   ToolCallDeltaPayload,
   ToolCallUpdatePayload,
-  FailureEnvelope
+  FailureEnvelope,
+  McpServers
 } from "./generated/protocol-types.js";
 
 // The data-shape types are generated from schema/protocol.schema.json (see
@@ -29,6 +32,7 @@ export type {
   AgentConfig,
   RuntimeLimits,
   CanonicalEventPayload,
+  InteractionRequestedPayload,
   ModelStepStartedPayload,
   ModelStepFinishedPayload,
   ToolCallCreatePayload,
@@ -49,6 +53,10 @@ export type {
   ChannelContextDescriptor,
   ChannelContextSnapshotRef,
   ContextCommitResult,
+  McpStdioServer,
+  McpStreamableHttpServer,
+  McpServer,
+  McpServers,
   RunIdentity,
   InvokeRequestWire
 } from "./generated/protocol-types.js";
@@ -87,6 +95,7 @@ export const CANONICAL_EVENT_TYPES = [
   "message.create", "message.delta", "message.update",
   "tool_call.create", "tool_call.delta", "tool_call.update",
   "surface.create", "surface.delta", "surface.update",
+  "interaction.requested",
   "run.queued", "run.running",
   ...TERMINAL_EVENT_TYPES
 ] as const;
@@ -97,6 +106,7 @@ export type CanonicalEventType = (typeof CANONICAL_EVENT_TYPES)[number];
 export type CanonicalPayloadFor<TType extends CanonicalEventType> =
   TType extends "model_step.started" ? CanonicalEventPayload & ModelStepStartedPayload
     : TType extends "model_step.finished" ? CanonicalEventPayload & ModelStepFinishedPayload
+      : TType extends "interaction.requested" ? CanonicalEventPayload & InteractionRequestedPayload
       : TType extends "tool_call.create" ? CanonicalEventPayload & ToolCallCreatePayload
     : TType extends "tool_call.delta" ? CanonicalEventPayload & ToolCallDeltaPayload
       : TType extends "tool_call.update" ? CanonicalEventPayload & ToolCallUpdatePayload
@@ -118,6 +128,16 @@ export type CanonicalEvent<TType extends CanonicalEventType = CanonicalEventType
 export interface InvokeRequest extends InvokeRequestWire {
   /** Fired when the Host cancels the invocation; the adapter should propagate it to the subprocess or a protocol cancel. */
   signal?: AbortSignal;
+}
+
+export const INTERACTION_RESPONSE_OUTCOMES = ["accepted", "declined", "answered", "cancelled"] as const;
+export type InteractionResponseOutcome = (typeof INTERACTION_RESPONSE_OUTCOMES)[number];
+
+/** Opaque answer carrier routed back to the provider request that emitted an interaction. */
+export interface InteractionResponse {
+  interactionId: string;
+  outcome: InteractionResponseOutcome;
+  value?: unknown;
 }
 
 /** Provider adapters must use this accessor so hidden context is sent exactly once when present. */
@@ -285,7 +305,9 @@ export const capabilities = Object.freeze({
   SESSION_FORK: "session.fork",
   MESSAGE_APPEND: "message.append",
   TOOL_CANONICAL: "tool.canonical",
-  REATTACH: "run.reattach"
+  REATTACH: "run.reattach",
+  MCP_DYNAMIC: "tool.mcp.dynamic",
+  INTERACTION_RESPONSE: "interaction.response"
 } as const);
 
 /**
@@ -367,6 +389,25 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
     requireEventString(payload, "id", event.type);
     requireEventString(payload, "status", event.type);
   }
+  if (event.type === "interaction.requested") {
+    requireEventString(payload, "interactionId", event.type);
+    if (payload.kind !== "approval" && payload.kind !== "question" && payload.kind !== "elicitation") {
+      throw new TypeError("interaction.requested payload.kind is unsupported");
+    }
+    if (!isRecord(payload.request)) throw new TypeError("interaction.requested payload.request must be an object");
+  }
+}
+
+/** Validate a response before it crosses the process or provider boundary. */
+export function assertInteractionResponse(value: unknown): asserts value is InteractionResponse {
+  if (!isRecord(value)) throw new TypeError("interaction response must be an object");
+  if (typeof value.interactionId !== "string" || value.interactionId.length === 0 || value.interactionId.length > 191) {
+    throw new TypeError("interaction response interactionId must be 1-191 characters");
+  }
+  if (typeof value.outcome !== "string"
+    || !(INTERACTION_RESPONSE_OUTCOMES as readonly string[]).includes(value.outcome)) {
+    throw new TypeError("interaction response outcome is unsupported");
+  }
 }
 
 /** Validate a structured failure at the dynamic adapter boundary. */
@@ -404,6 +445,8 @@ export function assertFailureEnvelope(value: unknown): asserts value is FailureE
 /** Assert the execution identifiers and path fields that must be present before the Host calls an adapter. */
 export function assertInvokeRequest(request: unknown): asserts request is InvokeRequest {
   if (!isRecord(request)) throw new TypeError("InvokeRequest must be an object");
+  if (request.runtimeLimits !== undefined) assertRuntimeLimits(request.runtimeLimits);
+  if (request.mcpServers !== undefined) assertMcpServers(request.mcpServers);
   for (const key of ["invocationId", "agentSessionId", "runId", "prompt", "workdir"] as const) {
     if (typeof request[key] !== "string" || request[key].length === 0) {
       throw new TypeError(`InvokeRequest.${key} must be a non-empty string`);
@@ -416,6 +459,98 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
   if (request.freshFallbackModelInput !== undefined
     && (typeof request.freshFallbackModelInput !== "string" || request.freshFallbackModelInput.length === 0)) {
     throw new TypeError("InvokeRequest.freshFallbackModelInput must be a non-empty string when present");
+  }
+}
+
+/** Validate dynamic MCP configuration before any value reaches a provider process. */
+export function assertMcpServers(value: unknown): asserts value is McpServers {
+  if (!isRecord(value)) throw new TypeError("mcpServers must be an object");
+  const entries = Object.entries(value);
+  if (entries.length > 32) throw new TypeError("mcpServers must not contain more than 32 servers");
+  for (const [name, server] of entries) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) {
+      throw new TypeError("mcpServers contains an invalid server name");
+    }
+    if (!isRecord(server)) throw new TypeError(`mcpServers.${name} must be an object`);
+    const allowed = server.type === "stdio"
+      ? new Set(["type", "command", "args", "env", "cwd", "required", "startupTimeoutMs", "toolTimeoutMs"])
+      : server.type === "streamable_http"
+        ? new Set(["type", "url", "headers", "required", "startupTimeoutMs", "toolTimeoutMs"])
+        : undefined;
+    if (!allowed) throw new TypeError(`mcpServers.${name}.type is unsupported`);
+    for (const key of Object.keys(server)) {
+      if (!allowed.has(key)) throw new TypeError(`mcpServers.${name}.${key} is unsupported`);
+    }
+    if (server.type === "stdio") {
+      requireNonEmptyString(server, "command", `mcpServers.${name}`);
+      assertStringArray(server.args, `mcpServers.${name}.args`, 128);
+      assertStringRecord(server.env, `mcpServers.${name}.env`, 128);
+      if (server.cwd !== undefined && (typeof server.cwd !== "string" || server.cwd.length === 0)) {
+        throw new TypeError(`mcpServers.${name}.cwd must be a non-empty string when present`);
+      }
+    } else {
+      requireNonEmptyString(server, "url", `mcpServers.${name}`);
+      let parsed: URL;
+      try {
+        parsed = new URL(server.url as string);
+      } catch {
+        throw new TypeError(`mcpServers.${name}.url must be an absolute HTTP URL`);
+      }
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        throw new TypeError(`mcpServers.${name}.url must be an absolute HTTP URL`);
+      }
+      assertStringRecord(server.headers, `mcpServers.${name}.headers`, 64);
+    }
+    if (server.required !== undefined && typeof server.required !== "boolean") {
+      throw new TypeError(`mcpServers.${name}.required must be boolean when present`);
+    }
+    assertMcpTimeout(server.startupTimeoutMs, `mcpServers.${name}.startupTimeoutMs`, 300_000);
+    assertMcpTimeout(server.toolTimeoutMs, `mcpServers.${name}.toolTimeoutMs`, 3_600_000);
+  }
+}
+
+function requireNonEmptyString(value: Record<string, unknown>, key: string, path: string): void {
+  if (typeof value[key] !== "string" || value[key].length === 0) {
+    throw new TypeError(`${path}.${key} must be a non-empty string`);
+  }
+}
+
+function assertStringArray(value: unknown, path: string, limit: number): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.length > limit || value.some(item => typeof item !== "string")) {
+    throw new TypeError(`${path} must be an array of strings`);
+  }
+}
+
+function assertStringRecord(value: unknown, path: string, limit: number): void {
+  if (value === undefined) return;
+  if (!isRecord(value) || Object.keys(value).length > limit || Object.values(value).some(item => typeof item !== "string")) {
+    throw new TypeError(`${path} must be a string map`);
+  }
+}
+
+function assertMcpTimeout(value: unknown, path: string, maximum: number): void {
+  if (value === undefined) return;
+  if (!Number.isSafeInteger(value) || Number(value) < 100 || Number(value) > maximum) {
+    throw new TypeError(`${path} is out of range`);
+  }
+}
+
+export function assertRuntimeLimits(value: unknown): asserts value is RuntimeLimits {
+  if (!isRecord(value)) throw new TypeError("runtimeLimits must be an object");
+  const bounds: Record<string, number> = {
+    firstFrameTimeoutMs: 1_800_000, modelIdleTimeoutMs: 3_600_000, modelIdleWarningMs: 3_600_000,
+    toolTimeoutMs: 86_400_000, toolWallTimeoutMs: 86_400_000, runTimeoutMs: 86_400_000, cancelGraceMs: 60_000
+  };
+  for (const [key, setting] of Object.entries(value)) {
+    if (key === "enforcement" || key === "modelIdlePolicy") {
+      if (setting !== "enforce" && setting !== "observe") throw new TypeError(`invalid runtimeLimits.${key}`);
+    } else if (!(key in bounds) || typeof setting !== "number" || !Number.isSafeInteger(setting) || setting < 100 || setting > bounds[key]) {
+      throw new TypeError(`invalid runtimeLimits.${key}`);
+    }
+  }
+  if (value.enforcement === "observe" && ["modelIdlePolicy", "modelIdleWarningMs", "toolWallTimeoutMs"].some(key => value[key] !== undefined)) {
+    throw new TypeError("legacy enforcement=observe cannot be combined with watchdog v2 settings; use modelIdlePolicy=observe with enforcement=enforce");
   }
 }
 
