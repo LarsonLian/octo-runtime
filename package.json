@@ -39,6 +39,7 @@
     "@mininglamp-oss/octo-harness-adapter-codebuddy": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-codex": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-hermes": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-icons": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-kimi-code": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-host": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-mcode": "workspace:*",
