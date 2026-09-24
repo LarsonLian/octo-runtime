@@ -15,17 +15,22 @@ const here = dirname(fileURLToPath(import.meta.url));
 const iconsDir = join(here, "..", "src", "icons");
 const outFile = join(here, "..", "src", "generated.ts");
 
-// Metadata keyed by adapter `type`. `monochrome` mirrors octo-web's
-// providerIcons.ts classification; `darkFile` is set only when a brand ships a
-// dedicated dark-theme variant.
+// Metadata keyed by adapter `type`. `monochrome` marks single-color glyphs the
+// consumer should tint (currentColor / maskImage); `darkFile` is set only when
+// a brand ships a dedicated dark-theme variant. Icons are sourced from LobeHub
+// Icons (https://lobehub.com/icons) unless noted.
 const ICONS = [
   { type: "codex", name: "Codex", file: "codex.svg", monochrome: true, const: "codexIcon" },
   { type: "claude-code", name: "Claude Code", file: "claude-code.svg", const: "claudeCodeIcon" },
   { type: "codebuddy", name: "CodeBuddy", file: "codebuddy.svg", const: "codebuddyIcon" },
   { type: "hermes", name: "Hermes", file: "hermes.svg", monochrome: true, const: "hermesIcon" },
-  { type: "kimi-code", name: "Kimi Code", file: "kimi-code.svg", monochrome: true, const: "kimiCodeIcon" },
-  { type: "opencode", name: "OpenCode", file: "opencode-light.svg", darkFile: "opencode-dark.svg", const: "opencodeIcon" },
-  { type: "openclaw", name: "OpenClaw", file: "openclaw.svg", const: "openclawIcon" }
+  { type: "kimi-code", name: "Kimi Code", file: "kimi-code.svg", const: "kimiCodeIcon" },
+  { type: "mcode", name: "MiniMax Code", file: "mcode.svg", const: "mcodeIcon" },
+  { type: "opencode", name: "OpenCode", file: "opencode.svg", monochrome: true, const: "opencodeIcon" },
+  { type: "openclaw", name: "OpenClaw", file: "openclaw.svg", const: "openclawIcon" },
+  { type: "qodercli", name: "Qoder", file: "qoder.svg", const: "qoderCliIcon" },
+  { type: "qoderclicn", name: "Qoder CN", file: "qoderclicn.svg", const: "qoderCliCnIcon" },
+  { type: "zcode-gui", name: "ZCode", file: "zai.svg", monochrome: true, const: "zcodeGuiIcon" }
 ];
 
 const read = (name) => readFileSync(join(iconsDir, name), "utf8").trim();
