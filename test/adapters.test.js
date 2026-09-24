@@ -14,6 +14,7 @@ import { acpModelSelectionRequest, createAcpAdapter, normalizeAcpUpdate } from "
 import { hermesAdapter } from "@mininglamp-oss/octo-harness-adapter-hermes";
 import { kimiCodeAdapter } from "@mininglamp-oss/octo-harness-adapter-kimi-code";
 import { mcodeAdapter } from "@mininglamp-oss/octo-harness-adapter-mcode";
+import { qoderCliAdapter } from "@mininglamp-oss/octo-harness-adapter-qodercli";
 import {
   buildCodexCommand,
   CodexEventNormalizer,
@@ -1632,6 +1633,12 @@ test("MiniMax Code exposes an ACP adapter with default session and tool capabili
   // MiniMax Code manages model selection itself, so it must not claim Codex's
   // append-only continuity recovery capability.
   assert.equal(mcodeAdapter.metadata.capabilities.includes("session.resume_recovery"), false);
+});
+
+test("Qoder CLI exposes an ACP adapter with default session and tool capabilities", () => {
+  assert.equal(qoderCliAdapter.metadata.type, "qodercli");
+  assert.deepEqual([...qoderCliAdapter.metadata.capabilities].sort(), ["session.serialize", "tool.canonical"]);
+  assert.equal(qoderCliAdapter.metadata.capabilities.includes("session.resume_recovery"), false);
 });
 
 test("generic ACP cancellation sends session/cancel and converges to run.stopped", async () => {

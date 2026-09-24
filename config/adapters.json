@@ -9,6 +9,7 @@
     { "type": "mcode", "module": "@mininglamp-oss/octo-harness-adapter-mcode", "export": "mcodeAdapter" },
     { "type": "opencode", "module": "@mininglamp-oss/octo-harness-adapter-opencode", "export": "opencodeAdapter" },
     { "type": "openclaw", "module": "@mininglamp-oss/octo-harness-adapter-openclaw", "export": "openclawAdapter" },
+    { "type": "qodercli", "module": "@mininglamp-oss/octo-harness-adapter-qodercli", "export": "qoderCliAdapter" },
     { "type": "zcode-gui", "module": "@mininglamp-oss/octo-harness-adapter-zcode-gui", "export": "zcodeGuiAdapter" }
   ]
 }
