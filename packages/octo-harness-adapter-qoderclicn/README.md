@@ -8,6 +8,8 @@ Qoder CN CLI ACP adapter，adapter type 为 `qoderclicn`。每次调用启动 `q
 
 `--acp` 让 Qoder CN 讲 Agent Client Protocol（JSON-RPC 2.0 over stdio）；`--yolo` 选择 ACP “bypass permissions” 模式，使无人值守的工具调用不会卡在交互式审批。
 
+> **安全要求**：`--yolo` 是危险权限模式（bypass permissions）。按 `CONTRIBUTING.md` 安全约定，此类模式只能在 Runtime 提供的外部容器/VM 沙箱内运行；workdir 只是 `cwd`，不是安全边界。
+
 ## 模型配置
 
 Qoder CN 在 `session/new`/`session/load` 响应中发布可选模型。若 Revision 配置了 `execution_profile.agent_config.model`，adapter 通过标准 ACP 选模设置该 session，值必须是返回的模型 id。未配置时沿用当前默认模型；请求模型不在发布列表时会在发送 prompt 前失败，不静默退回。
