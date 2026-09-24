@@ -6,6 +6,7 @@
     { "type": "codebuddy", "module": "@mininglamp-oss/octo-harness-adapter-codebuddy", "export": "codebuddyAdapter" },
     { "type": "hermes", "module": "@mininglamp-oss/octo-harness-adapter-hermes", "export": "hermesAdapter" },
     { "type": "kimi-code", "module": "@mininglamp-oss/octo-harness-adapter-kimi-code", "export": "kimiCodeAdapter" },
+    { "type": "mcode", "module": "@mininglamp-oss/octo-harness-adapter-mcode", "export": "mcodeAdapter" },
     { "type": "opencode", "module": "@mininglamp-oss/octo-harness-adapter-opencode", "export": "opencodeAdapter" },
     { "type": "openclaw", "module": "@mininglamp-oss/octo-harness-adapter-openclaw", "export": "openclawAdapter" },
     { "type": "zcode-gui", "module": "@mininglamp-oss/octo-harness-adapter-zcode-gui", "export": "zcodeGuiAdapter" }

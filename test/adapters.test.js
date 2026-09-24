@@ -13,6 +13,7 @@ import { createCodeBuddyAdapter } from "@mininglamp-oss/octo-harness-adapter-cod
 import { acpModelSelectionRequest, createAcpAdapter, normalizeAcpUpdate } from "@mininglamp-oss/octo-harness-adapter-acp";
 import { hermesAdapter } from "@mininglamp-oss/octo-harness-adapter-hermes";
 import { kimiCodeAdapter } from "@mininglamp-oss/octo-harness-adapter-kimi-code";
+import { mcodeAdapter } from "@mininglamp-oss/octo-harness-adapter-mcode";
 import {
   buildCodexCommand,
   CodexEventNormalizer,
@@ -1623,6 +1624,14 @@ test("Hermes and Kimi Code expose distinct ACP adapter types", () => {
     toolCallId: "tool-1",
     status: "failed"
   }, "fixture")[0].type, "tool_call.update");
+});
+
+test("MiniMax Code exposes an ACP adapter with default session and tool capabilities", () => {
+  assert.equal(mcodeAdapter.metadata.type, "mcode");
+  assert.deepEqual([...mcodeAdapter.metadata.capabilities].sort(), ["session.serialize", "tool.canonical"]);
+  // MiniMax Code manages model selection itself, so it must not claim Codex's
+  // append-only continuity recovery capability.
+  assert.equal(mcodeAdapter.metadata.capabilities.includes("session.resume_recovery"), false);
 });
 
 test("generic ACP cancellation sends session/cancel and converges to run.stopped", async () => {
