@@ -18,8 +18,11 @@
     "@mininglamp-oss/octo-harness-adapter-codex": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-hermes": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-kimi-code": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-mcode": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-openclaw": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-opencode": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-qodercli": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-qoderclicn": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-zcode-gui": "workspace:*",
     "@mininglamp-oss/octo-harness-observability": "workspace:*",
     "@mininglamp-oss/octo-harness-protocol": "workspace:*"

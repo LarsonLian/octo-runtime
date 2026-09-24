@@ -29,12 +29,21 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-kimi-code':
         specifier: workspace:*
         version: link:packages/octo-harness-adapter-kimi-code
+      '@mininglamp-oss/octo-harness-adapter-mcode':
+        specifier: workspace:*
+        version: link:packages/octo-harness-adapter-mcode
       '@mininglamp-oss/octo-harness-adapter-openclaw':
         specifier: workspace:*
         version: link:packages/octo-harness-adapter-openclaw
       '@mininglamp-oss/octo-harness-adapter-opencode':
         specifier: workspace:*
         version: link:packages/octo-harness-adapter-opencode
+      '@mininglamp-oss/octo-harness-adapter-qodercli':
+        specifier: workspace:*
+        version: link:packages/octo-harness-adapter-qodercli
+      '@mininglamp-oss/octo-harness-adapter-qoderclicn':
+        specifier: workspace:*
+        version: link:packages/octo-harness-adapter-qoderclicn
       '@mininglamp-oss/octo-harness-adapter-zcode-gui':
         specifier: workspace:*
         version: link:packages/octo-harness-adapter-zcode-gui
@@ -99,12 +108,21 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-kimi-code':
         specifier: workspace:*
         version: link:../../packages/octo-harness-adapter-kimi-code
+      '@mininglamp-oss/octo-harness-adapter-mcode':
+        specifier: workspace:*
+        version: link:../../packages/octo-harness-adapter-mcode
       '@mininglamp-oss/octo-harness-adapter-openclaw':
         specifier: workspace:*
         version: link:../../packages/octo-harness-adapter-openclaw
       '@mininglamp-oss/octo-harness-adapter-opencode':
         specifier: workspace:*
         version: link:../../packages/octo-harness-adapter-opencode
+      '@mininglamp-oss/octo-harness-adapter-qodercli':
+        specifier: workspace:*
+        version: link:../../packages/octo-harness-adapter-qodercli
+      '@mininglamp-oss/octo-harness-adapter-qoderclicn':
+        specifier: workspace:*
+        version: link:../../packages/octo-harness-adapter-qoderclicn
       '@mininglamp-oss/octo-harness-adapter-zcode-gui':
         specifier: workspace:*
         version: link:../../packages/octo-harness-adapter-zcode-gui
@@ -262,12 +280,21 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-kimi-code':
         specifier: workspace:*
         version: link:../octo-harness-adapter-kimi-code
+      '@mininglamp-oss/octo-harness-adapter-mcode':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-mcode
       '@mininglamp-oss/octo-harness-adapter-openclaw':
         specifier: workspace:*
         version: link:../octo-harness-adapter-openclaw
       '@mininglamp-oss/octo-harness-adapter-opencode':
         specifier: workspace:*
         version: link:../octo-harness-adapter-opencode
+      '@mininglamp-oss/octo-harness-adapter-qodercli':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-qodercli
+      '@mininglamp-oss/octo-harness-adapter-qoderclicn':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-qoderclicn
       '@mininglamp-oss/octo-harness-adapter-zcode-gui':
         specifier: workspace:*
         version: link:../octo-harness-adapter-zcode-gui
@@ -279,6 +306,12 @@ importers:
         version: link:../octo-harness-protocol
 
   packages/octo-harness-adapter-kimi-code:
+    dependencies:
+      '@mininglamp-oss/octo-harness-adapter-acp':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-acp
+
+  packages/octo-harness-adapter-mcode:
     dependencies:
       '@mininglamp-oss/octo-harness-adapter-acp':
         specifier: workspace:*
@@ -302,6 +335,18 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-harness-adapter-sdk
+
+  packages/octo-harness-adapter-qodercli:
+    dependencies:
+      '@mininglamp-oss/octo-harness-adapter-acp':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-acp
+
+  packages/octo-harness-adapter-qoderclicn:
+    dependencies:
+      '@mininglamp-oss/octo-harness-adapter-acp':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-acp
 
   packages/octo-harness-adapter-sdk:
     dependencies:
