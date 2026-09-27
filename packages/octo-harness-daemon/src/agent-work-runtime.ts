@@ -2351,16 +2351,12 @@ function webSocketEndpointMetadata(url: URL): Record<string, string> {
   };
 }
 
-/** Render the full immutable execution input (current parts, recent group
+/** Render the full immutable execution input (current prompt/parts, recent group
  * messages and any quoted message) into a single prompt. Used when no channel
  * context snapshot drives the model input. */
 export function renderAgentRunInputPrompt(content: Record<string, unknown> | undefined): string {
   const input = asRecord(content);
-  const parts = Array.isArray(input.parts) ? input.parts : [];
-  const current = parts.map(part => {
-    const value = asRecord(part);
-    return value.type === "text" && typeof value.text === "string" ? value.text : "";
-  }).filter(Boolean).join("\n");
+  const current = executionInputText(input);
   const blocks: string[] = [];
   const contextRefs = Array.isArray(input.context_refs) ? input.context_refs : [];
   const recent = contextRefs.flatMap((ref): unknown[] => {
@@ -2387,11 +2383,7 @@ export function renderAgentRunInputPrompt(content: Record<string, unknown> | und
 /** Render the product-visible current turn without context-only channel facts. */
 export function renderDisplayExecutionInputPrompt(content: Record<string, unknown> | undefined): string {
   const input = asRecord(content);
-  const parts = Array.isArray(input.parts) ? input.parts : [];
-  const current = parts.map(part => {
-    const value = asRecord(part);
-    return value.type === "text" && typeof value.text === "string" ? value.text : "";
-  }).filter(Boolean).join("\n");
+  const current = executionInputText(input);
   const blocks: string[] = [];
   const reply = asRecord(input.reply_to);
   if (stringValue(reply.text)) {
@@ -2399,6 +2391,15 @@ export function renderDisplayExecutionInputPrompt(content: Record<string, unknow
   }
   blocks.push(`[Current message]\n${current}`);
   return blocks.join("\n\n");
+}
+
+function executionInputText(input: Record<string, unknown>): string {
+  const parts = Array.isArray(input.parts) ? input.parts : [];
+  const partsText = parts.map(part => {
+    const value = asRecord(part);
+    return value.type === "text" && typeof value.text === "string" ? value.text : "";
+  }).filter(Boolean).join("\n");
+  return partsText || stringValue(input.prompt) || "";
 }
 
 function rawDataText(data: WebSocket.RawData): string {

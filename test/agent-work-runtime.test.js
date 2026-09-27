@@ -308,6 +308,22 @@ test("immutable execution input rendering keeps background separate from the cur
   assert.ok(prompt.indexOf("Recent group messages") < prompt.indexOf("Current message"));
 });
 
+test("Human and SDK prompt input renders without IM parts", () => {
+  const input = { prompt: "Review the task" };
+
+  assert.equal(renderAgentRunInputPrompt(input), "[Current message]\nReview the task");
+  assert.equal(renderDisplayExecutionInputPrompt(input), "[Current message]\nReview the task");
+});
+
+test("IM text parts take precedence over the prompt fallback", () => {
+  const input = {
+    prompt: "stale fallback",
+    parts: [{ type: "text", text: "current IM message" }]
+  };
+
+  assert.equal(renderAgentRunInputPrompt(input), "[Current message]\ncurrent IM message");
+});
+
 test("frozen channel context uses modelInput while prompt remains display-safe", () => {
   const snapshot = {
     ref: {
