@@ -1,0 +1,27 @@
+{
+  "name": "@mininglamp-oss/octo-harness-embedded",
+  "version": "0.1.0",
+  "description": "Embeddable Octo Harness runtime lifecycle SDK",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-manifest.mjs"
+  },
+  "dependencies": {
+    "@mininglamp-oss/octo-harness-adapter-host": "workspace:*",
+    "@mininglamp-oss/octo-harness-daemon": "workspace:*"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

@@ -61,16 +61,29 @@ export function loadManagedAgentWorks(
 ): AgentWorkRuntimeOptions[] | undefined {
   const root = readJsonOptional<HarnessHomeConfiguration>(join(home, "config.json"));
   if (!root) return undefined;
-  if (root.schema_version !== 1) throw new Error("unsupported Harness Home config schema");
-  const defaultProfile = requiredString(root.default_profile, "default_profile");
   const profiles = discoverProfiles(home);
-  if (!profiles.includes(defaultProfile)) throw new Error(`default profile ${defaultProfile} is missing`);
   if (requestedProfile && !profiles.includes(requestedProfile)) {
     throw new Error(`managed profile ${requestedProfile} does not exist in this Harness Home`);
   }
-  const orderedProfiles = [defaultProfile, ...profiles.filter(profile => profile !== defaultProfile)];
+  return loadManagedAgentWorksFromRoot(home, profiles);
+}
+
+/** Load only an explicit allowlist from a normal profile root. */
+export function loadManagedAgentWorksFromRoot(
+  rootPath: string,
+  profiles: readonly string[]
+): AgentWorkRuntimeOptions[] {
+  const root = readJsonRequired<HarnessHomeConfiguration>(join(rootPath, "config.json"));
+  if (root.schema_version !== 1) throw new Error("unsupported Harness Home config schema");
+  const defaultProfile = requiredString(root.default_profile, "default_profile");
+  const uniqueProfiles = [...new Set(profiles)];
+  if (!uniqueProfiles.includes(defaultProfile)) throw new Error(`default profile ${defaultProfile} is missing`);
+  for (const profile of uniqueProfiles) {
+    if (!isProfileName(profile)) throw new Error(`Harness Home profile is invalid: ${profile}`);
+  }
+  const orderedProfiles = [defaultProfile, ...uniqueProfiles.filter(profile => profile !== defaultProfile)];
   const runtimes = orderedProfiles
-    .map(profile => loadManagedProfile(home, profile))
+    .map(profile => loadManagedProfile(rootPath, profile))
     .filter((runtime): runtime is AgentWorkRuntimeOptions => runtime !== undefined);
   assertUniqueRuntimeBindings(runtimes);
   return runtimes;

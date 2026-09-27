@@ -398,6 +398,15 @@ importers:
         specifier: ^8.18.1
         version: 8.18.1
 
+  packages/octo-harness-embedded:
+    dependencies:
+      '@mininglamp-oss/octo-harness-adapter-host':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-host
+      '@mininglamp-oss/octo-harness-daemon':
+        specifier: workspace:*
+        version: link:../octo-harness-daemon
+
   packages/octo-harness-observability:
     dependencies:
       js-yaml:

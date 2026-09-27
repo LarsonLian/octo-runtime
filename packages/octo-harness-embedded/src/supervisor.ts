@@ -1,0 +1,212 @@
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { closeSync, existsSync, openSync } from "node:fs";
+import { delimiter, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { EmbeddedHarnessError } from "./errors.js";
+import { removeFile, writeJsonAtomic, type EmbeddedAccountPaths, type EmbeddedHomePaths } from "./home.js";
+import { callDaemon, probeDaemon, type DaemonStatus, type EmbeddedRunnerSession } from "./runtime-contract.js";
+import type { EmbeddedHarnessOptions } from "./types.js";
+
+export interface SupervisedRuntime {
+  child: ChildProcess;
+  nonce: string;
+  paths: EmbeddedHomePaths;
+}
+
+export async function startEmbeddedRuntime(options: {
+  sdk: EmbeddedHarnessOptions;
+  paths: EmbeddedHomePaths;
+  account: EmbeddedAccountPaths;
+  profiles: readonly string[];
+  nonce: string;
+}): Promise<{ supervised: SupervisedRuntime; status: DaemonStatus }> {
+  const nodePath = resolveNode(options.sdk);
+  const runnerPath = options.sdk.distribution?.runnerPath ?? fileURLToPath(new URL("./runner.js", import.meta.url));
+  if (!existsSync(runnerPath)) {
+    throw new EmbeddedHarnessError("DISTRIBUTION_MISSING", "distribution", false, `embedded runner is missing: ${runnerPath}`);
+  }
+  removeFile(options.paths.shutdownFile);
+  const session: EmbeddedRunnerSession = {
+    schema_version: 1,
+    nonce: options.nonce,
+    parent_pid: process.pid,
+    home: options.paths.home,
+    account_root: options.account.root,
+    profiles: [...options.profiles],
+    socket_path: options.paths.socket,
+    pid_path: options.paths.pidFile,
+    store_path: options.account.storeFile,
+    log_directory: options.account.logs,
+    shutdown_file: options.paths.shutdownFile,
+    supervisor_state: options.paths.supervisorState,
+    ...(options.sdk.distribution?.manifestPath ? { manifest_path: options.sdk.distribution.manifestPath } : {}),
+    ...(options.sdk.distribution?.adapterHostEntrypoint
+      ? { adapter_host_entrypoint: options.sdk.distribution.adapterHostEntrypoint }
+      : {})
+  };
+  writeJsonAtomic(options.paths.sessionFile, session, true);
+  const output = openSync(join(options.account.logs, "embedded-runtime.log"), "a", 0o600);
+  let child: ChildProcess;
+  try {
+    child = spawn(nodePath, [runnerPath, "--session", options.paths.sessionFile], {
+      argv0: "octo-harness-embedded",
+      cwd: dirname(runnerPath),
+      detached: false,
+      shell: false,
+      windowsHide: true,
+      stdio: ["ignore", output, output],
+      env: childEnvironment(options.paths, options.account)
+    });
+  } finally {
+    closeSync(output);
+  }
+  const supervised: SupervisedRuntime = { child, nonce: options.nonce, paths: options.paths };
+  const startupTimeout = options.sdk.startupTimeoutMs ?? 30_000;
+  const deadline = Date.now() + startupTimeout;
+  for (;;) {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new EmbeddedHarnessError(
+        "DAEMON_EXITED",
+        "daemon",
+        true,
+        `embedded runner exited before readiness (code=${child.exitCode ?? "none"}, signal=${child.signalCode ?? "none"})`
+      );
+    }
+    const status = await probeDaemon(options.paths.socket);
+    if (status?.ready) return { supervised, status };
+    if (Date.now() >= deadline) {
+      await stopEmbeddedRuntime(supervised).catch(() => undefined);
+      throw new EmbeddedHarnessError("DAEMON_START_TIMEOUT", "daemon", true, `embedded runtime was not ready within ${startupTimeout}ms`);
+    }
+    await delay(250);
+  }
+}
+
+export async function stopEmbeddedRuntime(supervised: SupervisedRuntime): Promise<void> {
+  try {
+    await callDaemon(supervised.paths.socket, { method: "lifecycle.drain", params: { timeoutMs: 5_000 } }, 7_000);
+  } catch {
+    // Shutdown must continue even if the local control endpoint is unavailable.
+  }
+  writeJsonAtomic(supervised.paths.shutdownFile, { nonce: supervised.nonce, requested_at: new Date().toISOString() });
+  if (await waitForExit(supervised.child, 5_000)) {
+    cleanup(supervised.paths);
+    return;
+  }
+  await terminateOwnedChild(supervised.child);
+  if (!(await waitForExit(supervised.child, 5_000))) {
+    throw new EmbeddedHarnessError("SHUTDOWN_INCOMPLETE", "shutdown", false, "embedded runtime process tree did not exit");
+  }
+  if (await probeDaemon(supervised.paths.socket, 500)) {
+    throw new EmbeddedHarnessError("SHUTDOWN_INCOMPLETE", "shutdown", false, "embedded daemon IPC is still reachable after shutdown");
+  }
+  cleanup(supervised.paths);
+}
+
+export async function runtimeStatus(supervised: SupervisedRuntime): Promise<DaemonStatus | undefined> {
+  if (supervised.child.exitCode !== null || supervised.child.signalCode !== null) return undefined;
+  return probeDaemon(supervised.paths.socket);
+}
+
+function resolveNode(options: EmbeddedHarnessOptions): string {
+  const explicit = options.distribution?.nodePath;
+  if (explicit) return assertNode24(explicit);
+  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
+  if (resourcesPath) {
+    const executable = process.platform === "win32" ? "node.exe" : "node";
+    for (const candidate of [
+      join(resourcesPath, "runtime", "node", "bin", executable),
+      join(resourcesPath, "embedded-runtime", "node", "bin", executable)
+    ]) {
+      if (existsSync(candidate)) return assertNode24(candidate);
+    }
+    if (!options.development) {
+      throw new EmbeddedHarnessError("NODE_RUNTIME_MISSING", "distribution", false, "packaged embedded runtime is missing its pinned Node.js 24 executable");
+    }
+  }
+  if (!process.versions.electron && Number(process.versions.node.split(".")[0]) >= 24) return process.execPath;
+  if (options.development) {
+    const pathNode = findOnPath(process.platform === "win32" ? "node.exe" : "node");
+    if (pathNode) return assertNode24(pathNode);
+  }
+  throw new EmbeddedHarnessError("NODE_RUNTIME_MISSING", "distribution", false, "Embedded Harness requires a pinned Node.js 24 runtime");
+}
+
+function assertNode24(path: string): string {
+  if (!existsSync(path)) throw new EmbeddedHarnessError("NODE_RUNTIME_MISSING", "distribution", false, `Node executable is missing: ${path}`);
+  const result = spawnSync(path, ["--version"], { encoding: "utf8", windowsHide: true, shell: false });
+  const version = String(result.stdout || result.stderr).trim();
+  if (result.status !== 0 || Number(/^v?(\d+)/.exec(version)?.[1] ?? 0) < 24) {
+    throw new EmbeddedHarnessError("NODE_RUNTIME_INVALID", "distribution", false, `Embedded Harness requires Node.js 24+: ${path} (${version || "unavailable"})`);
+  }
+  return path;
+}
+
+function findOnPath(executable: string): string | undefined {
+  for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+    const candidate = directory ? join(directory, executable) : undefined;
+    if (candidate && existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+function childEnvironment(paths: EmbeddedHomePaths, account: EmbeddedAccountPaths): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    PATH: process.env.PATH ?? "",
+    HOME: process.env.HOME ?? process.env.USERPROFILE ?? "",
+    LANG: process.env.LANG ?? "en_US.UTF-8",
+    OCTO_HARNESS_HOME: paths.home,
+    OCTO_HARNESS_LOG_DIR: account.logs
+  };
+  if (process.platform === "win32") {
+    for (const key of [
+      "SystemRoot", "SystemDrive", "COMSPEC", "PATHEXT", "TEMP", "TMP", "USERPROFILE",
+      "APPDATA", "LOCALAPPDATA", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE"
+    ]) {
+      const value = environmentValue(key);
+      if (value) env[key] = value;
+    }
+  }
+  return env;
+}
+
+function environmentValue(name: string): string | undefined {
+  const key = Object.keys(process.env).find(candidate => candidate.toLowerCase() === name.toLowerCase());
+  return key ? process.env[key] : undefined;
+}
+
+async function terminateOwnedChild(child: ChildProcess): Promise<void> {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform === "win32") {
+    await new Promise<void>((resolve, reject) => {
+      const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+        windowsHide: true,
+        shell: false,
+        stdio: "ignore"
+      });
+      killer.once("error", reject);
+      killer.once("exit", code => code === 0 || code === 128 ? resolve() : reject(new Error(`taskkill exited with ${code}`)));
+    });
+  } else {
+    child.kill("SIGTERM");
+    if (!(await waitForExit(child, 2_000))) child.kill("SIGKILL");
+  }
+}
+
+function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
+  return new Promise(resolve => {
+    const timer = setTimeout(() => { cleanupListener(); resolve(false); }, timeoutMs);
+    const onExit = (): void => { clearTimeout(timer); cleanupListener(); resolve(true); };
+    const cleanupListener = (): void => { child.off("exit", onExit); };
+    child.once("exit", onExit);
+  });
+}
+
+function cleanup(paths: EmbeddedHomePaths): void {
+  for (const path of [paths.shutdownFile, paths.sessionFile, paths.supervisorState]) removeFile(path);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
