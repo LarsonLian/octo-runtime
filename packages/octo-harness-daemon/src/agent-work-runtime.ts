@@ -208,6 +208,7 @@ export interface ExecutionEnvelope {
   };
   agent_revision: {
     definition?: Record<string, unknown>;
+    execution_spec?: Record<string, unknown>;
     execution_profile?: Record<string, unknown>;
   };
 }
@@ -2229,14 +2230,14 @@ export function mapExecutionEnvelope(
   if (envelope.continuity_mode === "fresh" && envelope.provider_session) {
     throw new TypeError("fresh execution envelope must not carry provider_session");
   }
-  const profile = asRecord(envelope.agent_revision.execution_profile);
+  const profile = executionProfile(envelope);
   const definition = asRecord(envelope.agent_revision.definition);
   const adapterType = executionAdapterType(envelope);
   const agentConfig = asRecord(profile.agent_config) as AgentConfig;
   const runtimeLimits = mapExecutionRuntimeLimits(profile.runtime_limits);
   const mcpServers = mapExecutionMcpServers(profile.mcp_servers);
   const workdir = stringValue(profile.workdir) ?? stringValue(agentConfig.workdir);
-  if (!workdir) throw new TypeError("execution_profile.workdir is required for a local runtime");
+  if (!workdir) throw new TypeError("agent_revision execution spec workdir is required for a local runtime");
   const content = envelope.agent_run_request.input;
   const displayPrompt = contextSnapshot
     ? renderDisplayExecutionInputPrompt(content)
@@ -2298,10 +2299,17 @@ function mapExecutionMcpServers(value: unknown): McpServers | undefined {
 }
 
 function executionAdapterType(envelope: ExecutionEnvelope): string {
-  const profile = asRecord(envelope.agent_revision?.execution_profile);
+  const profile = executionProfile(envelope);
   const adapterType = stringValue(profile.default_adapter);
-  if (!adapterType) throw new Error("agent_revision.execution_profile.default_adapter is required");
+  if (!adapterType) throw new Error("agent_revision execution spec default_adapter is required");
   return adapterType;
+}
+
+function executionProfile(envelope: ExecutionEnvelope): Record<string, unknown> {
+  return asRecord(
+    envelope.agent_revision?.execution_spec
+      ?? envelope.agent_revision?.execution_profile
+  );
 }
 
 function mapExecutionRuntimeLimits(value: unknown): Record<string, unknown> {

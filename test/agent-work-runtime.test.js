@@ -192,6 +192,37 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
   assert.match(mapped.request.prompt, /\[Current message\]\nFix the test/);
 });
 
+test("Worker execution_spec maps through the Harness execution boundary", () => {
+  const { execution_profile, ...agentRevision } = envelope.agent_revision;
+  const mapped = mapExecutionEnvelope({
+    ...envelope,
+    agent_revision: {
+      ...agentRevision,
+      execution_spec: execution_profile
+    }
+  });
+
+  assert.equal(mapped.adapterType, "codex");
+  assert.equal(mapped.request.workdir, "/workspace/project");
+  assert.equal(mapped.request.agentConfig.model, "gpt-5");
+});
+
+test("Worker execution_spec takes precedence over the legacy execution_profile", () => {
+  const mapped = mapExecutionEnvelope({
+    ...envelope,
+    agent_revision: {
+      ...envelope.agent_revision,
+      execution_spec: {
+        default_adapter: "opencode",
+        workdir: "/workspace/from-worker"
+      }
+    }
+  });
+
+  assert.equal(mapped.adapterType, "opencode");
+  assert.equal(mapped.request.workdir, "/workspace/from-worker");
+});
+
 test("Agent Work envelope maps a validated immutable MCP plan without exposing it in context", () => {
   const mcpServers = {
     team: {
@@ -268,7 +299,7 @@ test("execution envelope rejects legacy adapter_type without default_adapter", (
         execution_profile: { adapter_type: "codex", workdir: "/workspace/project" }
       }
     }),
-    /execution_profile\.default_adapter is required/
+    /agent_revision execution spec default_adapter is required/
   );
 });
 
