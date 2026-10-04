@@ -25,7 +25,9 @@ export const OPENCLAW_PROVIDER_OPTIONS = {
   publicKey: "OPENCLAW_GATEWAY_PUBLIC_KEY",
   privateKey: "OPENCLAW_GATEWAY_PRIVATE_KEY",
   agentId: "OPENCLAW_AGENT_ID",
-  workspace: "OPENCLAW_RUNNER_WORKSPACE"
+  workspace: "OPENCLAW_RUNNER_WORKSPACE",
+  externalBinding: "OCTO_EXTERNAL_OPENCLAW_BINDING",
+  bindingId: "OCTO_EXTERNAL_BINDING_ID"
 } as const;
 
 export interface OpenClawGatewayInvocation {
@@ -374,16 +376,22 @@ function normalizeFinalResponse(value: unknown, state: StreamState): {
   };
 }
 
-function assertRuntimeGatewayContract(value: unknown): void {
+function assertRuntimeGatewayContract(value: unknown, externalBinding = false): void {
   const hello = asRecord(value);
   const features = asRecord(hello?.features);
   const methods = Array.isArray(features?.methods) ? features.methods : [];
   const events = Array.isArray(features?.events) ? features.events : [];
   if (hello?.protocol !== 4) throw new Error(`unsupported OpenClaw Gateway protocol: ${String(hello?.protocol)}`);
-  for (const method of ["config.get", "sessions.create", "sessions.messages.subscribe", "agent", "agent.wait", "sessions.abort"]) {
+  const requiredMethods = ["sessions.create", "sessions.messages.subscribe", "agent", "agent.wait", "sessions.abort"];
+  if (!externalBinding) requiredMethods.unshift("config.get");
+  for (const method of requiredMethods) {
     if (!methods.includes(method)) throw new Error(`OpenClaw Gateway does not advertise required method ${method}`);
   }
   if (!events.includes("agent")) throw new Error("OpenClaw Gateway does not advertise the agent event stream");
+}
+
+function isExternalBinding(req: InvokeRequest): boolean {
+  return option(req, OPENCLAW_PROVIDER_OPTIONS.externalBinding) === "true";
 }
 
 function assertRuntimeIsolationConfig(value: unknown, invocation: OpenClawGatewayInvocation): void {
@@ -446,9 +454,12 @@ async function* invokeOpenClawGateway(
 
   try {
     const hello = await client.connect();
-    assertRuntimeGatewayContract(hello);
-    await client.request("config.get", {}, { timeoutMs: 10_000, signal: req.signal })
-      .then(value => assertRuntimeIsolationConfig(value, invocation));
+    const externalBinding = isExternalBinding(req);
+    assertRuntimeGatewayContract(hello, externalBinding);
+    if (!externalBinding) {
+      await client.request("config.get", {}, { timeoutMs: 10_000, signal: req.signal })
+        .then(value => assertRuntimeIsolationConfig(value, invocation));
+    }
     const created = asRecord(await client.request("sessions.create", invocation.createParams, {
       timeoutMs: 30_000,
       signal: req.signal

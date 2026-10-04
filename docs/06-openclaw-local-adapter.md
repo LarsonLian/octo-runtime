@@ -4,7 +4,21 @@
 
 ## 前置配置
 
-OpenClaw 配置绑定在已登录的 Harness profile 上，因此必须先完成 `octo-harness login`，并在 `setup` 时显式传入 `--profile`。省略 profile 或指定尚未登录的 profile 都会 fail closed。Gateway token 从 stdin 读取，不进入命令参数、profile config 或日志。
+OpenClaw 配置绑定在已登录的 Harness profile 上，因此必须先完成 `octo-harness login`。外部 Agent 使用 `connect` 命令显式完成绑定；省略 profile 或指定尚未登录的 profile 都会 fail closed。Gateway token 从 stdin 读取，不进入命令参数、profile config 或日志。
+
+本文原先描述的 `setup` 是 Harness 托管 runner 的旧路径。对于已经由 OpenClaw 管理的外部 Agent，应使用下面的黑盒接入路径：
+
+```bash
+printf '%s' "$OPENCLAW_GATEWAY_TOKEN" | \
+  octo-harness --profile <profile> adapter connect openclaw \
+    --binding-id <external-binding-id> \
+    --gateway-url wss://gateway.example.com \
+    --agent-id <existing-agent-id> \
+    --workspace /srv/openclaw/<agent-id> \
+    --token-stdin
+```
+
+`connect` 只验证 Gateway protocol 和目标 Agent 是否存在，然后保存本地 connector binding。它不会创建 Agent、patch Gateway config、清空 workspace 或修改外部 Agent 的人设和 skills。`setup` 仅保留给旧的 Harness-managed runner 兼容路径。
 
 ```bash
 printf '%s' "$OPENCLAW_GATEWAY_TOKEN" | \

@@ -934,6 +934,53 @@ test("OpenClaw Gateway adapter isolates run events, deduplicates seq, and stream
   });
 });
 
+test("OpenClaw external binding treats the provider Agent as a black box", async () => {
+  let listener = () => {};
+  const requests = [];
+  const client = {
+    connect: async () => openClawGatewayHello(),
+    onEvent(next) { listener = next; return () => { listener = () => {}; }; },
+    async request(method, params, options = {}) {
+      requests.push({ method, params });
+      if (method === "sessions.create") return { key: params.key };
+      if (method === "agent.wait") return { status: "ok", runId: params.runId };
+      if (method === "agent") {
+        const runId = params.idempotencyKey;
+        options.onAccepted?.({ status: "accepted", runId });
+        listener({ event: "agent", payload: { runId, seq: 1, stream: "lifecycle", data: { phase: "start" } } });
+        listener({ event: "agent", payload: { runId, seq: 2, stream: "assistant", data: { text: "external result" } } });
+        listener({ event: "agent", payload: { runId, seq: 3, stream: "lifecycle", data: { phase: "end", stopReason: "stop" } } });
+        return { status: "ok", runId };
+      }
+      return { ok: true };
+    },
+    close: async () => {}
+  };
+  const adapter = createOpenClawAdapter({ clientFactory: () => client });
+  const events = [];
+  for await (const event of adapter.invoke({
+    ...request,
+    agentConfig: {
+      providerAgentId: "external-agent",
+      providerOptions: {
+        OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
+        OPENCLAW_GATEWAY_TOKEN: "token",
+        OPENCLAW_GATEWAY_DEVICE_ID: "device",
+        OPENCLAW_GATEWAY_PUBLIC_KEY: "public",
+        OPENCLAW_GATEWAY_PRIVATE_KEY: "private",
+        OPENCLAW_RUNNER_WORKSPACE: "/remote/openclaw",
+        OCTO_EXTERNAL_OPENCLAW_BINDING: "true",
+        OCTO_EXTERNAL_BINDING_ID: "binding-external"
+      }
+    }
+  })) events.push(event);
+
+  assert.equal(requests.some(entry => entry.method === "config.get"), false);
+  assert.deepEqual(requests.slice(0, 4).map(entry => entry.method), ["sessions.create", "sessions.messages.subscribe", "agent", "agent.wait"]);
+  assert.equal(events.filter(event => event.type === "message.delta").map(event => event.payload.text).join(""), "external result");
+  assert.equal(events.at(-1).type, "run.finished");
+});
+
 test("OpenClaw Gateway adapter reconciles a final RPC result when live events are absent", async () => {
   const requests = [];
   const client = {

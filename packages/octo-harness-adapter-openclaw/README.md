@@ -16,6 +16,31 @@ Octo Harness 的 OpenClaw Gateway adapter。每次 invocation 创建一条已认
 
 ## Setup
 
+### External Agent binding
+
+For an OpenClaw Agent that is owned by an external Gateway, use the explicit
+`adapter connect` path. It verifies an existing provider Agent and stores a
+local connector binding; it never calls `agents.create` or `config.patch` and
+does not manage the Agent's persona, skills, memory, tools, or workspace.
+
+```bash
+printf '%s' "$OPENCLAW_GATEWAY_TOKEN" | \
+  octo-harness --profile <profile> adapter connect openclaw \
+    --binding-id <octo-external-binding-id> \
+    --gateway-url wss://gateway.example.com \
+    --agent-id research-agent \
+    --workspace /srv/openclaw/research-agent \
+    --token-stdin
+```
+
+The binding is a black-box execution target. The local daemon connects to the
+Gateway as an outbound bridge and returns canonical AgentRun events to Agent
+Worker. A missing provider Agent or unsupported Gateway capability fails the
+connection; Octo does not create or repair the remote Agent.
+
+The legacy `adapter setup openclaw` command remains for the managed local
+runner path and should not be used for an external binding.
+
 必须先完成 Harness profile 登录，并在 setup 时显式指定该 profile；不存在或尚未登录的 profile 会被拒绝：
 
 ```bash

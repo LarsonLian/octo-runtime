@@ -207,5 +207,6 @@ Provider 返回的 Codex thread ID、Claude session UUID 或 OpenCode session ID
 - [Module And Transport Flow](docs/02-module-and-transport-flow.md)
 - [Prompt And Workdir](docs/04-prompt-and-workdir.md)
 - [Provider Adapters](docs/05-provider-adapters.md)
+- [OpenClaw External Agent Binding](docs/15-openclaw-external-agent-binding-design.md)
 - [Transport And Multi-node](docs/09-transport-and-multinode.md)
 - [Agent Worker Runtime](docs/13-agent-work-runtime.md)

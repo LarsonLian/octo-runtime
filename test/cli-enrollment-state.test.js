@@ -147,7 +147,7 @@ test("OpenClaw setup requires login, stores secrets separately, and initializes 
           },
           auth: { deviceToken: rotatedGatewayToken }
         };
-      } else if (frame.method === "agents.list") payload = { agents: [] };
+      } else if (frame.method === "agents.list") payload = { agents: [{ id: "openclaw-external-agent", workspace: "/srv/openclaw-agent" }] };
       else if (frame.method === "agents.create") payload = { id: frame.params.name };
       else if (frame.method === "config.get") payload = { hash: "config-hash" };
       else if (frame.method === "config.patch") {
@@ -301,6 +301,24 @@ test("OpenClaw setup requires login, stores secrets separately, and initializes 
     if (process.platform !== "win32") {
       assert.equal((await stat(profile.adapters.openclaw.workspace)).mode & 0o222, 0);
     }
+    protocol = 4;
+    const externalOutput = [];
+    await runCli([
+      "--home", home, "--profile", "default", "adapter", "connect", "openclaw",
+      "--binding-id", "binding_external_fixture",
+      "--gateway-url", `ws://127.0.0.1:${address.port}`,
+      "--agent-id", "openclaw-external-agent",
+      "--workspace", "/srv/openclaw-agent",
+      "--token-stdin"
+    ], { input: Readable.from(["gateway-token\n"]), output: value => externalOutput.push(JSON.parse(value)) });
+    assert.equal(externalOutput[0].kind, "external");
+    assert.equal(externalOutput[0].binding_id, "binding_external_fixture");
+    const externalProfile = JSON.parse(await readFile(join(home, "default/config.json"), "utf8"));
+    assert.equal(externalProfile.adapters.openclaw.kind, "external");
+    assert.equal(externalProfile.adapters.openclaw.binding_id, "binding_external_fixture");
+    assert.equal(externalProfile.adapters.openclaw.agent_id, "openclaw-external-agent");
+    assert.equal(externalProfile.adapters.openclaw.execution.provider_options.OCTO_EXTERNAL_OPENCLAW_BINDING, "true");
+    assert.equal(externalProfile.adapters.openclaw.execution.managed_workspace, undefined);
   } finally {
     await rm(home, { recursive: true, force: true });
   }

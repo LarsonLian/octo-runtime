@@ -45,6 +45,10 @@ export interface ProfileConfiguration {
 
 export interface OpenClawAdapterConfiguration {
   schema_version: 1;
+  /** External binding mode: OpenClaw owns the Agent definition and lifecycle. */
+  kind?: "external";
+  /** Cloud-side ExternalAgentBinding identifier, when this profile was paired from Octo Work. */
+  binding_id?: string;
   gateway_url: string;
   agent_id: string;
   workspace: string;
