@@ -5,7 +5,7 @@ import test from "node:test";
 import { buildClaudeCommand, createClaudeCodeAdapter } from "@mininglamp-oss/octo-harness-adapter-claude-code";
 import { capabilities } from "@mininglamp-oss/octo-harness-protocol";
 
-const request = {
+const request = { protocolVersion: 2,
   invocationId: "invoke-mcp",
   agentSessionId: "session-mcp",
   runId: "run-mcp",

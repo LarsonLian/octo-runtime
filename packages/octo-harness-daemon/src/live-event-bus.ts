@@ -140,8 +140,7 @@ export class LiveEventBus {
     const payloadWithinLimit = estimatedJsonBytes(input.payload, this.#maxFrameBytes) <= this.#maxFrameBytes;
     const stage = input.stage ?? defaultStage(input.source, input.type);
     const direction = normalizeDirection(input.direction, input.source, input.type, stage);
-    let envelope: LiveEventEnvelope = {
-      schema: "octo-harness.live-event/v1",
+    let envelope: LiveEventEnvelope = { schema: "octo-harness.live-event/v1",
       local_seq: seq,
       occurred_at: input.occurredAt ?? new Date().toISOString(),
       source: input.source,
@@ -161,8 +160,7 @@ export class LiveEventBus {
     };
     let bytes = payloadWithinLimit ? encodeBounded(envelope, this.#maxFrameBytes) : undefined;
     if (!bytes) {
-      envelope = {
-        schema: "octo-harness.live-event/v1",
+      envelope = { schema: "octo-harness.live-event/v1",
         local_seq: seq,
         occurred_at: envelope.occurred_at,
         source: "control",
@@ -227,8 +225,7 @@ export class LiveEventBus {
   publishRecord(record: RecordEnvelope, sourceOverride?: LiveEventSource): boolean {
     const source = sourceOverride ?? sourceForRecord(record);
     const data = isRecord(record.data) ? record.data : {};
-    return this.publish({
-      source,
+    return this.publish({ source,
       type: record.event,
       profile: stringField(record.profile) ?? stringField(data.profile),
       runtimeId: stringField(record.runtime_id) ?? stringField(data.runtime_id),
@@ -268,8 +265,7 @@ export class LiveEventBus {
         if (signal?.aborted) return;
         const oldest = this.#oldestSeq();
         if (cursor < oldest) {
-          const gap: LiveEventEnvelope = {
-            schema: "octo-harness.live-event/v1",
+          const gap: LiveEventEnvelope = { schema: "octo-harness.live-event/v1",
             local_seq: cursor,
             occurred_at: new Date().toISOString(),
             source: "control",
@@ -424,8 +420,7 @@ function encode(value: LiveEventEnvelope): Buffer {
   try {
     return Buffer.from(JSON.stringify(value));
   } catch (error) {
-    return Buffer.from(JSON.stringify({
-      schema: "octo-harness.live-event/v1",
+    return Buffer.from(JSON.stringify({ schema: "octo-harness.live-event/v1",
       local_seq: value.local_seq,
       occurred_at: value.occurred_at,
       source: "control",

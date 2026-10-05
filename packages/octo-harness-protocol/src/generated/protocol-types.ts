@@ -39,6 +39,26 @@ export type McpServer = McpStdioServer | McpStreamableHttpServer;
  * via the `definition` "McpServers".
  */
 export type McpServers = Record<string, McpServer>;
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ActivitySubject".
+ */
+export type ActivitySubject =
+  | {
+      type: "run";
+    }
+  | {
+      type: "message";
+      id: string;
+    }
+  | {
+      type: "tool";
+      id: string;
+    }
+  | {
+      type: "interaction";
+      id: string;
+    };
 
 /**
  * Serializable data shapes for the Octo Harness NDJSON protocol. Runtime behavior remains hand-written in src/index.ts, and this schema is the source of truth for generated TypeScript types.
@@ -319,18 +339,11 @@ export interface ModelStepFinishedPayload {
    * Stable identifier from model_step.started.
    */
   stepId: string;
-  /**
-   * Terminal round status.
-   */
-  status: string;
+  status: "completed" | "failed" | "cancelled";
   /**
    * Provider-normalized reason such as tool-calls or stop.
    */
   finishReason?: string;
-  /**
-   * Bounded text the provider already emitted on a public final channel during this round. This is a display fallback, not private reasoning.
-   */
-  publicText?: string;
   /**
    * Provider-observed round finish timestamp in Unix milliseconds.
    */
@@ -356,10 +369,7 @@ export interface ToolCallCreatePayload {
    * Original structured input known when the tool call starts. Streaming providers may begin empty and append argsDelta.
    */
   args: Record<string, unknown>;
-  /**
-   * Optional initial tool status.
-   */
-  status?: string;
+  status: "running";
   [k: string]: unknown;
 }
 /**
@@ -394,10 +404,7 @@ export interface ToolCallUpdatePayload {
    * Stable identifier from the corresponding tool_call.create event.
    */
   id: string;
-  /**
-   * Terminal tool status such as completed, error, failed, or cancelled.
-   */
-  status: string;
+  status: "completed" | "failed" | "cancelled";
   /**
    * Final tool output as text or structured JSON.
    */
@@ -410,6 +417,7 @@ export interface ToolCallUpdatePayload {
    * Process exit code for command tools.
    */
   exitCode?: number;
+  durationMs?: number;
   [k: string]: unknown;
 }
 /**
@@ -681,4 +689,98 @@ export interface InvokeRequestWire {
   providerSession?: ProviderSession;
   runtimeLimits?: RuntimeLimits;
   agentConfig: AgentConfig;
+  protocolVersion: 2;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ActivityInfo".
+ */
+export interface ActivityInfo {
+  messageKey?: string;
+  params?: {
+    [k: string]: string | number | boolean;
+  };
+  attempt?: number;
+  retryAfterMs?: number;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ActivityStartedPayload".
+ */
+export interface ActivityStartedPayload {
+  activityId: string;
+  kind:
+    | "starting"
+    | "thinking"
+    | "executing_tool"
+    | "responding"
+    | "waiting_approval"
+    | "waiting_input"
+    | "compacting"
+    | "retrying"
+    | "working";
+  subject: ActivitySubject;
+  source: "provider" | "harness";
+  info: ActivityInfo;
+  startedAtMs?: number;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ActivityUpdatedPayload".
+ */
+export interface ActivityUpdatedPayload {
+  activityId: string;
+  info: ActivityInfo;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ActivityFinishedPayload".
+ */
+export interface ActivityFinishedPayload {
+  activityId: string;
+  status: "completed" | "failed" | "cancelled" | "superseded";
+  endedAtMs?: number;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "PlanUpdatedPayload".
+ */
+export interface PlanUpdatedPayload {
+  planId: string;
+  revision: number;
+  explanation: string | null;
+  /**
+   * @maxItems 200
+   */
+  steps: {
+    text: string;
+    status: "pending" | "in_progress" | "completed" | "blocked" | "cancelled";
+  }[];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ToolProgressPayload".
+ */
+export interface ToolProgressPayload {
+  id: string;
+  progress: {
+    message?: string;
+    completed?: number;
+    total?: number;
+    unit?: "items" | "bytes" | "steps";
+  };
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "RunNoticePayload".
+ */
+export interface RunNoticePayload {
+  noticeId: string;
+  code: "retry_scheduled" | "context_compacted" | "model_rerouted" | "config_warning";
+  severity: "info" | "warning";
+  params: {
+    [k: string]: string | number | boolean;
+  };
+  relatedActivityId?: string;
+  relatedItemId?: string;
 }

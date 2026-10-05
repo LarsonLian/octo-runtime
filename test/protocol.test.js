@@ -10,7 +10,7 @@ import {
 } from "../packages/octo-harness-protocol/dist/index.js";
 
 test("interaction contracts require a stable request id and bounded response outcome", () => {
-  assert.doesNotThrow(() => assertCanonicalEvent({
+  assert.doesNotThrow(() => assertCanonicalEvent({ protocolVersion: 2,
     type: "interaction.requested",
     payload: {
       interactionId: "approval-1",
@@ -22,7 +22,7 @@ test("interaction contracts require a stable request id and bounded response out
     interactionId: "approval-1", outcome: "accepted"
   }));
   assert.throws(
-    () => assertCanonicalEvent({ type: "interaction.requested", payload: { kind: "approval", request: {} } }),
+    () => assertCanonicalEvent({ protocolVersion: 2, type: "interaction.requested", payload: { kind: "approval", request: {} } }),
     /payload\.interactionId/
   );
   assert.throws(
@@ -32,14 +32,14 @@ test("interaction contracts require a stable request id and bounded response out
 });
 
 test("analysis exposure defaults closed and public classifications require provenance", () => {
-  const legacy = {
+  const legacy = { protocolVersion: 2,
     type: "message.delta",
     payload: { channel: "analysis", text: "unclassified" }
   };
   assert.doesNotThrow(() => assertCanonicalEvent(legacy));
   assert.equal(messageExposure(legacy), "unknown");
 
-  const summary = {
+  const summary = { protocolVersion: 2,
     type: "message.delta",
     payload: {
       channel: "analysis",
@@ -51,7 +51,7 @@ test("analysis exposure defaults closed and public classifications require prove
   assert.doesNotThrow(() => assertCanonicalEvent(summary));
   assert.equal(messageExposure(summary), "public_summary");
 
-  const publicReasoning = {
+  const publicReasoning = { protocolVersion: 2,
     type: "message.delta",
     payload: {
       channel: "analysis",
@@ -64,14 +64,14 @@ test("analysis exposure defaults closed and public classifications require prove
   assert.equal(messageExposure(publicReasoning), "public_reasoning");
 
   assert.throws(
-    () => assertCanonicalEvent({
+    () => assertCanonicalEvent({ protocolVersion: 2,
       type: "message.delta",
       payload: { channel: "analysis", text: "unsafe", exposure: "public_summary" }
     }),
     /requires payload\.provenance/
   );
   assert.throws(
-    () => assertCanonicalEvent({
+    () => assertCanonicalEvent({ protocolVersion: 2,
       type: "message.delta",
       payload: {
         channel: "analysis",
@@ -89,36 +89,36 @@ test("canonical message channels distinguish reasoning, progress, and answer con
     const payload = channel === "analysis"
       ? { channel, exposure: "public_summary", provenance: { provider: "test", nativeEvent: "summary" } }
       : { channel };
-    assert.doesNotThrow(() => assertCanonicalEvent({ type: "message.update", payload }));
+    assert.doesNotThrow(() => assertCanonicalEvent({ protocolVersion: 2, type: "message.update", payload }));
   }
   assert.throws(
-    () => assertCanonicalEvent({ type: "message.update", payload: { channel: "provider-specific" } }),
+    () => assertCanonicalEvent({ protocolVersion: 2, type: "message.update", payload: { channel: "provider-specific" } }),
     /payload\.channel/
   );
 });
 
 test("model step lifecycle requires stable identity and valid timestamps", () => {
-  assert.doesNotThrow(() => assertCanonicalEvent({
+  assert.doesNotThrow(() => assertCanonicalEvent({ protocolVersion: 2,
     type: "model_step.started",
     payload: { stepId: "message-1", startedAtMs: 1_788_793_000_000 }
   }));
-  assert.doesNotThrow(() => assertCanonicalEvent({
+  assert.doesNotThrow(() => assertCanonicalEvent({ protocolVersion: 2,
     type: "model_step.finished",
     payload: {
       stepId: "message-1", status: "completed", finishReason: "tool-calls",
-      publicText: "I'll inspect the repository.", endedAtMs: 1_788_793_002_000
+      endedAtMs: 1_788_793_002_000
     }
   }));
   assert.throws(
-    () => assertCanonicalEvent({ type: "model_step.started", payload: {} }),
+    () => assertCanonicalEvent({ protocolVersion: 2, type: "model_step.started", payload: {} }),
     /payload\.stepId/
   );
   assert.throws(
-    () => assertCanonicalEvent({ type: "model_step.finished", payload: { stepId: "message-1", status: "completed", endedAtMs: -1 } }),
+    () => assertCanonicalEvent({ protocolVersion: 2, type: "model_step.finished", payload: { stepId: "message-1", status: "completed", endedAtMs: -1 } }),
     /payload\.endedAtMs/
   );
   assert.throws(
-    () => assertCanonicalEvent({ type: "model_step.finished", payload: { stepId: "message-1", status: "completed", publicText: 42 } }),
+    () => assertCanonicalEvent({ protocolVersion: 2, type: "model_step.finished", payload: { stepId: "message-1", status: "completed", publicText: 42 } }),
     /payload\.publicText/
   );
 });
@@ -181,18 +181,18 @@ test("channel context wire contracts reject incomplete scope and mismatched trig
 });
 
 test("tool call protocol preserves complete and streamed command inputs", () => {
-  const codex = {
+  const codex = { protocolVersion: 2,
     type: "tool_call.create",
-    payload: { id: "tool-codex", name: "exec_command", args: { command: "pwd", cwd: "/repo" } }
+    payload: { status: "running", id: "tool-codex", name: "exec_command", args: { command: "pwd", cwd: "/repo" } }
   };
   assert.doesNotThrow(() => assertCanonicalEvent(codex));
   assert.equal(codex.payload.args.command, "pwd");
 
   const claude = [
-    { type: "tool_call.create", payload: { id: "tool-claude", name: "Bash", args: {} } },
-    { type: "tool_call.delta", payload: { id: "tool-claude", argsDelta: '{"command":"printf ' } },
-    { type: "tool_call.delta", payload: { id: "tool-claude", argsDelta: 'octo-harness-ok"}' } },
-    { type: "tool_call.update", payload: { id: "tool-claude", status: "completed", output: "octo-harness-ok" } }
+    { protocolVersion: 2, type: "tool_call.create", payload: { status: "running", id: "tool-claude", name: "Bash", args: {} } },
+    { protocolVersion: 2, type: "tool_call.delta", payload: { id: "tool-claude", argsDelta: '{"command":"printf ' } },
+    { protocolVersion: 2, type: "tool_call.delta", payload: { id: "tool-claude", argsDelta: 'octo-harness-ok"}' } },
+    { protocolVersion: 2, type: "tool_call.update", payload: { id: "tool-claude", status: "completed", output: "octo-harness-ok" } }
   ];
   for (const event of claude) assert.doesNotThrow(() => assertCanonicalEvent(event));
   const streamedArgs = claude
@@ -204,15 +204,24 @@ test("tool call protocol preserves complete and streamed command inputs", () => 
 
 test("tool call protocol rejects events that cannot reconstruct a command lifecycle", () => {
   assert.throws(
-    () => assertCanonicalEvent({ type: "tool_call.create", payload: { id: "tool-1", name: "Bash" } }),
+    () => assertCanonicalEvent({ protocolVersion: 2, type: "tool_call.create", payload: { status: "running", id: "tool-1", name: "Bash" } }),
     /payload\.args must be an object/
   );
   assert.throws(
-    () => assertCanonicalEvent({ type: "tool_call.delta", payload: { id: "tool-1" } }),
+    () => assertCanonicalEvent({ protocolVersion: 2, type: "tool_call.delta", payload: { id: "tool-1" } }),
     /requires argsDelta or outputDelta/
   );
   assert.throws(
-    () => assertCanonicalEvent({ type: "tool_call.update", payload: { id: "tool-1" } }),
+    () => assertCanonicalEvent({ protocolVersion: 2, type: "tool_call.update", payload: { id: "tool-1" } }),
     /payload\.status must be a non-empty string/
   );
+});
+
+test("protocol v2 rejects old roots and validates experience frames", () => {
+  assert.throws(() => assertCanonicalEvent({ protocolVersion: 1, type: "run.completed", payload: {} }), /protocolVersion/);
+  assert.throws(() => assertCanonicalEvent({ protocolVersion: 2, type: "run.finished", payload: {} }), /unsupported/);
+  assert.doesNotThrow(() => assertCanonicalEvent({ protocolVersion: 2, type: "activity.started", payload: { activityId: "a", kind: "thinking", source: "provider", subject: { type: "run" }, info: {} } }));
+  assert.throws(() => assertCanonicalEvent({ protocolVersion: 2, type: "tool_call.progress", payload: { id: "t", progress: { completed: 2, total: 1, unit: "steps" } } }));
+  assert.throws(() => assertCanonicalEvent({ protocolVersion: 2, type: "plan.updated", payload: { planId: "p", revision: 0, explanation: null, steps: [] } }));
+  assert.throws(() => assertCanonicalEvent({ protocolVersion: 2, type: "run.notice", payload: { noticeId: "n", code: "retry_scheduled", severity: "warning", params: { attempt: 2, error: "secret" } } }));
 });

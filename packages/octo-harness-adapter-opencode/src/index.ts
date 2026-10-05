@@ -1,3 +1,4 @@
+import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * OpenCode adapter: wraps the OpenCode CLI (`opencode run --format json
  * --thinking --auto`) and normalizes its JSON event/part stream into canonical
@@ -104,12 +105,12 @@ export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEv
   const part: OpenCodePart = native.part ?? native;
   const sessionId = native.sessionID ?? native.sessionId ?? native.part?.sessionID;
   if ((native.type === "step_start" || native.type === "session.created") && sessionId) {
-    events.push({ type: "session.update", payload: { providerSession: { sessionId, resumable: true } } });
+    events.push({ protocolVersion: 2, type: "session.update", payload: { providerSession: { sessionId, resumable: true } } });
   }
   const stepId = part.messageID;
   const timestamp = providerTimestamp(native.timestamp);
   if ((native.type === "step_start" || part.type === "step-start") && stepId) {
-    events.push({
+    events.push({ protocolVersion: 2,
       type: "model_step.started",
       payload: { stepId, ...(timestamp === undefined ? {} : { startedAtMs: timestamp }) }
     });
@@ -117,10 +118,10 @@ export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEv
   const toolState = part.state;
   const toolId = part.callID ?? part.id;
   if ((native.type === "text" || part.type === "text") && typeof part.text === "string") {
-    events.push({ type: "message.delta", payload: { text: part.text, ...(stepId ? { stepId } : {}) } });
+    events.push({ protocolVersion: 2, type: "message.delta", payload: { text: part.text, ...(stepId ? { stepId } : {}) } });
   }
   if ((native.type === "reasoning" || part.type === "reasoning") && typeof part.text === "string") {
-    events.push({
+    events.push({ protocolVersion: 2,
       type: "message.delta",
       payload: {
         text: part.text,
@@ -133,19 +134,19 @@ export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEv
   }
   if (part.type === "tool" && toolState?.status === "running" && toolId && part.tool) {
     const args = isRecord(toolState.input) ? toolState.input : toolState.input == null ? {} : { value: toolState.input };
-    events.push({ type: "tool_call.create", payload: { id: toolId, name: part.tool, args, ...(stepId ? { stepId } : {}) } });
+    events.push({ protocolVersion: 2, type: "tool_call.create", payload: { status: "running", id: toolId, name: part.tool, args, ...(stepId ? { stepId } : {}) } });
   }
   if (part.type === "tool" && toolId && toolState?.status && ["completed", "error"].includes(toolState.status)) {
     const args = isRecord(toolState.input) ? toolState.input : toolState.input == null ? {} : { value: toolState.input };
     const durationMs = toolDurationMs(toolState.time);
     // A terminal-only OpenCode frame carries enough identity to let the
     // projector create the item without inventing a duplicate start event.
-    events.push({
+    events.push({ protocolVersion: 2,
       type: "tool_call.update",
       payload: {
         id: toolId,
         ...(part.tool ? { name: part.tool, args } : {}),
-        status: toolState.status === "error" ? "failed" : toolState.status,
+        status: canonicalTerminalStatus(toolState.status === "error" ? "failed" : toolState.status),
         output: toolState.output ?? toolState.error,
         ...(stepId ? { stepId } : {}),
         ...(durationMs === undefined ? {} : { durationMs })
@@ -153,21 +154,21 @@ export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEv
     });
   }
   if ((native.type === "step_finish" || part.type === "step-finish") && stepId) {
-    events.push({
+    events.push({ protocolVersion: 2,
       type: "model_step.finished",
       payload: {
         stepId,
-        status: "completed",
+        status: canonicalTerminalStatus("completed"),
         ...(typeof part.reason === "string" ? { finishReason: part.reason } : {}),
         ...(timestamp === undefined ? {} : { endedAtMs: timestamp })
       }
     });
   }
   if (native.type === "step_finish" || part.type === "step-finish") {
-    events.push({ type: "usage.update", payload: { ...(part.tokens ?? native.usage ?? {}), cost: part.cost, ...(stepId ? { stepId } : {}) } });
-    if (part.reason === "stop") events.push({ type: "run.finished", payload: {} });
+    events.push({ protocolVersion: 2, type: "usage.update", payload: { ...(part.tokens ?? native.usage ?? {}), cost: part.cost, ...(stepId ? { stepId } : {}) } });
+    if (part.reason === "stop") events.push({ protocolVersion: 2, type: "run.completed", payload: {} });
   }
-  if (native.type === "error") events.push({ type: "run.error", payload: { message: native.error?.data?.message ?? native.error?.message ?? "OpenCode failed", providerError: native.error } });
+  if (native.type === "error") events.push({ protocolVersion: 2, type: "run.failed", payload: { message: native.error?.data?.message ?? native.error?.message ?? "OpenCode failed", providerError: native.error } });
   return events;
 }
 
@@ -191,13 +192,13 @@ function providerTimestamp(value: unknown): number | undefined {
 /**
  * Create an OpenCode adapter over the JSON CLI helper. OpenCode's stream ends
  * without an explicit terminal, so `onSuccess` synthesizes the closing
- * message.update/run.finished; run.error is emitted inline by the normalizer.
+ * message.update/run.completed; run.failed is emitted inline by the normalizer.
  */
 export function createOpenCodeAdapter({ command = "opencode" }: { command?: string } = {}) {
   return createJsonCliAdapter<OpenCodeNativeEvent>({
     metadata: { type: "opencode", capabilities: ["session.serialize", "tool.canonical", capabilities.MCP_DYNAMIC] },
     probe: () => probeCommand(command), buildCommand: req => buildOpenCodeCommand(req, command), normalize: normalizeOpenCodeEvent,
-    onSuccess: () => [{ type: "message.update", payload: { role: "assistant", status: "completed" } }, { type: "run.finished", payload: {} }]
+    onSuccess: () => [{ protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "completed" } }, { protocolVersion: 2, type: "run.completed", payload: {} }]
   });
 }
 

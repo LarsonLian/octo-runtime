@@ -1,3 +1,4 @@
+import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * Codex app-server transport and event adaptation layer.
  *
@@ -238,7 +239,7 @@ export async function* runCodexAppServerTurn({
     context?.reportActivity?.({ kind: "turn_started", method: "turn_start" });
 
     // Must come after turn/start: otherwise the Core would persist a provider session that cannot be executed.
-    yield {
+    yield { protocolVersion: 2,
       type: "session.update",
       payload: {
         providerSession: {
@@ -300,16 +301,16 @@ export async function* runCodexAppServerTurn({
     }
   } catch (error) {
     if (!terminal) {
-      // AbortSignal takes priority in deciding cancelled semantics; all other errors project uniformly to provider run.error.
+      // AbortSignal takes priority in deciding cancelled semantics; all other errors project uniformly to provider run.failed.
       if (request.signal?.aborted) {
-        yield {
-          type: "run.stopped",
+        yield { protocolVersion: 2,
+          type: "run.cancelled",
           payload: { reason: String(request.signal.reason ?? "cancelled") }
         };
       } else {
         const code = stringErrorCode(error);
-        yield {
-          type: "run.error",
+        yield { protocolVersion: 2,
+          type: "run.failed",
           payload: {
             message: client.errorMessage(error),
             adapterType: "codex",
@@ -462,7 +463,7 @@ export class CodexEventNormalizer {
         const threadId = stringValue(params.threadId)
           || stringValue(recordValue(params.thread)?.id)
           || stringValue(recordValue(params.thread)?.sessionId);
-        return threadId ? [{
+        return threadId ? [{ protocolVersion: 2,
           type: "session.update",
           payload: { providerSession: { sessionId: threadId, resumable: true } }
         }] : [];
@@ -471,7 +472,7 @@ export class CodexEventNormalizer {
         const threadId = stringValue(params.threadId)
           || stringValue(recordValue(params.thread)?.id)
           || stringValue(recordValue(params.thread)?.sessionId);
-        return threadId ? [{
+        return threadId ? [{ protocolVersion: 2,
           type: "session.update",
           payload: {
             providerSession: {
@@ -498,7 +499,7 @@ export class CodexEventNormalizer {
         const id = itemId(params);
         const delta = stringValue(params.delta);
         const stepId = this.#stepFor(params);
-        return id && delta ? [{
+        return id && delta ? [{ protocolVersion: 2,
           type: "tool_call.delta",
           payload: { id, outputDelta: delta, ...(stepId ? { stepId } : {}) }
         }] : [];
@@ -526,7 +527,7 @@ export class CodexEventNormalizer {
           const id = itemId(params);
           const delta = stringValue(params.delta);
           const stepId = this.#stepFor(params);
-          return id && delta ? [{
+          return id && delta ? [{ protocolVersion: 2,
             type: "tool_call.delta",
             payload: { id, argsDelta: delta, ...(stepId ? { stepId } : {}) }
           }] : [];
@@ -602,7 +603,7 @@ export class CodexEventNormalizer {
     this.#activeStepId = stepId;
     return {
       stepId,
-      events: [{ type: "model_step.started", payload: { stepId } }]
+      events: [{ protocolVersion: 2, type: "model_step.started", payload: { stepId } }]
     };
   }
 
@@ -610,9 +611,9 @@ export class CodexEventNormalizer {
     const stepId = this.#activeStepId;
     if (!stepId) return [];
     this.#activeStepId = undefined;
-    return [{
+    return [{ protocolVersion: 2,
       type: "model_step.finished",
-      payload: { stepId, status, finishReason }
+      payload: { stepId, status: canonicalTerminalStatus(status), finishReason }
     }];
   }
 
@@ -881,7 +882,7 @@ class CodexAppServerClient {
    * Cancellation follows a "converge host events first, then best-effort notify
    * the provider" order.
    *
-   * The queue immediately publishes the sole run.stopped so the UI need not wait
+   * The queue immediately publishes the sole run.cancelled so the UI need not wait
    * for a Codex response; if the thread/turn IDs are known, turn/interrupt is
    * sent in the background. After 250ms without exit, SIGTERM follows, with the
    * final SIGKILL fallback left to close().
@@ -889,8 +890,8 @@ class CodexAppServerClient {
   readonly #abortListener = (): void => {
     if (this.#closed || this.#terminal) return;
     this.#terminal = true;
-    this.#queue.push({
-      type: "run.stopped",
+    this.#queue.push({ protocolVersion: 2,
+      type: "run.cancelled",
       payload: { reason: String(this.#signal?.reason ?? "cancelled") }
     });
     this.#interactions.clear();
@@ -1159,7 +1160,7 @@ class CodexAppServerClient {
       return;
     }
     this.#interactions.set(interactionId, { rpcId: id, method, params, responding: false });
-    this.#queue.push({
+    this.#queue.push({ protocolVersion: 2,
       type: "interaction.requested",
       payload: {
         interactionId,
@@ -1447,7 +1448,7 @@ function textDelta(
   const text = stringValue(params.delta);
   if (!text) return [];
   const id = itemId(params);
-  return [{
+  return [{ protocolVersion: 2,
     type: "message.delta",
     payload: {
       text,
@@ -1468,7 +1469,7 @@ function usageEvents(params: JsonRecord): CanonicalEvent[] {
   const last = recordValue(tokenUsage?.last);
   const total = recordValue(tokenUsage?.total);
   if (!last && !total) return [];
-  return [{
+  return [{ protocolVersion: 2,
     type: "usage.update",
     payload: {
       ...(last ?? total ?? {}),
@@ -1487,7 +1488,7 @@ function itemStartedEvents(item: JsonRecord | undefined, stepId?: string): Canon
   const id = stringValue(item.id);
   if (type === "agentMessage") {
     const channel = agentMessageChannel(item);
-    return [{
+    return [{ protocolVersion: 2,
       type: "message.create",
       payload: {
         role: "assistant", status: "streaming", channel,
@@ -1497,7 +1498,7 @@ function itemStartedEvents(item: JsonRecord | undefined, stepId?: string): Canon
   }
   if (type === "reasoning" || type === "plan") {
     const exposure: MessageExposure = type === "plan" ? "public_plan" : "unknown";
-    return [{
+    return [{ protocolVersion: 2,
       type: "message.create",
       payload: {
         role: "assistant",
@@ -1511,9 +1512,9 @@ function itemStartedEvents(item: JsonRecord | undefined, stepId?: string): Canon
     }];
   }
   const tool = toolDescriptor(item);
-  return tool ? [{
+  return tool ? [{ protocolVersion: 2,
     type: "tool_call.create",
-    payload: { id: tool.id, name: tool.name, args: tool.args, ...(stepId ? { stepId } : {}) }
+    payload: { status: "running", id: tool.id, name: tool.name, args: tool.args, ...(stepId ? { stepId } : {}) }
   }] : [];
 }
 
@@ -1528,7 +1529,7 @@ function itemCompletedEvents(
   const id = stringValue(item.id);
   if (type === "agentMessage") {
     const channel = knownChannel ?? agentMessageChannel(item);
-    return [{
+    return [{ protocolVersion: 2,
       type: "message.update",
       payload: {
         role: "assistant",
@@ -1545,7 +1546,7 @@ function itemCompletedEvents(
     const text = type === "plan"
       ? stringValue(item.text)
       : stringArray(item.summary).join("\n") || undefined;
-    return [{
+    return [{ protocolVersion: 2,
       type: "message.update",
       payload: {
         role: "assistant",
@@ -1561,11 +1562,11 @@ function itemCompletedEvents(
   }
   const tool = toolDescriptor(item);
   if (!tool) return [];
-  return [{
+  return [{ protocolVersion: 2,
     type: "tool_call.update",
     payload: {
       id: tool.id,
-      status: toolStatus(item),
+      status: canonicalTerminalStatus(toolStatus(item)),
       output: toolOutput(item),
       ...(stepId ? { stepId } : {}),
       ...(typeof item.exitCode === "number" ? { exitCode: item.exitCode } : {})
@@ -1583,16 +1584,16 @@ function agentMessageChannel(item: JsonRecord | undefined): MessageChannel {
 function turnCompletedEvents(turn: JsonRecord | undefined): CanonicalEvent[] {
   const status = stringValue(turn?.status);
   if (status === "interrupted") {
-    return [{ type: "run.stopped", payload: { reason: "interrupted" } }];
+    return [{ protocolVersion: 2, type: "run.cancelled", payload: { reason: "interrupted" } }];
   }
   if (status === "failed") {
     const error = recordValue(turn?.error);
-    return [{
-      type: "run.error",
+    return [{ protocolVersion: 2,
+      type: "run.failed",
       payload: { message: stringValue(error?.message) || "Codex turn failed" }
     }];
   }
-  return [{ type: "run.finished", payload: {} }];
+  return [{ protocolVersion: 2, type: "run.completed", payload: {} }];
 }
 
 /**
@@ -1729,7 +1730,7 @@ function isToolArgsDeltaMethod(method: string): boolean {
 }
 
 function isTerminalEvent(event: CanonicalEvent): boolean {
-  return event.type === "run.finished" || event.type === "run.error" || event.type === "run.stopped";
+  return event.type === "run.completed" || event.type === "run.failed" || event.type === "run.cancelled";
 }
 
 function isThreadNotFound(error: unknown): boolean {

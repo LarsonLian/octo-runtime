@@ -21,7 +21,7 @@ const expectedText = `${adapterType.toUpperCase().replaceAll("-", "_")}_E2E_OK`;
 let finalText = "";
 
 try {
-  for await (const event of adapter.invoke({
+  for await (const event of adapter.invoke({ protocolVersion: 2,
     invocationId: `${adapterType}-smoke`,
     agentSessionId: `${adapterType}-smoke-session`,
     runId: `${adapterType}-smoke-run`,
@@ -51,7 +51,7 @@ try {
   clearTimeout(timeout);
 }
 
-if (events.at(-1)?.type !== "run.finished" || finalText.trim() !== expectedText) {
+if (events.at(-1)?.type !== "run.completed" || finalText.trim() !== expectedText) {
   console.error(`ACP smoke failed: terminal=${events.at(-1)?.type ?? "none"} final=${JSON.stringify(finalText.trim())}`);
   process.exitCode = 1;
 }

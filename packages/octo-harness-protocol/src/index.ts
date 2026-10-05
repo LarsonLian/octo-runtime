@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
+import { assertExperiencePayload } from "./experience.js";
 import type {
+  ActivityInfo,
+  ActivitySubject,
+  ActivityStartedPayload,
+  ActivityUpdatedPayload,
+  ActivityFinishedPayload,
+  PlanUpdatedPayload,
+  ToolProgressPayload,
+  RunNoticePayload,
   CanonicalEventPayload,
   ChannelContextAppend,
   ChannelContextDescriptor,
@@ -31,6 +40,14 @@ export type {
   ProviderSession,
   AgentConfig,
   RuntimeLimits,
+  ActivityInfo,
+  ActivitySubject,
+  ActivityStartedPayload,
+  ActivityUpdatedPayload,
+  ActivityFinishedPayload,
+  PlanUpdatedPayload,
+  ToolProgressPayload,
+  RunNoticePayload,
   CanonicalEventPayload,
   InteractionRequestedPayload,
   ModelStepStartedPayload,
@@ -79,7 +96,15 @@ import type { RunIdentity } from "./generated/protocol-types.js";
  * `stopped` means an explicit cancellation or an aborted stream. The Adapter
  * Host guarantees every invocation delivers exactly one of these upstream.
  */
-export const TERMINAL_EVENT_TYPES = ["run.finished", "run.error", "run.stopped"] as const;
+export const PROTOCOL_VERSION = 2 as const;
+
+export function canonicalTerminalStatus(value: unknown): "completed" | "failed" | "cancelled" {
+  if (value === "completed" || value === "success" || value === "succeeded" || value === undefined || value === "") return "completed";
+  if (value === "cancelled" || value === "stopped" || value === "interrupted" || value === "canceled") return "cancelled";
+  return "failed";
+}
+
+export const TERMINAL_EVENT_TYPES = ["run.completed", "run.failed", "run.cancelled"] as const;
 export type TerminalEventType = (typeof TERMINAL_EVENT_TYPES)[number];
 
 /**
@@ -94,9 +119,10 @@ export const CANONICAL_EVENT_TYPES = [
   "model_step.started", "model_step.finished",
   "message.create", "message.delta", "message.update",
   "tool_call.create", "tool_call.delta", "tool_call.update",
-  "surface.create", "surface.delta", "surface.update",
+  "activity.started", "activity.updated", "activity.finished",
+  "plan.updated", "tool_call.progress", "run.notice",
   "interaction.requested",
-  "run.queued", "run.running",
+  "run.queued", "run.started",
   ...TERMINAL_EVENT_TYPES
 ] as const;
 
@@ -104,7 +130,18 @@ export const CANONICAL_EVENT_TYPES = [
 export type CanonicalEventType = (typeof CANONICAL_EVENT_TYPES)[number];
 
 export type CanonicalPayloadFor<TType extends CanonicalEventType> =
-  TType extends "model_step.started" ? CanonicalEventPayload & ModelStepStartedPayload
+  TType extends "activity.started" ? CanonicalEventPayload & ActivityStartedPayload
+    :
+  TType extends "activity.updated" ? CanonicalEventPayload & ActivityUpdatedPayload
+    :
+  TType extends "activity.finished" ? CanonicalEventPayload & ActivityFinishedPayload
+    :
+  TType extends "plan.updated" ? CanonicalEventPayload & PlanUpdatedPayload
+    :
+  TType extends "tool_call.progress" ? CanonicalEventPayload & ToolProgressPayload
+    :
+  TType extends "run.notice" ? CanonicalEventPayload & RunNoticePayload
+    : TType extends "model_step.started" ? CanonicalEventPayload & ModelStepStartedPayload
     : TType extends "model_step.finished" ? CanonicalEventPayload & ModelStepFinishedPayload
       : TType extends "interaction.requested" ? CanonicalEventPayload & InteractionRequestedPayload
       : TType extends "tool_call.create" ? CanonicalEventPayload & ToolCallCreatePayload
@@ -115,7 +152,7 @@ export type CanonicalPayloadFor<TType extends CanonicalEventType> =
 /** The smallest event unit an adapter emits to the Host; the payload narrows by type for the tool lifecycle. */
 export type CanonicalEvent<TType extends CanonicalEventType = CanonicalEventType> =
   TType extends CanonicalEventType
-    ? { type: TType; payload: CanonicalPayloadFor<TType> }
+    ? { protocolVersion: 2; type: TType; payload: CanonicalPayloadFor<TType> }
     : never;
 
 /**
@@ -323,6 +360,7 @@ export function envelope<TType extends CanonicalEventType>(
   assertCanonicalEvent(event);
   // TypeScript loses the indexed type/payload relationship when a generic union is spread.
   const value = {
+    protocolVersion: PROTOCOL_VERSION,
     id: randomUUID(),
     seq,
     tsMs: Date.now(),
@@ -343,8 +381,10 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
   if (event.payload !== undefined && !isRecord(event.payload)) {
     throw new TypeError("event.payload must be an object");
   }
+  if (event.protocolVersion !== PROTOCOL_VERSION) throw new TypeError("canonical protocolVersion must be 2");
   const payload = isRecord(event.payload) ? event.payload : {};
-  if (event.type === "run.error" && payload.failure !== undefined) {
+  assertExperiencePayload(event.type, payload);
+  if (event.type === "run.failed" && payload.failure !== undefined) {
     assertFailureEnvelope(payload.failure);
   }
   if (event.type.startsWith("message.")) {
@@ -367,10 +407,8 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
     if (payload.finishReason !== undefined && typeof payload.finishReason !== "string") {
       throw new TypeError("model_step.finished payload.finishReason must be a string when present");
     }
-    if (payload.publicText !== undefined
-      && (typeof payload.publicText !== "string" || Array.from(payload.publicText).length > 1_000)) {
-      throw new TypeError("model_step.finished payload.publicText must be a string of at most 1000 characters when present");
-    }
+    if (payload.publicText !== undefined) throw new TypeError("model_step.finished payload.publicText is forbidden");
+    if (!["completed", "failed", "cancelled"].includes(String(payload.status))) throw new TypeError("model_step.finished payload.status is invalid");
   }
   if (event.type === "tool_call.create") {
     requireEventString(payload, "id", event.type);
@@ -445,6 +483,7 @@ export function assertFailureEnvelope(value: unknown): asserts value is FailureE
 /** Assert the execution identifiers and path fields that must be present before the Host calls an adapter. */
 export function assertInvokeRequest(request: unknown): asserts request is InvokeRequest {
   if (!isRecord(request)) throw new TypeError("InvokeRequest must be an object");
+  if (request.protocolVersion !== PROTOCOL_VERSION) throw new TypeError("InvokeRequest.protocolVersion must be 2");
   if (request.runtimeLimits !== undefined) assertRuntimeLimits(request.runtimeLimits);
   if (request.mcpServers !== undefined) assertMcpServers(request.mcpServers);
   for (const key of ["invocationId", "agentSessionId", "runId", "prompt", "workdir"] as const) {

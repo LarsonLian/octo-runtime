@@ -1,3 +1,4 @@
+import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import {
@@ -147,7 +148,7 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
   const ensureStep = (): void => {
     if (state.stepStarted) return;
     state.stepStarted = true;
-    events.push({ type: "model_step.started", payload: { stepId: state.stepId } });
+    events.push({ protocolVersion: 2, type: "model_step.started", payload: { stepId: state.stepId } });
   };
 
   if (event.type === "turn.started") {
@@ -163,13 +164,13 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
       if (!text) return events;
       if (!state.finalMessageStarted) {
         state.finalMessageStarted = true;
-        events.push({
+        events.push({ protocolVersion: 2,
           type: "message.create",
           payload: { messageId: `${state.stepId}:final`, role: "assistant", status: "streaming", channel: "final", stepId: state.stepId }
         });
       }
       appendPublicText(state, text);
-      events.push({
+      events.push({ protocolVersion: 2,
         type: "message.delta",
         payload: { messageId: `${state.stepId}:final`, text, channel: "final", stepId: state.stepId }
       });
@@ -180,7 +181,7 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
       if (!text) return events;
       if (!state.reasoningMessageStarted) {
         state.reasoningMessageStarted = true;
-        events.push({
+        events.push({ protocolVersion: 2,
           type: "message.create",
           payload: {
             messageId: `${state.stepId}:reasoning`,
@@ -192,7 +193,7 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
           }
         });
       }
-      events.push({
+      events.push({ protocolVersion: 2,
         type: "message.delta",
         payload: {
           messageId: `${state.stepId}:reasoning`,
@@ -229,7 +230,7 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
         const tool = state.tools.get(id);
         if (!tool || tool.terminal) continue;
         tool.terminal = true;
-        events.push({ type: "tool_call.update", payload: { id, status, stepId: state.stepId } });
+        events.push({ protocolVersion: 2, type: "tool_call.update", payload: { id, status: canonicalTerminalStatus(status), stepId: state.stepId } });
       }
       return events;
     }
@@ -255,15 +256,15 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
     }
     if (kind === "scheduled") return events;
     if (kind === "started") {
-      events.push({ type: "tool_call.update", payload: { id, status: "running", stepId: state.stepId } });
+      events.push({ protocolVersion: 2, type: "tool_call.update", payload: { id, status: canonicalTerminalStatus("running"), stepId: state.stepId } });
       return events;
     }
     if (kind === "progress") {
-      events.push({
+      events.push({ protocolVersion: 2,
         type: "tool_call.update",
         payload: {
           id,
-          status: "running",
+          status: canonicalTerminalStatus("running"),
           output: payload.stdoutTail ?? payload.stderrTail,
           stepId: state.stepId
         }
@@ -272,16 +273,16 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
     }
     if (kind === "result") {
       tool.terminal = true;
-      events.push({ type: "tool_call.update", payload: { id, status: "completed", output: payload.result, stepId: state.stepId } });
+      events.push({ protocolVersion: 2, type: "tool_call.update", payload: { id, status: canonicalTerminalStatus("completed"), output: payload.result, stepId: state.stepId } });
       return events;
     }
     if (kind === "error") {
       tool.terminal = true;
-      events.push({
+      events.push({ protocolVersion: 2,
         type: "tool_call.update",
         payload: {
           id,
-          status: "failed",
+          status: canonicalTerminalStatus("failed"),
           error: asRecord(payload.error) ?? { message: printableValue(payload.error, "ZCode tool failed") },
           stepId: state.stepId
         }
@@ -292,7 +293,7 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
 
   if (event.type === "session.updated") {
     const usage = asRecord(payload.usage);
-    if (usage) events.push({ type: "usage.update", payload: { ...usage, ...(payload.contextWindow !== undefined ? { contextWindow: payload.contextWindow } : {}) } });
+    if (usage) events.push({ protocolVersion: 2, type: "usage.update", payload: { ...usage, ...(payload.contextWindow !== undefined ? { contextWindow: payload.contextWindow } : {}) } });
     return events;
   }
 
@@ -301,35 +302,34 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
     const resultType = stringField(payload, "resultType") ?? (failed ? "error" : "success");
     const cancelled = /cancel|abort|stop|interrupt/i.test(resultType);
     const usage = asRecord(payload.usage);
-    if (usage) events.push({ type: "usage.update", payload: { ...usage } });
+    if (usage) events.push({ protocolVersion: 2, type: "usage.update", payload: { ...usage } });
     if (state.stepStarted && !state.stepFinished) {
       state.stepFinished = true;
-      events.push({
+      events.push({ protocolVersion: 2,
         type: "model_step.finished",
         payload: {
           stepId: state.stepId,
-          status: failed ? "failed" : cancelled ? "cancelled" : "completed",
+          status: canonicalTerminalStatus(failed ? "failed" : cancelled ? "cancelled" : "completed"),
           finishReason: resultType,
-          ...(state.publicText ? { publicText: state.publicText } : {})
         }
       });
     }
     if (state.reasoningMessageStarted) {
-      events.push({
+      events.push({ protocolVersion: 2,
         type: "message.update",
         payload: { messageId: `${state.stepId}:reasoning`, role: "assistant", status: failed ? "failed" : cancelled ? "stopped" : "completed" }
       });
     }
     if (state.finalMessageStarted) {
-      events.push({
+      events.push({ protocolVersion: 2,
         type: "message.update",
         payload: { messageId: `${state.stepId}:final`, role: "assistant", status: failed ? "failed" : cancelled ? "stopped" : "completed" }
       });
     }
     if (failed) {
       const error = asRecord(payload.error);
-      events.push({
-        type: "run.error",
+      events.push({ protocolVersion: 2,
+        type: "run.failed",
         payload: {
           adapterType: "zcode-gui",
           code: error?.code ?? "ZCODE_TURN_FAILED",
@@ -337,9 +337,9 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
         }
       });
     } else if (cancelled) {
-      events.push({ type: "run.stopped", payload: { reason: resultType } });
+      events.push({ protocolVersion: 2, type: "run.cancelled", payload: { reason: resultType } });
     } else {
-      events.push({ type: "run.finished", payload: {} });
+      events.push({ protocolVersion: 2, type: "run.completed", payload: {} });
     }
   }
   return events;
@@ -424,7 +424,7 @@ export async function* runZcodeAppServerTurn({
     );
     if (asRecord(sendResult)?.accepted === false) throw new Error("ZCode session/send was not accepted");
 
-    yield {
+    yield { protocolVersion: 2,
       type: "session.update",
       payload: {
         providerSession: {
@@ -474,10 +474,10 @@ export async function* runZcodeAppServerTurn({
   } catch (error) {
     if (!terminal) {
       if (request.signal?.aborted) {
-        yield { type: "run.stopped", payload: { reason: String(request.signal.reason ?? "cancelled") } };
+        yield { protocolVersion: 2, type: "run.cancelled", payload: { reason: String(request.signal.reason ?? "cancelled") } };
       } else {
-        yield {
-          type: "run.error",
+        yield { protocolVersion: 2,
+          type: "run.failed",
           payload: {
             adapterType: "zcode-gui",
             code: errorCode(error),
@@ -739,13 +739,13 @@ function ensureToolCreated(state: NormalizerState, id: string): CanonicalEvent |
   const tool = state.tools.get(id);
   if (!tool || tool.created) return undefined;
   tool.created = true;
-  return {
+  return { protocolVersion: 2,
     type: "tool_call.create",
     payload: {
       id,
       name: tool.name,
       args: asRecord(tool.input) ?? (tool.input === undefined ? {} : { value: tool.input }),
-      status: "pending",
+      status: "running",
       stepId: state.stepId
     }
   };
@@ -797,7 +797,7 @@ function throwIfAborted(signal?: AbortSignal): void {
 }
 
 function isTerminal(event: CanonicalEvent): boolean {
-  return event.type === "run.finished" || event.type === "run.error" || event.type === "run.stopped";
+  return event.type === "run.completed" || event.type === "run.failed" || event.type === "run.cancelled";
 }
 
 function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {

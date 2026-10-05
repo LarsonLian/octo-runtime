@@ -10,23 +10,42 @@
       "title": "MessageChannel",
       "description": "Provider-neutral assistant output channel. analysis is reasoning-class content gated by exposure; commentary is public in-run progress; final is answer content delivered only after the Run reaches a completed terminal state.",
       "type": "string",
-      "enum": ["analysis", "commentary", "final"]
+      "enum": [
+        "analysis",
+        "commentary",
+        "final"
+      ]
     },
     "MessageExposure": {
       "title": "MessageExposure",
       "description": "Adapter-authenticated classification of analysis content. public_reasoning, public_summary, and public_plan may enter a public Presentation; missing values are unknown.",
       "type": "string",
-      "enum": ["public_reasoning", "public_summary", "public_plan", "private_reasoning", "unknown"]
+      "enum": [
+        "public_reasoning",
+        "public_summary",
+        "public_plan",
+        "private_reasoning",
+        "unknown"
+      ]
     },
     "MessageProvenance": {
       "title": "MessageProvenance",
       "description": "Provider-native provenance written by the adapter. Audience projectors use it to audit public exposure and clients cannot override it.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["provider", "nativeEvent"],
+      "required": [
+        "provider",
+        "nativeEvent"
+      ],
       "properties": {
-        "provider": { "description": "Adapter or provider type that produced the message.", "type": "string" },
-        "nativeEvent": { "description": "Provider-native event type that was normalized.", "type": "string" }
+        "provider": {
+          "description": "Adapter or provider type that produced the message.",
+          "type": "string"
+        },
+        "nativeEvent": {
+          "description": "Provider-native event type that was normalized.",
+          "type": "string"
+        }
       }
     },
     "FailureAction": {
@@ -34,13 +53,28 @@
       "description": "A catalog-controlled recovery action. Clients render labelKey and must not execute arbitrary commands from this object.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "labelKey"],
+      "required": [
+        "type",
+        "labelKey"
+      ],
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["retry", "retry_later", "update_credentials", "change_model", "check_runtime", "install_dependency", "fix_permissions", "contact_admin"]
+          "enum": [
+            "retry",
+            "retry_later",
+            "update_credentials",
+            "change_model",
+            "check_runtime",
+            "install_dependency",
+            "fix_permissions",
+            "contact_admin"
+          ]
         },
-        "labelKey": { "type": "string", "minLength": 1 }
+        "labelKey": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "FailureSource": {
@@ -48,10 +82,22 @@
       "description": "Low-cardinality component identity. It intentionally excludes hostnames, paths, accounts, and tenant data.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["component"],
+      "required": [
+        "component"
+      ],
       "properties": {
-        "component": { "type": "string", "enum": ["octo-harness", "octo-agent-worker"] },
-        "adapter": { "type": "string", "minLength": 1, "maxLength": 128 }
+        "component": {
+          "type": "string",
+          "enum": [
+            "octo-harness",
+            "octo-agent-worker"
+          ]
+        },
+        "adapter": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
       }
     },
     "FailureCause": {
@@ -59,10 +105,20 @@
       "description": "Sanitized machine-readable root cause. Raw stderr, response bodies, paths, and credentials are forbidden.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["reasonCode"],
+      "required": [
+        "reasonCode"
+      ],
       "properties": {
-        "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "httpStatus": { "type": "integer", "minimum": 100, "maximum": 599 }
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "httpStatus": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599
+        }
       }
     },
     "FailureEnvelope": {
@@ -70,26 +126,84 @@
       "description": "Versioned, safe failure fact shared by Harness, Worker, and channel projectors. Public codes are immutable catalog identifiers; dynamic diagnostics stay outside this object.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["schemaVersion", "code", "reasonCode", "category", "stage", "messageKey", "params", "retryable", "action", "diagnosticId", "source", "occurredAt"],
+      "required": [
+        "schemaVersion",
+        "code",
+        "reasonCode",
+        "category",
+        "stage",
+        "messageKey",
+        "params",
+        "retryable",
+        "action",
+        "diagnosticId",
+        "source",
+        "occurredAt"
+      ],
       "properties": {
-        "schemaVersion": { "type": "integer", "const": 1 },
-        "code": { "type": "string", "pattern": "^OH-[A-Z]{3}-[0-9]{4}$" },
-        "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "category": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "stage": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "messageKey": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^OH-[A-Z]{3}-[0-9]{4}$"
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "stage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "messageKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
         "params": {
           "type": "object",
           "description": "Catalog-allowlisted presentation parameters only.",
-          "additionalProperties": { "type": ["string", "number", "boolean"] }
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
         },
-        "retryable": { "type": "boolean" },
-        "retryAfterMs": { "type": "integer", "minimum": 0 },
-        "action": { "$ref": "#/definitions/FailureAction" },
-        "diagnosticId": { "type": "string", "pattern": "^diag_[0-9a-f]{32}$" },
-        "source": { "$ref": "#/definitions/FailureSource" },
-        "cause": { "$ref": "#/definitions/FailureCause" },
-        "occurredAt": { "type": "string", "format": "date-time" }
+        "retryable": {
+          "type": "boolean"
+        },
+        "retryAfterMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "action": {
+          "$ref": "#/definitions/FailureAction"
+        },
+        "diagnosticId": {
+          "type": "string",
+          "pattern": "^diag_[0-9a-f]{32}$"
+        },
+        "source": {
+          "$ref": "#/definitions/FailureSource"
+        },
+        "cause": {
+          "$ref": "#/definitions/FailureCause"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "ProviderSession": {
@@ -97,7 +211,9 @@
       "description": "Provider-owned session resume data. Core treats sessionId and adapter extension fields as opaque.",
       "type": "object",
       "additionalProperties": true,
-      "required": ["sessionId"],
+      "required": [
+        "sessionId"
+      ],
       "properties": {
         "sessionId": {
           "description": "Opaque provider session identifier.",
@@ -110,7 +226,12 @@
         "resumeOutcome": {
           "description": "Continuity outcome for this session update. Compaction applies to the next turn; fresh fallback applies to the current turn.",
           "type": "string",
-          "enum": ["new", "resumed", "fresh_fallback", "compacted"]
+          "enum": [
+            "new",
+            "resumed",
+            "fresh_fallback",
+            "compacted"
+          ]
         },
         "resumeFallback": {
           "description": "Low-cardinality reason for a fresh resume fallback.",
@@ -119,7 +240,10 @@
         "contextInputVariant": {
           "description": "Frozen context input variant actually selected for the current provider turn.",
           "type": "string",
-          "enum": ["primary", "recovery"]
+          "enum": [
+            "primary",
+            "recovery"
+          ]
         }
       }
     },
@@ -129,15 +253,55 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "firstFrameTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 1800000 },
-        "modelIdleTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 3600000 },
-        "modelIdleWarningMs": { "type": "integer", "minimum": 100, "maximum": 3600000 },
-        "modelIdlePolicy": { "type": "string", "enum": ["observe", "enforce"] },
-        "toolTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 86400000 },
-        "toolWallTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 86400000 },
-        "runTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 86400000 },
-        "cancelGraceMs": { "type": "integer", "minimum": 100, "maximum": 60000 },
-        "enforcement": { "type": "string", "enum": ["observe", "enforce"] }
+        "firstFrameTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 1800000
+        },
+        "modelIdleTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3600000
+        },
+        "modelIdleWarningMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3600000
+        },
+        "modelIdlePolicy": {
+          "type": "string",
+          "enum": [
+            "observe",
+            "enforce"
+          ]
+        },
+        "toolTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 86400000
+        },
+        "toolWallTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 86400000
+        },
+        "runTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 86400000
+        },
+        "cancelGraceMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000
+        },
+        "enforcement": {
+          "type": "string",
+          "enum": [
+            "observe",
+            "enforce"
+          ]
+        }
       }
     },
     "AgentConfig": {
@@ -150,26 +314,53 @@
           "description": "Default provider CLI working directory. It is a cwd, not a filesystem security boundary.",
           "type": "string"
         },
-        "model": { "description": "Model identifier.", "type": "string" },
-        "sandbox": { "description": "Provider sandbox mode identifier.", "type": "string" },
-        "permissionMode": { "description": "Provider permission mode identifier.", "type": "string" },
+        "model": {
+          "description": "Model identifier.",
+          "type": "string"
+        },
+        "sandbox": {
+          "description": "Provider sandbox mode identifier.",
+          "type": "string"
+        },
+        "permissionMode": {
+          "description": "Provider permission mode identifier.",
+          "type": "string"
+        },
         "dangerouslyBypassPermissions": {
           "description": "Whether to bypass permission confirmation. Use only with explicit authorization.",
           "type": "boolean"
         },
-        "autoApprove": { "description": "Whether tool calls are approved automatically.", "type": "boolean" },
-        "providerAgentId": { "description": "Provider-side agent identifier.", "type": "string" },
+        "autoApprove": {
+          "description": "Whether tool calls are approved automatically.",
+          "type": "boolean"
+        },
+        "providerAgentId": {
+          "description": "Provider-side agent identifier.",
+          "type": "string"
+        },
         "thinking": {
           "description": "Whether provider thinking is enabled, or a legacy provider-specific thinking mode identifier.",
-          "type": ["boolean", "string"]
+          "type": [
+            "boolean",
+            "string"
+          ]
         },
         "effort": {
           "description": "Optional provider reasoning effort identifier. Provider adapters may define an explicit default.",
           "type": "string"
         },
-        "timeoutSeconds": { "description": "Invocation timeout in seconds.", "type": "number" },
-        "openclawConfigPath": { "description": "OpenClaw configuration path.", "type": "string" },
-        "openclawStateDir": { "description": "OpenClaw state directory.", "type": "string" },
+        "timeoutSeconds": {
+          "description": "Invocation timeout in seconds.",
+          "type": "number"
+        },
+        "openclawConfigPath": {
+          "description": "OpenClaw configuration path.",
+          "type": "string"
+        },
+        "openclawStateDir": {
+          "description": "OpenClaw state directory.",
+          "type": "string"
+        },
         "providerOptions": {
           "description": "Provider-specific extension options passed through unchanged by Core.",
           "type": "object",
@@ -184,18 +375,49 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "providerSession": { "$ref": "#/definitions/ProviderSession" },
-        "channel": { "$ref": "#/definitions/MessageChannel" },
-        "exposure": { "$ref": "#/definitions/MessageExposure" },
-        "provenance": { "$ref": "#/definitions/MessageProvenance" },
-        "messageId": { "description": "Stable message identifier.", "type": "string" },
-        "stepId": { "description": "Stable model-step identifier used to associate messages and tool calls with one provider turn.", "type": "string" },
-        "role": { "description": "Message role, such as assistant.", "type": "string" },
-        "status": { "description": "Tool call or run status identifier.", "type": "string" },
-        "text": { "description": "Text delta or complete text.", "type": "string" },
-        "reason": { "description": "Termination or error reason.", "type": "string" },
-        "message": { "description": "Human-readable diagnostic message.", "type": "string" },
-        "failure": { "$ref": "#/definitions/FailureEnvelope" }
+        "providerSession": {
+          "$ref": "#/definitions/ProviderSession"
+        },
+        "channel": {
+          "$ref": "#/definitions/MessageChannel"
+        },
+        "exposure": {
+          "$ref": "#/definitions/MessageExposure"
+        },
+        "provenance": {
+          "$ref": "#/definitions/MessageProvenance"
+        },
+        "messageId": {
+          "description": "Stable message identifier.",
+          "type": "string"
+        },
+        "stepId": {
+          "description": "Stable model-step identifier used to associate messages and tool calls with one provider turn.",
+          "type": "string"
+        },
+        "role": {
+          "description": "Message role, such as assistant.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Tool call or run status identifier.",
+          "type": "string"
+        },
+        "text": {
+          "description": "Text delta or complete text.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Termination or error reason.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable diagnostic message.",
+          "type": "string"
+        },
+        "failure": {
+          "$ref": "#/definitions/FailureEnvelope"
+        }
       }
     },
     "InteractionRequestedPayload": {
@@ -203,10 +425,26 @@
       "description": "Provider-neutral request that pauses one active invocation until an interaction response is returned through the Adapter Host.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["interactionId", "kind", "request"],
+      "required": [
+        "interactionId",
+        "kind",
+        "request"
+      ],
       "properties": {
-        "interactionId": { "description": "Stable invocation-scoped interaction identifier.", "type": "string", "minLength": 1, "maxLength": 191 },
-        "kind": { "type": "string", "enum": ["approval", "question", "elicitation"] },
+        "interactionId": {
+          "description": "Stable invocation-scoped interaction identifier.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "approval",
+            "question",
+            "elicitation"
+          ]
+        },
         "request": {
           "description": "Display-safe provider request projected for the responding product.",
           "type": "object",
@@ -220,10 +458,19 @@
       "description": "Starts one provider model round. A round may contain public reasoning, tool calls, and text output.",
       "type": "object",
       "additionalProperties": true,
-      "required": ["stepId"],
+      "required": [
+        "stepId"
+      ],
       "properties": {
-        "stepId": { "description": "Stable identifier reused by model_step.finished and child events.", "type": "string" },
-        "startedAtMs": { "description": "Provider-observed round content-start timestamp in Unix milliseconds.", "type": "integer", "minimum": 1 }
+        "stepId": {
+          "description": "Stable identifier reused by model_step.finished and child events.",
+          "type": "string"
+        },
+        "startedAtMs": {
+          "description": "Provider-observed round content-start timestamp in Unix milliseconds.",
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "ModelStepFinishedPayload": {
@@ -231,13 +478,31 @@
       "description": "Finishes one provider model round and records why control returned to the harness.",
       "type": "object",
       "additionalProperties": true,
-      "required": ["stepId", "status"],
+      "required": [
+        "stepId",
+        "status"
+      ],
       "properties": {
-        "stepId": { "description": "Stable identifier from model_step.started.", "type": "string" },
-        "status": { "description": "Terminal round status.", "type": "string" },
-        "finishReason": { "description": "Provider-normalized reason such as tool-calls or stop.", "type": "string" },
-        "publicText": { "description": "Bounded text the provider already emitted on a public final channel during this round. This is a display fallback, not private reasoning.", "type": "string", "maxLength": 1000 },
-        "endedAtMs": { "description": "Provider-observed round finish timestamp in Unix milliseconds.", "type": "integer", "minimum": 1 }
+        "stepId": {
+          "description": "Stable identifier from model_step.started.",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "finishReason": {
+          "description": "Provider-normalized reason such as tool-calls or stop.",
+          "type": "string"
+        },
+        "endedAtMs": {
+          "description": "Provider-observed round finish timestamp in Unix milliseconds.",
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "ToolCallCreatePayload": {
@@ -245,17 +510,30 @@
       "description": "Formal tool_call.create payload. args preserves the original structured input, including args.command for shell tools.",
       "type": "object",
       "additionalProperties": true,
-      "required": ["id", "name", "args"],
+      "required": [
+        "id",
+        "name",
+        "args",
+        "status"
+      ],
       "properties": {
-        "id": { "description": "Stable tool call identifier reused by later delta and update events.", "type": "string" },
-        "name": { "description": "Tool name normalized across providers.", "type": "string" },
+        "id": {
+          "description": "Stable tool call identifier reused by later delta and update events.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Tool name normalized across providers.",
+          "type": "string"
+        },
         "args": {
           "description": "Original structured input known when the tool call starts. Streaming providers may begin empty and append argsDelta.",
           "type": "object",
           "additionalProperties": true,
           "tsType": "Record<string, unknown>"
         },
-        "status": { "description": "Optional initial tool status.", "type": "string" }
+        "status": {
+          "const": "running"
+        }
       }
     },
     "ToolCallDeltaPayload": {
@@ -263,11 +541,23 @@
       "description": "Formal tool_call.delta payload. argsDelta is an ordered raw JSON fragment and must be concatenated before parsing.",
       "type": "object",
       "additionalProperties": true,
-      "required": ["id", "kind"],
+      "required": [
+        "id",
+        "kind"
+      ],
       "properties": {
-        "id": { "description": "Stable identifier from the corresponding tool_call.create event.", "type": "string" },
-        "argsDelta": { "description": "Raw JSON argument fragment; do not parse fragments independently.", "type": "string" },
-        "outputDelta": { "description": "Tool output text fragment.", "type": "string" }
+        "id": {
+          "description": "Stable identifier from the corresponding tool_call.create event.",
+          "type": "string"
+        },
+        "argsDelta": {
+          "description": "Raw JSON argument fragment; do not parse fragments independently.",
+          "type": "string"
+        },
+        "outputDelta": {
+          "description": "Tool output text fragment.",
+          "type": "string"
+        }
       }
     },
     "ToolCallUpdatePayload": {
@@ -275,18 +565,41 @@
       "description": "Formal tool_call.update payload that closes the tool lifecycle and carries its final result.",
       "type": "object",
       "additionalProperties": true,
-      "required": ["id", "status"],
+      "required": [
+        "id",
+        "status"
+      ],
       "properties": {
-        "id": { "description": "Stable identifier from the corresponding tool_call.create event.", "type": "string" },
-        "status": { "description": "Terminal tool status such as completed, error, failed, or cancelled.", "type": "string" },
-        "output": { "description": "Final tool output as text or structured JSON.", "tsType": "unknown" },
+        "id": {
+          "description": "Stable identifier from the corresponding tool_call.create event.",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "output": {
+          "description": "Final tool output as text or structured JSON.",
+          "tsType": "unknown"
+        },
         "error": {
           "description": "Structured error details.",
           "type": "object",
           "additionalProperties": true,
           "tsType": "Record<string, unknown>"
         },
-        "exitCode": { "description": "Process exit code for command tools.", "type": "integer" }
+        "exitCode": {
+          "description": "Process exit code for command tools.",
+          "type": "integer"
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
       }
     },
     "RunIdentity": {
@@ -294,10 +607,19 @@
       "description": "Stable run identity used by envelopes without requiring the complete domain object.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "agentSessionId"],
+      "required": [
+        "id",
+        "agentSessionId"
+      ],
       "properties": {
-        "id": { "description": "Run identifier.", "type": "string" },
-        "agentSessionId": { "description": "Owning Agent Worker session identifier.", "type": "string" }
+        "id": {
+          "description": "Run identifier.",
+          "type": "string"
+        },
+        "agentSessionId": {
+          "description": "Owning Agent Worker session identifier.",
+          "type": "string"
+        }
       }
     },
     "ChannelScope": {
@@ -305,15 +627,47 @@
       "description": "Platform-neutral channel isolation key. account_id may be null but remains explicit; an absent thread_id selects the conversation root.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["tenant_id", "endpoint_id", "channel", "account_id", "bot_id", "conversation_id"],
+      "required": [
+        "tenant_id",
+        "endpoint_id",
+        "channel",
+        "account_id",
+        "bot_id",
+        "conversation_id"
+      ],
       "properties": {
-        "tenant_id": { "type": "string", "minLength": 1 },
-        "endpoint_id": { "type": "string", "minLength": 1 },
-        "channel": { "type": "string", "minLength": 1 },
-        "account_id": { "type": ["string", "null"] },
-        "bot_id": { "type": "string", "minLength": 1 },
-        "conversation_id": { "type": "string", "minLength": 1 },
-        "thread_id": { "type": ["string", "null"] }
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "endpoint_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "channel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "account_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conversation_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "ChannelMessagePart": {
@@ -321,10 +675,17 @@
       "description": "Normalized platform message part. type and text are common fields; connector extensions remain untrusted external data.",
       "type": "object",
       "additionalProperties": true,
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "properties": {
-        "type": { "type": "string", "minLength": 1 },
-        "text": { "type": "string" }
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string"
+        }
       }
     },
     "ChannelMessageSender": {
@@ -332,11 +693,22 @@
       "description": "Normalized sender fact without platform credentials.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind"],
+      "required": [
+        "id",
+        "kind"
+      ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "label": { "type": "string" },
-        "kind": { "type": "string", "minLength": 1 }
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "ChannelMessageFlags": {
@@ -345,8 +717,12 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "self": { "type": "boolean" },
-        "control": { "type": "boolean" }
+        "self": {
+          "type": "boolean"
+        },
+        "control": {
+          "type": "boolean"
+        }
       }
     },
     "ChannelMessageFact": {
@@ -354,18 +730,38 @@
       "description": "A platform-neutral message fact in the rebuildable channel journal. Message content is always untrusted external input.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["message_id", "sender", "occurred_at_ms", "parts"],
+      "required": [
+        "message_id",
+        "sender",
+        "occurred_at_ms",
+        "parts"
+      ],
       "properties": {
-        "message_id": { "type": "string", "minLength": 1 },
-        "message_seq": { "type": "integer", "minimum": 0 },
-        "sender": { "$ref": "#/definitions/ChannelMessageSender" },
-        "occurred_at_ms": { "type": "integer", "minimum": 1 },
+        "message_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message_seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sender": {
+          "$ref": "#/definitions/ChannelMessageSender"
+        },
+        "occurred_at_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
         "parts": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/definitions/ChannelMessagePart" }
+          "items": {
+            "$ref": "#/definitions/ChannelMessagePart"
+          }
         },
-        "flags": { "$ref": "#/definitions/ChannelMessageFlags" }
+        "flags": {
+          "$ref": "#/definitions/ChannelMessageFlags"
+        }
       }
     },
     "ChannelContextAppend": {
@@ -373,17 +769,32 @@
       "description": "Idempotent context-only batch appended by agent-worker to its bound daemon.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["agent_id", "scope", "facts"],
+      "required": [
+        "agent_id",
+        "scope",
+        "facts"
+      ],
       "properties": {
-		"agent_id": { "type": "string", "minLength": 1, "maxLength": 96 },
-        "scope": { "$ref": "#/definitions/ChannelScope" },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "scope": {
+          "$ref": "#/definitions/ChannelScope"
+        },
         "facts": {
           "type": "array",
           "minItems": 1,
           "maxItems": 100,
-          "items": { "$ref": "#/definitions/ChannelMessageFact" }
+          "items": {
+            "$ref": "#/definitions/ChannelMessageFact"
+          }
         },
-        "gap_after_seq": { "type": "integer", "minimum": 0 }
+        "gap_after_seq": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "ContextSyncRequest": {
@@ -391,15 +802,42 @@
       "description": "Bounded backfill requested by the daemon after cold start or gap detection. It never carries platform tokens.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["request_id", "agent_run_id", "scope", "trigger_message_id", "limit"],
+      "required": [
+        "request_id",
+        "agent_run_id",
+        "scope",
+        "trigger_message_id",
+        "limit"
+      ],
       "properties": {
-        "request_id": { "type": "string", "minLength": 1 },
-        "agent_run_id": { "type": "string", "minLength": 1 },
-        "scope": { "$ref": "#/definitions/ChannelScope" },
-        "trigger_message_id": { "type": "string", "minLength": 1 },
-        "trigger_seq": { "type": "integer", "minimum": 0 },
-        "after_seq": { "type": "integer", "minimum": 0 },
-        "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent_run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "$ref": "#/definitions/ChannelScope"
+        },
+        "trigger_message_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trigger_seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "after_seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
       }
     },
     "ContextSyncResult": {
@@ -407,36 +845,94 @@
       "description": "Bounded history result. complete means only that the requested window was returned, not that the local journal is authoritative.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["request_id", "scope", "facts", "completeness"],
+      "required": [
+        "request_id",
+        "scope",
+        "facts",
+        "completeness"
+      ],
       "properties": {
-        "request_id": { "type": "string", "minLength": 1 },
-        "scope": { "$ref": "#/definitions/ChannelScope" },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "$ref": "#/definitions/ChannelScope"
+        },
         "facts": {
           "type": "array",
           "maxItems": 100,
-          "items": { "$ref": "#/definitions/ChannelMessageFact" }
+          "items": {
+            "$ref": "#/definitions/ChannelMessageFact"
+          }
         },
-        "completeness": { "type": "string", "enum": ["complete", "partial", "unavailable"] },
-        "through_seq": { "type": "integer", "minimum": 0 }
+        "completeness": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "through_seq": {
+          "type": "integer",
+          "minimum": 0
+        }
       },
-      "allOf": [{
-        "if": { "properties": { "completeness": { "const": "unavailable" } } },
-        "then": { "properties": { "facts": { "maxItems": 0 } } }
-      }]
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "completeness": {
+                "const": "unavailable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "facts": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
     },
     "ChannelContextDescriptor": {
       "title": "ChannelContextDescriptor",
       "description": "Snapshot selection descriptor in ExecutionEnvelope. Scope, consumer_key, and session_generation isolate the consumption cursor.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["scope", "consumer_key", "session_generation", "trigger_message_id", "trigger_fact"],
+      "required": [
+        "scope",
+        "consumer_key",
+        "session_generation",
+        "trigger_message_id",
+        "trigger_fact"
+      ],
       "properties": {
-        "scope": { "$ref": "#/definitions/ChannelScope" },
-        "consumer_key": { "type": "string", "minLength": 1 },
-        "session_generation": { "type": "integer", "minimum": 1 },
-        "trigger_message_id": { "type": "string", "minLength": 1 },
-        "trigger_seq": { "type": "integer", "minimum": 0 },
-        "trigger_fact": { "$ref": "#/definitions/ChannelMessageFact" }
+        "scope": {
+          "$ref": "#/definitions/ChannelScope"
+        },
+        "consumer_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "trigger_message_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trigger_seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "trigger_fact": {
+          "$ref": "#/definitions/ChannelMessageFact"
+        }
       }
     },
     "ChannelContextSnapshotRef": {
@@ -444,22 +940,62 @@
       "description": "Traceable reference to frozen provider-visible context. The primary and recovery hashes cover their exact rendered bytes.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["snapshot_id", "scope_key", "consumer_key", "session_generation", "trigger_message_id", "serializer_version", "rendered_sha256", "completeness"],
+      "required": [
+        "snapshot_id",
+        "scope_key",
+        "consumer_key",
+        "session_generation",
+        "trigger_message_id",
+        "serializer_version",
+        "rendered_sha256",
+        "completeness"
+      ],
       "properties": {
-        "snapshot_id": { "type": "string", "minLength": 1 },
-        "scope_key": { "type": "string", "minLength": 1 },
-        "consumer_key": { "type": "string", "minLength": 1 },
-        "session_generation": { "type": "integer", "minimum": 1 },
+        "snapshot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consumer_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
         "source_session_generation": {
           "description": "Original descriptor generation when recovery promotes the effective consumer generation.",
           "type": "integer",
           "minimum": 1
         },
-        "trigger_message_id": { "type": "string", "minLength": 1 },
-        "trigger_seq": { "type": "integer", "minimum": 0 },
-        "serializer_version": { "type": "string", "minLength": 1 },
-        "rendered_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-        "completeness": { "type": "string", "enum": ["complete", "partial", "unavailable"] },
+        "trigger_message_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trigger_seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "serializer_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rendered_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "completeness": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
         "recovery_rendered_sha256": {
           "description": "Hash of the frozen bounded cold projection used when provider resume falls back to a fresh session.",
           "type": "string",
@@ -468,7 +1004,11 @@
         "recovery_completeness": {
           "description": "Completeness of the frozen cold recovery projection.",
           "type": "string",
-          "enum": ["complete", "partial", "unavailable"]
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
         }
       }
     },
@@ -477,11 +1017,28 @@
       "description": "Result of advancing the consumer cursor with version CAS after terminal durability.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["snapshot_id", "committed"],
+      "required": [
+        "snapshot_id",
+        "committed"
+      ],
       "properties": {
-        "snapshot_id": { "type": "string", "minLength": 1 },
-        "committed": { "type": "boolean" },
-        "reason": { "type": "string", "enum": ["already_committed", "snapshot_not_found", "snapshot_not_submitted", "consumer_advanced", "snapshot_failed"] }
+        "snapshot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "committed": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "already_committed",
+            "snapshot_not_found",
+            "snapshot_not_submitted",
+            "consumer_advanced",
+            "snapshot_failed"
+          ]
+        }
       }
     },
     "McpStdioServer": {
@@ -489,21 +1046,50 @@
       "description": "A per-invocation MCP server launched as a child process by the provider.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "command"],
+      "required": [
+        "type",
+        "command"
+      ],
       "properties": {
-        "type": { "const": "stdio" },
-        "command": { "type": "string", "minLength": 1 },
-        "args": { "type": "array", "items": { "type": "string" }, "maxItems": 128 },
+        "type": {
+          "const": "stdio"
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 128
+        },
         "env": {
           "type": "object",
-          "additionalProperties": { "type": "string" },
+          "additionalProperties": {
+            "type": "string"
+          },
           "maxProperties": 128,
           "tsType": "Record<string, string>"
         },
-        "cwd": { "type": "string", "minLength": 1 },
-        "required": { "type": "boolean" },
-        "startupTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 300000 },
-        "toolTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 3600000 }
+        "cwd": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "startupTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 300000
+        },
+        "toolTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3600000
+        }
       }
     },
     "McpStreamableHttpServer": {
@@ -511,35 +1097,64 @@
       "description": "A per-invocation Streamable HTTP MCP endpoint. Header values are sensitive and must never enter logs or canonical events.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "url"],
+      "required": [
+        "type",
+        "url"
+      ],
       "properties": {
-        "type": { "const": "streamable_http" },
-        "url": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "type": {
+          "const": "streamable_http"
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
         "headers": {
           "type": "object",
-          "additionalProperties": { "type": "string" },
+          "additionalProperties": {
+            "type": "string"
+          },
           "maxProperties": 64,
           "tsType": "Record<string, string>"
         },
-        "required": { "type": "boolean" },
-        "startupTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 300000 },
-        "toolTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 3600000 }
+        "required": {
+          "type": "boolean"
+        },
+        "startupTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 300000
+        },
+        "toolTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3600000
+        }
       }
     },
     "McpServer": {
       "title": "McpServer",
       "description": "Provider-neutral per-invocation MCP server definition.",
       "oneOf": [
-        { "$ref": "#/definitions/McpStdioServer" },
-        { "$ref": "#/definitions/McpStreamableHttpServer" }
+        {
+          "$ref": "#/definitions/McpStdioServer"
+        },
+        {
+          "$ref": "#/definitions/McpStreamableHttpServer"
+        }
       ]
     },
     "McpServers": {
       "title": "McpServers",
       "description": "Named MCP servers frozen for one invocation.",
       "type": "object",
-      "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
-      "additionalProperties": { "$ref": "#/definitions/McpServer" },
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/McpServer"
+      },
       "maxProperties": 32,
       "tsType": "Record<string, McpServer>"
     },
@@ -556,7 +1171,8 @@
         "workdir",
         "appendInstructions",
         "context",
-        "agentConfig"
+        "agentConfig",
+        "protocolVersion"
       ],
       "properties": {
         "invocationId": {
@@ -567,7 +1183,10 @@
           "description": "Long-lived Agent Worker session identifier for this execution context.",
           "type": "string"
         },
-        "runId": { "description": "Run identifier for this execution.", "type": "string" },
+        "runId": {
+          "description": "Run identifier for this execution.",
+          "type": "string"
+        },
         "sessionGeneration": {
           "description": "Worker-owned AgentSession generation that fences stale continuity updates.",
           "type": "integer",
@@ -581,7 +1200,10 @@
         "continuityMode": {
           "description": "Caller continuity intent. Fresh invocations must not carry providerSession.",
           "type": "string",
-          "enum": ["continue", "fresh"]
+          "enum": [
+            "continue",
+            "fresh"
+          ]
         },
         "prompt": {
           "description": "Display-safe current request or task description. It excludes hidden channel context and provider control parameters.",
@@ -595,7 +1217,9 @@
           "description": "Frozen alternate user turn for the first turn of a fresh provider session after resume fails.",
           "type": "string"
         },
-        "contextSnapshot": { "$ref": "#/definitions/ChannelContextSnapshotRef" },
+        "contextSnapshot": {
+          "$ref": "#/definitions/ChannelContextSnapshotRef"
+        },
         "workdir": {
           "description": "Provider process cwd. Sandboxing, containers, or host permissions provide the actual access boundary.",
           "type": "string"
@@ -610,11 +1234,369 @@
           "additionalProperties": true,
           "tsType": "Record<string, unknown>"
         },
-        "mcpServers": { "$ref": "#/definitions/McpServers" },
-        "providerSession": { "$ref": "#/definitions/ProviderSession" },
-        "runtimeLimits": { "$ref": "#/definitions/RuntimeLimits" },
-        "agentConfig": { "$ref": "#/definitions/AgentConfig" }
+        "mcpServers": {
+          "$ref": "#/definitions/McpServers"
+        },
+        "providerSession": {
+          "$ref": "#/definitions/ProviderSession"
+        },
+        "runtimeLimits": {
+          "$ref": "#/definitions/RuntimeLimits"
+        },
+        "agentConfig": {
+          "$ref": "#/definitions/AgentConfig"
+        },
+        "protocolVersion": {
+          "const": 2
+        }
       }
+    },
+    "ActivityInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "messageKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "retryAfterMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": []
+    },
+    "ActivitySubject": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "run"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "message"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 191
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "tool"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 191
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "interaction"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 191
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        }
+      ]
+    },
+    "ActivityStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activityId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "kind": {
+          "enum": [
+            "starting",
+            "thinking",
+            "executing_tool",
+            "responding",
+            "waiting_approval",
+            "waiting_input",
+            "compacting",
+            "retrying",
+            "working"
+          ]
+        },
+        "subject": {
+          "$ref": "#/definitions/ActivitySubject"
+        },
+        "source": {
+          "enum": [
+            "provider",
+            "harness"
+          ]
+        },
+        "info": {
+          "$ref": "#/definitions/ActivityInfo"
+        },
+        "startedAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "activityId",
+        "kind",
+        "subject",
+        "source",
+        "info"
+      ]
+    },
+    "ActivityUpdatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activityId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "info": {
+          "$ref": "#/definitions/ActivityInfo"
+        }
+      },
+      "required": [
+        "activityId",
+        "info"
+      ]
+    },
+    "ActivityFinishedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activityId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "failed",
+            "cancelled",
+            "superseded"
+          ]
+        },
+        "endedAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "activityId",
+        "status"
+      ]
+    },
+    "PlanUpdatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "planId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "explanation": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4096
+        },
+        "steps": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "in_progress",
+                  "completed",
+                  "blocked",
+                  "cancelled"
+                ]
+              }
+            },
+            "required": [
+              "text",
+              "status"
+            ]
+          }
+        }
+      },
+      "required": [
+        "planId",
+        "revision",
+        "explanation",
+        "steps"
+      ]
+    },
+    "ToolProgressPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "progress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "completed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "unit": {
+              "enum": [
+                "items",
+                "bytes",
+                "steps"
+              ]
+            }
+          },
+          "required": []
+        }
+      },
+      "required": [
+        "id",
+        "progress"
+      ]
+    },
+    "RunNoticePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "noticeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "code": {
+          "enum": [
+            "retry_scheduled",
+            "context_compacted",
+            "model_rerouted",
+            "config_warning"
+          ]
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning"
+          ]
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "relatedActivityId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "relatedItemId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        }
+      },
+      "required": [
+        "noticeId",
+        "code",
+        "severity",
+        "params"
+      ]
     }
   }
 }

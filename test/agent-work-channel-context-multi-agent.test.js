@@ -111,12 +111,12 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         providerRequests.set(request.runId, request);
-        yield {
+        yield { protocolVersion: 2,
           type: "session.update",
           payload: { providerSession: { sessionId: providerSessionFor(request.runId), resumable: true } }
         };
-        yield { type: "message.delta", payload: { channel: "final", text: `R1 ${request.runId}` } };
-        yield { type: "run.finished", payload: {} };
+        yield { protocolVersion: 2, type: "message.delta", payload: { channel: "final", text: `R1 ${request.runId}` } };
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
       }
     };
     runtime = new AgentWorkRuntime({

@@ -12,7 +12,7 @@ import {
 } from "@mininglamp-oss/octo-harness-adapter-codex";
 import { capabilities } from "@mininglamp-oss/octo-harness-protocol";
 
-const request = {
+const request = { protocolVersion: 2,
   invocationId: "invoke-mcp",
   agentSessionId: "session-mcp",
   runId: "run-mcp",
@@ -101,7 +101,7 @@ test("Codex routes untrusted MCP approval through the non-interactive responder"
     events.push(event);
   }
 
-  assert.equal(events.at(-1)?.type, "run.finished");
+  assert.equal(events.at(-1)?.type, "run.completed");
   assert.ok(events.some(event => event.type === "tool_call.update"
     && event.payload.status === "completed"));
 });
@@ -177,7 +177,7 @@ test("Codex routes durable interaction responses back to native app-server reque
     "elicitation",
     "question"
   ]);
-  assert.equal(events.at(-1)?.type, "run.finished");
+  assert.equal(events.at(-1)?.type, "run.completed");
   await assert.rejects(
     adapter.respondInteraction(invocationId, {
       interactionId: "after-terminal",

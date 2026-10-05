@@ -1,6 +1,6 @@
 export function wire(type, payload) {
   return JSON.stringify({
-    version: 1,
+    version: 2,
     id: `wire-${Math.random()}`,
     type,
     sent_at: new Date().toISOString(),

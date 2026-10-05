@@ -72,7 +72,7 @@ export async function spawnAdapterHost({
       if (unavailableReported) return;
       unavailableReported = true;
       for (const affectedSource of ["adapter-canonical", "provider-native"]) {
-        observe({ source: "control", type: "adapter_observation.source_unavailable", payload: { reason, affected_source: affectedSource } });
+        observe({ protocolVersion: 2, source: "control", type: "adapter_observation.source_unavailable", payload: { reason, affected_source: affectedSource } });
       }
     };
     observationPipe.setEncoding("utf8");
@@ -80,14 +80,14 @@ export async function spawnAdapterHost({
       buffered += value.toString();
       if (buffered.length > 512 * 1024) {
         buffered = "";
-        observe({ source: "control", type: "adapter_observation.dropped", payload: { reason: "buffer_limit", affected_source: "adapter-canonical" } });
+        observe({ protocolVersion: 2, source: "control", type: "adapter_observation.dropped", payload: { reason: "buffer_limit", affected_source: "adapter-canonical" } });
       }
       let newline = buffered.indexOf("\n");
       while (newline >= 0) {
         const line = buffered.slice(0, newline);
         buffered = buffered.slice(newline + 1);
         try { observe(JSON.parse(line) as unknown); } catch {
-          observe({ source: "control", type: "adapter_observation.dropped", payload: { reason: "invalid_json", affected_source: "adapter-canonical" } });
+          observe({ protocolVersion: 2, source: "control", type: "adapter_observation.dropped", payload: { reason: "invalid_json", affected_source: "adapter-canonical" } });
         }
         newline = buffered.indexOf("\n");
       }

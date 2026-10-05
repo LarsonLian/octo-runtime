@@ -11,7 +11,7 @@ import { waitFor, wire } from "./agent-work-runtime-fixture.js";
 const host = {
   list: async () => [],
   cancel: async () => ({ cancelled: true }),
-  async *invoke() { yield { type: "run.finished", payload: {} }; }
+  async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
 };
 
 async function startFixture(t, { silentFirst = false, welcomeOnFirst = true } = {}) {
@@ -31,7 +31,7 @@ async function startFixture(t, { silentFirst = false, welcomeOnFirst = true } = 
     for await (const _chunk of request) { /* Consume registration. */ }
     state.registrations += 1;
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-liveness", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-liveness", protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket));

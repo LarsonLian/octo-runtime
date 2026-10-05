@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { assertInvokeRequest, assertMcpServers, capabilities } from "@mininglamp-oss/octo-harness-protocol";
 
-const baseRequest = {
+const baseRequest = { protocolVersion: 2,
   invocationId: "invoke-1",
   agentSessionId: "session-1",
   runId: "run-1",

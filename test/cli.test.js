@@ -389,7 +389,7 @@ test("adapter-host readiness timeout advances the restart staircase", async () =
   const home = await mkdtemp(join(tmpdir(), "oh-host-timeout-"));
   const manifestPath = join(home, "adapters.json");
   await writeFile(manifestPath, JSON.stringify({
-    version: 1,
+    version: 2,
     adapters: [{
       type: "test",
       module: join(root, "test/fixtures/test-adapter.js"),
@@ -425,7 +425,7 @@ test("daemon close cancels a hung adapter-host replacement handshake", async () 
   const home = await mkdtemp(join(tmpdir(), "oh-host-cancel-"));
   const manifestPath = join(home, "adapters.json");
   await writeFile(manifestPath, JSON.stringify({
-    version: 1,
+    version: 2,
     adapters: [{
       type: "test",
       module: join(root, "test/fixtures/test-adapter.js"),

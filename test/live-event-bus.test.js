@@ -61,8 +61,8 @@ test("LiveEventBus filters snapshots without waiting and follows new matching ev
   const stream = bus.subscribe({ source: "host-canonical" }, true);
   const pending = stream.next();
   bus.publish({ source: "daemon", type: "ignored", payload: {} });
-  bus.publish({ source: "host-canonical", type: "run.finished", payload: {} });
-  assert.equal((await pending).value.type, "run.finished");
+  bus.publish({ protocolVersion: 2, source: "host-canonical", type: "run.completed", payload: {} });
+  assert.equal((await pending).value.type, "run.completed");
   await stream.return();
 });
 

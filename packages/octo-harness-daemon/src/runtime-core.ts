@@ -31,8 +31,8 @@ export class HarnessDaemon extends EventEmitter {
   async recover(): Promise<void> {
     for (const run of this.#store.listAgentRuns()) {
       if (run.status === "running") {
-        await this.#engine.terminalizeRun(run.id, {
-          type: "run.error",
+        await this.#engine.terminalizeRun(run.id, { protocolVersion: 2,
+          type: "run.failed",
           payload: { code: "daemon_restarted", message: "daemon restarted while provider was active" }
         });
       } else if (run.status === "queued") {
@@ -107,8 +107,8 @@ export class HarnessDaemon extends EventEmitter {
         return this.#engine.executeRun(agentRunId);
       })
       .catch(async (error: unknown) => {
-        await this.#engine.terminalizeRun(agentRunId, {
-          type: "run.error",
+        await this.#engine.terminalizeRun(agentRunId, { protocolVersion: 2,
+          type: "run.failed",
           payload: { code: "daemon_execution_error", message: errorMessage(error) }
         });
         return { run: this.#store.getAgentRun(agentRunId), error };

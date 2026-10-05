@@ -41,7 +41,7 @@ import {
   tryParseOpenClawTranscriptLine
 } from "@mininglamp-oss/octo-harness-adapter-openclaw";
 
-const request = { invocationId: "inv-1", agentSessionId: "session-1", runId: "run-1", prompt: "work", workdir: process.cwd(), context: {}, appendInstructions: "CONTROL", agentConfig: {} };
+const request = { protocolVersion: 2, invocationId: "inv-1", agentSessionId: "session-1", runId: "run-1", prompt: "work", workdir: process.cwd(), context: {}, appendInstructions: "CONTROL", agentConfig: {} };
 
 const openClawGatewayMethods = ["config.get", "sessions.create", "sessions.messages.subscribe", "agent", "agent.wait", "sessions.abort"];
 
@@ -83,7 +83,7 @@ test("best-effort observations handle rejection and provider output excludes pri
       return { captureId: "output-test", state: "accepted", complete: true };
     }
   }, [
-    {
+    { protocolVersion: 2,
       type: "message.delta",
       payload: {
         text: "PRIVATE_REASONING_CANARY",
@@ -92,7 +92,7 @@ test("best-effort observations handle rejection and provider output excludes pri
         provenance: { provider: "fixture", nativeEvent: "reasoning.delta" }
       }
     },
-    {
+    { protocolVersion: 2,
       type: "message.delta",
       payload: {
         text: "safe summary",
@@ -101,8 +101,8 @@ test("best-effort observations handle rejection and provider output excludes pri
         provenance: { provider: "fixture", nativeEvent: "summary.delta" }
       }
     },
-    { type: "message.delta", payload: { text: "final answer", channel: "final" } },
-    {
+    { protocolVersion: 2, type: "message.delta", payload: { text: "final answer", channel: "final" } },
+    { protocolVersion: 2,
       type: "tool_call.update",
       payload: {
         id: "tool-1",
@@ -114,9 +114,9 @@ test("best-effort observations handle rejection and provider output excludes pri
         }
       }
     },
-    { type: "usage.update", payload: { inputTokens: 1, outputTokens: 2 } },
-    { type: "run.error", payload: { message: "provider error Bearer TOKEN_CANARY" } },
-    { type: "session.update", payload: { providerSession: { sessionId: "not-output" } } }
+    { protocolVersion: 2, type: "usage.update", payload: { inputTokens: 1, outputTokens: 2 } },
+    { protocolVersion: 2, type: "run.failed", payload: { message: "provider error Bearer TOKEN_CANARY" } },
+    { protocolVersion: 2, type: "session.update", payload: { providerSession: { sessionId: "not-output" } } }
   ], {
     rpcMethod: "fixture.stdout",
     native: {
@@ -145,7 +145,7 @@ test("best-effort observations handle rejection and provider output excludes pri
     "message.delta",
     "tool_call.update",
     "usage.update",
-    "run.error"
+    "run.failed"
   ]);
   assert.doesNotMatch(
     JSON.stringify(observations),
@@ -166,7 +166,7 @@ test("Codex native events map to session/message/usage/terminal", () => {
   })[0].type, "usage.update");
   assert.deepEqual(
     normalizeCodexEvent({ method: "turn/completed", params: { turn: { status: "completed" } } }).map(x => x.type),
-    ["run.finished"]
+    ["run.completed"]
   );
 });
 
@@ -245,7 +245,7 @@ test("Codex waits for turn/completed after a non-retry error so ReAct can recove
     }
   });
   assert.deepEqual(diagnostic.map(event => event.type), ["model_step.finished"]);
-  assert.equal(diagnostic.some(event => event.type === "run.error"), false);
+  assert.equal(diagnostic.some(event => event.type === "run.failed"), false);
 
   const recovery = normalizer.normalize({
     method: "item/started",
@@ -255,7 +255,7 @@ test("Codex waits for turn/completed after a non-retry error so ReAct can recove
   assert.equal(recovery[0].payload.stepId, "codex:turn-recovery:round:2");
   assert.deepEqual(
     normalizer.normalize({ method: "turn/completed", params: { turn: { id: "turn-recovery", status: "completed" } } }).at(-1),
-    { type: "run.finished", payload: {} }
+    { protocolVersion: 2, type: "run.completed", payload: {} }
   );
 });
 
@@ -268,7 +268,7 @@ test("Codex reasoning and plan deltas are emitted immediately with explicit expo
   for (const [method, exposure] of cases) {
     assert.deepEqual(
       normalizeCodexEvent({ method, params: { itemId: "analysis-1", delta: "step" } }),
-      [{
+      [{ protocolVersion: 2,
         type: "message.delta",
         payload: {
           text: "step",
@@ -293,7 +293,7 @@ test("Codex reasoning and plan deltas are emitted immediately with explicit expo
         }
       }
     }),
-    [{
+    [{ protocolVersion: 2,
       type: "message.update",
       payload: {
         role: "assistant",
@@ -379,11 +379,11 @@ test("Claude native events map to session/message/terminal", () => {
       type: "user",
       message: { content: [{ type: "tool_result", tool_use_id: "tool-1", is_error: true, content: "permission denied" }] }
     })[0],
-    {
+    { protocolVersion: 2,
       type: "tool_call.update",
       payload: {
         id: "tool-1",
-        status: "error",
+        status: "failed",
         output: "permission denied",
         error: { message: "permission denied" }
       }
@@ -394,9 +394,9 @@ test("Claude native events map to session/message/terminal", () => {
       type: "user",
       message: { content: [{ type: "tool_result", tool_use_id: "tool-2", content: [{ type: "text", text: "done" }] }] }
     })[0],
-    { type: "tool_call.update", payload: { id: "tool-2", status: "completed", output: "done" } }
+    { protocolVersion: 2, type: "tool_call.update", payload: { id: "tool-2", status: "completed", output: "done" } }
   );
-  assert.equal(normalizeClaudeEvent({ type: "result", session_id: "claude-1", result: "ok", usage: {} }).at(-1).type, "run.finished");
+  assert.equal(normalizeClaudeEvent({ type: "result", session_id: "claude-1", result: "ok", usage: {} }).at(-1).type, "run.completed");
 });
 
 test("Claude defaults to unattended bypass without restricting its tool catalog", async () => {
@@ -448,13 +448,13 @@ test("Claude preserves an empty thinking block as a public reasoning lifecycle",
   const native = event => ({ type: "stream_event", parent_tool_use_id: null, event });
   assert.deepEqual(normalizer.normalize(native({
     type: "message_start", message: { id: "message-empty-thinking" }
-  })), [{
+  })), [{ protocolVersion: 2,
     type: "model_step.started",
     payload: { stepId: "message-empty-thinking" }
   }]);
   assert.deepEqual(normalizer.normalize(native({
     type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" }
-  })), [{
+  })), [{ protocolVersion: 2,
     type: "message.create",
     payload: {
       role: "assistant", status: "streaming", messageId: "claude:message-empty-thinking:thinking:0",
@@ -466,7 +466,7 @@ test("Claude preserves an empty thinking block as a public reasoning lifecycle",
   assert.deepEqual(normalizer.normalize(native({
     type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "" }
   })), []);
-  assert.deepEqual(normalizer.normalize(native({ type: "content_block_stop", index: 0 })), [{
+  assert.deepEqual(normalizer.normalize(native({ type: "content_block_stop", index: 0 })), [{ protocolVersion: 2,
     type: "message.update",
     payload: {
       role: "assistant", status: "completed", messageId: "claude:message-empty-thinking:thinking:0",
@@ -478,7 +478,7 @@ test("Claude preserves an empty thinking block as a public reasoning lifecycle",
   assert.deepEqual(normalizer.normalize(native({
     type: "message_delta", delta: { stop_reason: "end_turn" }
   })), []);
-  assert.deepEqual(normalizer.normalize(native({ type: "message_stop" })), [{
+  assert.deepEqual(normalizer.normalize(native({ type: "message_stop" })), [{ protocolVersion: 2,
     type: "model_step.finished",
     payload: { stepId: "message-empty-thinking", status: "completed", finishReason: "end_turn" }
   }]);
@@ -490,7 +490,7 @@ test("Claude carries bounded public round text without classifying it as reasoni
   normalizer.normalize(native({ type: "message_start", message: { id: "message-public-text" } }));
   assert.deepEqual(normalizer.normalize(native({
     type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "I'll inspect " }
-  })), [{
+  })), [{ protocolVersion: 2,
     type: "message.delta",
     payload: { text: "I'll inspect ", channel: "final", stepId: "message-public-text" }
   }]);
@@ -498,11 +498,10 @@ test("Claude carries bounded public round text without classifying it as reasoni
     type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "the repository." }
   }));
   normalizer.normalize(native({ type: "message_delta", delta: { stop_reason: "tool_use" } }));
-  assert.deepEqual(normalizer.normalize(native({ type: "message_stop" })), [{
+  assert.deepEqual(normalizer.normalize(native({ type: "message_stop" })), [{ protocolVersion: 2,
     type: "model_step.finished",
     payload: {
       stepId: "message-public-text", status: "completed", finishReason: "tool_use",
-      publicText: "I'll inspect the repository."
     }
   }]);
 });
@@ -528,7 +527,7 @@ test("OpenCode native events map session/text/reasoning/tool/usage", () => {
   assert.deepEqual(normalizeOpenCodeEvent({
     type: "reasoning",
     part: { type: "reasoning", text: "checking the repository" }
-  }), [{
+  }), [{ protocolVersion: 2,
     type: "message.delta",
     payload: {
       text: "checking the repository",
@@ -552,7 +551,7 @@ test("OpenCode native events map session/text/reasoning/tool/usage", () => {
       }
     }
   }), [
-    {
+    { protocolVersion: 2,
       type: "tool_call.update",
       payload: {
         id: "call-1",
@@ -579,8 +578,8 @@ test("OpenCode native events map session/text/reasoning/tool/usage", () => {
       }
     })
   ], [
-    { type: "tool_call.create", payload: { id: "call-2", name: "bash", args: { command: "false" } } },
-    {
+    { protocolVersion: 2, type: "tool_call.create", payload: { status: "running", id: "call-2", name: "bash", args: { command: "false" } } },
+    { protocolVersion: 2,
       type: "tool_call.update",
       payload: {
         id: "call-2",
@@ -599,12 +598,12 @@ test("OpenCode preserves model rounds and associates their reasoning, tools, and
     type: "step_start", sessionID: "oc-1", timestamp: 1_788_793_000_000,
     part: { type: "step-start", messageID: "message-1" }
   }), [
-    { type: "session.update", payload: { providerSession: { sessionId: "oc-1", resumable: true } } },
-    { type: "model_step.started", payload: { stepId: "message-1", startedAtMs: 1_788_793_000_000 } }
+    { protocolVersion: 2, type: "session.update", payload: { providerSession: { sessionId: "oc-1", resumable: true } } },
+    { protocolVersion: 2, type: "model_step.started", payload: { stepId: "message-1", startedAtMs: 1_788_793_000_000 } }
   ]);
   assert.deepEqual(normalizeOpenCodeEvent({
     type: "reasoning", part: { type: "reasoning", messageID: "message-1", text: "checking weather" }
-  })[0], {
+  })[0], { protocolVersion: 2,
     type: "message.delta",
     payload: {
       text: "checking weather", stepId: "message-1", messageId: "opencode:message-1:reasoning",
@@ -615,30 +614,30 @@ test("OpenCode preserves model rounds and associates their reasoning, tools, and
   assert.deepEqual(normalizeOpenCodeEvent({
     type: "tool_use",
     part: { type: "tool", messageID: "message-1", callID: "call-1", tool: "websearch", state: { status: "running", input: { query: "宁波天气" } } }
-  })[0], {
+  })[0], { protocolVersion: 2,
     type: "tool_call.create",
-    payload: { id: "call-1", name: "websearch", args: { query: "宁波天气" }, stepId: "message-1" }
+    payload: { status: "running", id: "call-1", name: "websearch", args: { query: "宁波天气" }, stepId: "message-1" }
   });
   assert.deepEqual(normalizeOpenCodeEvent({
     type: "step_finish", timestamp: 1_788_793_002_000,
     part: { type: "step-finish", messageID: "message-1", reason: "tool-calls", tokens: { input: 10 } }
   }), [
-    {
+    { protocolVersion: 2,
       type: "model_step.finished",
       payload: { stepId: "message-1", status: "completed", finishReason: "tool-calls", endedAtMs: 1_788_793_002_000 }
     },
-    { type: "usage.update", payload: { input: 10, cost: undefined, stepId: "message-1" } }
+    { protocolVersion: 2, type: "usage.update", payload: { input: 10, cost: undefined, stepId: "message-1" } }
   ]);
   assert.deepEqual(normalizeOpenCodeEvent({
     type: "step_finish", timestamp: 1_788_793_003_000,
     part: { type: "step-finish", messageID: "message-2", reason: "stop", tokens: { output: 4 } }
   }), [
-    {
+    { protocolVersion: 2,
       type: "model_step.finished",
       payload: { stepId: "message-2", status: "completed", finishReason: "stop", endedAtMs: 1_788_793_003_000 }
     },
-    { type: "usage.update", payload: { output: 4, cost: undefined, stepId: "message-2" } },
-    { type: "run.finished", payload: {} }
+    { protocolVersion: 2, type: "usage.update", payload: { output: 4, cost: undefined, stepId: "message-2" } },
+    { protocolVersion: 2, type: "run.completed", payload: {} }
   ]);
 });
 
@@ -649,13 +648,13 @@ test("JSON CLI adapters reap a provider that stays alive after a semantic termin
       command: process.execPath,
       args: ["-e", "console.log(JSON.stringify({done:true}));setInterval(()=>{},1000)"]
     }),
-    normalize: native => native.done ? [{ type: "run.finished", payload: {} }] : []
+    normalize: native => native.done ? [{ protocolVersion: 2, type: "run.completed", payload: {} }] : []
   });
   const events = [];
   const startedAt = Date.now();
   for await (const event of adapter.invoke(request)) events.push(event);
 
-  assert.equal(events.at(-1).type, "run.finished");
+  assert.equal(events.at(-1).type, "run.completed");
   assert.ok(Date.now() - startedAt < 2_000);
 });
 
@@ -710,11 +709,11 @@ test("OpenClaw transcript maps model rounds, public reasoning, tools, and durati
   }));
   assert.ok(assistant);
   assert.deepEqual(normalizer.normalize(assistant), [
-    {
+    { protocolVersion: 2,
       type: "model_step.started",
       payload: { stepId: "openclaw:assistant-1", startedAtMs: 1_788_854_400_000 }
     },
-    {
+    { protocolVersion: 2,
       type: "message.delta",
       payload: {
         text: "checking the workspace", stepId: "openclaw:assistant-1",
@@ -723,11 +722,11 @@ test("OpenClaw transcript maps model rounds, public reasoning, tools, and durati
         provenance: { provider: "openclaw", nativeEvent: "session.transcript.thinking" }
       }
     },
-    {
+    { protocolVersion: 2,
       type: "tool_call.create",
-      payload: { id: "call-1", name: "exec", args: { command: "pwd" }, stepId: "openclaw:assistant-1" }
+      payload: { status: "running", id: "call-1", name: "exec", args: { command: "pwd" }, stepId: "openclaw:assistant-1" }
     },
-    {
+    { protocolVersion: 2,
       type: "model_step.finished",
       payload: {
         stepId: "openclaw:assistant-1", status: "completed", finishReason: "tool-calls",
@@ -744,7 +743,7 @@ test("OpenClaw transcript maps model rounds, public reasoning, tools, and durati
     }
   }));
   assert.ok(result);
-  assert.deepEqual(normalizer.normalize(result), [{
+  assert.deepEqual(normalizer.normalize(result), [{ protocolVersion: 2,
     type: "tool_call.update",
     payload: {
       id: "call-1", name: "exec", status: "completed", output: "workspace",
@@ -924,7 +923,7 @@ test("OpenClaw Gateway adapter isolates run events, deduplicates seq, and stream
   assert.equal(events.some(event => JSON.stringify(event).includes("LEAK")), false);
   assert.equal(events.filter(event => event.type === "message.delta" && event.payload.channel === "final").map(event => event.payload.text).join(""), "hello");
   assert.deepEqual(events.filter(event => event.type.startsWith("tool_call.")).map(event => event.type), ["tool_call.create", "tool_call.update"]);
-  assert.equal(events.at(-1).type, "run.finished");
+  assert.equal(events.at(-1).type, "run.completed");
   assert.deepEqual(requests.slice(0, 4).map(entry => entry.method), ["config.get", "sessions.create", "sessions.messages.subscribe", "agent"]);
   assert.equal(requests[1].params.cwd, request.workdir);
   assert.equal(requests[3].params.cwd, undefined);
@@ -978,7 +977,7 @@ test("OpenClaw external binding treats the provider Agent as a black box", async
   assert.equal(requests.some(entry => entry.method === "config.get"), false);
   assert.deepEqual(requests.slice(0, 4).map(entry => entry.method), ["sessions.create", "sessions.messages.subscribe", "agent", "agent.wait"]);
   assert.equal(events.filter(event => event.type === "message.delta").map(event => event.payload.text).join(""), "external result");
-  assert.equal(events.at(-1).type, "run.finished");
+  assert.equal(events.at(-1).type, "run.completed");
 });
 
 test("OpenClaw Gateway adapter reconciles a final RPC result when live events are absent", async () => {
@@ -1031,7 +1030,7 @@ test("OpenClaw Gateway adapter reconciles a final RPC result when live events ar
   assert.deepEqual(events.find(event => event.type === "usage.update")?.payload, {
     inputTokens: 3, outputTokens: 2, provider: "anthropic", model: "tencent/glm-5.3"
   });
-  assert.equal(events.at(-1).type, "run.finished");
+  assert.equal(events.at(-1).type, "run.completed");
 });
 
 test("OpenClaw Gateway adapter fails before session creation when isolation config drifts", async () => {
@@ -1133,11 +1132,11 @@ test("OpenClaw Gateway adapter refuses success when agent.wait confirms a differ
     }
   })) events.push(event);
 
-  assert.equal(events.some(event => event.type === "run.finished"), false);
+  assert.equal(events.some(event => event.type === "run.completed"), false);
   assert.match(events.at(-1).payload.message, /confirmed failed, not completed/);
 });
 
-test("OpenClaw Gateway adapter confirms abort before emitting run.stopped", async () => {
+test("OpenClaw Gateway adapter confirms abort before emitting run.cancelled", async () => {
   let listener = () => {};
   const controller = new AbortController();
   const requests = [];
@@ -1182,8 +1181,8 @@ test("OpenClaw Gateway adapter confirms abort before emitting run.stopped", asyn
   })) events.push(event);
 
   assert.deepEqual(requests.slice(-2), ["sessions.abort", "agent.wait"]);
-  assert.equal(events.at(-1).type, "run.stopped");
-  assert.equal(events.some(event => event.type === "run.finished"), false);
+  assert.equal(events.at(-1).type, "run.cancelled");
+  assert.equal(events.some(event => event.type === "run.completed"), false);
 });
 
 test("OpenClaw Gateway adapter stops without abort RPC when cancelled before agent acceptance", async () => {
@@ -1216,8 +1215,8 @@ test("OpenClaw Gateway adapter stops without abort RPC when cancelled before age
   })) events.push(event);
 
   assert.deepEqual(requests, ["config.get"]);
-  assert.equal(events.at(-1).type, "run.stopped");
-  assert.equal(events.some(event => event.type === "run.error"), false);
+  assert.equal(events.at(-1).type, "run.cancelled");
+  assert.equal(events.some(event => event.type === "run.failed"), false);
 });
 
 test("OpenClaw Gateway adapter reconnects and reconciles an accepted run after socket loss", async () => {
@@ -1271,8 +1270,8 @@ test("OpenClaw Gateway adapter reconnects and reconciles an accepted run after s
 
   assert.equal(factoryCalls, 2);
   assert.equal(waitCalls, 3);
-  assert.equal(events.at(-1).type, "run.finished");
-  assert.equal(events.some(event => event.type === "run.error"), false);
+  assert.equal(events.at(-1).type, "run.completed");
+  assert.equal(events.some(event => event.type === "run.failed"), false);
 });
 
 test("OpenClaw Gateway adapter fails reconciliation when non-terminal timeouts reach the invocation deadline", async () => {
@@ -1323,9 +1322,9 @@ test("OpenClaw Gateway adapter fails reconciliation when non-terminal timeouts r
 
   assert.equal(factoryCalls, 2);
   assert.ok(waitCalls >= 1);
-  assert.equal(events.at(-1).type, "run.error");
+  assert.equal(events.at(-1).type, "run.failed");
   assert.match(events.at(-1).payload.message, /invocation deadline/);
-  assert.equal(events.some(event => event.type === "run.finished"), false);
+  assert.equal(events.some(event => event.type === "run.completed"), false);
 });
 
 test("only Codex declares append-only continuity recovery", () => {
@@ -1351,9 +1350,9 @@ test("CodeBuddy preserves a cancelled ACP prompt as an interrupted run", async (
   const events = [];
   for await (const event of adapter.invoke(request)) events.push(event);
 
-  assert.equal(events.some(event => event.type === "run.finished"), false);
-  assert.deepEqual(events.at(-1), {
-    type: "run.stopped",
+  assert.equal(events.some(event => event.type === "run.completed"), false);
+  assert.deepEqual(events.at(-1), { protocolVersion: 2,
+    type: "run.cancelled",
     payload: { reason: "cancelled", finishReason: "tool_calls" }
   });
   assert.ok(events.some(event => event.type === "tool_call.update"
@@ -1378,8 +1377,8 @@ test("CodeBuddy keeps an end_turn ACP prompt as a completed run", async () => {
   const events = [];
   for await (const event of adapter.invoke(request)) events.push(event);
 
-  assert.equal(events.at(-1).type, "run.finished");
-  assert.equal(events.some(event => event.type === "run.stopped"), false);
+  assert.equal(events.at(-1).type, "run.completed");
+  assert.equal(events.some(event => event.type === "run.cancelled"), false);
 });
 
 test("generic ACP adapters expose a model step when the provider only sends public answer chunks", async () => {
@@ -1403,21 +1402,20 @@ test("generic ACP adapters expose a model step when the provider only sends publ
   for await (const event of adapter.invoke(request)) events.push(event);
 
   assert.deepEqual(events.filter(event => event.type.startsWith("model_step.")), [
-    { type: "model_step.started", payload: { stepId: "fixture-acp:step:1" } },
-    {
+    { protocolVersion: 2, type: "model_step.started", payload: { stepId: "fixture-acp:step:1" } },
+    { protocolVersion: 2,
       type: "model_step.finished",
       payload: {
         stepId: "fixture-acp:step:1",
         status: "completed",
         finishReason: "end_turn",
-        publicText: "done"
       }
     }
   ]);
   assert.ok(events.some(event => event.type === "message.delta"
     && event.payload.text === "done"
     && event.payload.stepId === "fixture-acp:step:1"));
-  assert.equal(events.at(-1).type, "run.finished");
+  assert.equal(events.at(-1).type, "run.completed");
 });
 
 test("generic ACP adapters select a requested model through standard config options", async () => {
@@ -1460,7 +1458,7 @@ test("generic ACP adapters select a requested model through standard config opti
     { method: "session/new", params: { cwd: request.workdir, mcpServers: [] } },
     { method: "session/set_config_option", params: { sessionId: "provider-session", configId: "model", value: "requested-model" } }
   ]);
-  assert.deepEqual(events.find(event => event.type === "session.update"), {
+  assert.deepEqual(events.find(event => event.type === "session.update"), { protocolVersion: 2,
     type: "session.update",
     payload: {
       providerSession: {
@@ -1521,7 +1519,7 @@ test("generic ACP adapters start fresh when session/load reports a missing sessi
 
   assert.deepEqual(requests.map(item => item.method), ["session/load", "session/new"]);
   assert.deepEqual(promptInput, { sessionId: "fresh-session", input: "recovery input\n\nCONTROL" });
-  assert.deepEqual(events.find(event => event.type === "session.update"), {
+  assert.deepEqual(events.find(event => event.type === "session.update"), { protocolVersion: 2,
     type: "session.update",
     payload: {
       providerSession: {
@@ -1534,7 +1532,7 @@ test("generic ACP adapters start fresh when session/load reports a missing sessi
       }
     }
   });
-  assert.equal(events.at(-1).type, "run.finished");
+  assert.equal(events.at(-1).type, "run.completed");
 });
 
 test("generic ACP adapters recover public text carried by the prompt response", async () => {
@@ -1560,8 +1558,8 @@ test("generic ACP adapters recover public text carried by the prompt response", 
     && event.payload.text === "response fallback"
     && event.payload.stepId === "fixture-acp:step:1"));
   assert.ok(events.some(event => event.type === "model_step.finished"
-    && event.payload.publicText === "response fallback"));
-  assert.equal(events.at(-1).type, "run.finished");
+    && event.payload.status === "completed" && !("publicText" in event.payload)));
+  assert.equal(events.at(-1).type, "run.completed");
 });
 
 test("generic ACP adapters reject an empty end_turn instead of reporting a false success", async () => {
@@ -1583,9 +1581,9 @@ test("generic ACP adapters reject an empty end_turn instead of reporting a false
   const events = [];
   for await (const event of adapter.invoke(request)) events.push(event);
 
-  assert.deepEqual(events.at(-2), { type: "message.update", payload: { role: "assistant", status: "failed" } });
-  assert.deepEqual(events.at(-1), {
-    type: "run.error",
+  assert.deepEqual(events.at(-2), { protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "failed" } });
+  assert.deepEqual(events.at(-1), { protocolVersion: 2,
+    type: "run.failed",
     payload: {
       code: "ACP_NO_FINAL_OUTPUT",
       message: "fixture-acp completed without assistant output",
@@ -1628,7 +1626,7 @@ test("generic ACP adapters keep a failed tool local and accept the prompt respon
     ]
   }).outcome.optionId, "allow");
   assert.deepEqual(events.filter(event => event.type.startsWith("run.")), [
-    { type: "run.finished", payload: {} }
+    { protocolVersion: 2, type: "run.completed", payload: {} }
   ]);
   assert.ok(events.some(event => event.type === "tool_call.update"
     && event.payload.id === "tool-failed"
@@ -1641,8 +1639,8 @@ test("generic ACP adapters keep a failed tool local and accept the prompt respon
     && event.payload.text === "recovered"
     && event.payload.stepId === "fixture-acp:step:2"));
   assert.deepEqual(events.filter(event => event.type.startsWith("model_step.")), [
-    { type: "model_step.started", payload: { stepId: "fixture-acp:step:1" } },
-    {
+    { protocolVersion: 2, type: "model_step.started", payload: { stepId: "fixture-acp:step:1" } },
+    { protocolVersion: 2,
       type: "model_step.finished",
       payload: {
         stepId: "fixture-acp:step:1",
@@ -1650,14 +1648,13 @@ test("generic ACP adapters keep a failed tool local and accept the prompt respon
         finishReason: "tool-calls"
       }
     },
-    { type: "model_step.started", payload: { stepId: "fixture-acp:step:2" } },
-    {
+    { protocolVersion: 2, type: "model_step.started", payload: { stepId: "fixture-acp:step:2" } },
+    { protocolVersion: 2,
       type: "model_step.finished",
       payload: {
         stepId: "fixture-acp:step:2",
         status: "completed",
         finishReason: "end_turn",
-        publicText: "recovered"
       }
     }
   ]);
@@ -1696,7 +1693,7 @@ test("Qoder CN CLI exposes a distinct ACP adapter type from Qoder CLI", () => {
   assert.equal(qoderCliCnAdapter.metadata.capabilities.includes("session.resume_recovery"), false);
 });
 
-test("generic ACP cancellation sends session/cancel and converges to run.stopped", async () => {
+test("generic ACP cancellation sends session/cancel and converges to run.cancelled", async () => {
   let nextRequestId = 1;
   let releasePrompt;
   const promptCancelled = new Promise(resolve => { releasePrompt = resolve; });
@@ -1729,13 +1726,13 @@ test("generic ACP cancellation sends session/cancel and converges to run.stopped
 
   assert.deepEqual(calls, [["cancel", "cancel-session"], ["close"]]);
   assert.equal(events.filter(event => event.type.startsWith("run.")).length, 1);
-  assert.deepEqual(events.filter(event => event.type === "model_step.finished"), [{
+  assert.deepEqual(events.filter(event => event.type === "model_step.finished"), [{ protocolVersion: 2,
     type: "model_step.finished",
     payload: {
       stepId: "fixture-acp:step:1",
-      status: "stopped",
+      status: "cancelled",
       finishReason: "cancelled"
     }
   }]);
-  assert.deepEqual(events.at(-1), { type: "run.stopped", payload: { reason: "cancelled" } });
+  assert.deepEqual(events.at(-1), { protocolVersion: 2, type: "run.cancelled", payload: { reason: "cancelled" } });
 });

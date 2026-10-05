@@ -45,8 +45,8 @@ import {
   type PreparedChannelContextSnapshot
 } from "./channel-context-store.js";
 
-const MIN_PROTOCOL_VERSION = 1;
-const MAX_PROTOCOL_VERSION = 1;
+const MIN_PROTOCOL_VERSION = 2;
+const MAX_PROTOCOL_VERSION = 2;
 const RUNTIME_VERSION = packageVersion();
 const DEFAULT_SEND_WINDOW = 32;
 export const DEFAULT_MAX_CONCURRENT_RUNS = 3;
@@ -1916,7 +1916,7 @@ export class AgentWorkRuntime {
       for await (const providerEvent of this.#host.invoke(adapterType, request)) {
         if (this.#authoritativeTerminalRuns.has(command.run_id)) break;
         let event = providerEvent;
-        if (event.type === "run.running" || event.type === "run.queued") continue;
+        if (event.type === "run.started" || event.type === "run.queued") continue;
         if (contextSnapshot && selectsRecoveryInput(event)) {
           if (started && contextSnapshot.selectedVariant !== "recovery") {
             throw new Error("provider selected channel context recovery after run.started was persisted");
@@ -2042,7 +2042,7 @@ export class AgentWorkRuntime {
                 run_id: batch.runId,
                 first_seq: batch.events[0].seq,
                 last_seq: batch.events[batch.events.length - 1].seq,
-                events: batch.events.map(row => ({
+                events: batch.events.map(row => ({ protocolVersion: 2,
                   event_id: row.eventId,
                   run_id: row.runId,
                   seq: row.seq,
@@ -2258,7 +2258,7 @@ export function mapExecutionEnvelope(
   };
   return {
     adapterType,
-    request: {
+    request: { protocolVersion: 2,
       invocationId: `invoke_${randomUUID()}`,
       agentSessionId: envelope.agent_session_id,
       runId: envelope.run_id,
@@ -2411,13 +2411,13 @@ function rawDataText(data: WebSocket.RawData): string {
 /** Translate a canonical event into an outbox wire event: terminal run states are
  * renamed to the Agent Work vocabulary (completed/failed/cancelled) and carry the
  * accumulated final text; all other events pass through unchanged. */
-export function mapRuntimeEvent(event: CanonicalEvent, finalText: string, runId: string): { type: string; payload: Record<string, unknown> } {
+export function mapRuntimeEvent(event: CanonicalEvent, finalText: string, runId: string): { protocolVersion: 2; type: string; payload: Record<string, unknown> } {
 	const terminalText = finalText || stringValue(event.payload.text) || "";
   switch (event.type) {
-    case "run.finished":
-      return { type: "run.completed", payload: { ...event.payload, text: terminalText } };
-    case "run.error":
-      return {
+    case "run.completed":
+      return { protocolVersion: 2, type: "run.completed", payload: { ...event.payload, text: terminalText } };
+    case "run.failed":
+      return { protocolVersion: 2,
         type: "run.failed",
         payload: {
           ...failurePayload({ code: "PROVIDER_ERROR", ...event.payload }, {
@@ -2433,10 +2433,10 @@ export function mapRuntimeEvent(event: CanonicalEvent, finalText: string, runId:
           text: terminalText
         }
       };
-    case "run.stopped":
-      return { type: "run.cancelled", payload: { ...event.payload, text: terminalText } };
+    case "run.cancelled":
+      return { protocolVersion: 2, type: "run.cancelled", payload: { ...event.payload, text: terminalText } };
     default:
-      return { type: event.type, payload: event.payload };
+      return { protocolVersion: 2, type: event.type, payload: event.payload };
   }
 }
 
@@ -2488,7 +2488,7 @@ function recoverySessionUpdate(
   const providerSession = asRecord(event.payload.providerSession);
   const sessionId = stringValue(providerSession.sessionId);
   if (!sessionId) return event;
-  return {
+  return { protocolVersion: 2,
     type: "session.update",
     payload: {
       ...event.payload,

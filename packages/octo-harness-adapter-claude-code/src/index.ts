@@ -1,3 +1,4 @@
+import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * Claude Code local CLI transport and event normalization layer.
  *
@@ -183,7 +184,7 @@ export class ClaudeEventNormalizer {
     if (native.type === "system" && native.session_id) {
       if (native.session_id === this.#publishedSessionId) return [];
       this.#publishedSessionId = native.session_id;
-      return [{
+      return [{ protocolVersion: 2,
         type: "session.update",
         payload: { providerSession: { sessionId: native.session_id, resumable: true } }
       }];
@@ -200,10 +201,10 @@ export class ClaudeEventNormalizer {
       const events: CanonicalEvent[] = [];
       for (const block of native.message?.content ?? []) {
         if (block.type === "text" && block.text) {
-          events.push({ type: "message.delta", payload: { text: block.text, channel: "final" } });
+          events.push({ protocolVersion: 2, type: "message.delta", payload: { text: block.text, channel: "final" } });
         }
         if (block.type === "thinking" && block.thinking) {
-          events.push({
+          events.push({ protocolVersion: 2,
             type: "message.delta",
             payload: {
               text: block.thinking,
@@ -212,9 +213,9 @@ export class ClaudeEventNormalizer {
           });
         }
         if (block.type === "tool_use" && block.id && block.name) {
-          events.push({
+          events.push({ protocolVersion: 2,
             type: "tool_call.create",
-            payload: { id: block.id, name: block.name, args: block.input ?? {} }
+            payload: { status: "running", id: block.id, name: block.name, args: block.input ?? {} }
           });
         }
       }
@@ -227,11 +228,11 @@ export class ClaudeEventNormalizer {
         if (block.type !== "tool_result" || !block.tool_use_id) continue;
         const output = claudeToolResultOutput(block.content);
         const stepId = this.#toolSteps.get(block.tool_use_id);
-        events.push({
+        events.push({ protocolVersion: 2,
           type: "tool_call.update",
           payload: {
             id: block.tool_use_id,
-            status: block.is_error ? "error" : "completed",
+            status: canonicalTerminalStatus(block.is_error ? "error" : "completed"),
             ...(stepId ? { stepId } : {}),
             ...(output === undefined ? {} : { output }),
             ...(block.is_error ? { error: { message: typeof output === "string" ? output : "Claude tool call failed" } } : {})
@@ -245,8 +246,8 @@ export class ClaudeEventNormalizer {
     if (native.type === "result") {
       const events = this.#finishActiveSteps(native.is_error ? "failed" : "completed");
       events.push(
-        { type: "usage.update", payload: native.usage ?? {} },
-        {
+        { protocolVersion: 2, type: "usage.update", payload: native.usage ?? {} },
+        { protocolVersion: 2,
           type: "message.update",
           payload: {
             role: "assistant",
@@ -256,8 +257,8 @@ export class ClaudeEventNormalizer {
             ...(!this.#sawPartialMessages && typeof native.result === "string" ? { text: native.result } : {})
           }
         },
-        {
-          type: native.is_error ? "run.error" : "run.finished",
+        { protocolVersion: 2,
+          type: native.is_error ? "run.failed" : "run.completed",
           payload: native.is_error ? { message: native.result ?? "Claude Code failed" } : {}
         }
       );
@@ -280,7 +281,7 @@ export class ClaudeEventNormalizer {
       this.#publicTexts.set(scope, "");
       const stepId = event.message?.id ?? `claude:${scope}:message-${++this.#messageSequence}`;
       this.#messageIds.set(scope, stepId);
-      events.push({ type: "model_step.started", payload: { stepId } });
+      events.push({ protocolVersion: 2, type: "model_step.started", payload: { stepId } });
       return events;
     }
 
@@ -304,7 +305,7 @@ export class ClaudeEventNormalizer {
         const providerMessageId = this.#messageIds.get(scope) ?? `message-${++this.#messageSequence}`;
         const messageId = `claude:${providerMessageId}:thinking:${event.index}`;
         blocks.set(event.index, messageId);
-        return [{
+        return [{ protocolVersion: 2,
           type: "message.create",
           payload: {
             role: "assistant",
@@ -324,9 +325,9 @@ export class ClaudeEventNormalizer {
       blocks.set(event.index, block.id);
       const stepId = this.#messageIds.get(scope);
       if (stepId) this.#toolSteps.set(block.id, stepId);
-      return [{
+      return [{ protocolVersion: 2,
         type: "tool_call.create",
-        payload: { id: block.id, name: block.name, args: block.input ?? {}, ...(stepId ? { stepId } : {}) }
+        payload: { status: "running", id: block.id, name: block.name, args: block.input ?? {}, ...(stepId ? { stepId } : {}) }
       }];
     }
 
@@ -334,7 +335,7 @@ export class ClaudeEventNormalizer {
       const messageId = this.#thinkingBlocks.get(scope)?.get(event.index);
       if (!messageId) return [];
       this.#thinkingBlocks.get(scope)?.delete(event.index);
-      return [{
+      return [{ protocolVersion: 2,
         type: "message.update",
         payload: {
           role: "assistant",
@@ -351,7 +352,7 @@ export class ClaudeEventNormalizer {
     if (delta?.type === "text_delta" && delta.text) {
       const stepId = this.#messageIds.get(scope);
       this.#appendPublicText(scope, delta.text);
-      return [{
+      return [{ protocolVersion: 2,
         type: "message.delta",
         payload: { text: delta.text, channel: "final", ...(stepId ? { stepId } : {}) }
       }];
@@ -360,7 +361,7 @@ export class ClaudeEventNormalizer {
       const messageId = typeof event.index === "number"
         ? this.#thinkingBlocks.get(scope)?.get(event.index)
         : undefined;
-      return [{
+      return [{ protocolVersion: 2,
         type: "message.delta",
         payload: {
           text: delta.thinking,
@@ -373,7 +374,7 @@ export class ClaudeEventNormalizer {
     if (delta?.type === "input_json_delta" && delta.partial_json && typeof event.index === "number") {
       const id = this.#toolBlocks.get(scope)?.get(event.index);
       const stepId = this.#messageIds.get(scope);
-      return id ? [{
+      return id ? [{ protocolVersion: 2,
         type: "tool_call.delta",
         payload: { id, argsDelta: delta.partial_json, ...(stepId ? { stepId } : {}) }
       }] : [];
@@ -385,17 +386,15 @@ export class ClaudeEventNormalizer {
     const stepId = this.#messageIds.get(scope);
     if (!stepId) return [];
     const finishReason = this.#finishReasons.get(scope);
-    const publicText = this.#publicTexts.get(scope)?.trim();
     this.#messageIds.delete(scope);
     this.#finishReasons.delete(scope);
     this.#publicTexts.delete(scope);
-    return [{
+    return [{ protocolVersion: 2,
       type: "model_step.finished",
       payload: {
         stepId,
-        status,
+        status: canonicalTerminalStatus(status),
         ...(finishReason ? { finishReason } : {}),
-        ...(publicText ? { publicText } : {})
       }
     }];
   }
@@ -467,7 +466,7 @@ export function createClaudeCodeAdapter({
           ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {}),
           carrier: spec.providerInput
         });
-        yield {
+        yield { protocolVersion: 2,
           type: "message.create",
           payload: { role: "assistant", status: "streaming", channel: "final" }
         };

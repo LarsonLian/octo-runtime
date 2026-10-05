@@ -9,6 +9,7 @@ test("one trigger occurrence creates one AgentRun and preserves Provider resume 
   const store = new MemoryStore(); const engine = new HarnessEngine({ store, host });
   const agent = await engine.registerAgent({ name: "test", adapterType: "test" });
   const request = {
+  protocolVersion: 2,
     namespace: "loop",
     agentId: agent.id,
     sessionKey: "v1/task/task-1",
@@ -20,8 +21,8 @@ test("one trigger occurrence creates one AgentRun and preserves Provider resume 
   const duplicate = await engine.submitAgentRun(request);
   assert.equal(result.run.status, "completed");
   assert.equal(result.events[0].type, "run.queued");
-  assert.equal(result.events[1].type, "run.running");
-  assert.equal(result.events.at(-1).type, "run.finished");
+  assert.equal(result.events[1].type, "run.started");
+  assert.equal(result.events.at(-1).type, "run.completed");
   assert.equal(duplicate.deduplicated, true);
   assert.equal(duplicate.agentRun.id, first.agentRun.id);
   assert.equal(store.listAgentRuns().length, 1);
@@ -59,5 +60,5 @@ test("only one concurrent executeRun call can claim a queued AgentRun", async ()
 
   assert.equal(outcomes.filter(outcome => outcome.status === "fulfilled").length, 1);
   assert.equal(outcomes.filter(outcome => outcome.status === "rejected").length, 1);
-  assert.equal(store.getEvents(submitted.agentRun.id).filter(item => item.type === "run.running").length, 1);
+  assert.equal(store.getEvents(submitted.agentRun.id).filter(item => item.type === "run.started").length, 1);
 });

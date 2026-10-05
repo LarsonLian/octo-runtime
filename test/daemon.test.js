@@ -72,7 +72,7 @@ test("daemon drain closes admission and waits for active Runs", async () => {
       metadata: { type: "slow", capabilities: [] },
       async *invoke() {
         await providerGate;
-        yield { type: "run.finished", payload: {} };
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
       }
     });
     const engine = new HarnessEngine({ store, host });

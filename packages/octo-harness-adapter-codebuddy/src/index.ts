@@ -1,3 +1,4 @@
+import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * CodeBuddy adapter: wraps the CodeBuddy CLI spoken over ACP (Agent Client
  * Protocol) as JSON-RPC 2.0 on stdio, and normalizes its `session/update`
@@ -41,7 +42,7 @@ export function normalizeCodeBuddyUpdate(update: CodeBuddyUpdate): CanonicalEven
   if (type === "agent_message_chunk" || type === "agent_thought_chunk") {
     const text = isRecord(update.content) && typeof update.content.text === "string" ? update.content.text : update.text;
     if (typeof text !== "string") return [];
-    return [{
+    return [{ protocolVersion: 2,
       type: "message.delta",
       payload: type === "agent_thought_chunk"
         ? {
@@ -58,19 +59,19 @@ export function normalizeCodeBuddyUpdate(update: CodeBuddyUpdate): CanonicalEven
     if (!update.toolCallId) return [];
     const value = update.rawInput ?? update.input;
     const args = isRecord(value) ? value : value == null ? {} : { value };
-    return [{
+    return [{ protocolVersion: 2,
       type: "tool_call.create",
-      payload: { id: update.toolCallId, name: update.name ?? update.title ?? "provider_tool", args }
+      payload: { status: "running", id: update.toolCallId, name: update.name ?? update.title ?? "provider_tool", args }
     }];
   }
   if (type === "tool_call_update") {
     if (!update.toolCallId || !update.status) return [];
-    return [{
+    return [{ protocolVersion: 2,
       type: "tool_call.update",
-      payload: { id: update.toolCallId, status: update.status, output: update.content ?? update.output }
+      payload: { id: update.toolCallId, status: canonicalTerminalStatus(update.status), output: update.content ?? update.output }
     }];
   }
-  if (type === "usage") return [{ type: "usage.update", payload: { ...update.usage, model: update.model } }];
+  if (type === "usage") return [{ protocolVersion: 2, type: "usage.update", payload: { ...update.usage, model: update.model } }];
   return [];
 }
 
@@ -154,8 +155,8 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
         }
         // The AgentSession stores only the provider sessionId; both the
         // new and resume paths converge on the same ACP prompt stream.
-        yield { type: "session.update", payload: { providerSession: { sessionId: session.id, resumable: true, model: req.agentConfig?.model } } };
-        yield { type: "message.create", payload: { role: "assistant", status: "streaming" } };
+        yield { protocolVersion: 2, type: "session.update", payload: { providerSession: { sessionId: session.id, resumable: true, model: req.agentConfig?.model } } };
+        yield { protocolVersion: 2, type: "message.create", payload: { role: "assistant", status: "streaming" } };
         // Build once and reuse for capture and dispatch. Reconstructing the
         // carrier separately risks evaluating content that was never sent.
         const prompt = `${providerInputText(req)}\n\n${req.appendInstructions}`;
@@ -238,10 +239,10 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
           const cancelled = isCancelledStopReason(promptStopReason);
           if (cancelled) {
             for (const id of activeToolIds) {
-              yield { type: "tool_call.update", payload: { id, status: "cancelled" } };
+              yield { protocolVersion: 2, type: "tool_call.update", payload: { id, status: canonicalTerminalStatus("cancelled") } };
             }
           }
-          const terminalMessage: CanonicalEvent = {
+          const terminalMessage: CanonicalEvent = { protocolVersion: 2,
             type: "message.update",
             payload: { role: "assistant", status: cancelled ? "stopped" : "completed" }
           };
@@ -253,8 +254,8 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
           });
           yield terminalMessage;
           yield cancelled
-            ? { type: "run.stopped", payload: { reason: promptStopReason ?? "cancelled", ...(promptFinishReason ? { finishReason: promptFinishReason } : {}) } }
-            : { type: "run.finished", payload: {} };
+            ? { protocolVersion: 2, type: "run.cancelled", payload: { reason: promptStopReason ?? "cancelled", ...(promptFinishReason ? { finishReason: promptFinishReason } : {}) } }
+            : { protocolVersion: 2, type: "run.completed", payload: {} };
         } catch (error) {
           observeBestEffort(context, {
             event: "provider.dispatch.failed",

@@ -37,7 +37,7 @@ test("late user cancellation cannot replace a terminal during cleanup", { timeou
   const cleaning = new Promise(resolve => { markCleaning = resolve; });
   const cleanup = new Promise(resolve => { release = resolve; });
   host.register({ metadata: { type: "terminal-race", capabilities: [] }, async *invoke() {
-    yield { type: "run.finished", payload: {} };
+    yield { protocolVersion: 2, type: "run.completed", payload: {} };
     markCleaning(); await cleanup;
   } });
   const stream = host.invoke("terminal-race", { ...request, invocationId: "terminal-race" });
@@ -45,21 +45,21 @@ test("late user cancellation cannot replace a terminal during cleanup", { timeou
   await Promise.race([cleaning, pending.then(() => assert.fail("terminal delivered before cleanup"))]);
   assert.equal(host.cancel("terminal-race"), false);
   release();
-  assert.equal((await pending).value.type, "run.finished");
+  assert.equal((await pending).value.type, "run.completed");
   await stream.next();
 });
 
 test("session and usage records cannot escape startup deadline", () => {
   const f = fixture({ firstFrameTimeoutMs: 100 });
-  f.tick(50); f.watchdog.canonical({ type: "session.update", payload: {} });
-  f.watchdog.canonical({ type: "usage.update", payload: {} });
+  f.tick(50); f.watchdog.canonical({ protocolVersion: 2, type: "session.update", payload: {} });
+  f.watchdog.canonical({ protocolVersion: 2, type: "usage.update", payload: {} });
   f.tick(50);
   assert.equal(f.controller.signal.reason.timeoutReason, "first_frame");
 });
 
 test("terminal freezes timers but completion metrics wait for cleanup outcome", () => {
   const f = fixture(); f.watchdog.activity(started); f.tick(10);
-  f.watchdog.canonical({ type: "run.finished", payload: {} });
+  f.watchdog.canonical({ protocolVersion: 2, type: "run.completed", payload: {} });
   assert.equal(f.records.filter(x => x.event === "finished").length, 0);
   f.tick(10000); f.watchdog.finish("failed"); f.watchdog.finish("completed");
   const records = f.records.filter(x => x.event === "finished");
@@ -112,32 +112,32 @@ test("model observe retains hard run deadline despite progress and warnings", ()
 
 test("tool idle is isolated per tool and output cannot extend wall deadline", () => {
   const f = fixture({ toolTimeoutMs:500, toolWallTimeoutMs:1000 });
-  f.watchdog.canonical({ type:"tool_call.create", payload:{id:"a"} });
-  f.watchdog.canonical({ type:"tool_call.create", payload:{id:"b"} });
+  f.watchdog.canonical({ protocolVersion: 2, type:"tool_call.create", payload:{ status: "running",id:"a"} });
+  f.watchdog.canonical({ protocolVersion: 2, type:"tool_call.create", payload:{ status: "running",id:"b"} });
   f.tick(400); f.watchdog.activity({kind:"turn_progress",method:"tool_delta",toolCallId:"a"});
   f.tick(100); assert.equal(f.controller.signal.reason.timeoutReason, "tool_idle");
   const g = fixture({ toolTimeoutMs:500, toolWallTimeoutMs:1000 });
-  g.watchdog.canonical({type:"tool_call.create",payload:{id:"a"}});
+  g.watchdog.canonical({ protocolVersion: 2,type:"tool_call.create",payload:{ status: "running",id:"a"}});
   for(let i=0;i<4;i++){g.tick(200);g.watchdog.activity({kind:"turn_progress",method:"tool_delta",toolCallId:"a"});}
   g.tick(200); assert.equal(g.controller.signal.reason.timeoutReason, "tool_deadline");
 });
 
 test("last tool closing starts a fresh model budget and terminal cancels timers", () => {
   const f = fixture({ modelIdleTimeoutMs:100, toolTimeoutMs:1000 });
-  f.watchdog.canonical({type:"tool_call.create",payload:{id:"a"}});
-  f.watchdog.canonical({type:"tool_call.create",payload:{id:"b"}}); f.tick(500);
-  f.watchdog.canonical({type:"tool_call.update",payload:{id:"a",status:"completed"}});
+  f.watchdog.canonical({ protocolVersion: 2,type:"tool_call.create",payload:{ status: "running",id:"a"}});
+  f.watchdog.canonical({ protocolVersion: 2,type:"tool_call.create",payload:{ status: "running",id:"b"}}); f.tick(500);
+  f.watchdog.canonical({ protocolVersion: 2,type:"tool_call.update",payload:{id:"a",status:"completed"}});
   assert.equal(f.watchdog.snapshot().phase,"tool_active");
-  f.watchdog.canonical({type:"tool_call.update",payload:{id:"b",status:"completed"}});
+  f.watchdog.canonical({ protocolVersion: 2,type:"tool_call.update",payload:{id:"b",status:"completed"}});
   f.tick(99); assert.equal(f.controller.signal.aborted,false);
-  f.watchdog.canonical({type:"run.finished",payload:{}}); f.tick(10_000);
+  f.watchdog.canonical({ protocolVersion: 2,type:"run.completed",payload:{}}); f.tick(10_000);
   f.watchdog.activity(progress); assert.equal(f.timers.size,0);
   assert.equal(f.controller.signal.aborted,false);
 });
 
 test("native-aware canonical usage does not count as progress; legacy observe remains explicit opt-out", () => {
   const f = fixture({ modelIdleTimeoutMs:100 }); f.watchdog.activity(started);
-  f.tick(90); f.watchdog.canonical({type:"usage.update",payload:{}}); f.tick(10);
+  f.tick(90); f.watchdog.canonical({ protocolVersion: 2,type:"usage.update",payload:{}}); f.tick(10);
   assert.equal(f.controller.signal.aborted,true);
   const g = fixture({enforcement:"observe"}); g.tick(2_000_000);
   assert.equal(g.controller.signal.aborted,false); g.watchdog.dispose();
@@ -161,19 +161,19 @@ test("host preserves a single pending next during activity and ignores failing d
       try {
         if(calls>1)return {done:true};
         for(let i=0;i<4;i++){await new Promise(r=>setTimeout(r,40));ctx.reportActivity(progress);}
-        return {done:false,value:{type:"run.finished",payload:{}}};
+        return {done:false,value:{ protocolVersion: 2,type:"run.completed",payload:{}}};
       } finally {active--;}
     }};
   }});
   const events=[];
   for await(const e of host.invoke("native",{...request,runtimeLimits:{modelIdleTimeoutMs:100,modelIdleWarningMs:100,runTimeoutMs:1000}}))events.push(e);
-  assert.equal(peak,1); assert.equal(calls,2); assert.equal(events.at(-1).type,"run.finished");
+  assert.equal(peak,1); assert.equal(calls,2); assert.equal(events.at(-1).type,"run.completed");
 });
 
 test("host hard deadline aborts provider even when its consumer is paused", async () => {
   let signal;
   const host=new AdapterHost();
-  host.register({metadata:{type:"paused",capabilities:[]},async *invoke(req){signal=req.signal; yield {type:"message.create",payload:{}}; await new Promise(()=>{});}});
+  host.register({metadata:{type:"paused",capabilities:[]},async *invoke(req){signal=req.signal; yield { protocolVersion: 2,type:"message.create",payload:{}}; await new Promise(()=>{});}});
   const iterator=host.invoke("paused",{...request,runtimeLimits:{runTimeoutMs:100,cancelGraceMs:100,modelIdlePolicy:"observe"}});
   await iterator.next(); await new Promise(r=>setTimeout(r,130));
   assert.equal(signal.aborted,true); assert.equal(signal.reason.timeoutReason,"run_deadline");
@@ -183,7 +183,7 @@ test("host hard deadline aborts provider even when its consumer is paused", asyn
 
 test("host bounds cleanup after terminal and timeout wins over provider stopped projection", async () => {
   const host=new AdapterHost();
-  host.register({metadata:{type:"cleanup",capabilities:[]},async *invoke(){yield {type:"run.finished",payload:{}};await new Promise(()=>{});}});
+  host.register({metadata:{type:"cleanup",capabilities:[]},async *invoke(){yield { protocolVersion: 2,type:"run.completed",payload:{}};await new Promise(()=>{});}});
   const events=[];
   for await(const e of host.invoke("cleanup",{...request,runtimeLimits:{cancelGraceMs:100}}))events.push(e);
   assert.equal(events.length,1);

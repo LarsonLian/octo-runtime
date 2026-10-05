@@ -349,8 +349,7 @@ export class AgentWorkStore {
       event_type: string;
       payload_json: string;
     } | undefined;
-    return row ? {
-      seq: row.seq,
+    return row ? { seq: row.seq,
       type: row.event_type,
       eventId: row.event_id,
       payload: JSON.parse(row.payload_json) as Record<string, unknown>

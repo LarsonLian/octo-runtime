@@ -10,7 +10,7 @@ import {
 const fixture = fileURLToPath(new URL("../test-support/zcode/fake-zcode-app-server.js", import.meta.url));
 
 function request(agentConfig = {}, providerSession) {
-  return {
+  return { protocolVersion: 2,
     invocationId: "inv-zcode",
     agentSessionId: "agent-session-zcode",
     runId: "run-zcode",
@@ -47,13 +47,13 @@ test("ZCode GUI adapter answers runtime preferences, streams events, and auto-ap
       ["tool_call.update", "completed"]
     ]
   );
-  assert.equal(events.at(-1).type, "run.finished");
+  assert.equal(events.at(-1).type, "run.completed");
 });
 
 test("ZCode GUI adapter denies native tool permission by default", async () => {
   const events = await invoke({ permissionMode: "build" });
   assert.equal(events.find(event => event.type === "message.delta" && event.payload.channel === "final")?.payload.text, "permission:deny");
-  assert.equal(events.at(-1).type, "run.finished");
+  assert.equal(events.at(-1).type, "run.completed");
 });
 
 test("ZCode GUI adapter falls back to a fresh session after resume failure", async () => {
@@ -65,7 +65,7 @@ test("ZCode GUI adapter falls back to a fresh session after resume failure", asy
     resumeFallback: "rpc_404",
     contextInputVariant: "primary"
   });
-  assert.equal(events.at(-1).type, "run.finished");
+  assert.equal(events.at(-1).type, "run.completed");
 });
 
 test("ZCode event normalizer ignores the duplicate turn.terminal compatibility event", () => {

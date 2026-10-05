@@ -84,7 +84,7 @@ test("operational logs redact credentials and restricted provider evidence is op
       method: "invoke.event",
       params: {
         invocationId: "inv-1",
-        event: {
+        event: { protocolVersion: 2,
           type: "message.delta",
           payload: {
             channel: "analysis",
@@ -274,7 +274,7 @@ test("full provider output capture strips private reasoning even when an adapter
       rpcMethod: "item/reasoning/textDelta",
       data: {
         native: { method: "item/reasoning/textDelta", params: { delta: "private-native-body" } },
-        canonical: {
+        canonical: { protocolVersion: 2,
           type: "message.delta",
           payload: { channel: "analysis", exposure: "private_reasoning", text: "private-canonical-body" }
         }

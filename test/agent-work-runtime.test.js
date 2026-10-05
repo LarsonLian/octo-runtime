@@ -108,7 +108,7 @@ test("process restart hello excludes stale non-terminal runs but retains pending
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-restart-ownership", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-restart-ownership", protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -134,7 +134,7 @@ test("process restart hello excludes stale non-terminal runs but retains pending
     }, {
       list: async () => [],
       cancel: async () => ({ cancelled: true }),
-      async *invoke() { yield { type: "run.finished", payload: {} }; }
+      async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
     });
     await runtime.start();
     assert.deepEqual((await helloReceived.promise).active_run_ids, ["run-terminal"]);
@@ -386,16 +386,16 @@ test("a recovery channel snapshot starts without the stale provider session", ()
 });
 
 test("runtime terminal mapping carries the assembled final answer", () => {
-  assert.deepEqual(mapRuntimeEvent({ type: "run.finished", payload: {} }, "done", TEST_AGENT_RUN_ID), {
+  assert.deepEqual(mapRuntimeEvent({ protocolVersion: 2, type: "run.completed", payload: {} }, "done", TEST_AGENT_RUN_ID), { protocolVersion: 2,
     type: "run.completed",
     payload: { text: "done" }
   });
-  assert.equal(mapRuntimeEvent({ type: "run.stopped", payload: { reason: "cancelled" } }, "", TEST_AGENT_RUN_ID).type, "run.cancelled");
+  assert.equal(mapRuntimeEvent({ protocolVersion: 2, type: "run.cancelled", payload: { reason: "cancelled" } }, "", TEST_AGENT_RUN_ID).type, "run.cancelled");
 });
 
 test("runtime failure mapping preserves legacy fields and adds a safe failure envelope", () => {
-  const mapped = mapRuntimeEvent({
-    type: "run.error",
+  const mapped = mapRuntimeEvent({ protocolVersion: 2,
+    type: "run.failed",
     payload: {
       code: "model_not_found",
       message: "model missing; Authorization: Bearer secret-canary",
@@ -415,19 +415,19 @@ test("runtime failure mapping preserves legacy fields and adds a safe failure en
 });
 
 test("final answer accumulator replaces snapshots and appends deltas", () => {
-  let text = accumulateFinalText("", {
+  let text = accumulateFinalText("", { protocolVersion: 2,
     type: "message.delta",
     payload: { channel: "final", text: "part" }
   });
-  text = accumulateFinalText(text, {
+  text = accumulateFinalText(text, { protocolVersion: 2,
     type: "message.update",
     payload: { channel: "final", text: "complete answer", replace: true }
   });
-  text = accumulateFinalText(text, {
+  text = accumulateFinalText(text, { protocolVersion: 2,
     type: "message.delta",
     payload: { channel: "analysis", text: "private reasoning" }
   });
-  text = accumulateFinalText(text, {
+  text = accumulateFinalText(text, { protocolVersion: 2,
     type: "message.update",
     payload: { channel: "commentary", text: "public progress update" }
   });
@@ -435,7 +435,7 @@ test("final answer accumulator replaces snapshots and appends deltas", () => {
 });
 
 test("terminal mapping uses provider terminal text when no message frame carried final text", () => {
-  assert.deepEqual(mapRuntimeEvent({ type: "run.finished", payload: { text: "provider answer" } }, "", TEST_AGENT_RUN_ID), {
+  assert.deepEqual(mapRuntimeEvent({ protocolVersion: 2, type: "run.completed", payload: { text: "provider answer" } }, "", TEST_AGENT_RUN_ID), { protocolVersion: 2,
     type: "run.completed",
     payload: { text: "provider answer" }
   });
@@ -515,7 +515,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         invokedRequest = request;
-        yield { type: "run.finished", payload: {} };
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
       }
     };
     runtime = new AgentWorkRuntime({
@@ -604,7 +604,7 @@ test("interaction response commands are fenced, receipt-deduplicated, and reject
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-interaction", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-interaction", protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -691,12 +691,12 @@ test("interaction response commands are fenced, receipt-deduplicated, and reject
         responseReceived.resolve();
       },
       async *invoke() {
-        yield {
+        yield { protocolVersion: 2,
           type: "interaction.requested",
           payload: { interactionId: "approval-1", kind: "approval", request: { title: "Proceed?" } }
         };
         await responseReceived.promise;
-        yield { type: "run.finished", payload: {} };
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
       }
     };
     runtime = new AgentWorkRuntime({
@@ -741,7 +741,7 @@ test("a configured runtime ID still refreshes registration and rejects identity 
     const host = {
       list: async () => [],
       cancel: async () => ({ cancelled: true }),
-      async *invoke() { yield { type: "run.finished", payload: {} }; }
+      async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
     };
     runtime = new AgentWorkRuntime({
       profile: "default",
@@ -778,7 +778,7 @@ test("startup registration failure stays alive and every reconnect re-registers"
     response.writeHead(registrations === 1 ? 503 : 200, { "Content-Type": "application/json" });
     response.end(registrations === 1
       ? JSON.stringify({ error: { message: "worker restarting" } })
-      : JSON.stringify({ runtime: { profile: "default", id: "runtime-reconnect", protocol_version: 1 } }));
+      : JSON.stringify({ runtime: { profile: "default", id: "runtime-reconnect", protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -806,7 +806,7 @@ test("startup registration failure stays alive and every reconnect re-registers"
     }, {
       list: async () => [],
       cancel: async () => ({ cancelled: true }),
-      async *invoke() { yield { type: "run.finished", payload: {} }; }
+      async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
     });
     await runtime.start();
     await waitFor(() => registrations >= 3 && connections >= 2 && runtime.status.connected === true, 2_000);
@@ -847,7 +847,7 @@ test("rejected runtime credentials stop after the configured failure budget", as
     }, {
       list: async () => [],
       cancel: async () => ({ cancelled: true }),
-      async *invoke() { yield { type: "run.finished", payload: {} }; }
+      async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
     });
     await runtime.start();
     await waitFor(() => runtime.status.connectionState === "action_required", 2_000);
@@ -874,7 +874,7 @@ test("connectivity notification interrupts a long reconnect backoff with bounded
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-fast-recovery", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-fast-recovery", protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -901,7 +901,7 @@ test("connectivity notification interrupts a long reconnect backoff with bounded
     }, {
       list: async () => [],
       cancel: async () => ({ cancelled: true }),
-      async *invoke() { yield { type: "run.finished", payload: {} }; }
+      async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
     });
     await runtime.start();
     await waitFor(() => runtime.status.connectionState === "online", 2_000);
@@ -932,7 +932,7 @@ test("reconnect terminal authority cancels local execution and discards its outb
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-terminal-authority", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-terminal-authority", protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -982,7 +982,7 @@ test("reconnect terminal authority cancels local execution and discards its outb
         return { cancelled: true };
       },
       async *invoke() {
-        yield { type: "message.delta", payload: { text: "partial local output" } };
+        yield { protocolVersion: 2, type: "message.delta", payload: { text: "partial local output" } };
         await providerRelease.promise;
       }
     });
@@ -1014,7 +1014,7 @@ test("runtime goaway delays and spreads the next reconnect", async () => {
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-goaway", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-goaway", protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -1049,7 +1049,7 @@ test("runtime goaway delays and spreads the next reconnect", async () => {
     }, {
       list: async () => [],
       cancel: async () => ({ cancelled: true }),
-      async *invoke() { yield { type: "run.finished", payload: {} }; }
+      async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
     });
     await runtime.start();
     const reconnectedAt = await Promise.race([
@@ -1078,7 +1078,7 @@ test("close cancels a pending reconnect backoff without late registration", asyn
     for await (const _chunk of request) { /* Consume registration. */ }
     registrations += 1;
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-close-backoff", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-close-backoff", protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, rawSocket, head) => {
     wsServer.handleUpgrade(request, rawSocket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -1103,7 +1103,7 @@ test("close cancels a pending reconnect backoff without late registration", asyn
     }, {
       list: async () => [],
       cancel: async () => ({ cancelled: true }),
-      async *invoke() { yield { type: "run.finished", payload: {} }; }
+      async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
     });
     await runtime.start();
     await waitFor(() => runtime.status.connected === true, 2_000);
@@ -1133,7 +1133,7 @@ test("a stalled WebSocket handshake times out and registration retries", async (
     for await (const _chunk of request) { /* Consume registration. */ }
     registrations += 1;
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-handshake-timeout", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-handshake-timeout", protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (_request, socket) => {
     upgradedSockets.add(socket);
@@ -1157,7 +1157,7 @@ test("a stalled WebSocket handshake times out and registration retries", async (
     }, {
       list: async () => [],
       cancel: async () => ({ cancelled: true }),
-      async *invoke() { yield { type: "run.finished", payload: {} }; }
+      async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
     });
     await runtime.start();
     await waitFor(() => registrations >= 2, 2_000);
@@ -1180,7 +1180,7 @@ test("hard outbox watermark rejects new work with a durable command receipt", as
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-hard-limit", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-hard-limit", protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -1209,7 +1209,7 @@ test("hard outbox watermark rejects new work with a durable command receipt", as
     }, {
       list: async () => [],
       cancel: async () => ({ cancelled: true }),
-      async *invoke() { invocations += 1; yield { type: "run.finished", payload: {} }; }
+      async *invoke() { invocations += 1; yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
     });
     await runtime.start();
     const ack = await rejection.promise;
@@ -1240,7 +1240,7 @@ test("low disk preflight stays connected, reports health and rejects new work", 
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-low-disk", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-low-disk", protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -1309,7 +1309,7 @@ test("store open failure keeps the control plane online with migration_failed he
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-store-failed", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-store-failed", protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -1367,7 +1367,7 @@ test("missing provider configuration rejects work with a durable catalog failure
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-provider-missing", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-provider-missing", protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -1395,7 +1395,7 @@ test("missing provider configuration rejects work with a durable catalog failure
     }, {
       list: async () => [{ type: "other", capabilities: [], available: true }],
       cancel: async () => ({ cancelled: true }),
-      async *invoke() { invocations += 1; yield { type: "run.finished", payload: {} }; }
+      async *invoke() { invocations += 1; yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
     });
     await runtime.start();
     const ack = await rejection.promise;
@@ -1431,7 +1431,7 @@ test("event nack releases the send window and retries from the requested sequenc
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-event-nack", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-event-nack", protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -1478,7 +1478,7 @@ test("event nack releases the send window and retries from the requested sequenc
     }, {
       list: async () => [{ type: "codex", capabilities: [] }],
       cancel: async () => ({ cancelled: true }),
-      async *invoke() { yield { type: "run.finished", payload: {} }; }
+      async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
     });
     await runtime.start();
     const secondBatch = await Promise.race([
@@ -1516,7 +1516,7 @@ test("local runtime concurrency limit queues a second provider invocation", asyn
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-capacity", protocol_version: 1 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-capacity", protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, rawSocket, head) => {
     wsServer.handleUpgrade(request, rawSocket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -1556,7 +1556,7 @@ test("local runtime concurrency limit queues a second provider invocation", asyn
         } else {
           secondStarted.resolve();
         }
-        yield { type: "run.finished", payload: {} };
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
       }
     });
     await runtime.start();

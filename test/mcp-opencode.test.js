@@ -51,7 +51,7 @@ test("OpenCode merges MCP into the child config and redacts provider observation
     mcp: { existing: { type: "remote", url: "https://existing.example.test", headers: { Existing: "secret" } } }
   });
   try {
-    const command = await buildOpenCodeCommand({
+    const command = await buildOpenCodeCommand({ protocolVersion: 2,
       invocationId: "invoke-mcp",
       agentSessionId: "session-mcp",
       runId: "run-mcp",

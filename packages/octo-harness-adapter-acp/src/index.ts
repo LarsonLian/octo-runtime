@@ -1,3 +1,4 @@
+import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 import {
   defineAdapter,
   freshFallbackInputText,
@@ -102,7 +103,7 @@ export function normalizeAcpUpdate(update: StandardAcpUpdate, provider: string):
   if (type === "agent_message_chunk" || type === "agent_thought_chunk") {
     const text = contentText(update.content) ?? update.text;
     if (!text) return [];
-    return [{
+    return [{ protocolVersion: 2,
       type: "message.delta",
       payload: type === "agent_thought_chunk"
         ? {
@@ -117,9 +118,9 @@ export function normalizeAcpUpdate(update: StandardAcpUpdate, provider: string):
   if (type === "tool_call") {
     if (!update.toolCallId) return [];
     const input = update.rawInput ?? update.input;
-    return [{
+    return [{ protocolVersion: 2,
       type: "tool_call.create",
-      payload: {
+      payload: { status: "running",
         id: update.toolCallId,
         name: update.name ?? update.title ?? "provider_tool",
         args: isRecord(input) ? input : input == null ? {} : { value: input }
@@ -128,17 +129,17 @@ export function normalizeAcpUpdate(update: StandardAcpUpdate, provider: string):
   }
   if (type === "tool_call_update") {
     if (!update.toolCallId) return [];
-    return [{
+    return [{ protocolVersion: 2,
       type: "tool_call.update",
       payload: {
         id: update.toolCallId,
-        status: update.status ?? "running",
+        status: canonicalTerminalStatus(update.status ?? "running"),
         output: update.rawOutput ?? update.output ?? update.content
       }
     }];
   }
   if (type === "usage" || type === "usage_update") {
-    return [{ type: "usage.update", payload: { ...update.usage, model: update.model } }];
+    return [{ protocolVersion: 2, type: "usage.update", payload: { ...update.usage, model: update.model } }];
   }
   return [];
 }
@@ -224,18 +225,17 @@ class AcpTurnNormalizer {
   #ensureStep(): CanonicalEvent[] {
     if (this.#stepId) return [];
     this.#stepId = `${this.#provider}:step:${++this.#stepNumber}`;
-    return [{ type: "model_step.started", payload: { stepId: this.#stepId } }];
+    return [{ protocolVersion: 2, type: "model_step.started", payload: { stepId: this.#stepId } }];
   }
 
   #finishStep(finishReason: string, status: string): CanonicalEvent[] {
     if (!this.#stepId) return [];
-    const event: CanonicalEvent = {
+    const event: CanonicalEvent = { protocolVersion: 2,
       type: "model_step.finished",
       payload: {
         stepId: this.#stepId,
-        status,
+        status: canonicalTerminalStatus(status),
         finishReason,
-        ...(this.#stepPublicText ? { publicText: this.#stepPublicText } : {})
       }
     };
     this.#stepId = undefined;
@@ -361,7 +361,7 @@ export function createAcpAdapter(
           providerModel = sessionModel(sessionResult);
         }
 
-        yield {
+        yield { protocolVersion: 2,
           type: "session.update",
           payload: {
             providerSession: {
@@ -376,7 +376,7 @@ export function createAcpAdapter(
             }
           }
         };
-        yield { type: "message.create", payload: { role: "assistant", status: "streaming" } };
+        yield { protocolVersion: 2, type: "message.create", payload: { role: "assistant", status: "streaming" } };
 
         const input = resumeFallback ? freshFallbackInputText(request) : providerInputText(request);
         const prompt = request.appendInstructions
@@ -454,14 +454,14 @@ export function createAcpAdapter(
           producedFinalOutput = true;
         }
         if (cancelled) {
-          for (const id of activeTools) yield { type: "tool_call.update", payload: { id, status: "cancelled" } };
+          for (const id of activeTools) yield { protocolVersion: 2, type: "tool_call.update", payload: { id, status: canonicalTerminalStatus("cancelled") } };
         }
         if (!cancelled && !producedFinalOutput) {
           for (const event of turn.finish("no-final-output", "failed")) yield event;
-          yield { type: "message.update", payload: { role: "assistant", status: "failed" } };
+          yield { protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "failed" } };
           terminal = true;
-          yield {
-            type: "run.error",
+          yield { protocolVersion: 2,
+            type: "run.failed",
             payload: {
               code: "ACP_NO_FINAL_OUTPUT",
               message: `${definition.provider} completed without assistant output`,
@@ -471,14 +471,14 @@ export function createAcpAdapter(
           return;
         }
         for (const event of turn.finish(stopReason ?? finishReason, cancelled ? "stopped" : "completed")) yield event;
-        yield { type: "message.update", payload: { role: "assistant", status: cancelled ? "stopped" : "completed" } };
+        yield { protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: cancelled ? "stopped" : "completed" } };
         terminal = true;
         yield cancelled
-          ? { type: "run.stopped", payload: { reason: stopReason ?? String(request.signal?.reason ?? "cancelled"), ...(finishReason ? { finishReason } : {}) } }
-          : { type: "run.finished", payload: {} };
+          ? { protocolVersion: 2, type: "run.cancelled", payload: { reason: stopReason ?? String(request.signal?.reason ?? "cancelled"), ...(finishReason ? { finishReason } : {}) } }
+          : { protocolVersion: 2, type: "run.completed", payload: {} };
       } catch (error) {
         if (!terminal && request.signal?.aborted) {
-          yield { type: "run.stopped", payload: { reason: String(request.signal.reason ?? "cancelled") } };
+          yield { protocolVersion: 2, type: "run.cancelled", payload: { reason: String(request.signal.reason ?? "cancelled") } };
         } else {
           throw error;
         }

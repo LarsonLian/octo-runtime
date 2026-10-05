@@ -181,7 +181,7 @@ export function observeProviderOutput(
 
 function isAllowedProviderOutput(event: CanonicalEvent): boolean {
   if (event.type.startsWith("tool_call.")) return true;
-  if (event.type === "usage.update" || event.type === "run.error") return true;
+  if (event.type === "usage.update" || event.type === "run.failed") return true;
   if (!event.type.startsWith("message.")) return false;
   if (event.payload.channel !== "analysis") return true;
   return event.payload.exposure === "public_reasoning"
@@ -423,7 +423,7 @@ export function createJsonCliAdapter<TNative = Record<string, unknown>>(
             }
           }
         });
-        yield { type: "message.create", payload: { role: "assistant", status: "streaming" } };
+        yield { protocolVersion: 2, type: "message.create", payload: { role: "assistant", status: "streaming" } };
         for await (const native of spawnJsonLines({
           ...spec,
           cwd: spec.cwd ?? request.workdir,

@@ -4,7 +4,7 @@ import test from "node:test";
 import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 import { capabilities } from "@mininglamp-oss/octo-harness-protocol";
 
-const request = {
+const request = { protocolVersion: 2,
   invocationId: "invoke-mcp",
   agentSessionId: "session-mcp",
   runId: "run-mcp",
@@ -35,7 +35,7 @@ test("Adapter Host rejects dynamic MCP before invoking an unsupported adapter", 
     metadata: { type: "unsupported", capabilities: [] },
     async *invoke() {
       invoked = true;
-      yield { type: "run.finished", payload: {} };
+      yield { protocolVersion: 2, type: "run.completed", payload: {} };
     }
   });
 
@@ -57,11 +57,11 @@ test("Adapter Host passes a dynamic MCP plan to an adapter that declares support
     metadata: { type: "supported", capabilities: [capabilities.MCP_DYNAMIC] },
     async *invoke(value) {
       received = value.mcpServers;
-      yield { type: "run.finished", payload: {} };
+      yield { protocolVersion: 2, type: "run.completed", payload: {} };
     }
   });
 
   const events = await collect(host.invoke("supported", request));
   assert.deepEqual(received, request.mcpServers);
-  assert.equal(events.at(-1).type, "run.finished");
+  assert.equal(events.at(-1).type, "run.completed");
 });

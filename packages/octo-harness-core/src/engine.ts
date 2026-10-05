@@ -108,7 +108,7 @@ export class HarnessEngine {
         input: structuredClone(input.input),
         requestHash
       };
-      this.store.appendEvent(envelope(run, run.nextSeq++, {
+      this.store.appendEvent(envelope(run, run.nextSeq++, { protocolVersion: 2,
         type: "run.queued",
         payload: { trigger_kind: run.trigger.kind, trigger_occurrence_id: run.trigger.occurrenceId }
       }));
@@ -153,14 +153,14 @@ export class HarnessEngine {
       run = candidate;
       session = candidateSession;
       agent = candidateAgent;
-      this.store.appendEvent(envelope(run, run.nextSeq++, { type: "run.running", payload: {} }));
+      this.store.appendEvent(envelope(run, run.nextSeq++, { protocolVersion: 2, type: "run.started", payload: {} }));
       this.store.putAgentRun(run);
       this.store.putAgentSession(session);
     });
 
     const context = composeContext({ agent, agentSession: session, agentRun: run });
     const prompt = promptFromInput(run.input);
-    const request: InvokeRequest = {
+    const request: InvokeRequest = { protocolVersion: 2,
       invocationId: id("invoke"),
       agentSessionId: session.id,
       runId: run.id,
@@ -181,7 +181,7 @@ export class HarnessEngine {
           this.store.putAgentSession(session);
         }
         if (isTerminal(event)) {
-          run.status = event.type === "run.finished" ? "completed" : event.type === "run.stopped" ? "cancelled" : "failed";
+          run.status = event.type === "run.completed" ? "completed" : event.type === "run.cancelled" ? "cancelled" : "failed";
           delete session.activeRunId;
           this.store.putAgentSession(session);
         }
@@ -196,7 +196,7 @@ export class HarnessEngine {
     const run = this.store.getAgentRun(agentRunId);
     if (!run || TERMINAL.has(run.status)) return run;
     const session = this.store.getAgentSession(run.agentSessionId);
-    run.status = event.type === "run.finished" ? "completed" : event.type === "run.stopped" ? "cancelled" : "failed";
+    run.status = event.type === "run.completed" ? "completed" : event.type === "run.cancelled" ? "cancelled" : "failed";
     await this.store.transaction(() => {
       this.store.appendEvent(envelope(run, run.nextSeq++, event));
       if (session?.activeRunId === run.id) {
@@ -213,7 +213,7 @@ export class HarnessEngine {
     if (!run) throw new Error(`agent run not found: ${agentRunId}`);
     if (TERMINAL.has(run.status)) return { cancelled: false, status: run.status };
     if (run.status === "queued") {
-      await this.terminalizeRun(run.id, { type: "run.stopped", payload: { reason } });
+      await this.terminalizeRun(run.id, { protocolVersion: 2, type: "run.cancelled", payload: { reason } });
       return { cancelled: true, status: "cancelled" };
     }
     if (!run.invocationId) throw new Error(`running agent run has no invocationId: ${run.id}`);

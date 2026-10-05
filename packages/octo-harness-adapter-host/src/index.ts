@@ -204,7 +204,7 @@ export class AdapterHost {
         payload: { ...event.payload, channel, messageId, ...analysisMetadata }
       };
       const prefix: CanonicalEvent[] = !state && event.type !== "message.create"
-        ? [{
+        ? [{ protocolVersion: 2,
             type: "message.create",
             payload: { role: "assistant", status: "streaming", channel, messageId, ...(stepId ? { stepId } : {}), ...analysisMetadata }
           }]
@@ -218,7 +218,7 @@ export class AdapterHost {
       for (const state of messages.values()) {
         if (!state.open || (stepId !== undefined && (state.channel !== "analysis" || state.stepId !== stepId))) continue;
         state.open = false;
-        closed.push({
+        closed.push({ protocolVersion: 2,
           type: "message.update",
           payload: {
             role: "assistant", status, channel: state.channel, messageId: state.messageId,
@@ -243,9 +243,9 @@ export class AdapterHost {
         if (next.done) break;
         const adapterEvent = next.value;
         assertCanonicalEvent(adapterEvent);
-        const event: CanonicalEvent = adapterEvent.type === "run.error"
-          ? {
-              type: "run.error",
+        const event: CanonicalEvent = adapterEvent.type === "run.failed"
+          ? { protocolVersion: 2,
+              type: "run.failed",
               payload: failurePayload(adapterEvent.payload, {
                 stage: "provider.invoke",
                 defaultDomain: "provider",
@@ -278,8 +278,8 @@ export class AdapterHost {
           yield prepared.event;
         }
       }
-      terminal ??= { type: "run.stopped", payload: { reason: "adapter_stream_ended" } };
-      const messageStatus = terminal.type === "run.finished" ? "completed" : terminal.type === "run.error" ? "failed" : "stopped";
+      terminal ??= { protocolVersion: 2, type: "run.cancelled", payload: { reason: "adapter_stream_ended" } };
+      const messageStatus = terminal.type === "run.completed" ? "completed" : terminal.type === "run.failed" ? "failed" : "stopped";
       outcome = messageStatus;
       for (const event of closeMessages(messageStatus)) yield event;
       yield terminal;
@@ -295,13 +295,13 @@ export class AdapterHost {
       await waitCleanup();
       for (const event of closeMessages(userCancelled ? "stopped" : "failed")) yield event;
       if (userCancelled) {
-        yield { type: "run.stopped", payload: { reason: String(controller.signal.reason ?? "cancelled") } };
-      } else if (terminal?.type === "run.error") {
+        yield { protocolVersion: 2, type: "run.cancelled", payload: { reason: String(controller.signal.reason ?? "cancelled") } };
+      } else if (terminal?.type === "run.failed") {
         yield terminal;
       } else {
         const code = errorCode(error);
-        yield {
-          type: "run.error",
+        yield { protocolVersion: 2,
+          type: "run.failed",
           payload: failurePayload({
             message: errorMessage(error),
             adapterType,

@@ -306,8 +306,7 @@ export async function startDaemonServer({
       });
       try {
         for await (const event of readyHost().client.invoke(adapterType, request)) {
-          events.publish({
-          source: "host-canonical",
+          events.publish({ source: "host-canonical",
           stage: "host.canonical",
           direction: "outbound",
           type: event.type,
@@ -319,7 +318,7 @@ export async function startDaemonServer({
           adapterType,
           payload: event
         });
-          if (["run.finished", "run.error", "run.stopped"].includes(event.type)) {
+          if (["run.completed", "run.failed", "run.cancelled"].includes(event.type)) {
             observability.clearRpcCorrelationForRun(request.runId);
           }
           yield event;
@@ -981,8 +980,7 @@ function optionalLiveEventSource(value: unknown): LiveEventSource | undefined {
 function publishAdapterObservation(events: LiveEventBus, value: unknown): void {
   if (!isRecord(value)) return;
   if (typeof value.droppedBefore === "number" && value.droppedBefore > 0) {
-    events.publish({
-      source: "control",
+    events.publish({ source: "control",
       type: "adapter_observation.dropped",
       payload: { count: value.droppedBefore, affected_source: value.source }
     });
@@ -996,8 +994,7 @@ function publishAdapterObservation(events: LiveEventBus, value: unknown): void {
     return;
   }
   if (value.source !== "adapter-canonical" || typeof value.type !== "string") return;
-  events.publish({
-    source: "adapter-canonical",
+  events.publish({ source: "adapter-canonical",
     stage: "adapter.canonical",
     direction: "outbound",
     type: value.type,

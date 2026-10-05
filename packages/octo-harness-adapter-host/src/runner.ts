@@ -75,7 +75,7 @@ const observability = new LocalObservability(
   { eventSink: record => emitObservation({ source: record.scope === "adapter.watchdog" ? "provider-activity" : "provider-native", record }) }
 );
 const watchdogMetrics = new WatchdogMetrics();
-const publishWatchdogMetrics = (): void => emitObservation({ source: "control", type: "watchdog.metrics", payload: watchdogMetrics.snapshot() });
+const publishWatchdogMetrics = (): void => emitObservation({ protocolVersion: 2, source: "control", type: "watchdog.metrics", payload: watchdogMetrics.snapshot() });
 const metricsTimer = setInterval(publishWatchdogMetrics, 5000);
 metricsTimer.unref();
 const host = new AdapterHost({
@@ -91,7 +91,7 @@ const host = new AdapterHost({
       data: { ...diagnostic.data, watchdogVersion: 2 }
     });
   },
-  canonicalSink: (identity, event) => emitObservation({
+  canonicalSink: (identity, event) => emitObservation({ protocolVersion: 2,
     source: "adapter-canonical",
     type: event.type,
     profile: identity.profile,

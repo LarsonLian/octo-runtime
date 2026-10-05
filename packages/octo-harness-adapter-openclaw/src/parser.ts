@@ -1,3 +1,4 @@
+import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 import type { CanonicalEvent } from "@mininglamp-oss/octo-harness-adapter-sdk";
 
 type JsonRecord = Record<string, unknown>;
@@ -286,12 +287,12 @@ export class OpenClawTranscriptNormalizer {
   normalize(frame: OpenClawTranscriptFrame): CanonicalEvent[] {
     if (frame.kind === "tool-result") {
       const stepId = this.toolSteps.get(frame.id);
-      return [{
+      return [{ protocolVersion: 2,
         type: "tool_call.update",
         payload: {
           id: frame.id,
           ...(frame.name ? { name: frame.name } : {}),
-          status: frame.isError ? "failed" : "completed",
+          status: canonicalTerminalStatus(frame.isError ? "failed" : "completed"),
           output: frame.output,
           ...(stepId ? { stepId } : {}),
           ...(frame.durationMs === undefined ? {} : { durationMs: frame.durationMs })
@@ -299,7 +300,7 @@ export class OpenClawTranscriptNormalizer {
       }];
     }
 
-    const events: CanonicalEvent[] = [{
+    const events: CanonicalEvent[] = [{ protocolVersion: 2,
       type: "model_step.started",
       payload: {
         stepId: frame.stepId,
@@ -307,7 +308,7 @@ export class OpenClawTranscriptNormalizer {
       }
     }];
     for (const thought of frame.reasoning) {
-      events.push({
+      events.push({ protocolVersion: 2,
         type: "message.delta",
         payload: {
           text: thought,
@@ -320,20 +321,20 @@ export class OpenClawTranscriptNormalizer {
       });
     }
     if (frame.text) {
-      events.push({ type: "message.delta", payload: { text: frame.text, channel: "final", stepId: frame.stepId } });
+      events.push({ protocolVersion: 2, type: "message.delta", payload: { text: frame.text, channel: "final", stepId: frame.stepId } });
     }
     for (const tool of frame.tools) {
       this.toolSteps.set(tool.id, frame.stepId);
-      events.push({
+      events.push({ protocolVersion: 2,
         type: "tool_call.create",
-        payload: { id: tool.id, name: tool.name, args: tool.args, stepId: frame.stepId }
+        payload: { status: "running", id: tool.id, name: tool.name, args: tool.args, stepId: frame.stepId }
       });
     }
-    events.push({
+    events.push({ protocolVersion: 2,
       type: "model_step.finished",
       payload: {
         stepId: frame.stepId,
-        status: frame.status,
+        status: canonicalTerminalStatus(frame.status),
         ...(frame.finishReason ? { finishReason: frame.finishReason } : {}),
         ...(frame.endedAtMs === undefined ? {} : { endedAtMs: frame.endedAtMs })
       }
@@ -347,16 +348,16 @@ export function normalizeOpenClawFrame(frame: OpenClawFrame): CanonicalEvent[] {
   // The parser preserves OpenClaw's native differences; this function only exposes provider-neutral canonical events upward.
   switch (frame.kind) {
     case "text":
-      return [{ type: "message.delta", payload: { text: frame.text, channel: "final" } }];
+      return [{ protocolVersion: 2, type: "message.delta", payload: { text: frame.text, channel: "final" } }];
     case "tool-call":
-      return [{ type: "tool_call.create", payload: { id: frame.id, name: frame.name, args: frame.args } }];
+      return [{ protocolVersion: 2, type: "tool_call.create", payload: { status: "running", id: frame.id, name: frame.name, args: frame.args } }];
     case "tool-result":
-      return [{
+      return [{ protocolVersion: 2,
         type: "tool_call.update",
-        payload: { id: frame.id, status: frame.isError ? "error" : "completed", output: frame.output }
+        payload: { id: frame.id, status: canonicalTerminalStatus(frame.isError ? "error" : "completed"), output: frame.output }
       }];
     case "usage":
-      return [{ type: "usage.update", payload: usagePayload(frame) }];
+      return [{ protocolVersion: 2, type: "usage.update", payload: usagePayload(frame) }];
     default:
       return [];
   }

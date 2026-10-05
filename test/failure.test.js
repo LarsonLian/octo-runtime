@@ -54,7 +54,7 @@ test("timeout causes have distinct public codes and actionable configuration pat
     assert.equal(payload.failure.code, `OH-ADP-${suffix}`);
     assert.equal(payload.failure.params.configParameter, `execution_profile.${parameter}`);
     assert.doesNotMatch(JSON.stringify(payload), /private|secret/);
-    assert.doesNotThrow(() => assertCanonicalEvent({ type: "run.error", payload }));
+    assert.doesNotThrow(() => assertCanonicalEvent({ protocolVersion: 2, type: "run.failed", payload }));
     assert.deepEqual(failurePayload(payload, context).failure.params, payload.failure.params);
     assert.equal(payload.failure.params.elapsedMs, 3600000);
   }
@@ -97,7 +97,7 @@ test("failure payload is backwards compatible and excludes untrusted secrets", (
   assert.equal(payload.failure.messageKey, "error.provider.credentials_invalid");
   assert.equal(payload.adapterType, "codex");
   assert.doesNotMatch(JSON.stringify(payload), /top-secret-token|authorization|providerError/);
-  assert.doesNotThrow(() => assertCanonicalEvent({ type: "run.error", payload }));
+  assert.doesNotThrow(() => assertCanonicalEvent({ protocolVersion: 2, type: "run.failed", payload }));
 });
 
 test("Agent Run UUID deterministically owns the diagnostic UUID", () => {
@@ -125,8 +125,8 @@ test("Agent Run UUID deterministically owns the diagnostic UUID", () => {
 });
 
 test("invalid structured failures are rejected at the adapter boundary", () => {
-  assert.throws(() => assertCanonicalEvent({
-    type: "run.error",
+  assert.throws(() => assertCanonicalEvent({ protocolVersion: 2,
+    type: "run.failed",
     payload: {
       failure: {
         schemaVersion: 1,

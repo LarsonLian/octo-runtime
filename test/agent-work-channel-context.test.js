@@ -98,8 +98,8 @@ test("Agent Work channel context sync becomes one provider turn and commits only
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         providerRequest = request;
-        yield { type: "message.delta", payload: { channel: "final", text: "done" } };
-        yield { type: "run.finished", payload: {} };
+        yield { protocolVersion: 2, type: "message.delta", payload: { channel: "final", text: "done" } };
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
       }
     };
     runtime = new AgentWorkRuntime({
@@ -239,7 +239,7 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
       list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
-        yield { type: "run.finished", payload: {} };
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
       }
     };
     runtime = new AgentWorkRuntime({
@@ -368,7 +368,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
       list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
-        yield { type: "run.finished", payload: {} };
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
       }
     };
     runtime = new AgentWorkRuntime({
@@ -550,7 +550,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
         providerRequests.push(request);
         if (request.runId === "run-next") secondInvokeSeen = true;
         if (request.runId === "run-next") {
-          yield {
+          yield { protocolVersion: 2,
             type: "session.update",
             payload: {
               providerSession: {
@@ -561,7 +561,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
             }
           };
         }
-        yield { type: "run.finished", payload: {} };
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
       }
     };
     runtime = new AgentWorkRuntime({
@@ -685,7 +685,7 @@ test("runtime rejects a queued source generation after recovery advanced the eff
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         invocationCount += 1;
-        yield { type: "run.finished", payload: {} };
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
       }
     };
     runtime = new AgentWorkRuntime({
@@ -798,7 +798,7 @@ test("runtime close joins a waiting command before immediate restart and replay"
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         invocationCount += 1;
-        yield { type: "run.finished", payload: {} };
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
       }
     };
     runtime = new AgentWorkRuntime({
@@ -939,7 +939,7 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         invocationCount += 1;
-        yield { type: "run.finished", payload: {} };
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
       }
     };
     runtime = new AgentWorkRuntime({
@@ -1048,9 +1048,9 @@ test("append-only channel context cold-starts an adapter without continuity reco
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         providerRequest = request;
-        yield { type: "session.update", payload: { providerSession: { sessionId: "new-provider-session", resumable: true } } };
-        yield { type: "message.delta", payload: { channel: "final", text: "done" } };
-        yield { type: "run.finished", payload: {} };
+        yield { protocolVersion: 2, type: "session.update", payload: { providerSession: { sessionId: "new-provider-session", resumable: true } } };
+        yield { protocolVersion: 2, type: "message.delta", payload: { channel: "final", text: "done" } };
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
       }
     };
     runtime = new AgentWorkRuntime({
@@ -1158,12 +1158,12 @@ test("append-only channel context accepts an adapter without serialized sessions
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         providerRequest = request;
-        yield {
+        yield { protocolVersion: 2,
           type: "session.update",
           payload: { providerSession: { sessionId: "ephemeral-provider-session", resumable: false } }
         };
-        yield { type: "message.delta", payload: { channel: "final", text: "done" } };
-        yield { type: "run.finished", payload: {} };
+        yield { protocolVersion: 2, type: "message.delta", payload: { channel: "final", text: "done" } };
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
       }
     };
     runtime = new AgentWorkRuntime({
