@@ -691,8 +691,8 @@ export class AgentWorkRuntime {
         "Agent Work runtime registration returned an unexpected profile"
       );
     }
-    const protocolVersion = registeredRuntime.protocol_version ?? MAX_PROTOCOL_VERSION;
-    if (protocolVersion < MIN_PROTOCOL_VERSION || protocolVersion > MAX_PROTOCOL_VERSION) {
+    const protocolVersion = registeredRuntime.protocol_version;
+    if (protocolVersion !== MAX_PROTOCOL_VERSION) {
       rejectRegistration(
         new Error(`Agent Work selected unsupported protocol ${protocolVersion} (request_id=${requestId})`),
         "Agent Work runtime registration selected an unsupported protocol"
@@ -707,7 +707,7 @@ export class AgentWorkRuntime {
       data: { runtime_id: registeredRuntime.id, http_status: response.status }
     });
     this.#credentialFailures = 0;
-    return { runtimeId: registeredRuntime.id, protocolVersion };
+    return { runtimeId: registeredRuntime.id, protocolVersion: MAX_PROTOCOL_VERSION };
   }
 
   async #registerAndConnect(epoch: number, signal?: AbortSignal): Promise<void> {
@@ -2411,33 +2411,8 @@ function rawDataText(data: WebSocket.RawData): string {
 /** Translate a canonical event into an outbox wire event: terminal run states are
  * renamed to the Agent Work vocabulary (completed/failed/cancelled) and carry the
  * accumulated final text; all other events pass through unchanged. */
-export function mapRuntimeEvent(event: CanonicalEvent, finalText: string, runId: string): { protocolVersion: 2; type: string; payload: Record<string, unknown> } {
-	const terminalText = finalText || stringValue(event.payload.text) || "";
-  switch (event.type) {
-    case "run.completed":
-      return { protocolVersion: 2, type: "run.completed", payload: { ...event.payload, text: terminalText } };
-    case "run.failed":
-      return { protocolVersion: 2,
-        type: "run.failed",
-        payload: {
-          ...failurePayload({ code: "PROVIDER_ERROR", ...event.payload }, {
-            stage: "provider.invoke",
-            defaultDomain: "provider",
-            runId,
-            preserveExisting: true,
-            source: {
-              component: "octo-harness",
-              ...(stringValue(event.payload.adapterType) ? { adapter: stringValue(event.payload.adapterType) } : {})
-            }
-          }),
-          text: terminalText
-        }
-      };
-    case "run.cancelled":
-      return { protocolVersion: 2, type: "run.cancelled", payload: { ...event.payload, text: terminalText } };
-    default:
-      return { protocolVersion: 2, type: event.type, payload: event.payload };
-  }
+export function mapRuntimeEvent(event: CanonicalEvent, _finalText: string, _runId: string): { protocolVersion: 2; type: string; payload: Record<string, unknown> } {
+  return { protocolVersion: 2, type: event.type, payload: event.payload };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

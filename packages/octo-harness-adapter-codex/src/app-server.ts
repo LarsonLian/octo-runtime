@@ -451,6 +451,9 @@ export function normalizeCodexEvent(native: CodexAppServerNotification): Canonic
 export class CodexEventNormalizer {
   #turnId?: string;
   #round = 0;
+  #planRevision = 0;
+  #noticeNumber = 0;
+  #attempt = 1;
   #activeStepId?: string;
   #toolBatchStepId?: string;
   readonly #itemSteps = new Map<string, string>();
@@ -459,6 +462,24 @@ export class CodexEventNormalizer {
   normalize(native: CodexAppServerNotification): CanonicalEvent[] {
     const params = native.params ?? {};
     switch (native.method) {
+      case "turn/plan/updated": {
+        const plan = Array.isArray(params.plan) ? params.plan : [];
+        return [{ protocolVersion: 2, type: "plan.updated", payload: {
+          planId: "codex:plan", revision: ++this.#planRevision,
+          explanation: typeof params.explanation === "string" ? params.explanation.slice(0, 4096) : null,
+          steps: plan.slice(0, 200).map(value => {
+            const step = recordValue(value) ?? {};
+            const status = step.status === "inProgress" ? "in_progress" : step.status === "completed" ? "completed" : "pending";
+            return { text: String(step.step ?? "").slice(0, 4096), status };
+          })
+        } }];
+      }
+      case "item/mcpToolCall/progress": {
+        const id = itemId(params);
+        return id && typeof params.message === "string" ? [{ protocolVersion: 2, type: "tool_call.progress", payload: { id, progress: { message: params.message.slice(0, 4096) } } }] : [];
+      }
+      case "model/rerouted":
+        return typeof params.fromModel === "string" && typeof params.toModel === "string" ? [{ protocolVersion: 2, type: "run.notice", payload: { noticeId: `codex:notice:${++this.#noticeNumber}`, code: "model_rerouted", severity: "info", params: { fromModel: params.fromModel.slice(0, 191), toModel: params.toModel.slice(0, 191) } } }] : [];
       case "thread/started": {
         const threadId = stringValue(params.threadId)
           || stringValue(recordValue(params.thread)?.id)
@@ -472,7 +493,7 @@ export class CodexEventNormalizer {
         const threadId = stringValue(params.threadId)
           || stringValue(recordValue(params.thread)?.id)
           || stringValue(recordValue(params.thread)?.sessionId);
-        return threadId ? [{ protocolVersion: 2,
+        return threadId ? [{ protocolVersion: 2, type: "run.notice", payload: { noticeId: `codex:notice:${++this.#noticeNumber}`, code: "context_compacted", severity: "info", params: {} } }, { protocolVersion: 2,
           type: "session.update",
           payload: {
             providerSession: {
@@ -516,7 +537,7 @@ export class CodexEventNormalizer {
           ...turnCompletedEvents(recordValue(params.turn))
         ];
       case "error": {
-        if (params.willRetry === true) return [];
+        if (params.willRetry === true) return [{ protocolVersion: 2, type: "run.notice", payload: { noticeId: `codex:notice:${++this.#noticeNumber}`, code: "retry_scheduled", severity: "warning", params: { attempt: ++this.#attempt } } }];
         // ErrorNotification is an in-turn diagnostic. Codex may still recover
         // after a failed tool and emit more items; turn/completed is the only
         // authoritative turn terminal.
@@ -571,6 +592,7 @@ export class CodexEventNormalizer {
     }
 
     const type = stringValue(item.type);
+    if (type === "contextCompaction" && id) return [{ protocolVersion: 2, type: "activity.started", payload: { activityId: `codex:compaction:${id}`, kind: "compacting", subject: { type: "run" }, source: "provider", info: {} } }];
     if (type !== "reasoning" && type !== "plan" && type !== "agentMessage") return [];
     this.#toolBatchStepId = undefined;
     const started = this.#ensureActiveStep(params);
@@ -585,6 +607,7 @@ export class CodexEventNormalizer {
     const item = recordValue(params.item);
     if (!item) return [];
     const id = stringValue(item.id);
+    if (stringValue(item.type) === "contextCompaction" && id) return [{ protocolVersion: 2, type: "activity.finished", payload: { activityId: `codex:compaction:${id}`, status: "completed" } }];
     const stepId = id ? this.#itemSteps.get(id) : undefined;
     const channel = id ? this.#itemChannels.get(id) : undefined;
     const events = itemCompletedEvents(item, stepId, channel);

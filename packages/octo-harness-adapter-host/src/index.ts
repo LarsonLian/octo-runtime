@@ -1,3 +1,4 @@
+import { InvocationExperience } from "./experience.js";
 import {
   assertCanonicalEvent,
   assertInteractionResponse,
@@ -146,6 +147,14 @@ export class AdapterHost {
   /** Invoke an adapter and emit lifecycle-corrected canonical events upstream. */
   async *invoke(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
     assertInvokeRequest(request);
+    const experience = new InvocationExperience();
+    for (const event of experience.start()) yield event;
+    for await (const event of this.#invokeProvider(adapterType, request)) {
+      for (const projected of experience.accept(event)) yield projected;
+    }
+  }
+
+  async *#invokeProvider(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
     const adapter = this.#adapters.get(adapterType);
     if (!adapter) throw new Error(`unknown adapter: ${adapterType}`);
     if (request.mcpServers && Object.keys(request.mcpServers).length > 0
@@ -279,7 +288,7 @@ export class AdapterHost {
         }
       }
       terminal ??= { protocolVersion: 2, type: "run.cancelled", payload: { reason: "adapter_stream_ended" } };
-      const messageStatus = terminal.type === "run.completed" ? "completed" : terminal.type === "run.failed" ? "failed" : "stopped";
+      const messageStatus = terminal.type === "run.completed" ? "completed" : terminal.type === "run.failed" ? "failed" : "cancelled";
       outcome = messageStatus;
       for (const event of closeMessages(messageStatus)) yield event;
       yield terminal;
@@ -293,7 +302,7 @@ export class AdapterHost {
       watchdog.dispose();
       if (!controller.signal.aborted) controller.abort(error);
       await waitCleanup();
-      for (const event of closeMessages(userCancelled ? "stopped" : "failed")) yield event;
+      for (const event of closeMessages(userCancelled ? "cancelled" : "failed")) yield event;
       if (userCancelled) {
         yield { protocolVersion: 2, type: "run.cancelled", payload: { reason: String(controller.signal.reason ?? "cancelled") } };
       } else if (terminal?.type === "run.failed") {

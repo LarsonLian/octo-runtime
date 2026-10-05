@@ -156,7 +156,7 @@ test("best-effort observations handle rejection and provider output excludes pri
 test("Codex native events map to session/message/usage/terminal", () => {
   assert.equal(normalizeCodexEvent({ method: "thread/started", params: { thread: { id: "thread-1" } } })[0].type, "session.update");
   assert.deepEqual(
-    normalizeCodexEvent({ method: "thread/compacted", params: { threadId: "thread-1" } })[0].payload,
+    normalizeCodexEvent({ method: "thread/compacted", params: { threadId: "thread-1" } }).find(event => event.type === "session.update").payload,
     { providerSession: { sessionId: "thread-1", resumable: true, resumeOutcome: "compacted" } }
   );
   assert.equal(normalizeCodexEvent({ method: "item/agentMessage/delta", params: { itemId: "message-1", delta: "ok" } })[0].type, "message.delta");
