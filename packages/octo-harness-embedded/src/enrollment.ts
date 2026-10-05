@@ -12,7 +12,7 @@ import type { AccountSubject, AuthorizedTenant } from "./types.js";
 import { EMBEDDED_HARNESS_VERSION } from "./version.js";
 
 const REQUEST_TIMEOUT_MS = 15_000;
-const PROTOCOL_VERSION = 1;
+const PROTOCOL_VERSION = 2;
 
 interface ProfileConfiguration {
   schema_version: 1;

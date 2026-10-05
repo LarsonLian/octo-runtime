@@ -67,7 +67,7 @@ test("registration failure preserves the enrolled identity for a credential-prov
         assert.equal(init.headers["X-Runtime-Token"], "runtime_token_1");
       }
       return Response.json({
-        runtime: { id: "runtime_original", profile: "default", octo_space_id: "space_fixture" },
+        runtime: { id: "runtime_original", profile: "default", octo_space_id: "space_fixture" , protocol_version: 2 },
         credential: { id: `credential_${enrollmentCount}`, token: `runtime_token_${enrollmentCount}` }
       });
     }
@@ -77,7 +77,7 @@ test("registration failure preserves the enrolled identity for a credential-prov
         return Response.json({ error: { code: "UNAVAILABLE", message: "worker restarting" } }, { status: 503 });
       }
       assert.equal(init.headers.Authorization, "Bearer runtime_token_2");
-      return Response.json({ runtime: { id: "runtime_original", profile: "default" } });
+      return Response.json({ runtime: { id: "runtime_original", profile: "default" , protocol_version: 2 } });
     }
     throw new Error(`unexpected request: ${url}`);
   };
@@ -185,7 +185,7 @@ test("OpenClaw setup requires login, stores secrets separately, and initializes 
     }
     assert.equal(String(input), "https://im-test.deepminer.com.cn/agentworker/api/v1/runtime/register");
     assert.equal(JSON.parse(init.body).profile, "default");
-    return Response.json({ data: { runtime: { id: "runtime_fixture", profile: "default" } } });
+    return Response.json({ data: { runtime: { id: "runtime_fixture", profile: "default" , protocol_version: 2 } } });
   };
   try {
     await assert.rejects(
@@ -357,7 +357,7 @@ test("re-enrollment reuses the Runtime and proves ownership with its credential"
     }
     if (url.endsWith("/v1/runtime/register")) {
       assert.equal(JSON.parse(init.body).profile, profile);
-      return Response.json({ data: { runtime: { profile, id: "runtime_fixture" } } });
+      return Response.json({ data: { runtime: { profile, id: "runtime_fixture" , protocol_version: 2 } } });
     }
     throw new Error(`unexpected request: ${url}`);
   };
@@ -441,7 +441,7 @@ test("a fresh enrollment token updates the endpoint while preserving the existin
     if (url.endsWith("/v1/runtime/register")) {
       const expectedBase = enrollmentCount === 1 ? "http://localhost:8091" : "http://localhost:3000";
       assert.equal(url, `${expectedBase}/agentworker/api/v1/runtime/register`);
-      return Response.json({ runtime: { id: "runtime_original", profile } });
+      return Response.json({ runtime: { id: "runtime_original", profile , protocol_version: 2 } });
     }
     throw new Error(`unexpected request: ${url}`);
   };
@@ -483,7 +483,7 @@ test("a fresh enrollment replaces stale local Runtime state after the Worker los
       if (enrollmentCalls === 1) {
         assert.equal(body.runtime_id, undefined);
         return Response.json({
-          runtime: { id: "runtime_stale", profile, octo_space_id: "space_fixture" },
+          runtime: { id: "runtime_stale", profile, octo_space_id: "space_fixture" , protocol_version: 2 },
           credential: { id: "credential_stale", token: "runtime_token_stale" }
         });
       }
@@ -501,13 +501,13 @@ test("a fresh enrollment replaces stale local Runtime state after the Worker los
       assert.equal(body.runtime_id, undefined);
       assert.equal(init.headers["X-Runtime-Token"], undefined);
       return Response.json({
-        runtime: { id: "runtime_recovered", profile, octo_space_id: "space_fixture" },
+        runtime: { id: "runtime_recovered", profile, octo_space_id: "space_fixture" , protocol_version: 2 },
         credential: { id: "credential_recovered", token: "runtime_token_recovered" }
       });
     }
     if (url.endsWith("/v1/runtime/register")) {
       const expectedRuntime = enrollmentCalls === 1 ? "runtime_stale" : "runtime_recovered";
-      return Response.json({ runtime: { id: expectedRuntime, profile } });
+      return Response.json({ runtime: { id: expectedRuntime, profile , protocol_version: 2 } });
     }
     throw new Error(`unexpected request: ${url}`);
   };
@@ -562,7 +562,7 @@ test("explicit Agent Worker API root appends only native /v1 routes", async () =
           credential: { id: "credential_fixture", token: "octo_runtime_fixture" }
         });
       }
-      return Response.json({ runtime: { id: "runtime_fixture", profile: "default" } });
+      return Response.json({ runtime: { id: "runtime_fixture", profile: "default" , protocol_version: 2 } });
     }
   });
 
@@ -600,10 +600,10 @@ test("failed enrollment and process retry preserve the Home machine label", asyn
       if (String(input).endsWith("/runtimes/enroll")) {
         machineIds.push(JSON.parse(init.body).machine_id);
         if (machineIds.length === 1) return Response.json({ error: { code: "UNAVAILABLE" } }, { status: 503 });
-        return Response.json({ runtime: { profile: "default", id: "runtime_fixture", octo_space_id: "space_fixture" },
+        return Response.json({ runtime: { profile: "default", id: "runtime_fixture", octo_space_id: "space_fixture" , protocol_version: 2 },
           credential: { id: "credential_fixture", token: "runtime_token_fixture" } });
       }
-      return Response.json({ runtime: { profile: "default", id: "runtime_fixture" } });
+      return Response.json({ runtime: { profile: "default", id: "runtime_fixture" , protocol_version: 2 } });
     };
     await assert.rejects(runCli(args, { input: Readable.from(["octo_enroll_fixture\n"]), output: () => undefined, fetchImplementation }));
     const before = await readFile(join(home, "machine.json"), "utf8");
@@ -679,7 +679,7 @@ test("login persists a 128-character profile and rejects missing or mismatched i
       input: Readable.from(["octo_enroll_fixture\n"]), output: () => undefined,
       fetchImplementation: async (_input, init) => {
         assert.equal(JSON.parse(init.body).profile, profile);
-        return Response.json({ runtime: { id: "runtime_fixture", profile, octo_space_id: "space_fixture" },
+        return Response.json({ runtime: { id: "runtime_fixture", profile, octo_space_id: "space_fixture" , protocol_version: 2 },
           credential: { id: "credential_fixture", token: "octo_runtime_fixture" } });
       }
     });

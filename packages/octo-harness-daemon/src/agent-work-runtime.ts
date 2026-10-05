@@ -1933,7 +1933,7 @@ export class AgentWorkRuntime {
         }
         appendStarted();
         finalText = accumulateFinalText(finalText, event);
-        const mapped = mapRuntimeEvent(event, finalText, command.run_id);
+        const mapped = mapRuntimeEvent(event);
         this.#log({
           level: "debug",
           scope: "adapter.invoke",
@@ -1993,7 +1993,6 @@ export class AgentWorkRuntime {
             runId: command.run_id,
             source: { component: "octo-harness", adapter: adapterType }
           }),
-          text: finalText
         };
         if (contextSnapshot) Object.assign(payload, contextEventFields(contextSnapshot));
         store.allocateAndAppend(command.run_id, "run.failed", payload);
@@ -2411,8 +2410,9 @@ function rawDataText(data: WebSocket.RawData): string {
 /** Translate a canonical event into an outbox wire event: terminal run states are
  * renamed to the Agent Work vocabulary (completed/failed/cancelled) and carry the
  * accumulated final text; all other events pass through unchanged. */
-export function mapRuntimeEvent(event: CanonicalEvent, _finalText: string, _runId: string): { protocolVersion: 2; type: string; payload: Record<string, unknown> } {
-  return { protocolVersion: 2, type: event.type, payload: event.payload };
+export function mapRuntimeEvent(event: CanonicalEvent): { protocolVersion: 2; type: string; payload: Record<string, unknown> } {
+  const payload = event.type === "run.completed" ? {} : event.type === "run.failed" ? { failure: event.payload.failure } : event.type === "run.cancelled" ? { reasonCode: "cancelled" } : event.payload;
+  return { protocolVersion: 2, type: event.type, payload };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

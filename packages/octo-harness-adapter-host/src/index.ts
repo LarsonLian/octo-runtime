@@ -148,9 +148,27 @@ export class AdapterHost {
   async *invoke(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
     assertInvokeRequest(request);
     const experience = new InvocationExperience();
-    for (const event of experience.start()) yield event;
-    for await (const event of this.#invokeProvider(adapterType, request)) {
-      for (const projected of experience.accept(event)) yield projected;
+    const provider = this.#invokeProvider(adapterType, request);
+    let pending = provider.next();
+    void pending.catch(() => undefined);
+    let finalBody = false;
+    try {
+      for (const event of experience.start()) yield event;
+      while (true) {
+        const next = await pending;
+        if (next.done) break;
+        const event = next.value;
+        if (event.type.startsWith("message.") && event.payload.channel === "final" && event.payload.text) finalBody = true;
+        if (event.type === "run.completed" && !finalBody && typeof event.payload.text === "string" && event.payload.text) {
+          const finalMessage: CanonicalEvent = { protocolVersion: 2, type: "message.update", payload: { messageId: `${request.runId}:final`, channel: "final", status: "completed", text: event.payload.text } };
+          for (const projected of experience.accept(finalMessage)) yield projected;
+        }
+        for (const projected of experience.accept(event)) yield projected;
+        pending = provider.next();
+        void pending.catch(() => undefined);
+      }
+    } finally {
+      await provider.return(undefined);
     }
   }
 

@@ -209,7 +209,7 @@ test("tool call protocol rejects events that cannot reconstruct a command lifecy
   );
   assert.throws(
     () => assertCanonicalEvent({ protocolVersion: 2, type: "tool_call.delta", payload: { id: "tool-1" } }),
-    /requires argsDelta or outputDelta/
+    /requires argsDelta, outputDelta or outputSnapshot/
   );
   assert.throws(
     () => assertCanonicalEvent({ protocolVersion: 2, type: "tool_call.update", payload: { id: "tool-1" } }),

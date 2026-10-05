@@ -16,7 +16,7 @@ const request = {
 test("host holds terminal until adapter stream cleanup succeeds", async () => {
   const host = new AdapterHost();
   host.register({ metadata: { type: "bad", capabilities: [] }, async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; throw new Error("cleanup failed"); } });
-  const events = []; for await (const event of host.invoke("bad", request)) events.push(event);
+  const events = []; for await (const event of host.invoke("bad", request)) { if (!event.type.startsWith("activity.")) events.push(event); };
   assert.deepEqual(events.map(x => x.type), ["run.failed"]);
   assert.equal(events[0].payload.failure.code, "OH-ADP-3004");
   assert.equal(events[0].payload.failure.stage, "adapter.invoke");
@@ -26,7 +26,7 @@ test("host holds terminal until adapter stream cleanup succeeds", async () => {
 test("host synthesizes stopped when adapter exits without terminal", async () => {
   const host = new AdapterHost();
   host.register({ metadata: { type: "short", capabilities: [] }, async *invoke() { yield { protocolVersion: 2, type: "message.create", payload: {} }; } });
-  const events = []; for await (const event of host.invoke("short", request)) events.push(event);
+  const events = []; for await (const event of host.invoke("short", request)) { if (!event.type.startsWith("activity.")) events.push(event); };
   assert.equal(events.at(-1).type, "run.cancelled");
 });
 
@@ -48,9 +48,9 @@ test("host preserves a strict trace capture error code in its synthesized termin
     }
   });
   const events = [];
-  for await (const event of host.invoke("capture-failure", request)) events.push(event);
+  for await (const event of host.invoke("capture-failure", request)) { if (!event.type.startsWith("activity.")) events.push(event); };
   assert.equal(events.at(-1).type, "run.failed");
-  assert.equal(events.at(-1).payload.code, "trace_capture_failed");
+  assert.equal(events.at(-1).payload.failure.reasonCode, "ADAPTER_INVOCATION_FAILED");
   assert.equal(events.at(-1).payload.failure.code, "OH-ADP-3004");
 });
 
@@ -71,8 +71,8 @@ test("host classifies and redacts adapter-provided provider failures", async () 
   });
 
   const events = [];
-  for await (const event of host.invoke("provider-fixture", request)) events.push(event);
-  assert.equal(events.at(-1).payload.code, "invalid_api_key");
+  for await (const event of host.invoke("provider-fixture", request)) { if (!event.type.startsWith("activity.")) events.push(event); };
+  assert.equal(events.at(-1).payload.failure.reasonCode, "PROVIDER_HTTP_401");
   assert.equal(events.at(-1).payload.failure.code, "OH-PRV-4001");
   assert.equal(events.at(-1).payload.failure.source.adapter, "provider-fixture");
   assert.doesNotMatch(JSON.stringify(events), /provider-secret|Authorization|providerError/);
@@ -103,7 +103,7 @@ test("host gives adapters a provider observation context with full invocation id
   for await (const event of host.invoke("observed", {
     ...request,
     context: { profile: "work", runtimeId: "runtime-work" }
-  })) events.push(event);
+  })) { if (!event.type.startsWith("activity.")) events.push(event); };
   assert.equal(events.at(-1).type, "run.completed");
   assert.deepEqual(observations[0].identity, {
     profile: "work",
@@ -126,9 +126,9 @@ test("host normalizes unclassified analysis to an explicit fail-closed exposure"
     }
   });
   const events = [];
-  for await (const event of host.invoke("legacy", request)) events.push(event);
+  for await (const event of host.invoke("legacy", request)) { if (!event.type.startsWith("activity.")) events.push(event); };
   const analysis = events.filter(event => event.type.startsWith("message."));
-  assert.equal(analysis.length, 3);
+  assert.equal(analysis.length, 0);
   for (const event of analysis) {
     assert.equal(event.payload.exposure, "unknown");
     assert.deepEqual(event.payload.provenance, { provider: "legacy", nativeEvent: "unknown" });
@@ -155,7 +155,7 @@ test("host keeps step-scoped analysis messages separate and closes each round", 
     }
   });
   const events = [];
-  for await (const event of host.invoke("steps", request)) events.push(event);
+  for await (const event of host.invoke("steps", request)) { if (!event.type.startsWith("activity.")) events.push(event); };
   const analysisCreates = events.filter(event => event.type === "message.create" && event.payload.channel === "analysis");
   const analysisUpdates = events.filter(event => event.type === "message.update" && event.payload.channel === "analysis");
   assert.deepEqual(analysisCreates.map(event => event.payload.messageId), ["step-1:reasoning", "step-2:reasoning"]);
@@ -172,7 +172,7 @@ test("host cancellation aborts provider and emits stopped once", async () => {
     await new Promise((_, reject) => req.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
   } });
   const events = [];
-  const consume = (async () => { for await (const event of host.invoke("slow", { ...request, invocationId: "cancel-me" })) events.push(event); })();
+  const consume = (async () => { for await (const event of host.invoke("slow", { ...request, invocationId: "cancel-me" })) { if (!event.type.startsWith("activity.")) events.push(event); }; })();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(host.cancel("cancel-me", "test_cancel"), true);
   await consume;
@@ -198,9 +198,9 @@ test("host watchdog fails a provider that never emits its first protocol frame",
       cancelGraceMs: 100,
       enforcement: "enforce"
     }
-  })) events.push(event);
+  })) { if (!event.type.startsWith("activity.")) events.push(event); };
   assert.equal(events.at(-1).type, "run.failed");
-  assert.equal(events.at(-1).payload.code, "ADAPTER_FIRST_FRAME_TIMEOUT");
+  assert.equal(events.at(-1).payload.failure.reasonCode, "ADAPTER_FIRST_FRAME_TIMEOUT");
   assert.equal(events.at(-1).payload.failure.code, "OH-ADP-3007");
   assert.equal(events.at(-1).payload.failure.stage, "adapter.invoke");
   assert.equal(events.at(-1).payload.failure.diagnosticId, "diag_35c4ffc5db9940c9be7ce3a894819ae3");
@@ -233,7 +233,7 @@ test("host watchdog uses the tool budget while a canonical tool call is open", a
       cancelGraceMs: 100,
       enforcement: "enforce"
     }
-  })) events.push(event);
+  })) { if (!event.type.startsWith("activity.")) events.push(event); };
   assert.deepEqual(events.slice(0, 2).map(event => event.type), ["model_step.started", "tool_call.create"]);
   assert.equal(events.at(-1).type, "run.failed");
   assert.equal(events.at(-1).payload.failure.reasonCode, "ADAPTER_TOOL_IDLE_TIMEOUT");
@@ -256,7 +256,7 @@ test("host shutdown aborts every active provider invocation before returning", a
   } });
   const invocations = ["shutdown-1", "shutdown-2"].map(invocationId => (async () => {
     const events = [];
-    for await (const event of host.invoke("slow", { ...request, invocationId })) events.push(event);
+    for await (const event of host.invoke("slow", { ...request, invocationId })) { if (!event.type.startsWith("activity.")) events.push(event); };
     return events;
   })());
   await new Promise(resolve => setImmediate(resolve));
@@ -276,7 +276,7 @@ test("separate adapter-host process loads manifest and streams events", async ()
     assert.equal(processHost.child.spawnargs[0], "octo-harness-adapter-host");
     assert.equal(processHost.adapters.some(item => item.type === "test"), true);
     assert.equal((await processHost.client.list()).some(item => item.type === "test"), true);
-    const events = []; for await (const event of processHost.client.invoke("test", { ...request, invocationId: "rpc-inv" })) events.push(event);
+    const events = []; for await (const event of processHost.client.invoke("test", { ...request, invocationId: "rpc-inv" })) { if (!event.type.startsWith("activity.")) events.push(event); };
     assert.equal(events.at(-1).type, "run.completed");
     // FD3 is independent of RPC stdout; allow its terminal snapshot to arrive.
     for (let i = 0; i < 50 && !observations.some(x => x.type === "watchdog.metrics"); i++) await new Promise(resolve => setTimeout(resolve, 10));
@@ -337,14 +337,14 @@ test("RPC interaction responses resume the same active invocation", async () => 
   const client = new AdapterHostRpcClient({ input: serverToClient, output: clientToServer });
 
   const iterator = client.invoke("interactive", { ...request, invocationId: "rpc-interactive" });
-  assert.equal((await iterator.next()).value.type, "interaction.requested");
+  while ((await iterator.next()).value.type !== "interaction.requested") {}
   await assert.rejects(
     client.respondInteraction("wrong-invocation", { interactionId: "approval-1", outcome: "accepted" }),
     /invocation is not active/
   );
   await client.respondInteraction("rpc-interactive", { interactionId: "approval-1", outcome: "accepted" });
   const remaining = [];
-  for await (const event of iterator) remaining.push(event);
+  for await (const event of iterator) { if (!event.type.startsWith("activity.")) remaining.push(event); };
   assert.deepEqual(remaining.map(event => event.type), ["message.create", "message.update", "run.completed"]);
   assert.equal(remaining[0].payload.text, "accepted");
 

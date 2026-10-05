@@ -124,8 +124,8 @@ test("missing, mismatched or rejected server profiles fail before WSS and do not
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-profile-drift-"));
   try {
     for (const result of [
-      { status: 200, body: { runtime: { id: "runtime-fixture" } } },
-      { status: 200, body: { runtime: { id: "runtime-fixture", profile: "Work" } } },
+      { status: 200, body: { runtime: { id: "runtime-fixture" , protocol_version: 2 } } },
+      { status: 200, body: { runtime: { id: "runtime-fixture", profile: "Work" , protocol_version: 2 } } },
       { status: 409, body: { error: { code: "CONFLICT", details: { reason_code: "RUNTIME_PROFILE_MISMATCH" } } } }
     ]) {
       let registrations = 0;

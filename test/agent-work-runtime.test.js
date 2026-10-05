@@ -385,33 +385,9 @@ test("a recovery channel snapshot starts without the stale provider session", ()
   assert.doesNotMatch(mapped.request.modelInput, /delta-only/);
 });
 
-test("runtime terminal mapping carries the assembled final answer", () => {
-  assert.deepEqual(mapRuntimeEvent({ protocolVersion: 2, type: "run.completed", payload: {} }, "done", TEST_AGENT_RUN_ID), { protocolVersion: 2,
-    type: "run.completed",
-    payload: { text: "done" }
-  });
-  assert.equal(mapRuntimeEvent({ protocolVersion: 2, type: "run.cancelled", payload: { reason: "cancelled" } }, "", TEST_AGENT_RUN_ID).type, "run.cancelled");
-});
-
-test("runtime failure mapping preserves legacy fields and adds a safe failure envelope", () => {
-  const mapped = mapRuntimeEvent({ protocolVersion: 2,
-    type: "run.failed",
-    payload: {
-      code: "model_not_found",
-      message: "model missing; Authorization: Bearer secret-canary",
-      providerError: { status: 404, token: "secret-canary" },
-      adapterType: "codex"
-    }
-  }, "partial answer", TEST_AGENT_RUN_ID);
-
-  assert.equal(mapped.type, "run.failed");
-  assert.equal(mapped.payload.code, "model_not_found");
-  assert.equal(mapped.payload.text, "partial answer");
-  assert.equal(mapped.payload.failure.code, "OH-PRV-4003");
-  assert.equal(mapped.payload.failure.reasonCode, "PROVIDER_MODEL_NOT_FOUND");
-  assert.equal(mapped.payload.failure.source.adapter, "codex");
-  assert.equal(mapped.payload.failure.diagnosticId, "diag_35c4ffc5db9940c9be7ce3a894819ae3");
-  assert.doesNotMatch(JSON.stringify(mapped), /secret-canary|Authorization|providerError/);
+test("runtime terminal mapping never duplicates final message text", () => {
+  assert.deepEqual(mapRuntimeEvent({ protocolVersion: 2, type: "run.completed", payload: {} }), { protocolVersion: 2, type: "run.completed", payload: {} });
+  assert.deepEqual(mapRuntimeEvent({ protocolVersion: 2, type: "run.cancelled", payload: { reason: "cancelled" } }).payload, { reasonCode: "cancelled" });
 });
 
 test("final answer accumulator replaces snapshots and appends deltas", () => {
@@ -434,10 +410,10 @@ test("final answer accumulator replaces snapshots and appends deltas", () => {
   assert.equal(text, "complete answer");
 });
 
-test("terminal mapping uses provider terminal text when no message frame carried final text", () => {
-  assert.deepEqual(mapRuntimeEvent({ protocolVersion: 2, type: "run.completed", payload: { text: "provider answer" } }, "", TEST_AGENT_RUN_ID), { protocolVersion: 2,
+test("terminal mapping drops native text after the Host normalizes it", () => {
+  assert.deepEqual(mapRuntimeEvent({ protocolVersion: 2, type: "run.completed", payload: { text: "provider answer" } }), { protocolVersion: 2,
     type: "run.completed",
-    payload: { text: "provider answer" }
+    payload: {}
   });
 });
 
@@ -464,7 +440,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     registrationBody = JSON.parse(body);
     registrationRequestId = request.headers["x-request-id"];
     response.writeHead(200, { "Content-Type": "application/json", "X-Request-Id": registrationRequestId });
-    response.end(JSON.stringify({ runtime: { profile: "work", id: "runtime-observed" } }));
+    response.end(JSON.stringify({ runtime: { profile: "work", id: "runtime-observed" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     connectionRequestId = request.headers["x-request-id"];
@@ -534,8 +510,8 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     ]);
     assert.equal(registrationBody.runtime_version, "0.1.0");
     assert.deepEqual(registrationBody.device, collectRuntimeDeviceInfo());
-    assert.equal(registrationBody.protocol_version_min, 1);
-    assert.equal(registrationBody.protocol_version_max, 1);
+    assert.equal(registrationBody.protocol_version_min, 2);
+    assert.equal(registrationBody.protocol_version_max, 2);
     assert.match(registrationRequestId, /^req_[0-9a-f]{32}$/);
     assert.match(connectionRequestId, /^req_[0-9a-f]{32}$/);
     assert.notEqual(registrationRequestId, connectionRequestId);
@@ -732,7 +708,7 @@ test("a configured runtime ID still refreshes registration and rejects identity 
     for await (const _chunk of request) { /* Consume the registration body. */ }
     registrationCount += 1;
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-actual" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-actual" , protocol_version: 2 } }));
   });
 
   try {

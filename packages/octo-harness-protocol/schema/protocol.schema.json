@@ -557,6 +557,10 @@
         "outputDelta": {
           "description": "Tool output text fragment.",
           "type": "string"
+        },
+        "outputSnapshot": {
+          "type": "string",
+          "description": "Full replacement of a provider rolling output snapshot; never an activity or a terminal status."
         }
       }
     },

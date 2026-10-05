@@ -256,16 +256,14 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
     }
     if (kind === "scheduled") return events;
     if (kind === "started") {
-      events.push({ protocolVersion: 2, type: "tool_call.update", payload: { id, status: canonicalTerminalStatus("running"), stepId: state.stepId } });
       return events;
     }
     if (kind === "progress") {
       events.push({ protocolVersion: 2,
-        type: "tool_call.update",
+        type: "tool_call.delta",
         payload: {
           id,
-          status: canonicalTerminalStatus("running"),
-          output: payload.stdoutTail ?? payload.stderrTail,
+          outputSnapshot: printableValue(payload.stdoutTail ?? payload.stderrTail, ""),
           stepId: state.stepId
         }
       });

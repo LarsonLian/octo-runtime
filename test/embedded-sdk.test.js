@@ -80,7 +80,7 @@ test("Human Token enrollment persists a loadable account-scoped profile", async 
           credential: { id: "credential-1", token: "octo_runtime_secret" }
         }, { status: 201 });
       }
-      return Response.json({ runtime: { id: "runtime-1", profile: profileName } });
+      return Response.json({ runtime: { id: "runtime-1", profile: profileName , protocol_version: 2 } });
     };
     const result = await ensureTenantEnrollment({
       subject: { type: "user", id: "uid-123" },

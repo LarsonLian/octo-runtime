@@ -8,8 +8,8 @@ import {
 import { assertProfileName } from "./state.js";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
-const MIN_AGENT_WORK_PROTOCOL_VERSION = 1;
-const MAX_AGENT_WORK_PROTOCOL_VERSION = 1;
+const MIN_AGENT_WORK_PROTOCOL_VERSION = 2;
+const MAX_AGENT_WORK_PROTOCOL_VERSION = 2;
 export const RUNTIME_VERSION = packageVersion();
 
 export interface EnrollmentOptions {

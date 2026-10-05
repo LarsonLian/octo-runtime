@@ -41,7 +41,7 @@ test("late user cancellation cannot replace a terminal during cleanup", { timeou
     markCleaning(); await cleanup;
   } });
   const stream = host.invoke("terminal-race", { ...request, invocationId: "terminal-race" });
-  const pending = stream.next();
+  const pending = (async () => { while (true) { const next = await stream.next(); if (next.done || next.value.type.startsWith("run.")) return next; } })();
   await Promise.race([cleaning, pending.then(() => assert.fail("terminal delivered before cleanup"))]);
   assert.equal(host.cancel("terminal-race"), false);
   release();
@@ -150,7 +150,7 @@ test("invalid budgets and ambiguous legacy/v2 policies fail closed", () => {
   assert.doesNotThrow(()=>assertRuntimeLimits({modelIdlePolicy:"observe",runTimeoutMs:100}));
 });
 
-const request = { invocationId:"watchdog-v2",agentSessionId:"s",runId:"r",prompt:"p",workdir:process.cwd() };
+const request = { protocolVersion: 2, invocationId:"watchdog-v2",agentSessionId:"s",runId:"r",prompt:"p",workdir:process.cwd() };
 test("host preserves a single pending next during activity and ignores failing diagnostic sinks", async () => {
   let calls=0; let active=0; let peak=0;
   const host = new AdapterHost({diagnosticSink(){throw new Error("sink unavailable");}});
@@ -185,7 +185,7 @@ test("host bounds cleanup after terminal and timeout wins over provider stopped 
   const host=new AdapterHost();
   host.register({metadata:{type:"cleanup",capabilities:[]},async *invoke(){yield { protocolVersion: 2,type:"run.completed",payload:{}};await new Promise(()=>{});}});
   const events=[];
-  for await(const e of host.invoke("cleanup",{...request,runtimeLimits:{cancelGraceMs:100}}))events.push(e);
+  for await(const e of host.invoke("cleanup",{...request,runtimeLimits:{cancelGraceMs:100}})) if (!e.type.startsWith("activity.")) events.push(e);
   assert.equal(events.length,1);
   assert.equal(events[0].payload.failure.params.timeoutReason,"cleanup_timeout");
 });

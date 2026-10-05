@@ -123,8 +123,7 @@ test("terminal event stays active until its seq is durably acknowledged", async 
     // received alone does not retire the run — only durable coverage does.
     store.advanceReceived("r1", 2);
     assert.deepEqual(store.activeRunIds(), ["r1"]);
-    assert.deepEqual(store.durableTerminal("r1", 2), { protocolVersion: 2,
-      seq: 2,
+    assert.deepEqual(store.durableTerminal("r1", 2), { seq: 2,
       type: "run.completed",
       eventId: terminal.eventId,
       payload: { text: "done" }
@@ -164,7 +163,7 @@ test("durable ACK inspection validates bounds and leaves terminal replayable acr
     assert.deepEqual(store.inspectDurableAck("r1", 2), {
       advanced: true,
       through: 2,
-      terminal: { protocolVersion: 2, seq: 2, type: "run.completed", eventId: terminal.eventId, payload: { text: "done" } }
+      terminal: { seq: 2, type: "run.completed", eventId: terminal.eventId, payload: { text: "done" } }
     });
     assert.equal(store.pendingCount(), 2);
     store.close();
@@ -173,7 +172,7 @@ test("durable ACK inspection validates bounds and leaves terminal replayable acr
     assert.deepEqual(reopened.inspectDurableAck("r1", 2), {
       advanced: true,
       through: 2,
-      terminal: { protocolVersion: 2, seq: 2, type: "run.completed", eventId: terminal.eventId, payload: { text: "done" } }
+      terminal: { seq: 2, type: "run.completed", eventId: terminal.eventId, payload: { text: "done" } }
     });
     reopened.advanceDurable("r1", 2);
     assert.equal(reopened.pendingCount(), 0);

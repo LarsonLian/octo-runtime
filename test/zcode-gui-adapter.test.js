@@ -42,8 +42,7 @@ test("ZCode GUI adapter answers runtime preferences, streams events, and auto-ap
   assert.deepEqual(
     events.filter(event => event.type.startsWith("tool_call.")).map(event => [event.type, event.payload.status]),
     [
-      ["tool_call.create", "pending"],
-      ["tool_call.update", "running"],
+      ["tool_call.create", "running"],
       ["tool_call.update", "completed"]
     ]
   );

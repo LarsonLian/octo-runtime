@@ -23,6 +23,12 @@ export class InvocationExperience {
     const output = this.#finish("harness:starting");
     if (!isTerminal(event)) output.push(...this.#begin("harness:working", "working", { type: "run" }));
     const payload = event.payload;
+    if (event.type.startsWith("message.") || event.type.startsWith("tool_call.") || event.type.startsWith("model_step.")) {
+      for (const [activityId, activity] of this.#active) {
+        if (activity.kind === "waiting_approval" || activity.kind === "waiting_input" || activity.kind === "retrying") output.push(...this.#finish(activityId));
+      }
+    }
+    if (event.type === "run.notice" && payload.code === "retry_scheduled") output.push(...this.#begin(`retry:${payload.noticeId}`, "retrying", { type: "run" }));
     if (event.type === "activity.started") this.#active.set(event.payload.activityId, { ...event.payload });
     if (event.type === "activity.finished") this.#active.delete(event.payload.activityId);
     if (event.type === "model_step.started") output.push(...this.#begin(`step:${payload.stepId}`, "thinking", { type: "run" }));

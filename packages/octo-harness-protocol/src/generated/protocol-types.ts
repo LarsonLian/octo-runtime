@@ -391,6 +391,10 @@ export interface ToolCallDeltaPayload {
    * Tool output text fragment.
    */
   outputDelta?: string;
+  /**
+   * Full replacement of a provider rolling output snapshot; never an activity or a terminal status.
+   */
+  outputSnapshot?: string;
   [k: string]: unknown;
 }
 /**

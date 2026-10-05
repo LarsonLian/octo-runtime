@@ -418,9 +418,9 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
   if (event.type === "tool_call.delta") {
     requireEventString(payload, "id", event.type);
     const hasArgs = typeof payload.argsDelta === "string";
-    const hasOutput = typeof payload.outputDelta === "string";
+    const hasOutput = typeof payload.outputDelta === "string" || typeof payload.outputSnapshot === "string";
     if (!hasArgs && !hasOutput) {
-      throw new TypeError("tool_call.delta requires argsDelta or outputDelta");
+      throw new TypeError("tool_call.delta requires argsDelta, outputDelta or outputSnapshot");
     }
   }
   if (event.type === "tool_call.update") {

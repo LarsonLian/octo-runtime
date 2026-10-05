@@ -250,7 +250,7 @@ function normalizeGatewayAgentEvent(payload: unknown, state: StreamState): Canon
     if (phase === "start") {
       events.push({ protocolVersion: 2, type: "tool_call.create", payload: { status: "running", id, name: nonEmptyString(data.name) ?? "tool", args: asRecord(data.args) ?? {} } });
     } else if (phase === "update") {
-      events.push({ protocolVersion: 2, type: "tool_call.update", payload: { id, status: canonicalTerminalStatus("running"), output: data.result ?? data.partialResult } });
+      events.push({ protocolVersion: 2, type: "tool_call.delta", payload: { id, outputSnapshot: typeof (data.result ?? data.partialResult) === "string" ? String(data.result ?? data.partialResult) : JSON.stringify(data.result ?? data.partialResult ?? "") } });
     } else if (phase === "result") {
       events.push({ protocolVersion: 2, type: "tool_call.update", payload: { id, status: canonicalTerminalStatus(data.isError === true ? "error" : "completed"), output: data.result } });
     }

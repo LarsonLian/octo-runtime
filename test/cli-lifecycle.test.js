@@ -133,11 +133,11 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
       assert.equal(registration.profile, workProfile ? "work" : "default");
       assert.deepEqual(registration.device, collectRuntimeDeviceInfo());
       assert.equal(registration.runtime_version, packageVersion);
-      assert.equal(registration.protocol_version, 1);
-      assert.equal(registration.protocol_version_min, 1);
-      assert.equal(registration.protocol_version_max, 1);
+      assert.equal(registration.protocol_version, 2);
+      assert.equal(registration.protocol_version_min, 2);
+      assert.equal(registration.protocol_version_max, 2);
       response.writeHead(runtimeRegistrationCount === 1 ? 201 : 200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ runtime: { profile: workProfile ? "work" : "default", id: workProfile ? "runtime-work" : "runtime-fixture" } }));
+      response.end(JSON.stringify({ runtime: { profile: workProfile ? "work" : "default", id: workProfile ? "runtime-work" : "runtime-fixture" , protocol_version: 2 } }));
       return;
     }
     response.writeHead(404).end();

@@ -42,7 +42,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
       for await (const chunk of request) chunks.push(chunk);
       registration = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-e2e" } }));
+      response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-e2e" , protocol_version: 2 } }));
     })();
   });
   httpServer.on("upgrade", (request, socket, head) => {
@@ -162,7 +162,7 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-reject" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-reject" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -298,7 +298,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-authority" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-authority" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -437,7 +437,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-ordered" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-ordered" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -651,7 +651,7 @@ test("runtime rejects a queued source generation after recovery advanced the eff
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-stale-generation" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-stale-generation" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -752,7 +752,7 @@ test("runtime close joins a waiting command before immediate restart and replay"
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-close-wait" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-close-wait" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -891,7 +891,7 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-cancel-wait" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-cancel-wait" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -992,7 +992,7 @@ test("append-only channel context cold-starts an adapter without continuity reco
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-capability" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-capability" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -1104,7 +1104,7 @@ test("append-only channel context accepts an adapter without serialized sessions
   httpServer.on("request", async (request, response) => {
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-stateless" } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-stateless" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
