@@ -15,18 +15,20 @@ function request(agentConfig = {}, providerSession) {
     agentSessionId: "agent-session-zcode",
     runId: "run-zcode",
     prompt: "write a file",
+    modelInput: "write a file",
     workdir: process.cwd(),
-    context: {},
-    appendInstructions: "CONTROL",
+    context: { schema: "octo.context-envelope/v1", items: [] },
+    controlInstructions: "CONTROL",
+    approvalMode: "full_access",
     agentConfig,
     ...(providerSession ? { providerSession } : {})
   };
 }
 
-async function invoke(agentConfig = {}, providerSession) {
+async function invoke(agentConfig = {}, providerSession, context) {
   const adapter = createZcodeGuiAdapter({ command: process.execPath, appServerArgs: [fixture] });
   const events = [];
-  for await (const event of adapter.invoke(request(agentConfig, providerSession))) events.push(event);
+  for await (const event of adapter.invoke(request(agentConfig, providerSession), context)) events.push(event);
   return events;
 }
 
@@ -34,8 +36,14 @@ test("ZCode GUI adapter discovers an explicit desktop CLI", () => {
   assert.equal(discoverZcodeBin({ ZCODE_BIN: fixture, PATH: "" }), fixture);
 });
 
-test("ZCode GUI adapter answers runtime preferences, streams events, and auto-approves explicitly", async () => {
-  const events = await invoke({ autoApprove: true });
+test("ZCode GUI adapter full_access answers runtime preferences, streams events, and uses native yolo", async () => {
+  const observations = [];
+  const events = await invoke({}, undefined, { observe: async observation => {
+    observations.push(observation);
+    return { captureId: "zcode-full-access", state: "accepted", complete: true };
+  } });
+  const create = observations.find(observation => observation.event === "provider.input" && observation.rpcMethod === "session/create");
+  assert.equal(create.carrier.content.params.mode, "yolo");
   assert.equal(events[0].type, "session.update");
   assert.equal(events[0].payload.providerSession.sessionId, "sess-zcode-fixture");
   assert.equal(events.find(event => event.type === "message.delta" && event.payload.channel === "final")?.payload.text, "permission:allow");
@@ -49,14 +57,31 @@ test("ZCode GUI adapter answers runtime preferences, streams events, and auto-ap
   assert.equal(events.at(-1).type, "run.completed");
 });
 
-test("ZCode GUI adapter denies native tool permission by default", async () => {
-  const events = await invoke({ permissionMode: "build" });
-  assert.equal(events.find(event => event.type === "message.delta" && event.payload.channel === "final")?.payload.text, "permission:deny");
-  assert.equal(events.at(-1).type, "run.completed");
+test("ZCode GUI adapter rejects unqualified ask and assisted before starting its native transport", async () => {
+  let spawned = false;
+  const adapter = createZcodeGuiAdapter({ spawnFn: () => { spawned = true; throw new Error("provider must not launch"); } });
+  for (const approvalMode of ["ask", "assisted"]) {
+    await assert.rejects(async () => {
+      for await (const event of adapter.invoke({ ...request(), approvalMode })) assert.fail(`unexpected ${event.type}`);
+    }, /APPROVAL_MODE_UNSUPPORTED/);
+  }
+  assert.equal(adapter.metadata.capabilities.includes("interaction.response"), false);
+  assert.equal(spawned, false);
+});
+
+test("ZCode GUI adapter independently rejects explicit model and effort before starting its native transport", async () => {
+  let spawned = false;
+  const adapter = createZcodeGuiAdapter({ spawnFn: () => { spawned = true; throw new Error("provider must not launch"); } });
+  for (const agentConfig of [{ model: "requested-model" }, { effort: "high" }, { model: "requested-model", effort: "high" }]) {
+    await assert.rejects(async () => {
+      for await (const event of adapter.invoke(request(agentConfig))) assert.fail(`unexpected ${event.type}`);
+    }, /EXECUTION_SELECTION_UNSUPPORTED/);
+  }
+  assert.equal(spawned, false);
 });
 
 test("ZCode GUI adapter falls back to a fresh session after resume failure", async () => {
-  const events = await invoke({ autoApprove: true }, { sessionId: "sess-missing" });
+  const events = await invoke({}, { sessionId: "sess-missing" });
   assert.deepEqual(events[0].payload.providerSession, {
     sessionId: "sess-zcode-fixture",
     resumable: true,

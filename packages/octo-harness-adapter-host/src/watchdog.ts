@@ -20,7 +20,7 @@ export function normalizeRuntimeLimits(value: RuntimeLimits | undefined): Effect
   return { ...DEFAULT_RUNTIME_LIMITS, ...value };
 }
 
-export type WatchdogPhase = "starting" | "model_active" | "tool_active" | "cancelling" | "terminal";
+export type WatchdogPhase = "starting" | "model_active" | "tool_active" | "waiting_approval" | "cancelling" | "terminal";
 export type WatchdogReason = "first_frame" | "model_silence" | "tool_idle" | "tool_deadline" | "run_deadline" | "cleanup_timeout";
 export interface WatchdogDiagnostic {
   event: "started" | "activity" | "model_silence" | "progress_resumed" | "timeout" | "finished";
@@ -44,6 +44,8 @@ export class InvocationWatchdog {
   readonly limits: EffectiveLimits;
   readonly #startedAt: number;
   readonly #tools = new Map<string, { startedAt: number; progressAt: number }>();
+  readonly #interactions = new Set<string>();
+  #waitingSince?: number;
   #phase: WatchdogPhase = "starting";
   #phaseAt: number;
   #progressAt: number;
@@ -115,7 +117,22 @@ export class InvocationWatchdog {
     if (event.type === "tool_call.update" && ["completed", "failed", "cancelled", "stopped"].includes(String(event.payload.status))) {
       this.#tools.delete(id);
     }
-    const phase = this.#tools.size ? "tool_active" : "model_active";
+    if (event.type === "interaction.requested" && typeof event.payload.interactionId === "string") {
+      if (!this.#interactions.size) this.#waitingSince = now;
+      this.#interactions.add(event.payload.interactionId);
+    }
+    if (event.type === "interaction.resolved" && typeof event.payload.interactionId === "string") {
+      this.#interactions.delete(event.payload.interactionId);
+      if (!this.#interactions.size && this.#waitingSince !== undefined) {
+        const pausedMs = now - this.#waitingSince;
+        for (const tool of this.#tools.values()) {
+          tool.startedAt += pausedMs;
+          tool.progressAt = now;
+        }
+        this.#waitingSince = undefined;
+      }
+    }
+    const phase = this.#interactions.size ? "waiting_approval" : this.#tools.size ? "tool_active" : "model_active";
     if (phase !== this.#phase) {
       this.#phase = phase;
       this.#phaseAt = this.#progressAt = now;
@@ -139,7 +156,7 @@ export class InvocationWatchdog {
       lastTransportAgeMs: age(this.#transportAt),
       maxCanonicalGapMs: Math.floor(Math.max(this.#maxCanonicalGapMs, now - this.#canonicalAt)),
       maxProgressGapMs: Math.floor(Math.max(this.#maxProgressGapMs, now - this.#progressAt)),
-      openToolCount: this.#tools.size, retryCount: this.#retryCount,
+      openToolCount: this.#tools.size, pendingInteractionCount: this.#interactions.size, retryCount: this.#retryCount,
       lastMethod: this.#lastMethod,
       activitySupport: this.nativeActivity ? "native_progress" : "canonical_only",
       modelIdlePolicy: this.limits.modelIdlePolicy
@@ -177,7 +194,7 @@ export class InvocationWatchdog {
     ];
     if (this.#phase === "starting") deadlines.push({ at: this.#startedAt + this.limits.firstFrameTimeoutMs, reason: "first_frame", budget: this.limits.firstFrameTimeoutMs });
     if (this.#phase === "model_active" && this.limits.modelIdlePolicy === "enforce") deadlines.push({ at: this.#progressAt + this.limits.modelIdleTimeoutMs, reason: "model_silence", budget: this.limits.modelIdleTimeoutMs });
-    for (const tool of this.#tools.values()) {
+    for (const tool of this.#phase === "waiting_approval" ? [] : this.#tools.values()) {
       deadlines.push({ at: tool.progressAt + this.limits.toolTimeoutMs, reason: "tool_idle", budget: this.limits.toolTimeoutMs });
       if (this.limits.toolWallTimeoutMs !== undefined) deadlines.push({ at: tool.startedAt + this.limits.toolWallTimeoutMs, reason: "tool_deadline", budget: this.limits.toolWallTimeoutMs });
     }

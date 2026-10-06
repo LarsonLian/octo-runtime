@@ -25,7 +25,7 @@ export class InvocationExperience {
     const payload = event.payload;
     if (event.type.startsWith("message.") || event.type.startsWith("tool_call.") || event.type.startsWith("model_step.")) {
       for (const [activityId, activity] of this.#active) {
-        if (activity.kind === "waiting_approval" || activity.kind === "waiting_input" || activity.kind === "retrying") output.push(...this.#finish(activityId));
+        if (activity.kind === "retrying") output.push(...this.#finish(activityId));
       }
     }
     if (event.type === "run.notice" && payload.code === "retry_scheduled") output.push(...this.#begin(`retry:${payload.noticeId}`, "retrying", { type: "run" }));
@@ -36,6 +36,7 @@ export class InvocationExperience {
     if (event.type === "tool_call.create") output.push(...this.#begin(`tool:${payload.id}`, "executing_tool", { type: "tool", id: String(payload.id) }));
     if (event.type === "tool_call.update") output.push(...this.#finish(`tool:${payload.id}`, canonicalTerminalStatus(payload.status)));
     if (event.type === "interaction.requested") output.push(...this.#begin(`interaction:${payload.interactionId}`, payload.kind === "approval" ? "waiting_approval" : "waiting_input", { type: "interaction", id: String(payload.interactionId) }));
+    if (event.type === "interaction.resolved") output.push(...this.#finish(`interaction:${String(payload.interactionId)}`, payload.status === "resolved" ? "completed" : "cancelled"));
     if (event.type.startsWith("message.")) {
       const messageId = String(payload.messageId);
       const publicAnalysis = ["public_reasoning", "public_summary", "public_plan"].includes(String(payload.exposure));

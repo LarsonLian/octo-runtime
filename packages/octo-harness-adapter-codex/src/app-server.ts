@@ -1,4 +1,4 @@
-import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
+import { canonicalTerminalStatus, contextHash } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * Codex app-server transport and event adaptation layer.
  *
@@ -26,6 +26,7 @@ import {
   observeBestEffort,
   observeProviderOutput,
   providerInputText,
+  sanitizePublicValue,
   type AdapterInvocationContext,
   type CanonicalEvent,
   type InvokeRequest,
@@ -56,6 +57,8 @@ interface PendingInteraction {
   method: string;
   params: JsonRecord;
   responding: boolean;
+  expiresAt: number;
+  timer: NodeJS.Timeout;
 }
 
 export type CodexInteractionResponder = (response: InteractionResponse) => Promise<void>;
@@ -134,8 +137,8 @@ export async function* runCodexAppServerTurn({
   onInteractionResponder?: (responder: CodexInteractionResponder | undefined) => void;
 }): AsyncGenerator<CanonicalEvent> {
   const requestTimeoutMs = appServerRequestTimeout(request);
-  const interactive = request.agentConfig.autoApprove === false;
-  let client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, interactive, request.signal, context);
+  const interactive = request.approvalMode !== "full_access";
+  let client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, interactive, request, context);
   onInteractionResponder?.(response => client.respondInteraction(response));
   let terminal = false;
   let turnProviderRequestId: string | undefined;
@@ -156,7 +159,7 @@ export async function* runCodexAppServerTurn({
       onInteractionResponder?.(undefined);
       await client.close();
       throwIfAborted(request.signal);
-      client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, interactive, request.signal, context);
+      client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, interactive, request, context);
       onInteractionResponder?.(response => client.respondInteraction(response));
       await initializeClient(client);
     }
@@ -669,12 +672,11 @@ function interactionKind(method: string): "approval" | "question" | "elicitation
 }
 
 /** Keep provider-owned request ids opaque while producing a short, ASCII database key. */
-function codexInteractionId(id: RpcId): string {
-  if (typeof id === "number") return `codex:n:${id}`;
-  return `codex:s:${createHash("sha256").update(id).digest("hex")}`;
+function codexInteractionId(id: RpcId, invocationId: string, sequence: number): string {
+  return `codex:${createHash("sha256").update(JSON.stringify([invocationId, id, sequence])).digest("hex")}`;
 }
 
-function automaticServerRequestResult(method: string, params: JsonRecord): unknown {
+function automaticServerRequestResult(method: string): unknown {
   switch (method) {
     case "item/commandExecution/requestApproval":
     case "item/fileChange/requestApproval":
@@ -682,10 +684,6 @@ function automaticServerRequestResult(method: string, params: JsonRecord): unkno
     case "execCommandApproval":
     case "applyPatchApproval":
       return { decision: "approved" };
-    case "item/permissions/requestApproval":
-      return { permissions: requestedPermissionGrant(params), scope: "turn" };
-    case "mcpServer/elicitation/request":
-      return { action: "accept", content: null, _meta: null };
     default:
       return undefined;
   }
@@ -734,7 +732,7 @@ function displaySafeInteractionRequest(method: string, params: JsonRecord): Json
     if (params.requestedSchema !== undefined) request.requestedSchema = boundedJson(params.requestedSchema);
     // Provider `_meta` and user-verification challenges are deliberately not projected.
   }
-  return request;
+  return sanitizePublicValue(request) as JsonRecord;
 }
 
 function providerInteractionReply(pending: PendingInteraction, response: InteractionResponse): JsonRecord {
@@ -890,6 +888,7 @@ class CodexAppServerClient {
   readonly #exitPromise: Promise<ProcessExit>;
   #resolveExit: (exit: ProcessExit) => void = () => undefined;
   #nextId = 1;
+  #nextInteractionId = 1;
   #stderr = "";
   #closed = false;
   #closing = false;
@@ -913,11 +912,11 @@ class CodexAppServerClient {
   readonly #abortListener = (): void => {
     if (this.#closed || this.#terminal) return;
     this.#terminal = true;
+    this.#invalidateInteractions("run_cancelled");
     this.#queue.push({ protocolVersion: 2,
       type: "run.cancelled",
       payload: { reason: String(this.#signal?.reason ?? "cancelled") }
     });
-    this.#interactions.clear();
     this.#queue.close();
     if (this.#activeThreadId && this.#activeTurnId) {
       void this.request("turn/interrupt", {
@@ -934,11 +933,12 @@ class CodexAppServerClient {
     spawnFn: CodexAppServerSpawn,
     requestTimeoutMs: number,
     interactive: boolean,
-    signal?: AbortSignal,
+    readonly invocation: InvokeRequest,
     readonly context?: AdapterInvocationContext
   ) {
     this.#requestTimeoutMs = requestTimeoutMs;
     this.#interactive = interactive;
+    const signal = invocation.signal;
     this.#signal = signal;
     this.#exitPromise = new Promise(resolve => {
       this.#resolveExit = resolve;
@@ -981,6 +981,7 @@ class CodexAppServerClient {
     if (!pending) {
       return Promise.reject(new Error(`unknown codex interaction: ${response.interactionId}`));
     }
+    if (pending.expiresAt <= Date.now()) return Promise.reject(new Error("INTERACTION_EXPIRED"));
     if (pending.responding) {
       return Promise.reject(new Error(`codex interaction response is already in flight: ${response.interactionId}`));
     }
@@ -1000,7 +1001,16 @@ class CodexAppServerClient {
           reject(error);
         },
         () => {
+          if (!this.#interactions.has(response.interactionId)) {
+            reject(new Error("INTERACTION_NOT_ACTIVE"));
+            return;
+          }
+          clearTimeout(pending.timer);
           this.#interactions.delete(response.interactionId);
+          this.#queue.push({ protocolVersion: 2, type: "interaction.resolved", payload: {
+            interactionId: response.interactionId, executionInstanceId: this.invocation.invocationId,
+            status: "resolved", outcome: response.outcome
+          } });
           resolve();
         }
       );
@@ -1079,7 +1089,7 @@ class CodexAppServerClient {
     if (this.#abortTimer) clearTimeout(this.#abortTimer);
     this.#reader.close();
     this.#rejectPending(new Error("codex app-server closed"));
-    this.#interactions.clear();
+    this.#invalidateInteractions("execution_lost");
     if (this.#exited) return;
     this.#child.stdin.end();
     if (await waitForExit(this.#exitPromise, APP_SERVER_CLOSE_GRACE_MS)) return;
@@ -1119,12 +1129,12 @@ class CodexAppServerClient {
     if (!this.#acceptNotification(params)) return;
     this.#reportNotificationActivity(method, params);
     for (const event of this.#normalizer.normalize({ method, params })) {
-      this.#queue.push(event);
       if (isTerminalEvent(event)) {
+        this.#invalidateInteractions("run_terminal");
         this.#terminal = true;
-        this.#interactions.clear();
+        this.#queue.push(event);
         this.#queue.close();
-      }
+      } else this.#queue.push(event);
     }
   }
 
@@ -1149,16 +1159,6 @@ class CodexAppServerClient {
   }
 
   #handleServerRequest(id: RpcId, method: string, params: JsonRecord): void {
-    if (!this.#interactive) {
-      const automatic = automaticServerRequestResult(method, params);
-      if (automatic !== undefined) {
-        this.#respond(id, automatic);
-        return;
-      }
-      this.#rejectServerRequest(id, method);
-      return;
-    }
-
     const kind = interactionKind(method);
     if (!kind) {
       this.#rejectServerRequest(id, method);
@@ -1173,8 +1173,18 @@ class CodexAppServerClient {
       return;
     }
 
-    const interactionId = codexInteractionId(id);
-    if (this.#interactions.has(interactionId)) {
+    if (method === "item/permissions/requestApproval") {
+      this.#rejectServerRequest(id, method);
+      this.#queue.fail(new Error("APPROVAL_GRANT_SCOPE_UNSUPPORTED"));
+      return;
+    }
+    if (this.#interactions.size >= 16) {
+      this.#rejectServerRequest(id, method);
+      this.#queue.fail(new Error("APPROVAL_PENDING_LIMIT_EXCEEDED"));
+      return;
+    }
+    const interactionId = codexInteractionId(id, this.invocation.invocationId, this.#nextInteractionId++);
+    if ([...this.#interactions.values()].some(pending => pending.rpcId === id)) {
       this.#write({
         jsonrpc: "2.0",
         id,
@@ -1182,19 +1192,58 @@ class CodexAppServerClient {
       });
       return;
     }
-    this.#interactions.set(interactionId, { rpcId: id, method, params, responding: false });
+    const expiresAt = Date.now() + 600_000;
+    const timer = setTimeout(() => {
+      this.#interactions.delete(interactionId);
+      this.#queue.push({ protocolVersion: 2, type: "interaction.resolved", payload: {
+        interactionId, executionInstanceId: this.invocation.invocationId, status: "expired", reasonCode: "approval_timeout"
+      } });
+      this.#rejectServerRequest(id, method);
+      this.#queue.fail(new Error("INTERACTION_EXPIRED"));
+    }, 600_000);
+    timer.unref?.();
+    this.#interactions.set(interactionId, { rpcId: id, method, params, responding: false, timer, expiresAt });
+    const display = displaySafeInteractionRequest(method, params);
     this.#queue.push({ protocolVersion: 2,
       type: "interaction.requested",
       payload: {
         interactionId,
         kind,
-        request: displaySafeInteractionRequest(method, params)
+        executionInstanceId: this.invocation.invocationId,
+        expiresAt: new Date(expiresAt).toISOString(),
+        request: kind === "approval" ? {
+          schema: "octo.approval-request/v1",
+          policy: { mode: this.invocation.approvalMode, hash: contextHash(this.invocation.context) },
+          operation: { kind: method.includes("fileChange") || method === "applyPatchApproval" ? "file_change" : "command_execution", summary: typeof display.command === "string" && display.command ? Array.from(display.command).slice(0, 500).join("") : "Approve provider operation", ...(typeof params.itemId === "string" ? { toolCallId: params.itemId } : {}) },
+          requestedPermissions: [],
+          allowedOutcomes: ["accepted", "declined", "cancelled"],
+          grantScope: "request",
+          providerDetails: display
+        } : display
       }
     });
-  }
-
-  #respond(id: RpcId, result: unknown): void {
-    this.#write({ jsonrpc: "2.0", id, result });
+    if (!this.#interactive && kind === "approval") {
+      const automatic = automaticServerRequestResult(method);
+      if (automatic === undefined) {
+        this.#rejectServerRequest(id, method);
+        this.#invalidateInteractions("approval_mapping_unsupported");
+        this.#queue.fail(new Error("APPROVAL_OPERATION_UNSUPPORTED"));
+        return;
+      }
+      this.#interactions.get(interactionId)!.responding = true;
+      this.#write({ jsonrpc: "2.0", id, result: automatic }, error => {
+        this.#invalidateInteractions("response_delivery_failed");
+        this.#queue.fail(error);
+      }, () => {
+        const pending = this.#interactions.get(interactionId);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        this.#interactions.delete(interactionId);
+        this.#queue.push({ protocolVersion: 2, type: "interaction.resolved", payload: {
+          interactionId, executionInstanceId: this.invocation.invocationId, status: "resolved", outcome: "accepted", reasonCode: "full_access_policy"
+        } });
+      });
+    }
   }
 
   #rejectServerRequest(id: RpcId, method: string): void {
@@ -1275,7 +1324,7 @@ class CodexAppServerClient {
 
   #handleProcessError(error: Error): void {
     this.#rejectPending(error);
-    this.#interactions.clear();
+    this.#invalidateInteractions("execution_lost");
     if (!this.#closing && !this.#terminal) this.#queue.fail(error);
   }
 
@@ -1285,8 +1334,18 @@ class CodexAppServerClient {
     this.#resolveExit(exit);
     const error = new CodexAppServerProcessError(this.processErrorMessage(exit), exit);
     this.#rejectPending(error);
-    this.#interactions.clear();
+    this.#invalidateInteractions("execution_lost");
     if (!this.#closing && !this.#terminal) this.#queue.fail(error);
+  }
+
+  #invalidateInteractions(reasonCode: string): void {
+    for (const [interactionId, pending] of this.#interactions) {
+      clearTimeout(pending.timer);
+      this.#queue.push({ protocolVersion: 2, type: "interaction.resolved", payload: {
+        interactionId, executionInstanceId: this.invocation.invocationId, status: "invalidated", reasonCode
+      } });
+    }
+    this.#interactions.clear();
   }
 
   #rejectPending(error: Error): void {
@@ -1390,7 +1449,7 @@ function threadParams(request: InvokeRequest, extra: JsonRecord): JsonRecord {
     // Dynamic MCP tools are untrusted until Codex asks the client to approve them. `never`
     // rejects those calls before the existing reverse-request handler can answer them.
     approvalPolicy: "untrusted",
-    developerInstructions: request.appendInstructions
+    developerInstructions: request.controlInstructions
   };
 }
 
@@ -1401,10 +1460,7 @@ function threadParams(request: InvokeRequest, extra: JsonRecord): JsonRecord {
  * publishing summaryTextDelta, so a UI might see only an empty analysis lifecycle.
  */
 function turnParams(request: InvokeRequest, threadId: string, freshFallback = false): JsonRecord {
-  const legacyEffort = typeof request.agentConfig.thinking === "string"
-    ? request.agentConfig.thinking
-    : undefined;
-  const effort = codexEffort(legacyEffort);
+  const effort = request.agentConfig.effort;
   return {
     threadId,
     input: [{
@@ -1419,11 +1475,6 @@ function turnParams(request: InvokeRequest, threadId: string, freshFallback = fa
   };
 }
 
-function codexEffort(value: string | undefined): string | undefined {
-  // The Codex app-server does not accept disabled; matching Aily behavior, use the lowest effective level low for compatibility.
-  return value === "disabled" ? "low" : value;
-}
-
 /**
  * The app-server will not automatically publish reasoning summary deltas just
  * because effort was set. Chat requests auto by default; callers can tighten or
@@ -1433,7 +1484,7 @@ function codexReasoningSummary(request: InvokeRequest): string {
   const configured = recordValue(request.agentConfig.providerOptions)?.reasoningSummary;
   const value = typeof configured === "string"
     ? configured
-    : request.agentConfig.thinking === false || request.agentConfig.thinking === "disabled" ? "none" : "auto";
+    : "auto";
   if (!["auto", "concise", "detailed", "none"].includes(value)) {
     throw new Error(`unsupported Codex reasoning summary: ${value}`);
   }
@@ -1441,12 +1492,13 @@ function codexReasoningSummary(request: InvokeRequest): string {
 }
 
 function codexSandbox(request: InvokeRequest): string {
-  const value = request.agentConfig.dangerouslyBypassPermissions
+  const value = request.approvalMode === "full_access"
     ? "danger-full-access"
     : request.agentConfig.sandbox ?? "workspace-write";
   if (!["read-only", "workspace-write", "danger-full-access"].includes(value)) {
     throw new Error(`unsupported Codex sandbox mode: ${value}`);
   }
+  if (request.approvalMode !== "full_access" && value === "danger-full-access") throw new Error("APPROVAL_SANDBOX_CONFLICT");
   return value;
 }
 

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { AgentWorkRuntime } from "../apps/daemon/dist/agent-work-runtime.js";
-import { waitFor, wire } from "./agent-work-runtime-fixture.js";
+import { contextEnvelope, executionContext, terminalGrant, waitFor, wire } from "./agent-work-runtime-fixture.js";
 
 const host = {
   list: async () => [],
@@ -14,11 +14,11 @@ const host = {
   async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
 };
 
-async function startFixture(t, { silentFirst = false, welcomeOnFirst = true } = {}) {
+async function startFixture(t, { silentFirst = false, welcomeOnFirst = true, dispatchRun = false } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-liveness-"));
   const httpServer = createServer();
   const wsServer = new WebSocketServer({ noServer: true });
-  const state = { registrations: 0, connections: 0, firstHeartbeats: 0, helloRuntimeIds: [] };
+  const state = { registrations: 0, connections: 0, firstHeartbeats: 0, helloRuntimeIds: [], invokedRequests: [], terminalEvents: [] };
   let runtime;
   t.after(async () => {
     await runtime?.close();
@@ -44,7 +44,38 @@ async function startFixture(t, { silentFirst = false, welcomeOnFirst = true } = 
         state.helloRuntimeIds.push(frame.runtime_id);
         if (connection !== 1 || welcomeOnFirst) {
           websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 10 }));
+          if (dispatchRun) {
+            const plan = { adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_capabilities: ["tool.canonical"] };
+            const items = [{ namespace: "octo.content", name: "selections", payload: { entries: [
+              { resource_ref: "octo://liveness/background", text: "Frozen background for the liveness run" }
+            ] } }];
+            websocket.send(wire("runtime.command", {
+              server_seq: 1, command_id: "command-liveness", run_id: "run-liveness", type: "run.start",
+              lease_id: "lease-liveness", fencing_token: 1,
+              payload: {
+                schema_version: 2, context_defaults_version: 1,
+                effective_context: executionContext(plan, items), resolved_execution_plan: plan,
+                run_id: "run-liveness", agent_session_id: "session-liveness",
+                agent_run_request: {
+                  namespace: "test", agent_id: "agent-liveness", agent_revision_id: "revision-liveness",
+                  session_key: "liveness/session", trigger: { kind: "test", occurrence_id: "liveness/current" },
+                  context: contextEnvelope(items), input: { parts: [{ type: "text", text: "Keep the connection healthy" }] }
+                },
+                agent_revision: { definition: { instructions: "Keep runtime work scoped." } }
+              }
+            }));
+          }
         }
+      }
+      if (frame.type === "run.event_batch") {
+        const terminal = frame.payload.events.find(event => event.type === "run.completed");
+        websocket.send(wire("event.ack", {
+          run_id: frame.payload.run_id,
+          received_through_seq: frame.payload.last_seq,
+          durable_through_seq: frame.payload.last_seq,
+          ...(terminal ? terminalGrant(terminal) : {})
+        }));
+        if (terminal) state.terminalEvents.push(terminal);
       }
       if (frame.type === "runtime.heartbeat") {
         if (connection === 1) state.firstHeartbeats += 1;
@@ -67,7 +98,14 @@ async function startFixture(t, { silentFirst = false, welcomeOnFirst = true } = 
     reconnectFirstMs: 5,
     reconnectMs: 5,
     reconnectMaxMs: 5
-  }, host);
+  }, {
+    ...host,
+    list: async () => [{ type: "fake", capabilities: ["tool.canonical"] }],
+    async *invoke(_adapterType, request) {
+      state.invokedRequests.push(request);
+      yield { protocolVersion: 2, type: "run.completed", payload: {} };
+    }
+  });
   await runtime.start();
   return { runtime, state };
 }
@@ -78,6 +116,23 @@ test("missing heartbeat ACKs terminate an open socket and reconnect the same run
   assert.ok(state.firstHeartbeats > 0, "outbound heartbeats must not reset the receive timeout");
   assert.deepEqual(state.helloRuntimeIds.slice(0, 2), ["runtime-liveness", "runtime-liveness"]);
   assert.equal(state.registrations, 2);
+});
+
+test("a schema2 run consumes frozen Context without disrupting heartbeat liveness", { timeout: 5_000 }, async testContext => {
+  const { runtime, state } = await startFixture(testContext, { dispatchRun: true });
+  await waitFor(() => state.terminalEvents.length === 1 && runtime.status.outboxPending === 0);
+  assert.equal(state.invokedRequests.length, 1);
+  const request = state.invokedRequests[0];
+  assert.equal(request.approvalMode, "ask");
+  assert.equal(request.controlInstructions, "Keep runtime work scoped.");
+  assert.equal(request.prompt, "[Current message]\nKeep the connection healthy");
+  assert.match(request.modelInput, /Frozen background for the liveness run/);
+  assert.doesNotMatch(request.prompt, /Frozen background/);
+  assert.equal(request.runMetadata.runtimeId, "runtime-liveness");
+  assert.equal(request.context.schema, "octo.context-envelope/v1");
+  assert.equal(request.context.runtimeId, undefined);
+  assert.equal(runtime.status.connected, true);
+  assert.equal(state.registrations, 1);
 });
 
 test("missing welcome after WebSocket open also triggers automatic reconnect", async t => {

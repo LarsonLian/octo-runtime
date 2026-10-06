@@ -1,5 +1,6 @@
 import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 import {
+  AcpApprovalBridge,
   defineAdapter,
   freshFallbackInputText,
   observeBestEffort,
@@ -17,6 +18,7 @@ import {
   spawnAcpClient,
   type AcpUpdate
 } from "@mininglamp-oss/octo-harness-acp-client";
+import { capabilities, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -260,22 +262,39 @@ export function createAcpAdapter(
     command?: string;
   } = {}
 ) {
+  const responders = new Map<string, AcpApprovalBridge>();
   return defineAdapter({
     metadata: {
       type: definition.type,
-      capabilities: [...(definition.capabilities ?? ["session.serialize", "tool.canonical"])]
+      capabilities: [...(definition.capabilities ?? ["session.serialize", "tool.canonical"]), capabilities.INTERACTION_RESPONSE]
     },
     probe: () => probeCommand(command),
+    async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
+      const bridge = responders.get(invocationId);
+      if (!bridge) throw new Error("INTERACTION_NOT_ACTIVE");
+      await bridge.respond(response);
+    },
     async *invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
+      if (request.agentConfig.effort) throw new Error("REASONING_UNSUPPORTED: ACP reasoning selection is not qualified");
+      if (responders.has(request.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
+      const bridge = new AcpApprovalBridge(request);
+      responders.set(request.invocationId, bridge);
+      try { yield* bridge.stream(execute(request, bridge, context)); }
+      finally { bridge.close("execution_lost"); responders.delete(request.invocationId); }
+    }
+  });
+
+  async function* execute(request: InvokeRequest, bridge: AcpApprovalBridge, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
       const args = typeof definition.args === "function" ? definition.args(request) : definition.args ?? ["acp"];
-      const autoApprove = request.agentConfig?.autoApprove === true
-        || request.agentConfig?.dangerouslyBypassPermissions === true;
       const client = acpClientFactory({
         command,
         args: [...args],
         cwd: request.workdir,
-        ...(autoApprove ? { permissionHandler: allowPermission } : {})
+        permissionHandler: params => bridge.requestPermission(params),
+        onPermissionResponseWritten: params => bridge.responseWritten(params),
+        onPermissionResponseFailed: (params, error) => bridge.responseFailed(params, error)
       });
+      bridge.bindTransport(() => client.close());
       let sessionId: string | undefined;
       let terminal = false;
       let forceCloseTimer: NodeJS.Timeout | undefined;
@@ -379,8 +398,8 @@ export function createAcpAdapter(
         yield { protocolVersion: 2, type: "message.create", payload: { role: "assistant", status: "streaming" } };
 
         const input = resumeFallback ? freshFallbackInputText(request) : providerInputText(request);
-        const prompt = request.appendInstructions
-          ? `${input}\n\n${request.appendInstructions}`
+        const prompt = request.controlInstructions
+          ? `${input}\n\n${request.controlInstructions}`
           : input;
         const promptParams = acpPromptParams(sessionId, prompt);
         const promptRequestId = client.reserveRequestId();
@@ -487,8 +506,7 @@ export function createAcpAdapter(
         if (forceCloseTimer) clearTimeout(forceCloseTimer);
         await client.close();
       }
-    }
-  });
+  }
 }
 
 async function observeInput(
@@ -568,20 +586,6 @@ function isTerminalToolStatus(status: unknown): boolean {
 function isCancelledStopReason(reason: unknown): boolean {
   return typeof reason === "string"
     && ["cancelled", "canceled", "interrupted", "aborted"].includes(reason.toLowerCase());
-}
-
-function allowPermission(params: JsonRecord): JsonRecord {
-  const options = Array.isArray(params.options) ? params.options.filter(isRecord) : [];
-  const selected = options.find(option => {
-    const label = stringField(option, "kind") ?? stringField(option, "name") ?? "";
-    return /allow|approve/i.test(label) && !/always/i.test(label);
-  }) ?? options.find(option => {
-    const label = stringField(option, "kind") ?? stringField(option, "name") ?? "";
-    return /allow|approve/i.test(label);
-  });
-  return selected
-    ? { outcome: { outcome: "selected", optionId: selected.optionId ?? selected.id } }
-    : { outcome: { outcome: "cancelled" } };
 }
 
 function isRecord(value: unknown): value is JsonRecord {

@@ -11,7 +11,7 @@ test("host emits activity without persisting private analysis and closes every a
     yield { protocolVersion: 2, type: "run.completed", payload: {} };
   } });
   const events = [];
-  for await (const event of host.invoke("experience", { protocolVersion: 2, invocationId: "i", agentSessionId: "s", runId: "r", prompt: "p", workdir: process.cwd(), agentConfig: {} })) events.push(event);
+  for await (const event of host.invoke("experience", { protocolVersion: 2, invocationId: "i", agentSessionId: "s", runId: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v1", items: [] }, controlInstructions: "", approvalMode: "full_access", agentConfig: {} })) events.push(event);
   assert.equal(events[0].payload.kind, "starting");
   assert.doesNotMatch(JSON.stringify(events), /secret-body/);
   assert.ok(events.some(event => event.type === "activity.started" && event.payload.kind === "thinking"));

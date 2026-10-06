@@ -29,7 +29,8 @@ import {
   createClaudeCodeAdapter,
   normalizeClaudeEvent
 } from "@mininglamp-oss/octo-harness-adapter-claude-code";
-import { buildOpenCodeCommand, normalizeOpenCodeEvent } from "@mininglamp-oss/octo-harness-adapter-opencode";
+import { buildOpenCodeCommand, createOpenCodeAdapter, normalizeOpenCodeEvent } from "@mininglamp-oss/octo-harness-adapter-opencode";
+import { contextHash } from "@mininglamp-oss/octo-harness-protocol";
 import {
   buildOpenClawGatewayInvocation,
   createOpenClawDeviceIdentity,
@@ -41,7 +42,38 @@ import {
   tryParseOpenClawTranscriptLine
 } from "@mininglamp-oss/octo-harness-adapter-openclaw";
 
-const request = { protocolVersion: 2, invocationId: "inv-1", agentSessionId: "session-1", runId: "run-1", prompt: "work", workdir: process.cwd(), context: {}, appendInstructions: "CONTROL", agentConfig: {} };
+const request = { protocolVersion: 2, invocationId: "inv-1", agentSessionId: "session-1", runId: "run-1", prompt: "work", modelInput: "work", workdir: process.cwd(), context: { schema: "octo.context-envelope/v1", items: [] }, controlInstructions: "CONTROL", approvalMode: "full_access", agentConfig: {} };
+
+function acpPermissionFixture(createAdapter, options) {
+  let nextRequestId = 1;
+  let spawnOptions;
+  const state = { responses: [], sideEffects: 0, spawnOptions: undefined };
+  const params = {
+    toolCall: { toolCallId: "permission-tool", title: "Write the requested file" },
+    options
+  };
+  const client = {
+    initialize: async () => {},
+    reserveRequestId: () => nextRequestId++,
+    request: async method => method === "session/new" ? { sessionId: "permission-session" } : {},
+    async *prompt() {
+      const response = await spawnOptions.permissionHandler(params);
+      state.responses.push(response);
+      spawnOptions.onPermissionResponseWritten(params);
+      if (response.outcome.optionId === "allow-once") state.sideEffects += 1;
+      yield { sessionUpdate: "agent_message_chunk", content: { text: "done" } };
+      yield { type: "prompt_result", stopReason: "end_turn" };
+    },
+    cancel: () => {},
+    close: async () => {}
+  };
+  const adapter = createAdapter({ acpClientFactory: options => {
+    spawnOptions = options;
+    state.spawnOptions = options;
+    return client;
+  } });
+  return { adapter, state };
+}
 
 const openClawGatewayMethods = ["config.get", "sessions.create", "sessions.messages.subscribe", "agent", "agent.wait", "sessions.abort"];
 
@@ -399,48 +431,27 @@ test("Claude native events map to session/message/terminal", () => {
   assert.equal(normalizeClaudeEvent({ type: "result", session_id: "claude-1", result: "ok", usage: {} }).at(-1).type, "run.completed");
 });
 
-test("Claude defaults to unattended bypass without restricting its tool catalog", async () => {
+test("Claude full_access uses native bypass without inventing a default effort", async () => {
   const claude = await buildClaudeCommand(request);
   assert.equal(claude.args.includes("--include-partial-messages"), true);
   assert.equal(claude.args.includes("--settings"), false);
-  assert.equal(claude.args[claude.args.indexOf("--effort") + 1], "medium");
+  assert.equal(claude.args.includes("--effort"), false);
+  assert.equal(claude.providerInput.content.effort, undefined);
   assert.equal(claude.args[claude.args.indexOf("--permission-mode") + 1], "bypassPermissions");
   assert.equal(claude.args.includes("--dangerously-skip-permissions"), true);
   assert.equal(claude.args.includes("--disallowedTools"), false);
   await claude.cleanup();
 });
 
-test("Claude enables thinking explicitly and defaults optional effort to medium", async () => {
-  const thinking = await buildClaudeCommand({
-    ...request,
-    agentConfig: { thinking: true }
-  });
-  assert.deepEqual(
-    JSON.parse(thinking.args[thinking.args.indexOf("--settings") + 1]),
-    { alwaysThinkingEnabled: true }
-  );
-  assert.equal(thinking.args[thinking.args.indexOf("--effort") + 1], "medium");
-  assert.equal(thinking.providerInput.content.thinking, true);
-  assert.equal(thinking.providerInput.content.effort, "medium");
-  await thinking.cleanup();
-
-  const tuned = await buildClaudeCommand({
-    ...request,
-    agentConfig: { thinking: true, effort: "high" }
-  });
-  assert.equal(tuned.args[tuned.args.indexOf("--effort") + 1], "high");
-  assert.equal(tuned.providerInput.content.effort, "high");
-  await tuned.cleanup();
-
-  const disabled = await buildClaudeCommand({
-    ...request,
-    agentConfig: { thinking: false }
-  });
-  assert.deepEqual(
-    JSON.parse(disabled.args[disabled.args.indexOf("--settings") + 1]),
-    { alwaysThinkingEnabled: false }
-  );
-  await disabled.cleanup();
+test("Claude maps explicit effort as the only reasoning strength input", async () => {
+  for (const effort of ["low", "medium", "high"]) {
+    const tuned = await buildClaudeCommand({ ...request, agentConfig: { effort } });
+    assert.equal(tuned.args[tuned.args.indexOf("--effort") + 1], effort);
+    assert.equal(tuned.args.includes("--settings"), false);
+    assert.equal(tuned.providerInput.content.effort, effort);
+    assert.equal(Object.hasOwn(tuned.providerInput.content, "thinking"), false);
+    await tuned.cleanup();
+  }
 });
 
 test("Claude preserves an empty thinking block as a public reasoning lifecycle", () => {
@@ -506,19 +517,19 @@ test("Claude carries bounded public round text without classifying it as reasoni
   }]);
 });
 
-test("Claude preserves an explicit restricted permission mode", async () => {
-  const claude = await buildClaudeCommand({ ...request, agentConfig: { permissionMode: "dontAsk" } });
-  assert.equal(claude.args[claude.args.indexOf("--permission-mode") + 1], "dontAsk");
-  assert.equal(claude.args.includes("--dangerously-skip-permissions"), false);
-  await claude.cleanup();
-
-  const forced = await buildClaudeCommand({
-    ...request,
-    agentConfig: { permissionMode: "dontAsk", dangerouslyBypassPermissions: true }
-  });
-  assert.equal(forced.args[forced.args.indexOf("--permission-mode") + 1], "bypassPermissions");
-  assert.equal(forced.args.includes("--dangerously-skip-permissions"), true);
-  await forced.cleanup();
+test("Claude and OpenCode reject unqualified ask and assisted before building a command", async () => {
+  for (const approvalMode of ["ask", "assisted"]) {
+    for (const buildCommand of [buildClaudeCommand, buildOpenCodeCommand]) {
+      await assert.rejects(buildCommand({ ...request, approvalMode }), /APPROVAL_MODE_UNSUPPORTED/);
+    }
+    for (const createAdapter of [createClaudeCodeAdapter, createOpenCodeAdapter]) {
+      const adapter = createAdapter({ command: "/unqualified-provider-must-not-launch" });
+      assert.equal(adapter.metadata.capabilities.includes("interaction.response"), false);
+      await assert.rejects(async () => {
+        for await (const event of adapter.invoke({ ...request, approvalMode })) assert.fail(`unexpected ${event.type}`);
+      }, /APPROVAL_MODE_UNSUPPORTED/);
+    }
+  }
 });
 
 test("OpenCode native events map session/text/reasoning/tool/usage", () => {
@@ -658,7 +669,7 @@ test("JSON CLI adapters reap a provider that stays alive after a semantic termin
   assert.ok(Date.now() - startedAt < 2_000);
 });
 
-test("OpenCode always requests reasoning JSON and tool approval, maps thinking to variant, and resumes a provider session", async () => {
+test("OpenCode full_access uses native auto approval, maps effort to variant, and resumes a provider session", async () => {
   const withoutVariant = await buildOpenCodeCommand(request);
   assert.deepEqual(withoutVariant.args.slice(0, 5), ["run", "--format", "json", "--thinking", "--auto"]);
   assert.equal(withoutVariant.args.filter(arg => arg === "--auto").length, 1);
@@ -668,7 +679,7 @@ test("OpenCode always requests reasoning JSON and tool approval, maps thinking t
   const opencode = await buildOpenCodeCommand({
     ...request,
     providerSession: { sessionId: "ses-existing" },
-    agentConfig: { model: "provider/model", thinking: "high", autoApprove: true }
+    agentConfig: { model: "provider/model", effort: "high" }
   });
   assert.deepEqual(opencode.args, [
     "run", "--format", "json", "--thinking", "--auto",
@@ -768,7 +779,7 @@ test("control instructions use private provider-native carriers", async () => {
   const openclaw = buildOpenClawGatewayInvocation({
     ...request,
     agentConfig: {
-      providerAgentId: "octo-openclaw-runner", model: "provider/model", thinking: "medium", timeoutSeconds: 30,
+      providerAgentId: "octo-openclaw-runner", model: "provider/model", effort: "medium", timeoutSeconds: 30,
       providerOptions: {
         OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
         OPENCLAW_GATEWAY_TOKEN: "SECRET_TOKEN",
@@ -1333,6 +1344,111 @@ test("only Codex declares append-only continuity recovery", () => {
   assert.equal(createCodeBuddyAdapter().metadata.capabilities.includes("session.resume_recovery"), false);
 });
 
+test("generic ACP and CodeBuddy full_access audit allow_once and cancel allow_always-only requests", { timeout: 5_000 }, async testContext => {
+  for (const [provider, createAdapter] of [
+    ["generic ACP", options => createAcpAdapter({ type: "fixture-acp", provider: "fixture-acp", command: "fixture" }, options)],
+    ["CodeBuddy", createCodeBuddyAdapter]
+  ]) {
+    for (const allowOnce of [true, false]) {
+      await testContext.test(`${provider} ${allowOnce ? "allow_once" : "allow_always-only"}`, async () => {
+        const { adapter, state } = acpPermissionFixture(createAdapter, [
+          { optionId: "allow-always", kind: "allow_always" },
+          ...(allowOnce ? [{ optionId: "allow-once", kind: "allow_once" }] : [])
+        ]);
+        const events = [];
+        for await (const event of adapter.invoke(request)) events.push(event);
+        assert.deepEqual(state.responses, [allowOnce
+          ? { outcome: { outcome: "selected", optionId: "allow-once" } }
+          : { outcome: { outcome: "cancelled" } }]);
+        assert.equal(state.sideEffects, allowOnce ? 1 : 0);
+        if (provider === "CodeBuddy") {
+          assert.deepEqual(state.spawnOptions.args, ["--acp", "--permission-mode", "bypassPermissions"]);
+          assert.equal(adapter.metadata.capabilities.includes("interaction.response"), false);
+        }
+        const interactions = events.filter(event => event.type.startsWith("interaction."));
+        assert.deepEqual(interactions.map(event => event.type), ["interaction.requested", "interaction.resolved"]);
+        assert.equal(interactions[0].payload.request.schema, "octo.approval-request/v1");
+        assert.deepEqual(interactions[0].payload.request.policy, { mode: "full_access", hash: contextHash(request.context) });
+        assert.equal(interactions[0].payload.request.grantScope, "request");
+        assert.deepEqual(interactions[0].payload.request.allowedOutcomes, allowOnce ? ["accepted", "cancelled"] : ["cancelled"]);
+        assert.deepEqual(interactions[1].payload, {
+          interactionId: interactions[0].payload.interactionId,
+          executionInstanceId: request.invocationId,
+          status: "resolved",
+          outcome: allowOnce ? "accepted" : "cancelled",
+          reasonCode: "full_access_policy"
+        });
+        assert.equal(events.at(-1).type, "run.completed");
+      });
+    }
+  }
+});
+
+test("generic ACP ask waits for actual respondInteraction before continuing the original permission request", { timeout: 5_000 }, async testContext => {
+  for (const outcome of ["accepted", "declined", "cancelled"]) {
+    await testContext.test(outcome, async () => {
+      const { adapter, state } = acpPermissionFixture(
+        options => createAcpAdapter({ type: "fixture-acp", provider: "fixture-acp", command: "fixture" }, options),
+        [{ optionId: "allow-once", kind: "allow_once" }, { optionId: "reject-once", kind: "reject_once" }]
+      );
+      assert.equal(adapter.metadata.capabilities.includes("interaction.response"), true);
+      assert.equal(typeof adapter.respondInteraction, "function");
+      const events = [];
+      for await (const event of adapter.invoke({ ...request, approvalMode: "ask" })) {
+        events.push(event);
+        if (event.type !== "interaction.requested") continue;
+        assert.equal(state.sideEffects, 0);
+        assert.deepEqual(state.responses, []);
+        assert.equal(event.payload.executionInstanceId, request.invocationId);
+        assert.deepEqual(event.payload.request.policy, { mode: "ask", hash: contextHash(request.context) });
+        assert.deepEqual(event.payload.request.allowedOutcomes, ["accepted", "declined", "cancelled"]);
+        await assert.rejects(adapter.respondInteraction("other-invocation", {
+          interactionId: event.payload.interactionId, outcome
+        }), /INTERACTION_NOT_ACTIVE/);
+        await adapter.respondInteraction(request.invocationId, { interactionId: event.payload.interactionId, outcome });
+        await assert.rejects(adapter.respondInteraction(request.invocationId, {
+          interactionId: event.payload.interactionId, outcome
+        }), /INTERACTION_NOT_ACTIVE/);
+      }
+      assert.deepEqual(state.responses, [outcome === "cancelled"
+        ? { outcome: { outcome: "cancelled" } }
+        : { outcome: { outcome: "selected", optionId: outcome === "accepted" ? "allow-once" : "reject-once" } }]);
+      assert.equal(state.sideEffects, outcome === "accepted" ? 1 : 0);
+      const interactions = events.filter(event => event.type.startsWith("interaction."));
+      assert.deepEqual(interactions.map(event => event.type), ["interaction.requested", "interaction.resolved"]);
+      assert.deepEqual(interactions[1].payload, {
+        interactionId: interactions[0].payload.interactionId, executionInstanceId: request.invocationId, status: "resolved", outcome
+      });
+      assert.equal(events.at(-1).type, "run.completed");
+    });
+  }
+});
+
+test("generic ACP and CodeBuddy reject explicit unqualified effort before creating a client", async () => {
+  let spawned = false;
+  const options = { acpClientFactory: () => { spawned = true; throw new Error("provider must not launch"); } };
+  for (const adapter of [
+    createAcpAdapter({ type: "fixture-acp", provider: "fixture-acp", command: "fixture" }, options),
+    createCodeBuddyAdapter(options)
+  ]) {
+    await assert.rejects(async () => {
+      for await (const event of adapter.invoke({ ...request, agentConfig: { effort: "high" } })) assert.fail(`unexpected ${event.type}`);
+    }, /REASONING_UNSUPPORTED/);
+  }
+  assert.equal(spawned, false);
+});
+
+test("CodeBuddy rejects ask and assisted before creating its full_access client", async () => {
+  let spawned = false;
+  const adapter = createCodeBuddyAdapter({ acpClientFactory: () => { spawned = true; throw new Error("provider must not launch"); } });
+  for (const approvalMode of ["ask", "assisted"]) {
+    await assert.rejects(async () => {
+      for await (const event of adapter.invoke({ ...request, approvalMode })) assert.fail(`unexpected ${event.type}`);
+    }, /APPROVAL_MODE_UNSUPPORTED/);
+  }
+  assert.equal(spawned, false);
+});
+
 test("CodeBuddy preserves a cancelled ACP prompt as an interrupted run", async () => {
   let nextRequestId = 1;
   const client = {
@@ -1451,7 +1567,7 @@ test("generic ACP adapters select a requested model through standard config opti
   const events = [];
   for await (const event of adapter.invoke({
     ...request,
-    agentConfig: { model: "requested-model", autoApprove: true }
+    agentConfig: { model: "requested-model" }
   })) events.push(event);
 
   assert.deepEqual(requests.slice(0, 2), [
@@ -1614,17 +1730,9 @@ test("generic ACP adapters keep a failed tool local and accept the prompt respon
     { acpClientFactory: options => { spawnOptions = options; return client; } }
   );
   const events = [];
-  for await (const event of adapter.invoke({
-    ...request,
-    agentConfig: { autoApprove: true }
-  })) events.push(event);
+  for await (const event of adapter.invoke(request)) events.push(event);
 
-  assert.equal(spawnOptions.permissionHandler({
-    options: [
-      { optionId: "reject", kind: "reject_once" },
-      { optionId: "allow", kind: "allow_once" }
-    ]
-  }).outcome.optionId, "allow");
+  assert.equal(typeof spawnOptions.permissionHandler, "function");
   assert.deepEqual(events.filter(event => event.type.startsWith("run.")), [
     { protocolVersion: 2, type: "run.completed", payload: {} }
   ]);
@@ -1674,7 +1782,8 @@ test("Hermes and Kimi Code expose distinct ACP adapter types", () => {
 
 test("MiniMax Code exposes an ACP adapter with default session and tool capabilities", () => {
   assert.equal(mcodeAdapter.metadata.type, "mcode");
-  assert.deepEqual([...mcodeAdapter.metadata.capabilities].sort(), ["session.serialize", "tool.canonical"]);
+  assert.deepEqual([...mcodeAdapter.metadata.capabilities].sort(), ["interaction.response", "session.serialize", "tool.canonical"]);
+  assert.equal(typeof mcodeAdapter.respondInteraction, "function");
   // MiniMax Code manages model selection itself, so it must not claim Codex's
   // append-only continuity recovery capability.
   assert.equal(mcodeAdapter.metadata.capabilities.includes("session.resume_recovery"), false);
@@ -1682,14 +1791,16 @@ test("MiniMax Code exposes an ACP adapter with default session and tool capabili
 
 test("Qoder CLI exposes an ACP adapter with default session and tool capabilities", () => {
   assert.equal(qoderCliAdapter.metadata.type, "qodercli");
-  assert.deepEqual([...qoderCliAdapter.metadata.capabilities].sort(), ["session.serialize", "tool.canonical"]);
+  assert.deepEqual([...qoderCliAdapter.metadata.capabilities].sort(), ["interaction.response", "session.serialize", "tool.canonical"]);
+  assert.equal(typeof qoderCliAdapter.respondInteraction, "function");
   assert.equal(qoderCliAdapter.metadata.capabilities.includes("session.resume_recovery"), false);
 });
 
 test("Qoder CN CLI exposes a distinct ACP adapter type from Qoder CLI", () => {
   assert.equal(qoderCliCnAdapter.metadata.type, "qoderclicn");
   assert.notEqual(qoderCliCnAdapter.metadata.type, qoderCliAdapter.metadata.type);
-  assert.deepEqual([...qoderCliCnAdapter.metadata.capabilities].sort(), ["session.serialize", "tool.canonical"]);
+  assert.deepEqual([...qoderCliCnAdapter.metadata.capabilities].sort(), ["interaction.response", "session.serialize", "tool.canonical"]);
+  assert.equal(typeof qoderCliCnAdapter.respondInteraction, "function");
   assert.equal(qoderCliCnAdapter.metadata.capabilities.includes("session.resume_recovery"), false);
 });
 
@@ -1724,7 +1835,7 @@ test("generic ACP cancellation sends session/cancel and converges to run.cancell
     if (event.type === "message.delta") controller.abort("user_stop");
   }
 
-  assert.deepEqual(calls, [["cancel", "cancel-session"], ["close"]]);
+  assert.deepEqual(calls, [["cancel", "cancel-session"], ["close"], ["close"]]);
   assert.equal(events.filter(event => event.type.startsWith("run.")).length, 1);
   assert.deepEqual(events.filter(event => event.type === "model_step.finished"), [{ protocolVersion: 2,
     type: "model_step.finished",

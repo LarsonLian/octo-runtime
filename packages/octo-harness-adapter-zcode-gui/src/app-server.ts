@@ -354,9 +354,9 @@ export async function* runZcodeAppServerTurn({
   context?: AdapterInvocationContext;
   spawnFn?: ZcodeAppServerSpawn;
 }): AsyncGenerator<CanonicalEvent> {
-  const autoApprove = request.agentConfig.autoApprove === true
-    || request.agentConfig.dangerouslyBypassPermissions === true
-    || request.agentConfig.permissionMode === "yolo";
+  if (request.approvalMode !== "full_access") throw new Error("APPROVAL_MODE_UNSUPPORTED: zcode approval bridge is not qualified");
+  if (request.agentConfig.model || request.agentConfig.effort) throw new Error("EXECUTION_SELECTION_UNSUPPORTED: zcode independent model/reasoning selection is not qualified");
+  const autoApprove = true;
   const client = new ZcodeAppServerClient({
     spec,
     spawnFn,
@@ -411,7 +411,7 @@ export async function* runZcodeAppServerTurn({
     }, sessionId);
 
     const input = resumeFallback ? freshFallbackInputText(request) : providerInputText(request);
-    const content = request.appendInstructions ? `${input}\n\n${request.appendInstructions}` : input;
+    const content = request.controlInstructions ? `${input}\n\n${request.controlInstructions}` : input;
     const sendResult = await observedRequest(
       client,
       context,
@@ -765,11 +765,7 @@ function extractSessionId(value: unknown): string | undefined {
 }
 
 function zcodeMode(request: InvokeRequest): string {
-  const mode = request.agentConfig.permissionMode;
-  if (["build", "edit", "plan", "yolo"].includes(mode ?? "")) return mode!;
-  return request.agentConfig.autoApprove === true || request.agentConfig.dangerouslyBypassPermissions === true
-    ? "yolo"
-    : "build";
+  return request.approvalMode === "full_access" ? "yolo" : "build";
 }
 
 function requestTimeout(request: InvokeRequest): number {

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { AgentWorkStore } from "../apps/daemon/dist/agent-work-store.js";
+import { approvalPayload } from "./agent-work-runtime-fixture.js";
 
 async function withStore(name, fn) {
   const dir = await mkdtemp(join(tmpdir(), `oh-outbox-${name}-`));
@@ -16,6 +17,41 @@ async function withStore(name, fn) {
     await rm(dir, { recursive: true, force: true });
   }
 }
+
+test("instance-bound requested and resolved approval audit survives reconnect replay until durable ACK", async () => {
+  await withStore("approval-audit", (store, file) => {
+    store.upsertRun({ runId: "run-approval", agentSessionId: "session-approval", commandId: "command-approval", leaseId: "lease-approval", fencingToken: 7 });
+    store.allocateAndAppend("run-approval", "run.started", {});
+    const payload = approvalPayload("invoke-approval");
+    payload.request.policy.mode = "full_access";
+    const requested = store.allocateAndAppend("run-approval", "interaction.requested", payload);
+    const resolved = store.allocateAndAppend("run-approval", "interaction.resolved", {
+      interactionId: payload.interactionId, executionInstanceId: payload.executionInstanceId,
+      status: "resolved", outcome: "accepted", reasonCode: "full_access_policy"
+    });
+    const terminal = store.allocateAndAppend("run-approval", "run.completed", {});
+    store.advanceReceived("run-approval", terminal.seq);
+    store.advanceDurable("run-approval", 1);
+    assert.equal(store.pendingCount(), 3);
+    assert.deepEqual(store.listSendable(10), []);
+
+    const reopened = AgentWorkStore.open(file);
+    try {
+      assert.equal(reopened.prepareReplayAfterReconnect(), 1);
+      const replay = reopened.listSendable(10);
+      assert.deepEqual(replay.map(row => row.eventId), [requested.eventId, resolved.eventId, terminal.eventId]);
+      assert.deepEqual(replay.map(row => row.eventType), ["interaction.requested", "interaction.resolved", "run.completed"]);
+      assert.deepEqual(replay[0].payload, payload);
+      assert.equal(replay[1].payload.executionInstanceId, "invoke-approval");
+      assert.equal(replay[1].payload.reasonCode, "full_access_policy");
+      assert.ok(replay.every(row => row.leaseId === "lease-approval" && row.fencingToken === 7));
+      reopened.advanceDurable("run-approval", terminal.seq);
+      assert.equal(reopened.pendingCount(), 0);
+    } finally {
+      reopened.close();
+    }
+  });
+});
 
 test("outbox appends in seq order; received releases the window, durable deletes", async () => {
   await withStore("ack", store => {

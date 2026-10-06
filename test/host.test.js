@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { PassThrough } from "node:stream";
+import { PassThrough, Writable } from "node:stream";
 import { AdapterHost, AdapterHostRpcClient, AdapterHostRpcServer, spawnAdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
+import { contextHash } from "@mininglamp-oss/octo-harness-protocol";
 
 const request = {
   protocolVersion: 2,
@@ -10,8 +11,114 @@ const request = {
   agentSessionId: "s",
   runId: "arun_35c4ffc5db9940c9be7ce3a894819ae3",
   prompt: "p",
-  workdir: process.cwd()
+  modelInput: "p",
+  workdir: process.cwd(),
+  context: { schema: "octo.context-envelope/v1", items: [] },
+  controlInstructions: "",
+  approvalMode: "full_access",
+  agentConfig: {}
 };
+
+async function assertClosedRpcCalls(client, failure) {
+  for (const call of [
+    () => client.request("list"),
+    () => client.list(),
+    () => client.probe("fixture"),
+    () => client.cancel("closed-invocation"),
+    () => client.respondInteraction("closed-invocation", { interactionId: "closed-interaction", outcome: "accepted" }),
+    () => client.invoke("fixture", { ...request, invocationId: "closed-invocation" }).next()
+  ]) {
+    const result = await Promise.race([
+      call().then(() => assert.fail("closed RPC call unexpectedly succeeded"), error => error),
+      new Promise(resolve => setImmediate(() => resolve("RPC call remained pending after close")))
+    ]);
+    assert.equal(result, failure);
+  }
+}
+
+test("host rejects missing mandatory invocation inputs and untyped context before dispatch", async () => {
+  let invoked = false;
+  const host = new AdapterHost();
+  host.register({
+    metadata: { type: "contract", capabilities: [] },
+    async *invoke() {
+      invoked = true;
+      yield { protocolVersion: 2, type: "run.completed", payload: {} };
+    }
+  });
+  for (const [field, reason] of [
+    ["context", /CONTEXT_REQUIRED/],
+    ["modelInput", /modelInput must be a non-empty string/],
+    ["controlInstructions", /controlInstructions must be a string/],
+    ["approvalMode", /APPROVAL_MODE_UNSUPPORTED/]
+  ]) {
+    const invalid = { ...request };
+    delete invalid[field];
+    await assert.rejects(async () => {
+      for await (const event of host.invoke("contract", invalid)) assert.fail(`unexpected ${event.type}`);
+    }, reason);
+  }
+  for (const context of [{}, { profile: "work", runtimeId: "runtime-work" }]) {
+    await assert.rejects(async () => {
+      for await (const event of host.invoke("contract", { ...request, context })) assert.fail(`unexpected ${event.type}`);
+    }, /CONTEXT_SCHEMA_INVALID|CONTEXT_UNKNOWN_FIELD/);
+  }
+  assert.equal(invoked, false);
+});
+
+test("host rejects legacy prompt, permission and reasoning contracts before dispatch", async () => {
+  let invoked = false;
+  const host = new AdapterHost();
+  host.register({
+    metadata: { type: "legacy", capabilities: [] },
+    async *invoke() {
+      invoked = true;
+      yield { protocolVersion: 2, type: "run.completed", payload: {} };
+    }
+  });
+  for (const [overrides, reason] of [
+    [{ appendInstructions: "legacy control" }, /LEGACY_RUN_CONTRACT_REJECTED/],
+    [{ agentConfig: { permissionMode: "bypassPermissions" } }, /LEGACY_PERMISSION_CONFIG_REJECTED/],
+    [{ agentConfig: { autoApprove: true } }, /LEGACY_PERMISSION_CONFIG_REJECTED/],
+    [{ agentConfig: { autoApprove: false } }, /LEGACY_PERMISSION_CONFIG_REJECTED/],
+    [{ agentConfig: { dangerouslyBypassPermissions: true } }, /LEGACY_PERMISSION_CONFIG_REJECTED/],
+    [{ agentConfig: { thinking: true } }, /LEGACY_REASONING_CONFIG_REJECTED/],
+    [{ agentConfig: { thinking: false } }, /LEGACY_REASONING_CONFIG_REJECTED/],
+    [{ agentConfig: { thinking: "high", effort: "high" } }, /LEGACY_REASONING_CONFIG_REJECTED/]
+  ]) {
+    await assert.rejects(async () => {
+      for await (const event of host.invoke("legacy", { ...request, ...overrides })) assert.fail(`unexpected ${event.type}`);
+    }, reason);
+  }
+  assert.equal(invoked, false);
+});
+
+test("host requires both declared interaction capability and a responder for ask and assisted", async () => {
+  let invoked = false;
+  let responded = false;
+  const host = new AdapterHost();
+  for (const [type, capabilities, responder] of [
+    ["neither", [], false],
+    ["declaration-only", ["interaction.response"], false],
+    ["responder-only", [], true]
+  ]) {
+    host.register({
+      metadata: { type, capabilities },
+      async *invoke() {
+        invoked = true;
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
+      },
+      ...(responder ? { async respondInteraction() { responded = true; } } : {})
+    });
+    for (const approvalMode of ["ask", "assisted"]) {
+      await assert.rejects(async () => {
+        for await (const event of host.invoke(type, { ...request, approvalMode })) assert.fail(`unexpected ${event.type}`);
+      }, /APPROVAL_MODE_UNSUPPORTED/);
+    }
+  }
+  assert.equal(invoked, false);
+  assert.equal(responded, false);
+});
 
 test("host holds terminal until adapter stream cleanup succeeds", async () => {
   const host = new AdapterHost();
@@ -102,7 +209,7 @@ test("host gives adapters a provider observation context with full invocation id
   const events = [];
   for await (const event of host.invoke("observed", {
     ...request,
-    context: { profile: "work", runtimeId: "runtime-work" }
+    runMetadata: { profile: "work", runtimeId: "runtime-work" }
   })) { if (!event.type.startsWith("activity.")) events.push(event); };
   assert.equal(events.at(-1).type, "run.completed");
   assert.deepEqual(observations[0].identity, {
@@ -311,7 +418,121 @@ test("RPC trace observes every client frame without changing the wire", async ()
   serverToClient.end();
 });
 
-test("RPC interaction responses resume the same active invocation", async () => {
+test("RPC failed Writable callback rejects pending calls and invoke ACK without an unhandled error", { timeout: 5_000 }, async testContext => {
+  const input = new PassThrough();
+  let failWrite;
+  const output = new Writable({ write(_chunk, _encoding, callback) { failWrite = callback; } });
+  const frames = [];
+  const client = new AdapterHostRpcClient({ input, output, trace: (_direction, frame) => frames.push(JSON.parse(frame)) });
+  testContext.after(() => { client.close(); input.destroy(); output.destroy(); });
+  assert.equal(output.listenerCount("error"), 1);
+  const failure = Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+  const rejectedCall = assert.rejects(client.list(), error => error === failure);
+  const iterator = client.invoke("fixture", { ...request, invocationId: "pending-ack" });
+  const rejectedInvoke = assert.rejects(iterator.next(), error => error === failure);
+  assert.deepEqual(frames.map(frame => frame.method), ["list", "invoke"]);
+  failWrite(failure);
+  await Promise.all([rejectedCall, rejectedInvoke]);
+  await new Promise(resolve => setImmediate(resolve));
+  client.close(new Error("later close must not replace the write failure"));
+  await assertClosedRpcCalls(client, failure);
+  assert.deepEqual(await iterator.next(), { value: undefined, done: true });
+  assert.deepEqual(frames.map(frame => frame.method), ["list", "invoke"]);
+});
+
+test("RPC failed Writable callback rejects an acknowledged invocation waiting for its next event", { timeout: 5_000 }, async testContext => {
+  const input = new PassThrough();
+  let failWrite;
+  const output = new Writable({ write(chunk, _encoding, callback) {
+    if (JSON.parse(chunk.toString()).method === "invoke") callback();
+    else failWrite = callback;
+  } });
+  const frames = [];
+  const client = new AdapterHostRpcClient({ input, output, trace: (_direction, frame) => frames.push(JSON.parse(frame)) });
+  testContext.after(() => { client.close(); input.destroy(); output.destroy(); });
+  const failure = Object.assign(new Error("write EPIPE after invoke ACK"), { code: "EPIPE" });
+  const iterator = client.invoke("fixture", { ...request, invocationId: "acknowledged-invoke" });
+  const rejectedInvoke = assert.rejects(iterator.next(), error => error === failure);
+  const acknowledgement = { jsonrpc: "2.0", id: frames[0].id, result: { invocationId: "acknowledged-invoke" } };
+  input.write(`${JSON.stringify(acknowledgement)}\n`);
+  await new Promise(resolve => setImmediate(resolve));
+  const rejectedCall = assert.rejects(client.list(), error => error === failure);
+  assert.equal(typeof failWrite, "function");
+  failWrite(failure);
+  await Promise.all([rejectedCall, rejectedInvoke]);
+  await new Promise(resolve => setImmediate(resolve));
+  const sentFrames = frames.filter(frame => frame.method);
+  assert.deepEqual(sentFrames.map(frame => frame.method), ["invoke", "list"]);
+  await assertClosedRpcCalls(client, failure);
+  assert.deepEqual(await iterator.next(), { value: undefined, done: true });
+  assert.equal(frames.filter(frame => frame.method).length, sentFrames.length);
+});
+
+test("RPC output error closes pending calls and invocations even when write callbacks succeeded", { timeout: 5_000 }, async testContext => {
+  const input = new PassThrough();
+  const output = new Writable({ write(_chunk, _encoding, callback) { callback(); } });
+  const frames = [];
+  const client = new AdapterHostRpcClient({ input, output, trace: (_direction, frame) => frames.push(JSON.parse(frame)) });
+  testContext.after(() => { client.close(); input.destroy(); output.destroy(); });
+  assert.equal(output.listenerCount("error"), 1);
+  const failure = Object.assign(new Error("output EPIPE"), { code: "EPIPE" });
+  const rejectedCall = assert.rejects(client.list(), error => error === failure);
+  const iterator = client.invoke("fixture", { ...request, invocationId: "output-error-invoke" });
+  const rejectedInvoke = assert.rejects(iterator.next(), error => error === failure);
+  output.emit("error", failure);
+  await Promise.all([rejectedCall, rejectedInvoke]);
+  await assertClosedRpcCalls(client, failure);
+  assert.deepEqual(frames.map(frame => frame.method), ["list", "invoke"]);
+});
+
+test("RPC synchronous Writable throw rejects all pending work and later calls without another write", { timeout: 5_000 }, async testContext => {
+  const input = new PassThrough();
+  const failure = Object.assign(new Error("synchronous write EPIPE"), { code: "EPIPE" });
+  const output = new Writable({ write(chunk, _encoding, callback) {
+    if (JSON.parse(chunk.toString()).method === "invoke") throw failure;
+    callback();
+  } });
+  const frames = [];
+  const client = new AdapterHostRpcClient({ input, output, trace: (_direction, frame) => frames.push(JSON.parse(frame)) });
+  testContext.after(() => { client.close(); input.destroy(); output.destroy(); });
+  const rejectedCall = assert.rejects(client.list(), error => error === failure);
+  const iterator = client.invoke("fixture", { ...request, invocationId: "synchronous-error-invoke" });
+  const rejectedInvoke = assert.rejects(iterator.next(), error => error === failure);
+  await Promise.all([rejectedCall, rejectedInvoke]);
+  await new Promise(resolve => setImmediate(resolve));
+  await assertClosedRpcCalls(client, failure);
+  assert.deepEqual(frames.map(frame => frame.method), ["list", "invoke"]);
+});
+
+test("RPC server closes active providers when its output fails", { timeout: 5_000 }, async testContext => {
+  const input = new PassThrough();
+  const output = new Writable({ write(_chunk, _encoding, callback) { callback(); } });
+  const host = new AdapterHost();
+  let started;
+  const providerStarted = new Promise(resolve => { started = resolve; });
+  let aborted;
+  const providerAborted = new Promise(resolve => { aborted = resolve; });
+  host.register({
+    metadata: { type: "broken-output", capabilities: [] },
+    async *invoke(invoke) {
+      started();
+      await new Promise(resolve => invoke.signal.addEventListener("abort", () => { aborted(); resolve(); }, { once: true }));
+      yield { protocolVersion: 2, type: "run.cancelled", payload: {} };
+    }
+  });
+  const frames = [];
+  new AdapterHostRpcServer({ host, output, trace: (_direction, frame) => frames.push(JSON.parse(frame)) }).listen(input);
+  testContext.after(async () => { input.destroy(); output.destroy(); await host.shutdown(); });
+  input.write(`${JSON.stringify({ jsonrpc: "2.0", id: "invoke-1", method: "invoke", params: { adapterType: "broken-output", request } })}\n`);
+  await providerStarted;
+  output.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" }));
+  await providerAborted;
+  await host.shutdown();
+  input.write(`${JSON.stringify({ jsonrpc: "2.0", id: "list-1", method: "list" })}\n`);
+  assert.equal(frames.filter(frame => frame.jsonrpc === "2.0" && frame.id === "list-1").length, 0);
+});
+
+test("RPC interaction responses resume the same active ask invocation", { timeout: 5_000 }, async testContext => {
   const clientToServer = new PassThrough();
   const serverToClient = new PassThrough();
   const host = new AdapterHost();
@@ -322,9 +543,26 @@ test("RPC interaction responses resume the same active invocation", async () => 
     async *invoke(invocation) {
       yield { protocolVersion: 2,
         type: "interaction.requested",
-        payload: { interactionId: "approval-1", kind: "approval", request: { title: "Proceed?" } }
+        payload: {
+          interactionId: "approval-1",
+          kind: "approval",
+          executionInstanceId: invocation.invocationId,
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          request: {
+            schema: "octo.approval-request/v1",
+            policy: { mode: invocation.approvalMode, hash: contextHash(invocation.context) },
+            operation: { kind: "tool_execution", summary: "Proceed?" },
+            requestedPermissions: [],
+            allowedOutcomes: ["accepted", "declined", "cancelled"],
+            grantScope: "request"
+          }
+        }
       };
       const answer = await response;
+      yield { protocolVersion: 2, type: "interaction.resolved", payload: {
+        interactionId: answer.interactionId, executionInstanceId: invocation.invocationId,
+        status: "resolved", outcome: answer.outcome
+      } };
       yield { protocolVersion: 2, type: "message.create", payload: { channel: "final", text: answer.outcome } };
       yield { protocolVersion: 2, type: "run.completed", payload: {} };
     },
@@ -335,9 +573,21 @@ test("RPC interaction responses resume the same active invocation", async () => 
   });
   new AdapterHostRpcServer({ host, output: serverToClient }).listen(clientToServer);
   const client = new AdapterHostRpcClient({ input: serverToClient, output: clientToServer });
+  testContext.after(() => {
+    client.close();
+    clientToServer.end();
+    serverToClient.end();
+  });
 
-  const iterator = client.invoke("interactive", { ...request, invocationId: "rpc-interactive" });
-  while ((await iterator.next()).value.type !== "interaction.requested") {}
+  const iterator = client.invoke("interactive", { ...request, invocationId: "rpc-interactive", approvalMode: "ask" });
+  let interaction;
+  while (!interaction) {
+    const next = await iterator.next();
+    assert.equal(next.done, false);
+    if (next.value.type === "interaction.requested") interaction = next.value;
+  }
+  assert.equal(interaction.payload.request.policy.mode, "ask");
+  assert.equal(interaction.payload.executionInstanceId, "rpc-interactive");
   await assert.rejects(
     client.respondInteraction("wrong-invocation", { interactionId: "approval-1", outcome: "accepted" }),
     /invocation is not active/
@@ -345,10 +595,9 @@ test("RPC interaction responses resume the same active invocation", async () => 
   await client.respondInteraction("rpc-interactive", { interactionId: "approval-1", outcome: "accepted" });
   const remaining = [];
   for await (const event of iterator) { if (!event.type.startsWith("activity.")) remaining.push(event); };
-  assert.deepEqual(remaining.map(event => event.type), ["message.create", "message.update", "run.completed"]);
-  assert.equal(remaining[0].payload.text, "accepted");
-
-  client.close();
-  clientToServer.end();
-  serverToClient.end();
+  assert.deepEqual(remaining.map(event => event.type), ["interaction.resolved", "message.create", "message.update", "run.completed"]);
+  assert.deepEqual(remaining[0].payload, {
+    interactionId: "approval-1", executionInstanceId: "rpc-interactive", status: "resolved", outcome: "accepted"
+  });
+  assert.equal(remaining[1].payload.text, "accepted");
 });

@@ -8,7 +8,8 @@ import { WebSocketServer } from "ws";
 import { AgentWorkRuntime } from "../apps/daemon/dist/agent-work-runtime.js";
 import { AgentWorkStore } from "../apps/daemon/dist/agent-work-store.js";
 import { ChannelContextStore } from "../apps/daemon/dist/channel-context-store.js";
-import { deferred, terminalGrant, waitFor, wire, withTimeout } from "./agent-work-runtime-fixture.js";
+import { assertInvokeRequest } from "../packages/octo-harness-protocol/dist/index.js";
+import { contextEnvelope, deferred, executionContext, terminalGrant, waitFor, wire, withTimeout } from "./agent-work-runtime-fixture.js";
 
 const now = Date.now();
 const scope = {
@@ -94,7 +95,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
+      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         providerRequest = request;
@@ -236,7 +237,7 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
+      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         yield { protocolVersion: 2, type: "run.completed", payload: {} };
@@ -365,7 +366,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
+      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         yield { protocolVersion: 2, type: "run.completed", payload: {} };
@@ -399,7 +400,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
     }
     const probe = contextStore.prepareSnapshot("run-authority-probe", executionEnvelope(
       "run-authority-probe", 6, "probe"
-    ).agent_run_request.input.channel_context);
+    ).effective_context.items.find(item => item.name === "continuity").payload);
     assert.deepEqual(probe.facts.map(item => item.message_seq), [1, 2, 3, 4, 5]);
     contextStore.close();
 
@@ -544,7 +545,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
+      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         providerRequests.push(request);
@@ -641,7 +642,7 @@ test("runtime rejects a queued source generation after recovery advanced the eff
     through_seq: 1
   });
   const blocker = executionEnvelope("run-recovery-blocker", 2, "recovery trigger")
-    .agent_run_request.input.channel_context;
+    .effective_context.items.find(item => item.name === "continuity").payload;
   contextStore.prepareSnapshot("run-recovery-blocker", blocker);
   contextStore.selectRecovery("run-recovery-blocker");
   contextStore.markSubmitted("run-recovery-blocker");
@@ -681,7 +682,7 @@ test("runtime rejects a queued source generation after recovery advanced the eff
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
+      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         invocationCount += 1;
@@ -744,7 +745,7 @@ test("runtime close joins a waiting command before immediate restart and replay"
     through_seq: 1
   });
   const blocker = executionEnvelope("run-blocker", 2, "blocker trigger")
-    .agent_run_request.input.channel_context;
+    .effective_context.items.find(item => item.name === "continuity").payload;
   contextStore.prepareSnapshot("run-blocker", blocker);
   contextStore.markSubmitted("run-blocker");
   contextStore.close();
@@ -794,7 +795,7 @@ test("runtime close joins a waiting command before immediate restart and replay"
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
+      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         invocationCount += 1;
@@ -874,7 +875,7 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
     through_seq: 1
   });
   const blocker = executionEnvelope("run-cancel-blocker", 2, "blocker trigger")
-    .agent_run_request.input.channel_context;
+    .effective_context.items.find(item => item.name === "continuity").payload;
   contextStore.prepareSnapshot("run-cancel-blocker", blocker);
   contextStore.markSubmitted("run-cancel-blocker");
   contextStore.close();
@@ -935,7 +936,7 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
+      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         invocationCount += 1;
@@ -1044,7 +1045,7 @@ test("append-only channel context cold-starts an adapter without continuity reco
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["session.serialize"] }],
+      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         providerRequest = request;
@@ -1204,33 +1205,221 @@ test("append-only channel context accepts an adapter without serialized sessions
   }
 });
 
+for (const [projection, providerPersistence] of [["window", "append_only"], ["delta", "ephemeral"]]) {
+  test(`${projection}/${providerPersistence} continuity materializes cold snapshots on every turn without promoting the generation`, { timeout: 10_000 }, async () => {
+    const directory = await mkdtemp(join(tmpdir(), "oh-channel-cold-projection-"));
+    const contextPath = join(directory, "channel-context.db");
+    const httpServer = createServer();
+    const wsServer = new WebSocketServer({ noServer: true });
+    const requests = [];
+    const terminalEvents = [];
+    const finished = deferred();
+    let runtime;
+    const sendStart = (websocket, round) => {
+      const payload = executionEnvelope(`run-cold-${round}`, round * 2, `cold current ${round}`);
+      payload.provider_session = { sessionId: "must-not-resume", resumable: true };
+      const selections = { namespace: "octo.content", name: "selections", payload: { entries: [
+        { resource_ref: "octo://messages/selected", text: "Selected inline facts" }
+      ] } };
+      payload.effective_context.items.push(structuredClone(selections));
+      payload.agent_run_request.context.items.push(structuredClone(selections));
+      websocket.send(wire("runtime.command", {
+        server_seq: round, command_id: `command-cold-${round}`, run_id: payload.run_id,
+        type: "run.start", payload, lease_id: `lease-cold-${round}`, fencing_token: round
+      }));
+    };
+    httpServer.on("request", async (request, response) => {
+      for await (const _chunk of request) {}
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-cold", protocol_version: 2 } }));
+    });
+    httpServer.on("upgrade", (request, socket, head) => {
+      wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket));
+    });
+    wsServer.on("connection", websocket => {
+      websocket.on("message", data => {
+        const frame = JSON.parse(data.toString("utf8"));
+        if (frame.type === "runtime.hello") {
+          websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+          sendStart(websocket, 1);
+        } else if (frame.type === "context.sync_request") {
+          websocket.send(wire("context.sync_result", {
+            request_id: frame.payload.request_id, scope, facts: [fact(1, "cold first background")],
+            completeness: "complete", through_seq: 1
+          }));
+        } else if (frame.type === "run.event_batch") {
+          const terminal = frame.payload.events.find(event => event.type === "run.completed");
+          websocket.send(wire("event.ack", {
+            run_id: frame.payload.run_id, received_through_seq: frame.payload.last_seq,
+            durable_through_seq: frame.payload.last_seq, ...(terminal ? terminalGrant(terminal) : {})
+          }));
+          if (!terminal) return;
+          terminalEvents.push(terminal);
+          if (terminalEvents.length === 1) {
+            websocket.send(wire("context.append", { agent_id: "agent-e2e", scope, facts: [fact(3, "cold second background")] }));
+            sendStart(websocket, 2);
+          } else finished.resolve();
+        }
+      });
+    });
+    try {
+      await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+      runtime = new AgentWorkRuntime({
+        profile: "default", baseUrl: `http://127.0.0.1:${httpServer.address().port}`, token: "runtime-token",
+        runtimeName: "runtime-cold", storePath: join(directory, "agent-work.db"),
+        channelContext: { store: "sqlite", projection, providerPersistence, storePath: contextPath, syncTimeoutMs: 1_000 }
+      }, {
+        list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
+        cancel: async () => ({ cancelled: true }),
+        async *invoke(_adapterType, request) {
+          assertInvokeRequest(request);
+          requests.push(request);
+          yield { protocolVersion: 2, type: "run.completed", payload: {} };
+        }
+      });
+      await runtime.start();
+      await withTimeout(finished.promise, 5_000, "cold projection terminal timeout");
+      await waitFor(() => runtime.status.outboxPending === 0 && runtime.status.channelContext.activeSnapshots === 0);
+      assert.equal(requests.length, 2);
+      for (const [index, request] of requests.entries()) {
+        assert.equal(request.providerSession, undefined);
+        assert.equal(request.contextSnapshot.session_generation, 1);
+        assert.equal(request.contextSnapshot.source_session_generation, undefined);
+        assert.match(request.modelInput, /cold first background/);
+        assert.match(request.modelInput, /Selected inline facts/);
+        assert.equal(request.prompt, `[Current message]\ncold current ${index + 1}`);
+        assert.doesNotMatch(request.prompt, /background|Selected inline facts/);
+        assert.equal(terminalEvents[index].payload.context_input_variant, "recovery");
+        assert.equal(terminalEvents[index].payload.context_session_generation, 1);
+        assert.equal(terminalEvents[index].payload.context_source_session_generation, undefined);
+      }
+      assert.doesNotMatch(requests[0].modelInput, /cold second background|cold current 2/);
+      assert.match(requests[1].modelInput, /cold second background/);
+      assert.match(requests[1].modelInput, /cold current 1/);
+      await runtime.close();
+      runtime = undefined;
+      const store = ChannelContextStore.open(contextPath);
+      try {
+        for (const round of [1, 2]) {
+          const snapshot = store.getSnapshot(`run-cold-${round}`);
+          assert.equal(snapshot.state, "committed");
+          assert.equal(snapshot.selectedVariant, "recovery");
+          assert.equal(snapshot.ref.session_generation, 1);
+          assert.equal(snapshot.ref.source_session_generation, undefined);
+        }
+      } finally {
+        store.close();
+      }
+    } finally {
+      await runtime?.close();
+      for (const client of wsServer.clients) client.terminate();
+      await new Promise(resolve => wsServer.close(() => resolve()));
+      await new Promise(resolve => httpServer.close(() => resolve()));
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}
+
+for (const [name, storeMode, adapterCapabilities, reason] of [
+  ["missing required capability", "sqlite", ["session.serialize"], "ADAPTER_REQUIRED_CAPABILITY_MISSING"],
+  ["continuity store disabled", "none", ["tool.canonical"], "CONTEXT_CONTINUITY_UNAVAILABLE"]
+]) {
+  test(`runtime rejects ${name} before invocation instead of dropping continuity`, { timeout: 5_000 }, async () => {
+    const directory = await mkdtemp(join(tmpdir(), "oh-channel-preflight-reject-"));
+    const httpServer = createServer();
+    const wsServer = new WebSocketServer({ noServer: true });
+    const rejected = deferred();
+    let runtime;
+    let invocations = 0;
+    let syncRequests = 0;
+    httpServer.on("request", async (request, response) => {
+      for await (const _chunk of request) {}
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-preflight", protocol_version: 2 } }));
+    });
+    httpServer.on("upgrade", (request, socket, head) => {
+      wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket));
+    });
+    wsServer.on("connection", websocket => {
+      websocket.on("message", data => {
+        const frame = JSON.parse(data.toString("utf8"));
+        if (frame.type === "runtime.hello") {
+          websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+          websocket.send(wire("runtime.command", {
+            server_seq: 1, command_id: "command-preflight", run_id: "run-preflight", type: "run.start",
+            payload: executionEnvelope("run-preflight"), lease_id: "lease-preflight", fencing_token: 1
+          }));
+        } else if (frame.type === "context.sync_request") syncRequests += 1;
+        else if (frame.type === "command.ack") rejected.resolve(frame.payload);
+      });
+    });
+    try {
+      await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+      runtime = new AgentWorkRuntime({
+        profile: "default", baseUrl: `http://127.0.0.1:${httpServer.address().port}`, token: "runtime-token",
+        runtimeName: "runtime-preflight", storePath: join(directory, "agent-work.db"),
+        channelContext: { store: storeMode, projection: "window", providerPersistence: "ephemeral", storePath: join(directory, "channel-context.db") }
+      }, {
+        list: async () => [{ type: "fake", capabilities: adapterCapabilities }],
+        cancel: async () => ({ cancelled: true }),
+        async *invoke() {
+          invocations += 1;
+          yield { protocolVersion: 2, type: "run.completed", payload: {} };
+        }
+      });
+      await runtime.start();
+      const ack = await withTimeout(rejected.promise, 2_000, "preflight rejection timeout");
+      assert.equal(ack.accepted, false);
+      assert.equal(ack.error.code, "INVALID_EXECUTION_ENVELOPE");
+      assert.equal(ack.error.message, reason);
+      assert.equal(invocations, 0);
+      assert.equal(syncRequests, 0);
+    } finally {
+      await runtime?.close();
+      for (const client of wsServer.clients) client.terminate();
+      await new Promise(resolve => wsServer.close(() => resolve()));
+      await new Promise(resolve => httpServer.close(() => resolve()));
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}
+
 function executionEnvelope(runId = "run-e2e", triggerSeq = 3, currentText = "trigger current", generation = 1) {
   const trigger = fact(triggerSeq, currentText);
+  const plan = {
+    adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_capabilities: ["tool.canonical"]
+  };
+  const items = [{
+    namespace: "octo.content", name: "continuity", payload: {
+      scope,
+      consumer_key: "agent-e2e/provider-e2e",
+      session_generation: generation,
+      trigger_message_id: trigger.message_id,
+      trigger_seq: trigger.message_seq,
+      trigger_fact: trigger
+    }
+  }];
   return {
-    schema_version: 1,
+    schema_version: 2,
+    context_defaults_version: 1,
+    effective_context: executionContext(plan, items),
+    resolved_execution_plan: plan,
     run_id: runId,
     agent_session_id: "session-e2e",
+    session_generation: generation,
     agent_run_request: {
+      context: contextEnvelope(items),
       namespace: "im",
       agent_id: "agent-e2e",
       agent_revision_id: "revision-e2e",
       session_key: "v1/octo/endpoint-e2e/group/group-e2e",
       trigger: { kind: "im.message", occurrence_id: `message/${trigger.message_id}` },
       input: {
-        parts: [{ type: "text", text: currentText }],
-        channel_context: {
-          scope,
-          consumer_key: "agent-e2e/provider-e2e",
-          session_generation: generation,
-          trigger_message_id: trigger.message_id,
-          trigger_seq: trigger.message_seq,
-          trigger_fact: trigger
-        }
+        parts: [{ type: "text", text: currentText }]
       }
     },
     agent_revision: {
-      definition: { instructions: "Answer briefly." },
-      execution_profile: { default_adapter: "fake", workdir: process.cwd(), agent_config: {} }
+      definition: { instructions: "Answer briefly." }
     }
   };
 }

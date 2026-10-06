@@ -604,7 +604,7 @@ export class LocalObservability {
     this.#expireRpcCorrelation(now);
     const params = isObjectRecord(value.params) ? value.params : {};
     const request = isObjectRecord(params.request) ? params.request : {};
-    const context = isObjectRecord(request.context) ? request.context : {};
+    const context = isObjectRecord(request.runMetadata) ? request.runMetadata : {};
     const result = isObjectRecord(value.result) ? value.result : {};
     const rpcId = typeof value.id === "string" || typeof value.id === "number" ? String(value.id) : undefined;
     const invocationId = optionalStringValue(request.invocationId)

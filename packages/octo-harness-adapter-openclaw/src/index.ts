@@ -86,7 +86,7 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
   const message = composeOpenClawPrompt(req);
   const timeout = finiteNumber(req.agentConfig.timeoutSeconds);
   const model = nonEmptyString(req.agentConfig.model);
-  const thinking = nonEmptyString(req.agentConfig.thinking);
+  const thinking = nonEmptyString(req.agentConfig.effort);
   const timeoutMilliseconds = timeout && timeout > 0 ? timeout * 1_000 : 30 * 60_000;
   const reconciliationGraceMilliseconds = Math.min(30_000, timeoutMilliseconds * 0.1);
   const createParams: JsonRecord = {
@@ -104,7 +104,7 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
     deliver: false,
     promptMode: "minimal",
     idempotencyKey: requestId,
-    ...(req.appendInstructions ? { extraSystemPrompt: req.appendInstructions } : {}),
+    ...(req.controlInstructions ? { extraSystemPrompt: req.controlInstructions } : {}),
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),
     ...(timeout === undefined ? {} : { timeout: Math.max(0, Math.floor(timeout)) })

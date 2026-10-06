@@ -56,9 +56,10 @@ interface OpenCodeNativeEvent extends OpenCodePart {
  * OpenCode. It must stay coupled to this builder as these transformations evolve.
  */
 export async function buildOpenCodeCommand(req: InvokeRequest, command = "opencode") {
+  if (req.approvalMode !== "full_access") throw new Error("APPROVAL_MODE_UNSUPPORTED: opencode permission transport is not qualified");
   const directory = await mkdtemp(join(tmpdir(), "octo-harness-opencode-"));
   const instructions = join(directory, "instructions.md");
-  await writeFile(instructions, req.appendInstructions, { mode: 0o600 });
+  await writeFile(instructions, req.controlInstructions, { mode: 0o600 });
   let inline: Record<string, unknown> = {};
   if (process.env.OPENCODE_CONFIG_CONTENT) inline = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) as Record<string, unknown>;
   const configuredInstructions = Array.isArray(inline.instructions)
@@ -75,7 +76,7 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
   const args = ["run", "--format", "json", "--thinking", "--auto"];
   if (req.providerSession?.sessionId) args.push("--session", req.providerSession.sessionId);
   if (req.agentConfig?.model) args.push("--model", req.agentConfig.model);
-  const variant = typeof req.agentConfig?.thinking === "string" ? req.agentConfig.thinking : undefined;
+  const variant = req.agentConfig?.effort;
   if (variant && variant !== "enabled" && variant !== "disabled") args.push("--variant", variant);
   args.push(providerInputText(req));
   return {
@@ -91,7 +92,7 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
         args,
         cwd: req.workdir,
         user_input: providerInputText(req),
-        instructions: req.appendInstructions,
+        instructions: req.controlInstructions,
         inline_config: redactOpenCodeInlineConfig(inline)
       }
     },

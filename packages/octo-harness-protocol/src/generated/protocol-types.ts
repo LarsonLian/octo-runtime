@@ -5,6 +5,114 @@
  */
 
 /**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ApprovalMode".
+ */
+export type ApprovalMode = "ask" | "assisted" | "full_access";
+/**
+ * Registered Context types. Payload schemas below are authoritative; the TypeScript envelope stays an opaque dictionary until runtime validation.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextItem".
+ */
+export type ContextItem = {namespace: string; name: string; payload: Record<string, unknown>};
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextModelPayload".
+ */
+export type ContextModelPayload = {
+  id?: string;
+  use_provider_default?: true;
+} & ContextModelPayload1;
+export type ContextModelPayload1 = {
+  [k: string]: unknown;
+};
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextReasoningPayload".
+ */
+export type ContextReasoningPayload = {
+  effort?: string;
+  use_provider_default?: true;
+} & ContextReasoningPayload1;
+export type ContextReasoningPayload1 = {
+  [k: string]: unknown;
+};
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextRuntimeSelectionPayload".
+ */
+export type ContextRuntimeSelectionPayload = {
+  mode: "binding" | "explicit";
+  runtime_id?: string;
+} & ContextRuntimeSelectionPayload1;
+export type ContextRuntimeSelectionPayload1 =
+  | {
+      mode?: "binding";
+    }
+  | {
+      mode?: "explicit";
+    };
+/**
+ * Declarative registered resolver operation, never an arbitrary shell command or credential. Validation does not resolve or authorize it. A consumer without the specified resolver must fail with CONTEXT_RESOLVER_UNAVAILABLE rather than ignore the entry.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextResourceEntry".
+ */
+export type ContextResourceEntry = {
+  resource_ref: string;
+  resolver: "mcp" | "cli" | "local_tool" | "snapshot";
+  locator: {};
+  /**
+   * Frozen non-secret JSON parameters supplied by the authenticated resolver plan, not model-generated commands.
+   */
+  params?: Record<string, unknown>;
+  authorization_ref?: string;
+  revision?: string;
+} & ContextResourceEntry1;
+export type ContextResourceEntry1 =
+  | {
+      resolver?: "mcp";
+      locator?: ContextMcpLocator;
+    }
+  | {
+      resolver?: "cli" | "local_tool";
+      locator?: ContextOperationLocator;
+    }
+  | {
+      resolver?: "snapshot";
+      locator?: ContextSnapshotLocator;
+    };
+/**
+ * A channel continuity descriptor. The x-octo-matching-trigger-fields keyword requires trigger_fact.message_id == trigger_message_id and matching presence/value of trigger_fact.message_seq and trigger_seq.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextContinuityPayload".
+ */
+export type ContextContinuityPayload = ChannelContextDescriptor & {
+  session_generation?: {
+    [k: string]: unknown;
+  };
+  trigger_seq?: {
+    [k: string]: unknown;
+  };
+  trigger_fact?: {
+    message_seq?: {
+      [k: string]: unknown;
+    };
+    occurred_at_ms?: {
+      [k: string]: unknown;
+    };
+  };
+};
+/**
+ * Named MCP servers frozen for one invocation.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "McpServers".
+ */
+export type McpServers = Record<string, McpServer>;
+/**
  * Provider-neutral assistant output channel. analysis is reasoning-class content gated by exposure; commentary is public in-run progress; final is answer content delivered only after the Run reaches a completed terminal state.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -19,6 +127,13 @@ export type MessageChannel = "analysis" | "commentary" | "final";
  */
 export type MessageExposure = "public_reasoning" | "public_summary" | "public_plan" | "private_reasoning" | "unknown";
 /**
+ * Display-only fields permitted by assertApprovalRequest. Values remain inert provider metadata and do not redefine commands, permissions or grant scope.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ApprovalDisplayDetails".
+ */
+export type ApprovalDisplayDetails = Record<string, unknown>;
+/**
  * Bounded history result. complete means only that the requested window was returned, not that the local journal is authoritative.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -32,13 +147,6 @@ export type ContextSyncResult = ContextSyncResult1;
  * via the `definition` "McpServer".
  */
 export type McpServer = McpStdioServer | McpStreamableHttpServer;
-/**
- * Named MCP servers frozen for one invocation.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "McpServers".
- */
-export type McpServers = Record<string, McpServer>;
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ActivitySubject".
@@ -61,9 +169,235 @@ export type ActivitySubject =
     };
 
 /**
- * Serializable data shapes for the Octo Harness NDJSON protocol. Runtime behavior remains hand-written in src/index.ts, and this schema is the source of truth for generated TypeScript types.
+ * Serializable data shapes for the Octo Harness NDJSON protocol. Runtime behavior remains hand-written in src/index.ts, and this schema is the source of truth for generated TypeScript types. The x-octo-unicode-scalar-strings semantic keyword requires every JSON string value and object member name to contain Unicode scalar values only: unpaired UTF-16 surrogates are rejected, not repaired or normalized. Consumers must enforce this protocol-wide rule even when validating a definition directly.
  */
 export interface OctoHarnessProtocolSchema {}
+/**
+ * In addition to draft-07 validation, every consumer must enforce the x-octo semantic keywords: unique ordered namespace/name tuples, compact UTF-8 JSON byte budget, JSON nesting depth with the envelope at depth zero, and Unicode scalar strings in every nested value and object key. Canonical hashing uses ECMAScript JSON number serialization, including -0 becoming 0 and normalized exponent notation; object keys are sorted by UTF-16 code units before ECMAScript integer-index enumeration. U+2028/U+2029 and non-ASCII scalar values are not escaped or Unicode-normalized.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextEnvelope".
+ */
+export interface ContextEnvelope {
+  schema: "octo.context-envelope/v1";
+  /**
+   * @maxItems 32
+   */
+  items: ContextItem[];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextAdapterPayload".
+ */
+export interface ContextAdapterPayload {
+  type: string;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextWorkspacePayload".
+ */
+export interface ContextWorkspacePayload {
+  mode: "fixed";
+  path: string;
+}
+/**
+ * Snake-case frozen watchdog limits, with the same bounds as RuntimeLimits. Legacy enforcement=observe cannot be combined with v2 settings.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextLimitsPayload".
+ */
+export interface ContextLimitsPayload {
+  first_frame_timeout_ms?: number;
+  model_idle_timeout_ms?: number;
+  model_idle_warning_ms?: number;
+  model_idle_policy?: "enforce" | "observe";
+  tool_timeout_ms?: number;
+  tool_wall_timeout_ms?: number;
+  run_timeout_ms?: number;
+  cancel_grace_ms?: number;
+  enforcement?: "enforce" | "observe";
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextApprovalPolicyPayload".
+ */
+export interface ContextApprovalPolicyPayload {
+  mode: ApprovalMode;
+}
+/**
+ * Untrusted inline selection text with optional resource reference, source metadata and summary. Source metadata is not an authorization claim.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextSelectionEntry".
+ */
+export interface ContextSelectionEntry {
+  text: string;
+  resource_ref?: string;
+  source?:
+    | {
+        [k: string]: unknown;
+      }
+    | string;
+  summary?: string;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextSelectionsPayload".
+ */
+export interface ContextSelectionsPayload {
+  entries: ContextSelectionEntry[];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextMcpLocator".
+ */
+export interface ContextMcpLocator {
+  server_ref: string;
+  tool: string;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextOperationLocator".
+ */
+export interface ContextOperationLocator {
+  operation_ref: string;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextSnapshotLocator".
+ */
+export interface ContextSnapshotLocator {
+  snapshot_ref: string;
+  digest: string;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextResourcesPayload".
+ */
+export interface ContextResourcesPayload {
+  entries: ContextResourceEntry[];
+}
+/**
+ * Minimal control instruction: non-empty text plus a source label. The source label is not proof of trust; authenticated upstream configuration must authorize it.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextInstructionEntry".
+ */
+export interface ContextInstructionEntry {
+  text: string;
+  source: "revision" | "agent_configuration" | "platform_policy";
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextInstructionsPayload".
+ */
+export interface ContextInstructionsPayload {
+  entries: ContextInstructionEntry[];
+}
+/**
+ * Snapshot selection descriptor in ExecutionEnvelope. Scope, consumer_key, and session_generation isolate the consumption cursor.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ChannelContextDescriptor".
+ */
+export interface ChannelContextDescriptor {
+  scope: ChannelScope;
+  consumer_key: string;
+  session_generation: number;
+  trigger_message_id: string;
+  trigger_seq?: number;
+  trigger_fact: ChannelMessageFact;
+}
+/**
+ * Platform-neutral channel isolation key. account_id may be null but remains explicit; an absent thread_id selects the conversation root.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ChannelScope".
+ */
+export interface ChannelScope {
+  tenant_id: string;
+  endpoint_id: string;
+  channel: string;
+  account_id: string | null;
+  bot_id: string;
+  conversation_id: string;
+  thread_id?: string | null;
+}
+/**
+ * A platform-neutral message fact in the rebuildable channel journal. Message content is always untrusted external input.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ChannelMessageFact".
+ */
+export interface ChannelMessageFact {
+  message_id: string;
+  message_seq?: number;
+  sender: ChannelMessageSender;
+  occurred_at_ms: number;
+  /**
+   * @minItems 1
+   */
+  parts: [ChannelMessagePart, ...ChannelMessagePart[]];
+  flags?: ChannelMessageFlags;
+}
+/**
+ * Normalized sender fact without platform credentials.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ChannelMessageSender".
+ */
+export interface ChannelMessageSender {
+  id: string;
+  label?: string;
+  kind: string;
+}
+/**
+ * Normalized platform message part. type and text are common fields; connector extensions remain untrusted external data.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ChannelMessagePart".
+ */
+export interface ChannelMessagePart {
+  type: string;
+  text?: string;
+  [k: string]: unknown;
+}
+/**
+ * Common message flags that affect context projection. Self and control messages are excluded from provider-visible context.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ChannelMessageFlags".
+ */
+export interface ChannelMessageFlags {
+  self?: boolean;
+  control?: boolean;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextDeliveryPolicyPayload".
+ */
+export interface ContextDeliveryPolicyPayload {
+  focus?: string[];
+  budget?: {
+    max_inline_bytes?: number;
+    max_items?: number;
+  };
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ResolvedExecutionPlan".
+ */
+export interface ResolvedExecutionPlan {
+  adapter_type: string;
+  workdir: string;
+  model?: string;
+  effort?: string;
+  approval_mode: ApprovalMode;
+  required_capabilities?: string[];
+  runtime_limits?: ContextLimitsPayload;
+  mcp_servers?: McpServers;
+  provider_compatibility?: Record<string, unknown>;
+}
 /**
  * Provider-native provenance written by the adapter. Audience projectors use it to audit public exposure and clients cannot override it.
  *
@@ -192,7 +526,7 @@ export interface RuntimeLimits {
   enforcement?: "observe" | "enforce";
 }
 /**
- * Persisted agent configuration. Adapters interpret provider-specific extensions while Core only stores and forwards them.
+ * Adapter-internal configuration derived from the resolved execution plan, not a public source of run model or approval choices. Legacy permission and thinking fields are forbidden.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "AgentConfig".
@@ -211,25 +545,9 @@ export interface AgentConfig {
    */
   sandbox?: string;
   /**
-   * Provider permission mode identifier.
-   */
-  permissionMode?: string;
-  /**
-   * Whether to bypass permission confirmation. Use only with explicit authorization.
-   */
-  dangerouslyBypassPermissions?: boolean;
-  /**
-   * Whether tool calls are approved automatically.
-   */
-  autoApprove?: boolean;
-  /**
    * Provider-side agent identifier.
    */
   providerAgentId?: string;
-  /**
-   * Whether provider thinking is enabled, or a legacy provider-specific thinking mode identifier.
-   */
-  thinking?: boolean | string;
   /**
    * Optional provider reasoning effort identifier. Provider adapters may define an explicit default.
    */
@@ -301,6 +619,8 @@ export interface CanonicalEventPayload {
  * via the `definition` "InteractionRequestedPayload".
  */
 export interface InteractionRequestedPayload {
+  executionInstanceId: string;
+  expiresAt: string;
   /**
    * Stable invocation-scoped interaction identifier.
    */
@@ -310,6 +630,52 @@ export interface InteractionRequestedPayload {
    * Display-safe provider request projected for the responding product.
    */
   request: Record<string, unknown>;
+}
+/**
+ * Supported profile: original native request approval with requestedPermissions=[] only. Non-empty permission instances fail with APPROVAL_PERMISSION_UNSUPPORTED; consumers must not fabricate them. Details are allowlisted inert metadata. The compact UTF-8 JSON budget is enforced by x-octo-max-json-bytes.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ApprovalRequest".
+ */
+export interface ApprovalRequest {
+  schema: "octo.approval-request/v1";
+  policy: {
+    mode: ApprovalMode;
+    hash: string;
+  };
+  operation: ApprovalOperation;
+  /**
+   * @maxItems 0
+   */
+  requestedPermissions: never[];
+  reason?: string;
+  /**
+   * @minItems 1
+   */
+  allowedOutcomes: ["accepted" | "declined" | "cancelled", ...("accepted" | "declined" | "cancelled")[]];
+  grantScope: "request";
+  providerDetails?: ApprovalDisplayDetails;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ApprovalOperation".
+ */
+export interface ApprovalOperation {
+  kind: "command_execution" | "file_change" | "tool_execution" | "permission_grant" | "context_access";
+  summary: string;
+  toolCallId?: string;
+  details?: ApprovalDisplayDetails;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "InteractionResolvedPayload".
+ */
+export interface InteractionResolvedPayload {
+  interactionId: string;
+  executionInstanceId: string;
+  status: "resolved" | "expired" | "invalidated";
+  outcome?: "accepted" | "declined" | "cancelled" | "answered";
+  reasonCode?: string;
 }
 /**
  * Starts one provider model round. A round may contain public reasoning, tool calls, and text output.
@@ -441,70 +807,6 @@ export interface RunIdentity {
   agentSessionId: string;
 }
 /**
- * Platform-neutral channel isolation key. account_id may be null but remains explicit; an absent thread_id selects the conversation root.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ChannelScope".
- */
-export interface ChannelScope {
-  tenant_id: string;
-  endpoint_id: string;
-  channel: string;
-  account_id: string | null;
-  bot_id: string;
-  conversation_id: string;
-  thread_id?: string | null;
-}
-/**
- * Normalized platform message part. type and text are common fields; connector extensions remain untrusted external data.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ChannelMessagePart".
- */
-export interface ChannelMessagePart {
-  type: string;
-  text?: string;
-  [k: string]: unknown;
-}
-/**
- * Normalized sender fact without platform credentials.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ChannelMessageSender".
- */
-export interface ChannelMessageSender {
-  id: string;
-  label?: string;
-  kind: string;
-}
-/**
- * Common message flags that affect context projection. Self and control messages are excluded from provider-visible context.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ChannelMessageFlags".
- */
-export interface ChannelMessageFlags {
-  self?: boolean;
-  control?: boolean;
-}
-/**
- * A platform-neutral message fact in the rebuildable channel journal. Message content is always untrusted external input.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ChannelMessageFact".
- */
-export interface ChannelMessageFact {
-  message_id: string;
-  message_seq?: number;
-  sender: ChannelMessageSender;
-  occurred_at_ms: number;
-  /**
-   * @minItems 1
-   */
-  parts: [ChannelMessagePart, ...ChannelMessagePart[]];
-  flags?: ChannelMessageFlags;
-}
-/**
  * Idempotent context-only batch appended by agent-worker to its bound daemon.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -544,20 +846,6 @@ export interface ContextSyncResult1 {
   facts: ChannelMessageFact[];
   completeness: "complete" | "partial" | "unavailable";
   through_seq?: number;
-}
-/**
- * Snapshot selection descriptor in ExecutionEnvelope. Scope, consumer_key, and session_generation isolate the consumption cursor.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ChannelContextDescriptor".
- */
-export interface ChannelContextDescriptor {
-  scope: ChannelScope;
-  consumer_key: string;
-  session_generation: number;
-  trigger_message_id: string;
-  trigger_seq?: number;
-  trigger_fact: ChannelMessageFact;
 }
 /**
  * Traceable reference to frozen provider-visible context. The primary and recovery hashes cover their exact rendered bytes.
@@ -669,9 +957,9 @@ export interface InvokeRequestWire {
    */
   prompt: string;
   /**
-   * Exact provider-visible user turn. Adapters fall back to prompt when this field is absent.
+   * Required exact provider-visible user turn.
    */
-  modelInput?: string;
+  modelInput: string;
   /**
    * Frozen alternate user turn for the first turn of a fresh provider session after resume fails.
    */
@@ -684,11 +972,10 @@ export interface InvokeRequestWire {
   /**
    * Harness-generated control instructions placed in a provider-native private carrier by the adapter.
    */
-  appendInstructions: string;
-  /**
-   * Structured Harness context for prompts, auditing, and future transports.
-   */
-  context: Record<string, unknown>;
+  controlInstructions: string;
+  context: ContextEnvelope;
+  runMetadata?: Record<string, unknown>;
+  approvalMode: ApprovalMode;
   mcpServers?: McpServers;
   providerSession?: ProviderSession;
   runtimeLimits?: RuntimeLimits;

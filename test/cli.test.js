@@ -18,6 +18,15 @@ import { InspectServer } from "../apps/daemon/dist/inspect-server.js";
 import { waitFor } from "./agent-work-runtime-fixture.js";
 
 const execute = promisify(execFile);
+const emptyContext = () => ({ schema: "octo.context-envelope/v1", items: [] });
+const defaultContext = () => ({
+  schema: "octo.context-envelope/v1",
+  items: [
+    { namespace: "octo.execution", name: "adapter", payload: { type: "test" } },
+    { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: process.cwd() } },
+    { namespace: "octo.security", name: "approval_policy", payload: { mode: "full_access" } }
+  ]
+});
 
 test("CLI exposes Runtime operations and unified AgentSession/AgentRun inspection only", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
@@ -92,13 +101,14 @@ test("CLI exposes bounded events and daemon-owned loopback inspect", async () =>
   });
   const cli = join(root, "apps/cli/dist/index.js");
   try {
-    const agent = await app.engine.registerAgent({ name: "test", adapterType: "test" });
+    const agent = await app.engine.registerAgent({ name: "test", defaultContext: defaultContext() });
     const submitted = await app.daemon.submitAgentRun({
       namespace: "test",
       agentId: agent.id,
       sessionKey: "v1/events",
       trigger: { kind: "test", occurrenceId: "events-1" },
-      input: { prompt: "emit events" }
+      input: { prompt: "emit events" },
+      context: emptyContext()
     });
     await app.daemon.waitForRun(submitted.agentRunId);
     const events = await execute(process.execPath, [cli, "events", "--json"], {
@@ -335,13 +345,14 @@ test("daemon terminalizes in-flight work and restarts adapter-host without exiti
     adapterHostRestartDelaysMs: [500, 100, 100, 100]
   });
   try {
-    const agent = await app.engine.registerAgent({ name: "test", adapterType: "test" });
+    const agent = await app.engine.registerAgent({ name: "test", defaultContext: defaultContext() });
     const submitted = await app.daemon.submitAgentRun({
       namespace: "test",
       agentId: agent.id,
       sessionKey: "v1/adapter-host-restart",
       trigger: { kind: "test", occurrenceId: "host-exit-1" },
-      input: { prompt: "wait-for-host-exit" }
+      input: { prompt: "wait-for-host-exit" },
+      context: emptyContext()
     });
     await waitFor(() => app.daemon.status.activeRuns === 1);
     const originalPid = app.hostProcess.child.pid;
@@ -360,7 +371,8 @@ test("daemon terminalizes in-flight work and restarts adapter-host without exiti
       agentId: agent.id,
       sessionKey: "v1/adapter-host-restarting",
       trigger: { kind: "test", occurrenceId: "host-exit-2" },
-      input: { prompt: "must-fail-while-restarting" }
+      input: { prompt: "must-fail-while-restarting" },
+      context: emptyContext()
     });
     assert.equal((await app.daemon.waitForRun(unavailable.agentRunId)).run.status, "failed");
     await waitFor(() => app.runtime.adapterHost.state === "ready" && app.hostProcess.child.pid !== originalPid);

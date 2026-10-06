@@ -2,10 +2,198 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "urn:mininglamp-oss:octo-harness:protocol-schema",
   "title": "OctoHarnessProtocolSchema",
-  "description": "Serializable data shapes for the Octo Harness NDJSON protocol. Runtime behavior remains hand-written in src/index.ts, and this schema is the source of truth for generated TypeScript types.",
+  "description": "Serializable data shapes for the Octo Harness NDJSON protocol. Runtime behavior remains hand-written in src/index.ts, and this schema is the source of truth for generated TypeScript types. The x-octo-unicode-scalar-strings semantic keyword requires every JSON string value and object member name to contain Unicode scalar values only: unpaired UTF-16 surrogates are rejected, not repaired or normalized. Consumers must enforce this protocol-wide rule even when validating a definition directly.",
+  "x-octo-unicode-scalar-strings": true,
   "type": "object",
   "additionalProperties": false,
   "definitions": {
+    "ApprovalMode": {
+      "title": "ApprovalMode",
+      "type": "string",
+      "enum": ["ask", "assisted", "full_access"]
+    },
+    "ContextItem": {
+      "title": "ContextItem",
+      "description": "Registered Context types. Payload schemas below are authoritative; the TypeScript envelope stays an opaque dictionary until runtime validation.",
+      "tsType": "{ namespace: string; name: string; payload: Record<string, unknown> }",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["namespace", "name", "payload"],
+      "properties": {
+        "namespace": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$", "maxLength": 96},
+        "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$", "maxLength": 96},
+        "payload": {"type": "object", "additionalProperties": true, "tsType": "Record<string, unknown>"}
+      },
+      "oneOf": [
+        {"properties": {"namespace": {"const": "octo.execution"}, "name": {"const": "adapter"}, "payload": {"$ref": "#/definitions/ContextAdapterPayload"}}},
+        {"properties": {"namespace": {"const": "octo.execution"}, "name": {"const": "model"}, "payload": {"$ref": "#/definitions/ContextModelPayload"}}},
+        {"properties": {"namespace": {"const": "octo.execution"}, "name": {"const": "reasoning"}, "payload": {"$ref": "#/definitions/ContextReasoningPayload"}}},
+        {"properties": {"namespace": {"const": "octo.execution"}, "name": {"const": "workspace"}, "payload": {"$ref": "#/definitions/ContextWorkspacePayload"}}},
+        {"properties": {"namespace": {"const": "octo.execution"}, "name": {"const": "limits"}, "payload": {"$ref": "#/definitions/ContextLimitsPayload"}}},
+        {"properties": {"namespace": {"const": "octo.runtime"}, "name": {"const": "selection"}, "payload": {"$ref": "#/definitions/ContextRuntimeSelectionPayload"}}},
+        {"properties": {"namespace": {"const": "octo.security"}, "name": {"const": "approval_policy"}, "payload": {"$ref": "#/definitions/ContextApprovalPolicyPayload"}}},
+        {"properties": {"namespace": {"const": "octo.content"}, "name": {"const": "selections"}, "payload": {"$ref": "#/definitions/ContextSelectionsPayload"}}},
+        {"properties": {"namespace": {"const": "octo.content"}, "name": {"const": "resources"}, "payload": {"$ref": "#/definitions/ContextResourcesPayload"}}},
+        {"properties": {"namespace": {"const": "octo.content"}, "name": {"const": "continuity"}, "payload": {"$ref": "#/definitions/ContextContinuityPayload"}}},
+        {"properties": {"namespace": {"const": "octo.content"}, "name": {"const": "delivery_policy"}, "payload": {"$ref": "#/definitions/ContextDeliveryPolicyPayload"}}},
+        {"properties": {"namespace": {"const": "octo.control"}, "name": {"const": "instructions"}, "payload": {"$ref": "#/definitions/ContextInstructionsPayload"}}}
+      ]
+    },
+    "ContextEnvelope": {
+      "title": "ContextEnvelope",
+      "description": "In addition to draft-07 validation, every consumer must enforce the x-octo semantic keywords: unique ordered namespace/name tuples, compact UTF-8 JSON byte budget, JSON nesting depth with the envelope at depth zero, and Unicode scalar strings in every nested value and object key. Canonical hashing uses ECMAScript JSON number serialization, including -0 becoming 0 and normalized exponent notation; object keys are sorted by UTF-16 code units before ECMAScript integer-index enumeration. U+2028/U+2029 and non-ASCII scalar values are not escaped or Unicode-normalized.",
+      "type": "object",
+      "additionalProperties": false,
+      "x-octo-unique-type-keys": true,
+      "x-octo-max-json-bytes": 65536,
+      "x-octo-max-json-depth": 32,
+      "x-octo-unicode-scalar-strings": true,
+      "required": ["schema", "items"],
+      "properties": {
+        "schema": {"const": "octo.context-envelope/v1"},
+        "items": {"type": "array", "maxItems": 32, "items": {"$ref": "#/definitions/ContextItem"}}
+      }
+    },
+    "ContextAdapterPayload": {
+      "type": "object", "additionalProperties": false, "required": ["type"],
+      "properties": {"type": {"type": "string", "minLength": 1}}
+    },
+    "ContextModelPayload": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"id": {"type": "string", "minLength": 1}, "use_provider_default": {"const": true}},
+      "oneOf": [{"required": ["id"], "not": {"required": ["use_provider_default"]}}, {"required": ["use_provider_default"], "not": {"required": ["id"]}}]
+    },
+    "ContextReasoningPayload": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"effort": {"type": "string", "minLength": 1}, "use_provider_default": {"const": true}},
+      "oneOf": [{"required": ["effort"], "not": {"required": ["use_provider_default"]}}, {"required": ["use_provider_default"], "not": {"required": ["effort"]}}]
+    },
+    "ContextWorkspacePayload": {
+      "type": "object", "additionalProperties": false, "required": ["mode", "path"],
+      "properties": {"mode": {"const": "fixed"}, "path": {"type": "string", "minLength": 1}}
+    },
+    "ContextLimitsPayload": {
+      "description": "Snake-case frozen watchdog limits, with the same bounds as RuntimeLimits. Legacy enforcement=observe cannot be combined with v2 settings.",
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "first_frame_timeout_ms": {"type": "integer", "minimum": 100, "maximum": 1800000},
+        "model_idle_timeout_ms": {"type": "integer", "minimum": 100, "maximum": 3600000},
+        "model_idle_warning_ms": {"type": "integer", "minimum": 100, "maximum": 3600000},
+        "model_idle_policy": {"enum": ["enforce", "observe"]},
+        "tool_timeout_ms": {"type": "integer", "minimum": 100, "maximum": 86400000},
+        "tool_wall_timeout_ms": {"type": "integer", "minimum": 100, "maximum": 86400000},
+        "run_timeout_ms": {"type": "integer", "minimum": 100, "maximum": 86400000},
+        "cancel_grace_ms": {"type": "integer", "minimum": 100, "maximum": 60000},
+        "enforcement": {"enum": ["enforce", "observe"]}
+      },
+      "if": {"required": ["enforcement"], "properties": {"enforcement": {"const": "observe"}}},
+      "then": {"not": {"anyOf": [{"required": ["model_idle_policy"]}, {"required": ["model_idle_warning_ms"]}, {"required": ["tool_wall_timeout_ms"]}]}}
+    },
+    "ContextRuntimeSelectionPayload": {
+      "type": "object", "additionalProperties": false, "required": ["mode"],
+      "properties": {"mode": {"enum": ["binding", "explicit"]}, "runtime_id": {"type": "string", "minLength": 1}},
+      "oneOf": [{"properties": {"mode": {"const": "binding"}}, "not": {"required": ["runtime_id"]}}, {"properties": {"mode": {"const": "explicit"}}, "required": ["runtime_id"]}]
+    },
+    "ContextApprovalPolicyPayload": {
+      "type": "object", "additionalProperties": false, "required": ["mode"],
+      "properties": {"mode": {"$ref": "#/definitions/ApprovalMode"}}
+    },
+    "ContextSelectionEntry": {
+      "description": "Untrusted inline selection text with optional resource reference, source metadata and summary. Source metadata is not an authorization claim.",
+      "type": "object", "additionalProperties": false, "required": ["text"],
+      "properties": {
+        "text": {"type": "string", "minLength": 1},
+        "resource_ref": {"type": "string", "minLength": 1},
+        "source": {"type": ["object", "string"], "additionalProperties": true},
+        "summary": {"type": "string"}
+      }
+    },
+    "ContextSelectionsPayload": {
+      "type": "object", "additionalProperties": false, "required": ["entries"],
+      "properties": {"entries": {"type": "array", "items": {"$ref": "#/definitions/ContextSelectionEntry"}}}
+    },
+    "ContextResourceEntry": {
+      "description": "Declarative registered resolver operation, never an arbitrary shell command or credential. Validation does not resolve or authorize it. A consumer without the specified resolver must fail with CONTEXT_RESOLVER_UNAVAILABLE rather than ignore the entry.",
+      "type": "object", "additionalProperties": false, "required": ["resource_ref", "resolver", "locator"],
+      "properties": {
+        "resource_ref": {"type": "string", "minLength": 1},
+        "resolver": {"enum": ["mcp", "cli", "local_tool", "snapshot"]},
+        "locator": {"type": "object"},
+        "params": {"description": "Frozen non-secret JSON parameters supplied by the authenticated resolver plan, not model-generated commands.", "type": "object", "additionalProperties": true, "tsType": "Record<string, unknown>"},
+        "authorization_ref": {"type": "string", "minLength": 1},
+        "revision": {"type": "string", "minLength": 1}
+      },
+      "oneOf": [
+        {"properties": {"resolver": {"const": "mcp"}, "locator": {"$ref": "#/definitions/ContextMcpLocator"}}},
+        {"properties": {"resolver": {"enum": ["cli", "local_tool"]}, "locator": {"$ref": "#/definitions/ContextOperationLocator"}}},
+        {"properties": {"resolver": {"const": "snapshot"}, "locator": {"$ref": "#/definitions/ContextSnapshotLocator"}}, "not": {"required": ["params"]}}
+      ]
+    },
+    "ContextMcpLocator": {
+      "type": "object", "additionalProperties": false, "required": ["server_ref", "tool"],
+      "properties": {"server_ref": {"type": "string", "minLength": 1}, "tool": {"type": "string", "minLength": 1}}
+    },
+    "ContextOperationLocator": {
+      "type": "object", "additionalProperties": false, "required": ["operation_ref"],
+      "properties": {"operation_ref": {"type": "string", "minLength": 1}}
+    },
+    "ContextSnapshotLocator": {
+      "type": "object", "additionalProperties": false, "required": ["snapshot_ref", "digest"],
+      "properties": {"snapshot_ref": {"type": "string", "minLength": 1}, "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}}
+    },
+    "ContextResourcesPayload": {
+      "type": "object", "additionalProperties": false, "required": ["entries"],
+      "properties": {"entries": {"type": "array", "items": {"$ref": "#/definitions/ContextResourceEntry"}}}
+    },
+    "ContextInstructionEntry": {
+      "description": "Minimal control instruction: non-empty text plus a source label. The source label is not proof of trust; authenticated upstream configuration must authorize it.",
+      "type": "object", "additionalProperties": false, "required": ["text", "source"],
+      "properties": {"text": {"type": "string", "minLength": 1}, "source": {"enum": ["revision", "agent_configuration", "platform_policy"]}}
+    },
+    "ContextInstructionsPayload": {
+      "type": "object", "additionalProperties": false, "required": ["entries"],
+      "properties": {"entries": {"type": "array", "items": {"$ref": "#/definitions/ContextInstructionEntry"}}}
+    },
+    "ContextContinuityPayload": {
+      "description": "A channel continuity descriptor. The x-octo-matching-trigger-fields keyword requires trigger_fact.message_id == trigger_message_id and matching presence/value of trigger_fact.message_seq and trigger_seq.",
+      "x-octo-matching-trigger-fields": true,
+      "allOf": [
+        {"$ref": "#/definitions/ChannelContextDescriptor"},
+        {"properties": {
+          "session_generation": {"maximum": 9007199254740991},
+          "trigger_seq": {"maximum": 9007199254740991},
+          "trigger_fact": {"properties": {"message_seq": {"maximum": 9007199254740991}, "occurred_at_ms": {"maximum": 9007199254740991}}}
+        }}
+      ]
+    },
+    "ContextDeliveryPolicyPayload": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "focus": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "budget": {
+          "type": "object", "additionalProperties": false,
+          "properties": {"max_inline_bytes": {"type": "integer", "minimum": 1, "maximum": 65536}, "max_items": {"type": "integer", "minimum": 1, "maximum": 32}}
+        }
+      }
+    },
+    "ResolvedExecutionPlan": {
+      "title": "ResolvedExecutionPlan",
+      "x-octo-unicode-scalar-strings": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter_type", "workdir", "approval_mode"],
+      "properties": {
+        "adapter_type": {"type": "string", "minLength": 1},
+        "workdir": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "minLength": 1},
+        "effort": {"type": "string", "minLength": 1},
+        "approval_mode": {"$ref": "#/definitions/ApprovalMode"},
+        "required_capabilities": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "runtime_limits": {"$ref": "#/definitions/ContextLimitsPayload"},
+        "mcp_servers": {"$ref": "#/definitions/McpServers"},
+        "provider_compatibility": {"type": "object", "additionalProperties": true, "tsType": "Record<string, unknown>"}
+      }
+    },
     "MessageChannel": {
       "title": "MessageChannel",
       "description": "Provider-neutral assistant output channel. analysis is reasoning-class content gated by exposure; commentary is public in-run progress; final is answer content delivered only after the Run reaches a completed terminal state.",
@@ -306,9 +494,10 @@
     },
     "AgentConfig": {
       "title": "AgentConfig",
-      "description": "Persisted agent configuration. Adapters interpret provider-specific extensions while Core only stores and forwards them.",
+      "description": "Adapter-internal configuration derived from the resolved execution plan, not a public source of run model or approval choices. Legacy permission and thinking fields are forbidden.",
       "type": "object",
       "additionalProperties": true,
+      "not": {"anyOf": [{"required": ["permissionMode"]}, {"required": ["autoApprove"]}, {"required": ["dangerouslyBypassPermissions"]}, {"required": ["thinking"]}]},
       "properties": {
         "workdir": {
           "description": "Default provider CLI working directory. It is a cwd, not a filesystem security boundary.",
@@ -322,28 +511,9 @@
           "description": "Provider sandbox mode identifier.",
           "type": "string"
         },
-        "permissionMode": {
-          "description": "Provider permission mode identifier.",
-          "type": "string"
-        },
-        "dangerouslyBypassPermissions": {
-          "description": "Whether to bypass permission confirmation. Use only with explicit authorization.",
-          "type": "boolean"
-        },
-        "autoApprove": {
-          "description": "Whether tool calls are approved automatically.",
-          "type": "boolean"
-        },
         "providerAgentId": {
           "description": "Provider-side agent identifier.",
           "type": "string"
-        },
-        "thinking": {
-          "description": "Whether provider thinking is enabled, or a legacy provider-specific thinking mode identifier.",
-          "type": [
-            "boolean",
-            "string"
-          ]
         },
         "effort": {
           "description": "Optional provider reasoning effort identifier. Provider adapters may define an explicit default.",
@@ -428,9 +598,13 @@
       "required": [
         "interactionId",
         "kind",
-        "request"
+        "request",
+        "executionInstanceId",
+        "expiresAt"
       ],
       "properties": {
+        "executionInstanceId": {"type": "string", "minLength": 1, "maxLength": 191},
+        "expiresAt": {"type": "string", "format": "date-time"},
         "interactionId": {
           "description": "Stable invocation-scoped interaction identifier.",
           "type": "string",
@@ -451,7 +625,56 @@
           "additionalProperties": true,
           "tsType": "Record<string, unknown>"
         }
+      },
+      "if": {"properties": {"kind": {"const": "approval"}}, "required": ["kind"]},
+      "then": {"properties": {"request": {"$ref": "#/definitions/ApprovalRequest"}}}
+    },
+    "ApprovalRequest": {
+      "description": "Supported profile: original native request approval with requestedPermissions=[] only. Non-empty permission instances fail with APPROVAL_PERMISSION_UNSUPPORTED; consumers must not fabricate them. Details are allowlisted inert metadata. The compact UTF-8 JSON budget is enforced by x-octo-max-json-bytes.",
+      "type": "object", "additionalProperties": false,
+      "x-octo-max-json-bytes": 65536,
+      "x-octo-unicode-scalar-strings": true,
+      "required": ["schema", "policy", "operation", "requestedPermissions", "allowedOutcomes", "grantScope"],
+      "properties": {
+        "schema": {"const": "octo.approval-request/v1"},
+        "policy": {
+          "type": "object", "additionalProperties": false, "required": ["mode", "hash"],
+          "properties": {"mode": {"$ref": "#/definitions/ApprovalMode"}, "hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}}
+        },
+        "operation": {"$ref": "#/definitions/ApprovalOperation"},
+        "requestedPermissions": {"type": "array", "maxItems": 0, "items": false},
+        "reason": {"type": "string"},
+        "allowedOutcomes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["accepted", "declined", "cancelled"]}},
+        "grantScope": {"const": "request"},
+        "providerDetails": {"$ref": "#/definitions/ApprovalDisplayDetails"}
       }
+    },
+    "ApprovalOperation": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "summary"],
+      "properties": {
+        "kind": {"enum": ["command_execution", "file_change", "tool_execution", "permission_grant", "context_access"]},
+        "summary": {"type": "string", "minLength": 1, "maxLength": 8192, "x-octo-max-utf16-length": 8192},
+        "toolCallId": {"type": "string", "minLength": 1},
+        "details": {"$ref": "#/definitions/ApprovalDisplayDetails"}
+      }
+    },
+    "ApprovalDisplayDetails": {
+      "description": "Display-only fields permitted by assertApprovalRequest. Values remain inert provider metadata and do not redefine commands, permissions or grant scope.",
+      "type": "object", "additionalProperties": false, "tsType": "Record<string, unknown>",
+      "properties": {"provider": {}, "method": {}, "itemId": {}, "approvalId": {}, "reason": {}, "command": {}, "cwd": {}, "grantRoot": {}, "files": {}, "toolCallId": {}, "title": {}, "description": {}, "options": {}}
+    },
+    "InteractionResolvedPayload": {
+      "type": "object", "additionalProperties": false, "required": ["interactionId", "executionInstanceId", "status"],
+      "properties": {
+        "interactionId": {"type": "string", "minLength": 1, "maxLength": 191},
+        "executionInstanceId": {"type": "string", "minLength": 1, "maxLength": 191},
+        "status": {"enum": ["resolved", "expired", "invalidated"]},
+        "outcome": {"enum": ["accepted", "declined", "cancelled", "answered"]},
+        "reasonCode": {"type": "string", "minLength": 1}
+      },
+      "if": {"properties": {"status": {"const": "resolved"}}, "required": ["status"]},
+      "then": {"required": ["outcome"]},
+      "else": {"required": ["reasonCode"]}
     },
     "ModelStepStartedPayload": {
       "title": "ModelStepStartedPayload",
@@ -1112,7 +1335,9 @@
         "url": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 4096
+          "maxLength": 4096,
+          "x-octo-http-url": true,
+          "$comment": "The x-octo-http-url semantic keyword applies the existing MCP validator contract: the string must parse as an absolute URL with http: or https: protocol. maxLength counts Unicode code points, not UTF-16 code units."
         },
         "headers": {
           "type": "object",
@@ -1173,9 +1398,11 @@
         "runId",
         "prompt",
         "workdir",
-        "appendInstructions",
+        "controlInstructions",
         "context",
         "agentConfig",
+        "modelInput",
+        "approvalMode",
         "protocolVersion"
       ],
       "properties": {
@@ -1214,7 +1441,7 @@
           "type": "string"
         },
         "modelInput": {
-          "description": "Exact provider-visible user turn. Adapters fall back to prompt when this field is absent.",
+          "description": "Required exact provider-visible user turn.",
           "type": "string"
         },
         "freshFallbackModelInput": {
@@ -1228,16 +1455,19 @@
           "description": "Provider process cwd. Sandboxing, containers, or host permissions provide the actual access boundary.",
           "type": "string"
         },
-        "appendInstructions": {
+        "controlInstructions": {
           "description": "Harness-generated control instructions placed in a provider-native private carrier by the adapter.",
           "type": "string"
         },
         "context": {
-          "description": "Structured Harness context for prompts, auditing, and future transports.",
+          "$ref": "#/definitions/ContextEnvelope"
+        },
+        "runMetadata": {
           "type": "object",
           "additionalProperties": true,
           "tsType": "Record<string, unknown>"
         },
+        "approvalMode": {"$ref": "#/definitions/ApprovalMode"},
         "mcpServers": {
           "$ref": "#/definitions/McpServers"
         },

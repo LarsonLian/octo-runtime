@@ -10,3 +10,4 @@ export * from "./inspect-server.js";
 export * from "./live-event-bus.js";
 export * from "./local-metrics.js";
 export * from "./managed-profile.js";
+export { RUNTIME_RUN_CONTRACT } from "@mininglamp-oss/octo-harness-protocol";

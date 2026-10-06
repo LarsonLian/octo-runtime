@@ -8,9 +8,11 @@ const baseRequest = { protocolVersion: 2,
   agentSessionId: "session-1",
   runId: "run-1",
   prompt: "work",
+  modelInput: "work",
   workdir: "/workspace",
-  appendInstructions: "",
-  context: {},
+  controlInstructions: "",
+  context: { schema: "octo.context-envelope/v1", items: [] },
+  approvalMode: "full_access",
   agentConfig: {}
 };
 
@@ -52,6 +54,21 @@ test("dynamic MCP contract rejects unknown transports, fields, names, and malfor
   for (const value of invalid) assert.throws(() => assertMcpServers(value), TypeError);
 });
 
-test("InvokeRequest remains backward compatible when dynamic MCP is absent", () => {
+test("InvokeRequest accepts the mandatory new contract when dynamic MCP is absent", () => {
   assert.doesNotThrow(() => assertInvokeRequest(baseRequest));
+});
+
+test("InvokeRequest without dynamic MCP rejects legacy contracts and missing mandatory inputs", () => {
+  assert.throws(() => assertInvokeRequest({ ...baseRequest, appendInstructions: "" }), /LEGACY_RUN_CONTRACT_REJECTED/);
+  assert.throws(() => assertInvokeRequest({ ...baseRequest, context: {} }), /CONTEXT_SCHEMA_INVALID/);
+  for (const [field, reason] of [
+    ["context", /CONTEXT_REQUIRED/],
+    ["modelInput", /modelInput must be a non-empty string/],
+    ["controlInstructions", /controlInstructions must be a string/],
+    ["approvalMode", /APPROVAL_MODE_UNSUPPORTED/]
+  ]) {
+    const incomplete = { ...baseRequest };
+    delete incomplete[field];
+    assert.throws(() => assertInvokeRequest(incomplete), reason);
+  }
 });

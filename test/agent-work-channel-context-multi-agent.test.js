@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { AgentWorkRuntime } from "../apps/daemon/dist/agent-work-runtime.js";
 import { ChannelContextStore } from "../apps/daemon/dist/channel-context-store.js";
-import { deferred, terminalGrant, waitFor, wire, withTimeout } from "./agent-work-runtime-fixture.js";
+import { assertInvokeRequest } from "../packages/octo-harness-protocol/dist/index.js";
+import { contextEnvelope, deferred, executionContext, terminalGrant, waitFor, wire, withTimeout } from "./agent-work-runtime-fixture.js";
 
 const occurredAt = Date.now();
 
@@ -107,9 +108,10 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["session.serialize", "session.resume_recovery"] }],
+      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
+        assertInvokeRequest(request);
         providerRequests.set(request.runId, request);
         yield { protocolVersion: 2,
           type: "session.update",
@@ -164,13 +166,23 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
     assert.match(a3.modelInput, /G before idle recovery for A/);
     assert.match(a3.modelInput, /U3 after idle recovery for A/);
     assert.doesNotMatch(a3.modelInput, /B background ABCDE|F after R1 for B/);
+    for (const request of [a1, a2, a3]) {
+      assert.match(request.modelInput, /Selected content only for Agent A/);
+      assert.doesNotMatch(request.modelInput, /Selected content only for Agent B/);
+      assert.doesNotMatch(request.prompt, /Selected content|background ABCDE|F after R1/);
+    }
+    for (const request of [b1, b2]) {
+      assert.match(request.modelInput, /Selected content only for Agent B/);
+      assert.doesNotMatch(request.modelInput, /Selected content only for Agent A/);
+      assert.doesNotMatch(request.prompt, /Selected content|background ABCDE|F after R1/);
+    }
     assert.equal(dm1.providerSession, undefined);
     assert.equal(dm1.contextSnapshot, undefined);
-    assert.equal(dm1.modelInput, undefined);
+    assert.equal(dm1.modelInput, dm1.prompt);
     assert.match(dm1.prompt, /DM U1 for A/);
     assert.equal(dm2.providerSession.sessionId, "provider-dm-a");
     assert.equal(dm2.contextSnapshot, undefined);
-    assert.equal(dm2.modelInput, undefined);
+    assert.equal(dm2.modelInput, dm2.prompt);
     assert.match(dm2.prompt, /DM U2 for A/);
     assert.doesNotMatch(dm2.prompt, /background ABCDE|F after R1|idle recovery/);
 
@@ -213,50 +225,69 @@ function groupFact(agent, seq, text) {
     sender: { id: `member-${seq}`, label: `Member ${seq}`, kind: "member" },
     occurred_at_ms: occurredAt + seq,
     parts: [{ type: "text", text }],
-    flags: { addressed_to_this_bot: text.startsWith("U") }
+    flags: { self: false, control: false }
   };
 }
 
 function groupEnvelope(agent, round, text) {
   const triggerSeq = round * 2;
   const trigger = groupFact(agent, triggerSeq, text);
+  const plan = {
+    adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_capabilities: ["tool.canonical"]
+  };
+  const items = [{
+    namespace: "octo.content", name: "continuity", payload: {
+      scope: groupScope(agent),
+      consumer_key: `agent-${agent}/provider-group-${agent}`,
+      session_generation: round === 3 ? 2 : 1,
+      trigger_message_id: trigger.message_id,
+      trigger_seq: trigger.message_seq,
+      trigger_fact: trigger
+    }
+  }, {
+    namespace: "octo.content", name: "selections", payload: { entries: [{
+      resource_ref: `octo://agents/${agent}/selected`, text: `Selected content only for Agent ${agent.toUpperCase()}`
+    }] }
+  }];
   return {
-    schema_version: 1,
+    schema_version: 2,
+    context_defaults_version: 1,
+    effective_context: executionContext(plan, items),
+    resolved_execution_plan: plan,
     run_id: `run-group-${agent}-${round}`,
     agent_session_id: `harness-group-${agent}`,
     ...(round === 2 ? { provider_session: { sessionId: `provider-group-${agent}`, resumable: true } } : {}),
     agent_run_request: {
+      context: contextEnvelope(items),
       namespace: "im",
       agent_id: `agent-${agent}`,
       agent_revision_id: `revision-${agent}`,
       session_key: `v1/octo/endpoint-${agent}/group/group-${agent}`,
       trigger: { kind: "im.message", occurrence_id: `message/${trigger.message_id}` },
       input: {
-        parts: [{ type: "text", text }],
-        channel_context: {
-          scope: groupScope(agent),
-          consumer_key: `agent-${agent}/provider-group-${agent}`,
-          session_generation: round === 3 ? 2 : 1,
-          trigger_message_id: trigger.message_id,
-          trigger_seq: trigger.message_seq,
-          trigger_fact: trigger
-        }
+        parts: [{ type: "text", text }]
       }
     },
     agent_revision: {
-      definition: { instructions: `Answer as Agent ${agent.toUpperCase()}.` },
-      execution_profile: { default_adapter: "fake", workdir: process.cwd(), agent_config: {} }
+      definition: { instructions: `Answer as Agent ${agent.toUpperCase()}.` }
     }
   };
 }
 
 function dmEnvelope(round) {
+  const plan = {
+    adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_capabilities: ["tool.canonical"]
+  };
   return {
-    schema_version: 1,
+    schema_version: 2,
+    context_defaults_version: 1,
+    effective_context: executionContext(plan),
+    resolved_execution_plan: plan,
     run_id: `run-dm-a-${round}`,
     agent_session_id: "harness-dm-a",
     ...(round === 2 ? { provider_session: { sessionId: "provider-dm-a", resumable: true } } : {}),
     agent_run_request: {
+      context: contextEnvelope(),
       namespace: "im",
       agent_id: "agent-a",
       agent_revision_id: "revision-a",
@@ -265,8 +296,7 @@ function dmEnvelope(round) {
       input: { parts: [{ type: "text", text: `DM U${round} for A` }] }
     },
     agent_revision: {
-      definition: { instructions: "Answer as Agent A." },
-      execution_profile: { default_adapter: "fake", workdir: process.cwd(), agent_config: {} }
+      definition: { instructions: "Answer as Agent A." }
     }
   };
 }

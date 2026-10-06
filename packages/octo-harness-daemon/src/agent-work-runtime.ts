@@ -17,22 +17,29 @@ import type {
   AgentConfig,
   CanonicalEvent,
   ChannelContextDescriptor,
+  ContextEnvelope,
   ContextSyncRequest,
   ContextSyncResult,
   InteractionResponse,
   InvokeRequest,
   McpServers,
-  ProviderSession
+  ProviderSession,
+  ResolvedExecutionPlan
 } from "@mininglamp-oss/octo-harness-protocol";
 import {
+  RUNTIME_RUN_CONTRACT,
   assertChannelContextAppend,
   assertChannelContextDescriptor,
   assertContextSyncResult,
   assertInteractionResponse,
   assertMcpServers,
+  assertContextEnvelope,
+  assertResolvedExecutionPlan,
+  contextItem,
   failurePayload
 } from "@mininglamp-oss/octo-harness-protocol";
 import { AgentWorkStore } from "./agent-work-store.js";
+import { assertFrozenContextPlan, compileRunContext } from "./run-context.js";
 import type { OutboxRow } from "./agent-work-store.js";
 import { collectRuntimeDeviceInfo } from "./device-info.js";
 import {
@@ -184,6 +191,9 @@ export interface ChannelContextRuntimeOptions extends ChannelContextStoreOptions
 /** Immutable execution description received from Agent Work before local mapping. */
 export interface ExecutionEnvelope {
   schema_version: number;
+  effective_context: ContextEnvelope;
+  context_defaults_version: number;
+  resolved_execution_plan: ResolvedExecutionPlan;
   run_id: string;
   agent_session_id: string;
   session_generation?: number;
@@ -197,6 +207,7 @@ export interface ExecutionEnvelope {
     session_key: string;
     trigger: { kind: string; occurrence_id: string; occurred_at?: string };
     input: Record<string, unknown>;
+    context: ContextEnvelope;
     execution_policy?: Record<string, unknown>;
     trace?: Record<string, unknown>;
     session_policy?: {
@@ -601,6 +612,7 @@ export class AgentWorkRuntime {
           protocol_version_min: MIN_PROTOCOL_VERSION,
           protocol_version_max: MAX_PROTOCOL_VERSION,
           capabilities: {
+            run_contract: RUNTIME_RUN_CONTRACT,
             adapters: this.#adapters.map(adapter => ({
               provider_type: adapter.type,
               provider_version: adapter.providerVersion ?? null,
@@ -1447,6 +1459,10 @@ export class AgentWorkRuntime {
       }
       try {
         const payload = asRecord(command.payload);
+        if (payload.execution_instance_id !== active.invocationId) {
+          reject("STALE_EXECUTION_INSTANCE", "interaction response does not own the active invocation instance");
+          return;
+        }
         const response: InteractionResponse = {
           interactionId: requiredString(payload.interaction_id, "interaction.respond interaction_id"),
           outcome: requiredString(payload.outcome, "interaction.respond outcome") as InteractionResponse["outcome"],
@@ -1600,8 +1616,13 @@ export class AgentWorkRuntime {
         leaseId = requiredString(command.lease_id, "run.start lease_id");
         fencingToken = requiredSafeInteger(command.fencing_token, "run.start fencing_token");
         const executionEnvelope = command.payload as ExecutionEnvelope;
+        assertContextEnvelope(executionEnvelope.agent_run_request?.context);
+        assertFrozenContextPlan(executionEnvelope.effective_context, executionEnvelope.resolved_execution_plan);
         const adapterTypeForContext = executionAdapterType(executionEnvelope);
         this.#assertAdapterAvailable(adapterTypeForContext);
+        const requiredCapabilities = executionEnvelope.resolved_execution_plan.required_capabilities ?? [];
+        const localCapabilities = this.#adapterCapabilities.get(adapterTypeForContext);
+        if (requiredCapabilities.some(capability => !localCapabilities?.has(capability))) throw new TypeError("ADAPTER_REQUIRED_CAPABILITY_MISSING");
         const contextSnapshot = await this.#prepareChannelContext(
           command.run_id,
           executionEnvelope,
@@ -1613,10 +1634,11 @@ export class AgentWorkRuntime {
         this.#assertCurrentLifecycle(epoch);
         const mapped = mapExecutionEnvelope(executionEnvelope, contextSnapshot);
         request = mapped.request;
+        request.runMetadata ??= {};
         // The authenticated Runtime connection owns this mapping. Never trust
         // an AgentRun payload to self-report its local profile.
-        if (this.#options.profile) request.context.profile = this.#options.profile;
-        request.context.runtimeId = this.#runtimeId;
+        if (this.#options.profile) request.runMetadata.profile = this.#options.profile;
+        request.runMetadata.runtimeId = this.#runtimeId;
         adapterType = mapped.adapterType;
         const adapterConfiguration = this.#options.adapterConfigurations?.[adapterType];
         if (adapterConfiguration) {
@@ -1761,7 +1783,7 @@ export class AgentWorkRuntime {
     signal: AbortSignal,
     epoch: number
   ): Promise<PreparedChannelContextSnapshot | undefined> {
-    const descriptorValue = asRecord(envelope.agent_run_request.input).channel_context;
+    const descriptorValue = contextItem(envelope.effective_context, "octo.content", "continuity")?.payload;
     if (descriptorValue === undefined) return undefined;
     assertChannelContextDescriptor(descriptorValue);
     const descriptor = descriptorValue;
@@ -1770,13 +1792,13 @@ export class AgentWorkRuntime {
 
     // Reliable trigger path repairs a dropped best-effort append before selection.
 	contextStore.append({ agent_id: envelope.agent_run_request.agent_id, scope: descriptor.scope, facts: [descriptor.trigger_fact] });
-    if (!this.#usesAppendOnlyDelta()) return undefined;
     const adapterCapabilities = this.#adapterCapabilities.get(adapterType);
     if (contextStore.needsSync(descriptor.scope)) await this.#requestContextSync(runId, descriptor, signal);
     while (this.#isCurrentLifecycle(epoch)) {
       throwIfAcceptingAborted(signal);
       try {
         const snapshot = contextStore.prepareSnapshot(runId, descriptor);
+        if (!this.#usesAppendOnlyDelta()) return contextStore.selectColdProjection(runId);
         // A provider with no serializable session starts cold on every turn.
         // Give it the bounded full projection without promoting the context
         // generation, because no previously resumed session became invalid.
@@ -1899,9 +1921,9 @@ export class AgentWorkRuntime {
       agentSessionId: request.agentSessionId,
       adapterType,
       data: {
-        namespace: stringValue(request.context?.namespace),
-        trigger_kind: stringValue(request.context?.triggerKind),
-        trigger_occurrence_id: stringValue(request.context?.triggerOccurrenceId)
+        namespace: stringValue(request.runMetadata?.namespace),
+        trigger_kind: stringValue(request.runMetadata?.triggerKind),
+        trigger_occurrence_id: stringValue(request.runMetadata?.triggerOccurrenceId)
       }
     });
     const appendStarted = (): void => {
@@ -2211,6 +2233,12 @@ export function mapExecutionEnvelope(
   envelope: ExecutionEnvelope,
   contextSnapshot?: PreparedChannelContextSnapshot
 ): { adapterType: string; request: InvokeRequest } {
+  if (envelope.schema_version !== 2) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
+  assertContextEnvelope(envelope.agent_run_request?.context);
+  assertContextEnvelope(envelope.effective_context);
+  assertResolvedExecutionPlan(envelope.resolved_execution_plan);
+  assertFrozenContextPlan(envelope.effective_context, envelope.resolved_execution_plan);
+  if (!Number.isSafeInteger(envelope.context_defaults_version) || envelope.context_defaults_version < 1) throw new TypeError("CONTEXT_DEFAULTS_VERSION_REQUIRED");
   if (!envelope?.run_id || !envelope.agent_session_id || !envelope.agent_revision || !envelope.agent_run_request?.input) {
     throw new TypeError("execution envelope is missing run/session/revision/agent run request");
   }
@@ -2232,15 +2260,19 @@ export function mapExecutionEnvelope(
   const profile = executionProfile(envelope);
   const definition = asRecord(envelope.agent_revision.definition);
   const adapterType = executionAdapterType(envelope);
-  const agentConfig = asRecord(profile.agent_config) as AgentConfig;
+  const agentConfig: AgentConfig = {
+    ...(profile.model ? { model: profile.model } : {}),
+    ...(profile.effort ? { effort: profile.effort } : {})
+  };
   const runtimeLimits = mapExecutionRuntimeLimits(profile.runtime_limits);
   const mcpServers = mapExecutionMcpServers(profile.mcp_servers);
-  const workdir = stringValue(profile.workdir) ?? stringValue(agentConfig.workdir);
-  if (!workdir) throw new TypeError("agent_revision execution spec workdir is required for a local runtime");
+  const workdir = profile.workdir;
   const content = envelope.agent_run_request.input;
-  const displayPrompt = contextSnapshot
-    ? renderDisplayExecutionInputPrompt(content)
-    : renderAgentRunInputPrompt(content);
+  if (Object.hasOwn(content, "context_refs") || Object.hasOwn(content, "channel_context")) throw new TypeError("LEGACY_CONTEXT_INPUT_REJECTED");
+  const compiled = compileRunContext(envelope.effective_context);
+  if (contextItem(envelope.effective_context, "octo.content", "continuity") && !contextSnapshot) throw new TypeError("CONTEXT_CONTINUITY_UNAVAILABLE");
+  const displayPrompt = renderDisplayExecutionInputPrompt(content);
+  const modelContext = (text: string): string => [text, compiled.modelContent].filter(Boolean).join("\n\n");
   const context = {
     schemaVersion: envelope.schema_version,
     namespace: envelope.agent_run_request.namespace,
@@ -2265,19 +2297,22 @@ export function mapExecutionEnvelope(
       ...(envelope.provider_epoch === undefined ? {} : { providerEpoch: envelope.provider_epoch }),
       ...(envelope.continuity_mode === undefined ? {} : { continuityMode: envelope.continuity_mode }),
       prompt: displayPrompt,
+      modelInput: composeProviderModelInput(compiled.modelContent, displayPrompt),
       ...(contextSnapshot ? {
         modelInput: composeProviderModelInput(
-          contextSnapshot.selectedVariant === "recovery"
+          modelContext(contextSnapshot.selectedVariant === "recovery"
             ? contextSnapshot.recoveryRenderedText
-            : contextSnapshot.renderedText,
+            : contextSnapshot.renderedText),
           displayPrompt
         ),
-        freshFallbackModelInput: composeProviderModelInput(contextSnapshot.recoveryRenderedText, displayPrompt),
+        freshFallbackModelInput: composeProviderModelInput(modelContext(contextSnapshot.recoveryRenderedText), displayPrompt),
         contextSnapshot: contextSnapshot.ref
       } : {}),
       workdir,
-      appendInstructions: stringValue(definition.instructions) ?? "",
-      context,
+      controlInstructions: [stringValue(definition.instructions), compiled.controlInstructions].filter(Boolean).join("\n\n"),
+      context: structuredClone(envelope.effective_context),
+      runMetadata: context,
+      approvalMode: profile.approval_mode,
       ...(mcpServers ? { mcpServers } : {}),
       ...(envelope.provider_session && contextSnapshot?.selectedVariant !== "recovery"
         ? { providerSession: envelope.provider_session }
@@ -2299,16 +2334,12 @@ function mapExecutionMcpServers(value: unknown): McpServers | undefined {
 
 function executionAdapterType(envelope: ExecutionEnvelope): string {
   const profile = executionProfile(envelope);
-  const adapterType = stringValue(profile.default_adapter);
-  if (!adapterType) throw new Error("agent_revision execution spec default_adapter is required");
-  return adapterType;
+  return profile.adapter_type;
 }
 
-function executionProfile(envelope: ExecutionEnvelope): Record<string, unknown> {
-  return asRecord(
-    envelope.agent_revision?.execution_spec
-      ?? envelope.agent_revision?.execution_profile
-  );
+function executionProfile(envelope: ExecutionEnvelope): ResolvedExecutionPlan {
+  assertResolvedExecutionPlan(envelope.resolved_execution_plan);
+  return envelope.resolved_execution_plan;
 }
 
 function mapExecutionRuntimeLimits(value: unknown): Record<string, unknown> {

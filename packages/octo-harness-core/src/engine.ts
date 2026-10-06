@@ -1,13 +1,16 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   envelope,
+  assertInvokeRequest,
+  contextHash,
   isTerminal,
-  type AgentConfig,
+  type ContextEnvelope,
   type CanonicalEvent,
   type EventEnvelope,
   type InvokeRequest
 } from "@mininglamp-oss/octo-harness-protocol";
-import { composeContext, renderPortableInstructions } from "./prompt.js";
+import { composeContext } from "./prompt.js";
+import { assertLocalAgentConfig, assertLocalContext, assertRunSnapshot, hashLocalValue, localRuntimeLimits, resolveLocalContext, type LocalAgentConfig } from "./context.js";
 import type { Agent, AgentRun, AgentRunTrigger, AgentSession, Store } from "./store.js";
 
 const id = (prefix: string): string => `${prefix}_${randomUUID()}`;
@@ -22,8 +25,14 @@ export interface HarnessHost {
 export interface RegisterAgentInput {
   id?: string;
   name: string;
-  adapterType: string;
-  config?: AgentConfig;
+  defaultContext: ContextEnvelope;
+  config?: LocalAgentConfig;
+}
+
+export interface ReplaceDefaultContextInput {
+  agentId: string;
+  expectedVersion: number;
+  context: ContextEnvelope;
 }
 
 export interface SubmitAgentRunInput {
@@ -32,6 +41,7 @@ export interface SubmitAgentRunInput {
   sessionKey: string;
   trigger: AgentRunTrigger;
   input: Record<string, unknown>;
+  context: ContextEnvelope;
 }
 
 export interface SubmitAgentRunResult {
@@ -55,28 +65,71 @@ export class HarnessEngine {
   }
 
   async registerAgent(input: RegisterAgentInput): Promise<Agent> {
-    if (!input.name || !input.adapterType) throw new Error("agent name and adapterType are required");
+    if (!input || Object.keys(input).some(name => !["id", "name", "defaultContext", "config"].includes(name))) throw new TypeError("LEGACY_AGENT_CONTRACT_REJECTED");
+    input = structuredClone(input);
+    if (!input.name) throw new Error("agent name is required");
+    assertLocalAgentConfig(input.config === undefined ? {} : input.config);
+    const resolved = resolveLocalContext(input.defaultContext, { schema: "octo.context-envelope/v1", items: [] });
     const adapters = await this.host.list();
-    if (!adapters.some(item => item.type === input.adapterType)) {
-      throw new Error(`adapter not loaded: ${input.adapterType}`);
-    }
+    assertLoadedAdapter(adapters, resolved.resolvedExecutionPlan.adapter_type);
     const agent: Agent = {
       id: input.id ?? id("agent"),
       name: input.name,
-      adapterType: input.adapterType,
-      config: input.config ?? {}
+      adapterType: resolved.resolvedExecutionPlan.adapter_type,
+      config: structuredClone(input.config ?? {}),
+      defaultContext: resolved.effectiveContext,
+      contextDefaultsVersion: 1
     };
-    await this.store.transaction(() => this.store.putAgent(agent));
+    await this.store.transaction(() => {
+      if (this.store.hasAgent(agent.id)) throw new Error("AGENT_ALREADY_REGISTERED");
+      this.store.putAgent(agent);
+    });
     return agent;
+  }
+
+  async replaceDefaultContext(input: ReplaceDefaultContextInput): Promise<Agent> {
+    input = structuredClone(input);
+    if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) throw new TypeError("CONTEXT_DEFAULTS_VERSION_REQUIRED");
+    const resolved = resolveLocalContext(input.context, { schema: "octo.context-envelope/v1", items: [] });
+    const adapters = await this.host.list();
+    assertLoadedAdapter(adapters, resolved.resolvedExecutionPlan.adapter_type);
+    let updated!: Agent;
+    await this.store.transaction(() => {
+      const agent = this.store.getAgent(input.agentId);
+      if (!agent) throw new Error(`agent not found: ${input.agentId}`);
+      if (agent.contextDefaultsVersion !== input.expectedVersion) throw new Error("CONTEXT_DEFAULTS_VERSION_CONFLICT");
+      assertMaterializationAdapter(agent, resolved.resolvedExecutionPlan.adapter_type);
+      updated = { ...agent, defaultContext: resolved.effectiveContext, contextDefaultsVersion: agent.contextDefaultsVersion + 1 };
+      this.store.putAgent(updated);
+    });
+    return updated;
   }
 
   async submitAgentRun(input: SubmitAgentRunInput): Promise<SubmitAgentRunResult> {
     validateSubmission(input);
-    if (!this.store.hasAgent(input.agentId)) throw new Error(`agent not found: ${input.agentId}`);
-    const requestHash = hashCanonical(input);
+    input = structuredClone(input);
+    const requestHash = hashLocalValue({ ...input, context: contextHash(input.context) });
+    const duplicate = await this.store.transaction(() => existingSubmission(this.store, input, requestHash));
+    if (duplicate) return duplicate;
+    const registered = this.store.getAgent(input.agentId);
+    if (!registered) throw new Error(`agent not found: ${input.agentId}`);
+    const selectedAdapter = resolveLocalContext(registered.defaultContext, input.context).resolvedExecutionPlan.adapter_type;
+    const adapters = selectedAdapter === registered.adapterType ? undefined : await this.host.list();
     let result!: SubmitAgentRunResult;
     await this.store.transaction(() => {
       let session = this.store.getAgentSessionByKey(input.namespace, input.agentId, input.sessionKey);
+      const existing = existingSubmission(this.store, input, requestHash);
+      if (existing) {
+        result = existing;
+        return;
+      }
+      const agent = this.store.getAgent(input.agentId);
+      if (!agent) throw new Error(`agent not found: ${input.agentId}`);
+      if (!Number.isSafeInteger(agent.contextDefaultsVersion) || agent.contextDefaultsVersion < 1) throw new TypeError("CONTEXT_DEFAULTS_VERSION_REQUIRED");
+      assertLocalAgentConfig(agent.config);
+      const resolved = resolveLocalContext(agent.defaultContext, input.context);
+      if (resolved.resolvedExecutionPlan.adapter_type !== agent.adapterType) assertLoadedAdapter(adapters ?? [], resolved.resolvedExecutionPlan.adapter_type);
+      assertMaterializationAdapter(agent, resolved.resolvedExecutionPlan.adapter_type);
       if (!session) {
         session = {
           id: id("asess"),
@@ -90,14 +143,6 @@ export class HarnessEngine {
         };
         this.store.putAgentSession(session);
       }
-      const existing = this.store.getAgentRunByOccurrence(session.id, input.trigger.occurrenceId);
-      if (existing) {
-        if (existing.requestHash !== requestHash) {
-          throw new Error("trigger occurrence was reused with a different AgentRun request");
-        }
-        result = { agentSession: session, agentRun: existing, deduplicated: true };
-        return;
-      }
       const run: AgentRun = {
         id: id("arun"),
         agentSessionId: session.id,
@@ -106,7 +151,12 @@ export class HarnessEngine {
         nextSeq: 1,
         trigger: { ...input.trigger, occurredAt: input.trigger.occurredAt ?? Date.now() },
         input: structuredClone(input.input),
-        requestHash
+        requestHash,
+        context: structuredClone(input.context),
+        contextDefaultsVersion: agent.contextDefaultsVersion,
+        contextHash: contextHash(resolved.effectiveContext),
+        ...resolved,
+        materialization: { id: agent.id, name: agent.name, adapterType: agent.adapterType, config: structuredClone(agent.config) }
       };
       this.store.appendEvent(envelope(run, run.nextSeq++, { protocolVersion: 2,
         type: "run.queued",
@@ -134,7 +184,6 @@ export class HarnessEngine {
   async executeRun(agentRunId: string): Promise<{ run: AgentRun; events: EventEnvelope[] }> {
     let run!: AgentRun;
     let session!: AgentSession;
-    let agent!: Agent;
     // Claiming is one synchronous Store transaction. Do not move lookup or
     // eligibility checks outside this critical section or make the callback async.
     await this.store.transaction(() => {
@@ -145,39 +194,50 @@ export class HarnessEngine {
       }
       const candidateSession = this.store.getAgentSession(candidate.agentSessionId);
       if (!candidateSession) throw new Error(`agent session not found: ${candidate.agentSessionId}`);
-      const candidateAgent = this.store.getAgent(candidateSession.agentId);
-      if (!candidateAgent) throw new Error(`agent not found: ${candidateSession.agentId}`);
+      assertRunSnapshot(candidate);
 
       candidate.status = "running";
       candidateSession.activeRunId = candidate.id;
       run = candidate;
       session = candidateSession;
-      agent = candidateAgent;
       this.store.appendEvent(envelope(run, run.nextSeq++, { protocolVersion: 2, type: "run.started", payload: {} }));
       this.store.putAgentRun(run);
       this.store.putAgentSession(session);
     });
 
-    const context = composeContext({ agent, agentSession: session, agentRun: run });
+    const context = composeContext({ agent: run.materialization, agentSession: session, agentRun: run });
+    const plan = run.resolvedExecutionPlan;
+    const configurationHash = hashLocalValue({ plan, config: run.materialization.config });
     const prompt = promptFromInput(run.input);
     const request: InvokeRequest = { protocolVersion: 2,
       invocationId: id("invoke"),
       agentSessionId: session.id,
       runId: run.id,
       prompt,
-      workdir: agent.config.workdir ?? process.cwd(),
-      context,
-      appendInstructions: renderPortableInstructions(context),
-      providerSession: session.providerSession,
-      agentConfig: agent.config
+      modelInput: prompt,
+      workdir: plan.workdir,
+      context: structuredClone(run.effectiveContext),
+      runMetadata: context,
+      approvalMode: plan.approval_mode,
+      controlInstructions: "",
+      ...(session.providerSessionConfigurationHash === configurationHash ? { providerSession: structuredClone(session.providerSession) } : {}),
+      runtimeLimits: localRuntimeLimits(plan),
+      agentConfig: {
+        ...structuredClone(run.materialization.config),
+        workdir: plan.workdir,
+        ...(plan.model ? { model: plan.model } : {}),
+        ...(plan.effort ? { effort: plan.effort } : {})
+      }
     };
+    assertInvokeRequest(request);
     run.invocationId = request.invocationId;
     this.store.putAgentRun(run);
-    for await (const event of this.host.invoke(agent.adapterType, request)) {
+    for await (const event of this.host.invoke(plan.adapter_type, request)) {
       await this.store.transaction(() => {
         this.store.appendEvent(envelope(run, run.nextSeq++, event));
         if (event.type === "session.update" && event.payload.providerSession) {
           session.providerSession = event.payload.providerSession;
+          session.providerSessionConfigurationHash = configurationHash;
           this.store.putAgentSession(session);
         }
         if (isTerminal(event)) {
@@ -226,27 +286,42 @@ export class HarnessEngine {
 }
 
 function validateSubmission(input: SubmitAgentRunInput): void {
+  if (!input || Object.keys(input).some(name => !["namespace", "agentId", "sessionKey", "trigger", "input", "context"].includes(name))) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
+  assertLocalContext(input.context);
   if (!/^[a-z][a-z0-9._-]{0,63}$/.test(input.namespace)) throw new Error("invalid namespace");
   if (!input.agentId || !input.sessionKey.startsWith("v1/")) throw new Error("agentId and canonical sessionKey are required");
   if (!input.trigger?.kind || !input.trigger.occurrenceId) throw new Error("trigger kind and occurrenceId are required");
-  if (!input.input || Array.isArray(input.input)) throw new Error("input must be an object");
+  if (!input.input || typeof input.input !== "object" || Array.isArray(input.input)) throw new Error("input must be an object");
+  if (["channel_context", "context_refs", "appendInstructions", "agentConfig", "approvalMode"].some(name => name in input.input)) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
 }
 
-function hashCanonical(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(sortValue(value))).digest("hex");
+function assertLoadedAdapter(adapters: Array<{ type: string }>, adapterType: string): void {
+  if (!adapters.some(adapter => adapter.type === adapterType)) throw new Error(`adapter not loaded: ${adapterType}`);
 }
 
-function sortValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortValue);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, nested]) => [key, sortValue(nested)]));
-  }
-  return value;
+function existingSubmission(store: Store, input: SubmitAgentRunInput, requestHash: string): SubmitAgentRunResult | undefined {
+  const session = store.getAgentSessionByKey(input.namespace, input.agentId, input.sessionKey);
+  if (!session) return undefined;
+  const run = store.getAgentRunByOccurrence(session.id, input.trigger.occurrenceId);
+  if (!run) return undefined;
+  assertRunSnapshot(run);
+  if (run.requestHash !== requestHash) throw new Error("trigger occurrence was reused with a different AgentRun request");
+  return { agentSession: session, agentRun: run, deduplicated: true };
+}
+
+function assertMaterializationAdapter(agent: Agent, adapterType: string): void {
+  if (adapterType !== agent.adapterType && Object.keys(agent.config).length > 0) throw new TypeError("LOCAL_MATERIALIZATION_ADAPTER_MISMATCH");
 }
 
 function promptFromInput(input: Record<string, unknown>): string {
+  if (Array.isArray(input.parts)) {
+    const text = input.parts.flatMap((part: unknown) => {
+      if (!part || typeof part !== "object" || Array.isArray(part)) return [];
+      const value = part as Record<string, unknown>;
+      return value.type === "text" && typeof value.text === "string" ? [value.text] : [];
+    }).join("\n");
+    if (text) return text;
+  }
   for (const key of ["prompt", "instruction", "description"]) {
     if (typeof input[key] === "string" && input[key].trim()) return input[key].trim();
   }

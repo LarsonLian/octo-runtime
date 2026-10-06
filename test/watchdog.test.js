@@ -150,7 +150,29 @@ test("invalid budgets and ambiguous legacy/v2 policies fail closed", () => {
   assert.doesNotThrow(()=>assertRuntimeLimits({modelIdlePolicy:"observe",runTimeoutMs:100}));
 });
 
-const request = { protocolVersion: 2, invocationId:"watchdog-v2",agentSessionId:"s",runId:"r",prompt:"p",workdir:process.cwd() };
+test("approval waiting suspends idle budgets but retains the overall deadline", () => {
+  const waiting = fixture({ modelIdleTimeoutMs: 100, toolTimeoutMs: 100, toolWallTimeoutMs: 200, runTimeoutMs: 1000 });
+  waiting.watchdog.canonical({ protocolVersion: 2, type: "tool_call.create", payload: { id: "tool", status: "running" } });
+  waiting.watchdog.canonical({ protocolVersion: 2, type: "interaction.requested", payload: { interactionId: "approval-a", kind: "approval" } });
+  waiting.watchdog.canonical({ protocolVersion: 2, type: "interaction.requested", payload: { interactionId: "approval-b", kind: "approval" } });
+  waiting.tick(500);
+  assert.equal(waiting.controller.signal.aborted, false);
+  assert.equal(waiting.watchdog.snapshot().phase, "waiting_approval");
+  waiting.watchdog.canonical({ protocolVersion: 2, type: "interaction.resolved", payload: { interactionId: "approval-a", status: "resolved" } });
+  waiting.tick(50);
+  assert.equal(waiting.watchdog.snapshot().pendingInteractionCount, 1);
+  waiting.watchdog.canonical({ protocolVersion: 2, type: "interaction.resolved", payload: { interactionId: "approval-b", status: "resolved" } });
+  waiting.tick(99);
+  assert.equal(waiting.controller.signal.aborted, false);
+  waiting.tick(1);
+  assert.equal(waiting.controller.signal.reason.timeoutReason, "tool_idle");
+  const deadline = fixture({ runTimeoutMs: 1000 });
+  deadline.watchdog.canonical({ protocolVersion: 2, type: "interaction.requested", payload: { interactionId: "approval", kind: "approval" } });
+  deadline.tick(1000);
+  assert.equal(deadline.controller.signal.reason.timeoutReason, "run_deadline");
+});
+
+const request = { protocolVersion: 2, invocationId:"watchdog-v2",agentSessionId:"s",runId:"r",prompt:"p",modelInput:"p",controlInstructions:"",approvalMode:"full_access",context:{schema:"octo.context-envelope/v1",items:[]},agentConfig:{},workdir:process.cwd() };
 test("host preserves a single pending next during activity and ignores failing diagnostic sinks", async () => {
   let calls=0; let active=0; let peak=0;
   const host = new AdapterHost({diagnosticSink(){throw new Error("sink unavailable");}});

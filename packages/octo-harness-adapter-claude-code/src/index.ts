@@ -81,11 +81,12 @@ export async function buildClaudeCommand(
   command = "claude",
   commandArgsPrefix: string[] = []
 ) {
+  if (req.approvalMode !== "full_access") throw new Error("APPROVAL_MODE_UNSUPPORTED: claude-code permission transport is not qualified");
   const directory = await mkdtemp(join(tmpdir(), "octo-harness-claude-"));
   const promptFile = join(directory, "system-prompt.txt");
   // The control prompt goes through Claude's dedicated file argument while the
   // user prompt is still fed via stdin, so the two never get conflated.
-  await writeFile(promptFile, req.appendInstructions, { mode: 0o600 });
+  await writeFile(promptFile, req.controlInstructions, { mode: 0o600 });
   if (req.mcpServers && Object.keys(req.mcpServers).length > 0) {
     const mcpFile = join(directory, "mcp.json");
     const mcpServers = Object.fromEntries(Object.entries(req.mcpServers).map(([name, server]) => [
@@ -117,15 +118,9 @@ export async function buildClaudeCommand(
   ];
   if (req.providerSession?.sessionId) args.push("--resume", req.providerSession.sessionId);
   if (req.agentConfig?.model) args.push("--model", req.agentConfig.model);
-  if (req.agentConfig?.thinking !== undefined) {
-    const enabled = req.agentConfig.thinking !== false && req.agentConfig.thinking !== "disabled";
-    args.push("--settings", JSON.stringify({ alwaysThinkingEnabled: enabled }));
-  }
-  const effort = req.agentConfig?.effort ?? "medium";
-  args.push("--effort", effort);
-  const mode = req.agentConfig?.dangerouslyBypassPermissions === true
-    ? "bypassPermissions"
-    : req.agentConfig?.permissionMode ?? "bypassPermissions";
+  const effort = req.agentConfig?.effort;
+  if (effort) args.push("--effort", effort);
+  const mode = "bypassPermissions";
   args.push("--permission-mode", mode);
   if (mode === "bypassPermissions") args.push("--dangerously-skip-permissions");
   args.push("-");
@@ -143,9 +138,8 @@ export async function buildClaudeCommand(
         args,
         cwd: req.workdir,
         stdin: input,
-        append_system_prompt: req.appendInstructions,
+        append_system_prompt: req.controlInstructions,
         model: req.agentConfig?.model,
-        thinking: req.agentConfig?.thinking,
         effort
       }
     },

@@ -68,11 +68,18 @@ class AsyncQueue<T> implements AsyncIterableIterator<T> {
   }
 }
 
-function writer(output: Writable, trace?: RpcTrace): (value: RpcMessage) => void {
+function writer(output: Writable, trace?: RpcTrace, onError?: (error: Error) => void): (value: RpcMessage) => void {
   return value => {
-    const frame = JSON.stringify(value);
-    trace?.("send", frame);
-    output.write(`${frame}\n`);
+    try {
+      const frame = JSON.stringify(value);
+      trace?.("send", frame);
+      output.write(`${frame}\n`, error => {
+        if (error) onError?.(error);
+      });
+    } catch (error) {
+      if (!onError) throw error;
+      onError(error instanceof Error ? error : new Error(errorMessage(error)));
+    }
   };
 }
 
@@ -85,16 +92,23 @@ export class AdapterHostRpcServer {
   readonly #host: AdapterHost;
   readonly #send: (value: RpcMessage) => void;
   readonly #trace: RpcTrace | undefined;
+  #closed = false;
 
   constructor({ host, output, trace }: { host: AdapterHost; output: Writable; trace?: RpcTrace }) {
     this.#host = host;
-    this.#send = writer(output, trace);
+    const send = writer(output, trace, error => this.#close(error));
+    this.#send = value => { if (!this.#closed) send(value); };
     this.#trace = trace;
+    output.on("error", error => this.#close(error));
   }
 
   /** Start consuming the input stream; each line must be one complete JSON-RPC object. */
   listen(input: Readable): void {
-    createInterface({ input }).on("line", line => {
+    const lines = createInterface({ input });
+    lines.on("close", () => this.#close(new Error("adapter-host parent connection closed")));
+    input.on("error", error => this.#close(error));
+    lines.on("line", line => {
+      if (this.#closed) return;
       this.#trace?.("receive", line);
       try {
         void this.#dispatch(asRpcMessage(JSON.parse(line)));
@@ -105,6 +119,7 @@ export class AdapterHostRpcServer {
   }
 
   async #dispatch(message: RpcMessage): Promise<void> {
+    if (this.#closed) return;
     const { id = null, method, params = {} } = message;
     try {
       if (method === "list") {
@@ -155,8 +170,10 @@ export class AdapterHostRpcServer {
   }
 
   async #streamInvoke(adapterType: string, request: InvokeRequest): Promise<void> {
+    if (this.#closed) return;
     try {
       for await (const event of this.#host.invoke(adapterType, request)) {
+        if (this.#closed) break;
         this.#send({ jsonrpc: "2.0", method: "invoke.event", params: { invocationId: request.invocationId, event } });
       }
       this.#send({ jsonrpc: "2.0", method: "invoke.done", params: { invocationId: request.invocationId } });
@@ -168,6 +185,12 @@ export class AdapterHostRpcServer {
       });
     }
   }
+
+  #close(error: Error): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    void this.#host.shutdown(error.message).catch(() => undefined);
+  }
 }
 
 /** The async client for AdapterHostRpcServer; it also reassembles invoke notifications back into an AsyncGenerator. */
@@ -175,9 +198,10 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
   readonly #send: (value: RpcMessage) => void;
   readonly #pending = new Map<string, Deferred<unknown>>();
   readonly #invocations = new Map<string, AsyncQueue<CanonicalEvent>>();
+  #closedError?: Error;
 
   constructor({ input, output, trace }: { input: Readable; output: Writable; trace?: RpcTrace }) {
-    this.#send = writer(output, trace);
+    this.#send = writer(output, trace, error => this.close(error));
     const lines = createInterface({ input });
     lines.on("line", line => {
       trace?.("receive", line);
@@ -189,6 +213,7 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
     });
     lines.on("close", () => this.close(new Error("adapter-host connection closed")));
     input.on("error", error => this.close(error));
+    output.on("error", error => this.close(error));
   }
 
   #receive(message: RpcMessage): void {
@@ -217,6 +242,7 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
 
   /** Send an ordinary JSON-RPC request and await the matching response by random ID. */
   request<T = unknown>(method: string, params: JsonRecord = {}): Promise<T> {
+    if (this.#closedError) return Promise.reject(this.#closedError);
     const id = randomUUID();
     const promise = new Promise<unknown>((resolve, reject) => {
       this.#pending.set(id, { resolve, reject });
@@ -227,6 +253,8 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
 
   /** Close the logical connection and end every pending request/invocation with the same error. */
   close(error = new Error("adapter-host client closed")): void {
+    if (this.#closedError) return;
+    this.#closedError = error;
     for (const pending of this.#pending.values()) pending.reject(error);
     this.#pending.clear();
     for (const queue of this.#invocations.values()) queue.close(error);

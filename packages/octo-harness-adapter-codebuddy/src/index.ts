@@ -5,6 +5,7 @@ import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
  * notifications into the harness canonical event stream.
  */
 import {
+  AcpApprovalBridge,
   defineAdapter,
   observeBestEffort,
   observeProviderOutput,
@@ -94,10 +95,17 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
     metadata: { type: "codebuddy", capabilities: ["session.serialize", "tool.canonical"] },
     probe: () => probeCommand(command),
     async *invoke(req: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
+      if (req.approvalMode !== "full_access") throw new Error("APPROVAL_MODE_UNSUPPORTED: codebuddy approval bridge is not qualified");
+      if (req.agentConfig.effort) throw new Error("REASONING_UNSUPPORTED: codebuddy reasoning selection is not qualified");
+      const permissions = new AcpApprovalBridge(req);
+      async function* execute(): AsyncGenerator<CanonicalEvent> {
       const client = acpClientFactory({
-        command, args: ["--acp", "--permission-mode", req.agentConfig?.permissionMode ?? "acceptEdits"],
-        cwd: req.workdir, signal: req.signal
+        command, args: ["--acp", "--permission-mode", "bypassPermissions"],
+        cwd: req.workdir, signal: req.signal, permissionHandler: params => permissions.requestPermission(params),
+        onPermissionResponseWritten: params => permissions.responseWritten(params),
+        onPermissionResponseFailed: (params, error) => permissions.responseFailed(params, error)
       });
+      permissions.bindTransport(() => client.close());
       try {
         await client.initialize();
         // Reserve the real JSON-RPC id before capture so every observation for
@@ -159,7 +167,7 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
         yield { protocolVersion: 2, type: "message.create", payload: { role: "assistant", status: "streaming" } };
         // Build once and reuse for capture and dispatch. Reconstructing the
         // carrier separately risks evaluating content that was never sent.
-        const prompt = `${providerInputText(req)}\n\n${req.appendInstructions}`;
+        const prompt = `${providerInputText(req)}\n\n${req.controlInstructions}`;
         const promptParams = acpPromptParams(session.id, prompt);
         const promptRequestId = client.reserveRequestId();
         // The await is the strict-capture gate and occurs before session/prompt
@@ -267,6 +275,9 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
           throw error;
         }
       } finally { await client.close?.(); }
+      }
+      try { yield* permissions.stream(execute()); }
+      finally { permissions.close("execution_lost"); }
     }
   });
 }

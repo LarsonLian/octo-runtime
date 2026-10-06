@@ -10,9 +10,11 @@ const request = { protocolVersion: 2,
   agentSessionId: "session-mcp",
   runId: "run-mcp",
   prompt: "call the tool",
+  modelInput: "call the tool",
   workdir: process.cwd(),
-  appendInstructions: "use the team tool",
-  context: {},
+  controlInstructions: "use the team tool",
+  context: { schema: "octo.context-envelope/v1", items: [] },
+  approvalMode: "full_access",
   agentConfig: {},
   mcpServers: {
     team: {

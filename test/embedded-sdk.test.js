@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { loadManagedAgentWorksFromRoot } from "../packages/octo-harness-daemon/dist/index.js";
+import { loadManagedAgentWorksFromRoot, RUNTIME_RUN_CONTRACT } from "../packages/octo-harness-daemon/dist/index.js";
 import { createEmbeddedHarness } from "../packages/octo-harness-embedded/dist/index.js";
 import {
   accountKeyFor,
@@ -58,6 +58,7 @@ test("Human Token enrollment persists a loadable account-scoped profile", async 
     ensureAccount(account, [profileName]);
     const profile = profilePaths(account, profileName);
     const calls = [];
+    let rejectRegistration = false;
     const fetchImplementation = async (url, init) => {
       calls.push({ url: String(url), init });
       if (String(url).endsWith("/v1/runtime_enrollments")) {
@@ -80,6 +81,10 @@ test("Human Token enrollment persists a loadable account-scoped profile", async 
           credential: { id: "credential-1", token: "octo_runtime_secret" }
         }, { status: 201 });
       }
+      assert.ok(String(url).endsWith("/v1/runtime/register"));
+      const registration = JSON.parse(init.body);
+      assert.deepEqual(registration.capabilities, { run_contract: RUNTIME_RUN_CONTRACT, adapters: [] });
+      if (rejectRegistration) return Response.json({ error: { code: "VALIDATION_ERROR", details: { reason_code: "RUNTIME_RUN_CONTRACT_UNSUPPORTED" } } }, { status: 400 });
       return Response.json({ runtime: { id: "runtime-1", profile: profileName , protocol_version: 2 } });
     };
     const result = await ensureTenantEnrollment({
@@ -104,6 +109,32 @@ test("Human Token enrollment persists a loadable account-scoped profile", async 
     assert.equal(runtimes.length, 1);
     assert.equal(runtimes[0].runtimeId, "runtime-1");
     assert.equal(runtimes[0].profile, profileName);
+    calls.length = 0;
+    const reused = await ensureTenantEnrollment({
+      subject: { type: "user", id: "uid-123" },
+      tenant: { id: "space-1", serverUrl: "https://im-test.deepminer.com.cn", agentWorkUrl: "https://im-test.deepminer.com.cn/agentworker/api" },
+      profile,
+      machine,
+      getHumanToken: () => { throw new Error("saved credentials must not trigger re-enrollment"); },
+      fetchImplementation,
+      signal: new AbortController().signal
+    });
+    assert.equal(reused.reused, true);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(JSON.parse(calls[0].init.body).capabilities.run_contract, RUNTIME_RUN_CONTRACT);
+    calls.length = 0;
+    rejectRegistration = true;
+    await assert.rejects(ensureTenantEnrollment({
+      subject: { type: "user", id: "uid-123" },
+      tenant: { id: "space-1", serverUrl: "https://im-test.deepminer.com.cn", agentWorkUrl: "https://im-test.deepminer.com.cn/agentworker/api" },
+      profile,
+      machine,
+      getHumanToken: () => { throw new Error("contract failure must not replace credentials"); },
+      fetchImplementation,
+      signal: new AbortController().signal
+    }), /400 VALIDATION_ERROR\/RUNTIME_RUN_CONTRACT_UNSUPPORTED/);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(readJson(profile.credentialFile), credential);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -136,6 +167,7 @@ test("embedded SDK starts and cooperatively stops the shared daemon core", { tim
       }, { status: 201 });
     }
     const body = JSON.parse(init.body);
+    assert.deepEqual(body.capabilities.run_contract, RUNTIME_RUN_CONTRACT);
     const registeredSpace = [...profileBySpace].find(([, profile]) => profile === body.profile)?.[0];
     return Response.json({ runtime: { id: `runtime-${registeredSpace}`, profile: body.profile } });
   };

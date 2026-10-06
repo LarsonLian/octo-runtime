@@ -10,16 +10,19 @@ import {
   codexMcpOverrides,
   createCodexAdapter
 } from "@mininglamp-oss/octo-harness-adapter-codex";
-import { capabilities } from "@mininglamp-oss/octo-harness-protocol";
+import { capabilities, contextHash } from "@mininglamp-oss/octo-harness-protocol";
+import { codexAppServerFixture } from "./agent-work-runtime-fixture.js";
 
 const request = { protocolVersion: 2,
   invocationId: "invoke-mcp",
   agentSessionId: "session-mcp",
   runId: "run-mcp",
   prompt: "call the tool",
+  modelInput: "call the tool",
   workdir: process.cwd(),
-  appendInstructions: "use the team tool",
-  context: {},
+  controlInstructions: "use the team tool",
+  context: { schema: "octo.context-envelope/v1", items: [] },
+  approvalMode: "full_access",
   agentConfig: {},
   mcpServers: {
     "team.api": {
@@ -87,7 +90,7 @@ test("Codex advertises dynamic MCP support", () => {
   assert.ok(adapter.metadata.capabilities.includes(capabilities.INTERACTION_RESPONSE));
 });
 
-test("Codex routes untrusted MCP approval through the non-interactive responder", async () => {
+test("Codex full_access routes untrusted MCP approval through an audited automatic responder", { timeout: 5_000 }, async () => {
   const adapter = createCodexAdapter({
     command: process.execPath,
     appServerArgs: [fileURLToPath(new URL("../test-support/fake-codex-mcp-approval.mjs", import.meta.url))]
@@ -96,7 +99,8 @@ test("Codex routes untrusted MCP approval through the non-interactive responder"
 
   for await (const event of adapter.invoke({
     ...request,
-    mcpServers: undefined
+    mcpServers: undefined,
+    signal: AbortSignal.timeout(4_000)
   })) {
     events.push(event);
   }
@@ -104,9 +108,23 @@ test("Codex routes untrusted MCP approval through the non-interactive responder"
   assert.equal(events.at(-1)?.type, "run.completed");
   assert.ok(events.some(event => event.type === "tool_call.update"
     && event.payload.status === "completed"));
+  const interactions = events.filter(event => event.type.startsWith("interaction."));
+  assert.deepEqual(interactions.map(event => event.type), ["interaction.requested", "interaction.resolved"]);
+  assert.equal(interactions[0].payload.kind, "approval");
+  assert.equal(interactions[0].payload.request.schema, "octo.approval-request/v1");
+  assert.deepEqual(interactions[0].payload.request.policy, { mode: "full_access", hash: contextHash(request.context) });
+  assert.equal(interactions[0].payload.request.grantScope, "request");
+  assert.deepEqual(interactions[1].payload, {
+    interactionId: interactions[0].payload.interactionId,
+    executionInstanceId: request.invocationId,
+    status: "resolved",
+    outcome: "accepted",
+    reasonCode: "full_access_policy"
+  });
+  assert.ok(events.indexOf(interactions[1]) < events.findIndex(event => event.type === "tool_call.update"));
 });
 
-test("Codex routes durable interaction responses back to native app-server requests", async () => {
+test("Codex ask routes durable interaction responses back to native app-server requests", { timeout: 5_000 }, async () => {
   const adapter = createCodexAdapter({
     command: process.execPath,
     appServerArgs: [fileURLToPath(new URL("../test-support/fake-codex-interaction.mjs", import.meta.url))]
@@ -120,7 +138,8 @@ test("Codex routes durable interaction responses back to native app-server reque
     runId: "run-interaction",
     agentSessionId: "session-interaction",
     mcpServers: undefined,
-    agentConfig: { autoApprove: false }
+    approvalMode: "ask",
+    signal: AbortSignal.timeout(4_000)
   })) {
     events.push(event);
     if (event.type !== "interaction.requested") continue;
@@ -141,7 +160,11 @@ test("Codex routes durable interaction responses back to native app-server reque
     );
 
     if (event.payload.kind === "approval") {
-      assert.equal(event.payload.request.command, "pnpm add example");
+      assert.equal(event.payload.request.schema, "octo.approval-request/v1");
+      assert.equal(event.payload.request.policy.mode, "ask");
+      assert.equal(event.payload.request.policy.hash, contextHash(request.context));
+      assert.equal(event.payload.request.operation.summary, "pnpm add example");
+      assert.equal(event.payload.request.grantScope, "request");
       await adapter.respondInteraction(invocationId, {
         interactionId: event.payload.interactionId,
         outcome: "accepted"
@@ -177,6 +200,14 @@ test("Codex routes durable interaction responses back to native app-server reque
     "elicitation",
     "question"
   ]);
+  const requested = events.filter(event => event.type === "interaction.requested");
+  const resolved = events.filter(event => event.type === "interaction.resolved");
+  assert.deepEqual(resolved.map(event => event.payload), requested.map((event, index) => ({
+    interactionId: event.payload.interactionId,
+    executionInstanceId: invocationId,
+    status: "resolved",
+    outcome: index === 0 ? "accepted" : "answered"
+  })));
   assert.equal(events.at(-1)?.type, "run.completed");
   await assert.rejects(
     adapter.respondInteraction(invocationId, {
@@ -186,3 +217,64 @@ test("Codex routes durable interaction responses back to native app-server reque
     /no active Codex interaction invocation/
   );
 });
+
+test("Codex full_access still requires explicit answers for MCP elicitation and questions", { timeout: 5_000 }, async () => {
+  const adapter = createCodexAdapter({
+    command: process.execPath,
+    appServerArgs: [fileURLToPath(new URL("../test-support/fake-codex-interaction.mjs", import.meta.url))]
+  });
+  const events = [];
+  for await (const event of adapter.invoke({ ...request, mcpServers: undefined, signal: AbortSignal.timeout(4_000) })) {
+    events.push(event);
+    if (event.type !== "interaction.requested") continue;
+    if (event.payload.kind === "approval") {
+      assert.equal(event.payload.request.policy.mode, "full_access");
+      continue;
+    }
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(events.some(previous => previous.type === "interaction.resolved"
+      && previous.payload.interactionId === event.payload.interactionId), false);
+    if (event.payload.kind === "elicitation") {
+      assert.equal(event.payload.request.title, "Verify account");
+      assert.doesNotMatch(JSON.stringify(event.payload.request), /provider-secret|challenge|_meta/);
+      await adapter.respondInteraction(request.invocationId, {
+        interactionId: event.payload.interactionId, outcome: "answered", value: { account: "verified" }
+      });
+    } else {
+      assert.equal(event.payload.kind, "question");
+      await adapter.respondInteraction(request.invocationId, {
+        interactionId: event.payload.interactionId, outcome: "answered", value: { language: "TypeScript" }
+      });
+    }
+  }
+  const requested = events.filter(event => event.type === "interaction.requested");
+  const resolved = events.filter(event => event.type === "interaction.resolved");
+  assert.deepEqual(requested.map(event => event.payload.kind), ["approval", "elicitation", "question"]);
+  assert.deepEqual(resolved.map(event => event.payload), requested.map((event, index) => ({
+    interactionId: event.payload.interactionId,
+    executionInstanceId: request.invocationId,
+    status: "resolved",
+    outcome: index === 0 ? "accepted" : "answered",
+    ...(index === 0 ? { reasonCode: "full_access_policy" } : {})
+  })));
+  assert.equal(events.at(-1).type, "run.completed");
+});
+
+for (const approvalMode of ["ask", "assisted", "full_access"]) {
+  test(`Codex ${approvalMode} rejects native turn-scoped permissions without granting or claiming request scope`, { timeout: 5_000 }, async () => {
+    const server = codexAppServerFixture({ method: "item/permissions/requestApproval" });
+    const adapter = createCodexAdapter({ command: "fixture", spawnFn: server.spawnFn });
+    const events = [];
+    for await (const event of adapter.invoke({
+      ...request, approvalMode, mcpServers: undefined, signal: AbortSignal.timeout(4_000)
+    })) events.push(event);
+    assert.equal(events.some(event => event.type === "interaction.requested"), false);
+    assert.equal(events.at(-1).type, "run.failed");
+    assert.match(events.at(-1).payload.message, /APPROVAL_GRANT_SCOPE_UNSUPPORTED/);
+    assert.deepEqual(server.writes.filter(message => message.id === "native-request-1"), [{
+      jsonrpc: "2.0", id: "native-request-1",
+      error: { code: -32601, message: "unhandled server request: item/permissions/requestApproval" }
+    }]);
+    assert.equal(server.writes.some(message => message.result?.permissions || message.result?.decision === "accept"), false);
+  });
+}

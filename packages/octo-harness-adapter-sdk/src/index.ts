@@ -4,6 +4,7 @@ import { delimiter, isAbsolute, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { access, stat } from "node:fs/promises";
 import { constants } from "node:fs";
+import { sanitizePublicValue } from "./public-display.js";
 import {
   isTerminal,
   type CanonicalEvent,
@@ -29,6 +30,8 @@ export type {
   ProviderObservation
 } from "@mininglamp-oss/octo-harness-observability";
 export { freshFallbackInputText, providerInputText } from "@mininglamp-oss/octo-harness-protocol";
+export { AcpApprovalBridge } from "./approval.js";
+export { sanitizePublicValue } from "./public-display.js";
 
 export interface AdapterMetadata {
   type: string;
@@ -244,34 +247,6 @@ function selectPublicFields(
     if (source[field] !== undefined) selected[field] = source[field];
   }
   return selected;
-}
-
-const SENSITIVE_OUTPUT_KEY = /(?:^|[_-])(?:authorization|proxy[_-]?authorization|cookie|set[_-]?cookie|token|access[_-]?token|refresh[_-]?token|secret|password|passwd|api[_-]?key|credential|private[_-]?key)(?:$|[_-])/i;
-
-/** Defense in depth for direct sinks; the observability logger repeats broader redaction at persistence time. */
-function sanitizePublicValue(value: unknown, key = "", depth = 0): unknown {
-  if (SENSITIVE_OUTPUT_KEY.test(key)) return "[REDACTED]";
-  if (typeof value === "string") return redactCredentialText(value);
-  if (value === null || typeof value !== "object") return value;
-  if (depth >= 16) return "[TRUNCATED]";
-  if (Array.isArray(value)) {
-    return value.map(item => sanitizePublicValue(item, "", depth + 1));
-  }
-  const result: Record<string, unknown> = {};
-  for (const [childKey, childValue] of Object.entries(value as Record<string, unknown>)) {
-    result[childKey] = sanitizePublicValue(childValue, childKey, depth + 1);
-  }
-  return result;
-}
-
-function redactCredentialText(value: string): string {
-  return value
-    .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/gi, "[REDACTED]")
-    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [REDACTED]")
-    .replace(/\b(api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd|secret)\s*[:=]\s*[^\s,;&]+/gi, "$1=[REDACTED]")
-    .replace(/([?&](?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)=)[^&#\s]*/gi, "$1[REDACTED]")
-    .replace(/\bsk-[A-Za-z0-9_-]{16,}\b/g, "[REDACTED]")
-    .replace(/:\/\/[^/\s:@]+:[^@\s/]+@/g, "://[REDACTED]@");
 }
 
 /**

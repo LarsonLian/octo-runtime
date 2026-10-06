@@ -10,6 +10,7 @@ import {
   redactCredentialsWithMetadata,
   writeMinimalCrashReport
 } from "@mininglamp-oss/octo-harness-observability";
+import { assertInvokeRequest } from "@mininglamp-oss/octo-harness-protocol";
 
 function options(directory, overrides = {}) {
   return {
@@ -18,6 +19,26 @@ function options(directory, overrides = {}) {
     component: "daemon",
     ...overrides
   };
+}
+
+function rpcInvokeRequest(overrides = {}) {
+  const request = {
+    protocolVersion: 2,
+    invocationId: "inv-1",
+    agentSessionId: "session-1",
+    runId: "run-1",
+    prompt: "work",
+    modelInput: "work",
+    controlInstructions: "",
+    workdir: process.cwd(),
+    context: { schema: "octo.context-envelope/v1", items: [] },
+    runMetadata: { profile: "work", runtimeId: "runtime-work" },
+    approvalMode: "full_access",
+    agentConfig: {},
+    ...overrides
+  };
+  assertInvokeRequest(request);
+  return request;
 }
 
 test("local logs roll by calendar day, rotate by size and use owner-only permissions", async () => {
@@ -72,12 +93,7 @@ test("operational logs redact credentials and restricted provider evidence is op
       params: {
         apiKey: "rpc-secret",
         adapterType: "codex",
-        request: {
-          runId: "run-1",
-          invocationId: "inv-1",
-          agentSessionId: "session-1",
-          context: { profile: "work", runtimeId: "runtime-work" }
-        }
+        request: rpcInvokeRequest()
       }
     }));
     logger.traceRpc("receive", JSON.stringify({
@@ -121,7 +137,16 @@ test("operational logs redact credentials and restricted provider evidence is op
     assert.ok(sensitive.some(record => record.event === "rpc.frame"));
     assert.ok(sensitive.filter(record => record.event === "rpc.frame")
       .every(record => record.profile === "work" && record.runtime_id === "runtime-work"));
-    assert.doesNotMatch(JSON.stringify(sensitive), /private-chain-of-thought-must-not-be-stored/);
+    const rpcFrames = sensitive.filter(record => record.event === "rpc.frame");
+    assert.equal(rpcFrames.length, 2);
+    assert.deepEqual(rpcFrames.map(record => [record.data.direction, record.run_id, record.invocation_id, record.agent_session_id, record.adapter_type]), [
+      ["send", "run-1", "inv-1", "session-1", "codex"],
+      ["receive", "run-1", "inv-1", "session-1", "codex"]
+    ]);
+    assert.deepEqual(rpcFrames[0].data.frame.params.request.runMetadata, { profile: "work", runtimeId: "runtime-work" });
+    assert.deepEqual(rpcFrames[0].data.frame.params.request.context, { schema: "octo.context-envelope/v1", items: [] });
+    assert.equal(rpcFrames[0].data.frame.params.apiKey, undefined);
+    assert.doesNotMatch(JSON.stringify(sensitive), /private-chain-of-thought-must-not-be-stored|must-not-leak|also-secret|rpc-secret|provider-secret/);
     const reasoningFrame = sensitive.find(record =>
       record.event === "rpc.frame" && record.data.frame?.params?.event?.payload?.body_omitted === true
     );
@@ -245,7 +270,7 @@ test("RPC correlation expires after its 24 hour TTL", async () => {
     logger.traceRpc("send", JSON.stringify({
       id: 1,
       method: "invoke",
-      params: { request: { runId: "run-expired", invocationId: "inv-expired" } }
+      params: { request: rpcInvokeRequest({ runId: "run-expired", invocationId: "inv-expired" }) }
     }));
     now = new Date("2026-01-02T01:00:00.000Z");
     logger.traceRpc("receive", JSON.stringify({ id: 2, result: {} }));
@@ -253,6 +278,9 @@ test("RPC correlation expires after its 24 hour TTL", async () => {
     const response = records.at(-1);
     assert.equal(response.event, "rpc.frame");
     assert.equal(response.run_id, undefined);
+    assert.equal(response.profile, undefined);
+    assert.equal(response.runtime_id, undefined);
+    assert.equal(response.invocation_id, undefined);
     assert.ok(records.some(record => record.event === "bus.correlation_gap"));
   } finally {
     await logger.close();

@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { AgentConfig, EventEnvelope, ProviderSession } from "@mininglamp-oss/octo-harness-protocol";
+import type { ContextEnvelope, EventEnvelope, ProviderSession, ResolvedExecutionPlan } from "@mininglamp-oss/octo-harness-protocol";
+import { assertRunSnapshot, type LocalAgentConfig } from "./context.js";
 import { openWalDatabase } from "./sqlite.js";
 
 export type AgentRunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
@@ -9,7 +10,9 @@ export interface Agent {
   id: string;
   name: string;
   adapterType: string;
-  config: AgentConfig;
+  config: LocalAgentConfig;
+  defaultContext: ContextEnvelope;
+  contextDefaultsVersion: number;
 }
 
 export interface AgentSession {
@@ -22,6 +25,7 @@ export interface AgentSession {
   nextRunNo: number;
   activeRunId?: string;
   providerSession?: ProviderSession;
+  providerSessionConfigurationHash?: string;
   createdAt: number;
 }
 
@@ -40,6 +44,12 @@ export interface AgentRun {
   trigger: AgentRunTrigger;
   input: Record<string, unknown>;
   requestHash: string;
+  readonly context: ContextEnvelope;
+  readonly effectiveContext: ContextEnvelope;
+  readonly contextDefaultsVersion: number;
+  readonly contextHash: string;
+  readonly resolvedExecutionPlan: Readonly<ResolvedExecutionPlan>;
+  readonly materialization: Pick<Agent, "id" | "name" | "adapterType" | "config">;
   invocationId?: string;
 }
 
@@ -69,28 +79,31 @@ export class MemoryStore implements Store {
   readonly #runs = new Map<string, AgentRun>();
   readonly #events = new Map<string, EventEnvelope[]>();
 
-  getAgent(id: string): Agent | undefined { return this.#agents.get(id); }
+  getAgent(id: string): Agent | undefined { return clone(this.#agents.get(id)); }
   hasAgent(id: string): boolean { return this.#agents.has(id); }
-  listAgents(): Agent[] { return [...this.#agents.values()]; }
-  putAgent(agent: Agent): void { this.#agents.set(agent.id, agent); }
+  listAgents(): Agent[] { return structuredClone([...this.#agents.values()]); }
+  putAgent(agent: Agent): void { this.#agents.set(agent.id, structuredClone(agent)); }
 
-  getAgentSession(id: string): AgentSession | undefined { return this.#sessions.get(id); }
+  getAgentSession(id: string): AgentSession | undefined { return clone(this.#sessions.get(id)); }
   getAgentSessionByKey(namespace: string, agentId: string, sessionKey: string): AgentSession | undefined {
-    return [...this.#sessions.values()].find(session =>
+    return clone([...this.#sessions.values()].find(session =>
       session.namespace === namespace && session.agentId === agentId && session.sessionKey === sessionKey
-    );
+    ));
   }
-  listAgentSessions(): AgentSession[] { return [...this.#sessions.values()]; }
-  putAgentSession(session: AgentSession): void { this.#sessions.set(session.id, session); }
+  listAgentSessions(): AgentSession[] { return structuredClone([...this.#sessions.values()]); }
+  putAgentSession(session: AgentSession): void { this.#sessions.set(session.id, structuredClone(session)); }
 
-  getAgentRun(id: string): AgentRun | undefined { return this.#runs.get(id); }
+  getAgentRun(id: string): AgentRun | undefined { return clone(this.#runs.get(id)); }
   getAgentRunByOccurrence(agentSessionId: string, occurrenceId: string): AgentRun | undefined {
-    return [...this.#runs.values()].find(run =>
+    return clone([...this.#runs.values()].find(run =>
       run.agentSessionId === agentSessionId && run.trigger.occurrenceId === occurrenceId
-    );
+    ));
   }
-  listAgentRuns(): AgentRun[] { return [...this.#runs.values()]; }
-  putAgentRun(run: AgentRun): void { this.#runs.set(run.id, run); }
+  listAgentRuns(): AgentRun[] { return structuredClone([...this.#runs.values()]); }
+  putAgentRun(run: AgentRun): void {
+    assertRunSnapshot(run, this.#runs.get(run.id));
+    this.#runs.set(run.id, structuredClone(run));
+  }
 
   getEvents(agentRunId: string): EventEnvelope[] { return this.#events.get(agentRunId) ?? []; }
   appendEvent(event: EventEnvelope): boolean {
@@ -171,6 +184,7 @@ export class SqliteStore implements Store {
   }
   listAgentRuns(): AgentRun[] { return this.#readAll<AgentRun>("agent_runs"); }
   putAgentRun(run: AgentRun): void {
+    assertRunSnapshot(run, this.getAgentRun(run.id));
     this.#db.prepare(
       `INSERT INTO agent_runs (id, agent_session_id, trigger_occurrence_id, json) VALUES (?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET agent_session_id = excluded.agent_session_id,
@@ -252,4 +266,8 @@ function assertSynchronousTransactionResult<T>(result: T): T {
 
 function normalizedError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function clone<T>(value: T | undefined): T | undefined {
+  return value === undefined ? undefined : structuredClone(value);
 }

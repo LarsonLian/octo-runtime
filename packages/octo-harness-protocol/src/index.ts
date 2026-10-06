@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { assertExperiencePayload } from "./experience.js";
+import { assertApprovalMode, assertContextEnvelope, assertJsonValue, assertMcpServers, contextItem } from "./context.js";
+export { APPROVAL_MODES, CONTEXT_SCHEMA, CONTEXT_MAX_BYTES, CONTEXT_MAX_ITEMS, RUNTIME_RUN_CONTRACT, assertApprovalMode, assertContextEnvelope, assertMcpServers, assertResolvedExecutionPlan, canonicalContext, contextHash, contextItem, mergeContext } from "./context.js";
 import type {
   ActivityInfo,
   ActivitySubject,
@@ -20,13 +22,13 @@ import type {
   MessageChannel,
   MessageExposure,
   InteractionRequestedPayload,
+  InteractionResolvedPayload,
   ModelStepFinishedPayload,
   ModelStepStartedPayload,
   ToolCallCreatePayload,
   ToolCallDeltaPayload,
   ToolCallUpdatePayload,
-  FailureEnvelope,
-  McpServers
+  FailureEnvelope
 } from "./generated/protocol-types.js";
 
 // The data-shape types are generated from schema/protocol.schema.json (see
@@ -34,6 +36,28 @@ import type {
 // of `@mininglamp-oss/octo-harness-protocol` stays stable regardless of how the
 // generator lays out its output.
 export type {
+  ApprovalMode,
+  ApprovalRequest,
+  ApprovalOperation,
+  ApprovalDisplayDetails,
+  ContextItem,
+  ContextEnvelope,
+  ContextAdapterPayload,
+  ContextModelPayload,
+  ContextReasoningPayload,
+  ContextWorkspacePayload,
+  ContextLimitsPayload,
+  ContextRuntimeSelectionPayload,
+  ContextApprovalPolicyPayload,
+  ContextSelectionEntry,
+  ContextSelectionsPayload,
+  ContextResourceEntry,
+  ContextResourcesPayload,
+  ContextInstructionEntry,
+  ContextInstructionsPayload,
+  ContextContinuityPayload,
+  ContextDeliveryPolicyPayload,
+  ResolvedExecutionPlan,
   MessageChannel,
   MessageExposure,
   MessageProvenance,
@@ -50,6 +74,7 @@ export type {
   RunNoticePayload,
   CanonicalEventPayload,
   InteractionRequestedPayload,
+  InteractionResolvedPayload,
   ModelStepStartedPayload,
   ModelStepFinishedPayload,
   ToolCallCreatePayload,
@@ -122,6 +147,7 @@ export const CANONICAL_EVENT_TYPES = [
   "activity.started", "activity.updated", "activity.finished",
   "plan.updated", "tool_call.progress", "run.notice",
   "interaction.requested",
+  "interaction.resolved",
   "run.queued", "run.started",
   ...TERMINAL_EVENT_TYPES
 ] as const;
@@ -144,6 +170,7 @@ export type CanonicalPayloadFor<TType extends CanonicalEventType> =
     : TType extends "model_step.started" ? CanonicalEventPayload & ModelStepStartedPayload
     : TType extends "model_step.finished" ? CanonicalEventPayload & ModelStepFinishedPayload
       : TType extends "interaction.requested" ? CanonicalEventPayload & InteractionRequestedPayload
+      : TType extends "interaction.resolved" ? CanonicalEventPayload & InteractionResolvedPayload
       : TType extends "tool_call.create" ? CanonicalEventPayload & ToolCallCreatePayload
     : TType extends "tool_call.delta" ? CanonicalEventPayload & ToolCallDeltaPayload
       : TType extends "tool_call.update" ? CanonicalEventPayload & ToolCallUpdatePayload
@@ -179,7 +206,7 @@ export interface InteractionResponse {
 
 /** Provider adapters must use this accessor so hidden context is sent exactly once when present. */
 export function providerInputText(request: InvokeRequest): string {
-  return request.modelInput ?? request.prompt;
+  return request.modelInput;
 }
 
 /** Exact alternate input for a provider that could not resume its session. */
@@ -429,17 +456,66 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
   }
   if (event.type === "interaction.requested") {
     requireEventString(payload, "interactionId", event.type);
+    requireEventString(payload, "executionInstanceId", event.type);
+    requireEventString(payload, "expiresAt", event.type);
+    if (Array.from(String(payload.interactionId)).length > 191 || Array.from(String(payload.executionInstanceId)).length > 191 || !isInteractionTimestamp(payload.expiresAt as string)) throw new TypeError("interaction.requested instance or expiry is invalid");
     if (payload.kind !== "approval" && payload.kind !== "question" && payload.kind !== "elicitation") {
       throw new TypeError("interaction.requested payload.kind is unsupported");
     }
     if (!isRecord(payload.request)) throw new TypeError("interaction.requested payload.request must be an object");
+    if (payload.kind === "approval") assertApprovalRequest(payload.request);
+  }
+  if (event.type === "interaction.resolved") {
+    requireEventString(payload, "interactionId", event.type);
+    requireEventString(payload, "executionInstanceId", event.type);
+    if (Array.from(String(payload.interactionId)).length > 191 || Array.from(String(payload.executionInstanceId)).length > 191) throw new TypeError("interaction.resolved instance is invalid");
+    if (!["resolved", "expired", "invalidated"].includes(String(payload.status))) throw new TypeError("interaction.resolved payload.status is invalid");
+    if (payload.status === "resolved") {
+      if (!INTERACTION_RESPONSE_OUTCOMES.includes(payload.outcome as InteractionResponseOutcome)) throw new TypeError("interaction.resolved payload.outcome is invalid");
+    } else requireEventString(payload, "reasonCode", event.type);
+  }
+}
+
+function isInteractionTimestamp(value: string): boolean {
+  const matched = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!matched) return false;
+  const [, year, month, day, hour, minute, second, offset] = matched;
+  const calendar = new Date(0);
+  calendar.setUTCFullYear(Number(year), Number(month) - 1, Number(day));
+  if (calendar.getUTCFullYear() !== Number(year) || calendar.getUTCMonth() !== Number(month) - 1 || calendar.getUTCDate() !== Number(day)) return false;
+  if (Number(hour) > 23 || Number(minute) > 59 || Number(second) > 59) return false;
+  if (offset !== "Z" && (Number(offset.slice(1, 3)) > 23 || Number(offset.slice(4)) > 59)) return false;
+  return Number.isFinite(Date.parse(value));
+}
+
+export function assertApprovalRequest(value: unknown): asserts value is Record<string, unknown> {
+  assertJsonValue(value);
+  if (!isRecord(value) || value.schema !== "octo.approval-request/v1") throw new TypeError("INVALID_APPROVAL_REQUEST");
+  const allowed = ["schema", "policy", "operation", "requestedPermissions", "reason", "allowedOutcomes", "grantScope", "providerDetails"];
+  if (Object.keys(value).some(property => !allowed.includes(property))) throw new TypeError("INVALID_APPROVAL_REQUEST");
+  if (Buffer.byteLength(JSON.stringify(value), "utf8") > 65_536) throw new TypeError("INVALID_APPROVAL_REQUEST");
+  if (!isRecord(value.policy) || Object.keys(value.policy).some(property => !["mode", "hash"].includes(property))) throw new TypeError("INVALID_APPROVAL_REQUEST");
+  assertApprovalMode(value.policy.mode);
+  if (typeof value.policy.hash !== "string" || !/^sha256:[a-f0-9]{64}$/.test(value.policy.hash)) throw new TypeError("INVALID_APPROVAL_REQUEST");
+  if (!isRecord(value.operation) || !["command_execution", "file_change", "tool_execution", "permission_grant", "context_access"].includes(String(value.operation.kind))) throw new TypeError("INVALID_APPROVAL_REQUEST");
+  if (Object.keys(value.operation).some(property => !["kind", "summary", "toolCallId", "details"].includes(property)) || typeof value.operation.summary !== "string" || !value.operation.summary || value.operation.summary.length > 8192) throw new TypeError("INVALID_APPROVAL_REQUEST");
+  if (value.operation.toolCallId !== undefined && (typeof value.operation.toolCallId !== "string" || !value.operation.toolCallId)) throw new TypeError("INVALID_APPROVAL_REQUEST");
+  if (value.grantScope !== "request") throw new TypeError("APPROVAL_GRANT_SCOPE_UNSUPPORTED");
+  if (!Array.isArray(value.requestedPermissions)) throw new TypeError("INVALID_APPROVAL_REQUEST");
+  if (value.requestedPermissions.length) throw new TypeError("APPROVAL_PERMISSION_UNSUPPORTED");
+  if (!Array.isArray(value.allowedOutcomes) || !value.allowedOutcomes.length || new Set(value.allowedOutcomes).size !== value.allowedOutcomes.length || value.allowedOutcomes.some(outcome => !["accepted", "declined", "cancelled"].includes(String(outcome)))) throw new TypeError("INVALID_APPROVAL_REQUEST");
+  if (value.reason !== undefined && typeof value.reason !== "string") throw new TypeError("INVALID_APPROVAL_REQUEST");
+  for (const details of [value.providerDetails, value.operation.details]) {
+    if (details === undefined) continue;
+    const displayFields = ["provider", "method", "itemId", "approvalId", "reason", "command", "cwd", "grantRoot", "files", "toolCallId", "title", "description", "options"];
+    if (!isRecord(details) || Object.keys(details).some(property => !displayFields.includes(property))) throw new TypeError("APPROVAL_DISPLAY_FIELD_UNSUPPORTED");
   }
 }
 
 /** Validate a response before it crosses the process or provider boundary. */
 export function assertInteractionResponse(value: unknown): asserts value is InteractionResponse {
   if (!isRecord(value)) throw new TypeError("interaction response must be an object");
-  if (typeof value.interactionId !== "string" || value.interactionId.length === 0 || value.interactionId.length > 191) {
+  if (typeof value.interactionId !== "string" || value.interactionId.length === 0 || Array.from(value.interactionId).length > 191) {
     throw new TypeError("interaction response interactionId must be 1-191 characters");
   }
   if (typeof value.outcome !== "string"
@@ -484,6 +560,23 @@ export function assertFailureEnvelope(value: unknown): asserts value is FailureE
 export function assertInvokeRequest(request: unknown): asserts request is InvokeRequest {
   if (!isRecord(request)) throw new TypeError("InvokeRequest must be an object");
   if (request.protocolVersion !== PROTOCOL_VERSION) throw new TypeError("InvokeRequest.protocolVersion must be 2");
+  if ("appendInstructions" in request) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
+  assertContextEnvelope(request.context);
+  assertApprovalMode(request.approvalMode);
+  const approvalPolicy = contextItem(request.context, "octo.security", "approval_policy");
+  if (approvalPolicy && approvalPolicy.payload.mode !== request.approvalMode) throw new TypeError("CONTEXT_PLAN_MISMATCH");
+  const agentConfig = request.agentConfig;
+  if (isRecord(agentConfig) && ["autoApprove", "dangerouslyBypassPermissions", "permissionMode"].some(key => key in agentConfig)) {
+    throw new TypeError("LEGACY_PERMISSION_CONFIG_REJECTED");
+  }
+  if (isRecord(agentConfig) && "thinking" in agentConfig) throw new TypeError("LEGACY_REASONING_CONFIG_REJECTED");
+  for (const selection of [{ name: "model", property: "id", config: "model" }, { name: "reasoning", property: "effort", config: "effort" }]) {
+    const selected = contextItem(request.context, "octo.execution", selection.name);
+    if (selected && selected.payload[selection.property] !== (isRecord(agentConfig) ? agentConfig[selection.config] : undefined)) throw new TypeError("CONTEXT_PLAN_MISMATCH");
+  }
+  const workspace = contextItem(request.context, "octo.execution", "workspace");
+  if (workspace && workspace.payload.path !== request.workdir) throw new TypeError("CONTEXT_PLAN_MISMATCH");
+  if (typeof request.controlInstructions !== "string") throw new TypeError("InvokeRequest.controlInstructions must be a string");
   if (request.runtimeLimits !== undefined) assertRuntimeLimits(request.runtimeLimits);
   if (request.mcpServers !== undefined) assertMcpServers(request.mcpServers);
   for (const key of ["invocationId", "agentSessionId", "runId", "prompt", "workdir"] as const) {
@@ -491,87 +584,12 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
       throw new TypeError(`InvokeRequest.${key} must be a non-empty string`);
     }
   }
-  if (request.modelInput !== undefined
-    && (typeof request.modelInput !== "string" || request.modelInput.length === 0)) {
-    throw new TypeError("InvokeRequest.modelInput must be a non-empty string when present");
+  if (typeof request.modelInput !== "string" || request.modelInput.length === 0) {
+    throw new TypeError("InvokeRequest.modelInput must be a non-empty string");
   }
   if (request.freshFallbackModelInput !== undefined
     && (typeof request.freshFallbackModelInput !== "string" || request.freshFallbackModelInput.length === 0)) {
     throw new TypeError("InvokeRequest.freshFallbackModelInput must be a non-empty string when present");
-  }
-}
-
-/** Validate dynamic MCP configuration before any value reaches a provider process. */
-export function assertMcpServers(value: unknown): asserts value is McpServers {
-  if (!isRecord(value)) throw new TypeError("mcpServers must be an object");
-  const entries = Object.entries(value);
-  if (entries.length > 32) throw new TypeError("mcpServers must not contain more than 32 servers");
-  for (const [name, server] of entries) {
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) {
-      throw new TypeError("mcpServers contains an invalid server name");
-    }
-    if (!isRecord(server)) throw new TypeError(`mcpServers.${name} must be an object`);
-    const allowed = server.type === "stdio"
-      ? new Set(["type", "command", "args", "env", "cwd", "required", "startupTimeoutMs", "toolTimeoutMs"])
-      : server.type === "streamable_http"
-        ? new Set(["type", "url", "headers", "required", "startupTimeoutMs", "toolTimeoutMs"])
-        : undefined;
-    if (!allowed) throw new TypeError(`mcpServers.${name}.type is unsupported`);
-    for (const key of Object.keys(server)) {
-      if (!allowed.has(key)) throw new TypeError(`mcpServers.${name}.${key} is unsupported`);
-    }
-    if (server.type === "stdio") {
-      requireNonEmptyString(server, "command", `mcpServers.${name}`);
-      assertStringArray(server.args, `mcpServers.${name}.args`, 128);
-      assertStringRecord(server.env, `mcpServers.${name}.env`, 128);
-      if (server.cwd !== undefined && (typeof server.cwd !== "string" || server.cwd.length === 0)) {
-        throw new TypeError(`mcpServers.${name}.cwd must be a non-empty string when present`);
-      }
-    } else {
-      requireNonEmptyString(server, "url", `mcpServers.${name}`);
-      let parsed: URL;
-      try {
-        parsed = new URL(server.url as string);
-      } catch {
-        throw new TypeError(`mcpServers.${name}.url must be an absolute HTTP URL`);
-      }
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        throw new TypeError(`mcpServers.${name}.url must be an absolute HTTP URL`);
-      }
-      assertStringRecord(server.headers, `mcpServers.${name}.headers`, 64);
-    }
-    if (server.required !== undefined && typeof server.required !== "boolean") {
-      throw new TypeError(`mcpServers.${name}.required must be boolean when present`);
-    }
-    assertMcpTimeout(server.startupTimeoutMs, `mcpServers.${name}.startupTimeoutMs`, 300_000);
-    assertMcpTimeout(server.toolTimeoutMs, `mcpServers.${name}.toolTimeoutMs`, 3_600_000);
-  }
-}
-
-function requireNonEmptyString(value: Record<string, unknown>, key: string, path: string): void {
-  if (typeof value[key] !== "string" || value[key].length === 0) {
-    throw new TypeError(`${path}.${key} must be a non-empty string`);
-  }
-}
-
-function assertStringArray(value: unknown, path: string, limit: number): void {
-  if (value === undefined) return;
-  if (!Array.isArray(value) || value.length > limit || value.some(item => typeof item !== "string")) {
-    throw new TypeError(`${path} must be an array of strings`);
-  }
-}
-
-function assertStringRecord(value: unknown, path: string, limit: number): void {
-  if (value === undefined) return;
-  if (!isRecord(value) || Object.keys(value).length > limit || Object.values(value).some(item => typeof item !== "string")) {
-    throw new TypeError(`${path} must be a string map`);
-  }
-}
-
-function assertMcpTimeout(value: unknown, path: string, maximum: number): void {
-  if (value === undefined) return;
-  if (!Number.isSafeInteger(value) || Number(value) < 100 || Number(value) > maximum) {
-    throw new TypeError(`${path} is out of range`);
   }
 }
 

@@ -147,6 +147,10 @@ export class AdapterHost {
   /** Invoke an adapter and emit lifecycle-corrected canonical events upstream. */
   async *invoke(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
     assertInvokeRequest(request);
+    const registered = this.#adapters.get(adapterType);
+    if (request.approvalMode !== "full_access" && (!registered?.metadata.capabilities.includes(capabilities.INTERACTION_RESPONSE) || typeof registered.respondInteraction !== "function")) {
+      throw new Error(`APPROVAL_MODE_UNSUPPORTED: ${adapterType} does not implement execution-time approval responses`);
+    }
     const experience = new InvocationExperience();
     const provider = this.#invokeProvider(adapterType, request);
     let pending = provider.next();
@@ -185,15 +189,15 @@ export class AdapterHost {
     let terminal: CanonicalEvent | undefined;
     let outcome = "stopped";
     const identity: ObservationIdentity = {
-      ...(typeof request.context?.profile === "string" ? { profile: request.context.profile } : {}),
-      ...(typeof request.context?.runtimeId === "string" ? { runtimeId: request.context.runtimeId } : {}),
+      ...(typeof request.runMetadata?.profile === "string" ? { profile: request.runMetadata.profile } : {}),
+      ...(typeof request.runMetadata?.runtimeId === "string" ? { runtimeId: request.runMetadata.runtimeId } : {}),
       runId: request.runId, invocationId: request.invocationId, agentSessionId: request.agentSessionId, adapterType
     };
     const watchdog = new InvocationWatchdog(request.runtimeLimits, controller,
       adapter.metadata.capabilities.includes(ACTIVITY_CAPABILITY),
       diagnostic => this.#diagnosticSink?.(identity, {
         ...diagnostic,
-        data: { ...diagnostic.data, agentRevisionId: request.context?.agentRevisionId }
+        data: { ...diagnostic.data, agentRevisionId: request.runMetadata?.agentRevisionId }
       }));
     let iterator: AsyncIterator<CanonicalEvent> | undefined;
     let cleanup: Promise<unknown> | undefined;
@@ -283,8 +287,8 @@ export class AdapterHost {
           : adapterEvent;
         watchdog.canonical(event);
         this.#canonicalSink?.({
-          ...(typeof request.context?.profile === "string" ? { profile: request.context.profile } : {}),
-          ...(typeof request.context?.runtimeId === "string" ? { runtimeId: request.context.runtimeId } : {}),
+          ...(typeof request.runMetadata?.profile === "string" ? { profile: request.runMetadata.profile } : {}),
+          ...(typeof request.runMetadata?.runtimeId === "string" ? { runtimeId: request.runMetadata.runtimeId } : {}),
           runId: request.runId,
           invocationId: request.invocationId,
           agentSessionId: request.agentSessionId,

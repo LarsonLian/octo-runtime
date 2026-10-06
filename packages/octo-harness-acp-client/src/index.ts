@@ -24,6 +24,8 @@ export interface SpawnAcpClientOptions {
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
   permissionHandler?: PermissionHandler;
+  onPermissionResponseWritten?: (params: JsonRecord) => void;
+  onPermissionResponseFailed?: (params: JsonRecord, error: Error) => void;
 }
 
 export interface AcpRequestOptions {
@@ -100,14 +102,19 @@ class AsyncQueue<T> implements AsyncIterableIterator<T> {
 export class AcpClient {
   readonly #child: ChildProcessWithoutNullStreams;
   readonly #permission: PermissionHandler;
+  readonly #permissionWritten?: (params: JsonRecord) => void;
+  readonly #permissionFailed?: (params: JsonRecord, error: Error) => void;
   readonly #pending = new Map<number, Deferred<unknown>>();
   readonly #updates = new Map<string, AsyncQueue<AcpUpdate>>();
   #nextId = 1;
   #stderr = "";
+  #closed = false;
 
-  constructor({ child, permissionHandler }: { child: ChildProcessWithoutNullStreams; permissionHandler?: PermissionHandler }) {
+  constructor({ child, permissionHandler, onPermissionResponseWritten, onPermissionResponseFailed }: { child: ChildProcessWithoutNullStreams; permissionHandler?: PermissionHandler; onPermissionResponseWritten?: (params: JsonRecord) => void; onPermissionResponseFailed?: (params: JsonRecord, error: Error) => void }) {
     this.#child = child;
     this.#permission = permissionHandler ?? denyPermission;
+    this.#permissionWritten = onPermissionResponseWritten;
+    this.#permissionFailed = onPermissionResponseFailed;
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (value: string | Buffer) => {
       // Keep only the tail; stderr is diagnostic context for a failure, not a log sink.
@@ -127,13 +134,17 @@ export class AcpClient {
     });
   }
 
-  #send(message: JsonRecord, onWritten?: () => void): void {
+  #send(message: JsonRecord, onWritten?: () => void, onFailed?: (error: Error) => void): void {
     // The write callback confirms acceptance by Node's stdin stream. It does not
     // imply that the ACP peer parsed the frame; the matching JSON-RPC response
     // remains the acknowledgement boundary.
-    this.#child.stdin.write(`${JSON.stringify(message)}\n`, error => {
-      if (!error) onWritten?.();
-    });
+    const failed = (error: Error): void => { onFailed?.(error); this.#failAll(error); };
+    try {
+      this.#child.stdin.write(`${JSON.stringify(message)}\n`, error => {
+        if (error) failed(error);
+        else onWritten?.();
+      });
+    } catch (error) { failed(toError(error)); }
   }
 
   /** Dispatch one inbound JSON-RPC message: response by id, `session/update` notification, or an inbound permission request. */
@@ -155,12 +166,12 @@ export class AcpClient {
     }
 
     const method = typeof message.method === "string" ? message.method : "";
-    if (typeof message.id === "number" && /permission/i.test(method)) {
+    if ((typeof message.id === "number" || typeof message.id === "string") && method === "session/request_permission") {
       const params = asRecord(message.params);
       // ACP inverts the usual call direction for permissions: the provider
       // sends the request and the client must reply with a response.
-      void Promise.resolve(this.#permission(params)).then(
-        result => this.#send({ jsonrpc: "2.0", id: message.id, result }),
+      void Promise.resolve().then(() => this.#permission(params)).then(
+        result => this.#send({ jsonrpc: "2.0", id: message.id, result }, () => this.#permissionWritten?.(params), error => this.#permissionFailed?.(params, error)),
         error => this.#send({
           jsonrpc: "2.0",
           id: message.id,
@@ -200,6 +211,7 @@ export class AcpClient {
     params: JsonRecord,
     { timeoutMs = 300_000, onWritten, requestId }: AcpRequestOptions = {}
   ): Promise<T> {
+    if (this.#closed) return Promise.reject(new Error("ACP client closed"));
     const id = requestId ?? this.reserveRequestId();
     if (this.#pending.has(id)) {
       return Promise.reject(new Error(`ACP request id ${id} is already pending`));
@@ -317,13 +329,18 @@ export class AcpClient {
 
   /** Terminate the subprocess: SIGTERM, then escalate to SIGKILL if it has not exited within one second. */
   async close(): Promise<void> {
+    if (this.#closed) return;
+    this.#closed = true;
+    this.#failAll(new Error("ACP client closed"));
     if (this.#child.exitCode !== null) return;
     signalProcessTree(this.#child, "SIGTERM");
-    await Promise.race([
-      new Promise<void>(resolve => this.#child.once("exit", () => resolve())),
-      new Promise<void>(resolve => setTimeout(resolve, 1000))
-    ]);
-    if (this.#child.exitCode === null) signalProcessTree(this.#child, "SIGKILL");
+    await new Promise<void>(resolve => {
+      const done = (): void => { clearTimeout(timer); this.#child.removeListener("exit", done); resolve(); };
+      const timer = setTimeout(done, 1000);
+      this.#child.once("exit", done);
+      if (this.#child.exitCode !== null || this.#child.signalCode !== null) done();
+    });
+    if (this.#child.exitCode === null && this.#child.signalCode === null) signalProcessTree(this.#child, "SIGKILL");
   }
 }
 
@@ -345,14 +362,14 @@ function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS
  * whole tree; aborting `signal` closes the client (and thus the process).
  */
 export function spawnAcpClient(options: SpawnAcpClientOptions): AcpClient {
-  const { command, args = [], cwd, env, signal, permissionHandler } = options;
+  const { command, args = [], cwd, env, signal, permissionHandler, onPermissionResponseWritten, onPermissionResponseFailed } = options;
   const child = spawn(command, args, {
     cwd,
     env: { ...process.env, ...env },
     stdio: ["pipe", "pipe", "pipe"],
     detached: process.platform !== "win32"
   });
-  const client = new AcpClient({ child, permissionHandler });
+  const client = new AcpClient({ child, permissionHandler, onPermissionResponseWritten, onPermissionResponseFailed });
   const abort = (): void => { void client.close(); };
   if (signal?.aborted) abort();
   else signal?.addEventListener("abort", abort, { once: true });

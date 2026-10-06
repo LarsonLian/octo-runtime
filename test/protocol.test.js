@@ -6,17 +6,17 @@ import {
   assertChannelContextDescriptor,
   assertContextSyncResult,
   assertInteractionResponse,
+  assertContextEnvelope,
+  assertInvokeRequest,
+  assertResolvedExecutionPlan,
   messageExposure
 } from "../packages/octo-harness-protocol/dist/index.js";
+import { approvalPayload, contextEnvelope, continuityItem, executionContext, invokeRequest } from "./agent-work-runtime-fixture.js";
 
 test("interaction contracts require a stable request id and bounded response outcome", () => {
   assert.doesNotThrow(() => assertCanonicalEvent({ protocolVersion: 2,
     type: "interaction.requested",
-    payload: {
-      interactionId: "approval-1",
-      kind: "approval",
-      request: { title: "Run tests", command: "pnpm test" }
-    }
+    payload: approvalPayload("invoke-approval")
   }));
   assert.doesNotThrow(() => assertInteractionResponse({
     interactionId: "approval-1", outcome: "accepted"
@@ -29,6 +29,170 @@ test("interaction contracts require a stable request id and bounded response out
     () => assertInteractionResponse({ interactionId: "approval-1", outcome: "maybe" }),
     /outcome is unsupported/
   );
+});
+
+test("InvokeRequest requires structured Context, control instructions, model input, and explicit approval mode", () => {
+  const request = invokeRequest();
+  assert.doesNotThrow(() => assertInvokeRequest(request));
+  for (const [field, error] of [
+    ["context", /CONTEXT_REQUIRED/],
+    ["controlInstructions", /controlInstructions must be a string/],
+    ["modelInput", /modelInput must be a non-empty string/],
+    ["approvalMode", /APPROVAL_MODE_UNSUPPORTED/]
+  ]) {
+    const incomplete = { ...request };
+    delete incomplete[field];
+    assert.throws(() => assertInvokeRequest(incomplete), error);
+  }
+  for (const modelInput of ["", null, 42]) {
+    assert.throws(() => assertInvokeRequest({ ...request, modelInput }), /modelInput must be a non-empty string/);
+  }
+  for (const controlInstructions of [null, 42]) {
+    assert.throws(() => assertInvokeRequest({ ...request, controlInstructions }), /controlInstructions must be a string/);
+  }
+  assert.doesNotThrow(() => assertInvokeRequest({ ...request, controlInstructions: "" }));
+  for (const approvalMode of ["ask", "assisted", "full_access"]) {
+    assert.doesNotThrow(() => assertInvokeRequest({ ...request, approvalMode }));
+  }
+  for (const approvalMode of ["auto", "never", "", null]) {
+    assert.throws(() => assertInvokeRequest({ ...request, approvalMode }), /APPROVAL_MODE_UNSUPPORTED/);
+  }
+});
+
+test("InvokeRequest rejects legacy instruction and permission fields rather than falling back", () => {
+  const request = invokeRequest();
+  for (const appendInstructions of ["legacy", "", undefined]) {
+    assert.throws(() => assertInvokeRequest({ ...request, appendInstructions }), /LEGACY_RUN_CONTRACT_REJECTED/);
+  }
+  for (const agentConfig of [{ autoApprove: true }, { autoApprove: false }, { dangerouslyBypassPermissions: true }, { permissionMode: "default" }]) {
+    assert.throws(() => assertInvokeRequest({ ...request, agentConfig }), /LEGACY_PERMISSION_CONFIG_REJECTED/);
+  }
+});
+
+test("audit metadata belongs in runMetadata and is not an alternate Context contract", () => {
+  const runMetadata = { namespace: "im", agentId: "agent-1", profile: "work", runtimeId: "runtime-1" };
+  assert.doesNotThrow(() => assertInvokeRequest(invokeRequest({ context: contextEnvelope(), runMetadata })));
+  for (const context of [{}, runMetadata, { ...contextEnvelope(), ...runMetadata }]) {
+    assert.throws(() => assertInvokeRequest(invokeRequest({ context })), /CONTEXT_SCHEMA_INVALID/);
+  }
+});
+
+test("resolved execution plan requires frozen execution selection and rejects revision-shaped fallbacks", () => {
+  const plan = { adapter_type: "codex", workdir: "/workspace", approval_mode: "ask", model: "frozen-model" };
+  assert.doesNotThrow(() => assertResolvedExecutionPlan(plan));
+  for (const value of [undefined, null]) {
+    assert.throws(() => assertResolvedExecutionPlan(value), /RESOLVED_EXECUTION_PLAN_REQUIRED/);
+  }
+  assert.throws(() => assertResolvedExecutionPlan({ default_adapter: "codex", workdir: "/workspace", approval_mode: "ask" }), /CONTEXT_SCHEMA_INVALID/);
+  assert.throws(() => assertResolvedExecutionPlan({ ...plan, agent_config: { model: "legacy" } }), /CONTEXT_SCHEMA_INVALID/);
+  const { approval_mode, ...withoutApprovalMode } = plan;
+  assert.throws(() => assertResolvedExecutionPlan(withoutApprovalMode), /APPROVAL_MODE_UNSUPPORTED/);
+});
+
+test("execution Context fixtures carry explicit frozen selections and provider defaults without sharing plan objects", () => {
+  const plan = {
+    adapter_type: "codex", workdir: "/workspace", approval_mode: "ask",
+    model: "frozen-model", effort: "high", runtime_limits: { run_timeout_ms: 60_000 }
+  };
+  const context = executionContext(plan);
+  assert.doesNotThrow(() => assertContextEnvelope(context));
+  assert.deepEqual(context.items.find(item => item.name === "adapter").payload, { type: "codex" });
+  assert.deepEqual(context.items.find(item => item.name === "workspace").payload, { mode: "fixed", path: "/workspace" });
+  assert.deepEqual(context.items.find(item => item.name === "approval_policy").payload, { mode: "ask" });
+  assert.deepEqual(context.items.find(item => item.name === "model").payload, { id: "frozen-model" });
+  assert.deepEqual(context.items.find(item => item.name === "reasoning").payload, { effort: "high" });
+  context.items.find(item => item.name === "limits").payload.run_timeout_ms = 120_000;
+  assert.equal(plan.runtime_limits.run_timeout_ms, 60_000);
+  const providerDefaults = executionContext({ adapter_type: "codex", workdir: "/workspace", approval_mode: "ask" });
+  assert.doesNotThrow(() => assertContextEnvelope(providerDefaults));
+  for (const name of ["model", "reasoning"]) {
+    assert.deepEqual(providerDefaults.items.find(item => item.name === name).payload, { use_provider_default: true });
+  }
+});
+
+test("typed content selections, continuity and sourced instructions have bounded entry shapes", () => {
+  const items = [
+    { namespace: "octo.content", name: "selections", payload: { entries: [{ resource_ref: "octo://messages/selected", text: "Selected message" }] } },
+    { namespace: "octo.control", name: "instructions", payload: { entries: [{ text: "Keep changes scoped.", source: "platform_policy" }] } },
+    continuityItem()
+  ];
+  assert.doesNotThrow(() => assertContextEnvelope(contextEnvelope(items)));
+  for (const entry of [{ text: "legacy instruction" }, { source: "revision" }, { text: "control", source: 42 }, { text: "control", source: "revision", command: "legacy" }]) {
+    assert.throws(() => assertContextEnvelope(contextEnvelope([{
+      namespace: "octo.control", name: "instructions", payload: { entries: [entry] }
+    }])), /CONTEXT_SCHEMA_INVALID/);
+  }
+  for (const entry of [{}, { text: 42 }, { resource_ref: "octo://selected", messages: [] }]) {
+    assert.throws(() => assertContextEnvelope(contextEnvelope([{
+      namespace: "octo.content", name: "selections", payload: { entries: [entry] }
+    }])), /CONTEXT_SCHEMA_INVALID/);
+  }
+});
+
+test("canonical interactions carry instance-scoped expiry and distinct resolved lifecycle events", () => {
+  const payload = approvalPayload("invoke-approval");
+  assert.doesNotThrow(() => assertCanonicalEvent({ protocolVersion: 2, type: "interaction.requested", payload }));
+  for (const status of ["resolved", "expired", "invalidated"]) {
+    assert.doesNotThrow(() => assertCanonicalEvent({ protocolVersion: 2, type: "interaction.resolved", payload: {
+      interactionId: payload.interactionId,
+      executionInstanceId: payload.executionInstanceId,
+      status,
+      ...(status === "resolved" ? { outcome: "accepted" } : { reasonCode: status === "expired" ? "approval_timeout" : "execution_lost" })
+    } }));
+  }
+});
+
+test("every requested interaction requires a bounded execution instance and finite expiry", () => {
+  for (const kind of ["approval", "question", "elicitation"]) {
+    const payload = { ...approvalPayload("invoke-contract"), kind };
+    assert.doesNotThrow(() => assertCanonicalEvent({ protocolVersion: 2, type: "interaction.requested", payload }));
+    for (const expiresAt of ["2030-10-06T12:00:00.123456789Z", "2030-10-06T12:00:00+08:00"]) {
+      assert.doesNotThrow(() => assertCanonicalEvent({ protocolVersion: 2, type: "interaction.requested", payload: { ...payload, expiresAt } }));
+    }
+    for (const field of ["interactionId", "executionInstanceId", "expiresAt"]) {
+      const incomplete = { ...payload };
+      delete incomplete[field];
+      assert.throws(() => assertCanonicalEvent({ protocolVersion: 2, type: "interaction.requested", payload: incomplete }), new RegExp(`payload\\.${field}`));
+      assert.throws(() => assertCanonicalEvent({ protocolVersion: 2, type: "interaction.requested", payload: { ...payload, [field]: "" } }), new RegExp(`payload\\.${field}`));
+    }
+    for (const invalid of [
+      { interactionId: "x".repeat(192) }, { executionInstanceId: "x".repeat(192) },
+      ...["forever", "October 6, 2030", "2030-10-06", "2030-02-30T12:00:00Z", "2030-10-06T24:00:00Z", "2030-10-06T12:00:00+24:00"].map(expiresAt => ({ expiresAt }))
+    ]) {
+      assert.throws(() => assertCanonicalEvent({ protocolVersion: 2, type: "interaction.requested", payload: { ...payload, ...invalid } }), /instance or expiry is invalid/);
+    }
+  }
+});
+
+test("approval requests reject legacy flat objects and incomplete typed requests", () => {
+  const payload = approvalPayload("invoke-contract");
+  assert.throws(() => assertCanonicalEvent({ protocolVersion: 2, type: "interaction.requested", payload: {
+    ...payload, request: { title: "Run tests", command: "pnpm test" }
+  } }), /INVALID_APPROVAL_REQUEST/);
+  for (const field of ["schema", "policy", "operation", "requestedPermissions", "allowedOutcomes", "grantScope"]) {
+    const request = structuredClone(payload.request);
+    delete request[field];
+    const error = field === "grantScope" ? /APPROVAL_GRANT_SCOPE_UNSUPPORTED/ : /INVALID_APPROVAL_REQUEST/;
+    assert.throws(() => assertCanonicalEvent({ protocolVersion: 2, type: "interaction.requested", payload: { ...payload, request } }), error, field);
+  }
+});
+
+test("resolved interactions require instance identity and either an outcome or an invalidation reason", () => {
+  const payload = { interactionId: "interaction-contract", executionInstanceId: "invoke-contract", status: "resolved", outcome: "accepted" };
+  for (const field of ["interactionId", "executionInstanceId"]) {
+    const incomplete = { ...payload };
+    delete incomplete[field];
+    assert.throws(() => assertCanonicalEvent({ protocolVersion: 2, type: "interaction.resolved", payload: incomplete }), new RegExp(`payload\\.${field}`));
+  }
+  for (const status of [undefined, "pending", "completed"]) {
+    assert.throws(() => assertCanonicalEvent({ protocolVersion: 2, type: "interaction.resolved", payload: { ...payload, status } }), /payload\.status is invalid/);
+  }
+  for (const outcome of [undefined, "maybe"]) {
+    assert.throws(() => assertCanonicalEvent({ protocolVersion: 2, type: "interaction.resolved", payload: { ...payload, outcome } }), /payload\.outcome is invalid/);
+  }
+  for (const status of ["expired", "invalidated"]) {
+    assert.throws(() => assertCanonicalEvent({ protocolVersion: 2, type: "interaction.resolved", payload: { ...payload, status } }), /payload\.reasonCode/);
+  }
 });
 
 test("analysis exposure defaults closed and public classifications require provenance", () => {

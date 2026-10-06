@@ -8,16 +8,26 @@ import { HarnessEngine, SqliteStore } from "@mininglamp-oss/octo-harness-core";
 import { HarnessDaemon } from "@mininglamp-oss/octo-harness-daemon";
 import { testAdapter } from "./fixtures/test-adapter.js";
 
+const emptyContext = () => ({ schema: "octo.context-envelope/v1", items: [] });
+const defaultContext = adapterType => ({
+  schema: "octo.context-envelope/v1",
+  items: [
+    { namespace: "octo.execution", name: "adapter", payload: { type: adapterType } },
+    { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: process.cwd() } },
+    { namespace: "octo.security", name: "approval_policy", payload: { mode: "full_access" } }
+  ]
+});
+
 test("daemon recovers queued AgentRuns and terminalizes orphaned running runs", async () => {
   const directory = await mkdtemp(join(tmpdir(), "octo-harness-recovery-"));
   try {
     const store = SqliteStore.open(join(directory, "state.db"));
     const host = new AdapterHost(); host.register(testAdapter);
     const engine = new HarnessEngine({ store, host });
-    const agent = await engine.registerAgent({ name: "test", adapterType: "test" });
+    const agent = await engine.registerAgent({ name: "test", defaultContext: defaultContext("test") });
     const queued = await engine.submitAgentRun({
       namespace: "loop", agentId: agent.id, sessionKey: "v1/task/task-1",
-      trigger: { kind: "loop.task.ready", occurrenceId: "task-event/e-1" }, input: { prompt: "run" }
+      trigger: { kind: "loop.task.ready", occurrenceId: "task-event/e-1" }, input: { prompt: "run" }, context: emptyContext()
     });
     const daemon = new HarnessDaemon({ engine, store });
     await daemon.recover();
@@ -34,8 +44,8 @@ test("daemon deduplicates occurrences and executes one session in run_no order",
     const host = new AdapterHost(); host.register(testAdapter);
     const engine = new HarnessEngine({ store, host });
     const daemon = new HarnessDaemon({ engine, store });
-    const agent = await engine.registerAgent({ name: "test", adapterType: "test" });
-    const base = { namespace: "im", agentId: agent.id, sessionKey: "v1/octo/ep-1/group/g-1" };
+    const agent = await engine.registerAgent({ name: "test", defaultContext: defaultContext("test") });
+    const base = { namespace: "im", agentId: agent.id, sessionKey: "v1/octo/ep-1/group/g-1", context: emptyContext() };
     const first = await daemon.submitAgentRun({
       ...base, trigger: { kind: "im.message", occurrenceId: "message/m-1" }, input: { prompt: "one" }
     });
@@ -77,8 +87,8 @@ test("daemon drain closes admission and waits for active Runs", async () => {
     });
     const engine = new HarnessEngine({ store, host });
     const daemon = new HarnessDaemon({ engine, store });
-    const agent = await engine.registerAgent({ name: "slow", adapterType: "slow" });
-    const base = { namespace: "test", agentId: agent.id, sessionKey: "v1/drain" };
+    const agent = await engine.registerAgent({ name: "slow", defaultContext: defaultContext("slow") });
+    const base = { namespace: "test", agentId: agent.id, sessionKey: "v1/drain", context: emptyContext() };
     const accepted = await daemon.submitAgentRun({
       ...base,
       trigger: { kind: "test", occurrenceId: "occurrence-1" },

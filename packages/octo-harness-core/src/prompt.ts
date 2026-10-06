@@ -1,7 +1,7 @@
 import type { Agent, AgentRun, AgentSession } from "./store.js";
 
 export interface HarnessContextInput {
-  agent: Agent;
+  agent: Pick<Agent, "id" | "name">;
   agentSession: AgentSession;
   agentRun: AgentRun;
 }

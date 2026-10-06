@@ -1,5 +1,5 @@
 import { hostname } from "node:os";
-import { collectRuntimeDeviceInfo } from "@mininglamp-oss/octo-harness-daemon";
+import { collectRuntimeDeviceInfo, RUNTIME_RUN_CONTRACT } from "@mininglamp-oss/octo-harness-daemon";
 import { EmbeddedHarnessError } from "./errors.js";
 import {
   readJsonOptional,
@@ -228,7 +228,7 @@ async function registerRuntime(
       protocol_version: PROTOCOL_VERSION,
       protocol_version_min: PROTOCOL_VERSION,
       protocol_version_max: PROTOCOL_VERSION,
-      capabilities: { adapters: [] }
+      capabilities: { run_contract: RUNTIME_RUN_CONTRACT, adapters: [] }
     }),
     signal
   }, "Runtime registration");
@@ -262,14 +262,16 @@ async function requestObject(
   }
   if (!response.ok) {
     const detail = objectValue(decoded.error);
-    const code = typeof detail?.code === "string" ? detail.code : undefined;
-    throw new HttpError(response.status, code, `${name} failed (${response.status}${code ? ` ${code}` : ""})`);
+    const details = objectValue(detail?.details);
+    const code = diagnosticCode(detail?.code);
+    const reasonCode = diagnosticCode(details?.reason_code);
+    throw new HttpError(response.status, code, reasonCode, `${name} failed (${response.status}${code ? ` ${code}` : ""}${reasonCode ? `/${reasonCode}` : ""})`);
   }
   return objectValue(decoded.data) ?? decoded;
 }
 
 class HttpError extends EmbeddedHarnessError {
-  constructor(readonly status: number, readonly responseCode: string | undefined, message: string) {
+  constructor(readonly status: number, readonly responseCode: string | undefined, readonly responseReasonCode: string | undefined, message: string) {
     super(
       status === 401 || status === 403 ? "AUTH_REJECTED" : "HTTP_ERROR",
       "enrollment",
@@ -277,6 +279,10 @@ class HttpError extends EmbeddedHarnessError {
       message
     );
   }
+}
+
+function diagnosticCode(value: unknown): string | undefined {
+  return typeof value === "string" && /^[A-Z][A-Z0-9_]{0,127}$/.test(value) ? value : undefined;
 }
 
 function endpoint(base: string, path: string): string {
