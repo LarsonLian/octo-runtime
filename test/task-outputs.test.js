@@ -26,7 +26,7 @@ test("manifest requires stable IDs, bounded files, relative paths and exact chec
   for (const relative_path of ["../outside", "/tmp/outside", "C:/outside", "output\\..\\outside", "output/../outside", "output//file", "./output/file", "output/\0file"]) {
     assert.throws(() => assertTaskOutputManifest({ schema: TASK_OUTPUT_SCHEMA, outputs: [{ ...entry, relative_path }] }), /TASK_OUTPUT_PATH_INVALID/);
   }
-  for (const overrides of [{ size: -1 }, { size: 129 * 1024 * 1024 }, { sha256: "pretend" }, { name: "../credentials" }, { output_id: "../id" }, { role: "reference" }]) {
+  for (const overrides of [{ size: -1 }, { size: 0 }, { size: 101 * 1024 * 1024 }, { sha256: "pretend" }, { name: "../credentials" }, { name: "a".repeat(201) }, { output_id: "../id" }, { role: "reference" }]) {
     assert.throws(() => assertTaskOutputManifest({ schema: TASK_OUTPUT_SCHEMA, outputs: [{ ...entry, ...overrides }] }), /TASK_OUTPUT_MANIFEST_INVALID/);
   }
   assert.throws(() => assertTaskOutputManifest({ schema: TASK_OUTPUT_SCHEMA, outputs: [entry, entry] }), /TASK_OUTPUT_MANIFEST_INVALID/);

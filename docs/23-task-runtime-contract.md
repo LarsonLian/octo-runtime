@@ -34,7 +34,7 @@ Access/Worker 物化 `resolved_execution_plan.mcp_servers.octo_task` 为受限 S
 
 只归档本次执行声明的 manifest；不扫描整个项目或自动上传用户所有文件。Runtime 验证输出相对目录路径、真实目录、symlink、普通文件、文件大小和 SHA-256，随后经运行授权获取上传凭据。上传成功且服务端确认关联后才产生已保存事实；失败保留明确错误，不能把 Run 成功当作文件保存成功。远端 Runtime 执行上传，不依赖桌面在线。
 
-Harness 的可信运行指令要求产出者写 `.octo/task-outputs/<URI 编码 Run ID>.json`。schema 为 `octo.task-output-manifest/v1`，outputs 项含 output_id、relative_path、name、media_type、size、sha256（64 位小写 hex）、role=output。最多 32 个文件、单文件 128 MiB、总计 256 MiB、manifest 64 KiB。目录各段及目标文件拒绝 symlink，读文件后用实际字节再次校验 size/hash；只接受普通文件。
+Harness 的可信运行指令要求产出者写 `.octo/task-outputs/<URI 编码 Run ID>.json`。schema 为 `octo.task-output-manifest/v1`，outputs 项含 output_id、relative_path、name、media_type、size、sha256（64 位小写 hex）、role=output。最多 32 个文件、单文件 100 MiB（不可空）、总计 256 MiB、manifest 64 KiB，文件名最多 200 个 Unicode 字符。目录各段及目标文件拒绝 symlink，读文件后用实际字节再次校验 size/hash；只接受普通文件。
 
 provider 返回 run.completed 后、持久化 terminal 前，Runtime 调用 `task_prepare_output({task_id,manifest})`。响应为 ticket_id、upload_url、upload_headers、upload_method=PUT。Runtime 只向该票据地址 PUT 真实文件字节，不把 MCP Bearer 附在上传请求上；拒绝 redirect。随后调用 `task_commit_output({task_id,ticket_id,manifest})`，服务端 HEAD/等效校验并写网盘和任务引用，返回 status=saved、attachment_id、file_id、file_version_id。prepare 对已成功保存的同键/同 hash 可以直接返回 saved 引用，无需再次上传。
 

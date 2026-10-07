@@ -6,7 +6,7 @@ import type { ResolvedExecutionPlan } from "@mininglamp-oss/octo-harness-protoco
 import { TaskMcpClient, taskMcpServer } from "./task-materials.js";
 
 export const TASK_OUTPUT_SCHEMA = "octo.task-output-manifest/v1";
-export const TASK_OUTPUT_LIMITS = Object.freeze({ maxFiles: 32, maxFileBytes: 128 * 1024 * 1024, maxTotalBytes: 256 * 1024 * 1024, maxManifestBytes: 64 * 1024 });
+export const TASK_OUTPUT_LIMITS = Object.freeze({ maxFiles: 32, maxFileBytes: 100 * 1024 * 1024, maxTotalBytes: 256 * 1024 * 1024, maxManifestBytes: 64 * 1024 });
 
 export interface TaskOutputManifestEntry {
   output_id: string;
@@ -51,9 +51,9 @@ export function assertTaskOutputManifest(value: unknown): asserts value is { sch
     const entry = object(raw);
     if (Object.keys(entry).some(key => !["output_id", "relative_path", "name", "media_type", "size", "sha256", "role"].includes(key))
       || typeof entry.output_id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(entry.output_id) || ids.has(entry.output_id)
-      || typeof entry.name !== "string" || !entry.name || entry.name.length > 255 || hasControl(entry.name) || /[/\\]/.test(entry.name)
+      || typeof entry.name !== "string" || !entry.name || Array.from(entry.name).length > 200 || hasControl(entry.name) || /[/\\]/.test(entry.name)
       || typeof entry.media_type !== "string" || !/^[\w.+-]+\/[\w.+-]+$/.test(entry.media_type)
-      || !Number.isSafeInteger(entry.size) || Number(entry.size) < 0 || Number(entry.size) > TASK_OUTPUT_LIMITS.maxFileBytes
+      || !Number.isSafeInteger(entry.size) || Number(entry.size) < 1 || Number(entry.size) > TASK_OUTPUT_LIMITS.maxFileBytes
       || typeof entry.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(entry.sha256) || entry.role !== "output") throw new TypeError("TASK_OUTPUT_MANIFEST_INVALID");
     assertRelativePath(entry.relative_path);
     ids.add(entry.output_id);
