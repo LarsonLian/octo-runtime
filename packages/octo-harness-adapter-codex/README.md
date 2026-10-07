@@ -91,6 +91,16 @@ provisioning 的具体形态：
 
 ## 使用
 
+Task 专家运行使用服务端冻结的 `approvalMode: full_access` 时，只有 Worker 物化的
+`octo_task` HTTP server 且 Runtime 已校验并读取同一任务材料，才会为已注册的七个
+Task 工具设置 Codex `tools.<tool>.approval_mode = "approve"`。校验依据为冻结的
+Task resource 与 `runMetadata.taskMaterials` 中匹配的任务、材料引用、版本、处理权
+epoch 和摘要；默认工具策略仍为 `prompt`。`ask`、`assisted`、未知工具及一般 MCP
+elicitation 继续走 durable interaction。用户正文和控制指令不会被解析为审批策略
+或 MCP 地址；每次调用仍由 Task 服务端校验运行 grant 和任务操作权限。
+
+配置字段参见 [Codex 配置参考](https://learn.chatgpt.com/docs/config-file/config-reference)。
+
 前置条件：Node.js 20+、pnpm，以及 PATH 上一个已登录的 Codex CLI。
 
 ```bash

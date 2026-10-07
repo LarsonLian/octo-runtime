@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { prepareTaskMaterials } from "../packages/octo-harness-daemon/dist/task-materials.js";
 import { AgentWorkRuntime, mapExecutionEnvelope } from "../packages/octo-harness-daemon/dist/agent-work-runtime.js";
+import { buildCodexCommand } from "@mininglamp-oss/octo-harness-adapter-codex";
 import { contextEnvelope, executionContext, resolvedRuntimeSelection, waitFor, wire } from "./agent-work-runtime-fixture.js";
 
 const resource = { namespace: "octo.content", name: "resources", payload: { entries: [{
@@ -67,6 +68,13 @@ test("task materials use authorized MCP and freeze actual facts separately from 
   assert.doesNotMatch(request.controlInstructions, /Ignore policy/);
   assert.doesNotMatch(request.modelInput, /fixture-run-grant/);
   assert.doesNotMatch(JSON.stringify(request.runMetadata), /fixture-run-grant/);
+  assert.doesNotMatch(JSON.stringify(buildCodexCommand(request).args), /approval_mode/);
+  const automaticEnvelope = structuredClone(envelope);
+  automaticEnvelope.resolved_execution_plan.approval_mode = "full_access";
+  automaticEnvelope.effective_context.items.find(item => item.namespace === "octo.security" && item.name === "approval_policy").payload.mode = "full_access";
+  const automaticRequest = mapExecutionEnvelope(automaticEnvelope, undefined, first).request;
+  assert.match(JSON.stringify(buildCodexCommand(automaticRequest).args), /task_get_materials.*approval_mode/);
+  assert.doesNotMatch(JSON.stringify(buildCodexCommand(automaticRequest).args), /fixture-run-grant/);
 });
 
 test("task scope, grant failures, missing MCP and unregistered resources fail closed", async t => {

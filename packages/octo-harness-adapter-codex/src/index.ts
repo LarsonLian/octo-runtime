@@ -7,7 +7,7 @@
  * params, so app-server sees the complete state database and plugin runtime.
  */
 import { defineAdapter, probeCommand, type AdapterInvocationContext, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { capabilities, type InteractionResponse, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
+import { capabilities, contextItem, type InteractionResponse, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
 import { parse, stringify } from "smol-toml";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
@@ -248,7 +248,7 @@ export function buildCodexCommand(
   env: NodeJS.ProcessEnv = process.env
 ): CodexAppServerCommand {
   const codexHome = env.CODEX_HOME || join(homedir(), ".codex");
-  const mcp = codexMcpOverrides(req.mcpServers, env);
+  const mcp = codexMcpOverrides(req.mcpServers, env, req);
   return {
     command,
     args: [...appServerArgs, ...mcp.args],
@@ -261,7 +261,8 @@ export function buildCodexCommand(
 /** Build process-local Codex config overrides without placing secret values in argv. */
 export function codexMcpOverrides(
   servers: McpServers | undefined,
-  inheritedEnv: NodeJS.ProcessEnv = process.env
+  inheritedEnv: NodeJS.ProcessEnv = process.env,
+  invocation?: Pick<InvokeRequest, "approvalMode" | "context" | "runMetadata">
 ): { args: string[]; env: NodeJS.ProcessEnv } {
   if (!servers || Object.keys(servers).length === 0) return { args: [], env: {} };
   const env: NodeJS.ProcessEnv = {};
@@ -298,6 +299,12 @@ export function codexMcpOverrides(
     if (server.required !== undefined) entry.required = server.required;
     if (server.startupTimeoutMs !== undefined) entry.startup_timeout_sec = server.startupTimeoutMs / 1000;
     if (server.toolTimeoutMs !== undefined) entry.tool_timeout_sec = server.toolTimeoutMs / 1000;
+    if (name === "octo_task" && server.type === "streamable_http" && isPreparedFullAccessTask(invocation)) {
+      // This reserved server is materialized by Worker, then checked by the
+      // Runtime's Task bootstrap. Unknown tools still require native approval.
+      entry.default_tools_approval_mode = "prompt";
+      entry.tools = Object.fromEntries(TASK_MCP_TOOLS.map(tool => [tool, { approval_mode: "approve" }]));
+    }
     configured[name] = entry;
   });
 
@@ -305,6 +312,35 @@ export function codexMcpOverrides(
   // merges this object on top of inheritedEnv exactly once.
   void inheritedEnv;
   return { args: ["-c", `mcp_servers=${tomlValue(configured)}`], env };
+}
+
+const TASK_MCP_TOOLS = [
+  "task_get_materials", "task_read_attachment", "task_prepare_output", "task_commit_output",
+  "task_fail_output", "task_apply_action", "task_create_child"
+] as const;
+
+function isPreparedFullAccessTask(invocation: Pick<InvokeRequest, "approvalMode" | "context" | "runMetadata"> | undefined): boolean {
+  if (!invocation || invocation.approvalMode !== "full_access"
+    || contextItem(invocation.context, "octo.security", "approval_policy")?.payload.mode !== "full_access") return false;
+  const entries = contextItem(invocation.context, "octo.content", "resources")?.payload.entries;
+  const snapshots = invocation.runMetadata?.taskMaterials;
+  if (!Array.isArray(entries) || entries.length !== 1 || !Array.isArray(snapshots) || snapshots.length !== 1) return false;
+  const resource = taskRecord(entries[0]);
+  const locator = taskRecord(resource?.locator);
+  const params = taskRecord(resource?.params);
+  const snapshot = taskRecord(snapshots[0]);
+  return resource?.resolver === "mcp" && locator?.server_ref === "octo_task" && locator.tool === "task_get_materials"
+    && typeof params?.task_id === "string" && params.task_id.length > 0
+    && typeof resource.resource_ref === "string" && resource.resource_ref.length > 0
+    && snapshot?.task_id === params.task_id && snapshot.resource_ref === resource.resource_ref
+    && Number.isSafeInteger(snapshot.task_version) && Number(snapshot.task_version) > 0
+    && Number.isSafeInteger(snapshot.handler_epoch) && Number(snapshot.handler_epoch) > 0
+    && (params.handler_epoch === undefined || snapshot.handler_epoch === params.handler_epoch)
+    && typeof snapshot.digest === "string" && /^sha256:[a-f0-9]{64}$/.test(snapshot.digest);
+}
+
+function taskRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 
 function tomlValue(value: unknown): string {
