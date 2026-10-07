@@ -60,4 +60,6 @@ Drive 当前确认接口只证明文件条目和大小，未提供服务端 SHA 
 
 Mailbox 结果保留公共 final 消息和 `task_output_receipts` 已保存引用；它们进入模型事实，不进入平台控制指令。Worker 负责持久 join/wakeup 与目标 grant，Harness 不新增 Team 会话、邮箱或任务完成判断。
 
+可信自动 Task Team 的 Codex 工具审批沿用 M0 的材料校验门禁，并额外验证 `task_execution.handler_type=team`、一致的 Task ID 和真实运行触发元信息。初始运行须为 `agent_access.conversation`，执行目标的 target_type=team、target_id 非空；委派和唤醒须为真实 `coordination.delegate_handoff` 或 `coordination.mailbox` 包装，并含 team_session_id 和 delegation_id。`octo_team` 与 `octo_task` 必须都是 required HTTP 服务，地址和授权 headers 完全一致。只为当前注册的九个固定工具（delegate_handoff、post_task_comment 和七个 Task 工具）设置 approval_mode=approve；未知工具仍为 prompt。正文中的工具名、Team 名或 coordination 字段不能授予权限。服务端继续逐次验证 grant、lease/fencing 和处理权。
+
 验收：Task ID/未来快照/不可读附件版本拒绝，稳定引用的合法 handoff 可进入真实 mapExecutionEnvelope；handoff 和 mailbox 包装内容均实际进入 modelInput，目标 workdir 固定，源/目标 grant 不进入模型。Task 普通会话与 Team Run 共用材料和归档路径。
