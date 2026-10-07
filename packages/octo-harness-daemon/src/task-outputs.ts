@@ -116,6 +116,7 @@ export async function archiveTaskOutputs(plan: ResolvedExecutionPlan, taskId: st
   await client.initialize();
   const receipts: TaskOutputReceipt[] = [];
   for (const output of outputs) {
+    let ticketId: string | undefined;
     try {
       const bytes = await readTaskOutput(plan.workdir, output.relative_path, TASK_OUTPUT_LIMITS.maxFileBytes);
       if (bytes.length !== output.size || createHash("sha256").update(bytes).digest("hex") !== output.sha256) throw new TypeError("TASK_OUTPUT_INTEGRITY_MISMATCH");
@@ -125,6 +126,7 @@ export async function archiveTaskOutputs(plan: ResolvedExecutionPlan, taskId: st
         continue;
       }
       if (typeof ticket.ticket_id !== "string" || !ticket.ticket_id || typeof ticket.upload_url !== "string" || ticket.upload_method !== "PUT") throw new TypeError("TASK_OUTPUT_TICKET_INVALID");
+      ticketId = ticket.ticket_id;
       const url = new URL(ticket.upload_url);
       if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.hash) throw new TypeError("TASK_OUTPUT_TICKET_INVALID");
       const headers = ticket.upload_headers === undefined ? {} : object(ticket.upload_headers);
@@ -139,7 +141,15 @@ export async function archiveTaskOutputs(plan: ResolvedExecutionPlan, taskId: st
       receipts.push(savedReceipt(output.output_id, saved));
     } catch (error) {
       if (signal.aborted) throw error;
-      receipts.push({ output_id: output.output_id, status: "failed", error_code: safeOutputError(error) });
+      const errorCode = safeOutputError(error);
+      if (ticketId) {
+        try {
+          const reported = await client.call("task_fail_output", { task_id: taskId, ticket_id: ticketId, output_id: output.output_id, error_code: errorCode });
+          // A lost commit response must not turn a durable saved file into a failed job.
+          if (reported.status === "saved") { receipts.push(savedReceipt(output.output_id, reported)); continue; }
+        } catch { /* The terminal receipt preserves the failure if its callback is unavailable. */ }
+      }
+      receipts.push({ output_id: output.output_id, status: "failed", error_code: errorCode });
     }
   }
   return receipts;

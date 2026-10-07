@@ -40,6 +40,7 @@ test("real Runtime uploads a declared deliverable before durable terminal and re
       ticket_id: rpc.params.arguments.manifest.output_id, upload_url: `http://127.0.0.1:${server.address().port}/upload/${rpc.params.arguments.manifest.output_id}`,
       upload_method: "PUT"
     } };
+    else if (rpc.params.name === "task_fail_output") result = { structuredContent: { status: "failed" } };
     else {
       assert.equal(rpc.params.name, "task_commit_output");
       const id = rpc.params.arguments.manifest.output_id;

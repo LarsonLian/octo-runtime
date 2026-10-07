@@ -40,6 +40,8 @@ provider 返回 run.completed 后、持久化 terminal 前，Runtime 调用 `tas
 
 terminal 的 `task_output_receipts` 逐文件携带保存结果与引用，失败只有稳定 error_code；不会携带绝对路径、上传 URL 或运行凭据。部分失败另产生 run.notice/config_warning，业务 Run 仍可 completed，Task 完成仍是 Access 独立动作。取消、关机或服务端 terminal 会中断 Runtime 归档，不在失去执行权后补写成功。
 
+拿到上传票据后的 PUT/commit 失败调用 `task_fail_output({task_id,ticket_id,output_id,error_code})`，使服务端持久化 failed，供 UI 重试。commit 已持久成功而回执丢失时，fail 不能覆盖 saved，返回原保存引用；Runtime 恢复 saved 回执，避免已归档文件误标失败。该回调也不可达时保留 terminal 失败回执；取消导致授权失效的未完成 job 由 Worker/Access 回收，不能让旧 Runtime 越权补写。
+
 验收：真实 Runtime websocket admission → MCP 材料读取 → provider 写文件与 manifest → MCP prepare → PUT → commit → durable terminal 的调用顺序由集成测试验证。另验证修改文件的 hash 不匹配、symlink、路径越界、PUT 503、幂等已保存引用；失败不产生 saved 或 commit。
 
 ## M4：Team

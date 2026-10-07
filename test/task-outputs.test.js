@@ -44,7 +44,7 @@ test("Runtime rejects symlink paths and verifies real file bytes within its froz
   await assert.rejects(readTaskOutput(directory, entry.relative_path, 1), /TASK_OUTPUT_SIZE_EXCEEDED/);
 });
 
-test("Runtime uploads actual bytes via ticket then commits; retries reuse saved references", async t => {
+test("Runtime uploads actual bytes; a lost commit receipt and retries reuse durable saved references", async t => {
   const directory = await workspace(t);
   const calls = [];
   let uploads = 0;
@@ -70,12 +70,17 @@ test("Runtime uploads actual bytes via ticket then commits; retries reuse saved 
     else if (rpc.params.name === "task_prepare_output") {
       assert.deepEqual(rpc.params.arguments, { task_id: "task-1", manifest: entry });
       result = { structuredContent: saved ? receipt : { ticket_id: "ticket-1", upload_url: `http://127.0.0.1:${server.address().port}/storage/upload-ticket`, upload_method: "PUT" } };
+    } else if (rpc.params.name === "task_fail_output") {
+      assert.equal(saved, true);
+      result = { structuredContent: receipt };
     } else {
       assert.equal(rpc.params.name, "task_commit_output");
       assert.deepEqual(rpc.params.arguments, { task_id: "task-1", ticket_id: "ticket-1", manifest: entry });
       assert.equal(uploads, 1);
       saved = true;
-      result = { structuredContent: receipt };
+      response.writeHead(503);
+      response.end();
+      return;
     }
     response.end(JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result }));
   });
@@ -105,7 +110,8 @@ test("upload failures never produce saved receipts or call commit", async t => {
     let result = { protocolVersion: "2025-03-26" };
     if (rpc.method === "tools/call") {
       tools.push(rpc.params.name);
-      result = { structuredContent: { ticket_id: "ticket-1", upload_url: `http://127.0.0.1:${server.address().port}/upload`, upload_method: "PUT" } };
+      result = { structuredContent: rpc.params.name === "task_fail_output" ? { status: "failed" } : { ticket_id: "ticket-1", upload_url: `http://127.0.0.1:${server.address().port}/upload`, upload_method: "PUT" } };
+      if (rpc.params.name === "task_fail_output") assert.deepEqual(rpc.params.arguments, { task_id: "task-1", ticket_id: "ticket-1", output_id: "page-1", error_code: "TASK_OUTPUT_UPLOAD_FAILED" });
     }
     response.end(JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result }));
   });
@@ -113,5 +119,5 @@ test("upload failures never produce saved receipts or call commit", async t => {
   t.after(() => new Promise(resolve => server.close(resolve)));
   const plan = { workdir: directory, mcp_servers: { octo_task: { type: "streamable_http", url: `http://127.0.0.1:${server.address().port}/mcp/team` } } };
   assert.deepEqual(await archiveTaskOutputs(plan, "task-1", "run-1", new AbortController().signal), [{ output_id: "page-1", status: "failed", error_code: "TASK_OUTPUT_UPLOAD_FAILED" }]);
-  assert.deepEqual(tools, ["task_prepare_output"]);
+  assert.deepEqual(tools, ["task_prepare_output", "task_fail_output"]);
 });
