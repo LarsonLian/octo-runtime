@@ -35,7 +35,7 @@ export function taskOutputInstructions(runId: string): string {
   return [
     "Task output files must be saved through the Runtime uploader before being described as saved to the shared drive.",
     `When this Run produces deliverable files, write ${taskOutputManifestPath(runId)} under the frozen workdir before finishing.`,
-    `Use JSON {\"schema\":\"${TASK_OUTPUT_SCHEMA}\",\"outputs\":[{\"output_id\":\"unique-stable-id\",\"relative_path\":\"path/from/workdir\",\"name\":\"filename\",\"media_type\":\"text/html\",\"size\":123,\"sha256\":\"64 lowercase hex characters\",\"role\":\"output\"}]}.`,
+    `Use JSON ${JSON.stringify({ schema: TASK_OUTPUT_SCHEMA, outputs: [{ output_id: "unique-stable-id", relative_path: "path/from/workdir", name: "filename", media_type: "text/html", size: 123, sha256: "64 lowercase hex characters", role: "output" }] })}.`,
     "Compute size and SHA-256 from the actual files. Use a new output_id for changed contents. Only include deliverables you intend to share; exclude credentials and unrelated project files.",
     "Do not send absolute local paths or run capability credentials through Team handoff. Use attachment_id and file_version_id after saving. Run success does not complete the business task."
   ].join("\n");
@@ -51,7 +51,7 @@ export function assertTaskOutputManifest(value: unknown): asserts value is { sch
     const entry = object(raw);
     if (Object.keys(entry).some(key => !["output_id", "relative_path", "name", "media_type", "size", "sha256", "role"].includes(key))
       || typeof entry.output_id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(entry.output_id) || ids.has(entry.output_id)
-      || typeof entry.name !== "string" || !entry.name || entry.name.length > 255 || /[\x00-\x1f/\\]/.test(entry.name)
+      || typeof entry.name !== "string" || !entry.name || entry.name.length > 255 || hasControl(entry.name) || /[/\\]/.test(entry.name)
       || typeof entry.media_type !== "string" || !/^[\w.+-]+\/[\w.+-]+$/.test(entry.media_type)
       || !Number.isSafeInteger(entry.size) || Number(entry.size) < 0 || Number(entry.size) > TASK_OUTPUT_LIMITS.maxFileBytes
       || typeof entry.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(entry.sha256) || entry.role !== "output") throw new TypeError("TASK_OUTPUT_MANIFEST_INVALID");
@@ -87,7 +87,9 @@ export async function readTaskOutput(workdir: string, path: string, maxBytes: nu
     // A growing file must not bypass the initial stat bound.
     const chunks: Buffer[] = [];
     let total = 0;
-    for await (const chunk of handle.createReadStream({ autoClose: false })) {
+    for await (const value of handle.createReadStream({ autoClose: false })) {
+      const chunk: unknown = value;
+      if (!(chunk instanceof Uint8Array)) throw new TypeError("TASK_OUTPUT_READ_FAILED");
       const bytes = Buffer.from(chunk);
       total += bytes.length;
       if (total > maxBytes) throw new TypeError("TASK_OUTPUT_SIZE_EXCEEDED");
@@ -154,13 +156,14 @@ function savedReceipt(id: string, value: Record<string, unknown>): TaskOutputRec
 }
 
 function assertRelativePath(value: unknown): asserts value is string {
-  if (typeof value !== "string" || !value || value.length > 4096 || isAbsolute(value) || /[\\\x00-\x1f]/.test(value)
+  if (typeof value !== "string" || !value || value.length > 4096 || isAbsolute(value) || hasControl(value) || /\\/.test(value)
     || /^[A-Za-z]:/.test(value) || value.split("/").some(part => !part || part === "." || part === "..")) throw new TypeError("TASK_OUTPUT_PATH_INVALID");
 }
 function contained(root: string, path: string): boolean {
   const rel = relative(root, path);
   return !!rel && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 }
+function hasControl(value: string): boolean { return Array.from(value).some(char => char.charCodeAt(0) < 32); }
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("TASK_OUTPUT_MANIFEST_INVALID");
   return value as Record<string, unknown>;

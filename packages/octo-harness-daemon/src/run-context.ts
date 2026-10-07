@@ -24,7 +24,7 @@ export function compileRunContext(context: ContextEnvelope, resolvedResources: r
   const resourceRefs = Array.isArray(resources) ? resources.map(entry => isObject(entry) ? entry.resource_ref : undefined) : [];
   if (resourceRefs.length !== resolvedResources.length || resourceRefs.some(ref => !resolvedResources.some(entry => entry.resource_ref === ref))) throw new TypeError("CONTEXT_RESOLVER_UNAVAILABLE");
   const selections = contextItem(context, "octo.content", "selections")?.payload.entries;
-  const entries = [...(Array.isArray(selections) ? selections : []), ...resolvedResources];
+  const entries: unknown[] = [...(Array.isArray(selections) ? selections as unknown[] : []), ...resolvedResources];
   for (const entry of entries) {
     if (!isObject(entry) || typeof entry.text !== "string" || !entry.text) throw new TypeError("CONTEXT_CONTENT_UNSUPPORTED");
   }

@@ -80,9 +80,11 @@ export class TaskMcpClient {
       while (true) {
         const next = await reader.read();
         if (next.done) break;
-        size += next.value.length;
+        const chunk: unknown = next.value;
+        if (!(chunk instanceof Uint8Array)) throw new TypeError("TASK_MCP_RESULT_INVALID");
+        size += chunk.length;
         if (size > MAX_RESPONSE_BYTES) throw new TypeError("TASK_MCP_RESULT_BUDGET_EXCEEDED");
-        chunks.push(next.value);
+        chunks.push(chunk);
       }
     } finally { await reader.cancel().catch(() => undefined); }
     let body: Record<string, unknown>;
