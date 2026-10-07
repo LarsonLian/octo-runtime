@@ -11,7 +11,7 @@
   "resource_ref": "task:task_id/materials",
   "resolver": "mcp",
   "locator": {"server_ref": "octo_task", "tool": "task_get_materials"},
-  "params": {"task_id": "task_id"}
+  "params": {"task_id": "task_id", "handler_epoch": 2}
 }
 ```
 
@@ -22,6 +22,8 @@ Access/Worker 物化 `resolved_execution_plan.mcp_servers.octo_task` 为受限 S
 模型按需调用已物化 MCP 的 `task_read_attachment`，服务端同时校验任务和网盘权限。Harness 不全量下载附件，也不把跨 Host 的本机目录当作附件引用。
 
 运行位置和本次材料冻结后才进入 provider；下一 Run 重新读取。相同 Run 的 admission 重试保留已接纳事实。代码不得将 MCP headers 写入 Run 元信息、日志或模型输入。
+
+Codex 工具审批：只有执行计划为 full_access、Task bootstrap 已校验、唯一 Task 资源与冻结 taskMaterials 的 task_id/resource_ref/handler_epoch/version/digest 一致时，为七个固定 octo_task 工具配置 approval_mode=approve。其余工具默认 prompt。个人 ask/assisted 与普通 elicitation 保持原有交互；用户正文、冒名 stdio 服务或未经读取的 Task 引用不能触发自动审批。MCP 服务端仍逐次验证运行 grant 和业务处理权。
 
 ## M2：材料闭环验收
 
