@@ -20,7 +20,7 @@ const outFile = join(here, "..", "src", "generated.ts");
 // a brand ships a dedicated dark-theme variant. Icons are sourced from LobeHub
 // Icons (https://lobehub.com/icons) unless noted.
 const ICONS = [
-  { type: "codex", name: "Codex", file: "codex.svg", monochrome: true, const: "codexIcon" },
+  { type: "codex", name: "Codex", file: "codex.svg", const: "codexIcon" },
   { type: "claude-code", name: "Claude Code", file: "claude-code.svg", const: "claudeCodeIcon" },
   { type: "codebuddy", name: "CodeBuddy", file: "codebuddy.svg", const: "codebuddyIcon" },
   { type: "hermes", name: "Hermes", file: "hermes.svg", monochrome: true, const: "hermesIcon" },

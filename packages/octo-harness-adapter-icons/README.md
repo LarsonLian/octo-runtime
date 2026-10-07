@@ -12,7 +12,7 @@ import { getAdapterIcon, adapterIcons, codexIcon } from "@mininglamp-oss/octo-ha
 
 // 按 adapter type 查询(未命中返回 undefined,消费方 fallback 到默认图标)
 const icon = getAdapterIcon("codex");
-// icon = { type: "codex", name: "Codex", monochrome: true, svg: "<svg ...>" }
+// icon = { type: "codex", name: "Codex", svg: "<svg ...>" }
 ```
 
 React 渲染(SVG 字符串内联,bundler 自动打包,无需拷图):
@@ -33,7 +33,7 @@ function AdapterIcon({ type }: { type: string }) {
 
 | type | 名称 | 类型 |
 | --- | --- | --- |
-| `codex` | Codex | 单色 |
+| `codex` | Codex | 彩色 |
 | `claude-code` | Claude Code | 彩色 |
 | `codebuddy` | CodeBuddy | 彩色 |
 | `hermes` | Hermes | 单色 |

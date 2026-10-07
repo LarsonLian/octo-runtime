@@ -7,6 +7,7 @@ import {
   getAdapterIcon,
   codexIcon,
   claudeCodeIcon,
+  openclawIcon,
   qoderCliCnIcon
 } from "@mininglamp-oss/octo-harness-adapter-icons";
 
@@ -31,9 +32,14 @@ test("each icon carries a non-empty inline SVG and a matching type/name", () => 
   }
 });
 
-test("monochrome classification: codex is tintable, claude-code is full color", () => {
-  assert.equal(codexIcon.monochrome, true);
+test("Codex, OpenClaw, and Claude Code preserve their brand colors", () => {
+  assert.notEqual(codexIcon.monochrome, true);
+  assert.notEqual(openclawIcon.monochrome, true);
   assert.notEqual(claudeCodeIcon.monochrome, true);
+  assert.match(codexIcon.svg, /#3941FF/);
+  assert.match(openclawIcon.svg, /#FF4D4D/);
+  assert.doesNotMatch(codexIcon.svg, /currentColor/);
+  assert.doesNotMatch(openclawIcon.svg, /currentColor/);
 });
 
 test("Qoder CN icon is the Qoder mark with a CN badge", () => {
