@@ -45,3 +45,11 @@ terminal 的 `task_output_receipts` 逐文件携带保存结果与引用，失�
 ## M4：Team
 
 继续使用 Worker 的 octo_team handoff/Delegation/Mailbox。handoff 传递任务 ID 和稳定附件版本引用，不传本机路径、MCP headers 或源 Run grant。目标 Run 由 Worker 重新物化目标 Runtime/lease/fencing 的 octo_task 能力，再执行同一材料 bootstrap。handoff 结果为摘要和已保存文件引用；Run/Delegation 结束不代表业务子任务完成。
+
+实际 Worker 输入为 `coordination.delegate_handoff` trigger 下的 `{coordination,payload}`，Mailbox 唤醒为 `coordination.mailbox` trigger 下的 `{coordination,message}`。Harness 用 trigger 识别真实入口，不能仅因用户正文出现 coordination 字段就改变执行模式。此前 parts/prompt 渲染会丢掉这些包装内容，本版在同一运行映射处将它们作为非可信事实呈现，当前显示指令取 payload.instruction/prompt。
+
+任务 handoff payload 是 schema_version=1、instruction、task_material_ref(task_id/snapshot_version)、attachment_refs(attachment_id/file_version_id)、reply_to(kind=delegation_result)、result_contract(summary_required/output_manifest_required=true)。Task ID 必须匹配本 Run 实际 bootstrap 的材料；source snapshot_version 可旧于最新版本，不能声称未来版本。附件必须存在于最新可读目录并匹配固定版本；字段拒绝本机 path、临时 download_url、源 Run authorization。目标使用自己的冻结 workdir/MCP，不沿用源 Host 路径。
+
+Mailbox 结果保留公共 final 消息和 `task_output_receipts` 已保存引用；它们进入模型事实，不进入平台控制指令。Worker 负责持久 join/wakeup 与目标 grant，Harness 不新增 Team 会话、邮箱或任务完成判断。
+
+验收：Task ID/未来快照/不可读附件版本拒绝，稳定引用的合法 handoff 可进入真实 mapExecutionEnvelope；handoff 和 mailbox 包装内容均实际进入 modelInput，目标 workdir 固定，源/目标 grant 不进入模型。Task 普通会话与 Team Run 共用材料和归档路径。

@@ -46,6 +46,7 @@ import { AgentWorkStore } from "./agent-work-store.js";
 import { assertFrozenContextPlan, compileRunContext } from "./run-context.js";
 import { prepareTaskMaterials, type PreparedTaskMaterials } from "./task-materials.js";
 import { archiveTaskOutputs, safeOutputError, taskOutputInstructions } from "./task-outputs.js";
+import { prepareTeamInput } from "./team-input.js";
 import type { OutboxRow } from "./agent-work-store.js";
 import { collectRuntimeDeviceInfo } from "./device-info.js";
 import {
@@ -2325,15 +2326,17 @@ export function mapExecutionEnvelope(
   const content = envelope.agent_run_request.input;
   if (Object.hasOwn(content, "context_refs") || Object.hasOwn(content, "channel_context")) throw new TypeError("LEGACY_CONTEXT_INPUT_REJECTED");
   const compiled = compileRunContext(envelope.effective_context, taskMaterials?.selections);
+  const teamInput = prepareTeamInput(content, envelope.agent_run_request.trigger.kind, taskMaterials);
+  const compiledModelContent = [compiled.modelContent, teamInput?.modelContent].filter(Boolean).join("\n\n");
   if (contextItem(envelope.effective_context, "octo.content", "continuity") && !contextSnapshot) throw new TypeError("CONTEXT_CONTINUITY_UNAVAILABLE");
-  const displayPrompt = renderDisplayExecutionInputPrompt(content);
-  const modelContext = (text: string): string => [text, compiled.modelContent].filter(Boolean).join("\n\n");
+  const displayPrompt = teamInput ? `[Current message]\n${teamInput.displayText}` : renderDisplayExecutionInputPrompt(content);
+  const modelContext = (text: string): string => [text, compiledModelContent].filter(Boolean).join("\n\n");
   const contextHasImages = (facts: PreparedChannelContextSnapshot["facts"]): boolean => facts.some(fact => fact.parts.some(part => part.type === "image"));
   if (contextSnapshot && contextHasImages(contextSnapshot.selectedVariant === "recovery" ? contextSnapshot.recoveryFacts : contextSnapshot.facts)) {
     throw new TypeError("ARTIFACT_UNAVAILABLE: channel context images have no authorized materialized source");
   }
   const primaryContext = contextSnapshot ? modelContext(contextSnapshot.selectedVariant === "recovery"
-    ? contextSnapshot.recoveryRenderedText : contextSnapshot.renderedText) : compiled.modelContent;
+    ? contextSnapshot.recoveryRenderedText : contextSnapshot.renderedText) : compiledModelContent;
   const reply = asRecord(content.reply_to);
   const quotedText = stringValue(reply.text) ? `[Quoted message from ${stringValue(reply.author_name) ?? stringValue(reply.author_id) ?? "unknown"}]\n${stringValue(reply.text)}` : "";
   const imageParts = modelPartsFromInput(content, [primaryContext, quotedText, "[Current message]"].filter(Boolean).join("\n\n"));
@@ -2370,7 +2373,7 @@ export function mapExecutionEnvelope(
       ...(envelope.provider_epoch === undefined ? {} : { providerEpoch: envelope.provider_epoch }),
       ...(envelope.continuity_mode === undefined ? {} : { continuityMode: envelope.continuity_mode }),
       prompt: displayPrompt,
-      modelInput: composeProviderModelInput(compiled.modelContent, displayPrompt),
+      modelInput: composeProviderModelInput(compiledModelContent, displayPrompt),
       ...(imageParts ? { modelInputParts: imageParts } : {}),
       ...(recoveryParts ? { freshFallbackModelInputParts: recoveryParts } : {}),
       ...(contextSnapshot && contextHasImages(contextSnapshot.recoveryFacts) ? { freshFallbackImagesUnavailable: true } : {}),
