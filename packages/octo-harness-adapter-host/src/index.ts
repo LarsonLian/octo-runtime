@@ -3,6 +3,7 @@ import {
   assertCanonicalEvent,
   assertInteractionResponse,
   assertInvokeRequest,
+  hasImageInput,
   capabilities,
   failurePayload,
   isTerminal,
@@ -148,6 +149,9 @@ export class AdapterHost {
   async *invoke(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
     assertInvokeRequest(request);
     const registered = this.#adapters.get(adapterType);
+    if (hasImageInput(request) && !registered?.metadata.capabilities.includes(capabilities.INPUT_IMAGE)) {
+      throw new Error(`UNSUPPORTED_INPUT_MODALITY: ${adapterType} does not implement native image input`);
+    }
     if (request.approvalMode !== "full_access" && (!registered?.metadata.capabilities.includes(capabilities.INTERACTION_RESPONSE) || typeof registered.respondInteraction !== "function")) {
       throw new Error(`APPROVAL_MODE_UNSUPPORTED: ${adapterType} does not implement execution-time approval responses`);
     }

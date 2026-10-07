@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { assertExperiencePayload } from "./experience.js";
+import { assertModelInputParts, assertImageRecoveryParts, hasImageInput } from "./multimodal.js";
+export { IMAGE_INPUT_LIMITS, IMAGE_INPUT_MIME_TYPES, assertModelInputParts, providerInputParts, hasImageInput, modelPartsFromInput } from "./multimodal.js";
 import { assertApprovalMode, assertContextEnvelope, assertJsonValue, assertMcpServers, contextItem } from "./context.js";
 export { APPROVAL_MODES, CONTEXT_SCHEMA, CONTEXT_MAX_BYTES, CONTEXT_MAX_ITEMS, RUNTIME_RUN_CONTRACT, assertApprovalMode, assertContextEnvelope, assertMcpServers, assertResolvedExecutionPlan, canonicalContext, contextHash, contextItem, mergeContext } from "./context.js";
+export { RUNTIME_SELECTION_SCHEMA, assertResolvedRuntimeSelection } from "./runtime-selection.js";
 import type {
   ActivityInfo,
   ActivitySubject,
@@ -36,6 +39,7 @@ import type {
 // of `@mininglamp-oss/octo-harness-protocol` stays stable regardless of how the
 // generator lays out its output.
 export type {
+  ModelInputPart,
   ApprovalMode,
   ApprovalRequest,
   ApprovalOperation,
@@ -58,6 +62,7 @@ export type {
   ContextContinuityPayload,
   ContextDeliveryPolicyPayload,
   ResolvedExecutionPlan,
+  ResolvedRuntimeSelection,
   MessageChannel,
   MessageExposure,
   MessageProvenance,
@@ -211,6 +216,7 @@ export function providerInputText(request: InvokeRequest): string {
 
 /** Exact alternate input for a provider that could not resume its session. */
 export function freshFallbackInputText(request: InvokeRequest): string {
+  if (request.freshFallbackImagesUnavailable) throw new TypeError("ARTIFACT_UNAVAILABLE: historical images cannot be restored");
   return request.freshFallbackModelInput ?? providerInputText(request);
 }
 
@@ -371,7 +377,8 @@ export const capabilities = Object.freeze({
   TOOL_CANONICAL: "tool.canonical",
   REATTACH: "run.reattach",
   MCP_DYNAMIC: "tool.mcp.dynamic",
-  INTERACTION_RESPONSE: "interaction.response"
+  INTERACTION_RESPONSE: "interaction.response",
+  INPUT_IMAGE: "input.image"
 } as const);
 
 /**
@@ -587,6 +594,18 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
   if (typeof request.modelInput !== "string" || request.modelInput.length === 0) {
     throw new TypeError("InvokeRequest.modelInput must be a non-empty string");
   }
+  if (request.modelInputParts !== undefined) assertModelInputParts(request.modelInputParts);
+  if (request.freshFallbackModelInputParts !== undefined) assertModelInputParts(request.freshFallbackModelInputParts);
+  if (request.freshFallbackImagesUnavailable !== undefined && typeof request.freshFallbackImagesUnavailable !== "boolean") throw new TypeError("INPUT_PARTS_INVALID");
+  const imageInput = {
+    modelInputParts: request.modelInputParts,
+    freshFallbackModelInputParts: request.freshFallbackModelInputParts,
+    freshFallbackModelInput: typeof request.freshFallbackModelInput === "string" ? request.freshFallbackModelInput : undefined
+  };
+  if (hasImageInput(imageInput) && request.freshFallbackModelInput !== undefined && request.freshFallbackModelInputParts === undefined) {
+    throw new TypeError("IMAGE_RECOVERY_INPUT_REQUIRED");
+  }
+  assertImageRecoveryParts(imageInput);
   if (request.freshFallbackModelInput !== undefined
     && (typeof request.freshFallbackModelInput !== "string" || request.freshFallbackModelInput.length === 0)) {
     throw new TypeError("InvokeRequest.freshFallbackModelInput must be a non-empty string when present");

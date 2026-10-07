@@ -29,7 +29,7 @@ export type {
   ProviderCarrier,
   ProviderObservation
 } from "@mininglamp-oss/octo-harness-observability";
-export { freshFallbackInputText, providerInputText } from "@mininglamp-oss/octo-harness-protocol";
+export { freshFallbackInputText, providerInputText, providerInputParts, hasImageInput } from "@mininglamp-oss/octo-harness-protocol";
 export { AcpApprovalBridge } from "./approval.js";
 export { sanitizePublicValue } from "./public-display.js";
 

@@ -1782,7 +1782,7 @@ test("Hermes and Kimi Code expose distinct ACP adapter types", () => {
 
 test("MiniMax Code exposes an ACP adapter with default session and tool capabilities", () => {
   assert.equal(mcodeAdapter.metadata.type, "mcode");
-  assert.deepEqual([...mcodeAdapter.metadata.capabilities].sort(), ["interaction.response", "session.serialize", "tool.canonical"]);
+  assert.deepEqual([...mcodeAdapter.metadata.capabilities].sort(), ["input.image", "interaction.response", "session.serialize", "tool.canonical"]);
   assert.equal(typeof mcodeAdapter.respondInteraction, "function");
   // MiniMax Code manages model selection itself, so it must not claim Codex's
   // append-only continuity recovery capability.
@@ -1791,7 +1791,7 @@ test("MiniMax Code exposes an ACP adapter with default session and tool capabili
 
 test("Qoder CLI exposes an ACP adapter with default session and tool capabilities", () => {
   assert.equal(qoderCliAdapter.metadata.type, "qodercli");
-  assert.deepEqual([...qoderCliAdapter.metadata.capabilities].sort(), ["interaction.response", "session.serialize", "tool.canonical"]);
+  assert.deepEqual([...qoderCliAdapter.metadata.capabilities].sort(), ["input.image", "interaction.response", "session.serialize", "tool.canonical"]);
   assert.equal(typeof qoderCliAdapter.respondInteraction, "function");
   assert.equal(qoderCliAdapter.metadata.capabilities.includes("session.resume_recovery"), false);
 });
@@ -1799,7 +1799,7 @@ test("Qoder CLI exposes an ACP adapter with default session and tool capabilitie
 test("Qoder CN CLI exposes a distinct ACP adapter type from Qoder CLI", () => {
   assert.equal(qoderCliCnAdapter.metadata.type, "qoderclicn");
   assert.notEqual(qoderCliCnAdapter.metadata.type, qoderCliAdapter.metadata.type);
-  assert.deepEqual([...qoderCliCnAdapter.metadata.capabilities].sort(), ["interaction.response", "session.serialize", "tool.canonical"]);
+  assert.deepEqual([...qoderCliCnAdapter.metadata.capabilities].sort(), ["input.image", "interaction.response", "session.serialize", "tool.canonical"]);
   assert.equal(typeof qoderCliCnAdapter.respondInteraction, "function");
   assert.equal(qoderCliCnAdapter.metadata.capabilities.includes("session.resume_recovery"), false);
 });

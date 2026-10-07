@@ -1,4 +1,4 @@
-import { canonicalTerminalStatus, contextHash } from "@mininglamp-oss/octo-harness-protocol";
+import { canonicalTerminalStatus, contextHash, providerInputParts } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * Codex app-server transport and event adaptation layer.
  *
@@ -22,10 +22,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 import {
-  freshFallbackInputText,
   observeBestEffort,
   observeProviderOutput,
-  providerInputText,
   sanitizePublicValue,
   type AdapterInvocationContext,
   type CanonicalEvent,
@@ -252,7 +250,7 @@ export async function* runCodexAppServerTurn({
           ...(resumeFallback ? {
             resumeOutcome: "fresh_fallback",
             resumeFallback,
-            contextInputVariant: request.freshFallbackModelInput ? "recovery" : "primary"
+            contextInputVariant: request.freshFallbackModelInputParts || request.freshFallbackModelInput ? "recovery" : "primary"
           } : {})
         }
       }
@@ -389,7 +387,7 @@ async function observedRequest({
     rpcMethod: method,
     providerRequestId,
     ...(providerSessionId ? { providerSessionId } : {}),
-    carrier: { kind: "json_params", content: { method, params } }
+    carrier: { kind: "json_params", content: { method, params: imageSafeParams(params) } }
   });
   const response = client.request(method, params, undefined, () => {
     // The callback is reached only after Node accepts the complete NDJSON frame.
@@ -421,6 +419,18 @@ async function observedRequest({
     });
     throw error;
   }
+}
+
+function imageSafeParams(params: JsonRecord): JsonRecord {
+  if (!Array.isArray(params.input)) return params;
+  return { ...params, input: params.input.map((value: unknown) => {
+    const part = recordValue(value);
+    if (part?.type !== "image" || typeof part.url !== "string") return value;
+    const separator = part.url.indexOf(";base64,");
+    if (!part.url.startsWith("data:") || separator < 0) return { type: "image", url: "[redacted]" };
+    const bytes = Buffer.from(part.url.slice(separator + 8), "base64");
+    return { type: "image", mimeType: part.url.slice(5, separator), byteSize: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+  }) };
 }
 
 function stringErrorCode(error: unknown): string | undefined {
@@ -1463,11 +1473,9 @@ function turnParams(request: InvokeRequest, threadId: string, freshFallback = fa
   const effort = request.agentConfig.effort;
   return {
     threadId,
-    input: [{
-      type: "text",
-      text: freshFallback ? freshFallbackInputText(request) : providerInputText(request),
-      text_elements: []
-    }],
+    input: providerInputParts(request, freshFallback).map(part => part.type === "image"
+      ? { type: "image", url: `data:${part.mimeType};base64,${part.data}` }
+      : { type: "text", text: part.text, text_elements: [] }),
     cwd: request.workdir,
     ...(request.agentConfig.model ? { model: request.agentConfig.model } : {}),
     ...(effort ? { effort } : {}),

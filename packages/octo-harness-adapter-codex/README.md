@@ -10,6 +10,10 @@ Codex 采用自有的会话（thread）概念与一套双向 JSON-RPC 协议，�
 
 适配器仅负责协议翻译和当前 invocation 内的原生请求恢复，不涉及排队、Trigger、Chat/Task 持久化，也不承担跨节点调度或人工权限决策；这些权威状态都在 Agent Worker。
 
+`input.image` 表示适配器能够编码图片输入。`modelInputParts` 中的有序 text/image 分别映射为 `turn/start.input` 的 text 和 image data URL，不传本地客户端路径。会话恢复失败时使用 `freshFallbackModelInputParts`。所选模型是否支持图片由上游能力检查和实际 Provider 请求确认，适配器声明不代表所有模型均支持图片。诊断输入只保存图片 MIME、字节大小和 SHA-256，不保存图片内容。
+
+组件测试位于 `test/adapter-multimodal.test.js`。启用 `OCTO_CODEX_MULTIMODAL_LIVE=1` 后，测试使用本机 Codex 登录状态发送三张自制 PNG，并验证识图结果及原生输入摘要；可用 `OCTO_CODEX_MULTIMODAL_MODEL` 指定测试模型。该测试会调用真实模型。
+
 ## 工作原理
 
 与单向读取 stdout 的 `codex exec --json` 不同，本适配器使用 `codex app-server` 的双向 JSON-RPC 2.0：Octo Harness 既主动发起请求，也应答 Codex 反向发来的请求。一次调用对应一个子进程，执行完成后即回收。

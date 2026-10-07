@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import {
   envelope,
   assertInvokeRequest,
+  modelPartsFromInput,
+  failurePayload,
   contextHash,
   isTerminal,
   type ContextEnvelope,
@@ -205,16 +207,30 @@ export class HarnessEngine {
       this.store.putAgentSession(session);
     });
 
+    try {
+      return await this.#executeClaimedRun(run, session);
+    } catch (error) {
+      await this.terminalizeRun(run.id, {
+        protocolVersion: 2, type: "run.failed",
+        payload: failurePayload(error, { stage: "input_dispatch", defaultDomain: "runtime", runId: run.id })
+      });
+      throw error;
+    }
+  }
+
+  async #executeClaimedRun(run: AgentRun, session: AgentSession): Promise<{ run: AgentRun; events: EventEnvelope[] }> {
     const context = composeContext({ agent: run.materialization, agentSession: session, agentRun: run });
     const plan = run.resolvedExecutionPlan;
     const configurationHash = hashLocalValue({ plan, config: run.materialization.config });
     const prompt = promptFromInput(run.input);
+    const modelInputParts = modelPartsFromInput(run.input);
     const request: InvokeRequest = { protocolVersion: 2,
       invocationId: id("invoke"),
       agentSessionId: session.id,
       runId: run.id,
       prompt,
       modelInput: prompt,
+      ...(modelInputParts ? { modelInputParts } : {}),
       workdir: plan.workdir,
       context: structuredClone(run.effectiveContext),
       runMetadata: context,
@@ -321,6 +337,7 @@ function promptFromInput(input: Record<string, unknown>): string {
       return value.type === "text" && typeof value.text === "string" ? [value.text] : [];
     }).join("\n");
     if (text) return text;
+    if (input.parts.some((part: unknown) => part && typeof part === "object" && (part as Record<string, unknown>).type === "image")) return "[Image input]";
   }
   for (const key of ["prompt", "instruction", "description"]) {
     if (typeof input[key] === "string" && input[key].trim()) return input[key].trim();

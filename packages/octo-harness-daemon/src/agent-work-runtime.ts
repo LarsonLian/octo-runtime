@@ -24,7 +24,8 @@ import type {
   InvokeRequest,
   McpServers,
   ProviderSession,
-  ResolvedExecutionPlan
+  ResolvedExecutionPlan,
+  ResolvedRuntimeSelection
 } from "@mininglamp-oss/octo-harness-protocol";
 import {
   RUNTIME_RUN_CONTRACT,
@@ -35,9 +36,12 @@ import {
   assertMcpServers,
   assertContextEnvelope,
   assertResolvedExecutionPlan,
+  assertResolvedRuntimeSelection,
   contextItem,
-  failurePayload
+  failurePayload,
+  modelPartsFromInput
 } from "@mininglamp-oss/octo-harness-protocol";
+import { resolveRuntimeInputImages } from "./input-images.js";
 import { AgentWorkStore } from "./agent-work-store.js";
 import { assertFrozenContextPlan, compileRunContext } from "./run-context.js";
 import type { OutboxRow } from "./agent-work-store.js";
@@ -190,10 +194,11 @@ export interface ChannelContextRuntimeOptions extends ChannelContextStoreOptions
 
 /** Immutable execution description received from Agent Work before local mapping. */
 export interface ExecutionEnvelope {
-  schema_version: number;
+  schema_version: 3;
   effective_context: ContextEnvelope;
   context_defaults_version: number;
   resolved_execution_plan: ResolvedExecutionPlan;
+  resolved_runtime_selection: ResolvedRuntimeSelection;
   run_id: string;
   agent_session_id: string;
   session_generation?: number;
@@ -223,6 +228,8 @@ export interface ExecutionEnvelope {
     execution_profile?: Record<string, unknown>;
   };
 }
+
+export type AgentWorkExecutionEnvelope = ExecutionEnvelope;
 
 interface RuntimeCommand {
   server_seq: number;
@@ -1616,13 +1623,25 @@ export class AgentWorkRuntime {
         leaseId = requiredString(command.lease_id, "run.start lease_id");
         fencingToken = requiredSafeInteger(command.fencing_token, "run.start fencing_token");
         const executionEnvelope = command.payload as ExecutionEnvelope;
-        assertContextEnvelope(executionEnvelope.agent_run_request?.context);
-        assertFrozenContextPlan(executionEnvelope.effective_context, executionEnvelope.resolved_execution_plan);
+        assertExecutionEnvelopeContract(executionEnvelope);
+        const selection = executionEnvelope.resolved_runtime_selection;
+        if (!selection.authorized_candidates.some(candidate => candidate.runtime_id === this.#runtimeId)
+          || (selection.selection_mode === "explicit" && selection.explicit_runtime_id !== this.#runtimeId)) {
+          throw new TypeError("RUNTIME_SELECTION_TARGET_MISMATCH");
+        }
         const adapterTypeForContext = executionAdapterType(executionEnvelope);
         this.#assertAdapterAvailable(adapterTypeForContext);
         const requiredCapabilities = executionEnvelope.resolved_execution_plan.required_capabilities ?? [];
         const localCapabilities = this.#adapterCapabilities.get(adapterTypeForContext);
         if (requiredCapabilities.some(capability => !localCapabilities?.has(capability))) throw new TypeError("ADAPTER_REQUIRED_CAPABILITY_MISSING");
+        const input = executionEnvelope.agent_run_request.input;
+        const hasImages = Array.isArray(input.parts) && input.parts.some(part => part && typeof part === "object" && (part as Record<string, unknown>).type === "image");
+        if (hasImages && !localCapabilities?.has("input.image")) throw new TypeError("UNSUPPORTED_INPUT_MODALITY");
+        const materializedInput = await resolveRuntimeInputImages(input, {
+          baseUrl: this.#options.baseUrl,
+          headers: this.#headers(true, createRequestId()),
+          runId: command.run_id, leaseId, fencingToken, signal: controller.signal
+        });
         const contextSnapshot = await this.#prepareChannelContext(
           command.run_id,
           executionEnvelope,
@@ -1632,7 +1651,10 @@ export class AgentWorkRuntime {
         );
         throwIfAcceptingAborted(controller.signal);
         this.#assertCurrentLifecycle(epoch);
-        const mapped = mapExecutionEnvelope(executionEnvelope, contextSnapshot);
+        const mapped = mapExecutionEnvelope({
+          ...executionEnvelope,
+          agent_run_request: { ...executionEnvelope.agent_run_request, input: materializedInput }
+        }, contextSnapshot);
         request = mapped.request;
         request.runMetadata ??= {};
         // The authenticated Runtime connection owns this mapping. Never trust
@@ -2233,12 +2255,7 @@ export function mapExecutionEnvelope(
   envelope: ExecutionEnvelope,
   contextSnapshot?: PreparedChannelContextSnapshot
 ): { adapterType: string; request: InvokeRequest } {
-  if (envelope.schema_version !== 2) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
-  assertContextEnvelope(envelope.agent_run_request?.context);
-  assertContextEnvelope(envelope.effective_context);
-  assertResolvedExecutionPlan(envelope.resolved_execution_plan);
-  assertFrozenContextPlan(envelope.effective_context, envelope.resolved_execution_plan);
-  if (!Number.isSafeInteger(envelope.context_defaults_version) || envelope.context_defaults_version < 1) throw new TypeError("CONTEXT_DEFAULTS_VERSION_REQUIRED");
+  assertExecutionEnvelopeContract(envelope);
   if (!envelope?.run_id || !envelope.agent_session_id || !envelope.agent_revision || !envelope.agent_run_request?.input) {
     throw new TypeError("execution envelope is missing run/session/revision/agent run request");
   }
@@ -2273,6 +2290,16 @@ export function mapExecutionEnvelope(
   if (contextItem(envelope.effective_context, "octo.content", "continuity") && !contextSnapshot) throw new TypeError("CONTEXT_CONTINUITY_UNAVAILABLE");
   const displayPrompt = renderDisplayExecutionInputPrompt(content);
   const modelContext = (text: string): string => [text, compiled.modelContent].filter(Boolean).join("\n\n");
+  const contextHasImages = (facts: PreparedChannelContextSnapshot["facts"]): boolean => facts.some(fact => fact.parts.some(part => part.type === "image"));
+  if (contextSnapshot && contextHasImages(contextSnapshot.selectedVariant === "recovery" ? contextSnapshot.recoveryFacts : contextSnapshot.facts)) {
+    throw new TypeError("ARTIFACT_UNAVAILABLE: channel context images have no authorized materialized source");
+  }
+  const primaryContext = contextSnapshot ? modelContext(contextSnapshot.selectedVariant === "recovery"
+    ? contextSnapshot.recoveryRenderedText : contextSnapshot.renderedText) : compiled.modelContent;
+  const reply = asRecord(content.reply_to);
+  const quotedText = stringValue(reply.text) ? `[Quoted message from ${stringValue(reply.author_name) ?? stringValue(reply.author_id) ?? "unknown"}]\n${stringValue(reply.text)}` : "";
+  const imageParts = modelPartsFromInput(content, [primaryContext, quotedText, "[Current message]"].filter(Boolean).join("\n\n"));
+  const recoveryParts = contextSnapshot ? modelPartsFromInput(content, [modelContext(contextSnapshot.recoveryRenderedText), quotedText, "[Current message]"].filter(Boolean).join("\n\n")) : undefined;
   const context = {
     schemaVersion: envelope.schema_version,
     namespace: envelope.agent_run_request.namespace,
@@ -2281,7 +2308,14 @@ export function mapExecutionEnvelope(
     sessionKey: envelope.agent_run_request.session_key,
     triggerKind: envelope.agent_run_request.trigger.kind,
     triggerOccurrenceId: envelope.agent_run_request.trigger.occurrence_id,
-    input: content,
+    input: imageParts ? {
+      ...content,
+      parts: (content.parts as Record<string, unknown>[]).map(part => {
+        const metadata = { ...part };
+        delete metadata.source;
+        return metadata;
+      })
+    } : content,
     ...(envelope.session_generation === undefined ? {} : { sessionGeneration: envelope.session_generation }),
     ...(envelope.provider_epoch === undefined ? {} : { providerEpoch: envelope.provider_epoch }),
     ...(envelope.continuity_mode === undefined ? {} : { continuityMode: envelope.continuity_mode }),
@@ -2298,6 +2332,9 @@ export function mapExecutionEnvelope(
       ...(envelope.continuity_mode === undefined ? {} : { continuityMode: envelope.continuity_mode }),
       prompt: displayPrompt,
       modelInput: composeProviderModelInput(compiled.modelContent, displayPrompt),
+      ...(imageParts ? { modelInputParts: imageParts } : {}),
+      ...(recoveryParts ? { freshFallbackModelInputParts: recoveryParts } : {}),
+      ...(contextSnapshot && contextHasImages(contextSnapshot.recoveryFacts) ? { freshFallbackImagesUnavailable: true } : {}),
       ...(contextSnapshot ? {
         modelInput: composeProviderModelInput(
           modelContext(contextSnapshot.selectedVariant === "recovery"
@@ -2330,6 +2367,22 @@ function mapExecutionMcpServers(value: unknown): McpServers | undefined {
   // The execution envelope remains an immutable dispatch fact. Clone the
   // validated scalar-only contract before adapter-specific materialization.
   return structuredClone(value);
+}
+
+function assertExecutionEnvelopeContract(envelope: ExecutionEnvelope): void {
+  if (envelope?.schema_version !== 3) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
+  assertContextEnvelope(envelope.agent_run_request?.context);
+  assertContextEnvelope(envelope.effective_context);
+  assertResolvedExecutionPlan(envelope.resolved_execution_plan);
+  assertResolvedRuntimeSelection(envelope.resolved_runtime_selection);
+  assertFrozenContextPlan(envelope.effective_context, envelope.resolved_execution_plan);
+  if (!Number.isSafeInteger(envelope.context_defaults_version) || envelope.context_defaults_version < 1) throw new TypeError("CONTEXT_DEFAULTS_VERSION_REQUIRED");
+  const contextSelection = contextItem(envelope.effective_context, "octo.runtime", "selection")?.payload;
+  const selection = envelope.resolved_runtime_selection;
+  if (contextSelection && (contextSelection.mode !== selection.selection_mode
+    || (contextSelection.mode === "explicit" && contextSelection.runtime_id !== selection.explicit_runtime_id))) {
+    throw new TypeError("RUNTIME_SELECTION_CONTEXT_MISMATCH");
+  }
 }
 
 function executionAdapterType(envelope: ExecutionEnvelope): string {

@@ -1,12 +1,11 @@
-import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
+import { canonicalTerminalStatus, providerInputParts } from "@mininglamp-oss/octo-harness-protocol";
+import { createHash } from "node:crypto";
 import {
   AcpApprovalBridge,
   defineAdapter,
-  freshFallbackInputText,
   observeBestEffort,
   observeProviderOutput,
   probeCommand,
-  providerInputText,
   type AdapterInvocationContext,
   type CanonicalEvent,
   type InvokeRequest
@@ -266,7 +265,7 @@ export function createAcpAdapter(
   return defineAdapter({
     metadata: {
       type: definition.type,
-      capabilities: [...(definition.capabilities ?? ["session.serialize", "tool.canonical"]), capabilities.INTERACTION_RESPONSE]
+      capabilities: [...(definition.capabilities ?? ["session.serialize", "tool.canonical"]), capabilities.INTERACTION_RESPONSE, capabilities.INPUT_IMAGE]
     },
     probe: () => probeCommand(command),
     async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
@@ -307,7 +306,12 @@ export function createAcpAdapter(
       else request.signal?.addEventListener("abort", abort, { once: true });
 
       try {
-        await client.initialize({ protocolVersion: definition.protocolVersion ?? 1 });
+        const initialization = recordValue(await client.initialize({ protocolVersion: definition.protocolVersion ?? 1 }));
+        const imageSupported = recordValue(recordValue(initialization.agentCapabilities).promptCapabilities).image === true;
+        const inputs = [providerInputParts(request), ...(request.providerSession ? [providerInputParts(request, true)] : [])];
+        if (!imageSupported && inputs.some(parts => parts.some(part => part.type === "image"))) {
+          throw new Error("UNSUPPORTED_INPUT_MODALITY: ACP agent did not advertise promptCapabilities.image");
+        }
         const requestedSessionId = request.providerSession?.sessionId;
         let providerModel: string | undefined;
         let resumeFallback: string | undefined;
@@ -389,7 +393,7 @@ export function createAcpAdapter(
               ...(resumeFallback ? {
                 resumeOutcome: "fresh_fallback",
                 resumeFallback,
-                contextInputVariant: request.freshFallbackModelInput ? "recovery" : "primary"
+                contextInputVariant: request.freshFallbackModelInputParts || request.freshFallbackModelInput ? "recovery" : "primary"
               } : {}),
               ...(providerModel ? { model: providerModel } : {})
             }
@@ -397,10 +401,11 @@ export function createAcpAdapter(
         };
         yield { protocolVersion: 2, type: "message.create", payload: { role: "assistant", status: "streaming" } };
 
-        const input = resumeFallback ? freshFallbackInputText(request) : providerInputText(request);
-        const prompt = request.controlInstructions
-          ? `${input}\n\n${request.controlInstructions}`
-          : input;
+        const input = providerInputParts(request, resumeFallback !== undefined);
+        // Preserve the legacy text call while mixed prompts retain every block's position.
+        const prompt = input.length === 1 && input[0]?.type === "text"
+          ? `${input[0].text}${request.controlInstructions ? `\n\n${request.controlInstructions}` : ""}`
+          : [...input, ...(request.controlInstructions ? [{ type: "text" as const, text: request.controlInstructions }] : [])];
         const promptParams = acpPromptParams(sessionId, prompt);
         const promptRequestId = client.reserveRequestId();
         await observeInput(context, "session/prompt", promptParams, promptRequestId, sessionId);
@@ -521,8 +526,18 @@ async function observeInput(
     rpcMethod: method,
     providerRequestId: String(requestId),
     ...(sessionId ? { providerSessionId: sessionId } : {}),
-    carrier: { kind: "json_params", content: { method, params } }
+    carrier: { kind: "json_params", content: { method, params: imageSafeParams(params) } }
   });
+}
+
+function imageSafeParams(params: JsonRecord): JsonRecord {
+  if (!Array.isArray(params.prompt)) return params;
+  return { ...params, prompt: params.prompt.map((value: unknown) => {
+    const part = recordValue(value);
+    if (part.type !== "image" || typeof part.data !== "string") return value;
+    const bytes = Buffer.from(part.data, "base64");
+    return { type: "image", mimeType: part.mimeType, byteSize: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+  }) };
 }
 
 function observeWritten(context: AdapterInvocationContext | undefined, method: string, requestId: number, sessionId?: string): void {

@@ -176,6 +176,49 @@
         }
       }
     },
+    "ResolvedRuntimeSelection": {
+      "title": "ResolvedRuntimeSelection",
+      "description": "Worker-frozen authorized routing snapshot, never caller-supplied authorization. Context routing and explicit selection cannot fail over.",
+      "x-octo-unicode-scalar-strings": true,
+      "x-octo-runtime-selection-invariants": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "routing_mode", "routing_policy_version", "selection_mode", "authorized_candidates", "offline_behavior", "failover"],
+      "properties": {
+        "schema": {"const": "octo.runtime-selection/v1"},
+        "routing_mode": {"enum": ["context", "bound"]},
+        "routing_policy_version": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "selection_mode": {"enum": ["explicit", "binding"]},
+        "explicit_runtime_id": {"type": "string", "minLength": 1, "maxLength": 191},
+        "binding_ref": {
+          "type": "object", "additionalProperties": false, "required": ["id", "version"],
+          "properties": {
+            "id": {"type": "string", "minLength": 1, "maxLength": 191},
+            "version": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}
+          }
+        },
+        "authorized_candidates": {
+          "type": "array", "minItems": 1, "maxItems": 64,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["runtime_id", "priority", "owner_subject_type", "owner_subject_id"],
+            "properties": {
+              "runtime_id": {"type": "string", "minLength": 1, "maxLength": 191},
+              "priority": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+              "owner_subject_type": {"enum": ["user", "teamspace"]},
+              "owner_subject_id": {"type": "string", "minLength": 1, "maxLength": 191}
+            }
+          }
+        },
+        "offline_behavior": {"enum": ["wait", "fail"]},
+        "failover": {"enum": ["binding", "none"]}
+      },
+      "allOf": [
+        {"if": {"properties": {"routing_mode": {"const": "bound"}}}, "then": {"required": ["binding_ref"]}, "else": {"not": {"required": ["binding_ref"]}}},
+        {"if": {"properties": {"selection_mode": {"const": "explicit"}}}, "then": {"required": ["explicit_runtime_id"], "properties": {"authorized_candidates": {"maxItems": 1}, "failover": {"const": "none"}}}, "else": {"not": {"required": ["explicit_runtime_id"]}}},
+        {"if": {"properties": {"routing_mode": {"const": "context"}}}, "then": {"properties": {"selection_mode": {"const": "explicit"}, "failover": {"const": "none"}}}}
+      ]
+    },
     "ResolvedExecutionPlan": {
       "title": "ResolvedExecutionPlan",
       "x-octo-unicode-scalar-strings": true,
@@ -1387,6 +1430,33 @@
       "maxProperties": 32,
       "tsType": "Record<string, McpServer>"
     },
+    "ModelInputPart": {
+      "title": "ModelInputPart",
+      "description": "Ordered provider-native user input. Image bytes are materialized only for the invocation, never used as a text fallback.",
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "text"],
+          "properties": {
+            "id": {"type": "string", "minLength": 1},
+            "type": {"const": "text"},
+            "text": {"type": "string"}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "mimeType", "data", "byteSize", "sha256"],
+          "properties": {
+            "id": {"type": "string", "minLength": 1},
+            "type": {"const": "image"},
+            "mimeType": {"enum": ["image/png", "image/jpeg", "image/webp"]},
+            "data": {"type": "string", "minLength": 1, "maxLength": 2796204},
+            "byteSize": {"type": "integer", "minimum": 1, "maximum": 2097152},
+            "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+          }
+        }
+      ]
+    },
     "InvokeRequestWire": {
       "title": "InvokeRequestWire",
       "description": "Serializable execution request sent from Core to Adapter Host. AbortSignal is added in src/index.ts because it cannot cross a process boundary.",
@@ -1443,6 +1513,20 @@
         "modelInput": {
           "description": "Required exact provider-visible user turn.",
           "type": "string"
+        },
+        "modelInputParts": {
+          "type": "array", "minItems": 1, "maxItems": 128,
+          "tsType": "ModelInputPart[]",
+          "items": {"$ref": "#/definitions/ModelInputPart"}
+        },
+        "freshFallbackModelInputParts": {
+          "type": "array", "minItems": 1, "maxItems": 128,
+          "tsType": "ModelInputPart[]",
+          "items": {"$ref": "#/definitions/ModelInputPart"}
+        },
+        "freshFallbackImagesUnavailable": {
+          "description": "Recovery includes historical images whose bytes are unavailable. Adapters must fail before sending a fresh prompt.",
+          "type": "boolean"
         },
         "freshFallbackModelInput": {
           "description": "Frozen alternate user turn for the first turn of a fresh provider session after resume fails.",

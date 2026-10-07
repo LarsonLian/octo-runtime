@@ -76,6 +76,8 @@ try {
 
 恢复已有会话使用 `client.loadSession(sessionId, { cwd })`（超时放宽至 10 分钟，因部分 provider 会在 load 时回放历史）；中途打断使用 `client.cancel(sessionId)`（一条无 id 的 fire-and-forget 通知）。
 
+`client.prompt(sessionId, input)` 和 `acpPromptParams(sessionId, input)` 同时接受字符串及有序 text/image 块数组。图片块使用 `{ type: "image", mimeType, data }`，其中 `data` 为 base64，不含 data URL 前缀。调用方必须在握手结果中确认 `agentCapabilities.promptCapabilities.image === true` 才能发送图片；通用 ACP Adapter 执行此检查。传输层只负责编码，不替代资源授权与内容完整性校验。
+
 ## 约束与注意事项
 
 - **并非完整的 ACP SDK**。仅覆盖 `initialize` 与 `session` 相关方法，未暴露文件系统、terminal、MCP server 等 capability 协商扩展。握手时通告的 `clientCapabilities` 为空。

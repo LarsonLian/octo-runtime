@@ -9,7 +9,7 @@ import { AgentWorkRuntime } from "../apps/daemon/dist/agent-work-runtime.js";
 import { AgentWorkStore } from "../apps/daemon/dist/agent-work-store.js";
 import { ChannelContextStore } from "../apps/daemon/dist/channel-context-store.js";
 import { assertInvokeRequest } from "../packages/octo-harness-protocol/dist/index.js";
-import { contextEnvelope, deferred, executionContext, terminalGrant, waitFor, wire, withTimeout } from "./agent-work-runtime-fixture.js";
+import { contextEnvelope, resolvedRuntimeSelection, deferred, executionContext, terminalGrant, waitFor, wire, withTimeout } from "./agent-work-runtime-fixture.js";
 
 const now = Date.now();
 const scope = {
@@ -60,7 +60,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
           command_id: "command-e2e",
           run_id: "run-e2e",
           type: "run.start",
-          payload: executionEnvelope(),
+          payload: executionEnvelope("runtime-e2e"),
           lease_id: "lease-e2e",
           fencing_token: 1
         }));
@@ -186,7 +186,7 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
           command_id: "command-reject",
           run_id: "run-reject",
           type: "run.start",
-          payload: executionEnvelope("run-reject"),
+          payload: executionEnvelope("runtime-reject", "run-reject"),
           lease_id: "lease-reject",
           fencing_token: 1
         }));
@@ -310,7 +310,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
       command_id: `command-authority-${index}`,
       run_id: `run-authority-${index}`,
       type: "run.start",
-      payload: executionEnvelope(`run-authority-${index}`, index + 2, `trigger authority ${index}`),
+      payload: executionEnvelope("runtime-authority", `run-authority-${index}`, index + 2, `trigger authority ${index}`),
       lease_id: `lease-authority-${index}`,
       fencing_token: index
     }));
@@ -398,7 +398,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
     for (let index = 1; index <= 3; index += 1) {
       assert.equal(contextStore.getSnapshot(`run-authority-${index}`).state, "failed");
     }
-    const probe = contextStore.prepareSnapshot("run-authority-probe", executionEnvelope(
+    const probe = contextStore.prepareSnapshot("run-authority-probe", executionEnvelope("runtime-authority",
       "run-authority-probe", 6, "probe"
     ).effective_context.items.find(item => item.name === "continuity").payload);
     assert.deepEqual(probe.facts.map(item => item.message_seq), [1, 2, 3, 4, 5]);
@@ -458,7 +458,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
           command_id: "command-prior",
           run_id: "run-prior",
           type: "run.start",
-          payload: executionEnvelope("run-prior", 3, "prior trigger"),
+          payload: executionEnvelope("runtime-ordered", "run-prior", 3, "prior trigger"),
           lease_id: "lease-prior",
           fencing_token: 1
         }));
@@ -494,7 +494,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
           command_id: "command-next",
           run_id: "run-next",
           type: "run.start",
-          payload: executionEnvelope("run-next", 5, "next trigger"),
+          payload: executionEnvelope("runtime-ordered", "run-next", 5, "next trigger"),
           lease_id: "lease-next",
           fencing_token: 2
         };
@@ -530,7 +530,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
               command_id: "command-third",
               run_id: "run-third",
               type: "run.start",
-              payload: executionEnvelope("run-third", 7, "third trigger", 2),
+              payload: executionEnvelope("runtime-ordered", "run-third", 7, "third trigger", 2),
               lease_id: "lease-third",
               fencing_token: 3
             }));
@@ -641,7 +641,7 @@ test("runtime rejects a queued source generation after recovery advanced the eff
     completeness: "complete",
     through_seq: 1
   });
-  const blocker = executionEnvelope("run-recovery-blocker", 2, "recovery trigger")
+  const blocker = executionEnvelope("runtime-stale-generation", "run-recovery-blocker", 2, "recovery trigger")
     .effective_context.items.find(item => item.name === "continuity").payload;
   contextStore.prepareSnapshot("run-recovery-blocker", blocker);
   contextStore.selectRecovery("run-recovery-blocker");
@@ -667,7 +667,7 @@ test("runtime rejects a queued source generation after recovery advanced the eff
           command_id: "command-stale-generation",
           run_id: "run-stale-generation",
           type: "run.start",
-          payload: executionEnvelope("run-stale-generation", 3, "queued trigger"),
+          payload: executionEnvelope("runtime-stale-generation", "run-stale-generation", 3, "queued trigger"),
           lease_id: "lease-stale-generation",
           fencing_token: 1
         }));
@@ -744,7 +744,7 @@ test("runtime close joins a waiting command before immediate restart and replay"
     completeness: "complete",
     through_seq: 1
   });
-  const blocker = executionEnvelope("run-blocker", 2, "blocker trigger")
+  const blocker = executionEnvelope("runtime-close-wait", "run-blocker", 2, "blocker trigger")
     .effective_context.items.find(item => item.name === "continuity").payload;
   contextStore.prepareSnapshot("run-blocker", blocker);
   contextStore.markSubmitted("run-blocker");
@@ -769,7 +769,7 @@ test("runtime close joins a waiting command before immediate restart and replay"
           command_id: "command-waiting",
           run_id: "run-waiting",
           type: "run.start",
-          payload: executionEnvelope("run-waiting", 3, "waiting trigger"),
+          payload: executionEnvelope("runtime-close-wait", "run-waiting", 3, "waiting trigger"),
           lease_id: "lease-waiting",
           fencing_token: 1
         }));
@@ -874,7 +874,7 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
     completeness: "complete",
     through_seq: 1
   });
-  const blocker = executionEnvelope("run-cancel-blocker", 2, "blocker trigger")
+  const blocker = executionEnvelope("runtime-cancel-wait", "run-cancel-blocker", 2, "blocker trigger")
     .effective_context.items.find(item => item.name === "continuity").payload;
   contextStore.prepareSnapshot("run-cancel-blocker", blocker);
   contextStore.markSubmitted("run-cancel-blocker");
@@ -885,7 +885,7 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
     command_id: "command-cancel-waiting",
     run_id: "run-cancel-waiting",
     type: "run.start",
-    payload: executionEnvelope("run-cancel-waiting", 3, "waiting trigger"),
+    payload: executionEnvelope("runtime-cancel-wait", "run-cancel-waiting", 3, "waiting trigger"),
     lease_id: "lease-cancel-waiting",
     fencing_token: 1
   };
@@ -1003,7 +1003,7 @@ test("append-only channel context cold-starts an adapter without continuity reco
       const envelope = JSON.parse(data.toString("utf8"));
       if (envelope.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
-        const payload = executionEnvelope("run-stateless", 2, "current message");
+        const payload = executionEnvelope("runtime-capability", "run-stateless", 2, "current message");
         payload.provider_session = { sessionId: "stale-provider-session", resumable: true };
         websocket.send(wire("runtime.command", {
           server_seq: 1,
@@ -1120,7 +1120,7 @@ test("append-only channel context accepts an adapter without serialized sessions
           command_id: "command-stateless",
           run_id: "run-stateless",
           type: "run.start",
-          payload: executionEnvelope("run-stateless", 2, "current message"),
+          payload: executionEnvelope("runtime-stateless", "run-stateless", 2, "current message"),
           lease_id: "lease-stateless",
           fencing_token: 1
         }));
@@ -1216,7 +1216,7 @@ for (const [projection, providerPersistence] of [["window", "append_only"], ["de
     const finished = deferred();
     let runtime;
     const sendStart = (websocket, round) => {
-      const payload = executionEnvelope(`run-cold-${round}`, round * 2, `cold current ${round}`);
+      const payload = executionEnvelope("runtime-cold", `run-cold-${round}`, round * 2, `cold current ${round}`);
       payload.provider_session = { sessionId: "must-not-resume", resumable: true };
       const selections = { namespace: "octo.content", name: "selections", payload: { entries: [
         { resource_ref: "octo://messages/selected", text: "Selected inline facts" }
@@ -1347,7 +1347,7 @@ for (const [name, storeMode, adapterCapabilities, reason] of [
           websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
           websocket.send(wire("runtime.command", {
             server_seq: 1, command_id: "command-preflight", run_id: "run-preflight", type: "run.start",
-            payload: executionEnvelope("run-preflight"), lease_id: "lease-preflight", fencing_token: 1
+            payload: executionEnvelope("runtime-preflight", "run-preflight"), lease_id: "lease-preflight", fencing_token: 1
           }));
         } else if (frame.type === "context.sync_request") syncRequests += 1;
         else if (frame.type === "command.ack") rejected.resolve(frame.payload);
@@ -1384,7 +1384,7 @@ for (const [name, storeMode, adapterCapabilities, reason] of [
   });
 }
 
-function executionEnvelope(runId = "run-e2e", triggerSeq = 3, currentText = "trigger current", generation = 1) {
+function executionEnvelope(runtimeId, runId = "run-e2e", triggerSeq = 3, currentText = "trigger current", generation = 1) {
   const trigger = fact(triggerSeq, currentText);
   const plan = {
     adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_capabilities: ["tool.canonical"]
@@ -1400,7 +1400,8 @@ function executionEnvelope(runId = "run-e2e", triggerSeq = 3, currentText = "tri
     }
   }];
   return {
-    schema_version: 2,
+    schema_version: 3,
+    resolved_runtime_selection: resolvedRuntimeSelection(runtimeId),
     context_defaults_version: 1,
     effective_context: executionContext(plan, items),
     resolved_execution_plan: plan,

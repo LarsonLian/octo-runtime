@@ -8,7 +8,7 @@ import { WebSocketServer } from "ws";
 import { AgentWorkRuntime } from "../apps/daemon/dist/agent-work-runtime.js";
 import { ChannelContextStore } from "../apps/daemon/dist/channel-context-store.js";
 import { assertInvokeRequest } from "../packages/octo-harness-protocol/dist/index.js";
-import { contextEnvelope, deferred, executionContext, terminalGrant, waitFor, wire, withTimeout } from "./agent-work-runtime-fixture.js";
+import { contextEnvelope, resolvedRuntimeSelection, deferred, executionContext, terminalGrant, waitFor, wire, withTimeout } from "./agent-work-runtime-fixture.js";
 
 const occurredAt = Date.now();
 
@@ -250,7 +250,8 @@ function groupEnvelope(agent, round, text) {
     }] }
   }];
   return {
-    schema_version: 2,
+    schema_version: 3,
+    resolved_runtime_selection: resolvedRuntimeSelection("runtime-multi-agent"),
     context_defaults_version: 1,
     effective_context: executionContext(plan, items),
     resolved_execution_plan: plan,
@@ -279,7 +280,8 @@ function dmEnvelope(round) {
     adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_capabilities: ["tool.canonical"]
   };
   return {
-    schema_version: 2,
+    schema_version: 3,
+    resolved_runtime_selection: resolvedRuntimeSelection("runtime-multi-agent"),
     context_defaults_version: 1,
     effective_context: executionContext(plan),
     resolved_execution_plan: plan,

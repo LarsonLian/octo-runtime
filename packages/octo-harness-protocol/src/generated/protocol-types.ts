@@ -106,6 +106,13 @@ export type ContextContinuityPayload = ChannelContextDescriptor & {
   };
 };
 /**
+ * Worker-frozen authorized routing snapshot, never caller-supplied authorization. Context routing and explicit selection cannot fail over.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ResolvedRuntimeSelection".
+ */
+export type ResolvedRuntimeSelection = ResolvedRuntimeSelection1;
+/**
  * Named MCP servers frozen for one invocation.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -147,6 +154,26 @@ export type ContextSyncResult = ContextSyncResult1;
  * via the `definition` "McpServer".
  */
 export type McpServer = McpStdioServer | McpStreamableHttpServer;
+/**
+ * Ordered provider-native user input. Image bytes are materialized only for the invocation, never used as a text fallback.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ModelInputPart".
+ */
+export type ModelInputPart =
+  | {
+      id?: string;
+      type: "text";
+      text: string;
+    }
+  | {
+      id?: string;
+      type: "image";
+      mimeType: "image/png" | "image/jpeg" | "image/webp";
+      data: string;
+      byteSize: number;
+      sha256: string;
+    };
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ActivitySubject".
@@ -382,6 +409,37 @@ export interface ContextDeliveryPolicyPayload {
     max_inline_bytes?: number;
     max_items?: number;
   };
+}
+export interface ResolvedRuntimeSelection1 {
+  schema: "octo.runtime-selection/v1";
+  routing_mode: "context" | "bound";
+  routing_policy_version: number;
+  selection_mode: "explicit" | "binding";
+  explicit_runtime_id?: string;
+  binding_ref?: {
+    id: string;
+    version: number;
+  };
+  /**
+   * @minItems 1
+   * @maxItems 64
+   */
+  authorized_candidates: [
+    {
+      runtime_id: string;
+      priority: number;
+      owner_subject_type: "user" | "teamspace";
+      owner_subject_id: string;
+    },
+    ...{
+      runtime_id: string;
+      priority: number;
+      owner_subject_type: "user" | "teamspace";
+      owner_subject_id: string;
+    }[]
+  ];
+  offline_behavior: "wait" | "fail";
+  failover: "binding" | "none";
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -960,6 +1018,20 @@ export interface InvokeRequestWire {
    * Required exact provider-visible user turn.
    */
   modelInput: string;
+  /**
+   * @minItems 1
+   * @maxItems 128
+   */
+  modelInputParts?: ModelInputPart[];
+  /**
+   * @minItems 1
+   * @maxItems 128
+   */
+  freshFallbackModelInputParts?: ModelInputPart[];
+  /**
+   * Recovery includes historical images whose bytes are unavailable. Adapters must fail before sending a fresh prompt.
+   */
+  freshFallbackImagesUnavailable?: boolean;
   /**
    * Frozen alternate user turn for the first turn of a fresh provider session after resume fails.
    */

@@ -25,7 +25,7 @@ import { AgentWorkStore } from "../apps/daemon/dist/agent-work-store.js";
 import { collectRuntimeDeviceInfo } from "../apps/daemon/dist/server.js";
 import { assertContextEnvelope, assertResolvedExecutionPlan } from "../packages/octo-harness-protocol/dist/index.js";
 import {
-  approvalPayload, contextEnvelope, continuityItem, deferred, executionContext,
+  approvalPayload, contextEnvelope, resolvedRuntimeSelection, continuityItem, deferred, executionContext,
   waitFor, wire, withExecutionPlan, withTimeout
 } from "./agent-work-runtime-fixture.js";
 
@@ -48,10 +48,11 @@ const contentItems = [{
 }];
 
 const envelope = {
-  schema_version: 2,
+  schema_version: 3,
   effective_context: executionContext(executionPlan, contentItems),
   context_defaults_version: 1,
   resolved_execution_plan: executionPlan,
+  resolved_runtime_selection: resolvedRuntimeSelection(),
   run_id: "run-1",
   agent_session_id: "chat-1",
   session_generation: 7,
@@ -193,7 +194,7 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
   assert.match(mapped.request.modelInput, /Ada: The failing case is reset\./);
   assert.deepEqual(mapped.request.context, source.effective_context);
   assert.notEqual(mapped.request.context, source.effective_context);
-  assert.equal(mapped.request.runMetadata.schemaVersion, 2);
+  assert.equal(mapped.request.runMetadata.schemaVersion, 3);
   assert.equal(mapped.request.runMetadata.agentRevisionId, "revision-1");
   assert.equal(mapped.request.context.agentRevisionId, undefined);
   assert.equal(Object.hasOwn(mapped.request, "appendInstructions"), false);
@@ -214,11 +215,14 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
   assert.doesNotMatch(mapped.request.prompt, /Lin|Ada|octo:\/\/messages|selections/);
 });
 
-test("execution envelope rejects schema 1 and missing frozen contract fields", () => {
-  assert.throws(() => mapExecutionEnvelope({ ...envelope, schema_version: 1 }), /LEGACY_RUN_CONTRACT_REJECTED/);
+test("execution envelope rejects schema 1/2 and missing frozen contract fields", () => {
+  for (const version of [1, 2, 4, "3", undefined, null]) {
+    assert.throws(() => mapExecutionEnvelope({ ...envelope, schema_version: version }), /LEGACY_RUN_CONTRACT_REJECTED/);
+  }
   for (const [field, error] of [
     ["effective_context", /CONTEXT_REQUIRED/],
     ["resolved_execution_plan", /RESOLVED_EXECUTION_PLAN_REQUIRED/],
+    ["resolved_runtime_selection", /RESOLVED_RUNTIME_SELECTION_REQUIRED/],
     ["context_defaults_version", /CONTEXT_DEFAULTS_VERSION_REQUIRED/]
   ]) {
     const source = structuredClone(envelope);
@@ -231,6 +235,19 @@ test("execution envelope rejects schema 1 and missing frozen contract fields", (
   assert.throws(() => mapExecutionEnvelope({
     ...envelope, agent_run_request: { ...envelope.agent_run_request, context: {} }
   }), /CONTEXT_SCHEMA_INVALID/);
+});
+
+test("execution envelope enforces frozen runtime selection and matching effective Context", () => {
+  const source = structuredClone(envelope);
+  source.effective_context.items.push({ namespace: "octo.runtime", name: "selection", payload: { mode: "explicit", runtime_id: "runtime-1" } });
+  assert.doesNotThrow(() => mapExecutionEnvelope(source));
+  source.effective_context.items.at(-1).payload.runtime_id = "other-runtime";
+  assert.throws(() => mapExecutionEnvelope(source), /RUNTIME_SELECTION_CONTEXT_MISMATCH/);
+  source.effective_context.items.at(-1).payload = { mode: "binding" };
+  assert.throws(() => mapExecutionEnvelope(source), /RUNTIME_SELECTION_CONTEXT_MISMATCH/);
+  for (const selection of [{}, { ...envelope.resolved_runtime_selection, failover: "binding" }]) {
+    assert.throws(() => mapExecutionEnvelope({ ...envelope, resolved_runtime_selection: selection }), /RESOLVED_RUNTIME_SELECTION_INVALID/);
+  }
 });
 
 test("revision execution_spec and execution_profile cannot replace a missing resolved plan", () => {
@@ -639,6 +656,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
   let invokedRequest;
   const observedExecution = withExecutionPlan({
     ...envelope,
+    resolved_runtime_selection: resolvedRuntimeSelection("runtime-observed"),
     run_id: "run-observed",
     agent_session_id: "session-observed",
     agent_run_request: {
@@ -767,6 +785,7 @@ test("interaction responses require the active execution instance as well as lea
   let activeInvocationId;
   const interactionExecution = withExecutionPlan({
     ...envelope,
+    resolved_runtime_selection: resolvedRuntimeSelection("runtime-interaction"),
     run_id: "run-interaction",
     agent_session_id: "session-interaction",
     agent_run_request: {
@@ -1141,7 +1160,7 @@ test("reconnect terminal authority cancels local execution and discards its outb
       const frame = JSON.parse(data.toString("utf8"));
       if (frame.type === "runtime.hello" && connectionNumber === 1) {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000, authoritative_terminal_runs: [] }));
-        websocket.send(wire("runtime.command", runtimeCommand("authority", 1)));
+        websocket.send(wire("runtime.command", runtimeCommand("authority", 1, "runtime-terminal-authority")));
       } else if (frame.type === "run.event_batch" && connectionNumber === 1) {
         websocket.close(1012, "worker restarted after committing terminal");
       } else if (frame.type === "runtime.hello" && connectionNumber === 2) {
@@ -1381,7 +1400,7 @@ test("hard outbox watermark rejects new work with a durable command receipt", as
       const frame = JSON.parse(data.toString("utf8"));
       if (frame.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
-        websocket.send(wire("runtime.command", runtimeCommand("hard", 1)));
+        websocket.send(wire("runtime.command", runtimeCommand("hard", 1, "runtime-hard-limit")));
       } else if (frame.type === "command.ack" && frame.payload.command_id === "command-hard") {
         rejection.resolve(frame.payload);
       }
@@ -1446,7 +1465,7 @@ test("low disk preflight stays connected, reports health and rejects new work", 
         healthReceived.resolve(frame.payload);
         if (!commandSent) {
           commandSent = true;
-          websocket.send(wire("runtime.command", runtimeCommand("low-disk", 1)));
+          websocket.send(wire("runtime.command", runtimeCommand("low-disk", 1, "runtime-low-disk")));
         }
       } else if (frame.type === "command.ack" && frame.payload.command_id === "command-low-disk") {
         rejection.resolve(frame.payload);
@@ -1568,7 +1587,7 @@ test("missing provider configuration rejects work with a durable catalog failure
       const frame = JSON.parse(data.toString("utf8"));
       if (frame.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
-        websocket.send(wire("runtime.command", runtimeCommand("provider-missing", 1)));
+        websocket.send(wire("runtime.command", runtimeCommand("provider-missing", 1, "runtime-provider-missing")));
       } else if (frame.type === "command.ack" && frame.payload.command_id === "command-provider-missing") {
         rejection.resolve(frame.payload);
       }
@@ -1633,7 +1652,7 @@ test("event nack releases the send window and retries from the requested sequenc
       const frame = JSON.parse(data.toString("utf8"));
       if (frame.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
-        websocket.send(wire("runtime.command", runtimeCommand("event-nack", 1)));
+        websocket.send(wire("runtime.command", runtimeCommand("event-nack", 1, "runtime-event-nack")));
         return;
       }
       if (frame.type !== "run.event_batch") return;
@@ -1715,7 +1734,7 @@ test("local runtime concurrency limit queues a second provider invocation", asyn
       const frame = JSON.parse(data.toString("utf8"));
       if (frame.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
-        websocket.send(wire("runtime.command", runtimeCommand("first", 1)));
+        websocket.send(wire("runtime.command", runtimeCommand("first", 1, "runtime-capacity")));
       } else if (frame.type === "command.ack" && frame.payload.command_id === "command-first") {
         firstAccepted.resolve(frame.payload);
       } else if (frame.type === "command.ack" && frame.payload.command_id === "command-second") {
@@ -1750,12 +1769,12 @@ test("local runtime concurrency limit queues a second provider invocation", asyn
     await runtime.start();
     await withTimeout(firstStarted.promise, 2_000, "first provider start timeout");
     assert.equal((await withTimeout(firstAccepted.promise, 2_000, "first command ack timeout")).accepted, true);
-    socket.send(wire("runtime.command", runtimeCommand("second", 2)));
+    socket.send(wire("runtime.command", runtimeCommand("second", 2, "runtime-capacity")));
     await new Promise(resolve => setTimeout(resolve, 75));
     assert.equal(invocations, 1);
     // A control-plane retry must be acknowledged while the original handler
     // remains queued; otherwise long first Runs can make the server reject it.
-    socket.send(wire("runtime.command", runtimeCommand("second", 2)));
+    socket.send(wire("runtime.command", runtimeCommand("second", 2, "runtime-capacity")));
     assert.equal((await withTimeout(secondAccepted.promise, 2_000, "second command ack timeout")).accepted, true);
     assert.equal(invocations, 1);
     releaseFirst.resolve();
@@ -1771,13 +1790,13 @@ test("local runtime concurrency limit queues a second provider invocation", asyn
   }
 });
 
-function runtimeCommand(suffix, serverSeq) {
+function runtimeCommand(suffix, serverSeq, runtimeId) {
   return {
     server_seq: serverSeq,
     command_id: `command-${suffix}`,
     run_id: `run-${suffix}`,
     type: "run.start",
-    payload: { ...envelope, run_id: `run-${suffix}` },
+    payload: { ...envelope, run_id: `run-${suffix}`, resolved_runtime_selection: resolvedRuntimeSelection(runtimeId) },
     lease_id: `lease-${suffix}`,
     fencing_token: serverSeq
   };

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { AgentWorkRuntime } from "../apps/daemon/dist/agent-work-runtime.js";
-import { contextEnvelope, executionContext, terminalGrant, waitFor, wire } from "./agent-work-runtime-fixture.js";
+import { contextEnvelope, resolvedRuntimeSelection, executionContext, terminalGrant, waitFor, wire } from "./agent-work-runtime-fixture.js";
 
 const host = {
   list: async () => [],
@@ -53,7 +53,8 @@ async function startFixture(t, { silentFirst = false, welcomeOnFirst = true, dis
               server_seq: 1, command_id: "command-liveness", run_id: "run-liveness", type: "run.start",
               lease_id: "lease-liveness", fencing_token: 1,
               payload: {
-                schema_version: 2, context_defaults_version: 1,
+                schema_version: 3, context_defaults_version: 1,
+                resolved_runtime_selection: resolvedRuntimeSelection("runtime-liveness"),
                 effective_context: executionContext(plan, items), resolved_execution_plan: plan,
                 run_id: "run-liveness", agent_session_id: "session-liveness",
                 agent_run_request: {

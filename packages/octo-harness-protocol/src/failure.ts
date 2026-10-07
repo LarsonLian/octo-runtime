@@ -26,6 +26,11 @@ interface CatalogEntry {
 
 /** Harness-owned subset of the global catalog in improvement 70-01. */
 export const FAILURE_CATALOG = Object.freeze({
+  "OH-INP-5001": entry("input_modality", "所选模型或运行方式不支持图片输入，请更换模型或移除图片。", "error.input.unsupported_modality", false, "change_model"),
+  "OH-INP-5002": entry("input_limit", "图片数量或大小超过本次输入限制。", "error.input.image_limit_exceeded", false, "retry"),
+  "OH-INP-5003": entry("input_resource", "本次输入的图片暂时无法读取。", "error.input.artifact_unavailable", true, "retry"),
+  "OH-INP-5004": entry("input_integrity", "图片内容与提交的资源记录不一致，请重新添加图片。", "error.input.artifact_integrity_mismatch", false, "retry"),
+  "OH-INP-5005": entry("input_permission", "当前执行没有读取图片的权限。", "error.input.artifact_access_denied", false, "fix_permissions"),
   "OH-RUN-2002": entry("runtime_admission", "运行环境正在维护，本轮任务未启动，请稍后重试。", "error.runtime.draining", true, "retry_later", 30_000),
   "OH-RUN-2003": entry("runtime_capacity", "运行环境当前繁忙，暂时无法接收新任务。", "error.runtime.capacity", true, "retry_later", 30_000),
   "OH-RUN-2008": entry("runtime_local_store", "运行设备存储异常，本轮任务已安全结束。", "error.runtime.local_store", true, "check_runtime"),
@@ -258,6 +263,13 @@ function failureEvidence(input: unknown): FailureEvidence {
 function classify(evidence: FailureEvidence, defaultDomain: FailureDomain): { code: PublicFailureCode; reasonCode: string } {
   const text = evidence.fingerprint;
   const explicit = evidence.explicitCode?.toUpperCase();
+  for (const [reason, code] of Object.entries({
+    UNSUPPORTED_INPUT_MODALITY: "OH-INP-5001", IMAGE_RECOVERY_INPUT_REQUIRED: "OH-INP-5001",
+    IMAGE_LIMIT_EXCEEDED: "OH-INP-5002", ARTIFACT_UNAVAILABLE: "OH-INP-5003",
+    ARTIFACT_INTEGRITY_MISMATCH: "OH-INP-5004", ARTIFACT_ACCESS_DENIED: "OH-INP-5005"
+  })) {
+    if (explicit === reason || text.includes(reason.toLowerCase())) return result(code as PublicFailureCode, reason);
+  }
   const timeouts: Record<string, PublicFailureCode> = {
     ADAPTER_FIRST_FRAME_TIMEOUT: "OH-ADP-3007", ADAPTER_MODEL_IDLE_TIMEOUT: "OH-ADP-3008",
     ADAPTER_TOOL_IDLE_TIMEOUT: "OH-ADP-3009", ADAPTER_TOOL_DEADLINE: "OH-ADP-3010",

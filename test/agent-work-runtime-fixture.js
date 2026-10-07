@@ -62,6 +62,19 @@ export function contextEnvelope(items = []) {
   return { schema: "octo.context-envelope/v1", items: structuredClone(items) };
 }
 
+export function resolvedRuntimeSelection(runtimeId = "runtime-1") {
+  return {
+    schema: "octo.runtime-selection/v1",
+    routing_mode: "context",
+    routing_policy_version: 1,
+    selection_mode: "explicit",
+    explicit_runtime_id: runtimeId,
+    authorized_candidates: [{ runtime_id: runtimeId, priority: 1, owner_subject_type: "user", owner_subject_id: "user-1" }],
+    offline_behavior: "wait",
+    failover: "none"
+  };
+}
+
 export function executionContext(plan, items = []) {
   return contextEnvelope([
     { namespace: "octo.execution", name: "adapter", payload: { type: plan.adapter_type } },

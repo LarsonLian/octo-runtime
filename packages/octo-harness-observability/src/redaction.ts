@@ -79,6 +79,7 @@ function redactValue(
   parentKey: string | undefined
 ): unknown {
   if (typeof value === "string") {
+    if (/^data:image\//i.test(value)) return "[image content omitted]";
     if (parentKey && inlineConfigurationKey(parentKey)) return redactInlineConfiguration(value, path, state);
     if (parentKey && urlKey(parentKey)) return redactUrl(value, path, state);
     return value;
@@ -98,7 +99,12 @@ function redactValue(
         });
   }
   const output: Record<string, unknown> = {};
+  const image = (value as Record<string, unknown>).type === "image" || typeof (value as Record<string, unknown>).mimeType === "string" && String((value as Record<string, unknown>).mimeType).startsWith("image/");
   for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    if (image && ["data", "data_base64", "content_b64"].includes(key)) {
+      output[key] = "[image content omitted]";
+      continue;
+    }
     const nestedPath = `${path}.${normalizedKey(key) || "field"}`;
     if (credentialKey(key)) {
       state.excluded.add(nestedPath);

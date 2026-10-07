@@ -350,7 +350,8 @@ export function createCodexAdapter({
     "session.resume_recovery",
     "activity.turn-progress",
     capabilities.MCP_DYNAMIC,
-    capabilities.INTERACTION_RESPONSE
+    capabilities.INTERACTION_RESPONSE,
+    capabilities.INPUT_IMAGE
   ];
   if (detectComputerUseProvisioningSync(env).available) adapterCapabilities.push(COMPUTER_USE_CAPABILITY);
   const interactionResponders = new Map<string, CodexInteractionResponder>();

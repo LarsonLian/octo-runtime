@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import type { ApprovalMode, ContextEnvelope, ContextItem, McpServers, ResolvedExecutionPlan } from "./generated/protocol-types.js";
+import { RUNTIME_SELECTION_SCHEMA } from "./runtime-selection.js";
 
 export const CONTEXT_SCHEMA = "octo.context-envelope/v1" as const;
 export const RUNTIME_RUN_CONTRACT = Object.freeze({
-  schema_version: 2,
+  schema_version: 3,
+  routing_schema: RUNTIME_SELECTION_SCHEMA,
   context_schema: CONTEXT_SCHEMA,
   approval_schema: "octo.approval-request/v1"
 } as const);

@@ -35,6 +35,8 @@ export interface AcpRequestOptions {
   requestId?: number;
 }
 
+export type AcpPromptContent = { type: "text"; text: string } | { type: "image"; mimeType: string; data: string };
+
 /** Build the exact params serialized by `session/new`. */
 export function acpNewSessionParams({ cwd, model }: { cwd: string; model?: string }): JsonRecord {
   return { cwd, mcpServers: [], ...(model ? { model } : {}) };
@@ -46,8 +48,10 @@ export function acpLoadSessionParams(sessionId: string, { cwd = process.cwd() }:
 }
 
 /** Build the exact params serialized by `session/prompt`. */
-export function acpPromptParams(sessionId: string, text: string): JsonRecord {
-  return { sessionId, prompt: [{ type: "text", text }] };
+export function acpPromptParams(sessionId: string, input: string | readonly AcpPromptContent[]): JsonRecord {
+  return { sessionId, prompt: typeof input === "string" ? [{ type: "text", text: input }] : input.map(part =>
+    part.type === "image" ? { type: "image", mimeType: part.mimeType, data: part.data } : { type: "text", text: part.text }
+  ) };
 }
 
 /**
@@ -288,7 +292,7 @@ export class AcpClient {
    */
   async *prompt(
     sessionId: string,
-    text: string,
+    text: string | readonly AcpPromptContent[],
     {
       onWritten,
       requestId,
