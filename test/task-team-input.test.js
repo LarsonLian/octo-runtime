@@ -2,13 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { prepareTeamInput } from "../packages/octo-harness-daemon/dist/team-input.js";
 import { mapExecutionEnvelope } from "../packages/octo-harness-daemon/dist/agent-work-runtime.js";
+import { buildCodexCommand } from "@mininglamp-oss/octo-harness-adapter-codex";
 import { contextEnvelope, executionContext, resolvedRuntimeSelection } from "./agent-work-runtime-fixture.js";
 
 const ref = { resource_ref: "task:task-1/materials", task_id: "task-1", task_version: 18, handler_epoch: 3, digest: `sha256:${"a".repeat(64)}` };
 const materials = { refs: [ref], selections: [{ resource_ref: ref.resource_ref, text: JSON.stringify({
   task: { id: "task-1", row_version: 18, handler_epoch: 3 }, attachments: [{ id: "att-1", version_id: "fv-1" }]
 }) }] };
-const input = { coordination: { team_session_id: "team-session-1", delegation_id: "delegation-1", source_run_id: "source-1", target_alias: "designer" }, payload: {
+const input = { task_execution: { task_id: "task-1", handler_type: "team", workspace_bindings: {} },
+  coordination: { team_session_id: "team-session-1", delegation_id: "delegation-1", source_run_id: "source-1", target_alias: "designer" }, payload: {
   schema_version: 1, instruction: "使用需求附件制作活动页面", task_material_ref: { task_id: "task-1", snapshot_version: 17 },
   attachment_refs: [{ attachment_id: "att-1", file_version_id: "fv-1" }], reply_to: { kind: "delegation_result" },
   result_contract: { summary_required: true, output_manifest_required: true }
@@ -42,8 +44,9 @@ test("task handoff rejects local paths, credentials and unavailable attachment v
 
 test("actual Worker wrapper renders handoff instruction and mailbox output references without a parallel engine", () => {
   const plan = { adapter_type: "codex", workdir: "/target-runtime/workspace", approval_mode: "full_access", mcp_servers: {
-    octo_task: { type: "streamable_http", url: "https://worker.test/mcp/team", headers: { Authorization: "Bearer target-only-grant" } }
+    octo_task: { type: "streamable_http", url: "https://worker.test/mcp/team", headers: { Authorization: "Bearer target-only-grant" }, required: true }
   } };
+  plan.mcp_servers.octo_team = structuredClone(plan.mcp_servers.octo_task);
   const resource = { namespace: "octo.content", name: "resources", payload: { entries: [{ resource_ref: ref.resource_ref,
     resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_id: "task-1", handler_epoch: 3 }
   }] } };
@@ -57,7 +60,8 @@ test("actual Worker wrapper renders handoff instruction and mailbox output refer
   assert.doesNotMatch(request.modelInput, /target-only-grant/);
   assert.doesNotMatch(request.controlInstructions, /使用需求附件/);
   assert.equal(request.workdir, "/target-runtime/workspace");
-  const mailbox = { coordination: input.coordination, message: { child_run_id: "target-run", status: "completed",
+  assert.match(JSON.stringify(buildCodexCommand(request).args), /octo_team.*delegate_handoff.*approval_mode/);
+  const mailbox = { task_execution: input.task_execution, coordination: input.coordination, message: { child_run_id: "target-run", status: "completed",
     messages: [{ item_id: "item-1", text: "页面已生成" }], task_output_receipts: [{ output_id: "page-1", status: "saved", attachment_id: "att-page", file_id: "file-page", file_version_id: "fv-page" }]
   } };
   envelope.agent_run_request.input = mailbox;
@@ -66,6 +70,7 @@ test("actual Worker wrapper renders handoff instruction and mailbox output refer
   assert.match(wake.modelInput, /fv-page/);
   assert.match(wake.modelInput, /页面已生成/);
   assert.doesNotMatch(wake.modelInput, /target-only-grant/);
+  assert.match(JSON.stringify(buildCodexCommand(wake).args), /octo_team.*delegate_handoff.*approval_mode/);
 });
 
 test("non-task existing Team payload is retained as bounded facts instead of an empty prompt", () => {

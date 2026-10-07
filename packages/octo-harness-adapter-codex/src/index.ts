@@ -268,6 +268,8 @@ export function codexMcpOverrides(
   const env: NodeJS.ProcessEnv = {};
   const forwarded = new Map<string, string>();
   const configured: Record<string, Record<string, unknown>> = {};
+  const preparedTask = isPreparedFullAccessTask(invocation);
+  const preparedTeam = preparedTask && isPreparedTaskTeam(invocation, servers);
 
   Object.entries(servers).forEach(([name, server], serverIndex) => {
     const entry: Record<string, unknown> = {};
@@ -299,11 +301,13 @@ export function codexMcpOverrides(
     if (server.required !== undefined) entry.required = server.required;
     if (server.startupTimeoutMs !== undefined) entry.startup_timeout_sec = server.startupTimeoutMs / 1000;
     if (server.toolTimeoutMs !== undefined) entry.tool_timeout_sec = server.toolTimeoutMs / 1000;
-    if (name === "octo_task" && server.type === "streamable_http" && isPreparedFullAccessTask(invocation)) {
+    const trustedTools = name === "octo_task" && preparedTask ? TASK_MCP_TOOLS
+      : name === "octo_team" && preparedTeam ? TEAM_MCP_TOOLS : undefined;
+    if (server.type === "streamable_http" && trustedTools) {
       // This reserved server is materialized by Worker, then checked by the
       // Runtime's Task bootstrap. Unknown tools still require native approval.
       entry.default_tools_approval_mode = "prompt";
-      entry.tools = Object.fromEntries(TASK_MCP_TOOLS.map(tool => [tool, { approval_mode: "approve" }]));
+      entry.tools = Object.fromEntries(trustedTools.map(tool => [tool, { approval_mode: "approve" }]));
     }
     configured[name] = entry;
   });
@@ -318,6 +322,7 @@ const TASK_MCP_TOOLS = [
   "task_get_materials", "task_read_attachment", "task_prepare_output", "task_commit_output",
   "task_fail_output", "task_apply_action", "task_create_child"
 ] as const;
+const TEAM_MCP_TOOLS = ["delegate_handoff", "post_task_comment", ...TASK_MCP_TOOLS] as const;
 
 function isPreparedFullAccessTask(invocation: Pick<InvokeRequest, "approvalMode" | "context" | "runMetadata"> | undefined): boolean {
   if (!invocation || invocation.approvalMode !== "full_access"
@@ -337,6 +342,36 @@ function isPreparedFullAccessTask(invocation: Pick<InvokeRequest, "approvalMode"
     && Number.isSafeInteger(snapshot.handler_epoch) && Number(snapshot.handler_epoch) > 0
     && (params.handler_epoch === undefined || snapshot.handler_epoch === params.handler_epoch)
     && typeof snapshot.digest === "string" && /^sha256:[a-f0-9]{64}$/.test(snapshot.digest);
+}
+
+function isPreparedTaskTeam(
+  invocation: Pick<InvokeRequest, "approvalMode" | "context" | "runMetadata"> | undefined,
+  servers: McpServers
+): boolean {
+  const metadata = invocation?.runMetadata;
+  const input = taskRecord(metadata?.input);
+  const execution = taskRecord(input?.task_execution);
+  const snapshots = metadata?.taskMaterials;
+  if (execution?.handler_type !== "team" || !Array.isArray(snapshots)
+    || execution.task_id !== taskRecord(snapshots[0])?.task_id) return false;
+  if (metadata?.triggerKind === "agent_access.conversation") {
+    const target = taskRecord(input?.agent_access_execution);
+    if (target?.target_type !== "team" || typeof target.target_id !== "string" || !target.target_id) return false;
+  } else if (metadata?.triggerKind === "coordination.delegate_handoff" || metadata?.triggerKind === "coordination.mailbox") {
+    const coordination = taskRecord(input?.coordination);
+    if (typeof coordination?.team_session_id !== "string" || !coordination.team_session_id
+      || typeof coordination.delegation_id !== "string" || !coordination.delegation_id) return false;
+  } else return false;
+
+  // Worker reserves both names and materializes them from the same Team grant.
+  const team = servers.octo_team;
+  const task = servers.octo_task;
+  if (team?.type !== "streamable_http" || task?.type !== "streamable_http"
+    || team.required !== true || task.required !== true || team.url !== task.url
+    || !task.headers?.Authorization?.startsWith("Bearer ")) return false;
+  const headers = Object.entries(task.headers);
+  return headers.length === Object.keys(team.headers ?? {}).length
+    && headers.every(([name, value]) => team.headers?.[name] === value);
 }
 
 function taskRecord(value: unknown): Record<string, unknown> | undefined {
