@@ -17,7 +17,7 @@
 
 Access/Worker 物化 `resolved_execution_plan.mcp_servers.octo_task` 为受限 Streamable HTTP MCP 地址和运行 grant。URL、headers 均不属于用户正文，不从材料、Agent 指令、模型输出解析。grant 绑定空间、任务、Conversation、Run、Runtime、lease/fencing 和处理权 epoch。服务端每次工具调用重新校验。
 
-`task_get_materials` 返回 MCP structuredContent 或单个 JSON text，至少包含 task_id、task_version、handler_epoch，正文、附件元信息、最近讨论及处理摘要由服务端有界投影。snapshot 不含凭据或远端本机路径；附件以 attachment_id/file_version_id 引用。Harness 每次 Run 在调用 provider 前实际读取材料，将 JSON 放入非可信事实输入；控制指令保持独立。失败拒绝该 Run，不能凭一句“请读取任务”视为材料已注入。
+`task_get_materials` 返回 MCP structuredContent 或单个 JSON text，至少包含 `task.id`、`task.row_version`、`task.handler_epoch`；正文、附件元信息、最近讨论及处理摘要由服务端有界投影。snapshot 不含凭据或远端本机路径；附件以 attachment_id/file_version_id 引用。Harness 每次 Run 在调用 provider 前实际读取材料，将 JSON 放入非可信事实输入；控制指令保持独立。失败拒绝该 Run，不能凭一句“请读取任务”视为材料已注入。
 
 模型按需调用已物化 MCP 的 `task_read_attachment`，服务端同时校验任务和网盘权限。Harness 不全量下载附件，也不把跨 Host 的本机目录当作附件引用。
 

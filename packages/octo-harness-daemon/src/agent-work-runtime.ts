@@ -44,6 +44,7 @@ import {
 import { resolveRuntimeInputImages } from "./input-images.js";
 import { AgentWorkStore } from "./agent-work-store.js";
 import { assertFrozenContextPlan, compileRunContext } from "./run-context.js";
+import { prepareTaskMaterials, type PreparedTaskMaterials } from "./task-materials.js";
 import type { OutboxRow } from "./agent-work-store.js";
 import { collectRuntimeDeviceInfo } from "./device-info.js";
 import {
@@ -1642,6 +1643,8 @@ export class AgentWorkRuntime {
           headers: this.#headers(true, createRequestId()),
           runId: command.run_id, leaseId, fencingToken, signal: controller.signal
         });
+        const taskMaterials = await prepareTaskMaterials(executionEnvelope.effective_context,
+          executionEnvelope.resolved_execution_plan, controller.signal);
         const contextSnapshot = await this.#prepareChannelContext(
           command.run_id,
           executionEnvelope,
@@ -1654,7 +1657,7 @@ export class AgentWorkRuntime {
         const mapped = mapExecutionEnvelope({
           ...executionEnvelope,
           agent_run_request: { ...executionEnvelope.agent_run_request, input: materializedInput }
-        }, contextSnapshot);
+        }, contextSnapshot, taskMaterials);
         request = mapped.request;
         request.runMetadata ??= {};
         // The authenticated Runtime connection owns this mapping. Never trust
@@ -2253,7 +2256,8 @@ export function accumulateFinalText(current: string, event: CanonicalEvent): str
  * the recovery/cold projection as `freshFallbackModelInput`). */
 export function mapExecutionEnvelope(
   envelope: ExecutionEnvelope,
-  contextSnapshot?: PreparedChannelContextSnapshot
+  contextSnapshot?: PreparedChannelContextSnapshot,
+  taskMaterials?: PreparedTaskMaterials
 ): { adapterType: string; request: InvokeRequest } {
   assertExecutionEnvelopeContract(envelope);
   if (!envelope?.run_id || !envelope.agent_session_id || !envelope.agent_revision || !envelope.agent_run_request?.input) {
@@ -2286,7 +2290,7 @@ export function mapExecutionEnvelope(
   const workdir = profile.workdir;
   const content = envelope.agent_run_request.input;
   if (Object.hasOwn(content, "context_refs") || Object.hasOwn(content, "channel_context")) throw new TypeError("LEGACY_CONTEXT_INPUT_REJECTED");
-  const compiled = compileRunContext(envelope.effective_context);
+  const compiled = compileRunContext(envelope.effective_context, taskMaterials?.selections);
   if (contextItem(envelope.effective_context, "octo.content", "continuity") && !contextSnapshot) throw new TypeError("CONTEXT_CONTINUITY_UNAVAILABLE");
   const displayPrompt = renderDisplayExecutionInputPrompt(content);
   const modelContext = (text: string): string => [text, compiled.modelContent].filter(Boolean).join("\n\n");
@@ -2319,7 +2323,8 @@ export function mapExecutionEnvelope(
     ...(envelope.session_generation === undefined ? {} : { sessionGeneration: envelope.session_generation }),
     ...(envelope.provider_epoch === undefined ? {} : { providerEpoch: envelope.provider_epoch }),
     ...(envelope.continuity_mode === undefined ? {} : { continuityMode: envelope.continuity_mode }),
-    ...(contextSnapshot ? { contextSnapshot: contextSnapshot.ref } : {})
+    ...(contextSnapshot ? { contextSnapshot: contextSnapshot.ref } : {}),
+    ...(taskMaterials ? { taskMaterials: structuredClone(taskMaterials.refs) } : {})
   };
   return {
     adapterType,

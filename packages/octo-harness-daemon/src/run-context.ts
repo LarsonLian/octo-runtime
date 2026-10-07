@@ -1,4 +1,4 @@
-import { assertContextEnvelope, assertResolvedExecutionPlan, contextItem, type ContextEnvelope, type ResolvedExecutionPlan } from "@mininglamp-oss/octo-harness-protocol";
+import { assertContextEnvelope, assertResolvedExecutionPlan, contextItem, type ContextEnvelope, type ContextSelectionEntry, type ResolvedExecutionPlan } from "@mininglamp-oss/octo-harness-protocol";
 
 export function assertFrozenContextPlan(context: ContextEnvelope, plan: ResolvedExecutionPlan): void {
   assertContextEnvelope(context);
@@ -18,12 +18,13 @@ export function assertFrozenContextPlan(context: ContextEnvelope, plan: Resolved
   }
 }
 
-export function compileRunContext(context: ContextEnvelope): { modelContent: string; controlInstructions: string } {
+export function compileRunContext(context: ContextEnvelope, resolvedResources: readonly ContextSelectionEntry[] = []): { modelContent: string; controlInstructions: string } {
   assertContextEnvelope(context);
   const resources = contextItem(context, "octo.content", "resources")?.payload.entries;
-  if (Array.isArray(resources) && resources.length) throw new TypeError("CONTEXT_RESOLVER_UNAVAILABLE");
+  const resourceRefs = Array.isArray(resources) ? resources.map(entry => isObject(entry) ? entry.resource_ref : undefined) : [];
+  if (resourceRefs.length !== resolvedResources.length || resourceRefs.some(ref => !resolvedResources.some(entry => entry.resource_ref === ref))) throw new TypeError("CONTEXT_RESOLVER_UNAVAILABLE");
   const selections = contextItem(context, "octo.content", "selections")?.payload.entries;
-  const entries = Array.isArray(selections) ? selections : [];
+  const entries = [...(Array.isArray(selections) ? selections : []), ...resolvedResources];
   for (const entry of entries) {
     if (!isObject(entry) || typeof entry.text !== "string" || !entry.text) throw new TypeError("CONTEXT_CONTENT_UNSUPPORTED");
   }
