@@ -52,6 +52,10 @@ terminal 的 `task_output_receipts` 逐文件携带保存结果与引用，失�
 
 任务 handoff payload 是 schema_version=1、instruction、task_material_ref(task_id/snapshot_version)、attachment_refs(attachment_id/file_version_id)、reply_to(kind=delegation_result)、result_contract(summary_required/output_manifest_required=true)。Task ID 必须匹配本 Run 实际 bootstrap 的材料；source snapshot_version 可旧于最新版本，不能声称未来版本。附件必须存在于最新可读目录并匹配固定版本；字段拒绝本机 path、临时 download_url、源 Run authorization。目标使用自己的冻结 workdir/MCP，不沿用源 Host 路径。
 
+已落地的 TaskAttachment HTTP 合同使用 `id`、`version_id`、`version_kind`；handoff 与保存回执中的 `attachment_id`/`file_version_id` 是运行协议引用。Harness 按该映射校验，不改变 App/Access 的附件 DTO，也不接受另一份附件目录形状。
+
+Drive 当前确认接口只证明文件条目和大小，未提供服务端 SHA 字段。SHA-256 在可信 Runtime 内从实际上传字节验证；服务端版本引用的 sha256 值是 Runtime 声明，不能宣传为服务端重新计算的校验结果。对不可信 Runtime 的强内容证明须后续由存储校验字段或服务端重读计算补齐；首版不伪造此能力。
+
 Mailbox 结果保留公共 final 消息和 `task_output_receipts` 已保存引用；它们进入模型事实，不进入平台控制指令。Worker 负责持久 join/wakeup 与目标 grant，Harness 不新增 Team 会话、邮箱或任务完成判断。
 
 验收：Task ID/未来快照/不可读附件版本拒绝，稳定引用的合法 handoff 可进入真实 mapExecutionEnvelope；handoff 和 mailbox 包装内容均实际进入 modelInput，目标 workdir 固定，源/目标 grant 不进入模型。Task 普通会话与 Team Run 共用材料和归档路径。

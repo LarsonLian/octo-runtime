@@ -29,7 +29,7 @@ export function prepareTeamInput(input: Record<string, unknown>, triggerKind: st
       const attachment = object(raw);
       if (Object.keys(attachment).some(key => !["attachment_id", "file_version_id"].includes(key))
         || typeof attachment.attachment_id !== "string" || !attachment.attachment_id || typeof attachment.file_version_id !== "string" || !attachment.file_version_id) throw new TypeError("TEAM_TASK_INPUT_INVALID");
-      if (!attachments.some(item => (item.id ?? item.attachment_id) === attachment.attachment_id && item.file_version_id === attachment.file_version_id)) throw new TypeError("TEAM_TASK_ATTACHMENT_UNAVAILABLE");
+      if (!attachments.some(item => item.id === attachment.attachment_id && item.version_id === attachment.file_version_id)) throw new TypeError("TEAM_TASK_ATTACHMENT_UNAVAILABLE");
     }
     const reply = object(payload.reply_to);
     const contract = object(payload.result_contract);

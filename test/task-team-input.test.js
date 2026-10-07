@@ -6,7 +6,7 @@ import { contextEnvelope, executionContext, resolvedRuntimeSelection } from "./a
 
 const ref = { resource_ref: "task:task-1/materials", task_id: "task-1", task_version: 18, handler_epoch: 3, digest: `sha256:${"a".repeat(64)}` };
 const materials = { refs: [ref], selections: [{ resource_ref: ref.resource_ref, text: JSON.stringify({
-  task: { id: "task-1", row_version: 18, handler_epoch: 3 }, attachments: [{ id: "att-1", file_version_id: "fv-1" }]
+  task: { id: "task-1", row_version: 18, handler_epoch: 3 }, attachments: [{ id: "att-1", version_id: "fv-1" }]
 }) }] };
 const input = { coordination: { team_session_id: "team-session-1", delegation_id: "delegation-1", source_run_id: "source-1", target_alias: "designer" }, payload: {
   schema_version: 1, instruction: "使用需求附件制作活动页面", task_material_ref: { task_id: "task-1", snapshot_version: 17 },
