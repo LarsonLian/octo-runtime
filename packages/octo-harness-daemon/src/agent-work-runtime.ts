@@ -37,6 +37,7 @@ import {
   assertContextEnvelope,
   assertResolvedExecutionPlan,
   assertResolvedRuntimeSelection,
+  capabilities,
   contextItem,
   failurePayload,
   modelPartsFromInput
@@ -1643,6 +1644,10 @@ export class AgentWorkRuntime {
         const requiredCapabilities = executionEnvelope.resolved_execution_plan.required_capabilities ?? [];
         const localCapabilities = this.#adapterCapabilities.get(adapterTypeForContext);
         if (requiredCapabilities.some(capability => !localCapabilities?.has(capability))) throw new TypeError("ADAPTER_REQUIRED_CAPABILITY_MISSING");
+        const contentResources = contextItem(executionEnvelope.effective_context, "octo.content", "resources")?.payload.entries;
+        if (Array.isArray(contentResources) && contentResources.length > 0 && !localCapabilities?.has(capabilities.MCP_DYNAMIC)) {
+          throw new TypeError("TASK_MCP_ADAPTER_UNSUPPORTED");
+        }
         const input = executionEnvelope.agent_run_request.input;
         const hasImages = Array.isArray(input.parts) && input.parts.some(part => part && typeof part === "object" && (part as Record<string, unknown>).type === "image");
         if (hasImages && !localCapabilities?.has("input.image")) throw new TypeError("UNSUPPORTED_INPUT_MODALITY");

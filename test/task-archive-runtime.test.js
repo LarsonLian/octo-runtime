@@ -72,7 +72,7 @@ test("real Runtime uploads a declared deliverable before durable terminal and re
   });
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   runtime = new AgentWorkRuntime({ profile: "default", baseUrl, token: "runtime-grant", runtimeName: "archive-fixture", storePath: join(directory, "runtime.db") }, {
-    list: async () => [{ type: "codex", capabilities: [] }], cancel: async () => ({ cancelled: true }),
+    list: async () => [{ type: "codex", capabilities: ["tool.mcp.dynamic"] }], cancel: async () => ({ cancelled: true }),
     async *invoke(_adapter, request) {
       assert.match(request.controlInstructions, /task-output-manifest/);
       const bytes = Buffer.from(`<title>${request.runId}</title>`);

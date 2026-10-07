@@ -108,7 +108,7 @@ test("real Runtime admission bootstraps MCP before provider invocation and rejec
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const runtime = new AgentWorkRuntime({ profile: "default", baseUrl: `http://127.0.0.1:${server.address().port}`,
     token: "fixture-runtime", runtimeName: "fixture-task", storePath: join(directory, "runtime.db") }, {
-    list: async () => [{ type: "codex", capabilities: [] }], cancel: async () => ({ cancelled: true }),
+    list: async () => [{ type: "codex", capabilities: ["tool.mcp.dynamic"] }, { type: "no-mcp", capabilities: [] }], cancel: async () => ({ cancelled: true }),
     async *invoke(_adapter, request) {
       assert.ok(f.calls.some(call => call.method === "tools/call"));
       invocations.push(request);
@@ -124,8 +124,9 @@ test("real Runtime admission bootstraps MCP before provider invocation and rejec
   });
   await runtime.start();
   await waitFor(() => socket?.readyState === 1);
-  const command = (suffix, url) => {
+  const command = (suffix, url, adapter = "codex") => {
     const resolvedPlan = plan(url);
+    resolvedPlan.adapter_type = adapter;
     return { server_seq: suffix, command_id: `command-${suffix}`, run_id: `run-${suffix}`, type: "run.start", lease_id: `lease-${suffix}`, fencing_token: suffix,
       payload: { schema_version: 3, effective_context: executionContext(resolvedPlan, [resource]), context_defaults_version: 1,
         resolved_execution_plan: resolvedPlan, resolved_runtime_selection: resolvedRuntimeSelection(), run_id: `run-${suffix}`, agent_session_id: "conversation-1",
@@ -139,5 +140,11 @@ test("real Runtime admission bootstraps MCP before provider invocation and rejec
   socket.send(wire("runtime.command", command(2, failure.url)));
   await waitFor(() => acknowledgements.some(ack => ack.command_id === "command-2"));
   assert.equal(acknowledgements.find(ack => ack.command_id === "command-2").accepted, false);
+  assert.equal(invocations.length, 1);
+  const callsBefore = f.calls.length;
+  socket.send(wire("runtime.command", command(3, f.url, "no-mcp")));
+  await waitFor(() => acknowledgements.some(ack => ack.command_id === "command-3"));
+  assert.equal(acknowledgements.find(ack => ack.command_id === "command-3").accepted, false);
+  assert.equal(f.calls.length, callsBefore);
   assert.equal(invocations.length, 1);
 });
