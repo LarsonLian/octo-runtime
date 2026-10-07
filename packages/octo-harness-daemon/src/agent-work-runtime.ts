@@ -45,6 +45,7 @@ import { resolveRuntimeInputImages } from "./input-images.js";
 import { AgentWorkStore } from "./agent-work-store.js";
 import { assertFrozenContextPlan, compileRunContext } from "./run-context.js";
 import { prepareTaskMaterials, type PreparedTaskMaterials } from "./task-materials.js";
+import { archiveTaskOutputs, safeOutputError, taskOutputInstructions } from "./task-outputs.js";
 import type { OutboxRow } from "./agent-work-store.js";
 import { collectRuntimeDeviceInfo } from "./device-info.js";
 import {
@@ -257,6 +258,8 @@ interface ActiveRun {
   invocationId: string;
   leaseId: string;
   fencingToken: number;
+  outputController: AbortController;
+  archiving: boolean;
 }
 
 interface AcceptingRun {
@@ -549,6 +552,7 @@ export class AgentWorkRuntime {
       accepting.controller.abort(new RuntimeStoppingError());
     }
     for (const run of this.#activeRuns.values()) {
+      run.outputController.abort(new RuntimeStoppingError());
       await this.#host.cancel(run.invocationId, "runtime shutdown").catch(() => undefined);
     }
     this.#socket?.close(1000, "runtime shutdown");
@@ -1402,6 +1406,7 @@ export class AgentWorkRuntime {
       accepting?.controller.abort(new AuthoritativeTerminalRunError(runId, status));
       const active = this.#activeRuns.get(runId);
       if (active) {
+        active.outputController.abort(new AuthoritativeTerminalRunError(runId, status));
         await this.#host.cancel(active.invocationId, `authoritative server terminal: ${status}`).catch(error => {
           this.#reportError("adapter.invoke.authoritative_cancel_failed", "failed to cancel an authoritatively terminal invocation", error, {
             run_id: runId,
@@ -1488,6 +1493,8 @@ export class AgentWorkRuntime {
     if (command.type === "run.cancel") {
       const active = this.#activeRuns.get(command.run_id);
       if (active) {
+        active.outputController.abort(new Error("RUN_CANCELLED"));
+        if (active.archiving) { this.#ackCommand(command, true); return; }
         const cancelled = (await this.#host.cancel(active.invocationId, "control plane cancel")).cancelled;
         this.#ackCommand(command, true, cancelled ? undefined : { code: "RUN_NOT_ACTIVE" });
         return;
@@ -1775,7 +1782,9 @@ export class AgentWorkRuntime {
       this.#activeRuns.set(command.run_id, {
         invocationId: request.invocationId,
         leaseId,
-        fencingToken
+        fencingToken,
+        outputController: new AbortController(),
+        archiving: false
       });
       if (!accepting.acknowledged) this.#ackCommand(command, true);
       const execution = this.#execute(command, adapterType, request, releaseAdmission);
@@ -1981,6 +1990,31 @@ export class AgentWorkRuntime {
         appendStarted();
         finalText = accumulateFinalText(finalText, event);
         const mapped = mapRuntimeEvent(event);
+        const taskRef = Array.isArray(request.runMetadata?.taskMaterials) ? asRecord(request.runMetadata.taskMaterials[0]) : {};
+        if (mapped.type === "run.completed" && typeof taskRef.task_id === "string") {
+          const active = this.#activeRuns.get(command.run_id)!;
+          active.archiving = true;
+          try {
+            mapped.payload.task_output_receipts = await archiveTaskOutputs(
+              (command.payload as ExecutionEnvelope).resolved_execution_plan, taskRef.task_id, command.run_id, active.outputController.signal
+            );
+          } catch (error) {
+            mapped.payload.task_output_receipts = [{ output_id: "manifest", status: "failed", error_code: safeOutputError(error) }];
+          }
+          active.archiving = false;
+          if (this.#authoritativeTerminalRuns.has(command.run_id)) break;
+          if (active.outputController.signal.aborted) {
+            mapped.type = "run.cancelled";
+            mapped.payload = { reasonCode: "cancelled" };
+          }
+          const failed = ((mapped.payload.task_output_receipts ?? []) as { status: string }[]).filter(receipt => receipt.status === "failed");
+          if (failed.length) {
+            store.allocateAndAppend(command.run_id, "run.notice", {
+              noticeId: `task-output-${command.run_id}`, code: "config_warning", severity: "warning",
+              params: { task_output_save: "failed", failed_count: failed.length }
+            });
+          }
+        }
         this.#log({
           level: "debug",
           scope: "adapter.invoke",
@@ -2351,7 +2385,8 @@ export function mapExecutionEnvelope(
         contextSnapshot: contextSnapshot.ref
       } : {}),
       workdir,
-      controlInstructions: [stringValue(definition.instructions), compiled.controlInstructions].filter(Boolean).join("\n\n"),
+      controlInstructions: [stringValue(definition.instructions), compiled.controlInstructions,
+        ...(taskMaterials ? [taskOutputInstructions(envelope.run_id)] : [])].filter(Boolean).join("\n\n"),
       context: structuredClone(envelope.effective_context),
       runMetadata: context,
       approvalMode: profile.approval_mode,

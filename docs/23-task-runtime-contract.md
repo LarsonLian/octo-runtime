@@ -34,6 +34,14 @@ Access/Worker 物化 `resolved_execution_plan.mcp_servers.octo_task` 为受限 S
 
 只归档本次执行声明的 manifest；不扫描整个项目或自动上传用户所有文件。Runtime 验证输出相对目录路径、真实目录、symlink、普通文件、文件大小和 SHA-256，随后经运行授权获取上传凭据。上传成功且服务端确认关联后才产生已保存事实；失败保留明确错误，不能把 Run 成功当作文件保存成功。远端 Runtime 执行上传，不依赖桌面在线。
 
+Harness 的可信运行指令要求产出者写 `.octo/task-outputs/<URI 编码 Run ID>.json`。schema 为 `octo.task-output-manifest/v1`，outputs 项含 output_id、relative_path、name、media_type、size、sha256（64 位小写 hex）、role=output。最多 32 个文件、单文件 128 MiB、总计 256 MiB、manifest 64 KiB。目录各段及目标文件拒绝 symlink，读文件后用实际字节再次校验 size/hash；只接受普通文件。
+
+provider 返回 run.completed 后、持久化 terminal 前，Runtime 调用 `task_prepare_output({task_id,manifest})`。响应为 ticket_id、upload_url、upload_headers、upload_method=PUT。Runtime 只向该票据地址 PUT 真实文件字节，不把 MCP Bearer 附在上传请求上；拒绝 redirect。随后调用 `task_commit_output({task_id,ticket_id,manifest})`，服务端 HEAD/等效校验并写网盘和任务引用，返回 status=saved、attachment_id、file_id、file_version_id。prepare 对已成功保存的同键/同 hash 可以直接返回 saved 引用，无需再次上传。
+
+terminal 的 `task_output_receipts` 逐文件携带保存结果与引用，失败只有稳定 error_code；不会携带绝对路径、上传 URL 或运行凭据。部分失败另产生 run.notice/config_warning，业务 Run 仍可 completed，Task 完成仍是 Access 独立动作。取消、关机或服务端 terminal 会中断 Runtime 归档，不在失去执行权后补写成功。
+
+验收：真实 Runtime websocket admission → MCP 材料读取 → provider 写文件与 manifest → MCP prepare → PUT → commit → durable terminal 的调用顺序由集成测试验证。另验证修改文件的 hash 不匹配、symlink、路径越界、PUT 503、幂等已保存引用；失败不产生 saved 或 commit。
+
 ## M4：Team
 
 继续使用 Worker 的 octo_team handoff/Delegation/Mailbox。handoff 传递任务 ID 和稳定附件版本引用，不传本机路径、MCP headers 或源 Run grant。目标 Run 由 Worker 重新物化目标 Runtime/lease/fencing 的 octo_task 能力，再执行同一材料 bootstrap。handoff 结果为摘要和已保存文件引用；Run/Delegation 结束不代表业务子任务完成。
