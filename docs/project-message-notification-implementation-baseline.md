@@ -1,6 +1,6 @@
 # 项目消息通知：Harness 实施约束
 
-日期：2026-10-08（Asia/Shanghai）。状态：实施约束已明确；功能契约待需求范围冻结后定义。
+日期：2026-10-08（Asia/Shanghai）。状态：首版公共消息合同已实现；第 5 节记录实际交付，下文第 1–4 节保留最初实施约束。当前范围以 [首版实现基线](../../octo-harness-work-app/docs/project-message-notification-v1.md) 为准。
 
 公共需求、术语、候选交互和验收条款见 [工作项目消息通知基线](../../octo-harness-work-app/docs/project-message-notification-baseline.md)。本文只定义 Harness 的责任边界，不新增另一份消息通知需求事实源。
 
@@ -46,3 +46,12 @@ Harness 负责将 Provider 执行事实表达为统一协议。通知需求涉�
 只暂存本 feat 的文件，不包含其他工作的变更。当前要求没有指定新增分支，不擅自切换工作树。不等待整个消息通知功能完成后再集中提交。需求约束文档使用 docs 提交。
 
 公共实施顺序和退出条件见公共基线第 11 节。本轮文档提交只完成 F00，不代表已经增加协议字段或运行时能力。
+
+## 5. 首版实现与验证记录
+
+- `58dc565` 定义 `NotificationMessage`：`octo.notification.v1`，必填八个字段，禁止额外字段；schema、生成类型、导出和运行时校验同步。
+- `9aa6423` 增加浏览器安全的 `@mininglamp-oss/octo-harness-protocol/notification` 导出。Work App 的真实 Agent Access 客户端用该入口校验发送记录，未引入 Node 模块到 renderer。
+- 已有执行终态及 `message/final` 公开结果满足首版事实来源要求，因此复用原生命周期；没有重复 final 正文，也没有 Provider 直接向外发送。
+- 构建及消息校验测试通过，覆盖正式/测试消息、空正文、额外字段、错误长度及无效 Unicode。Go 服务镜像同一消息结构；HTTP 管理合同由 Agent Access 提供。
+
+Harness 合同可被实际消费者使用，不代表真实群已经收到消息。跨仓库联合验证和未验收项见首版实现基线第 6 节。三个项目按匹配版本直接升级。
