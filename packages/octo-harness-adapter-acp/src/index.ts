@@ -2,6 +2,7 @@ import { canonicalTerminalStatus, providerInputParts } from "@mininglamp-oss/oct
 import { createHash } from "node:crypto";
 import {
   AcpApprovalBridge,
+  AcpTurnNormalizer,
   acpToolTerminalStatus,
   normalizeAcpToolUpdate,
   defineAdapter,
@@ -138,115 +139,6 @@ export function normalizeAcpUpdate(update: StandardAcpUpdate, provider: string):
     return [{ protocolVersion: 2, type: "usage.update", payload: { ...update.usage, model: update.model } }];
   }
   return [];
-}
-
-const MAX_STEP_PUBLIC_TEXT_CHARS = 1_000;
-
-/**
- * ACP standardizes the stream envelope but does not require providers to emit
- * public thought chunks or model-round boundaries. Reconstruct conservative
- * round boundaries from tool lifecycles and retain only already-public answer
- * text as the card fallback when a provider exposes no reasoning.
- */
-class AcpTurnNormalizer {
-  readonly #provider: string;
-  readonly #activeTools = new Set<string>();
-  #stepNumber = 0;
-  #stepId?: string;
-  #stepHasTool = false;
-  #stepPublicText = "";
-  #toolsCompleted = false;
-
-  constructor(provider: string) {
-    this.#provider = provider;
-  }
-
-  normalize(update: StandardAcpUpdate): CanonicalEvent[] {
-    const nativeType = update.sessionUpdate ?? update.type;
-    const normalized = normalizeAcpUpdate(update, this.#provider);
-    const semantic = normalized.some(event => event.type.startsWith("message.") || event.type.startsWith("tool_call."));
-    if (!semantic) return normalized;
-
-    const startsModelOutput = nativeType === "agent_message_chunk"
-      || nativeType === "agent_thought_chunk"
-      || nativeType === "tool_call";
-    const events: CanonicalEvent[] = [];
-    if (startsModelOutput && this.#toolsCompleted) events.push(...this.#finishStep("tool-calls", "completed"));
-    events.push(...this.#ensureStep());
-
-    const stepId = this.#stepId;
-    for (const event of normalized) {
-      if (event.type === "message.delta") {
-        events.push({
-          ...event,
-          payload: {
-            ...event.payload,
-            ...(stepId ? { stepId } : {}),
-            ...(stepId && event.payload.channel === "analysis" ? { messageId: `${stepId}:reasoning` } : {})
-          }
-        });
-        if (event.payload.channel !== "analysis") this.#appendPublicText(event.payload.text);
-        continue;
-      }
-      const toolId = stringField(event.payload, "id");
-      if (event.type === "tool_call.create" && toolId) {
-        events.push({ ...event, payload: { ...event.payload, ...(stepId ? { stepId } : {}) } });
-        this.#activeTools.add(toolId);
-        this.#stepHasTool = true;
-        this.#toolsCompleted = false;
-        continue;
-      }
-      if (event.type === "tool_call.update" && toolId && isTerminalToolStatus(event.payload.status)) {
-        events.push({ ...event, payload: { ...event.payload, ...(stepId ? { stepId } : {}) } });
-        this.#activeTools.delete(toolId);
-        if (this.#stepHasTool && this.#activeTools.size === 0) this.#toolsCompleted = true;
-        continue;
-      }
-      if (event.type === "tool_call.update") {
-        events.push({ ...event, payload: { ...event.payload, ...(stepId ? { stepId } : {}) } });
-        continue;
-      }
-      events.push(event);
-    }
-    return events;
-  }
-
-  finish(finishReason: string | undefined, status: string): CanonicalEvent[] {
-    const reason = this.#stepHasTool && this.#stepPublicText.length === 0
-      ? "tool-calls"
-      : finishReason ?? "end_turn";
-    return this.#finishStep(reason, status);
-  }
-
-  #ensureStep(): CanonicalEvent[] {
-    if (this.#stepId) return [];
-    this.#stepId = `${this.#provider}:step:${++this.#stepNumber}`;
-    return [{ protocolVersion: 2, type: "model_step.started", payload: { stepId: this.#stepId } }];
-  }
-
-  #finishStep(finishReason: string, status: string): CanonicalEvent[] {
-    if (!this.#stepId) return [];
-    const event: CanonicalEvent = { protocolVersion: 2,
-      type: "model_step.finished",
-      payload: {
-        stepId: this.#stepId,
-        status: canonicalTerminalStatus(status),
-        finishReason,
-      }
-    };
-    this.#stepId = undefined;
-    this.#stepHasTool = false;
-    this.#stepPublicText = "";
-    this.#toolsCompleted = false;
-    return [event];
-  }
-
-  #appendPublicText(value: unknown): void {
-    if (typeof value !== "string" || !value) return;
-    const remaining = MAX_STEP_PUBLIC_TEXT_CHARS - Array.from(this.#stepPublicText).length;
-    if (remaining <= 0) return;
-    this.#stepPublicText += Array.from(value).slice(0, remaining).join("");
-  }
 }
 
 export function createAcpAdapter(
@@ -394,7 +286,6 @@ export function createAcpAdapter(
             }
           }
         };
-        yield { protocolVersion: 2, type: "message.create", payload: { role: "assistant", status: "streaming" } };
 
         const input = providerInputParts(request, resumeFallback !== undefined);
         // Preserve the legacy text call while mixed prompts retain every block's position.
@@ -433,7 +324,7 @@ export function createAcpAdapter(
               continue;
             }
             const standardUpdate = update as StandardAcpUpdate;
-            const events = turn.normalize(standardUpdate);
+            const events = turn.normalize(standardUpdate.sessionUpdate ?? standardUpdate.type, normalizeAcpUpdate(standardUpdate, definition.provider));
             observeProviderOutput(context, events, {
               rpcMethod: "session/update",
               providerSessionId: sessionId,
@@ -464,11 +355,11 @@ export function createAcpAdapter(
 
         const cancelled = request.signal?.aborted || isCancelledStopReason(stopReason);
         if (!cancelled && !producedFinalOutput && promptResultPublicText) {
-          const fallbackEvents = turn.normalize({
+          const fallbackEvents = turn.normalize("agent_message_chunk", normalizeAcpUpdate({
             type: "prompt_result",
             sessionUpdate: "agent_message_chunk",
             content: { text: promptResultPublicText }
-          });
+          }, definition.provider));
           for (const event of fallbackEvents) yield event;
           producedFinalOutput = true;
         }

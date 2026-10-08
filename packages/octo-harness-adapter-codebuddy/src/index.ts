@@ -6,6 +6,7 @@ import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
  */
 import {
   AcpApprovalBridge,
+  AcpTurnNormalizer,
   acpToolTerminalStatus,
   normalizeAcpToolUpdate,
   defineAdapter,
@@ -163,7 +164,6 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
         // The AgentSession stores only the provider sessionId; both the
         // new and resume paths converge on the same ACP prompt stream.
         yield { protocolVersion: 2, type: "session.update", payload: { providerSession: { sessionId: session.id, resumable: true, model: req.agentConfig?.model } } };
-        yield { protocolVersion: 2, type: "message.create", payload: { role: "assistant", status: "streaming" } };
         // Build once and reuse for capture and dispatch. Reconstructing the
         // carrier separately risks evaluating content that was never sent.
         const prompt = `${providerInputText(req)}\n\n${req.controlInstructions}`;
@@ -186,6 +186,7 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
           let promptStopReason: string | undefined;
           let promptFinishReason: string | undefined;
           const activeToolIds = new Set<string>();
+          const turn = new AcpTurnNormalizer("codebuddy");
           for await (const update of client.prompt(session.id, prompt, {
             requestId: promptRequestId,
             params: promptParams,
@@ -215,7 +216,7 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
               promptFinishReason = update.finishReason;
               continue;
             }
-            const events = normalizeCodeBuddyUpdate(update);
+            const events = turn.normalize(update.sessionUpdate ?? update.type, normalizeCodeBuddyUpdate(update));
             const nativeType = typeof update.sessionUpdate === "string"
               ? update.sessionUpdate
               : update.type;
@@ -249,6 +250,7 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
               yield { protocolVersion: 2, type: "tool_call.update", payload: { id, status: canonicalTerminalStatus("cancelled") } };
             }
           }
+          for (const event of turn.finish(promptFinishReason ?? promptStopReason, cancelled ? "cancelled" : "completed")) yield event;
           const terminalMessage: CanonicalEvent = { protocolVersion: 2,
             type: "message.update",
             payload: { role: "assistant", status: cancelled ? "stopped" : "completed" }
