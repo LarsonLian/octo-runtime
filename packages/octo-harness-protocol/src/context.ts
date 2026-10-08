@@ -267,14 +267,8 @@ function resource(value: Record<string, unknown>): void {
   if (value.params !== undefined) object(value.params, "CONTEXT_SCHEMA_INVALID");
   const locator = value.locator;
   object(locator, "CONTEXT_SCHEMA_INVALID");
-  if (value.resolver === "mcp") {
-    fields(locator, ["server_ref", "tool"]); text(locator.server_ref); text(locator.tool);
-  } else if (value.resolver === "cli" || value.resolver === "local_tool") {
-    fields(locator, ["operation_ref"]); text(locator.operation_ref);
-  } else if (value.resolver === "snapshot") {
-    fields(locator, ["snapshot_ref", "digest"]); text(locator.snapshot_ref);
-    if (typeof locator.digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(locator.digest) || "params" in value) throw new TypeError("CONTEXT_SCHEMA_INVALID");
-  } else throw new TypeError("CONTEXT_SCHEMA_INVALID");
+  if (value.resolver !== "mcp") throw new TypeError("CONTEXT_SCHEMA_INVALID");
+  fields(locator, ["server_ref", "tool"]); text(locator.server_ref); text(locator.tool);
 }
 
 function continuity(value: Record<string, unknown>): void {

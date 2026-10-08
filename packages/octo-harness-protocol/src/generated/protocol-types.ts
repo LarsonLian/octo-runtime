@@ -91,14 +91,16 @@ export type ContextRuntimeSelectionPayload1 =
       mode?: "explicit";
     };
 /**
- * Declarative registered resolver operation, never an arbitrary shell command or credential. Validation does not resolve or authorize it. A consumer without the specified resolver must fail with CONTEXT_RESOLVER_UNAVAILABLE rather than ignore the entry.
+ * Declarative MCP resource operation. Only deployed scoped operations may execute; schema validation does not authorize access.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextResourceEntry".
  */
 export type ContextResourceEntry = {
+  locator?: ContextMcpLocator;
+} & {
   resource_ref: string;
-  resolver: "mcp" | "cli" | "local_tool" | "snapshot";
+  resolver: "mcp";
   locator: {};
   /**
    * Frozen non-secret JSON parameters supplied by the authenticated resolver plan, not model-generated commands.
@@ -106,20 +108,7 @@ export type ContextResourceEntry = {
   params?: Record<string, unknown>;
   authorization_ref?: string;
   revision?: string;
-} & ContextResourceEntry1;
-export type ContextResourceEntry1 =
-  | {
-      resolver?: "mcp";
-      locator?: ContextMcpLocator;
-    }
-  | {
-      resolver?: "cli" | "local_tool";
-      locator?: ContextOperationLocator;
-    }
-  | {
-      resolver?: "snapshot";
-      locator?: ContextSnapshotLocator;
-    };
+};
 /**
  * A channel continuity descriptor. The x-octo-matching-trigger-fields keyword requires trigger_fact.message_id == trigger_message_id and matching presence/value of trigger_fact.message_seq and trigger_seq.
  *
@@ -1869,21 +1858,6 @@ export interface ContextSelectionsPayload {
 export interface ContextMcpLocator {
   server_ref: string;
   tool: string;
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextOperationLocator".
- */
-export interface ContextOperationLocator {
-  operation_ref: string;
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextSnapshotLocator".
- */
-export interface ContextSnapshotLocator {
-  snapshot_ref: string;
-  digest: string;
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema

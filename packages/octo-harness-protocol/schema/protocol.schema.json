@@ -431,33 +431,21 @@
       "properties": {"entries": {"type": "array", "items": {"$ref": "#/definitions/ContextSelectionEntry"}}}
     },
     "ContextResourceEntry": {
-      "description": "Declarative registered resolver operation, never an arbitrary shell command or credential. Validation does not resolve or authorize it. A consumer without the specified resolver must fail with CONTEXT_RESOLVER_UNAVAILABLE rather than ignore the entry.",
+      "description": "Declarative MCP resource operation. Only deployed scoped operations may execute; schema validation does not authorize access.",
       "type": "object", "additionalProperties": false, "required": ["resource_ref", "resolver", "locator"],
       "properties": {
         "resource_ref": {"type": "string", "minLength": 1},
-        "resolver": {"enum": ["mcp", "cli", "local_tool", "snapshot"]},
+        "resolver": {"const": "mcp"},
         "locator": {"type": "object"},
         "params": {"description": "Frozen non-secret JSON parameters supplied by the authenticated resolver plan, not model-generated commands.", "type": "object", "additionalProperties": true, "tsType": "Record<string, unknown>"},
         "authorization_ref": {"type": "string", "minLength": 1},
         "revision": {"type": "string", "minLength": 1}
       },
-      "oneOf": [
-        {"properties": {"resolver": {"const": "mcp"}, "locator": {"$ref": "#/definitions/ContextMcpLocator"}}},
-        {"properties": {"resolver": {"enum": ["cli", "local_tool"]}, "locator": {"$ref": "#/definitions/ContextOperationLocator"}}},
-        {"properties": {"resolver": {"const": "snapshot"}, "locator": {"$ref": "#/definitions/ContextSnapshotLocator"}}, "not": {"required": ["params"]}}
-      ]
+      "allOf": [{"properties": {"locator": {"$ref": "#/definitions/ContextMcpLocator"}}}]
     },
     "ContextMcpLocator": {
       "type": "object", "additionalProperties": false, "required": ["server_ref", "tool"],
       "properties": {"server_ref": {"type": "string", "minLength": 1}, "tool": {"type": "string", "minLength": 1}}
-    },
-    "ContextOperationLocator": {
-      "type": "object", "additionalProperties": false, "required": ["operation_ref"],
-      "properties": {"operation_ref": {"type": "string", "minLength": 1}}
-    },
-    "ContextSnapshotLocator": {
-      "type": "object", "additionalProperties": false, "required": ["snapshot_ref", "digest"],
-      "properties": {"snapshot_ref": {"type": "string", "minLength": 1}, "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}}
     },
     "ContextResourcesPayload": {
       "type": "object", "additionalProperties": false, "required": ["entries"],
