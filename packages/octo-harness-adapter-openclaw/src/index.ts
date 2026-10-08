@@ -163,6 +163,28 @@ interface StreamState {
   reasoningText: string;
   stepStarted: boolean;
   stepFinished: boolean;
+  messageNumber: number;
+  messages: Map<string, CanonicalEvent["payload"]>;
+  assistantItemId?: string;
+  tools: Set<string>;
+}
+
+function gatewayMessage(state: StreamState, channel: "analysis" | "final" | "commentary", nativeId?: string): CanonicalEvent["payload"] {
+  const key = channel === "commentary" ? `commentary:${nativeId ?? "preamble"}` : channel;
+  let message = state.messages.get(key);
+  if (!message) {
+    message = { messageId: nativeId ? `openclaw:${nativeId}` : `openclaw:${channel}:${++state.messageNumber}`, channel,
+      ...(channel === "analysis" ? { exposure: "public_reasoning", provenance: { provider: "openclaw", nativeEvent: "gateway.agent.thinking" } } : {}) };
+    state.messages.set(key, message);
+  }
+  return message;
+}
+
+function closeGatewayMessage(state: StreamState, key: string, status = "completed"): CanonicalEvent[] {
+  const message = state.messages.get(key);
+  if (!message) return [];
+  state.messages.delete(key);
+  return [{ protocolVersion: 2, type: "message.update", payload: { ...message, status: canonicalTerminalStatus(status) } }];
 }
 
 function snapshotDelta(previous: string, next: string): { delta?: string; replacement?: string } {
@@ -221,13 +243,23 @@ function normalizeGatewayAgentEvent(payload: unknown, state: StreamState): Canon
 
   ensureStep();
   if (stream === "assistant" && typeof data.text === "string") {
+    events.push(...closeGatewayMessage(state, "analysis"));
+    state.reasoningText = "";
+    const nativeId = nonEmptyString(data.itemId);
+    if (nativeId && nativeId !== state.assistantItemId) {
+      events.push(...closeGatewayMessage(state, "final"));
+      state.assistantText = "";
+      state.assistantItemId = nativeId;
+    }
+    const message = gatewayMessage(state, "final", nativeId);
     const change = snapshotDelta(state.assistantText, data.text);
     state.assistantText = data.text;
-    if (change.delta) events.push({ protocolVersion: 2, type: "message.delta", payload: { text: change.delta, channel: "final" } });
+    if (change.delta) events.push({ protocolVersion: 2, type: "message.delta", payload: { ...message, text: change.delta, channel: "final" } });
     if (change.replacement !== undefined) {
-      events.push({ protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "streaming", text: change.replacement, channel: "final" } });
+      events.push({ protocolVersion: 2, type: "message.update", payload: { ...message, role: "assistant", status: "streaming", text: change.replacement, channel: "final" } });
     }
   } else if (stream === "thinking" && typeof data.text === "string") {
+    const message = gatewayMessage(state, "analysis");
     const change = snapshotDelta(state.reasoningText, data.text);
     state.reasoningText = data.text;
     const text = change.delta ?? change.replacement;
@@ -235,6 +267,7 @@ function normalizeGatewayAgentEvent(payload: unknown, state: StreamState): Canon
       events.push({ protocolVersion: 2,
         type: change.replacement === undefined ? "message.delta" : "message.update",
         payload: {
+          ...message,
           role: "assistant",
           status: "streaming",
           text,
@@ -244,26 +277,31 @@ function normalizeGatewayAgentEvent(payload: unknown, state: StreamState): Canon
         }
       });
     }
+  } else if (stream === "thinking" && finiteNumber(data.progressTokens) !== undefined) {
+    if (!state.messages.has("analysis")) {
+      events.push({ protocolVersion: 2, type: "message.create", payload: { ...gatewayMessage(state, "analysis"), status: "streaming", exposure: "unknown" } });
+    }
   } else if (stream === "tool") {
     const phase = nonEmptyString(data.phase);
-    const id = nonEmptyString(data.toolCallId) ?? "tool";
+    const id = nonEmptyString(data.toolCallId);
+    if (!id) return events;
     if (phase === "start") {
+      if (state.tools.has(id)) return events;
+      state.tools.add(id);
+      events.push(...closeGatewayMessage(state, "analysis"));
+      state.reasoningText = "";
       events.push({ protocolVersion: 2, type: "tool_call.create", payload: { status: "running", id, name: nonEmptyString(data.name) ?? "tool", args: asRecord(data.args) ?? {} } });
     } else if (phase === "update") {
       events.push({ protocolVersion: 2, type: "tool_call.delta", payload: { id, outputSnapshot: typeof (data.result ?? data.partialResult) === "string" ? String(data.result ?? data.partialResult) : JSON.stringify(data.result ?? data.partialResult ?? "") } });
     } else if (phase === "result") {
-      events.push({ protocolVersion: 2, type: "tool_call.update", payload: { id, status: canonicalTerminalStatus(data.isError === true ? "error" : "completed"), output: data.result } });
+      events.push({ protocolVersion: 2, type: "tool_call.update", payload: { id, ...(nonEmptyString(data.name) ? { name: data.name } : {}), status: canonicalTerminalStatus(data.isError === true ? "error" : "completed"), output: data.result } });
     }
   } else if (stream === "item" && data.kind === "preamble" && typeof data.progressText === "string") {
-    events.push({ protocolVersion: 2,
-      type: "message.delta",
-      payload: {
-        text: data.progressText,
-        channel: "analysis",
-        exposure: "public_summary",
-        provenance: { provider: "openclaw", nativeEvent: "gateway.agent.item" }
-      }
-    });
+    const nativeId = nonEmptyString(data.itemId);
+    const message = gatewayMessage(state, "commentary", nativeId);
+    events.push({ protocolVersion: 2, type: "message.update", payload: {
+      ...message, text: data.progressText, status: data.phase === "end" ? "completed" : "streaming"
+    } });
   } else if (stream === "usage") {
     const event = usageEvent(data);
     if (event) events.push(event);
@@ -340,11 +378,12 @@ function normalizeFinalResponse(value: unknown, state: StreamState): {
   };
   if (finalText) {
     ensureStep();
+    const message = gatewayMessage(state, "final", state.assistantItemId);
     const change = snapshotDelta(state.assistantText, finalText);
     state.assistantText = finalText;
-    if (change.delta) events.push({ protocolVersion: 2, type: "message.delta", payload: { text: change.delta, channel: "final" } });
+    if (change.delta) events.push({ protocolVersion: 2, type: "message.delta", payload: { ...message, text: change.delta, channel: "final" } });
     if (change.replacement !== undefined) {
-      events.push({ protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "streaming", text: change.replacement, channel: "final" } });
+      events.push({ protocolVersion: 2, type: "message.update", payload: { ...message, role: "assistant", status: "streaming", text: change.replacement, channel: "final" } });
     }
   }
   const usage = asRecord(agentMeta?.usage);
@@ -450,7 +489,7 @@ async function* invokeOpenClawGateway(
   let agentAccepted = false;
   let providerSessionKey = invocation.sessionKey;
   const unsubscribe = client.onEvent(event => queue.push({ event }));
-  const state: StreamState = { lastSeq: -1, assistantText: "", reasoningText: "", stepStarted: false, stepFinished: false };
+  const state: StreamState = { lastSeq: -1, assistantText: "", reasoningText: "", stepStarted: false, stepFinished: false, messageNumber: 0, messages: new Map(), tools: new Set() };
   let terminal: "completed" | "failed" | "cancelled" | undefined;
 
   try {
@@ -475,7 +514,6 @@ async function* invokeOpenClawGateway(
       type: "session.update",
       payload: { providerSession: { sessionId: providerSessionKey, resumable: false, agentId: invocation.agentId } }
     };
-    yield { protocolVersion: 2, type: "message.create", payload: { role: "assistant", status: "streaming", channel: "final" } };
 
     const request = client.request("agent", invocation.agentParams, {
       expectFinal: true,
@@ -547,17 +585,17 @@ async function* invokeOpenClawGateway(
     }
 
     if (req.signal?.aborted || terminal === "cancelled") {
-      yield { protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "stopped", text: state.assistantText, channel: "final" } };
+      yield { protocolVersion: 2, type: "message.update", payload: { ...gatewayMessage(state, "final", state.assistantItemId), role: "assistant", status: "stopped", text: state.assistantText, channel: "final" } };
       yield { protocolVersion: 2, type: "run.cancelled", payload: { reason: String(req.signal?.reason ?? "openclaw_aborted") } };
       return;
     }
     if (terminal !== "completed") throw new Error("OpenClaw Gateway stream ended without a terminal lifecycle event");
-    yield { protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "completed", text: state.assistantText, channel: "final" } };
+    yield { protocolVersion: 2, type: "message.update", payload: { ...gatewayMessage(state, "final", state.assistantItemId), role: "assistant", status: "completed", text: state.assistantText, channel: "final" } };
     yield { protocolVersion: 2, type: "run.completed", payload: {} };
   } catch (error) {
     if (req.signal?.aborted) {
       if (!agentAccepted) {
-        yield { protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "stopped", text: state.assistantText, channel: "final" } };
+        yield { protocolVersion: 2, type: "message.update", payload: { ...gatewayMessage(state, "final", state.assistantItemId), role: "assistant", status: "stopped", text: state.assistantText, channel: "final" } };
         yield { protocolVersion: 2, type: "run.cancelled", payload: { reason: String(req.signal.reason ?? "openclaw_aborted_before_dispatch") } };
         return;
       }
@@ -579,11 +617,11 @@ async function* invokeOpenClawGateway(
           "cancelled",
           Date.now() + 30_000
         );
-        yield { protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "stopped", text: state.assistantText, channel: "final" } };
+        yield { protocolVersion: 2, type: "message.update", payload: { ...gatewayMessage(state, "final", state.assistantItemId), role: "assistant", status: "stopped", text: state.assistantText, channel: "final" } };
         yield { protocolVersion: 2, type: "run.cancelled", payload: { reason: String(req.signal.reason ?? "openclaw_aborted") } };
       } catch (abortError) {
         const message = abortError instanceof Error ? abortError.message : "OpenClaw Gateway abort confirmation failed";
-        yield { protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "failed", text: state.assistantText, channel: "final" } };
+        yield { protocolVersion: 2, type: "message.update", payload: { ...gatewayMessage(state, "final", state.assistantItemId), role: "assistant", status: "failed", text: state.assistantText, channel: "final" } };
         yield { protocolVersion: 2, type: "run.failed", payload: { message, adapterType: "openclaw" } };
       } finally {
         await recoveryClient?.close();
@@ -596,7 +634,7 @@ async function* invokeOpenClawGateway(
       try {
         assertRuntimeGatewayContract(await recoveryClient.connect());
         await waitForConfirmedTerminal(recoveryClient, acceptedRunId, "completed", invocation.reconciliationDeadlineAt);
-        yield { protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "completed", text: state.assistantText, channel: "final" } };
+        yield { protocolVersion: 2, type: "message.update", payload: { ...gatewayMessage(state, "final", state.assistantItemId), role: "assistant", status: "completed", text: state.assistantText, channel: "final" } };
         yield { protocolVersion: 2, type: "run.completed", payload: {} };
         return;
       } catch (recoveryError) {
@@ -613,7 +651,7 @@ async function* invokeOpenClawGateway(
       providerRequestId: acceptedRunId,
       data: { error: message }
     });
-    yield { protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "failed", text: state.assistantText, channel: "final" } };
+    yield { protocolVersion: 2, type: "message.update", payload: { ...gatewayMessage(state, "final", state.assistantItemId), role: "assistant", status: "failed", text: state.assistantText, channel: "final" } };
     yield { protocolVersion: 2, type: "run.failed", payload: { message, adapterType: "openclaw" } };
   } finally {
     unsubscribe();
