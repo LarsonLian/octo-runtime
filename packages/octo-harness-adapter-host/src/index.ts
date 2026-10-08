@@ -216,6 +216,8 @@ export class AdapterHost {
     // adapter. This prevents a plugin from accidentally attributing sensitive
     // input to another Run while still letting it describe transport details.
     const context: AdapterInvocationContext = {
+    const anonymousMessages = new Map<string, string>();
+    let messageNumber = 0;
       observe: observation => this.#observe(identity, observation),
       reportActivity: activity => watchdog.activity(activity)
     };
@@ -226,8 +228,13 @@ export class AdapterHost {
         || event.type === "message.delta"
         || event.type === "message.update";
       if (!isMessage) return { prefix: [], event };
-      const channel = event.payload.channel ?? "final";
-      const messageId = event.payload.messageId ?? `${request.runId}:${channel}`;
+      const previous = event.payload.messageId ? messages.get(event.payload.messageId) : undefined;
+      const channel = event.payload.channel ?? previous?.channel ?? "final";
+      const segmentKey = `${channel}:${event.payload.stepId ?? ""}`;
+      const currentAnonymous = anonymousMessages.get(segmentKey);
+      const messageId = event.payload.messageId ?? (currentAnonymous && messages.get(currentAnonymous)?.open && event.type !== "message.create"
+        ? currentAnonymous : `${request.runId}:${channel}:message:${++messageNumber}`);
+      if (!event.payload.messageId) anonymousMessages.set(segmentKey, messageId);
       const state = messages.get(messageId);
       const stepId = typeof event.payload.stepId === "string" ? event.payload.stepId : state?.stepId;
       const analysisMetadata = channel === "analysis" ? {
@@ -249,10 +256,11 @@ export class AdapterHost {
       return { prefix, event: prepared };
     };
 
-    const closeMessages = (status: string, stepId?: string): CanonicalEvent[] => {
+    const closeMessages = (status: string, stepId?: string, onlyAnonymous = false): CanonicalEvent[] => {
       const closed: CanonicalEvent[] = [];
       for (const state of messages.values()) {
-        if (!state.open || (stepId !== undefined && (state.channel !== "analysis" || state.stepId !== stepId))) continue;
+        if (!state.open || (stepId !== undefined && state.stepId !== stepId)) continue;
+        if (onlyAnonymous && ![...anonymousMessages.values()].includes(state.messageId)) continue;
         state.open = false;
         closed.push({ protocolVersion: 2,
           type: "message.update",
@@ -310,6 +318,17 @@ export class AdapterHost {
             for (const closed of closeMessages(event.payload.status, event.payload.stepId)) yield closed;
           }
           const prepared = prepareMessage(event);
+          // Placeholder creates do not establish a provider message boundary.
+          if (event.type === "message.create" && !event.payload.messageId && !event.payload.text) continue;
+          if (event.type === "message.update" && !event.payload.messageId && !event.payload.text
+            && ["completed", "failed", "cancelled", "canceled", "stopped"].includes(String(event.payload.status))) {
+            for (const closed of closeMessages(String(event.payload.status), typeof event.payload.stepId === "string" ? event.payload.stepId : undefined)) yield closed;
+            continue;
+          }
+          if (event.type === "tool_call.create") {
+            for (const closed of closeMessages("completed", undefined, true)) yield closed;
+            anonymousMessages.clear();
+          }
           for (const prefix of prepared.prefix) yield prefix;
           yield prepared.event;
         }
