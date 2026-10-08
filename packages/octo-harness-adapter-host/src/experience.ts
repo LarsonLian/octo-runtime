@@ -41,8 +41,9 @@ export class InvocationExperience {
       const messageId = String(payload.messageId);
       const publicAnalysis = ["public_reasoning", "public_summary", "public_plan"].includes(String(payload.exposure));
       const visible = payload.channel !== "analysis" || publicAnalysis;
-      if (event.type !== "message.update") output.push(...this.#begin(`message:${messageId}`, payload.channel === "analysis" ? "thinking" : "responding", { type: "message", id: messageId }));
-      else output.push(...this.#finish(`message:${messageId}`, payload.status === "failed" ? "failed" : payload.status === "cancelled" ? "cancelled" : "completed"));
+      const closed = event.type === "message.update" && ["completed", "failed", "cancelled", "canceled", "stopped"].includes(String(payload.status));
+      if (!closed) output.push(...this.#begin(`message:${messageId}`, payload.channel === "analysis" ? "thinking" : "responding", { type: "message", id: messageId }));
+      else output.push(...this.#finish(`message:${messageId}`, canonicalTerminalStatus(payload.status)));
       if (!visible) return output;
     }
     if (isTerminal(event)) {

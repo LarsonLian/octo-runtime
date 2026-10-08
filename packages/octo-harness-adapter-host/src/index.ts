@@ -244,7 +244,8 @@ export class AdapterHost {
             payload: { role: "assistant", status: "streaming", channel, messageId, ...(stepId ? { stepId } : {}), ...analysisMetadata }
           }]
         : [];
-      messages.set(messageId, { messageId, channel, open: event.type !== "message.update", ...(stepId ? { stepId } : {}), ...analysisMetadata });
+      const closed = event.type === "message.update" && ["completed", "failed", "cancelled", "canceled", "stopped"].includes(String(event.payload.status));
+      messages.set(messageId, { messageId, channel, open: !closed, ...(stepId ? { stepId } : {}), ...analysisMetadata });
       return { prefix, event: prepared };
     };
 
