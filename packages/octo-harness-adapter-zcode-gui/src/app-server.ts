@@ -208,7 +208,7 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
     }
     if (kind === "tool_call") {
       const id = stringField(payload, "toolCallId");
-      if (id) {
+      if (id && !state.tools.has(id)) {
         state.tools.set(id, {
           name: stringField(payload, "toolName") ?? "zcode_tool",
           input: payload.input,
@@ -230,7 +230,7 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
         const tool = state.tools.get(id);
         if (!tool || tool.terminal) continue;
         tool.terminal = true;
-        events.push({ protocolVersion: 2, type: "tool_call.update", payload: { id, status: canonicalTerminalStatus(status), stepId: state.stepId } });
+        events.push({ protocolVersion: 2, type: "tool_call.update", payload: { id, name: tool.name, args: tool.input, status: canonicalTerminalStatus(status), stepId: state.stepId } });
       }
       return events;
     }
@@ -250,7 +250,8 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
       tool.name = stringField(payload, "toolName") ?? tool.name;
       if (payload.input !== undefined) tool.input = payload.input;
     }
-    if (kind === "scheduled" || !toolCreated(events, state, id)) {
+    if (tool.terminal) return events;
+    if (kind !== "result" && kind !== "error" && (kind === "scheduled" || !toolCreated(events, state, id))) {
       const created = ensureToolCreated(state, id);
       if (created) events.push(created);
     }
@@ -271,7 +272,7 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
     }
     if (kind === "result") {
       tool.terminal = true;
-      events.push({ protocolVersion: 2, type: "tool_call.update", payload: { id, status: canonicalTerminalStatus("completed"), output: payload.result, stepId: state.stepId } });
+      events.push({ protocolVersion: 2, type: "tool_call.update", payload: { id, name: tool.name, args: tool.input, status: canonicalTerminalStatus("completed"), output: payload.result, stepId: state.stepId } });
       return events;
     }
     if (kind === "error") {
@@ -280,6 +281,8 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
         type: "tool_call.update",
         payload: {
           id,
+          name: tool.name,
+          args: tool.input,
           status: canonicalTerminalStatus("failed"),
           error: asRecord(payload.error) ?? { message: printableValue(payload.error, "ZCode tool failed") },
           stepId: state.stepId
