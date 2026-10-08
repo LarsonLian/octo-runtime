@@ -5,6 +5,7 @@ import {
   AcpTurnNormalizer,
   acpToolTerminalStatus,
   normalizeAcpToolUpdate,
+  observeAcpToolStatus,
   defineAdapter,
   observeBestEffort,
   observeProviderOutput,
@@ -324,6 +325,7 @@ export function createAcpAdapter(
               continue;
             }
             const standardUpdate = update as StandardAcpUpdate;
+            observeAcpToolStatus(context, standardUpdate);
             const events = turn.normalize(standardUpdate.sessionUpdate ?? standardUpdate.type, normalizeAcpUpdate(standardUpdate, definition.provider));
             observeProviderOutput(context, events, {
               rpcMethod: "session/update",

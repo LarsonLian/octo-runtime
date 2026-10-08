@@ -33,7 +33,7 @@ export { freshFallbackInputText, providerInputText, providerInputParts, hasImage
 export { AcpTurnNormalizer } from "./acp-turn.js";
 export { AcpApprovalBridge } from "./approval.js";
 export { sanitizePublicValue } from "./public-display.js";
-export { acpToolTerminalStatus, normalizeAcpToolUpdate } from "./acp-tool.js";
+export { acpToolTerminalStatus, normalizeAcpToolUpdate, observeAcpToolStatus } from "./acp-tool.js";
 
 export interface AdapterMetadata {
   type: string;

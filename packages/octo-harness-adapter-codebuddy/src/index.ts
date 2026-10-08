@@ -9,6 +9,7 @@ import {
   AcpTurnNormalizer,
   acpToolTerminalStatus,
   normalizeAcpToolUpdate,
+  observeAcpToolStatus,
   defineAdapter,
   observeBestEffort,
   observeProviderOutput,
@@ -216,6 +217,7 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
               promptFinishReason = update.finishReason;
               continue;
             }
+            observeAcpToolStatus(context, update);
             const events = turn.normalize(update.sessionUpdate ?? update.type, normalizeCodeBuddyUpdate(update));
             const nativeType = typeof update.sessionUpdate === "string"
               ? update.sessionUpdate
