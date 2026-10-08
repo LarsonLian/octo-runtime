@@ -495,7 +495,7 @@ test("Claude preserves an empty thinking block as a public reasoning lifecycle",
   }]);
 });
 
-test("Claude carries bounded public round text without classifying it as reasoning", () => {
+test("Claude retains public text identity and closes it at the round boundary", () => {
   const normalizer = new ClaudeEventNormalizer();
   const native = event => ({ type: "stream_event", parent_tool_use_id: null, event });
   normalizer.normalize(native({ type: "message_start", message: { id: "message-public-text" } }));
@@ -503,13 +503,16 @@ test("Claude carries bounded public round text without classifying it as reasoni
     type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "I'll inspect " }
   })), [{ protocolVersion: 2,
     type: "message.delta",
-    payload: { text: "I'll inspect ", channel: "final", stepId: "message-public-text" }
+    payload: { text: "I'll inspect ", channel: "final", messageId: "claude:message-public-text:text:0", stepId: "message-public-text" }
   }]);
   normalizer.normalize(native({
     type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "the repository." }
   }));
   normalizer.normalize(native({ type: "message_delta", delta: { stop_reason: "tool_use" } }));
   assert.deepEqual(normalizer.normalize(native({ type: "message_stop" })), [{ protocolVersion: 2,
+    type: "message.update",
+    payload: { messageId: "claude:message-public-text:text:0", channel: "final", stepId: "message-public-text", status: "completed" }
+  }, { protocolVersion: 2,
     type: "model_step.finished",
     payload: {
       stepId: "message-public-text", status: "completed", finishReason: "tool_use",

@@ -60,7 +60,7 @@ interface ClaudeNativeEvent {
   session_id?: string;
   parent_tool_use_id?: string | null;
   event?: ClaudeStreamEvent;
-  message?: { content?: ClaudeContentBlock[] };
+  message?: { id?: string; content?: ClaudeContentBlock[] };
   usage?: Record<string, unknown>;
   is_error?: boolean;
   result?: string;
@@ -169,6 +169,8 @@ export class ClaudeEventNormalizer {
   readonly #publicTexts = new Map<string, string>();
   /** parent tool scope -> content block index -> public thinking item id. */
   readonly #thinkingBlocks = new Map<string, Map<number, string>>();
+  readonly #textBlocks = new Map<string, Map<number, string>>();
+  readonly #completedMessages = new Set<string>();
   /** tool_use id -> provider model round, retained until Claude reports the tool result. */
   readonly #toolSteps = new Map<string, string>();
   #messageSequence = 0;
@@ -193,14 +195,18 @@ export class ClaudeEventNormalizer {
       // --include-partial-messages replays the complete block after the delta; do not emit it again.
       if (this.#sawPartialMessages) return [];
       const events: CanonicalEvent[] = [];
-      for (const block of native.message?.content ?? []) {
+      const stepId = native.message?.id ?? `claude:message-${++this.#messageSequence}`;
+      if (this.#completedMessages.has(stepId)) return [];
+      this.#completedMessages.add(stepId);
+      for (const [index, block] of (native.message?.content ?? []).entries()) {
         if (block.type === "text" && block.text) {
-          events.push({ protocolVersion: 2, type: "message.delta", payload: { text: block.text, channel: "final" } });
+          events.push({ protocolVersion: 2, type: "message.update", payload: { messageId: `claude:${stepId}:text:${index}`, stepId, status: "completed", text: block.text, channel: "final" } });
         }
         if (block.type === "thinking" && block.thinking) {
           events.push({ protocolVersion: 2,
-            type: "message.delta",
+            type: "message.update",
             payload: {
+              messageId: `claude:${stepId}:thinking:${index}`, stepId, status: "completed",
               text: block.thinking,
               ...claudeAnalysisMetadata("public_reasoning", "assistant.content.thinking")
             }
@@ -271,6 +277,7 @@ export class ClaudeEventNormalizer {
       // A block index is only stable within one provider message, so a new message must clear the current scope.
       this.#toolBlocks.set(scope, new Map());
       this.#thinkingBlocks.set(scope, new Map());
+      this.#textBlocks.set(scope, new Map());
       this.#finishReasons.delete(scope);
       this.#publicTexts.set(scope, "");
       const stepId = event.message?.id ?? `claude:${scope}:message-${++this.#messageSequence}`;
@@ -290,6 +297,15 @@ export class ClaudeEventNormalizer {
 
     if (event.type === "content_block_start") {
       const block = event.content_block;
+      if (block?.type === "text" && typeof event.index === "number") {
+        const stepId = this.#messageIds.get(scope) ?? `claude:${scope}:message-${++this.#messageSequence}`;
+        this.#messageIds.set(scope, stepId);
+        const messageId = `claude:${stepId}:text:${event.index}`;
+        const blocks = this.#textBlocks.get(scope) ?? new Map<number, string>();
+        this.#textBlocks.set(scope, blocks);
+        blocks.set(event.index, messageId);
+        return [{ protocolVersion: 2, type: "message.create", payload: { role: "assistant", status: "streaming", channel: "final", messageId, stepId, ...(block.text ? { text: block.text } : {}) } }];
+      }
       if (block?.type === "thinking" && typeof event.index === "number") {
         let blocks = this.#thinkingBlocks.get(scope);
         if (!blocks) {
@@ -326,6 +342,11 @@ export class ClaudeEventNormalizer {
     }
 
     if (event.type === "content_block_stop" && typeof event.index === "number") {
+      const textId = this.#textBlocks.get(scope)?.get(event.index);
+      if (textId) {
+        this.#textBlocks.get(scope)?.delete(event.index);
+        return [{ protocolVersion: 2, type: "message.update", payload: { messageId: textId, channel: "final", status: "completed", stepId: this.#messageIds.get(scope) } }];
+      }
       const messageId = this.#thinkingBlocks.get(scope)?.get(event.index);
       if (!messageId) return [];
       this.#thinkingBlocks.get(scope)?.delete(event.index);
@@ -344,11 +365,17 @@ export class ClaudeEventNormalizer {
     if (event.type !== "content_block_delta") return [];
     const delta = event.delta;
     if (delta?.type === "text_delta" && delta.text) {
-      const stepId = this.#messageIds.get(scope);
+      const stepId = this.#messageIds.get(scope) ?? `claude:${scope}:message-${++this.#messageSequence}`;
+      this.#messageIds.set(scope, stepId);
+      const index = event.index ?? 0;
+      const blocks = this.#textBlocks.get(scope) ?? new Map<number, string>();
+      this.#textBlocks.set(scope, blocks);
+      const messageId = blocks.get(index) ?? `claude:${stepId}:text:${index}`;
+      blocks.set(index, messageId);
       this.#appendPublicText(scope, delta.text);
       return [{ protocolVersion: 2,
         type: "message.delta",
-        payload: { text: delta.text, channel: "final", ...(stepId ? { stepId } : {}) }
+        payload: { text: delta.text, channel: "final", messageId, stepId }
       }];
     }
     if (delta?.type === "thinking_delta" && delta.thinking) {
@@ -380,10 +407,15 @@ export class ClaudeEventNormalizer {
     const stepId = this.#messageIds.get(scope);
     if (!stepId) return [];
     const finishReason = this.#finishReasons.get(scope);
+    const closed: CanonicalEvent[] = [];
+    for (const messageId of this.#textBlocks.get(scope)?.values() ?? []) {
+      closed.push({ protocolVersion: 2, type: "message.update", payload: { messageId, channel: "final", stepId, status: canonicalTerminalStatus(status) } });
+    }
+    this.#textBlocks.delete(scope);
     this.#messageIds.delete(scope);
     this.#finishReasons.delete(scope);
     this.#publicTexts.delete(scope);
-    return [{ protocolVersion: 2,
+    return [...closed, { protocolVersion: 2,
       type: "model_step.finished",
       payload: {
         stepId,
