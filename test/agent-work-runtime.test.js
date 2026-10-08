@@ -48,9 +48,9 @@ const contentItems = [{
 }];
 
 const envelope = {
-  schema_version: 3,
+  schema_version: 4,
   effective_context: executionContext(executionPlan, contentItems),
-  context_defaults_version: 1,
+  context_configuration_version: 1,
   resolved_execution_plan: executionPlan,
   resolved_runtime_selection: resolvedRuntimeSelection(),
   run_id: "run-1",
@@ -121,6 +121,7 @@ test("process restart hello excludes stale non-terminal runs but retains pending
   const helloReceived = deferred();
   let runtime;
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-restart-ownership", protocol_version: 2 } }));
@@ -194,7 +195,7 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
   assert.match(mapped.request.modelInput, /Ada: The failing case is reset\./);
   assert.deepEqual(mapped.request.context, source.effective_context);
   assert.notEqual(mapped.request.context, source.effective_context);
-  assert.equal(mapped.request.runMetadata.schemaVersion, 3);
+  assert.equal(mapped.request.runMetadata.schemaVersion, 4);
   assert.equal(mapped.request.runMetadata.agentRevisionId, "revision-1");
   assert.equal(mapped.request.context.agentRevisionId, undefined);
   assert.equal(Object.hasOwn(mapped.request, "appendInstructions"), false);
@@ -216,21 +217,21 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
 });
 
 test("execution envelope rejects schema 1/2 and missing frozen contract fields", () => {
-  for (const version of [1, 2, 4, "3", undefined, null]) {
+  for (const version of [1, 2, 3, "4", undefined, null]) {
     assert.throws(() => mapExecutionEnvelope({ ...envelope, schema_version: version }), /LEGACY_RUN_CONTRACT_REJECTED/);
   }
   for (const [field, error] of [
     ["effective_context", /CONTEXT_REQUIRED/],
     ["resolved_execution_plan", /RESOLVED_EXECUTION_PLAN_REQUIRED/],
     ["resolved_runtime_selection", /RESOLVED_RUNTIME_SELECTION_REQUIRED/],
-    ["context_defaults_version", /CONTEXT_DEFAULTS_VERSION_REQUIRED/]
+    ["context_configuration_version", /CONTEXT_CONFIGURATION_VERSION_REQUIRED/]
   ]) {
     const source = structuredClone(envelope);
     delete source[field];
     assert.throws(() => mapExecutionEnvelope(source), error);
   }
   for (const version of [0, -1, 1.5, "1", null]) {
-    assert.throws(() => mapExecutionEnvelope({ ...envelope, context_defaults_version: version }), /CONTEXT_DEFAULTS_VERSION_REQUIRED/);
+    assert.throws(() => mapExecutionEnvelope({ ...envelope, context_configuration_version: version }), /CONTEXT_CONFIGURATION_VERSION_REQUIRED/);
   }
   assert.throws(() => mapExecutionEnvelope({
     ...envelope, agent_run_request: { ...envelope.agent_run_request, context: {} }
@@ -244,7 +245,7 @@ test("execution envelope enforces frozen runtime selection and matching effectiv
   source.effective_context.items.at(-1).payload.runtime_id = "other-runtime";
   assert.throws(() => mapExecutionEnvelope(source), /RUNTIME_SELECTION_CONTEXT_MISMATCH/);
   source.effective_context.items.at(-1).payload = { mode: "binding" };
-  assert.throws(() => mapExecutionEnvelope(source), /RUNTIME_SELECTION_CONTEXT_MISMATCH/);
+  assert.throws(() => mapExecutionEnvelope(source), /CONTEXT_SCHEMA_INVALID/);
   for (const selection of [{}, { ...envelope.resolved_runtime_selection, failover: "binding" }]) {
     assert.throws(() => mapExecutionEnvelope({ ...envelope, resolved_runtime_selection: selection }), /RESOLVED_RUNTIME_SELECTION_INVALID/);
   }
@@ -666,6 +667,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
   }, { adapter_type: "codex", workdir: process.cwd(), approval_mode: "ask" });
 
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     let body = "";
     for await (const chunk of request) body += chunk;
     registrationBody = JSON.parse(body);
@@ -826,6 +828,7 @@ test("interaction responses require the active execution instance as well as lea
   };
 
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-interaction", protocol_version: 2 } }));
@@ -945,6 +948,7 @@ test("a configured runtime ID still refreshes registration and rejects identity 
   let registrationCount = 0;
   let runtime;
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume the registration body. */ }
     registrationCount += 1;
     response.writeHead(200, { "Content-Type": "application/json" });
@@ -989,6 +993,7 @@ test("startup registration failure stays alive and every reconnect re-registers"
   let connections = 0;
   let runtime;
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume registration. */ }
     registrations += 1;
     response.writeHead(registrations === 1 ? 503 : 200, { "Content-Type": "application/json" });
@@ -1041,6 +1046,7 @@ test("rejected runtime credentials stop after the configured failure budget", as
   let registrations = 0;
   let runtime;
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume registration. */ }
     registrations += 1;
     response.writeHead(401, { "Content-Type": "application/json" });
@@ -1088,6 +1094,7 @@ test("connectivity notification interrupts a long reconnect backoff with bounded
   let runtime;
   let firstSocket;
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-fast-recovery", protocol_version: 2 } }));
@@ -1146,6 +1153,7 @@ test("reconnect terminal authority cancels local execution and discards its outb
   let connections = 0;
   let runtime;
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-terminal-authority", protocol_version: 2 } }));
@@ -1225,6 +1233,7 @@ test("runtime goaway delays and spreads the next reconnect", async () => {
   let goawayAt = 0;
   let runtime;
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-goaway", protocol_version: 2 } }));
@@ -1285,6 +1294,7 @@ test("close cancels a pending reconnect backoff without late registration", asyn
   let runtime;
   let socket;
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume registration. */ }
     registrations += 1;
     response.writeHead(200, { "Content-Type": "application/json" });
@@ -1340,6 +1350,7 @@ test("a stalled WebSocket handshake times out and registration retries", async (
   let registrations = 0;
   let runtime;
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume registration. */ }
     registrations += 1;
     response.writeHead(200, { "Content-Type": "application/json" });
@@ -1388,6 +1399,7 @@ test("hard outbox watermark rejects new work with a durable command receipt", as
   let runtime;
   let invocations = 0;
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-hard-limit", protocol_version: 2 } }));
@@ -1448,6 +1460,7 @@ test("low disk preflight stays connected, reports health and rejects new work", 
   let runtime;
   let commandSent = false;
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-low-disk", protocol_version: 2 } }));
@@ -1517,6 +1530,7 @@ test("store open failure keeps the control plane online with migration_failed he
   const healthReceived = deferred();
   let runtime;
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-store-failed", protocol_version: 2 } }));
@@ -1575,6 +1589,7 @@ test("missing provider configuration rejects work with a durable catalog failure
   let runtime;
   let invocations = 0;
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-provider-missing", protocol_version: 2 } }));
@@ -1639,6 +1654,7 @@ test("event nack releases the send window and retries from the requested sequenc
   let connectionCount = 0;
   let batchCount = 0;
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-event-nack", protocol_version: 2 } }));
@@ -1721,6 +1737,7 @@ test("local runtime concurrency limit queues a second provider invocation", asyn
   let socket;
   let invocations = 0;
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-capacity", protocol_version: 2 } }));
@@ -1796,7 +1813,7 @@ function runtimeCommand(suffix, serverSeq, runtimeId) {
     command_id: `command-${suffix}`,
     run_id: `run-${suffix}`,
     type: "run.start",
-    payload: { ...envelope, run_id: `run-${suffix}`, resolved_runtime_selection: resolvedRuntimeSelection(runtimeId) },
+    payload: withExecutionPlan({ ...envelope, run_id: `run-${suffix}`, resolved_runtime_selection: resolvedRuntimeSelection(runtimeId) }, { ...executionPlan, workdir: process.cwd() }),
     lease_id: `lease-${suffix}`,
     fencing_token: serverSeq
   };

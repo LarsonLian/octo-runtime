@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./dist/index.js",
+    "./browser": "./dist/browser.js",
     "./notification": "./dist/notification.js"
   },
   "types": "./dist/index.d.ts",

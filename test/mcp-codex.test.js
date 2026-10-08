@@ -16,6 +16,17 @@ import { codexAppServerFixture } from "./agent-work-runtime-fixture.js";
 
 const { parse: parseToml } = createRequire(import.meta.resolve("@mininglamp-oss/octo-harness-adapter-codex"))("smol-toml");
 
+test("portable plugins retain separate root and data environment values", () => {
+  const servers = Object.fromEntries(["first", "second"].map(name => [name, {
+    type: "stdio", command: "node", env: { PLUGIN_ROOT: "/packages/" + name, PLUGIN_DATA: "/data/" + name },
+  }]));
+  const result = codexMcpOverrides(servers);
+  const configuration = parseToml(result.args[1]);
+  assert.deepEqual(configuration.mcp_servers.first.env, servers.first.env);
+  assert.deepEqual(configuration.mcp_servers.second.env, servers.second.env);
+  assert.deepEqual(result.env, {});
+});
+
 const request = { protocolVersion: 2,
   invocationId: "invoke-mcp",
   agentSessionId: "session-mcp",

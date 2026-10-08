@@ -109,6 +109,12 @@ export class AgentWorkStore {
    * retained for forensic recovery; callers should emit an operator alert. */
   get quarantinedPath(): string | undefined { return this.#quarantinedPath; }
 
+  conversationWorkspace(scopeKey: string, candidatePath: string): { path: string; created: boolean } {
+    const result = this.#db.prepare("INSERT OR IGNORE INTO conversation_workspaces (scope_key, path) VALUES (?, ?)").run(scopeKey, candidatePath);
+    const row = this.#db.prepare("SELECT path FROM conversation_workspaces WHERE scope_key = ?").get(scopeKey) as { path: string };
+    return { path: row.path, created: result.changes === 1 };
+  }
+
   getCommandReceipt(commandId: string): CommandReceipt | undefined {
     const row = this.#db.prepare(
       "SELECT command_id, server_seq, accepted, result_json FROM command_receipts WHERE command_id = ?"
@@ -400,6 +406,10 @@ export class AgentWorkStore {
 
 function initialize(db: DatabaseSync): void {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS conversation_workspaces (
+      scope_key TEXT PRIMARY KEY,
+      path TEXT NOT NULL UNIQUE
+    );
     CREATE TABLE IF NOT EXISTS runs (
       run_id TEXT PRIMARY KEY,
       agent_session_id TEXT,

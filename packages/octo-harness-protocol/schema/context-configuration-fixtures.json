@@ -1,0 +1,706 @@
+[
+  {
+    "name": "empty",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v1",
+        "items": []
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v1",
+        "items": []
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v1",
+      "items": []
+    },
+    "expected": {
+      "schema": "octo.context-envelope/v1",
+      "items": []
+    }
+  },
+  {
+    "name": "request-overrides-default",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v1",
+        "items": [
+          {
+            "namespace": "octo.execution",
+            "name": "model",
+            "payload": {
+              "id": "old"
+            }
+          }
+        ]
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v1",
+        "items": []
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "model",
+          "payload": {
+            "id": "new"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "model",
+          "payload": {
+            "id": "new"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "mandatory-model-conflict",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v1",
+        "items": []
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v1",
+        "items": [
+          {
+            "namespace": "octo.execution",
+            "name": "model",
+            "payload": {
+              "id": "fixed"
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "model",
+          "payload": {
+            "id": "other"
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_MANDATORY_CONFLICT"
+  },
+  {
+    "name": "mandatory-runtime-subset",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v1",
+        "items": []
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v1",
+        "items": [
+          {
+            "namespace": "octo.runtime",
+            "name": "selection",
+            "payload": {
+              "mode": "candidates",
+              "runtime_ids": [
+                "device-a",
+                "device-b"
+              ],
+              "strategy": "preferred_failover",
+              "offline_behavior": "wait"
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.runtime",
+          "name": "selection",
+          "payload": {
+            "mode": "explicit",
+            "runtime_id": "device-b"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.runtime",
+          "name": "selection",
+          "payload": {
+            "mode": "explicit",
+            "runtime_id": "device-b",
+            "offline_behavior": "wait"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "mandatory-runtime-outside",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v1",
+        "items": []
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v1",
+        "items": [
+          {
+            "namespace": "octo.runtime",
+            "name": "selection",
+            "payload": {
+              "mode": "candidates",
+              "runtime_ids": [
+                "device-a",
+                "device-b"
+              ],
+              "strategy": "preferred_failover",
+              "offline_behavior": "wait"
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.runtime",
+          "name": "selection",
+          "payload": {
+            "mode": "explicit",
+            "runtime_id": "device-c"
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_MANDATORY_CONFLICT"
+  },
+  {
+    "name": "mandatory-offline-conflict",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v1",
+        "items": []
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v1",
+        "items": [
+          {
+            "namespace": "octo.runtime",
+            "name": "selection",
+            "payload": {
+              "mode": "candidates",
+              "runtime_ids": [
+                "device-a",
+                "device-b"
+              ],
+              "strategy": "preferred_failover",
+              "offline_behavior": "wait"
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.runtime",
+          "name": "selection",
+          "payload": {
+            "mode": "explicit",
+            "runtime_id": "device-a",
+            "offline_behavior": "fail"
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_MANDATORY_CONFLICT"
+  },
+  {
+    "name": "random-workspace",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v1",
+        "items": [
+          {
+            "namespace": "octo.execution",
+            "name": "workspace",
+            "payload": {
+              "mode": "random",
+              "scope": "conversation"
+            }
+          }
+        ]
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v1",
+        "items": []
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v1",
+      "items": []
+    },
+    "expected": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "workspace",
+          "payload": {
+            "mode": "random",
+            "scope": "conversation"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "capability-union",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v1",
+        "items": []
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v1",
+        "items": [
+          {
+            "namespace": "octo.execution",
+            "name": "requirements",
+            "payload": {
+              "capabilities": [
+                "z.required",
+                "a.required"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "requirements",
+          "payload": {
+            "capabilities": [
+              "a.required",
+              "b.requested"
+            ]
+          }
+        }
+      ]
+    },
+    "expected": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "requirements",
+          "payload": {
+            "capabilities": [
+              "z.required",
+              "a.required",
+              "b.requested"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "resource-add-remove",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v1",
+        "items": [
+          {
+            "namespace": "octo.plugins",
+            "name": "selection",
+            "payload": {
+              "include": [
+                {
+                  "resource_id": "optional",
+                  "version": "1"
+                }
+              ],
+              "exclude": []
+            }
+          }
+        ]
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v1",
+        "items": [
+          {
+            "namespace": "octo.plugins",
+            "name": "selection",
+            "payload": {
+              "include": [
+                {
+                  "resource_id": "required",
+                  "version": "1"
+                }
+              ],
+              "exclude": []
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.plugins",
+          "name": "selection",
+          "payload": {
+            "include": [
+              {
+                "resource_id": "additional",
+                "version": "1"
+              }
+            ],
+            "exclude": [
+              "optional"
+            ]
+          }
+        }
+      ]
+    },
+    "expected": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.plugins",
+          "name": "selection",
+          "payload": {
+            "include": [
+              {
+                "resource_id": "additional",
+                "version": "1"
+              },
+              {
+                "resource_id": "required",
+                "version": "1"
+              }
+            ],
+            "exclude": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "mandatory-resource-exclude",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v1",
+        "items": []
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v1",
+        "items": [
+          {
+            "namespace": "octo.plugins",
+            "name": "selection",
+            "payload": {
+              "include": [
+                {
+                  "resource_id": "required",
+                  "version": "1"
+                }
+              ],
+              "exclude": []
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.plugins",
+          "name": "selection",
+          "payload": {
+            "include": [],
+            "exclude": [
+              "required"
+            ]
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_MANDATORY_CONFLICT"
+  },
+  {
+    "name": "mandatory-resource-version",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v1",
+        "items": []
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v1",
+        "items": [
+          {
+            "namespace": "octo.plugins",
+            "name": "selection",
+            "payload": {
+              "include": [
+                {
+                  "resource_id": "required",
+                  "version": "1"
+                }
+              ],
+              "exclude": []
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.plugins",
+          "name": "selection",
+          "payload": {
+            "include": [
+              {
+                "resource_id": "required",
+                "version": "2"
+              }
+            ],
+            "exclude": []
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_MANDATORY_CONFLICT"
+  },
+  {
+    "name": "mandatory-component-subset",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v1",
+        "items": []
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v1",
+        "items": [
+          {
+            "namespace": "octo.plugins",
+            "name": "selection",
+            "payload": {
+              "include": [
+                {
+                  "resource_id": "required",
+                  "version": "1",
+                  "components": [
+                    "skill:writer"
+                  ],
+                  "invoke": true
+                }
+              ],
+              "exclude": []
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.plugins",
+          "name": "selection",
+          "payload": {
+            "include": [
+              {
+                "resource_id": "required",
+                "version": "1",
+                "components": [
+                  "skill:writer",
+                  "mcp:docs"
+                ],
+                "invoke": true
+              }
+            ],
+            "exclude": []
+          }
+        }
+      ]
+    },
+    "expected": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.plugins",
+          "name": "selection",
+          "payload": {
+            "include": [
+              {
+                "resource_id": "required",
+                "version": "1",
+                "components": [
+                  "skill:writer",
+                  "mcp:docs"
+                ],
+                "invoke": true
+              }
+            ],
+            "exclude": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "mandatory-component-removal",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v1",
+        "items": []
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v1",
+        "items": [
+          {
+            "namespace": "octo.plugins",
+            "name": "selection",
+            "payload": {
+              "include": [
+                {
+                  "resource_id": "required",
+                  "version": "1",
+                  "components": [
+                    "skill:writer"
+                  ]
+                }
+              ],
+              "exclude": []
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.plugins",
+          "name": "selection",
+          "payload": {
+            "include": [
+              {
+                "resource_id": "required",
+                "version": "1",
+                "components": []
+              }
+            ],
+            "exclude": []
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_MANDATORY_CONFLICT"
+  },
+  {
+    "name": "mandatory-invoke-removal",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v1",
+        "items": []
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v1",
+        "items": [
+          {
+            "namespace": "octo.plugins",
+            "name": "selection",
+            "payload": {
+              "include": [
+                {
+                  "resource_id": "required",
+                  "version": "1",
+                  "invoke": true
+                }
+              ],
+              "exclude": []
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v1",
+      "items": [
+        {
+          "namespace": "octo.plugins",
+          "name": "selection",
+          "payload": {
+            "include": [
+              {
+                "resource_id": "required",
+                "version": "1",
+                "invoke": false
+              }
+            ],
+            "exclude": []
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_MANDATORY_CONFLICT"
+  },
+  {
+    "name": "ephemeral-default-forbidden",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v1",
+        "items": [
+          {
+            "namespace": "octo.content",
+            "name": "selections",
+            "payload": {
+              "entries": []
+            }
+          }
+        ]
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v1",
+        "items": []
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v1",
+      "items": []
+    },
+    "error": "CONTEXT_CONFIGURATION_TYPE_FORBIDDEN"
+  }
+]

@@ -29,7 +29,7 @@ const validateSelectionSchema = ajv.compile({ $ref: `${schema.$id}#/definitions/
 
 test("registration advertises schema 3 without changing Context or approval schemas", () => {
   assert.deepEqual(RUNTIME_RUN_CONTRACT, {
-    schema_version: 3,
+    schema_version: 4,
     routing_schema: RUNTIME_SELECTION_SCHEMA,
     context_schema: "octo.context-envelope/v1",
     approval_schema: "octo.approval-request/v1"
@@ -52,7 +52,7 @@ test("runtime selection rejects non-JSON values without coercing or defaulting",
     assert.throws(() => assertResolvedRuntimeSelection(selection), /RESOLVED_RUNTIME_SELECTION_REQUIRED/);
   }
   for (const value of [undefined, NaN, Infinity, 1n, () => {}, Symbol("runtime")]) {
-    assert.throws(() => assertResolvedRuntimeSelection({ ...resolvedRuntimeSelection(), routing_policy_version: value }), TypeError);
+    assert.throws(() => assertResolvedRuntimeSelection({ ...resolvedRuntimeSelection(), context_configuration_version: value }), TypeError);
   }
   const selection = resolvedRuntimeSelection();
   selection.binding_ref = undefined;

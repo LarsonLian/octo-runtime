@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { mkdir, statfs } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
 import { performance } from "node:perf_hooks";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import WebSocket from "ws";
 import type { AdapterHostRpc, HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
 import {
@@ -44,7 +44,9 @@ import {
 } from "@mininglamp-oss/octo-harness-protocol";
 import { resolveRuntimeInputImages } from "./input-images.js";
 import { AgentWorkStore } from "./agent-work-store.js";
-import { assertFrozenContextPlan, compileRunContext } from "./run-context.js";
+import { prepareRunContext, recordContextPreparation, type PreparedRunContext } from "./context-preparation.js";
+import { ContextPipeline } from "./context-pipeline.js";
+import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext } from "./run-context.js";
 import { prepareTaskMaterials, type PreparedTaskMaterials } from "./task-materials.js";
 import { archiveTaskOutputs, safeOutputError, taskOutputInstructions } from "./task-outputs.js";
 import { prepareTeamInput } from "./team-input.js";
@@ -198,9 +200,9 @@ export interface ChannelContextRuntimeOptions extends ChannelContextStoreOptions
 
 /** Immutable execution description received from Agent Work before local mapping. */
 export interface ExecutionEnvelope {
-  schema_version: 3;
+  schema_version: 4;
   effective_context: ContextEnvelope;
-  context_defaults_version: number;
+  context_configuration_version: number;
   resolved_execution_plan: ResolvedExecutionPlan;
   resolved_runtime_selection: ResolvedRuntimeSelection;
   run_id: string;
@@ -228,7 +230,6 @@ export interface ExecutionEnvelope {
   };
   agent_revision: {
     definition?: Record<string, unknown>;
-    execution_spec?: Record<string, unknown>;
     execution_profile?: Record<string, unknown>;
   };
 }
@@ -1651,26 +1652,40 @@ export class AgentWorkRuntime {
         const input = executionEnvelope.agent_run_request.input;
         const hasImages = Array.isArray(input.parts) && input.parts.some(part => part && typeof part === "object" && (part as Record<string, unknown>).type === "image");
         if (hasImages && !localCapabilities?.has("input.image")) throw new TypeError("UNSUPPORTED_INPUT_MODALITY");
-        const materializedInput = await resolveRuntimeInputImages(input, {
-          baseUrl: this.#options.baseUrl,
-          headers: this.#headers(true, createRequestId()),
-          runId: command.run_id, leaseId, fencingToken, signal: controller.signal
+        const pipeline = new ContextPipeline({
+          trustedInstructions: [
+            ...(stringValue(asRecord(executionEnvelope.agent_revision.definition).instructions)
+              ? [{ text: stringValue(asRecord(executionEnvelope.agent_revision.definition).instructions)!, source: "revision" as const }] : []),
+            ...(Array.isArray(contentResources) && contentResources.length
+              ? [{ text: taskOutputInstructions(executionEnvelope.run_id), source: "platform_policy" as const }] : [])
+          ],
+          prepareInput: signal => resolveRuntimeInputImages(input, {
+            baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
+            runId: command.run_id, leaseId, fencingToken, signal
+          }),
+          prepareCapabilities: signal => prepareRunContext(executionEnvelope.resolved_execution_plan, {
+            stateRoot: join(dirname(this.#options.storePath), "context"),
+            agentSessionId: executionEnvelope.agent_session_id,
+            agentId: executionEnvelope.agent_run_request.agent_id, store, signal
+          }),
+          prepareMaterials: signal => prepareTaskMaterials(executionEnvelope.effective_context,
+            executionEnvelope.resolved_execution_plan, signal),
+          prepareContinuity: signal => this.#prepareChannelContext(command.run_id,
+            executionEnvelope, adapterTypeForContext, signal, epoch),
+          seal: (receipt, signal) => recordContextPreparation(receipt, {
+            baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
+            runId: command.run_id, leaseId, fencingToken, signal
+          })
         });
-        const taskMaterials = await prepareTaskMaterials(executionEnvelope.effective_context,
-          executionEnvelope.resolved_execution_plan, controller.signal);
-        const contextSnapshot = await this.#prepareChannelContext(
-          command.run_id,
-          executionEnvelope,
-          adapterTypeForContext,
-          controller.signal,
-          epoch
-        );
+        const prepared = await pipeline.prepare(executionEnvelope.effective_context,
+          executionEnvelope.resolved_execution_plan,
+          { runId: command.run_id, leaseId, fencingToken }, controller.signal);
         throwIfAcceptingAborted(controller.signal);
         this.#assertCurrentLifecycle(epoch);
         const mapped = mapExecutionEnvelope({
           ...executionEnvelope,
-          agent_run_request: { ...executionEnvelope.agent_run_request, input: materializedInput }
-        }, contextSnapshot, taskMaterials);
+          agent_run_request: { ...executionEnvelope.agent_run_request, input: prepared.input }
+        }, prepared.continuity, prepared.materials, prepared.capabilities, prepared.compiled);
         request = mapped.request;
         request.runMetadata ??= {};
         // The authenticated Runtime connection owns this mapping. Never trust
@@ -2297,7 +2312,9 @@ export function accumulateFinalText(current: string, event: CanonicalEvent): str
 export function mapExecutionEnvelope(
   envelope: ExecutionEnvelope,
   contextSnapshot?: PreparedChannelContextSnapshot,
-  taskMaterials?: PreparedTaskMaterials
+  taskMaterials?: PreparedTaskMaterials,
+  preparedContext?: PreparedRunContext,
+  preparedCompilation?: CompiledRunContext
 ): { adapterType: string; request: InvokeRequest } {
   assertExecutionEnvelopeContract(envelope);
   if (!envelope?.run_id || !envelope.agent_session_id || !envelope.agent_revision || !envelope.agent_run_request?.input) {
@@ -2326,11 +2343,12 @@ export function mapExecutionEnvelope(
     ...(profile.effort ? { effort: profile.effort } : {})
   };
   const runtimeLimits = mapExecutionRuntimeLimits(profile.runtime_limits);
-  const mcpServers = mapExecutionMcpServers(profile.mcp_servers);
-  const workdir = profile.workdir;
+  const mcpServers = mapExecutionMcpServers({ ...profile.mcp_servers, ...preparedContext?.mcpServers });
+  const workdir = preparedContext?.workdir ?? profile.workdir;
+  if (!workdir || profile.resources?.length && !preparedContext) throw new TypeError("CONTEXT_PREPARATION_REQUIRED");
   const content = envelope.agent_run_request.input;
   if (Object.hasOwn(content, "context_refs") || Object.hasOwn(content, "channel_context")) throw new TypeError("LEGACY_CONTEXT_INPUT_REJECTED");
-  const compiled = compileRunContext(envelope.effective_context, taskMaterials?.selections);
+  const compiled = preparedCompilation ?? compileRunContext(envelope.effective_context, taskMaterials?.selections);
   const teamInput = prepareTeamInput(content, envelope.agent_run_request.trigger.kind, taskMaterials);
   const compiledModelContent = [compiled.modelContent, teamInput?.modelContent].filter(Boolean).join("\n\n");
   if (contextItem(envelope.effective_context, "octo.content", "continuity") && !contextSnapshot) throw new TypeError("CONTEXT_CONTINUITY_UNAVAILABLE");
@@ -2393,8 +2411,10 @@ export function mapExecutionEnvelope(
         contextSnapshot: contextSnapshot.ref
       } : {}),
       workdir,
-      controlInstructions: [stringValue(definition.instructions), compiled.controlInstructions,
-        ...(taskMaterials ? [taskOutputInstructions(envelope.run_id)] : [])].filter(Boolean).join("\n\n"),
+      ...(preparedContext ? { skills: preparedContext.skills, skillRoots: preparedContext.skillRoots, providerStateDir: preparedContext.providerStateDir } : {}),
+      controlInstructions: preparedCompilation ? compiled.controlInstructions
+        : [stringValue(definition.instructions), compiled.controlInstructions,
+          ...(taskMaterials ? [taskOutputInstructions(envelope.run_id)] : [])].filter(Boolean).join("\n\n"),
       context: structuredClone(envelope.effective_context),
       runMetadata: context,
       approvalMode: profile.approval_mode,
@@ -2418,13 +2438,14 @@ function mapExecutionMcpServers(value: unknown): McpServers | undefined {
 }
 
 function assertExecutionEnvelopeContract(envelope: ExecutionEnvelope): void {
-  if (envelope?.schema_version !== 3) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
+  if (envelope?.schema_version !== 4) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
   assertContextEnvelope(envelope.agent_run_request?.context);
   assertContextEnvelope(envelope.effective_context);
   assertResolvedExecutionPlan(envelope.resolved_execution_plan);
   assertResolvedRuntimeSelection(envelope.resolved_runtime_selection);
   assertFrozenContextPlan(envelope.effective_context, envelope.resolved_execution_plan);
-  if (!Number.isSafeInteger(envelope.context_defaults_version) || envelope.context_defaults_version < 1) throw new TypeError("CONTEXT_DEFAULTS_VERSION_REQUIRED");
+  if (!Number.isSafeInteger(envelope.context_configuration_version) || envelope.context_configuration_version < 1
+    || envelope.context_configuration_version !== envelope.resolved_runtime_selection.context_configuration_version) throw new TypeError("CONTEXT_CONFIGURATION_VERSION_REQUIRED");
   const contextSelection = contextItem(envelope.effective_context, "octo.runtime", "selection")?.payload;
   const selection = envelope.resolved_runtime_selection;
   if (contextSelection && (contextSelection.mode !== selection.selection_mode

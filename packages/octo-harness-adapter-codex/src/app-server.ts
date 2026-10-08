@@ -163,6 +163,8 @@ export async function* runCodexAppServerTurn({
     }
     client.notify("initialized");
 
+    if (request.skills !== undefined) await applySkillScope(client, request, context);
+
     // Phase 2: providerSession.sessionId is the Codex thread ID, kept opaque to the Core.
     const requestedSessionId = request.providerSession?.sessionId;
     let resumeFallback: string | undefined;
@@ -1473,14 +1475,33 @@ function turnParams(request: InvokeRequest, threadId: string, freshFallback = fa
   const effort = request.agentConfig.effort;
   return {
     threadId,
-    input: providerInputParts(request, freshFallback).map(part => part.type === "image"
+    input: [...providerInputParts(request, freshFallback).map(part => part.type === "image"
       ? { type: "image", url: `data:${part.mimeType};base64,${part.data}` }
       : { type: "text", text: part.text, text_elements: [] }),
+      ...(request.skills ?? []).filter(skill => skill.invoke).map(skill => ({ type: "skill", name: skill.name, path: skill.path }))],
     cwd: request.workdir,
     ...(request.agentConfig.model ? { model: request.agentConfig.model } : {}),
     ...(effort ? { effort } : {}),
     summary: codexReasoningSummary(request)
   };
+}
+
+async function applySkillScope(client: CodexAppServerClient, request: InvokeRequest, context?: AdapterInvocationContext): Promise<void> {
+  await observedRequest({ client, context, method: "skills/extraRoots/set", params: { extraRoots: request.skillRoots ?? [] } });
+  const result = recordValue(await observedRequest({ client, context, method: "skills/list", params: { cwds: [request.workdir], forceReload: true } }));
+  const discovered = Array.isArray(result?.data) ? result.data.flatMap(entry => {
+    const value = recordValue(entry);
+    return Array.isArray(value?.skills) ? value.skills.map(recordValue).filter(Boolean) : [];
+  }) : [];
+  const paths = new Set((request.skills ?? []).map(skill => skill.path));
+  for (const skill of discovered) {
+    if (typeof skill?.path !== "string") throw new TypeError("CODEX_SKILL_DISCOVERY_INVALID");
+    const enabled = paths.has(skill.path);
+    if (skill.enabled !== enabled) await observedRequest({ client, context, method: "skills/config/write", params: { path: skill.path, enabled } });
+  }
+  for (const expected of request.skills ?? []) {
+    if (!discovered.some(skill => skill?.path === expected.path && skill.name === expected.name)) throw new TypeError("CODEX_SKILL_UNAVAILABLE: " + expected.name);
+  }
 }
 
 /**

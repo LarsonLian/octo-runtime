@@ -35,25 +35,55 @@
       "tsType": "{ namespace: string; name: string; payload: Record<string, unknown> }",
       "type": "object",
       "additionalProperties": false,
-      "required": ["namespace", "name", "payload"],
+      "required": ["namespace","name","payload"],
       "properties": {
-        "namespace": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$", "maxLength": 96},
-        "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$", "maxLength": 96},
-        "payload": {"type": "object", "additionalProperties": true, "tsType": "Record<string, unknown>"}
+        "namespace": {"type":"string","pattern":"^[a-z0-9][a-z0-9._-]*$","maxLength":96},
+        "name": {"type":"string","pattern":"^[a-z0-9][a-z0-9._-]*$","maxLength":96},
+        "payload": {"type":"object","additionalProperties":true,"tsType":"Record<string, unknown>"}
       },
       "oneOf": [
-        {"properties": {"namespace": {"const": "octo.execution"}, "name": {"const": "adapter"}, "payload": {"$ref": "#/definitions/ContextAdapterPayload"}}},
-        {"properties": {"namespace": {"const": "octo.execution"}, "name": {"const": "model"}, "payload": {"$ref": "#/definitions/ContextModelPayload"}}},
-        {"properties": {"namespace": {"const": "octo.execution"}, "name": {"const": "reasoning"}, "payload": {"$ref": "#/definitions/ContextReasoningPayload"}}},
-        {"properties": {"namespace": {"const": "octo.execution"}, "name": {"const": "workspace"}, "payload": {"$ref": "#/definitions/ContextWorkspacePayload"}}},
-        {"properties": {"namespace": {"const": "octo.execution"}, "name": {"const": "limits"}, "payload": {"$ref": "#/definitions/ContextLimitsPayload"}}},
-        {"properties": {"namespace": {"const": "octo.runtime"}, "name": {"const": "selection"}, "payload": {"$ref": "#/definitions/ContextRuntimeSelectionPayload"}}},
-        {"properties": {"namespace": {"const": "octo.security"}, "name": {"const": "approval_policy"}, "payload": {"$ref": "#/definitions/ContextApprovalPolicyPayload"}}},
-        {"properties": {"namespace": {"const": "octo.content"}, "name": {"const": "selections"}, "payload": {"$ref": "#/definitions/ContextSelectionsPayload"}}},
-        {"properties": {"namespace": {"const": "octo.content"}, "name": {"const": "resources"}, "payload": {"$ref": "#/definitions/ContextResourcesPayload"}}},
-        {"properties": {"namespace": {"const": "octo.content"}, "name": {"const": "continuity"}, "payload": {"$ref": "#/definitions/ContextContinuityPayload"}}},
-        {"properties": {"namespace": {"const": "octo.content"}, "name": {"const": "delivery_policy"}, "payload": {"$ref": "#/definitions/ContextDeliveryPolicyPayload"}}},
-        {"properties": {"namespace": {"const": "octo.control"}, "name": {"const": "instructions"}, "payload": {"$ref": "#/definitions/ContextInstructionsPayload"}}}
+        {
+          "properties": {"namespace":{"const":"octo.execution"},"name":{"const":"adapter"},"payload":{"$ref":"#/definitions/ContextAdapterPayload"}}
+        },
+        {
+          "properties": {"namespace":{"const":"octo.execution"},"name":{"const":"model"},"payload":{"$ref":"#/definitions/ContextModelPayload"}}
+        },
+        {
+          "properties": {"namespace":{"const":"octo.execution"},"name":{"const":"reasoning"},"payload":{"$ref":"#/definitions/ContextReasoningPayload"}}
+        },
+        {
+          "properties": {"namespace":{"const":"octo.execution"},"name":{"const":"workspace"},"payload":{"$ref":"#/definitions/ContextWorkspacePayload"}}
+        },
+        {
+          "properties": {"namespace":{"const":"octo.execution"},"name":{"const":"limits"},"payload":{"$ref":"#/definitions/ContextLimitsPayload"}}
+        },
+        {
+          "properties": {"namespace":{"const":"octo.execution"},"name":{"const":"requirements"},"payload":{"$ref":"#/definitions/ContextRequirementsPayload"}}
+        },
+        {
+          "properties": {"namespace":{"enum":["octo.plugins","octo.skills","octo.connectors"]},"name":{"const":"selection"},"payload":{"$ref":"#/definitions/ContextCapabilitySelectionPayload"}}
+        },
+        {
+          "properties": {"namespace":{"const":"octo.runtime"},"name":{"const":"selection"},"payload":{"$ref":"#/definitions/ContextRuntimeSelectionPayload"}}
+        },
+        {
+          "properties": {"namespace":{"const":"octo.security"},"name":{"const":"approval_policy"},"payload":{"$ref":"#/definitions/ContextApprovalPolicyPayload"}}
+        },
+        {
+          "properties": {"namespace":{"const":"octo.content"},"name":{"const":"selections"},"payload":{"$ref":"#/definitions/ContextSelectionsPayload"}}
+        },
+        {
+          "properties": {"namespace":{"const":"octo.content"},"name":{"const":"resources"},"payload":{"$ref":"#/definitions/ContextResourcesPayload"}}
+        },
+        {
+          "properties": {"namespace":{"const":"octo.content"},"name":{"const":"continuity"},"payload":{"$ref":"#/definitions/ContextContinuityPayload"}}
+        },
+        {
+          "properties": {"namespace":{"const":"octo.content"},"name":{"const":"delivery_policy"},"payload":{"$ref":"#/definitions/ContextDeliveryPolicyPayload"}}
+        },
+        {
+          "properties": {"namespace":{"const":"octo.control"},"name":{"const":"instructions"},"payload":{"$ref":"#/definitions/ContextInstructionsPayload"}}
+        }
       ]
     },
     "ContextEnvelope": {
@@ -86,8 +116,69 @@
       "oneOf": [{"required": ["effort"], "not": {"required": ["use_provider_default"]}}, {"required": ["use_provider_default"], "not": {"required": ["effort"]}}]
     },
     "ContextWorkspacePayload": {
-      "type": "object", "additionalProperties": false, "required": ["mode", "path"],
-      "properties": {"mode": {"const": "fixed"}, "path": {"type": "string", "minLength": 1}}
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode","path"],
+          "properties": {"mode":{"const":"fixed"},"path":{"type":"string","minLength":1}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode","scope"],
+          "properties": {"mode":{"const":"random"},"scope":{"const":"conversation"}}
+        }
+      ]
+    },
+    "ContextRequirementsPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capabilities"],
+      "properties": {"capabilities":{"type":"array","maxItems":64,"uniqueItems":true,"items":{"type":"string","minLength":1}}}
+    },
+    "ContextCapabilityReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource_id","version"],
+      "properties": {
+        "resource_id": {"type":"string","pattern":"^[a-z0-9][a-z0-9.-]{0,95}$"},
+        "version": {"type":"string","minLength":1,"maxLength":96},
+        "invoke": {"type":"boolean"},
+        "components": {"type":"array","uniqueItems":true,"maxItems":64,"items":{"type":"string","pattern":"^(skill|mcp):[a-z0-9][a-z0-9._-]{0,95}$"}}
+      }
+    },
+    "ContextCapabilitySelectionPayload": {
+      "description": "Includes have unique resource_id values; include and exclude are disjoint. Consumers must enforce x-octo-capability-selection in addition to draft-07 constraints.",
+      "x-octo-capability-selection": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["include","exclude"],
+      "properties": {
+        "include": {"type":"array","maxItems":32,"items":{"$ref":"#/definitions/ContextCapabilityReference"}},
+        "exclude": {"type":"array","maxItems":32,"uniqueItems":true,"items":{"type":"string","pattern":"^[a-z0-9][a-z0-9.-]{0,95}$"}}
+      }
+    },
+    "ResolvedCapabilityResource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource_id","kind","version","digest","files","sources","invoke"],
+      "properties": {
+        "resource_id": {"type":"string","minLength":1},
+        "kind": {"enum":["plugin","skill","connector"]},
+        "version": {"type":"string","minLength":1},
+        "digest": {"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},
+        "files": {"type":"object","additionalProperties":{"type":"string"}},
+        "sources": {"type":"array","items":{"enum":["agent_default","agent_mandatory","request"]}},
+        "invoke": {"type":"boolean"},
+        "components": {"type":"array","items":{"type":"string"}}
+      }
+    },
+    "PreparedSkill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name","description","path","invoke"],
+      "properties": {"name":{"type":"string","minLength":1},"description":{"type":"string","minLength":1},"path":{"type":"string","minLength":1},"invoke":{"type":"boolean"}}
     },
     "ContextLimitsPayload": {
       "description": "Snake-case frozen watchdog limits, with the same bounds as RuntimeLimits. Legacy enforcement=observe cannot be combined with v2 settings.",
@@ -107,9 +198,29 @@
       "then": {"not": {"anyOf": [{"required": ["model_idle_policy"]}, {"required": ["model_idle_warning_ms"]}, {"required": ["tool_wall_timeout_ms"]}]}}
     },
     "ContextRuntimeSelectionPayload": {
-      "type": "object", "additionalProperties": false, "required": ["mode"],
-      "properties": {"mode": {"enum": ["binding", "explicit"]}, "runtime_id": {"type": "string", "minLength": 1}},
-      "oneOf": [{"properties": {"mode": {"const": "binding"}}, "not": {"required": ["runtime_id"]}}, {"properties": {"mode": {"const": "explicit"}}, "required": ["runtime_id"]}]
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {"enum":["candidates","explicit"]},
+        "runtime_id": {"type":"string","minLength":1},
+        "runtime_ids": {"type":"array","minItems":1,"maxItems":64,"uniqueItems":true,"items":{"type":"string","minLength":1}},
+        "strategy": {"const":"preferred_failover"},
+        "offline_behavior": {"enum":["wait","fail"]},
+        "failover": {"enum":["candidates","none"]}
+      },
+      "oneOf": [
+        {
+          "properties": {"mode":{"const":"candidates"}},
+          "required": ["runtime_ids","strategy"],
+          "not": {"required":["runtime_id"]}
+        },
+        {
+          "properties": {"mode":{"const":"explicit"}},
+          "required": ["runtime_id"],
+          "not": {"anyOf":[{"required":["runtime_ids"]},{"required":["strategy"]}]}
+        }
+      ]
     },
     "ContextApprovalPolicyPayload": {
       "type": "object", "additionalProperties": false, "required": ["mode"],
@@ -124,6 +235,117 @@
         "source": {"type": ["object", "string"], "additionalProperties": true},
         "summary": {"type": "string"}
       }
+    },
+    "ContextConfiguration": {
+      "title": "ContextConfiguration",
+      "description": "Agent defaults and mandatory constraints, stored under one external configuration version. Validation and resolution do not authorize the writer or referenced resources. Ephemeral content and trusted instructions cannot be persisted here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["defaults","mandatory"],
+      "properties": {"defaults":{"$ref":"#/definitions/PersistentContextEnvelope"},"mandatory":{"$ref":"#/definitions/PersistentContextEnvelope"}}
+    },
+    "RunContextProjection": {
+      "title": "RunContextProjection",
+      "description": "Public Context facts. Preparation is distinct from Adapter application or invocation. This projection excludes resource files, trusted instruction text, credentials and Runtime paths.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id","context_configuration_version","context_hash","preparation_status","execution","model_uses_provider_default","effort_uses_provider_default"],
+      "properties": {
+        "run_id": {"type":"string","minLength":1},
+        "context_configuration_version": {"type":"integer","minimum":1},
+        "context_hash": {"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},
+        "actual_runtime_id": {"type":"string","minLength":1},
+        "preparation_status": {"enum":["unknown","prepared"]},
+        "model_uses_provider_default": {"type":"boolean"},
+        "effort_uses_provider_default": {"type":"boolean"},
+        "execution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["adapter_type","approval_mode","workspace_mode","resources"],
+          "properties": {
+            "adapter_type": {"type":"string","minLength":1},
+            "model": {"type":"string","minLength":1},
+            "effort": {"type":"string","minLength":1},
+            "approval_mode": {"enum":["ask","assisted","full_access"]},
+            "workspace_mode": {"enum":["fixed","random"]},
+            "resources": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["resource_id","kind","version","digest","sources"],
+                "properties": {
+                  "resource_id": {"type":"string","minLength":1},
+                  "kind": {"enum":["plugin","skill","connector"]},
+                  "version": {"type":"string","minLength":1},
+                  "digest": {"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},
+                  "sources": {"type":"array","uniqueItems":true,"items":{"enum":["agent_default","agent_mandatory","request"]}}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ContextPreparationReceipt": {
+      "title": "ContextPreparationReceipt",
+      "description": "Durable Runtime preparation evidence, sealed before Adapter invocation and fenced by the active Run lease. Private paths must not be exposed by product projections.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["compiler_version","catalog_version","context_hash","run_id","lease_id","fencing_token","workspace_mode","workspace_path","provider_state_dir","resources","materials","warnings"],
+      "properties": {
+        "compiler_version": {"const":"octo.context-compiler/v1"},
+        "catalog_version": {"const":"octo.context-catalog/v1"},
+        "context_hash": {"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},
+        "run_id": {"type":"string","minLength":1},
+        "lease_id": {"type":"string","minLength":1},
+        "fencing_token": {"type":"integer","minimum":1,"maximum":9007199254740991},
+        "workspace_mode": {"enum":["fixed","random"]},
+        "workspace_path": {"type":"string","minLength":1},
+        "provider_state_dir": {"type":"string","minLength":1},
+        "resources": {"type":"array","maxItems":32,"items":{"$ref":"#/definitions/PreparedCapabilityReceipt"}},
+        "materials": {"type":"array","maxItems":32,"items":{"$ref":"#/definitions/PreparedMaterialReceipt"}},
+        "continuity": {"$ref":"#/definitions/ChannelContextSnapshotRef"},
+        "warnings": {"type":"array","maxItems":256,"items":{"type":"string","maxLength":4096}}
+      }
+    },
+    "PreparedCapabilityReceipt": {
+      "title": "PreparedCapabilityReceipt",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource_id","version","digest","root","data","components"],
+      "properties": {
+        "resource_id": {"type":"string","minLength":1},
+        "version": {"type":"string","minLength":1},
+        "digest": {"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},
+        "root": {"type":"string","minLength":1},
+        "data": {"type":"string","minLength":1},
+        "components": {"type":"array","maxItems":64,"uniqueItems":true,"items":{"type":"string","minLength":1}}
+      }
+    },
+    "PreparedMaterialReceipt": {
+      "title": "PreparedMaterialReceipt",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource_ref","task_id","task_version","handler_epoch","digest"],
+      "properties": {
+        "resource_ref": {"type":"string","minLength":1},
+        "task_id": {"type":"string","minLength":1},
+        "task_version": {"type":"integer","minimum":1,"maximum":9007199254740991},
+        "handler_epoch": {"type":"integer","minimum":1,"maximum":9007199254740991},
+        "digest": {"type":"string","pattern":"^sha256:[a-f0-9]{64}$"}
+      }
+    },
+    "PersistentContextEnvelope": {
+      "allOf": [
+        {"$ref":"#/definitions/ContextEnvelope"},
+        {
+          "properties": {
+            "items": {"items":{"not":{"anyOf":[{"properties":{"namespace":{"const":"octo.control"}}},{"properties":{"namespace":{"const":"octo.content"},"name":{"enum":["selections","continuity"]}}}]}}}
+          }
+        }
+      ]
     },
     "ContextSelectionsPayload": {
       "type": "object", "additionalProperties": false, "required": ["entries"],
@@ -195,45 +417,47 @@
     },
     "ResolvedRuntimeSelection": {
       "title": "ResolvedRuntimeSelection",
-      "description": "Worker-frozen authorized routing snapshot, never caller-supplied authorization. Context routing and explicit selection cannot fail over.",
+      "description": "Worker-frozen Context runtime candidates. Explicit selection cannot fail over.",
       "x-octo-unicode-scalar-strings": true,
       "x-octo-runtime-selection-invariants": true,
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema", "routing_mode", "routing_policy_version", "selection_mode", "authorized_candidates", "offline_behavior", "failover"],
+      "required": ["schema","context_configuration_version","selection_mode","authorized_candidates","offline_behavior","failover"],
       "properties": {
-        "schema": {"const": "octo.runtime-selection/v1"},
-        "routing_mode": {"enum": ["context", "bound"]},
-        "routing_policy_version": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
-        "selection_mode": {"enum": ["explicit", "binding"]},
-        "explicit_runtime_id": {"type": "string", "minLength": 1, "maxLength": 191},
-        "binding_ref": {
-          "type": "object", "additionalProperties": false, "required": ["id", "version"],
-          "properties": {
-            "id": {"type": "string", "minLength": 1, "maxLength": 191},
-            "version": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}
-          }
-        },
+        "schema": {"const":"octo.runtime-selection/v2"},
+        "context_configuration_version": {"type":"integer","minimum":1,"maximum":9007199254740991},
+        "selection_mode": {"enum":["explicit","candidates"]},
+        "explicit_runtime_id": {"type":"string","minLength":1,"maxLength":191},
         "authorized_candidates": {
-          "type": "array", "minItems": 1, "maxItems": 64,
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
           "items": {
-            "type": "object", "additionalProperties": false,
-            "required": ["runtime_id", "priority", "owner_subject_type", "owner_subject_id"],
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["runtime_id","priority","owner_subject_type","owner_subject_id"],
             "properties": {
-              "runtime_id": {"type": "string", "minLength": 1, "maxLength": 191},
-              "priority": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
-              "owner_subject_type": {"enum": ["user", "teamspace"]},
-              "owner_subject_id": {"type": "string", "minLength": 1, "maxLength": 191}
+              "runtime_id": {"type":"string","minLength":1,"maxLength":191},
+              "priority": {"type":"integer","minimum":1,"maximum":9007199254740991},
+              "owner_subject_type": {"enum":["user","teamspace"]},
+              "owner_subject_id": {"type":"string","minLength":1,"maxLength":191}
             }
           }
         },
-        "offline_behavior": {"enum": ["wait", "fail"]},
-        "failover": {"enum": ["binding", "none"]}
+        "offline_behavior": {"enum":["wait","fail"]},
+        "failover": {"enum":["candidates","none"]}
       },
       "allOf": [
-        {"if": {"properties": {"routing_mode": {"const": "bound"}}}, "then": {"required": ["binding_ref"]}, "else": {"not": {"required": ["binding_ref"]}}},
-        {"if": {"properties": {"selection_mode": {"const": "explicit"}}}, "then": {"required": ["explicit_runtime_id"], "properties": {"authorized_candidates": {"maxItems": 1}, "failover": {"const": "none"}}}, "else": {"not": {"required": ["explicit_runtime_id"]}}},
-        {"if": {"properties": {"routing_mode": {"const": "context"}}}, "then": {"properties": {"selection_mode": {"const": "explicit"}, "failover": {"const": "none"}}}}
+        {
+          "if": {
+            "properties": {"selection_mode":{"const":"explicit"}}
+          },
+          "then": {
+            "required": ["explicit_runtime_id"],
+            "properties": {"authorized_candidates":{"maxItems":1},"failover":{"const":"none"}}
+          },
+          "else": {"not":{"required":["explicit_runtime_id"]}}
+        }
       ]
     },
     "ResolvedExecutionPlan": {
@@ -241,17 +465,27 @@
       "x-octo-unicode-scalar-strings": true,
       "type": "object",
       "additionalProperties": false,
-      "required": ["adapter_type", "workdir", "approval_mode"],
+      "required": ["adapter_type","workdir","approval_mode"],
       "properties": {
-        "adapter_type": {"type": "string", "minLength": 1},
-        "workdir": {"type": "string", "minLength": 1},
-        "model": {"type": "string", "minLength": 1},
-        "effort": {"type": "string", "minLength": 1},
-        "approval_mode": {"$ref": "#/definitions/ApprovalMode"},
-        "required_capabilities": {"type": "array", "items": {"type": "string", "minLength": 1}},
-        "runtime_limits": {"$ref": "#/definitions/ContextLimitsPayload"},
-        "mcp_servers": {"$ref": "#/definitions/McpServers"},
-        "provider_compatibility": {"type": "object", "additionalProperties": true, "tsType": "Record<string, unknown>"}
+        "adapter_type": {"type":"string","minLength":1},
+        "workdir": {"type":"string"},
+        "workspace": {"$ref":"#/definitions/ContextWorkspacePayload"},
+        "resources": {"type":"array","maxItems":32,"items":{"$ref":"#/definitions/ResolvedCapabilityResource"}},
+        "model": {"type":"string","minLength":1},
+        "effort": {"type":"string","minLength":1},
+        "approval_mode": {"$ref":"#/definitions/ApprovalMode"},
+        "required_capabilities": {"type":"array","items":{"type":"string","minLength":1}},
+        "runtime_limits": {"$ref":"#/definitions/ContextLimitsPayload"},
+        "mcp_servers": {"$ref":"#/definitions/McpServers"},
+        "provider_compatibility": {"type":"object","additionalProperties":true,"tsType":"Record<string, unknown>"}
+      },
+      "if": {
+        "required": ["workdir"],
+        "properties": {"workdir":{"const":""}}
+      },
+      "then": {
+        "required": ["workspace"],
+        "properties": {"workspace":{"properties":{"mode":{"const":"random"}}}}
       }
     },
     "MessageChannel": {
@@ -1479,111 +1713,34 @@
       "description": "Serializable execution request sent from Core to Adapter Host. AbortSignal is added in src/index.ts because it cannot cross a process boundary.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "invocationId",
-        "agentSessionId",
-        "runId",
-        "prompt",
-        "workdir",
-        "controlInstructions",
-        "context",
-        "agentConfig",
-        "modelInput",
-        "approvalMode",
-        "protocolVersion"
-      ],
+      "required": ["invocationId","agentSessionId","runId","prompt","workdir","controlInstructions","context","agentConfig","modelInput","approvalMode","protocolVersion"],
       "properties": {
-        "invocationId": {
-          "description": "Active Adapter Host invocation identifier and cancellation target.",
-          "type": "string"
-        },
-        "agentSessionId": {
-          "description": "Long-lived Agent Worker session identifier for this execution context.",
-          "type": "string"
-        },
-        "runId": {
-          "description": "Run identifier for this execution.",
-          "type": "string"
-        },
-        "sessionGeneration": {
-          "description": "Worker-owned AgentSession generation that fences stale continuity updates.",
-          "type": "integer",
-          "minimum": 1
-        },
-        "providerEpoch": {
-          "description": "Worker-owned provider binding epoch for this Run.",
-          "type": "integer",
-          "minimum": 1
-        },
-        "continuityMode": {
-          "description": "Caller continuity intent. Fresh invocations must not carry providerSession.",
-          "type": "string",
-          "enum": [
-            "continue",
-            "fresh"
-          ]
-        },
-        "prompt": {
-          "description": "Display-safe current request or task description. It excludes hidden channel context and provider control parameters.",
-          "type": "string"
-        },
-        "modelInput": {
-          "description": "Required exact provider-visible user turn.",
-          "type": "string"
-        },
-        "modelInputParts": {
-          "type": "array", "minItems": 1, "maxItems": 128,
-          "tsType": "ModelInputPart[]",
-          "items": {"$ref": "#/definitions/ModelInputPart"}
-        },
-        "freshFallbackModelInputParts": {
-          "type": "array", "minItems": 1, "maxItems": 128,
-          "tsType": "ModelInputPart[]",
-          "items": {"$ref": "#/definitions/ModelInputPart"}
-        },
-        "freshFallbackImagesUnavailable": {
-          "description": "Recovery includes historical images whose bytes are unavailable. Adapters must fail before sending a fresh prompt.",
-          "type": "boolean"
-        },
-        "freshFallbackModelInput": {
-          "description": "Frozen alternate user turn for the first turn of a fresh provider session after resume fails.",
-          "type": "string"
-        },
-        "contextSnapshot": {
-          "$ref": "#/definitions/ChannelContextSnapshotRef"
-        },
-        "workdir": {
-          "description": "Provider process cwd. Sandboxing, containers, or host permissions provide the actual access boundary.",
-          "type": "string"
-        },
-        "controlInstructions": {
-          "description": "Harness-generated control instructions placed in a provider-native private carrier by the adapter.",
-          "type": "string"
-        },
-        "context": {
-          "$ref": "#/definitions/ContextEnvelope"
-        },
-        "runMetadata": {
-          "type": "object",
-          "additionalProperties": true,
-          "tsType": "Record<string, unknown>"
-        },
-        "approvalMode": {"$ref": "#/definitions/ApprovalMode"},
-        "mcpServers": {
-          "$ref": "#/definitions/McpServers"
-        },
-        "providerSession": {
-          "$ref": "#/definitions/ProviderSession"
-        },
-        "runtimeLimits": {
-          "$ref": "#/definitions/RuntimeLimits"
-        },
-        "agentConfig": {
-          "$ref": "#/definitions/AgentConfig"
-        },
-        "protocolVersion": {
-          "const": 2
-        }
+        "invocationId": {"description":"Active Adapter Host invocation identifier and cancellation target.","type":"string"},
+        "agentSessionId": {"description":"Long-lived Agent Worker session identifier for this execution context.","type":"string"},
+        "runId": {"description":"Run identifier for this execution.","type":"string"},
+        "sessionGeneration": {"description":"Worker-owned AgentSession generation that fences stale continuity updates.","type":"integer","minimum":1},
+        "providerEpoch": {"description":"Worker-owned provider binding epoch for this Run.","type":"integer","minimum":1},
+        "continuityMode": {"description":"Caller continuity intent. Fresh invocations must not carry providerSession.","type":"string","enum":["continue","fresh"]},
+        "prompt": {"description":"Display-safe current request or task description. It excludes hidden channel context and provider control parameters.","type":"string"},
+        "modelInput": {"description":"Required exact provider-visible user turn.","type":"string"},
+        "modelInputParts": {"type":"array","minItems":1,"maxItems":128,"tsType":"ModelInputPart[]","items":{"$ref":"#/definitions/ModelInputPart"}},
+        "freshFallbackModelInputParts": {"type":"array","minItems":1,"maxItems":128,"tsType":"ModelInputPart[]","items":{"$ref":"#/definitions/ModelInputPart"}},
+        "freshFallbackImagesUnavailable": {"description":"Recovery includes historical images whose bytes are unavailable. Adapters must fail before sending a fresh prompt.","type":"boolean"},
+        "freshFallbackModelInput": {"description":"Frozen alternate user turn for the first turn of a fresh provider session after resume fails.","type":"string"},
+        "contextSnapshot": {"$ref":"#/definitions/ChannelContextSnapshotRef"},
+        "workdir": {"description":"Provider process cwd. Sandboxing, containers, or host permissions provide the actual access boundary.","type":"string"},
+        "controlInstructions": {"description":"Harness-generated control instructions placed in a provider-native private carrier by the adapter.","type":"string"},
+        "context": {"$ref":"#/definitions/ContextEnvelope"},
+        "runMetadata": {"type":"object","additionalProperties":true,"tsType":"Record<string, unknown>"},
+        "approvalMode": {"$ref":"#/definitions/ApprovalMode"},
+        "mcpServers": {"$ref":"#/definitions/McpServers"},
+        "skills": {"type":"array","items":{"$ref":"#/definitions/PreparedSkill"}},
+        "skillRoots": {"type":"array","items":{"type":"string","minLength":1}},
+        "providerStateDir": {"type":"string","minLength":1},
+        "providerSession": {"$ref":"#/definitions/ProviderSession"},
+        "runtimeLimits": {"$ref":"#/definitions/RuntimeLimits"},
+        "agentConfig": {"$ref":"#/definitions/AgentConfig"},
+        "protocolVersion": {"const":2}
       }
     },
     "ActivityInfo": {

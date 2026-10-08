@@ -55,7 +55,7 @@ test("task materials use authorized MCP and freeze actual facts separately from 
   assert.deepEqual(context, before);
   assert.equal(f.calls.filter(call => call.method === "tools/call").length, 2);
   assert.ok(f.calls.every(call => call.authorization === "Bearer fixture-run-grant"));
-  const envelope = { schema_version: 3, effective_context: context, context_defaults_version: 1,
+  const envelope = { schema_version: 4, effective_context: context, context_configuration_version: 1,
     resolved_execution_plan: resolvedPlan, resolved_runtime_selection: resolvedRuntimeSelection(), run_id: "run-1", agent_session_id: "conversation-1",
     agent_run_request: { context: contextEnvelope([resource]), namespace: "task", agent_id: "agent-1", agent_revision_id: "revision-1",
       session_key: "conversation-1", trigger: { kind: "message", occurrence_id: "message-1" }, input: { text: "制作页面" } },
@@ -134,9 +134,10 @@ test("real Runtime admission bootstraps MCP before provider invocation and rejec
   await waitFor(() => socket?.readyState === 1);
   const command = (suffix, url, adapter = "codex") => {
     const resolvedPlan = plan(url);
+    resolvedPlan.workdir = directory;
     resolvedPlan.adapter_type = adapter;
     return { server_seq: suffix, command_id: `command-${suffix}`, run_id: `run-${suffix}`, type: "run.start", lease_id: `lease-${suffix}`, fencing_token: suffix,
-      payload: { schema_version: 3, effective_context: executionContext(resolvedPlan, [resource]), context_defaults_version: 1,
+      payload: { schema_version: 4, effective_context: executionContext(resolvedPlan, [resource]), context_configuration_version: 1,
         resolved_execution_plan: resolvedPlan, resolved_runtime_selection: resolvedRuntimeSelection(), run_id: `run-${suffix}`, agent_session_id: "conversation-1",
         agent_run_request: { context: contextEnvelope([resource]), namespace: "task", agent_id: "agent-1", agent_revision_id: "revision-1", session_key: "conversation-1",
           trigger: { kind: "message", occurrence_id: `message-${suffix}` }, input: { text: "制作页面" } }, agent_revision: {} } };

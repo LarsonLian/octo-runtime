@@ -1,10 +1,9 @@
-import { createHash } from "node:crypto";
 import type { ApprovalMode, ContextEnvelope, ContextItem, McpServers, ResolvedExecutionPlan } from "./generated/protocol-types.js";
 import { RUNTIME_SELECTION_SCHEMA } from "./runtime-selection.js";
 
 export const CONTEXT_SCHEMA = "octo.context-envelope/v1" as const;
 export const RUNTIME_RUN_CONTRACT = Object.freeze({
-  schema_version: 3,
+  schema_version: 4,
   routing_schema: RUNTIME_SELECTION_SCHEMA,
   context_schema: CONTEXT_SCHEMA,
   approval_schema: "octo.approval-request/v1"
@@ -37,7 +36,7 @@ export function assertContextEnvelope(value: unknown): asserts value is ContextE
     object(item.payload, "CONTEXT_SCHEMA_INVALID");
     payload(item.namespace as string, item.name as string, item.payload);
   }
-  if (Buffer.byteLength(JSON.stringify(value), "utf8") > CONTEXT_MAX_BYTES) throw new TypeError("CONTEXT_BUDGET_EXCEEDED");
+  if (new TextEncoder().encode(JSON.stringify(value)).length > CONTEXT_MAX_BYTES) throw new TypeError("CONTEXT_BUDGET_EXCEEDED");
 }
 
 export function contextItem(context: ContextEnvelope, namespace: string, name: string): ContextItem | undefined {
@@ -49,10 +48,6 @@ export function canonicalContext(context: ContextEnvelope): string {
   return JSON.stringify(sorted({ schema: context.schema, items: [...context.items].sort((left, right) =>
     left.namespace < right.namespace ? -1 : left.namespace > right.namespace ? 1 : left.name < right.name ? -1 : left.name > right.name ? 1 : 0
   ) }));
-}
-
-export function contextHash(context: ContextEnvelope): string {
-  return `sha256:${createHash("sha256").update(canonicalContext(context)).digest("hex")}`;
 }
 
 export function mergeContext(defaults: ContextEnvelope, overrides: ContextEnvelope): ContextEnvelope {
@@ -68,9 +63,12 @@ export function mergeContext(defaults: ContextEnvelope, overrides: ContextEnvelo
 export function assertResolvedExecutionPlan(value: unknown): asserts value is ResolvedExecutionPlan {
   object(value, "RESOLVED_EXECUTION_PLAN_REQUIRED");
   assertJsonValue(value);
-  fields(value, ["adapter_type", "workdir", "approval_mode", "model", "effort", "required_capabilities", "runtime_limits", "mcp_servers", "provider_compatibility"]);
+  fields(value, ["adapter_type", "workdir", "workspace", "resources", "approval_mode", "model", "effort", "required_capabilities", "runtime_limits", "mcp_servers", "provider_compatibility"]);
   text(value.adapter_type);
-  text(value.workdir);
+  if (typeof value.workdir !== "string") throw new TypeError("CONTEXT_SCHEMA_INVALID");
+  if (value.workspace !== undefined) { object(value.workspace, "RESOLVED_EXECUTION_PLAN_INVALID"); payload("octo.execution", "workspace", value.workspace); }
+  if (!value.workdir && (!isObject(value.workspace) || value.workspace.mode !== "random")) throw new TypeError("RESOLVED_EXECUTION_PLAN_INVALID");
+  if (value.resources !== undefined) assertCapabilityResources(value.resources);
   assertApprovalMode(value.approval_mode);
   for (const property of ["model", "effort"]) if (value[property] !== undefined) text(value[property]);
   if (value.required_capabilities !== undefined && (!Array.isArray(value.required_capabilities) || value.required_capabilities.some(item => typeof item !== "string" || !item))) throw new TypeError("RESOLVED_EXECUTION_PLAN_INVALID");
@@ -172,14 +170,40 @@ function payload(namespace: string, name: string, value: Record<string, unknown>
       if (value.use_provider_default !== undefined) throw new TypeError("CONTEXT_SCHEMA_INVALID");
       text(value[property]); return;
     }
-    if (name === "workspace") { fields(value, ["mode", "path"]); if (value.mode !== "fixed") throw new TypeError("CONTEXT_SCHEMA_INVALID"); text(value.path); return; }
+    if (name === "workspace") {
+      fields(value, ["mode", "path", "scope"]);
+      if (value.mode === "fixed" && value.scope === undefined) { text(value.path); return; }
+      if (value.mode === "random" && value.scope === "conversation" && value.path === undefined) return;
+      throw new TypeError("CONTEXT_SCHEMA_INVALID");
+    }
+    if (name === "requirements") { fields(value, ["capabilities"]); stringList(value.capabilities, 64); return; }
     if (name === "limits") { limits(value); return; }
   }
   if (namespace === "octo.runtime" && name === "selection") {
-    fields(value, ["mode", "runtime_id"]);
-    if (value.mode === "binding" && value.runtime_id === undefined) return;
-    if (value.mode === "explicit") { text(value.runtime_id); return; }
+    fields(value, ["mode", "runtime_id", "runtime_ids", "strategy", "offline_behavior", "failover"]);
+    if (value.offline_behavior !== undefined && value.offline_behavior !== "wait" && value.offline_behavior !== "fail") throw new TypeError("CONTEXT_SCHEMA_INVALID");
+    if (value.failover !== undefined && value.failover !== "none" && value.failover !== "candidates") throw new TypeError("CONTEXT_SCHEMA_INVALID");
+    if (value.mode === "explicit" && value.failover !== undefined && value.failover !== "none") throw new TypeError("CONTEXT_SCHEMA_INVALID");
+    if (value.mode === "explicit" && value.runtime_ids === undefined && value.strategy === undefined) { text(value.runtime_id); return; }
+    if (value.mode === "candidates" && value.runtime_id === undefined && value.strategy === "preferred_failover") { stringList(value.runtime_ids, 64, 1); return; }
     throw new TypeError("CONTEXT_SCHEMA_INVALID");
+  }
+  if (["octo.skills", "octo.plugins", "octo.connectors"].includes(namespace) && name === "selection") {
+    fields(value, ["include", "exclude"]);
+    if (!Array.isArray(value.include) || value.include.length > 32) throw new TypeError("CONTEXT_SCHEMA_INVALID");
+    stringList(value.exclude, 32);
+    if (value.exclude.some(id => !/^[a-z0-9][a-z0-9.-]{0,95}$/.test(id))) throw new TypeError("CONTEXT_SCHEMA_INVALID");
+    const references = new Map<string, string>();
+    for (const entry of value.include) {
+      object(entry, "CONTEXT_SCHEMA_INVALID"); fields(entry, ["resource_id", "version", "invoke", "components"]);
+      text(entry.resource_id); text(entry.version);
+      if (!/^[a-z0-9][a-z0-9.-]{0,95}$/.test(entry.resource_id) || entry.version.length > 96 || value.exclude.includes(entry.resource_id)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
+      if (entry.invoke !== undefined && typeof entry.invoke !== "boolean") throw new TypeError("CONTEXT_SCHEMA_INVALID");
+      if (entry.components !== undefined) { stringList(entry.components, 64); if (entry.components.some(component => !/^(skill|mcp):[a-z0-9][a-z0-9._-]{0,95}$/.test(component))) throw new TypeError("CONTEXT_SCHEMA_INVALID"); }
+      if (references.has(entry.resource_id)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
+      references.set(entry.resource_id, entry.version);
+    }
+    return;
   }
   if (namespace === "octo.security" && name === "approval_policy") { fields(value, ["mode"]); assertApprovalMode(value.mode); return; }
   if ((namespace === "octo.content" && ["selections", "resources"].includes(name)) || (namespace === "octo.control" && name === "instructions")) {
@@ -288,6 +312,28 @@ function continuity(value: Record<string, unknown>): void {
 
 function integer(value: unknown, minimum: number, maximum = Number.MAX_SAFE_INTEGER): void {
   if (!Number.isSafeInteger(value) || Number(value) < minimum || Number(value) > maximum) throw new TypeError("CONTEXT_SCHEMA_INVALID");
+}
+
+function stringList(value: unknown, maximum: number, minimum = 0): asserts value is string[] {
+  if (!Array.isArray(value) || value.length < minimum || value.length > maximum || value.some(item => typeof item !== "string" || !item) || new Set(value).size !== value.length) throw new TypeError("CONTEXT_SCHEMA_INVALID");
+}
+
+export function assertCapabilityResources(value: unknown): void {
+  if (!Array.isArray(value) || value.length > 32) throw new TypeError("CONTEXT_RESOURCE_INVALID");
+  for (const resource of value) {
+    object(resource, "CONTEXT_RESOURCE_INVALID");
+    fields(resource, ["resource_id", "kind", "version", "digest", "files", "sources", "invoke", "components"]);
+    text(resource.resource_id); text(resource.version);
+    if (!["plugin", "skill", "connector"].includes(String(resource.kind)) || typeof resource.digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(resource.digest) || typeof resource.invoke !== "boolean") throw new TypeError("CONTEXT_RESOURCE_INVALID");
+    object(resource.files, "CONTEXT_RESOURCE_INVALID");
+    if (Object.keys(resource.files).length > 256 || new TextEncoder().encode(JSON.stringify(resource.files)).length > 2_097_152) throw new TypeError("CONTEXT_RESOURCE_BUDGET_EXCEEDED");
+    for (const [path, content] of Object.entries(resource.files)) {
+      if (!path || path.startsWith("/") || path.includes("\\") || path.split("/").some(segment => !segment || segment === "." || segment === "..") || path.includes("\0") || typeof content !== "string") throw new TypeError("CONTEXT_RESOURCE_INVALID");
+    }
+    stringList(resource.sources, 3, 1);
+    if (resource.sources.some(source => !["agent_default", "agent_mandatory", "request"].includes(source))) throw new TypeError("CONTEXT_RESOURCE_INVALID");
+    if (resource.components !== undefined) stringList(resource.components, 64);
+  }
 }
 
 function fields(value: Record<string, unknown>, allowed: string[]): void {

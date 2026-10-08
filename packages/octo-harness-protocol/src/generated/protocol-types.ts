@@ -40,19 +40,49 @@ export type ContextReasoningPayload1 = {
 };
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextWorkspacePayload".
+ */
+export type ContextWorkspacePayload =
+  | {
+      mode: "fixed";
+      path: string;
+    }
+  | {
+      mode: "random";
+      scope: "conversation";
+    };
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextRuntimeSelectionPayload".
  */
 export type ContextRuntimeSelectionPayload = {
-  mode: "binding" | "explicit";
+  mode: "candidates" | "explicit";
   runtime_id?: string;
+  /**
+   * @minItems 1
+   * @maxItems 64
+   */
+  runtime_ids?: [string, ...string[]];
+  strategy?: "preferred_failover";
+  offline_behavior?: "wait" | "fail";
+  failover?: "candidates" | "none";
 } & ContextRuntimeSelectionPayload1;
 export type ContextRuntimeSelectionPayload1 =
   | {
-      mode?: "binding";
+      mode?: "candidates";
     }
   | {
       mode?: "explicit";
     };
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "PersistentContextEnvelope".
+ */
+export type PersistentContextEnvelope = ContextEnvelope & {
+  items?: {
+    [k: string]: unknown;
+  }[];
+};
 /**
  * Declarative registered resolver operation, never an arbitrary shell command or credential. Validation does not resolve or authorize it. A consumer without the specified resolver must fail with CONTEXT_RESOLVER_UNAVAILABLE rather than ignore the entry.
  *
@@ -106,7 +136,7 @@ export type ContextContinuityPayload = ChannelContextDescriptor & {
   };
 };
 /**
- * Worker-frozen authorized routing snapshot, never caller-supplied authorization. Context routing and explicit selection cannot fail over.
+ * Worker-frozen Context runtime candidates. Explicit selection cannot fail over.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ResolvedRuntimeSelection".
@@ -237,11 +267,68 @@ export interface ContextAdapterPayload {
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextWorkspacePayload".
+ * via the `definition` "ContextRequirementsPayload".
  */
-export interface ContextWorkspacePayload {
-  mode: "fixed";
+export interface ContextRequirementsPayload {
+  /**
+   * @maxItems 64
+   */
+  capabilities: string[];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextCapabilityReference".
+ */
+export interface ContextCapabilityReference {
+  resource_id: string;
+  version: string;
+  invoke?: boolean;
+  /**
+   * @maxItems 64
+   */
+  components?: string[];
+}
+/**
+ * Includes have unique resource_id values; include and exclude are disjoint. Consumers must enforce x-octo-capability-selection in addition to draft-07 constraints.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextCapabilitySelectionPayload".
+ */
+export interface ContextCapabilitySelectionPayload {
+  /**
+   * @maxItems 32
+   */
+  include: ContextCapabilityReference[];
+  /**
+   * @maxItems 32
+   */
+  exclude: string[];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ResolvedCapabilityResource".
+ */
+export interface ResolvedCapabilityResource {
+  resource_id: string;
+  kind: "plugin" | "skill" | "connector";
+  version: string;
+  digest: string;
+  files: {
+    [k: string]: string;
+  };
+  sources: ("agent_default" | "agent_mandatory" | "request")[];
+  invoke: boolean;
+  components?: string[];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "PreparedSkill".
+ */
+export interface PreparedSkill {
+  name: string;
+  description: string;
   path: string;
+  invoke: boolean;
 }
 /**
  * Snake-case frozen watchdog limits, with the same bounds as RuntimeLimits. Legacy enforcement=observe cannot be combined with v2 settings.
@@ -282,6 +369,133 @@ export interface ContextSelectionEntry {
       }
     | string;
   summary?: string;
+}
+/**
+ * Agent defaults and mandatory constraints, stored under one external configuration version. Validation and resolution do not authorize the writer or referenced resources. Ephemeral content and trusted instructions cannot be persisted here.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextConfiguration".
+ */
+export interface ContextConfiguration {
+  defaults: PersistentContextEnvelope;
+  mandatory: PersistentContextEnvelope;
+}
+/**
+ * Public Context facts. Preparation is distinct from Adapter application or invocation. This projection excludes resource files, trusted instruction text, credentials and Runtime paths.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "RunContextProjection".
+ */
+export interface RunContextProjection {
+  run_id: string;
+  context_configuration_version: number;
+  context_hash: string;
+  actual_runtime_id?: string;
+  preparation_status: "unknown" | "prepared";
+  model_uses_provider_default: boolean;
+  effort_uses_provider_default: boolean;
+  execution: {
+    adapter_type: string;
+    model?: string;
+    effort?: string;
+    approval_mode: "ask" | "assisted" | "full_access";
+    workspace_mode: "fixed" | "random";
+    /**
+     * @maxItems 32
+     */
+    resources: {
+      resource_id: string;
+      kind: "plugin" | "skill" | "connector";
+      version: string;
+      digest: string;
+      sources: ("agent_default" | "agent_mandatory" | "request")[];
+    }[];
+  };
+}
+/**
+ * Durable Runtime preparation evidence, sealed before Adapter invocation and fenced by the active Run lease. Private paths must not be exposed by product projections.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextPreparationReceipt".
+ */
+export interface ContextPreparationReceipt {
+  compiler_version: "octo.context-compiler/v1";
+  catalog_version: "octo.context-catalog/v1";
+  context_hash: string;
+  run_id: string;
+  lease_id: string;
+  fencing_token: number;
+  workspace_mode: "fixed" | "random";
+  workspace_path: string;
+  provider_state_dir: string;
+  /**
+   * @maxItems 32
+   */
+  resources: PreparedCapabilityReceipt[];
+  /**
+   * @maxItems 32
+   */
+  materials: PreparedMaterialReceipt[];
+  continuity?: ChannelContextSnapshotRef;
+  /**
+   * @maxItems 256
+   */
+  warnings: string[];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "PreparedCapabilityReceipt".
+ */
+export interface PreparedCapabilityReceipt {
+  resource_id: string;
+  version: string;
+  digest: string;
+  root: string;
+  data: string;
+  /**
+   * @maxItems 64
+   */
+  components: string[];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "PreparedMaterialReceipt".
+ */
+export interface PreparedMaterialReceipt {
+  resource_ref: string;
+  task_id: string;
+  task_version: number;
+  handler_epoch: number;
+  digest: string;
+}
+/**
+ * Traceable reference to frozen provider-visible context. The primary and recovery hashes cover their exact rendered bytes.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ChannelContextSnapshotRef".
+ */
+export interface ChannelContextSnapshotRef {
+  snapshot_id: string;
+  scope_key: string;
+  consumer_key: string;
+  session_generation: number;
+  /**
+   * Original descriptor generation when recovery promotes the effective consumer generation.
+   */
+  source_session_generation?: number;
+  trigger_message_id: string;
+  trigger_seq?: number;
+  serializer_version: string;
+  rendered_sha256: string;
+  completeness: "complete" | "partial" | "unavailable";
+  /**
+   * Hash of the frozen bounded cold projection used when provider resume falls back to a fresh session.
+   */
+  recovery_rendered_sha256?: string;
+  /**
+   * Completeness of the frozen cold recovery projection.
+   */
+  recovery_completeness?: "complete" | "partial" | "unavailable";
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -427,15 +641,10 @@ export interface ContextDeliveryPolicyPayload {
   };
 }
 export interface ResolvedRuntimeSelection1 {
-  schema: "octo.runtime-selection/v1";
-  routing_mode: "context" | "bound";
-  routing_policy_version: number;
-  selection_mode: "explicit" | "binding";
+  schema: "octo.runtime-selection/v2";
+  context_configuration_version: number;
+  selection_mode: "explicit" | "candidates";
   explicit_runtime_id?: string;
-  binding_ref?: {
-    id: string;
-    version: number;
-  };
   /**
    * @minItems 1
    * @maxItems 64
@@ -455,7 +664,7 @@ export interface ResolvedRuntimeSelection1 {
     }[]
   ];
   offline_behavior: "wait" | "fail";
-  failover: "binding" | "none";
+  failover: "candidates" | "none";
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -464,6 +673,11 @@ export interface ResolvedRuntimeSelection1 {
 export interface ResolvedExecutionPlan {
   adapter_type: string;
   workdir: string;
+  workspace?: ContextWorkspacePayload;
+  /**
+   * @maxItems 32
+   */
+  resources?: ResolvedCapabilityResource[];
   model?: string;
   effort?: string;
   approval_mode: ApprovalMode;
@@ -922,35 +1136,6 @@ export interface ContextSyncResult1 {
   through_seq?: number;
 }
 /**
- * Traceable reference to frozen provider-visible context. The primary and recovery hashes cover their exact rendered bytes.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ChannelContextSnapshotRef".
- */
-export interface ChannelContextSnapshotRef {
-  snapshot_id: string;
-  scope_key: string;
-  consumer_key: string;
-  session_generation: number;
-  /**
-   * Original descriptor generation when recovery promotes the effective consumer generation.
-   */
-  source_session_generation?: number;
-  trigger_message_id: string;
-  trigger_seq?: number;
-  serializer_version: string;
-  rendered_sha256: string;
-  completeness: "complete" | "partial" | "unavailable";
-  /**
-   * Hash of the frozen bounded cold projection used when provider resume falls back to a fresh session.
-   */
-  recovery_rendered_sha256?: string;
-  /**
-   * Completeness of the frozen cold recovery projection.
-   */
-  recovery_completeness?: "complete" | "partial" | "unavailable";
-}
-/**
  * Result of advancing the consumer cursor with version CAS after terminal durability.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -1065,6 +1250,9 @@ export interface InvokeRequestWire {
   runMetadata?: Record<string, unknown>;
   approvalMode: ApprovalMode;
   mcpServers?: McpServers;
+  skills?: PreparedSkill[];
+  skillRoots?: string[];
+  providerStateDir?: string;
   providerSession?: ProviderSession;
   runtimeLimits?: RuntimeLimits;
   agentConfig: AgentConfig;

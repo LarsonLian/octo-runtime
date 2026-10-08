@@ -14,8 +14,8 @@ const plan = { adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask
 
 function executionEnvelope(selection = resolvedRuntimeSelection(runtimeId)) {
   return {
-    schema_version: 3,
-    context_defaults_version: 1,
+    schema_version: 4,
+    context_configuration_version: 1,
     effective_context: executionContext(plan),
     resolved_execution_plan: plan,
     resolved_runtime_selection: selection,
@@ -31,8 +31,8 @@ function executionEnvelope(selection = resolvedRuntimeSelection(runtimeId)) {
 }
 
 const boundPool = {
-  ...resolvedRuntimeSelection(runtimeId), routing_mode: "bound", selection_mode: "binding",
-  binding_ref: { id: "binding-1", version: 1 }, failover: "binding",
+  ...resolvedRuntimeSelection(runtimeId), selection_mode: "candidates",
+  failover: "candidates",
   authorized_candidates: [
     { runtime_id: "other-runtime", priority: 1, owner_subject_type: "teamspace", owner_subject_id: "space-1" },
     { runtime_id: runtimeId, priority: 2, owner_subject_type: "user", owner_subject_id: "user-1" }
@@ -98,7 +98,7 @@ for (const [name, selection] of [["explicit Unicode target", resolvedRuntimeSele
       assert.equal(fixture.receipts[0].accepted, true);
       assert.equal(fixture.registrations, 1);
       assert.equal(fixture.invocations[0].runMetadata.runtimeId, runtimeId);
-      assert.equal(fixture.invocations[0].runMetadata.schemaVersion, 3);
+      assert.equal(fixture.invocations[0].runMetadata.schemaVersion, 4);
     } finally {
       await fixture.close();
     }
@@ -126,12 +126,13 @@ async function startFixture({ rejectRegistration = false } = {}) {
   const ready = deferred();
   const fixture = { storePath, ready, registrations: 0, upgrades: 0, contextSyncs: 0, receipts: [], invocations: [], socket: undefined };
   server.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     let body = "";
     for await (const chunk of request) body += chunk;
     const registration = JSON.parse(body);
     assert.deepEqual(registration.capabilities.run_contract, RUNTIME_RUN_CONTRACT);
-    assert.equal(registration.capabilities.run_contract.schema_version, 3);
-    assert.equal(registration.capabilities.run_contract.routing_schema, "octo.runtime-selection/v1");
+    assert.equal(registration.capabilities.run_contract.schema_version, 4);
+    assert.equal(registration.capabilities.run_contract.routing_schema, "octo.runtime-selection/v2");
     fixture.registrations += 1;
     response.writeHead(rejectRegistration ? 400 : 200, { "Content-Type": "application/json" });
     response.end(JSON.stringify(rejectRegistration

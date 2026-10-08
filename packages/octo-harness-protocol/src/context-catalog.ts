@@ -1,0 +1,60 @@
+import type { ContextEnvelope } from "./generated/protocol-types.js";
+import { assertContextEnvelope } from "./context.js";
+
+export const CONTEXT_CATALOG_VERSION = "octo.context-catalog/v1" as const;
+export type ContextStage = "validate" | "merge" | "resolve" | "dispatch" | "prepare" | "compile" | "apply";
+export type ContextOutput = "execution" | "routing" | "policy" | "materials" | "instructions" | "resources";
+export interface ContextTypeDefinition {
+  readonly namespace: string;
+  readonly name: string;
+  readonly schemaRef: string;
+  readonly persistent: boolean;
+  readonly trustedOnly: boolean;
+  readonly merge: "replace" | "capability_set";
+  readonly mandatory: "equal" | "runtime_subset" | "capability_union" | "required_resources";
+  readonly stages: readonly ContextStage[];
+  readonly outputs: readonly ContextOutput[];
+}
+
+function entry(namespace: string, name: string, schema: string, persistent: boolean,
+  stages: ContextStage[], outputs: ContextOutput[], mandatory: ContextTypeDefinition["mandatory"] = "equal",
+  merge: ContextTypeDefinition["merge"] = "replace", trustedOnly = false): ContextTypeDefinition {
+  return Object.freeze({ namespace, name, schemaRef: `#/definitions/${schema}`, persistent, trustedOnly,
+    merge, mandatory, stages: Object.freeze(["validate", "merge", ...stages] as ContextStage[]), outputs: Object.freeze(outputs) });
+}
+
+/** Data contracts only. Processor availability and authorization belong to the host. */
+export const CONTEXT_TYPE_CATALOG: readonly ContextTypeDefinition[] = Object.freeze([
+  entry("octo.execution", "adapter", "ContextAdapterPayload", true, ["resolve", "dispatch", "apply"], ["execution"]),
+  entry("octo.execution", "model", "ContextModelPayload", true, ["resolve", "apply"], ["execution"]),
+  entry("octo.execution", "reasoning", "ContextReasoningPayload", true, ["resolve", "apply"], ["execution"]),
+  entry("octo.execution", "workspace", "ContextWorkspacePayload", true, ["resolve", "dispatch", "prepare", "apply"], ["execution"]),
+  entry("octo.execution", "limits", "ContextLimitsPayload", true, ["resolve", "apply"], ["execution"]),
+  entry("octo.execution", "requirements", "ContextRequirementsPayload", true, ["resolve", "dispatch", "apply"], ["execution"], "capability_union"),
+  ...["octo.plugins", "octo.skills", "octo.connectors"].map(namespace =>
+    entry(namespace, "selection", "ContextCapabilitySelectionPayload", true, ["resolve", "prepare", "compile", "apply"], ["resources"], "required_resources", "capability_set")),
+  entry("octo.runtime", "selection", "ContextRuntimeSelectionPayload", true, ["resolve", "dispatch"], ["routing"], "runtime_subset"),
+  entry("octo.security", "approval_policy", "ContextApprovalPolicyPayload", true, ["resolve", "apply"], ["policy"]),
+  entry("octo.content", "selections", "ContextSelectionsPayload", false, ["compile"], ["materials"]),
+  entry("octo.content", "resources", "ContextResourcesPayload", true, ["resolve", "prepare", "compile"], ["materials"]),
+  entry("octo.content", "continuity", "ContextContinuityPayload", false, ["resolve", "prepare", "compile"], ["materials"]),
+  entry("octo.content", "delivery_policy", "ContextDeliveryPolicyPayload", true, ["resolve", "compile"], ["materials"]),
+  entry("octo.control", "instructions", "ContextInstructionsPayload", false, ["compile", "apply"], ["instructions"], "equal", "replace", true)
+]);
+
+export function contextTypeDefinition(namespace: string, name: string): ContextTypeDefinition {
+  const definition = CONTEXT_TYPE_CATALOG.find(item => item.namespace === namespace && item.name === name);
+  if (!definition) throw new TypeError(`CONTEXT_TYPE_UNSUPPORTED: ${namespace}/${name}`);
+  return definition;
+}
+
+export function assertContextProcessorCoverage(context: ContextEnvelope, stage: ContextStage, supportedKeys: ReadonlySet<string>): void {
+  assertContextEnvelope(context);
+  for (const item of context.items) {
+    const definition = contextTypeDefinition(item.namespace, item.name);
+    const key = `${item.namespace}/${item.name}`;
+    if (definition.stages.includes(stage) && !supportedKeys.has(key)) {
+      throw new TypeError(`CONTEXT_PROCESSOR_UNAVAILABLE: ${stage}: ${key}`);
+    }
+  }
+}

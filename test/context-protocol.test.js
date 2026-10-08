@@ -50,6 +50,14 @@ ajv.addKeyword("x-octo-matching-trigger-fields", {
     && value.trigger_fact?.message_seq === value.trigger_seq
     && Object.hasOwn(value.trigger_fact ?? {}, "message_seq") === Object.hasOwn(value, "trigger_seq"))
 });
+ajv.addKeyword("x-octo-capability-selection", {
+  type: "object",
+  validate: (enabled, value) => {
+    if (!enabled || !Array.isArray(value.include) || !Array.isArray(value.exclude)) return true;
+    const ids = value.include.map(item => item?.resource_id);
+    return new Set(ids).size === ids.length && ids.every(id => !value.exclude.includes(id));
+  }
+});
 ajv.addSchema(schema);
 const validateContextSchema = ajv.compile({ $ref: `${schema.$id}#/definitions/ContextEnvelope` });
 const validatePlanSchema = ajv.compile({ $ref: `${schema.$id}#/definitions/ResolvedExecutionPlan` });
@@ -102,7 +110,8 @@ test("Context schema constants and registered handlers stay aligned", () => {
   assert.equal(schema["x-octo-unicode-scalar-strings"], true);
   assert.equal(schema.definitions.ContextEnvelope["x-octo-unicode-scalar-strings"], true);
   assert.deepEqual(schema.definitions.ApprovalMode.enum, APPROVAL_MODES);
-  const registered = schema.definitions.ContextItem.oneOf.map(branch => JSON.stringify([branch.properties.namespace.const, branch.properties.name.const]));
+  const registered = schema.definitions.ContextItem.oneOf.flatMap(branch =>
+    (branch.properties.namespace.enum ?? [branch.properties.namespace.const]).map(namespace => JSON.stringify([namespace, branch.properties.name.const])));
   const covered = new Set(fixtures.filter(fixture => fixture.valid && fixture.context).flatMap(fixture => fixture.context.items.map(item => JSON.stringify([item.namespace, item.name]))));
   assert.deepEqual([...covered].sort(), registered.sort());
 });

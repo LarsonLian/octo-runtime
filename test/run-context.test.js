@@ -14,6 +14,7 @@ test("frozen execution plan cannot broaden or contradict its effective Context",
   for (const overrides of [{ approval_mode: "full_access" }, { adapter_type: "other" }, { workdir: "/other" }, { model: "unrequested-model" }, { effort: "unrequested-effort" }, { runtime_limits: { run_timeout_ms: 30_000 } }]) {
     assert.throws(() => assertFrozenContextPlan(context, { ...plan, ...overrides }), /CONTEXT_PLAN_MISMATCH/);
   }
+  assert.throws(() => assertFrozenContextPlan(context, { ...plan, workspace: { mode: "random", scope: "conversation" } }), /CONTEXT_PLAN_MISMATCH/);
   const defaults = { ...context, items: [...context.items, { namespace: "octo.execution", name: "model", payload: { use_provider_default: true } }] };
   assert.throws(() => assertFrozenContextPlan(defaults, { ...plan, model: "forced" }), /CONTEXT_PLAN_MISMATCH/);
 });

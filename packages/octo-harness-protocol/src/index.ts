@@ -1,10 +1,14 @@
 import { randomUUID } from "node:crypto";
+export { contextHash } from "./context-hash.js";
 import { assertExperiencePayload } from "./experience.js";
 import { assertModelInputParts, assertImageRecoveryParts, hasImageInput } from "./multimodal.js";
 export { IMAGE_INPUT_LIMITS, IMAGE_INPUT_MIME_TYPES, assertModelInputParts, providerInputParts, hasImageInput, modelPartsFromInput } from "./multimodal.js";
 import { assertApprovalMode, assertContextEnvelope, assertJsonValue, assertMcpServers, contextItem } from "./context.js";
-export { APPROVAL_MODES, CONTEXT_SCHEMA, CONTEXT_MAX_BYTES, CONTEXT_MAX_ITEMS, RUNTIME_RUN_CONTRACT, assertApprovalMode, assertContextEnvelope, assertMcpServers, assertResolvedExecutionPlan, canonicalContext, contextHash, contextItem, mergeContext } from "./context.js";
+export { APPROVAL_MODES, CONTEXT_SCHEMA, CONTEXT_MAX_BYTES, CONTEXT_MAX_ITEMS, RUNTIME_RUN_CONTRACT, assertApprovalMode, assertContextEnvelope, assertCapabilityResources, assertMcpServers, assertResolvedExecutionPlan, canonicalContext, contextItem, mergeContext } from "./context.js";
 export { RUNTIME_SELECTION_SCHEMA, assertResolvedRuntimeSelection } from "./runtime-selection.js";
+export { CONTEXT_CATALOG_VERSION, CONTEXT_TYPE_CATALOG, contextTypeDefinition, assertContextProcessorCoverage } from "./context-catalog.js";
+export type { ContextStage, ContextOutput, ContextTypeDefinition } from "./context-catalog.js";
+export { assertContextConfiguration, resolveContextConfiguration } from "./context-configuration.js";
 export { assertNotificationMessage } from "./notification.js";
 import type {
   ActivityInfo,
@@ -47,12 +51,22 @@ export type {
   ApprovalOperation,
   ApprovalDisplayDetails,
   ContextItem,
+  ContextCapabilityReference,
+  ContextCapabilitySelectionPayload,
+  ResolvedCapabilityResource,
+  PreparedSkill,
   ContextEnvelope,
+  ContextConfiguration,
+  ContextPreparationReceipt,
+  RunContextProjection,
+  PreparedCapabilityReceipt,
+  PreparedMaterialReceipt,
   ContextAdapterPayload,
   ContextModelPayload,
   ContextReasoningPayload,
   ContextWorkspacePayload,
   ContextLimitsPayload,
+  ContextRequirementsPayload,
   ContextRuntimeSelectionPayload,
   ContextApprovalPolicyPayload,
   ContextSelectionEntry,
@@ -584,7 +598,14 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
     if (selected && selected.payload[selection.property] !== (isRecord(agentConfig) ? agentConfig[selection.config] : undefined)) throw new TypeError("CONTEXT_PLAN_MISMATCH");
   }
   const workspace = contextItem(request.context, "octo.execution", "workspace");
-  if (workspace && workspace.payload.path !== request.workdir) throw new TypeError("CONTEXT_PLAN_MISMATCH");
+  if (workspace?.payload.mode === "fixed" && workspace.payload.path !== request.workdir) throw new TypeError("CONTEXT_PLAN_MISMATCH");
+  if (request.skills !== undefined) {
+    if (!Array.isArray(request.skills)) throw new TypeError("SKILL_SCOPE_INVALID");
+    for (const skill of request.skills) {
+      if (!isRecord(skill) || typeof skill.name !== "string" || !skill.name || typeof skill.description !== "string" || !skill.description || typeof skill.path !== "string" || !skill.path.startsWith("/") || typeof skill.invoke !== "boolean") throw new TypeError("SKILL_SCOPE_INVALID");
+    }
+    if (!Array.isArray(request.skillRoots) || request.skillRoots.some(root => typeof root !== "string" || !root.startsWith("/")) || typeof request.providerStateDir !== "string" || !request.providerStateDir.startsWith("/")) throw new TypeError("SKILL_SCOPE_INVALID");
+  }
   if (typeof request.controlInstructions !== "string") throw new TypeError("InvokeRequest.controlInstructions must be a string");
   if (request.runtimeLimits !== undefined) assertRuntimeLimits(request.runtimeLimits);
   if (request.mcpServers !== undefined) assertMcpServers(request.mcpServers);

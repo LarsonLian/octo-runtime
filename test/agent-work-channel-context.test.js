@@ -38,6 +38,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
   const terminalSent = deferred();
 
   httpServer.on("request", (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     void (async () => {
       const chunks = [];
       for await (const chunk of request) chunks.push(chunk);
@@ -161,6 +162,7 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
   let terminalHandled = false;
 
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-reject" , protocol_version: 2 } }));
@@ -297,6 +299,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
   let runtime;
 
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-authority" , protocol_version: 2 } }));
@@ -436,6 +439,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
   let nextStarted;
 
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-ordered" , protocol_version: 2 } }));
@@ -650,6 +654,7 @@ test("runtime rejects a queued source generation after recovery advanced the eff
   contextStore.close();
 
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-stale-generation" , protocol_version: 2 } }));
@@ -751,6 +756,7 @@ test("runtime close joins a waiting command before immediate restart and replay"
   contextStore.close();
 
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-close-wait" , protocol_version: 2 } }));
@@ -890,6 +896,7 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
     fencing_token: 1
   };
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-cancel-wait" , protocol_version: 2 } }));
@@ -991,6 +998,7 @@ test("append-only channel context cold-starts an adapter without continuity reco
   let providerRequest;
 
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-capability" , protocol_version: 2 } }));
@@ -1103,6 +1111,7 @@ test("append-only channel context accepts an adapter without serialized sessions
   let providerRequest;
 
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-stateless" , protocol_version: 2 } }));
@@ -1229,6 +1238,7 @@ for (const [projection, providerPersistence] of [["window", "append_only"], ["de
       }));
     };
     httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
       for await (const _chunk of request) {}
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-cold", protocol_version: 2 } }));
@@ -1333,6 +1343,7 @@ for (const [name, storeMode, adapterCapabilities, reason] of [
     let invocations = 0;
     let syncRequests = 0;
     httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
       for await (const _chunk of request) {}
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-preflight", protocol_version: 2 } }));
@@ -1400,9 +1411,9 @@ function executionEnvelope(runtimeId, runId = "run-e2e", triggerSeq = 3, current
     }
   }];
   return {
-    schema_version: 3,
+    schema_version: 4,
     resolved_runtime_selection: resolvedRuntimeSelection(runtimeId),
-    context_defaults_version: 1,
+    context_configuration_version: 1,
     effective_context: executionContext(plan, items),
     resolved_execution_plan: plan,
     run_id: runId,

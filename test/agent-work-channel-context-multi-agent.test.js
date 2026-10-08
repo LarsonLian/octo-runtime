@@ -26,6 +26,7 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
   let recoveryRoundSent = false;
 
   httpServer.on("request", async (request, response) => {
+    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume the registration body. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-multi-agent" , protocol_version: 2 } }));
@@ -250,9 +251,9 @@ function groupEnvelope(agent, round, text) {
     }] }
   }];
   return {
-    schema_version: 3,
+    schema_version: 4,
     resolved_runtime_selection: resolvedRuntimeSelection("runtime-multi-agent"),
-    context_defaults_version: 1,
+    context_configuration_version: 1,
     effective_context: executionContext(plan, items),
     resolved_execution_plan: plan,
     run_id: `run-group-${agent}-${round}`,
@@ -280,9 +281,9 @@ function dmEnvelope(round) {
     adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_capabilities: ["tool.canonical"]
   };
   return {
-    schema_version: 3,
+    schema_version: 4,
     resolved_runtime_selection: resolvedRuntimeSelection("runtime-multi-agent"),
-    context_defaults_version: 1,
+    context_configuration_version: 1,
     effective_context: executionContext(plan),
     resolved_execution_plan: plan,
     run_id: `run-dm-a-${round}`,

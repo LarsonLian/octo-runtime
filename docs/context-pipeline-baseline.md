@@ -1,0 +1,89 @@
+# Harness 统一 Context 处理实施基线
+
+日期：2026-10-08（Asia/Shanghai）。版本：`0.2`。状态：统一入口、准备回执和纯编译器已接入 daemon；逐 Adapter 应用资格与材料恢复仍有待验收项。
+
+共享语义以 [跨项目总基线](../../docs/62-octo-context-compiler-se-baseline.md) 为准。本文覆盖 Protocol、daemon、core、Adapter Host 和各 Adapter。
+
+## 1. 现状与统一入口
+
+| 当前定位 | 已有职责 | 目标处理器 |
+| --- | --- | --- |
+| `packages/octo-harness-protocol/src/context.ts` | 校验、merge、canonical/hash、类型预算 | 公共目录与纯合同工具 |
+| `packages/octo-harness-core/src/context.ts` | 本地模式仅接受 execution/security 子集 | 本地管线配置；不隐式开放云端资源类型 |
+| `packages/octo-harness-daemon/src/run-context.ts` | 冻结计划检查、材料和控制编译 | verify 与 Compiler 起点 |
+| `daemon/src/input-images.ts` | Artifact 租约读取，临时图片 source | 图片 Materializer，保持 input.parts |
+| `daemon/src/task-materials.ts` | 注册任务 MCP 读取及材料摘要 | prepare-time 任务资源处理器 |
+| `daemon/src/channel-context-store.ts` | 频道快照与连续性缓存 | continuity 处理器，保留原 cursor/epoch 规则 |
+| `daemon/src/agent-work-runtime.ts` | 准备编排与 InvokeRequest 映射 | 统一管线调用者，不重复拼接事实和指令 |
+| `packages/octo-harness-adapter-*` | Provider 原生输入映射 | applied/loaded 与兼容性证据消费者 |
+
+源码路径中的 `daemon/src` 均相对于 `packages/octo-harness-daemon/`。新的 package 是否独立建立，待实现规模确定；不因模块命名提前创建空包。
+
+## 2. Protocol 与处理器注册
+
+Protocol 必须发布类型目录和共享准备/编译元数据合同。目录包含数据语义，不包含 fetch、解包、工具执行或凭据实现。TypeScript 与 Worker Go 必须消费同源 fixtures。
+
+daemon 按目录注册 verify/prepare/compile 处理器。编排器必须检查依赖、缺失处理器、输出冲突与消费记录。目录顺序不等于执行顺序；并行准备不能改变模型投递顺序。
+
+本地 core 当前只支持 execution/security。目标管线必须声明该支持子集；不支持的资源类型仍拒绝。本地能力后续扩展也必须有授权 Port 和合同，不能绕过云端模型来执行任意资源操作。
+
+## 3. 准备、回执与清理
+
+Runtime 收到命令后，必须先验证冻结 Context/plan、Runtime 目标、lease/fence、Adapter 能力和必需处理器。验证通过后才能读取图片、取任务材料、准备频道快照、下载包或创建目录。
+
+每个 Materializer 使用当前执行绑定和取消信号。临时凭据按既有安全物化接口注入；不得从资源正文构造认证 header 或可执行命令。
+
+prepare 输出必须包含稳定资源标识、实际版本/digest、授权 scope、路径映射和类型消费结果。路径与二进制内容属于 Runtime 资源视图；持久 Context 保持引用。Compiler 只读准备产物，不负责网络访问。
+
+模型启动前必须封存回执并取得权威确认。响应未知时查询或幂等重交，不能先启动。相同准备身份返回不同路径或摘要时拒绝；取消后的晚到结果不得覆盖已终止状态。
+
+恢复同一 attempt 时，必须复用已封存资源或读取同版本并校验。新的 attempt 按资源一致性规则准备，不能因重连获取不同 latest 却沿用旧内容 hash。
+
+包根目录、cwd、Run 资源视图和插件持久数据分开管理。下载校验摘要；解包拒绝路径穿越与不允许的符号链接。失败清理只删除本次临时资源，不能修改共享个人 Provider 配置或删除用户目录。
+
+random workspace 的目录分配必须幂等并回传实际路径。输入的策略快照不回写为本机路径；协议允许随机策略的执行计划暂不包含具体 workdir。当前 Runtime 先准备实际目录并取得 Worker 回执确认，再映射 Provider 的 workdir；不得直接使用冻结计划中的空 workdir 启动。
+
+## 4. Compiler 与 Adapter 输出
+
+Compiler 必须通过一个入口生成 CompiledContext，并映射现有 InvokeRequest。引用选区、任务材料、频道事实和当前用户输入分别保留来源边界；图片保留数量和相对顺序。
+
+可信指令装配将 Revision、可信配置和平台贡献接入统一入口。切换后旧 `mapExecutionEnvelope` 不再第二次加入同一贡献；指令顺序与来源必须可追溯。
+
+工具范围、模型、强度、cwd、审批和限额继续使用结构化字段。Prompt 不能代替 MCP 挂载、包下载、文件授权或 Provider 模型设置。Compiler 成功不代表 Adapter 已应用。
+
+Adapter 对必需映射不支持时必须在 invoke 前拒绝。Adapter 报告 applied 和 loaded；实际 invoked 仅来自可观测事件，无法判断时为未知。严格资源范围无法验证时拒绝严格模式，不能只通过提示词宣称范围受控。
+
+bootstrap/delta/inherit/recovery 与 fresh Provider Session 保留原语义。每轮 invocation 都应用冻结运行配置。资源、编译版本、工具范围或实际工作区变化必须进入版本化兼容判断；恢复输入不得重新加入已撤权材料。
+
+## 5. 工作包与验收
+
+| 工作包 | 交付 | 总基线验收 |
+| --- | --- | --- |
+| CP-P01-H | 类型目录、版本、fixtures 与合同导出 | CP-A01、03、19 |
+| CP-H01 | 编排器、现有四类准备处理器、回执和消费检查 | CP-A02、08、09、10、13、14、16 |
+| CP-H02 | InvokeRequest 映射、逐 Adapter 应用与连续性 | CP-A11、12、15、17 |
+| CP-X01-H | 插件/技能/连接器、random workspace 与严格范围 | CP-A04、09、10、15、20 |
+
+必须覆盖取消中下载、错 digest、解包穿越、回执响应丢失、重复准备、旧 fence 和图片混合输入。测试要观察 Provider 启动次数和实际配置；只比较生成字符串不足以证明应用。
+
+逐 Adapter 记录版本与资格。真实 Runtime 连接 im-test + octo-auth，验证任务取数、图片读取、频道恢复和回执持久化。未部署的 Adapter 或处理器不能在能力目录宣称可用。
+
+## 6. 待确认
+
+当前运行合同为 schema 4，选路快照为 v2，Context 信封仍为 v1；旧 binding 模式不保留兼容分支。阶段依赖图、独立阶段预算、正文快照的跨重启恢复与重新授权、逐 Adapter 的应用证据和本地模式扩展仍需后续交付。目录只声明语义，不能据此宣称某部署或 Adapter 已具备全部处理能力。
+
+## 7. 本轮 Protocol 增补与验证
+
+本轮新增 `context-catalog.ts` 与 `context-configuration.ts`，并从 schema 生成公开 ContextConfiguration 类型。公开 API 为 `CONTEXT_TYPE_CATALOG`、`contextTypeDefinition`、`assertContextProcessorCoverage`、`assertContextConfiguration` 和 `resolveContextConfiguration`。
+
+配置解析保留 replace 类型的默认覆盖；资源 selection 使用 include/exclude 集合操作；mandatory 限制设备范围、资源版本、组件范围与 invoke；requirements 合并强制和请求能力。解析结果经公共 canonical 规则输出，输入对象不被修改。
+
+共享 configuration fixtures 位于 Protocol schema 目录，并复制到 Worker domain/testdata。两端测试必须消费同一内容，不能各自维护不同预期。原有 Context fixtures 已扩充新类型、非法候选、非法 random 组合、资源重复与 include/exclude 冲突；旧 binding 样例改为拒绝。
+
+`daemon/src/context-pipeline.ts` 提供有副作用的 ContextPipeline 和纯 ContextCompiler。Runtime 按输入图片、能力包、任务材料、频道连续性的顺序准备，检查取消，汇总准备证据，编译事实与可信指令，最后向 Worker 封存回执。任何前置失败或封存拒绝均不能返回可调用的结果。Revision 和平台指令经明确可信来源进入编译器；已编译贡献不再由 InvokeRequest 映射重复加入。
+
+回执合同为 `ContextPreparationReceipt`，包含 compiler/catalog 版本、Context hash、run/lease/fence、实际目录、能力包、材料版本和连续性引用。公开查询采用 `RunContextProjection`，排除秘密和私有路径。回执确认只证明准备完成，不证明技能被实际调用。材料重读发生摘要变化时拒绝恢复；当前没有可跨重启复用的材料正文仓库。
+
+本轮验证：完整 Harness 构建通过；Protocol/configuration/Compiler/Pipeline/frozen-plan 测试 258 项通过；Runtime、频道上下文、任务材料及归档相关集成测试 76 项通过；新增目录、配置解析、管线和 run-context 的 ESLint 通过。Worker 的 domain、service、repository、handler 和 Agent Access workerclient 包级测试通过。
+
+本轮通过 CDP 核查了真实 renderer 的唯一桥、新配置方法及 im-test 登录状态。完整资源到 Provider 的真实业务链路另有项目联测进行中，本文不将桥接检查计为三项目端到端通过。未验证全部 Adapter 的应用或调用资格。

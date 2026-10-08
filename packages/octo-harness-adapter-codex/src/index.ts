@@ -9,7 +9,7 @@
 import { defineAdapter, probeCommand, type AdapterInvocationContext, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { capabilities, contextItem, type InteractionResponse, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
 import { parse, stringify } from "smol-toml";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync, copyFileSync, writeFileSync, lstatSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -247,7 +247,8 @@ export function buildCodexCommand(
   appServerArgs = buildCodexAppServerArgs(),
   env: NodeJS.ProcessEnv = process.env
 ): CodexAppServerCommand {
-  const codexHome = env.CODEX_HOME || join(homedir(), ".codex");
+  const realHome = env.CODEX_HOME || join(homedir(), ".codex");
+  const codexHome = req.skills !== undefined ? prepareScopedCodexHome(req, realHome) : realHome;
   const mcp = codexMcpOverrides(req.mcpServers, env, req);
   return {
     command,
@@ -256,6 +257,22 @@ export function buildCodexCommand(
     env: { ...env, ...mcp.env, CODEX_HOME: codexHome },
     cleanup: () => undefined
   };
+}
+
+function prepareScopedCodexHome(request: InvokeRequest, realHome: string): string {
+  if (!request.providerStateDir) throw new TypeError("SKILL_SCOPE_INVALID");
+  const home = join(request.providerStateDir, "codex");
+  mkdirSync(home, { recursive: true, mode: 0o700 });
+  if (lstatSync(home).isSymbolicLink()) throw new TypeError("PROVIDER_HOME_INVALID");
+  let config: Record<string, unknown> = {};
+  try { config = parse(readFileSync(join(realHome, "config.toml"), "utf8")); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  for (const key of ["skills", "plugins", "mcp_servers", "developer_instructions", "hooks"]) delete config[key];
+  config.features = { ...(typeof config.features === "object" ? config.features : {}), apps: false, plugins: false };
+  writeFileSync(join(home, "config.toml"), stringify(config), { mode: 0o600 });
+  try { copyFileSync(join(realHome, "auth.json"), join(home, "auth.json")); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  return home;
 }
 
 /** Build process-local Codex config overrides without placing secret values in argv. */
@@ -278,6 +295,9 @@ export function codexMcpOverrides(
       if (server.args) entry.args = server.args;
       if (server.cwd) entry.cwd = server.cwd;
       if (server.env) {
+        if (server.env.PLUGIN_ROOT !== undefined && server.env.PLUGIN_DATA !== undefined) {
+          entry.env = server.env;
+        } else {
         for (const [key, value] of Object.entries(server.env)) {
           const prior = forwarded.get(key);
           if (prior !== undefined && prior !== value) {
@@ -287,6 +307,7 @@ export function codexMcpOverrides(
           env[key] = value;
         }
         entry.env_vars = Object.keys(server.env);
+        }
       }
     } else {
       entry.url = server.url;
@@ -322,7 +343,7 @@ const TASK_MCP_TOOLS = [
   "task_get_materials", "task_read_attachment", "task_prepare_output", "task_commit_output",
   "task_fail_output", "task_apply_action", "task_create_child"
 ] as const;
-const TEAM_MCP_TOOLS = ["delegate_handoff", "post_task_comment", ...TASK_MCP_TOOLS] as const;
+const TEAM_MCP_TOOLS = ["delegate_handoff", ...TASK_MCP_TOOLS] as const;
 
 function isPreparedFullAccessTask(invocation: Pick<InvokeRequest, "approvalMode" | "context" | "runMetadata"> | undefined): boolean {
   if (!invocation || invocation.approvalMode !== "full_access"
@@ -423,6 +444,7 @@ export function createCodexAdapter({
     capabilities.MCP_DYNAMIC,
     capabilities.INTERACTION_RESPONSE,
     capabilities.INPUT_IMAGE
+    , "context.capabilities"
   ];
   if (detectComputerUseProvisioningSync(env).available) adapterCapabilities.push(COMPUTER_USE_CAPABILITY);
   const interactionResponders = new Map<string, CodexInteractionResponder>();

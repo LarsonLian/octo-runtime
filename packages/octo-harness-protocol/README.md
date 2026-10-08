@@ -84,7 +84,19 @@ pnpm build                            # 3. 构建
 - 本包不表达某个 provider 的完整私有协议；无法统一的字段应保留在适配器内，必要时置于可扩展的 payload 或 provider session 中。
 - 选用 JSON Schema（而非 Protobuf/Thrift）的权衡，以及为将来 Go/Rust daemon 抽取类型的意义，见下方文档。
 
-## 相关文档
+## Context 统一处理合同
+
+运行合同采用 schema 4，选路快照为 `octo.runtime-selection/v2`，Context 信封保持 `octo.context-envelope/v1`。旧 `mode=binding` 不再接受；通过 candidates 或 explicit 声明设备意图，授权候选由 Worker 固定。
+
+`CONTEXT_TYPE_CATALOG` 定义每种类型的 schema、持久性、合并、强制约束、阶段和输出。`assertContextProcessorCoverage` 用于阶段开始前核对处理器；目录本身不证明宿主已经部署资源下载或 Provider 支持。
+
+`ContextConfiguration` 包含 defaults 与 mandatory。使用 `assertContextConfiguration` 验证持久配置，再用 `resolveContextConfiguration(configuration, request)` 解析有效项。replace 类型整项覆盖；资源 selection 使用 include 添加/替换、exclude 删除，空 include/exclude 表示不增删。mandatory 冲突必须拒绝；requirements 取强制与请求能力并集。
+
+插件、技能和连接器资源引用使用 resource_id、version、可选 invoke/components。include 的 resource_id 必须唯一，include/exclude 不得交叉；JSON Schema 消费者必须实现 `x-octo-capability-selection` 语义关键字。随机目录声明使用 `{mode:"random",scope:"conversation"}`，实际路径由 Runtime 准备，不能以空 workdir 启动 Provider。
+
+这些公开函数不执行 ACL 检查、签发凭据、下载资源或构造 Provider system prompt。处理阶段和跨项目验收见 [ContextPipeline 基线](../../../docs/62-octo-context-compiler-se-baseline.md)。
+
+## 相关设计
 
 - 事件生命周期与 JSON-RPC 映射：[Architecture](../../docs/01-architecture.md)
 - 为何选用 JSON Schema：[Protocol Schema And Codegen](../../docs/10-protocol-schema-codegen.md)
