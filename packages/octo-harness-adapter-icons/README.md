@@ -48,6 +48,8 @@ function AdapterIcon({ type }: { type: string }) {
 `config/adapters.json` 中的每个 adapter type 均有对应图标,`getAdapterIcon`
 对全部 11 类都返回结果。
 
+`getAdapterIcon("zcode")` 兼容 Runtime 的简写,返回 `zcode-gui` 的同一个官方图标。
+
 ## 维护:新增/更新图标
 
 1. 将官方 SVG 放入 `src/icons/`(文件名与 `ICONS` 表的 `file` 一致)。

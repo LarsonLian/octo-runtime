@@ -10,5 +10,5 @@ import { adapterIcons } from "./generated.js";
  * generic glyph.
  */
 export function getAdapterIcon(type: string): AdapterIcon | undefined {
-  return adapterIcons.get(type);
+  return adapterIcons.get(type === "zcode" ? "zcode-gui" : type);
 }

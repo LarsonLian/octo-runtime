@@ -50,3 +50,11 @@ test("Qoder CN icon is the Qoder mark with a CN badge", () => {
 test("getAdapterIcon returns undefined for unknown types", () => {
   assert.equal(getAdapterIcon("does-not-exist"), undefined);
 });
+
+test("ZCode runtime aliases resolve to the official monochrome mark", () => {
+  const icon = getAdapterIcon("zcode-gui");
+  assert.equal(getAdapterIcon("zcode"), icon);
+  assert.equal(icon.monochrome, true);
+  assert.match(icon.svg, /viewBox="0 0 120 90"/);
+  assert.match(icon.svg, /M10 8 H110 V22 L42 68 H110 V82 H10 V68 L78 22 H10 Z/);
+});
