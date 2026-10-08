@@ -32,6 +32,18 @@ test("manifest requires stable IDs, bounded files, relative paths and exact chec
   assert.throws(() => assertTaskOutputManifest({ schema: TASK_OUTPUT_SCHEMA, outputs: [entry, entry] }), /TASK_OUTPUT_MANIFEST_INVALID/);
 });
 
+test("text-only delivery supports review classification and rejects unknown verdicts", async t => {
+  const directory = await workspace(t);
+  const delivery = { output_kind: "code_review_report", review_verdict: "changes_requested" };
+  await writeFile(join(directory, taskOutputManifestPath("run-1")), JSON.stringify({ schema: TASK_OUTPUT_SCHEMA, outputs: [], delivery }));
+  let received;
+  assert.deepEqual(await archiveTaskOutputs({ workdir: directory }, "task-1", "run-1", new AbortController().signal, value => { received = value; }), []);
+  assert.deepEqual(received, delivery);
+  for (const invalid of [{ output_kind: "unknown" }, { output_kind: "agent_report", review_verdict: "approved" }, { output_kind: "code_review_report", review_verdict: "unknown" }]) {
+    assert.throws(() => assertTaskOutputManifest({ schema: TASK_OUTPUT_SCHEMA, outputs: [], delivery: invalid }), /TASK_OUTPUT_MANIFEST_INVALID/);
+  }
+});
+
 test("Runtime rejects symlink paths and verifies real file bytes within its frozen directory", async t => {
   const directory = await workspace(t);
   assert.deepEqual(await loadTaskOutputs(directory, "run-1"), [entry]);

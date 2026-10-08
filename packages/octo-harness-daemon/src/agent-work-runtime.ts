@@ -2026,7 +2026,8 @@ export class AgentWorkRuntime {
           active.archiving = true;
           try {
             mapped.payload.task_output_receipts = await archiveTaskOutputs(
-              (command.payload as ExecutionEnvelope).resolved_execution_plan, taskRef.task_id, command.run_id, active.outputController.signal
+              (command.payload as ExecutionEnvelope).resolved_execution_plan, taskRef.task_id, command.run_id, active.outputController.signal,
+              delivery => { mapped.payload.task_delivery = delivery; }
             );
           } catch (error) {
             mapped.payload.task_output_receipts = [{ output_id: "manifest", status: "failed", error_code: safeOutputError(error) }];
@@ -2041,7 +2042,7 @@ export class AgentWorkRuntime {
           if (failed.length) {
             store.allocateAndAppend(command.run_id, "run.notice", {
               noticeId: `task-output-${command.run_id}`, code: "config_warning", severity: "warning",
-              params: { task_output_save: "failed", failed_count: failed.length }
+              params: { warningCode: "TASK_OUTPUT_SAVE_FAILED" }
             });
           }
         }

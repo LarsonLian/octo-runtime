@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { AgentWorkRuntime } from "../packages/octo-harness-daemon/dist/agent-work-runtime.js";
+import { assertCanonicalEvent } from "../packages/octo-harness-protocol/dist/index.js";
 import { taskOutputManifestPath, TASK_OUTPUT_SCHEMA } from "../packages/octo-harness-daemon/dist/task-outputs.js";
 import { contextEnvelope, executionContext, resolvedRuntimeSelection, waitFor, wire } from "./agent-work-runtime-fixture.js";
 
@@ -109,5 +110,7 @@ test("real Runtime uploads a declared deliverable before durable terminal and re
   const failed = events.find(event => event.run_id === "run-2" && event.type === "run.completed");
   assert.equal(failed.payload.task_output_receipts[0].status, "failed");
   assert.equal(failed.payload.task_output_receipts[0].error_code, "TASK_OUTPUT_UPLOAD_FAILED");
-  assert.ok(events.some(event => event.run_id === "run-2" && event.type === "run.notice"));
+  const notice = events.find(event => event.run_id === "run-2" && event.type === "run.notice");
+  assert.deepEqual(notice.payload.params, { warningCode: "TASK_OUTPUT_SAVE_FAILED" });
+  assert.doesNotThrow(() => assertCanonicalEvent(notice));
 });

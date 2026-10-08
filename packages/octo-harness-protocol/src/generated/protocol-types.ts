@@ -5,6 +5,13 @@
  */
 
 /**
+ * Public, channel-neutral project notification. No runtime context, reasoning, credentials, or tool payloads belong in this envelope.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "NotificationMessage".
+ */
+export type NotificationMessage = NotificationMessage1;
+/**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ApprovalMode".
  */
@@ -16,6 +23,15 @@ export type ApprovalMode = "ask" | "assisted" | "full_access";
  * via the `definition` "ContextItem".
  */
 export type ContextItem = {namespace: string; name: string; payload: Record<string, unknown>};
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "PersistentContextEnvelope".
+ */
+export type PersistentContextEnvelope = ContextEnvelope & {
+  items?: {
+    [k: string]: unknown;
+  }[];
+};
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextModelPayload".
@@ -74,15 +90,6 @@ export type ContextRuntimeSelectionPayload1 =
   | {
       mode?: "explicit";
     };
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "PersistentContextEnvelope".
- */
-export type PersistentContextEnvelope = ContextEnvelope & {
-  items?: {
-    [k: string]: unknown;
-  }[];
-};
 /**
  * Declarative registered resolver operation, never an arbitrary shell command or credential. Validation does not resolve or authorize it. A consumer without the specified resolver must fail with CONTEXT_RESOLVER_UNAVAILABLE rather than ignore the entry.
  *
@@ -229,21 +236,1342 @@ export type ActivitySubject =
  * Serializable data shapes for the Octo Harness NDJSON protocol. Runtime behavior remains hand-written in src/index.ts, and this schema is the source of truth for generated TypeScript types. The x-octo-unicode-scalar-strings semantic keyword requires every JSON string value and object member name to contain Unicode scalar values only: unpaired UTF-16 surrogates are rejected, not repaired or normalized. Consumers must enforce this protocol-wide rule even when validating a definition directly.
  */
 export interface OctoHarnessProtocolSchema {}
-/**
- * Public, channel-neutral project notification. No runtime context, reasoning, credentials, or tool payloads belong in this envelope.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "NotificationMessage".
- */
-export interface NotificationMessage {
-  schema: "octo.notification.v1";
+export interface NotificationMessage1 {
+  schema: "octo.notification.v2";
   eventId: string;
-  event: "task.done" | "execution.succeeded" | "execution.failed" | "notification.test";
+  event: "task.event" | "execution.succeeded" | "execution.failed" | "notification.test";
   occurredAt: string;
   projectId: string;
   sourceId: string;
   title: string;
   text: string;
+  evt_type?: number;
+  task?: {
+    id: string;
+    title: string;
+    status: "backlog" | "todo" | "in_progress" | "done" | "cancelled";
+    row_version: number;
+    handler_epoch: number;
+    responsible_party?: {} | null;
+    current_handler?: {} | null;
+  };
+  taskEvent?: {
+    id: string;
+    sequence: number;
+    evt_type: number;
+    actor: {};
+    task_conversation_id?: string;
+    source_run_id?: string;
+    summary: string;
+    payload: {};
+  };
+  /**
+   * @maxItems 20
+   */
+  timeline?:
+    | []
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ]
+    | [
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        },
+        {
+          eventId: string;
+          sequence: number;
+          evt_type: number;
+          summary: string;
+        }
+      ];
+  timelineTruncated?: boolean;
+  timelineThroughSequence?: number;
 }
 /**
  * In addition to draft-07 validation, every consumer must enforce the x-octo semantic keywords: unique ordered namespace/name tuples, compact UTF-8 JSON byte budget, JSON nesting depth with the envelope at depth zero, and Unicode scalar strings in every nested value and object key. Canonical hashing uses ECMAScript JSON number serialization, including -0 becoming 0 and normalized exponent notation; object keys are sorted by UTF-16 code units before ECMAScript integer-index enumeration. U+2028/U+2029 and non-ASCII scalar values are not escaped or Unicode-normalized.
@@ -257,118 +1585,6 @@ export interface ContextEnvelope {
    * @maxItems 32
    */
   items: ContextItem[];
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextAdapterPayload".
- */
-export interface ContextAdapterPayload {
-  type: string;
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextRequirementsPayload".
- */
-export interface ContextRequirementsPayload {
-  /**
-   * @maxItems 64
-   */
-  capabilities: string[];
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextCapabilityReference".
- */
-export interface ContextCapabilityReference {
-  resource_id: string;
-  version: string;
-  invoke?: boolean;
-  /**
-   * @maxItems 64
-   */
-  components?: string[];
-}
-/**
- * Includes have unique resource_id values; include and exclude are disjoint. Consumers must enforce x-octo-capability-selection in addition to draft-07 constraints.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextCapabilitySelectionPayload".
- */
-export interface ContextCapabilitySelectionPayload {
-  /**
-   * @maxItems 32
-   */
-  include: ContextCapabilityReference[];
-  /**
-   * @maxItems 32
-   */
-  exclude: string[];
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ResolvedCapabilityResource".
- */
-export interface ResolvedCapabilityResource {
-  resource_id: string;
-  kind: "plugin" | "skill" | "connector";
-  version: string;
-  digest: string;
-  files: {
-    [k: string]: string;
-  };
-  sources: ("agent_default" | "agent_mandatory" | "request")[];
-  invoke: boolean;
-  components?: string[];
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "PreparedSkill".
- */
-export interface PreparedSkill {
-  name: string;
-  description: string;
-  path: string;
-  invoke: boolean;
-}
-/**
- * Snake-case frozen watchdog limits, with the same bounds as RuntimeLimits. Legacy enforcement=observe cannot be combined with v2 settings.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextLimitsPayload".
- */
-export interface ContextLimitsPayload {
-  first_frame_timeout_ms?: number;
-  model_idle_timeout_ms?: number;
-  model_idle_warning_ms?: number;
-  model_idle_policy?: "enforce" | "observe";
-  tool_timeout_ms?: number;
-  tool_wall_timeout_ms?: number;
-  run_timeout_ms?: number;
-  cancel_grace_ms?: number;
-  enforcement?: "enforce" | "observe";
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextApprovalPolicyPayload".
- */
-export interface ContextApprovalPolicyPayload {
-  mode: ApprovalMode;
-}
-/**
- * Untrusted inline selection text with optional resource reference, source metadata and summary. Source metadata is not an authorization claim.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextSelectionEntry".
- */
-export interface ContextSelectionEntry {
-  text: string;
-  resource_ref?: string;
-  source?:
-    | {
-        [k: string]: unknown;
-      }
-    | string;
-  summary?: string;
 }
 /**
  * Agent defaults and mandatory constraints, stored under one external configuration version. Validation and resolution do not authorize the writer or referenced resources. Ephemeral content and trusted instructions cannot be persisted here.
@@ -526,6 +1742,118 @@ export interface ContextApplicationEvidence {
    * @maxItems 64
    */
   loaded_skills: string[];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextAdapterPayload".
+ */
+export interface ContextAdapterPayload {
+  type: string;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextRequirementsPayload".
+ */
+export interface ContextRequirementsPayload {
+  /**
+   * @maxItems 64
+   */
+  capabilities: string[];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextCapabilityReference".
+ */
+export interface ContextCapabilityReference {
+  resource_id: string;
+  version: string;
+  invoke?: boolean;
+  /**
+   * @maxItems 64
+   */
+  components?: string[];
+}
+/**
+ * Includes have unique resource_id values; include and exclude are disjoint. Consumers must enforce x-octo-capability-selection in addition to draft-07 constraints.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextCapabilitySelectionPayload".
+ */
+export interface ContextCapabilitySelectionPayload {
+  /**
+   * @maxItems 32
+   */
+  include: ContextCapabilityReference[];
+  /**
+   * @maxItems 32
+   */
+  exclude: string[];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ResolvedCapabilityResource".
+ */
+export interface ResolvedCapabilityResource {
+  resource_id: string;
+  kind: "plugin" | "skill" | "connector";
+  version: string;
+  digest: string;
+  files: {
+    [k: string]: string;
+  };
+  sources: ("agent_default" | "agent_mandatory" | "request")[];
+  invoke: boolean;
+  components?: string[];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "PreparedSkill".
+ */
+export interface PreparedSkill {
+  name: string;
+  description: string;
+  path: string;
+  invoke: boolean;
+}
+/**
+ * Snake-case frozen watchdog limits, with the same bounds as RuntimeLimits. Legacy enforcement=observe cannot be combined with v2 settings.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextLimitsPayload".
+ */
+export interface ContextLimitsPayload {
+  first_frame_timeout_ms?: number;
+  model_idle_timeout_ms?: number;
+  model_idle_warning_ms?: number;
+  model_idle_policy?: "enforce" | "observe";
+  tool_timeout_ms?: number;
+  tool_wall_timeout_ms?: number;
+  run_timeout_ms?: number;
+  cancel_grace_ms?: number;
+  enforcement?: "enforce" | "observe";
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextApprovalPolicyPayload".
+ */
+export interface ContextApprovalPolicyPayload {
+  mode: ApprovalMode;
+}
+/**
+ * Untrusted inline selection text with optional resource reference, source metadata and summary. Source metadata is not an authorization claim.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextSelectionEntry".
+ */
+export interface ContextSelectionEntry {
+  text: string;
+  resource_ref?: string;
+  source?:
+    | {
+        [k: string]: unknown;
+      }
+    | string;
+  summary?: string;
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema

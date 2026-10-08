@@ -7,22 +7,76 @@
   "type": "object",
   "additionalProperties": false,
   "definitions": {
+
     "NotificationMessage": {
       "title": "NotificationMessage",
       "description": "Public, channel-neutral project notification. No runtime context, reasoning, credentials, or tool payloads belong in this envelope.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema", "eventId", "event", "occurredAt", "projectId", "sourceId", "title", "text"],
+      "required": ["schema","eventId","event","occurredAt","projectId","sourceId","title","text"],
       "properties": {
-        "schema": {"const": "octo.notification.v1"},
-        "eventId": {"type": "string", "minLength": 1, "maxLength": 256},
-        "event": {"enum": ["task.done", "execution.succeeded", "execution.failed", "notification.test"]},
-        "occurredAt": {"type": "string", "format": "date-time"},
-        "projectId": {"type": "string", "minLength": 1, "maxLength": 128},
-        "sourceId": {"type": "string", "minLength": 1, "maxLength": 128},
-        "title": {"type": "string", "minLength": 1, "maxLength": 256},
-        "text": {"type": "string", "maxLength": 4096}
-      }
+        "schema": {"const":"octo.notification.v2"},
+        "eventId": {"type":"string","minLength":1,"maxLength":256},
+        "event": {"enum":["task.event","execution.succeeded","execution.failed","notification.test"]},
+        "occurredAt": {"type":"string","format":"date-time"},
+        "projectId": {"type":"string","minLength":1,"maxLength":128},
+        "sourceId": {"type":"string","minLength":1,"maxLength":128},
+        "title": {"type":"string","minLength":1,"maxLength":256},
+        "text": {"type":"string","maxLength":4096},
+        "evt_type": {"type":"integer","minimum":101,"maximum":115},
+        "task": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id","title","status","row_version","handler_epoch"],
+          "properties": {
+            "id": {"type":"string","minLength":1},
+            "title": {"type":"string"},
+            "status": {"enum":["backlog","todo","in_progress","done","cancelled"]},
+            "row_version": {"type":"integer","minimum":1},
+            "handler_epoch": {"type":"integer","minimum":1},
+            "responsible_party": {"type":["object","null"]},
+            "current_handler": {"type":["object","null"]}
+          }
+        },
+        "taskEvent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id","sequence","evt_type","actor","summary","payload"],
+          "properties": {
+            "id": {"type":"string"},
+            "sequence": {"type":"integer","minimum":1},
+            "evt_type": {"type":"integer","minimum":101,"maximum":115},
+            "actor": {"type":"object"},
+            "task_conversation_id": {"type":"string"},
+            "source_run_id": {"type":"string"},
+            "summary": {"type":"string"},
+            "payload": {"type":"object"}
+          }
+        },
+        "timeline": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["eventId","sequence","evt_type","summary"],
+            "properties": {"eventId":{"type":"string"},"sequence":{"type":"integer","minimum":1},"evt_type":{"type":"integer","minimum":101,"maximum":115},"summary":{"type":"string"}}
+          }
+        },
+        "timelineTruncated": {"type":"boolean"},
+        "timelineThroughSequence": {"type":"integer","minimum":1}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"event":{"const":"task.event"}}
+          },
+          "then": {"required":["evt_type","task","taskEvent","timeline","timelineThroughSequence"]},
+          "else": {
+            "not": {"anyOf":[{"required":["evt_type"]},{"required":["task"]},{"required":["taskEvent"]},{"required":["timeline"]},{"required":["timelineThroughSequence"]},{"required":["timelineTruncated"]}]}
+          }
+        }
+      ]
     },
     "ApprovalMode": {
       "title": "ApprovalMode",
@@ -99,141 +153,6 @@
       "properties": {
         "schema": {"const": "octo.context-envelope/v1"},
         "items": {"type": "array", "maxItems": 32, "items": {"$ref": "#/definitions/ContextItem"}}
-      }
-    },
-    "ContextAdapterPayload": {
-      "type": "object", "additionalProperties": false, "required": ["type"],
-      "properties": {"type": {"type": "string", "minLength": 1}}
-    },
-    "ContextModelPayload": {
-      "type": "object", "additionalProperties": false,
-      "properties": {"id": {"type": "string", "minLength": 1}, "use_provider_default": {"const": true}},
-      "oneOf": [{"required": ["id"], "not": {"required": ["use_provider_default"]}}, {"required": ["use_provider_default"], "not": {"required": ["id"]}}]
-    },
-    "ContextReasoningPayload": {
-      "type": "object", "additionalProperties": false,
-      "properties": {"effort": {"type": "string", "minLength": 1}, "use_provider_default": {"const": true}},
-      "oneOf": [{"required": ["effort"], "not": {"required": ["use_provider_default"]}}, {"required": ["use_provider_default"], "not": {"required": ["effort"]}}]
-    },
-    "ContextWorkspacePayload": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["mode","path"],
-          "properties": {"mode":{"const":"fixed"},"path":{"type":"string","minLength":1}}
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["mode","scope"],
-          "properties": {"mode":{"const":"random"},"scope":{"const":"conversation"}}
-        }
-      ]
-    },
-    "ContextRequirementsPayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["capabilities"],
-      "properties": {"capabilities":{"type":"array","maxItems":64,"uniqueItems":true,"items":{"type":"string","minLength":1}}}
-    },
-    "ContextCapabilityReference": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["resource_id","version"],
-      "properties": {
-        "resource_id": {"type":"string","pattern":"^[a-z0-9][a-z0-9.-]{0,95}$"},
-        "version": {"type":"string","minLength":1,"maxLength":96},
-        "invoke": {"type":"boolean"},
-        "components": {"type":"array","uniqueItems":true,"maxItems":64,"items":{"type":"string","pattern":"^(skill|mcp):[a-z0-9][a-z0-9._-]{0,95}$"}}
-      }
-    },
-    "ContextCapabilitySelectionPayload": {
-      "description": "Includes have unique resource_id values; include and exclude are disjoint. Consumers must enforce x-octo-capability-selection in addition to draft-07 constraints.",
-      "x-octo-capability-selection": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["include","exclude"],
-      "properties": {
-        "include": {"type":"array","maxItems":32,"items":{"$ref":"#/definitions/ContextCapabilityReference"}},
-        "exclude": {"type":"array","maxItems":32,"uniqueItems":true,"items":{"type":"string","pattern":"^[a-z0-9][a-z0-9.-]{0,95}$"}}
-      }
-    },
-    "ResolvedCapabilityResource": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["resource_id","kind","version","digest","files","sources","invoke"],
-      "properties": {
-        "resource_id": {"type":"string","minLength":1},
-        "kind": {"enum":["plugin","skill","connector"]},
-        "version": {"type":"string","minLength":1},
-        "digest": {"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},
-        "files": {"type":"object","additionalProperties":{"type":"string"}},
-        "sources": {"type":"array","items":{"enum":["agent_default","agent_mandatory","request"]}},
-        "invoke": {"type":"boolean"},
-        "components": {"type":"array","items":{"type":"string"}}
-      }
-    },
-    "PreparedSkill": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["name","description","path","invoke"],
-      "properties": {"name":{"type":"string","minLength":1},"description":{"type":"string","minLength":1},"path":{"type":"string","minLength":1},"invoke":{"type":"boolean"}}
-    },
-    "ContextLimitsPayload": {
-      "description": "Snake-case frozen watchdog limits, with the same bounds as RuntimeLimits. Legacy enforcement=observe cannot be combined with v2 settings.",
-      "type": "object", "additionalProperties": false,
-      "properties": {
-        "first_frame_timeout_ms": {"type": "integer", "minimum": 100, "maximum": 1800000},
-        "model_idle_timeout_ms": {"type": "integer", "minimum": 100, "maximum": 3600000},
-        "model_idle_warning_ms": {"type": "integer", "minimum": 100, "maximum": 3600000},
-        "model_idle_policy": {"enum": ["enforce", "observe"]},
-        "tool_timeout_ms": {"type": "integer", "minimum": 100, "maximum": 86400000},
-        "tool_wall_timeout_ms": {"type": "integer", "minimum": 100, "maximum": 86400000},
-        "run_timeout_ms": {"type": "integer", "minimum": 100, "maximum": 86400000},
-        "cancel_grace_ms": {"type": "integer", "minimum": 100, "maximum": 60000},
-        "enforcement": {"enum": ["enforce", "observe"]}
-      },
-      "if": {"required": ["enforcement"], "properties": {"enforcement": {"const": "observe"}}},
-      "then": {"not": {"anyOf": [{"required": ["model_idle_policy"]}, {"required": ["model_idle_warning_ms"]}, {"required": ["tool_wall_timeout_ms"]}]}}
-    },
-    "ContextRuntimeSelectionPayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["mode"],
-      "properties": {
-        "mode": {"enum":["candidates","explicit"]},
-        "runtime_id": {"type":"string","minLength":1},
-        "runtime_ids": {"type":"array","minItems":1,"maxItems":64,"uniqueItems":true,"items":{"type":"string","minLength":1}},
-        "strategy": {"const":"preferred_failover"},
-        "offline_behavior": {"enum":["wait","fail"]},
-        "failover": {"enum":["candidates","none"]}
-      },
-      "oneOf": [
-        {
-          "properties": {"mode":{"const":"candidates"}},
-          "required": ["runtime_ids","strategy"],
-          "not": {"required":["runtime_id"]}
-        },
-        {
-          "properties": {"mode":{"const":"explicit"}},
-          "required": ["runtime_id"],
-          "not": {"anyOf":[{"required":["runtime_ids"]},{"required":["strategy"]}]}
-        }
-      ]
-    },
-    "ContextApprovalPolicyPayload": {
-      "type": "object", "additionalProperties": false, "required": ["mode"],
-      "properties": {"mode": {"$ref": "#/definitions/ApprovalMode"}}
-    },
-    "ContextSelectionEntry": {
-      "description": "Untrusted inline selection text with optional resource reference, source metadata and summary. Source metadata is not an authorization claim.",
-      "type": "object", "additionalProperties": false, "required": ["text"],
-      "properties": {
-        "text": {"type": "string", "minLength": 1},
-        "resource_ref": {"type": "string", "minLength": 1},
-        "source": {"type": ["object", "string"], "additionalProperties": true},
-        "summary": {"type": "string"}
       }
     },
     "ContextConfiguration": {
@@ -371,6 +290,141 @@
           }
         }
       ]
+    },
+    "ContextAdapterPayload": {
+      "type": "object", "additionalProperties": false, "required": ["type"],
+      "properties": {"type": {"type": "string", "minLength": 1}}
+    },
+    "ContextModelPayload": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"id": {"type": "string", "minLength": 1}, "use_provider_default": {"const": true}},
+      "oneOf": [{"required": ["id"], "not": {"required": ["use_provider_default"]}}, {"required": ["use_provider_default"], "not": {"required": ["id"]}}]
+    },
+    "ContextReasoningPayload": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"effort": {"type": "string", "minLength": 1}, "use_provider_default": {"const": true}},
+      "oneOf": [{"required": ["effort"], "not": {"required": ["use_provider_default"]}}, {"required": ["use_provider_default"], "not": {"required": ["effort"]}}]
+    },
+    "ContextWorkspacePayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode","path"],
+          "properties": {"mode":{"const":"fixed"},"path":{"type":"string","minLength":1}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode","scope"],
+          "properties": {"mode":{"const":"random"},"scope":{"const":"conversation"}}
+        }
+      ]
+    },
+    "ContextRequirementsPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capabilities"],
+      "properties": {"capabilities":{"type":"array","maxItems":64,"uniqueItems":true,"items":{"type":"string","minLength":1}}}
+    },
+    "ContextCapabilityReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource_id","version"],
+      "properties": {
+        "resource_id": {"type":"string","pattern":"^[a-z0-9][a-z0-9.-]{0,95}$"},
+        "version": {"type":"string","minLength":1,"maxLength":96},
+        "invoke": {"type":"boolean"},
+        "components": {"type":"array","uniqueItems":true,"maxItems":64,"items":{"type":"string","pattern":"^(skill|mcp):[a-z0-9][a-z0-9._-]{0,95}$"}}
+      }
+    },
+    "ContextCapabilitySelectionPayload": {
+      "description": "Includes have unique resource_id values; include and exclude are disjoint. Consumers must enforce x-octo-capability-selection in addition to draft-07 constraints.",
+      "x-octo-capability-selection": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["include","exclude"],
+      "properties": {
+        "include": {"type":"array","maxItems":32,"items":{"$ref":"#/definitions/ContextCapabilityReference"}},
+        "exclude": {"type":"array","maxItems":32,"uniqueItems":true,"items":{"type":"string","pattern":"^[a-z0-9][a-z0-9.-]{0,95}$"}}
+      }
+    },
+    "ResolvedCapabilityResource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource_id","kind","version","digest","files","sources","invoke"],
+      "properties": {
+        "resource_id": {"type":"string","minLength":1},
+        "kind": {"enum":["plugin","skill","connector"]},
+        "version": {"type":"string","minLength":1},
+        "digest": {"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},
+        "files": {"type":"object","additionalProperties":{"type":"string"}},
+        "sources": {"type":"array","items":{"enum":["agent_default","agent_mandatory","request"]}},
+        "invoke": {"type":"boolean"},
+        "components": {"type":"array","items":{"type":"string"}}
+      }
+    },
+    "PreparedSkill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name","description","path","invoke"],
+      "properties": {"name":{"type":"string","minLength":1},"description":{"type":"string","minLength":1},"path":{"type":"string","minLength":1},"invoke":{"type":"boolean"}}
+    },
+    "ContextLimitsPayload": {
+      "description": "Snake-case frozen watchdog limits, with the same bounds as RuntimeLimits. Legacy enforcement=observe cannot be combined with v2 settings.",
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "first_frame_timeout_ms": {"type": "integer", "minimum": 100, "maximum": 1800000},
+        "model_idle_timeout_ms": {"type": "integer", "minimum": 100, "maximum": 3600000},
+        "model_idle_warning_ms": {"type": "integer", "minimum": 100, "maximum": 3600000},
+        "model_idle_policy": {"enum": ["enforce", "observe"]},
+        "tool_timeout_ms": {"type": "integer", "minimum": 100, "maximum": 86400000},
+        "tool_wall_timeout_ms": {"type": "integer", "minimum": 100, "maximum": 86400000},
+        "run_timeout_ms": {"type": "integer", "minimum": 100, "maximum": 86400000},
+        "cancel_grace_ms": {"type": "integer", "minimum": 100, "maximum": 60000},
+        "enforcement": {"enum": ["enforce", "observe"]}
+      },
+      "if": {"required": ["enforcement"], "properties": {"enforcement": {"const": "observe"}}},
+      "then": {"not": {"anyOf": [{"required": ["model_idle_policy"]}, {"required": ["model_idle_warning_ms"]}, {"required": ["tool_wall_timeout_ms"]}]}}
+    },
+    "ContextRuntimeSelectionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {"enum":["candidates","explicit"]},
+        "runtime_id": {"type":"string","minLength":1},
+        "runtime_ids": {"type":"array","minItems":1,"maxItems":64,"uniqueItems":true,"items":{"type":"string","minLength":1}},
+        "strategy": {"const":"preferred_failover"},
+        "offline_behavior": {"enum":["wait","fail"]},
+        "failover": {"enum":["candidates","none"]}
+      },
+      "oneOf": [
+        {
+          "properties": {"mode":{"const":"candidates"}},
+          "required": ["runtime_ids","strategy"],
+          "not": {"required":["runtime_id"]}
+        },
+        {
+          "properties": {"mode":{"const":"explicit"}},
+          "required": ["runtime_id"],
+          "not": {"anyOf":[{"required":["runtime_ids"]},{"required":["strategy"]}]}
+        }
+      ]
+    },
+    "ContextApprovalPolicyPayload": {
+      "type": "object", "additionalProperties": false, "required": ["mode"],
+      "properties": {"mode": {"$ref": "#/definitions/ApprovalMode"}}
+    },
+    "ContextSelectionEntry": {
+      "description": "Untrusted inline selection text with optional resource reference, source metadata and summary. Source metadata is not an authorization claim.",
+      "type": "object", "additionalProperties": false, "required": ["text"],
+      "properties": {
+        "text": {"type": "string", "minLength": 1},
+        "resource_ref": {"type": "string", "minLength": 1},
+        "source": {"type": ["object", "string"], "additionalProperties": true},
+        "summary": {"type": "string"}
+      }
     },
     "ContextSelectionsPayload": {
       "type": "object", "additionalProperties": false, "required": ["entries"],

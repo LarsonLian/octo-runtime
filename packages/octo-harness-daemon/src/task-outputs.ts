@@ -27,6 +27,17 @@ export interface TaskOutputReceipt {
   error_code?: string;
 }
 
+export interface TaskDelivery {
+  output_kind: "agent_report" | "code_review_report" | "bug_triage_report";
+  review_verdict?: "approved" | "changes_requested";
+}
+
+interface TaskOutputManifest {
+  schema: typeof TASK_OUTPUT_SCHEMA;
+  outputs: TaskOutputManifestEntry[];
+  delivery?: TaskDelivery;
+}
+
 export function taskOutputManifestPath(runId: string): string {
   return `.octo/task-outputs/${encodeURIComponent(runId)}.json`;
 }
@@ -35,16 +46,23 @@ export function taskOutputInstructions(runId: string): string {
   return [
     "Task output files must be saved through the Runtime uploader before being described as saved to the shared drive.",
     `When this Run produces deliverable files, write ${taskOutputManifestPath(runId)} under the frozen workdir before finishing.`,
-    `Use JSON ${JSON.stringify({ schema: TASK_OUTPUT_SCHEMA, outputs: [{ output_id: "unique-stable-id", relative_path: "path/from/workdir", name: "filename", media_type: "text/html", size: 123, sha256: "64 lowercase hex characters", role: "output" }] })}.`,
+    `Use JSON ${JSON.stringify({ schema: TASK_OUTPUT_SCHEMA, delivery: { output_kind: "agent_report" }, outputs: [{ output_id: "unique-stable-id", relative_path: "path/from/workdir", name: "filename", media_type: "text/html", size: 123, sha256: "64 lowercase hex characters", role: "output" }] })}.`,
+    "Use delivery.output_kind code_review_report for review, or bug_triage_report for triage. Reviews may include review_verdict approved or changes_requested. For text-only reports, use outputs: [] and put the public report in the final response.",
     "Compute size and SHA-256 from the actual files. Use a new output_id for changed contents. Only include deliverables you intend to share; exclude credentials and unrelated project files.",
     "Do not send absolute local paths or run capability credentials through Team handoff. Use attachment_id and file_version_id after saving. Run success does not complete the business task."
   ].join("\n");
 }
 
-export function assertTaskOutputManifest(value: unknown): asserts value is { schema: typeof TASK_OUTPUT_SCHEMA; outputs: TaskOutputManifestEntry[] } {
+export function assertTaskOutputManifest(value: unknown): asserts value is TaskOutputManifest {
   const manifest = object(value);
-  if (manifest.schema !== TASK_OUTPUT_SCHEMA || Object.keys(manifest).some(key => !["schema", "outputs"].includes(key))
+  if (manifest.schema !== TASK_OUTPUT_SCHEMA || Object.keys(manifest).some(key => !["schema", "outputs", "delivery"].includes(key))
     || !Array.isArray(manifest.outputs) || manifest.outputs.length > TASK_OUTPUT_LIMITS.maxFiles) throw new TypeError("TASK_OUTPUT_MANIFEST_INVALID");
+  if (manifest.delivery !== undefined) {
+    const delivery = object(manifest.delivery);
+    if (Object.keys(delivery).some(key => !["output_kind", "review_verdict"].includes(key))
+      || !["agent_report", "code_review_report", "bug_triage_report"].includes(String(delivery.output_kind))
+      || delivery.review_verdict !== undefined && (delivery.output_kind !== "code_review_report" || !["approved", "changes_requested"].includes(String(delivery.review_verdict)))) throw new TypeError("TASK_OUTPUT_MANIFEST_INVALID");
+  }
   const ids = new Set<string>();
   let total = 0;
   for (const raw of manifest.outputs) {
@@ -100,17 +118,23 @@ export async function readTaskOutput(workdir: string, path: string, maxBytes: nu
 }
 
 export async function loadTaskOutputs(workdir: string, runId: string): Promise<TaskOutputManifestEntry[]> {
+  return (await loadTaskOutputManifest(workdir, runId)).outputs;
+}
+
+async function loadTaskOutputManifest(workdir: string, runId: string): Promise<TaskOutputManifest> {
   let bytes: Buffer;
   try { bytes = await readTaskOutput(workdir, taskOutputManifestPath(runId), TASK_OUTPUT_LIMITS.maxManifestBytes); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return { schema: TASK_OUTPUT_SCHEMA, outputs: [] }; throw error; }
   let manifest: unknown;
   try { manifest = JSON.parse(bytes.toString("utf8")); } catch { throw new TypeError("TASK_OUTPUT_MANIFEST_INVALID"); }
   assertTaskOutputManifest(manifest);
-  return manifest.outputs;
+  return manifest;
 }
 
-export async function archiveTaskOutputs(plan: ResolvedExecutionPlan, taskId: string, runId: string, signal: AbortSignal): Promise<TaskOutputReceipt[]> {
-  const outputs = await loadTaskOutputs(plan.workdir, runId);
+export async function archiveTaskOutputs(plan: ResolvedExecutionPlan, taskId: string, runId: string, signal: AbortSignal, onDelivery?: (delivery: TaskDelivery) => void): Promise<TaskOutputReceipt[]> {
+  const manifest = await loadTaskOutputManifest(plan.workdir, runId);
+  const outputs = manifest.outputs;
+  onDelivery?.(manifest.delivery ?? { output_kind: "agent_report" });
   if (outputs.length === 0) return [];
   const client = new TaskMcpClient(taskMcpServer(plan), signal);
   await client.initialize();
