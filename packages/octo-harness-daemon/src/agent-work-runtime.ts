@@ -1688,6 +1688,15 @@ export class AgentWorkRuntime {
         }, prepared.continuity, prepared.materials, prepared.capabilities, prepared.compiled);
         request = mapped.request;
         request.runMetadata ??= {};
+        request.runMetadata.contextCompilation = {
+          compiler_version: prepared.receipt.compiler_version, catalog_version: prepared.receipt.catalog_version,
+          context_hash: prepared.receipt.context_hash, compiled_hash: prepared.receipt.compiled_hash,
+          run_id: command.run_id, lease_id: leaseId, fencing_token: fencingToken
+        };
+        this.#log({ level: "debug", scope: "context.pipeline", event: "context.compiled", runId: command.run_id,
+          message: "Context prepared, compiled and sealed", data: {
+            compiled_hash: prepared.receipt.compiled_hash, consumption: prepared.consumption
+          } });
         // The authenticated Runtime connection owns this mapping. Never trust
         // an AgentRun payload to self-report its local profile.
         if (this.#options.profile) request.runMetadata.profile = this.#options.profile;

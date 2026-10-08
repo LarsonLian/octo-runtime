@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { prepareTaskMaterials } from "../packages/octo-harness-daemon/dist/task-materials.js";
+import { AgentWorkStore } from "../packages/octo-harness-daemon/dist/agent-work-store.js";
 import { AgentWorkRuntime, mapExecutionEnvelope } from "../packages/octo-harness-daemon/dist/agent-work-runtime.js";
 import { buildCodexCommand } from "@mininglamp-oss/octo-harness-adapter-codex";
 import { contextEnvelope, executionContext, resolvedRuntimeSelection, waitFor, wire } from "./agent-work-runtime-fixture.js";
@@ -90,6 +91,47 @@ test("task scope, grant failures, missing MCP and unregistered resources fail cl
   await assert.rejects(prepareTaskMaterials(contextEnvelope([resource]), plan(changedEpoch.url), new AbortController().signal), /TASK_MATERIAL_SCOPE_MISMATCH/);
   const oversized = await fixture(t, () => ({ ...material(1), description: "a".repeat(70_000) }));
   await assert.rejects(prepareTaskMaterials(contextEnvelope([resource]), plan(oversized.url), new AbortController().signal), /TASK_MATERIAL_BUDGET_EXCEEDED/);
+});
+
+test("restart reuses exact material bytes after live authorization without fetching latest facts", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-task-material-snapshot-"));
+  let version = 2;
+  const f = await fixture(t, request => request.params.name === "task_authorize_material_snapshot"
+    ? { authorized: true, ...request.params.arguments } : material(version));
+  const file = join(directory, "runtime.db");
+  let store = AgentWorkStore.open(file);
+  t.after(async () => { store.close(); await rm(directory, { recursive: true, force: true }); });
+  const resolvedPlan = plan(f.url), context = executionContext(resolvedPlan, [resource]);
+  const first = await prepareTaskMaterials(context, resolvedPlan, new AbortController().signal, { runId: "run-1", store });
+  store.close();
+  store = AgentWorkStore.open(file);
+  version = 5;
+  const restored = await prepareTaskMaterials(context, resolvedPlan, new AbortController().signal, { runId: "run-1", store });
+  assert.deepEqual(restored, first);
+  assert.equal(restored.refs[0].task_version, 2);
+  assert.equal(f.calls.filter(call => call.params?.name === "task_get_materials").length, 1);
+  assert.equal(f.calls.filter(call => call.params?.name === "task_authorize_material_snapshot").length, 1);
+  const changed = structuredClone(context);
+  changed.items = changed.items.filter(item => item.namespace !== "octo.execution" || item.name !== "model");
+  changed.items.push({ namespace: "octo.execution", name: "model", payload: { id: "another-model" } });
+  await assert.rejects(prepareTaskMaterials(changed, resolvedPlan, new AbortController().signal, { runId: "run-1", store }), /SNAPSHOT_CONFLICT/);
+  store.discardAuthoritativelyTerminalRun("run-1");
+  assert.equal(store.getTaskMaterialSnapshot("run-1", first.refs[0].digest), undefined);
+});
+
+test("cached snapshots cannot bypass a revoked grant or changed handler epoch", async t => {
+  const snapshot = new Map();
+  const store = { getTaskMaterialSnapshot: key => snapshot.get(key), putTaskMaterialSnapshot: (key, _hash, value) => snapshot.set(key, value) };
+  const f = await fixture(t, request => request.params.name === "task_authorize_material_snapshot"
+    ? { authorized: false, ...request.params.arguments } : material(2));
+  const resolvedPlan = plan(f.url), context = executionContext(resolvedPlan, [resource]);
+  await prepareTaskMaterials(context, resolvedPlan, new AbortController().signal, { runId: "run-1", store });
+  await assert.rejects(prepareTaskMaterials(context, resolvedPlan, new AbortController().signal, { runId: "run-1", store }), /SNAPSHOT_UNAUTHORIZED/);
+  const entry = snapshot.get("run-1");
+  entry.selections[0].text += "tampered";
+  await assert.rejects(prepareTaskMaterials(context, resolvedPlan, new AbortController().signal, { runId: "run-1", store }), /SNAPSHOT_INVALID/);
+  const denied = await fixture(t, () => material(2), 403);
+  await assert.rejects(prepareTaskMaterials(context, plan(denied.url), new AbortController().signal, { runId: "run-1", store }), /ACCESS_DENIED/);
 });
 
 test("real Runtime admission bootstraps MCP before provider invocation and rejects failed reads", async t => {

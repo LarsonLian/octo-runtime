@@ -9,6 +9,8 @@ export { RUNTIME_SELECTION_SCHEMA, assertResolvedRuntimeSelection } from "./runt
 export { CONTEXT_CATALOG_VERSION, CONTEXT_TYPE_CATALOG, contextTypeDefinition, assertContextProcessorCoverage } from "./context-catalog.js";
 export type { ContextStage, ContextOutput, ContextTypeDefinition } from "./context-catalog.js";
 export { assertContextConfiguration, resolveContextConfiguration } from "./context-configuration.js";
+import { assertContextApplicationEvidence } from "./context-application.js";
+export { assertContextApplicationEvidence } from "./context-application.js";
 export { assertNotificationMessage } from "./notification.js";
 import type {
   ActivityInfo,
@@ -19,6 +21,7 @@ import type {
   PlanUpdatedPayload,
   ToolProgressPayload,
   RunNoticePayload,
+  ContextApplicationEvidence,
   CanonicalEventPayload,
   ChannelContextAppend,
   ChannelContextDescriptor,
@@ -58,6 +61,7 @@ export type {
   ContextEnvelope,
   ContextConfiguration,
   ContextPreparationReceipt,
+  ContextApplicationEvidence,
   RunContextProjection,
   PreparedCapabilityReceipt,
   PreparedMaterialReceipt,
@@ -161,7 +165,7 @@ export type TerminalEventType = (typeof TERMINAL_EVENT_TYPES)[number];
  * inside the adapter and must never leak through to this level.
  */
 export const CANONICAL_EVENT_TYPES = [
-  "session.update", "usage.update",
+  "session.update", "context.applied", "usage.update",
   "model_step.started", "model_step.finished",
   "message.create", "message.delta", "message.update",
   "tool_call.create", "tool_call.delta", "tool_call.update",
@@ -177,7 +181,8 @@ export const CANONICAL_EVENT_TYPES = [
 export type CanonicalEventType = (typeof CANONICAL_EVENT_TYPES)[number];
 
 export type CanonicalPayloadFor<TType extends CanonicalEventType> =
-  TType extends "activity.started" ? CanonicalEventPayload & ActivityStartedPayload
+  TType extends "context.applied" ? CanonicalEventPayload & ContextApplicationEvidence
+    : TType extends "activity.started" ? CanonicalEventPayload & ActivityStartedPayload
     :
   TType extends "activity.updated" ? CanonicalEventPayload & ActivityUpdatedPayload
     :
@@ -434,6 +439,7 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
   if (event.protocolVersion !== PROTOCOL_VERSION) throw new TypeError("canonical protocolVersion must be 2");
   const payload = isRecord(event.payload) ? event.payload : {};
   assertExperiencePayload(event.type, payload);
+  if (event.type === "context.applied") assertContextApplicationEvidence(payload);
   if (event.type === "run.failed" && payload.failure !== undefined) {
     assertFailureEnvelope(payload.failure);
   }

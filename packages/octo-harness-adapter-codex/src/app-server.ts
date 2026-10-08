@@ -241,6 +241,17 @@ export async function* runCodexAppServerTurn({
     if (turnId) client.setActiveTurn(turnId);
     context?.reportActivity?.({ kind: "turn_started", method: "turn_start" });
 
+    const compilation = recordValue(request.runMetadata?.contextCompilation);
+    if (compilation) {
+      yield { protocolVersion: 2, type: "context.applied", payload: {
+        schema: "octo.context-application/v1", compiler_version: "octo.context-compiler/v1", catalog_version: "octo.context-catalog/v1",
+        context_hash: String(compilation.context_hash), compiled_hash: String(compilation.compiled_hash),
+        run_id: String(compilation.run_id), lease_id: String(compilation.lease_id), fencing_token: Number(compilation.fencing_token),
+        adapter_type: "codex", provider_session_id: threadId, provider_ack: "turn/start",
+        loaded_skills: (request.skills ?? []).map(skill => skill.name)
+      } };
+    }
+
     // Must come after turn/start: otherwise the Core would persist a provider session that cannot be executed.
     yield { protocolVersion: 2,
       type: "session.update",

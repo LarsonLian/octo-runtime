@@ -392,6 +392,12 @@ export interface RunContextProjection {
   context_hash: string;
   actual_runtime_id?: string;
   preparation_status: "unknown" | "prepared";
+  application_status: "unknown" | "applied";
+  invocation_status: "unknown";
+  /**
+   * @maxItems 64
+   */
+  loaded_skills: string[];
   model_uses_provider_default: boolean;
   effort_uses_provider_default: boolean;
   execution: {
@@ -422,6 +428,7 @@ export interface ContextPreparationReceipt {
   compiler_version: "octo.context-compiler/v1";
   catalog_version: "octo.context-catalog/v1";
   context_hash: string;
+  compiled_hash: string;
   run_id: string;
   lease_id: string;
   fencing_token: number;
@@ -496,6 +503,29 @@ export interface ChannelContextSnapshotRef {
    * Completeness of the frozen cold recovery projection.
    */
   recovery_completeness?: "complete" | "partial" | "unavailable";
+}
+/**
+ * Adapter evidence emitted only after Provider accepts the invocation. Loaded skills require native discovery and scope confirmation. Invocation remains unknown without a native execution event. No private paths, credentials or instruction text are permitted.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextApplicationEvidence".
+ */
+export interface ContextApplicationEvidence {
+  schema: "octo.context-application/v1";
+  compiler_version: "octo.context-compiler/v1";
+  catalog_version: "octo.context-catalog/v1";
+  context_hash: string;
+  compiled_hash: string;
+  run_id: string;
+  lease_id: string;
+  fencing_token: number;
+  adapter_type: "codex";
+  provider_session_id: string;
+  provider_ack: "turn/start";
+  /**
+   * @maxItems 64
+   */
+  loaded_skills: string[];
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema

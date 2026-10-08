@@ -3,6 +3,7 @@ import {
   CONTEXT_MAX_BYTES,
   assertContextEnvelope,
   assertMcpServers,
+  contextHash,
   contextItem,
   type ContextEnvelope,
   type ContextSelectionEntry,
@@ -18,6 +19,11 @@ const MAX_RESPONSE_BYTES = 256 * 1024;
 export interface PreparedTaskMaterials {
   selections: ContextSelectionEntry[];
   refs: { resource_ref: string; task_id: string; task_version: number; handler_epoch: number; digest: string }[];
+}
+
+export interface TaskMaterialSnapshotStore {
+  getTaskMaterialSnapshot(runId: string, hash: string): PreparedTaskMaterials | undefined;
+  putTaskMaterialSnapshot(runId: string, hash: string, value: PreparedTaskMaterials): void;
 }
 
 /** A client for the frozen run grant. Never accept endpoint or headers from tool arguments. */
@@ -104,7 +110,10 @@ export function taskMcpServer(plan: ResolvedExecutionPlan): McpStreamableHttpSer
 }
 
 /** Resolve only the registered task operation; arbitrary MCP/CLI resources remain fail-closed. */
-export async function prepareTaskMaterials(context: ContextEnvelope, plan: ResolvedExecutionPlan, signal: AbortSignal): Promise<PreparedTaskMaterials | undefined> {
+export async function prepareTaskMaterials(context: ContextEnvelope, plan: ResolvedExecutionPlan, signal: AbortSignal, snapshot?: {
+  runId: string; store: TaskMaterialSnapshotStore;
+}): Promise<PreparedTaskMaterials | undefined> {
+  signal.throwIfAborted();
   assertContextEnvelope(context);
   const resources = contextItem(context, "octo.content", "resources")?.payload.entries;
   if (!Array.isArray(resources) || resources.length === 0) return undefined;
@@ -115,15 +124,31 @@ export async function prepareTaskMaterials(context: ContextEnvelope, plan: Resol
     throw new TypeError("CONTEXT_RESOLVER_UNAVAILABLE");
   }
   const params = object(resource.params);
-  if (typeof params.task_id !== "string" || !params.task_id || Object.keys(params).some(key => !["task_id", "expected_version", "handler_epoch", "after_sequence", "known_task_version"].includes(key))) {
+  if (typeof params.task_id !== "string" || !params.task_id || Object.keys(params).some(key => !["task_id", "expected_version", "handler_epoch"].includes(key))) {
     throw new TypeError("TASK_MATERIAL_SCOPE_INVALID");
   }
   const client = new TaskMcpClient(taskMcpServer(plan), signal);
   await client.initialize();
+  const hash = contextHash(context);
+  const cached = snapshot?.store.getTaskMaterialSnapshot(snapshot.runId, hash);
+  if (cached) {
+    assertTaskMaterialSnapshot(cached, String(resource.resource_ref), params);
+    const ref = cached.refs[0];
+    const authorized = await client.call("task_authorize_material_snapshot", {
+      task_id: ref.task_id, task_version: ref.task_version, handler_epoch: ref.handler_epoch, digest: ref.digest
+    });
+    if (authorized.authorized !== true || authorized.task_id !== ref.task_id || authorized.task_version !== ref.task_version
+      || authorized.handler_epoch !== ref.handler_epoch || authorized.digest !== ref.digest) {
+      throw new TypeError("TASK_MATERIAL_SNAPSHOT_UNAUTHORIZED");
+    }
+    signal.throwIfAborted();
+    return structuredClone(cached);
+  }
   const result = await client.call(TASK_MATERIAL_TOOL, structuredClone(params));
   const task = object(result.task);
   if (task.id !== params.task_id || !positive(task.row_version) || !positive(task.handler_epoch)
-    || (params.handler_epoch !== undefined && task.handler_epoch !== params.handler_epoch)) {
+    || (params.handler_epoch !== undefined && task.handler_epoch !== params.handler_epoch)
+    || (params.expected_version !== undefined && task.row_version !== params.expected_version)) {
     throw new TypeError("TASK_MATERIAL_SCOPE_MISMATCH");
   }
   const text = JSON.stringify(result);
@@ -133,10 +158,32 @@ export async function prepareTaskMaterials(context: ContextEnvelope, plan: Resol
     resource_ref: resourceRef, task_id: String(task.id), task_version: Number(task.row_version),
     handler_epoch: Number(task.handler_epoch), digest: `sha256:${createHash("sha256").update(text).digest("hex")}`
   };
-  return {
+  const prepared: PreparedTaskMaterials = {
     selections: [{ resource_ref: resourceRef, text, source: { type: "task_material_snapshot", ...ref } }],
     refs: [ref]
   };
+  signal.throwIfAborted();
+  if (snapshot) snapshot.store.putTaskMaterialSnapshot(snapshot.runId, hash, prepared);
+  return prepared;
+}
+
+function assertTaskMaterialSnapshot(value: PreparedTaskMaterials, resourceRef: string, params: Record<string, unknown>): void {
+  if (!Array.isArray(value.refs) || value.refs.length !== 1 || !Array.isArray(value.selections) || value.selections.length !== 1) {
+    throw new TypeError("TASK_MATERIAL_SNAPSHOT_INVALID");
+  }
+  const ref = value.refs[0], selection = value.selections[0];
+  if (ref.resource_ref !== resourceRef || ref.task_id !== params.task_id || !positive(ref.task_version) || !positive(ref.handler_epoch)
+    || (params.handler_epoch !== undefined && ref.handler_epoch !== params.handler_epoch)
+    || (params.expected_version !== undefined && ref.task_version !== params.expected_version)
+    || selection.resource_ref !== resourceRef || typeof selection.text !== "string"
+    || Buffer.byteLength(selection.text, "utf8") > CONTEXT_MAX_BYTES - 1024
+    || ref.digest !== `sha256:${createHash("sha256").update(selection.text).digest("hex")}`) {
+    throw new TypeError("TASK_MATERIAL_SNAPSHOT_INVALID");
+  }
+  const task = object(object(JSON.parse(selection.text)).task);
+  if (task.id !== ref.task_id || task.row_version !== ref.task_version || task.handler_epoch !== ref.handler_epoch) {
+    throw new TypeError("TASK_MATERIAL_SNAPSHOT_INVALID");
+  }
 }
 
 function positive(value: unknown): boolean { return Number.isSafeInteger(value) && Number(value) > 0; }

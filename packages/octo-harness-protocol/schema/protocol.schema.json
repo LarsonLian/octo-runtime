@@ -249,13 +249,16 @@
       "description": "Public Context facts. Preparation is distinct from Adapter application or invocation. This projection excludes resource files, trusted instruction text, credentials and Runtime paths.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["run_id","context_configuration_version","context_hash","preparation_status","execution","model_uses_provider_default","effort_uses_provider_default"],
+      "required": ["run_id","context_configuration_version","context_hash","preparation_status","application_status","invocation_status","loaded_skills","execution","model_uses_provider_default","effort_uses_provider_default"],
       "properties": {
         "run_id": {"type":"string","minLength":1},
         "context_configuration_version": {"type":"integer","minimum":1},
         "context_hash": {"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},
         "actual_runtime_id": {"type":"string","minLength":1},
         "preparation_status": {"enum":["unknown","prepared"]},
+        "application_status": {"enum":["unknown","applied"]},
+        "invocation_status": {"const":"unknown"},
+        "loaded_skills": {"type":"array","maxItems":64,"uniqueItems":true,"items":{"type":"string","pattern":"^[a-z0-9][a-z0-9._-]{0,95}$"}},
         "model_uses_provider_default": {"type":"boolean"},
         "effort_uses_provider_default": {"type":"boolean"},
         "execution": {
@@ -293,11 +296,12 @@
       "description": "Durable Runtime preparation evidence, sealed before Adapter invocation and fenced by the active Run lease. Private paths must not be exposed by product projections.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["compiler_version","catalog_version","context_hash","run_id","lease_id","fencing_token","workspace_mode","workspace_path","provider_state_dir","resources","materials","warnings"],
+      "required": ["compiler_version","catalog_version","context_hash","compiled_hash","run_id","lease_id","fencing_token","workspace_mode","workspace_path","provider_state_dir","resources","materials","warnings"],
       "properties": {
         "compiler_version": {"const":"octo.context-compiler/v1"},
         "catalog_version": {"const":"octo.context-catalog/v1"},
         "context_hash": {"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},
+        "compiled_hash": {"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},
         "run_id": {"type":"string","minLength":1},
         "lease_id": {"type":"string","minLength":1},
         "fencing_token": {"type":"integer","minimum":1,"maximum":9007199254740991},
@@ -308,6 +312,27 @@
         "materials": {"type":"array","maxItems":32,"items":{"$ref":"#/definitions/PreparedMaterialReceipt"}},
         "continuity": {"$ref":"#/definitions/ChannelContextSnapshotRef"},
         "warnings": {"type":"array","maxItems":256,"items":{"type":"string","maxLength":4096}}
+      }
+    },
+    "ContextApplicationEvidence": {
+      "title": "ContextApplicationEvidence",
+      "description": "Adapter evidence emitted only after Provider accepts the invocation. Loaded skills require native discovery and scope confirmation. Invocation remains unknown without a native execution event. No private paths, credentials or instruction text are permitted.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema","compiler_version","catalog_version","context_hash","compiled_hash","run_id","lease_id","fencing_token","adapter_type","provider_session_id","provider_ack","loaded_skills"],
+      "properties": {
+        "schema": {"const":"octo.context-application/v1"},
+        "compiler_version": {"const":"octo.context-compiler/v1"},
+        "catalog_version": {"const":"octo.context-catalog/v1"},
+        "context_hash": {"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},
+        "compiled_hash": {"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},
+        "run_id": {"type":"string","minLength":1},
+        "lease_id": {"type":"string","minLength":1},
+        "fencing_token": {"type":"integer","minimum":1,"maximum":9007199254740991},
+        "adapter_type": {"const":"codex"},
+        "provider_session_id": {"type":"string","minLength":1},
+        "provider_ack": {"const":"turn/start"},
+        "loaded_skills": {"type":"array","maxItems":64,"uniqueItems":true,"items":{"type":"string","pattern":"^[a-z0-9][a-z0-9._-]{0,95}$"}}
       }
     },
     "PreparedCapabilityReceipt": {

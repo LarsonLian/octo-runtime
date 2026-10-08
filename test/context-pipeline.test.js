@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { contextHash } from "../packages/octo-harness-protocol/dist/index.js";
-import { ContextCompiler, ContextPipeline } from "../packages/octo-harness-daemon/dist/context-pipeline.js";
+import { ContextCompiler, ContextPipeline, orderContextPreparationStages } from "../packages/octo-harness-daemon/dist/context-pipeline.js";
 
 const context = { schema: "octo.context-envelope/v1", items: [
   { namespace: "octo.execution", name: "adapter", payload: { type: "codex" } },
@@ -18,7 +18,7 @@ const Ajv = require("ajv").default;
 const ajv = new Ajv({ strict: false, logger: false });
 ajv.addSchema(schema);
 const validReceipt = ajv.compile({ $ref: `${schema.$id}#/definitions/ContextPreparationReceipt` });
-function fixture(overrides = {}) {
+function fixture(overrides = {}, options = {}) {
   const calls = [];
   let receipt;
   const ports = {
@@ -30,7 +30,7 @@ function fixture(overrides = {}) {
     prepareContinuity: async () => { calls.push("continuity"); },
     seal: async value => { calls.push("seal"); receipt = value; }, ...overrides
   };
-  return { pipeline: new ContextPipeline(ports), calls, receipt: () => receipt };
+  return { pipeline: new ContextPipeline(ports, options), calls, receipt: () => receipt };
 }
 
 test("pipeline seals all successful preparation stages before returning a compiled request", async () => {
@@ -39,6 +39,8 @@ test("pipeline seals all successful preparation stages before returning a compil
   const prepared = await f.pipeline.prepare(context, plan, identity, new AbortController().signal);
   assert.deepEqual(f.calls, ["input", "capabilities", "materials", "continuity", "seal"]);
   assert.equal(prepared.receipt.context_hash, contextHash(context));
+  assert.match(prepared.receipt.compiled_hash, /^sha256:[a-f0-9]{64}$/);
+  assert.deepEqual(prepared.consumption, [{ key: "octo.execution/workspace", stage: "prepare", processor: "capabilities" }]);
   assert.equal(prepared.receipt.run_id, identity.runId);
   assert.equal(prepared.receipt.lease_id, identity.leaseId);
   assert.equal(prepared.receipt.fencing_token, identity.fencingToken);
@@ -94,4 +96,35 @@ test("host-authenticated revision instructions compile through the same trusted 
   const compiled = new ContextCompiler().compile(context, undefined, [{ source: "revision", text: "Use approved tools" }]);
   assert.equal(compiled.controlInstructions, "Use approved tools");
   assert.equal(compiled.modelContent, "");
+});
+
+test("stage registry rejects missing dependencies and cycles before side effects", async () => {
+  const stages = [
+    { id: "continuity", dependsOn: ["materials"] }, { id: "materials", dependsOn: ["capabilities"] },
+    { id: "capabilities", dependsOn: ["input"] }, { id: "input", dependsOn: [] }
+  ];
+  assert.deepEqual(orderContextPreparationStages(stages), ["input", "capabilities", "materials", "continuity"]);
+  const f = fixture({}, { stages: stages.map(item => item.id === "input" ? { ...item, dependsOn: ["continuity"] } : item) });
+  await assert.rejects(f.pipeline.prepare(context, plan, identity, new AbortController().signal), /DEPENDENCY_CYCLE/);
+  assert.deepEqual(f.calls, []);
+  assert.throws(() => orderContextPreparationStages(stages.slice(1)), /GRAPH_INVALID/);
+});
+
+test("stage deadline aborts the Port and discards a late completion without sealing", async () => {
+  let release, stageSignal;
+  const f = fixture({ prepareInput: signal => { stageSignal = signal; return new Promise(resolve => { release = resolve; }); } }, { timeoutMs: { input: 5 } });
+  await assert.rejects(f.pipeline.prepare(context, plan, identity, new AbortController().signal), /CONTEXT_STAGE_TIMEOUT: input/);
+  assert.equal(stageSignal.aborted, true);
+  release({ text: "late" });
+  await new Promise(setImmediate);
+  assert.deepEqual(f.calls, []);
+  assert.equal(f.receipt(), undefined);
+});
+
+test("compiled identity is stable across item order and changes with trusted instruction content", async () => {
+  const first = await fixture().pipeline.prepare(context, plan, identity, new AbortController().signal);
+  const reordered = await fixture().pipeline.prepare({ ...context, items: [...context.items].reverse() }, plan, identity, new AbortController().signal);
+  assert.equal(first.receipt.compiled_hash, reordered.receipt.compiled_hash);
+  const changed = await fixture({ trustedInstructions: [{ source: "revision", text: "Updated instructions" }] }).pipeline.prepare(context, plan, identity, new AbortController().signal);
+  assert.notEqual(changed.receipt.compiled_hash, first.receipt.compiled_hash);
 });

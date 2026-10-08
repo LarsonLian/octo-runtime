@@ -2,6 +2,7 @@ import { renameSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { openWalDatabase } from "@mininglamp-oss/octo-harness-core";
+import type { PreparedTaskMaterials } from "./task-materials.js";
 
 /** One event staged before ACK, already carrying the lease/fencing and the stable
  * event_id needed for replay. */
@@ -109,6 +110,23 @@ export class AgentWorkStore {
    * retained for forensic recovery; callers should emit an operator alert. */
   get quarantinedPath(): string | undefined { return this.#quarantinedPath; }
 
+  getTaskMaterialSnapshot(runId: string, hash: string): PreparedTaskMaterials | undefined {
+    const row = this.#db.prepare("SELECT context_hash, snapshot_json FROM task_material_snapshots WHERE run_id = ?").get(runId) as
+      { context_hash: string; snapshot_json: string } | undefined;
+    if (!row) return undefined;
+    if (row.context_hash !== hash) throw new TypeError("CONTEXT_MATERIAL_SNAPSHOT_CONFLICT");
+    return JSON.parse(row.snapshot_json) as PreparedTaskMaterials;
+  }
+
+  putTaskMaterialSnapshot(runId: string, hash: string, value: PreparedTaskMaterials): void {
+    const json = JSON.stringify(value);
+    if (!runId || !/^sha256:[a-f0-9]{64}$/.test(hash) || Buffer.byteLength(json) > 3 * 65536) throw new TypeError("TASK_MATERIAL_SNAPSHOT_INVALID");
+    this.#db.prepare("INSERT OR IGNORE INTO task_material_snapshots (run_id, context_hash, snapshot_json, created_at) VALUES (?, ?, ?, ?)")
+      .run(runId, hash, json, Date.now());
+    const prior = this.#db.prepare("SELECT context_hash, snapshot_json FROM task_material_snapshots WHERE run_id = ?").get(runId) as { context_hash: string; snapshot_json: string };
+    if (prior.context_hash !== hash || prior.snapshot_json !== json) throw new TypeError("CONTEXT_MATERIAL_SNAPSHOT_CONFLICT");
+  }
+
   conversationWorkspace(scopeKey: string, candidatePath: string): { path: string; created: boolean } {
     const result = this.#db.prepare("INSERT OR IGNORE INTO conversation_workspaces (scope_key, path) VALUES (?, ?)").run(scopeKey, candidatePath);
     const row = this.#db.prepare("SELECT path FROM conversation_workspaces WHERE scope_key = ?").get(scopeKey) as { path: string };
@@ -199,6 +217,7 @@ export class AgentWorkStore {
     this.#db.exec("BEGIN IMMEDIATE");
     try {
       this.#db.prepare("DELETE FROM event_outbox WHERE run_id = ?").run(runId);
+      this.#db.prepare("DELETE FROM task_material_snapshots WHERE run_id = ?").run(runId);
       const result = this.#db.prepare("DELETE FROM runs WHERE run_id = ?").run(runId);
       this.#db.exec("COMMIT");
       return result.changes > 0;
@@ -394,6 +413,8 @@ export class AgentWorkStore {
        WHERE completed_at IS NOT NULL AND completed_at < ?
          AND run_id NOT IN (SELECT run_id FROM event_outbox)`
     ).run(now - DEFAULT_RETENTION_MS);
+    this.#db.prepare("DELETE FROM task_material_snapshots WHERE created_at < ? AND run_id NOT IN (SELECT run_id FROM runs)")
+      .run(now - DEFAULT_RETENTION_MS);
     this.#db.exec("PRAGMA wal_checkpoint(PASSIVE)");
     this.#db.exec("PRAGMA incremental_vacuum");
   }
@@ -409,6 +430,12 @@ function initialize(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS conversation_workspaces (
       scope_key TEXT PRIMARY KEY,
       path TEXT NOT NULL UNIQUE
+    );
+    CREATE TABLE IF NOT EXISTS task_material_snapshots (
+      run_id TEXT PRIMARY KEY,
+      context_hash TEXT NOT NULL,
+      snapshot_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS runs (
       run_id TEXT PRIMARY KEY,

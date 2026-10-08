@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { PassThrough, Writable } from "node:stream";
 
-export function codexAppServerFixture({ method = "item/commandExecution/requestApproval", holdResponseWrites = false } = {}) {
+export function codexAppServerFixture({ method = "item/commandExecution/requestApproval", holdResponseWrites = false, turnStartError, skills = [] } = {}) {
   const child = new EventEmitter();
   const writes = [];
   const pendingWrites = [];
@@ -32,9 +32,14 @@ export function codexAppServerFixture({ method = "item/commandExecution/requestA
       writes.push(message);
       if (message.method === "initialize") send({ id: message.id, result: {} });
       if (message.method === "thread/start") send({ id: message.id, result: { thread: { id: "thread-fixture" } } });
+      if (["skills/extraRoots/set", "skills/config/write"].includes(message.method)) send({ id: message.id, result: {} });
+      if (message.method === "skills/list") send({ id: message.id, result: { data: [{ skills }] } });
       if (message.method === "turn/start") {
-        send({ id: message.id, result: { turn: { id: "turn-fixture" } } });
-        setImmediate(requestInteraction);
+        if (turnStartError) send({ id: message.id, error: { code: -32000, message: turnStartError } });
+        else {
+          send({ id: message.id, result: { turn: { id: "turn-fixture" } } });
+          setImmediate(requestInteraction);
+        }
       }
       if (message.method === "turn/interrupt") send({ id: message.id, result: {} });
       if (holdResponseWrites && message.id === "native-request-1" && !message.method) pendingWrites.push(callback);

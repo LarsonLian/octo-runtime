@@ -1,6 +1,6 @@
 # Harness 统一 Context 处理实施基线
 
-日期：2026-10-08（Asia/Shanghai）。版本：`0.2`。状态：统一入口、准备回执和纯编译器已接入 daemon；逐 Adapter 应用资格与材料恢复仍有待验收项。
+日期：2026-10-08（Asia/Shanghai）。版本：`0.3`。状态：统一入口、阶段预算、材料恢复与 Codex 原生应用证据已实现。其他 Adapter 仍按各自已验证的能力拒绝不支持的资源类型。
 
 共享语义以 [跨项目总基线](../../docs/62-octo-context-compiler-se-baseline.md) 为准。本文覆盖 Protocol、daemon、core、Adapter Host 和各 Adapter。
 
@@ -17,7 +17,7 @@
 | `daemon/src/agent-work-runtime.ts` | 准备编排与 InvokeRequest 映射 | 统一管线调用者，不重复拼接事实和指令 |
 | `packages/octo-harness-adapter-*` | Provider 原生输入映射 | applied/loaded 与兼容性证据消费者 |
 
-源码路径中的 `daemon/src` 均相对于 `packages/octo-harness-daemon/`。新的 package 是否独立建立，待实现规模确定；不因模块命名提前创建空包。
+源码路径中的 `daemon/src` 均相对于 `packages/octo-harness-daemon/`。Pipeline 与 Compiler 位于现有 daemon 模块中，Protocol 只提供纯合同与校验。
 
 ## 2. Protocol 与处理器注册
 
@@ -68,9 +68,9 @@ bootstrap/delta/inherit/recovery 与 fresh Provider Session 保留原语义。�
 
 逐 Adapter 记录版本与资格。真实 Runtime 连接 im-test + octo-auth，验证任务取数、图片读取、频道恢复和回执持久化。未部署的 Adapter 或处理器不能在能力目录宣称可用。
 
-## 6. 待确认
+## 6. 当前运行合同
 
-当前运行合同为 schema 4，选路快照为 v2，Context 信封仍为 v1；旧 binding 模式不保留兼容分支。阶段依赖图、独立阶段预算、正文快照的跨重启恢复与重新授权、逐 Adapter 的应用证据和本地模式扩展仍需后续交付。目录只声明语义，不能据此宣称某部署或 Adapter 已具备全部处理能力。
+当前运行合同为 schema 4，选路快照为 v2，Context 信封仍为 v1；旧 binding 模式不保留兼容分支。公共回执新增必填 `compiled_hash`，公开投影新增必填应用状态、调用状态和已加载技能。三个项目必须同步升级。目录只声明语义；执行能力仍取决于 Resolver 和 Adapter。core 本地模式继续明确接受 execution/security 子集。
 
 ## 7. 本轮 Protocol 增补与验证
 
@@ -82,8 +82,14 @@ bootstrap/delta/inherit/recovery 与 fresh Provider Session 保留原语义。�
 
 `daemon/src/context-pipeline.ts` 提供有副作用的 ContextPipeline 和纯 ContextCompiler。Runtime 按输入图片、能力包、任务材料、频道连续性的顺序准备，检查取消，汇总准备证据，编译事实与可信指令，最后向 Worker 封存回执。任何前置失败或封存拒绝均不能返回可调用的结果。Revision 和平台指令经明确可信来源进入编译器；已编译贡献不再由 InvokeRequest 映射重复加入。
 
-回执合同为 `ContextPreparationReceipt`，包含 compiler/catalog 版本、Context hash、run/lease/fence、实际目录、能力包、材料版本和连续性引用。公开查询采用 `RunContextProjection`，排除秘密和私有路径。回执确认只证明准备完成，不证明技能被实际调用。材料重读发生摘要变化时拒绝恢复；当前没有可跨重启复用的材料正文仓库。
+回执合同为 `ContextPreparationReceipt`，包含 compiler/catalog 版本、Context hash、`compiled_hash`、run/lease/fence、实际目录、能力包、材料版本和连续性引用。编译摘要覆盖编译版本、实际产物、可信贡献顺序、工作区、资源与材料证据；实际路径会影响本轮应用身份。摘要不是跨机器归一化的模型正文摘要。
 
-本轮验证：完整 Harness 构建通过；Protocol/configuration/Compiler/Pipeline/frozen-plan 测试 258 项通过；Runtime、频道上下文、任务材料及归档相关集成测试 76 项通过；新增目录、配置解析、管线和 run-context 的 ESLint 通过。Worker 的 domain、service、repository、handler 和 Agent Access workerclient 包级测试通过。
+准备阶段注册表为 `input -> capabilities -> materials -> continuity`。稳定拓扑排序在副作用前拒绝缺失阶段、重复阶段、未知依赖和依赖环。每个阶段及 seal 默认预算为 30,000 毫秒，从进入阶段开始计时，阶段内部重试计入同一预算。达到阈值后中止子信号并拒绝结果；即使 Port 未及时响应取消，晚到结果也不能封存或启动模型。该预算不替代各资源的字节、解包或编译输入限制。
 
-本轮通过 CDP 核查了真实 renderer 的唯一桥、新配置方法及 im-test 登录状态。完整资源到 Provider 的真实业务链路另有项目联测进行中，本文不将桥接检查计为三项目端到端通过。未验证全部 Adapter 的应用或调用资格。
+类型消费记录明确处理键、prepare/compile 阶段及处理器。编排器校验每阶段覆盖和重复消费。Compiler 是纯函数；网络读取、下载、授权和封存由 Pipeline Port 承担。
+
+任务材料首次读取执行 `expected_version` 检查，并将正文、版本、handler epoch 和 digest 写入 Runtime SQLite。恢复相同 Run 时先建立当前授权连接，再通过 `task_authorize_material_snapshot` 验证当前 Run/任务绑定与 handler epoch；只复用已保存正文，不获取新 latest。Context hash 冲突、正文被修改或授权撤销均拒绝。终态确认清理该 Run 快照；孤立快照按七天清理，活动 Run 受保护。
+
+Codex Adapter 在原生技能发现与启用成功、且 `turn/start` 获得确认后发送 `context.applied`。证据绑定编译摘要和当前 lease/fence，记录原生 Provider Session 与加载技能。Provider 启动失败或技能缺失时不得发送应用成功。此证据不证明技能或工具实际调用，公开 `invocation_status` 保持 `unknown`。
+
+完整 Harness 提交快照构建通过。提交快照完整测试共 806 项：802 通过，4 跳过，0 失败。新增用例覆盖阶段环、超时晚到、编译摘要稳定性、SQLite 关闭后恢复与撤权、原生技能和启动确认。同源应用证据 fixtures 在 TypeScript 与 Go 两端校验。真实三项目验收记录见 Work App 的 `docs/validation/context-pipeline-2026-10-08/`；测试与 Adapter 资格分别记录。

@@ -111,7 +111,7 @@ test("Codex full_access approves only the registered tools of a bootstrapped Tas
   const config = commandMcpConfig(invocation);
   assert.equal(config.octo_task.default_tools_approval_mode, "prompt");
   assert.deepEqual(config.octo_task.tools, Object.fromEntries([
-    "task_get_materials", "task_read_attachment", "task_prepare_output", "task_commit_output",
+    "task_get_materials", "task_authorize_material_snapshot", "task_read_attachment", "task_prepare_output", "task_commit_output",
     "task_fail_output", "task_apply_action", "task_create_child"
   ].map(tool => [tool, { approval_mode: "approve" }])));
   assert.equal(config["team.api"].tools, undefined);
@@ -178,7 +178,7 @@ test("Codex approves the registered Team tools for Task leaders, handoffs and ma
     const config = commandMcpConfig(preparedTaskTeamRequest(trigger));
     assert.equal(config.octo_team.default_tools_approval_mode, "prompt", trigger);
     assert.deepEqual(config.octo_team.tools, {
-      delegate_handoff: { approval_mode: "approve" }, post_task_comment: { approval_mode: "approve" },
+      delegate_handoff: { approval_mode: "approve" },
       ...config.octo_task.tools
     }, trigger);
     assert.equal(config.octo_team.tools.transition_task, undefined);

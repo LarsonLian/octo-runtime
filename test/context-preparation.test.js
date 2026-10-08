@@ -10,7 +10,7 @@ import { AgentWorkStore } from "../packages/octo-harness-daemon/dist/agent-work-
 const skill = "---\nname: context-proof\ndescription: Verify selected Context resources.\n---\nUse the selected tools.\n";
 const resource = (files, extra = {}) => ({ resource_id: "proof", version: "1.0.0", kind: "plugin", invoke: true,
   digest: "sha256:" + createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.entries(files).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)))).digest("hex"),
-  files, sources: ["mandatory"], ...extra });
+  files, sources: ["agent_mandatory"], ...extra });
 const plugin = () => ({
   "plugin.json": JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "context-proof", version: "1.0.0" }),
   "skills/context-proof/SKILL.md": skill,
