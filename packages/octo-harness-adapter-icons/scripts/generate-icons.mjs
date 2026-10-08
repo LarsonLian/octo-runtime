@@ -30,7 +30,7 @@ const ICONS = [
   { type: "openclaw", name: "OpenClaw", file: "openclaw.svg", const: "openclawIcon" },
   { type: "qodercli", name: "Qoder", file: "qoder.svg", const: "qoderCliIcon" },
   { type: "qoderclicn", name: "Qoder CN", file: "qoderclicn.svg", const: "qoderCliCnIcon" },
-  { type: "zcode-gui", name: "ZCode", file: "zai.svg", monochrome: true, const: "zcodeGuiIcon" }
+  { type: "zcode-gui", name: "ZCode", file: "zcode.svg", monochrome: true, const: "zcodeGuiIcon" }
 ];
 
 const read = (name) => readFileSync(join(iconsDir, name), "utf8").trim();

@@ -68,7 +68,7 @@ export const zcodeGuiIcon: AdapterIcon = {
   type: "zcode-gui",
   name: "ZCode",
   monochrome: true,
-  svg: "<svg fill=\"currentColor\" fill-rule=\"evenodd\" height=\"1em\" style=\"flex:none;line-height:1\" viewBox=\"0 0 24 24\" width=\"1em\" xmlns=\"http://www.w3.org/2000/svg\"><title>Z.ai</title><path d=\"M12.105 2L9.927 4.953H.653L2.83 2h9.276zM23.254 19.048L21.078 22h-9.242l2.174-2.952h9.244zM24 2L9.264 22H0L14.736 2H24z\"></path></svg>",
+  svg: "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 120 90\" width=\"120\" height=\"90\">\n  <path d=\"M10 8 H110 V22 L42 68 H110 V82 H10 V68 L78 22 H10 Z\" fill=\"#fafafa\"/>\n</svg>",
 };
 
 /** All adapter icons keyed by adapter `type`. */

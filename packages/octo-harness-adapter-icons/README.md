@@ -43,7 +43,7 @@ function AdapterIcon({ type }: { type: string }) {
 | `openclaw` | OpenClaw | 彩色 |
 | `qodercli` | Qoder | 彩色 |
 | `qoderclicn` | Qoder CN | 彩色(Qoder 底图 + 右下角 CN 角标) |
-| `zcode-gui` | ZCode | 单色(z.ai 品牌 mark) |
+| `zcode-gui` | ZCode | 单色(ZCode 官方 Z 字形) |
 
 `config/adapters.json` 中的每个 adapter type 均有对应图标,`getAdapterIcon`
 对全部 11 类都返回结果。
@@ -69,6 +69,6 @@ third-party redraws.
   (与 octo-web 同源)。
 - **qoderclicn**:以 LobeHub 的 Qoder 彩色 mark 为底图,叠加右下角蓝色 `CN`
   角标合成,标识 Qoder 中国区发行版。
-- **zcode-gui**:使用 LobeHub 的 z.ai(`zai`)品牌 mark(ZCode 为 z.ai 的
-  编码产品)。
+- **zcode-gui**:使用 [ZCode 官方品牌素材](https://github.com/zerx-lab/zcode/tree/zcode/brand/logo)
+  中的 `zcode-mark-mono.svg`,保留原始字形与比例,由消费方通过 mask 适配主题颜色。
 - **mcode**:使用 LobeHub 的 MiniMax 彩色 mark。
