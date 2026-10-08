@@ -215,9 +215,9 @@ export class AdapterHost {
     // Correlation fields come from the validated host request, never from the
     // adapter. This prevents a plugin from accidentally attributing sensitive
     // input to another Run while still letting it describe transport details.
-    const context: AdapterInvocationContext = {
     const anonymousMessages = new Map<string, string>();
     let messageNumber = 0;
+    const context: AdapterInvocationContext = {
       observe: observation => this.#observe(identity, observation),
       reportActivity: activity => watchdog.activity(activity)
     };
