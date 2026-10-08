@@ -6,6 +6,8 @@ import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
  */
 import {
   AcpApprovalBridge,
+  acpToolTerminalStatus,
+  normalizeAcpToolUpdate,
   defineAdapter,
   observeBestEffort,
   observeProviderOutput,
@@ -58,6 +60,7 @@ export function normalizeCodeBuddyUpdate(update: CodeBuddyUpdate): CanonicalEven
   }
   if (type === "tool_call") {
     if (!update.toolCallId) return [];
+    if (acpToolTerminalStatus(update.status)) return normalizeAcpToolUpdate(update);
     const value = update.rawInput ?? update.input;
     const args = isRecord(value) ? value : value == null ? {} : { value };
     return [{ protocolVersion: 2,
@@ -66,11 +69,7 @@ export function normalizeCodeBuddyUpdate(update: CodeBuddyUpdate): CanonicalEven
     }];
   }
   if (type === "tool_call_update") {
-    if (!update.toolCallId || !update.status) return [];
-    return [{ protocolVersion: 2,
-      type: "tool_call.update",
-      payload: { id: update.toolCallId, status: canonicalTerminalStatus(update.status), output: update.content ?? update.output }
-    }];
+    return normalizeAcpToolUpdate(update);
   }
   if (type === "usage") return [{ protocolVersion: 2, type: "usage.update", payload: { ...update.usage, model: update.model } }];
   return [];

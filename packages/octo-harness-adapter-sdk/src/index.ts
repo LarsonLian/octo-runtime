@@ -32,6 +32,7 @@ export type {
 export { freshFallbackInputText, providerInputText, providerInputParts, hasImageInput } from "@mininglamp-oss/octo-harness-protocol";
 export { AcpApprovalBridge } from "./approval.js";
 export { sanitizePublicValue } from "./public-display.js";
+export { acpToolTerminalStatus, normalizeAcpToolUpdate } from "./acp-tool.js";
 
 export interface AdapterMetadata {
   type: string;

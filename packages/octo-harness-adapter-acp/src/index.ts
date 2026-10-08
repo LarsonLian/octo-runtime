@@ -2,6 +2,8 @@ import { canonicalTerminalStatus, providerInputParts } from "@mininglamp-oss/oct
 import { createHash } from "node:crypto";
 import {
   AcpApprovalBridge,
+  acpToolTerminalStatus,
+  normalizeAcpToolUpdate,
   defineAdapter,
   observeBestEffort,
   observeProviderOutput,
@@ -118,6 +120,7 @@ export function normalizeAcpUpdate(update: StandardAcpUpdate, provider: string):
   }
   if (type === "tool_call") {
     if (!update.toolCallId) return [];
+    if (acpToolTerminalStatus(update.status)) return normalizeAcpToolUpdate(update);
     const input = update.rawInput ?? update.input;
     return [{ protocolVersion: 2,
       type: "tool_call.create",
@@ -129,15 +132,7 @@ export function normalizeAcpUpdate(update: StandardAcpUpdate, provider: string):
     }];
   }
   if (type === "tool_call_update") {
-    if (!update.toolCallId) return [];
-    return [{ protocolVersion: 2,
-      type: "tool_call.update",
-      payload: {
-        id: update.toolCallId,
-        status: canonicalTerminalStatus(update.status ?? "running"),
-        output: update.rawOutput ?? update.output ?? update.content
-      }
-    }];
+    return normalizeAcpToolUpdate(update);
   }
   if (type === "usage" || type === "usage_update") {
     return [{ protocolVersion: 2, type: "usage.update", payload: { ...update.usage, model: update.model } }];
