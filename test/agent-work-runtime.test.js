@@ -708,6 +708,9 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         invokedRequest = request;
+        yield { protocolVersion: 2, type: "message.delta", payload: { channel: "analysis", exposure: "private", text: "private diagnostic fixture" } };
+        yield { protocolVersion: 2, type: "message.delta", payload: { channel: "final", text: "public diagnostic fixture" } };
+        yield { protocolVersion: 2, type: "message.delta", payload: { channel: "final", text: " continuation" } };
         yield { protocolVersion: 2, type: "run.completed", payload: {} };
       }
     };
@@ -744,6 +747,15 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     assert.ok(trace.some(record => record.event === "agent_run.received" && record.data.trigger_occurrence_id === "message/observed"));
     assert.ok(trace.some(record => record.event === "adapter.selected" && record.adapter_type === "codex"));
     assert.ok(trace.some(record => record.event === "adapter.invoke.started" && record.invocation_id));
+    assert.ok(trace.some(record => record.event === "context.preparation.started"));
+    const prepared = trace.find(record => record.event === "context.preparation.ended");
+    assert.equal(prepared.data.outcome, "completed");
+    assert.equal(prepared.data.clock, "runtime_monotonic");
+    assert.ok(prepared.data.elapsed_ms >= 0);
+    const firstProgress = trace.filter(record => record.event === "adapter.public_progress.first");
+    assert.equal(firstProgress.length, 1);
+    assert.equal(firstProgress[0].data.clock, "runtime_monotonic");
+    assert.ok(firstProgress[0].data.elapsed_ms >= 0);
     assert.ok(trace.some(record => record.event === "adapter.invoke.completed"
       && Number.isInteger(record.duration_ms)
       && record.duration_ms >= 0));

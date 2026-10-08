@@ -1677,9 +1677,20 @@ export class AgentWorkRuntime {
             runId: command.run_id, leaseId, fencingToken, signal
           })
         });
+        const preparationStartedAt = process.hrtime.bigint();
+        this.#log({ level: "info", scope: "context.pipeline", event: "context.preparation.started",
+          runId: command.run_id, adapterType: adapterTypeForContext, message: "Context preparation started" });
+        const preparationEnded = (outcome: "completed" | "failed"): void => {
+          this.#log({ level: "info", scope: "context.pipeline", event: "context.preparation.ended",
+            runId: command.run_id, adapterType: adapterTypeForContext, message: "Context preparation ended",
+            data: { outcome, elapsed_ms: Number(process.hrtime.bigint() - preparationStartedAt) / 1e6, clock: "runtime_monotonic" } });
+        };
         const prepared = await pipeline.prepare(executionEnvelope.effective_context,
           executionEnvelope.resolved_execution_plan,
-          { runId: command.run_id, leaseId, fencingToken }, controller.signal);
+          { runId: command.run_id, leaseId, fencingToken }, controller.signal).then(
+            result => { preparationEnded("completed"); return result; },
+            error => { preparationEnded("failed"); throw error; }
+          );
         throwIfAcceptingAborted(controller.signal);
         this.#assertCurrentLifecycle(epoch);
         const mapped = mapExecutionEnvelope({
@@ -1973,6 +1984,7 @@ export class AgentWorkRuntime {
     let started = false;
     let recoverySessionReported = false;
     const invocationStartedAt = process.hrtime.bigint();
+    let firstPublicProgress = false;
     // Keep execution, invocation, business namespace, and trigger occurrence
     // as distinct correlation domains.
     this.#log({
@@ -2018,6 +2030,14 @@ export class AgentWorkRuntime {
           recoverySessionReported = true;
         }
         appendStarted();
+        const publicMessage = event.type.startsWith("message.") && typeof event.payload.text === "string" && event.payload.text.length > 0
+          && (event.payload.channel !== "analysis" || ["public_reasoning", "public_summary", "public_plan"].includes(String(event.payload.exposure)));
+        if (!firstPublicProgress && (publicMessage || event.type === "tool_call.create" || event.type === "tool_call.update")) {
+          firstPublicProgress = true;
+          this.#log({ level: "info", scope: "adapter.invoke", event: "adapter.public_progress.first",
+            runId: command.run_id, invocationId: request.invocationId, adapterType, message: "First public text or tool event",
+            data: { canonical_event_type: event.type, elapsed_ms: Number(process.hrtime.bigint() - invocationStartedAt) / 1e6, clock: "runtime_monotonic" } });
+        }
         finalText = accumulateFinalText(finalText, event);
         const mapped = mapRuntimeEvent(event);
         const taskRef = Array.isArray(request.runMetadata?.taskMaterials) ? asRecord(request.runMetadata.taskMaterials[0]) : {};
