@@ -200,6 +200,22 @@ export type ActivitySubject =
  */
 export interface OctoHarnessProtocolSchema {}
 /**
+ * Public, channel-neutral project notification. No runtime context, reasoning, credentials, or tool payloads belong in this envelope.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "NotificationMessage".
+ */
+export interface NotificationMessage {
+  schema: "octo.notification.v1";
+  eventId: string;
+  event: "task.done" | "execution.succeeded" | "execution.failed" | "notification.test";
+  occurredAt: string;
+  projectId: string;
+  sourceId: string;
+  title: string;
+  text: string;
+}
+/**
  * In addition to draft-07 validation, every consumer must enforce the x-octo semantic keywords: unique ordered namespace/name tuples, compact UTF-8 JSON byte budget, JSON nesting depth with the envelope at depth zero, and Unicode scalar strings in every nested value and object key. Canonical hashing uses ECMAScript JSON number serialization, including -0 becoming 0 and normalized exponent notation; object keys are sorted by UTF-16 code units before ECMAScript integer-index enumeration. U+2028/U+2029 and non-ASCII scalar values are not escaped or Unicode-normalized.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema

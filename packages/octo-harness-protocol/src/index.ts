@@ -5,6 +5,7 @@ export { IMAGE_INPUT_LIMITS, IMAGE_INPUT_MIME_TYPES, assertModelInputParts, prov
 import { assertApprovalMode, assertContextEnvelope, assertJsonValue, assertMcpServers, contextItem } from "./context.js";
 export { APPROVAL_MODES, CONTEXT_SCHEMA, CONTEXT_MAX_BYTES, CONTEXT_MAX_ITEMS, RUNTIME_RUN_CONTRACT, assertApprovalMode, assertContextEnvelope, assertMcpServers, assertResolvedExecutionPlan, canonicalContext, contextHash, contextItem, mergeContext } from "./context.js";
 export { RUNTIME_SELECTION_SCHEMA, assertResolvedRuntimeSelection } from "./runtime-selection.js";
+export { assertNotificationMessage } from "./notification.js";
 import type {
   ActivityInfo,
   ActivitySubject,
@@ -39,6 +40,7 @@ import type {
 // of `@mininglamp-oss/octo-harness-protocol` stays stable regardless of how the
 // generator lays out its output.
 export type {
+  NotificationMessage,
   ModelInputPart,
   ApprovalMode,
   ApprovalRequest,

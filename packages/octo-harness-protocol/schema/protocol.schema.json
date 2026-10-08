@@ -7,6 +7,23 @@
   "type": "object",
   "additionalProperties": false,
   "definitions": {
+    "NotificationMessage": {
+      "title": "NotificationMessage",
+      "description": "Public, channel-neutral project notification. No runtime context, reasoning, credentials, or tool payloads belong in this envelope.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "eventId", "event", "occurredAt", "projectId", "sourceId", "title", "text"],
+      "properties": {
+        "schema": {"const": "octo.notification.v1"},
+        "eventId": {"type": "string", "minLength": 1, "maxLength": 256},
+        "event": {"enum": ["task.done", "execution.succeeded", "execution.failed", "notification.test"]},
+        "occurredAt": {"type": "string", "format": "date-time"},
+        "projectId": {"type": "string", "minLength": 1, "maxLength": 128},
+        "sourceId": {"type": "string", "minLength": 1, "maxLength": 128},
+        "title": {"type": "string", "minLength": 1, "maxLength": 256},
+        "text": {"type": "string", "maxLength": 4096}
+      }
+    },
     "ApprovalMode": {
       "title": "ApprovalMode",
       "type": "string",
