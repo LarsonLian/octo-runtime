@@ -12,6 +12,7 @@ const MAX_STEP_PUBLIC_TEXT_CHARS = 1_000;
 export class AcpTurnNormalizer {
   readonly #provider: string;
   readonly #activeTools = new Set<string>();
+  readonly #seenTools = new Set<string>();
   #stepNumber = 0;
   #stepId?: string;
   #stepHasTool = false;
@@ -59,7 +60,8 @@ export class AcpTurnNormalizer {
       }
       const toolId = typeof event.payload.id === "string" ? event.payload.id : undefined;
       if (event.type === "tool_call.create" && toolId) {
-        if (this.#activeTools.has(toolId)) continue;
+        if (this.#seenTools.has(toolId)) continue;
+        this.#seenTools.add(toolId);
         events.push(...this.#closeMessage());
         events.push({ ...event, payload: { ...event.payload, ...(stepId ? { stepId } : {}) } });
         this.#activeTools.add(toolId);
@@ -68,6 +70,9 @@ export class AcpTurnNormalizer {
         continue;
       }
       if (event.type === "tool_call.update" && toolId && acpToolTerminalStatus(event.payload.status) !== undefined) {
+        this.#seenTools.add(toolId);
+        this.#stepHasTool = true;
+        events.push(...this.#closeMessage());
         events.push({ ...event, payload: { ...event.payload, ...(stepId ? { stepId } : {}) } });
         this.#activeTools.delete(toolId);
         if (this.#stepHasTool && this.#activeTools.size === 0) this.#toolsCompleted = true;

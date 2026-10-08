@@ -1,4 +1,5 @@
 import test from "node:test";
+import { AcpTurnNormalizer } from "../packages/octo-harness-adapter-sdk/dist/index.js";
 import assert from "node:assert/strict";
 import { createAcpAdapter } from "@mininglamp-oss/octo-harness-adapter-acp";
 import { createCodeBuddyAdapter } from "@mininglamp-oss/octo-harness-adapter-codebuddy";
@@ -38,3 +39,16 @@ for (const provider of ["ACP", "CodeBuddy"]) {
     assert.equal(events.at(-1).type, "run.completed");
   });
 }
+
+
+test("ACP terminal-only tool creates a real boundary without manufacturing a start", () => {
+  const turn = new AcpTurnNormalizer("acp");
+  const thought = text => ({ protocolVersion: 2, type: "message.delta", payload: { channel: "analysis", exposure: "public_reasoning", text } });
+  const first = turn.normalize("agent_thought_chunk", [thought("before")]);
+  const tool = turn.normalize("tool_call_update", [{ protocolVersion: 2, type: "tool_call.update", payload: { id: "t", status: "completed" } }]);
+  const next = turn.normalize("agent_thought_chunk", [thought("after")]);
+  assert.ok(tool.some(e => e.type === "message.update"));
+  assert.ok(!tool.some(e => e.type === "tool_call.create"));
+  assert.notEqual(first.find(e => e.type === "message.delta").payload.messageId, next.find(e => e.type === "message.delta").payload.messageId);
+  assert.deepEqual(turn.normalize("tool_call", [{ protocolVersion: 2, type: "tool_call.create", payload: { id: "t", name: "read", args: {}, status: "running" } }]), []);
+});
