@@ -212,11 +212,11 @@ export class AdapterHost {
     const onAbort = () => { void closeIterator(); };
     controller.signal.addEventListener("abort", onAbort, { once: true });
     const messages = new Map<string, MessageState>();
+    const anonymousMessages = new Map<string, string>();
+    let messageNumber = 0;
     // Correlation fields come from the validated host request, never from the
     // adapter. This prevents a plugin from accidentally attributing sensitive
     // input to another Run while still letting it describe transport details.
-    const anonymousMessages = new Map<string, string>();
-    let messageNumber = 0;
     const context: AdapterInvocationContext = {
       observe: observation => this.#observe(identity, observation),
       reportActivity: activity => watchdog.activity(activity)
@@ -314,10 +314,6 @@ export class AdapterHost {
           this.#acceptedTerminals.add(request.invocationId);
         }
         else {
-          if (event.type === "model_step.finished") {
-            for (const closed of closeMessages(event.payload.status, event.payload.stepId)) yield closed;
-          }
-          const prepared = prepareMessage(event);
           // Placeholder creates do not establish a provider message boundary.
           if (event.type === "message.create" && !event.payload.messageId && !event.payload.text) continue;
           if (event.type === "message.update" && !event.payload.messageId && !event.payload.text
@@ -329,6 +325,10 @@ export class AdapterHost {
             for (const closed of closeMessages("completed", undefined, true)) yield closed;
             anonymousMessages.clear();
           }
+          if (event.type === "model_step.finished") {
+            for (const closed of closeMessages(event.payload.status, event.payload.stepId)) yield closed;
+          }
+          const prepared = prepareMessage(event);
           for (const prefix of prepared.prefix) yield prefix;
           yield prepared.event;
         }
