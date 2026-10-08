@@ -472,6 +472,7 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
     if (!isRecord(payload.args)) throw new TypeError("tool_call.create payload.args must be an object");
   }
   if (event.type === "tool_call.delta") {
+    if (payload.status !== "running") throw new TypeError("tool_call.create payload.status must be running");
     requireEventString(payload, "id", event.type);
     const hasArgs = typeof payload.argsDelta === "string";
     const hasOutput = typeof payload.outputDelta === "string" || typeof payload.outputSnapshot === "string";
@@ -484,6 +485,9 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
     requireEventString(payload, "status", event.type);
   }
   if (event.type === "interaction.requested") {
+    if (!["completed", "failed", "cancelled"].includes(String(payload.status))) {
+      throw new TypeError("tool_call.update payload.status must be terminal");
+    }
     requireEventString(payload, "interactionId", event.type);
     requireEventString(payload, "executionInstanceId", event.type);
     requireEventString(payload, "expiresAt", event.type);
