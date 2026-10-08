@@ -5,7 +5,7 @@ import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
  * events. This adapter is an unattended local coding runtime, so tool
  * permissions are always auto-approved.
  */
-import { createJsonCliAdapter, probeCommand, providerInputText, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { createJsonCliAdapter, probeCommand, providerInputText, type AdapterInvocationContext, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { capabilities, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -119,14 +119,14 @@ export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEv
   const toolState = part.state;
   const toolId = part.callID ?? part.id;
   if ((native.type === "text" || part.type === "text") && typeof part.text === "string") {
-    events.push({ protocolVersion: 2, type: "message.delta", payload: { text: part.text, ...(stepId ? { stepId } : {}) } });
+    events.push({ protocolVersion: 2, type: "message.delta", payload: { text: part.text, ...(stepId ? { stepId, messageId: `opencode:${part.id ?? `${stepId}:answer`}` } : part.id ? { messageId: `opencode:${part.id}` } : {}) } });
   }
   if ((native.type === "reasoning" || part.type === "reasoning") && typeof part.text === "string") {
     events.push({ protocolVersion: 2,
       type: "message.delta",
       payload: {
         text: part.text,
-        ...(stepId ? { stepId, messageId: `opencode:${stepId}:reasoning` } : {}),
+        ...(stepId ? { stepId, messageId: `opencode:${part.id ?? `${stepId}:reasoning`}` } : {}),
         channel: "analysis",
         exposure: "public_reasoning",
         provenance: { provider: "opencode", nativeEvent: "reasoning" }
@@ -195,12 +195,46 @@ function providerTimestamp(value: unknown): number | undefined {
  * without an explicit terminal, so `onSuccess` synthesizes the closing
  * message.update/run.completed; run.failed is emitted inline by the normalizer.
  */
+export class OpenCodeEventNormalizer {
+  readonly #text = new Map<string, string>();
+  readonly #tools = new Set<string>();
+
+  normalize(native: OpenCodeNativeEvent): CanonicalEvent[] {
+    return normalizeOpenCodeEvent(native).flatMap(event => {
+      if (event.type === "message.delta" && typeof event.payload.messageId === "string" && typeof event.payload.text === "string") {
+        const id = event.payload.messageId;
+        const previous = this.#text.get(id);
+        const text = event.payload.text;
+        this.#text.set(id, text);
+        if (previous === undefined) return [event];
+        if (previous === text) return [];
+        if (text.startsWith(previous)) return [{ ...event, payload: { ...event.payload, text: text.slice(previous.length) } }];
+        return [{ protocolVersion: 2, type: "message.update", payload: { ...event.payload, status: "streaming" } }];
+      }
+      if (event.type === "tool_call.create") {
+        const id = event.payload.id;
+        if (this.#tools.has(id)) {
+          const output = (native.part ?? native).state?.output;
+          return output === undefined ? [] : [{ protocolVersion: 2, type: "tool_call.delta", payload: { id, outputSnapshot: typeof output === "string" ? output : JSON.stringify(output) } }];
+        }
+        this.#tools.add(id);
+      }
+      return [event];
+    });
+  }
+}
+
 export function createOpenCodeAdapter({ command = "opencode" }: { command?: string } = {}) {
-  return createJsonCliAdapter<OpenCodeNativeEvent>({
+  const options: Parameters<typeof createJsonCliAdapter<OpenCodeNativeEvent>>[0] = {
     metadata: { type: "opencode", capabilities: ["session.serialize", "tool.canonical", capabilities.MCP_DYNAMIC] },
-    probe: () => probeCommand(command), buildCommand: req => buildOpenCodeCommand(req, command), normalize: normalizeOpenCodeEvent,
-    onSuccess: () => [{ protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "completed" } }, { protocolVersion: 2, type: "run.completed", payload: {} }]
-  });
+    probe: () => probeCommand(command), buildCommand: (req: InvokeRequest) => buildOpenCodeCommand(req, command), normalize: normalizeOpenCodeEvent,
+    onSuccess: (): CanonicalEvent[] => [{ protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "completed" } }, { protocolVersion: 2, type: "run.completed", payload: {} }]
+  };
+  const adapter = createJsonCliAdapter<OpenCodeNativeEvent>(options);
+  return { ...adapter, async *invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
+    const normalizer = new OpenCodeEventNormalizer();
+    yield* createJsonCliAdapter<OpenCodeNativeEvent>({ ...options, normalize: native => normalizer.normalize(native) }).invoke(request, context);
+  } };
 }
 
 /** Convert the canonical transport-neutral shape to OpenCode's native config. */
