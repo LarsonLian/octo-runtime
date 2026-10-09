@@ -601,3 +601,38 @@ test("RPC interaction responses resume the same active ask invocation", { timeou
   });
   assert.equal(remaining[1].payload.text, "accepted");
 });
+
+test("RPC keeps AbortSignal local and cancels both pending ACK and active streams", async t => {
+  for (const acknowledged of [false, true]) {
+    const input = new PassThrough();
+    const frames = [];
+    const output = new Writable({ write(chunk, _encoding, callback) { frames.push(JSON.parse(chunk.toString())); callback(); } });
+    const client = new AdapterHostRpcClient({ input, output });
+    t.after(() => { client.close(); input.destroy(); output.destroy(); });
+    const controller = new AbortController();
+    const reason = new Error("shared run deadline");
+    const iterator = client.invoke("fixture", { ...request, invocationId: "abort-" + acknowledged, signal: controller.signal });
+    const pending = iterator.next();
+    assert.equal(Object.hasOwn(frames[0].params.request, "signal"), false);
+    if (acknowledged) {
+      input.write(JSON.stringify({ jsonrpc: "2.0", id: frames[0].id, result: { invocationId: request.invocationId } }) + "\n");
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    controller.abort(reason);
+    await assert.rejects(pending, error => error === reason);
+    const cancellation = frames.find(frame => frame.method === "cancel");
+    assert.equal(cancellation.params.invocationId, "abort-" + acknowledged);
+    input.write(JSON.stringify({ jsonrpc: "2.0", id: cancellation.id, result: { cancelled: true } }) + "\n");
+    assert.deepEqual(await iterator.next(), { value: undefined, done: true });
+  }
+});
+
+test("pre-aborted RPC invocation sends no Provider command", async t => {
+  const input = new PassThrough(); const frames = [];
+  const output = new Writable({ write(chunk, _encoding, callback) { frames.push(JSON.parse(chunk.toString())); callback(); } });
+  const client = new AdapterHostRpcClient({ input, output });
+  t.after(() => { client.close(); input.destroy(); output.destroy(); });
+  const controller = new AbortController(); controller.abort(new Error("cancelled before dispatch"));
+  await assert.rejects(client.invoke("fixture", { ...request, signal: controller.signal }).next(), /cancelled before dispatch/);
+  assert.deepEqual(frames, []);
+});

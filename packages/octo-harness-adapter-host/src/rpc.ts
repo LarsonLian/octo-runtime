@@ -241,11 +241,18 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
   }
 
   /** Send an ordinary JSON-RPC request and await the matching response by random ID. */
-  request<T = unknown>(method: string, params: JsonRecord = {}): Promise<T> {
+  request<T = unknown>(method: string, params: JsonRecord = {}, signal?: AbortSignal): Promise<T> {
     if (this.#closedError) return Promise.reject(this.#closedError);
+    if (signal?.aborted) return Promise.reject(abortError(signal));
     const id = randomUUID();
     const promise = new Promise<unknown>((resolve, reject) => {
-      this.#pending.set(id, { resolve, reject });
+      const cleanup = (): void => { signal?.removeEventListener("abort", onAbort); this.#pending.delete(id); };
+      const onAbort = (): void => { cleanup(); reject(abortError(signal!)); };
+      this.#pending.set(id, {
+        resolve: value => { cleanup(); resolve(value); },
+        reject: error => { cleanup(); reject(error); }
+      });
+      signal?.addEventListener("abort", onAbort, { once: true });
     });
     this.#send({ jsonrpc: "2.0", id, method, params });
     return promise as Promise<T>;
@@ -279,17 +286,29 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
 
   /** Await the invoke ACK first, then keep yielding this invocation's event notifications until done. */
   async *invoke(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
+    const { signal, ...wireRequest } = request;
+    if (signal?.aborted) throw abortError(signal);
     const queue = new AsyncQueue<CanonicalEvent>();
     this.#invocations.set(request.invocationId, queue);
+    // AbortSignal 只留在本进程；跨进程发送明确的 cancel RPC，不能序列化成空对象。
+    const onAbort = (): void => {
+      queue.close(abortError(signal!));
+      void this.request("cancel", { invocationId: request.invocationId, reason: "caller_aborted" }, AbortSignal.timeout(2000)).catch(() => undefined);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
     try {
-      await this.request("invoke", { adapterType, request });
-      for await (const event of queue) yield event;
-    } catch (error) {
+      await this.request("invoke", { adapterType, request: wireRequest }, signal);
+      for await (const event of queue) {
+        if (signal?.aborted) throw abortError(signal);
+        yield event;
+      }
+    } finally {
+      signal?.removeEventListener("abort", onAbort);
       this.#invocations.delete(request.invocationId);
       queue.close();
-      throw error;
     }
   }
+
 }
 
 function asRpcMessage(value: unknown): RpcMessage {
@@ -315,3 +334,5 @@ function errorMessage(error: unknown): string {
 function errorCode(error: unknown): number {
   return isRecord(error) && typeof error.code === "number" ? error.code : -32000;
 }
+
+function abortError(signal: AbortSignal): Error { return signal.reason instanceof Error ? signal.reason : new Error("adapter invocation aborted"); }
