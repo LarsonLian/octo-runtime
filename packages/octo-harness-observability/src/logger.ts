@@ -186,6 +186,21 @@ export class LocalObservability {
   /** Record one provider milestone under its trusted invocation identity. */
   async observeProvider(identity: ObservationIdentity, observation: ProviderObservation): Promise<CaptureReceipt> {
     const captureId = `cap_${randomUUID()}`;
+    if (observation.event === "provider.stage.completed") {
+      const data = observation.data ?? {};
+      this.log({
+        ...identity,
+        level: "info", scope: "provider.timing", event: observation.event,
+        message: "provider stage finished",
+        durationMs: typeof data.duration_ms === "number" ? data.duration_ms : undefined,
+        data: {
+          stage: data.stage, outcome: data.outcome,
+          clock: "runtime_monotonic",
+          ...(observation.rpcMethod ? { rpc_method: observation.rpcMethod } : {})
+        }
+      });
+      return { captureId, state: "disabled", complete: true };
+    }
     const isInput = observation.event === "provider.input";
     const enabled = this.#options.fileLog && (
       (isInput && this.#options.captureProviderIo !== "off")
@@ -842,6 +857,7 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 
 function providerObservationMessage(event: ProviderObservation["event"]): string {
   switch (event) {
+    case "provider.stage.completed": return "provider stage finished";
     case "provider.input": return "provider input captured";
     case "provider.dispatch.written": return "provider input written";
     case "provider.dispatch.acknowledged": return "provider acknowledged request";

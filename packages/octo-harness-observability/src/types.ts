@@ -58,6 +58,7 @@ export type ProviderCarrier = ProviderCarrierBytes | ProviderCarrierJson;
 /** Ordered evidence emitted at the local provider boundary. */
 export interface ProviderObservation {
   event:
+    | "provider.stage.completed"
     | "provider.input"
     | "provider.dispatch.written"
     | "provider.dispatch.acknowledged"

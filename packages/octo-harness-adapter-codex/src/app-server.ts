@@ -23,6 +23,9 @@ import { createHash } from "node:crypto";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 import {
   observeBestEffort,
+  createProviderStageTimer,
+  measureProviderStage,
+  isPublicProviderProgress,
   observeProviderOutput,
   sanitizePublicValue,
   type AdapterInvocationContext,
@@ -136,6 +139,11 @@ export async function* runCodexAppServerTurn({
 }): AsyncGenerator<CanonicalEvent> {
   const requestTimeoutMs = appServerRequestTimeout(request);
   const interactive = request.approvalMode !== "full_access";
+  const stage = createProviderStageTimer(context);
+  const finishInvocation = stage("invocation");
+  let finishFirstOutput: ((outcome?: string) => void) | undefined;
+  let finishFirstPublicOutput: ((outcome?: string) => void) | undefined;
+  let outcome = "interrupted";
   let client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, interactive, request, context);
   onInteractionResponder?.(response => client.respondInteraction(response));
   let terminal = false;
@@ -146,7 +154,7 @@ export async function* runCodexAppServerTurn({
 
     // Phase 1: negotiate the experimental app-server API first; no thread request is sent until initialize completes.
     try {
-      await initializeClient(client);
+      await measureProviderStage(context, "initialize", "initialize", () => initializeClient(client));
     } catch (error) {
       if (!isInitializeTimeout(error) || request.signal?.aborted) throw error;
       observeBestEffort(context, {
@@ -159,7 +167,7 @@ export async function* runCodexAppServerTurn({
       throwIfAborted(request.signal);
       client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, interactive, request, context);
       onInteractionResponder?.(response => client.respondInteraction(response));
-      await initializeClient(client);
+      await measureProviderStage(context, "initialize", "initialize", () => initializeClient(client));
     }
     client.notify("initialized");
 
@@ -201,6 +209,8 @@ export async function* runCodexAppServerTurn({
     client.setActiveThread(threadId);
 
     // Phase 3: only a successful turn/start means this turn is truly executable.
+    finishFirstOutput = stage("first_output", "turn/start");
+    finishFirstPublicOutput = stage("first_public_output", "turn/start");
     let turnResult: unknown;
     try {
       turnResult = await observedRequest({
@@ -282,6 +292,7 @@ export async function* runCodexAppServerTurn({
       }
       if (firstOutput) {
         firstOutput = false;
+        finishFirstOutput();
         // This is the first accepted provider notification after turn/start,
         // not merely the JSON-RPC response that acknowledged the request.
         observeBestEffort(context, {
@@ -301,7 +312,9 @@ export async function* runCodexAppServerTurn({
             : event.type
         }
       });
+      if (isPublicProviderProgress(event)) finishFirstPublicOutput();
       terminal ||= isTerminalEvent(event);
+      if (terminal) outcome = event.type === "run.completed" ? "completed" : event.type === "run.cancelled" ? "cancelled" : "failed";
       yield event;
       if (terminal) break;
     }
@@ -315,6 +328,7 @@ export async function* runCodexAppServerTurn({
       );
     }
   } catch (error) {
+    outcome = request.signal?.aborted ? "cancelled" : "failed";
     if (!terminal) {
       // AbortSignal takes priority in deciding cancelled semantics; all other errors project uniformly to provider run.failed.
       if (request.signal?.aborted) {
@@ -338,6 +352,9 @@ export async function* runCodexAppServerTurn({
       }
     }
   } finally {
+    finishFirstOutput?.(request.signal?.aborted ? "cancelled" : "no_output");
+    finishFirstPublicOutput?.(request.signal?.aborted ? "cancelled" : "no_output");
+    finishInvocation(outcome);
     // close() handles RPC/stdio/process; spec.cleanup handles any caller-owned resources.
     onInteractionResponder?.(undefined);
     await client.close();
@@ -403,6 +420,8 @@ async function observedRequest({
     ...(providerSessionId ? { providerSessionId } : {}),
     carrier: { kind: "json_params", content: { method, params: imageSafeParams(params) } }
   });
+  const stage = method === "thread/resume" ? "session_restore" : method === "thread/start" ? "session_create" : method === "turn/start" ? "turn_start" : method;
+  const finishRequest = createProviderStageTimer(context)(stage, method);
   const response = client.request(method, params, undefined, () => {
     // The callback is reached only after Node accepts the complete NDJSON frame.
     observeBestEffort(context, {
@@ -414,6 +433,7 @@ async function observedRequest({
   }, requestId);
   try {
     const result = await response;
+    finishRequest();
     // A correlated response is the app-server's protocol-level acknowledgement;
     // streamed model output may arrive later as independent notifications.
     observeBestEffort(context, {
@@ -424,6 +444,7 @@ async function observedRequest({
     });
     return result;
   } catch (error) {
+    finishRequest("failed");
     observeBestEffort(context, {
       event: "provider.dispatch.failed",
       rpcMethod: method,

@@ -157,6 +157,43 @@ export function observeBestEffort(
   void context.observe(observation).catch(() => undefined);
 }
 
+/** Stage timings use a monotonic clock and never gate provider execution. */
+export function createProviderStageTimer(context?: AdapterInvocationContext) {
+  return (stage: string, rpcMethod?: string) => {
+    const start = performance.now();
+    let finished = false;
+    return (outcome = "completed") => {
+      if (finished) return;
+      finished = true;
+      const end = performance.now();
+      observeBestEffort(context, {
+        event: "provider.stage.completed", rpcMethod,
+        data: { stage, outcome, duration_ms: Math.max(0, end - start) }
+      });
+    };
+  };
+}
+
+export async function measureProviderStage<T>(context: AdapterInvocationContext | undefined, stage: string, rpcMethod: string,
+  operation: () => Promise<T>): Promise<T> {
+  const finish = createProviderStageTimer(context)(stage, rpcMethod);
+  try {
+    const result = await operation();
+    finish();
+    return result;
+  } catch (error) {
+    finish("failed");
+    throw error;
+  }
+}
+
+export function isPublicProviderProgress(event: CanonicalEvent): boolean {
+  if (event.type === "tool_call.create" || event.type === "tool_call.update") return true;
+  return event.type.startsWith("message.") && typeof event.payload.text === "string" && event.payload.text.length > 0
+    && (event.payload.channel !== "analysis"
+      || ["public_reasoning", "public_summary", "public_plan"].includes(String(event.payload.exposure)));
+}
+
 /**
  * Capture only provider output that the canonical privacy contract classifies
  * as public. Raw provider envelopes are intentionally excluded because they may
