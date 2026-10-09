@@ -59,3 +59,14 @@ test("native contextCompaction completion persists resumable history evidence",a
  assert.equal(events.find(e=>e.type==="session.update").payload.providerSession.sessionId,"history-thread");
  assert.equal(events.some(e=>e.type==="run.completed"),false);
 });
+
+test("Codex capacity cache matches only the selected model and requires an API key",async t=>{
+ const root=await mkdtemp(join(tmpdir(),"octo-codex-model-cache-"));t.after(()=>rm(root,{recursive:true,force:true}));
+ await writeFile(join(root,"config.toml"),'model="selected-model"\n');
+ await writeFile(join(root,"models_cache.json"),JSON.stringify({models:[{slug:"other-model",context_window:999999},{slug:"selected-model",context_window:272000,max_context_window:1000000}]}));
+ const options={codexHome:root,env:{OPENAI_API_KEY:"private-fixture"},protectedInput:"input",instructions:"",signal:AbortSignal.timeout(1000)};
+ const port=await createCodexMaterialCompactionPort(options);assert.equal(port.contextWindow,272000);assert.equal(port.capacitySource,"codex.models_cache.context_window");
+ await assert.rejects(createCodexMaterialCompactionPort({...options,model:"missing-model"}),/CAPACITY_UNAVAILABLE/);
+ await writeFile(join(root,"auth.json"),JSON.stringify({tokens:{access_token:"oauth-token-is-not-an-api-key"}}));
+ await assert.rejects(createCodexMaterialCompactionPort({...options,env:{}}),/API_KEY_UNAVAILABLE/);
+});

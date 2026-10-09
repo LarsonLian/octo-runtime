@@ -117,9 +117,18 @@ export async function createCodexMaterialCompactionPort(options: {
   // 官方模型页明确披露容量；未知模型必须由可信宿主配置，不能猜测。
   // https://developers.openai.com/api/docs/models/gpt-6.1-sol
   const documentedWindow = model === "gpt-6.1-sol" ? 1_050_000 : undefined;
-  const window = positive(config.model_context_window) ? config.model_context_window : documentedWindow;
+  let cachedWindow: number | undefined;
+  if (!positive(config.model_context_window)) {
+    try {
+      const cached = object(JSON.parse(await readFile(join(root, "models_cache.json"), { encoding: "utf8", signal: options.signal })));
+      const matches = (Array.isArray(cached.models) ? cached.models : []).map(object).filter(value => value.slug === model);
+      if (matches.length > 1) throw new Error("CONTEXT_CAPACITY_CACHE_AMBIGUOUS");
+      if (positive(matches[0]?.context_window)) cachedWindow = matches[0].context_window;
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  }
+  const window = positive(config.model_context_window) ? config.model_context_window : cachedWindow ?? documentedWindow;
   if (!window) throw new Error("CONTEXT_CAPACITY_UNAVAILABLE");
   return createResponsesMaterialCompactionPort({ model, baseUrl: typeof provider.base_url === "string" ? provider.base_url : "https://api.openai.com/v1",
-    apiKey: key, contextWindow: window, capacitySource: positive(config.model_context_window) ? "codex.config.model_context_window" : "openai.model.gpt-6.1-sol",
+    apiKey: key, contextWindow: window, capacitySource: positive(config.model_context_window) ? "codex.config.model_context_window" : cachedWindow ? "codex.models_cache.context_window" : "openai.model.gpt-6.1-sol",
     protectedInput: options.protectedInput, instructions: options.instructions });
 }

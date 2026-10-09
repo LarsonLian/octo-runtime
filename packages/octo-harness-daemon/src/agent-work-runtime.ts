@@ -47,6 +47,7 @@ import { resolveRuntimeInputImages } from "./input-images.js";
 import { AgentWorkStore } from "./agent-work-store.js";
 import { prepareRunContext, recordContextPreparation, resolveRunResources, type PreparedRunContext } from "./context-preparation.js";
 import { ContextPipeline } from "./context-pipeline.js";
+import { createClaudeMaterialCompactionPort } from "./anthropic-material-compaction.js";
 import { createCodexMaterialCompactionPort } from "./responses-material-compaction.js";
 import { compactContextMaterials, FileMaterialCompactionStore, type MaterialCompactionPort } from "./context-compaction.js";
 import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext } from "./run-context.js";
@@ -1721,12 +1722,12 @@ export class AgentWorkRuntime {
             executionEnvelope.resolved_execution_plan, signal, { runId: command.run_id, store }),
           prepareContinuity: signal => this.#prepareChannelContext(command.run_id,
             executionEnvelope, adapterTypeForContext, signal, epoch),
-          ...((this.#options.createMaterialCompactionPort || adapterTypeForContext === "codex") ? {
+          ...((this.#options.createMaterialCompactionPort || ["codex", "claude-code"].includes(adapterTypeForContext)) ? {
             prepareCompiled: async (compiled: CompiledRunContext, signal: AbortSignal): Promise<CompiledRunContext> => {
               if (!compiled.modelContent) return compiled;
               const port = this.#options.createMaterialCompactionPort
                 ? await this.#options.createMaterialCompactionPort({ envelope: executionEnvelope, compiled, signal })
-                : await createCodexMaterialCompactionPort({ model: compiled.executionPlan?.model,
+                : await (adapterTypeForContext === "claude-code" ? createClaudeMaterialCompactionPort : createCodexMaterialCompactionPort)({ model: compiled.executionPlan?.model,
                   protectedInput: executionInputText(input), instructions: compiled.controlInstructions, signal });
               const sourceRefs = Array.isArray(materialEntries) ? materialEntries.map(entry => {
                 const value = asRecord(entry);
@@ -1743,7 +1744,7 @@ export class AgentWorkRuntime {
                   runId: command.run_id, adapterType: adapterTypeForContext, message: `Material compaction ${state}` })
               });
               return { ...compiled, modelContent: compacted.material,
-                ...(port.measurementMode === "provider_native" ? { modelCapacity: { contextWindow: port.contextWindow, outputReserveTokens: port.outputReserveTokens, source: port.capacitySource ?? "trusted_host", management: "provider_native" as const } } : {}),
+                ...(port.measurementMode === "provider_native" ? { modelCapacity: { model: port.model, contextWindow: port.contextWindow, outputReserveTokens: port.outputReserveTokens, source: port.capacitySource ?? "trusted_host", management: "provider_native" as const } } : {}),
                 ...(compacted.receipt ? { materialCompaction: compacted.receipt } : {}) };
             }
           } : {}),
@@ -2587,7 +2588,7 @@ export function mapExecutionEnvelope(
         ? { providerSession: envelope.provider_session }
         : {}),
       ...(Object.keys(runtimeLimits).length > 0 ? { runtimeLimits } : {}),
-      agentConfig: { ...agentConfig, workdir }
+      agentConfig: { ...agentConfig, ...(compiled.modelCapacity?.model ? { model: compiled.modelCapacity.model } : {}), workdir }
     }
   };
 }

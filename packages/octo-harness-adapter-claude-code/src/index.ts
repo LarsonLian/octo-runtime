@@ -57,6 +57,7 @@ interface ClaudeStreamEvent {
 
 interface ClaudeNativeEvent {
   type?: string;
+  subtype?: string;
   session_id?: string;
   parent_tool_use_id?: string | null;
   event?: ClaudeStreamEvent;
@@ -155,6 +156,7 @@ export async function buildClaudeCommand(
  * sharing one instance globally would cross-wire concurrent Runs.
  */
 export class ClaudeEventNormalizer {
+  #compactionNumber = 0;
   /** Once a partial arrives, later assistant snapshots and result text are treated as duplicate snapshots. */
   #sawPartialMessages = false;
   /** Claude repeats system/status on every tool turn; publish the session id to Core only once per session. */
@@ -177,6 +179,14 @@ export class ClaudeEventNormalizer {
 
   /** Return canonical events in stdout arrival order; this method neither buffers a whole turn nor reorders events. */
   normalize(native: ClaudeNativeEvent): CanonicalEvent[] {
+    // compact_boundary 是历史已被 Provider 压缩的确认；不得据此重发当前用户 turn。
+    if (native.type === "system" && native.subtype === "compact_boundary" && native.session_id) {
+      return [{ protocolVersion: 2, type: "run.notice", payload: {
+        noticeId: `claude:compaction:${native.session_id}:${++this.#compactionNumber}`, code: "context_compacted", severity: "info", params: {}
+      } }, { protocolVersion: 2, type: "session.update", payload: {
+        providerSession: { sessionId: native.session_id, resumable: true, resumeOutcome: "compacted" }
+      } }];
+    }
     if (native.type === "system" && native.session_id) {
       if (native.session_id === this.#publishedSessionId) return [];
       this.#publishedSessionId = native.session_id;

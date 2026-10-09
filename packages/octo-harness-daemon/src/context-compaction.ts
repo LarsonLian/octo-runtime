@@ -13,6 +13,7 @@ export interface CompactionReceipt {
   inputHash: string;
   sourceDigest: string;
   model: string;
+  inputTokenCountKind?: "exact" | "lower_bound";
   measurementMode?: "provider_native";
   capacitySource?: string;
   summary: string;
@@ -29,9 +30,10 @@ export interface MaterialCompactionPort {
   outputReserveTokens: number;
   summaryInputLimit: number;
   toolsDisabled: true;
+  inputTokenCountKind?: "exact" | "lower_bound";
   measurementMode?: "provider_native";
   capacitySource?: string;
-  /** 精确计量显式输入；provider_native 模式由 Provider 原生管理隐藏指令、工具及历史。 */
+  /** 计量显式输入；原生容量拒绝须标记 lower_bound，隐藏指令、工具及历史由 Provider 原生管理。 */
   measureInputTokens(material: string, signal: AbortSignal): Promise<number>;
   countTokens(text: string, signal: AbortSignal): Promise<number>;
   summarize(text: string, targetTokens: number, signal: AbortSignal): Promise<string>;
@@ -107,6 +109,7 @@ export async function compactContextMaterials(input: MaterialCompactionInput): P
   const cached = await call(() => store.load(input.runId, workSignal));
   if (cached) return restore(cached);
   const totalTokens = tokenCount(await call(() => port.measureInputTokens(input.material, workSignal)));
+  const inputTokenCountKind = port.inputTokenCountKind ?? "exact";
   if (totalTokens <= allowed) return { material: input.material };
   const protectedTokens = tokenCount(await call(() => port.measureInputTokens("", workSignal)));
   if (protectedTokens >= allowed || !input.material) throw new Error("CONTEXT_PROTECTED_INPUT_TOO_LARGE");
@@ -164,7 +167,7 @@ export async function compactContextMaterials(input: MaterialCompactionInput): P
       const after = tokenCount(await call(() => port.measureInputTokens(rendered, workSignal)));
       if (after > allowed) continue;
       const receipt: CompactionReceipt = { version: MATERIAL_COMPACTION_VERSION, inputHash, sourceDigest,
-        model: port.model, ...(port.measurementMode ? { measurementMode: port.measurementMode } : {}), ...(port.capacitySource ? { capacitySource: port.capacitySource } : {}), summary: current, outputDigest: digest(current), calls, inputTokens: totalTokens, outputTokens: after };
+        model: port.model, inputTokenCountKind, ...(port.measurementMode ? { measurementMode: port.measurementMode } : {}), ...(port.capacitySource ? { capacitySource: port.capacitySource } : {}), summary: current, outputDigest: digest(current), calls, inputTokens: totalTokens, outputTokens: after };
       const saved = await call(() => store.save(input.runId, receipt, workSignal));
       const result = await restore(saved);
       progress("completed");

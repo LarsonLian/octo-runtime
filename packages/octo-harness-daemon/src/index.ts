@@ -16,3 +16,4 @@ export * from "./managed-profile.js";
 export { RUNTIME_RUN_CONTRACT } from "@mininglamp-oss/octo-harness-protocol";
 
 export * from "./responses-material-compaction.js";
+export * from "./anthropic-material-compaction.js";
