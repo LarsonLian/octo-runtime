@@ -173,7 +173,7 @@ test("approval waiting suspends idle budgets but retains the overall deadline", 
   assert.equal(deadline.controller.signal.reason.timeoutReason, "run_deadline");
 });
 
-const request = { protocolVersion: 2, invocationId:"watchdog-v2",agentSessionId:"s",runId:"r",prompt:"p",modelInput:"p",controlInstructions:"",approvalMode:"full_access",context:{schema:"octo.context-envelope/v2",items:[]},agentSource: "provisioned", agentConfig:{},workdir:process.cwd() };
+const request = { protocolVersion: 2, invocationId:"watchdog-v2",agentSessionId:"s",runId:"r",prompt:"p",modelInput:"p",controlInstructions:"",approvalMode:"full_access",context:{schema:"octo.context-envelope/v3",items:[]},agentSource: "provisioned", agentConfig:{},workdir:process.cwd() };
 test("host preserves a single pending next during activity and ignores failing diagnostic sinks", async () => {
   let calls=0; let active=0; let peak=0;
   const host = new AdapterHost({diagnosticSink(){throw new Error("sink unavailable");}});

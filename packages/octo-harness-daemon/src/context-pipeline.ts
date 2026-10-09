@@ -8,8 +8,8 @@ import type { PreparedRunContext } from "./context-preparation.js";
 import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext, type TrustedContextInstruction } from "./run-context.js";
 import type { PreparedTaskMaterials } from "./task-materials.js";
 
-export const CONTEXT_COMPILER_VERSION = "octo.context-compiler/v2" as const;
-const preparationKeys = new Set(["octo.execution/config", "octo.resources/selection", "octo.content/materials"]);
+export const CONTEXT_COMPILER_VERSION = "octo.context-compiler/v3" as const;
+const preparationKeys = new Set(["octo.execution/adapter", "octo.execution/model", "octo.execution/workspace", "octo.execution/limits", "octo.runtime/selection", "octo.security/approval_policy", "octo.resources/skills", "octo.resources/agent_plugins", "octo.resources/knowledge", "octo.resources/connectors", "octo.content/inline", "octo.content/references"]);
 const compilationKeys = new Set([...preparationKeys, "octo.control/instructions"]);
 
 export type ContextPipelineReceipt = ContextPreparationReceipt;
@@ -25,7 +25,8 @@ const stages: readonly ContextStageDefinition[] = [
   { id: "continuity", dependsOn: ["materials"] }
 ];
 const preparationOwners: Readonly<Record<string, ContextPreparationStage>> = {
-  "octo.execution/config": "capabilities", "octo.resources/selection": "capabilities", "octo.content/materials": "materials"
+  "octo.execution/adapter": "capabilities", "octo.execution/model": "capabilities", "octo.execution/workspace": "capabilities", "octo.execution/limits": "capabilities", "octo.runtime/selection": "capabilities", "octo.security/approval_policy": "capabilities",
+  "octo.resources/skills": "capabilities", "octo.resources/agent_plugins": "capabilities", "octo.resources/knowledge": "capabilities", "octo.resources/connectors": "capabilities", "octo.content/inline": "materials", "octo.content/references": "materials"
 };
 export interface ContextConsumption { key: string; stage: "prepare" | "compile"; processor: string }
 export interface ContextPipelineOptions {

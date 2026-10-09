@@ -31,7 +31,7 @@ function rpcInvokeRequest(overrides = {}) {
     modelInput: "work",
     controlInstructions: "",
     workdir: process.cwd(),
-    context: { schema: "octo.context-envelope/v2", items: [] },
+    context: { schema: "octo.context-envelope/v3", items: [] },
     runMetadata: { profile: "work", runtimeId: "runtime-work" },
     approvalMode: "full_access",
     agentSource: "provisioned", agentConfig: {},
@@ -144,7 +144,7 @@ test("operational logs redact credentials and restricted provider evidence is op
       ["receive", "run-1", "inv-1", "session-1", "codex"]
     ]);
     assert.deepEqual(rpcFrames[0].data.frame.params.request.runMetadata, { profile: "work", runtimeId: "runtime-work" });
-    assert.deepEqual(rpcFrames[0].data.frame.params.request.context, { schema: "octo.context-envelope/v2", items: [] });
+    assert.deepEqual(rpcFrames[0].data.frame.params.request.context, { schema: "octo.context-envelope/v3", items: [] });
     assert.equal(rpcFrames[0].data.frame.params.apiKey, undefined);
     assert.doesNotMatch(JSON.stringify(sensitive), /private-chain-of-thought-must-not-be-stored|must-not-leak|also-secret|rpc-secret|provider-secret/);
     const reasoningFrame = sensitive.find(record =>

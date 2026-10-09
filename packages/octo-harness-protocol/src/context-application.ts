@@ -5,8 +5,8 @@ export function assertContextApplicationEvidence(value: unknown): asserts value 
   const row = value as Record<string, unknown>;
   const required = ["schema", "compiler_version", "catalog_version", "context_hash", "compiled_hash", "run_id", "lease_id", "fencing_token", "adapter_type", "provider_session_id", "provider_ack", "loaded_skills"];
   if (Object.keys(row).length !== required.length || required.some(key => !(key in row))
-    || row.schema !== "octo.context-application/v1" || row.compiler_version !== "octo.context-compiler/v2"
-    || row.catalog_version !== "octo.context-catalog/v2" || row.adapter_type !== "codex" || row.provider_ack !== "turn/start"
+    || row.schema !== "octo.context-application/v1" || row.compiler_version !== "octo.context-compiler/v3"
+    || row.catalog_version !== "octo.context-catalog/v3" || row.adapter_type !== "codex" || row.provider_ack !== "turn/start"
     || ["context_hash", "compiled_hash"].some(key => typeof row[key] !== "string" || !/^sha256:[a-f0-9]{64}$/.test(row[key]))
     || ["run_id", "lease_id", "provider_session_id"].some(key => typeof row[key] !== "string" || !row[key])
     || !Number.isSafeInteger(row.fencing_token) || Number(row.fencing_token) <= 0

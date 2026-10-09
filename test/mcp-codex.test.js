@@ -35,7 +35,7 @@ const request = { protocolVersion: 2,
   modelInput: "call the tool",
   workdir: process.cwd(),
   controlInstructions: "use the team tool",
-  context: { schema: "octo.context-envelope/v2", items: [] },
+  context: { schema: "octo.context-envelope/v3", items: [] },
   approvalMode: "full_access",
   agentSource: "provisioned", agentConfig: {},
   mcpServers: {
@@ -82,10 +82,9 @@ test("Codex rejects ambiguous stdio environment forwarding", () => {
 function preparedTaskRequest() {
   return {
     ...structuredClone(request),
-    context: { schema: "octo.context-envelope/v2", items: [
-      { namespace: "octo.execution", name: "config", payload: { approval_policy: { mode: "full_access" } } },
-      { namespace: "octo.content", name: "materials", payload: { entries: [{ type: "reference",
-        resource_ref: "task:task-1/materials", resolver: "mcp",
+    context: { schema: "octo.context-envelope/v3", items: [
+      { namespace: "octo.security", name: "approval_policy", payload: { mode: "full_access" } },
+      { namespace: "octo.content", name: "references", payload: { entries: [{ resource_ref: "task:task-1/materials", resolver: "mcp",
         locator: { server_ref: "octo_task", tool: "task_get_materials" },
         params: { task_id: "task-1", handler_epoch: 3 }
       }] } }

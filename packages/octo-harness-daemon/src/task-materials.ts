@@ -120,8 +120,8 @@ export async function prepareTaskMaterials(context: ContextEnvelope, plan: Resol
 }): Promise<PreparedTaskMaterials | undefined> {
   signal.throwIfAborted();
   assertContextEnvelope(context);
-  const entries = contextItem(context, "octo.content", "materials")?.payload.entries;
-  const resources = Array.isArray(entries) ? entries.filter(entry => object(entry).type === "reference") : [];
+  const entries = contextItem(context, "octo.content", "references")?.payload.entries;
+  const resources = Array.isArray(entries) ? entries : [];
   if (!Array.isArray(resources) || resources.length === 0) return undefined;
   if (resources.length !== 1) throw new TypeError("TASK_MATERIAL_SCOPE_INVALID");
   const resource = object(resources[0]);

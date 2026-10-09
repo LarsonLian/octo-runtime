@@ -42,7 +42,7 @@ import {
   tryParseOpenClawTranscriptLine
 } from "@mininglamp-oss/octo-harness-adapter-openclaw";
 
-const request = { protocolVersion: 2, invocationId: "inv-1", agentSessionId: "session-1", runId: "run-1", prompt: "work", modelInput: "work", workdir: process.cwd(), context: { schema: "octo.context-envelope/v2", items: [] }, controlInstructions: "CONTROL", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} };
+const request = { protocolVersion: 2, invocationId: "inv-1", agentSessionId: "session-1", runId: "run-1", prompt: "work", modelInput: "work", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "CONTROL", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} };
 
 function acpPermissionFixture(createAdapter, options) {
   let nextRequestId = 1;

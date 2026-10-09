@@ -40,10 +40,10 @@ const executionPlan = {
 
 const contentItems = [{
   namespace: "octo.content",
-  name: "materials",
+  name: "inline",
   payload: { entries: [
-    { type: "inline",  resource_ref: "octo://messages/previous", text: "Lin: Use the existing adapter." },
-    { type: "inline",  resource_ref: "octo://messages/quoted", text: "Ada: The failing case is reset." }
+    { resource_ref: "octo://messages/previous", text: "Lin: Use the existing adapter." },
+    { resource_ref: "octo://messages/quoted", text: "Ada: The failing case is reset." }
   ] }
 }];
 
@@ -200,8 +200,8 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
   assert.equal(mapped.request.runMetadata.agentRevisionId, "revision-1");
   assert.equal(mapped.request.context.agentRevisionId, undefined);
   assert.equal(Object.hasOwn(mapped.request, "appendInstructions"), false);
-  mapped.request.context.items.find(item => item.name === "config").payload.model.id = "changed";
-  assert.equal(envelope.effective_context.items.find(item => item.name === "config").payload.model.id, "gpt-5");
+  mapped.request.context.items.find(item => item.name === "model").payload.selection.id = "changed";
+  assert.equal(envelope.effective_context.items.find(item => item.name === "model").payload.selection.id, "gpt-5");
   assert.deepEqual(mapped.request.runtimeLimits, {
     firstFrameTimeoutMs: 60_000,
     modelIdleTimeoutMs: 120_000,
@@ -241,11 +241,11 @@ test("execution envelope rejects schema 1/2 and missing frozen contract fields",
 
 test("execution envelope enforces frozen runtime selection and matching effective Context", () => {
   const source = structuredClone(envelope);
-  source.effective_context.items.find(item => item.name === "config").payload.runtime = { mode: "explicit", runtime_id: "runtime-1" };
+  source.effective_context.items.push({ namespace: "octo.runtime", name: "selection", payload: { mode: "explicit", runtime_id: "runtime-1" } });
   assert.doesNotThrow(() => mapExecutionEnvelope(source));
-  source.effective_context.items.find(item => item.name === "config").payload.runtime.runtime_id = "other-runtime";
+  source.effective_context.items.find(item => item.namespace === "octo.runtime").payload.runtime_id = "other-runtime";
   assert.throws(() => mapExecutionEnvelope(source), /RUNTIME_SELECTION_CONTEXT_MISMATCH/);
-  source.effective_context.items.find(item => item.name === "config").payload.runtime = { mode: "binding" };
+  source.effective_context.items.find(item => item.namespace === "octo.runtime").payload = { mode: "binding" };
   assert.throws(() => mapExecutionEnvelope(source), /CONTEXT_SCHEMA_INVALID/);
   for (const selection of [{}, { ...envelope.resolved_runtime_selection, failover: "binding" }]) {
     assert.throws(() => mapExecutionEnvelope({ ...envelope, resolved_runtime_selection: selection }), /RESOLVED_RUNTIME_SELECTION_INVALID/);
@@ -304,7 +304,7 @@ for (const [name, overrides] of [
 test("frozen execution selection requires adapter, fixed workspace and approval Context items", () => {
   for (const name of ["adapter", "workspace", "approval_policy"]) {
     const changed = structuredClone(envelope);
-    delete changed.effective_context.items.find(item => item.name === "config").payload[name];
+    changed.effective_context.items = changed.effective_context.items.filter(item => item.name !== name);
     assert.throws(() => mapExecutionEnvelope(changed), /CONTEXT_PLAN_MISMATCH/, name);
   }
 });
@@ -379,7 +379,7 @@ test("typed control instructions remain separate from untrusted model selections
     ...envelope,
     effective_context: executionContext(executionPlan, [
       { namespace: "octo.control", name: "instructions", payload: { entries: instructions } },
-      { namespace: "octo.content", name: "materials", payload: { entries: [{ type: "inline",  resource_ref: "octo://messages/untrusted", text: selectedText }] } }
+      { namespace: "octo.content", name: "inline", payload: { entries: [{ resource_ref: "octo://messages/untrusted", text: selectedText }] } }
     ])
   };
   const { request } = mapExecutionEnvelope(source);
@@ -412,7 +412,7 @@ test("registered unresolved resources fail at the compiler rather than silently 
     const source = {
       ...envelope,
       effective_context: executionContext(executionPlan, [{
-        namespace: "octo.content", name: "materials", payload: { entries: [{ type: "reference",  resource_ref: "octo://resources/unresolved", resolver, locator }] }
+        namespace: "octo.content", name: "references", payload: { entries: [{ resource_ref: "octo://resources/unresolved", resolver, locator }] }
       }])
     };
     if (resolver === "mcp") assert.doesNotThrow(() => assertContextEnvelope(source.effective_context), resolver);
@@ -425,7 +425,7 @@ test("reference-only selections cannot masquerade as resolved model content", ()
   assert.throws(() => mapExecutionEnvelope({
     ...envelope,
     effective_context: executionContext(executionPlan, [{
-      namespace: "octo.content", name: "materials", payload: { entries: [{ type: "inline",  resource_ref: "octo://resources/unresolved" }] }
+      namespace: "octo.content", name: "inline", payload: { entries: [{ resource_ref: "octo://resources/unresolved" }] }
     }])
   }), /CONTEXT_SCHEMA_INVALID/);
 });

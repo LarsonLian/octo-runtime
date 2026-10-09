@@ -1,22 +1,30 @@
 [
+  {"name":"model-reasoning-inherits-selection","configuration":{"defaults":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"model","payload":{"selection":{"id":"default-model"},"reasoning":{"effort":"low"}}}]},"mandatory":{"schema":"octo.context-envelope/v3","items":[]}},"request":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"model","payload":{"reasoning":{"effort":"high"}}}]},"expected":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"model","payload":{"selection":{"id":"default-model"},"reasoning":{"effort":"high"}}}]}},
+  {"name":"mandatory-model-does-not-lock-reasoning","configuration":{"defaults":{"schema":"octo.context-envelope/v3","items":[]},"mandatory":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"model","payload":{"selection":{"id":"fixed-model"}}}]}},"request":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"model","payload":{"reasoning":{"effort":"high"}}}]},"expected":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"model","payload":{"selection":{"id":"fixed-model"},"reasoning":{"effort":"high"}}}]}},
+  {"name":"model-provider-default-replaces-entire-selection","configuration":{"defaults":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"model","payload":{"selection":{"id":"old"},"reasoning":{"effort":"low"}}}]},"mandatory":{"schema":"octo.context-envelope/v3","items":[]}},"request":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"model","payload":{"selection":{"use_provider_default":true}}}]},"expected":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"model","payload":{"selection":{"use_provider_default":true},"reasoning":{"effort":"low"}}}]}},
+  {"name":"workspace-atomic-replacement","configuration":{"defaults":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"workspace","payload":{"mode":"fixed","path":"/old"}}]},"mandatory":{"schema":"octo.context-envelope/v3","items":[]}},"request":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"workspace","payload":{"mode":"random"}}]},"expected":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"workspace","payload":{"mode":"random"}}]}},
+  {"name":"adapter-atomic-replacement","configuration":{"defaults":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"adapter","payload":{"type":"openclaw","provider_agent_id":"main"}}]},"mandatory":{"schema":"octo.context-envelope/v3","items":[]}},"request":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"adapter","payload":{"type":"codex"}}]},"expected":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"adapter","payload":{"type":"codex"}}]}},
+  {"name":"persistent-inline-forbidden","configuration":{"defaults":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.content","name":"inline","payload":{"entries":[{"text":"request only"}]}}]},"mandatory":{"schema":"octo.context-envelope/v3","items":[]}},"request":{"schema":"octo.context-envelope/v3","items":[]},"error":"CONTEXT_CONFIGURATION_TYPE_FORBIDDEN"},
+  {"name":"reference-request-replaces-default-by-identity","configuration":{"defaults":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.content","name":"references","payload":{"entries":[{"resource_ref":"task:1","resolver":"mcp","locator":{"server_ref":"octo_task","tool":"task_get_materials"},"params":{"expected_version":1}}]}}]},"mandatory":{"schema":"octo.context-envelope/v3","items":[]}},"request":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.content","name":"references","payload":{"entries":[{"resource_ref":"task:1","resolver":"mcp","locator":{"server_ref":"octo_task","tool":"task_get_materials"},"params":{"expected_version":2}}]}}]},"expected":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.content","name":"references","payload":{"entries":[{"resource_ref":"task:1","resolver":"mcp","locator":{"server_ref":"octo_task","tool":"task_get_materials"},"params":{"expected_version":2}}]}}]}},
+  {"name":"mandatory-reference-conflict","configuration":{"defaults":{"schema":"octo.context-envelope/v3","items":[]},"mandatory":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.content","name":"references","payload":{"entries":[{"resource_ref":"task:1","resolver":"mcp","locator":{"server_ref":"octo_task","tool":"task_get_materials"},"params":{"expected_version":1}}]}}]}},"request":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.content","name":"references","payload":{"entries":[{"resource_ref":"task:1","resolver":"mcp","locator":{"server_ref":"octo_task","tool":"task_get_materials"},"params":{"expected_version":2}}]}}]},"error":"CONTEXT_MANDATORY_CONFLICT"},
   {
     "name": "empty",
     "configuration": {
       "defaults": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": []
       },
       "mandatory": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": []
       }
     },
     "request": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": []
     },
     "expected": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": []
     }
   },
@@ -24,13 +32,13 @@
     "name": "request-overrides-default",
     "configuration": {
       "defaults": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": [
           {
             "namespace": "octo.execution",
-            "name": "config",
+            "name": "model",
             "payload": {
-              "model": {
+              "selection": {
                 "id": "old"
               }
             }
@@ -38,18 +46,18 @@
         ]
       },
       "mandatory": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": []
       }
     },
     "request": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": [
         {
           "namespace": "octo.execution",
-          "name": "config",
+          "name": "model",
           "payload": {
-            "model": {
+            "selection": {
               "id": "new"
             }
           }
@@ -57,13 +65,13 @@
       ]
     },
     "expected": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": [
         {
           "namespace": "octo.execution",
-          "name": "config",
+          "name": "model",
           "payload": {
-            "model": {
+            "selection": {
               "id": "new"
             }
           }
@@ -75,17 +83,17 @@
     "name": "mandatory-model-conflict",
     "configuration": {
       "defaults": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": []
       },
       "mandatory": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": [
           {
             "namespace": "octo.execution",
-            "name": "config",
+            "name": "model",
             "payload": {
-              "model": {
+              "selection": {
                 "id": "fixed"
               }
             }
@@ -94,13 +102,13 @@
       }
     },
     "request": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": [
         {
           "namespace": "octo.execution",
-          "name": "config",
+          "name": "model",
           "payload": {
-            "model": {
+            "selection": {
               "id": "other"
             }
           }
@@ -113,57 +121,51 @@
     "name": "mandatory-runtime-subset",
     "configuration": {
       "defaults": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": []
       },
       "mandatory": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": [
           {
-            "namespace": "octo.execution",
-            "name": "config",
+            "namespace": "octo.runtime",
+            "name": "selection",
             "payload": {
-              "runtime": {
-                "mode": "candidates",
-                "runtime_ids": [
-                  "device-a",
-                  "device-b"
-                ],
-                "strategy": "preferred_failover",
-                "offline_behavior": "wait"
-              }
+              "mode": "candidates",
+              "runtime_ids": [
+                "device-a",
+                "device-b"
+              ],
+              "strategy": "preferred_failover",
+              "offline_behavior": "wait"
             }
           }
         ]
       }
     },
     "request": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": [
         {
-          "namespace": "octo.execution",
-          "name": "config",
+          "namespace": "octo.runtime",
+          "name": "selection",
           "payload": {
-            "runtime": {
-              "mode": "explicit",
-              "runtime_id": "device-b"
-            }
+            "mode": "explicit",
+            "runtime_id": "device-b"
           }
         }
       ]
     },
     "expected": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": [
         {
-          "namespace": "octo.execution",
-          "name": "config",
+          "namespace": "octo.runtime",
+          "name": "selection",
           "payload": {
-            "runtime": {
-              "mode": "explicit",
-              "runtime_id": "device-b",
-              "offline_behavior": "wait"
-            }
+            "mode": "explicit",
+            "runtime_id": "device-b",
+            "offline_behavior": "wait"
           }
         }
       ]
@@ -173,41 +175,37 @@
     "name": "mandatory-runtime-outside",
     "configuration": {
       "defaults": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": []
       },
       "mandatory": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": [
           {
-            "namespace": "octo.execution",
-            "name": "config",
+            "namespace": "octo.runtime",
+            "name": "selection",
             "payload": {
-              "runtime": {
-                "mode": "candidates",
-                "runtime_ids": [
-                  "device-a",
-                  "device-b"
-                ],
-                "strategy": "preferred_failover",
-                "offline_behavior": "wait"
-              }
+              "mode": "candidates",
+              "runtime_ids": [
+                "device-a",
+                "device-b"
+              ],
+              "strategy": "preferred_failover",
+              "offline_behavior": "wait"
             }
           }
         ]
       }
     },
     "request": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": [
         {
-          "namespace": "octo.execution",
-          "name": "config",
+          "namespace": "octo.runtime",
+          "name": "selection",
           "payload": {
-            "runtime": {
-              "mode": "explicit",
-              "runtime_id": "device-c"
-            }
+            "mode": "explicit",
+            "runtime_id": "device-c"
           }
         }
       ]
@@ -218,42 +216,38 @@
     "name": "mandatory-offline-conflict",
     "configuration": {
       "defaults": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": []
       },
       "mandatory": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": [
           {
-            "namespace": "octo.execution",
-            "name": "config",
+            "namespace": "octo.runtime",
+            "name": "selection",
             "payload": {
-              "runtime": {
-                "mode": "candidates",
-                "runtime_ids": [
-                  "device-a",
-                  "device-b"
-                ],
-                "strategy": "preferred_failover",
-                "offline_behavior": "wait"
-              }
+              "mode": "candidates",
+              "runtime_ids": [
+                "device-a",
+                "device-b"
+              ],
+              "strategy": "preferred_failover",
+              "offline_behavior": "wait"
             }
           }
         ]
       }
     },
     "request": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": [
         {
-          "namespace": "octo.execution",
-          "name": "config",
+          "namespace": "octo.runtime",
+          "name": "selection",
           "payload": {
-            "runtime": {
-              "mode": "explicit",
-              "runtime_id": "device-a",
-              "offline_behavior": "fail"
-            }
+            "mode": "explicit",
+            "runtime_id": "device-a",
+            "offline_behavior": "fail"
           }
         }
       ]
@@ -264,38 +258,34 @@
     "name": "random-workspace",
     "configuration": {
       "defaults": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": [
           {
             "namespace": "octo.execution",
-            "name": "config",
+            "name": "workspace",
             "payload": {
-              "workspace": {
-                "mode": "random"
-              }
+              "mode": "random"
             }
           }
         ]
       },
       "mandatory": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": []
       }
     },
     "request": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": []
     },
     "expected": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": [
         {
           "namespace": "octo.execution",
-          "name": "config",
+          "name": "workspace",
           "payload": {
-            "workspace": {
-              "mode": "random"
-            }
+            "mode": "random"
           }
         }
       ]
@@ -305,16 +295,15 @@
     "name": "resource-add-remove",
     "configuration": {
       "defaults": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": [
           {
             "namespace": "octo.resources",
-            "name": "selection",
+            "name": "agent_plugins",
             "payload": {
               "include": [
                 {
-                  "resource_id": "ec91fdd9-256c-475a-8611-249b50cb7eb1",
-                  "kind": "agent_plugin"
+                  "resource_id": "ec91fdd9-256c-475a-8611-249b50cb7eb1"
                 }
               ],
               "exclude": []
@@ -323,16 +312,15 @@
         ]
       },
       "mandatory": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": [
           {
             "namespace": "octo.resources",
-            "name": "selection",
+            "name": "agent_plugins",
             "payload": {
               "include": [
                 {
-                  "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
-                  "kind": "agent_plugin"
+                  "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00"
                 }
               ],
               "exclude": []
@@ -342,21 +330,19 @@
       }
     },
     "request": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": [
         {
           "namespace": "octo.resources",
-          "name": "selection",
+          "name": "agent_plugins",
           "payload": {
             "include": [
               {
-                "resource_id": "7b476727-faf3-430a-88e7-e4a514079dfe",
-                "kind": "agent_plugin"
+                "resource_id": "7b476727-faf3-430a-88e7-e4a514079dfe"
               }
             ],
             "exclude": [
               {
-                "kind": "agent_plugin",
                 "resource_id": "ec91fdd9-256c-475a-8611-249b50cb7eb1"
               }
             ]
@@ -365,20 +351,18 @@
       ]
     },
     "expected": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": [
         {
           "namespace": "octo.resources",
-          "name": "selection",
+          "name": "agent_plugins",
           "payload": {
             "include": [
               {
-                "resource_id": "7b476727-faf3-430a-88e7-e4a514079dfe",
-                "kind": "agent_plugin"
+                "resource_id": "7b476727-faf3-430a-88e7-e4a514079dfe"
               },
               {
-                "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
-                "kind": "agent_plugin"
+                "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00"
               }
             ],
             "exclude": []
@@ -391,20 +375,19 @@
     "name": "mandatory-resource-exclude",
     "configuration": {
       "defaults": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": []
       },
       "mandatory": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": [
           {
             "namespace": "octo.resources",
-            "name": "selection",
+            "name": "agent_plugins",
             "payload": {
               "include": [
                 {
-                  "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
-                  "kind": "agent_plugin"
+                  "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00"
                 }
               ],
               "exclude": []
@@ -414,16 +397,15 @@
       }
     },
     "request": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": [
         {
           "namespace": "octo.resources",
-          "name": "selection",
+          "name": "agent_plugins",
           "payload": {
             "include": [],
             "exclude": [
               {
-                "kind": "agent_plugin",
                 "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00"
               }
             ]
@@ -437,20 +419,19 @@
     "name": "resource-version-forbidden",
     "configuration": {
       "defaults": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": []
       },
       "mandatory": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": [
           {
             "namespace": "octo.resources",
-            "name": "selection",
+            "name": "agent_plugins",
             "payload": {
               "include": [
                 {
-                  "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
-                  "kind": "agent_plugin"
+                  "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00"
                 }
               ],
               "exclude": []
@@ -460,16 +441,15 @@
       }
     },
     "request": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": [
         {
           "namespace": "octo.resources",
-          "name": "selection",
+          "name": "agent_plugins",
           "payload": {
             "include": [
               {
                 "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
-                "kind": "agent_plugin",
                 "version": "2"
               }
             ],
@@ -484,15 +464,15 @@
     "name": "mandatory-component-subset",
     "configuration": {
       "defaults": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": []
       },
       "mandatory": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": [
           {
             "namespace": "octo.resources",
-            "name": "selection",
+            "name": "agent_plugins",
             "payload": {
               "include": [
                 {
@@ -500,8 +480,7 @@
                   "components": [
                     "skill:writer"
                   ],
-                  "invoke": true,
-                  "kind": "agent_plugin"
+                  "invoke": true
                 }
               ],
               "exclude": []
@@ -511,11 +490,11 @@
       }
     },
     "request": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": [
         {
           "namespace": "octo.resources",
-          "name": "selection",
+          "name": "agent_plugins",
           "payload": {
             "include": [
               {
@@ -524,8 +503,7 @@
                   "skill:writer",
                   "mcp:docs"
                 ],
-                "invoke": true,
-                "kind": "agent_plugin"
+                "invoke": true
               }
             ],
             "exclude": []
@@ -534,11 +512,11 @@
       ]
     },
     "expected": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": [
         {
           "namespace": "octo.resources",
-          "name": "selection",
+          "name": "agent_plugins",
           "payload": {
             "include": [
               {
@@ -547,8 +525,7 @@
                   "skill:writer",
                   "mcp:docs"
                 ],
-                "invoke": true,
-                "kind": "agent_plugin"
+                "invoke": true
               }
             ],
             "exclude": []
@@ -561,23 +538,22 @@
     "name": "mandatory-component-removal",
     "configuration": {
       "defaults": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": []
       },
       "mandatory": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": [
           {
             "namespace": "octo.resources",
-            "name": "selection",
+            "name": "agent_plugins",
             "payload": {
               "include": [
                 {
                   "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
                   "components": [
                     "skill:writer"
-                  ],
-                  "kind": "agent_plugin"
+                  ]
                 }
               ],
               "exclude": []
@@ -587,17 +563,16 @@
       }
     },
     "request": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": [
         {
           "namespace": "octo.resources",
-          "name": "selection",
+          "name": "agent_plugins",
           "payload": {
             "include": [
               {
                 "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
-                "components": [],
-                "kind": "agent_plugin"
+                "components": []
               }
             ],
             "exclude": []
@@ -611,21 +586,20 @@
     "name": "mandatory-invoke-removal",
     "configuration": {
       "defaults": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": []
       },
       "mandatory": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": [
           {
             "namespace": "octo.resources",
-            "name": "selection",
+            "name": "agent_plugins",
             "payload": {
               "include": [
                 {
                   "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
-                  "invoke": true,
-                  "kind": "agent_plugin"
+                  "invoke": true
                 }
               ],
               "exclude": []
@@ -635,17 +609,16 @@
       }
     },
     "request": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": [
         {
           "namespace": "octo.resources",
-          "name": "selection",
+          "name": "agent_plugins",
           "payload": {
             "include": [
               {
                 "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
-                "invoke": false,
-                "kind": "agent_plugin"
+                "invoke": false
               }
             ],
             "exclude": []
@@ -659,15 +632,14 @@
     "name": "ephemeral-default-forbidden",
     "configuration": {
       "defaults": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": [
           {
             "namespace": "octo.content",
-            "name": "materials",
+            "name": "inline",
             "payload": {
               "entries": [
                 {
-                  "type": "inline",
                   "text": "ephemeral"
                 }
               ]
@@ -676,12 +648,12 @@
         ]
       },
       "mandatory": {
-        "schema": "octo.context-envelope/v2",
+        "schema": "octo.context-envelope/v3",
         "items": []
       }
     },
     "request": {
-      "schema": "octo.context-envelope/v2",
+      "schema": "octo.context-envelope/v3",
       "items": []
     },
     "error": "CONTEXT_CONFIGURATION_TYPE_FORBIDDEN"

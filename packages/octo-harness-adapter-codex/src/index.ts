@@ -358,9 +358,9 @@ const TEAM_MCP_TOOLS = ["delegate_handoff", ...TASK_MCP_TOOLS] as const;
 
 function isPreparedFullAccessTask(invocation: Pick<InvokeRequest, "approvalMode" | "context" | "runMetadata"> | undefined): boolean {
   if (!invocation || invocation.approvalMode !== "full_access"
-    || taskRecord(contextItem(invocation.context, "octo.execution", "config")?.payload.approval_policy)?.mode !== "full_access") return false;
-  const materials = contextItem(invocation.context, "octo.content", "materials")?.payload.entries;
-  const entries = Array.isArray(materials) ? materials.filter(entry => taskRecord(entry)?.type === "reference") : [];
+    || contextItem(invocation.context, "octo.security", "approval_policy")?.payload.mode !== "full_access") return false;
+  const materials = contextItem(invocation.context, "octo.content", "references")?.payload.entries;
+  const entries = Array.isArray(materials) ? materials : [];
   const snapshots = invocation.runMetadata?.taskMaterials;
   if (!Array.isArray(entries) || entries.length !== 1 || !Array.isArray(snapshots) || snapshots.length !== 1) return false;
   const resource = taskRecord(entries[0]);

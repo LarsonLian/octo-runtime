@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HarnessEngine, MemoryStore, SqliteStore } from "@mininglamp-oss/octo-harness-core";
 
-const context = { schema: "octo.context-envelope/v2", items: [ { namespace: "octo.execution", name: "config", payload: { ...{ adapter: { type: "test" } }, ...{ workspace: { mode: "fixed", path: process.cwd() } }, ...{ approval_policy: { mode: "ask" } } } } ] };
+const context = { schema: "octo.context-envelope/v3", items: [ { namespace: "octo.execution", name: "adapter", payload: { type: "test" } }, { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: process.cwd() } }, { namespace: "octo.security", name: "approval_policy", payload: { mode: "ask" } } ] };
 
 for (const kind of ["memory", "sqlite"]) {
   test(`${kind} store isolates caller objects and rejects immutable Run snapshot rewrites`, async () => {
@@ -61,7 +61,7 @@ test("SQLite reopen retains the submitted Context, defaults version and frozen p
     const input = {
       namespace: "local", agentId: agent.id, sessionKey: "v1/task/reopen",
       trigger: { kind: "manual", occurrenceId: "reopen" }, input: { prompt: "hello" },
-      context: { schema: context.schema, items: [{ namespace: "octo.execution", name: "config", payload: { model: { id: "frozen" } } }] }
+      context: { schema: context.schema, items: [{ namespace: "octo.execution", name: "model", payload: { selection: { id: "frozen" } } }] }
     };
     const submitted = await engine.submitAgentRun(input);
     await engine.replaceDefaultContext({ agentId: agent.id, expectedVersion: 1, context: {

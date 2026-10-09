@@ -255,7 +255,7 @@ export async function* runCodexAppServerTurn({
     const compilation = recordValue(request.runMetadata?.contextCompilation);
     if (compilation) {
       yield { protocolVersion: 2, type: "context.applied", payload: {
-        schema: "octo.context-application/v1", compiler_version: "octo.context-compiler/v2", catalog_version: "octo.context-catalog/v2",
+        schema: "octo.context-application/v1", compiler_version: "octo.context-compiler/v3", catalog_version: "octo.context-catalog/v3",
         context_hash: String(compilation.context_hash), compiled_hash: String(compilation.compiled_hash),
         run_id: String(compilation.run_id), lease_id: String(compilation.lease_id), fencing_token: Number(compilation.fencing_token),
         adapter_type: "codex", provider_session_id: threadId, provider_ack: "turn/start",

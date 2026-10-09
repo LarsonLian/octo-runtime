@@ -4,7 +4,7 @@ import { assertExperiencePayload } from "./experience.js";
 import { assertModelInputParts, assertImageRecoveryParts, hasImageInput } from "./multimodal.js";
 export { IMAGE_INPUT_LIMITS, IMAGE_INPUT_MIME_TYPES, assertModelInputParts, providerInputParts, hasImageInput, modelPartsFromInput } from "./multimodal.js";
 import { assertAgentSource, assertApprovalMode, assertContextEnvelope, assertJsonValue, assertMcpServers, contextItem } from "./context.js";
-export { APPROVAL_MODES, CONTEXT_SCHEMA, CONTEXT_MAX_BYTES, CONTEXT_MAX_ITEMS, RUNTIME_RUN_CONTRACT, assertAgentSource, assertApprovalMode, assertContextEnvelope, assertCapabilityResources, assertMcpServers, assertResolvedExecutionPlan, canonicalContext, contextItem, mergeContext } from "./context.js";
+export { APPROVAL_MODES, CONTEXT_SCHEMA, CONTEXT_MAX_BYTES, CONTEXT_MAX_ITEMS, RUNTIME_RUN_CONTRACT, RESOURCE_CONTEXT_KINDS, assertAgentSource, assertApprovalMode, assertContextEnvelope, assertCapabilityResources, assertMcpServers, assertResolvedExecutionPlan, canonicalContext, contextItem, contextResourceReferences, mergeContext } from "./context.js";
 export { RUNTIME_SELECTION_SCHEMA, assertResolvedRuntimeSelection } from "./runtime-selection.js";
 export { CONTEXT_CATALOG_VERSION, CONTEXT_TYPE_CATALOG, contextTypeDefinition, assertContextProcessorCoverage } from "./context-catalog.js";
 export type { ContextStage, ContextOutput, ContextTypeDefinition } from "./context-catalog.js";
@@ -55,9 +55,10 @@ export type {
   ApprovalOperation,
   ApprovalDisplayDetails,
   ContextItem,
-  ContextExecutionPayload,
-  ContextMaterialsPayload,
-  ContextMaterialEntry,
+  ContextInlinePayload,
+  ContextReferencesPayload,
+  ContextInlineEntry,
+  ContextReferenceEntry,
   ContextResourceIdentity,
   ResolvedResourceFile,
   ContextCapabilityReference,
@@ -601,19 +602,19 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
   assertAgentSource(request.agentSource);
   assertContextEnvelope(request.context);
   assertApprovalMode(request.approvalMode);
-  const execution = contextItem(request.context, "octo.execution", "config")?.payload;
-  const approvalPolicy = execution?.approval_policy as Record<string, unknown> | undefined;
+  const modelChoices = contextItem(request.context, "octo.execution", "model")?.payload;
+  const approvalPolicy = contextItem(request.context, "octo.security", "approval_policy")?.payload;
   if (approvalPolicy && approvalPolicy.mode !== request.approvalMode) throw new TypeError("CONTEXT_PLAN_MISMATCH");
   const agentConfig = request.agentConfig;
   if (isRecord(agentConfig) && ["autoApprove", "dangerouslyBypassPermissions", "permissionMode"].some(key => key in agentConfig)) {
     throw new TypeError("LEGACY_PERMISSION_CONFIG_REJECTED");
   }
   if (isRecord(agentConfig) && "thinking" in agentConfig) throw new TypeError("LEGACY_REASONING_CONFIG_REJECTED");
-  for (const selection of [{ name: "model", property: "id", config: "model" }, { name: "reasoning", property: "effort", config: "effort" }]) {
-    const selected = execution?.[selection.name] as Record<string, unknown> | undefined;
+  for (const selection of [{ name: "selection", property: "id", config: "model" }, { name: "reasoning", property: "effort", config: "effort" }]) {
+    const selected = modelChoices?.[selection.name] as Record<string, unknown> | undefined;
     if (selected && selected[selection.property] !== (isRecord(agentConfig) ? agentConfig[selection.config] : undefined)) throw new TypeError("CONTEXT_PLAN_MISMATCH");
   }
-  const workspace = execution?.workspace as Record<string, unknown> | undefined;
+  const workspace = contextItem(request.context, "octo.execution", "workspace")?.payload;
   if (workspace?.mode === "fixed" && workspace.path !== request.workdir) throw new TypeError("CONTEXT_PLAN_MISMATCH");
   if (request.skills !== undefined && (!Array.isArray(request.skills) || request.skills.length > 0)) {
     if (!Array.isArray(request.skills)) throw new TypeError("SKILL_SCOPE_INVALID");

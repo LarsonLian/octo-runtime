@@ -5,10 +5,8 @@ import { createRequire } from "node:module";
 import { contextHash } from "../packages/octo-harness-protocol/dist/index.js";
 import { ContextCompiler, ContextPipeline, orderContextPreparationStages } from "../packages/octo-harness-daemon/dist/context-pipeline.js";
 
-const context = { schema: "octo.context-envelope/v2", items: [
-  { namespace: "octo.execution", name: "config", payload: {
-    adapter: { type: "codex" }, workspace: { mode: "fixed", path: "/workspace" }, approval_policy: { mode: "ask" }
-  } }
+const context = { schema: "octo.context-envelope/v3", items: [
+  { namespace: "octo.execution", name: "adapter", payload: { type: "codex" } }, { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: "/workspace" } }, { namespace: "octo.security", name: "approval_policy", payload: { mode: "ask" } }
 ] };
 const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "/workspace", approval_mode: "ask" };
 const identity = { runId: "run-1", leaseId: "lease-1", fencingToken: 3 };
@@ -40,7 +38,14 @@ test("pipeline seals all successful preparation stages before returning a compil
   assert.deepEqual(f.calls, ["input", "capabilities", "materials", "continuity", "seal"]);
   assert.equal(prepared.receipt.context_hash, contextHash(context));
   assert.match(prepared.receipt.compiled_hash, /^sha256:[a-f0-9]{64}$/);
-  assert.deepEqual(prepared.consumption, [{ key: "octo.execution/config", stage: "compile", processor: "compiler" }, { key: "octo.execution/config", stage: "prepare", processor: "capabilities" }]);
+  assert.deepEqual(prepared.consumption, [
+    { key: "octo.execution/adapter", stage: "compile", processor: "compiler" },
+    { key: "octo.execution/workspace", stage: "compile", processor: "compiler" },
+    { key: "octo.security/approval_policy", stage: "compile", processor: "compiler" },
+    { key: "octo.execution/adapter", stage: "prepare", processor: "capabilities" },
+    { key: "octo.execution/workspace", stage: "prepare", processor: "capabilities" },
+    { key: "octo.security/approval_policy", stage: "prepare", processor: "capabilities" }
+  ]);
   assert.equal(prepared.receipt.run_id, identity.runId);
   assert.equal(prepared.receipt.lease_id, identity.leaseId);
   assert.equal(prepared.receipt.fencing_token, identity.fencingToken);
@@ -78,9 +83,9 @@ test("declared continuity without snapshot evidence fails before sealing", async
 });
 
 test("compiler rejects duplicate resolver evidence instead of covering another reference twice", () => {
-  const withResources = { ...context, items: [...context.items, { namespace: "octo.content", name: "materials", payload: { entries: [
-    { type: "reference", resource_ref: "task/1", resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_id: "1" } },
-    { type: "reference", resource_ref: "task/2", resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_id: "2" } }
+  const withResources = { ...context, items: [...context.items, { namespace: "octo.content", name: "references", payload: { entries: [
+    { resource_ref: "task/1", resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_id: "1" } },
+    { resource_ref: "task/2", resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_id: "2" } }
   ] } }] };
   assert.throws(() => new ContextCompiler().compile(withResources, { selections: [
     { resource_ref: "task/1", text: "one" }, { resource_ref: "task/1", text: "duplicate" }

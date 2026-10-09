@@ -18,10 +18,10 @@ import { InspectServer } from "../apps/daemon/dist/inspect-server.js";
 import { waitFor } from "./agent-work-runtime-fixture.js";
 
 const execute = promisify(execFile);
-const emptyContext = () => ({ schema: "octo.context-envelope/v2", items: [] });
+const emptyContext = () => ({ schema: "octo.context-envelope/v3", items: [] });
 const defaultContext = () => ({
-  schema: "octo.context-envelope/v2",
-  items: [ { namespace: "octo.execution", name: "config", payload: { ...{ adapter: { type: "test" } }, ...{ workspace: { mode: "fixed", path: process.cwd() } }, ...{ approval_policy: { mode: "full_access" } } } } ]
+  schema: "octo.context-envelope/v3",
+  items: [ { namespace: "octo.execution", name: "adapter", payload: { type: "test" } }, { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: process.cwd() } }, { namespace: "octo.security", name: "approval_policy", payload: { mode: "full_access" } } ]
 });
 
 test("CLI exposes Runtime operations and unified AgentSession/AgentRun inspection only", async () => {

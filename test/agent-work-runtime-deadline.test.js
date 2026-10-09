@@ -38,8 +38,8 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task 
     runtime_limits: { run_timeout_ms: timeout, enforcement: "enforce" } };
   const envelope = {
     schema_version: 6, context_configuration_version: 1,
-    effective_context: executionContext(plan, compactionPort ? [{ namespace: "octo.content", name: "materials",
-      payload: { entries: [{ type: "inline", text: "material to measure" }] } }] : []), resolved_execution_plan: plan,
+    effective_context: executionContext(plan, compactionPort ? [{ namespace: "octo.content", name: "inline",
+      payload: { entries: [{ text: "material to measure" }] } }] : []), resolved_execution_plan: plan,
     resolved_runtime_selection: resolvedRuntimeSelection("runtime-deadline"),
     run_id: "run-deadline", agent_session_id: "session-deadline",
     agent_run_request: { context: contextEnvelope(), namespace: "test", agent_id: "agent-deadline",

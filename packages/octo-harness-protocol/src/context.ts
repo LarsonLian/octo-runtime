@@ -1,7 +1,7 @@
 import type { ApprovalMode, ContextEnvelope, ContextItem, McpServers, ResolvedExecutionPlan } from "./generated/protocol-types.js";
 import { RUNTIME_SELECTION_SCHEMA } from "./runtime-selection.js";
 
-export const CONTEXT_SCHEMA = "octo.context-envelope/v2" as const;
+export const CONTEXT_SCHEMA = "octo.context-envelope/v3" as const;
 export const RUNTIME_RUN_CONTRACT = Object.freeze({
   schema_version: 6,
   routing_schema: RUNTIME_SELECTION_SCHEMA,
@@ -62,11 +62,13 @@ export function mergeContext(defaults: ContextEnvelope, overrides: ContextEnvelo
     const key = JSON.stringify([item.namespace, item.name]);
     const previous = items.get(key);
     const next = structuredClone(item);
-    if (previous && item.namespace === "octo.execution" && item.name === "config") {
+    if (previous && item.namespace === "octo.execution" && ["model", "limits"].includes(item.name)) {
       next.payload = { ...previous.payload, ...next.payload };
-      if (previous.payload.limits || item.payload.limits) next.payload.limits = { ...(previous.payload.limits as object), ...(item.payload.limits as object) };
     }
-    if (previous && item.namespace === "octo.content" && item.name === "materials") next.payload.entries = [...previous.payload.entries as unknown[], ...next.payload.entries as unknown[]];
+    if (previous && item.namespace === "octo.runtime" && item.name === "selection") {
+      for (const field of ["offline_behavior", "failover"]) if (next.payload[field] === undefined && previous.payload[field] !== undefined) next.payload[field] = previous.payload[field];
+    }
+    if (previous && item.namespace === "octo.content" && item.name === "references") next.payload.entries = mergeReferences(previous.payload.entries as Record<string, unknown>[], next.payload.entries as Record<string, unknown>[]);
     items.set(key, next);
   }
   const result: ContextEnvelope = { schema: CONTEXT_SCHEMA, items: [...items.values()] };
@@ -180,17 +182,35 @@ export function assertJsonValue(value: unknown): void {
   json(value, 0);
 }
 
-/** v2 信封只注册四种公开类型；字段校验不构造旧版 ContextItem。 */
+export const RESOURCE_CONTEXT_KINDS: Readonly<Record<string, string>> = Object.freeze({ skills: "skill", agent_plugins: "agent_plugin", knowledge: "knowledge", connectors: "connector" });
+
+export function contextResourceReferences(context: ContextEnvelope): (Record<string, unknown> & {kind: string; resource_id: string})[] {
+  return context.items.filter(item => item.namespace === "octo.resources" && RESOURCE_CONTEXT_KINDS[item.name])
+    .flatMap(item => (item.payload.include as Record<string, unknown>[]).map(value => ({ ...value, kind: RESOURCE_CONTEXT_KINDS[item.name], resource_id: String(value.resource_id) })))
+    .sort((a, b) => `${a.kind}/${a.resource_id}` < `${b.kind}/${b.resource_id}` ? -1 : `${a.kind}/${a.resource_id}` > `${b.kind}/${b.resource_id}` ? 1 : 0);
+}
+
+export function mergeReferences(base: Record<string, unknown>[], next: Record<string, unknown>[]): Record<string, unknown>[] {
+  const entries = new Map([...base, ...next].map(entry => [String(entry.resource_ref), structuredClone(entry)]));
+  return [...entries].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, entry]) => entry);
+}
+
 function publicPayload(namespace: string, name: string, value: Record<string, unknown>): void {
-  if (namespace === "octo.execution" && name === "config") {
-    fields(value, ["adapter", "model", "reasoning", "workspace", "limits", "runtime", "approval_policy"]);
+  if (namespace === "octo.execution" && name === "model") {
+    fields(value, ["selection", "reasoning"]);
+    if (!Object.keys(value).length) throw new TypeError("CONTEXT_SCHEMA_INVALID");
     for (const [key, setting] of Object.entries(value)) {
       object(setting, "CONTEXT_SCHEMA_INVALID");
-      executionField(key === "runtime" ? "octo.runtime" : key === "approval_policy" ? "octo.security" : "octo.execution", key === "runtime" ? "selection" : key, setting);
+      executionField("octo.execution", key === "selection" ? "model" : "reasoning", setting);
     }
     return;
   }
-  if (namespace === "octo.resources" && name === "selection") {
+  if ((namespace === "octo.execution" && ["adapter", "workspace", "limits"].includes(name)) || (namespace === "octo.runtime" && name === "selection") || (namespace === "octo.security" && name === "approval_policy")) {
+    executionField(namespace, name, value);
+    return;
+  }
+  if (namespace === "octo.resources" && RESOURCE_CONTEXT_KINDS[name]) {
+    const kind = RESOURCE_CONTEXT_KINDS[name];
     fields(value, ["include", "exclude"]);
     const seen = new Set<string>();
     for (const list of ["include", "exclude"]) {
@@ -198,30 +218,36 @@ function publicPayload(namespace: string, name: string, value: Record<string, un
       if (!Array.isArray(entries) || entries.length > 32) throw new TypeError("CONTEXT_SCHEMA_INVALID");
       for (const entry of entries) {
         object(entry, "CONTEXT_SCHEMA_INVALID");
-        fields(entry, list === "include" ? ["kind", "resource_id", "invoke", "components"] : ["kind", "resource_id"]);
-        if (!["agent_plugin", "skill", "connector", "knowledge"].includes(String(entry.kind)) || typeof entry.resource_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(entry.resource_id)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
-        const key = `${String(entry.kind)}/${entry.resource_id}`;
+        const allowed = ["resource_id"];
+        if (list === "include" && ["skill", "agent_plugin"].includes(kind)) allowed.push("invoke");
+        if (list === "include" && ["agent_plugin", "connector"].includes(kind)) allowed.push("components");
+        fields(entry, allowed);
+        if (typeof entry.resource_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(entry.resource_id)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
+        const key = entry.resource_id;
         if (seen.has(key)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
         seen.add(key);
         if (entry.invoke !== undefined && typeof entry.invoke !== "boolean") throw new TypeError("CONTEXT_SCHEMA_INVALID");
-        if (entry.components !== undefined) { stringList(entry.components, 64); if (entry.components.some(component => !/^(skill|mcp):[a-z0-9][a-z0-9._-]{0,95}$/.test(component))) throw new TypeError("CONTEXT_SCHEMA_INVALID"); }
+        if (entry.components !== undefined) { stringList(entry.components, 64); if (entry.components.some(component => !/^(skill|mcp):[a-z0-9][a-z0-9._-]{0,95}$/.test(component) || (kind === "connector" && !component.startsWith("mcp:")))) throw new TypeError("CONTEXT_SCHEMA_INVALID"); }
       }
     }
     return;
   }
-  if ((namespace === "octo.content" && name === "materials") || (namespace === "octo.control" && name === "instructions")) {
+  if ((namespace === "octo.content" && ["inline", "references"].includes(name)) || (namespace === "octo.control" && name === "instructions")) {
     fields(value, ["entries"]);
-    if (!Array.isArray(value.entries)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
+    if (!Array.isArray(value.entries) || (name !== "instructions" && value.entries.length === 0)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
+    const refs = new Set<string>();
     for (const entry of value.entries) {
       object(entry, "CONTEXT_SCHEMA_INVALID");
       if (name === "instructions") {
         fields(entry, ["text", "source"]); text(entry.text);
         if (!["revision", "agent_configuration", "platform_policy"].includes(String(entry.source))) throw new TypeError("CONTEXT_SCHEMA_INVALID");
-      } else if (entry.type === "reference") {
-        const reference = { ...entry }; delete reference.type;
-        resource(reference);
-      } else if (entry.type === "inline") {
-        fields(entry, ["type", "text", "resource_ref", "source", "summary"]); text(entry.text);
+      } else if (name === "references") {
+        resource(entry);
+        const ref = String(entry.resource_ref);
+        if (refs.has(ref)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
+        refs.add(ref);
+      } else if (name === "inline") {
+        fields(entry, ["text", "resource_ref", "source", "summary"]); text(entry.text);
         if (entry.resource_ref !== undefined) text(entry.resource_ref);
         if (entry.source !== undefined && typeof entry.source !== "string" && !isObject(entry.source)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
         if (entry.summary !== undefined && typeof entry.summary !== "string") throw new TypeError("CONTEXT_SCHEMA_INVALID");

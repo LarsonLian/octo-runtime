@@ -34,13 +34,13 @@ export type PersistentContextEnvelope = ContextEnvelope & {
 };
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextModelPayload".
+ * via the `definition` "ContextModelSelectionPayload".
  */
-export type ContextModelPayload = {
+export type ContextModelSelectionPayload = {
   id?: string;
   use_provider_default?: true;
-} & ContextModelPayload1;
-export type ContextModelPayload1 = {
+} & ContextModelSelectionPayload1;
+export type ContextModelSelectionPayload1 = {
   [k: string]: unknown;
 };
 /**
@@ -216,35 +216,24 @@ export type ActivitySubject =
       id: string;
     };
 /**
+ * Declarative MCP resource operation. Only deployed scoped operations may execute; schema validation does not authorize access.
+ *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextMaterialEntry".
+ * via the `definition` "ContextReferenceEntry".
  */
-export type ContextMaterialEntry =
-  | {
-      text: string;
-      resource_ref?: string;
-      source?:
-        | {
-            [k: string]: unknown;
-          }
-        | string;
-      summary?: string;
-      type: "inline";
-    }
-  | ({
-      locator?: ContextMcpLocator;
-    } & {
-      resource_ref: string;
-      resolver: "mcp";
-      locator: {};
-      /**
-       * Frozen non-secret JSON parameters supplied by the authenticated resolver plan, not model-generated commands.
-       */
-      params?: Record<string, unknown>;
-      authorization_ref?: string;
-      revision?: string;
-      type: "reference";
-    });
+export type ContextReferenceEntry = {
+  locator?: ContextMcpLocator;
+} & {
+  resource_ref: string;
+  resolver: "mcp";
+  locator: {};
+  /**
+   * Frozen non-secret JSON parameters supplied by the authenticated resolver plan, not model-generated commands.
+   */
+  params?: Record<string, unknown>;
+  authorization_ref?: string;
+  revision?: string;
+};
 
 /**
  * Serializable data shapes for the Octo Harness NDJSON protocol. Runtime behavior remains hand-written in src/index.ts, and this schema is the source of truth for generated TypeScript types. The x-octo-unicode-scalar-strings semantic keyword requires every JSON string value and object member name to contain Unicode scalar values only: unpaired UTF-16 surrogates are rejected, not repaired or normalized. Consumers must enforce this protocol-wide rule even when validating a definition directly.
@@ -1594,7 +1583,7 @@ export interface NotificationMessage1 {
  * via the `definition` "ContextEnvelope".
  */
 export interface ContextEnvelope {
-  schema: "octo.context-envelope/v2";
+  schema: "octo.context-envelope/v3";
   /**
    * @maxItems 32
    */
@@ -1655,8 +1644,8 @@ export interface RunContextProjection {
  * via the `definition` "ContextPreparationReceipt".
  */
 export interface ContextPreparationReceipt {
-  compiler_version: "octo.context-compiler/v2";
-  catalog_version: "octo.context-catalog/v2";
+  compiler_version: "octo.context-compiler/v3";
+  catalog_version: "octo.context-catalog/v3";
   context_hash: string;
   compiled_hash: string;
   run_id: string;
@@ -1742,8 +1731,8 @@ export interface ChannelContextSnapshotRef {
  */
 export interface ContextApplicationEvidence {
   schema: "octo.context-application/v1";
-  compiler_version: "octo.context-compiler/v2";
-  catalog_version: "octo.context-catalog/v2";
+  compiler_version: "octo.context-compiler/v3";
+  catalog_version: "octo.context-catalog/v3";
   context_hash: string;
   compiled_hash: string;
   run_id: string;
@@ -1767,10 +1756,17 @@ export interface ContextAdapterPayload {
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextModelPayload".
+ */
+export interface ContextModelPayload {
+  selection?: ContextModelSelectionPayload;
+  reasoning?: ContextReasoningPayload;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextCapabilityReference".
  */
 export interface ContextCapabilityReference {
-  kind: "agent_plugin" | "skill" | "connector" | "knowledge";
   resource_id: string;
   invoke?: boolean;
   /**
@@ -1799,7 +1795,6 @@ export interface ContextCapabilitySelectionPayload {
  * via the `definition` "ContextResourceIdentity".
  */
 export interface ContextResourceIdentity {
-  kind: "agent_plugin" | "skill" | "connector" | "knowledge";
   resource_id: string;
 }
 /**
@@ -2703,21 +2698,139 @@ export interface RunNoticePayload {
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextExecutionPayload".
+ * via the `definition` "ContextSkillsReference".
  */
-export interface ContextExecutionPayload {
-  adapter?: ContextAdapterPayload;
-  model?: ContextModelPayload;
-  reasoning?: ContextReasoningPayload;
-  workspace?: ContextWorkspacePayload;
-  limits?: ContextLimitsPayload;
-  runtime?: ContextRuntimeSelectionPayload;
-  approval_policy?: ContextApprovalPolicyPayload;
+export interface ContextSkillsReference {
+  resource_id: string;
+  invoke?: boolean;
+}
+/**
+ * Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextSkillsPayload".
+ */
+export interface ContextSkillsPayload {
+  /**
+   * @maxItems 32
+   */
+  include: ContextSkillsReference[];
+  /**
+   * @maxItems 32
+   */
+  exclude: ContextResourceIdentity[];
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextMaterialsPayload".
+ * via the `definition` "ContextAgentPluginsReference".
  */
-export interface ContextMaterialsPayload {
-  entries: ContextMaterialEntry[];
+export interface ContextAgentPluginsReference {
+  resource_id: string;
+  invoke?: boolean;
+  /**
+   * @maxItems 64
+   */
+  components?: string[];
+}
+/**
+ * Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextAgentPluginsPayload".
+ */
+export interface ContextAgentPluginsPayload {
+  /**
+   * @maxItems 32
+   */
+  include: ContextAgentPluginsReference[];
+  /**
+   * @maxItems 32
+   */
+  exclude: ContextResourceIdentity[];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextKnowledgeReference".
+ */
+export interface ContextKnowledgeReference {
+  resource_id: string;
+}
+/**
+ * Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextKnowledgePayload".
+ */
+export interface ContextKnowledgePayload {
+  /**
+   * @maxItems 32
+   */
+  include: ContextKnowledgeReference[];
+  /**
+   * @maxItems 32
+   */
+  exclude: ContextResourceIdentity[];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextConnectorsReference".
+ */
+export interface ContextConnectorsReference {
+  resource_id: string;
+  /**
+   * @maxItems 64
+   */
+  components?: string[];
+}
+/**
+ * Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextConnectorsPayload".
+ */
+export interface ContextConnectorsPayload {
+  /**
+   * @maxItems 32
+   */
+  include: ContextConnectorsReference[];
+  /**
+   * @maxItems 32
+   */
+  exclude: ContextResourceIdentity[];
+}
+/**
+ * Untrusted inline selection text with optional resource reference, source metadata and summary. Source metadata is not an authorization claim.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextInlineEntry".
+ */
+export interface ContextInlineEntry {
+  text: string;
+  resource_ref?: string;
+  source?:
+    | {
+        [k: string]: unknown;
+      }
+    | string;
+  summary?: string;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextInlinePayload".
+ */
+export interface ContextInlinePayload {
+  /**
+   * @minItems 1
+   */
+  entries: [ContextInlineEntry, ...ContextInlineEntry[]];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextReferencesPayload".
+ */
+export interface ContextReferencesPayload {
+  /**
+   * @minItems 1
+   */
+  entries: [ContextReferenceEntry, ...ContextReferenceEntry[]];
 }

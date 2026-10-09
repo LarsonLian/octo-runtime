@@ -4,10 +4,10 @@ import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 import { HarnessEngine, MemoryStore } from "@mininglamp-oss/octo-harness-core";
 import { testAdapter } from "./fixtures/test-adapter.js";
 
-const emptyContext = () => ({ schema: "octo.context-envelope/v2", items: [] });
+const emptyContext = () => ({ schema: "octo.context-envelope/v3", items: [] });
 const defaultContext = (mode = "full_access", model = "model-1") => ({
-  schema: "octo.context-envelope/v2",
-  items: [ { namespace: "octo.execution", name: "config", payload: { ...{ adapter: { type: "test" } }, ...{ workspace: { mode: "fixed", path: process.cwd() } }, ...{ model: { id: model } }, ...{ approval_policy: { mode } } } } ]
+  schema: "octo.context-envelope/v3",
+  items: [ { namespace: "octo.execution", name: "adapter", payload: { type: "test" } }, { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: process.cwd() } }, { namespace: "octo.security", name: "approval_policy", payload: { mode } }, { namespace: "octo.execution", name: "model", payload: { selection: { id: model } } } ]
 });
 
 function capturingEngine() {
@@ -91,7 +91,7 @@ test("only one concurrent executeRun call can claim a queued AgentRun", async ()
 test("submitted Run freezes defaults and materialization before Agent changes", async () => {
   const { engine, store, requests } = capturingEngine();
   const originalDefaults = defaultContext("ask");
-  originalDefaults.items[0].payload.reasoning = { effort: "low" };
+  originalDefaults.items.find(item => item.name === "model").payload.reasoning = { effort: "low" };
   const agent = await engine.registerAgent({ agentSource: "provisioned",
     name: "original", defaultContext: originalDefaults,
     config: { providerAgentId: "original-provider", providerOptions: { endpoint: "original" } }
@@ -99,8 +99,8 @@ test("submitted Run freezes defaults and materialization before Agent changes", 
   const input = submission(agent.id);
   const first = await engine.submitAgentRun(input);
   const changedDefaults = defaultContext("full_access", "model-2");
-  changedDefaults.items.find(item => item.name === "config").payload.workspace.path = `${process.cwd()}/future-workspace`;
-  changedDefaults.items[0].payload.reasoning = { effort: "high" };
+  changedDefaults.items.find(item => item.name === "workspace").payload.path = `${process.cwd()}/future-workspace`;
+  changedDefaults.items.find(item => item.name === "model").payload.reasoning = { effort: "high" };
   const updated = await engine.replaceDefaultContext({ agentId: agent.id, expectedVersion: 1, context: changedDefaults });
   updated.name = "changed";
   updated.config.providerAgentId = "changed-provider";
@@ -136,24 +136,24 @@ test("per-Run approval overrides are frozen and do not change Agent defaults", a
   const { engine, store, requests } = capturingEngine();
   const agent = await engine.registerAgent({ agentSource: "provisioned", name: "approval", defaultContext: defaultContext("ask") });
   for (const mode of ["ask", "assisted", "full_access"]) {
-    const context = { schema: "octo.context-envelope/v2", items: [
-      { namespace: "octo.execution", name: "config", payload: { approval_policy: { mode } } }
+    const context = { schema: "octo.context-envelope/v3", items: [
+      { namespace: "octo.security", name: "approval_policy", payload: { mode } }
     ] };
     const result = await engine.submitAgentRun(submission(agent.id, mode, context));
-    context.items[0].payload.approval_policy.mode = "ask";
+    context.items[0].payload.mode = "ask";
     assert.equal(result.agentRun.resolvedExecutionPlan.approval_mode, mode);
     await engine.executeRun(result.agentRun.id);
     assert.equal(requests.at(-1).request.approvalMode, mode);
-    assert.equal(requests.at(-1).request.context.items.find(item => item.name === "config").payload.approval_policy.mode, mode);
+    assert.equal(requests.at(-1).request.context.items.find(item => item.name === "approval_policy").payload.mode, mode);
   }
   assert.equal(store.getAgent(agent.id).contextDefaultsVersion, 1);
-  assert.equal(store.getAgent(agent.id).defaultContext.items.find(item => item.name === "config").payload.approval_policy.mode, "ask");
+  assert.equal(store.getAgent(agent.id).defaultContext.items.find(item => item.name === "approval_policy").payload.mode, "ask");
 });
 
 test("occurrence hashing uses canonical submitted Context, not item order or current defaults", async () => {
   const { engine, store } = capturingEngine();
   const agent = await engine.registerAgent({ agentSource: "provisioned", name: "hash", defaultContext: defaultContext() });
-  const context = { schema: "octo.context-envelope/v2", items: [ { namespace: "octo.execution", name: "config", payload: { ...{ model: { id: "override" } }, ...{ approval_policy: { mode: "ask" } } } } ] };
+  const context = { schema: "octo.context-envelope/v3", items: [ { namespace: "octo.security", name: "approval_policy", payload: { mode: "ask" } }, { namespace: "octo.execution", name: "model", payload: { selection: { id: "override" } } } ] };
   const first = await engine.submitAgentRun(submission(agent.id, "hash", context));
   await engine.replaceDefaultContext({ agentId: agent.id, expectedVersion: 1, context: defaultContext("assisted", "changed") });
   const reordered = { items: [...context.items].reverse().map(item => ({ payload: item.payload, name: item.name, namespace: item.namespace })), schema: context.schema };
@@ -162,7 +162,7 @@ test("occurrence hashing uses canonical submitted Context, not item order or cur
   assert.equal(duplicate.agentRun.contextHash, first.agentRun.contextHash);
   assert.equal(duplicate.agentRun.contextDefaultsVersion, 1);
   const changed = structuredClone(context);
-  changed.items[0].payload.model.id = "different";
+  changed.items.find(item => item.name === "model").payload.selection.id = "different";
   await assert.rejects(engine.submitAgentRun(submission(agent.id, "hash", changed)), /different AgentRun request/);
   await assert.rejects(engine.submitAgentRun(submission(agent.id, "hash", emptyContext())), /different AgentRun request/);
   assert.equal(store.listAgentRuns().length, 1);
@@ -172,7 +172,7 @@ test("default Context replacement uses CAS without changing stable materializati
   const { engine, store } = capturingEngine();
   const agent = await engine.registerAgent({ agentSource: "provisioned", name: "CAS", defaultContext: defaultContext() });
   const changed = defaultContext("ask");
-  changed.items.find(item => item.name === "config").payload.adapter.type = "other";
+  changed.items.find(item => item.name === "adapter").payload.type = "other";
   const outcomes = await Promise.allSettled([
     engine.replaceDefaultContext({ agentId: agent.id, expectedVersion: 1, context: changed }),
     engine.replaceDefaultContext({ agentId: agent.id, expectedVersion: 1, context: defaultContext("assisted") })
@@ -186,10 +186,10 @@ test("default Context replacement uses CAS without changing stable materializati
 test("local defaults choose ask explicitly and Provider defaults remove inherited model and effort", async () => {
   const { engine, requests } = capturingEngine();
   const defaults = defaultContext();
-  delete defaults.items[0].payload.approval_policy;
-  defaults.items[0].payload.reasoning = { effort: "high" };
+  defaults.items = defaults.items.filter(item => item.name !== "approval_policy");
+  defaults.items.find(item => item.name === "model").payload.reasoning = { effort: "high" };
   const agent = await engine.registerAgent({ agentSource: "provisioned", name: "defaults", defaultContext: defaults });
-  const result = await engine.submitAgentRun(submission(agent.id, "defaults", { schema: defaults.schema, items: [ { namespace: "octo.execution", name: "config", payload: { ...{ model: { use_provider_default: true } }, ...{ reasoning: { use_provider_default: true } }, ...{ limits: { run_timeout_ms: 2000 } } } } ] }));
+  const result = await engine.submitAgentRun(submission(agent.id, "defaults", { schema: defaults.schema, items: [ { namespace: "octo.execution", name: "limits", payload: { run_timeout_ms: 2000 } }, { namespace: "octo.execution", name: "model", payload: { selection: { use_provider_default: true }, reasoning: { use_provider_default: true } } } ] }));
   await engine.executeRun(result.agentRun.id);
   assert.equal(requests[0].request.approvalMode, "ask");
   assert.equal(requests[0].request.agentConfig.model, undefined);
@@ -213,10 +213,10 @@ test("register and submit reject legacy contracts and unsupported trusted Contex
   await assert.rejects(engine.submitAgentRun({ ...submission(agent.id), approvalMode: "full_access" }), /LEGACY_RUN_CONTRACT_REJECTED/);
   for (const item of [
     { namespace: "octo.control", name: "instructions", payload: { entries: [{ text: "trusted?", source: "agent_configuration" }] } },
-    { namespace: "octo.content", name: "materials", payload: { entries: [] } },
-    { namespace: "octo.execution", name: "config", payload: { runtime: { mode: "explicit", runtime_id: "remote" } } }
+    { namespace: "octo.content", name: "inline", payload: { entries: [{ text: "material" }] } },
+    { namespace: "octo.runtime", name: "selection", payload: { mode: "explicit", runtime_id: "remote" } }
   ]) {
-    const context = { schema: "octo.context-envelope/v2", items: [item] };
+    const context = { schema: "octo.context-envelope/v3", items: [item] };
     await assert.rejects(engine.submitAgentRun(submission(agent.id, "unsupported", context)), /LOCAL_CONTEXT_TYPE_UNSUPPORTED/);
     await assert.rejects(engine.registerAgent({ agentSource: "provisioned", name: "unsupported", defaultContext: item.namespace === "octo.execution" ? { ...defaultContext(), items: [{ ...item, payload: { ...defaultContext().items[0].payload, ...item.payload } }] } : { ...defaultContext(), items: [...defaultContext().items, item] } }), /LOCAL_CONTEXT_TYPE_UNSUPPORTED/);
   }
@@ -227,7 +227,7 @@ test("register and submit reject legacy contracts and unsupported trusted Contex
 test("stable provider materialization cannot silently transfer to another Adapter", async () => {
   const { engine, store } = capturingEngine();
   const agent = await engine.registerAgent({ agentSource: "provisioned", name: "bound", defaultContext: defaultContext(), config: { providerAgentId: "test-agent" } });
-  const context = { schema: "octo.context-envelope/v2", items: [{ namespace: "octo.execution", name: "config", payload: { adapter: { type: "other" } } }] };
+  const context = { schema: "octo.context-envelope/v3", items: [{ namespace: "octo.execution", name: "adapter", payload: { type: "other" } }] };
   await assert.rejects(engine.submitAgentRun(submission(agent.id, "other", context)), /LOCAL_MATERIALIZATION_ADAPTER_MISMATCH/);
   assert.equal(store.listAgentRuns().length, 0);
 });
@@ -269,7 +269,7 @@ test("registered Adapter submissions and occurrence replay do not require a live
   assert.equal(duplicate.deduplicated, true);
   const next = await engine.submitAgentRun(submission(agent.id, "next"));
   assert.equal(next.agentRun.status, "queued");
-  const override = { schema: "octo.context-envelope/v2", items: [{ namespace: "octo.execution", name: "config", payload: { adapter: { type: "other" } } }] };
+  const override = { schema: "octo.context-envelope/v3", items: [{ namespace: "octo.execution", name: "adapter", payload: { type: "other" } }] };
   await assert.rejects(engine.submitAgentRun(submission(agent.id, "override", override)), error => error.code === "ADAPTER_HOST_RESTARTING");
   assert.equal(store.listAgentRuns().length, 2);
 });

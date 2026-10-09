@@ -1683,8 +1683,8 @@ export class AgentWorkRuntime {
         const requiredCapabilities = executionEnvelope.resolved_execution_plan.required_execution_features ?? [];
         const localCapabilities = this.#adapterCapabilities.get(adapterTypeForContext);
         if (requiredCapabilities.some(capability => !localCapabilities?.has(capability))) throw new TypeError("ADAPTER_REQUIRED_CAPABILITY_MISSING");
-        const materialEntries = contextItem(executionEnvelope.effective_context, "octo.content", "materials")?.payload.entries;
-        const contentResources = Array.isArray(materialEntries) ? materialEntries.filter(entry => asRecord(entry).type === "reference") : [];
+        const materialEntries = contextItem(executionEnvelope.effective_context, "octo.content", "references")?.payload.entries;
+        const contentResources = Array.isArray(materialEntries) ? materialEntries : [];
         if (Array.isArray(contentResources) && contentResources.length > 0 && !localCapabilities?.has(executionFeatures.MCP_DYNAMIC)) {
           throw new TypeError("TASK_MCP_ADAPTER_UNSUPPORTED");
         }
@@ -1704,8 +1704,8 @@ export class AgentWorkRuntime {
             runId: command.run_id, leaseId, fencingToken, signal
           }),
           prepareCapabilities: async signal => {
-            const selected = contextItem(executionEnvelope.effective_context, "octo.resources", "selection")?.payload.include;
-            if (Array.isArray(selected) && selected.length) {
+            const selected = executionEnvelope.effective_context.items.filter(item => item.namespace === "octo.resources").flatMap(item => item.payload.include as unknown[]);
+            if (selected.length) {
               executionEnvelope.resolved_execution_plan.resources = await resolveRunResources({
                 baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
                 runId: command.run_id, leaseId, fencingToken, signal
@@ -2611,7 +2611,7 @@ function assertExecutionEnvelopeContract(envelope: ExecutionEnvelope): void {
   assertFrozenContextPlan(envelope.effective_context, envelope.resolved_execution_plan);
   if (!Number.isSafeInteger(envelope.context_configuration_version) || envelope.context_configuration_version < 1
     || envelope.context_configuration_version !== envelope.resolved_runtime_selection.context_configuration_version) throw new TypeError("CONTEXT_CONFIGURATION_VERSION_REQUIRED");
-  const contextSelection = contextItem(envelope.effective_context, "octo.execution", "config")?.payload.runtime as Record<string, unknown> | undefined;
+  const contextSelection = contextItem(envelope.effective_context, "octo.runtime", "selection")?.payload;
   const selection = envelope.resolved_runtime_selection;
   if (contextSelection && (contextSelection.mode !== selection.selection_mode
     || (contextSelection.mode === "explicit" && contextSelection.runtime_id !== selection.explicit_runtime_id))) {

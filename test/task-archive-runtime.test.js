@@ -90,8 +90,7 @@ test("real Runtime uploads a declared deliverable before durable terminal and re
   await runtime.start();
   await waitFor(() => socket?.readyState === 1);
   for (const number of [1, 2]) {
-    const resource = { namespace: "octo.content", name: "materials", payload: { entries: [{ type: "reference",
-      resource_ref: "task:task-1/materials", resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_id: "task-1", handler_epoch: 2 }
+    const resource = { namespace: "octo.content", name: "references", payload: { entries: [{ resource_ref: "task:task-1/materials", resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_id: "task-1", handler_epoch: 2 }
     }] } };
     const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: directory, approval_mode: "ask", mcp_servers: { octo_task: {
       type: "streamable_http", url: `${baseUrl}/mcp/team`, headers: { Authorization: "Bearer run-grant" }

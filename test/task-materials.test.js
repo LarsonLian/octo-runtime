@@ -11,8 +11,7 @@ import { AgentWorkRuntime, mapExecutionEnvelope } from "../packages/octo-harness
 import { buildCodexCommand } from "@mininglamp-oss/octo-harness-adapter-codex";
 import { contextEnvelope, executionContext, resolvedRuntimeSelection, waitFor, wire } from "./agent-work-runtime-fixture.js";
 
-const resource = { namespace: "octo.content", name: "materials", payload: { entries: [{ type: "reference",
-  resource_ref: "task:task-1/materials", resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" },
+const resource = { namespace: "octo.content", name: "references", payload: { entries: [{ resource_ref: "task:task-1/materials", resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" },
   params: { task_id: "task-1", handler_epoch: 3 }
 }] } };
 const material = version => ({
@@ -72,7 +71,7 @@ test("task materials use authorized MCP and freeze actual facts separately from 
   assert.doesNotMatch(JSON.stringify(buildCodexCommand(request).args), /approval_mode/);
   const automaticEnvelope = structuredClone(envelope);
   automaticEnvelope.resolved_execution_plan.approval_mode = "full_access";
-  automaticEnvelope.effective_context.items.find(item => item.name === "config").payload.approval_policy.mode = "full_access";
+  automaticEnvelope.effective_context.items.find(item => item.name === "approval_policy").payload.mode = "full_access";
   const automaticRequest = mapExecutionEnvelope(automaticEnvelope, undefined, first).request;
   assert.match(JSON.stringify(buildCodexCommand(automaticRequest).args), /task_get_materials.*approval_mode/);
   assert.doesNotMatch(JSON.stringify(buildCodexCommand(automaticRequest).args), /fixture-run-grant/);
@@ -112,7 +111,7 @@ test("restart reuses exact material bytes after live authorization without fetch
   assert.equal(f.calls.filter(call => call.params?.name === "task_get_materials").length, 1);
   assert.equal(f.calls.filter(call => call.params?.name === "task_authorize_material_snapshot").length, 1);
   const changed = structuredClone(context);
-  changed.items.find(item => item.name === "config").payload.model = { id: "another-model" };
+  changed.items.find(item => item.name === "model").payload.selection = { id: "another-model" };
   await assert.rejects(prepareTaskMaterials(changed, resolvedPlan, new AbortController().signal, { runId: "run-1", store }), /SNAPSHOT_CONFLICT/);
   store.discardAuthoritativelyTerminalRun("run-1");
   assert.equal(store.getTaskMaterialSnapshot("run-1", first.refs[0].digest), undefined);

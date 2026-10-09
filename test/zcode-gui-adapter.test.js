@@ -17,7 +17,7 @@ function request(agentConfig = {}, providerSession) {
     prompt: "write a file",
     modelInput: "write a file",
     workdir: process.cwd(),
-    context: { schema: "octo.context-envelope/v2", items: [] },
+    context: { schema: "octo.context-envelope/v3", items: [] },
     controlInstructions: "CONTROL",
     approvalMode: "full_access",
     agentConfig,

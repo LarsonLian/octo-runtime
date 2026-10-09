@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AcpApprovalBridge } from "../packages/octo-harness-adapter-sdk/dist/index.js";
 
-const request = { protocolVersion: 2, invocationId: "instance-1", agentSessionId: "session-1", runId: "run-1", prompt: "hello", modelInput: "hello", controlInstructions: "", approvalMode: "ask", context: { schema: "octo.context-envelope/v2", items: [] }, agentSource: "provisioned", agentConfig: {}, workdir: "/tmp" };
+const request = { protocolVersion: 2, invocationId: "instance-1", agentSessionId: "session-1", runId: "run-1", prompt: "hello", modelInput: "hello", controlInstructions: "", approvalMode: "ask", context: { schema: "octo.context-envelope/v3", items: [] }, agentSource: "provisioned", agentConfig: {}, workdir: "/tmp" };
 const permission = { toolCall: { toolCallId: "tool-1", title: "Read a file" }, options: [{ kind: "allow_once", optionId: "allow" }, { kind: "reject_once", optionId: "deny" }, { kind: "allow_always", optionId: "always" }] };
 function deferred() {
   let resolve;

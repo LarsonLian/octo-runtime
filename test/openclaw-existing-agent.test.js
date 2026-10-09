@@ -10,14 +10,14 @@ import { loadManagedAgentWorksFromRoot } from "../packages/octo-harness-daemon/d
 import { HarnessEngine, MemoryStore } from "../packages/octo-harness-core/dist/index.js";
 
 test("OpenClaw target validation, replacement and frozen-plan consistency", () => {
- const envelope = payload => ({ schema:"octo.context-envelope/v2", items:[{namespace:"octo.execution",name:"config",payload:{adapter:payload}}] });
+ const envelope = payload => ({ schema:"octo.context-envelope/v3", items:[{ namespace: "octo.execution", name: "adapter", payload: payload }] });
  const openclaw = envelope({type:"openclaw",provider_agent_id:"main"});
  assertContextEnvelope(openclaw);
  for (const payload of [{type:"openclaw"},{type:"openclaw",provider_agent_id:" "},{type:"codex",provider_agent_id:"main"}]) assert.throws(() => assertContextEnvelope(envelope(payload)));
- assert.deepEqual(mergeContext(openclaw,envelope({type:"codex"})).items[0].payload,{adapter:{type:"codex"}});
+ assert.deepEqual(mergeContext(openclaw,envelope({type:"codex"})).items[0].payload,{type:"codex"});
  const plan={agent_source: "provisioned", adapter_type:"openclaw",provider_agent_id:"main",workdir:"/workspace",approval_mode:"full_access"};
  assertResolvedExecutionPlan(plan);
- Object.assign(openclaw.items[0].payload,{workspace:{mode:"fixed",path:"/workspace"},approval_policy:{mode:"full_access"}});
+ openclaw.items.push({namespace:"octo.execution",name:"workspace",payload:{mode:"fixed",path:"/workspace"}}, {namespace:"octo.security",name:"approval_policy",payload:{mode:"full_access"}});
  assertFrozenContextPlan(openclaw,plan);
  assert.throws(()=>assertFrozenContextPlan(openclaw,{...plan,provider_agent_id:"other"}),/CONTEXT_PLAN_MISMATCH/);
 });
@@ -73,8 +73,8 @@ test("local Harness dispatch freezes the Context target ahead of legacy agent co
  const requests=[];
  const host={list:()=>[{type:"openclaw"}],async *invoke(_type,request){requests.push(request);yield {protocolVersion:2,type:"run.completed",payload:{}};}};
  const engine=new HarnessEngine({store:new MemoryStore(),host});
- const agent=await engine.registerAgent({name:"existing",agentSource:"provisioned",config:{providerAgentId:"old-runner"},defaultContext:{schema:"octo.context-envelope/v2",items:[ { namespace: "octo.execution", name: "config", payload: { ...{ adapter: {type:"openclaw",provider_agent_id:"main"} }, ...{ workspace: {mode:"fixed",path:"/workspace"} }, ...{ approval_policy: {mode:"full_access"} } } } ]}});
- const submitted=await engine.submitAgentRun({namespace:"local",agentId:agent.id,sessionKey:"v1/task/existing",trigger:{kind:"manual",occurrenceId:"once"},input:{prompt:"work"},context:{schema:"octo.context-envelope/v2",items:[]}});
+ const agent=await engine.registerAgent({name:"existing",agentSource:"provisioned",config:{providerAgentId:"old-runner"},defaultContext:{schema:"octo.context-envelope/v3",items:[ { namespace: "octo.execution", name: "adapter", payload: {type:"openclaw",provider_agent_id:"main"} }, { namespace: "octo.execution", name: "workspace", payload: {mode:"fixed",path:"/workspace"} }, { namespace: "octo.security", name: "approval_policy", payload: {mode:"full_access"} } ]}});
+ const submitted=await engine.submitAgentRun({namespace:"local",agentId:agent.id,sessionKey:"v1/task/existing",trigger:{kind:"manual",occurrenceId:"once"},input:{prompt:"work"},context:{schema:"octo.context-envelope/v3",items:[]}});
  await engine.executeRun(submitted.agentRun.id);
  assert.equal(requests[0].agentConfig.providerAgentId,"main");
  assert.equal(submitted.agentRun.resolvedExecutionPlan.provider_agent_id,"main");

@@ -297,10 +297,75 @@
               "const": "octo.execution"
             },
             "name": {
-              "const": "config"
+              "const": "adapter"
             },
             "payload": {
-              "$ref": "#/definitions/ContextExecutionPayload"
+              "$ref": "#/definitions/ContextAdapterPayload"
+            }
+          }
+        },
+        {
+          "properties": {
+            "namespace": {
+              "const": "octo.execution"
+            },
+            "name": {
+              "const": "model"
+            },
+            "payload": {
+              "$ref": "#/definitions/ContextModelPayload"
+            }
+          }
+        },
+        {
+          "properties": {
+            "namespace": {
+              "const": "octo.execution"
+            },
+            "name": {
+              "const": "workspace"
+            },
+            "payload": {
+              "$ref": "#/definitions/ContextWorkspacePayload"
+            }
+          }
+        },
+        {
+          "properties": {
+            "namespace": {
+              "const": "octo.execution"
+            },
+            "name": {
+              "const": "limits"
+            },
+            "payload": {
+              "$ref": "#/definitions/ContextLimitsPayload"
+            }
+          }
+        },
+        {
+          "properties": {
+            "namespace": {
+              "const": "octo.runtime"
+            },
+            "name": {
+              "const": "selection"
+            },
+            "payload": {
+              "$ref": "#/definitions/ContextRuntimeSelectionPayload"
+            }
+          }
+        },
+        {
+          "properties": {
+            "namespace": {
+              "const": "octo.security"
+            },
+            "name": {
+              "const": "approval_policy"
+            },
+            "payload": {
+              "$ref": "#/definitions/ContextApprovalPolicyPayload"
             }
           }
         },
@@ -310,10 +375,49 @@
               "const": "octo.resources"
             },
             "name": {
-              "const": "selection"
+              "const": "skills"
             },
             "payload": {
-              "$ref": "#/definitions/ContextCapabilitySelectionPayload"
+              "$ref": "#/definitions/ContextSkillsPayload"
+            }
+          }
+        },
+        {
+          "properties": {
+            "namespace": {
+              "const": "octo.resources"
+            },
+            "name": {
+              "const": "agent_plugins"
+            },
+            "payload": {
+              "$ref": "#/definitions/ContextAgentPluginsPayload"
+            }
+          }
+        },
+        {
+          "properties": {
+            "namespace": {
+              "const": "octo.resources"
+            },
+            "name": {
+              "const": "knowledge"
+            },
+            "payload": {
+              "$ref": "#/definitions/ContextKnowledgePayload"
+            }
+          }
+        },
+        {
+          "properties": {
+            "namespace": {
+              "const": "octo.resources"
+            },
+            "name": {
+              "const": "connectors"
+            },
+            "payload": {
+              "$ref": "#/definitions/ContextConnectorsPayload"
             }
           }
         },
@@ -323,10 +427,23 @@
               "const": "octo.content"
             },
             "name": {
-              "const": "materials"
+              "const": "inline"
             },
             "payload": {
-              "$ref": "#/definitions/ContextMaterialsPayload"
+              "$ref": "#/definitions/ContextInlinePayload"
+            }
+          }
+        },
+        {
+          "properties": {
+            "namespace": {
+              "const": "octo.content"
+            },
+            "name": {
+              "const": "references"
+            },
+            "payload": {
+              "$ref": "#/definitions/ContextReferencesPayload"
             }
           }
         },
@@ -360,7 +477,7 @@
       ],
       "properties": {
         "schema": {
-          "const": "octo.context-envelope/v2"
+          "const": "octo.context-envelope/v3"
         },
         "items": {
           "type": "array",
@@ -563,10 +680,10 @@
       ],
       "properties": {
         "compiler_version": {
-          "const": "octo.context-compiler/v2"
+          "const": "octo.context-compiler/v3"
         },
         "catalog_version": {
-          "const": "octo.context-catalog/v2"
+          "const": "octo.context-catalog/v3"
         },
         "context_hash": {
           "type": "string",
@@ -653,10 +770,10 @@
           "const": "octo.context-application/v1"
         },
         "compiler_version": {
-          "const": "octo.context-compiler/v2"
+          "const": "octo.context-compiler/v3"
         },
         "catalog_version": {
-          "const": "octo.context-catalog/v2"
+          "const": "octo.context-catalog/v3"
         },
         "context_hash": {
           "type": "string",
@@ -801,30 +918,13 @@
                     }
                   },
                   {
-                    "if": {
+                    "not": {
                       "properties": {
                         "namespace": {
                           "const": "octo.content"
                         },
                         "name": {
-                          "const": "materials"
-                        }
-                      }
-                    },
-                    "then": {
-                      "properties": {
-                        "payload": {
-                          "properties": {
-                            "entries": {
-                              "items": {
-                                "properties": {
-                                  "type": {
-                                    "const": "reference"
-                                  }
-                                }
-                              }
-                            }
-                          }
+                          "const": "inline"
                         }
                       }
                     }
@@ -875,37 +975,15 @@
     "ContextModelPayload": {
       "type": "object",
       "additionalProperties": false,
+      "minProperties": 1,
       "properties": {
-        "id": {
-          "type": "string",
-          "minLength": 1
+        "selection": {
+          "$ref": "#/definitions/ContextModelSelectionPayload"
         },
-        "use_provider_default": {
-          "const": true
+        "reasoning": {
+          "$ref": "#/definitions/ContextReasoningPayload"
         }
-      },
-      "oneOf": [
-        {
-          "required": [
-            "id"
-          ],
-          "not": {
-            "required": [
-              "use_provider_default"
-            ]
-          }
-        },
-        {
-          "required": [
-            "use_provider_default"
-          ],
-          "not": {
-            "required": [
-              "id"
-            ]
-          }
-        }
-      ]
+      }
     },
     "ContextReasoningPayload": {
       "type": "object",
@@ -992,18 +1070,9 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "kind",
         "resource_id"
       ],
       "properties": {
-        "kind": {
-          "enum": [
-            "agent_plugin",
-            "skill",
-            "connector",
-            "knowledge"
-          ]
-        },
         "resource_id": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -3671,152 +3740,16 @@
         "provisioned"
       ]
     },
-    "ContextExecutionPayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "adapter": {
-          "$ref": "#/definitions/ContextAdapterPayload"
-        },
-        "model": {
-          "$ref": "#/definitions/ContextModelPayload"
-        },
-        "reasoning": {
-          "$ref": "#/definitions/ContextReasoningPayload"
-        },
-        "workspace": {
-          "$ref": "#/definitions/ContextWorkspacePayload"
-        },
-        "limits": {
-          "$ref": "#/definitions/ContextLimitsPayload"
-        },
-        "runtime": {
-          "$ref": "#/definitions/ContextRuntimeSelectionPayload"
-        },
-        "approval_policy": {
-          "$ref": "#/definitions/ContextApprovalPolicyPayload"
-        }
-      }
-    },
     "ContextResourceIdentity": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "kind",
         "resource_id"
       ],
       "properties": {
-        "kind": {
-          "enum": [
-            "agent_plugin",
-            "skill",
-            "connector",
-            "knowledge"
-          ]
-        },
         "resource_id": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-        }
-      }
-    },
-    "ContextMaterialEntry": {
-      "oneOf": [
-        {
-          "description": "Untrusted inline selection text with optional resource reference, source metadata and summary. Source metadata is not an authorization claim.",
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "text",
-            "type"
-          ],
-          "properties": {
-            "text": {
-              "type": "string",
-              "minLength": 1
-            },
-            "resource_ref": {
-              "type": "string",
-              "minLength": 1
-            },
-            "source": {
-              "type": [
-                "object",
-                "string"
-              ],
-              "additionalProperties": true
-            },
-            "summary": {
-              "type": "string"
-            },
-            "type": {
-              "const": "inline"
-            }
-          }
-        },
-        {
-          "description": "Declarative MCP resource operation. Only deployed scoped operations may execute; schema validation does not authorize access.",
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "resource_ref",
-            "resolver",
-            "locator",
-            "type"
-          ],
-          "properties": {
-            "resource_ref": {
-              "type": "string",
-              "minLength": 1
-            },
-            "resolver": {
-              "const": "mcp"
-            },
-            "locator": {
-              "type": "object"
-            },
-            "params": {
-              "description": "Frozen non-secret JSON parameters supplied by the authenticated resolver plan, not model-generated commands.",
-              "type": "object",
-              "additionalProperties": true,
-              "tsType": "Record<string, unknown>"
-            },
-            "authorization_ref": {
-              "type": "string",
-              "minLength": 1
-            },
-            "revision": {
-              "type": "string",
-              "minLength": 1
-            },
-            "type": {
-              "const": "reference"
-            }
-          },
-          "allOf": [
-            {
-              "properties": {
-                "locator": {
-                  "$ref": "#/definitions/ContextMcpLocator"
-                }
-              }
-            }
-          ]
-        }
-      ]
-    },
-    "ContextMaterialsPayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "entries"
-      ],
-      "properties": {
-        "entries": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/ContextMaterialEntry"
-          }
         }
       }
     },
@@ -3833,6 +3766,332 @@
         },
         "executable": {
           "type": "boolean"
+        }
+      }
+    },
+    "ContextModelSelectionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "use_provider_default": {
+          "const": true
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "id"
+          ],
+          "not": {
+            "required": [
+              "use_provider_default"
+            ]
+          }
+        },
+        {
+          "required": [
+            "use_provider_default"
+          ],
+          "not": {
+            "required": [
+              "id"
+            ]
+          }
+        }
+      ]
+    },
+    "ContextSkillsReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_id"
+      ],
+      "properties": {
+        "resource_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "invoke": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ContextSkillsPayload": {
+      "description": "Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.",
+      "x-octo-capability-selection": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "include",
+        "exclude"
+      ],
+      "properties": {
+        "include": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/definitions/ContextSkillsReference"
+          }
+        },
+        "exclude": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/ContextResourceIdentity"
+          }
+        }
+      }
+    },
+    "ContextAgentPluginsReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_id"
+      ],
+      "properties": {
+        "resource_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "invoke": {
+          "type": "boolean"
+        },
+        "components": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^(skill|mcp):[a-z0-9][a-z0-9._-]{0,95}$"
+          }
+        }
+      }
+    },
+    "ContextAgentPluginsPayload": {
+      "description": "Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.",
+      "x-octo-capability-selection": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "include",
+        "exclude"
+      ],
+      "properties": {
+        "include": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/definitions/ContextAgentPluginsReference"
+          }
+        },
+        "exclude": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/ContextResourceIdentity"
+          }
+        }
+      }
+    },
+    "ContextKnowledgeReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_id"
+      ],
+      "properties": {
+        "resource_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        }
+      }
+    },
+    "ContextKnowledgePayload": {
+      "description": "Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.",
+      "x-octo-capability-selection": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "include",
+        "exclude"
+      ],
+      "properties": {
+        "include": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/definitions/ContextKnowledgeReference"
+          }
+        },
+        "exclude": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/ContextResourceIdentity"
+          }
+        }
+      }
+    },
+    "ContextConnectorsReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_id"
+      ],
+      "properties": {
+        "resource_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "components": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^mcp:[a-z0-9][a-z0-9._-]{0,95}$"
+          }
+        }
+      }
+    },
+    "ContextConnectorsPayload": {
+      "description": "Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.",
+      "x-octo-capability-selection": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "include",
+        "exclude"
+      ],
+      "properties": {
+        "include": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/definitions/ContextConnectorsReference"
+          }
+        },
+        "exclude": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/ContextResourceIdentity"
+          }
+        }
+      }
+    },
+    "ContextInlineEntry": {
+      "description": "Untrusted inline selection text with optional resource reference, source metadata and summary. Source metadata is not an authorization claim.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": [
+            "object",
+            "string"
+          ],
+          "additionalProperties": true
+        },
+        "summary": {
+          "type": "string"
+        }
+      }
+    },
+    "ContextReferenceEntry": {
+      "description": "Declarative MCP resource operation. Only deployed scoped operations may execute; schema validation does not authorize access.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_ref",
+        "resolver",
+        "locator"
+      ],
+      "properties": {
+        "resource_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resolver": {
+          "const": "mcp"
+        },
+        "locator": {
+          "type": "object"
+        },
+        "params": {
+          "description": "Frozen non-secret JSON parameters supplied by the authenticated resolver plan, not model-generated commands.",
+          "type": "object",
+          "additionalProperties": true,
+          "tsType": "Record<string, unknown>"
+        },
+        "authorization_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "properties": {
+            "locator": {
+              "$ref": "#/definitions/ContextMcpLocator"
+            }
+          }
+        }
+      ]
+    },
+    "ContextInlinePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entries"
+      ],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/ContextInlineEntry"
+          }
+        }
+      }
+    },
+    "ContextReferencesPayload": {
+      "type": "object",
+      "x-octo-unique-resource-refs": true,
+      "additionalProperties": false,
+      "required": [
+        "entries"
+      ],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/ContextReferenceEntry"
+          }
         }
       }
     }

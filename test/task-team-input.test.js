@@ -47,7 +47,7 @@ test("actual Worker wrapper renders handoff instruction and mailbox output refer
     octo_task: { type: "streamable_http", url: "https://worker.test/mcp/team", headers: { Authorization: "Bearer target-only-grant" }, required: true }
   } };
   plan.mcp_servers.octo_team = structuredClone(plan.mcp_servers.octo_task);
-  const resource = { namespace: "octo.content", name: "materials", payload: { entries: [{ type: "reference",  resource_ref: ref.resource_ref,
+  const resource = { namespace: "octo.content", name: "references", payload: { entries: [{ resource_ref: ref.resource_ref,
     resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_id: "task-1", handler_epoch: 3 }
   }] } };
   const envelope = { schema_version: 6, effective_context: executionContext(plan, [resource]), context_configuration_version: 1,

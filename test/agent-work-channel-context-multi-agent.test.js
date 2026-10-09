@@ -246,8 +246,7 @@ function groupEnvelope(agent, round, text) {
       trigger_fact: trigger
     }
   }, {
-    namespace: "octo.content", name: "materials", payload: { entries: [{ type: "inline",
-      resource_ref: `octo://agents/${agent}/selected`, text: `Selected content only for Agent ${agent.toUpperCase()}`
+    namespace: "octo.content", name: "inline", payload: { entries: [{ resource_ref: `octo://agents/${agent}/selected`, text: `Selected content only for Agent ${agent.toUpperCase()}`
     }] }
   }];
   return {

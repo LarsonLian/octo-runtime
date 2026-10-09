@@ -1,8 +1,8 @@
 {
   "base": {
     "schema": "octo.context-application/v1",
-    "compiler_version": "octo.context-compiler/v2",
-    "catalog_version": "octo.context-catalog/v2",
+    "compiler_version": "octo.context-compiler/v3",
+    "catalog_version": "octo.context-catalog/v3",
     "context_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "compiled_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "run_id": "run-1",
@@ -11,20 +11,94 @@
     "adapter_type": "codex",
     "provider_session_id": "thread-1",
     "provider_ack": "turn/start",
-    "loaded_skills": ["proof"]
+    "loaded_skills": [
+      "proof"
+    ]
   },
   "cases": [
-    {"name":"accepted native acknowledgement","patch":{},"valid":true},
-    {"name":"no selected skills","patch":{"loaded_skills":[]},"valid":true},
-    {"name":"unknown compiler","patch":{"compiler_version":"octo.context-compiler/v0"},"valid":false},
-    {"name":"missing acknowledgement","remove":"provider_ack","patch":{},"valid":false},
-    {"name":"invalid compiled digest","patch":{"compiled_hash":"not-a-digest"},"valid":false},
-    {"name":"stale zero fence","patch":{"fencing_token":0},"valid":false},
-    {"name":"fractional fence","patch":{"fencing_token":1.5},"valid":false},
-    {"name":"unsafe fence","patch":{"fencing_token":9007199254740992},"valid":false},
-    {"name":"missing loaded evidence","patch":{"loaded_skills":null},"valid":false},
-    {"name":"duplicate skill","patch":{"loaded_skills":["proof","proof"]},"valid":false},
-    {"name":"private path","patch":{"workspace_path":"/private"},"valid":false},
-    {"name":"unsupported Adapter evidence","patch":{"adapter_type":"claude"},"valid":false}
+    {
+      "name": "accepted native acknowledgement",
+      "patch": {},
+      "valid": true
+    },
+    {
+      "name": "no selected skills",
+      "patch": {
+        "loaded_skills": []
+      },
+      "valid": true
+    },
+    {
+      "name": "unknown compiler",
+      "patch": {
+        "compiler_version": "octo.context-compiler/v0"
+      },
+      "valid": false
+    },
+    {
+      "name": "missing acknowledgement",
+      "remove": "provider_ack",
+      "patch": {},
+      "valid": false
+    },
+    {
+      "name": "invalid compiled digest",
+      "patch": {
+        "compiled_hash": "not-a-digest"
+      },
+      "valid": false
+    },
+    {
+      "name": "stale zero fence",
+      "patch": {
+        "fencing_token": 0
+      },
+      "valid": false
+    },
+    {
+      "name": "fractional fence",
+      "patch": {
+        "fencing_token": 1.5
+      },
+      "valid": false
+    },
+    {
+      "name": "unsafe fence",
+      "patch": {
+        "fencing_token": 9007199254740992
+      },
+      "valid": false
+    },
+    {
+      "name": "missing loaded evidence",
+      "patch": {
+        "loaded_skills": null
+      },
+      "valid": false
+    },
+    {
+      "name": "duplicate skill",
+      "patch": {
+        "loaded_skills": [
+          "proof",
+          "proof"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "private path",
+      "patch": {
+        "workspace_path": "/private"
+      },
+      "valid": false
+    },
+    {
+      "name": "unsupported Adapter evidence",
+      "patch": {
+        "adapter_type": "claude"
+      },
+      "valid": false
+    }
   ]
 }

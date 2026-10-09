@@ -1227,8 +1227,8 @@ for (const [projection, providerPersistence] of [["window", "append_only"], ["de
     const sendStart = (websocket, round) => {
       const payload = executionEnvelope("runtime-cold", `run-cold-${round}`, round * 2, `cold current ${round}`);
       payload.provider_session = { sessionId: "must-not-resume", resumable: true };
-      const selections = { namespace: "octo.content", name: "materials", payload: { entries: [
-        { type: "inline",  resource_ref: "octo://messages/selected", text: "Selected inline facts" }
+      const selections = { namespace: "octo.content", name: "inline", payload: { entries: [
+        { resource_ref: "octo://messages/selected", text: "Selected inline facts" }
       ] } };
       payload.effective_context.items.push(structuredClone(selections));
       payload.agent_run_request.context.items.push(structuredClone(selections));

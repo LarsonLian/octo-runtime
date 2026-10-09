@@ -47,7 +47,7 @@ for (const scenario of [
   { name: "explicit foreign target", error: "RUNTIME_SELECTION_TARGET_MISMATCH", modify: envelope => { envelope.resolved_runtime_selection = resolvedRuntimeSelection("foreign-runtime"); } },
   { name: "explicit inconsistent candidate", error: "RESOLVED_RUNTIME_SELECTION_INVALID", modify: envelope => { envelope.resolved_runtime_selection.explicit_runtime_id = "foreign-runtime"; } },
   { name: "bound pool excludes local Runtime", error: "RUNTIME_SELECTION_TARGET_MISMATCH", modify: envelope => { envelope.resolved_runtime_selection = structuredClone(boundPool); envelope.resolved_runtime_selection.authorized_candidates[1].runtime_id = "another-runtime"; } },
-  { name: "effective Context target disagrees", error: "RUNTIME_SELECTION_CONTEXT_MISMATCH", modify: envelope => { envelope.effective_context.items.find(item => item.name === "config").payload.runtime = { mode: "explicit", runtime_id: "foreign-runtime" }; } }
+  { name: "effective Context target disagrees", error: "RUNTIME_SELECTION_CONTEXT_MISMATCH", modify: envelope => { envelope.effective_context.items.push({ namespace: "octo.runtime", name: "selection", payload: { mode: "explicit", runtime_id: "foreign-runtime" } }); } }
 ]) {
   test(`daemon rejects ${scenario.name} before context sync or invocation and persists replay rejection`, { timeout: 5_000 }, async () => {
     const payload = executionEnvelope();

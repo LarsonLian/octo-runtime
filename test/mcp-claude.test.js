@@ -13,7 +13,7 @@ const request = { protocolVersion: 2,
   modelInput: "call the tool",
   workdir: process.cwd(),
   controlInstructions: "use the team tool",
-  context: { schema: "octo.context-envelope/v2", items: [] },
+  context: { schema: "octo.context-envelope/v3", items: [] },
   approvalMode: "full_access",
   agentSource: "provisioned", agentConfig: {},
   mcpServers: {

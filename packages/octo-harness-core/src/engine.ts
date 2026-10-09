@@ -72,7 +72,7 @@ export class HarnessEngine {
     input = structuredClone(input);
     if (!input.name) throw new Error("agent name is required");
     assertLocalAgentConfig(input.config === undefined ? {} : input.config);
-    const resolved = resolveLocalContext(input.defaultContext, { schema: "octo.context-envelope/v2", items: [] }, input.agentSource);
+    const resolved = resolveLocalContext(input.defaultContext, { schema: "octo.context-envelope/v3", items: [] }, input.agentSource);
     const adapters = await this.host.list();
     assertLoadedAdapter(adapters, resolved.resolvedExecutionPlan.adapter_type);
     const agent: Agent = {
@@ -97,7 +97,7 @@ export class HarnessEngine {
     if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) throw new TypeError("CONTEXT_DEFAULTS_VERSION_REQUIRED");
     const current = this.store.getAgent(input.agentId);
     if (!current) throw new Error(`agent not found: ${input.agentId}`);
-    const resolved = resolveLocalContext(input.context, { schema: "octo.context-envelope/v2", items: [] }, current.agentSource);
+    const resolved = resolveLocalContext(input.context, { schema: "octo.context-envelope/v3", items: [] }, current.agentSource);
     const adapters = await this.host.list();
     assertLoadedAdapter(adapters, resolved.resolvedExecutionPlan.adapter_type);
     let updated!: Agent;

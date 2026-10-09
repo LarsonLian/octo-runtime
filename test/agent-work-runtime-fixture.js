@@ -64,7 +64,7 @@ export function codexAppServerFixture({ method = "item/commandExecution/requestA
 }
 
 export function contextEnvelope(items = []) {
-  return { schema: "octo.context-envelope/v2", items: structuredClone(items) };
+  return { schema: "octo.context-envelope/v3", items: structuredClone(items) };
 }
 
 export function resolvedRuntimeSelection(runtimeId = "runtime-1") {
@@ -81,14 +81,14 @@ export function resolvedRuntimeSelection(runtimeId = "runtime-1") {
 
 export function executionContext(plan, items = []) {
   return contextEnvelope([
-    { namespace: "octo.execution", name: "config", payload: {
-      adapter: { type: plan.adapter_type },
-      workspace: plan.workspace ?? { mode: "fixed", path: plan.workdir },
-      model: plan.model === undefined ? { use_provider_default: true } : { id: plan.model },
-      reasoning: plan.effort === undefined ? { use_provider_default: true } : { effort: plan.effort },
-      approval_policy: { mode: plan.approval_mode },
-      ...(plan.runtime_limits === undefined ? {} : { limits: plan.runtime_limits })
-    } }, ...items
+    { namespace: "octo.execution", name: "adapter", payload: { type: plan.adapter_type, ...(plan.provider_agent_id ? {provider_agent_id: plan.provider_agent_id} : {}) } },
+    { namespace: "octo.execution", name: "workspace", payload: plan.workspace ?? { mode: "fixed", path: plan.workdir } },
+    { namespace: "octo.execution", name: "model", payload: {
+      selection: plan.model === undefined ? { use_provider_default: true } : { id: plan.model },
+      reasoning: plan.effort === undefined ? { use_provider_default: true } : { effort: plan.effort }
+    } },
+    { namespace: "octo.security", name: "approval_policy", payload: { mode: plan.approval_mode } },
+    ...(plan.runtime_limits === undefined ? [] : [{namespace:"octo.execution", name:"limits", payload:plan.runtime_limits}]), ...items
   ]);
 }
 
