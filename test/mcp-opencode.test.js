@@ -59,7 +59,7 @@ test("OpenCode merges MCP into the child config and redacts provider observation
       modelInput: "call the tool",
       workdir: process.cwd(),
       controlInstructions: "control",
-      context: { schema: "octo.context-envelope/v1", items: [] },
+      context: { schema: "octo.context-envelope/v2", items: [] },
       approvalMode: "full_access",
       agentSource: "provisioned", agentConfig: {},
       mcpServers

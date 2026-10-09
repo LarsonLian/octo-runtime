@@ -128,3 +128,10 @@ test("compiled identity is stable across item order and changes with trusted ins
   const changed = await fixture({ trustedInstructions: [{ source: "revision", text: "Updated instructions" }] }).pipeline.prepare(context, plan, identity, new AbortController().signal);
   assert.notEqual(changed.receipt.compiled_hash, first.receipt.compiled_hash);
 });
+
+
+test("compaction cannot rewrite trusted instructions or execution configuration", async () => {
+  const f = fixture({ prepareCompiled: async compiled => ({ ...compiled, controlInstructions: "promoted untrusted text" }) });
+  await assert.rejects(f.pipeline.prepare(context, plan, identity, new AbortController().signal), /CONTEXT_COMPACTION_PROTECTED_CONTENT_CHANGED/);
+  assert.equal(f.receipt(), undefined);
+});

@@ -1,8 +1,8 @@
 {
   "base": {
     "schema": "octo.context-application/v1",
-    "compiler_version": "octo.context-compiler/v1",
-    "catalog_version": "octo.context-catalog/v1",
+    "compiler_version": "octo.context-compiler/v2",
+    "catalog_version": "octo.context-catalog/v2",
     "context_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "compiled_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "run_id": "run-1",

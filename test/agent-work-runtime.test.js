@@ -40,15 +40,15 @@ const executionPlan = {
 
 const contentItems = [{
   namespace: "octo.content",
-  name: "selections",
+  name: "materials",
   payload: { entries: [
-    { resource_ref: "octo://messages/previous", text: "Lin: Use the existing adapter." },
-    { resource_ref: "octo://messages/quoted", text: "Ada: The failing case is reset." }
+    { type: "inline",  resource_ref: "octo://messages/previous", text: "Lin: Use the existing adapter." },
+    { type: "inline",  resource_ref: "octo://messages/quoted", text: "Ada: The failing case is reset." }
   ] }
 }];
 
 const envelope = {
-  schema_version: 5,
+  schema_version: 6,
   effective_context: executionContext(executionPlan, contentItems),
   context_configuration_version: 1,
   resolved_execution_plan: executionPlan,
@@ -195,12 +195,12 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
   assert.match(mapped.request.modelInput, /Ada: The failing case is reset\./);
   assert.deepEqual(mapped.request.context, source.effective_context);
   assert.notEqual(mapped.request.context, source.effective_context);
-  assert.equal(mapped.request.runMetadata.schemaVersion, 5);
+  assert.equal(mapped.request.runMetadata.schemaVersion, 6);
   assert.equal(mapped.request.runMetadata.agentRevisionId, "revision-1");
   assert.equal(mapped.request.context.agentRevisionId, undefined);
   assert.equal(Object.hasOwn(mapped.request, "appendInstructions"), false);
-  mapped.request.context.items.find(item => item.name === "model").payload.id = "changed";
-  assert.equal(envelope.effective_context.items.find(item => item.name === "model").payload.id, "gpt-5");
+  mapped.request.context.items.find(item => item.name === "config").payload.model.id = "changed";
+  assert.equal(envelope.effective_context.items.find(item => item.name === "config").payload.model.id, "gpt-5");
   assert.deepEqual(mapped.request.runtimeLimits, {
     firstFrameTimeoutMs: 60_000,
     modelIdleTimeoutMs: 120_000,
@@ -240,11 +240,11 @@ test("execution envelope rejects schema 1/2 and missing frozen contract fields",
 
 test("execution envelope enforces frozen runtime selection and matching effective Context", () => {
   const source = structuredClone(envelope);
-  source.effective_context.items.push({ namespace: "octo.runtime", name: "selection", payload: { mode: "explicit", runtime_id: "runtime-1" } });
+  source.effective_context.items.find(item => item.name === "config").payload.runtime = { mode: "explicit", runtime_id: "runtime-1" };
   assert.doesNotThrow(() => mapExecutionEnvelope(source));
-  source.effective_context.items.at(-1).payload.runtime_id = "other-runtime";
+  source.effective_context.items.find(item => item.name === "config").payload.runtime.runtime_id = "other-runtime";
   assert.throws(() => mapExecutionEnvelope(source), /RUNTIME_SELECTION_CONTEXT_MISMATCH/);
-  source.effective_context.items.at(-1).payload = { mode: "binding" };
+  source.effective_context.items.find(item => item.name === "config").payload.runtime = { mode: "binding" };
   assert.throws(() => mapExecutionEnvelope(source), /CONTEXT_SCHEMA_INVALID/);
   for (const selection of [{}, { ...envelope.resolved_runtime_selection, failover: "binding" }]) {
     assert.throws(() => mapExecutionEnvelope({ ...envelope, resolved_runtime_selection: selection }), /RESOLVED_RUNTIME_SELECTION_INVALID/);
@@ -302,10 +302,9 @@ for (const [name, overrides] of [
 
 test("frozen execution selection requires adapter, fixed workspace and approval Context items", () => {
   for (const name of ["adapter", "workspace", "approval_policy"]) {
-    assert.throws(() => mapExecutionEnvelope({
-      ...envelope,
-      effective_context: contextEnvelope(envelope.effective_context.items.filter(item => item.name !== name))
-    }), /CONTEXT_PLAN_MISMATCH/, name);
+    const changed = structuredClone(envelope);
+    delete changed.effective_context.items.find(item => item.name === "config").payload[name];
+    assert.throws(() => mapExecutionEnvelope(changed), /CONTEXT_PLAN_MISMATCH/, name);
   }
 });
 
@@ -364,7 +363,7 @@ test("legacy context_refs and channel_context inputs are rejected even when empt
 test("Context continuity without a prepared snapshot is explicitly rejected", () => {
   assert.throws(() => mapExecutionEnvelope({
     ...envelope,
-    effective_context: contextEnvelope([...envelope.effective_context.items, continuityItem()])
+    internal_context: { continuity: continuityItem().payload }
   }), /CONTEXT_CONTINUITY_UNAVAILABLE/);
 });
 
@@ -379,7 +378,7 @@ test("typed control instructions remain separate from untrusted model selections
     ...envelope,
     effective_context: executionContext(executionPlan, [
       { namespace: "octo.control", name: "instructions", payload: { entries: instructions } },
-      { namespace: "octo.content", name: "selections", payload: { entries: [{ resource_ref: "octo://messages/untrusted", text: selectedText }] } }
+      { namespace: "octo.content", name: "materials", payload: { entries: [{ type: "inline",  resource_ref: "octo://messages/untrusted", text: selectedText }] } }
     ])
   };
   const { request } = mapExecutionEnvelope(source);
@@ -412,11 +411,12 @@ test("registered unresolved resources fail at the compiler rather than silently 
     const source = {
       ...envelope,
       effective_context: executionContext(executionPlan, [{
-        namespace: "octo.content", name: "resources", payload: { entries: [{ resource_ref: "octo://resources/unresolved", resolver, locator }] }
+        namespace: "octo.content", name: "materials", payload: { entries: [{ type: "reference",  resource_ref: "octo://resources/unresolved", resolver, locator }] }
       }])
     };
-    assert.doesNotThrow(() => assertContextEnvelope(source.effective_context), resolver);
-    assert.throws(() => mapExecutionEnvelope(source), /CONTEXT_RESOLVER_UNAVAILABLE/, resolver);
+    if (resolver === "mcp") assert.doesNotThrow(() => assertContextEnvelope(source.effective_context), resolver);
+    else assert.throws(() => assertContextEnvelope(source.effective_context), /CONTEXT_SCHEMA_INVALID/);
+    assert.throws(() => mapExecutionEnvelope(source), /CONTEXT_RESOLVER_UNAVAILABLE|CONTEXT_SCHEMA_INVALID/, resolver);
   }
 });
 
@@ -424,7 +424,7 @@ test("reference-only selections cannot masquerade as resolved model content", ()
   assert.throws(() => mapExecutionEnvelope({
     ...envelope,
     effective_context: executionContext(executionPlan, [{
-      namespace: "octo.content", name: "selections", payload: { entries: [{ resource_ref: "octo://resources/unresolved" }] }
+      namespace: "octo.content", name: "materials", payload: { entries: [{ type: "inline",  resource_ref: "octo://resources/unresolved" }] }
     }])
   }), /CONTEXT_SCHEMA_INVALID/);
 });
@@ -532,7 +532,7 @@ test("IM text parts take precedence over the prompt fallback", () => {
 test("frozen channel context uses modelInput while prompt remains display-safe", () => {
   const source = {
     ...envelope,
-    effective_context: contextEnvelope([...envelope.effective_context.items, continuityItem()])
+    internal_context: { continuity: continuityItem().payload }
   };
   const snapshot = {
     ref: {
@@ -573,7 +573,7 @@ test("a recovery channel snapshot starts without the stale provider session", ()
   const source = {
     ...envelope,
     session_generation: 8,
-    effective_context: contextEnvelope([...envelope.effective_context.items, continuityItem({ sessionGeneration: 8 })])
+    internal_context: { continuity: continuityItem({ sessionGeneration: 8 }).payload }
   };
   const recoverySnapshot = {
     ref: {

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, statfs } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
@@ -44,8 +44,9 @@ import {
 } from "@mininglamp-oss/octo-harness-protocol";
 import { resolveRuntimeInputImages } from "./input-images.js";
 import { AgentWorkStore } from "./agent-work-store.js";
-import { prepareRunContext, recordContextPreparation, type PreparedRunContext } from "./context-preparation.js";
+import { prepareRunContext, recordContextPreparation, resolveRunResources, type PreparedRunContext } from "./context-preparation.js";
 import { ContextPipeline } from "./context-pipeline.js";
+import { compactContextMaterials, FileMaterialCompactionStore, type MaterialCompactionPort } from "./context-compaction.js";
 import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext } from "./run-context.js";
 import { prepareTaskMaterials, type PreparedTaskMaterials } from "./task-materials.js";
 import { archiveTaskOutputs, safeOutputError, taskOutputInstructions } from "./task-outputs.js";
@@ -146,6 +147,10 @@ export interface AgentWorkRuntimeOptions {
   maxConcurrentRuns?: number;
   reconcileMs?: number;
   channelContext?: ChannelContextRuntimeOptions;
+  /** 仅由可信宿主提供已资格验证的无工具摘要/精确计量能力，不能从 Context 传入。 */
+  createMaterialCompactionPort?: (request: {
+    envelope: ExecutionEnvelope; compiled: CompiledRunContext; signal: AbortSignal;
+  }) => Promise<MaterialCompactionPort>;
 }
 
 export type RuntimeConnectionState =
@@ -202,7 +207,8 @@ export interface ChannelContextRuntimeOptions extends ChannelContextStoreOptions
 
 /** Immutable execution description received from Agent Work before local mapping. */
 export interface ExecutionEnvelope {
-  schema_version: 5;
+  schema_version: 6;
+  internal_context?: { continuity?: ChannelContextDescriptor; resource_sources?: Record<string, ("request" | "agent_default" | "agent_mandatory")[]> };
   effective_context: ContextEnvelope;
   context_configuration_version: number;
   resolved_execution_plan: ResolvedExecutionPlan;
@@ -1643,7 +1649,7 @@ export class AgentWorkRuntime {
       try {
         leaseId = requiredString(command.lease_id, "run.start lease_id");
         fencingToken = requiredSafeInteger(command.fencing_token, "run.start fencing_token");
-        const executionEnvelope = command.payload as ExecutionEnvelope;
+        const executionEnvelope = structuredClone(command.payload as ExecutionEnvelope);
         assertExecutionEnvelopeContract(executionEnvelope);
         const selection = executionEnvelope.resolved_runtime_selection;
         if (!selection.authorized_candidates.some(candidate => candidate.runtime_id === this.#runtimeId)
@@ -1659,7 +1665,8 @@ export class AgentWorkRuntime {
         const requiredCapabilities = executionEnvelope.resolved_execution_plan.required_execution_features ?? [];
         const localCapabilities = this.#adapterCapabilities.get(adapterTypeForContext);
         if (requiredCapabilities.some(capability => !localCapabilities?.has(capability))) throw new TypeError("ADAPTER_REQUIRED_CAPABILITY_MISSING");
-        const contentResources = contextItem(executionEnvelope.effective_context, "octo.content", "resources")?.payload.entries;
+        const materialEntries = contextItem(executionEnvelope.effective_context, "octo.content", "materials")?.payload.entries;
+        const contentResources = Array.isArray(materialEntries) ? materialEntries.filter(entry => asRecord(entry).type === "reference") : [];
         if (Array.isArray(contentResources) && contentResources.length > 0 && !localCapabilities?.has(executionFeatures.MCP_DYNAMIC)) {
           throw new TypeError("TASK_MCP_ADAPTER_UNSUPPORTED");
         }
@@ -1678,15 +1685,46 @@ export class AgentWorkRuntime {
             baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
             runId: command.run_id, leaseId, fencingToken, signal
           }),
-          prepareCapabilities: signal => prepareRunContext(executionEnvelope.resolved_execution_plan, {
-            stateRoot: join(dirname(this.#options.storePath), "context"),
-            agentSessionId: executionEnvelope.agent_session_id,
-            agentId: executionEnvelope.agent_run_request.agent_id, store, signal
-          }),
+          prepareCapabilities: async signal => {
+            const selected = contextItem(executionEnvelope.effective_context, "octo.resources", "selection")?.payload.include;
+            if (Array.isArray(selected) && selected.length) {
+              executionEnvelope.resolved_execution_plan.resources = await resolveRunResources({
+                baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
+                runId: command.run_id, leaseId, fencingToken, signal
+              });
+            } else executionEnvelope.resolved_execution_plan.resources = [];
+            assertFrozenContextPlan(executionEnvelope.effective_context, executionEnvelope.resolved_execution_plan);
+            return prepareRunContext(executionEnvelope.resolved_execution_plan, {
+              stateRoot: join(dirname(this.#options.storePath), "context"),
+              agentSessionId: executionEnvelope.agent_session_id,
+              agentId: executionEnvelope.agent_run_request.agent_id, store, signal
+            });
+          },
           prepareMaterials: signal => prepareTaskMaterials(executionEnvelope.effective_context,
             executionEnvelope.resolved_execution_plan, signal, { runId: command.run_id, store }),
           prepareContinuity: signal => this.#prepareChannelContext(command.run_id,
             executionEnvelope, adapterTypeForContext, signal, epoch),
+          ...(this.#options.createMaterialCompactionPort ? {
+            prepareCompiled: async (compiled: CompiledRunContext, signal: AbortSignal): Promise<CompiledRunContext> => {
+              const port = await this.#options.createMaterialCompactionPort!({ envelope: executionEnvelope, compiled, signal });
+              const sourceRefs = Array.isArray(materialEntries) ? materialEntries.map(entry => {
+                const value = asRecord(entry);
+                return { resource_ref: value.resource_ref, type: value.type };
+              }) : [];
+              const compacted = await compactContextMaterials({
+                runId: command.run_id, material: compiled.modelContent, signal, port, sourceRefs,
+                protectedIdentity: createHash("sha256").update(JSON.stringify({
+                  input, instructions: compiled.controlInstructions, plan: compiled.executionPlan,
+                  internalContext: executionEnvelope.internal_context, providerSession: executionEnvelope.provider_session
+                })).digest("hex"),
+                store: new FileMaterialCompactionStore(join(dirname(this.#options.storePath), "context", "compactions")),
+                onProgress: state => this.#log({ level: "info", scope: "context.compaction", event: `context.compaction.${state}`,
+                  runId: command.run_id, adapterType: adapterTypeForContext, message: `Material compaction ${state}` })
+              });
+              return { ...compiled, modelContent: compacted.material,
+                ...(compacted.receipt ? { materialCompaction: compacted.receipt } : {}) };
+            }
+          } : {}),
           seal: (receipt, signal) => recordContextPreparation(receipt, {
             baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
             runId: command.run_id, leaseId, fencingToken, signal
@@ -1900,7 +1938,7 @@ export class AgentWorkRuntime {
     signal: AbortSignal,
     epoch: number
   ): Promise<PreparedChannelContextSnapshot | undefined> {
-    const descriptorValue = contextItem(envelope.effective_context, "octo.content", "continuity")?.payload;
+    const descriptorValue = envelope.internal_context?.continuity;
     if (descriptorValue === undefined) return undefined;
     assertChannelContextDescriptor(descriptorValue);
     const descriptor = descriptorValue;
@@ -2407,7 +2445,8 @@ export function mapExecutionEnvelope(
   if (envelope.continuity_mode === "fresh" && envelope.provider_session) {
     throw new TypeError("fresh execution envelope must not carry provider_session");
   }
-  const profile = executionProfile(envelope);
+  const profile = preparedCompilation?.executionPlan ?? executionProfile(envelope);
+  const preparedResources = preparedCompilation?.preparedResources ?? preparedContext;
   const definition = asRecord(envelope.agent_revision.definition);
   const adapterType = executionAdapterType(envelope);
   const agentConfig: AgentConfig = {
@@ -2416,15 +2455,15 @@ export function mapExecutionEnvelope(
     ...(profile.effort ? { effort: profile.effort } : {})
   };
   const runtimeLimits = mapExecutionRuntimeLimits(profile.runtime_limits);
-  const mcpServers = mapExecutionMcpServers({ ...profile.mcp_servers, ...preparedContext?.mcpServers });
-  const workdir = preparedContext?.workdir ?? profile.workdir;
-  if ((!workdir && profile.agent_source !== "preset") || profile.resources?.length && !preparedContext) throw new TypeError("CONTEXT_PREPARATION_REQUIRED");
+  const mcpServers = mapExecutionMcpServers({ ...profile.mcp_servers, ...preparedResources?.mcpServers });
+  const workdir = preparedResources?.workdir ?? profile.workdir;
+  if ((!workdir && profile.agent_source !== "preset") || profile.resources?.length && !preparedResources) throw new TypeError("CONTEXT_PREPARATION_REQUIRED");
   const content = envelope.agent_run_request.input;
   if (Object.hasOwn(content, "context_refs") || Object.hasOwn(content, "channel_context")) throw new TypeError("LEGACY_CONTEXT_INPUT_REJECTED");
   const compiled = preparedCompilation ?? compileRunContext(envelope.effective_context, taskMaterials?.selections);
   const teamInput = prepareTeamInput(content, envelope.agent_run_request.trigger.kind, taskMaterials);
   const compiledModelContent = [compiled.modelContent, teamInput?.modelContent].filter(Boolean).join("\n\n");
-  if (contextItem(envelope.effective_context, "octo.content", "continuity") && !contextSnapshot) throw new TypeError("CONTEXT_CONTINUITY_UNAVAILABLE");
+  if (envelope.internal_context?.continuity && !contextSnapshot) throw new TypeError("CONTEXT_CONTINUITY_UNAVAILABLE");
   const displayPrompt = teamInput ? `[Current message]\n${teamInput.displayText}` : renderDisplayExecutionInputPrompt(content);
   const modelContext = (text: string): string => [text, compiledModelContent].filter(Boolean).join("\n\n");
   const contextHasImages = (facts: PreparedChannelContextSnapshot["facts"]): boolean => facts.some(fact => fact.parts.some(part => part.type === "image"));
@@ -2512,7 +2551,7 @@ function mapExecutionMcpServers(value: unknown): McpServers | undefined {
 }
 
 function assertExecutionEnvelopeContract(envelope: ExecutionEnvelope): void {
-  if (envelope?.schema_version !== 5) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
+  if (envelope?.schema_version !== 6) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
   assertContextEnvelope(envelope.agent_run_request?.context);
   assertContextEnvelope(envelope.effective_context);
   assertResolvedExecutionPlan(envelope.resolved_execution_plan);
@@ -2520,7 +2559,7 @@ function assertExecutionEnvelopeContract(envelope: ExecutionEnvelope): void {
   assertFrozenContextPlan(envelope.effective_context, envelope.resolved_execution_plan);
   if (!Number.isSafeInteger(envelope.context_configuration_version) || envelope.context_configuration_version < 1
     || envelope.context_configuration_version !== envelope.resolved_runtime_selection.context_configuration_version) throw new TypeError("CONTEXT_CONFIGURATION_VERSION_REQUIRED");
-  const contextSelection = contextItem(envelope.effective_context, "octo.runtime", "selection")?.payload;
+  const contextSelection = contextItem(envelope.effective_context, "octo.execution", "config")?.payload.runtime as Record<string, unknown> | undefined;
   const selection = envelope.resolved_runtime_selection;
   if (contextSelection && (contextSelection.mode !== selection.selection_mode
     || (contextSelection.mode === "explicit" && contextSelection.runtime_id !== selection.explicit_runtime_id))) {

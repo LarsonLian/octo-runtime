@@ -82,7 +82,7 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
     inside(workspaces, workdir);
   } else {
     if (!isAbsolute(workspace.path)) throw new TypeError("CONTEXT_WORKSPACE_INVALID");
-    workdir = await realDirectory(workspace.path);
+    await realDirectory(workspace.path);
     // 保留请求中的固定路径写法，以便 Worker 按冻结合同比较。
     workdir = workspace.path;
   }
@@ -105,7 +105,7 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
     const receipt: PreparedCapabilityReceipt = { resource_id: resource.resource_id, revision: resource.revision, digest: resource.digest, root, data, components: [] };
     prepared.receipt.resources.push(receipt);
     if (resource.kind === "agent_plugin") {
-      const manifest = JSON.parse(texts["plugin.json"] ?? "");
+      const manifest: unknown = JSON.parse(texts["plugin.json"] ?? "");
       if (!manifestValidator(manifest)) throw new TypeError("CONTEXT_PLUGIN_MANIFEST_INVALID");
       const known = new Set(["$schema", "name", "version", "description", "author", "homepage", "repository", "license", "keywords", "extensions"]);
       for (const key of Object.keys(manifest)) if (!known.has(key)) prepared.receipt.warnings.push(resource.resource_id + ": ignored manifest field " + key);
@@ -115,7 +115,7 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
       const declaredName = resource.kind === "skill" ? root.split(sep).at(-1) : path.split("/")[1];
       if (resource.components && !resource.components.includes("skill:" + declaredName)) continue;
       let skill: PreparedSkill;
-      try { skill = parseSkill(texts[path]!, join(root, path), resource.invoke); }
+      try { skill = parseSkill(texts[path], join(root, path), resource.invoke); }
       catch {
         throw new TypeError("CONTEXT_SKILL_UNAVAILABLE: " + resource.resource_id + "/" + path);
       }
@@ -129,7 +129,7 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
       prepared.skillRoots.push(resource.kind === "skill" ? dirname(root) : join(root, "skills"));
     }
     if (resource.kind !== "skill" && texts["mcp.json"] && (!resource.components || resource.components.some(key => key.startsWith("mcp:")))) {
-      const document = JSON.parse(texts["mcp.json"]);
+      const document: unknown = JSON.parse(texts["mcp.json"]);
       if (!record(document) || document.$schema !== mcpSchema || !record(document.mcpServers) || Object.keys(document).some(key => key !== "$schema" && key !== "mcpServers")) {
         throw new TypeError("CONTEXT_MCP_CONFIG_INVALID: " + resource.resource_id);
       } else {
@@ -164,16 +164,21 @@ function parseSkill(content: string, path: string, invoke: boolean): PreparedSki
   if (lines[0] !== "---" || end < 2) throw new TypeError("SKILL_FRONTMATTER_INVALID");
   const document = parseDocument(lines.slice(1, end).join("\n"), { uniqueKeys: true });
   if (document.errors.length) throw new TypeError("SKILL_FRONTMATTER_INVALID");
-  const value = document.toJS({ maxAliasCount: 20 });
+  const value: unknown = document.toJS({ maxAliasCount: 20 });
   if (!record(value) || typeof value.name !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value.name) || value.name.length > 64
     || typeof value.description !== "string" || !value.description.trim() || value.description.length > 1024
     || dirname(path).split(sep).at(-1) !== value.name) throw new TypeError("SKILL_FRONTMATTER_INVALID");
   return { name: value.name, description: value.description, path, invoke };
 }
 
+/** 对真实文件字节的规范 base64 表示和执行位计算摘要，与资源 revision 分开。 */
+export function resourceFilesDigest(files: ResolvedCapabilityResource["files"]): string {
+  const canonical = Object.fromEntries(Object.keys(files).sort().map(key => [key, { content_base64: files[key].content_base64, executable: files[key].executable }]));
+  return "sha256:" + createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
+
 async function materializeResource(stateRoot: string, resource: ResolvedCapabilityResource): Promise<string> {
-  const files = Object.fromEntries(Object.keys(resource.files).sort().map(key => [key, { content_base64: resource.files[key]!.content_base64, executable: resource.files[key]!.executable }]));
-  const digest = "sha256:" + createHash("sha256").update(JSON.stringify(files)).digest("hex");
+  const digest = resourceFilesDigest(resource.files);
   if (digest !== resource.digest) throw new TypeError("CONTEXT_RESOURCE_DIGEST_MISMATCH");
   const cache = await privateDirectory(join(stateRoot, "resources", resource.resource_id, resource.digest.slice(7)));
   // Standalone skill directory must have the native skill name.
@@ -183,7 +188,7 @@ async function materializeResource(stateRoot: string, resource: ResolvedCapabili
     const end = lines.indexOf("---", 1);
     if (lines[0] !== "---" || end < 2) throw new TypeError("SKILL_FRONTMATTER_INVALID");
     const doc = parseDocument(lines.slice(1, end).join("\n"));
-    const value = doc.toJS({ maxAliasCount: 20 });
+    const value: unknown = doc.toJS({ maxAliasCount: 20 });
     if (doc.errors.length || !record(value) || typeof value.name !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value.name)) throw new TypeError("SKILL_FRONTMATTER_INVALID");
     leaf = value.name;
   }
@@ -220,7 +225,7 @@ async function prepareMcpServer(value: unknown, root: string, data: string): Pro
   if (!serverValidator(value) || !record(value)) throw new TypeError("MCP_CONFIG_INVALID");
   if (value.type === "sse") throw new TypeError("MCP_TRANSPORT_UNSUPPORTED");
   if (value.type === "streamable-http") {
-    const url = new URL(value.url as string);
+    const url = new URL(value.url);
     if (url.username || url.password || url.hash || !["http:", "https:"].includes(url.protocol)
       || url.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) throw new TypeError("MCP_URL_INVALID");
     const headers = value.headers as Record<string, string> | undefined;
@@ -232,7 +237,7 @@ async function prepareMcpServer(value: unknown, root: string, data: string): Pro
     return { type: "streamable_http", url: url.href, ...(headers ? { headers } : {}) };
   }
   const command = value.command as string;
-  if (command.includes("${") || !command.startsWith("./") && (/[\/\\]/.test(command) || /\s/.test(command))) throw new TypeError("MCP_COMMAND_INVALID");
+  if (command.includes("${") || !command.startsWith("./") && (/[/\\]/.test(command) || /\s/.test(command))) throw new TypeError("MCP_COMMAND_INVALID");
   let executable = command;
   if (command.startsWith("./")) { executable = await realpath(resolve(root, command)); inside(root, executable); }
   const expand = (text: string): string => text.replace(/\$\{(PLUGIN_ROOT|PLUGIN_DATA)\}/g, (_, key: string) => key === "PLUGIN_ROOT" ? root : data);

@@ -1,5 +1,7 @@
 # Harness 统一 Context 处理实施基线
 
+本文保留 v1 实施历史；当前 v2 合同与验证状态见 [Context v2 验证记录](context-simplification-validation.md)，不再以本文旧类型清单作为在线协议。
+
 日期：2026-10-08（Asia/Shanghai）。版本：`0.3`。状态：统一入口、阶段预算、材料恢复与 Codex 原生应用证据已实现。其他 Adapter 仍按各自已验证的能力拒绝不支持的资源类型。
 
 共享语义以 [跨项目总基线](../../docs/62-octo-context-compiler-se-baseline.md) 为准。本文覆盖 Protocol、daemon、core、Adapter Host 和各 Adapter。

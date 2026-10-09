@@ -4,7 +4,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { prepareRunContext } from "../packages/octo-harness-daemon/dist/context-preparation.js";
+import { prepareRunContext, resourceFilesDigest } from "../packages/octo-harness-daemon/dist/context-preparation.js";
 import { AgentWorkStore } from "../packages/octo-harness-daemon/dist/agent-work-store.js";
 
 const skill = "---\nname: context-proof\ndescription: Verify selected Context resources.\n---\nUse the selected tools.\n";
@@ -123,4 +123,27 @@ test("path escapes and file/directory conflicts never publish a resource", async
   for (const path of ["../escape", "/tmp/escape", "a\\b", "a//b", "./x"])
     await assert.rejects(f.prepare([resource({ "SKILL.md": skill, [path]: "bad" }, { kind: "skill" })]), /CONTEXT_RESOURCE_INVALID/);
   await assert.rejects(f.prepare([resource({ "SKILL.md": skill, "a": "file", "a/b": "nested" }, { kind: "skill" })]));
+});
+
+
+test("resolved byte digest matches shared Go/TS canonical fixtures", async () => {
+  const fixtures = JSON.parse(await readFile(new URL("../packages/octo-harness-protocol/schema/file-bundle-resolved-fixtures.json", import.meta.url), "utf8"));
+  for (const fixture of fixtures) assert.equal(resourceFilesDigest(fixture.files), fixture.digest, fixture.name);
+});
+
+test("resource resolution sends only the active Run lease and validates the frozen response", async t => {
+  const { createServer } = await import("node:http");
+  const { resolveRunResources } = await import("../packages/octo-harness-daemon/dist/context-preparation.js");
+  const values = [resource(plugin())];
+  let supplied;
+  const server = createServer(async (request, response) => {
+    supplied = { path: request.url, body: JSON.parse(await Array.fromAsync(request).then(chunks => Buffer.concat(chunks).toString())) };
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ data: { resources: values } }));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const resolved = await resolveRunResources({ baseUrl: `http://127.0.0.1:${server.address().port}`, headers: {}, runId: "run-1", leaseId: "lease-1", fencingToken: 9, signal: new AbortController().signal });
+  assert.deepEqual(supplied, { path: "/v1/runtime/context/resources/resolve", body: { run_id: "run-1", lease_id: "lease-1", fencing_token: 9 } });
+  assert.deepEqual(resolved, values);
 });

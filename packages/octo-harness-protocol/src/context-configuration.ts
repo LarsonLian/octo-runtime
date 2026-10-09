@@ -101,7 +101,7 @@ function constrainRuntime(required: Record<string, unknown>, supplied: Record<st
   for (const field of ["offline_behavior", "failover"]) if (required[field] !== undefined && supplied[field] !== undefined && required[field] !== supplied[field]) conflict(`runtime.${field}`);
   const allowed = required.mode === "explicit" ? [required.runtime_id] : required.runtime_ids as string[];
   const selected = supplied.mode === "explicit" ? [supplied.runtime_id] : supplied.runtime_ids as string[];
-  if (!selected.length || selected.some(id => !allowed.includes(id as string))) conflict("runtime");
+  if (!selected.length || selected.some(id => !allowed.includes(id))) conflict("runtime");
   const result = structuredClone(supplied);
   for (const field of ["offline_behavior", "failover"]) if (required[field] !== undefined) result[field] = required[field];
   if (result.mode === "candidates") result.runtime_ids = allowed.filter(id => selected.includes(id));

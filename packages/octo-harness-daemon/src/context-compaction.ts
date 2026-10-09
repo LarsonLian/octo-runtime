@@ -79,7 +79,7 @@ export async function compactContextMaterials(input: MaterialCompactionInput): P
     let aborted: () => void = () => undefined;
     try {
       const stopped = new Promise<never>((_resolve, reject) => {
-        aborted = () => reject(workSignal.reason);
+        aborted = () => reject(workSignal.reason instanceof Error ? workSignal.reason : new Error("CONTEXT_COMPACTION_ABORTED"));
         workSignal.addEventListener("abort", aborted, { once: true });
       });
       const result = await Promise.race([Promise.resolve().then(work), stopped]);

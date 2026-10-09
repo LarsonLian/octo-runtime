@@ -63,9 +63,9 @@ export function resolveLocalContext(defaults: ContextEnvelope, submitted: Contex
     agent_source: agentSource,
     adapter_type: adapter,
     ...(workspace ? { workspace } : {}),
-    ...(adapter === "openclaw" ? { provider_agent_id: execution.adapter!.provider_agent_id } : {}),
+    ...(adapter === "openclaw" ? { provider_agent_id: execution.adapter.provider_agent_id } : {}),
     workdir,
-    approval_mode: execution.approval_policy!.mode,
+    approval_mode: execution.approval_policy.mode,
     ...(typeof model === "string" ? { model } : {}),
     ...(typeof effort === "string" ? { effort } : {}),
     ...(limits ? { runtime_limits: structuredClone(limits) } : {})

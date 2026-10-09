@@ -96,25 +96,24 @@ test("execution Context fixtures carry explicit frozen selections and provider d
   };
   const context = executionContext(plan);
   assert.doesNotThrow(() => assertContextEnvelope(context));
-  assert.deepEqual(context.items.find(item => item.name === "adapter").payload, { type: "codex" });
-  assert.deepEqual(context.items.find(item => item.name === "workspace").payload, { mode: "fixed", path: "/workspace" });
-  assert.deepEqual(context.items.find(item => item.name === "approval_policy").payload, { mode: "ask" });
-  assert.deepEqual(context.items.find(item => item.name === "model").payload, { id: "frozen-model" });
-  assert.deepEqual(context.items.find(item => item.name === "reasoning").payload, { effort: "high" });
-  context.items.find(item => item.name === "limits").payload.run_timeout_ms = 120_000;
+  assert.deepEqual(context.items.find(item => item.name === "config").payload.adapter, { type: "codex" });
+  assert.deepEqual(context.items.find(item => item.name === "config").payload.workspace, { mode: "fixed", path: "/workspace" });
+  assert.deepEqual(context.items.find(item => item.name === "config").payload.approval_policy, { mode: "ask" });
+  assert.deepEqual(context.items.find(item => item.name === "config").payload.model, { id: "frozen-model" });
+  assert.deepEqual(context.items.find(item => item.name === "config").payload.reasoning, { effort: "high" });
+  context.items.find(item => item.name === "config").payload.limits.run_timeout_ms = 120_000;
   assert.equal(plan.runtime_limits.run_timeout_ms, 60_000);
   const providerDefaults = executionContext({ agent_source: "provisioned", adapter_type: "codex", workdir: "/workspace", approval_mode: "ask" });
   assert.doesNotThrow(() => assertContextEnvelope(providerDefaults));
   for (const name of ["model", "reasoning"]) {
-    assert.deepEqual(providerDefaults.items.find(item => item.name === name).payload, { use_provider_default: true });
+    assert.deepEqual(providerDefaults.items.find(item => item.name === "config").payload[name], { use_provider_default: true });
   }
 });
 
 test("typed content selections, continuity and sourced instructions have bounded entry shapes", () => {
   const items = [
-    { namespace: "octo.content", name: "selections", payload: { entries: [{ resource_ref: "octo://messages/selected", text: "Selected message" }] } },
+    { namespace: "octo.content", name: "materials", payload: { entries: [{ type: "inline",  resource_ref: "octo://messages/selected", text: "Selected message" }] } },
     { namespace: "octo.control", name: "instructions", payload: { entries: [{ text: "Keep changes scoped.", source: "platform_policy" }] } },
-    continuityItem()
   ];
   assert.doesNotThrow(() => assertContextEnvelope(contextEnvelope(items)));
   for (const entry of [{ text: "legacy instruction" }, { source: "revision" }, { text: "control", source: 42 }, { text: "control", source: "revision", command: "legacy" }]) {
@@ -124,7 +123,7 @@ test("typed content selections, continuity and sourced instructions have bounded
   }
   for (const entry of [{}, { text: 42 }, { resource_ref: "octo://selected", messages: [] }]) {
     assert.throws(() => assertContextEnvelope(contextEnvelope([{
-      namespace: "octo.content", name: "selections", payload: { entries: [entry] }
+      namespace: "octo.content", name: "materials", payload: { entries: [entry] }
     }])), /CONTEXT_SCHEMA_INVALID/);
   }
 });

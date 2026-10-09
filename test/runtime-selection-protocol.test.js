@@ -29,9 +29,9 @@ const validateSelectionSchema = ajv.compile({ $ref: `${schema.$id}#/definitions/
 
 test("registration advertises schema 3 without changing Context or approval schemas", () => {
   assert.deepEqual(RUNTIME_RUN_CONTRACT, {
-    schema_version: 5,
+    schema_version: 6,
     routing_schema: RUNTIME_SELECTION_SCHEMA,
-    context_schema: "octo.context-envelope/v1",
+    context_schema: "octo.context-envelope/v2",
     approval_schema: "octo.approval-request/v1"
   });
   assert.equal(Object.isFrozen(RUNTIME_RUN_CONTRACT), true);

@@ -25,7 +25,7 @@ test("Host closes a still-streaming snapshot on root completion", async () => {
     yield { protocolVersion: 2, type: "run.completed", payload: {} };
   } });
   const events = [];
-  for await (const event of host.invoke("snapshot", { protocolVersion: 2, invocationId: "i", agentSessionId: "s", runId: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v1", items: [] }, controlInstructions: "", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} })) events.push(event);
+  for await (const event of host.invoke("snapshot", { protocolVersion: 2, invocationId: "i", agentSessionId: "s", runId: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v2", items: [] }, controlInstructions: "", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} })) events.push(event);
   assert.deepEqual(events.filter(e => e.type === "message.update").map(e => e.payload.status), ["streaming", "completed"]);
   assert.equal(events.filter(e => e.type === "activity.started" && e.payload.kind === "thinking").length, 1);
   assert.equal(events.at(-1).type, "run.completed");

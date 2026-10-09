@@ -23,7 +23,7 @@ for (const provider of ["ACP", "CodeBuddy"]) {
       }
     };
     const adapter = provider === "ACP" ? createAcpAdapter({ type: "fixture", provider: "fixture", command: "fixture" }, { acpClientFactory: () => client }) : createCodeBuddyAdapter({ acpClientFactory: () => client });
-    const request = { protocolVersion: 2, invocationId: "i", agentSessionId: "s", runId: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v1", items: [] }, controlInstructions: "", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} };
+    const request = { protocolVersion: 2, invocationId: "i", agentSessionId: "s", runId: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v2", items: [] }, controlInstructions: "", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} };
     const events = [];
     for await (const e of adapter.invoke(request)) events.push(e);
     const texts = events.filter(e => e.type === "message.delta");

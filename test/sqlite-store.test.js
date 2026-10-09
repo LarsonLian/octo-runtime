@@ -6,11 +6,7 @@ import { join } from "node:path";
 import { SqliteStore } from "@mininglamp-oss/octo-harness-core";
 import { contextHash } from "@mininglamp-oss/octo-harness-protocol";
 
-const context = { schema: "octo.context-envelope/v1", items: [
-  { namespace: "octo.execution", name: "adapter", payload: { type: "test" } },
-  { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: process.cwd() } },
-  { namespace: "octo.security", name: "approval_policy", payload: { mode: "ask" } }
-] };
+const context = { schema: "octo.context-envelope/v2", items: [ { namespace: "octo.execution", name: "config", payload: { ...{ adapter: { type: "test" } }, ...{ workspace: { mode: "fixed", path: process.cwd() } }, ...{ approval_policy: { mode: "ask" } } } } ] };
 const agentRecord = (id, name) => ({ id, name, adapterType: "test", config: {}, defaultContext: structuredClone(context), contextDefaultsVersion: 1 });
 
 const event = (runId, seq, type = "message.delta") => ({

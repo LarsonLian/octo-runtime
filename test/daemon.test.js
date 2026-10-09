@@ -8,14 +8,10 @@ import { HarnessEngine, SqliteStore } from "@mininglamp-oss/octo-harness-core";
 import { HarnessDaemon } from "@mininglamp-oss/octo-harness-daemon";
 import { testAdapter } from "./fixtures/test-adapter.js";
 
-const emptyContext = () => ({ schema: "octo.context-envelope/v1", items: [] });
+const emptyContext = () => ({ schema: "octo.context-envelope/v2", items: [] });
 const defaultContext = adapterType => ({
-  schema: "octo.context-envelope/v1",
-  items: [
-    { namespace: "octo.execution", name: "adapter", payload: { type: adapterType } },
-    { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: process.cwd() } },
-    { namespace: "octo.security", name: "approval_policy", payload: { mode: "full_access" } }
-  ]
+  schema: "octo.context-envelope/v2",
+  items: [ { namespace: "octo.execution", name: "config", payload: { ...{ adapter: { type: adapterType } }, ...{ workspace: { mode: "fixed", path: process.cwd() } }, ...{ approval_policy: { mode: "full_access" } } } } ]
 });
 
 test("daemon recovers queued AgentRuns and terminalizes orphaned running runs", async () => {

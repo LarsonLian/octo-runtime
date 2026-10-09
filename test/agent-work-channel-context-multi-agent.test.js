@@ -246,21 +246,22 @@ function groupEnvelope(agent, round, text) {
       trigger_fact: trigger
     }
   }, {
-    namespace: "octo.content", name: "selections", payload: { entries: [{
+    namespace: "octo.content", name: "materials", payload: { entries: [{ type: "inline",
       resource_ref: `octo://agents/${agent}/selected`, text: `Selected content only for Agent ${agent.toUpperCase()}`
     }] }
   }];
   return {
-    schema_version: 5,
+    schema_version: 6,
     resolved_runtime_selection: resolvedRuntimeSelection("runtime-multi-agent"),
     context_configuration_version: 1,
-    effective_context: executionContext(plan, items),
+    internal_context: { continuity: items[0].payload },
+    effective_context: executionContext(plan, items.slice(1)),
     resolved_execution_plan: plan,
     run_id: `run-group-${agent}-${round}`,
     agent_session_id: `harness-group-${agent}`,
     ...(round === 2 ? { provider_session: { sessionId: `provider-group-${agent}`, resumable: true } } : {}),
     agent_run_request: {
-      context: contextEnvelope(items),
+      context: contextEnvelope(items.slice(1)),
       namespace: "im",
       agent_id: `agent-${agent}`,
       agent_revision_id: `revision-${agent}`,
@@ -281,7 +282,7 @@ function dmEnvelope(round) {
     agent_source: "provisioned", adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_execution_features: ["tool.canonical"]
   };
   return {
-    schema_version: 5,
+    schema_version: 6,
     resolved_runtime_selection: resolvedRuntimeSelection("runtime-multi-agent"),
     context_configuration_version: 1,
     effective_context: executionContext(plan),

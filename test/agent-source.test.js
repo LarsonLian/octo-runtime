@@ -11,7 +11,7 @@ import { AgentWorkStore } from "../packages/octo-harness-daemon/dist/agent-work-
 const request = {
   protocolVersion: 2, invocationId: "source-invocation", runId: "source-run", agentSessionId: "source-session",
   agentSource: "preset", workdir: "", prompt: "work", modelInput: "work", controlInstructions: "",
-  approvalMode: "full_access", context: { schema: "octo.context-envelope/v1", items: [] }, agentConfig: { providerAgentId: "main" }
+  approvalMode: "full_access", context: { schema: "octo.context-envelope/v2", items: [] }, agentConfig: { providerAgentId: "main" }
 };
 
 test("source is required and empty workdir is exclusive to preset invocation", () => {

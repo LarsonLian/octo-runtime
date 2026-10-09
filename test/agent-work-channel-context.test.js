@@ -403,7 +403,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
     }
     const probe = contextStore.prepareSnapshot("run-authority-probe", executionEnvelope("runtime-authority",
       "run-authority-probe", 6, "probe"
-    ).effective_context.items.find(item => item.name === "continuity").payload);
+    ).internal_context.continuity);
     assert.deepEqual(probe.facts.map(item => item.message_seq), [1, 2, 3, 4, 5]);
     contextStore.close();
 
@@ -646,7 +646,7 @@ test("runtime rejects a queued source generation after recovery advanced the eff
     through_seq: 1
   });
   const blocker = executionEnvelope("runtime-stale-generation", "run-recovery-blocker", 2, "recovery trigger")
-    .effective_context.items.find(item => item.name === "continuity").payload;
+    .internal_context.continuity;
   contextStore.prepareSnapshot("run-recovery-blocker", blocker);
   contextStore.selectRecovery("run-recovery-blocker");
   contextStore.markSubmitted("run-recovery-blocker");
@@ -750,7 +750,7 @@ test("runtime close joins a waiting command before immediate restart and replay"
     through_seq: 1
   });
   const blocker = executionEnvelope("runtime-close-wait", "run-blocker", 2, "blocker trigger")
-    .effective_context.items.find(item => item.name === "continuity").payload;
+    .internal_context.continuity;
   contextStore.prepareSnapshot("run-blocker", blocker);
   contextStore.markSubmitted("run-blocker");
   contextStore.close();
@@ -881,7 +881,7 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
     through_seq: 1
   });
   const blocker = executionEnvelope("runtime-cancel-wait", "run-cancel-blocker", 2, "blocker trigger")
-    .effective_context.items.find(item => item.name === "continuity").payload;
+    .internal_context.continuity;
   contextStore.prepareSnapshot("run-cancel-blocker", blocker);
   contextStore.markSubmitted("run-cancel-blocker");
   contextStore.close();
@@ -1227,8 +1227,8 @@ for (const [projection, providerPersistence] of [["window", "append_only"], ["de
     const sendStart = (websocket, round) => {
       const payload = executionEnvelope("runtime-cold", `run-cold-${round}`, round * 2, `cold current ${round}`);
       payload.provider_session = { sessionId: "must-not-resume", resumable: true };
-      const selections = { namespace: "octo.content", name: "selections", payload: { entries: [
-        { resource_ref: "octo://messages/selected", text: "Selected inline facts" }
+      const selections = { namespace: "octo.content", name: "materials", payload: { entries: [
+        { type: "inline",  resource_ref: "octo://messages/selected", text: "Selected inline facts" }
       ] } };
       payload.effective_context.items.push(structuredClone(selections));
       payload.agent_run_request.context.items.push(structuredClone(selections));
@@ -1411,16 +1411,17 @@ function executionEnvelope(runtimeId, runId = "run-e2e", triggerSeq = 3, current
     }
   }];
   return {
-    schema_version: 5,
+    schema_version: 6,
     resolved_runtime_selection: resolvedRuntimeSelection(runtimeId),
     context_configuration_version: 1,
-    effective_context: executionContext(plan, items),
+    internal_context: { continuity: items[0].payload },
+    effective_context: executionContext(plan, items.slice(1)),
     resolved_execution_plan: plan,
     run_id: runId,
     agent_session_id: "session-e2e",
     session_generation: generation,
     agent_run_request: {
-      context: contextEnvelope(items),
+      context: contextEnvelope(items.slice(1)),
       namespace: "im",
       agent_id: "agent-e2e",
       agent_revision_id: "revision-e2e",

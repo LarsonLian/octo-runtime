@@ -11,7 +11,7 @@ const baseRequest = { protocolVersion: 2,
   modelInput: "work",
   workdir: "/workspace",
   controlInstructions: "",
-  context: { schema: "octo.context-envelope/v1", items: [] },
+  context: { schema: "octo.context-envelope/v2", items: [] },
   approvalMode: "full_access",
   agentSource: "provisioned", agentConfig: {}
 };

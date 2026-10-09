@@ -11,7 +11,7 @@ import { AgentWorkRuntime, mapExecutionEnvelope } from "../packages/octo-harness
 import { buildCodexCommand } from "@mininglamp-oss/octo-harness-adapter-codex";
 import { contextEnvelope, executionContext, resolvedRuntimeSelection, waitFor, wire } from "./agent-work-runtime-fixture.js";
 
-const resource = { namespace: "octo.content", name: "resources", payload: { entries: [{
+const resource = { namespace: "octo.content", name: "materials", payload: { entries: [{ type: "reference",
   resource_ref: "task:task-1/materials", resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" },
   params: { task_id: "task-1", handler_epoch: 3 }
 }] } };
@@ -56,7 +56,7 @@ test("task materials use authorized MCP and freeze actual facts separately from 
   assert.deepEqual(context, before);
   assert.equal(f.calls.filter(call => call.method === "tools/call").length, 2);
   assert.ok(f.calls.every(call => call.authorization === "Bearer fixture-run-grant"));
-  const envelope = { schema_version: 5, effective_context: context, context_configuration_version: 1,
+  const envelope = { schema_version: 6, effective_context: context, context_configuration_version: 1,
     resolved_execution_plan: resolvedPlan, resolved_runtime_selection: resolvedRuntimeSelection(), run_id: "run-1", agent_session_id: "conversation-1",
     agent_run_request: { context: contextEnvelope([resource]), namespace: "task", agent_id: "agent-1", agent_revision_id: "revision-1",
       session_key: "conversation-1", trigger: { kind: "message", occurrence_id: "message-1" }, input: { text: "制作页面" } },
@@ -72,7 +72,7 @@ test("task materials use authorized MCP and freeze actual facts separately from 
   assert.doesNotMatch(JSON.stringify(buildCodexCommand(request).args), /approval_mode/);
   const automaticEnvelope = structuredClone(envelope);
   automaticEnvelope.resolved_execution_plan.approval_mode = "full_access";
-  automaticEnvelope.effective_context.items.find(item => item.namespace === "octo.security" && item.name === "approval_policy").payload.mode = "full_access";
+  automaticEnvelope.effective_context.items.find(item => item.name === "config").payload.approval_policy.mode = "full_access";
   const automaticRequest = mapExecutionEnvelope(automaticEnvelope, undefined, first).request;
   assert.match(JSON.stringify(buildCodexCommand(automaticRequest).args), /task_get_materials.*approval_mode/);
   assert.doesNotMatch(JSON.stringify(buildCodexCommand(automaticRequest).args), /fixture-run-grant/);
@@ -112,8 +112,7 @@ test("restart reuses exact material bytes after live authorization without fetch
   assert.equal(f.calls.filter(call => call.params?.name === "task_get_materials").length, 1);
   assert.equal(f.calls.filter(call => call.params?.name === "task_authorize_material_snapshot").length, 1);
   const changed = structuredClone(context);
-  changed.items = changed.items.filter(item => item.namespace !== "octo.execution" || item.name !== "model");
-  changed.items.push({ namespace: "octo.execution", name: "model", payload: { id: "another-model" } });
+  changed.items.find(item => item.name === "config").payload.model = { id: "another-model" };
   await assert.rejects(prepareTaskMaterials(changed, resolvedPlan, new AbortController().signal, { runId: "run-1", store }), /SNAPSHOT_CONFLICT/);
   store.discardAuthoritativelyTerminalRun("run-1");
   assert.equal(store.getTaskMaterialSnapshot("run-1", first.refs[0].digest), undefined);
@@ -179,7 +178,7 @@ test("real Runtime admission bootstraps MCP before provider invocation and rejec
     resolvedPlan.workdir = directory;
     resolvedPlan.adapter_type = adapter;
     return { server_seq: suffix, command_id: `command-${suffix}`, run_id: `run-${suffix}`, type: "run.start", lease_id: `lease-${suffix}`, fencing_token: suffix,
-      payload: { schema_version: 5, effective_context: executionContext(resolvedPlan, [resource]), context_configuration_version: 1,
+      payload: { schema_version: 6, effective_context: executionContext(resolvedPlan, [resource]), context_configuration_version: 1,
         resolved_execution_plan: resolvedPlan, resolved_runtime_selection: resolvedRuntimeSelection(), run_id: `run-${suffix}`, agent_session_id: "conversation-1",
         agent_run_request: { context: contextEnvelope([resource]), namespace: "task", agent_id: "agent-1", agent_revision_id: "revision-1", session_key: "conversation-1",
           trigger: { kind: "message", occurrence_id: `message-${suffix}` }, input: { text: "制作页面" } }, agent_revision: {} } };

@@ -14,7 +14,7 @@ const plan = { agent_source: "provisioned", adapter_type: "fake", workdir: proce
 
 function executionEnvelope(selection = resolvedRuntimeSelection(runtimeId)) {
   return {
-    schema_version: 5,
+    schema_version: 6,
     context_configuration_version: 1,
     effective_context: executionContext(plan),
     resolved_execution_plan: plan,
@@ -47,11 +47,11 @@ for (const scenario of [
   { name: "explicit foreign target", error: "RUNTIME_SELECTION_TARGET_MISMATCH", modify: envelope => { envelope.resolved_runtime_selection = resolvedRuntimeSelection("foreign-runtime"); } },
   { name: "explicit inconsistent candidate", error: "RESOLVED_RUNTIME_SELECTION_INVALID", modify: envelope => { envelope.resolved_runtime_selection.explicit_runtime_id = "foreign-runtime"; } },
   { name: "bound pool excludes local Runtime", error: "RUNTIME_SELECTION_TARGET_MISMATCH", modify: envelope => { envelope.resolved_runtime_selection = structuredClone(boundPool); envelope.resolved_runtime_selection.authorized_candidates[1].runtime_id = "another-runtime"; } },
-  { name: "effective Context target disagrees", error: "RUNTIME_SELECTION_CONTEXT_MISMATCH", modify: envelope => { envelope.effective_context.items.push({ namespace: "octo.runtime", name: "selection", payload: { mode: "explicit", runtime_id: "foreign-runtime" } }); } }
+  { name: "effective Context target disagrees", error: "RUNTIME_SELECTION_CONTEXT_MISMATCH", modify: envelope => { envelope.effective_context.items.find(item => item.name === "config").payload.runtime = { mode: "explicit", runtime_id: "foreign-runtime" }; } }
 ]) {
   test(`daemon rejects ${scenario.name} before context sync or invocation and persists replay rejection`, { timeout: 5_000 }, async () => {
     const payload = executionEnvelope();
-    payload.effective_context.items.push(continuityItem());
+    payload.internal_context = { continuity: continuityItem().payload };
     scenario.modify(payload);
     const fixture = await startFixture();
     try {
@@ -98,7 +98,7 @@ for (const [name, selection] of [["explicit Unicode target", resolvedRuntimeSele
       assert.equal(fixture.receipts[0].accepted, true);
       assert.equal(fixture.registrations, 1);
       assert.equal(fixture.invocations[0].runMetadata.runtimeId, runtimeId);
-      assert.equal(fixture.invocations[0].runMetadata.schemaVersion, 5);
+      assert.equal(fixture.invocations[0].runMetadata.schemaVersion, 6);
     } finally {
       await fixture.close();
     }
@@ -150,7 +150,7 @@ async function startFixture({ rejectRegistration = false, openClawProbeState } =
     const registration = JSON.parse(body);
     fixture.lastCapabilities = registration.capabilities;
     assert.deepEqual(registration.capabilities.run_contract, RUNTIME_RUN_CONTRACT);
-    assert.equal(registration.capabilities.run_contract.schema_version, 5);
+    assert.equal(registration.capabilities.run_contract.schema_version, 6);
     assert.equal(registration.capabilities.run_contract.routing_schema, "octo.runtime-selection/v2");
     fixture.registrations += 1;
     response.writeHead(rejectRegistration ? 400 : 200, { "Content-Type": "application/json" });

@@ -89,14 +89,14 @@ test("real Runtime uploads a declared deliverable before durable terminal and re
   await runtime.start();
   await waitFor(() => socket?.readyState === 1);
   for (const number of [1, 2]) {
-    const resource = { namespace: "octo.content", name: "resources", payload: { entries: [{
+    const resource = { namespace: "octo.content", name: "materials", payload: { entries: [{ type: "reference",
       resource_ref: "task:task-1/materials", resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_id: "task-1", handler_epoch: 2 }
     }] } };
     const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: directory, approval_mode: "ask", mcp_servers: { octo_task: {
       type: "streamable_http", url: `${baseUrl}/mcp/team`, headers: { Authorization: "Bearer run-grant" }
     } } };
     socket.send(wire("runtime.command", { server_seq: number, command_id: `command-${number}`, run_id: `run-${number}`, type: "run.start", lease_id: `lease-${number}`, fencing_token: number,
-      payload: { schema_version: 5, effective_context: executionContext(plan, [resource]), context_configuration_version: 1,
+      payload: { schema_version: 6, effective_context: executionContext(plan, [resource]), context_configuration_version: 1,
         resolved_execution_plan: plan, resolved_runtime_selection: resolvedRuntimeSelection(), run_id: `run-${number}`, agent_session_id: "conversation-1",
         agent_run_request: { context: contextEnvelope([resource]), namespace: "task", agent_id: "agent-1", agent_revision_id: "revision-1", session_key: "conversation-1",
           trigger: { kind: "message", occurrence_id: `message-${number}` }, input: { prompt: "生成页面" } }, agent_revision: {} } }));

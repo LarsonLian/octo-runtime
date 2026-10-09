@@ -200,7 +200,7 @@ function publicPayload(namespace: string, name: string, value: Record<string, un
         object(entry, "CONTEXT_SCHEMA_INVALID");
         fields(entry, list === "include" ? ["kind", "resource_id", "invoke", "components"] : ["kind", "resource_id"]);
         if (!["agent_plugin", "skill", "connector", "knowledge"].includes(String(entry.kind)) || typeof entry.resource_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(entry.resource_id)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
-        const key = `${entry.kind}/${entry.resource_id}`;
+        const key = `${String(entry.kind)}/${entry.resource_id}`;
         if (seen.has(key)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
         seen.add(key);
         if (entry.invoke !== undefined && typeof entry.invoke !== "boolean") throw new TypeError("CONTEXT_SCHEMA_INVALID");
@@ -218,7 +218,7 @@ function publicPayload(namespace: string, name: string, value: Record<string, un
         fields(entry, ["text", "source"]); text(entry.text);
         if (!["revision", "agent_configuration", "platform_policy"].includes(String(entry.source))) throw new TypeError("CONTEXT_SCHEMA_INVALID");
       } else if (entry.type === "reference") {
-        const { type: _type, ...reference } = entry;
+        const reference = { ...entry }; delete reference.type;
         resource(reference);
       } else if (entry.type === "inline") {
         fields(entry, ["type", "text", "resource_ref", "source", "summary"]); text(entry.text);

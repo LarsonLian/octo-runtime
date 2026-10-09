@@ -30,7 +30,7 @@ const preparationOwners: Readonly<Record<string, ContextPreparationStage>> = {
 export interface ContextConsumption { key: string; stage: "prepare" | "compile"; processor: string }
 export interface ContextPipelineOptions {
   stages?: readonly ContextStageDefinition[];
-  timeoutMs?: Partial<Record<ContextPreparationStage | "seal", number>>;
+  timeoutMs?: Partial<Record<ContextPreparationStage | "seal" | "compact", number>>;
 }
 
 /** 校验完整阶段图并按固定阶段顺序稳定排序；缺失、重复、未知依赖或依赖环均在准备前拒绝。 */
@@ -55,7 +55,7 @@ export function orderContextPreparationStages(definitions: readonly ContextStage
  * 为单个阶段设置毫秒预算，并将上层取消传给 Port。
  * 超时或取消后拒绝晚到结果；不承诺已经发出的远端请求或文件操作已回滚。
  */
-async function boundedStage<T>(id: ContextPreparationStage | "seal", timeoutMs: number, signal: AbortSignal, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
+async function boundedStage<T>(id: ContextPreparationStage | "seal" | "compact", timeoutMs: number, signal: AbortSignal, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
   signal.throwIfAborted();
   const controller = new AbortController();
   const abort = (): void => controller.abort(signal.reason);
@@ -100,7 +100,8 @@ export class ContextCompiler {
     assertContextProcessorCoverage(context, "compile", compilationKeys);
     const compiled = compileRunContext(context, materials?.selections, instructions);
     if (prepared) {
-      const { resources: _files, ...executionPlan } = prepared.plan;
+      const executionPlan = structuredClone(prepared.plan);
+      delete executionPlan.resources;
       const { skills, skillRoots, mcpServers, workdir, providerStateDir } = prepared.capabilities;
       compiled.executionPlan = structuredClone(executionPlan);
       compiled.preparedResources = structuredClone({ skills, skillRoots, mcpServers, workdir, providerStateDir });
@@ -116,7 +117,7 @@ export class ContextCompiler {
 export class ContextPipeline<Input> {
   constructor(private readonly ports: ContextPipelinePorts<Input>, private readonly options: ContextPipelineOptions = {}) {}
 
-  /** 每阶段及 seal 默认预算为 30 秒；消费记录要求每个类型在声明阶段恰好处理一次。 */
+  /** 准备及 seal 默认 30 秒，compact 默认 120 秒；每个类型在声明阶段恰好消费一次。 */
   async prepare(context: ContextEnvelope, plan: ResolvedExecutionPlan, identity: {
     runId: string; leaseId: string; fencingToken: number;
   }, signal: AbortSignal): Promise<{
@@ -129,7 +130,7 @@ export class ContextPipeline<Input> {
     assertContextProcessorCoverage(context, "prepare", preparationKeys);
     assertContextProcessorCoverage(context, "compile", compilationKeys);
     const order = orderContextPreparationStages(this.options.stages ?? stages);
-    const budgets = { input: 30_000, capabilities: 30_000, materials: 30_000, continuity: 30_000, seal: 30_000, ...this.options.timeoutMs };
+    const budgets = { input: 30_000, capabilities: 30_000, materials: 30_000, continuity: 30_000, seal: 30_000, compact: 120_000, ...this.options.timeoutMs };
     if (Object.values(budgets).some(value => !Number.isSafeInteger(value) || value <= 0)) throw new TypeError("CONTEXT_STAGE_BUDGET_INVALID");
     // 复制本次 Context 与可信贡献，避免异步准备期间原对象被修改而改变编译依据。
     const frozen = structuredClone(context);
@@ -153,7 +154,15 @@ export class ContextPipeline<Input> {
     const { input, capabilities, materials, continuity } = outputs;
     if (!capabilities) throw new TypeError("CONTEXT_CAPABILITIES_UNAVAILABLE");
     let compiled = new ContextCompiler().compile(frozen, materials, instructions, { plan, capabilities });
-    if (this.ports.prepareCompiled) compiled = await boundedStage("materials", budgets.materials, signal, stageSignal => this.ports.prepareCompiled!(compiled, stageSignal));
+    if (this.ports.prepareCompiled) {
+      const original = compiled;
+      compiled = await boundedStage("compact", budgets.compact, signal, stageSignal => this.ports.prepareCompiled!(structuredClone(original), stageSignal));
+      // 压缩只替换参考材料；执行配置和可信指令必须保留原编译结果。
+      if (typeof compiled.modelContent !== "string" || ["controlInstructions", "execution", "resourceSelection", "executionPlan", "preparedResources"].some(key =>
+        JSON.stringify(compiled[key as keyof CompiledRunContext]) !== JSON.stringify(original[key as keyof CompiledRunContext]))) {
+        throw new TypeError("CONTEXT_COMPACTION_PROTECTED_CONTENT_CHANGED");
+      }
+    }
     for (const item of frozen.items) {
       if (contextTypeDefinition(item.namespace, item.name).stages.includes("compile")) {
         consumption.push({ key: `${item.namespace}/${item.name}`, stage: "compile", processor: "compiler" });

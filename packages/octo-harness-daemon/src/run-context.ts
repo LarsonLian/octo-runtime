@@ -46,7 +46,9 @@ export function assertFrozenContextPlan(context: ContextEnvelope, plan: Resolved
   if (seen.size !== selected.size) throw new TypeError("CONTEXT_PLAN_MISMATCH");
 }
 
-export interface CompiledRunContext { modelContent: string; controlInstructions: string; execution?: Record<string, unknown>; resourceSelection?: Record<string, unknown>; executionPlan?: ResolvedExecutionPlan; preparedResources?: { skills: PreparedSkill[]; skillRoots: string[]; mcpServers: McpServers; workdir: string; providerStateDir: string } }
+import type { CompactionReceipt } from "./context-compaction.js";
+
+export interface CompiledRunContext { materialCompaction?: CompactionReceipt; modelContent: string; controlInstructions: string; execution?: Record<string, unknown>; resourceSelection?: Record<string, unknown>; executionPlan?: ResolvedExecutionPlan; preparedResources?: { skills: PreparedSkill[]; skillRoots: string[]; mcpServers: McpServers; workdir: string; providerStateDir: string } }
 export interface TrustedContextInstruction { text: string; source: "revision" | "agent_configuration" | "platform_policy" }
 
 /**
@@ -62,7 +64,7 @@ export function compileRunContext(context: ContextEnvelope, resolvedResources: r
   const resolvedRefs = resolvedResources.map(entry => entry.resource_ref);
   if (new Set(resourceRefs).size !== resourceRefs.length || new Set(resolvedRefs).size !== resolvedRefs.length
     || resourceRefs.length !== resolvedResources.length || resourceRefs.some(ref => !resolvedRefs.includes(String(ref)))) throw new TypeError("CONTEXT_RESOLVER_UNAVAILABLE");
-  const selections = Array.isArray(materials) ? materials.filter(entry => isObject(entry) && entry.type === "inline").map(entry => { const { type: _type, ...value } = entry as Record<string, unknown>; return value; }) : [];
+  const selections = Array.isArray(materials) ? materials.filter(entry => isObject(entry) && entry.type === "inline").map(entry => { const value = { ...entry as Record<string, unknown> }; delete value.type; return value; }) : [];
   const entries: unknown[] = [...(Array.isArray(selections) ? selections as unknown[] : []), ...resolvedResources];
   for (const entry of entries) {
     if (!isObject(entry) || typeof entry.text !== "string" || !entry.text) throw new TypeError("CONTEXT_CONTENT_UNSUPPORTED");

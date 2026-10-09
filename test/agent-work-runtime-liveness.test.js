@@ -47,14 +47,14 @@ async function startFixture(t, { silentFirst = false, welcomeOnFirst = true, dis
           websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 10 }));
           if (dispatchRun) {
             const plan = { agent_source: "provisioned", adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_execution_features: ["tool.canonical"] };
-            const items = [{ namespace: "octo.content", name: "selections", payload: { entries: [
-              { resource_ref: "octo://liveness/background", text: "Frozen background for the liveness run" }
+            const items = [{ namespace: "octo.content", name: "materials", payload: { entries: [
+              { type: "inline",  resource_ref: "octo://liveness/background", text: "Frozen background for the liveness run" }
             ] } }];
             websocket.send(wire("runtime.command", {
               server_seq: 1, command_id: "command-liveness", run_id: "run-liveness", type: "run.start",
               lease_id: "lease-liveness", fencing_token: 1,
               payload: {
-                schema_version: 5, context_configuration_version: 1,
+                schema_version: 6, context_configuration_version: 1,
                 resolved_runtime_selection: resolvedRuntimeSelection("runtime-liveness"),
                 effective_context: executionContext(plan, items), resolved_execution_plan: plan,
                 run_id: "run-liveness", agent_session_id: "session-liveness",
@@ -131,7 +131,7 @@ test("a schema2 run consumes frozen Context without disrupting heartbeat livenes
   assert.match(request.modelInput, /Frozen background for the liveness run/);
   assert.doesNotMatch(request.prompt, /Frozen background/);
   assert.equal(request.runMetadata.runtimeId, "runtime-liveness");
-  assert.equal(request.context.schema, "octo.context-envelope/v1");
+  assert.equal(request.context.schema, "octo.context-envelope/v2");
   assert.equal(request.context.runtimeId, undefined);
   assert.equal(runtime.status.connected, true);
   assert.equal(state.registrations, 1);
