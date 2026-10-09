@@ -109,7 +109,11 @@ export function taskMcpServer(plan: ResolvedExecutionPlan): McpStreamableHttpSer
   return server;
 }
 
-/** Resolve only the registered task operation; arbitrary MCP/CLI resources remain fail-closed. */
+/**
+ * 仅通过注册的任务 MCP 操作读取材料，并固定实读版本、handler epoch、正文和 digest。
+ * 命中本地快照后仍使用当前 Run 授权重新校验；恢复复用原正文，不读取新 latest。
+ * 快照不一致或授权失效时抛错，不将任意 MCP/CLI 调用作为备用解析器。
+ */
 export async function prepareTaskMaterials(context: ContextEnvelope, plan: ResolvedExecutionPlan, signal: AbortSignal, snapshot?: {
   runId: string; store: TaskMaterialSnapshotStore;
 }): Promise<PreparedTaskMaterials | undefined> {

@@ -42,6 +42,7 @@ export interface ContextPipelineOptions {
   timeoutMs?: Partial<Record<ContextPreparationStage | "seal", number>>;
 }
 
+/** 校验完整阶段图并按固定阶段顺序稳定排序；缺失、重复、未知依赖或依赖环均在准备前拒绝。 */
 export function orderContextPreparationStages(definitions: readonly ContextStageDefinition[]): ContextPreparationStage[] {
   const pending = new Map(definitions.map(value => [value.id, value.dependsOn]));
   if (pending.size !== definitions.length || stages.some(value => !pending.has(value.id))
@@ -59,6 +60,10 @@ export function orderContextPreparationStages(definitions: readonly ContextStage
   return result;
 }
 
+/**
+ * 为单个阶段设置毫秒预算，并将上层取消传给 Port。
+ * 超时或取消后拒绝晚到结果；不承诺已经发出的远端请求或文件操作已回滚。
+ */
 async function boundedStage<T>(id: ContextPreparationStage | "seal", timeoutMs: number, signal: AbortSignal, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
   signal.throwIfAborted();
   const controller = new AbortController();
@@ -87,6 +92,7 @@ async function boundedStage<T>(id: ContextPreparationStage | "seal", timeoutMs: 
   }
 }
 
+/** 宿主注入有副作用的准备与封存能力；可信指令的来源身份须由宿主先行验证。 */
 export interface ContextPipelinePorts<Input> {
   trustedInstructions?: readonly TrustedContextInstruction[];
   prepareInput(signal: AbortSignal): Promise<Input>;
@@ -96,7 +102,7 @@ export interface ContextPipelinePorts<Input> {
   seal(receipt: ContextPipelineReceipt, signal: AbortSignal): Promise<void>;
 }
 
-/** Pure compilation has no network, filesystem, credentials or provider side effects. */
+/** 将准备好的材料与可信指令分通道编译；不访问网络、文件、凭据或 Provider。 */
 export class ContextCompiler {
   compile(context: ContextEnvelope, materials?: PreparedTaskMaterials, instructions: readonly TrustedContextInstruction[] = []): CompiledRunContext {
     assertContextProcessorCoverage(context, "compile", compilationKeys);
@@ -104,10 +110,14 @@ export class ContextCompiler {
   }
 }
 
-/** One admission boundary for every preparation path before Adapter invocation. */
+/**
+ * Adapter 调用前的统一准备入口：校验冻结计划、准备资源、编译产物、封存回执。
+ * 只有封存获得 Worker 确认才返回可调用产物；任一必需阶段失败都会拒绝整次准备。
+ */
 export class ContextPipeline<Input> {
   constructor(private readonly ports: ContextPipelinePorts<Input>, private readonly options: ContextPipelineOptions = {}) {}
 
+  /** 每阶段及 seal 默认预算为 30 秒；消费记录要求每个类型在声明阶段恰好处理一次。 */
   async prepare(context: ContextEnvelope, plan: ResolvedExecutionPlan, identity: {
     runId: string; leaseId: string; fencingToken: number;
   }, signal: AbortSignal): Promise<{
@@ -122,7 +132,7 @@ export class ContextPipeline<Input> {
     const order = orderContextPreparationStages(this.options.stages ?? stages);
     const budgets = { input: 30_000, capabilities: 30_000, materials: 30_000, continuity: 30_000, seal: 30_000, ...this.options.timeoutMs };
     if (Object.values(budgets).some(value => !Number.isSafeInteger(value) || value <= 0)) throw new TypeError("CONTEXT_STAGE_BUDGET_INVALID");
-    // Freeze the admitted inputs so asynchronous host work cannot change the compilation basis.
+    // 复制本次 Context 与可信贡献，避免异步准备期间原对象被修改而改变编译依据。
     const frozen = structuredClone(context);
     const instructions = structuredClone(this.ports.trustedInstructions ?? []);
     const outputs: { input?: Input; capabilities?: PreparedRunContext; materials?: PreparedTaskMaterials; continuity?: PreparedChannelContextSnapshot } = {};
@@ -160,6 +170,7 @@ export class ContextPipeline<Input> {
         }
       }
     }
+    // compiled_hash 标识本轮实际编译与准备结果，包含实际目录，不是跨机器归一化的正文摘要。
     const receipt: ContextPipelineReceipt = {
       ...structuredClone(capabilities.receipt), compiler_version: CONTEXT_COMPILER_VERSION,
       catalog_version: CONTEXT_CATALOG_VERSION, context_hash: contextHash(frozen),

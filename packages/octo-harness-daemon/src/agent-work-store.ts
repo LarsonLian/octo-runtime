@@ -110,6 +110,7 @@ export class AgentWorkStore {
    * retained for forensic recovery; callers should emit an operator alert. */
   get quarantinedPath(): string | undefined { return this.#quarantinedPath; }
 
+  /** 按 Run 读取耐久材料快照；Context hash 不一致时拒绝，授权与正文完整性由准备入口复核。 */
   getTaskMaterialSnapshot(runId: string, hash: string): PreparedTaskMaterials | undefined {
     const row = this.#db.prepare("SELECT context_hash, snapshot_json FROM task_material_snapshots WHERE run_id = ?").get(runId) as
       { context_hash: string; snapshot_json: string } | undefined;
@@ -118,6 +119,7 @@ export class AgentWorkStore {
     return JSON.parse(row.snapshot_json) as PreparedTaskMaterials;
   }
 
+  /** 首次写入后固定正文；重复写入必须保持 Context hash 和序列化正文相同，否则报冲突。 */
   putTaskMaterialSnapshot(runId: string, hash: string, value: PreparedTaskMaterials): void {
     const json = JSON.stringify(value);
     if (!runId || !/^sha256:[a-f0-9]{64}$/.test(hash) || Buffer.byteLength(json) > 3 * 65536) throw new TypeError("TASK_MATERIAL_SNAPSHOT_INVALID");

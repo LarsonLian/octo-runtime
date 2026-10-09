@@ -241,6 +241,7 @@ export async function* runCodexAppServerTurn({
     if (turnId) client.setActiveTurn(turnId);
     context?.reportActivity?.({ kind: "turn_started", method: "turn_start" });
 
+    // 原生技能启用且 turn/start 已获确认，才报告本轮应用证据；loaded 不表示技能已实际调用。
     const compilation = recordValue(request.runMetadata?.contextCompilation);
     if (compilation) {
       yield { protocolVersion: 2, type: "context.applied", payload: {

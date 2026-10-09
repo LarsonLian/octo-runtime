@@ -1,5 +1,6 @@
 import { assertContextEnvelope, assertResolvedExecutionPlan, contextItem, type ContextEnvelope, type ContextSelectionEntry, type ResolvedExecutionPlan } from "@mininglamp-oss/octo-harness-protocol";
 
+/** 验证有效 Context 与冻结执行计划逐项一致；不匹配时禁止进入资源准备。 */
 export function assertFrozenContextPlan(context: ContextEnvelope, plan: ResolvedExecutionPlan): void {
   assertContextEnvelope(context);
   assertResolvedExecutionPlan(plan);
@@ -51,6 +52,11 @@ export function assertFrozenContextPlan(context: ContextEnvelope, plan: Resolved
 export interface CompiledRunContext { modelContent: string; controlInstructions: string }
 export interface TrustedContextInstruction { text: string; source: "revision" | "agent_configuration" | "platform_policy" }
 
+/**
+ * 将选区和已解析资源编译为不可信事实，将已验证来源的指令编译为独立控制通道。
+ * 引用缺失、重复、focus 无法解析或预算超限时抛错，不截断后继续。
+ * source 字段只标识贡献来源，不能代替调用方的身份与权限检查。
+ */
 export function compileRunContext(context: ContextEnvelope, resolvedResources: readonly ContextSelectionEntry[] = [], trustedInstructions: readonly TrustedContextInstruction[] = []): CompiledRunContext {
   assertContextEnvelope(context);
   const resources = contextItem(context, "octo.content", "resources")?.payload.entries;

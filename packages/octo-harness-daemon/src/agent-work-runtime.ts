@@ -1666,6 +1666,7 @@ export class AgentWorkRuntime {
         const input = executionEnvelope.agent_run_request.input;
         const hasImages = Array.isArray(input.parts) && input.parts.some(part => part && typeof part === "object" && (part as Record<string, unknown>).type === "image");
         if (hasImages && !localCapabilities?.has("input.image")) throw new TypeError("UNSUPPORTED_INPUT_MODALITY");
+        // 完成执行绑定和 Adapter 能力检查后，为统一管线注入宿主能力；封存确认前不调用模型。
         const pipeline = new ContextPipeline({
           trustedInstructions: [
             ...(stringValue(asRecord(executionEnvelope.agent_revision.definition).instructions)

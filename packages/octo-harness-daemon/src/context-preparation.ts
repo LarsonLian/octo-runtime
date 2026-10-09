@@ -57,6 +57,11 @@ export interface PreparedRunContext {
   receipt: ContextPreparationReceipt;
 }
 
+/**
+ * 按冻结计划准备实际工作区、Provider 状态目录、技能与 MCP 配置。
+ * random 工作区按 Agent Session 复用；已分配目录丢失时拒绝续接，不重新创建空目录。
+ * 返回的路径属于 Runtime 私有视图；本地准备完成不表示 Worker 已确认或 Provider 已应用。
+ */
 export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
   stateRoot: string; agentSessionId: string; agentId: string; store: AgentWorkStore; signal?: AbortSignal;
 }): Promise<PreparedRunContext> {
@@ -72,13 +77,13 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
     const workspaces = await privateDirectory(join(stateRoot, "workspaces"));
     const chosen = options.store.conversationWorkspace(options.agentSessionId, join(workspaces, randomUUID()));
     if (chosen.created) await mkdir(chosen.path, { mode: 0o700 });
-    // A lost directory must never be silently recreated for a continuing conversation.
+    // 续接必须保留原工作区事实；目录丢失时失败，不能静默创建同路径的空目录。
     workdir = await realDirectory(chosen.path);
     inside(workspaces, workdir);
   } else {
     if (!isAbsolute(workspace.path)) throw new TypeError("CONTEXT_WORKSPACE_INVALID");
     workdir = await realDirectory(workspace.path);
-    // Preserve the requested fixed spelling for protocol comparisons.
+    // 保留请求中的固定路径写法，以便 Worker 按冻结合同比较。
     workdir = workspace.path;
   }
   const scope = createHash("sha256").update(options.agentSessionId).digest("hex");
@@ -260,6 +265,10 @@ function inside(root: string, path: string): void {
 }
 function record(value: unknown): value is Record<string, unknown> { return !!value && typeof value === "object" && !Array.isArray(value); }
 
+/**
+ * 使用当前 run/lease/fence 向 Worker 提交准备回执；仅 HTTP 成功确认后返回。
+ * 拒绝、取消或响应未知均抛错，调用方不能据本地资源存在就启动 Provider。
+ */
 export async function recordContextPreparation(receipt: ContextPreparationReceipt, options: {
   baseUrl: string; headers: Record<string, string>; runId: string; leaseId: string; fencingToken: number; signal: AbortSignal;
 }): Promise<void> {

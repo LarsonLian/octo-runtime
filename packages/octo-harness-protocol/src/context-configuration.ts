@@ -7,6 +7,7 @@ const keyOf = (item: ContextItem): string => `${item.namespace}/${item.name}`;
 const selection = (envelope: ContextEnvelope, namespace: string): ContextCapabilitySelectionPayload | undefined =>
   envelope.items.find(item => item.namespace === namespace && item.name === "selection")?.payload as ContextCapabilitySelectionPayload | undefined;
 
+/** 校验配置形状、可持久化类型和两层配置的一致性；本函数不授予配置编辑权限。 */
 export function assertContextConfiguration(value: unknown): asserts value is ContextConfiguration {
   if (!value || typeof value !== "object" || Array.isArray(value)
     || Object.keys(value).some(key => !["defaults", "mandatory"].includes(key))) throw new TypeError("CONTEXT_CONFIGURATION_INVALID");
@@ -25,7 +26,11 @@ function validateLayers(configuration: ContextConfiguration): void {
   }
 }
 
-/** Pure resolution; the caller must still verify identity, resource ACLs and platform limits. */
+/**
+ * 按类型规则装配 defaults、request 和 mandatory，返回规范化的有效 Context。
+ * 强制约束针对原始 request 检查，防止后续覆盖掩盖冲突；冲突时抛错。
+ * 本函数不修改输入，也不读取资源。调用方仍须验证身份、资源权限和平台限制。
+ */
 export function resolveContextConfiguration(configuration: ContextConfiguration, request: ContextEnvelope): ContextEnvelope {
   validateLayers(configuration);
   assertContextEnvelope(request);
@@ -59,6 +64,7 @@ export function resolveContextConfiguration(configuration: ContextConfiguration,
     }
     items.set(key, forced);
   }
+  // 资源选择按标识执行 include/exclude；mandatory 固定版本、组件范围和 invoke 要求。
   for (const namespace of ["octo.plugins", "octo.skills", "octo.connectors"]) {
     const required = selection(configuration.mandatory, namespace);
     const resources = new Map<string, ContextCapabilityReference>();

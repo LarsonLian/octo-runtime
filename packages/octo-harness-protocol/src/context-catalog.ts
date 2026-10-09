@@ -23,7 +23,10 @@ function entry(namespace: string, name: string, schema: string, persistent: bool
     merge, mandatory, stages: Object.freeze(["validate", "merge", ...stages] as ContextStage[]), outputs: Object.freeze(outputs) });
 }
 
-/** Data contracts only. Processor availability and authorization belong to the host. */
+/**
+ * 定义 Context 类型的持久化、合并、强制约束和消费阶段。
+ * 目录只描述数据语义；宿主负责检查处理器是否可用，并验证调用身份与资源权限。
+ */
 export const CONTEXT_TYPE_CATALOG: readonly ContextTypeDefinition[] = Object.freeze([
   entry("octo.execution", "adapter", "ContextAdapterPayload", true, ["resolve", "dispatch", "apply"], ["execution"]),
   entry("octo.execution", "model", "ContextModelPayload", true, ["resolve", "apply"], ["execution"]),
