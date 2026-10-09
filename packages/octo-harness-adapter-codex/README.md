@@ -137,6 +137,9 @@ Agent revision 的 `execution_profile.agent_config` 提供 `workdir`、`model`�
 | `dangerouslyBypassPermissions` | 为 `true` 时强制 sandbox 为 `danger-full-access`，优先级高于 `sandbox` | `false` |
 | `providerOptions.reasoningSummary` | reasoning summary 采集偏好 `auto/concise/detailed/none` | `auto`（`thinking:disabled` 时为 `none`） |
 | `providerOptions.appServerRequestTimeoutMs` | 单个 RPC 的超时 | `30000` |
+| `providerOptions.finalizationTimeoutMs` | 原生 `final_answer` 完成且无未完成 item/交互后，等待轮次结束的上限；新活动取消计时 | `15000` |
+
+最终答复完成后超过收尾期限，适配器请求 `turn/interrupt`，再等待最多 2 秒；没有终态则结束本次子进程。已有答复保留，异常以 `CODEX_FINALIZATION_TIMEOUT` 上报，不伪造成功、不重新提交问题。中断期间若收到正常 `completed`，仍按成功结束。原生中断或超时均需验证后续 `thread/resume`；该策略仅用于 Codex。
 
 `summary` 默认显式传入 `auto`：仅设置 `effort` 并不保证 app-server 回吐 reasoning summary，不显式请求可能只得到空的 analysis。该字段仅控制 provider 是否采集，不代表内容一定对用户可见。
 

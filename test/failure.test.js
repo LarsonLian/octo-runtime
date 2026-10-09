@@ -29,13 +29,22 @@ test("global failure classifier covers runtime admission and adapter roots", () 
     [Object.assign(new Error("spawn failed"), { code: "EACCES" }), "adapter", "OH-ADP-3003", "EACCES"],
     [{ code: "ADAPTER_INVOCATION_FAILED" }, "adapter", "OH-ADP-3004", "ADAPTER_INVOCATION_FAILED"],
     [{ code: "INVALID_JSON" }, "adapter", "OH-ADP-3005", "ADAPTER_PROTOCOL_ERROR"],
-    [{ code: "RPC_TIMEOUT" }, "adapter", "OH-ADP-3013", "RPC_TIMEOUT"]
+    [{ code: "RPC_TIMEOUT" }, "adapter", "OH-ADP-3013", "RPC_TIMEOUT"],
+    [{ code: "CODEX_FINALIZATION_TIMEOUT" }, "adapter", "OH-ADP-3013", "CODEX_FINALIZATION_TIMEOUT"]
   ];
   for (const [input, domain, code, reasonCode] of cases) {
     const failure = classify(input, domain, domain === "runtime" ? "runtime.command.accept" : "adapter.invoke");
     assert.equal(failure.code, code);
     assert.equal(failure.reasonCode, reasonCode);
   }
+});
+
+test("Codex finalization timeout cannot retry an already answered turn", () => {
+  const failure = classifyFailure({ code: "CODEX_FINALIZATION_TIMEOUT" }, {
+    defaultDomain: "adapter", stage: "adapter.invoke", source: { component: "octo-harness", adapter: "codex" }
+  });
+  assert.equal(failure.retryable, false);
+  assert.equal(failure.params.configParameter, "execution_profile.agent_config.providerOptions.finalizationTimeoutMs");
 });
 
 test("timeout causes have distinct public codes and actionable configuration paths", () => {

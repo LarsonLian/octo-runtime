@@ -39,6 +39,8 @@ import type { InteractionResponse } from "@mininglamp-oss/octo-harness-protocol"
 const APP_SERVER_REQUEST_TIMEOUT_MS = 30_000;
 const APP_SERVER_CLOSE_GRACE_MS = 500;
 const APP_SERVER_KILL_GRACE_MS = 1_000;
+const FINALIZATION_TIMEOUT_MS = 15_000;
+const FINALIZATION_INTERRUPT_GRACE_MS = 2_000;
 // Keep only the tail of stderr, balancing error diagnosability against the memory ceiling of a long-lived process.
 const STDERR_TAIL_LIMIT = 64 * 1024;
 
@@ -951,6 +953,63 @@ class CodexAppServerClient {
   #lastUsage = -1;
   readonly #seenItems = new Set<string>();
   #abortTimer?: NodeJS.Timeout;
+  #finalizationTimer?: NodeJS.Timeout;
+  #finalizationGraceTimer?: NodeJS.Timeout;
+  #finalizationTimedOut = false;
+  #finalizationTimeoutMs = FINALIZATION_TIMEOUT_MS;
+  readonly #openItems = new Set<string>();
+
+  #clearFinalizationTimer(): void {
+    if (this.#finalizationTimer) clearTimeout(this.#finalizationTimer);
+    this.#finalizationTimer = undefined;
+  }
+
+  #finalizationFailure(): CanonicalEvent {
+    return { protocolVersion: 2, type: "run.failed", payload: {
+      code: "CODEX_FINALIZATION_TIMEOUT", adapterType: "codex",
+      message: "Codex final answer completed but the turn did not finish before the finalization deadline",
+      timeoutStage: "rpc", timeoutReason: "rpc_timeout", timeoutMs: this.#finalizationTimeoutMs
+    } };
+  }
+
+  #watchFinalization(method: string, params: JsonRecord): void {
+    if (this.#terminal || this.#closed || this.#finalizationTimedOut) return;
+    if (method === "turn/completed") { this.#clearFinalizationTimer(); return; }
+    if (method === "item/started") {
+      const id = stringValue(recordValue(params.item)?.id);
+      if (id) this.#openItems.add(id);
+      this.#clearFinalizationTimer();
+      return;
+    }
+    if (method === "error" || method.endsWith("Delta") || method.endsWith("/delta")) {
+      this.#clearFinalizationTimer();
+      return;
+    }
+    if (method !== "item/completed") return;
+    const item = recordValue(params.item);
+    const id = stringValue(item?.id);
+    if (id) this.#openItems.delete(id);
+    if (item?.type !== "agentMessage" || item.phase !== "final_answer"
+      || params.threadId !== this.#activeThreadId || notificationTurnId(params) !== this.#activeTurnId
+      || this.#openItems.size || this.#interactions.size || !this.#activeThreadId || !this.#activeTurnId) return;
+    this.#clearFinalizationTimer();
+    const configured = recordValue(this.invocation.agentConfig.providerOptions)?.finalizationTimeoutMs;
+    const timeoutMs = typeof configured === "number" && Number.isFinite(configured) && configured > 0
+      ? configured : FINALIZATION_TIMEOUT_MS;
+    this.#finalizationTimeoutMs = timeoutMs;
+    this.#finalizationTimer = setTimeout(() => {
+      this.#finalizationTimedOut = true;
+      // RPC acknowledgement is not a turn terminal; await the notification separately.
+      this.#finalizationGraceTimer = setTimeout(() => {
+        if (this.#terminal || this.#closed) return;
+        this.#terminal = true;
+        this.#queue.push(this.#finalizationFailure());
+        this.#queue.close();
+      }, FINALIZATION_INTERRUPT_GRACE_MS);
+      void this.request("turn/interrupt", { threadId: this.#activeThreadId, turnId: this.#activeTurnId },
+        FINALIZATION_INTERRUPT_GRACE_MS).catch(() => undefined);
+    }, timeoutMs);
+  }
 
   /**
    * Cancellation follows a "converge host events first, then best-effort notify
@@ -964,6 +1023,7 @@ class CodexAppServerClient {
   readonly #abortListener = (): void => {
     if (this.#closed || this.#terminal) return;
     this.#terminal = true;
+    this.#clearFinalizationTimer();
     this.#invalidateInteractions("run_cancelled");
     this.#queue.push({ protocolVersion: 2,
       type: "run.cancelled",
@@ -1136,6 +1196,8 @@ class CodexAppServerClient {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
+    this.#clearFinalizationTimer();
+    if (this.#finalizationGraceTimer) clearTimeout(this.#finalizationGraceTimer);
     this.#closing = true;
     this.#signal?.removeEventListener("abort", this.#abortListener);
     if (this.#abortTimer) clearTimeout(this.#abortTimer);
@@ -1180,11 +1242,14 @@ class CodexAppServerClient {
     const params = recordValue(message.params) ?? {};
     if (!this.#acceptNotification(params)) return;
     this.#reportNotificationActivity(method, params);
+    this.#watchFinalization(method, params);
     for (const event of this.#normalizer.normalize({ method, params })) {
       if (isTerminalEvent(event)) {
         this.#invalidateInteractions("run_terminal");
         this.#terminal = true;
-        this.#queue.push(event);
+        this.#clearFinalizationTimer();
+        if (this.#finalizationGraceTimer) clearTimeout(this.#finalizationGraceTimer);
+        this.#queue.push(this.#finalizationTimedOut && event.type !== "run.completed" ? this.#finalizationFailure() : event);
         this.#queue.close();
       } else this.#queue.push(event);
     }
@@ -1211,6 +1276,7 @@ class CodexAppServerClient {
   }
 
   #handleServerRequest(id: RpcId, method: string, params: JsonRecord): void {
+    this.#clearFinalizationTimer();
     const kind = interactionKind(method);
     if (!kind) {
       this.#rejectServerRequest(id, method);
@@ -1375,12 +1441,14 @@ class CodexAppServerClient {
   }
 
   #handleProcessError(error: Error): void {
+    this.#clearFinalizationTimer();
     this.#rejectPending(error);
     this.#invalidateInteractions("execution_lost");
     if (!this.#closing && !this.#terminal) this.#queue.fail(error);
   }
 
   #handleExit(exit: ProcessExit): void {
+    this.#clearFinalizationTimer();
     if (this.#exited) return;
     this.#exited = true;
     this.#resolveExit(exit);

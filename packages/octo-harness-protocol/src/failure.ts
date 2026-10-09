@@ -72,8 +72,10 @@ export function classifyFailure(input: unknown, context: FailureClassificationCo
     category: catalog.category,
     stage: context.stage,
     messageKey: catalog.messageKey,
-    params: timeoutConfiguration(classification.code, context.source?.adapter),
-    retryable: catalog.retryable,
+    params: classification.reasonCode === "CODEX_FINALIZATION_TIMEOUT"
+      ? { configParameter: "execution_profile.agent_config.providerOptions.finalizationTimeoutMs" }
+      : timeoutConfiguration(classification.code, context.source?.adapter),
+    retryable: classification.reasonCode === "CODEX_FINALIZATION_TIMEOUT" ? false : catalog.retryable,
     ...(catalog.retryAfterMs === undefined ? {} : { retryAfterMs: catalog.retryAfterMs }),
     action: catalog.action,
     diagnosticId: diagnosticIdForContext(context),
@@ -273,7 +275,8 @@ function classify(evidence: FailureEvidence, defaultDomain: FailureDomain): { co
   const timeouts: Record<string, PublicFailureCode> = {
     ADAPTER_FIRST_FRAME_TIMEOUT: "OH-ADP-3007", ADAPTER_MODEL_IDLE_TIMEOUT: "OH-ADP-3008",
     ADAPTER_TOOL_IDLE_TIMEOUT: "OH-ADP-3009", ADAPTER_TOOL_DEADLINE: "OH-ADP-3010",
-    ADAPTER_RUN_DEADLINE: "OH-ADP-3011", ADAPTER_CLEANUP_TIMEOUT: "OH-ADP-3012", RPC_TIMEOUT: "OH-ADP-3013"
+    ADAPTER_RUN_DEADLINE: "OH-ADP-3011", ADAPTER_CLEANUP_TIMEOUT: "OH-ADP-3012", RPC_TIMEOUT: "OH-ADP-3013",
+    CODEX_FINALIZATION_TIMEOUT: "OH-ADP-3013"
   };
   if (explicit && timeouts[explicit]) return result(timeouts[explicit], explicit);
   if (explicit === "RUNTIME_DRAINING") return result("OH-RUN-2002", "RUNTIME_DRAINING");

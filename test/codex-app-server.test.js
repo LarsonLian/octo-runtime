@@ -11,6 +11,27 @@ import { codexAppServerFixture, invokeRequest, withTimeout } from "./agent-work-
 
 const fixture = fileURLToPath(new URL("../test-support/fake-codex-cancellation.mjs", import.meta.url));
 
+for (const mode of ["normal", "stall", "ignore-interrupt", "commentary", "open-tool", "new-work"]) {
+  test(`Codex finalization deadline: ${mode}`, { timeout: 6_000 }, async () => {
+    const adapter = createCodexAdapter({ command: process.execPath,
+      appServerArgs: [fileURLToPath(new URL("../test-support/fake-codex-finalization.mjs", import.meta.url))] });
+    const events = [];
+    const started = Date.now();
+    for await (const event of adapter.invoke(invokeRequest({
+      modelInput: mode, signal: AbortSignal.timeout(5_000),
+      agentConfig: { providerOptions: { finalizationTimeoutMs: 60 } }
+    }))) events.push(event);
+    const terminals = events.filter(event => ["run.failed", "run.completed", "run.cancelled"].includes(event.type));
+    assert.equal(terminals.length, 1);
+    assert.ok(events.some(event => event.type === "message.update" && event.payload.text === "answer preserved"));
+    if (["stall", "ignore-interrupt"].includes(mode)) {
+      assert.equal(terminals[0].type, "run.failed");
+      assert.equal(terminals[0].payload.code, "CODEX_FINALIZATION_TIMEOUT");
+      assert.ok(Date.now() - started < 4_000);
+    } else assert.equal(terminals[0].type, "run.completed");
+  });
+}
+
 test("Codex reports scoped activity before normalization without retry/duplicate progress", { timeout: 5_000 }, async () => {
   const adapter = createCodexAdapter({ command:process.execPath, appServerArgs:[fileURLToPath(new URL("../test-support/fake-codex-activity.mjs",import.meta.url))] });
   const activities=[]; const events=[];
