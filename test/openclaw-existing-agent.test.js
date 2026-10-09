@@ -45,7 +45,10 @@ test("local discovery handles a later install, JSON5, token rotation and removed
  await assert.rejects(loadLocalOpenClawGateway(home),/config_not_found/);
 });
 
-test("existing instance invocation preserves provider configuration and uses the explicit target", async () => {
+for (const { agentSource, target, workdir } of [
+ { agentSource: "preset", target: "researcher", workdir: "" },
+ { agentSource: "provisioned", target: "main", workdir: "/workspace" }
+]) test(`existing ${target} invocation from ${agentSource} preserves provider configuration`, async () => {
  const calls=[];
  const client={
   connect:async()=>({protocol:4,features:{methods:["agents.list","sessions.create","sessions.messages.subscribe","agent","agent.wait","sessions.abort"],events:["agent"]}}),
@@ -59,11 +62,11 @@ test("existing instance invocation preserves provider configuration and uses the
    return {};
   }
  };
- const request={protocolVersion:2,invocationId:"i",runId:"r",agentSessionId:"s",workdir:"",prompt:"work",approvalMode:"full_access",agentSource: "preset", agentConfig:{providerAgentId:"researcher",providerOptions:{OPENCLAW_GATEWAY_URL:"ws://127.0.0.1:18789",OPENCLAW_GATEWAY_TOKEN:"fixture",OPENCLAW_GATEWAY_DEVICE_ID:"d",OPENCLAW_GATEWAY_PUBLIC_KEY:"p",OPENCLAW_GATEWAY_PRIVATE_KEY:"k"}}};
+ const request={protocolVersion:2,invocationId:"i",runId:"r",agentSessionId:"s",workdir,prompt:"work",approvalMode:"full_access",agentSource, agentConfig:{providerAgentId:target,providerOptions:{OPENCLAW_GATEWAY_URL:"ws://127.0.0.1:18789",OPENCLAW_GATEWAY_TOKEN:"fixture",OPENCLAW_GATEWAY_DEVICE_ID:"d",OPENCLAW_GATEWAY_PUBLIC_KEY:"p",OPENCLAW_GATEWAY_PRIVATE_KEY:"k"}}};
  const events=[];
  for await(const event of createOpenClawAdapter({clientFactory:()=>client}).invoke(request))events.push(event);
  assert.equal(events.at(-1).type,"run.completed");
- assert.equal(calls.find(c=>c.method==="agent").params.agentId,"researcher");
+ assert.equal(calls.find(c=>c.method==="agent").params.agentId,target);
  assert.equal(calls.find(c=>c.method==="agent").params.promptMode,undefined);
  assert.equal(calls.find(c=>c.method==="sessions.create").params.cwd,undefined);
  assert.equal(calls.some(c=>["config.get","config.patch","agents.create"].includes(c.method)),false);

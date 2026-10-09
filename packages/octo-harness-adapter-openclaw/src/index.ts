@@ -92,7 +92,7 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
   const createParams: JsonRecord = {
     key: sessionKey,
     agentId,
-    ...(!isPresetAgent(req) ? { cwd: req.workdir } : {}),
+    ...(!usesExistingAgent(req) ? { cwd: req.workdir } : {}),
     idempotencyKey: `${requestId}-session`,
     ...(model ? { model } : {}),
     ...(thinking ? { thinkingLevel: thinking } : {})
@@ -102,7 +102,7 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
     agentId,
     sessionKey,
     deliver: false,
-    ...(!isPresetAgent(req) ? { promptMode: "minimal" } : {}),
+    ...(!usesExistingAgent(req) ? { promptMode: "minimal" } : {}),
     idempotencyKey: requestId,
     ...(req.controlInstructions ? { extraSystemPrompt: req.controlInstructions } : {}),
     ...(model ? { model } : {}),
@@ -122,7 +122,7 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
       kind: "json_params",
       content: {
         operations: [
-          ...(!isPresetAgent(req) ? [{ method: "config.get", params: {} }] : [{ method: "agents.list", params: {} }]),
+          ...(!usesExistingAgent(req) ? [{ method: "config.get", params: {} }] : [{ method: "agents.list", params: {} }]),
           { method: "sessions.create", params: createParams },
           { method: "sessions.messages.subscribe", params: { key: sessionKey, agentId } },
           { method: "agent", params: agentParams }
@@ -431,8 +431,9 @@ function assertRuntimeGatewayContract(value: unknown, externalBinding = false): 
   if (!events.includes("agent")) throw new Error("OpenClaw Gateway does not advertise the agent event stream");
 }
 
-function isPresetAgent(req: InvokeRequest): boolean {
-  return req.agentSource === "preset";
+function usesExistingAgent(req: InvokeRequest): boolean {
+  // Work App's default assistant selects the user's existing main even when its Octo definition is provisioned.
+  return req.agentSource === "preset" || req.agentConfig.providerAgentId === "main";
 }
 
 function assertRuntimeIsolationConfig(value: unknown, invocation: OpenClawGatewayInvocation): void {
@@ -495,7 +496,7 @@ async function* invokeOpenClawGateway(
 
   try {
     const hello = await client.connect();
-    const externalBinding = isPresetAgent(req);
+    const externalBinding = usesExistingAgent(req);
     assertRuntimeGatewayContract(hello, externalBinding);
     if (!externalBinding) {
       await client.request("config.get", {}, { timeoutMs: 10_000, signal: req.signal })
@@ -608,7 +609,7 @@ async function* invokeOpenClawGateway(
           await controlClient.request("sessions.abort", abortParams, { timeoutMs: 5_000 });
         } catch {
           recoveryClient = clientFactory(invocation.gateway);
-          assertRuntimeGatewayContract(await recoveryClient.connect(), isPresetAgent(req));
+          assertRuntimeGatewayContract(await recoveryClient.connect(), usesExistingAgent(req));
           controlClient = recoveryClient;
           await controlClient.request("sessions.abort", abortParams, { timeoutMs: 5_000 });
         }
