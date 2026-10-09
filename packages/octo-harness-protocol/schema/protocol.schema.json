@@ -374,6 +374,7 @@
       "oneOf": [{"required": ["effort"], "not": {"required": ["use_provider_default"]}}, {"required": ["use_provider_default"], "not": {"required": ["effort"]}}]
     },
     "ContextWorkspacePayload": {
+      "description": "fixed uses the supplied path; random creates a workspace on the AgentSession's first run and reuses it for subsequent runs; none delegates workspace ownership to a preset Agent.",
       "oneOf": [
         {
           "type": "object",
@@ -396,15 +397,11 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "mode",
-            "scope"
+            "mode"
           ],
           "properties": {
             "mode": {
               "const": "random"
-            },
-            "scope": {
-              "const": "conversation"
             }
           }
         },

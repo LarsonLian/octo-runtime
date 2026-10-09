@@ -15,7 +15,7 @@ export function assertFrozenContextPlan(context: ContextEnvelope, plan: Resolved
     match("octo.execution", "workspace", "path", plan.workdir);
     if (plan.workspace && (plan.workspace.mode !== "fixed" || plan.workspace.path !== workspace.path)) throw new TypeError("CONTEXT_PLAN_MISMATCH");
   }
-  if (workspace?.mode === "random" && (plan.workdir !== "" || plan.workspace?.mode !== "random" || plan.workspace.scope !== "conversation")) throw new TypeError("CONTEXT_PLAN_MISMATCH");
+  if (workspace?.mode === "random" && (plan.workdir !== "" || plan.workspace?.mode !== "random")) throw new TypeError("CONTEXT_PLAN_MISMATCH");
   match("octo.security", "approval_policy", "mode", plan.approval_mode);
   match("octo.execution", "model", "id", plan.model);
   match("octo.execution", "reasoning", "effort", plan.effort);

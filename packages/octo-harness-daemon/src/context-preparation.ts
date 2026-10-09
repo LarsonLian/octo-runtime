@@ -59,7 +59,7 @@ export interface PreparedRunContext {
 
 /**
  * 按冻结计划准备实际工作区、Provider 状态目录、技能与 MCP 配置。
- * random 工作区按 Agent Session 复用；已分配目录丢失时拒绝续接，不重新创建空目录。
+ * random 在 Agent Session 首次运行时创建工作区，后续运行复用；已分配目录丢失时拒绝续接。
  * 返回的路径属于 Runtime 私有视图；本地准备完成不表示 Worker 已确认或 Provider 已应用。
  */
 export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {

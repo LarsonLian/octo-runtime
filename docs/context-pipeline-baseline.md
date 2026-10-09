@@ -41,7 +41,7 @@ prepare 输出必须包含稳定资源标识、实际版本/digest、授权 scop
 
 包根目录、cwd、Run 资源视图和插件持久数据分开管理。下载校验摘要；解包拒绝路径穿越与不允许的符号链接。失败清理只删除本次临时资源，不能修改共享个人 Provider 配置或删除用户目录。
 
-random workspace 的目录分配必须幂等并回传实际路径。输入的策略快照不回写为本机路径；协议允许随机策略的执行计划暂不包含具体 workdir。当前 Runtime 先准备实际目录并取得 Worker 回执确认，再映射 Provider 的 workdir；不得直接使用冻结计划中的空 workdir 启动。
+random workspace 仅声明 `{ "mode": "random" }`，不得携带 scope 或 path。Runtime 在 AgentSession 首次运行时创建工作区，后续运行复用该目录；不同 AgentSession 使用独立目录。已绑定目录丢失时拒绝续接，不创建空目录替代。目录分配必须幂等并回传实际路径。输入的策略快照不回写为本机路径；协议允许随机策略的执行计划暂不包含具体 workdir。当前 Runtime 先准备实际目录并取得 Worker 回执确认，再映射 Provider 的 workdir；不得直接使用冻结计划中的空 workdir 启动。
 
 ## 4. Compiler 与 Adapter 输出
 

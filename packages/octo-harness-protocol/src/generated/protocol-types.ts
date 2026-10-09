@@ -55,6 +55,8 @@ export type ContextReasoningPayload1 = {
   [k: string]: unknown;
 };
 /**
+ * fixed uses the supplied path; random creates a workspace on the AgentSession's first run and reuses it for subsequent runs; none delegates workspace ownership to a preset Agent.
+ *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextWorkspacePayload".
  */
@@ -65,7 +67,6 @@ export type ContextWorkspacePayload =
     }
   | {
       mode: "random";
-      scope: "conversation";
     }
   | {
       mode: "none";

@@ -25,11 +25,11 @@ async function fixture(t) {
   const store = AgentWorkStore.open(join(root, "runtime.db"));
   t.after(async () => { store.close(); await rm(root, { recursive: true, force: true }); });
   const options = { stateRoot: root, agentSessionId: "session-1", agentId: "agent-1", store };
-  const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "", approval_mode: "ask", workspace: { mode: "random", scope: "conversation" } };
+  const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "", approval_mode: "ask", workspace: { mode: "random" } };
   return { root, options, plan, prepare: (resources = [], updates = {}) => prepareRunContext({ ...plan, resources, ...updates }, options) };
 }
 
-test("conversation workspaces and provider state survive repeated preparation; missing workspaces fail", async t => {
+test("random workspaces and provider state are created once per AgentSession; missing workspaces fail", async t => {
   const f = await fixture(t);
   const first = await f.prepare();
   await writeFile(join(first.workdir, "retained.txt"), "retained");
@@ -37,6 +37,9 @@ test("conversation workspaces and provider state survive repeated preparation; m
   assert.equal(second.workdir, first.workdir);
   assert.equal(second.providerStateDir, first.providerStateDir);
   assert.equal(await readFile(join(second.workdir, "retained.txt"), "utf8"), "retained");
+  const anotherSession = await prepareRunContext(f.plan, { ...f.options, agentSessionId: "session-2" });
+  assert.notEqual(anotherSession.workdir, first.workdir);
+  assert.notEqual(anotherSession.providerStateDir, first.providerStateDir);
   await rm(first.workdir, { recursive: true });
   await assert.rejects(f.prepare(), /ENOENT/);
 });

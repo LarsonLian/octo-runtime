@@ -181,10 +181,10 @@ function payload(namespace: string, name: string, value: Record<string, unknown>
       text(value[property]); return;
     }
     if (name === "workspace") {
-      fields(value, ["mode", "path", "scope"]);
-      if (value.mode === "none" && value.path === undefined && value.scope === undefined) return;
-      if (value.mode === "fixed" && value.scope === undefined) { text(value.path); return; }
-      if (value.mode === "random" && value.scope === "conversation" && value.path === undefined) return;
+      fields(value, ["mode", "path"]);
+      if (value.mode === "none" && value.path === undefined) return;
+      if (value.mode === "fixed") { text(value.path); return; }
+      if (value.mode === "random" && value.path === undefined) return;
       throw new TypeError("CONTEXT_SCHEMA_INVALID");
     }
     if (name === "requirements") {

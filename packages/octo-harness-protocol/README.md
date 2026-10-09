@@ -92,7 +92,7 @@ pnpm build                            # 3. 构建
 
 `ContextConfiguration` 包含 defaults 与 mandatory。使用 `assertContextConfiguration` 验证持久配置，再用 `resolveContextConfiguration(configuration, request)` 解析有效项。replace 类型整项覆盖；资源 selection 使用 include 添加/替换、exclude 删除，空 include/exclude 表示不增删。mandatory 冲突必须拒绝；requirements 取强制与请求能力并集。
 
-插件、技能和连接器资源引用使用 resource_id、version、可选 invoke/components。include 的 resource_id 必须唯一，include/exclude 不得交叉；JSON Schema 消费者必须实现 `x-octo-capability-selection` 语义关键字。随机目录声明使用 `{mode:"random",scope:"conversation"}`，实际路径由 Runtime 准备，不能以空 workdir 启动 Provider。
+插件、技能和连接器资源引用使用 resource_id、version、可选 invoke/components。include 的 resource_id 必须唯一，include/exclude 不得交叉；JSON Schema 消费者必须实现 `x-octo-capability-selection` 语义关键字。随机目录声明仅使用 `{mode:"random"}`，不得携带 scope 或 path。Runtime 在 AgentSession 首次运行时创建目录，后续运行复用；不同 AgentSession 使用独立目录。实际路径由 Runtime 准备，不能以空 workdir 启动 Provider。
 
 这些公开函数不执行 ACL 检查、签发凭据、下载资源或构造 Provider system prompt。处理阶段和跨项目验收见 [ContextPipeline 基线](../../../docs/62-octo-context-compiler-se-baseline.md)。
 

@@ -246,8 +246,7 @@
             "namespace": "octo.execution",
             "name": "workspace",
             "payload": {
-              "mode": "random",
-              "scope": "conversation"
+              "mode": "random"
             }
           }
         ]
@@ -268,8 +267,7 @@
           "namespace": "octo.execution",
           "name": "workspace",
           "payload": {
-            "mode": "random",
-            "scope": "conversation"
+            "mode": "random"
           }
         }
       ]
