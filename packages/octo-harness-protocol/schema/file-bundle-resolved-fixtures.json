@@ -1,0 +1,25 @@
+[
+  {
+    "name": "utf16-path-sort-binary-and-executable",
+    "files": {
+      "😀.txt": {
+        "content_base64": "AAH/",
+        "executable": false
+      },
+      "a.sh": {
+        "content_base64": "IyEvYmluL3NoCg==",
+        "executable": true
+      },
+      "": {
+        "content_base64": "",
+        "executable": false
+      },
+      "𐀀": {
+        "content_base64": "5Lit5paH",
+        "executable": false
+      }
+    },
+    "canonical": "{\"a.sh\":{\"content_base64\":\"IyEvYmluL3NoCg==\",\"executable\":true},\"𐀀\":{\"content_base64\":\"5Lit5paH\",\"executable\":false},\"😀.txt\":{\"content_base64\":\"AAH/\",\"executable\":false},\"\":{\"content_base64\":\"\",\"executable\":false}}",
+    "digest": "sha256:081fd3f519185f578535f94f861a2f7c868777189e27fac1defc8454822246ac"
+  }
+]

@@ -55,6 +55,11 @@ export type {
   ApprovalOperation,
   ApprovalDisplayDetails,
   ContextItem,
+  ContextExecutionPayload,
+  ContextMaterialsPayload,
+  ContextMaterialEntry,
+  ContextResourceIdentity,
+  ResolvedResourceFile,
   ContextCapabilityReference,
   ContextCapabilitySelectionPayload,
   ResolvedCapabilityResource,
@@ -71,17 +76,13 @@ export type {
   ContextReasoningPayload,
   ContextWorkspacePayload,
   ContextLimitsPayload,
-  ContextRequirementsPayload,
   ContextRuntimeSelectionPayload,
   ContextApprovalPolicyPayload,
   ContextSelectionEntry,
-  ContextSelectionsPayload,
   ContextResourceEntry,
-  ContextResourcesPayload,
   ContextInstructionEntry,
   ContextInstructionsPayload,
   ContextContinuityPayload,
-  ContextDeliveryPolicyPayload,
   ResolvedExecutionPlan,
   ResolvedRuntimeSelection,
   MessageChannel,
@@ -600,19 +601,20 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
   assertAgentSource(request.agentSource);
   assertContextEnvelope(request.context);
   assertApprovalMode(request.approvalMode);
-  const approvalPolicy = contextItem(request.context, "octo.security", "approval_policy");
-  if (approvalPolicy && approvalPolicy.payload.mode !== request.approvalMode) throw new TypeError("CONTEXT_PLAN_MISMATCH");
+  const execution = contextItem(request.context, "octo.execution", "config")?.payload;
+  const approvalPolicy = execution?.approval_policy as Record<string, unknown> | undefined;
+  if (approvalPolicy && approvalPolicy.mode !== request.approvalMode) throw new TypeError("CONTEXT_PLAN_MISMATCH");
   const agentConfig = request.agentConfig;
   if (isRecord(agentConfig) && ["autoApprove", "dangerouslyBypassPermissions", "permissionMode"].some(key => key in agentConfig)) {
     throw new TypeError("LEGACY_PERMISSION_CONFIG_REJECTED");
   }
   if (isRecord(agentConfig) && "thinking" in agentConfig) throw new TypeError("LEGACY_REASONING_CONFIG_REJECTED");
   for (const selection of [{ name: "model", property: "id", config: "model" }, { name: "reasoning", property: "effort", config: "effort" }]) {
-    const selected = contextItem(request.context, "octo.execution", selection.name);
-    if (selected && selected.payload[selection.property] !== (isRecord(agentConfig) ? agentConfig[selection.config] : undefined)) throw new TypeError("CONTEXT_PLAN_MISMATCH");
+    const selected = execution?.[selection.name] as Record<string, unknown> | undefined;
+    if (selected && selected[selection.property] !== (isRecord(agentConfig) ? agentConfig[selection.config] : undefined)) throw new TypeError("CONTEXT_PLAN_MISMATCH");
   }
-  const workspace = contextItem(request.context, "octo.execution", "workspace");
-  if (workspace?.payload.mode === "fixed" && workspace.payload.path !== request.workdir) throw new TypeError("CONTEXT_PLAN_MISMATCH");
+  const workspace = execution?.workspace as Record<string, unknown> | undefined;
+  if (workspace?.mode === "fixed" && workspace.path !== request.workdir) throw new TypeError("CONTEXT_PLAN_MISMATCH");
   if (request.skills !== undefined && (!Array.isArray(request.skills) || request.skills.length > 0)) {
     if (!Array.isArray(request.skills)) throw new TypeError("SKILL_SCOPE_INVALID");
     for (const skill of request.skills) {

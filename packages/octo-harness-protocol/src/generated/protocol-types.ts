@@ -95,25 +95,6 @@ export type ContextRuntimeSelectionPayload1 =
       mode?: "explicit";
     };
 /**
- * Declarative MCP resource operation. Only deployed scoped operations may execute; schema validation does not authorize access.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextResourceEntry".
- */
-export type ContextResourceEntry = {
-  locator?: ContextMcpLocator;
-} & {
-  resource_ref: string;
-  resolver: "mcp";
-  locator: {};
-  /**
-   * Frozen non-secret JSON parameters supplied by the authenticated resolver plan, not model-generated commands.
-   */
-  params?: Record<string, unknown>;
-  authorization_ref?: string;
-  revision?: string;
-};
-/**
  * A channel continuity descriptor. The x-octo-matching-trigger-fields keyword requires trigger_fact.message_id == trigger_message_id and matching presence/value of trigger_fact.message_seq and trigger_seq.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -234,6 +215,36 @@ export type ActivitySubject =
       type: "interaction";
       id: string;
     };
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextMaterialEntry".
+ */
+export type ContextMaterialEntry =
+  | {
+      text: string;
+      resource_ref?: string;
+      source?:
+        | {
+            [k: string]: unknown;
+          }
+        | string;
+      summary?: string;
+      type: "inline";
+    }
+  | ({
+      locator?: ContextMcpLocator;
+    } & {
+      resource_ref: string;
+      resolver: "mcp";
+      locator: {};
+      /**
+       * Frozen non-secret JSON parameters supplied by the authenticated resolver plan, not model-generated commands.
+       */
+      params?: Record<string, unknown>;
+      authorization_ref?: string;
+      revision?: string;
+      type: "reference";
+    });
 
 /**
  * Serializable data shapes for the Octo Harness NDJSON protocol. Runtime behavior remains hand-written in src/index.ts, and this schema is the source of truth for generated TypeScript types. The x-octo-unicode-scalar-strings semantic keyword requires every JSON string value and object member name to contain Unicode scalar values only: unpaired UTF-16 surrogates are rejected, not repaired or normalized. Consumers must enforce this protocol-wide rule even when validating a definition directly.
@@ -1583,7 +1594,7 @@ export interface NotificationMessage1 {
  * via the `definition` "ContextEnvelope".
  */
 export interface ContextEnvelope {
-  schema: "octo.context-envelope/v1";
+  schema: "octo.context-envelope/v2";
   /**
    * @maxItems 32
    */
@@ -1630,10 +1641,10 @@ export interface RunContextProjection {
      */
     resources: {
       resource_id: string;
-      kind: "plugin" | "skill" | "connector";
-      version: string;
+      kind: "agent_plugin" | "skill" | "connector" | "knowledge";
       digest: string;
       sources: ("agent_default" | "agent_mandatory" | "request")[];
+      revision: number;
     }[];
   };
 }
@@ -1644,8 +1655,8 @@ export interface RunContextProjection {
  * via the `definition` "ContextPreparationReceipt".
  */
 export interface ContextPreparationReceipt {
-  compiler_version: "octo.context-compiler/v1";
-  catalog_version: "octo.context-catalog/v1";
+  compiler_version: "octo.context-compiler/v2";
+  catalog_version: "octo.context-catalog/v2";
   context_hash: string;
   compiled_hash: string;
   run_id: string;
@@ -1674,7 +1685,6 @@ export interface ContextPreparationReceipt {
  */
 export interface PreparedCapabilityReceipt {
   resource_id: string;
-  version: string;
   digest: string;
   root: string;
   data: string;
@@ -1682,6 +1692,7 @@ export interface PreparedCapabilityReceipt {
    * @maxItems 64
    */
   components: string[];
+  revision: number;
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -1731,8 +1742,8 @@ export interface ChannelContextSnapshotRef {
  */
 export interface ContextApplicationEvidence {
   schema: "octo.context-application/v1";
-  compiler_version: "octo.context-compiler/v1";
-  catalog_version: "octo.context-catalog/v1";
+  compiler_version: "octo.context-compiler/v2";
+  catalog_version: "octo.context-catalog/v2";
   context_hash: string;
   compiled_hash: string;
   run_id: string;
@@ -1756,25 +1767,11 @@ export interface ContextAdapterPayload {
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextRequirementsPayload".
- */
-export interface ContextRequirementsPayload {
-  /**
-   * @maxItems 1
-   */
-  capabilities: [] | ["react"];
-  /**
-   * @maxItems 64
-   */
-  execution_features?: string[];
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextCapabilityReference".
  */
 export interface ContextCapabilityReference {
+  kind: "agent_plugin" | "skill" | "connector" | "knowledge";
   resource_id: string;
-  version: string;
   invoke?: boolean;
   /**
    * @maxItems 64
@@ -1782,7 +1779,7 @@ export interface ContextCapabilityReference {
   components?: string[];
 }
 /**
- * Includes have unique resource_id values; include and exclude are disjoint. Consumers must enforce x-octo-capability-selection in addition to draft-07 constraints.
+ * Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextCapabilitySelectionPayload".
@@ -1795,7 +1792,15 @@ export interface ContextCapabilitySelectionPayload {
   /**
    * @maxItems 32
    */
-  exclude: string[];
+  exclude: ContextResourceIdentity[];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextResourceIdentity".
+ */
+export interface ContextResourceIdentity {
+  kind: "agent_plugin" | "skill" | "connector" | "knowledge";
+  resource_id: string;
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -1803,15 +1808,23 @@ export interface ContextCapabilitySelectionPayload {
  */
 export interface ResolvedCapabilityResource {
   resource_id: string;
-  kind: "plugin" | "skill" | "connector";
-  version: string;
+  kind: "agent_plugin" | "skill" | "connector" | "knowledge";
   digest: string;
   files: {
-    [k: string]: string;
+    [k: string]: ResolvedResourceFile;
   };
   sources: ("agent_default" | "agent_mandatory" | "request")[];
   invoke: boolean;
   components?: string[];
+  revision: number;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ResolvedResourceFile".
+ */
+export interface ResolvedResourceFile {
+  content_base64: string;
+  executable: boolean;
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -1865,25 +1878,22 @@ export interface ContextSelectionEntry {
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextSelectionsPayload".
- */
-export interface ContextSelectionsPayload {
-  entries: ContextSelectionEntry[];
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextMcpLocator".
  */
 export interface ContextMcpLocator {
   server_ref: string;
   tool: string;
 }
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextResourcesPayload".
- */
-export interface ContextResourcesPayload {
-  entries: ContextResourceEntry[];
+export interface ContextResourceEntry {
+  resource_ref: string;
+  resolver: "mcp";
+  locator: {};
+  /**
+   * Frozen non-secret JSON parameters supplied by the authenticated resolver plan, not model-generated commands.
+   */
+  params?: Record<string, unknown>;
+  authorization_ref?: string;
+  revision?: string;
 }
 /**
  * Minimal control instruction: non-empty text plus a source label. The source label is not proof of trust; authenticated upstream configuration must authorize it.
@@ -1979,17 +1989,6 @@ export interface ChannelMessagePart {
 export interface ChannelMessageFlags {
   self?: boolean;
   control?: boolean;
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextDeliveryPolicyPayload".
- */
-export interface ContextDeliveryPolicyPayload {
-  focus?: string[];
-  budget?: {
-    max_inline_bytes?: number;
-    max_items?: number;
-  };
 }
 export interface ResolvedRuntimeSelection1 {
   schema: "octo.runtime-selection/v2";
@@ -2701,4 +2700,24 @@ export interface RunNoticePayload {
   };
   relatedActivityId?: string;
   relatedItemId?: string;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextExecutionPayload".
+ */
+export interface ContextExecutionPayload {
+  adapter?: ContextAdapterPayload;
+  model?: ContextModelPayload;
+  reasoning?: ContextReasoningPayload;
+  workspace?: ContextWorkspacePayload;
+  limits?: ContextLimitsPayload;
+  runtime?: ContextRuntimeSelectionPayload;
+  approval_policy?: ContextApprovalPolicyPayload;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextMaterialsPayload".
+ */
+export interface ContextMaterialsPayload {
+  entries: ContextMaterialEntry[];
 }

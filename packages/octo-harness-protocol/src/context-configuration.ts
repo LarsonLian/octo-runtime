@@ -1,35 +1,33 @@
 import type { ContextConfiguration, ContextEnvelope, ContextItem, ContextCapabilityReference, ContextCapabilitySelectionPayload } from "./generated/protocol-types.js";
-import { assertContextEnvelope, canonicalContext, mergeContext } from "./context.js";
+import { assertContextEnvelope, canonicalContext, mergeContext, CONTEXT_SCHEMA } from "./context.js";
 import { contextTypeDefinition } from "./context-catalog.js";
 
-const empty = (): ContextEnvelope => ({ schema: "octo.context-envelope/v1", items: [] });
+const empty = (): ContextEnvelope => ({ schema: CONTEXT_SCHEMA, items: [] });
 const keyOf = (item: ContextItem): string => `${item.namespace}/${item.name}`;
-const selection = (envelope: ContextEnvelope, namespace: string): ContextCapabilitySelectionPayload | undefined =>
-  envelope.items.find(item => item.namespace === namespace && item.name === "selection")?.payload as ContextCapabilitySelectionPayload | undefined;
+const resourceKey = (item: { kind: string; resource_id: string }): string => `${item.kind}/${item.resource_id}`;
+const selection = (envelope: ContextEnvelope): ContextCapabilitySelectionPayload | undefined =>
+  envelope.items.find(item => item.namespace === "octo.resources" && item.name === "selection")?.payload as ContextCapabilitySelectionPayload | undefined;
 
-/** 校验配置形状、可持久化类型和两层配置的一致性；本函数不授予配置编辑权限。 */
+/** 校验可持久化配置；身份、资源权限和强制来源仍由 Worker 验证。 */
 export function assertContextConfiguration(value: unknown): asserts value is ContextConfiguration {
   if (!value || typeof value !== "object" || Array.isArray(value)
     || Object.keys(value).some(key => !["defaults", "mandatory"].includes(key))) throw new TypeError("CONTEXT_CONFIGURATION_INVALID");
-  const configuration = value as ContextConfiguration;
-  validateLayers(configuration);
-  resolveContextConfiguration(configuration, empty());
+  resolveContextConfiguration(value as ContextConfiguration, empty());
 }
 
 function validateLayers(configuration: ContextConfiguration): void {
   for (const envelope of [configuration.defaults, configuration.mandatory]) {
     assertContextEnvelope(envelope);
     for (const item of envelope.items) {
-      const definition = contextTypeDefinition(item.namespace, item.name);
-      if (!definition.persistent) throw new TypeError("CONTEXT_CONFIGURATION_TYPE_FORBIDDEN");
+      if (!contextTypeDefinition(item.namespace, item.name).persistent) throw new TypeError("CONTEXT_CONFIGURATION_TYPE_FORBIDDEN");
+      if (item.namespace === "octo.content" && (item.payload.entries as {type: string}[]).some(entry => entry.type !== "reference")) throw new TypeError("CONTEXT_CONFIGURATION_TYPE_FORBIDDEN");
     }
   }
 }
 
 /**
- * 按类型规则装配 defaults、request 和 mandatory，返回规范化的有效 Context。
- * 强制约束针对原始 request 检查，防止后续覆盖掩盖冲突；冲突时抛错。
- * 本函数不修改输入，也不读取资源。调用方仍须验证身份、资源权限和平台限制。
+ * execution 按字段覆盖，limits 按命名值继承，资源按 kind/UUID 合并。
+ * mandatory 检查原请求后补入约束，不能通过默认覆盖隐藏冲突。
  */
 export function resolveContextConfiguration(configuration: ContextConfiguration, request: ContextEnvelope): ContextEnvelope {
   validateLayers(configuration);
@@ -38,89 +36,86 @@ export function resolveContextConfiguration(configuration: ContextConfiguration,
   const items = new Map(effective.items.map(item => [keyOf(item), item]));
   for (const required of configuration.mandatory.items) {
     const key = keyOf(required);
-    const definition = contextTypeDefinition(required.namespace, required.name);
-    if (definition.merge === "capability_set") continue;
+    if (required.namespace === "octo.resources") continue;
     const supplied = request.items.find(item => keyOf(item) === key);
-    if (supplied && definition.mandatory !== "capability_union" && !mandatoryAllows(required, supplied)) conflict(key);
-    const selected = items.get(key);
-    const forced = structuredClone(required);
-    if (definition.mandatory === "runtime_subset" && supplied) {
-      forced.payload = structuredClone(supplied.payload);
-      for (const property of ["offline_behavior", "failover"]) {
-        if (required.payload[property] !== undefined) forced.payload[property] = required.payload[property];
+    if (required.namespace === "octo.execution") {
+      const selected = items.get(key) ?? { ...required, payload: {} };
+      selected.payload = structuredClone(selected.payload);
+      for (const [field, constraint] of Object.entries(required.payload)) {
+        const override = supplied?.payload[field];
+        if (field === "limits") {
+          for (const [name, value] of Object.entries(constraint as object)) {
+            const suppliedValue = (override as Record<string, unknown> | undefined)?.[name];
+            if (suppliedValue !== undefined && !equal(value, suppliedValue)) conflict(`${key}.${field}.${name}`);
+          }
+          selected.payload[field] = { ...(selected.payload[field] as object), ...(constraint as object) };
+        } else if (field === "runtime" && override !== undefined) {
+          selected.payload[field] = constrainRuntime(constraint as Record<string, unknown>, override as Record<string, unknown>);
+        } else {
+          if (override !== undefined && !equal(constraint, override)) conflict(`${key}.${field}`);
+          selected.payload[field] = structuredClone(constraint);
+        }
       }
-      if (forced.payload.mode === "candidates") {
-        const allowed = required.payload.mode === "explicit" ? [required.payload.runtime_id] : required.payload.runtime_ids as string[];
-        forced.payload.runtime_ids = allowed.filter(id => (supplied.payload.runtime_ids as string[]).includes(id as string));
-      }
-    }
-    if (definition.mandatory === "capability_union") {
-      if (required.payload.execution_features !== undefined || selected?.payload.execution_features !== undefined) forced.payload.execution_features = [...new Set([
-        ...required.payload.execution_features as string[] ?? [], ...selected?.payload.execution_features as string[] ?? []
-      ])];
-      forced.payload.capabilities = [...new Set([
-        ...required.payload.capabilities as string[], ...selected?.payload.capabilities as string[] ?? []
-      ])];
-    }
-    items.set(key, forced);
-  }
-  // 资源选择按标识执行 include/exclude；mandatory 固定版本、组件范围和 invoke 要求。
-  for (const namespace of ["octo.plugins", "octo.skills", "octo.connectors"]) {
-    const required = selection(configuration.mandatory, namespace);
-    const resources = new Map<string, ContextCapabilityReference>();
-    for (const layer of [configuration.defaults, configuration.mandatory, request]) {
-      const scope = selection(layer, namespace);
-      for (const excluded of scope?.exclude ?? []) {
-        if (required?.include.some(item => item.resource_id === excluded)) conflict(excluded);
-        resources.delete(excluded);
-      }
-      for (const reference of scope?.include ?? []) resources.set(reference.resource_id, structuredClone(reference));
-    }
-    const supplied = selection(request, namespace);
-    for (const excluded of required?.exclude ?? []) {
-      if (supplied?.include.some(item => item.resource_id === excluded)) conflict(excluded);
-      resources.delete(excluded);
-    }
-    for (const forced of required?.include ?? []) {
-      const override = supplied?.include.find(item => item.resource_id === forced.resource_id);
-      if (override && (override.version !== forced.version || forced.invoke && override.invoke === false
-        || !componentsContain(override.components, forced.components))) conflict(forced.resource_id);
-      const chosen = resources.get(forced.resource_id);
-      if (!chosen || chosen.version !== forced.version) resources.set(forced.resource_id, structuredClone(forced));
-      else {
-        if (forced.invoke) chosen.invoke = true;
-        if (!componentsContain(chosen.components, forced.components)) chosen.components = structuredClone(forced.components);
-      }
-    }
-    const key = `${namespace}/selection`;
-    if (items.has(key) || resources.size) {
-      items.set(key, { namespace, name: "selection", payload: {
-        include: [...resources.values()].sort((a, b) => a.resource_id < b.resource_id ? -1 : a.resource_id > b.resource_id ? 1 : 0), exclude: []
-      } });
+      items.set(key, selected);
+    } else if (required.namespace === "octo.content") {
+      const selected = items.get(key);
+      const entries = [...((selected?.payload.entries ?? []) as unknown[])];
+      for (const entry of required.payload.entries as unknown[]) if (!entries.some(value => equal(value, entry))) entries.push(structuredClone(entry));
+      items.set(key, { ...required, payload: { entries } });
     }
   }
-  return JSON.parse(canonicalContext({ schema: effective.schema, items: [...items.values()] })) as ContextEnvelope;
+  const required = selection(configuration.mandatory);
+  const resources = new Map<string, ContextCapabilityReference>();
+  for (const layer of [configuration.defaults, configuration.mandatory, request]) {
+    const scope = selection(layer);
+    for (const excluded of scope?.exclude ?? []) {
+      const key = resourceKey(excluded);
+      if (required?.include.some(item => resourceKey(item) === key)) conflict(key);
+      resources.delete(key);
+    }
+    for (const reference of scope?.include ?? []) resources.set(resourceKey(reference), structuredClone(reference));
+  }
+  const supplied = selection(request);
+  for (const excluded of required?.exclude ?? []) {
+    const key = resourceKey(excluded);
+    if (supplied?.include.some(item => resourceKey(item) === key)) conflict(key);
+    resources.delete(key);
+  }
+  for (const forced of required?.include ?? []) {
+    const key = resourceKey(forced);
+    const override = supplied?.include.find(item => resourceKey(item) === key);
+    if (override && (forced.invoke && override.invoke === false || !componentsContain(override.components, forced.components))) conflict(key);
+    const chosen = resources.get(key) ?? structuredClone(forced);
+    if (forced.invoke) chosen.invoke = true;
+    if (!componentsContain(chosen.components, forced.components)) chosen.components = structuredClone(forced.components);
+    resources.set(key, chosen);
+  }
+  const key = "octo.resources/selection";
+  if (items.has(key) || required || resources.size) items.set(key, { namespace: "octo.resources", name: "selection", payload: {
+    include: [...resources.values()].sort((a, b) => resourceKey(a) < resourceKey(b) ? -1 : resourceKey(a) > resourceKey(b) ? 1 : 0), exclude: []
+  } });
+  return JSON.parse(canonicalContext({ schema: CONTEXT_SCHEMA, items: [...items.values()] })) as ContextEnvelope;
 }
 
-function mandatoryAllows(required: ContextItem, supplied: ContextItem): boolean {
-  if (keyOf(required) === "octo.runtime/selection") {
-    const constraint = required.payload;
-    const value = supplied.payload;
-    if (value.offline_behavior !== undefined && constraint.offline_behavior !== undefined
-      && value.offline_behavior !== constraint.offline_behavior) return false;
-    if (value.failover !== undefined && constraint.failover !== undefined && value.failover !== constraint.failover) return false;
-    const ids = value.mode === "explicit" ? [value.runtime_id] : value.runtime_ids as string[];
-    const allowed = constraint.mode === "explicit" ? [constraint.runtime_id] : constraint.runtime_ids as string[];
-    return ids.length > 0 && ids.every(id => allowed.includes(id as string));
-  }
-  return canonicalContext({ schema: "octo.context-envelope/v1", items: [required] })
-    === canonicalContext({ schema: "octo.context-envelope/v1", items: [supplied] });
+function constrainRuntime(required: Record<string, unknown>, supplied: Record<string, unknown>): Record<string, unknown> {
+  for (const field of ["offline_behavior", "failover"]) if (required[field] !== undefined && supplied[field] !== undefined && required[field] !== supplied[field]) conflict(`runtime.${field}`);
+  const allowed = required.mode === "explicit" ? [required.runtime_id] : required.runtime_ids as string[];
+  const selected = supplied.mode === "explicit" ? [supplied.runtime_id] : supplied.runtime_ids as string[];
+  if (!selected.length || selected.some(id => !allowed.includes(id as string))) conflict("runtime");
+  const result = structuredClone(supplied);
+  for (const field of ["offline_behavior", "failover"]) if (required[field] !== undefined) result[field] = required[field];
+  if (result.mode === "candidates") result.runtime_ids = allowed.filter(id => selected.includes(id));
+  return result;
 }
-
+function equal(left: unknown, right: unknown): boolean { return JSON.stringify(sort(left)) === JSON.stringify(sort(right)); }
+function sort(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sort);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => [key, sort(item)]));
+  return value;
+}
 function componentsContain(selected?: string[], required?: string[]): boolean {
   if (selected === undefined) return true;
   if (required === undefined) return false;
   return required.every(component => selected.includes(component));
 }
-
 function conflict(key: string): never { throw new TypeError(`CONTEXT_MANDATORY_CONFLICT: ${key}`); }

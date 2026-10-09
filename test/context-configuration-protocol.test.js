@@ -37,32 +37,31 @@ test("catalog covers every schema branch, including grouped capability namespace
     assert.ok(Object.isFrozen(item.stages));
     assert.ok(Object.isFrozen(item));
   }
-  assert.equal(CONTEXT_CATALOG_VERSION, "octo.context-catalog/v1");
+  assert.equal(CONTEXT_CATALOG_VERSION, "octo.context-catalog/v2");
   assert.throws(() => contextTypeDefinition("unknown", "selection"), /CONTEXT_TYPE_UNSUPPORTED/);
 });
 
-test("processor coverage distinguishes stage consumers from routing-only items", () => {
-  const context = { schema: "octo.context-envelope/v1", items: [
-    {namespace:"octo.content", name:"selections", payload:{entries:[{text:"material"}]}},
-    {namespace:"octo.runtime", name:"selection", payload:{mode:"explicit",runtime_id:"device"}}
+test("processor coverage enforces aggregate execution and materials", () => {
+  const context = { schema: "octo.context-envelope/v2", items: [
+    {namespace:"octo.content", name:"materials", payload:{entries:[{type:"inline",text:"material"}]}},
+    {namespace:"octo.execution", name:"config", payload:{runtime:{mode:"explicit",runtime_id:"device"}}}
   ] };
-  assert.doesNotThrow(() => assertContextProcessorCoverage(context, "compile", new Set(["octo.content/selections"])));
-  assert.throws(() => assertContextProcessorCoverage(context, "dispatch", new Set()), /CONTEXT_PROCESSOR_UNAVAILABLE: dispatch: octo.runtime\/selection/);
+  assert.doesNotThrow(() => assertContextProcessorCoverage(context, "compile", new Set(["octo.content/materials", "octo.execution/config"])));
+  assert.throws(() => assertContextProcessorCoverage(context, "dispatch", new Set()), /CONTEXT_PROCESSOR_UNAVAILABLE: dispatch: octo.execution\/config/);
   assert.throws(() => assertContextProcessorCoverage(context, "compile", new Set()), /CONTEXT_PROCESSOR_UNAVAILABLE: compile/);
 });
 
 test("configuration rejects unknown fields and persistent trusted controls", () => {
-  const empty = {schema:"octo.context-envelope/v1",items:[]};
+  const empty = {schema:"octo.context-envelope/v2",items:[]};
   for (const invalid of [null, [], {}, {defaults:empty,mandatory:empty,source:"admin"},
     {defaults:empty,mandatory:{...empty,items:[{namespace:"octo.control",name:"instructions",payload:{entries:[]}}]}}]) {
     assert.throws(() => assertContextConfiguration(invalid));
   }
 });
 
-test("all resource namespaces validate and resolve independently", () => {
-  const selection = namespace => ({namespace,name:"selection",payload:{include:[{resource_id:"shared",version:"1"}],exclude:[]}});
-  const defaults = {schema:"octo.context-envelope/v1",items:["octo.plugins","octo.skills","octo.connectors"].map(selection)};
+test("resource kinds with the same UUID are independent identities", () => {
+  const include = ["agent_plugin", "skill", "connector"].map(kind => ({ kind, resource_id: "ae67cb3e-0d16-4bb2-9a4e-bb563cb707af" }));
+  const defaults = { schema: "octo.context-envelope/v2", items: [{namespace:"octo.resources",name:"selection",payload:{include,exclude:[]}}] };
   const result = resolveContextConfiguration({defaults,mandatory:{...defaults,items:[]}}, {...defaults,items:[]});
-  assert.equal(result.items.length, 3);
-  assert.doesNotThrow(() => assertContextEnvelope(result));
+  assert.equal(result.items[0].payload.include.length, 3);
 });

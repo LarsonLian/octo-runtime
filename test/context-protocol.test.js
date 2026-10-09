@@ -54,8 +54,9 @@ ajv.addKeyword("x-octo-capability-selection", {
   type: "object",
   validate: (enabled, value) => {
     if (!enabled || !Array.isArray(value.include) || !Array.isArray(value.exclude)) return true;
-    const ids = value.include.map(item => item?.resource_id);
-    return new Set(ids).size === ids.length && ids.every(id => !value.exclude.includes(id));
+    const ids = value.include.map(item => `${item?.kind}/${item?.resource_id}`);
+    const excluded = value.exclude.map(item => `${item?.kind}/${item?.resource_id}`);
+    return new Set(ids).size === ids.length && ids.every(id => !excluded.includes(id));
   }
 });
 ajv.addSchema(schema);
@@ -118,7 +119,8 @@ test("Context schema constants and registered handlers stay aligned", () => {
 
 test("Shared Unicode and number fixtures preserve ECMAScript canonical bytes", () => {
   const zero = fixtures.find(fixture => fixture.name === "canonical-negative-zero");
-  assert.equal(Object.is(zero.context.items[0].payload.entries[0].source.negative_zero, -0), true);
+  zero.context.items[0].payload.entries[0].source.negative_zero = -0;
+  assert.equal(canonicalContext(zero.context), zero.expected_canonical);
   assert.equal(zero.expected_canonical.includes('"negative_zero":0'), true);
   assert.equal(zero.expected_canonical.includes(":-0"), false);
   const exponents = fixtures.find(fixture => fixture.name === "canonical-exponent-numbers");
@@ -155,8 +157,8 @@ test("Context and host watchdog limit schemas share bounds and enums", () => {
 });
 
 test("Resolved plan limits use the same Context payload acceptance set", () => {
-  for (const fixture of fixtures.filter(fixture => fixture.context?.items?.some(item => item.namespace === "octo.execution" && item.name === "limits"))) {
-    const runtime_limits = fixture.context.items.find(item => item.name === "limits").payload;
+  for (const fixture of fixtures.filter(fixture => fixture.context?.items?.some(item => item.namespace === "octo.execution" && item.name === "config" && item.payload?.limits))) {
+    const runtime_limits = fixture.context.items.find(item => item.name === "config" && item.payload?.limits).payload.limits;
     const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "/tmp", approval_mode: "ask", runtime_limits };
     assert.equal(validateDefinition("ResolvedExecutionPlan", plan), fixture.valid, fixture.name);
     if (fixture.valid) assert.doesNotThrow(() => assertResolvedExecutionPlan(plan));
@@ -165,7 +167,7 @@ test("Resolved plan limits use the same Context payload acceptance set", () => {
 });
 
 test("Context budgets reject excessive UTF-8 bytes, item counts and nesting in both validators", () => {
-  const base = { schema: "octo.context-envelope/v1", items: [{ namespace: "octo.content", name: "selections", payload: { entries: [{ text: "" }] } }] };
+  const base = { schema: "octo.context-envelope/v2", items: [{ namespace: "octo.content", name: "materials", payload: { entries: [{ type: "inline", text: "" }] } }] };
   const overhead = Buffer.byteLength(JSON.stringify(base), "utf8");
   base.items[0].payload.entries[0].text = "x".repeat(CONTEXT_MAX_BYTES - overhead);
   assert.equal(validateContextSchema(base), true);
@@ -178,7 +180,7 @@ test("Context budgets reject excessive UTF-8 bytes, item counts and nesting in b
   assert.equal(validateContextSchema(many), false);
   assert.throws(() => assertContextEnvelope(many), /CONTEXT_BUDGET_EXCEEDED/);
   const nested = structuredClone(base);
-  nested.items[0].payload.entries[0] = { text: "Text", source: {} };
+  nested.items[0].payload.entries[0] = { type: "inline", text: "Text", source: {} };
   let current = nested.items[0].payload.entries[0].source;
   for (let depth = 6; depth < 32; depth++) { current.child = {}; current = current.child; }
   assert.equal(validateContextSchema(nested), true);
@@ -270,23 +272,23 @@ test("Context payload arrays preserve order and affect the hash", () => {
   assert.notEqual(contextHash(original), contextHash(reordered));
 });
 
-test("Context merge replaces the complete payload and does not mutate defaults", () => {
-  const defaults = { schema: "octo.context-envelope/v1", items: [{ namespace: "octo.execution", name: "model", payload: { id: "a" } }] };
-  const overrides = { schema: "octo.context-envelope/v1", items: [{ namespace: "octo.execution", name: "model", payload: { use_provider_default: true } }] };
+test("Context merge replaces atomic model without losing other execution fields and does not mutate defaults", () => {
+  const defaults = { schema: "octo.context-envelope/v2", items: [{ namespace: "octo.execution", name: "config", payload: { model: { id: "a" }, adapter: { type: "codex" } } }] };
+  const overrides = { schema: "octo.context-envelope/v2", items: [{ namespace: "octo.execution", name: "config", payload: { model: { use_provider_default: true } } }] };
   const merged = mergeContext(defaults, overrides);
-  assert.deepEqual(merged.items[0].payload, { use_provider_default: true });
-  assert.deepEqual(defaults.items[0].payload, { id: "a" });
+  assert.deepEqual(merged.items[0].payload, { model: { use_provider_default: true }, adapter: { type: "codex" } });
+  assert.deepEqual(defaults.items[0].payload, { model: { id: "a" }, adapter: { type: "codex" } });
 });
 
 test("Context rejects oversized payloads and non-JSON values", () => {
-  const context = { schema: "octo.context-envelope/v1", items: [{ namespace: "octo.content", name: "selections", payload: { entries: [{ text: "x".repeat(65_536) }] } }] };
+  const context = { schema: "octo.context-envelope/v2", items: [{ namespace: "octo.content", name: "materials", payload: { entries: [{ type: "inline", text: "x".repeat(65_536) }] } }] };
   assert.throws(() => assertContextEnvelope(context), /CONTEXT_BUDGET_EXCEEDED/);
   context.items[0].payload.entries = [{ value: NaN }];
   assert.throws(() => assertContextEnvelope(context), /CONTEXT_SCHEMA_INVALID/);
 });
 
 test("InvokeRequest rejects legacy execution contracts before provider dispatch", () => {
-  const request = { protocolVersion: 2, invocationId: "invoke-1", agentSessionId: "session-1", runId: "run-1", prompt: "hello", workdir: "/tmp", modelInput: "hello", controlInstructions: "", context: { schema: "octo.context-envelope/v1", items: [] }, approvalMode: "ask", agentSource: "provisioned", agentConfig: {} };
+  const request = { protocolVersion: 2, invocationId: "invoke-1", agentSessionId: "session-1", runId: "run-1", prompt: "hello", workdir: "/tmp", modelInput: "hello", controlInstructions: "", context: { schema: "octo.context-envelope/v2", items: [] }, approvalMode: "ask", agentSource: "provisioned", agentConfig: {} };
   assert.doesNotThrow(() => assertInvokeRequest(request));
   assert.throws(() => assertInvokeRequest({ ...request, appendInstructions: "legacy" }), /LEGACY_RUN_CONTRACT_REJECTED/);
   assert.throws(() => assertInvokeRequest({ ...request, context: {} }), /CONTEXT_SCHEMA_INVALID/);
