@@ -10,7 +10,7 @@ import { AgentWorkRuntime } from "../apps/daemon/dist/agent-work-runtime.js";
 import { contextEnvelope, executionContext, resolvedRuntimeSelection, wire, waitFor } from "./agent-work-runtime-fixture.js";
 
 // 真实 HTTP/WS 准备和派发链路，仅替换 Provider，验证总时限不会在阶段切换时重置。
-async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task = false }, verify) {
+async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task = false, compactionPort }, verify) {
   const directory = await mkdtemp(join(tmpdir(), "octo-run-deadline-"));
   const frames = [];
   const calls = [];
@@ -38,7 +38,8 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task 
     runtime_limits: { run_timeout_ms: timeout, enforcement: "enforce" } };
   const envelope = {
     schema_version: 6, context_configuration_version: 1,
-    effective_context: executionContext(plan), resolved_execution_plan: plan,
+    effective_context: executionContext(plan, compactionPort ? [{ namespace: "octo.content", name: "materials",
+      payload: { entries: [{ type: "inline", text: "material to measure" }] } }] : []), resolved_execution_plan: plan,
     resolved_runtime_selection: resolvedRuntimeSelection("runtime-deadline"),
     run_id: "run-deadline", agent_session_id: "session-deadline",
     agent_run_request: { context: contextEnvelope(), namespace: "test", agent_id: "agent-deadline",
@@ -70,7 +71,8 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task 
       plan.mcp_servers = { octo_task: { type: "streamable_http", url: `http://127.0.0.1:${server.address().port}/task-mcp` } };
     }
     runtime = new AgentWorkRuntime({ profile: "default", baseUrl: `http://127.0.0.1:${server.address().port}`,
-      token: "fixture-only", runtimeName: "runtime-deadline", storePath: join(directory, "state.db") }, {
+      token: "fixture-only", runtimeName: "runtime-deadline", storePath: join(directory, "state.db"),
+      ...(compactionPort ? { createMaterialCompactionPort: compactionPort } : {}) }, {
       list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [], available: true }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_type, request) {
@@ -112,6 +114,20 @@ test("Run deadline subtracts preparation time from provider watchdog", async () 
     assert.equal(calls.length, 1);
     assert.ok(calls[0].runtimeLimits.runTimeoutMs < 700);
     assert.ok(calls[0].runtimeLimits.runTimeoutMs >= 100);
+  });
+});
+
+test("Run deadline preserves classification when compaction transport throws AbortError", async () => {
+  await exercise({ compactionPort: async ({ signal }) => ({ model: "fixture", contextWindow: 100_000,
+    outputReserveTokens: 1000, summaryInputLimit: 10_000, toolsDisabled: true,
+    measureInputTokens: () => new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+    }), countTokens: async () => 10, summarize: async () => { throw Error("unexpected summary"); }
+  }), invoke: async function* () { throw Error("unexpected dispatch"); } }, async ({ ack, calls }) => {
+    await waitFor(() => ack(), 3_000);
+    assert.equal(ack().accepted, false);
+    assert.equal(ack().error.code, "ADAPTER_RUN_DEADLINE", JSON.stringify(ack()));
+    assert.equal(calls.length, 0);
   });
 });
 
