@@ -495,3 +495,4 @@ export {
 } from "./rpc.js";
 export { spawnAdapterHost } from "./process.js";
 export type { AdapterHostProcess, SpawnAdapterHostOptions } from "./process.js";
+export { DEFAULT_RUNTIME_LIMITS } from "./watchdog.js";
