@@ -96,7 +96,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
+      list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         providerRequest = request;
@@ -239,7 +239,7 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
+      list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         yield { protocolVersion: 2, type: "run.completed", payload: {} };
@@ -369,7 +369,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
+      list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         yield { protocolVersion: 2, type: "run.completed", payload: {} };
@@ -549,7 +549,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
+      list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         providerRequests.push(request);
@@ -687,7 +687,7 @@ test("runtime rejects a queued source generation after recovery advanced the eff
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
+      list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         invocationCount += 1;
@@ -801,7 +801,7 @@ test("runtime close joins a waiting command before immediate restart and replay"
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
+      list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         invocationCount += 1;
@@ -943,7 +943,7 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
+      list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         invocationCount += 1;
@@ -1053,7 +1053,7 @@ test("append-only channel context cold-starts an adapter without continuity reco
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize"] }],
+      list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["tool.canonical", "session.serialize"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         providerRequest = request;
@@ -1164,7 +1164,7 @@ test("append-only channel context accepts an adapter without serialized sessions
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["tool.canonical"] }],
+      list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["tool.canonical"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         providerRequest = request;
@@ -1279,7 +1279,7 @@ for (const [projection, providerPersistence] of [["window", "append_only"], ["de
         runtimeName: "runtime-cold", storePath: join(directory, "agent-work.db"),
         channelContext: { store: "sqlite", projection, providerPersistence, storePath: contextPath, syncTimeoutMs: 1_000 }
       }, {
-        list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
+        list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
         cancel: async () => ({ cancelled: true }),
         async *invoke(_adapterType, request) {
           assertInvokeRequest(request);
@@ -1371,7 +1371,7 @@ for (const [name, storeMode, adapterCapabilities, reason] of [
         runtimeName: "runtime-preflight", storePath: join(directory, "agent-work.db"),
         channelContext: { store: storeMode, projection: "window", providerPersistence: "ephemeral", storePath: join(directory, "channel-context.db") }
       }, {
-        list: async () => [{ type: "fake", capabilities: adapterCapabilities }],
+        list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: adapterCapabilities }],
         cancel: async () => ({ cancelled: true }),
         async *invoke() {
           invocations += 1;
@@ -1398,7 +1398,7 @@ for (const [name, storeMode, adapterCapabilities, reason] of [
 function executionEnvelope(runtimeId, runId = "run-e2e", triggerSeq = 3, currentText = "trigger current", generation = 1) {
   const trigger = fact(triggerSeq, currentText);
   const plan = {
-    adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_capabilities: ["tool.canonical"]
+    agent_source: "provisioned", adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_execution_features: ["tool.canonical"]
   };
   const items = [{
     namespace: "octo.content", name: "continuity", payload: {
@@ -1411,7 +1411,7 @@ function executionEnvelope(runtimeId, runId = "run-e2e", triggerSeq = 3, current
     }
   }];
   return {
-    schema_version: 4,
+    schema_version: 5,
     resolved_runtime_selection: resolvedRuntimeSelection(runtimeId),
     context_configuration_version: 1,
     effective_context: executionContext(plan, items),

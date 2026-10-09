@@ -129,7 +129,7 @@ test("LiveEventBus maps observability records to canonical stages, directions, a
     run_id: "run-rpc",
     agent_session_id: "session-rpc",
     invocation_id: "invoke-rpc",
-    adapter_type: "codebuddy",
+    agent_source: "provisioned", adapter_type: "codebuddy",
     duration_ms: 17.25
   };
   bus.publishRecord({ ...base, data: { direction: "send", frame: { method: "invoke" } } });

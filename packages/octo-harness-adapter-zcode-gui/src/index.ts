@@ -119,7 +119,9 @@ export function createZcodeGuiAdapter({
   return defineAdapter({
     metadata: {
       type: "zcode-gui",
-      capabilities: ["session.serialize", "session.resume_recovery", "tool.canonical"],
+      capabilities: ["react"],
+      agentSources: ["provisioned"],
+      executionFeatures: ["session.serialize", "session.resume_recovery", "tool.canonical"],
       processModel: "subprocess-per-invocation",
       transport: "zcode-ndjson-rpc/stdio"
     },

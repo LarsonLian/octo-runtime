@@ -6,7 +6,7 @@ import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
  * permissions are always auto-approved.
  */
 import { createJsonCliAdapter, probeCommand, providerInputText, type AdapterInvocationContext, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { capabilities, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
+import { executionFeatures, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -226,7 +226,7 @@ export class OpenCodeEventNormalizer {
 
 export function createOpenCodeAdapter({ command = "opencode" }: { command?: string } = {}) {
   const options: Parameters<typeof createJsonCliAdapter<OpenCodeNativeEvent>>[0] = {
-    metadata: { type: "opencode", capabilities: ["session.serialize", "tool.canonical", capabilities.MCP_DYNAMIC] },
+    metadata: { type: "opencode", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["session.serialize", "tool.canonical", executionFeatures.MCP_DYNAMIC] },
     probe: () => probeCommand(command), buildCommand: (req: InvokeRequest) => buildOpenCodeCommand(req, command), normalize: normalizeOpenCodeEvent,
     onSuccess: (): CanonicalEvent[] => [{ protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "completed" } }, { protocolVersion: 2, type: "run.completed", payload: {} }]
   };

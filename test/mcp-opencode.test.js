@@ -6,7 +6,7 @@ import {
   createOpenCodeAdapter,
   openCodeMcpConfig
 } from "@mininglamp-oss/octo-harness-adapter-opencode";
-import { capabilities } from "@mininglamp-oss/octo-harness-protocol";
+import { executionFeatures } from "@mininglamp-oss/octo-harness-protocol";
 
 const mcpServers = {
   team: {
@@ -61,7 +61,7 @@ test("OpenCode merges MCP into the child config and redacts provider observation
       controlInstructions: "control",
       context: { schema: "octo.context-envelope/v1", items: [] },
       approvalMode: "full_access",
-      agentConfig: {},
+      agentSource: "provisioned", agentConfig: {},
       mcpServers
     }, "opencode-test");
     const actual = JSON.parse(command.env.OPENCODE_CONFIG_CONTENT);
@@ -80,5 +80,5 @@ test("OpenCode merges MCP into the child config and redacts provider observation
 });
 
 test("OpenCode advertises dynamic MCP support", () => {
-  assert.ok(createOpenCodeAdapter({ command: "opencode-test" }).metadata.capabilities.includes(capabilities.MCP_DYNAMIC));
+  assert.ok(createOpenCodeAdapter({ command: "opencode-test" }).metadata.executionFeatures.includes(executionFeatures.MCP_DYNAMIC));
 });

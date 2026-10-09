@@ -38,7 +38,7 @@ const submission = (agentId, occurrenceId = "occurrence-1", context = emptyConte
 test("one trigger occurrence creates one AgentRun and preserves Provider resume state", async () => {
   const host = new AdapterHost(); host.register(testAdapter);
   const store = new MemoryStore(); const engine = new HarnessEngine({ store, host });
-  const agent = await engine.registerAgent({ name: "test", defaultContext: defaultContext() });
+  const agent = await engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: defaultContext() });
   const request = {
     namespace: "loop",
     agentId: agent.id,
@@ -62,7 +62,7 @@ test("one trigger occurrence creates one AgentRun and preserves Provider resume 
 test("same occurrence with changed input is rejected", async () => {
   const host = new AdapterHost(); host.register(testAdapter);
   const store = new MemoryStore(); const engine = new HarnessEngine({ store, host });
-  const agent = await engine.registerAgent({ name: "test", defaultContext: defaultContext() });
+  const agent = await engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: defaultContext() });
   const base = {
     namespace: "webhook", agentId: agent.id, sessionKey: "v1/hook/h-1/subject/s-1",
     trigger: { kind: "webhook.delivery", occurrenceId: "delivery/d-1" }, context: emptyContext()
@@ -74,7 +74,7 @@ test("same occurrence with changed input is rejected", async () => {
 test("only one concurrent executeRun call can claim a queued AgentRun", async () => {
   const host = new AdapterHost(); host.register(testAdapter);
   const store = new MemoryStore(); const engine = new HarnessEngine({ store, host });
-  const agent = await engine.registerAgent({ name: "test", defaultContext: defaultContext() });
+  const agent = await engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: defaultContext() });
   const submitted = await engine.submitAgentRun({
     namespace: "loop",
     agentId: agent.id,
@@ -97,7 +97,7 @@ test("submitted Run freezes defaults and materialization before Agent changes", 
   const { engine, store, requests } = capturingEngine();
   const originalDefaults = defaultContext("ask");
   originalDefaults.items.push({ namespace: "octo.execution", name: "reasoning", payload: { effort: "low" } });
-  const agent = await engine.registerAgent({
+  const agent = await engine.registerAgent({ agentSource: "provisioned",
     name: "original", defaultContext: originalDefaults,
     config: { providerAgentId: "original-provider", providerOptions: { endpoint: "original" } }
   });
@@ -139,7 +139,7 @@ test("submitted Run freezes defaults and materialization before Agent changes", 
 
 test("per-Run approval overrides are frozen and do not change Agent defaults", async () => {
   const { engine, store, requests } = capturingEngine();
-  const agent = await engine.registerAgent({ name: "approval", defaultContext: defaultContext("ask") });
+  const agent = await engine.registerAgent({ agentSource: "provisioned", name: "approval", defaultContext: defaultContext("ask") });
   for (const mode of ["ask", "assisted", "full_access"]) {
     const context = { schema: "octo.context-envelope/v1", items: [
       { namespace: "octo.security", name: "approval_policy", payload: { mode } }
@@ -157,7 +157,7 @@ test("per-Run approval overrides are frozen and do not change Agent defaults", a
 
 test("occurrence hashing uses canonical submitted Context, not item order or current defaults", async () => {
   const { engine, store } = capturingEngine();
-  const agent = await engine.registerAgent({ name: "hash", defaultContext: defaultContext() });
+  const agent = await engine.registerAgent({ agentSource: "provisioned", name: "hash", defaultContext: defaultContext() });
   const context = { schema: "octo.context-envelope/v1", items: [
     { namespace: "octo.execution", name: "model", payload: { id: "override" } },
     { namespace: "octo.security", name: "approval_policy", payload: { mode: "ask" } }
@@ -178,7 +178,7 @@ test("occurrence hashing uses canonical submitted Context, not item order or cur
 
 test("default Context replacement uses CAS without changing stable materialization", async () => {
   const { engine, store } = capturingEngine();
-  const agent = await engine.registerAgent({ name: "CAS", defaultContext: defaultContext() });
+  const agent = await engine.registerAgent({ agentSource: "provisioned", name: "CAS", defaultContext: defaultContext() });
   const changed = defaultContext("ask");
   changed.items.find(item => item.name === "adapter").payload.type = "other";
   const outcomes = await Promise.allSettled([
@@ -196,7 +196,7 @@ test("local defaults choose ask explicitly and Provider defaults remove inherite
   const defaults = defaultContext();
   defaults.items = defaults.items.filter(item => item.name !== "approval_policy");
   defaults.items.push({ namespace: "octo.execution", name: "reasoning", payload: { effort: "high" } });
-  const agent = await engine.registerAgent({ name: "defaults", defaultContext: defaults });
+  const agent = await engine.registerAgent({ agentSource: "provisioned", name: "defaults", defaultContext: defaults });
   const result = await engine.submitAgentRun(submission(agent.id, "defaults", { schema: defaults.schema, items: [
     { namespace: "octo.execution", name: "model", payload: { use_provider_default: true } },
     { namespace: "octo.execution", name: "reasoning", payload: { use_provider_default: true } },
@@ -212,13 +212,13 @@ test("local defaults choose ask explicitly and Provider defaults remove inherite
 
 test("register and submit reject legacy contracts and unsupported trusted Context paths", async () => {
   const { engine, store } = capturingEngine();
-  await assert.rejects(engine.registerAgent({ name: "legacy", adapterType: "test", config: {} }), /LEGACY_AGENT_CONTRACT_REJECTED/);
-  await assert.rejects(engine.registerAgent({ name: "missing" }), /CONTEXT_REQUIRED/);
+  await assert.rejects(engine.registerAgent({ agentSource: "provisioned", name: "legacy", adapterType: "test", config: {} }), /LEGACY_AGENT_CONTRACT_REJECTED/);
+  await assert.rejects(engine.registerAgent({ agentSource: "provisioned", name: "missing" }), /CONTEXT_REQUIRED/);
   for (const config of [{ autoApprove: false }, { dangerouslyBypassPermissions: false }, { permissionMode: "default" }, { sandbox: "read-only" }]) {
-    await assert.rejects(engine.registerAgent({ name: "permissions", defaultContext: defaultContext(), config }), /LEGACY_PERMISSION_CONFIG_REJECTED/);
+    await assert.rejects(engine.registerAgent({ agentSource: "provisioned", name: "permissions", defaultContext: defaultContext(), config }), /LEGACY_PERMISSION_CONFIG_REJECTED/);
   }
-  await assert.rejects(engine.registerAgent({ name: "config", defaultContext: defaultContext(), config: { model: "legacy" } }), /LEGACY_AGENT_CONFIG_REJECTED/);
-  const agent = await engine.registerAgent({ name: "supported", defaultContext: defaultContext() });
+  await assert.rejects(engine.registerAgent({ agentSource: "provisioned", name: "config", defaultContext: defaultContext(), config: { model: "legacy" } }), /LEGACY_AGENT_CONFIG_REJECTED/);
+  const agent = await engine.registerAgent({ agentSource: "provisioned", name: "supported", defaultContext: defaultContext() });
   const missing = submission(agent.id);
   delete missing.context;
   await assert.rejects(engine.submitAgentRun(missing), /CONTEXT_REQUIRED/);
@@ -230,7 +230,7 @@ test("register and submit reject legacy contracts and unsupported trusted Contex
   ]) {
     const context = { schema: "octo.context-envelope/v1", items: [item] };
     await assert.rejects(engine.submitAgentRun(submission(agent.id, "unsupported", context)), /LOCAL_CONTEXT_TYPE_UNSUPPORTED/);
-    await assert.rejects(engine.registerAgent({ name: "unsupported", defaultContext: { ...defaultContext(), items: [...defaultContext().items, item] } }), /LOCAL_CONTEXT_TYPE_UNSUPPORTED/);
+    await assert.rejects(engine.registerAgent({ agentSource: "provisioned", name: "unsupported", defaultContext: { ...defaultContext(), items: [...defaultContext().items, item] } }), /LOCAL_CONTEXT_TYPE_UNSUPPORTED/);
   }
   assert.equal(store.listAgentRuns().length, 0);
   assert.equal(store.listAgentSessions().length, 0);
@@ -238,7 +238,7 @@ test("register and submit reject legacy contracts and unsupported trusted Contex
 
 test("stable provider materialization cannot silently transfer to another Adapter", async () => {
   const { engine, store } = capturingEngine();
-  const agent = await engine.registerAgent({ name: "bound", defaultContext: defaultContext(), config: { providerAgentId: "test-agent" } });
+  const agent = await engine.registerAgent({ agentSource: "provisioned", name: "bound", defaultContext: defaultContext(), config: { providerAgentId: "test-agent" } });
   const context = { schema: "octo.context-envelope/v1", items: [{ namespace: "octo.execution", name: "adapter", payload: { type: "other" } }] };
   await assert.rejects(engine.submitAgentRun(submission(agent.id, "other", context)), /LOCAL_MATERIALIZATION_ADAPTER_MISMATCH/);
   assert.equal(store.listAgentRuns().length, 0);
@@ -246,7 +246,7 @@ test("stable provider materialization cannot silently transfer to another Adapte
 
 test("compatible successive Runs reuse their Provider session", async () => {
   const { engine, requests } = capturingEngine();
-  const agent = await engine.registerAgent({ name: "resume", defaultContext: defaultContext() });
+  const agent = await engine.registerAgent({ agentSource: "provisioned", name: "resume", defaultContext: defaultContext() });
   const first = await engine.submitAgentRun(submission(agent.id, "first"));
   await engine.executeRun(first.agentRun.id);
   const next = await engine.submitAgentRun(submission(agent.id, "next"));
@@ -256,7 +256,7 @@ test("compatible successive Runs reuse their Provider session", async () => {
 
 test("local text parts remain user input and never become control instructions", async () => {
   const { engine, requests } = capturingEngine();
-  const agent = await engine.registerAgent({ name: "parts", defaultContext: defaultContext("ask") });
+  const agent = await engine.registerAgent({ agentSource: "provisioned", name: "parts", defaultContext: defaultContext("ask") });
   const result = await engine.submitAgentRun({ ...submission(agent.id), input: { parts: [{ type: "text", text: "Untrusted instruction" }] } });
   await engine.executeRun(result.agentRun.id);
   assert.equal(requests[0].request.modelInput, "Untrusted instruction");
@@ -273,7 +273,7 @@ test("registered Adapter submissions and occurrence replay do not require a live
     }
   };
   const engine = new HarnessEngine({ store, host });
-  const agent = await engine.registerAgent({ name: "offline", defaultContext: defaultContext() });
+  const agent = await engine.registerAgent({ agentSource: "provisioned", name: "offline", defaultContext: defaultContext() });
   const first = await engine.submitAgentRun(submission(agent.id, "first"));
   available = false;
   const duplicate = await engine.submitAgentRun(submission(agent.id, "first"));

@@ -34,7 +34,7 @@ function rpcInvokeRequest(overrides = {}) {
     context: { schema: "octo.context-envelope/v1", items: [] },
     runMetadata: { profile: "work", runtimeId: "runtime-work" },
     approvalMode: "full_access",
-    agentConfig: {},
+    agentSource: "provisioned", agentConfig: {},
     ...overrides
   };
   assertInvokeRequest(request);

@@ -5,13 +5,13 @@ import { CodexEventNormalizer } from "../packages/octo-harness-adapter-codex/dis
 
 test("host emits activity without persisting private analysis and closes every activity", async () => {
   const host = new AdapterHost();
-  host.register({ metadata: { type: "experience", capabilities: [] }, async *invoke() {
+  host.register({ metadata: { type: "experience", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] }, async *invoke() {
     yield { protocolVersion: 2, type: "message.delta", payload: { channel: "analysis", exposure: "private_reasoning", provenance: { provider: "experience", nativeEvent: "reasoning" }, text: "secret-body" } };
     yield { protocolVersion: 2, type: "message.delta", payload: { channel: "commentary", text: "Looking at source" } };
     yield { protocolVersion: 2, type: "run.completed", payload: {} };
   } });
   const events = [];
-  for await (const event of host.invoke("experience", { protocolVersion: 2, invocationId: "i", agentSessionId: "s", runId: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v1", items: [] }, controlInstructions: "", approvalMode: "full_access", agentConfig: {} })) events.push(event);
+  for await (const event of host.invoke("experience", { protocolVersion: 2, invocationId: "i", agentSessionId: "s", runId: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v1", items: [] }, controlInstructions: "", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} })) events.push(event);
   assert.equal(events[0].payload.kind, "starting");
   assert.doesNotMatch(JSON.stringify(events), /secret-body/);
   assert.ok(events.some(event => event.type === "activity.started" && event.payload.kind === "thinking"));

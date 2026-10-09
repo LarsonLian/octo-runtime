@@ -317,7 +317,7 @@ test("OpenClaw setup requires login, stores secrets separately, and initializes 
     assert.equal(externalProfile.adapters.openclaw.kind, "external");
     assert.equal(externalProfile.adapters.openclaw.binding_id, "binding_external_fixture");
     assert.equal(externalProfile.adapters.openclaw.agent_id, "openclaw-external-agent");
-    assert.equal(externalProfile.adapters.openclaw.execution.provider_options.OCTO_EXTERNAL_OPENCLAW_BINDING, "true");
+    assert.equal(externalProfile.adapters.openclaw.execution.provider_agent_id, "openclaw-external-agent");
     assert.equal(externalProfile.adapters.openclaw.execution.managed_workspace, undefined);
   } finally {
     await rm(home, { recursive: true, force: true });

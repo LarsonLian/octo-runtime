@@ -36,7 +36,7 @@ test("late user cancellation cannot replace a terminal during cleanup", { timeou
   let release, markCleaning;
   const cleaning = new Promise(resolve => { markCleaning = resolve; });
   const cleanup = new Promise(resolve => { release = resolve; });
-  host.register({ metadata: { type: "terminal-race", capabilities: [] }, async *invoke() {
+  host.register({ metadata: { type: "terminal-race", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] }, async *invoke() {
     yield { protocolVersion: 2, type: "run.completed", payload: {} };
     markCleaning(); await cleanup;
   } });
@@ -172,11 +172,11 @@ test("approval waiting suspends idle budgets but retains the overall deadline", 
   assert.equal(deadline.controller.signal.reason.timeoutReason, "run_deadline");
 });
 
-const request = { protocolVersion: 2, invocationId:"watchdog-v2",agentSessionId:"s",runId:"r",prompt:"p",modelInput:"p",controlInstructions:"",approvalMode:"full_access",context:{schema:"octo.context-envelope/v1",items:[]},agentConfig:{},workdir:process.cwd() };
+const request = { protocolVersion: 2, invocationId:"watchdog-v2",agentSessionId:"s",runId:"r",prompt:"p",modelInput:"p",controlInstructions:"",approvalMode:"full_access",context:{schema:"octo.context-envelope/v1",items:[]},agentSource: "provisioned", agentConfig:{},workdir:process.cwd() };
 test("host preserves a single pending next during activity and ignores failing diagnostic sinks", async () => {
   let calls=0; let active=0; let peak=0;
   const host = new AdapterHost({diagnosticSink(){throw new Error("sink unavailable");}});
-  host.register({metadata:{type:"native",capabilities:["activity.turn-progress"]},invoke(req,ctx){
+  host.register({metadata:{type:"native",capabilities:["react"],agentSources:["provisioned"],executionFeatures:["activity.turn-progress"]},invoke(req,ctx){
     ctx.reportActivity(started);
     return { [Symbol.asyncIterator](){return this;}, async next(){
       calls++; active++; peak=Math.max(peak,active);
@@ -195,7 +195,7 @@ test("host preserves a single pending next during activity and ignores failing d
 test("host hard deadline aborts provider even when its consumer is paused", async () => {
   let signal;
   const host=new AdapterHost();
-  host.register({metadata:{type:"paused",capabilities:[]},async *invoke(req){signal=req.signal; yield { protocolVersion: 2,type:"message.create",payload:{}}; await new Promise(()=>{});}});
+  host.register({metadata:{type:"paused",capabilities:["react"],agentSources:["provisioned"],executionFeatures:[]},async *invoke(req){signal=req.signal; yield { protocolVersion: 2,type:"message.create",payload:{}}; await new Promise(()=>{});}});
   const iterator=host.invoke("paused",{...request,runtimeLimits:{runTimeoutMs:100,cancelGraceMs:100,modelIdlePolicy:"observe"}});
   await iterator.next(); await new Promise(r=>setTimeout(r,130));
   assert.equal(signal.aborted,true); assert.equal(signal.reason.timeoutReason,"run_deadline");
@@ -205,7 +205,7 @@ test("host hard deadline aborts provider even when its consumer is paused", asyn
 
 test("host bounds cleanup after terminal and timeout wins over provider stopped projection", async () => {
   const host=new AdapterHost();
-  host.register({metadata:{type:"cleanup",capabilities:[]},async *invoke(){yield { protocolVersion: 2,type:"run.completed",payload:{}};await new Promise(()=>{});}});
+  host.register({metadata:{type:"cleanup",capabilities:["react"],agentSources:["provisioned"],executionFeatures:[]},async *invoke(){yield { protocolVersion: 2,type:"run.completed",payload:{}};await new Promise(()=>{});}});
   const events=[];
   for await(const e of host.invoke("cleanup",{...request,runtimeLimits:{cancelGraceMs:100}})) if (!e.type.startsWith("activity.")) events.push(e);
   assert.equal(events.length,1);

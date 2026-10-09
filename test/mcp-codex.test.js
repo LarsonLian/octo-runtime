@@ -11,7 +11,7 @@ import {
   codexMcpOverrides,
   createCodexAdapter
 } from "@mininglamp-oss/octo-harness-adapter-codex";
-import { capabilities, contextHash } from "@mininglamp-oss/octo-harness-protocol";
+import { executionFeatures, contextHash } from "@mininglamp-oss/octo-harness-protocol";
 import { codexAppServerFixture } from "./agent-work-runtime-fixture.js";
 
 const { parse: parseToml } = createRequire(import.meta.resolve("@mininglamp-oss/octo-harness-adapter-codex"))("smol-toml");
@@ -37,7 +37,7 @@ const request = { protocolVersion: 2,
   controlInstructions: "use the team tool",
   context: { schema: "octo.context-envelope/v1", items: [] },
   approvalMode: "full_access",
-  agentConfig: {},
+  agentSource: "provisioned", agentConfig: {},
   mcpServers: {
     "team.api": {
       type: "streamable_http",
@@ -240,8 +240,8 @@ test("Codex preserves the real home and does not rewrite config.toml", async () 
 
 test("Codex advertises dynamic MCP support", () => {
   const adapter = createCodexAdapter({ command: "codex-test", env: {} });
-  assert.ok(adapter.metadata.capabilities.includes(capabilities.MCP_DYNAMIC));
-  assert.ok(adapter.metadata.capabilities.includes(capabilities.INTERACTION_RESPONSE));
+  assert.ok(adapter.metadata.executionFeatures.includes(executionFeatures.MCP_DYNAMIC));
+  assert.ok(adapter.metadata.executionFeatures.includes(executionFeatures.INTERACTION_RESPONSE));
 });
 
 test("Codex full_access routes untrusted MCP approval through an audited automatic responder", { timeout: 5_000 }, async () => {

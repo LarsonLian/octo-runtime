@@ -134,7 +134,7 @@ test("Shared Unicode and number fixtures preserve ECMAScript canonical bytes", (
 });
 
 test("Resolved plans reject malformed Unicode strings and nested property names", () => {
-  const plan = { adapter_type: "codex", workdir: "/tmp", approval_mode: "ask", provider_compatibility: { label: "😀\u2028\u2029" } };
+  const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "/tmp", approval_mode: "ask", provider_compatibility: { label: "😀\u2028\u2029" } };
   assert.equal(validateDefinition("ResolvedExecutionPlan", plan), true);
   assert.doesNotThrow(() => assertResolvedExecutionPlan(plan));
   for (const compatibility of [{ label: "\uD800" }, { ["\uDC00"]: "value" }, { nested: [{ label: "\uDFFF" }] }]) {
@@ -157,7 +157,7 @@ test("Context and host watchdog limit schemas share bounds and enums", () => {
 test("Resolved plan limits use the same Context payload acceptance set", () => {
   for (const fixture of fixtures.filter(fixture => fixture.context?.items?.some(item => item.namespace === "octo.execution" && item.name === "limits"))) {
     const runtime_limits = fixture.context.items.find(item => item.name === "limits").payload;
-    const plan = { adapter_type: "codex", workdir: "/tmp", approval_mode: "ask", runtime_limits };
+    const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "/tmp", approval_mode: "ask", runtime_limits };
     assert.equal(validateDefinition("ResolvedExecutionPlan", plan), fixture.valid, fixture.name);
     if (fixture.valid) assert.doesNotThrow(() => assertResolvedExecutionPlan(plan));
     else assert.throws(() => assertResolvedExecutionPlan(plan), /CONTEXT_SCHEMA_INVALID/);
@@ -286,9 +286,9 @@ test("Context rejects oversized payloads and non-JSON values", () => {
 });
 
 test("InvokeRequest rejects legacy execution contracts before provider dispatch", () => {
-  const request = { protocolVersion: 2, invocationId: "invoke-1", agentSessionId: "session-1", runId: "run-1", prompt: "hello", workdir: "/tmp", modelInput: "hello", controlInstructions: "", context: { schema: "octo.context-envelope/v1", items: [] }, approvalMode: "ask", agentConfig: {} };
+  const request = { protocolVersion: 2, invocationId: "invoke-1", agentSessionId: "session-1", runId: "run-1", prompt: "hello", workdir: "/tmp", modelInput: "hello", controlInstructions: "", context: { schema: "octo.context-envelope/v1", items: [] }, approvalMode: "ask", agentSource: "provisioned", agentConfig: {} };
   assert.doesNotThrow(() => assertInvokeRequest(request));
   assert.throws(() => assertInvokeRequest({ ...request, appendInstructions: "legacy" }), /LEGACY_RUN_CONTRACT_REJECTED/);
   assert.throws(() => assertInvokeRequest({ ...request, context: {} }), /CONTEXT_SCHEMA_INVALID/);
-  assert.throws(() => assertInvokeRequest({ ...request, agentConfig: { autoApprove: true } }), /LEGACY_PERMISSION_CONFIG_REJECTED/);
+  assert.throws(() => assertInvokeRequest({ ...request, agentSource: "provisioned", agentConfig: { autoApprove: true } }), /LEGACY_PERMISSION_CONFIG_REJECTED/);
 });

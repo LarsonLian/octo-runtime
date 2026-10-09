@@ -7,6 +7,7 @@ export function assertFrozenContextPlan(context: ContextEnvelope, plan: Resolved
     if (contextItem(context, namespace, name)?.payload[property] !== actual) throw new TypeError("CONTEXT_PLAN_MISMATCH");
   };
   match("octo.execution", "adapter", "type", plan.adapter_type);
+  match("octo.execution", "adapter", "provider_agent_id", plan.provider_agent_id);
   const workspace = contextItem(context, "octo.execution", "workspace")?.payload;
   if (!workspace) throw new TypeError("CONTEXT_PLAN_MISMATCH");
   if (workspace?.mode === "fixed") {
@@ -22,8 +23,11 @@ export function assertFrozenContextPlan(context: ContextEnvelope, plan: Resolved
   for (const property of new Set([...Object.keys(limits), ...Object.keys(resolvedLimits)])) {
     if (limits[property] !== resolvedLimits[property]) throw new TypeError("CONTEXT_PLAN_MISMATCH");
   }
+  if (workspace?.mode === "none" && (plan.agent_source !== "preset" || plan.workdir || plan.workspace?.mode !== "none")) throw new TypeError("CONTEXT_PLAN_MISMATCH");
+  const features = contextItem(context, "octo.execution", "requirements")?.payload.execution_features;
+  if (Array.isArray(features) && features.some(key => !plan.required_execution_features?.includes(String(key)))) throw new TypeError("CONTEXT_PLAN_MISMATCH");
   const requirements = contextItem(context, "octo.execution", "requirements")?.payload.capabilities;
-  if (Array.isArray(requirements) && requirements.some(key => !plan.required_capabilities?.includes(String(key)))) throw new TypeError("CONTEXT_PLAN_MISMATCH");
+  if (Array.isArray(requirements) && requirements.some(key => key !== "react" || !plan.required_capabilities?.includes(key))) throw new TypeError("CONTEXT_PLAN_MISMATCH");
   const resources = plan.resources ?? [];
   const selected = new Map<string, Record<string, unknown>>();
   for (const [namespace, kind] of [["octo.plugins", "plugin"], ["octo.skills", "skill"], ["octo.connectors", "connector"]]) {

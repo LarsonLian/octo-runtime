@@ -66,7 +66,7 @@ for (const fallback of [false, true]) {
     assert.equal(capture.carrier.content.params.input[1].sha256, images[0].sha256);
     assert.equal(capture.carrier.content.params.input[1].byteSize, images[0].byteSize);
     for (const image of images) assert.equal(JSON.stringify(observations).includes(image.data), false);
-    assert.equal(adapter.metadata.capabilities.includes("input.image"), true);
+    assert.equal(adapter.metadata.executionFeatures.includes("input.image"), true);
   });
 }
 
@@ -152,7 +152,7 @@ test("Codex real app-server identifies three native images in supplied order", {
       modelInputParts: [{ type: "text", text: 'Identify the main shape and its color in each supplied image, in order. Reply with only a JSON array of three objects using keys "shape" and "color" and English lowercase values. Inspect the images directly and do not call tools.' }, ...images],
       controlInstructions: "Only answer the image question. Do not read files or run commands.",
       approvalMode: "ask",
-      agentConfig: { sandbox: "read-only", ...(process.env.OCTO_CODEX_MULTIMODAL_MODEL ? { model: process.env.OCTO_CODEX_MULTIMODAL_MODEL } : {}) },
+      agentSource: "provisioned", agentConfig: { sandbox: "read-only", ...(process.env.OCTO_CODEX_MULTIMODAL_MODEL ? { model: process.env.OCTO_CODEX_MULTIMODAL_MODEL } : {}) },
       signal: AbortSignal.timeout(170_000)
     }), observer(observations)));
     assert.equal(events.at(-1).type, "run.completed", JSON.stringify(events.at(-1)));

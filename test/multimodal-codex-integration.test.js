@@ -59,9 +59,9 @@ test("frozen artifacts cross runtime mapping and Host into a real Codex three-im
       method: "POST", path: "/v1/runtime/input_artifact/read", authorization,
       body: { run_id: runId, artifact_id: artifact.id, lease_id: leaseId, fencing_token: fencingToken }
     })));
-    const plan = { adapter_type: "codex", workdir, approval_mode: "ask", ...(process.env.OCTO_CODEX_MULTIMODAL_MODEL ? { model: process.env.OCTO_CODEX_MULTIMODAL_MODEL } : {}) };
+    const plan = { agent_source: "provisioned", adapter_type: "codex", workdir, approval_mode: "ask", ...(process.env.OCTO_CODEX_MULTIMODAL_MODEL ? { model: process.env.OCTO_CODEX_MULTIMODAL_MODEL } : {}) };
     const envelope = {
-      schema_version: 4, effective_context: executionContext(plan), context_configuration_version: 1,
+      schema_version: 5, effective_context: executionContext(plan), context_configuration_version: 1,
       resolved_execution_plan: plan, resolved_runtime_selection: resolvedRuntimeSelection(),
       run_id: runId, agent_session_id: `session-${randomUUID()}`,
       agent_revision: { definition: { instructions: "Only answer the image question. Do not read files or run commands." } },

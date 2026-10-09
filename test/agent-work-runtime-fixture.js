@@ -138,7 +138,7 @@ export function invokeRequest(overrides = {}) {
     runMetadata: { namespace: "test", triggerOccurrenceId: "test/invoke" },
     approvalMode: "ask",
     workdir: process.cwd(),
-    agentConfig: {},
+    agentSource: "provisioned", agentConfig: {},
     ...overrides
   };
 }

@@ -25,7 +25,7 @@ async function fixture(t) {
   const store = AgentWorkStore.open(join(root, "runtime.db"));
   t.after(async () => { store.close(); await rm(root, { recursive: true, force: true }); });
   const options = { stateRoot: root, agentSessionId: "session-1", agentId: "agent-1", store };
-  const plan = { adapter_type: "codex", workdir: "", approval_mode: "ask", workspace: { mode: "random", scope: "conversation" } };
+  const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "", approval_mode: "ask", workspace: { mode: "random", scope: "conversation" } };
   return { root, options, plan, prepare: (resources = [], updates = {}) => prepareRunContext({ ...plan, resources, ...updates }, options) };
 }
 

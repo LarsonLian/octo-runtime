@@ -3,7 +3,7 @@ import { access, readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
 import { buildClaudeCommand, createClaudeCodeAdapter } from "@mininglamp-oss/octo-harness-adapter-claude-code";
-import { capabilities } from "@mininglamp-oss/octo-harness-protocol";
+import { executionFeatures } from "@mininglamp-oss/octo-harness-protocol";
 
 const request = { protocolVersion: 2,
   invocationId: "invoke-mcp",
@@ -15,7 +15,7 @@ const request = { protocolVersion: 2,
   controlInstructions: "use the team tool",
   context: { schema: "octo.context-envelope/v1", items: [] },
   approvalMode: "full_access",
-  agentConfig: {},
+  agentSource: "provisioned", agentConfig: {},
   mcpServers: {
     team: {
       type: "streamable_http",
@@ -63,5 +63,5 @@ test("Claude Code materializes a private strict per-invocation MCP config", asyn
 
 test("Claude Code advertises dynamic MCP only when the adapter implements it", () => {
   const adapter = createClaudeCodeAdapter({ command: "claude-test" });
-  assert.ok(adapter.metadata.capabilities.includes(capabilities.MCP_DYNAMIC));
+  assert.ok(adapter.metadata.executionFeatures.includes(executionFeatures.MCP_DYNAMIC));
 });

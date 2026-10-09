@@ -78,7 +78,7 @@ test("audit metadata belongs in runMetadata and is not an alternate Context cont
 });
 
 test("resolved execution plan requires frozen execution selection and rejects revision-shaped fallbacks", () => {
-  const plan = { adapter_type: "codex", workdir: "/workspace", approval_mode: "ask", model: "frozen-model" };
+  const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "/workspace", approval_mode: "ask", model: "frozen-model" };
   assert.doesNotThrow(() => assertResolvedExecutionPlan(plan));
   for (const value of [undefined, null]) {
     assert.throws(() => assertResolvedExecutionPlan(value), /RESOLVED_EXECUTION_PLAN_REQUIRED/);
@@ -91,7 +91,7 @@ test("resolved execution plan requires frozen execution selection and rejects re
 
 test("execution Context fixtures carry explicit frozen selections and provider defaults without sharing plan objects", () => {
   const plan = {
-    adapter_type: "codex", workdir: "/workspace", approval_mode: "ask",
+    agent_source: "provisioned", adapter_type: "codex", workdir: "/workspace", approval_mode: "ask",
     model: "frozen-model", effort: "high", runtime_limits: { run_timeout_ms: 60_000 }
   };
   const context = executionContext(plan);
@@ -103,7 +103,7 @@ test("execution Context fixtures carry explicit frozen selections and provider d
   assert.deepEqual(context.items.find(item => item.name === "reasoning").payload, { effort: "high" });
   context.items.find(item => item.name === "limits").payload.run_timeout_ms = 120_000;
   assert.equal(plan.runtime_limits.run_timeout_ms, 60_000);
-  const providerDefaults = executionContext({ adapter_type: "codex", workdir: "/workspace", approval_mode: "ask" });
+  const providerDefaults = executionContext({ agent_source: "provisioned", adapter_type: "codex", workdir: "/workspace", approval_mode: "ask" });
   assert.doesNotThrow(() => assertContextEnvelope(providerDefaults));
   for (const name of ["model", "reasoning"]) {
     assert.deepEqual(providerDefaults.items.find(item => item.name === name).payload, { use_provider_default: true });

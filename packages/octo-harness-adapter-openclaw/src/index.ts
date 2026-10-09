@@ -16,6 +16,7 @@ import {
   type OpenClawGatewayEvent,
   type OpenClawGatewayOptions
 } from "./gateway.js";
+import { loadLocalOpenClawGateway, localGatewayFailure } from "./local-gateway.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -27,7 +28,6 @@ export const OPENCLAW_PROVIDER_OPTIONS = {
   privateKey: "OPENCLAW_GATEWAY_PRIVATE_KEY",
   agentId: "OPENCLAW_AGENT_ID",
   workspace: "OPENCLAW_RUNNER_WORKSPACE",
-  externalBinding: "OCTO_EXTERNAL_OPENCLAW_BINDING",
   bindingId: "OCTO_EXTERNAL_BINDING_ID"
 } as const;
 
@@ -78,8 +78,8 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
     publicKey: requiredOption(req, OPENCLAW_PROVIDER_OPTIONS.publicKey),
     privateKey: requiredOption(req, OPENCLAW_PROVIDER_OPTIONS.privateKey)
   };
-  const configuredAgent = option(req, OPENCLAW_PROVIDER_OPTIONS.agentId);
-  const agentId = req.agentConfig.providerAgentId ?? configuredAgent ?? "octo-openclaw-runner";
+  const agentId = req.agentConfig.providerAgentId;
+  if (!agentId || !/^[a-z0-9_][a-z0-9_-]{0,63}$/.test(agentId)) throw new Error("OpenClaw provider_agent_id is required");
   const runnerWorkspace = option(req, OPENCLAW_PROVIDER_OPTIONS.workspace);
   const sessionKey = `agent:${agentId}:octo-run:${req.runId}:${randomUUID()}`;
   const requestId = `octo-harness-${req.runId}-${randomUUID()}`;
@@ -92,7 +92,7 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
   const createParams: JsonRecord = {
     key: sessionKey,
     agentId,
-    cwd: req.workdir,
+    ...(!isPresetAgent(req) ? { cwd: req.workdir } : {}),
     idempotencyKey: `${requestId}-session`,
     ...(model ? { model } : {}),
     ...(thinking ? { thinkingLevel: thinking } : {})
@@ -102,7 +102,7 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
     agentId,
     sessionKey,
     deliver: false,
-    promptMode: "minimal",
+    ...(!isPresetAgent(req) ? { promptMode: "minimal" } : {}),
     idempotencyKey: requestId,
     ...(req.controlInstructions ? { extraSystemPrompt: req.controlInstructions } : {}),
     ...(model ? { model } : {}),
@@ -122,7 +122,7 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
       kind: "json_params",
       content: {
         operations: [
-          { method: "config.get", params: {} },
+          ...(!isPresetAgent(req) ? [{ method: "config.get", params: {} }] : [{ method: "agents.list", params: {} }]),
           { method: "sessions.create", params: createParams },
           { method: "sessions.messages.subscribe", params: { key: sessionKey, agentId } },
           { method: "agent", params: agentParams }
@@ -424,14 +424,15 @@ function assertRuntimeGatewayContract(value: unknown, externalBinding = false): 
   if (hello?.protocol !== 4) throw new Error(`unsupported OpenClaw Gateway protocol: ${String(hello?.protocol)}`);
   const requiredMethods = ["sessions.create", "sessions.messages.subscribe", "agent", "agent.wait", "sessions.abort"];
   if (!externalBinding) requiredMethods.unshift("config.get");
+  else requiredMethods.unshift("agents.list");
   for (const method of requiredMethods) {
     if (!methods.includes(method)) throw new Error(`OpenClaw Gateway does not advertise required method ${method}`);
   }
   if (!events.includes("agent")) throw new Error("OpenClaw Gateway does not advertise the agent event stream");
 }
 
-function isExternalBinding(req: InvokeRequest): boolean {
-  return option(req, OPENCLAW_PROVIDER_OPTIONS.externalBinding) === "true";
+function isPresetAgent(req: InvokeRequest): boolean {
+  return req.agentSource === "preset";
 }
 
 function assertRuntimeIsolationConfig(value: unknown, invocation: OpenClawGatewayInvocation): void {
@@ -494,12 +495,12 @@ async function* invokeOpenClawGateway(
 
   try {
     const hello = await client.connect();
-    const externalBinding = isExternalBinding(req);
+    const externalBinding = isPresetAgent(req);
     assertRuntimeGatewayContract(hello, externalBinding);
     if (!externalBinding) {
       await client.request("config.get", {}, { timeoutMs: 10_000, signal: req.signal })
         .then(value => assertRuntimeIsolationConfig(value, invocation));
-    }
+    } else await assertExistingAgent(client, invocation.agentId, req.signal);
     const created = asRecord(await client.request("sessions.create", invocation.createParams, {
       timeoutMs: 30_000,
       signal: req.signal
@@ -607,7 +608,7 @@ async function* invokeOpenClawGateway(
           await controlClient.request("sessions.abort", abortParams, { timeoutMs: 5_000 });
         } catch {
           recoveryClient = clientFactory(invocation.gateway);
-          assertRuntimeGatewayContract(await recoveryClient.connect());
+          assertRuntimeGatewayContract(await recoveryClient.connect(), isPresetAgent(req));
           controlClient = recoveryClient;
           await controlClient.request("sessions.abort", abortParams, { timeoutMs: 5_000 });
         }
@@ -662,19 +663,45 @@ async function* invokeOpenClawGateway(
 export function createOpenClawAdapter(
   { clientFactory = options => new OpenClawGatewayClient(options) }: { clientFactory?: GatewayClientFactory } = {}
 ) {
+  let pendingProbe: Promise<{ available: boolean; command: string; reason?: string }> | undefined;
+  const probeGateway = async () => {
+    let client: OpenClawGatewayClientLike | undefined;
+    try {
+      client = clientFactory(await loadLocalOpenClawGateway());
+      assertRuntimeGatewayContract(await client.connect(), true);
+      await assertExistingAgent(client, "main");
+      return { available: true, command: "openclaw-gateway" };
+    } catch (error) { return { available: false, command: "openclaw-gateway", reason: localGatewayFailure(error) }; }
+    finally { await client?.close(); }
+  };
   return defineAdapter({
     metadata: {
       type: "openclaw",
       processModel: "websocket-per-invocation",
       transport: "openclaw-gateway-rpc",
-      capabilities: ["tool.canonical"]
+      capabilities: ["react"],
+      agentSources: ["preset", "provisioned"],
+      executionFeatures: ["tool.canonical", "agent.existing-target.v1"]
     },
-    probe: () => Promise.resolve({ available: true, command: "openclaw-gateway" }),
+    probe() {
+      return pendingProbe ??= probeGateway().finally(() => { pendingProbe = undefined; });
+    },
     async *invoke(req: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
+      if (!option(req, OPENCLAW_PROVIDER_OPTIONS.url)) {
+        const gateway = await loadLocalOpenClawGateway();
+        req = { ...req, agentConfig: { ...req.agentConfig, providerOptions: {
+          [OPENCLAW_PROVIDER_OPTIONS.url]: gateway.url,
+          [OPENCLAW_PROVIDER_OPTIONS.token]: gateway.token,
+          [OPENCLAW_PROVIDER_OPTIONS.deviceId]: gateway.device.deviceId,
+          [OPENCLAW_PROVIDER_OPTIONS.publicKey]: gateway.device.publicKey,
+          [OPENCLAW_PROVIDER_OPTIONS.privateKey]: gateway.device.privateKey
+        } } };
+      }
+      if (req.agentSource === "preset" && req.workdir) throw new Error("CONTEXT_WORKSPACE_UNSUPPORTED: preset OpenClaw uses its provider workspace");
       const invocation = buildOpenClawGatewayInvocation(req);
       await context?.observe({
         event: "provider.input",
-        rpcMethod: "gateway.config.get+sessions.create+messages.subscribe+agent",
+        rpcMethod: "gateway.agents.list+sessions.create+messages.subscribe+agent",
         providerSessionId: invocation.sessionKey,
         providerRequestId: invocation.requestId,
         carrier: invocation.providerInput
@@ -683,6 +710,14 @@ export function createOpenClawAdapter(
     }
   });
 }
+
+async function assertExistingAgent(client: OpenClawGatewayClientLike, agentId: string, signal?: AbortSignal): Promise<void> {
+  const result = asRecord(await client.request("agents.list", {}, { timeoutMs: 1_000, signal }));
+  const agents = Array.isArray(result?.agents) ? result.agents : [];
+  if (!agents.some(agent => asRecord(agent)?.id === agentId)) throw new Error(`OpenClaw agent ${agentId} is missing`);
+}
+
+export { loadLocalOpenClawGateway } from "./local-gateway.js";
 
 export {
   OpenClawGatewayClient,

@@ -17,7 +17,7 @@ for (const kind of ["memory", "sqlite"]) {
     const store = kind === "memory" ? new MemoryStore() : SqliteStore.open(join(directory, "state.db"));
     try {
       const engine = new HarnessEngine({ store, host: { list: () => [{ type: "test" }] } });
-      const agent = await engine.registerAgent({ name: "local", defaultContext: context, config: { providerAgentId: "original" } });
+      const agent = await engine.registerAgent({ agentSource: "provisioned", name: "local", defaultContext: context, config: { providerAgentId: "original" } });
       const submitted = await engine.submitAgentRun({
         namespace: "local", agentId: agent.id, sessionKey: "v1/task/store",
         trigger: { kind: "manual", occurrenceId: "store" }, input: { prompt: "hello" },
@@ -61,7 +61,7 @@ test("SQLite reopen retains the submitted Context, defaults version and frozen p
   };
   try {
     let engine = new HarnessEngine({ store, host });
-    const agent = await engine.registerAgent({ name: "persisted", defaultContext: context });
+    const agent = await engine.registerAgent({ agentSource: "provisioned", name: "persisted", defaultContext: context });
     const input = {
       namespace: "local", agentId: agent.id, sessionKey: "v1/task/reopen",
       trigger: { kind: "manual", occurrenceId: "reopen" }, input: { prompt: "hello" },

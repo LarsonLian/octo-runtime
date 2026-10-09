@@ -37,7 +37,7 @@ test("ordered model input validates image content, limits, and recovery without 
 test("Host refuses image input before calling an old text-only adapter", async () => {
   let called = false;
   const host = new AdapterHost();
-  host.register({ metadata: { type: "text-only", capabilities: [] }, async *invoke() { called = true; } });
+  host.register({ metadata: { type: "text-only", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] }, async *invoke() { called = true; } });
   await assert.rejects(async () => {
     for await (const _event of host.invoke("text-only", { ...invokeRequest(), approvalMode: "full_access", modelInputParts: [image] })) {}
   }, /UNSUPPORTED_INPUT_MODALITY/);
@@ -75,10 +75,10 @@ test("runtime reads frozen artifacts under lease, verifies bytes, and leaves dur
 });
 
 test("daemon preserves mixed ordering and excludes materialized bytes from run metadata", () => {
-  const plan = { adapter_type: "codex", workdir: "/tmp", approval_mode: "full_access" };
+  const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "/tmp", approval_mode: "full_access" };
   const content = input(); content.parts[1].source = source(image); content.reply_to = { text: "quoted instruction", author_name: "Lin" };
   const envelope = {
-    schema_version: 4, effective_context: executionContext(plan), context_configuration_version: 1,
+    schema_version: 5, effective_context: executionContext(plan), context_configuration_version: 1,
     resolved_execution_plan: plan, resolved_runtime_selection: resolvedRuntimeSelection(),
     run_id: "run-1", agent_session_id: "session-1", agent_revision: { definition: {} },
     agent_run_request: { namespace: "work", agent_id: "a", agent_revision_id: "rev", session_key: "v1/work/test", trigger: { kind: "manual", occurrence_id: "message-1" }, input: content, context: contextEnvelope() }
@@ -106,7 +106,7 @@ test("Core failed image dispatch releases the session so subsequent text can run
     yield { protocolVersion: 2, type: "run.completed", payload: {} };
   } };
   const engine = new HarnessEngine({ store, host });
-  const agent = await engine.registerAgent({ name: "test", defaultContext: contextEnvelope([
+  const agent = await engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: contextEnvelope([
     { namespace: "octo.execution", name: "adapter", payload: { type: "test" } },
     { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: process.cwd() } },
     { namespace: "octo.security", name: "approval_policy", payload: { mode: "full_access" } }

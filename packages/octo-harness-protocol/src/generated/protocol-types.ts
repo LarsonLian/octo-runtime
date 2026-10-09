@@ -66,6 +66,9 @@ export type ContextWorkspacePayload =
   | {
       mode: "random";
       scope: "conversation";
+    }
+  | {
+      mode: "none";
     };
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -139,12 +142,22 @@ export type ContextContinuityPayload = ChannelContextDescriptor & {
  */
 export type ResolvedRuntimeSelection = ResolvedRuntimeSelection1;
 /**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ResolvedExecutionPlan".
+ */
+export type ResolvedExecutionPlan = ResolvedExecutionPlan1;
+/**
  * Named MCP servers frozen for one invocation.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "McpServers".
  */
 export type McpServers = Record<string, McpServer>;
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "AgentSource".
+ */
+export type AgentSource = "preset" | "provisioned";
 /**
  * Provider-neutral assistant output channel. analysis is reasoning-class content gated by exposure; commentary is public in-run progress; final is answer content delivered only after the Run reaches a completed terminal state.
  *
@@ -1637,7 +1650,7 @@ export interface ContextPreparationReceipt {
   run_id: string;
   lease_id: string;
   fencing_token: number;
-  workspace_mode: "fixed" | "random";
+  workspace_mode: "fixed" | "random" | "none";
   workspace_path: string;
   provider_state_dir: string;
   /**
@@ -1738,6 +1751,7 @@ export interface ContextApplicationEvidence {
  */
 export interface ContextAdapterPayload {
   type: string;
+  provider_agent_id?: string;
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -1745,9 +1759,13 @@ export interface ContextAdapterPayload {
  */
 export interface ContextRequirementsPayload {
   /**
+   * @maxItems 1
+   */
+  capabilities: [] | ["react"];
+  /**
    * @maxItems 64
    */
-  capabilities: string[];
+  execution_features?: string[];
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -1998,11 +2016,7 @@ export interface ResolvedRuntimeSelection1 {
   offline_behavior: "wait" | "fail";
   failover: "candidates" | "none";
 }
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ResolvedExecutionPlan".
- */
-export interface ResolvedExecutionPlan {
+export interface ResolvedExecutionPlan1 {
   adapter_type: string;
   workdir: string;
   workspace?: ContextWorkspacePayload;
@@ -2013,10 +2027,13 @@ export interface ResolvedExecutionPlan {
   model?: string;
   effort?: string;
   approval_mode: ApprovalMode;
-  required_capabilities?: string[];
+  required_capabilities?: "react"[];
   runtime_limits?: ContextLimitsPayload;
   mcp_servers?: McpServers;
   provider_compatibility?: Record<string, unknown>;
+  provider_agent_id?: string;
+  agent_source: AgentSource;
+  required_execution_features?: string[];
 }
 /**
  * Provider-native provenance written by the adapter. Audience projectors use it to audit public exposure and clients cannot override it.
@@ -2589,6 +2606,7 @@ export interface InvokeRequestWire {
   runtimeLimits?: RuntimeLimits;
   agentConfig: AgentConfig;
   protocolVersion: 2;
+  agentSource: AgentSource;
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema

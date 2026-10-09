@@ -32,7 +32,7 @@ import {
 const TEST_AGENT_RUN_ID = "arun_35c4ffc5db9940c9be7ce3a894819ae3";
 
 const executionPlan = {
-  adapter_type: "codex",
+  agent_source: "provisioned", adapter_type: "codex",
   workdir: "/workspace/project",
   model: "gpt-5",
   approval_mode: "ask"
@@ -48,7 +48,7 @@ const contentItems = [{
 }];
 
 const envelope = {
-  schema_version: 4,
+  schema_version: 5,
   effective_context: executionContext(executionPlan, contentItems),
   context_configuration_version: 1,
   resolved_execution_plan: executionPlan,
@@ -195,7 +195,7 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
   assert.match(mapped.request.modelInput, /Ada: The failing case is reset\./);
   assert.deepEqual(mapped.request.context, source.effective_context);
   assert.notEqual(mapped.request.context, source.effective_context);
-  assert.equal(mapped.request.runMetadata.schemaVersion, 4);
+  assert.equal(mapped.request.runMetadata.schemaVersion, 5);
   assert.equal(mapped.request.runMetadata.agentRevisionId, "revision-1");
   assert.equal(mapped.request.context.agentRevisionId, undefined);
   assert.equal(Object.hasOwn(mapped.request, "appendInstructions"), false);
@@ -267,7 +267,7 @@ test("revision execution_spec and execution_profile cannot replace a missing res
 
 test("execution envelope consumes a matching frozen plan and preserves explicit provider-default model selection", () => {
   const mapped = mapExecutionEnvelope(withExecutionPlan(envelope, {
-    adapter_type: "opencode", workdir: "/workspace/frozen", approval_mode: "assisted", effort: "high"
+    agent_source: "provisioned", adapter_type: "opencode", workdir: "/workspace/frozen", approval_mode: "assisted", effort: "high"
   }));
   assert.equal(mapped.adapterType, "opencode");
   assert.equal(mapped.request.workdir, "/workspace/frozen");
@@ -278,7 +278,7 @@ test("execution envelope consumes a matching frozen plan and preserves explicit 
 
 for (const [name, overrides] of [
   ["ask cannot become full_access", { approval_mode: "full_access" }],
-  ["adapter cannot change", { adapter_type: "opencode" }],
+  ["adapter cannot change", { agent_source: "provisioned", adapter_type: "opencode" }],
   ["fixed workspace cannot change", { workdir: "/workspace/other" }],
   ["model cannot change", { model: "different-model" }],
   ["reasoning effort cannot change", { effort: "low" }],
@@ -310,7 +310,7 @@ test("frozen execution selection requires adapter, fixed workspace and approval 
 });
 
 test("provider-default model and reasoning forbid a frozen plan from forcing values", () => {
-  const source = withExecutionPlan(envelope, { adapter_type: "codex", workdir: "/workspace/project", approval_mode: "ask" });
+  const source = withExecutionPlan(envelope, { agent_source: "provisioned", adapter_type: "codex", workdir: "/workspace/project", approval_mode: "ask" });
   const mapped = mapExecutionEnvelope(source);
   assert.equal(mapped.request.agentConfig.model, undefined);
   assert.equal(mapped.request.agentConfig.effort, undefined);
@@ -664,7 +664,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
       ...envelope.agent_run_request,
       trigger: { kind: "im.message", occurrence_id: "message/observed" }
     }
-  }, { adapter_type: "codex", workdir: process.cwd(), approval_mode: "ask" });
+  }, { agent_source: "provisioned", adapter_type: "codex", workdir: process.cwd(), approval_mode: "ask" });
 
   httpServer.on("request", async (request, response) => {
     if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
@@ -704,7 +704,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "codex", capabilities: [], providerVersion: "1.2.3", providerPath: "/test/codex", available: true }],
+      list: async () => [{ type: "codex", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [], providerVersion: "1.2.3", providerPath: "/test/codex", available: true }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         invokedRequest = request;
@@ -734,7 +734,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     assert.notEqual(registrationRequestId, connectionRequestId);
     assert.deepEqual(registrationBody.capabilities.adapters, [{
       provider_type: "codex", provider_version: "1.2.3", provider_path: "/test/codex",
-      available: true, unavailable_reason: null, capabilities: []
+      available: true, unavailable_reason: null, capabilities: ["react"], agent_sources: ["provisioned"], execution_features: []
     }]);
     assert.equal(invokedRequest.runMetadata.profile, "work");
     assert.equal(invokedRequest.runMetadata.runtimeId, "runtime-observed");
@@ -806,7 +806,7 @@ test("interaction responses require the active execution instance as well as lea
       ...envelope.agent_run_request,
       trigger: { kind: "im.message", occurrence_id: "message/interaction" }
     }
-  }, { adapter_type: "interactive", workdir: process.cwd(), approval_mode: "ask" });
+  }, { agent_source: "provisioned", adapter_type: "interactive", workdir: process.cwd(), approval_mode: "ask" });
   const rejectedCommands = [
     { id: "stale-fence", error: "STALE_COMMAND_FENCE", overrides: { fencing_token: 6 } },
     { id: "stale-lease", error: "STALE_COMMAND_FENCE", overrides: { lease_id: "lease-previous" } },
@@ -911,7 +911,7 @@ test("interaction responses require the active execution instance as well as lea
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "interactive", capabilities: ["interaction.response"], available: true }],
+      list: async () => [{ type: "interactive", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["interaction.response"], available: true }],
       cancel: async () => ({ cancelled: true }),
       async respondInteraction(invocationId, response) {
         responseCalls += 1;
@@ -1210,7 +1210,7 @@ test("reconnect terminal authority cancels local execution and discards its outb
       reconnectMs: 5,
       reconnectMaxMs: 5
     }, {
-      list: async () => [],
+      list: async () => [{ type: "codex", available: true, capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] }],
       cancel: async (_invocationId, reason) => {
         assert.match(reason, /authoritative server terminal: failed/);
         providerRelease.resolve();
@@ -1630,7 +1630,7 @@ test("missing provider configuration rejects work with a durable catalog failure
       runtimeName: "runtime-provider-missing",
       storePath
     }, {
-      list: async () => [{ type: "other", capabilities: [], available: true }],
+      list: async () => [{ type: "other", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [], available: true }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() { invocations += 1; yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
     });
@@ -1714,7 +1714,7 @@ test("event nack releases the send window and retries from the requested sequenc
       runtimeName: "runtime-event-nack",
       storePath: join(directory, "agent-work.db")
     }, {
-      list: async () => [{ type: "codex", capabilities: [] }],
+      list: async () => [{ type: "codex", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
     });
@@ -1782,7 +1782,7 @@ test("local runtime concurrency limit queues a second provider invocation", asyn
       storePath: join(directory, "agent-work.db"),
       maxConcurrentRuns: 1
     }, {
-      list: async () => [{ type: "codex", capabilities: [] }],
+      list: async () => [{ type: "codex", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke() {
         invocations += 1;

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
 import {
+  assertAgentSource,
   assertContextEnvelope,
   assertResolvedExecutionPlan,
   assertRuntimeLimits,
@@ -37,10 +38,11 @@ export function assertLocalContext(context: unknown): asserts context is Context
   }
 }
 
-export function resolveLocalContext(defaults: ContextEnvelope, submitted: ContextEnvelope): {
+export function resolveLocalContext(defaults: ContextEnvelope, submitted: ContextEnvelope, agentSource: "preset" | "provisioned"): {
   effectiveContext: ContextEnvelope;
   resolvedExecutionPlan: ResolvedExecutionPlan;
 } {
+  assertAgentSource(agentSource);
   assertLocalContext(defaults);
   assertLocalContext(submitted);
   let effectiveContext = mergeContext(defaults, submitted);
@@ -50,14 +52,18 @@ export function resolveLocalContext(defaults: ContextEnvelope, submitted: Contex
     ] });
   }
   const adapter = contextItem(effectiveContext, "octo.execution", "adapter")?.payload.type;
-  const workdir = contextItem(effectiveContext, "octo.execution", "workspace")?.payload.path;
+  const workspace = contextItem(effectiveContext, "octo.execution", "workspace")?.payload;
+  const workdir = workspace?.path ?? "";
   if (typeof adapter !== "string" || !adapter) throw new TypeError("LOCAL_ADAPTER_CONTEXT_REQUIRED");
-  if (typeof workdir !== "string" || !isAbsolute(workdir)) throw new TypeError("LOCAL_ABSOLUTE_WORKSPACE_REQUIRED");
+  if ((agentSource !== "preset" || workdir) && (typeof workdir !== "string" || !isAbsolute(workdir))) throw new TypeError("LOCAL_ABSOLUTE_WORKSPACE_REQUIRED");
   const model = contextItem(effectiveContext, "octo.execution", "model")?.payload.id;
   const effort = contextItem(effectiveContext, "octo.execution", "reasoning")?.payload.effort;
   const limits = contextItem(effectiveContext, "octo.execution", "limits")?.payload;
   const plan = {
+    agent_source: agentSource,
     adapter_type: adapter,
+    ...(workspace ? { workspace } : {}),
+    ...(adapter === "openclaw" ? { provider_agent_id: contextItem(effectiveContext, "octo.execution", "adapter")!.payload.provider_agent_id } : {}),
     workdir,
     approval_mode: contextItem(effectiveContext, "octo.security", "approval_policy")!.payload.mode,
     ...(typeof model === "string" ? { model } : {}),
@@ -106,7 +112,7 @@ export function assertRunSnapshot(run: AgentRun, previous?: AgentRun): void {
     throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
   }
   assertLocalContext(run.context);
-  const resolved = resolveLocalContext(run.effectiveContext, { schema: run.effectiveContext.schema, items: [] });
+  const resolved = resolveLocalContext(run.effectiveContext, { schema: run.effectiveContext.schema, items: [] }, run.resolvedExecutionPlan.agent_source);
   if (contextHash(resolved.effectiveContext) !== run.contextHash
     || hashLocalValue(resolved.resolvedExecutionPlan) !== hashLocalValue(run.resolvedExecutionPlan)) {
     throw new TypeError("LOCAL_RUN_SNAPSHOT_INVALID");

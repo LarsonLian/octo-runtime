@@ -9,6 +9,8 @@ export type AgentRunStatus = "queued" | "running" | "completed" | "failed" | "ca
 export interface Agent {
   id: string;
   name: string;
+  agentSource: "preset" | "provisioned";
+  capabilities: ["react"];
   adapterType: string;
   config: LocalAgentConfig;
   defaultContext: ContextEnvelope;

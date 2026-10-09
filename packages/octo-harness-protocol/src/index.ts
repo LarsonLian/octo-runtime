@@ -3,8 +3,8 @@ export { contextHash } from "./context-hash.js";
 import { assertExperiencePayload } from "./experience.js";
 import { assertModelInputParts, assertImageRecoveryParts, hasImageInput } from "./multimodal.js";
 export { IMAGE_INPUT_LIMITS, IMAGE_INPUT_MIME_TYPES, assertModelInputParts, providerInputParts, hasImageInput, modelPartsFromInput } from "./multimodal.js";
-import { assertApprovalMode, assertContextEnvelope, assertJsonValue, assertMcpServers, contextItem } from "./context.js";
-export { APPROVAL_MODES, CONTEXT_SCHEMA, CONTEXT_MAX_BYTES, CONTEXT_MAX_ITEMS, RUNTIME_RUN_CONTRACT, assertApprovalMode, assertContextEnvelope, assertCapabilityResources, assertMcpServers, assertResolvedExecutionPlan, canonicalContext, contextItem, mergeContext } from "./context.js";
+import { assertAgentSource, assertApprovalMode, assertContextEnvelope, assertJsonValue, assertMcpServers, contextItem } from "./context.js";
+export { APPROVAL_MODES, CONTEXT_SCHEMA, CONTEXT_MAX_BYTES, CONTEXT_MAX_ITEMS, RUNTIME_RUN_CONTRACT, assertAgentSource, assertApprovalMode, assertContextEnvelope, assertCapabilityResources, assertMcpServers, assertResolvedExecutionPlan, canonicalContext, contextItem, mergeContext } from "./context.js";
 export { RUNTIME_SELECTION_SCHEMA, assertResolvedRuntimeSelection } from "./runtime-selection.js";
 export { CONTEXT_CATALOG_VERSION, CONTEXT_TYPE_CATALOG, contextTypeDefinition, assertContextProcessorCoverage } from "./context-catalog.js";
 export type { ContextStage, ContextOutput, ContextTypeDefinition } from "./context-catalog.js";
@@ -47,6 +47,7 @@ import type {
 // of `@mininglamp-oss/octo-harness-protocol` stays stable regardless of how the
 // generator lays out its output.
 export type {
+  AgentSource,
   NotificationMessage,
   ModelInputPart,
   ApprovalMode,
@@ -390,7 +391,9 @@ export const MESSAGE_CHANNELS: ReadonlySet<MessageChannel> = new Set([
  * end-to-end ability and should not be claimed just because the underlying CLI
  * happens to support it.
  */
-export const capabilities = Object.freeze({
+export const capabilities = Object.freeze({ REACT: "react" } as const);
+
+export const executionFeatures = Object.freeze({
   SESSION_SERIALIZE: "session.serialize",
   SESSION_RESUME_RECOVERY: "session.resume_recovery",
   SESSION_FORK: "session.fork",
@@ -594,6 +597,7 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
   if (!isRecord(request)) throw new TypeError("InvokeRequest must be an object");
   if (request.protocolVersion !== PROTOCOL_VERSION) throw new TypeError("InvokeRequest.protocolVersion must be 2");
   if ("appendInstructions" in request) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
+  assertAgentSource(request.agentSource);
   assertContextEnvelope(request.context);
   assertApprovalMode(request.approvalMode);
   const approvalPolicy = contextItem(request.context, "octo.security", "approval_policy");
@@ -609,7 +613,7 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
   }
   const workspace = contextItem(request.context, "octo.execution", "workspace");
   if (workspace?.payload.mode === "fixed" && workspace.payload.path !== request.workdir) throw new TypeError("CONTEXT_PLAN_MISMATCH");
-  if (request.skills !== undefined) {
+  if (request.skills !== undefined && (!Array.isArray(request.skills) || request.skills.length > 0)) {
     if (!Array.isArray(request.skills)) throw new TypeError("SKILL_SCOPE_INVALID");
     for (const skill of request.skills) {
       if (!isRecord(skill) || typeof skill.name !== "string" || !skill.name || typeof skill.description !== "string" || !skill.description || typeof skill.path !== "string" || !skill.path.startsWith("/") || typeof skill.invoke !== "boolean") throw new TypeError("SKILL_SCOPE_INVALID");
@@ -619,11 +623,12 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
   if (typeof request.controlInstructions !== "string") throw new TypeError("InvokeRequest.controlInstructions must be a string");
   if (request.runtimeLimits !== undefined) assertRuntimeLimits(request.runtimeLimits);
   if (request.mcpServers !== undefined) assertMcpServers(request.mcpServers);
-  for (const key of ["invocationId", "agentSessionId", "runId", "prompt", "workdir"] as const) {
+  for (const key of ["invocationId", "agentSessionId", "runId", "prompt"] as const) {
     if (typeof request[key] !== "string" || request[key].length === 0) {
       throw new TypeError(`InvokeRequest.${key} must be a non-empty string`);
     }
   }
+  if (typeof request.workdir !== "string" || (!request.workdir && request.agentSource !== "preset")) throw new TypeError("InvokeRequest.workdir is required for provisioned execution");
   if (typeof request.modelInput !== "string" || request.modelInput.length === 0) {
     throw new TypeError("InvokeRequest.modelInput must be a non-empty string");
   }

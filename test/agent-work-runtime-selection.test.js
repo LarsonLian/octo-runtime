@@ -10,11 +10,11 @@ import { RUNTIME_RUN_CONTRACT } from "../packages/octo-harness-protocol/dist/ind
 import { contextEnvelope, continuityItem, deferred, executionContext, resolvedRuntimeSelection, waitFor, wire, withTimeout } from "./agent-work-runtime-fixture.js";
 
 const runtimeId = "本机 Runtime/🎯";
-const plan = { adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask" };
+const plan = { agent_source: "provisioned", adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask" };
 
 function executionEnvelope(selection = resolvedRuntimeSelection(runtimeId)) {
   return {
-    schema_version: 4,
+    schema_version: 5,
     context_configuration_version: 1,
     effective_context: executionContext(plan),
     resolved_execution_plan: plan,
@@ -98,7 +98,7 @@ for (const [name, selection] of [["explicit Unicode target", resolvedRuntimeSele
       assert.equal(fixture.receipts[0].accepted, true);
       assert.equal(fixture.registrations, 1);
       assert.equal(fixture.invocations[0].runMetadata.runtimeId, runtimeId);
-      assert.equal(fixture.invocations[0].runMetadata.schemaVersion, 4);
+      assert.equal(fixture.invocations[0].runMetadata.schemaVersion, 5);
     } finally {
       await fixture.close();
     }
@@ -118,7 +118,25 @@ test("daemon schema 3 registration rejection cannot connect or execute with a co
   }
 });
 
-async function startFixture({ rejectRegistration = false } = {}) {
+test("OpenClaw availability refresh preserves the device connection and other adapters", async () => {
+  const state = { available: false, reason: "config_not_found" };
+  const fixture = await startFixture({ openClawProbeState: state });
+  try {
+    await fixture.runtime.start();
+    await fixture.ready.promise;
+    state.available = true;
+    await waitFor(() => fixture.lastCapabilities.adapters.find(a => a.provider_type === "openclaw")?.available === true);
+    state.available = false;
+    state.reason = "gateway_unreachable";
+    await waitFor(() => fixture.lastCapabilities.adapters.find(a => a.provider_type === "openclaw")?.unavailable_reason === "gateway_unreachable");
+    assert.equal(fixture.runtime.status.connected, true);
+    assert.equal(fixture.runtime.status.connectionState, "online");
+    assert.equal(fixture.upgrades, 1);
+    assert.equal(fixture.lastCapabilities.adapters.find(a => a.provider_type === "fake").available, true);
+  } finally { await fixture.close(); }
+});
+
+async function startFixture({ rejectRegistration = false, openClawProbeState } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-selection-"));
   const storePath = join(directory, "agent-work.db");
   const server = createServer();
@@ -130,8 +148,9 @@ async function startFixture({ rejectRegistration = false } = {}) {
     let body = "";
     for await (const chunk of request) body += chunk;
     const registration = JSON.parse(body);
+    fixture.lastCapabilities = registration.capabilities;
     assert.deepEqual(registration.capabilities.run_contract, RUNTIME_RUN_CONTRACT);
-    assert.equal(registration.capabilities.run_contract.schema_version, 4);
+    assert.equal(registration.capabilities.run_contract.schema_version, 5);
     assert.equal(registration.capabilities.run_contract.routing_schema, "octo.runtime-selection/v2");
     fixture.registrations += 1;
     response.writeHead(rejectRegistration ? 400 : 200, { "Content-Type": "application/json" });
@@ -160,9 +179,11 @@ async function startFixture({ rejectRegistration = false } = {}) {
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   fixture.runtime = new AgentWorkRuntime({
     profile: "default", baseUrl: `http://127.0.0.1:${server.address().port}`, token: "runtime-test-token",
-    runtimeId, runtimeName: "selection-test", storePath, initialReconnectDelayMs: 60_000, reconnectDelayMs: 60_000
+    runtimeId, runtimeName: "selection-test", storePath, initialReconnectDelayMs: 60_000, reconnectDelayMs: 60_000,
+    ...(openClawProbeState ? { adapterProbeMs: 20 } : {})
   }, {
-    list: async () => [{ type: "fake", available: true, capabilities: [] }],
+    list: async () => [{ type: "fake", available: true, capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] }, ...(openClawProbeState ? [{ type: "openclaw", available: false, unavailableReason: "config_not_found", capabilities: ["react"], agentSources: ["preset", "provisioned"], executionFeatures: ["agent.existing-target.v1"] }] : [])],
+    probe: async () => ({ ...openClawProbeState }),
     cancel: async () => ({ cancelled: true }),
     async *invoke(_adapterType, request) {
       fixture.invocations.push(request);

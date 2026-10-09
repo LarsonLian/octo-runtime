@@ -10,7 +10,7 @@ const context = { schema: "octo.context-envelope/v1", items: [
   { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: "/workspace" } },
   { namespace: "octo.security", name: "approval_policy", payload: { mode: "ask" } }
 ] };
-const plan = { adapter_type: "codex", workdir: "/workspace", approval_mode: "ask" };
+const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "/workspace", approval_mode: "ask" };
 const identity = { runId: "run-1", leaseId: "lease-1", fencingToken: 3 };
 const schema = JSON.parse(readFileSync(new URL("../packages/octo-harness-protocol/schema/protocol.schema.json", import.meta.url), "utf8"));
 const require = createRequire(new URL("../packages/octo-harness-daemon/package.json", import.meta.url));

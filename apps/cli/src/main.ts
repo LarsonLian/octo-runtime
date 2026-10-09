@@ -635,7 +635,6 @@ async function runAdapterConnectCommand(context: CliContext, adapterType: string
               provider_options: {
                 [OPENCLAW_PROVIDER_OPTIONS.url]: gatewayUrl,
                 [OPENCLAW_PROVIDER_OPTIONS.workspace]: workspace,
-                [OPENCLAW_PROVIDER_OPTIONS.externalBinding]: "true",
                 [OPENCLAW_PROVIDER_OPTIONS.bindingId]: bindingId
               },
               credential_ref: "credentials/openclaw-gateway.json"

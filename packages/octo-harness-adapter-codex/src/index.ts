@@ -7,7 +7,7 @@
  * params, so app-server sees the complete state database and plugin runtime.
  */
 import { defineAdapter, probeCommand, type AdapterInvocationContext, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { capabilities, contextItem, type InteractionResponse, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
+import { executionFeatures, contextItem, type InteractionResponse, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
 import { parse, stringify } from "smol-toml";
 import { readFileSync, mkdirSync, copyFileSync, writeFileSync, lstatSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
@@ -298,15 +298,15 @@ export function codexMcpOverrides(
         if (server.env.PLUGIN_ROOT !== undefined && server.env.PLUGIN_DATA !== undefined) {
           entry.env = server.env;
         } else {
-        for (const [key, value] of Object.entries(server.env)) {
-          const prior = forwarded.get(key);
-          if (prior !== undefined && prior !== value) {
-            throw new Error(`dynamic MCP stdio environment variable ${key} has conflicting values`);
+          for (const [key, value] of Object.entries(server.env)) {
+            const prior = forwarded.get(key);
+            if (prior !== undefined && prior !== value) {
+              throw new Error(`dynamic MCP stdio environment variable ${key} has conflicting values`);
+            }
+            forwarded.set(key, value);
+            env[key] = value;
           }
-          forwarded.set(key, value);
-          env[key] = value;
-        }
-        entry.env_vars = Object.keys(server.env);
+          entry.env_vars = Object.keys(server.env);
         }
       }
     } else {
@@ -441,9 +441,9 @@ export function createCodexAdapter({
     "session.serialize",
     "session.resume_recovery",
     "activity.turn-progress",
-    capabilities.MCP_DYNAMIC,
-    capabilities.INTERACTION_RESPONSE,
-    capabilities.INPUT_IMAGE
+    executionFeatures.MCP_DYNAMIC,
+    executionFeatures.INTERACTION_RESPONSE,
+    executionFeatures.INPUT_IMAGE
     , "context.capabilities"
   ];
   if (detectComputerUseProvisioningSync(env).available) adapterCapabilities.push(COMPUTER_USE_CAPABILITY);
@@ -451,7 +451,9 @@ export function createCodexAdapter({
   return defineAdapter({
     metadata: {
       type: "codex",
-      capabilities: adapterCapabilities,
+      capabilities: ["react"],
+      agentSources: ["provisioned"],
+      executionFeatures: adapterCapabilities,
       processModel: "subprocess-per-invocation",
       transport: "json-rpc-2.0/stdio"
     },

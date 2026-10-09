@@ -4,7 +4,7 @@ import {
   assertInteractionResponse,
   assertInvokeRequest,
   hasImageInput,
-  capabilities,
+  executionFeatures,
   failurePayload,
   isTerminal,
   type CanonicalEvent,
@@ -26,6 +26,8 @@ import { InvocationWatchdog, AdapterWatchdogTimeoutError, WATCHDOG_CAPABILITY, A
 export interface HostedAdapterMetadata {
   type: string;
   capabilities: string[];
+  agentSources: ("preset" | "provisioned")[];
+  executionFeatures: string[];
   processModel?: string;
   transport?: string;
   providerVersion?: string | null;
@@ -108,7 +110,7 @@ export class AdapterHost {
 
   /** List registered adapters, for Agent registration and control-plane display. */
   list(): HostedAdapterMetadata[] {
-    return [...this.#adapters.values()].map(adapter => ({ ...adapter.metadata, capabilities: [...new Set([...adapter.metadata.capabilities, WATCHDOG_CAPABILITY])] }));
+    return [...this.#adapters.values()].map(adapter => ({ ...adapter.metadata, executionFeatures: [...new Set([...adapter.metadata.executionFeatures, WATCHDOG_CAPABILITY])] }));
   }
 
   /** Report installed provider identity separately from adapter registration. */
@@ -136,7 +138,7 @@ export class AdapterHost {
       const available = probe.available === true && typeof probe.command === "string" && probe.command.length > 0;
       return {
         ...adapter.metadata,
-        capabilities: [...new Set([...adapter.metadata.capabilities, WATCHDOG_CAPABILITY])],
+        executionFeatures: [...new Set([...adapter.metadata.executionFeatures, WATCHDOG_CAPABILITY])],
         available,
         unavailableReason: available ? null : unavailableReason,
         providerPath: available ? probe.command as string : null,
@@ -149,12 +151,14 @@ export class AdapterHost {
   async *invoke(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
     assertInvokeRequest(request);
     const registered = this.#adapters.get(adapterType);
-    if (hasImageInput(request) && !registered?.metadata.capabilities.includes(capabilities.INPUT_IMAGE)) {
+    if (hasImageInput(request) && !registered?.metadata.executionFeatures.includes(executionFeatures.INPUT_IMAGE)) {
       throw new Error(`UNSUPPORTED_INPUT_MODALITY: ${adapterType} does not implement native image input`);
     }
-    if (request.approvalMode !== "full_access" && (!registered?.metadata.capabilities.includes(capabilities.INTERACTION_RESPONSE) || typeof registered.respondInteraction !== "function")) {
+    if (request.approvalMode !== "full_access" && (!registered?.metadata.executionFeatures.includes(executionFeatures.INTERACTION_RESPONSE) || typeof registered.respondInteraction !== "function")) {
       throw new Error(`APPROVAL_MODE_UNSUPPORTED: ${adapterType} does not implement execution-time approval responses`);
     }
+    if (!registered?.metadata.agentSources.includes(request.agentSource)) throw new Error("AGENT_SOURCE_UNSUPPORTED: " + adapterType);
+    if (request.skills?.length && !registered.metadata.executionFeatures.includes("context.capabilities")) throw new Error("CONTEXT_COMPONENT_UNAVAILABLE: skills");
     const experience = new InvocationExperience();
     const provider = this.#invokeProvider(adapterType, request);
     let pending = provider.next();
@@ -184,7 +188,7 @@ export class AdapterHost {
     const adapter = this.#adapters.get(adapterType);
     if (!adapter) throw new Error(`unknown adapter: ${adapterType}`);
     if (request.mcpServers && Object.keys(request.mcpServers).length > 0
-      && !adapter.metadata.capabilities.includes(capabilities.MCP_DYNAMIC)) {
+      && !adapter.metadata.executionFeatures.includes(executionFeatures.MCP_DYNAMIC)) {
       throw new Error(`adapter ${adapterType} does not support dynamic MCP configuration`);
     }
     const controller = new AbortController();
@@ -198,7 +202,7 @@ export class AdapterHost {
       runId: request.runId, invocationId: request.invocationId, agentSessionId: request.agentSessionId, adapterType
     };
     const watchdog = new InvocationWatchdog(request.runtimeLimits, controller,
-      adapter.metadata.capabilities.includes(ACTIVITY_CAPABILITY),
+      adapter.metadata.executionFeatures.includes(ACTIVITY_CAPABILITY),
       diagnostic => this.#diagnosticSink?.(identity, {
         ...diagnostic,
         data: { ...diagnostic.data, agentRevisionId: request.runMetadata?.agentRevisionId }
@@ -407,7 +411,7 @@ export class AdapterHost {
     if (!adapter.respondInteraction) {
       throw new Error(`adapter does not support interaction responses: ${adapter.metadata.type}`);
     }
-    if (!adapter.metadata.capabilities.includes(capabilities.INTERACTION_RESPONSE)) {
+    if (!adapter.metadata.executionFeatures.includes(executionFeatures.INTERACTION_RESPONSE)) {
       throw new Error(`adapter did not declare interaction response capability: ${adapter.metadata.type}`);
     }
     await adapter.respondInteraction(invocationId, response);

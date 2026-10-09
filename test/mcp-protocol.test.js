@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { assertInvokeRequest, assertMcpServers, capabilities } from "@mininglamp-oss/octo-harness-protocol";
+import { assertInvokeRequest, assertMcpServers, executionFeatures } from "@mininglamp-oss/octo-harness-protocol";
 
 const baseRequest = { protocolVersion: 2,
   invocationId: "invoke-1",
@@ -13,7 +13,7 @@ const baseRequest = { protocolVersion: 2,
   controlInstructions: "",
   context: { schema: "octo.context-envelope/v1", items: [] },
   approvalMode: "full_access",
-  agentConfig: {}
+  agentSource: "provisioned", agentConfig: {}
 };
 
 test("dynamic MCP contract accepts stdio and Streamable HTTP servers", () => {
@@ -37,7 +37,7 @@ test("dynamic MCP contract accepts stdio and Streamable HTTP servers", () => {
 
   assert.doesNotThrow(() => assertMcpServers(mcpServers));
   assert.doesNotThrow(() => assertInvokeRequest({ ...baseRequest, mcpServers }));
-  assert.equal(capabilities.MCP_DYNAMIC, "tool.mcp.dynamic");
+  assert.equal(executionFeatures.MCP_DYNAMIC, "tool.mcp.dynamic");
 });
 
 test("dynamic MCP contract rejects unknown transports, fields, names, and malformed URLs", () => {

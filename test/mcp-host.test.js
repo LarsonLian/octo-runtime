@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
-import { capabilities } from "@mininglamp-oss/octo-harness-protocol";
+import { executionFeatures } from "@mininglamp-oss/octo-harness-protocol";
 
 const request = { protocolVersion: 2,
   invocationId: "invoke-mcp",
@@ -14,7 +14,7 @@ const request = { protocolVersion: 2,
   controlInstructions: "",
   context: { schema: "octo.context-envelope/v1", items: [] },
   approvalMode: "full_access",
-  agentConfig: {},
+  agentSource: "provisioned", agentConfig: {},
   mcpServers: {
     team: {
       type: "streamable_http",
@@ -34,7 +34,7 @@ test("Adapter Host rejects dynamic MCP before invoking an unsupported adapter", 
   let invoked = false;
   const host = new AdapterHost();
   host.register({
-    metadata: { type: "unsupported", capabilities: [] },
+    metadata: { type: "unsupported", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] },
     async *invoke() {
       invoked = true;
       yield { protocolVersion: 2, type: "run.completed", payload: {} };
@@ -56,7 +56,7 @@ test("Adapter Host passes a dynamic MCP plan to an adapter that declares support
   let received;
   const host = new AdapterHost();
   host.register({
-    metadata: { type: "supported", capabilities: [capabilities.MCP_DYNAMIC] },
+    metadata: { type: "supported", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [executionFeatures.MCP_DYNAMIC] },
     async *invoke(value) {
       received = value.mcpServers;
       yield { protocolVersion: 2, type: "run.completed", payload: {} };

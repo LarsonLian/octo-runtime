@@ -42,7 +42,7 @@ import {
   tryParseOpenClawTranscriptLine
 } from "@mininglamp-oss/octo-harness-adapter-openclaw";
 
-const request = { protocolVersion: 2, invocationId: "inv-1", agentSessionId: "session-1", runId: "run-1", prompt: "work", modelInput: "work", workdir: process.cwd(), context: { schema: "octo.context-envelope/v1", items: [] }, controlInstructions: "CONTROL", approvalMode: "full_access", agentConfig: {} };
+const request = { protocolVersion: 2, invocationId: "inv-1", agentSessionId: "session-1", runId: "run-1", prompt: "work", modelInput: "work", workdir: process.cwd(), context: { schema: "octo.context-envelope/v1", items: [] }, controlInstructions: "CONTROL", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} };
 
 function acpPermissionFixture(createAdapter, options) {
   let nextRequestId = 1;
@@ -75,7 +75,7 @@ function acpPermissionFixture(createAdapter, options) {
   return { adapter, state };
 }
 
-const openClawGatewayMethods = ["config.get", "sessions.create", "sessions.messages.subscribe", "agent", "agent.wait", "sessions.abort"];
+const openClawGatewayMethods = ["config.get", "agents.list", "sessions.create", "sessions.messages.subscribe", "agent", "agent.wait", "sessions.abort"];
 
 function openClawGatewayHello() {
   return { type: "hello-ok", protocol: 4, features: { methods: openClawGatewayMethods, events: ["agent"] } };
@@ -445,7 +445,7 @@ test("Claude full_access uses native bypass without inventing a default effort",
 
 test("Claude maps explicit effort as the only reasoning strength input", async () => {
   for (const effort of ["low", "medium", "high"]) {
-    const tuned = await buildClaudeCommand({ ...request, agentConfig: { effort } });
+    const tuned = await buildClaudeCommand({ ...request, agentSource: "provisioned", agentConfig: { effort } });
     assert.equal(tuned.args[tuned.args.indexOf("--effort") + 1], effort);
     assert.equal(tuned.args.includes("--settings"), false);
     assert.equal(tuned.providerInput.content.effort, effort);
@@ -527,7 +527,7 @@ test("Claude and OpenCode reject unqualified ask and assisted before building a 
     }
     for (const createAdapter of [createClaudeCodeAdapter, createOpenCodeAdapter]) {
       const adapter = createAdapter({ command: "/unqualified-provider-must-not-launch" });
-      assert.equal(adapter.metadata.capabilities.includes("interaction.response"), false);
+      assert.equal(adapter.metadata.executionFeatures.includes("interaction.response"), false);
       await assert.rejects(async () => {
         for await (const event of adapter.invoke({ ...request, approvalMode })) assert.fail(`unexpected ${event.type}`);
       }, /APPROVAL_MODE_UNSUPPORTED/);
@@ -657,7 +657,7 @@ test("OpenCode preserves model rounds and associates their reasoning, tools, and
 
 test("JSON CLI adapters reap a provider that stays alive after a semantic terminal", async () => {
   const adapter = createJsonCliAdapter({
-    metadata: { type: "semantic-terminal", capabilities: [] },
+    metadata: { type: "semantic-terminal", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] },
     buildCommand: () => ({
       command: process.execPath,
       args: ["-e", "console.log(JSON.stringify({done:true}));setInterval(()=>{},1000)"]
@@ -682,7 +682,7 @@ test("OpenCode full_access uses native auto approval, maps effort to variant, an
   const opencode = await buildOpenCodeCommand({
     ...request,
     providerSession: { sessionId: "ses-existing" },
-    agentConfig: { model: "provider/model", effort: "high" }
+    agentSource: "provisioned", agentConfig: { model: "provider/model", effort: "high" }
   });
   assert.deepEqual(opencode.args, [
     "run", "--format", "json", "--thinking", "--auto",
@@ -781,7 +781,7 @@ test("control instructions use private provider-native carriers", async () => {
 
   const openclaw = buildOpenClawGatewayInvocation({
     ...request,
-    agentConfig: {
+    agentSource: "provisioned", agentConfig: {
       providerAgentId: "octo-openclaw-runner", model: "provider/model", effort: "medium", timeoutSeconds: 30,
       providerOptions: {
         OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
@@ -823,7 +823,8 @@ test("text adapters prefer the exact modelInput over the display prompt", async 
 
   const openclaw = buildOpenClawGatewayInvocation({
     ...modelRequest,
-    agentConfig: {
+    agentSource: "provisioned", agentConfig: {
+      providerAgentId: "octo-openclaw-runner",
       providerOptions: {
         OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
         OPENCLAW_GATEWAY_TOKEN: "token",
@@ -923,7 +924,8 @@ test("OpenClaw Gateway adapter isolates run events, deduplicates seq, and stream
   const events = [];
   for await (const event of adapter.invoke({
     ...request,
-    agentConfig: {
+    agentSource: "provisioned", agentConfig: {
+      providerAgentId: "octo-openclaw-runner",
       providerOptions: {
         OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
         OPENCLAW_GATEWAY_TOKEN: "token",
@@ -947,7 +949,7 @@ test("OpenClaw Gateway adapter isolates run events, deduplicates seq, and stream
   });
 });
 
-test("OpenClaw external binding treats the provider Agent as a black box", async () => {
+test("OpenClaw preset treats the provider Agent as a black box", async () => {
   let listener = () => {};
   const requests = [];
   const client = {
@@ -955,6 +957,7 @@ test("OpenClaw external binding treats the provider Agent as a black box", async
     onEvent(next) { listener = next; return () => { listener = () => {}; }; },
     async request(method, params, options = {}) {
       requests.push({ method, params });
+      if (method === "agents.list") return { agents: [{ id: "external-agent" }] };
       if (method === "sessions.create") return { key: params.key };
       if (method === "agent.wait") return { status: "ok", runId: params.runId };
       if (method === "agent") {
@@ -973,7 +976,7 @@ test("OpenClaw external binding treats the provider Agent as a black box", async
   const events = [];
   for await (const event of adapter.invoke({
     ...request,
-    agentConfig: {
+    agentSource: "preset", workdir: "", agentConfig: {
       providerAgentId: "external-agent",
       providerOptions: {
         OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
@@ -982,14 +985,13 @@ test("OpenClaw external binding treats the provider Agent as a black box", async
         OPENCLAW_GATEWAY_PUBLIC_KEY: "public",
         OPENCLAW_GATEWAY_PRIVATE_KEY: "private",
         OPENCLAW_RUNNER_WORKSPACE: "/remote/openclaw",
-        OCTO_EXTERNAL_OPENCLAW_BINDING: "true",
         OCTO_EXTERNAL_BINDING_ID: "binding-external"
       }
     }
   })) events.push(event);
 
   assert.equal(requests.some(entry => entry.method === "config.get"), false);
-  assert.deepEqual(requests.slice(0, 4).map(entry => entry.method), ["sessions.create", "sessions.messages.subscribe", "agent", "agent.wait"]);
+  assert.deepEqual(requests.slice(0, 5).map(entry => entry.method), ["agents.list", "sessions.create", "sessions.messages.subscribe", "agent", "agent.wait"]);
   assert.equal(events.filter(event => event.type === "message.delta").map(event => event.payload.text).join(""), "external result");
   assert.equal(events.at(-1).type, "run.completed");
 });
@@ -1028,7 +1030,8 @@ test("OpenClaw Gateway adapter reconciles a final RPC result when live events ar
   const events = [];
   for await (const event of adapter.invoke({
     ...request,
-    agentConfig: {
+    agentSource: "provisioned", agentConfig: {
+      providerAgentId: "octo-openclaw-runner",
       providerOptions: {
         OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
         OPENCLAW_GATEWAY_TOKEN: "token",
@@ -1064,7 +1067,8 @@ test("OpenClaw Gateway adapter fails before session creation when isolation conf
   const events = [];
   for await (const event of createOpenClawAdapter({ clientFactory: () => client }).invoke({
     ...request,
-    agentConfig: {
+    agentSource: "provisioned", agentConfig: {
+      providerAgentId: "octo-openclaw-runner",
       providerOptions: {
         OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
         OPENCLAW_GATEWAY_TOKEN: "token",
@@ -1096,7 +1100,8 @@ test("OpenClaw Gateway adapter rejects a runner that can pause on ask_user", asy
   const events = [];
   for await (const event of createOpenClawAdapter({ clientFactory: () => client }).invoke({
     ...request,
-    agentConfig: {
+    agentSource: "provisioned", agentConfig: {
+      providerAgentId: "octo-openclaw-runner",
       providerOptions: {
         OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
         OPENCLAW_GATEWAY_TOKEN: "token",
@@ -1135,7 +1140,8 @@ test("OpenClaw Gateway adapter refuses success when agent.wait confirms a differ
   const events = [];
   for await (const event of createOpenClawAdapter({ clientFactory: () => client }).invoke({
     ...request,
-    agentConfig: {
+    agentSource: "provisioned", agentConfig: {
+      providerAgentId: "octo-openclaw-runner",
       providerOptions: {
         OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
         OPENCLAW_GATEWAY_TOKEN: "token",
@@ -1183,7 +1189,8 @@ test("OpenClaw Gateway adapter confirms abort before emitting run.cancelled", as
   for await (const event of createOpenClawAdapter({ clientFactory: () => client }).invoke({
     ...request,
     signal: controller.signal,
-    agentConfig: {
+    agentSource: "provisioned", agentConfig: {
+      providerAgentId: "octo-openclaw-runner",
       providerOptions: {
         OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
         OPENCLAW_GATEWAY_TOKEN: "token",
@@ -1217,7 +1224,8 @@ test("OpenClaw Gateway adapter stops without abort RPC when cancelled before age
   for await (const event of createOpenClawAdapter({ clientFactory: () => client }).invoke({
     ...request,
     signal: controller.signal,
-    agentConfig: {
+    agentSource: "provisioned", agentConfig: {
+      providerAgentId: "octo-openclaw-runner",
       providerOptions: {
         OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
         OPENCLAW_GATEWAY_TOKEN: "token",
@@ -1271,7 +1279,8 @@ test("OpenClaw Gateway adapter reconnects and reconciles an accepted run after s
   const events = [];
   for await (const event of adapter.invoke({
     ...request,
-    agentConfig: {
+    agentSource: "provisioned", agentConfig: {
+      providerAgentId: "octo-openclaw-runner",
       providerOptions: {
         OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
         OPENCLAW_GATEWAY_TOKEN: "token",
@@ -1322,8 +1331,9 @@ test("OpenClaw Gateway adapter fails reconciliation when non-terminal timeouts r
     clientFactory: () => factoryCalls++ === 0 ? primary : recovery
   }).invoke({
     ...request,
-    agentConfig: {
+    agentSource: "provisioned", agentConfig: {
       timeoutSeconds: 0.2,
+      providerAgentId: "octo-openclaw-runner",
       providerOptions: {
         OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
         OPENCLAW_GATEWAY_TOKEN: "token",
@@ -1342,9 +1352,9 @@ test("OpenClaw Gateway adapter fails reconciliation when non-terminal timeouts r
 });
 
 test("only Codex declares append-only continuity recovery", () => {
-  assert.equal(createCodexAdapter().metadata.capabilities.includes("session.resume_recovery"), true);
-  assert.equal(createClaudeCodeAdapter().metadata.capabilities.includes("session.resume_recovery"), false);
-  assert.equal(createCodeBuddyAdapter().metadata.capabilities.includes("session.resume_recovery"), false);
+  assert.equal(createCodexAdapter().metadata.executionFeatures.includes("session.resume_recovery"), true);
+  assert.equal(createClaudeCodeAdapter().metadata.executionFeatures.includes("session.resume_recovery"), false);
+  assert.equal(createCodeBuddyAdapter().metadata.executionFeatures.includes("session.resume_recovery"), false);
 });
 
 test("generic ACP and CodeBuddy full_access audit allow_once and cancel allow_always-only requests", { timeout: 5_000 }, async testContext => {
@@ -1366,7 +1376,7 @@ test("generic ACP and CodeBuddy full_access audit allow_once and cancel allow_al
         assert.equal(state.sideEffects, allowOnce ? 1 : 0);
         if (provider === "CodeBuddy") {
           assert.deepEqual(state.spawnOptions.args, ["--acp", "--permission-mode", "bypassPermissions"]);
-          assert.equal(adapter.metadata.capabilities.includes("interaction.response"), false);
+          assert.equal(adapter.metadata.executionFeatures.includes("interaction.response"), false);
         }
         const interactions = events.filter(event => event.type.startsWith("interaction."));
         assert.deepEqual(interactions.map(event => event.type), ["interaction.requested", "interaction.resolved"]);
@@ -1394,7 +1404,7 @@ test("generic ACP ask waits for actual respondInteraction before continuing the 
         options => createAcpAdapter({ type: "fixture-acp", provider: "fixture-acp", command: "fixture" }, options),
         [{ optionId: "allow-once", kind: "allow_once" }, { optionId: "reject-once", kind: "reject_once" }]
       );
-      assert.equal(adapter.metadata.capabilities.includes("interaction.response"), true);
+      assert.equal(adapter.metadata.executionFeatures.includes("interaction.response"), true);
       assert.equal(typeof adapter.respondInteraction, "function");
       const events = [];
       for await (const event of adapter.invoke({ ...request, approvalMode: "ask" })) {
@@ -1435,7 +1445,7 @@ test("generic ACP and CodeBuddy reject explicit unqualified effort before creati
     createCodeBuddyAdapter(options)
   ]) {
     await assert.rejects(async () => {
-      for await (const event of adapter.invoke({ ...request, agentConfig: { effort: "high" } })) assert.fail(`unexpected ${event.type}`);
+      for await (const event of adapter.invoke({ ...request, agentSource: "provisioned", agentConfig: { effort: "high" } })) assert.fail(`unexpected ${event.type}`);
     }, /REASONING_UNSUPPORTED/);
   }
   assert.equal(spawned, false);
@@ -1570,7 +1580,7 @@ test("generic ACP adapters select a requested model through standard config opti
   const events = [];
   for await (const event of adapter.invoke({
     ...request,
-    agentConfig: { model: "requested-model" }
+    agentSource: "provisioned", agentConfig: { model: "requested-model" }
   })) events.push(event);
 
   assert.deepEqual(requests.slice(0, 2), [
@@ -1785,26 +1795,26 @@ test("Hermes and Kimi Code expose distinct ACP adapter types", () => {
 
 test("MiniMax Code exposes an ACP adapter with default session and tool capabilities", () => {
   assert.equal(mcodeAdapter.metadata.type, "mcode");
-  assert.deepEqual([...mcodeAdapter.metadata.capabilities].sort(), ["input.image", "interaction.response", "session.serialize", "tool.canonical"]);
+  assert.deepEqual([...mcodeAdapter.metadata.executionFeatures].sort(), ["input.image", "interaction.response", "session.serialize", "tool.canonical"]);
   assert.equal(typeof mcodeAdapter.respondInteraction, "function");
   // MiniMax Code manages model selection itself, so it must not claim Codex's
   // append-only continuity recovery capability.
-  assert.equal(mcodeAdapter.metadata.capabilities.includes("session.resume_recovery"), false);
+  assert.equal(mcodeAdapter.metadata.executionFeatures.includes("session.resume_recovery"), false);
 });
 
 test("Qoder CLI exposes an ACP adapter with default session and tool capabilities", () => {
   assert.equal(qoderCliAdapter.metadata.type, "qodercli");
-  assert.deepEqual([...qoderCliAdapter.metadata.capabilities].sort(), ["input.image", "interaction.response", "session.serialize", "tool.canonical"]);
+  assert.deepEqual([...qoderCliAdapter.metadata.executionFeatures].sort(), ["input.image", "interaction.response", "session.serialize", "tool.canonical"]);
   assert.equal(typeof qoderCliAdapter.respondInteraction, "function");
-  assert.equal(qoderCliAdapter.metadata.capabilities.includes("session.resume_recovery"), false);
+  assert.equal(qoderCliAdapter.metadata.executionFeatures.includes("session.resume_recovery"), false);
 });
 
 test("Qoder CN CLI exposes a distinct ACP adapter type from Qoder CLI", () => {
   assert.equal(qoderCliCnAdapter.metadata.type, "qoderclicn");
   assert.notEqual(qoderCliCnAdapter.metadata.type, qoderCliAdapter.metadata.type);
-  assert.deepEqual([...qoderCliCnAdapter.metadata.capabilities].sort(), ["input.image", "interaction.response", "session.serialize", "tool.canonical"]);
+  assert.deepEqual([...qoderCliCnAdapter.metadata.executionFeatures].sort(), ["input.image", "interaction.response", "session.serialize", "tool.canonical"]);
   assert.equal(typeof qoderCliCnAdapter.respondInteraction, "function");
-  assert.equal(qoderCliCnAdapter.metadata.capabilities.includes("session.resume_recovery"), false);
+  assert.equal(qoderCliCnAdapter.metadata.executionFeatures.includes("session.resume_recovery"), false);
 });
 
 test("generic ACP cancellation sends session/cancel and converges to run.cancelled", async () => {

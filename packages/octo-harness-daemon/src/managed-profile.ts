@@ -71,7 +71,8 @@ export function loadManagedAgentWorks(
 /** Load only an explicit allowlist from a normal profile root. */
 export function loadManagedAgentWorksFromRoot(
   rootPath: string,
-  profiles: readonly string[]
+  profiles: readonly string[],
+  options: { discoverLocalOpenClaw?: boolean } = {}
 ): AgentWorkRuntimeOptions[] {
   const root = readJsonRequired<HarnessHomeConfiguration>(join(rootPath, "config.json"));
   if (root.schema_version !== 1) throw new Error("unsupported Harness Home config schema");
@@ -83,13 +84,13 @@ export function loadManagedAgentWorksFromRoot(
   }
   const orderedProfiles = [defaultProfile, ...uniqueProfiles.filter(profile => profile !== defaultProfile)];
   const runtimes = orderedProfiles
-    .map(profile => loadManagedProfile(rootPath, profile))
+    .map(profile => loadManagedProfile(rootPath, profile, options))
     .filter((runtime): runtime is AgentWorkRuntimeOptions => runtime !== undefined);
   assertUniqueRuntimeBindings(runtimes);
   return runtimes;
 }
 
-function loadManagedProfile(home: string, profile: string): AgentWorkRuntimeOptions | undefined {
+function loadManagedProfile(home: string, profile: string, options: { discoverLocalOpenClaw?: boolean }): AgentWorkRuntimeOptions | undefined {
   if (!isProfileName(profile)) {
     throw new Error(`Harness Home profile is invalid: ${profile}`);
   }
@@ -102,7 +103,7 @@ function loadManagedProfile(home: string, profile: string): AgentWorkRuntimeOpti
   if (!baseUrl) return undefined;
   const credential = readJsonRequired<RuntimeCredential>(join(profileRoot, "credentials", "runtime-token.json"));
   if (credential.schema_version !== 1) throw new Error(`managed Runtime credential for ${profile} is invalid`);
-  const adapterConfigurations = readAdapterConfigurations(profileRoot, config.adapters);
+  const adapterConfigurations = readAdapterConfigurations(profileRoot, config.adapters, options.discoverLocalOpenClaw);
   return {
     profile,
     baseUrl,
@@ -122,11 +123,14 @@ function loadManagedProfile(home: string, profile: string): AgentWorkRuntimeOpti
 
 function readAdapterConfigurations(
   profileRoot: string,
-  adaptersValue: unknown
+  adaptersValue: unknown,
+  discoverLocalOpenClaw = false
 ): NonNullable<AgentWorkRuntimeOptions["adapterConfigurations"]> {
   const adapters = objectValue(adaptersValue);
   if (!adapters) return {};
-  return Object.fromEntries(Object.entries(adapters).map(([adapterType, value]) => {
+  return Object.fromEntries(Object.entries(adapters)
+    .filter(([type]) => !discoverLocalOpenClaw || type !== "openclaw")
+    .map(([adapterType, value]) => {
     if (!/^[a-z0-9][a-z0-9-]{0,127}$/.test(adapterType)) {
       throw new Error(`managed adapter type is invalid: ${adapterType}`);
     }

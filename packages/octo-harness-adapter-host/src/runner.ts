@@ -133,7 +133,7 @@ for (const entry of manifest.adapters) {
     event: "adapter.registered",
     message: "adapter registered",
     adapterType: instance.metadata.type,
-    data: { capabilities: instance.metadata.capabilities }
+    data: { capabilities: instance.metadata.capabilities, agentSources: instance.metadata.agentSources, executionFeatures: instance.metadata.executionFeatures }
   });
 }
 
@@ -202,8 +202,10 @@ function callFactory(value: unknown, options: JsonRecord, entry: AdapterManifest
 function isHostedAdapter(value: unknown): value is HostedAdapter {
   if (!isRecord(value) || !isRecord(value.metadata)) return false;
   return typeof value.metadata.type === "string" &&
+    Array.isArray(value.metadata.agentSources) && value.metadata.agentSources.length > 0 && value.metadata.agentSources.every(source => source === "preset" || source === "provisioned") &&
+    Array.isArray(value.metadata.executionFeatures) && value.metadata.executionFeatures.every(feature => typeof feature === "string") &&
     Array.isArray(value.metadata.capabilities) &&
-    value.metadata.capabilities.every(capability => typeof capability === "string") &&
+    value.metadata.capabilities.length === 1 && value.metadata.capabilities[0] === "react" &&
     typeof value.invoke === "function";
 }
 

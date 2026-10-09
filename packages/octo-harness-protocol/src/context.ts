@@ -3,7 +3,7 @@ import { RUNTIME_SELECTION_SCHEMA } from "./runtime-selection.js";
 
 export const CONTEXT_SCHEMA = "octo.context-envelope/v1" as const;
 export const RUNTIME_RUN_CONTRACT = Object.freeze({
-  schema_version: 4,
+  schema_version: 5,
   routing_schema: RUNTIME_SELECTION_SCHEMA,
   context_schema: CONTEXT_SCHEMA,
   approval_schema: "octo.approval-request/v1"
@@ -11,6 +11,10 @@ export const RUNTIME_RUN_CONTRACT = Object.freeze({
 export const CONTEXT_MAX_BYTES = 65_536;
 export const CONTEXT_MAX_ITEMS = 32;
 export const APPROVAL_MODES: readonly ApprovalMode[] = ["ask", "assisted", "full_access"];
+
+export function assertAgentSource(value: unknown): asserts value is "preset" | "provisioned" {
+  if (value !== "preset" && value !== "provisioned") throw new TypeError("AGENT_SOURCE_INVALID");
+}
 
 export function assertApprovalMode(value: unknown): asserts value is ApprovalMode {
   if (!APPROVAL_MODES.includes(value as ApprovalMode)) throw new TypeError("APPROVAL_MODE_UNSUPPORTED");
@@ -63,15 +67,21 @@ export function mergeContext(defaults: ContextEnvelope, overrides: ContextEnvelo
 export function assertResolvedExecutionPlan(value: unknown): asserts value is ResolvedExecutionPlan {
   object(value, "RESOLVED_EXECUTION_PLAN_REQUIRED");
   assertJsonValue(value);
-  fields(value, ["adapter_type", "workdir", "workspace", "resources", "approval_mode", "model", "effort", "required_capabilities", "runtime_limits", "mcp_servers", "provider_compatibility"]);
+  fields(value, ["agent_source", "adapter_type", "provider_agent_id", "workdir", "workspace", "resources", "approval_mode", "model", "effort", "required_capabilities", "required_execution_features", "runtime_limits", "mcp_servers", "provider_compatibility"]);
+  assertAgentSource(value.agent_source);
   text(value.adapter_type);
+  assertProviderAgent(value.adapter_type, value.provider_agent_id);
   if (typeof value.workdir !== "string") throw new TypeError("CONTEXT_SCHEMA_INVALID");
   if (value.workspace !== undefined) { object(value.workspace, "RESOLVED_EXECUTION_PLAN_INVALID"); payload("octo.execution", "workspace", value.workspace); }
-  if (!value.workdir && (!isObject(value.workspace) || value.workspace.mode !== "random")) throw new TypeError("RESOLVED_EXECUTION_PLAN_INVALID");
+  if (!value.workdir && value.agent_source !== "preset" && (!isObject(value.workspace) || value.workspace.mode !== "random")) throw new TypeError("RESOLVED_EXECUTION_PLAN_INVALID");
+  if (isObject(value.workspace) && value.workspace.mode === "none" && (value.agent_source !== "preset" || value.workdir !== "")) throw new TypeError("RESOLVED_EXECUTION_PLAN_INVALID");
+  if (value.agent_source === "preset" && typeof value.provider_agent_id !== "string") throw new TypeError("PRESET_AGENT_TARGET_REQUIRED");
   if (value.resources !== undefined) assertCapabilityResources(value.resources);
   assertApprovalMode(value.approval_mode);
   for (const property of ["model", "effort"]) if (value[property] !== undefined) text(value[property]);
   if (value.required_capabilities !== undefined && (!Array.isArray(value.required_capabilities) || value.required_capabilities.some(item => typeof item !== "string" || !item))) throw new TypeError("RESOLVED_EXECUTION_PLAN_INVALID");
+  if (Array.isArray(value.required_capabilities) && value.required_capabilities.some(item => item !== "react")) throw new TypeError("RESOLVED_EXECUTION_PLAN_INVALID");
+  if (value.required_execution_features !== undefined && (!Array.isArray(value.required_execution_features) || value.required_execution_features.some(item => typeof item !== "string" || !item))) throw new TypeError("RESOLVED_EXECUTION_PLAN_INVALID");
   for (const property of ["runtime_limits", "provider_compatibility"]) if (value[property] !== undefined) object(value[property], "RESOLVED_EXECUTION_PLAN_INVALID");
   if (value.runtime_limits !== undefined) {
     object(value.runtime_limits, "RESOLVED_EXECUTION_PLAN_INVALID");
@@ -162,7 +172,7 @@ export function assertJsonValue(value: unknown): void {
 
 function payload(namespace: string, name: string, value: Record<string, unknown>): void {
   if (namespace === "octo.execution") {
-    if (name === "adapter") { fields(value, ["type"]); text(value.type); return; }
+    if (name === "adapter") { fields(value, ["type", "provider_agent_id"]); text(value.type); assertProviderAgent(value.type, value.provider_agent_id); return; }
     if (name === "model" || name === "reasoning") {
       const property = name === "model" ? "id" : "effort";
       fields(value, [property, "use_provider_default"]);
@@ -172,11 +182,18 @@ function payload(namespace: string, name: string, value: Record<string, unknown>
     }
     if (name === "workspace") {
       fields(value, ["mode", "path", "scope"]);
+      if (value.mode === "none" && value.path === undefined && value.scope === undefined) return;
       if (value.mode === "fixed" && value.scope === undefined) { text(value.path); return; }
       if (value.mode === "random" && value.scope === "conversation" && value.path === undefined) return;
       throw new TypeError("CONTEXT_SCHEMA_INVALID");
     }
-    if (name === "requirements") { fields(value, ["capabilities"]); stringList(value.capabilities, 64); return; }
+    if (name === "requirements") {
+      fields(value, ["capabilities", "execution_features"]);
+      stringList(value.capabilities, 1);
+      if ((value.capabilities as string[]).some(item => item !== "react")) throw new TypeError("CONTEXT_SCHEMA_INVALID");
+      if (value.execution_features !== undefined) stringList(value.execution_features, 64);
+      return;
+    }
     if (name === "limits") { limits(value); return; }
   }
   if (namespace === "octo.runtime" && name === "selection") {
@@ -328,6 +345,12 @@ export function assertCapabilityResources(value: unknown): void {
     if (resource.sources.some(source => !["agent_default", "agent_mandatory", "request"].includes(source))) throw new TypeError("CONTEXT_RESOURCE_INVALID");
     if (resource.components !== undefined) stringList(resource.components, 64);
   }
+}
+
+function assertProviderAgent(type: string, id: unknown): void {
+  if (type === "openclaw") {
+    if (typeof id !== "string" || !/^[a-z0-9_][a-z0-9_-]{0,63}$/.test(id)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
+  } else if (id !== undefined) throw new TypeError("CONTEXT_SCHEMA_INVALID");
 }
 
 function fields(value: Record<string, unknown>, allowed: string[]): void {

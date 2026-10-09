@@ -22,7 +22,7 @@ import {
   type InvokeRequest,
   type MessageExposure
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { capabilities } from "@mininglamp-oss/octo-harness-protocol";
+import { executionFeatures } from "@mininglamp-oss/octo-harness-protocol";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -473,7 +473,9 @@ export function createClaudeCodeAdapter({
   return defineAdapter({
     metadata: {
       type: "claude-code",
-      capabilities: ["session.serialize", "tool.canonical", capabilities.MCP_DYNAMIC],
+      capabilities: ["react"],
+      agentSources: ["provisioned"],
+      executionFeatures: ["session.serialize", "tool.canonical", executionFeatures.MCP_DYNAMIC],
       processModel: "subprocess-per-invocation",
       transport: "ndjson/stdio"
     },

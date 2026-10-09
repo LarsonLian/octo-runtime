@@ -50,6 +50,9 @@ export function resolveContextConfiguration(configuration: ContextConfiguration,
       }
     }
     if (definition.mandatory === "capability_union") {
+      if (required.payload.execution_features !== undefined || selected?.payload.execution_features !== undefined) forced.payload.execution_features = [...new Set([
+        ...required.payload.execution_features as string[] ?? [], ...selected?.payload.execution_features as string[] ?? []
+      ])];
       forced.payload.capabilities = [...new Set([
         ...required.payload.capabilities as string[], ...selected?.payload.capabilities as string[] ?? []
       ])];

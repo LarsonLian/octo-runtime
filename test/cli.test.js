@@ -101,7 +101,7 @@ test("CLI exposes bounded events and daemon-owned loopback inspect", async () =>
   });
   const cli = join(root, "apps/cli/dist/index.js");
   try {
-    const agent = await app.engine.registerAgent({ name: "test", defaultContext: defaultContext() });
+    const agent = await app.engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: defaultContext() });
     const submitted = await app.daemon.submitAgentRun({
       namespace: "test",
       agentId: agent.id,
@@ -345,7 +345,7 @@ test("daemon terminalizes in-flight work and restarts adapter-host without exiti
     adapterHostRestartDelaysMs: [500, 100, 100, 100]
   });
   try {
-    const agent = await app.engine.registerAgent({ name: "test", defaultContext: defaultContext() });
+    const agent = await app.engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: defaultContext() });
     const submitted = await app.daemon.submitAgentRun({
       namespace: "test",
       agentId: agent.id,

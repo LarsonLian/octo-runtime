@@ -37,7 +37,7 @@ import {
   assertContextEnvelope,
   assertResolvedExecutionPlan,
   assertResolvedRuntimeSelection,
-  capabilities,
+  executionFeatures,
   contextItem,
   failurePayload,
   modelPartsFromInput
@@ -110,6 +110,8 @@ export interface AgentWorkRuntimeOptions {
     providerAgentId?: string;
     providerOptions: Record<string, string>;
   }>;
+  /** Local adapter health poll; default 5 seconds. */
+  adapterProbeMs?: number;
   /** Delay before the first reconnect attempt after a connected socket drops. */
   reconnectFirstMs?: number;
   /** Full-jitter backoff floor used from the second reconnect attempt onward. */
@@ -200,7 +202,7 @@ export interface ChannelContextRuntimeOptions extends ChannelContextStoreOptions
 
 /** Immutable execution description received from Agent Work before local mapping. */
 export interface ExecutionEnvelope {
-  schema_version: 4;
+  schema_version: 5;
   effective_context: ContextEnvelope;
   context_configuration_version: number;
   resolved_execution_plan: ResolvedExecutionPlan;
@@ -310,6 +312,9 @@ export class AgentWorkRuntime {
   readonly #executionTasks = new Set<Promise<void>>();
   readonly #adapterCapabilities = new Map<string, Set<string>>();
   #adapters: HostedAdapterMetadata[] = [];
+  #adapterProbe?: NodeJS.Timeout;
+  #adapterProbePending = false;
+  #adapterRegistrationDirty = false;
   /** `${runId}:${seq}` already sent on this connection and awaiting ACK; cleared
    * on reconnect so the sender replays them. */
   readonly #inFlight = new Set<string>();
@@ -478,7 +483,7 @@ export class AgentWorkRuntime {
     const adapters = await this.#host.list();
     this.#adapters = adapters;
     for (const adapter of adapters) {
-      this.#adapterCapabilities.set(adapter.type, new Set(adapter.capabilities ?? []));
+      this.#adapterCapabilities.set(adapter.type, new Set(adapter.executionFeatures));
     }
     await this.#openStore();
     if (this.#options.channelContext?.store === "sqlite") {
@@ -489,6 +494,7 @@ export class AgentWorkRuntime {
     }
     this.#startRecoveryProbe(epoch);
     this.#startDiskProbe(epoch);
+    this.#adapterProbe = setInterval(() => { void this.#refreshOpenClaw(epoch); }, this.#options.adapterProbeMs ?? 5_000);
     try {
       await this.#registerAndConnect(epoch);
     } catch (error) {
@@ -536,6 +542,8 @@ export class AgentWorkRuntime {
     this.#draining = true;
     this.#connectionState = "stopped";
     this.#lifecycleEpoch += 1;
+    if (this.#adapterProbe) clearInterval(this.#adapterProbe);
+    this.#adapterProbe = undefined;
     if (this.#heartbeat) clearInterval(this.#heartbeat);
     this.#heartbeat = undefined;
     if (this.#reconnectReset) clearTimeout(this.#reconnectReset);
@@ -601,8 +609,8 @@ export class AgentWorkRuntime {
     }
   }
 
-  async #register(adapterTypes: string[], signal?: AbortSignal): Promise<{ runtimeId: string; protocolVersion: number }> {
-    this.#connectionState = "registering";
+  async #register(adapterTypes: string[], signal?: AbortSignal, updateOnly = false): Promise<{ runtimeId: string; protocolVersion: number }> {
+    if (!updateOnly) this.#connectionState = "registering";
     const contextStats = this.#contextStore?.stats();
     const sentRequestId = createRequestId();
     this.#log({
@@ -635,6 +643,8 @@ export class AgentWorkRuntime {
               available: adapter.available === true,
               unavailable_reason: adapter.available === true ? null : adapter.unavailableReason ?? "probe_missing",
               capabilities: adapter.capabilities,
+              agent_sources: adapter.agentSources,
+              execution_features: adapter.executionFeatures,
               ...(adapter.processModel ? { process_model: adapter.processModel } : {}),
               ...(adapter.transport ? { transport: adapter.transport } : {})
             })),
@@ -1642,11 +1652,15 @@ export class AgentWorkRuntime {
         }
         const adapterTypeForContext = executionAdapterType(executionEnvelope);
         this.#assertAdapterAvailable(adapterTypeForContext);
-        const requiredCapabilities = executionEnvelope.resolved_execution_plan.required_capabilities ?? [];
+        const source = executionEnvelope.resolved_execution_plan.agent_source;
+        const adapter = this.#adapters.find(value => value.type === executionEnvelope.resolved_execution_plan.adapter_type);
+        if (!adapter?.agentSources.includes(source)) throw new TypeError("AGENT_SOURCE_UNSUPPORTED");
+        if ((executionEnvelope.resolved_execution_plan.required_capabilities ?? []).some(capability => !adapter.capabilities.includes(capability))) throw new TypeError("ADAPTER_CAPABILITY_UNSUPPORTED");
+        const requiredCapabilities = executionEnvelope.resolved_execution_plan.required_execution_features ?? [];
         const localCapabilities = this.#adapterCapabilities.get(adapterTypeForContext);
         if (requiredCapabilities.some(capability => !localCapabilities?.has(capability))) throw new TypeError("ADAPTER_REQUIRED_CAPABILITY_MISSING");
         const contentResources = contextItem(executionEnvelope.effective_context, "octo.content", "resources")?.payload.entries;
-        if (Array.isArray(contentResources) && contentResources.length > 0 && !localCapabilities?.has(capabilities.MCP_DYNAMIC)) {
+        if (Array.isArray(contentResources) && contentResources.length > 0 && !localCapabilities?.has(executionFeatures.MCP_DYNAMIC)) {
           throw new TypeError("TASK_MCP_ADAPTER_UNSUPPORTED");
         }
         const input = executionEnvelope.agent_run_request.input;
@@ -1669,7 +1683,7 @@ export class AgentWorkRuntime {
             agentId: executionEnvelope.agent_run_request.agent_id, store, signal
           }),
           prepareMaterials: signal => prepareTaskMaterials(executionEnvelope.effective_context,
-            executionEnvelope.resolved_execution_plan, signal),
+            executionEnvelope.resolved_execution_plan, signal, { runId: command.run_id, store }),
           prepareContinuity: signal => this.#prepareChannelContext(command.run_id,
             executionEnvelope, adapterTypeForContext, signal, epoch),
           seal: (receipt, signal) => recordContextPreparation(receipt, {
@@ -1714,7 +1728,7 @@ export class AgentWorkRuntime {
         request.runMetadata.runtimeId = this.#runtimeId;
         adapterType = mapped.adapterType;
         const adapterConfiguration = this.#options.adapterConfigurations?.[adapterType];
-        if (adapterConfiguration) {
+        if (adapterConfiguration && adapterType !== "openclaw") {
           request.agentConfig = {
             ...request.agentConfig,
             ...(adapterConfiguration.providerAgentId
@@ -1840,6 +1854,33 @@ export class AgentWorkRuntime {
       }
       if (!this.#activeRuns.has(command.run_id)) this.#authoritativeTerminalRuns.delete(command.run_id);
     }
+  }
+
+  async #refreshOpenClaw(epoch: number): Promise<void> {
+    if (this.#adapterProbePending || !this.#isCurrentLifecycle(epoch)) return;
+    const adapter = this.#adapters.find(item => item.type === "openclaw");
+    if (!adapter) return;
+    this.#adapterProbePending = true;
+    try {
+      let result: { available?: boolean; reason?: string };
+      try { result = await this.#host.probe("openclaw") as typeof result; }
+      catch { result = { available: false, reason: "probe_failed" }; }
+      if (!this.#isCurrentLifecycle(epoch)) return;
+      const available = result?.available === true;
+      const reason = available ? null : result?.reason ?? "probe_failed";
+      if (adapter.available !== available || adapter.unavailableReason !== reason) {
+        adapter.available = available;
+        adapter.unavailableReason = reason;
+        adapter.providerPath = available ? "openclaw-gateway" : null;
+        this.#adapterRegistrationDirty = true;
+      }
+      if (this.#adapterRegistrationDirty && this.#connectionState === "online") {
+        await this.#register([...this.#adapterCapabilities.keys()], undefined, true);
+        if (this.#isCurrentLifecycle(epoch)) this.#adapterRegistrationDirty = false;
+      }
+    } catch (error) {
+      this.#reportError("agent_work.adapter.refresh_failed", "adapter capability refresh failed", error);
+    } finally { this.#adapterProbePending = false; }
   }
 
   #assertAdapterAvailable(adapterType: string): void {
@@ -2369,13 +2410,14 @@ export function mapExecutionEnvelope(
   const definition = asRecord(envelope.agent_revision.definition);
   const adapterType = executionAdapterType(envelope);
   const agentConfig: AgentConfig = {
+    ...(profile.provider_agent_id ? { providerAgentId: profile.provider_agent_id } : {}),
     ...(profile.model ? { model: profile.model } : {}),
     ...(profile.effort ? { effort: profile.effort } : {})
   };
   const runtimeLimits = mapExecutionRuntimeLimits(profile.runtime_limits);
   const mcpServers = mapExecutionMcpServers({ ...profile.mcp_servers, ...preparedContext?.mcpServers });
   const workdir = preparedContext?.workdir ?? profile.workdir;
-  if (!workdir || profile.resources?.length && !preparedContext) throw new TypeError("CONTEXT_PREPARATION_REQUIRED");
+  if ((!workdir && profile.agent_source !== "preset") || profile.resources?.length && !preparedContext) throw new TypeError("CONTEXT_PREPARATION_REQUIRED");
   const content = envelope.agent_run_request.input;
   if (Object.hasOwn(content, "context_refs") || Object.hasOwn(content, "channel_context")) throw new TypeError("LEGACY_CONTEXT_INPUT_REJECTED");
   const compiled = preparedCompilation ?? compileRunContext(envelope.effective_context, taskMaterials?.selections);
@@ -2419,6 +2461,7 @@ export function mapExecutionEnvelope(
   return {
     adapterType,
     request: { protocolVersion: 2,
+      agentSource: profile.agent_source,
       invocationId: `invoke_${randomUUID()}`,
       agentSessionId: envelope.agent_session_id,
       runId: envelope.run_id,
@@ -2468,7 +2511,7 @@ function mapExecutionMcpServers(value: unknown): McpServers | undefined {
 }
 
 function assertExecutionEnvelopeContract(envelope: ExecutionEnvelope): void {
-  if (envelope?.schema_version !== 4) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
+  if (envelope?.schema_version !== 5) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
   assertContextEnvelope(envelope.agent_run_request?.context);
   assertContextEnvelope(envelope.effective_context);
   assertResolvedExecutionPlan(envelope.resolved_execution_plan);

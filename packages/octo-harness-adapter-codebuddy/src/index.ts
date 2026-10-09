@@ -93,7 +93,7 @@ function isCancelledStopReason(reason: unknown): boolean {
  */
 export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, command = "codebuddy" }: { acpClientFactory?: typeof spawnAcpClient; command?: string } = {}) {
   return defineAdapter({
-    metadata: { type: "codebuddy", capabilities: ["session.serialize", "tool.canonical"] },
+    metadata: { type: "codebuddy", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["session.serialize", "tool.canonical"] },
     probe: () => probeCommand(command),
     async *invoke(req: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
       if (req.approvalMode !== "full_access") throw new Error("APPROVAL_MODE_UNSUPPORTED: codebuddy approval bridge is not qualified");

@@ -46,7 +46,7 @@ async function startFixture(t, { silentFirst = false, welcomeOnFirst = true, dis
         if (connection !== 1 || welcomeOnFirst) {
           websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 10 }));
           if (dispatchRun) {
-            const plan = { adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_capabilities: ["tool.canonical"] };
+            const plan = { agent_source: "provisioned", adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_execution_features: ["tool.canonical"] };
             const items = [{ namespace: "octo.content", name: "selections", payload: { entries: [
               { resource_ref: "octo://liveness/background", text: "Frozen background for the liveness run" }
             ] } }];
@@ -54,7 +54,7 @@ async function startFixture(t, { silentFirst = false, welcomeOnFirst = true, dis
               server_seq: 1, command_id: "command-liveness", run_id: "run-liveness", type: "run.start",
               lease_id: "lease-liveness", fencing_token: 1,
               payload: {
-                schema_version: 4, context_configuration_version: 1,
+                schema_version: 5, context_configuration_version: 1,
                 resolved_runtime_selection: resolvedRuntimeSelection("runtime-liveness"),
                 effective_context: executionContext(plan, items), resolved_execution_plan: plan,
                 run_id: "run-liveness", agent_session_id: "session-liveness",
@@ -102,7 +102,7 @@ async function startFixture(t, { silentFirst = false, welcomeOnFirst = true, dis
     reconnectMaxMs: 5
   }, {
     ...host,
-    list: async () => [{ type: "fake", capabilities: ["tool.canonical"] }],
+    list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["tool.canonical"] }],
     async *invoke(_adapterType, request) {
       state.invokedRequests.push(request);
       yield { protocolVersion: 2, type: "run.completed", payload: {} };

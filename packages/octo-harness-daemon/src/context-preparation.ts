@@ -42,7 +42,7 @@ export interface PreparedCapabilityReceipt {
   components: string[];
 }
 export interface ContextPreparationReceipt {
-  workspace_mode: "fixed" | "random";
+  workspace_mode: "fixed" | "random" | "none";
   workspace_path: string;
   provider_state_dir: string;
   resources: PreparedCapabilityReceipt[];
@@ -62,8 +62,12 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
 }): Promise<PreparedRunContext> {
   options.signal?.throwIfAborted();
   const stateRoot = await privateDirectory(options.stateRoot);
-  const workspace = plan.workspace ?? { mode: "fixed", path: plan.workdir };
+  const workspace = plan.workspace ?? (plan.agent_source === "preset" && !plan.workdir ? { mode: "none" as const } : { mode: "fixed" as const, path: plan.workdir });
   let workdir: string;
+  if (workspace.mode === "none") {
+    if (plan.agent_source !== "preset" || plan.workdir || plan.resources?.length) throw new TypeError("CONTEXT_WORKSPACE_INVALID");
+    return { workdir: "", providerStateDir: "", skills: [], skillRoots: [], mcpServers: {}, receipt: { workspace_mode: "none", workspace_path: "", provider_state_dir: "", resources: [], warnings: [] } };
+  }
   if (workspace.mode === "random") {
     const workspaces = await privateDirectory(join(stateRoot, "workspaces"));
     const chosen = options.store.conversationWorkspace(options.agentSessionId, join(workspaces, randomUUID()));

@@ -21,7 +21,7 @@ import {
   spawnAcpClient,
   type AcpUpdate
 } from "@mininglamp-oss/octo-harness-acp-client";
-import { capabilities, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
+import { executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -30,7 +30,7 @@ export interface AcpAdapterDefinition {
   provider: string;
   command: string;
   args?: readonly string[] | ((request: InvokeRequest) => readonly string[]);
-  capabilities?: readonly string[];
+  executionFeatures?: readonly string[];
   protocolVersion?: string | number;
   emptyLoadResultMeansMissing?: boolean;
 }
@@ -153,7 +153,9 @@ export function createAcpAdapter(
   return defineAdapter({
     metadata: {
       type: definition.type,
-      capabilities: [...(definition.capabilities ?? ["session.serialize", "tool.canonical"]), capabilities.INTERACTION_RESPONSE, capabilities.INPUT_IMAGE]
+      capabilities: ["react"],
+      agentSources: ["provisioned"],
+      executionFeatures: [...(definition.executionFeatures ?? ["session.serialize", "tool.canonical"]), executionFeatures.INTERACTION_RESPONSE, executionFeatures.INPUT_IMAGE]
     },
     probe: () => probeCommand(command),
     async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {

@@ -19,7 +19,7 @@ if (session.schema_version !== 1 || !session.nonce || !Number.isSafeInteger(sess
 
 const manifestPath = session.manifest_path ?? fileURLToPath(new URL("./config/adapters.json", import.meta.url));
 const hostEntrypoint = session.adapter_host_entrypoint ?? fileURLToPath(import.meta.resolve("@mininglamp-oss/octo-harness-adapter-host/runner"));
-const agentWorks = loadManagedAgentWorksFromRoot(session.account_root, session.profiles);
+const agentWorks = loadManagedAgentWorksFromRoot(session.account_root, session.profiles, { discoverLocalOpenClaw: true });
 let application: DaemonApplication | undefined;
 let stopping = false;
 

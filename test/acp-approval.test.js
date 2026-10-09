@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AcpApprovalBridge } from "../packages/octo-harness-adapter-sdk/dist/index.js";
 
-const request = { protocolVersion: 2, invocationId: "instance-1", agentSessionId: "session-1", runId: "run-1", prompt: "hello", modelInput: "hello", controlInstructions: "", approvalMode: "ask", context: { schema: "octo.context-envelope/v1", items: [] }, agentConfig: {}, workdir: "/tmp" };
+const request = { protocolVersion: 2, invocationId: "instance-1", agentSessionId: "session-1", runId: "run-1", prompt: "hello", modelInput: "hello", controlInstructions: "", approvalMode: "ask", context: { schema: "octo.context-envelope/v1", items: [] }, agentSource: "provisioned", agentConfig: {}, workdir: "/tmp" };
 const permission = { toolCall: { toolCallId: "tool-1", title: "Read a file" }, options: [{ kind: "allow_once", optionId: "allow" }, { kind: "reject_once", optionId: "deny" }, { kind: "allow_always", optionId: "always" }] };
 function deferred() {
   let resolve;
@@ -84,7 +84,7 @@ test("Host rejects an approval capability declaration with no response implement
   const { AdapterHost } = await import("@mininglamp-oss/octo-harness-adapter-host");
   const host = new AdapterHost();
   let started = false;
-  host.register({ metadata: { type: "broken", capabilities: ["interaction.response"] }, async *invoke() { started = true; yield { protocolVersion: 2, type: "run.completed", payload: {} }; } });
+  host.register({ metadata: { type: "broken", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["interaction.response"] }, async *invoke() { started = true; yield { protocolVersion: 2, type: "run.completed", payload: {} }; } });
   await assert.rejects(async () => { for await (const event of host.invoke("broken", request)) assert.fail(event.type); }, /APPROVAL_MODE_UNSUPPORTED/);
   assert.equal(started, false);
 });

@@ -109,7 +109,7 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     const host = {
-      list: async () => [{ type: "fake", capabilities: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
+      list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["tool.canonical", "session.serialize", "session.resume_recovery"] }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         assertInvokeRequest(request);
@@ -234,7 +234,7 @@ function groupEnvelope(agent, round, text) {
   const triggerSeq = round * 2;
   const trigger = groupFact(agent, triggerSeq, text);
   const plan = {
-    adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_capabilities: ["tool.canonical"]
+    agent_source: "provisioned", adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_execution_features: ["tool.canonical"]
   };
   const items = [{
     namespace: "octo.content", name: "continuity", payload: {
@@ -251,7 +251,7 @@ function groupEnvelope(agent, round, text) {
     }] }
   }];
   return {
-    schema_version: 4,
+    schema_version: 5,
     resolved_runtime_selection: resolvedRuntimeSelection("runtime-multi-agent"),
     context_configuration_version: 1,
     effective_context: executionContext(plan, items),
@@ -278,10 +278,10 @@ function groupEnvelope(agent, round, text) {
 
 function dmEnvelope(round) {
   const plan = {
-    adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_capabilities: ["tool.canonical"]
+    agent_source: "provisioned", adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_execution_features: ["tool.canonical"]
   };
   return {
-    schema_version: 4,
+    schema_version: 5,
     resolved_runtime_selection: resolvedRuntimeSelection("runtime-multi-agent"),
     context_configuration_version: 1,
     effective_context: executionContext(plan),

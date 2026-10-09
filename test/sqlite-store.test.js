@@ -32,7 +32,7 @@ test("SqliteStore persists unified AgentSession and AgentRun state across reopen
         id: "arun-1", agentSessionId: "asess-1", runNo: 1, status: "queued", nextSeq: 2,
         trigger: { kind: "loop.task.ready", occurrenceId: "task-event/e-1" }, input: {}, requestHash: "hash",
         context: { schema: context.schema, items: [] }, effectiveContext: context, contextHash: contextHash(context), contextDefaultsVersion: 1,
-        resolvedExecutionPlan: { adapter_type: "test", workdir: process.cwd(), approval_mode: "ask" },
+        resolvedExecutionPlan: { agent_source: "provisioned", adapter_type: "test", workspace: { mode: "fixed", path: process.cwd() }, workdir: process.cwd(), approval_mode: "ask" },
         materialization: { id: "a1", name: "A", adapterType: "test", config: {} }
       });
       store.appendEvent(event("arun-1", 1, "run.queued"));

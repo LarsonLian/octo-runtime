@@ -27,6 +27,7 @@ export interface HarnessHost {
 export interface RegisterAgentInput {
   id?: string;
   name: string;
+  agentSource: "preset" | "provisioned";
   defaultContext: ContextEnvelope;
   config?: LocalAgentConfig;
 }
@@ -67,16 +68,18 @@ export class HarnessEngine {
   }
 
   async registerAgent(input: RegisterAgentInput): Promise<Agent> {
-    if (!input || Object.keys(input).some(name => !["id", "name", "defaultContext", "config"].includes(name))) throw new TypeError("LEGACY_AGENT_CONTRACT_REJECTED");
+    if (!input || Object.keys(input).some(name => !["id", "name", "agentSource", "defaultContext", "config"].includes(name))) throw new TypeError("LEGACY_AGENT_CONTRACT_REJECTED");
     input = structuredClone(input);
     if (!input.name) throw new Error("agent name is required");
     assertLocalAgentConfig(input.config === undefined ? {} : input.config);
-    const resolved = resolveLocalContext(input.defaultContext, { schema: "octo.context-envelope/v1", items: [] });
+    const resolved = resolveLocalContext(input.defaultContext, { schema: "octo.context-envelope/v1", items: [] }, input.agentSource);
     const adapters = await this.host.list();
     assertLoadedAdapter(adapters, resolved.resolvedExecutionPlan.adapter_type);
     const agent: Agent = {
       id: input.id ?? id("agent"),
       name: input.name,
+      agentSource: input.agentSource,
+      capabilities: ["react"],
       adapterType: resolved.resolvedExecutionPlan.adapter_type,
       config: structuredClone(input.config ?? {}),
       defaultContext: resolved.effectiveContext,
@@ -92,7 +95,9 @@ export class HarnessEngine {
   async replaceDefaultContext(input: ReplaceDefaultContextInput): Promise<Agent> {
     input = structuredClone(input);
     if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) throw new TypeError("CONTEXT_DEFAULTS_VERSION_REQUIRED");
-    const resolved = resolveLocalContext(input.context, { schema: "octo.context-envelope/v1", items: [] });
+    const current = this.store.getAgent(input.agentId);
+    if (!current) throw new Error(`agent not found: ${input.agentId}`);
+    const resolved = resolveLocalContext(input.context, { schema: "octo.context-envelope/v1", items: [] }, current.agentSource);
     const adapters = await this.host.list();
     assertLoadedAdapter(adapters, resolved.resolvedExecutionPlan.adapter_type);
     let updated!: Agent;
@@ -115,7 +120,7 @@ export class HarnessEngine {
     if (duplicate) return duplicate;
     const registered = this.store.getAgent(input.agentId);
     if (!registered) throw new Error(`agent not found: ${input.agentId}`);
-    const selectedAdapter = resolveLocalContext(registered.defaultContext, input.context).resolvedExecutionPlan.adapter_type;
+    const selectedAdapter = resolveLocalContext(registered.defaultContext, input.context, registered.agentSource).resolvedExecutionPlan.adapter_type;
     const adapters = selectedAdapter === registered.adapterType ? undefined : await this.host.list();
     let result!: SubmitAgentRunResult;
     await this.store.transaction(() => {
@@ -129,7 +134,7 @@ export class HarnessEngine {
       if (!agent) throw new Error(`agent not found: ${input.agentId}`);
       if (!Number.isSafeInteger(agent.contextDefaultsVersion) || agent.contextDefaultsVersion < 1) throw new TypeError("CONTEXT_DEFAULTS_VERSION_REQUIRED");
       assertLocalAgentConfig(agent.config);
-      const resolved = resolveLocalContext(agent.defaultContext, input.context);
+      const resolved = resolveLocalContext(agent.defaultContext, input.context, agent.agentSource);
       if (resolved.resolvedExecutionPlan.adapter_type !== agent.adapterType) assertLoadedAdapter(adapters ?? [], resolved.resolvedExecutionPlan.adapter_type);
       assertMaterializationAdapter(agent, resolved.resolvedExecutionPlan.adapter_type);
       if (!session) {
@@ -225,6 +230,7 @@ export class HarnessEngine {
     const prompt = promptFromInput(run.input);
     const modelInputParts = modelPartsFromInput(run.input);
     const request: InvokeRequest = { protocolVersion: 2,
+      agentSource: run.resolvedExecutionPlan!.agent_source,
       invocationId: id("invoke"),
       agentSessionId: session.id,
       runId: run.id,
@@ -240,6 +246,7 @@ export class HarnessEngine {
       runtimeLimits: localRuntimeLimits(plan),
       agentConfig: {
         ...structuredClone(run.materialization.config),
+        ...(plan.provider_agent_id ? { providerAgentId: plan.provider_agent_id } : {}),
         workdir: plan.workdir,
         ...(plan.model ? { model: plan.model } : {}),
         ...(plan.effort ? { effort: plan.effort } : {})

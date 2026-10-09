@@ -7,11 +7,11 @@ const context = { schema: "octo.context-envelope/v1", items: [
   { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: "/workspace" } },
   { namespace: "octo.security", name: "approval_policy", payload: { mode: "ask" } }
 ] };
-const plan = { adapter_type: "codex", workdir: "/workspace", approval_mode: "ask" };
+const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "/workspace", approval_mode: "ask" };
 
 test("frozen execution plan cannot broaden or contradict its effective Context", () => {
   assert.doesNotThrow(() => assertFrozenContextPlan(context, plan));
-  for (const overrides of [{ approval_mode: "full_access" }, { adapter_type: "other" }, { workdir: "/other" }, { model: "unrequested-model" }, { effort: "unrequested-effort" }, { runtime_limits: { run_timeout_ms: 30_000 } }]) {
+  for (const overrides of [{ approval_mode: "full_access" }, { agent_source: "provisioned", adapter_type: "other" }, { workdir: "/other" }, { model: "unrequested-model" }, { effort: "unrequested-effort" }, { runtime_limits: { run_timeout_ms: 30_000 } }]) {
     assert.throws(() => assertFrozenContextPlan(context, { ...plan, ...overrides }), /CONTEXT_PLAN_MISMATCH/);
   }
   assert.throws(() => assertFrozenContextPlan(context, { ...plan, workspace: { mode: "random", scope: "conversation" } }), /CONTEXT_PLAN_MISMATCH/);

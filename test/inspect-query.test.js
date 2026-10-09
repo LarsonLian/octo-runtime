@@ -57,7 +57,7 @@ test("inspect event normalization extracts table fields without inventing diagno
     agent_run_id: "run-9",
     agent_session_id: "session-9",
     invocation_id: "inv-9",
-    adapter_type: "codebuddy",
+    agent_source: "provisioned", adapter_type: "codebuddy",
     payload: {
       duration_ms: 1684,
       status: "failed",
@@ -92,7 +92,7 @@ test("inspect QL returns useful syntax errors", () => {
 });
 
 test("inspect QL completes fields, operators, values, and logical operators", () => {
-  const values = { adapter_type: ["codex", "codebuddy"], runtime_id: ["runtime-work"] };
+  const values = { agent_source: "provisioned", adapter_type: ["codex", "codebuddy"], runtime_id: ["runtime-work"] };
   assert.deepEqual(
     queryCompletions("adap", 4, values).map(item => item.label),
     ["adapter_type"]
