@@ -388,7 +388,7 @@ test("separate adapter-host process loads manifest and streams events", async ()
     // FD3 is independent of RPC stdout; allow its terminal snapshot to arrive.
     for (let i = 0; i < 50 && !observations.some(x => x.type === "watchdog.metrics"); i++) await new Promise(resolve => setTimeout(resolve, 10));
     const started = observations.find(x => x.source === "provider-activity" && x.record?.event === "watchdog.started");
-    assert.equal(started.record.data.effectiveLimits.runTimeoutMs, 3600000);
+    assert.equal(started.record.data.effectiveLimits.runTimeoutMs, 10800000);
     assert.equal(started.record.data.effectiveLimits.modelIdleTimeoutMs, 300000);
     const snapshot = observations.find(x => x.type === "watchdog.metrics");
     assert.equal(snapshot.payload.find(x => x.name === "outcomes_total").labels.outcome, "completed");

@@ -68,10 +68,11 @@ test("terminal freezes timers but completion metrics wait for cleanup outcome", 
   assert.equal(records[0].data.elapsedMs, 10);
 });
 
-test("run default is one hour and a revision may extend it to two hours", () => {
-  for (const [limits, deadline] of [[{},3_600_000],[{runTimeoutMs:7_200_000},7_200_000]]) {
+test("run defaults to three hours and explicit limits may shorten or extend it", () => {
+  for (const [limits, deadline] of [[{},10_800_000],[{runTimeoutMs:7_200_000},7_200_000],[{runTimeoutMs:21_600_000},21_600_000]]) {
     const f=fixture({...limits,modelIdlePolicy:"observe"}); f.watchdog.activity(started);
     f.tick(deadline-1); assert.equal(f.controller.signal.aborted,false);
+    f.watchdog.activity(progress);
     f.tick(1); assert.equal(f.controller.signal.reason.timeoutMs,deadline);
     assert.equal(f.controller.signal.reason.timeoutReason,"run_deadline");
   }

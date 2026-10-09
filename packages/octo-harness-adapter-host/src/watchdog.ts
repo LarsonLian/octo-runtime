@@ -10,7 +10,7 @@ export const DEFAULT_RUNTIME_LIMITS = {
   modelIdleWarningMs: 120_000,
   modelIdlePolicy: "enforce" as const,
   toolTimeoutMs: 600_000,
-  runTimeoutMs: 3_600_000,
+  runTimeoutMs: 10_800_000,
   cancelGraceMs: 1_000,
   enforcement: "enforce" as const
 };

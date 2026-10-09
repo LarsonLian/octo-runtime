@@ -87,9 +87,9 @@ daemon 将这些字段映射为 `InvokeRequest.runtimeLimits`，由 adapter-host
 
 以上为局部配置示例，应合并到完整 execution profile，保留 adapter、workdir 等字段。
 该参数限制模型阶段连续未收到下一条 canonical event 的时长，不是整个任务的运行时长。
-未显式覆盖的其他默认值为：启动等待 60 秒、工具阶段静默 600 秒、整个任务 3600 秒、
+未显式覆盖的其他默认值为：启动等待 60 秒、工具阶段静默 600 秒、单轮运行总时长 10800 秒（3 小时）、
 取消清理等待 1 秒、`enforcement: "enforce"`。收到事件不会延长整个任务的时限。
-`run_timeout_ms` 可由 AgentRevision 覆盖，允许 100–86400000 毫秒（最多 24 小时）。
+`run_timeout_ms` 可通过 Agent Context 的 `octo.execution/limits` 覆盖，允许 100–86400000 毫秒（最多 24 小时）。未配置时由 Adapter Host 使用 10800000 毫秒默认值；显式配置不会被此默认值覆盖。
 不要用旧 `enforcement: "observe"` 代替延长预算：它为兼容历史配置仍跳过整套 watchdog。
 新 `model_idle_policy: "observe"` 仅关闭模型静默取消，总时限和工具时限始终执行。
 默认策略为 `enforce`；`model_idle_warning_ms` 默认 120000，在持续无进展时只告警一次，
