@@ -32,8 +32,7 @@ const LIMIT_NAMES = {
 export function assertLocalContext(context: unknown): asserts context is ContextEnvelope {
   assertContextEnvelope(context);
   for (const item of context.items) {
-    if (item.namespace === "octo.execution" && ["adapter", "workspace", "model", "reasoning", "limits"].includes(item.name)) continue;
-    if (item.namespace === "octo.security" && item.name === "approval_policy") continue;
+    if (item.namespace === "octo.execution" && item.name === "config" && item.payload.runtime === undefined) continue;
     throw new TypeError(`LOCAL_CONTEXT_TYPE_UNSUPPORTED: ${item.namespace}/${item.name}`);
   }
 }
@@ -46,26 +45,27 @@ export function resolveLocalContext(defaults: ContextEnvelope, submitted: Contex
   assertLocalContext(defaults);
   assertLocalContext(submitted);
   let effectiveContext = mergeContext(defaults, submitted);
-  if (!contextItem(effectiveContext, "octo.security", "approval_policy")) {
+  if (!contextItem(effectiveContext, "octo.execution", "config")?.payload.approval_policy) {
     effectiveContext = mergeContext(effectiveContext, { schema: effectiveContext.schema, items: [
-      { namespace: "octo.security", name: "approval_policy", payload: { mode: "ask" } }
+      { namespace: "octo.execution", name: "config", payload: { approval_policy: { mode: "ask" } } }
     ] });
   }
-  const adapter = contextItem(effectiveContext, "octo.execution", "adapter")?.payload.type;
-  const workspace = contextItem(effectiveContext, "octo.execution", "workspace")?.payload;
+  const execution = contextItem(effectiveContext, "octo.execution", "config")!.payload as Record<string, Record<string, unknown>>;
+  const adapter = execution.adapter?.type;
+  const workspace = execution.workspace;
   const workdir = workspace?.path ?? "";
   if (typeof adapter !== "string" || !adapter) throw new TypeError("LOCAL_ADAPTER_CONTEXT_REQUIRED");
   if ((agentSource !== "preset" || workdir) && (typeof workdir !== "string" || !isAbsolute(workdir))) throw new TypeError("LOCAL_ABSOLUTE_WORKSPACE_REQUIRED");
-  const model = contextItem(effectiveContext, "octo.execution", "model")?.payload.id;
-  const effort = contextItem(effectiveContext, "octo.execution", "reasoning")?.payload.effort;
-  const limits = contextItem(effectiveContext, "octo.execution", "limits")?.payload;
+  const model = execution.model?.id;
+  const effort = execution.reasoning?.effort;
+  const limits = execution.limits;
   const plan = {
     agent_source: agentSource,
     adapter_type: adapter,
     ...(workspace ? { workspace } : {}),
-    ...(adapter === "openclaw" ? { provider_agent_id: contextItem(effectiveContext, "octo.execution", "adapter")!.payload.provider_agent_id } : {}),
+    ...(adapter === "openclaw" ? { provider_agent_id: execution.adapter!.provider_agent_id } : {}),
     workdir,
-    approval_mode: contextItem(effectiveContext, "octo.security", "approval_policy")!.payload.mode,
+    approval_mode: execution.approval_policy!.mode,
     ...(typeof model === "string" ? { model } : {}),
     ...(typeof effort === "string" ? { effort } : {}),
     ...(limits ? { runtime_limits: structuredClone(limits) } : {})

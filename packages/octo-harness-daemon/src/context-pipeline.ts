@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import {
-  CONTEXT_CATALOG_VERSION, assertContextProcessorCoverage, contextHash, contextItem, contextTypeDefinition,
+  CONTEXT_CATALOG_VERSION, assertContextProcessorCoverage, contextHash, contextTypeDefinition,
   type ContextEnvelope, type ResolvedExecutionPlan, type ContextPreparationReceipt
 } from "@mininglamp-oss/octo-harness-protocol";
 import type { PreparedChannelContextSnapshot } from "./channel-context-store.js";
@@ -8,16 +8,9 @@ import type { PreparedRunContext } from "./context-preparation.js";
 import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext, type TrustedContextInstruction } from "./run-context.js";
 import type { PreparedTaskMaterials } from "./task-materials.js";
 
-export const CONTEXT_COMPILER_VERSION = "octo.context-compiler/v1" as const;
-const preparationKeys = new Set([
-  "octo.execution/workspace", "octo.plugins/selection", "octo.skills/selection",
-  "octo.connectors/selection", "octo.content/resources", "octo.content/continuity"
-]);
-const compilationKeys = new Set([
-  "octo.plugins/selection", "octo.skills/selection", "octo.connectors/selection",
-  "octo.content/selections", "octo.content/resources", "octo.content/continuity",
-  "octo.content/delivery_policy", "octo.control/instructions"
-]);
+export const CONTEXT_COMPILER_VERSION = "octo.context-compiler/v2" as const;
+const preparationKeys = new Set(["octo.execution/config", "octo.resources/selection", "octo.content/materials"]);
+const compilationKeys = new Set([...preparationKeys, "octo.control/instructions"]);
 
 export type ContextPipelineReceipt = ContextPreparationReceipt;
 export type ContextPreparationStage = "input" | "capabilities" | "materials" | "continuity";
@@ -32,9 +25,7 @@ const stages: readonly ContextStageDefinition[] = [
   { id: "continuity", dependsOn: ["materials"] }
 ];
 const preparationOwners: Readonly<Record<string, ContextPreparationStage>> = {
-  "octo.execution/workspace": "capabilities", "octo.plugins/selection": "capabilities",
-  "octo.skills/selection": "capabilities", "octo.connectors/selection": "capabilities",
-  "octo.content/resources": "materials", "octo.content/continuity": "continuity"
+  "octo.execution/config": "capabilities", "octo.resources/selection": "capabilities", "octo.content/materials": "materials"
 };
 export interface ContextConsumption { key: string; stage: "prepare" | "compile"; processor: string }
 export interface ContextPipelineOptions {
@@ -99,14 +90,22 @@ export interface ContextPipelinePorts<Input> {
   prepareCapabilities(signal: AbortSignal): Promise<PreparedRunContext>;
   prepareMaterials(signal: AbortSignal): Promise<PreparedTaskMaterials | undefined>;
   prepareContinuity(signal: AbortSignal): Promise<PreparedChannelContextSnapshot | undefined>;
+  prepareCompiled?(compiled: CompiledRunContext, signal: AbortSignal): Promise<CompiledRunContext>;
   seal(receipt: ContextPipelineReceipt, signal: AbortSignal): Promise<void>;
 }
 
 /** 将准备好的材料与可信指令分通道编译；不访问网络、文件、凭据或 Provider。 */
 export class ContextCompiler {
-  compile(context: ContextEnvelope, materials?: PreparedTaskMaterials, instructions: readonly TrustedContextInstruction[] = []): CompiledRunContext {
+  compile(context: ContextEnvelope, materials?: PreparedTaskMaterials, instructions: readonly TrustedContextInstruction[] = [], prepared?: { plan: ResolvedExecutionPlan; capabilities: PreparedRunContext }): CompiledRunContext {
     assertContextProcessorCoverage(context, "compile", compilationKeys);
-    return compileRunContext(context, materials?.selections, instructions);
+    const compiled = compileRunContext(context, materials?.selections, instructions);
+    if (prepared) {
+      const { resources: _files, ...executionPlan } = prepared.plan;
+      const { skills, skillRoots, mcpServers, workdir, providerStateDir } = prepared.capabilities;
+      compiled.executionPlan = structuredClone(executionPlan);
+      compiled.preparedResources = structuredClone({ skills, skillRoots, mcpServers, workdir, providerStateDir });
+    }
+    return compiled;
   }
 }
 
@@ -153,10 +152,8 @@ export class ContextPipeline<Input> {
     }
     const { input, capabilities, materials, continuity } = outputs;
     if (!capabilities) throw new TypeError("CONTEXT_CAPABILITIES_UNAVAILABLE");
-    if (contextItem(frozen, "octo.content", "continuity") && !continuity) {
-      throw new TypeError("CONTEXT_CONTINUITY_UNAVAILABLE");
-    }
-    const compiled = new ContextCompiler().compile(frozen, materials, instructions);
+    let compiled = new ContextCompiler().compile(frozen, materials, instructions, { plan, capabilities });
+    if (this.ports.prepareCompiled) compiled = await boundedStage("materials", budgets.materials, signal, stageSignal => this.ports.prepareCompiled!(compiled, stageSignal));
     for (const item of frozen.items) {
       if (contextTypeDefinition(item.namespace, item.name).stages.includes("compile")) {
         consumption.push({ key: `${item.namespace}/${item.name}`, stage: "compile", processor: "compiler" });

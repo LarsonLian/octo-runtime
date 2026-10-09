@@ -35,7 +35,7 @@ const serverValidator = ajv.compile({
 
 export interface PreparedCapabilityReceipt {
   resource_id: string;
-  version: string;
+  revision: number;
   digest: string;
   root: string;
   data: string;
@@ -96,26 +96,26 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
   for (const resource of plan.resources ?? []) {
     options.signal?.throwIfAborted();
     totalBytes += Buffer.byteLength(JSON.stringify(resource.files));
-    if (totalBytes > 2_097_152) throw new TypeError("CONTEXT_RESOURCE_BUDGET_EXCEEDED");
+    if (totalBytes > 16_777_216) throw new TypeError("CONTEXT_RESOURCE_BUDGET_EXCEEDED");
+    if (resource.kind === "knowledge") throw new TypeError("CONTEXT_RESOURCE_KIND_UNSUPPORTED: knowledge");
     const root = await materializeResource(stateRoot, resource);
+    const texts = Object.fromEntries(Object.entries(resource.files).map(([path, file]) => [path, Buffer.from(file.content_base64, "base64").toString("utf8")]));
     const installation = createHash("sha256").update(options.agentId + "/" + resource.resource_id).digest("hex");
     const data = await privateDirectory(join(stateRoot, "plugin-data", installation));
-    const receipt: PreparedCapabilityReceipt = { resource_id: resource.resource_id, version: resource.version, digest: resource.digest, root, data, components: [] };
+    const receipt: PreparedCapabilityReceipt = { resource_id: resource.resource_id, revision: resource.revision, digest: resource.digest, root, data, components: [] };
     prepared.receipt.resources.push(receipt);
-    if (resource.kind === "plugin") {
-      const manifest = JSON.parse(resource.files["plugin.json"] ?? "");
+    if (resource.kind === "agent_plugin") {
+      const manifest = JSON.parse(texts["plugin.json"] ?? "");
       if (!manifestValidator(manifest)) throw new TypeError("CONTEXT_PLUGIN_MANIFEST_INVALID");
       const known = new Set(["$schema", "name", "version", "description", "author", "homepage", "repository", "license", "keywords", "extensions"]);
       for (const key of Object.keys(manifest)) if (!known.has(key)) prepared.receipt.warnings.push(resource.resource_id + ": ignored manifest field " + key);
-      const manifestVersion = (manifest as unknown as Record<string, unknown>).version;
-      if (manifestVersion !== undefined && manifestVersion !== resource.version) throw new TypeError("CONTEXT_PLUGIN_VERSION_MISMATCH");
     }
     const skillFiles = resource.kind === "skill" ? ["SKILL.md"] : Object.keys(resource.files).filter(path => /^skills\/[^/]+\/SKILL\.md$/.test(path)).sort();
     for (const path of skillFiles) {
       const declaredName = resource.kind === "skill" ? root.split(sep).at(-1) : path.split("/")[1];
       if (resource.components && !resource.components.includes("skill:" + declaredName)) continue;
       let skill: PreparedSkill;
-      try { skill = parseSkill(resource.files[path]!, join(root, path), resource.invoke); }
+      try { skill = parseSkill(texts[path]!, join(root, path), resource.invoke); }
       catch {
         throw new TypeError("CONTEXT_SKILL_UNAVAILABLE: " + resource.resource_id + "/" + path);
       }
@@ -128,8 +128,8 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
       // Extra roots are skill collection directories, not individual SKILL.md paths.
       prepared.skillRoots.push(resource.kind === "skill" ? dirname(root) : join(root, "skills"));
     }
-    if (resource.kind !== "skill" && resource.files["mcp.json"] && (!resource.components || resource.components.some(key => key.startsWith("mcp:")))) {
-      const document = JSON.parse(resource.files["mcp.json"]);
+    if (resource.kind !== "skill" && texts["mcp.json"] && (!resource.components || resource.components.some(key => key.startsWith("mcp:")))) {
+      const document = JSON.parse(texts["mcp.json"]);
       if (!record(document) || document.$schema !== mcpSchema || !record(document.mcpServers) || Object.keys(document).some(key => key !== "$schema" && key !== "mcpServers")) {
         throw new TypeError("CONTEXT_MCP_CONFIG_INVALID: " + resource.resource_id);
       } else {
@@ -172,14 +172,14 @@ function parseSkill(content: string, path: string, invoke: boolean): PreparedSki
 }
 
 async function materializeResource(stateRoot: string, resource: ResolvedCapabilityResource): Promise<string> {
-  const files = Object.fromEntries(Object.keys(resource.files).sort().map(key => [key, resource.files[key]]));
+  const files = Object.fromEntries(Object.keys(resource.files).sort().map(key => [key, { content_base64: resource.files[key]!.content_base64, executable: resource.files[key]!.executable }]));
   const digest = "sha256:" + createHash("sha256").update(JSON.stringify(files)).digest("hex");
   if (digest !== resource.digest) throw new TypeError("CONTEXT_RESOURCE_DIGEST_MISMATCH");
   const cache = await privateDirectory(join(stateRoot, "resources", resource.resource_id, resource.digest.slice(7)));
   // Standalone skill directory must have the native skill name.
   let leaf = "package";
   if (resource.kind === "skill") {
-    const lines = resource.files["SKILL.md"]?.split(/\r?\n/) ?? [];
+    const lines = Buffer.from(resource.files["SKILL.md"]?.content_base64 ?? "", "base64").toString("utf8").split(/\r?\n/);
     const end = lines.indexOf("---", 1);
     if (lines[0] !== "---" || end < 2) throw new TypeError("SKILL_FRONTMATTER_INVALID");
     const doc = parseDocument(lines.slice(1, end).join("\n"));
@@ -193,11 +193,11 @@ async function materializeResource(stateRoot: string, resource: ResolvedCapabili
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     const staged = await mkdtemp(join(cache, ".prepare-"));
     try {
-      for (const [path, text] of Object.entries(resource.files)) {
+      for (const [path, content] of Object.entries(resource.files)) {
         const file = join(staged, path);
         inside(staged, file);
         await mkdir(dirname(file), { recursive: true, mode: 0o700 });
-        await writeFile(file, text, { flag: "wx", mode: 0o500 });
+        await writeFile(file, Buffer.from(content.content_base64, "base64"), { flag: "wx", mode: content.executable ? 0o500 : 0o400 });
       }
       try { await rename(staged, target); }
       catch (renameError) { if (!["EEXIST", "ENOTEMPTY"].includes((renameError as NodeJS.ErrnoException).code ?? "")) throw renameError; }
@@ -210,8 +210,8 @@ async function materializeResource(stateRoot: string, resource: ResolvedCapabili
     const info = await lstat(file);
     if (!info.isFile() || info.isSymbolicLink()) throw new TypeError("CONTEXT_PACKAGE_PATH_INVALID");
     inside(root, await realpath(file));
-    if (await readFile(file, "utf8") !== content) throw new TypeError("CONTEXT_RESOURCE_DIGEST_MISMATCH");
-    await chmod(file, 0o500);
+    if (!(await readFile(file)).equals(Buffer.from(content.content_base64, "base64"))) throw new TypeError("CONTEXT_RESOURCE_DIGEST_MISMATCH");
+    await chmod(file, content.executable ? 0o500 : 0o400);
   }
   return root;
 }
@@ -282,4 +282,23 @@ export async function recordContextPreparation(receipt: ContextPreparationReceip
     throw new Error(body?.error?.code ?? "CONTEXT_PREPARATION_REJECTED");
   }
   await response.body?.cancel();
+}
+
+/** 首次准备读取最新资源并由 Worker 冻结；重复准备复核当前授权后读取原快照。 */
+export async function resolveRunResources(options: {
+  baseUrl: string; headers: Record<string, string>; runId: string; leaseId: string; fencingToken: number; signal: AbortSignal;
+}): Promise<ResolvedCapabilityResource[]> {
+  const response = await fetch(options.baseUrl.replace(/\/$/, "") + "/v1/runtime/context/resources/resolve", {
+    method: "POST", headers: { ...options.headers, "Content-Type": "application/json" }, redirect: "error",
+    signal: AbortSignal.any([options.signal, AbortSignal.timeout(30_000)]),
+    body: JSON.stringify({ run_id: options.runId, lease_id: options.leaseId, fencing_token: options.fencingToken })
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => undefined) as { error?: { code?: string } } | undefined;
+    throw new Error(body?.error?.code ?? "CONTEXT_RESOURCE_RESOLVE_FAILED");
+  }
+  const result = await response.json() as { data?: { resources?: unknown } };
+  assertCapabilityResources(result.data?.resources);
+  options.signal.throwIfAborted();
+  return result.data!.resources as ResolvedCapabilityResource[];
 }

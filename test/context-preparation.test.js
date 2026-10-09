@@ -8,9 +8,11 @@ import { prepareRunContext } from "../packages/octo-harness-daemon/dist/context-
 import { AgentWorkStore } from "../packages/octo-harness-daemon/dist/agent-work-store.js";
 
 const skill = "---\nname: context-proof\ndescription: Verify selected Context resources.\n---\nUse the selected tools.\n";
-const resource = (files, extra = {}) => ({ resource_id: "proof", version: "1.0.0", kind: "plugin", invoke: true,
-  digest: "sha256:" + createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.entries(files).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)))).digest("hex"),
-  files, sources: ["agent_mandatory"], ...extra });
+const resource = (texts, extra = {}) => {
+  const files = Object.fromEntries(Object.entries(texts).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([path, text]) => [path, { content_base64: Buffer.from(text).toString("base64"), executable: false }]));
+  return { resource_id: "ae67cb3e-0d16-4bb2-9a4e-bb563cb707af", revision: 1, kind: "agent_plugin", invoke: true,
+    digest: "sha256:" + createHash("sha256").update(JSON.stringify(files)).digest("hex"), files, sources: ["agent_mandatory"], ...extra };
+};
 const plugin = () => ({
   "plugin.json": JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "context-proof", version: "1.0.0" }),
   "skills/context-proof/SKILL.md": skill,
@@ -62,7 +64,7 @@ test("same plugin installation retains data across immutable package versions", 
   const first = await f.prepare([resource(plugin())]);
   const files = plugin();
   files["plugin.json"] = JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "context-proof", version: "2.0.0" });
-  const second = await f.prepare([resource(files, { version: "2.0.0" })]);
+  const second = await f.prepare([resource(files, { revision: 2 })]);
   assert.equal(second.receipt.resources[0].data, first.receipt.resources[0].data);
   assert.notEqual(second.receipt.resources[0].root, first.receipt.resources[0].root);
 });
@@ -92,4 +94,33 @@ test("unsupported MCP transports and package credentials fail explicitly", async
     files["mcp.json"] = JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json", mcpServers: { local: server } });
     await assert.rejects(f.prepare([resource(files)]), /CONTEXT_COMPONENT_UNAVAILABLE/);
   }
+});
+
+test("binary files and executable flags survive FileBundle materialization", async t => {
+  const { stat } = await import("node:fs/promises");
+  const f = await fixture(t);
+  const value = resource({ "SKILL.md": skill, "assets/data.bin": Buffer.from([0, 255, 128, 10]), "scripts/check.sh": "#!/bin/sh\nexit 0\n" }, { kind: "skill" });
+  value.files["scripts/check.sh"].executable = true;
+  value.digest = "sha256:" + createHash("sha256").update(JSON.stringify(value.files)).digest("hex");
+  const prepared = await f.prepare([value]);
+  const root = prepared.receipt.resources[0].root;
+  assert.deepEqual(await readFile(join(root, "assets/data.bin")), Buffer.from([0, 255, 128, 10]));
+  assert.equal((await stat(join(root, "scripts/check.sh"))).mode & 0o777, 0o500);
+  assert.equal((await stat(join(root, "SKILL.md"))).mode & 0o777, 0o400);
+  assert.equal(prepared.receipt.resources[0].revision, 1);
+});
+
+test("manifest version is optional metadata and independent of resource revision", async t => {
+  const f = await fixture(t);
+  const files = plugin();
+  files["plugin.json"] = JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "context-proof" });
+  await assert.doesNotReject(f.prepare([resource(files, { revision: 9 })]));
+  await assert.rejects(f.prepare([resource({ "AGENTS.md": "expert only" })]));
+});
+
+test("path escapes and file/directory conflicts never publish a resource", async t => {
+  const f = await fixture(t);
+  for (const path of ["../escape", "/tmp/escape", "a\\b", "a//b", "./x"])
+    await assert.rejects(f.prepare([resource({ "SKILL.md": skill, [path]: "bad" }, { kind: "skill" })]), /CONTEXT_RESOURCE_INVALID/);
+  await assert.rejects(f.prepare([resource({ "SKILL.md": skill, "a": "file", "a/b": "nested" }, { kind: "skill" })]));
 });
