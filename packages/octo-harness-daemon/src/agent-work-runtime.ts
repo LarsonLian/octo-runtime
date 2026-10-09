@@ -6,6 +6,7 @@ import { performance } from "node:perf_hooks";
 import { dirname, join } from "node:path";
 import WebSocket from "ws";
 import type { AdapterHostRpc, HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
+import { DEFAULT_RUNTIME_LIMITS } from "@mininglamp-oss/octo-harness-adapter-host";
 import {
   REQUEST_ID_HEADER,
   createRequestId,
@@ -46,6 +47,7 @@ import { resolveRuntimeInputImages } from "./input-images.js";
 import { AgentWorkStore } from "./agent-work-store.js";
 import { prepareRunContext, recordContextPreparation, resolveRunResources, type PreparedRunContext } from "./context-preparation.js";
 import { ContextPipeline } from "./context-pipeline.js";
+import { createCodexMaterialCompactionPort } from "./responses-material-compaction.js";
 import { compactContextMaterials, FileMaterialCompactionStore, type MaterialCompactionPort } from "./context-compaction.js";
 import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext } from "./run-context.js";
 import { prepareTaskMaterials, type PreparedTaskMaterials } from "./task-materials.js";
@@ -1630,6 +1632,9 @@ export class AgentWorkRuntime {
     }
     const maxConcurrentRuns = this.#options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS;
     const controller = new AbortController();
+    const acceptedAt = performance.now();
+    let runDeadlineAt: number | undefined;
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
     this.#acceptingCommandIds.add(command.command_id);
     const accepting: AcceptingRun = {
       commandId: command.command_id,
@@ -1651,6 +1656,18 @@ export class AgentWorkRuntime {
         fencingToken = requiredSafeInteger(command.fencing_token, "run.start fencing_token");
         const executionEnvelope = structuredClone(command.payload as ExecutionEnvelope);
         assertExecutionEnvelopeContract(executionEnvelope);
+        // 准备、压缩、等待执行容量和主调用共用一次总时限，不在阶段切换时重置。
+        const limits = asRecord(executionEnvelope.resolved_execution_plan.runtime_limits);
+        if (limits.enforcement !== "observe") {
+          const duration = typeof limits.run_timeout_ms === "number" ? limits.run_timeout_ms : DEFAULT_RUNTIME_LIMITS.runTimeoutMs;
+          runDeadlineAt = acceptedAt + duration;
+          deadlineTimer = setTimeout(() => {
+            controller.abort(new RunTotalDeadlineError(duration));
+            const active = this.#activeRuns.get(command.run_id);
+            if (active) void this.#host.cancel(active.invocationId).catch(() => {});
+          }, Math.max(1, runDeadlineAt - performance.now()));
+          deadlineTimer.unref?.();
+        }
         const selection = executionEnvelope.resolved_runtime_selection;
         if (!selection.authorized_candidates.some(candidate => candidate.runtime_id === this.#runtimeId)
           || (selection.selection_mode === "explicit" && selection.explicit_runtime_id !== this.#runtimeId)) {
@@ -1704,9 +1721,13 @@ export class AgentWorkRuntime {
             executionEnvelope.resolved_execution_plan, signal, { runId: command.run_id, store }),
           prepareContinuity: signal => this.#prepareChannelContext(command.run_id,
             executionEnvelope, adapterTypeForContext, signal, epoch),
-          ...(this.#options.createMaterialCompactionPort ? {
+          ...((this.#options.createMaterialCompactionPort || adapterTypeForContext === "codex") ? {
             prepareCompiled: async (compiled: CompiledRunContext, signal: AbortSignal): Promise<CompiledRunContext> => {
-              const port = await this.#options.createMaterialCompactionPort!({ envelope: executionEnvelope, compiled, signal });
+              if (!compiled.modelContent) return compiled;
+              const port = this.#options.createMaterialCompactionPort
+                ? await this.#options.createMaterialCompactionPort({ envelope: executionEnvelope, compiled, signal })
+                : await createCodexMaterialCompactionPort({ model: compiled.executionPlan?.model,
+                  protectedInput: executionInputText(input), instructions: compiled.controlInstructions, signal });
               const sourceRefs = Array.isArray(materialEntries) ? materialEntries.map(entry => {
                 const value = asRecord(entry);
                 return { resource_ref: value.resource_ref, type: value.type };
@@ -1722,6 +1743,7 @@ export class AgentWorkRuntime {
                   runId: command.run_id, adapterType: adapterTypeForContext, message: `Material compaction ${state}` })
               });
               return { ...compiled, modelContent: compacted.material,
+                ...(port.measurementMode === "provider_native" ? { modelCapacity: { contextWindow: port.contextWindow, outputReserveTokens: port.outputReserveTokens, source: port.capacitySource ?? "trusted_host", management: "provider_native" as const } } : {}),
                 ...(compacted.receipt ? { materialCompaction: compacted.receipt } : {}) };
             }
           } : {}),
@@ -1833,7 +1855,10 @@ export class AgentWorkRuntime {
           return;
         }
         this.#contextStore?.markFailed(command.run_id);
-        const failure = error instanceof ChannelContextStaleGenerationError
+        const deadlineError: unknown = controller.signal.reason;
+        const failure = deadlineError instanceof RunTotalDeadlineError
+          ? runDeadlineFailure(deadlineError, command.run_id, "context.preparation")
+          : error instanceof ChannelContextStaleGenerationError
           ? {
               code: "STALE_CONTEXT_GENERATION",
               message: error.message,
@@ -1865,6 +1890,11 @@ export class AgentWorkRuntime {
       this.#assertCurrentLifecycle(epoch);
       releaseAdmission = await this.#runAdmission?.acquire(controller.signal);
       this.#assertCurrentLifecycle(epoch);
+      throwIfAcceptingAborted(controller.signal);
+      request.signal = controller.signal;
+      if (runDeadlineAt !== undefined) {
+        request.runtimeLimits = { ...request.runtimeLimits, runTimeoutMs: Math.max(100, Math.floor(runDeadlineAt - performance.now())) };
+      }
       store.upsertRun({
         runId: command.run_id,
         agentSessionId,
@@ -1877,16 +1907,29 @@ export class AgentWorkRuntime {
         invocationId: request.invocationId,
         leaseId,
         fencingToken,
-        outputController: new AbortController(),
+        outputController: controller,
         archiving: false
       });
       if (!accepting.acknowledged) this.#ackCommand(command, true);
       const execution = this.#execute(command, adapterType, request, releaseAdmission);
       admissionHandedOff = true;
       this.#executionTasks.add(execution);
-      void execution.finally(() => this.#executionTasks.delete(execution));
+      void execution.finally(() => {
+        clearTimeout(deadlineTimer);
+        this.#executionTasks.delete(execution);
+      });
+    } catch (error) {
+      const deadlineError: unknown = controller.signal.reason;
+      if (!(deadlineError instanceof RunTotalDeadlineError)) throw error;
+      this.#contextStore?.markFailed(command.run_id);
+      const failure = runDeadlineFailure(deadlineError, command.run_id, "runtime.admission");
+      store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
+      this.#ackCommand(command, false, failure);
     } finally {
-      if (!admissionHandedOff) releaseAdmission?.();
+      if (!admissionHandedOff) {
+        clearTimeout(deadlineTimer);
+        releaseAdmission?.();
+      }
       this.#acceptingCommandIds.delete(command.command_id);
       if (this.#acceptingRuns.get(command.run_id)?.controller === controller) {
         this.#acceptingRuns.delete(command.run_id);
@@ -2120,6 +2163,10 @@ export class AgentWorkRuntime {
         }
         finalText = accumulateFinalText(finalText, event);
         const mapped = mapRuntimeEvent(event);
+        if (TERMINAL_OUTBOX_TYPES.has(mapped.type) && request.signal?.reason instanceof RunTotalDeadlineError) {
+          mapped.type = "run.failed";
+          mapped.payload = runDeadlineFailure(request.signal.reason, command.run_id, "adapter.invoke");
+        }
         const taskRef = Array.isArray(request.runMetadata?.taskMaterials) ? asRecord(request.runMetadata.taskMaterials[0]) : {};
         if (mapped.type === "run.completed" && typeof taskRef.task_id === "string") {
           const active = this.#activeRuns.get(command.run_id)!;
@@ -2135,8 +2182,11 @@ export class AgentWorkRuntime {
           active.archiving = false;
           if (this.#authoritativeTerminalRuns.has(command.run_id)) break;
           if (active.outputController.signal.aborted) {
-            mapped.type = "run.cancelled";
-            mapped.payload = { reasonCode: "cancelled" };
+            const reason: unknown = active.outputController.signal.reason;
+            mapped.type = reason instanceof RunTotalDeadlineError ? "run.failed" : "run.cancelled";
+            mapped.payload = reason instanceof RunTotalDeadlineError
+              ? runDeadlineFailure(reason, command.run_id, "task.output.archive")
+              : { reasonCode: "cancelled" };
           }
           const failed = ((mapped.payload.task_output_receipts ?? []) as { status: string }[]).filter(receipt => receipt.status === "failed");
           if (failed.length) {
@@ -2195,7 +2245,8 @@ export class AgentWorkRuntime {
       });
       try {
         appendStarted();
-        const payload = {
+        const payload = request.signal?.reason instanceof RunTotalDeadlineError
+          ? runDeadlineFailure(request.signal.reason, command.run_id, "adapter.invoke") : {
           ...failurePayload(Object.assign(error instanceof Error ? error : new Error(errorMessage(error)), {
             code: (error as NodeJS.ErrnoException)?.code ?? "ADAPTER_INVOCATION_FAILED",
             adapterType
@@ -2529,7 +2580,7 @@ export function mapExecutionEnvelope(
         : [stringValue(definition.instructions), compiled.controlInstructions,
           ...(taskMaterials ? [taskOutputInstructions(envelope.run_id)] : [])].filter(Boolean).join("\n\n"),
       context: structuredClone(envelope.effective_context),
-      runMetadata: context,
+      runMetadata: { ...context, ...(compiled.modelCapacity ? { contextCapacity: compiled.modelCapacity } : {}) },
       approvalMode: profile.approval_mode,
       ...(mcpServers ? { mcpServers } : {}),
       ...(envelope.provider_session && contextSnapshot?.selectedVariant !== "recovery"
@@ -2664,7 +2715,7 @@ function executionInputText(input: Record<string, unknown>): string {
     const value = asRecord(part);
     return value.type === "text" && typeof value.text === "string" ? value.text : "";
   }).filter(Boolean).join("\n");
-  return partsText || stringValue(input.prompt) || "";
+  return partsText || stringValue(input.prompt) || stringValue(input.text) || "";
 }
 
 function rawDataText(data: WebSocket.RawData): string {
@@ -2801,6 +2852,19 @@ class AcceptingRunCancelledError extends Error {
     super("run cancelled before provider invocation");
     this.name = "AcceptingRunCancelledError";
   }
+}
+
+class RunTotalDeadlineError extends Error {
+  readonly code = "ADAPTER_RUN_DEADLINE";
+  constructor(readonly timeoutMs: number) {
+    super("Run total deadline exhausted during preparation or execution");
+    this.name = "RunTotalDeadlineError";
+  }
+}
+
+function runDeadlineFailure(error: RunTotalDeadlineError, runId: string, stage: string): Record<string, unknown> {
+  return { ...failurePayload(error, { stage, defaultDomain: "runtime", runId }),
+    timeoutReason: "run_deadline", timeoutStage: stage, timeoutMs: error.timeoutMs };
 }
 
 class ProviderConfigurationMissingError extends Error {

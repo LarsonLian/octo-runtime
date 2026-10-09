@@ -142,6 +142,7 @@ test("process restart hello excludes stale non-terminal runs but retains pending
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -715,6 +716,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
       }
     };
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token-must-not-leak",
       tenantId: "tenant-observed",
@@ -932,6 +934,7 @@ test("interaction responses require the active execution instance as well as lea
       }
     };
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -976,6 +979,7 @@ test("a configured runtime ID still refreshes registration and rejects identity 
       async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
     };
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1028,6 +1032,7 @@ test("startup registration failure stays alive and every reconnect re-registers"
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1069,6 +1074,7 @@ test("rejected runtime credentials stop after the configured failure budget", as
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "rejected-runtime-token",
@@ -1124,6 +1130,7 @@ test("connectivity notification interrupts a long reconnect backoff with bounded
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1201,6 +1208,7 @@ test("reconnect terminal authority cancels local execution and discards its outb
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1272,6 +1280,7 @@ test("runtime goaway delays and spreads the next reconnect", async () => {
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1324,6 +1333,7 @@ test("close cancels a pending reconnect backoff without late registration", asyn
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1378,6 +1388,7 @@ test("a stalled WebSocket handshake times out and registration retries", async (
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1434,6 +1445,7 @@ test("hard outbox watermark rejects new work with a durable command receipt", as
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1501,6 +1513,7 @@ test("low disk preflight stays connected, reports health and rejects new work", 
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1565,6 +1578,7 @@ test("store open failure keeps the control plane online with migration_failed he
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1624,6 +1638,7 @@ test("missing provider configuration rejects work with a durable catalog failure
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1708,6 +1723,7 @@ test("event nack releases the send window and retries from the requested sequenc
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1775,6 +1791,7 @@ test("local runtime concurrency limit queues a second provider invocation", asyn
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",

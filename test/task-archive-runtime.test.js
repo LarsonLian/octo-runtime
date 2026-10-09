@@ -73,7 +73,8 @@ test("real Runtime uploads a declared deliverable before durable terminal and re
     await rm(directory, { recursive: true, force: true });
   });
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
-  runtime = new AgentWorkRuntime({ profile: "default", baseUrl, token: "runtime-grant", runtimeName: "archive-fixture", storePath: join(directory, "runtime.db") }, {
+  runtime = new AgentWorkRuntime({
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }), profile: "default", baseUrl, token: "runtime-grant", runtimeName: "archive-fixture", storePath: join(directory, "runtime.db") }, {
     list: async () => [{ type: "codex", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["tool.mcp.dynamic"] }], cancel: async () => ({ cancelled: true }),
     async *invoke(_adapter, request) {
       assert.match(request.controlInstructions, /task-output-manifest/);

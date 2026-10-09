@@ -634,7 +634,14 @@ export class CodexEventNormalizer {
     const item = recordValue(params.item);
     if (!item) return [];
     const id = stringValue(item.id);
-    if (stringValue(item.type) === "contextCompaction" && id) return [{ protocolVersion: 2, type: "activity.finished", payload: { activityId: `codex:compaction:${id}`, status: "completed" } }];
+    if (stringValue(item.type) === "contextCompaction" && id) {
+      const threadId = stringValue(params.threadId);
+      return [{ protocolVersion: 2, type: "activity.finished", payload: { activityId: `codex:compaction:${id}`, status: "completed" } },
+        { protocolVersion: 2, type: "run.notice", payload: { noticeId: `codex:compaction:${id}`, code: "context_compacted", severity: "info", params: {} } },
+        ...(threadId ? [{ protocolVersion: 2 as const, type: "session.update" as const, payload: {
+          providerSession: { sessionId: threadId, resumable: true, resumeOutcome: "compacted" as const }
+        } }] : [])];
+    }
     const stepId = id ? this.#itemSteps.get(id) : undefined;
     const channel = id ? this.#itemChannels.get(id) : undefined;
     const events = itemCompletedEvents(item, stepId, channel);

@@ -396,6 +396,9 @@ importers:
       ajv:
         specifier: ^8.17.1
         version: 8.20.0
+      smol-toml:
+        specifier: ^1.8.0
+        version: 1.8.0
       ws:
         specifier: ^8.18.3
         version: 8.21.3

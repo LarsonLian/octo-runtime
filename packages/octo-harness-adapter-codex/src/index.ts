@@ -252,11 +252,22 @@ export function buildCodexCommand(
   const mcp = codexMcpOverrides(req.mcpServers, env, req);
   return {
     command,
-    args: [...appServerArgs, ...mcp.args],
+    args: [...appServerArgs, ...mcp.args, ...nativeCapacityOverrides(req)],
     cwd: req.workdir,
     env: { ...env, ...mcp.env, CODEX_HOME: codexHome },
     cleanup: () => undefined
   };
+}
+
+/** 宿主已核实的窗口同步给 Codex；历史由原生自动压缩处理，绝不重发已接受的 turn。 */
+function nativeCapacityOverrides(request: InvokeRequest): string[] {
+  const value = request.runMetadata?.contextCapacity as Record<string, unknown> | undefined;
+  if (!value) return [];
+  const window = value.contextWindow;
+  const reserve = value.outputReserveTokens;
+  if (value.management !== "provider_native" || typeof window !== "number" || !Number.isSafeInteger(window) || window < 1024
+    || typeof reserve !== "number" || !Number.isSafeInteger(reserve) || reserve < 0 || reserve >= window) throw new TypeError("CONTEXT_CAPACITY_UNAVAILABLE");
+  return ["-c", `model_context_window=${window}`, "-c", `model_auto_compact_token_limit=${window - reserve}`];
 }
 
 function prepareScopedCodexHome(request: InvokeRequest, realHome: string): string {

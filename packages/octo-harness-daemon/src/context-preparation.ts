@@ -48,7 +48,10 @@ export interface ContextPreparationReceipt {
   resources: PreparedCapabilityReceipt[];
   warnings: string[];
 }
+export interface PreparedKnowledge { resource_id: string; root: string; files: string[] }
+
 export interface PreparedRunContext {
+  knowledge?: PreparedKnowledge[];
   workdir: string;
   providerStateDir: string;
   skills: PreparedSkill[];
@@ -97,13 +100,21 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
     options.signal?.throwIfAborted();
     totalBytes += Buffer.byteLength(JSON.stringify(resource.files));
     if (totalBytes > 16_777_216) throw new TypeError("CONTEXT_RESOURCE_BUDGET_EXCEEDED");
-    if (resource.kind === "knowledge") throw new TypeError("CONTEXT_RESOURCE_KIND_UNSUPPORTED: knowledge");
     const root = await materializeResource(stateRoot, resource);
     const texts = Object.fromEntries(Object.entries(resource.files).map(([path, file]) => [path, Buffer.from(file.content_base64, "base64").toString("utf8")]));
     const installation = createHash("sha256").update(options.agentId + "/" + resource.resource_id).digest("hex");
     const data = await privateDirectory(join(stateRoot, "plugin-data", installation));
     const receipt: PreparedCapabilityReceipt = { resource_id: resource.resource_id, revision: resource.revision, digest: resource.digest, root, data, components: [] };
     prepared.receipt.resources.push(receipt);
+    // 知识包只提供完整文件树；目录清单属于不可信事实，不能升级成控制指令。
+    if (resource.kind === "knowledge") {
+      if (resource.invoke || resource.components !== undefined) throw new TypeError("CONTEXT_KNOWLEDGE_SELECTION_INVALID");
+      const files = Object.keys(resource.files).sort();
+      if (!files.length) throw new TypeError("CONTEXT_RESOURCE_UNAVAILABLE: " + resource.resource_id);
+      (prepared.knowledge ??= []).push({ resource_id: resource.resource_id, root, files });
+      receipt.components.push("knowledge:files");
+      continue;
+    }
     if (resource.kind === "agent_plugin") {
       const manifest: unknown = JSON.parse(texts["plugin.json"] ?? "");
       if (!manifestValidator(manifest)) throw new TypeError("CONTEXT_PLUGIN_MANIFEST_INVALID");

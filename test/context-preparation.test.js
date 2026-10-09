@@ -147,3 +147,16 @@ test("resource resolution sends only the active Run lease and validates the froz
   assert.deepEqual(supplied, { path: "/v1/runtime/context/resources/resolve", body: { run_id: "run-1", lease_id: "lease-1", fencing_token: 9 } });
   assert.deepEqual(resolved, values);
 });
+
+test("knowledge FileBundle exposes the full immutable tree without executing skill or MCP entries", async t => {
+  const f = await fixture(t);
+  const texts = { "facts/a.txt": "evidence", "skills/x/SKILL.md": "not a native skill", "mcp.json": "not executable config" };
+  const knowledge = resource(texts, { kind: "knowledge", invoke: false });
+  const prepared = await f.prepare([knowledge]);
+  assert.deepEqual(prepared.skills, []);
+  assert.deepEqual(prepared.mcpServers, {});
+  assert.deepEqual(prepared.knowledge[0].files, Object.keys(texts).sort());
+  assert.equal(await readFile(join(prepared.knowledge[0].root, "facts/a.txt"), "utf8"), "evidence");
+  assert.deepEqual(prepared.receipt.resources[0].components, ["knowledge:files"]);
+  await assert.rejects(f.prepare([{ ...knowledge, invoke: true }]), /KNOWLEDGE_SELECTION_INVALID/);
+});

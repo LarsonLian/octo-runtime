@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createServer } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
@@ -89,7 +89,7 @@ test("task scope, grant failures, missing MCP and unregistered resources fail cl
   await assert.rejects(prepareTaskMaterials(contextEnvelope([arbitrary]), plan(f.url), new AbortController().signal), /CONTEXT_RESOLVER_UNAVAILABLE/);
   const changedEpoch = await fixture(t, () => ({ ...material(1), task: { ...material(1).task, handler_epoch: 4 } }));
   await assert.rejects(prepareTaskMaterials(contextEnvelope([resource]), plan(changedEpoch.url), new AbortController().signal), /TASK_MATERIAL_SCOPE_MISMATCH/);
-  const oversized = await fixture(t, () => ({ ...material(1), description: "a".repeat(70_000) }));
+  const oversized = await fixture(t, () => ({ ...material(1), description: "a".repeat(16 * 1024 * 1024 + 1) }));
   await assert.rejects(prepareTaskMaterials(contextEnvelope([resource]), plan(oversized.url), new AbortController().signal), /TASK_MATERIAL_BUDGET_EXCEEDED/);
 });
 
@@ -139,7 +139,7 @@ test("real Runtime admission bootstraps MCP before provider invocation and rejec
   const server = createServer(async (request, response) => {
     for await (const _chunk of request) { /* Drain registration. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-1", protocol_version: 2 } }));
+    response.end(JSON.stringify(request.url === "/responses/input_tokens" ? { input_tokens: 100 } : { runtime: { profile: "default", id: "runtime-1", protocol_version: 2 } }));
   });
   const ws = new WebSocketServer({ noServer: true });
   server.on("upgrade", (request, socket, head) => ws.handleUpgrade(request, socket, head, client => ws.emit("connection", client, request)));
@@ -155,6 +155,11 @@ test("real Runtime admission bootstraps MCP before provider invocation and rejec
     });
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const priorCodexHome = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = directory;
+  await writeFile(join(directory, "config.toml"), `model="fixture"\nmodel_context_window=8192\nmodel_provider="fixture"\n[model_providers.fixture]\nbase_url="http://127.0.0.1:${server.address().port}"\nwire_api="responses"\n`);
+  await writeFile(join(directory, "auth.json"), JSON.stringify({OPENAI_API_KEY:"fake-unit-test"}));
+  t.after(() => { if (priorCodexHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = priorCodexHome; });
   const runtime = new AgentWorkRuntime({ profile: "default", baseUrl: `http://127.0.0.1:${server.address().port}`,
     token: "fixture-runtime", runtimeName: "fixture-task", storePath: join(directory, "runtime.db") }, {
     list: async () => [{ type: "codex", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["tool.mcp.dynamic"] }, { type: "no-mcp", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] }], cancel: async () => ({ cancelled: true }),

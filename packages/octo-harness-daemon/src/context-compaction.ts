@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, link, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
-export const MATERIAL_COMPACTION_VERSION = "octo.material-compaction/v1";
+export const MATERIAL_COMPACTION_VERSION = "octo.material-compaction/v2";
 const MAX_CALLS = 64;
 const MAX_ROUNDS = 8;
 const MAX_DURATION_MS = 120_000;
@@ -13,6 +13,8 @@ export interface CompactionReceipt {
   inputHash: string;
   sourceDigest: string;
   model: string;
+  measurementMode?: "provider_native";
+  capacitySource?: string;
   summary: string;
   outputDigest: string;
   calls: number;
@@ -27,7 +29,9 @@ export interface MaterialCompactionPort {
   outputReserveTokens: number;
   summaryInputLimit: number;
   toolsDisabled: true;
-  /** 必须计入当前输入、指令、工具定义、历史及本次材料，不能用字符数代替 token。 */
+  measurementMode?: "provider_native";
+  capacitySource?: string;
+  /** 精确计量显式输入；provider_native 模式由 Provider 原生管理隐藏指令、工具及历史。 */
   measureInputTokens(material: string, signal: AbortSignal): Promise<number>;
   countTokens(text: string, signal: AbortSignal): Promise<number>;
   summarize(text: string, targetTokens: number, signal: AbortSignal): Promise<string>;
@@ -72,7 +76,8 @@ export async function compactContextMaterials(input: MaterialCompactionInput): P
     || port.outputReserveTokens >= port.contextWindow || !Number.isSafeInteger(port.summaryInputLimit) || port.summaryInputLimit < 64) {
     throw new Error("CONTEXT_CAPACITY_UNAVAILABLE");
   }
-  const workSignal = AbortSignal.any([signal, AbortSignal.timeout(MAX_DURATION_MS)]);
+  const failed = new AbortController();
+  const workSignal = AbortSignal.any([signal, failed.signal, AbortSignal.timeout(MAX_DURATION_MS)]);
   // 即使 Port 没有及时响应取消，也不能接收晚到产物或继续摘要下一块。
   const call = async <T>(work: () => Promise<T>): Promise<T> => {
     workSignal.throwIfAborted();
@@ -89,7 +94,7 @@ export async function compactContextMaterials(input: MaterialCompactionInput): P
   };
   const sourceDigest = digest(input.material);
   const inputHash = digest({ version: MATERIAL_COMPACTION_VERSION, sourceDigest, protectedIdentity: input.protectedIdentity,
-    sourceRefs: input.sourceRefs, model: port.model, window: port.contextWindow, reserve: port.outputReserveTokens });
+    sourceRefs: input.sourceRefs, model: port.model, window: port.contextWindow, reserve: port.outputReserveTokens, mode: port.measurementMode, capacitySource: port.capacitySource });
   const allowed = port.contextWindow - port.outputReserveTokens;
   const restore = async (receipt: CompactionReceipt): Promise<{ material: string; receipt: CompactionReceipt }> => {
     if (receipt.version !== MATERIAL_COMPACTION_VERSION || receipt.inputHash !== inputHash
@@ -110,18 +115,24 @@ export async function compactContextMaterials(input: MaterialCompactionInput): P
   const chunks = async (text: string): Promise<string[]> => {
     const points = Array.from(text);
     const parts: string[] = [];
-    let start = 0;
-    while (start < points.length) {
-      if (parts.length >= MAX_CALLS) throw new Error("CONTEXT_COMPACTION_CALL_LIMIT");
-      let low = 1, high = points.length - start, fit = 0;
-      while (low <= high) {
-        const mid = Math.floor((low + high) / 2);
-        if (await count(points.slice(start, start + mid).join("")) <= port.summaryInputLimit) { fit = mid; low = mid + 1; }
-        else high = mid - 1;
-      }
-      if (!fit) throw new Error("CONTEXT_COMPACTION_CHUNK_TOO_LARGE");
-      parts.push(points.slice(start, start + fit).join(""));
-      start += fit;
+    const total = await count(text);
+    const candidateLength = Math.max(1, Math.floor(points.length * port.summaryInputLimit / Math.max(1, total) * 0.9));
+    const candidates: string[] = [];
+    for (let start = 0; start < points.length; start += candidateLength) {
+      if (candidates.length >= MAX_CALLS) throw new Error("CONTEXT_COMPACTION_CALL_LIMIT");
+      candidates.push(points.slice(start, start + candidateLength).join(""));
+    }
+    const fit = async (candidate: string): Promise<string[]> => {
+      if (await count(candidate) <= port.summaryInputLimit) return [candidate];
+      const chunkPoints = Array.from(candidate);
+      if (chunkPoints.length <= 1) throw new Error("CONTEXT_COMPACTION_CHUNK_TOO_LARGE");
+      const middle = Math.floor(chunkPoints.length / 2);
+      return [...await fit(chunkPoints.slice(0, middle).join("")), ...await fit(chunkPoints.slice(middle).join(""))];
+    };
+    // 比例只选候选块；计量也最多四路并发，每个最终块都经过实际 token 校验。
+    for (let offset = 0; offset < candidates.length; offset += 4) {
+      parts.push(...(await Promise.all(candidates.slice(offset, offset + 4).map(fit))).flat());
+      if (parts.length > MAX_CALLS) throw new Error("CONTEXT_COMPACTION_CALL_LIMIT");
     }
     return parts;
   };
@@ -134,13 +145,18 @@ export async function compactContextMaterials(input: MaterialCompactionInput): P
       const before = await count(current);
       const parts = await chunks(current);
       const summaries: string[] = [];
-      for (const part of parts) {
-        if (++calls > MAX_CALLS) throw new Error("CONTEXT_COMPACTION_CALL_LIMIT");
-        const target = Math.max(1, Math.min(Math.floor((allowed - protectedTokens) / 2 / parts.length), Math.floor(await count(part) / 2)));
-        const summary = await call(() => port.summarize(part, target, workSignal));
-        if (typeof summary !== "string" || !summary.trim()) throw new Error("CONTEXT_COMPACTION_EMPTY");
-        if (await count(summary) >= await count(part)) throw new Error("CONTEXT_COMPACTION_NO_PROGRESS");
-        summaries.push(summary);
+      // 并发有界且共享同一取消信号；Promise.all 保留原始材料顺序。
+      for (let offset = 0; offset < parts.length; offset += 4) {
+        const batch = await Promise.all(parts.slice(offset, offset + 4).map(async part => {
+          if (++calls > MAX_CALLS) throw new Error("CONTEXT_COMPACTION_CALL_LIMIT");
+          const partTokens = await count(part);
+          const target = Math.max(1, Math.min(Math.floor((allowed - protectedTokens) / 2 / parts.length), Math.floor(partTokens / 2)));
+          const summary = await call(() => port.summarize(part, target, workSignal));
+          if (typeof summary !== "string" || !summary.trim()) throw new Error("CONTEXT_COMPACTION_EMPTY");
+          if (await count(summary) >= partTokens) throw new Error("CONTEXT_COMPACTION_NO_PROGRESS");
+          return summary;
+        }));
+        summaries.push(...batch);
       }
       current = summaries.join("\n\n");
       if (await count(current) >= before) throw new Error("CONTEXT_COMPACTION_NO_PROGRESS");
@@ -148,14 +164,14 @@ export async function compactContextMaterials(input: MaterialCompactionInput): P
       const after = tokenCount(await call(() => port.measureInputTokens(rendered, workSignal)));
       if (after > allowed) continue;
       const receipt: CompactionReceipt = { version: MATERIAL_COMPACTION_VERSION, inputHash, sourceDigest,
-        model: port.model, summary: current, outputDigest: digest(current), calls, inputTokens: totalTokens, outputTokens: after };
+        model: port.model, ...(port.measurementMode ? { measurementMode: port.measurementMode } : {}), ...(port.capacitySource ? { capacitySource: port.capacitySource } : {}), summary: current, outputDigest: digest(current), calls, inputTokens: totalTokens, outputTokens: after };
       const saved = await call(() => store.save(input.runId, receipt, workSignal));
       const result = await restore(saved);
       progress("completed");
       return result;
     }
     throw new Error("CONTEXT_COMPACTION_ROUND_LIMIT");
-  } catch (error) { progress("failed"); throw error; }
+  } catch (error) { failed.abort(error); progress("failed"); throw error; }
 }
 
 /** 原子写入私有摘要；同 Run 的首次写入获胜，恢复不会产生另一份随机摘要。 */

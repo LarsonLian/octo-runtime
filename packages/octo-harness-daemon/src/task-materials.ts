@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
-  CONTEXT_MAX_BYTES,
   assertContextEnvelope,
   assertMcpServers,
   contextHash,
@@ -14,7 +13,9 @@ import {
 export const TASK_MCP_SERVER = "octo_task";
 export const TASK_MATERIAL_TOOL = "task_get_materials";
 const MCP_PROTOCOL = "2025-03-26";
-const MAX_RESPONSE_BYTES = 256 * 1024;
+// 这是内部受权材料的传输上限，不是公开 Context 信封或模型 token 预算。
+const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
+const MAX_MATERIAL_BYTES = 16 * 1024 * 1024;
 
 export interface PreparedTaskMaterials {
   selections: ContextSelectionEntry[];
@@ -157,7 +158,7 @@ export async function prepareTaskMaterials(context: ContextEnvelope, plan: Resol
     throw new TypeError("TASK_MATERIAL_SCOPE_MISMATCH");
   }
   const text = JSON.stringify(result);
-  if (Buffer.byteLength(text, "utf8") > CONTEXT_MAX_BYTES - 1024) throw new TypeError("TASK_MATERIAL_BUDGET_EXCEEDED");
+  if (Buffer.byteLength(text, "utf8") > MAX_MATERIAL_BYTES) throw new TypeError("TASK_MATERIAL_BUDGET_EXCEEDED");
   const resourceRef = String(resource.resource_ref);
   const ref = {
     resource_ref: resourceRef, task_id: String(task.id), task_version: Number(task.row_version),
@@ -181,7 +182,7 @@ function assertTaskMaterialSnapshot(value: PreparedTaskMaterials, resourceRef: s
     || (params.handler_epoch !== undefined && ref.handler_epoch !== params.handler_epoch)
     || (params.expected_version !== undefined && ref.task_version !== params.expected_version)
     || selection.resource_ref !== resourceRef || typeof selection.text !== "string"
-    || Buffer.byteLength(selection.text, "utf8") > CONTEXT_MAX_BYTES - 1024
+    || Buffer.byteLength(selection.text, "utf8") > MAX_MATERIAL_BYTES
     || ref.digest !== `sha256:${createHash("sha256").update(selection.text).digest("hex")}`) {
     throw new TypeError("TASK_MATERIAL_SNAPSHOT_INVALID");
   }
