@@ -140,3 +140,17 @@ test("compaction cannot rewrite trusted instructions or execution configuration"
   await assert.rejects(f.pipeline.prepare(context, plan, identity, new AbortController().signal), /CONTEXT_COMPACTION_PROTECTED_CONTENT_CHANGED/);
   assert.equal(f.receipt(), undefined);
 });
+
+test('policy revision identity changes compilation digest without changing material or instruction text', async () => {
+  const snapshots = JSON.parse(readFileSync(new URL('../packages/octo-harness-protocol/schema/scenario-policy-fixtures.json', import.meta.url), 'utf8'));
+  const prepare = async snapshot => {
+    const f = fixture({ scenarioPolicyHash: snapshot.hash });
+    return f.pipeline.prepare(context, plan, identity, new AbortController().signal);
+  };
+  const first = await prepare(snapshots[0]);
+  const second = await prepare(snapshots[1]);
+  assert.equal(first.receipt.context_hash, second.receipt.context_hash);
+  assert.notEqual(first.receipt.compiled_hash, second.receipt.compiled_hash);
+  assert.equal(first.receipt.scenario_policy_hash, snapshots[0].hash);
+  assert.equal(first.receipt.compiler_version, 'octo.context-compiler/v4');
+});

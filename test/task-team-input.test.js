@@ -50,7 +50,7 @@ test("actual Worker wrapper renders handoff instruction and mailbox output refer
   const resource = { namespace: "octo.content", name: "references", payload: { entries: [{ resource_ref: ref.resource_ref,
     resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_id: "task-1", handler_epoch: 3 }
   }] } };
-  const envelope = { schema_version: 6, effective_context: executionContext(plan, [resource]), context_configuration_version: 1,
+  const envelope = { schema_version: 7, effective_context: executionContext(plan, [resource]), context_configuration_version: 1,
     resolved_execution_plan: plan, resolved_runtime_selection: resolvedRuntimeSelection(), run_id: "target-run", agent_session_id: "target-session",
     agent_run_request: { context: contextEnvelope([resource]), namespace: "task", agent_id: "designer", agent_revision_id: "designer-rev", session_key: "team/designer",
       trigger: { kind: "coordination.delegate_handoff", occurrence_id: "delegation/1" }, input }, agent_revision: { definition: { instructions: "Keep project rules" } } };

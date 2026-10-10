@@ -1411,7 +1411,7 @@ function executionEnvelope(runtimeId, runId = "run-e2e", triggerSeq = 3, current
     }
   }];
   return {
-    schema_version: 6,
+    schema_version: 7,
     resolved_runtime_selection: resolvedRuntimeSelection(runtimeId),
     context_configuration_version: 1,
     internal_context: { continuity: items[0].payload },

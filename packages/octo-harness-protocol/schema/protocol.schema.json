@@ -642,7 +642,8 @@
                       "enum": [
                         "agent_default",
                         "agent_mandatory",
-                        "request"
+                        "request",
+                        "scenario_policy"
                       ]
                     }
                   },
@@ -655,6 +656,9 @@
               }
             }
           }
+        },
+        "scenario": {
+          "$ref": "#/definitions/ScenarioProjection"
         }
       }
     },
@@ -680,7 +684,7 @@
       ],
       "properties": {
         "compiler_version": {
-          "const": "octo.context-compiler/v3"
+          "const": "octo.context-compiler/v4"
         },
         "catalog_version": {
           "const": "octo.context-catalog/v3"
@@ -743,6 +747,10 @@
             "type": "string",
             "maxLength": 4096
           }
+        },
+        "scenario_policy_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
         }
       }
     },
@@ -770,7 +778,7 @@
           "const": "octo.context-application/v1"
         },
         "compiler_version": {
-          "const": "octo.context-compiler/v3"
+          "const": "octo.context-compiler/v4"
         },
         "catalog_version": {
           "const": "octo.context-catalog/v3"
@@ -1159,7 +1167,8 @@
             "enum": [
               "agent_default",
               "agent_mandatory",
-              "request"
+              "request",
+              "scenario_policy"
             ]
           }
         },
@@ -4094,6 +4103,156 @@
           }
         }
       }
+    },
+    "ScenarioRequest": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "builder_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "builder_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        }
+      },
+      "required": [
+        "key",
+        "builder_id",
+        "builder_version"
+      ]
+    },
+    "ScenarioPolicy": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "instructions": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "default_skills": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "resource_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "invoke": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "resource_id",
+              "invoke"
+            ]
+          }
+        }
+      },
+      "required": [
+        "enabled",
+        "instructions",
+        "default_skills"
+      ]
+    },
+    "ScenarioPolicySnapshot": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "instructions": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "default_skills": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "resource_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "invoke": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "resource_id",
+              "invoke"
+            ]
+          }
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "key",
+        "version",
+        "instructions",
+        "default_skills",
+        "hash"
+      ]
+    },
+    "ScenarioProjection": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "policy_version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "policy_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "key",
+        "policy_version",
+        "policy_hash"
+      ]
     }
   }
 }

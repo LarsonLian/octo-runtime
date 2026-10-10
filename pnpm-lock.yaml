@@ -371,6 +371,12 @@ importers:
         specifier: workspace:*
         version: link:../octo-harness-adapter-sdk
 
+  packages/octo-harness-context-builder:
+    dependencies:
+      '@mininglamp-oss/octo-harness-protocol':
+        specifier: workspace:*
+        version: link:../octo-harness-protocol
+
   packages/octo-harness-core:
     dependencies:
       '@mininglamp-oss/octo-harness-protocol':

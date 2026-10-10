@@ -37,7 +37,7 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task 
     workspace: { mode: "fixed", path: directory }, workdir: directory,
     runtime_limits: { run_timeout_ms: timeout, enforcement: "enforce" } };
   const envelope = {
-    schema_version: 6, context_configuration_version: 1,
+    schema_version: 7, context_configuration_version: 1,
     effective_context: executionContext(plan, compactionPort ? [{ namespace: "octo.content", name: "inline",
       payload: { entries: [{ text: "material to measure" }] } }] : []), resolved_execution_plan: plan,
     resolved_runtime_selection: resolvedRuntimeSelection("runtime-deadline"),

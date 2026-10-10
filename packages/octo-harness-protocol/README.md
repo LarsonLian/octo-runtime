@@ -86,11 +86,11 @@ pnpm build                            # 3. 构建
 
 ## Context 统一处理合同
 
-运行合同采用 schema 6，选路快照为 `octo.runtime-selection/v2`，Context 信封为 `octo.context-envelope/v2`。公开类型只有 execution/config、resources/selection、content/materials 和受信 control/instructions。旧 `mode=binding` 不再接受；通过 candidates 或 explicit 声明设备意图，授权候选由 Worker 固定。
+运行合同固定采用 schema 7，选路快照为 `octo.runtime-selection/v2`，Context 信封固定为 `octo.context-envelope/v3`，Compiler 为 v4、Catalog 为 v3。新增可选场景元数据不升级 Run/Context 版本；未知可选字段忽略，已识别字段继续校验。旧 `mode=binding` 不再接受；通过 candidates 或 explicit 声明设备意图，授权候选由 Worker 固定。
 
 `CONTEXT_TYPE_CATALOG` 定义每种类型的 schema、持久性、合并、强制约束、阶段和输出。`assertContextProcessorCoverage` 用于阶段开始前核对处理器；目录本身不证明宿主已经部署资源下载或 Provider 支持。
 
-`ContextConfiguration` 包含 defaults 与 mandatory。使用 `assertContextConfiguration` 验证持久配置，再用 `resolveContextConfiguration(configuration, request)` 解析有效项。execution/config 按字段继承，adapter/model/reasoning/workspace/runtime/approval_policy 原子替换，limits 按字段覆盖。资源 selection 使用 include 添加/替换、exclude 删除，空 include/exclude 表示不增删。mandatory 检查原始请求，冲突必须拒绝；内部能力要求由可信执行计划提供。
+`ContextConfiguration` 包含 defaults 与 mandatory。使用 `assertContextConfiguration` 验证持久配置，再用 `resolveContextConfiguration(configuration, request)` 解析有效项。adapter/model/workspace/runtime/approval_policy 沿当前独立类型合并，limits 按字段覆盖。资源 selection 使用 include 添加/替换、exclude 删除，空 include/exclude 表示不增删。mandatory 检查原始请求，冲突必须拒绝；内部能力要求由可信执行计划提供。
 
 资源引用使用 kind、UUID resource_id、可选 invoke/components，不接收 version/revision。include 的 kind/resource_id 必须唯一，include/exclude 不得交叉；JSON Schema 消费者必须实现 `x-octo-capability-selection` 语义关键字。随机目录声明仅使用 `{mode:"random"}`，不得携带 scope 或 path。Runtime 在 AgentSession 首次运行时创建目录，后续运行复用；不同 AgentSession 使用独立目录。实际路径由 Runtime 准备，不能以空 workdir 启动 Provider。
 

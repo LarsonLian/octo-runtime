@@ -1,0 +1,20 @@
+[
+  {
+    "key": "doc.selection.review",
+    "version": 1,
+    "instructions": [
+      "审核 <文本> & 中文 😀"
+    ],
+    "default_skills": [],
+    "hash": "sha256:a2e44db904abe89a1a645d241b8dffd5901c9a2497f3f9bbdfd81b660225753f"
+  },
+  {
+    "key": "doc.selection.review",
+    "version": 2,
+    "instructions": [
+      "审核 <文本> & 中文 😀"
+    ],
+    "default_skills": [],
+    "hash": "sha256:6258380e8d54288078e107ea1e217fd47a3cc0b69249faba679d26508936b761"
+  }
+]

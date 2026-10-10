@@ -3,7 +3,7 @@ import { RUNTIME_SELECTION_SCHEMA } from "./runtime-selection.js";
 
 export const CONTEXT_SCHEMA = "octo.context-envelope/v3" as const;
 export const RUNTIME_RUN_CONTRACT = Object.freeze({
-  schema_version: 6,
+  schema_version: 7,
   routing_schema: RUNTIME_SELECTION_SCHEMA,
   context_schema: CONTEXT_SCHEMA,
   approval_schema: "octo.approval-request/v1"
@@ -343,8 +343,8 @@ export function assertCapabilityResources(value: unknown): void {
       object(content, "CONTEXT_RESOURCE_INVALID"); fields(content, ["content_base64", "executable"]);
       if (typeof content.content_base64 !== "string" || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(content.content_base64) || typeof content.executable !== "boolean") throw new TypeError("CONTEXT_RESOURCE_INVALID");
     }
-    stringList(resource.sources, 3, 1);
-    if (resource.sources.some(source => !["agent_default", "agent_mandatory", "request"].includes(source))) throw new TypeError("CONTEXT_RESOURCE_INVALID");
+    stringList(resource.sources, 4, 1);
+    if (resource.sources.some(source => !["agent_default", "agent_mandatory", "request", "scenario_policy"].includes(source))) throw new TypeError("CONTEXT_RESOURCE_INVALID");
     if (resource.components !== undefined) stringList(resource.components, 64);
   }
 }

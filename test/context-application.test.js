@@ -8,7 +8,7 @@ import { assertCanonicalEvent } from "@mininglamp-oss/octo-harness-protocol";
 import { codexAppServerFixture, invokeRequest } from "./agent-work-runtime-fixture.js";
 
 const compilation = {
-  compiler_version: "octo.context-compiler/v3", catalog_version: "octo.context-catalog/v3",
+  compiler_version: "octo.context-compiler/v4", catalog_version: "octo.context-catalog/v3",
   context_hash: "sha256:" + "a".repeat(64), compiled_hash: "sha256:" + "b".repeat(64),
   run_id: "run-1", lease_id: "lease-1", fencing_token: 1
 };

@@ -1,7 +1,7 @@
 {
   "base": {
     "schema": "octo.context-application/v1",
-    "compiler_version": "octo.context-compiler/v3",
+    "compiler_version": "octo.context-compiler/v4",
     "catalog_version": "octo.context-catalog/v3",
     "context_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "compiled_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",

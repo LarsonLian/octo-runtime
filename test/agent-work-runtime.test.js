@@ -48,7 +48,7 @@ const contentItems = [{
 }];
 
 const envelope = {
-  schema_version: 6,
+  schema_version: 7,
   effective_context: executionContext(executionPlan, contentItems),
   context_configuration_version: 1,
   resolved_execution_plan: executionPlan,

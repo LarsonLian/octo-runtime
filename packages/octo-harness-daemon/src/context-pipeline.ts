@@ -8,7 +8,7 @@ import type { PreparedRunContext } from "./context-preparation.js";
 import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext, type TrustedContextInstruction } from "./run-context.js";
 import type { PreparedTaskMaterials } from "./task-materials.js";
 
-export const CONTEXT_COMPILER_VERSION = "octo.context-compiler/v3" as const;
+export const CONTEXT_COMPILER_VERSION = "octo.context-compiler/v4" as const;
 const preparationKeys = new Set(["octo.execution/adapter", "octo.execution/model", "octo.execution/workspace", "octo.execution/limits", "octo.runtime/selection", "octo.security/approval_policy", "octo.resources/skills", "octo.resources/agent_plugins", "octo.resources/knowledge", "octo.resources/connectors", "octo.content/inline", "octo.content/references"]);
 const compilationKeys = new Set([...preparationKeys, "octo.control/instructions"]);
 
@@ -86,6 +86,7 @@ async function boundedStage<T>(id: ContextPreparationStage | "seal" | "compact",
 
 /** 宿主注入有副作用的准备与封存能力；可信指令的来源身份须由宿主先行验证。 */
 export interface ContextPipelinePorts<Input> {
+  scenarioPolicyHash?: string;
   trustedInstructions?: readonly TrustedContextInstruction[];
   prepareInput(signal: AbortSignal): Promise<Input>;
   prepareCapabilities(signal: AbortSignal): Promise<PreparedRunContext>;
@@ -179,14 +180,16 @@ export class ContextPipeline<Input> {
       }
     }
     // compiled_hash 标识本轮实际编译与准备结果，包含实际目录，不是跨机器归一化的正文摘要。
+    const compilerVersion = CONTEXT_COMPILER_VERSION;
     const receipt: ContextPipelineReceipt = {
-      ...structuredClone(capabilities.receipt), compiler_version: CONTEXT_COMPILER_VERSION,
+      ...structuredClone(capabilities.receipt), compiler_version: compilerVersion,
       catalog_version: CONTEXT_CATALOG_VERSION, context_hash: contextHash(frozen),
       compiled_hash: `sha256:${createHash("sha256").update(JSON.stringify({
-        compiler: CONTEXT_COMPILER_VERSION, catalog: CONTEXT_CATALOG_VERSION, context: contextHash(frozen),
+        ...(this.ports.scenarioPolicyHash ? { scenarioPolicyHash: this.ports.scenarioPolicyHash } : {}), compiler: compilerVersion, catalog: CONTEXT_CATALOG_VERSION, context: contextHash(frozen),
         compiled, trustedSources: instructions.map(value => value.source), workspace: capabilities.workdir,
         resources: capabilities.receipt.resources, materials: materials?.refs ?? [], continuity: continuity?.ref
       })).digest("hex")}`,
+      ...(this.ports.scenarioPolicyHash ? { scenario_policy_hash: this.ports.scenarioPolicyHash } : {}),
       run_id: identity.runId, lease_id: identity.leaseId, fencing_token: identity.fencingToken,
       materials: structuredClone(materials?.refs ?? []),
       ...(continuity ? { continuity: structuredClone(continuity.ref) } : {})

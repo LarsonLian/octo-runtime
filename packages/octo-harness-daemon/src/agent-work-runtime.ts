@@ -1,3 +1,5 @@
+import { scenarioInstructions } from "./scenario-context.js";
+import type { ScenarioRequest, ScenarioPolicySnapshot } from "@mininglamp-oss/octo-harness-protocol";
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, statfs } from "node:fs/promises";
@@ -210,8 +212,8 @@ export interface ChannelContextRuntimeOptions extends ChannelContextStoreOptions
 
 /** Immutable execution description received from Agent Work before local mapping. */
 export interface ExecutionEnvelope {
-  schema_version: 6;
-  internal_context?: { continuity?: ChannelContextDescriptor; resource_sources?: Record<string, ("request" | "agent_default" | "agent_mandatory")[]> };
+  schema_version: 7;
+  internal_context?: { scenario_policy?: ScenarioPolicySnapshot; continuity?: ChannelContextDescriptor; resource_sources?: Record<string, ("request" | "agent_default" | "agent_mandatory" | "scenario_policy")[]> };
   effective_context: ContextEnvelope;
   context_configuration_version: number;
   resolved_execution_plan: ResolvedExecutionPlan;
@@ -223,6 +225,7 @@ export interface ExecutionEnvelope {
   continuity_mode?: "continue" | "fresh";
   provider_session?: ProviderSession;
   agent_run_request: {
+    scenario?: ScenarioRequest;
     namespace: string;
     agent_id: string;
     agent_revision_id: string;
@@ -1693,9 +1696,11 @@ export class AgentWorkRuntime {
         if (hasImages && !localCapabilities?.has("input.image")) throw new TypeError("UNSUPPORTED_INPUT_MODALITY");
         // 完成执行绑定和 Adapter 能力检查后，为统一管线注入宿主能力；封存确认前不调用模型。
         const pipeline = new ContextPipeline({
+          scenarioPolicyHash: executionEnvelope.internal_context?.scenario_policy?.hash,
           trustedInstructions: [
             ...(stringValue(asRecord(executionEnvelope.agent_revision.definition).instructions)
               ? [{ text: stringValue(asRecord(executionEnvelope.agent_revision.definition).instructions)!, source: "revision" as const }] : []),
+            ...scenarioInstructions(executionEnvelope.agent_run_request.scenario, executionEnvelope.internal_context?.scenario_policy, executionEnvelope.agent_run_request.context),
             ...(Array.isArray(contentResources) && contentResources.length
               ? [{ text: taskOutputInstructions(executionEnvelope.run_id), source: "platform_policy" as const }] : [])
           ],
@@ -2603,7 +2608,7 @@ function mapExecutionMcpServers(value: unknown): McpServers | undefined {
 }
 
 function assertExecutionEnvelopeContract(envelope: ExecutionEnvelope): void {
-  if (envelope?.schema_version !== 6) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
+  if (envelope?.schema_version !== 7) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
   assertContextEnvelope(envelope.agent_run_request?.context);
   assertContextEnvelope(envelope.effective_context);
   assertResolvedExecutionPlan(envelope.resolved_execution_plan);

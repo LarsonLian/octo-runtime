@@ -1632,10 +1632,21 @@ export interface RunContextProjection {
       resource_id: string;
       kind: "agent_plugin" | "skill" | "connector" | "knowledge";
       digest: string;
-      sources: ("agent_default" | "agent_mandatory" | "request")[];
+      sources: ("agent_default" | "agent_mandatory" | "request" | "scenario_policy")[];
       revision: number;
     }[];
   };
+  scenario?: ScenarioProjection;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ScenarioProjection".
+ */
+export interface ScenarioProjection {
+  key: string;
+  policy_version: number;
+  policy_hash: string;
+  [k: string]: unknown;
 }
 /**
  * Durable Runtime preparation evidence, sealed before Adapter invocation and fenced by the active Run lease. Private paths must not be exposed by product projections.
@@ -1644,7 +1655,7 @@ export interface RunContextProjection {
  * via the `definition` "ContextPreparationReceipt".
  */
 export interface ContextPreparationReceipt {
-  compiler_version: "octo.context-compiler/v3";
+  compiler_version: "octo.context-compiler/v4";
   catalog_version: "octo.context-catalog/v3";
   context_hash: string;
   compiled_hash: string;
@@ -1667,6 +1678,7 @@ export interface ContextPreparationReceipt {
    * @maxItems 256
    */
   warnings: string[];
+  scenario_policy_hash?: string;
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -1731,7 +1743,7 @@ export interface ChannelContextSnapshotRef {
  */
 export interface ContextApplicationEvidence {
   schema: "octo.context-application/v1";
-  compiler_version: "octo.context-compiler/v3";
+  compiler_version: "octo.context-compiler/v4";
   catalog_version: "octo.context-catalog/v3";
   context_hash: string;
   compiled_hash: string;
@@ -1808,7 +1820,7 @@ export interface ResolvedCapabilityResource {
   files: {
     [k: string]: ResolvedResourceFile;
   };
-  sources: ("agent_default" | "agent_mandatory" | "request")[];
+  sources: ("agent_default" | "agent_mandatory" | "request" | "scenario_policy")[];
   invoke: boolean;
   components?: string[];
   revision: number;
@@ -2833,4 +2845,56 @@ export interface ContextReferencesPayload {
    * @minItems 1
    */
   entries: [ContextReferenceEntry, ...ContextReferenceEntry[]];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ScenarioRequest".
+ */
+export interface ScenarioRequest {
+  key: string;
+  builder_id: string;
+  builder_version: string;
+  [k: string]: unknown;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ScenarioPolicy".
+ */
+export interface ScenarioPolicy {
+  enabled: boolean;
+  /**
+   * @maxItems 32
+   */
+  instructions: string[];
+  /**
+   * @maxItems 32
+   */
+  default_skills: {
+    resource_id: string;
+    invoke: boolean;
+    [k: string]: unknown;
+  }[];
+  [k: string]: unknown;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ScenarioPolicySnapshot".
+ */
+export interface ScenarioPolicySnapshot {
+  key: string;
+  version: number;
+  /**
+   * @maxItems 32
+   */
+  instructions: string[];
+  /**
+   * @maxItems 32
+   */
+  default_skills: {
+    resource_id: string;
+    invoke: boolean;
+    [k: string]: unknown;
+  }[];
+  hash: string;
+  [k: string]: unknown;
 }

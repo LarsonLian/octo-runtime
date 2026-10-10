@@ -250,7 +250,7 @@ function groupEnvelope(agent, round, text) {
     }] }
   }];
   return {
-    schema_version: 6,
+    schema_version: 7,
     resolved_runtime_selection: resolvedRuntimeSelection("runtime-multi-agent"),
     context_configuration_version: 1,
     internal_context: { continuity: items[0].payload },
@@ -281,7 +281,7 @@ function dmEnvelope(round) {
     agent_source: "provisioned", adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_execution_features: ["tool.canonical"]
   };
   return {
-    schema_version: 6,
+    schema_version: 7,
     resolved_runtime_selection: resolvedRuntimeSelection("runtime-multi-agent"),
     context_configuration_version: 1,
     effective_context: executionContext(plan),

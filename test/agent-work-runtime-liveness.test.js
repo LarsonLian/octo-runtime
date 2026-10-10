@@ -54,7 +54,7 @@ async function startFixture(t, { silentFirst = false, welcomeOnFirst = true, dis
               server_seq: 1, command_id: "command-liveness", run_id: "run-liveness", type: "run.start",
               lease_id: "lease-liveness", fencing_token: 1,
               payload: {
-                schema_version: 6, context_configuration_version: 1,
+                schema_version: 7, context_configuration_version: 1,
                 resolved_runtime_selection: resolvedRuntimeSelection("runtime-liveness"),
                 effective_context: executionContext(plan, items), resolved_execution_plan: plan,
                 run_id: "run-liveness", agent_session_id: "session-liveness",

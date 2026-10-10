@@ -14,7 +14,7 @@ const plan = { agent_source: "provisioned", adapter_type: "fake", workdir: proce
 
 function executionEnvelope(selection = resolvedRuntimeSelection(runtimeId)) {
   return {
-    schema_version: 6,
+    schema_version: 7,
     context_configuration_version: 1,
     effective_context: executionContext(plan),
     resolved_execution_plan: plan,
