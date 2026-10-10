@@ -2180,7 +2180,8 @@ export class AgentWorkRuntime {
           active.archiving = true;
           try {
             mapped.payload.task_output_receipts = await archiveTaskOutputs(
-              (command.payload as ExecutionEnvelope).resolved_execution_plan, taskRef.task_id, command.run_id, active.outputController.signal,
+              { ...(command.payload as ExecutionEnvelope).resolved_execution_plan, workdir: request.workdir ?? "" },
+              taskRef.task_id, command.run_id, active.outputController.signal,
               delivery => { mapped.payload.task_delivery = delivery; }
             );
           } catch (error) {

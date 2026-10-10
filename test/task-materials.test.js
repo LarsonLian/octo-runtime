@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createServer } from "node:http";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
-import { prepareTaskMaterials } from "../packages/octo-harness-daemon/dist/task-materials.js";
+import { prepareTaskMaterials, TaskMcpClient } from "../packages/octo-harness-daemon/dist/task-materials.js";
+import { TASK_OUTPUT_SCHEMA, taskOutputManifestPath } from "../packages/octo-harness-daemon/dist/task-outputs.js";
 import { AgentWorkStore } from "../packages/octo-harness-daemon/dist/agent-work-store.js";
 import { AgentWorkRuntime, mapExecutionEnvelope } from "../packages/octo-harness-daemon/dist/agent-work-runtime.js";
 import { buildCodexCommand } from "@mininglamp-oss/octo-harness-adapter-codex";
@@ -23,22 +24,84 @@ const plan = url => ({ agent_source: "provisioned", adapter_type: "codex", workd
   octo_task: { type: "streamable_http", url, headers: { Authorization: "Bearer fixture-run-grant", "X-Space-ID":"space-1", "X-Namespace":"task" }, required: true }
 } });
 
-async function fixture(t, result = () => material(1), status = 200) {
+async function fixture(t, result = () => material(1), status = 200, toolResult = false) {
   const calls = [];
   const server = createServer(async (request, response) => {
     let body = "";
     for await (const chunk of request) body += chunk;
     const value = JSON.parse(body);
-    calls.push({ ...value, authorization: request.headers.authorization });
+    calls.push({ ...value, authorization: request.headers.authorization, space: request.headers["x-space-id"], namespace: request.headers["x-namespace"] });
     response.writeHead(status, { "Content-Type": "application/json" });
     if (value.method === "notifications/initialized") { response.end(); return; }
     response.end(JSON.stringify({ jsonrpc: "2.0", id: value.id, result: value.method === "initialize"
-      ? { protocolVersion: "2025-03-26", capabilities: {} } : { structuredContent: result(value), content: [] } }));
+      ? { protocolVersion: "2025-03-26", capabilities: {} } : toolResult ? result(value) : { structuredContent: result(value), content: [] } }));
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   return { calls, url: `http://127.0.0.1:${server.address().port}/mcp/task` };
 }
+
+const toolFailure = code => ({ isError: true, structuredContent: { error: { code } }, content: [{ type: "text", text: "private detail" }] });
+
+test("only structured binding-pending preparation reads retry the exact frozen grant and arguments", async t => {
+  let reads = 0;
+  const f = await fixture(t, () => ++reads < 3 ? toolFailure("TASK_RESULT_BINDING_PENDING") : { structuredContent: material(2) }, 200, true);
+  const client = new TaskMcpClient(plan(f.url).mcp_servers.octo_task, new AbortController().signal);
+  await client.initialize();
+  const args = { task_id: "task-1", expected_version: 2, handler_epoch: 3 };
+  const result = client.call("task_get_materials", args);
+  await waitFor(() => reads === 1);
+  args.expected_version = 99;
+  assert.deepEqual(await result, material(2));
+  const calls = f.calls.filter(call => call.method === "tools/call");
+  assert.equal(calls.length, 3);
+  assert.ok(calls.every(call => call.authorization === "Bearer fixture-run-grant"));
+  assert.ok(calls.every(call => call.space === "space-1" && call.namespace === "task"));
+  assert.ok(calls.every(call => JSON.stringify(call.params) === JSON.stringify({ name: "task_get_materials", arguments: { task_id: "task-1", expected_version: 2, handler_epoch: 3 } })));
+  // A repeated read returns the same durable snapshot rather than applying a mutation.
+  assert.deepEqual(await client.call("task_get_materials", calls[0].params.arguments), material(2));
+});
+
+test("authorization, epoch, version and non-preparation tools never retry", async t => {
+  for (const code of ["TASK_ACCESS_DENIED", "TASK_HANDLER_EPOCH_CONFLICT", "TASK_VERSION_CONFLICT", "TASK_TOOL_FAILED"]) {
+    const f = await fixture(t, () => toolFailure(code), 200, true);
+    const client = new TaskMcpClient(plan(f.url).mcp_servers.octo_task, new AbortController().signal);
+    await assert.rejects(client.call("task_get_materials", { task_id: "task-1" }), /TASK_MCP_TOOL_FAILED/);
+    assert.equal(f.calls.length, 1);
+  }
+  const f = await fixture(t, () => toolFailure("TASK_RESULT_BINDING_PENDING"), 200, true);
+  const client = new TaskMcpClient(plan(f.url).mcp_servers.octo_task, new AbortController().signal);
+  await assert.rejects(client.call("task_apply_action", { task_id: "task-1" }), /TASK_MCP_TOOL_FAILED/);
+  assert.equal(f.calls.length, 1);
+  const denied = await fixture(t, () => toolFailure("TASK_RESULT_BINDING_PENDING"), 403, true);
+  await assert.rejects(new TaskMcpClient(plan(denied.url).mcp_servers.octo_task, new AbortController().signal).call("task_get_materials", {}), /TASK_MCP_ACCESS_DENIED/);
+  assert.equal(denied.calls.length, 1);
+  const unstructured = await fixture(t, () => ({ isError: true, content: [{ type: "text", text: JSON.stringify({ error: { code: "TASK_RESULT_BINDING_PENDING" } }) }] }), 200, true);
+  await assert.rejects(new TaskMcpClient(plan(unstructured.url).mcp_servers.octo_task, new AbortController().signal).call("task_get_materials", {}), /TASK_MCP_TOOL_FAILED/);
+  assert.equal(unstructured.calls.length, 1);
+  let reads = 0;
+  const changed = await fixture(t, () => toolFailure(++reads === 1 ? "TASK_RESULT_BINDING_PENDING" : "TASK_VERSION_CONFLICT"), 200, true);
+  await assert.rejects(new TaskMcpClient(plan(changed.url).mcp_servers.octo_task, new AbortController().signal).call("task_get_materials", {}), /TASK_MCP_TOOL_FAILED/);
+  assert.equal(changed.calls.length, 2);
+});
+
+test("binding preparation retries stop at the Run signal and their independent deadline", async t => {
+  const f = await fixture(t, () => toolFailure("TASK_RESULT_BINDING_PENDING"), 200, true);
+  const controller = new AbortController();
+  const client = new TaskMcpClient(plan(f.url).mcp_servers.octo_task, controller.signal);
+  const pending = client.call("task_authorize_material_snapshot", { task_id: "task-1", task_version: 2, handler_epoch: 3, digest: "sha256:fixture" });
+  await waitFor(() => f.calls.length === 1);
+  controller.abort(new Error("RUN_TOTAL_DEADLINE"));
+  await assert.rejects(pending, /RUN_TOTAL_DEADLINE/);
+  assert.equal(f.calls.length, 1);
+  const started = performance.now();
+  await assert.rejects(new TaskMcpClient(plan(f.url).mcp_servers.octo_task, new AbortController().signal).call("task_get_materials", {}), /TASK_RESULT_BINDING_PENDING/);
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed >= 9_000 && elapsed < 12_000, `bounded preparation duration: ${elapsed}`);
+  const finishedCalls = f.calls.length;
+  await new Promise(resolve => setTimeout(resolve, 300));
+  assert.equal(f.calls.length, finishedCalls);
+});
 
 test("task materials use authorized MCP and freeze actual facts separately from instructions", async t => {
   let version = 2;
@@ -144,6 +207,7 @@ test("real Runtime admission bootstraps MCP before provider invocation and rejec
   server.on("upgrade", (request, socket, head) => ws.handleUpgrade(request, socket, head, client => ws.emit("connection", client, request)));
   let socket;
   const acknowledgements = [];
+  const events = [];
   const invocations = [];
   ws.on("connection", client => {
     socket = client;
@@ -151,6 +215,7 @@ test("real Runtime admission bootstraps MCP before provider invocation and rejec
       const frame = JSON.parse(data.toString());
       if (frame.type === "runtime.hello") client.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
       if (frame.type === "command.ack") acknowledgements.push(frame.payload);
+      if (frame.type === "run.event_batch") events.push(...frame.payload.events);
     });
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -165,6 +230,8 @@ test("real Runtime admission bootstraps MCP before provider invocation and rejec
     async *invoke(_adapter, request) {
       assert.ok(f.calls.some(call => call.method === "tools/call"));
       invocations.push(request);
+      await mkdir(join(request.workdir, ".octo/task-outputs"), { recursive: true });
+      await writeFile(join(request.workdir, taskOutputManifestPath(request.runId)), JSON.stringify({ schema: TASK_OUTPUT_SCHEMA, outputs: [], delivery: { output_kind: "code_review_report", review_verdict: "approved" } }));
       yield { protocolVersion: 2, type: "run.completed", payload: {} };
     }
   });
@@ -179,7 +246,8 @@ test("real Runtime admission bootstraps MCP before provider invocation and rejec
   await waitFor(() => socket?.readyState === 1);
   const command = (suffix, url, adapter = "codex") => {
     const resolvedPlan = plan(url);
-    resolvedPlan.workdir = directory;
+    resolvedPlan.workdir = "";
+    resolvedPlan.workspace = { mode: "random" };
     resolvedPlan.adapter_type = adapter;
     return { server_seq: suffix, command_id: `command-${suffix}`, run_id: `run-${suffix}`, type: "run.start", lease_id: `lease-${suffix}`, fencing_token: suffix,
       payload: { schema_version: 7, effective_context: executionContext(resolvedPlan, [resource]), context_configuration_version: 1,
@@ -190,6 +258,11 @@ test("real Runtime admission bootstraps MCP before provider invocation and rejec
   socket.send(wire("runtime.command", command(1, f.url)));
   await waitFor(() => invocations.length === 1);
   assert.match(invocations[0].modelInput, /附件|需求.md|attachment-1/);
+  assert.ok(invocations[0].workdir.startsWith(join(await realpath(directory), "context/workspaces")));
+  await waitFor(() => events.some(event => event.type === "run.completed"));
+  const completed = events.find(event => event.type === "run.completed");
+  assert.deepEqual(completed.payload.task_output_receipts, []);
+  assert.deepEqual(completed.payload.task_delivery, { output_kind: "code_review_report", review_verdict: "approved" });
   const failure = await fixture(t, () => material(1), 403);
   socket.send(wire("runtime.command", command(2, failure.url)));
   await waitFor(() => acknowledgements.some(ack => ack.command_id === "command-2"));

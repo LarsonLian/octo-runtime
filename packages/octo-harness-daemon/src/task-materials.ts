@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   assertContextEnvelope,
   assertMcpServers,
@@ -16,6 +17,8 @@ const MCP_PROTOCOL = "2025-03-26";
 // 这是内部受权材料的传输上限，不是公开 Context 信封或模型 token 预算。
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 const MAX_MATERIAL_BYTES = 16 * 1024 * 1024;
+const BINDING_RETRY_MS = 250;
+const BINDING_RETRY_DEADLINE_MS = 10_000;
 
 export interface PreparedTaskMaterials {
   selections: ContextSelectionEntry[];
@@ -52,20 +55,46 @@ export class TaskMcpClient {
   }
 
   async call(tool: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const result = object(await this.#request("tools/call", { name: tool, arguments: args }));
-    if (result.isError === true) throw new TypeError("TASK_MCP_TOOL_FAILED");
-    if (result.structuredContent !== undefined) return object(result.structuredContent);
-    if (!Array.isArray(result.content) || result.content.length !== 1) throw new TypeError("TASK_MCP_RESULT_INVALID");
-    const content = object(result.content[0]);
-    if (content.type !== "text" || typeof content.text !== "string") throw new TypeError("TASK_MCP_RESULT_INVALID");
-    try { return object(JSON.parse(content.text)); } catch { throw new TypeError("TASK_MCP_RESULT_INVALID"); }
+    const params = { name: tool, arguments: structuredClone(args) };
+    let retryDeadline: AbortSignal | undefined;
+    let signal = this.#signal;
+    try {
+      while (true) {
+        signal.throwIfAborted();
+        const result = object(await this.#request("tools/call", params, false, signal));
+        if (result.isError === true) {
+          const content = result.structuredContent;
+          const error = content && typeof content === "object" && !Array.isArray(content)
+            ? (content as Record<string, unknown>).error : undefined;
+          const pending = error && typeof error === "object" && !Array.isArray(error)
+            && (error as Record<string, unknown>).code === "TASK_RESULT_BINDING_PENDING";
+          if (!pending || ![TASK_MATERIAL_TOOL, "task_authorize_material_snapshot"].includes(tool)) {
+            throw new TypeError("TASK_MCP_TOOL_FAILED");
+          }
+          // Run admission can precede Access's registration ACK. Repeat only this read with its frozen grant and arguments.
+          retryDeadline ??= AbortSignal.timeout(BINDING_RETRY_DEADLINE_MS);
+          signal = AbortSignal.any([this.#signal, retryDeadline]);
+          await delay(BINDING_RETRY_MS, undefined, { signal });
+          continue;
+        }
+        if (result.structuredContent !== undefined) return object(result.structuredContent);
+        if (!Array.isArray(result.content) || result.content.length !== 1) throw new TypeError("TASK_MCP_RESULT_INVALID");
+        const content = object(result.content[0]);
+        if (content.type !== "text" || typeof content.text !== "string") throw new TypeError("TASK_MCP_RESULT_INVALID");
+        try { return object(JSON.parse(content.text)); } catch { throw new TypeError("TASK_MCP_RESULT_INVALID"); }
+      }
+    } catch (error) {
+      this.#signal.throwIfAborted();
+      if (retryDeadline?.aborted) throw new TypeError("TASK_RESULT_BINDING_PENDING");
+      throw error;
+    }
   }
 
-  async #request(method: string, params?: Record<string, unknown>, notification = false): Promise<unknown> {
+  async #request(method: string, params?: Record<string, unknown>, notification = false, signal = this.#signal): Promise<unknown> {
     const id = randomUUID();
     const response = await fetch(this.#server.url, {
       method: "POST", redirect: "error",
-      signal: AbortSignal.any([this.#signal, AbortSignal.timeout(this.#server.toolTimeoutMs ?? 30_000)]),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(this.#server.toolTimeoutMs ?? 30_000)]),
       headers: {
         ...this.#server.headers, "Content-Type": "application/json", Accept: "application/json, text/event-stream",
         "MCP-Protocol-Version": this.#protocol, ...(this.#session ? { "Mcp-Session-Id": this.#session } : {})
