@@ -455,6 +455,9 @@ export function createCodexAdapter({
     "activity.turn-progress",
     executionFeatures.MCP_DYNAMIC,
     executionFeatures.INTERACTION_RESPONSE,
+    executionFeatures.APPROVAL_ASK,
+    executionFeatures.APPROVAL_ASSISTED,
+    executionFeatures.APPROVAL_FULL_ACCESS,
     executionFeatures.INPUT_IMAGE
     , "context.capabilities"
   ];

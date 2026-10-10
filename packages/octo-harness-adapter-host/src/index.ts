@@ -5,6 +5,7 @@ import {
   assertInvokeRequest,
   hasImageInput,
   executionFeatures,
+  adapterApprovalModes,
   failurePayload,
   isTerminal,
   type CanonicalEvent,
@@ -151,6 +152,9 @@ export class AdapterHost {
   async *invoke(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
     assertInvokeRequest(request);
     const registered = this.#adapters.get(adapterType);
+    if (!registered || !adapterApprovalModes(registered.metadata.executionFeatures).includes(request.approvalMode)) {
+      throw new Error(`APPROVAL_MODE_UNSUPPORTED: ${adapterType} does not advertise ${request.approvalMode}`);
+    }
     if (hasImageInput(request) && !registered?.metadata.executionFeatures.includes(executionFeatures.INPUT_IMAGE)) {
       throw new Error(`UNSUPPORTED_INPUT_MODALITY: ${adapterType} does not implement native image input`);
     }

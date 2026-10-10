@@ -1568,7 +1568,7 @@ function threadParams(request: InvokeRequest, extra: JsonRecord): JsonRecord {
     sandbox: codexSandbox(request),
     // Dynamic MCP tools are untrusted until Codex asks the client to approve them. `never`
     // rejects those calls before the existing reverse-request handler can answer them.
-    approvalPolicy: "untrusted",
+    approvalPolicy: request.approvalMode === "assisted" ? "on-request" : "untrusted",
     developerInstructions: request.controlInstructions
   };
 }

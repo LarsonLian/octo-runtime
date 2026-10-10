@@ -1,5 +1,5 @@
 export const testAdapter = {
-  metadata: { type: "test", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["session.serialize", "tool.canonical"] },
+  metadata: { type: "test", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["session.serialize", "tool.canonical", "approval.ask", "approval.assisted", "approval.full_access"] },
   async *invoke(request) {
     if (request.prompt === "wait-for-host-exit") await new Promise(() => {});
     await Promise.resolve();

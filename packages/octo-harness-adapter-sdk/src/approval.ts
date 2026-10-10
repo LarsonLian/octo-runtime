@@ -33,7 +33,7 @@ export class AcpApprovalBridge {
     request.signal?.addEventListener("abort", this.#abort, { once: true });
   }
 
-  requestPermission(params: RecordValue): Promise<RecordValue> {
+  requestPermission(params: RecordValue, providerExpiresAt?: number): Promise<RecordValue> {
     if (this.#closed || this.request.signal?.aborted) return Promise.reject(new Error("APPROVAL_WAIT_UNAVAILABLE"));
     const options = Array.isArray(params.options) ? params.options.filter(isObject) : [];
     const option = (kind: string): string | undefined => {
@@ -45,7 +45,9 @@ export class AcpApprovalBridge {
     if (!allow && !decline && this.request.approvalMode !== "full_access") return Promise.resolve(cancelled());
     if (this.#pending.size >= 16 || this.request.signal?.aborted) return Promise.reject(new Error("APPROVAL_WAIT_UNAVAILABLE"));
     const interactionId = `interaction_${randomUUID()}`;
-    const expiresAt = Date.now() + this.timeoutMs;
+    const now = Date.now();
+    const expiresAt = providerExpiresAt === undefined ? now + this.timeoutMs : Math.min(now + this.timeoutMs, providerExpiresAt);
+    if (!Number.isSafeInteger(expiresAt) || expiresAt <= now) return Promise.reject(new Error("APPROVAL_EXPIRED"));
     let confirm!: () => void;
     let fail!: (error: Error) => void;
     const written = new Promise<void>((resolve, reject) => { confirm = resolve; fail = reject; });
@@ -58,11 +60,17 @@ export class AcpApprovalBridge {
         this.#emit({ protocolVersion: 2, type: "interaction.resolved", payload: { interactionId, executionInstanceId: this.request.invocationId, status: "expired", reasonCode: "approval_timeout" } });
         this.#error = error;
         this.#wake?.();
-      }, this.timeoutMs);
+      }, expiresAt - now);
       timer.unref?.();
       this.#pending.set(interactionId, { params, allow, decline, expiresAt, timer, resolve, reject, written, confirm, fail, responding: this.request.approvalMode === "full_access", ...(this.request.approvalMode === "full_access" ? { automaticOutcome: allow ? "accepted" : "cancelled" } : {}) });
     });
     const tool = isObject(params.toolCall) ? sanitizePublicValue(params.toolCall) as RecordValue : {};
+    const input = isObject(tool.rawInput) ? tool.rawInput : {};
+    const details = isObject(params.providerDetails) ? params.providerDetails : {
+      ...(typeof input.command === "string" ? { command: input.command } : {}),
+      ...(typeof input.file_path === "string" ? { files: [input.file_path] } : {}),
+      ...(typeof tool.title === "string" ? { title: tool.title } : {})
+    };
     this.#emit({ protocolVersion: 2, type: "interaction.requested", payload: {
       interactionId,
       kind: "approval",
@@ -74,7 +82,8 @@ export class AcpApprovalBridge {
         operation: { kind: "tool_execution", summary: typeof tool.title === "string" && tool.title ? Array.from(tool.title).slice(0, 500).join("") : "Approve tool execution", ...(typeof tool.toolCallId === "string" ? { toolCallId: tool.toolCallId } : {}) },
         requestedPermissions: [],
         allowedOutcomes: [...(allow ? ["accepted"] : []), ...(decline ? ["declined"] : []), "cancelled"],
-        grantScope: "request"
+        grantScope: "request",
+        ...(Object.keys(details).length ? { providerDetails: sanitizePublicValue(Object.fromEntries(Object.entries(details).filter(([, value]) => value !== undefined))) } : {})
       }
     } });
     if (this.request.approvalMode === "full_access") this.#pending.get(interactionId)!.resolve(allow ? selected(allow) : cancelled());

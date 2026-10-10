@@ -4,12 +4,14 @@ import { homedir } from "node:os";
 import { delimiter, extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import {
+  AcpApprovalBridge,
   defineAdapter,
   probeCommand,
   type AdapterInvocationContext,
   type InvokeRequest,
   type ProbeResult
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
 import {
   runZcodeAppServerTurn,
   type ZcodeAppServerCommand,
@@ -116,19 +118,31 @@ export function createZcodeGuiAdapter({
   appServerArgs?: readonly string[];
   spawnFn?: ZcodeAppServerSpawn;
 } = {}) {
+  const responders = new Map<string, AcpApprovalBridge>();
   return defineAdapter({
     metadata: {
       type: "zcode-gui",
       capabilities: ["react"],
       agentSources: ["provisioned"],
-      executionFeatures: ["session.serialize", "session.resume_recovery", "tool.canonical"],
+      executionFeatures: ["session.serialize", "session.resume_recovery", "tool.canonical", executionFeatures.INTERACTION_RESPONSE, executionFeatures.APPROVAL_ASK, executionFeatures.APPROVAL_FULL_ACCESS],
       processModel: "subprocess-per-invocation",
       transport: "zcode-ndjson-rpc/stdio"
     },
     probe: () => command ? probeCommand(command) : probeZcodeGui(),
+    async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
+      const bridge = responders.get(invocationId);
+      if (!bridge) throw new Error("INTERACTION_NOT_ACTIVE");
+      await bridge.respond(response);
+    },
     async *invoke(request: InvokeRequest, context?: AdapterInvocationContext) {
-      const spec = buildZcodeCommand(request, command, appServerArgs);
-      yield* runZcodeAppServerTurn({ request, spec, context, ...(spawnFn ? { spawnFn } : {}) });
+      if (request.approvalMode === "assisted") throw new Error("APPROVAL_MODE_UNSUPPORTED");
+      if (responders.has(request.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
+      const bridge = new AcpApprovalBridge(request);
+      responders.set(request.invocationId, bridge);
+      try {
+        const spec = buildZcodeCommand(request, command, appServerArgs);
+        yield* bridge.stream(runZcodeAppServerTurn({ request, spec, context, approvalBridge: bridge, ...(spawnFn ? { spawnFn } : {}) }));
+      } finally { bridge.close("execution_lost"); responders.delete(request.invocationId); }
     }
   });
 }

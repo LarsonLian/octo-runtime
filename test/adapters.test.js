@@ -520,19 +520,19 @@ test("Claude retains public text identity and closes it at the round boundary", 
   }]);
 });
 
-test("Claude and OpenCode reject unqualified ask and assisted before building a command", async () => {
-  for (const approvalMode of ["ask", "assisted"]) {
-    for (const buildCommand of [buildClaudeCommand, buildOpenCodeCommand]) {
-      await assert.rejects(buildCommand({ ...request, approvalMode }), /APPROVAL_MODE_UNSUPPORTED/);
-    }
-    for (const createAdapter of [createClaudeCodeAdapter, createOpenCodeAdapter]) {
-      const adapter = createAdapter({ command: "/unqualified-provider-must-not-launch" });
-      assert.equal(adapter.metadata.executionFeatures.includes("interaction.response"), false);
-      await assert.rejects(async () => {
-        for await (const event of adapter.invoke({ ...request, approvalMode })) assert.fail(`unexpected ${event.type}`);
-      }, /APPROVAL_MODE_UNSUPPORTED/);
-    }
+test("Claude explicitly maps all permission modes; OpenCode routes human approvals through ACP", async () => {
+  for (const [approvalMode, nativeMode] of [["ask", "default"], ["assisted", "auto"], ["full_access", "bypassPermissions"]]) {
+    const spec = await buildClaudeCommand({ ...request, approvalMode });
+    try {
+      assert.equal(spec.args[spec.args.indexOf("--permission-mode") + 1], nativeMode);
+      assert.equal(spec.args.includes("--dangerously-skip-permissions"), approvalMode === "full_access");
+      assert.equal(spec.args[spec.args.indexOf("--input-format") + 1], "stream-json");
+      assert.equal(spec.args[spec.args.indexOf("--permission-prompt-tool") + 1], "stdio");
+    } finally { await spec.cleanup(); }
   }
+  assert.equal(createOpenCodeAdapter().metadata.executionFeatures.includes("approval.ask"), true);
+  const adapter = createOpenCodeAdapter({ command: "/provider-must-not-launch" });
+  await assert.rejects(async () => { for await (const event of adapter.invoke({ ...request, approvalMode: "assisted" })) assert.fail(event.type); }, /APPROVAL_MODE_UNSUPPORTED/);
 });
 
 test("OpenCode native events map session/text/reasoning/tool/usage", () => {
@@ -812,7 +812,7 @@ test("text adapters prefer the exact modelInput over the display prompt", async 
   };
 
   const claude = await buildClaudeCommand(modelRequest);
-  assert.equal(claude.input, "MODEL_INPUT_OK");
+  assert.equal(JSON.parse(claude.input).message.content, "MODEL_INPUT_OK");
   assert.equal(claude.providerInput.content.stdin, claude.input);
   await claude.cleanup();
 
@@ -1376,7 +1376,7 @@ test("generic ACP and CodeBuddy full_access audit allow_once and cancel allow_al
         assert.equal(state.sideEffects, allowOnce ? 1 : 0);
         if (provider === "CodeBuddy") {
           assert.deepEqual(state.spawnOptions.args, ["--acp", "--permission-mode", "bypassPermissions"]);
-          assert.equal(adapter.metadata.executionFeatures.includes("interaction.response"), false);
+          assert.equal(adapter.metadata.executionFeatures.includes("interaction.response"), true);
         }
         const interactions = events.filter(event => event.type.startsWith("interaction."));
         assert.deepEqual(interactions.map(event => event.type), ["interaction.requested", "interaction.resolved"]);
@@ -1451,15 +1451,23 @@ test("generic ACP and CodeBuddy reject explicit unqualified effort before creati
   assert.equal(spawned, false);
 });
 
-test("CodeBuddy rejects ask and assisted before creating its full_access client", async () => {
-  let spawned = false;
-  const adapter = createCodeBuddyAdapter({ acpClientFactory: () => { spawned = true; throw new Error("provider must not launch"); } });
-  for (const approvalMode of ["ask", "assisted"]) {
-    await assert.rejects(async () => {
-      for await (const event of adapter.invoke({ ...request, approvalMode })) assert.fail(`unexpected ${event.type}`);
-    }, /APPROVAL_MODE_UNSUPPORTED/);
+test("CodeBuddy ask and assisted map native modes and wait for the original invocation's human response", async () => {
+  for (const [approvalMode, nativeMode] of [["ask", "default"], ["assisted", "auto"]]) {
+    const { adapter, state } = acpPermissionFixture(createCodeBuddyAdapter,
+      [{ optionId: "allow-once", kind: "allow_once" }, { optionId: "reject-once", kind: "reject_once" }]);
+    const events = [];
+    for await (const event of adapter.invoke({ ...request, approvalMode })) {
+      events.push(event);
+      if (event.type === "interaction.requested") {
+        assert.equal(state.sideEffects, 0);
+        await assert.rejects(adapter.respondInteraction("wrong-invocation", { interactionId: event.payload.interactionId, outcome: "accepted" }), /INTERACTION_NOT_ACTIVE/);
+        await adapter.respondInteraction(request.invocationId, { interactionId: event.payload.interactionId, outcome: "accepted" });
+      }
+    }
+    assert.deepEqual(state.spawnOptions.args, ["--acp", "--permission-mode", nativeMode]);
+    assert.equal(state.sideEffects, 1);
+    assert.equal(events.at(-1).type, "run.completed");
   }
-  assert.equal(spawned, false);
 });
 
 test("CodeBuddy preserves a cancelled ACP prompt as an interrupted run", async () => {
@@ -1795,7 +1803,7 @@ test("Hermes and Kimi Code expose distinct ACP adapter types", () => {
 
 test("MiniMax Code exposes an ACP adapter with default session and tool capabilities", () => {
   assert.equal(mcodeAdapter.metadata.type, "mcode");
-  assert.deepEqual([...mcodeAdapter.metadata.executionFeatures].sort(), ["input.image", "interaction.response", "session.serialize", "tool.canonical"]);
+  assert.deepEqual([...mcodeAdapter.metadata.executionFeatures].sort(), ["approval.ask", "approval.full_access", "input.image", "interaction.response", "session.serialize", "tool.canonical"]);
   assert.equal(typeof mcodeAdapter.respondInteraction, "function");
   // MiniMax Code manages model selection itself, so it must not claim Codex's
   // append-only continuity recovery capability.
@@ -1804,7 +1812,7 @@ test("MiniMax Code exposes an ACP adapter with default session and tool capabili
 
 test("Qoder CLI exposes an ACP adapter with default session and tool capabilities", () => {
   assert.equal(qoderCliAdapter.metadata.type, "qodercli");
-  assert.deepEqual([...qoderCliAdapter.metadata.executionFeatures].sort(), ["input.image", "interaction.response", "session.serialize", "tool.canonical"]);
+  assert.deepEqual([...qoderCliAdapter.metadata.executionFeatures].sort(), ["approval.ask", "approval.full_access", "input.image", "interaction.response", "session.serialize", "tool.canonical"]);
   assert.equal(typeof qoderCliAdapter.respondInteraction, "function");
   assert.equal(qoderCliAdapter.metadata.executionFeatures.includes("session.resume_recovery"), false);
 });
@@ -1812,7 +1820,7 @@ test("Qoder CLI exposes an ACP adapter with default session and tool capabilitie
 test("Qoder CN CLI exposes a distinct ACP adapter type from Qoder CLI", () => {
   assert.equal(qoderCliCnAdapter.metadata.type, "qoderclicn");
   assert.notEqual(qoderCliCnAdapter.metadata.type, qoderCliAdapter.metadata.type);
-  assert.deepEqual([...qoderCliCnAdapter.metadata.executionFeatures].sort(), ["input.image", "interaction.response", "session.serialize", "tool.canonical"]);
+  assert.deepEqual([...qoderCliCnAdapter.metadata.executionFeatures].sort(), ["approval.ask", "approval.full_access", "input.image", "interaction.response", "session.serialize", "tool.canonical"]);
   assert.equal(typeof qoderCliCnAdapter.respondInteraction, "function");
   assert.equal(qoderCliCnAdapter.metadata.executionFeatures.includes("session.resume_recovery"), false);
 });

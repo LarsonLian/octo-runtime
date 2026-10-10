@@ -2,6 +2,7 @@ import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import {
+  type AcpApprovalBridge,
   freshFallbackInputText,
   observeBestEffort,
   observeProviderOutput,
@@ -350,22 +351,39 @@ export async function* runZcodeAppServerTurn({
   request,
   spec,
   context,
-  spawnFn = defaultSpawn
+  spawnFn = defaultSpawn,
+  approvalBridge
 }: {
   request: InvokeRequest;
   spec: ZcodeAppServerCommand;
   context?: AdapterInvocationContext;
   spawnFn?: ZcodeAppServerSpawn;
+  approvalBridge?: AcpApprovalBridge;
 }): AsyncGenerator<CanonicalEvent> {
-  if (request.approvalMode !== "full_access") throw new Error("APPROVAL_MODE_UNSUPPORTED: zcode approval bridge is not qualified");
+  if (request.approvalMode === "assisted" || (request.approvalMode === "ask" && !approvalBridge)) throw new Error("APPROVAL_MODE_UNSUPPORTED");
   if (request.agentConfig.model || request.agentConfig.effort) throw new Error("EXECUTION_SELECTION_UNSUPPORTED: zcode independent model/reasoning selection is not qualified");
-  const autoApprove = true;
+  const autoApprove = request.approvalMode === "full_access";
   const client = new ZcodeAppServerClient({
     spec,
     spawnFn,
     requestTimeoutMs: requestTimeout(request),
-    autoApprove
+    autoApprove,
+    permissionHandler: approvalBridge ? async (params, write) => {
+      const permission = {
+        toolCall: { title: typeof params.reason === "string" ? params.reason : "ZCode tool permission" },
+        options: [{ kind: "allow_once", optionId: "allow" }, { kind: "reject_once", optionId: "deny" }]
+      };
+      try {
+        const result = await approvalBridge.requestPermission(permission);
+        await write({ decision: (result.outcome as { optionId?: string })?.optionId === "allow" ? "allow" : "deny" });
+        approvalBridge.responseWritten(permission);
+      } catch (error) {
+        approvalBridge.responseFailed(permission, error instanceof Error ? error : new Error(String(error)));
+        throw error;
+      }
+    } : undefined
   });
+  approvalBridge?.bindTransport(() => client.close());
   let sessionId: string | undefined;
   let terminal = false;
   let promptRequestId: string | undefined;
@@ -500,6 +518,7 @@ class ZcodeAppServerClient {
   readonly #events = new AsyncQueue<ZcodeSessionEvent>();
   readonly #requestTimeoutMs: number;
   readonly #autoApprove: boolean;
+  readonly #permissionHandler?: (params: JsonRecord, write: (result: JsonRecord) => Promise<void>) => Promise<void>;
   readonly #exitPromise: Promise<ProcessExit>;
   #resolveExit!: (exit: ProcessExit) => void;
   #nextId = 1;
@@ -512,15 +531,18 @@ class ZcodeAppServerClient {
     spec,
     spawnFn,
     requestTimeoutMs,
-    autoApprove
+    autoApprove,
+    permissionHandler
   }: {
     spec: ZcodeAppServerCommand;
     spawnFn: ZcodeAppServerSpawn;
     requestTimeoutMs: number;
     autoApprove: boolean;
+    permissionHandler?: (params: JsonRecord, write: (result: JsonRecord) => Promise<void>) => Promise<void>;
   }) {
     this.#requestTimeoutMs = requestTimeoutMs;
     this.#autoApprove = autoApprove;
+    this.#permissionHandler = permissionHandler;
     this.#exitPromise = new Promise(resolve => { this.#resolveExit = resolve; });
     this.#child = spawnFn(spec.command, spec.args, {
       cwd: spec.cwd,
@@ -654,6 +676,12 @@ class ZcodeAppServerClient {
       return;
     }
     if (method === "interaction/requestPermission") {
+      if (this.#permissionHandler) {
+        void this.#permissionHandler(params, result => new Promise<void>((resolve, reject) => {
+          this.#child.stdin.write(`${JSON.stringify({ id, result })}\n`, error => error ? reject(error) : resolve());
+        })).catch(error => this.#failAll(error instanceof Error ? error : new Error(String(error))));
+        return;
+      }
       this.#reply(id, this.#autoApprove
         ? { decision: "allow" }
         : { decision: "deny", reason: "Octo Harness unattended policy denied this tool request" });

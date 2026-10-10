@@ -1,7 +1,8 @@
-import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
+import { canonicalTerminalStatus, executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
 import { randomUUID } from "node:crypto";
 import {
   defineAdapter,
+  AcpApprovalBridge,
   observeBestEffort,
   observeProviderOutput,
   providerInputText,
@@ -92,6 +93,7 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
   const createParams: JsonRecord = {
     key: sessionKey,
     agentId,
+    permissionMode: req.approvalMode === "full_access" ? "full" : "guarded",
     ...(!usesExistingAgent(req) ? { cwd: req.workdir } : {}),
     idempotencyKey: `${requestId}-session`,
     ...(model ? { model } : {}),
@@ -483,12 +485,15 @@ async function* invokeOpenClawGateway(
   req: InvokeRequest,
   invocation: OpenClawGatewayInvocation,
   context: AdapterInvocationContext | undefined,
-  clientFactory: GatewayClientFactory
+  clientFactory: GatewayClientFactory,
+  permissions: AcpApprovalBridge
 ): AsyncGenerator<CanonicalEvent> {
   const client = clientFactory(invocation.gateway);
+  permissions.bindTransport(() => client.close());
   const queue = new EventQueue();
   let acceptedRunId = invocation.requestId;
   let agentAccepted = false;
+  const seenApprovals = new Set<string>();
   let providerSessionKey = invocation.sessionKey;
   const unsubscribe = client.onEvent(event => queue.push({ event }));
   const state: StreamState = { lastSeq: -1, assistantText: "", reasoningText: "", stepStarted: false, stepFinished: false, messageNumber: 0, messages: new Map(), tools: new Set() };
@@ -498,6 +503,13 @@ async function* invokeOpenClawGateway(
     const hello = await client.connect();
     const externalBinding = usesExistingAgent(req);
     assertRuntimeGatewayContract(hello, externalBinding);
+    if (req.approvalMode === "ask") {
+      const features = asRecord(asRecord(hello)?.features);
+      if (!Array.isArray(features?.methods) || !features.methods.includes("exec.approval.resolve")
+        || !Array.isArray(features.events) || !features.events.includes("exec.approval.requested")) {
+        throw new Error("APPROVAL_MODE_UNSUPPORTED: OpenClaw Gateway has no approval transport");
+      }
+    }
     if (!externalBinding) {
       await client.request("config.get", {}, { timeoutMs: 10_000, signal: req.signal })
         .then(value => assertRuntimeIsolationConfig(value, invocation));
@@ -550,6 +562,30 @@ async function* invokeOpenClawGateway(
         terminal = reconciled.terminal;
         if (terminal === "failed") throw new Error(reconciled.error);
         break;
+      }
+      if (item.event?.event === "exec.approval.requested") {
+        const payload = asRecord(item.event.payload);
+        const approvalRequest = asRecord(payload?.request);
+        // Gateway approval events are broadcast. Only this invocation's session may be answered.
+        if (approvalRequest?.sessionKey !== providerSessionKey || typeof payload?.id !== "string") continue;
+        const id = payload.id;
+        if (seenApprovals.has(id)) continue;
+        seenApprovals.add(id);
+        if (seenApprovals.size > 1024) throw new Error("APPROVAL_WAIT_UNAVAILABLE");
+        const allowed = Array.isArray(approvalRequest.allowedDecisions) ? approvalRequest.allowedDecisions : ["allow-once", "deny"];
+        const params = { toolCall: { toolCallId: id, title: nonEmptyString(approvalRequest.command) ?? "OpenClaw command" },
+          providerDetails: { provider: "openclaw", command: approvalRequest.command, cwd: approvalRequest.cwd },
+          options: [...(allowed.includes("allow-once") ? [{ kind: "allow_once", optionId: "allow-once" }] : []), ...(allowed.includes("deny") ? [{ kind: "reject_once", optionId: "deny" }] : [])] };
+        void permissions.requestPermission(params, finiteNumber(payload.expiresAtMs)).then(async result => {
+          const decision = asRecord(result.outcome)?.optionId === "allow-once" ? "allow-once" : "deny";
+          await client.request("exec.approval.resolve", { id, decision }, { timeoutMs: 10_000, signal: req.signal });
+          permissions.responseWritten(params);
+        }).catch(error => {
+          const failure = error instanceof Error ? error : new Error(String(error));
+          permissions.responseFailed(params, failure);
+          queue.push({ error: failure });
+        });
+        continue;
       }
       if (!item.event || item.event.event !== "agent") continue;
       const native = asRecord(item.event.payload);
@@ -664,6 +700,7 @@ async function* invokeOpenClawGateway(
 export function createOpenClawAdapter(
   { clientFactory = options => new OpenClawGatewayClient(options) }: { clientFactory?: GatewayClientFactory } = {}
 ) {
+  const responders = new Map<string, AcpApprovalBridge>();
   let pendingProbe: Promise<{ available: boolean; command: string; reason?: string }> | undefined;
   const probeGateway = async () => {
     let client: OpenClawGatewayClientLike | undefined;
@@ -682,12 +719,19 @@ export function createOpenClawAdapter(
       transport: "openclaw-gateway-rpc",
       capabilities: ["react"],
       agentSources: ["preset", "provisioned"],
-      executionFeatures: ["tool.canonical", "agent.existing-target.v1"]
+      executionFeatures: ["tool.canonical", "agent.existing-target.v1", executionFeatures.INTERACTION_RESPONSE, executionFeatures.APPROVAL_ASK, executionFeatures.APPROVAL_FULL_ACCESS]
     },
     probe() {
       return pendingProbe ??= probeGateway().finally(() => { pendingProbe = undefined; });
     },
+    async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
+      const bridge = responders.get(invocationId);
+      if (!bridge) throw new Error("INTERACTION_NOT_ACTIVE");
+      await bridge.respond(response);
+    },
     async *invoke(req: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
+      if (req.approvalMode === "assisted") throw new Error("APPROVAL_MODE_UNSUPPORTED: OpenClaw has no qualified assisted policy");
+      if (responders.has(req.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
       if (!option(req, OPENCLAW_PROVIDER_OPTIONS.url)) {
         const gateway = await loadLocalOpenClawGateway();
         req = { ...req, agentConfig: { ...req.agentConfig, providerOptions: {
@@ -707,7 +751,10 @@ export function createOpenClawAdapter(
         providerRequestId: invocation.requestId,
         carrier: invocation.providerInput
       });
-      yield* invokeOpenClawGateway(req, invocation, context, clientFactory);
+      const bridge = new AcpApprovalBridge(req);
+      responders.set(req.invocationId, bridge);
+      try { yield* bridge.stream(invokeOpenClawGateway(req, invocation, context, clientFactory, bridge)); }
+      finally { bridge.close("execution_lost"); responders.delete(req.invocationId); }
     }
   });
 }

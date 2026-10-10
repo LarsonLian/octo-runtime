@@ -20,7 +20,7 @@ test("streaming message snapshots keep one activity until an explicit terminal",
 
 test("Host closes a still-streaming snapshot on root completion", async () => {
   const host = new AdapterHost();
-  host.register({ metadata: { type: "snapshot", capabilities: [], agentSources: ["provisioned"], executionFeatures: [] }, async *invoke() {
+  host.register({ metadata: { type: "snapshot", capabilities: [], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke() {
     yield { protocolVersion: 2, type: "message.update", payload: { ...metadata, status: "streaming", text: "public snapshot" } };
     yield { protocolVersion: 2, type: "run.completed", payload: {} };
   } });

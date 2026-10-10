@@ -37,7 +37,7 @@ test("ordered model input validates image content, limits, and recovery without 
 test("Host refuses image input before calling an old text-only adapter", async () => {
   let called = false;
   const host = new AdapterHost();
-  host.register({ metadata: { type: "text-only", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] }, async *invoke() { called = true; } });
+  host.register({ metadata: { type: "text-only", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke() { called = true; } });
   await assert.rejects(async () => {
     for await (const _event of host.invoke("text-only", { ...invokeRequest(), approvalMode: "full_access", modelInputParts: [image] })) {}
   }, /UNSUPPORTED_INPUT_MODALITY/);

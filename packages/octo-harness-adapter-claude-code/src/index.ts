@@ -11,6 +11,7 @@ import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
  */
 import {
   defineAdapter,
+  AcpApprovalBridge,
   observeBestEffort,
   observeProviderOutput,
   parseJsonLine,
@@ -22,7 +23,7 @@ import {
   type InvokeRequest,
   type MessageExposure
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { executionFeatures } from "@mininglamp-oss/octo-harness-protocol";
+import { executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -65,6 +66,8 @@ interface ClaudeNativeEvent {
   usage?: Record<string, unknown>;
   is_error?: boolean;
   result?: string;
+  request_id?: string;
+  request?: { subtype?: string; tool_name?: string; input?: Record<string, unknown>; tool_use_id?: string };
 }
 
 /**
@@ -82,7 +85,7 @@ export async function buildClaudeCommand(
   command = "claude",
   commandArgsPrefix: string[] = []
 ) {
-  if (req.approvalMode !== "full_access") throw new Error("APPROVAL_MODE_UNSUPPORTED: claude-code permission transport is not qualified");
+  const mode = claudePermissionMode(req.approvalMode);
   const directory = await mkdtemp(join(tmpdir(), "octo-harness-claude-"));
   const promptFile = join(directory, "system-prompt.txt");
   // The control prompt goes through Claude's dedicated file argument while the
@@ -111,7 +114,7 @@ export async function buildClaudeCommand(
   const args = [
     ...commandArgsPrefix,
     "--print",
-    "--input-format", "text",
+    "--input-format", "stream-json",
     "--output-format", "stream-json",
     "--verbose",
     "--include-partial-messages",
@@ -121,11 +124,10 @@ export async function buildClaudeCommand(
   if (req.agentConfig?.model) args.push("--model", req.agentConfig.model);
   const effort = req.agentConfig?.effort;
   if (effort) args.push("--effort", effort);
-  const mode = "bypassPermissions";
   args.push("--permission-mode", mode);
+  args.push("--permission-prompt-tool", "stdio");
   if (mode === "bypassPermissions") args.push("--dangerously-skip-permissions");
-  args.push("-");
-  const input = providerInputText(req);
+  const input = `${JSON.stringify({ type: "user", session_id: req.providerSession?.sessionId ?? "", message: { role: "user", content: providerInputText(req) }, parent_tool_use_id: null })}\n`;
   return {
     command,
     args,
@@ -146,6 +148,15 @@ export async function buildClaudeCommand(
     },
     cleanup: () => rm(directory, { recursive: true, force: true })
   };
+}
+
+export function claudePermissionMode(mode: InvokeRequest["approvalMode"]): string {
+  switch (mode) {
+    case "ask": return "default";
+    case "assisted": return "auto";
+    case "full_access": return "bypassPermissions";
+    default: throw new Error("APPROVAL_MODE_UNSUPPORTED");
+  }
 }
 
 /**
@@ -480,17 +491,32 @@ export function createClaudeCodeAdapter({
   command?: string;
   commandArgsPrefix?: string[];
 } = {}) {
+  const responders = new Map<string, AcpApprovalBridge>();
   return defineAdapter({
     metadata: {
       type: "claude-code",
       capabilities: ["react"],
       agentSources: ["provisioned"],
-      executionFeatures: ["session.serialize", "tool.canonical", executionFeatures.MCP_DYNAMIC],
+      executionFeatures: ["session.serialize", "tool.canonical", executionFeatures.MCP_DYNAMIC, executionFeatures.INTERACTION_RESPONSE, executionFeatures.APPROVAL_ASK, executionFeatures.APPROVAL_ASSISTED, executionFeatures.APPROVAL_FULL_ACCESS],
       processModel: "subprocess-per-invocation",
       transport: "ndjson/stdio"
     },
     probe: () => probeCommand(command),
+    async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
+      const bridge = responders.get(invocationId);
+      if (!bridge) throw new Error("INTERACTION_NOT_ACTIVE");
+      await bridge.respond(response);
+    },
     async *invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
+      if (responders.has(request.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
+      const permissions = new AcpApprovalBridge(request);
+      responders.set(request.invocationId, permissions);
+      try { yield* permissions.stream(execute(request, permissions, context)); }
+      finally { permissions.close("execution_lost"); responders.delete(request.invocationId); }
+    }
+  });
+
+    async function* execute(request: InvokeRequest, permissions: AcpApprovalBridge, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
       const spec = await buildClaudeCommand(request, command, commandArgsPrefix);
       // The normalizer must not be hoisted to an adapter singleton: one adapter may run several invocations concurrently.
       const normalizer = new ClaudeEventNormalizer();
@@ -512,6 +538,34 @@ export function createClaudeCodeAdapter({
           ...spec,
           cwd: request.workdir,
           signal: request.signal,
+          onSpawn: close => permissions.bindTransport(close),
+          endInputWhen: native => native.type === "result",
+          controlHandler: async (native, write) => {
+            if (native.type !== "control_request") return;
+            if (!native.request_id || native.request?.subtype !== "can_use_tool") {
+              throw new Error("CLAUDE_CONTROL_REQUEST_UNSUPPORTED");
+            }
+            const params = {
+              toolCall: { toolCallId: native.request.tool_use_id, title: native.request.tool_name ?? "Claude tool" },
+              providerDetails: { provider: "claude-code", method: "can_use_tool", title: native.request.tool_name,
+                ...(typeof native.request.input?.command === "string" ? { command: native.request.input.command } : {}),
+                ...(typeof native.request.input?.file_path === "string" ? { files: [native.request.input.file_path] } : {}) },
+              options: [{ kind: "allow_once", optionId: "allow" }, { kind: "reject_once", optionId: "deny" }]
+            };
+            try {
+              const decision = await permissions.requestPermission(params);
+              const allowed = (decision.outcome as { optionId?: string })?.optionId === "allow";
+              await write({ type: "control_response", response: {
+                subtype: "success", request_id: native.request_id,
+                response: allowed ? { behavior: "allow", updatedInput: native.request.input ?? {} }
+                  : { behavior: "deny", message: "User declined tool execution", interrupt: false }
+              } });
+              permissions.responseWritten(params);
+            } catch (error) {
+              permissions.responseFailed(params, error instanceof Error ? error : new Error(String(error)));
+              throw error;
+            }
+          },
           onInputWritten: () => {
             // Claude has no response envelope for stdin input. This marks local
             // stream acceptance only; first stdout is the next observable state.
@@ -545,6 +599,7 @@ export function createClaudeCodeAdapter({
             }
           });
           yield* events;
+          if (events.some(event => ["run.completed", "run.failed", "run.cancelled"].includes(event.type))) return;
         }
       } catch (error) {
         observeBestEffort(context, {
@@ -557,7 +612,6 @@ export function createClaudeCodeAdapter({
         await spec.cleanup();
       }
     }
-  });
 }
 
 export const claudeCodeAdapter = createClaudeCodeAdapter();

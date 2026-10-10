@@ -1,12 +1,12 @@
 import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * OpenCode adapter: wraps the OpenCode CLI (`opencode run --format json
- * --thinking --auto`) and normalizes its JSON event/part stream into canonical
- * events. This adapter is an unattended local coding runtime, so tool
- * permissions are always auto-approved.
+ * --thinking --auto`) for full access and ACP for interactive approval.
+ * Both transports normalize provider output into canonical events.
  */
 import { createJsonCliAdapter, probeCommand, providerInputText, type AdapterInvocationContext, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { executionFeatures, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
+import { createAcpAdapter } from "@mininglamp-oss/octo-harness-adapter-acp";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -225,13 +225,23 @@ export class OpenCodeEventNormalizer {
 }
 
 export function createOpenCodeAdapter({ command = "opencode" }: { command?: string } = {}) {
+  const interactive = createAcpAdapter({ type: "opencode", provider: "opencode", command, args: ["acp"],
+    env: () => ({ OPENCODE_CLIENT: "octo-harness", OPENCODE_CONFIG_CONTENT: JSON.stringify({
+      ...(process.env.OPENCODE_CONFIG_CONTENT ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : {}), permission: "ask"
+    }) })
+  });
   const options: Parameters<typeof createJsonCliAdapter<OpenCodeNativeEvent>>[0] = {
-    metadata: { type: "opencode", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["session.serialize", "tool.canonical", executionFeatures.MCP_DYNAMIC] },
+    metadata: { type: "opencode", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["session.serialize", "tool.canonical", executionFeatures.MCP_DYNAMIC, executionFeatures.INTERACTION_RESPONSE, executionFeatures.APPROVAL_ASK, executionFeatures.APPROVAL_FULL_ACCESS] },
     probe: () => probeCommand(command), buildCommand: (req: InvokeRequest) => buildOpenCodeCommand(req, command), normalize: normalizeOpenCodeEvent,
     onSuccess: (): CanonicalEvent[] => [{ protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "completed" } }, { protocolVersion: 2, type: "run.completed", payload: {} }]
   };
   const adapter = createJsonCliAdapter<OpenCodeNativeEvent>(options);
-  return { ...adapter, async *invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
+  return { ...adapter, respondInteraction: interactive.respondInteraction, async *invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
+    if (request.approvalMode === "assisted") throw new Error("APPROVAL_MODE_UNSUPPORTED: opencode has no qualified assisted policy");
+    if (request.approvalMode === "ask") {
+      yield* interactive.invoke(request, context);
+      return;
+    }
     const normalizer = new OpenCodeEventNormalizer();
     yield* createJsonCliAdapter<OpenCodeNativeEvent>({ ...options, normalize: native => normalizer.normalize(native) }).invoke(request, context);
   } };

@@ -75,7 +75,7 @@ test("daemon drain closes admission and waits for active Runs", async () => {
     const store = SqliteStore.open(join(directory, "state.db"));
     const host = new AdapterHost();
     host.register({
-      metadata: { type: "slow", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] },
+      metadata: { type: "slow", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] },
       async *invoke() {
         await providerGate;
         yield { protocolVersion: 2, type: "run.completed", payload: {} };

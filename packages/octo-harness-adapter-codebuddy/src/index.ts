@@ -1,4 +1,4 @@
-import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
+import { canonicalTerminalStatus, executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * CodeBuddy adapter: wraps the CodeBuddy CLI spoken over ACP (Agent Client
  * Protocol) as JSON-RPC 2.0 on stdio, and normalizes its `session/update`
@@ -95,23 +95,30 @@ function isCancelledStopReason(reason: unknown): boolean {
  * prompt streams end silently rather than with a terminal.
  */
 export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, command = "codebuddy" }: { acpClientFactory?: typeof spawnAcpClient; command?: string } = {}) {
+  const responders = new Map<string, AcpApprovalBridge>();
   return defineAdapter({
-    metadata: { type: "codebuddy", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["session.serialize", "tool.canonical"] },
+    metadata: { type: "codebuddy", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["session.serialize", "tool.canonical", executionFeatures.INTERACTION_RESPONSE, executionFeatures.APPROVAL_ASK, executionFeatures.APPROVAL_ASSISTED, executionFeatures.APPROVAL_FULL_ACCESS] },
     probe: () => probeCommand(command),
+    async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
+      const bridge = responders.get(invocationId);
+      if (!bridge) throw new Error("INTERACTION_NOT_ACTIVE");
+      await bridge.respond(response);
+    },
     async *invoke(req: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
-      if (req.approvalMode !== "full_access") throw new Error("APPROVAL_MODE_UNSUPPORTED: codebuddy approval bridge is not qualified");
       if (req.agentConfig.effort) throw new Error("REASONING_UNSUPPORTED: codebuddy reasoning selection is not qualified");
+      if (responders.has(req.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
       const permissions = new AcpApprovalBridge(req);
+      responders.set(req.invocationId, permissions);
       async function* execute(): AsyncGenerator<CanonicalEvent> {
       const stage = createProviderStageTimer(context);
       const finishInvocation = stage("invocation");
       let outcome = "interrupted";
-      const client = await measureProviderStage(context, "cli_spawn", "spawn", async () => acpClientFactory({
-        command, args: ["--acp", "--permission-mode", "bypassPermissions"],
+      const client = await measureProviderStage(context, "cli_spawn", "spawn", () => Promise.resolve(acpClientFactory({
+        command, args: ["--acp", "--permission-mode", codeBuddyPermissionMode(req.approvalMode)],
         cwd: req.workdir, signal: req.signal, permissionHandler: params => permissions.requestPermission(params),
         onPermissionResponseWritten: params => permissions.responseWritten(params),
         onPermissionResponseFailed: (params, error) => permissions.responseFailed(params, error)
-      })).catch(error => { finishInvocation("failed"); throw error; });
+      }))).catch(error => { finishInvocation("failed"); throw error; });
       permissions.bindTransport(() => client.close());
       try {
         await measureProviderStage(context, "initialize", "initialize", () => client.initialize());
@@ -301,9 +308,18 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
       }
       }
       try { yield* permissions.stream(execute()); }
-      finally { permissions.close("execution_lost"); }
+      finally { permissions.close("execution_lost"); responders.delete(req.invocationId); }
     }
   });
+}
+
+export function codeBuddyPermissionMode(mode: InvokeRequest["approvalMode"]): string {
+  switch (mode) {
+    case "ask": return "default";
+    case "assisted": return "auto";
+    case "full_access": return "bypassPermissions";
+    default: throw new Error("APPROVAL_MODE_UNSUPPORTED");
+  }
 }
 
 /** Narrow an unknown value to a plain object (excluding arrays), used to guard ACP payloads before indexing. */

@@ -1,12 +1,12 @@
 import { createAcpAdapter } from "@mininglamp-oss/octo-harness-adapter-acp";
 
 /**
- * Qoder CLI ACP adapter. Launches `qodercli --yolo --acp` and speaks the Agent
+ * Qoder CLI ACP adapter. Launches `qodercli --acp` and speaks the Agent
  * Client Protocol through the shared ACP adapter, which reconstructs model
  * steps, streams the prompt turn and normalizes `session/update` notifications
  * into canonical events.
  *
- * `--yolo` selects Qoder's ACP "bypass permissions" mode so headless tool runs
+ * Full access adds `--yolo`, selecting Qoder's ACP "bypass permissions" mode so headless tool runs
  * do not block on interactive approval. Qoder advertises session loading, so a
  * stored provider session resumes through `session/load` without a fresh
  * fallback. Per-session model selection follows the standard ACP path when the

@@ -125,6 +125,10 @@ interface SpawnJsonLinesOptions<TNative> extends CommandSpec {
   parseLine: (line: string) => TNative | null;
   /** Called only after Node accepts the complete stdin payload for writing. */
   onInputWritten?: () => void;
+  /** Keep stdin open for provider reverse requests; writes are acknowledged. */
+  controlHandler?: (event: TNative, write: (response: unknown) => Promise<void>) => Promise<void>;
+  endInputWhen?: (event: TNative) => boolean;
+  onSpawn?: (close: () => Promise<void>) => void;
 }
 
 interface ProcessExit {
@@ -314,13 +318,17 @@ export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TN
     child.once("close", (code, exitSignal) => resolve({ code, signal: exitSignal }));
   });
   let killTimer: NodeJS.Timeout | undefined;
+  let terminating = false;
   const abort = (): void => {
+    if (terminating || child.exitCode !== null || child.signalCode !== null) return;
+    terminating = true;
     signalProcessTree(child, "SIGTERM");
     killTimer ??= setTimeout(() => {
-      if (child.exitCode === null) signalProcessTree(child, "SIGKILL");
+      if (child.exitCode === null && child.signalCode === null) signalProcessTree(child, "SIGKILL");
     }, 1_000);
     killTimer.unref();
   };
+  options.onSpawn?.(() => { if (child.exitCode === null) abort(); return Promise.resolve(); });
   signal?.addEventListener("abort", abort, { once: true });
   if (signal?.aborted) abort();
   let stderr = "";
@@ -330,7 +338,14 @@ export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TN
   });
   // Use the completion callback rather than observing before end(): the latter
   // would incorrectly classify a synchronous write failure as dispatched.
-  child.stdin.end(input, onInputWritten);
+  let controlError: Error | undefined;
+  const handlers = new Set<Promise<void>>();
+  child.stdin.on("error", error => { controlError ??= error; abort(); });
+  const write = (response: unknown): Promise<void> => new Promise((resolve, reject) => {
+    child.stdin.write(`${JSON.stringify(response)}\n`, error => error ? reject(error) : resolve());
+  });
+  if (options.controlHandler) child.stdin.write(input ?? "", onInputWritten);
+  else child.stdin.end(input, onInputWritten);
 
   let exited = false;
   try {
@@ -338,11 +353,23 @@ export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TN
     // left to the specific adapter's parseLine.
     for await (const line of createInterface({ input: child.stdout })) {
       const event = parseLine(line);
-      if (event !== null) yield event;
+      if (event !== null) {
+        if (options.controlHandler) {
+          const task = options.controlHandler(event, write).catch(error => {
+            controlError ??= error instanceof Error ? error : new Error(String(error));
+            abort();
+          });
+          handlers.add(task);
+          void task.finally(() => handlers.delete(task));
+        }
+        if (options.endInputWhen?.(event)) child.stdin.end();
+        yield event;
+      }
     }
 
     const exit = await exitPromise;
     exited = true;
+    if (controlError) throw controlError;
     if (exit.code !== 0) {
       throw new ProviderProcessError(
         stderr.trim() || `${command} exited with ${exit.code ?? exit.signal}`,
@@ -351,13 +378,13 @@ export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TN
     }
   } finally {
     signal?.removeEventListener("abort", abort);
-    if (!exited && child.exitCode === null) {
+    if (!exited && child.exitCode === null && child.signalCode === null) {
       abort();
       await Promise.race([
         exitPromise.catch(() => undefined),
         new Promise<void>(resolve => setTimeout(resolve, 1_000))
       ]);
-      if (child.exitCode === null) signalProcessTree(child, "SIGKILL");
+      if (child.exitCode === null && child.signalCode === null) signalProcessTree(child, "SIGKILL");
     }
     if (killTimer) clearTimeout(killTimer);
   }
@@ -372,7 +399,7 @@ function signalProcessTree(
       process.kill(-child.pid, signal);
       return;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      if (!["ESRCH", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
     }
   }
   child.kill(signal);

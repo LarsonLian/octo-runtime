@@ -43,7 +43,7 @@ const CLIENT_ID = "cli";
 const CLIENT_MODE = "cli";
 const CLIENT_PLATFORM = process.platform === "darwin" ? "macos" : process.platform;
 const CLIENT_DEVICE_FAMILY = "desktop";
-const REQUESTED_SCOPES = ["operator.read", "operator.write", "operator.admin"];
+const REQUESTED_SCOPES = ["operator.read", "operator.write", "operator.admin", "operator.approvals"];
 const REQUEST_ID_HEADER = "X-Request-Id";
 
 function record(value: unknown): Record<string, unknown> | undefined {

@@ -44,8 +44,7 @@ test("ZCode GUI adapter full_access answers runtime preferences, streams events,
   } });
   const create = observations.find(observation => observation.event === "provider.input" && observation.rpcMethod === "session/create");
   assert.equal(create.carrier.content.params.mode, "yolo");
-  assert.equal(events[0].type, "session.update");
-  assert.equal(events[0].payload.providerSession.sessionId, "sess-zcode-fixture");
+  assert.equal(events.find(event => event.type === "session.update").payload.providerSession.sessionId, "sess-zcode-fixture");
   assert.equal(events.find(event => event.type === "message.delta" && event.payload.channel === "final")?.payload.text, "permission:allow");
   assert.deepEqual(
     events.filter(event => event.type.startsWith("tool_call.")).map(event => [event.type, event.payload.status]),
@@ -57,15 +56,15 @@ test("ZCode GUI adapter full_access answers runtime preferences, streams events,
   assert.equal(events.at(-1).type, "run.completed");
 });
 
-test("ZCode GUI adapter rejects unqualified ask and assisted before starting its native transport", async () => {
+test("ZCode GUI adapter rejects unqualified assisted before starting its native transport", async () => {
   let spawned = false;
   const adapter = createZcodeGuiAdapter({ spawnFn: () => { spawned = true; throw new Error("provider must not launch"); } });
-  for (const approvalMode of ["ask", "assisted"]) {
+  for (const approvalMode of ["assisted"]) {
     await assert.rejects(async () => {
       for await (const event of adapter.invoke({ ...request(), approvalMode })) assert.fail(`unexpected ${event.type}`);
     }, /APPROVAL_MODE_UNSUPPORTED/);
   }
-  assert.equal(adapter.metadata.executionFeatures.includes("interaction.response"), false);
+  assert.equal(adapter.metadata.executionFeatures.includes("interaction.response"), true);
   assert.equal(spawned, false);
 });
 
@@ -82,7 +81,7 @@ test("ZCode GUI adapter independently rejects explicit model and effort before s
 
 test("ZCode GUI adapter falls back to a fresh session after resume failure", async () => {
   const events = await invoke({}, { sessionId: "sess-missing" });
-  assert.deepEqual(events[0].payload.providerSession, {
+  assert.deepEqual(events.find(event => event.type === "session.update").payload.providerSession, {
     sessionId: "sess-zcode-fixture",
     resumable: true,
     resumeOutcome: "fresh_fallback",

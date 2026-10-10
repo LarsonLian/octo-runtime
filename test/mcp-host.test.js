@@ -34,7 +34,7 @@ test("Adapter Host rejects dynamic MCP before invoking an unsupported adapter", 
   let invoked = false;
   const host = new AdapterHost();
   host.register({
-    metadata: { type: "unsupported", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] },
+    metadata: { type: "unsupported", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] },
     async *invoke() {
       invoked = true;
       yield { protocolVersion: 2, type: "run.completed", payload: {} };
@@ -56,7 +56,7 @@ test("Adapter Host passes a dynamic MCP plan to an adapter that declares support
   let received;
   const host = new AdapterHost();
   host.register({
-    metadata: { type: "supported", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [executionFeatures.MCP_DYNAMIC] },
+    metadata: { type: "supported", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access", executionFeatures.MCP_DYNAMIC] },
     async *invoke(value) {
       received = value.mcpServers;
       yield { protocolVersion: 2, type: "run.completed", payload: {} };

@@ -396,6 +396,9 @@ export const MESSAGE_CHANNELS: ReadonlySet<MessageChannel> = new Set([
 export const capabilities = Object.freeze({ REACT: "react" } as const);
 
 export const executionFeatures = Object.freeze({
+  APPROVAL_ASK: "approval.ask",
+  APPROVAL_ASSISTED: "approval.assisted",
+  APPROVAL_FULL_ACCESS: "approval.full_access",
   SESSION_SERIALIZE: "session.serialize",
   SESSION_RESUME_RECOVERY: "session.resume_recovery",
   SESSION_FORK: "session.fork",
@@ -406,6 +409,8 @@ export const executionFeatures = Object.freeze({
   INTERACTION_RESPONSE: "interaction.response",
   INPUT_IMAGE: "input.image"
 } as const);
+
+export { adapterApprovalModes } from "./permissions.js";
 
 /**
  * Validate an adapter event and stamp it with the ID, sequence, timestamp and

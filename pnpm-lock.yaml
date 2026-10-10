@@ -340,6 +340,9 @@ importers:
 
   packages/octo-harness-adapter-opencode:
     dependencies:
+      '@mininglamp-oss/octo-harness-adapter-acp':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-acp
       '@mininglamp-oss/octo-harness-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-harness-adapter-sdk

@@ -30,6 +30,7 @@ export interface AcpAdapterDefinition {
   provider: string;
   command: string;
   args?: readonly string[] | ((request: InvokeRequest) => readonly string[]);
+  env?: (request: InvokeRequest) => NodeJS.ProcessEnv;
   executionFeatures?: readonly string[];
   protocolVersion?: string | number;
   emptyLoadResultMeansMissing?: boolean;
@@ -155,7 +156,7 @@ export function createAcpAdapter(
       type: definition.type,
       capabilities: ["react"],
       agentSources: ["provisioned"],
-      executionFeatures: [...(definition.executionFeatures ?? ["session.serialize", "tool.canonical"]), executionFeatures.INTERACTION_RESPONSE, executionFeatures.INPUT_IMAGE]
+      executionFeatures: [...(definition.executionFeatures ?? ["session.serialize", "tool.canonical"]), executionFeatures.INTERACTION_RESPONSE, executionFeatures.INPUT_IMAGE, executionFeatures.APPROVAL_ASK, executionFeatures.APPROVAL_FULL_ACCESS]
     },
     probe: () => probeCommand(command),
     async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
@@ -164,6 +165,7 @@ export function createAcpAdapter(
       await bridge.respond(response);
     },
     async *invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
+      if (request.approvalMode !== "ask" && request.approvalMode !== "full_access") throw new Error("APPROVAL_MODE_UNSUPPORTED: this ACP adapter has no assisted policy");
       if (request.agentConfig.effort) throw new Error("REASONING_UNSUPPORTED: ACP reasoning selection is not qualified");
       if (responders.has(request.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
       const bridge = new AcpApprovalBridge(request);
@@ -178,6 +180,7 @@ export function createAcpAdapter(
       const client = acpClientFactory({
         command,
         args: [...args],
+        env: definition.env?.(request),
         cwd: request.workdir,
         permissionHandler: params => bridge.requestPermission(params),
         onPermissionResponseWritten: params => bridge.responseWritten(params),
@@ -209,6 +212,7 @@ export function createAcpAdapter(
         let sessionParams = requestedSessionId
           ? acpLoadSessionParams(requestedSessionId, { cwd: request.workdir })
           : acpNewSessionParams({ cwd: request.workdir });
+        sessionParams.mcpServers = acpMcpServers(request);
         let sessionRequestId = client.reserveRequestId();
         let sessionResult: JsonRecord = {};
         await observeInput(context, sessionMethod, sessionParams, sessionRequestId, requestedSessionId);
@@ -229,6 +233,7 @@ export function createAcpAdapter(
             resumeFallback = "session_load_not_found";
             sessionMethod = "session/new";
             sessionParams = acpNewSessionParams({ cwd: request.workdir });
+            sessionParams.mcpServers = acpMcpServers(request);
             sessionRequestId = client.reserveRequestId();
             await observeInput(context, sessionMethod, sessionParams, sessionRequestId);
             result = await client.request<JsonRecord>(sessionMethod, sessionParams, {
@@ -402,6 +407,12 @@ export function createAcpAdapter(
         await client.close();
       }
   }
+}
+
+function acpMcpServers(request: InvokeRequest): JsonRecord[] {
+  return Object.entries(request.mcpServers ?? {}).map(([name, server]) => server.type === "stdio"
+    ? { name, command: server.command, args: server.args ?? [], env: Object.entries(server.env ?? {}).map(([name, value]) => ({ name, value })) }
+    : { name, type: server.type, url: server.url, headers: Object.entries(server.headers ?? {}).map(([name, value]) => ({ name, value })) });
 }
 
 async function observeInput(
