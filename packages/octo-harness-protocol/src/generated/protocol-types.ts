@@ -1629,7 +1629,7 @@ export interface RunContextProjection {
      * @maxItems 32
      */
     resources: {
-      resource_id: string;
+      resource_key: string;
       kind: "agent_plugin" | "skill" | "connector" | "knowledge";
       digest: string;
       sources: ("agent_default" | "agent_mandatory" | "request" | "scenario_policy")[];
@@ -1685,7 +1685,7 @@ export interface ContextPreparationReceipt {
  * via the `definition` "PreparedCapabilityReceipt".
  */
 export interface PreparedCapabilityReceipt {
-  resource_id: string;
+  resource_key: string;
   digest: string;
   root: string;
   data: string;
@@ -1779,7 +1779,7 @@ export interface ContextModelPayload {
  * via the `definition` "ContextCapabilityReference".
  */
 export interface ContextCapabilityReference {
-  resource_id: string;
+  resource_key: string;
   invoke?: boolean;
   /**
    * @maxItems 64
@@ -1807,14 +1807,14 @@ export interface ContextCapabilitySelectionPayload {
  * via the `definition` "ContextResourceIdentity".
  */
 export interface ContextResourceIdentity {
-  resource_id: string;
+  resource_key: string;
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ResolvedCapabilityResource".
  */
 export interface ResolvedCapabilityResource {
-  resource_id: string;
+  resource_key: string;
   kind: "agent_plugin" | "skill" | "connector" | "knowledge";
   digest: string;
   files: {
@@ -2713,7 +2713,7 @@ export interface RunNoticePayload {
  * via the `definition` "ContextSkillsReference".
  */
 export interface ContextSkillsReference {
-  resource_id: string;
+  resource_key: string;
   invoke?: boolean;
 }
 /**
@@ -2737,7 +2737,7 @@ export interface ContextSkillsPayload {
  * via the `definition` "ContextAgentPluginsReference".
  */
 export interface ContextAgentPluginsReference {
-  resource_id: string;
+  resource_key: string;
   invoke?: boolean;
   /**
    * @maxItems 64
@@ -2765,7 +2765,7 @@ export interface ContextAgentPluginsPayload {
  * via the `definition` "ContextKnowledgeReference".
  */
 export interface ContextKnowledgeReference {
-  resource_id: string;
+  resource_key: string;
 }
 /**
  * Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.
@@ -2788,7 +2788,7 @@ export interface ContextKnowledgePayload {
  * via the `definition` "ContextConnectorsReference".
  */
 export interface ContextConnectorsReference {
-  resource_id: string;
+  resource_key: string;
   /**
    * @maxItems 64
    */
@@ -2870,7 +2870,7 @@ export interface ScenarioPolicy {
    * @maxItems 32
    */
   default_skills: {
-    resource_id: string;
+    resource_key: string;
     invoke: boolean;
     [k: string]: unknown;
   }[];
@@ -2891,7 +2891,7 @@ export interface ScenarioPolicySnapshot {
    * @maxItems 32
    */
   default_skills: {
-    resource_id: string;
+    resource_key: string;
     invoke: boolean;
     [k: string]: unknown;
   }[];

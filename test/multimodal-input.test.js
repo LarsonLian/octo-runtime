@@ -12,7 +12,7 @@ import { visualInputImages } from "../test-support/multimodal-images.mjs";
 
 const [image] = visualInputImages();
 const source = ({ type: _type, ...value }) => value;
-const artifact = { id: "artifact-1", mediaType: image.mimeType, byteSize: image.byteSize, sha256: image.sha256 };
+const artifact = { artifact_key: "artifact-1", mediaType: image.mimeType, byteSize: image.byteSize, sha256: image.sha256 };
 const input = () => ({ parts: [{ id: "t1", type: "text", text: "compare" }, { id: "p1", type: "image", artifact }, { id: "t2", type: "text", text: "then describe" }] });
 
 test("ordered model input validates image content, limits, and recovery without text fallback", () => {
@@ -65,7 +65,7 @@ test("runtime reads frozen artifacts under lease, verifies bytes, and leaves dur
   const materialized = await resolveRuntimeInputImages(original, options);
   assert.equal(original.parts[1].source, undefined);
   assert.deepEqual(modelPartsFromInput(materialized).map(part => part.type), ["text", "image", "text"]);
-  assert.deepEqual(requests[0], { url: "/v1/runtime/input_artifact/read", authorization: "Bearer test-runtime", body: { run_key: "run-1", artifact_id: artifact.id, lease_id: "lease-1", fencing_token: 9 } });
+  assert.deepEqual(requests[0], { url: "/v1/runtime/input_artifact/read", authorization: "Bearer test-runtime", body: { run_key: "run-1", artifact_key: artifact.artifact_key, lease_id: "lease-1", fencing_token: 9 } });
   corrupt = true;
   await assert.rejects(resolveRuntimeInputImages(input(), options), /ARTIFACT_INTEGRITY_MISMATCH/);
   corrupt = false; denied = true;

@@ -612,14 +612,14 @@
                 "type": "object",
                 "additionalProperties": false,
                 "required": [
-                  "resource_id",
+                  "resource_key",
                   "kind",
                   "revision",
                   "digest",
                   "sources"
                 ],
                 "properties": {
-                  "resource_id": {
+                  "resource_key": {
                     "type": "string",
                     "minLength": 1
                   },
@@ -830,7 +830,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resource_id",
+        "resource_key",
         "revision",
         "digest",
         "root",
@@ -838,7 +838,7 @@
         "components"
       ],
       "properties": {
-        "resource_id": {
+        "resource_key": {
           "type": "string",
           "minLength": 1
         },
@@ -1078,10 +1078,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resource_id"
+        "resource_key"
       ],
       "properties": {
-        "resource_id": {
+        "resource_key": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         },
@@ -1130,7 +1130,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resource_id",
+        "resource_key",
         "kind",
         "revision",
         "digest",
@@ -1139,7 +1139,7 @@
         "invoke"
       ],
       "properties": {
-        "resource_id": {
+        "resource_key": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         },
@@ -3753,10 +3753,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resource_id"
+        "resource_key"
       ],
       "properties": {
-        "resource_id": {
+        "resource_key": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         }
@@ -3817,10 +3817,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resource_id"
+        "resource_key"
       ],
       "properties": {
-        "resource_id": {
+        "resource_key": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         },
@@ -3860,10 +3860,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resource_id"
+        "resource_key"
       ],
       "properties": {
-        "resource_id": {
+        "resource_key": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         },
@@ -3912,10 +3912,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resource_id"
+        "resource_key"
       ],
       "properties": {
-        "resource_id": {
+        "resource_key": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         }
@@ -3952,10 +3952,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resource_id"
+        "resource_key"
       ],
       "properties": {
-        "resource_id": {
+        "resource_key": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         },
@@ -4152,7 +4152,7 @@
             "type": "object",
             "additionalProperties": true,
             "properties": {
-              "resource_id": {
+              "resource_key": {
                 "type": "string",
                 "format": "uuid"
               },
@@ -4161,7 +4161,7 @@
               }
             },
             "required": [
-              "resource_id",
+              "resource_key",
               "invoke"
             ]
           }
@@ -4202,7 +4202,7 @@
             "type": "object",
             "additionalProperties": true,
             "properties": {
-              "resource_id": {
+              "resource_key": {
                 "type": "string",
                 "format": "uuid"
               },
@@ -4211,7 +4211,7 @@
               }
             },
             "required": [
-              "resource_id",
+              "resource_key",
               "invoke"
             ]
           }

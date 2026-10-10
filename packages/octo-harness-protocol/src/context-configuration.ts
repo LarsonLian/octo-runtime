@@ -4,7 +4,7 @@ import { contextTypeDefinition } from "./context-catalog.js";
 
 const empty = (): ContextEnvelope => ({ schema: CONTEXT_SCHEMA, items: [] });
 const keyOf = (item: ContextItem): string => `${item.namespace}/${item.name}`;
-const resourceKey = (item: { resource_id: string }): string => item.resource_id;
+const resourceKey = (item: { resource_key: string }): string => item.resource_key;
 const selection = (envelope: ContextEnvelope, name: string): ContextCapabilitySelectionPayload | undefined =>
   envelope.items.find(item => item.namespace === "octo.resources" && item.name === name)?.payload as ContextCapabilitySelectionPayload | undefined;
 

@@ -54,8 +54,8 @@ ajv.addKeyword("x-octo-capability-selection", {
   type: "object",
   validate: (enabled, value) => {
     if (!enabled || !Array.isArray(value.include) || !Array.isArray(value.exclude)) return true;
-    const ids = value.include.map(item => `${item?.kind}/${item?.resource_id}`);
-    const excluded = value.exclude.map(item => `${item?.kind}/${item?.resource_id}`);
+    const ids = value.include.map(item => `${item?.kind}/${item?.resource_key}`);
+    const excluded = value.exclude.map(item => `${item?.kind}/${item?.resource_key}`);
     return new Set(ids).size === ids.length && ids.every(id => !excluded.includes(id));
   }
 });

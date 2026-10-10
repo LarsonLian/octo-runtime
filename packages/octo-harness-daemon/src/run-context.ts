@@ -44,13 +44,13 @@ export function assertFrozenContextPlan(context: ContextEnvelope, plan: Resolved
   const include = contextResourceReferences(context);
   for (const entry of Array.isArray(include) ? include : []) {
     if (!isObject(entry)) throw new TypeError("CONTEXT_PLAN_MISMATCH");
-    selected.set(`${String(entry.kind)}/${String(entry.resource_id)}`, entry);
+    selected.set(`${String(entry.kind)}/${String(entry.resource_key)}`, entry);
   }
   // 派发只包含身份；资源在准备阶段按当前授权取最新并冻结后再次完整比较。
   if (plan.resources === undefined) return;
   const seen = new Set<string>();
   for (const resource of resources) {
-    const key = `${resource.kind}/${resource.resource_id}`;
+    const key = `${resource.kind}/${resource.resource_key}`;
     const entry = selected.get(key);
     if (!entry || seen.has(key) || (entry.invoke === true) !== resource.invoke
       || JSON.stringify(entry.components) !== JSON.stringify(resource.components)) throw new TypeError("CONTEXT_PLAN_MISMATCH");

@@ -17,7 +17,7 @@ test("frozen artifacts cross runtime mapping and Host into a real Codex three-im
 }, async () => {
   const workdir = await mkdtemp(join(tmpdir(), "octo-mm-integration-"));
   const images = visualInputImages();
-  const artifacts = images.map((image, index) => ({ id: `artifact-${index + 1}`, mediaType: image.mimeType, byteSize: image.byteSize, sha256: image.sha256 }));
+  const artifacts = images.map((image, index) => ({ artifact_key: `artifact-${index + 1}`, mediaType: image.mimeType, byteSize: image.byteSize, sha256: image.sha256 }));
   const runKey = `run-${randomUUID()}`;
   const leaseId = "fixture-lease";
   const fencingToken = 19;
@@ -40,7 +40,7 @@ test("frozen artifacts cross runtime mapping and Host into a real Codex three-im
       res.writeHead(403).end();
       return;
     }
-    const index = artifacts.findIndex(artifact => artifact.id === body.artifact_id);
+    const index = artifacts.findIndex(artifact => artifact.id === body.artifact_key);
     if (index < 0) { res.writeHead(404).end(); return; }
     const { type: _type, ...source } = images[index];
     res.setHeader("Content-Type", "application/json");
@@ -57,7 +57,7 @@ test("frozen artifacts cross runtime mapping and Host into a real Codex three-im
     assert.equal(input.parts.some(part => Object.hasOwn(part, "source")), false);
     assert.deepEqual(reads, artifacts.map(artifact => ({
       method: "POST", path: "/v1/runtime/input_artifact/read", authorization,
-      body: { run_key: runKey, artifact_id: artifact.id, lease_id: leaseId, fencing_token: fencingToken }
+      body: { run_key: runKey, artifact_key: artifact.id, lease_id: leaseId, fencing_token: fencingToken }
     })));
     const plan = { agent_source: "provisioned", adapter_type: "codex", workdir, approval_mode: "ask", ...(process.env.OCTO_CODEX_MULTIMODAL_MODEL ? { model: process.env.OCTO_CODEX_MULTIMODAL_MODEL } : {}) };
     const envelope = {
