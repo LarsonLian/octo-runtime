@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+export { runMcpServerHash } from "./context-hash.js";
 export { contextHash } from "./context-hash.js";
 import { assertExperiencePayload } from "./experience.js";
 import { assertModelInputParts, assertImageRecoveryParts, hasImageInput } from "./multimodal.js";

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { runMcpServerHash } from "@mininglamp-oss/octo-harness-protocol";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { tmpdir } from "node:os";
@@ -80,7 +81,7 @@ test("Codex rejects ambiguous stdio environment forwarding", () => {
 });
 
 function preparedTaskRequest() {
-  return {
+  const invocation = {
     ...structuredClone(request),
     context: { schema: "octo.context-envelope/v3", items: [
       { namespace: "octo.security", name: "approval_policy", payload: { mode: "full_access" } },
@@ -89,15 +90,17 @@ function preparedTaskRequest() {
         params: { task_id: "task-1", handler_epoch: 3 }
       }] } }
     ] },
-    runMetadata: { taskMaterials: [{
+    runMetadata: { namespace: "loop", input: {task_id:"task-1",conversation_id:"tconv-1"}, taskMaterials: [{
       resource_ref: "task:task-1/materials", task_id: "task-1", task_version: 2,
       handler_epoch: 3, digest: `sha256:${"a".repeat(64)}`
     }] },
     mcpServers: { ...structuredClone(request.mcpServers), octo_task: {
-      type: "streamable_http", url: "https://worker.example.test/agentworker/api/mcp/team",
-      headers: { Authorization: "Bearer task-run-grant" }, required: true
+      type: "streamable_http", url: "https://loop.example.test/mcp/task",
+      headers: { Authorization: "Bearer task-run-grant", "X-Space-ID":"space-1", "X-Namespace":"loop" }, required: true
     } }
   };
+  invocation.runMetadata.frozenMcpServers = {octo_task:runMcpServerHash(invocation.mcpServers.octo_task)};
+  return invocation;
 }
 
 function commandMcpConfig(invocation) {
@@ -136,6 +139,10 @@ test("Codex Task tool approval requires frozen policy and matching verified mate
     ["stale handler epoch", invocation => invocation.runMetadata.taskMaterials[0].handler_epoch = 2],
     ["invalid snapshot version", invocation => invocation.runMetadata.taskMaterials[0].task_version = 0],
     ["invalid digest", invocation => invocation.runMetadata.taskMaterials[0].digest = "unverified"],
+    ["stale frozen version", invocation => invocation.context.items[1].payload.entries[0].params.expected_version=3],
+    ["missing real space", invocation => delete invocation.mcpServers.octo_task.headers["X-Space-ID"]],
+    ["different frozen endpoint", invocation => invocation.mcpServers.octo_task.url="https://untrusted.example/mcp/task"],
+    ["missing frozen server evidence", invocation => delete invocation.runMetadata.frozenMcpServers],
     ["multiple resources", invocation => invocation.context.items[1].payload.entries.push(
       structuredClone(invocation.context.items[1].payload.entries[0]))],
     ["unregistered tool locator", invocation => invocation.context.items[1].payload.entries[0].locator.tool = "arbitrary"],
@@ -160,25 +167,26 @@ test("Codex never derives MCP approval or an endpoint from Task body or instruct
   assert.equal(parseToml(codexMcpOverrides(invocation.mcpServers, {}).args[1]).mcp_servers.octo_task.tools, undefined);
 });
 
-function preparedTaskTeamRequest(triggerKind = "agent_access.conversation") {
+function preparedTaskTeamRequest(triggerKind = "coordination.node") {
   const invocation = preparedTaskRequest();
   invocation.mcpServers.octo_team = structuredClone(invocation.mcpServers.octo_task);
+  invocation.mcpServers.octo_team.url = "https://access.example.test/mcp/team";
+  invocation.runMetadata.frozenMcpServers.octo_team = runMcpServerHash(invocation.mcpServers.octo_team);
   Object.assign(invocation.runMetadata, { triggerKind, input: {
-    task_execution: { task_id: "task-1", handler_type: "team", workspace_bindings: {} },
-    ...(triggerKind === "agent_access.conversation"
-      ? { agent_access_execution: { target_type: "team", target_id: "team-1" } }
+    task_id: "task-1", conversation_id:"tconv-1",
+    ...(triggerKind === "coordination.node"
+      ? { coordination: {team_session_id:"team-session-1",operation_key:"leader/1"} }
       : { coordination: { team_session_id: "team-session-1", delegation_id: "delegation-1" } })
   } });
   return invocation;
 }
 
 test("Codex approves the registered Team tools for Task leaders, handoffs and mailbox wakes", () => {
-  for (const trigger of ["agent_access.conversation", "coordination.delegate_handoff", "coordination.mailbox"]) {
+  for (const trigger of ["coordination.node", "coordination.delegate_handoff", "coordination.mailbox"]) {
     const config = commandMcpConfig(preparedTaskTeamRequest(trigger));
     assert.equal(config.octo_team.default_tools_approval_mode, "prompt", trigger);
     assert.deepEqual(config.octo_team.tools, {
-      delegate_handoff: { approval_mode: "approve" },
-      ...config.octo_task.tools
+      delegate_handoff: { approval_mode: "approve" }
     }, trigger);
     assert.equal(config.octo_team.tools.transition_task, undefined);
     assert.equal(config["team.api"].tools, undefined);
@@ -190,19 +198,21 @@ test("Codex Team approval requires actual Task Team metadata and the matching ma
     ["ask", invocation => { invocation.approvalMode = "ask"; invocation.context.items[0].payload.mode = "ask"; }],
     ["assisted", invocation => { invocation.approvalMode = "assisted"; invocation.context.items[0].payload.mode = "assisted"; }],
     ["missing Task bootstrap", invocation => delete invocation.runMetadata.taskMaterials],
-    ["independent Agent Task", invocation => invocation.runMetadata.input.task_execution.handler_type = "agent"],
-    ["different Task metadata", invocation => invocation.runMetadata.input.task_execution.task_id = "other-task"],
-    ["missing Task metadata", invocation => delete invocation.runMetadata.input.task_execution],
-    ["non-Team target", invocation => invocation.runMetadata.input.agent_access_execution.target_type = "agent"],
-    ["missing target identity", invocation => delete invocation.runMetadata.input.agent_access_execution.target_id],
+    ["different Task metadata", invocation => invocation.runMetadata.input.task_id = "other-task"],
+    ["missing Task metadata", invocation => delete invocation.runMetadata.input.task_id],
+    ["missing conversation", invocation => delete invocation.runMetadata.input.conversation_id],
+    ["missing operation identity", invocation => delete invocation.runMetadata.input.coordination.operation_key],
     ["user trigger", invocation => invocation.runMetadata.triggerKind = "user.message"],
-    ["missing coordination wrapper", invocation => { invocation.runMetadata.triggerKind = "coordination.delegate_handoff"; }],
+    ["missing coordination wrapper", invocation => { invocation.runMetadata.triggerKind = "coordination.delegate_handoff"; delete invocation.runMetadata.input.coordination; }],
     ["missing Team session", invocation => {
       invocation.runMetadata.triggerKind = "coordination.mailbox";
       invocation.runMetadata.input.coordination = { delegation_id: "delegation-1" };
     }],
     ["different endpoint", invocation => invocation.mcpServers.octo_team.url = "https://arbitrary.example/mcp"],
     ["different grant", invocation => invocation.mcpServers.octo_team.headers.Authorization = "Bearer other-grant"],
+    ["different space", invocation => invocation.mcpServers.octo_team.headers["X-Space-ID"] = "other-space"],
+    ["different namespace", invocation => invocation.mcpServers.octo_team.headers["X-Namespace"] = "im"],
+    ["missing frozen endpoint evidence", invocation => delete invocation.runMetadata.frozenMcpServers],
     ["extra headers", invocation => invocation.mcpServers.octo_team.headers.Extra = "unrelated"],
     ["missing grant", invocation => { delete invocation.mcpServers.octo_task.headers; delete invocation.mcpServers.octo_team.headers; }],
     ["optional Team server", invocation => invocation.mcpServers.octo_team.required = false],

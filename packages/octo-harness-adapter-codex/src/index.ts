@@ -7,7 +7,7 @@
  * params, so app-server sees the complete state database and plugin runtime.
  */
 import { defineAdapter, probeCommand, type AdapterInvocationContext, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { executionFeatures, contextItem, type InteractionResponse, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
+import { executionFeatures, contextItem, runMcpServerHash, type InteractionResponse, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
 import { parse, stringify } from "smol-toml";
 import { readFileSync, mkdirSync, copyFileSync, writeFileSync, lstatSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
@@ -296,7 +296,7 @@ export function codexMcpOverrides(
   const env: NodeJS.ProcessEnv = {};
   const forwarded = new Map<string, string>();
   const configured: Record<string, Record<string, unknown>> = {};
-  const preparedTask = isPreparedFullAccessTask(invocation);
+  const preparedTask = isPreparedFullAccessTask(invocation) && isFrozenRunMcp(invocation, servers, "octo_task");
   const preparedTeam = preparedTask && isPreparedTaskTeam(invocation, servers);
 
   Object.entries(servers).forEach(([name, server], serverIndex) => {
@@ -354,7 +354,18 @@ const TASK_MCP_TOOLS = [
   "task_get_materials", "task_authorize_material_snapshot", "task_read_attachment", "task_prepare_output", "task_commit_output",
   "task_fail_output", "task_apply_action", "task_create_child"
 ] as const;
-const TEAM_MCP_TOOLS = ["delegate_handoff", ...TASK_MCP_TOOLS] as const;
+const TEAM_MCP_TOOLS = ["delegate_handoff"] as const;
+
+function isFrozenRunMcp(invocation: Pick<InvokeRequest, "runMetadata"> | undefined, servers: McpServers, name: string): boolean {
+  const server = servers[name];
+  if (server?.type !== "streamable_http" || server.required !== true) return false;
+  const header = server.headers;
+  if (!header || !/^Bearer \S+$/.test(header.Authorization ?? "") || !header["X-Space-ID"]
+    || header["X-Namespace"] !== invocation?.runMetadata?.namespace) return false;
+  const url = new URL(server.url);
+  if (url.username || url.password || url.search || url.hash) return false;
+  return taskRecord(invocation?.runMetadata?.frozenMcpServers)?.[name] === runMcpServerHash(server);
+}
 
 function isPreparedFullAccessTask(invocation: Pick<InvokeRequest, "approvalMode" | "context" | "runMetadata"> | undefined): boolean {
   if (!invocation || invocation.approvalMode !== "full_access"
@@ -374,6 +385,7 @@ function isPreparedFullAccessTask(invocation: Pick<InvokeRequest, "approvalMode"
     && Number.isSafeInteger(snapshot.task_version) && Number(snapshot.task_version) > 0
     && Number.isSafeInteger(snapshot.handler_epoch) && Number(snapshot.handler_epoch) > 0
     && (params.handler_epoch === undefined || snapshot.handler_epoch === params.handler_epoch)
+    && (params.expected_version === undefined || snapshot.task_version === params.expected_version)
     && typeof snapshot.digest === "string" && /^sha256:[a-f0-9]{64}$/.test(snapshot.digest);
 }
 
@@ -383,26 +395,25 @@ function isPreparedTaskTeam(
 ): boolean {
   const metadata = invocation?.runMetadata;
   const input = taskRecord(metadata?.input);
-  const execution = taskRecord(input?.task_execution);
   const snapshots = metadata?.taskMaterials;
-  if (execution?.handler_type !== "team" || !Array.isArray(snapshots)
-    || execution.task_id !== taskRecord(snapshots[0])?.task_id) return false;
-  if (metadata?.triggerKind === "agent_access.conversation") {
-    const target = taskRecord(input?.agent_access_execution);
-    if (target?.target_type !== "team" || typeof target.target_id !== "string" || !target.target_id) return false;
+  if (!Array.isArray(snapshots) || input?.task_id !== taskRecord(snapshots[0])?.task_id
+    || typeof input?.conversation_id !== "string" || !input.conversation_id) return false;
+  if (metadata?.triggerKind === "coordination.node") {
+    const coordination = taskRecord(input?.coordination);
+    if (typeof coordination?.team_session_id !== "string" || !coordination.team_session_id
+      || typeof coordination.operation_key !== "string" || !coordination.operation_key) return false;
   } else if (metadata?.triggerKind === "coordination.delegate_handoff" || metadata?.triggerKind === "coordination.mailbox") {
     const coordination = taskRecord(input?.coordination);
     if (typeof coordination?.team_session_id !== "string" || !coordination.team_session_id
       || typeof coordination.delegation_id !== "string" || !coordination.delegation_id) return false;
   } else return false;
 
-  // Worker reserves both names and materializes them from the same Team grant.
+  // Separate cloud endpoints are trusted only when they match the frozen Run plan.
   const team = servers.octo_team;
   const task = servers.octo_task;
   if (team?.type !== "streamable_http" || task?.type !== "streamable_http"
-    || team.required !== true || task.required !== true || team.url !== task.url
-    || !task.headers?.Authorization?.startsWith("Bearer ")) return false;
-  const headers = Object.entries(task.headers);
+    || !isFrozenRunMcp(invocation, servers, "octo_team")) return false;
+  const headers = Object.entries(task.headers ?? {});
   return headers.length === Object.keys(team.headers ?? {}).length
     && headers.every(([name, value]) => team.headers?.[name] === value);
 }

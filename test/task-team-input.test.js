@@ -9,7 +9,7 @@ const ref = { resource_ref: "task:task-1/materials", task_id: "task-1", task_ver
 const materials = { refs: [ref], selections: [{ resource_ref: ref.resource_ref, text: JSON.stringify({
   task: { id: "task-1", row_version: 18, handler_epoch: 3 }, attachments: [{ id: "att-1", version_id: "fv-1" }]
 }) }] };
-const input = { task_execution: { task_id: "task-1", handler_type: "team", workspace_bindings: {} },
+const input = { task_id:"task-1",conversation_id:"tconv-1",
   coordination: { team_session_id: "team-session-1", delegation_id: "delegation-1", source_run_id: "source-1", target_alias: "designer" }, payload: {
   schema_version: 1, instruction: "使用需求附件制作活动页面", task_material_ref: { task_id: "task-1", snapshot_version: 17 },
   attachment_refs: [{ attachment_id: "att-1", file_version_id: "fv-1" }], reply_to: { kind: "delegation_result" },
@@ -42,11 +42,12 @@ test("task handoff rejects local paths, credentials and unavailable attachment v
   assert.throws(() => prepareTeamInput(changed, "coordination.delegate_handoff", materials), /TEAM_TASK_ATTACHMENT_UNAVAILABLE/);
 });
 
-test("actual Worker wrapper renders handoff instruction and mailbox output references without a parallel engine", () => {
+test("frozen Run plan binds separate Loop and Access endpoints for handoff and mailbox", () => {
   const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "/target-runtime/workspace", approval_mode: "full_access", mcp_servers: {
-    octo_task: { type: "streamable_http", url: "https://worker.test/mcp/team", headers: { Authorization: "Bearer target-only-grant" }, required: true }
+    octo_task: { type: "streamable_http", url: "https://loop.test/mcp/task", headers: { Authorization: "Bearer target-only-grant", "X-Space-ID":"space-1", "X-Namespace":"task" }, required: true }
   } };
   plan.mcp_servers.octo_team = structuredClone(plan.mcp_servers.octo_task);
+  plan.mcp_servers.octo_team.url="https://access.test/mcp/team";
   const resource = { namespace: "octo.content", name: "references", payload: { entries: [{ resource_ref: ref.resource_ref,
     resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_id: "task-1", handler_epoch: 3 }
   }] } };
@@ -61,7 +62,7 @@ test("actual Worker wrapper renders handoff instruction and mailbox output refer
   assert.doesNotMatch(request.controlInstructions, /使用需求附件/);
   assert.equal(request.workdir, "/target-runtime/workspace");
   assert.match(JSON.stringify(buildCodexCommand(request).args), /octo_team.*delegate_handoff.*approval_mode/);
-  const mailbox = { task_execution: input.task_execution, coordination: input.coordination, message: { child_run_id: "target-run", status: "completed",
+  const mailbox = { task_id:input.task_id,conversation_id:input.conversation_id, coordination: input.coordination, message: { child_run_id: "target-run", status: "completed",
     messages: [{ item_id: "item-1", text: "页面已生成" }], task_output_receipts: [{ output_id: "page-1", status: "saved", attachment_id: "att-page", file_id: "file-page", file_version_id: "fv-page" }]
   } };
   envelope.agent_run_request.input = mailbox;
@@ -71,6 +72,15 @@ test("actual Worker wrapper renders handoff instruction and mailbox output refer
   assert.match(wake.modelInput, /页面已生成/);
   assert.doesNotMatch(wake.modelInput, /target-only-grant/);
   assert.match(JSON.stringify(buildCodexCommand(wake).args), /octo_team.*delegate_handoff.*approval_mode/);
+});
+
+test("Access coordination node carries bounded facts and requires frozen operation identity", () => {
+  const node={task_id:"task-1",conversation_id:"tconv-1",instruction:"Execute assigned task",coordination:{team_session_id:"team-1",operation_key:"member/1"}};
+  const result=prepareTeamInput(node,"coordination.node",materials);
+  assert.equal(result.displayText,node.instruction);
+  assert.match(result.modelContent,/member\/1/);
+  delete node.coordination.operation_key;
+  assert.throws(()=>prepareTeamInput(node,"coordination.node",materials),/TEAM_INPUT_INVALID/);
 });
 
 test("non-task existing Team payload is retained as bounded facts instead of an empty prompt", () => {

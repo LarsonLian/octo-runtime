@@ -32,6 +32,7 @@ import type {
 } from "@mininglamp-oss/octo-harness-protocol";
 import {
   RUNTIME_RUN_CONTRACT,
+  runMcpServerHash,
   assertChannelContextAppend,
   assertChannelContextDescriptor,
   assertContextSyncResult,
@@ -2513,6 +2514,10 @@ export function mapExecutionEnvelope(
   };
   const runtimeLimits = mapExecutionRuntimeLimits(profile.runtime_limits);
   const mcpServers = mapExecutionMcpServers({ ...profile.mcp_servers, ...preparedResources?.mcpServers });
+  const frozenMcpServers = Object.fromEntries(["octo_task", "octo_team"].flatMap(name => {
+    const server = envelope.resolved_execution_plan.mcp_servers?.[name];
+    return server?.type === "streamable_http" ? [[name, runMcpServerHash(server)]] : [];
+  }));
   const workdir = preparedResources?.workdir ?? profile.workdir;
   if ((!workdir && profile.agent_source !== "preset") || profile.resources?.length && !preparedResources) throw new TypeError("CONTEXT_PREPARATION_REQUIRED");
   const content = envelope.agent_run_request.input;
@@ -2553,7 +2558,8 @@ export function mapExecutionEnvelope(
     ...(envelope.provider_epoch === undefined ? {} : { providerEpoch: envelope.provider_epoch }),
     ...(envelope.continuity_mode === undefined ? {} : { continuityMode: envelope.continuity_mode }),
     ...(contextSnapshot ? { contextSnapshot: contextSnapshot.ref } : {}),
-    ...(taskMaterials ? { taskMaterials: structuredClone(taskMaterials.refs) } : {})
+    ...(taskMaterials ? { taskMaterials: structuredClone(taskMaterials.refs) } : {}),
+    frozenMcpServers
   };
   return {
     adapterType,

@@ -6,12 +6,12 @@ export interface PreparedTeamInput {
   modelContent: string;
 }
 
-/** Worker supplies the coordination wrapper; a user-authored payload cannot promote itself to a handoff. */
+/** Access supplies the frozen coordination wrapper; payload remains untrusted business facts. */
 export function prepareTeamInput(input: Record<string, unknown>, triggerKind: string, materials?: PreparedTaskMaterials): PreparedTeamInput | undefined {
-  if (triggerKind !== "coordination.delegate_handoff" && triggerKind !== "coordination.mailbox") return undefined;
-  const payload = object(triggerKind === "coordination.mailbox" ? input.message : input.payload);
+  if (!["coordination.node", "coordination.delegate_handoff", "coordination.mailbox"].includes(triggerKind)) return undefined;
+  const payload = object(triggerKind === "coordination.node" ? input : triggerKind === "coordination.mailbox" ? input.message : input.payload);
   const coordination = object(input.coordination);
-  for (const key of ["team_session_id", "delegation_id"]) {
+  for (const key of ["team_session_id", triggerKind === "coordination.node" ? "operation_key" : "delegation_id"]) {
     if (typeof coordination[key] !== "string" || !coordination[key]) throw new TypeError("TEAM_INPUT_INVALID");
   }
   if (triggerKind === "coordination.delegate_handoff" && payload.task_material_ref !== undefined) {

@@ -20,7 +20,7 @@ const material = version => ({
   timeline: { summary: "已决定使用既有设计", source_until_sequence: 12, truncated: false }
 });
 const plan = url => ({ agent_source: "provisioned", adapter_type: "codex", workdir: "/workspace", approval_mode: "ask", mcp_servers: {
-  octo_task: { type: "streamable_http", url, headers: { Authorization: "Bearer fixture-run-grant" }, required: true }
+  octo_task: { type: "streamable_http", url, headers: { Authorization: "Bearer fixture-run-grant", "X-Space-ID":"space-1", "X-Namespace":"task" }, required: true }
 } });
 
 async function fixture(t, result = () => material(1), status = 200) {
@@ -37,7 +37,7 @@ async function fixture(t, result = () => material(1), status = 200) {
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
-  return { calls, url: `http://127.0.0.1:${server.address().port}/mcp/team` };
+  return { calls, url: `http://127.0.0.1:${server.address().port}/mcp/task` };
 }
 
 test("task materials use authorized MCP and freeze actual facts separately from instructions", async t => {
