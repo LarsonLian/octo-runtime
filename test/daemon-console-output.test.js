@@ -42,12 +42,12 @@ test("verbose foreground console includes structured operational context", () =>
     scope: "transport.wss",
     event: "transport.connection.opened",
     message: "Agent Work WebSocket connection opened",
-    data: { runtime_id: "runtime-test", reconnect_attempt: 2 }
+    data: { runtime_key: "runtime-test", reconnect_attempt: 2 }
   }), { verbose: true });
   const plain = stripVTControlCharacters(line);
 
   assert.match(plain, /12:34:56\.789 INFO/);
   assert.match(plain, /transport\.connection\.opened/);
   assert.match(plain, /runtime=runtime-test attempt=2/);
-  assert.match(plain, /"runtime_id":"runtime-test"/);
+  assert.match(plain, /"runtime_key":"runtime-test"/);
 });

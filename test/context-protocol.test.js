@@ -293,7 +293,7 @@ test("Context rejects oversized payloads and non-JSON values", () => {
 });
 
 test("InvokeRequest rejects legacy execution contracts before provider dispatch", () => {
-  const request = { protocolVersion: 2, invocationId: "invoke-1", agentSessionId: "session-1", runId: "run-1", prompt: "hello", workdir: "/tmp", modelInput: "hello", controlInstructions: "", context: { schema: "octo.context-envelope/v3", items: [] }, approvalMode: "ask", agentSource: "provisioned", agentConfig: {} };
+  const request = { protocolVersion: 2, invocationId: "invoke-1", agentSessionKey: "session-1", runKey: "run-1", prompt: "hello", workdir: "/tmp", modelInput: "hello", controlInstructions: "", context: { schema: "octo.context-envelope/v3", items: [] }, approvalMode: "ask", agentSource: "provisioned", agentConfig: {} };
   assert.doesNotThrow(() => assertInvokeRequest(request));
   assert.throws(() => assertInvokeRequest({ ...request, appendInstructions: "legacy" }), /LEGACY_RUN_CONTRACT_REJECTED/);
   assert.throws(() => assertInvokeRequest({ ...request, context: {} }), /CONTEXT_SCHEMA_INVALID/);

@@ -86,13 +86,13 @@
           "name": "selection",
           "payload": {
             "mode": "explicit",
-            "runtime_id": "runtime-1"
+            "runtime_key": "runtime-1"
           }
         }
       ]
     },
-    "expected_canonical": "{\"items\":[{\"name\":\"selection\",\"namespace\":\"octo.runtime\",\"payload\":{\"mode\":\"explicit\",\"runtime_id\":\"runtime-1\"}}],\"schema\":\"octo.context-envelope/v3\"}",
-    "expected_hash": "sha256:26c89328cf2a0bedba0bba186d34215af263f0039a1702d0ac5fe380acb433cd"
+    "expected_canonical": "{\"items\":[{\"name\":\"selection\",\"namespace\":\"octo.runtime\",\"payload\":{\"mode\":\"explicit\",\"runtime_key\":\"runtime-1\"}}],\"schema\":\"octo.context-envelope/v3\"}",
+    "expected_hash": "sha256:550b5b0398bcc062780f5c20905fe8ec1389fe637c8b737e8e2f1f2bb4251bac"
   },
   {
     "name": "multivalue-content",
@@ -273,7 +273,7 @@
           "name": "selection",
           "payload": {
             "mode": "binding",
-            "runtime_id": "runtime-1"
+            "runtime_key": "runtime-1"
           }
         }
       ]

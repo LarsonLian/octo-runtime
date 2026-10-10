@@ -143,10 +143,10 @@
             "actor": {
               "type": "object"
             },
-            "task_conversation_id": {
+            "task_conversation_key": {
               "type": "string"
             },
-            "source_run_id": {
+            "source_run_key": {
               "type": "string"
             },
             "summary": {
@@ -512,7 +512,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "run_id",
+        "run_key",
         "context_configuration_version",
         "context_hash",
         "preparation_status",
@@ -524,7 +524,7 @@
         "effort_uses_provider_default"
       ],
       "properties": {
-        "run_id": {
+        "run_key": {
           "type": "string",
           "minLength": 1
         },
@@ -672,7 +672,7 @@
         "catalog_version",
         "context_hash",
         "compiled_hash",
-        "run_id",
+        "run_key",
         "lease_id",
         "fencing_token",
         "workspace_mode",
@@ -697,7 +697,7 @@
           "type": "string",
           "pattern": "^sha256:[a-f0-9]{64}$"
         },
-        "run_id": {
+        "run_key": {
           "type": "string",
           "minLength": 1
         },
@@ -765,7 +765,7 @@
         "catalog_version",
         "context_hash",
         "compiled_hash",
-        "run_id",
+        "run_key",
         "lease_id",
         "fencing_token",
         "adapter_type",
@@ -791,7 +791,7 @@
           "type": "string",
           "pattern": "^sha256:[a-f0-9]{64}$"
         },
-        "run_id": {
+        "run_key": {
           "type": "string",
           "minLength": 1
         },
@@ -876,7 +876,7 @@
       "additionalProperties": false,
       "required": [
         "resource_ref",
-        "task_id",
+        "task_key",
         "task_version",
         "handler_epoch",
         "digest"
@@ -886,7 +886,7 @@
           "type": "string",
           "minLength": 1
         },
-        "task_id": {
+        "task_key": {
           "type": "string",
           "minLength": 1
         },
@@ -1313,7 +1313,7 @@
             "explicit"
           ]
         },
-        "runtime_id": {
+        "runtime_key": {
           "type": "string",
           "minLength": 1
         },
@@ -1356,7 +1356,7 @@
           ],
           "not": {
             "required": [
-              "runtime_id"
+              "runtime_key"
             ]
           }
         },
@@ -1367,7 +1367,7 @@
             }
           },
           "required": [
-            "runtime_id"
+            "runtime_key"
           ],
           "not": {
             "anyOf": [
@@ -1585,7 +1585,7 @@
             "candidates"
           ]
         },
-        "explicit_runtime_id": {
+        "explicit_runtime_key": {
           "type": "string",
           "minLength": 1,
           "maxLength": 191
@@ -1598,13 +1598,13 @@
             "type": "object",
             "additionalProperties": false,
             "required": [
-              "runtime_id",
+              "runtime_key",
               "priority",
               "owner_subject_type",
               "owner_subject_id"
             ],
             "properties": {
-              "runtime_id": {
+              "runtime_key": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 191
@@ -1652,7 +1652,7 @@
           },
           "then": {
             "required": [
-              "explicit_runtime_id"
+              "explicit_runtime_key"
             ],
             "properties": {
               "authorized_candidates": {
@@ -1666,7 +1666,7 @@
           "else": {
             "not": {
               "required": [
-                "explicit_runtime_id"
+                "explicit_runtime_key"
               ]
             }
           }
@@ -2634,14 +2634,14 @@
       "additionalProperties": false,
       "required": [
         "id",
-        "agentSessionId"
+        "agentSessionKey"
       ],
       "properties": {
         "id": {
           "description": "Run identifier.",
           "type": "string"
         },
-        "agentSessionId": {
+        "agentSessionKey": {
           "description": "Owning Agent Worker session identifier.",
           "type": "string"
         }
@@ -2654,7 +2654,7 @@
       "additionalProperties": false,
       "required": [
         "tenant_id",
-        "endpoint_id",
+        "endpoint_key",
         "channel",
         "account_id",
         "bot_id",
@@ -2665,7 +2665,7 @@
           "type": "string",
           "minLength": 1
         },
-        "endpoint_id": {
+        "endpoint_key": {
           "type": "string",
           "minLength": 1
         },
@@ -2795,12 +2795,12 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "agent_id",
+        "agent_key",
         "scope",
         "facts"
       ],
       "properties": {
-        "agent_id": {
+        "agent_key": {
           "type": "string",
           "minLength": 1,
           "maxLength": 96
@@ -2829,7 +2829,7 @@
       "additionalProperties": false,
       "required": [
         "request_id",
-        "agent_run_id",
+        "run_key",
         "scope",
         "trigger_message_id",
         "limit"
@@ -2839,7 +2839,7 @@
           "type": "string",
           "minLength": 1
         },
-        "agent_run_id": {
+        "run_key": {
           "type": "string",
           "minLength": 1
         },
@@ -3259,8 +3259,8 @@
       "additionalProperties": false,
       "required": [
         "invocationId",
-        "agentSessionId",
-        "runId",
+        "agentSessionKey",
+        "runKey",
         "prompt",
         "workdir",
         "controlInstructions",
@@ -3276,11 +3276,11 @@
           "description": "Active Adapter Host invocation identifier and cancellation target.",
           "type": "string"
         },
-        "agentSessionId": {
+        "agentSessionKey": {
           "description": "Long-lived Agent Worker session identifier for this execution context.",
           "type": "string"
         },
-        "runId": {
+        "runKey": {
           "description": "Run identifier for this execution.",
           "type": "string"
         },

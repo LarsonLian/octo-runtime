@@ -23,8 +23,8 @@ let finalText = "";
 try {
   for await (const event of adapter.invoke({ protocolVersion: 2,
     invocationId: `${adapterType}-smoke`,
-    agentSessionId: `${adapterType}-smoke-session`,
-    runId: `${adapterType}-smoke-run`,
+    agentSessionKey: `${adapterType}-smoke-session`,
+    runKey: `${adapterType}-smoke-run`,
     prompt: `Reply with exactly ${expectedText} and nothing else.`,
     workdir: process.cwd(),
     context: {},

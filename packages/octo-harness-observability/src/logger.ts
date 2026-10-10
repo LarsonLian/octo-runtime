@@ -57,10 +57,10 @@ interface RpcCorrelation {
   rpcId?: string;
   rpcMethod?: string;
   profile?: string;
-  runtimeId?: string;
-  runId?: string;
+  runtimeKey?: string;
+  runKey?: string;
   invocationId?: string;
-  agentSessionId?: string;
+  agentSessionKey?: string;
   adapterType?: string;
   touchedAt?: number;
 }
@@ -164,10 +164,10 @@ export class LocalObservability {
       event: "rpc.frame",
       message: `adapter-host RPC ${direction}`,
       profile: correlation.profile,
-      runtimeId: correlation.runtimeId,
-      runId: correlation.runId,
+      runtimeKey: correlation.runtimeKey,
+      runKey: correlation.runKey,
       invocationId: correlation.invocationId,
-      agentSessionId: correlation.agentSessionId,
+      agentSessionKey: correlation.agentSessionKey,
       adapterType: correlation.adapterType,
       data: {
         direction,
@@ -218,10 +218,10 @@ export class LocalObservability {
       event: observation.event,
       message: providerObservationMessage(observation.event),
       profile: identity.profile,
-      runtimeId: identity.runtimeId,
-      runId: identity.runId,
+      runtimeKey: identity.runtimeKey,
+      runKey: identity.runKey,
       invocationId: identity.invocationId,
-      agentSessionId: identity.agentSessionId,
+      agentSessionKey: identity.agentSessionKey,
       adapterType: identity.adapterType,
       data: {
         ...safeObservationData,
@@ -322,7 +322,7 @@ export class LocalObservability {
             try {
               const value = JSON.parse(line) as StoredLogRecord;
               if (options.requestId && value.request_id !== options.requestId) continue;
-              if (options.runId && value.run_id !== options.runId) continue;
+              if (options.runKey && value.run_key !== options.runKey) continue;
               if (options.invocationId && value.invocation_id !== options.invocationId) continue;
               retainedBytes = insertNewestRecord(
                 records,
@@ -353,10 +353,10 @@ export class LocalObservability {
     this.#rpcInvocations.clear();
   }
 
-  clearRpcCorrelationForRun(runId: string): void {
+  clearRpcCorrelationForRun(runKey: string): void {
     for (const map of [this.#rpcRequests, this.#rpcInvocations]) {
       for (const [key, value] of map) {
-        if (value.runId === runId) map.delete(key);
+        if (value.runKey === runKey) map.delete(key);
       }
     }
   }
@@ -399,10 +399,10 @@ export class LocalObservability {
       sensitivity,
       ...(input.requestId ? { request_id: input.requestId } : {}),
       ...(input.profile ? { profile: input.profile } : {}),
-      ...(input.runtimeId ? { runtime_id: input.runtimeId } : {}),
-      ...(input.runId ? { run_id: input.runId } : {}),
+      ...(input.runtimeKey ? { runtime_key: input.runtimeKey } : {}),
+      ...(input.runKey ? { run_key: input.runKey } : {}),
       ...(input.invocationId ? { invocation_id: input.invocationId } : {}),
-      ...(input.agentSessionId ? { agent_session_id: input.agentSessionId } : {}),
+      ...(input.agentSessionKey ? { agent_session_key: input.agentSessionKey } : {}),
       ...(input.adapterType ? { adapter_type: input.adapterType } : {}),
       ...(input.durationMs !== undefined ? { duration_ms: input.durationMs } : {}),
       ...(data ? { data } : {})
@@ -578,10 +578,10 @@ export class LocalObservability {
       event: "capture.receipt",
       message: `provider capture ${state}`,
       profile: identity.profile,
-      runtimeId: identity.runtimeId,
-      runId: identity.runId,
+      runtimeKey: identity.runtimeKey,
+      runKey: identity.runKey,
       invocationId: identity.invocationId,
-      agentSessionId: identity.agentSessionId,
+      agentSessionKey: identity.agentSessionKey,
       adapterType: identity.adapterType,
       data: { capture_id: captureId, state, complete: state === "persisted", ...(reason ? { reason } : {}) }
     }, "restricted");
@@ -629,17 +629,17 @@ export class LocalObservability {
       rpcId,
       rpcMethod: optionalStringValue(value.method),
       profile: optionalStringValue(context.profile),
-      runtimeId: optionalStringValue(context.runtimeId),
-      runId: optionalStringValue(request.runId) ?? optionalStringValue(params.runId),
+      runtimeKey: optionalStringValue(context.runtimeKey),
+      runKey: optionalStringValue(request.runKey) ?? optionalStringValue(params.runKey),
       invocationId,
-      agentSessionId: optionalStringValue(request.agentSessionId) ?? optionalStringValue(params.agentSessionId),
+      agentSessionKey: optionalStringValue(request.agentSessionKey) ?? optionalStringValue(params.agentSessionKey),
       adapterType: optionalStringValue(params.adapterType) ?? optionalStringValue(request.adapterType),
       touchedAt: now
     };
     if (rpcId) correlation = mergeDefined(this.#rpcRequests.get(rpcId), correlation);
     if (invocationId) correlation = mergeDefined(this.#rpcInvocations.get(invocationId), correlation);
     if (direction === "send" && rpcId && value.method) this.#rememberRpc(this.#rpcRequests, rpcId, correlation);
-    if (invocationId && (correlation.runId || correlation.agentSessionId || correlation.adapterType)) {
+    if (invocationId && (correlation.runKey || correlation.agentSessionKey || correlation.adapterType)) {
       this.#rememberRpc(this.#rpcInvocations, invocationId, correlation);
     }
     if (direction === "receive" && rpcId && ("result" in value || "error" in value)) this.#rpcRequests.delete(rpcId);
@@ -834,10 +834,10 @@ function mergeDefined(base: RpcCorrelation | undefined, override: RpcCorrelation
     rpcId: override.rpcId ?? base?.rpcId,
     rpcMethod: override.rpcMethod ?? base?.rpcMethod,
     profile: override.profile ?? base?.profile,
-    runtimeId: override.runtimeId ?? base?.runtimeId,
-    runId: override.runId ?? base?.runId,
+    runtimeKey: override.runtimeKey ?? base?.runtimeKey,
+    runKey: override.runKey ?? base?.runKey,
     invocationId: override.invocationId ?? base?.invocationId,
-    agentSessionId: override.agentSessionId ?? base?.agentSessionId,
+    agentSessionKey: override.agentSessionKey ?? base?.agentSessionKey,
     adapterType: override.adapterType ?? base?.adapterType,
     touchedAt: override.touchedAt ?? base?.touchedAt
   };

@@ -74,8 +74,8 @@ export class HarnessDaemon extends EventEmitter {
   async submitAgentRun(input: SubmitAgentRunInput): Promise<{
     accepted: boolean;
     deduplicated: boolean;
-    agentSessionId: string;
-    agentRunId: string;
+    agentSessionKey: string;
+    runKey: string;
     runNo: number;
   }> {
     if (this.#draining || this.#stopped) {
@@ -90,8 +90,8 @@ export class HarnessDaemon extends EventEmitter {
       return {
         accepted: !result.deduplicated,
         deduplicated: result.deduplicated,
-        agentSessionId: result.agentSession.id,
-        agentRunId: result.agentRun.id,
+        agentSessionKey: result.agentSession.id,
+        runKey: result.agentRun.id,
         runNo: result.agentRun.runNo
       };
     } finally {
@@ -99,53 +99,53 @@ export class HarnessDaemon extends EventEmitter {
     }
   }
 
-  #schedule(agentRunId: string): void {
-    if (this.#pending.has(agentRunId)) return;
-    const job = this.#waitUntilExecutable(agentRunId)
+  #schedule(runKey: string): void {
+    if (this.#pending.has(runKey)) return;
+    const job = this.#waitUntilExecutable(runKey)
       .then(() => {
-        this.emit("agent_run.started", { agentRunId });
-        return this.#engine.executeRun(agentRunId);
+        this.emit("agent_run.started", { runKey });
+        return this.#engine.executeRun(runKey);
       })
       .catch(async (error: unknown) => {
-        await this.#engine.terminalizeRun(agentRunId, { protocolVersion: 2,
+        await this.#engine.terminalizeRun(runKey, { protocolVersion: 2,
           type: "run.failed",
           payload: { code: "daemon_execution_error", message: errorMessage(error) }
         });
-        return { run: this.#store.getAgentRun(agentRunId), error };
+        return { run: this.#store.getAgentRun(runKey), error };
       })
       .then(result => {
-        this.emit("agent_run.terminal", { agentRunId, status: this.#store.getAgentRun(agentRunId)?.status });
-        for (const resolve of this.#waiters.get(agentRunId) ?? []) resolve(result);
-        this.#waiters.delete(agentRunId);
+        this.emit("agent_run.terminal", { runKey, status: this.#store.getAgentRun(runKey)?.status });
+        for (const resolve of this.#waiters.get(runKey) ?? []) resolve(result);
+        this.#waiters.delete(runKey);
         return result;
       })
-      .finally(() => this.#pending.delete(agentRunId));
-    this.#pending.set(agentRunId, job);
+      .finally(() => this.#pending.delete(runKey));
+    this.#pending.set(runKey, job);
   }
 
-  async #waitUntilExecutable(agentRunId: string): Promise<void> {
+  async #waitUntilExecutable(runKey: string): Promise<void> {
     while (!this.#stopped) {
-      const run = this.#store.getAgentRun(agentRunId);
+      const run = this.#store.getAgentRun(runKey);
       if (!run || TERMINAL.has(run.status)) return;
-      if (this.#engine.canExecute(agentRunId)) return;
+      if (this.#engine.canExecute(runKey)) return;
       await new Promise<void>(resolve => setTimeout(resolve, HEAD_POLL_MS));
     }
     throw new Error("daemon stopped before AgentRun became executable");
   }
 
-  async waitForRun(agentRunId: string): Promise<unknown> {
-    const run = this.#store.getAgentRun(agentRunId);
-    if (!run) throw new Error(`agent run not found: ${agentRunId}`);
-    if (TERMINAL.has(run.status)) return { run, events: this.#store.getEvents(agentRunId) };
+  async waitForRun(runKey: string): Promise<unknown> {
+    const run = this.#store.getAgentRun(runKey);
+    if (!run) throw new Error(`agent run not found: ${runKey}`);
+    if (TERMINAL.has(run.status)) return { run, events: this.#store.getEvents(runKey) };
     return new Promise(resolve => {
-      const waiters = this.#waiters.get(agentRunId) ?? [];
+      const waiters = this.#waiters.get(runKey) ?? [];
       waiters.push(resolve);
-      this.#waiters.set(agentRunId, waiters);
+      this.#waiters.set(runKey, waiters);
     });
   }
 
-  cancelRun(agentRunId: string, reason?: string): ReturnType<HarnessEngine["cancelRun"]> {
-    return this.#engine.cancelRun(agentRunId, reason);
+  cancelRun(runKey: string, reason?: string): ReturnType<HarnessEngine["cancelRun"]> {
+    return this.#engine.cancelRun(runKey, reason);
   }
 }
 

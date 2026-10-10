@@ -11,7 +11,7 @@ interface AdapterHostIdentity {
 
 export interface InvocationManifestEntry {
   invocationId: string;
-  runId: string;
+  runKey: string;
   adapterType: string;
   startedAt: string;
 }

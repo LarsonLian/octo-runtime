@@ -248,7 +248,7 @@ export function freshFallbackInputText(request: InvokeRequest): string {
 /** Runtime validation at the Agent Work plugin boundary; JSON schema remains the wire source of truth. */
 export function assertChannelScope(value: unknown): asserts value is ChannelScope {
   if (!isRecord(value)) throw new TypeError("channel context scope must be an object");
-  for (const key of ["tenant_id", "endpoint_id", "channel", "bot_id", "conversation_id"] as const) {
+  for (const key of ["tenant_id", "endpoint_key", "channel", "bot_id", "conversation_id"] as const) {
     if (typeof value[key] !== "string" || value[key].length === 0) {
       throw new TypeError(`channel context scope.${key} must be a non-empty string`);
     }
@@ -296,8 +296,8 @@ export function assertChannelMessageFact(value: unknown): asserts value is Chann
 
 export function assertChannelContextAppend(value: unknown): asserts value is ChannelContextAppend {
   if (!isRecord(value)) throw new TypeError("channel context append must be an object");
-	if (typeof value.agent_id !== "string" || value.agent_id.length < 1 || value.agent_id.length > 96) {
-		throw new TypeError("channel context append.agent_id must contain 1..96 characters");
+	if (typeof value.agent_key !== "string" || value.agent_key.length < 1 || value.agent_key.length > 96) {
+		throw new TypeError("channel context append.agent_key must contain 1..96 characters");
 	}
   assertChannelScope(value.scope);
   if (!Array.isArray(value.facts) || value.facts.length < 1 || value.facts.length > 100) {
@@ -363,15 +363,15 @@ export function assertChannelContextDescriptor(value: unknown): asserts value is
 /**
  * The event record written to the Store.
  * `seq` is monotonic only within a single run; consumers should order and
- * dedupe on `(runId, seq)`.
+ * dedupe on `(runKey, seq)`.
  */
 export type EventEnvelope<TType extends CanonicalEventType = CanonicalEventType> = CanonicalEvent<TType> & {
   /** A globally random ID for each persisted event. */
   id: string;
   seq: number;
   tsMs: number;
-  agentSessionId: string;
-  runId: string;
+  agentSessionKey: string;
+  runKey: string;
 };
 
 export const TERMINAL_EVENTS: ReadonlySet<CanonicalEventType> = new Set(TERMINAL_EVENT_TYPES);
@@ -430,8 +430,8 @@ export function envelope<TType extends CanonicalEventType>(
     id: randomUUID(),
     seq,
     tsMs: Date.now(),
-    agentSessionId: run.agentSessionId,
-    runId: run.id,
+    agentSessionKey: run.agentSessionKey,
+    runKey: run.id,
     type: event.type,
     payload: event.payload ?? {}
   } as unknown as EventEnvelope<TType>;
@@ -632,7 +632,7 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
   if (typeof request.controlInstructions !== "string") throw new TypeError("InvokeRequest.controlInstructions must be a string");
   if (request.runtimeLimits !== undefined) assertRuntimeLimits(request.runtimeLimits);
   if (request.mcpServers !== undefined) assertMcpServers(request.mcpServers);
-  for (const key of ["invocationId", "agentSessionId", "runId", "prompt"] as const) {
+  for (const key of ["invocationId", "agentSessionKey", "runKey", "prompt"] as const) {
     if (typeof request[key] !== "string" || request[key].length === 0) {
       throw new TypeError(`InvokeRequest.${key} must be a non-empty string`);
     }

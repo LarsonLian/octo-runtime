@@ -72,20 +72,20 @@ test("Human Token enrollment persists a loadable account-scoped profile", async 
       if (String(url).endsWith("/v1/runtimes/enroll")) {
         return Response.json({
           runtime: {
-            id: "runtime-1",
+            runtime_key: "runtime-1",
             profile: profileName,
             octo_space_id: "space-1",
             owner_subject_type: "user",
             owner_subject_id: "uid-123"
           },
-          credential: { id: "credential-1", token: "octo_runtime_secret" }
+          credential: { runtime_credential_key: "credential-1", token: "octo_runtime_secret" }
         }, { status: 201 });
       }
       assert.ok(String(url).endsWith("/v1/runtime/register"));
       const registration = JSON.parse(init.body);
       assert.deepEqual(registration.capabilities, { run_contract: RUNTIME_RUN_CONTRACT, adapters: [] });
       if (rejectRegistration) return Response.json({ error: { code: "VALIDATION_ERROR", details: { reason_code: "RUNTIME_RUN_CONTRACT_UNSUPPORTED" } } }, { status: 400 });
-      return Response.json({ runtime: { id: "runtime-1", profile: profileName , protocol_version: 2 } });
+      return Response.json({ runtime: { runtime_key: "runtime-1", profile: profileName , protocol_version: 2 } });
     };
     const result = await ensureTenantEnrollment({
       subject: { type: "user", id: "uid-123" },
@@ -100,14 +100,14 @@ test("Human Token enrollment persists a loadable account-scoped profile", async 
       fetchImplementation,
       signal: new AbortController().signal
     });
-    assert.equal(result.runtimeId, "runtime-1");
+    assert.equal(result.runtimeKey, "runtime-1");
     assert.equal(calls[0].init.headers.Token, "human-token");
     assert.equal(calls[0].init.headers["X-Space-ID"], "space-1");
     const credential = readJson(profile.credentialFile);
     assert.equal(credential.access_token, "octo_runtime_secret");
     const runtimes = loadManagedAgentWorksFromRoot(account.root, [profileName]);
     assert.equal(runtimes.length, 1);
-    assert.equal(runtimes[0].runtimeId, "runtime-1");
+    assert.equal(runtimes[0].runtimeKey, "runtime-1");
     assert.equal(runtimes[0].profile, profileName);
     calls.length = 0;
     const reused = await ensureTenantEnrollment({
@@ -157,19 +157,19 @@ test("embedded SDK starts and cooperatively stops the shared daemon core", { tim
       const enrolledSpace = [...profileBySpace].find(([, profile]) => profile === body.profile)?.[0];
       return Response.json({
         runtime: {
-          id: `runtime-${enrolledSpace}`,
+          runtime_key: `runtime-${enrolledSpace}`,
           profile: body.profile,
           octo_space_id: enrolledSpace,
           owner_subject_type: "user",
           owner_subject_id: "uid-smoke"
         },
-        credential: { id: `credential-${enrolledSpace}`, token: `octo_runtime_${enrolledSpace}` }
+        credential: { runtime_credential_key: `credential-${enrolledSpace}`, token: `octo_runtime_${enrolledSpace}` }
       }, { status: 201 });
     }
     const body = JSON.parse(init.body);
     assert.deepEqual(body.capabilities.run_contract, RUNTIME_RUN_CONTRACT);
     const registeredSpace = [...profileBySpace].find(([, profile]) => profile === body.profile)?.[0];
-    return Response.json({ runtime: { id: `runtime-${registeredSpace}`, profile: body.profile } });
+    return Response.json({ runtime: { runtime_key: `runtime-${registeredSpace}`, profile: body.profile } });
   };
   const harness = createEmbeddedHarness({
     appId: "sdk-smoke",
@@ -190,7 +190,7 @@ test("embedded SDK starts and cooperatively stops the shared daemon core", { tim
     });
     assert.equal(health.local.ready, true);
     assert.equal(health.profiles.length, 2);
-    assert.deepEqual(health.profiles.map((profile) => profile.runtimeId).sort(), ["runtime-space-1", "runtime-space-2"]);
+    assert.deepEqual(health.profiles.map((profile) => profile.runtimeKey).sort(), ["runtime-space-1", "runtime-space-2"]);
     await harness.stop("quit");
     assert.equal(harness.health().phase, "stopped");
   } catch (error) {

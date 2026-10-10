@@ -34,7 +34,7 @@ interface EventStreamProps {
   onPause(reason: PauseReason): void;
   onResume(): void;
   onFiltersChange(filters: ColumnFilters): void;
-  onQuickFilter(field: "type" | "agent_run_id" | "session_id" | "stage", value: string): void;
+  onQuickFilter(field: "type" | "run_key" | "session_id" | "stage", value: string): void;
 }
 
 export function EventStream({
@@ -227,7 +227,7 @@ export function EventStream({
                       <span>{record.summary}</span>
                     </span>
                     <Identifier className="session-column" value={record.sessionId} />
-                    <Identifier className="run-column" value={record.runId} />
+                    <Identifier className="run-column" value={record.runKey} />
                     <time className="numeric-column event-time" dateTime={record.occurredAt}>{clock(record.occurredAt)}</time>
                     <Duration value={record.durationMs} />
                   </div>
@@ -325,7 +325,7 @@ function Duration({ value }: { value?: number }) {
 
 function EventDetail({ record, onQuickFilter }: {
   record: InspectRecord;
-  onQuickFilter(field: "type" | "agent_run_id" | "session_id" | "stage", value: string): void;
+  onQuickFilter(field: "type" | "run_key" | "session_id" | "stage", value: string): void;
 }) {
   const [wrap, setWrap] = useState(false);
   const json = JSON.stringify(record.value, null, 2);
@@ -345,13 +345,13 @@ function EventDetail({ record, onQuickFilter }: {
       <div className="context-grid">
         <ContextPanel title="请求上下文" entries={[
           ["Profile", record.profile],
-          ["Runtime", record.runtimeId],
+          ["Runtime", record.runtimeKey],
           ["Adapter", record.adapterType],
           ["Source", record.source]
         ]} />
         <ContextPanel title="关联标识" entries={[
           ["Session", record.sessionId],
-          ["Agent Run", record.runId],
+          ["Agent Run", record.runKey],
           ["Invocation", record.invocationId]
         ]} />
         <ContextPanel title="时间与状态" entries={[
@@ -387,7 +387,7 @@ function EventDetail({ record, onQuickFilter }: {
       <footer className="detail-actions">
         <button type="button" disabled><RotateCcw />重放 Invocation（无实现）</button>
         <button type="button" onClick={() => onQuickFilter("type", record.type)}><Filter />仅看此类事件</button>
-        <button type="button" disabled={!record.runId} onClick={() => onQuickFilter("agent_run_id", record.runId)}><Filter />过滤此次 AgentRun</button>
+        <button type="button" disabled={!record.runKey} onClick={() => onQuickFilter("run_key", record.runKey)}><Filter />过滤此次 AgentRun</button>
         <button type="button" disabled={!record.sessionId} onClick={() => onQuickFilter("session_id", record.sessionId)}><Filter />过滤此次 AgentSession</button>
         <button type="button" disabled={!record.stage} onClick={() => onQuickFilter("stage", record.stage)}><Filter />过滤当前 Stage</button>
         <button type="button" disabled><Copy />复制 cURL / RPC（无实现）</button>

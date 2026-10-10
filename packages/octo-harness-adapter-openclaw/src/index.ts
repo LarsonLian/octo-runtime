@@ -82,8 +82,8 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
   const agentId = req.agentConfig.providerAgentId;
   if (!agentId || !/^[a-z0-9_][a-z0-9_-]{0,63}$/.test(agentId)) throw new Error("OpenClaw provider_agent_id is required");
   const runnerWorkspace = option(req, OPENCLAW_PROVIDER_OPTIONS.workspace);
-  const sessionKey = `agent:${agentId}:octo-run:${req.runId}:${randomUUID()}`;
-  const requestId = `octo-harness-${req.runId}-${randomUUID()}`;
+  const sessionKey = `agent:${agentId}:octo-run:${req.runKey}:${randomUUID()}`;
+  const requestId = `octo-harness-${req.runKey}-${randomUUID()}`;
   const message = composeOpenClawPrompt(req);
   const timeout = finiteNumber(req.agentConfig.timeoutSeconds);
   const model = nonEmptyString(req.agentConfig.model);

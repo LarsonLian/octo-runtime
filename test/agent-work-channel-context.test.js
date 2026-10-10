@@ -14,7 +14,7 @@ import { contextEnvelope, resolvedRuntimeSelection, deferred, executionContext, 
 const now = Date.now();
 const scope = {
   tenant_id: "tenant-e2e",
-  endpoint_id: "endpoint-e2e",
+  endpoint_key: "endpoint-e2e",
   channel: "fake-im",
   account_id: null,
   bot_id: "bot-e2e",
@@ -44,7 +44,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
       for await (const chunk of request) chunks.push(chunk);
       registration = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-e2e" , protocol_version: 2 } }));
+      response.end(JSON.stringify({ runtime: { profile: "default", runtime_key: "runtime-e2e" , protocol_version: 2 } }));
     })();
   });
   httpServer.on("upgrade", (request, socket, head) => {
@@ -55,11 +55,11 @@ test("Agent Work channel context sync becomes one provider turn and commits only
       const envelope = JSON.parse(data.toString("utf8"));
       if (envelope.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
-		websocket.send(wire("context.append", { agent_id: "agent-1", scope, facts: [fact(2, "second background")] }));
+		websocket.send(wire("context.append", { agent_key: "agent-1", scope, facts: [fact(2, "second background")] }));
         websocket.send(wire("runtime.command", {
           server_seq: 1,
-          command_id: "command-e2e",
-          run_id: "run-e2e",
+          command_key: "command-e2e",
+          run_key: "run-e2e",
           type: "run.start",
           payload: executionEnvelope("runtime-e2e"),
           lease_id: "lease-e2e",
@@ -69,7 +69,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
       }
       if (envelope.type === "context.sync_request") {
         assert.equal(envelope.payload.limit, 40);
-        assert.equal(envelope.payload.agent_run_id, "run-e2e");
+        assert.equal(envelope.payload.run_key, "run-e2e");
         websocket.send(wire("context.sync_result", {
           request_id: envelope.payload.request_id,
           scope,
@@ -82,7 +82,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
       if (envelope.type === "run.event_batch") {
         const terminal = envelope.payload.events.find(event => event.type === "run.completed");
         websocket.send(wire("event.ack", {
-          run_id: envelope.payload.run_id,
+          run_key: envelope.payload.run_key,
           received_through_seq: envelope.payload.last_seq,
           durable_through_seq: envelope.payload.last_seq,
           ...(terminal ? terminalGrant(terminal) : {})
@@ -110,7 +110,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
       token: "runtime-token",
       tenantId: "tenant-e2e",
       subjectId: "device-e2e",
-      runtimeId: "runtime-e2e",
+      runtimeKey: "runtime-e2e",
       runtimeName: "runtime-e2e",
       storePath: join(directory, "agent-work.db"),
       channelContext: {
@@ -165,7 +165,7 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
     if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-reject" , protocol_version: 2 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", runtime_key: "runtime-reject" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -185,8 +185,8 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
         }));
         websocket.send(wire("runtime.command", {
           server_seq: 1,
-          command_id: "command-reject",
-          run_id: "run-reject",
+          command_key: "command-reject",
+          run_key: "run-reject",
           type: "run.start",
           payload: executionEnvelope("runtime-reject", "run-reject"),
           lease_id: "lease-reject",
@@ -225,7 +225,7 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
           contextStore.close();
         }
         websocket.send(wire("event.ack", {
-          run_id: envelope.payload.run_id,
+          run_key: envelope.payload.run_key,
           received_through_seq: envelope.payload.last_seq,
           durable_through_seq: envelope.payload.last_seq,
           ...(terminal ? terminalGrant(terminal) : {})
@@ -302,7 +302,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
     if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-authority" , protocol_version: 2 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", runtime_key: "runtime-authority" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -310,8 +310,8 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
   wsServer.on("connection", websocket => {
     const sendStart = index => websocket.send(wire("runtime.command", {
       server_seq: index,
-      command_id: `command-authority-${index}`,
-      run_id: `run-authority-${index}`,
+      command_key: `command-authority-${index}`,
+      run_key: `run-authority-${index}`,
       type: "run.start",
       payload: executionEnvelope("runtime-authority", `run-authority-${index}`, index + 2, `trigger authority ${index}`),
       lease_id: `lease-authority-${index}`,
@@ -321,7 +321,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
       const envelope = JSON.parse(data.toString("utf8"));
       if (envelope.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
-		websocket.send(wire("context.append", { agent_id: "agent-1", scope, facts: [fact(1, "first"), fact(2, "second")] }));
+		websocket.send(wire("context.append", { agent_key: "agent-1", scope, facts: [fact(1, "first"), fact(2, "second")] }));
         sendStart(1);
         return;
       }
@@ -337,7 +337,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
       }
       if (envelope.type !== "run.event_batch") return;
       const terminal = envelope.payload.events.find(event => event.type === "run.completed");
-      const index = Number(envelope.payload.run_id.split("-").at(-1));
+      const index = Number(envelope.payload.run_key.split("-").at(-1));
       const authority = terminal && index === 1
         ? { context_commit_granted: true }
         : terminal && index === 2
@@ -354,7 +354,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
               }
             : {};
       websocket.send(wire("event.ack", {
-        run_id: envelope.payload.run_id,
+        run_key: envelope.payload.run_key,
         received_through_seq: envelope.payload.last_seq,
         durable_through_seq: envelope.payload.last_seq,
         ...authority
@@ -442,7 +442,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
     if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-ordered" , protocol_version: 2 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", runtime_key: "runtime-ordered" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -453,14 +453,14 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
       if (envelope.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
         websocket.send(wire("context.append", {
-		  agent_id: "agent-1",
+		  agent_key: "agent-1",
           scope,
           facts: [fact(1, "first background"), fact(2, "second background")]
         }));
         websocket.send(wire("runtime.command", {
           server_seq: 1,
-          command_id: "command-prior",
-          run_id: "run-prior",
+          command_key: "command-prior",
+          run_key: "run-prior",
           type: "run.start",
           payload: executionEnvelope("runtime-ordered", "run-prior", 3, "prior trigger"),
           lease_id: "lease-prior",
@@ -478,7 +478,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
         }));
         return;
       }
-      if (envelope.type === "command.ack" && envelope.payload.command_id === "command-next") {
+      if (envelope.type === "command.ack" && envelope.payload.command_key === "command-next") {
         secondAckSeen = true;
         secondAckCount += 1;
         secondCommandAcked.resolve();
@@ -487,16 +487,16 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
       if (envelope.type !== "run.event_batch") return;
 
       const terminal = envelope.payload.events.find(event => event.type === "run.completed");
-      if (envelope.payload.run_id === "run-next") {
+      if (envelope.payload.run_key === "run-next") {
         nextStarted ??= envelope.payload.events.find(event => event.type === "run.started");
       }
-      if (envelope.payload.run_id === "run-prior" && terminal && !secondSent) {
+      if (envelope.payload.run_key === "run-prior" && terminal && !secondSent) {
         secondSent = true;
-		websocket.send(wire("context.append", { agent_id: "agent-1", scope, facts: [fact(4, "fourth background")] }));
+		websocket.send(wire("context.append", { agent_key: "agent-1", scope, facts: [fact(4, "fourth background")] }));
         const nextCommand = {
           server_seq: 2,
-          command_id: "command-next",
-          run_id: "run-next",
+          command_key: "command-next",
+          run_key: "run-next",
           type: "run.start",
           payload: executionEnvelope("runtime-ordered", "run-next", 5, "next trigger"),
           lease_id: "lease-next",
@@ -507,7 +507,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
         setTimeout(() => {
           observedBeforePriorAck = { secondAckSeen, secondInvokeSeen };
           websocket.send(wire("event.ack", {
-            run_id: "run-prior",
+            run_key: "run-prior",
             received_through_seq: envelope.payload.last_seq,
             durable_through_seq: envelope.payload.last_seq,
             ...terminalGrant(terminal)
@@ -518,21 +518,21 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
       }
 
       websocket.send(wire("event.ack", {
-        run_id: envelope.payload.run_id,
+        run_key: envelope.payload.run_key,
         received_through_seq: envelope.payload.last_seq,
         durable_through_seq: envelope.payload.last_seq,
         ...(terminal ? terminalGrant(terminal) : {})
       }));
-      if (envelope.payload.run_id === "run-next" && terminal) {
+      if (envelope.payload.run_key === "run-next" && terminal) {
         secondTerminalAcked.resolve();
         if (!thirdSent) {
           thirdSent = true;
           setTimeout(() => {
-			websocket.send(wire("context.append", { agent_id: "agent-1", scope, facts: [fact(6, "sixth background")] }));
+			websocket.send(wire("context.append", { agent_key: "agent-1", scope, facts: [fact(6, "sixth background")] }));
             websocket.send(wire("runtime.command", {
               server_seq: 3,
-              command_id: "command-third",
-              run_id: "run-third",
+              command_key: "command-third",
+              run_key: "run-third",
               type: "run.start",
               payload: executionEnvelope("runtime-ordered", "run-third", 7, "third trigger", 2),
               lease_id: "lease-third",
@@ -541,7 +541,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
           }, 30);
         }
       }
-      if (envelope.payload.run_id === "run-third" && terminal) thirdTerminalAcked.resolve();
+      if (envelope.payload.run_key === "run-third" && terminal) thirdTerminalAcked.resolve();
     });
   });
 
@@ -553,8 +553,8 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         providerRequests.push(request);
-        if (request.runId === "run-next") secondInvokeSeen = true;
-        if (request.runId === "run-next") {
+        if (request.runKey === "run-next") secondInvokeSeen = true;
+        if (request.runKey === "run-next") {
           yield { protocolVersion: 2,
             type: "session.update",
             payload: {
@@ -593,9 +593,9 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
     await withTimeout(thirdTerminalAcked.promise, 3_000, "third terminal timeout");
     await waitFor(() => runtime.status.channelContext.activeSnapshots === 0);
     assert.equal(secondAckCount, 1);
-    assert.equal(providerRequests.filter(request => request.runId === "run-next").length, 1);
+    assert.equal(providerRequests.filter(request => request.runKey === "run-next").length, 1);
 
-    const nextRequest = providerRequests.find(request => request.runId === "run-next");
+    const nextRequest = providerRequests.find(request => request.runKey === "run-next");
     assert.match(nextRequest.modelInput, /fourth background/);
     assert.doesNotMatch(nextRequest.modelInput, /first background|second background|prior trigger/);
     assert.match(nextRequest.freshFallbackModelInput, /first background/);
@@ -604,7 +604,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
     assert.equal(nextStarted.payload.context_input_variant, "recovery");
     assert.equal(nextStarted.payload.context_session_generation, 2);
     assert.equal(nextStarted.payload.context_snapshot_sha256, nextRequest.contextSnapshot.recovery_rendered_sha256);
-    const thirdRequest = providerRequests.find(request => request.runId === "run-third");
+    const thirdRequest = providerRequests.find(request => request.runKey === "run-third");
     assert.match(thirdRequest.modelInput, /sixth background/);
     assert.doesNotMatch(thirdRequest.modelInput, /first background|second background|prior trigger|fourth background/);
 
@@ -657,7 +657,7 @@ test("runtime rejects a queued source generation after recovery advanced the eff
     if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-stale-generation" , protocol_version: 2 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", runtime_key: "runtime-stale-generation" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -669,15 +669,15 @@ test("runtime rejects a queued source generation after recovery advanced the eff
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
         websocket.send(wire("runtime.command", {
           server_seq: 1,
-          command_id: "command-stale-generation",
-          run_id: "run-stale-generation",
+          command_key: "command-stale-generation",
+          run_key: "run-stale-generation",
           type: "run.start",
           payload: executionEnvelope("runtime-stale-generation", "run-stale-generation", 3, "queued trigger"),
           lease_id: "lease-stale-generation",
           fencing_token: 1
         }));
       }
-      if (envelope.type === "command.ack" && envelope.payload.command_id === "command-stale-generation") {
+      if (envelope.type === "command.ack" && envelope.payload.command_key === "command-stale-generation") {
         rejected.resolve(envelope.payload);
       }
     });
@@ -759,7 +759,7 @@ test("runtime close joins a waiting command before immediate restart and replay"
     if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-close-wait" , protocol_version: 2 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", runtime_key: "runtime-close-wait" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -772,8 +772,8 @@ test("runtime close joins a waiting command before immediate restart and replay"
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
         websocket.send(wire("runtime.command", {
           server_seq: 1,
-          command_id: "command-waiting",
-          run_id: "run-waiting",
+          command_key: "command-waiting",
+          run_key: "run-waiting",
           type: "run.start",
           payload: executionEnvelope("runtime-close-wait", "run-waiting", 3, "waiting trigger"),
           lease_id: "lease-waiting",
@@ -781,13 +781,13 @@ test("runtime close joins a waiting command before immediate restart and replay"
         }));
         commandDispatched.resolve();
       }
-      if (envelope.type === "command.ack" && envelope.payload.command_id === "command-waiting") {
+      if (envelope.type === "command.ack" && envelope.payload.command_key === "command-waiting") {
         commandAcked = true;
       }
       if (envelope.type === "run.event_batch") {
         const terminal = envelope.payload.events.find(event => event.type === "run.completed");
         websocket.send(wire("event.ack", {
-          run_id: envelope.payload.run_id,
+          run_key: envelope.payload.run_key,
           received_through_seq: envelope.payload.last_seq,
           durable_through_seq: envelope.payload.last_seq,
           ...(terminal ? terminalGrant(terminal) : {})
@@ -888,8 +888,8 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
 
   const startCommand = {
     server_seq: 1,
-    command_id: "command-cancel-waiting",
-    run_id: "run-cancel-waiting",
+    command_key: "command-cancel-waiting",
+    run_key: "run-cancel-waiting",
     type: "run.start",
     payload: executionEnvelope("runtime-cancel-wait", "run-cancel-waiting", 3, "waiting trigger"),
     lease_id: "lease-cancel-waiting",
@@ -899,7 +899,7 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
     if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-cancel-wait" , protocol_version: 2 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", runtime_key: "runtime-cancel-wait" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -914,8 +914,8 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
           beforeCancelAck = startAckCount;
           websocket.send(wire("runtime.command", {
             server_seq: 2,
-            command_id: "command-cancel-accepting",
-            run_id: "run-cancel-waiting",
+            command_key: "command-cancel-accepting",
+            run_key: "run-cancel-waiting",
             type: "run.cancel",
             payload: {},
             lease_id: "lease-cancel-waiting",
@@ -925,11 +925,11 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
         return;
       }
       if (envelope.type !== "command.ack") return;
-      if (envelope.payload.command_id === "command-cancel-accepting") {
+      if (envelope.payload.command_key === "command-cancel-accepting") {
         assert.equal(envelope.payload.accepted, true);
         cancelled.resolve();
       }
-      if (envelope.payload.command_id === startCommand.command_id) {
+      if (envelope.payload.command_key === startCommand.command_key) {
         startAckCount += 1;
         assert.equal(envelope.payload.accepted, false);
         assert.equal(envelope.payload.error.code, "RUN_CANCELLED_BEFORE_START");
@@ -976,7 +976,7 @@ test("run.cancel tombstones a busy accepting run and replay cannot invoke it", a
     runtime = undefined;
 
     const reopened = AgentWorkStore.open(outboxPath);
-    assert.equal(reopened.getCommandReceipt(startCommand.command_id).accepted, false);
+    assert.equal(reopened.getCommandReceipt(startCommand.command_key).accepted, false);
     reopened.close();
   } finally {
     await runtime?.close();
@@ -1001,7 +1001,7 @@ test("append-only channel context cold-starts an adapter without continuity reco
     if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-capability" , protocol_version: 2 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", runtime_key: "runtime-capability" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -1015,8 +1015,8 @@ test("append-only channel context cold-starts an adapter without continuity reco
         payload.provider_session = { sessionId: "stale-provider-session", resumable: true };
         websocket.send(wire("runtime.command", {
           server_seq: 1,
-          command_id: "command-stateless",
-          run_id: "run-stateless",
+          command_key: "command-stateless",
+          run_key: "run-stateless",
           type: "run.start",
           payload,
           lease_id: "lease-stateless",
@@ -1032,14 +1032,14 @@ test("append-only channel context cold-starts an adapter without continuity reco
           through_seq: 1
         }));
       }
-      if (envelope.type === "command.ack" && envelope.payload.command_id === "command-stateless") {
+      if (envelope.type === "command.ack" && envelope.payload.command_key === "command-stateless") {
         accepted.resolve(envelope.payload);
       }
       if (envelope.type === "run.event_batch") {
         emitted.push(...envelope.payload.events);
         const terminal = envelope.payload.events.find(event => event.type === "run.completed");
         websocket.send(wire("event.ack", {
-          run_id: envelope.payload.run_id,
+          run_key: envelope.payload.run_key,
           received_through_seq: envelope.payload.last_seq,
           durable_through_seq: envelope.payload.last_seq,
           ...(terminal ? terminalGrant(terminal) : {})
@@ -1114,7 +1114,7 @@ test("append-only channel context accepts an adapter without serialized sessions
     if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* consume registration body */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-stateless" , protocol_version: 2 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", runtime_key: "runtime-stateless" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -1126,8 +1126,8 @@ test("append-only channel context accepts an adapter without serialized sessions
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
         websocket.send(wire("runtime.command", {
           server_seq: 1,
-          command_id: "command-stateless",
-          run_id: "run-stateless",
+          command_key: "command-stateless",
+          run_key: "run-stateless",
           type: "run.start",
           payload: executionEnvelope("runtime-stateless", "run-stateless", 2, "current message"),
           lease_id: "lease-stateless",
@@ -1143,14 +1143,14 @@ test("append-only channel context accepts an adapter without serialized sessions
           through_seq: 1
         }));
       }
-      if (envelope.type === "command.ack" && envelope.payload.command_id === "command-stateless") {
+      if (envelope.type === "command.ack" && envelope.payload.command_key === "command-stateless") {
         accepted.resolve(envelope.payload);
       }
       if (envelope.type === "run.event_batch") {
         emitted.push(...envelope.payload.events);
         const terminal = envelope.payload.events.find(event => event.type === "run.completed");
         websocket.send(wire("event.ack", {
-          run_id: envelope.payload.run_id,
+          run_key: envelope.payload.run_key,
           received_through_seq: envelope.payload.last_seq,
           durable_through_seq: envelope.payload.last_seq,
           ...(terminal ? terminalGrant(terminal) : {})
@@ -1233,7 +1233,7 @@ for (const [projection, providerPersistence] of [["window", "append_only"], ["de
       payload.effective_context.items.push(structuredClone(selections));
       payload.agent_run_request.context.items.push(structuredClone(selections));
       websocket.send(wire("runtime.command", {
-        server_seq: round, command_id: `command-cold-${round}`, run_id: payload.run_id,
+        server_seq: round, command_key: `command-cold-${round}`, run_key: payload.run_key,
         type: "run.start", payload, lease_id: `lease-cold-${round}`, fencing_token: round
       }));
     };
@@ -1241,7 +1241,7 @@ for (const [projection, providerPersistence] of [["window", "append_only"], ["de
     if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
       for await (const _chunk of request) {}
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-cold", protocol_version: 2 } }));
+      response.end(JSON.stringify({ runtime: { profile: "default", runtime_key: "runtime-cold", protocol_version: 2 } }));
     });
     httpServer.on("upgrade", (request, socket, head) => {
       wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket));
@@ -1260,13 +1260,13 @@ for (const [projection, providerPersistence] of [["window", "append_only"], ["de
         } else if (frame.type === "run.event_batch") {
           const terminal = frame.payload.events.find(event => event.type === "run.completed");
           websocket.send(wire("event.ack", {
-            run_id: frame.payload.run_id, received_through_seq: frame.payload.last_seq,
+            run_key: frame.payload.run_key, received_through_seq: frame.payload.last_seq,
             durable_through_seq: frame.payload.last_seq, ...(terminal ? terminalGrant(terminal) : {})
           }));
           if (!terminal) return;
           terminalEvents.push(terminal);
           if (terminalEvents.length === 1) {
-            websocket.send(wire("context.append", { agent_id: "agent-e2e", scope, facts: [fact(3, "cold second background")] }));
+            websocket.send(wire("context.append", { agent_key: "agent-e2e", scope, facts: [fact(3, "cold second background")] }));
             sendStart(websocket, 2);
           } else finished.resolve();
         }
@@ -1346,7 +1346,7 @@ for (const [name, storeMode, adapterCapabilities, reason] of [
     if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
       for await (const _chunk of request) {}
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ runtime: { profile: "default", id: "runtime-preflight", protocol_version: 2 } }));
+      response.end(JSON.stringify({ runtime: { profile: "default", runtime_key: "runtime-preflight", protocol_version: 2 } }));
     });
     httpServer.on("upgrade", (request, socket, head) => {
       wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket));
@@ -1357,7 +1357,7 @@ for (const [name, storeMode, adapterCapabilities, reason] of [
         if (frame.type === "runtime.hello") {
           websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
           websocket.send(wire("runtime.command", {
-            server_seq: 1, command_id: "command-preflight", run_id: "run-preflight", type: "run.start",
+            server_seq: 1, command_key: "command-preflight", run_key: "run-preflight", type: "run.start",
             payload: executionEnvelope("runtime-preflight", "run-preflight"), lease_id: "lease-preflight", fencing_token: 1
           }));
         } else if (frame.type === "context.sync_request") syncRequests += 1;
@@ -1395,7 +1395,7 @@ for (const [name, storeMode, adapterCapabilities, reason] of [
   });
 }
 
-function executionEnvelope(runtimeId, runId = "run-e2e", triggerSeq = 3, currentText = "trigger current", generation = 1) {
+function executionEnvelope(runtimeKey, runKey = "run-e2e", triggerSeq = 3, currentText = "trigger current", generation = 1) {
   const trigger = fact(triggerSeq, currentText);
   const plan = {
     agent_source: "provisioned", adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_execution_features: ["tool.canonical"]
@@ -1412,21 +1412,21 @@ function executionEnvelope(runtimeId, runId = "run-e2e", triggerSeq = 3, current
   }];
   return {
     schema_version: 7,
-    resolved_runtime_selection: resolvedRuntimeSelection(runtimeId),
+    resolved_runtime_selection: resolvedRuntimeSelection(runtimeKey),
     context_configuration_version: 1,
     internal_context: { continuity: items[0].payload },
     effective_context: executionContext(plan, items.slice(1)),
     resolved_execution_plan: plan,
-    run_id: runId,
-    agent_session_id: "session-e2e",
+    run_key: runKey,
+    agent_session_key: "session-e2e",
     session_generation: generation,
     agent_run_request: {
       context: contextEnvelope(items.slice(1)),
       namespace: "im",
-      agent_id: "agent-e2e",
-      agent_revision_id: "revision-e2e",
-      session_key: "v1/octo/endpoint-e2e/group/group-e2e",
-      trigger: { kind: "im.message", occurrence_id: `message/${trigger.message_id}` },
+      agent_key: "agent-e2e",
+      agent_revision_key: "revision-e2e",
+      session_affinity_key: "v1/octo/endpoint-e2e/group/group-e2e",
+      trigger: { kind: "im.message", occurrence_key: `message/${trigger.message_id}` },
       input: {
         parts: [{ type: "text", text: currentText }]
       }

@@ -8,7 +8,7 @@ export interface FailureClassificationContext {
   source?: FailureSource;
   defaultDomain: FailureDomain;
   /** Agent Work Run identity; standard arun IDs deterministically own the diagnostic UUID. */
-  runId?: string;
+  runKey?: string;
   diagnosticId?: string;
   occurredAt?: string;
   /** Only trusted downstream boundaries may retain a previously validated envelope. */
@@ -98,7 +98,7 @@ export function failurePayload(
 ): Record<string, unknown> & { failure: FailureEnvelope } {
   const record = asRecord(input) ?? {};
   const existing = context.preserveExisting && isFailureEnvelope(record.failure) ? record.failure : undefined;
-  const runDiagnosticId = diagnosticIdFromRunId(context.runId);
+  const runDiagnosticId = diagnosticIdFromRunId(context.runKey);
   const classified = existing
     ? runDiagnosticId === undefined ? existing : { ...existing, diagnosticId: runDiagnosticId }
     : classifyFailure(input, context);
@@ -132,13 +132,13 @@ export function failurePayload(
 }
 
 function diagnosticIdForContext(context: FailureClassificationContext): string {
-  return diagnosticIdFromRunId(context.runId)
+  return diagnosticIdFromRunId(context.runKey)
     ?? context.diagnosticId
     ?? `diag_${randomUUID().replaceAll("-", "")}`;
 }
 
-function diagnosticIdFromRunId(runId: string | undefined): string | undefined {
-  const match = /^arun_([0-9a-f]{32})$/.exec(runId ?? "");
+function diagnosticIdFromRunId(runKey: string | undefined): string | undefined {
+  const match = /^arun_([0-9a-f]{32})$/.exec(runKey ?? "");
   return match ? `diag_${match[1]}` : undefined;
 }
 

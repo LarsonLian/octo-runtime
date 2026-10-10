@@ -379,9 +379,9 @@ function isPreparedFullAccessTask(invocation: Pick<InvokeRequest, "approvalMode"
   const params = taskRecord(resource?.params);
   const snapshot = taskRecord(snapshots[0]);
   return resource?.resolver === "mcp" && locator?.server_ref === "octo_task" && locator.tool === "task_get_materials"
-    && typeof params?.task_id === "string" && params.task_id.length > 0
+    && typeof params?.task_key === "string" && params.task_key.length > 0
     && typeof resource.resource_ref === "string" && resource.resource_ref.length > 0
-    && snapshot?.task_id === params.task_id && snapshot.resource_ref === resource.resource_ref
+    && snapshot?.task_key === params.task_key && snapshot.resource_ref === resource.resource_ref
     && Number.isSafeInteger(snapshot.task_version) && Number(snapshot.task_version) > 0
     && Number.isSafeInteger(snapshot.handler_epoch) && Number(snapshot.handler_epoch) > 0
     && (params.handler_epoch === undefined || snapshot.handler_epoch === params.handler_epoch)
@@ -396,16 +396,16 @@ function isPreparedTaskTeam(
   const metadata = invocation?.runMetadata;
   const input = taskRecord(metadata?.input);
   const snapshots = metadata?.taskMaterials;
-  if (!Array.isArray(snapshots) || input?.task_id !== taskRecord(snapshots[0])?.task_id
+  if (!Array.isArray(snapshots) || input?.task_key !== taskRecord(snapshots[0])?.task_key
     || typeof input?.conversation_id !== "string" || !input.conversation_id) return false;
   if (metadata?.triggerKind === "coordination.node") {
     const coordination = taskRecord(input?.coordination);
-    if (typeof coordination?.team_session_id !== "string" || !coordination.team_session_id
+    if (typeof coordination?.team_session_key !== "string" || !coordination.team_session_key
       || typeof coordination.operation_key !== "string" || !coordination.operation_key) return false;
   } else if (metadata?.triggerKind === "coordination.delegate_handoff" || metadata?.triggerKind === "coordination.mailbox") {
     const coordination = taskRecord(input?.coordination);
-    if (typeof coordination?.team_session_id !== "string" || !coordination.team_session_id
-      || typeof coordination.delegation_id !== "string" || !coordination.delegation_id) return false;
+    if (typeof coordination?.team_session_key !== "string" || !coordination.team_session_key
+      || typeof coordination.delegation_key !== "string" || !coordination.delegation_key) return false;
   } else return false;
 
   // Separate cloud endpoints are trusted only when they match the frozen Run plan.

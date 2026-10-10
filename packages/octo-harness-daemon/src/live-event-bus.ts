@@ -33,9 +33,9 @@ export interface LiveEventEnvelope {
   direction: LiveEventDirection;
   type: string;
   profile?: string;
-  runtime_id?: string;
-  agent_run_id?: string;
-  agent_session_id?: string;
+  runtime_key?: string;
+  run_key?: string;
+  agent_session_key?: string;
   invocation_id?: string;
   adapter_type?: string;
   duration_ms?: number;
@@ -43,7 +43,7 @@ export interface LiveEventEnvelope {
 }
 
 export interface LiveEventFilter {
-  runId?: string;
+  runKey?: string;
   source?: LiveEventSource;
   profile?: string;
 }
@@ -54,9 +54,9 @@ export interface LiveEventInput {
   direction?: string;
   type: string;
   profile?: string;
-  runtimeId?: string;
-  runId?: string;
-  agentSessionId?: string;
+  runtimeKey?: string;
+  runKey?: string;
+  agentSessionKey?: string;
   invocationId?: string;
   adapterType?: string;
   durationMs?: number;
@@ -66,7 +66,7 @@ export interface LiveEventInput {
 
 interface RingEntry {
   readonly seq: number;
-  readonly runId?: string;
+  readonly runKey?: string;
   readonly source: LiveEventSource;
   readonly type: string;
   readonly profile?: string;
@@ -148,9 +148,9 @@ export class LiveEventBus {
       direction,
       type: input.type,
       ...(input.profile ? { profile: input.profile } : {}),
-      ...(input.runtimeId ? { runtime_id: input.runtimeId } : {}),
-      ...(input.runId ? { agent_run_id: input.runId } : {}),
-      ...(input.agentSessionId ? { agent_session_id: input.agentSessionId } : {}),
+      ...(input.runtimeKey ? { runtime_key: input.runtimeKey } : {}),
+      ...(input.runKey ? { run_key: input.runKey } : {}),
+      ...(input.agentSessionKey ? { agent_session_key: input.agentSessionKey } : {}),
       ...(input.invocationId ? { invocation_id: input.invocationId } : {}),
       ...(input.adapterType ? { adapter_type: input.adapterType } : {}),
       ...(input.durationMs !== undefined ? { duration_ms: input.durationMs } : {}),
@@ -168,9 +168,9 @@ export class LiveEventBus {
         direction: envelope.direction,
         type: "event.oversize_dropped",
         ...(envelope.profile ? { profile: envelope.profile } : {}),
-        ...(envelope.runtime_id ? { runtime_id: envelope.runtime_id } : {}),
-        ...(envelope.agent_run_id ? { agent_run_id: envelope.agent_run_id } : {}),
-        ...(envelope.agent_session_id ? { agent_session_id: envelope.agent_session_id } : {}),
+        ...(envelope.runtime_key ? { runtime_key: envelope.runtime_key } : {}),
+        ...(envelope.run_key ? { run_key: envelope.run_key } : {}),
+        ...(envelope.agent_session_key ? { agent_session_key: envelope.agent_session_key } : {}),
         ...(envelope.invocation_id ? { invocation_id: envelope.invocation_id } : {}),
         ...(envelope.adapter_type ? { adapter_type: envelope.adapter_type } : {}),
         ...(envelope.duration_ms !== undefined ? { duration_ms: envelope.duration_ms } : {}),
@@ -206,7 +206,7 @@ export class LiveEventBus {
     const tail = (this.#head + this.#count) % this.#slots.length;
     this.#slots[tail] = {
       seq,
-      runId: envelope.agent_run_id,
+      runKey: envelope.run_key,
       source: envelope.source,
       type: envelope.type,
       ...(envelope.profile ? { profile: envelope.profile } : {}),
@@ -228,12 +228,12 @@ export class LiveEventBus {
     return this.publish({ source,
       type: record.event,
       profile: stringField(record.profile) ?? stringField(data.profile),
-      runtimeId: stringField(record.runtime_id) ?? stringField(data.runtime_id),
+      runtimeKey: stringField(record.runtime_key) ?? stringField(data.runtime_key),
       stage: stageForRecord(record, source),
       direction: stringField(data.direction),
       occurredAt: record.ts,
-      runId: stringField(record.run_id),
-      agentSessionId: stringField(record.agent_session_id),
+      runKey: stringField(record.run_key),
+      agentSessionKey: stringField(record.agent_session_key),
       invocationId: stringField(record.invocation_id),
       adapterType: stringField(record.adapter_type),
       durationMs: numberField(record.duration_ms) ?? numberField(data.duration_ms),
@@ -273,7 +273,7 @@ export class LiveEventBus {
             direction: "inbound",
             type: "bus.gap",
             ...(filter.profile ? { profile: filter.profile } : {}),
-            ...(filter.runId ? { agent_run_id: filter.runId } : {}),
+            ...(filter.runKey ? { run_key: filter.runKey } : {}),
             payload: { from_seq: cursor, to_seq: oldest }
           };
           cursor = oldest;
@@ -304,7 +304,7 @@ export class LiveEventBus {
     for (let offset = 0; offset < this.#count; offset++) {
       const entry = this.#slots[(this.#head + offset) % this.#slots.length];
       if (!entry || entry.seq < fromSeq || entry.seq > throughSeq) continue;
-      if (filter.runId && entry.runId !== filter.runId && entry.type !== "bus.correlation_gap") continue;
+      if (filter.runKey && entry.runKey !== filter.runKey && entry.type !== "bus.correlation_gap") continue;
       if (filter.source && entry.source !== filter.source && entry.affectedSource !== filter.source) continue;
       if (filter.profile && entry.profile !== filter.profile) continue;
       return entry;
@@ -428,9 +428,9 @@ function encode(value: LiveEventEnvelope): Buffer {
       direction: value.direction,
       type: "event.serialization_failed",
       ...(value.profile ? { profile: value.profile } : {}),
-      ...(value.runtime_id ? { runtime_id: value.runtime_id } : {}),
-      ...(value.agent_run_id ? { agent_run_id: value.agent_run_id } : {}),
-      ...(value.agent_session_id ? { agent_session_id: value.agent_session_id } : {}),
+      ...(value.runtime_key ? { runtime_key: value.runtime_key } : {}),
+      ...(value.run_key ? { run_key: value.run_key } : {}),
+      ...(value.agent_session_key ? { agent_session_key: value.agent_session_key } : {}),
       ...(value.invocation_id ? { invocation_id: value.invocation_id } : {}),
       ...(value.adapter_type ? { adapter_type: value.adapter_type } : {}),
       ...(value.duration_ms !== undefined ? { duration_ms: value.duration_ms } : {}),

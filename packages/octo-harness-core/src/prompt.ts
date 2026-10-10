@@ -14,7 +14,7 @@ export function composeContext({ agent, agentSession, agentRun }: HarnessContext
     agent_session: {
       id: agentSession.id,
       namespace: agentSession.namespace,
-      session_key: agentSession.sessionKey,
+      session_affinity_key: agentSession.sessionKey,
       generation: agentSession.generation
     },
     agent_run: {

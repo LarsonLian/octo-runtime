@@ -22,8 +22,8 @@ test("daemon recovers queued AgentRuns and terminalizes orphaned running runs", 
     const engine = new HarnessEngine({ store, host });
     const agent = await engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: defaultContext("test") });
     const queued = await engine.submitAgentRun({
-      namespace: "loop", agentId: agent.id, sessionKey: "v1/task/task-1",
-      trigger: { kind: "loop.task.ready", occurrenceId: "task-event/e-1" }, input: { prompt: "run" }, context: emptyContext()
+      namespace: "loop", agentKey: agent.id, sessionKey: "v1/task/task-1",
+      trigger: { kind: "loop.task.ready", occurrenceKey: "task-event/e-1" }, input: { prompt: "run" }, context: emptyContext()
     });
     const daemon = new HarnessDaemon({ engine, store });
     await daemon.recover();
@@ -41,23 +41,23 @@ test("daemon deduplicates occurrences and executes one session in run_no order",
     const engine = new HarnessEngine({ store, host });
     const daemon = new HarnessDaemon({ engine, store });
     const agent = await engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: defaultContext("test") });
-    const base = { namespace: "im", agentId: agent.id, sessionKey: "v1/octo/ep-1/group/g-1", context: emptyContext() };
+    const base = { namespace: "im", agentKey: agent.id, sessionKey: "v1/octo/ep-1/group/g-1", context: emptyContext() };
     const first = await daemon.submitAgentRun({
-      ...base, trigger: { kind: "im.message", occurrenceId: "message/m-1" }, input: { prompt: "one" }
+      ...base, trigger: { kind: "im.message", occurrenceKey: "message/m-1" }, input: { prompt: "one" }
     });
     const second = await daemon.submitAgentRun({
-      ...base, trigger: { kind: "im.message", occurrenceId: "message/m-2" }, input: { prompt: "two" }
+      ...base, trigger: { kind: "im.message", occurrenceKey: "message/m-2" }, input: { prompt: "two" }
     });
     const duplicate = await daemon.submitAgentRun({
-      ...base, trigger: { kind: "im.message", occurrenceId: "message/m-1" }, input: { prompt: "one" }
+      ...base, trigger: { kind: "im.message", occurrenceKey: "message/m-1" }, input: { prompt: "one" }
     });
     assert.equal(duplicate.deduplicated, true);
-    await Promise.all([daemon.waitForRun(first.agentRunId), daemon.waitForRun(second.agentRunId)]);
+    await Promise.all([daemon.waitForRun(first.runKey), daemon.waitForRun(second.runKey)]);
     assert.deepEqual(
       store.listAgentRuns().sort((a, b) => a.runNo - b.runNo).map(run => [run.runNo, run.status]),
       [[1, "completed"], [2, "completed"]]
     );
-    assert.equal(new Set(store.listAgentRuns().map(run => run.agentSessionId)).size, 1);
+    assert.equal(new Set(store.listAgentRuns().map(run => run.agentSessionKey)).size, 1);
     daemon.stop(); store.close();
 
     const reopened = SqliteStore.open(file);
@@ -84,10 +84,10 @@ test("daemon drain closes admission and waits for active Runs", async () => {
     const engine = new HarnessEngine({ store, host });
     const daemon = new HarnessDaemon({ engine, store });
     const agent = await engine.registerAgent({ agentSource: "provisioned", name: "slow", defaultContext: defaultContext("slow") });
-    const base = { namespace: "test", agentId: agent.id, sessionKey: "v1/drain", context: emptyContext() };
+    const base = { namespace: "test", agentKey: agent.id, sessionKey: "v1/drain", context: emptyContext() };
     const accepted = await daemon.submitAgentRun({
       ...base,
-      trigger: { kind: "test", occurrenceId: "occurrence-1" },
+      trigger: { kind: "test", occurrenceKey: "occurrence-1" },
       input: { prompt: "wait" }
     });
 
@@ -96,7 +96,7 @@ test("daemon drain closes admission and waits for active Runs", async () => {
     await assert.rejects(
       daemon.submitAgentRun({
         ...base,
-        trigger: { kind: "test", occurrenceId: "occurrence-2" },
+        trigger: { kind: "test", occurrenceKey: "occurrence-2" },
         input: { prompt: "must reject" }
       }),
       error => error.code === "DAEMON_DRAINING"
@@ -107,7 +107,7 @@ test("daemon drain closes admission and waits for active Runs", async () => {
     releaseProvider();
     await draining;
     assert.equal(daemon.status.activeRuns, 0);
-    assert.equal((await daemon.waitForRun(accepted.agentRunId)).run.status, "completed");
+    assert.equal((await daemon.waitForRun(accepted.runKey)).run.status, "completed");
     daemon.stop();
     store.close();
   } finally {

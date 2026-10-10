@@ -34,7 +34,7 @@ interface ProfileConfiguration {
 interface RuntimeIdentity {
   schema_version?: unknown;
   profile?: unknown;
-  runtime_id?: unknown;
+  runtime_key?: unknown;
 }
 
 interface RuntimeCredential {
@@ -108,7 +108,7 @@ function loadManagedProfile(home: string, profile: string, options: { discoverLo
     profile,
     baseUrl,
     token: requiredString(credential.access_token, "access_token"),
-    runtimeId: requiredString(identity.runtime_id, "runtime_id"),
+    runtimeKey: requiredString(identity.runtime_key, "runtime_key"),
     runtimeName: optionalString(config.runtime_name) ?? "octo-harness-local",
     storePath: join(profileRoot, "agent-work.db"),
     channelContext: {
@@ -218,8 +218,8 @@ function assertNoCredentialLikeOptions(options: Record<string, string>, adapterT
 function assertUniqueRuntimeBindings(runtimes: AgentWorkRuntimeOptions[]): void {
   const bindings = new Map<string, string>();
   for (const runtime of runtimes) {
-    if (!runtime.runtimeId) continue;
-    const binding = `${new URL(runtime.baseUrl).toString()}\u0000${runtime.runtimeId}`;
+    if (!runtime.runtimeKey) continue;
+    const binding = `${new URL(runtime.baseUrl).toString()}\u0000${runtime.runtimeKey}`;
     const existing = bindings.get(binding);
     if (existing) {
       throw new Error(`profiles ${existing} and ${runtime.profile} use the same Agent Work Runtime binding`);

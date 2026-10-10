@@ -9,7 +9,7 @@ test("diagnostic bundle exports only allowlisted metadata", () => {
     agentWork: {
       connected: false,
       runtimes: [{
-        runtimeId: "runtime-1",
+        runtimeKey: "runtime-1",
         connectionState: "backing_off",
         outboxPending: 12,
         outboxPendingBytes: 4096,

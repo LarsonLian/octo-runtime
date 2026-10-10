@@ -125,25 +125,25 @@ export class InspectStore {
       [...new Set(this.#snapshot.events.map(select).filter(Boolean))];
     return {
       profile: values(event => event.profile),
-      runtime_id: values(event => event.runtimeId),
+      runtime_key: values(event => event.runtimeKey),
       source: EVENT_SOURCES,
       stage: values(event => event.stage),
       direction: ["inbound", "outbound"],
       type: values(event => event.type),
       adapter_type: values(event => event.adapterType),
       session_id: values(event => event.sessionId),
-      agent_run_id: values(event => event.runId),
+      run_key: values(event => event.runKey),
       invocation_id: values(event => event.invocationId),
       status: ["ok", "warning", "error"]
     };
   }
 
   #trackRun(event: InspectRecord): void {
-    if (!event.runId) return;
-    const key = `${event.profile}\u0000${event.runId}`;
+    if (!event.runKey) return;
+    const key = `${event.profile}\u0000${event.runKey}`;
     this.#runIndex.delete(key);
     this.#runIndex.set(key, {
-      id: event.runId,
+      id: event.runKey,
       profile: event.profile,
       type: event.type,
       occurredAt: event.occurredAt

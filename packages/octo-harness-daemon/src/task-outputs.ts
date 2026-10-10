@@ -9,7 +9,7 @@ export const TASK_OUTPUT_SCHEMA = "octo.task-output-manifest/v1";
 export const TASK_OUTPUT_LIMITS = Object.freeze({ maxFiles: 32, maxFileBytes: 100 * 1024 * 1024, maxTotalBytes: 256 * 1024 * 1024, maxManifestBytes: 64 * 1024 });
 
 export interface TaskOutputManifestEntry {
-  output_id: string;
+  output_key: string;
   relative_path: string;
   name: string;
   media_type: string;
@@ -19,9 +19,9 @@ export interface TaskOutputManifestEntry {
 }
 
 export interface TaskOutputReceipt {
-  output_id: string;
+  output_key: string;
   status: "saved" | "failed";
-  attachment_id?: string;
+  attachment_key?: string;
   file_id?: string;
   file_version_id?: string;
   error_code?: string;
@@ -38,18 +38,18 @@ interface TaskOutputManifest {
   delivery?: TaskDelivery;
 }
 
-export function taskOutputManifestPath(runId: string): string {
-  return `.octo/task-outputs/${encodeURIComponent(runId)}.json`;
+export function taskOutputManifestPath(runKey: string): string {
+  return `.octo/task-outputs/${encodeURIComponent(runKey)}.json`;
 }
 
-export function taskOutputInstructions(runId: string): string {
+export function taskOutputInstructions(runKey: string): string {
   return [
     "Task output files must be saved through the Runtime uploader before being described as saved to the shared drive.",
-    `When this Run produces deliverable files, write ${taskOutputManifestPath(runId)} under the frozen workdir before finishing.`,
-    `Use JSON ${JSON.stringify({ schema: TASK_OUTPUT_SCHEMA, delivery: { output_kind: "agent_report" }, outputs: [{ output_id: "unique-stable-id", relative_path: "path/from/workdir", name: "filename", media_type: "text/html", size: 123, sha256: "64 lowercase hex characters", role: "output" }] })}.`,
+    `When this Run produces deliverable files, write ${taskOutputManifestPath(runKey)} under the frozen workdir before finishing.`,
+    `Use JSON ${JSON.stringify({ schema: TASK_OUTPUT_SCHEMA, delivery: { output_kind: "agent_report" }, outputs: [{ output_key: "unique-stable-id", relative_path: "path/from/workdir", name: "filename", media_type: "text/html", size: 123, sha256: "64 lowercase hex characters", role: "output" }] })}.`,
     "Use delivery.output_kind code_review_report for review, or bug_triage_report for triage. Reviews may include review_verdict approved or changes_requested. For text-only reports, use outputs: [] and put the public report in the final response.",
-    "Compute size and SHA-256 from the actual files. Use a new output_id for changed contents. Only include deliverables you intend to share; exclude credentials and unrelated project files.",
-    "Do not send absolute local paths or run capability credentials through Team handoff. Use attachment_id and file_version_id after saving. Run success does not complete the business task."
+    "Compute size and SHA-256 from the actual files. Use a new output_key for changed contents. Only include deliverables you intend to share; exclude credentials and unrelated project files.",
+    "Do not send absolute local paths or run capability credentials through Team handoff. Use attachment_key and file_version_id after saving. Run success does not complete the business task."
   ].join("\n");
 }
 
@@ -67,14 +67,14 @@ export function assertTaskOutputManifest(value: unknown): asserts value is TaskO
   let total = 0;
   for (const raw of manifest.outputs) {
     const entry = object(raw);
-    if (Object.keys(entry).some(key => !["output_id", "relative_path", "name", "media_type", "size", "sha256", "role"].includes(key))
-      || typeof entry.output_id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(entry.output_id) || ids.has(entry.output_id)
+    if (Object.keys(entry).some(key => !["output_key", "relative_path", "name", "media_type", "size", "sha256", "role"].includes(key))
+      || typeof entry.output_key !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(entry.output_key) || ids.has(entry.output_key)
       || typeof entry.name !== "string" || !entry.name || Array.from(entry.name).length > 200 || hasControl(entry.name) || /[/\\]/.test(entry.name)
       || typeof entry.media_type !== "string" || !/^[\w.+-]+\/[\w.+-]+$/.test(entry.media_type)
       || !Number.isSafeInteger(entry.size) || Number(entry.size) < 1 || Number(entry.size) > TASK_OUTPUT_LIMITS.maxFileBytes
       || typeof entry.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(entry.sha256) || entry.role !== "output") throw new TypeError("TASK_OUTPUT_MANIFEST_INVALID");
     assertRelativePath(entry.relative_path);
-    ids.add(entry.output_id);
+    ids.add(entry.output_key);
     total += Number(entry.size);
   }
   if (total > TASK_OUTPUT_LIMITS.maxTotalBytes) throw new TypeError("TASK_OUTPUT_SIZE_EXCEEDED");
@@ -117,13 +117,13 @@ export async function readTaskOutput(workdir: string, path: string, maxBytes: nu
   } finally { await handle.close(); }
 }
 
-export async function loadTaskOutputs(workdir: string, runId: string): Promise<TaskOutputManifestEntry[]> {
-  return (await loadTaskOutputManifest(workdir, runId)).outputs;
+export async function loadTaskOutputs(workdir: string, runKey: string): Promise<TaskOutputManifestEntry[]> {
+  return (await loadTaskOutputManifest(workdir, runKey)).outputs;
 }
 
-async function loadTaskOutputManifest(workdir: string, runId: string): Promise<TaskOutputManifest> {
+async function loadTaskOutputManifest(workdir: string, runKey: string): Promise<TaskOutputManifest> {
   let bytes: Buffer;
-  try { bytes = await readTaskOutput(workdir, taskOutputManifestPath(runId), TASK_OUTPUT_LIMITS.maxManifestBytes); }
+  try { bytes = await readTaskOutput(workdir, taskOutputManifestPath(runKey), TASK_OUTPUT_LIMITS.maxManifestBytes); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return { schema: TASK_OUTPUT_SCHEMA, outputs: [] }; throw error; }
   let manifest: unknown;
   try { manifest = JSON.parse(bytes.toString("utf8")); } catch { throw new TypeError("TASK_OUTPUT_MANIFEST_INVALID"); }
@@ -131,8 +131,8 @@ async function loadTaskOutputManifest(workdir: string, runId: string): Promise<T
   return manifest;
 }
 
-export async function archiveTaskOutputs(plan: ResolvedExecutionPlan, taskId: string, runId: string, signal: AbortSignal, onDelivery?: (delivery: TaskDelivery) => void): Promise<TaskOutputReceipt[]> {
-  const manifest = await loadTaskOutputManifest(plan.workdir, runId);
+export async function archiveTaskOutputs(plan: ResolvedExecutionPlan, taskKey: string, runKey: string, signal: AbortSignal, onDelivery?: (delivery: TaskDelivery) => void): Promise<TaskOutputReceipt[]> {
+  const manifest = await loadTaskOutputManifest(plan.workdir, runKey);
   const outputs = manifest.outputs;
   onDelivery?.(manifest.delivery ?? { output_kind: "agent_report" });
   if (outputs.length === 0) return [];
@@ -144,9 +144,9 @@ export async function archiveTaskOutputs(plan: ResolvedExecutionPlan, taskId: st
     try {
       const bytes = await readTaskOutput(plan.workdir, output.relative_path, TASK_OUTPUT_LIMITS.maxFileBytes);
       if (bytes.length !== output.size || createHash("sha256").update(bytes).digest("hex") !== output.sha256) throw new TypeError("TASK_OUTPUT_INTEGRITY_MISMATCH");
-      const ticket = await client.call("task_prepare_output", { task_id: taskId, manifest: output });
+      const ticket = await client.call("task_prepare_output", { task_key: taskKey, manifest: output });
       if (ticket.status === "saved") {
-        receipts.push(savedReceipt(output.output_id, ticket));
+        receipts.push(savedReceipt(output.output_key, ticket));
         continue;
       }
       if (typeof ticket.ticket_id !== "string" || !ticket.ticket_id || typeof ticket.upload_url !== "string" || ticket.upload_method !== "PUT") throw new TypeError("TASK_OUTPUT_TICKET_INVALID");
@@ -161,19 +161,19 @@ export async function archiveTaskOutputs(plan: ResolvedExecutionPlan, taskId: st
       });
       await response.body?.cancel();
       if (!response.ok) throw new TypeError("TASK_OUTPUT_UPLOAD_FAILED");
-      const saved = await client.call("task_commit_output", { task_id: taskId, ticket_id: ticket.ticket_id, manifest: output });
-      receipts.push(savedReceipt(output.output_id, saved));
+      const saved = await client.call("task_commit_output", { task_key: taskKey, ticket_id: ticket.ticket_id, manifest: output });
+      receipts.push(savedReceipt(output.output_key, saved));
     } catch (error) {
       if (signal.aborted) throw error;
       const errorCode = safeOutputError(error);
       if (ticketId) {
         try {
-          const reported = await client.call("task_fail_output", { task_id: taskId, ticket_id: ticketId, output_id: output.output_id, error_code: errorCode });
+          const reported = await client.call("task_fail_output", { task_key: taskKey, ticket_id: ticketId, output_key: output.output_key, error_code: errorCode });
           // A lost commit response must not turn a durable saved file into a failed job.
-          if (reported.status === "saved") { receipts.push(savedReceipt(output.output_id, reported)); continue; }
+          if (reported.status === "saved") { receipts.push(savedReceipt(output.output_key, reported)); continue; }
         } catch { /* The terminal receipt preserves the failure if its callback is unavailable. */ }
       }
-      receipts.push({ output_id: output.output_id, status: "failed", error_code: errorCode });
+      receipts.push({ output_key: output.output_key, status: "failed", error_code: errorCode });
     }
   }
   return receipts;
@@ -185,8 +185,8 @@ export function safeOutputError(error: unknown): string {
 }
 
 function savedReceipt(id: string, value: Record<string, unknown>): TaskOutputReceipt {
-  if (value.status !== "saved" || ![value.attachment_id, value.file_id, value.file_version_id].every(item => typeof item === "string" && item)) throw new TypeError("TASK_OUTPUT_CONFIRMATION_INVALID");
-  return { output_id: id, status: "saved", attachment_id: String(value.attachment_id), file_id: String(value.file_id), file_version_id: String(value.file_version_id) };
+  if (value.status !== "saved" || ![value.attachment_key, value.file_id, value.file_version_id].every(item => typeof item === "string" && item)) throw new TypeError("TASK_OUTPUT_CONFIRMATION_INVALID");
+  return { output_key: id, status: "saved", attachment_key: String(value.attachment_key), file_id: String(value.file_id), file_version_id: String(value.file_version_id) };
 }
 
 function assertRelativePath(value: unknown): asserts value is string {

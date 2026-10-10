@@ -233,7 +233,7 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
       profile: context.profile,
       runtimeName,
       machineId: machine.machine_id,
-      runtimeId: identity?.runtime_id,
+      runtimeKey: identity?.runtime_key,
       runtimeToken: credential?.access_token,
       agentWorkUrl: resolvedAgentWorkUrl,
       fetchImplementation: context.fetchImplementation
@@ -265,7 +265,7 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
       ok: true,
       enrolled,
       profile: context.profile,
-      runtime_id: identity.runtime_id,
+      runtime_key: identity.runtime_key,
       server_url: profileConfig.server_url
     }
   };
@@ -286,7 +286,7 @@ async function persistEnrollment(
   const identity: RuntimeIdentity = {
     schema_version: 1,
     profile: result.profile,
-    runtime_id: result.runtimeId,
+    runtime_key: result.runtimeKey,
     credential_id: result.credentialId,
     ...(result.octoSpaceId ? { octo_space_id: result.octoSpaceId } : {}),
     enrolled_at: now
@@ -681,7 +681,7 @@ async function configureOpenClawAdapter(
   const agentId = optionalString(context.flags.agentId)
     ?? (configuredAgentId && !isDeprecatedOpenClawRunnerAgentId(configuredAgentId)
       ? configuredAgentId
-      : defaultOpenClawRunnerAgentId(runtimeIdentity.runtime_id));
+      : defaultOpenClawRunnerAgentId(runtimeIdentity.runtime_key));
   if (!isValidOpenClawAgentId(agentId)) {
     throw new Error("--agent-id must be 1-64 characters and contain lowercase letters, digits, underscores, or hyphens");
   }
@@ -775,7 +775,7 @@ async function migrateLegacyOpenClawRunnerConfiguration(
   const openclaw = profileConfig.adapters?.openclaw;
   if (!openclaw) return profileConfig;
 
-  const agentId = defaultOpenClawRunnerAgentId(runtimeIdentity.runtime_id);
+  const agentId = defaultOpenClawRunnerAgentId(runtimeIdentity.runtime_key);
   const legacyWorkspace = resolve(context.paths.openclawRoot, "octo-runner.workspace");
   const localGateway = isLoopbackHost(new URL(openclaw.gateway_url).hostname);
   const hasDeprecatedAgentId = isDeprecatedOpenClawRunnerAgentId(openclaw.agent_id);
@@ -1058,12 +1058,12 @@ async function runDoctor(context: CliContext): Promise<CommandResult> {
   }
   const application = await tryDaemonStatus(context.paths.socket);
   checks.push(check("daemon.ipc", Boolean(application), application ? "ready" : "not reachable", "Run octo-harness daemon start"));
-  const agentWork = selectedRuntimeStatus(application, identity.value?.runtime_id);
+  const agentWork = selectedRuntimeStatus(application, identity.value?.runtime_key);
   if (agentWork?.enabled === true) {
     checks.push(check(
       "runtime.cloud",
       agentWork.connected === true,
-      agentWork.connected === true ? `online as ${String(agentWork.runtimeId)}` : "not connected",
+      agentWork.connected === true ? `online as ${String(agentWork.runtimeKey)}` : "not connected",
       "Inspect daemon logs and verify the server credential"
     ));
   }
@@ -1081,7 +1081,7 @@ function daemonRequest(group: string, action: string | undefined, id: string | u
       method: "logs.query",
       params: {
         ...(optionalString(flags.requestId) ? { requestId: optionalString(flags.requestId) } : {}),
-        ...(id ? { runId: id } : {}),
+        ...(id ? { runKey: id } : {}),
         ...(optionalString(flags.invocation) ? { invocationId: optionalString(flags.invocation) } : {}),
         ...(limit ? { limit: Number(limit) } : {}),
         includeSensitive: flags.sensitive === true
@@ -1095,14 +1095,14 @@ function daemonRequest(group: string, action: string | undefined, id: string | u
   if (group === "agent-session" && action && ["list", "get"].includes(action)) {
     return action === "list"
       ? { method: "agent_session.list" }
-      : { method: "agent_session.get", params: { agentSessionId: required(id, "agent-session-id") } };
+      : { method: "agent_session.get", params: { agentSessionKey: required(id, "agent-session-id") } };
   }
   if (group === "events") {
     if (action !== undefined) throw new Error("events accepts filters as flags, not positional arguments");
     return {
       method: "events.subscribe",
       params: {
-        ...(optionalString(flags.runId) ? { runId: optionalString(flags.runId) } : {}),
+        ...(optionalString(flags.runKey) ? { runKey: optionalString(flags.runKey) } : {}),
         ...(optionalString(flags.source) ? { source: optionalString(flags.source) } : {}),
         follow: flags.follow === true
       }
@@ -1111,13 +1111,13 @@ function daemonRequest(group: string, action: string | undefined, id: string | u
   if (group === "agent-run" && action && ["list", "get", "wait"].includes(action)) {
     return action === "list"
       ? { method: "agent_run.list" }
-      : { method: `agent_run.${action}`, params: { agentRunId: required(id, "agent-run-id") } };
+      : { method: `agent_run.${action}`, params: { runKey: required(id, "agent-run-id") } };
   }
   if (group === "agent-run" && action === "cancel") {
     return {
       method: "agent_run.cancel",
       params: {
-        agentRunId: required(id, "agent-run-id"),
+        runKey: required(id, "agent-run-id"),
         reason: optionalString(flags.reason) ?? "cancelled_by_operator"
       }
     };
@@ -1182,10 +1182,10 @@ function formatLiveEvent(value: unknown, json: boolean): string {
   if (json || !record) return JSON.stringify(value);
   const source = typeof record.source === "string" ? record.source : "unknown";
   const type = typeof record.type === "string" ? record.type : "event";
-  const runId = typeof record.agent_run_id === "string" ? ` run=${record.agent_run_id}` : "";
+  const runKey = typeof record.run_key === "string" ? ` run=${record.run_key}` : "";
   const color = process.stdout.isTTY ? sourceColor(source) : "";
   const reset = color ? "\u001b[0m" : "";
-  return `${color}[${source}]${reset} ${type}${runId} ${JSON.stringify(record.payload)}`;
+  return `${color}[${source}]${reset} ${type}${runKey} ${JSON.stringify(record.payload)}`;
 }
 
 function sourceColor(source: string): string {
@@ -1230,13 +1230,13 @@ async function waitForDaemonOnline(
   let last: Record<string, unknown> | undefined;
   while (Date.now() < deadline) {
     last = await tryDaemonStatus(context.paths.socket);
-    const agentWork = selectedRuntimeStatus(last, identity.runtime_id);
-    if (last?.ready === true && agentWork?.connected === true && agentWork.runtimeId === identity.runtime_id) return last;
+    const agentWork = selectedRuntimeStatus(last, identity.runtime_key);
+    if (last?.ready === true && agentWork?.connected === true && agentWork.runtimeKey === identity.runtime_key) return last;
     await context.sleep(100);
   }
-  const agentWork = selectedRuntimeStatus(last, identity.runtime_id);
+  const agentWork = selectedRuntimeStatus(last, identity.runtime_key);
   throw new Error(
-    `runtime ${identity.runtime_id} did not become cloud-online within ${timeoutMs}ms (connected=${agentWork?.connected === true})`
+    `runtime ${identity.runtime_key} did not become cloud-online within ${timeoutMs}ms (connected=${agentWork?.connected === true})`
   );
 }
 
@@ -1306,7 +1306,7 @@ async function readEnrollmentToken(input: NodeJS.ReadableStream): Promise<string
 }
 
 function validateIdentity(value: RuntimeIdentity, profile: string): void {
-  if (value.schema_version !== 1 || value.profile !== profile || !value.runtime_id || !value.credential_id || "system_id" in value || "device_id" in value) {
+  if (value.schema_version !== 1 || value.profile !== profile || !value.runtime_key || !value.credential_id || "system_id" in value || "device_id" in value) {
     throw new Error("runtime identity is invalid; refusing automatic re-enrollment");
   }
 }
@@ -1447,15 +1447,15 @@ function objectValue(value: unknown): Record<string, unknown> | undefined {
 
 function selectedRuntimeStatus(
   application: Record<string, unknown> | undefined,
-  runtimeId: string | undefined
+  runtimeKey: string | undefined
 ): Record<string, unknown> | undefined {
   const agentWork = objectValue(application?.agentWork);
   if (!agentWork) return undefined;
-  if (!runtimeId || agentWork.runtimeId === runtimeId) return agentWork;
+  if (!runtimeKey || agentWork.runtimeKey === runtimeKey) return agentWork;
   const runtimes = Array.isArray(agentWork.runtimes) ? agentWork.runtimes : [];
   return runtimes
     .map(objectValue)
-    .find(status => status?.runtimeId === runtimeId);
+    .find(status => status?.runtimeKey === runtimeKey);
 }
 
 function helpText(group?: string): string {

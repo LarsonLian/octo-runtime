@@ -278,12 +278,12 @@ function executionField(namespace: string, name: string, value: Record<string, u
     if (name === "limits") { limits(value); return; }
   }
   if (namespace === "octo.runtime" && name === "selection") {
-    fields(value, ["mode", "runtime_id", "runtime_ids", "strategy", "offline_behavior", "failover"]);
+    fields(value, ["mode", "runtime_key", "runtime_ids", "strategy", "offline_behavior", "failover"]);
     if (value.offline_behavior !== undefined && value.offline_behavior !== "wait" && value.offline_behavior !== "fail") throw new TypeError("CONTEXT_SCHEMA_INVALID");
     if (value.failover !== undefined && value.failover !== "none" && value.failover !== "candidates") throw new TypeError("CONTEXT_SCHEMA_INVALID");
     if (value.mode === "explicit" && value.failover !== undefined && value.failover !== "none") throw new TypeError("CONTEXT_SCHEMA_INVALID");
-    if (value.mode === "explicit" && value.runtime_ids === undefined && value.strategy === undefined) { text(value.runtime_id); return; }
-    if (value.mode === "candidates" && value.runtime_id === undefined && value.strategy === "preferred_failover") { stringList(value.runtime_ids, 64, 1); return; }
+    if (value.mode === "explicit" && value.runtime_ids === undefined && value.strategy === undefined) { text(value.runtime_key); return; }
+    if (value.mode === "candidates" && value.runtime_key === undefined && value.strategy === "preferred_failover") { stringList(value.runtime_ids, 64, 1); return; }
     throw new TypeError("CONTEXT_SCHEMA_INVALID");
   }
   if (namespace === "octo.security" && name === "approval_policy") { fields(value, ["mode"]); assertApprovalMode(value.mode); return; }

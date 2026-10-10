@@ -44,7 +44,7 @@ test("catalog covers every schema branch, including grouped capability namespace
 test("processor coverage enforces independent execution and material types", () => {
   const context = { schema: "octo.context-envelope/v3", items: [
     {namespace:"octo.content", name:"inline", payload:{entries:[{text:"material"}]}},
-    { namespace: "octo.runtime", name: "selection", payload: {mode:"explicit",runtime_id:"device"} }
+    { namespace: "octo.runtime", name: "selection", payload: {mode:"explicit",runtime_key:"device"} }
   ] };
   assert.doesNotThrow(() => assertContextProcessorCoverage(context, "compile", new Set(["octo.content/inline", "octo.runtime/selection"])));
   assert.throws(() => assertContextProcessorCoverage(context, "dispatch", new Set()), /CONTEXT_PROCESSOR_UNAVAILABLE: dispatch: octo.runtime\/selection/);

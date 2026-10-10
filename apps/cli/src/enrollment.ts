@@ -18,7 +18,7 @@ export interface EnrollmentOptions {
   profile: string;
   runtimeName: string;
   machineId: string;
-  runtimeId?: string;
+  runtimeKey?: string;
   runtimeToken?: string;
   agentWorkUrl?: string;
   fetchImplementation?: typeof fetch;
@@ -26,7 +26,7 @@ export interface EnrollmentOptions {
 
 export interface EnrollmentResult {
   profile: string;
-  runtimeId: string;
+  runtimeKey: string;
   credentialId: string;
   accessToken?: string;
   octoSpaceId?: string;
@@ -44,8 +44,8 @@ export async function exchangeRuntimeEnrollment(options: EnrollmentOptions): Pro
   try {
     return await exchangeRuntimeEnrollmentOnce(options);
   } catch (error) {
-    if (!options.runtimeId || !options.runtimeToken || !isInvalidRuntimeRenewal(error)) throw error;
-    return exchangeRuntimeEnrollmentOnce({ ...options, runtimeId: undefined, runtimeToken: undefined });
+    if (!options.runtimeKey || !options.runtimeToken || !isInvalidRuntimeRenewal(error)) throw error;
+    return exchangeRuntimeEnrollmentOnce({ ...options, runtimeKey: undefined, runtimeToken: undefined });
   }
 }
 
@@ -64,24 +64,24 @@ async function exchangeRuntimeEnrollmentOnce(options: EnrollmentOptions): Promis
       Accept: "application/json",
       "Cache-Control": "no-store"
     },
-    body: JSON.stringify({ profile: options.profile, machine_id: options.machineId, ...(options.runtimeId ? { runtime_id: options.runtimeId } : {}) }),
+    body: JSON.stringify({ profile: options.profile, machine_id: options.machineId, ...(options.runtimeKey ? { runtime_key: options.runtimeKey } : {}) }),
     signal: AbortSignal.timeout(15_000)
   });
   const enrolledRuntime = objectValue(enrolled.runtime);
   const credential = objectValue(enrolled.credential);
   const runtimeToken = stringValue(credential?.token);
-  const enrolledRuntimeId = stringValue(enrolledRuntime?.id);
+  const enrolledRuntimeId = stringValue(enrolledRuntime?.runtime_key);
   const octoSpaceId = stringValue(enrolledRuntime?.octo_space_id);
-  const credentialId = stringValue(credential?.id);
+  const credentialId = stringValue(credential?.runtime_credential_key);
   if (!runtimeToken || !enrolledRuntimeId || !credentialId) {
     throw new Error(`runtime enrollment response is missing credential or Runtime identity (request_id=${enrollmentRequestId})`);
   }
-  if (options.runtimeId && enrolledRuntimeId !== options.runtimeId) throw new Error(`enrollment returned a different Runtime identity (request_id=${enrollmentRequestId})`);
+  if (options.runtimeKey && enrolledRuntimeId !== options.runtimeKey) throw new Error(`enrollment returned a different Runtime identity (request_id=${enrollmentRequestId})`);
   if (enrolledRuntime?.profile !== options.profile) throw new Error(`runtime enrollment returned a different or missing profile (request_id=${enrollmentRequestId})`);
 
   return {
     profile: options.profile,
-    runtimeId: enrolledRuntimeId,
+    runtimeKey: enrolledRuntimeId,
     credentialId,
     accessToken: runtimeToken,
     octoSpaceId,
@@ -116,9 +116,9 @@ export async function registerEnrolledRuntime(options: EnrollmentOptions, enroll
     signal: AbortSignal.timeout(15_000)
   });
   const runtime = objectValue(registered.runtime);
-  const runtimeId = stringValue(runtime?.id);
-  if (!runtimeId) throw new Error(`Runtime registration response is missing runtime.id (request_id=${registrationRequestId})`);
-  if (runtimeId !== enrollment.runtimeId) throw new Error(`Runtime registration changed the enrolled identity (request_id=${registrationRequestId})`);
+  const runtimeKey = stringValue(runtime?.runtime_key);
+  if (!runtimeKey) throw new Error(`Runtime registration response is missing runtime.runtime_key (request_id=${registrationRequestId})`);
+  if (runtimeKey !== enrollment.runtimeKey) throw new Error(`Runtime registration changed the enrolled identity (request_id=${registrationRequestId})`);
   if (runtime?.profile !== options.profile) throw new Error(`Runtime registration changed or omitted the enrolled profile (request_id=${registrationRequestId})`);
 }
 

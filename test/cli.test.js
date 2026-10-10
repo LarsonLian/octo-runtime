@@ -100,13 +100,13 @@ test("CLI exposes bounded events and daemon-owned loopback inspect", async () =>
     const agent = await app.engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: defaultContext() });
     const submitted = await app.daemon.submitAgentRun({
       namespace: "test",
-      agentId: agent.id,
+      agentKey: agent.id,
       sessionKey: "v1/events",
-      trigger: { kind: "test", occurrenceId: "events-1" },
+      trigger: { kind: "test", occurrenceKey: "events-1" },
       input: { prompt: "emit events" },
       context: emptyContext()
     });
-    await app.daemon.waitForRun(submitted.agentRunId);
+    await app.daemon.waitForRun(submitted.runKey);
     const events = await execute(process.execPath, [cli, "events", "--json"], {
       cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home }
     });
@@ -116,7 +116,7 @@ test("CLI exposes bounded events and daemon-owned loopback inspect", async () =>
     assert.ok(frames.some(frame => frame.source === "provider-native"));
     assert.ok(frames.some(frame => frame.source === "adapter-canonical"));
     assert.ok(frames.some(frame => frame.source === "host-canonical"));
-    assert.ok(frames.filter(frame => frame.agent_run_id === submitted.agentRunId).length > 0);
+    assert.ok(frames.filter(frame => frame.run_key === submitted.runKey).length > 0);
 
     const inspected = await execute(process.execPath, [cli, "inspect"], {
       cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home }
@@ -344,16 +344,16 @@ test("daemon terminalizes in-flight work and restarts adapter-host without exiti
     const agent = await app.engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: defaultContext() });
     const submitted = await app.daemon.submitAgentRun({
       namespace: "test",
-      agentId: agent.id,
+      agentKey: agent.id,
       sessionKey: "v1/adapter-host-restart",
-      trigger: { kind: "test", occurrenceId: "host-exit-1" },
+      trigger: { kind: "test", occurrenceKey: "host-exit-1" },
       input: { prompt: "wait-for-host-exit" },
       context: emptyContext()
     });
     await waitFor(() => app.daemon.status.activeRuns === 1);
     const originalPid = app.hostProcess.child.pid;
     assert.equal(app.hostProcess.child.kill("SIGKILL"), true);
-    const terminal = await app.daemon.waitForRun(submitted.agentRunId);
+    const terminal = await app.daemon.waitForRun(submitted.runKey);
     assert.equal(terminal.run.status, "failed");
     await waitFor(() => app.runtime.adapterHost.state === "restarting");
     const restartingStatus = JSON.parse((await execute(
@@ -364,13 +364,13 @@ test("daemon terminalizes in-flight work and restarts adapter-host without exiti
     assert.equal(restartingStatus.adapterHost.state, "restarting");
     const unavailable = await app.daemon.submitAgentRun({
       namespace: "test",
-      agentId: agent.id,
+      agentKey: agent.id,
       sessionKey: "v1/adapter-host-restarting",
-      trigger: { kind: "test", occurrenceId: "host-exit-2" },
+      trigger: { kind: "test", occurrenceKey: "host-exit-2" },
       input: { prompt: "must-fail-while-restarting" },
       context: emptyContext()
     });
-    assert.equal((await app.daemon.waitForRun(unavailable.agentRunId)).run.status, "failed");
+    assert.equal((await app.daemon.waitForRun(unavailable.runKey)).run.status, "failed");
     await waitFor(() => app.runtime.adapterHost.state === "ready" && app.hostProcess.child.pid !== originalPid);
     assert.equal(app.runtime.adapterHost.restartAttempt, 1);
     assert.deepEqual((await app.hostProcess.client.list()).map(adapter => adapter.type), ["test"]);

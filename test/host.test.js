@@ -8,8 +8,8 @@ import { contextHash } from "@mininglamp-oss/octo-harness-protocol";
 const request = {
   protocolVersion: 2,
   invocationId: "inv-host",
-  agentSessionId: "s",
-  runId: "arun_35c4ffc5db9940c9be7ce3a894819ae3",
+  agentSessionKey: "s",
+  runKey: "arun_35c4ffc5db9940c9be7ce3a894819ae3",
   prompt: "p",
   modelInput: "p",
   workdir: process.cwd(),
@@ -58,7 +58,7 @@ test("host rejects missing mandatory invocation inputs and untyped context befor
       for await (const event of host.invoke("contract", invalid)) assert.fail(`unexpected ${event.type}`);
     }, reason);
   }
-  for (const context of [{}, { profile: "work", runtimeId: "runtime-work" }]) {
+  for (const context of [{}, { profile: "work", runtimeKey: "runtime-work" }]) {
     await assert.rejects(async () => {
       for await (const event of host.invoke("contract", { ...request, context })) assert.fail(`unexpected ${event.type}`);
     }, /CONTEXT_SCHEMA_INVALID|CONTEXT_UNKNOWN_FIELD/);
@@ -209,15 +209,15 @@ test("host gives adapters a provider observation context with full invocation id
   const events = [];
   for await (const event of host.invoke("observed", {
     ...request,
-    runMetadata: { profile: "work", runtimeId: "runtime-work" }
+    runMetadata: { profile: "work", runtimeKey: "runtime-work" }
   })) { if (!event.type.startsWith("activity.")) events.push(event); };
   assert.equal(events.at(-1).type, "run.completed");
   assert.deepEqual(observations[0].identity, {
     profile: "work",
-    runtimeId: "runtime-work",
-    runId: request.runId,
+    runtimeKey: "runtime-work",
+    runKey: request.runKey,
     invocationId: "inv-host",
-    agentSessionId: "s",
+    agentSessionKey: "s",
     adapterType: "observed"
   });
   assert.equal(observations[0].observation.rpcMethod, "turn/start");

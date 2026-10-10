@@ -193,7 +193,7 @@ if [ "\${FAKE_LOGIN_FAIL:-0}" = "1" ]; then exit 7; fi
   assert.match(setupInvocation, /octo_enroll_test/);
   const identityPath = join(harnessHome, "identity/runtime.json");
   await mkdir(join(harnessHome, "identity"), { recursive: true });
-  await writeFile(identityPath, '{"schema_version":1,"runtime_id":"runtime-existing"}\n', "utf8");
+  await writeFile(identityPath, '{"schema_version":1,"runtime_key":"runtime-existing"}\n', "utf8");
   await execute("sh", [posixInstallerPath, "https://server.example"], { env: installerEnvironment });
   assert.match(await readFile(setupLog, "utf8"), /LOGIN .*--enroll-token-stdin\n\nINSTALL .*daemon install\nSTART .*daemon start --wait-online\n$/);
 

@@ -6,10 +6,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -28,13 +28,13 @@
       "selection_mode": "candidates",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
         },
         {
-          "runtime_id": "runtime-2",
+          "runtime_key": "runtime-2",
           "priority": 2,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -53,13 +53,13 @@
       "selection_mode": "candidates",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
         },
         {
-          "runtime_id": "runtime-2",
+          "runtime_key": "runtime-2",
           "priority": 2,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -76,10 +76,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -95,10 +95,10 @@
     "selection": {
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -115,10 +115,10 @@
       "schema": null,
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -134,10 +134,10 @@
     "selection": {
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -154,10 +154,10 @@
     "selection": {
       "schema": "octo.runtime-selection/v2",
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -174,10 +174,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": null,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -193,10 +193,10 @@
     "selection": {
       "schema": "octo.runtime-selection/v2",
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -213,10 +213,10 @@
     "selection": {
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -233,10 +233,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": null,
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -252,10 +252,10 @@
     "selection": {
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -273,7 +273,7 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "offline_behavior": "wait",
       "failover": "none"
     }
@@ -285,7 +285,7 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": null,
       "offline_behavior": "wait",
       "failover": "none"
@@ -298,12 +298,12 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "offline_behavior": "wait",
       "failover": "none",
       "AUTHORIZED_CANDIDATES": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -318,10 +318,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -337,10 +337,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -357,10 +357,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -377,10 +377,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -396,10 +396,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -416,10 +416,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -436,10 +436,10 @@
       "schema": "octo.runtime-selection/v1",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -456,10 +456,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 0,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -476,10 +476,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 9007199254740992,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -496,10 +496,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": "1",
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -516,10 +516,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1.1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -536,10 +536,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "binding",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -556,10 +556,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -576,10 +576,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -596,10 +596,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -617,10 +617,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -641,10 +641,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "",
+      "explicit_runtime_key": "",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -661,23 +661,23 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [],
       "offline_behavior": "wait",
       "failover": "none"
     }
   },
   {
-    "name": "candidate-runtime_id-",
+    "name": "candidate-runtime_key-",
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "",
+          "runtime_key": "",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -694,10 +694,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 0,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -714,10 +714,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1.1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
@@ -734,10 +734,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "service",
           "owner_subject_id": "user-1"
@@ -754,10 +754,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": ""
@@ -774,10 +774,10 @@
       "schema": "octo.runtime-selection/v2",
       "context_configuration_version": 1,
       "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
+      "explicit_runtime_key": "runtime-1",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1",
@@ -817,13 +817,13 @@
       "selection_mode": "candidates",
       "authorized_candidates": [
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 1,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"
         },
         {
-          "runtime_id": "runtime-1",
+          "runtime_key": "runtime-1",
           "priority": 2,
           "owner_subject_type": "user",
           "owner_subject_id": "user-1"

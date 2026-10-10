@@ -18,7 +18,7 @@ test("frozen artifacts cross runtime mapping and Host into a real Codex three-im
   const workdir = await mkdtemp(join(tmpdir(), "octo-mm-integration-"));
   const images = visualInputImages();
   const artifacts = images.map((image, index) => ({ id: `artifact-${index + 1}`, mediaType: image.mimeType, byteSize: image.byteSize, sha256: image.sha256 }));
-  const runId = `run-${randomUUID()}`;
+  const runKey = `run-${randomUUID()}`;
   const leaseId = "fixture-lease";
   const fencingToken = 19;
   const authorization = "Bearer fixture-runtime";
@@ -36,7 +36,7 @@ test("frozen artifacts cross runtime mapping and Host into a real Codex three-im
     const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     reads.push({ method: req.method, path: req.url, authorization: req.headers.authorization, body });
     if (req.method !== "POST" || req.url !== "/v1/runtime/input_artifact/read"
-      || req.headers.authorization !== authorization || body.run_id !== runId || body.lease_id !== leaseId || body.fencing_token !== fencingToken) {
+      || req.headers.authorization !== authorization || body.run_key !== runKey || body.lease_id !== leaseId || body.fencing_token !== fencingToken) {
       res.writeHead(403).end();
       return;
     }
@@ -51,23 +51,23 @@ test("frozen artifacts cross runtime mapping and Host into a real Codex three-im
     const materializedInput = await resolveRuntimeInputImages(input, {
       baseUrl: `http://127.0.0.1:${server.address().port}`,
       headers: { Authorization: authorization, "Content-Type": "application/json" },
-      runId, leaseId, fencingToken, signal: AbortSignal.timeout(170_000)
+      runKey, leaseId, fencingToken, signal: AbortSignal.timeout(170_000)
     });
     assert.deepEqual(input, frozenInput);
     assert.equal(input.parts.some(part => Object.hasOwn(part, "source")), false);
     assert.deepEqual(reads, artifacts.map(artifact => ({
       method: "POST", path: "/v1/runtime/input_artifact/read", authorization,
-      body: { run_id: runId, artifact_id: artifact.id, lease_id: leaseId, fencing_token: fencingToken }
+      body: { run_key: runKey, artifact_id: artifact.id, lease_id: leaseId, fencing_token: fencingToken }
     })));
     const plan = { agent_source: "provisioned", adapter_type: "codex", workdir, approval_mode: "ask", ...(process.env.OCTO_CODEX_MULTIMODAL_MODEL ? { model: process.env.OCTO_CODEX_MULTIMODAL_MODEL } : {}) };
     const envelope = {
       schema_version: 7, effective_context: executionContext(plan), context_configuration_version: 1,
       resolved_execution_plan: plan, resolved_runtime_selection: resolvedRuntimeSelection(),
-      run_id: runId, agent_session_id: `session-${randomUUID()}`,
+      run_key: runKey, agent_session_key: `session-${randomUUID()}`,
       agent_revision: { definition: { instructions: "Only answer the image question. Do not read files or run commands." } },
       agent_run_request: {
-        namespace: "work", agent_id: "fixture-agent", agent_revision_id: "fixture-revision", session_key: "v1/work/multimodal-integration",
-        trigger: { kind: "manual", occurrence_id: `message-${randomUUID()}` }, input: materializedInput, context: contextEnvelope()
+        namespace: "work", agent_key: "fixture-agent", agent_revision_key: "fixture-revision", session_affinity_key: "v1/work/multimodal-integration",
+        trigger: { kind: "manual", occurrence_key: `message-${randomUUID()}` }, input: materializedInput, context: contextEnvelope()
       }
     };
     const { adapterType, request } = mapExecutionEnvelope(envelope);
@@ -89,7 +89,7 @@ test("frozen artifacts cross runtime mapping and Host into a real Codex three-im
     const parsed = JSON.parse(answer.slice(answer.indexOf("["), answer.lastIndexOf("]") + 1));
     assert.deepEqual(parsed, [{ shape: "circle", color: "red" }, { shape: "square", color: "green" }, { shape: "triangle", color: "blue" }]);
     const receipt = observations.find(({ observation }) => observation.event === "provider.input" && observation.rpcMethod === "turn/start");
-    assert.equal(receipt.identity.runId, runId);
+    assert.equal(receipt.identity.runKey, runKey);
     assert.equal(receipt.identity.invocationId, request.invocationId);
     assert.deepEqual(receipt.observation.carrier.content.params.input.filter(part => part.type === "image").map(part => ({ sha256: part.sha256, byteSize: part.byteSize })), artifacts.map(({ sha256, byteSize }) => ({ sha256, byteSize })));
     for (const image of images) {
@@ -97,7 +97,7 @@ test("frozen artifacts cross runtime mapping and Host into a real Codex three-im
       assert.equal(JSON.stringify(request.runMetadata).includes(image.data), false);
     }
     assert.deepEqual(input, frozenInput);
-    console.log(JSON.stringify({ evidence: "artifact-runtime-host-codex-native-three-image", runId,
+    console.log(JSON.stringify({ evidence: "artifact-runtime-host-codex-native-three-image", runKey,
       providerSession: events.find(event => event.type === "session.update")?.payload.providerSession,
       artifactReads: reads.length, leaseVerified: true, fencingVerified: true,
       images: artifacts.map(({ id, sha256, byteSize }) => ({ id, sha256, byteSize })), answer: parsed }));

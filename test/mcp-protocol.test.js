@@ -5,8 +5,8 @@ import { assertInvokeRequest, assertMcpServers, executionFeatures } from "@minin
 
 const baseRequest = { protocolVersion: 2,
   invocationId: "invoke-1",
-  agentSessionId: "session-1",
-  runId: "run-1",
+  agentSessionKey: "session-1",
+  runKey: "run-1",
   prompt: "work",
   modelInput: "work",
   workdir: "/workspace",

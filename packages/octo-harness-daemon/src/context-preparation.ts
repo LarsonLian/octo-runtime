@@ -66,7 +66,7 @@ export interface PreparedRunContext {
  * 返回的路径属于 Runtime 私有视图；本地准备完成不表示 Worker 已确认或 Provider 已应用。
  */
 export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
-  stateRoot: string; agentSessionId: string; agentId: string; store: AgentWorkStore; signal?: AbortSignal;
+  stateRoot: string; agentSessionKey: string; agentKey: string; store: AgentWorkStore; signal?: AbortSignal;
 }): Promise<PreparedRunContext> {
   options.signal?.throwIfAborted();
   const stateRoot = await privateDirectory(options.stateRoot);
@@ -78,7 +78,7 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
   }
   if (workspace.mode === "random") {
     const workspaces = await privateDirectory(join(stateRoot, "workspaces"));
-    const chosen = options.store.conversationWorkspace(options.agentSessionId, join(workspaces, randomUUID()));
+    const chosen = options.store.conversationWorkspace(options.agentSessionKey, join(workspaces, randomUUID()));
     if (chosen.created) await mkdir(chosen.path, { mode: 0o700 });
     // 续接必须保留原工作区事实；目录丢失时失败，不能静默创建同路径的空目录。
     workdir = await realDirectory(chosen.path);
@@ -89,7 +89,7 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
     // 保留请求中的固定路径写法，以便 Worker 按冻结合同比较。
     workdir = workspace.path;
   }
-  const scope = createHash("sha256").update(options.agentSessionId).digest("hex");
+  const scope = createHash("sha256").update(options.agentSessionKey).digest("hex");
   const providerStateDir = await privateDirectory(join(stateRoot, "providers", scope));
   const prepared: PreparedRunContext = { workdir, providerStateDir, skills: [], skillRoots: [], mcpServers: {},
     receipt: { workspace_mode: workspace.mode, workspace_path: workdir, provider_state_dir: providerStateDir, resources: [], warnings: [] } };
@@ -102,7 +102,7 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
     if (totalBytes > 16_777_216) throw new TypeError("CONTEXT_RESOURCE_BUDGET_EXCEEDED");
     const root = await materializeResource(stateRoot, resource);
     const texts = Object.fromEntries(Object.entries(resource.files).map(([path, file]) => [path, Buffer.from(file.content_base64, "base64").toString("utf8")]));
-    const installation = createHash("sha256").update(options.agentId + "/" + resource.resource_id).digest("hex");
+    const installation = createHash("sha256").update(options.agentKey + "/" + resource.resource_id).digest("hex");
     const data = await privateDirectory(join(stateRoot, "plugin-data", installation));
     const receipt: PreparedCapabilityReceipt = { resource_id: resource.resource_id, revision: resource.revision, digest: resource.digest, root, data, components: [] };
     prepared.receipt.resources.push(receipt);
@@ -286,12 +286,12 @@ function record(value: unknown): value is Record<string, unknown> { return !!val
  * 拒绝、取消或响应未知均抛错，调用方不能据本地资源存在就启动 Provider。
  */
 export async function recordContextPreparation(receipt: ContextPreparationReceipt, options: {
-  baseUrl: string; headers: Record<string, string>; runId: string; leaseId: string; fencingToken: number; signal: AbortSignal;
+  baseUrl: string; headers: Record<string, string>; runKey: string; leaseId: string; fencingToken: number; signal: AbortSignal;
 }): Promise<void> {
   const response = await fetch(options.baseUrl.replace(/\/$/, "") + "/v1/runtime/context/prepare", {
     method: "POST", headers: { ...options.headers, "Content-Type": "application/json" }, redirect: "error",
     signal: AbortSignal.any([options.signal, AbortSignal.timeout(30_000)]),
-    body: JSON.stringify({ run_id: options.runId, lease_id: options.leaseId, fencing_token: options.fencingToken, preparation: receipt })
+    body: JSON.stringify({ run_key: options.runKey, lease_id: options.leaseId, fencing_token: options.fencingToken, preparation: receipt })
   });
   if (!response.ok) {
     const body = await response.json().catch(() => undefined) as { error?: { code?: string } } | undefined;
@@ -302,12 +302,12 @@ export async function recordContextPreparation(receipt: ContextPreparationReceip
 
 /** 首次准备读取最新资源并由 Worker 冻结；重复准备复核当前授权后读取原快照。 */
 export async function resolveRunResources(options: {
-  baseUrl: string; headers: Record<string, string>; runId: string; leaseId: string; fencingToken: number; signal: AbortSignal;
+  baseUrl: string; headers: Record<string, string>; runKey: string; leaseId: string; fencingToken: number; signal: AbortSignal;
 }): Promise<ResolvedCapabilityResource[]> {
   const response = await fetch(options.baseUrl.replace(/\/$/, "") + "/v1/runtime/context/resources/resolve", {
     method: "POST", headers: { ...options.headers, "Content-Type": "application/json" }, redirect: "error",
     signal: AbortSignal.any([options.signal, AbortSignal.timeout(30_000)]),
-    body: JSON.stringify({ run_id: options.runId, lease_id: options.leaseId, fencing_token: options.fencingToken })
+    body: JSON.stringify({ run_key: options.runKey, lease_id: options.leaseId, fencing_token: options.fencingToken })
   });
   if (!response.ok) {
     const body = await response.json().catch(() => undefined) as { error?: { code?: string } } | undefined;

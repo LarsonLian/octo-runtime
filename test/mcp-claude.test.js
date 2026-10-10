@@ -7,8 +7,8 @@ import { executionFeatures } from "@mininglamp-oss/octo-harness-protocol";
 
 const request = { protocolVersion: 2,
   invocationId: "invoke-mcp",
-  agentSessionId: "session-mcp",
-  runId: "run-mcp",
+  agentSessionKey: "session-mcp",
+  runKey: "run-mcp",
   prompt: "call the tool",
   modelInput: "call the tool",
   workdir: process.cwd(),

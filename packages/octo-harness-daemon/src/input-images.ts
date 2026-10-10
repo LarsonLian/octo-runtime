@@ -3,7 +3,7 @@ import { IMAGE_INPUT_LIMITS, modelPartsFromInput } from "@mininglamp-oss/octo-ha
 export interface RuntimeImageReadOptions {
   baseUrl: string;
   headers: Record<string, string>;
-  runId: string;
+  runKey: string;
   leaseId: string;
   fencingToken: number;
   signal: AbortSignal;
@@ -32,7 +32,7 @@ export async function resolveRuntimeInputImages(input: Record<string, unknown>, 
       method: "POST", headers: options.headers,
       signal: AbortSignal.any([options.signal, AbortSignal.timeout(30_000)]),
       redirect: "error",
-      body: JSON.stringify({ run_id: options.runId, artifact_id: artifact.id, lease_id: options.leaseId, fencing_token: options.fencingToken })
+      body: JSON.stringify({ run_key: options.runKey, artifact_id: artifact.id, lease_id: options.leaseId, fencing_token: options.fencingToken })
     });
     if (!response.ok) {
       await response.body?.cancel();

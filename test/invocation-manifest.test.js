@@ -17,12 +17,12 @@ test("invocation manifest persists only process and invocation metadata", async 
   try {
     assert.deepEqual(reap, { found: false, reaped: false });
     await manifest.setAdapterHost(process.pid, "/test/adapter-host.js");
-    await manifest.begin({ invocationId: "invoke-1", runId: "run-1", adapterType: "codex" });
+    await manifest.begin({ invocationId: "invoke-1", runKey: "run-1", adapterType: "codex" });
     const persisted = JSON.parse(await readFile(path, "utf8"));
     assert.equal(persisted.schemaVersion, 1);
     assert.equal(persisted.daemonPid, process.pid);
     assert.equal(persisted.adapterHost.pid, process.pid);
-    assert.deepEqual(Object.keys(persisted.invocations[0]).sort(), ["adapterType", "invocationId", "runId", "startedAt"]);
+    assert.deepEqual(Object.keys(persisted.invocations[0]).sort(), ["adapterType", "invocationId", "runKey", "startedAt"]);
     assert.doesNotMatch(JSON.stringify(persisted), /prompt|token|secret|providerOptions/);
     await manifest.end("invoke-1");
     assert.deepEqual(JSON.parse(await readFile(path, "utf8")).invocations, []);
@@ -49,7 +49,7 @@ test("orphan reaper requires matching process start identity before killing the 
       daemonPid: 2_147_483_646,
       updatedAt: new Date().toISOString(),
       adapterHost: { pid: child.pid, started, entrypoint: "/test/adapter-host.js" },
-      invocations: [{ invocationId: "invoke-orphan", runId: "run-orphan", adapterType: "codex", startedAt: new Date().toISOString() }]
+      invocations: [{ invocationId: "invoke-orphan", runKey: "run-orphan", adapterType: "codex", startedAt: new Date().toISOString() }]
     }));
     const result = await reapOrphanedInvocationManifest(path);
     assert.deepEqual(result, { found: true, reaped: true, pid: child.pid });

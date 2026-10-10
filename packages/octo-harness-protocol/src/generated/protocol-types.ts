@@ -77,7 +77,7 @@ export type ContextWorkspacePayload =
  */
 export type ContextRuntimeSelectionPayload = {
   mode: "candidates" | "explicit";
-  runtime_id?: string;
+  runtime_key?: string;
   /**
    * @minItems 1
    * @maxItems 64
@@ -263,8 +263,8 @@ export interface NotificationMessage1 {
     sequence: number;
     evt_type: number;
     actor: {};
-    task_conversation_id?: string;
-    source_run_id?: string;
+    task_conversation_key?: string;
+    source_run_key?: string;
     summary: string;
     payload: {};
   };
@@ -1606,7 +1606,7 @@ export interface ContextConfiguration {
  * via the `definition` "RunContextProjection".
  */
 export interface RunContextProjection {
-  run_id: string;
+  run_key: string;
   context_configuration_version: number;
   context_hash: string;
   actual_runtime_id?: string;
@@ -1659,7 +1659,7 @@ export interface ContextPreparationReceipt {
   catalog_version: "octo.context-catalog/v3";
   context_hash: string;
   compiled_hash: string;
-  run_id: string;
+  run_key: string;
   lease_id: string;
   fencing_token: number;
   workspace_mode: "fixed" | "random" | "none";
@@ -1701,7 +1701,7 @@ export interface PreparedCapabilityReceipt {
  */
 export interface PreparedMaterialReceipt {
   resource_ref: string;
-  task_id: string;
+  task_key: string;
   task_version: number;
   handler_epoch: number;
   digest: string;
@@ -1747,7 +1747,7 @@ export interface ContextApplicationEvidence {
   catalog_version: "octo.context-catalog/v3";
   context_hash: string;
   compiled_hash: string;
-  run_id: string;
+  run_key: string;
   lease_id: string;
   fencing_token: number;
   adapter_type: "codex";
@@ -1941,7 +1941,7 @@ export interface ChannelContextDescriptor {
  */
 export interface ChannelScope {
   tenant_id: string;
-  endpoint_id: string;
+  endpoint_key: string;
   channel: string;
   account_id: string | null;
   bot_id: string;
@@ -2001,20 +2001,20 @@ export interface ResolvedRuntimeSelection1 {
   schema: "octo.runtime-selection/v2";
   context_configuration_version: number;
   selection_mode: "explicit" | "candidates";
-  explicit_runtime_id?: string;
+  explicit_runtime_key?: string;
   /**
    * @minItems 1
    * @maxItems 64
    */
   authorized_candidates: [
     {
-      runtime_id: string;
+      runtime_key: string;
       priority: number;
       owner_subject_type: "user" | "teamspace";
       owner_subject_id: string;
     },
     ...{
-      runtime_id: string;
+      runtime_key: string;
       priority: number;
       owner_subject_type: "user" | "teamspace";
       owner_subject_id: string;
@@ -2448,7 +2448,7 @@ export interface RunIdentity {
   /**
    * Owning Agent Worker session identifier.
    */
-  agentSessionId: string;
+  agentSessionKey: string;
 }
 /**
  * Idempotent context-only batch appended by agent-worker to its bound daemon.
@@ -2457,7 +2457,7 @@ export interface RunIdentity {
  * via the `definition` "ChannelContextAppend".
  */
 export interface ChannelContextAppend {
-  agent_id: string;
+  agent_key: string;
   scope: ChannelScope;
   /**
    * @minItems 1
@@ -2474,7 +2474,7 @@ export interface ChannelContextAppend {
  */
 export interface ContextSyncRequest {
   request_id: string;
-  agent_run_id: string;
+  run_key: string;
   scope: ChannelScope;
   trigger_message_id: string;
   trigger_seq?: number;
@@ -2550,11 +2550,11 @@ export interface InvokeRequestWire {
   /**
    * Long-lived Agent Worker session identifier for this execution context.
    */
-  agentSessionId: string;
+  agentSessionKey: string;
   /**
    * Run identifier for this execution.
    */
-  runId: string;
+  runKey: string;
   /**
    * Worker-owned AgentSession generation that fences stale continuity updates.
    */

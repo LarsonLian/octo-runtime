@@ -9,45 +9,45 @@ import { AgentWorkRuntime, AgentWorkStore } from "../packages/octo-harness-daemo
 import { RUNTIME_RUN_CONTRACT } from "../packages/octo-harness-protocol/dist/index.js";
 import { contextEnvelope, continuityItem, deferred, executionContext, resolvedRuntimeSelection, waitFor, wire, withTimeout } from "./agent-work-runtime-fixture.js";
 
-const runtimeId = "本机 Runtime/🎯";
+const runtimeKey = "本机 Runtime/🎯";
 const plan = { agent_source: "provisioned", adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask" };
 
-function executionEnvelope(selection = resolvedRuntimeSelection(runtimeId)) {
+function executionEnvelope(selection = resolvedRuntimeSelection(runtimeKey)) {
   return {
     schema_version: 7,
     context_configuration_version: 1,
     effective_context: executionContext(plan),
     resolved_execution_plan: plan,
     resolved_runtime_selection: selection,
-    run_id: "run-selection",
-    agent_session_id: "session-selection",
+    run_key: "run-selection",
+    agent_session_key: "session-selection",
     agent_revision: {},
     agent_run_request: {
-      context: contextEnvelope(), namespace: "test", agent_id: "agent-1", agent_revision_id: "revision-1",
-      session_key: "selection-test", trigger: { kind: "test", occurrence_id: "test/selection" },
+      context: contextEnvelope(), namespace: "test", agent_key: "agent-1", agent_revision_key: "revision-1",
+      session_affinity_key: "selection-test", trigger: { kind: "test", occurrence_key: "test/selection" },
       input: { prompt: "Target this Runtime only." }
     }
   };
 }
 
 const boundPool = {
-  ...resolvedRuntimeSelection(runtimeId), selection_mode: "candidates",
+  ...resolvedRuntimeSelection(runtimeKey), selection_mode: "candidates",
   failover: "candidates",
   authorized_candidates: [
-    { runtime_id: "other-runtime", priority: 1, owner_subject_type: "teamspace", owner_subject_id: "space-1" },
-    { runtime_id: runtimeId, priority: 2, owner_subject_type: "user", owner_subject_id: "user-1" }
+    { runtime_key: "other-runtime", priority: 1, owner_subject_type: "teamspace", owner_subject_id: "space-1" },
+    { runtime_key: runtimeKey, priority: 2, owner_subject_type: "user", owner_subject_id: "user-1" }
   ]
 };
-delete boundPool.explicit_runtime_id;
+delete boundPool.explicit_runtime_key;
 
 for (const scenario of [
   { name: "schema 2", error: "LEGACY_RUN_CONTRACT_REJECTED", modify: envelope => { envelope.schema_version = 2; delete envelope.resolved_runtime_selection; } },
   { name: "missing selection", error: "RESOLVED_RUNTIME_SELECTION_REQUIRED", modify: envelope => { delete envelope.resolved_runtime_selection; } },
-  { name: "unknown routing field", error: "RESOLVED_RUNTIME_SELECTION_INVALID", modify: envelope => { envelope.resolved_runtime_selection.target_runtime_id = runtimeId; } },
+  { name: "unknown routing field", error: "RESOLVED_RUNTIME_SELECTION_INVALID", modify: envelope => { envelope.resolved_runtime_selection.target_runtime_id = runtimeKey; } },
   { name: "explicit foreign target", error: "RUNTIME_SELECTION_TARGET_MISMATCH", modify: envelope => { envelope.resolved_runtime_selection = resolvedRuntimeSelection("foreign-runtime"); } },
-  { name: "explicit inconsistent candidate", error: "RESOLVED_RUNTIME_SELECTION_INVALID", modify: envelope => { envelope.resolved_runtime_selection.explicit_runtime_id = "foreign-runtime"; } },
-  { name: "bound pool excludes local Runtime", error: "RUNTIME_SELECTION_TARGET_MISMATCH", modify: envelope => { envelope.resolved_runtime_selection = structuredClone(boundPool); envelope.resolved_runtime_selection.authorized_candidates[1].runtime_id = "another-runtime"; } },
-  { name: "effective Context target disagrees", error: "RUNTIME_SELECTION_CONTEXT_MISMATCH", modify: envelope => { envelope.effective_context.items.push({ namespace: "octo.runtime", name: "selection", payload: { mode: "explicit", runtime_id: "foreign-runtime" } }); } }
+  { name: "explicit inconsistent candidate", error: "RESOLVED_RUNTIME_SELECTION_INVALID", modify: envelope => { envelope.resolved_runtime_selection.explicit_runtime_key = "foreign-runtime"; } },
+  { name: "bound pool excludes local Runtime", error: "RUNTIME_SELECTION_TARGET_MISMATCH", modify: envelope => { envelope.resolved_runtime_selection = structuredClone(boundPool); envelope.resolved_runtime_selection.authorized_candidates[1].runtime_key = "another-runtime"; } },
+  { name: "effective Context target disagrees", error: "RUNTIME_SELECTION_CONTEXT_MISMATCH", modify: envelope => { envelope.effective_context.items.push({ namespace: "octo.runtime", name: "selection", payload: { mode: "explicit", runtime_key: "foreign-runtime" } }); } }
 ]) {
   test(`daemon rejects ${scenario.name} before context sync or invocation and persists replay rejection`, { timeout: 5_000 }, async () => {
     const payload = executionEnvelope();
@@ -57,7 +57,7 @@ for (const scenario of [
     try {
       await fixture.runtime.start();
       await withTimeout(fixture.ready.promise, 2_000, "runtime hello timeout");
-      const command = { server_seq: 1, command_id: "command-selection", run_id: payload.run_id, type: "run.start", payload, lease_id: "lease-1", fencing_token: 1 };
+      const command = { server_seq: 1, command_key: "command-selection", run_key: payload.run_key, type: "run.start", payload, lease_id: "lease-1", fencing_token: 1 };
       fixture.socket.send(wire("runtime.command", command));
       await waitFor(() => fixture.receipts.length === 1);
       assert.equal(fixture.receipts[0].accepted, false);
@@ -71,10 +71,10 @@ for (const scenario of [
       await fixture.runtime.close();
       const store = AgentWorkStore.open(fixture.storePath);
       try {
-        const persisted = store.getCommandReceipt(command.command_id);
+        const persisted = store.getCommandReceipt(command.command_key);
         assert.equal(persisted.accepted, false);
         assert.equal(persisted.error.message, scenario.error);
-        assert.deepEqual(store.activeRunIds(), []);
+        assert.deepEqual(store.activeRunKeys(), []);
       } finally {
         store.close();
       }
@@ -84,20 +84,20 @@ for (const scenario of [
   });
 }
 
-for (const [name, selection] of [["explicit Unicode target", resolvedRuntimeSelection(runtimeId)], ["non-primary authorized bound candidate", boundPool]]) {
+for (const [name, selection] of [["explicit Unicode target", resolvedRuntimeSelection(runtimeKey)], ["non-primary authorized bound candidate", boundPool]]) {
   test(`daemon accepts ${name} after schema 3 pre-registration`, { timeout: 5_000 }, async () => {
     const fixture = await startFixture();
     try {
       await fixture.runtime.start();
       await withTimeout(fixture.ready.promise, 2_000, "runtime hello timeout");
       fixture.socket.send(wire("runtime.command", {
-        server_seq: 1, command_id: "command-selection", run_id: "run-selection", type: "run.start",
+        server_seq: 1, command_key: "command-selection", run_key: "run-selection", type: "run.start",
         payload: executionEnvelope(selection), lease_id: "lease-1", fencing_token: 1
       }));
       await waitFor(() => fixture.receipts.length === 1 && fixture.invocations.length === 1);
       assert.equal(fixture.receipts[0].accepted, true);
       assert.equal(fixture.registrations, 1);
-      assert.equal(fixture.invocations[0].runMetadata.runtimeId, runtimeId);
+      assert.equal(fixture.invocations[0].runMetadata.runtimeKey, runtimeKey);
       assert.equal(fixture.invocations[0].runMetadata.schemaVersion, 7);
     } finally {
       await fixture.close();
@@ -156,7 +156,7 @@ async function startFixture({ rejectRegistration = false, openClawProbeState } =
     response.writeHead(rejectRegistration ? 400 : 200, { "Content-Type": "application/json" });
     response.end(JSON.stringify(rejectRegistration
       ? { error: { code: "VALIDATION_ERROR", details: { reason_code: "RUNTIME_RUN_CONTRACT_UNSUPPORTED" } } }
-      : { runtime: { id: runtimeId, profile: "default", protocol_version: 2 } }));
+      : { runtime: { runtime_key: runtimeKey, profile: "default", protocol_version: 2 } }));
   });
   server.on("upgrade", (request, socket, head) => {
     assert.ok(fixture.registrations > 0);
@@ -179,7 +179,7 @@ async function startFixture({ rejectRegistration = false, openClawProbeState } =
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   fixture.runtime = new AgentWorkRuntime({
     profile: "default", baseUrl: `http://127.0.0.1:${server.address().port}`, token: "runtime-test-token",
-    runtimeId, runtimeName: "selection-test", storePath, initialReconnectDelayMs: 60_000, reconnectDelayMs: 60_000,
+    runtimeKey, runtimeName: "selection-test", storePath, initialReconnectDelayMs: 60_000, reconnectDelayMs: 60_000,
     ...(openClawProbeState ? { adapterProbeMs: 20 } : {})
   }, {
     list: async () => [{ type: "fake", available: true, capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] }, ...(openClawProbeState ? [{ type: "openclaw", available: false, unavailableReason: "config_not_found", capabilities: ["react"], agentSources: ["preset", "provisioned"], executionFeatures: ["agent.existing-target.v1"] }] : [])],

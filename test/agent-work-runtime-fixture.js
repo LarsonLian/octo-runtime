@@ -67,13 +67,13 @@ export function contextEnvelope(items = []) {
   return { schema: "octo.context-envelope/v3", items: structuredClone(items) };
 }
 
-export function resolvedRuntimeSelection(runtimeId = "runtime-1") {
+export function resolvedRuntimeSelection(runtimeKey = "runtime-1") {
   return {
     schema: "octo.runtime-selection/v2",
     context_configuration_version: 1,
     selection_mode: "explicit",
-    explicit_runtime_id: runtimeId,
-    authorized_candidates: [{ runtime_id: runtimeId, priority: 1, owner_subject_type: "user", owner_subject_id: "user-1" }],
+    explicit_runtime_key: runtimeKey,
+    authorized_candidates: [{ runtime_key: runtimeKey, priority: 1, owner_subject_type: "user", owner_subject_id: "user-1" }],
     offline_behavior: "wait",
     failover: "none"
   };
@@ -108,7 +108,7 @@ export function continuityItem({ sessionGeneration = 7, triggerMessageId = "mess
     name: "continuity",
     payload: {
       scope: {
-        tenant_id: "tenant-1", endpoint_id: "endpoint-1", channel: "discord",
+        tenant_id: "tenant-1", endpoint_key: "endpoint-1", channel: "discord",
         account_id: null, bot_id: "bot-1", conversation_id: "conversation-1"
       },
       consumer_key: "consumer-1",
@@ -130,13 +130,13 @@ export function invokeRequest(overrides = {}) {
   return {
     protocolVersion: 2,
     invocationId: "invoke-test",
-    agentSessionId: "session-test",
-    runId: "run-test",
+    agentSessionKey: "session-test",
+    runKey: "run-test",
     prompt: "Display-safe input",
     modelInput: "Provider model input",
     controlInstructions: "Keep changes scoped.",
     context: contextEnvelope(),
-    runMetadata: { namespace: "test", triggerOccurrenceId: "test/invoke" },
+    runMetadata: { namespace: "test", triggerOccurrenceKey: "test/invoke" },
     approvalMode: "ask",
     workdir: process.cwd(),
     agentSource: "provisioned", agentConfig: {},

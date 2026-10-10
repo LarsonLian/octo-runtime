@@ -28,7 +28,7 @@ export interface DaemonStatus {
     connectedProfiles?: number;
     runtimes?: Array<{
       profile?: string;
-      runtimeId?: string;
+      runtimeKey?: string;
       connected?: boolean;
       error?: string;
     }>;

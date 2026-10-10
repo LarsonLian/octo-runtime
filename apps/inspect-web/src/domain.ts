@@ -30,9 +30,9 @@ export interface InspectRecord {
   direction: string;
   type: string;
   profile: string;
-  runtimeId: string;
+  runtimeKey: string;
   sessionId: string;
-  runId: string;
+  runKey: string;
   invocationId: string;
   adapterType: string;
   durationMs?: number;
@@ -71,9 +71,9 @@ export function normalizeEvent(value: Record<string, unknown>, raw: string): Ins
     direction: normalizeDirection(stringValue(value.direction) || stringValue(data.direction)),
     type,
     profile: stringValue(value.profile),
-    runtimeId: stringValue(value.runtime_id),
-    sessionId: firstString(value.agent_session_id, value.session_id, payload.agent_session_id, payload.session_id, data.agent_session_id, data.session_id),
-    runId: stringValue(value.agent_run_id),
+    runtimeKey: stringValue(value.runtime_key),
+    sessionId: firstString(value.agent_session_key, value.session_id, payload.agent_session_key, payload.session_id, data.agent_session_key, data.session_id),
+    runKey: stringValue(value.run_key),
     invocationId: firstString(value.invocation_id, payload.invocation_id, data.invocation_id),
     adapterType: stringValue(value.adapter_type),
     durationMs: firstNumber(value.duration_ms, payload.duration_ms, data.duration_ms),
@@ -99,9 +99,9 @@ export function normalizeLog(value: Record<string, unknown>, index: number): Ins
     direction: normalizeDirection(stringValue(data.direction)),
     type,
     profile: stringValue(value.profile) || stringValue(data.profile),
-    runtimeId: stringValue(value.runtime_id) || stringValue(data.runtime_id),
-    sessionId: firstString(value.agent_session_id, data.agent_session_id, data.session_id),
-    runId: stringValue(value.run_id),
+    runtimeKey: stringValue(value.runtime_key) || stringValue(data.runtime_key),
+    sessionId: firstString(value.agent_session_key, data.agent_session_key, data.session_id),
+    runKey: stringValue(value.run_key),
     invocationId: firstString(value.invocation_id, data.invocation_id),
     adapterType: stringValue(value.adapter_type) || stringValue(data.adapter_type),
     durationMs: firstNumber(value.duration_ms, data.duration_ms),

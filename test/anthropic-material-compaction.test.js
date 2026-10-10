@@ -37,7 +37,7 @@ test('compaction receipt preserves the initial lower-bound qualifier after later
  let kind='exact';let saved;
  const port={model:'fixture',contextWindow:1024,outputReserveTokens:64,summaryInputLimit:512,toolsDisabled:true,
   get inputTokenCountKind(){return kind},measureInputTokens:async(text)=>{kind=text==='original'?'lower_bound':'exact';return text==='original'?1025:100},countTokens:async(text)=>text==='original'?200:10,summarize:async()=> 'facts'};
- const result=await compactContextMaterials({runId:'lower-bound',material:'original',protectedIdentity:'protected',sourceRefs:[],signal:AbortSignal.timeout(1000),port,store:{load:async()=>undefined,save:async(_id,value)=>{saved=value;return value}}});
+ const result=await compactContextMaterials({runKey:'lower-bound',material:'original',protectedIdentity:'protected',sourceRefs:[],signal:AbortSignal.timeout(1000),port,store:{load:async()=>undefined,save:async(_id,value)=>{saved=value;return value}}});
  assert.equal(result.receipt.inputTokenCountKind,'lower_bound');assert.equal(saved.inputTokens,1025);
 });
 

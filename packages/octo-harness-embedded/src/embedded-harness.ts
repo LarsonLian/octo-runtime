@@ -153,7 +153,7 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
           });
           successful.push(profile);
           this.#patchProfile(tenant.id, {
-            runtimeId: enrolled.runtimeId,
+            runtimeKey: enrolled.runtimeKey,
             state: "connecting",
             reasonCode: undefined,
             observedAt: Date.now()
@@ -243,7 +243,7 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
     const runtimes = status.agentWork?.runtimes ?? [];
     let connected = 0;
     const profiles = this.#snapshot.profiles.map(profile => {
-      const runtime = runtimes.find(item => item.profile === profile.profile || item.runtimeId === profile.runtimeId);
+      const runtime = runtimes.find(item => item.profile === profile.profile || item.runtimeKey === profile.runtimeKey);
       if (runtime?.connected) connected += 1;
       if (profile.state === "error" || profile.state === "unauthorized") return profile;
       return {

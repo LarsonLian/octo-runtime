@@ -110,12 +110,12 @@ test("failure payload is backwards compatible and excludes untrusted secrets", (
 });
 
 test("Agent Run UUID deterministically owns the diagnostic UUID", () => {
-  const runId = "arun_35c4ffc5db9940c9be7ce3a894819ae3";
+  const runKey = "arun_35c4ffc5db9940c9be7ce3a894819ae3";
   const classified = classifyFailure({ code: "RPC_TIMEOUT" }, {
     defaultDomain: "adapter",
     stage: "adapter.invoke",
     source,
-    runId,
+    runKey,
     diagnosticId: "diag_0123456789abcdef0123456789abcdef"
   });
   assert.equal(classified.diagnosticId, "diag_35c4ffc5db9940c9be7ce3a894819ae3");
@@ -127,7 +127,7 @@ test("Agent Run UUID deterministically owns the diagnostic UUID", () => {
     defaultDomain: "provider",
     stage: "provider.invoke",
     source,
-    runId,
+    runKey,
     preserveExisting: true
   });
   assert.equal(payload.failure.diagnosticId, "diag_35c4ffc5db9940c9be7ce3a894819ae3");

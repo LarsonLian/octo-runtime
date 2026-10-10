@@ -55,7 +55,7 @@ try {
       assert.ok(await page.locator("[data-index]").count() < 60);
       assert.equal(websocketCount, 1);
 
-      await page.locator("#query").fill("runtime_id=runtime-online-test");
+      await page.locator("#query").fill("runtime_key=runtime-online-test");
       await page.locator("[data-index]").first().waitFor();
       assert.equal(websocketCount, 1);
       await page.getByRole("button", { name: "重置" }).click();
@@ -118,7 +118,7 @@ try {
       await expandedRow.getByRole("button", { name: "仅看此类事件" }).click();
       assert.match(await page.locator("#query").getAttribute("value") ?? "", /^type=/);
       await expandedRow.getByRole("button", { name: "过滤此次 AgentRun" }).click();
-      assert.match(await page.locator("#query").getAttribute("value") ?? "", /^agent_run_id=/);
+      assert.match(await page.locator("#query").getAttribute("value") ?? "", /^run_key=/);
       await expandedRow.getByRole("button", { name: "过滤此次 AgentSession" }).click();
       assert.match(await page.locator("#query").getAttribute("value") ?? "", /^session_id=/);
       await expandedRow.getByRole("button", { name: "过滤当前 Stage" }).click();

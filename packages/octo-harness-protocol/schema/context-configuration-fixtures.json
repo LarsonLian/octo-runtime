@@ -151,7 +151,7 @@
           "name": "selection",
           "payload": {
             "mode": "explicit",
-            "runtime_id": "device-b"
+            "runtime_key": "device-b"
           }
         }
       ]
@@ -164,7 +164,7 @@
           "name": "selection",
           "payload": {
             "mode": "explicit",
-            "runtime_id": "device-b",
+            "runtime_key": "device-b",
             "offline_behavior": "wait"
           }
         }
@@ -205,7 +205,7 @@
           "name": "selection",
           "payload": {
             "mode": "explicit",
-            "runtime_id": "device-c"
+            "runtime_key": "device-c"
           }
         }
       ]
@@ -246,7 +246,7 @@
           "name": "selection",
           "payload": {
             "mode": "explicit",
-            "runtime_id": "device-a",
+            "runtime_key": "device-a",
             "offline_behavior": "fail"
           }
         }

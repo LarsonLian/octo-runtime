@@ -47,7 +47,7 @@ function sequence(value: unknown): boolean { return Number.isSafeInteger(value) 
 function validateTaskNotification(message: Record<string, unknown>): void {
   const task = object(message.task), event = object(message.taskEvent);
   knownFields(task, ["id", "title", "status", "row_version", "handler_epoch"], ["responsible_party", "current_handler"]);
-  knownFields(event, ["id", "sequence", "evt_type", "actor", "summary", "payload"], ["task_conversation_id", "source_run_id"]);
+  knownFields(event, ["id", "sequence", "evt_type", "actor", "summary", "payload"], ["task_conversation_key", "source_run_key"]);
   if (task.id !== message.sourceId || typeof task.title !== "string" || !["backlog", "todo", "in_progress", "done", "cancelled"].includes(String(task.status)) || !sequence(task.row_version) || !sequence(task.handler_epoch)) throw new Error("invalid task snapshot");
   const actor = object(event.actor);
   if (typeof actor.type !== "string" || typeof actor.id !== "string" || typeof event.summary !== "string") throw new Error("invalid event actor or summary");

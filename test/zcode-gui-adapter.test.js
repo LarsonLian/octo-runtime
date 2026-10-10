@@ -12,8 +12,8 @@ const fixture = fileURLToPath(new URL("../test-support/zcode/fake-zcode-app-serv
 function request(agentConfig = {}, providerSession) {
   return { protocolVersion: 2,
     invocationId: "inv-zcode",
-    agentSessionId: "agent-session-zcode",
-    runId: "run-zcode",
+    agentSessionKey: "agent-session-zcode",
+    runKey: "run-zcode",
     prompt: "write a file",
     modelInput: "write a file",
     workdir: process.cwd(),

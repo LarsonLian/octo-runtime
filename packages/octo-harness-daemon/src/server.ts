@@ -301,7 +301,7 @@ export async function startDaemonServer({
     async *invoke(adapterType, request) {
       await invocationManifest.begin({
         invocationId: request.invocationId,
-        runId: request.runId,
+        runKey: request.runKey,
         adapterType
       });
       try {
@@ -311,15 +311,15 @@ export async function startDaemonServer({
           direction: "outbound",
           type: event.type,
           profile: optionalString(request.runMetadata?.profile),
-          runtimeId: optionalString(request.runMetadata?.runtimeId),
-          runId: request.runId,
-          agentSessionId: request.agentSessionId,
+          runtimeKey: optionalString(request.runMetadata?.runtimeKey),
+          runKey: request.runKey,
+          agentSessionKey: request.agentSessionKey,
           invocationId: request.invocationId,
           adapterType,
           payload: event
         });
           if (["run.completed", "run.failed", "run.cancelled"].includes(event.type)) {
-            observability.clearRpcCorrelationForRun(request.runId);
+            observability.clearRpcCorrelationForRun(request.runKey);
           }
           yield event;
         }
@@ -332,7 +332,7 @@ export async function startDaemonServer({
             scope: "adapter-host.lifecycle",
             event: "invocation_manifest.cleanup_failed",
             message: "failed to remove completed invocation from the manifest",
-            runId: request.runId,
+            runKey: request.runKey,
             invocationId: request.invocationId,
             adapterType,
             data: { error: errorMessage(error) }
@@ -459,8 +459,8 @@ export async function startDaemonServer({
   const inspect = new InspectServer(
     events,
     inspectStatus,
-    runId => observability.query({
-      ...(runId ? { runId } : {}),
+    runKey => observability.query({
+      ...(runKey ? { runKey } : {}),
       includeSensitive: false,
       limit: 500,
       maxBytes: 2 * 1024 * 1024
@@ -469,28 +469,28 @@ export async function startDaemonServer({
   );
   // HarnessDaemon events mark execution, rather than submission, boundaries.
   // A control request can therefore be acknowledged before `run.started` while
-  // the resulting Run still remains correlated by its stable runId.
-  daemon.on("agent_run.started", ({ agentRunId }: { agentRunId: string }) => {
-    const run = store.getAgentRun(agentRunId);
+  // the resulting Run still remains correlated by its stable runKey.
+  daemon.on("agent_run.started", ({ runKey }: { runKey: string }) => {
+    const run = store.getAgentRun(runKey);
     observability.log({
       level: "info",
       scope: "run.execution",
       event: "run.execution.started",
       message: "run execution started",
-      runId: agentRunId,
-      agentSessionId: run?.agentSessionId,
+      runKey: runKey,
+      agentSessionKey: run?.agentSessionKey,
       data: { priorStatus: run?.status ?? "unknown" }
     });
   });
-  daemon.on("agent_run.terminal", ({ agentRunId, status }: { agentRunId: string; status?: string }) => {
-    const run = store.getAgentRun(agentRunId);
+  daemon.on("agent_run.terminal", ({ runKey, status }: { runKey: string; status?: string }) => {
+    const run = store.getAgentRun(runKey);
     observability.log({
       level: status === "completed" ? "info" : "error",
       scope: "run.execution",
       event: status === "completed" ? "run.execution.completed" : "run.execution.failed",
       message: status === "completed" ? "run execution completed" : "run execution ended unsuccessfully",
-      runId: agentRunId,
-      agentSessionId: run?.agentSessionId,
+      runKey: runKey,
+      agentSessionKey: run?.agentSessionKey,
       data: { status: status ?? run?.status ?? "unknown" }
     });
   });
@@ -681,8 +681,8 @@ async function handleRequestLine({
         scope: "control.request",
         event: "control.request.received",
         message: "daemon control request received",
-        runId: optionalString(request.params?.agentRunId),
-        agentSessionId: optionalString(request.params?.agentSessionId),
+        runKey: optionalString(request.params?.runKey),
+        agentSessionKey: optionalString(request.params?.agentSessionKey),
         data: {
           connection_id: connectionId,
           request_id: typeof request.id === "string" || typeof request.id === "number" ? request.id : null,
@@ -705,8 +705,8 @@ async function handleRequestLine({
         scope: "control.request",
         event: "control.request.completed",
         message: "daemon control request completed",
-        runId: optionalString(resultRecord.agentRunId) ?? optionalString(request.params?.agentRunId),
-        agentSessionId: optionalString(request.params?.agentSessionId),
+        runKey: optionalString(resultRecord.runKey) ?? optionalString(request.params?.runKey),
+        agentSessionKey: optionalString(request.params?.agentSessionKey),
         adapterType: resultAgent ? optionalString(resultAgent.adapterType) : undefined,
         data: {
           connection_id: connectionId,
@@ -721,8 +721,8 @@ async function handleRequestLine({
       scope: "control.request",
       event: "control.request.failed",
       message: "daemon control request failed",
-      runId: optionalString(request?.params?.agentRunId),
-      agentSessionId: optionalString(request?.params?.agentSessionId),
+      runKey: optionalString(request?.params?.runKey),
+      agentSessionKey: optionalString(request?.params?.agentSessionKey),
       data: {
         connection_id: connectionId,
         method: request?.method ?? "unknown",
@@ -752,13 +752,13 @@ async function streamLiveEvents({
   events: LiveEventBus;
 }): Promise<void> {
   const params = request.params ?? {};
-  const runId = optionalString(params.runId);
+  const runKey = optionalString(params.runKey);
   const source = optionalLiveEventSource(params.source);
   const follow = params.follow === true;
   let count = 0;
   const controller = new AbortController();
   socket.once("close", () => controller.abort());
-  for await (const event of events.subscribeBytes({ runId, source }, follow, controller.signal)) {
+  for await (const event of events.subscribeBytes({ runKey, source }, follow, controller.signal)) {
     if (socket.destroyed) return;
     await writeSocketEvent(socket, request.id, event);
     count += 1;
@@ -907,7 +907,7 @@ async function dispatch({
       // socket is local. Callers must explicitly cross the privacy boundary.
       return observability.query({
         requestId: optionalString(params.requestId),
-        runId: optionalString(params.runId),
+        runKey: optionalString(params.runKey),
         invocationId: optionalString(params.invocationId),
         includeSensitive: params.includeSensitive === true,
         ...(typeof params.limit === "number" ? { limit: params.limit } : {})
@@ -936,15 +936,15 @@ async function dispatch({
     case "agent_session.list":
       return store.listAgentSessions();
     case "agent_session.get":
-      return store.getAgentSession(requiredString(params.agentSessionId, "agentSessionId")) ?? null;
+      return store.getAgentSession(requiredString(params.agentSessionKey, "agentSessionKey")) ?? null;
     case "agent_run.list":
       return store.listAgentRuns();
     case "agent_run.get":
-      return store.getAgentRun(requiredString(params.agentRunId, "agentRunId")) ?? null;
+      return store.getAgentRun(requiredString(params.runKey, "runKey")) ?? null;
     case "agent_run.wait":
-      return daemon.waitForRun(requiredString(params.agentRunId, "agentRunId"));
+      return daemon.waitForRun(requiredString(params.runKey, "runKey"));
     case "agent_run.cancel":
-      return daemon.cancelRun(requiredString(params.agentRunId, "agentRunId"), optionalString(params.reason));
+      return daemon.cancelRun(requiredString(params.runKey, "runKey"), optionalString(params.reason));
     default:
       throw Object.assign(new Error(`unknown daemon method: ${request.method}`), { code: "method_not_found" });
   }
@@ -999,9 +999,9 @@ function publishAdapterObservation(events: LiveEventBus, value: unknown): void {
     direction: "outbound",
     type: value.type,
     profile: optionalString(value.profile),
-    runtimeId: optionalString(value.runtimeId),
-    runId: optionalString(value.runId),
-    agentSessionId: optionalString(value.agentSessionId),
+    runtimeKey: optionalString(value.runtimeKey),
+    runKey: optionalString(value.runKey),
+    agentSessionKey: optionalString(value.agentSessionKey),
     invocationId: optionalString(value.invocationId),
     adapterType: optionalString(value.adapterType),
     payload: value.payload

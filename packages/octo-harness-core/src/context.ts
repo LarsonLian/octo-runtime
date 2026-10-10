@@ -128,7 +128,7 @@ export function assertRunSnapshot(run: AgentRun, previous?: AgentRun): void {
 function immutableRun(run: AgentRun): unknown {
   return {
     id: run.id,
-    agentSessionId: run.agentSessionId,
+    agentSessionKey: run.agentSessionKey,
     runNo: run.runNo,
     trigger: run.trigger,
     input: run.input,

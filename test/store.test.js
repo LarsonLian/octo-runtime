@@ -15,8 +15,8 @@ for (const kind of ["memory", "sqlite"]) {
       const engine = new HarnessEngine({ store, host: { list: () => [{ type: "test" }] } });
       const agent = await engine.registerAgent({ agentSource: "provisioned", name: "local", defaultContext: context, config: { providerAgentId: "original" } });
       const submitted = await engine.submitAgentRun({
-        namespace: "local", agentId: agent.id, sessionKey: "v1/task/store",
-        trigger: { kind: "manual", occurrenceId: "store" }, input: { prompt: "hello" },
+        namespace: "local", agentKey: agent.id, sessionKey: "v1/task/store",
+        trigger: { kind: "manual", occurrenceKey: "store" }, input: { prompt: "hello" },
         context: { schema: context.schema, items: [] }
       });
       const run = store.getAgentRun(submitted.agentRun.id);
@@ -59,12 +59,12 @@ test("SQLite reopen retains the submitted Context, defaults version and frozen p
     let engine = new HarnessEngine({ store, host });
     const agent = await engine.registerAgent({ agentSource: "provisioned", name: "persisted", defaultContext: context });
     const input = {
-      namespace: "local", agentId: agent.id, sessionKey: "v1/task/reopen",
-      trigger: { kind: "manual", occurrenceId: "reopen" }, input: { prompt: "hello" },
+      namespace: "local", agentKey: agent.id, sessionKey: "v1/task/reopen",
+      trigger: { kind: "manual", occurrenceKey: "reopen" }, input: { prompt: "hello" },
       context: { schema: context.schema, items: [{ namespace: "octo.execution", name: "model", payload: { selection: { id: "frozen" } } }] }
     };
     const submitted = await engine.submitAgentRun(input);
-    await engine.replaceDefaultContext({ agentId: agent.id, expectedVersion: 1, context: {
+    await engine.replaceDefaultContext({ agentKey: agent.id, expectedVersion: 1, context: {
       schema: context.schema, items: context.items.map(item => item.name === "approval_policy" ? { ...item, payload: { mode: "full_access" } } : item)
     } });
     store.close();

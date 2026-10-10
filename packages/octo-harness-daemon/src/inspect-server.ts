@@ -28,7 +28,7 @@ export interface InspectServerInfo {
 export class InspectServer {
   readonly #events: LiveEventBus;
   readonly #status: () => unknown;
-  readonly #logs: (runId?: string) => Promise<unknown>;
+  readonly #logs: (runKey?: string) => Promise<unknown>;
   readonly #host: string;
   readonly #port?: number;
   readonly #diagnostics?: () => Promise<unknown>;
@@ -42,7 +42,7 @@ export class InspectServer {
   constructor(
     events: LiveEventBus,
     status: () => unknown,
-    logs: (runId?: string) => Promise<unknown>,
+    logs: (runKey?: string) => Promise<unknown>,
     options: InspectServerOptions = {}
   ) {
     this.#events = events;
@@ -125,7 +125,7 @@ export class InspectServer {
           return;
         }
         this.#logRequestActive = true;
-        void this.#logs(url.searchParams.get("runId") || undefined).then(logs => {
+        void this.#logs(url.searchParams.get("runKey") || undefined).then(logs => {
           const encoded = boundedJsonArray(logs, MAX_LOG_RESPONSE_BYTES);
           response.writeHead(200, {
             "Content-Type": "application/json; charset=utf-8",
@@ -168,7 +168,7 @@ export class InspectServer {
       const address = server.address();
       if (!address || typeof address === "string") return client.close();
       const url = new URL(request.url ?? "/", `http://${urlAuthority(host, address.port)}`);
-      const runId = url.searchParams.get("runId") || undefined;
+      const runKey = url.searchParams.get("runKey") || undefined;
       const sourceValue = url.searchParams.get("source") || undefined;
       const source = isSource(sourceValue) ? sourceValue : undefined;
       const replaySnapshot = url.searchParams.get("replay") !== "0";
@@ -178,7 +178,7 @@ export class InspectServer {
       void (async () => {
         try {
           for await (const event of this.#events.subscribeBytes(
-            { runId, source },
+            { runKey, source },
             true,
             controller.signal,
             replaySnapshot

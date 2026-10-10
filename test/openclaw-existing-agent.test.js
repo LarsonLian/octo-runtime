@@ -62,7 +62,7 @@ for (const { agentSource, target, workdir } of [
    return {};
   }
  };
- const request={protocolVersion:2,invocationId:"i",runId:"r",agentSessionId:"s",workdir,prompt:"work",approvalMode:"full_access",agentSource, agentConfig:{providerAgentId:target,providerOptions:{OPENCLAW_GATEWAY_URL:"ws://127.0.0.1:18789",OPENCLAW_GATEWAY_TOKEN:"fixture",OPENCLAW_GATEWAY_DEVICE_ID:"d",OPENCLAW_GATEWAY_PUBLIC_KEY:"p",OPENCLAW_GATEWAY_PRIVATE_KEY:"k"}}};
+ const request={protocolVersion:2,invocationId:"i",runKey:"r",agentSessionKey:"s",workdir,prompt:"work",approvalMode:"full_access",agentSource, agentConfig:{providerAgentId:target,providerOptions:{OPENCLAW_GATEWAY_URL:"ws://127.0.0.1:18789",OPENCLAW_GATEWAY_TOKEN:"fixture",OPENCLAW_GATEWAY_DEVICE_ID:"d",OPENCLAW_GATEWAY_PUBLIC_KEY:"p",OPENCLAW_GATEWAY_PRIVATE_KEY:"k"}}};
  const events=[];
  for await(const event of createOpenClawAdapter({clientFactory:()=>client}).invoke(request))events.push(event);
  assert.equal(events.at(-1).type,"run.completed");
@@ -77,7 +77,7 @@ test("local Harness dispatch freezes the Context target ahead of legacy agent co
  const host={list:()=>[{type:"openclaw"}],async *invoke(_type,request){requests.push(request);yield {protocolVersion:2,type:"run.completed",payload:{}};}};
  const engine=new HarnessEngine({store:new MemoryStore(),host});
  const agent=await engine.registerAgent({name:"existing",agentSource:"provisioned",config:{providerAgentId:"old-runner"},defaultContext:{schema:"octo.context-envelope/v3",items:[ { namespace: "octo.execution", name: "adapter", payload: {type:"openclaw",provider_agent_id:"main"} }, { namespace: "octo.execution", name: "workspace", payload: {mode:"fixed",path:"/workspace"} }, { namespace: "octo.security", name: "approval_policy", payload: {mode:"full_access"} } ]}});
- const submitted=await engine.submitAgentRun({namespace:"local",agentId:agent.id,sessionKey:"v1/task/existing",trigger:{kind:"manual",occurrenceId:"once"},input:{prompt:"work"},context:{schema:"octo.context-envelope/v3",items:[]}});
+ const submitted=await engine.submitAgentRun({namespace:"local",agentKey:agent.id,sessionKey:"v1/task/existing",trigger:{kind:"manual",occurrenceKey:"once"},input:{prompt:"work"},context:{schema:"octo.context-envelope/v3",items:[]}});
  await engine.executeRun(submitted.agentRun.id);
  assert.equal(requests[0].agentConfig.providerAgentId,"main");
  assert.equal(submitted.agentRun.resolvedExecutionPlan.provider_agent_id,"main");
@@ -90,7 +90,7 @@ test("embedded local discovery ignores an unusable historical OpenClaw profile",
  await mkdir(join(home,"default","credentials"));
  await writeFile(join(home,"config.json"),JSON.stringify({schema_version:1,default_profile:"default"}));
  await writeFile(join(home,"default","config.json"),JSON.stringify({schema_version:1,profile:"default",agent_work_url:"https://worker.example",adapters:{openclaw:{execution:{provider_agent_id:"old-runner",provider_options:{},credential_ref:"credentials/deleted.json"}}}}));
- await writeFile(join(home,"default","identity","runtime.json"),JSON.stringify({schema_version:1,profile:"default",runtime_id:"r"}));
+ await writeFile(join(home,"default","identity","runtime.json"),JSON.stringify({schema_version:1,profile:"default",runtime_key:"r"}));
  await writeFile(join(home,"default","credentials","runtime-token.json"),JSON.stringify({schema_version:1,access_token:"fixture"}));
  assert.throws(()=>loadManagedAgentWorksFromRoot(home,["default"]));
  const runtimes=loadManagedAgentWorksFromRoot(home,["default"],{discoverLocalOpenClaw:true});

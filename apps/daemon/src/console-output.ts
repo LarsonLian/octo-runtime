@@ -75,8 +75,8 @@ function concisePresentation(record: RecordEnvelope): Presentation | undefined {
 function conciseDetail(record: RecordEnvelope): string | undefined {
   const data = objectValue(record.data);
   const parts = [
-    pair("runtime", stringValue(data?.runtime_id)),
-    pair("run", stringValue(record.run_id)),
+    pair("runtime", stringValue(data?.runtime_key)),
+    pair("run", stringValue(record.run_key)),
     pair("adapter", stringValue(record.adapter_type)),
     pair("pid", numberValue(data?.pid)),
     pair("type", stringValue(data?.command_type)),

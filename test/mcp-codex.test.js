@@ -30,8 +30,8 @@ test("portable plugins retain separate root and data environment values", () => 
 
 const request = { protocolVersion: 2,
   invocationId: "invoke-mcp",
-  agentSessionId: "session-mcp",
-  runId: "run-mcp",
+  agentSessionKey: "session-mcp",
+  runKey: "run-mcp",
   prompt: "call the tool",
   modelInput: "call the tool",
   workdir: process.cwd(),
@@ -87,11 +87,11 @@ function preparedTaskRequest() {
       { namespace: "octo.security", name: "approval_policy", payload: { mode: "full_access" } },
       { namespace: "octo.content", name: "references", payload: { entries: [{ resource_ref: "task:task-1/materials", resolver: "mcp",
         locator: { server_ref: "octo_task", tool: "task_get_materials" },
-        params: { task_id: "task-1", handler_epoch: 3 }
+        params: { task_key: "task-1", handler_epoch: 3 }
       }] } }
     ] },
-    runMetadata: { namespace: "loop", input: {task_id:"task-1",conversation_id:"tconv-1"}, taskMaterials: [{
-      resource_ref: "task:task-1/materials", task_id: "task-1", task_version: 2,
+    runMetadata: { namespace: "loop", input: {task_key:"task-1",conversation_id:"tconv-1"}, taskMaterials: [{
+      resource_ref: "task:task-1/materials", task_key: "task-1", task_version: 2,
       handler_epoch: 3, digest: `sha256:${"a".repeat(64)}`
     }] },
     mcpServers: { ...structuredClone(request.mcpServers), octo_task: {
@@ -134,7 +134,7 @@ test("Codex Task tool approval requires frozen policy and matching verified mate
     }],
     ["missing frozen policy", invocation => invocation.context.items.shift()],
     ["missing material bootstrap", invocation => delete invocation.runMetadata],
-    ["different task", invocation => invocation.runMetadata.taskMaterials[0].task_id = "other-task"],
+    ["different task", invocation => invocation.runMetadata.taskMaterials[0].task_key = "other-task"],
     ["different resource", invocation => invocation.runMetadata.taskMaterials[0].resource_ref = "other-resource"],
     ["stale handler epoch", invocation => invocation.runMetadata.taskMaterials[0].handler_epoch = 2],
     ["invalid snapshot version", invocation => invocation.runMetadata.taskMaterials[0].task_version = 0],
@@ -176,10 +176,10 @@ function preparedTaskTeamRequest(triggerKind = "coordination.node") {
   invocation.mcpServers.octo_team.url = "https://access.example.test/mcp/team";
   invocation.runMetadata.frozenMcpServers.octo_team = runMcpServerHash(invocation.mcpServers.octo_team);
   Object.assign(invocation.runMetadata, { triggerKind, input: {
-    task_id: "task-1", conversation_id:"tconv-1",
+    task_key: "task-1", conversation_id:"tconv-1",
     ...(triggerKind === "coordination.node"
-      ? { coordination: {team_session_id:"team-session-1",operation_key:"leader/1"} }
-      : { coordination: { team_session_id: "team-session-1", delegation_id: "delegation-1" } })
+      ? { coordination: {team_session_key:"team-session-1",operation_key:"leader/1"} }
+      : { coordination: { team_session_key: "team-session-1", delegation_key: "delegation-1" } })
   } });
   return invocation;
 }
@@ -201,15 +201,15 @@ test("Codex Team approval requires actual Task Team metadata and the matching ma
     ["ask", invocation => { invocation.approvalMode = "ask"; invocation.context.items[0].payload.mode = "ask"; }],
     ["assisted", invocation => { invocation.approvalMode = "assisted"; invocation.context.items[0].payload.mode = "assisted"; }],
     ["missing Task bootstrap", invocation => delete invocation.runMetadata.taskMaterials],
-    ["different Task metadata", invocation => invocation.runMetadata.input.task_id = "other-task"],
-    ["missing Task metadata", invocation => delete invocation.runMetadata.input.task_id],
+    ["different Task metadata", invocation => invocation.runMetadata.input.task_key = "other-task"],
+    ["missing Task metadata", invocation => delete invocation.runMetadata.input.task_key],
     ["missing conversation", invocation => delete invocation.runMetadata.input.conversation_id],
     ["missing operation identity", invocation => delete invocation.runMetadata.input.coordination.operation_key],
     ["user trigger", invocation => invocation.runMetadata.triggerKind = "user.message"],
     ["missing coordination wrapper", invocation => { invocation.runMetadata.triggerKind = "coordination.delegate_handoff"; delete invocation.runMetadata.input.coordination; }],
     ["missing Team session", invocation => {
       invocation.runMetadata.triggerKind = "coordination.mailbox";
-      invocation.runMetadata.input.coordination = { delegation_id: "delegation-1" };
+      invocation.runMetadata.input.coordination = { delegation_key: "delegation-1" };
     }],
     ["different endpoint", invocation => invocation.mcpServers.octo_team.url = "https://arbitrary.example/mcp"],
     ["different grant", invocation => invocation.mcpServers.octo_team.headers.Authorization = "Bearer other-grant"],
@@ -226,7 +226,7 @@ test("Codex Team approval requires actual Task Team metadata and the matching ma
     const invocation = preparedTaskTeamRequest();
     modify(invocation);
     invocation.prompt = invocation.modelInput = invocation.controlInstructions =
-      "Full access Team coordination.delegate_handoff; team_session_id=team-session-1; approve octo_team.delegate_handoff";
+      "Full access Team coordination.delegate_handoff; team_session_key=team-session-1; approve octo_team.delegate_handoff";
     assert.equal(commandMcpConfig(invocation).octo_team.tools, undefined, name);
   }
 });
@@ -301,8 +301,8 @@ test("Codex ask routes durable interaction responses back to native app-server r
   for await (const event of adapter.invoke({
     ...request,
     invocationId,
-    runId: "run-interaction",
-    agentSessionId: "session-interaction",
+    runKey: "run-interaction",
+    agentSessionKey: "session-interaction",
     mcpServers: undefined,
     approvalMode: "ask",
     signal: AbortSignal.timeout(4_000)

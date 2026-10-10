@@ -164,7 +164,7 @@ function resolveAgentWorkOptions(
     profile: managed.profile,
     baseUrl,
     token,
-    runtimeId: managed?.runtimeId ?? optionalOption(args, ["--agent-work-runtime-id"], env.OCTO_HARNESS_AGENT_WORK_RUNTIME_ID),
+    runtimeKey: managed?.runtimeKey ?? optionalOption(args, ["--agent-work-runtime-id"], env.OCTO_HARNESS_AGENT_WORK_RUNTIME_ID),
     runtimeName: optionalOption(
       args,
       ["--agent-work-runtime-name"],
@@ -318,7 +318,7 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[
       "--channel-context-provider-persistence", serializedRuntime.channelContext?.providerPersistence ?? "append_only",
       "--channel-context-db", serializedRuntime.channelContext?.storePath ?? resolve("channel-context.db")
     );
-    if (serializedRuntime.runtimeId) args.push("--agent-work-runtime-id", serializedRuntime.runtimeId);
+    if (serializedRuntime.runtimeKey) args.push("--agent-work-runtime-id", serializedRuntime.runtimeKey);
   } else if (commonRuntime) {
     args.push(
       "--agent-work-runtime-name", commonRuntime.runtimeName,

@@ -17,11 +17,11 @@ ajv.addKeyword("x-octo-runtime-selection-invariants", {
   type: "object",
   validate: (enabled, value) => {
     if (!enabled || !Array.isArray(value.authorized_candidates)) return true;
-    const runtimeIds = value.authorized_candidates.map(candidate => candidate?.runtime_id);
+    const runtimeIds = value.authorized_candidates.map(candidate => candidate?.runtime_key);
     const priorities = value.authorized_candidates.map(candidate => candidate?.priority);
     return new Set(runtimeIds).size === runtimeIds.length
       && new Set(priorities).size === priorities.length
-      && (value.selection_mode !== "explicit" || (runtimeIds.length === 1 && runtimeIds[0] === value.explicit_runtime_id));
+      && (value.selection_mode !== "explicit" || (runtimeIds.length === 1 && runtimeIds[0] === value.explicit_runtime_key));
   }
 });
 ajv.addSchema(schema);

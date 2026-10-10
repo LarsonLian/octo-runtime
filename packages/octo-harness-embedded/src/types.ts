@@ -48,7 +48,7 @@ export interface StartAccountOptions {
 export interface ProfileHealth {
   tenantId: string;
   profile: string;
-  runtimeId?: string;
+  runtimeKey?: string;
   state: "pending" | "enrolling" | "connecting" | "online" | "offline" | "unauthorized" | "error";
   reasonCode?: string;
   observedAt: number;
