@@ -98,7 +98,7 @@ for (const [name, selection] of [["explicit Unicode target", resolvedRuntimeSele
       assert.equal(fixture.receipts[0].accepted, true);
       assert.equal(fixture.registrations, 1);
       assert.equal(fixture.invocations[0].runMetadata.runtimeId, runtimeId);
-      assert.equal(fixture.invocations[0].runMetadata.schemaVersion, 6);
+      assert.equal(fixture.invocations[0].runMetadata.schemaVersion, 7);
     } finally {
       await fixture.close();
     }
@@ -150,7 +150,7 @@ async function startFixture({ rejectRegistration = false, openClawProbeState } =
     const registration = JSON.parse(body);
     fixture.lastCapabilities = registration.capabilities;
     assert.deepEqual(registration.capabilities.run_contract, RUNTIME_RUN_CONTRACT);
-    assert.equal(registration.capabilities.run_contract.schema_version, 6);
+    assert.equal(registration.capabilities.run_contract.schema_version, 7);
     assert.equal(registration.capabilities.run_contract.routing_schema, "octo.runtime-selection/v2");
     fixture.registrations += 1;
     response.writeHead(rejectRegistration ? 400 : 200, { "Content-Type": "application/json" });

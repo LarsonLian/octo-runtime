@@ -196,7 +196,7 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
   assert.match(mapped.request.modelInput, /Ada: The failing case is reset\./);
   assert.deepEqual(mapped.request.context, source.effective_context);
   assert.notEqual(mapped.request.context, source.effective_context);
-  assert.equal(mapped.request.runMetadata.schemaVersion, 6);
+  assert.equal(mapped.request.runMetadata.schemaVersion, 7);
   assert.equal(mapped.request.runMetadata.agentRevisionId, "revision-1");
   assert.equal(mapped.request.context.agentRevisionId, undefined);
   assert.equal(Object.hasOwn(mapped.request, "appendInstructions"), false);

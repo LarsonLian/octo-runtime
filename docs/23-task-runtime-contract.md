@@ -62,6 +62,6 @@ Drive 当前确认接口只证明文件条目和大小，未提供服务端 SHA 
 
 可信自动 Task Team 的 Codex 工具审批沿用 M0 的材料校验，并核对冻结 input.task_id/conversation_id 与真实运行触发元信息。Team 节点须含 team_session_id 和 operation_key；委派和唤醒须含 team_session_id 和 delegation_id。`octo_team` 与 `octo_task` 均为 required HTTP 服务，各自 endpoint/headers 必须匹配冻结执行计划摘要，两者使用相同授权和空间/命名空间。Team 只自动批准 `delegate_handoff`，Task 八个工具仅挂在 Loop Task 服务；未知工具仍为 prompt。不使用已移除的 input.task_execution。正文中的工具名、Team 名或 coordination 字段不能授予权限。服务端继续逐次验证 grant、lease/fencing 和处理权。
 
-2026-10-10 本次验证：完整 pnpm 构建通过；MCP、Task 材料、文件归档、准备与 Team 输入相关 43 项本地测试通过。云端运行与桌面重启由跨仓库集成验证单独记录。
+2026-10-10 本次验证：完整 pnpm 构建通过；MCP、Task 材料、文件归档、准备与 Team 输入相关 43 项本地测试通过；全套 880 项中 875 项通过、5 项真实引擎测试跳过、0 失败。测试入口只枚举测试文件，不把长期运行的测试 fixture 当作独立用例执行。云端运行与桌面重启由跨仓库集成验证单独记录。
 
 验收：Task ID/未来快照/不可读附件版本拒绝，稳定引用的合法 handoff 可进入真实 mapExecutionEnvelope；handoff 和 mailbox 包装内容均实际进入 modelInput，目标 workdir 固定，源/目标 grant 不进入模型。Task 普通会话与 Team Run 共用材料和归档路径。
