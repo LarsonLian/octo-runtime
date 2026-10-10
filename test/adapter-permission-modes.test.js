@@ -9,12 +9,17 @@ import { adapterApprovalModes } from "@mininglamp-oss/octo-harness-protocol";
 
 const request = { protocolVersion: 2, invocationId: "permission-instance", agentSessionId: "session", runId: "run", prompt: "fixture", modelInput: "fixture", controlInstructions: "", workdir: process.cwd(), approvalMode: "ask", agentSource: "provisioned", agentConfig: {}, context: { schema: "octo.context-envelope/v3", items: [] } };
 
-test("every registered adapter advertises two or three executable permission modes and a human responder", async () => {
+test("registered adapters advertise executable permission modes and responders for interactive approvals", async () => {
   const manifest = JSON.parse(await readFile(new URL("../config/adapters.json", import.meta.url), "utf8"));
-  assert.equal(manifest.adapters.length, 11);
+  assert.equal(manifest.adapters.length, 12);
   for (const entry of manifest.adapters) {
     const adapter = (await import(entry.module))[entry.export];
     const modes = adapterApprovalModes(adapter.metadata.executionFeatures);
+    if (entry.type === "antigravity") {
+      assert.deepEqual(modes, ["full_access"]);
+      assert.equal(adapter.respondInteraction, undefined);
+      continue;
+    }
     assert.ok(modes.length >= 2 && modes.length <= 3, entry.type);
     assert.ok(modes.includes("ask") && modes.includes("full_access"), entry.type);
     assert.equal(typeof adapter.respondInteraction, "function", entry.type);

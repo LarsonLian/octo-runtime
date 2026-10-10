@@ -29,10 +29,11 @@ function AdapterIcon({ type }: { type: string }) {
   由主题文字色上色,保证明暗主题下可见。彩色图标(`monochrome` 缺省)自带品牌色。
 - `darkSvg` 存在时可在暗色主题下改用暗色变体(当前无图标使用)。
 
-## 覆盖的 adapter 类型(11,全部)
+## 覆盖的 adapter 类型(12,全部)
 
 | type | 名称 | 类型 |
 | --- | --- | --- |
+| `antigravity` | Antigravity | 彩色 |
 | `codex` | Codex | 彩色 |
 | `claude-code` | Claude Code | 彩色 |
 | `codebuddy` | CodeBuddy | 彩色 |
@@ -46,7 +47,7 @@ function AdapterIcon({ type }: { type: string }) {
 | `zcode-gui` | ZCode | 单色(ZCode 官方 Z 字形) |
 
 `config/adapters.json` 中的每个 adapter type 均有对应图标,`getAdapterIcon`
-对全部 11 类都返回结果。
+对全部 12 类都返回结果。
 
 `getAdapterIcon("zcode")` 兼容 Runtime 的简写,返回 `zcode-gui` 的同一个官方图标。
 
@@ -74,3 +75,4 @@ third-party redraws.
 - **zcode-gui**:使用 [ZCode 官方品牌素材](https://github.com/zerx-lab/zcode/tree/zcode/brand/logo)
   中的 `zcode-mark-mono.svg`,保留原始字形与比例,由消费方通过 mask 适配主题颜色。
 - **mcode**:使用 LobeHub 的 MiniMax 彩色 mark。
+- **antigravity**:使用 LobeHub 的 `antigravity-color.svg`，保留渐变 A 形、透明背景和 SVG filters。来源为 [lobe-icons](https://github.com/lobehub/lobe-icons)，本次定位 commit `c385b2b8d1f9e19aa86e628d4e23c91ee1111a47`；代码许可证为 MIT，品牌归属不变。实际素材校验值见接入验收记录。

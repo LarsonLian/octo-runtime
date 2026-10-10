@@ -11,6 +11,9 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-acp':
         specifier: workspace:*
         version: link:packages/octo-harness-adapter-acp
+      '@mininglamp-oss/octo-harness-adapter-antigravity':
+        specifier: workspace:*
+        version: link:packages/octo-harness-adapter-antigravity
       '@mininglamp-oss/octo-harness-adapter-claude-code':
         specifier: workspace:*
         version: link:packages/octo-harness-adapter-claude-code
@@ -236,6 +239,15 @@ importers:
         specifier: workspace:*
         version: link:../octo-harness-adapter-sdk
 
+  packages/octo-harness-adapter-antigravity:
+    dependencies:
+      '@mininglamp-oss/octo-harness-adapter-sdk':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-sdk
+      '@mininglamp-oss/octo-harness-protocol':
+        specifier: workspace:*
+        version: link:../octo-harness-protocol
+
   packages/octo-harness-adapter-claude-code:
     dependencies:
       '@mininglamp-oss/octo-harness-adapter-sdk':
@@ -268,6 +280,9 @@ importers:
 
   packages/octo-harness-adapter-host:
     dependencies:
+      '@mininglamp-oss/octo-harness-adapter-antigravity':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-antigravity
       '@mininglamp-oss/octo-harness-adapter-claude-code':
         specifier: workspace:*
         version: link:../octo-harness-adapter-claude-code

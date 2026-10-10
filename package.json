@@ -34,6 +34,7 @@
     "lint": "eslint apps packages"
   },
   "dependencies": {
+    "@mininglamp-oss/octo-harness-adapter-antigravity": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-claude-code": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-acp": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-codebuddy": "workspace:*",

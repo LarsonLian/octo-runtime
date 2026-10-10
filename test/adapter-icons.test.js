@@ -51,6 +51,16 @@ test("getAdapterIcon returns undefined for unknown types", () => {
   assert.equal(getAdapterIcon("does-not-exist"), undefined);
 });
 
+test("Antigravity preserves the LobeHub color mark and offline SVG filters", () => {
+  const icon = getAdapterIcon("antigravity");
+  assert.equal(icon.name, "Antigravity");
+  assert.notEqual(icon.monochrome, true);
+  assert.match(icon.svg, /#3186FF/);
+  assert.match(icon.svg, /lobe-icons-antigravity/);
+  assert.match(icon.svg, /viewBox="0 0 24 24"/);
+  assert.doesNotMatch(icon.svg, /https?:\/\/[^\s"<>]+\.(png|jpg)/);
+});
+
 test("ZCode runtime aliases resolve to the official monochrome mark", () => {
   const icon = getAdapterIcon("zcode-gui");
   assert.equal(getAdapterIcon("zcode"), icon);

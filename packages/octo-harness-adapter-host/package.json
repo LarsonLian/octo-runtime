@@ -13,6 +13,7 @@
     }
   },
   "dependencies": {
+    "@mininglamp-oss/octo-harness-adapter-antigravity": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-claude-code": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-codebuddy": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-codex": "workspace:*",

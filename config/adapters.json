@@ -11,6 +11,7 @@
     { "type": "openclaw", "module": "@mininglamp-oss/octo-harness-adapter-openclaw", "export": "openclawAdapter" },
     { "type": "qodercli", "module": "@mininglamp-oss/octo-harness-adapter-qodercli", "export": "qoderCliAdapter" },
     { "type": "qoderclicn", "module": "@mininglamp-oss/octo-harness-adapter-qoderclicn", "export": "qoderCliCnAdapter" },
-    { "type": "zcode-gui", "module": "@mininglamp-oss/octo-harness-adapter-zcode-gui", "export": "zcodeGuiAdapter" }
+    { "type": "zcode-gui", "module": "@mininglamp-oss/octo-harness-adapter-zcode-gui", "export": "zcodeGuiAdapter" },
+    { "type": "antigravity", "module": "@mininglamp-oss/octo-harness-adapter-antigravity", "export": "antigravityAdapter" }
   ]
 }
