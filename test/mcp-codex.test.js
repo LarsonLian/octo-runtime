@@ -113,7 +113,7 @@ test("Codex full_access approves only the registered tools of a bootstrapped Tas
   const config = commandMcpConfig(invocation);
   assert.equal(config.octo_task.default_tools_approval_mode, "prompt");
   assert.deepEqual(config.octo_task.tools, Object.fromEntries([
-    "task_get_materials", "task_authorize_material_snapshot", "task_read_attachment", "task_prepare_output", "task_commit_output",
+    "task_get", "task_get_materials", "task_authorize_material_snapshot", "task_read_attachment", "task_prepare_output", "task_commit_output",
     "task_fail_output", "task_apply_action", "task_create_child"
   ].map(tool => [tool, { approval_mode: "approve" }])));
   assert.equal(config["team.api"].tools, undefined);
@@ -141,6 +141,9 @@ test("Codex Task tool approval requires frozen policy and matching verified mate
     ["invalid digest", invocation => invocation.runMetadata.taskMaterials[0].digest = "unverified"],
     ["stale frozen version", invocation => invocation.context.items[1].payload.entries[0].params.expected_version=3],
     ["missing real space", invocation => delete invocation.mcpServers.octo_task.headers["X-Space-ID"]],
+    ["forged Run bearer", invocation => invocation.mcpServers.octo_task.headers.Authorization = "Bearer forged-run-grant"],
+    ["different real space", invocation => invocation.mcpServers.octo_task.headers["X-Space-ID"] = "other-space"],
+    ["different namespace", invocation => invocation.mcpServers.octo_task.headers["X-Namespace"] = "other-namespace"],
     ["different frozen endpoint", invocation => invocation.mcpServers.octo_task.url="https://untrusted.example/mcp/task"],
     ["missing frozen server evidence", invocation => delete invocation.runMetadata.frozenMcpServers],
     ["multiple resources", invocation => invocation.context.items[1].payload.entries.push(

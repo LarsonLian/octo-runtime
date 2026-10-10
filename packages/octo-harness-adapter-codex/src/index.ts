@@ -351,7 +351,7 @@ export function codexMcpOverrides(
 }
 
 const TASK_MCP_TOOLS = [
-  "task_get_materials", "task_authorize_material_snapshot", "task_read_attachment", "task_prepare_output", "task_commit_output",
+  "task_get", "task_get_materials", "task_authorize_material_snapshot", "task_read_attachment", "task_prepare_output", "task_commit_output",
   "task_fail_output", "task_apply_action", "task_create_child"
 ] as const;
 const TEAM_MCP_TOOLS = ["delegate_handoff"] as const;
