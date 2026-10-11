@@ -1,3 +1,4 @@
+import { RUNTIME_RUN_CONTRACT } from "@mininglamp-oss/octo-harness-protocol";
 import { readFileSync } from "node:fs";
 import { collectRuntimeDeviceInfo } from "@mininglamp-oss/octo-harness-daemon-app";
 import {
@@ -111,7 +112,7 @@ export async function registerEnrolledRuntime(options: EnrollmentOptions, enroll
       protocol_version: MAX_AGENT_WORK_PROTOCOL_VERSION,
       protocol_version_min: MIN_AGENT_WORK_PROTOCOL_VERSION,
       protocol_version_max: MAX_AGENT_WORK_PROTOCOL_VERSION,
-      capabilities: { adapters: [] }
+      capabilities: { run_contract: RUNTIME_RUN_CONTRACT, adapters: [] }
     }),
     signal: AbortSignal.timeout(15_000)
   });

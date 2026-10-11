@@ -15,6 +15,7 @@
     "@mininglamp-oss/octo-harness-adapter-openclaw": "workspace:*",
     "@mininglamp-oss/octo-harness-cross-service": "workspace:*",
     "@mininglamp-oss/octo-harness-daemon-app": "workspace:*",
-    "@mininglamp-oss/octo-harness-observability": "workspace:*"
+    "@mininglamp-oss/octo-harness-observability": "workspace:*",
+    "@mininglamp-oss/octo-harness-protocol": "workspace:*"
   }
 }

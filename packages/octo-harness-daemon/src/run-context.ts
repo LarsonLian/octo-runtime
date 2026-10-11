@@ -1,3 +1,4 @@
+import type { PreparedCliBinding } from "./cli-bindings.js";
 import { assertContextEnvelope, assertResolvedExecutionPlan, contextItem, contextResourceReferences, type ContextEnvelope, type ContextSelectionEntry, type ResolvedExecutionPlan, type PreparedSkill, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
 
 function executionValues(context: ContextEnvelope): Record<string, Record<string, unknown>> {
@@ -62,7 +63,7 @@ export function assertFrozenContextPlan(context: ContextEnvelope, plan: Resolved
 import type { PreparedKnowledge } from "./context-preparation.js";
 import type { CompactionReceipt } from "./context-compaction.js";
 
-export interface CompiledRunContext { modelCapacity?: { model?: string; contextWindow: number; outputReserveTokens: number; source: string; management: "provider_native" }; materialCompaction?: CompactionReceipt; modelContent: string; controlInstructions: string; execution?: Record<string, unknown>; resourceSelection?: Record<string, unknown>; executionPlan?: ResolvedExecutionPlan; preparedResources?: { knowledge?: PreparedKnowledge[]; skills: PreparedSkill[]; skillRoots: string[]; mcpServers: McpServers; workdir: string; providerStateDir: string } }
+export interface CompiledRunContext { modelCapacity?: { model?: string; contextWindow: number; outputReserveTokens: number; source: string; management: "provider_native" }; materialCompaction?: CompactionReceipt; modelContent: string; controlInstructions: string; execution?: Record<string, unknown>; resourceSelection?: Record<string, unknown>; executionPlan?: ResolvedExecutionPlan; preparedResources?: { cliBindings?: PreparedCliBinding[]; knowledge?: PreparedKnowledge[]; skills: PreparedSkill[]; skillRoots: string[]; mcpServers: McpServers; workdir: string; providerStateDir: string } }
 export interface TrustedContextInstruction { text: string; source: "revision" | "agent_configuration" | "platform_policy" }
 
 /**

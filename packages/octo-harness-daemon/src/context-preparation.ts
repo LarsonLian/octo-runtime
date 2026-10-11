@@ -1,3 +1,4 @@
+import { prepareCliBindings, type PreparedCliBinding } from "./cli-bindings.js";
 import { createHash, randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -51,6 +52,7 @@ export interface ContextPreparationReceipt {
 export interface PreparedKnowledge { resource_key: string; root: string; files: string[] }
 
 export interface PreparedRunContext {
+  cliBindings?: PreparedCliBinding[];
   knowledge?: PreparedKnowledge[];
   workdir: string;
   providerStateDir: string;
@@ -67,6 +69,7 @@ export interface PreparedRunContext {
  */
 export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
   stateRoot: string; agentSessionKey: string; agentKey: string; store: AgentWorkStore; signal?: AbortSignal;
+  registerCleanup?: (path: string) => void;
 }): Promise<PreparedRunContext> {
   options.signal?.throwIfAborted();
   const stateRoot = await privateDirectory(options.stateRoot);
@@ -158,6 +161,16 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
           }
         }
       }
+    }
+    if (texts["cli.json"]) {
+      if (!options.registerCleanup) throw new TypeError("CLI_BINDING_LIFECYCLE_REQUIRED");
+      const bindings = await prepareCliBindings(texts["cli.json"], {
+        stateRoot, credentials: resource.mcp_credentials ?? {},
+        selectedServers: new Set(receipt.components.filter(component => component.startsWith("mcp:")).map(component => component.slice(4))),
+        registerCleanup: options.registerCleanup, signal: options.signal
+      });
+      prepared.cliBindings = [...(prepared.cliBindings ?? []), ...bindings];
+      if (new Set(prepared.cliBindings.map(binding => binding.name)).size !== prepared.cliBindings.length) throw new TypeError("CLI_BINDING_NAME_CONFLICT");
     }
     if (resource.components?.some(component => !receipt.components.includes(component))) throw new TypeError("CONTEXT_COMPONENT_UNAVAILABLE: " + resource.resource_key);
     if (resource.kind === "skill" && receipt.components.length !== 1 || resource.invoke && !receipt.components.some(key => key.startsWith("skill:"))

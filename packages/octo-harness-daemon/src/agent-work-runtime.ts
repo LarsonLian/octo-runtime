@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import { scenarioInstructions } from "./scenario-context.js";
 import type { ScenarioRequest, ScenarioPolicySnapshot } from "@mininglamp-oss/octo-harness-protocol";
 import { createHash, randomUUID } from "node:crypto";
@@ -1649,6 +1650,11 @@ export class AgentWorkRuntime {
     this.#acceptingRuns.set(command.run_key, accepting);
     let releaseAdmission: (() => void) | undefined;
     let admissionHandedOff = false;
+    const cliCleanupPaths: string[] = [];
+    const cleanupCli = async (): Promise<void> => {
+      const results = await Promise.allSettled(cliCleanupPaths.splice(0).map(path => rm(path, { recursive: true, force: true })));
+      if (results.some(result => result.status === "rejected")) this.#log({ level: "warn", scope: "runtime.context", event: "runtime.cli_cleanup.failed", message: "Run command files could not all be removed" });
+    };
     try {
       let request: InvokeRequest;
       let adapterType: string;
@@ -1720,7 +1726,7 @@ export class AgentWorkRuntime {
             return prepareRunContext(executionEnvelope.resolved_execution_plan, {
               stateRoot: join(dirname(this.#options.storePath), "context"),
               agentSessionKey: executionEnvelope.agent_session_key,
-              agentKey: executionEnvelope.agent_run_request.agent_key, store, signal
+              agentKey: executionEnvelope.agent_run_request.agent_key, store, signal, registerCleanup: path => cliCleanupPaths.push(path)
             });
           },
           prepareMaterials: signal => prepareTaskMaterials(executionEnvelope.effective_context,
@@ -1920,7 +1926,8 @@ export class AgentWorkRuntime {
       const execution = this.#execute(command, adapterType, request, releaseAdmission);
       admissionHandedOff = true;
       this.#executionTasks.add(execution);
-      void execution.finally(() => {
+      void execution.finally(async () => {
+        await cleanupCli();
         clearTimeout(deadlineTimer);
         this.#executionTasks.delete(execution);
       });
@@ -1933,6 +1940,7 @@ export class AgentWorkRuntime {
       this.#ackCommand(command, false, failure);
     } finally {
       if (!admissionHandedOff) {
+        await cleanupCli();
         clearTimeout(deadlineTimer);
         releaseAdmission?.();
       }

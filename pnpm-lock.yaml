@@ -150,6 +150,9 @@ importers:
       '@mininglamp-oss/octo-harness-observability':
         specifier: workspace:*
         version: link:../../packages/octo-harness-observability
+      '@mininglamp-oss/octo-harness-protocol':
+        specifier: workspace:*
+        version: link:../../packages/octo-harness-protocol
 
   apps/daemon:
     dependencies:

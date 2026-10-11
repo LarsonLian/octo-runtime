@@ -73,6 +73,7 @@ test("registration failure preserves the enrolled identity for a credential-prov
     }
     if (url.endsWith("/v1/runtime/register")) {
       registrationCount++;
+      assert.deepEqual(JSON.parse(init.body).capabilities.run_contract, { schema_version: 7, context_schema: "octo.context-envelope/v3", approval_schema: "octo.approval-request/v1", routing_schema: "octo.runtime-selection/v2" });
       if (registrationCount === 1) {
         return Response.json({ error: { code: "UNAVAILABLE", message: "worker restarting" } }, { status: 503 });
       }
