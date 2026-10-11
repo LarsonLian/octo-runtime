@@ -6,8 +6,8 @@ function object(v: unknown, _fields: string[]): asserts v is Record<string, unkn
   if (!v || typeof v !== 'object' || Array.isArray(v)) throw new TypeError('SCENARIO_INVALID');
 }
 export function assertScenarioRequest(v: unknown, context?: ContextEnvelope): asserts v is ScenarioRequest {
-  object(v, ['key', 'builder_id', 'builder_version']);
-  if (v.key !== SCENARIO_ID || v.builder_id !== 'doc-selection' || v.builder_version !== '1') throw new TypeError('SCENARIO_UNSUPPORTED');
+  object(v, ['scenario_id', 'builder_id', 'builder_version']);
+  if (v.scenario_id !== SCENARIO_ID || v.builder_id !== 'doc-selection' || v.builder_version !== '1') throw new TypeError('SCENARIO_UNSUPPORTED');
   if (context) {
     assertContextEnvelope(context);
     const entries = contextItem(context, 'octo.content', 'inline')?.payload.entries as Record<string, unknown>[] | undefined;
@@ -26,14 +26,14 @@ export function assertScenarioPolicy(v: unknown): asserts v is ScenarioPolicy {
     ids.add(skill.resource_id);
   }
 }
-export function canonicalScenarioPolicy(v: Pick<ScenarioPolicySnapshot, 'key' | 'version' | 'instructions' | 'default_skills'>): string {
-  if (v.key !== SCENARIO_ID || !Number.isSafeInteger(v.version) || v.version < 1) throw new TypeError('SCENARIO_INVALID');
+export function canonicalScenarioPolicy(v: Pick<ScenarioPolicySnapshot, 'scenario_id' | 'version' | 'instructions' | 'default_skills'>): string {
+  if (v.scenario_id !== SCENARIO_ID || !Number.isSafeInteger(v.version) || v.version < 1) throw new TypeError('SCENARIO_INVALID');
   assertScenarioPolicy({ enabled: true, instructions: v.instructions, default_skills: v.default_skills });
   // Same recursively sorted JSON object keys as Go CanonicalScalarJSON.
-  return JSON.stringify({ default_skills: [...v.default_skills].sort((a,b) => a.resource_id < b.resource_id ? -1 : a.resource_id > b.resource_id ? 1 : 0).map(s => ({ invoke: s.invoke, resource_id: s.resource_id })), instructions: v.instructions, key: v.key, version: v.version });
+  return JSON.stringify({ default_skills: [...v.default_skills].sort((a,b) => a.resource_id < b.resource_id ? -1 : a.resource_id > b.resource_id ? 1 : 0).map(s => ({ invoke: s.invoke, resource_id: s.resource_id })), instructions: v.instructions, scenario_id: v.scenario_id, version: v.version });
 }
 export function assertScenarioSnapshot(v: unknown): asserts v is ScenarioPolicySnapshot {
-  object(v, ['key', 'version', 'instructions', 'default_skills', 'hash']);
+  object(v, ['scenario_id', 'version', 'instructions', 'default_skills', 'hash']);
   canonicalScenarioPolicy(v as unknown as ScenarioPolicySnapshot);
   if (typeof v.hash !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(v.hash)) throw new TypeError('SCENARIO_POLICY_MISMATCH');
 }

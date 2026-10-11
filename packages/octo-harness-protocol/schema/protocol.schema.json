@@ -4121,7 +4121,7 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "key": {
+        "scenario_id": {
           "type": "string",
           "minLength": 1,
           "maxLength": 96
@@ -4138,7 +4138,7 @@
         }
       },
       "required": [
-        "key",
+        "scenario_id",
         "builder_id",
         "builder_version"
       ]
@@ -4190,7 +4190,7 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "key": {
+        "scenario_id": {
           "type": "string",
           "minLength": 1,
           "maxLength": 96
@@ -4235,7 +4235,7 @@
         }
       },
       "required": [
-        "key",
+        "scenario_id",
         "version",
         "instructions",
         "default_skills",
@@ -4246,7 +4246,7 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "key": {
+        "scenario_id": {
           "type": "string",
           "minLength": 1,
           "maxLength": 96
@@ -4262,7 +4262,7 @@
         }
       },
       "required": [
-        "key",
+        "scenario_id",
         "policy_version",
         "policy_hash"
       ]

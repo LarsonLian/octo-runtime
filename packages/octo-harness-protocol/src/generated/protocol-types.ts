@@ -1643,7 +1643,7 @@ export interface RunContextProjection {
  * via the `definition` "ScenarioProjection".
  */
 export interface ScenarioProjection {
-  key: string;
+  scenario_id: string;
   policy_version: number;
   policy_hash: string;
   [k: string]: unknown;
@@ -2859,7 +2859,7 @@ export interface ContextReferencesPayload {
  * via the `definition` "ScenarioRequest".
  */
 export interface ScenarioRequest {
-  key: string;
+  scenario_id: string;
   builder_id: string;
   builder_version: string;
   [k: string]: unknown;
@@ -2889,7 +2889,7 @@ export interface ScenarioPolicy {
  * via the `definition` "ScenarioPolicySnapshot".
  */
 export interface ScenarioPolicySnapshot {
-  key: string;
+  scenario_id: string;
   version: number;
   /**
    * @maxItems 32
