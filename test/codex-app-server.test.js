@@ -106,6 +106,8 @@ for (const approvalMode of ["ask", "assisted", "full_access"]) {
         assert.equal(payload.request.operation.kind, "command_execution");
         assert.equal(payload.request.operation.toolCallId, "command-1");
         assert.equal(payload.request.providerDetails.command, "pnpm add example");
+        assert.equal(payload.request.providerDetails.itemId, "command-1");
+        assert.equal(Object.hasOwn(payload.request.providerDetails, "itemKey"), false);
         assert.equal(payload.request.command, undefined);
         assert.deepEqual(payload.request.requestedPermissions, []);
         assert.deepEqual(payload.request.allowedOutcomes, ["accepted", "declined", "cancelled"]);

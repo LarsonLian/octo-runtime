@@ -208,7 +208,7 @@ test("Approval requests share the supported zero-permission profile and display 
     schema: "octo.approval-request/v1", policy: { mode: "ask", hash: `sha256:${"a".repeat(64)}` },
     operation: { kind: "command_execution", summary: "Run tests", toolCallId: "tool-1", details: { command: "pnpm test" } },
     requestedPermissions: [],
-    allowedOutcomes: ["accepted", "declined", "cancelled"], grantScope: "request", providerDetails: { provider: "codex" }
+    allowedOutcomes: ["accepted", "declined", "cancelled"], grantScope: "request", providerDetails: { provider: "codex", itemId: "tool-1" }
   };
   assert.equal(validateDefinition("ApprovalRequest", request), true);
   assert.doesNotThrow(() => assertApprovalRequest(request));
@@ -218,6 +218,7 @@ test("Approval requests share the supported zero-permission profile and display 
     value => { value.policy.hash = "invalid"; }, value => { value.allowedOutcomes = ["answered"]; },
     value => { value.allowedOutcomes = ["accepted", "accepted"]; }, value => { value.allowedOutcomes = []; },
     value => { value.grantScope = "session"; }, value => { value.autoApprove = true; },
+    value => { value.providerDetails = { itemKey: "legacy-alias" }; },
     value => { value.providerDetails = { token: "fixture-not-a-secret" }; }, value => { value.operation.details = { env: {} }; },
     value => { value.operation.summary = "x".repeat(8193); }, value => { value.operation.summary = "😀".repeat(4097); }
   ]) {
