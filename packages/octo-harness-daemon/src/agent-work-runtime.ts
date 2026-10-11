@@ -1,3 +1,4 @@
+import { channelAwarenessInstructions, type ChannelAwareness } from "./channel-awareness.js";
 import { rm } from "node:fs/promises";
 import { scenarioInstructions } from "./scenario-context.js";
 import type { ScenarioRequest, ScenarioPolicySnapshot } from "@mininglamp-oss/octo-harness-protocol";
@@ -214,7 +215,7 @@ export interface ChannelContextRuntimeOptions extends ChannelContextStoreOptions
 /** Immutable execution description received from Agent Work before local mapping. */
 export interface ExecutionEnvelope {
   schema_version: 7;
-  internal_context?: { scenario_policy?: ScenarioPolicySnapshot; continuity?: ChannelContextDescriptor; resource_sources?: Record<string, ("request" | "agent_default" | "agent_mandatory" | "scenario_policy")[]> };
+  internal_context?: { channel_awareness?: ChannelAwareness; scenario_policy?: ScenarioPolicySnapshot; continuity?: ChannelContextDescriptor; resource_sources?: Record<string, ("request" | "agent_default" | "agent_mandatory" | "scenario_policy")[]> };
   effective_context: ContextEnvelope;
   context_configuration_version: number;
   resolved_execution_plan: ResolvedExecutionPlan;
@@ -1706,6 +1707,7 @@ export class AgentWorkRuntime {
           trustedInstructions: [
             ...(stringValue(asRecord(executionEnvelope.agent_revision.definition).instructions)
               ? [{ text: stringValue(asRecord(executionEnvelope.agent_revision.definition).instructions)!, source: "revision" as const }] : []),
+            ...channelAwarenessInstructions(executionEnvelope.internal_context?.channel_awareness),
             ...scenarioInstructions(executionEnvelope.agent_run_request.scenario, executionEnvelope.internal_context?.scenario_policy, executionEnvelope.agent_run_request.context),
             ...(Array.isArray(contentResources) && contentResources.length
               ? [{ text: taskOutputInstructions(executionEnvelope.run_id), source: "platform_policy" as const }] : [])
@@ -2558,6 +2560,7 @@ export function mapExecutionEnvelope(
       ...(preparedContext ? { skills: preparedContext.skills, skillRoots: preparedContext.skillRoots, providerStateDir: preparedContext.providerStateDir } : {}),
       controlInstructions: preparedCompilation ? compiled.controlInstructions
         : [stringValue(definition.instructions), compiled.controlInstructions,
+          ...channelAwarenessInstructions(envelope.internal_context?.channel_awareness).map(entry => entry.text),
           ...(taskMaterials ? [taskOutputInstructions(envelope.run_id)] : [])].filter(Boolean).join("\n\n"),
       context: structuredClone(envelope.effective_context),
       runMetadata: { ...context, ...(compiled.modelCapacity ? { contextCapacity: compiled.modelCapacity } : {}) },

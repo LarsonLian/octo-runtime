@@ -1,6 +1,7 @@
 import { prepareCliBindings, type PreparedCliBinding } from "./cli-bindings.js";
 import { createHash, randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { parseDocument } from "yaml";
@@ -70,6 +71,7 @@ export interface PreparedRunContext {
 export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
   stateRoot: string; agentSessionId: string; agentId: string; store: AgentWorkStore; signal?: AbortSignal;
   registerCleanup?: (path: string) => void;
+  workspaceRoot?: string;
 }): Promise<PreparedRunContext> {
   options.signal?.throwIfAborted();
   const stateRoot = await privateDirectory(options.stateRoot);
@@ -80,12 +82,19 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
     return { workdir: "", providerStateDir: "", skills: [], skillRoots: [], mcpServers: {}, receipt: { workspace_mode: "none", workspace_path: "", provider_state_dir: "", resources: [], warnings: [] } };
   }
   if (workspace.mode === "random") {
-    const workspaces = await privateDirectory(join(stateRoot, "workspaces"));
-    const chosen = options.store.conversationWorkspace(options.agentSessionId, join(workspaces, randomUUID()));
-    if (chosen.created) await mkdir(chosen.path, { mode: 0o700 });
+    const nativeWorkspace = plan.adapter_type === "openclaw";
+    const workspaces = await privateDirectory(nativeWorkspace ? join(stateRoot, "workspaces") : options.workspaceRoot ?? join(homedir(), "OctoWork"));
+    const proposed = nativeWorkspace ? join(workspaces, randomUUID()) : join(workspaces, `agent-${randomUUID()}`, "workdir");
+    const chosen = options.store.conversationWorkspace(options.agentSessionId, proposed);
+    if (chosen.created) {
+      await privateDirectory(dirname(chosen.path));
+      await mkdir(chosen.path, { mode: 0o700 });
+    }
     // 续接必须保留原工作区事实；目录丢失时失败，不能静默创建同路径的空目录。
     workdir = await realDirectory(chosen.path);
-    inside(workspaces, workdir);
+    // Previously allocated session directories remain valid; never relocate a live session.
+    const legacyRoot = join(stateRoot, "workspaces");
+    inside(workdir.startsWith(legacyRoot + sep) ? legacyRoot : workspaces, workdir);
   } else {
     if (!isAbsolute(workspace.path)) throw new TypeError("CONTEXT_WORKSPACE_INVALID");
     await realDirectory(workspace.path);

@@ -26,7 +26,7 @@ async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "octo-context-preparation-"));
   const store = AgentWorkStore.open(join(root, "runtime.db"));
   t.after(async () => { store.close(); await rm(root, { recursive: true, force: true }); });
-  const options = { stateRoot: root, agentSessionId: "session-1", agentId: "agent-1", store };
+  const options = { workspaceRoot: join(root, "OctoWork"), stateRoot: root, agentSessionId: "session-1", agentId: "agent-1", store };
   const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "", approval_mode: "ask", workspace: { mode: "random" } };
   return { root, options, plan, prepare: (resources = [], updates = {}) => prepareRunContext({ ...plan, resources, ...updates }, options) };
 }
@@ -34,6 +34,7 @@ async function fixture(t) {
 test("random workspaces and provider state are created once per AgentSession; missing workspaces fail", async t => {
   const f = await fixture(t);
   const first = await f.prepare();
+  assert.match(first.workdir, /OctoWork[\\/]agent-[0-9a-f-]+[\\/]workdir$/);
   await writeFile(join(first.workdir, "retained.txt"), "retained");
   const second = await f.prepare();
   assert.equal(second.workdir, first.workdir);

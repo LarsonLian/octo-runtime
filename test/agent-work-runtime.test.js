@@ -1898,3 +1898,15 @@ test('control-plane cancellation is not classified as adapter failure when the o
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('GROUP.md group and subchannel snapshots reach the provider initial control instructions', async () => {
+  const { createHash } = await import('node:crypto');
+  const source = structuredClone(envelope);
+  const document = (kind, content, subchannel_id) => ({ kind, content, group_id: 'g1', ...(subchannel_id ? { subchannel_id } : {}), version: 2, digest: `sha256:${createHash('sha256').update(content).digest('hex')}` });
+  source.internal_context = { channel_awareness: { space_id: 's1', endpoint_id: 'ep1', conversation_id: 'topic:g1:t1', documents: [document('group', 'GROUP_RULE'), document('subchannel', 'SUBCHANNEL_RULE', 't1')] } };
+  const mapped = mapExecutionEnvelope(source);
+  assert.match(mapped.request.controlInstructions, /GROUP_RULE/);
+  assert.match(mapped.request.controlInstructions, /SUBCHANNEL_RULE/);
+  assert.ok(mapped.request.controlInstructions.indexOf('GROUP_RULE') < mapped.request.controlInstructions.indexOf('SUBCHANNEL_RULE'));
+  assert.ok(!mapped.request.prompt.includes('GROUP_RULE'));
+});
