@@ -1872,12 +1872,12 @@
     },
     "FailureAction": {
       "title": "FailureAction",
-      "description": "A catalog-controlled recovery action. Clients render labelId and must not execute arbitrary commands from this object.",
+      "description": "A catalog-controlled recovery action. Clients render labelKey and must not execute arbitrary commands from this object.",
       "type": "object",
       "additionalProperties": false,
       "required": [
         "type",
-        "labelId"
+        "labelKey"
       ],
       "properties": {
         "type": {
@@ -1893,7 +1893,7 @@
             "contact_admin"
           ]
         },
-        "labelId": {
+        "labelKey": {
           "type": "string",
           "minLength": 1
         }
@@ -1954,7 +1954,7 @@
         "reasonCode",
         "category",
         "stage",
-        "messageId",
+        "messageKey",
         "params",
         "retryable",
         "action",
@@ -1986,7 +1986,7 @@
           "minLength": 1,
           "maxLength": 128
         },
-        "messageId": {
+        "messageKey": {
           "type": "string",
           "minLength": 1,
           "maxLength": 128
@@ -3411,7 +3411,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "messageId": {
+        "messageKey": {
           "type": "string",
           "minLength": 1,
           "maxLength": 191

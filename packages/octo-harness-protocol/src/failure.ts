@@ -18,7 +18,7 @@ export interface FailureClassificationContext {
 interface CatalogEntry {
   category: string;
   message: string;
-  messageId: string;
+  messageKey: string;
   retryable: boolean;
   retryAfterMs?: number;
   action: FailureAction;
@@ -71,7 +71,7 @@ export function classifyFailure(input: unknown, context: FailureClassificationCo
     reasonCode: classification.reasonCode,
     category: catalog.category,
     stage: context.stage,
-    messageId: catalog.messageId,
+    messageKey: catalog.messageKey,
     params: classification.reasonCode === "CODEX_FINALIZATION_TIMEOUT"
       ? { configParameter: "execution_profile.agent_config.providerOptions.finalizationTimeoutMs" }
       : timeoutConfiguration(classification.code, context.source?.adapter),
@@ -191,19 +191,19 @@ export function isFailureEnvelope(value: unknown): value is FailureEnvelope {
     && typeof record.reasonCode === "string" && record.reasonCode.length > 0
     && typeof record.category === "string" && record.category.length > 0
     && typeof record.stage === "string" && record.stage.length > 0
-    && typeof record.messageId === "string" && record.messageId.length > 0
+    && typeof record.messageKey === "string" && record.messageKey.length > 0
     && asRecord(record.params) !== undefined
     && typeof record.retryable === "boolean"
     && typeof record.diagnosticId === "string" && /^diag_[0-9a-f]{32}$/.test(record.diagnosticId)
     && (source.component === "octo-harness" || source.component === "octo-agent-worker")
-    && typeof action.type === "string" && typeof action.labelId === "string"
+    && typeof action.type === "string" && typeof action.labelKey === "string"
     && typeof record.occurredAt === "string" && !Number.isNaN(Date.parse(record.occurredAt));
 }
 
 function entry(
   category: string,
   message: string,
-  messageId: string,
+  messageKey: string,
   retryable: boolean,
   actionType: FailureAction["type"],
   retryAfterMs?: number
@@ -211,10 +211,10 @@ function entry(
   return {
     category,
     message,
-    messageId,
+    messageKey,
     retryable,
     ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
-    action: { type: actionType, labelId: `action.${actionType}` }
+    action: { type: actionType, labelKey: `action.${actionType}` }
   };
 }
 

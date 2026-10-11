@@ -2067,7 +2067,7 @@ export interface MessageProvenance {
   nativeEvent: string;
 }
 /**
- * A catalog-controlled recovery action. Clients render labelId and must not execute arbitrary commands from this object.
+ * A catalog-controlled recovery action. Clients render labelKey and must not execute arbitrary commands from this object.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "FailureAction".
@@ -2082,7 +2082,7 @@ export interface FailureAction {
     | "install_dependency"
     | "fix_permissions"
     | "contact_admin";
-  labelId: string;
+  labelKey: string;
 }
 /**
  * Low-cardinality component identity. It intentionally excludes hostnames, paths, accounts, and tenant data.
@@ -2116,7 +2116,7 @@ export interface FailureEnvelope {
   reasonCode: string;
   category: string;
   stage: string;
-  messageId: string;
+  messageKey: string;
   /**
    * Catalog-allowlisted presentation parameters only.
    */
@@ -2628,7 +2628,7 @@ export interface InvokeRequestWire {
  * via the `definition` "ActivityInfo".
  */
 export interface ActivityInfo {
-  messageId?: string;
+  messageKey?: string;
   params?: {
     [k: string]: string | number | boolean;
   };

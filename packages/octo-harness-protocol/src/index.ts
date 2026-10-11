@@ -584,7 +584,7 @@ export function assertFailureEnvelope(value: unknown): asserts value is FailureE
   if (typeof value.code !== "string" || !/^OH-[A-Z]{3}-\d{4}$/.test(value.code)) {
     throw new TypeError("failure.code must be a global OH error code");
   }
-  for (const key of ["reasonCode", "category", "stage", "messageId", "diagnosticId", "occurredAt"] as const) {
+  for (const key of ["reasonCode", "category", "stage", "messageKey", "diagnosticId", "occurredAt"] as const) {
     if (typeof value[key] !== "string" || value[key].length === 0) {
       throw new TypeError(`failure.${key} must be a non-empty string`);
     }
@@ -598,7 +598,7 @@ export function assertFailureEnvelope(value: unknown): asserts value is FailureE
   if (value.retryAfterMs !== undefined && (!Number.isSafeInteger(value.retryAfterMs) || Number(value.retryAfterMs) < 0)) {
     throw new TypeError("failure.retryAfterMs must be a non-negative safe integer");
   }
-  if (!isRecord(value.action) || typeof value.action.type !== "string" || typeof value.action.labelId !== "string") {
+  if (!isRecord(value.action) || typeof value.action.type !== "string" || typeof value.action.labelKey !== "string") {
     throw new TypeError("failure.action must be a catalog action");
   }
   if (!isRecord(value.source) || (value.source.component !== "octo-harness" && value.source.component !== "octo-agent-worker")) {

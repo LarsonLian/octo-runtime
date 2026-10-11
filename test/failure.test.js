@@ -103,7 +103,7 @@ test("failure payload is backwards compatible and excludes untrusted secrets", (
 
   assert.equal(payload.code, "invalid_api_key");
   assert.equal(payload.failure.code, "OH-PRV-4001");
-  assert.equal(payload.failure.messageId, "error.provider.credentials_invalid");
+  assert.equal(payload.failure.messageKey, "error.provider.credentials_invalid");
   assert.equal(payload.adapterType, "codex");
   assert.doesNotMatch(JSON.stringify(payload), /top-secret-token|authorization|providerError/);
   assert.doesNotThrow(() => assertCanonicalEvent({ protocolVersion: 2, type: "run.failed", payload }));

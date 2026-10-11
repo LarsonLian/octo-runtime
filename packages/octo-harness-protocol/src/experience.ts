@@ -20,8 +20,8 @@ function fields(payload: Payload, allowed: string[], required: string[]): void {
 
 function info(value: unknown): void {
   if (!record(value)) throw new TypeError('activity info must be an object');
-  fields(value, ['messageId', 'params', 'attempt', 'retryAfterMs'], []);
-  if (value.messageId !== undefined) string(value.messageId);
+  fields(value, ['messageKey', 'params', 'attempt', 'retryAfterMs'], []);
+  if (value.messageKey !== undefined) string(value.messageKey);
   if (value.params !== undefined && (!record(value.params) || Object.values(value.params).some(item => !['string', 'number', 'boolean'].includes(typeof item)))) throw new TypeError('activity params must contain scalar values');
   if (value.attempt !== undefined) integer(value.attempt, 1);
   if (value.retryAfterMs !== undefined) integer(value.retryAfterMs);
