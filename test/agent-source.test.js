@@ -9,7 +9,7 @@ import { prepareRunContext } from "../packages/octo-harness-daemon/dist/context-
 import { AgentWorkStore } from "../packages/octo-harness-daemon/dist/agent-work-store.js";
 
 const request = {
-  protocolVersion: 2, invocationId: "source-invocation", runKey: "source-run", agentSessionKey: "source-session",
+  protocolVersion: 2, invocationId: "source-invocation", runId: "source-run", agentSessionId: "source-session",
   agentSource: "preset", workdir: "", prompt: "work", modelInput: "work", controlInstructions: "",
   approvalMode: "full_access", context: { schema: "octo.context-envelope/v3", items: [] }, agentConfig: { providerAgentId: "main" }
 };
@@ -43,7 +43,7 @@ test("preset preparation creates no workspace or provider directory and rejects 
   const store = AgentWorkStore.open(join(root, "runtime.db"));
   t.after(async () => { store.close(); await rm(root, { recursive: true, force: true }); });
   const plan = { agent_source: "preset", adapter_type: "openclaw", provider_agent_id: "main", workdir: "", workspace: { mode: "none" }, approval_mode: "full_access" };
-  const options = { stateRoot: join(root, "state"), agentSessionKey: "session", agentKey: "agent", store };
+  const options = { stateRoot: join(root, "state"), agentSessionId: "session", agentId: "agent", store };
   const prepared = await prepareRunContext(plan, options);
   assert.equal(prepared.workdir, "");
   assert.equal(prepared.providerStateDir, "");

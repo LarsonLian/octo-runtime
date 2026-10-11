@@ -16,13 +16,13 @@ const material=Array.from({length:59000},(_,i)=>`Record ${i}: accepted retention
 const count=await port.measureInputTokens(material,signal);console.log(JSON.stringify({stage:'counted',inputTokens:count,window:port.contextWindow,bytes:Buffer.byteLength(material)}));
 if(count<=port.contextWindow)throw Error('LIVE_MATERIAL_NOT_OVER_WINDOW');
 const store=new FileMaterialCompactionStore(join(root,'snapshots'));
-const result=await compactContextMaterials({runKey:'live-over-official-window-v1',material,protectedIdentity:'synthetic-v1',sourceRefs:['synthetic:records'],signal,port,store,onProgress:state=>console.log(JSON.stringify({stage:'compaction',state}))});
+const result=await compactContextMaterials({runId:'live-over-official-window-v1',material,protectedIdentity:'synthetic-v1',sourceRefs:['synthetic:records'],signal,port,store,onProgress:state=>console.log(JSON.stringify({stage:'compaction',state}))});
 await writeFile(join(root,'summary.txt'),result.material,{mode:0o600});
-const restored=await compactContextMaterials({runKey:'live-over-official-window-v1',material,protectedIdentity:'synthetic-v1',sourceRefs:['synthetic:records'],signal,port:{...port,summarize:()=>{throw Error('UNEXPECTED_REGENERATION')}},store});
+const restored=await compactContextMaterials({runId:'live-over-official-window-v1',material,protectedIdentity:'synthetic-v1',sourceRefs:['synthetic:records'],signal,port:{...port,summarize:()=>{throw Error('UNEXPECTED_REGENERATION')}},store});
 if(restored.material!==result.material)throw Error('RESTORE_CHANGED');
 const adapter=createCodexAdapter();const events=[];
 await mkdir(join(root,'workspace'),{recursive:true});
-for await(const event of adapter.invoke(invokeRequest({runKey:'live-over-window-main',invocationId:'live-over-window-main',agentSessionKey:'live-over-window',prompt,modelInput:result.material+'\n\nCurrent question: '+prompt,controlInstructions:instructions,workdir:join(root,'workspace'),providerStateDir:join(root,'provider'),skills:[],skillRoots:[],mcpServers:{},agentConfig:{model:port.model,effort:'low'},runMetadata:{contextCapacity:{contextWindow:port.contextWindow,outputReserveTokens:port.outputReserveTokens,management:'provider_native'}},signal}))) {
+for await(const event of adapter.invoke(invokeRequest({runId:'live-over-window-main',invocationId:'live-over-window-main',agentSessionId:'live-over-window',prompt,modelInput:result.material+'\n\nCurrent question: '+prompt,controlInstructions:instructions,workdir:join(root,'workspace'),providerStateDir:join(root,'provider'),skills:[],skillRoots:[],mcpServers:{},agentConfig:{model:port.model,effort:'low'},runMetadata:{contextCapacity:{contextWindow:port.contextWindow,outputReserveTokens:port.outputReserveTokens,management:'provider_native'}},signal}))) {
  events.push(event); if(['run.completed','run.failed','run.cancelled'].includes(event.type))console.log(JSON.stringify({stage:'main',event}));
 }
 const text=events.filter(e=>e.type==='message.delta').map(e=>e.payload.text??e.payload.delta??'').join('');

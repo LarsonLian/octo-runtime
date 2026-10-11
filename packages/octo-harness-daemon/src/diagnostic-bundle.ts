@@ -7,7 +7,7 @@ const PACKAGE_VERSION = packageVersion();
 const STATUS_KEYS = new Set([
   "ready", "pid", "state", "restartAttempt", "enabled", "connected",
   "totalProfiles", "connectedProfiles", "activeRuns", "maxConcurrentRuns",
-  "profile", "connectionState", "connectionReason", "actionRequired", "draining", "runtimeKey",
+  "profile", "connectionState", "connectionReason", "actionRequired", "draining", "runtimeId",
   "lastRecoveryDurationMs", "lastRecoveryTrigger",
   "acceptingRuns", "runtimeVersion", "protocolVersion", "lastAckedCommandSeq",
   "outboxPendingBytes", "outboxPending", "outboxOldestAgeMs", "dbBytes",
@@ -20,7 +20,7 @@ const STATUS_KEYS = new Set([
 
 const RECORD_KEYS = new Set([
   "ts", "level", "component", "scope", "event", "request_id", "profile",
-  "runtime_key", "run_key", "agent_session_key", "invocation_id", "adapter_type",
+  "runtime_id", "run_id", "agent_session_id", "invocation_id", "adapter_type",
   "duration_ms", "seq", "data"
 ]);
 

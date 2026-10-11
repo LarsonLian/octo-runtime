@@ -9,8 +9,8 @@ import { contextHash } from "@mininglamp-oss/octo-harness-protocol";
 const context = { schema: "octo.context-envelope/v3", items: [ { namespace: "octo.execution", name: "adapter", payload: { type: "test" } }, { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: process.cwd() } }, { namespace: "octo.security", name: "approval_policy", payload: { mode: "ask" } } ] };
 const agentRecord = (id, name) => ({ id, name, adapterType: "test", config: {}, defaultContext: structuredClone(context), contextDefaultsVersion: 1 });
 
-const event = (runKey, seq, type = "message.delta") => ({
-  id: `e${seq}`, seq, tsMs: seq, agentSessionKey: "asess-1", runKey, type, payload: {}
+const event = (runId, seq, type = "message.delta") => ({
+  id: `e${seq}`, seq, tsMs: seq, agentSessionId: "asess-1", runId, type, payload: {}
 });
 
 test("SqliteStore persists unified AgentSession and AgentRun state across reopen", async () => {
@@ -21,12 +21,12 @@ test("SqliteStore persists unified AgentSession and AgentRun state across reopen
     await store.transaction(() => {
       store.putAgent(agentRecord("a1", "A"));
       store.putAgentSession({
-        id: "asess-1", namespace: "loop", agentKey: "a1", sessionKey: "v1/task/t-1",
+        id: "asess-1", namespace: "loop", agentId: "a1", sessionKey: "v1/task/t-1",
         status: "active", generation: 1, nextRunNo: 2, createdAt: 1
       });
       store.putAgentRun({
-        id: "arun-1", agentSessionKey: "asess-1", runNo: 1, status: "queued", nextSeq: 2,
-        trigger: { kind: "loop.task.ready", occurrenceKey: "task-event/e-1" }, input: {}, requestHash: "hash",
+        id: "arun-1", agentSessionId: "asess-1", runNo: 1, status: "queued", nextSeq: 2,
+        trigger: { kind: "loop.task.ready", occurrenceId: "task-event/e-1" }, input: {}, requestHash: "hash",
         context: { schema: context.schema, items: [] }, effectiveContext: context, contextHash: contextHash(context), contextDefaultsVersion: 1,
         resolvedExecutionPlan: { agent_source: "provisioned", adapter_type: "test", workspace: { mode: "fixed", path: process.cwd() }, workdir: process.cwd(), approval_mode: "ask" },
         materialization: { id: "a1", name: "A", adapterType: "test", config: {} }
@@ -46,7 +46,7 @@ test("SqliteStore persists unified AgentSession and AgentRun state across reopen
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test("SqliteStore deduplicates AgentRun events on (run_key, seq)", async () => {
+test("SqliteStore deduplicates AgentRun events on (run_id, seq)", async () => {
   const dir = await mkdtemp(join(tmpdir(), "oh-sqlite-dedupe-"));
   try {
     const store = SqliteStore.open(join(dir, "state.db"));

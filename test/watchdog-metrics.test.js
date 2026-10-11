@@ -6,7 +6,7 @@ import { renderLocalMetrics } from "../packages/octo-harness-daemon/dist/local-m
 test("watchdog snapshots preserve counters without high cardinality or censored success samples", () => {
   const metrics = new WatchdogMetrics();
   for (let i = 0; i < 100; i++) {
-    const data = { modelIdlePolicy: "observe", runKey: `secret-run-${i}` };
+    const data = { modelIdlePolicy: "observe", runId: `secret-run-${i}` };
     metrics.record(`private-adapter-${i}`, { event: "started", data });
     metrics.record(`private-adapter-${i}`, { event: "timeout", data: { ...data, timeoutReason: "run_deadline" } });
     metrics.record(`private-adapter-${i}`, { event: "finished", data: { ...data, outcome: "failed", maxCanonicalGapMs: 125000, maxProgressGapMs: 5000 } });
@@ -22,6 +22,6 @@ test("watchdog snapshots preserve counters without high cardinality or censored 
   assert.match(text, /outcome="failed",kind="canonical",le="300"\} 100/);
   assert.doesNotMatch(text, /secret|private|outcome="completed"/);
   assert.deepEqual(metrics.snapshot(), series);
-  status.watchdogMetrics.series.push({ name: "active", labels: { runKey: "secret" }, value: 1 });
-  assert.doesNotMatch(renderLocalMetrics(status), /secret|runKey/);
+  status.watchdogMetrics.series.push({ name: "active", labels: { runId: "secret" }, value: 1 });
+  assert.doesNotMatch(renderLocalMetrics(status), /secret|runId/);
 });

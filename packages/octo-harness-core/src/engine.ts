@@ -33,14 +33,14 @@ export interface RegisterAgentInput {
 }
 
 export interface ReplaceDefaultContextInput {
-  agentKey: string;
+  agentId: string;
   expectedVersion: number;
   context: ContextEnvelope;
 }
 
 export interface SubmitAgentRunInput {
   namespace: string;
-  agentKey: string;
+  agentId: string;
   sessionKey: string;
   trigger: AgentRunTrigger;
   input: Record<string, unknown>;
@@ -95,15 +95,15 @@ export class HarnessEngine {
   async replaceDefaultContext(input: ReplaceDefaultContextInput): Promise<Agent> {
     input = structuredClone(input);
     if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) throw new TypeError("CONTEXT_DEFAULTS_VERSION_REQUIRED");
-    const current = this.store.getAgent(input.agentKey);
-    if (!current) throw new Error(`agent not found: ${input.agentKey}`);
+    const current = this.store.getAgent(input.agentId);
+    if (!current) throw new Error(`agent not found: ${input.agentId}`);
     const resolved = resolveLocalContext(input.context, { schema: "octo.context-envelope/v3", items: [] }, current.agentSource);
     const adapters = await this.host.list();
     assertLoadedAdapter(adapters, resolved.resolvedExecutionPlan.adapter_type);
     let updated!: Agent;
     await this.store.transaction(() => {
-      const agent = this.store.getAgent(input.agentKey);
-      if (!agent) throw new Error(`agent not found: ${input.agentKey}`);
+      const agent = this.store.getAgent(input.agentId);
+      if (!agent) throw new Error(`agent not found: ${input.agentId}`);
       if (agent.contextDefaultsVersion !== input.expectedVersion) throw new Error("CONTEXT_DEFAULTS_VERSION_CONFLICT");
       assertMaterializationAdapter(agent, resolved.resolvedExecutionPlan.adapter_type);
       updated = { ...agent, defaultContext: resolved.effectiveContext, contextDefaultsVersion: agent.contextDefaultsVersion + 1 };
@@ -118,20 +118,20 @@ export class HarnessEngine {
     const requestHash = hashLocalValue({ ...input, context: contextHash(input.context) });
     const duplicate = await this.store.transaction(() => existingSubmission(this.store, input, requestHash));
     if (duplicate) return duplicate;
-    const registered = this.store.getAgent(input.agentKey);
-    if (!registered) throw new Error(`agent not found: ${input.agentKey}`);
+    const registered = this.store.getAgent(input.agentId);
+    if (!registered) throw new Error(`agent not found: ${input.agentId}`);
     const selectedAdapter = resolveLocalContext(registered.defaultContext, input.context, registered.agentSource).resolvedExecutionPlan.adapter_type;
     const adapters = selectedAdapter === registered.adapterType ? undefined : await this.host.list();
     let result!: SubmitAgentRunResult;
     await this.store.transaction(() => {
-      let session = this.store.getAgentSessionByKey(input.namespace, input.agentKey, input.sessionKey);
+      let session = this.store.getAgentSessionByKey(input.namespace, input.agentId, input.sessionKey);
       const existing = existingSubmission(this.store, input, requestHash);
       if (existing) {
         result = existing;
         return;
       }
-      const agent = this.store.getAgent(input.agentKey);
-      if (!agent) throw new Error(`agent not found: ${input.agentKey}`);
+      const agent = this.store.getAgent(input.agentId);
+      if (!agent) throw new Error(`agent not found: ${input.agentId}`);
       if (!Number.isSafeInteger(agent.contextDefaultsVersion) || agent.contextDefaultsVersion < 1) throw new TypeError("CONTEXT_DEFAULTS_VERSION_REQUIRED");
       assertLocalAgentConfig(agent.config);
       const resolved = resolveLocalContext(agent.defaultContext, input.context, agent.agentSource);
@@ -141,7 +141,7 @@ export class HarnessEngine {
         session = {
           id: id("asess"),
           namespace: input.namespace,
-          agentKey: input.agentKey,
+          agentId: input.agentId,
           sessionKey: input.sessionKey,
           status: "active",
           generation: 1,
@@ -152,7 +152,7 @@ export class HarnessEngine {
       }
       const run: AgentRun = {
         id: id("arun"),
-        agentSessionKey: session.id,
+        agentSessionId: session.id,
         runNo: session.nextRunNo++,
         status: "queued",
         nextSeq: 1,
@@ -167,7 +167,7 @@ export class HarnessEngine {
       };
       this.store.appendEvent(envelope(run, run.nextSeq++, { protocolVersion: 2,
         type: "run.queued",
-        payload: { trigger_kind: run.trigger.kind, trigger_occurrence_key: run.trigger.occurrenceKey }
+        payload: { trigger_kind: run.trigger.kind, trigger_occurrence_id: run.trigger.occurrenceId }
       }));
       this.store.putAgentRun(run);
       this.store.putAgentSession(session);
@@ -176,35 +176,35 @@ export class HarnessEngine {
     return result;
   }
 
-  canExecute(runKey: string): boolean {
-    const run = this.store.getAgentRun(runKey);
+  canExecute(runId: string): boolean {
+    const run = this.store.getAgentRun(runId);
     if (!run || run.status !== "queued") return false;
-    const session = this.store.getAgentSession(run.agentSessionKey);
-    if (!session || (session.activeRunKey && session.activeRunKey !== run.id)) return false;
+    const session = this.store.getAgentSession(run.agentSessionId);
+    if (!session || (session.activeRunId && session.activeRunId !== run.id)) return false;
     return !this.store.listAgentRuns().some(candidate =>
-      candidate.agentSessionKey === run.agentSessionKey &&
+      candidate.agentSessionId === run.agentSessionId &&
       candidate.runNo < run.runNo &&
       !TERMINAL.has(candidate.status)
     );
   }
 
-  async executeRun(runKey: string): Promise<{ run: AgentRun; events: EventEnvelope[] }> {
+  async executeRun(runId: string): Promise<{ run: AgentRun; events: EventEnvelope[] }> {
     let run!: AgentRun;
     let session!: AgentSession;
     // Claiming is one synchronous Store transaction. Do not move lookup or
     // eligibility checks outside this critical section or make the callback async.
     await this.store.transaction(() => {
-      const candidate = this.store.getAgentRun(runKey);
-      if (!candidate) throw new Error(`agent run not found: ${runKey}`);
+      const candidate = this.store.getAgentRun(runId);
+      if (!candidate) throw new Error(`agent run not found: ${runId}`);
       if (!this.canExecute(candidate.id)) {
         throw new Error(`agent run is not the executable session head: ${candidate.id}`);
       }
-      const candidateSession = this.store.getAgentSession(candidate.agentSessionKey);
-      if (!candidateSession) throw new Error(`agent session not found: ${candidate.agentSessionKey}`);
+      const candidateSession = this.store.getAgentSession(candidate.agentSessionId);
+      if (!candidateSession) throw new Error(`agent session not found: ${candidate.agentSessionId}`);
       assertRunSnapshot(candidate);
 
       candidate.status = "running";
-      candidateSession.activeRunKey = candidate.id;
+      candidateSession.activeRunId = candidate.id;
       run = candidate;
       session = candidateSession;
       this.store.appendEvent(envelope(run, run.nextSeq++, { protocolVersion: 2, type: "run.started", payload: {} }));
@@ -217,7 +217,7 @@ export class HarnessEngine {
     } catch (error) {
       await this.terminalizeRun(run.id, {
         protocolVersion: 2, type: "run.failed",
-        payload: failurePayload(error, { stage: "input_dispatch", defaultDomain: "runtime", runKey: run.id })
+        payload: failurePayload(error, { stage: "input_dispatch", defaultDomain: "runtime", runId: run.id })
       });
       throw error;
     }
@@ -232,8 +232,8 @@ export class HarnessEngine {
     const request: InvokeRequest = { protocolVersion: 2,
       agentSource: run.resolvedExecutionPlan!.agent_source,
       invocationId: id("invoke"),
-      agentSessionKey: session.id,
-      runKey: run.id,
+      agentSessionId: session.id,
+      runId: run.id,
       prompt,
       modelInput: prompt,
       ...(modelInputParts ? { modelInputParts } : {}),
@@ -265,7 +265,7 @@ export class HarnessEngine {
         }
         if (isTerminal(event)) {
           run.status = event.type === "run.completed" ? "completed" : event.type === "run.cancelled" ? "cancelled" : "failed";
-          delete session.activeRunKey;
+          delete session.activeRunId;
           this.store.putAgentSession(session);
         }
         this.store.putAgentRun(run);
@@ -274,16 +274,16 @@ export class HarnessEngine {
     return { run, events: this.store.getEvents(run.id) };
   }
 
-  async terminalizeRun(runKey: string, event: CanonicalEvent): Promise<AgentRun | undefined> {
+  async terminalizeRun(runId: string, event: CanonicalEvent): Promise<AgentRun | undefined> {
     if (!isTerminal(event)) throw new TypeError("terminal event required");
-    const run = this.store.getAgentRun(runKey);
+    const run = this.store.getAgentRun(runId);
     if (!run || TERMINAL.has(run.status)) return run;
-    const session = this.store.getAgentSession(run.agentSessionKey);
+    const session = this.store.getAgentSession(run.agentSessionId);
     run.status = event.type === "run.completed" ? "completed" : event.type === "run.cancelled" ? "cancelled" : "failed";
     await this.store.transaction(() => {
       this.store.appendEvent(envelope(run, run.nextSeq++, event));
-      if (session?.activeRunKey === run.id) {
-        delete session.activeRunKey;
+      if (session?.activeRunId === run.id) {
+        delete session.activeRunId;
         this.store.putAgentSession(session);
       }
       this.store.putAgentRun(run);
@@ -291,9 +291,9 @@ export class HarnessEngine {
     return run;
   }
 
-  async cancelRun(runKey: string, reason = "cancelled"): Promise<{ cancelled: boolean; status: AgentRun["status"] }> {
-    const run = this.store.getAgentRun(runKey);
-    if (!run) throw new Error(`agent run not found: ${runKey}`);
+  async cancelRun(runId: string, reason = "cancelled"): Promise<{ cancelled: boolean; status: AgentRun["status"] }> {
+    const run = this.store.getAgentRun(runId);
+    if (!run) throw new Error(`agent run not found: ${runId}`);
     if (TERMINAL.has(run.status)) return { cancelled: false, status: run.status };
     if (run.status === "queued") {
       await this.terminalizeRun(run.id, { protocolVersion: 2, type: "run.cancelled", payload: { reason } });
@@ -309,11 +309,11 @@ export class HarnessEngine {
 }
 
 function validateSubmission(input: SubmitAgentRunInput): void {
-  if (!input || Object.keys(input).some(name => !["namespace", "agentKey", "sessionKey", "trigger", "input", "context"].includes(name))) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
+  if (!input || Object.keys(input).some(name => !["namespace", "agentId", "sessionKey", "trigger", "input", "context"].includes(name))) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
   assertLocalContext(input.context);
   if (!/^[a-z][a-z0-9._-]{0,63}$/.test(input.namespace)) throw new Error("invalid namespace");
-  if (!input.agentKey || !input.sessionKey.startsWith("v1/")) throw new Error("agentKey and canonical sessionKey are required");
-  if (!input.trigger?.kind || !input.trigger.occurrenceKey) throw new Error("trigger kind and occurrenceKey are required");
+  if (!input.agentId || !input.sessionKey.startsWith("v1/")) throw new Error("agentId and canonical sessionKey are required");
+  if (!input.trigger?.kind || !input.trigger.occurrenceId) throw new Error("trigger kind and occurrenceId are required");
   if (!input.input || typeof input.input !== "object" || Array.isArray(input.input)) throw new Error("input must be an object");
   if (["channel_context", "context_refs", "appendInstructions", "agentConfig", "approvalMode"].some(name => name in input.input)) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
 }
@@ -323,9 +323,9 @@ function assertLoadedAdapter(adapters: Array<{ type: string }>, adapterType: str
 }
 
 function existingSubmission(store: Store, input: SubmitAgentRunInput, requestHash: string): SubmitAgentRunResult | undefined {
-  const session = store.getAgentSessionByKey(input.namespace, input.agentKey, input.sessionKey);
+  const session = store.getAgentSessionByKey(input.namespace, input.agentId, input.sessionKey);
   if (!session) return undefined;
-  const run = store.getAgentRunByOccurrence(session.id, input.trigger.occurrenceKey);
+  const run = store.getAgentRunByOccurrence(session.id, input.trigger.occurrenceId);
   if (!run) return undefined;
   assertRunSnapshot(run);
   if (run.requestHash !== requestHash) throw new Error("trigger occurrence was reused with a different AgentRun request");

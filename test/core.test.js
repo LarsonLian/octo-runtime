@@ -16,7 +16,7 @@ function capturingEngine() {
     list: () => [{ type: "test" }, { type: "other" }],
     async *invoke(adapterType, request) {
       requests.push({ adapterType, request: structuredClone(request) });
-      yield { protocolVersion: 2, type: "session.update", payload: { providerSession: { sessionId: `provider-${request.runKey}` } } };
+      yield { protocolVersion: 2, type: "session.update", payload: { providerSession: { sessionId: `provider-${request.runId}` } } };
       yield { protocolVersion: 2, type: "run.completed", payload: {} };
     },
     cancel: () => true
@@ -25,9 +25,9 @@ function capturingEngine() {
   return { engine: new HarnessEngine({ store, host }), store, requests };
 }
 
-const submission = (agentKey, occurrenceKey = "occurrence-1", context = emptyContext()) => ({
-  namespace: "local", agentKey, sessionKey: "v1/task/frozen",
-  trigger: { kind: "manual", occurrenceKey }, input: { prompt: "Do once" }, context
+const submission = (agentId, occurrenceId = "occurrence-1", context = emptyContext()) => ({
+  namespace: "local", agentId, sessionKey: "v1/task/frozen",
+  trigger: { kind: "manual", occurrenceId }, input: { prompt: "Do once" }, context
 });
 
 test("one trigger occurrence creates one AgentRun and preserves Provider resume state", async () => {
@@ -36,9 +36,9 @@ test("one trigger occurrence creates one AgentRun and preserves Provider resume 
   const agent = await engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: defaultContext() });
   const request = {
     namespace: "loop",
-    agentKey: agent.id,
+    agentId: agent.id,
     sessionKey: "v1/task/task-1",
-    trigger: { kind: "loop.task.manual", occurrenceKey: "task-event/event-1" },
+    trigger: { kind: "loop.task.manual", occurrenceId: "task-event/event-1" },
     input: { prompt: "Do T" }, context: emptyContext()
   };
   const first = await engine.submitAgentRun(request);
@@ -59,8 +59,8 @@ test("same occurrence with changed input is rejected", async () => {
   const store = new MemoryStore(); const engine = new HarnessEngine({ store, host });
   const agent = await engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: defaultContext() });
   const base = {
-    namespace: "webhook", agentKey: agent.id, sessionKey: "v1/hook/h-1/subject/s-1",
-    trigger: { kind: "webhook.delivery", occurrenceKey: "delivery/d-1" }, context: emptyContext()
+    namespace: "webhook", agentId: agent.id, sessionKey: "v1/hook/h-1/subject/s-1",
+    trigger: { kind: "webhook.delivery", occurrenceId: "delivery/d-1" }, context: emptyContext()
   };
   await engine.submitAgentRun({ ...base, input: { prompt: "one" } });
   await assert.rejects(engine.submitAgentRun({ ...base, input: { prompt: "two" } }), /different AgentRun request/);
@@ -72,9 +72,9 @@ test("only one concurrent executeRun call can claim a queued AgentRun", async ()
   const agent = await engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: defaultContext() });
   const submitted = await engine.submitAgentRun({
     namespace: "loop",
-    agentKey: agent.id,
+    agentId: agent.id,
     sessionKey: "v1/task/concurrent",
-    trigger: { kind: "loop.task.manual", occurrenceKey: "task-event/concurrent" },
+    trigger: { kind: "loop.task.manual", occurrenceId: "task-event/concurrent" },
     input: { prompt: "Do once" }, context: emptyContext()
   });
 
@@ -101,7 +101,7 @@ test("submitted Run freezes defaults and materialization before Agent changes", 
   const changedDefaults = defaultContext("full_access", "model-2");
   changedDefaults.items.find(item => item.name === "workspace").payload.path = `${process.cwd()}/future-workspace`;
   changedDefaults.items.find(item => item.name === "model").payload.reasoning = { effort: "high" };
-  const updated = await engine.replaceDefaultContext({ agentKey: agent.id, expectedVersion: 1, context: changedDefaults });
+  const updated = await engine.replaceDefaultContext({ agentId: agent.id, expectedVersion: 1, context: changedDefaults });
   updated.name = "changed";
   updated.config.providerAgentId = "changed-provider";
   updated.config.providerOptions.endpoint = "changed";
@@ -155,7 +155,7 @@ test("occurrence hashing uses canonical submitted Context, not item order or cur
   const agent = await engine.registerAgent({ agentSource: "provisioned", name: "hash", defaultContext: defaultContext() });
   const context = { schema: "octo.context-envelope/v3", items: [ { namespace: "octo.security", name: "approval_policy", payload: { mode: "ask" } }, { namespace: "octo.execution", name: "model", payload: { selection: { id: "override" } } } ] };
   const first = await engine.submitAgentRun(submission(agent.id, "hash", context));
-  await engine.replaceDefaultContext({ agentKey: agent.id, expectedVersion: 1, context: defaultContext("assisted", "changed") });
+  await engine.replaceDefaultContext({ agentId: agent.id, expectedVersion: 1, context: defaultContext("assisted", "changed") });
   const reordered = { items: [...context.items].reverse().map(item => ({ payload: item.payload, name: item.name, namespace: item.namespace })), schema: context.schema };
   const duplicate = await engine.submitAgentRun(submission(agent.id, "hash", reordered));
   assert.equal(duplicate.agentRun.id, first.agentRun.id);
@@ -174,8 +174,8 @@ test("default Context replacement uses CAS without changing stable materializati
   const changed = defaultContext("ask");
   changed.items.find(item => item.name === "adapter").payload.type = "other";
   const outcomes = await Promise.allSettled([
-    engine.replaceDefaultContext({ agentKey: agent.id, expectedVersion: 1, context: changed }),
-    engine.replaceDefaultContext({ agentKey: agent.id, expectedVersion: 1, context: defaultContext("assisted") })
+    engine.replaceDefaultContext({ agentId: agent.id, expectedVersion: 1, context: changed }),
+    engine.replaceDefaultContext({ agentId: agent.id, expectedVersion: 1, context: defaultContext("assisted") })
   ]);
   assert.equal(outcomes.filter(outcome => outcome.status === "fulfilled").length, 1);
   assert.match(outcomes.find(outcome => outcome.status === "rejected").reason.message, /VERSION_CONFLICT/);
@@ -214,7 +214,7 @@ test("register and submit reject legacy contracts and unsupported trusted Contex
   for (const item of [
     { namespace: "octo.control", name: "instructions", payload: { entries: [{ text: "trusted?", source: "agent_configuration" }] } },
     { namespace: "octo.content", name: "inline", payload: { entries: [{ text: "material" }] } },
-    { namespace: "octo.runtime", name: "selection", payload: { mode: "explicit", runtime_key: "remote" } }
+    { namespace: "octo.runtime", name: "selection", payload: { mode: "explicit", runtime_id: "remote" } }
   ]) {
     const context = { schema: "octo.context-envelope/v3", items: [item] };
     await assert.rejects(engine.submitAgentRun(submission(agent.id, "unsupported", context)), /LOCAL_CONTEXT_TYPE_UNSUPPORTED/);

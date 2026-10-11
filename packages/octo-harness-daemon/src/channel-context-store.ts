@@ -103,7 +103,7 @@ export class ChannelContextStaleGenerationError extends Error {
 
 interface SnapshotRow {
   snapshot_id: string;
-  run_key: string;
+  run_id: string;
   scope_key: string;
   consumer_key: string;
   session_generation: number;
@@ -235,9 +235,9 @@ export class ChannelContextStore {
    * generation is behind the latest. Selects both the delta (after the consumer
    * cursor) and an independent recovery projection (from the start of the window).
    */
-  prepareSnapshot(runKey: string, descriptor: ChannelContextDescriptor, now = Date.now()): PreparedChannelContextSnapshot {
+  prepareSnapshot(runId: string, descriptor: ChannelContextDescriptor, now = Date.now()): PreparedChannelContextSnapshot {
     assertChannelContextDescriptor(descriptor);
-    const existing = this.#snapshotForRun(runKey);
+    const existing = this.#snapshotForRun(runId);
     if (existing) {
       assertSnapshotIdentity(existing, descriptor);
       this.#assertCurrentGeneration(
@@ -245,25 +245,25 @@ export class ChannelContextStore {
         existing.consumer_key,
         descriptor.session_generation,
         Math.max(descriptor.session_generation, existing.effective_session_generation),
-        runKey
+        runId
       );
       if (existing.state === "failed") {
         const active = this.#db.prepare(
-          `SELECT run_key FROM channel_context_snapshots
+          `SELECT run_id FROM channel_context_snapshots
            WHERE scope_key = ? AND consumer_key = ? AND effective_session_generation = ?
-             AND run_key <> ? AND state IN ('prepared', 'submitted')
+             AND run_id <> ? AND state IN ('prepared', 'submitted')
            LIMIT 1`
         ).get(
           existing.scope_key,
           existing.consumer_key,
           existing.effective_session_generation,
-          runKey
-        ) as { run_key: string } | undefined;
-        if (active) throw new ChannelContextConsumerBusyError(active.run_key);
+          runId
+        ) as { run_id: string } | undefined;
+        if (active) throw new ChannelContextConsumerBusyError(active.run_id);
         this.#db.prepare(
           "UPDATE channel_context_snapshots SET state = 'prepared' WHERE snapshot_id = ? AND state = 'failed'"
         ).run(existing.snapshot_id);
-        return this.getSnapshot(runKey)!;
+        return this.getSnapshot(runId)!;
       }
       return snapshotFromRow(existing);
     }
@@ -279,7 +279,7 @@ export class ChannelContextStore {
         descriptor.consumer_key,
         descriptor.session_generation,
         descriptor.session_generation,
-        runKey
+        runId
       );
       this.#db.prepare(
         `INSERT OR IGNORE INTO channel_context_consumers (
@@ -289,12 +289,12 @@ export class ChannelContextStore {
       ).run(scopeKey, descriptor.consumer_key, descriptor.session_generation, now);
 
       const active = this.#db.prepare(
-        `SELECT run_key FROM channel_context_snapshots
+        `SELECT run_id FROM channel_context_snapshots
          WHERE scope_key = ? AND consumer_key = ? AND effective_session_generation = ?
-           AND run_key <> ? AND state IN ('prepared', 'submitted')
+           AND run_id <> ? AND state IN ('prepared', 'submitted')
          LIMIT 1`
-      ).get(scopeKey, descriptor.consumer_key, descriptor.session_generation, runKey) as { run_key: string } | undefined;
-      if (active) throw new ChannelContextConsumerBusyError(active.run_key);
+      ).get(scopeKey, descriptor.consumer_key, descriptor.session_generation, runId) as { run_id: string } | undefined;
+      if (active) throw new ChannelContextConsumerBusyError(active.run_id);
 
       const consumer = this.#db.prepare(
         `SELECT consumed_order_key, consumed_through_seq, version
@@ -342,7 +342,7 @@ export class ChannelContextStore {
 
       this.#db.prepare(
         `INSERT INTO channel_context_snapshots (
-           snapshot_id, run_key, scope_key, consumer_key, session_generation,
+           snapshot_id, run_id, scope_key, consumer_key, session_generation,
            effective_session_generation, selected_variant,
            base_consumer_version, base_consumed_seq, trigger_message_id, trigger_seq,
            commit_order_key, payload_json, rendered_text, serializer_version,
@@ -351,7 +351,7 @@ export class ChannelContextStore {
          ) VALUES (?, ?, ?, ?, ?, ?, 'primary', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'prepared', ?)`
       ).run(
         snapshotId,
-        runKey,
+        runId,
         scopeKey,
         descriptor.consumer_key,
         descriptor.session_generation,
@@ -372,7 +372,7 @@ export class ChannelContextStore {
         now
       );
       this.#db.exec("COMMIT");
-      return this.getSnapshot(runKey)!;
+      return this.getSnapshot(runId)!;
     } catch (error) {
       this.#db.exec("ROLLBACK");
       throw error;
@@ -423,8 +423,8 @@ export class ChannelContextStore {
   }
 
   /** Return the frozen snapshot for a run, or undefined if none was prepared. */
-  getSnapshot(runKey: string): PreparedChannelContextSnapshot | undefined {
-    const row = this.#snapshotForRun(runKey);
+  getSnapshot(runId: string): PreparedChannelContextSnapshot | undefined {
+    const row = this.#snapshotForRun(runId);
     return row ? snapshotFromRow(row) : undefined;
   }
 
@@ -432,11 +432,11 @@ export class ChannelContextStore {
    * Called when the provider's resume fell back to a fresh session mid-turn: the
    * snapshot rebinds to the recovery variant and a new consumer generation so the
    * later commit advances the right cursor. Idempotent; guarded by ConsumerBusy. */
-  selectRecovery(runKey: string, now = Date.now()): PreparedChannelContextSnapshot {
+  selectRecovery(runId: string, now = Date.now()): PreparedChannelContextSnapshot {
     this.#db.exec("BEGIN IMMEDIATE");
     try {
-      const row = this.#snapshotForRun(runKey);
-      if (!row) throw new Error(`channel context snapshot not found for run ${runKey}`);
+      const row = this.#snapshotForRun(runId);
+      if (!row) throw new Error(`channel context snapshot not found for run ${runId}`);
       if (row.selected_variant === "recovery") {
         this.#db.exec("COMMIT");
         return snapshotFromRow(row);
@@ -449,12 +449,12 @@ export class ChannelContextStore {
         throw new Error("channel context recovery generation exceeds the safe integer range");
       }
       const active = this.#db.prepare(
-        `SELECT run_key FROM channel_context_snapshots
+        `SELECT run_id FROM channel_context_snapshots
          WHERE scope_key = ? AND consumer_key = ? AND effective_session_generation = ?
-           AND run_key <> ? AND state IN ('prepared', 'submitted')
+           AND run_id <> ? AND state IN ('prepared', 'submitted')
          LIMIT 1`
-      ).get(row.scope_key, row.consumer_key, recoveryGeneration, runKey) as { run_key: string } | undefined;
-      if (active) throw new ChannelContextConsumerBusyError(active.run_key);
+      ).get(row.scope_key, row.consumer_key, recoveryGeneration, runId) as { run_id: string } | undefined;
+      if (active) throw new ChannelContextConsumerBusyError(active.run_id);
       this.#db.prepare(
         `INSERT OR IGNORE INTO channel_context_consumers (
            scope_key, consumer_key, session_generation, consumed_order_key,
@@ -480,7 +480,7 @@ export class ChannelContextStore {
         row.snapshot_id
       );
       this.#db.exec("COMMIT");
-      return this.getSnapshot(runKey)!;
+      return this.getSnapshot(runId)!;
     } catch (error) {
       this.#db.exec("ROLLBACK");
       throw error;
@@ -491,11 +491,11 @@ export class ChannelContextStore {
    * provider session. Unlike resume fallback, this keeps the current consumer
    * generation: there was no failed provider session to invalidate, and every
    * later turn will independently select the same full-history projection. */
-  selectColdProjection(runKey: string): PreparedChannelContextSnapshot {
+  selectColdProjection(runId: string): PreparedChannelContextSnapshot {
     this.#db.exec("BEGIN IMMEDIATE");
     try {
-      const row = this.#snapshotForRun(runKey);
-      if (!row) throw new Error(`channel context snapshot not found for run ${runKey}`);
+      const row = this.#snapshotForRun(runId);
+      if (!row) throw new Error(`channel context snapshot not found for run ${runId}`);
       if (row.selected_variant === "recovery") {
         this.#db.exec("COMMIT");
         return snapshotFromRow(row);
@@ -507,7 +507,7 @@ export class ChannelContextStore {
         "UPDATE channel_context_snapshots SET selected_variant = 'recovery' WHERE snapshot_id = ?"
       ).run(row.snapshot_id);
       this.#db.exec("COMMIT");
-      return this.getSnapshot(runKey)!;
+      return this.getSnapshot(runId)!;
     } catch (error) {
       this.#db.exec("ROLLBACK");
       throw error;
@@ -516,20 +516,20 @@ export class ChannelContextStore {
 
   /** Mark a prepared snapshot as submitted once its run.started has been enqueued;
    * the consumer cursor is not advanced until commit. No-op if not `prepared`. */
-  markSubmitted(runKey: string): PreparedChannelContextSnapshot | undefined {
+  markSubmitted(runId: string): PreparedChannelContextSnapshot | undefined {
     this.#db.prepare(
-      "UPDATE channel_context_snapshots SET state = 'submitted' WHERE run_key = ? AND state = 'prepared'"
-    ).run(runKey);
-    return this.getSnapshot(runKey);
+      "UPDATE channel_context_snapshots SET state = 'submitted' WHERE run_id = ? AND state = 'prepared'"
+    ).run(runId);
+    return this.getSnapshot(runId);
   }
 
   /** Abandon a snapshot (run failed/cancelled or context could not be granted) so
    * it releases the consumer without advancing the cursor. Only affects
    * prepared/submitted rows; committed snapshots are untouched. */
-  markFailed(runKey: string): void {
+  markFailed(runId: string): void {
     this.#db.prepare(
-      "UPDATE channel_context_snapshots SET state = 'failed' WHERE run_key = ? AND state IN ('prepared', 'submitted')"
-    ).run(runKey);
+      "UPDATE channel_context_snapshots SET state = 'failed' WHERE run_id = ? AND state IN ('prepared', 'submitted')"
+    ).run(runId);
   }
 
   /** Advance the consumer only after Agent Work durably ACKs the successful
@@ -537,13 +537,13 @@ export class ChannelContextStore {
    * consumer row: if the version moved (another run committed), this snapshot is
    * marked failed and reports `consumer_advanced`. Idempotent — already-committed
    * returns success. This is the only method that moves the consumer cursor. */
-  commitSnapshot(runKey: string, now = Date.now()): ContextCommitResult {
+  commitSnapshot(runId: string, now = Date.now()): ContextCommitResult {
     this.#db.exec("BEGIN IMMEDIATE");
     try {
-      const row = this.#snapshotForRun(runKey);
+      const row = this.#snapshotForRun(runId);
       if (!row) {
         this.#db.exec("COMMIT");
-        return { snapshot_id: runKey, committed: false, reason: "snapshot_not_found" };
+        return { snapshot_id: runId, committed: false, reason: "snapshot_not_found" };
       }
       if (row.state === "committed") {
         this.#db.exec("COMMIT");
@@ -600,14 +600,14 @@ export class ChannelContextStore {
     this.#db.exec("BEGIN IMMEDIATE");
     try {
       const orphanCandidates = this.#db.prepare(
-        `SELECT snapshot_id, run_key FROM channel_context_snapshots
+        `SELECT snapshot_id, run_id FROM channel_context_snapshots
          WHERE created_at_ms < ? AND state IN ('prepared', 'submitted')`
-      ).all(activeSnapshotCutoff) as Array<{ snapshot_id: string; run_key: string }>;
+      ).all(activeSnapshotCutoff) as Array<{ snapshot_id: string; run_id: string }>;
       const failSnapshot = this.#db.prepare(
         "UPDATE channel_context_snapshots SET state = 'failed' WHERE snapshot_id = ? AND state IN ('prepared', 'submitted')"
       );
       for (const snapshot of orphanCandidates) {
-        if (!protectedRunIds.has(snapshot.run_key)) failSnapshot.run(snapshot.snapshot_id);
+        if (!protectedRunIds.has(snapshot.run_id)) failSnapshot.run(snapshot.snapshot_id);
       }
       const scopes = this.#db.prepare("SELECT scope_key FROM channel_context_scopes").all() as Array<{ scope_key: string }>;
       for (const { scope_key: scopeKey } of scopes) this.#pruneScope(scopeKey, now);
@@ -699,16 +699,16 @@ export class ChannelContextStore {
   walBytes(): number { return fileBytes(`${this.#file}-wal`); }
   close(): void { this.#db.close(); }
 
-  #snapshotForRun(runKey: string): SnapshotRow | undefined {
+  #snapshotForRun(runId: string): SnapshotRow | undefined {
     return this.#db.prepare(
-      `SELECT snapshot_id, run_key, scope_key, consumer_key, session_generation,
+      `SELECT snapshot_id, run_id, scope_key, consumer_key, session_generation,
               effective_session_generation, selected_variant,
               base_consumer_version, base_consumed_seq, trigger_message_id, trigger_seq, commit_order_key,
               payload_json, rendered_text, serializer_version, rendered_sha256,
               completeness, recovery_rendered_text, recovery_rendered_sha256,
               recovery_completeness, state
-       FROM channel_context_snapshots WHERE run_key = ?`
-    ).get(runKey) as SnapshotRow | undefined;
+       FROM channel_context_snapshots WHERE run_id = ?`
+    ).get(runId) as SnapshotRow | undefined;
   }
 
   /** Upsert a scope row. `gap_after_seq` monotonically tightens: a new gap only
@@ -798,15 +798,15 @@ export class ChannelContextStore {
     consumerKey: string,
     requestedGeneration: number,
     allowedGeneration: number,
-    runKey: string
+    runId: string
   ): void {
     const active = this.#db.prepare(
-      `SELECT run_key FROM channel_context_snapshots
-       WHERE scope_key = ? AND consumer_key = ? AND run_key <> ?
+      `SELECT run_id FROM channel_context_snapshots
+       WHERE scope_key = ? AND consumer_key = ? AND run_id <> ?
          AND effective_session_generation > ? AND state IN ('prepared', 'submitted')
        ORDER BY effective_session_generation DESC LIMIT 1`
-    ).get(scopeKey, consumerKey, runKey, allowedGeneration) as { run_key: string } | undefined;
-    if (active) throw new ChannelContextConsumerBusyError(active.run_key);
+    ).get(scopeKey, consumerKey, runId, allowedGeneration) as { run_id: string } | undefined;
+    if (active) throw new ChannelContextConsumerBusyError(active.run_id);
 
     const row = this.#db.prepare(
       `SELECT MAX(generation) AS latest_generation FROM (
@@ -816,9 +816,9 @@ export class ChannelContextStore {
          UNION ALL
          SELECT effective_session_generation AS generation
          FROM channel_context_snapshots
-         WHERE scope_key = ? AND consumer_key = ? AND run_key <> ? AND state = 'committed'
+         WHERE scope_key = ? AND consumer_key = ? AND run_id <> ? AND state = 'committed'
        )`
-    ).get(scopeKey, consumerKey, scopeKey, consumerKey, runKey) as {
+    ).get(scopeKey, consumerKey, scopeKey, consumerKey, runId) as {
       latest_generation: number | null;
     };
     if (row.latest_generation !== null && row.latest_generation > allowedGeneration) {
@@ -848,7 +848,7 @@ export class ChannelContextStore {
 export function channelScopeKey(scope: ChannelScope): string {
   return canonicalJson({
     tenant_id: scope.tenant_id,
-    endpoint_key: scope.endpoint_key,
+    endpoint_id: scope.endpoint_id,
     channel: scope.channel,
     account_id: scope.account_id,
     bot_id: scope.bot_id,
@@ -924,7 +924,7 @@ function migrate(db: DatabaseSync): void {
       );
       CREATE TABLE IF NOT EXISTS channel_context_snapshots (
         snapshot_id TEXT PRIMARY KEY,
-        run_key TEXT NOT NULL UNIQUE,
+        run_id TEXT NOT NULL UNIQUE,
         scope_key TEXT NOT NULL,
         consumer_key TEXT NOT NULL,
         session_generation INTEGER NOT NULL,
@@ -1041,7 +1041,7 @@ function assertSnapshotIdentity(row: SnapshotRow, descriptor: ChannelContextDesc
     || row.session_generation !== descriptor.session_generation
     || row.trigger_message_id !== descriptor.trigger_message_id
     || row.trigger_seq !== (descriptor.trigger_seq ?? null)) {
-    throw new Error(`run ${row.run_key} already has a different channel context snapshot`);
+    throw new Error(`run ${row.run_id} already has a different channel context snapshot`);
   }
 }
 

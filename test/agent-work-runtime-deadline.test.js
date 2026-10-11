@@ -27,7 +27,7 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task 
       return;
     }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", runtime_key: "runtime-deadline", protocol_version: 2 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", runtime_id: "runtime-deadline", protocol_version: 2 } }));
   });
   const websocketServer = new WebSocketServer({ noServer: true });
   server.on("upgrade", (request, socket, head) => {
@@ -41,10 +41,10 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task 
     effective_context: executionContext(plan, compactionPort ? [{ namespace: "octo.content", name: "inline",
       payload: { entries: [{ text: "material to measure" }] } }] : []), resolved_execution_plan: plan,
     resolved_runtime_selection: resolvedRuntimeSelection("runtime-deadline"),
-    run_key: "run-deadline", agent_session_key: "session-deadline",
-    agent_run_request: { context: contextEnvelope(), namespace: "test", agent_key: "agent-deadline",
-      agent_revision_key: "revision-deadline", session_affinity_key: "deadline",
-      trigger: { kind: "test", occurrence_key: "deadline" }, input: { prompt: "Return done" } },
+    run_id: "run-deadline", agent_session_id: "session-deadline",
+    agent_run_request: { context: contextEnvelope(), namespace: "test", agent_id: "agent-deadline",
+      agent_revision_id: "revision-deadline", session_affinity_key: "deadline",
+      trigger: { kind: "test", occurrence_id: "deadline" }, input: { prompt: "Return done" } },
     agent_revision: { definition: { instructions: "Return done" } }
   };
   websocketServer.on("connection", websocket => websocket.on("message", raw => {
@@ -52,7 +52,7 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task 
     frames.push(frame);
     if (frame.type === "runtime.hello") {
       websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
-      websocket.send(wire("runtime.command", { server_seq: 1, command_key: "command-deadline", run_key: "run-deadline",
+      websocket.send(wire("runtime.command", { server_seq: 1, command_id: "command-deadline", run_id: "run-deadline",
         type: "run.start", payload: envelope, lease_id: "lease-deadline", fencing_token: 1 }));
     }
   }));
@@ -64,7 +64,7 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task 
       await writeFile(join(directory, "output.txt"), content);
       await mkdir(join(directory, ".octo/task-outputs"), { recursive: true });
       await writeFile(join(directory, ".octo/task-outputs/run-deadline.json"), JSON.stringify({
-        schema: "octo.task-output-manifest/v1", outputs: [{ output_key: "proof", relative_path: "output.txt",
+        schema: "octo.task-output-manifest/v1", outputs: [{ output_id: "proof", relative_path: "output.txt",
           name: "output.txt", media_type: "text/plain", size: content.length,
           sha256: createHash("sha256").update(content).digest("hex"), role: "output" }]
       }));
@@ -77,7 +77,7 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task 
       cancel: async () => ({ cancelled: true }),
       async *invoke(_type, request) {
         calls.push(request);
-        if (task) request.runMetadata.taskMaterials = [{ task_key: "task-deadline" }];
+        if (task) request.runMetadata.taskMaterials = [{ task_id: "task-deadline" }];
         yield* invoke(request);
       }
     }, undefined, admission);

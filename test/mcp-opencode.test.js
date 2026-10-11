@@ -53,8 +53,8 @@ test("OpenCode merges MCP into the child config and redacts provider observation
   try {
     const command = await buildOpenCodeCommand({ protocolVersion: 2,
       invocationId: "invoke-mcp",
-      agentSessionKey: "session-mcp",
-      runKey: "run-mcp",
+      agentSessionId: "session-mcp",
+      runId: "run-mcp",
       prompt: "call the tool",
       modelInput: "call the tool",
       workdir: process.cwd(),

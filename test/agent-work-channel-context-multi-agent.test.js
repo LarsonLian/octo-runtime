@@ -29,7 +29,7 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
     if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
     for await (const _chunk of request) { /* Consume the registration body. */ }
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", runtime_key: "runtime-multi-agent" , protocol_version: 2 } }));
+    response.end(JSON.stringify({ runtime: { profile: "default", runtime_id: "runtime-multi-agent" , protocol_version: 2 } }));
   });
   httpServer.on("upgrade", (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
@@ -40,12 +40,12 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
       if (envelope.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
         websocket.send(wire("context.append", {
-		  agent_key: "agent-a",
+		  agent_id: "agent-a",
           scope: scopes.a,
           facts: [groupFact("a", 1, "A background ABCDE")]
         }));
         websocket.send(wire("context.append", {
-		  agent_key: "agent-b",
+		  agent_id: "agent-b",
           scope: scopes.b,
           facts: [groupFact("b", 1, "B background ABCDE")]
         }));
@@ -68,23 +68,23 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
       if (envelope.type !== "run.event_batch") return;
       const terminal = envelope.payload.events.find(event => event.type === "run.completed");
       websocket.send(wire("event.ack", {
-        run_key: envelope.payload.run_key,
+        run_id: envelope.payload.run_id,
         received_through_seq: envelope.payload.last_seq,
         durable_through_seq: envelope.payload.last_seq,
         ...(terminal ? terminalGrant(terminal) : {})
       }));
       if (!terminal) return;
 
-      completedRuns.add(envelope.payload.run_key);
+      completedRuns.add(envelope.payload.run_id);
       if (!secondRoundSent && ["run-group-a-1", "run-group-b-1", "run-dm-a-1"].every(id => completedRuns.has(id))) {
         secondRoundSent = true;
         websocket.send(wire("context.append", {
-		  agent_key: "agent-a",
+		  agent_id: "agent-a",
           scope: scopes.a,
           facts: [groupFact("a", 3, "F after R1 for A")]
         }));
         websocket.send(wire("context.append", {
-		  agent_key: "agent-b",
+		  agent_id: "agent-b",
           scope: scopes.b,
           facts: [groupFact("b", 3, "F after R1 for B")]
         }));
@@ -95,7 +95,7 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
       if (!recoveryRoundSent && ["run-group-a-2", "run-group-b-2", "run-dm-a-2"].every(id => completedRuns.has(id))) {
         recoveryRoundSent = true;
         websocket.send(wire("context.append", {
-		  agent_key: "agent-a",
+		  agent_id: "agent-a",
           scope: scopes.a,
           facts: [groupFact("a", 5, "G before idle recovery for A")]
         }));
@@ -113,12 +113,12 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
       cancel: async () => ({ cancelled: true }),
       async *invoke(_adapterType, request) {
         assertInvokeRequest(request);
-        providerRequests.set(request.runKey, request);
+        providerRequests.set(request.runId, request);
         yield { protocolVersion: 2,
           type: "session.update",
-          payload: { providerSession: { sessionId: providerSessionFor(request.runKey), resumable: true } }
+          payload: { providerSession: { sessionId: providerSessionFor(request.runId), resumable: true } }
         };
-        yield { protocolVersion: 2, type: "message.delta", payload: { channel: "final", text: `R1 ${request.runKey}` } };
+        yield { protocolVersion: 2, type: "message.delta", payload: { channel: "final", text: `R1 ${request.runId}` } };
         yield { protocolVersion: 2, type: "run.completed", payload: {} };
       }
     };
@@ -190,8 +190,8 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
     await runtime.close();
     runtime = undefined;
     const store = ChannelContextStore.open(contextPath);
-    for (const runKey of ["run-group-a-1", "run-group-b-1", "run-group-a-2", "run-group-b-2", "run-group-a-3"]) {
-      assert.equal(store.getSnapshot(runKey).state, "committed");
+    for (const runId of ["run-group-a-1", "run-group-b-1", "run-group-a-2", "run-group-b-2", "run-group-a-3"]) {
+      assert.equal(store.getSnapshot(runId).state, "committed");
     }
     assert.deepEqual(store.getSnapshot("run-group-a-2").facts.map(item => item.message_seq), [3]);
     assert.deepEqual(store.getSnapshot("run-group-b-2").facts.map(item => item.message_seq), [3]);
@@ -211,7 +211,7 @@ test("two Agents isolate group deltas while idle recovery and two-round DM prese
 function groupScope(agent) {
   return {
     tenant_id: "tenant-e2e",
-    endpoint_key: `endpoint-${agent}`,
+    endpoint_id: `endpoint-${agent}`,
     channel: "fake-im",
     account_id: null,
     bot_id: `bot-${agent}`,
@@ -256,16 +256,16 @@ function groupEnvelope(agent, round, text) {
     internal_context: { continuity: items[0].payload },
     effective_context: executionContext(plan, items.slice(1)),
     resolved_execution_plan: plan,
-    run_key: `run-group-${agent}-${round}`,
-    agent_session_key: `harness-group-${agent}`,
+    run_id: `run-group-${agent}-${round}`,
+    agent_session_id: `harness-group-${agent}`,
     ...(round === 2 ? { provider_session: { sessionId: `provider-group-${agent}`, resumable: true } } : {}),
     agent_run_request: {
       context: contextEnvelope(items.slice(1)),
       namespace: "im",
-      agent_key: `agent-${agent}`,
-      agent_revision_key: `revision-${agent}`,
+      agent_id: `agent-${agent}`,
+      agent_revision_id: `revision-${agent}`,
       session_affinity_key: `v1/octo/endpoint-${agent}/group/group-${agent}`,
-      trigger: { kind: "im.message", occurrence_key: `message/${trigger.message_id}` },
+      trigger: { kind: "im.message", occurrence_id: `message/${trigger.message_id}` },
       input: {
         parts: [{ type: "text", text }]
       }
@@ -286,16 +286,16 @@ function dmEnvelope(round) {
     context_configuration_version: 1,
     effective_context: executionContext(plan),
     resolved_execution_plan: plan,
-    run_key: `run-dm-a-${round}`,
-    agent_session_key: "harness-dm-a",
+    run_id: `run-dm-a-${round}`,
+    agent_session_id: "harness-dm-a",
     ...(round === 2 ? { provider_session: { sessionId: "provider-dm-a", resumable: true } } : {}),
     agent_run_request: {
       context: contextEnvelope(),
       namespace: "im",
-      agent_key: "agent-a",
-      agent_revision_key: "revision-a",
+      agent_id: "agent-a",
+      agent_revision_id: "revision-a",
       session_affinity_key: "v1/octo/endpoint-a/dm/user-a",
-      trigger: { kind: "im.message", occurrence_key: `message/dm-message-${round}` },
+      trigger: { kind: "im.message", occurrence_id: `message/dm-message-${round}` },
       input: { parts: [{ type: "text", text: `DM U${round} for A` }] }
     },
     agent_revision: {
@@ -307,8 +307,8 @@ function dmEnvelope(round) {
 function startCommand(serverSeq, key, payload) {
   return wire("runtime.command", {
     server_seq: serverSeq,
-    command_key: `command-${key}`,
-    run_key: payload.run_key,
+    command_id: `command-${key}`,
+    run_id: payload.run_id,
     type: "run.start",
     payload,
     lease_id: `lease-${key}`,
@@ -316,7 +316,7 @@ function startCommand(serverSeq, key, payload) {
   });
 }
 
-function providerSessionFor(runKey) {
-  if (runKey.includes("run-dm-a")) return "provider-dm-a";
-  return runKey.includes("group-a") ? "provider-group-a" : "provider-group-b";
+function providerSessionFor(runId) {
+  if (runId.includes("run-dm-a")) return "provider-dm-a";
+  return runId.includes("group-a") ? "provider-group-a" : "provider-group-b";
 }

@@ -23,7 +23,7 @@ test('optional unknown metadata ignored, known policy budget still enforced',()=
  assert.throws(()=>assertScenarioPolicy({enabled:true,instructions:['中'.repeat(6000)],default_skills:[]}),/INVALID/);
 });
 test('registry is deterministic, has no fallback, enforces captured selection budget',()=>{
- const registry=new ContextBuilderRegistry();const builder={id:'doc-selection',version:'1',scenarioKey:request.key,build:()=>structuredClone(context)};
+ const registry=new ContextBuilderRegistry();const builder={id:'doc-selection',version:'1',scenarioId:request.key,build:()=>structuredClone(context)};
  registry.register(builder);assert.throws(()=>registry.register(builder),/DUPLICATED/);
  assert.throws(()=>registry.build('other',{}),/NOT_FOUND/);
  assert.throws(()=>registry.build(request.key,{kind:'document_selection',document_id:'doc',text:'中'.repeat(12000)}),/INVALID/);

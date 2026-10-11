@@ -35,7 +35,7 @@ for (const mode of ["normal", "stall", "ignore-interrupt", "commentary", "open-t
 test("Codex reports scoped activity before normalization without retry/duplicate progress", { timeout: 5_000 }, async () => {
   const adapter = createCodexAdapter({ command:process.execPath, appServerArgs:[fileURLToPath(new URL("../test-support/fake-codex-activity.mjs",import.meta.url))] });
   const activities=[]; const events=[];
-  for await(const event of adapter.invoke(invokeRequest({ invocationId: "i", agentSessionKey: "s", runKey: "r", signal: AbortSignal.timeout(4_000) }), {
+  for await(const event of adapter.invoke(invokeRequest({ invocationId: "i", agentSessionId: "s", runId: "r", signal: AbortSignal.timeout(4_000) }), {
     observe:async()=>({captureId:"off",state:"disabled",complete:false}), reportActivity:a=>activities.push(a)
   })) events.push(event);
   assert.equal(activities.filter(a=>a.kind==="turn_progress" && a.method==="text_delta").length,1);
@@ -58,8 +58,8 @@ test("Codex cancellation reaps the whole app-server process group", { skip: proc
   try {
     for await (const event of adapter.invoke(invokeRequest({
       invocationId: "invoke-cancel-tree",
-      agentSessionKey: "session-cancel-tree",
-      runKey: "run-cancel-tree",
+      agentSessionId: "session-cancel-tree",
+      runId: "run-cancel-tree",
       prompt: `WAIT_FOR_CANCEL PID_FILE=${pidFile}`,
       modelInput: `WAIT_FOR_CANCEL PID_FILE=${pidFile}`,
       signal: AbortSignal.any([controller.signal, AbortSignal.timeout(4_000)])

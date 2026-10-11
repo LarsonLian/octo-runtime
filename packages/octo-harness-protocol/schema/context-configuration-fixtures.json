@@ -151,7 +151,7 @@
           "name": "selection",
           "payload": {
             "mode": "explicit",
-            "runtime_key": "device-b"
+            "runtime_id": "device-b"
           }
         }
       ]
@@ -164,7 +164,7 @@
           "name": "selection",
           "payload": {
             "mode": "explicit",
-            "runtime_key": "device-b",
+            "runtime_id": "device-b",
             "offline_behavior": "wait"
           }
         }
@@ -205,7 +205,7 @@
           "name": "selection",
           "payload": {
             "mode": "explicit",
-            "runtime_key": "device-c"
+            "runtime_id": "device-c"
           }
         }
       ]
@@ -246,7 +246,7 @@
           "name": "selection",
           "payload": {
             "mode": "explicit",
-            "runtime_key": "device-a",
+            "runtime_id": "device-a",
             "offline_behavior": "fail"
           }
         }
@@ -303,7 +303,7 @@
             "payload": {
               "include": [
                 {
-                  "resource_key": "ec91fdd9-256c-475a-8611-249b50cb7eb1"
+                  "resource_id": "ec91fdd9-256c-475a-8611-249b50cb7eb1"
                 }
               ],
               "exclude": []
@@ -320,7 +320,7 @@
             "payload": {
               "include": [
                 {
-                  "resource_key": "d0a36305-55bb-4c7f-805a-98d311c23b00"
+                  "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00"
                 }
               ],
               "exclude": []
@@ -338,12 +338,12 @@
           "payload": {
             "include": [
               {
-                "resource_key": "7b476727-faf3-430a-88e7-e4a514079dfe"
+                "resource_id": "7b476727-faf3-430a-88e7-e4a514079dfe"
               }
             ],
             "exclude": [
               {
-                "resource_key": "ec91fdd9-256c-475a-8611-249b50cb7eb1"
+                "resource_id": "ec91fdd9-256c-475a-8611-249b50cb7eb1"
               }
             ]
           }
@@ -359,10 +359,10 @@
           "payload": {
             "include": [
               {
-                "resource_key": "7b476727-faf3-430a-88e7-e4a514079dfe"
+                "resource_id": "7b476727-faf3-430a-88e7-e4a514079dfe"
               },
               {
-                "resource_key": "d0a36305-55bb-4c7f-805a-98d311c23b00"
+                "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00"
               }
             ],
             "exclude": []
@@ -387,7 +387,7 @@
             "payload": {
               "include": [
                 {
-                  "resource_key": "d0a36305-55bb-4c7f-805a-98d311c23b00"
+                  "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00"
                 }
               ],
               "exclude": []
@@ -406,7 +406,7 @@
             "include": [],
             "exclude": [
               {
-                "resource_key": "d0a36305-55bb-4c7f-805a-98d311c23b00"
+                "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00"
               }
             ]
           }
@@ -431,7 +431,7 @@
             "payload": {
               "include": [
                 {
-                  "resource_key": "d0a36305-55bb-4c7f-805a-98d311c23b00"
+                  "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00"
                 }
               ],
               "exclude": []
@@ -449,7 +449,7 @@
           "payload": {
             "include": [
               {
-                "resource_key": "d0a36305-55bb-4c7f-805a-98d311c23b00",
+                "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
                 "version": "2"
               }
             ],
@@ -476,7 +476,7 @@
             "payload": {
               "include": [
                 {
-                  "resource_key": "d0a36305-55bb-4c7f-805a-98d311c23b00",
+                  "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
                   "components": [
                     "skill:writer"
                   ],
@@ -498,7 +498,7 @@
           "payload": {
             "include": [
               {
-                "resource_key": "d0a36305-55bb-4c7f-805a-98d311c23b00",
+                "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
                 "components": [
                   "skill:writer",
                   "mcp:docs"
@@ -520,7 +520,7 @@
           "payload": {
             "include": [
               {
-                "resource_key": "d0a36305-55bb-4c7f-805a-98d311c23b00",
+                "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
                 "components": [
                   "skill:writer",
                   "mcp:docs"
@@ -550,7 +550,7 @@
             "payload": {
               "include": [
                 {
-                  "resource_key": "d0a36305-55bb-4c7f-805a-98d311c23b00",
+                  "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
                   "components": [
                     "skill:writer"
                   ]
@@ -571,7 +571,7 @@
           "payload": {
             "include": [
               {
-                "resource_key": "d0a36305-55bb-4c7f-805a-98d311c23b00",
+                "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
                 "components": []
               }
             ],
@@ -598,7 +598,7 @@
             "payload": {
               "include": [
                 {
-                  "resource_key": "d0a36305-55bb-4c7f-805a-98d311c23b00",
+                  "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
                   "invoke": true
                 }
               ],
@@ -617,7 +617,7 @@
           "payload": {
             "include": [
               {
-                "resource_key": "d0a36305-55bb-4c7f-805a-98d311c23b00",
+                "resource_id": "d0a36305-55bb-4c7f-805a-98d311c23b00",
                 "invoke": false
               }
             ],

@@ -26,7 +26,7 @@ interface ProfileConfiguration {
 interface RuntimeIdentity {
   schema_version: 1;
   profile: string;
-  runtime_key: string;
+  runtime_id: string;
   credential_id: string;
   octo_space_id: string;
   enrolled_at: string;
@@ -40,7 +40,7 @@ interface RuntimeCredential {
 }
 
 export interface EnrollmentResult {
-  runtimeKey: string;
+  runtimeId: string;
   credentialId: string;
   reused: boolean;
 }
@@ -60,15 +60,15 @@ export async function ensureTenantEnrollment(options: {
     try {
       await registerRuntime(fetchImplementation, options.tenant.agentWorkUrl, {
         profile: options.profile.name,
-        runtimeKey: saved.identity.runtime_key,
+        runtimeId: saved.identity.runtime_id,
         runtimeToken: saved.credential.access_token
       }, options.signal);
-      return { runtimeKey: saved.identity.runtime_key, credentialId: saved.identity.credential_id, reused: true };
+      return { runtimeId: saved.identity.runtime_id, credentialId: saved.identity.credential_id, reused: true };
     } catch (error) {
       if (error instanceof HttpError && (error.status === 401 || error.status === 403)) {
         // A definitive credential rejection is repaired below.
       } else if (error instanceof EmbeddedHarnessError && (error.code === "NETWORK" || error.retryable)) {
-        return { runtimeKey: saved.identity.runtime_key, credentialId: saved.identity.credential_id, reused: true };
+        return { runtimeId: saved.identity.runtime_id, credentialId: saved.identity.credential_id, reused: true };
       } else {
         throw error;
       }
@@ -93,7 +93,7 @@ export async function ensureTenantEnrollment(options: {
     throw new EmbeddedHarnessError("PROTOCOL_INVALID", "enrollment", false, "Worker returned an invalid enrollment token");
   }
 
-  const existingRuntimeId = saved.identity?.runtime_key;
+  const existingRuntimeId = saved.identity?.runtime_id;
   const existingRuntimeToken = saved.credential?.access_token;
   let enrolled: Record<string, unknown>;
   try {
@@ -105,8 +105,8 @@ export async function ensureTenantEnrollment(options: {
 
   const runtime = objectValue(enrolled.runtime);
   const credential = objectValue(enrolled.credential);
-  const runtimeKey = requiredString(runtime?.runtime_key, "runtime.runtime_key");
-  const credentialId = requiredString(credential?.runtime_credential_key, "credential.runtime_credential_key");
+  const runtimeId = requiredString(runtime?.runtime_id, "runtime.runtime_id");
+  const credentialId = requiredString(credential?.runtime_credential_id, "credential.runtime_credential_id");
   const runtimeToken = requiredString(credential?.token, "credential.token");
   const octoSpaceId = requiredString(runtime?.octo_space_id, "runtime.octo_space_id");
   const ownerType = requiredString(runtime?.owner_subject_type ?? runtime?.subject_type, "runtime.owner_subject_type");
@@ -117,7 +117,7 @@ export async function ensureTenantEnrollment(options: {
 
   await registerRuntime(fetchImplementation, options.tenant.agentWorkUrl, {
     profile: options.profile.name,
-    runtimeKey,
+    runtimeId,
     runtimeToken
   }, options.signal);
 
@@ -140,12 +140,12 @@ export async function ensureTenantEnrollment(options: {
   writeJsonAtomic(options.profile.identityFile, {
     schema_version: 1,
     profile: options.profile.name,
-    runtime_key: runtimeKey,
+    runtime_id: runtimeId,
     credential_id: credentialId,
     octo_space_id: octoSpaceId,
     enrolled_at: now
   } satisfies RuntimeIdentity);
-  return { runtimeKey, credentialId, reused: false };
+  return { runtimeId, credentialId, reused: false };
 }
 
 export function resetTenantEnrollment(profile: EmbeddedProfilePaths): void {
@@ -177,7 +177,7 @@ function isHealthy(
     saved.identity?.schema_version === 1 &&
     saved.identity.profile === profile &&
     saved.identity.octo_space_id === tenant.id &&
-    Boolean(saved.identity.runtime_key) &&
+    Boolean(saved.identity.runtime_id) &&
     Boolean(saved.identity.credential_id) &&
     saved.credential?.schema_version === 1 &&
     Boolean(saved.credential.access_token);
@@ -187,7 +187,7 @@ async function exchangeEnrollment(
   fetchImplementation: typeof fetch,
   options: Parameters<typeof ensureTenantEnrollment>[0],
   enrollmentToken: string,
-  runtimeKey?: string,
+  runtimeId?: string,
   runtimeToken?: string
 ): Promise<Record<string, unknown>> {
   return requestObject(fetchImplementation, endpoint(options.tenant.agentWorkUrl, "/v1/runtimes/enroll"), {
@@ -201,7 +201,7 @@ async function exchangeEnrollment(
     body: JSON.stringify({
       profile: options.profile.name,
       machine_id: options.machine.machine_id,
-      ...(runtimeKey ? { runtime_key: runtimeKey } : {})
+      ...(runtimeId ? { runtime_id: runtimeId } : {})
     }),
     signal: options.signal
   }, "runtime enrollment");
@@ -210,7 +210,7 @@ async function exchangeEnrollment(
 async function registerRuntime(
   fetchImplementation: typeof fetch,
   agentWorkUrl: string,
-  runtime: { profile: string; runtimeKey: string; runtimeToken: string },
+  runtime: { profile: string; runtimeId: string; runtimeToken: string },
   signal: AbortSignal
 ): Promise<void> {
   const registered = await requestObject(fetchImplementation, endpoint(agentWorkUrl, "/v1/runtime/register"), {
@@ -233,7 +233,7 @@ async function registerRuntime(
     signal
   }, "Runtime registration");
   const registeredRuntime = objectValue(registered.runtime);
-  if (registeredRuntime?.runtime_key !== runtime.runtimeKey || registeredRuntime.profile !== runtime.profile) {
+  if (registeredRuntime?.runtime_id !== runtime.runtimeId || registeredRuntime.profile !== runtime.profile) {
     throw new EmbeddedHarnessError("BINDING_MISMATCH", "enrollment", false, "Runtime registration returned another identity");
   }
 }

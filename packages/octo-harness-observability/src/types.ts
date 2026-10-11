@@ -35,10 +35,10 @@ export interface LogInput {
   data?: Record<string, unknown>;
   requestId?: string;
   profile?: string;
-  runtimeKey?: string;
-  runKey?: string;
+  runtimeId?: string;
+  runId?: string;
   invocationId?: string;
-  agentSessionKey?: string;
+  agentSessionId?: string;
   adapterType?: string;
   durationMs?: number;
 }
@@ -86,10 +86,10 @@ export interface ProviderActivity {
 
 export interface ObservationIdentity {
   profile?: string;
-  runtimeKey?: string;
-  runKey: string;
+  runtimeId?: string;
+  runId: string;
   invocationId: string;
-  agentSessionKey: string;
+  agentSessionId: string;
   adapterType: string;
 }
 
@@ -115,7 +115,7 @@ export interface ObservabilityStatus {
 
 export interface QueryLogOptions {
   requestId?: string;
-  runKey?: string;
+  runId?: string;
   invocationId?: string;
   includeSensitive?: boolean;
   limit?: number;
@@ -141,9 +141,9 @@ export interface RecordEnvelope extends Record<string, unknown> {
   sensitivity: LogSensitivity;
   request_id?: string;
   profile?: string;
-  runtime_key?: string;
-  run_key?: string;
-  agent_session_key?: string;
+  runtime_id?: string;
+  run_id?: string;
+  agent_session_id?: string;
   invocation_id?: string;
   adapter_type?: string;
   duration_ms?: number;

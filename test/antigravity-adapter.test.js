@@ -8,7 +8,7 @@ import { assertCanonicalEvent } from "@mininglamp-oss/octo-harness-protocol";
 import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 import { AntigravityEventNormalizer, antigravityLogError, buildAntigravityCommand, createAntigravityAdapter } from "@mininglamp-oss/octo-harness-adapter-antigravity";
 
-const request = { protocolVersion: 2, invocationId: "inv-agy", agentSessionKey: "session-agy", runKey: "run-agy", prompt: "display", modelInput: "actual user input", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "CONTROL", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} };
+const request = { protocolVersion: 2, invocationId: "inv-agy", agentSessionId: "session-agy", runId: "run-agy", prompt: "display", modelInput: "actual user input", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "CONTROL", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} };
 const fixture = fileURLToPath(new URL("./fixtures/antigravity-cli.mjs", import.meta.url));
 const create = () => createAntigravityAdapter({ command: process.execPath, commandArgsPrefix: [fixture] });
 const collect = async iterable => { const events = []; for await (const event of iterable) { assertCanonicalEvent(event); events.push(event); } return events; };

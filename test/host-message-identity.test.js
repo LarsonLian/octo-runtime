@@ -17,7 +17,7 @@ test("Host scopes anonymous segments to tool boundaries and closes every channel
     yield event("run.completed", {});
   } });
   const events = [];
-  for await (const e of host.invoke("identity", { protocolVersion: 2, invocationId: "i", agentSessionKey: "s", runKey: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} })) events.push(e);
+  for await (const e of host.invoke("identity", { protocolVersion: 2, invocationId: "i", agentSessionId: "s", runId: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} })) events.push(e);
   const deltas = events.filter(e => e.type === "message.delta");
   assert.equal(deltas[0].payload.messageId, deltas[1].payload.messageId);
   assert.notEqual(deltas[0].payload.messageId, deltas[2].payload.messageId);

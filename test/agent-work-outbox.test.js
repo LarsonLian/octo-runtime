@@ -20,7 +20,7 @@ async function withStore(name, fn) {
 
 test("instance-bound requested and resolved approval audit survives reconnect replay until durable ACK", async () => {
   await withStore("approval-audit", (store, file) => {
-    store.upsertRun({ runKey: "run-approval", agentSessionKey: "session-approval", commandKey: "command-approval", leaseId: "lease-approval", fencingToken: 7 });
+    store.upsertRun({ runId: "run-approval", agentSessionId: "session-approval", commandId: "command-approval", leaseId: "lease-approval", fencingToken: 7 });
     store.allocateAndAppend("run-approval", "run.started", {});
     const payload = approvalPayload("invoke-approval");
     payload.request.policy.mode = "full_access";
@@ -55,7 +55,7 @@ test("instance-bound requested and resolved approval audit survives reconnect re
 
 test("outbox appends in seq order; received releases the window, durable deletes", async () => {
   await withStore("ack", store => {
-    store.upsertRun({ runKey: "r1", commandKey: "c1", leaseId: "l1", fencingToken: 3 });
+    store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 3 });
     assert.equal(store.allocateAndAppend("r1", "run.started", {}).seq, 1);
     assert.equal(store.allocateAndAppend("r1", "message.delta", { text: "hi" }).seq, 2);
 
@@ -77,16 +77,16 @@ test("outbox appends in seq order; received releases the window, durable deletes
   });
 });
 
-test("opening a legacy outbox migrates session_id to agent_session_key", async () => {
+test("opening a legacy outbox migrates session_id to agent_session_id", async () => {
   const dir = await mkdtemp(join(tmpdir(), "oh-outbox-legacy-session-"));
   const file = join(dir, "agent-work.db");
   try {
     const legacy = new DatabaseSync(file);
     legacy.exec(`
       CREATE TABLE runs (
-        run_key TEXT PRIMARY KEY,
+        run_id TEXT PRIMARY KEY,
         session_id TEXT,
-        command_key TEXT NOT NULL UNIQUE,
+        command_id TEXT NOT NULL UNIQUE,
         lease_id TEXT NOT NULL,
         fencing_token INTEGER NOT NULL,
         status TEXT NOT NULL,
@@ -98,16 +98,16 @@ test("opening a legacy outbox migrates session_id to agent_session_key", async (
         completed_at INTEGER
       );
       INSERT INTO runs (
-        run_key, session_id, command_key, lease_id, fencing_token, status, updated_at
+        run_id, session_id, command_id, lease_id, fencing_token, status, updated_at
       ) VALUES ('legacy-run', 'legacy-session', 'legacy-command', 'legacy-lease', 1, 'running', 1);
     `);
     legacy.close();
 
     const store = AgentWorkStore.open(file);
     store.upsertRun({
-      runKey: "new-run",
-      agentSessionKey: "new-session",
-      commandKey: "new-command",
+      runId: "new-run",
+      agentSessionId: "new-session",
+      commandId: "new-command",
       leaseId: "new-lease",
       fencingToken: 2
     });
@@ -115,11 +115,11 @@ test("opening a legacy outbox migrates session_id to agent_session_key", async (
 
     const migrated = new DatabaseSync(file);
     assert.equal(
-      migrated.prepare("SELECT agent_session_key FROM runs WHERE run_key = 'legacy-run'").get().agent_session_key,
+      migrated.prepare("SELECT agent_session_id FROM runs WHERE run_id = 'legacy-run'").get().agent_session_id,
       "legacy-session"
     );
     assert.equal(
-      migrated.prepare("SELECT agent_session_key FROM runs WHERE run_key = 'new-run'").get().agent_session_key,
+      migrated.prepare("SELECT agent_session_id FROM runs WHERE run_id = 'new-run'").get().agent_session_id,
       "new-session"
     );
     migrated.close();
@@ -130,7 +130,7 @@ test("opening a legacy outbox migrates session_id to agent_session_key", async (
 
 test("analysis exposure provenance survives the reliable outbox and dual watermarks", async () => {
   await withStore("analysis-provenance", store => {
-    store.upsertRun({ runKey: "r1", commandKey: "c1", leaseId: "l1", fencingToken: 3 });
+    store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 3 });
     const payload = {
       channel: "analysis",
       text: "Checked the source.",
@@ -149,16 +149,16 @@ test("analysis exposure provenance survives the reliable outbox and dual waterma
 
 test("terminal event stays active until its seq is durably acknowledged", async () => {
   await withStore("terminal", store => {
-    store.upsertRun({ runKey: "r1", commandKey: "c1", leaseId: "l1", fencingToken: 1 });
+    store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });
     assert.deepEqual(store.pendingTerminalAckRunIds(), []);
     store.allocateAndAppend("r1", "run.started", {});
     const terminal = store.allocateAndAppend("r1", "run.completed", { text: "done" });
-    assert.deepEqual(store.activeRunKeys(), ["r1"]);
+    assert.deepEqual(store.activeRunIds(), ["r1"]);
     assert.deepEqual(store.pendingTerminalAckRunIds(), ["r1"]);
 
     // received alone does not retire the run — only durable coverage does.
     store.advanceReceived("r1", 2);
-    assert.deepEqual(store.activeRunKeys(), ["r1"]);
+    assert.deepEqual(store.activeRunIds(), ["r1"]);
     assert.deepEqual(store.durableTerminal("r1", 2), { seq: 2,
       type: "run.completed",
       eventId: terminal.eventId,
@@ -166,7 +166,7 @@ test("terminal event stays active until its seq is durably acknowledged", async 
     });
 
     store.advanceDurable("r1", 2);
-    assert.deepEqual(store.activeRunKeys(), []);
+    assert.deepEqual(store.activeRunIds(), []);
     assert.deepEqual(store.pendingTerminalAckRunIds(), []);
     assert.equal(store.outboxBytes(), 0);
     assert.equal(store.durableTerminal("r1", 2), undefined);
@@ -175,14 +175,14 @@ test("terminal event stays active until its seq is durably acknowledged", async 
 
 test("authoritative server terminal discards local run and pending outbox atomically", async () => {
   await withStore("authoritative-terminal", store => {
-    store.upsertRun({ runKey: "r1", commandKey: "c1", leaseId: "l1", fencingToken: 1 });
+    store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });
     store.allocateAndAppend("r1", "run.started", {});
     store.allocateAndAppend("r1", "message.delta", { text: "local work" });
     assert.equal(store.pendingCount(), 2);
 
     assert.equal(store.discardAuthoritativelyTerminalRun("r1"), true);
     assert.equal(store.pendingCount(), 0);
-    assert.deepEqual(store.activeRunKeys(), []);
+    assert.deepEqual(store.activeRunIds(), []);
     assert.equal(store.discardAuthoritativelyTerminalRun("r1"), false);
   });
 });
@@ -192,7 +192,7 @@ test("durable ACK inspection validates bounds and leaves terminal replayable acr
   const file = join(dir, "agent-work.db");
   try {
     const store = AgentWorkStore.open(file);
-    store.upsertRun({ runKey: "r1", commandKey: "c1", leaseId: "l1", fencingToken: 1 });
+    store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });
     store.allocateAndAppend("r1", "run.started", {});
     const terminal = store.allocateAndAppend("r1", "run.completed", { text: "done" });
     assert.deepEqual(store.inspectDurableAck("r1", 9), { advanced: false, reason: "ack_beyond_produced" });
@@ -220,7 +220,7 @@ test("durable ACK inspection validates bounds and leaves terminal replayable acr
 
 test("duplicate, backward and out-of-range ACKs are handled without deleting unacked events", async () => {
   await withStore("acks", store => {
-    store.upsertRun({ runKey: "r1", commandKey: "c1", leaseId: "l1", fencingToken: 1 });
+    store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });
     store.allocateAndAppend("r1", "run.started", {});
     store.allocateAndAppend("r1", "message.delta", { text: "a" });
 
@@ -239,7 +239,7 @@ test("unacknowledged events survive reopen and are replayed", async () => {
   const file = join(dir, "agent-work.db");
   try {
     const store = AgentWorkStore.open(file);
-    store.upsertRun({ runKey: "r1", commandKey: "c1", leaseId: "l1", fencingToken: 1 });
+    store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });
     const first = store.allocateAndAppend("r1", "run.started", {});
     store.allocateAndAppend("r1", "message.delta", { text: "hi" });
     store.advanceReceived("r1", 1);
@@ -251,7 +251,7 @@ test("unacknowledged events survive reopen and are replayed", async () => {
     assert.deepEqual(sendable.map(row => row.seq), [2]);
     // stable event_id preserved across restart
     assert.notEqual(sendable[0].eventId, first.eventId);
-    assert.deepEqual(reopened.activeRunKeys(), ["r1"]);
+    assert.deepEqual(reopened.activeRunIds(), ["r1"]);
     reopened.close();
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -260,7 +260,7 @@ test("unacknowledged events survive reopen and are replayed", async () => {
 
 test("new transport connection replays received but non-durable events", async () => {
   await withStore("received-replay", store => {
-    store.upsertRun({ runKey: "r1", commandKey: "c1", leaseId: "l1", fencingToken: 1 });
+    store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });
     store.allocateAndAppend("r1", "run.started", {});
     store.allocateAndAppend("r1", "message.delta", { text: "live only" });
     store.advanceReceived("r1", 2);
@@ -298,7 +298,7 @@ test("command receipts and last acked command seq persist for restart dedupe", a
 
 test("reconcile clears events already within the durable watermark", async () => {
   await withStore("reconcile", store => {
-    store.upsertRun({ runKey: "r1", commandKey: "c1", leaseId: "l1", fencingToken: 1 });
+    store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });
     store.allocateAndAppend("r1", "run.started", {});
     store.allocateAndAppend("r1", "run.completed", {});
     store.advanceDurable("r1", 2);

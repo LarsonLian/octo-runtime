@@ -10,7 +10,7 @@ import { AgentWorkStore } from "../packages/octo-harness-daemon/dist/agent-work-
 const skill = "---\nname: context-proof\ndescription: Verify selected Context resources.\n---\nUse the selected tools.\n";
 const resource = (texts, extra = {}) => {
   const files = Object.fromEntries(Object.entries(texts).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([path, text]) => [path, { content_base64: Buffer.from(text).toString("base64"), executable: false }]));
-  return { resource_key: "ae67cb3e-0d16-4bb2-9a4e-bb563cb707af", revision: 1, kind: "agent_plugin", invoke: true,
+  return { resource_id: "ae67cb3e-0d16-4bb2-9a4e-bb563cb707af", revision: 1, kind: "agent_plugin", invoke: true,
     digest: "sha256:" + createHash("sha256").update(JSON.stringify(files)).digest("hex"), files, sources: ["agent_mandatory"], ...extra };
 };
 const plugin = () => ({
@@ -26,7 +26,7 @@ async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "octo-context-preparation-"));
   const store = AgentWorkStore.open(join(root, "runtime.db"));
   t.after(async () => { store.close(); await rm(root, { recursive: true, force: true }); });
-  const options = { stateRoot: root, agentSessionKey: "session-1", agentKey: "agent-1", store };
+  const options = { stateRoot: root, agentSessionId: "session-1", agentId: "agent-1", store };
   const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "", approval_mode: "ask", workspace: { mode: "random" } };
   return { root, options, plan, prepare: (resources = [], updates = {}) => prepareRunContext({ ...plan, resources, ...updates }, options) };
 }
@@ -39,7 +39,7 @@ test("random workspaces and provider state are created once per AgentSession; mi
   assert.equal(second.workdir, first.workdir);
   assert.equal(second.providerStateDir, first.providerStateDir);
   assert.equal(await readFile(join(second.workdir, "retained.txt"), "utf8"), "retained");
-  const anotherSession = await prepareRunContext(f.plan, { ...f.options, agentSessionKey: "session-2" });
+  const anotherSession = await prepareRunContext(f.plan, { ...f.options, agentSessionId: "session-2" });
   assert.notEqual(anotherSession.workdir, first.workdir);
   assert.notEqual(anotherSession.providerStateDir, first.providerStateDir);
   await rm(first.workdir, { recursive: true });
@@ -143,8 +143,8 @@ test("resource resolution sends only the active Run lease and validates the froz
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
-  const resolved = await resolveRunResources({ baseUrl: `http://127.0.0.1:${server.address().port}`, headers: {}, runKey: "run-1", leaseId: "lease-1", fencingToken: 9, signal: new AbortController().signal });
-  assert.deepEqual(supplied, { path: "/v1/runtime/context/resources/resolve", body: { run_key: "run-1", lease_id: "lease-1", fencing_token: 9 } });
+  const resolved = await resolveRunResources({ baseUrl: `http://127.0.0.1:${server.address().port}`, headers: {}, runId: "run-1", leaseId: "lease-1", fencingToken: 9, signal: new AbortController().signal });
+  assert.deepEqual(supplied, { path: "/v1/runtime/context/resources/resolve", body: { run_id: "run-1", lease_id: "lease-1", fencing_token: 9 } });
   assert.deepEqual(resolved, values);
 });
 

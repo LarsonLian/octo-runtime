@@ -25,14 +25,14 @@ function rpcInvokeRequest(overrides = {}) {
   const request = {
     protocolVersion: 2,
     invocationId: "inv-1",
-    agentSessionKey: "session-1",
-    runKey: "run-1",
+    agentSessionId: "session-1",
+    runId: "run-1",
     prompt: "work",
     modelInput: "work",
     controlInstructions: "",
     workdir: process.cwd(),
     context: { schema: "octo.context-envelope/v3", items: [] },
-    runMetadata: { profile: "work", runtimeKey: "runtime-work" },
+    runMetadata: { profile: "work", runtimeId: "runtime-work" },
     approvalMode: "full_access",
     agentSource: "provisioned", agentConfig: {},
     ...overrides
@@ -84,7 +84,7 @@ test("operational logs redact credentials and restricted provider evidence is op
       scope: "test",
       event: "credentials.checked",
       message: "credential redaction",
-      runKey: "run-1",
+      runId: "run-1",
       data: { Authorization: "Bearer must-not-leak", nested: { access_token: "also-secret", result: "ok" } }
     });
     logger.traceRpc("send", JSON.stringify({
@@ -112,10 +112,10 @@ test("operational logs redact credentials and restricted provider evidence is op
     }));
     const receipt = await logger.observeProvider({
       profile: "work",
-      runtimeKey: "runtime-work",
-      runKey: "run-1",
+      runtimeId: "runtime-work",
+      runId: "run-1",
       invocationId: "inv-1",
-      agentSessionKey: "session-1",
+      agentSessionId: "session-1",
       adapterType: "codex"
     }, {
       event: "provider.input",
@@ -125,7 +125,7 @@ test("operational logs redact credentials and restricted provider evidence is op
 
     assert.equal(receipt.state, "durable");
     assert.equal(receipt.complete, true);
-    const ordinary = await logger.query({ runKey: "run-1" });
+    const ordinary = await logger.query({ runId: "run-1" });
     assert.deepEqual(ordinary.map(record => record.event), ["credentials.checked"]);
     assert.equal(ordinary[0].data.Authorization, undefined);
     assert.equal(ordinary[0].data.nested.access_token, undefined);
@@ -133,17 +133,17 @@ test("operational logs redact credentials and restricted provider evidence is op
     assert.deepEqual(operational.map(record => record.event), ["credentials.checked"]);
     assert.doesNotMatch(JSON.stringify(operational), /must-not-leak|also-secret/);
 
-    const sensitive = await logger.query({ runKey: "run-1", includeSensitive: true });
+    const sensitive = await logger.query({ runId: "run-1", includeSensitive: true });
     assert.ok(sensitive.some(record => record.event === "rpc.frame"));
     assert.ok(sensitive.filter(record => record.event === "rpc.frame")
-      .every(record => record.profile === "work" && record.runtime_key === "runtime-work"));
+      .every(record => record.profile === "work" && record.runtime_id === "runtime-work"));
     const rpcFrames = sensitive.filter(record => record.event === "rpc.frame");
     assert.equal(rpcFrames.length, 2);
-    assert.deepEqual(rpcFrames.map(record => [record.data.direction, record.run_key, record.invocation_id, record.agent_session_key, record.adapter_type]), [
+    assert.deepEqual(rpcFrames.map(record => [record.data.direction, record.run_id, record.invocation_id, record.agent_session_id, record.adapter_type]), [
       ["send", "run-1", "inv-1", "session-1", "codex"],
       ["receive", "run-1", "inv-1", "session-1", "codex"]
     ]);
-    assert.deepEqual(rpcFrames[0].data.frame.params.request.runMetadata, { profile: "work", runtimeKey: "runtime-work" });
+    assert.deepEqual(rpcFrames[0].data.frame.params.request.runMetadata, { profile: "work", runtimeId: "runtime-work" });
     assert.deepEqual(rpcFrames[0].data.frame.params.request.context, { schema: "octo.context-envelope/v3", items: [] });
     assert.equal(rpcFrames[0].data.frame.params.apiKey, undefined);
     assert.doesNotMatch(JSON.stringify(sensitive), /private-chain-of-thought-must-not-be-stored|must-not-leak|also-secret|rpc-secret|provider-secret/);
@@ -153,7 +153,7 @@ test("operational logs redact credentials and restricted provider evidence is op
     assert.equal(reasoningFrame.data.frame.params.event.payload.text, undefined);
     const provider = sensitive.find(record => record.event === "provider.input");
     assert.equal(provider.profile, "work");
-    assert.equal(provider.runtime_key, "runtime-work");
+    assert.equal(provider.runtime_id, "runtime-work");
     assert.equal(provider.adapter_type, "codex");
     assert.equal(provider.data.projection.content.prompt, "evaluate this exact prompt");
     assert.equal(provider.data.projection.content.authToken, undefined);
@@ -234,9 +234,9 @@ test("unparseable URL-shaped carriers are omitted and mark provider capture inco
   const logger = new LocalObservability(options(directory, { captureProviderIo: "input" }));
   try {
     const receipt = await logger.observeProvider({
-      runKey: "run-incomplete",
+      runId: "run-incomplete",
       invocationId: "inv-incomplete",
-      agentSessionKey: "session-incomplete",
+      agentSessionId: "session-incomplete",
       adapterType: "codex"
     }, {
       event: "provider.input",
@@ -244,7 +244,7 @@ test("unparseable URL-shaped carriers are omitted and mark provider capture inco
     });
     assert.equal(receipt.complete, false);
     await logger.flush();
-    const records = await logger.query({ runKey: "run-incomplete", includeSensitive: true });
+    const records = await logger.query({ runId: "run-incomplete", includeSensitive: true });
     const input = records.find(record => record.event === "provider.input");
     const failed = records.find(record => record.event === "capture.receipt");
     assert.equal(input.data.projection.content.endpointUrl, undefined);
@@ -270,16 +270,16 @@ test("RPC correlation expires after its 24 hour TTL", async () => {
     logger.traceRpc("send", JSON.stringify({
       id: 1,
       method: "invoke",
-      params: { request: rpcInvokeRequest({ runKey: "run-expired", invocationId: "inv-expired" }) }
+      params: { request: rpcInvokeRequest({ runId: "run-expired", invocationId: "inv-expired" }) }
     }));
     now = new Date("2026-01-02T01:00:00.000Z");
     logger.traceRpc("receive", JSON.stringify({ id: 2, result: {} }));
     logger.traceRpc("receive", JSON.stringify({ id: 1, result: {} }));
     const response = records.at(-1);
     assert.equal(response.event, "rpc.frame");
-    assert.equal(response.run_key, undefined);
+    assert.equal(response.run_id, undefined);
     assert.equal(response.profile, undefined);
-    assert.equal(response.runtime_key, undefined);
+    assert.equal(response.runtime_id, undefined);
     assert.equal(response.invocation_id, undefined);
     assert.ok(records.some(record => record.event === "bus.correlation_gap"));
   } finally {
@@ -293,9 +293,9 @@ test("full provider output capture strips private reasoning even when an adapter
   const logger = new LocalObservability(options(directory, { captureProviderIo: "full" }));
   try {
     await logger.observeProvider({
-      runKey: "run-private-output",
+      runId: "run-private-output",
       invocationId: "inv-private-output",
-      agentSessionKey: "session-private-output",
+      agentSessionId: "session-private-output",
       adapterType: "codex"
     }, {
       event: "provider.output",
@@ -309,7 +309,7 @@ test("full provider output capture strips private reasoning even when an adapter
       }
     });
     await logger.flush();
-    const records = await logger.query({ runKey: "run-private-output", includeSensitive: true });
+    const records = await logger.query({ runId: "run-private-output", includeSensitive: true });
     const output = records.find(record => record.event === "provider.output");
     assert.ok(output);
     assert.equal(output.data.native.body_omitted, true);
@@ -337,9 +337,9 @@ test("strict provider capture fails closed on a symlinked log root", async t => 
   try {
     await assert.rejects(
       logger.observeProvider({
-        runKey: "run-strict",
+        runId: "run-strict",
         invocationId: "inv-strict",
-        agentSessionKey: "session-strict",
+        agentSessionId: "session-strict",
         adapterType: "codex"
       }, {
         event: "provider.input",
@@ -372,9 +372,9 @@ test("strict provider capture fails closed on a symlinked target file", async t 
   try {
     await assert.rejects(
       logger.observeProvider({
-        runKey: "run-target-symlink",
+        runId: "run-target-symlink",
         invocationId: "inv-target-symlink",
-        agentSessionKey: "session-target-symlink",
+        agentSessionId: "session-target-symlink",
         adapterType: "codex"
       }, {
         event: "provider.input",
@@ -436,9 +436,9 @@ test("accepted capture records a same-id failed receipt and degraded status afte
   });
   try {
     const receipt = await logger.observeProvider({
-      runKey: "run-eacces",
+      runId: "run-eacces",
       invocationId: "inv-eacces",
-      agentSessionKey: "session-eacces",
+      agentSessionId: "session-eacces",
       adapterType: "codex"
     }, {
       event: "provider.input",
@@ -469,9 +469,9 @@ test("strict provider capture reports ENOSPC before dispatch", async () => {
   try {
     await assert.rejects(
       logger.observeProvider({
-        runKey: "run-enospc",
+        runId: "run-enospc",
         invocationId: "inv-enospc",
-        agentSessionKey: "session-enospc",
+        agentSessionId: "session-enospc",
         adapterType: "codex"
       }, {
         event: "provider.input",
@@ -540,9 +540,9 @@ test("strict capture immediately observes startup capacity before provider dispa
   try {
     await assert.rejects(
       logger.observeProvider({
-        runKey: "run-startup-capacity",
+        runId: "run-startup-capacity",
         invocationId: "inv-startup-capacity",
-        agentSessionKey: "session-startup-capacity",
+        agentSessionId: "session-startup-capacity",
         adapterType: "codex"
       }, {
         event: "provider.input",
@@ -803,13 +803,13 @@ test("reasoning mapping persists requested and native levels without provider in
   const records = [];
   const logger = new LocalObservability(options(directory, { captureProviderIo: "off" }), { operationalSink: record => records.push(record) });
   try {
-    for (const native of ["high", null]) await logger.observeProvider({ runKey: "reasoning-run", invocationId: "reasoning-invoke", agentSessionKey: "reasoning-session", adapterType: "fixture" }, {
+    for (const native of ["high", null]) await logger.observeProvider({ runId: "reasoning-run", invocationId: "reasoning-invoke", agentSessionId: "reasoning-session", adapterType: "fixture" }, {
       event: "provider.stage.completed", rpcMethod: "adapter.reasoning.map",
       data: { stage: "reasoning_mapping", outcome: native === null ? "not_applied" : "mapped", duration_ms: 0, requested_effort: "xhigh", native_effort: native }
     });
     await logger.flush();
     assert.deepEqual(records.map(record => [record.data.requested_effort, record.data.native_effort, record.data.outcome]), [["xhigh", "high", "mapped"], ["xhigh", null, "not_applied"]]);
-    const stored = await logger.query({ runKey: "reasoning-run" });
+    const stored = await logger.query({ runId: "reasoning-run" });
     assert.deepEqual(stored.map(record => record.data.native_effort), ["high", null]);
   } finally { await logger.close(); await rm(directory, { recursive: true, force: true }); }
 });

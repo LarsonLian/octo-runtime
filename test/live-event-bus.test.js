@@ -5,7 +5,7 @@ import { LiveEventBus } from "@mininglamp-oss/octo-harness-daemon-app";
 test("LiveEventBus enforces byte, frame, slot, and subscriber bounds", async () => {
   const bus = new LiveEventBus({ maxBytes: 1024, maxFrameBytes: 512, maxSlots: 4, maxSubscribers: 1 });
   for (let index = 0; index < 20; index++) {
-    bus.publish({ source: "daemon", type: "sample", runKey: `run-${index % 2}`, payload: { body: "x".repeat(180) } });
+    bus.publish({ source: "daemon", type: "sample", runId: `run-${index % 2}`, payload: { body: "x".repeat(180) } });
     assert.ok(bus.stats.retainedBytes <= 1024);
     assert.ok(bus.stats.retainedEvents <= 4);
   }
@@ -49,10 +49,10 @@ test("LiveEventBus keeps a pinned frame bounded and releases retired storage", a
 
 test("LiveEventBus filters snapshots without waiting and follows new matching events", async () => {
   const bus = new LiveEventBus();
-  bus.publish({ source: "daemon", type: "one", profile: "default", runKey: "run-a", payload: {} });
-  bus.publish({ source: "adapter-rpc", type: "two", profile: "work", runKey: "run-b", payload: {} });
+  bus.publish({ source: "daemon", type: "one", profile: "default", runId: "run-a", payload: {} });
+  bus.publish({ source: "adapter-rpc", type: "two", profile: "work", runId: "run-b", payload: {} });
   const snapshot = [];
-  for await (const event of bus.subscribe({ runKey: "run-b" })) snapshot.push(event);
+  for await (const event of bus.subscribe({ runId: "run-b" })) snapshot.push(event);
   assert.deepEqual(snapshot.map(event => event.type), ["two"]);
   const workSnapshot = [];
   for await (const event of bus.subscribe({ profile: "work" })) workSnapshot.push(event);
@@ -86,9 +86,9 @@ test("LiveEventBus emits the v1 envelope and strips private reasoning", async ()
     source: "provider-native",
     type: "provider.output",
     profile: "work",
-    runtimeKey: "runtime-work",
-    runKey: "run-safe",
-    agentSessionKey: "session-safe",
+    runtimeId: "runtime-work",
+    runId: "run-safe",
+    agentSessionId: "session-safe",
     invocationId: "invoke-safe",
     adapterType: "codebuddy",
     durationMs: 312.5,
@@ -100,9 +100,9 @@ test("LiveEventBus emits the v1 envelope and strips private reasoning", async ()
   assert.equal(values[0].stage, "adapter.native");
   assert.equal(values[0].direction, "outbound");
   assert.equal(values[0].profile, "work");
-  assert.equal(values[0].runtime_key, "runtime-work");
-  assert.equal(values[0].run_key, "run-safe");
-  assert.equal(values[0].agent_session_key, "session-safe");
+  assert.equal(values[0].runtime_id, "runtime-work");
+  assert.equal(values[0].run_id, "run-safe");
+  assert.equal(values[0].agent_session_id, "session-safe");
   assert.equal(values[0].invocation_id, "invoke-safe");
   assert.equal(values[0].adapter_type, "codebuddy");
   assert.equal(values[0].duration_ms, 312.5);
@@ -125,9 +125,9 @@ test("LiveEventBus maps observability records to canonical stages, directions, a
     seq: 1,
     sensitivity: "restricted",
     profile: "work",
-    runtime_key: "runtime-work",
-    run_key: "run-rpc",
-    agent_session_key: "session-rpc",
+    runtime_id: "runtime-work",
+    run_id: "run-rpc",
+    agent_session_id: "session-rpc",
     invocation_id: "invoke-rpc",
     agent_source: "provisioned", adapter_type: "codebuddy",
     duration_ms: 17.25
@@ -141,7 +141,7 @@ test("LiveEventBus maps observability records to canonical stages, directions, a
     ["wire.daemon_host", "outbound"]
   ]);
   assert.deepEqual(
-    values.map(event => [event.profile, event.runtime_key, event.run_key, event.agent_session_key, event.invocation_id, event.adapter_type]),
+    values.map(event => [event.profile, event.runtime_id, event.run_id, event.agent_session_id, event.invocation_id, event.adapter_type]),
     Array.from({ length: 2 }, () => ["work", "runtime-work", "run-rpc", "session-rpc", "invoke-rpc", "codebuddy"])
   );
   assert.deepEqual(values.map(event => event.duration_ms), [17.25, 17.25]);
@@ -162,11 +162,11 @@ test("LiveEventBus aborts an idle follower without leaking a subscriber", async 
 test("LiveEventBus soak returns subscriber and retired state to baseline", async () => {
   const bus = new LiveEventBus({ maxBytes: 64 * 1024, maxFrameBytes: 2048, maxSlots: 128 });
   for (let index = 0; index < 50_000; index++) {
-    bus.publish({ source: "daemon", type: "soak", runKey: `run-${index % 100}`, payload: { index, body: "z".repeat(256) } });
+    bus.publish({ source: "daemon", type: "soak", runId: `run-${index % 100}`, payload: { index, body: "z".repeat(256) } });
   }
   for (let index = 0; index < 500; index++) {
     const controller = new AbortController();
-    const stream = bus.subscribe({ runKey: "never" }, true, controller.signal);
+    const stream = bus.subscribe({ runId: "never" }, true, controller.signal);
     const pending = stream.next();
     controller.abort();
     await pending;

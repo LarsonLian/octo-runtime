@@ -82,7 +82,7 @@ export interface OpenClawGatewayCredential {
 export interface RuntimeIdentity {
   schema_version: 1;
   profile: string;
-  runtime_key: string;
+  runtime_id: string;
   credential_id: string;
   octo_space_id?: string;
   enrolled_at: string;
@@ -162,8 +162,8 @@ export function harnessPaths(home: string, profile: string): HarnessPaths {
   };
 }
 
-export function defaultOpenClawRunnerAgentId(runtimeKey: string): string {
-  const identity = runtimeKey.startsWith("runtime_") ? runtimeKey.slice("runtime_".length) : runtimeKey;
+export function defaultOpenClawRunnerAgentId(runtimeId: string): string {
+  const identity = runtimeId.startsWith("runtime_") ? runtimeId.slice("runtime_".length) : runtimeId;
   const direct = `${OPENCLAW_RUNNER_AGENT_ID_PREFIX}${identity}`;
   if (isValidOpenClawAgentId(direct)) return direct;
 
@@ -171,7 +171,7 @@ export function defaultOpenClawRunnerAgentId(runtimeKey: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  const digest = createHash("sha256").update(runtimeKey).digest("hex").slice(0, 10);
+  const digest = createHash("sha256").update(runtimeId).digest("hex").slice(0, 10);
   const maxSlugLength = OPENCLAW_AGENT_ID_MAX_LENGTH
     - OPENCLAW_RUNNER_AGENT_ID_PREFIX.length
     - digest.length

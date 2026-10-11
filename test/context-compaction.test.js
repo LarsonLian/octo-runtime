@@ -16,7 +16,7 @@ async function fixture(t, overrides = {}) {
     measureInputTokens: async text => 32 + Array.from(text).length,
     countTokens: async text => Array.from(text).length,
     summarize: async () => { calls++; return 'summary facts'; }, ...overrides };
-  const input = { runKey: 'run-1', material: '材料😀'.repeat(1000), protectedIdentity: 'fixed-instructions-and-input',
+  const input = { runId: 'run-1', material: '材料😀'.repeat(1000), protectedIdentity: 'fixed-instructions-and-input',
     sourceRefs: [{ resource_ref: 'task/1', revision: 3 }], signal: new AbortController().signal,
     port, store: new FileMaterialCompactionStore(root), onProgress: value => progress.push(value) };
   return { input, root, progress, calls: () => calls };

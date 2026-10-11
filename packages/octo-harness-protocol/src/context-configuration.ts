@@ -4,7 +4,7 @@ import { contextTypeDefinition } from "./context-catalog.js";
 
 const empty = (): ContextEnvelope => ({ schema: CONTEXT_SCHEMA, items: [] });
 const keyOf = (item: ContextItem): string => `${item.namespace}/${item.name}`;
-const resourceKey = (item: { resource_key: string }): string => item.resource_key;
+const resourceId = (item: { resource_id: string }): string => item.resource_id;
 const selection = (envelope: ContextEnvelope, name: string): ContextCapabilitySelectionPayload | undefined =>
   envelope.items.find(item => item.namespace === "octo.resources" && item.name === name)?.payload as ContextCapabilitySelectionPayload | undefined;
 
@@ -68,21 +68,21 @@ export function resolveContextConfiguration(configuration: ContextConfiguration,
   for (const layer of [configuration.defaults, configuration.mandatory, request]) {
     const scope = selection(layer, name);
     for (const excluded of scope?.exclude ?? []) {
-      const key = resourceKey(excluded);
-      if (required?.include.some(item => resourceKey(item) === key)) conflict(`octo.resources/${name}.${key}`);
+      const key = resourceId(excluded);
+      if (required?.include.some(item => resourceId(item) === key)) conflict(`octo.resources/${name}.${key}`);
       resources.delete(key);
     }
-    for (const reference of scope?.include ?? []) resources.set(resourceKey(reference), structuredClone(reference));
+    for (const reference of scope?.include ?? []) resources.set(resourceId(reference), structuredClone(reference));
   }
   const supplied = selection(request, name);
   for (const excluded of required?.exclude ?? []) {
-    const key = resourceKey(excluded);
-    if (supplied?.include.some(item => resourceKey(item) === key)) conflict(`octo.resources/${name}.${key}`);
+    const key = resourceId(excluded);
+    if (supplied?.include.some(item => resourceId(item) === key)) conflict(`octo.resources/${name}.${key}`);
     resources.delete(key);
   }
   for (const forced of required?.include ?? []) {
-    const key = resourceKey(forced);
-    const override = supplied?.include.find(item => resourceKey(item) === key);
+    const key = resourceId(forced);
+    const override = supplied?.include.find(item => resourceId(item) === key);
     if (override && (forced.invoke && override.invoke === false || !componentsContain(override.components, forced.components))) conflict(`octo.resources/${name}.${key}`);
     const chosen = resources.get(key) ?? structuredClone(forced);
     if (forced.invoke) chosen.invoke = true;
@@ -91,7 +91,7 @@ export function resolveContextConfiguration(configuration: ContextConfiguration,
   }
   const key = `octo.resources/${name}`;
   if (items.has(key) || required || resources.size) items.set(key, { namespace: "octo.resources", name, payload: {
-    include: [...resources.values()].sort((a, b) => resourceKey(a) < resourceKey(b) ? -1 : resourceKey(a) > resourceKey(b) ? 1 : 0), exclude: []
+    include: [...resources.values()].sort((a, b) => resourceId(a) < resourceId(b) ? -1 : resourceId(a) > resourceId(b) ? 1 : 0), exclude: []
   } });
   }
   return JSON.parse(canonicalContext({ schema: CONTEXT_SCHEMA, items: [...items.values()] })) as ContextEnvelope;
@@ -99,8 +99,8 @@ export function resolveContextConfiguration(configuration: ContextConfiguration,
 
 function constrainRuntime(required: Record<string, unknown>, supplied: Record<string, unknown>): Record<string, unknown> {
   for (const field of ["offline_behavior", "failover"]) if (required[field] !== undefined && supplied[field] !== undefined && required[field] !== supplied[field]) conflict(`runtime.${field}`);
-  const allowed = required.mode === "explicit" ? [required.runtime_key] : required.runtime_ids as string[];
-  const selected = supplied.mode === "explicit" ? [supplied.runtime_key] : supplied.runtime_ids as string[];
+  const allowed = required.mode === "explicit" ? [required.runtime_id] : required.runtime_ids as string[];
+  const selected = supplied.mode === "explicit" ? [supplied.runtime_id] : supplied.runtime_ids as string[];
   if (!selected.length || selected.some(id => !allowed.includes(id))) conflict("runtime");
   const result = structuredClone(supplied);
   for (const field of ["offline_behavior", "failover"]) if (required[field] !== undefined) result[field] = required[field];

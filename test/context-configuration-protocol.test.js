@@ -44,7 +44,7 @@ test("catalog covers every schema branch, including grouped capability namespace
 test("processor coverage enforces independent execution and material types", () => {
   const context = { schema: "octo.context-envelope/v3", items: [
     {namespace:"octo.content", name:"inline", payload:{entries:[{text:"material"}]}},
-    { namespace: "octo.runtime", name: "selection", payload: {mode:"explicit",runtime_key:"device"} }
+    { namespace: "octo.runtime", name: "selection", payload: {mode:"explicit",runtime_id:"device"} }
   ] };
   assert.doesNotThrow(() => assertContextProcessorCoverage(context, "compile", new Set(["octo.content/inline", "octo.runtime/selection"])));
   assert.throws(() => assertContextProcessorCoverage(context, "dispatch", new Set()), /CONTEXT_PROCESSOR_UNAVAILABLE: dispatch: octo.runtime\/selection/);
@@ -60,7 +60,7 @@ test("configuration rejects unknown fields and persistent trusted controls", () 
 });
 
 test("resource kinds with the same UUID are independent identities", () => {
-  const defaults = { schema: "octo.context-envelope/v3", items: ["agent_plugins", "skills", "connectors"].map(name => ({namespace:"octo.resources",name,payload:{include:[{resource_key: "ae67cb3e-0d16-4bb2-9a4e-bb563cb707af"}],exclude:[]}})) };
+  const defaults = { schema: "octo.context-envelope/v3", items: ["agent_plugins", "skills", "connectors"].map(name => ({namespace:"octo.resources",name,payload:{include:[{resource_id: "ae67cb3e-0d16-4bb2-9a4e-bb563cb707af"}],exclude:[]}})) };
   const result = resolveContextConfiguration({defaults,mandatory:{...defaults,items:[]}}, {...defaults,items:[]});
   assert.equal(result.items.length, 3);
 });

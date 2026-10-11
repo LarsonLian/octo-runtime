@@ -2,12 +2,12 @@ import type { NotificationMessage } from "./generated/protocol-types.js";
 
 const keys = ["schema", "eventId", "event", "occurredAt", "projectId", "sourceId", "title", "text"] as const;
 const events = new Set(["task.event", "execution.succeeded", "execution.failed", "notification.test"]);
-const taskKeys = ["evt_type", "task", "taskEvent", "timeline", "timelineTruncated", "timelineThroughSequence"];
+const taskIds = ["evt_type", "task", "taskEvent", "timeline", "timelineTruncated", "timelineThroughSequence"];
 
 export function assertNotificationMessage(value: unknown): asserts value is NotificationMessage {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("notification must be an object");
   const message = value as Record<string, unknown>;
-  if (Object.keys(message).some(key => !keys.includes(key as typeof keys[number]) && !taskKeys.includes(key)) || keys.some(key => typeof message[key] !== "string")) {
+  if (Object.keys(message).some(key => !keys.includes(key as typeof keys[number]) && !taskIds.includes(key)) || keys.some(key => typeof message[key] !== "string")) {
     throw new Error("notification contains missing or unsupported fields");
   }
   for (const key of keys) {
@@ -19,7 +19,7 @@ export function assertNotificationMessage(value: unknown): asserts value is Noti
   if (message.schema !== "octo.notification.v2" || !events.has(message.event as string)) throw new Error("unsupported notification schema or event");
   if (message.event === "task.event") {
     validateTaskNotification(message);
-  } else if (taskKeys.some(key => key in message)) {
+  } else if (taskIds.some(key => key in message)) {
     throw new Error("task fields require a task event");
   }
   for (const [key, max, min] of [["eventId", 256, 1], ["projectId", 128, 1], ["sourceId", 128, 1], ["title", 256, 1], ["text", 4096, 0]] as const) {
@@ -47,7 +47,7 @@ function sequence(value: unknown): boolean { return Number.isSafeInteger(value) 
 function validateTaskNotification(message: Record<string, unknown>): void {
   const task = object(message.task), event = object(message.taskEvent);
   knownFields(task, ["id", "title", "status", "row_version", "handler_epoch"], ["responsible_party", "current_handler"]);
-  knownFields(event, ["id", "sequence", "evt_type", "actor", "summary", "payload"], ["task_conversation_key", "source_run_key"]);
+  knownFields(event, ["id", "sequence", "evt_type", "actor", "summary", "payload"], ["task_conversation_id", "source_run_id"]);
   if (task.id !== message.sourceId || typeof task.title !== "string" || !["backlog", "todo", "in_progress", "done", "cancelled"].includes(String(task.status)) || !sequence(task.row_version) || !sequence(task.handler_epoch)) throw new Error("invalid task snapshot");
   const actor = object(event.actor);
   if (typeof actor.type !== "string" || typeof actor.id !== "string" || typeof event.summary !== "string") throw new Error("invalid event actor or summary");

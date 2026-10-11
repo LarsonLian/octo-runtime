@@ -31,7 +31,7 @@ test("OpenClaw Gateway preserves new thought phases, native answer IDs and comme
   };
   const adapter = createOpenClawAdapter({ clientFactory: () => client });
   const output = [];
-  for await (const e of adapter.invoke({ protocolVersion: 2, invocationId: "i", agentSessionKey: "s", runKey: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "", approvalMode: "full_access", agentSource: "provisioned", agentConfig: { providerAgentId: "runner", providerOptions: { OPENCLAW_GATEWAY_URL: "ws://localhost:1", OPENCLAW_GATEWAY_TOKEN: "fixture", OPENCLAW_GATEWAY_DEVICE_ID: "fixture", OPENCLAW_GATEWAY_PUBLIC_KEY: "fixture", OPENCLAW_GATEWAY_PRIVATE_KEY: "fixture" } } })) output.push(e);
+  for await (const e of adapter.invoke({ protocolVersion: 2, invocationId: "i", agentSessionId: "s", runId: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "", approvalMode: "full_access", agentSource: "provisioned", agentConfig: { providerAgentId: "runner", providerOptions: { OPENCLAW_GATEWAY_URL: "ws://localhost:1", OPENCLAW_GATEWAY_TOKEN: "fixture", OPENCLAW_GATEWAY_DEVICE_ID: "fixture", OPENCLAW_GATEWAY_PUBLIC_KEY: "fixture", OPENCLAW_GATEWAY_PRIVATE_KEY: "fixture" } } })) output.push(e);
   const thoughts = output.filter(e => e.type.startsWith("message.") && e.payload.channel === "analysis" && e.payload.text);
   assert.notEqual(thoughts[0].payload.messageId, thoughts[1].payload.messageId);
   assert.equal(thoughts[1].payload.messageId, thoughts[2].payload.messageId);

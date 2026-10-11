@@ -39,12 +39,12 @@ export interface MaterialCompactionPort {
   summarize(text: string, targetTokens: number, signal: AbortSignal): Promise<string>;
 }
 export interface MaterialCompactionStore {
-  load(runKey: string, signal: AbortSignal): Promise<CompactionReceipt | undefined>;
+  load(runId: string, signal: AbortSignal): Promise<CompactionReceipt | undefined>;
   /** 首次成功写入者获胜；返回实际保存的回执，不允许覆盖同 Run 的摘要。 */
-  save(runKey: string, receipt: CompactionReceipt, signal: AbortSignal): Promise<CompactionReceipt>;
+  save(runId: string, receipt: CompactionReceipt, signal: AbortSignal): Promise<CompactionReceipt>;
 }
 export interface MaterialCompactionInput {
-  runKey: string;
+  runId: string;
   material: string;
   /** 对已冻结输入、可信指令及工具配置计算的身份，不是可摘要正文。 */
   protectedIdentity: string;
@@ -106,7 +106,7 @@ export async function compactContextMaterials(input: MaterialCompactionInput): P
     if (tokenCount(await call(() => port.measureInputTokens(material, workSignal))) > allowed) throw new Error("CONTEXT_COMPACTION_SNAPSHOT_TOO_LARGE");
     return { material, receipt };
   };
-  const cached = await call(() => store.load(input.runKey, workSignal));
+  const cached = await call(() => store.load(input.runId, workSignal));
   if (cached) return restore(cached);
   const totalTokens = tokenCount(await call(() => port.measureInputTokens(input.material, workSignal)));
   const inputTokenCountKind = port.inputTokenCountKind ?? "exact";
@@ -168,7 +168,7 @@ export async function compactContextMaterials(input: MaterialCompactionInput): P
       if (after > allowed) continue;
       const receipt: CompactionReceipt = { version: MATERIAL_COMPACTION_VERSION, inputHash, sourceDigest,
         model: port.model, inputTokenCountKind, ...(port.measurementMode ? { measurementMode: port.measurementMode } : {}), ...(port.capacitySource ? { capacitySource: port.capacitySource } : {}), summary: current, outputDigest: digest(current), calls, inputTokens: totalTokens, outputTokens: after };
-      const saved = await call(() => store.save(input.runKey, receipt, workSignal));
+      const saved = await call(() => store.save(input.runId, receipt, workSignal));
       const result = await restore(saved);
       progress("completed");
       return result;
@@ -180,26 +180,26 @@ export async function compactContextMaterials(input: MaterialCompactionInput): P
 /** 原子写入私有摘要；同 Run 的首次写入获胜，恢复不会产生另一份随机摘要。 */
 export class FileMaterialCompactionStore implements MaterialCompactionStore {
   constructor(private readonly root: string) {}
-  private path(runKey: string): string {
-    if (!runKey) throw new Error("CONTEXT_COMPACTION_RUN_REQUIRED");
-    return join(this.root, `${createHash("sha256").update(runKey).digest("hex")}.json`);
+  private path(runId: string): string {
+    if (!runId) throw new Error("CONTEXT_COMPACTION_RUN_REQUIRED");
+    return join(this.root, `${createHash("sha256").update(runId).digest("hex")}.json`);
   }
-  async load(runKey: string, signal: AbortSignal): Promise<CompactionReceipt | undefined> {
+  async load(runId: string, signal: AbortSignal): Promise<CompactionReceipt | undefined> {
     signal.throwIfAborted();
-    try { return JSON.parse(await readFile(this.path(runKey), { encoding: "utf8", signal })) as CompactionReceipt; }
+    try { return JSON.parse(await readFile(this.path(runId), { encoding: "utf8", signal })) as CompactionReceipt; }
     catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; }
   }
-  async save(runKey: string, receipt: CompactionReceipt, signal: AbortSignal): Promise<CompactionReceipt> {
+  async save(runId: string, receipt: CompactionReceipt, signal: AbortSignal): Promise<CompactionReceipt> {
     signal.throwIfAborted();
     await mkdir(this.root, { recursive: true, mode: 0o700 });
-    const target = this.path(runKey);
+    const target = this.path(runId);
     const temporary = `${target}.${randomUUID()}.tmp`;
     try {
       await writeFile(temporary, JSON.stringify(receipt), { encoding: "utf8", mode: 0o600, flag: "wx", signal });
       signal.throwIfAborted();
       try { await link(temporary, target); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
-      const stored = await this.load(runKey, signal);
+      const stored = await this.load(runId, signal);
       if (!stored) throw new Error("CONTEXT_COMPACTION_SNAPSHOT_LOST");
       return stored;
     } finally { await unlink(temporary).catch(error => { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }); }

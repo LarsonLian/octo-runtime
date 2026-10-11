@@ -77,7 +77,7 @@ export type ContextWorkspacePayload =
  */
 export type ContextRuntimeSelectionPayload = {
   mode: "candidates" | "explicit";
-  runtime_key?: string;
+  runtime_id?: string;
   /**
    * @minItems 1
    * @maxItems 64
@@ -263,8 +263,8 @@ export interface NotificationMessage1 {
     sequence: number;
     evt_type: number;
     actor: {};
-    task_conversation_key?: string;
-    source_run_key?: string;
+    task_conversation_id?: string;
+    source_run_id?: string;
     summary: string;
     payload: {};
   };
@@ -1606,7 +1606,7 @@ export interface ContextConfiguration {
  * via the `definition` "RunContextProjection".
  */
 export interface RunContextProjection {
-  run_key: string;
+  run_id: string;
   context_configuration_version: number;
   context_hash: string;
   actual_runtime_id?: string;
@@ -1629,7 +1629,7 @@ export interface RunContextProjection {
      * @maxItems 32
      */
     resources: {
-      resource_key: string;
+      resource_id: string;
       kind: "agent_plugin" | "skill" | "connector" | "knowledge";
       digest: string;
       sources: ("agent_default" | "agent_mandatory" | "request" | "scenario_policy")[];
@@ -1659,7 +1659,7 @@ export interface ContextPreparationReceipt {
   catalog_version: "octo.context-catalog/v3";
   context_hash: string;
   compiled_hash: string;
-  run_key: string;
+  run_id: string;
   lease_id: string;
   fencing_token: number;
   workspace_mode: "fixed" | "random" | "none";
@@ -1685,7 +1685,7 @@ export interface ContextPreparationReceipt {
  * via the `definition` "PreparedCapabilityReceipt".
  */
 export interface PreparedCapabilityReceipt {
-  resource_key: string;
+  resource_id: string;
   digest: string;
   root: string;
   data: string;
@@ -1701,7 +1701,7 @@ export interface PreparedCapabilityReceipt {
  */
 export interface PreparedMaterialReceipt {
   resource_ref: string;
-  task_key: string;
+  task_id: string;
   task_version: number;
   handler_epoch: number;
   digest: string;
@@ -1747,7 +1747,7 @@ export interface ContextApplicationEvidence {
   catalog_version: "octo.context-catalog/v3";
   context_hash: string;
   compiled_hash: string;
-  run_key: string;
+  run_id: string;
   lease_id: string;
   fencing_token: number;
   adapter_type: "codex";
@@ -1779,7 +1779,7 @@ export interface ContextModelPayload {
  * via the `definition` "ContextCapabilityReference".
  */
 export interface ContextCapabilityReference {
-  resource_key: string;
+  resource_id: string;
   invoke?: boolean;
   /**
    * @maxItems 64
@@ -1807,14 +1807,14 @@ export interface ContextCapabilitySelectionPayload {
  * via the `definition` "ContextResourceIdentity".
  */
 export interface ContextResourceIdentity {
-  resource_key: string;
+  resource_id: string;
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ResolvedCapabilityResource".
  */
 export interface ResolvedCapabilityResource {
-  resource_key: string;
+  resource_id: string;
   kind: "agent_plugin" | "skill" | "connector" | "knowledge";
   digest: string;
   files: {
@@ -1949,7 +1949,7 @@ export interface ChannelContextDescriptor {
  */
 export interface ChannelScope {
   tenant_id: string;
-  endpoint_key: string;
+  endpoint_id: string;
   channel: string;
   account_id: string | null;
   bot_id: string;
@@ -2009,20 +2009,20 @@ export interface ResolvedRuntimeSelection1 {
   schema: "octo.runtime-selection/v2";
   context_configuration_version: number;
   selection_mode: "explicit" | "candidates";
-  explicit_runtime_key?: string;
+  explicit_runtime_id?: string;
   /**
    * @minItems 1
    * @maxItems 64
    */
   authorized_candidates: [
     {
-      runtime_key: string;
+      runtime_id: string;
       priority: number;
       owner_subject_type: "user" | "teamspace";
       owner_subject_id: string;
     },
     ...{
-      runtime_key: string;
+      runtime_id: string;
       priority: number;
       owner_subject_type: "user" | "teamspace";
       owner_subject_id: string;
@@ -2067,7 +2067,7 @@ export interface MessageProvenance {
   nativeEvent: string;
 }
 /**
- * A catalog-controlled recovery action. Clients render labelKey and must not execute arbitrary commands from this object.
+ * A catalog-controlled recovery action. Clients render labelId and must not execute arbitrary commands from this object.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "FailureAction".
@@ -2082,7 +2082,7 @@ export interface FailureAction {
     | "install_dependency"
     | "fix_permissions"
     | "contact_admin";
-  labelKey: string;
+  labelId: string;
 }
 /**
  * Low-cardinality component identity. It intentionally excludes hostnames, paths, accounts, and tenant data.
@@ -2116,7 +2116,7 @@ export interface FailureEnvelope {
   reasonCode: string;
   category: string;
   stage: string;
-  messageKey: string;
+  messageId: string;
   /**
    * Catalog-allowlisted presentation parameters only.
    */
@@ -2456,7 +2456,7 @@ export interface RunIdentity {
   /**
    * Owning Agent Worker session identifier.
    */
-  agentSessionKey: string;
+  agentSessionId: string;
 }
 /**
  * Idempotent context-only batch appended by agent-worker to its bound daemon.
@@ -2465,7 +2465,7 @@ export interface RunIdentity {
  * via the `definition` "ChannelContextAppend".
  */
 export interface ChannelContextAppend {
-  agent_key: string;
+  agent_id: string;
   scope: ChannelScope;
   /**
    * @minItems 1
@@ -2482,7 +2482,7 @@ export interface ChannelContextAppend {
  */
 export interface ContextSyncRequest {
   request_id: string;
-  run_key: string;
+  run_id: string;
   scope: ChannelScope;
   trigger_message_id: string;
   trigger_seq?: number;
@@ -2558,11 +2558,11 @@ export interface InvokeRequestWire {
   /**
    * Long-lived Agent Worker session identifier for this execution context.
    */
-  agentSessionKey: string;
+  agentSessionId: string;
   /**
    * Run identifier for this execution.
    */
-  runKey: string;
+  runId: string;
   /**
    * Worker-owned AgentSession generation that fences stale continuity updates.
    */
@@ -2628,7 +2628,7 @@ export interface InvokeRequestWire {
  * via the `definition` "ActivityInfo".
  */
 export interface ActivityInfo {
-  messageKey?: string;
+  messageId?: string;
   params?: {
     [k: string]: string | number | boolean;
   };
@@ -2721,7 +2721,7 @@ export interface RunNoticePayload {
  * via the `definition` "ContextSkillsReference".
  */
 export interface ContextSkillsReference {
-  resource_key: string;
+  resource_id: string;
   invoke?: boolean;
 }
 /**
@@ -2745,7 +2745,7 @@ export interface ContextSkillsPayload {
  * via the `definition` "ContextAgentPluginsReference".
  */
 export interface ContextAgentPluginsReference {
-  resource_key: string;
+  resource_id: string;
   invoke?: boolean;
   /**
    * @maxItems 64
@@ -2773,7 +2773,7 @@ export interface ContextAgentPluginsPayload {
  * via the `definition` "ContextKnowledgeReference".
  */
 export interface ContextKnowledgeReference {
-  resource_key: string;
+  resource_id: string;
 }
 /**
  * Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.
@@ -2796,7 +2796,7 @@ export interface ContextKnowledgePayload {
  * via the `definition` "ContextConnectorsReference".
  */
 export interface ContextConnectorsReference {
-  resource_key: string;
+  resource_id: string;
   /**
    * @maxItems 64
    */
@@ -2878,7 +2878,7 @@ export interface ScenarioPolicy {
    * @maxItems 32
    */
   default_skills: {
-    resource_key: string;
+    resource_id: string;
     invoke: boolean;
     [k: string]: unknown;
   }[];
@@ -2899,7 +2899,7 @@ export interface ScenarioPolicySnapshot {
    * @maxItems 32
    */
   default_skills: {
-    resource_key: string;
+    resource_id: string;
     invoke: boolean;
     [k: string]: unknown;
   }[];

@@ -143,10 +143,10 @@
             "actor": {
               "type": "object"
             },
-            "task_conversation_key": {
+            "task_conversation_id": {
               "type": "string"
             },
-            "source_run_key": {
+            "source_run_id": {
               "type": "string"
             },
             "summary": {
@@ -512,7 +512,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "run_key",
+        "run_id",
         "context_configuration_version",
         "context_hash",
         "preparation_status",
@@ -524,7 +524,7 @@
         "effort_uses_provider_default"
       ],
       "properties": {
-        "run_key": {
+        "run_id": {
           "type": "string",
           "minLength": 1
         },
@@ -612,14 +612,14 @@
                 "type": "object",
                 "additionalProperties": false,
                 "required": [
-                  "resource_key",
+                  "resource_id",
                   "kind",
                   "revision",
                   "digest",
                   "sources"
                 ],
                 "properties": {
-                  "resource_key": {
+                  "resource_id": {
                     "type": "string",
                     "minLength": 1
                   },
@@ -672,7 +672,7 @@
         "catalog_version",
         "context_hash",
         "compiled_hash",
-        "run_key",
+        "run_id",
         "lease_id",
         "fencing_token",
         "workspace_mode",
@@ -697,7 +697,7 @@
           "type": "string",
           "pattern": "^sha256:[a-f0-9]{64}$"
         },
-        "run_key": {
+        "run_id": {
           "type": "string",
           "minLength": 1
         },
@@ -765,7 +765,7 @@
         "catalog_version",
         "context_hash",
         "compiled_hash",
-        "run_key",
+        "run_id",
         "lease_id",
         "fencing_token",
         "adapter_type",
@@ -791,7 +791,7 @@
           "type": "string",
           "pattern": "^sha256:[a-f0-9]{64}$"
         },
-        "run_key": {
+        "run_id": {
           "type": "string",
           "minLength": 1
         },
@@ -830,7 +830,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resource_key",
+        "resource_id",
         "revision",
         "digest",
         "root",
@@ -838,7 +838,7 @@
         "components"
       ],
       "properties": {
-        "resource_key": {
+        "resource_id": {
           "type": "string",
           "minLength": 1
         },
@@ -876,7 +876,7 @@
       "additionalProperties": false,
       "required": [
         "resource_ref",
-        "task_key",
+        "task_id",
         "task_version",
         "handler_epoch",
         "digest"
@@ -886,7 +886,7 @@
           "type": "string",
           "minLength": 1
         },
-        "task_key": {
+        "task_id": {
           "type": "string",
           "minLength": 1
         },
@@ -1078,10 +1078,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resource_key"
+        "resource_id"
       ],
       "properties": {
-        "resource_key": {
+        "resource_id": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         },
@@ -1130,7 +1130,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resource_key",
+        "resource_id",
         "kind",
         "revision",
         "digest",
@@ -1139,7 +1139,7 @@
         "invoke"
       ],
       "properties": {
-        "resource_key": {
+        "resource_id": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         },
@@ -1326,7 +1326,7 @@
             "explicit"
           ]
         },
-        "runtime_key": {
+        "runtime_id": {
           "type": "string",
           "minLength": 1
         },
@@ -1369,7 +1369,7 @@
           ],
           "not": {
             "required": [
-              "runtime_key"
+              "runtime_id"
             ]
           }
         },
@@ -1380,7 +1380,7 @@
             }
           },
           "required": [
-            "runtime_key"
+            "runtime_id"
           ],
           "not": {
             "anyOf": [
@@ -1598,7 +1598,7 @@
             "candidates"
           ]
         },
-        "explicit_runtime_key": {
+        "explicit_runtime_id": {
           "type": "string",
           "minLength": 1,
           "maxLength": 191
@@ -1611,13 +1611,13 @@
             "type": "object",
             "additionalProperties": false,
             "required": [
-              "runtime_key",
+              "runtime_id",
               "priority",
               "owner_subject_type",
               "owner_subject_id"
             ],
             "properties": {
-              "runtime_key": {
+              "runtime_id": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 191
@@ -1665,7 +1665,7 @@
           },
           "then": {
             "required": [
-              "explicit_runtime_key"
+              "explicit_runtime_id"
             ],
             "properties": {
               "authorized_candidates": {
@@ -1679,7 +1679,7 @@
           "else": {
             "not": {
               "required": [
-                "explicit_runtime_key"
+                "explicit_runtime_id"
               ]
             }
           }
@@ -1872,12 +1872,12 @@
     },
     "FailureAction": {
       "title": "FailureAction",
-      "description": "A catalog-controlled recovery action. Clients render labelKey and must not execute arbitrary commands from this object.",
+      "description": "A catalog-controlled recovery action. Clients render labelId and must not execute arbitrary commands from this object.",
       "type": "object",
       "additionalProperties": false,
       "required": [
         "type",
-        "labelKey"
+        "labelId"
       ],
       "properties": {
         "type": {
@@ -1893,7 +1893,7 @@
             "contact_admin"
           ]
         },
-        "labelKey": {
+        "labelId": {
           "type": "string",
           "minLength": 1
         }
@@ -1954,7 +1954,7 @@
         "reasonCode",
         "category",
         "stage",
-        "messageKey",
+        "messageId",
         "params",
         "retryable",
         "action",
@@ -1986,7 +1986,7 @@
           "minLength": 1,
           "maxLength": 128
         },
-        "messageKey": {
+        "messageId": {
           "type": "string",
           "minLength": 1,
           "maxLength": 128
@@ -2647,14 +2647,14 @@
       "additionalProperties": false,
       "required": [
         "id",
-        "agentSessionKey"
+        "agentSessionId"
       ],
       "properties": {
         "id": {
           "description": "Run identifier.",
           "type": "string"
         },
-        "agentSessionKey": {
+        "agentSessionId": {
           "description": "Owning Agent Worker session identifier.",
           "type": "string"
         }
@@ -2667,7 +2667,7 @@
       "additionalProperties": false,
       "required": [
         "tenant_id",
-        "endpoint_key",
+        "endpoint_id",
         "channel",
         "account_id",
         "bot_id",
@@ -2678,7 +2678,7 @@
           "type": "string",
           "minLength": 1
         },
-        "endpoint_key": {
+        "endpoint_id": {
           "type": "string",
           "minLength": 1
         },
@@ -2808,12 +2808,12 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "agent_key",
+        "agent_id",
         "scope",
         "facts"
       ],
       "properties": {
-        "agent_key": {
+        "agent_id": {
           "type": "string",
           "minLength": 1,
           "maxLength": 96
@@ -2842,7 +2842,7 @@
       "additionalProperties": false,
       "required": [
         "request_id",
-        "run_key",
+        "run_id",
         "scope",
         "trigger_message_id",
         "limit"
@@ -2852,7 +2852,7 @@
           "type": "string",
           "minLength": 1
         },
-        "run_key": {
+        "run_id": {
           "type": "string",
           "minLength": 1
         },
@@ -3272,8 +3272,8 @@
       "additionalProperties": false,
       "required": [
         "invocationId",
-        "agentSessionKey",
-        "runKey",
+        "agentSessionId",
+        "runId",
         "prompt",
         "workdir",
         "controlInstructions",
@@ -3289,11 +3289,11 @@
           "description": "Active Adapter Host invocation identifier and cancellation target.",
           "type": "string"
         },
-        "agentSessionKey": {
+        "agentSessionId": {
           "description": "Long-lived Agent Worker session identifier for this execution context.",
           "type": "string"
         },
-        "runKey": {
+        "runId": {
           "description": "Run identifier for this execution.",
           "type": "string"
         },
@@ -3411,7 +3411,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "messageKey": {
+        "messageId": {
           "type": "string",
           "minLength": 1,
           "maxLength": 191
@@ -3766,10 +3766,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resource_key"
+        "resource_id"
       ],
       "properties": {
-        "resource_key": {
+        "resource_id": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         }
@@ -3830,10 +3830,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resource_key"
+        "resource_id"
       ],
       "properties": {
-        "resource_key": {
+        "resource_id": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         },
@@ -3873,10 +3873,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resource_key"
+        "resource_id"
       ],
       "properties": {
-        "resource_key": {
+        "resource_id": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         },
@@ -3925,10 +3925,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resource_key"
+        "resource_id"
       ],
       "properties": {
-        "resource_key": {
+        "resource_id": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         }
@@ -3965,10 +3965,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resource_key"
+        "resource_id"
       ],
       "properties": {
-        "resource_key": {
+        "resource_id": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         },
@@ -4165,7 +4165,7 @@
             "type": "object",
             "additionalProperties": true,
             "properties": {
-              "resource_key": {
+              "resource_id": {
                 "type": "string",
                 "format": "uuid"
               },
@@ -4174,7 +4174,7 @@
               }
             },
             "required": [
-              "resource_key",
+              "resource_id",
               "invoke"
             ]
           }
@@ -4215,7 +4215,7 @@
             "type": "object",
             "additionalProperties": true,
             "properties": {
-              "resource_key": {
+              "resource_id": {
                 "type": "string",
                 "format": "uuid"
               },
@@ -4224,7 +4224,7 @@
               }
             },
             "required": [
-              "resource_key",
+              "resource_id",
               "invoke"
             ]
           }

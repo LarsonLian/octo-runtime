@@ -184,10 +184,10 @@ export function assertJsonValue(value: unknown): void {
 
 export const RESOURCE_CONTEXT_KINDS: Readonly<Record<string, string>> = Object.freeze({ skills: "skill", agent_plugins: "agent_plugin", knowledge: "knowledge", connectors: "connector" });
 
-export function contextResourceReferences(context: ContextEnvelope): (Record<string, unknown> & {kind: string; resource_key: string})[] {
+export function contextResourceReferences(context: ContextEnvelope): (Record<string, unknown> & {kind: string; resource_id: string})[] {
   return context.items.filter(item => item.namespace === "octo.resources" && RESOURCE_CONTEXT_KINDS[item.name])
-    .flatMap(item => (item.payload.include as Record<string, unknown>[]).map(value => ({ ...value, kind: RESOURCE_CONTEXT_KINDS[item.name], resource_key: String(value.resource_key) })))
-    .sort((a, b) => `${a.kind}/${a.resource_key}` < `${b.kind}/${b.resource_key}` ? -1 : `${a.kind}/${a.resource_key}` > `${b.kind}/${b.resource_key}` ? 1 : 0);
+    .flatMap(item => (item.payload.include as Record<string, unknown>[]).map(value => ({ ...value, kind: RESOURCE_CONTEXT_KINDS[item.name], resource_id: String(value.resource_id) })))
+    .sort((a, b) => `${a.kind}/${a.resource_id}` < `${b.kind}/${b.resource_id}` ? -1 : `${a.kind}/${a.resource_id}` > `${b.kind}/${b.resource_id}` ? 1 : 0);
 }
 
 export function mergeReferences(base: Record<string, unknown>[], next: Record<string, unknown>[]): Record<string, unknown>[] {
@@ -218,12 +218,12 @@ function publicPayload(namespace: string, name: string, value: Record<string, un
       if (!Array.isArray(entries) || entries.length > 32) throw new TypeError("CONTEXT_SCHEMA_INVALID");
       for (const entry of entries) {
         object(entry, "CONTEXT_SCHEMA_INVALID");
-        const allowed = ["resource_key"];
+        const allowed = ["resource_id"];
         if (list === "include" && ["skill", "agent_plugin"].includes(kind)) allowed.push("invoke");
         if (list === "include" && ["agent_plugin", "connector"].includes(kind)) allowed.push("components");
         fields(entry, allowed);
-        if (typeof entry.resource_key !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(entry.resource_key)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
-        const key = entry.resource_key;
+        if (typeof entry.resource_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(entry.resource_id)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
+        const key = entry.resource_id;
         if (seen.has(key)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
         seen.add(key);
         if (entry.invoke !== undefined && typeof entry.invoke !== "boolean") throw new TypeError("CONTEXT_SCHEMA_INVALID");
@@ -278,12 +278,12 @@ function executionField(namespace: string, name: string, value: Record<string, u
     if (name === "limits") { limits(value); return; }
   }
   if (namespace === "octo.runtime" && name === "selection") {
-    fields(value, ["mode", "runtime_key", "runtime_ids", "strategy", "offline_behavior", "failover"]);
+    fields(value, ["mode", "runtime_id", "runtime_ids", "strategy", "offline_behavior", "failover"]);
     if (value.offline_behavior !== undefined && value.offline_behavior !== "wait" && value.offline_behavior !== "fail") throw new TypeError("CONTEXT_SCHEMA_INVALID");
     if (value.failover !== undefined && value.failover !== "none" && value.failover !== "candidates") throw new TypeError("CONTEXT_SCHEMA_INVALID");
     if (value.mode === "explicit" && value.failover !== undefined && value.failover !== "none") throw new TypeError("CONTEXT_SCHEMA_INVALID");
-    if (value.mode === "explicit" && value.runtime_ids === undefined && value.strategy === undefined) { text(value.runtime_key); return; }
-    if (value.mode === "candidates" && value.runtime_key === undefined && value.strategy === "preferred_failover") { stringList(value.runtime_ids, 64, 1); return; }
+    if (value.mode === "explicit" && value.runtime_ids === undefined && value.strategy === undefined) { text(value.runtime_id); return; }
+    if (value.mode === "candidates" && value.runtime_id === undefined && value.strategy === "preferred_failover") { stringList(value.runtime_ids, 64, 1); return; }
     throw new TypeError("CONTEXT_SCHEMA_INVALID");
   }
   if (namespace === "octo.security" && name === "approval_policy") { fields(value, ["mode"]); assertApprovalMode(value.mode); return; }
@@ -327,14 +327,14 @@ export function assertCapabilityResources(value: unknown): void {
   if (!Array.isArray(value) || value.length > 32) throw new TypeError("CONTEXT_RESOURCE_INVALID");
   for (const resource of value) {
     object(resource, "CONTEXT_RESOURCE_INVALID");
-    fields(resource, ["resource_key", "kind", "revision", "digest", "files", "sources", "invoke", "components", "mcp_credentials"]);
+    fields(resource, ["resource_id", "kind", "revision", "digest", "files", "sources", "invoke", "components", "mcp_credentials"]);
     if (resource.mcp_credentials !== undefined) {
       object(resource.mcp_credentials, "CONTEXT_RESOURCE_INVALID");
       if (Object.keys(resource.mcp_credentials).length > 32) throw new TypeError("CONTEXT_RESOURCE_INVALID");
       for (const headers of Object.values(resource.mcp_credentials)) assertStringRecord(headers, "mcp_credentials", 64);
     }
-    text(resource.resource_key); integer(resource.revision, 1);
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(resource.resource_key)) throw new TypeError("CONTEXT_RESOURCE_INVALID");
+    text(resource.resource_id); integer(resource.revision, 1);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(resource.resource_id)) throw new TypeError("CONTEXT_RESOURCE_INVALID");
     if (!["agent_plugin", "skill", "connector", "knowledge"].includes(String(resource.kind)) || typeof resource.digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(resource.digest) || typeof resource.invoke !== "boolean") throw new TypeError("CONTEXT_RESOURCE_INVALID");
     object(resource.files, "CONTEXT_RESOURCE_INVALID");
     if (Object.keys(resource.files).length > 256 || new TextEncoder().encode(JSON.stringify(resource.files)).length > 16_777_216) throw new TypeError("CONTEXT_RESOURCE_BUDGET_EXCEEDED");

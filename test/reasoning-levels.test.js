@@ -7,7 +7,7 @@ import { buildOpenClawGatewayInvocation } from '@mininglamp-oss/octo-harness-ada
 import { buildAntigravityCommand } from '@mininglamp-oss/octo-harness-adapter-antigravity';
 import { assertCanonicalEvent } from '@mininglamp-oss/octo-harness-protocol';
 
-const request = { protocolVersion: 2, invocationId: 'reasoning-test', runKey: 'reasoning-run', agentSessionKey: 'reasoning-session', agentSource: 'provisioned', context: { schema: 'octo.context-envelope/v3', items: [] }, workdir: process.cwd(), controlInstructions: '', modelInput: 'hello', prompt: 'hello', approvalMode: 'full_access', agentConfig: { effort: 'xhigh' } };
+const request = { protocolVersion: 2, invocationId: 'reasoning-test', runId: 'reasoning-run', agentSessionId: 'reasoning-session', agentSource: 'provisioned', context: { schema: 'octo.context-envelope/v3', items: [] }, workdir: process.cwd(), controlInstructions: '', modelInput: 'hello', prompt: 'hello', approvalMode: 'full_access', agentConfig: { effort: 'xhigh' } };
 
 test('four public levels map through immutable adapter defaults; invalid levels never become defaults', () => {
   assert.deepEqual(OMNI_REASONING_LEVELS, ['low', 'medium', 'high', 'xhigh']);

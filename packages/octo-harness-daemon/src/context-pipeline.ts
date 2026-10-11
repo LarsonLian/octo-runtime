@@ -123,7 +123,7 @@ export class ContextPipeline<Input> {
 
   /** 准备及 seal 默认 30 秒，compact 默认 120 秒；每个类型在声明阶段恰好消费一次。 */
   async prepare(context: ContextEnvelope, plan: ResolvedExecutionPlan, identity: {
-    runKey: string; leaseId: string; fencingToken: number;
+    runId: string; leaseId: string; fencingToken: number;
   }, signal: AbortSignal): Promise<{
     input: Input; capabilities: PreparedRunContext; materials?: PreparedTaskMaterials;
     continuity?: PreparedChannelContextSnapshot; compiled: CompiledRunContext;
@@ -191,7 +191,7 @@ export class ContextPipeline<Input> {
         resources: capabilities.receipt.resources, materials: materials?.refs ?? [], continuity: continuity?.ref
       })).digest("hex")}`,
       ...(this.ports.scenarioPolicyHash ? { scenario_policy_hash: this.ports.scenarioPolicyHash } : {}),
-      run_key: identity.runKey, lease_id: identity.leaseId, fencing_token: identity.fencingToken,
+      run_id: identity.runId, lease_id: identity.leaseId, fencing_token: identity.fencingToken,
       materials: structuredClone(materials?.refs ?? []),
       ...(continuity ? { continuity: structuredClone(continuity.ref) } : {})
     };

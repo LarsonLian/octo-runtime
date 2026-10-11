@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { archiveTaskOutputs, assertTaskOutputManifest, loadTaskOutputs, readTaskOutput, TASK_OUTPUT_SCHEMA, taskOutputManifestPath } from "../packages/octo-harness-daemon/dist/task-outputs.js";
 
 const bytes = Buffer.from("<!doctype html><title>活动页面</title>");
-const entry = { output_key: "page-1", relative_path: "output/page.html", name: "活动.html", media_type: "text/html", size: bytes.length,
+const entry = { output_id: "page-1", relative_path: "output/page.html", name: "活动.html", media_type: "text/html", size: bytes.length,
   sha256: createHash("sha256").update(bytes).digest("hex"), role: "output" };
 
 async function workspace(t) {
@@ -26,7 +26,7 @@ test("manifest requires stable IDs, bounded files, relative paths and exact chec
   for (const relative_path of ["../outside", "/tmp/outside", "C:/outside", "output\\..\\outside", "output/../outside", "output//file", "./output/file", "output/\0file"]) {
     assert.throws(() => assertTaskOutputManifest({ schema: TASK_OUTPUT_SCHEMA, outputs: [{ ...entry, relative_path }] }), /TASK_OUTPUT_PATH_INVALID/);
   }
-  for (const overrides of [{ size: -1 }, { size: 0 }, { size: 101 * 1024 * 1024 }, { sha256: "pretend" }, { name: "../credentials" }, { name: "a".repeat(201) }, { output_key: "../id" }, { role: "reference" }]) {
+  for (const overrides of [{ size: -1 }, { size: 0 }, { size: 101 * 1024 * 1024 }, { sha256: "pretend" }, { name: "../credentials" }, { name: "a".repeat(201) }, { output_id: "../id" }, { role: "reference" }]) {
     assert.throws(() => assertTaskOutputManifest({ schema: TASK_OUTPUT_SCHEMA, outputs: [{ ...entry, ...overrides }] }), /TASK_OUTPUT_MANIFEST_INVALID/);
   }
   assert.throws(() => assertTaskOutputManifest({ schema: TASK_OUTPUT_SCHEMA, outputs: [entry, entry] }), /TASK_OUTPUT_MANIFEST_INVALID/);
@@ -61,7 +61,7 @@ test("Runtime uploads actual bytes; a lost commit receipt and retries reuse dura
   const calls = [];
   let uploads = 0;
   let saved = false;
-  const receipt = { status: "saved", attachment_key: "att-1", file_id: "file-1", file_version_id: "fv-1" };
+  const receipt = { status: "saved", attachment_id: "att-1", file_id: "file-1", file_version_id: "fv-1" };
   const server = createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -80,14 +80,14 @@ test("Runtime uploads actual bytes; a lost commit receipt and retries reuse dura
     let result;
     if (rpc.method === "initialize") result = { protocolVersion: "2025-03-26" };
     else if (rpc.params.name === "task_prepare_output") {
-      assert.deepEqual(rpc.params.arguments, { task_key: "task-1", manifest: entry });
+      assert.deepEqual(rpc.params.arguments, { task_id: "task-1", manifest: entry });
       result = { structuredContent: saved ? receipt : { ticket_id: "ticket-1", upload_url: `http://127.0.0.1:${server.address().port}/storage/upload-ticket`, upload_method: "PUT" } };
     } else if (rpc.params.name === "task_fail_output") {
       assert.equal(saved, true);
       result = { structuredContent: receipt };
     } else {
       assert.equal(rpc.params.name, "task_commit_output");
-      assert.deepEqual(rpc.params.arguments, { task_key: "task-1", ticket_id: "ticket-1", manifest: entry });
+      assert.deepEqual(rpc.params.arguments, { task_id: "task-1", ticket_id: "ticket-1", manifest: entry });
       assert.equal(uploads, 1);
       saved = true;
       response.writeHead(503);
@@ -99,13 +99,13 @@ test("Runtime uploads actual bytes; a lost commit receipt and retries reuse dura
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   const plan = { workdir: directory, mcp_servers: { octo_task: { type: "streamable_http", url: `http://127.0.0.1:${server.address().port}/mcp/team`, headers: { Authorization: "Bearer run-grant" } } } };
-  assert.deepEqual(await archiveTaskOutputs(plan, "task-1", "run-1", new AbortController().signal), [{ output_key: "page-1", ...receipt }]);
-  assert.deepEqual(await archiveTaskOutputs(plan, "task-1", "run-1", new AbortController().signal), [{ output_key: "page-1", ...receipt }]);
+  assert.deepEqual(await archiveTaskOutputs(plan, "task-1", "run-1", new AbortController().signal), [{ output_id: "page-1", ...receipt }]);
+  assert.deepEqual(await archiveTaskOutputs(plan, "task-1", "run-1", new AbortController().signal), [{ output_id: "page-1", ...receipt }]);
   assert.equal(uploads, 1);
   assert.equal(calls.filter(call => call.method === "tools/call" && call.params.name === "task_commit_output").length, 1);
   await writeFile(join(directory, entry.relative_path), "changed after manifest");
   const failure = await archiveTaskOutputs(plan, "task-1", "run-1", new AbortController().signal);
-  assert.deepEqual(failure, [{ output_key: "page-1", status: "failed", error_code: "TASK_OUTPUT_INTEGRITY_MISMATCH" }]);
+  assert.deepEqual(failure, [{ output_id: "page-1", status: "failed", error_code: "TASK_OUTPUT_INTEGRITY_MISMATCH" }]);
   assert.equal(uploads, 1);
 });
 
@@ -123,13 +123,13 @@ test("upload failures never produce saved receipts or call commit", async t => {
     if (rpc.method === "tools/call") {
       tools.push(rpc.params.name);
       result = { structuredContent: rpc.params.name === "task_fail_output" ? { status: "failed" } : { ticket_id: "ticket-1", upload_url: `http://127.0.0.1:${server.address().port}/upload`, upload_method: "PUT" } };
-      if (rpc.params.name === "task_fail_output") assert.deepEqual(rpc.params.arguments, { task_key: "task-1", ticket_id: "ticket-1", output_key: "page-1", error_code: "TASK_OUTPUT_UPLOAD_FAILED" });
+      if (rpc.params.name === "task_fail_output") assert.deepEqual(rpc.params.arguments, { task_id: "task-1", ticket_id: "ticket-1", output_id: "page-1", error_code: "TASK_OUTPUT_UPLOAD_FAILED" });
     }
     response.end(JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result }));
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   const plan = { workdir: directory, mcp_servers: { octo_task: { type: "streamable_http", url: `http://127.0.0.1:${server.address().port}/mcp/team` } } };
-  assert.deepEqual(await archiveTaskOutputs(plan, "task-1", "run-1", new AbortController().signal), [{ output_key: "page-1", status: "failed", error_code: "TASK_OUTPUT_UPLOAD_FAILED" }]);
+  assert.deepEqual(await archiveTaskOutputs(plan, "task-1", "run-1", new AbortController().signal), [{ output_id: "page-1", status: "failed", error_code: "TASK_OUTPUT_UPLOAD_FAILED" }]);
   assert.deepEqual(tools, ["task_prepare_output", "task_fail_output"]);
 });

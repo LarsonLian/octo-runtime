@@ -126,9 +126,9 @@ export interface NormalizerState {
 export class ZcodeEventNormalizer {
   readonly #state: NormalizerState;
 
-  constructor(runKey: string) {
+  constructor(runId: string) {
     this.#state = {
-      stepId: `zcode-gui:${runKey}`,
+      stepId: `zcode-gui:${runId}`,
       stepStarted: false,
       stepFinished: false,
       finalMessageStarted: false,
@@ -459,7 +459,7 @@ export async function* runZcodeAppServerTurn({
       }
     };
 
-    const normalizer = new ZcodeEventNormalizer(request.runKey);
+    const normalizer = new ZcodeEventNormalizer(request.runId);
     let firstOutput = true;
     for await (const nativeEvent of client.events()) {
       const events = normalizer.normalize(nativeEvent);

@@ -30,8 +30,8 @@ test("portable plugins retain separate root and data environment values", () => 
 
 const request = { protocolVersion: 2,
   invocationId: "invoke-mcp",
-  agentSessionKey: "session-mcp",
-  runKey: "run-mcp",
+  agentSessionId: "session-mcp",
+  runId: "run-mcp",
   prompt: "call the tool",
   modelInput: "call the tool",
   workdir: process.cwd(),
@@ -185,8 +185,8 @@ test("Codex ask routes durable interaction responses back to native app-server r
   for await (const event of adapter.invoke({
     ...request,
     invocationId,
-    runKey: "run-interaction",
-    agentSessionKey: "session-interaction",
+    runId: "run-interaction",
+    agentSessionId: "session-interaction",
     mcpServers: undefined,
     approvalMode: "ask",
     signal: AbortSignal.timeout(4_000)

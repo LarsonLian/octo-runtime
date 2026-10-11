@@ -5,7 +5,7 @@
     "catalog_version": "octo.context-catalog/v3",
     "context_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "compiled_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    "run_key": "run-1",
+    "run_id": "run-1",
     "lease_id": "lease-1",
     "fencing_token": 1,
     "adapter_type": "codex",

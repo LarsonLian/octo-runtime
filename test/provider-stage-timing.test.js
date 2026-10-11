@@ -32,12 +32,12 @@ test("stage durations persist as operational JSON with provider capture off", as
   const logger = new LocalObservability({ ...DEFAULT_OBSERVABILITY_CONFIGURATION, directory,
     component: "adapter-host", fileLog: true, logLevel: "info", captureProviderIo: "off" });
   try {
-    await logger.observeProvider({ runKey: "run-stage", invocationId: "inv-stage", agentSessionKey: "session-stage", adapterType: "codebuddy" }, {
+    await logger.observeProvider({ runId: "run-stage", invocationId: "inv-stage", agentSessionId: "session-stage", adapterType: "codebuddy" }, {
       event: "provider.stage.completed", rpcMethod: "initialize",
       data: { stage: "initialize", outcome: "completed", duration_ms: 125, prompt: "must-not-appear" }
     });
     await logger.flush();
-    const records = await logger.query({ runKey: "run-stage" });
+    const records = await logger.query({ runId: "run-stage" });
     assert.equal(records.length, 1);
     assert.equal(records[0].event, "provider.stage.completed");
     assert.equal(records[0].duration_ms, 125);

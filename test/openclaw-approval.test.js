@@ -39,7 +39,7 @@ function fixture({ decisions = ['allow-once', 'allow-always', 'deny'], ttl = 600
     }, async close() { finish?.(); }
   };
   const adapter = createOpenClawAdapter({ clientFactory: () => client });
-  const request = { protocolVersion: 2, invocationId: 'i', agentSessionKey: 's', runKey: 'r', modelInput: 'test', prompt: 'test', controlInstructions: '',
+  const request = { protocolVersion: 2, invocationId: 'i', agentSessionId: 's', runId: 'r', modelInput: 'test', prompt: 'test', controlInstructions: '',
     context: { schema: 'octo.context-envelope/v3', items: [] }, approvalMode: 'ask', agentSource: 'preset', workdir: '',
     agentConfig: { providerAgentId: 'main', providerOptions: { OPENCLAW_GATEWAY_URL: 'ws://localhost:1', OPENCLAW_GATEWAY_TOKEN: 'x', OPENCLAW_GATEWAY_DEVICE_ID: 'd', OPENCLAW_GATEWAY_PUBLIC_KEY: 'p', OPENCLAW_GATEWAY_PRIVATE_KEY: 'k' } } };
   const events = [];

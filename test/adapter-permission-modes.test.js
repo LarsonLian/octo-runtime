@@ -7,7 +7,7 @@ import { createZcodeGuiAdapter } from "@mininglamp-oss/octo-harness-adapter-zcod
 import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 import { adapterApprovalModes } from "@mininglamp-oss/octo-harness-protocol";
 
-const request = { protocolVersion: 2, invocationId: "permission-instance", agentSessionKey: "session", runKey: "run", prompt: "fixture", modelInput: "fixture", controlInstructions: "", workdir: process.cwd(), approvalMode: "ask", agentSource: "provisioned", agentConfig: {}, context: { schema: "octo.context-envelope/v3", items: [] } };
+const request = { protocolVersion: 2, invocationId: "permission-instance", agentSessionId: "session", runId: "run", prompt: "fixture", modelInput: "fixture", controlInstructions: "", workdir: process.cwd(), approvalMode: "ask", agentSource: "provisioned", agentConfig: {}, context: { schema: "octo.context-envelope/v3", items: [] } };
 
 test("registered adapters advertise executable permission modes and responders for interactive approvals", async () => {
   const manifest = JSON.parse(await readFile(new URL("../config/adapters.json", import.meta.url), "utf8"));

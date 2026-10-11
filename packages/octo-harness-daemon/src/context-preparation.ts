@@ -35,7 +35,7 @@ const serverValidator = ajv.compile({
 });
 
 export interface PreparedCapabilityReceipt {
-  resource_key: string;
+  resource_id: string;
   revision: number;
   digest: string;
   root: string;
@@ -49,7 +49,7 @@ export interface ContextPreparationReceipt {
   resources: PreparedCapabilityReceipt[];
   warnings: string[];
 }
-export interface PreparedKnowledge { resource_key: string; root: string; files: string[] }
+export interface PreparedKnowledge { resource_id: string; root: string; files: string[] }
 
 export interface PreparedRunContext {
   cliBindings?: PreparedCliBinding[];
@@ -68,7 +68,7 @@ export interface PreparedRunContext {
  * 返回的路径属于 Runtime 私有视图；本地准备完成不表示 Worker 已确认或 Provider 已应用。
  */
 export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
-  stateRoot: string; agentSessionKey: string; agentKey: string; store: AgentWorkStore; signal?: AbortSignal;
+  stateRoot: string; agentSessionId: string; agentId: string; store: AgentWorkStore; signal?: AbortSignal;
   registerCleanup?: (path: string) => void;
 }): Promise<PreparedRunContext> {
   options.signal?.throwIfAborted();
@@ -81,7 +81,7 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
   }
   if (workspace.mode === "random") {
     const workspaces = await privateDirectory(join(stateRoot, "workspaces"));
-    const chosen = options.store.conversationWorkspace(options.agentSessionKey, join(workspaces, randomUUID()));
+    const chosen = options.store.conversationWorkspace(options.agentSessionId, join(workspaces, randomUUID()));
     if (chosen.created) await mkdir(chosen.path, { mode: 0o700 });
     // 续接必须保留原工作区事实；目录丢失时失败，不能静默创建同路径的空目录。
     workdir = await realDirectory(chosen.path);
@@ -92,7 +92,7 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
     // 保留请求中的固定路径写法，以便 Worker 按冻结合同比较。
     workdir = workspace.path;
   }
-  const scope = createHash("sha256").update(options.agentSessionKey).digest("hex");
+  const scope = createHash("sha256").update(options.agentSessionId).digest("hex");
   const providerStateDir = await privateDirectory(join(stateRoot, "providers", scope));
   const prepared: PreparedRunContext = { workdir, providerStateDir, skills: [], skillRoots: [], mcpServers: {},
     receipt: { workspace_mode: workspace.mode, workspace_path: workdir, provider_state_dir: providerStateDir, resources: [], warnings: [] } };
@@ -105,16 +105,16 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
     if (totalBytes > 16_777_216) throw new TypeError("CONTEXT_RESOURCE_BUDGET_EXCEEDED");
     const root = await materializeResource(stateRoot, resource);
     const texts = Object.fromEntries(Object.entries(resource.files).map(([path, file]) => [path, Buffer.from(file.content_base64, "base64").toString("utf8")]));
-    const installation = createHash("sha256").update(options.agentKey + "/" + resource.resource_key).digest("hex");
+    const installation = createHash("sha256").update(options.agentId + "/" + resource.resource_id).digest("hex");
     const data = await privateDirectory(join(stateRoot, "plugin-data", installation));
-    const receipt: PreparedCapabilityReceipt = { resource_key: resource.resource_key, revision: resource.revision, digest: resource.digest, root, data, components: [] };
+    const receipt: PreparedCapabilityReceipt = { resource_id: resource.resource_id, revision: resource.revision, digest: resource.digest, root, data, components: [] };
     prepared.receipt.resources.push(receipt);
     // 知识包只提供完整文件树；目录清单属于不可信事实，不能升级成控制指令。
     if (resource.kind === "knowledge") {
       if (resource.invoke || resource.components !== undefined) throw new TypeError("CONTEXT_KNOWLEDGE_SELECTION_INVALID");
       const files = Object.keys(resource.files).sort();
-      if (!files.length) throw new TypeError("CONTEXT_RESOURCE_UNAVAILABLE: " + resource.resource_key);
-      (prepared.knowledge ??= []).push({ resource_key: resource.resource_key, root, files });
+      if (!files.length) throw new TypeError("CONTEXT_RESOURCE_UNAVAILABLE: " + resource.resource_id);
+      (prepared.knowledge ??= []).push({ resource_id: resource.resource_id, root, files });
       receipt.components.push("knowledge:files");
       continue;
     }
@@ -122,7 +122,7 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
       const manifest: unknown = JSON.parse(texts["plugin.json"] ?? "");
       if (!manifestValidator(manifest)) throw new TypeError("CONTEXT_PLUGIN_MANIFEST_INVALID");
       const known = new Set(["$schema", "name", "version", "description", "author", "homepage", "repository", "license", "keywords", "extensions"]);
-      for (const key of Object.keys(manifest)) if (!known.has(key)) prepared.receipt.warnings.push(resource.resource_key + ": ignored manifest field " + key);
+      for (const key of Object.keys(manifest)) if (!known.has(key)) prepared.receipt.warnings.push(resource.resource_id + ": ignored manifest field " + key);
     }
     const skillFiles = resource.kind === "skill" ? ["SKILL.md"] : Object.keys(resource.files).filter(path => /^skills\/[^/]+\/SKILL\.md$/.test(path)).sort();
     for (const path of skillFiles) {
@@ -131,7 +131,7 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
       let skill: PreparedSkill;
       try { skill = parseSkill(texts[path], join(root, path), resource.invoke); }
       catch {
-        throw new TypeError("CONTEXT_SKILL_UNAVAILABLE: " + resource.resource_key + "/" + path);
+        throw new TypeError("CONTEXT_SKILL_UNAVAILABLE: " + resource.resource_id + "/" + path);
       }
       const component = "skill:" + skill.name;
       if (resource.components && !resource.components.includes(component)) continue;
@@ -145,7 +145,7 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
     if (resource.kind !== "skill" && texts["mcp.json"] && (!resource.components || resource.components.some(key => key.startsWith("mcp:")))) {
       const document: unknown = JSON.parse(texts["mcp.json"]);
       if (!record(document) || document.$schema !== mcpSchema || !record(document.mcpServers) || Object.keys(document).some(key => key !== "$schema" && key !== "mcpServers")) {
-        throw new TypeError("CONTEXT_MCP_CONFIG_INVALID: " + resource.resource_key);
+        throw new TypeError("CONTEXT_MCP_CONFIG_INVALID: " + resource.resource_id);
       } else {
         for (const [name, value] of Object.entries(document.mcpServers)) {
           const component = "mcp:" + name;
@@ -157,7 +157,7 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
             prepared.mcpServers[scopedName] = server;
             receipt.components.push(component);
           } catch (error) {
-            throw new TypeError("CONTEXT_COMPONENT_UNAVAILABLE: " + resource.resource_key + "/" + component, { cause: error });
+            throw new TypeError("CONTEXT_COMPONENT_UNAVAILABLE: " + resource.resource_id + "/" + component, { cause: error });
           }
         }
       }
@@ -172,9 +172,9 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
       prepared.cliBindings = [...(prepared.cliBindings ?? []), ...bindings];
       if (new Set(prepared.cliBindings.map(binding => binding.name)).size !== prepared.cliBindings.length) throw new TypeError("CLI_BINDING_NAME_CONFLICT");
     }
-    if (resource.components?.some(component => !receipt.components.includes(component))) throw new TypeError("CONTEXT_COMPONENT_UNAVAILABLE: " + resource.resource_key);
+    if (resource.components?.some(component => !receipt.components.includes(component))) throw new TypeError("CONTEXT_COMPONENT_UNAVAILABLE: " + resource.resource_id);
     if (resource.kind === "skill" && receipt.components.length !== 1 || resource.invoke && !receipt.components.some(key => key.startsWith("skill:"))
-      || resource.kind === "connector" && !receipt.components.some(key => key.startsWith("mcp:"))) throw new TypeError("CONTEXT_RESOURCE_UNAVAILABLE: " + resource.resource_key);
+      || resource.kind === "connector" && !receipt.components.some(key => key.startsWith("mcp:"))) throw new TypeError("CONTEXT_RESOURCE_UNAVAILABLE: " + resource.resource_id);
   }
   prepared.skillRoots = [...new Set(prepared.skillRoots)];
   assertMcpServers(prepared.mcpServers);
@@ -204,7 +204,7 @@ export function resourceFilesDigest(files: ResolvedCapabilityResource["files"]):
 async function materializeResource(stateRoot: string, resource: ResolvedCapabilityResource): Promise<string> {
   const digest = resourceFilesDigest(resource.files);
   if (digest !== resource.digest) throw new TypeError("CONTEXT_RESOURCE_DIGEST_MISMATCH");
-  const cache = await privateDirectory(join(stateRoot, "resources", resource.resource_key, resource.digest.slice(7)));
+  const cache = await privateDirectory(join(stateRoot, "resources", resource.resource_id, resource.digest.slice(7)));
   // Standalone skill directory must have the native skill name.
   let leaf = "package";
   if (resource.kind === "skill") {
@@ -311,12 +311,12 @@ function record(value: unknown): value is Record<string, unknown> { return !!val
  * 拒绝、取消或响应未知均抛错，调用方不能据本地资源存在就启动 Provider。
  */
 export async function recordContextPreparation(receipt: ContextPreparationReceipt, options: {
-  baseUrl: string; headers: Record<string, string>; runKey: string; leaseId: string; fencingToken: number; signal: AbortSignal;
+  baseUrl: string; headers: Record<string, string>; runId: string; leaseId: string; fencingToken: number; signal: AbortSignal;
 }): Promise<void> {
   const response = await fetch(options.baseUrl.replace(/\/$/, "") + "/v1/runtime/context/prepare", {
     method: "POST", headers: { ...options.headers, "Content-Type": "application/json" }, redirect: "error",
     signal: AbortSignal.any([options.signal, AbortSignal.timeout(30_000)]),
-    body: JSON.stringify({ run_key: options.runKey, lease_id: options.leaseId, fencing_token: options.fencingToken, preparation: receipt })
+    body: JSON.stringify({ run_id: options.runId, lease_id: options.leaseId, fencing_token: options.fencingToken, preparation: receipt })
   });
   if (!response.ok) {
     const body = await response.json().catch(() => undefined) as { error?: { code?: string } } | undefined;
@@ -327,12 +327,12 @@ export async function recordContextPreparation(receipt: ContextPreparationReceip
 
 /** 首次准备读取最新资源并由 Worker 冻结；重复准备复核当前授权后读取原快照。 */
 export async function resolveRunResources(options: {
-  baseUrl: string; headers: Record<string, string>; runKey: string; leaseId: string; fencingToken: number; signal: AbortSignal;
+  baseUrl: string; headers: Record<string, string>; runId: string; leaseId: string; fencingToken: number; signal: AbortSignal;
 }): Promise<ResolvedCapabilityResource[]> {
   const response = await fetch(options.baseUrl.replace(/\/$/, "") + "/v1/runtime/context/resources/resolve", {
     method: "POST", headers: { ...options.headers, "Content-Type": "application/json" }, redirect: "error",
     signal: AbortSignal.any([options.signal, AbortSignal.timeout(30_000)]),
-    body: JSON.stringify({ run_key: options.runKey, lease_id: options.leaseId, fencing_token: options.fencingToken })
+    body: JSON.stringify({ run_id: options.runId, lease_id: options.leaseId, fencing_token: options.fencingToken })
   });
   if (!response.ok) {
     const body = await response.json().catch(() => undefined) as { error?: { code?: string } } | undefined;

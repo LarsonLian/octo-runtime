@@ -9,7 +9,7 @@ const context = { schema: "octo.context-envelope/v3", items: [
   { namespace: "octo.execution", name: "adapter", payload: { type: "codex" } }, { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: "/workspace" } }, { namespace: "octo.security", name: "approval_policy", payload: { mode: "ask" } }
 ] };
 const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "/workspace", approval_mode: "ask" };
-const identity = { runKey: "run-1", leaseId: "lease-1", fencingToken: 3 };
+const identity = { runId: "run-1", leaseId: "lease-1", fencingToken: 3 };
 const schema = JSON.parse(readFileSync(new URL("../packages/octo-harness-protocol/schema/protocol.schema.json", import.meta.url), "utf8"));
 const require = createRequire(new URL("../packages/octo-harness-daemon/package.json", import.meta.url));
 const Ajv = require("ajv").default;
@@ -46,7 +46,7 @@ test("pipeline seals all successful preparation stages before returning a compil
     { key: "octo.execution/workspace", stage: "prepare", processor: "capabilities" },
     { key: "octo.security/approval_policy", stage: "prepare", processor: "capabilities" }
   ]);
-  assert.equal(prepared.receipt.run_key, identity.runKey);
+  assert.equal(prepared.receipt.run_id, identity.runId);
   assert.equal(prepared.receipt.lease_id, identity.leaseId);
   assert.equal(prepared.receipt.fencing_token, identity.fencingToken);
   assert.deepEqual(prepared.receipt.materials, []);
@@ -74,7 +74,7 @@ test("cancellation between preparation stages prevents later work and sealing", 
 test("declared continuity without snapshot evidence fails before sealing", async () => {
   const f = fixture();
   const withContinuity = { ...context, items: [...context.items, { namespace: "octo.content", name: "continuity", payload: {
-    scope: { tenant_id: "space", endpoint_key: "endpoint", channel: "im", account_id: null, bot_id: "bot", conversation_id: "chat" },
+    scope: { tenant_id: "space", endpoint_id: "endpoint", channel: "im", account_id: null, bot_id: "bot", conversation_id: "chat" },
     consumer_key: "agent", session_generation: 1, trigger_message_id: "msg",
     trigger_fact: { message_id: "msg", occurred_at_ms: 1, sender: { id: "user", kind: "user" }, parts: [{ type: "text", text: "hello" }] }
   } }] };
@@ -84,8 +84,8 @@ test("declared continuity without snapshot evidence fails before sealing", async
 
 test("compiler rejects duplicate resolver evidence instead of covering another reference twice", () => {
   const withResources = { ...context, items: [...context.items, { namespace: "octo.content", name: "references", payload: { entries: [
-    { resource_ref: "task/1", resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_key: "1" } },
-    { resource_ref: "task/2", resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_key: "2" } }
+    { resource_ref: "task/1", resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_id: "1" } },
+    { resource_ref: "task/2", resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_id: "2" } }
   ] } }] };
   assert.throws(() => new ContextCompiler().compile(withResources, { selections: [
     { resource_ref: "task/1", text: "one" }, { resource_ref: "task/1", text: "duplicate" }

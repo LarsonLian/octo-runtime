@@ -1,8 +1,8 @@
 [
-  {"name":"knowledge-selection","valid":true,"context":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.resources","name":"knowledge","payload":{"include":[{"resource_key":"a01f99ce-fb3b-424a-bc22-1df495b6409c"}],"exclude":[]}}]}},
-  {"name":"knowledge-rejects-invoke-field","valid":false,"error":"CONTEXT_SCHEMA_INVALID","context":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.resources","name":"knowledge","payload":{"include":[{"resource_key":"a01f99ce-fb3b-424a-bc22-1df495b6409c","invoke":false}],"exclude":[]}}]}},
-  {"name":"skills-reject-components","valid":false,"error":"CONTEXT_SCHEMA_INVALID","context":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.resources","name":"skills","payload":{"include":[{"resource_key":"a01f99ce-fb3b-424a-bc22-1df495b6409c","components":[]}],"exclude":[]}}]}},
-  {"name":"connector-rejects-skill-component","valid":false,"error":"CONTEXT_SCHEMA_INVALID","context":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.resources","name":"connectors","payload":{"include":[{"resource_key":"a01f99ce-fb3b-424a-bc22-1df495b6409c","components":["skill:review"]}],"exclude":[]}}]}},
+  {"name":"knowledge-selection","valid":true,"context":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.resources","name":"knowledge","payload":{"include":[{"resource_id":"a01f99ce-fb3b-424a-bc22-1df495b6409c"}],"exclude":[]}}]}},
+  {"name":"knowledge-rejects-invoke-field","valid":false,"error":"CONTEXT_SCHEMA_INVALID","context":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.resources","name":"knowledge","payload":{"include":[{"resource_id":"a01f99ce-fb3b-424a-bc22-1df495b6409c","invoke":false}],"exclude":[]}}]}},
+  {"name":"skills-reject-components","valid":false,"error":"CONTEXT_SCHEMA_INVALID","context":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.resources","name":"skills","payload":{"include":[{"resource_id":"a01f99ce-fb3b-424a-bc22-1df495b6409c","components":[]}],"exclude":[]}}]}},
+  {"name":"connector-rejects-skill-component","valid":false,"error":"CONTEXT_SCHEMA_INVALID","context":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.resources","name":"connectors","payload":{"include":[{"resource_id":"a01f99ce-fb3b-424a-bc22-1df495b6409c","components":["skill:review"]}],"exclude":[]}}]}},
   {"name":"model-requires-subchoice","valid":false,"error":"CONTEXT_SCHEMA_INVALID","context":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"model","payload":{}}]}},
   {"name":"reference-identity-duplicated","valid":false,"error":"CONTEXT_SCHEMA_INVALID","context":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.content","name":"references","payload":{"entries":[{"resource_ref":"task:1","resolver":"mcp","locator":{"server_ref":"octo_task","tool":"task_get_materials"}},{"resource_ref":"task:1","resolver":"mcp","locator":{"server_ref":"octo_task","tool":"task_get_materials"}}]}}]}},
   {
@@ -86,13 +86,13 @@
           "name": "selection",
           "payload": {
             "mode": "explicit",
-            "runtime_key": "runtime-1"
+            "runtime_id": "runtime-1"
           }
         }
       ]
     },
-    "expected_canonical": "{\"items\":[{\"name\":\"selection\",\"namespace\":\"octo.runtime\",\"payload\":{\"mode\":\"explicit\",\"runtime_key\":\"runtime-1\"}}],\"schema\":\"octo.context-envelope/v3\"}",
-    "expected_hash": "sha256:550b5b0398bcc062780f5c20905fe8ec1389fe637c8b737e8e2f1f2bb4251bac"
+    "expected_canonical": "{\"items\":[{\"name\":\"selection\",\"namespace\":\"octo.runtime\",\"payload\":{\"mode\":\"explicit\",\"runtime_id\":\"runtime-1\"}}],\"schema\":\"octo.context-envelope/v3\"}",
+    "expected_hash": "sha256:26c89328cf2a0bedba0bba186d34215af263f0039a1702d0ac5fe380acb433cd"
   },
   {
     "name": "multivalue-content",
@@ -273,7 +273,7 @@
           "name": "selection",
           "payload": {
             "mode": "binding",
-            "runtime_key": "runtime-1"
+            "runtime_id": "runtime-1"
           }
         }
       ]
@@ -510,10 +510,10 @@
           "payload": {
             "include": [
               {
-                "resource_key": "b9300677-4cbd-44b2-8938-9a03ac3d88c3"
+                "resource_id": "b9300677-4cbd-44b2-8938-9a03ac3d88c3"
               },
               {
-                "resource_key": "b9300677-4cbd-44b2-8938-9a03ac3d88c3"
+                "resource_id": "b9300677-4cbd-44b2-8938-9a03ac3d88c3"
               }
             ],
             "exclude": []
@@ -535,12 +535,12 @@
           "payload": {
             "include": [
               {
-                "resource_key": "b9300677-4cbd-44b2-8938-9a03ac3d88c3"
+                "resource_id": "b9300677-4cbd-44b2-8938-9a03ac3d88c3"
               }
             ],
             "exclude": [
               {
-                "resource_key": "b9300677-4cbd-44b2-8938-9a03ac3d88c3"
+                "resource_id": "b9300677-4cbd-44b2-8938-9a03ac3d88c3"
               }
             ]
           }
@@ -562,7 +562,7 @@
             "include": [],
             "exclude": [
               {
-                "resource_key": "not-uuid"
+                "resource_id": "not-uuid"
               }
             ]
           }
@@ -582,7 +582,7 @@
           "payload": {
             "include": [
               {
-                "resource_key": "b9300677-4cbd-44b2-8938-9a03ac3d88c3",
+                "resource_id": "b9300677-4cbd-44b2-8938-9a03ac3d88c3",
                 "components": [
                   "skill:writer",
                   "mcp:docs"
@@ -594,8 +594,8 @@
         }
       ]
     },
-    "expected_canonical": "{\"items\":[{\"name\":\"agent_plugins\",\"namespace\":\"octo.resources\",\"payload\":{\"exclude\":[],\"include\":[{\"components\":[\"skill:writer\",\"mcp:docs\"],\"resource_key\":\"b9300677-4cbd-44b2-8938-9a03ac3d88c3\"}]}}],\"schema\":\"octo.context-envelope/v3\"}",
-    "expected_hash": "sha256:56067fc239cba33c45e4e4d5b6c9707fdd750e018a80d8f031d1a736e7f417ee"
+    "expected_canonical": "{\"items\":[{\"name\":\"agent_plugins\",\"namespace\":\"octo.resources\",\"payload\":{\"exclude\":[],\"include\":[{\"components\":[\"skill:writer\",\"mcp:docs\"],\"resource_id\":\"b9300677-4cbd-44b2-8938-9a03ac3d88c3\"}]}}],\"schema\":\"octo.context-envelope/v3\"}",
+    "expected_hash": "sha256:e8831d028182f57145065870687161c3c189d093162ba99629eb81b5f89da712"
   },
   {
     "name": "skill-selection",
@@ -609,7 +609,7 @@
           "payload": {
             "include": [
               {
-                "resource_key": "b9300677-4cbd-44b2-8938-9a03ac3d88c3",
+                "resource_id": "b9300677-4cbd-44b2-8938-9a03ac3d88c3",
                 "invoke": true
               }
             ],
@@ -618,8 +618,8 @@
         }
       ]
     },
-    "expected_canonical": "{\"items\":[{\"name\":\"skills\",\"namespace\":\"octo.resources\",\"payload\":{\"exclude\":[],\"include\":[{\"invoke\":true,\"resource_key\":\"b9300677-4cbd-44b2-8938-9a03ac3d88c3\"}]}}],\"schema\":\"octo.context-envelope/v3\"}",
-    "expected_hash": "sha256:ccce3b2d75c108abf217b2a92c25b2b3068d1762192da2a544b1870414762c6c"
+    "expected_canonical": "{\"items\":[{\"name\":\"skills\",\"namespace\":\"octo.resources\",\"payload\":{\"exclude\":[],\"include\":[{\"invoke\":true,\"resource_id\":\"b9300677-4cbd-44b2-8938-9a03ac3d88c3\"}]}}],\"schema\":\"octo.context-envelope/v3\"}",
+    "expected_hash": "sha256:99444903b502fca5927dc20f08dc619079d970bfbcc05be9433f415b1e5db422"
   },
   {
     "name": "connector-selection",
@@ -634,15 +634,15 @@
             "include": [],
             "exclude": [
               {
-                "resource_key": "46b42b42-29cd-4a39-8564-e780bb665a8b"
+                "resource_id": "46b42b42-29cd-4a39-8564-e780bb665a8b"
               }
             ]
           }
         }
       ]
     },
-    "expected_canonical": "{\"items\":[{\"name\":\"connectors\",\"namespace\":\"octo.resources\",\"payload\":{\"exclude\":[{\"resource_key\":\"46b42b42-29cd-4a39-8564-e780bb665a8b\"}],\"include\":[]}}],\"schema\":\"octo.context-envelope/v3\"}",
-    "expected_hash": "sha256:0f83db589b91e802ff9bf2f0405683fd36b0a5c63e12e91d7e14ce20c09d02a1"
+    "expected_canonical": "{\"items\":[{\"name\":\"connectors\",\"namespace\":\"octo.resources\",\"payload\":{\"exclude\":[{\"resource_id\":\"46b42b42-29cd-4a39-8564-e780bb665a8b\"}],\"include\":[]}}],\"schema\":\"octo.context-envelope/v3\"}",
+    "expected_hash": "sha256:9a3dd5c0ef4c77b1242769bd9a67d839a364f6feff8617a823b769556e207f57"
   },
   {
     "name": "limits-boundaries",

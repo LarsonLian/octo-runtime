@@ -1,15 +1,15 @@
 import { assertScenarioRequest, type ContextEnvelope, type ScenarioRequest } from '@mininglamp-oss/octo-harness-protocol/browser';
 export const CONTEXT_BUILDER_SCHEMA = 'octo.context-builder/v1';
 export interface AwarenessSnapshot { kind: 'document_selection'; document_id: string; document_version?: string; text: string }
-export interface ContextBuilder { id: string; version: string; scenarioKey: string; build(awareness: AwarenessSnapshot): ContextEnvelope }
+export interface ContextBuilder { id: string; version: string; scenarioId: string; build(awareness: AwarenessSnapshot): ContextEnvelope }
 export interface BuiltScenarioContext { scenario: ScenarioRequest; context: ContextEnvelope }
 /** Pure local registry: the host owns capture and submission. */
 export class ContextBuilderRegistry {
   private readonly builders = new Map<string, ContextBuilder>();
   register(builder: ContextBuilder): void {
-    assertScenarioRequest({ key: builder.scenarioKey, builder_id: builder.id, builder_version: builder.version });
-    if (this.builders.has(builder.scenarioKey)) throw new TypeError('CONTEXT_BUILDER_DUPLICATED');
-    this.builders.set(builder.scenarioKey, builder);
+    assertScenarioRequest({ key: builder.scenarioId, builder_id: builder.id, builder_version: builder.version });
+    if (this.builders.has(builder.scenarioId)) throw new TypeError('CONTEXT_BUILDER_DUPLICATED');
+    this.builders.set(builder.scenarioId, builder);
   }
   build(key: string, snapshot: AwarenessSnapshot): BuiltScenarioContext {
     const builder = this.builders.get(key);

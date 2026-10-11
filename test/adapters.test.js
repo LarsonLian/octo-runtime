@@ -42,7 +42,7 @@ import {
   tryParseOpenClawTranscriptLine
 } from "@mininglamp-oss/octo-harness-adapter-openclaw";
 
-const request = { protocolVersion: 2, invocationId: "inv-1", agentSessionKey: "session-1", runKey: "run-1", prompt: "work", modelInput: "work", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "CONTROL", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} };
+const request = { protocolVersion: 2, invocationId: "inv-1", agentSessionId: "session-1", runId: "run-1", prompt: "work", modelInput: "work", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "CONTROL", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} };
 
 function acpPermissionFixture(createAdapter, options) {
   let nextRequestId = 1;
@@ -81,13 +81,13 @@ function openClawGatewayHello() {
   return { type: "hello-ok", protocol: 4, features: { methods: openClawGatewayMethods, events: ["agent"] } };
 }
 
-function openClawIsolationConfig(agentKey = "octo-openclaw-runner") {
+function openClawIsolationConfig(agentId = "octo-openclaw-runner") {
   return {
     config: {
       agents: {
         defaults: { skipBootstrap: true },
         entries: {
-          [agentKey]: {
+          [agentId]: {
             workspace: "/managed/openclaw-runner",
             contextInjection: "never",
             skills: [],
@@ -861,8 +861,8 @@ test("OpenClaw Gateway client authenticates, handles accepted/final responses, a
           payload: { type: "hello-ok", protocol: 4, features: { methods: [], events: [] } }
         }));
       } else if (frame.method === "stream") {
-        socket.send(JSON.stringify({ type: "res", id: frame.id, ok: true, payload: { status: "accepted", runKey: "run-fixture" } }));
-        socket.send(JSON.stringify({ type: "res", id: frame.id, ok: true, payload: { status: "ok", runKey: "run-fixture" } }));
+        socket.send(JSON.stringify({ type: "res", id: frame.id, ok: true, payload: { status: "accepted", runId: "run-fixture" } }));
+        socket.send(JSON.stringify({ type: "res", id: frame.id, ok: true, payload: { status: "ok", runId: "run-fixture" } }));
       } else if (frame.method === "malformed") {
         socket.send("{");
       }
@@ -887,8 +887,8 @@ test("OpenClaw Gateway client authenticates, handles accepted/final responses, a
   assert.deepEqual(await client.request("stream", {}, {
     expectFinal: true,
     onAccepted: value => accepted.push(value)
-  }), { status: "ok", runKey: "run-fixture" });
-  assert.deepEqual(accepted, [{ status: "accepted", runKey: "run-fixture" }]);
+  }), { status: "ok", runId: "run-fixture" });
+  assert.deepEqual(accepted, [{ status: "accepted", runId: "run-fixture" }]);
 
   await assert.rejects(client.request("malformed", {}), /malformed JSON/);
   assert.deepEqual(requests.map(frame => frame.method), ["connect", "never", "stream", "malformed"]);

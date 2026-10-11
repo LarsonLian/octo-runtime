@@ -14,7 +14,7 @@ test("local metrics expose bounded Runtime recovery and storage state", () => {
         outboxOldestAgeMs: 2500,
         outboxPendingBytes: 4096,
         storeHealth: { state: "low_disk" },
-        runtimeKey: "runtime-high-cardinality"
+        runtimeId: "runtime-high-cardinality"
       }]
     }
   });

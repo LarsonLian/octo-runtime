@@ -12,7 +12,7 @@ import { visualInputImages } from "../test-support/multimodal-images.mjs";
 
 const [image] = visualInputImages();
 const source = ({ type: _type, ...value }) => value;
-const artifact = { artifact_key: "artifact-1", mediaType: image.mimeType, byteSize: image.byteSize, sha256: image.sha256 };
+const artifact = { artifact_id: "artifact-1", mediaType: image.mimeType, byteSize: image.byteSize, sha256: image.sha256 };
 const input = () => ({ parts: [{ id: "t1", type: "text", text: "compare" }, { id: "p1", type: "image", artifact }, { id: "t2", type: "text", text: "then describe" }] });
 
 test("ordered model input validates image content, limits, and recovery without text fallback", () => {
@@ -60,12 +60,12 @@ test("runtime reads frozen artifacts under lease, verifies bytes, and leaves dur
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
-  const options = { baseUrl: `http://127.0.0.1:${server.address().port}`, headers: { Authorization: "Bearer test-runtime", "Content-Type": "application/json" }, runKey: "run-1", leaseId: "lease-1", fencingToken: 9, signal: new AbortController().signal };
+  const options = { baseUrl: `http://127.0.0.1:${server.address().port}`, headers: { Authorization: "Bearer test-runtime", "Content-Type": "application/json" }, runId: "run-1", leaseId: "lease-1", fencingToken: 9, signal: new AbortController().signal };
   const original = input();
   const materialized = await resolveRuntimeInputImages(original, options);
   assert.equal(original.parts[1].source, undefined);
   assert.deepEqual(modelPartsFromInput(materialized).map(part => part.type), ["text", "image", "text"]);
-  assert.deepEqual(requests[0], { url: "/v1/runtime/input_artifact/read", authorization: "Bearer test-runtime", body: { run_key: "run-1", artifact_key: artifact.artifact_key, lease_id: "lease-1", fencing_token: 9 } });
+  assert.deepEqual(requests[0], { url: "/v1/runtime/input_artifact/read", authorization: "Bearer test-runtime", body: { run_id: "run-1", artifact_id: artifact.artifact_id, lease_id: "lease-1", fencing_token: 9 } });
   corrupt = true;
   await assert.rejects(resolveRuntimeInputImages(input(), options), /ARTIFACT_INTEGRITY_MISMATCH/);
   corrupt = false; denied = true;
@@ -80,8 +80,8 @@ test("daemon preserves mixed ordering and excludes materialized bytes from run m
   const envelope = {
     schema_version: 7, effective_context: executionContext(plan), context_configuration_version: 1,
     resolved_execution_plan: plan, resolved_runtime_selection: resolvedRuntimeSelection(),
-    run_key: "run-1", agent_session_key: "session-1", agent_revision: { definition: {} },
-    agent_run_request: { namespace: "work", agent_key: "a", agent_revision_key: "rev", session_affinity_key: "v1/work/test", trigger: { kind: "manual", occurrence_key: "message-1" }, input: content, context: contextEnvelope() }
+    run_id: "run-1", agent_session_id: "session-1", agent_revision: { definition: {} },
+    agent_run_request: { namespace: "work", agent_id: "a", agent_revision_id: "rev", session_affinity_key: "v1/work/test", trigger: { kind: "manual", occurrence_id: "message-1" }, input: content, context: contextEnvelope() }
   };
   const { request } = mapExecutionEnvelope(envelope);
   assert.deepEqual(request.modelInputParts.filter(part => part.id).map(part => part.id), ["t1", "p1", "t2"]);
@@ -107,12 +107,12 @@ test("Core failed image dispatch releases the session so subsequent text can run
   } };
   const engine = new HarnessEngine({ store, host });
   const agent = await engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: contextEnvelope([ { namespace: "octo.execution", name: "adapter", payload: { type: "test" } }, { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: process.cwd() } }, { namespace: "octo.security", name: "approval_policy", payload: { mode: "full_access" } } ]) });
-  const submit = occurrenceKey => ({ namespace: "local", agentKey: agent.id, sessionKey: "v1/task/image", trigger: { kind: "manual", occurrenceKey }, context: contextEnvelope(), input: {} });
+  const submit = occurrenceId => ({ namespace: "local", agentId: agent.id, sessionKey: "v1/task/image", trigger: { kind: "manual", occurrenceId }, context: contextEnvelope(), input: {} });
   const mixed = input(); mixed.parts[1].source = source(image);
   const first = await engine.submitAgentRun({ ...submit("image"), input: mixed });
   await assert.rejects(engine.executeRun(first.agentRun.id), /UNSUPPORTED_INPUT_MODALITY/);
   assert.equal(store.getAgentRun(first.agentRun.id).status, "failed");
-  assert.equal(store.getAgentSession(first.agentSession.id).activeRunKey, undefined);
+  assert.equal(store.getAgentSession(first.agentSession.id).activeRunId, undefined);
   rejectImage = false;
   const second = await engine.submitAgentRun({ ...submit("text"), input: { prompt: "text still works" } });
   await engine.executeRun(second.agentRun.id);

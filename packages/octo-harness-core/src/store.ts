@@ -20,12 +20,12 @@ export interface Agent {
 export interface AgentSession {
   id: string;
   namespace: string;
-  agentKey: string;
+  agentId: string;
   sessionKey: string;
   status: "active" | "closed";
   generation: number;
   nextRunNo: number;
-  activeRunKey?: string;
+  activeRunId?: string;
   providerSession?: ProviderSession;
   providerSessionConfigurationHash?: string;
   createdAt: number;
@@ -33,13 +33,13 @@ export interface AgentSession {
 
 export interface AgentRunTrigger {
   kind: string;
-  occurrenceKey: string;
+  occurrenceId: string;
   occurredAt?: number;
 }
 
 export interface AgentRun {
   id: string;
-  agentSessionKey: string;
+  agentSessionId: string;
   runNo: number;
   status: AgentRunStatus;
   nextSeq: number;
@@ -61,14 +61,14 @@ export interface Store {
   listAgents(): Agent[];
   putAgent(agent: Agent): void;
   getAgentSession(id: string): AgentSession | undefined;
-  getAgentSessionByKey(namespace: string, agentKey: string, sessionKey: string): AgentSession | undefined;
+  getAgentSessionByKey(namespace: string, agentId: string, sessionKey: string): AgentSession | undefined;
   listAgentSessions(): AgentSession[];
   putAgentSession(session: AgentSession): void;
   getAgentRun(id: string): AgentRun | undefined;
-  getAgentRunByOccurrence(agentSessionKey: string, occurrenceKey: string): AgentRun | undefined;
+  getAgentRunByOccurrence(agentSessionId: string, occurrenceId: string): AgentRun | undefined;
   listAgentRuns(): AgentRun[];
   putAgentRun(run: AgentRun): void;
-  getEvents(runKey: string): EventEnvelope[];
+  getEvents(runId: string): EventEnvelope[];
   appendEvent(event: EventEnvelope): boolean;
   /** The callback is a synchronous critical section and must never return a Promise. */
   transaction<T>(fn: () => T): Promise<T>;
@@ -87,18 +87,18 @@ export class MemoryStore implements Store {
   putAgent(agent: Agent): void { this.#agents.set(agent.id, structuredClone(agent)); }
 
   getAgentSession(id: string): AgentSession | undefined { return clone(this.#sessions.get(id)); }
-  getAgentSessionByKey(namespace: string, agentKey: string, sessionKey: string): AgentSession | undefined {
+  getAgentSessionByKey(namespace: string, agentId: string, sessionKey: string): AgentSession | undefined {
     return clone([...this.#sessions.values()].find(session =>
-      session.namespace === namespace && session.agentKey === agentKey && session.sessionKey === sessionKey
+      session.namespace === namespace && session.agentId === agentId && session.sessionKey === sessionKey
     ));
   }
   listAgentSessions(): AgentSession[] { return structuredClone([...this.#sessions.values()]); }
   putAgentSession(session: AgentSession): void { this.#sessions.set(session.id, structuredClone(session)); }
 
   getAgentRun(id: string): AgentRun | undefined { return clone(this.#runs.get(id)); }
-  getAgentRunByOccurrence(agentSessionKey: string, occurrenceKey: string): AgentRun | undefined {
+  getAgentRunByOccurrence(agentSessionId: string, occurrenceId: string): AgentRun | undefined {
     return clone([...this.#runs.values()].find(run =>
-      run.agentSessionKey === agentSessionKey && run.trigger.occurrenceKey === occurrenceKey
+      run.agentSessionId === agentSessionId && run.trigger.occurrenceId === occurrenceId
     ));
   }
   listAgentRuns(): AgentRun[] { return structuredClone([...this.#runs.values()]); }
@@ -107,12 +107,12 @@ export class MemoryStore implements Store {
     this.#runs.set(run.id, structuredClone(run));
   }
 
-  getEvents(runKey: string): EventEnvelope[] { return this.#events.get(runKey) ?? []; }
+  getEvents(runId: string): EventEnvelope[] { return this.#events.get(runId) ?? []; }
   appendEvent(event: EventEnvelope): boolean {
-    const stream = this.#events.get(event.runKey) ?? [];
+    const stream = this.#events.get(event.runId) ?? [];
     if (stream.some(item => item.seq === event.seq)) return false;
     stream.push(event);
-    this.#events.set(event.runKey, stream);
+    this.#events.set(event.runId, stream);
     return true;
   }
   transaction<T>(fn: () => T): Promise<T> {
@@ -136,23 +136,23 @@ export class SqliteStore implements Store {
       CREATE TABLE IF NOT EXISTS agent_sessions (
         id TEXT PRIMARY KEY,
         namespace TEXT NOT NULL,
-        agent_key TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
         session_affinity_key TEXT NOT NULL,
         json TEXT NOT NULL,
-        UNIQUE (namespace, agent_key, session_affinity_key)
+        UNIQUE (namespace, agent_id, session_affinity_key)
       );
       CREATE TABLE IF NOT EXISTS agent_runs (
         id TEXT PRIMARY KEY,
-        agent_session_key TEXT NOT NULL,
-        trigger_occurrence_key TEXT NOT NULL,
+        agent_session_id TEXT NOT NULL,
+        trigger_occurrence_id TEXT NOT NULL,
         json TEXT NOT NULL,
-        UNIQUE (agent_session_key, trigger_occurrence_key)
+        UNIQUE (agent_session_id, trigger_occurrence_id)
       );
       CREATE TABLE IF NOT EXISTS agent_run_events (
-        run_key TEXT NOT NULL,
+        run_id TEXT NOT NULL,
         seq INTEGER NOT NULL,
         json TEXT NOT NULL,
-        PRIMARY KEY (run_key, seq)
+        PRIMARY KEY (run_id, seq)
       );
     `);
     return new SqliteStore(db);
@@ -164,44 +164,44 @@ export class SqliteStore implements Store {
   putAgent(agent: Agent): void { this.#upsert("agents", ["id"], [agent.id], agent); }
 
   getAgentSession(id: string): AgentSession | undefined { return this.#readOne<AgentSession>("agent_sessions", id); }
-  getAgentSessionByKey(namespace: string, agentKey: string, sessionKey: string): AgentSession | undefined {
+  getAgentSessionByKey(namespace: string, agentId: string, sessionKey: string): AgentSession | undefined {
     return this.#parse<AgentSession>(this.#db.prepare(
-      "SELECT json FROM agent_sessions WHERE namespace = ? AND agent_key = ? AND session_affinity_key = ?"
-    ).get(namespace, agentKey, sessionKey));
+      "SELECT json FROM agent_sessions WHERE namespace = ? AND agent_id = ? AND session_affinity_key = ?"
+    ).get(namespace, agentId, sessionKey));
   }
   listAgentSessions(): AgentSession[] { return this.#readAll<AgentSession>("agent_sessions"); }
   putAgentSession(session: AgentSession): void {
     this.#db.prepare(
-      `INSERT INTO agent_sessions (id, namespace, agent_key, session_affinity_key, json) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET namespace = excluded.namespace, agent_key = excluded.agent_key,
+      `INSERT INTO agent_sessions (id, namespace, agent_id, session_affinity_key, json) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET namespace = excluded.namespace, agent_id = excluded.agent_id,
          session_affinity_key = excluded.session_affinity_key, json = excluded.json`
-    ).run(session.id, session.namespace, session.agentKey, session.sessionKey, JSON.stringify(session));
+    ).run(session.id, session.namespace, session.agentId, session.sessionKey, JSON.stringify(session));
   }
 
   getAgentRun(id: string): AgentRun | undefined { return this.#readOne<AgentRun>("agent_runs", id); }
-  getAgentRunByOccurrence(agentSessionKey: string, occurrenceKey: string): AgentRun | undefined {
+  getAgentRunByOccurrence(agentSessionId: string, occurrenceId: string): AgentRun | undefined {
     return this.#parse<AgentRun>(this.#db.prepare(
-      "SELECT json FROM agent_runs WHERE agent_session_key = ? AND trigger_occurrence_key = ?"
-    ).get(agentSessionKey, occurrenceKey));
+      "SELECT json FROM agent_runs WHERE agent_session_id = ? AND trigger_occurrence_id = ?"
+    ).get(agentSessionId, occurrenceId));
   }
   listAgentRuns(): AgentRun[] { return this.#readAll<AgentRun>("agent_runs"); }
   putAgentRun(run: AgentRun): void {
     assertRunSnapshot(run, this.getAgentRun(run.id));
     this.#db.prepare(
-      `INSERT INTO agent_runs (id, agent_session_key, trigger_occurrence_key, json) VALUES (?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET agent_session_key = excluded.agent_session_key,
-         trigger_occurrence_key = excluded.trigger_occurrence_key, json = excluded.json`
-    ).run(run.id, run.agentSessionKey, run.trigger.occurrenceKey, JSON.stringify(run));
+      `INSERT INTO agent_runs (id, agent_session_id, trigger_occurrence_id, json) VALUES (?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET agent_session_id = excluded.agent_session_id,
+         trigger_occurrence_id = excluded.trigger_occurrence_id, json = excluded.json`
+    ).run(run.id, run.agentSessionId, run.trigger.occurrenceId, JSON.stringify(run));
   }
 
-  getEvents(runKey: string): EventEnvelope[] {
-    return this.#db.prepare("SELECT json FROM agent_run_events WHERE run_key = ? ORDER BY seq").all(runKey)
+  getEvents(runId: string): EventEnvelope[] {
+    return this.#db.prepare("SELECT json FROM agent_run_events WHERE run_id = ? ORDER BY seq").all(runId)
       .map(row => this.#parse<EventEnvelope>(row)!);
   }
   appendEvent(event: EventEnvelope): boolean {
     return this.#db.prepare(
-      "INSERT OR IGNORE INTO agent_run_events (run_key, seq, json) VALUES (?, ?, ?)"
-    ).run(event.runKey, event.seq, JSON.stringify(event)).changes > 0;
+      "INSERT OR IGNORE INTO agent_run_events (run_id, seq, json) VALUES (?, ?, ?)"
+    ).run(event.runId, event.seq, JSON.stringify(event)).changes > 0;
   }
 
   transaction<T>(fn: () => T): Promise<T> {

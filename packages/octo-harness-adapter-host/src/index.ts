@@ -176,7 +176,7 @@ export class AdapterHost {
         const event = next.value;
         if (event.type.startsWith("message.") && event.payload.channel === "final" && event.payload.text) finalBody = true;
         if (event.type === "run.completed" && !finalBody && typeof event.payload.text === "string" && event.payload.text) {
-          const finalMessage: CanonicalEvent = { protocolVersion: 2, type: "message.update", payload: { messageId: `${request.runKey}:final`, channel: "final", status: "completed", text: event.payload.text } };
+          const finalMessage: CanonicalEvent = { protocolVersion: 2, type: "message.update", payload: { messageId: `${request.runId}:final`, channel: "final", status: "completed", text: event.payload.text } };
           for (const projected of experience.accept(finalMessage)) yield projected;
         }
         for (const projected of experience.accept(event)) yield projected;
@@ -202,14 +202,14 @@ export class AdapterHost {
     let outcome = "stopped";
     const identity: ObservationIdentity = {
       ...(typeof request.runMetadata?.profile === "string" ? { profile: request.runMetadata.profile } : {}),
-      ...(typeof request.runMetadata?.runtimeKey === "string" ? { runtimeKey: request.runMetadata.runtimeKey } : {}),
-      runKey: request.runKey, invocationId: request.invocationId, agentSessionKey: request.agentSessionKey, adapterType
+      ...(typeof request.runMetadata?.runtimeId === "string" ? { runtimeId: request.runMetadata.runtimeId } : {}),
+      runId: request.runId, invocationId: request.invocationId, agentSessionId: request.agentSessionId, adapterType
     };
     const watchdog = new InvocationWatchdog(request.runtimeLimits, controller,
       adapter.metadata.executionFeatures.includes(ACTIVITY_CAPABILITY),
       diagnostic => this.#diagnosticSink?.(identity, {
         ...diagnostic,
-        data: { ...diagnostic.data, agentRevisionKey: request.runMetadata?.agentRevisionKey }
+        data: { ...diagnostic.data, agentRevisionId: request.runMetadata?.agentRevisionId }
       }));
     let iterator: AsyncIterator<CanonicalEvent> | undefined;
     let cleanup: Promise<unknown> | undefined;
@@ -241,7 +241,7 @@ export class AdapterHost {
       const segmentKey = `${channel}:${event.payload.stepId ?? ""}`;
       const currentAnonymous = anonymousMessages.get(segmentKey);
       const messageId = event.payload.messageId ?? (currentAnonymous && messages.get(currentAnonymous)?.open && event.type !== "message.create"
-        ? currentAnonymous : `${request.runKey}:${channel}:message:${++messageNumber}`);
+        ? currentAnonymous : `${request.runId}:${channel}:message:${++messageNumber}`);
       if (!event.payload.messageId) anonymousMessages.set(segmentKey, messageId);
       const state = messages.get(messageId);
       const stepId = typeof event.payload.stepId === "string" ? event.payload.stepId : state?.stepId;
@@ -301,7 +301,7 @@ export class AdapterHost {
               payload: failurePayload(adapterEvent.payload, {
                 stage: "provider.invoke",
                 defaultDomain: "provider",
-                runKey: request.runKey,
+                runId: request.runId,
                 source: { component: "octo-harness", adapter: adapterType }
               })
             }
@@ -309,10 +309,10 @@ export class AdapterHost {
         watchdog.canonical(event);
         this.#canonicalSink?.({
           ...(typeof request.runMetadata?.profile === "string" ? { profile: request.runMetadata.profile } : {}),
-          ...(typeof request.runMetadata?.runtimeKey === "string" ? { runtimeKey: request.runMetadata.runtimeKey } : {}),
-          runKey: request.runKey,
+          ...(typeof request.runMetadata?.runtimeId === "string" ? { runtimeId: request.runMetadata.runtimeId } : {}),
+          runId: request.runId,
           invocationId: request.invocationId,
-          agentSessionKey: request.agentSessionKey,
+          agentSessionId: request.agentSessionId,
           adapterType
         }, event);
         if (terminal) throw new Error(`${adapterType} emitted after terminal event`);
@@ -373,7 +373,7 @@ export class AdapterHost {
           }, {
             stage: "adapter.invoke",
             defaultDomain: "adapter",
-            runKey: request.runKey,
+            runId: request.runId,
             source: { component: "octo-harness", adapter: adapterType }
           })
         };

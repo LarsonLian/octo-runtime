@@ -1,13 +1,13 @@
 import { assertContextEnvelope, assertJsonValue, contextItem } from './context.js';
 import type { ContextEnvelope, ScenarioRequest, ScenarioPolicy, ScenarioPolicySnapshot } from './generated/protocol-types.js';
-export const SCENARIO_KEY = 'doc.selection.review';
+export const SCENARIO_ID = 'doc.selection.review';
 const encoder = new TextEncoder();
 function object(v: unknown, _fields: string[]): asserts v is Record<string, unknown> {
   if (!v || typeof v !== 'object' || Array.isArray(v)) throw new TypeError('SCENARIO_INVALID');
 }
 export function assertScenarioRequest(v: unknown, context?: ContextEnvelope): asserts v is ScenarioRequest {
   object(v, ['key', 'builder_id', 'builder_version']);
-  if (v.key !== SCENARIO_KEY || v.builder_id !== 'doc-selection' || v.builder_version !== '1') throw new TypeError('SCENARIO_UNSUPPORTED');
+  if (v.key !== SCENARIO_ID || v.builder_id !== 'doc-selection' || v.builder_version !== '1') throw new TypeError('SCENARIO_UNSUPPORTED');
   if (context) {
     assertContextEnvelope(context);
     const entries = contextItem(context, 'octo.content', 'inline')?.payload.entries as Record<string, unknown>[] | undefined;
@@ -21,16 +21,16 @@ export function assertScenarioPolicy(v: unknown): asserts v is ScenarioPolicy {
     || encoder.encode(v.instructions.join('')).length > 16384 || !Array.isArray(v.default_skills) || v.default_skills.length > 32 || encoder.encode(JSON.stringify(v)).length > 65536) throw new TypeError('SCENARIO_INVALID');
   const ids = new Set<string>();
   for (const skill of v.default_skills) {
-    object(skill, ['resource_key', 'invoke']);
-    if (typeof skill.resource_key !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(skill.resource_key) || typeof skill.invoke !== 'boolean' || ids.has(skill.resource_key)) throw new TypeError('SCENARIO_INVALID');
-    ids.add(skill.resource_key);
+    object(skill, ['resource_id', 'invoke']);
+    if (typeof skill.resource_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(skill.resource_id) || typeof skill.invoke !== 'boolean' || ids.has(skill.resource_id)) throw new TypeError('SCENARIO_INVALID');
+    ids.add(skill.resource_id);
   }
 }
 export function canonicalScenarioPolicy(v: Pick<ScenarioPolicySnapshot, 'key' | 'version' | 'instructions' | 'default_skills'>): string {
-  if (v.key !== SCENARIO_KEY || !Number.isSafeInteger(v.version) || v.version < 1) throw new TypeError('SCENARIO_INVALID');
+  if (v.key !== SCENARIO_ID || !Number.isSafeInteger(v.version) || v.version < 1) throw new TypeError('SCENARIO_INVALID');
   assertScenarioPolicy({ enabled: true, instructions: v.instructions, default_skills: v.default_skills });
   // Same recursively sorted JSON object keys as Go CanonicalScalarJSON.
-  return JSON.stringify({ default_skills: [...v.default_skills].sort((a,b) => a.resource_key < b.resource_key ? -1 : a.resource_key > b.resource_key ? 1 : 0).map(s => ({ invoke: s.invoke, resource_key: s.resource_key })), instructions: v.instructions, key: v.key, version: v.version });
+  return JSON.stringify({ default_skills: [...v.default_skills].sort((a,b) => a.resource_id < b.resource_id ? -1 : a.resource_id > b.resource_id ? 1 : 0).map(s => ({ invoke: s.invoke, resource_id: s.resource_id })), instructions: v.instructions, key: v.key, version: v.version });
 }
 export function assertScenarioSnapshot(v: unknown): asserts v is ScenarioPolicySnapshot {
   object(v, ['key', 'version', 'instructions', 'default_skills', 'hash']);

@@ -28,7 +28,7 @@ async function writeManagedRuntime(home, profile = "default") {
   }));
   await writeFile(join(profileRoot, "identity/runtime.json"), JSON.stringify({
     schema_version: 1,
-    runtime_key: `runtime-${profile}`,
+    runtime_id: `runtime-${profile}`,
     profile,
     credential_id: `credential-${profile}`,
     enrolled_at: new Date().toISOString()
@@ -48,7 +48,7 @@ test("managed Runtime requires the bound profile and discovers 128-character nam
     await writeManagedRuntime(home, profile);
     assert.deepEqual(resolveDaemonRuntimePaths(["--home", home], {}).agentWorks.map(runtime => runtime.profile), ["default", profile]);
     for (const wrong of [undefined, "other"]) {
-      await writeFile(join(home, profile, "identity/runtime.json"), JSON.stringify({ schema_version: 1, runtime_key: "runtime_fixture", profile: wrong }));
+      await writeFile(join(home, profile, "identity/runtime.json"), JSON.stringify({ schema_version: 1, runtime_id: "runtime_fixture", profile: wrong }));
       assert.throws(() => resolveDaemonRuntimePaths(["--home", home], {}), /managed Runtime identity.*invalid/);
     }
   } finally {
@@ -67,7 +67,7 @@ test("managed profile loads OpenClaw adapter credentials without serializing the
       openclaw: {
         schema_version: 1,
         gateway_url: "ws://127.0.0.1:18789/",
-        agent_key: "octo-openclaw-runner",
+        agent_id: "octo-openclaw-runner",
         workspace: join(home, "default/adapters/openclaw/octo-runner.workspace"),
         credential_ref: "credentials/openclaw-gateway.json",
         execution: {
@@ -270,7 +270,7 @@ test("managed Runtime binding ignores process-level endpoint and identity overri
     const runtime = paths.agentWorks[0];
     assert.equal(runtime.baseUrl, "https://worker.example");
     assert.equal(runtime.token, "device-token-default");
-    assert.equal(runtime.runtimeKey, "runtime-default");
+    assert.equal(runtime.runtimeId, "runtime-default");
     assert.equal(runtime.runtimeName, "linked-runtime");
     assert.equal("fingerprint" in runtime, false);
     const args = daemonRuntimeArguments(paths);
@@ -355,7 +355,7 @@ test("managed Home discovers multiple profile Runtimes without putting credentia
       "--agent-work-disk-check-ms", "15000"
     ], {});
     assert.deepEqual(
-      paths.agentWorks.map(runtime => [runtime.profile, runtime.runtimeKey]),
+      paths.agentWorks.map(runtime => [runtime.profile, runtime.runtimeId]),
       [
         ["default", "runtime-default"],
         ["work", "runtime-work"]

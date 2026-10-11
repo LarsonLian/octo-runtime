@@ -103,19 +103,19 @@ test("failure payload is backwards compatible and excludes untrusted secrets", (
 
   assert.equal(payload.code, "invalid_api_key");
   assert.equal(payload.failure.code, "OH-PRV-4001");
-  assert.equal(payload.failure.messageKey, "error.provider.credentials_invalid");
+  assert.equal(payload.failure.messageId, "error.provider.credentials_invalid");
   assert.equal(payload.adapterType, "codex");
   assert.doesNotMatch(JSON.stringify(payload), /top-secret-token|authorization|providerError/);
   assert.doesNotThrow(() => assertCanonicalEvent({ protocolVersion: 2, type: "run.failed", payload }));
 });
 
 test("Agent Run UUID deterministically owns the diagnostic UUID", () => {
-  const runKey = "arun_35c4ffc5db9940c9be7ce3a894819ae3";
+  const runId = "arun_35c4ffc5db9940c9be7ce3a894819ae3";
   const classified = classifyFailure({ code: "RPC_TIMEOUT" }, {
     defaultDomain: "adapter",
     stage: "adapter.invoke",
     source,
-    runKey,
+    runId,
     diagnosticId: "diag_0123456789abcdef0123456789abcdef"
   });
   assert.equal(classified.diagnosticId, "diag_35c4ffc5db9940c9be7ce3a894819ae3");
@@ -127,7 +127,7 @@ test("Agent Run UUID deterministically owns the diagnostic UUID", () => {
     defaultDomain: "provider",
     stage: "provider.invoke",
     source,
-    runKey,
+    runId,
     preserveExisting: true
   });
   assert.equal(payload.failure.diagnosticId, "diag_35c4ffc5db9940c9be7ce3a894819ae3");
