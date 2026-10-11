@@ -257,7 +257,7 @@ async function prepareMcpServer(value: unknown, root: string, data: string, cred
       if (names.has(key.toLowerCase()) || /[\r\n]/.test(key + entry)) throw new TypeError("MCP_PACKAGE_CREDENTIALS_FORBIDDEN");
       names.add(key.toLowerCase());
     }
-    return { type: "streamable_http", url: url.href, ...(headers ? { headers } : {}) };
+    return { type: "streamable_http", required: true, url: url.href, ...(headers ? { headers } : {}) };
   }
   const command = value.command as string;
   if (command.includes("${") || !command.startsWith("./") && (/[/\\]/.test(command) || /\s/.test(command))) throw new TypeError("MCP_COMMAND_INVALID");

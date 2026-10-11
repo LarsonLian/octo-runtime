@@ -136,7 +136,7 @@ test("task materials use authorized MCP and freeze actual facts separately from 
   automaticEnvelope.resolved_execution_plan.approval_mode = "full_access";
   automaticEnvelope.effective_context.items.find(item => item.name === "approval_policy").payload.mode = "full_access";
   const automaticRequest = mapExecutionEnvelope(automaticEnvelope, undefined, first).request;
-  assert.match(JSON.stringify(buildCodexCommand(automaticRequest).args), /task_get_materials.*approval_mode/);
+  assert.match(JSON.stringify(buildCodexCommand(automaticRequest).args), /octo_task.*default_tools_approval_mode.*approve/);
   assert.doesNotMatch(JSON.stringify(buildCodexCommand(automaticRequest).args), /fixture-run-grant/);
 });
 

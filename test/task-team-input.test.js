@@ -61,7 +61,7 @@ test("frozen Run plan binds separate Loop and Access endpoints for handoff and m
   assert.doesNotMatch(request.modelInput, /target-only-grant/);
   assert.doesNotMatch(request.controlInstructions, /使用需求附件/);
   assert.equal(request.workdir, "/target-runtime/workspace");
-  assert.match(JSON.stringify(buildCodexCommand(request).args), /octo_team.*delegate_handoff.*approval_mode/);
+  assert.match(JSON.stringify(buildCodexCommand(request).args), /octo_team.*default_tools_approval_mode.*approve/);
   const mailbox = { task_key:input.task_key,conversation_id:input.conversation_id, coordination: input.coordination, message: { child_run_key: "target-run", status: "completed",
     messages: [{ item_id: "item-1", text: "页面已生成" }], task_output_receipts: [{ output_key: "page-1", status: "saved", attachment_key: "att-page", file_id: "file-page", file_version_id: "fv-page" }]
   } };
@@ -71,7 +71,7 @@ test("frozen Run plan binds separate Loop and Access endpoints for handoff and m
   assert.match(wake.modelInput, /fv-page/);
   assert.match(wake.modelInput, /页面已生成/);
   assert.doesNotMatch(wake.modelInput, /target-only-grant/);
-  assert.match(JSON.stringify(buildCodexCommand(wake).args), /octo_team.*delegate_handoff.*approval_mode/);
+  assert.match(JSON.stringify(buildCodexCommand(wake).args), /octo_team.*default_tools_approval_mode.*approve/);
 });
 
 test("Access coordination node carries bounded facts and requires frozen operation identity", () => {
