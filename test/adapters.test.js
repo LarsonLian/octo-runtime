@@ -854,6 +854,7 @@ test("OpenClaw Gateway client authenticates, handles accepted/final responses, a
       requests.push(frame);
       if (frame.method === "connect") {
         assert.equal(frame.params.auth.token, "fixture-token");
+        assert.ok(frame.params.caps.includes("exec-approvals"), "Gateway must recognize this CLI as an approval recipient");
         assert.match(frame.params.device.signature, /^[A-Za-z0-9_-]+$/);
         socket.send(JSON.stringify({
           type: "res", id: frame.id, ok: true,

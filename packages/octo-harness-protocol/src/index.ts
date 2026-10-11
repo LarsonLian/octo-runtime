@@ -544,7 +544,16 @@ export function assertApprovalRequest(value: unknown): asserts value is Record<s
   if (!isRecord(value.operation) || !["command_execution", "file_change", "tool_execution", "permission_grant", "context_access"].includes(String(value.operation.kind))) throw new TypeError("INVALID_APPROVAL_REQUEST");
   if (Object.keys(value.operation).some(property => !["kind", "summary", "toolCallId", "details"].includes(property)) || typeof value.operation.summary !== "string" || !value.operation.summary || value.operation.summary.length > 8192) throw new TypeError("INVALID_APPROVAL_REQUEST");
   if (value.operation.toolCallId !== undefined && (typeof value.operation.toolCallId !== "string" || !value.operation.toolCallId)) throw new TypeError("INVALID_APPROVAL_REQUEST");
-  if (value.grantScope !== "request") throw new TypeError("APPROVAL_GRANT_SCOPE_UNSUPPORTED");
+  if (value.grantScope !== "request" && value.grantScope !== "provider") throw new TypeError("APPROVAL_GRANT_SCOPE_UNSUPPORTED");
+  if (value.grantScope === "provider") {
+    const details = value.providerDetails;
+    if (!isRecord(details) || details.provider !== "openclaw" || details.method !== "exec.approval.resolve"
+      || !Array.isArray(details.options) || !details.options.length
+      || !details.options.some(option => isRecord(option) && option.optionId === "allow-always" && option.kind === "allow_always")
+      || details.options.some(option => !isRecord(option) || ![
+        "allow-once:allow_once", "allow-always:allow_always", "deny:reject_once"
+      ].includes(`${option.optionId}:${option.kind}`))) throw new TypeError("APPROVAL_GRANT_SCOPE_UNSUPPORTED");
+  }
   if (!Array.isArray(value.requestedPermissions)) throw new TypeError("INVALID_APPROVAL_REQUEST");
   if (value.requestedPermissions.length) throw new TypeError("APPROVAL_PERMISSION_UNSUPPORTED");
   if (!Array.isArray(value.allowedOutcomes) || !value.allowedOutcomes.length || new Set(value.allowedOutcomes).size !== value.allowedOutcomes.length || value.allowedOutcomes.some(outcome => !["accepted", "declined", "cancelled"].includes(String(outcome)))) throw new TypeError("INVALID_APPROVAL_REQUEST");

@@ -494,6 +494,7 @@ async function* invokeOpenClawGateway(
   let acceptedRunId = invocation.requestId;
   let agentAccepted = false;
   const seenApprovals = new Set<string>();
+  const activeApprovals = new Map<string, JsonRecord>();
   let providerSessionKey = invocation.sessionKey;
   const unsubscribe = client.onEvent(event => queue.push({ event }));
   const state: StreamState = { lastSeq: -1, assistantText: "", reasoningText: "", stepStarted: false, stepFinished: false, messageNumber: 0, messages: new Map(), tools: new Set() };
@@ -506,7 +507,9 @@ async function* invokeOpenClawGateway(
     if (req.approvalMode === "ask") {
       const features = asRecord(asRecord(hello)?.features);
       if (!Array.isArray(features?.methods) || !features.methods.includes("exec.approval.resolve")
-        || !Array.isArray(features.events) || !features.events.includes("exec.approval.requested")) {
+        || !features.methods.includes("exec.approval.list")
+        || !Array.isArray(features.events) || !features.events.includes("exec.approval.requested")
+        || !features.events.includes("exec.approval.resolved")) {
         throw new Error("APPROVAL_MODE_UNSUPPORTED: OpenClaw Gateway has no approval transport");
       }
     }
@@ -524,6 +527,11 @@ async function* invokeOpenClawGateway(
       key: providerSessionKey,
       agentId: invocation.agentId
     }, { timeoutMs: 10_000, signal: req.signal });
+    if (req.approvalMode === "ask") {
+      const pending = await client.request("exec.approval.list", {}, { timeoutMs: 10_000, signal: req.signal });
+      if (!Array.isArray(pending)) throw new Error("OpenClaw Gateway returned invalid pending approvals");
+      for (const payload of pending) queue.push({ event: { event: "exec.approval.requested", payload } });
+    }
     yield { protocolVersion: 2,
       type: "session.update",
       payload: { providerSession: { sessionId: providerSessionKey, resumable: false, agentId: invocation.agentId } }
@@ -563,23 +571,46 @@ async function* invokeOpenClawGateway(
         if (terminal === "failed") throw new Error(reconciled.error);
         break;
       }
+      if (item.event?.event === "exec.approval.resolved") {
+        const payload = asRecord(item.event.payload);
+        const id = nonEmptyString(payload?.id);
+        if (!id) continue;
+        const params = activeApprovals.get(id);
+        if (!params) continue;
+        permissions.resolveFromProvider(params, payload?.decision == null ? "expired" : "resolved",
+          payload?.decision === "deny" ? "declined" : ["allow-once", "allow-always"].includes(String(payload?.decision)) ? "accepted" : undefined);
+        activeApprovals.delete(id);
+        continue;
+      }
       if (item.event?.event === "exec.approval.requested") {
         const payload = asRecord(item.event.payload);
         const approvalRequest = asRecord(payload?.request);
         // Gateway approval events are broadcast. Only this invocation's session may be answered.
         if (approvalRequest?.sessionKey !== providerSessionKey || typeof payload?.id !== "string") continue;
+        if (approvalRequest.runId && approvalRequest.runId !== acceptedRunId && approvalRequest.runId !== invocation.requestId) continue;
         const id = payload.id;
         if (seenApprovals.has(id)) continue;
         seenApprovals.add(id);
         if (seenApprovals.size > 1024) throw new Error("APPROVAL_WAIT_UNAVAILABLE");
-        const allowed = Array.isArray(approvalRequest.allowedDecisions) ? approvalRequest.allowedDecisions : ["allow-once", "deny"];
-        const params = { toolCall: { toolCallId: id, title: nonEmptyString(approvalRequest.command) ?? "OpenClaw command" },
-          providerDetails: { provider: "openclaw", command: approvalRequest.command, cwd: approvalRequest.cwd },
-          options: [...(allowed.includes("allow-once") ? [{ kind: "allow_once", optionId: "allow-once" }] : []), ...(allowed.includes("deny") ? [{ kind: "reject_once", optionId: "deny" }] : [])] };
+        const expiresAt = finiteNumber(payload.expiresAtMs);
+        if (expiresAt === undefined || expiresAt <= Date.now()) continue;
+        const allowed = Array.isArray(approvalRequest.allowedDecisions) ? approvalRequest.allowedDecisions : [];
+        const options = [
+          ...(allowed.includes("allow-once") ? [{ kind: "allow_once", optionId: "allow-once" }] : []),
+          ...(allowed.includes("allow-always") ? [{ kind: "allow_always", optionId: "allow-always" }] : []),
+          ...(allowed.includes("deny") ? [{ kind: "reject_once", optionId: "deny" }] : [])
+        ];
+        const params = { toolCall: { toolCallId: nonEmptyString(approvalRequest.toolCallId) ?? id, title: nonEmptyString(approvalRequest.command) ?? "OpenClaw command" },
+          providerDetails: { provider: "openclaw", method: "exec.approval.resolve", approvalId: id,
+            command: approvalRequest.command, cwd: approvalRequest.cwd, reason: approvalRequest.warningText,
+            description: [approvalRequest.host, approvalRequest.nodeId].filter(value => typeof value === "string" && value).join(" · "), options }, options };
+        activeApprovals.set(id, params);
         void permissions.requestPermission(params, finiteNumber(payload.expiresAtMs)).then(async result => {
-          const decision = asRecord(result.outcome)?.optionId === "allow-once" ? "allow-once" : "deny";
+          if (result.providerResolved) { activeApprovals.delete(id); return; }
+          const decision = nonEmptyString(asRecord(result.outcome)?.optionId) ?? "deny";
           await client.request("exec.approval.resolve", { id, decision }, { timeoutMs: 10_000, signal: req.signal });
           permissions.responseWritten(params);
+          activeApprovals.delete(id);
         }).catch(error => {
           const failure = error instanceof Error ? error : new Error(String(error));
           permissions.responseFailed(params, failure);
@@ -751,7 +782,7 @@ export function createOpenClawAdapter(
         providerRequestId: invocation.requestId,
         carrier: invocation.providerInput
       });
-      const bridge = new AcpApprovalBridge(req);
+      const bridge = new AcpApprovalBridge(req, 600_000, { providerDecisions: true, providerManagedExpiry: true });
       responders.set(req.invocationId, bridge);
       try { yield* bridge.stream(invokeOpenClawGateway(req, invocation, context, clientFactory, bridge)); }
       finally { bridge.close("execution_lost"); responders.delete(req.invocationId); }

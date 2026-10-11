@@ -2305,7 +2305,7 @@ export interface ApprovalRequest {
    * @minItems 1
    */
   allowedOutcomes: ["accepted" | "declined" | "cancelled", ...("accepted" | "declined" | "cancelled")[]];
-  grantScope: "request";
+  grantScope: "request" | "provider";
   providerDetails?: ApprovalDisplayDetails;
 }
 /**

@@ -826,7 +826,7 @@ test("interaction responses require the active execution instance as well as lea
     run_key: "run-interaction",
     type: "interaction.respond",
     payload: {
-      interaction_key: "approval-1",
+      interaction_id: "approval-1",
       execution_instance_id: Object.hasOwn(options, "instanceId") ? options.instanceId : activeInvocationId,
       outcome: options.outcome ?? "accepted"
     },
@@ -1847,3 +1847,54 @@ function runtimeCommand(suffix, serverSeq, runtimeKey) {
     fencing_token: serverSeq
   };
 }
+
+test('control-plane cancellation is not classified as adapter failure when the output stream rejects', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'oh-runtime-cancel-'));
+  const server = createServer(async (request, response) => {
+    for await (const _ of request) {}
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify(request.url.includes('context/prepare') ? {} : { runtime: { runtime_key: 'runtime-cancel', profile: 'default', protocol_version: 2 } }));
+  });
+  const sockets = new WebSocketServer({ noServer: true });
+  server.on('upgrade', (request, socket, head) => sockets.handleUpgrade(request, socket, head, ws => sockets.emit('connection', ws)));
+  const completed = deferred();
+  let runtime;
+  let sentCancel = false;
+  sockets.on('connection', ws => ws.on('message', data => {
+    const frame = JSON.parse(data.toString());
+    if (frame.type === 'runtime.hello') {
+      ws.send(wire('runtime.welcome', { heartbeat_every_ms: 60000 }));
+      ws.send(wire('runtime.command', { server_seq: 1, command_key: 'start-cancel', run_key: 'run-cancel', type: 'run.start', lease_id: 'lease-cancel', fencing_token: 1,
+        payload: withExecutionPlan({ ...envelope, run_key: 'run-cancel', resolved_runtime_selection: resolvedRuntimeSelection('runtime-cancel') }, { agent_source: 'provisioned', adapter_type: 'codex', workdir: process.cwd(), approval_mode: 'ask' }) }));
+    }
+    if (frame.type === 'run.event_batch') {
+      const events = frame.payload.events;
+      ws.send(wire('event.ack', { run_key: 'run-cancel', received_through_seq: events.at(-1).seq, durable_through_seq: events.at(-1).seq }));
+      if (events.some(event => event.type === 'run.started') && !sentCancel) {
+        sentCancel = true;
+        ws.send(wire('runtime.command', { server_seq: 2, command_key: 'cancel', run_key: 'run-cancel', type: 'run.cancel', lease_id: 'lease-cancel', fencing_token: 1, payload: {} }));
+      }
+      const terminal = events.find(event => ['run.failed', 'run.cancelled'].includes(event.type));
+      if (terminal) completed.resolve(terminal.type);
+    }
+  }));
+  try {
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    runtime = new AgentWorkRuntime({ profile: 'default', baseUrl: `http://127.0.0.1:${server.address().port}`, token: 'fixture', runtimeName: 'runtime-cancel', storePath: join(directory, 'state.db'),
+      createMaterialCompactionPort: async () => ({ model: 'fixture', contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error('unexpected summary'); } })
+    }, { list: async () => [{ type: 'codex', capabilities: ['react'], agentSources: ['provisioned'], executionFeatures: ['approval.ask', 'interaction.response'] }], cancel: async () => ({ cancelled: true }),
+      async *invoke(_type, request) {
+        yield { protocolVersion: 2, type: 'message.delta', payload: { text: 'starting' } };
+        await new Promise((_, reject) => { if (request.signal.aborted) reject(request.signal.reason); else request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true }); });
+      }
+    });
+    await runtime.start();
+    assert.equal(await withTimeout(completed.promise, 5000, 'cancel terminal timeout'), 'run.cancelled');
+  } finally {
+    await runtime?.close();
+    for (const socket of sockets.clients) socket.terminate();
+    await new Promise(resolve => sockets.close(resolve));
+    await new Promise(resolve => server.close(resolve));
+    await rm(directory, { recursive: true, force: true });
+  }
+});

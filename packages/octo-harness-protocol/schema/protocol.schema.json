@@ -2367,7 +2367,7 @@
           }
         },
         "grantScope": {
-          "const": "request"
+          "enum": ["request", "provider"]
         },
         "providerDetails": {
           "$ref": "#/definitions/ApprovalDisplayDetails"

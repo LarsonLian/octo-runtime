@@ -1503,7 +1503,7 @@ export class AgentWorkRuntime {
           return;
         }
         const response: InteractionResponse = {
-          interactionId: requiredString(payload.interaction_key, "interaction.respond interaction_key"),
+          interactionId: requiredString(payload.interaction_id, "interaction.respond interaction_id"),
           outcome: requiredString(payload.outcome, "interaction.respond outcome") as InteractionResponse["outcome"],
           ...(Object.hasOwn(payload, "value") ? { value: payload.value } : {})
         };
@@ -1519,7 +1519,7 @@ export class AgentWorkRuntime {
     if (command.type === "run.cancel") {
       const active = this.#activeRuns.get(command.run_key);
       if (active) {
-        active.outputController.abort(new Error("RUN_CANCELLED"));
+        active.outputController.abort(new ControlPlaneRunCancelledError());
         if (active.archiving) { this.#ackCommand(command, true); return; }
         const cancelled = (await this.#host.cancel(active.invocationId, "control plane cancel")).cancelled;
         this.#ackCommand(command, true, cancelled ? undefined : { code: "RUN_NOT_ACTIVE" });
@@ -2200,6 +2200,13 @@ export class AgentWorkRuntime {
     } catch (error) {
       if (this.#authoritativeTerminalRuns.has(command.run_key)) return;
       if (this.#markStoreUnavailable(error)) return;
+      if (request.signal?.reason instanceof ControlPlaneRunCancelledError) {
+        appendStarted();
+        const payload = { reasonCode: "cancelled", ...(contextSnapshot ? contextEventFields(contextSnapshot) : {}) };
+        store.allocateAndAppend(command.run_key, "run.cancelled", payload);
+        this.#kickSender();
+        return;
+      }
       this.#log({
         level: "error",
         scope: "adapter.invoke",
@@ -2818,6 +2825,10 @@ class AuthoritativeTerminalRunError extends Error {
     super(`Run ${runKey} is already authoritatively ${status}`);
     this.name = "AuthoritativeTerminalRunError";
   }
+}
+
+class ControlPlaneRunCancelledError extends Error {
+  constructor() { super("RUN_CANCELLED"); this.name = "ControlPlaneRunCancelledError"; }
 }
 
 class AcceptingRunCancelledError extends Error {

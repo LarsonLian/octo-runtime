@@ -201,7 +201,7 @@ export class OpenClawGatewayClient {
           },
           role: "operator",
           scopes: REQUESTED_SCOPES,
-          caps: ["tool-events", "session-scoped-events"],
+          caps: ["tool-events", "session-scoped-events", "exec-approvals"],
           commands: [],
           permissions: {},
           auth: { token: this.#options.token },
