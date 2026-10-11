@@ -1,3 +1,4 @@
+import { mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * OpenCode adapter: wraps the OpenCode CLI (`opencode run --format json
@@ -76,7 +77,7 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
   const args = ["run", "--format", "json", "--thinking", "--auto"];
   if (req.providerSession?.sessionId) args.push("--session", req.providerSession.sessionId);
   if (req.agentConfig?.model) args.push("--model", req.agentConfig.model);
-  const variant = req.agentConfig?.effort;
+  const variant = mapReasoningEffort("opencode", req.agentConfig?.effort);
   if (variant && variant !== "enabled" && variant !== "disabled") args.push("--variant", variant);
   args.push(providerInputText(req));
   return {

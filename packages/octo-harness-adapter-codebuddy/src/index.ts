@@ -105,7 +105,6 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
       await bridge.respond(response);
     },
     async *invoke(req: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
-      if (req.agentConfig.effort) throw new Error("REASONING_UNSUPPORTED: codebuddy reasoning selection is not qualified");
       if (responders.has(req.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
       const permissions = new AcpApprovalBridge(req);
       responders.set(req.invocationId, permissions);

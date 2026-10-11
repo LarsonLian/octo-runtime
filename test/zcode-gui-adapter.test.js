@@ -68,10 +68,10 @@ test("ZCode GUI adapter rejects unqualified assisted before starting its native 
   assert.equal(spawned, false);
 });
 
-test("ZCode GUI adapter independently rejects explicit model and effort before starting its native transport", async () => {
+test("ZCode GUI adapter rejects explicit model before starting its native transport", async () => {
   let spawned = false;
   const adapter = createZcodeGuiAdapter({ spawnFn: () => { spawned = true; throw new Error("provider must not launch"); } });
-  for (const agentConfig of [{ model: "requested-model" }, { effort: "high" }, { model: "requested-model", effort: "high" }]) {
+  for (const agentConfig of [{ model: "requested-model" }]) {
     await assert.rejects(async () => {
       for await (const event of adapter.invoke(request(agentConfig))) assert.fail(`unexpected ${event.type}`);
     }, /EXECUTION_SELECTION_UNSUPPORTED/);
@@ -99,4 +99,10 @@ test("ZCode event normalizer ignores the duplicate turn.terminal compatibility e
     type: "turn.terminal",
     payload: { status: "success" }
   }), []);
+});
+
+test("ZCode preserves requested effort and uses its native default with an explicit notice", async () => {
+  const events = await invoke({ effort: "xhigh" });
+  assert.equal(events[0].payload.params.warningCode, "REASONING_EFFORT_NOT_APPLIED");
+  assert.equal(events.at(-1).type, "run.completed");
 });

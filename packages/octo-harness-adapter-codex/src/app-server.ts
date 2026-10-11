@@ -1,3 +1,4 @@
+import { mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus, contextHash, providerInputParts } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * Codex app-server transport and event adaptation layer.
@@ -1580,7 +1581,7 @@ function threadParams(request: InvokeRequest, extra: JsonRecord): JsonRecord {
  * publishing summaryTextDelta, so a UI might see only an empty analysis lifecycle.
  */
 function turnParams(request: InvokeRequest, threadId: string, freshFallback = false): JsonRecord {
-  const effort = request.agentConfig.effort;
+  const effort = mapReasoningEffort("codex", request.agentConfig.effort);
   return {
     threadId,
     input: [...providerInputParts(request, freshFallback).map(part => part.type === "image"

@@ -797,3 +797,19 @@ async function writeLog(path, ts, event, padding = 0) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   await writeFile(path, `${JSON.stringify({ ts, event, padding: "x".repeat(padding) })}\n`, { mode: 0o600 });
 }
+
+test("reasoning mapping persists requested and native levels without provider input capture", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oh-reasoning-"));
+  const records = [];
+  const logger = new LocalObservability(options(directory, { captureProviderIo: "off" }), { operationalSink: record => records.push(record) });
+  try {
+    for (const native of ["high", null]) await logger.observeProvider({ runKey: "reasoning-run", invocationId: "reasoning-invoke", agentSessionKey: "reasoning-session", adapterType: "fixture" }, {
+      event: "provider.stage.completed", rpcMethod: "adapter.reasoning.map",
+      data: { stage: "reasoning_mapping", outcome: native === null ? "not_applied" : "mapped", duration_ms: 0, requested_effort: "xhigh", native_effort: native }
+    });
+    await logger.flush();
+    assert.deepEqual(records.map(record => [record.data.requested_effort, record.data.native_effort, record.data.outcome]), [["xhigh", "high", "mapped"], ["xhigh", null, "not_applied"]]);
+    const stored = await logger.query({ runKey: "reasoning-run" });
+    assert.deepEqual(stored.map(record => record.data.native_effort), ["high", null]);
+  } finally { await logger.close(); await rm(directory, { recursive: true, force: true }); }
+});

@@ -48,4 +48,6 @@ OpenClaw Gateway adapter 使用 fake Gateway 完成 RPC、runId 隔离、seq 去
 
 ## Adding Provider Options
 
-Agent config 作为 InvokeRequest 的 `agentConfig` 传给 adapter。公共 CLI 当前支持 `model`、`providerAgentId`、`thinking`、`effort`、`timeoutSeconds`、`permissionMode`、`sandbox`、`dangerouslyBypassPermissions`、`autoApprove`。Claude Code 将 `thinking` 与可选 `effort` 分别映射为运行级 settings 和 `--effort`，未配置 effort 时显式使用 `medium`；其他 provider-specific 字段由相应 adapter 读取，不应进入 core 分支。OpenClaw 的详细行为见 [OpenClaw Gateway Adapter](06-openclaw-local-adapter.md)。
+`agentConfig.effort` 承载 Harness 统一档位 `low / medium / high / xhigh`，不是原生提供方档位。未配置时保留提供方默认值，不补 `medium`。原生档位转换仅在 adapter 生成命令或 RPC 参数时发生，不修改 Context、执行快照或 Core 中的用户选择。旧 `thinking` 配置仍不允许。
+
+默认映射与验证见 [Adapter SDK reasoning.ts](../packages/octo-harness-adapter-sdk/src/reasoning.ts)，行为与验收见 [思考强度映射](reasoning-level-mapping.md)。其他 provider-specific 配置也由相应 adapter 读取，不进入 Core 分支。OpenClaw 的详细行为见 [OpenClaw Gateway Adapter](06-openclaw-local-adapter.md)。

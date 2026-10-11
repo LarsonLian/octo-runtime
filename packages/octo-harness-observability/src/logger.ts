@@ -196,6 +196,10 @@ export class LocalObservability {
         data: {
           stage: data.stage, outcome: data.outcome,
           clock: "runtime_monotonic",
+          ...(data.stage === "reasoning_mapping" ? {
+            ...(["low", "medium", "high", "xhigh"].includes(String(data.requested_effort)) ? { requested_effort: data.requested_effort } : {}),
+            ...(data.native_effort === null || (typeof data.native_effort === "string" && /^[a-z][a-z0-9_-]{0,31}$/.test(data.native_effort)) ? { native_effort: data.native_effort } : {})
+          } : {}),
           ...(observation.rpcMethod ? { rpc_method: observation.rpcMethod } : {})
         }
       });

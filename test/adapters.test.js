@@ -1438,18 +1438,21 @@ test("generic ACP ask waits for actual respondInteraction before continuing the 
   }
 });
 
-test("generic ACP and CodeBuddy reject explicit unqualified effort before creating a client", async () => {
-  let spawned = false;
-  const options = { acpClientFactory: () => { spawned = true; throw new Error("provider must not launch"); } };
-  for (const adapter of [
-    createAcpAdapter({ type: "fixture-acp", provider: "fixture-acp", command: "fixture" }, options),
-    createCodeBuddyAdapter(options)
+test("generic ACP and CodeBuddy keep explicit effort and continue with a not-applied notice", async () => {
+  for (const factory of [
+    options => createAcpAdapter({ type: "fixture-acp", provider: "fixture-acp", command: "fixture" }, options),
+    createCodeBuddyAdapter
   ]) {
-    await assert.rejects(async () => {
-      for await (const event of adapter.invoke({ ...request, agentSource: "provisioned", agentConfig: { effort: "high" } })) assert.fail(`unexpected ${event.type}`);
-    }, /REASONING_UNSUPPORTED/);
+    const { adapter } = acpPermissionFixture(factory, [{ optionId: "allow-once", kind: "allow_once" }]);
+    const input = { ...request, approvalMode: "full_access", agentSource: "provisioned", agentConfig: { effort: "xhigh" } };
+    const events = [];
+    const observations = [];
+    for await (const event of adapter.invoke(input, { observe: async observation => { observations.push(observation); } })) events.push(event);
+    assert.equal(input.agentConfig.effort, "xhigh");
+    assert.equal(events[0].payload.params.warningCode, "REASONING_EFFORT_NOT_APPLIED");
+    assert.equal(events.at(-1).type, "run.completed");
+    assert.equal(observations.find(item => item.rpcMethod === "adapter.reasoning.map").data.outcome, "not_applied");
   }
-  assert.equal(spawned, false);
 });
 
 test("CodeBuddy ask and assisted map native modes and wait for the original invocation's human response", async () => {

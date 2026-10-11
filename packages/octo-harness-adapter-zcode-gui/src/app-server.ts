@@ -361,7 +361,7 @@ export async function* runZcodeAppServerTurn({
   approvalBridge?: AcpApprovalBridge;
 }): AsyncGenerator<CanonicalEvent> {
   if (request.approvalMode === "assisted" || (request.approvalMode === "ask" && !approvalBridge)) throw new Error("APPROVAL_MODE_UNSUPPORTED");
-  if (request.agentConfig.model || request.agentConfig.effort) throw new Error("EXECUTION_SELECTION_UNSUPPORTED: zcode independent model/reasoning selection is not qualified");
+  if (request.agentConfig.model) throw new Error("EXECUTION_SELECTION_UNSUPPORTED: zcode independent model selection is not qualified");
   const autoApprove = request.approvalMode === "full_access";
   const client = new ZcodeAppServerClient({
     spec,

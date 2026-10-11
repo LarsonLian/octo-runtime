@@ -166,14 +166,13 @@ export function createAcpAdapter(
     },
     async *invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
       if (request.approvalMode !== "ask" && request.approvalMode !== "full_access") throw new Error("APPROVAL_MODE_UNSUPPORTED: this ACP adapter has no assisted policy");
-      if (request.agentConfig.effort) throw new Error("REASONING_UNSUPPORTED: ACP reasoning selection is not qualified");
       if (responders.has(request.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
       const bridge = new AcpApprovalBridge(request);
       responders.set(request.invocationId, bridge);
       try { yield* bridge.stream(execute(request, bridge, context)); }
       finally { bridge.close("execution_lost"); responders.delete(request.invocationId); }
     }
-  });
+  }, null); // ACP transports currently have no implemented reasoning setter.
 
   async function* execute(request: InvokeRequest, bridge: AcpApprovalBridge, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
       const args = typeof definition.args === "function" ? definition.args(request) : definition.args ?? ["acp"];

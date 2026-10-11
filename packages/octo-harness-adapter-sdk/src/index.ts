@@ -1,3 +1,4 @@
+import { mapReasoningEffort, reasoningLevelMap, type ReasoningLevelMap } from "./reasoning.js";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { delimiter, isAbsolute, resolve } from "node:path";
@@ -30,6 +31,7 @@ export type {
   ProviderObservation
 } from "@mininglamp-oss/octo-harness-observability";
 export { freshFallbackInputText, providerInputText, providerInputParts, hasImageInput } from "@mininglamp-oss/octo-harness-protocol";
+export { OMNI_REASONING_LEVELS, DEFAULT_REASONING_LEVEL_MAPS, mapReasoningEffort, reasoningLevelMap, type OmniReasoningLevel, type ReasoningLevelMap } from "./reasoning.js";
 export { AcpTurnNormalizer } from "./acp-turn.js";
 export { AcpApprovalBridge } from "./approval.js";
 export { sanitizePublicValue } from "./public-display.js";
@@ -140,11 +142,30 @@ interface ProcessExit {
  * Validate and freeze an adapter definition. Freezing makes the metadata and
  * `invoke` reference immutable so a loaded adapter cannot be mutated at runtime.
  */
-export function defineAdapter<TAdapter extends Adapter>(adapter: TAdapter): Readonly<TAdapter> {
+export function defineAdapter<TAdapter extends Adapter>(adapter: TAdapter, levels: ReasoningLevelMap | null = reasoningLevelMap(adapter.metadata.type)): Readonly<TAdapter> {
   if (!adapter?.metadata?.type || typeof adapter.invoke !== "function") {
     throw new TypeError("adapter requires metadata.type and invoke(req)");
   }
-  return Object.freeze(adapter);
+  const invoke = adapter.invoke;
+  return Object.freeze({ ...adapter, async *invoke(request: InvokeRequest, context?: AdapterInvocationContext) {
+    const requested = request.agentConfig.effort;
+    const native = mapReasoningEffort(adapter.metadata.type, requested, levels);
+    if (requested !== undefined) {
+      observeBestEffort(context, {
+        event: "provider.stage.completed", rpcMethod: "adapter.reasoning.map",
+        data: { stage: "reasoning_mapping", outcome: native === undefined ? "not_applied" : "mapped", duration_ms: 0,
+          requested_effort: requested, native_effort: native ?? null, adapter_type: adapter.metadata.type }
+      });
+      if (native === undefined || native !== requested) yield {
+        protocolVersion: 2 as const, type: "run.notice" as const,
+        payload: { noticeId: `${request.invocationId}:reasoning`, code: "config_warning" as const,
+          severity: native === undefined ? "warning" as const : "info" as const,
+          params: { warningCode: native === undefined ? "REASONING_EFFORT_NOT_APPLIED" : "REASONING_EFFORT_DOWNGRADED" } }
+      };
+    }
+    // Keep the original four-level request intact. Only native carriers map it.
+    yield* invoke.call(adapter, request, context);
+  } });
 }
 
 /**

@@ -1,3 +1,4 @@
+import { mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * Claude Code local CLI transport and event normalization layer.
@@ -122,7 +123,7 @@ export async function buildClaudeCommand(
   ];
   if (req.providerSession?.sessionId) args.push("--resume", req.providerSession.sessionId);
   if (req.agentConfig?.model) args.push("--model", req.agentConfig.model);
-  const effort = req.agentConfig?.effort;
+  const effort = mapReasoningEffort("claude-code", req.agentConfig?.effort);
   if (effort) args.push("--effort", effort);
   args.push("--permission-mode", mode);
   args.push("--permission-prompt-tool", "stdio");

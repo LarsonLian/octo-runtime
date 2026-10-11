@@ -1,3 +1,4 @@
+import { mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus, executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
 import { randomUUID } from "node:crypto";
 import {
@@ -87,7 +88,7 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
   const message = composeOpenClawPrompt(req);
   const timeout = finiteNumber(req.agentConfig.timeoutSeconds);
   const model = nonEmptyString(req.agentConfig.model);
-  const thinking = nonEmptyString(req.agentConfig.effort);
+  const thinking = mapReasoningEffort("openclaw", req.agentConfig.effort);
   const timeoutMilliseconds = timeout && timeout > 0 ? timeout * 1_000 : 30 * 60_000;
   const reconciliationGraceMilliseconds = Math.min(30_000, timeoutMilliseconds * 0.1);
   const createParams: JsonRecord = {

@@ -1,3 +1,4 @@
+import { mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -205,8 +206,7 @@ export function buildAntigravityCommand(request: InvokeRequest, command = "agy",
   for (const arg of commandArgsPrefix) {
     if (managedFlags.has(arg.split("=")[0]) || /^-[pic].+/.test(arg)) throw new Error(`ANTIGRAVITY_MANAGED_ARGUMENT: ${arg.split("=")[0]}`);
   }
-  const effort = request.agentConfig.effort;
-  if (effort && !["low", "medium", "high", "xhigh", "max"].includes(effort)) throw new Error("ANTIGRAVITY_EFFORT_UNSUPPORTED");
+  const effort = mapReasoningEffort("antigravity", request.agentConfig.effort);
   const args = [...commandArgsPrefix, "--input-format", "stream-json", "--output-format", "stream-json", "--dangerously-skip-permissions", "--mode", "accept-edits", "--print-timeout", "0"];
   if (logPath) args.push("--log-file", logPath);
   if (request.providerSession?.sessionId) args.push("--conversation", request.providerSession.sessionId);
