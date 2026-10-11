@@ -150,7 +150,7 @@ function findOnPath(executable: string): string | undefined {
   return undefined;
 }
 
-function childEnvironment(paths: EmbeddedHomePaths, account: EmbeddedAccountPaths): NodeJS.ProcessEnv {
+export function childEnvironment(paths: EmbeddedHomePaths, account: EmbeddedAccountPaths): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH ?? "",
     HOME: process.env.HOME ?? process.env.USERPROFILE ?? "",
@@ -158,6 +158,11 @@ function childEnvironment(paths: EmbeddedHomePaths, account: EmbeddedAccountPath
     OCTO_HARNESS_HOME: paths.home,
     OCTO_HARNESS_LOG_DIR: account.logs
   };
+  // Preserve the host's explicit network routing, including loopback bypasses.
+  // Do not inherit arbitrary application credentials into the runtime process.
+  for (const key of ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"]) {
+    if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
   if (process.platform === "win32") {
     for (const key of [
       "SystemRoot", "SystemDrive", "COMSPEC", "PATHEXT", "TEMP", "TMP", "USERPROFILE",
