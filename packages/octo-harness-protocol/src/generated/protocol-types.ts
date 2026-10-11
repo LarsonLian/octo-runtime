@@ -1824,6 +1824,14 @@ export interface ResolvedCapabilityResource {
   invoke: boolean;
   components?: string[];
   revision: number;
+  /**
+   * Ephemeral per-server credentials returned by authorized resource preparation; never part of files or digest.
+   */
+  mcp_credentials?: {
+    [k: string]: {
+      [k: string]: string;
+    };
+  };
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema

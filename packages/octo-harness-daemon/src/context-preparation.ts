@@ -148,7 +148,7 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
           const component = "mcp:" + name;
           if (resource.components && !resource.components.includes(component)) continue;
           try {
-            const server = await prepareMcpServer(value, root, data);
+            const server = await prepareMcpServer(value, root, data, resource.mcp_credentials?.[name]);
             const scopedName = "p_" + installation.slice(0, 12) + "_" + name;
             if (scopedName.length > 64 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(scopedName)) throw new TypeError("MCP_NAME_UNSUPPORTED");
             prepared.mcpServers[scopedName] = server;
@@ -232,17 +232,29 @@ async function materializeResource(stateRoot: string, resource: ResolvedCapabili
   return root;
 }
 
-async function prepareMcpServer(value: unknown, root: string, data: string): Promise<McpServers[string]> {
+async function prepareMcpServer(value: unknown, root: string, data: string, credentials?: Record<string, string>): Promise<McpServers[string]> {
+  let octo = false;
+  if (record(value) && Object.hasOwn(value, "octo_auth")) {
+    const auth = value.octo_auth;
+    if (!record(auth) || typeof auth.service_subject_id !== "string" || !auth.service_subject_id
+      || ![auth.allowed_tools, auth.resource_refs].every(items => Array.isArray(items) && items.length > 0 && items.length <= 128 && items.every(item => typeof item === "string" && item.length > 0 && item.length <= 512))) throw new TypeError("MCP_OCTO_AUTH_INVALID");
+    if (value.type !== "streamable-http" || !credentials?.Authorization?.startsWith("Bearer octo_run_") || !credentials["X-Space-ID"] || !credentials["X-Namespace"])
+      throw new TypeError("MCP_OCTO_CREDENTIALS_REQUIRED");
+    if (record(value.headers) && Object.keys(value.headers).some(key => /^(authorization|x-space-id|x-namespace)$/i.test(key))) throw new TypeError("MCP_AUTH_CONFLICT");
+    const { octo_auth: _, ...server } = value;
+    value = server;
+    octo = true;
+  } else if (credentials !== undefined) throw new TypeError("MCP_CREDENTIAL_TARGET_MISMATCH");
   if (!serverValidator(value) || !record(value)) throw new TypeError("MCP_CONFIG_INVALID");
   if (value.type === "sse") throw new TypeError("MCP_TRANSPORT_UNSUPPORTED");
   if (value.type === "streamable-http") {
     const url = new URL(value.url);
     if (url.username || url.password || url.hash || !["http:", "https:"].includes(url.protocol)
       || url.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) throw new TypeError("MCP_URL_INVALID");
-    const headers = value.headers as Record<string, string> | undefined;
+    const headers = octo ? { ...(value.headers as Record<string, string> ?? {}), ...credentials } : value.headers as Record<string, string> | undefined;
     const names = new Set<string>();
     for (const [key, entry] of Object.entries(headers ?? {})) {
-      if (names.has(key.toLowerCase()) || /[\r\n]/.test(key + entry) || /^(authorization|cookie|proxy-authorization)$/i.test(key)) throw new TypeError("MCP_PACKAGE_CREDENTIALS_FORBIDDEN");
+      if (names.has(key.toLowerCase()) || /[\r\n]/.test(key + entry)) throw new TypeError("MCP_PACKAGE_CREDENTIALS_FORBIDDEN");
       names.add(key.toLowerCase());
     }
     return { type: "streamable_http", url: url.href, ...(headers ? { headers } : {}) };

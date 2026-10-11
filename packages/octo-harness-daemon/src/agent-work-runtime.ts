@@ -21,7 +21,6 @@ import type {
   CanonicalEvent,
   ChannelContextDescriptor,
   ContextEnvelope,
-  ContextSyncRequest,
   ContextSyncResult,
   InteractionResponse,
   InvokeRequest,
@@ -1998,7 +1997,7 @@ export class AgentWorkRuntime {
     // Reliable trigger path repairs a dropped best-effort append before selection.
 	contextStore.append({ agent_key: envelope.agent_run_request.agent_key, scope: descriptor.scope, facts: [descriptor.trigger_fact] });
     const adapterCapabilities = this.#adapterCapabilities.get(adapterType);
-    if (contextStore.needsSync(descriptor.scope)) await this.#requestContextSync(runKey, descriptor, signal);
+    // Initial history is supplied by the App; Worker does not proxy business history.
     while (this.#isCurrentLifecycle(epoch)) {
       throwIfAcceptingAborted(signal);
       try {
@@ -2024,52 +2023,6 @@ export class AgentWorkRuntime {
       }
     }
     throw new RuntimeStoppingError();
-  }
-
-  async #requestContextSync(runKey: string, descriptor: ChannelContextDescriptor, signal: AbortSignal): Promise<void> {
-    const contextStore = this.#contextStore;
-    if (!contextStore) return;
-    const requestId = `ctx_sync_${randomUUID()}`;
-    const afterSeq = contextStore.syncAfterSeq(descriptor.scope);
-    const request: ContextSyncRequest = {
-      request_id: requestId,
-      run_key: runKey,
-      scope: descriptor.scope,
-      trigger_message_id: descriptor.trigger_message_id,
-      ...(descriptor.trigger_seq === undefined ? {} : { trigger_seq: descriptor.trigger_seq }),
-      ...(afterSeq === undefined ? {} : { after_seq: afterSeq }),
-      limit: Math.min(this.#options.channelContext?.maxProjectedMessages ?? DEFAULT_CONTEXT_SYNC_LIMIT, 100)
-    };
-    const scopeKey = channelScopeKey(descriptor.scope);
-    const wait = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.#resolveContextSync(requestId);
-      }, this.#options.channelContext?.syncTimeoutMs ?? DEFAULT_CONTEXT_SYNC_TIMEOUT_MS);
-      timer.unref?.();
-      const onAbort = (): void => {
-        this.#resolveContextSync(requestId, acceptingAbortError(signal));
-      };
-      this.#pendingContextSyncs.set(requestId, {
-        scopeKey,
-        triggerMessageId: descriptor.trigger_message_id,
-        ...(descriptor.trigger_seq === undefined ? {} : { triggerSeq: descriptor.trigger_seq }),
-        ...(afterSeq === undefined ? {} : { afterSeq }),
-        resolve,
-        reject,
-        timer,
-        signal,
-        onAbort
-      });
-      this.#latestContextSyncByScope.set(scopeKey, requestId);
-      signal.addEventListener("abort", onAbort, { once: true });
-      if (signal.aborted) onAbort();
-    });
-    try {
-      this.#send("context.sync_request", request);
-    } catch {
-      this.#resolveContextSync(requestId);
-    }
-    await wait;
   }
 
   #resolveContextSync(requestId: string, error?: Error): void {
@@ -2515,8 +2468,7 @@ export function mapExecutionEnvelope(
   };
   const runtimeLimits = mapExecutionRuntimeLimits(profile.runtime_limits);
   const mcpServers = mapExecutionMcpServers({ ...profile.mcp_servers, ...preparedResources?.mcpServers });
-  const frozenMcpServers = Object.fromEntries(["octo_task", "octo_team"].flatMap(name => {
-    const server = envelope.resolved_execution_plan.mcp_servers?.[name];
+  const frozenMcpServers = Object.fromEntries(Object.entries({ ...profile.mcp_servers, ...preparedResources?.mcpServers }).flatMap(([name, server]) => {
     return server?.type === "streamable_http" ? [[name, runMcpServerHash(server)]] : [];
   }));
   const workdir = preparedResources?.workdir ?? profile.workdir;

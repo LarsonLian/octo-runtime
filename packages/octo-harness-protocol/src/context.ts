@@ -327,7 +327,12 @@ export function assertCapabilityResources(value: unknown): void {
   if (!Array.isArray(value) || value.length > 32) throw new TypeError("CONTEXT_RESOURCE_INVALID");
   for (const resource of value) {
     object(resource, "CONTEXT_RESOURCE_INVALID");
-    fields(resource, ["resource_key", "kind", "revision", "digest", "files", "sources", "invoke", "components"]);
+    fields(resource, ["resource_key", "kind", "revision", "digest", "files", "sources", "invoke", "components", "mcp_credentials"]);
+    if (resource.mcp_credentials !== undefined) {
+      object(resource.mcp_credentials, "CONTEXT_RESOURCE_INVALID");
+      if (Object.keys(resource.mcp_credentials).length > 32) throw new TypeError("CONTEXT_RESOURCE_INVALID");
+      for (const headers of Object.values(resource.mcp_credentials)) assertStringRecord(headers, "mcp_credentials", 64);
+    }
     text(resource.resource_key); integer(resource.revision, 1);
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(resource.resource_key)) throw new TypeError("CONTEXT_RESOURCE_INVALID");
     if (!["agent_plugin", "skill", "connector", "knowledge"].includes(String(resource.kind)) || typeof resource.digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(resource.digest) || typeof resource.invoke !== "boolean") throw new TypeError("CONTEXT_RESOURCE_INVALID");

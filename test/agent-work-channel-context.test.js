@@ -28,7 +28,7 @@ const fact = (seq, text) => ({
   parts: [{ type: "text", text }]
 });
 
-test("Agent Work channel context sync becomes one provider turn and commits only after durable terminal ACK", async () => {
+test("App supplied channel facts become one provider turn without a Worker history request", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-channel-runtime-"));
   const httpServer = createServer();
   const wsServer = new WebSocketServer({ noServer: true });
@@ -55,7 +55,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
       const envelope = JSON.parse(data.toString("utf8"));
       if (envelope.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
-		websocket.send(wire("context.append", { agent_key: "agent-1", scope, facts: [fact(2, "second background")] }));
+		websocket.send(wire("context.append", { agent_key: "agent-1", scope, facts: [fact(1, "first background"), fact(2, "second background")] }));
         websocket.send(wire("runtime.command", {
           server_seq: 1,
           command_key: "command-e2e",
@@ -67,18 +67,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
         }));
         return;
       }
-      if (envelope.type === "context.sync_request") {
-        assert.equal(envelope.payload.limit, 40);
-        assert.equal(envelope.payload.run_key, "run-e2e");
-        websocket.send(wire("context.sync_result", {
-          request_id: envelope.payload.request_id,
-          scope,
-          facts: [fact(1, "first background"), fact(2, "second background")],
-          completeness: "complete",
-          through_seq: 2
-        }));
-        return;
-      }
+      if (envelope.type === "context.sync_request") assert.fail("Runtime must not ask Worker for App history");
       if (envelope.type === "run.event_batch") {
         const terminal = envelope.payload.events.find(event => event.type === "run.completed");
         websocket.send(wire("event.ack", {
@@ -133,7 +122,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
     assert.match(providerRequest.modelInput, /first background/);
     assert.match(providerRequest.modelInput, /second background/);
     assert.doesNotMatch(providerRequest.modelInput, /trigger current.*trigger current/s);
-    assert.equal(providerRequest.contextSnapshot.completeness, "complete");
+    assert.notEqual(providerRequest.contextSnapshot.completeness, "complete", "best-effort append must not claim a verified history read");
 
     await runtime.close();
     runtime = undefined;
@@ -149,7 +138,7 @@ test("Agent Work channel context sync becomes one provider turn and commits only
   }
 });
 
-test("invalid or late sync results do not pollute context and a rejected cursor commit retains terminal outbox", async () => {
+test("unsolicited history results do not pollute context and a rejected cursor commit retains terminal outbox", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-channel-runtime-reject-"));
   const contextPath = join(directory, "channel-context.db");
   const outboxPath = join(directory, "agent-work.db");
@@ -194,28 +183,7 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
         }));
         return;
       }
-      if (envelope.type === "context.sync_request") {
-        // Same request ID but wrong scope must neither write nor resolve the pending request.
-        websocket.send(wire("context.sync_result", {
-          request_id: envelope.payload.request_id,
-          scope: mismatchedScope,
-          facts: [fact(1, "wrong scope")],
-          completeness: "complete",
-          through_seq: 1
-        }));
-        setTimeout(() => {
-          // This matches, but arrives after the bounded request timed out.
-          websocket.send(wire("context.sync_result", {
-            request_id: envelope.payload.request_id,
-            scope,
-            facts: [fact(1, "late")],
-            completeness: "complete",
-            through_seq: 1
-          }));
-          lateResultSent.resolve();
-        }, 60);
-        return;
-      }
+      if (envelope.type === "context.sync_request") assert.fail("Runtime must not ask Worker for App history");
       if (envelope.type === "run.event_batch") {
         const terminal = envelope.payload.events.find(event => event.type === "run.completed");
         if (terminal && !terminalHandled) {
@@ -263,7 +231,7 @@ test("invalid or late sync results do not pollute context and a rejected cursor 
     }, host);
     await runtime.start();
     await withTimeout(terminalAckSent.promise, 3_000, "rejected terminal ACK timeout");
-    await withTimeout(lateResultSent.promise, 3_000, "late context result timeout");
+
     await new Promise(resolve => setTimeout(resolve, 50));
     await runtime.close();
     runtime = undefined;
@@ -325,16 +293,7 @@ test("context cursor fails closed when the durable ACK lacks matching terminal a
         sendStart(1);
         return;
       }
-      if (envelope.type === "context.sync_request") {
-        websocket.send(wire("context.sync_result", {
-          request_id: envelope.payload.request_id,
-          scope,
-          facts: [fact(1, "first"), fact(2, "second")],
-          completeness: "complete",
-          through_seq: 2
-        }));
-        return;
-      }
+      if (envelope.type === "context.sync_request") assert.fail("Runtime must not ask Worker for App history");
       if (envelope.type !== "run.event_batch") return;
       const terminal = envelope.payload.events.find(event => event.type === "run.completed");
       const index = Number(envelope.payload.run_key.split("-").at(-1));
@@ -468,16 +427,7 @@ test("a later run waits for the prior durable cursor commit and then freezes fro
         }));
         return;
       }
-      if (envelope.type === "context.sync_request") {
-        websocket.send(wire("context.sync_result", {
-          request_id: envelope.payload.request_id,
-          scope,
-          facts: [fact(1, "first background"), fact(2, "second background")],
-          completeness: "complete",
-          through_seq: 2
-        }));
-        return;
-      }
+      if (envelope.type === "context.sync_request") assert.fail("Runtime must not ask Worker for App history");
       if (envelope.type === "command.ack" && envelope.payload.command_key === "command-next") {
         secondAckSeen = true;
         secondAckCount += 1;
@@ -1011,6 +961,7 @@ test("append-only channel context cold-starts an adapter without continuity reco
       const envelope = JSON.parse(data.toString("utf8"));
       if (envelope.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("context.append", { agent_key: "agent-e2e", scope, facts: [fact(1, "background message")] }));
         const payload = executionEnvelope("runtime-capability", "run-stateless", 2, "current message");
         payload.provider_session = { sessionId: "stale-provider-session", resumable: true };
         websocket.send(wire("runtime.command", {
@@ -1023,15 +974,7 @@ test("append-only channel context cold-starts an adapter without continuity reco
           fencing_token: 1
         }));
       }
-      if (envelope.type === "context.sync_request") {
-        websocket.send(wire("context.sync_result", {
-          request_id: envelope.payload.request_id,
-          scope,
-          facts: [fact(1, "background message")],
-          completeness: "complete",
-          through_seq: 1
-        }));
-      }
+      if (envelope.type === "context.sync_request") assert.fail("Runtime must not ask Worker for App history");
       if (envelope.type === "command.ack" && envelope.payload.command_key === "command-stateless") {
         accepted.resolve(envelope.payload);
       }
@@ -1124,6 +1067,7 @@ test("append-only channel context accepts an adapter without serialized sessions
       const envelope = JSON.parse(data.toString("utf8"));
       if (envelope.type === "runtime.hello") {
         websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("context.append", { agent_key: "agent-e2e", scope, facts: [fact(1, "background message")] }));
         websocket.send(wire("runtime.command", {
           server_seq: 1,
           command_key: "command-stateless",
@@ -1134,15 +1078,7 @@ test("append-only channel context accepts an adapter without serialized sessions
           fencing_token: 1
         }));
       }
-      if (envelope.type === "context.sync_request") {
-        websocket.send(wire("context.sync_result", {
-          request_id: envelope.payload.request_id,
-          scope,
-          facts: [fact(1, "background message")],
-          completeness: "complete",
-          through_seq: 1
-        }));
-      }
+      if (envelope.type === "context.sync_request") assert.fail("Runtime must not ask Worker for App history");
       if (envelope.type === "command.ack" && envelope.payload.command_key === "command-stateless") {
         accepted.resolve(envelope.payload);
       }
@@ -1251,6 +1187,7 @@ for (const [projection, providerPersistence] of [["window", "append_only"], ["de
         const frame = JSON.parse(data.toString("utf8"));
         if (frame.type === "runtime.hello") {
           websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+          websocket.send(wire("context.append", { agent_key: "agent-e2e", scope, facts: [fact(1, "cold first background")] }));
           sendStart(websocket, 1);
         } else if (frame.type === "context.sync_request") {
           websocket.send(wire("context.sync_result", {

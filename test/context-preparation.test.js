@@ -87,9 +87,9 @@ test("corrupt cached packages and invalid frontmatter cannot become prepared ski
   await assert.rejects(f.prepare([resource({ "SKILL.md": "---\nname: context-proof\nname: duplicate\ndescription: test\n---\n" }, { kind: "skill" })]), /SKILL_FRONTMATTER_INVALID|CONTEXT_SKILL_UNAVAILABLE/);
 });
 
-test("unsupported MCP transports and package credentials fail explicitly", async t => {
+test("unsupported MCP transports fail explicitly", async t => {
   const f = await fixture(t);
-  for (const server of [{ type: "sse", url: "https://example.test/mcp" }, { type: "streamable-http", url: "https://example.test/mcp", headers: { Authorization: "secret" } }]) {
+  for (const server of [{ type: "sse", url: "https://example.test/mcp" }]) {
     const files = plugin();
     files["mcp.json"] = JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json", mcpServers: { local: server } });
     await assert.rejects(f.prepare([resource(files)]), /CONTEXT_COMPONENT_UNAVAILABLE/);
@@ -159,4 +159,26 @@ test("knowledge FileBundle exposes the full immutable tree without executing ski
   assert.equal(await readFile(join(prepared.knowledge[0].root, "facts/a.txt"), "utf8"), "evidence");
   assert.deepEqual(prepared.receipt.resources[0].components, ["knowledge:files"]);
   await assert.rejects(f.prepare([{ ...knowledge, invoke: true }]), /KNOWLEDGE_SELECTION_INVALID/);
+});
+
+
+test("Octo credentials are required, target-specific, and absent from package bytes and receipts", async t => {
+  const f = await fixture(t);
+  const files = plugin();
+  files["mcp.json"] = JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json", mcpServers: {
+    octo: { type: "streamable-http", url: "https://intranet.example/mcp", octo_auth: { service_subject_id: "tools", allowed_tools: ["read"], resource_refs: ["document:a"] } },
+    third: { type: "streamable-http", url: "https://external.example/mcp", headers: { Authorization: "Bearer external" } }
+  }});
+  const selected = resource(files);
+  await assert.rejects(f.prepare([selected]), /CONTEXT_COMPONENT_UNAVAILABLE/);
+  selected.mcp_credentials = { octo: { Authorization: "Bearer octo_run_test", "X-Space-ID": "space", "X-Namespace": "app" } };
+  const prepared = await f.prepare([selected]);
+  const servers = Object.values(prepared.mcpServers);
+  assert.equal(servers.find(server => server.url.includes("intranet")).headers.Authorization, "Bearer octo_run_test");
+  assert.equal(servers.find(server => server.url.includes("external")).headers.Authorization, "Bearer external");
+  assert.equal(JSON.stringify(prepared.receipt).includes("octo_run_test"), false);
+  const bytes = await readFile(join(prepared.receipt.resources[0].root, "mcp.json"), "utf8");
+  assert.equal(bytes.includes("octo_run_test"), false);
+  selected.mcp_credentials.third = selected.mcp_credentials.octo;
+  await assert.rejects(f.prepare([selected]), /CONTEXT_COMPONENT_UNAVAILABLE/);
 });
