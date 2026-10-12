@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { canonicalScenarioPolicy, assertScenarioPolicy } from '../packages/octo-harness-protocol/dist/index.js';
+import { canonicalScenarioPolicy, assertScenarioPolicy, assertScenarioRequest } from '../packages/octo-harness-protocol/dist/index.js';
 import { scenarioInstructions } from '../packages/octo-harness-daemon/dist/scenario-context.js';
 import { ContextBuilderRegistry } from '../packages/octo-harness-context-builder/dist/index.js';
 const snapshots = JSON.parse(readFileSync(new URL('../packages/octo-harness-protocol/schema/scenario-policy-fixtures.json', import.meta.url)));
@@ -28,4 +28,21 @@ test('registry is deterministic, has no fallback, enforces captured selection bu
  assert.throws(()=>registry.build('other',{}),/NOT_FOUND/);
  assert.throws(()=>registry.build(request.scenario_id,{kind:'document_selection',document_id:'doc',text:'中'.repeat(12000)}),/INVALID/);
  const built=registry.build(request.scenario_id,{kind:'document_selection',document_id:'doc',text:'selection'});assert.deepEqual(built.scenario,request);
+});
+
+test('Loop scenarios validate v3 without document selection and match Go policy hashes',()=>{
+ const empty={schema:'octo.context-envelope/v3',items:[]};
+ for (const [scenario_id,builder_id,hash] of [
+  ['loop_discussion','loop-discussion','sha256:b0b84b16d6d80f6da24ada596fbd314af70f51f5b921ca83e0bef292a697c728'],
+  ['loop_task','loop-task','sha256:acda241c0bccbf581221f07e10aba538e99e39c25f7e113f125b6acca22b4c08'],
+ ]) {
+  const request={scenario_id,builder_id,builder_version:'1'};
+  const snapshot={scenario_id,version:1,instructions:[],default_skills:[],hash};
+  assert.doesNotThrow(()=>assertScenarioRequest(request,empty));
+  assert.throws(()=>assertScenarioRequest({...request,builder_id:'doc-selection'},empty),/UNSUPPORTED/);
+  assert.throws(()=>assertScenarioRequest(request,{schema:'octo.context-envelope/v2',items:[]}),/CONTEXT/);
+  assert.equal('sha256:'+createHash('sha256').update(canonicalScenarioPolicy(snapshot)).digest('hex'),hash);
+  assert.deepEqual(scenarioInstructions(request,snapshot,empty),[]);
+  assert.throws(()=>scenarioInstructions(request,{...snapshot,scenario_id:'doc.selection.review'},empty),/MISMATCH/);
+ }
 });
