@@ -6,6 +6,26 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { archiveDiscussionOutputs, DISCUSSION_OUTPUT_SCHEMA, discussionOutputManifestPath } from "../packages/octo-harness-daemon/dist/discussion-outputs.js";
+import { TaskMcpClient } from "../packages/octo-harness-daemon/dist/task-materials.js";
+
+test("trusted output errors retain only bounded business codes", async t => {
+  let failure = "TASK_DRIVE_OWNER_MISMATCH";
+  const server = createServer(async (request, response) => {
+    const chunks = []; for await (const chunk of request) chunks.push(chunk);
+    const rpc = JSON.parse(Buffer.concat(chunks).toString());
+    response.setHeader("Content-Type", "application/json");
+    if (rpc.method === "notifications/initialized") { response.writeHead(202); response.end(); return; }
+    const result = rpc.method === "initialize" ? { protocolVersion: "2025-03-26" } : { isError: true, structuredContent: { error: { code: failure, detail: "private detail must not be retained" } } };
+    response.end(JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result }));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const client = new TaskMcpClient({ type: "streamable_http", url: `http://127.0.0.1:${server.address().port}/mcp` }, new AbortController().signal);
+  await client.initialize();
+  await assert.rejects(client.call("discussion_prepare_output", {}), /^TypeError: TASK_DRIVE_OWNER_MISMATCH$/);
+  failure = "https://private.example/credential";
+  await assert.rejects(client.call("discussion_prepare_output", {}), /^TypeError: TASK_MCP_TOOL_FAILED$/);
+});
 
 test("Discussion text-only result needs no manifest or plugin", async t => {
   const workdir = await mkdtemp(join(tmpdir(), "oh-discussion-text-"));

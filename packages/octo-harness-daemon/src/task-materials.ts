@@ -69,6 +69,9 @@ export class TaskMcpClient {
           const pending = error && typeof error === "object" && !Array.isArray(error)
             && (error as Record<string, unknown>).code === "TASK_RESULT_BINDING_PENDING";
           if (!pending || ![TASK_MATERIAL_TOOL, "task_authorize_material_snapshot"].includes(tool)) {
+            // 只传递可信结构化业务错误码；不把服务端详情、URL 或凭据写入公共收据。
+            const code = error && typeof error === "object" && !Array.isArray(error) ? (error as Record<string, unknown>).code : undefined;
+            if (typeof code === "string" && /^(TASK|DISCUSSION)_[A-Z_]{1,80}$/.test(code)) throw new TypeError(code);
             throw new TypeError("TASK_MCP_TOOL_FAILED");
           }
           // Run admission can precede Access's registration ACK. Repeat only this read with its frozen grant and arguments.
