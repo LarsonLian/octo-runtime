@@ -31,11 +31,11 @@ test("selected facts and trusted control entries compile into different channels
   assert.deepEqual(input, before);
 });
 
-test("removed delivery policy is rejected rather than filtering input", () => {
+test("unknown delivery policy is ignored without filtering recognized facts", () => {
   const input = { ...context, items: [...context.items,
     { namespace: "octo.content", name: "delivery_policy", payload: { focus: ["doc/1"], budget: { max_items: 1 } } }
   ] };
-  assert.throws(() => compileRunContext(input), /CONTEXT_TYPE_UNSUPPORTED/);
+  assert.deepEqual(compileRunContext(input), compileRunContext(context));
 });
 
 test("unimplemented external resolvers fail closed instead of losing Context items", () => {

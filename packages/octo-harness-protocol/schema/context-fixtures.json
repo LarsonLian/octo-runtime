@@ -196,8 +196,7 @@
   },
   {
     "name": "unknown-type",
-    "valid": false,
-    "error": "CONTEXT_TYPE_UNSUPPORTED",
+    "valid": true,
     "context": {
       "schema": "octo.context-envelope/v3",
       "items": [
@@ -4722,8 +4721,7 @@
   },
   {
     "name": "removed-aggregate-config",
-    "valid": false,
-    "error": "CONTEXT_TYPE_UNSUPPORTED",
+    "valid": true,
     "context": {
       "schema": "octo.context-envelope/v3",
       "items": [
@@ -4737,8 +4735,7 @@
   },
   {
     "name": "removed-requirements-type",
-    "valid": false,
-    "error": "CONTEXT_TYPE_UNSUPPORTED",
+    "valid": true,
     "context": {
       "schema": "octo.context-envelope/v3",
       "items": [

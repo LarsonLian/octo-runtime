@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
 export { runMcpServerHash } from "./context-hash.js";
 export { contextHash } from "./context-hash.js";
+export { assertContextExtensionsSnapshot } from './context-extensions.js';
+export type { ContextExtensionsSnapshot, ContextExtensionResult } from './generated/protocol-types.js';
 import { assertExperiencePayload } from "./experience.js";
 import { assertModelInputParts, assertImageRecoveryParts, hasImageInput } from "./multimodal.js";
 export { IMAGE_INPUT_LIMITS, IMAGE_INPUT_MIME_TYPES, assertModelInputParts, providerInputParts, hasImageInput, modelPartsFromInput } from "./multimodal.js";
 import { assertAgentSource, assertApprovalMode, assertContextEnvelope, assertJsonValue, assertMcpServers, contextItem } from "./context.js";
 export { APPROVAL_MODES, CONTEXT_SCHEMA, CONTEXT_MAX_BYTES, CONTEXT_MAX_ITEMS, RUNTIME_RUN_CONTRACT, RESOURCE_CONTEXT_KINDS, assertAgentSource, assertApprovalMode, assertContextEnvelope, assertCapabilityResources, assertMcpServers, assertResolvedExecutionPlan, canonicalContext, contextItem, contextResourceReferences, mergeContext } from "./context.js";
 export { RUNTIME_SELECTION_SCHEMA, assertResolvedRuntimeSelection } from "./runtime-selection.js";
-export { CONTEXT_CATALOG_VERSION, CONTEXT_TYPE_CATALOG, contextTypeDefinition, assertContextProcessorCoverage } from "./context-catalog.js";
+export { CONTEXT_CATALOG_VERSION, CONTEXT_TYPE_CATALOG, contextTypeDefinition, findContextTypeDefinition, assertContextProcessorCoverage } from "./context-catalog.js";
 export type { ContextStage, ContextOutput, ContextTypeDefinition } from "./context-catalog.js";
 export { assertContextConfiguration, resolveContextConfiguration } from "./context-configuration.js";
 import { assertContextApplicationEvidence } from "./context-application.js";

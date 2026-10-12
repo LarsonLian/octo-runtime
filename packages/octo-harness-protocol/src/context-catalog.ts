@@ -44,17 +44,21 @@ export const CONTEXT_TYPE_CATALOG: readonly ContextTypeDefinition[] = Object.fre
 ]);
 
 export function contextTypeDefinition(namespace: string, name: string): ContextTypeDefinition {
-  const definition = CONTEXT_TYPE_CATALOG.find(item => item.namespace === namespace && item.name === name);
+  const definition = findContextTypeDefinition(namespace, name);
   if (!definition) throw new TypeError(`CONTEXT_TYPE_UNSUPPORTED: ${namespace}/${name}`);
   return definition;
+}
+
+export function findContextTypeDefinition(namespace: string, name: string): ContextTypeDefinition | undefined {
+  return CONTEXT_TYPE_CATALOG.find(item => item.namespace === namespace && item.name === name);
 }
 
 export function assertContextProcessorCoverage(context: ContextEnvelope, stage: ContextStage, supportedKeys: ReadonlySet<string>): void {
   assertContextEnvelope(context);
   for (const item of context.items) {
-    const definition = contextTypeDefinition(item.namespace, item.name);
+    const definition = findContextTypeDefinition(item.namespace, item.name);
     const key = `${item.namespace}/${item.name}`;
-    if (definition.stages.includes(stage) && !supportedKeys.has(key)) {
+    if (definition?.stages.includes(stage) && !supportedKeys.has(key)) {
       throw new TypeError(`CONTEXT_PROCESSOR_UNAVAILABLE: ${stage}: ${key}`);
     }
   }

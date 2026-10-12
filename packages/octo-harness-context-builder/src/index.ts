@@ -1,6 +1,7 @@
 import { assertScenarioRequest, type ContextEnvelope, type ScenarioRequest } from '@mininglamp-oss/octo-harness-protocol/browser';
 import { assertObjectSelectionSnapshot, type ObjectSelectionSnapshot } from './object-selection.js';
 export * from './object-selection.js';
+export * from './providers.js';
 export const CONTEXT_BUILDER_SCHEMA = 'octo.context-builder/v1';
 export interface DocumentSelectionSnapshot { kind: 'document_selection'; document_id: string; document_version?: string; text: string }
 export type AwarenessSnapshot = DocumentSelectionSnapshot | ObjectSelectionSnapshot;

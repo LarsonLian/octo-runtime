@@ -115,9 +115,9 @@ test("Context schema constants and registered handlers stay aligned", () => {
   assert.equal(schema["x-octo-unicode-scalar-strings"], true);
   assert.equal(schema.definitions.ContextEnvelope["x-octo-unicode-scalar-strings"], true);
   assert.deepEqual(schema.definitions.ApprovalMode.enum, APPROVAL_MODES);
-  const registered = schema.definitions.ContextItem.oneOf.flatMap(branch =>
-    (branch.properties.namespace.enum ?? [branch.properties.namespace.const]).map(namespace => JSON.stringify([namespace, branch.properties.name.const])));
-  const covered = new Set(fixtures.filter(fixture => fixture.valid && fixture.context).flatMap(fixture => fixture.context.items.map(item => JSON.stringify([item.namespace, item.name]))));
+  const registered = schema.definitions.ContextItem.allOf.flatMap(branch =>
+    (branch.if.properties.namespace.enum ?? [branch.if.properties.namespace.const]).map(namespace => JSON.stringify([namespace, branch.if.properties.name.const])));
+  const covered = new Set(fixtures.filter(fixture => fixture.valid && fixture.context).flatMap(fixture => fixture.context.items.map(item => JSON.stringify([item.namespace, item.name]))).filter(key => registered.includes(key)));
   assert.deepEqual([...covered].sort(), registered.sort());
 });
 

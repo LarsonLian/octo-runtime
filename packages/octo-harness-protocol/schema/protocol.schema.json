@@ -264,7 +264,7 @@
     },
     "ContextItem": {
       "title": "ContextItem",
-      "description": "Registered Context types. Payload schemas below are authoritative; the TypeScript envelope stays an opaque dictionary until runtime validation.",
+      "description": "Open Context item. Built-in types retain their payload contracts; unknown optional types are preserved and ignored by unsupported consumers.",
       "tsType": "{ namespace: string; name: string; payload: Record<string, unknown> }",
       "type": "object",
       "additionalProperties": false,
@@ -290,173 +290,251 @@
           "tsType": "Record<string, unknown>"
         }
       },
-      "oneOf": [
+      "allOf": [
         {
-          "properties": {
-            "namespace": {
-              "const": "octo.execution"
-            },
-            "name": {
-              "const": "adapter"
-            },
-            "payload": {
-              "$ref": "#/definitions/ContextAdapterPayload"
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.execution"
+              },
+              "name": {
+                "const": "adapter"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextAdapterPayload"
+              }
             }
           }
         },
         {
-          "properties": {
-            "namespace": {
-              "const": "octo.execution"
-            },
-            "name": {
-              "const": "model"
-            },
-            "payload": {
-              "$ref": "#/definitions/ContextModelPayload"
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.execution"
+              },
+              "name": {
+                "const": "model"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextModelPayload"
+              }
             }
           }
         },
         {
-          "properties": {
-            "namespace": {
-              "const": "octo.execution"
-            },
-            "name": {
-              "const": "workspace"
-            },
-            "payload": {
-              "$ref": "#/definitions/ContextWorkspacePayload"
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.execution"
+              },
+              "name": {
+                "const": "workspace"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextWorkspacePayload"
+              }
             }
           }
         },
         {
-          "properties": {
-            "namespace": {
-              "const": "octo.execution"
-            },
-            "name": {
-              "const": "limits"
-            },
-            "payload": {
-              "$ref": "#/definitions/ContextLimitsPayload"
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.execution"
+              },
+              "name": {
+                "const": "limits"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextLimitsPayload"
+              }
             }
           }
         },
         {
-          "properties": {
-            "namespace": {
-              "const": "octo.runtime"
-            },
-            "name": {
-              "const": "selection"
-            },
-            "payload": {
-              "$ref": "#/definitions/ContextRuntimeSelectionPayload"
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.runtime"
+              },
+              "name": {
+                "const": "selection"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextRuntimeSelectionPayload"
+              }
             }
           }
         },
         {
-          "properties": {
-            "namespace": {
-              "const": "octo.security"
-            },
-            "name": {
-              "const": "approval_policy"
-            },
-            "payload": {
-              "$ref": "#/definitions/ContextApprovalPolicyPayload"
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.security"
+              },
+              "name": {
+                "const": "approval_policy"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextApprovalPolicyPayload"
+              }
             }
           }
         },
         {
-          "properties": {
-            "namespace": {
-              "const": "octo.resources"
-            },
-            "name": {
-              "const": "skills"
-            },
-            "payload": {
-              "$ref": "#/definitions/ContextSkillsPayload"
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.resources"
+              },
+              "name": {
+                "const": "skills"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextSkillsPayload"
+              }
             }
           }
         },
         {
-          "properties": {
-            "namespace": {
-              "const": "octo.resources"
-            },
-            "name": {
-              "const": "agent_plugins"
-            },
-            "payload": {
-              "$ref": "#/definitions/ContextAgentPluginsPayload"
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.resources"
+              },
+              "name": {
+                "const": "agent_plugins"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextAgentPluginsPayload"
+              }
             }
           }
         },
         {
-          "properties": {
-            "namespace": {
-              "const": "octo.resources"
-            },
-            "name": {
-              "const": "knowledge"
-            },
-            "payload": {
-              "$ref": "#/definitions/ContextKnowledgePayload"
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.resources"
+              },
+              "name": {
+                "const": "knowledge"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextKnowledgePayload"
+              }
             }
           }
         },
         {
-          "properties": {
-            "namespace": {
-              "const": "octo.resources"
-            },
-            "name": {
-              "const": "connectors"
-            },
-            "payload": {
-              "$ref": "#/definitions/ContextConnectorsPayload"
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.resources"
+              },
+              "name": {
+                "const": "connectors"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextConnectorsPayload"
+              }
             }
           }
         },
         {
-          "properties": {
-            "namespace": {
-              "const": "octo.content"
-            },
-            "name": {
-              "const": "inline"
-            },
-            "payload": {
-              "$ref": "#/definitions/ContextInlinePayload"
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.content"
+              },
+              "name": {
+                "const": "inline"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextInlinePayload"
+              }
             }
           }
         },
         {
-          "properties": {
-            "namespace": {
-              "const": "octo.content"
-            },
-            "name": {
-              "const": "references"
-            },
-            "payload": {
-              "$ref": "#/definitions/ContextReferencesPayload"
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.content"
+              },
+              "name": {
+                "const": "references"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextReferencesPayload"
+              }
             }
           }
         },
         {
-          "properties": {
-            "namespace": {
-              "const": "octo.control"
-            },
-            "name": {
-              "const": "instructions"
-            },
-            "payload": {
-              "$ref": "#/definitions/ContextInstructionsPayload"
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.control"
+              },
+              "name": {
+                "const": "instructions"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextInstructionsPayload"
+              }
             }
           }
         }
@@ -936,13 +1014,148 @@
                         }
                       }
                     }
+                  },
+                  {
+                    "anyOf": [
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.execution"
+                          },
+                          "name": {
+                            "const": "adapter"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.execution"
+                          },
+                          "name": {
+                            "const": "model"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.execution"
+                          },
+                          "name": {
+                            "const": "workspace"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.execution"
+                          },
+                          "name": {
+                            "const": "limits"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.runtime"
+                          },
+                          "name": {
+                            "const": "selection"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.security"
+                          },
+                          "name": {
+                            "const": "approval_policy"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.resources"
+                          },
+                          "name": {
+                            "const": "skills"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.resources"
+                          },
+                          "name": {
+                            "const": "agent_plugins"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.resources"
+                          },
+                          "name": {
+                            "const": "knowledge"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.resources"
+                          },
+                          "name": {
+                            "const": "connectors"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.content"
+                          },
+                          "name": {
+                            "const": "inline"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.content"
+                          },
+                          "name": {
+                            "const": "references"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.control"
+                          },
+                          "name": {
+                            "const": "instructions"
+                          }
+                        }
+                      }
+                    ]
                   }
                 ]
               }
             }
           }
         }
-      ]
+      ],
+      "tsType": "ContextEnvelope"
     },
     "ContextAdapterPayload": {
       "type": "object",
@@ -1757,6 +1970,9 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "context_extensions": {
+          "$ref": "#/definitions/ContextExtensionsSnapshot"
         }
       },
       "if": {
@@ -2367,7 +2583,10 @@
           }
         },
         "grantScope": {
-          "enum": ["request", "provider"]
+          "enum": [
+            "request",
+            "provider"
+          ]
         },
         "providerDetails": {
           "$ref": "#/definitions/ApprovalDisplayDetails"
@@ -4270,6 +4489,99 @@
         "policy_version",
         "policy_hash"
       ]
+    },
+    "ContextExtensionResult": {
+      "title": "ContextExtensionResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "name",
+        "status"
+      ],
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "maxLength": 96
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "maxLength": 96
+        },
+        "status": {
+          "enum": [
+            "material",
+            "ignored"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "not_configured",
+            "disabled",
+            "unsupported_version"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "material"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "text"
+            ],
+            "not": {
+              "required": [
+                "reason"
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "reason"
+            ],
+            "not": {
+              "required": [
+                "text"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "ContextExtensionsSnapshot": {
+      "title": "ContextExtensionsSnapshot",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "configuration_version",
+        "items"
+      ],
+      "properties": {
+        "configuration_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/definitions/ContextExtensionResult"
+          }
+        }
+      }
     }
   }
 }

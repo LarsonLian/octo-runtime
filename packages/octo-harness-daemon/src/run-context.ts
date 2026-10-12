@@ -1,10 +1,11 @@
 import type { PreparedCliBinding } from "./cli-bindings.js";
+import { assertContextExtensionsSnapshot } from '@mininglamp-oss/octo-harness-protocol';
 import { assertContextEnvelope, assertResolvedExecutionPlan, contextItem, contextResourceReferences, type ContextEnvelope, type ContextSelectionEntry, type ResolvedExecutionPlan, type PreparedSkill, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
 
 function executionValues(context: ContextEnvelope): Record<string, Record<string, unknown>> {
   const result: Record<string, Record<string, unknown>> = {};
   for (const item of [...context.items].sort((a, b) => `${a.namespace}/${a.name}` < `${b.namespace}/${b.name}` ? -1 : `${a.namespace}/${a.name}` > `${b.namespace}/${b.name}` ? 1 : 0)) {
-    if (item.namespace === "octo.execution" && item.name !== "model") result[item.name] = item.payload;
+    if (item.namespace === "octo.execution" && ["adapter", "workspace", "limits"].includes(item.name)) result[item.name] = item.payload;
     if (item.namespace === "octo.security" && item.name === "approval_policy") result.approval_policy = item.payload;
     if (item.namespace === "octo.runtime" && item.name === "selection") result.runtime = item.payload;
     if (item.namespace === "octo.execution" && item.name === "model") {
@@ -19,6 +20,7 @@ function executionValues(context: ContextEnvelope): Record<string, Record<string
 export function assertFrozenContextPlan(context: ContextEnvelope, plan: ResolvedExecutionPlan): void {
   assertContextEnvelope(context);
   assertResolvedExecutionPlan(plan);
+  if (plan.context_extensions) assertContextExtensionsSnapshot(plan.context_extensions, context);
   const execution = executionValues(context);
   const match = (field: string, property: string, actual: unknown): void => {
     if (execution[field]?.[property] !== actual) throw new TypeError("CONTEXT_PLAN_MISMATCH");

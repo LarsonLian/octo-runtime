@@ -17,7 +17,7 @@ export type NotificationMessage = NotificationMessage1;
  */
 export type ApprovalMode = "ask" | "assisted" | "full_access";
 /**
- * Registered Context types. Payload schemas below are authoritative; the TypeScript envelope stays an opaque dictionary until runtime validation.
+ * Open Context item. Built-in types retain their payload contracts; unknown optional types are preserved and ignored by unsupported consumers.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextItem".
@@ -27,11 +27,7 @@ export type ContextItem = {namespace: string; name: string; payload: Record<stri
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "PersistentContextEnvelope".
  */
-export type PersistentContextEnvelope = ContextEnvelope & {
-  items?: {
-    [k: string]: unknown;
-  }[];
-};
+export type PersistentContextEnvelope = ContextEnvelope;
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextModelSelectionPayload".
@@ -140,6 +136,11 @@ export type McpServers = Record<string, McpServer>;
  * via the `definition` "AgentSource".
  */
 export type AgentSource = "preset" | "provisioned";
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextExtensionResult".
+ */
+export type ContextExtensionResult = ContextExtensionResult1;
 /**
  * Provider-neutral assistant output channel. analysis is reasoning-class content gated by exposure; commentary is public in-run progress; final is answer content delivered only after the Run reaches a completed terminal state.
  *
@@ -2049,6 +2050,25 @@ export interface ResolvedExecutionPlan1 {
   provider_agent_id?: string;
   agent_source: AgentSource;
   required_execution_features?: string[];
+  context_extensions?: ContextExtensionsSnapshot;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextExtensionsSnapshot".
+ */
+export interface ContextExtensionsSnapshot {
+  configuration_version: string;
+  /**
+   * @maxItems 32
+   */
+  items: ContextExtensionResult[];
+}
+export interface ContextExtensionResult1 {
+  namespace: string;
+  name: string;
+  status: "material" | "ignored";
+  reason?: "not_configured" | "disabled" | "unsupported_version";
+  text?: string;
 }
 /**
  * Provider-native provenance written by the adapter. Audience projectors use it to audit public exposure and clients cannot override it.

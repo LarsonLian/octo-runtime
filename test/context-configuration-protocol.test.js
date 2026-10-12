@@ -29,8 +29,8 @@ for (const fixture of fixtures) {
 }
 
 test("catalog covers every schema branch, including grouped capability namespaces", () => {
-  const keys = schema.definitions.ContextItem.oneOf.flatMap(branch =>
-    (branch.properties.namespace.enum ?? [branch.properties.namespace.const]).map(namespace => `${namespace}/${branch.properties.name.const}`));
+  const keys = schema.definitions.ContextItem.allOf.flatMap(branch =>
+    (branch.if.properties.namespace.enum ?? [branch.if.properties.namespace.const]).map(namespace => `${namespace}/${branch.if.properties.name.const}`));
   assert.deepEqual(CONTEXT_TYPE_CATALOG.map(item => `${item.namespace}/${item.name}`).sort(), keys.sort());
   for (const item of CONTEXT_TYPE_CATALOG) {
     assert.ok(schema.definitions[item.schemaRef.split("/").at(-1)]);

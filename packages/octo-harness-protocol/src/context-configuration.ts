@@ -1,6 +1,6 @@
 import type { ContextConfiguration, ContextEnvelope, ContextItem, ContextCapabilityReference, ContextCapabilitySelectionPayload } from "./generated/protocol-types.js";
 import { assertContextEnvelope, canonicalContext, mergeContext, mergeReferences, CONTEXT_SCHEMA, RESOURCE_CONTEXT_KINDS } from "./context.js";
-import { contextTypeDefinition } from "./context-catalog.js";
+import { findContextTypeDefinition } from "./context-catalog.js";
 
 const empty = (): ContextEnvelope => ({ schema: CONTEXT_SCHEMA, items: [] });
 const keyOf = (item: ContextItem): string => `${item.namespace}/${item.name}`;
@@ -19,7 +19,7 @@ function validateLayers(configuration: ContextConfiguration): void {
   for (const envelope of [configuration.defaults, configuration.mandatory]) {
     assertContextEnvelope(envelope);
     for (const item of envelope.items) {
-      if (!contextTypeDefinition(item.namespace, item.name).persistent) throw new TypeError("CONTEXT_CONFIGURATION_TYPE_FORBIDDEN");
+      if (!findContextTypeDefinition(item.namespace, item.name)?.persistent) throw new TypeError("CONTEXT_CONFIGURATION_TYPE_FORBIDDEN");
     }
   }
 }

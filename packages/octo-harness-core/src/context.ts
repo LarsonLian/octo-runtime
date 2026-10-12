@@ -7,6 +7,7 @@ import {
   assertRuntimeLimits,
   contextHash,
   contextItem,
+  findContextTypeDefinition,
   mergeContext,
   type AgentConfig,
   type ContextEnvelope,
@@ -32,6 +33,7 @@ const LIMIT_NAMES = {
 export function assertLocalContext(context: unknown): asserts context is ContextEnvelope {
   assertContextEnvelope(context);
   for (const item of context.items) {
+    if (!findContextTypeDefinition(item.namespace, item.name)) continue;
     if (item.namespace === "octo.execution" || (item.namespace === "octo.security" && item.name === "approval_policy")) continue;
     throw new TypeError(`LOCAL_CONTEXT_TYPE_UNSUPPORTED: ${item.namespace}/${item.name}`);
   }

@@ -1,5 +1,6 @@
 import type { ApprovalMode, ContextEnvelope, ContextItem, McpServers, ResolvedExecutionPlan } from "./generated/protocol-types.js";
 import { RUNTIME_SELECTION_SCHEMA } from "./runtime-selection.js";
+import { assertContextExtensionsSnapshot } from "./context-extensions.js";
 
 export const CONTEXT_SCHEMA = "octo.context-envelope/v3" as const;
 export const RUNTIME_RUN_CONTRACT = Object.freeze({
@@ -79,7 +80,8 @@ export function mergeContext(defaults: ContextEnvelope, overrides: ContextEnvelo
 export function assertResolvedExecutionPlan(value: unknown): asserts value is ResolvedExecutionPlan {
   object(value, "RESOLVED_EXECUTION_PLAN_REQUIRED");
   assertJsonValue(value);
-  fields(value, ["agent_source", "adapter_type", "provider_agent_id", "workdir", "workspace", "resources", "approval_mode", "model", "effort", "required_capabilities", "required_execution_features", "runtime_limits", "mcp_servers", "provider_compatibility"]);
+  fields(value, ["agent_source", "adapter_type", "provider_agent_id", "workdir", "workspace", "resources", "approval_mode", "model", "effort", "required_capabilities", "required_execution_features", "runtime_limits", "mcp_servers", "provider_compatibility", "context_extensions"]);
+  if (value.context_extensions !== undefined) assertContextExtensionsSnapshot(value.context_extensions);
   assertAgentSource(value.agent_source);
   text(value.adapter_type);
   assertProviderAgent(value.adapter_type, value.provider_agent_id);
@@ -185,7 +187,7 @@ export function assertJsonValue(value: unknown): void {
 export const RESOURCE_CONTEXT_KINDS: Readonly<Record<string, string>> = Object.freeze({ skills: "skill", agent_plugins: "agent_plugin", knowledge: "knowledge", connectors: "connector" });
 
 export function contextResourceReferences(context: ContextEnvelope): (Record<string, unknown> & {kind: string; resource_id: string})[] {
-  return context.items.filter(item => item.namespace === "octo.resources" && RESOURCE_CONTEXT_KINDS[item.name])
+  return context.items.filter(item => item.namespace === "octo.resources" && Object.hasOwn(RESOURCE_CONTEXT_KINDS, item.name))
     .flatMap(item => (item.payload.include as Record<string, unknown>[]).map(value => ({ ...value, kind: RESOURCE_CONTEXT_KINDS[item.name], resource_id: String(value.resource_id) })))
     .sort((a, b) => `${a.kind}/${a.resource_id}` < `${b.kind}/${b.resource_id}` ? -1 : `${a.kind}/${a.resource_id}` > `${b.kind}/${b.resource_id}` ? 1 : 0);
 }
@@ -209,7 +211,7 @@ function publicPayload(namespace: string, name: string, value: Record<string, un
     executionField(namespace, name, value);
     return;
   }
-  if (namespace === "octo.resources" && RESOURCE_CONTEXT_KINDS[name]) {
+  if (namespace === "octo.resources" && Object.hasOwn(RESOURCE_CONTEXT_KINDS, name)) {
     const kind = RESOURCE_CONTEXT_KINDS[name];
     fields(value, ["include", "exclude"]);
     const seen = new Set<string>();
@@ -255,7 +257,7 @@ function publicPayload(namespace: string, name: string, value: Record<string, un
     }
     return;
   }
-  throw new TypeError("CONTEXT_TYPE_UNSUPPORTED");
+  // Unknown optional types remain opaque until a consumer explicitly supports them.
 }
 
 function executionField(namespace: string, name: string, value: Record<string, unknown>): void {

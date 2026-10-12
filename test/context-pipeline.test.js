@@ -71,15 +71,17 @@ test("cancellation between preparation stages prevents later work and sealing", 
   assert.deepEqual(f.calls, []);
 });
 
-test("declared continuity without snapshot evidence fails before sealing", async () => {
+test("unknown optional continuity cannot become trusted session continuity", async () => {
   const f = fixture();
   const withContinuity = { ...context, items: [...context.items, { namespace: "octo.content", name: "continuity", payload: {
     scope: { tenant_id: "space", endpoint_id: "endpoint", channel: "im", account_id: null, bot_id: "bot", conversation_id: "chat" },
     consumer_key: "agent", session_generation: 1, trigger_message_id: "msg",
     trigger_fact: { message_id: "msg", occurred_at_ms: 1, sender: { id: "user", kind: "user" }, parts: [{ type: "text", text: "hello" }] }
   } }] };
-  await assert.rejects(f.pipeline.prepare(withContinuity, plan, identity, new AbortController().signal), /CONTEXT_TYPE_UNSUPPORTED/);
-  assert.equal(f.receipt(), undefined);
+  const result = await f.pipeline.prepare(withContinuity, plan, identity, new AbortController().signal);
+  assert.equal(result.continuity, undefined);
+  assert.equal(result.compiled.modelContent.includes("trigger_fact"), false);
+  assert.ok(f.receipt());
 });
 
 test("compiler rejects duplicate resolver evidence instead of covering another reference twice", () => {
