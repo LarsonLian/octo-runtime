@@ -23,3 +23,7 @@
 ### 验证记录
 
 定向 Context、配置合并、场景、Pipeline 与新增对象选择测试共 256 项通过；Work App 定向回归 58 项通过。Harness 完整 `pnpm build`、Work App `pnpm typecheck` 与 `pnpm build` 通过。此次只新增纯构建能力，没有 UI 和业务接口改造，尚未进行业务材料的实机闭环验收。
+
+## Milestone 4：集成来源字段边界
+
+状态：开始实施。对象候选和宿主已接线，复核事实 source 的脱敏边界。object_scope 只输出已定义的 type/id，不将输入附带的未知字段复制到模型事实。增加脱敏回归并同步构建。
