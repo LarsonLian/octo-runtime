@@ -117,3 +117,10 @@ test('object snapshots register under existing Loop scenarios without inventing 
   assert.equal(registry.build('loop_task', input).context.items.length, 1);
   assert.throws(() => registry.build('loop_task', { kind: 'document_selection', document_id: 'doc', text: 'text' }), /SCENARIO_INVALID/);
 });
+
+test('scope source exports only the defined provenance fields', () => {
+  const input = snapshot([selection('a', 'task', 'task', { object_scope: { type: 'user', id: 'user', credential: 'private-value' } })], [inline('a')]);
+  const context = buildObjectSelectionContext(input);
+  assert.deepEqual(context.items[0].payload.entries[0].source.object_scope, { type: 'user', id: 'user' });
+  assert.doesNotMatch(JSON.stringify(context), /private-value|credential/);
+});

@@ -135,7 +135,7 @@ export function buildObjectSelectionContext(snapshot: ObjectSelectionSnapshot): 
       kind: 'object_selection', object_type: selection.object_type, origin: selection.origin,
       // Local handles are host authority and must not be published into model facts.
       ...(selection.object_type === 'local_file' ? {} : { object_id: selection.object_id }),
-      ...(selection.object_scope ? { object_scope: structuredClone(selection.object_scope) } : {}),
+      ...(selection.object_scope ? { object_scope: { type: selection.object_scope.type, id: selection.object_scope.id } } : {}),
       ...(material.revision ? { revision: material.revision } : {}),
       ...(selection.selector ? { selector: structuredClone(selection.selector) } : {}),
     } });
