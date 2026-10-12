@@ -138,7 +138,7 @@ function diagnosticIdForContext(context: FailureClassificationContext): string {
 }
 
 function diagnosticIdFromRunId(runId: string | undefined): string | undefined {
-  const match = /^arun_([0-9a-f]{32})$/.exec(runId ?? "");
+  const match = /^run_([0-9a-f]{32})$/.exec(runId ?? "");
   return match ? `diag_${match[1]}` : undefined;
 }
 

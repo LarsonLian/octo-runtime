@@ -9,7 +9,7 @@ const request = {
   protocolVersion: 2,
   invocationId: "inv-host",
   agentSessionId: "s",
-  runId: "arun_35c4ffc5db9940c9be7ce3a894819ae3",
+  runId: "run_35c4ffc5db9940c9be7ce3a894819ae3",
   prompt: "p",
   modelInput: "p",
   workdir: process.cwd(),

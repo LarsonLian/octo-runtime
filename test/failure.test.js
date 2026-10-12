@@ -110,7 +110,7 @@ test("failure payload is backwards compatible and excludes untrusted secrets", (
 });
 
 test("Agent Run UUID deterministically owns the diagnostic UUID", () => {
-  const runId = "arun_35c4ffc5db9940c9be7ce3a894819ae3";
+  const runId = "run_35c4ffc5db9940c9be7ce3a894819ae3";
   const classified = classifyFailure({ code: "RPC_TIMEOUT" }, {
     defaultDomain: "adapter",
     stage: "adapter.invoke",

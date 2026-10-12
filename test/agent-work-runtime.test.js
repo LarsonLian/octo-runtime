@@ -29,7 +29,7 @@ import {
   waitFor, wire, withExecutionPlan, withTimeout
 } from "./agent-work-runtime-fixture.js";
 
-const TEST_AGENT_RUN_ID = "arun_35c4ffc5db9940c9be7ce3a894819ae3";
+const TEST_AGENT_RUN_ID = "run_35c4ffc5db9940c9be7ce3a894819ae3";
 
 const executionPlan = {
   agent_source: "provisioned", adapter_type: "codex",

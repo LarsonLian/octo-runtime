@@ -237,7 +237,7 @@ export class AgentWorkStore {
       | undefined;
     if (!run) throw new Error(`agent work run not found: ${runId}`);
     const seq = run.next_seq;
-    const eventId = `event_${randomUUID()}`;
+    const eventId = `evt_${randomUUID()}`;
     const payloadJson = JSON.stringify(payload);
     const now = Date.now();
     this.#db.exec("BEGIN IMMEDIATE");

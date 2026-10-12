@@ -241,6 +241,7 @@ test("unacknowledged events survive reopen and are replayed", async () => {
     const store = AgentWorkStore.open(file);
     store.upsertRun({ runId: "r1", commandId: "c1", leaseId: "l1", fencingToken: 1 });
     const first = store.allocateAndAppend("r1", "run.started", {});
+    assert.match(first.eventId, /^evt_[0-9a-f-]{36}$/);
     store.allocateAndAppend("r1", "message.delta", { text: "hi" });
     store.advanceReceived("r1", 1);
     store.advanceDurable("r1", 1);
