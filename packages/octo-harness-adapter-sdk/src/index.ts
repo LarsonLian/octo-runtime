@@ -35,6 +35,7 @@ export { OMNI_REASONING_LEVELS, DEFAULT_REASONING_LEVEL_MAPS, mapReasoningEffort
 export { AcpTurnNormalizer } from "./acp-turn.js";
 export { AcpApprovalBridge } from "./approval.js";
 export { sanitizePublicValue } from "./public-display.js";
+export { normalizeAgentPluginMcpConfig, normalizeAgentPluginMcpServer, canonicalMcpServers } from "./mcp-config.js";
 export { acpToolTerminalStatus, normalizeAcpToolUpdate, observeAcpToolStatus } from "./acp-tool.js";
 
 export interface AdapterMetadata {

@@ -1,4 +1,4 @@
-import { mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { canonicalMcpServers, mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * Claude Code local CLI transport and event normalization layer.
@@ -94,7 +94,7 @@ export async function buildClaudeCommand(
   await writeFile(promptFile, req.controlInstructions, { mode: 0o600 });
   if (req.mcpServers && Object.keys(req.mcpServers).length > 0) {
     const mcpFile = join(directory, "mcp.json");
-    const mcpServers = Object.fromEntries(Object.entries(req.mcpServers).map(([name, server]) => [
+    const mcpServers = Object.fromEntries(Object.entries(canonicalMcpServers(req.mcpServers)).map(([name, server]) => [
       name,
       server.type === "stdio"
         ? {

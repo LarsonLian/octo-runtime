@@ -6,7 +6,7 @@
  * app-server transport. Per-run developer instructions travel in native thread
  * params, so app-server sees the complete state database and plugin runtime.
  */
-import { defineAdapter, probeCommand, type AdapterInvocationContext, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { canonicalMcpServers, defineAdapter, probeCommand, type AdapterInvocationContext, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { executionFeatures, contextItem, runMcpServerHash, type InteractionResponse, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
 import { parse, stringify } from "smol-toml";
 import { readFileSync, mkdirSync, copyFileSync, writeFileSync, lstatSync } from "node:fs";
@@ -292,6 +292,7 @@ export function codexMcpOverrides(
   inheritedEnv: NodeJS.ProcessEnv = process.env,
   invocation?: Pick<InvokeRequest, "approvalMode" | "context" | "runMetadata">
 ): { args: string[]; env: NodeJS.ProcessEnv } {
+  servers = canonicalMcpServers(servers);
   if (!servers || Object.keys(servers).length === 0) return { args: [], env: {} };
   const env: NodeJS.ProcessEnv = {};
   const forwarded = new Map<string, string>();

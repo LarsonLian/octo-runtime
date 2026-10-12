@@ -1,4 +1,5 @@
 import { prepareCliBindings, type PreparedCliBinding } from "./cli-bindings.js";
+import { normalizeAgentPluginMcpServer } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { createHash, randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -20,19 +21,6 @@ const manifestValidator = ajv.compile({
     keywords: { type: "array", items: { type: "string" } },
     author: { type: "object", additionalProperties: false, properties: { name: { type: "string" }, email: { type: "string" }, url: { type: "string" } } }
   }
-});
-const strings = { type: "array", items: { type: "string" } };
-const stringMap = { type: "object", additionalProperties: { type: "string" } };
-const serverValidator = ajv.compile({
-  oneOf: [
-    { type: "object", additionalProperties: false, required: ["type", "command"], properties: {
-      type: { const: "stdio" }, command: { type: "string", minLength: 1 }, args: strings, env: stringMap,
-      cwd: { type: "string", minLength: 1 }
-    } },
-    ...["streamable-http", "sse"].map(type => ({ type: "object", additionalProperties: false, required: ["type", "url"], properties: {
-      type: { const: type }, url: { type: "string", minLength: 1 }, headers: stringMap
-    } }))
-  ]
 });
 
 export interface PreparedCapabilityReceipt {
@@ -153,12 +141,13 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
     }
     if (resource.kind !== "skill" && texts["mcp.json"] && (!resource.components || resource.components.some(key => key.startsWith("mcp:")))) {
       const document: unknown = JSON.parse(texts["mcp.json"]);
-      if (!record(document) || document.$schema !== mcpSchema || !record(document.mcpServers) || Object.keys(document).some(key => key !== "$schema" && key !== "mcpServers")) {
+      if (!record(document) || document.$schema !== undefined && document.$schema !== mcpSchema || !record(document.mcpServers) || Object.keys(document).some(key => key !== "$schema" && key !== "mcpServers")) {
         throw new TypeError("CONTEXT_MCP_CONFIG_INVALID: " + resource.resource_id);
       } else {
         for (const [name, value] of Object.entries(document.mcpServers)) {
           const component = "mcp:" + name;
           if (resource.components && !resource.components.includes(component)) continue;
+          if (record(value) && value.disabled === true) continue;
           try {
             const server = await prepareMcpServer(value, root, data, resource.mcp_credentials?.[name]);
             const scopedName = "p_" + installation.slice(0, 12) + "_" + name;
@@ -260,44 +249,44 @@ async function prepareMcpServer(value: unknown, root: string, data: string, cred
     const auth = value.octo_auth;
     if (!record(auth) || typeof auth.service_subject_id !== "string" || !auth.service_subject_id
       || ![auth.allowed_tools, auth.resource_refs].every(items => Array.isArray(items) && items.length > 0 && items.length <= 128 && items.every(item => typeof item === "string" && item.length > 0 && item.length <= 512))) throw new TypeError("MCP_OCTO_AUTH_INVALID");
-    if (value.type !== "streamable-http" || !credentials?.Authorization?.startsWith("Bearer octo_run_") || !credentials["X-Space-ID"] || !credentials["X-Namespace"])
+    if (!["streamable-http", "streamable_http", "streamableHttp", "http"].includes(String(value.type)) || !credentials?.Authorization?.startsWith("Bearer octo_run_") || !credentials["X-Space-ID"] || !credentials["X-Namespace"])
       throw new TypeError("MCP_OCTO_CREDENTIALS_REQUIRED");
-    if (record(value.headers) && Object.keys(value.headers).some(key => /^(authorization|x-space-id|x-namespace)$/i.test(key))) throw new TypeError("MCP_AUTH_CONFLICT");
+    if ([value.headers, value.staticHeaders].some(headers => record(headers) && Object.keys(headers).some(key => /^(authorization|x-space-id|x-namespace)$/i.test(key)))) throw new TypeError("MCP_AUTH_CONFLICT");
     const { octo_auth: _, ...server } = value;
     value = server;
     octo = true;
   } else if (credentials !== undefined) throw new TypeError("MCP_CREDENTIAL_TARGET_MISMATCH");
-  if (!serverValidator(value) || !record(value)) throw new TypeError("MCP_CONFIG_INVALID");
-  if (value.type === "sse") throw new TypeError("MCP_TRANSPORT_UNSUPPORTED");
-  if (value.type === "streamable-http") {
-    const url = new URL(value.url);
+  const normalized = normalizeAgentPluginMcpServer(value);
+  if (!normalized) throw new TypeError("MCP_CONFIG_DISABLED");
+  if (normalized.type === "streamable_http") {
+    const url = new URL(normalized.url);
     if (url.username || url.password || url.hash || !["http:", "https:"].includes(url.protocol)
       || url.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) throw new TypeError("MCP_URL_INVALID");
-    const headers = octo ? { ...(value.headers as Record<string, string> ?? {}), ...credentials } : value.headers as Record<string, string> | undefined;
+    const headers = octo ? { ...(normalized.headers ?? {}), ...credentials } : normalized.headers;
     const names = new Set<string>();
     for (const [key, entry] of Object.entries(headers ?? {})) {
       if (names.has(key.toLowerCase()) || /[\r\n]/.test(key + entry)) throw new TypeError("MCP_PACKAGE_CREDENTIALS_FORBIDDEN");
       names.add(key.toLowerCase());
     }
-    return { type: "streamable_http", required: true, url: url.href, ...(headers ? { headers } : {}) };
+    return { ...normalized, type: "streamable_http", required: normalized.required ?? true, url: url.href, ...(headers ? { headers } : {}) };
   }
-  const command = value.command as string;
+  const command = normalized.command;
   if (command.includes("${") || !command.startsWith("./") && (/[/\\]/.test(command) || /\s/.test(command))) throw new TypeError("MCP_COMMAND_INVALID");
   let executable = command;
   if (command.startsWith("./")) { executable = await realpath(resolve(root, command)); inside(root, executable); }
   const expand = (text: string): string => text.replace(/\$\{(PLUGIN_ROOT|PLUGIN_DATA)\}/g, (_, key: string) => key === "PLUGIN_ROOT" ? root : data);
-  const rawCwd = value.cwd as string | undefined;
+  const rawCwd = normalized.cwd;
   if (rawCwd && !rawCwd.startsWith("./") && !/^\$\{PLUGIN_(ROOT|DATA)\}(\/|$)/.test(rawCwd)) throw new TypeError("MCP_CWD_INVALID");
   const boundary = rawCwd?.startsWith("${PLUGIN_DATA}") ? data : root;
   const cwd = resolve(root, expand(rawCwd ?? root));
   inside(boundary, cwd);
   if (boundary === data) await mkdir(cwd, { recursive: true, mode: 0o700 });
   inside(boundary, await realDirectory(cwd));
-  const env = Object.fromEntries(Object.entries(value.env as Record<string, string> ?? {}).map(([key, entry]) => {
+  const env = Object.fromEntries(Object.entries(normalized.env ?? {}).map(([key, entry]) => {
     if (["PLUGIN_ROOT", "PLUGIN_DATA"].includes(key.toUpperCase())) throw new TypeError("MCP_RESERVED_ENV_INVALID");
     return [key, expand(entry)];
   }));
-  return { type: "stdio", command: executable, args: (value.args as string[] ?? []).map(expand), cwd, env: { ...env, PLUGIN_ROOT: root, PLUGIN_DATA: data } };
+  return { ...normalized, type: "stdio", command: executable, args: (normalized.args ?? []).map(expand), cwd, env: { ...env, PLUGIN_ROOT: root, PLUGIN_DATA: data } };
 }
 
 async function privateDirectory(path: string): Promise<string> {

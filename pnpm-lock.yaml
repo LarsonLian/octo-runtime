@@ -411,6 +411,9 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-host':
         specifier: workspace:*
         version: link:../octo-harness-adapter-host
+      '@mininglamp-oss/octo-harness-adapter-sdk':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-sdk
       '@mininglamp-oss/octo-harness-core':
         specifier: workspace:*
         version: link:../octo-harness-core

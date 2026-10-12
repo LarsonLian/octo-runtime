@@ -2,6 +2,7 @@ import { canonicalTerminalStatus, providerInputParts } from "@mininglamp-oss/oct
 import { createHash } from "node:crypto";
 import {
   AcpApprovalBridge,
+  canonicalMcpServers,
   AcpTurnNormalizer,
   acpToolTerminalStatus,
   normalizeAcpToolUpdate,
@@ -409,7 +410,7 @@ export function createAcpAdapter(
 }
 
 function acpMcpServers(request: InvokeRequest): JsonRecord[] {
-  return Object.entries(request.mcpServers ?? {}).map(([name, server]) => server.type === "stdio"
+  return Object.entries(canonicalMcpServers(request.mcpServers)).map(([name, server]) => server.type === "stdio"
     ? { name, command: server.command, args: server.args ?? [], env: Object.entries(server.env ?? {}).map(([name, value]) => ({ name, value })) }
     : { name, type: server.type, url: server.url, headers: Object.entries(server.headers ?? {}).map(([name, value]) => ({ name, value })) });
 }

@@ -1,4 +1,4 @@
-import { mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { canonicalMcpServers, mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * OpenCode adapter: wraps the OpenCode CLI (`opencode run --format json
@@ -250,6 +250,7 @@ export function createOpenCodeAdapter({ command = "opencode" }: { command?: stri
 
 /** Convert the canonical transport-neutral shape to OpenCode's native config. */
 export function openCodeMcpConfig(servers: McpServers): Record<string, unknown> {
+  servers = canonicalMcpServers(servers);
   return Object.fromEntries(Object.entries(servers).map(([name, server]) => [
     name,
     server.type === "stdio"
