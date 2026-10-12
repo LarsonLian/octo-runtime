@@ -1659,6 +1659,7 @@ export class AgentWorkRuntime {
     };
     try {
       let request: InvokeRequest;
+      let outputPlan: ResolvedExecutionPlan;
       let adapterType: string;
       let agentSessionId: string;
       let leaseId: string;
@@ -1790,6 +1791,10 @@ export class AgentWorkRuntime {
           agent_run_request: { ...executionEnvelope.agent_run_request, input: prepared.input }
         }, prepared.continuity, prepared.materials, prepared.capabilities, prepared.compiled);
         request = mapped.request;
+        // 归档必须使用实际准备并封存的 MCP（含临时 Run grant），原始命令尚未包含资源组件。
+        const compiledPlan = prepared.compiled.executionPlan ?? executionEnvelope.resolved_execution_plan;
+        const preparedOutputResources = prepared.compiled.preparedResources ?? prepared.capabilities;
+        outputPlan = { ...compiledPlan, workdir: request.workdir ?? "", mcp_servers: { ...compiledPlan.mcp_servers, ...preparedOutputResources.mcpServers } };
         request.runMetadata ??= {};
         request.runMetadata.contextCompilation = {
           compiler_version: prepared.receipt.compiler_version, catalog_version: prepared.receipt.catalog_version,
@@ -1928,7 +1933,7 @@ export class AgentWorkRuntime {
         archiving: false
       });
       if (!accepting.acknowledged) this.#ackCommand(command, true);
-      const execution = this.#execute(command, adapterType, request, releaseAdmission);
+      const execution = this.#execute(command, adapterType, request, outputPlan, releaseAdmission);
       admissionHandedOff = true;
       this.#executionTasks.add(execution);
       void execution.finally(async () => {
@@ -2070,6 +2075,7 @@ export class AgentWorkRuntime {
     command: RuntimeCommand,
     adapterType: string,
     request: InvokeRequest,
+    outputPlan: ResolvedExecutionPlan,
     releaseAdmission?: () => void
   ): Promise<void> {
     const store = this.#store;
@@ -2147,9 +2153,9 @@ export class AgentWorkRuntime {
           active.archiving = true;
           try {
             mapped.payload.task_output_receipts = discussionOutput
-              ? await archiveDiscussionOutputs({ ...(command.payload as ExecutionEnvelope).resolved_execution_plan, workdir: request.workdir ?? "" }, command.run_id, active.outputController.signal)
+              ? await archiveDiscussionOutputs(outputPlan, command.run_id, active.outputController.signal)
               : await archiveTaskOutputs(
-              { ...(command.payload as ExecutionEnvelope).resolved_execution_plan, workdir: request.workdir ?? "" },
+              outputPlan,
               taskRef.task_id as string, command.run_id, active.outputController.signal,
               delivery => { mapped.payload.task_delivery = delivery; }
             );

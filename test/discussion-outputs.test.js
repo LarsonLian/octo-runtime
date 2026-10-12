@@ -48,7 +48,7 @@ test("Discussion declared outputs require trusted plugin and use independent too
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
-  const plan = { workdir, mcp_servers: { octo_discussion: { type: "streamable_http", url: `http://127.0.0.1:${server.address().port}/mcp`, headers: { Authorization: "Bearer test-run-grant" } } } };
+  const plan = { workdir, mcp_servers: { p_012345abcdef_octo_discussion: { type: "streamable_http", url: `http://127.0.0.1:${server.address().port}/mcp`, headers: { Authorization: "Bearer test-run-grant" } } } };
   const receipts = await archiveDiscussionOutputs(plan, "run-1", new AbortController().signal);
   assert.deepEqual(calls, ["discussion_prepare_output", "discussion_commit_output"]);
   assert.equal(receipts[0].status, "saved");

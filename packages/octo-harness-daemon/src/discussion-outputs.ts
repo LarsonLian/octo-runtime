@@ -28,7 +28,9 @@ export async function archiveDiscussionOutputs(plan: ResolvedExecutionPlan, runI
   const validated = { ...manifest, schema: TASK_OUTPUT_SCHEMA };
   assertTaskOutputManifest(validated);
   if (validated.outputs.length === 0) return [];
-  const server = plan.mcp_servers?.octo_discussion;
+  // 资源安装时使用 p_<installation>_ 名称隔离；只接受唯一准备好的 Discussion 组件。
+  const candidates = Object.entries(plan.mcp_servers ?? {}).filter(([name]) => name === "octo_discussion" || /^p_[a-f0-9]{12}_octo_discussion$/.test(name));
+  const server = candidates.length === 1 ? candidates[0]?.[1] : undefined;
   if (!server || server.type !== "streamable_http") throw new TypeError("DISCUSSION_OUTPUT_PLUGIN_REQUIRED");
   return archiveOutputEntries(plan.workdir, validated.outputs, new TaskMcpClient(server, signal), "discussion", {}, signal);
 }
