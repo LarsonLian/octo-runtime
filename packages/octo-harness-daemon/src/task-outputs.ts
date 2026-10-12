@@ -137,14 +137,19 @@ export async function archiveTaskOutputs(plan: ResolvedExecutionPlan, taskId: st
   onDelivery?.(manifest.delivery ?? { output_kind: "agent_report" });
   if (outputs.length === 0) return [];
   const client = new TaskMcpClient(taskMcpServer(plan), signal);
+  return archiveOutputEntries(plan.workdir, outputs, client, "task", { task_id: taskId }, signal);
+}
+
+/** 文件校验、上传与丢失确认恢复共用同一实现；业务资源边界由服务端 Run grant 决定。 */
+export async function archiveOutputEntries(workdir: string, outputs: TaskOutputManifestEntry[], client: TaskMcpClient, prefix: "task" | "discussion", scope: Record<string, string>, signal: AbortSignal): Promise<TaskOutputReceipt[]> {
   await client.initialize();
   const receipts: TaskOutputReceipt[] = [];
   for (const output of outputs) {
     let ticketId: string | undefined;
     try {
-      const bytes = await readTaskOutput(plan.workdir, output.relative_path, TASK_OUTPUT_LIMITS.maxFileBytes);
+      const bytes = await readTaskOutput(workdir, output.relative_path, TASK_OUTPUT_LIMITS.maxFileBytes);
       if (bytes.length !== output.size || createHash("sha256").update(bytes).digest("hex") !== output.sha256) throw new TypeError("TASK_OUTPUT_INTEGRITY_MISMATCH");
-      const ticket = await client.call("task_prepare_output", { task_id: taskId, manifest: output });
+      const ticket = await client.call(`${prefix}_prepare_output`, { ...scope, manifest: output });
       if (ticket.status === "saved") {
         receipts.push(savedReceipt(output.output_id, ticket));
         continue;
@@ -161,14 +166,14 @@ export async function archiveTaskOutputs(plan: ResolvedExecutionPlan, taskId: st
       });
       await response.body?.cancel();
       if (!response.ok) throw new TypeError("TASK_OUTPUT_UPLOAD_FAILED");
-      const saved = await client.call("task_commit_output", { task_id: taskId, ticket_id: ticket.ticket_id, manifest: output });
+      const saved = await client.call(`${prefix}_commit_output`, { ...scope, ticket_id: ticket.ticket_id, manifest: output });
       receipts.push(savedReceipt(output.output_id, saved));
     } catch (error) {
       if (signal.aborted) throw error;
       const errorCode = safeOutputError(error);
       if (ticketId) {
         try {
-          const reported = await client.call("task_fail_output", { task_id: taskId, ticket_id: ticketId, output_id: output.output_id, error_code: errorCode });
+          const reported = await client.call(`${prefix}_fail_output`, { ...scope, ticket_id: ticketId, output_id: output.output_id, error_code: errorCode });
           // A lost commit response must not turn a durable saved file into a failed job.
           if (reported.status === "saved") { receipts.push(savedReceipt(output.output_id, reported)); continue; }
         } catch { /* The terminal receipt preserves the failure if its callback is unavailable. */ }
@@ -181,7 +186,7 @@ export async function archiveTaskOutputs(plan: ResolvedExecutionPlan, taskId: st
 
 export function safeOutputError(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
-  return /^TASK_[A-Z_]+$/.test(message) ? message : "TASK_OUTPUT_SAVE_FAILED";
+  return /^(TASK|DISCUSSION)_[A-Z_]+$/.test(message) ? message : "TASK_OUTPUT_SAVE_FAILED";
 }
 
 function savedReceipt(id: string, value: Record<string, unknown>): TaskOutputReceipt {

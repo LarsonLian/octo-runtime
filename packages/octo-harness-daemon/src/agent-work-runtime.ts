@@ -57,6 +57,7 @@ import { compactContextMaterials, FileMaterialCompactionStore, type MaterialComp
 import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext } from "./run-context.js";
 import { prepareTaskMaterials, type PreparedTaskMaterials } from "./task-materials.js";
 import { archiveTaskOutputs, safeOutputError, taskOutputInstructions } from "./task-outputs.js";
+import { archiveDiscussionOutputs, discussionOutputInstructions } from "./discussion-outputs.js";
 import { prepareTeamInput } from "./team-input.js";
 import type { OutboxRow } from "./agent-work-store.js";
 import { collectRuntimeDeviceInfo } from "./device-info.js";
@@ -1709,6 +1710,8 @@ export class AgentWorkRuntime {
               ? [{ text: stringValue(asRecord(executionEnvelope.agent_revision.definition).instructions)!, source: "revision" as const }] : []),
             ...channelAwarenessInstructions(executionEnvelope.internal_context?.channel_awareness),
             ...scenarioInstructions(executionEnvelope.agent_run_request.scenario, executionEnvelope.internal_context?.scenario_policy, executionEnvelope.agent_run_request.context),
+            ...(executionEnvelope.agent_run_request.scenario?.scenario_id === "loop_discussion"
+              ? [{ text: discussionOutputInstructions(executionEnvelope.run_id), source: "platform_policy" as const }] : []),
             ...(Array.isArray(contentResources) && contentResources.length
               ? [{ text: taskOutputInstructions(executionEnvelope.run_id), source: "platform_policy" as const }] : [])
           ],
@@ -2138,17 +2141,21 @@ export class AgentWorkRuntime {
           mapped.payload = runDeadlineFailure(request.signal.reason, command.run_id, "adapter.invoke");
         }
         const taskRef = Array.isArray(request.runMetadata?.taskMaterials) ? asRecord(request.runMetadata.taskMaterials[0]) : {};
-        if (mapped.type === "run.completed" && typeof taskRef.task_id === "string") {
+        const discussionOutput = (command.payload as ExecutionEnvelope).agent_run_request.scenario?.scenario_id === "loop_discussion";
+        if (mapped.type === "run.completed" && (typeof taskRef.task_id === "string" || discussionOutput)) {
           const active = this.#activeRuns.get(command.run_id)!;
           active.archiving = true;
           try {
-            mapped.payload.task_output_receipts = await archiveTaskOutputs(
+            mapped.payload.task_output_receipts = discussionOutput
+              ? await archiveDiscussionOutputs({ ...(command.payload as ExecutionEnvelope).resolved_execution_plan, workdir: request.workdir ?? "" }, command.run_id, active.outputController.signal)
+              : await archiveTaskOutputs(
               { ...(command.payload as ExecutionEnvelope).resolved_execution_plan, workdir: request.workdir ?? "" },
-              taskRef.task_id, command.run_id, active.outputController.signal,
+              taskRef.task_id as string, command.run_id, active.outputController.signal,
               delivery => { mapped.payload.task_delivery = delivery; }
             );
           } catch (error) {
-            mapped.payload.task_output_receipts = [{ output_id: "manifest", status: "failed", error_code: safeOutputError(error) }];
+            const code = error instanceof Error && /^DISCUSSION_[A-Z_]+$/.test(error.message) ? error.message : safeOutputError(error);
+            mapped.payload.task_output_receipts = [{ output_id: "manifest", status: "failed", error_code: code }];
           }
           active.archiving = false;
           if (this.#authoritativeTerminalRuns.has(command.run_id)) break;
