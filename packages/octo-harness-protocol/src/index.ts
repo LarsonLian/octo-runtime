@@ -59,8 +59,6 @@ import { assertContextApplicationEvidence } from "./context-application.js";
 export { assertContextApplicationEvidence } from "./context-application.js";
 export { assertNotificationMessage } from "./notification.js";
 import type {
-  ActivityInfo,
-  ActivitySubject,
   ActivityStartedPayload,
   ActivityUpdatedPayload,
   ActivityFinishedPayload,
