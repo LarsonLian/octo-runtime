@@ -304,7 +304,7 @@ export class HarnessEngine {
     const modelInputParts = modelPartsFromInput(run.input);
     const request: InvokeRequest = {
       protocolVersion: 2,
-      agentSource: run.resolvedExecutionPlan!.agent_source,
+      agentSource: plan.agent_source,
       invocationId: id("invoke"),
       agentSessionId: session.id,
       runId: run.id,
