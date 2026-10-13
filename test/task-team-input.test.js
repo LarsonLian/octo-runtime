@@ -7,7 +7,7 @@ import { contextEnvelope, executionContext, resolvedRuntimeSelection } from "./a
 
 const ref = { resource_ref: "task:task-1/materials", task_id: "task-1", task_version: 18, handler_epoch: 3, digest: `sha256:${"a".repeat(64)}` };
 const materials = { refs: [ref], selections: [{ resource_ref: ref.resource_ref, text: JSON.stringify({
-  task: { task_id: "task-1", row_version: 18, handler_epoch: 3 }, attachments: [{ id: "att-1", version_id: "fv-1" }]
+  task: { task_id: "task-1", row_version: 18, handler_epoch: 3 }, attachments: [{ attachment_id: "att-1", version_id: "fv-1" }]
 }) }] };
 const input = { task_id:"task-1",conversation_id:"tconv-1",
   coordination: { team_session_id: "team-session-1", delegation_id: "delegation-1", source_run_id: "source-1", target_alias: "designer" }, payload: {
@@ -40,6 +40,9 @@ test("task handoff rejects local paths, credentials and unavailable attachment v
   const changed = structuredClone(input);
   changed.payload.attachment_refs[0].file_version_id = "not-readable-version";
   assert.throws(() => prepareTeamInput(changed, "coordination.delegate_handoff", materials), /TEAM_TASK_ATTACHMENT_UNAVAILABLE/);
+  const oldMaterials = structuredClone(materials);
+  oldMaterials.selections[0].text = JSON.stringify({ task: { task_id: "task-1", row_version: 18, handler_epoch: 3 }, attachments: [{ id: "att-1", version_id: "fv-1" }] });
+  assert.throws(() => prepareTeamInput(input, "coordination.delegate_handoff", oldMaterials), /TEAM_TASK_ATTACHMENT_UNAVAILABLE/);
 });
 
 test("Team handoff and mailbox preserve facts without carrying tool configuration", () => {
