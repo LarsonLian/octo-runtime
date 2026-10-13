@@ -1,5 +1,4 @@
-import { invocationEnvironment } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { invocationEnvironment, mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * Claude Code local CLI transport and event normalization layer.
@@ -12,16 +11,13 @@ import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
  * independent ClaudeEventNormalizer state.
  */
 import {
-  defineAdapter,
   AcpApprovalBridge,
-  observeBestEffort,
-  observeProviderOutput,
+  defineAdapter,
   parseJsonLine,
   probeCommand,
   providerInputText,
   spawnJsonLines,
   type CanonicalEvent,
-  type AdapterInvocationContext,
   type InvokeRequest,
   type MessageExposure
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
@@ -78,9 +74,6 @@ interface ClaudeNativeEvent {
  * The system/control prompt is written to a private temp file passed via
  * `--append-system-prompt-file`, while the user prompt stays on stdin, so the
  * two never get conflated. Returns a `cleanup` that removes the temp directory.
- * `providerInput` records both channels after argv construction; it is the
- * provider-visible carrier used for evaluation rather than an approximation
- * reconstructed from the original InvokeRequest.
  */
 export async function buildClaudeCommand(
   req: InvokeRequest,
@@ -117,20 +110,6 @@ export async function buildClaudeCommand(
     command,
     args,
     input,
-    rpcMethod: "process.stdin",
-    providerSessionId: req.providerSession?.sessionId,
-    providerInput: {
-      kind: "json_params" as const,
-      content: {
-        command,
-        args,
-        cwd: req.workdir,
-        stdin: input,
-        append_system_prompt: req.controlInstructions,
-        model: req.agentConfig?.model,
-        effort
-      }
-    },
     cleanup: () => rm(directory, { recursive: true, force: true })
   };
 }
@@ -178,10 +157,10 @@ export class ClaudeEventNormalizer {
     // compact_boundary 是历史已被 Provider 压缩的确认；不得据此重发当前用户 turn。
     if (native.type === "system" && native.subtype === "compact_boundary" && native.session_id) {
       return [{ protocolVersion: 2, type: "run.notice", payload: {
-        noticeId: `claude:compaction:${native.session_id}:${++this.#compactionNumber}`, code: "context_compacted", severity: "info", params: {}
-      } }, { protocolVersion: 2, type: "session.update", payload: {
-        providerSession: { sessionId: native.session_id, resumable: true, resumeOutcome: "compacted" }
-      } }];
+          noticeId: `claude:compaction:${native.session_id}:${++this.#compactionNumber}`, code: "context_compacted", severity: "info", params: {}
+        } }, { protocolVersion: 2, type: "session.update", payload: {
+          providerSession: { sessionId: native.session_id, resumable: true, resumeOutcome: "compacted" }
+        } }];
     }
     if (native.type === "system" && native.session_id) {
       if (native.session_id === this.#publishedSessionId) return [];
@@ -492,112 +471,67 @@ export function createClaudeCodeAdapter({
       if (!bridge) throw new Error("INTERACTION_NOT_ACTIVE");
       await bridge.respond(response);
     },
-    async *invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
+    async *invoke(request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
       if (responders.has(request.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
       const permissions = new AcpApprovalBridge(request);
       responders.set(request.invocationId, permissions);
-      try { yield* permissions.stream(execute(request, permissions, context)); }
+      try { yield* permissions.stream(execute(request, permissions)); }
       finally { permissions.close("execution_lost"); responders.delete(request.invocationId); }
     }
   });
 
-    async function* execute(request: InvokeRequest, permissions: AcpApprovalBridge, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
-      const spec = await buildClaudeCommand(request, command, commandArgsPrefix);
-      // The normalizer must not be hoisted to an adapter singleton: one adapter may run several invocations concurrently.
-      const normalizer = new ClaudeEventNormalizer();
-      let firstOutput = true;
-      try {
-        // Await capture before spawning. Under require-capture this prevents the
-        // model input from leaving the harness unless its audit copy is durable.
-        await context?.observe({
-          event: "provider.input",
-          rpcMethod: spec.rpcMethod,
-          ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {}),
-          carrier: spec.providerInput
-        });
-        yield { protocolVersion: 2,
-          type: "message.create",
-          payload: { role: "assistant", status: "streaming", channel: "final" }
-        };
-        for await (const native of spawnJsonLines<ClaudeNativeEvent>({
-          ...spec,
-          cwd: request.workdir,
-          env: invocationEnvironment(request),
-          signal: request.signal,
-          onSpawn: close => permissions.bindTransport(close),
-          endInputWhen: native => native.type === "result",
-          controlHandler: async (native, write) => {
-            if (native.type !== "control_request") return;
-            if (!native.request_id || native.request?.subtype !== "can_use_tool") {
-              throw new Error("CLAUDE_CONTROL_REQUEST_UNSUPPORTED");
-            }
-            const params = {
-              toolCall: { toolCallId: native.request.tool_use_id, title: native.request.tool_name ?? "Claude tool" },
-              providerDetails: { provider: "claude-code", method: "can_use_tool", title: native.request.tool_name,
-                ...(typeof native.request.input?.command === "string" ? { command: native.request.input.command } : {}),
-                ...(typeof native.request.input?.file_path === "string" ? { files: [native.request.input.file_path] } : {}) },
-              options: [{ kind: "allow_once", optionId: "allow" }, { kind: "reject_once", optionId: "deny" }]
-            };
-            try {
-              const decision = await permissions.requestPermission(params);
-              const allowed = (decision.outcome as { optionId?: string })?.optionId === "allow";
-              await write({ type: "control_response", response: {
+  async function* execute(request: InvokeRequest, permissions: AcpApprovalBridge): AsyncGenerator<CanonicalEvent> {
+    const spec = await buildClaudeCommand(request, command, commandArgsPrefix);
+    // The normalizer must not be hoisted to an adapter singleton: one adapter may run several invocations concurrently.
+    const normalizer = new ClaudeEventNormalizer();
+    try {
+      yield { protocolVersion: 2,
+        type: "message.create",
+        payload: { role: "assistant", status: "streaming", channel: "final" }
+      };
+      for await (const native of spawnJsonLines<ClaudeNativeEvent>({
+        ...spec,
+        cwd: request.workdir,
+        env: invocationEnvironment(request),
+        signal: request.signal,
+        onSpawn: close => permissions.bindTransport(close),
+        endInputWhen: native => native.type === "result",
+        controlHandler: async (native, write) => {
+          if (native.type !== "control_request") return;
+          if (!native.request_id || native.request?.subtype !== "can_use_tool") {
+            throw new Error("CLAUDE_CONTROL_REQUEST_UNSUPPORTED");
+          }
+          const params = {
+            toolCall: { toolCallId: native.request.tool_use_id, title: native.request.tool_name ?? "Claude tool" },
+            providerDetails: { provider: "claude-code", method: "can_use_tool", title: native.request.tool_name,
+              ...(typeof native.request.input?.command === "string" ? { command: native.request.input.command } : {}),
+              ...(typeof native.request.input?.file_path === "string" ? { files: [native.request.input.file_path] } : {}) },
+            options: [{ kind: "allow_once", optionId: "allow" }, { kind: "reject_once", optionId: "deny" }]
+          };
+          try {
+            const decision = await permissions.requestPermission(params);
+            const allowed = (decision.outcome as { optionId?: string })?.optionId === "allow";
+            await write({ type: "control_response", response: {
                 subtype: "success", request_id: native.request_id,
                 response: allowed ? { behavior: "allow", updatedInput: native.request.input ?? {} }
                   : { behavior: "deny", message: "User declined tool execution", interrupt: false }
               } });
-              permissions.responseWritten(params);
-            } catch (error) {
-              permissions.responseFailed(params, error instanceof Error ? error : new Error(String(error)));
-              throw error;
-            }
-          },
-          onInputWritten: () => {
-            // Claude has no response envelope for stdin input. This marks local
-            // stream acceptance only; first stdout is the next observable state.
-            observeBestEffort(context, {
-              event: "provider.dispatch.written",
-              rpcMethod: spec.rpcMethod,
-              ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {})
-            });
-          },
-          parseLine: parseJsonLine
-        })) {
-          if (firstOutput) {
-            firstOutput = false;
-            // Count the first native frame even if normalization produces no
-            // canonical event; it still proves the provider responded.
-            observeBestEffort(context, {
-              event: "provider.output.first",
-              rpcMethod: "process.stdout",
-              ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {})
-            });
+            permissions.responseWritten(params);
+          } catch (error) {
+            permissions.responseFailed(params, error instanceof Error ? error : new Error(String(error)));
+            throw error;
           }
-          const events = normalizer.normalize(native);
-          observeProviderOutput(context, events, {
-            rpcMethod: "process.stdout",
-            ...(native.session_id ?? spec.providerSessionId
-              ? { providerSessionId: native.session_id ?? spec.providerSessionId }
-              : {}),
-            native: {
-              ...(native.type ? { type: native.type } : {}),
-              ...(native.event?.type ? { subtype: native.event.type } : {})
-            }
-          });
-          yield* events;
-          if (events.some(event => ["run.completed", "run.failed", "run.cancelled"].includes(event.type))) return;
-        }
-      } catch (error) {
-        observeBestEffort(context, {
-          event: "provider.dispatch.failed",
-          rpcMethod: spec.rpcMethod,
-          data: { error: error instanceof Error ? error.message : String(error) }
-        });
-        throw error;
-      } finally {
-        await spec.cleanup();
+        },
+        parseLine: parseJsonLine
+      })) {
+        const events = normalizer.normalize(native);
+        yield* events;
+        if (events.some(event => ["run.completed", "run.failed", "run.cancelled"].includes(event.type))) return;
       }
+    } finally {
+      await spec.cleanup();
     }
+  }
 }
 
 export const claudeCodeAdapter = createClaudeCodeAdapter();

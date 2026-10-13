@@ -21,7 +21,7 @@
 | ZCode GUI | 只收到 result／error 时直接保留终态工具，不补造 start；终态之后忽略重复开始 | `zcode-tool-lifecycle` 测试 |
 | Worker | 根终态后迟到内容与活动不重启；允许迟到 usage；终态工具缺少 duration 时不虚构开始时间 | `terminal_lifecycle_test.go` |
 | Work App | 运行中正文和工具按 firstSeq 排列；完成后显示“用时 · 执行过程”；复制仍只取最终回答 | 前端专项测试、真实 CDP |
-| 启动诊断 | 记录 preparation.started／ended 和 first public progress；Runtime 内耗时用单调时钟；不记录正文 | Runtime observability 测试 |
+| 启动诊断 | `OCTO_RUNTIME_DEBUG=1` 时将 Host 日志追加到 Octo Home | Host debug 日志测试 |
 
 已有 Provider dispatch.written／output.first observation 与 adapter.invoke.started 日志继续使用。客户端验收时点来自 renderer 的 performance 时钟，仅作本机观测，不与服务器时间戳直接相减。新准备耗时日志已经过单测，尚未在重新启动后的真实 daemon 上采样，不能用它解释旧样本的具体启动耗时。
 

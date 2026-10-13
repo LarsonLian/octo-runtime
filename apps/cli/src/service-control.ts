@@ -48,9 +48,10 @@ export function resolveServiceControl(options: ServiceControlOptions = {}): {
         command: nodeExecutable,
         args: [daemonEntrypoint, "--home", paths.home, ...daemonArgs],
         workingDirectory: paths.home,
-        ...(environment.PATH || environment.Path
-          ? { environment: { PATH: environment.PATH ?? environment.Path ?? "" } }
-          : {}),
+        environment: {
+          ...(environment.PATH || environment.Path ? { PATH: environment.PATH ?? environment.Path ?? "" } : {}),
+          ...(environment.OCTO_RUNTIME_DEBUG === "1" ? { OCTO_RUNTIME_DEBUG: "1" } : {})
+        },
         enabled,
         restart: { policy: "on-failure", delaySeconds: 5, maxBurst: 5 },
         timeoutStopSeconds: 45,

@@ -1,13 +1,13 @@
-import { createHash, randomUUID } from "node:crypto";
-import { access, stat } from "node:fs/promises";
-import net from "node:net";
-import { arch, hostname, platform as osPlatform, release } from "node:os";
-import type { ServiceBackend } from "@mininglamp-oss/octo-harness-cross-service";
 import {
   OPENCLAW_PROVIDER_OPTIONS,
   OpenClawGatewayClient,
   createOpenClawDeviceIdentity
 } from "@mininglamp-oss/octo-harness-adapter-openclaw";
+import type { ServiceBackend } from "@mininglamp-oss/octo-harness-cross-service";
+import { createHash, randomUUID } from "node:crypto";
+import { access, stat } from "node:fs/promises";
+import net from "node:net";
+import { arch, hostname, platform as osPlatform, release } from "node:os";
 import {
   exchangeRuntimeEnrollment,
   normalizeServerUrl,
@@ -16,9 +16,9 @@ import {
 } from "./enrollment.js";
 import { resolveServiceControl, verifyServiceProgram, type ServiceControlOptions } from "./service-control.js";
 import {
+  assertHomeConfiguration,
   defaultHarnessHome,
   ensureMachineIdentity,
-  assertHomeConfiguration,
   harnessPaths,
   isValidOpenClawAgentId,
   migrateLegacyProfileLayout,
@@ -149,19 +149,7 @@ async function dispatchCli(context: CliContext): Promise<CommandResult> {
   if (group === "adapter" && action === "connect") return runAdapterConnectCommand(context, id);
   if (group === "daemon") return runDaemonCommand(context, action);
   if (group === "doctor") return runDoctor(context);
-  if (group === "inspect") {
-    if (action !== undefined || context.flags.noOpen !== undefined) {
-      throw new Error("unknown command; run octo-harness help");
-    }
-    const result = await callDaemon<{ url: string }>(context.paths.socket, { method: "inspect.info" });
-    return { value: result.url };
-  }
-
   const request = daemonRequest(group, action, id, context.flags);
-  if (request.method === "events.subscribe") {
-    await streamDaemon(context.paths.socket, request, context.output, context.flags.json === true);
-    return { streamed: true };
-  }
   return { value: await callDaemon(context.paths.socket, request) };
 }
 
@@ -358,16 +346,11 @@ async function recoverUpdate(context: CliContext): Promise<CommandResult> {
 
 async function runDaemonCommand(context: CliContext, action: string | undefined): Promise<CommandResult> {
   const selected = action ?? "run";
-  if (!["run", "install"].includes(selected)
-    && (context.flags.inspectHost !== undefined || context.flags.inspectPort !== undefined)) {
-    throw new Error("--inspect-host and --inspect-port are valid with 'daemon run' or 'daemon install'");
-  }
   if (selected === "run") {
     const exitCode = await context.runForegroundDaemon([
       "--home", context.home,
       ...(context.flags.quiet === true ? [] : ["--console"]),
-      ...(context.flags.verbose === true ? ["--verbose"] : []),
-      ...inspectDaemonArguments(inspectBindingFromFlags(context.flags))
+      ...(context.flags.verbose === true ? ["--verbose"] : [])
     ]);
     return { streamed: true, exitCode: exitCode ?? 0 };
   }
@@ -429,17 +412,13 @@ async function installDaemonService(context: CliContext): Promise<CommandResult>
     const homeConfiguration = await readJsonFile<HarnessHomeConfiguration>(context.paths.rootConfig);
     assertHomeConfiguration(homeConfiguration);
     if (!homeConfiguration) throw new Error("Harness Home config is missing; run octo-harness login first");
-    const inspectBinding = inspectBindingFromFlags(context.flags, homeConfiguration.inspect);
-    const spec = context.service.spec(context.paths, autostart, inspectDaemonArguments(inspectBinding));
+    const spec = context.service.spec(context.paths, autostart);
     await verifyServiceProgram(spec);
     const probe = await context.service.backend.probe();
     if (!probe.supported) {
       throw new Error(`${probe.manager} is unavailable: ${probe.detail ?? "unsupported user session"}`);
     }
     await context.service.backend.install(spec);
-    if (inspectBinding) {
-      await writeJsonAtomic(context.paths.rootConfig, { ...homeConfiguration, inspect: inspectBinding });
-    }
     if (autostart) await context.service.backend.enable(spec);
     else await context.service.backend.disable(spec);
     return {
@@ -698,21 +677,6 @@ async function runDoctor(context: CliContext): Promise<CommandResult> {
 
 function daemonRequest(group: string, action: string | undefined, id: string | undefined, flags: Flags): CliRequest {
   if (group === "status") return { method: "status" };
-  if (group === "diagnostics" && action === undefined) return { method: "diagnostics.bundle" };
-  if (group === "logs" && action === "path") return { method: "logs.path" };
-  if (group === "logs" && action === "query") {
-    const limit = optionalString(flags.limit);
-    return {
-      method: "logs.query",
-      params: {
-        ...(optionalString(flags.requestId) ? { requestId: optionalString(flags.requestId) } : {}),
-        ...(id ? { runId: id } : {}),
-        ...(optionalString(flags.invocation) ? { invocationId: optionalString(flags.invocation) } : {}),
-        ...(limit ? { limit: Number(limit) } : {}),
-        includeSensitive: flags.sensitive === true
-      }
-    };
-  }
   if (group === "adapter" && action === "list") return { method: "adapter.list" };
   if (group === "adapter" && action === "probe") {
     return { method: "adapter.probe", params: { adapterType: required(id, "adapter-type") } };
@@ -721,17 +685,6 @@ function daemonRequest(group: string, action: string | undefined, id: string | u
     return action === "list"
       ? { method: "agent_session.list" }
       : { method: "agent_session.get", params: { agentSessionId: required(id, "agent-session-id") } };
-  }
-  if (group === "events") {
-    if (action !== undefined) throw new Error("events accepts filters as flags, not positional arguments");
-    return {
-      method: "events.subscribe",
-      params: {
-        ...(optionalString(flags.runId) ? { runId: optionalString(flags.runId) } : {}),
-        ...(optionalString(flags.source) ? { source: optionalString(flags.source) } : {}),
-        follow: flags.follow === true
-      }
-    };
   }
   if (group === "agent-run" && action && ["list", "get", "wait"].includes(action)) {
     return action === "list"
@@ -775,56 +728,6 @@ export async function callDaemon<T = unknown>(socketPath: string, request: CliRe
   socket.destroy();
   if (response.error) throw new Error(response.error.message ?? "daemon request failed");
   return response.result as T;
-}
-
-async function streamDaemon(
-  socketPath: string,
-  request: CliRequest,
-  output: (value: string) => void,
-  json: boolean
-): Promise<void> {
-  const socket = await connectDaemon(socketPath);
-  socket.write(`${JSON.stringify({ id: randomUUID(), ...request })}\n`);
-  let done = false;
-  try {
-    for await (const line of createLines(socket)) {
-      const response = JSON.parse(line) as CliResponse;
-      if (response.error) throw new Error(response.error.message ?? "daemon stream failed");
-      if (response.event !== undefined) output(formatLiveEvent(response.event, json));
-      if (response.result !== undefined) {
-        done = true;
-        break;
-      }
-    }
-    if (!done) throw new Error("daemon stream closed before completion");
-  } finally {
-    socket.destroy();
-  }
-}
-
-function formatLiveEvent(value: unknown, json: boolean): string {
-  const record = objectValue(value);
-  if (json || !record) return JSON.stringify(value);
-  const source = typeof record.source === "string" ? record.source : "unknown";
-  const type = typeof record.type === "string" ? record.type : "event";
-  const runId = typeof record.run_id === "string" ? ` run=${record.run_id}` : "";
-  const color = process.stdout.isTTY ? sourceColor(source) : "";
-  const reset = color ? "\u001b[0m" : "";
-  return `${color}[${source}]${reset} ${type}${runId} ${JSON.stringify(record.payload)}`;
-}
-
-function sourceColor(source: string): string {
-  const colors: Record<string, string> = {
-    daemon: "\u001b[36m",
-    "adapter-rpc": "\u001b[35m",
-    "provider-native": "\u001b[33m",
-    "adapter-canonical": "\u001b[34m",
-    "host-canonical": "\u001b[32m",
-    runtime: "\u001b[37m",
-    worker: "\u001b[36m",
-    control: "\u001b[31m"
-  };
-  return colors[source] ?? "\u001b[37m";
 }
 
 async function waitForDaemonReady(context: CliContext, timeoutMs: number): Promise<Record<string, unknown>> {
@@ -900,21 +803,6 @@ async function connectDaemon(socketPath: string): Promise<net.Socket> {
     throw error;
   }
   return socket;
-}
-
-async function* createLines(socket: net.Socket): AsyncGenerator<string> {
-  let buffered = "";
-  socket.setEncoding("utf8");
-  for await (const chunk of socket) {
-    buffered += String(chunk);
-    let newline = buffered.indexOf("\n");
-    while (newline >= 0) {
-      yield buffered.slice(0, newline);
-      buffered = buffered.slice(newline + 1);
-      newline = buffered.indexOf("\n");
-    }
-  }
-  if (buffered) yield buffered;
 }
 
 async function readEnrollmentToken(input: NodeJS.ReadableStream): Promise<string> {
@@ -1004,42 +892,12 @@ function optionalString(value: FlagValue | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-interface InspectBinding {
-  host: string;
-  port?: number;
-}
-
-function inspectBindingFromFlags(flags: Flags, fallback?: InspectBinding): InspectBinding | undefined {
-  if (flags.inspectHost === undefined && flags.inspectPort === undefined) return fallback;
-  const host = flags.inspectHost === undefined
-    ? fallback?.host ?? "127.0.0.1"
-    : requiredFlag(flags.inspectHost, "inspect-host").trim();
-  if (!host || /[\s/]/.test(host) || host.includes("://") || (host.includes(":") && net.isIP(host) !== 6)) {
-    throw new Error("--inspect-host must be a hostname or IP address without a scheme, path, or port");
-  }
-  const rawPort = flags.inspectPort === undefined ? undefined : requiredFlag(flags.inspectPort, "inspect-port");
-  const port = rawPort === undefined ? fallback?.port : Number(rawPort);
-  if (port !== undefined && (!Number.isSafeInteger(port) || port < 1 || port > 65_535)) {
-    throw new Error("--inspect-port must be an integer between 1 and 65535");
-  }
-  return { host, ...(port === undefined ? {} : { port }) };
-}
-
-function inspectDaemonArguments(binding: InspectBinding | undefined): string[] {
-  if (!binding) return [];
-  const args: string[] = [];
-  args.push("--inspect-host", binding.host);
-  if (binding.port !== undefined) args.push("--inspect-port", String(binding.port));
-  return args;
-}
-
 async function daemonServiceSpec(context: CliContext, enabled = true) {
   const configuration = await readJsonFile<HarnessHomeConfiguration>(context.paths.rootConfig);
   assertHomeConfiguration(configuration);
   return context.service.spec(
     context.paths,
-    enabled,
-    inspectDaemonArguments(configuration?.inspect)
+    enabled
   );
 }
 
@@ -1097,12 +955,11 @@ function helpText(group?: string): string {
   }
   if (group === "daemon") {
     return `Usage: octo-harness [--home PATH] daemon install|uninstall|run|start|stop|restart|status [options]\n\n` +
-      `  install [--no-autostart] [--inspect-host HOST] [--inspect-port PORT]\n` +
+      `  install [--no-autostart]\n` +
       `  uninstall [--force] [--timeout-ms MS]\n` +
-      `  run [--quiet] [--verbose] [--inspect-host HOST] [--inspect-port PORT]\n` +
+      `  run [--quiet] [--verbose]\n` +
       `  start [--wait-online] [--timeout-ms MS]\n` +
       `  stop|restart [--force] [--wait-online] [--timeout-ms MS]\n\n` +
-      `The inspector defaults to 127.0.0.1 and a random port from 20001 through 65535. Non-loopback hosts expose a capability-protected diagnostic endpoint.\n\n` +
       `Uninstall removes the native service but preserves Harness Home identity, credentials, databases, and logs.`;
   }
   if (group === "doctor") {
@@ -1112,23 +969,6 @@ function helpText(group?: string): string {
   if (group === "status") {
     return `Usage: octo-harness [--home PATH] status\n\n` +
       `Reads the daemon's local application status over IPC. Use 'daemon status' to include native service state.`;
-  }
-  if (group === "logs") {
-    return `Usage: octo-harness [--home PATH] logs path|query [RUN_ID] [options]\n\n` +
-      `  query [RUN_ID] [--request-id ID] [--invocation ID] [--limit N] [--sensitive]\n` +
-      `Application data is read through daemon IPC; use doctor for service startup failures.`;
-  }
-  if (group === "diagnostics") {
-    return `Usage: octo-harness [--home PATH] diagnostics\n\n` +
-      `Builds a metadata-only support bundle. It excludes credentials, prompts, model output, tool I/O, provider I/O, outbox payloads, and filesystem paths.`;
-  }
-  if (group === "events") {
-    return `Usage: octo-harness [--home PATH] events [--follow] [--run-id ID] [--source SOURCE] [--json]\n\n` +
-      `Reads the daemon's bounded in-memory event stream. The default prints the retained snapshot and exits.`;
-  }
-  if (group === "inspect") {
-    return `Usage: octo-harness [--home PATH] inspect\n\n` +
-      `Prints the address of the daemon-owned inspector, which listens for the full daemon lifetime.`;
   }
   if (group === "adapter") {
     return `Usage: octo-harness [--home PATH] [--profile NAME] adapter list\n` +
@@ -1150,13 +990,9 @@ function helpText(group?: string): string {
     `  octo-harness daemon install|uninstall|run|start|stop|restart|status\n` +
     `  octo-harness doctor [--json]\n` +
     `  octo-harness status\n` +
-    `  octo-harness diagnostics\n` +
     `  octo-harness adapter list\n` +
     `  octo-harness adapter probe <type>\n` +
     `  octo-harness adapter connect openclaw --binding-id ID --gateway-url URL --agent-id ID --workspace PATH --token-stdin\n` +
-    `  octo-harness logs path|query [RUN_ID]\n` +
-    `  octo-harness events [--follow] [--run-id ID] [--source SOURCE]\n` +
-    `  octo-harness inspect\n` +
     `  octo-harness agent-session list|get ID\n` +
     `  octo-harness agent-run list|get|wait|cancel ID`;
 }

@@ -25,7 +25,6 @@ test("Antigravity builds an isolated stdin carrier, exact model and explicit yol
   assert.ok(!spec.args.join(" ").includes("CONTROL"));
   assert.ok(!spec.args.includes("--continue"));
   assert.deepEqual(JSON.parse(spec.input), { event: "user", message: { content: [{ type: "text", text: "Harness control instructions (apply to this turn):\nCONTROL" }, { type: "text", text: "User input:\nactual user input" }] } });
-  assert.equal(spec.providerInput.content.instructionDelivery, "user-channel-segmented");
 });
 
 test("Antigravity rejects unsupported permissions and managed arguments before spawn", async () => {
@@ -116,19 +115,14 @@ test("Antigravity ignores transient startup login diagnostics but surfaces expli
   assert.match(antigravityLogError("exiting agent loop due to error: authentication required"), /AUTH_REQUIRED/);
 });
 
-test("Antigravity subprocess runs and resumes without changing AGENTS.md and captures exact input", async () => {
+test("Antigravity subprocess runs and resumes without changing AGENTS.md", async () => {
   const directory = await mkdtemp(join(tmpdir(), "octo-agy-test-"));
-  const observations = [];
   try {
     await writeFile(join(directory, "AGENTS.md"), "USER RULES");
-    const events = await collect(create().invoke({ ...request, workdir: directory, providerSession: { sessionId: "resume-specific" } }, { observe: async value => { observations.push(value); } }));
+    const events = await collect(create().invoke({ ...request, workdir: directory, providerSession: { sessionId: "resume-specific" } }));
     assert.equal(events.at(-1).type, "run.completed");
     assert.equal(events.find(e => e.type === "session.update").payload.providerSession.sessionId, "resume-specific");
     assert.equal(events.find(e => e.type === "usage.update").payload.inputTokens, 12);
-    const capture = observations.find(o => o.event === "provider.input");
-    assert.equal(JSON.parse(capture.carrier.content.input).event, "user");
-    const args = capture.carrier.content.args;
-    await assert.rejects(readFile(args[args.indexOf("--log-file") + 1]), error => error.code === "ENOENT");
     assert.equal(await readFile(join(directory, "AGENTS.md"), "utf8"), "USER RULES");
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

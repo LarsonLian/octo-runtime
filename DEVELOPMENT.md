@@ -150,9 +150,7 @@ curl -fsSL https://im-test.deepminer.com.cn/octo-harness/install.sh \
 ### Request ID 排障
 
 Harness 对 enrollment、Runtime registration 和 WebSocket Upgrade 请求发送
-`X-Request-Id`。Daemon 结构化日志将同一值写入顶层 `request_id`，HTTP 失败信息也会
-带上该值。可使用 `octo-harness logs query --request-id <ID>` 查询一次请求的本地记录，
-再用同一 ID 对照 Agent Worker / 网关日志。外部返回的 request id 仅接受最长 128 字节的
+`X-Request-Id`。HTTP 失败信息带上该值，可用同一 ID 对照 Agent Worker / 网关日志。外部返回的 request id 仅接受最长 128 字节的
 可见 ASCII，避免把不可信 Header 原样写入日志。
 
 ```bash
@@ -287,7 +285,7 @@ OCTO_HARNESS_DEV_HOME="$PWD/.tmp/harness-home"
 octo-harness --home "$OCTO_HARNESS_DEV_HOME" status
 octo-harness --home "$OCTO_HARNESS_DEV_HOME" adapter list
 octo-harness --home "$OCTO_HARNESS_DEV_HOME" adapter probe codex
-octo-harness --home "$OCTO_HARNESS_DEV_HOME" logs path
+OCTO_RUNTIME_DEBUG=1 octo-harness --home "$OCTO_HARNESS_DEV_HOME" daemon run
 octo-harness --home "$OCTO_HARNESS_DEV_HOME" agent-session list
 octo-harness --home "$OCTO_HARNESS_DEV_HOME" agent-run list
 ```
@@ -392,7 +390,7 @@ files.
 
 ```bash
 octo-harness --home "$OCTO_HARNESS_DEV_HOME" status
-octo-harness --home "$OCTO_HARNESS_DEV_HOME" logs path
+OCTO_RUNTIME_DEBUG=1 octo-harness --home "$OCTO_HARNESS_DEV_HOME" daemon run
 octo-harness --home "$OCTO_HARNESS_DEV_HOME" adapter list
 ```
 

@@ -184,7 +184,7 @@ Human Token、甲方 JWT 和密码不进入 SDK 持久化层。SDK从 token prov
 
 具体复用规则：
 
-- `startDaemonServer()`、Agent Work 多 Runtime supervisor、adapter-host、store、inspect、drain/close 只保留
+- `startDaemonServer()`、Agent Work 多 Runtime supervisor、adapter-host、store、drain/close 只保留
   在 `packages/octo-harness-daemon` 一份，standalone 与 embedded 都调用它。
 - standalone 的 `apps/daemon` 继续读取普通 Home 一级 profile，并由 LaunchAgent/systemd/Task Scheduler
   管理；它不知道 Human Token、账号切换或 `accounts/`。
@@ -297,7 +297,7 @@ running(account A)
   -> 关闭全部 Runtime WSS
   -> 请求 runner 协作退出（Unix signal / Windows shutdown control）
   -> 超时后按已验证的进程归属做平台级进程树回收
-  -> 删除瞬态 allowlist/inspect/supervisor 文件
+  -> 删除瞬态 allowlist/supervisor 文件
   -> 清空 grant、AbortController、timer、health session
   -> stopped
   -> startAccount(account B)
@@ -378,7 +378,7 @@ health 语义：
 - `allConnected` 只表示本次账号 allowlist 全部在线，不包含历史 profile。
 - `onHealth()` 注册后立即收到一次当前快照；相同语义状态不重复推送，仅更新时间不会制造事件风暴。
 - listener 异常不能影响 SDK；取消订阅后不得再收到事件。
-- health 不包含 Runtime token、grant、inspect token、Human token 或 provider credential。
+- health 不包含 Runtime token、grant、Human token 或 provider credential。
 
 Electron 宿主只需在 main 中订阅，再通过自己已有的单一 preload bridge 投影给 renderer；SDK自身
 不创建任何 `window.*` 全局或 IPC channel。
@@ -476,7 +476,7 @@ packages/octo-harness-embedded/
 
 - `private: false`，发布编译后的 `dist`，不导出仓库内 TypeScript 源路径。
 - Node.js `>=24`，不依赖 Electron、React 或任一宿主应用。
-- 依赖固定兼容范围的 `octo-harness-daemon`、`adapter-host`、protocol 和 observability 包。
+- 依赖固定兼容范围的 `octo-harness-daemon`、`adapter-host`、protocol 包。
 - 高层 API 是唯一推荐入口；低层 Home/enrollment/supervisor 模块不在初始版承诺稳定。
 - 包版本与冻结的 daemon/adapter 版本写入 runtime manifest；宿主构建不得隐式使用相邻仓库 HEAD。
 
@@ -501,7 +501,7 @@ octo-harness-embedded prepare \
 5. `appId`、subject ID 和 tenant ID 都经过长度、字符与路径穿越校验；账号/profile 路径段使用哈希派生。
 6. 全局 Home 同时只允许一个 SDK owner 和一个活动账号；锁冲突 fail closed，不抢占活进程。
 7. 切账号 stop 失败时保持 `error`，禁止自动启动新账号。
-8. 宿主只能看到非敏感 health 投影；原始 daemon status 和 inspect capability 不默认暴露。
+8. 宿主只能看到非敏感 health 投影；原始 daemon status  不默认暴露。
 9. profile allowlist 和账号级数据目录防止 SDK 误加载，不替代 OS 账号权限；互不信任的本机用户必须
    使用不同 OS 账号。
 

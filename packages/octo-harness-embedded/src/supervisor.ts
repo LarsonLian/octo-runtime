@@ -55,7 +55,7 @@ export async function startEmbeddedRuntime(options: {
       shell: false,
       windowsHide: true,
       stdio: ["ignore", output, output],
-      env: childEnvironment(options.paths, options.account)
+      env: childEnvironment(options.paths)
     });
   } finally {
     closeSync(output);
@@ -150,13 +150,13 @@ function findOnPath(executable: string): string | undefined {
   return undefined;
 }
 
-export function childEnvironment(paths: EmbeddedHomePaths, account: EmbeddedAccountPaths): NodeJS.ProcessEnv {
+export function childEnvironment(paths: EmbeddedHomePaths): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH ?? "",
     HOME: process.env.HOME ?? process.env.USERPROFILE ?? "",
     LANG: process.env.LANG ?? "en_US.UTF-8",
     OCTO_HARNESS_HOME: paths.home,
-    OCTO_HARNESS_LOG_DIR: account.logs
+    ...(process.env.OCTO_RUNTIME_DEBUG === "1" ? { OCTO_RUNTIME_DEBUG: "1" } : {})
   };
   // Preserve the host's explicit network routing, including loopback bypasses.
   // Do not inherit arbitrary application credentials into the runtime process.

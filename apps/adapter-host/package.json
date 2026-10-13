@@ -22,8 +22,7 @@
     "@mininglamp-oss/octo-harness-adapter-opencode": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-qodercli": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-qoderclicn": "workspace:*",
-    "@mininglamp-oss/octo-harness-adapter-zcode-gui": "workspace:*",
-    "@mininglamp-oss/octo-harness-observability": "workspace:*"
+    "@mininglamp-oss/octo-harness-adapter-zcode-gui": "workspace:*"
   },
   "types": "./dist/index.d.ts"
 }

@@ -1,12 +1,12 @@
-import { InvocationExperience } from "./experience.js";
+import type { AdapterInvocationContext } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import {
+  adapterApprovalModes,
   assertCanonicalEvent,
   assertInteractionResponse,
   assertInvokeRequest,
-  hasImageInput,
   executionFeatures,
-  adapterApprovalModes,
   failurePayload,
+  hasImageInput,
   isTerminal,
   type CanonicalEvent,
   type InteractionResponse,
@@ -15,13 +15,9 @@ import {
   type MessageExposure,
   type MessageProvenance
 } from "@mininglamp-oss/octo-harness-protocol";
-import type {
-  AdapterInvocationContext,
-  CaptureReceipt,
-  ObservationIdentity,
-  ProviderObservation
-} from "@mininglamp-oss/octo-harness-observability";
-import { InvocationWatchdog, AdapterWatchdogTimeoutError, WATCHDOG_CAPABILITY, ACTIVITY_CAPABILITY, type WatchdogDiagnostic } from "./watchdog.js";
+import { InvocationExperience } from "./experience.js";
+import { hostLog } from "./host-log.js";
+import { ACTIVITY_CAPABILITY, AdapterWatchdogTimeoutError, InvocationWatchdog, WATCHDOG_CAPABILITY } from "./watchdog.js";
 
 /** Provider-neutral metadata the Host uses for registration and capability discovery. */
 export interface HostedAdapterMetadata {
@@ -45,27 +41,10 @@ export interface HostedAdapterMetadata {
 export interface HostedAdapter {
   metadata: HostedAdapterMetadata;
   probe?: () => unknown;
-  /**
-   * The optional context preserves compatibility with third-party adapters that
-   * implement the original one-argument method. When present, it is the only
-   * supported path for recording provider input and dispatch milestones.
-   */
+  /** Execute a turn and report progress for host deadline enforcement. */
   invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncIterable<CanonicalEvent>;
   /** Resume a provider request that paused this exact active invocation. */
   respondInteraction?(invocationId: string, response: InteractionResponse): Promise<void>;
-}
-
-/** Host-owned dependencies used to attach trusted identity to plugin observations. */
-export interface AdapterHostOptions {
-  /**
-   * Persist an adapter observation under the invocation identity supplied by
-   * the host. A durable-capture implementation may reject this Promise to stop
-   * dispatch before sensitive provider input leaves the process.
-   */
-  observe?: (identity: ObservationIdentity, observation: ProviderObservation) => Promise<CaptureReceipt>;
-  /** Receives adapter output after schema validation and before host correction. */
-  canonicalSink?: (identity: ObservationIdentity, event: CanonicalEvent) => void;
-  diagnosticSink?: (identity: ObservationIdentity, diagnostic: WatchdogDiagnostic) => void;
 }
 
 interface MessageState {
@@ -87,22 +66,6 @@ export class AdapterHost {
   readonly #active = new Map<string, AbortController>();
   readonly #activeAdapters = new Map<string, HostedAdapter>();
   readonly #acceptedTerminals = new Set<string>();
-  readonly #observe: NonNullable<AdapterHostOptions["observe"]>;
-  readonly #canonicalSink?: AdapterHostOptions["canonicalSink"];
-  readonly #diagnosticSink?: AdapterHostOptions["diagnosticSink"];
-
-  constructor(options: AdapterHostOptions = {}) {
-    // A disabled receipt keeps observability additive: existing embeddings and
-    // third-party hosts do not need to configure a logger to invoke adapters.
-    this.#observe = options.observe ?? (() => Promise.resolve({
-      captureId: "disabled",
-      state: "disabled",
-      complete: false
-    }));
-    this.#canonicalSink = options.canonicalSink;
-    this.#diagnosticSink = options.diagnosticSink;
-  }
-
   /** Register an adapter by `metadata.type`; the same type cannot be overwritten twice. */
   register(adapter: HostedAdapter): void {
     if (this.#adapters.has(adapter.metadata.type)) throw new Error(`duplicate adapter: ${adapter.metadata.type}`);
@@ -124,9 +87,9 @@ export class AdapterHost {
         const result: unknown = await Promise.race([
           Promise.resolve().then(() => adapter.probe?.()),
           new Promise<undefined>(resolve => { timer = setTimeout(() => {
-            unavailableReason = "probe_timeout";
-            resolve(undefined);
-          }, 3_000); })
+              unavailableReason = "probe_timeout";
+              resolve(undefined);
+            }, 3_000); })
         ]);
         if (result && typeof result === "object") probe = result as Record<string, unknown>;
         if (probe.available === false) unavailableReason = typeof probe.reason === "string" ? probe.reason : "provider_unavailable";
@@ -195,14 +158,14 @@ export class AdapterHost {
     this.#activeAdapters.set(request.invocationId, adapter);
     let terminal: CanonicalEvent | undefined;
     let outcome = "stopped";
-    const identity: ObservationIdentity = {
+    const identity = {
       ...(typeof request.runMetadata?.profile === "string" ? { profile: request.runMetadata.profile } : {}),
       ...(typeof request.runMetadata?.runtimeId === "string" ? { runtimeId: request.runMetadata.runtimeId } : {}),
       runId: request.runId, invocationId: request.invocationId, agentSessionId: request.agentSessionId, adapterType
     };
     const watchdog = new InvocationWatchdog(request.runtimeLimits, controller,
       adapter.metadata.executionFeatures.includes(ACTIVITY_CAPABILITY),
-      diagnostic => this.#diagnosticSink?.(identity, {
+      diagnostic => hostLog("watchdog", { ...identity,
         ...diagnostic,
         data: { ...diagnostic.data, agentRevisionId: request.runMetadata?.agentRevisionId }
       }));
@@ -217,11 +180,7 @@ export class AdapterHost {
     const messages = new Map<string, MessageState>();
     const anonymousMessages = new Map<string, string>();
     let messageNumber = 0;
-    // Correlation fields come from the validated host request, never from the
-    // adapter. This prevents a plugin from accidentally attributing sensitive
-    // input to another Run while still letting it describe transport details.
     const context: AdapterInvocationContext = {
-      observe: observation => this.#observe(identity, observation),
       reportActivity: activity => watchdog.activity(activity)
     };
 
@@ -250,9 +209,9 @@ export class AdapterHost {
       };
       const prefix: CanonicalEvent[] = !state && event.type !== "message.create"
         ? [{ protocolVersion: 2,
-            type: "message.create",
-            payload: { role: "assistant", status: "streaming", channel, messageId, ...(stepId ? { stepId } : {}), ...analysisMetadata }
-          }]
+          type: "message.create",
+          payload: { role: "assistant", status: "streaming", channel, messageId, ...(stepId ? { stepId } : {}), ...analysisMetadata }
+        }]
         : [];
       const closed = event.type === "message.update" && ["completed", "failed", "cancelled", "canceled", "stopped"].includes(String(event.payload.status));
       messages.set(messageId, { messageId, channel, open: !closed, ...(stepId ? { stepId } : {}), ...analysisMetadata });
@@ -292,24 +251,16 @@ export class AdapterHost {
         assertCanonicalEvent(adapterEvent);
         const event: CanonicalEvent = adapterEvent.type === "run.failed"
           ? { protocolVersion: 2,
-              type: "run.failed",
-              payload: failurePayload(adapterEvent.payload, {
-                stage: "provider.invoke",
-                defaultDomain: "provider",
-                runId: request.runId,
-                source: { component: "octo-harness", adapter: adapterType }
-              })
-            }
+            type: "run.failed",
+            payload: failurePayload(adapterEvent.payload, {
+              stage: "provider.invoke",
+              defaultDomain: "provider",
+              runId: request.runId,
+              source: { component: "octo-harness", adapter: adapterType }
+            })
+          }
           : adapterEvent;
         watchdog.canonical(event);
-        this.#canonicalSink?.({
-          ...(typeof request.runMetadata?.profile === "string" ? { profile: request.runMetadata.profile } : {}),
-          ...(typeof request.runMetadata?.runtimeId === "string" ? { runtimeId: request.runMetadata.runtimeId } : {}),
-          runId: request.runId,
-          invocationId: request.invocationId,
-          agentSessionId: request.agentSessionId,
-          adapterType
-        }, event);
         if (terminal) throw new Error(`${adapterType} emitted after terminal event`);
         if (isTerminal(event)) {
           terminal = event;
@@ -346,7 +297,7 @@ export class AdapterHost {
       const userCancelled = controller.signal.aborted && !(controller.signal.reason instanceof AdapterWatchdogTimeoutError);
       outcome = userCancelled ? "stopped" : "failed";
       if (error instanceof AdapterWatchdogTimeoutError && error.timeoutReason === "cleanup_timeout") {
-        try { this.#diagnosticSink?.(identity, { event: "timeout", data: { ...watchdog.snapshot(), timeoutReason: error.timeoutReason, timeoutMs: error.timeoutMs } }); } catch { /* best effort */ }
+        try { hostLog("watchdog", { ...identity, event: "timeout", data: { ...watchdog.snapshot(), timeoutReason: error.timeoutReason, timeoutMs: error.timeoutMs } }); } catch { /* best effort */ }
       }
       watchdog.dispose();
       if (!controller.signal.aborted) controller.abort(error);
@@ -485,6 +436,8 @@ function watchdogFailureDetails(error: unknown): Record<string, unknown> {
     : {};
 }
 
+export { spawnAdapterHost } from "./process.js";
+export type { AdapterHostProcess,SpawnAdapterHostOptions } from "./process.js";
 export {
   AdapterHostRpcClient,
   AdapterHostRpcServer,
@@ -492,6 +445,4 @@ export {
   type RpcTrace,
   type RpcTraceDirection
 } from "./rpc.js";
-export { spawnAdapterHost } from "./process.js";
-export type { AdapterHostProcess, SpawnAdapterHostOptions } from "./process.js";
 export { DEFAULT_RUNTIME_LIMITS } from "./watchdog.js";

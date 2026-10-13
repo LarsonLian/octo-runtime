@@ -1,17 +1,11 @@
-import { invocationEnvs, mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { canonicalTerminalStatus, executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
-import { randomUUID } from "node:crypto";
 import {
-  defineAdapter,
-  AcpApprovalBridge,
-  observeBestEffort,
-  observeProviderOutput,
-  providerInputText,
+  AcpApprovalBridge,defineAdapter,invocationEnvs,mapReasoningEffort,providerInputText,
   type AdapterInvocationContext,
   type CanonicalEvent,
-  type InvokeRequest,
-  type ProviderCarrier
+  type InvokeRequest
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { canonicalTerminalStatus, executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
+import { randomUUID } from "node:crypto";
 import {
   OpenClawGatewayClient,
   type OpenClawDeviceIdentity,
@@ -42,7 +36,6 @@ export interface OpenClawGatewayInvocation {
   reconciliationDeadlineAt: number;
   createParams: JsonRecord;
   agentParams: JsonRecord;
-  providerInput: ProviderCarrier;
 }
 
 function asRecord(value: unknown): JsonRecord | undefined {
@@ -122,19 +115,6 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
     reconciliationDeadlineAt: Date.now() + timeoutMilliseconds + reconciliationGraceMilliseconds,
     createParams,
     agentParams,
-    providerInput: {
-      kind: "json_params",
-      content: {
-        operations: [
-          { method: "agents.list", params: {} },
-          { method: "sessions.create", params: createParams },
-          { method: "sessions.messages.subscribe", params: { key: sessionKey, agentId } },
-          { method: "agent", params: agentParams }
-        ],
-        // Authentication is deliberately absent from the captured provider carrier.
-        gatewayUrl
-      }
-    }
   };
 }
 
@@ -304,8 +284,8 @@ function normalizeGatewayAgentEvent(payload: unknown, state: StreamState): Canon
     const nativeId = nonEmptyString(data.itemId);
     const message = gatewayMessage(state, "commentary", nativeId);
     events.push({ protocolVersion: 2, type: "message.update", payload: {
-      ...message, text: data.progressText, status: data.phase === "end" ? "completed" : "streaming"
-    } });
+        ...message, text: data.progressText, status: data.phase === "end" ? "completed" : "streaming"
+      } });
   } else if (stream === "usage") {
     const event = usageEvent(data);
     if (event) events.push(event);
@@ -508,12 +488,6 @@ async function* invokeOpenClawGateway(
         agentAccepted = true;
         const runId = nonEmptyString(asRecord(value)?.runId);
         if (runId) acceptedRunId = runId;
-        observeBestEffort(context, {
-          event: "provider.dispatch.written",
-          rpcMethod: "gateway.agent",
-          providerSessionId: providerSessionKey,
-          providerRequestId: acceptedRunId
-        });
       }
     });
     void request.then(result => queue.push({ done: true, result }), error => queue.push({ error: error instanceof Error ? error : new Error(String(error)) }));
@@ -523,12 +497,6 @@ async function* invokeOpenClawGateway(
       if (item.error) throw item.error;
       if (item.done) {
         const reconciled = normalizeFinalResponse(item.result, state);
-        observeProviderOutput(context, reconciled.events, {
-          rpcMethod: "gateway.agent.final",
-          providerSessionId: providerSessionKey,
-          providerRequestId: acceptedRunId,
-          native: { type: "agent.final" }
-        });
         for (const event of reconciled.events) yield event;
         terminal = reconciled.terminal;
         if (terminal === "failed") throw new Error(reconciled.error);
@@ -585,29 +553,7 @@ async function* invokeOpenClawGateway(
       const native = asRecord(item.event.payload);
       const runId = nonEmptyString(native?.runId);
       if (!runId || (runId !== acceptedRunId && runId !== invocation.requestId)) continue;
-      const incomingSeq = finiteNumber(native?.seq);
-      if (incomingSeq !== undefined && state.lastSeq >= 0 && incomingSeq > state.lastSeq + 1) {
-        observeBestEffort(context, {
-          event: "provider.output",
-          rpcMethod: "gateway.event.agent",
-          providerSessionId: providerSessionKey,
-          providerRequestId: runId,
-          data: {
-            diagnostic: {
-              type: "sequence_gap",
-              expectedSeq: state.lastSeq + 1,
-              receivedSeq: incomingSeq
-            }
-          }
-        });
-      }
       const events = normalizeGatewayAgentEvent(item.event.payload, state);
-      observeProviderOutput(context, events, {
-        rpcMethod: "gateway.event.agent",
-        providerSessionId: providerSessionKey,
-        providerRequestId: runId,
-        native: { type: nonEmptyString(native?.stream) }
-      });
       for (const event of events) yield event;
       terminal = terminalState(item.event.payload);
       if (terminal) {
@@ -676,13 +622,6 @@ async function* invokeOpenClawGateway(
         await recoveryClient.close();
       }
     }
-    observeBestEffort(context, {
-      event: "provider.dispatch.failed",
-      rpcMethod: "gateway.agent",
-      providerSessionId: providerSessionKey,
-      providerRequestId: acceptedRunId,
-      data: { error: message }
-    });
     yield { protocolVersion: 2, type: "message.update", payload: { ...gatewayMessage(state, "final", state.assistantItemId), role: "assistant", status: "failed", text: state.assistantText, channel: "final" } };
     yield { protocolVersion: 2, type: "run.failed", payload: { message, adapterType: "openclaw" } };
   } finally {
@@ -729,22 +668,15 @@ export function createOpenClawAdapter(
       if (!option(req, OPENCLAW_PROVIDER_OPTIONS.url)) {
         const gateway = await loadLocalOpenClawGateway();
         req = { ...req, agentConfig: { ...req.agentConfig, providerOptions: {
-          [OPENCLAW_PROVIDER_OPTIONS.url]: gateway.url,
-          [OPENCLAW_PROVIDER_OPTIONS.token]: gateway.token,
-          [OPENCLAW_PROVIDER_OPTIONS.deviceId]: gateway.device.deviceId,
-          [OPENCLAW_PROVIDER_OPTIONS.publicKey]: gateway.device.publicKey,
-          [OPENCLAW_PROVIDER_OPTIONS.privateKey]: gateway.device.privateKey
-        } } };
+              [OPENCLAW_PROVIDER_OPTIONS.url]: gateway.url,
+              [OPENCLAW_PROVIDER_OPTIONS.token]: gateway.token,
+              [OPENCLAW_PROVIDER_OPTIONS.deviceId]: gateway.device.deviceId,
+              [OPENCLAW_PROVIDER_OPTIONS.publicKey]: gateway.device.publicKey,
+              [OPENCLAW_PROVIDER_OPTIONS.privateKey]: gateway.device.privateKey
+            } } };
       }
       if (req.agentSource === "preset" && req.workdir) throw new Error("CONTEXT_WORKSPACE_UNSUPPORTED: preset OpenClaw uses its provider workspace");
       const invocation = buildOpenClawGatewayInvocation(req);
-      await context?.observe({
-        event: "provider.input",
-        rpcMethod: "gateway.agents.list+sessions.create+messages.subscribe+agent",
-        providerSessionId: invocation.sessionKey,
-        providerRequestId: invocation.requestId,
-        carrier: invocation.providerInput
-      });
       const bridge = new AcpApprovalBridge(req, 600_000, { providerDecisions: true, providerManagedExpiry: true });
       responders.set(req.invocationId, bridge);
       try { yield* bridge.stream(invokeOpenClawGateway(req, invocation, context, clientFactory, bridge)); }
@@ -769,9 +701,7 @@ export {
   type OpenClawGatewayOptions
 } from "./gateway.js";
 export {
-  normalizeOpenClawFrame,
-  OpenClawTranscriptNormalizer,
-  tryParseOpenClawEvent,
+  OpenClawTranscriptNormalizer,normalizeOpenClawFrame,tryParseOpenClawEvent,
   tryParseOpenClawFinalBlob,
   tryParseOpenClawTranscriptLine
 } from "./parser.js";

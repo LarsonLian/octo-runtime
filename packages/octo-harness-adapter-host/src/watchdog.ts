@@ -1,6 +1,6 @@
-import { performance } from "node:perf_hooks";
+import type { ProviderActivity } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { isTerminal, type CanonicalEvent, type RuntimeLimits } from "@mininglamp-oss/octo-harness-protocol";
-import type { ProviderActivity } from "@mininglamp-oss/octo-harness-observability";
+import { performance } from "node:perf_hooks";
 
 export const WATCHDOG_CAPABILITY = "runtime.watchdog.v2";
 export const ACTIVITY_CAPABILITY = "activity.turn-progress";

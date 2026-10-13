@@ -1,55 +1,50 @@
-import { recordContextPreparation } from "./context-preparation-receipt.js";
-import { scenarioInstructions } from "./scenario-context.js";
-import type { ScenarioRequest, ScenarioPolicySnapshot } from "@mininglamp-oss/octo-harness-protocol";
-import { createHash, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { mkdir, statfs } from "node:fs/promises";
-import { networkInterfaces } from "node:os";
-import { performance } from "node:perf_hooks";
-import { dirname, join } from "node:path";
-import WebSocket from "ws";
 import type { AdapterHostRpc, HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
 import { DEFAULT_RUNTIME_LIMITS } from "@mininglamp-oss/octo-harness-adapter-host";
-import {
-  REQUEST_ID_HEADER,
-  createRequestId,
-  responseRequestId,
-  type LocalObservability,
-  type LogInput
-} from "@mininglamp-oss/octo-harness-observability";
+import { createClaudeMaterialCompactionPort } from "@mininglamp-oss/octo-harness-context-builder/anthropic-material-compaction";
+import { FileMaterialCompactionStore, compactContextMaterials, type MaterialCompactionPort } from "@mininglamp-oss/octo-harness-context-builder/context-compaction";
+import { prepareRunContext, type PreparedRunContext } from "@mininglamp-oss/octo-harness-context-builder/context-preparation";
+import { resolveRuntimeInputImages } from "@mininglamp-oss/octo-harness-context-builder/input-images";
+import { createCodexMaterialCompactionPort } from "@mininglamp-oss/octo-harness-context-builder/responses-material-compaction";
+import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext } from "@mininglamp-oss/octo-harness-context-builder/run-context";
 import type {
   AgentConfig,
   CanonicalEvent,
   ContextEnvelope,
   InteractionResponse,
-  InvokeRequest,
-  ProviderSession,
+  InvokeRequest,IssuedToolAuthorization,ProviderSession,
   ResolvedExecutionPlan,
-  ResolvedRuntimeSelection
+  ResolvedRuntimeSelection,ScenarioPolicySnapshot,ScenarioRequest,ToolAuthorization
 } from "@mininglamp-oss/octo-harness-protocol";
 import {
   RUNTIME_RUN_CONTRACT,
-  assertInteractionResponse,
   assertContextEnvelope,
+  assertInteractionResponse,
   assertResolvedExecutionPlan,
   assertResolvedRuntimeSelection,
   contextItem,
   failurePayload,
   modelPartsFromInput
 } from "@mininglamp-oss/octo-harness-protocol";
-import { resolveRuntimeInputImages } from "@mininglamp-oss/octo-harness-context-builder/input-images";
+import { createHash, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { mkdir, statfs } from "node:fs/promises";
+import { networkInterfaces } from "node:os";
+import { dirname, join } from "node:path";
+import { performance } from "node:perf_hooks";
+import WebSocket from "ws";
+import type { ReplayEvent } from "./agent-work-store.js";
 import { AgentWorkStore, StreamGapError } from "./agent-work-store.js";
-import { prepareRunContext, type PreparedRunContext } from "@mininglamp-oss/octo-harness-context-builder/context-preparation";
 import { ContextPipeline } from "./context-pipeline.js";
-import { createClaudeMaterialCompactionPort } from "@mininglamp-oss/octo-harness-context-builder/anthropic-material-compaction";
-import { createCodexMaterialCompactionPort } from "@mininglamp-oss/octo-harness-context-builder/responses-material-compaction";
-import { compactContextMaterials, FileMaterialCompactionStore, type MaterialCompactionPort } from "@mininglamp-oss/octo-harness-context-builder/context-compaction";
-import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext } from "@mininglamp-oss/octo-harness-context-builder/run-context";
+import { recordContextPreparation } from "./context-preparation-receipt.js";
+import { collectRuntimeDeviceInfo } from "./device-info.js";
+import {
+  REQUEST_ID_HEADER,
+  createRequestId,
+  responseRequestId
+} from "./request-id.js";
+import { scenarioInstructions } from "./scenario-context.js";
 import { prepareTaskMaterials, type PreparedTaskMaterials } from "./task-materials.js";
 import { businessServiceConnections, resolveToolAuthorizations, unconsumedToolAuthorizations, type BusinessServiceBinding, type BusinessServiceConnections } from "./tool-authorizations.js";
-import type { IssuedToolAuthorization, ToolAuthorization } from "@mininglamp-oss/octo-harness-protocol";
-import type { ReplayEvent } from "./agent-work-store.js";
-import { collectRuntimeDeviceInfo } from "./device-info.js";
 
 const MIN_PROTOCOL_VERSION = 2;
 const MAX_PROTOCOL_VERSION = 2;
@@ -274,9 +269,6 @@ interface AcceptingRun {
 export class AgentWorkRuntime {
   readonly #options: AgentWorkRuntimeOptions;
   readonly #host: AdapterHostRpc;
-  // Observability is optional so the reusable runtime preserves compatibility
-  // with existing embedders. When present, it replaces routine stderr output.
-  readonly #observability?: LocalObservability;
   readonly #runAdmission?: RunAdmission;
   readonly #activeRuns = new Map<string, ActiveRun>();
   readonly #acceptingCommandIds = new Set<string>();
@@ -332,7 +324,6 @@ export class AgentWorkRuntime {
   constructor(
     options: AgentWorkRuntimeOptions,
     host: AdapterHostRpc,
-    observability?: LocalObservability,
     runAdmission?: RunAdmission
   ) {
     if (typeof options.profile !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(options.profile)) {
@@ -340,7 +331,6 @@ export class AgentWorkRuntime {
     }
     this.#options = options;
     this.#host = host;
-    this.#observability = observability;
     this.#runAdmission = runAdmission;
     const minimumFreeBytes = options.minimumFreeBytes ?? DEFAULT_MINIMUM_FREE_BYTES;
     if (!Number.isSafeInteger(minimumFreeBytes) || minimumFreeBytes < 0) {
@@ -544,56 +534,35 @@ export class AgentWorkRuntime {
   async #register(adapterTypes: string[], signal?: AbortSignal, updateOnly = false): Promise<{ runtimeId: string; protocolVersion: number }> {
     if (!updateOnly) this.#connectionState = "registering";
     const sentRequestId = createRequestId();
-    this.#log({
-      level: "info",
-      scope: "agent-work.registration",
-      event: "agent_work.registration.started",
-      message: "registering local Agent Work runtime",
-      requestId: sentRequestId,
-      data: { endpoint: httpEndpointMetadata(this.#options.baseUrl), adapter_types: adapterTypes }
+    const response = await fetch(`${stripSlash(this.#options.baseUrl)}/v1/runtime/register`, {
+      method: "POST",
+      headers: this.#headers(true, sentRequestId),
+      body: JSON.stringify({
+        profile: this.#options.profile,
+        name: this.#options.runtimeName,
+        device: collectRuntimeDeviceInfo(),
+        runtime_version: RUNTIME_VERSION,
+        protocol_version: MAX_PROTOCOL_VERSION,
+        protocol_version_min: MIN_PROTOCOL_VERSION,
+        protocol_version_max: MAX_PROTOCOL_VERSION,
+        capabilities: {
+          run_contract: RUNTIME_RUN_CONTRACT,
+          adapters: this.#adapters.map(adapter => ({
+            provider_type: adapter.type,
+            provider_version: adapter.providerVersion ?? null,
+            provider_path: adapter.providerPath ?? null,
+            available: adapter.available === true,
+            unavailable_reason: adapter.available === true ? null : adapter.unavailableReason ?? "probe_missing",
+            capabilities: adapter.capabilities,
+            agent_sources: adapter.agentSources,
+            execution_features: adapter.executionFeatures,
+            ...(adapter.processModel ? { process_model: adapter.processModel } : {}),
+            ...(adapter.transport ? { transport: adapter.transport } : {})
+          })),
+        }
+      }),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000)
     });
-    let response: Response;
-    try {
-      response = await fetch(`${stripSlash(this.#options.baseUrl)}/v1/runtime/register`, {
-        method: "POST",
-        headers: this.#headers(true, sentRequestId),
-        body: JSON.stringify({
-          profile: this.#options.profile,
-          name: this.#options.runtimeName,
-          device: collectRuntimeDeviceInfo(),
-          runtime_version: RUNTIME_VERSION,
-          protocol_version: MAX_PROTOCOL_VERSION,
-          protocol_version_min: MIN_PROTOCOL_VERSION,
-          protocol_version_max: MAX_PROTOCOL_VERSION,
-          capabilities: {
-            run_contract: RUNTIME_RUN_CONTRACT,
-            adapters: this.#adapters.map(adapter => ({
-              provider_type: adapter.type,
-              provider_version: adapter.providerVersion ?? null,
-              provider_path: adapter.providerPath ?? null,
-              available: adapter.available === true,
-              unavailable_reason: adapter.available === true ? null : adapter.unavailableReason ?? "probe_missing",
-              capabilities: adapter.capabilities,
-              agent_sources: adapter.agentSources,
-              execution_features: adapter.executionFeatures,
-              ...(adapter.processModel ? { process_model: adapter.processModel } : {}),
-              ...(adapter.transport ? { transport: adapter.transport } : {})
-            })),
-          }
-        }),
-        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000)
-      });
-    } catch (error) {
-      this.#log({
-        level: "error",
-        scope: "agent-work.registration",
-        event: "agent_work.registration.failed",
-        message: "Agent Work runtime registration request failed",
-        requestId: sentRequestId,
-        data: { endpoint: httpEndpointMetadata(this.#options.baseUrl), error: errorMessage(error) }
-      });
-      throw error;
-    }
     const requestId = responseRequestId(response, sentRequestId);
     let body: {
       runtime?: { runtime_id?: string; profile?: string; protocol_version?: number };
@@ -602,31 +571,14 @@ export class AgentWorkRuntime {
     try {
       body = await response.json() as typeof body;
     } catch (error) {
-      this.#log({
-        level: "error",
-        scope: "agent-work.registration",
-        event: "agent_work.registration.failed",
-        message: "Agent Work runtime registration returned invalid JSON",
-        requestId,
-        data: { endpoint: httpEndpointMetadata(this.#options.baseUrl), http_status: response.status, error: errorMessage(error) }
-      });
       throw new Error(`Agent Work runtime registration returned invalid JSON (request_id=${requestId})`, { cause: error });
     }
-    const rejectRegistration = (error: Error, message: string): never => {
-      this.#log({
-        level: "error",
-        scope: "agent-work.registration",
-        event: "agent_work.registration.failed",
-        message,
-        requestId,
-        data: { endpoint: httpEndpointMetadata(this.#options.baseUrl), http_status: response.status, error: error.message }
-      });
+    const rejectRegistration = (error: Error): never => {
       throw error;
     };
     if (body.error?.code === "RUNTIME_PROFILE_MISMATCH" || body.error?.details?.reason_code === "RUNTIME_PROFILE_MISMATCH") {
       rejectRegistration(
-        new RuntimeIdentityMismatchError(`Agent Work profile does not match the enrolled Runtime (request_id=${requestId})`),
-        "Agent Work runtime registration profile was rejected"
+        new RuntimeIdentityMismatchError(`Agent Work profile does not match the enrolled Runtime (request_id=${requestId})`)
       );
     }
     const registeredRuntime = body.runtime;
@@ -634,34 +586,23 @@ export class AgentWorkRuntime {
       if (response.status === 401 || response.status === 403) {
         this.#credentialFailures += 1;
         return rejectRegistration(
-          new RuntimeCredentialRejectedError(response.status, this.#credentialFailures),
-          "Agent Work runtime credential was rejected"
+          new RuntimeCredentialRejectedError(response.status, this.#credentialFailures)
         );
       }
       const error = new Error(`Agent Work runtime registration failed (${response.status}, request_id=${requestId}): ${body.error?.message ?? "invalid response"}`);
-      return rejectRegistration(error, "Agent Work runtime registration was rejected");
+      return rejectRegistration(error);
     }
     if (registeredRuntime.profile !== this.#options.profile) {
       rejectRegistration(
-        new RuntimeIdentityMismatchError(`Agent Work runtime registration returned a different or missing profile (request_id=${requestId})`),
-        "Agent Work runtime registration returned an unexpected profile"
+        new RuntimeIdentityMismatchError(`Agent Work runtime registration returned a different or missing profile (request_id=${requestId})`)
       );
     }
     const protocolVersion = registeredRuntime.protocol_version;
     if (protocolVersion !== MAX_PROTOCOL_VERSION) {
       rejectRegistration(
-        new Error(`Agent Work selected unsupported protocol ${protocolVersion} (request_id=${requestId})`),
-        "Agent Work runtime registration selected an unsupported protocol"
+        new Error(`Agent Work selected unsupported protocol ${protocolVersion} (request_id=${requestId})`)
       );
     }
-    this.#log({
-      level: "info",
-      scope: "agent-work.registration",
-      event: "agent_work.registration.completed",
-      message: "local Agent Work runtime registered",
-      requestId,
-      data: { runtime_id: registeredRuntime.runtime_id, http_status: response.status }
-    });
     this.#credentialFailures = 0;
     return { runtimeId: registeredRuntime.runtime_id, protocolVersion: MAX_PROTOCOL_VERSION };
   }
@@ -685,18 +626,7 @@ export class AgentWorkRuntime {
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     const connectionId = `conn_wss_${randomUUID()}`;
     const requestId = createRequestId();
-    const attempt = ++this.#connectionAttempt;
-    // Endpoint metadata is intentionally reconstructed from URL components. Do
-    // not record the original URL: it may contain userinfo or query credentials.
-    const endpoint = webSocketEndpointMetadata(url);
-    this.#log({
-      level: "info",
-      scope: "transport.wss",
-      event: "transport.connection.connecting",
-      message: "Agent Work WebSocket connection starting",
-      requestId,
-      data: { connection_id: connectionId, reconnect_attempt: attempt, endpoint }
-    });
+    this.#connectionAttempt++;
     const socket = new WebSocket(url, { headers: this.#headers(false, requestId) });
     this.#connectingSocket = socket;
     try {
@@ -741,21 +671,6 @@ export class AgentWorkRuntime {
       });
       this.#assertCurrentLifecycle(epoch);
     } catch (error) {
-      if (!(error instanceof RuntimeStoppingError)) {
-        this.#log({
-          level: "warn",
-          scope: "transport.wss",
-          event: "transport.connection.failed",
-          message: "Agent Work WebSocket connection failed",
-          requestId,
-          data: {
-            connection_id: connectionId,
-            reconnect_attempt: attempt,
-            endpoint,
-            error: errorMessage(error)
-          }
-        });
-      }
       socket.terminate();
       throw error;
     } finally {
@@ -764,19 +679,6 @@ export class AgentWorkRuntime {
     this.#socket = socket;
     this.#connectionState = "awaiting_welcome";
     this.#connectionId = connectionId;
-    this.#log({
-      level: "info",
-      scope: "transport.wss",
-      event: "transport.connection.opened",
-      message: "Agent Work WebSocket connection opened",
-      requestId,
-      data: {
-        connection_id: connectionId,
-        reconnect_attempt: attempt,
-        runtime_id: this.#runtimeId,
-        endpoint
-      }
-    });
     this.#send("runtime.hello", {
       last_acked_command_seq: this.#store?.lastAckedCommandSeq ?? 0,
       active_run_ids: this.#activeRunIds(),
@@ -1016,13 +918,6 @@ export class AgentWorkRuntime {
     this.#fastRecoveryReason = reason;
     this.#connectionReason = reason;
     this.#beginRecovery(reason);
-    this.#log({
-      level: "info",
-      scope: "transport.wss",
-      event: "transport.connection.fast_recovery_requested",
-      message: "Agent Work connectivity changed; scheduling a fast reconnect",
-      data: { reason, connection_state: this.#connectionState }
-    });
     this.#reconnectAbort?.abort(new RuntimeRecoverySignal(reason));
     this.#connectingSocket?.terminate();
     this.#socket?.terminate();
@@ -1066,18 +961,7 @@ export class AgentWorkRuntime {
         this.#messageHandlers.add(handler);
         void handler.finally(() => this.#messageHandlers.delete(handler));
       };
-      const onClose = (code: number, reason: Buffer): void => {
-        this.#log({
-          level: code === 1000 ? "info" : "warn",
-          scope: "transport.wss",
-          event: "transport.connection.closed",
-          message: "Agent Work WebSocket connection closed",
-          data: {
-            connection_id: this.#connectionId,
-            close_code: code,
-            close_reason: reason.toString("utf8") || undefined
-          }
-        });
+      const onClose = (): void => {
         settle();
       };
       const onError = (error: Error): void => settle(error);
@@ -1096,27 +980,6 @@ export class AgentWorkRuntime {
         `Agent Work message targeted runtime ${envelope.runtime_id}, expected ${this.#runtimeId}`
       );
     }
-    const envelopePayload = asRecord(envelope.payload);
-    const commandPayload = envelope.type === "runtime.command" ? envelopePayload : undefined;
-    // Transport traces carry routing and correlation fields, never the envelope
-    // payload. Business payloads can contain full occurrence or provider content
-    // and belong only in the explicitly enabled sensitive capture stream.
-    this.#log({
-      level: "debug",
-      scope: "transport.wss",
-      event: "transport.message.received",
-      message: "Agent Work WebSocket message received",
-      runId: stringValue(commandPayload?.run_id) ?? stringValue(envelopePayload.run_id),
-      data: {
-        connection_id: this.#connectionId,
-        envelope_id: envelope.id,
-        frame_type: envelope.type,
-        command_id: stringValue(commandPayload?.command_id),
-        server_seq: commandPayload?.server_seq,
-        seq: envelope.seq,
-        ack: envelope.ack
-      }
-    });
     if (envelope.type === "runtime.welcome") {
       const payload = asRecord(envelope.payload);
       const everyMs = typeof payload.heartbeat_every_ms === "number" ? payload.heartbeat_every_ms : 30_000;
@@ -1142,17 +1005,6 @@ export class AgentWorkRuntime {
         this.#recoveryStartedAt = undefined;
         this.#recoveryTrigger = undefined;
       }
-      this.#log({
-        level: "info",
-        scope: "agent-work.runtime",
-        event: "agent_work.runtime.ready",
-        message: "Agent Work runtime is online",
-        data: {
-          runtime_id: this.#runtimeId,
-          heartbeat_every_ms: everyMs,
-          connection_id: this.#connectionId
-        }
-      });
       if (this.#reconnectReset) clearTimeout(this.#reconnectReset);
       this.#reconnectReset = setTimeout(() => {
         if (this.#connected && this.#isCurrentLifecycle(epoch)) this.#consecutiveReconnects = 0;
@@ -1176,17 +1028,6 @@ export class AgentWorkRuntime {
       this.#serverReconnectProtected = true;
       this.#connected = false;
       this.#connectionReason = "server_goaway";
-      this.#log({
-        level: "info",
-        scope: "transport.wss",
-        event: "transport.connection.goaway",
-        message: "Agent Work server requested a delayed reconnect",
-        data: {
-          connection_id: this.#connectionId,
-          reason: stringValue(payload.reason),
-          retry_after_ms: retryAfterMs
-        }
-      });
       this.#socket?.close(1012, "worker draining");
       return;
     }
@@ -1219,20 +1060,6 @@ export class AgentWorkRuntime {
         : DEFAULT_NACK_RETRY_MS;
       const retryMs = Math.min(MAX_NACK_RETRY_MS, baseRetryMs * (2 ** Math.min(attempt - 1, 10)));
       this.#nackBackoff.set(runId, { attempt, retryAt: Date.now() + retryMs });
-      this.#log({
-        level: "warn",
-        scope: "agent-work.delivery",
-        event: "agent_work.event.nack",
-        message: "Agent Work event batch was rejected",
-        runId,
-        data: {
-          code: payload.code,
-          resume_from_seq: resumeFromSeq,
-          retry_after_ms: retryMs,
-          retry_attempt: attempt,
-          connection_id: this.#connectionId
-        }
-      });
       this.#kickSender();
       return;
     }
@@ -1249,19 +1076,6 @@ export class AgentWorkRuntime {
 
   async #acceptCommand(command: RuntimeCommand, epoch: number): Promise<void> {
     if (!command?.command_id || !command.run_id || !command.type) throw new Error("invalid runtime.command payload");
-    this.#log({
-      level: "info",
-      scope: "agent-work.command",
-      event: "agent_work.command.received",
-      message: "Agent Work command received",
-      runId: command.run_id,
-      data: {
-        connection_id: this.#connectionId,
-        command_id: command.command_id,
-        command_type: command.type,
-        server_seq: command.server_seq
-      }
-    });
     if (command.type === "interaction.respond") {
       const store = this.#store;
       if (!store) {
@@ -1396,14 +1210,6 @@ export class AgentWorkRuntime {
     const hardWatermark = this.#options.hardWatermarkBytes ?? DEFAULT_HARD_WATERMARK_BYTES;
     const pendingBytes = store.outboxBytes();
     if (pendingBytes >= hardWatermark) {
-      this.#log({
-        level: "error",
-        scope: "agent-work.outbox",
-        event: "agent_work.outbox.hard_watermark",
-        message: "Agent Work outbox is above the hard watermark",
-        runId: command.run_id,
-        data: { pending_bytes: pendingBytes, hard_watermark_bytes: hardWatermark }
-      });
       const error = failurePayload({ code: "OUTBOX_HARD_LIMIT" }, {
         stage: "runtime.command.accept",
         defaultDomain: "runtime",
@@ -1500,8 +1306,8 @@ export class AgentWorkRuntime {
             if (nativeGrants.length && !this.#options.receiveToolAuthorizations) throw new TypeError("TOOL_AUTHORIZATION_RECEIVER_UNSUPPORTED");
             if (this.#options.receiveToolAuthorizations && nativeGrants.length) await this.#options.receiveToolAuthorizations(nativeGrants, { runId: command.run_id, leaseId, fencingToken, signal });
             return resolveRuntimeInputImages(input, {
-            baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
-            runId: command.run_id, leaseId, fencingToken, signal
+              baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
+              runId: command.run_id, leaseId, fencingToken, signal
             });
           },
           prepareCapabilities: async signal => {
@@ -1532,9 +1338,7 @@ export class AgentWorkRuntime {
                   input, instructions: compiled.controlInstructions, plan: compiled.executionPlan,
                   internalContext: executionEnvelope.internal_context, providerSession: executionEnvelope.provider_session
                 })).digest("hex"),
-                store: new FileMaterialCompactionStore(join(dirname(this.#options.storePath), "context", "compactions")),
-                onProgress: state => this.#log({ level: "info", scope: "context.compaction", event: `context.compaction.${state}`,
-                  runId: command.run_id, adapterType: adapterTypeForContext, message: `Material compaction ${state}` })
+                store: new FileMaterialCompactionStore(join(dirname(this.#options.storePath), "context", "compactions"))
               });
               return { ...compiled, modelContent: compacted.material,
                 ...(port.measurementMode === "provider_native" ? { modelCapacity: { model: port.model, contextWindow: port.contextWindow, outputReserveTokens: port.outputReserveTokens, source: port.capacitySource ?? "trusted_host", management: "provider_native" as const } } : {}),
@@ -1546,20 +1350,9 @@ export class AgentWorkRuntime {
             runId: command.run_id, leaseId, fencingToken, signal
           })
         });
-        const preparationStartedAt = process.hrtime.bigint();
-        this.#log({ level: "info", scope: "context.pipeline", event: "context.preparation.started",
-          runId: command.run_id, adapterType: adapterTypeForContext, message: "Context preparation started" });
-        const preparationEnded = (outcome: "completed" | "failed"): void => {
-          this.#log({ level: "info", scope: "context.pipeline", event: "context.preparation.ended",
-            runId: command.run_id, adapterType: adapterTypeForContext, message: "Context preparation ended",
-            data: { outcome, elapsed_ms: Number(process.hrtime.bigint() - preparationStartedAt) / 1e6, clock: "runtime_monotonic" } });
-        };
         const prepared = await pipeline.prepare(executionEnvelope.effective_context,
           executionEnvelope.resolved_execution_plan,
-          { runId: command.run_id, leaseId, fencingToken }, controller.signal).then(
-            result => { preparationEnded("completed"); return result; },
-            error => { preparationEnded("failed"); throw error; }
-          );
+          { runId: command.run_id, leaseId, fencingToken }, controller.signal);
         throwIfAcceptingAborted(controller.signal);
         this.#assertCurrentLifecycle(epoch);
         const mapped = mapExecutionEnvelope({
@@ -1574,10 +1367,6 @@ export class AgentWorkRuntime {
           context_hash: prepared.receipt.context_hash, compiled_hash: prepared.receipt.compiled_hash,
           run_id: command.run_id, lease_id: leaseId, fencing_token: fencingToken
         };
-        this.#log({ level: "debug", scope: "context.pipeline", event: "context.compiled", runId: command.run_id,
-          message: "Context prepared, compiled and sealed", data: {
-            compiled_hash: prepared.receipt.compiled_hash, consumption: prepared.consumption
-          } });
         // The authenticated Runtime connection owns this mapping. Never trust
         // an AgentRun payload to self-report its local profile.
         if (this.#options.profile) request.runMetadata.profile = this.#options.profile;
@@ -1597,45 +1386,12 @@ export class AgentWorkRuntime {
           };
         }
         agentSessionId = request.agentSessionId;
-        const trigger = executionEnvelope.agent_run_request.trigger;
-        this.#log({
-          level: "info",
-          scope: "agent-work.dispatch",
-          event: "agent_run.received",
-          message: "AgentRun received from Agent Worker",
-          runId: command.run_id,
-          invocationId: request.invocationId,
-          agentSessionId,
-          data: {
-            connection_id: this.#connectionId,
-            command_id: command.command_id,
-            namespace: executionEnvelope.agent_run_request.namespace,
-            trigger_kind: trigger.kind,
-            trigger_occurrence_id: trigger.occurrence_id
-          }
-        });
-        this.#log({
-          level: "info",
-          scope: "adapter.dispatch",
-          event: "adapter.selected",
-          message: `selected ${adapterType} adapter`,
-          runId: command.run_id,
-          invocationId: request.invocationId,
-          agentSessionId,
-          adapterType,
-          data: {
-            command_id: command.command_id,
-            namespace: executionEnvelope.agent_run_request.namespace,
-            trigger_kind: trigger.kind,
-            trigger_occurrence_id: trigger.occurrence_id
-          }
-        });
       } catch (error) {
         if (error instanceof RuntimeStoppingError) {
-            return;
+          return;
         }
         if (error instanceof AcceptingRunCancelledError) {
-            const failure = store.getCommandReceipt(command.command_id)?.error
+          const failure = store.getCommandReceipt(command.command_id)?.error
             ?? { code: "RUN_CANCELLED_BEFORE_START", message: "run cancelled while waiting for admission" };
           if (!store.getCommandReceipt(command.command_id)) {
             store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
@@ -1648,11 +1404,11 @@ export class AgentWorkRuntime {
           ? runDeadlineFailure(deadlineError, command.run_id, "context.preparation")
           : error instanceof ProviderConfigurationMissingError
             ? failurePayload({ code: "PROVIDER_CONFIG_MISSING" }, {
-                stage: "provider.configuration",
-                defaultDomain: "provider",
-                runId: command.run_id,
-                source: { component: "octo-harness", adapter: error.adapterType }
-              })
+              stage: "provider.configuration",
+              defaultDomain: "provider",
+              runId: command.run_id,
+              source: { component: "octo-harness", adapter: error.adapterType }
+            })
             : { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) };
         store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
         if (store.runExists(command.run_id)) {
@@ -1776,25 +1532,6 @@ export class AgentWorkRuntime {
     if (!store) return;
     let terminal = false;
     let started = false;
-    const invocationStartedAt = process.hrtime.bigint();
-    let firstPublicProgress = false;
-    // Keep execution, invocation, business namespace, and trigger occurrence
-    // as distinct correlation domains.
-    this.#log({
-      level: "info",
-      scope: "adapter.invoke",
-      event: "adapter.invoke.started",
-      message: "adapter invocation started",
-      runId: command.run_id,
-      invocationId: request.invocationId,
-      agentSessionId: request.agentSessionId,
-      adapterType,
-      data: {
-        namespace: stringValue(request.runMetadata?.namespace),
-        trigger_kind: stringValue(request.runMetadata?.triggerKind),
-        trigger_occurrence_id: stringValue(request.runMetadata?.triggerOccurrenceId)
-      }
-    });
     const appendStarted = (): void => {
       if (started) return;
       store.allocateAndAppend(command.run_id, "run.started", {});
@@ -1806,47 +1543,17 @@ export class AgentWorkRuntime {
         const event = providerEvent;
         if (event.type === "run.started" || event.type === "run.queued") continue;
         appendStarted();
-        const publicMessage = event.type.startsWith("message.") && typeof event.payload.text === "string" && event.payload.text.length > 0
-          && (event.payload.channel !== "analysis" || ["public_reasoning", "public_summary", "public_plan"].includes(String(event.payload.exposure)));
-        if (!firstPublicProgress && (publicMessage || event.type === "tool_call.create" || event.type === "tool_call.update")) {
-          firstPublicProgress = true;
-          this.#log({ level: "info", scope: "adapter.invoke", event: "adapter.public_progress.first",
-            runId: command.run_id, invocationId: request.invocationId, adapterType, message: "First public text or tool event",
-            data: { canonical_event_type: event.type, elapsed_ms: Number(process.hrtime.bigint() - invocationStartedAt) / 1e6, clock: "runtime_monotonic" } });
-        }
         const mapped = mapRuntimeEvent(event);
         if (TERMINAL_OUTBOX_TYPES.has(mapped.type) && request.signal?.reason instanceof RunTotalDeadlineError) {
           mapped.type = "run.failed";
           mapped.payload = runDeadlineFailure(request.signal.reason, command.run_id, "adapter.invoke");
         }
-        this.#log({
-          level: "debug",
-          scope: "adapter.invoke",
-          event: "adapter.event.received",
-          message: `adapter emitted ${event.type}`,
-          runId: command.run_id,
-          invocationId: request.invocationId,
-          agentSessionId: request.agentSessionId,
-          adapterType,
-          data: { canonical_event_type: event.type, outbox_event_type: mapped.type }
-        });
         // Terminal events bypass soft-watermark backpressure so a Run can still
         // reach durable storage and close out under sustained backpressure.
         store.allocateAndAppend(command.run_id, mapped.type, mapped.payload);
         terminal ||= TERMINAL_OUTBOX_TYPES.has(mapped.type);
         this.#kickSender();
       }
-      this.#log({
-        level: terminal ? "info" : "warn",
-        scope: "adapter.invoke",
-        event: terminal ? "adapter.invoke.completed" : "adapter.invoke.ended_without_terminal",
-        message: terminal ? "adapter invocation completed" : "adapter invocation ended without a terminal event",
-        runId: command.run_id,
-        invocationId: request.invocationId,
-        agentSessionId: request.agentSessionId,
-        adapterType,
-        durationMs: elapsedMilliseconds(invocationStartedAt)
-      });
     } catch (error) {
       if (this.#markStoreUnavailable(error)) return;
       if (request.signal?.reason instanceof ControlPlaneRunCancelledError) {
@@ -1856,32 +1563,20 @@ export class AgentWorkRuntime {
         this.#kickSender();
         return;
       }
-      this.#log({
-        level: "error",
-        scope: "adapter.invoke",
-        event: "adapter.invoke.failed",
-        message: "adapter invocation failed",
-        runId: command.run_id,
-        invocationId: request.invocationId,
-        agentSessionId: request.agentSessionId,
-        adapterType,
-        durationMs: elapsedMilliseconds(invocationStartedAt),
-        data: { error: errorMessage(error) }
-      });
       try {
         appendStarted();
         const payload = request.signal?.reason instanceof RunTotalDeadlineError
           ? runDeadlineFailure(request.signal.reason, command.run_id, "adapter.invoke") : {
-          ...failurePayload(Object.assign(error instanceof Error ? error : new Error(errorMessage(error)), {
-            code: (error as NodeJS.ErrnoException)?.code ?? "ADAPTER_INVOCATION_FAILED",
-            adapterType
-          }), {
-            stage: "adapter.invoke",
-            defaultDomain: "adapter",
-            runId: command.run_id,
-            source: { component: "octo-harness", adapter: adapterType }
-          }),
-        };
+            ...failurePayload(Object.assign(error instanceof Error ? error : new Error(errorMessage(error)), {
+              code: (error as NodeJS.ErrnoException)?.code ?? "ADAPTER_INVOCATION_FAILED",
+              adapterType
+            }), {
+              stage: "adapter.invoke",
+              defaultDomain: "adapter",
+              runId: command.run_id,
+              source: { component: "octo-harness", adapter: adapterType }
+            }),
+          };
         store.allocateAndAppend(command.run_id, "run.failed", payload);
         this.#kickSender();
       } catch (appendError) {
@@ -1994,24 +1689,6 @@ export class AgentWorkRuntime {
       sent_at: new Date().toISOString(),
       payload
     } satisfies WireEnvelope));
-    const payloadRecord = asRecord(payload);
-    // As on receive, log the envelope identity and sequencing metadata only.
-    // The wire payload is deliberately excluded from normal operational logs.
-    this.#log({
-      level: "debug",
-      scope: "transport.wss",
-      event: "transport.message.sent",
-      message: "Agent Work WebSocket message sent",
-      runId: stringValue(payloadRecord.run_id),
-      data: {
-        connection_id: this.#connectionId,
-        envelope_id: envelopeId,
-        frame_type: type,
-        command_id: stringValue(payloadRecord.command_id),
-        seq,
-        ack
-      }
-    });
   }
 
   /** Send without throwing (heartbeat/ACK are safe to drop while disconnected;
@@ -2032,47 +1709,9 @@ export class AgentWorkRuntime {
     };
   }
 
-  #log(input: LogInput): void {
-    this.#observability?.log({
-      ...input,
-      profile: this.#options.profile,
-      runtimeId: this.#runtimeId || this.#options.runtimeId,
-      data: { ...input.data, ...(this.#options.profile ? { profile: this.#options.profile } : {}) }
-    });
+  #reportError(event: string, message: string, error: unknown, data: Record<string, unknown> = {}): void {
+    console.error(`octo-harness ${message}: ${errorMessage(error)}`, { event, ...data });
   }
-
-  /**
-   * Route runtime failures through the protected local log when available.
-   * stderr remains a compatibility fallback for embedders that did not supply
-   * observability; it receives only the synthesized error message.
-   */
-  #reportError(
-    event: string,
-    message: string,
-    error: unknown,
-    data: Record<string, unknown> = {}
-  ): void {
-    if (!this.#observability) {
-      console.error(`octo-harness ${message}: ${errorMessage(error)}`);
-      return;
-    }
-    this.#observability.log({
-      level: "error",
-      scope: "agent-work.runtime",
-      event,
-      message,
-      profile: this.#options.profile,
-      data: {
-        ...data,
-        ...(this.#options.profile ? { profile: this.#options.profile } : {}),
-        error: errorMessage(error)
-      }
-    });
-  }
-}
-
-function elapsedMilliseconds(startedAt: bigint): number {
-  return Math.max(0, Math.round(Number(process.hrtime.bigint() - startedAt) / 1_000_000));
 }
 
 /** Accumulate the final-channel assistant text across message events so the
@@ -2228,26 +1867,6 @@ function mapExecutionRuntimeLimits(value: unknown): Record<string, unknown> {
   return mapped;
 }
 
-function httpEndpointMetadata(baseUrl: string): Record<string, string> {
-  const url = new URL(`${stripSlash(baseUrl)}/v1/runtime/register`);
-  return {
-    scheme: url.protocol.slice(0, -1),
-    host: url.hostname,
-    port: url.port || (url.protocol === "https:" ? "443" : "80"),
-    path: url.pathname
-  };
-}
-
-/** Return only support-safe WSS location fields; credentials and query are omitted. */
-function webSocketEndpointMetadata(url: URL): Record<string, string> {
-  return {
-    scheme: url.protocol.slice(0, -1),
-    host: url.hostname,
-    port: url.port || (url.protocol === "wss:" ? "443" : "80"),
-    path: url.pathname
-  };
-}
-
 /** Render the full immutable execution input (current prompt/parts, recent group
  * messages and any quoted message) into a single prompt. Used when no channel
  * context snapshot drives the model input. */
@@ -2359,7 +1978,6 @@ class RuntimeRecoverySignal extends Error {
     this.name = "RuntimeRecoverySignal";
   }
 }
-
 
 class ControlPlaneRunCancelledError extends Error {
   constructor() { super("RUN_CANCELLED"); this.name = "ControlPlaneRunCancelledError"; }

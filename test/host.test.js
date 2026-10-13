@@ -137,30 +137,6 @@ test("host synthesizes stopped when adapter exits without terminal", async () =>
   assert.equal(events.at(-1).type, "run.cancelled");
 });
 
-test("host preserves a strict trace capture error code in its synthesized terminal", async () => {
-  const host = new AdapterHost({
-    observe: async () => {
-      throw Object.assign(new Error("provider trace capture failed"), { code: "trace_capture_failed" });
-    }
-  });
-  host.register({
-    metadata: { type: "capture-failure", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] },
-    async *invoke(_request, context) {
-      await context.observe({
-        event: "provider.input",
-        rpcMethod: "turn/start",
-        carrier: { kind: "json_params", content: { prompt: "strict input" } }
-      });
-      yield { protocolVersion: 2, type: "run.completed", payload: {} };
-    }
-  });
-  const events = [];
-  for await (const event of host.invoke("capture-failure", request)) { if (!event.type.startsWith("activity.")) events.push(event); };
-  assert.equal(events.at(-1).type, "run.failed");
-  assert.equal(events.at(-1).payload.failure.reasonCode, "ADAPTER_INVOCATION_FAILED");
-  assert.equal(events.at(-1).payload.failure.code, "OH-ADP-3004");
-});
-
 test("host classifies and redacts adapter-provided provider failures", async () => {
   const host = new AdapterHost();
   host.register({
@@ -183,44 +159,6 @@ test("host classifies and redacts adapter-provided provider failures", async () 
   assert.equal(events.at(-1).payload.failure.code, "OH-PRV-4001");
   assert.equal(events.at(-1).payload.failure.source.adapter, "provider-fixture");
   assert.doesNotMatch(JSON.stringify(events), /provider-secret|Authorization|providerError/);
-});
-
-test("host gives adapters a provider observation context with full invocation identity", async () => {
-  const observations = [];
-  const host = new AdapterHost({
-    observe: async (identity, observation) => {
-      observations.push({ identity, observation });
-      return { captureId: "cap-test", state: "durable", complete: true };
-    }
-  });
-  host.register({
-    metadata: { type: "observed", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] },
-    async *invoke(_request, context) {
-      const receipt = await context.observe({
-        event: "provider.input",
-        rpcMethod: "turn/start",
-        carrier: { kind: "json_params", content: { prompt: "raw input" } }
-      });
-      assert.equal(receipt.state, "durable");
-      yield { protocolVersion: 2, type: "run.completed", payload: {} };
-    }
-  });
-
-  const events = [];
-  for await (const event of host.invoke("observed", {
-    ...request,
-    runMetadata: { profile: "work", runtimeId: "runtime-work" }
-  })) { if (!event.type.startsWith("activity.")) events.push(event); };
-  assert.equal(events.at(-1).type, "run.completed");
-  assert.deepEqual(observations[0].identity, {
-    profile: "work",
-    runtimeId: "runtime-work",
-    runId: request.runId,
-    invocationId: "inv-host",
-    agentSessionId: "s",
-    adapterType: "observed"
-  });
-  assert.equal(observations[0].observation.rpcMethod, "turn/start");
 });
 
 test("host normalizes unclassified analysis to an explicit fail-closed exposure", async () => {
@@ -373,26 +311,6 @@ test("host shutdown aborts every active provider invocation before returning", a
 
   assert.equal(aborted, 2);
   assert.deepEqual(results.map(events => events.at(-1).type), ["run.cancelled", "run.cancelled"]);
-});
-
-test("separate adapter-host process loads manifest and streams events", async () => {
-  const root = fileURLToPath(new URL("..", import.meta.url));
-  const observations = [];
-  const processHost = await spawnAdapterHost({ entrypoint: `${root}/apps/adapter-host/dist/index.js`, manifest: `${root}/test/fixtures/adapters.json`, observe: frame => observations.push(frame) });
-  try {
-    assert.equal(processHost.child.spawnargs[0], "octo-harness-adapter-host");
-    assert.equal(processHost.adapters.some(item => item.type === "test"), true);
-    assert.equal((await processHost.client.list()).some(item => item.type === "test"), true);
-    const events = []; for await (const event of processHost.client.invoke("test", { ...request, invocationId: "rpc-inv" })) { if (!event.type.startsWith("activity.")) events.push(event); };
-    assert.equal(events.at(-1).type, "run.completed");
-    // FD3 is independent of RPC stdout; allow its terminal snapshot to arrive.
-    for (let i = 0; i < 50 && !observations.some(x => x.type === "watchdog.metrics"); i++) await new Promise(resolve => setTimeout(resolve, 10));
-    const started = observations.find(x => x.source === "provider-activity" && x.record?.event === "watchdog.started");
-    assert.equal(started.record.data.effectiveLimits.runTimeoutMs, 10800000);
-    assert.equal(started.record.data.effectiveLimits.modelIdleTimeoutMs, 300000);
-    const snapshot = observations.find(x => x.type === "watchdog.metrics");
-    assert.equal(snapshot.payload.find(x => x.name === "outcomes_total").labels.outcome, "completed");
-  } finally { await processHost.close(); }
 });
 
 test("RPC trace observes every client frame without changing the wire", async () => {

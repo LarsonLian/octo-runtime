@@ -6,10 +6,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import {
-  DEFAULT_OBSERVABILITY_CONFIGURATION,
-  LocalObservability
-} from "@mininglamp-oss/octo-harness-observability";
-import {
   AgentWorkRuntime,
   accumulateFinalText,
   clockChanged,
@@ -531,17 +527,11 @@ test("terminal mapping drops native text after the Host normalizes it", () => {
   });
 });
 
-test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation and adapter without logging credentials", async () => {
+test("Agent Work correlates HTTP request IDs and preserves invocation identity", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-agent-work-logs-"));
   const httpServer = createServer();
   const wsServer = new WebSocketServer({ noServer: true });
   const terminal = deferred();
-  const logger = new LocalObservability({
-    directory: join(directory, "logs"),
-    ...DEFAULT_OBSERVABILITY_CONFIGURATION,
-    logLevel: "debug",
-    component: "daemon"
-  });
   let registrationBody;
   let registrationRequestId;
   let connectionRequestId;
@@ -615,7 +605,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
       runtimeName: "runtime-observed",
       profile: "work",
       storePath: join(directory, "agent-work.db")
-    }, host, logger);
+    }, host);
     await runtime.start();
     await withTimeout(terminal.promise, 3_000, "terminal timeout");
     assert.equal(registrationBody.runtime_version, "0.1.0");
@@ -636,44 +626,8 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     assert.equal(invokedRequest.context.runtimeId, undefined);
     await runtime.close();
     runtime = undefined;
-    const trace = await logger.query({ runId: "run-observed" });
-    assert.ok(trace.some(record => record.event === "agent_run.received" && record.data.trigger_occurrence_id === "message/observed"));
-    assert.ok(trace.some(record => record.event === "adapter.selected" && record.adapter_type === "codex"));
-    assert.ok(trace.some(record => record.event === "adapter.invoke.started" && record.invocation_id));
-    assert.ok(trace.some(record => record.event === "context.preparation.started"));
-    const prepared = trace.find(record => record.event === "context.preparation.ended");
-    assert.equal(prepared.data.outcome, "completed");
-    assert.equal(prepared.data.clock, "runtime_monotonic");
-    assert.ok(prepared.data.elapsed_ms >= 0);
-    const firstProgress = trace.filter(record => record.event === "adapter.public_progress.first");
-    assert.equal(firstProgress.length, 1);
-    assert.equal(firstProgress[0].data.clock, "runtime_monotonic");
-    assert.ok(firstProgress[0].data.elapsed_ms >= 0);
-    assert.ok(trace.some(record => record.event === "adapter.invoke.completed"
-      && Number.isInteger(record.duration_ms)
-      && record.duration_ms >= 0));
-    assert.ok(trace.every(record => record.profile === "work"));
-    assert.ok(trace.every(record => record.runtime_id === "runtime-observed"));
-    assert.ok(trace.some(record => record.event === "transport.message.received" && record.data.frame_type === "runtime.command"));
-    const all = await logger.query({ limit: 500 });
-    const opened = all.find(record => record.event === "transport.connection.opened" && record.scope === "transport.wss");
-    assert.equal(opened.request_id, connectionRequestId);
-    assert.ok(all.some(record => record.event === "agent_work.registration.completed"
-      && record.request_id === registrationRequestId));
-    const registrationTrace = await logger.query({ requestId: registrationRequestId });
-    assert.ok(registrationTrace.length >= 2);
-    assert.ok(registrationTrace.every(record => record.request_id === registrationRequestId));
-    assert.deepEqual(opened.data.endpoint, {
-      scheme: "ws",
-      host: "127.0.0.1",
-      port: String(address.port),
-      path: "/v1/runtime/connect"
-    });
-    const serialized = JSON.stringify(all);
-    assert.doesNotMatch(serialized, /runtime-token-must-not-leak|Fix the test/);
   } finally {
     await runtime?.close();
-    await logger.close();
     for (const client of wsServer.clients) client.terminate();
     await new Promise(resolve => wsServer.close(() => resolve()));
     await new Promise(resolve => httpServer.close(() => resolve()));

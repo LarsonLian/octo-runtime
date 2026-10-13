@@ -25,7 +25,6 @@ ACP 路径包含 Hermes、Kimi Code、MiniMax Code、Qoder 与 Qoder CN。目前
 - 各 adapter 在现有原生载体处调用共同 mapper：Codex `turn/start.effort`，Claude / Antigravity `--effort`，OpenCode `--variant`，OpenClaw `sessions.create.thinkingLevel` 和 `agent.thinking`。
 - 缺少 effort 时不传参数，不产生额外提示。非法已知值（包括 `max`、拼错的 `xhight`、空字符串）在 adapter 边界拒绝，不当作“无接口”。公共 Context 类型暂仍使用 string，四挡检查在 Adapter SDK 执行边界完成。
 - 无 setter 时，按用户授权保留选择、使用原生默认执行，不注入虚构 CLI 参数，不向提示词追加“请多思考”。
-- 复用 `provider.stage.completed` 记录 `reasoning_mapping` 阶段的 `requested_effort`、`native_effort` 和 `outcome=mapped|not_applied`。`mapped` 只表示完成参数映射；实际写入/接收仍以现有 provider input / dispatch 记录为准。
 - 无 setter 时额外产生现有 `run.notice/config_warning`，`warningCode=REASONING_EFFORT_NOT_APPLIED`。降档时使用 `REASONING_EFFORT_DOWNGRADED`。Work App 展示具体说明；默认执行不冒充强度已应用。
 - 不改变 Run schema_version=7、Context octo.context-envelope/v3、身份、授权、租约、fencing 或 mandatory 合并规则。
 

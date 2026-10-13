@@ -4,7 +4,6 @@ import { createServer } from "node:http";
 import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 import { HarnessEngine, MemoryStore } from "@mininglamp-oss/octo-harness-core";
 import { assertModelInputParts, assertInvokeRequest, modelPartsFromInput, providerInputParts, failurePayload } from "@mininglamp-oss/octo-harness-protocol";
-import { redactCredentials } from "@mininglamp-oss/octo-harness-observability";
 import { resolveRuntimeInputImages } from "../packages/octo-harness-context-builder/dist/input-images.js";
 import { mapExecutionEnvelope } from "../packages/octo-harness-worker-access/dist/agent-work-runtime.js";
 import { invokeRequest, contextEnvelope, executionContext, resolvedRuntimeSelection } from "./agent-work-runtime-fixture.js";
@@ -114,10 +113,7 @@ test("Core failed image dispatch releases the session so subsequent text can run
   assert.equal(captured[0].modelInput, "text still works");
 });
 
-test("image payloads never appear in shared diagnostics and failures keep actionable reasons", () => {
-  const projected = redactCredentials({ prompt: [image, { type: "image", url: `data:image/png;base64,${image.data}` }] });
-  assert.equal(JSON.stringify(projected).includes(image.data), false);
-  assert.equal(projected.prompt[0].sha256, image.sha256);
+test("image failures keep actionable reasons", () => {
   for (const code of ["UNSUPPORTED_INPUT_MODALITY", "IMAGE_LIMIT_EXCEEDED", "ARTIFACT_UNAVAILABLE", "ARTIFACT_INTEGRITY_MISMATCH", "ARTIFACT_ACCESS_DENIED"]) {
     const failure = failurePayload(new Error(code), { defaultDomain: "runtime", stage: "input" }).failure;
     assert.equal(failure.reasonCode, code);

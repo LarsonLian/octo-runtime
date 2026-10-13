@@ -9,7 +9,6 @@ import { buildCodexCommand } from "../packages/octo-harness-adapter-codex/dist/i
 import { codexEnvironmentConfig } from "../packages/octo-harness-adapter-codex/dist/environment.js";
 import { buildZcodeCommand } from "../packages/octo-harness-adapter-zcode-gui/dist/index.js";
 import { buildOpenClawGatewayInvocation } from "../packages/octo-harness-adapter-openclaw/dist/index.js";
-import { redactCredentials } from "../packages/octo-harness-observability/dist/index.js";
 import { invokeRequest } from "./agent-work-runtime-fixture.js";
 
 const envPayload = values => ({ env_variables: Object.entries(values).map(([key, value]) => ({ key, value })) });
@@ -63,10 +62,8 @@ test("concurrent CLI invocations and their child tools inherit isolated envs", a
     buildCommand: () => ({ command: process.execPath, args: ["-e", source] }),
     normalize: native => [{ protocolVersion: 2, type: "run.completed", payload: { result: native.value } }] });
   const run = async value => {
-    const observations = [];
     const events = [];
-    for await (const event of adapter.invoke(request({ [key]: value }), { observe: async data => { observations.push(data); } })) events.push(event);
-    assert.doesNotMatch(JSON.stringify(observations), new RegExp(value));
+    for await (const event of adapter.invoke(request({ [key]: value }))) events.push(event);
     return events.at(-1).payload.result;
   };
   assert.deepEqual(await Promise.all([run("private-left-123"), run("private-right-456")]), ["private-left-123", "private-right-456"]);
@@ -87,12 +84,4 @@ test("Codex whitelists env names for local MCP and supplies shell env without ch
   });
   assert.deepEqual(config, original);
   assert.deepEqual(codexEnvironmentConfig(request({}), config), {});
-});
-
-test("env values are excluded from observability regardless of variable name", () => {
-  const value = "private-arbitrary-value";
-  const redacted = redactCredentials({ context: envContext({ ANY: value }), plan: { envs: envPayload({ ANY: value }) },
-    config: { "shell_environment_policy.set": { ANY: value } }, nested: { shell_environment_policy: { set: { ANY: value } } } });
-  assert.doesNotMatch(JSON.stringify(redacted), /private-arbitrary-value/);
-  assert.throws(() => buildOpenClawGatewayInvocation(request({ ANY: value })), /CONTEXT_ENVS_UNSUPPORTED/);
 });

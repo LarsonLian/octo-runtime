@@ -158,7 +158,7 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
     backend,
     output: value => output.push(value),
     daemonEntrypoint: join(root, "apps/daemon/dist/launcher.js"),
-    environment: { PATH: "/test/provider/bin:/usr/bin:/bin" }
+    environment: { PATH: "/test/provider/bin:/usr/bin:/bin", OCTO_RUNTIME_DEBUG: "1" }
   };
   const invoke = async (args, extra = {}) => {
     output.length = 0;
@@ -188,7 +188,7 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
     assert.equal(initialStart.value.readiness.agentWork.connected, true);
     assert.equal(backend.state, "running");
     assert.equal(backend.enabled, true);
-    assert.deepEqual(backend.spec.environment, { PATH: "/test/provider/bin:/usr/bin:/bin" });
+    assert.deepEqual(backend.spec.environment, { PATH: "/test/provider/bin:/usr/bin:/bin", OCTO_RUNTIME_DEBUG: "1" });
     assert.equal(enrollmentCount, 1);
     assert.ok(runtimeRegistrationCount >= 2);
     assert.doesNotMatch(JSON.stringify(backend.spec), /octo_enroll_fixture|octo_runtime_fixture_secret/);
@@ -273,23 +273,12 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
     );
 
     const installed = await invoke([
-      "daemon", "install", "--inspect-host", "10.20.30.40", "--inspect-port", "23456"
+      "daemon", "install"
     ]);
     assert.equal(installed.value.action, "install");
     assert.equal(installed.value.service.state, "stopped");
     assert.equal(installed.value.service.enabled, true);
     assert.equal(backend.state, "stopped");
-    assert.deepEqual(backend.spec.args.slice(-4), [
-      "--inspect-host", "10.20.30.40", "--inspect-port", "23456"
-    ]);
-    assert.deepEqual(
-      JSON.parse(await readFile(join(home, "config.json"), "utf8")).inspect,
-      { host: "10.20.30.40", port: 23_456 }
-    );
-    await invoke(["daemon", "status"]);
-    assert.deepEqual(backend.inspectedSpec.args.slice(-4), [
-      "--inspect-host", "10.20.30.40", "--inspect-port", "23456"
-    ]);
     assert.equal(enrollmentCount, 2);
 
     const startedOnline = await invoke(["daemon", "start", "--wait-online", "--timeout-ms", "5000"]);
@@ -304,19 +293,6 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
     });
     assert.equal(foreground.exitCode, 0);
     assert.deepEqual(foregroundArgs, ["--home", home, "--console"]);
-    const inspectForeground = await invoke([
-      "daemon", "run", "--inspect-host", "10.20.30.40", "--inspect-port", "23456"
-    ], {
-      runForegroundDaemon: async args => { foregroundArgs = args; }
-    });
-    assert.equal(inspectForeground.exitCode, 0);
-    assert.deepEqual(foregroundArgs, [
-      "--home", home, "--console", "--inspect-host", "10.20.30.40", "--inspect-port", "23456"
-    ]);
-    await assert.rejects(
-      invoke(["daemon", "start", "--inspect-port", "23456"]),
-      /valid with 'daemon run' or 'daemon install'/
-    );
     const verboseForeground = await invoke(["--verbose", "daemon", "run"], {
       runForegroundDaemon: async args => { foregroundArgs = args; }
     });

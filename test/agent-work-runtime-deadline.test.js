@@ -82,7 +82,7 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task 
         if (task) request.runMetadata.taskMaterials = [{ task_id: "task-deadline" }];
         yield* invoke(request);
       }
-    }, undefined, admission);
+    }, admission);
     await runtime.start();
     const events = () => frames.filter(frame => frame.type === "run.event_batch").flatMap(frame => frame.payload.events);
     const ack = () => frames.find(frame => frame.type === "command.ack")?.payload;

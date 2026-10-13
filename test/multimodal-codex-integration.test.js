@@ -23,7 +23,6 @@ test("frozen artifacts cross runtime mapping and Host into a real Codex three-im
   const fencingToken = 19;
   const authorization = "Bearer fixture-runtime";
   const reads = [];
-  const observations = [];
   const input = { version: 1, parts: [
     { id: "question", type: "text", text: 'Identify the main shape and its color in each supplied image, in order. Reply with only a JSON array of three objects using keys "shape" and "color" and English lowercase values. Inspect the supplied images directly and do not call tools.' },
     ...artifacts.map((artifact, index) => ({ id: `picture-${index + 1}`, type: "image", artifact }))
@@ -77,10 +76,7 @@ test("frozen artifacts cross runtime mapping and Host into a real Codex three-im
     assert.deepEqual(request.modelInputParts.filter(part => part.id).map(part => part.id), input.parts.map(part => part.id));
     assert.deepEqual(request.modelInputParts.filter(part => part.type === "image").map(part => part.sha256), artifacts.map(artifact => artifact.sha256));
     assert.deepEqual(request.runMetadata.input, frozenInput);
-    const host = new AdapterHost({ observe: async (identity, observation) => {
-      observations.push({ identity, observation });
-      return { captureId: "off", state: "disabled", complete: false };
-    } });
+    const host = new AdapterHost();
     host.register(createCodexAdapter());
     const events = [];
     for await (const event of host.invoke(adapterType, request)) events.push(event);
@@ -88,12 +84,7 @@ test("frozen artifacts cross runtime mapping and Host into a real Codex three-im
     const answer = events.filter(event => event.type === "message.delta" && event.payload.channel === "final").map(event => event.payload.text ?? "").join("");
     const parsed = JSON.parse(answer.slice(answer.indexOf("["), answer.lastIndexOf("]") + 1));
     assert.deepEqual(parsed, [{ shape: "circle", color: "red" }, { shape: "square", color: "green" }, { shape: "triangle", color: "blue" }]);
-    const receipt = observations.find(({ observation }) => observation.event === "provider.input" && observation.rpcMethod === "turn/start");
-    assert.equal(receipt.identity.runId, runId);
-    assert.equal(receipt.identity.invocationId, request.invocationId);
-    assert.deepEqual(receipt.observation.carrier.content.params.input.filter(part => part.type === "image").map(part => ({ sha256: part.sha256, byteSize: part.byteSize })), artifacts.map(({ sha256, byteSize }) => ({ sha256, byteSize })));
     for (const image of images) {
-      assert.equal(JSON.stringify(observations).includes(image.data), false);
       assert.equal(JSON.stringify(request.runMetadata).includes(image.data), false);
     }
     assert.deepEqual(input, frozenInput);

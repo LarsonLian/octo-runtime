@@ -1,24 +1,22 @@
-import { invocationEnvironment } from "./environment.js";
-export { invocationEnvs, invocationEnvironment } from "./environment.js";
-import { mapReasoningEffort, reasoningLevelMap, type ReasoningLevelMap } from "./reasoning.js";
 import { execFile, spawn } from "node:child_process";
-import { promisify } from "node:util";
+import { constants } from "node:fs";
+import { access, stat } from "node:fs/promises";
 import { delimiter, isAbsolute, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { access, stat } from "node:fs/promises";
-import { constants } from "node:fs";
-import { sanitizePublicValue } from "./public-display.js";
+import { promisify } from "node:util";
+import type { AdapterInvocationContext } from "./activity.js";
+import { invocationEnvironment } from "./environment.js";
+import { mapReasoningEffort, reasoningLevelMap, type ReasoningLevelMap } from "./reasoning.js";
+export type { AdapterInvocationContext,ProviderActivity } from "./activity.js";
+export { invocationEnvironment,invocationEnvs } from "./environment.js";
+
 import {
   isTerminal,
   type CanonicalEvent,
   type InvokeRequest
 } from "@mininglamp-oss/octo-harness-protocol";
-import type {
-  AdapterInvocationContext,
-  ProviderCarrier,
-  ProviderObservation
-} from "@mininglamp-oss/octo-harness-observability";
 
+export { freshFallbackInputText,hasImageInput,providerInputParts,providerInputText } from "@mininglamp-oss/octo-harness-protocol";
 export type {
   CanonicalEvent,
   InvokeRequest,
@@ -26,18 +24,11 @@ export type {
   MessageExposure,
   MessageProvenance
 } from "@mininglamp-oss/octo-harness-protocol";
-export type {
-  AdapterInvocationContext,
-  CaptureReceipt,
-  ProviderCarrier,
-  ProviderObservation
-} from "@mininglamp-oss/octo-harness-observability";
-export { freshFallbackInputText, providerInputText, providerInputParts, hasImageInput } from "@mininglamp-oss/octo-harness-protocol";
-export { OMNI_REASONING_LEVELS, DEFAULT_REASONING_LEVEL_MAPS, mapReasoningEffort, reasoningLevelMap, type OmniReasoningLevel, type ReasoningLevelMap } from "./reasoning.js";
+export { acpToolTerminalStatus,normalizeAcpToolUpdate } from "./acp-tool.js";
 export { AcpTurnNormalizer } from "./acp-turn.js";
 export { AcpApprovalBridge } from "./approval.js";
 export { sanitizePublicValue } from "./public-display.js";
-export { acpToolTerminalStatus, normalizeAcpToolUpdate, observeAcpToolStatus } from "./acp-tool.js";
+export { DEFAULT_REASONING_LEVEL_MAPS,OMNI_REASONING_LEVELS,mapReasoningEffort,reasoningLevelMap,type OmniReasoningLevel,type ReasoningLevelMap } from "./reasoning.js";
 
 export interface AdapterMetadata {
   type: string;
@@ -58,14 +49,7 @@ export interface ProbeResult {
 export interface Adapter {
   metadata: AdapterMetadata;
   probe?: () => Promise<ProbeResult>;
-  /**
-   * Execute one provider turn.
-   *
-   * `context` is optional so adapters built against the original SDK contract
-   * remain loadable. New adapters should report provider I/O through it, but
-   * must not use observability as a source of invocation identity or control
-   * flow. The host attaches Run/session correlation outside the plugin boundary.
-   */
+  /** Execute one provider turn, optionally reporting watchdog progress. */
   invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncIterable<CanonicalEvent>;
 }
 
@@ -77,16 +61,6 @@ export interface CommandSpec {
   env?: NodeJS.ProcessEnv;
   input?: string;
   cleanup?: () => void | Promise<void>;
-  /**
-   * Exact logical carrier presented to the provider after all adapter-specific
-   * prompt, configuration, argv, and stdin transformations have been applied.
-   * When omitted, the generic helper derives a carrier from this command spec.
-   */
-  providerInput?: ProviderCarrier;
-  /** Stable transport operation name used to group provider observations. */
-  rpcMethod?: string;
-  /** Opaque provider-owned session identifier, when known before dispatch. */
-  providerSessionId?: string;
 }
 
 export interface JsonCliAdapterOptions<TNative> {
@@ -95,33 +69,6 @@ export interface JsonCliAdapterOptions<TNative> {
   normalize: (event: TNative, request: InvokeRequest) => CanonicalEvent[] | undefined;
   probe?: () => Promise<ProbeResult>;
   onSuccess?: (request: InvokeRequest) => CanonicalEvent[];
-}
-
-/** Low-cardinality provider metadata that is safe to retain beside public output. */
-export interface ProviderOutputMetadata {
-  type?: string;
-  subtype?: string;
-  provider?: string;
-  model?: string;
-}
-
-/**
- * A provider-native-shaped projection built exclusively from canonical fields
- * that the adapter already classified as public. It deliberately has no
- * catch-all envelope field, so prompt carriers and co-located private reasoning
- * cannot cross the adapter boundary by accident.
- */
-export interface ProviderPublicOutputProjection {
-  kind: "message" | "tool" | "usage" | "error";
-  type: string;
-  content: Record<string, unknown>;
-}
-
-export interface ObserveProviderOutputOptions {
-  rpcMethod: string;
-  providerSessionId?: string;
-  providerRequestId?: string;
-  native?: ProviderOutputMetadata;
 }
 
 interface SpawnJsonLinesOptions<TNative> extends CommandSpec {
@@ -150,171 +97,19 @@ export function defineAdapter<TAdapter extends Adapter>(adapter: TAdapter, level
   }
   const invoke = adapter.invoke;
   return Object.freeze({ ...adapter, async *invoke(request: InvokeRequest, context?: AdapterInvocationContext) {
-    const requested = request.agentConfig.effort;
-    const native = mapReasoningEffort(adapter.metadata.type, requested, levels);
-    if (requested !== undefined) {
-      observeBestEffort(context, {
-        event: "provider.stage.completed", rpcMethod: "adapter.reasoning.map",
-        data: { stage: "reasoning_mapping", outcome: native === undefined ? "not_applied" : "mapped", duration_ms: 0,
-          requested_effort: requested, native_effort: native ?? null, adapter_type: adapter.metadata.type }
-      });
-      if (native === undefined || native !== requested) yield {
-        protocolVersion: 2 as const, type: "run.notice" as const,
-        payload: { noticeId: `${request.invocationId}:reasoning`, code: "config_warning" as const,
-          severity: native === undefined ? "warning" as const : "info" as const,
-          params: { warningCode: native === undefined ? "REASONING_EFFORT_NOT_APPLIED" : "REASONING_EFFORT_DOWNGRADED" } }
-      };
-    }
-    // Keep the original four-level request intact. Only native carriers map it.
-    yield* invoke.call(adapter, request, context);
-  } });
-}
-
-/**
- * Submit a non-critical observation without allowing logging availability to
- * alter provider execution. Strict provider input must continue to call and
- * await `context.observe` directly; every other milestone uses this helper so a
- * logger closed during shutdown cannot create an unhandled rejection.
- */
-export function observeBestEffort(
-  context: AdapterInvocationContext | undefined,
-  observation: ProviderObservation
-): void {
-  if (!context) return;
-  void context.observe(observation).catch(() => undefined);
-}
-
-/** Stage timings use a monotonic clock and never gate provider execution. */
-export function createProviderStageTimer(context?: AdapterInvocationContext) {
-  return (stage: string, rpcMethod?: string) => {
-    const start = performance.now();
-    let finished = false;
-    return (outcome = "completed") => {
-      if (finished) return;
-      finished = true;
-      const end = performance.now();
-      observeBestEffort(context, {
-        event: "provider.stage.completed", rpcMethod,
-        data: { stage, outcome, duration_ms: Math.max(0, end - start) }
-      });
-    };
-  };
-}
-
-export async function measureProviderStage<T>(context: AdapterInvocationContext | undefined, stage: string, rpcMethod: string,
-  operation: () => Promise<T>): Promise<T> {
-  const finish = createProviderStageTimer(context)(stage, rpcMethod);
-  try {
-    const result = await operation();
-    finish();
-    return result;
-  } catch (error) {
-    finish("failed");
-    throw error;
-  }
-}
-
-export function isPublicProviderProgress(event: CanonicalEvent): boolean {
-  if (event.type === "tool_call.create" || event.type === "tool_call.update") return true;
-  return event.type.startsWith("message.") && typeof event.payload.text === "string" && event.payload.text.length > 0
-    && (event.payload.channel !== "analysis"
-      || ["public_reasoning", "public_summary", "public_plan"].includes(String(event.payload.exposure)));
-}
-
-/**
- * Capture only provider output that the canonical privacy contract classifies
- * as public. Raw provider envelopes are intentionally excluded because they may
- * echo prompts or co-locate private reasoning with public content. The optional
- * native projection is restricted to bounded type/provider/model labels.
- */
-export function observeProviderOutput(
-  context: AdapterInvocationContext | undefined,
-  events: readonly CanonicalEvent[],
-  options: ObserveProviderOutputOptions
-): void {
-  const canonical = events
-    .filter(isAllowedProviderOutput)
-    .map(sanitizeCanonicalProviderOutput);
-  if (canonical.length === 0) return;
-  const native = sanitizeProviderOutputMetadata(options.native);
-  const publicOutput = canonical.map(projectPublicProviderOutput);
-  observeBestEffort(context, {
-    event: "provider.output",
-    rpcMethod: options.rpcMethod,
-    ...(options.providerSessionId ? { providerSessionId: options.providerSessionId } : {}),
-    ...(options.providerRequestId ? { providerRequestId: options.providerRequestId } : {}),
-    data: {
-      native: { ...native, public: publicOutput },
-      canonical
-    }
-  });
-}
-
-function isAllowedProviderOutput(event: CanonicalEvent): boolean {
-  if (event.type.startsWith("tool_call.")) return true;
-  if (event.type === "usage.update" || event.type === "run.failed") return true;
-  if (!event.type.startsWith("message.")) return false;
-  if (event.payload.channel !== "analysis") return true;
-  return event.payload.exposure === "public_reasoning"
-    || event.payload.exposure === "public_summary"
-    || event.payload.exposure === "public_plan";
-}
-
-function sanitizeProviderOutputMetadata(metadata: ProviderOutputMetadata | undefined): ProviderOutputMetadata {
-  if (!metadata) return {};
-  const output: ProviderOutputMetadata = {};
-  for (const key of ["type", "subtype", "provider", "model"] as const) {
-    const value = metadata[key];
-    if (typeof value === "string" && value.length > 0) output[key] = value.slice(0, 256);
-  }
-  return output;
-}
-
-/** Clone and redact the selected public event before handing it to a sink. */
-function sanitizeCanonicalProviderOutput(event: CanonicalEvent): CanonicalEvent {
-  return sanitizePublicValue(event) as CanonicalEvent;
-}
-
-/**
- * Convert a canonical provider event back into a small native-shaped record for
- * evaluation tooling. Only explicitly enumerated public fields are selected;
- * the original provider frame is never accepted by this function.
- */
-function projectPublicProviderOutput(event: CanonicalEvent): ProviderPublicOutputProjection {
-  const payload = event.payload as Record<string, unknown>;
-  if (event.type.startsWith("message.")) {
-    return {
-      kind: "message",
-      type: event.type,
-      content: selectPublicFields(payload, ["messageId", "role", "status", "channel", "exposure", "text"])
-    };
-  }
-  if (event.type.startsWith("tool_call.")) {
-    return {
-      kind: "tool",
-      type: event.type,
-      content: selectPublicFields(payload, ["id", "name", "status", "args", "argsDelta", "output", "error"])
-    };
-  }
-  if (event.type === "usage.update") {
-    return { kind: "usage", type: event.type, content: { ...payload } };
-  }
-  return {
-    kind: "error",
-    type: event.type,
-    content: selectPublicFields(payload, ["adapterType", "code", "message"])
-  };
-}
-
-function selectPublicFields(
-  source: Record<string, unknown>,
-  fields: readonly string[]
-): Record<string, unknown> {
-  const selected: Record<string, unknown> = {};
-  for (const field of fields) {
-    if (source[field] !== undefined) selected[field] = source[field];
-  }
-  return selected;
+      const requested = request.agentConfig.effort;
+      const native = mapReasoningEffort(adapter.metadata.type, requested, levels);
+      if (requested !== undefined) {
+        if (native === undefined || native !== requested) yield {
+          protocolVersion: 2 as const, type: "run.notice" as const,
+          payload: { noticeId: `${request.invocationId}:reasoning`, code: "config_warning" as const,
+            severity: native === undefined ? "warning" as const : "info" as const,
+            params: { warningCode: native === undefined ? "REASONING_EFFORT_NOT_APPLIED" : "REASONING_EFFORT_DOWNGRADED" } }
+        };
+      }
+      // Keep the original four-level request intact. Only native carriers map it.
+      yield* invoke.call(adapter, request, context);
+    } });
 }
 
 /**
@@ -454,11 +249,6 @@ export function parseJsonLine(line: string): Record<string, unknown> | null {
  * normalize each native line into canonical events, and — if the provider never
  * produced a terminal event — synthesize the `onSuccess` events. `cleanup` runs
  * in a `finally` so it fires on cancellation and error paths too.
- *
- * Observation ordering is intentional: `provider.input` is awaited before the
- * subprocess is spawned, allowing require-capture mode to fail closed. The
- * write and first-output observations are best-effort timing markers and never
- * delay the provider stream.
  */
 export function createJsonCliAdapter<TNative = Record<string, unknown>>(
   options: JsonCliAdapterOptions<TNative>
@@ -467,60 +257,19 @@ export function createJsonCliAdapter<TNative = Record<string, unknown>>(
   return defineAdapter({
     metadata,
     ...(probe ? { probe } : {}),
-    async *invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
+    async *invoke(request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
       const spec = await buildCommand(request);
       let terminal = false;
-      let firstOutput = true;
       try {
-        // Capture the final provider-visible carrier before starting a process.
-        // In strict mode this await is the durability barrier for model input.
-        await context?.observe({
-          event: "provider.input",
-          rpcMethod: spec.rpcMethod ?? "process.spawn",
-          ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {}),
-          carrier: spec.providerInput ?? {
-            kind: "json_params",
-            content: {
-              command: spec.command,
-              args: spec.args ?? [],
-              cwd: spec.cwd ?? request.workdir,
-              env: spec.env ?? {},
-              input: spec.input ?? ""
-            }
-          }
-        });
         yield { protocolVersion: 2, type: "message.create", payload: { role: "assistant", status: "streaming" } };
         for await (const native of spawnJsonLines({
           ...spec,
           cwd: spec.cwd ?? request.workdir,
           env: invocationEnvironment(request, spec.env),
           signal: request.signal,
-          onInputWritten: () => {
-            // A stream write is a transport milestone, not provider acceptance.
-            observeBestEffort(context, {
-              event: "provider.dispatch.written",
-              rpcMethod: spec.rpcMethod ?? "process.stdin",
-              ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {})
-            });
-          },
           parseLine: parseJsonLine as (line: string) => TNative | null
         })) {
-          if (firstOutput) {
-            firstOutput = false;
-            // The first native stdout record proves that the provider started
-            // producing a response, even for records the normalizer discards.
-            observeBestEffort(context, {
-              event: "provider.output.first",
-              rpcMethod: spec.rpcMethod ?? "process.stdout",
-              ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {})
-            });
-          }
           const events = normalize(native, request) ?? [];
-          observeProviderOutput(context, events, {
-            rpcMethod: spec.rpcMethod ?? "process.stdout",
-            ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {}),
-            native: providerOutputMetadata(native)
-          });
           for (const event of events) {
             terminal ||= isTerminal(event);
             yield event;
@@ -532,41 +281,13 @@ export function createJsonCliAdapter<TNative = Record<string, unknown>>(
         }
         if (!terminal) {
           const events = onSuccess?.(request) ?? [];
-          observeProviderOutput(context, events, {
-            rpcMethod: spec.rpcMethod ?? "process.exit",
-            ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {}),
-            native: { type: "process.exit" }
-          });
           for (const event of events) yield event;
         }
-      } catch (error) {
-        observeBestEffort(context, {
-          event: "provider.dispatch.failed",
-          rpcMethod: spec.rpcMethod ?? "process.spawn",
-          ...(spec.providerSessionId ? { providerSessionId: spec.providerSessionId } : {}),
-          data: { error: error instanceof Error ? error.message : String(error) }
-        });
-        throw error;
       } finally {
         await spec.cleanup?.();
       }
     }
   });
-}
-
-/** Extract only low-cardinality labels from an otherwise untrusted native frame. */
-function providerOutputMetadata(value: unknown): ProviderOutputMetadata {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
-  const record = value as Record<string, unknown>;
-  const part = record.part !== null && typeof record.part === "object" && !Array.isArray(record.part)
-    ? record.part as Record<string, unknown>
-    : undefined;
-  return {
-    ...(typeof record.type === "string" ? { type: record.type } : {}),
-    ...(typeof part?.type === "string" ? { subtype: part.type } : {}),
-    ...(typeof record.provider === "string" ? { provider: record.provider } : {}),
-    ...(typeof record.model === "string" ? { model: record.model } : {})
-  };
 }
 
 /**
@@ -578,11 +299,11 @@ export async function probeCommand(command: string, { env = process.env }: { env
   const candidates = isAbsolute(command) || command.includes("/") || command.includes("\\")
     ? [command]
     : (env.PATH ?? "").split(delimiter).flatMap(directory => {
-        const extensions = process.platform === "win32" && !/\.[^\\/]+$/.test(command)
-          ? ["", ...(env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";")]
-          : [""];
-        return extensions.map(extension => resolve(directory, command + extension));
-      });
+      const extensions = process.platform === "win32" && !/\.[^\\/]+$/.test(command)
+        ? ["", ...(env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";")]
+        : [""];
+      return extensions.map(extension => resolve(directory, command + extension));
+    });
   for (const candidate of candidates) {
     try {
       await access(candidate, constants.X_OK);

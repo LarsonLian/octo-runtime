@@ -176,7 +176,7 @@ test("approval waiting suspends idle budgets but retains the overall deadline", 
 const request = { protocolVersion: 2, invocationId:"watchdog-v2",agentSessionId:"s",runId:"r",prompt:"p",modelInput:"p",controlInstructions:"",approvalMode:"full_access",context:{schema:"octo.context-envelope/v3",items:[]},agentSource: "provisioned", agentConfig:{},workdir:process.cwd() };
 test("host preserves a single pending next during activity and ignores failing diagnostic sinks", async () => {
   let calls=0; let active=0; let peak=0;
-  const host = new AdapterHost({diagnosticSink(){throw new Error("sink unavailable");}});
+  const host = new AdapterHost();
   host.register({metadata:{type:"native",capabilities:["react"],agentSources:["provisioned"],executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access", "activity.turn-progress"]},invoke(req,ctx){
     ctx.reportActivity(started);
     return { [Symbol.asyncIterator](){return this;}, async next(){

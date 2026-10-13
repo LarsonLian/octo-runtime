@@ -27,7 +27,6 @@
 | [octo-harness-daemon](octo-harness-daemon/README.md) | 管理共享 adapter-host 进程及重启、本地 UDS/Pipe 控制接口、reference Run 调度、诊断与观测。通过注入同一个 AdapterHostRpc 装配 Worker 接入模块。 |
 | [octo-harness-embedded](octo-harness-embedded/README.md) | 为 Node/Electron 宿主提供运行时生命周期、账户隔离和本地 IPC 接入 |
 | [octo-harness-im](octo-harness-im/README.md) | 读取本地 bf_token、连接 IM 专用 WS、管理私聊会话与 /reset，经共享 AdapterHostRpc 执行后回发最终文本。 |
-| [octo-harness-observability](octo-harness-observability/README.md) | 提供日志、追踪、脱敏与诊断基础能力 |
 | [octo-harness-protocol](octo-harness-protocol/README.md) | 定义和校验统一执行、事件与 Context 合同 |
 | [octo-harness-worker-access](octo-harness-worker-access/README.md) | 管理 Worker 注册、profile、WS 建连重连、远端命令与准备回执、执行 envelope 转换和事件回传。构造 AgentWorkRuntime / AgentWorkSupervisor 时由宿主传入 AdapterHostRpc。 |
 

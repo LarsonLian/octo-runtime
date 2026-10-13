@@ -19,60 +19,34 @@ The daemon and CLI must use the same `OCTO_HARNESS_HOME`.
 pnpm cli status
 pnpm cli adapter list
 pnpm cli adapter probe opencode
-pnpm cli logs path
-pnpm cli logs query <agent-run-id>
-pnpm cli diagnostics
-pnpm cli events --run-id <agent-run-id>
-pnpm cli events --follow
-pnpm cli inspect
-pnpm cli daemon run --inspect-host 127.0.0.1 --inspect-port 23456
-pnpm cli daemon install --inspect-host 127.0.0.1 --inspect-port 23456
 pnpm cli agent-session list
 pnpm cli agent-run list
 pnpm cli agent-run get <agent-run-id>
 pnpm cli agent-run cancel <agent-run-id> --reason operator_cancel
 ```
 
-The local bounded event stream is non-durable and does not reconstruct a complete
-trajectory. Local AgentSession/AgentRun views are reference diagnostics. Query
-Worker for the authoritative production lifecycle and complete trajectory.
-The live event sink is process-local and always applies credential redaction and
-private-reasoning removal. Sensitive RPC/provider persistence remains explicitly
-controlled by the trace and provider-capture settings.
+For local Host debugging, set the environment variable before starting Harness:
 
-`diagnostics` builds a metadata-only support bundle from an explicit field
-allowlist. It contains package versions, connection state, sequence and ACK
-watermarks, store/outbox watermarks, timestamps, bounded error codes, and a
-redacted evidence timeline. It never includes credentials, prompts, model
-output, tool input/output, provider I/O, outbox payloads, or local filesystem
-paths. The inspect server exposes the same bundle at `/api/diagnostics` behind
-the capability token. Provider I/O remains a separate restricted capture path
-and is never added to this bundle.
+```bash
+OCTO_RUNTIME_DEBUG=1 octo-harness daemon run
+# With a custom Home:
+OCTO_RUNTIME_DEBUG=1 octo-harness --home /absolute/runtime/state daemon run
+tail -f /absolute/runtime/state/logs/adapter-host.log
+```
 
-The capability-protected `/api/metrics` endpoint exposes local Runtime
-connection state, latest recovery duration, outbox watermarks, and store
-health. Its `profile` label is intentionally local and high-cardinality; do not
-send this endpoint directly to a central metrics store. A management layer must
-aggregate by bounded state, trigger, outcome, and health labels first.
+Only the exact value `1` enables file logging. Otherwise no debug log directory or
+file is created. The Host appends lifecycle, watchdog and stdio RPC records to
+`<Harness Home>/logs/adapter-host.log`; restarted Host processes use the same file.
+The default Home is `~/.octo-harness` (or `%LOCALAPPDATA%/OctoHarness` on Windows).
+Set the variable in the service environment when running Harness as a native service.
+Changing a shell environment does not change an already running daemon.
 
-Inspect starts with the daemon and defaults to `127.0.0.1` and a random port in
-`20001–65535`. It keeps listening even with no browser connected so container and
-cloud-image port mappings remain stable. With no WebSocket client there are zero
-subscribers; only the byte-bounded daemon event ring remains resident. The
-`inspect` command only prints the daemon-owned capability URL. The React SPA
-independently retains at most 6000 events or about 6 MiB, prepends the newest frames, and uses TanStack Virtual
-to render only visible rows; its recent AgentRuns index retains 100 IDs without
-copying event payloads. Changing the local QL filter never reconnects the socket.
-Pausing, scrolling away from the top, or expanding an event closes the current
-WebSocket and freezes the view. Resume follows from the daemon ring's current
-tail, intentionally skipping frames emitted during the pause.
-After a disconnect the browser retries after 1, 2, 5, 10 and 30 seconds, then
-stops until manual retry. `daemon run` consumes explicit
-`--inspect-host` / `--inspect-port` values directly. `daemon install` persists
-them in the native service definition and Harness Home. A non-loopback listener
-requires TLS and network access control supplied by the deployment; the
-capability URL alone is not transport security. Reverse proxies, WAFs and access
-logs must not record its `?token=...` query parameter.
+The file is local debug output and may contain invocation input and output. It is
+created with owner-only permissions. There is no automatic rotation or retention;
+remove the file when no longer needed. A write failure reports once on stderr and
+does not interrupt execution. There is no Provider-native capture, observation ring,
+subscriber transport, Inspect HTTP/WebSocket server or support-bundle service.
+Use Worker for the authoritative production lifecycle and complete trajectory.
 
 ## Health Signals
 
@@ -83,15 +57,12 @@ logs must not record its `?token=...` query parameter.
 - channel context cache size/gap state when enabled.
 - provider process duration, terminal event and cancellation latency.
 
-Never place Runtime tokens, IM bot tokens, prompts or full provider I/O in
-ordinary support output. Restricted traces require explicit local enablement and
-retention controls.
+Keep local debug logs private because they can contain execution data.
 
 ## Recovery Runbook
 
-Run `octo-harness doctor`, `octo-harness status`, and
-`octo-harness diagnostics` first. Keep the bundle's `generatedAt` timestamp and
-timeline order as the common clock when correlating Worker and channel evidence.
+Run `octo-harness doctor` and `octo-harness status` first. Enable Host debug logging
+when reproducing a problem, and correlate its timestamps and invocation IDs with Worker.
 
 | Incident | Evidence | Recovery decision |
 | --- | --- | --- |
@@ -102,4 +73,4 @@ timeline order as the common clock when correlating Worker and channel evidence.
 | Offline budget exhausted | oldest outbox age, pending rows/bytes, last ACK | Restore connectivity or free local storage. Acknowledge or replay only through the protocol; never edit outbox rows manually. |
 | Dependency degradation | HTTP status, bounded error code, timeout stage | Identify whether auth, Worker, Redis, MySQL, or the provider is degraded. Recover that dependency before raising retry limits. |
 | Outbox watermark pressure | pending bytes/rows, oldest age, database and WAL bytes | Remove the upstream ACK blockage. New work remains rejected at the hard watermark until durable ACK cleanup lowers usage. |
-| Evidence timeline disagreement | generation, server sequence, ACK, occurrence/run/invocation IDs | Order facts by source timestamp and sequence, then accept Worker terminal authority. Escalate only with the metadata bundle and separately approved restricted capture. |
+| Evidence timeline disagreement | generation, server sequence, ACK, occurrence/run/invocation IDs | Order facts by source timestamp and sequence, then accept Worker terminal authority. Use the Host debug log when additional execution evidence is needed. |

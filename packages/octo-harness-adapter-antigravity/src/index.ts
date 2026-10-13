@@ -1,13 +1,7 @@
-import { invocationEnvironment } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { defineAdapter, hasImageInput, invocationEnvironment, mapReasoningEffort, parseJsonLine, probeCommand, providerInputText, spawnJsonLines, type CanonicalEvent, type CommandSpec, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  defineAdapter, hasImageInput, observeBestEffort, observeProviderOutput,
-  parseJsonLine, probeCommand, providerInputText, spawnJsonLines,
-  type AdapterInvocationContext, type CanonicalEvent, type CommandSpec, type InvokeRequest
-} from "@mininglamp-oss/octo-harness-adapter-sdk";
 
 interface NativeUsage {
   input_tokens?: number;
@@ -115,14 +109,14 @@ export class AntigravityEventNormalizer {
       if (done) {
         tool.done = true;
         events.push({ protocolVersion: 2, type: "tool_call.update", payload: {
-          id: tool.id, status: step.tool_info?.error ? "failed" : "completed",
-          ...(step.tool_info?.output !== undefined ? { output: step.tool_info.output } : {}),
-          ...(step.tool_info?.error ? { error: step.tool_info.error } : {})
-        } });
+            id: tool.id, status: step.tool_info?.error ? "failed" : "completed",
+            ...(step.tool_info?.output !== undefined ? { output: step.tool_info.output } : {}),
+            ...(step.tool_info?.error ? { error: step.tool_info.error } : {})
+          } });
       } else if (step.tool_info?.output !== undefined) {
         events.push({ protocolVersion: 2, type: "tool_call.delta", payload: {
-          id: tool.id, outputSnapshot: typeof step.tool_info.output === "string" ? step.tool_info.output : JSON.stringify(step.tool_info.output)
-        } });
+            id: tool.id, outputSnapshot: typeof step.tool_info.output === "string" ? step.tool_info.output : JSON.stringify(step.tool_info.output)
+          } });
       }
     }
     return events;
@@ -158,10 +152,10 @@ export class AntigravityEventNormalizer {
     events.push(isCancelled
       ? { protocolVersion: 2, type: "run.cancelled", payload: {} }
       : succeeded ? { protocolVersion: 2, type: "run.completed", payload: {} }
-      : { protocolVersion: 2, type: "run.failed", payload: {
-          code: "ANTIGRAVITY_EXECUTION_FAILED",
-          message: error instanceof Error ? error.message : result?.error || (result ? `Antigravity returned ${status ?? "INVALID"}${response.trim() ? "" : " without an answer"}` : "Antigravity exited without a result event")
-        } });
+        : { protocolVersion: 2, type: "run.failed", payload: {
+            code: "ANTIGRAVITY_EXECUTION_FAILED",
+            message: error instanceof Error ? error.message : result?.error || (result ? `Antigravity returned ${status ?? "INVALID"}${response.trim() ? "" : " without an answer"}` : "Antigravity exited without a result event")
+          } });
     return events;
   }
 
@@ -216,8 +210,7 @@ export function buildAntigravityCommand(request: InvokeRequest, command = "agy",
     ? [{ type: "text", text: `Harness control instructions (apply to this turn):\n${request.controlInstructions}` }, { type: "text", text: `User input:\n${providerInputText(request)}` }]
     : providerInputText(request);
   const input = `${JSON.stringify({ event: "user", message: { content } })}\n`;
-  return { command, args, input, cwd: request.workdir, rpcMethod: "process.stdin", providerSessionId: request.providerSession?.sessionId,
-    providerInput: { kind: "json_params", content: { command, args, cwd: request.workdir, input, instructionDelivery: "user-channel-segmented" } } };
+  return { command, args, input, cwd: request.workdir, };
 }
 
 export function antigravityLogError(log: string): string | undefined {
@@ -235,7 +228,7 @@ export function createAntigravityAdapter({ command = "agy", commandArgsPrefix = 
       if (result.available && (!result.version || compareVersion(result.version, "1.3.3") < 0)) return { ...result, available: false, reason: "provider_version_unsupported" };
       return result;
     },
-    async *invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
+    async *invoke(request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
       buildAntigravityCommand(request, command, commandArgsPrefix);
       const directory = await mkdtemp(join(tmpdir(), "octo-harness-antigravity-"));
       const logPath = join(directory, "cli.log");
@@ -260,11 +253,8 @@ export function createAntigravityAdapter({ command = "agy", commandArgsPrefix = 
       const timer = setInterval(() => { void checkLog(); }, 250);
       timer.unref();
       const spec = buildAntigravityCommand(request, command, commandArgsPrefix, logPath);
-      let first = true;
       try {
-        await context?.observe({ event: "provider.input", rpcMethod: "process.stdin", carrier: spec.providerInput });
         for await (const native of spawnJsonLines({ ...spec, env: invocationEnvironment(request, spec.env), signal: controller.signal,
-          onInputWritten: () => observeBestEffort(context, { event: "provider.dispatch.written", rpcMethod: "process.stdin" }),
           parseLine: (line): AntigravityNativeEvent | null => {
             if (!line.trim()) return null;
             const value = parseJsonLine(line);
@@ -272,9 +262,7 @@ export function createAntigravityAdapter({ command = "agy", commandArgsPrefix = 
             return value;
           }
         })) {
-          if (first) { first = false; observeBestEffort(context, { event: "provider.output.first", rpcMethod: "process.stdout" }); }
           const events = normalizer.normalize(native);
-          observeProviderOutput(context, events, { rpcMethod: "process.stdout", native: { type: native.event, provider: "antigravity" } });
           for (const event of events) yield event;
           if (normalizer.hasResult) break;
         }
@@ -287,7 +275,6 @@ export function createAntigravityAdapter({ command = "agy", commandArgsPrefix = 
         await rm(directory, { recursive: true, force: true });
       }
       const terminalEvents = normalizer.finish(providerError, request.signal?.aborted);
-      observeProviderOutput(context, terminalEvents, { rpcMethod: "process.exit", native: { type: "result", provider: "antigravity" } });
       for (const event of terminalEvents) yield event;
     }
   });

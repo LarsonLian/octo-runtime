@@ -5,9 +5,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import {
-  createJsonCliAdapter,
-  observeBestEffort,
-  observeProviderOutput
+  createJsonCliAdapter
 } from "../packages/octo-harness-adapter-sdk/dist/index.js";
 import { createCodeBuddyAdapter } from "@mininglamp-oss/octo-harness-adapter-codebuddy";
 import { acpModelSelectionRequest, createAcpAdapter, normalizeAcpUpdate } from "@mininglamp-oss/octo-harness-adapter-acp";
@@ -79,91 +77,6 @@ const openClawGatewayMethods = ["agents.list", "sessions.create", "sessions.mess
 function openClawGatewayHello() {
   return { type: "hello-ok", protocol: 4, features: { methods: openClawGatewayMethods, events: ["agent"] } };
 }
-
-test("best-effort observations handle rejection and provider output excludes private reasoning", async () => {
-  observeBestEffort({
-    observe: async () => { throw new Error("logger closed"); }
-  }, {
-    event: "provider.output.first",
-    rpcMethod: "process.stdout"
-  });
-
-  const observations = [];
-  observeProviderOutput({
-    observe: async observation => {
-      observations.push(observation);
-      return { captureId: "output-test", state: "accepted", complete: true };
-    }
-  }, [
-    { protocolVersion: 2,
-      type: "message.delta",
-      payload: {
-        text: "PRIVATE_REASONING_CANARY",
-        channel: "analysis",
-        exposure: "private_reasoning",
-        provenance: { provider: "fixture", nativeEvent: "reasoning.delta" }
-      }
-    },
-    { protocolVersion: 2,
-      type: "message.delta",
-      payload: {
-        text: "safe summary",
-        channel: "analysis",
-        exposure: "public_summary",
-        provenance: { provider: "fixture", nativeEvent: "summary.delta" }
-      }
-    },
-    { protocolVersion: 2, type: "message.delta", payload: { text: "final answer", channel: "final" } },
-    { protocolVersion: 2,
-      type: "tool_call.update",
-      payload: {
-        id: "tool-1",
-        status: "completed",
-        output: {
-          safe: "done",
-          password: "CREDENTIAL_CANARY",
-          OPENAI_API_KEY: "sk-abcdefghijklmnopCREDENTIAL_CANARY"
-        }
-      }
-    },
-    { protocolVersion: 2, type: "usage.update", payload: { inputTokens: 1, outputTokens: 2 } },
-    { protocolVersion: 2, type: "run.failed", payload: { message: "provider error Bearer TOKEN_CANARY" } },
-    { protocolVersion: 2, type: "session.update", payload: { providerSession: { sessionId: "not-output" } } }
-  ], {
-    rpcMethod: "fixture.stdout",
-    native: {
-      type: "mixed-frame",
-      subtype: "content",
-      provider: "fixture",
-      model: "fixture-model"
-    }
-  });
-  await new Promise(resolve => setImmediate(resolve));
-
-  assert.equal(observations.length, 1);
-  assert.equal(observations[0].event, "provider.output");
-  assert.equal(observations[0].data.native.type, "mixed-frame");
-  assert.equal(observations[0].data.native.subtype, "content");
-  assert.equal(observations[0].data.native.provider, "fixture");
-  assert.equal(observations[0].data.native.model, "fixture-model");
-  assert.ok(observations[0].data.native.public.some(projection =>
-    projection.kind === "message" && projection.content.text === "final answer"
-  ));
-  assert.ok(observations[0].data.native.public.some(projection =>
-    projection.kind === "tool" && projection.content.status === "completed"
-  ));
-  assert.deepEqual(observations[0].data.canonical.map(event => event.type), [
-    "message.delta",
-    "message.delta",
-    "tool_call.update",
-    "usage.update",
-    "run.failed"
-  ]);
-  assert.doesNotMatch(
-    JSON.stringify(observations),
-    /PRIVATE_REASONING_CANARY|CREDENTIAL_CANARY|TOKEN_CANARY|not-output/
-  );
-});
 
 test("Codex native events map to session/message/usage/terminal", () => {
   assert.equal(normalizeCodexEvent({ method: "thread/started", params: { thread: { id: "thread-1" } } })[0].type, "session.update");
@@ -416,7 +329,6 @@ test("Claude full_access uses native bypass without inventing a default effort",
   assert.equal(claude.args.includes("--include-partial-messages"), true);
   assert.equal(claude.args.includes("--settings"), false);
   assert.equal(claude.args.includes("--effort"), false);
-  assert.equal(claude.providerInput.content.effort, undefined);
   assert.equal(claude.args[claude.args.indexOf("--permission-mode") + 1], "bypassPermissions");
   assert.equal(claude.args.includes("--dangerously-skip-permissions"), true);
   assert.equal(claude.args.includes("--disallowedTools"), false);
@@ -428,8 +340,6 @@ test("Claude maps explicit effort as the only reasoning strength input", async (
     const tuned = await buildClaudeCommand({ ...request, agentSource: "provisioned", agentConfig: { effort } });
     assert.equal(tuned.args[tuned.args.indexOf("--effort") + 1], effort);
     assert.equal(tuned.args.includes("--settings"), false);
-    assert.equal(tuned.providerInput.content.effort, effort);
-    assert.equal(Object.hasOwn(tuned.providerInput.content, "thinking"), false);
     await tuned.cleanup();
   }
 });
@@ -780,7 +690,6 @@ test("control instructions use private provider-native carriers", async () => {
   assert.equal(openclaw.createParams.cwd, undefined);
   assert.equal(openclaw.createParams.model, "provider/model");
   assert.equal(openclaw.createParams.thinkingLevel, "medium");
-  assert.equal(JSON.stringify(openclaw.providerInput).includes("SECRET_TOKEN"), false);
   assert.match(openclaw.sessionKey, /^agent:octo-openclaw-runner:octo-run:run-1:/);
 });
 
@@ -794,12 +703,10 @@ test("text adapters prefer the exact modelInput over the display prompt", async 
 
   const claude = await buildClaudeCommand(modelRequest);
   assert.equal(JSON.parse(claude.input).message.content, "MODEL_INPUT_OK");
-  assert.equal(claude.providerInput.content.stdin, claude.input);
   await claude.cleanup();
 
   const opencode = await buildOpenCodeCommand(modelRequest);
   assert.equal(opencode.args.at(-1), "MODEL_INPUT_OK");
-  assert.equal(opencode.providerInput.content.user_input, opencode.args.at(-1));
   await opencode.cleanup();
 
   const openclaw = buildOpenClawGatewayInvocation({
@@ -816,7 +723,6 @@ test("text adapters prefer the exact modelInput over the display prompt", async 
     }
   });
   assert.equal(openclaw.agentParams.message, "MODEL_INPUT_OK");
-  assert.equal(openclaw.providerInput.content.operations[3].params.message, "MODEL_INPUT_OK");
 });
 
 test("OpenClaw Gateway client authenticates, handles accepted/final responses, aborts, and rejects malformed JSON", async t => {
@@ -878,7 +784,6 @@ test("OpenClaw Gateway client authenticates, handles accepted/final responses, a
 test("OpenClaw Gateway adapter isolates run events, deduplicates seq, and streams tools", async () => {
   let listener = () => {};
   const requests = [];
-  const observations = [];
   const client = {
     connect: async () => openClawGatewayHello(),
     onEvent(next) { listener = next; return () => { listener = () => {}; }; },
@@ -916,7 +821,7 @@ test("OpenClaw Gateway adapter isolates run events, deduplicates seq, and stream
         OPENCLAW_GATEWAY_PRIVATE_KEY: "private"
       }
     }
-  }, { observe: async observation => { observations.push(observation); } })) events.push(event);
+  })) events.push(event);
 
   assert.equal(events.some(event => JSON.stringify(event).includes("LEAK")), false);
   assert.equal(events.filter(event => event.type === "message.delta" && event.payload.channel === "final").map(event => event.payload.text).join(""), "hello");
@@ -926,9 +831,7 @@ test("OpenClaw Gateway adapter isolates run events, deduplicates seq, and stream
   assert.equal(requests[1].params.cwd, undefined);
   assert.equal(requests[3].params.cwd, undefined);
   assert.ok(requests.some(entry => entry.method === "agent.wait"));
-  assert.deepEqual(observations.find(observation => observation.data?.diagnostic)?.data.diagnostic, {
-    type: "sequence_gap", expectedSeq: 6, receivedSeq: 7
-  });
+
 });
 
 test("OpenClaw preset treats the provider Agent as a black box", async () => {
@@ -1361,12 +1264,10 @@ test("generic ACP and CodeBuddy keep explicit effort and continue with a not-app
     const { adapter } = acpPermissionFixture(factory, [{ optionId: "allow-once", kind: "allow_once" }]);
     const input = { ...request, approvalMode: "full_access", agentSource: "provisioned", agentConfig: { effort: "xhigh" } };
     const events = [];
-    const observations = [];
-    for await (const event of adapter.invoke(input, { observe: async observation => { observations.push(observation); } })) events.push(event);
+    for await (const event of adapter.invoke(input)) events.push(event);
     assert.equal(input.agentConfig.effort, "xhigh");
     assert.equal(events[0].payload.params.warningCode, "REASONING_EFFORT_NOT_APPLIED");
     assert.equal(events.at(-1).type, "run.completed");
-    assert.equal(observations.find(item => item.rpcMethod === "adapter.reasoning.map").data.outcome, "not_applied");
   }
 });
 

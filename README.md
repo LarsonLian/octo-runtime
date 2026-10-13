@@ -53,7 +53,6 @@ flowchart TB
 | [Core](packages/octo-harness-core/README.md) | 本地 AgentSession/AgentRun 状态与通用执行引擎 | IM/Loop 业务模型、WS 接入 |
 | [Protocol](packages/octo-harness-protocol/README.md) | InvokeRequest、CanonicalEvent、Context 和校验合同 | 网络连接、进程和业务存储 |
 | [Embedded](packages/octo-harness-embedded/README.md) | 宿主 SDK、运行时接入、生命周期和本地 IPC 桥 | IM 业务实现、provider 协议分支 |
-| [Observability](packages/octo-harness-observability/README.md) / [Inspect Web](apps/inspect-web/README.md) | 日志、诊断和观测展示 | 业务消息历史、执行权威 |
 | [Cross Service](packages/octo-harness-cross-service/README.md) | OS 用户级服务管理 | Run 调度、连接协议 |
 | [Adapters / SDK / ACP](packages/README.md) | provider 协议转换、进程与 transport 工具 | Worker/IM 连接和业务决策 |
 
@@ -68,7 +67,6 @@ apps/
   cli/                             现有运维 CLI
   daemon/                          启动与配置入口
   adapter-host/                    Host 进程入口
-  inspect-web/                     诊断 UI
 packages/
   octo-harness-daemon/              模块装配、本地 IPC、共享 Host 生命周期
   octo-harness-worker-access/       Worker WS 接入与远端执行编排
@@ -80,7 +78,6 @@ packages/
   octo-harness-embedded/            宿主集成 SDK
   octo-harness-adapter-*/           provider adapters 与共享 SDK
   octo-harness-acp-client/          ACP transport
-  octo-harness-observability/       观测基础设施
   octo-harness-cross-service/       原生用户服务管理
 ```
 
@@ -223,18 +220,9 @@ pnpm cli adapter list
 pnpm cli adapter probe codex
 pnpm cli agent-session list
 pnpm cli agent-run list
-pnpm cli events --run-id <agent-run-id>
-pnpm cli events --follow
-pnpm cli inspect
-# foreground daemon: optional explicit inspect binding
-pnpm cli daemon run --inspect-host 127.0.0.1 --inspect-port 23456
-# native service: persist the binding in the installed service definition
-pnpm cli daemon install --inspect-host 127.0.0.1 --inspect-port 23456
 ```
 
-`events` 直接读取 daemon 中约 6 MiB 的有界内存事件流，默认输出当前保留快照后退出，`--follow` 才持续跟随；它不读取 SQLite，也不等同于完整 AgentRun trajectory。daemon 启动时即监听 Inspect HTTP/WS 端口，即使没有浏览器连接也保持端口可用于容器或云镜像映射；此时 WS 订阅者为零，只有有界事件 ring 常驻。`inspect` 只读取并输出带 Capability token 的地址，不打开浏览器。页面使用 React SPA 和 TanStack Virtual，在浏览器中按最新优先保留最多 6000 条或约 6 MiB 事件，实际只渲染可见行。手动暂停、滚离顶部或展开事件都会关闭当前 WS 并固定视图；恢复时从 daemon ring 的当前尾部继续，不补回暂停期间的事件。QL 支持 `profile`、`runtime_id`、`source`、`stage`、`direction`、`type`、`adapter_type`、`session_id`、`agent_run_id`、`invocation_id`、`status`，以及 `=`、`!=`、`~=`、`and`、`or`。创建 AgentRun、reset AgentSession、查询云端权威状态或获取完整 trajectory，应调用 Agent Worker API 或 `octo-cli harness agent-run ...`。
-
-显式 `--inspect-host` 可以用于云主机或容器；`daemon run` 直接使用参数，原生服务则在 `daemon install` 时把参数写入服务定义和 Harness Home，供后续 status/restart/update recovery 复用。监听非回环地址会暴露诊断接口，部署方必须提供 TLS 和网络访问控制，不能只依赖 URL 中的 Capability token。Capability 使用 `?token=...` 传入；反向代理、WAF 与 access log 必须禁止记录该 query 参数。
+启动前设置 `OCTO_RUNTIME_DEBUG=1`，Host 日志会直接追加到 `$OCTO_HARNESS_HOME/logs/adapter-host.log`（Home 默认 `~/.octo-harness`）。默认关闭；没有内存观测队列、Provider I/O 采集或 Inspect 服务。
 
 ## 会话恢复
 

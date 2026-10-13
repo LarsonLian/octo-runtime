@@ -1,20 +1,3 @@
-import { invocationEnvironment } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { canonicalTerminalStatus, providerInputParts } from "@mininglamp-oss/octo-harness-protocol";
-import { createHash } from "node:crypto";
-import {
-  AcpApprovalBridge,
-  AcpTurnNormalizer,
-  acpToolTerminalStatus,
-  normalizeAcpToolUpdate,
-  observeAcpToolStatus,
-  defineAdapter,
-  observeBestEffort,
-  observeProviderOutput,
-  probeCommand,
-  type AdapterInvocationContext,
-  type CanonicalEvent,
-  type InvokeRequest
-} from "@mininglamp-oss/octo-harness-adapter-sdk";
 import {
   acpLoadSessionParams,
   acpNewSessionParams,
@@ -22,7 +5,14 @@ import {
   spawnAcpClient,
   type AcpUpdate
 } from "@mininglamp-oss/octo-harness-acp-client";
-import { executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
+import {
+  AcpApprovalBridge,
+  AcpTurnNormalizer,
+  acpToolTerminalStatus,defineAdapter,invocationEnvironment,normalizeAcpToolUpdate,probeCommand,
+  type CanonicalEvent,
+  type InvokeRequest
+} from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { canonicalTerminalStatus, executionFeatures, providerInputParts, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -114,11 +104,11 @@ export function normalizeAcpUpdate(update: StandardAcpUpdate, provider: string):
       type: "message.delta",
       payload: type === "agent_thought_chunk"
         ? {
-            text,
-            channel: "analysis",
-            exposure: "public_reasoning",
-            provenance: { provider, nativeEvent: type }
-          }
+          text,
+          channel: "analysis",
+          exposure: "public_reasoning",
+          provenance: { provider, nativeEvent: type }
+        }
         : { text, channel: "final" }
     }];
   }
@@ -165,308 +155,198 @@ export function createAcpAdapter(
       if (!bridge) throw new Error("INTERACTION_NOT_ACTIVE");
       await bridge.respond(response);
     },
-    async *invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
+    async *invoke(request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
       if (request.approvalMode !== "ask" && request.approvalMode !== "full_access") throw new Error("APPROVAL_MODE_UNSUPPORTED: this ACP adapter has no assisted policy");
       if (responders.has(request.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
       const bridge = new AcpApprovalBridge(request);
       responders.set(request.invocationId, bridge);
-      try { yield* bridge.stream(execute(request, bridge, context)); }
+      try { yield* bridge.stream(execute(request, bridge)); }
       finally { bridge.close("execution_lost"); responders.delete(request.invocationId); }
     }
   }, null); // ACP transports currently have no implemented reasoning setter.
 
-  async function* execute(request: InvokeRequest, bridge: AcpApprovalBridge, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
-      const args = typeof definition.args === "function" ? definition.args(request) : definition.args ?? ["acp"];
-      const client = acpClientFactory({
-        command,
-        args: [...args],
-        env: invocationEnvironment(request, definition.env?.(request)),
-        cwd: request.workdir,
-        permissionHandler: params => bridge.requestPermission(params),
-        onPermissionResponseWritten: params => bridge.responseWritten(params),
-        onPermissionResponseFailed: (params, error) => bridge.responseFailed(params, error)
+  async function* execute(request: InvokeRequest, bridge: AcpApprovalBridge): AsyncGenerator<CanonicalEvent> {
+    const args = typeof definition.args === "function" ? definition.args(request) : definition.args ?? ["acp"];
+    const client = acpClientFactory({
+      command,
+      args: [...args],
+      env: invocationEnvironment(request, definition.env?.(request)),
+      cwd: request.workdir,
+      permissionHandler: params => bridge.requestPermission(params),
+      onPermissionResponseWritten: params => bridge.responseWritten(params),
+      onPermissionResponseFailed: (params, error) => bridge.responseFailed(params, error)
+    });
+    bridge.bindTransport(() => client.close());
+    let sessionId: string | undefined;
+    let terminal = false;
+    let forceCloseTimer: NodeJS.Timeout | undefined;
+    const abort = (): void => {
+      if (sessionId) client.cancel(sessionId);
+      forceCloseTimer ??= setTimeout(() => { void client.close(); }, 250);
+      forceCloseTimer.unref?.();
+    };
+    if (request.signal?.aborted) abort();
+    else request.signal?.addEventListener("abort", abort, { once: true });
+
+    try {
+      const initialization = recordValue(await client.initialize({ protocolVersion: definition.protocolVersion ?? 1 }));
+      const imageSupported = recordValue(recordValue(initialization.agentCapabilities).promptCapabilities).image === true;
+      const inputs = [providerInputParts(request), ...(request.providerSession ? [providerInputParts(request, true)] : [])];
+      if (!imageSupported && inputs.some(parts => parts.some(part => part.type === "image"))) {
+        throw new Error("UNSUPPORTED_INPUT_MODALITY: ACP agent did not advertise promptCapabilities.image");
+      }
+      const requestedSessionId = request.providerSession?.sessionId;
+      let providerModel: string | undefined;
+      let resumeFallback: string | undefined;
+      let sessionMethod = requestedSessionId ? "session/load" : "session/new";
+      let sessionParams = requestedSessionId
+        ? acpLoadSessionParams(requestedSessionId, { cwd: request.workdir })
+        : acpNewSessionParams({ cwd: request.workdir });
+      sessionParams.mcpServers = [];
+      let sessionRequestId = client.reserveRequestId();
+      let sessionResult: JsonRecord = {};
+
+      let result = await client.request<JsonRecord | null>(sessionMethod, sessionParams, {
+        requestId: sessionRequestId,
+        ...(requestedSessionId ? { timeoutMs: 600_000 } : {}),
       });
-      bridge.bindTransport(() => client.close());
-      let sessionId: string | undefined;
-      let terminal = false;
-      let forceCloseTimer: NodeJS.Timeout | undefined;
-      const abort = (): void => {
-        if (sessionId) client.cancel(sessionId);
-        forceCloseTimer ??= setTimeout(() => { void client.close(); }, 250);
-        forceCloseTimer.unref?.();
-      };
-      if (request.signal?.aborted) abort();
-      else request.signal?.addEventListener("abort", abort, { once: true });
-
-      try {
-        const initialization = recordValue(await client.initialize({ protocolVersion: definition.protocolVersion ?? 1 }));
-        const imageSupported = recordValue(recordValue(initialization.agentCapabilities).promptCapabilities).image === true;
-        const inputs = [providerInputParts(request), ...(request.providerSession ? [providerInputParts(request, true)] : [])];
-        if (!imageSupported && inputs.some(parts => parts.some(part => part.type === "image"))) {
-          throw new Error("UNSUPPORTED_INPUT_MODALITY: ACP agent did not advertise promptCapabilities.image");
-        }
-        const requestedSessionId = request.providerSession?.sessionId;
-        let providerModel: string | undefined;
-        let resumeFallback: string | undefined;
-        let sessionMethod = requestedSessionId ? "session/load" : "session/new";
-        let sessionParams = requestedSessionId
-          ? acpLoadSessionParams(requestedSessionId, { cwd: request.workdir })
-          : acpNewSessionParams({ cwd: request.workdir });
+      const initialSessionId = requestedSessionId ?? (isRecord(result) ? stringField(result, "sessionId") : undefined);
+      if (!initialSessionId) throw new Error("ACP session/new returned no sessionId");
+      const missingLoadedSession = requestedSessionId && (
+        result === null
+        || (definition.emptyLoadResultMeansMissing === true && isRecord(result) && Object.keys(result).length === 0)
+      );
+      if (missingLoadedSession) {
+        resumeFallback = "session_load_not_found";
+        sessionMethod = "session/new";
+        sessionParams = acpNewSessionParams({ cwd: request.workdir });
         sessionParams.mcpServers = [];
-        let sessionRequestId = client.reserveRequestId();
-        let sessionResult: JsonRecord = {};
-        await observeInput(context, sessionMethod, sessionParams, sessionRequestId, requestedSessionId);
-        try {
-          let result = await client.request<JsonRecord | null>(sessionMethod, sessionParams, {
-            requestId: sessionRequestId,
-            ...(requestedSessionId ? { timeoutMs: 600_000 } : {}),
-            onWritten: () => observeWritten(context, sessionMethod, sessionRequestId, requestedSessionId)
-          });
-          const initialSessionId = requestedSessionId ?? (isRecord(result) ? stringField(result, "sessionId") : undefined);
-          if (!initialSessionId) throw new Error("ACP session/new returned no sessionId");
-          observeAcknowledged(context, sessionMethod, sessionRequestId, initialSessionId);
-          const missingLoadedSession = requestedSessionId && (
-            result === null
-            || (definition.emptyLoadResultMeansMissing === true && isRecord(result) && Object.keys(result).length === 0)
-          );
-          if (missingLoadedSession) {
-            resumeFallback = "session_load_not_found";
-            sessionMethod = "session/new";
-            sessionParams = acpNewSessionParams({ cwd: request.workdir });
-            sessionParams.mcpServers = [];
-            sessionRequestId = client.reserveRequestId();
-            await observeInput(context, sessionMethod, sessionParams, sessionRequestId);
-            result = await client.request<JsonRecord>(sessionMethod, sessionParams, {
-              requestId: sessionRequestId,
-              onWritten: () => observeWritten(context, sessionMethod, sessionRequestId)
-            });
-            const freshSessionId = stringField(result, "sessionId");
-            if (!freshSessionId) throw new Error("ACP session/new returned no sessionId");
-            observeAcknowledged(context, sessionMethod, sessionRequestId, freshSessionId);
-          }
-          sessionResult = isRecord(result) ? result : {};
-          sessionId = resumeFallback ? stringField(sessionResult, "sessionId") : requestedSessionId ?? stringField(sessionResult, "sessionId");
-          if (!sessionId) throw new Error("ACP session/new returned no sessionId");
-        } catch (error) {
-          observeFailed(
-            context,
-            sessionMethod,
-            sessionRequestId,
-            sessionMethod === "session/load" ? requestedSessionId : undefined,
-            error
-          );
-          throw error;
-        }
-        const requestedModel = nonEmptyString(request.agentConfig?.model);
-        if (requestedModel) {
-          const selection = acpModelSelectionRequest(sessionResult, sessionId, requestedModel);
-          if (selection) {
-            const selectionRequestId = client.reserveRequestId();
-            await observeInput(context, selection.method, selection.params, selectionRequestId, sessionId);
-            try {
-              await client.request(selection.method, selection.params, {
-                requestId: selectionRequestId,
-                onWritten: () => observeWritten(context, selection.method, selectionRequestId, sessionId)
-              });
-              observeAcknowledged(context, selection.method, selectionRequestId, sessionId);
-            } catch (error) {
-              observeFailed(context, selection.method, selectionRequestId, sessionId, error);
-              throw error;
-            }
-          }
-          providerModel = requestedModel;
-        } else {
-          providerModel = sessionModel(sessionResult);
-        }
+        sessionRequestId = client.reserveRequestId();
+        result = await client.request<JsonRecord>(sessionMethod, sessionParams, {
+          requestId: sessionRequestId,
+        });
+        const freshSessionId = stringField(result, "sessionId");
+        if (!freshSessionId) throw new Error("ACP session/new returned no sessionId");
+      }
+      sessionResult = isRecord(result) ? result : {};
+      sessionId = resumeFallback ? stringField(sessionResult, "sessionId") : requestedSessionId ?? stringField(sessionResult, "sessionId");
+      if (!sessionId) throw new Error("ACP session/new returned no sessionId");
+      const requestedModel = nonEmptyString(request.agentConfig?.model);
+      if (requestedModel) {
+        const selection = acpModelSelectionRequest(sessionResult, sessionId, requestedModel);
+        if (selection) {
+          const selectionRequestId = client.reserveRequestId();
 
+          await client.request(selection.method, selection.params, {
+            requestId: selectionRequestId,
+          });
+        }
+        providerModel = requestedModel;
+      } else {
+        providerModel = sessionModel(sessionResult);
+      }
+
+      yield { protocolVersion: 2,
+        type: "session.update",
+        payload: {
+          providerSession: {
+            sessionId,
+            resumable: true,
+            ...(resumeFallback ? {
+              resumeOutcome: "fresh_fallback",
+              resumeFallback,
+              contextInputVariant: request.freshFallbackModelInputParts || request.freshFallbackModelInput ? "recovery" : "primary"
+            } : {}),
+            ...(providerModel ? { model: providerModel } : {})
+          }
+        }
+      };
+
+      const input = providerInputParts(request, resumeFallback !== undefined);
+      // Preserve the legacy text call while mixed prompts retain every block's position.
+      const prompt = input.length === 1 && input[0]?.type === "text"
+        ? `${input[0].text}${request.controlInstructions ? `\n\n${request.controlInstructions}` : ""}`
+        : [...input, ...(request.controlInstructions ? [{ type: "text" as const, text: request.controlInstructions }] : [])];
+      const promptParams = acpPromptParams(sessionId, prompt);
+      const promptRequestId = client.reserveRequestId();
+      let stopReason: string | undefined;
+      let finishReason: string | undefined;
+      let promptResultPublicText: string | undefined;
+      let producedFinalOutput = false;
+      const activeTools = new Set<string>();
+      const turn = new AcpTurnNormalizer(definition.provider);
+
+      for await (const update of client.prompt(sessionId, prompt, {
+        requestId: promptRequestId,
+        params: promptParams,
+      })) {
+        if (update.type === "prompt_result") {
+          stopReason = update.stopReason;
+          finishReason = update.finishReason;
+          promptResultPublicText = promptResultText(update);
+          continue;
+        }
+        const standardUpdate = update as StandardAcpUpdate;
+        const events = turn.normalize(standardUpdate.sessionUpdate ?? standardUpdate.type, normalizeAcpUpdate(standardUpdate, definition.provider));
+        for (const event of events) {
+          const id = stringField(event.payload, "id");
+          if (event.type === "message.delta"
+            && event.payload.channel !== "analysis"
+            && typeof event.payload.text === "string"
+            && event.payload.text.length > 0) {
+            producedFinalOutput = true;
+          }
+          if (event.type === "tool_call.create" && id) activeTools.add(id);
+          if (event.type === "tool_call.update" && id && isTerminalToolStatus(event.payload.status)) activeTools.delete(id);
+          yield event;
+        }
+      }
+
+      const cancelled = request.signal?.aborted || isCancelledStopReason(stopReason);
+      if (!cancelled && !producedFinalOutput && promptResultPublicText) {
+        const fallbackEvents = turn.normalize("agent_message_chunk", normalizeAcpUpdate({
+          type: "prompt_result",
+          sessionUpdate: "agent_message_chunk",
+          content: { text: promptResultPublicText }
+        }, definition.provider));
+        for (const event of fallbackEvents) yield event;
+        producedFinalOutput = true;
+      }
+      if (cancelled) {
+        for (const id of activeTools) yield { protocolVersion: 2, type: "tool_call.update", payload: { id, status: canonicalTerminalStatus("cancelled") } };
+      }
+      if (!cancelled && !producedFinalOutput) {
+        for (const event of turn.finish("no-final-output", "failed")) yield event;
+        yield { protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "failed" } };
+        terminal = true;
         yield { protocolVersion: 2,
-          type: "session.update",
+          type: "run.failed",
           payload: {
-            providerSession: {
-              sessionId,
-              resumable: true,
-              ...(resumeFallback ? {
-                resumeOutcome: "fresh_fallback",
-                resumeFallback,
-                contextInputVariant: request.freshFallbackModelInputParts || request.freshFallbackModelInput ? "recovery" : "primary"
-              } : {}),
-              ...(providerModel ? { model: providerModel } : {})
-            }
+            code: "ACP_NO_FINAL_OUTPUT",
+            message: `${definition.provider} completed without assistant output`,
+            adapterType: definition.type
           }
         };
-
-        const input = providerInputParts(request, resumeFallback !== undefined);
-        // Preserve the legacy text call while mixed prompts retain every block's position.
-        const prompt = input.length === 1 && input[0]?.type === "text"
-          ? `${input[0].text}${request.controlInstructions ? `\n\n${request.controlInstructions}` : ""}`
-          : [...input, ...(request.controlInstructions ? [{ type: "text" as const, text: request.controlInstructions }] : [])];
-        const promptParams = acpPromptParams(sessionId, prompt);
-        const promptRequestId = client.reserveRequestId();
-        await observeInput(context, "session/prompt", promptParams, promptRequestId, sessionId);
-        let firstOutput = true;
-        let stopReason: string | undefined;
-        let finishReason: string | undefined;
-        let promptResultPublicText: string | undefined;
-        let producedFinalOutput = false;
-        const activeTools = new Set<string>();
-        const turn = new AcpTurnNormalizer(definition.provider);
-        try {
-          for await (const update of client.prompt(sessionId, prompt, {
-            requestId: promptRequestId,
-            params: promptParams,
-            onWritten: () => observeWritten(context, "session/prompt", promptRequestId, sessionId)
-          })) {
-            if (firstOutput) {
-              firstOutput = false;
-              observeBestEffort(context, {
-                event: "provider.output.first",
-                rpcMethod: "session/update",
-                providerSessionId: sessionId,
-                providerRequestId: String(promptRequestId)
-              });
-            }
-            if (update.type === "prompt_result") {
-              stopReason = update.stopReason;
-              finishReason = update.finishReason;
-              promptResultPublicText = promptResultText(update);
-              continue;
-            }
-            const standardUpdate = update as StandardAcpUpdate;
-            observeAcpToolStatus(context, standardUpdate);
-            const events = turn.normalize(standardUpdate.sessionUpdate ?? standardUpdate.type, normalizeAcpUpdate(standardUpdate, definition.provider));
-            observeProviderOutput(context, events, {
-              rpcMethod: "session/update",
-              providerSessionId: sessionId,
-              providerRequestId: String(promptRequestId),
-              native: {
-                type: standardUpdate.sessionUpdate ?? standardUpdate.type ?? "session/update",
-                provider: definition.provider
-              }
-            });
-            for (const event of events) {
-              const id = stringField(event.payload, "id");
-              if (event.type === "message.delta"
-                && event.payload.channel !== "analysis"
-                && typeof event.payload.text === "string"
-                && event.payload.text.length > 0) {
-                producedFinalOutput = true;
-              }
-              if (event.type === "tool_call.create" && id) activeTools.add(id);
-              if (event.type === "tool_call.update" && id && isTerminalToolStatus(event.payload.status)) activeTools.delete(id);
-              yield event;
-            }
-          }
-          observeAcknowledged(context, "session/prompt", promptRequestId, sessionId);
-        } catch (error) {
-          observeFailed(context, "session/prompt", promptRequestId, sessionId, error);
-          throw error;
-        }
-
-        const cancelled = request.signal?.aborted || isCancelledStopReason(stopReason);
-        if (!cancelled && !producedFinalOutput && promptResultPublicText) {
-          const fallbackEvents = turn.normalize("agent_message_chunk", normalizeAcpUpdate({
-            type: "prompt_result",
-            sessionUpdate: "agent_message_chunk",
-            content: { text: promptResultPublicText }
-          }, definition.provider));
-          for (const event of fallbackEvents) yield event;
-          producedFinalOutput = true;
-        }
-        if (cancelled) {
-          for (const id of activeTools) yield { protocolVersion: 2, type: "tool_call.update", payload: { id, status: canonicalTerminalStatus("cancelled") } };
-        }
-        if (!cancelled && !producedFinalOutput) {
-          for (const event of turn.finish("no-final-output", "failed")) yield event;
-          yield { protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "failed" } };
-          terminal = true;
-          yield { protocolVersion: 2,
-            type: "run.failed",
-            payload: {
-              code: "ACP_NO_FINAL_OUTPUT",
-              message: `${definition.provider} completed without assistant output`,
-              adapterType: definition.type
-            }
-          };
-          return;
-        }
-        for (const event of turn.finish(stopReason ?? finishReason, cancelled ? "stopped" : "completed")) yield event;
-        yield { protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: cancelled ? "stopped" : "completed" } };
-        terminal = true;
-        yield cancelled
-          ? { protocolVersion: 2, type: "run.cancelled", payload: { reason: stopReason ?? String(request.signal?.reason ?? "cancelled"), ...(finishReason ? { finishReason } : {}) } }
-          : { protocolVersion: 2, type: "run.completed", payload: {} };
-      } catch (error) {
-        if (!terminal && request.signal?.aborted) {
-          yield { protocolVersion: 2, type: "run.cancelled", payload: { reason: String(request.signal.reason ?? "cancelled") } };
-        } else {
-          throw error;
-        }
-      } finally {
-        request.signal?.removeEventListener("abort", abort);
-        if (forceCloseTimer) clearTimeout(forceCloseTimer);
-        await client.close();
+        return;
       }
+      for (const event of turn.finish(stopReason ?? finishReason, cancelled ? "stopped" : "completed")) yield event;
+      yield { protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: cancelled ? "stopped" : "completed" } };
+      terminal = true;
+      yield cancelled
+        ? { protocolVersion: 2, type: "run.cancelled", payload: { reason: stopReason ?? String(request.signal?.reason ?? "cancelled"), ...(finishReason ? { finishReason } : {}) } }
+        : { protocolVersion: 2, type: "run.completed", payload: {} };
+    } catch (error) {
+      if (!terminal && request.signal?.aborted) {
+        yield { protocolVersion: 2, type: "run.cancelled", payload: { reason: String(request.signal.reason ?? "cancelled") } };
+      } else {
+        throw error;
+      }
+    } finally {
+      request.signal?.removeEventListener("abort", abort);
+      if (forceCloseTimer) clearTimeout(forceCloseTimer);
+      await client.close();
+    }
   }
-}
-
-async function observeInput(
-  context: AdapterInvocationContext | undefined,
-  method: string,
-  params: JsonRecord,
-  requestId: number,
-  sessionId?: string
-): Promise<void> {
-  await context?.observe({
-    event: "provider.input",
-    rpcMethod: method,
-    providerRequestId: String(requestId),
-    ...(sessionId ? { providerSessionId: sessionId } : {}),
-    carrier: { kind: "json_params", content: { method, params: imageSafeParams(params) } }
-  });
-}
-
-function imageSafeParams(params: JsonRecord): JsonRecord {
-  if (!Array.isArray(params.prompt)) return params;
-  return { ...params, prompt: params.prompt.map((value: unknown) => {
-    const part = recordValue(value);
-    if (part.type !== "image" || typeof part.data !== "string") return value;
-    const bytes = Buffer.from(part.data, "base64");
-    return { type: "image", mimeType: part.mimeType, byteSize: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
-  }) };
-}
-
-function observeWritten(context: AdapterInvocationContext | undefined, method: string, requestId: number, sessionId?: string): void {
-  observeBestEffort(context, {
-    event: "provider.dispatch.written",
-    rpcMethod: method,
-    providerRequestId: String(requestId),
-    ...(sessionId ? { providerSessionId: sessionId } : {})
-  });
-}
-
-function observeAcknowledged(context: AdapterInvocationContext | undefined, method: string, requestId: number, sessionId: string): void {
-  observeBestEffort(context, {
-    event: "provider.dispatch.acknowledged",
-    rpcMethod: method,
-    providerRequestId: String(requestId),
-    providerSessionId: sessionId
-  });
-}
-
-function observeFailed(
-  context: AdapterInvocationContext | undefined,
-  method: string,
-  requestId: number,
-  sessionId: string | undefined,
-  error: unknown
-): void {
-  observeBestEffort(context, {
-    event: "provider.dispatch.failed",
-    rpcMethod: method,
-    providerRequestId: String(requestId),
-    ...(sessionId ? { providerSessionId: sessionId } : {}),
-    data: { error: error instanceof Error ? error.message : String(error) }
-  });
 }
 
 function contentText(value: unknown): string | undefined {

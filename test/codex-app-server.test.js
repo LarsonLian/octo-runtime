@@ -36,7 +36,7 @@ test("Codex reports scoped activity before normalization without retry/duplicate
   const adapter = createCodexAdapter({ command:process.execPath, appServerArgs:[fileURLToPath(new URL("../test-support/fake-codex-activity.mjs",import.meta.url))] });
   const activities=[]; const events=[];
   for await(const event of adapter.invoke(invokeRequest({ invocationId: "i", agentSessionId: "s", runId: "r", signal: AbortSignal.timeout(4_000) }), {
-    observe:async()=>({captureId:"off",state:"disabled",complete:false}), reportActivity:a=>activities.push(a)
+    reportActivity:a=>activities.push(a)
   })) events.push(event);
   assert.equal(activities.filter(a=>a.kind==="turn_progress" && a.method==="text_delta").length,1);
   assert.equal(activities.filter(a=>a.method==="usage").length,1);

@@ -3,6 +3,5 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts"],
-  "exclude": ["apps/inspect-web"]
+  "include": ["apps/**/*.ts", "packages/**/*.ts"]
 }

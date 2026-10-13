@@ -23,10 +23,6 @@ export interface HarnessHomeConfiguration {
   schema_version: 1;
   default_profile: string;
   channel: "stable" | "beta";
-  inspect?: {
-    host: string;
-    port?: number;
-  };
 }
 
 export interface ProfileConfiguration {
@@ -198,11 +194,11 @@ export async function migrateLegacyProfileLayout(paths: HarnessPaths, daemonRunn
   const legacyProfileRoot = join(paths.home, "profiles", basename(paths.profileRoot));
   const legacyGlobalFiles = basename(paths.profileRoot) === "default"
     ? [
-        [join(paths.home, "identity", "runtime.json"), paths.identity],
-        [join(paths.home, "credentials", "runtime-token.json"), paths.credential],
-        ...["agent-work.db", "agent-work.db-wal", "agent-work.db-shm"].map(name => [join(paths.home, name), join(paths.profileRoot, name)]),
-        ...["channel-context.db", "channel-context.db-wal", "channel-context.db-shm"].map(name => [join(paths.home, name), join(paths.profileRoot, name)])
-      ]
+      [join(paths.home, "identity", "runtime.json"), paths.identity],
+      [join(paths.home, "credentials", "runtime-token.json"), paths.credential],
+      ...["agent-work.db", "agent-work.db-wal", "agent-work.db-shm"].map(name => [join(paths.home, name), join(paths.profileRoot, name)]),
+      ...["channel-context.db", "channel-context.db-wal", "channel-context.db-shm"].map(name => [join(paths.home, name), join(paths.profileRoot, name)])
+    ]
     : [];
   const hasLegacyProfile = await pathExists(legacyProfileRoot);
   const hasLegacyGlobal = (await Promise.all(legacyGlobalFiles.map(([source]) => pathExists(source)))).some(Boolean);
@@ -282,7 +278,6 @@ export async function reconcileHomeConfiguration(
     schema_version: 1,
     default_profile: existing?.default_profile ?? profile,
     channel,
-    ...(existing?.inspect ? { inspect: existing.inspect } : {})
   };
   await writeJsonAtomic(paths.rootConfig, value);
   return value;
@@ -296,17 +291,7 @@ export function assertHomeConfiguration(
     throw new Error("unsupported Harness Home config schema");
   }
   assertProfileName(configuration.default_profile);
-  if (configuration.inspect) {
-    if (typeof configuration.inspect.host !== "string" || !configuration.inspect.host.trim()) {
-      throw new Error("Harness Home inspect host is invalid");
-    }
-    if (configuration.inspect.port !== undefined
-      && (!Number.isSafeInteger(configuration.inspect.port)
-        || configuration.inspect.port < 1
-        || configuration.inspect.port > 65_535)) {
-      throw new Error("Harness Home inspect port is invalid");
-    }
-  }
+
 }
 
 async function secureDirectory(path: string): Promise<void> {

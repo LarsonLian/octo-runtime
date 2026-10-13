@@ -123,10 +123,6 @@ test("daemon runtime options resolve environment defaults to absolute paths", ()
   assert.equal(paths.storePath, `${home}/state.db`);
   assert.equal(paths.manifestPath, resolve("config/adapters.json"));
   assert.equal(paths.hostEntrypoint, resolve("apps/adapter-host/dist/index.js"));
-  assert.equal(paths.inspectHost, "127.0.0.1");
-  assert.equal(paths.inspectPort, undefined);
-  assert.equal(paths.logging.directory, `${home}/logs`);
-  assert.equal(paths.logging.fileLog, true);
 });
 
 test("daemon runtime keeps all local paths under one supplied Harness Home", () => {
@@ -161,77 +157,8 @@ test("daemon runtime argv uses explicit options and normalizes the legacy host a
     "--store", resolve("runtime/custom.json"),
     "--manifest", resolve("runtime/adapters.json"),
     "--adapter-host", resolve("runtime/host.js"),
-    "--inspect-host", "127.0.0.1",
-    "--log-dir", resolve("ignored/logs"),
-    "--log-level", "info",
-    "--log-retention-days", "14",
-    "--trace-retention-days", "3",
-    "--crash-retention-days", "30",
-    "--log-max-file-bytes", String(64 * 1024 * 1024),
-    "--log-max-total-bytes", String(1024 * 1024 * 1024)
+
   ]);
-});
-
-test("inspect bind options resolve from flags or environment and survive launcher serialization", () => {
-  const explicit = resolveDaemonRuntimePaths([
-    "--home", unmanagedHome,
-    "--inspect-host", "10.20.30.40",
-    "--inspect-port", "23456"
-  ], {});
-  assert.equal(explicit.inspectHost, "10.20.30.40");
-  assert.equal(explicit.inspectPort, 23_456);
-  const args = daemonRuntimeArguments(explicit);
-  assert.deepEqual(args.slice(args.indexOf("--inspect-host"), args.indexOf("--inspect-host") + 4), [
-    "--inspect-host", "10.20.30.40", "--inspect-port", "23456"
-  ]);
-
-  const environment = resolveDaemonRuntimePaths(["--home", unmanagedHome], {
-    OCTO_HARNESS_INSPECT_HOST: "inspect.internal",
-    OCTO_HARNESS_INSPECT_PORT: "34567"
-  });
-  assert.equal(environment.inspectHost, "inspect.internal");
-  assert.equal(environment.inspectPort, 34_567);
-  assert.throws(
-    () => resolveDaemonRuntimePaths(["--home", unmanagedHome, "--inspect-port", "65536"], {}),
-    /between 1 and 65535/
-  );
-});
-
-test("verbose is an atomic preset for debug, RPC tracing and full provider capture", () => {
-  const paths = resolveDaemonRuntimePaths([
-    "--verbose",
-    "--require-provider-capture",
-    "--log-dir", ".tmp/verbose-logs"
-  ], { OCTO_HARNESS_HOME: unmanagedHome });
-
-  assert.equal(paths.logging.logLevel, "debug");
-  assert.equal(paths.logging.verbose, true);
-  assert.equal(paths.logging.traceRpc, true);
-  assert.equal(paths.logging.captureProviderIo, "full");
-  assert.equal(paths.logging.requireProviderCapture, true);
-  assert.equal(paths.logging.directory, resolve(".tmp/verbose-logs"));
-  const args = daemonRuntimeArguments(paths);
-  assert.ok(args.includes("--verbose"));
-  assert.ok(args.includes("--require-provider-capture"));
-});
-
-test("logging options reject contradictory or non-durable capture configurations", () => {
-  assert.throws(
-    () => resolveDaemonRuntimePaths(["--verbose", "--log-level", "info"], { OCTO_HARNESS_HOME: unmanagedHome }),
-    /verbose conflicts/
-  );
-  assert.throws(
-    () => resolveDaemonRuntimePaths(["--verbose", "--capture-provider-io", "input"], { OCTO_HARNESS_HOME: unmanagedHome }),
-    /verbose conflicts/
-  );
-  assert.throws(
-    () => resolveDaemonRuntimePaths(["--require-provider-capture"], { OCTO_HARNESS_HOME: unmanagedHome }),
-    /requires --capture-provider-io/
-  );
-  assert.throws(
-    () => resolveDaemonRuntimePaths(["--no-file-log", "--trace-rpc"], { OCTO_HARNESS_HOME: unmanagedHome }),
-    /cannot be combined/
-  );
 });
 
 test("Agent Work runtime mode is opt-in and rejects environment credentials", () => {

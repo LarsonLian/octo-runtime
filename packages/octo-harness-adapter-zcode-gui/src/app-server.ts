@@ -1,16 +1,14 @@
-import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createInterface } from "node:readline";
 import {
-  type AcpApprovalBridge,
   freshFallbackInputText,
-  observeBestEffort,
-  observeProviderOutput,
   providerInputText,
+  type AcpApprovalBridge,
   type AdapterInvocationContext,
   type CanonicalEvent,
   type InvokeRequest
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createInterface } from "node:readline";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const CLOSE_GRACE_MS = 500;
@@ -350,7 +348,6 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
 export async function* runZcodeAppServerTurn({
   request,
   spec,
-  context,
   spawnFn = defaultSpawn,
   approvalBridge
 }: {
@@ -386,7 +383,6 @@ export async function* runZcodeAppServerTurn({
   approvalBridge?.bindTransport(() => client.close());
   let sessionId: string | undefined;
   let terminal = false;
-  let promptRequestId: string | undefined;
   const abort = (): void => {
     if (sessionId) client.notify("session/stop", { sessionId });
     const timer = setTimeout(() => { void client.close(); }, CLOSE_GRACE_MS);
@@ -405,10 +401,10 @@ export async function* runZcodeAppServerTurn({
 
     if (requestedSessionId) {
       try {
-        sessionResult = await observedRequest(client, context, "session/resume", {
+        sessionResult = await client.request("session/resume", {
           sessionId: requestedSessionId,
           workspace
-        }, requestedSessionId);
+        });
         sessionId = extractSessionId(sessionResult) ?? requestedSessionId;
         resumed = true;
       } catch (error) {
@@ -418,29 +414,22 @@ export async function* runZcodeAppServerTurn({
 
     if (!sessionId) {
       const mode = zcodeMode(request);
-      sessionResult = await observedRequest(client, context, "session/create", { workspace, mode });
+      sessionResult = await client.request("session/create", { workspace, mode });
       sessionId = extractSessionId(sessionResult);
       if (!sessionId) throw new Error("ZCode session/create returned no session id");
     }
 
     client.setActiveSession(sessionId);
-    await observedRequest(client, context, "session/subscribe", {
+    await client.request("session/subscribe", {
       sessionId,
       deliveryKind: "desktop-continuous",
       includeSnapshot: false,
       afterSeq: 0
-    }, sessionId);
+    });
 
     const input = resumeFallback ? freshFallbackInputText(request) : providerInputText(request);
     const content = request.controlInstructions ? `${input}\n\n${request.controlInstructions}` : input;
-    const sendResult = await observedRequest(
-      client,
-      context,
-      "session/send",
-      { sessionId, content },
-      sessionId,
-      id => { promptRequestId = id; }
-    );
+    const sendResult = await client.request("session/send", { sessionId, content });
     if (asRecord(sendResult)?.accepted === false) throw new Error("ZCode session/send was not accepted");
 
     yield { protocolVersion: 2,
@@ -460,25 +449,9 @@ export async function* runZcodeAppServerTurn({
     };
 
     const normalizer = new ZcodeEventNormalizer(request.runId);
-    let firstOutput = true;
     for await (const nativeEvent of client.events()) {
       const events = normalizer.normalize(nativeEvent);
       if (events.length === 0) continue;
-      if (firstOutput) {
-        firstOutput = false;
-        observeBestEffort(context, {
-          event: "provider.output.first",
-          rpcMethod: "session/event",
-          providerSessionId: sessionId,
-          ...(promptRequestId ? { providerRequestId: promptRequestId } : {})
-        });
-      }
-      observeProviderOutput(context, events, {
-        rpcMethod: "session/event",
-        providerSessionId: sessionId,
-        ...(promptRequestId ? { providerRequestId: promptRequestId } : {}),
-        native: { type: nativeEvent.type, provider: "zcode-gui" }
-      });
       for (const event of events) {
         terminal ||= isTerminal(event);
         yield event;
@@ -715,52 +688,6 @@ class ZcodeAppServerClient {
     }
     this.#pending.clear();
     this.#events.end(error);
-  }
-}
-
-async function observedRequest(
-  client: ZcodeAppServerClient,
-  context: AdapterInvocationContext | undefined,
-  method: string,
-  params: JsonRecord,
-  providerSessionId?: string,
-  onRequestId?: (id: string) => void
-): Promise<unknown> {
-  const requestId = client.reserveRequestId();
-  const providerRequestId = String(requestId);
-  onRequestId?.(providerRequestId);
-  await context?.observe({
-    event: "provider.input",
-    rpcMethod: method,
-    providerRequestId,
-    ...(providerSessionId ? { providerSessionId } : {}),
-    carrier: { kind: "json_params", content: { method, params } }
-  });
-  try {
-    const result = await client.request(method, params, () => {
-      observeBestEffort(context, {
-        event: "provider.dispatch.written",
-        rpcMethod: method,
-        providerRequestId,
-        ...(providerSessionId ? { providerSessionId } : {})
-      });
-    }, requestId);
-    observeBestEffort(context, {
-      event: "provider.dispatch.acknowledged",
-      rpcMethod: method,
-      providerRequestId,
-      ...(providerSessionId ? { providerSessionId } : {})
-    });
-    return result;
-  } catch (error) {
-    observeBestEffort(context, {
-      event: "provider.dispatch.failed",
-      rpcMethod: method,
-      providerRequestId,
-      ...(providerSessionId ? { providerSessionId } : {}),
-      data: { error: error instanceof Error ? error.message : String(error) }
-    });
-    throw error;
   }
 }
 

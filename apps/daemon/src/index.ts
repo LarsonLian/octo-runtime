@@ -1,26 +1,14 @@
 #!/usr/bin/env node
 // Thin process entrypoint. Resource ownership lives in startDaemonServer(); this
 // file only translates process signals into its idempotent close contract.
+import { inspect } from "node:util";
 import { resolveDaemonRuntimePaths } from "./runtime-options.js";
 import { startDaemonServer, type DaemonApplication } from "./server.js";
-import { installCrashReporter } from "@mininglamp-oss/octo-harness-observability";
-import { inspect } from "node:util";
-import { createDaemonConsoleOutput } from "./console-output.js";
 
 const runtimePaths = resolveDaemonRuntimePaths();
-const crashReporter = runtimePaths.logging?.fileLog
-  ? installCrashReporter({ directory: runtimePaths.logging.directory, component: "daemon" })
-  : undefined;
-process.once("exit", () => crashReporter?.close());
-
 let app: DaemonApplication | undefined;
 try {
-  app = await startDaemonServer({
-    ...runtimePaths,
-    operationalSink: runtimePaths.consoleOutput
-      ? createDaemonConsoleOutput({ verbose: runtimePaths.logging?.verbose })
-      : undefined
-  });
+  app = await startDaemonServer(runtimePaths);
 } catch (error) {
   const verbose = process.argv.includes("--verbose");
   const message = error instanceof Error ? error.message : String(error);
@@ -38,16 +26,7 @@ if (app) {
     void app.close().then(
       () => process.exit(0),
       error => {
-        app.observability.log({
-          level: "error",
-          scope: "daemon.lifecycle",
-          event: "daemon.shutdown.failed",
-          message: "daemon shutdown failed",
-          data: { error: error instanceof Error ? error.message : String(error) }
-        });
-        // stderr is an emergency channel only. Normal diagnostics stay in the
-        // protected log directory, but a failed logger shutdown must remain visible
-        // to a supervising process even when the file sink is unavailable.
+        console.error("daemon shutdown failed", { error: error instanceof Error ? error.message : String(error) });
         console.error(JSON.stringify({
           event: "daemon.shutdown.failed",
           error: error instanceof Error ? error.message : String(error)

@@ -208,13 +208,15 @@ test("embedded SDK starts and cooperatively stops the shared daemon core", { tim
 });
 
 
-test("embedded runtime preserves configured proxy routing without unrelated credentials", async () => {
+test("embedded runtime preserves proxy routing and debug logging without unrelated credentials", async () => {
   const { childEnvironment } = await import("../packages/octo-harness-embedded/dist/supervisor.js");
-  const values = { NO_PROXY: "localhost,127.0.0.1", https_proxy: "http://proxy.example:8080", OCTO_TEST_PRIVATE_TOKEN: "not-inherited" };
+  const values = { OCTO_RUNTIME_DEBUG: "1", NO_PROXY: "localhost,127.0.0.1", https_proxy: "http://proxy.example:8080", OCTO_TEST_PRIVATE_TOKEN: "not-inherited" };
   const before = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]));
   try {
     Object.assign(process.env, values);
-    const env = childEnvironment({ home: "/tmp/harness" }, { logs: "/tmp/logs" });
+    const env = childEnvironment({ home: "/tmp/harness" });
+    assert.equal(env.OCTO_RUNTIME_DEBUG, "1");
+    assert.equal(env.OCTO_HARNESS_LOG_DIR, undefined);
     assert.equal(env.NO_PROXY, values.NO_PROXY);
     assert.equal(env.https_proxy, values.https_proxy);
     assert.equal(env.OCTO_TEST_PRIVATE_TOKEN, undefined);

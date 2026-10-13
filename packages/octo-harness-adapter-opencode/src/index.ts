@@ -5,9 +5,9 @@ import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
  * --thinking --auto`) for full access and ACP for interactive approval.
  * Both transports normalize provider output into canonical events.
  */
+import { createAcpAdapter } from "@mininglamp-oss/octo-harness-adapter-acp";
 import { createJsonCliAdapter, probeCommand, providerInputText, type AdapterInvocationContext, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { executionFeatures } from "@mininglamp-oss/octo-harness-protocol";
-import { createAcpAdapter } from "@mininglamp-oss/octo-harness-adapter-acp";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -52,9 +52,6 @@ interface OpenCodeNativeEvent extends OpenCodePart {
  * merged onto any inline config so the user's existing OpenCode config is not
  * overwritten. Returns a `cleanup` that removes the temp directory.
  *
- * The observation carrier contains the finalized argv and inline config,
- * including the user input and instruction-file reference actually exposed to
- * OpenCode. It must stay coupled to this builder as these transformations evolve.
  */
 export async function buildOpenCodeCommand(req: InvokeRequest, command = "opencode") {
   if (req.approvalMode !== "full_access") throw new Error("APPROVAL_MODE_UNSUPPORTED: opencode permission transport is not qualified");
@@ -80,19 +77,6 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
     command, args, env: { OPENCODE_CONFIG_CONTENT: JSON.stringify(inline), OPENCODE_CLIENT: "octo-harness" },
     rpcMethod: "process.argv",
     providerSessionId: req.providerSession?.sessionId,
-    // Do not fall back to the generic CommandSpec snapshot here: retaining the
-    // logical inputs alongside argv makes file/config indirection evaluable.
-    providerInput: {
-      kind: "json_params" as const,
-      content: {
-        command,
-        args,
-        cwd: req.workdir,
-        user_input: providerInputText(req),
-        instructions: req.controlInstructions,
-        inline_config: redactOpenCodeInlineConfig(inline)
-      }
-    },
     cleanup: () => rm(directory, { recursive: true, force: true })
   };
 }
@@ -224,8 +208,8 @@ export class OpenCodeEventNormalizer {
 export function createOpenCodeAdapter({ command = "opencode" }: { command?: string } = {}) {
   const interactive = createAcpAdapter({ type: "opencode", provider: "opencode", command, args: ["acp"],
     env: () => ({ OPENCODE_CLIENT: "octo-harness", OPENCODE_CONFIG_CONTENT: JSON.stringify({
-      ...(process.env.OPENCODE_CONFIG_CONTENT ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : {}), permission: "ask"
-    }) })
+        ...(process.env.OPENCODE_CONFIG_CONTENT ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : {}), permission: "ask"
+      }) })
   });
   const options: Parameters<typeof createJsonCliAdapter<OpenCodeNativeEvent>>[0] = {
     metadata: { type: "opencode", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["session.serialize", "tool.canonical",  executionFeatures.INTERACTION_RESPONSE, executionFeatures.APPROVAL_ASK, executionFeatures.APPROVAL_FULL_ACCESS] },
@@ -234,29 +218,14 @@ export function createOpenCodeAdapter({ command = "opencode" }: { command?: stri
   };
   const adapter = createJsonCliAdapter<OpenCodeNativeEvent>(options);
   return { ...adapter, respondInteraction: interactive.respondInteraction, async *invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
-    if (request.approvalMode === "assisted") throw new Error("APPROVAL_MODE_UNSUPPORTED: opencode has no qualified assisted policy");
-    if (request.approvalMode === "ask") {
-      yield* interactive.invoke(request, context);
-      return;
-    }
-    const normalizer = new OpenCodeEventNormalizer();
-    yield* createJsonCliAdapter<OpenCodeNativeEvent>({ ...options, normalize: native => normalizer.normalize(native) }).invoke(request, context);
-  } };
-}
-
-function redactOpenCodeInlineConfig(inline: Record<string, unknown>): Record<string, unknown> {
-  const redacted = structuredClone(inline);
-  const mcp = isRecord(redacted.mcp) ? redacted.mcp : {};
-  for (const serverValue of Object.values(mcp)) {
-    if (!isRecord(serverValue)) continue;
-    if (isRecord(serverValue.headers)) {
-      serverValue.headers = Object.fromEntries(Object.keys(serverValue.headers).map(key => [key, "[REDACTED]"]));
-    }
-    if (isRecord(serverValue.environment)) {
-      serverValue.environment = Object.fromEntries(Object.keys(serverValue.environment).map(key => [key, "[REDACTED]"]));
-    }
-  }
-  return redacted;
+      if (request.approvalMode === "assisted") throw new Error("APPROVAL_MODE_UNSUPPORTED: opencode has no qualified assisted policy");
+      if (request.approvalMode === "ask") {
+        yield* interactive.invoke(request);
+        return;
+      }
+      const normalizer = new OpenCodeEventNormalizer();
+      yield* createJsonCliAdapter<OpenCodeNativeEvent>({ ...options, normalize: native => normalizer.normalize(native) }).invoke(request, context);
+    } };
 }
 
 export const opencodeAdapter = createOpenCodeAdapter();

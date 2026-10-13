@@ -37,13 +37,7 @@ test("ZCode GUI adapter discovers an explicit desktop CLI", () => {
 });
 
 test("ZCode GUI adapter full_access answers runtime preferences, streams events, and uses native yolo", async () => {
-  const observations = [];
-  const events = await invoke({}, undefined, { observe: async observation => {
-    observations.push(observation);
-    return { captureId: "zcode-full-access", state: "accepted", complete: true };
-  } });
-  const create = observations.find(observation => observation.event === "provider.input" && observation.rpcMethod === "session/create");
-  assert.equal(create.carrier.content.params.mode, "yolo");
+  const events = await invoke({});
   assert.equal(events.find(event => event.type === "session.update").payload.providerSession.sessionId, "sess-zcode-fixture");
   assert.equal(events.find(event => event.type === "message.delta" && event.payload.channel === "final")?.payload.text, "permission:allow");
   assert.deepEqual(

@@ -73,19 +73,14 @@ Use `daemon run` for foreground debugging. `--verbose` may expose detailed opera
 Use these groups for the local reference and diagnostic projection:
 
 ```bash
-octo-harness logs path
-octo-harness logs query RUN_ID
 octo-harness agent-session list
 octo-harness agent-session get SESSION_ID
 octo-harness agent-run list
 octo-harness agent-run get RUN_ID
 octo-harness agent-run wait RUN_ID
-octo-harness events --run-id RUN_ID
-octo-harness events --follow
-octo-harness inspect
 ```
 
-Use `logs query` for durable local log records. Use `events` for the current bounded in-memory snapshot and add `--follow` only for a live tail. Complete AgentRun trajectory belongs to `octo-cli`, not this skill. Only use `--sensitive` when the user explicitly requests sensitive log fields and their disclosure is necessary.
+For local Host logs, start with `OCTO_RUNTIME_DEBUG=1 octo-harness daemon run` and read `$OCTO_HARNESS_HOME/logs/adapter-host.log` (default Home: `~/.octo-harness`). Logging is off by default. Complete AgentRun trajectory belongs to Worker.
 
 `agent-run cancel RUN_ID` changes live execution state. Confirm the exact Run ID from current state and use it only under an explicit cancellation request.
 

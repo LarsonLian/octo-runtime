@@ -39,17 +39,13 @@ test('native carriers receive mapped effort while the input request keeps xhigh'
 
 test('mapping and non-application use existing evidence and valid run notices, never claim application', async () => {
   for (const [type, expected] of [['openclaw', 'REASONING_EFFORT_DOWNGRADED'], ['mcode', 'REASONING_EFFORT_NOT_APPLIED']]) {
-    const observations = [];
     let received;
     const adapter = defineAdapter({ metadata: { type, capabilities: [], executionFeatures: [], agentSources: ['provisioned'] }, async *invoke(input) { received = input; yield { protocolVersion: 2, type: 'run.completed', payload: {} }; } });
     const events = [];
-    for await (const event of adapter.invoke(request, { observe: async value => observations.push(value) })) { assertCanonicalEvent(event); events.push(event); }
+    for await (const event of adapter.invoke(request)) { assertCanonicalEvent(event); events.push(event); }
     assert.equal(received, request);
     assert.equal(events[0].payload.params.warningCode, expected);
     assert.equal(events.at(-1).type, 'run.completed');
-    assert.equal(observations[0].data.requested_effort, 'xhigh');
-    assert.equal(observations[0].data.native_effort, type === 'mcode' ? null : 'high');
-    assert.equal(observations[0].data.outcome, type === 'mcode' ? 'not_applied' : 'mapped');
   }
 });
 

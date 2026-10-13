@@ -24,15 +24,9 @@
     "@mininglamp-oss/octo-harness-adapter-host": "workspace:*",
     "@mininglamp-oss/octo-harness-core": "workspace:*",
     "@mininglamp-oss/octo-harness-daemon": "workspace:*",
-    "@mininglamp-oss/octo-harness-observability": "workspace:*",
     "@mininglamp-oss/octo-harness-protocol": "workspace:*",
-    "ws": "^8.18.3",
     "@mininglamp-oss/octo-harness-worker-access": "workspace:*",
     "@mininglamp-oss/octo-harness-context-builder": "workspace:*"
-  },
-  "devDependencies": {
-    "@mininglamp-oss/octo-harness-inspect-web": "workspace:*",
-    "@types/ws": "^8.18.1"
   },
   "types": "./dist/server.d.ts"
 }

@@ -1,5 +1,4 @@
 import type { AdapterHostRpc } from "@mininglamp-oss/octo-harness-adapter-host";
-import type { LocalObservability } from "@mininglamp-oss/octo-harness-observability";
 import {
   AgentWorkRuntime,
   DEFAULT_MAX_CONCURRENT_RUNS,
@@ -20,14 +19,13 @@ export class AgentWorkSupervisor {
 
   constructor(
     options: AgentWorkRuntimeOptions[],
-    host: AdapterHostRpc,
-    observability?: LocalObservability
+    host: AdapterHostRpc
   ) {
     const limit = options[0]?.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS;
     this.#admission = new SharedRunAdmission(limit);
     this.#entries = options.map((item, index) => ({
       profile: item.profile ?? `runtime-${index + 1}`,
-      runtime: new AgentWorkRuntime(item, host, observability, this.#admission)
+      runtime: new AgentWorkRuntime(item, host, this.#admission)
     }));
   }
 

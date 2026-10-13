@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
-import { AdapterHostRpcClient, type RpcTrace } from "./rpc.js";
 import type { HostedAdapterMetadata } from "./index.js";
+import { AdapterHostRpcClient } from "./rpc.js";
 
 export interface SpawnAdapterHostOptions {
   entrypoint: string;
@@ -11,14 +11,6 @@ export interface SpawnAdapterHostOptions {
   signal?: AbortSignal;
   /** Maximum time allowed for the initial RPC readiness handshake. */
   readyTimeoutMs?: number;
-  /**
-   * Optional caller-owned wire observer. The daemon supplies a structured,
-   * redacting trace sink; this helper deliberately does not infer tracing from
-   * environment variables or write raw RPC frames to stderr.
-   */
-  trace?: RpcTrace;
-  /** Receives bounded observation frames from the child process's fd 3. */
-  observe?: (frame: unknown) => void;
 }
 
 type HostedChild = ChildProcessByStdio<Writable, Readable, Readable>;
@@ -35,18 +27,15 @@ export interface AdapterHostProcess {
  * Spawn the adapter-host as a child process and return a ready-to-use RPC
  * client. It waits for the first `list` to succeed as a readiness handshake, so
  * a failed spawn (bad manifest, missing binary) surfaces here with the child's
- * captured stderr rather than at first invoke. Wire tracing is injected by the
- * caller so all frames pass through the same retention and redaction policy as
- * other daemon logs.
+ * captured stderr rather than at first invoke. The child inherits the debug
+ * environment and writes its own Host log.
  */
 export async function spawnAdapterHost({
   entrypoint,
   manifest,
   env = process.env,
   signal,
-  readyTimeoutMs = 15_000,
-  trace,
-  observe
+  readyTimeoutMs = 15_000
 }: SpawnAdapterHostOptions): Promise<AdapterHostProcess> {
   if (signal?.aborted) throw new Error("adapter-host spawn cancelled");
   if (!Number.isFinite(readyTimeoutMs) || readyTimeoutMs < 1) {
@@ -55,7 +44,7 @@ export async function spawnAdapterHost({
   const child = spawn(process.execPath, [entrypoint, "--manifest", manifest], {
     argv0: "octo-harness-adapter-host",
     env,
-    stdio: ["pipe", "pipe", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
     detached: process.platform !== "win32"
   });
   let stderr = "";
@@ -64,41 +53,9 @@ export async function spawnAdapterHost({
     // Keep only the tail so a chatty child cannot grow this buffer unbounded.
     stderr = (stderr + value.toString()).slice(-8192);
   });
-  const observationPipe = child.stdio[3] as Readable | null;
-  if (observe && observationPipe) {
-    let buffered = "";
-    let unavailableReported = false;
-    const unavailable = (reason: string): void => {
-      if (unavailableReported) return;
-      unavailableReported = true;
-      for (const affectedSource of ["adapter-canonical", "provider-native"]) {
-        observe({ protocolVersion: 2, source: "control", type: "adapter_observation.source_unavailable", payload: { reason, affected_source: affectedSource } });
-      }
-    };
-    observationPipe.setEncoding("utf8");
-    observationPipe.on("data", (value: string | Buffer) => {
-      buffered += value.toString();
-      if (buffered.length > 512 * 1024) {
-        buffered = "";
-        observe({ protocolVersion: 2, source: "control", type: "adapter_observation.dropped", payload: { reason: "buffer_limit", affected_source: "adapter-canonical" } });
-      }
-      let newline = buffered.indexOf("\n");
-      while (newline >= 0) {
-        const line = buffered.slice(0, newline);
-        buffered = buffered.slice(newline + 1);
-        try { observe(JSON.parse(line) as unknown); } catch {
-          observe({ protocolVersion: 2, source: "control", type: "adapter_observation.dropped", payload: { reason: "invalid_json", affected_source: "adapter-canonical" } });
-        }
-        newline = buffered.indexOf("\n");
-      }
-    });
-    observationPipe.once("error", () => unavailable("pipe_error"));
-    observationPipe.once("end", () => unavailable("pipe_ended"));
-  }
   const client = new AdapterHostRpcClient({
     input: child.stdout,
-    output: child.stdin,
-    ...(trace ? { trace } : {})
+    output: child.stdin
   });
   let adapters: HostedAdapterMetadata[];
   try {

@@ -5,31 +5,24 @@ import { canonicalTerminalStatus, executionFeatures, type InteractionResponse } 
  * Protocol) as JSON-RPC 2.0 on stdio, and normalizes its `session/update`
  * notifications into the harness canonical event stream.
  */
-import {
-  AcpApprovalBridge,
-  AcpTurnNormalizer,
-  acpToolTerminalStatus,
-  normalizeAcpToolUpdate,
-  observeAcpToolStatus,
-  defineAdapter,
-  createProviderStageTimer,
-  measureProviderStage,
-  isPublicProviderProgress,
-  observeBestEffort,
-  observeProviderOutput,
-  probeCommand,
-  providerInputText,
-  type AdapterInvocationContext,
-  type CanonicalEvent,
-  type InvokeRequest
-} from "@mininglamp-oss/octo-harness-adapter-sdk";
+import type { AcpUpdate } from "@mininglamp-oss/octo-harness-acp-client";
 import {
   acpLoadSessionParams,
   acpNewSessionParams,
   acpPromptParams,
   spawnAcpClient
 } from "@mininglamp-oss/octo-harness-acp-client";
-import type { AcpUpdate } from "@mininglamp-oss/octo-harness-acp-client";
+import {
+  AcpApprovalBridge,
+  AcpTurnNormalizer,
+  acpToolTerminalStatus,
+  defineAdapter,
+  normalizeAcpToolUpdate,
+  probeCommand,
+  providerInputText,
+  type CanonicalEvent,
+  type InvokeRequest
+} from "@mininglamp-oss/octo-harness-adapter-sdk";
 
 /** One ACP `session/update` notification; fields are optional because their presence depends on `sessionUpdate`. */
 interface CodeBuddyUpdate extends AcpUpdate {
@@ -55,12 +48,12 @@ export function normalizeCodeBuddyUpdate(update: CodeBuddyUpdate): CanonicalEven
       type: "message.delta",
       payload: type === "agent_thought_chunk"
         ? {
-            // agent_thought_chunk is CodeBuddy's presentation-facing ACP reasoning stream.
-            text,
-            channel: "analysis",
-            exposure: "public_reasoning",
-            provenance: { provider: "codebuddy", nativeEvent: "agent_thought_chunk" }
-          }
+          // agent_thought_chunk is CodeBuddy's presentation-facing ACP reasoning stream.
+          text,
+          channel: "analysis",
+          exposure: "public_reasoning",
+          provenance: { provider: "codebuddy", nativeEvent: "agent_thought_chunk" }
+        }
         : { text, channel: "final" }
     }];
   }
@@ -105,53 +98,34 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
       if (!bridge) throw new Error("INTERACTION_NOT_ACTIVE");
       await bridge.respond(response);
     },
-    async *invoke(req: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
+    async *invoke(req: InvokeRequest): AsyncGenerator<CanonicalEvent> {
       if (responders.has(req.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
       const permissions = new AcpApprovalBridge(req);
       responders.set(req.invocationId, permissions);
       async function* execute(): AsyncGenerator<CanonicalEvent> {
-      const stage = createProviderStageTimer(context);
-      const finishInvocation = stage("invocation");
-      let outcome = "interrupted";
-      const client = await measureProviderStage(context, "cli_spawn", "spawn", () => Promise.resolve(acpClientFactory({
-        command, args: ["--acp", "--permission-mode", codeBuddyPermissionMode(req.approvalMode)],
-        env: invocationEnvironment(req),
-        cwd: req.workdir, signal: req.signal, permissionHandler: params => permissions.requestPermission(params),
-        onPermissionResponseWritten: params => permissions.responseWritten(params),
-        onPermissionResponseFailed: (params, error) => permissions.responseFailed(params, error)
-      }))).catch(error => { finishInvocation("failed"); throw error; });
-      permissions.bindTransport(() => client.close());
-      try {
-        await measureProviderStage(context, "initialize", "initialize", () => client.initialize());
-        // Reserve the real JSON-RPC id before capture so every observation for
-        // this request matches the id subsequently written to the ACP process.
-        const requestedSessionId = req.providerSession?.sessionId;
-        const sessionMethod = requestedSessionId ? "session/load" : "session/new";
-        const sessionParams = requestedSessionId
-          ? acpLoadSessionParams(requestedSessionId, { cwd: req.workdir })
-          : acpNewSessionParams({ cwd: req.workdir, model: req.agentConfig?.model });
-        const sessionRequestId = client.reserveRequestId();
-        await context?.observe({
-          event: "provider.input",
-          rpcMethod: sessionMethod,
-          providerRequestId: String(sessionRequestId),
-          ...(requestedSessionId ? { providerSessionId: requestedSessionId } : {}),
-          carrier: { kind: "json_params", content: { method: sessionMethod, params: sessionParams } }
-        });
-        let session: { id: string };
+        const client = await Promise.resolve(acpClientFactory({
+          command, args: ["--acp", "--permission-mode", codeBuddyPermissionMode(req.approvalMode)],
+          env: invocationEnvironment(req),
+          cwd: req.workdir, signal: req.signal, permissionHandler: params => permissions.requestPermission(params),
+          onPermissionResponseWritten: params => permissions.responseWritten(params),
+          onPermissionResponseFailed: (params, error) => permissions.responseFailed(params, error)
+        }));
+        permissions.bindTransport(() => client.close());
         try {
+          await client.initialize();
+          const requestedSessionId = req.providerSession?.sessionId;
+          const sessionMethod = requestedSessionId ? "session/load" : "session/new";
+          const sessionParams = requestedSessionId
+            ? acpLoadSessionParams(requestedSessionId, { cwd: req.workdir })
+            : acpNewSessionParams({ cwd: req.workdir, model: req.agentConfig?.model });
+          const sessionRequestId = client.reserveRequestId();
+          let session: { id: string };
+
           const requestOptions = {
             requestId: sessionRequestId,
             ...(requestedSessionId ? { timeoutMs: 600_000 } : {}),
-            onWritten: () => observeBestEffort(context, {
-              event: "provider.dispatch.written",
-              rpcMethod: sessionMethod,
-              providerRequestId: String(sessionRequestId),
-              ...(requestedSessionId ? { providerSessionId: requestedSessionId } : {})
-            })
           };
-          const sessionResult = await measureProviderStage(context, requestedSessionId ? "session_restore" : "session_create",
-            sessionMethod, () => client.request(sessionMethod, sessionParams, requestOptions));
+          const sessionResult = await client.request(sessionMethod, sessionParams, requestOptions);
           if (requestedSessionId) {
             session = { id: requestedSessionId };
           } else {
@@ -161,46 +135,13 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
             if (!sessionId) throw new Error("ACP session/new returned no sessionId");
             session = { id: sessionId };
           }
-          observeBestEffort(context, {
-            event: "provider.dispatch.acknowledged",
-            rpcMethod: sessionMethod,
-            providerRequestId: String(sessionRequestId),
-            providerSessionId: session.id
-          });
-        } catch (error) {
-          observeBestEffort(context, {
-            event: "provider.dispatch.failed",
-            rpcMethod: sessionMethod,
-            providerRequestId: String(sessionRequestId),
-            ...(requestedSessionId ? { providerSessionId: requestedSessionId } : {}),
-            data: { error: error instanceof Error ? error.message : String(error) }
-          });
-          throw error;
-        }
-        // The AgentSession stores only the provider sessionId; both the
-        // new and resume paths converge on the same ACP prompt stream.
-        yield { protocolVersion: 2, type: "session.update", payload: { providerSession: { sessionId: session.id, resumable: true, model: req.agentConfig?.model } } };
-        // Build once and reuse for capture and dispatch. Reconstructing the
-        // carrier separately risks evaluating content that was never sent.
-        const prompt = `${providerInputText(req)}\n\n${req.controlInstructions}`;
-        const promptParams = acpPromptParams(session.id, prompt);
-        const promptRequestId = client.reserveRequestId();
-        // The await is the strict-capture gate and occurs before session/prompt
-        // is written to the ACP subprocess.
-        await context?.observe({
-          event: "provider.input",
-          rpcMethod: "session/prompt",
-          providerSessionId: session.id,
-          providerRequestId: String(promptRequestId),
-          carrier: {
-            kind: "json_params",
-            content: { method: "session/prompt", params: promptParams }
-          }
-        });
-        const finishFirstOutput = stage("first_output", "session/prompt");
-        const finishFirstPublicOutput = stage("first_public_output", "session/prompt");
-        try {
-          let firstOutput = true;
+          // The AgentSession stores only the provider sessionId; both the
+          // new and resume paths converge on the same ACP prompt stream.
+          yield { protocolVersion: 2, type: "session.update", payload: { providerSession: { sessionId: session.id, resumable: true, model: req.agentConfig?.model } } };
+          const prompt = `${providerInputText(req)}\n\n${req.controlInstructions}`;
+          const promptParams = acpPromptParams(session.id, prompt);
+          const promptRequestId = client.reserveRequestId();
+
           let promptStopReason: string | undefined;
           let promptFinishReason: string | undefined;
           const activeToolIds = new Set<string>();
@@ -208,48 +149,13 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
           for await (const update of client.prompt(session.id, prompt, {
             requestId: promptRequestId,
             params: promptParams,
-            onWritten: () => {
-              // ACP's stdin callback establishes local write completion only.
-              observeBestEffort(context, {
-                event: "provider.dispatch.written",
-                rpcMethod: "session/prompt",
-                providerSessionId: session.id,
-                providerRequestId: String(promptRequestId)
-              });
-            }
           })) {
-            if (firstOutput) {
-              firstOutput = false;
-              finishFirstOutput();
-              // session/update may precede the final response and is therefore
-              // an output milestone, not request acknowledgement.
-              observeBestEffort(context, {
-                event: "provider.output.first",
-                rpcMethod: "session/update",
-                providerSessionId: session.id,
-                providerRequestId: String(promptRequestId)
-              });
-            }
             if (update.type === "prompt_result") {
               promptStopReason = update.stopReason;
               promptFinishReason = update.finishReason;
               continue;
             }
-            observeAcpToolStatus(context, update);
             const events = turn.normalize(update.sessionUpdate ?? update.type, normalizeCodeBuddyUpdate(update));
-            if (events.some(isPublicProviderProgress)) finishFirstPublicOutput();
-            const nativeType = typeof update.sessionUpdate === "string"
-              ? update.sessionUpdate
-              : update.type;
-            observeProviderOutput(context, events, {
-              rpcMethod: "session/update",
-              providerSessionId: session.id,
-              providerRequestId: String(promptRequestId),
-              native: {
-                type: nativeType,
-                ...(update.model ? { model: update.model } : {})
-              }
-            });
             for (const event of events) {
               const toolID = typeof event.payload.id === "string" ? event.payload.id : undefined;
               if (event.type === "tool_call.create" && toolID) activeToolIds.add(toolID);
@@ -257,16 +163,7 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
               yield event;
             }
           }
-          // AcpClient.prompt completes only after the session/prompt response;
-          // this is the protocol acknowledgement boundary.
-          observeBestEffort(context, {
-            event: "provider.dispatch.acknowledged",
-            rpcMethod: "session/prompt",
-            providerSessionId: session.id,
-            providerRequestId: String(promptRequestId)
-          });
           const cancelled = isCancelledStopReason(promptStopReason);
-          outcome = cancelled ? "cancelled" : "completed";
           if (cancelled) {
             for (const id of activeToolIds) {
               yield { protocolVersion: 2, type: "tool_call.update", payload: { id, status: canonicalTerminalStatus("cancelled") } };
@@ -277,36 +174,13 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
             type: "message.update",
             payload: { role: "assistant", status: cancelled ? "stopped" : "completed" }
           };
-          observeProviderOutput(context, [terminalMessage], {
-            rpcMethod: "session/prompt",
-            providerSessionId: session.id,
-            providerRequestId: String(promptRequestId),
-            native: { type: "session/prompt.response" }
-          });
           yield terminalMessage;
           yield cancelled
             ? { protocolVersion: 2, type: "run.cancelled", payload: { reason: promptStopReason ?? "cancelled", ...(promptFinishReason ? { finishReason: promptFinishReason } : {}) } }
             : { protocolVersion: 2, type: "run.completed", payload: {} };
-        } catch (error) {
-          observeBestEffort(context, {
-            event: "provider.dispatch.failed",
-            rpcMethod: "session/prompt",
-            providerSessionId: session.id,
-            providerRequestId: String(promptRequestId),
-            data: { error: error instanceof Error ? error.message : String(error) }
-          });
-          throw error;
         } finally {
-          finishFirstOutput(req.signal?.aborted ? "cancelled" : "no_output");
-          finishFirstPublicOutput(req.signal?.aborted ? "cancelled" : "no_output");
+          await client.close?.();
         }
-      } catch (error) {
-        outcome = req.signal?.aborted ? "cancelled" : "failed";
-        throw error;
-      } finally {
-        finishInvocation(outcome);
-        await client.close?.();
-      }
       }
       try { yield* permissions.stream(execute()); }
       finally { permissions.close("execution_lost"); responders.delete(req.invocationId); }

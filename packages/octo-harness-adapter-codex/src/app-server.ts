@@ -1,6 +1,6 @@
-import { codexEnvironmentConfig } from "./environment.js";
 import { invocationEnvs, mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus, contextHash, providerInputParts } from "@mininglamp-oss/octo-harness-protocol";
+import { codexEnvironmentConfig } from "./environment.js";
 /**
  * Codex app-server transport and event adaptation layer.
  *
@@ -20,15 +20,7 @@ import { canonicalTerminalStatus, contextHash, providerInputParts } from "@minin
  * - all pending RPCs and subprocess resources eventually converge via
  *   close()/finally.
  */
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createHash } from "node:crypto";
-import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 import {
-  observeBestEffort,
-  createProviderStageTimer,
-  measureProviderStage,
-  isPublicProviderProgress,
-  observeProviderOutput,
   sanitizePublicValue,
   type AdapterInvocationContext,
   type CanonicalEvent,
@@ -37,6 +29,9 @@ import {
   type MessageExposure
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import type { InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createHash } from "node:crypto";
+import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 
 const APP_SERVER_REQUEST_TIMEOUT_MS = 30_000;
 const APP_SERVER_CLOSE_GRACE_MS = 500;
@@ -143,35 +138,24 @@ export async function* runCodexAppServerTurn({
 }): AsyncGenerator<CanonicalEvent> {
   const requestTimeoutMs = appServerRequestTimeout(request);
   const interactive = request.approvalMode !== "full_access";
-  const stage = createProviderStageTimer(context);
-  const finishInvocation = stage("invocation");
-  let finishFirstOutput: ((outcome?: string) => void) | undefined;
-  let finishFirstPublicOutput: ((outcome?: string) => void) | undefined;
-  let outcome = "interrupted";
   let client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, interactive, request, context);
   onInteractionResponder?.(response => client.respondInteraction(response));
   let terminal = false;
-  let turnProviderRequestId: string | undefined;
 
   try {
     throwIfAborted(request.signal);
 
     // Phase 1: negotiate the experimental app-server API first; no thread request is sent until initialize completes.
     try {
-      await measureProviderStage(context, "initialize", "initialize", () => initializeClient(client));
+      await initializeClient(client);
     } catch (error) {
       if (!isInitializeTimeout(error) || request.signal?.aborted) throw error;
-      observeBestEffort(context, {
-        event: "provider.dispatch.failed",
-        rpcMethod: "initialize",
-        data: { error: error instanceof Error ? error.message : String(error), retrying: true }
-      });
       onInteractionResponder?.(undefined);
       await client.close();
       throwIfAborted(request.signal);
       client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, interactive, request, context);
       onInteractionResponder?.(response => client.respondInteraction(response));
-      await measureProviderStage(context, "initialize", "initialize", () => initializeClient(client));
+      await initializeClient(client);
     }
     client.notify("initialized");
     let environmentConfig: JsonRecord | undefined;
@@ -182,7 +166,6 @@ export async function* runCodexAppServerTurn({
       environmentConfig = codexEnvironmentConfig(request, config);
     }
 
-
     // Phase 2: providerSession.sessionId is the Codex thread ID, kept opaque to the Core.
     const requestedSessionId = request.providerSession?.sessionId;
     let resumeFallback: string | undefined;
@@ -191,13 +174,7 @@ export async function* runCodexAppServerTurn({
 
     if (requestedSessionId) {
       try {
-        threadResult = await observedRequest({
-          client,
-          context,
-          method: "thread/resume",
-          params: threadParams(request, { threadId: requestedSessionId }, environmentConfig),
-          providerSessionId: requestedSessionId
-        });
+        threadResult = await client.request("thread/resume", threadParams(request, { threadId: requestedSessionId }, environmentConfig));
         resumed = true;
       } catch (error) {
         // A failed resume does not abort this turn; record a low-cardinality reason and fall back to a fresh thread.
@@ -206,55 +183,27 @@ export async function* runCodexAppServerTurn({
     }
 
     if (!threadResult) {
-      threadResult = await observedRequest({
-        client,
-        context,
-        method: "thread/start",
-        params: threadParams(request, { sessionStartSource: "startup" }, environmentConfig)
-      });
+      threadResult = await client.request("thread/start", threadParams(request, { sessionStartSource: "startup" }, environmentConfig));
     }
 
     let threadId = extractThreadId(threadResult);
     if (!threadId) throw new Error("codex thread start/resume returned no thread id");
     client.setActiveThread(threadId);
-
-    // Phase 3: only a successful turn/start means this turn is truly executable.
-    finishFirstOutput = stage("first_output", "turn/start");
-    finishFirstPublicOutput = stage("first_public_output", "turn/start");
     let turnResult: unknown;
     try {
-      turnResult = await observedRequest({
-        client,
-        context,
-        method: "turn/start",
-        params: turnParams(request, threadId, resumeFallback !== undefined),
-        providerSessionId: threadId,
-        onRequestId: id => { turnProviderRequestId = id; }
-      });
+      turnResult = await client.request("turn/start", turnParams(request, threadId, resumeFallback !== undefined));
     } catch (error) {
       // Some corrupt sessions pass thread/resume but only reveal the missing rollout at turn/start.
       if (!resumed || !isThreadNotFound(error)) throw error;
       resumeFallback = "turn_start_thread_not_found";
       resumed = false;
-      threadResult = await observedRequest({
-        client,
-        context,
-        method: "thread/start",
-        params: threadParams(request, { sessionStartSource: "startup" }, environmentConfig)
-      });
+      threadResult = await client.request("thread/start", threadParams(request, { sessionStartSource: "startup" }, environmentConfig));
       threadId = extractThreadId(threadResult);
       if (!threadId) {
         throw new Error("codex fresh fallback returned no thread id", { cause: error });
       }
       client.setActiveThread(threadId);
-      turnResult = await observedRequest({
-        client,
-        context,
-        method: "turn/start",
-        params: turnParams(request, threadId, true),
-        providerSessionId: threadId,
-        onRequestId: id => { turnProviderRequestId = id; }
-      });
+      turnResult = await client.request("turn/start", turnParams(request, threadId, true));
     }
 
     const turnId = extractTurnId(turnResult);
@@ -265,11 +214,11 @@ export async function* runCodexAppServerTurn({
     const compilation = recordValue(request.runMetadata?.contextCompilation);
     if (compilation) {
       yield { protocolVersion: 2, type: "context.applied", payload: {
-        schema: "octo.context-application/v1", compiler_version: "octo.context-compiler/v4", catalog_version: "octo.context-catalog/v3",
-        context_hash: String(compilation.context_hash), compiled_hash: String(compilation.compiled_hash),
-        run_id: String(compilation.run_id), lease_id: String(compilation.lease_id), fencing_token: Number(compilation.fencing_token),
-        adapter_type: "codex", provider_session_id: threadId, provider_ack: "turn/start"
-      } };
+          schema: "octo.context-application/v1", compiler_version: "octo.context-compiler/v4", catalog_version: "octo.context-catalog/v3",
+          context_hash: String(compilation.context_hash), compiled_hash: String(compilation.compiled_hash),
+          run_id: String(compilation.run_id), lease_id: String(compilation.lease_id), fencing_token: Number(compilation.fencing_token),
+          adapter_type: "codex", provider_session_id: threadId, provider_ack: "turn/start"
+        } };
     }
 
     // Must come after turn/start: otherwise the Core would persist a provider session that cannot be executed.
@@ -288,9 +237,6 @@ export async function* runCodexAppServerTurn({
         }
       }
     };
-
-    // Phase 4: the client queue has already normalized JSON-RPC notifications into CanonicalEvents.
-    let firstOutput = true;
     for await (const event of client.events()) {
       // The thread RPC response already produced the authoritative initial
       // update. Later lifecycle outcomes (such as compaction) must pass through.
@@ -299,31 +245,7 @@ export async function* runCodexAppServerTurn({
         && event.payload.providerSession.resumeOutcome === undefined) {
         continue;
       }
-      if (firstOutput) {
-        firstOutput = false;
-        finishFirstOutput();
-        // This is the first accepted provider notification after turn/start,
-        // not merely the JSON-RPC response that acknowledged the request.
-        observeBestEffort(context, {
-          event: "provider.output.first",
-          rpcMethod: "notification",
-          providerSessionId: threadId,
-          ...(turnProviderRequestId ? { providerRequestId: turnProviderRequestId } : {})
-        });
-      }
-      observeProviderOutput(context, [event], {
-        rpcMethod: "notification",
-        providerSessionId: threadId,
-        ...(turnProviderRequestId ? { providerRequestId: turnProviderRequestId } : {}),
-        native: {
-          type: typeof event.payload.provenance?.nativeEvent === "string"
-            ? event.payload.provenance.nativeEvent
-            : event.type
-        }
-      });
-      if (isPublicProviderProgress(event)) finishFirstPublicOutput();
       terminal ||= isTerminalEvent(event);
-      if (terminal) outcome = event.type === "run.completed" ? "completed" : event.type === "run.cancelled" ? "cancelled" : "failed";
       yield event;
       if (terminal) break;
     }
@@ -337,7 +259,6 @@ export async function* runCodexAppServerTurn({
       );
     }
   } catch (error) {
-    outcome = request.signal?.aborted ? "cancelled" : "failed";
     if (!terminal) {
       // AbortSignal takes priority in deciding cancelled semantics; all other errors project uniformly to provider run.failed.
       if (request.signal?.aborted) {
@@ -361,9 +282,6 @@ export async function* runCodexAppServerTurn({
       }
     }
   } finally {
-    finishFirstOutput?.(request.signal?.aborted ? "cancelled" : "no_output");
-    finishFirstPublicOutput?.(request.signal?.aborted ? "cancelled" : "no_output");
-    finishInvocation(outcome);
     // close() handles RPC/stdio/process; spec.cleanup handles any caller-owned resources.
     onInteractionResponder?.(undefined);
     await client.close();
@@ -390,91 +308,6 @@ function initializeClient(client: CodexAppServerClient): Promise<unknown> {
 
 function isInitializeTimeout(error: unknown): boolean {
   return error instanceof Error && /^codex app-server initialize timed out after \d+ms$/.test(error.message);
-}
-
-/**
- * Send one model-affecting app-server request with ordered observations.
- *
- * The carrier is the exact `{ method, params }` object serialized onto stdin;
- * it is captured before the write and awaited so strict capture can fail closed.
- * `provider.dispatch.written` comes from the stdin write callback, whereas
- * `provider.dispatch.acknowledged` requires the matching JSON-RPC response.
- * These states must not be collapsed: a locally buffered frame can still be
- * rejected, time out, or disappear with a crashed provider process.
- */
-async function observedRequest({
-  client,
-  context,
-  method,
-  params,
-  providerSessionId,
-  onRequestId
-}: {
-  client: CodexAppServerClient;
-  context?: AdapterInvocationContext;
-  method: string;
-  params: JsonRecord;
-  providerSessionId?: string;
-  onRequestId?: (id: string) => void;
-}): Promise<unknown> {
-  const requestId = client.reserveRequestId();
-  const providerRequestId = String(requestId);
-  onRequestId?.(providerRequestId);
-  // Do not reconstruct this from InvokeRequest: thread fallback and provider
-  // defaults have already selected the exact method and params sent on the wire.
-  await context?.observe({
-    event: "provider.input",
-    rpcMethod: method,
-    providerRequestId,
-    ...(providerSessionId ? { providerSessionId } : {}),
-    carrier: { kind: "json_params", content: { method, params: imageSafeParams(params) } }
-  });
-  const stage = method === "thread/resume" ? "session_restore" : method === "thread/start" ? "session_create" : method === "turn/start" ? "turn_start" : method;
-  const finishRequest = createProviderStageTimer(context)(stage, method);
-  const response = client.request(method, params, undefined, () => {
-    // The callback is reached only after Node accepts the complete NDJSON frame.
-    observeBestEffort(context, {
-      event: "provider.dispatch.written",
-      rpcMethod: method,
-      providerRequestId,
-      ...(providerSessionId ? { providerSessionId } : {})
-    });
-  }, requestId);
-  try {
-    const result = await response;
-    finishRequest();
-    // A correlated response is the app-server's protocol-level acknowledgement;
-    // streamed model output may arrive later as independent notifications.
-    observeBestEffort(context, {
-      event: "provider.dispatch.acknowledged",
-      rpcMethod: method,
-      providerRequestId,
-      ...(providerSessionId ? { providerSessionId } : {})
-    });
-    return result;
-  } catch (error) {
-    finishRequest("failed");
-    observeBestEffort(context, {
-      event: "provider.dispatch.failed",
-      rpcMethod: method,
-      providerRequestId,
-      ...(providerSessionId ? { providerSessionId } : {}),
-      data: { error: error instanceof Error ? error.message : String(error) }
-    });
-    throw error;
-  }
-}
-
-function imageSafeParams(params: JsonRecord): JsonRecord {
-  if (!Array.isArray(params.input)) return params;
-  return { ...params, input: params.input.map((value: unknown) => {
-    const part = recordValue(value);
-    if (part?.type !== "image" || typeof part.url !== "string") return value;
-    const separator = part.url.indexOf(";base64,");
-    if (!part.url.startsWith("data:") || separator < 0) return { type: "image", url: "[redacted]" };
-    const bytes = Buffer.from(part.url.slice(separator + 8), "base64");
-    return { type: "image", mimeType: part.url.slice(5, separator), byteSize: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
-  }) };
 }
 
 function stringErrorCode(error: unknown): string | undefined {
@@ -522,14 +355,14 @@ export class CodexEventNormalizer {
       case "turn/plan/updated": {
         const plan = Array.isArray(params.plan) ? params.plan : [];
         return [{ protocolVersion: 2, type: "plan.updated", payload: {
-          planId: "codex:plan", revision: ++this.#planRevision,
-          explanation: typeof params.explanation === "string" ? params.explanation.slice(0, 4096) : null,
-          steps: plan.slice(0, 200).map(value => {
-            const step = recordValue(value) ?? {};
-            const status = step.status === "inProgress" ? "in_progress" : step.status === "completed" ? "completed" : "pending";
-            return { text: String(step.step ?? "").slice(0, 4096), status };
-          })
-        } }];
+            planId: "codex:plan", revision: ++this.#planRevision,
+            explanation: typeof params.explanation === "string" ? params.explanation.slice(0, 4096) : null,
+            steps: plan.slice(0, 200).map(value => {
+              const step = recordValue(value) ?? {};
+              const status = step.status === "inProgress" ? "in_progress" : step.status === "completed" ? "completed" : "pending";
+              return { text: String(step.step ?? "").slice(0, 4096), status };
+            })
+          } }];
       }
       case "item/mcpToolCall/progress": {
         const id = itemId(params);
@@ -667,8 +500,8 @@ export class CodexEventNormalizer {
     if (stringValue(item.type) === "contextCompaction" && id) {
       const threadId = stringValue(params.threadId);
       return [{ protocolVersion: 2, type: "activity.finished", payload: { activityId: `codex:compaction:${id}`, status: "completed" } },
-        { protocolVersion: 2, type: "run.notice", payload: { noticeId: `codex:compaction:${id}`, code: "context_compacted", severity: "info", params: {} } },
-        ...(threadId ? [{ protocolVersion: 2 as const, type: "session.update" as const, payload: {
+      { protocolVersion: 2, type: "run.notice", payload: { noticeId: `codex:compaction:${id}`, code: "context_compacted", severity: "info", params: {} } },
+      ...(threadId ? [{ protocolVersion: 2 as const, type: "session.update" as const, payload: {
           providerSession: { sessionId: threadId, resumable: true, resumeOutcome: "compacted" as const }
         } }] : [])];
     }
@@ -973,10 +806,10 @@ class CodexAppServerClient {
 
   #finalizationFailure(): CanonicalEvent {
     return { protocolVersion: 2, type: "run.failed", payload: {
-      code: "CODEX_FINALIZATION_TIMEOUT", adapterType: "codex",
-      message: "Codex final answer completed but the turn did not finish before the finalization deadline",
-      timeoutStage: "rpc", timeoutReason: "rpc_timeout", timeoutMs: this.#finalizationTimeoutMs
-    } };
+        code: "CODEX_FINALIZATION_TIMEOUT", adapterType: "codex",
+        message: "Codex final answer completed but the turn did not finish before the finalization deadline",
+        timeoutStage: "rpc", timeoutReason: "rpc_timeout", timeoutMs: this.#finalizationTimeoutMs
+      } };
   }
 
   #watchFinalization(method: string, params: JsonRecord): void {
@@ -1127,9 +960,9 @@ class CodexAppServerClient {
           clearTimeout(pending.timer);
           this.#interactions.delete(response.interactionId);
           this.#queue.push({ protocolVersion: 2, type: "interaction.resolved", payload: {
-            interactionId: response.interactionId, executionInstanceId: this.invocation.invocationId,
-            status: "resolved", outcome: response.outcome
-          } });
+              interactionId: response.interactionId, executionInstanceId: this.invocation.invocationId,
+              status: "resolved", outcome: response.outcome
+            } });
           resolve();
         }
       );
@@ -1321,8 +1154,8 @@ class CodexAppServerClient {
     const timer = setTimeout(() => {
       this.#interactions.delete(interactionId);
       this.#queue.push({ protocolVersion: 2, type: "interaction.resolved", payload: {
-        interactionId, executionInstanceId: this.invocation.invocationId, status: "expired", reasonCode: "approval_timeout"
-      } });
+          interactionId, executionInstanceId: this.invocation.invocationId, status: "expired", reasonCode: "approval_timeout"
+        } });
       this.#rejectServerRequest(id, method);
       this.#queue.fail(new Error("INTERACTION_EXPIRED"));
     }, 600_000);
@@ -1365,8 +1198,8 @@ class CodexAppServerClient {
         clearTimeout(pending.timer);
         this.#interactions.delete(interactionId);
         this.#queue.push({ protocolVersion: 2, type: "interaction.resolved", payload: {
-          interactionId, executionInstanceId: this.invocation.invocationId, status: "resolved", outcome: "accepted", reasonCode: "full_access_policy"
-        } });
+            interactionId, executionInstanceId: this.invocation.invocationId, status: "resolved", outcome: "accepted", reasonCode: "full_access_policy"
+          } });
       });
     }
   }
@@ -1469,8 +1302,8 @@ class CodexAppServerClient {
     for (const [interactionId, pending] of this.#interactions) {
       clearTimeout(pending.timer);
       this.#queue.push({ protocolVersion: 2, type: "interaction.resolved", payload: {
-        interactionId, executionInstanceId: this.invocation.invocationId, status: "invalidated", reasonCode
-      } });
+          interactionId, executionInstanceId: this.invocation.invocationId, status: "invalidated", reasonCode
+        } });
     }
     this.#interactions.clear();
   }
