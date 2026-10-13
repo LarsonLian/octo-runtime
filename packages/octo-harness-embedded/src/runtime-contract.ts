@@ -72,7 +72,11 @@ export async function callDaemon<T = unknown>(
           if (response.error) throw new Error(response.error.message ?? "daemon request failed");
           resolve(response.result as T);
         } catch (error) {
-          reject(error);
+          reject(
+            error instanceof Error
+              ? error
+              : new Error("daemon response handling failed", { cause: error })
+          );
         }
       });
       socket.once("end", () => {

@@ -5,6 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { invokeDaemonRun } from '../packages/octo-harness-embedded/dist/run-stream.js';
+import { callDaemon } from '../packages/octo-harness-embedded/dist/runtime-contract.js';
 import { invokeRequest } from './agent-work-runtime-fixture.js';
 
 async function fixture(t, handler) {
@@ -21,6 +22,22 @@ async function fixture(t, handler) {
 }
 const event = (request, stream, seq, canonical) => ({ jsonrpc: '2.0', method: 'agent_run.event', params: { run_id: request.runId, stream_id: stream, seq, event: canonical } });
 const write = (socket, frame) => socket.write(JSON.stringify(frame) + '\n');
+
+test("daemon calls reject malformed JSON with the original parse Error", async (t) => {
+  const path = await fixture(t, (_rpc, socket) => socket.end("{invalid JSON}\n"));
+  await assert.rejects(callDaemon(path, { method: "status" }), SyntaxError);
+});
+
+test("daemon calls reject remote errors with their diagnostic message", async (t) => {
+  const path = await fixture(t, (rpc, socket) => {
+    write(socket, { jsonrpc: "2.0", id: rpc.id, error: { message: "fixture daemon failed" } });
+    socket.end();
+  });
+  await assert.rejects(callDaemon(path, { method: "status" }), {
+    name: "Error",
+    message: "fixture daemon failed"
+  });
+});
 
 test('local invoke repairs IPC disconnect without submitting again or losing full canonical payloads', async t => {
   const request = invokeRequest(), calls = [], stream = 'host:epoch';
