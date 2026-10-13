@@ -313,9 +313,9 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
     }
   }
 
-  async #stop(_reason: "logout" | "account-switch" | "quit" | "reconfigure"): Promise<void> {
+  async #stop(reason: "logout" | "account-switch" | "quit" | "reconfigure"): Promise<void> {
     ++this.#generation;
-    this.#abort?.abort(new Error("embedded account stopped"));
+    this.#abort?.abort(new Error(`embedded account stopped: ${reason}`));
     this.#abort = undefined;
     if (this.#pollTimer) clearInterval(this.#pollTimer);
     this.#pollTimer = undefined;
