@@ -15,6 +15,9 @@ import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
  */
 import {
   AcpApprovalBridge,
+  NativeInteractionBridge,
+  type AdapterOutput,
+  type AdapterInvocationContext,
   defineAdapter,
   parseJsonLine,
   probeCommand,
@@ -24,7 +27,12 @@ import {
   type InvokeRequest,
   type MessageExposure
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
+import {
+  executionFeatures,
+  protocolError,
+  type InteractionResponse,
+  type NativeInteractionResponse
+} from "@mininglamp-oss/octo-harness-protocol";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,6 +66,7 @@ interface ClaudeStreamEvent {
 }
 
 interface ClaudeNativeEvent {
+  [key: string]: unknown;
   type?: string;
   subtype?: string;
   session_id?: string;
@@ -589,12 +598,19 @@ export function createClaudeCodeAdapter({
   commandArgsPrefix?: string[];
 } = {}) {
   const responders = new Map<string, AcpApprovalBridge>();
+  const nativeResponders = new Map<string, NativeInteractionBridge>();
   return defineAdapter({
     metadata: {
+      protocolSupport: {
+        protocol: "claude.stream-json",
+        modes: ["native", "canonical"],
+        nativeMethods: ["managed-turn", "can_use_tool", "control_response", "cancel"]
+      },
       type: "claude-code",
       capabilities: ["react"],
       agentSources: ["provisioned"],
       executionFeatures: [
+        "activity.turn-progress",
         "session.serialize",
         "tool.canonical",
         executionFeatures.INTERACTION_RESPONSE,
@@ -606,17 +622,44 @@ export function createClaudeCodeAdapter({
       transport: "ndjson/stdio"
     },
     probe: () => probeCommand(command),
+    async respondNative(invocationId: string, response: NativeInteractionResponse): Promise<void> {
+      const bridge = nativeResponders.get(invocationId);
+      if (!bridge) throw protocolError("INTERACTION_NOT_ACTIVE");
+      await bridge.respond(response);
+    },
     async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
       const bridge = responders.get(invocationId);
       if (!bridge) throw new Error("INTERACTION_NOT_ACTIVE");
       await bridge.respond(response);
     },
-    async *invoke(request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
+    async *invoke(
+      request: InvokeRequest,
+      context?: AdapterInvocationContext
+    ): AsyncGenerator<AdapterOutput> {
+      if (context?.protocolMode === "native") {
+        if (nativeResponders.has(request.invocationId))
+          throw new Error("INVOCATION_ALREADY_ACTIVE");
+        const bridge = new NativeInteractionBridge();
+        nativeResponders.set(request.invocationId, bridge);
+        try {
+          yield* bridge.stream(execute(request, bridge, context));
+        } finally {
+          bridge.close();
+          nativeResponders.delete(request.invocationId);
+        }
+        return;
+      }
       if (responders.has(request.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
       const permissions = new AcpApprovalBridge(request);
       responders.set(request.invocationId, permissions);
       try {
-        yield* permissions.stream(execute(request, permissions));
+        yield* permissions.stream(canonicalSource());
+        async function* canonicalSource(): AsyncGenerator<CanonicalEvent> {
+          for await (const output of execute(request, permissions, context)) {
+            if ("kind" in output) throw protocolError("EXECUTION_PROTOCOL_MISMATCH");
+            yield output;
+          }
+        }
       } finally {
         permissions.close("execution_lost");
         responders.delete(request.invocationId);
@@ -626,17 +669,20 @@ export function createClaudeCodeAdapter({
 
   async function* execute(
     request: InvokeRequest,
-    permissions: AcpApprovalBridge
-  ): AsyncGenerator<CanonicalEvent> {
+    permissions: AcpApprovalBridge | NativeInteractionBridge,
+    context?: AdapterInvocationContext
+  ): AsyncGenerator<AdapterOutput> {
     const spec = await buildClaudeCommand(request, command, commandArgsPrefix);
     // The normalizer must not be hoisted to an adapter singleton: one adapter may run several invocations concurrently.
-    const normalizer = new ClaudeEventNormalizer();
+    const normalizer =
+      permissions instanceof NativeInteractionBridge ? undefined : new ClaudeEventNormalizer();
     try {
-      yield {
-        protocolVersion: 2,
-        type: "message.create",
-        payload: { role: "assistant", status: "streaming", channel: "final" }
-      };
+      if (normalizer)
+        yield {
+          protocolVersion: 2,
+          type: "message.create",
+          payload: { role: "assistant", status: "streaming", channel: "final" }
+        };
       for await (const native of spawnJsonLines<ClaudeNativeEvent>({
         ...spec,
         cwd: request.workdir,
@@ -647,7 +693,61 @@ export function createClaudeCodeAdapter({
         controlHandler: async (native, write) => {
           if (native.type !== "control_request") return;
           if (!native.request_id || native.request?.subtype !== "can_use_tool") {
+            if (native.request_id)
+              await write({
+                type: "control_response",
+                response: {
+                  subtype: "error",
+                  request_id: native.request_id,
+                  error: "Unsupported control request"
+                }
+              });
             throw new Error("CLAUDE_CONTROL_REQUEST_UNSUPPORTED");
+          }
+          if (permissions instanceof NativeInteractionBridge) {
+            const requestId = native.request_id;
+            const validate = (payload: Record<string, unknown>): void => {
+              const response = payload.response as Record<string, unknown> | undefined;
+              const decision = response?.response as Record<string, unknown> | undefined;
+              if (
+                payload.type !== "control_response" ||
+                response?.subtype !== "success" ||
+                response.request_id !== requestId ||
+                !decision ||
+                !["allow", "deny"].includes(String(decision.behavior)) ||
+                Object.keys(payload).some((key) => !["type", "response"].includes(key)) ||
+                Object.keys(response).some(
+                  (key) => !["subtype", "request_id", "response"].includes(key)
+                ) ||
+                Object.keys(decision).some(
+                  (key) => !["behavior", "updatedInput", "message", "interrupt"].includes(key)
+                ) ||
+                (decision.behavior === "allow" &&
+                  JSON.stringify(decision.updatedInput) !==
+                    JSON.stringify(native.request?.input ?? {})) ||
+                (decision.behavior === "deny" &&
+                  decision.interrupt !== undefined &&
+                  decision.interrupt !== false)
+              )
+                throw protocolError("NATIVE_RESPONSE_INVALID");
+            };
+            permissions.request(
+              requestId,
+              native,
+              write,
+              validate,
+              request.approvalMode === "full_access"
+                ? {
+                    type: "control_response",
+                    response: {
+                      subtype: "success",
+                      request_id: requestId,
+                      response: { behavior: "allow", updatedInput: native.request.input ?? {} }
+                    }
+                  }
+                : undefined
+            );
+            return;
           }
           const params = {
             toolCall: {
@@ -694,6 +794,55 @@ export function createClaudeCodeAdapter({
         },
         parseLine: parseJsonLine
       })) {
+        if (native.type === "system" && native.subtype === "init")
+          context?.reportActivity?.({ kind: "turn_started", method: "turn_start" });
+        if (native.type === "stream_event") {
+          const event = native.event;
+          if (event?.type === "message_start")
+            context?.reportActivity?.({ kind: "turn_started", method: "turn_start" });
+          else if (
+            event?.type === "content_block_start" &&
+            event.content_block?.type === "tool_use" &&
+            event.content_block.id
+          )
+            context?.reportActivity?.({
+              kind: "turn_progress",
+              method: "item_lifecycle",
+              toolCallId: event.content_block.id,
+              toolState: "started"
+            });
+          else if (
+            event?.type === "content_block_delta" &&
+            (event.delta?.text || event.delta?.thinking || event.delta?.partial_json)
+          )
+            context?.reportActivity?.({
+              kind: "turn_progress",
+              method: event.delta.partial_json ? "tool_delta" : "text_delta"
+            });
+        }
+        for (const block of native.message?.content ?? []) {
+          if (block.type === "tool_result" && block.tool_use_id)
+            context?.reportActivity?.({
+              kind: "turn_progress",
+              method: "item_lifecycle",
+              toolCallId: block.tool_use_id,
+              toolState: "completed"
+            });
+        }
+        if (!normalizer) {
+          if (native.type === "control_request") continue;
+          yield { kind: "native", messageKind: "message", payload: native };
+          if (native.type === "result") {
+            (permissions as NativeInteractionBridge).close();
+            yield {
+              kind: "control",
+              control: { type: "state", state: native.is_error ? "failed" : "completed" }
+            };
+            return;
+          }
+          continue;
+        }
+        context?.reportConversion?.();
         const events = normalizer.normalize(native);
         yield* events;
         if (

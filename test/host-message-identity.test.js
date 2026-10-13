@@ -4,7 +4,7 @@ import { AdapterHost } from "../packages/octo-harness-adapter-host/dist/index.js
 
 test("Host scopes anonymous segments to tool boundaries and closes every channel at a step end", async () => {
   const host = new AdapterHost();
-  host.register({ metadata: { type: "identity", capabilities: [], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke() {
+  host.register({ metadata: { protocolSupport: { protocol: ("identity") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "identity", capabilities: [], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke() {
     const event = (type, payload) => ({ protocolVersion: 2, type, payload });
     yield event("message.create", { status: "streaming" });
     yield event("message.delta", { text: "before" });
@@ -17,7 +17,7 @@ test("Host scopes anonymous segments to tool boundaries and closes every channel
     yield event("run.completed", {});
   } });
   const events = [];
-  for await (const e of host.invoke("identity", { protocolVersion: 2, invocationId: "i", agentSessionId: "s", runId: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} })) events.push(e);
+  for await (const e of host.invoke("identity", { protocolVersion: 2, invocationId: "i", agentSessionId: "s", runId: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} }, { protocolMode: "canonical" })) events.push(e);
   const deltas = events.filter(e => e.type === "message.delta");
   assert.equal(deltas[0].payload.messageId, deltas[1].payload.messageId);
   assert.notEqual(deltas[0].payload.messageId, deltas[2].payload.messageId);

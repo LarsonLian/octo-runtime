@@ -227,6 +227,7 @@ export interface ExecutionEnvelope {
   continuity_mode?: "continue" | "fresh";
   provider_session?: ProviderSession;
   agent_run_request: {
+    protocol_mode?: "canonical";
     execution_target?: ExecutionTarget;
     tool_authorizations?: ToolAuthorization[];
     scenario?: ScenarioRequest;
@@ -1853,7 +1854,9 @@ export class AgentWorkRuntime {
       this.#kickSender();
     };
     try {
-      for await (const providerEvent of this.#host.invoke(adapterType, request)) {
+      for await (const providerEvent of this.#host.invoke(adapterType, request, {
+        protocolMode: "canonical"
+      })) {
         const event = providerEvent;
         if (event.type === "run.started" || event.type === "run.queued") continue;
         appendStarted();
@@ -2224,6 +2227,10 @@ export function mapExecutionEnvelope(
 
 function assertExecutionEnvelopeContract(envelope: ExecutionEnvelope): void {
   if (envelope?.schema_version !== 7) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
+  const mode: unknown = envelope.agent_run_request?.protocol_mode;
+  if (mode === "native") throw new TypeError("REMOTE_NATIVE_UNSUPPORTED");
+  if (Object.hasOwn(envelope.agent_run_request ?? {}, "protocol_mode") && mode !== "canonical")
+    throw new TypeError("PROTOCOL_MODE_INVALID");
   if (
     envelope.internal_context &&
     ["knowledge_snapshot", "resource_sources"].some((key) =>

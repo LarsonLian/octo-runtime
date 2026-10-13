@@ -30,10 +30,10 @@ test("public react does not bypass adapter source admission", async () => {
   let invocations = 0;
   const host = new AdapterHost();
   host.register({
-    metadata: { type: "fixture", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] },
+    metadata: { protocolSupport: { protocol: ("fixture") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "fixture", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] },
     async *invoke() { invocations++; yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
   });
-  await assert.rejects(async () => { for await (const event of host.invoke("fixture", request)) assert.fail(event.type); }, /AGENT_SOURCE_UNSUPPORTED/);
+  await assert.rejects(async () => { for await (const event of host.invoke("fixture", request, { protocolMode: "canonical" })) assert.fail(event.type); }, /AGENT_SOURCE_UNSUPPORTED/);
   assert.equal(invocations, 0);
   assert.deepEqual(host.list()[0].capabilities, ["react"]);
 });

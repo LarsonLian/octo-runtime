@@ -26,13 +26,20 @@ import { codexEnvironmentConfig } from "./environment.js";
  */
 import {
   sanitizePublicValue,
+  DriverQueue,
+  watchLineLimit,
   type AdapterInvocationContext,
+  type AdapterOutput,
   type CanonicalEvent,
   type InvokeRequest,
   type MessageChannel,
   type MessageExposure
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import type { InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
+import {
+  protocolError,
+  type InteractionResponse,
+  type NativeInteractionResponse
+} from "@mininglamp-oss/octo-harness-protocol";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
@@ -135,14 +142,18 @@ export async function* runCodexAppServerTurn({
   spec,
   spawnFn = defaultSpawn,
   context,
-  onInteractionResponder
+  onInteractionResponder,
+  onNativeResponder
 }: {
   request: InvokeRequest;
   spec: CodexAppServerCommand;
   spawnFn?: CodexAppServerSpawn;
   context?: AdapterInvocationContext;
   onInteractionResponder?: (responder: CodexInteractionResponder | undefined) => void;
-}): AsyncGenerator<CanonicalEvent> {
+  onNativeResponder?: (
+    responder: ((response: NativeInteractionResponse) => Promise<void>) | undefined
+  ) => void;
+}): AsyncGenerator<AdapterOutput> {
   const requestTimeoutMs = appServerRequestTimeout(request);
   const interactive = request.approvalMode !== "full_access";
   let client = new CodexAppServerClient(
@@ -154,6 +165,7 @@ export async function* runCodexAppServerTurn({
     context
   );
   onInteractionResponder?.((response) => client.respondInteraction(response));
+  onNativeResponder?.((response) => client.respondNative(response));
   let terminal = false;
 
   try {
@@ -176,6 +188,7 @@ export async function* runCodexAppServerTurn({
         context
       );
       onInteractionResponder?.((response) => client.respondInteraction(response));
+      onNativeResponder?.((response) => client.respondNative(response));
       await initializeClient(client);
     }
     client.notify("initialized");
@@ -249,7 +262,7 @@ export async function* runCodexAppServerTurn({
     // 原生技能启用且 turn/start 已获确认，才报告本轮应用证据；loaded 不表示技能已实际调用。
     const compilation = recordValue(request.runMetadata?.contextCompilation);
     if (compilation) {
-      yield {
+      const evidence: CanonicalEvent = {
         protocolVersion: 2,
         type: "context.applied",
         payload: {
@@ -266,10 +279,16 @@ export async function* runCodexAppServerTurn({
           provider_ack: "turn/start"
         }
       };
+      yield context?.protocolMode === "native"
+        ? {
+            kind: "control",
+            control: { type: "evidence", name: "context.applied", payload: evidence.payload }
+          }
+        : evidence;
     }
 
     // Must come after turn/start: otherwise the Core would persist a provider session that cannot be executed.
-    yield {
+    const session: CanonicalEvent = {
       protocolVersion: 2,
       type: "session.update",
       payload: {
@@ -290,7 +309,22 @@ export async function* runCodexAppServerTurn({
         }
       }
     };
+    yield context?.protocolMode === "native"
+      ? {
+          kind: "control",
+          control: { type: "evidence", name: "session", payload: session.payload }
+        }
+      : session;
     for await (const event of client.events()) {
+      if ("kind" in event) {
+        terminal ||=
+          event.kind === "control" &&
+          event.control.type === "state" &&
+          event.control.state !== "running";
+        yield event;
+        if (terminal) break;
+        continue;
+      }
       // The thread RPC response already produced the authoritative initial
       // update. Later lifecycle outcomes (such as compaction) must pass through.
       if (
@@ -311,6 +345,10 @@ export async function* runCodexAppServerTurn({
       throw new CodexAppServerProcessError(client.processErrorMessage(exit), exit);
     }
   } catch (error) {
+    if (context?.protocolMode === "native") {
+      yield* client.bufferedEvents();
+      throw error;
+    }
     if (!terminal) {
       // AbortSignal takes priority in deciding cancelled semantics; all other errors project uniformly to provider run.failed.
       if (request.signal?.aborted) {
@@ -342,6 +380,7 @@ export async function* runCodexAppServerTurn({
   } finally {
     // close() handles RPC/stdio/process; spec.cleanup handles any caller-owned resources.
     onInteractionResponder?.(undefined);
+    onNativeResponder?.(undefined);
     await client.close();
     await spec.cleanup?.();
   }
@@ -1010,10 +1049,13 @@ function boundedJson(value: unknown, depth = 0): unknown {
 class CodexAppServerClient {
   readonly #child: ChildProcessWithoutNullStreams;
   readonly #reader: ReadLineInterface;
-  readonly #queue = new AsyncEventQueue<CanonicalEvent>();
-  readonly #normalizer = new CodexEventNormalizer();
+  readonly #removeLineGuard: () => void;
+  readonly #queue = new DriverQueue<AdapterOutput>();
+  readonly #normalizer?: CodexEventNormalizer;
+  readonly #native: boolean;
   readonly #pending = new Map<RpcId, PendingRequest>();
   readonly #interactions = new Map<string, PendingInteraction>();
+  readonly #nativeRequestIds = new Set<RpcId>();
   readonly #requestTimeoutMs: number;
   readonly #interactive: boolean;
   readonly #signal?: AbortSignal;
@@ -1042,7 +1084,16 @@ class CodexAppServerClient {
     this.#finalizationTimer = undefined;
   }
 
-  #finalizationFailure(): CanonicalEvent {
+  #finalizationFailure(): AdapterOutput {
+    if (this.#native)
+      return {
+        kind: "control",
+        control: {
+          type: "error",
+          code: "HOST_EXECUTION_FAILED",
+          message: "CODEX_FINALIZATION_TIMEOUT"
+        }
+      };
     return {
       protocolVersion: 2,
       type: "run.failed",
@@ -1105,6 +1156,8 @@ class CodexAppServerClient {
         if (this.#terminal || this.#closed) return;
         this.#terminal = true;
         this.#queue.push(this.#finalizationFailure());
+        if (this.#native)
+          this.#queue.push({ kind: "control", control: { type: "state", state: "failed" } });
         this.#queue.close();
       }, FINALIZATION_INTERRUPT_GRACE_MS);
       void this.request(
@@ -1129,11 +1182,14 @@ class CodexAppServerClient {
     this.#terminal = true;
     this.#clearFinalizationTimer();
     this.#invalidateInteractions("run_cancelled");
-    this.#queue.push({
-      protocolVersion: 2,
-      type: "run.cancelled",
-      payload: { reason: String(this.#signal?.reason ?? "cancelled") }
-    });
+    if (this.#native)
+      this.#queue.push({ kind: "control", control: { type: "state", state: "cancelled" } });
+    else
+      this.#queue.push({
+        protocolVersion: 2,
+        type: "run.cancelled",
+        payload: { reason: String(this.#signal?.reason ?? "cancelled") }
+      });
     this.#queue.close();
     if (this.#activeThreadId && this.#activeTurnId) {
       void this.request(
@@ -1157,6 +1213,8 @@ class CodexAppServerClient {
     readonly invocation: InvokeRequest,
     readonly context?: AdapterInvocationContext
   ) {
+    this.#native = context?.protocolMode === "native";
+    if (!this.#native) this.#normalizer = new CodexEventNormalizer();
     this.#requestTimeoutMs = requestTimeoutMs;
     this.#interactive = interactive;
     const signal = invocation.signal;
@@ -1167,6 +1225,12 @@ class CodexAppServerClient {
     this.#child = spawnFn(spec.command, spec.args, { cwd: spec.cwd, env: spec.env });
 
     // The app-server protocol requires one JSON-RPC frame per line; readline handles chunk boundaries.
+    this.#removeLineGuard = watchLineLimit(this.#child.stdout, 256 * 1024, (error) => {
+      this.#reader.close();
+      this.#child.stdout.destroy();
+      this.#handleProcessError(error);
+      signalProcessTree(this.#child, "SIGTERM");
+    });
     this.#reader = createInterface({ input: this.#child.stdout });
     this.#reader.on("line", (line) => this.#handleLine(line));
     this.#child.stderr.setEncoding("utf8");
@@ -1189,8 +1253,101 @@ class CodexAppServerClient {
     this.#activeTurnId = turnId;
   }
 
-  events(): AsyncIterable<CanonicalEvent> {
+  events(): AsyncIterable<AdapterOutput> {
     return this.#queue;
+  }
+  bufferedEvents(): AdapterOutput[] {
+    return this.#queue.drain();
+  }
+
+  /** Accept only a provider reply to a pending request in this invocation. */
+  async respondNative(response: NativeInteractionResponse): Promise<void> {
+    if (!this.#native || this.#closed || this.#exited || this.#terminal)
+      throw protocolError("INTERACTION_NOT_ACTIVE");
+    const entry = [...this.#interactions.entries()].find(
+      ([, value]) => value.rpcId === response.requestId
+    );
+    if (!entry) throw protocolError("INTERACTION_NOT_ACTIVE");
+    const [interactionId, pending] = entry;
+    if (pending.responding || pending.expiresAt <= Date.now())
+      throw protocolError("INTERACTION_NOT_ACTIVE");
+    const payload = response.payload;
+    if (
+      payload.id !== pending.rpcId ||
+      payload.jsonrpc !== "2.0" ||
+      Object.hasOwn(payload, "result") === Object.hasOwn(payload, "error") ||
+      Object.keys(payload).some((key) => !["jsonrpc", "id", "result", "error"].includes(key))
+    )
+      throw protocolError("NATIVE_RESPONSE_INVALID");
+    const result = recordValue(payload.result);
+    const error = recordValue(payload.error);
+    if (error) {
+      if (!Number.isSafeInteger(error.code) || typeof error.message !== "string")
+        throw protocolError("NATIVE_RESPONSE_INVALID");
+    } else if (!result) throw protocolError("NATIVE_RESPONSE_INVALID");
+    else if (interactionKind(pending.method) === "approval") {
+      const legacy =
+        pending.method === "execCommandApproval" || pending.method === "applyPatchApproval";
+      const decisions = legacy ? ["approved", "abort"] : ["accept", "decline", "cancel"];
+      if (
+        Object.keys(result).some((key) => key !== "decision") ||
+        !(
+          decisions.includes(String(result.decision)) ||
+          (legacy && recordValue(recordValue(result.decision)?.denied))
+        )
+      )
+        throw protocolError("NATIVE_RESPONSE_INVALID");
+    } else if (pending.method === "item/tool/requestUserInput") {
+      questionAnswers(pending.params, result);
+    } else if (pending.method === "mcpServer/elicitation/request") {
+      if (!["accept", "decline", "cancel"].includes(String(result.action)))
+        throw protocolError("NATIVE_RESPONSE_INVALID");
+    } else throw protocolError("NATIVE_METHOD_UNSUPPORTED");
+    pending.responding = true;
+    await new Promise<void>((resolve, reject) =>
+      this.#write(
+        payload,
+        (error) => {
+          this.#invalidateInteractions("response_delivery_failed");
+          this.#queue.fail(error);
+          signalProcessTree(this.#child, "SIGTERM");
+          reject(error);
+        },
+        () => {
+          if (!this.#interactions.has(interactionId)) {
+            reject(protocolError("INTERACTION_NOT_ACTIVE"));
+            return;
+          }
+          clearTimeout(pending.timer);
+          this.#interactions.delete(interactionId);
+          this.#interactionState(interactionId, pending.rpcId, "resolved");
+          resolve();
+        }
+      )
+    );
+  }
+
+  #interactionState(
+    interactionId: string,
+    requestId: RpcId,
+    status: "resolved" | "expired" | "invalidated",
+    reasonCode?: string
+  ): void {
+    this.#queue.push(
+      this.#native
+        ? { kind: "control", control: { type: "interaction", requestId, status } }
+        : {
+            protocolVersion: 2,
+            type: "interaction.resolved",
+            payload: {
+              interactionId,
+              executionInstanceId: this.invocation.invocationId,
+              status,
+              ...(reasonCode ? { reasonCode } : {}),
+              ...(reasonCode === "full_access_policy" ? { outcome: "accepted" } : {})
+            }
+          }
+    );
   }
 
   /** Resume one provider reverse request after the durable Worker response reaches this invocation. */
@@ -1326,6 +1483,7 @@ class CodexAppServerClient {
     this.#signal?.removeEventListener("abort", this.#abortListener);
     if (this.#abortTimer) clearTimeout(this.#abortTimer);
     this.#reader.close();
+    this.#removeLineGuard();
     this.#rejectPending(new Error("codex app-server closed"));
     this.#invalidateInteractions("execution_lost");
     if (this.#exited) return;
@@ -1350,6 +1508,13 @@ class CodexAppServerClient {
 
   /** Dispatch one stdout frame. Ordering of the checks matters: a response may also lack a method. */
   #handleLine(line: string): void {
+    if (Buffer.byteLength(line) > 256 * 1024) {
+      const error = new Error("STREAM_EVENT_TOO_LARGE");
+      this.#rejectPending(error);
+      this.#queue.fail(error);
+      signalProcessTree(this.#child, "SIGTERM");
+      return;
+    }
     const message = parseRecord(line);
     if (!message) return;
     const id = rpcId(message.id);
@@ -1360,14 +1525,48 @@ class CodexAppServerClient {
     const method = stringValue(message.method);
     if (!method) return;
     if (id !== undefined) {
-      this.#handleServerRequest(id, method, recordValue(message.params) ?? {});
+      this.#handleServerRequest(id, method, recordValue(message.params) ?? {}, message);
       return;
     }
     const params = recordValue(message.params) ?? {};
+    if (
+      this.#native &&
+      ((!this.#activeThreadId && method !== "thread/started") ||
+        (this.#activeThreadId &&
+          !params.threadId &&
+          !recordValue(params.thread)?.id &&
+          !notificationTurnId(params)))
+    )
+      return;
     if (!this.#acceptNotification(params)) return;
     this.#reportNotificationActivity(method, params);
     this.#watchFinalization(method, params);
-    for (const event of this.#normalizer.normalize({ method, params })) {
+    if (this.#native) {
+      this.#queue.push({ kind: "native", messageKind: "notification", payload: message });
+      if (method === "turn/completed") {
+        this.#invalidateInteractions("run_terminal");
+        this.#terminal = true;
+        this.#clearFinalizationTimer();
+        if (this.#finalizationGraceTimer) clearTimeout(this.#finalizationGraceTimer);
+        const status = recordValue(params.turn)?.status;
+        this.#queue.push({
+          kind: "control",
+          control: {
+            type: "state",
+            state:
+              status === "completed"
+                ? "completed"
+                : status === "interrupted"
+                  ? "cancelled"
+                  : "failed"
+          }
+        });
+        this.#queue.close();
+      }
+      return;
+    }
+    this.context?.reportConversion?.();
+    for (const event of this.#normalizer!.normalize({ method, params })) {
       if (isTerminalEvent(event)) {
         this.#invalidateInteractions("run_terminal");
         this.#terminal = true;
@@ -1387,6 +1586,11 @@ class CodexAppServerClient {
     // A late response arriving after timeout has no pending entry; drop it so it cannot pollute the next request.
     const pending = this.#pending.get(id);
     if (!pending) return;
+    if (
+      this.#native &&
+      ["thread/start", "thread/resume", "turn/start", "turn/interrupt"].includes(pending.method)
+    )
+      this.#queue.push({ kind: "native", messageKind: "response", payload: message });
     this.#pending.delete(id);
     clearTimeout(pending.timer);
     this.context?.reportActivity?.({ kind: "transport_response", method: "rpc_response" });
@@ -1405,7 +1609,7 @@ class CodexAppServerClient {
     pending.resolve(message.result);
   }
 
-  #handleServerRequest(id: RpcId, method: string, params: JsonRecord): void {
+  #handleServerRequest(id: RpcId, method: string, params: JsonRecord, message: JsonRecord): void {
     this.#clearFinalizationTimer();
     const kind = interactionKind(method);
     if (!kind) {
@@ -1420,6 +1624,20 @@ class CodexAppServerClient {
       });
       return;
     }
+    if (
+      this.#native &&
+      (!this.#acceptNotification(params) ||
+        this.#nativeRequestIds.has(id) ||
+        this.#nativeRequestIds.size >= 4096)
+    ) {
+      this.#write({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32600, message: "request does not belong to a new active interaction" }
+      });
+      return;
+    }
+    if (this.#native) this.#nativeRequestIds.add(id);
 
     if (method === "item/permissions/requestApproval") {
       this.#rejectServerRequest(id, method);
@@ -1447,16 +1665,7 @@ class CodexAppServerClient {
     const expiresAt = Date.now() + 600_000;
     const timer = setTimeout(() => {
       this.#interactions.delete(interactionId);
-      this.#queue.push({
-        protocolVersion: 2,
-        type: "interaction.resolved",
-        payload: {
-          interactionId,
-          executionInstanceId: this.invocation.invocationId,
-          status: "expired",
-          reasonCode: "approval_timeout"
-        }
-      });
+      this.#interactionState(interactionId, id, "expired", "approval_timeout");
       this.#rejectServerRequest(id, method);
       this.#queue.fail(new Error("INTERACTION_EXPIRED"));
     }, 600_000);
@@ -1469,42 +1678,50 @@ class CodexAppServerClient {
       timer,
       expiresAt
     });
-    const display = displaySafeInteractionRequest(method, params);
-    this.#queue.push({
-      protocolVersion: 2,
-      type: "interaction.requested",
-      payload: {
-        interactionId,
-        kind,
-        executionInstanceId: this.invocation.invocationId,
-        expiresAt: new Date(expiresAt).toISOString(),
-        request:
-          kind === "approval"
-            ? {
-                schema: "octo.approval-request/v1",
-                policy: {
-                  mode: this.invocation.approvalMode,
-                  hash: contextHash(this.invocation.context)
-                },
-                operation: {
-                  kind:
-                    method.includes("fileChange") || method === "applyPatchApproval"
-                      ? "file_change"
-                      : "command_execution",
-                  summary:
-                    typeof display.command === "string" && display.command
-                      ? Array.from(display.command).slice(0, 500).join("")
-                      : "Approve provider operation",
-                  ...(typeof params.itemId === "string" ? { toolCallId: params.itemId } : {})
-                },
-                requestedPermissions: [],
-                allowedOutcomes: ["accepted", "declined", "cancelled"],
-                grantScope: "request",
-                providerDetails: display
-              }
-            : display
-      }
-    });
+    if (this.#native) {
+      this.#queue.push({ kind: "native", messageKind: "request", payload: message });
+      this.#queue.push({
+        kind: "control",
+        control: { type: "interaction", requestId: id, status: "pending", expiresAt }
+      });
+    } else {
+      const display = displaySafeInteractionRequest(method, params);
+      this.#queue.push({
+        protocolVersion: 2,
+        type: "interaction.requested",
+        payload: {
+          interactionId,
+          kind,
+          executionInstanceId: this.invocation.invocationId,
+          expiresAt: new Date(expiresAt).toISOString(),
+          request:
+            kind === "approval"
+              ? {
+                  schema: "octo.approval-request/v1",
+                  policy: {
+                    mode: this.invocation.approvalMode,
+                    hash: contextHash(this.invocation.context)
+                  },
+                  operation: {
+                    kind:
+                      method.includes("fileChange") || method === "applyPatchApproval"
+                        ? "file_change"
+                        : "command_execution",
+                    summary:
+                      typeof display.command === "string" && display.command
+                        ? Array.from(display.command).slice(0, 500).join("")
+                        : "Approve provider operation",
+                    ...(typeof params.itemId === "string" ? { toolCallId: params.itemId } : {})
+                  },
+                  requestedPermissions: [],
+                  allowedOutcomes: ["accepted", "declined", "cancelled"],
+                  grantScope: "request",
+                  providerDetails: display
+                }
+              : display
+        }
+      });
+    }
     if (!this.#interactive && kind === "approval") {
       const automatic = automaticServerRequestResult(method);
       if (automatic === undefined) {
@@ -1525,17 +1742,7 @@ class CodexAppServerClient {
           if (!pending) return;
           clearTimeout(pending.timer);
           this.#interactions.delete(interactionId);
-          this.#queue.push({
-            protocolVersion: 2,
-            type: "interaction.resolved",
-            payload: {
-              interactionId,
-              executionInstanceId: this.invocation.invocationId,
-              status: "resolved",
-              outcome: "accepted",
-              reasonCode: "full_access_policy"
-            }
-          });
+          this.#interactionState(interactionId, id, "resolved", "full_access_policy");
         }
       );
     }
@@ -1638,7 +1845,9 @@ class CodexAppServerClient {
       this.context?.reportActivity?.({
         kind: "turn_progress",
         method: "item_lifecycle",
-        ...(toolDescriptor(item) ? { toolCallId: id } : {})
+        ...(toolDescriptor(item)
+          ? { toolCallId: id, toolState: method === "item/started" ? "started" : "completed" }
+          : {})
       });
     }
   }
@@ -1664,16 +1873,7 @@ class CodexAppServerClient {
   #invalidateInteractions(reasonCode: string): void {
     for (const [interactionId, pending] of this.#interactions) {
       clearTimeout(pending.timer);
-      this.#queue.push({
-        protocolVersion: 2,
-        type: "interaction.resolved",
-        payload: {
-          interactionId,
-          executionInstanceId: this.invocation.invocationId,
-          status: "invalidated",
-          reasonCode
-        }
-      });
+      this.#interactionState(interactionId, pending.rpcId, "invalidated", reasonCode);
     }
     this.#interactions.clear();
   }
@@ -1684,58 +1884,6 @@ class CodexAppServerClient {
       pending.reject(error);
     }
     this.#pending.clear();
-  }
-}
-
-/**
- * Bridge EventEmitter-style process callbacks into an AsyncIterable.
- *
- * values buffers events when production outpaces consumption; waiters holds
- * next() calls when consumption outpaces production. close is normal completion,
- * fail makes waiters throw. After closing, push is ignored, cleanly guaranteeing
- * no events are emitted past the terminal.
- */
-class AsyncEventQueue<T> implements AsyncIterable<T> {
-  readonly #values: T[] = [];
-  readonly #waiters: Array<{
-    resolve: (result: IteratorResult<T>) => void;
-    reject: (reason: Error) => void;
-  }> = [];
-  #closed = false;
-  #error?: Error;
-
-  push(value: T): void {
-    if (this.#closed) return;
-    const waiter = this.#waiters.shift();
-    if (waiter) waiter.resolve({ value, done: false });
-    else this.#values.push(value);
-  }
-
-  close(): void {
-    if (this.#closed) return;
-    this.#closed = true;
-    for (const waiter of this.#waiters.splice(0)) {
-      waiter.resolve({ value: undefined, done: true });
-    }
-  }
-
-  fail(error: Error): void {
-    if (this.#closed) return;
-    this.#error = error;
-    this.#closed = true;
-    for (const waiter of this.#waiters.splice(0)) waiter.reject(error);
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<T> {
-    return {
-      next: (): Promise<IteratorResult<T>> => {
-        const value = this.#values.shift();
-        if (value !== undefined) return Promise.resolve({ value, done: false });
-        if (this.#error) return Promise.reject(this.#error);
-        if (this.#closed) return Promise.resolve({ value: undefined, done: true });
-        return new Promise((resolve, reject) => this.#waiters.push({ resolve, reject }));
-      }
-    };
   }
 }
 

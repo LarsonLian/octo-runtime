@@ -266,7 +266,9 @@ export class ImRuntime {
       failed = false;
     try {
       assertInvokeRequest(request);
-      for await (const event of this.dependencies.host.invoke(this.config.adapterType, request)) {
+      for await (const event of this.dependencies.host.invoke(this.config.adapterType, request, {
+        protocolMode: "canonical"
+      })) {
         if (event.type === "session.update")
           session.providerSession = event.payload.providerSession;
         if (

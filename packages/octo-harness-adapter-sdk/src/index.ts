@@ -6,13 +6,18 @@ import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import type { AdapterInvocationContext } from "./activity.js";
 import { invocationEnvironment } from "./environment.js";
+import { watchLineLimit } from "./line-limit.js";
 import { mapReasoningEffort, reasoningLevelMap, type ReasoningLevelMap } from "./reasoning.js";
 export type { AdapterInvocationContext, ProviderActivity } from "./activity.js";
 export { invocationEnvironment, invocationEnvs } from "./environment.js";
 
 import {
   isTerminal,
+  assertProtocolSupport,
   type CanonicalEvent,
+  type AdapterProtocolSupport,
+  type HostControl,
+  type NativeHostFrame,
   type InvokeRequest
 } from "@mininglamp-oss/octo-harness-protocol";
 
@@ -32,6 +37,8 @@ export type {
 export { acpToolTerminalStatus, normalizeAcpToolUpdate } from "./acp-tool.js";
 export { AcpTurnNormalizer } from "./acp-turn.js";
 export { AcpApprovalBridge } from "./approval.js";
+export { DriverQueue, NativeInteractionBridge } from "./native.js";
+export { watchLineLimit } from "./line-limit.js";
 export { sanitizePublicValue } from "./public-display.js";
 export {
   DEFAULT_REASONING_LEVEL_MAPS,
@@ -43,6 +50,7 @@ export {
 } from "./reasoning.js";
 
 export interface AdapterMetadata {
+  protocolSupport?: AdapterProtocolSupport;
   type: string;
   capabilities: string[];
   agentSources: ("preset" | "provisioned")[];
@@ -58,12 +66,18 @@ export interface ProbeResult {
   reason?: string;
 }
 
-export interface Adapter {
+export interface Adapter<TOutput extends AdapterOutput = AdapterOutput> {
   metadata: AdapterMetadata;
   probe?: () => Promise<ProbeResult>;
   /** Execute one provider turn, optionally reporting watchdog progress. */
-  invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncIterable<CanonicalEvent>;
+  invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncIterable<TOutput>;
 }
+
+/** Provider objects and lifetime signals before the Host assigns stream identity. */
+export type DriverFrame =
+  | Pick<NativeHostFrame, "kind" | "messageKind" | "payload">
+  | { kind: "control"; control: HostControl };
+export type AdapterOutput = CanonicalEvent | DriverFrame;
 
 /** The fully materialized subprocess contract produced immediately before spawn. */
 export interface CommandSpec {
@@ -111,12 +125,27 @@ export function defineAdapter<TAdapter extends Adapter>(
     throw new TypeError("adapter requires metadata.type and invoke(req)");
   }
   const invoke = adapter.invoke.bind(adapter);
+  const protocolSupport: AdapterProtocolSupport = adapter.metadata.protocolSupport ?? {
+    protocol: `${adapter.metadata.type}.canonical`,
+    modes: ["canonical"],
+    nativeMethods: []
+  };
   return Object.freeze({
     ...adapter,
-    async *invoke(request: InvokeRequest, context?: AdapterInvocationContext) {
+    metadata: {
+      ...adapter.metadata,
+      protocolSupport
+    },
+    async *invoke(
+      request: InvokeRequest,
+      context?: AdapterInvocationContext
+    ): AsyncGenerator<AdapterOutput> {
+      assertProtocolSupport(protocolSupport, {
+        protocolMode: context?.protocolMode ?? "canonical"
+      });
       const requested = request.agentConfig.effort;
       const native = mapReasoningEffort(adapter.metadata.type, requested, levels);
-      if (requested !== undefined) {
+      if (requested !== undefined && context?.protocolMode !== "native") {
         if (native === undefined || native !== requested)
           yield {
             protocolVersion: 2 as const,
@@ -185,11 +214,18 @@ export async function* spawnJsonLines<TNative>(
   let stderr = "";
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk: string | Buffer) => {
-    stderr += chunk.toString();
+    stderr = (stderr + chunk.toString()).slice(-64 * 1024);
   });
   // Use the completion callback rather than observing before end(): the latter
   // would incorrectly classify a synchronous write failure as dispatched.
   let controlError: Error | undefined;
+  const reader = createInterface({ input: child.stdout });
+  const removeLineGuard = watchLineLimit(child.stdout, 256 * 1024, (error) => {
+    controlError ??= error;
+    reader.close();
+    child.stdout.destroy();
+    abort();
+  });
   const handlers = new Set<Promise<void>>();
   child.stdin.on("error", (error) => {
     controlError ??= error;
@@ -208,7 +244,7 @@ export async function* spawnJsonLines<TNative>(
   try {
     // One provider-native event per line; whether a parse failure is ignored is
     // left to the specific adapter's parseLine.
-    for await (const line of createInterface({ input: child.stdout })) {
+    for await (const line of reader) {
       const event = parseLine(line);
       if (event !== null) {
         if (options.controlHandler) {
@@ -234,6 +270,8 @@ export async function* spawnJsonLines<TNative>(
       );
     }
   } finally {
+    reader.close();
+    removeLineGuard();
     signal?.removeEventListener("abort", abort);
     if (!exited && child.exitCode === null && child.signalCode === null) {
       abort();
@@ -291,7 +329,7 @@ export function parseJsonLine(line: string): Record<string, unknown> | null {
  */
 export function createJsonCliAdapter<TNative = Record<string, unknown>>(
   options: JsonCliAdapterOptions<TNative>
-): Readonly<Adapter> {
+): Readonly<Adapter<CanonicalEvent>> {
   const { metadata, buildCommand, normalize, probe, onSuccess } = options;
   return defineAdapter({
     metadata,

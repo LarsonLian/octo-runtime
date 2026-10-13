@@ -6,13 +6,13 @@ Octo Harness 的适配器宿主（Adapter Host）：统一管理各 provider 适
 
 不同的 Agent provider（Codex、Claude Code、CodeBuddy、OpenCode 等）在事件格式、生命周期语义和取消方式上存在显著差异：部分只输出增量文本而不标记消息的开始与结束；部分在异常退出时不产生任何收尾事件；取消机制也各不相同。若由领域核心（`octo-harness-core`）直接对接这些差异，核心逻辑会被大量 provider 分支污染，且每接入一个新 provider 都需改动核心。
 
-适配器宿主将这些差异收敛在单一边界上。它对上层仅暴露三个操作——列举（`list`）、调用（`invoke`）、取消（`cancel`）——并保证：无论底层适配器行为是否规范，上层始终得到格式统一、生命周期完整、且必然以单一终态结束的事件流。
+适配器宿主将这些差异收敛在单一边界上，提供模式声明、接纳、调用、取消与对应模式的交互响应。默认 native 交付真实原生载荷及独立 Host 控制帧；显式 canonical 提供统一事件视图。两个模式共用执行与资源清理，并以唯一 Host 控制终态收尾。
 
 宿主本身不涉及排队、调度、持久化或业务建模，这些职责属于 daemon 与 core。
 
 ## 工作原理
 
-Core 传入统一的 `InvokeRequest`，宿主据此选择适配器执行，并对适配器产出的事件进行规整后再交回 Core。其核心工作体现为三点：补全消息生命周期、拦截非法事件、兜底终态事件。
+Core 传入统一的 `InvokeRequest` 并显式选择 canonical。以下流程说明 canonical 消费；native 分支保留 Provider 消息，不执行消息补全或 Canonical 转换。
 
 ```mermaid
 sequenceDiagram
@@ -21,7 +21,7 @@ sequenceDiagram
     participant Adapter
     participant CLI as Provider CLI
 
-    Core->>Host: invoke("codex", InvokeRequest)
+    Core->>Host: invoke("codex", InvokeRequest, canonical)
     Host->>Host: 校验请求并创建 AbortController
     Host->>Adapter: invoke(request, signal)
     Adapter->>CLI: 启动子进程 / 发起请求
@@ -35,13 +35,13 @@ sequenceDiagram
 
     CLI-->>Adapter: 结束 / 异常退出 / 被取消
     Host->>Host: 关闭仍处于打开状态的消息<br/>并归一为单一 run 终态
-    Host-->>Core: run.finished / run.error / run.stopped
+    Host-->>Core: run.completed / run.failed / run.cancelled
 ```
 
 规整过程遵循三条约束：
 
 1. **消息生命周期完整**：即使适配器仅发送 `message.delta`，宿主也会补全起始的 `message.create` 与结束的 `message.update`，并确保同一条消息始终使用同一 `messageId`，使上层无需自行推断消息归属。
-2. **终态唯一**：正常结束归一为 `run.finished`，错误归一为 `run.error`，取消或流中断归一为 `run.stopped`。适配器崩溃、缺失收尾、或在终态后继续发送事件的情况，均由宿主兜底或纠正为单一终态。
+2. **终态唯一**：正常结束为 `run.completed`，错误为 `run.failed`，取消为 `run.cancelled`；缺失 Provider 终态报告失败。完整帧流另外携带唯一 Host 控制终态，连接结束本身不能作为成功依据。
 3. **取消经由 AbortSignal**：`cancel(invocationId)` 触发对应调用的 `AbortController`，由适配器负责将其传导至子进程或协议层；上层无需了解 provider 的进程模型。
 
 适配器宿主作为 daemon 启动的独立子进程运行：宿主进程内的 `AdapterHostRpcServer` 依据 manifest 加载适配器并对外提供服务，daemon 通过 `spawnAdapterHost` 建立 `AdapterHostRpcClient`，两者以 stdio 上的 NDJSON JSON-RPC 2.0 通信。这条子进程边界是宿主的运行方式，Core 面向的始终是同一组 `invoke/list/cancel` 契约。
@@ -61,21 +61,34 @@ const host = await spawnAdapterHost({
 
 const request: InvokeRequest = {
   invocationId: "invoke-1",
-  sessionId: "session-1",
+  protocolVersion: 2,
+  agentSessionId: "session-1",
+  sessionGeneration: 0,
   runId: "run-1",
   prompt: "Inspect this repository",
   workdir: process.cwd(),
-  appendInstructions: "",
-  context: {},
+  modelInput: "Inspect this repository",
+  controlInstructions: "",
+  context: { schema: "octo.context-envelope/v3", items: [] },
+  approvalMode: "full_access",
+  agentSource: "provisioned",
   agentConfig: {}
 };
 
-for await (const event of host.client.invoke("codex", request)) {
+for await (const event of host.client.invoke("codex", request, { protocolMode: "canonical" })) {
   console.log(event.type, event.payload);
 }
 
 await host.close();
 ```
+
+省略 `protocolMode` 时，`invoke` 返回 native `HostFrame`，不运行 canonical 转换器。
+`invokeFrames` 在两种模式下都返回带身份与连续序号的完整帧；显式 canonical 的 `invoke`
+是 `canonicalEvents` 类型化视图。模式、协议与能力在 ACK 前校验，`prepare` 不启动 Provider。
+当前执行的原生反向请求通过 `respondNative(invocationId, { requestId, payload })` 回复，
+`payload` 为完整 Provider 响应。终态、过期、重复响应和扩大授权范围的响应均拒绝。
+本地 native 支持 Codex app-server 和 Claude stream-json；其他 Adapter 声明 canonical-only。
+可运行样例见 `examples/managed-turn.mjs`，支持 native / canonical 与 SIGINT 取消。
 
 `spawnAdapterHost` 以首次 `list` 成功作为就绪握手：manifest 错误或可执行文件缺失会在此阶段即时暴露，而非延迟到首次调用。
 

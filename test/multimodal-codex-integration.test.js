@@ -79,7 +79,7 @@ test("frozen artifacts cross runtime mapping and Host into a real Codex three-im
     const host = new AdapterHost();
     host.register(createCodexAdapter());
     const events = [];
-    for await (const event of host.invoke(adapterType, request)) events.push(event);
+    for await (const event of host.invoke(adapterType, request, { protocolMode: "canonical" })) events.push(event);
     assert.equal(events.at(-1).type, "run.completed", JSON.stringify(events.at(-1)));
     const answer = events.filter(event => event.type === "message.delta" && event.payload.channel === "final").map(event => event.payload.text ?? "").join("");
     const parsed = JSON.parse(answer.slice(answer.indexOf("["), answer.lastIndexOf("]") + 1));

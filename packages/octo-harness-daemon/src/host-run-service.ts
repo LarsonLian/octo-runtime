@@ -1,29 +1,33 @@
-import { randomUUID } from "node:crypto";
 import type { AdapterHostRpc } from "@mininglamp-oss/octo-harness-adapter-host";
 import {
   assertInvokeRequest,
-  type CanonicalEvent,
+  createHostInvoke,
+  assertHostFrameIdentity,
+  isHostTerminal,
+  type HostFrame,
+  type HostRunReceipt,
+  type HostInvokeOptions,
+  type NativeInteractionResponse,
   type InvokeRequest,
   type InteractionResponse
 } from "@mininglamp-oss/octo-harness-protocol";
 
 export interface SourceEvent {
   seq: number;
-  event: CanonicalEvent;
+  event: HostFrame;
   bytes: number;
   at: number;
 }
 interface Run {
+  receipt: HostRunReceipt;
   streamId: string;
   invocationId: string;
   next: number;
   bytes: number;
   updated: number;
   events: SourceEvent[];
-  terminal?: CanonicalEvent;
+  terminal?: HostFrame;
 }
-const terminal = (event: CanonicalEvent): boolean =>
-  ["run.completed", "run.failed", "run.cancelled"].includes(event.type);
 const TTL = 120_000,
   MAX_RUN_BYTES = 4 << 20,
   MAX_BYTES = 64 << 20,
@@ -31,6 +35,9 @@ const TTL = 120_000,
 
 /** One process-local event authority around the existing adapter-host IPC client. */
 export class HostRunService implements AdapterHostRpc {
+  readonly invoke = createHostInvoke((type, request, options) =>
+    this.invokeFrames(type, request, options)
+  );
   #runs = new Map<string, Run>();
   #bytes = 0;
   #subscribers = 0;
@@ -49,13 +56,33 @@ export class HostRunService implements AdapterHostRpc {
   respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
     return this.transport.respondInteraction(invocationId, response);
   }
-  #begin(request: InvokeRequest): Run {
+  respondNative(invocationId: string, response: NativeInteractionResponse): Promise<void> {
+    return this.transport.respondNative(invocationId, response);
+  }
+  prepare(
+    adapterType: string,
+    request: InvokeRequest,
+    options: HostInvokeOptions = {}
+  ): Promise<HostRunReceipt> {
+    return this.transport.prepare(adapterType, request, options);
+  }
+  async #begin(
+    adapterType: string,
+    request: InvokeRequest,
+    options: HostInvokeOptions
+  ): Promise<Run> {
+    assertInvokeRequest(request);
     this.#prune();
     if (this.#draining) throw new Error("DAEMON_DRAINING");
     if (this.#runs.has(request.runId)) throw new Error("RUN_ALREADY_ACCEPTED");
     if (this.#runs.size >= 128) throw new Error("RUN_CAPACITY_EXHAUSTED");
+    const receipt = await this.prepare(adapterType, request, options);
+    if (this.#runs.has(request.runId)) throw new Error("RUN_ALREADY_ACCEPTED");
+    if (this.#draining) throw new Error("DAEMON_DRAINING");
+    if (this.#runs.size >= 128) throw new Error("RUN_CAPACITY_EXHAUSTED");
     const run: Run = {
-      streamId: `host:${randomUUID()}`,
+      receipt,
+      streamId: receipt.stream_id,
       invocationId: request.invocationId,
       next: 1,
       bytes: 0,
@@ -65,29 +92,45 @@ export class HostRunService implements AdapterHostRpc {
     this.#runs.set(request.runId, run);
     return run;
   }
-  async *invoke(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
-    assertInvokeRequest(request);
-    const run = this.#begin(request);
-    yield* this.#execute(adapterType, request, run);
+  async *invokeFrames(
+    adapterType: string,
+    request: InvokeRequest,
+    options: HostInvokeOptions = {}
+  ): AsyncGenerator<HostFrame> {
+    const run = await this.#begin(adapterType, request, options);
+    yield* this.#execute(adapterType, request, run, options);
   }
   async *#execute(
     adapterType: string,
     request: InvokeRequest,
-    run: Run
-  ): AsyncGenerator<CanonicalEvent> {
+    run: Run,
+    options: HostInvokeOptions
+  ): AsyncGenerator<HostFrame> {
     try {
-      for await (const event of this.transport.invoke(adapterType, request)) {
+      for await (const event of this.transport.invokeFrames(adapterType, request, options)) {
         this.#append(run, event);
         yield event;
       }
       if (!run.terminal) throw new Error("HOST_ENDED_WITHOUT_TERMINAL");
     } catch (error) {
-      if (!run.terminal)
+      if (!run.terminal) {
         this.#append(run, {
-          protocolVersion: 2,
-          type: "run.failed",
-          payload: { code: "HOST_EXECUTION_FAILED", message: "Host execution failed" }
+          ...run.receipt,
+          seq: run.next,
+          kind: "control",
+          control: {
+            type: "error",
+            code: "HOST_EXECUTION_FAILED",
+            message: "Host execution failed"
+          }
         });
+        this.#append(run, {
+          ...run.receipt,
+          seq: run.next,
+          kind: "control",
+          control: { type: "state", state: "lost" }
+        });
+      }
       throw error;
     } finally {
       // A consumer abandoning the generator cannot leave a live provider behind.
@@ -96,25 +139,31 @@ export class HostRunService implements AdapterHostRpc {
           .cancel(request.invocationId, "Host stream consumer closed")
           .catch(() => undefined);
         this.#append(run, {
-          protocolVersion: 2,
-          type: "run.cancelled",
-          payload: { reasonCode: "consumer_closed" }
+          ...run.receipt,
+          seq: run.next,
+          kind: "control",
+          control: { type: "state", state: "cancelled" }
         });
       }
     }
   }
-  submit(adapterType: string, request: InvokeRequest): { run_id: string; stream_id: string } {
-    assertInvokeRequest(request);
-    const run = this.#begin(request);
+  async submit(
+    adapterType: string,
+    request: InvokeRequest,
+    options: HostInvokeOptions = {}
+  ): Promise<HostRunReceipt> {
+    const run = await this.#begin(adapterType, request, options);
     const task = (async (): Promise<void> => {
-      for await (const event of this.#execute(adapterType, request, run)) void event;
+      for await (const event of this.#execute(adapterType, request, run, options)) void event;
     })().catch(() => undefined);
     this.#tasks.add(task);
     void task.finally(() => this.#tasks.delete(task));
-    return { run_id: request.runId, stream_id: run.streamId };
+    return { ...run.receipt };
   }
-  #append(run: Run, event: CanonicalEvent): void {
-    if (run.terminal) return;
+  #append(run: Run, event: HostFrame): void {
+    if (run.terminal) throw new Error("HOST_FRAME_AFTER_TERMINAL");
+    assertHostFrameIdentity(event, run.receipt);
+    if (event.seq !== run.next) throw new Error("STREAM_GAP");
     // Consumers own persistence and presentation filtering; replay retains the complete event.
     const safe = structuredClone(event),
       bytes = Buffer.byteLength(JSON.stringify(safe));
@@ -124,7 +173,7 @@ export class HostRunService implements AdapterHostRpc {
     run.events.push({ seq: run.next++, event: safe, bytes, at: now });
     run.bytes += bytes;
     this.#bytes += bytes;
-    if (terminal(safe)) run.terminal = safe;
+    if (isHostTerminal(safe)) run.terminal = safe;
     while (run.bytes > MAX_RUN_BYTES || run.events.length > MAX_EVENTS) this.#drop(run);
     while (this.#bytes > MAX_BYTES) {
       const oldest = [...this.#runs.values()]
@@ -158,17 +207,14 @@ export class HostRunService implements AdapterHostRpc {
     if (!run) throw new Error("RUN_NOT_AVAILABLE");
     return run;
   }
-  get(runId: string): {
-    run_id: string;
-    stream_id: string;
+  get(runId: string): HostRunReceipt & {
     oldest_seq: number;
     latest_seq: number;
-    terminal?: CanonicalEvent;
+    terminal?: HostFrame;
   } {
     const run = this.#get(runId);
     return {
-      run_id: runId,
-      stream_id: run.streamId,
+      ...run.receipt,
       oldest_seq: run.events[0]?.seq ?? run.next,
       latest_seq: run.next - 1,
       ...(run.terminal ? { terminal: structuredClone(run.terminal) } : {})
@@ -207,6 +253,12 @@ export class HostRunService implements AdapterHostRpc {
     const run = this.#get(runId);
     if (run.terminal) throw new Error("INTERACTION_EXPIRED");
     return this.respondInteraction(run.invocationId, response);
+  }
+  respondNativeRun(runId: string, response: NativeInteractionResponse): Promise<void> {
+    const run = this.#get(runId);
+    if (run.terminal || run.receipt.protocol_mode !== "native")
+      throw new Error("INTERACTION_NOT_ACTIVE");
+    return this.respondNative(run.invocationId, response);
   }
   acquireSubscription(): () => void {
     if (this.#subscribers >= 16) throw new Error("STREAM_SUBSCRIBER_LIMIT");

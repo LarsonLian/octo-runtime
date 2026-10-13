@@ -20,12 +20,12 @@ test("streaming message snapshots keep one activity until an explicit terminal",
 
 test("Host closes a still-streaming snapshot on root completion", async () => {
   const host = new AdapterHost();
-  host.register({ metadata: { type: "snapshot", capabilities: [], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke() {
+  host.register({ metadata: { protocolSupport: { protocol: ("snapshot") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "snapshot", capabilities: [], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke() {
     yield { protocolVersion: 2, type: "message.update", payload: { ...metadata, status: "streaming", text: "public snapshot" } };
     yield { protocolVersion: 2, type: "run.completed", payload: {} };
   } });
   const events = [];
-  for await (const event of host.invoke("snapshot", { protocolVersion: 2, invocationId: "i", agentSessionId: "s", runId: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} })) events.push(event);
+  for await (const event of host.invoke("snapshot", { protocolVersion: 2, invocationId: "i", agentSessionId: "s", runId: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} }, { protocolMode: "canonical" })) events.push(event);
   assert.deepEqual(events.filter(e => e.type === "message.update").map(e => e.payload.status), ["streaming", "completed"]);
   assert.equal(events.filter(e => e.type === "activity.started" && e.payload.kind === "thinking").length, 1);
   assert.equal(events.at(-1).type, "run.completed");

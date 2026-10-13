@@ -87,6 +87,24 @@
     ],
     "HostControl": [
       {
+        "type": "evidence",
+        "name": "session",
+        "payload": { "providerSession": { "sessionId": "native-session", "resumable": true } }
+      },
+      {
+        "type": "evidence",
+        "name": "context.applied",
+        "payload": {
+          "schema": "octo.context-application/v1",
+          "compiler_version": "octo.context-compiler/v4",
+          "catalog_version": "octo.context-catalog/v3",
+          "context_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "compiled_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "run_id": "run-1", "lease_id": "lease-1", "fencing_token": 1,
+          "adapter_type": "codex", "provider_session_id": "thread-native", "provider_ack": "turn/start"
+        }
+      },
+      {
         "type": "state",
         "state": "running"
       },

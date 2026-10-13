@@ -1,5 +1,8 @@
 import type {
-  CanonicalEvent,
+  HostInvoke,
+  HostFrame,
+  HostInvokeOptions,
+  NativeInteractionResponse,
   InvokeRequest,
   InteractionResponse
 } from "@mininglamp-oss/octo-harness-protocol";
@@ -96,10 +99,16 @@ export interface EmbeddedHealth {
 }
 
 export interface EmbeddedHarness {
-  invoke(adapterType: string, request: InvokeRequest): AsyncIterable<CanonicalEvent>;
+  invoke: HostInvoke;
+  invokeFrames(
+    adapterType: string,
+    request: InvokeRequest,
+    options?: HostInvokeOptions
+  ): AsyncGenerator<HostFrame>;
   listAdapters(): Promise<HostedAdapterMetadata[]>;
   cancelRun(runId: string): Promise<{ cancelled: boolean }>;
   respondRun(runId: string, response: InteractionResponse): Promise<void>;
+  respondNativeRun(runId: string, response: NativeInteractionResponse): Promise<void>;
   subscribeRun(input: {
     runId: string;
     streamId?: string;

@@ -71,6 +71,14 @@ const envelope = {
   }
 };
 
+test("remote envelopes reject native and invalid mode before mapping execution inputs", () => {
+  assert.doesNotThrow(() => mapExecutionEnvelope({ ...envelope, agent_run_request: { ...envelope.agent_run_request, protocol_mode: "canonical" } }));
+  for (const protocol_mode of ["native", null, "", "unknown", 1]) {
+    assert.throws(() => mapExecutionEnvelope({ ...envelope, agent_run_request: { ...envelope.agent_run_request, protocol_mode } }),
+      new RegExp(protocol_mode === "native" ? "REMOTE_NATIVE_UNSUPPORTED" : "PROTOCOL_MODE_INVALID"));
+  }
+});
+
 test("reconnect delay keeps one fast attempt before capped full-jitter backoff", () => {
   assert.equal(reconnectDelayMs(1, 20_000, 60_000, () => 0.5), 1_000);
   assert.equal(reconnectDelayMs(1, 20_000, 60_000, () => 0.5, 750), 750);

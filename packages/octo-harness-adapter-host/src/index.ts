@@ -1,6 +1,24 @@
-import type { AdapterInvocationContext } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { createHash, randomUUID } from "node:crypto";
+import type {
+  AdapterInvocationContext,
+  AdapterOutput
+} from "@mininglamp-oss/octo-harness-adapter-sdk";
 import {
   adapterApprovalModes,
+  createHostInvoke,
+  assertProtocolSupport,
+  assertAdapterProtocolSupport,
+  assertHostFrame,
+  assertHostFrameIdentity,
+  assertNativeInteractionResponse,
+  resolveHostInvokeOptions,
+  protocolError,
+  type AdapterProtocolSupport,
+  type HostInvokeOptions,
+  type HostRunReceipt,
+  type HostFrame,
+  type HostControl,
+  type NativeInteractionResponse,
   assertCanonicalEvent,
   assertInteractionResponse,
   assertInvokeRequest,
@@ -26,6 +44,7 @@ import {
 
 /** Provider-neutral metadata the Host uses for registration and capability discovery. */
 export interface HostedAdapterMetadata {
+  protocolSupport?: AdapterProtocolSupport;
   type: string;
   capabilities: string[];
   agentSources: ("preset" | "provisioned")[];
@@ -47,9 +66,10 @@ export interface HostedAdapter {
   metadata: HostedAdapterMetadata;
   probe?: () => unknown;
   /** Execute a turn and report progress for host deadline enforcement. */
-  invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncIterable<CanonicalEvent>;
+  invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncIterable<AdapterOutput>;
   /** Resume a provider request that paused this exact active invocation. */
   respondInteraction?(invocationId: string, response: InteractionResponse): Promise<void>;
+  respondNative?(invocationId: string, response: NativeInteractionResponse): Promise<void>;
 }
 
 interface MessageState {
@@ -67,12 +87,27 @@ interface MessageState {
  * a single terminal, and turns cancellation into an AbortSignal.
  */
 export class AdapterHost {
+  readonly invoke = createHostInvoke((type, request, options) =>
+    this.invokeFrames(type, request, options)
+  );
   readonly #adapters = new Map<string, HostedAdapter>();
   readonly #active = new Map<string, AbortController>();
   readonly #activeAdapters = new Map<string, HostedAdapter>();
   readonly #acceptedTerminals = new Set<string>();
+  readonly #runs = new Map<
+    string,
+    {
+      receipt: HostRunReceipt;
+      fingerprint: string;
+      request?: Omit<InvokeRequest, "signal">;
+      started: boolean;
+      at: number;
+    }
+  >();
+  readonly #modes = new Map<string, "native" | "canonical">();
   /** Register an adapter by `metadata.type`; the same type cannot be overwritten twice. */
   register(adapter: HostedAdapter): void {
+    assertAdapterProtocolSupport(adapter.metadata.protocolSupport);
     if (this.#adapters.has(adapter.metadata.type))
       throw new Error(`duplicate adapter: ${adapter.metadata.type}`);
     this.#adapters.set(adapter.metadata.type, adapter);
@@ -82,6 +117,7 @@ export class AdapterHost {
   list(): HostedAdapterMetadata[] {
     return [...this.#adapters.values()].map((adapter) => ({
       ...adapter.metadata,
+      protocolSupport: this.#support(adapter),
       executionFeatures: [...new Set([...adapter.metadata.executionFeatures, WATCHDOG_CAPABILITY])]
     }));
   }
@@ -117,6 +153,7 @@ export class AdapterHost {
           probe.available === true && typeof probe.command === "string" && probe.command.length > 0;
         return {
           ...adapter.metadata,
+          protocolSupport: this.#support(adapter),
           executionFeatures: [
             ...new Set([...adapter.metadata.executionFeatures, WATCHDOG_CAPABILITY])
           ],
@@ -129,10 +166,24 @@ export class AdapterHost {
     );
   }
 
-  /** Invoke an adapter and emit lifecycle-corrected canonical events upstream. */
-  async *invoke(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
+  #support(adapter: HostedAdapter): AdapterProtocolSupport {
+    const support = adapter.metadata.protocolSupport;
+    assertAdapterProtocolSupport(support);
+    return support;
+  }
+
+  /** Admission runs before RPC acknowledgement and never starts a provider. */
+  prepare(
+    adapterType: string,
+    request: InvokeRequest,
+    options: HostInvokeOptions = {}
+  ): HostRunReceipt {
+    const resolved = resolveHostInvokeOptions(options);
     assertInvokeRequest(request);
     const registered = this.#adapters.get(adapterType);
+    if (!registered) throw new Error(`unknown adapter: ${adapterType}`);
+    const support = this.#support(registered);
+    assertProtocolSupport(support, resolved);
     if (
       !registered ||
       !adapterApprovalModes(registered.metadata.executionFeatures).includes(request.approvalMode)
@@ -152,7 +203,9 @@ export class AdapterHost {
     if (
       request.approvalMode !== "full_access" &&
       (!registered?.metadata.executionFeatures.includes(executionFeatures.INTERACTION_RESPONSE) ||
-        typeof registered.respondInteraction !== "function")
+        (resolved.protocolMode === "native"
+          ? typeof registered.respondNative !== "function"
+          : typeof registered.respondInteraction !== "function"))
     ) {
       throw new Error(
         `APPROVAL_MODE_UNSUPPORTED: ${adapterType} does not implement execution-time approval responses`
@@ -160,6 +213,195 @@ export class AdapterHost {
     }
     if (!registered?.metadata.agentSources.includes(request.agentSource))
       throw new Error("AGENT_SOURCE_UNSUPPORTED: " + adapterType);
+    const { signal: _signal, ...wire } = request;
+    void _signal;
+    const fingerprint = createHash("sha256")
+      .update(stableJson([adapterType, resolved.protocolMode, support.protocol, wire]))
+      .digest("hex");
+    const existing = this.#runs.get(request.invocationId);
+    if (existing) {
+      if (existing.fingerprint !== fingerprint) throw protocolError("EXECUTION_IDENTITY_CONFLICT");
+      return { ...existing.receipt };
+    }
+    for (const [id, run] of this.#runs) {
+      if (!this.#active.has(id) && Date.now() - run.at > 120_000) this.#runs.delete(id);
+    }
+    if (this.#runs.size >= 1024) throw new Error("RUN_CAPACITY_EXHAUSTED");
+    if ([...this.#runs.values()].some((run) => run.receipt.run_id === request.runId))
+      throw protocolError("EXECUTION_IDENTITY_CONFLICT");
+    const receipt: HostRunReceipt = {
+      run_id: request.runId,
+      invocation_id: request.invocationId,
+      stream_id: `host:${randomUUID()}`,
+      agent_session_id: request.agentSessionId,
+      session_generation: request.sessionGeneration ?? 0,
+      protocol_mode: resolved.protocolMode,
+      protocol: support.protocol
+    };
+    this.#runs.set(request.invocationId, {
+      receipt,
+      fingerprint,
+      request: structuredClone(wire),
+      started: false,
+      at: Date.now()
+    });
+    return { ...receipt };
+  }
+
+  /** Public invocations default to native; canonical consumers explicitly select their view. */
+  invokeFrames(
+    adapterType: string,
+    request: InvokeRequest,
+    options: HostInvokeOptions = {}
+  ): AsyncGenerator<HostFrame> {
+    const receipt = this.prepare(adapterType, request, options);
+    const run = this.#runs.get(request.invocationId)!;
+    if (run.started)
+      throw protocolError(
+        "EXECUTION_IDENTITY_CONFLICT",
+        "Invocation already executed; subscribe to the retained stream"
+      );
+    run.started = true;
+    const frozenRequest = { ...run.request!, signal: request.signal };
+    run.request = undefined;
+    return this.#streamInvocation(adapterType, frozenRequest, receipt);
+  }
+
+  async *#streamInvocation(
+    adapterType: string,
+    request: InvokeRequest,
+    receipt: HostRunReceipt
+  ): AsyncGenerator<HostFrame> {
+    this.#modes.set(request.invocationId, receipt.protocol_mode);
+    let seq = 0;
+    let bytes = 0;
+    const frame = (output: AdapterOutput): HostFrame => {
+      const result: HostFrame =
+        "kind" in output
+          ? ({ ...receipt, ...output, seq: seq + 1 } as HostFrame)
+          : {
+              ...receipt,
+              protocol_mode: "canonical",
+              kind: "canonical",
+              event: output,
+              seq: seq + 1
+            };
+      assertHostFrame(result);
+      assertHostFrameIdentity(result, receipt);
+      const size = Buffer.byteLength(JSON.stringify(result));
+      if (size > 256 * 1024) throw new Error("STREAM_EVENT_TOO_LARGE");
+      seq++;
+      bytes += size;
+      return result;
+    };
+    let state: (HostControl & { type: "state" }) | undefined;
+    const pendingInteractions = new Set<string | number>();
+    const source =
+      receipt.protocol_mode === "canonical"
+        ? this.#invokeCanonical(adapterType, request)
+        : this.#invokeProvider(adapterType, request, "native");
+    let pending = source.next();
+    void pending.catch(() => undefined);
+    try {
+      yield frame({ kind: "control", control: { type: "state", state: "running" } });
+      while (true) {
+        const next = await pending;
+        if (next.done) break;
+        const output = next.value;
+        if (
+          "kind" in output &&
+          output.kind === "control" &&
+          output.control.type === "interaction"
+        ) {
+          if (output.control.status === "pending")
+            pendingInteractions.add(output.control.requestId);
+          else pendingInteractions.delete(output.control.requestId);
+        }
+        if (
+          "kind" in output &&
+          output.kind === "control" &&
+          output.control.type === "state" &&
+          output.control.state !== "running"
+        )
+          state = output.control;
+        else if (!("kind" in output) && isTerminal(output))
+          state = {
+            type: "state",
+            state:
+              output.type === "run.completed"
+                ? "completed"
+                : output.type === "run.cancelled"
+                  ? "cancelled"
+                  : "failed"
+          };
+        if (!(
+          "kind" in output &&
+          output.kind === "control" &&
+          output.control.type === "state" &&
+          output.control.state !== "running"
+        ))
+          yield frame(output);
+        pending = source.next();
+        void pending.catch(() => undefined);
+      }
+      if (!state) {
+        yield frame({
+          kind: "control",
+          control: {
+            type: "error",
+            code: "HOST_ENDED_WITHOUT_TERMINAL",
+            message: "Provider ended without terminal"
+          }
+        });
+        state = { type: "state", state: "failed" };
+      }
+      for (const requestId of pendingInteractions)
+        yield frame({
+          kind: "control",
+          control: { type: "interaction", requestId, status: "invalidated" }
+        });
+      pendingInteractions.clear();
+      yield frame({ kind: "control", control: state });
+    } catch (error) {
+      this.#active.get(request.invocationId)?.abort(error);
+      await source.return(undefined);
+      state = { type: "state", state: "failed" };
+      for (const requestId of pendingInteractions)
+        yield {
+          ...receipt,
+          kind: "control",
+          seq: ++seq,
+          control: { type: "interaction", requestId, status: "invalidated" }
+        };
+      yield {
+        ...receipt,
+        kind: "control",
+        seq: ++seq,
+        control: {
+          type: "error",
+          code: "HOST_FRAME_INVALID",
+          message: "Host output violated the selected stream contract"
+        }
+      };
+      yield { ...receipt, kind: "control", seq: ++seq, control: state };
+    } finally {
+      this.cancel(request.invocationId, "consumer_closed");
+      await source.return(undefined);
+      this.#modes.delete(request.invocationId);
+      this.#runs.get(request.invocationId)!.at = Date.now();
+      hostLog("protocol.stream", {
+        ...receipt,
+        frameCount: seq,
+        byteCount: bytes,
+        terminalState: state?.state
+      });
+    }
+  }
+
+  async *#invokeCanonical(
+    adapterType: string,
+    request: InvokeRequest
+  ): AsyncGenerator<CanonicalEvent> {
     const experience = new InvocationExperience();
     const provider = this.#invokeProvider(adapterType, request);
     let pending = provider.next();
@@ -171,6 +413,7 @@ export class AdapterHost {
         const next = await pending;
         if (next.done) break;
         const event = next.value;
+        if ("kind" in event) throw protocolError("EXECUTION_PROTOCOL_MISMATCH");
         if (
           event.type.startsWith("message.") &&
           event.payload.channel === "final" &&
@@ -206,15 +449,24 @@ export class AdapterHost {
 
   async *#invokeProvider(
     adapterType: string,
-    request: InvokeRequest
-  ): AsyncGenerator<CanonicalEvent> {
+    request: InvokeRequest,
+    protocolMode: "native" | "canonical" = "canonical"
+  ): AsyncGenerator<AdapterOutput> {
     const adapter = this.#adapters.get(adapterType);
     if (!adapter) throw new Error(`unknown adapter: ${adapterType}`);
     const controller = new AbortController();
+    const callerAbort = (): void => {
+      if (!this.#acceptedTerminals.has(request.invocationId))
+        controller.abort(request.signal?.reason);
+    };
+    request.signal?.addEventListener("abort", callerAbort, { once: true });
+    if (request.signal?.aborted) callerAbort();
     this.#active.set(request.invocationId, controller);
     this.#activeAdapters.set(request.invocationId, adapter);
     let terminal: CanonicalEvent | undefined;
+    let nativeTerminal: (HostControl & { type: "state" }) | undefined;
     let outcome = "stopped";
+    let conversions = 0;
     const identity = {
       ...(typeof request.runMetadata?.profile === "string"
         ? { profile: request.runMetadata.profile }
@@ -238,24 +490,31 @@ export class AdapterHost {
           data: { ...diagnostic.data, agentRevisionId: request.runMetadata?.agentRevisionId }
         })
     );
-    let iterator: AsyncIterator<CanonicalEvent> | undefined;
+    let iterator: AsyncIterator<AdapterOutput> | undefined;
     let cleanup: Promise<unknown> | undefined;
     let cleanupWait: Promise<void> | undefined;
     const closeIterator = (): Promise<unknown> =>
-      (cleanup ??= Promise.resolve()
-        .then(() => iterator?.return?.())
-        .catch(() => undefined));
+      (cleanup ??= Promise.resolve().then(() => iterator?.return?.()));
     const waitCleanup = (): Promise<void> =>
       (cleanupWait ??= boundedCleanup(closeIterator(), watchdog.limits.cancelGraceMs));
     // The timer can fire while a consumer is paused at yield.
     const onAbort = () => {
-      void closeIterator();
+      void closeIterator().catch(() => undefined);
     };
     controller.signal.addEventListener("abort", onAbort, { once: true });
     const messages = new Map<string, MessageState>();
     const anonymousMessages = new Map<string, string>();
     let messageNumber = 0;
     const context: AdapterInvocationContext = {
+      protocolMode,
+      reportConversion: () => {
+        if (protocolMode === "native")
+          throw protocolError(
+            "EXECUTION_PROTOCOL_MISMATCH",
+            "Native execution invoked a canonical converter"
+          );
+        conversions++;
+      },
       reportActivity: (activity) => watchdog.activity(activity)
     };
 
@@ -360,12 +619,32 @@ export class AdapterHost {
       while (true) {
         if (controller.signal.aborted) throw controller.signal.reason;
         const pendingNext = iterator.next();
-        const next = terminal
-          ? await withCleanupDeadline(pendingNext, watchdog.limits.cancelGraceMs, controller)
-          : await waitForNext(pendingNext, controller.signal);
+        const next =
+          terminal || nativeTerminal
+            ? await withCleanupDeadline(pendingNext, watchdog.limits.cancelGraceMs, controller)
+            : await waitForNext(pendingNext, controller.signal);
         if (controller.signal.aborted) throw controller.signal.reason;
         if (next.done) break;
         const adapterEvent = next.value;
+        if (protocolMode === "native") {
+          if (!("kind" in adapterEvent)) throw protocolError("EXECUTION_PROTOCOL_MISMATCH");
+          if (nativeTerminal) throw new Error(`${adapterType} emitted after terminal`);
+          if (adapterEvent.kind === "control" && adapterEvent.control.type === "interaction")
+            watchdog.interaction(
+              adapterEvent.control.requestId,
+              adapterEvent.control.status === "pending"
+            );
+          if (
+            adapterEvent.kind === "control" &&
+            adapterEvent.control.type === "state" &&
+            adapterEvent.control.state !== "running"
+          ) {
+            nativeTerminal = adapterEvent.control;
+            watchdog.terminal();
+            this.#acceptedTerminals.add(request.invocationId);
+          } else yield adapterEvent;
+          continue;
+        }
         assertCanonicalEvent(adapterEvent);
         const event: CanonicalEvent =
           adapterEvent.type === "run.failed"
@@ -418,11 +697,14 @@ export class AdapterHost {
           yield prepared.event;
         }
       }
-      terminal ??= {
-        protocolVersion: 2,
-        type: "run.cancelled",
-        payload: { reason: "adapter_stream_ended" }
-      };
+      await withCleanupDeadline(closeIterator(), watchdog.limits.cancelGraceMs, controller);
+      if (protocolMode === "native") {
+        if (!nativeTerminal) throw protocolError("HOST_ENDED_WITHOUT_TERMINAL");
+        outcome = nativeTerminal.state;
+        yield { kind: "control", control: nativeTerminal };
+        return;
+      }
+      if (!terminal) throw protocolError("HOST_ENDED_WITHOUT_TERMINAL");
       const messageStatus =
         terminal.type === "run.completed"
           ? "completed"
@@ -461,7 +743,28 @@ export class AdapterHost {
       }
       watchdog.dispose();
       if (!controller.signal.aborted) controller.abort(error);
-      await waitCleanup();
+      await waitCleanup().catch(() => undefined);
+      if (protocolMode === "native") {
+        if (!userCancelled)
+          yield {
+            kind: "control",
+            control: {
+              type: "error",
+              code:
+                error instanceof Error &&
+                "code" in error &&
+                error.code === "HOST_ENDED_WITHOUT_TERMINAL"
+                  ? "HOST_ENDED_WITHOUT_TERMINAL"
+                  : "HOST_EXECUTION_FAILED",
+              message: errorMessage(error)
+            }
+          };
+        yield {
+          kind: "control",
+          control: { type: "state", state: userCancelled ? "cancelled" : "failed" }
+        };
+        return;
+      }
       for (const event of closeMessages(userCancelled ? "cancelled" : "failed")) yield event;
       if (userCancelled) {
         yield {
@@ -494,9 +797,17 @@ export class AdapterHost {
       }
     } finally {
       watchdog.finish(outcome);
-      if (!terminal && !controller.signal.aborted) controller.abort("consumer closed");
-      await waitCleanup();
+      hostLog("protocol.conversion", {
+        runId: request.runId,
+        invocationId: request.invocationId,
+        protocolMode,
+        conversionCount: conversions
+      });
+      if (!terminal && !nativeTerminal && !controller.signal.aborted)
+        controller.abort("consumer closed");
+      await waitCleanup().catch(() => undefined);
       controller.signal.removeEventListener("abort", onAbort);
+      request.signal?.removeEventListener("abort", callerAbort);
       this.#active.delete(request.invocationId);
       this.#activeAdapters.delete(request.invocationId);
       this.#acceptedTerminals.delete(request.invocationId);
@@ -526,6 +837,8 @@ export class AdapterHost {
     if (!adapter || this.#acceptedTerminals.has(invocationId)) {
       throw new Error(`invocation is not active: ${invocationId}`);
     }
+    if (this.#modes.get(invocationId) !== "canonical")
+      throw protocolError("EXECUTION_PROTOCOL_MISMATCH");
     if (!adapter.respondInteraction) {
       throw new Error(`adapter does not support interaction responses: ${adapter.metadata.type}`);
     }
@@ -535,6 +848,16 @@ export class AdapterHost {
       );
     }
     await adapter.respondInteraction(invocationId, response);
+  }
+
+  async respondNative(invocationId: string, response: NativeInteractionResponse): Promise<void> {
+    assertNativeInteractionResponse(response);
+    if (this.#modes.get(invocationId) !== "native")
+      throw protocolError("EXECUTION_PROTOCOL_MISMATCH");
+    const adapter = this.#activeAdapters.get(invocationId);
+    if (!adapter?.respondNative || this.#acceptedTerminals.has(invocationId))
+      throw protocolError("INTERACTION_NOT_ACTIVE");
+    await adapter.respondNative(invocationId, response);
   }
 
   /** Abort every invocation and wait briefly for adapter cleanup to reap its
@@ -554,6 +877,14 @@ export class AdapterHost {
       check();
     });
   }
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_key, item: unknown) =>
+    item && typeof item === "object" && !Array.isArray(item)
+      ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)))
+      : item
+  );
 }
 
 function errorMessage(error: unknown): string {

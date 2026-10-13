@@ -1,9 +1,12 @@
 import { subscribeDaemonRun, invokeDaemonRun } from "./run-stream.js";
 import { callDaemon } from "./runtime-contract.js";
-import type {
-  CanonicalEvent,
-  InvokeRequest,
-  InteractionResponse
+import {
+  createHostInvoke,
+  type HostFrame,
+  type HostInvokeOptions,
+  type NativeInteractionResponse,
+  type InvokeRequest,
+  type InteractionResponse
 } from "@mininglamp-oss/octo-harness-protocol";
 import type { HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
 import { EmbeddedHarnessError, asEmbeddedError } from "./errors.js";
@@ -46,6 +49,9 @@ interface ActiveAccount {
 }
 
 export class NodeEmbeddedHarness implements EmbeddedHarness {
+  readonly invoke = createHostInvoke((type, request, options) =>
+    this.invokeFrames(type, request, options)
+  );
   readonly #options: EmbeddedHarnessOptions;
   readonly #paths: EmbeddedHomePaths;
   readonly #listeners = new Set<(health: EmbeddedHealth) => void>();
@@ -114,9 +120,13 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
     return this.#snapshot;
   }
 
-  async *invoke(adapterType: string, request: InvokeRequest): AsyncIterable<CanonicalEvent> {
+  async *invokeFrames(
+    adapterType: string,
+    request: InvokeRequest,
+    options: HostInvokeOptions = {}
+  ): AsyncGenerator<HostFrame> {
     if (!this.#active) throw new Error("HOST_NOT_RUNNING");
-    yield* invokeDaemonRun(this.#active.supervised.paths.socket, adapterType, request);
+    yield* invokeDaemonRun(this.#active.supervised.paths.socket, adapterType, request, options);
   }
 
   listAdapters(): Promise<HostedAdapterMetadata[]> {
@@ -136,6 +146,13 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
     if (!this.#active) throw new Error("HOST_NOT_RUNNING");
     await callDaemon(this.#active.supervised.paths.socket, {
       method: "agent_run.respond",
+      params: { run_id: runId, response }
+    });
+  }
+  async respondNativeRun(runId: string, response: NativeInteractionResponse): Promise<void> {
+    if (!this.#active) throw new Error("HOST_NOT_RUNNING");
+    await callDaemon(this.#active.supervised.paths.socket, {
+      method: "agent_run.native.respond",
       params: { run_id: runId, response }
     });
   }

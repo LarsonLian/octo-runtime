@@ -103,6 +103,20 @@ export class InvocationWatchdog {
 
   activity(activity: ProviderActivity): void {
     if (!this.#active()) return;
+    if (activity.toolCallId && activity.toolState === "started") {
+      const now = this.time.now();
+      if (!this.#tools.has(activity.toolCallId))
+        this.#tools.set(activity.toolCallId, { startedAt: now, progressAt: now });
+      this.#phase = "tool_active";
+      this.#phaseAt = this.#progressAt = now;
+    }
+    if (activity.toolCallId && activity.toolState === "completed") {
+      this.#tools.delete(activity.toolCallId);
+      if (!this.#tools.size && !this.#interactions.size) {
+        this.#phase = "model_active";
+        this.#phaseAt = this.#progressAt = this.time.now();
+      }
+    }
     if (
       !["turn_started", "turn_progress", "transport_response", "retry_notice"].includes(
         activity.kind
@@ -197,6 +211,41 @@ export class InvocationWatchdog {
       this.#progress(event.type.startsWith("tool_call.") ? id : undefined);
     }
     this.#arm();
+  }
+
+  /** Lifetime evidence is independent of provider payload conversion. */
+  interaction(requestId: string | number, pending: boolean): void {
+    if (!this.#active()) return;
+    const id = `${typeof requestId}:${requestId}`,
+      now = this.time.now();
+    if (pending) {
+      if (!this.#interactions.size) this.#waitingSince = now;
+      this.#interactions.add(id);
+    } else {
+      this.#interactions.delete(id);
+      if (!this.#interactions.size && this.#waitingSince !== undefined) {
+        const pausedMs = now - this.#waitingSince;
+        for (const tool of this.#tools.values()) {
+          tool.startedAt += pausedMs;
+          tool.progressAt = now;
+        }
+        this.#waitingSince = undefined;
+      }
+    }
+    this.#phase = this.#interactions.size
+      ? "waiting_approval"
+      : this.#tools.size
+        ? "tool_active"
+        : "model_active";
+    this.#phaseAt = this.#progressAt = now;
+    this.#warned = false;
+    this.#arm();
+  }
+
+  terminal(): void {
+    this.#terminalSnapshot = this.snapshot();
+    this.#phase = "terminal";
+    this.dispose();
   }
 
   snapshot(): Record<string, unknown> {

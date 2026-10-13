@@ -28,7 +28,11 @@ const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 
 export interface HarnessHost {
   list(): Array<{ type: string }> | Promise<Array<{ type: string }>>;
-  invoke(adapterType: string, request: InvokeRequest): AsyncIterable<CanonicalEvent>;
+  invoke(
+    adapterType: string,
+    request: InvokeRequest,
+    options: { protocolMode: "canonical" }
+  ): AsyncIterable<CanonicalEvent>;
   cancel(
     invocationId: string,
     reason?: string
@@ -331,7 +335,9 @@ export class HarnessEngine {
     assertInvokeRequest(request);
     run.invocationId = request.invocationId;
     this.store.putAgentRun(run);
-    for await (const event of this.host.invoke(plan.adapter_type, request)) {
+    for await (const event of this.host.invoke(plan.adapter_type, request, {
+      protocolMode: "canonical"
+    })) {
       await this.store.transaction(() => {
         this.store.appendEvent(envelope(run, run.nextSeq++, event));
         if (event.type === "session.update" && event.payload.providerSession) {

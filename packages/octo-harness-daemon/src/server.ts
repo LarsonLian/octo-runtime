@@ -7,6 +7,9 @@ import { HarnessEngine, SqliteStore, type Store } from "@mininglamp-oss/octo-har
 import { ImRuntime, loadImBots, type ImBotConfig } from "@mininglamp-oss/octo-harness-channel-im";
 import {
   assertInteractionResponse,
+  assertNativeInteractionResponse,
+  createHostInvoke,
+  resolveHostInvokeWireOptions,
   type InvokeRequest
 } from "@mininglamp-oss/octo-harness-protocol";
 import type { AgentWorkRuntimeOptions } from "@mininglamp-oss/octo-harness-worker-access/agent-work-runtime";
@@ -215,14 +218,21 @@ export async function startDaemonServer({
     cancel: async (invocationId, reason) => readyHost().client.cancel(invocationId, reason),
     respondInteraction: async (invocationId, response) =>
       readyHost().client.respondInteraction(invocationId, response),
-    async *invoke(adapterType, request) {
+    respondNative: async (invocationId, response) =>
+      readyHost().client.respondNative(invocationId, response),
+    prepare: (adapterType, request, options) =>
+      readyHost().client.prepare(adapterType, request, options),
+    invoke: createHostInvoke((type, request, options) =>
+      transportHost.invokeFrames(type, request, options)
+    ),
+    async *invokeFrames(adapterType, request, options) {
       await invocationManifest.begin({
         invocationId: request.invocationId,
         runId: request.runId,
         adapterType
       });
       try {
-        for await (const event of readyHost().client.invoke(adapterType, request)) {
+        for await (const event of readyHost().client.invokeFrames(adapterType, request, options)) {
           yield event;
         }
       } finally {
@@ -447,7 +457,11 @@ async function handleRequestLine({
         throw new Error("JSON-RPC 2.0 required");
       if (request.method === "agent_run.invoke") {
         const invocation = request.params?.request as InvokeRequest;
-        host.submit(requiredString(request.params?.adapter_type, "adapter_type"), invocation);
+        await host.submit(
+          requiredString(request.params?.adapter_type, "adapter_type"),
+          invocation,
+          resolveHostInvokeWireOptions(request.params?.options)
+        );
         request.params = { run_id: invocation.runId };
       }
       await streamAgentRun(request, socket, host);
@@ -489,6 +503,11 @@ async function streamAgentRun(
   socket: net.Socket,
   host: HostRunService
 ): Promise<void> {
+  if (
+    request.params &&
+    (Object.hasOwn(request.params, "options") || Object.hasOwn(request.params, "protocol_mode"))
+  )
+    throw new Error("EXECUTION_PROTOCOL_MISMATCH: subscription inherits the accepted mode");
   const runId = requiredString(request.params?.run_id, "run_id");
   let streamId = optionalString(request.params?.stream_id);
   const cursor = request.params?.after_seq ?? 0;
@@ -703,8 +722,13 @@ async function dispatch({
     case "agent_run.submit":
       return host.submit(
         requiredString(params.adapter_type, "adapter_type"),
-        params.request as InvokeRequest
+        params.request as InvokeRequest,
+        resolveHostInvokeWireOptions(params.options)
       );
+    case "agent_run.native.respond":
+      assertNativeInteractionResponse(params.response);
+      await host.respondNativeRun(requiredString(params.run_id, "run_id"), params.response);
+      return { accepted: true };
     case "agent_run.respond":
       assertInteractionResponse(params.response);
       await host.respond(requiredString(params.run_id, "run_id"), params.response);

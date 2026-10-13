@@ -8,6 +8,12 @@ Octo Harness 的适配器开发 SDK。多数 provider CLI 的形态一致——�
 
 本 SDK 将这些通用逻辑封装为工具函数。接入一个“JSON 流式 CLI”型 provider 时，适配器作者真正需要实现的仅有三处 provider 特有逻辑：如何构造命令、如何将原生事件翻译为 `CanonicalEvent`、以及结束时补充何种终态。
 
+双模式 Driver 在同一条执行链中读取 `AdapterInvocationContext.protocolMode`。
+native 输出 `DriverFrame` 原始对象及独立控制事实，canonical 才创建每次执行独享的 Normalizer。
+`DriverQueue` 和 `NativeInteractionBridge` 提供有界缓冲、当前 pending 请求关联、写入确认和过期清理。
+`defineAdapter` 默认声明 canonical-only；提供原生出口的 Driver 必须明确声明 `protocolSupport`。
+Host 注册阶段校验该声明，不从 Provider 名称或 payload 推断模式。
+
 ## 工作原理
 
 `createJsonCliAdapter` 固定通用流程，并将 provider 差异保留为若干回调：

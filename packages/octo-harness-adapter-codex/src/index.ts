@@ -13,7 +13,11 @@ import {
   type AdapterInvocationContext,
   type InvokeRequest
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
+import {
+  executionFeatures,
+  type InteractionResponse,
+  type NativeInteractionResponse
+} from "@mininglamp-oss/octo-harness-protocol";
 import { parse } from "smol-toml";
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -258,8 +262,28 @@ export function createCodexAdapter({
   if (detectComputerUseProvisioningSync(env).available)
     adapterCapabilities.push(COMPUTER_USE_CAPABILITY);
   const interactionResponders = new Map<string, CodexInteractionResponder>();
+  const nativeResponders = new Map<
+    string,
+    (response: NativeInteractionResponse) => Promise<void>
+  >();
   return defineAdapter({
     metadata: {
+      protocolSupport: {
+        protocol: "codex.app-server",
+        modes: ["native", "canonical"],
+        nativeMethods: [
+          "thread/start",
+          "thread/resume",
+          "turn/start",
+          "turn/interrupt",
+          "item/commandExecution/requestApproval",
+          "execCommandApproval",
+          "item/fileChange/requestApproval",
+          "applyPatchApproval",
+          "item/tool/requestUserInput",
+          "mcpServer/elicitation/request"
+        ]
+      },
       type: "codex",
       capabilities: ["react"],
       agentSources: ["provisioned"],
@@ -268,6 +292,11 @@ export function createCodexAdapter({
       transport: "json-rpc-2.0/stdio"
     },
     probe: () => probeCommand(command),
+    async respondNative(invocationId: string, response: NativeInteractionResponse): Promise<void> {
+      const responder = nativeResponders.get(invocationId);
+      if (!responder) throw new Error("INTERACTION_NOT_ACTIVE");
+      await responder(response);
+    },
     async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
       const responder = interactionResponders.get(invocationId);
       if (!responder) throw new Error(`no active Codex interaction invocation: ${invocationId}`);
@@ -298,6 +327,10 @@ export function createCodexAdapter({
           spec,
           context,
           onInteractionResponder,
+          onNativeResponder: (responder) => {
+            if (responder) nativeResponders.set(request.invocationId, responder);
+            else nativeResponders.delete(request.invocationId);
+          },
           ...(spawnFn ? { spawnFn } : {})
         });
       } finally {

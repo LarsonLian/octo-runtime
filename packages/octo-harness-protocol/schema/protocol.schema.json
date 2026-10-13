@@ -151,6 +151,18 @@
         {
           "type": "object",
           "additionalProperties": false,
+          "required": ["type", "name", "payload"],
+          "properties": {
+            "type": { "const": "evidence" },
+            "name": { "enum": ["session", "context.applied"] },
+            "payload": { "type": "object", "additionalProperties": true }
+          },
+          "if": { "properties": { "name": { "const": "context.applied" } } },
+          "then": { "properties": { "payload": { "$ref": "#/definitions/ContextApplicationEvidence" } } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
           "required": ["type", "state"],
           "properties": {
             "type": { "const": "state" },

@@ -30,9 +30,9 @@ test("registered adapters advertise executable permission modes and responders f
 test("host rejects undeclared permission mode before provider invocation", async () => {
   const host = new AdapterHost();
   let invoked = false;
-  host.register({ metadata: { type: "two-mode", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.full_access", "interaction.response"] },
+  host.register({ metadata: { protocolSupport: { protocol: ("two-mode") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "two-mode", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.full_access", "interaction.response"] },
     async respondInteraction() {}, async *invoke() { invoked = true; } });
-  await assert.rejects(async () => { for await (const event of host.invoke("two-mode", { ...request, approvalMode: "assisted" })) assert.fail(event.type); }, /APPROVAL_MODE_UNSUPPORTED/);
+  await assert.rejects(async () => { for await (const event of host.invoke("two-mode", { ...request, approvalMode: "assisted" }, { protocolMode: "canonical" })) assert.fail(event.type); }, /APPROVAL_MODE_UNSUPPORTED/);
   assert.equal(invoked, false);
 });
 

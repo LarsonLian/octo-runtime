@@ -1,5 +1,6 @@
 import { assertJsonValue } from "./context.js";
-import { assertCanonicalEvent, type CanonicalEvent } from "./index.js";
+import { assertContextApplicationEvidence } from "./context-application.js";
+import { assertCanonicalEvent, type CanonicalEvent, type InvokeRequest } from "./index.js";
 import type {
   ProtocolMode,
   RunProtocolErrorCode,
@@ -48,6 +49,60 @@ export const RUN_PROTOCOL_ERRORS = [
   "HOST_RECEIPT_INVALID",
   "PROTOCOL_SUPPORT_INVALID"
 ] as const satisfies readonly RunProtocolErrorCode[];
+
+export interface HostInvoke {
+  (
+    adapterType: string,
+    request: InvokeRequest,
+    options: HostInvokeOptions & { protocolMode: "canonical" }
+  ): AsyncGenerator<CanonicalEvent>;
+  (
+    adapterType: string,
+    request: InvokeRequest,
+    options?: HostInvokeOptions & { protocolMode?: "native" }
+  ): AsyncGenerator<HostFrame>;
+  (
+    adapterType: string,
+    request: InvokeRequest,
+    options: HostInvokeOptions
+  ): AsyncGenerator<CanonicalEvent | HostFrame>;
+}
+
+/** The canonical view is explicit and consumes the same authoritative source frames. */
+export function createHostInvoke(
+  source: (
+    adapterType: string,
+    request: InvokeRequest,
+    options: HostInvokeOptions
+  ) => AsyncIterable<HostFrame>
+): HostInvoke {
+  function invoke(
+    adapterType: string,
+    request: InvokeRequest,
+    options: HostInvokeOptions & { protocolMode: "canonical" }
+  ): AsyncGenerator<CanonicalEvent>;
+  function invoke(
+    adapterType: string,
+    request: InvokeRequest,
+    options?: HostInvokeOptions & { protocolMode?: "native" }
+  ): AsyncGenerator<HostFrame>;
+  function invoke(
+    adapterType: string,
+    request: InvokeRequest,
+    options: HostInvokeOptions
+  ): AsyncGenerator<CanonicalEvent | HostFrame>;
+  async function* invoke(
+    adapterType: string,
+    request: InvokeRequest,
+    options: HostInvokeOptions = {}
+  ): AsyncGenerator<CanonicalEvent | HostFrame> {
+    const resolved = resolveHostInvokeOptions(options);
+    const frames = source(adapterType, request, resolved);
+    if (resolved.protocolMode === "canonical") yield* canonicalEvents(frames);
+    else yield* frames;
+  }
+  return invoke;
+}
 
 export function protocolError(
   code: (typeof RUN_PROTOCOL_ERRORS)[number],
@@ -164,6 +219,21 @@ export function assertHostRunReceipt(value: unknown): asserts value is HostRunRe
 export function assertHostControl(value: unknown): asserts value is HostControl {
   assertProtocolJson(value, "HOST_CONTROL_INVALID");
   if (!isRecord(value)) throw protocolError("HOST_CONTROL_INVALID");
+  if (
+    value.type === "evidence" &&
+    exactKeys(value, ["type", "name", "payload"]) &&
+    ["session", "context.applied"].includes(String(value.name)) &&
+    isRecord(value.payload)
+  ) {
+    if (value.name === "context.applied") {
+      try {
+        assertContextApplicationEvidence(value.payload);
+      } catch {
+        throw protocolError("HOST_CONTROL_INVALID");
+      }
+    }
+    return;
+  }
   if (
     value.type === "state" &&
     exactKeys(value, ["type", "state"]) &&

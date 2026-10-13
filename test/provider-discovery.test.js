@@ -15,9 +15,10 @@ test("provider discovery reports real executable path/version, not adapter versi
     const result = await probeCommand(command);
     assert.deepEqual(result, { available: true, command, version: "1.2.3" });
     const host = new AdapterHost();
-    host.register({ metadata: { type: "codex", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["session.serialize"] },
+    host.register({ metadata: { protocolSupport: { protocol: ("codex") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "codex", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["session.serialize"] },
       probe: () => probeCommand(command), async *invoke() {} });
     assert.deepEqual(await host.describe(), [{ type: "codex", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["session.serialize", "runtime.watchdog.v2"],
+      protocolSupport: { protocol: "codex.canonical", modes: ["canonical"], nativeMethods: [] },
       available: true, providerPath: command, providerVersion: "1.2.3", unavailableReason: null }]);
     await mkdir(join(directory, "not-a-command"));
     assert.equal((await probeCommand(join(directory, "not-a-command"))).available, false);
@@ -29,7 +30,7 @@ test("missing and failed probes report unavailable without invented provider met
   const host = new AdapterHost();
   for (const [type, probe] of [["missing", () => ({ available: false, command: "missing", reason: "command_not_found" })],
     ["failed", () => { throw new Error("probe failed"); }], ["unchecked", undefined]]) {
-    host.register({ metadata: { type, capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] }, ...(probe ? { probe } : {}), async *invoke() {} });
+    host.register({ metadata: { protocolSupport: { protocol: (type) + '.canonical', modes: ['canonical'], nativeMethods: [] }, type, capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] }, ...(probe ? { probe } : {}), async *invoke() {} });
   }
   for (const provider of await host.describe()) {
     assert.equal(provider.available, false);

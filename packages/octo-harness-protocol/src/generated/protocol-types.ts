@@ -52,6 +52,13 @@ export type ProtocolMode2 = "native" | "canonical";
  */
 export type HostControl =
   | {
+      type: "evidence";
+      name: "session" | "context.applied";
+      payload: {
+        [k: string]: unknown;
+      };
+    }
+  | {
       type: "state";
       state: "running" | "completed" | "failed" | "cancelled" | "lost";
     }
