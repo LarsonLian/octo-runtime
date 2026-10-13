@@ -368,7 +368,7 @@ async function requestObject(
     });
   }
   const text = await response.text();
-  let decoded: Record<string, unknown> = {};
+  let decoded: Record<string, unknown>;
   try {
     decoded = text ? (objectValue(JSON.parse(text)) ?? {}) : {};
   } catch (error) {
