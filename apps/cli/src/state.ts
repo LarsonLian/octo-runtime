@@ -32,6 +32,8 @@ export interface ProfileConfiguration {
   agent_work_url?: string;
   octo_space_id?: string;
   runtime_name: string;
+  agent_identity?: string;
+  agent_name?: string;
   adapters?: {
     openclaw?: OpenClawAdapterConfiguration;
   };

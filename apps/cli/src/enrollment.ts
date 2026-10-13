@@ -18,6 +18,8 @@ export interface EnrollmentOptions {
   enrollmentToken: string;
   profile: string;
   runtimeName: string;
+  agentIdentity?: string;
+  agentName?: string;
   machineId: string;
   runtimeId?: string;
   runtimeToken?: string;
@@ -107,6 +109,8 @@ export async function registerEnrolledRuntime(options: EnrollmentOptions, enroll
     body: JSON.stringify({
       profile: options.profile,
       name: options.runtimeName,
+      agent_identity: options.agentIdentity ?? "main",
+      ...(options.agentName !== undefined ? { agent_name: options.agentName } : {}),
       device: collectRuntimeDeviceInfo(),
       runtime_version: RUNTIME_VERSION,
       protocol_version: MAX_AGENT_WORK_PROTOCOL_VERSION,

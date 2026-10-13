@@ -113,3 +113,5 @@ The package does not own login UI, SSO, tenant selection, Electron IPC, or rende
 - 负责：为 Node/Electron 宿主提供运行时生命周期、账户隔离和本地 IPC 接入。
 - 不负责：在 renderer 存放凭据、IM 消息处理、绕过 Host 的 provider 执行。
 - 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。
+
+`AuthorizedTenant.agentIdentity`（缺省 `main`）和 `agentName` 配置 Runtime 注册时幂等创建的 Agent。身份和初始展示名写入 profile，SDK 注册与 daemon 重连使用同一配置；展示名不会覆盖云端已修改的名称。

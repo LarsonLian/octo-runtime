@@ -155,7 +155,7 @@ test("shared runtime dispatches WeCom text to Codex and replies using the origin
           calls.push(request);
           assert.equal(type, "codex");
           assert.equal(request.context.schema, "octo.context-envelope/v3");
-          assert.equal(request.prompt, "hello");
+          assert.ok(["hello", "next"].includes(request.prompt));
           assert.equal(request.approvalMode, "full_access");
           yield { type: "run.started", payload: {} };
           yield {
@@ -237,6 +237,14 @@ test("shared runtime dispatches WeCom text to Codex and replies using the origin
   await delay(600);
   assert.equal(f.frames.length, count, "no progress after final reply");
   assert.equal(runtime.status.sessions.length, 1);
+  const oldSession = calls[0].agentSessionId;
+  f.socket.send(JSON.stringify({ ...frame, headers: { req_id: "reset-1" }, body: { ...frame.body, msgid: "reset-1", text: { content: "/reset" } } }));
+  await until(() => f.frames.some(item => item.headers?.req_id === "reset-1" && item.body?.stream?.finish));
+  assert.equal(f.frames.find(item => item.headers?.req_id === "reset-1" && item.body?.stream?.finish).body.stream.content, "会话已经重置");
+  assert.equal(calls.length, 1);
+  f.socket.send(JSON.stringify({ ...frame, headers: { req_id: "next-1" }, body: { ...frame.body, msgid: "next-1", text: { content: "next" } } }));
+  await until(() => f.frames.some(item => item.headers?.req_id === "next-1" && item.body?.stream?.finish));
+  assert.notEqual(calls[1].agentSessionId, oldSession);
 });
 
 test("im.json persists Codex defaults and disabled entries do not connect", async (t) => {

@@ -1,5 +1,8 @@
 # Agent Worker Runtime 模式
 
+> 2026-10-14 新基线：Agent Revision 已移除。系统 instructions 保存到 ContextConfiguration.mandatory；默认 ensure 写入“我是个人助理”。只在底层会话首轮注入，续聊不重复；重置或新建底层会话重新注入。下文涉及 Revision 的内容仅为历史记录。
+
+
 > 2026-10-13 全局 Context 约束：每轮模型上下文由业务发起方决定，selection 等业务项可不发送；可传空、只传当轮需要的项或显式重复。必要的 adapter 等执行配置独立校验且不注入 LLM。底层只转发并渲染本轮快照，不按 sessionId 缓存、补齐、合并、去重或省略；reset、新建 Provider 会话或 resume 失败后，由业务方重新提供必要背景。详见 [Event Context IPD-SE 0.3](../../docs/event-context-rendering-ipd-se.md)。本文原有 Compiler/Pipeline、材料预取、场景自动追加与此约束冲突的内容仅保留历史背景；旧链路退出尚未完成。
 
 `apps/daemon` 作为 Agent Worker 的本地执行节点。Worker 是 AgentSession/AgentRun 唯一权威，daemon 只消费执行命令、调用 provider 并可靠回传事件。

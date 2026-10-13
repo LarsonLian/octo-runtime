@@ -371,7 +371,7 @@ function publicPayload(namespace: string, name: string, value: Record<string, un
       if (name === "instructions") {
         fields(entry, ["text", "source"]);
         text(entry.text);
-        if (!["revision", "agent_configuration", "platform_policy"].includes(String(entry.source)))
+        if (!["agent_configuration", "platform_policy"].includes(String(entry.source)))
           throw new TypeError("CONTEXT_SCHEMA_INVALID");
       } else if (name === "references") {
         resource(entry);

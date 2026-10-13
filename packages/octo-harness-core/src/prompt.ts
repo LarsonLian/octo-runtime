@@ -18,7 +18,7 @@ export function composeContext({
     agent_session: {
       id: agentSession.id,
       namespace: agentSession.namespace,
-      session_affinity_key: agentSession.sessionKey,
+      session_id: agentSession.sessionKey,
       generation: agentSession.generation
     },
     agent_run: {

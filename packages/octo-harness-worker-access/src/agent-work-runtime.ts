@@ -107,7 +107,9 @@ export interface AgentWorkRuntimeOptions {
   token: string;
   runtimeId?: string;
   runtimeName: string;
-  /** Profile-local adapter configuration. Secrets never come from AgentRevision or service argv. */
+  agentIdentity?: string;
+  agentName?: string;
+  /** Profile-local adapter configuration. Secrets never come from Agent metadata or service argv. */
   adapterConfigurations?: Record<
     string,
     {
@@ -203,6 +205,7 @@ export interface ExecutionEnvelope {
   resolved_runtime_selection: ResolvedRuntimeSelection;
   run_id: string;
   agent_session_id: string;
+  session_scope_id: string;
   session_generation?: number;
   provider_epoch?: number;
   continuity_mode?: "continue" | "fresh";
@@ -214,8 +217,7 @@ export interface ExecutionEnvelope {
     scenario?: ScenarioRequest;
     namespace: string;
     agent_id: string;
-    agent_revision_id: string;
-    session_affinity_key: string;
+    session_id: string;
     trigger: { kind: string; occurrence_id: string; occurred_at?: string };
     input: Record<string, unknown>;
     context: ContextEnvelope;
@@ -227,10 +229,6 @@ export interface ExecutionEnvelope {
       cancel_active?: boolean;
       admission?: "queue_after_active" | "reject_if_active";
     };
-  };
-  agent_revision: {
-    definition?: Record<string, unknown>;
-    execution_profile?: Record<string, unknown>;
   };
 }
 
@@ -574,6 +572,8 @@ export class AgentWorkRuntime {
       body: JSON.stringify({
         profile: this.#options.profile,
         name: this.#options.runtimeName,
+        agent_identity: this.#options.agentIdentity ?? "main",
+        ...(this.#options.agentName !== undefined ? { agent_name: this.#options.agentName } : {}),
         device: collectRuntimeDeviceInfo(),
         runtime_version: RUNTIME_VERSION,
         protocol_version: MAX_PROTOCOL_VERSION,
@@ -1480,7 +1480,7 @@ export class AgentWorkRuntime {
         });
         const preparedWorkspace = await prepareRunContext(executionEnvelope.resolved_execution_plan, {
           stateRoot: join(dirname(this.#options.storePath), "context"),
-          agentSessionId: executionEnvelope.agent_session_id,
+          agentSessionId: executionEnvelope.session_scope_id,
           agentId: executionEnvelope.agent_run_request.agent_id, store, signal: controller.signal
         });
         await recordContextPreparation({
@@ -1932,10 +1932,9 @@ export function mapExecutionEnvelope(
   if (
     !envelope?.run_id ||
     !envelope.agent_session_id ||
-    !envelope.agent_revision ||
     !envelope.agent_run_request?.input
   ) {
-    throw new TypeError("execution envelope is missing run/session/revision/agent run request");
+    throw new TypeError("execution envelope is missing run/session/agent run request");
   }
   if (
     envelope.session_generation !== undefined &&
@@ -1961,7 +1960,6 @@ export function mapExecutionEnvelope(
   }
   const profile = executionProfile(envelope);
   const preparedResources = preparedContext;
-  const definition = asRecord(envelope.agent_revision.definition);
   const adapterType = executionAdapterType(envelope);
   const agentConfig: AgentConfig = {
     ...(profile.provider_agent_id ? { providerAgentId: profile.provider_agent_id } : {}),
@@ -1989,8 +1987,7 @@ export function mapExecutionEnvelope(
     schemaVersion: envelope.schema_version,
     namespace: envelope.agent_run_request.namespace,
     agentId: envelope.agent_run_request.agent_id,
-    agentRevisionId: envelope.agent_run_request.agent_revision_id,
-    sessionKey: envelope.agent_run_request.session_affinity_key,
+    sessionKey: envelope.agent_run_request.session_id,
     triggerKind: envelope.agent_run_request.trigger.kind,
     triggerOccurrenceId: envelope.agent_run_request.trigger.occurrence_id,
     input: imageParts
@@ -2028,8 +2025,7 @@ export function mapExecutionEnvelope(
       modelInput: displayPrompt,
       ...(imageParts ? { modelInputParts: imageParts } : {}),
       workdir,
-      controlInstructions: [stringValue(definition.instructions), contextControlInstructions(envelope.effective_context)]
-        .filter(Boolean).join("\n\n"),
+      controlInstructions: contextControlInstructions(envelope.effective_context),
       context: structuredClone(envelope.effective_context),
       runMetadata: context,
       approvalMode: profile.approval_mode,
@@ -2046,6 +2042,7 @@ export function mapExecutionEnvelope(
 
 function assertExecutionEnvelopeContract(envelope: ExecutionEnvelope): void {
   if (envelope?.schema_version !== 7) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
+  if (!envelope.session_scope_id) throw new TypeError("SESSION_SCOPE_REQUIRED");
   const mode: unknown = envelope.agent_run_request?.protocol_mode;
   if (mode === "native") throw new TypeError("REMOTE_NATIVE_UNSUPPORTED");
   if (Object.hasOwn(envelope.agent_run_request ?? {}, "protocol_mode") && mode !== "canonical")

@@ -478,7 +478,7 @@
     }
   },
   {
-    "name": "mandatory-model-conflict",
+    "name": "mandatory-model-override",
     "configuration": {
       "defaults": {
         "schema": "octo.context-envelope/v3",
@@ -513,10 +513,23 @@
         }
       ]
     },
-    "error": "CONTEXT_MANDATORY_CONFLICT"
+    "expected": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "model",
+          "payload": {
+            "selection": {
+              "id": "fixed"
+            }
+          }
+        }
+      ]
+    }
   },
   {
-    "name": "mandatory-runtime-subset",
+    "name": "mandatory-runtime-authoritative",
     "configuration": {
       "defaults": {
         "schema": "octo.context-envelope/v3",
@@ -561,8 +574,12 @@
           "namespace": "octo.runtime",
           "name": "selection",
           "payload": {
-            "mode": "explicit",
-            "runtime_id": "device-b",
+            "mode": "candidates",
+            "runtime_ids": [
+              "device-a",
+              "device-b"
+            ],
+            "strategy": "preferred_failover",
             "offline_behavior": "wait"
           }
         }
@@ -570,7 +587,7 @@
     }
   },
   {
-    "name": "mandatory-runtime-outside",
+    "name": "mandatory-runtime-override-outside",
     "configuration": {
       "defaults": {
         "schema": "octo.context-envelope/v3",
@@ -608,10 +625,27 @@
         }
       ]
     },
-    "error": "CONTEXT_MANDATORY_CONFLICT"
+    "expected": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.runtime",
+          "name": "selection",
+          "payload": {
+            "mode": "candidates",
+            "runtime_ids": [
+              "device-a",
+              "device-b"
+            ],
+            "strategy": "preferred_failover",
+            "offline_behavior": "wait"
+          }
+        }
+      ]
+    }
   },
   {
-    "name": "mandatory-offline-conflict",
+    "name": "mandatory-offline-override",
     "configuration": {
       "defaults": {
         "schema": "octo.context-envelope/v3",
@@ -650,7 +684,24 @@
         }
       ]
     },
-    "error": "CONTEXT_MANDATORY_CONFLICT"
+    "expected": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.runtime",
+          "name": "selection",
+          "payload": {
+            "mode": "candidates",
+            "runtime_ids": [
+              "device-a",
+              "device-b"
+            ],
+            "strategy": "preferred_failover",
+            "offline_behavior": "wait"
+          }
+        }
+      ]
+    }
   },
   {
     "name": "random-workspace",
@@ -817,7 +868,7 @@
     }
   },
   {
-    "name": "envs-mandatory-conflict",
+    "name": "envs-mandatory-override",
     "configuration": {
       "defaults": {
         "schema": "octo.context-envelope/v3",
@@ -879,7 +930,31 @@
         }
       ]
     },
-    "error": "CONTEXT_MANDATORY_CONFLICT"
+    "expected": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [
+              {
+                "key": "A",
+                "value": "default"
+              },
+              {
+                "key": "B",
+                "value": "preserved"
+              },
+              {
+                "key": "FIXED",
+                "value": "required"
+              }
+            ]
+          }
+        }
+      ]
+    }
   },
   {
     "name": "envs-empty-list-preserves-defaults",
@@ -1072,7 +1147,7 @@
       "schema": "octo.context-envelope/v3",
       "items": []
     },
-    "error": "CONTEXT_CONFIGURATION_TYPE_FORBIDDEN"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "mandatory-instructions-cannot-claim-platform_policy",
@@ -1106,7 +1181,7 @@
     "error": "CONTEXT_CONFIGURATION_TYPE_FORBIDDEN"
   },
   {
-    "name": "mandatory-system-instructions-conflict",
+    "name": "mandatory-system-instructions-override",
     "configuration": {
       "defaults": {
         "schema": "octo.context-envelope/v3",
@@ -1147,6 +1222,22 @@
         }
       ]
     },
-    "error": "CONTEXT_MANDATORY_CONFLICT"
+    "expected": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.control",
+          "name": "instructions",
+          "payload": {
+            "entries": [
+              {
+                "text": "我是个人助理",
+                "source": "agent_configuration"
+              }
+            ]
+          }
+        }
+      ]
+    }
   }
 ]

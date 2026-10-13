@@ -2051,7 +2051,6 @@
         },
         "source": {
           "enum": [
-            "revision",
             "agent_configuration",
             "platform_policy"
           ]
@@ -3907,7 +3906,7 @@
           "type": "string"
         },
         "controlInstructions": {
-          "description": "Harness-generated control instructions placed in a provider-native private carrier by the adapter.",
+          "description": "Trusted session instructions. Adapters inject them only when starting a provider session; resuming an existing session must not inject or clear them.",
           "type": "string"
         },
         "context": {

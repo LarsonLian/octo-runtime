@@ -10,6 +10,7 @@ Octo Harness is a provider-neutral execution runtime. Agent Worker is the contro
 4. Provider resume data is opaque. Harness forwards `providerSession`; it does not parse or synthesize provider thread IDs.
 5. A run has one ordered event stream and one terminal outcome.
 6. The production Harness outbox is a delivery/recovery ledger, not a second cloud authority.
+7. The host application (`HostApp`) owns all Runtime installation decisions, including the embedded Harness Runtime, native Provider Runtimes, and their runtime dependencies. HostApp decides whether to install, which Runtimes and versions to install, and how to install them. SDK, Harness, daemon, adapter-host, and adapters may execute an installation plan explicitly selected by HostApp; they must not independently download or install Runtimes. Missing or unsuitable Runtimes must be reported to HostApp, without implicit installation during registration, probing, or Run execution.
 
 ## Per-Run Context Ownership
 

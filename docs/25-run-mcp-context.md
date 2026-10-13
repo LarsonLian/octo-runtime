@@ -63,7 +63,7 @@ Schema 结构参考 [Agent Plugins 官方 MCP schema](https://agent-plugins.org/
 - Worker 存储：`agent_context_configurations.configuration_json`，通过 `octo_space_id + agent_id` 关联 Agent；不在 Agent 主表或 revision 字段中。
 - 本地 Harness Agent：注册时的 `defaultContext`，后续通过 `replaceDefaultContext()` 修改。
 
-defaults 和请求按 server 名称合并；同名 server 整项替换，不深合并 headers、env 或 transport 字段。mandatory 也按 server 名称约束：请求显式传入的同名 server 必须完整一致，否则报 `CONTEXT_MANDATORY_CONFLICT`。空 map 不删除 defaults 或原生本地 MCP。
+defaults 和请求按 server 名称合并；同名 server 整项替换，不深合并 headers、env 或 transport 字段。mandatory 也按 server 名称约束：mandatory 同名 server 完整覆盖请求值，不因值不同报错。空 map 不删除 defaults 或原生本地 MCP。
 
 执行计划使用 `mcp: { mcpServers: ... }` 冻结未展开的模板，并与有效 Context 核对。环境值仅在执行主机准备 invocation 时读取，不回写 Context、执行计划或原生配置文件。框架不从上一轮补 MCP 配置；Worker 的会话兼容性标识包含 MCP 模板。MCP 配置和 envs 不渲染到模型上下文。
 

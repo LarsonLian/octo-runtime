@@ -60,12 +60,12 @@ test("frozen artifacts cross runtime mapping and Host into a real Codex three-im
     })));
     const plan = { agent_source: "provisioned", adapter_type: "codex", workdir, approval_mode: "ask", ...(process.env.OCTO_CODEX_MULTIMODAL_MODEL ? { model: process.env.OCTO_CODEX_MULTIMODAL_MODEL } : {}) };
     const envelope = {
-      schema_version: 7, effective_context: executionContext(plan), context_configuration_version: 1,
+      schema_version: 7, session_scope_id: "fixture-scope", effective_context: executionContext(plan), context_configuration_version: 1,
       resolved_execution_plan: plan, resolved_runtime_selection: resolvedRuntimeSelection(),
       run_id: runId, agent_session_id: `session-${randomUUID()}`,
-      agent_revision: { definition: { instructions: "Only answer the image question. Do not read files or run commands." } },
+
       agent_run_request: {
-        namespace: "work", agent_id: "fixture-agent", agent_revision_id: "fixture-revision", session_affinity_key: "v1/work/multimodal-integration",
+        namespace: "work", agent_id: "fixture-agent", session_id: "v1/work/multimodal-integration",
         trigger: { kind: "manual", occurrence_id: `message-${randomUUID()}` }, input: materializedInput, context: contextEnvelope()
       }
     };

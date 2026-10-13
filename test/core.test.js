@@ -26,8 +26,27 @@ function capturingEngine() {
 }
 
 const submission = (agentId, occurrenceId = "occurrence-1", context = emptyContext()) => ({
-  namespace: "local", agentId, sessionKey: "v1/task/frozen",
+  namespace: "local", agentId, sessionId: "v1/task/frozen",
   trigger: { kind: "manual", occurrenceId }, input: { prompt: "Do once" }, context
+});
+
+test("business session defaults only when absent and explicit rotation cannot resume the old Provider", async () => {
+  const { engine, requests } = capturingEngine();
+  const agent = await engine.registerAgent({ agentSource: "provisioned", name: "sessions", defaultContext: defaultContext() });
+  const base = { ...submission(agent.id), conversationId: "dm-user" };
+  delete base.sessionId;
+  const first = await engine.submitAgentRun(base);
+  await engine.executeRun(first.agentRun.id);
+  const explicit = await engine.submitAgentRun({ ...base, sessionId: "dm-user" });
+  assert.equal(explicit.deduplicated, true);
+  assert.equal(explicit.agentRun.id, first.agentRun.id);
+  for (const sessionId of ["", null, " whitespace", "control\n"])
+    await assert.rejects(engine.submitAgentRun({ ...base, sessionId }), /sessionId/);
+  const next = await engine.submitAgentRun({ ...base, sessionId: "new-session", trigger: { kind: "manual", occurrenceId: "after-reset" } });
+  await engine.executeRun(next.agentRun.id);
+  assert.notEqual(next.agentSession.id, first.agentSession.id);
+  assert.equal(requests[1].request.providerSession, undefined);
+  assert.equal((await engine.submitAgentRun(base)).agentRun.id, first.agentRun.id);
 });
 
 test("one trigger occurrence creates one AgentRun and preserves Provider resume state", async () => {
@@ -37,7 +56,7 @@ test("one trigger occurrence creates one AgentRun and preserves Provider resume 
   const request = {
     namespace: "loop",
     agentId: agent.id,
-    sessionKey: "v1/task/task-1",
+    sessionId: "v1/task/task-1",
     trigger: { kind: "loop.task.manual", occurrenceId: "task-event/event-1" },
     input: { prompt: "Do T" }, context: emptyContext()
   };
@@ -59,7 +78,7 @@ test("same occurrence with changed input is rejected", async () => {
   const store = new MemoryStore(); const engine = new HarnessEngine({ store, host });
   const agent = await engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: defaultContext() });
   const base = {
-    namespace: "webhook", agentId: agent.id, sessionKey: "v1/hook/h-1/subject/s-1",
+    namespace: "webhook", agentId: agent.id, sessionId: "v1/hook/h-1/subject/s-1",
     trigger: { kind: "webhook.delivery", occurrenceId: "delivery/d-1" }, context: emptyContext()
   };
   await engine.submitAgentRun({ ...base, input: { prompt: "one" } });
@@ -73,7 +92,7 @@ test("only one concurrent executeRun call can claim a queued AgentRun", async ()
   const submitted = await engine.submitAgentRun({
     namespace: "loop",
     agentId: agent.id,
-    sessionKey: "v1/task/concurrent",
+    sessionId: "v1/task/concurrent",
     trigger: { kind: "loop.task.manual", occurrenceId: "task-event/concurrent" },
     input: { prompt: "Do once" }, context: emptyContext()
   });

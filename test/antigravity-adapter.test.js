@@ -15,16 +15,20 @@ const collect = async iterable => { const events = []; for await (const event of
 const step = (index, overrides = {}) => ({ event: "step_update", step_update: { step_index: index, step_type: "agent_response", state: "ACTIVE", ...overrides } });
 
 test("Antigravity builds an isolated stdin carrier, exact model and explicit yolo mode", () => {
-  const spec = buildAntigravityCommand({ ...request, providerSession: { sessionId: "conversation-specific" }, agentConfig: { model: "Gemini Model (High)", effort: "high" } });
+  const spec = buildAntigravityCommand({ ...request, agentConfig: { model: "Gemini Model (High)", effort: "high" } });
   assert.equal(spec.cwd, request.workdir);
   assert.ok(spec.args.includes("--dangerously-skip-permissions"));
   assert.equal(spec.args[spec.args.indexOf("--mode") + 1], "accept-edits");
-  assert.equal(spec.args[spec.args.indexOf("--conversation") + 1], "conversation-specific");
+  assert.ok(!spec.args.includes("--conversation"));
   assert.equal(spec.args[spec.args.indexOf("--model") + 1], "Gemini Model (High)");
   assert.equal(spec.args[spec.args.indexOf("--print-timeout") + 1], "0");
   assert.ok(!spec.args.join(" ").includes("CONTROL"));
   assert.ok(!spec.args.includes("--continue"));
-  assert.deepEqual(JSON.parse(spec.input), { event: "user", message: { content: [{ type: "text", text: "Harness control instructions (apply to this turn):\nCONTROL" }, { type: "text", text: "User input:\nactual user input" }] } });
+  assert.deepEqual(JSON.parse(spec.input), { event: "user", message: { content: [{ type: "text", text: "Harness control instructions (apply throughout this session):\nCONTROL" }, { type: "text", text: "User input:\nactual user input" }] } });
+  const resumed = buildAntigravityCommand({ ...request, providerSession: { sessionId: "conversation-specific" } });
+  assert.equal(resumed.args[resumed.args.indexOf("--conversation") + 1], "conversation-specific");
+  assert.equal(resumed.args[resumed.args.indexOf("--conversation") + 1], "conversation-specific");
+  assert.deepEqual(JSON.parse(resumed.input), { event: "user", message: { content: "actual user input" } });
 });
 
 test("Antigravity rejects unsupported permissions and managed arguments before spawn", async () => {

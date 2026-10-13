@@ -14,17 +14,17 @@ const plan = { agent_source: "provisioned", adapter_type: "fake", workdir: proce
 
 function executionEnvelope(selection = resolvedRuntimeSelection(runtimeId)) {
   return {
-    schema_version: 7,
+    schema_version: 7, session_scope_id: "fixture-scope",
     context_configuration_version: 1,
     effective_context: executionContext(plan),
     resolved_execution_plan: plan,
     resolved_runtime_selection: selection,
     run_id: "run-selection",
     agent_session_id: "session-selection",
-    agent_revision: {},
+
     agent_run_request: {
-      context: contextEnvelope(), namespace: "test", agent_id: "agent-1", agent_revision_id: "revision-1",
-      session_affinity_key: "selection-test", trigger: { kind: "test", occurrence_id: "test/selection" },
+      context: contextEnvelope(), namespace: "test", agent_id: "agent-1",
+      session_id: "selection-test", trigger: { kind: "test", occurrence_id: "test/selection" },
       input: { prompt: "Target this Runtime only." }
     }
   };

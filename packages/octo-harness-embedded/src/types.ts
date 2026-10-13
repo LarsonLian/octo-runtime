@@ -44,6 +44,8 @@ export interface AccountSubject {
 }
 
 export interface AuthorizedTenant {
+  agentIdentity?: string;
+  agentName?: string;
   id: string;
   name?: string;
   serverUrl: string;

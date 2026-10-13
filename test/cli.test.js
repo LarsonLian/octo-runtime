@@ -159,7 +159,7 @@ test("daemon terminalizes in-flight work and restarts adapter-host without exiti
     const submitted = await app.daemon.submitAgentRun({
       namespace: "test",
       agentId: agent.id,
-      sessionKey: "v1/adapter-host-restart",
+      sessionId: "v1/adapter-host-restart",
       trigger: { kind: "test", occurrenceId: "host-exit-1" },
       input: { prompt: "wait-for-host-exit" },
       context: emptyContext()
@@ -179,7 +179,7 @@ test("daemon terminalizes in-flight work and restarts adapter-host without exiti
     const unavailable = await app.daemon.submitAgentRun({
       namespace: "test",
       agentId: agent.id,
-      sessionKey: "v1/adapter-host-restarting",
+      sessionId: "v1/adapter-host-restarting",
       trigger: { kind: "test", occurrenceId: "host-exit-2" },
       input: { prompt: "must-fail-while-restarting" },
       context: emptyContext()

@@ -113,7 +113,7 @@ export interface ImExecutionPort {
 }
 
 export interface ImSession {
-  id: string;
+  id?: string;
   generation: number;
   providerSession?: ProviderSession;
   lastEventId?: string;

@@ -15,7 +15,7 @@ for (const kind of ["memory", "sqlite"]) {
       const engine = new HarnessEngine({ store, host: { list: () => [{ type: "test" }] } });
       const agent = await engine.registerAgent({ agentSource: "provisioned", name: "local", defaultContext: context, config: { providerAgentId: "original" } });
       const submitted = await engine.submitAgentRun({
-        namespace: "local", agentId: agent.id, sessionKey: "v1/task/store",
+        namespace: "local", agentId: agent.id, sessionId: "v1/task/store",
         trigger: { kind: "manual", occurrenceId: "store" }, input: { prompt: "hello" },
         context: { schema: context.schema, items: [] }
       });
@@ -59,7 +59,7 @@ test("SQLite reopen retains the submitted Context, defaults version and frozen p
     let engine = new HarnessEngine({ store, host });
     const agent = await engine.registerAgent({ agentSource: "provisioned", name: "persisted", defaultContext: context });
     const input = {
-      namespace: "local", agentId: agent.id, sessionKey: "v1/task/reopen",
+      namespace: "local", agentId: agent.id, sessionId: "v1/task/reopen",
       trigger: { kind: "manual", occurrenceId: "reopen" }, input: { prompt: "hello" },
       context: { schema: context.schema, items: [{ namespace: "octo.execution", name: "model", payload: { selection: { id: "frozen" } } }] }
     };

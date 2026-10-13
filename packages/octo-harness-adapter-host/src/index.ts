@@ -489,7 +489,7 @@ export class AdapterHost {
         hostLog("watchdog", {
           ...identity,
           ...diagnostic,
-          data: { ...diagnostic.data, agentRevisionId: request.runMetadata?.agentRevisionId }
+          data: diagnostic.data
         })
     );
     let iterator: AsyncIterator<AdapterOutput> | undefined;

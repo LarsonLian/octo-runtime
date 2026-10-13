@@ -25,6 +25,8 @@ interface ProfileConfiguration {
   agent_work_url: string;
   octo_space_id: string;
   runtime_name: string;
+  agent_identity: string;
+  agent_name?: string;
 }
 
 interface RuntimeIdentity {
@@ -59,14 +61,18 @@ export async function ensureTenantEnrollment(options: {
   signal: AbortSignal;
 }): Promise<EnrollmentResult> {
   const fetchImplementation = options.fetchImplementation ?? fetch;
+  const agentIdentity = options.tenant.agentIdentity ?? "main";
+  const agentName = options.tenant.agentName;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,190}$/.test(agentIdentity) || (agentName !== undefined && (!agentName || agentName.trim() !== agentName || Buffer.byteLength(agentName) > 255))) throw new EmbeddedHarnessError("INVALID_ARGUMENT", "enrollment", false, "Invalid Agent identity or name");
   const saved = readProfile(options.profile);
   if (isHealthy(saved, options.tenant, options.profile.name)) {
     if (
       JSON.stringify(saved.config.business_service_bindings) !==
-      JSON.stringify(options.tenant.businessServiceBindings)
+      JSON.stringify(options.tenant.businessServiceBindings) || saved.config.agent_identity !== agentIdentity || saved.config.agent_name !== agentName
     ) {
       writeJsonAtomic(options.profile.configFile, {
         ...saved.config,
+        agent_identity: agentIdentity, agent_name: agentName,
         business_service_bindings: options.tenant.businessServiceBindings
       });
     }
@@ -77,7 +83,7 @@ export async function ensureTenantEnrollment(options: {
         {
           profile: options.profile.name,
           runtimeId: saved.identity.runtime_id,
-          runtimeToken: saved.credential.access_token
+          runtimeToken: saved.credential.access_token, agentIdentity, agentName
         },
         options.signal
       );
@@ -197,7 +203,7 @@ export async function ensureTenantEnrollment(options: {
     {
       profile: options.profile.name,
       runtimeId,
-      runtimeToken
+      runtimeToken, agentIdentity, agentName
     },
     options.signal
   );
@@ -223,7 +229,8 @@ export async function ensureTenantEnrollment(options: {
       ? { business_service_bindings: options.tenant.businessServiceBindings }
       : {}),
     octo_space_id: octoSpaceId,
-    runtime_name: runtimeName
+    runtime_name: runtimeName,
+    agent_identity: agentIdentity, agent_name: agentName
   } satisfies ProfileConfiguration);
   writeJsonAtomic(options.profile.identityFile, {
     schema_version: 1,
@@ -309,7 +316,7 @@ async function exchangeEnrollment(
 async function registerRuntime(
   fetchImplementation: typeof fetch,
   agentWorkUrl: string,
-  runtime: { profile: string; runtimeId: string; runtimeToken: string },
+  runtime: { profile: string; runtimeId: string; runtimeToken: string; agentIdentity: string; agentName?: string },
   signal: AbortSignal
 ): Promise<void> {
   const registered = await requestObject(
@@ -324,6 +331,8 @@ async function registerRuntime(
       },
       body: JSON.stringify({
         profile: runtime.profile,
+        agent_identity: runtime.agentIdentity,
+        ...(runtime.agentName !== undefined ? { agent_name: runtime.agentName } : {}),
         name: hostname() || "Octo Harness Runtime",
         device: collectRuntimeDeviceInfo(),
         runtime_version: EMBEDDED_HARNESS_VERSION,

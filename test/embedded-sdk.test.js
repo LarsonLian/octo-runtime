@@ -83,6 +83,8 @@ test("Human Token enrollment persists a loadable account-scoped profile", async 
       }
       assert.ok(String(url).endsWith("/v1/runtime/register"));
       const registration = JSON.parse(init.body);
+      assert.equal(registration.agent_identity, "bot_sdk");
+      assert.equal(registration.agent_name, "SDK 分身");
       assert.deepEqual(registration.capabilities, { run_contract: RUNTIME_RUN_CONTRACT, adapters: [] });
       if (rejectRegistration) return Response.json({ error: { code: "VALIDATION_ERROR", details: { reason_code: "RUNTIME_RUN_CONTRACT_UNSUPPORTED" } } }, { status: 400 });
       return Response.json({ runtime: { runtime_id: "runtime-1", profile: profileName , protocol_version: 2 } });
@@ -90,7 +92,7 @@ test("Human Token enrollment persists a loadable account-scoped profile", async 
     const result = await ensureTenantEnrollment({
       subject: { type: "user", id: "uid-123" },
       tenant: {
-        id: "space-1",
+        id: "space-1", agentIdentity: "bot_sdk", agentName: "SDK 分身",
         serverUrl: "https://im-test.deepminer.com.cn",
         agentWorkUrl: "https://im-test.deepminer.com.cn/agentworker/api",
         businessServiceBindings: { task: { serviceSubjectId: "loop", url: "https://local-config.test/mcp/task" } }
@@ -110,12 +112,14 @@ test("Human Token enrollment persists a loadable account-scoped profile", async 
     assert.equal(runtimes.length, 1);
     assert.equal(runtimes[0].runtimeId, "runtime-1");
     assert.equal(runtimes[0].profile, profileName);
+    assert.equal(runtimes[0].agentIdentity, "bot_sdk");
+    assert.equal(runtimes[0].agentName, "SDK 分身");
     assert.deepEqual(runtimes[0].businessServiceBindings, { task: { serviceSubjectId: "loop", url: "https://local-config.test/mcp/task" } });
     assert.equal(calls.some(call => String(call.init.body).includes("local-config.test")), false);
     calls.length = 0;
     const reused = await ensureTenantEnrollment({
       subject: { type: "user", id: "uid-123" },
-      tenant: { id: "space-1", serverUrl: "https://im-test.deepminer.com.cn", agentWorkUrl: "https://im-test.deepminer.com.cn/agentworker/api" },
+      tenant: { id: "space-1", agentIdentity: "bot_sdk", agentName: "SDK 分身", serverUrl: "https://im-test.deepminer.com.cn", agentWorkUrl: "https://im-test.deepminer.com.cn/agentworker/api" },
       profile,
       machine,
       getHumanToken: () => { throw new Error("saved credentials must not trigger re-enrollment"); },
@@ -130,7 +134,7 @@ test("Human Token enrollment persists a loadable account-scoped profile", async 
     rejectRegistration = true;
     await assert.rejects(ensureTenantEnrollment({
       subject: { type: "user", id: "uid-123" },
-      tenant: { id: "space-1", serverUrl: "https://im-test.deepminer.com.cn", agentWorkUrl: "https://im-test.deepminer.com.cn/agentworker/api" },
+      tenant: { id: "space-1", agentIdentity: "bot_sdk", agentName: "SDK 分身", serverUrl: "https://im-test.deepminer.com.cn", agentWorkUrl: "https://im-test.deepminer.com.cn/agentworker/api" },
       profile,
       machine,
       getHumanToken: () => { throw new Error("contract failure must not replace credentials"); },

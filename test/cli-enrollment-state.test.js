@@ -569,3 +569,40 @@ test("login persists a 128-character profile and rejects missing or mismatched i
     await rm(home, { recursive: true, force: true });
   }
 });
+
+test("Agent identity and display name survive CLI registration, profile loading and repeated login", async () => {
+  const { loadManagedAgentWorks } = await import("../packages/octo-harness-worker-access/dist/managed-profile.js");
+  const home = await mkdtemp(join(tmpdir(), "oh-agent-identity-"));
+  const registrations = [];
+  const fetchImplementation = async (input, init) => {
+    if (String(input).endsWith("/v1/runtimes/enroll")) return Response.json({
+      runtime: { runtime_id: "runtime_identity", profile: "default", octo_space_id: "space" },
+      credential: { runtime_credential_id: "credential", token: "test_runtime_credential" }
+    });
+    if (String(input).endsWith("/v1/runtime/register")) {
+      registrations.push(JSON.parse(init.body));
+      return Response.json({ runtime: { runtime_id: "runtime_identity", profile: "default" }, agent: { agent_id: "agent_identity", identity: "bot_123" } });
+    }
+    throw new Error("unexpected endpoint");
+  };
+  const common = ["--home", home, "--profile", "default", "login"];
+  try {
+    await runCli([...common, "--server-url=https://im-test.deepminer.com.cn", "--enroll-token-stdin", "--agent-identit=bot_123", "--agent_name=云端分身"], {
+      input: Readable.from(["octo_enroll_identity_test\n"]), output: () => {}, fetchImplementation
+    });
+    assert.equal(registrations[0].agent_identity, "bot_123");
+    assert.equal(registrations[0].agent_name, "云端分身");
+    let profile = loadManagedAgentWorks(home)[0];
+    assert.equal(profile.agentIdentity, "bot_123");
+    assert.equal(profile.agentName, "云端分身");
+    await runCli([...common, "--agent-name", "第二次注册名称"], { output: () => {}, fetchImplementation });
+    assert.equal(registrations[1].agent_identity, "bot_123");
+    profile = loadManagedAgentWorks(home)[0];
+    assert.equal(profile.agentIdentity, "bot_123");
+    assert.equal(profile.agentName, "第二次注册名称");
+    await assert.rejects(runCli([...common, "--agent-identit=a", "--agent-identity=b"], { output: () => {} }), /duplicate/);
+    await assert.rejects(runCli([...common, "--agent-identity="], { output: () => {} }), /nonempty/);
+    await assert.rejects(runCli([...common, "--agent-identity=bad identity"], { output: () => {} }), /invalid/);
+    assert.equal(registrations.length, 2);
+  } finally { await rm(home, { recursive: true, force: true }); }
+});

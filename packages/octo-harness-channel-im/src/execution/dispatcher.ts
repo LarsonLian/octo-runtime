@@ -23,6 +23,7 @@ export function createImInvocation(
   occurrenceId = message.messageId
 ): { request: InvokeRequest; adapterType: string } {
   assertContextEnvelope(context);
+  if (!session.id) throw new Error("IM_SESSION_NOT_ALLOCATED");
   const defaults: ContextEnvelope = {
     schema: context.schema,
     items: [

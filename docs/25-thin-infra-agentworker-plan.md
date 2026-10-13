@@ -40,14 +40,12 @@ flowchart TB
 
 ## 2. Worker 保留与删除
 
-唯一根 DDL `octo-agent-worker/migrations/001_init.sql` 保留 9 张应用表：7 张控制配置表，以及 2 张轻量发起记录表：
+唯一根 DDL `octo-agent-worker/migrations/001_init.sql` 保留 7 张应用表：5 张控制配置表，以及 2 张轻量发起记录表：
 
 | 表 | 用途 |
 | --- | --- |
 | agents | Agent 身份与配置入口 |
-| agent_revisions | 可执行定义版本 |
 | agent_context_configurations | Context defaults / mandatory |
-| agent_bootstrap_slots | 创建幂等与槽位 |
 | runtimes | 已注册设备信息 |
 | runtime_credentials | Runtime 身份凭据 |
 | runtime_enrollments | 注册流程 |

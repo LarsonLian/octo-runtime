@@ -344,12 +344,12 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   assert.match(replies[1], new RegExp(session));
   send("/reset");
   await waitFor(() => replies.length === 3);
-  assert.match(replies[2], /generation=2/);
+  assert.equal(replies[2], "会话已经重置");
   send("after reset");
   await waitFor(() => replies.length === 4);
   assert.equal(calls.length, 2);
   assert.equal(calls[1].providerSession, undefined);
-  assert.equal(calls[1].agentSessionId, session);
+  assert.notEqual(calls[1].agentSessionId, session);
   assert.equal(calls[1].sessionGeneration, 2);
   send("approval");
   await waitFor(() => replies.some((reply) => reply.includes("/approve interaction-fixture")));
@@ -363,6 +363,11 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   assert.equal(responses[0].response.outcome, "accepted");
   send("wait");
   await waitFor(() => !!releaseCancellation);
+  const beforeReset = replies.length;
+  send("/reset");
+  await waitFor(() => replies.length > beforeReset && replies.at(-1) === "会话已经重置");
+  assert.equal(cancellations.length, 0, "reset does not cancel the active run");
+  assert.equal(runtime.status.sessions[0].sessionId, undefined);
   send("/stop");
   await waitFor(
     () => cancellations.length === 1 && replies.some((reply) => reply.includes("本轮执行已中断"))

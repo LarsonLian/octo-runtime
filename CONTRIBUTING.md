@@ -169,7 +169,7 @@ The full walkthrough is in
 - **Never** hardcode secrets, tokens or credentials in source. Local provider
   CLIs are authenticated out-of-band by the operator. A remote adapter that
   requires a runtime credential must store it in the profile credential store
-  with owner-only permissions; credentials must never enter AgentRevision,
+  with owner-only permissions; credentials must never enter Agent Context configuration,
   process argv, prompts, provider observations or operational logs.
 - The workdir is the process `cwd`, **not** a chroot. Sandboxing is delegated to
   the runtime. Do not enable dangerous permission modes

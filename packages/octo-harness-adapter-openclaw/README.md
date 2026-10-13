@@ -24,6 +24,8 @@ printf '%s' "$OPENCLAW_GATEWAY_TOKEN" | \
     --token-stdin
 ```
 
+`--agent-id` 可省略，缺省连接已有的 `main`；目标不存在仍拒绝执行。
+
 `--workspace` 记录已有 Agent 的本地连接信息，不创建目录或覆盖执行工作目录。远程 Gateway 必须使用 `wss://`。Gateway token 和 device private key 只保存在 profile credential，不进入云端 revision、模型输入或 provider observation。
 
 旧 `adapter setup openclaw`、`adapter openclaw configure/init` 和托管 runner 迁移已删除。用户通过 OpenClaw 自己的管理入口完成安装和配置。

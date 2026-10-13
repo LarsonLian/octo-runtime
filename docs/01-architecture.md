@@ -14,10 +14,13 @@ Octo Harness 是 Agent Worker 的执行节点，不是业务调度器。统一�
 | AutoPilot schedule/misfire | AutoPilot service |
 | Webhook endpoint/filter/event | Webhook service |
 | Provider process、invocation、native event translation | Octo Harness |
+| 所有 Runtime 的安装决策（含内置 Harness、原生 Provider 及其运行依赖） | 宿主应用 HostApp |
 | Skill、Plugin、MCP、Connector 安装与配置 | 本地用户或原生 Runtime |
 | OKF 业务记忆 | Loop service |
 
 Harness 不能根据输入猜测“这是 Chat 还是 Task”，也不能创建业务 Task。上游只提交 namespace、Agent、session key、trigger occurrence 与输入。
+
+所有 Runtime 的安装统一由宿主应用 `HostApp` 决定。HostApp 决定是否安装、安装哪些 Runtime、版本及安装方式。SDK、Harness、daemon、adapter-host 和 Adapter 只能执行 HostApp 明确指定的安装方案，不得自行决定下载或安装。Runtime 缺失或版本不满足要求时，执行层必须向 HostApp 返回明确状态，由 HostApp 决定后续安装操作；注册、探测和 Run 执行不得隐式触发安装。
 
 Harness 不接收云端插件包、安装路径、启动命令或 MCP 配置。适配器直接调用已经完成本地配置的原生 Runtime；Harness 不替用户修改插件配置。工作目录准备仍由 Harness 执行，但不创建插件物化目录或工具 CLI 包装器。
 

@@ -22,7 +22,7 @@ test("daemon recovers queued AgentRuns and terminalizes orphaned running runs", 
     const engine = new HarnessEngine({ store, host });
     const agent = await engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: defaultContext("test") });
     const queued = await engine.submitAgentRun({
-      namespace: "loop", agentId: agent.id, sessionKey: "v1/task/task-1",
+      namespace: "loop", agentId: agent.id, sessionId: "v1/task/task-1",
       trigger: { kind: "loop.task.ready", occurrenceId: "task-event/e-1" }, input: { prompt: "run" }, context: emptyContext()
     });
     const daemon = new HarnessDaemon({ engine, store });
@@ -41,7 +41,7 @@ test("daemon deduplicates occurrences and executes one session in run_no order",
     const engine = new HarnessEngine({ store, host });
     const daemon = new HarnessDaemon({ engine, store });
     const agent = await engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: defaultContext("test") });
-    const base = { namespace: "im", agentId: agent.id, sessionKey: "v1/octo/ep-1/group/g-1", context: emptyContext() };
+    const base = { namespace: "im", agentId: agent.id, sessionId: "v1/octo/ep-1/group/g-1", context: emptyContext() };
     const first = await daemon.submitAgentRun({
       ...base, trigger: { kind: "im.message", occurrenceId: "message/m-1" }, input: { prompt: "one" }
     });
@@ -84,7 +84,7 @@ test("daemon drain closes admission and waits for active Runs", async () => {
     const engine = new HarnessEngine({ store, host });
     const daemon = new HarnessDaemon({ engine, store });
     const agent = await engine.registerAgent({ agentSource: "provisioned", name: "slow", defaultContext: defaultContext("slow") });
-    const base = { namespace: "test", agentId: agent.id, sessionKey: "v1/drain", context: emptyContext() };
+    const base = { namespace: "test", agentId: agent.id, sessionId: "v1/drain", context: emptyContext() };
     const accepted = await daemon.submitAgentRun({
       ...base,
       trigger: { kind: "test", occurrenceId: "occurrence-1" },

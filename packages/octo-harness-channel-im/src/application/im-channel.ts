@@ -20,13 +20,16 @@ import { createImConnector } from "../connectors/registry.js";
 import { createImInvocation } from "../execution/dispatcher.js";
 import { ImDeliveryDispatcher } from "../delivery/dispatcher.js";
 import { ImRunProjector } from "../presentation/run-projector.js";
+import { MemoryImSessionStore, type ImSessionStore } from "./session-store.js";
 
 export class ImRuntime {
   readonly config: ImBotConfig;
   #connector?: ImConnector;
   #delivery?: ImDeliveryDispatcher;
   readonly #sessions = new Map<string, ImSession>();
+  readonly #sessionStore: ImSessionStore;
   readonly #seen = new Map<string, number>();
+  readonly #queuedOccurrences = new Set<string>();
   readonly #interactions = new Map<
     string,
     { invocationId: string; key: string; senderId: string; request: InteractionRequestedPayload }
@@ -47,6 +50,7 @@ export class ImRuntime {
   ) {
     validateImConfig(config);
     this.config = structuredClone(config);
+    this.#sessionStore = dependencies.sessions ?? new MemoryImSessionStore();
   }
   get status(): Record<string, unknown> {
     return {
@@ -225,8 +229,36 @@ export class ImRuntime {
         this.#diagnostic("IM_SESSION_CAPACITY_EXHAUSTED");
         return;
       }
-      session = { id: `as_${randomUUID()}`, generation: 1, pending: 0, tail: Promise.resolve() };
+      session = {
+        generation: 1,
+        ...this.#sessionStore.read(key),
+        pending: 0,
+        tail: Promise.resolve()
+      };
       this.#sessions.set(key, session);
+    }
+    if (command === "/reset") {
+      try {
+        const binding = this.#sessionStore.reset(key, message.messageId);
+        session.id = binding.id;
+        session.generation = binding.generation;
+        session.providerSession = binding.providerSession;
+        session.lastRunId = undefined;
+        void this.#reply(message, "会话已经重置", `control:${message.messageId}`, true).catch(
+          () => {
+            this.#seen.delete(dedupe);
+            this.#diagnostic("IM_RESET_REPLY_FAILED");
+          }
+        );
+      } catch {
+        this.#seen.delete(dedupe);
+        void this.#reply(
+          message,
+          "会话重置失败，请重试。",
+          `reset-failed:${message.messageId}`
+        ).catch(() => this.#diagnostic("IM_RESET_FAILED"));
+      }
+      return;
     }
     if (command === "/stop" || command === "/cancel") {
       // 控制命令绕过普通消息队列，否则 stop 会排在待取消的长任务之后。
@@ -243,7 +275,12 @@ export class ImRuntime {
       })().catch(() => this.#diagnostic("IM_CANCEL_FAILED"));
       return;
     }
-    this.#enqueue(message, key, session);
+    try {
+      this.#enqueue(message, key, session);
+    } catch {
+      this.#seen.delete(dedupe);
+      this.#diagnostic("IM_SESSION_STORE_FAILED");
+    }
   }
   #enqueue(
     message: ImInboundMessage,
@@ -255,21 +292,51 @@ export class ImRuntime {
       this.#diagnostic("IM_INBOUND_CAPACITY_EXHAUSTED");
       return false;
     }
+    const id = occurrenceId ?? message.messageId;
+    const queuedKey = JSON.stringify([key, id]);
+    if (this.#queuedOccurrences.has(queuedKey)) return false;
+    const previous = this.#sessionStore.occurrence(key, id);
+    if (previous) {
+      void this.#reply(
+        message,
+        previous.text === message.text
+          ? "该消息已经提交，请查看原执行结果。"
+          : "消息身份冲突，请重新发送。",
+        `duplicate:${id}`
+      );
+      return false;
+    }
+    if (message.text.trim() !== "/session" && !session.id) {
+      const binding = { id: `as_${randomUUID()}`, generation: session.generation };
+      this.#sessionStore.save(key, binding);
+      session.id = binding.id;
+    }
+    const executionSession = { ...session };
+    this.#queuedOccurrences.add(queuedKey);
     session.pending++;
     this.#pending++;
     session.tail = session.tail
-      .then(() => this.#turn(message, key, session, occurrenceId))
+      .then(() => this.#turn(message, key, session, occurrenceId, executionSession))
       .catch(() => this.#diagnostic("IM_TURN_FAILED"))
       .finally(() => {
+        this.#queuedOccurrences.delete(queuedKey);
         session.pending--;
         this.#pending--;
       });
     return true;
   }
-  async #reply(message: ImInboundMessage, text: string, effectKey: string): Promise<void> {
+  async #reply(
+    message: ImInboundMessage,
+    text: string,
+    effectKey: string,
+    requireDelivered = false
+  ): Promise<void> {
     if (this.#closed || !this.#delivery) return;
     const receipt = await this.#delivery.deliver(effectKey, () => message.reply(text, effectKey));
-    if (receipt.state !== "delivered") this.#diagnostic(receipt.code ?? "IM_DELIVERY_FAILED");
+    if (receipt.state !== "delivered") {
+      this.#diagnostic(receipt.code ?? "IM_DELIVERY_FAILED");
+      if (requireDelivered) throw new Error(receipt.code ?? "IM_DELIVERY_FAILED");
+    }
   }
   async #respond(message: ImInboundMessage, key: string): Promise<void> {
     const match = /^\/(approve|decline|respond)\s+(\S+)(?:\s+([\s\S]*))?$/.exec(
@@ -320,22 +387,12 @@ export class ImRuntime {
     message: ImInboundMessage,
     key: string,
     session: ImSession,
-    occurrenceId?: string
+    occurrenceId?: string,
+    executionSession: ImSession = session
   ): Promise<void> {
     if (this.#closed || !this.#delivery) return;
     const prompt = message.text.trim();
     if (!prompt) return;
-    if (prompt === "/reset") {
-      session.generation++;
-      session.providerSession = undefined;
-      session.lastRunId = undefined;
-      await this.#reply(
-        message,
-        `会话已重置。session=${session.id} generation=${session.generation}`,
-        `control:${message.messageId}`
-      );
-      return;
-    }
     if (prompt === "/session") {
       await this.#reply(
         message,
@@ -346,16 +403,25 @@ export class ImRuntime {
     }
     let prepared: ReturnType<typeof createImInvocation>;
     try {
+      if (session.id === executionSession.id)
+        executionSession.providerSession = session.providerSession;
       // 每轮重新构造材料快照；Provider session 只续接执行，不承载或缓存 Context。
       prepared = createImInvocation(
         this.config,
         message,
         await message.buildContext(this.#abort.signal),
         key,
-        session,
+        executionSession,
         this.#abort.signal,
         occurrenceId
       );
+      const { signal: _signal, ...snapshot } = prepared.request;
+      this.#sessionStore.remember(key, occurrenceId ?? message.messageId, {
+        text: message.text,
+        sessionId: executionSession.id!,
+        runId: prepared.request.runId,
+        snapshot
+      });
     } catch {
       this.#diagnostic("IM_CONTEXT_PREPARATION_FAILED");
       await this.#reply(
@@ -367,6 +433,10 @@ export class ImRuntime {
     }
     if (this.#closed) return;
     const { request, adapterType } = prepared;
+    if (session.id === request.agentSessionId) {
+      session.lastEventId = executionSession.lastEventId;
+      session.lastRunId = request.runId;
+    }
     const projector = new ImRunProjector(request.runId, message.conversationKind === "direct");
     const presentation = message.beginPresentation?.(
       request.runId,
@@ -387,8 +457,14 @@ export class ImRuntime {
         protocolMode: "canonical"
       })) {
         if (this.#closed) break;
-        if (event.type === "session.update")
+        if (event.type === "session.update" && session.id === request.agentSessionId) {
           session.providerSession = event.payload.providerSession;
+          this.#sessionStore.save(key, {
+            id: session.id,
+            generation: session.generation,
+            providerSession: session.providerSession
+          });
+        }
         // 只有执行策略与事件策略均为 full_access 的审批才是自动处理的审计记录。
         // 问题/elicitation 仍须展示并交回原交互入口，不能一并过滤。
         if (

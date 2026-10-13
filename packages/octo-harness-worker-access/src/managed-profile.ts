@@ -30,6 +30,8 @@ interface ProfileConfiguration {
   agent_work_url?: unknown;
   octo_space_id?: unknown;
   runtime_name?: unknown;
+  agent_identity?: unknown;
+  agent_name?: unknown;
   adapters?: unknown;
 }
 
@@ -110,6 +112,8 @@ function loadManagedProfile(
     throw new Error(`managed profile ${profile} is invalid`);
   if (identity.schema_version !== 1 || identity.profile !== profile)
     throw new Error(`managed Runtime identity for ${profile} is invalid`);
+  if (config.agent_identity !== undefined && (typeof config.agent_identity !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,190}$/.test(config.agent_identity))) throw new Error("invalid profile agent_identity");
+  if (config.agent_name !== undefined && (typeof config.agent_name !== "string" || !config.agent_name || config.agent_name.trim() !== config.agent_name || Buffer.byteLength(config.agent_name) > 255)) throw new Error("invalid profile agent_name");
   const baseUrl = optionalString(config.agent_work_url);
   if (!baseUrl) return undefined;
   const credential = readJsonRequired<RuntimeCredential>(
@@ -128,6 +132,8 @@ function loadManagedProfile(
     token: requiredString(credential.access_token, "access_token"),
     runtimeId: requiredString(identity.runtime_id, "runtime_id"),
     runtimeName: optionalString(config.runtime_name) ?? "octo-harness-local",
+    agentIdentity: optionalString(config.agent_identity) ?? "main",
+    agentName: optionalString(config.agent_name),
     businessServiceBindings: readBusinessServiceBindings(config.business_service_bindings),
     storePath: join(profileRoot, "agent-work.db"),
     ...(Object.keys(adapterConfigurations).length ? { adapterConfigurations } : {})

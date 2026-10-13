@@ -191,6 +191,10 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
   const channel = enumFlag(context.flags.channel, ["stable", "beta"] as const, "stable");
   let identity = await readJsonFile<RuntimeIdentity>(context.paths.identity);
   let profileConfig = await readJsonFile<ProfileConfiguration>(context.paths.profileConfig);
+  const agentIdentity = optionalString(context.flags.agentIdentity) ?? profileConfig?.agent_identity ?? "main";
+  const agentName = optionalString(context.flags.agentName) ?? profileConfig?.agent_name;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,190}$/.test(agentIdentity)) throw new Error("invalid --agent-identity");
+  if (agentName !== undefined && (!agentName || agentName.trim() !== agentName || Buffer.byteLength(agentName) > 255)) throw new Error("invalid --agent-name");
   let enrolled = false;
   const enrollmentToken = context.flags.enrollTokenStdin === true
     ? await readEnrollmentToken(context.input)
@@ -224,6 +228,7 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
       enrollmentToken,
       profile: context.profile,
       runtimeName,
+      agentIdentity, agentName,
       machineId: machine.machine_id,
       runtimeId: identity?.runtime_id,
       runtimeToken: credential?.access_token,
@@ -233,7 +238,7 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
     const result = await exchangeRuntimeEnrollment(enrollmentOptions);
     // Enrollment already created the durable Runtime identity and credential.
     // Persist them before registration so a retry can prove and reuse that identity.
-    ({ identity, profileConfig } = await persistEnrollment(context, serverUrl, result, runtimeName));
+    ({ identity, profileConfig } = await persistEnrollment(context, serverUrl, result, runtimeName, agentIdentity, agentName));
     await registerEnrolledRuntime(enrollmentOptions, result);
     enrolled = true;
   } else {
@@ -250,6 +255,14 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
     }
   }
 
+  if (!enrolled && (context.flags.agentIdentity !== undefined || context.flags.agentName !== undefined)) {
+    profileConfig = { ...profileConfig, agent_identity: agentIdentity, ...(agentName ? { agent_name: agentName } : {}) };
+    await writeJsonAtomic(context.paths.profileConfig, profileConfig);
+    const credential = await readJsonFile<RuntimeCredential>(context.paths.credential);
+    await registerEnrolledRuntime({ serverUrl: profileConfig.server_url, enrollmentToken: "", profile: context.profile, runtimeName: profileConfig.runtime_name, machineId: "", agentIdentity, agentName, agentWorkUrl: profileConfig.agent_work_url, fetchImplementation: context.fetchImplementation }, {
+      profile: context.profile, runtimeId: identity.runtime_id, credentialId: identity.credential_id, accessToken: credential?.access_token, agentWorkUrl: profileConfig.agent_work_url
+    });
+  }
   await reconcileHomeConfiguration(context.paths, context.profile, channel);
   await removeIfPresent(context.paths.updateJournal);
   return {
@@ -258,6 +271,7 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
       enrolled,
       profile: context.profile,
       runtime_id: identity.runtime_id,
+      agent_identity: agentIdentity,
       server_url: profileConfig.server_url
     }
   };
@@ -267,7 +281,9 @@ async function persistEnrollment(
   context: CliContext,
   serverUrl: string,
   result: EnrollmentResult,
-  runtimeName: string
+  runtimeName: string,
+  agentIdentity: string,
+  agentName?: string
 ): Promise<{ identity: RuntimeIdentity; profileConfig: ProfileConfiguration }> {
   const now = new Date().toISOString();
   const previousProfileConfig = await readJsonFile<ProfileConfiguration>(context.paths.profileConfig);
@@ -290,6 +306,8 @@ async function persistEnrollment(
     ...(agentWorkUrl ? { agent_work_url: agentWorkUrl } : {}),
     ...(result.octoSpaceId ? { octo_space_id: result.octoSpaceId } : {}),
     runtime_name: runtimeName,
+    agent_identity: agentIdentity,
+    ...(agentName ? { agent_name: agentName } : {}),
     ...(previousProfileConfig?.adapters ? { adapters: previousProfileConfig.adapters } : {})
   };
   const credential: RuntimeCredential = {
@@ -508,7 +526,7 @@ async function runAdapterConnectCommand(context: CliContext, adapterType: string
     await prepareHarnessDirectories(context.paths);
     const bindingId = requiredFlag(context.flags.bindingId, "binding-id");
     const gatewayUrl = normalizeOpenClawGatewayUrl(requiredFlag(context.flags.gatewayUrl, "gateway-url"));
-    const agentId = requiredFlag(context.flags.agentId, "agent-id");
+    const agentId = context.flags.agentId === undefined ? "main" : requiredFlag(context.flags.agentId, "agent-id");
     const workspace = requiredFlag(context.flags.workspace, "workspace");
     if (!isValidOpenClawAgentId(agentId)) {
       throw new Error("--agent-id must be 1-64 characters and contain lowercase letters, digits, underscores, or hyphens");
@@ -878,13 +896,19 @@ function parseArguments(args: string[]): { flags: Flags; positionals: string[] }
       positionals.push(argument);
       continue;
     }
-    const key = argument.slice(2).replace(/-([a-z])/g, (_match: string, character: string) => character.toUpperCase());
+    const separator = argument.indexOf("=");
+    const rawKey = argument.slice(2, separator < 0 ? undefined : separator);
+    const normalizedKey = rawKey.replace(/[-_]([a-z])/g, (_match: string, character: string) => character.toUpperCase());
+    const key = normalizedKey === "agentIdentit" ? "agentIdentity" : normalizedKey;
+    if ((key === "agentIdentity" || key === "agentName") && Object.hasOwn(flags, key)) throw new Error(`duplicate --${rawKey}`);
     if (BOOLEAN_FLAGS.has(key)) {
+      if (separator >= 0) throw new Error(`--${rawKey} does not accept a value`);
       flags[key] = true;
       continue;
     }
     const next = args[index + 1];
-    flags[key] = next && !next.startsWith("--") ? args[++index] : true;
+    flags[key] = separator >= 0 ? argument.slice(separator + 1) : next && !next.startsWith("--") ? args[++index] : true;
+    if ((key === "agentIdentity" || key === "agentName") && (typeof flags[key] !== "string" || !flags[key])) throw new Error(`--${rawKey} requires a nonempty value`);
   }
   return { flags, positionals };
 }
@@ -966,6 +990,8 @@ function helpText(group?: string): string {
   if (group === "login") {
     return `Usage: octo-harness [--home PATH] [--profile NAME] login [options]\n\n` +
       `First login:\n` +
+      `  --agent-identity ID   Agent identity (default: main); also --agent-identit\n` +
+      `  --agent-name NAME     Initial display name; also --agent_name\n` +
       `  --server-url URL --enroll-token-stdin [--agent-work-url URL]\n\n` +
       `  --agent-work-url is the Worker API root and defaults to SERVER_URL/agentworker/api.\n\n` +
       `Installer-only update modes:\n` +
@@ -994,7 +1020,7 @@ function helpText(group?: string): string {
   if (group === "adapter") {
     return `Usage: octo-harness [--home PATH] [--profile NAME] adapter list\n` +
       `       octo-harness [--home PATH] [--profile NAME] adapter probe <adapter-type>\n` +
-      `       octo-harness [--home PATH] --profile NAME adapter connect openclaw --binding-id ID --gateway-url URL --agent-id ID --workspace PATH --token-stdin\n\n` +
+      `       octo-harness [--home PATH] --profile NAME adapter connect openclaw --binding-id ID --gateway-url URL [--agent-id ID] --workspace PATH --token-stdin\n\n` +
       `adapter connect pairs an existing OpenClaw Agent as a black-box external binding; it never creates or patches that Agent.\n` +
       `Connect requires an explicit, already logged-in Harness profile. Tokens are read from stdin and stored separately from profile config.`;
   }
@@ -1014,7 +1040,7 @@ function helpText(group?: string): string {
     `  octo-harness status\n` +
     `  octo-harness adapter list\n` +
     `  octo-harness adapter probe <type>\n` +
-    `  octo-harness adapter connect openclaw --binding-id ID --gateway-url URL --agent-id ID --workspace PATH --token-stdin\n` +
+    `  octo-harness adapter connect openclaw --binding-id ID --gateway-url URL [--agent-id ID] --workspace PATH --token-stdin\n` +
     `  octo-harness agent-session list|get ID\n` +
     `  octo-harness agent-run list|get|wait|cancel ID`;
 }

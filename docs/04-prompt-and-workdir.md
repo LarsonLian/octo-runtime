@@ -1,5 +1,8 @@
 # Prompt、上下文与 Workdir
 
+> 2026-10-14 新基线：Agent Revision 已移除。系统 instructions 保存到 ContextConfiguration.mandatory；默认 ensure 写入“我是个人助理”。只在底层会话首轮注入，续聊不重复；重置或新建底层会话重新注入。下文涉及 Revision 的内容仅为历史记录。
+
+
 Provider 输入由 AgentRun 的冻结输入与 Agent revision 共同构造，不从 workdir 文件反推业务状态。
 
 Reference Core 生成：

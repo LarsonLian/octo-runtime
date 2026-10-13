@@ -56,7 +56,8 @@ export interface ReplaceDefaultContextInput {
 export interface SubmitAgentRunInput {
   namespace: string;
   agentId: string;
-  sessionKey: string;
+  sessionId?: string;
+  conversationId?: string;
   trigger: AgentRunTrigger;
   input: Record<string, unknown>;
   context: ContextEnvelope;
@@ -148,6 +149,11 @@ export class HarnessEngine {
   }
 
   async submitAgentRun(input: SubmitAgentRunInput): Promise<SubmitAgentRunResult> {
+    if (input)
+      input = {
+        ...input,
+        sessionId: input.sessionId === undefined ? input.conversationId : input.sessionId
+      };
     validateSubmission(input);
     input = structuredClone(input);
     const requestHash = hashLocalValue({ ...input, context: contextHash(input.context) });
@@ -169,7 +175,7 @@ export class HarnessEngine {
       let session = this.store.getAgentSessionByKey(
         input.namespace,
         input.agentId,
-        input.sessionKey
+        input.sessionId!
       );
       const existing = existingSubmission(this.store, input, requestHash);
       if (existing) {
@@ -190,7 +196,7 @@ export class HarnessEngine {
           id: id("asess"),
           namespace: input.namespace,
           agentId: input.agentId,
-          sessionKey: input.sessionKey,
+          sessionKey: input.sessionId!,
           status: "active",
           generation: 1,
           nextRunNo: 1,
@@ -412,14 +418,38 @@ function validateSubmission(input: SubmitAgentRunInput): void {
     !input ||
     Object.keys(input).some(
       (name) =>
-        !["namespace", "agentId", "sessionKey", "trigger", "input", "context"].includes(name)
+        ![
+          "namespace",
+          "agentId",
+          "sessionId",
+          "conversationId",
+          "trigger",
+          "input",
+          "context"
+        ].includes(name)
     )
   )
     throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
   assertLocalContext(input.context);
   if (!/^[a-z][a-z0-9._-]{0,63}$/.test(input.namespace)) throw new Error("invalid namespace");
-  if (!input.agentId || !input.sessionKey.startsWith("v1/"))
-    throw new Error("agentId and canonical sessionKey are required");
+  if (
+    !input.agentId ||
+    typeof input.sessionId !== "string" ||
+    !input.sessionId ||
+    Buffer.byteLength(input.sessionId) > 512 ||
+    input.sessionId.trim() !== input.sessionId ||
+    /[\u0000-\u001f\u007f-\u009f]/.test(input.sessionId)
+  )
+    throw new Error("agentId and opaque sessionId are required");
+  if (
+    input.conversationId !== undefined &&
+    (typeof input.conversationId !== "string" ||
+      !input.conversationId ||
+      Buffer.byteLength(input.conversationId) > 512 ||
+      input.conversationId.trim() !== input.conversationId ||
+      /[\u0000-\u001f\u007f-\u009f]/.test(input.conversationId))
+  )
+    throw new Error("INVALID_CONVERSATION_ID");
   if (!input.trigger?.kind || !input.trigger.occurrenceId)
     throw new Error("trigger kind and occurrenceId are required");
   if (!input.input || typeof input.input !== "object" || Array.isArray(input.input))
@@ -442,7 +472,7 @@ function existingSubmission(
   input: SubmitAgentRunInput,
   requestHash: string
 ): SubmitAgentRunResult | undefined {
-  const session = store.getAgentSessionByKey(input.namespace, input.agentId, input.sessionKey);
+  const session = store.getAgentSessionByKey(input.namespace, input.agentId, input.sessionId!);
   if (!session) return undefined;
   const run = store.getAgentRunByOccurrence(session.id, input.trigger.occurrenceId);
   if (!run) return undefined;

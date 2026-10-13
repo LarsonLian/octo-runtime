@@ -2114,7 +2114,7 @@ export interface ContextResourceEntry {
  */
 export interface ContextInstructionEntry {
   text: string;
-  source: "revision" | "agent_configuration" | "platform_policy";
+  source: "agent_configuration" | "platform_policy";
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -2704,7 +2704,7 @@ export interface InvokeRequestWire {
    */
   workdir: string;
   /**
-   * Harness-generated control instructions placed in a provider-native private carrier by the adapter.
+   * Trusted session instructions. Adapters inject them only when starting a provider session; resuming an existing session must not inject or clear them.
    */
   controlInstructions: string;
   context: ContextEnvelope;

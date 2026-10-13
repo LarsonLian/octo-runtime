@@ -87,14 +87,8 @@ test("MCP defaults replace whole servers and mandatory checks original request b
   const servers = effective.items[0].payload.mcpServers;
   assert.deepEqual(servers.x, { type: "stdio", command: "node" });
   assert.ok(servers.retained && servers.locked);
-  assert.throws(
-    () =>
-      resolveContextConfiguration(
-        { defaults, mandatory },
-        envelope({ locked: remote({ Extra: "no" }) })
-      ),
-    /CONTEXT_MANDATORY_CONFLICT/
-  );
+  const forced = resolveContextConfiguration({ defaults, mandatory }, envelope({ locked: remote({ Extra: "no" }) }));
+  assert.deepEqual(forced.items[0].payload.mcpServers.locked, remote());
 });
 
 test("MCP variable resolution is single-pass, isolated, preserves literals and fails before spawn", async () => {

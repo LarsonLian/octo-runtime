@@ -900,29 +900,6 @@
     "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
-    "name": "instruction-source-revision",
-    "valid": true,
-    "context": {
-      "schema": "octo.context-envelope/v3",
-      "items": [
-        {
-          "namespace": "octo.control",
-          "name": "instructions",
-          "payload": {
-            "entries": [
-              {
-                "text": "Keep changes scoped.",
-                "source": "revision"
-              }
-            ]
-          }
-        }
-      ]
-    },
-    "expected_canonical": "{\"items\":[{\"name\":\"instructions\",\"namespace\":\"octo.control\",\"payload\":{\"entries\":[{\"source\":\"revision\",\"text\":\"Keep changes scoped.\"}]}}],\"schema\":\"octo.context-envelope/v3\"}",
-    "expected_hash": "sha256:41db4ca0123859dfa056aff40209698c6f52bd8776963a6389d1d0f2f527850b"
-  },
-  {
     "name": "instruction-source-agent_configuration",
     "valid": true,
     "context": {

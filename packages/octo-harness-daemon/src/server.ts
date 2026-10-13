@@ -4,7 +4,7 @@ import {
   type AdapterHostRpc
 } from "@mininglamp-oss/octo-harness-adapter-host";
 import { HarnessEngine, SqliteStore, type Store } from "@mininglamp-oss/octo-harness-core";
-import { ImChannelManager, type ImBotConfig, type ImCredentialSource } from "@mininglamp-oss/octo-harness-channel-im";
+import { ImChannelManager, SqliteImSessionStore, type ImBotConfig, type ImCredentialSource } from "@mininglamp-oss/octo-harness-channel-im";
 import {
   assertInteractionResponse,
   assertNativeInteractionResponse,
@@ -330,7 +330,8 @@ export async function startDaemonServer({
 
   monitorAdapterHost(hostProcess);
   const host = new HostRunService(transportHost);
-  const im = new ImChannelManager({ host, ...(imCredentials ? { credentials: imCredentials } : {}) });
+  const imSessions = new SqliteImSessionStore(join(homePath ?? dirname(storePath), "im-sessions.db"));
+  const im = new ImChannelManager({ host, sessions: imSessions, ...(imCredentials ? { credentials: imCredentials } : {}) });
   Object.defineProperty(runtime, "im", {
     enumerable: true,
     get: () => im.status
@@ -396,6 +397,7 @@ export async function startDaemonServer({
     if (hostStableReset) clearTimeout(hostStableReset);
     daemon.stop();
     await im.close();
+    imSessions.close();
     await agentWorkSupervisor?.close();
     await host.close();
     await hostRestartTask?.catch(() => undefined);
@@ -425,6 +427,7 @@ export async function startDaemonServer({
       if (consoleOutput) console.error("daemon stopping");
       daemon.stop();
       await im.close();
+      imSessions.close();
       await agentWorkSupervisor?.close();
       await host.close();
       for (const connection of connections) connection.destroy();

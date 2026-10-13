@@ -99,7 +99,7 @@ test("local Harness dispatch freezes the Context target ahead of legacy agent co
  const host={list:()=>[{type:"openclaw"}],async *invoke(_type,request){requests.push(request);yield {protocolVersion:2,type:"run.completed",payload:{}};}};
  const engine=new HarnessEngine({store:new MemoryStore(),host});
  const agent=await engine.registerAgent({name:"existing",agentSource:"provisioned",config:{providerAgentId:"old-runner"},defaultContext:{schema:"octo.context-envelope/v3",items:[ { namespace: "octo.execution", name: "adapter", payload: {type:"openclaw",provider_agent_id:"main"} }, { namespace: "octo.execution", name: "workspace", payload: {mode:"fixed",path:"/workspace"} }, { namespace: "octo.security", name: "approval_policy", payload: {mode:"full_access"} } ]}});
- const submitted=await engine.submitAgentRun({namespace:"local",agentId:agent.id,sessionKey:"v1/task/existing",trigger:{kind:"manual",occurrenceId:"once"},input:{prompt:"work"},context:{schema:"octo.context-envelope/v3",items:[]}});
+ const submitted=await engine.submitAgentRun({namespace:"local",agentId:agent.id,sessionId:"v1/task/existing",trigger:{kind:"manual",occurrenceId:"once"},input:{prompt:"work"},context:{schema:"octo.context-envelope/v3",items:[]}});
  await engine.executeRun(submitted.agentRun.id);
  assert.equal(requests[0].agentConfig.providerAgentId,"main");
  assert.equal(submitted.agentRun.resolvedExecutionPlan.provider_agent_id,"main");

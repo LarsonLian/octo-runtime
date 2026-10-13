@@ -266,6 +266,7 @@ Provider 返回的 Codex thread ID、Claude session UUID 或 OpenCode session ID
 ## 进一步阅读
 
 - [Event Context 与 Host 固定渲染：IPD-SE 设计基线](../docs/event-context-rendering-ipd-se.md)
+- [业务会话、执行 Session 与本地 Reset：IPD-SE 实施与验证](docs/session-ownership-reset-ipd-se.md)
 - [Architecture](docs/01-architecture.md)
 - [Module And Transport Flow](docs/02-module-and-transport-flow.md)
 - [Prompt And Workdir](docs/04-prompt-and-workdir.md)

@@ -216,3 +216,7 @@ One Harness Home runs one daemon and adapter-host. Each discovered profile has i
 - 负责：提供现有 octo-harness 命令、Home/profile 配置、服务管理和本地诊断。
 - 不负责：实现 Worker/IM 协议、直接启动每个 provider。
 - 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。
+
+### 注册默认助理或分身
+
+`login` 支持 `--agent-identit=bot_123 --agent_name=云端分身`（规范拼写为 `--agent-identity` / `--agent-name`）。省略 identity 使用 `main`；重复登录沿用已保存的 profile 身份。Worker 按 Space、Runtime owner、identity 幂等创建 Agent，名称只在创建时使用；重复注册不覆盖云端已有配置。参数保存进 profile，daemon 重连继续透传。修改运行中 profile 后重启对应 daemon，使其加载新值。OpenClaw `adapter connect openclaw` 的 `--agent-id` 省略时为 `main`，与 Octo identity 独立。
