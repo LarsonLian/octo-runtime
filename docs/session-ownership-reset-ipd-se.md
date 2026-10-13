@@ -330,6 +330,8 @@ type ResetOutcome = {
 
 最终全量回归：Harness 899 项中 890 项通过、9 项按测试条件跳过；Work 1546 项通过、1 项跳过；Worker 和 Loop `go test ./...` 均通过。Work kit 测试独立通过。桌面全量测试首次与 Harness clean/build 同时执行，出现临时缺失 dist 的模块加载错误；等待构建完成后全量重跑通过。
 
+重启后实测：Worker、Loop 健康检查就绪；桌面内置运行时已连接云端。本地控制回执再次验证通过，`conversation.changed` 同时刷新会话列表与详情。随后真实本地模型执行完成，23 条 canonical 事件与 SQLite 完全一致，重复提交没有再次 invoke，重载后的答案正常显示。验证脚本等待实际会话导航完成，避免冷启动默认路由覆盖过早的点击。
+
 存储边界：`octo_agent_app_loop.conversation_session_binding` 只属于 Loop 业务服务；Work 使用自己的 `sessions.db`，IM daemon 使用插件的 `im-sessions.db`。Agent Access 不持有 conversation 当前 session 映射。Worker 只持有每个冻结 session 的执行状态和 Provider 连续性，不分配业务会话的 reset 绑定。
 
 实测限制：IM 的原平台协议使用本机真实 socket 测试，没有向线上群聊发送测试消息；未逐一实测所有原生 Adapter。IM 回复失败会保留已完成控制记录，平台重投时只补回复；没有新增启动时自动恢复投递的 outbox。SDK 默认 MemoryImSessionStore 不保证跨进程持久化，需宿主注入 SQLite 或等效存储；官方 daemon 已注入 SQLite。工作包代码已落地，这些限制保留为后续部署验收项。
