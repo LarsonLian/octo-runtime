@@ -10,6 +10,7 @@ import { watchLineLimit } from "./line-limit.js";
 import { mapReasoningEffort, reasoningLevelMap, type ReasoningLevelMap } from "./reasoning.js";
 export type { AdapterInvocationContext, ProviderActivity } from "./activity.js";
 export { invocationEnvironment, invocationEnvs } from "./environment.js";
+export { invocationMcpServers, expandMcpValue, assertMcpOptions } from "./mcp.js";
 
 import {
   isTerminal,
@@ -50,6 +51,8 @@ export {
 } from "./reasoning.js";
 
 export interface AdapterMetadata {
+  /** Local implementation support; not a remote runtime admission feature. */
+  mcp?: boolean;
   protocolSupport?: AdapterProtocolSupport;
   type: string;
   capabilities: string[];
@@ -143,6 +146,11 @@ export function defineAdapter<TAdapter extends Adapter>(
       assertProtocolSupport(protocolSupport, {
         protocolMode: context?.protocolMode ?? "canonical"
       });
+      const mcp = request.context.items.find(
+        (item) => item.namespace === "octo.execution" && item.name === "mcp"
+      );
+      if (mcp && Object.keys(mcp.payload.mcpServers as object).length && !adapter.metadata.mcp)
+        throw new Error(`MCP_UNSUPPORTED: ${adapter.metadata.type}`);
       const requested = request.agentConfig.effort;
       const native = mapReasoningEffort(adapter.metadata.type, requested, levels);
       if (requested !== undefined && context?.protocolMode !== "native") {

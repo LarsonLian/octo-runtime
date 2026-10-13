@@ -100,7 +100,7 @@ pnpm build                            # 3. 构建
 
 随机目录声明仅使用 `{mode:"random"}`，不得携带 scope 或 path。Runtime 在 AgentSession 首次运行时创建目录，后续运行复用；不同 AgentSession 使用独立目录。实际路径由 Runtime 准备，不能以空 workdir 启动 Provider。
 
-Skill、Plugin、MCP 和 Connector 由本地用户或原生 Runtime 安装与配置。`octo.resources` 及旧云端安装字段直接拒绝；执行计划不包含 `resources` 或 `mcp_servers`。Context 表达发起方选择的普通材料以及独立执行配置；不生成 continuity 或编译应用证据。
+Skill、Plugin、CLI 和 MCP 程序由 HostApp 管理安装；本轮 MCP 连接配置使用 `octo.execution/mcp`，payload 为动态名称 map `mcpServers`，执行计划冻结到 `mcp`。详见 [Run MCP 合同](../../docs/25-run-mcp-context.md)。`octo.resources` 及旧云端安装字段直接拒绝；执行计划不包含 `resources` 或 `mcp_servers`。Context 表达发起方选择的普通材料以及独立执行配置；不生成 continuity 或编译应用证据。
 
 `ToolAuthorization` 只包含 `service_subject_id`、`allowed_tools` 与 `resource_refs`。独立授权接口返回 `IssuedToolAuthorization`，增加短期 `token`、`octo_space_id`、`namespace` 与 `expires_at`；不允许携带地址、命令或配置模板。凭据只能进入本地已配置的业务连接或宿主授权接收器，不能进入模型输入。
 

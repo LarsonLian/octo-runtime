@@ -35,7 +35,8 @@ export function assertLocalContext(context: unknown): asserts context is Context
   for (const item of context.items) {
     if (!findContextTypeDefinition(item.namespace, item.name)) continue;
     if (
-      item.namespace === "octo.execution" || item.namespace === "octo.content" ||
+      item.namespace === "octo.execution" ||
+      item.namespace === "octo.content" ||
       (item.namespace === "octo.security" && item.name === "approval_policy")
     )
       continue;
@@ -54,7 +55,11 @@ export function resolveLocalContext(
   assertAgentSource(agentSource);
   assertLocalContext(defaults);
   assertLocalContext(submitted);
-  if (defaults.items.some(item => item.namespace !== "octo.execution" && item.namespace !== "octo.security"))
+  if (
+    defaults.items.some(
+      (item) => item.namespace !== "octo.execution" && item.namespace !== "octo.security"
+    )
+  )
     throw new TypeError("CONTEXT_CONFIGURATION_TYPE_FORBIDDEN");
   let effectiveContext = mergeContext(defaults, submitted);
   if (!contextItem(effectiveContext, "octo.security", "approval_policy")) {
@@ -79,6 +84,7 @@ export function resolveLocalContext(
   const effort = (choices?.reasoning as Record<string, unknown> | undefined)?.effort;
   const limits = contextItem(effectiveContext, "octo.execution", "limits")?.payload;
   const envs = contextItem(effectiveContext, "octo.execution", "envs")?.payload;
+  const mcp = contextItem(effectiveContext, "octo.execution", "mcp")?.payload;
   const plan = {
     agent_source: agentSource,
     adapter_type: adapter,
@@ -89,7 +95,8 @@ export function resolveLocalContext(
     ...(typeof model === "string" ? { model } : {}),
     ...(typeof effort === "string" ? { effort } : {}),
     ...(limits ? { runtime_limits: structuredClone(limits) } : {}),
-    ...(envs ? { envs: structuredClone(envs) } : {})
+    ...(envs ? { envs: structuredClone(envs) } : {}),
+    ...(mcp ? { mcp: structuredClone(mcp) } : {})
   };
   assertResolvedExecutionPlan(plan);
   localRuntimeLimits(plan);

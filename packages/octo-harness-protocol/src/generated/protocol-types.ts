@@ -232,6 +232,13 @@ export type ResolvedExecutionPlan = ResolvedExecutionPlan1;
  */
 export type AgentSource = "preset" | "provisioned";
 /**
+ * Dynamic server-name map. No business-specific names are enumerated. Each value must match one closed transport variant.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "McpServers".
+ */
+export type McpServers = Record<string, McpServer>;
+/**
  * Display-only fields permitted by assertApprovalRequest. Values remain inert provider metadata and do not redefine commands, permissions or grant scope.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -252,13 +259,6 @@ export type ContextSyncResult = ContextSyncResult1;
  * via the `definition` "McpServer".
  */
 export type McpServer = McpStdioServer | McpStreamableHttpServer;
-/**
- * Named MCP servers frozen for one invocation.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "McpServers".
- */
-export type McpServers = Record<string, McpServer>;
 /**
  * Ordered provider-native user input. Image bytes are materialized only for the invocation, never used as a text fallback.
  *
@@ -2241,6 +2241,7 @@ export interface ResolvedExecutionPlan1 {
   agent_source: AgentSource;
   required_execution_features?: string[];
   envs?: ContextEnvsPayload;
+  mcp?: ContextMcpPayload;
 }
 /**
  * Run 级环境变量列表；以 key 标识变量，按 key 合并，不进入模型输入。
@@ -2256,6 +2257,15 @@ export interface ContextEnvsPayload {
     key: string;
     value: string;
   }[];
+}
+/**
+ * Run-scoped MCP connection templates. Server names are dynamic keys; values are validated by transport. Variables resolve only in the execution environment, never in the model context.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextMcpPayload".
+ */
+export interface ContextMcpPayload {
+  mcpServers: McpServers;
 }
 /**
  * Harness-owned phase-aware invocation watchdog budgets.
@@ -2622,6 +2632,9 @@ export interface McpStdioServer {
  */
 export interface McpStreamableHttpServer {
   type: "streamable_http";
+  /**
+   * Absolute HTTP(S) endpoint or environment template; the resolved endpoint is validated again before connecting.
+   */
   url: string;
   headers?: Record<string, string>;
   required?: boolean;

@@ -1,4 +1,5 @@
 import { invocationEnvironment } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { codexMcpConfig } from "./mcp.js";
 /**
  * Assembly entry point for the Codex adapter.
  *
@@ -201,12 +202,14 @@ export function buildCodexCommand(
   env: NodeJS.ProcessEnv = process.env
 ): CodexAppServerCommand {
   const runEnv = invocationEnvironment(req, {}, env);
+  const mcp = codexMcpConfig(req, runEnv);
   const realHome = runEnv.CODEX_HOME || join(homedir(), ".codex");
   return {
     command,
     args: [...appServerArgs, ...nativeCapacityOverrides(req)],
     cwd: req.workdir,
-    env: { ...runEnv, CODEX_HOME: realHome },
+    env: { ...runEnv, ...mcp.env, CODEX_HOME: realHome },
+    ...(Object.keys(mcp.servers).length ? { mcpServers: mcp.servers } : {}),
     cleanup: () => undefined
   };
 }
@@ -268,6 +271,7 @@ export function createCodexAdapter({
   >();
   return defineAdapter({
     metadata: {
+      mcp: true,
       protocolSupport: {
         protocol: "codex.app-server",
         modes: ["native", "canonical"],

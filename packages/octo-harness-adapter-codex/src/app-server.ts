@@ -90,6 +90,7 @@ export interface CodexAppServerCommand {
   args: string[];
   cwd: string;
   env: NodeJS.ProcessEnv;
+  mcpServers?: Record<string, Record<string, unknown>>;
   cleanup?: () => void | Promise<void>;
 }
 
@@ -193,14 +194,26 @@ export async function* runCodexAppServerTurn({
     }
     client.notify("initialized");
     let environmentConfig: JsonRecord | undefined;
-    if (Object.keys(invocationEnvs(request)).length) {
+    if (Object.keys(invocationEnvs(request)).length || spec.mcpServers) {
       const result = recordValue(
         await client.request("config/read", { includeLayers: false, cwd: request.workdir })
       );
       const config = recordValue(result?.config);
       if (!config)
         throw new Error("CONTEXT_ENVS_UNAVAILABLE: provider effective configuration is missing");
+      if (spec.mcpServers)
+        config.mcp_servers = { ...recordValue(config.mcp_servers), ...spec.mcpServers };
       environmentConfig = codexEnvironmentConfig(request, config);
+      if (spec.mcpServers) {
+        const servers = recordValue(config.mcp_servers) ?? {};
+        const forwarding = recordValue(environmentConfig.mcp_servers) ?? {};
+        environmentConfig.mcp_servers = Object.fromEntries(
+          Object.entries(servers).map(([name, server]) => [
+            name,
+            { ...recordValue(server), ...recordValue(forwarding[name]) }
+          ])
+        );
+      }
     }
 
     // Phase 2: providerSession.sessionId is the Codex thread ID, kept opaque to the Core.

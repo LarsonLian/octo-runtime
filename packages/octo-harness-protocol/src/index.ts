@@ -34,6 +34,7 @@ export {
   assertContextEnvelope,
   assertContextEnvs,
   assertMcpServers,
+  assertContextMcp,
   assertResolvedExecutionPlan,
   canonicalContext,
   contextItem,

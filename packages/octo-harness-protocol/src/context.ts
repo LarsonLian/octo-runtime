@@ -101,6 +101,13 @@ export function mergeContext(
     }
     if (previous && item.namespace === "octo.execution" && item.name === "envs")
       next.payload = { ...mergeContextEnvs(previous.payload, next.payload) };
+    if (previous && item.namespace === "octo.execution" && item.name === "mcp")
+      next.payload = {
+        mcpServers: {
+          ...(previous.payload.mcpServers as McpServers),
+          ...(next.payload.mcpServers as McpServers)
+        }
+      };
     if (previous && item.namespace === "octo.runtime" && item.name === "selection") {
       for (const field of ["offline_behavior", "failover"])
         if (next.payload[field] === undefined && previous.payload[field] !== undefined)
@@ -136,9 +143,11 @@ export function assertResolvedExecutionPlan(
     "required_execution_features",
     "runtime_limits",
     "provider_compatibility",
-    "envs"
+    "envs",
+    "mcp"
   ]);
   if (value.envs !== undefined) assertContextEnvs(value.envs);
+  if (value.mcp !== undefined) assertContextMcp(value.mcp);
   assertAgentSource(value.agent_source);
   text(value.adapter_type);
   assertProviderAgent(value.adapter_type, value.provider_agent_id);
@@ -189,12 +198,22 @@ export function assertResolvedExecutionPlan(
   }
 }
 
-export function assertMcpServers(value: unknown): asserts value is McpServers {
+export function assertContextMcp(value: unknown): asserts value is { mcpServers: McpServers } {
+  object(value, "CONTEXT_SCHEMA_INVALID");
+  fields(value, ["mcpServers"]);
+  try {
+    assertMcpServers(value.mcpServers, true);
+  } catch {
+    throw new TypeError("CONTEXT_SCHEMA_INVALID");
+  }
+}
+
+export function assertMcpServers(value: unknown, templates = false): asserts value is McpServers {
   if (!isObject(value)) throw new TypeError("mcpServers must be an object");
   const entries = Object.entries(value);
   if (entries.length > 32) throw new TypeError("mcpServers must not contain more than 32 servers");
   for (const [name, server] of entries) {
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name)) {
       throw new TypeError("mcpServers contains an invalid server name");
     }
     if (!isObject(server)) throw new TypeError(`mcpServers.${name} must be an object`);
@@ -221,14 +240,19 @@ export function assertMcpServers(value: unknown): asserts value is McpServers {
       requireNonEmptyString(server, "command", `mcpServers.${name}`);
       assertStringArray(server.args, `mcpServers.${name}.args`, 128);
       assertStringRecord(server.env, `mcpServers.${name}.env`, 128);
+      for (const [key, value] of Object.entries(server.env ?? {})) {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || /\0/.test(String(value)))
+          throw new TypeError(`MCP_ENV_INVALID: ${name}.${key}`);
+      }
       if (server.cwd !== undefined && (typeof server.cwd !== "string" || server.cwd.length === 0)) {
         throw new TypeError(`mcpServers.${name}.cwd must be a non-empty string when present`);
       }
     } else {
       requireNonEmptyString(server, "url", `mcpServers.${name}`);
+      const templated = templates && /\$\$?\{[A-Za-z_][A-Za-z0-9_]*\}/.test(server.url as string);
       let parsed: URL;
       try {
-        parsed = new URL(server.url as string);
+        parsed = new URL(templated ? "https://template.invalid" : (server.url as string));
       } catch {
         throw new TypeError(`mcpServers.${name}.url must be an absolute HTTP URL`);
       }
@@ -239,6 +263,16 @@ export function assertMcpServers(value: unknown): asserts value is McpServers {
         throw new TypeError(`mcpServers.${name}.url must not exceed 4096 characters`);
       }
       assertStringRecord(server.headers, `mcpServers.${name}.headers`, 64);
+      const seen = new Set<string>();
+      for (const [key, value] of Object.entries(server.headers ?? {})) {
+        if (
+          !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(key) ||
+          /[\r\n\0]/.test(String(value)) ||
+          seen.has(key.toLowerCase())
+        )
+          throw new TypeError(`MCP_HEADER_INVALID: ${name}.${key}`);
+        seen.add(key.toLowerCase());
+      }
     }
     if (server.required !== undefined && typeof server.required !== "boolean") {
       throw new TypeError(`mcpServers.${name}.required must be boolean when present`);
@@ -298,6 +332,10 @@ export function mergeReferences(
 }
 
 function publicPayload(namespace: string, name: string, value: Record<string, unknown>): void {
+  if (namespace === "octo.execution" && name === "mcp") {
+    assertContextMcp(value);
+    return;
+  }
   if (namespace === "octo.execution" && name === "envs") {
     assertContextEnvs(value);
     return;

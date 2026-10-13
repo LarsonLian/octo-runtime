@@ -6,8 +6,20 @@ export interface ContextTypeDefinition {
   readonly trustedOnly: boolean;
 }
 
-function entry(namespace: string, name: string, schema: string, persistent: boolean, trustedOnly = false): ContextTypeDefinition {
-  return Object.freeze({ namespace, name, schemaRef: `#/definitions/${schema}`, persistent, trustedOnly });
+function entry(
+  namespace: string,
+  name: string,
+  schema: string,
+  persistent: boolean,
+  trustedOnly = false
+): ContextTypeDefinition {
+  return Object.freeze({
+    namespace,
+    name,
+    schemaRef: `#/definitions/${schema}`,
+    persistent,
+    trustedOnly
+  });
 }
 
 /** Built-in schema and execution-configuration classification; no processing stages. */
@@ -16,6 +28,7 @@ export const CONTEXT_TYPE_CATALOG: readonly ContextTypeDefinition[] = Object.fre
   entry("octo.execution", "model", "ContextModelPayload", true),
   entry("octo.execution", "workspace", "ContextWorkspacePayload", true),
   entry("octo.execution", "envs", "ContextEnvsPayload", true),
+  entry("octo.execution", "mcp", "ContextMcpPayload", true),
   entry("octo.execution", "limits", "ContextLimitsPayload", true),
   entry("octo.runtime", "selection", "ContextRuntimeSelectionPayload", true),
   entry("octo.security", "approval_policy", "ContextApprovalPolicyPayload", true),
@@ -30,6 +43,9 @@ export function contextTypeDefinition(namespace: string, name: string): ContextT
   return definition;
 }
 
-export function findContextTypeDefinition(namespace: string, name: string): ContextTypeDefinition | undefined {
-  return CONTEXT_TYPE_CATALOG.find(item => item.namespace === namespace && item.name === name);
+export function findContextTypeDefinition(
+  namespace: string,
+  name: string
+): ContextTypeDefinition | undefined {
+  return CONTEXT_TYPE_CATALOG.find((item) => item.namespace === namespace && item.name === name);
 }

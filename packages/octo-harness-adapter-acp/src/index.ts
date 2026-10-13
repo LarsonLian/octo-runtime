@@ -11,6 +11,8 @@ import {
   acpToolTerminalStatus,
   defineAdapter,
   invocationEnvironment,
+  invocationMcpServers,
+  assertMcpOptions,
   normalizeAcpToolUpdate,
   probeCommand,
   type CanonicalEvent,
@@ -183,6 +185,7 @@ export function createAcpAdapter(
   return defineAdapter(
     {
       metadata: {
+        mcp: true,
         type: definition.type,
         capabilities: ["react"],
         agentSources: ["provisioned"],
@@ -225,10 +228,28 @@ export function createAcpAdapter(
       typeof definition.args === "function"
         ? definition.args(request)
         : (definition.args ?? ["acp"]);
+    const runEnv = invocationEnvironment(request, definition.env?.(request));
+    const mcp = invocationMcpServers(request, runEnv);
+    assertMcpOptions(mcp, definition.type, []);
+    const servers = Object.entries(mcp).map(([name, server]) =>
+      server.type === "stdio"
+        ? {
+            name,
+            command: server.command,
+            args: server.args ?? [],
+            env: Object.entries(server.env ?? {}).map(([name, value]) => ({ name, value }))
+          }
+        : {
+            name,
+            type: "http",
+            url: server.url,
+            headers: Object.entries(server.headers ?? {}).map(([name, value]) => ({ name, value }))
+          }
+    );
     const client = acpClientFactory({
       command,
       args: [...args],
-      env: invocationEnvironment(request, definition.env?.(request)),
+      env: runEnv,
       cwd: request.workdir,
       permissionHandler: (params) => bridge.requestPermission(params),
       onPermissionResponseWritten: (params) => bridge.responseWritten(params),
@@ -252,6 +273,11 @@ export function createAcpAdapter(
       const initialization = recordValue(
         await client.initialize({ protocolVersion: definition.protocolVersion ?? 1 })
       );
+      if (
+        servers.some((server) => server.type === "http") &&
+        recordValue(recordValue(initialization.agentCapabilities).mcpCapabilities).http !== true
+      )
+        throw new Error(`MCP_TRANSPORT_UNSUPPORTED: ${definition.type}: http`);
       const imageSupported =
         recordValue(recordValue(initialization.agentCapabilities).promptCapabilities).image ===
         true;
@@ -271,7 +297,7 @@ export function createAcpAdapter(
       let sessionParams = requestedSessionId
         ? acpLoadSessionParams(requestedSessionId, { cwd: request.workdir })
         : acpNewSessionParams({ cwd: request.workdir });
-      sessionParams.mcpServers = [];
+      sessionParams.mcpServers = servers;
       let sessionRequestId = client.reserveRequestId();
       let sessionResult: JsonRecord = {};
 
@@ -292,7 +318,7 @@ export function createAcpAdapter(
         resumeFallback = "session_load_not_found";
         sessionMethod = "session/new";
         sessionParams = acpNewSessionParams({ cwd: request.workdir });
-        sessionParams.mcpServers = [];
+        sessionParams.mcpServers = servers;
         sessionRequestId = client.reserveRequestId();
         result = await client.request<JsonRecord>(sessionMethod, sessionParams, {
           requestId: sessionRequestId

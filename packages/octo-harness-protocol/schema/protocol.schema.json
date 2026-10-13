@@ -1106,6 +1106,25 @@
               ]
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.execution"
+              },
+              "name": {
+                "const": "mcp"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextMcpPayload"
+              }
+            }
+          }
         }
       ],
       "not": {
@@ -2228,6 +2247,9 @@
         },
         "envs": {
           "$ref": "#/definitions/ContextEnvsPayload"
+        },
+        "mcp": {
+          "$ref": "#/definitions/ContextMcpPayload"
         }
       },
       "if": {
@@ -3580,10 +3602,14 @@
         "env": {
           "type": "object",
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[^\\u0000]*$"
           },
           "maxProperties": 128,
-          "tsType": "Record<string, string>"
+          "tsType": "Record<string, string>",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          }
         },
         "cwd": {
           "type": "string",
@@ -3621,16 +3647,29 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "x-octo-http-url": true,
-          "$comment": "The x-octo-http-url semantic keyword applies the existing MCP validator contract: the string must parse as an absolute URL with http: or https: protocol. maxLength counts Unicode code points, not UTF-16 code units."
+          "anyOf": [
+            {
+              "x-octo-http-url": true
+            },
+            {
+              "pattern": "\\$\\$?\\{[A-Za-z_][A-Za-z0-9_]*\\}"
+            }
+          ],
+          "description": "Absolute HTTP(S) endpoint or environment template; the resolved endpoint is validated again before connecting.",
+          "tsType": "string"
         },
         "headers": {
           "type": "object",
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[^\\r\\n\\u0000]*$"
           },
           "maxProperties": 64,
-          "tsType": "Record<string, string>"
+          "tsType": "Record<string, string>",
+          "propertyNames": {
+            "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$"
+          },
+          "x-octo-unique-header-names": true
         },
         "required": {
           "type": "boolean"
@@ -3661,10 +3700,10 @@
     },
     "McpServers": {
       "title": "McpServers",
-      "description": "Named MCP servers frozen for one invocation.",
+      "description": "Dynamic server-name map. No business-specific names are enumerated. Each value must match one closed transport variant.",
       "type": "object",
       "propertyNames": {
-        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
       },
       "additionalProperties": {
         "$ref": "#/definitions/McpServer"
@@ -4566,6 +4605,20 @@
           }
         }
       ]
+    },
+    "ContextMcpPayload": {
+      "title": "ContextMcpPayload",
+      "description": "Run-scoped MCP connection templates. Server names are dynamic keys; values are validated by transport. Variables resolve only in the execution environment, never in the model context.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mcpServers"
+      ],
+      "properties": {
+        "mcpServers": {
+          "$ref": "#/definitions/McpServers"
+        }
+      }
     }
   }
 }

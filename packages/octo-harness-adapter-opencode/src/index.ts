@@ -1,4 +1,9 @@
-import { mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import {
+  mapReasoningEffort,
+  invocationEnvironment,
+  invocationMcpServers,
+  assertMcpOptions
+} from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * OpenCode adapter: wraps the OpenCode CLI (`opencode run --format json
@@ -63,17 +68,41 @@ interface OpenCodeNativeEvent extends OpenCodePart {
 export async function buildOpenCodeCommand(req: InvokeRequest, command = "opencode") {
   if (req.approvalMode !== "full_access")
     throw new Error("APPROVAL_MODE_UNSUPPORTED: opencode permission transport is not qualified");
+  const runEnv = invocationEnvironment(req);
+  const servers = invocationMcpServers(req, runEnv);
+  assertMcpOptions(servers, "opencode", ["toolTimeoutMs"]);
   const directory = await mkdtemp(join(tmpdir(), "octo-harness-opencode-"));
   const instructions = join(directory, "instructions.md");
   await writeFile(instructions, req.controlInstructions, { mode: 0o600 });
   let inline: Record<string, unknown> = {};
-  if (process.env.OPENCODE_CONFIG_CONTENT)
-    inline = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) as Record<string, unknown>;
+  if (runEnv.OPENCODE_CONFIG_CONTENT)
+    inline = JSON.parse(runEnv.OPENCODE_CONFIG_CONTENT) as Record<string, unknown>;
   const configuredInstructions = Array.isArray(inline.instructions)
     ? inline.instructions.filter((value): value is string => typeof value === "string")
     : [];
   // Inject harness context via a temporary instructions file, without rewriting the user's existing OpenCode config.
   inline.instructions = [...configuredInstructions, instructions];
+  if (Object.keys(servers).length) {
+    inline.mcp = {
+      ...(isRecord(inline.mcp) ? inline.mcp : {}),
+      ...Object.fromEntries(
+        Object.entries(servers).map(([name, server]) => [
+          name,
+          {
+            ...(server.type === "stdio"
+              ? {
+                  type: "local",
+                  command: [server.command, ...(server.args ?? [])],
+                  environment: server.env ?? {}
+                }
+              : { type: "remote", url: server.url, headers: server.headers ?? {} }),
+            enabled: true,
+            ...(server.toolTimeoutMs !== undefined ? { timeout: server.toolTimeoutMs } : {})
+          }
+        ])
+      )
+    };
+  }
   // Reasoning output and non-interactive tool approval are mandatory parts of
   // this adapter's provider contract.
   const args = ["run", "--format", "json", "--thinking", "--auto"];
@@ -316,6 +345,7 @@ export function createOpenCodeAdapter({ command = "opencode" }: { command?: stri
   });
   const options: Parameters<typeof createJsonCliAdapter<OpenCodeNativeEvent>>[0] = {
     metadata: {
+      mcp: true,
       type: "opencode",
       capabilities: ["react"],
       agentSources: ["provisioned"],

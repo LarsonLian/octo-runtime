@@ -1,5 +1,7 @@
 import {
   invocationEnvironment,
+  invocationMcpServers,
+  assertMcpOptions,
   mapReasoningEffort
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
@@ -98,11 +100,37 @@ export async function buildClaudeCommand(
   commandArgsPrefix: string[] = []
 ) {
   const mode = claudePermissionMode(req.approvalMode);
+  const servers = invocationMcpServers(req);
+  assertMcpOptions(servers, "claude-code", []);
+  // Native Claude expands placeholders again at connection time. Reject values
+  // it cannot preserve instead of silently changing a resolved literal/token.
+  if (Object.values(servers).some((server) => JSON.stringify(server).includes("${")))
+    throw new Error(
+      "MCP_LITERAL_UNSUPPORTED: claude-code cannot preserve resolved placeholder text"
+    );
   const directory = await mkdtemp(join(tmpdir(), "octo-harness-claude-"));
   const promptFile = join(directory, "system-prompt.txt");
   // The control prompt goes through Claude's dedicated file argument while the
   // user prompt is still fed via stdin, so the two never get conflated.
   await writeFile(promptFile, req.controlInstructions, { mode: 0o600 });
+  if (Object.keys(servers).length) {
+    const mcpFile = join(directory, "mcp.json");
+    const mcpServers = Object.fromEntries(
+      Object.entries(servers).map(([name, server]) => [
+        name,
+        server.type === "stdio"
+          ? {
+              type: "stdio",
+              command: server.command,
+              args: server.args ?? [],
+              env: server.env ?? {}
+            }
+          : { type: "http", url: server.url, headers: server.headers ?? {} }
+      ])
+    );
+    await writeFile(mcpFile, JSON.stringify({ mcpServers }), { mode: 0o600 });
+    commandArgsPrefix = [...commandArgsPrefix, "--mcp-config", mcpFile];
+  }
   // Only --include-partial-messages produces thinking/text/input_json deltas;
   // plain stream-json still delivers whole assistant blocks, which cannot
   // satisfy the local Chat's real-time streaming requirement.
@@ -601,6 +629,7 @@ export function createClaudeCodeAdapter({
   const nativeResponders = new Map<string, NativeInteractionBridge>();
   return defineAdapter({
     metadata: {
+      mcp: true,
       protocolSupport: {
         protocol: "claude.stream-json",
         modes: ["native", "canonical"],

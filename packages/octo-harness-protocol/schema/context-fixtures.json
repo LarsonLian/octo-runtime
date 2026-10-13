@@ -5842,5 +5842,204 @@
         }
       ]
     }
+  },
+  {
+    "name": "mcp-context-dynamic-keys",
+    "valid": true,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "mcp",
+          "payload": {
+            "mcpServers": {
+              "business.eu-v2": {
+                "type": "streamable_http",
+                "url": "${MCP_URL}",
+                "headers": {
+                  "Authorization": "Bearer ${BUSINESS_TOKEN}",
+                  "X-Space-ID": "${SPACE_ID}"
+                }
+              },
+              "constructor": {
+                "type": "stdio",
+                "command": "node",
+                "args": [
+                  "${SCRIPT}"
+                ],
+                "env": {
+                  "MODE": "fixed"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "mcp-context-empty",
+    "valid": true,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "mcp",
+          "payload": {
+            "mcpServers": {}
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "mcp-context-missing",
+    "valid": false,
+    "error": "CONTEXT_SCHEMA_INVALID",
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "mcp",
+          "payload": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "mcp-context-array",
+    "valid": false,
+    "error": "CONTEXT_SCHEMA_INVALID",
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "mcp",
+          "payload": {
+            "mcpServers": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "mcp-context-null-server",
+    "valid": false,
+    "error": "CONTEXT_SCHEMA_INVALID",
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "mcp",
+          "payload": {
+            "mcpServers": {
+              "name": null
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "mcp-context-unknown-field",
+    "valid": false,
+    "error": "CONTEXT_SCHEMA_INVALID",
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "mcp",
+          "payload": {
+            "mcpServers": {
+              "x": {
+                "type": "stdio",
+                "command": "node",
+                "typo": true
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "mcp-context-header-newline",
+    "valid": false,
+    "error": "CONTEXT_SCHEMA_INVALID",
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "mcp",
+          "payload": {
+            "mcpServers": {
+              "x": {
+                "type": "streamable_http",
+                "url": "https://example.com/mcp",
+                "headers": {
+                  "Auth": "bad\nvalue"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "mcp-context-header-case-conflict",
+    "valid": false,
+    "error": "CONTEXT_SCHEMA_INVALID",
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "mcp",
+          "payload": {
+            "mcpServers": {
+              "x": {
+                "type": "streamable_http",
+                "url": "https://example.com/mcp",
+                "headers": {
+                  "Auth": "a",
+                  "auth": "b"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "mcp-context-transport-mixed",
+    "valid": false,
+    "error": "CONTEXT_SCHEMA_INVALID",
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "mcp",
+          "payload": {
+            "mcpServers": {
+              "x": {
+                "type": "streamable_http",
+                "url": "https://example.com/mcp",
+                "command": "node"
+              }
+            }
+          }
+        }
+      ]
+    }
   }
 ]

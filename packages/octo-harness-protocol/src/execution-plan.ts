@@ -16,7 +16,7 @@ function executionValues(context: ContextEnvelope): Record<string, Record<string
   )) {
     if (
       item.namespace === "octo.execution" &&
-      ["adapter", "workspace", "limits", "envs"].includes(item.name)
+      ["adapter", "workspace", "limits", "envs", "mcp"].includes(item.name)
     )
       result[item.name] = item.payload;
     if (item.namespace === "octo.security" && item.name === "approval_policy")
@@ -64,6 +64,18 @@ export function assertFrozenContextPlan(
   match("approval_policy", "mode", plan.approval_mode);
   match("model", "id", plan.model);
   match("reasoning", "effort", plan.effort);
+  const canonical = (value: unknown): string =>
+    JSON.stringify(value, function (_key, child: unknown) {
+      return isObject(child)
+        ? Object.fromEntries(
+            Object.keys(child)
+              .sort()
+              .map((key) => [key, child[key]])
+          )
+        : child;
+    });
+  if (canonical(execution.mcp ?? { mcpServers: {} }) !== canonical(plan.mcp ?? { mcpServers: {} }))
+    throw new TypeError("CONTEXT_PLAN_MISMATCH");
   const envs = execution.envs ?? { env_variables: [] };
   assertContextEnvs(envs);
   const plannedEnvs = new Map(

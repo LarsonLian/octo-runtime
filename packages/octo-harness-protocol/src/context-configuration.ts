@@ -9,6 +9,7 @@ import {
   mergeContext,
   mergeContextEnvs,
   assertContextEnvs,
+  assertContextMcp,
   CONTEXT_SCHEMA
 } from "./context.js";
 import { findContextTypeDefinition } from "./context-catalog.js";
@@ -62,6 +63,26 @@ export function resolveContextConfiguration(
         selected.payload = { ...selected.payload, [field]: structuredClone(constraint) };
       }
       items.set(key, selected);
+    } else if (key === "octo.execution/mcp") {
+      assertContextMcp(required.payload);
+      const suppliedPayload = supplied?.payload ?? { mcpServers: {} };
+      assertContextMcp(suppliedPayload);
+      for (const [name, server] of Object.entries(required.payload.mcpServers)) {
+        if (
+          Object.hasOwn(suppliedPayload.mcpServers, name) &&
+          !equal(server, suppliedPayload.mcpServers[name])
+        )
+          conflict(`${key}.${name}`);
+      }
+      items.set(key, {
+        ...required,
+        payload: {
+          mcpServers: {
+            ...(items.get(key)?.payload.mcpServers as Record<string, unknown>),
+            ...structuredClone(required.payload.mcpServers)
+          }
+        }
+      });
     } else if (key === "octo.execution/envs") {
       const requiredPayload = required.payload;
       assertContextEnvs(requiredPayload);

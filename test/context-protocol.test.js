@@ -98,6 +98,10 @@ ajv.addKeyword("x-octo-unique-env-keys", {
     !Array.isArray(value.env_variables) ||
     new Set(value.env_variables.map((entry) => entry?.key)).size === value.env_variables.length
 });
+ajv.addKeyword("x-octo-unique-header-names", {
+  type: "object",
+  validate: (enabled, value) => !enabled || new Set(Object.keys(value).map(key => key.toLowerCase())).size === Object.keys(value).length
+});
 ajv.addSchema(schema);
 const validateContextSchema = ajv.compile({ $ref: `${schema.$id}#/definitions/ContextEnvelope` });
 const validatePlanSchema = ajv.compile({
