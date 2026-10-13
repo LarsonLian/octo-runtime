@@ -101,6 +101,18 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
   const normalizedArgs = [...args];
   if (normalizedArgs[0] === "--") normalizedArgs.shift();
   const { positionals, flags } = parseArguments(normalizedArgs);
+  if (positionals[0] === "playboard" && flags.help !== true) {
+    if (positionals.length !== 1 || Object.keys(flags).some(key => key !== "manifest")) {
+      throw new Error("playboard accepts only --manifest PATH; pass the request JSON on stdin");
+    }
+    const { runPlayboard } = await import("./playboard.js");
+    return runPlayboard({
+      input: dependencies.input ?? process.stdin,
+      output: dependencies.output,
+      env: dependencies.env,
+      manifest: flags.manifest === undefined ? undefined : requiredFlag(flags.manifest, "manifest")
+    });
+  }
   const profile = optionalString(flags.profile) ?? "default";
   const home = optionalString(flags.home) ?? defaultHarnessHome(dependencies.env, dependencies.platform);
   const paths = harnessPaths(home, profile);
@@ -940,6 +952,17 @@ function selectedRuntimeStatus(
 }
 
 function helpText(group?: string): string {
+  if (group === "playboard") {
+    return `Usage: octo-harness playboard [--manifest PATH] < request.json\n\n` +
+      `Read one complete JSON request from stdin, spawn an independent Host, and stream NDJSON HostFrames.\n` +
+      `No login, Access, Worker, or daemon is required. This runs real providers.\n` +
+      `Required: inputs (ModelInputPart[]), contexts (Context v3 envelope).\n` +
+      `Optional: sessionId, protocolMode (native by default, or canonical), agentSource, providerSession, continuityMode.\n` +
+      `Defaults: codex, current working directory, approval ask, 120-second run timeout.\n` +
+      `Execution settings are overridden by contexts. Pending interactions fail explicitly in this one-shot mode.\n` +
+      `--manifest selects an adapter manifest; defaults to the bundled adapters.\n` +
+      `See apps/cli/README.md for a complete here-string example.`;
+  }
   if (group === "login") {
     return `Usage: octo-harness [--home PATH] [--profile NAME] login [options]\n\n` +
       `First login:\n` +
@@ -985,6 +1008,7 @@ function helpText(group?: string): string {
   return `Octo Harness CLI\n\n` +
     `Global: --home PATH; --profile NAME; --verbose\n\n` +
     `  octo-harness login --help\n` +
+    `  octo-harness playboard < request.json\n` +
     `  octo-harness daemon install|uninstall|run|start|stop|restart|status\n` +
     `  octo-harness doctor [--json]\n` +
     `  octo-harness status\n` +

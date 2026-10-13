@@ -122,6 +122,74 @@ octo-harness agent-run cancel <agent-run-id>
 
 调试时在启动前设置 `OCTO_RUNTIME_DEBUG=1`，Host 日志直接追加到 `$OCTO_HARNESS_HOME/logs/adapter-host.log`。默认关闭；该开关通过进程环境传递到 daemon 和 Host。
 
+## Playboard: standalone local trials
+
+`playboard` reads **one complete JSON object** from stdin, starts its own adapter-host,
+streams one `HostFrame` per stdout line (NDJSON), then exits and closes the Host.
+It uses real adapters/providers without login, enrollment, Access, Worker, a daemon,
+or a Harness database. Provider installation and authentication are still required.
+It does not install providers. Provider tools can act on your workspace.
+
+For Bash/zsh, a complete example is:
+
+```bash
+octo-harness playboard <<< '{
+  "inputs": [{ "type": "text", "text": "Reply with OK. Do not use tools." }],
+  "contexts": { "schema": "octo.context-envelope/v3", "items": [] },
+  "sessionId": "playboard-demo",
+  "protocolMode": "canonical"
+}'
+```
+
+Or save the same JSON and run `octo-harness playboard < request.json`.
+Input can span lines; stdout is NDJSON, not a JSON array. Diagnostics go to stderr.
+No extra summary is appended to stdout. Help is available with `playboard --help`.
+
+| JSON field | Contract |
+| --- | --- |
+| `inputs` | Required, non-empty `ModelInputPart[]`. Text is `{ "type": "text", "text": "..." }`; images use the existing validated base64/mimeType/byteSize/sha256 contract. |
+| `contexts` | Required Context v3 envelope. Empty `items` is valid. Business context retains its submitted order and is rendered by the shared Host. |
+| `sessionId` | Optional local caller session identity, otherwise generated. Reusing it does not restore history or a provider session. Each invocation gets fresh run/invocation IDs. |
+| `protocolMode` | `native` (default) or `canonical`. Native preserves provider payloads; unsupported modes fail without fallback. |
+| `agentSource` | `provisioned` (default) or `preset`, subject to adapter support. |
+| `providerSession` | Optional opaque provider binding, including a non-empty `sessionId`. Pass back the real binding returned in Host events to request continuation. |
+| `continuityMode` | Defaults to `continue` when `providerSession` is supplied, otherwise `fresh`. Explicit `continue` requires the binding; `fresh` forbids it. The provider determines whether resume succeeds. |
+
+Local execution defaults are codex, the current directory (for provisioned execution),
+`approval_policy.mode=ask`, and `limits.run_timeout_ms=120000`. Override execution
+settings in `contexts.items`, for example:
+
+```json
+[
+  { "namespace": "octo.execution", "name": "adapter", "payload": { "type": "claude-code" } },
+  { "namespace": "octo.execution", "name": "workspace", "payload": { "mode": "fixed", "path": "/absolute/workspace" } },
+  { "namespace": "octo.execution", "name": "model", "payload": { "selection": { "id": "your-provider-model" } } },
+  { "namespace": "extra.playboard", "name": "background", "payload": { "text": "Only this turn's background." } }
+]
+```
+
+Workspace selection uses the local resolver: provisioned runs require a fixed absolute
+path; random workspace allocation is not provided. Model, reasoning, limits, envs,
+and MCP configuration use the existing execution protocol. Control instructions use
+the existing independent control channel. Execution configuration is never injected
+as business context. Empty or repeated business items are not supplemented from any
+previous invocation. Provide needed background again after reset or failed resume.
+
+This is a one-shot trial: stdin EOF finishes reading the request, **not execution**.
+If the provider requests approval or user input, its interaction frame is emitted,
+then the CLI cancels and fails with `PLAYBOARD_INTERACTION_REQUIRED`; it never silently
+approves or waits for a reply on closed stdin. Ctrl+C cancels and cleans up the Host.
+Exit codes: `0` completed, `1` validation/startup/provider/interaction failure,
+`130` cancelled or interrupted, `143` SIGTERM. An interrupted or rejected stream may
+end without a terminal frame; consumers must also check the process exit code/stderr.
+Requests are limited to 16 MiB, including embedded images.
+
+`--manifest /absolute/adapters.json` selects an explicit adapter manifest for adapter
+experiments or fake-provider tests; the default is the bundled `config/adapters.json`,
+resolved relative to the installed CLI. Playboard does not read daemon profiles or
+provider bindings from Harness Home. It tests execution, not remote scheduling,
+leases, persistence, or production end-to-end delivery.
+
 ## 状态目录
 
 ```text
