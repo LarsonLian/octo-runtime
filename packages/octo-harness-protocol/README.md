@@ -2,6 +2,8 @@
 
 Octo Harness 的协议包：定义 Core、Adapter Host 与所有 provider 适配器共用的类型契约与运行时校验，包括 `InvokeRequest`、`CanonicalEvent`、`EventEnvelope`、provider 会话与 capability。它与具体 provider 及传输方式均无关。
 
+新增 native / canonical 的模式、帧、接纳身份和交互响应合同，详见[实施记录](../../docs/27-native-canonical-protocol-contract.md)。当前只完成 Protocol 子包，运行入口尚未接入双模式；下文流程仍描述现有 canonical 执行。
+
 ## 定位与职责
 
 各 provider 的原生事件格式差异很大。若缺少统一契约，会带来两个问题：其一，上层（UI、存储）被 provider 绑定，需为每家单独解析，更换 provider 即需重写；其二，适配器作为插件，一个格式错误的事件对象可能污染 Core 的状态。

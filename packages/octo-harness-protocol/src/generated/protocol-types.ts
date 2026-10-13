@@ -5,6 +5,79 @@
  */
 
 /**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "RunProtocolErrorCode".
+ */
+export type RunProtocolErrorCode =
+  | "PROTOCOL_MODE_INVALID"
+  | "PROTOCOL_MODE_UNSUPPORTED"
+  | "EXECUTION_PROTOCOL_MISMATCH"
+  | "EXECUTION_IDENTITY_CONFLICT"
+  | "NATIVE_METHOD_UNSUPPORTED"
+  | "NATIVE_RESPONSE_INVALID"
+  | "INTERACTION_NOT_ACTIVE"
+  | "HOST_EXECUTION_FAILED"
+  | "HOST_ENDED_WITHOUT_TERMINAL"
+  | "STREAM_GAP"
+  | "STREAM_EXPIRED"
+  | "REMOTE_NATIVE_UNSUPPORTED"
+  | "HOST_FRAME_INVALID"
+  | "HOST_CONTROL_INVALID"
+  | "HOST_RECEIPT_INVALID"
+  | "PROTOCOL_SUPPORT_INVALID";
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ProtocolMode".
+ */
+export type ProtocolMode = "native" | "canonical";
+/**
+ * Provider-neutral assistant output channel. analysis is reasoning-class content gated by exposure; commentary is public in-run progress; final is answer content delivered only after the Run reaches a completed terminal state.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "MessageChannel".
+ */
+export type MessageChannel = "analysis" | "commentary" | "final";
+/**
+ * Adapter-authenticated classification of analysis content. public_reasoning, public_summary, and public_plan may enter a public Presentation; missing values are unknown.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "MessageExposure".
+ */
+export type MessageExposure = "public_reasoning" | "public_summary" | "public_plan" | "private_reasoning" | "unknown";
+export type ProtocolMode1 = "native" | "canonical";
+export type ProtocolMode2 = "native" | "canonical";
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "HostControl".
+ */
+export type HostControl =
+  | {
+      type: "state";
+      state: "running" | "completed" | "failed" | "cancelled" | "lost";
+    }
+  | {
+      type: "error";
+      code: RunProtocolErrorCode;
+      message: string;
+    }
+  | {
+      type: "interaction";
+      requestId: string | number;
+      status: "pending" | "resolved" | "expired" | "invalidated";
+      expiresAt?: number;
+    }
+  | {
+      type: "gap";
+      requested_after_seq: number;
+      oldest_seq: number;
+      latest_seq: number;
+    };
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "HostFrame".
+ */
+export type HostFrame = NativeHostFrame | CanonicalHostFrame | ControlHostFrame;
+/**
  * Public, channel-neutral project notification. No runtime context, reasoning, credentials, or tool payloads belong in this envelope.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -157,20 +230,6 @@ export type AgentSource = "preset" | "provisioned";
  */
 export type ContextExtensionResult = ContextExtensionResult1;
 /**
- * Provider-neutral assistant output channel. analysis is reasoning-class content gated by exposure; commentary is public in-run progress; final is answer content delivered only after the Run reaches a completed terminal state.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "MessageChannel".
- */
-export type MessageChannel = "analysis" | "commentary" | "final";
-/**
- * Adapter-authenticated classification of analysis content. public_reasoning, public_summary, and public_plan may enter a public Presentation; missing values are unknown.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "MessageExposure".
- */
-export type MessageExposure = "public_reasoning" | "public_summary" | "public_plan" | "private_reasoning" | "unknown";
-/**
  * Display-only fields permitted by assertApprovalRequest. Values remain inert provider metadata and do not redefine commands, permissions or grant scope.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -275,6 +334,293 @@ export type ExecutionTarget =
  * Serializable data shapes for the Octo Harness NDJSON protocol. Runtime behavior remains hand-written in src/index.ts, and this schema is the source of truth for generated TypeScript types. The x-octo-unicode-scalar-strings semantic keyword requires every JSON string value and object member name to contain Unicode scalar values only: unpaired UTF-16 surrogates are rejected, not repaired or normalized. Consumers must enforce this protocol-wide rule even when validating a definition directly.
  */
 export interface OctoHarnessProtocolSchema {}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "CanonicalEventWire".
+ */
+export interface CanonicalEventWire {
+  protocolVersion: 2;
+  type:
+    | "session.update"
+    | "context.applied"
+    | "usage.update"
+    | "model_step.started"
+    | "model_step.finished"
+    | "message.create"
+    | "message.delta"
+    | "message.update"
+    | "tool_call.create"
+    | "tool_call.delta"
+    | "tool_call.update"
+    | "activity.started"
+    | "activity.updated"
+    | "activity.finished"
+    | "plan.updated"
+    | "tool_call.progress"
+    | "run.notice"
+    | "interaction.requested"
+    | "interaction.resolved"
+    | "run.queued"
+    | "run.started"
+    | "run.completed"
+    | "run.failed"
+    | "run.cancelled";
+  payload: CanonicalEventPayload;
+}
+/**
+ * Shared canonical event payload. The open dictionary carries structured tool, surface, and usage fields while common lifecycle fields remain explicit.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "CanonicalEventPayload".
+ */
+export interface CanonicalEventPayload {
+  providerSession?: ProviderSession;
+  channel?: MessageChannel;
+  exposure?: MessageExposure;
+  provenance?: MessageProvenance;
+  /**
+   * Stable message identifier.
+   */
+  messageId?: string;
+  /**
+   * Stable model-step identifier used to associate messages and tool calls with one provider turn.
+   */
+  stepId?: string;
+  /**
+   * Message role, such as assistant.
+   */
+  role?: string;
+  /**
+   * Tool call or run status identifier.
+   */
+  status?: string;
+  /**
+   * Text delta or complete text.
+   */
+  text?: string;
+  /**
+   * Termination or error reason.
+   */
+  reason?: string;
+  /**
+   * Human-readable diagnostic message.
+   */
+  message?: string;
+  failure?: FailureEnvelope;
+  [k: string]: unknown;
+}
+/**
+ * Provider-owned session resume data. Core treats sessionId and adapter extension fields as opaque.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ProviderSession".
+ */
+export interface ProviderSession {
+  /**
+   * Opaque provider session identifier.
+   */
+  sessionId: string;
+  /**
+   * Whether the provider declares that later invocations can resume this session.
+   */
+  resumable?: boolean;
+  /**
+   * Continuity outcome for this session update. Compaction applies to the next turn; fresh fallback applies to the current turn.
+   */
+  resumeOutcome?: "new" | "resumed" | "fresh_fallback" | "compacted";
+  /**
+   * Low-cardinality reason for a fresh resume fallback.
+   */
+  resumeFallback?: string;
+  /**
+   * Frozen context input variant actually selected for the current provider turn.
+   */
+  contextInputVariant?: "primary" | "recovery";
+  [k: string]: unknown;
+}
+/**
+ * Provider-native provenance written by the adapter. Audience projectors use it to audit public exposure and clients cannot override it.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "MessageProvenance".
+ */
+export interface MessageProvenance {
+  /**
+   * Adapter or provider type that produced the message.
+   */
+  provider: string;
+  /**
+   * Provider-native event type that was normalized.
+   */
+  nativeEvent: string;
+}
+/**
+ * Versioned, safe failure fact shared by Harness, Worker, and channel projectors. Public codes are immutable catalog identifiers; dynamic diagnostics stay outside this object.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "FailureEnvelope".
+ */
+export interface FailureEnvelope {
+  schemaVersion: 1;
+  code: string;
+  reasonCode: string;
+  category: string;
+  stage: string;
+  messageKey: string;
+  /**
+   * Catalog-allowlisted presentation parameters only.
+   */
+  params: {
+    [k: string]: string | number | boolean;
+  };
+  retryable: boolean;
+  retryAfterMs?: number;
+  action: FailureAction;
+  diagnosticId: string;
+  source: FailureSource;
+  cause?: FailureCause;
+  occurredAt: string;
+}
+/**
+ * A catalog-controlled recovery action. Clients render labelKey and must not execute arbitrary commands from this object.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "FailureAction".
+ */
+export interface FailureAction {
+  type:
+    | "retry"
+    | "retry_later"
+    | "update_credentials"
+    | "change_model"
+    | "check_runtime"
+    | "install_dependency"
+    | "fix_permissions"
+    | "contact_admin";
+  labelKey: string;
+}
+/**
+ * Low-cardinality component identity. It intentionally excludes hostnames, paths, accounts, and tenant data.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "FailureSource".
+ */
+export interface FailureSource {
+  component: "octo-harness" | "octo-agent-worker";
+  adapter?: string;
+}
+/**
+ * Sanitized machine-readable root cause. Raw stderr, response bodies, paths, and credentials are forbidden.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "FailureCause".
+ */
+export interface FailureCause {
+  reasonCode: string;
+  httpStatus?: number;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "HostInvokeOptions".
+ */
+export interface HostInvokeOptions {
+  protocolMode?: ProtocolMode1;
+  protocol?: string;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "HostInvokeWireOptions".
+ */
+export interface HostInvokeWireOptions {
+  protocol_mode?: ProtocolMode2;
+  protocol?: string;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "HostRunReceipt".
+ */
+export interface HostRunReceipt {
+  run_id: string;
+  invocation_id: string;
+  stream_id: string;
+  agent_session_id: string;
+  session_generation: number;
+  protocol_mode: ProtocolMode;
+  protocol: string;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "AdapterProtocolSupport".
+ */
+export interface AdapterProtocolSupport {
+  protocol: string;
+  /**
+   * @minItems 1
+   */
+  modes: [ProtocolMode, ...ProtocolMode[]];
+  nativeMethods: string[];
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "NativeInteractionResponse".
+ */
+export interface NativeInteractionResponse {
+  requestId: string | number;
+  payload: {
+    [k: string]: unknown;
+  };
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "NativeHostFrame".
+ */
+export interface NativeHostFrame {
+  run_id: string;
+  invocation_id: string;
+  stream_id: string;
+  agent_session_id: string;
+  session_generation: number;
+  seq: number;
+  protocol_mode: "native";
+  protocol: string;
+  kind: "native";
+  messageKind: "response" | "notification" | "request" | "message";
+  payload: {
+    [k: string]: unknown;
+  };
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "CanonicalHostFrame".
+ */
+export interface CanonicalHostFrame {
+  run_id: string;
+  invocation_id: string;
+  stream_id: string;
+  agent_session_id: string;
+  session_generation: number;
+  seq: number;
+  protocol_mode: "canonical";
+  protocol: string;
+  kind: "canonical";
+  event: CanonicalEventWire;
+}
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ControlHostFrame".
+ */
+export interface ControlHostFrame {
+  run_id: string;
+  invocation_id: string;
+  stream_id: string;
+  agent_session_id: string;
+  session_generation: number;
+  seq: number;
+  protocol_mode: ProtocolMode;
+  protocol: string;
+  kind: "control";
+  control: HostControl;
+}
 export interface NotificationMessage1 {
   schema: "octo.notification.v2";
   eventId: string;
@@ -2009,116 +2355,6 @@ export interface ContextEnvsPayload {
   }[];
 }
 /**
- * Provider-native provenance written by the adapter. Audience projectors use it to audit public exposure and clients cannot override it.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "MessageProvenance".
- */
-export interface MessageProvenance {
-  /**
-   * Adapter or provider type that produced the message.
-   */
-  provider: string;
-  /**
-   * Provider-native event type that was normalized.
-   */
-  nativeEvent: string;
-}
-/**
- * A catalog-controlled recovery action. Clients render labelKey and must not execute arbitrary commands from this object.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "FailureAction".
- */
-export interface FailureAction {
-  type:
-    | "retry"
-    | "retry_later"
-    | "update_credentials"
-    | "change_model"
-    | "check_runtime"
-    | "install_dependency"
-    | "fix_permissions"
-    | "contact_admin";
-  labelKey: string;
-}
-/**
- * Low-cardinality component identity. It intentionally excludes hostnames, paths, accounts, and tenant data.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "FailureSource".
- */
-export interface FailureSource {
-  component: "octo-harness" | "octo-agent-worker";
-  adapter?: string;
-}
-/**
- * Sanitized machine-readable root cause. Raw stderr, response bodies, paths, and credentials are forbidden.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "FailureCause".
- */
-export interface FailureCause {
-  reasonCode: string;
-  httpStatus?: number;
-}
-/**
- * Versioned, safe failure fact shared by Harness, Worker, and channel projectors. Public codes are immutable catalog identifiers; dynamic diagnostics stay outside this object.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "FailureEnvelope".
- */
-export interface FailureEnvelope {
-  schemaVersion: 1;
-  code: string;
-  reasonCode: string;
-  category: string;
-  stage: string;
-  messageKey: string;
-  /**
-   * Catalog-allowlisted presentation parameters only.
-   */
-  params: {
-    [k: string]: string | number | boolean;
-  };
-  retryable: boolean;
-  retryAfterMs?: number;
-  action: FailureAction;
-  diagnosticId: string;
-  source: FailureSource;
-  cause?: FailureCause;
-  occurredAt: string;
-}
-/**
- * Provider-owned session resume data. Core treats sessionId and adapter extension fields as opaque.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ProviderSession".
- */
-export interface ProviderSession {
-  /**
-   * Opaque provider session identifier.
-   */
-  sessionId: string;
-  /**
-   * Whether the provider declares that later invocations can resume this session.
-   */
-  resumable?: boolean;
-  /**
-   * Continuity outcome for this session update. Compaction applies to the next turn; fresh fallback applies to the current turn.
-   */
-  resumeOutcome?: "new" | "resumed" | "fresh_fallback" | "compacted";
-  /**
-   * Low-cardinality reason for a fresh resume fallback.
-   */
-  resumeFallback?: string;
-  /**
-   * Frozen context input variant actually selected for the current provider turn.
-   */
-  contextInputVariant?: "primary" | "recovery";
-  [k: string]: unknown;
-}
-/**
  * Harness-owned phase-aware invocation watchdog budgets.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -2178,48 +2414,6 @@ export interface AgentConfig {
    * Provider-specific extension options passed through unchanged by Core.
    */
   providerOptions?: Record<string, unknown>;
-  [k: string]: unknown;
-}
-/**
- * Shared canonical event payload. The open dictionary carries structured tool, surface, and usage fields while common lifecycle fields remain explicit.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "CanonicalEventPayload".
- */
-export interface CanonicalEventPayload {
-  providerSession?: ProviderSession;
-  channel?: MessageChannel;
-  exposure?: MessageExposure;
-  provenance?: MessageProvenance;
-  /**
-   * Stable message identifier.
-   */
-  messageId?: string;
-  /**
-   * Stable model-step identifier used to associate messages and tool calls with one provider turn.
-   */
-  stepId?: string;
-  /**
-   * Message role, such as assistant.
-   */
-  role?: string;
-  /**
-   * Tool call or run status identifier.
-   */
-  status?: string;
-  /**
-   * Text delta or complete text.
-   */
-  text?: string;
-  /**
-   * Termination or error reason.
-   */
-  reason?: string;
-  /**
-   * Human-readable diagnostic message.
-   */
-  message?: string;
-  failure?: FailureEnvelope;
   [k: string]: unknown;
 }
 /**
