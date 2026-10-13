@@ -1,19 +1,38 @@
-import type { AdapterHostRpc, HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
+import type {
+  AdapterHostRpc,
+  HostedAdapterMetadata
+} from "@mininglamp-oss/octo-harness-adapter-host";
 import { DEFAULT_RUNTIME_LIMITS } from "@mininglamp-oss/octo-harness-adapter-host";
 import { createClaudeMaterialCompactionPort } from "@mininglamp-oss/octo-harness-context-builder/anthropic-material-compaction";
-import { FileMaterialCompactionStore, compactContextMaterials, type MaterialCompactionPort } from "@mininglamp-oss/octo-harness-context-builder/context-compaction";
-import { prepareRunContext, type PreparedRunContext } from "@mininglamp-oss/octo-harness-context-builder/context-preparation";
+import {
+  FileMaterialCompactionStore,
+  compactContextMaterials,
+  type MaterialCompactionPort
+} from "@mininglamp-oss/octo-harness-context-builder/context-compaction";
+import {
+  prepareRunContext,
+  type PreparedRunContext
+} from "@mininglamp-oss/octo-harness-context-builder/context-preparation";
 import { resolveRuntimeInputImages } from "@mininglamp-oss/octo-harness-context-builder/input-images";
 import { createCodexMaterialCompactionPort } from "@mininglamp-oss/octo-harness-context-builder/responses-material-compaction";
-import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext } from "@mininglamp-oss/octo-harness-context-builder/run-context";
+import {
+  assertFrozenContextPlan,
+  compileRunContext,
+  type CompiledRunContext
+} from "@mininglamp-oss/octo-harness-context-builder/run-context";
 import type {
   AgentConfig,
   CanonicalEvent,
   ContextEnvelope,
   InteractionResponse,
-  InvokeRequest,IssuedToolAuthorization,ProviderSession,
+  InvokeRequest,
+  IssuedToolAuthorization,
+  ProviderSession,
   ResolvedExecutionPlan,
-  ResolvedRuntimeSelection,ScenarioPolicySnapshot,ScenarioRequest,ToolAuthorization
+  ResolvedRuntimeSelection,
+  ScenarioPolicySnapshot,
+  ScenarioRequest,
+  ToolAuthorization
 } from "@mininglamp-oss/octo-harness-protocol";
 import {
   RUNTIME_RUN_CONTRACT,
@@ -37,14 +56,16 @@ import { AgentWorkStore, StreamGapError } from "./agent-work-store.js";
 import { ContextPipeline } from "./context-pipeline.js";
 import { recordContextPreparation } from "./context-preparation-receipt.js";
 import { collectRuntimeDeviceInfo } from "./device-info.js";
-import {
-  REQUEST_ID_HEADER,
-  createRequestId,
-  responseRequestId
-} from "./request-id.js";
+import { REQUEST_ID_HEADER, createRequestId, responseRequestId } from "./request-id.js";
 import { scenarioInstructions } from "./scenario-context.js";
 import { prepareTaskMaterials, type PreparedTaskMaterials } from "./task-materials.js";
-import { businessServiceConnections, resolveToolAuthorizations, unconsumedToolAuthorizations, type BusinessServiceBinding, type BusinessServiceConnections } from "./tool-authorizations.js";
+import {
+  businessServiceConnections,
+  resolveToolAuthorizations,
+  unconsumedToolAuthorizations,
+  type BusinessServiceBinding,
+  type BusinessServiceConnections
+} from "./tool-authorizations.js";
 
 const MIN_PROTOCOL_VERSION = 2;
 const MAX_PROTOCOL_VERSION = 2;
@@ -87,17 +108,26 @@ export interface AgentWorkRuntimeOptions {
   /** Endpoints configured by the local host, never supplied by a Run. */
   businessServiceBindings?: Partial<Record<"task" | "discussion", BusinessServiceBinding>>;
   /** A native tool's existing credential receiver; must not install or rewrite tool configuration. */
-  receiveToolAuthorizations?: (grants: readonly IssuedToolAuthorization[], identity: {
-    runId: string; leaseId: string; fencingToken: number; signal: AbortSignal;
-  }) => Promise<void>;
+  receiveToolAuthorizations?: (
+    grants: readonly IssuedToolAuthorization[],
+    identity: {
+      runId: string;
+      leaseId: string;
+      fencingToken: number;
+      signal: AbortSignal;
+    }
+  ) => Promise<void>;
   token: string;
   runtimeId?: string;
   runtimeName: string;
   /** Profile-local adapter configuration. Secrets never come from AgentRevision or service argv. */
-  adapterConfigurations?: Record<string, {
-    providerAgentId?: string;
-    providerOptions: Record<string, string>;
-  }>;
+  adapterConfigurations?: Record<
+    string,
+    {
+      providerAgentId?: string;
+      providerOptions: Record<string, string>;
+    }
+  >;
   /** Local adapter health poll; default 5 seconds. */
   adapterProbeMs?: number;
   /** Delay before the first reconnect attempt after a connected socket drops. */
@@ -135,7 +165,9 @@ export interface AgentWorkRuntimeOptions {
   reconcileMs?: number;
   /** 仅由可信宿主提供已资格验证的无工具摘要/精确计量能力，不能从 Context 传入。 */
   createMaterialCompactionPort?: (request: {
-    envelope: ExecutionEnvelope; compiled: CompiledRunContext; signal: AbortSignal;
+    envelope: ExecutionEnvelope;
+    compiled: CompiledRunContext;
+    signal: AbortSignal;
   }) => Promise<MaterialCompactionPort>;
 }
 
@@ -161,14 +193,11 @@ export type RuntimeConnectionReason =
   | "system_resume"
   | "clock_change";
 
-type RuntimeRecoveryTrigger = "transport" | "server_goaway" | "network_change" | "system_resume" | "clock_change";
+type RuntimeRecoveryTrigger =
+  "transport" | "server_goaway" | "network_change" | "system_resume" | "clock_change";
 
 export type RuntimeStoreHealthState =
-  | "healthy"
-  | "low_disk"
-  | "full"
-  | "corrupt_quarantined"
-  | "migration_failed";
+  "healthy" | "low_disk" | "full" | "corrupt_quarantined" | "migration_failed";
 
 interface RuntimeStoreHealth {
   state: RuntimeStoreHealthState;
@@ -197,7 +226,7 @@ export interface ExecutionEnvelope {
   continuity_mode?: "continue" | "fresh";
   provider_session?: ProviderSession;
   agent_run_request: {
-    execution_target?: import('@mininglamp-oss/octo-harness-protocol').ExecutionTarget;
+    execution_target?: import("@mininglamp-oss/octo-harness-protocol").ExecutionTarget;
     tool_authorizations?: ToolAuthorization[];
     scenario?: ScenarioRequest;
     namespace: string;
@@ -260,11 +289,9 @@ interface AcceptingRun {
 }
 
 /**
- * The local Agent Work runtime: registers with the control plane, holds a
- * WebSocket for commands, executes accepted Runs through the adapter host, and
- * relays original events from a bounded process-local replay window.
- * Reconnect uses source cursors; restart or overflow reports an explicit gap.
- * Completion does not wait for a cloud event ACK.
+ * 向 Worker 注册并通过 WebSocket 接收命令，经 Adapter Host 执行已接纳的 Run。
+ * 原始事件保存在有界的进程内回放窗口，断线后按源游标续传。
+ * 重启或窗口淘汰后明确报告流失效或缺口；执行完成不等待云端事件 ACK。
  */
 export class AgentWorkRuntime {
   readonly #options: AgentWorkRuntimeOptions;
@@ -321,12 +348,11 @@ export class AgentWorkRuntime {
   #storeQuarantined = false;
   #storeHealth: RuntimeStoreHealth;
 
-  constructor(
-    options: AgentWorkRuntimeOptions,
-    host: AdapterHostRpc,
-    runAdmission?: RunAdmission
-  ) {
-    if (typeof options.profile !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(options.profile)) {
+  constructor(options: AgentWorkRuntimeOptions, host: AdapterHostRpc, runAdmission?: RunAdmission) {
+    if (
+      typeof options.profile !== "string" ||
+      !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(options.profile)
+    ) {
       throw new Error("Agent Work Runtime requires a valid Harness profile of 1-128 characters");
     }
     this.#options = options;
@@ -352,7 +378,10 @@ export class AgentWorkRuntime {
     if ((options.reconnectFirstMs ?? DEFAULT_RECONNECT_FIRST_MS) < 1) {
       throw new Error("reconnectFirstMs must be positive");
     }
-    if ((options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS) < (options.reconnectMs ?? DEFAULT_RECONNECT_MIN_MS)) {
+    if (
+      (options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS) <
+      (options.reconnectMs ?? DEFAULT_RECONNECT_MIN_MS)
+    ) {
       throw new Error("reconnectMaxMs must not be below reconnectMs");
     }
     if ((options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS) < 1) {
@@ -370,8 +399,13 @@ export class AgentWorkRuntime {
     if (!Number.isFinite(recoveryJitterMaxMs) || recoveryJitterMaxMs < 1) {
       throw new Error("recoveryJitterMaxMs must be finite and positive");
     }
-    const credentialFailureLimit = options.credentialFailureLimit ?? DEFAULT_CREDENTIAL_FAILURE_LIMIT;
-    if (!Number.isSafeInteger(credentialFailureLimit) || credentialFailureLimit < 1 || credentialFailureLimit > 100) {
+    const credentialFailureLimit =
+      options.credentialFailureLimit ?? DEFAULT_CREDENTIAL_FAILURE_LIMIT;
+    if (
+      !Number.isSafeInteger(credentialFailureLimit) ||
+      credentialFailureLimit < 1 ||
+      credentialFailureLimit > 100
+    ) {
       throw new Error("credentialFailureLimit must be an integer between 1 and 100");
     }
   }
@@ -407,7 +441,7 @@ export class AgentWorkRuntime {
         freeBytes: this.#storeHealth.freeBytes,
         minimumFreeBytes: this.#storeHealth.minimumFreeBytes,
         errorCode: this.#storeHealth.errorCode ?? null
-      },
+      }
     };
   }
 
@@ -430,14 +464,18 @@ export class AgentWorkRuntime {
     await this.#openStore();
     this.#startRecoveryProbe(epoch);
     this.#startDiskProbe(epoch);
-    this.#adapterProbe = setInterval(() => { void this.#refreshOpenClaw(epoch); }, this.#options.adapterProbeMs ?? 5_000);
+    this.#adapterProbe = setInterval(() => {
+      void this.#refreshOpenClaw(epoch);
+    }, this.#options.adapterProbeMs ?? 5_000);
     try {
       await this.#registerAndConnect(epoch);
     } catch (error) {
       this.#connectionReason = connectionFailureReason(error);
       if (error instanceof RuntimeIdentityMismatchError) throw error;
-      if (error instanceof RuntimeCredentialRejectedError
-        && error.attempt >= (this.#options.credentialFailureLimit ?? DEFAULT_CREDENTIAL_FAILURE_LIMIT)) {
+      if (
+        error instanceof RuntimeCredentialRejectedError &&
+        error.attempt >= (this.#options.credentialFailureLimit ?? DEFAULT_CREDENTIAL_FAILURE_LIMIT)
+      ) {
         this.#connectionState = "action_required";
         this.#connectionReason = "auth";
         this.#reportError(
@@ -447,9 +485,14 @@ export class AgentWorkRuntime {
           { http_status: error.status, consecutive_failures: error.attempt }
         );
       }
-      this.#reportError("transport.connection.initial_failed", "initial Agent Work connection failed", error);
+      this.#reportError(
+        "transport.connection.initial_failed",
+        "initial Agent Work connection failed",
+        error
+      );
     }
-    this.#loop = this.#connectionState === "action_required" ? Promise.resolve() : this.#readLoop(epoch);
+    this.#loop =
+      this.#connectionState === "action_required" ? Promise.resolve() : this.#readLoop(epoch);
     this.#pump = this.#senderLoop(epoch);
     const reconcileMs = this.#options.reconcileMs ?? DEFAULT_RECONCILE_MS;
     this.#reconcileTimer = setInterval(() => {
@@ -457,7 +500,11 @@ export class AgentWorkRuntime {
         this.#store?.reconcile();
       } catch (error) {
         this.#markStoreUnavailable(error);
-        this.#reportError("agent_work.outbox.reconcile_failed", "Agent Work outbox reconcile failed", error);
+        this.#reportError(
+          "agent_work.outbox.reconcile_failed",
+          "Agent Work outbox reconcile failed",
+          error
+        );
       }
     }, reconcileMs);
   }
@@ -531,7 +578,11 @@ export class AgentWorkRuntime {
     }
   }
 
-  async #register(adapterTypes: string[], signal?: AbortSignal, updateOnly = false): Promise<{ runtimeId: string; protocolVersion: number }> {
+  async #register(
+    adapterTypes: string[],
+    signal?: AbortSignal,
+    updateOnly = false
+  ): Promise<{ runtimeId: string; protocolVersion: number }> {
     if (!updateOnly) this.#connectionState = "registering";
     const sentRequestId = createRequestId();
     const response = await fetch(`${stripSlash(this.#options.baseUrl)}/v1/runtime/register`, {
@@ -547,21 +598,24 @@ export class AgentWorkRuntime {
         protocol_version_max: MAX_PROTOCOL_VERSION,
         capabilities: {
           run_contract: RUNTIME_RUN_CONTRACT,
-          adapters: this.#adapters.map(adapter => ({
+          adapters: this.#adapters.map((adapter) => ({
             provider_type: adapter.type,
             provider_version: adapter.providerVersion ?? null,
             provider_path: adapter.providerPath ?? null,
             available: adapter.available === true,
-            unavailable_reason: adapter.available === true ? null : adapter.unavailableReason ?? "probe_missing",
+            unavailable_reason:
+              adapter.available === true ? null : (adapter.unavailableReason ?? "probe_missing"),
             capabilities: adapter.capabilities,
             agent_sources: adapter.agentSources,
             execution_features: adapter.executionFeatures,
             ...(adapter.processModel ? { process_model: adapter.processModel } : {}),
             ...(adapter.transport ? { transport: adapter.transport } : {})
-          })),
+          }))
         }
       }),
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000)
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+        : AbortSignal.timeout(15_000)
     });
     const requestId = responseRequestId(response, sentRequestId);
     let body: {
@@ -569,16 +623,24 @@ export class AgentWorkRuntime {
       error?: { message?: string; code?: string; details?: { reason_code?: string } };
     };
     try {
-      body = await response.json() as typeof body;
+      body = (await response.json()) as typeof body;
     } catch (error) {
-      throw new Error(`Agent Work runtime registration returned invalid JSON (request_id=${requestId})`, { cause: error });
+      throw new Error(
+        `Agent Work runtime registration returned invalid JSON (request_id=${requestId})`,
+        { cause: error }
+      );
     }
     const rejectRegistration = (error: Error): never => {
       throw error;
     };
-    if (body.error?.code === "RUNTIME_PROFILE_MISMATCH" || body.error?.details?.reason_code === "RUNTIME_PROFILE_MISMATCH") {
+    if (
+      body.error?.code === "RUNTIME_PROFILE_MISMATCH" ||
+      body.error?.details?.reason_code === "RUNTIME_PROFILE_MISMATCH"
+    ) {
       rejectRegistration(
-        new RuntimeIdentityMismatchError(`Agent Work profile does not match the enrolled Runtime (request_id=${requestId})`)
+        new RuntimeIdentityMismatchError(
+          `Agent Work profile does not match the enrolled Runtime (request_id=${requestId})`
+        )
       );
     }
     const registeredRuntime = body.runtime;
@@ -589,18 +651,24 @@ export class AgentWorkRuntime {
           new RuntimeCredentialRejectedError(response.status, this.#credentialFailures)
         );
       }
-      const error = new Error(`Agent Work runtime registration failed (${response.status}, request_id=${requestId}): ${body.error?.message ?? "invalid response"}`);
+      const error = new Error(
+        `Agent Work runtime registration failed (${response.status}, request_id=${requestId}): ${body.error?.message ?? "invalid response"}`
+      );
       return rejectRegistration(error);
     }
     if (registeredRuntime.profile !== this.#options.profile) {
       rejectRegistration(
-        new RuntimeIdentityMismatchError(`Agent Work runtime registration returned a different or missing profile (request_id=${requestId})`)
+        new RuntimeIdentityMismatchError(
+          `Agent Work runtime registration returned a different or missing profile (request_id=${requestId})`
+        )
       );
     }
     const protocolVersion = registeredRuntime.protocol_version;
     if (protocolVersion !== MAX_PROTOCOL_VERSION) {
       rejectRegistration(
-        new Error(`Agent Work selected unsupported protocol ${protocolVersion} (request_id=${requestId})`)
+        new Error(
+          `Agent Work selected unsupported protocol ${protocolVersion} (request_id=${requestId})`
+        )
       );
     }
     this.#credentialFailures = 0;
@@ -699,9 +767,14 @@ export class AgentWorkRuntime {
           await this.#waitForDisconnect(socket, epoch);
         } catch (error) {
           this.#connectionReason = connectionFailureReason(error);
-          this.#reportError("transport.connection.error", "Agent Work WebSocket connection failed", error, {
-            connection_id: this.#connectionId
-          });
+          this.#reportError(
+            "transport.connection.error",
+            "Agent Work WebSocket connection failed",
+            error,
+            {
+              connection_id: this.#connectionId
+            }
+          );
         }
         if (this.#socket === socket) this.#socket = undefined;
         this.#connectionId = undefined;
@@ -727,14 +800,16 @@ export class AgentWorkRuntime {
         const fastRecoveryReason = this.#fastRecoveryReason;
         this.#fastRecoveryReason = undefined;
         const clientReconnectDelay = fastRecoveryReason
-          ? Math.floor(Math.random() * (this.#options.recoveryJitterMaxMs ?? DEFAULT_RECOVERY_JITTER_MAX_MS))
+          ? Math.floor(
+              Math.random() * (this.#options.recoveryJitterMaxMs ?? DEFAULT_RECOVERY_JITTER_MAX_MS)
+            )
           : reconnectDelayMs(
-            reconnectAttempt,
-            this.#options.reconnectMs ?? DEFAULT_RECONNECT_MIN_MS,
-            this.#options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS,
-            Math.random,
-            this.#options.reconnectFirstMs ?? DEFAULT_RECONNECT_FIRST_MS
-          );
+              reconnectAttempt,
+              this.#options.reconnectMs ?? DEFAULT_RECONNECT_MIN_MS,
+              this.#options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS,
+              Math.random,
+              this.#options.reconnectFirstMs ?? DEFAULT_RECONNECT_FIRST_MS
+            );
         const reconnectDelay = reconnectDelayWithServerHintMs(
           clientReconnectDelay,
           serverReconnectAfterMs,
@@ -753,8 +828,11 @@ export class AgentWorkRuntime {
           this.#connectionReason = connectionFailureReason(error);
           if (error instanceof RuntimeStoppingError || !this.#isCurrentLifecycle(epoch)) return;
           if (error instanceof RuntimeRecoverySignal) continue;
-          if (error instanceof RuntimeCredentialRejectedError
-            && error.attempt >= (this.#options.credentialFailureLimit ?? DEFAULT_CREDENTIAL_FAILURE_LIMIT)) {
+          if (
+            error instanceof RuntimeCredentialRejectedError &&
+            error.attempt >=
+              (this.#options.credentialFailureLimit ?? DEFAULT_CREDENTIAL_FAILURE_LIMIT)
+          ) {
             this.#connectionState = "action_required";
             this.#connectionReason = "auth";
             this.#reportError(
@@ -765,9 +843,14 @@ export class AgentWorkRuntime {
             );
             return;
           }
-          this.#reportError("transport.connection.reconnect_failed", "Agent Work WebSocket reconnect failed", error, {
-            reconnect_attempt: this.#connectionAttempt
-          });
+          this.#reportError(
+            "transport.connection.reconnect_failed",
+            "Agent Work WebSocket reconnect failed",
+            error,
+            {
+              reconnect_attempt: this.#connectionAttempt
+            }
+          );
         } finally {
           if (this.#reconnectAbort === reconnectAbort) this.#reconnectAbort = undefined;
         }
@@ -789,9 +872,11 @@ export class AgentWorkRuntime {
       this.#lastRecoveryProbeAt = now;
       this.#lastRecoveryProbeMonotonicAt = monotonicNow;
       const fingerprint = localNetworkFingerprint();
-      if (clockChanged(elapsed, monotonicElapsed, intervalMs * 2)) this.#requestFastRecovery("clock_change");
+      if (clockChanged(elapsed, monotonicElapsed, intervalMs * 2))
+        this.#requestFastRecovery("clock_change");
       else if (monotonicElapsed > intervalMs * 3) this.#requestFastRecovery("system_resume");
-      else if (fingerprint !== this.#networkFingerprint) this.#requestFastRecovery("network_change");
+      else if (fingerprint !== this.#networkFingerprint)
+        this.#requestFastRecovery("network_change");
       this.#networkFingerprint = fingerprint;
     }, intervalMs);
     this.#recoveryProbe.unref();
@@ -800,7 +885,12 @@ export class AgentWorkRuntime {
   async #openStore(): Promise<void> {
     try {
       if (this.#storeHealth.state === "migration_failed") {
-        this.#storeHealth = { ...this.#storeHealth, state: "healthy", acceptingNewRuns: false, errorCode: undefined };
+        this.#storeHealth = {
+          ...this.#storeHealth,
+          state: "healthy",
+          acceptingNewRuns: false,
+          errorCode: undefined
+        };
       }
       await mkdir(dirname(this.#options.storePath), { recursive: true });
       await this.#refreshDiskHealth(false);
@@ -821,7 +911,12 @@ export class AgentWorkRuntime {
           { quarantined_path: this.#store.quarantinedPath }
         );
       } else if (this.#storeHealth.state !== "low_disk") {
-        this.#storeHealth = { ...this.#storeHealth, state: "healthy", acceptingNewRuns: true, errorCode: undefined };
+        this.#storeHealth = {
+          ...this.#storeHealth,
+          state: "healthy",
+          acceptingNewRuns: true,
+          errorCode: undefined
+        };
       }
     } catch (error) {
       this.#store = undefined;
@@ -840,8 +935,12 @@ export class AgentWorkRuntime {
   #startDiskProbe(epoch: number): void {
     const intervalMs = this.#options.diskCheckMs ?? DEFAULT_DISK_CHECK_MS;
     this.#diskTimer = setInterval(() => {
-      void this.#refreshDiskHealth(true).catch(error => {
-        this.#reportError("agent_work.store.disk_probe_failed", "Agent Work disk probe failed", error);
+      void this.#refreshDiskHealth(true).catch((error) => {
+        this.#reportError(
+          "agent_work.store.disk_probe_failed",
+          "Agent Work disk probe failed",
+          error
+        );
       });
     }, intervalMs);
     this.#diskTimer.unref();
@@ -862,8 +961,12 @@ export class AgentWorkRuntime {
     const previous = this.#storeHealth;
     const belowMinimum = freeBytes < previous.minimumFreeBytes;
     const state: RuntimeStoreHealthState = belowMinimum
-      ? (previous.state === "full" ? "full" : "low_disk")
-      : (this.#storeQuarantined ? "corrupt_quarantined" : "healthy");
+      ? previous.state === "full"
+        ? "full"
+        : "low_disk"
+      : this.#storeQuarantined
+        ? "corrupt_quarantined"
+        : "healthy";
     this.#storeHealth = {
       state,
       acceptingNewRuns: !belowMinimum && this.#store !== undefined,
@@ -903,9 +1006,7 @@ export class AgentWorkRuntime {
   }
 
   #activeRunIds(): string[] {
-    return [...new Set([
-      ...this.#activeRuns.keys(),
-      ...this.#acceptingRuns.keys(),    ])];
+    return [...new Set([...this.#activeRuns.keys(), ...this.#acceptingRuns.keys()])];
   }
 
   #sendRuntimeHealth(): void {
@@ -914,7 +1015,12 @@ export class AgentWorkRuntime {
   }
 
   #requestFastRecovery(reason: "network_change" | "system_resume" | "clock_change"): void {
-    if (this.#stopped || this.#connectionState === "action_required" || this.#serverReconnectProtected) return;
+    if (
+      this.#stopped ||
+      this.#connectionState === "action_required" ||
+      this.#serverReconnectProtected
+    )
+      return;
     this.#fastRecoveryReason = reason;
     this.#connectionReason = reason;
     this.#beginRecovery(reason);
@@ -974,23 +1080,31 @@ export class AgentWorkRuntime {
 
   async #receive(envelope: WireEnvelope, epoch: number): Promise<void> {
     if (!this.#isCurrentLifecycle(epoch)) return;
-    if (envelope.version !== this.#protocolVersion) throw new Error(`unsupported Agent Work protocol ${envelope.version}`);
+    if (envelope.version !== this.#protocolVersion)
+      throw new Error(`unsupported Agent Work protocol ${envelope.version}`);
     if (envelope.runtime_id && envelope.runtime_id !== this.#runtimeId) {
       throw new RuntimeIdentityMismatchError(
         `Agent Work message targeted runtime ${envelope.runtime_id}, expected ${this.#runtimeId}`
       );
     }
+    // 先按 Worker 的游标恢复发送位置，再将连接标记为在线并启动事件发送。
     if (envelope.type === "runtime.welcome") {
       const payload = asRecord(envelope.payload);
-      const everyMs = typeof payload.heartbeat_every_ms === "number" ? payload.heartbeat_every_ms : 30_000;
-      if (!Array.isArray(payload.resume_cursors)) throw new Error("runtime.welcome requires resume_cursors");
+      const everyMs =
+        typeof payload.heartbeat_every_ms === "number" ? payload.heartbeat_every_ms : 30_000;
+      if (!Array.isArray(payload.resume_cursors))
+        throw new Error("runtime.welcome requires resume_cursors");
       for (const value of payload.resume_cursors) {
         const cursor = asRecord(value);
         const runId = stringValue(cursor.run_id);
         if (!runId) throw new Error("invalid resume cursor");
-        if (cursor.expired === true) { this.#store?.pauseCloudStream(runId); continue; }
-        try { this.#store?.resume(runId, Number(cursor.after_seq)); }
-        catch (error) {
+        if (cursor.expired === true) {
+          this.#store?.pauseCloudStream(runId);
+          continue;
+        }
+        try {
+          this.#store?.resume(runId, Number(cursor.after_seq));
+        } catch (error) {
           if (!(error instanceof StreamGapError)) throw error;
           this.#store?.pauseCloudStream(runId);
           this.#trySend("run.stream_gap", { run_id: runId });
@@ -1011,7 +1125,10 @@ export class AgentWorkRuntime {
       }, RECONNECT_STABLE_RESET_MS);
       this.#reconnectReset.unref();
       if (this.#heartbeat) clearInterval(this.#heartbeat);
-      this.#heartbeat = setInterval(() => this.#trySend("runtime.heartbeat", { runtime_version: RUNTIME_VERSION }), everyMs);
+      this.#heartbeat = setInterval(
+        () => this.#trySend("runtime.heartbeat", { runtime_version: RUNTIME_VERSION }),
+        everyMs
+      );
       this.#sendRuntimeHealth();
       // Once the connection is ready, immediately drain the outbox (including
       // events backlogged during the disconnect).
@@ -1035,6 +1152,7 @@ export class AgentWorkRuntime {
       await this.#acceptCommand(envelope.payload as RuntimeCommand, epoch);
       return;
     }
+    // NACK 只回退事件发送游标，不重新执行 Run；不可恢复的流停止发送。
     if (envelope.type === "event.nack") {
       const payload = asRecord(envelope.payload);
       const runId = stringValue(payload.run_id);
@@ -1042,11 +1160,17 @@ export class AgentWorkRuntime {
       if (!runId || !Number.isSafeInteger(resumeFromSeq) || resumeFromSeq < 1) {
         throw new Error("Agent Work event.nack requires run_id and a positive resume_from_seq");
       }
-      if (["RUN_EXPIRED", "RUN_NOT_FOUND", "STALE_RUN_EVENT", "RUN_TERMINAL"].includes(String(payload.code))) {
-        this.#store?.pauseCloudStream(runId); return;
+      if (
+        ["RUN_EXPIRED", "RUN_NOT_FOUND", "STALE_RUN_EVENT", "RUN_TERMINAL"].includes(
+          String(payload.code)
+        )
+      ) {
+        this.#store?.pauseCloudStream(runId);
+        return;
       }
-      try { this.#store?.resume(runId,resumeFromSeq-1); }
-      catch (error) {
+      try {
+        this.#store?.resume(runId, resumeFromSeq - 1);
+      } catch (error) {
         if (!(error instanceof StreamGapError)) throw error;
         this.#store?.pauseCloudStream(runId);
         this.#trySend("run.stream_gap", { run_id: runId });
@@ -1055,17 +1179,20 @@ export class AgentWorkRuntime {
       const previous = this.#nackBackoff.get(runId);
       const attempt = (previous?.attempt ?? 0) + 1;
       const suggestedRetryMs = Number(payload.retry_after_ms);
-      const baseRetryMs = Number.isFinite(suggestedRetryMs) && suggestedRetryMs > 0
-        ? Math.trunc(suggestedRetryMs)
-        : DEFAULT_NACK_RETRY_MS;
-      const retryMs = Math.min(MAX_NACK_RETRY_MS, baseRetryMs * (2 ** Math.min(attempt - 1, 10)));
+      const baseRetryMs =
+        Number.isFinite(suggestedRetryMs) && suggestedRetryMs > 0
+          ? Math.trunc(suggestedRetryMs)
+          : DEFAULT_NACK_RETRY_MS;
+      const retryMs = Math.min(MAX_NACK_RETRY_MS, baseRetryMs * 2 ** Math.min(attempt - 1, 10));
       this.#nackBackoff.set(runId, { attempt, retryAt: Date.now() + retryMs });
       this.#kickSender();
       return;
     }
     if (envelope.type === "error") {
       const payload = asRecord(envelope.payload);
-      throw new Error(`Agent Work protocol error ${String(payload.code)}: ${String(payload.message)}`);
+      throw new Error(
+        `Agent Work protocol error ${String(payload.code)}: ${String(payload.message)}`
+      );
     }
   }
 
@@ -1075,7 +1202,8 @@ export class AgentWorkRuntime {
   }
 
   async #acceptCommand(command: RuntimeCommand, epoch: number): Promise<void> {
-    if (!command?.command_id || !command.run_id || !command.type) throw new Error("invalid runtime.command payload");
+    if (!command?.command_id || !command.run_id || !command.type)
+      throw new Error("invalid runtime.command payload");
     if (command.type === "interaction.respond") {
       const store = this.#store;
       if (!store) {
@@ -1104,12 +1232,21 @@ export class AgentWorkRuntime {
       try {
         const payload = asRecord(command.payload);
         if (payload.execution_instance_id !== active.invocationId) {
-          reject("STALE_EXECUTION_INSTANCE", "interaction response does not own the active invocation instance");
+          reject(
+            "STALE_EXECUTION_INSTANCE",
+            "interaction response does not own the active invocation instance"
+          );
           return;
         }
         const response: InteractionResponse = {
-          interactionId: requiredString(payload.interaction_id, "interaction.respond interaction_id"),
-          outcome: requiredString(payload.outcome, "interaction.respond outcome") as InteractionResponse["outcome"],
+          interactionId: requiredString(
+            payload.interaction_id,
+            "interaction.respond interaction_id"
+          ),
+          outcome: requiredString(
+            payload.outcome,
+            "interaction.respond outcome"
+          ) as InteractionResponse["outcome"],
           ...(Object.hasOwn(payload, "value") ? { value: payload.value } : {})
         };
         assertInteractionResponse(response);
@@ -1125,13 +1262,17 @@ export class AgentWorkRuntime {
       const active = this.#activeRuns.get(command.run_id);
       if (active) {
         active.outputController.abort(new ControlPlaneRunCancelledError());
-        const cancelled = (await this.#host.cancel(active.invocationId, "control plane cancel")).cancelled;
+        const cancelled = (await this.#host.cancel(active.invocationId, "control plane cancel"))
+          .cancelled;
         this.#ackCommand(command, true, cancelled ? undefined : { code: "RUN_NOT_ACTIVE" });
         return;
       }
       const accepting = this.#acceptingRuns.get(command.run_id);
       if (accepting) {
-        const failure = { code: "RUN_CANCELLED_BEFORE_START", message: "run cancelled while waiting for admission" };
+        const failure = {
+          code: "RUN_CANCELLED_BEFORE_START",
+          message: "run cancelled while waiting for admission"
+        };
         this.#store?.recordCommandReceipt(accepting.commandId, accepting.serverSeq, false, failure);
         accepting.controller.abort(new AcceptingRunCancelledError());
         this.#ackCommand(command, true);
@@ -1146,11 +1287,14 @@ export class AgentWorkRuntime {
     }
     const store = this.#store;
     if (!store) {
-      const error = failurePayload({ code: "LOCAL_STORE_UNAVAILABLE" }, {
-        stage: "runtime.command.accept",
-        defaultDomain: "runtime",
-        runId: command.run_id
-      });
+      const error = failurePayload(
+        { code: "LOCAL_STORE_UNAVAILABLE" },
+        {
+          stage: "runtime.command.accept",
+          defaultDomain: "runtime",
+          runId: command.run_id
+        }
+      );
       this.#ackCommand(command, false, error);
       this.#sendRuntimeHealth();
       return;
@@ -1168,7 +1312,10 @@ export class AgentWorkRuntime {
     }
     // A replay while the first handler waits must join the in-flight
     // admission attempt before evaluating mutable capacity constraints.
-    if (this.#acceptingCommandIds.has(command.command_id) || this.#acceptingRuns.has(command.run_id)) {
+    if (
+      this.#acceptingCommandIds.has(command.command_id) ||
+      this.#acceptingRuns.has(command.run_id)
+    ) {
       // The control plane retries unacknowledged commands while a FIFO entry
       // can legitimately wait longer than its delivery timeout. Confirm that
       // the existing local admission owns the command; its original handler
@@ -1181,24 +1328,31 @@ export class AgentWorkRuntime {
       return;
     }
     if (this.#draining) {
-      const error = failurePayload({ code: "RUNTIME_DRAINING" }, {
-        stage: "runtime.command.accept",
-        defaultDomain: "runtime",
-        runId: command.run_id
-      });
+      const error = failurePayload(
+        { code: "RUNTIME_DRAINING" },
+        {
+          stage: "runtime.command.accept",
+          defaultDomain: "runtime",
+          runId: command.run_id
+        }
+      );
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
       return;
     }
     if (!this.#storeHealth.acceptingNewRuns) {
-      const code = this.#storeHealth.state === "low_disk" || this.#storeHealth.state === "full"
-        ? "LOCAL_STORE_FULL"
-        : "LOCAL_STORE_UNAVAILABLE";
-      const error = failurePayload({ code }, {
-        stage: "runtime.command.accept",
-        defaultDomain: "runtime",
-        runId: command.run_id
-      });
+      const code =
+        this.#storeHealth.state === "low_disk" || this.#storeHealth.state === "full"
+          ? "LOCAL_STORE_FULL"
+          : "LOCAL_STORE_UNAVAILABLE";
+      const error = failurePayload(
+        { code },
+        {
+          stage: "runtime.command.accept",
+          defaultDomain: "runtime",
+          runId: command.run_id
+        }
+      );
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
       this.#sendRuntimeHealth();
@@ -1210,21 +1364,27 @@ export class AgentWorkRuntime {
     const hardWatermark = this.#options.hardWatermarkBytes ?? DEFAULT_HARD_WATERMARK_BYTES;
     const pendingBytes = store.outboxBytes();
     if (pendingBytes >= hardWatermark) {
-      const error = failurePayload({ code: "OUTBOX_HARD_LIMIT" }, {
-        stage: "runtime.command.accept",
-        defaultDomain: "runtime",
-        runId: command.run_id
-      });
+      const error = failurePayload(
+        { code: "OUTBOX_HARD_LIMIT" },
+        {
+          stage: "runtime.command.accept",
+          defaultDomain: "runtime",
+          runId: command.run_id
+        }
+      );
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
       return;
     }
     if (pendingBytes >= softWatermark) {
-      const error = failurePayload({ code: "OUTBOX_BACKPRESSURE" }, {
-        stage: "runtime.command.accept",
-        defaultDomain: "runtime",
-        runId: command.run_id
-      });
+      const error = failurePayload(
+        { code: "OUTBOX_BACKPRESSURE" },
+        {
+          stage: "runtime.command.accept",
+          defaultDomain: "runtime",
+          runId: command.run_id
+        }
+      );
       store.recordCommandReceipt(command.command_id, command.server_seq, false, error);
       this.#ackCommand(command, false, error);
       return;
@@ -1259,116 +1419,255 @@ export class AgentWorkRuntime {
         // 准备、压缩、等待执行容量和主调用共用一次总时限，不在阶段切换时重置。
         const limits = asRecord(executionEnvelope.resolved_execution_plan.runtime_limits);
         if (limits.enforcement !== "observe") {
-          const duration = typeof limits.run_timeout_ms === "number" ? limits.run_timeout_ms : DEFAULT_RUNTIME_LIMITS.runTimeoutMs;
+          const duration =
+            typeof limits.run_timeout_ms === "number"
+              ? limits.run_timeout_ms
+              : DEFAULT_RUNTIME_LIMITS.runTimeoutMs;
           runDeadlineAt = acceptedAt + duration;
-          deadlineTimer = setTimeout(() => {
-            controller.abort(new RunTotalDeadlineError(duration));
-            const active = this.#activeRuns.get(command.run_id);
-            if (active) void this.#host.cancel(active.invocationId).catch(() => {});
-          }, Math.max(1, runDeadlineAt - performance.now()));
+          deadlineTimer = setTimeout(
+            () => {
+              controller.abort(new RunTotalDeadlineError(duration));
+              const active = this.#activeRuns.get(command.run_id);
+              if (active) void this.#host.cancel(active.invocationId).catch(() => {});
+            },
+            Math.max(1, runDeadlineAt - performance.now())
+          );
           deadlineTimer.unref?.();
         }
         const selection = executionEnvelope.resolved_runtime_selection;
-        if (!selection.authorized_candidates.some(candidate => candidate.runtime_id === this.#runtimeId)
-          || (selection.selection_mode === "explicit" && selection.explicit_runtime_id !== this.#runtimeId)) {
+        if (
+          !selection.authorized_candidates.some(
+            (candidate) => candidate.runtime_id === this.#runtimeId
+          ) ||
+          (selection.selection_mode === "explicit" &&
+            selection.explicit_runtime_id !== this.#runtimeId)
+        ) {
           throw new TypeError("RUNTIME_SELECTION_TARGET_MISMATCH");
         }
         const adapterTypeForContext = executionAdapterType(executionEnvelope);
         this.#assertAdapterAvailable(adapterTypeForContext);
         const source = executionEnvelope.resolved_execution_plan.agent_source;
-        const adapter = this.#adapters.find(value => value.type === executionEnvelope.resolved_execution_plan.adapter_type);
-        if (!adapter?.agentSources.includes(source)) throw new TypeError("AGENT_SOURCE_UNSUPPORTED");
-        if ((executionEnvelope.resolved_execution_plan.required_capabilities ?? []).some(capability => !adapter.capabilities.includes(capability))) throw new TypeError("ADAPTER_CAPABILITY_UNSUPPORTED");
-        const requiredCapabilities = executionEnvelope.resolved_execution_plan.required_execution_features ?? [];
+        const adapter = this.#adapters.find(
+          (value) => value.type === executionEnvelope.resolved_execution_plan.adapter_type
+        );
+        if (!adapter?.agentSources.includes(source))
+          throw new TypeError("AGENT_SOURCE_UNSUPPORTED");
+        if (
+          (executionEnvelope.resolved_execution_plan.required_capabilities ?? []).some(
+            (capability) => !adapter.capabilities.includes(capability)
+          )
+        )
+          throw new TypeError("ADAPTER_CAPABILITY_UNSUPPORTED");
+        const requiredCapabilities =
+          executionEnvelope.resolved_execution_plan.required_execution_features ?? [];
         const localCapabilities = this.#adapterCapabilities.get(adapterTypeForContext);
-        if (requiredCapabilities.some(capability => !localCapabilities?.has(capability))) throw new TypeError("ADAPTER_REQUIRED_CAPABILITY_MISSING");
+        if (requiredCapabilities.some((capability) => !localCapabilities?.has(capability)))
+          throw new TypeError("ADAPTER_REQUIRED_CAPABILITY_MISSING");
         const input = executionEnvelope.agent_run_request.input;
-        const hasImages = Array.isArray(input.parts) && input.parts.some(part => part && typeof part === "object" && (part as Record<string, unknown>).type === "image");
-        if (hasImages && !localCapabilities?.has("input.image")) throw new TypeError("UNSUPPORTED_INPUT_MODALITY");
-        const materialEntries = contextItem(executionEnvelope.effective_context, "octo.content", "references")?.payload.entries;
-        store.upsertRun({ runId: command.run_id, agentSessionId: executionEnvelope.agent_session_id,
-          commandId: command.command_id, leaseId, fencingToken });
+        const hasImages =
+          Array.isArray(input.parts) &&
+          input.parts.some(
+            (part) =>
+              part && typeof part === "object" && (part as Record<string, unknown>).type === "image"
+          );
+        if (hasImages && !localCapabilities?.has("input.image"))
+          throw new TypeError("UNSUPPORTED_INPUT_MODALITY");
+        const materialEntries = contextItem(
+          executionEnvelope.effective_context,
+          "octo.content",
+          "references"
+        )?.payload.entries;
+        store.upsertRun({
+          runId: command.run_id,
+          agentSessionId: executionEnvelope.agent_session_id,
+          commandId: command.command_id,
+          leaseId,
+          fencingToken
+        });
         // 完成执行绑定和 Adapter 能力检查后，为统一管线注入宿主能力；封存确认前不调用模型。
         const pipeline = new ContextPipeline({
           scenarioPolicyHash: executionEnvelope.internal_context?.scenario_policy?.hash,
           trustedInstructions: [
             ...(stringValue(asRecord(executionEnvelope.agent_revision.definition).instructions)
-              ? [{ text: stringValue(asRecord(executionEnvelope.agent_revision.definition).instructions)!, source: "revision" as const }] : []),
-            ...scenarioInstructions(executionEnvelope.agent_run_request.scenario, executionEnvelope.internal_context?.scenario_policy, executionEnvelope.agent_run_request.context),
+              ? [
+                  {
+                    text: stringValue(
+                      asRecord(executionEnvelope.agent_revision.definition).instructions
+                    )!,
+                    source: "revision" as const
+                  }
+                ]
+              : []),
+            ...scenarioInstructions(
+              executionEnvelope.agent_run_request.scenario,
+              executionEnvelope.internal_context?.scenario_policy,
+              executionEnvelope.agent_run_request.context
+            )
           ],
-          prepareInput: async signal => {
-            const grants = await resolveToolAuthorizations(executionEnvelope.agent_run_request.tool_authorizations ?? [], {
-              baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
-              runId: command.run_id, leaseId, fencingToken, signal
-            });
+          prepareInput: async (signal) => {
+            const grants = await resolveToolAuthorizations(
+              executionEnvelope.agent_run_request.tool_authorizations ?? [],
+              {
+                baseUrl: this.#options.baseUrl,
+                headers: this.#headers(true, createRequestId()),
+                runId: command.run_id,
+                leaseId,
+                fencingToken,
+                signal
+              }
+            );
             services = businessServiceConnections(grants, this.#options.businessServiceBindings);
-            const nativeGrants = unconsumedToolAuthorizations(grants, this.#options.businessServiceBindings);
-            if (nativeGrants.length && !this.#options.receiveToolAuthorizations) throw new TypeError("TOOL_AUTHORIZATION_RECEIVER_UNSUPPORTED");
-            if (this.#options.receiveToolAuthorizations && nativeGrants.length) await this.#options.receiveToolAuthorizations(nativeGrants, { runId: command.run_id, leaseId, fencingToken, signal });
+            const nativeGrants = unconsumedToolAuthorizations(
+              grants,
+              this.#options.businessServiceBindings
+            );
+            if (nativeGrants.length && !this.#options.receiveToolAuthorizations)
+              throw new TypeError("TOOL_AUTHORIZATION_RECEIVER_UNSUPPORTED");
+            if (this.#options.receiveToolAuthorizations && nativeGrants.length)
+              await this.#options.receiveToolAuthorizations(nativeGrants, {
+                runId: command.run_id,
+                leaseId,
+                fencingToken,
+                signal
+              });
             return resolveRuntimeInputImages(input, {
-              baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
-              runId: command.run_id, leaseId, fencingToken, signal
+              baseUrl: this.#options.baseUrl,
+              headers: this.#headers(true, createRequestId()),
+              runId: command.run_id,
+              leaseId,
+              fencingToken,
+              signal
             });
           },
-          prepareCapabilities: async signal => {
-            assertFrozenContextPlan(executionEnvelope.effective_context, executionEnvelope.resolved_execution_plan);
+          prepareCapabilities: async (signal) => {
+            assertFrozenContextPlan(
+              executionEnvelope.effective_context,
+              executionEnvelope.resolved_execution_plan
+            );
             return prepareRunContext(executionEnvelope.resolved_execution_plan, {
               stateRoot: join(dirname(this.#options.storePath), "context"),
               agentSessionId: executionEnvelope.agent_session_id,
-              agentId: executionEnvelope.agent_run_request.agent_id, store, signal
+              agentId: executionEnvelope.agent_run_request.agent_id,
+              store,
+              signal
             });
           },
-          prepareMaterials: signal => prepareTaskMaterials(executionEnvelope.effective_context,
-            services.task, signal, { runId: command.run_id, store }),
+          prepareMaterials: (signal) =>
+            prepareTaskMaterials(executionEnvelope.effective_context, services.task, signal, {
+              runId: command.run_id,
+              store
+            }),
           prepareContinuity: () => Promise.resolve(undefined),
-          ...((this.#options.createMaterialCompactionPort || ["codex", "claude-code"].includes(adapterTypeForContext)) ? {
-            prepareCompiled: async (compiled: CompiledRunContext, signal: AbortSignal): Promise<CompiledRunContext> => {
-              if (!compiled.modelContent) return compiled;
-              const port = this.#options.createMaterialCompactionPort
-                ? await this.#options.createMaterialCompactionPort({ envelope: executionEnvelope, compiled, signal })
-                : await (adapterTypeForContext === "claude-code" ? createClaudeMaterialCompactionPort : createCodexMaterialCompactionPort)({ model: compiled.executionPlan?.model,
-                  protectedInput: executionInputText(input), instructions: compiled.controlInstructions, signal });
-              const sourceRefs = Array.isArray(materialEntries) ? materialEntries.map(entry => {
-                const value = asRecord(entry);
-                return { resource_ref: value.resource_ref, type: value.type };
-              }) : [];
-              const compacted = await compactContextMaterials({
-                runId: command.run_id, material: compiled.modelContent, signal, port, sourceRefs,
-                protectedIdentity: createHash("sha256").update(JSON.stringify({
-                  input, instructions: compiled.controlInstructions, plan: compiled.executionPlan,
-                  internalContext: executionEnvelope.internal_context, providerSession: executionEnvelope.provider_session
-                })).digest("hex"),
-                store: new FileMaterialCompactionStore(join(dirname(this.#options.storePath), "context", "compactions"))
-              });
-              return { ...compiled, modelContent: compacted.material,
-                ...(port.measurementMode === "provider_native" ? { modelCapacity: { model: port.model, contextWindow: port.contextWindow, outputReserveTokens: port.outputReserveTokens, source: port.capacitySource ?? "trusted_host", management: "provider_native" as const } } : {}),
-                ...(compacted.receipt ? { materialCompaction: compacted.receipt } : {}) };
-            }
-          } : {}),
-          seal: (receipt, signal) => recordContextPreparation(receipt, {
-            baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
-            runId: command.run_id, leaseId, fencingToken, signal
-          })
+          ...(this.#options.createMaterialCompactionPort ||
+          ["codex", "claude-code"].includes(adapterTypeForContext)
+            ? {
+                prepareCompiled: async (
+                  compiled: CompiledRunContext,
+                  signal: AbortSignal
+                ): Promise<CompiledRunContext> => {
+                  if (!compiled.modelContent) return compiled;
+                  const port = this.#options.createMaterialCompactionPort
+                    ? await this.#options.createMaterialCompactionPort({
+                        envelope: executionEnvelope,
+                        compiled,
+                        signal
+                      })
+                    : await (
+                        adapterTypeForContext === "claude-code"
+                          ? createClaudeMaterialCompactionPort
+                          : createCodexMaterialCompactionPort
+                      )({
+                        model: compiled.executionPlan?.model,
+                        protectedInput: executionInputText(input),
+                        instructions: compiled.controlInstructions,
+                        signal
+                      });
+                  const sourceRefs = Array.isArray(materialEntries)
+                    ? materialEntries.map((entry) => {
+                        const value = asRecord(entry);
+                        return { resource_ref: value.resource_ref, type: value.type };
+                      })
+                    : [];
+                  const compacted = await compactContextMaterials({
+                    runId: command.run_id,
+                    material: compiled.modelContent,
+                    signal,
+                    port,
+                    sourceRefs,
+                    protectedIdentity: createHash("sha256")
+                      .update(
+                        JSON.stringify({
+                          input,
+                          instructions: compiled.controlInstructions,
+                          plan: compiled.executionPlan,
+                          internalContext: executionEnvelope.internal_context,
+                          providerSession: executionEnvelope.provider_session
+                        })
+                      )
+                      .digest("hex"),
+                    store: new FileMaterialCompactionStore(
+                      join(dirname(this.#options.storePath), "context", "compactions")
+                    )
+                  });
+                  return {
+                    ...compiled,
+                    modelContent: compacted.material,
+                    ...(port.measurementMode === "provider_native"
+                      ? {
+                          modelCapacity: {
+                            model: port.model,
+                            contextWindow: port.contextWindow,
+                            outputReserveTokens: port.outputReserveTokens,
+                            source: port.capacitySource ?? "trusted_host",
+                            management: "provider_native" as const
+                          }
+                        }
+                      : {}),
+                    ...(compacted.receipt ? { materialCompaction: compacted.receipt } : {})
+                  };
+                }
+              }
+            : {}),
+          seal: (receipt, signal) =>
+            recordContextPreparation(receipt, {
+              baseUrl: this.#options.baseUrl,
+              headers: this.#headers(true, createRequestId()),
+              runId: command.run_id,
+              leaseId,
+              fencingToken,
+              signal
+            })
         });
-        const prepared = await pipeline.prepare(executionEnvelope.effective_context,
+        const prepared = await pipeline.prepare(
+          executionEnvelope.effective_context,
           executionEnvelope.resolved_execution_plan,
-          { runId: command.run_id, leaseId, fencingToken }, controller.signal);
+          { runId: command.run_id, leaseId, fencingToken },
+          controller.signal
+        );
         throwIfAcceptingAborted(controller.signal);
         this.#assertCurrentLifecycle(epoch);
-        const mapped = mapExecutionEnvelope({
-          ...executionEnvelope,
-          agent_run_request: { ...executionEnvelope.agent_run_request, input: prepared.input }
-        }, prepared.materials, prepared.capabilities, prepared.compiled);
+        const mapped = mapExecutionEnvelope(
+          {
+            ...executionEnvelope,
+            agent_run_request: { ...executionEnvelope.agent_run_request, input: prepared.input }
+          },
+          prepared.materials,
+          prepared.capabilities,
+          prepared.compiled
+        );
         request = mapped.request;
         // 归档必须使用实际准备并封存的 MCP（含临时 Run grant），原始命令尚未包含资源组件。
         request.runMetadata ??= {};
         request.runMetadata.contextCompilation = {
-          compiler_version: prepared.receipt.compiler_version, catalog_version: prepared.receipt.catalog_version,
-          context_hash: prepared.receipt.context_hash, compiled_hash: prepared.receipt.compiled_hash,
-          run_id: command.run_id, lease_id: leaseId, fencing_token: fencingToken
+          compiler_version: prepared.receipt.compiler_version,
+          catalog_version: prepared.receipt.catalog_version,
+          context_hash: prepared.receipt.context_hash,
+          compiled_hash: prepared.receipt.compiled_hash,
+          run_id: command.run_id,
+          lease_id: leaseId,
+          fencing_token: fencingToken
         };
-        // The authenticated Runtime connection owns this mapping. Never trust
-        // an AgentRun payload to self-report its local profile.
+        // profile 由已认证的本地 Runtime 连接决定，不接受 AgentRun 自报的归属。
         if (this.#options.profile) request.runMetadata.profile = this.#options.profile;
         request.runMetadata.runtimeId = this.#runtimeId;
         adapterType = mapped.adapterType;
@@ -1391,8 +1690,10 @@ export class AgentWorkRuntime {
           return;
         }
         if (error instanceof AcceptingRunCancelledError) {
-          const failure = store.getCommandReceipt(command.command_id)?.error
-            ?? { code: "RUN_CANCELLED_BEFORE_START", message: "run cancelled while waiting for admission" };
+          const failure = store.getCommandReceipt(command.command_id)?.error ?? {
+            code: "RUN_CANCELLED_BEFORE_START",
+            message: "run cancelled while waiting for admission"
+          };
           if (!store.getCommandReceipt(command.command_id)) {
             store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
           }
@@ -1400,27 +1701,29 @@ export class AgentWorkRuntime {
           return;
         }
         const deadlineError: unknown = controller.signal.reason;
-        const failure = deadlineError instanceof RunTotalDeadlineError
-          ? runDeadlineFailure(deadlineError, command.run_id, "context.preparation")
-          : error instanceof ProviderConfigurationMissingError
-            ? failurePayload({ code: "PROVIDER_CONFIG_MISSING" }, {
-              stage: "provider.configuration",
-              defaultDomain: "provider",
-              runId: command.run_id,
-              source: { component: "octo-harness", adapter: error.adapterType }
-            })
-            : { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) };
+        const failure =
+          deadlineError instanceof RunTotalDeadlineError
+            ? runDeadlineFailure(deadlineError, command.run_id, "context.preparation")
+            : error instanceof ProviderConfigurationMissingError
+              ? failurePayload(
+                  { code: "PROVIDER_CONFIG_MISSING" },
+                  {
+                    stage: "provider.configuration",
+                    defaultDomain: "provider",
+                    runId: command.run_id,
+                    source: { component: "octo-harness", adapter: error.adapterType }
+                  }
+                )
+              : { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) };
         store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
         if (store.runExists(command.run_id)) {
           store.pauseCloudStream(command.run_id);
-          store.allocateAndAppend(command.run_id, 'run.failed', { code: failure.code });
+          store.allocateAndAppend(command.run_id, "run.failed", { code: failure.code });
         }
         this.#ackCommand(command, false, failure);
         return;
       }
-      // Freeze the command's context before it waits for provider capacity.
-      // Otherwise a faster sibling Run can advance the consumer generation and
-      // turn a valid fan-out command into a stale-context rejection in the queue.
+      // 上下文已在排队前准备并封存；等待容量期间不重新解析，避免并行 Run 改变执行输入。
       while (this.#isCurrentLifecycle(epoch)) {
         throwIfAcceptingAborted(controller.signal);
         const position = [...this.#acceptingRuns.keys()].indexOf(command.run_id);
@@ -1434,7 +1737,10 @@ export class AgentWorkRuntime {
       throwIfAcceptingAborted(controller.signal);
       request.signal = controller.signal;
       if (runDeadlineAt !== undefined) {
-        request.runtimeLimits = { ...request.runtimeLimits, runTimeoutMs: Math.max(100, Math.floor(runDeadlineAt - performance.now())) };
+        request.runtimeLimits = {
+          ...request.runtimeLimits,
+          runTimeoutMs: Math.max(100, Math.floor(runDeadlineAt - performance.now()))
+        };
       }
       store.upsertRun({
         runId: command.run_id,
@@ -1448,14 +1754,13 @@ export class AgentWorkRuntime {
         invocationId: request.invocationId,
         leaseId,
         fencingToken,
-        outputController: controller,
+        outputController: controller
       });
       if (!accepting.acknowledged) this.#ackCommand(command, true);
       const execution = this.#execute(command, adapterType, request, releaseAdmission);
       admissionHandedOff = true;
       this.#executionTasks.add(execution);
       void execution.finally(() => {
-
         clearTimeout(deadlineTimer);
         this.#executionTasks.delete(execution);
       });
@@ -1467,7 +1772,6 @@ export class AgentWorkRuntime {
       this.#ackCommand(command, false, failure);
     } finally {
       if (!admissionHandedOff) {
-
         clearTimeout(deadlineTimer);
         releaseAdmission?.();
       }
@@ -1480,16 +1784,19 @@ export class AgentWorkRuntime {
 
   async #refreshOpenClaw(epoch: number): Promise<void> {
     if (this.#adapterProbePending || !this.#isCurrentLifecycle(epoch)) return;
-    const adapter = this.#adapters.find(item => item.type === "openclaw");
+    const adapter = this.#adapters.find((item) => item.type === "openclaw");
     if (!adapter) return;
     this.#adapterProbePending = true;
     try {
       let result: { available?: boolean; reason?: string };
-      try { result = await this.#host.probe("openclaw") as typeof result; }
-      catch { result = { available: false, reason: "probe_failed" }; }
+      try {
+        result = (await this.#host.probe("openclaw")) as typeof result;
+      } catch {
+        result = { available: false, reason: "probe_failed" };
+      }
       if (!this.#isCurrentLifecycle(epoch)) return;
       const available = result?.available === true;
-      const reason = available ? null : result?.reason ?? "probe_failed";
+      const reason = available ? null : (result?.reason ?? "probe_failed");
       if (adapter.available !== available || adapter.unavailableReason !== reason) {
         adapter.available = available;
         adapter.unavailableReason = reason;
@@ -1501,12 +1808,18 @@ export class AgentWorkRuntime {
         if (this.#isCurrentLifecycle(epoch)) this.#adapterRegistrationDirty = false;
       }
     } catch (error) {
-      this.#reportError("agent_work.adapter.refresh_failed", "adapter capability refresh failed", error);
-    } finally { this.#adapterProbePending = false; }
+      this.#reportError(
+        "agent_work.adapter.refresh_failed",
+        "adapter capability refresh failed",
+        error
+      );
+    } finally {
+      this.#adapterProbePending = false;
+    }
   }
 
   #assertAdapterAvailable(adapterType: string): void {
-    const adapter = this.#adapters.find(candidate => candidate.type === adapterType);
+    const adapter = this.#adapters.find((candidate) => candidate.type === adapterType);
     // An empty capability list is retained for legacy embedders. Production
     // daemon startup always reports discovered adapters.
     if (this.#adapters.length > 0 && (!adapter || adapter.available === false)) {
@@ -1544,12 +1857,18 @@ export class AgentWorkRuntime {
         if (event.type === "run.started" || event.type === "run.queued") continue;
         appendStarted();
         const mapped = mapRuntimeEvent(event);
-        if (TERMINAL_OUTBOX_TYPES.has(mapped.type) && request.signal?.reason instanceof RunTotalDeadlineError) {
+        if (
+          TERMINAL_OUTBOX_TYPES.has(mapped.type) &&
+          request.signal?.reason instanceof RunTotalDeadlineError
+        ) {
           mapped.type = "run.failed";
-          mapped.payload = runDeadlineFailure(request.signal.reason, command.run_id, "adapter.invoke");
+          mapped.payload = runDeadlineFailure(
+            request.signal.reason,
+            command.run_id,
+            "adapter.invoke"
+          );
         }
-        // Terminal events bypass soft-watermark backpressure so a Run can still
-        // reach durable storage and close out under sustained backpressure.
+        // 终态与普通事件进入同一内存回放窗口；执行收尾不等待云端确认。
         store.allocateAndAppend(command.run_id, mapped.type, mapped.payload);
         terminal ||= TERMINAL_OUTBOX_TYPES.has(mapped.type);
         this.#kickSender();
@@ -1565,23 +1884,33 @@ export class AgentWorkRuntime {
       }
       try {
         appendStarted();
-        const payload = request.signal?.reason instanceof RunTotalDeadlineError
-          ? runDeadlineFailure(request.signal.reason, command.run_id, "adapter.invoke") : {
-            ...failurePayload(Object.assign(error instanceof Error ? error : new Error(errorMessage(error)), {
-              code: (error as NodeJS.ErrnoException)?.code ?? "ADAPTER_INVOCATION_FAILED",
-              adapterType
-            }), {
-              stage: "adapter.invoke",
-              defaultDomain: "adapter",
-              runId: command.run_id,
-              source: { component: "octo-harness", adapter: adapterType }
-            }),
-          };
+        const payload =
+          request.signal?.reason instanceof RunTotalDeadlineError
+            ? runDeadlineFailure(request.signal.reason, command.run_id, "adapter.invoke")
+            : {
+                ...failurePayload(
+                  Object.assign(error instanceof Error ? error : new Error(errorMessage(error)), {
+                    code: (error as NodeJS.ErrnoException)?.code ?? "ADAPTER_INVOCATION_FAILED",
+                    adapterType
+                  }),
+                  {
+                    stage: "adapter.invoke",
+                    defaultDomain: "adapter",
+                    runId: command.run_id,
+                    source: { component: "octo-harness", adapter: adapterType }
+                  }
+                )
+              };
         store.allocateAndAppend(command.run_id, "run.failed", payload);
         this.#kickSender();
       } catch (appendError) {
         this.#markStoreUnavailable(appendError);
-        this.#reportError("agent_work.outbox.failure_record_failed", "failed to record run failure", appendError, { run_id: command.run_id });
+        this.#reportError(
+          "agent_work.outbox.failure_record_failed",
+          "failed to record run failure",
+          appendError,
+          { run_id: command.run_id }
+        );
       }
     } finally {
       this.#activeRuns.delete(command.run_id);
@@ -1589,7 +1918,7 @@ export class AgentWorkRuntime {
     }
   }
 
-  /** Relay retained events in source order. Reconnect uses the Worker's memory cursor. */
+  /** 按源序号转发保留事件；重连使用 Worker 返回的内存游标。 */
   async #senderLoop(epoch: number): Promise<void> {
     const window = this.#options.sendWindow ?? DEFAULT_SEND_WINDOW;
     while (this.#isCurrentLifecycle(epoch)) {
@@ -1597,31 +1926,37 @@ export class AgentWorkRuntime {
       try {
         if (store && this.#connected && this.#socket?.readyState === WebSocket.OPEN) {
           const now = Date.now();
-          const rows = store.listSendable(window).filter(row => {
+          const rows = store.listSendable(window).filter((row) => {
             const retry = this.#nackBackoff.get(row.runId);
-            return (!retry || retry.retryAt <= now);
+            return !retry || retry.retryAt <= now;
           });
           for (const batch of coalesceBatches(rows)) {
             if (this.#socket?.readyState !== WebSocket.OPEN) break;
             try {
-              this.#send("run.event_batch", {
-                run_id: batch.runId,
-                first_seq: batch.events[0].seq,
-                last_seq: batch.events[batch.events.length - 1].seq,
-                events: batch.events.map(row => ({ protocolVersion: 2,
-                  event_id: row.eventId,
-                  run_id: row.runId,
-                  seq: row.seq,
-                  type: row.eventType,
-                  payload: row.payload,
-                  lease_id: row.leaseId,
-                  fencing_token: row.fencingToken,
-                  occurred_at: new Date(row.createdAt).toISOString()
-                }))
-              }, batch.events[batch.events.length - 1].seq);
+              this.#send(
+                "run.event_batch",
+                {
+                  run_id: batch.runId,
+                  first_seq: batch.events[0].seq,
+                  last_seq: batch.events[batch.events.length - 1].seq,
+                  events: batch.events.map((row) => ({
+                    protocolVersion: 2,
+                    event_id: row.eventId,
+                    run_id: row.runId,
+                    seq: row.seq,
+                    type: row.eventType,
+                    payload: row.payload,
+                    lease_id: row.leaseId,
+                    fencing_token: row.fencingToken,
+                    occurred_at: new Date(row.createdAt).toISOString()
+                  }))
+                },
+                batch.events[batch.events.length - 1].seq
+              );
             } catch {
               break;
             }
+            // 这里只记录已发送位置，不表示云端已持久化；重连或 NACK 可回退游标。
             for (const row of batch.events) {
               store.markSent(row.runId, row.seq);
             }
@@ -1634,22 +1969,35 @@ export class AgentWorkRuntime {
           continue;
         }
         if (!this.#markStoreUnavailable(error)) {
-          this.#reportError("agent_work.outbox.sender_failed", "Agent Work outbox sender failed", error);
+          this.#reportError(
+            "agent_work.outbox.sender_failed",
+            "Agent Work outbox sender failed",
+            error
+          );
         }
       }
       await this.#waitKick(PUMP_POLL_MS);
     }
   }
 
-  readRunEvents(runId: string, streamId?: string, after = 0): { streamId: string; latestSeq: number; events: ReplayEvent[]; terminal: boolean } {
+  readRunEvents(
+    runId: string,
+    streamId?: string,
+    after = 0
+  ): { streamId: string; latestSeq: number; events: ReplayEvent[]; terminal: boolean } {
     if (!this.#store) throw new Error("STREAM_EXPIRED");
-    return { ...this.#store.read(runId, streamId, after), terminal: this.#store.terminalType(runId) !== undefined };
+    return {
+      ...this.#store.read(runId, streamId, after),
+      terminal: this.#store.terminalType(runId) !== undefined
+    };
   }
 
-  hasRun(runId: string): boolean { return this.#store?.runExists(runId) ?? false; }
+  hasRun(runId: string): boolean {
+    return this.#store?.runExists(runId) ?? false;
+  }
 
   #waitKick(ms: number): Promise<void> {
-    return new Promise<void>(resolve => {
+    return new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
         this.#senderKick = undefined;
         resolve();
@@ -1667,28 +2015,38 @@ export class AgentWorkRuntime {
   }
 
   #ackCommand(command: RuntimeCommand, accepted: boolean, error?: Record<string, unknown>): void {
-    this.#store?.setLastAckedCommandSeq(Math.max(this.#store.lastAckedCommandSeq, command.server_seq));
-    this.#trySend("command.ack", {
-      command_id: command.command_id,
-      server_seq: command.server_seq,
-      accepted,
-      ...(error ? { error } : {})
-    }, undefined, command.server_seq);
+    this.#store?.setLastAckedCommandSeq(
+      Math.max(this.#store.lastAckedCommandSeq, command.server_seq)
+    );
+    this.#trySend(
+      "command.ack",
+      {
+        command_id: command.command_id,
+        server_seq: command.server_seq,
+        accepted,
+        ...(error ? { error } : {})
+      },
+      undefined,
+      command.server_seq
+    );
   }
 
   #send(type: string, payload: unknown, seq?: number, ack?: number): void {
-    if (!this.#socket || this.#socket.readyState !== WebSocket.OPEN) throw new Error("Agent Work runtime socket is not open");
+    if (!this.#socket || this.#socket.readyState !== WebSocket.OPEN)
+      throw new Error("Agent Work runtime socket is not open");
     const envelopeId = `msg_${randomUUID()}`;
-    this.#socket.send(JSON.stringify({
-      version: this.#protocolVersion,
-      id: envelopeId,
-      type,
-      runtime_id: this.#runtimeId,
-      ...(seq === undefined ? {} : { seq }),
-      ...(ack === undefined ? {} : { ack }),
-      sent_at: new Date().toISOString(),
-      payload
-    } satisfies WireEnvelope));
+    this.#socket.send(
+      JSON.stringify({
+        version: this.#protocolVersion,
+        id: envelopeId,
+        type,
+        runtime_id: this.#runtimeId,
+        ...(seq === undefined ? {} : { seq }),
+        ...(ack === undefined ? {} : { ack }),
+        sent_at: new Date().toISOString(),
+        payload
+      } satisfies WireEnvelope)
+    );
   }
 
   /** Send without throwing (heartbeat/ACK are safe to drop while disconnected;
@@ -1709,7 +2067,12 @@ export class AgentWorkRuntime {
     };
   }
 
-  #reportError(event: string, message: string, error: unknown, data: Record<string, unknown> = {}): void {
+  #reportError(
+    event: string,
+    message: string,
+    error: unknown,
+    data: Record<string, unknown> = {}
+  ): void {
     console.error(`octo-harness ${message}: ${errorMessage(error)}`, { event, ...data });
   }
 }
@@ -1718,7 +2081,8 @@ export class AgentWorkRuntime {
  * terminal outbox event can carry the full reply (deltas concatenate, a full
  * message replaces). Only `final`-channel messages count. */
 export function accumulateFinalText(current: string, event: CanonicalEvent): string {
-  if (!event.type.startsWith("message.") || (event.payload.channel ?? "final") !== "final") return current;
+  if (!event.type.startsWith("message.") || (event.payload.channel ?? "final") !== "final")
+    return current;
   const text = stringValue(event.payload.text);
   if (!text) return current;
   if (event.type === "message.delta") return current + text;
@@ -1733,19 +2097,31 @@ export function mapExecutionEnvelope(
   preparedCompilation?: CompiledRunContext
 ): { adapterType: string; request: InvokeRequest } {
   assertExecutionEnvelopeContract(envelope);
-  if (!envelope?.run_id || !envelope.agent_session_id || !envelope.agent_revision || !envelope.agent_run_request?.input) {
+  if (
+    !envelope?.run_id ||
+    !envelope.agent_session_id ||
+    !envelope.agent_revision ||
+    !envelope.agent_run_request?.input
+  ) {
     throw new TypeError("execution envelope is missing run/session/revision/agent run request");
   }
-  if (envelope.session_generation !== undefined
-    && (!Number.isSafeInteger(envelope.session_generation) || envelope.session_generation < 1)) {
+  if (
+    envelope.session_generation !== undefined &&
+    (!Number.isSafeInteger(envelope.session_generation) || envelope.session_generation < 1)
+  ) {
     throw new TypeError("execution envelope session_generation must be a positive safe integer");
   }
-  if (envelope.provider_epoch !== undefined
-    && (!Number.isSafeInteger(envelope.provider_epoch) || envelope.provider_epoch < 1)) {
+  if (
+    envelope.provider_epoch !== undefined &&
+    (!Number.isSafeInteger(envelope.provider_epoch) || envelope.provider_epoch < 1)
+  ) {
     throw new TypeError("execution envelope provider_epoch must be a positive safe integer");
   }
-  if (envelope.continuity_mode !== undefined
-    && envelope.continuity_mode !== "continue" && envelope.continuity_mode !== "fresh") {
+  if (
+    envelope.continuity_mode !== undefined &&
+    envelope.continuity_mode !== "continue" &&
+    envelope.continuity_mode !== "fresh"
+  ) {
     throw new TypeError("execution envelope continuity_mode must be continue or fresh");
   }
   if (envelope.continuity_mode === "fresh" && envelope.provider_session) {
@@ -1762,15 +2138,23 @@ export function mapExecutionEnvelope(
   };
   const runtimeLimits = mapExecutionRuntimeLimits(profile.runtime_limits);
   const workdir = preparedResources?.workdir ?? profile.workdir;
-  if ((!workdir && profile.agent_source !== "preset")) throw new TypeError("CONTEXT_PREPARATION_REQUIRED");
+  if (!workdir && profile.agent_source !== "preset")
+    throw new TypeError("CONTEXT_PREPARATION_REQUIRED");
   const content = envelope.agent_run_request.input;
-  if (Object.hasOwn(content, "context_refs") || Object.hasOwn(content, "channel_context")) throw new TypeError("LEGACY_CONTEXT_INPUT_REJECTED");
-  const compiled = preparedCompilation ?? compileRunContext(envelope.effective_context, taskMaterials?.selections);
+  if (Object.hasOwn(content, "context_refs") || Object.hasOwn(content, "channel_context"))
+    throw new TypeError("LEGACY_CONTEXT_INPUT_REJECTED");
+  const compiled =
+    preparedCompilation ?? compileRunContext(envelope.effective_context, taskMaterials?.selections);
   const compiledModelContent = compiled.modelContent;
   const displayPrompt = renderDisplayExecutionInputPrompt(content);
   const reply = asRecord(content.reply_to);
-  const quotedText = stringValue(reply.text) ? `[Quoted message from ${stringValue(reply.author_name) ?? stringValue(reply.author_id) ?? "unknown"}]\n${stringValue(reply.text)}` : "";
-  const imageParts = modelPartsFromInput(content, [compiledModelContent, quotedText, "[Current message]"].filter(Boolean).join("\n\n"));
+  const quotedText = stringValue(reply.text)
+    ? `[Quoted message from ${stringValue(reply.author_name) ?? stringValue(reply.author_id) ?? "unknown"}]\n${stringValue(reply.text)}`
+    : "";
+  const imageParts = modelPartsFromInput(
+    content,
+    [compiledModelContent, quotedText, "[Current message]"].filter(Boolean).join("\n\n")
+  );
   const context = {
     schemaVersion: envelope.schema_version,
     namespace: envelope.agent_run_request.namespace,
@@ -1779,61 +2163,97 @@ export function mapExecutionEnvelope(
     sessionKey: envelope.agent_run_request.session_affinity_key,
     triggerKind: envelope.agent_run_request.trigger.kind,
     triggerOccurrenceId: envelope.agent_run_request.trigger.occurrence_id,
-    input: imageParts ? {
-      ...content,
-      parts: (content.parts as Record<string, unknown>[]).map(part => {
-        const metadata = { ...part };
-        delete metadata.source;
-        return metadata;
-      })
-    } : content,
-    ...(envelope.session_generation === undefined ? {} : { sessionGeneration: envelope.session_generation }),
+    input: imageParts
+      ? {
+          ...content,
+          parts: (content.parts as Record<string, unknown>[]).map((part) => {
+            const metadata = { ...part };
+            delete metadata.source;
+            return metadata;
+          })
+        }
+      : content,
+    ...(envelope.session_generation === undefined
+      ? {}
+      : { sessionGeneration: envelope.session_generation }),
     ...(envelope.provider_epoch === undefined ? {} : { providerEpoch: envelope.provider_epoch }),
     ...(envelope.continuity_mode === undefined ? {} : { continuityMode: envelope.continuity_mode }),
     ...(taskMaterials ? { taskMaterials: structuredClone(taskMaterials.refs) } : {})
   };
   return {
     adapterType,
-    request: { protocolVersion: 2,
+    request: {
+      protocolVersion: 2,
       agentSource: profile.agent_source,
       invocationId: `invoke_${randomUUID()}`,
       agentSessionId: envelope.agent_session_id,
       runId: envelope.run_id,
-      ...(envelope.session_generation === undefined ? {} : { sessionGeneration: envelope.session_generation }),
+      ...(envelope.session_generation === undefined
+        ? {}
+        : { sessionGeneration: envelope.session_generation }),
       ...(envelope.provider_epoch === undefined ? {} : { providerEpoch: envelope.provider_epoch }),
-      ...(envelope.continuity_mode === undefined ? {} : { continuityMode: envelope.continuity_mode }),
+      ...(envelope.continuity_mode === undefined
+        ? {}
+        : { continuityMode: envelope.continuity_mode }),
       prompt: displayPrompt,
       modelInput: [compiledModelContent, displayPrompt].filter(Boolean).join("\n\n"),
       ...(imageParts ? { modelInputParts: imageParts } : {}),
       workdir,
-      controlInstructions: preparedCompilation ? compiled.controlInstructions
-        : [stringValue(definition.instructions), compiled.controlInstructions].filter(Boolean).join("\n\n"),
+      controlInstructions: preparedCompilation
+        ? compiled.controlInstructions
+        : [stringValue(definition.instructions), compiled.controlInstructions]
+            .filter(Boolean)
+            .join("\n\n"),
       context: structuredClone(envelope.effective_context),
-      runMetadata: { ...context, ...(compiled.modelCapacity ? { contextCapacity: compiled.modelCapacity } : {}) },
+      runMetadata: {
+        ...context,
+        ...(compiled.modelCapacity ? { contextCapacity: compiled.modelCapacity } : {})
+      },
       approvalMode: profile.approval_mode,
-      ...(envelope.provider_session
-        ? { providerSession: envelope.provider_session }
-        : {}),
+      ...(envelope.provider_session ? { providerSession: envelope.provider_session } : {}),
       ...(Object.keys(runtimeLimits).length > 0 ? { runtimeLimits } : {}),
-      agentConfig: { ...agentConfig, ...(compiled.modelCapacity?.model ? { model: compiled.modelCapacity.model } : {}), workdir }
+      agentConfig: {
+        ...agentConfig,
+        ...(compiled.modelCapacity?.model ? { model: compiled.modelCapacity.model } : {}),
+        workdir
+      }
     }
   };
 }
 
 function assertExecutionEnvelopeContract(envelope: ExecutionEnvelope): void {
   if (envelope?.schema_version !== 7) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
-  if (envelope.internal_context && ["knowledge_snapshot", "resource_sources"].some(key => Object.hasOwn(envelope.internal_context!, key))) throw new TypeError("CONTEXT_TYPE_REMOVED");
+  if (
+    envelope.internal_context &&
+    ["knowledge_snapshot", "resource_sources"].some((key) =>
+      Object.hasOwn(envelope.internal_context!, key)
+    )
+  )
+    throw new TypeError("CONTEXT_TYPE_REMOVED");
   assertContextEnvelope(envelope.agent_run_request?.context);
   assertContextEnvelope(envelope.effective_context);
   assertResolvedExecutionPlan(envelope.resolved_execution_plan);
   assertResolvedRuntimeSelection(envelope.resolved_runtime_selection);
   assertFrozenContextPlan(envelope.effective_context, envelope.resolved_execution_plan);
-  if (!Number.isSafeInteger(envelope.context_configuration_version) || envelope.context_configuration_version < 1
-    || envelope.context_configuration_version !== envelope.resolved_runtime_selection.context_configuration_version) throw new TypeError("CONTEXT_CONFIGURATION_VERSION_REQUIRED");
-  const contextSelection = contextItem(envelope.effective_context, "octo.runtime", "selection")?.payload;
+  if (
+    !Number.isSafeInteger(envelope.context_configuration_version) ||
+    envelope.context_configuration_version < 1 ||
+    envelope.context_configuration_version !==
+      envelope.resolved_runtime_selection.context_configuration_version
+  )
+    throw new TypeError("CONTEXT_CONFIGURATION_VERSION_REQUIRED");
+  const contextSelection = contextItem(
+    envelope.effective_context,
+    "octo.runtime",
+    "selection"
+  )?.payload;
   const selection = envelope.resolved_runtime_selection;
-  if (contextSelection && (contextSelection.mode !== selection.selection_mode
-    || (contextSelection.mode === "explicit" && contextSelection.runtime_id !== selection.explicit_runtime_id))) {
+  if (
+    contextSelection &&
+    (contextSelection.mode !== selection.selection_mode ||
+      (contextSelection.mode === "explicit" &&
+        contextSelection.runtime_id !== selection.explicit_runtime_id))
+  ) {
     throw new TypeError("RUNTIME_SELECTION_CONTEXT_MISMATCH");
   }
 }
@@ -1878,32 +2298,44 @@ export function renderAgentRunInputPrompt(content: Record<string, unknown> | und
   const recent = contextRefs.flatMap((ref): unknown[] => {
     const value = asRecord(ref);
     return value.kind === "recent_group" && Array.isArray(value.messages)
-      ? value.messages as unknown[]
+      ? (value.messages as unknown[])
       : [];
   });
   if (recent.length > 0) {
-    blocks.push("[Recent group messages]\n" + recent.map(message => {
-      const value = asRecord(message);
-      const author = stringValue(value.author_name) ?? stringValue(value.author_id) ?? "unknown";
-      return `${author}: ${stringValue(value.text) ?? ""}`;
-    }).join("\n"));
+    blocks.push(
+      "[Recent group messages]\n" +
+        recent
+          .map((message) => {
+            const value = asRecord(message);
+            const author =
+              stringValue(value.author_name) ?? stringValue(value.author_id) ?? "unknown";
+            return `${author}: ${stringValue(value.text) ?? ""}`;
+          })
+          .join("\n")
+    );
   }
   const reply = asRecord(input.reply_to);
   if (stringValue(reply.text)) {
-    blocks.push(`[Quoted message from ${stringValue(reply.author_name) ?? stringValue(reply.author_id) ?? "unknown"}]\n${stringValue(reply.text)}`);
+    blocks.push(
+      `[Quoted message from ${stringValue(reply.author_name) ?? stringValue(reply.author_id) ?? "unknown"}]\n${stringValue(reply.text)}`
+    );
   }
   blocks.push(`[Current message]\n${current}`);
   return blocks.join("\n\n");
 }
 
 /** Render the product-visible current turn without context-only channel facts. */
-export function renderDisplayExecutionInputPrompt(content: Record<string, unknown> | undefined): string {
+export function renderDisplayExecutionInputPrompt(
+  content: Record<string, unknown> | undefined
+): string {
   const input = asRecord(content);
   const current = executionInputText(input);
   const blocks: string[] = [];
   const reply = asRecord(input.reply_to);
   if (stringValue(reply.text)) {
-    blocks.push(`[Quoted message from ${stringValue(reply.author_name) ?? stringValue(reply.author_id) ?? "unknown"}]\n${stringValue(reply.text)}`);
+    blocks.push(
+      `[Quoted message from ${stringValue(reply.author_name) ?? stringValue(reply.author_id) ?? "unknown"}]\n${stringValue(reply.text)}`
+    );
   }
   blocks.push(`[Current message]\n${current}`);
   return blocks.join("\n\n");
@@ -1911,10 +2343,13 @@ export function renderDisplayExecutionInputPrompt(content: Record<string, unknow
 
 function executionInputText(input: Record<string, unknown>): string {
   const parts = Array.isArray(input.parts) ? input.parts : [];
-  const partsText = parts.map(part => {
-    const value = asRecord(part);
-    return value.type === "text" && typeof value.text === "string" ? value.text : "";
-  }).filter(Boolean).join("\n");
+  const partsText = parts
+    .map((part) => {
+      const value = asRecord(part);
+      return value.type === "text" && typeof value.text === "string" ? value.text : "";
+    })
+    .filter(Boolean)
+    .join("\n");
   return partsText || stringValue(input.prompt) || stringValue(input.text) || "";
 }
 
@@ -1927,13 +2362,26 @@ function rawDataText(data: WebSocket.RawData): string {
 /** Translate a canonical event into an outbox wire event: terminal run states are
  * renamed to the Agent Work vocabulary (completed/failed/cancelled) and carry the
  * accumulated final text; all other events pass through unchanged. */
-export function mapRuntimeEvent(event: CanonicalEvent): { protocolVersion: 2; type: string; payload: Record<string, unknown> } {
-  const payload = event.type === "run.completed" ? {} : event.type === "run.failed" ? { failure: event.payload.failure } : event.type === "run.cancelled" ? { reasonCode: "cancelled" } : event.payload;
+export function mapRuntimeEvent(event: CanonicalEvent): {
+  protocolVersion: 2;
+  type: string;
+  payload: Record<string, unknown>;
+} {
+  const payload =
+    event.type === "run.completed"
+      ? {}
+      : event.type === "run.failed"
+        ? { failure: event.payload.failure }
+        : event.type === "run.cancelled"
+          ? { reasonCode: "cancelled" }
+          : event.payload;
   return { protocolVersion: 2, type: event.type, payload };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -1966,7 +2414,10 @@ class RuntimeIdentityMismatchError extends Error {
 }
 
 class RuntimeCredentialRejectedError extends Error {
-  constructor(readonly status: number, readonly attempt: number) {
+  constructor(
+    readonly status: number,
+    readonly attempt: number
+  ) {
     super(`Agent Work runtime credential was rejected (${status}); consecutive failure ${attempt}`);
     this.name = "RuntimeCredentialRejectedError";
   }
@@ -1980,7 +2431,10 @@ class RuntimeRecoverySignal extends Error {
 }
 
 class ControlPlaneRunCancelledError extends Error {
-  constructor() { super("RUN_CANCELLED"); this.name = "ControlPlaneRunCancelledError"; }
+  constructor() {
+    super("RUN_CANCELLED");
+    this.name = "ControlPlaneRunCancelledError";
+  }
 }
 
 class AcceptingRunCancelledError extends Error {
@@ -1998,9 +2452,17 @@ class RunTotalDeadlineError extends Error {
   }
 }
 
-function runDeadlineFailure(error: RunTotalDeadlineError, runId: string, stage: string): Record<string, unknown> {
-  return { ...failurePayload(error, { stage, defaultDomain: "runtime", runId }),
-    timeoutReason: "run_deadline", timeoutStage: stage, timeoutMs: error.timeoutMs };
+function runDeadlineFailure(
+  error: RunTotalDeadlineError,
+  runId: string,
+  stage: string
+): Record<string, unknown> {
+  return {
+    ...failurePayload(error, { stage, defaultDomain: "runtime", runId }),
+    timeoutReason: "run_deadline",
+    timeoutStage: stage,
+    timeoutMs: error.timeoutMs
+  };
 }
 
 class ProviderConfigurationMissingError extends Error {
@@ -2023,7 +2485,7 @@ function stripSlash(value: string): string {
 }
 
 function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function reconnectRuntimeDelay(ms: number, signal: AbortSignal): Promise<void> {
@@ -2047,9 +2509,11 @@ function abortError(signal?: AbortSignal): Error {
 
 function localNetworkFingerprint(): string {
   return Object.entries(networkInterfaces())
-    .flatMap(([name, addresses]) => (addresses ?? [])
-      .filter(address => !address.internal)
-      .map(address => `${name}:${address.family}:${address.address}:${address.scopeid ?? 0}`))
+    .flatMap(([name, addresses]) =>
+      (addresses ?? [])
+        .filter((address) => !address.internal)
+        .map((address) => `${name}:${address.family}:${address.address}:${address.scopeid ?? 0}`)
+    )
     .sort()
     .join("|");
 }
@@ -2065,7 +2529,7 @@ export function reconnectDelayMs(
 ): number {
   if (Math.trunc(attempt) <= 1) return firstMs;
   const exponent = Math.max(1, Math.min(30, Math.trunc(attempt) - 1));
-  const ceiling = Math.min(maximumMs, minimumMs * (2 ** exponent));
+  const ceiling = Math.min(maximumMs, minimumMs * 2 ** exponent);
   const jitterRange = Math.max(0, ceiling - minimumMs);
   return minimumMs + Math.floor(Math.max(0, Math.min(0.999999999, random())) * jitterRange);
 }
@@ -2077,7 +2541,11 @@ export function reconnectDelayWithServerHintMs(
   serverRetryAfterMs: number | undefined,
   random = Math.random
 ): number {
-  if (typeof serverRetryAfterMs !== "number" || !Number.isSafeInteger(serverRetryAfterMs) || serverRetryAfterMs < 1) {
+  if (
+    typeof serverRetryAfterMs !== "number" ||
+    !Number.isSafeInteger(serverRetryAfterMs) ||
+    serverRetryAfterMs < 1
+  ) {
     return clientDelayMs;
   }
   const floor = Math.max(clientDelayMs, serverRetryAfterMs);
@@ -2088,28 +2556,45 @@ export function reconnectDelayWithServerHintMs(
 /** Stable transport reason used by status, local metrics and support bundles. */
 export function connectionFailureReason(error: unknown): RuntimeConnectionReason {
   if (error instanceof RuntimeCredentialRejectedError) return "auth";
-  const code = typeof (error as NodeJS.ErrnoException | undefined)?.code === "string"
-    ? (error as NodeJS.ErrnoException).code ?? ""
-    : "";
+  const code =
+    typeof (error as NodeJS.ErrnoException | undefined)?.code === "string"
+      ? ((error as NodeJS.ErrnoException).code ?? "")
+      : "";
   if (["ENOTFOUND", "EAI_AGAIN", "EAI_FAIL", "EAI_NODATA"].includes(code)) return "dns";
-  if (code.startsWith("ERR_TLS_") || code.startsWith("CERT_") || [
-    "DEPTH_ZERO_SELF_SIGNED_CERT", "SELF_SIGNED_CERT_IN_CHAIN", "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
-    "ERR_SSL_WRONG_VERSION_NUMBER"
-  ].includes(code)) return "tls";
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-  if (message.includes("receive timed out") || message.includes("receive timeout")) return "receive_timeout";
+  if (
+    code.startsWith("ERR_TLS_") ||
+    code.startsWith("CERT_") ||
+    [
+      "DEPTH_ZERO_SELF_SIGNED_CERT",
+      "SELF_SIGNED_CERT_IN_CHAIN",
+      "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      "ERR_SSL_WRONG_VERSION_NUMBER"
+    ].includes(code)
+  )
+    return "tls";
+  const message =
+    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  if (message.includes("receive timed out") || message.includes("receive timeout"))
+    return "receive_timeout";
   return "transport";
 }
 
 /** Compare wall and monotonic elapsed time so a clock correction is not
  * mistaken for an ordinary event-loop delay or device resume. */
-export function clockChanged(wallElapsedMs: number, monotonicElapsedMs: number, thresholdMs: number): boolean {
-  if (![wallElapsedMs, monotonicElapsedMs, thresholdMs].every(Number.isFinite) || thresholdMs < 0) return false;
+export function clockChanged(
+  wallElapsedMs: number,
+  monotonicElapsedMs: number,
+  thresholdMs: number
+): boolean {
+  if (![wallElapsedMs, monotonicElapsedMs, thresholdMs].every(Number.isFinite) || thresholdMs < 0)
+    return false;
   return Math.abs(wallElapsedMs - monotonicElapsedMs) > thresholdMs;
 }
 
 function packageVersion(): string {
-  const metadata = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+  const metadata = JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8")
+  ) as {
     version?: unknown;
   };
   if (typeof metadata.version !== "string" || !metadata.version.trim()) {
@@ -2144,15 +2629,23 @@ function storageErrorCode(error: unknown): string {
 
 function isStorageCapacityError(error: unknown): boolean {
   const code = storageErrorCode(error);
-  return code === "ENOSPC" || code === "EDQUOT" || code === "SQLITE_FULL"
-    || /database or disk is full|no space left on device|disk quota exceeded/i.test(errorMessage(error));
+  return (
+    code === "ENOSPC" ||
+    code === "EDQUOT" ||
+    code === "SQLITE_FULL" ||
+    /database or disk is full|no space left on device|disk quota exceeded/i.test(
+      errorMessage(error)
+    )
+  );
 }
 
 function sameStoreHealth(left: RuntimeStoreHealth, right: RuntimeStoreHealth): boolean {
-  return left.state === right.state
-    && left.acceptingNewRuns === right.acceptingNewRuns
-    && left.minimumFreeBytes === right.minimumFreeBytes
-    && left.errorCode === right.errorCode;
+  return (
+    left.state === right.state &&
+    left.acceptingNewRuns === right.acceptingNewRuns &&
+    left.minimumFreeBytes === right.minimumFreeBytes &&
+    left.errorCode === right.errorCode
+  );
 }
 
 interface EventBatch {
@@ -2168,7 +2661,11 @@ function coalesceBatches(rows: ReplayEvent[]): EventBatch[] {
   let current: EventBatch | undefined;
   for (const row of rows) {
     const last = current?.events[current.events.length - 1];
-    const contiguous = current !== undefined && last !== undefined && last.runId === row.runId && row.seq === last.seq + 1;
+    const contiguous =
+      current !== undefined &&
+      last !== undefined &&
+      last.runId === row.runId &&
+      row.seq === last.seq + 1;
     if (!contiguous) {
       current = { runId: row.runId, events: [] };
       batches.push(current);

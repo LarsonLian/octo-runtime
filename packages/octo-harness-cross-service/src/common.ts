@@ -13,47 +13,71 @@ import type {
 
 const SERVICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const ENVIRONMENT_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const SENSITIVE_ENVIRONMENT_KEY = /(^|_)(authorization|cookie|credential|password|private_key|secret|token|api_key|access_key)($|_)/i;
-const SENSITIVE_ARGUMENT = /(^|\s)(bearer\s+|octo_enroll_)|^--?(?:auth(?:orization)?|.*(?:token|secret|password|private-key|api-key))(?:=|$)/i;
+const SENSITIVE_ENVIRONMENT_KEY =
+  /(^|_)(authorization|cookie|credential|password|private_key|secret|token|api_key|access_key)($|_)/i;
+const SENSITIVE_ARGUMENT =
+  /(^|\s)(bearer\s+|octo_enroll_)|^--?(?:auth(?:orization)?|.*(?:token|secret|password|private-key|api-key))(?:=|$)/i;
 
 /**
  * Validate a portable spec, reject obvious credential persistence, apply
  * defaults, and freeze collection fields before platform rendering.
  */
-export function normalizeServiceSpec(spec: ServiceSpec, platform: NodeJS.Platform): NormalizedServiceSpec {
-  if (!SERVICE_ID.test(spec.id)) invalid("id must contain only letters, digits, dot, underscore, or hyphen");
+export function normalizeServiceSpec(
+  spec: ServiceSpec,
+  platform: NodeJS.Platform
+): NormalizedServiceSpec {
+  if (!SERVICE_ID.test(spec.id))
+    invalid("id must contain only letters, digits, dot, underscore, or hyphen");
   assertText(spec.command, "command");
   assertText(spec.workingDirectory, "workingDirectory");
   if (spec.description !== undefined) assertText(spec.description, "description");
   if (!isAbsoluteForPlatform(spec.command, platform)) invalid("command must be an absolute path");
-  if (!isAbsoluteForPlatform(spec.workingDirectory, platform)) invalid("workingDirectory must be an absolute path");
+  if (!isAbsoluteForPlatform(spec.workingDirectory, platform))
+    invalid("workingDirectory must be an absolute path");
 
   const args = [...(spec.args ?? [])];
   for (const arg of args) {
     assertTextAllowEmpty(arg, "args");
-    if (SENSITIVE_ARGUMENT.test(arg)) invalid("service args must not contain credentials or credential flags");
+    if (SENSITIVE_ARGUMENT.test(arg))
+      invalid("service args must not contain credentials or credential flags");
   }
 
   const environment: Record<string, string> = {};
   for (const [key, value] of Object.entries(spec.environment ?? {})) {
     if (!ENVIRONMENT_KEY.test(key)) invalid(`invalid environment key: ${key}`);
-    if (SENSITIVE_ENVIRONMENT_KEY.test(key)) invalid(`sensitive environment key is not allowed: ${key}`);
+    if (SENSITIVE_ENVIRONMENT_KEY.test(key))
+      invalid(`sensitive environment key is not allowed: ${key}`);
     assertTextAllowEmpty(value, `environment.${key}`);
     environment[key] = value;
   }
 
-  for (const [key, value] of [["stdoutPath", spec.stdoutPath], ["stderrPath", spec.stderrPath]] as const) {
+  for (const [key, value] of [
+    ["stdoutPath", spec.stdoutPath],
+    ["stderrPath", spec.stderrPath]
+  ] as const) {
     if (value === undefined) continue;
     assertText(value, key);
     if (!isAbsoluteForPlatform(value, platform)) invalid(`${key} must be an absolute path`);
   }
 
-  const delaySeconds = integerInRange(spec.restart?.delaySeconds ?? 5, 1, 3600, "restart.delaySeconds");
+  const delaySeconds = integerInRange(
+    spec.restart?.delaySeconds ?? 5,
+    1,
+    3600,
+    "restart.delaySeconds"
+  );
   const maxBurst = integerInRange(spec.restart?.maxBurst ?? 5, 1, 100, "restart.maxBurst");
-  const timeoutStopSeconds = integerInRange(spec.timeoutStopSeconds ?? 45, 1, 3600, "timeoutStopSeconds");
+  const timeoutStopSeconds = integerInRange(
+    spec.timeoutStopSeconds ?? 45,
+    1,
+    3600,
+    "timeoutStopSeconds"
+  );
   const policy = spec.restart?.policy ?? "on-failure";
-  if (!(["always", "on-failure", "never"] as const).includes(policy)) invalid("invalid restart.policy");
-  if (spec.enabled !== undefined && typeof spec.enabled !== "boolean") invalid("enabled must be a boolean");
+  if (!(["always", "on-failure", "never"] as const).includes(policy))
+    invalid("invalid restart.policy");
+  if (spec.enabled !== undefined && typeof spec.enabled !== "boolean")
+    invalid("enabled must be a boolean");
   return Object.freeze({
     id: spec.id,
     description: spec.description?.trim() || `Octo Harness service ${spec.id}`,
@@ -124,7 +148,7 @@ export async function readDefinition(path: string): Promise<string | undefined> 
  * Returns `false` when the installed bytes already match the desired content.
  */
 export async function writeDefinition(path: string, content: string): Promise<boolean> {
-  if (await readDefinition(path) === content) return false;
+  if ((await readDefinition(path)) === content) return false;
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
   try {
@@ -177,15 +201,19 @@ export function parseProperties(output: string): Record<string, string> {
 
 /** Narrow an unknown error to a Node.js system error with the requested code. */
 export function isNodeError(error: unknown, code: string): boolean {
-  return error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === code;
+  return (
+    error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === code
+  );
 }
 
 function assertText(value: string, field: string): void {
-  if (!value || value.includes("\0") || /[\r\n]/.test(value)) invalid(`${field} must be non-empty and single-line`);
+  if (!value || value.includes("\0") || /[\r\n]/.test(value))
+    invalid(`${field} must be non-empty and single-line`);
 }
 
 function assertTextAllowEmpty(value: string, field: string): void {
-  if (value.includes("\0") || /[\r\n]/.test(value)) invalid(`${field} must not contain NUL or line breaks`);
+  if (value.includes("\0") || /[\r\n]/.test(value))
+    invalid(`${field} must not contain NUL or line breaks`);
 }
 
 function integerInRange(value: number, minimum: number, maximum: number, field: string): number {

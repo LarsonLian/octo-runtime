@@ -41,7 +41,9 @@ export class InvocationManifest {
     this.#path = path;
   }
 
-  static async open(path: string): Promise<{ manifest: InvocationManifest; reap: OrphanReapResult }> {
+  static async open(
+    path: string
+  ): Promise<{ manifest: InvocationManifest; reap: OrphanReapResult }> {
     const reap = await reapOrphanedInvocationManifest(path);
     if (reap.reason === "daemon_alive" || reap.reason === "unsupported_identity") {
       throw new Error(`cannot replace live or unverifiable invocation manifest (${reap.reason})`);
@@ -83,13 +85,16 @@ export class InvocationManifest {
       daemonPid: process.pid,
       updatedAt: new Date().toISOString(),
       ...(this.#adapterHost ? { adapterHost: { ...this.#adapterHost } } : {}),
-      invocations: [...this.#invocations.values()].map(entry => ({ ...entry }))
+      invocations: [...this.#invocations.values()].map((entry) => ({ ...entry }))
     };
     this.#writes = this.#writes.then(async () => {
       await mkdir(dirname(this.#path), { recursive: true, mode: 0o700 });
       const temporary = `${this.#path}.${process.pid}.${randomUUID()}.tmp`;
       try {
-        await writeFile(temporary, `${JSON.stringify(snapshot)}\n`, { encoding: "utf8", mode: 0o600 });
+        await writeFile(temporary, `${JSON.stringify(snapshot)}\n`, {
+          encoding: "utf8",
+          mode: 0o600
+        });
         await rename(temporary, this.#path);
       } finally {
         await rm(temporary, { force: true });
@@ -108,7 +113,11 @@ export async function reapOrphanedInvocationManifest(path: string): Promise<Orph
     await rm(path, { force: true });
     return { found: true, reaped: false, reason: "host_missing" };
   }
-  if (Number.isSafeInteger(parsed.daemonPid) && parsed.daemonPid > 0 && processAlive(parsed.daemonPid)) {
+  if (
+    Number.isSafeInteger(parsed.daemonPid) &&
+    parsed.daemonPid > 0 &&
+    processAlive(parsed.daemonPid)
+  ) {
     return { found: true, reaped: false, reason: "daemon_alive" };
   }
   const host = parsed.adapterHost;
@@ -134,18 +143,26 @@ export async function processStartIdentity(pid: number): Promise<string | undefi
   if (process.platform === "linux") {
     try {
       const stat = await readFile(`/proc/${pid}/stat`, "utf8");
-      const fields = stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/);
+      const fields = stat
+        .slice(stat.lastIndexOf(")") + 2)
+        .trim()
+        .split(/\s+/);
       return fields[19] ? `linux:${fields[19]}` : undefined;
     } catch {
       return undefined;
     }
   }
   if (process.platform === "darwin" || process.platform === "freebsd") {
-    return new Promise(resolve => {
-      execFile("/bin/ps", ["-o", "lstart=", "-p", String(pid)], { timeout: 2_000 }, (error, stdout) => {
-        const value = stdout.trim();
-        resolve(error || !value ? undefined : `ps:${value}`);
-      });
+    return new Promise((resolve) => {
+      execFile(
+        "/bin/ps",
+        ["-o", "lstart=", "-p", String(pid)],
+        { timeout: 2_000 },
+        (error, stdout) => {
+          const value = stdout.trim();
+          resolve(error || !value ? undefined : `ps:${value}`);
+        }
+      );
     });
   }
   return undefined;
@@ -169,7 +186,7 @@ function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
 async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (processAlive(pid) && Date.now() < deadline) {
-    await new Promise(resolve => setTimeout(resolve, 25));
+    await new Promise((resolve) => setTimeout(resolve, 25));
   }
   return !processAlive(pid);
 }

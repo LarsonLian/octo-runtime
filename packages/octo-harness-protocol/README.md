@@ -46,7 +46,7 @@ const event: CanonicalEvent = {
   payload: { channel: "final", text: "done" }
 };
 
-assertCanonicalEvent(event);                                  // 边界校验
+assertCanonicalEvent(event); // 边界校验
 const stored = envelope({ id: "run-1", sessionId: "session-1" }, 1, event);
 console.log(stored.seq, isTerminal(event));
 ```

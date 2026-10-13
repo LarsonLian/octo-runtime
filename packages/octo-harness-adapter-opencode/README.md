@@ -68,12 +68,12 @@ session ID 并通过 `--session` 恢复。
 
 ## 配置
 
-| Agent revision 配置 | `agentConfig` 字段 | 拼入命令行 |
-|---|---|---|
-| `--workdir DIR` | `workdir` | 子进程 cwd；本身不构成文件访问隔离 |
-| `--model provider/model` | `model` | `--model provider/model` |
-| `--thinking LEVEL` | `thinking` | `--variant LEVEL`；具体可用值由 OpenCode provider/model 决定 |
-| `--auto-approve` | `autoApprove` | 兼容保留；adapter 已强制传入 `--auto` |
+| Agent revision 配置      | `agentConfig` 字段 | 拼入命令行                                                   |
+| ------------------------ | ------------------ | ------------------------------------------------------------ |
+| `--workdir DIR`          | `workdir`          | 子进程 cwd；本身不构成文件访问隔离                           |
+| `--model provider/model` | `model`            | `--model provider/model`                                     |
+| `--thinking LEVEL`       | `thinking`         | `--variant LEVEL`；具体可用值由 OpenCode provider/model 决定 |
+| `--auto-approve`         | `autoApprove`      | 兼容保留；adapter 已强制传入 `--auto`                        |
 
 实际命令形态：首次 turn 为 `opencode run --format json --thinking --auto [--model …] [--variant …] <prompt>`；后续 turn 会附加 `--session <provider-session-id>` 以恢复会话。Adapter 无条件传入 `--thinking`，确保 reasoning block 写入 JSON stdout；无条件传入 `--auto`，避免无人值守调用停在权限确认；可选的 `--variant` 只控制 provider-specific reasoning 档位。
 

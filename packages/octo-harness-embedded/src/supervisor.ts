@@ -3,8 +3,18 @@ import { closeSync, existsSync, openSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EmbeddedHarnessError } from "./errors.js";
-import { removeFile, writeJsonAtomic, type EmbeddedAccountPaths, type EmbeddedHomePaths } from "./home.js";
-import { callDaemon, probeDaemon, type DaemonStatus, type EmbeddedRunnerSession } from "./runtime-contract.js";
+import {
+  removeFile,
+  writeJsonAtomic,
+  type EmbeddedAccountPaths,
+  type EmbeddedHomePaths
+} from "./home.js";
+import {
+  callDaemon,
+  probeDaemon,
+  type DaemonStatus,
+  type EmbeddedRunnerSession
+} from "./runtime-contract.js";
 import type { EmbeddedHarnessOptions } from "./types.js";
 
 export interface SupervisedRuntime {
@@ -21,9 +31,15 @@ export async function startEmbeddedRuntime(options: {
   nonce: string;
 }): Promise<{ supervised: SupervisedRuntime; status: DaemonStatus }> {
   const nodePath = resolveNode(options.sdk);
-  const runnerPath = options.sdk.distribution?.runnerPath ?? fileURLToPath(new URL("./runner.js", import.meta.url));
+  const runnerPath =
+    options.sdk.distribution?.runnerPath ?? fileURLToPath(new URL("./runner.js", import.meta.url));
   if (!existsSync(runnerPath)) {
-    throw new EmbeddedHarnessError("DISTRIBUTION_MISSING", "distribution", false, `embedded runner is missing: ${runnerPath}`);
+    throw new EmbeddedHarnessError(
+      "DISTRIBUTION_MISSING",
+      "distribution",
+      false,
+      `embedded runner is missing: ${runnerPath}`
+    );
   }
   removeFile(options.paths.shutdownFile);
   const session: EmbeddedRunnerSession = {
@@ -39,7 +55,9 @@ export async function startEmbeddedRuntime(options: {
     log_directory: options.account.logs,
     shutdown_file: options.paths.shutdownFile,
     supervisor_state: options.paths.supervisorState,
-    ...(options.sdk.distribution?.manifestPath ? { manifest_path: options.sdk.distribution.manifestPath } : {}),
+    ...(options.sdk.distribution?.manifestPath
+      ? { manifest_path: options.sdk.distribution.manifestPath }
+      : {}),
     ...(options.sdk.distribution?.adapterHostEntrypoint
       ? { adapter_host_entrypoint: options.sdk.distribution.adapterHostEntrypoint }
       : {})
@@ -76,7 +94,12 @@ export async function startEmbeddedRuntime(options: {
     if (status?.ready) return { supervised, status };
     if (Date.now() >= deadline) {
       await stopEmbeddedRuntime(supervised).catch(() => undefined);
-      throw new EmbeddedHarnessError("DAEMON_START_TIMEOUT", "daemon", true, `embedded runtime was not ready within ${startupTimeout}ms`);
+      throw new EmbeddedHarnessError(
+        "DAEMON_START_TIMEOUT",
+        "daemon",
+        true,
+        `embedded runtime was not ready within ${startupTimeout}ms`
+      );
     }
     await delay(250);
   }
@@ -84,26 +107,45 @@ export async function startEmbeddedRuntime(options: {
 
 export async function stopEmbeddedRuntime(supervised: SupervisedRuntime): Promise<void> {
   try {
-    await callDaemon(supervised.paths.socket, { method: "lifecycle.drain", params: { timeoutMs: 5_000 } }, 7_000);
+    await callDaemon(
+      supervised.paths.socket,
+      { method: "lifecycle.drain", params: { timeoutMs: 5_000 } },
+      7_000
+    );
   } catch {
     // Shutdown must continue even if the local control endpoint is unavailable.
   }
-  writeJsonAtomic(supervised.paths.shutdownFile, { nonce: supervised.nonce, requested_at: new Date().toISOString() });
+  writeJsonAtomic(supervised.paths.shutdownFile, {
+    nonce: supervised.nonce,
+    requested_at: new Date().toISOString()
+  });
   if (await waitForExit(supervised.child, 5_000)) {
     cleanup(supervised.paths);
     return;
   }
   await terminateOwnedChild(supervised.child);
   if (!(await waitForExit(supervised.child, 5_000))) {
-    throw new EmbeddedHarnessError("SHUTDOWN_INCOMPLETE", "shutdown", false, "embedded runtime process tree did not exit");
+    throw new EmbeddedHarnessError(
+      "SHUTDOWN_INCOMPLETE",
+      "shutdown",
+      false,
+      "embedded runtime process tree did not exit"
+    );
   }
   if (await probeDaemon(supervised.paths.socket, 500)) {
-    throw new EmbeddedHarnessError("SHUTDOWN_INCOMPLETE", "shutdown", false, "embedded daemon IPC is still reachable after shutdown");
+    throw new EmbeddedHarnessError(
+      "SHUTDOWN_INCOMPLETE",
+      "shutdown",
+      false,
+      "embedded daemon IPC is still reachable after shutdown"
+    );
   }
   cleanup(supervised.paths);
 }
 
-export async function runtimeStatus(supervised: SupervisedRuntime): Promise<DaemonStatus | undefined> {
+export async function runtimeStatus(
+  supervised: SupervisedRuntime
+): Promise<DaemonStatus | undefined> {
   if (supervised.child.exitCode !== null || supervised.child.signalCode !== null) return undefined;
   return probeDaemon(supervised.paths.socket);
 }
@@ -121,23 +163,49 @@ function resolveNode(options: EmbeddedHarnessOptions): string {
       if (existsSync(candidate)) return assertNode24(candidate);
     }
     if (!options.development) {
-      throw new EmbeddedHarnessError("NODE_RUNTIME_MISSING", "distribution", false, "packaged embedded runtime is missing its pinned Node.js 24 executable");
+      throw new EmbeddedHarnessError(
+        "NODE_RUNTIME_MISSING",
+        "distribution",
+        false,
+        "packaged embedded runtime is missing its pinned Node.js 24 executable"
+      );
     }
   }
-  if (!process.versions.electron && Number(process.versions.node.split(".")[0]) >= 24) return process.execPath;
+  if (!process.versions.electron && Number(process.versions.node.split(".")[0]) >= 24)
+    return process.execPath;
   if (options.development) {
     const pathNode = findOnPath(process.platform === "win32" ? "node.exe" : "node");
     if (pathNode) return assertNode24(pathNode);
   }
-  throw new EmbeddedHarnessError("NODE_RUNTIME_MISSING", "distribution", false, "Embedded Harness requires a pinned Node.js 24 runtime");
+  throw new EmbeddedHarnessError(
+    "NODE_RUNTIME_MISSING",
+    "distribution",
+    false,
+    "Embedded Harness requires a pinned Node.js 24 runtime"
+  );
 }
 
 function assertNode24(path: string): string {
-  if (!existsSync(path)) throw new EmbeddedHarnessError("NODE_RUNTIME_MISSING", "distribution", false, `Node executable is missing: ${path}`);
-  const result = spawnSync(path, ["--version"], { encoding: "utf8", windowsHide: true, shell: false });
+  if (!existsSync(path))
+    throw new EmbeddedHarnessError(
+      "NODE_RUNTIME_MISSING",
+      "distribution",
+      false,
+      `Node executable is missing: ${path}`
+    );
+  const result = spawnSync(path, ["--version"], {
+    encoding: "utf8",
+    windowsHide: true,
+    shell: false
+  });
   const version = String(result.stdout || result.stderr).trim();
   if (result.status !== 0 || Number(/^v?(\d+)/.exec(version)?.[1] ?? 0) < 24) {
-    throw new EmbeddedHarnessError("NODE_RUNTIME_INVALID", "distribution", false, `Embedded Harness requires Node.js 24+: ${path} (${version || "unavailable"})`);
+    throw new EmbeddedHarnessError(
+      "NODE_RUNTIME_INVALID",
+      "distribution",
+      false,
+      `Embedded Harness requires Node.js 24+: ${path} (${version || "unavailable"})`
+    );
   }
   return path;
 }
@@ -160,13 +228,31 @@ export function childEnvironment(paths: EmbeddedHomePaths): NodeJS.ProcessEnv {
   };
   // Preserve the host's explicit network routing, including loopback bypasses.
   // Do not inherit arbitrary application credentials into the runtime process.
-  for (const key of ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"]) {
+  for (const key of [
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "no_proxy"
+  ]) {
     if (process.env[key] !== undefined) env[key] = process.env[key];
   }
   if (process.platform === "win32") {
     for (const key of [
-      "SystemRoot", "SystemDrive", "COMSPEC", "PATHEXT", "TEMP", "TMP", "USERPROFILE",
-      "APPDATA", "LOCALAPPDATA", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE"
+      "SystemRoot",
+      "SystemDrive",
+      "COMSPEC",
+      "PATHEXT",
+      "TEMP",
+      "TMP",
+      "USERPROFILE",
+      "APPDATA",
+      "LOCALAPPDATA",
+      "NUMBER_OF_PROCESSORS",
+      "PROCESSOR_ARCHITECTURE"
     ]) {
       const value = environmentValue(key);
       if (value) env[key] = value;
@@ -176,7 +262,9 @@ export function childEnvironment(paths: EmbeddedHomePaths): NodeJS.ProcessEnv {
 }
 
 function environmentValue(name: string): string | undefined {
-  const key = Object.keys(process.env).find(candidate => candidate.toLowerCase() === name.toLowerCase());
+  const key = Object.keys(process.env).find(
+    (candidate) => candidate.toLowerCase() === name.toLowerCase()
+  );
   return key ? process.env[key] : undefined;
 }
 
@@ -190,7 +278,9 @@ async function terminateOwnedChild(child: ChildProcess): Promise<void> {
         stdio: "ignore"
       });
       killer.once("error", reject);
-      killer.once("exit", code => code === 0 || code === 128 ? resolve() : reject(new Error(`taskkill exited with ${code}`)));
+      killer.once("exit", (code) =>
+        code === 0 || code === 128 ? resolve() : reject(new Error(`taskkill exited with ${code}`))
+      );
     });
   } else {
     child.kill("SIGTERM");
@@ -200,18 +290,28 @@ async function terminateOwnedChild(child: ChildProcess): Promise<void> {
 
 function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
-  return new Promise(resolve => {
-    const timer = setTimeout(() => { cleanupListener(); resolve(false); }, timeoutMs);
-    const onExit = (): void => { clearTimeout(timer); cleanupListener(); resolve(true); };
-    const cleanupListener = (): void => { child.off("exit", onExit); };
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      cleanupListener();
+      resolve(false);
+    }, timeoutMs);
+    const onExit = (): void => {
+      clearTimeout(timer);
+      cleanupListener();
+      resolve(true);
+    };
+    const cleanupListener = (): void => {
+      child.off("exit", onExit);
+    };
     child.once("exit", onExit);
   });
 }
 
 function cleanup(paths: EmbeddedHomePaths): void {
-  for (const path of [paths.shutdownFile, paths.sessionFile, paths.supervisorState]) removeFile(path);
+  for (const path of [paths.shutdownFile, paths.sessionFile, paths.supervisorState])
+    removeFile(path);
 }
 
 function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

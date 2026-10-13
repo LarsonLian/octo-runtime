@@ -31,32 +31,34 @@
     "build": "pnpm --recursive --filter \"./packages/**\" --filter \"./apps/**\" run build",
     "prepare": "pnpm run build",
     "typecheck": "pnpm build && tsc -p tsconfig.json --noEmit",
-    "lint": "eslint apps packages"
+    "lint": "eslint apps packages",
+    "format": "prettier --write",
+    "format:check": "prettier --check"
   },
   "dependencies": {
+    "@mininglamp-oss/octo-harness-adapter-acp": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-antigravity": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-claude-code": "workspace:*",
-    "@mininglamp-oss/octo-harness-adapter-acp": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-codebuddy": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-codex": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-hermes": "workspace:*",
+    "@mininglamp-oss/octo-harness-adapter-host": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-icons": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-kimi-code": "workspace:*",
-    "@mininglamp-oss/octo-harness-adapter-host": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-mcode": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-openclaw": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-opencode": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-qodercli": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-qoderclicn": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-zcode-gui": "workspace:*",
+    "@mininglamp-oss/octo-harness-channel-im": "workspace:*",
+    "@mininglamp-oss/octo-harness-context-builder": "workspace:*",
     "@mininglamp-oss/octo-harness-core": "workspace:*",
     "@mininglamp-oss/octo-harness-cross-service": "workspace:*",
     "@mininglamp-oss/octo-harness-daemon": "workspace:*",
     "@mininglamp-oss/octo-harness-protocol": "workspace:*",
-    "ws": "^8.18.3",
     "@mininglamp-oss/octo-harness-worker-access": "workspace:*",
-    "@mininglamp-oss/octo-harness-context-builder": "workspace:*",
-    "@mininglamp-oss/octo-harness-im": "workspace:*"
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -64,6 +66,7 @@
     "@mininglamp-oss/octo-harness-daemon-app": "workspace:*",
     "@types/node": "^24.0.0",
     "eslint": "^10.9.1",
+    "prettier": "3.9.6",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.68.0"
   },

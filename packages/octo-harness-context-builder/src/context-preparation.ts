@@ -2,7 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
-import { assertResolvedExecutionPlan, type ResolvedExecutionPlan } from "@mininglamp-oss/octo-harness-protocol";
+import {
+  assertResolvedExecutionPlan,
+  type ResolvedExecutionPlan
+} from "@mininglamp-oss/octo-harness-protocol";
 export interface WorkspaceAssignments {
   conversationWorkspace(key: string, candidate: string): { path: string; created: boolean };
 }
@@ -25,24 +28,46 @@ export interface PreparedRunContext {
  * random 在 Agent Session 首次运行时创建工作区，后续运行复用；已分配目录丢失时拒绝续接。
  * 返回的路径属于 Runtime 私有视图；本地准备完成不表示 Worker 已确认或 Provider 已应用。
  */
-export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
-  stateRoot: string; agentSessionId: string; agentId: string; store: WorkspaceAssignments; signal?: AbortSignal;
-  registerCleanup?: (path: string) => void;
-  workspaceRoot?: string;
-}): Promise<PreparedRunContext> {
+export async function prepareRunContext(
+  plan: ResolvedExecutionPlan,
+  options: {
+    stateRoot: string;
+    agentSessionId: string;
+    agentId: string;
+    store: WorkspaceAssignments;
+    signal?: AbortSignal;
+    registerCleanup?: (path: string) => void;
+    workspaceRoot?: string;
+  }
+): Promise<PreparedRunContext> {
   assertResolvedExecutionPlan(plan);
   options.signal?.throwIfAborted();
   const stateRoot = await privateDirectory(options.stateRoot);
-  const workspace = plan.workspace ?? (plan.agent_source === "preset" && !plan.workdir ? { mode: "none" as const } : { mode: "fixed" as const, path: plan.workdir });
+  const workspace =
+    plan.workspace ??
+    (plan.agent_source === "preset" && !plan.workdir
+      ? { mode: "none" as const }
+      : { mode: "fixed" as const, path: plan.workdir });
   let workdir: string;
   if (workspace.mode === "none") {
-    if (plan.agent_source !== "preset" || plan.workdir) throw new TypeError("CONTEXT_WORKSPACE_INVALID");
-    return { workdir: "", providerStateDir: "", receipt: { workspace_mode: "none", workspace_path: "", provider_state_dir: "", warnings: [] } };
+    if (plan.agent_source !== "preset" || plan.workdir)
+      throw new TypeError("CONTEXT_WORKSPACE_INVALID");
+    return {
+      workdir: "",
+      providerStateDir: "",
+      receipt: { workspace_mode: "none", workspace_path: "", provider_state_dir: "", warnings: [] }
+    };
   }
   if (workspace.mode === "random") {
     const nativeWorkspace = plan.adapter_type === "openclaw";
-    const workspaces = await privateDirectory(nativeWorkspace ? join(stateRoot, "workspaces") : options.workspaceRoot ?? join(homedir(), "OctoWork"));
-    const proposed = nativeWorkspace ? join(workspaces, randomUUID()) : join(workspaces, `agent-${randomUUID()}`, "workdir");
+    const workspaces = await privateDirectory(
+      nativeWorkspace
+        ? join(stateRoot, "workspaces")
+        : (options.workspaceRoot ?? join(homedir(), "OctoWork"))
+    );
+    const proposed = nativeWorkspace
+      ? join(workspaces, randomUUID())
+      : join(workspaces, `agent-${randomUUID()}`, "workdir");
     const chosen = options.store.conversationWorkspace(options.agentSessionId, proposed);
     if (chosen.created) {
       await privateDirectory(dirname(chosen.path));
@@ -61,8 +86,16 @@ export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
   }
   const scope = createHash("sha256").update(options.agentSessionId).digest("hex");
   const providerStateDir = await privateDirectory(join(stateRoot, "providers", scope));
-  const prepared: PreparedRunContext = { workdir, providerStateDir,
-    receipt: { workspace_mode: workspace.mode, workspace_path: workdir, provider_state_dir: providerStateDir, warnings: [] } };
+  const prepared: PreparedRunContext = {
+    workdir,
+    providerStateDir,
+    receipt: {
+      workspace_mode: workspace.mode,
+      workspace_path: workdir,
+      provider_state_dir: providerStateDir,
+      warnings: []
+    }
+  };
   options.signal?.throwIfAborted();
   return prepared;
 }
@@ -73,10 +106,12 @@ async function privateDirectory(path: string): Promise<string> {
 }
 async function realDirectory(path: string): Promise<string> {
   const info = await lstat(path);
-  if (!info.isDirectory() || info.isSymbolicLink()) throw new TypeError("CONTEXT_DIRECTORY_UNAVAILABLE");
+  if (!info.isDirectory() || info.isSymbolicLink())
+    throw new TypeError("CONTEXT_DIRECTORY_UNAVAILABLE");
   return realpath(path);
 }
 function inside(root: string, path: string): void {
   const part = relative(root, path);
-  if (part === ".." || part.startsWith(".." + sep) || isAbsolute(part)) throw new TypeError("CONTEXT_PACKAGE_PATH_ESCAPE");
+  if (part === ".." || part.startsWith(".." + sep) || isAbsolute(part))
+    throw new TypeError("CONTEXT_PACKAGE_PATH_ESCAPE");
 }

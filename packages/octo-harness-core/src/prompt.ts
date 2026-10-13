@@ -7,7 +7,11 @@ export interface HarnessContextInput {
 }
 
 /** Build provider-neutral context from the unified execution objects only. */
-export function composeContext({ agent, agentSession, agentRun }: HarnessContextInput): Readonly<Record<string, unknown>> {
+export function composeContext({
+  agent,
+  agentSession,
+  agentRun
+}: HarnessContextInput): Readonly<Record<string, unknown>> {
   return Object.freeze({
     schema: "octo-harness.agent-run-context/v1",
     agent: { id: agent.id, name: agent.name },
@@ -33,5 +37,7 @@ export function renderPortableInstructions(context: Record<string, unknown>, per
     "[Harness Contract]",
     "Return work through the provider response stream. Use canonical Submit/AskUser tools when available. Do not call a business CLI merely to report completion.",
     perRun ? `[Run Instructions]\n${perRun}` : ""
-  ].filter(Boolean).join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }

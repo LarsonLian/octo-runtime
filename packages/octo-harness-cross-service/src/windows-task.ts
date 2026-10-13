@@ -64,27 +64,41 @@ export class WindowsUserTaskBackend implements ServiceBackend {
     this.#homeDirectory = options.homeDirectory ?? process.env.USERPROFILE ?? "";
     this.#environment = options.environment ?? process.env;
     this.#windowsUserId = options.windowsUserId ?? windowsUserId(this.#environment);
-    const windowsDirectory = this.#environment.SystemRoot ?? this.#environment.WINDIR ?? "C:\\Windows";
-    this.#schtasks = options.schtasksPath ?? win32.join(windowsDirectory, "System32", "schtasks.exe");
-    this.#powershell = options.powershellPath
-      ?? win32.join(windowsDirectory, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-    const localAppData = this.#environment.LOCALAPPDATA
-      ?? win32.join(this.#homeDirectory, "AppData", "Local");
-    this.#definitionDirectory = options.windowsDefinitionDirectory
-      ?? win32.join(localAppData, "OctoHarness", "services");
+    const windowsDirectory =
+      this.#environment.SystemRoot ?? this.#environment.WINDIR ?? "C:\\Windows";
+    this.#schtasks =
+      options.schtasksPath ?? win32.join(windowsDirectory, "System32", "schtasks.exe");
+    this.#powershell =
+      options.powershellPath ??
+      win32.join(windowsDirectory, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+    const localAppData =
+      this.#environment.LOCALAPPDATA ?? win32.join(this.#homeDirectory, "AppData", "Local");
+    this.#definitionDirectory =
+      options.windowsDefinitionDirectory ?? win32.join(localAppData, "OctoHarness", "services");
   }
 
   /** Report whether Task Scheduler and query cmdlets work for this user; no task is created. */
   async probe(): Promise<ServiceProbe> {
-    if (this.#platform !== "win32") return { supported: false, manager: this.kind, detail: "requires Windows" };
+    if (this.#platform !== "win32")
+      return { supported: false, manager: this.kind, detail: "requires Windows" };
     if (!this.#homeDirectory || !this.#windowsUserId) {
-      return { supported: false, manager: this.kind, detail: "current Windows user or profile is unavailable" };
+      return {
+        supported: false,
+        manager: this.kind,
+        detail: "current Windows user or profile is unavailable"
+      };
     }
     try {
-      const scheduler = await runCommand(this.#runner, this.kind, this.#schtasks, ["/Query", "/FO", "CSV", "/NH"], {
-        checked: false,
-        env: this.#environment
-      });
+      const scheduler = await runCommand(
+        this.#runner,
+        this.kind,
+        this.#schtasks,
+        ["/Query", "/FO", "CSV", "/NH"],
+        {
+          checked: false,
+          env: this.#environment
+        }
+      );
       if (scheduler.exitCode !== 0) {
         return {
           supported: false,
@@ -92,12 +106,22 @@ export class WindowsUserTaskBackend implements ServiceBackend {
           detail: (scheduler.stderr || scheduler.stdout).trim() || "Task Scheduler is unavailable"
         };
       }
-      await runCommand(this.#runner, this.kind, this.#powershell, powershellArguments("Get-Command Get-ScheduledTask -ErrorAction Stop | Out-Null"), {
-        env: this.#environment
-      });
+      await runCommand(
+        this.#runner,
+        this.kind,
+        this.#powershell,
+        powershellArguments("Get-Command Get-ScheduledTask -ErrorAction Stop | Out-Null"),
+        {
+          env: this.#environment
+        }
+      );
       return { supported: true, manager: this.kind };
     } catch (error) {
-      return { supported: false, manager: this.kind, detail: error instanceof Error ? error.message : String(error) };
+      return {
+        supported: false,
+        manager: this.kind,
+        detail: error instanceof Error ? error.message : String(error)
+      };
     }
   }
 
@@ -149,7 +173,10 @@ export class WindowsUserTaskBackend implements ServiceBackend {
       enabled: task.enabled === true,
       lastExitCode: task.last_exit_code,
       definitionPath,
-      drift: [...definitionDrift(actual, desired), ...windowsManagerDrift(task, normalized, this.#windowsUserId)],
+      drift: [
+        ...definitionDrift(actual, desired),
+        ...windowsManagerDrift(task, normalized, this.#windowsUserId)
+      ],
       detail: task.state ? undefined : "Task Scheduler did not report a state"
     };
   }
@@ -166,7 +193,10 @@ export class WindowsUserTaskBackend implements ServiceBackend {
     // Re-registration replaces Task Scheduler's definition. Capture running
     // state first so install can restore it without becoming an implicit start.
     const previous = await this.inspect(spec);
-    await writeDefinition(definitionPath, renderWindowsTaskXmlNormalized(normalized, taskName, this.#windowsUserId));
+    await writeDefinition(
+      definitionPath,
+      renderWindowsTaskXmlNormalized(normalized, taskName, this.#windowsUserId)
+    );
     if (previous.state === "running") {
       await this.#schtasksCommand(["/End", "/TN", taskName], false);
     }
@@ -207,7 +237,11 @@ export class WindowsUserTaskBackend implements ServiceBackend {
       throw new ServiceError("MANAGER_UNAVAILABLE", status.detail, { backend: this.kind });
     }
     if (!status.enabled) {
-      throw new ServiceError("SERVICE_DISABLED", "Windows task is disabled; call enable before start", { backend: this.kind });
+      throw new ServiceError(
+        "SERVICE_DISABLED",
+        "Windows task is disabled; call enable before start",
+        { backend: this.kind }
+      );
     }
     if (status.state !== "running") {
       await this.#schtasksCommand(["/Run", "/TN", windowsTaskName(normalized)]);
@@ -228,16 +262,24 @@ export class WindowsUserTaskBackend implements ServiceBackend {
       throw new ServiceError("MANAGER_UNAVAILABLE", status.detail, { backend: this.kind });
     }
     if (!status.enabled) {
-      throw new ServiceError("SERVICE_DISABLED", "Windows task is disabled; call enable before restart", { backend: this.kind });
+      throw new ServiceError(
+        "SERVICE_DISABLED",
+        "Windows task is disabled; call enable before restart",
+        { backend: this.kind }
+      );
     }
     await this.#schtasksCommand(["/End", "/TN", windowsTaskName(normalized)], false);
     await this.#schtasksCommand(["/Run", "/TN", windowsTaskName(normalized)]);
   }
 
   #normalize(spec: ServiceSpec): NormalizedServiceSpec {
-    if (this.#platform !== "win32") throw new ServiceError("UNSUPPORTED_PLATFORM", "Windows task backend requires Windows");
+    if (this.#platform !== "win32")
+      throw new ServiceError("UNSUPPORTED_PLATFORM", "Windows task backend requires Windows");
     if (!this.#homeDirectory || !this.#windowsUserId) {
-      throw new ServiceError("MANAGER_UNAVAILABLE", "current Windows user or profile is unavailable");
+      throw new ServiceError(
+        "MANAGER_UNAVAILABLE",
+        "current Windows user or profile is unavailable"
+      );
     }
     assertSingleLine(this.#windowsUserId, "Windows user id");
     const normalized = normalizeServiceSpec(spec, "win32");
@@ -248,7 +290,9 @@ export class WindowsUserTaskBackend implements ServiceBackend {
   async #installed(spec: ServiceSpec): Promise<NormalizedServiceSpec> {
     const normalized = this.#normalize(spec);
     if (!(await this.#exists(windowsTaskName(normalized)))) {
-      throw new ServiceError("NOT_INSTALLED", "Windows task is not installed", { backend: this.kind });
+      throw new ServiceError("NOT_INSTALLED", "Windows task is not installed", {
+        backend: this.kind
+      });
     }
     return normalized;
   }
@@ -313,11 +357,16 @@ export function quoteWindowsArgument(value: string): string {
   return `${quoted}${"\\".repeat(backslashes * 2)}"`;
 }
 
-function renderWindowsTaskXmlNormalized(spec: NormalizedServiceSpec, taskName: string, userId: string): string {
+function renderWindowsTaskXmlNormalized(
+  spec: NormalizedServiceSpec,
+  taskName: string,
+  userId: string
+): string {
   const argumentsText = spec.args.map(quoteWindowsArgument).join(" ");
-  const restart = spec.restart.policy === "on-failure"
-    ? `    <RestartOnFailure>\n      <Interval>PT${Math.max(TASK_RESTART_MINIMUM_SECONDS, spec.restart.delaySeconds)}S</Interval>\n      <Count>${spec.restart.maxBurst}</Count>\n    </RestartOnFailure>\n`
-    : "";
+  const restart =
+    spec.restart.policy === "on-failure"
+      ? `    <RestartOnFailure>\n      <Interval>PT${Math.max(TASK_RESTART_MINIMUM_SECONDS, spec.restart.delaySeconds)}S</Interval>\n      <Count>${spec.restart.maxBurst}</Count>\n    </RestartOnFailure>\n`
+      : "";
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
@@ -366,26 +415,41 @@ function windowsTaskName(spec: NormalizedServiceSpec): string {
   const name = spec.names.windowsTaskName ?? `\\OctoHarness.${spec.id}`;
   const segment = name.startsWith("\\") ? name.slice(1) : "";
   if (!WINDOWS_TASK_SEGMENT.test(segment)) {
-    throw new ServiceError("INVALID_SPEC", "Windows task name must be a single root task such as \\OctoHarness.daemon");
+    throw new ServiceError(
+      "INVALID_SPEC",
+      "Windows task name must be a single root task such as \\OctoHarness.daemon"
+    );
   }
   return name;
 }
 
 function assertWindowsSupported(spec: NormalizedServiceSpec): void {
   if (Object.keys(spec.environment).length > 0) {
-    throw new ServiceError("UNSUPPORTED_SPEC", "Windows user tasks do not support service environment variables", {
-      backend: "windows-user-task"
-    });
+    throw new ServiceError(
+      "UNSUPPORTED_SPEC",
+      "Windows user tasks do not support service environment variables",
+      {
+        backend: "windows-user-task"
+      }
+    );
   }
   if (spec.stdoutPath || spec.stderrPath) {
-    throw new ServiceError("UNSUPPORTED_SPEC", "Windows user tasks do not support native stdout/stderr redirection", {
-      backend: "windows-user-task"
-    });
+    throw new ServiceError(
+      "UNSUPPORTED_SPEC",
+      "Windows user tasks do not support native stdout/stderr redirection",
+      {
+        backend: "windows-user-task"
+      }
+    );
   }
   if (spec.restart.policy === "always") {
-    throw new ServiceError("UNSUPPORTED_SPEC", "Windows Task Scheduler cannot represent restart policy 'always'", {
-      backend: "windows-user-task"
-    });
+    throw new ServiceError(
+      "UNSUPPORTED_SPEC",
+      "Windows Task Scheduler cannot represent restart policy 'always'",
+      {
+        backend: "windows-user-task"
+      }
+    );
   }
 }
 
@@ -412,9 +476,14 @@ function windowsManagerDrift(
   const drift: string[] = [];
   if (!equalWindowsPath(task.execute, spec.command)) drift.push("manager.command");
   if ((task.arguments ?? "") !== expectedArguments) drift.push("manager.arguments");
-  if (!equalWindowsPath(task.working_directory, spec.workingDirectory)) drift.push("manager.working_directory");
+  if (!equalWindowsPath(task.working_directory, spec.workingDirectory))
+    drift.push("manager.working_directory");
   if (!equalWindowsIdentity(task.principal_user_id, userId)) drift.push("manager.principal_user");
-  if (!["interactivetoken", "interactive", "3"].includes(task.principal_logon_type?.toLowerCase() ?? "")) {
+  if (
+    !["interactivetoken", "interactive", "3"].includes(
+      task.principal_logon_type?.toLowerCase() ?? ""
+    )
+  ) {
     drift.push("manager.logon_type");
   }
   if (!equalWindowsIdentity(task.trigger_user_id, userId)) drift.push("manager.trigger_user");
@@ -423,7 +492,9 @@ function windowsManagerDrift(
 }
 
 function equalWindowsPath(actual: string | undefined, expected: string): boolean {
-  return actual?.replaceAll("/", "\\").toLowerCase() === expected.replaceAll("/", "\\").toLowerCase();
+  return (
+    actual?.replaceAll("/", "\\").toLowerCase() === expected.replaceAll("/", "\\").toLowerCase()
+  );
 }
 
 function equalWindowsIdentity(actual: string | undefined, expected: string): boolean {
@@ -432,11 +503,15 @@ function equalWindowsIdentity(actual: string | undefined, expected: string): boo
 
 function windowsTaskState(value: string | undefined): ServiceState {
   switch (value?.toLowerCase()) {
-    case "running": return "running";
-    case "queued": return "starting";
+    case "running":
+      return "running";
+    case "queued":
+      return "starting";
     case "ready":
-    case "disabled": return "stopped";
-    default: return "unknown";
+    case "disabled":
+      return "stopped";
+    default:
+      return "unknown";
   }
 }
 

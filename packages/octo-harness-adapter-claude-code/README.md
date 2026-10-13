@@ -81,14 +81,14 @@ claude --print --input-format text --output-format stream-json --verbose \
 
 ## 配置
 
-| 字段 | 作用 | 默认 |
-|---|---|---|
-| `workdir` | Claude 的 cwd 与代码目标（不是安全边界） | 必填 |
-| `model` | `--model`，别名 / 全名取决于 CLI | 由 CLI 决定 |
-| `thinking` | 显式配置 Claude thinking；`true`/非 `disabled` 字符串写入 `alwaysThinkingEnabled:true`，`false`/`disabled` 写入 `false` | 未配置时由 CLI settings 决定 |
-| `effort` | 可选推理强度，映射为 `--effort low/medium/high/xhigh/max` | `medium` |
-| `permissionMode` | 支持 `acceptEdits/auto/bypassPermissions/default/dontAsk/plan` | `bypassPermissions` |
-| `dangerouslyBypassPermissions` | 为 `true` 时强制 `bypassPermissions`，优先级高于 `permissionMode` | `false` |
+| 字段                           | 作用                                                                                                                    | 默认                         |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `workdir`                      | Claude 的 cwd 与代码目标（不是安全边界）                                                                                | 必填                         |
+| `model`                        | `--model`，别名 / 全名取决于 CLI                                                                                        | 由 CLI 决定                  |
+| `thinking`                     | 显式配置 Claude thinking；`true`/非 `disabled` 字符串写入 `alwaysThinkingEnabled:true`，`false`/`disabled` 写入 `false` | 未配置时由 CLI settings 决定 |
+| `effort`                       | 可选推理强度，映射为 `--effort low/medium/high/xhigh/max`                                                               | `medium`                     |
+| `permissionMode`               | 支持 `acceptEdits/auto/bypassPermissions/default/dontAsk/plan`                                                          | `bypassPermissions`          |
+| `dangerouslyBypassPermissions` | 为 `true` 时强制 `bypassPermissions`，优先级高于 `permissionMode`                                                       | `false`                      |
 
 control 指令经 `0600` 临时文件（`--append-system-prompt-file`）传入，用户 prompt 经 stdin 传入，两者互不混淆；临时文件在调用的 `finally` 阶段清理。适配器不传 `--disallowedTools`，保留 Claude 完整工具目录。
 

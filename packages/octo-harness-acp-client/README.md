@@ -64,13 +64,13 @@ const client = spawnAcpClient({
 });
 
 try {
-  await client.initialize();                         // ACP 握手，必须最先调用
+  await client.initialize(); // ACP 握手，必须最先调用
   const session = await client.newSession({ cwd: process.cwd() });
   for await (const update of client.prompt(session.id, "Inspect this repository")) {
-    console.log(update);                             // 逐条消费 session/update
+    console.log(update); // 逐条消费 session/update
   }
 } finally {
-  await client.close();                              // SIGTERM，1 秒未退出则 SIGKILL
+  await client.close(); // SIGTERM，1 秒未退出则 SIGKILL
 }
 ```
 

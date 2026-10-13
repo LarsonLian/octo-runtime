@@ -1,20 +1,19 @@
 import {
   spawnAdapterHost,
   type AdapterHostProcess,
-  type AdapterHostRpc,
+  type AdapterHostRpc
 } from "@mininglamp-oss/octo-harness-adapter-host";
+import { HarnessEngine, SqliteStore, type Store } from "@mininglamp-oss/octo-harness-core";
+import { ImRuntime, loadImBots, type ImBotConfig } from "@mininglamp-oss/octo-harness-channel-im";
 import {
-  HarnessEngine,
-  SqliteStore,
-  type Store
-} from "@mininglamp-oss/octo-harness-core";
-import { ImRuntime, loadImBots, type ImBotConfig } from "@mininglamp-oss/octo-harness-im";
-import { assertInteractionResponse, type InvokeRequest } from "@mininglamp-oss/octo-harness-protocol";
+  assertInteractionResponse,
+  type InvokeRequest
+} from "@mininglamp-oss/octo-harness-protocol";
 import type { AgentWorkRuntimeOptions } from "@mininglamp-oss/octo-harness-worker-access/agent-work-runtime";
 import { AgentWorkSupervisor } from "@mininglamp-oss/octo-harness-worker-access/agent-work-supervisor";
 import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, open, readFile, rm } from "node:fs/promises";
-import net,{ type Server } from "node:net";
+import net, { type Server } from "node:net";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { HostRunService } from "./host-run-service.js";
@@ -104,8 +103,10 @@ export async function startDaemonServer({
   adapterHostRestartDelaysMs = DEFAULT_ADAPTER_HOST_RESTART_DELAYS_MS,
   adapterHostReadyTimeoutMs
 }: StartDaemonServerOptions): Promise<DaemonApplication> {
-  if (adapterHostRestartDelaysMs.length === 0 ||
-    adapterHostRestartDelaysMs.some(delay => !Number.isFinite(delay) || delay < 1)) {
+  if (
+    adapterHostRestartDelaysMs.length === 0 ||
+    adapterHostRestartDelaysMs.some((delay) => !Number.isFinite(delay) || delay < 1)
+  ) {
     throw new Error("adapterHostRestartDelaysMs must contain positive delays");
   }
   const configuredImBots = imBots ?? loadImBots(homePath ?? dirname(storePath));
@@ -127,7 +128,12 @@ export async function startDaemonServer({
     const openedManifest = await InvocationManifest.open(invocationManifestPath);
     invocationManifest = openedManifest.manifest;
     if (openedManifest.reap.found) {
-      console.error(openedManifest.reap.reaped ? "reaped orphaned adapter-host process group" : "cleared stale invocation manifest", { pid: openedManifest.reap.pid, reason: openedManifest.reap.reason });
+      console.error(
+        openedManifest.reap.reaped
+          ? "reaped orphaned adapter-host process group"
+          : "cleared stale invocation manifest",
+        { pid: openedManifest.reap.pid, reason: openedManifest.reap.reason }
+      );
     }
   } catch (error) {
     await releasePid();
@@ -136,7 +142,9 @@ export async function startDaemonServer({
 
   let store: SqliteStore;
   try {
-    store = SqliteStore.open(storePath, { recordRunEvents: process.env.OCTO_RECORD_RUN_STEPS === "1" });
+    store = SqliteStore.open(storePath, {
+      recordRunEvents: process.env.OCTO_RECORD_RUN_STEPS === "1"
+    });
   } catch (error) {
     await invocationManifest.close();
     await releasePid();
@@ -148,7 +156,9 @@ export async function startDaemonServer({
       manifest: manifestPath,
       env: { ...process.env, OCTO_HARNESS_HOME: homePath ?? dirname(storePath) },
       ...(signal ? { signal } : {}),
-      ...(adapterHostReadyTimeoutMs !== undefined ? { readyTimeoutMs: adapterHostReadyTimeoutMs } : {}),
+      ...(adapterHostReadyTimeoutMs !== undefined
+        ? { readyTimeoutMs: adapterHostReadyTimeoutMs }
+        : {})
     });
     await invocationManifest.setAdapterHost(spawned.child.pid, hostEntrypoint);
     return spawned;
@@ -164,7 +174,7 @@ export async function startDaemonServer({
   }
   let adapters: string[];
   try {
-    adapters = hostProcess.adapters.map(adapter => adapter.type);
+    adapters = hostProcess.adapters.map((adapter) => adapter.type);
   } catch (error) {
     await hostProcess.close();
     await invocationManifest.close();
@@ -193,15 +203,18 @@ export async function startDaemonServer({
   let hostStableReset: NodeJS.Timeout | undefined;
   const readyHost = (): AdapterHostProcess => {
     if (runtime.adapterHost.state !== "ready") {
-      throw Object.assign(new Error("adapter-host is restarting"), { code: "ADAPTER_HOST_RESTARTING" });
+      throw Object.assign(new Error("adapter-host is restarting"), {
+        code: "ADAPTER_HOST_RESTARTING"
+      });
     }
     return hostProcess;
   };
   const transportHost: AdapterHostRpc = {
     list: async () => readyHost().client.list(),
-    probe: async adapterType => readyHost().client.probe(adapterType),
+    probe: async (adapterType) => readyHost().client.probe(adapterType),
     cancel: async (invocationId, reason) => readyHost().client.cancel(invocationId, reason),
-    respondInteraction: async (invocationId, response) => readyHost().client.respondInteraction(invocationId, response),
+    respondInteraction: async (invocationId, response) =>
+      readyHost().client.respondInteraction(invocationId, response),
     async *invoke(adapterType, request) {
       await invocationManifest.begin({
         invocationId: request.invocationId,
@@ -216,7 +229,9 @@ export async function startDaemonServer({
         try {
           await invocationManifest.end(request.invocationId);
         } catch (error) {
-          console.error("failed to remove completed invocation from the manifest", { error: errorMessage(error) });
+          console.error("failed to remove completed invocation from the manifest", {
+            error: errorMessage(error)
+          });
         }
       }
     }
@@ -227,7 +242,10 @@ export async function startDaemonServer({
       const attempt = ++hostRestartAttempt;
       const restartDelay = adapterHostRestartDelayMs(attempt, adapterHostRestartDelaysMs);
       runtime.adapterHost.restartAttempt = attempt;
-      console.error("adapter-host restart scheduled", { restart_attempt: attempt, restart_delay_ms: restartDelay });
+      console.error("adapter-host restart scheduled", {
+        restart_attempt: attempt,
+        restart_delay_ms: restartDelay
+      });
       try {
         await abortableDelay(restartDelay, signal);
         const replacement = await spawnHost(signal);
@@ -235,7 +253,7 @@ export async function startDaemonServer({
           await replacement.close();
           throw new Error("adapter-host restart cancelled");
         }
-        const replacementAdapters = replacement.adapters.map(adapter => adapter.type);
+        const replacementAdapters = replacement.adapters.map((adapter) => adapter.type);
         if (shuttingDown || signal.aborted) {
           await replacement.close();
           throw new Error("adapter-host restart cancelled");
@@ -245,7 +263,10 @@ export async function startDaemonServer({
         runtime.adapterHost.state = "ready";
         runtime.adapters = replacementAdapters;
         monitorAdapterHost(replacement);
-        console.error("adapter-host restarted", { adapter_host_pid: replacement.child.pid ?? null, restart_attempt: attempt });
+        console.error("adapter-host restarted", {
+          adapter_host_pid: replacement.child.pid ?? null,
+          restart_attempt: attempt
+        });
         hostStableReset = setTimeout(() => {
           if (hostProcess === replacement && runtime.adapterHost.state === "ready") {
             hostRestartAttempt = 0;
@@ -256,7 +277,10 @@ export async function startDaemonServer({
         return replacement;
       } catch (error) {
         if (shuttingDown || signal.aborted) throw error;
-        console.error("adapter-host restart attempt failed", { restart_attempt: attempt, error: errorMessage(error) });
+        console.error("adapter-host restart attempt failed", {
+          restart_attempt: attempt,
+          error: errorMessage(error)
+        });
       }
     }
     throw new Error("adapter-host restart cancelled");
@@ -275,7 +299,10 @@ export async function startDaemonServer({
     runtime.adapterHost.pid = null;
     runtime.adapterHost.state = "restarting";
     void invocationManifest.setAdapterHost(undefined, hostEntrypoint).catch(() => undefined);
-    console.error("adapter-host exited unexpectedly; restarting inside daemon", { exit_code: code, signal });
+    console.error("adapter-host exited unexpectedly; restarting inside daemon", {
+      exit_code: code,
+      signal
+    });
     const controller = new AbortController();
     hostRestartAbort = controller;
     const restart = restartAdapterHost(controller.signal);
@@ -289,16 +316,20 @@ export async function startDaemonServer({
 
   monitorAdapterHost(hostProcess);
   const host = new HostRunService(transportHost);
-  const imRuntimes = configuredImBots.map(config => new ImRuntime(config, { host }));
-  Object.defineProperty(runtime, "im", { enumerable: true, get: () => imRuntimes.map(im => im.status) });
+  const imRuntimes = configuredImBots.map((config) => new ImRuntime(config, { host }));
+  Object.defineProperty(runtime, "im", {
+    enumerable: true,
+    get: () => imRuntimes.map((im) => im.status)
+  });
   const engine = new HarnessEngine({ store, host });
   const daemon = new HarnessDaemon({ engine, store });
   const configuredAgentWorks = agentWorks ?? (agentWork ? [agentWork] : []);
-  const agentWorkSupervisor = configuredAgentWorks.length > 0
-    ? new AgentWorkSupervisor(configuredAgentWorks, host)
-    : undefined;
+  const agentWorkSupervisor =
+    configuredAgentWorks.length > 0
+      ? new AgentWorkSupervisor(configuredAgentWorks, host)
+      : undefined;
   const connections = new Set<net.Socket>();
-  const server = net.createServer(socket => {
+  const server = net.createServer((socket) => {
     connections.add(socket);
     // A connection id scopes transport evidence only. AgentRun, AgentSession and
     // invocation ids retain their domain meanings and may span other transports.
@@ -306,7 +337,7 @@ export async function startDaemonServer({
     socket.once("close", () => {
       connections.delete(socket);
     });
-    createInterface({ input: socket }).once("line", line => {
+    createInterface({ input: socket }).once("line", (line) => {
       void handleRequestLine({
         line,
         socket,
@@ -330,20 +361,21 @@ export async function startDaemonServer({
     // 0600 restricts it to the current host account (there is no RBAC above it).
     if (process.platform !== "win32") await chmod(socketPath, 0o600);
     await agentWorkSupervisor?.start();
-    await Promise.all(imRuntimes.map(im => im.start()));
-    if (consoleOutput) console.error("daemon ready", {
-      pid: process.pid,
-      home_path: homePath,
-      socket_path: socketPath,
-      adapter_host_pid: hostProcess.child.pid ?? null,
-      adapters,
-    });
+    await Promise.all(imRuntimes.map((im) => im.start()));
+    if (consoleOutput)
+      console.error("daemon ready", {
+        pid: process.pid,
+        home_path: homePath,
+        socket_path: socketPath,
+        adapter_host_pid: hostProcess.child.pid ?? null,
+        adapters
+      });
   } catch (error) {
     shuttingDown = true;
     hostRestartAbort?.abort();
     if (hostStableReset) clearTimeout(hostStableReset);
     daemon.stop();
-    await Promise.allSettled(imRuntimes.map(im => im.close()));
+    await Promise.allSettled(imRuntimes.map((im) => im.close()));
     await agentWorkSupervisor?.close();
     await host.close();
     await hostRestartTask?.catch(() => undefined);
@@ -371,11 +403,11 @@ export async function startDaemonServer({
       if (hostStableReset) clearTimeout(hostStableReset);
       if (consoleOutput) console.error("daemon stopping");
       daemon.stop();
-      await Promise.allSettled(imRuntimes.map(im => im.close()));
+      await Promise.allSettled(imRuntimes.map((im) => im.close()));
       await agentWorkSupervisor?.close();
       await host.close();
       for (const connection of connections) connection.destroy();
-      await new Promise<void>(resolve => server.close(() => resolve()));
+      await new Promise<void>((resolve) => server.close(() => resolve()));
       await hostRestartTask?.catch(() => undefined);
       await hostProcess.close();
       await invocationManifest.close();
@@ -411,7 +443,8 @@ async function handleRequestLine({
   try {
     request = parseRequest(line);
     if (request.method === "agent_run.invoke" || request.method === "agent_run.subscribe") {
-      if ((JSON.parse(line) as Record<string, unknown>).jsonrpc !== "2.0") throw new Error("JSON-RPC 2.0 required");
+      if ((JSON.parse(line) as Record<string, unknown>).jsonrpc !== "2.0")
+        throw new Error("JSON-RPC 2.0 required");
       if (request.method === "agent_run.invoke") {
         const invocation = request.params?.request as InvokeRequest;
         host.submit(requiredString(request.params?.adapter_type, "adapter_type"), invocation);
@@ -421,7 +454,12 @@ async function handleRequestLine({
       return;
     }
     const result = await dispatch({
-      request, daemon, store, host, runtime, agentWorkSupervisor
+      request,
+      daemon,
+      store,
+      host,
+      runtime,
+      agentWorkSupervisor
     });
     socket.end(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result })}\n`);
   } catch (error) {
@@ -432,10 +470,13 @@ async function handleRequestLine({
       code: (error as NodeJS.ErrnoException).code
     });
     const rpcError = error as NodeJS.ErrnoException;
-    socket.end(`${JSON.stringify({
-      jsonrpc: "2.0", id: request?.id,
-      error: { message: errorMessage(error), code: rpcError.code }
-    })}\n`);
+    socket.end(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: request?.id,
+        error: { message: errorMessage(error), code: rpcError.code }
+      })}\n`
+    );
   }
 }
 
@@ -443,7 +484,11 @@ async function handleRequestLine({
  * Emit the currently retained in-memory event snapshot and optionally follow it.
  * No SQLite query is involved; a disconnected client owns no queued payloads.
  */
-async function streamAgentRun(request: DaemonRequest, socket: net.Socket, host: HostRunService): Promise<void> {
+async function streamAgentRun(
+  request: DaemonRequest,
+  socket: net.Socket,
+  host: HostRunService
+): Promise<void> {
   const runId = requiredString(request.params?.run_id, "run_id");
   let streamId = optionalString(request.params?.stream_id);
   const cursor = request.params?.after_seq ?? 0;
@@ -458,26 +503,71 @@ async function streamAgentRun(request: DaemonRequest, socket: net.Socket, host: 
       const page = host.read(runId, streamId, after);
       streamId = page.stream_id;
       if (!started) {
-        await writeSocketLine(socket, { jsonrpc: "2.0", id: request.id, result: { subscription_id: subscriptionId, ...page, events: undefined } });
+        await writeSocketLine(socket, {
+          jsonrpc: "2.0",
+          id: request.id,
+          result: { subscription_id: subscriptionId, ...page, events: undefined }
+        });
         started = true;
       }
       for (const value of page.events) {
-        await writeSocketLine(socket, { jsonrpc: "2.0", method: "agent_run.event", params: {
-            subscription_id: subscriptionId, run_id: runId, stream_id: streamId, seq: value.seq, event: value.event
-          } });
+        await writeSocketLine(socket, {
+          jsonrpc: "2.0",
+          method: "agent_run.event",
+          params: {
+            subscription_id: subscriptionId,
+            run_id: runId,
+            stream_id: streamId,
+            seq: value.seq,
+            event: value.event
+          }
+        });
         after = value.seq;
       }
-      if ((page.terminal || request.params?.follow === false) && after >= page.latest_seq) { socket.end(); return; }
-      if (!page.events.length) await new Promise<void>(resolve => {
-        const done = (): void => { clearTimeout(timer); socket.off("close", done); resolve(); };
-        const timer = setTimeout(done, 100); socket.once("close", done);
-      });
+      if ((page.terminal || request.params?.follow === false) && after >= page.latest_seq) {
+        socket.end();
+        return;
+      }
+      if (!page.events.length)
+        await new Promise<void>((resolve) => {
+          const done = (): void => {
+            clearTimeout(timer);
+            socket.off("close", done);
+            resolve();
+          };
+          const timer = setTimeout(done, 100);
+          socket.once("close", done);
+        });
     }
   } catch (error) {
-    if (!socket.destroyed) socket.end(`${JSON.stringify({ jsonrpc: "2.0", ...(started
-        ? { method: "agent_run.stream_error", params: { subscription_id: subscriptionId, run_id: runId, stream_id: streamId, code: errorMessage(error), ...((error as { data?: object }).data ?? {}) } }
-        : { id: request.id, error: { code: -32001, message: errorMessage(error), data: (error as { data?: object }).data } }) })}\n`);
-  } finally { release(); }
+    if (!socket.destroyed)
+      socket.end(
+        `${JSON.stringify({
+          jsonrpc: "2.0",
+          ...(started
+            ? {
+                method: "agent_run.stream_error",
+                params: {
+                  subscription_id: subscriptionId,
+                  run_id: runId,
+                  stream_id: streamId,
+                  code: errorMessage(error),
+                  ...((error as { data?: object }).data ?? {})
+                }
+              }
+            : {
+                id: request.id,
+                error: {
+                  code: -32001,
+                  message: errorMessage(error),
+                  data: (error as { data?: object }).data
+                }
+              })
+        })}\n`
+      );
+  } finally {
+    release();
+  }
 }
 
 async function writeSocketLine(socket: net.Socket, value: unknown): Promise<void> {
@@ -499,13 +589,26 @@ function waitForDrain(socket: net.Socket, timeoutMs: number): Promise<void> {
       socket.off("error", onError);
       socket.off("close", onClose);
     };
-    const onDrain = (): void => { cleanup(); resolve(); };
-    const onError = (error: Error): void => { cleanup(); reject(error); };
-    const onClose = (): void => { cleanup(); reject(new Error("daemon event client disconnected")); };
+    const onDrain = (): void => {
+      cleanup();
+      resolve();
+    };
+    const onError = (error: Error): void => {
+      cleanup();
+      reject(error);
+    };
+    const onClose = (): void => {
+      cleanup();
+      reject(new Error("daemon event client disconnected"));
+    };
     const timer = setTimeout(() => {
       cleanup();
       socket.destroy();
-      reject(Object.assign(new Error("daemon event client drain timed out"), { code: "EVENT_DRAIN_TIMEOUT" }));
+      reject(
+        Object.assign(new Error("daemon event client drain timed out"), {
+          code: "EVENT_DRAIN_TIMEOUT"
+        })
+      );
     }, timeoutMs);
     timer.unref();
     socket.once("drain", onDrain);
@@ -535,7 +638,7 @@ export function adapterHostRestartDelayMs(
   attempt: number,
   delays: readonly number[] = DEFAULT_ADAPTER_HOST_RESTART_DELAYS_MS
 ): number {
-  if (delays.length === 0 || delays.some(delay => !Number.isFinite(delay) || delay < 1)) {
+  if (delays.length === 0 || delays.some((delay) => !Number.isFinite(delay) || delay < 1)) {
     throw new Error("adapter-host restart delays must contain positive values");
   }
   const index = Math.max(0, Math.min(delays.length - 1, Math.trunc(attempt) - 1));
@@ -551,7 +654,7 @@ async function dispatch({
   store,
   host,
   runtime,
-  agentWorkSupervisor,
+  agentWorkSupervisor
 }: {
   request: DaemonRequest;
   daemon: HarnessDaemon;
@@ -598,7 +701,10 @@ async function dispatch({
     case "agent_session.get":
       return store.getAgentSession(requiredString(params.agentSessionId, "agentSessionId")) ?? null;
     case "agent_run.submit":
-      return host.submit(requiredString(params.adapter_type, "adapter_type"), params.request as InvokeRequest);
+      return host.submit(
+        requiredString(params.adapter_type, "adapter_type"),
+        params.request as InvokeRequest
+      );
     case "agent_run.respond":
       assertInteractionResponse(params.response);
       await host.respond(requiredString(params.run_id, "run_id"), params.response);
@@ -611,16 +717,23 @@ async function dispatch({
     case "agent_run.wait":
       return daemon.waitForRun(requiredString(params.runId, "runId"));
     case "agent_run.cancel":
-      if (params.run_id !== undefined) return host.cancelRun(requiredString(params.run_id, "run_id"), optionalString(params.reason));
+      if (params.run_id !== undefined)
+        return host.cancelRun(
+          requiredString(params.run_id, "run_id"),
+          optionalString(params.reason)
+        );
       return daemon.cancelRun(requiredString(params.runId, "runId"), optionalString(params.reason));
     default:
-      throw Object.assign(new Error(`unknown daemon method: ${request.method}`), { code: "method_not_found" });
+      throw Object.assign(new Error(`unknown daemon method: ${request.method}`), {
+        code: "method_not_found"
+      });
   }
 }
 
 function parseRequest(line: string): DaemonRequest {
   const value: unknown = JSON.parse(line);
-  if (!isRecord(value) || typeof value.method !== "string") throw new TypeError("daemon request requires method");
+  if (!isRecord(value) || typeof value.method !== "string")
+    throw new TypeError("daemon request requires method");
   return value as unknown as DaemonRequest;
 }
 
@@ -629,7 +742,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function requiredString(value: unknown, name: string): string {
-  if (typeof value !== "string" || value.length === 0) throw new TypeError(`${name} must be a non-empty string`);
+  if (typeof value !== "string" || value.length === 0)
+    throw new TypeError(`${name} must be a non-empty string`);
   return value;
 }
 
@@ -673,7 +787,9 @@ async function acquirePidFile(path: string): Promise<() => Promise<void>> {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       const owner = await readPid(path);
       if (owner !== undefined && processAlive(owner)) {
-        throw new Error(`Octo Harness daemon is already running with pid ${owner}`, { cause: error });
+        throw new Error(`Octo Harness daemon is already running with pid ${owner}`, {
+          cause: error
+        });
       }
       await rm(path, { force: true });
     }

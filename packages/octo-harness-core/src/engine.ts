@@ -12,7 +12,15 @@ import {
   type InvokeRequest
 } from "@mininglamp-oss/octo-harness-protocol";
 import { composeContext } from "./prompt.js";
-import { assertLocalAgentConfig, assertLocalContext, assertRunSnapshot, hashLocalValue, localRuntimeLimits, resolveLocalContext, type LocalAgentConfig } from "./context.js";
+import {
+  assertLocalAgentConfig,
+  assertLocalContext,
+  assertRunSnapshot,
+  hashLocalValue,
+  localRuntimeLimits,
+  resolveLocalContext,
+  type LocalAgentConfig
+} from "./context.js";
 import type { Agent, AgentRun, AgentRunTrigger, AgentSession, Store } from "./store.js";
 
 const id = (prefix: string): string => `${prefix}_${randomUUID()}`;
@@ -21,7 +29,10 @@ const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 export interface HarnessHost {
   list(): Array<{ type: string }> | Promise<Array<{ type: string }>>;
   invoke(adapterType: string, request: InvokeRequest): AsyncIterable<CanonicalEvent>;
-  cancel(invocationId: string, reason?: string): boolean | { cancelled: boolean } | Promise<boolean | { cancelled: boolean }>;
+  cancel(
+    invocationId: string,
+    reason?: string
+  ): boolean | { cancelled: boolean } | Promise<boolean | { cancelled: boolean }>;
 }
 
 export interface RegisterAgentInput {
@@ -68,11 +79,21 @@ export class HarnessEngine {
   }
 
   async registerAgent(input: RegisterAgentInput): Promise<Agent> {
-    if (!input || Object.keys(input).some(name => !["id", "name", "agentSource", "defaultContext", "config"].includes(name))) throw new TypeError("LEGACY_AGENT_CONTRACT_REJECTED");
+    if (
+      !input ||
+      Object.keys(input).some(
+        (name) => !["id", "name", "agentSource", "defaultContext", "config"].includes(name)
+      )
+    )
+      throw new TypeError("LEGACY_AGENT_CONTRACT_REJECTED");
     input = structuredClone(input);
     if (!input.name) throw new Error("agent name is required");
     assertLocalAgentConfig(input.config === undefined ? {} : input.config);
-    const resolved = resolveLocalContext(input.defaultContext, { schema: "octo.context-envelope/v3", items: [] }, input.agentSource);
+    const resolved = resolveLocalContext(
+      input.defaultContext,
+      { schema: "octo.context-envelope/v3", items: [] },
+      input.agentSource
+    );
     const adapters = await this.host.list();
     assertLoadedAdapter(adapters, resolved.resolvedExecutionPlan.adapter_type);
     const agent: Agent = {
@@ -94,19 +115,29 @@ export class HarnessEngine {
 
   async replaceDefaultContext(input: ReplaceDefaultContextInput): Promise<Agent> {
     input = structuredClone(input);
-    if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) throw new TypeError("CONTEXT_DEFAULTS_VERSION_REQUIRED");
+    if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1)
+      throw new TypeError("CONTEXT_DEFAULTS_VERSION_REQUIRED");
     const current = this.store.getAgent(input.agentId);
     if (!current) throw new Error(`agent not found: ${input.agentId}`);
-    const resolved = resolveLocalContext(input.context, { schema: "octo.context-envelope/v3", items: [] }, current.agentSource);
+    const resolved = resolveLocalContext(
+      input.context,
+      { schema: "octo.context-envelope/v3", items: [] },
+      current.agentSource
+    );
     const adapters = await this.host.list();
     assertLoadedAdapter(adapters, resolved.resolvedExecutionPlan.adapter_type);
     let updated!: Agent;
     await this.store.transaction(() => {
       const agent = this.store.getAgent(input.agentId);
       if (!agent) throw new Error(`agent not found: ${input.agentId}`);
-      if (agent.contextDefaultsVersion !== input.expectedVersion) throw new Error("CONTEXT_DEFAULTS_VERSION_CONFLICT");
+      if (agent.contextDefaultsVersion !== input.expectedVersion)
+        throw new Error("CONTEXT_DEFAULTS_VERSION_CONFLICT");
       assertMaterializationAdapter(agent, resolved.resolvedExecutionPlan.adapter_type);
-      updated = { ...agent, defaultContext: resolved.effectiveContext, contextDefaultsVersion: agent.contextDefaultsVersion + 1 };
+      updated = {
+        ...agent,
+        defaultContext: resolved.effectiveContext,
+        contextDefaultsVersion: agent.contextDefaultsVersion + 1
+      };
       this.store.putAgent(updated);
     });
     return updated;
@@ -116,15 +147,26 @@ export class HarnessEngine {
     validateSubmission(input);
     input = structuredClone(input);
     const requestHash = hashLocalValue({ ...input, context: contextHash(input.context) });
-    const duplicate = await this.store.transaction(() => existingSubmission(this.store, input, requestHash));
+    const duplicate = await this.store.transaction(() =>
+      existingSubmission(this.store, input, requestHash)
+    );
     if (duplicate) return duplicate;
     const registered = this.store.getAgent(input.agentId);
     if (!registered) throw new Error(`agent not found: ${input.agentId}`);
-    const selectedAdapter = resolveLocalContext(registered.defaultContext, input.context, registered.agentSource).resolvedExecutionPlan.adapter_type;
-    const adapters = selectedAdapter === registered.adapterType ? undefined : await this.host.list();
+    const selectedAdapter = resolveLocalContext(
+      registered.defaultContext,
+      input.context,
+      registered.agentSource
+    ).resolvedExecutionPlan.adapter_type;
+    const adapters =
+      selectedAdapter === registered.adapterType ? undefined : await this.host.list();
     let result!: SubmitAgentRunResult;
     await this.store.transaction(() => {
-      let session = this.store.getAgentSessionByKey(input.namespace, input.agentId, input.sessionKey);
+      let session = this.store.getAgentSessionByKey(
+        input.namespace,
+        input.agentId,
+        input.sessionKey
+      );
       const existing = existingSubmission(this.store, input, requestHash);
       if (existing) {
         result = existing;
@@ -132,10 +174,12 @@ export class HarnessEngine {
       }
       const agent = this.store.getAgent(input.agentId);
       if (!agent) throw new Error(`agent not found: ${input.agentId}`);
-      if (!Number.isSafeInteger(agent.contextDefaultsVersion) || agent.contextDefaultsVersion < 1) throw new TypeError("CONTEXT_DEFAULTS_VERSION_REQUIRED");
+      if (!Number.isSafeInteger(agent.contextDefaultsVersion) || agent.contextDefaultsVersion < 1)
+        throw new TypeError("CONTEXT_DEFAULTS_VERSION_REQUIRED");
       assertLocalAgentConfig(agent.config);
       const resolved = resolveLocalContext(agent.defaultContext, input.context, agent.agentSource);
-      if (resolved.resolvedExecutionPlan.adapter_type !== agent.adapterType) assertLoadedAdapter(adapters ?? [], resolved.resolvedExecutionPlan.adapter_type);
+      if (resolved.resolvedExecutionPlan.adapter_type !== agent.adapterType)
+        assertLoadedAdapter(adapters ?? [], resolved.resolvedExecutionPlan.adapter_type);
       assertMaterializationAdapter(agent, resolved.resolvedExecutionPlan.adapter_type);
       if (!session) {
         session = {
@@ -163,12 +207,23 @@ export class HarnessEngine {
         contextDefaultsVersion: agent.contextDefaultsVersion,
         contextHash: contextHash(resolved.effectiveContext),
         ...resolved,
-        materialization: { id: agent.id, name: agent.name, adapterType: agent.adapterType, config: structuredClone(agent.config) }
+        materialization: {
+          id: agent.id,
+          name: agent.name,
+          adapterType: agent.adapterType,
+          config: structuredClone(agent.config)
+        }
       };
-      this.store.appendEvent(envelope(run, run.nextSeq++, { protocolVersion: 2,
-        type: "run.queued",
-        payload: { trigger_kind: run.trigger.kind, trigger_occurrence_id: run.trigger.occurrenceId }
-      }));
+      this.store.appendEvent(
+        envelope(run, run.nextSeq++, {
+          protocolVersion: 2,
+          type: "run.queued",
+          payload: {
+            trigger_kind: run.trigger.kind,
+            trigger_occurrence_id: run.trigger.occurrenceId
+          }
+        })
+      );
       this.store.putAgentRun(run);
       this.store.putAgentSession(session);
       result = { agentSession: session, agentRun: run, deduplicated: false };
@@ -181,11 +236,14 @@ export class HarnessEngine {
     if (!run || run.status !== "queued") return false;
     const session = this.store.getAgentSession(run.agentSessionId);
     if (!session || (session.activeRunId && session.activeRunId !== run.id)) return false;
-    return !this.store.listAgentRuns().some(candidate =>
-      candidate.agentSessionId === run.agentSessionId &&
-      candidate.runNo < run.runNo &&
-      !TERMINAL.has(candidate.status)
-    );
+    return !this.store
+      .listAgentRuns()
+      .some(
+        (candidate) =>
+          candidate.agentSessionId === run.agentSessionId &&
+          candidate.runNo < run.runNo &&
+          !TERMINAL.has(candidate.status)
+      );
   }
 
   async executeRun(runId: string): Promise<{ run: AgentRun; events: EventEnvelope[] }> {
@@ -200,14 +258,17 @@ export class HarnessEngine {
         throw new Error(`agent run is not the executable session head: ${candidate.id}`);
       }
       const candidateSession = this.store.getAgentSession(candidate.agentSessionId);
-      if (!candidateSession) throw new Error(`agent session not found: ${candidate.agentSessionId}`);
+      if (!candidateSession)
+        throw new Error(`agent session not found: ${candidate.agentSessionId}`);
       assertRunSnapshot(candidate);
 
       candidate.status = "running";
       candidateSession.activeRunId = candidate.id;
       run = candidate;
       session = candidateSession;
-      this.store.appendEvent(envelope(run, run.nextSeq++, { protocolVersion: 2, type: "run.started", payload: {} }));
+      this.store.appendEvent(
+        envelope(run, run.nextSeq++, { protocolVersion: 2, type: "run.started", payload: {} })
+      );
       this.store.putAgentRun(run);
       this.store.putAgentSession(session);
     });
@@ -216,20 +277,33 @@ export class HarnessEngine {
       return await this.#executeClaimedRun(run, session);
     } catch (error) {
       await this.terminalizeRun(run.id, {
-        protocolVersion: 2, type: "run.failed",
-        payload: failurePayload(error, { stage: "input_dispatch", defaultDomain: "runtime", runId: run.id })
+        protocolVersion: 2,
+        type: "run.failed",
+        payload: failurePayload(error, {
+          stage: "input_dispatch",
+          defaultDomain: "runtime",
+          runId: run.id
+        })
       });
       throw error;
     }
   }
 
-  async #executeClaimedRun(run: AgentRun, session: AgentSession): Promise<{ run: AgentRun; events: EventEnvelope[] }> {
-    const context = composeContext({ agent: run.materialization, agentSession: session, agentRun: run });
+  async #executeClaimedRun(
+    run: AgentRun,
+    session: AgentSession
+  ): Promise<{ run: AgentRun; events: EventEnvelope[] }> {
+    const context = composeContext({
+      agent: run.materialization,
+      agentSession: session,
+      agentRun: run
+    });
     const plan = run.resolvedExecutionPlan;
     const configurationHash = hashLocalValue({ plan, config: run.materialization.config });
     const prompt = promptFromInput(run.input);
     const modelInputParts = modelPartsFromInput(run.input);
-    const request: InvokeRequest = { protocolVersion: 2,
+    const request: InvokeRequest = {
+      protocolVersion: 2,
       agentSource: run.resolvedExecutionPlan!.agent_source,
       invocationId: id("invoke"),
       agentSessionId: session.id,
@@ -242,7 +316,9 @@ export class HarnessEngine {
       runMetadata: context,
       approvalMode: plan.approval_mode,
       controlInstructions: "",
-      ...(session.providerSessionConfigurationHash === configurationHash ? { providerSession: structuredClone(session.providerSession) } : {}),
+      ...(session.providerSessionConfigurationHash === configurationHash
+        ? { providerSession: structuredClone(session.providerSession) }
+        : {}),
       runtimeLimits: localRuntimeLimits(plan),
       agentConfig: {
         ...structuredClone(run.materialization.config),
@@ -264,7 +340,12 @@ export class HarnessEngine {
           this.store.putAgentSession(session);
         }
         if (isTerminal(event)) {
-          run.status = event.type === "run.completed" ? "completed" : event.type === "run.cancelled" ? "cancelled" : "failed";
+          run.status =
+            event.type === "run.completed"
+              ? "completed"
+              : event.type === "run.cancelled"
+                ? "cancelled"
+                : "failed";
           delete session.activeRunId;
           this.store.putAgentSession(session);
         }
@@ -279,7 +360,12 @@ export class HarnessEngine {
     const run = this.store.getAgentRun(runId);
     if (!run || TERMINAL.has(run.status)) return run;
     const session = this.store.getAgentSession(run.agentSessionId);
-    run.status = event.type === "run.completed" ? "completed" : event.type === "run.cancelled" ? "cancelled" : "failed";
+    run.status =
+      event.type === "run.completed"
+        ? "completed"
+        : event.type === "run.cancelled"
+          ? "cancelled"
+          : "failed";
     await this.store.transaction(() => {
       this.store.appendEvent(envelope(run, run.nextSeq++, event));
       if (session?.activeRunId === run.id) {
@@ -291,12 +377,19 @@ export class HarnessEngine {
     return run;
   }
 
-  async cancelRun(runId: string, reason = "cancelled"): Promise<{ cancelled: boolean; status: AgentRun["status"] }> {
+  async cancelRun(
+    runId: string,
+    reason = "cancelled"
+  ): Promise<{ cancelled: boolean; status: AgentRun["status"] }> {
     const run = this.store.getAgentRun(runId);
     if (!run) throw new Error(`agent run not found: ${runId}`);
     if (TERMINAL.has(run.status)) return { cancelled: false, status: run.status };
     if (run.status === "queued") {
-      await this.terminalizeRun(run.id, { protocolVersion: 2, type: "run.cancelled", payload: { reason } });
+      await this.terminalizeRun(run.id, {
+        protocolVersion: 2,
+        type: "run.cancelled",
+        payload: { reason }
+      });
       return { cancelled: true, status: "cancelled" };
     }
     if (!run.invocationId) throw new Error(`running agent run has no invocationId: ${run.id}`);
@@ -309,42 +402,72 @@ export class HarnessEngine {
 }
 
 function validateSubmission(input: SubmitAgentRunInput): void {
-  if (!input || Object.keys(input).some(name => !["namespace", "agentId", "sessionKey", "trigger", "input", "context"].includes(name))) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
+  if (
+    !input ||
+    Object.keys(input).some(
+      (name) =>
+        !["namespace", "agentId", "sessionKey", "trigger", "input", "context"].includes(name)
+    )
+  )
+    throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
   assertLocalContext(input.context);
   if (!/^[a-z][a-z0-9._-]{0,63}$/.test(input.namespace)) throw new Error("invalid namespace");
-  if (!input.agentId || !input.sessionKey.startsWith("v1/")) throw new Error("agentId and canonical sessionKey are required");
-  if (!input.trigger?.kind || !input.trigger.occurrenceId) throw new Error("trigger kind and occurrenceId are required");
-  if (!input.input || typeof input.input !== "object" || Array.isArray(input.input)) throw new Error("input must be an object");
-  if (["channel_context", "context_refs", "appendInstructions", "agentConfig", "approvalMode"].some(name => name in input.input)) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
+  if (!input.agentId || !input.sessionKey.startsWith("v1/"))
+    throw new Error("agentId and canonical sessionKey are required");
+  if (!input.trigger?.kind || !input.trigger.occurrenceId)
+    throw new Error("trigger kind and occurrenceId are required");
+  if (!input.input || typeof input.input !== "object" || Array.isArray(input.input))
+    throw new Error("input must be an object");
+  if (
+    ["channel_context", "context_refs", "appendInstructions", "agentConfig", "approvalMode"].some(
+      (name) => name in input.input
+    )
+  )
+    throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
 }
 
 function assertLoadedAdapter(adapters: Array<{ type: string }>, adapterType: string): void {
-  if (!adapters.some(adapter => adapter.type === adapterType)) throw new Error(`adapter not loaded: ${adapterType}`);
+  if (!adapters.some((adapter) => adapter.type === adapterType))
+    throw new Error(`adapter not loaded: ${adapterType}`);
 }
 
-function existingSubmission(store: Store, input: SubmitAgentRunInput, requestHash: string): SubmitAgentRunResult | undefined {
+function existingSubmission(
+  store: Store,
+  input: SubmitAgentRunInput,
+  requestHash: string
+): SubmitAgentRunResult | undefined {
   const session = store.getAgentSessionByKey(input.namespace, input.agentId, input.sessionKey);
   if (!session) return undefined;
   const run = store.getAgentRunByOccurrence(session.id, input.trigger.occurrenceId);
   if (!run) return undefined;
   assertRunSnapshot(run);
-  if (run.requestHash !== requestHash) throw new Error("trigger occurrence was reused with a different AgentRun request");
+  if (run.requestHash !== requestHash)
+    throw new Error("trigger occurrence was reused with a different AgentRun request");
   return { agentSession: session, agentRun: run, deduplicated: true };
 }
 
 function assertMaterializationAdapter(agent: Agent, adapterType: string): void {
-  if (adapterType !== agent.adapterType && Object.keys(agent.config).length > 0) throw new TypeError("LOCAL_MATERIALIZATION_ADAPTER_MISMATCH");
+  if (adapterType !== agent.adapterType && Object.keys(agent.config).length > 0)
+    throw new TypeError("LOCAL_MATERIALIZATION_ADAPTER_MISMATCH");
 }
 
 function promptFromInput(input: Record<string, unknown>): string {
   if (Array.isArray(input.parts)) {
-    const text = input.parts.flatMap((part: unknown) => {
-      if (!part || typeof part !== "object" || Array.isArray(part)) return [];
-      const value = part as Record<string, unknown>;
-      return value.type === "text" && typeof value.text === "string" ? [value.text] : [];
-    }).join("\n");
+    const text = input.parts
+      .flatMap((part: unknown) => {
+        if (!part || typeof part !== "object" || Array.isArray(part)) return [];
+        const value = part as Record<string, unknown>;
+        return value.type === "text" && typeof value.text === "string" ? [value.text] : [];
+      })
+      .join("\n");
     if (text) return text;
-    if (input.parts.some((part: unknown) => part && typeof part === "object" && (part as Record<string, unknown>).type === "image")) return "[Image input]";
+    if (
+      input.parts.some(
+        (part: unknown) =>
+          part && typeof part === "object" && (part as Record<string, unknown>).type === "image"
+      )
+    )
+      return "[Image input]";
   }
   for (const key of ["prompt", "instruction", "description"]) {
     if (typeof input[key] === "string" && input[key].trim()) return input[key].trim();

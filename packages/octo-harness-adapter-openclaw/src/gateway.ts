@@ -43,12 +43,17 @@ const CLIENT_ID = "cli";
 const CLIENT_MODE = "cli";
 const CLIENT_PLATFORM = process.platform === "darwin" ? "macos" : process.platform;
 const CLIENT_DEVICE_FAMILY = "desktop";
-const REQUESTED_SCOPES = ["operator.read", "operator.write", "operator.admin", "operator.approvals"];
+const REQUESTED_SCOPES = [
+  "operator.read",
+  "operator.write",
+  "operator.admin",
+  "operator.approvals"
+];
 const REQUEST_ID_HEADER = "X-Request-Id";
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : undefined;
 }
 
@@ -60,9 +65,11 @@ function messageText(data: RawData): string {
 
 function errorFromFrame(frame: GatewayFrame): Error {
   const native = record(frame.error);
-  const message = typeof native?.message === "string" ? native.message : "OpenClaw Gateway request failed";
+  const message =
+    typeof native?.message === "string" ? native.message : "OpenClaw Gateway request failed";
   const details = record(native?.details);
-  const requestId = typeof details?.requestId === "string" ? ` (pairing request ${details.requestId})` : "";
+  const requestId =
+    typeof details?.requestId === "string" ? ` (pairing request ${details.requestId})` : "";
   const code = typeof native?.code === "string" ? ` [${native.code}]` : "";
   return new Error(`${message}${requestId}${code}`);
 }
@@ -74,7 +81,8 @@ function withRequestId(error: Error, requestId: string): Error {
 
 function publicKeyRaw(publicKey: string): Buffer {
   const der = Buffer.from(publicKey.replace(/-----[^-]+-----/g, "").replace(/\s+/g, ""), "base64");
-  if (der.length !== 44) throw new Error("OpenClaw device public key is not a canonical Ed25519 SPKI key");
+  if (der.length !== 44)
+    throw new Error("OpenClaw device public key is not a canonical Ed25519 SPKI key");
   return der.subarray(12);
 }
 
@@ -86,7 +94,12 @@ export function createOpenClawDeviceIdentity(): OpenClawDeviceIdentity {
   return { deviceId, publicKey, privateKey };
 }
 
-function deviceProof(device: OpenClawDeviceIdentity, token: string, nonce: string, signedAt: number) {
+function deviceProof(
+  device: OpenClawDeviceIdentity,
+  token: string,
+  nonce: string,
+  signedAt: number
+) {
   const publicKey = publicKeyRaw(device.publicKey).toString("base64url");
   const payload = [
     "v3",
@@ -146,11 +159,16 @@ export class OpenClawGatewayClient {
       maxPayload: 25 * 1024 * 1024
     });
     this.#socket = socket;
-    socket.on("message", data => this.#onMessage(messageText(data)));
-    socket.on("close", (code, reason) => this.#failPending(withRequestId(
-      new Error(`OpenClaw Gateway closed (${code}): ${reason.toString()}`), requestId
-    )));
-    socket.on("error", error => this.#failPending(withRequestId(error, requestId)));
+    socket.on("message", (data) => this.#onMessage(messageText(data)));
+    socket.on("close", (code, reason) =>
+      this.#failPending(
+        withRequestId(
+          new Error(`OpenClaw Gateway closed (${code}): ${reason.toString()}`),
+          requestId
+        )
+      )
+    );
+    socket.on("error", (error) => this.#failPending(withRequestId(error, requestId)));
 
     const timeoutMs = this.#options.connectTimeoutMs ?? 10_000;
     return new Promise<OpenClawGatewayHello>((resolve, reject) => {
@@ -164,56 +182,75 @@ export class OpenClawGatewayClient {
         socket.off("error", onHandshakeError);
         socket.off("close", onHandshakeClose);
         if (error) {
-          if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) socket.terminate();
+          if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)
+            socket.terminate();
           reject(withRequestId(error, requestId));
-        }
-        else resolve(hello!);
+        } else resolve(hello!);
       };
       const onHandshakeError = (error: Error) => finish(error);
       const onHandshakeClose = (code: number, reason: Buffer) => {
-        finish(new Error(`OpenClaw Gateway closed during handshake (${code}): ${reason.toString()}`));
+        finish(
+          new Error(`OpenClaw Gateway closed during handshake (${code}): ${reason.toString()}`)
+        );
       };
       socket.once("error", onHandshakeError);
       socket.once("close", onHandshakeClose);
-      const timer = setTimeout(() => finish(new Error(`OpenClaw Gateway handshake timed out after ${timeoutMs}ms`)), timeoutMs);
+      const timer = setTimeout(
+        () => finish(new Error(`OpenClaw Gateway handshake timed out after ${timeoutMs}ms`)),
+        timeoutMs
+      );
       timer.unref?.();
-      cleanupChallenge = this.onEvent(event => {
+      cleanupChallenge = this.onEvent((event) => {
         if (event.event !== "connect.challenge") return;
         const challenge = record(event.payload);
         const nonce = typeof challenge?.nonce === "string" ? challenge.nonce : undefined;
-        const signedAt = typeof challenge?.ts === "number" && Number.isSafeInteger(challenge.ts) && challenge.ts >= 0
-          ? challenge.ts
-          : undefined;
+        const signedAt =
+          typeof challenge?.ts === "number" &&
+          Number.isSafeInteger(challenge.ts) &&
+          challenge.ts >= 0
+            ? challenge.ts
+            : undefined;
         if (!nonce || signedAt === undefined) {
           finish(new Error("OpenClaw Gateway sent an invalid connect.challenge"));
           return;
         }
         cleanupChallenge();
-        void this.request("connect", {
-          minProtocol: PROTOCOL_VERSION,
-          maxProtocol: PROTOCOL_VERSION,
-          client: {
-            id: CLIENT_ID,
-            version: "octo-harness/0.1.0",
-            platform: CLIENT_PLATFORM,
-            deviceFamily: CLIENT_DEVICE_FAMILY,
-            mode: CLIENT_MODE
+        void this.request(
+          "connect",
+          {
+            minProtocol: PROTOCOL_VERSION,
+            maxProtocol: PROTOCOL_VERSION,
+            client: {
+              id: CLIENT_ID,
+              version: "octo-harness/0.1.0",
+              platform: CLIENT_PLATFORM,
+              deviceFamily: CLIENT_DEVICE_FAMILY,
+              mode: CLIENT_MODE
+            },
+            role: "operator",
+            scopes: REQUESTED_SCOPES,
+            caps: ["tool-events", "session-scoped-events", "exec-approvals"],
+            commands: [],
+            permissions: {},
+            auth: { token: this.#options.token },
+            locale: "zh-CN",
+            userAgent: "octo-harness/0.1.0",
+            device: deviceProof(this.#options.device, this.#options.token, nonce, signedAt)
           },
-          role: "operator",
-          scopes: REQUESTED_SCOPES,
-          caps: ["tool-events", "session-scoped-events", "exec-approvals"],
-          commands: [],
-          permissions: {},
-          auth: { token: this.#options.token },
-          locale: "zh-CN",
-          userAgent: "octo-harness/0.1.0",
-          device: deviceProof(this.#options.device, this.#options.token, nonce, signedAt)
-        }, { timeoutMs }).then(value => {
-          const hello = record(value) as OpenClawGatewayHello | undefined;
-          if (!hello || hello.type !== "hello-ok") throw new Error("OpenClaw Gateway returned an invalid hello response");
-          this.#hello = hello;
-          finish(undefined, hello);
-        }, (error: unknown) => finish(error instanceof Error ? error : new Error("OpenClaw Gateway connect request failed")));
+          { timeoutMs }
+        ).then(
+          (value) => {
+            const hello = record(value) as OpenClawGatewayHello | undefined;
+            if (!hello || hello.type !== "hello-ok")
+              throw new Error("OpenClaw Gateway returned an invalid hello response");
+            this.#hello = hello;
+            finish(undefined, hello);
+          },
+          (error: unknown) =>
+            finish(
+              error instanceof Error ? error : new Error("OpenClaw Gateway connect request failed")
+            )
+        );
       });
     });
   }
@@ -221,7 +258,12 @@ export class OpenClawGatewayClient {
   request(
     method: string,
     params: Record<string, unknown>,
-    options: { expectFinal?: boolean; timeoutMs?: number | null; signal?: AbortSignal; onAccepted?: (value: unknown) => void } = {}
+    options: {
+      expectFinal?: boolean;
+      timeoutMs?: number | null;
+      signal?: AbortSignal;
+      onAccepted?: (value: unknown) => void;
+    } = {}
   ): Promise<unknown> {
     const socket = this.#socket;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -235,7 +277,10 @@ export class OpenClawGatewayClient {
         expectFinal: options.expectFinal === true,
         accepted: options.onAccepted
       };
-      const timeoutMs = options.timeoutMs === null ? undefined : options.timeoutMs ?? this.#options.requestTimeoutMs ?? 30_000;
+      const timeoutMs =
+        options.timeoutMs === null
+          ? undefined
+          : (options.timeoutMs ?? this.#options.requestTimeoutMs ?? 30_000);
       if (timeoutMs !== undefined) {
         pending.timer = setTimeout(() => {
           if (!this.#pending.delete(id)) return;
@@ -270,7 +315,7 @@ export class OpenClawGatewayClient {
       socket.terminate();
       return;
     }
-    await new Promise<void>(resolve => {
+    await new Promise<void>((resolve) => {
       let settled = false;
       const finish = () => {
         if (settled) return;
@@ -294,14 +339,18 @@ export class OpenClawGatewayClient {
       frame = JSON.parse(text) as GatewayFrame;
     } catch {
       const error = this.#connectionRequestId
-        ? withRequestId(new Error("OpenClaw Gateway sent malformed JSON"), this.#connectionRequestId)
+        ? withRequestId(
+            new Error("OpenClaw Gateway sent malformed JSON"),
+            this.#connectionRequestId
+          )
         : new Error("OpenClaw Gateway sent malformed JSON");
       this.#failPending(error);
       this.#socket?.close(1002, "malformed JSON");
       return;
     }
     if (frame.type === "event" && typeof frame.event === "string") {
-      for (const listener of this.#listeners) listener({ event: frame.event, payload: frame.payload });
+      for (const listener of this.#listeners)
+        listener({ event: frame.event, payload: frame.payload });
       return;
     }
     if (frame.type !== "res" || typeof frame.id !== "string") return;

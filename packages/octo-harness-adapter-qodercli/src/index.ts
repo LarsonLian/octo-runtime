@@ -16,7 +16,7 @@ export const qoderCliAdapter = createAcpAdapter({
   type: "qodercli",
   provider: "qodercli",
   command: "qodercli",
-  args: request => request.approvalMode === "full_access" ? ["--yolo", "--acp"] : ["--acp"]
+  args: (request) => (request.approvalMode === "full_access" ? ["--yolo", "--acp"] : ["--acp"])
 });
 
 export default qoderCliAdapter;

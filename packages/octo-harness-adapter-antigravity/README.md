@@ -11,9 +11,9 @@
 探测只检查程序路径和版本，不代表账户登录、额度或模型调用已经通过。`command` 可指定实际程序路径；`agy-yolo` 是 shell 别名，不能作为后台程序名。
 
 ```js
-import { createAntigravityAdapter } from '@mininglamp-oss/octo-harness-adapter-antigravity';
+import { createAntigravityAdapter } from "@mininglamp-oss/octo-harness-adapter-antigravity";
 
-const adapter = createAntigravityAdapter({ command: '/path/to/agy' });
+const adapter = createAntigravityAdapter({ command: "/path/to/agy" });
 ```
 
 ## 输入与能力边界

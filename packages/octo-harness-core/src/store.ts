@@ -1,5 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { ContextEnvelope, EventEnvelope, ProviderSession, ResolvedExecutionPlan } from "@mininglamp-oss/octo-harness-protocol";
+import type {
+  ContextEnvelope,
+  EventEnvelope,
+  ProviderSession,
+  ResolvedExecutionPlan
+} from "@mininglamp-oss/octo-harness-protocol";
 import { assertRunSnapshot, type LocalAgentConfig } from "./context.js";
 import { openWalDatabase } from "./sqlite.js";
 
@@ -61,7 +66,11 @@ export interface Store {
   listAgents(): Agent[];
   putAgent(agent: Agent): void;
   getAgentSession(id: string): AgentSession | undefined;
-  getAgentSessionByKey(namespace: string, agentId: string, sessionKey: string): AgentSession | undefined;
+  getAgentSessionByKey(
+    namespace: string,
+    agentId: string,
+    sessionKey: string
+  ): AgentSession | undefined;
   listAgentSessions(): AgentSession[];
   putAgentSession(session: AgentSession): void;
   getAgentRun(id: string): AgentRun | undefined;
@@ -81,36 +90,67 @@ export class MemoryStore implements Store {
   readonly #runs = new Map<string, AgentRun>();
   readonly #events = new Map<string, EventEnvelope[]>();
 
-  getAgent(id: string): Agent | undefined { return clone(this.#agents.get(id)); }
-  hasAgent(id: string): boolean { return this.#agents.has(id); }
-  listAgents(): Agent[] { return structuredClone([...this.#agents.values()]); }
-  putAgent(agent: Agent): void { this.#agents.set(agent.id, structuredClone(agent)); }
-
-  getAgentSession(id: string): AgentSession | undefined { return clone(this.#sessions.get(id)); }
-  getAgentSessionByKey(namespace: string, agentId: string, sessionKey: string): AgentSession | undefined {
-    return clone([...this.#sessions.values()].find(session =>
-      session.namespace === namespace && session.agentId === agentId && session.sessionKey === sessionKey
-    ));
+  getAgent(id: string): Agent | undefined {
+    return clone(this.#agents.get(id));
   }
-  listAgentSessions(): AgentSession[] { return structuredClone([...this.#sessions.values()]); }
-  putAgentSession(session: AgentSession): void { this.#sessions.set(session.id, structuredClone(session)); }
+  hasAgent(id: string): boolean {
+    return this.#agents.has(id);
+  }
+  listAgents(): Agent[] {
+    return structuredClone([...this.#agents.values()]);
+  }
+  putAgent(agent: Agent): void {
+    this.#agents.set(agent.id, structuredClone(agent));
+  }
 
-  getAgentRun(id: string): AgentRun | undefined { return clone(this.#runs.get(id)); }
+  getAgentSession(id: string): AgentSession | undefined {
+    return clone(this.#sessions.get(id));
+  }
+  getAgentSessionByKey(
+    namespace: string,
+    agentId: string,
+    sessionKey: string
+  ): AgentSession | undefined {
+    return clone(
+      [...this.#sessions.values()].find(
+        (session) =>
+          session.namespace === namespace &&
+          session.agentId === agentId &&
+          session.sessionKey === sessionKey
+      )
+    );
+  }
+  listAgentSessions(): AgentSession[] {
+    return structuredClone([...this.#sessions.values()]);
+  }
+  putAgentSession(session: AgentSession): void {
+    this.#sessions.set(session.id, structuredClone(session));
+  }
+
+  getAgentRun(id: string): AgentRun | undefined {
+    return clone(this.#runs.get(id));
+  }
   getAgentRunByOccurrence(agentSessionId: string, occurrenceId: string): AgentRun | undefined {
-    return clone([...this.#runs.values()].find(run =>
-      run.agentSessionId === agentSessionId && run.trigger.occurrenceId === occurrenceId
-    ));
+    return clone(
+      [...this.#runs.values()].find(
+        (run) => run.agentSessionId === agentSessionId && run.trigger.occurrenceId === occurrenceId
+      )
+    );
   }
-  listAgentRuns(): AgentRun[] { return structuredClone([...this.#runs.values()]); }
+  listAgentRuns(): AgentRun[] {
+    return structuredClone([...this.#runs.values()]);
+  }
   putAgentRun(run: AgentRun): void {
     assertRunSnapshot(run, this.#runs.get(run.id));
     this.#runs.set(run.id, structuredClone(run));
   }
 
-  getEvents(runId: string): EventEnvelope[] { return this.#events.get(runId) ?? []; }
+  getEvents(runId: string): EventEnvelope[] {
+    return this.#events.get(runId) ?? [];
+  }
   appendEvent(event: EventEnvelope): boolean {
     const stream = this.#events.get(event.runId) ?? [];
-    if (stream.some(item => item.seq === event.seq)) return false;
+    if (stream.some((item) => item.seq === event.seq)) return false;
     stream.push(event);
     this.#events.set(event.runId, stream);
     return true;
@@ -130,7 +170,10 @@ export class SqliteStore implements Store {
   #depth = 0;
   #savepoint = 0;
 
-  private constructor(db: DatabaseSync, recordRunEvents: boolean) { this.#db = db; this.#recordRunEvents = recordRunEvents; }
+  private constructor(db: DatabaseSync, recordRunEvents: boolean) {
+    this.#db = db;
+    this.#recordRunEvents = recordRunEvents;
+  }
 
   static open(file: string, options: { recordRunEvents?: boolean } = {}): SqliteStore {
     const db = openWalDatabase(file);
@@ -152,7 +195,8 @@ export class SqliteStore implements Store {
         UNIQUE (agent_session_id, trigger_occurrence_id)
       );
     `);
-    if (options.recordRunEvents === true) db.exec(`CREATE TABLE IF NOT EXISTS agent_run_events (
+    if (options.recordRunEvents === true)
+      db.exec(`CREATE TABLE IF NOT EXISTS agent_run_events (
         run_id TEXT NOT NULL,
         seq INTEGER NOT NULL,
         json TEXT NOT NULL,
@@ -162,40 +206,78 @@ export class SqliteStore implements Store {
     return new SqliteStore(db, options.recordRunEvents === true);
   }
 
-  getAgent(id: string): Agent | undefined { return this.#readOne<Agent>("agents", id); }
-  hasAgent(id: string): boolean { return this.#exists("agents", id); }
-  listAgents(): Agent[] { return this.#readAll<Agent>("agents"); }
-  putAgent(agent: Agent): void { this.#upsert("agents", ["id"], [agent.id], agent); }
-
-  getAgentSession(id: string): AgentSession | undefined { return this.#readOne<AgentSession>("agent_sessions", id); }
-  getAgentSessionByKey(namespace: string, agentId: string, sessionKey: string): AgentSession | undefined {
-    return this.#parse<AgentSession>(this.#db.prepare(
-      "SELECT json FROM agent_sessions WHERE namespace = ? AND agent_id = ? AND session_affinity_key = ?"
-    ).get(namespace, agentId, sessionKey));
+  getAgent(id: string): Agent | undefined {
+    return this.#readOne<Agent>("agents", id);
   }
-  listAgentSessions(): AgentSession[] { return this.#readAll<AgentSession>("agent_sessions"); }
+  hasAgent(id: string): boolean {
+    return this.#exists("agents", id);
+  }
+  listAgents(): Agent[] {
+    return this.#readAll<Agent>("agents");
+  }
+  putAgent(agent: Agent): void {
+    this.#upsert("agents", ["id"], [agent.id], agent);
+  }
+
+  getAgentSession(id: string): AgentSession | undefined {
+    return this.#readOne<AgentSession>("agent_sessions", id);
+  }
+  getAgentSessionByKey(
+    namespace: string,
+    agentId: string,
+    sessionKey: string
+  ): AgentSession | undefined {
+    return this.#parse<AgentSession>(
+      this.#db
+        .prepare(
+          "SELECT json FROM agent_sessions WHERE namespace = ? AND agent_id = ? AND session_affinity_key = ?"
+        )
+        .get(namespace, agentId, sessionKey)
+    );
+  }
+  listAgentSessions(): AgentSession[] {
+    return this.#readAll<AgentSession>("agent_sessions");
+  }
   putAgentSession(session: AgentSession): void {
-    this.#db.prepare(
-      `INSERT INTO agent_sessions (id, namespace, agent_id, session_affinity_key, json) VALUES (?, ?, ?, ?, ?)
+    this.#db
+      .prepare(
+        `INSERT INTO agent_sessions (id, namespace, agent_id, session_affinity_key, json) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET namespace = excluded.namespace, agent_id = excluded.agent_id,
          session_affinity_key = excluded.session_affinity_key, json = excluded.json`
-    ).run(session.id, session.namespace, session.agentId, session.sessionKey, JSON.stringify(session));
+      )
+      .run(
+        session.id,
+        session.namespace,
+        session.agentId,
+        session.sessionKey,
+        JSON.stringify(session)
+      );
   }
 
-  getAgentRun(id: string): AgentRun | undefined { return this.#readOne<AgentRun>("agent_runs", id); }
-  getAgentRunByOccurrence(agentSessionId: string, occurrenceId: string): AgentRun | undefined {
-    return this.#parse<AgentRun>(this.#db.prepare(
-      "SELECT json FROM agent_runs WHERE agent_session_id = ? AND trigger_occurrence_id = ?"
-    ).get(agentSessionId, occurrenceId));
+  getAgentRun(id: string): AgentRun | undefined {
+    return this.#readOne<AgentRun>("agent_runs", id);
   }
-  listAgentRuns(): AgentRun[] { return this.#readAll<AgentRun>("agent_runs"); }
+  getAgentRunByOccurrence(agentSessionId: string, occurrenceId: string): AgentRun | undefined {
+    return this.#parse<AgentRun>(
+      this.#db
+        .prepare(
+          "SELECT json FROM agent_runs WHERE agent_session_id = ? AND trigger_occurrence_id = ?"
+        )
+        .get(agentSessionId, occurrenceId)
+    );
+  }
+  listAgentRuns(): AgentRun[] {
+    return this.#readAll<AgentRun>("agent_runs");
+  }
   putAgentRun(run: AgentRun): void {
     assertRunSnapshot(run, this.getAgentRun(run.id));
-    this.#db.prepare(
-      `INSERT INTO agent_runs (id, agent_session_id, trigger_occurrence_id, json) VALUES (?, ?, ?, ?)
+    this.#db
+      .prepare(
+        `INSERT INTO agent_runs (id, agent_session_id, trigger_occurrence_id, json) VALUES (?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET agent_session_id = excluded.agent_session_id,
          trigger_occurrence_id = excluded.trigger_occurrence_id, json = excluded.json`
-    ).run(run.id, run.agentSessionId, run.trigger.occurrenceId, JSON.stringify(run));
+      )
+      .run(run.id, run.agentSessionId, run.trigger.occurrenceId, JSON.stringify(run));
   }
 
   getEvents(runId: string): EventEnvelope[] {
@@ -204,33 +286,55 @@ export class SqliteStore implements Store {
       if (!stream || Date.now() - stream.at > 120_000) return [];
       return structuredClone(stream.entries);
     }
-    return this.#db.prepare("SELECT json FROM agent_run_events WHERE run_id = ? ORDER BY seq").all(runId)
-      .map(row => this.#parse<EventEnvelope>(row)!);
+    return this.#db
+      .prepare("SELECT json FROM agent_run_events WHERE run_id = ? ORDER BY seq")
+      .all(runId)
+      .map((row) => this.#parse<EventEnvelope>(row)!);
   }
   appendEvent(event: EventEnvelope): boolean {
     if (!this.#recordRunEvents) {
       const now = Date.now();
-      for (const [id, stream] of this.#events) if (now - stream.at > 120_000) { this.#eventBytes -= stream.bytes; this.#events.delete(id); }
+      for (const [id, stream] of this.#events)
+        if (now - stream.at > 120_000) {
+          this.#eventBytes -= stream.bytes;
+          this.#events.delete(id);
+        }
       let stream = this.#events.get(event.runId);
       if (!stream) {
         if (this.#events.size >= 128) throw new Error("STREAM_CAPACITY_EXHAUSTED");
-        stream = { entries: [], bytes: 0, at: now };this.#events.set(event.runId, stream);
+        stream = { entries: [], bytes: 0, at: now };
+        this.#events.set(event.runId, stream);
       }
-      if (stream.entries.some(item => item.seq === event.seq)) return false;
+      if (stream.entries.some((item) => item.seq === event.seq)) return false;
       const bytes = Buffer.byteLength(JSON.stringify(event));
       if (bytes > 256 << 10) throw new Error("STREAM_EVENT_TOO_LARGE");
-      stream.entries.push(structuredClone(event));stream.bytes += bytes;stream.at = now;this.#eventBytes += bytes;
-      const drop = (value: typeof stream): void => { const item=value.entries.shift();if(item){const bytes=Buffer.byteLength(JSON.stringify(item));value.bytes-=bytes;this.#eventBytes-=bytes;} };
+      stream.entries.push(structuredClone(event));
+      stream.bytes += bytes;
+      stream.at = now;
+      this.#eventBytes += bytes;
+      const drop = (value: typeof stream): void => {
+        const item = value.entries.shift();
+        if (item) {
+          const bytes = Buffer.byteLength(JSON.stringify(item));
+          value.bytes -= bytes;
+          this.#eventBytes -= bytes;
+        }
+      };
       while (stream.bytes > 4 << 20 || stream.entries.length > 4096) drop(stream);
       while (this.#eventBytes > 64 << 20) {
-        const oldest = [...this.#events.values()].filter(value => value.entries.length).sort((a,b) => a.at-b.at)[0];
-        if (!oldest) break;drop(oldest);
+        const oldest = [...this.#events.values()]
+          .filter((value) => value.entries.length)
+          .sort((a, b) => a.at - b.at)[0];
+        if (!oldest) break;
+        drop(oldest);
       }
       return true;
     }
-    return this.#db.prepare(
-      "INSERT OR IGNORE INTO agent_run_events (run_id, seq, json) VALUES (?, ?, ?)"
-    ).run(event.runId, event.seq, JSON.stringify(event)).changes > 0;
+    return (
+      this.#db
+        .prepare("INSERT OR IGNORE INTO agent_run_events (run_id, seq, json) VALUES (?, ?, ?)")
+        .run(event.runId, event.seq, JSON.stringify(event)).changes > 0
+    );
   }
 
   transaction<T>(fn: () => T): Promise<T> {
@@ -263,33 +367,44 @@ export class SqliteStore implements Store {
       this.#depth = 0;
     }
   }
-  close(): void { this.#db.close(); }
+  close(): void {
+    this.#db.close();
+  }
 
   #readOne<T>(table: string, id: string): T | undefined {
     return this.#parse<T>(this.#db.prepare(`SELECT json FROM ${table} WHERE id = ?`).get(id));
   }
   #readAll<T>(table: string): T[] {
-    return this.#db.prepare(`SELECT json FROM ${table}`).all().map(row => this.#parse<T>(row)!);
+    return this.#db
+      .prepare(`SELECT json FROM ${table}`)
+      .all()
+      .map((row) => this.#parse<T>(row)!);
   }
   #exists(table: string, id: string): boolean {
     return this.#db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(id) !== undefined;
   }
   #upsert(table: string, keyColumns: string[], keyValues: string[], value: object): void {
     const columns = [...keyColumns, "json"];
-    this.#db.prepare(
-      `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})
+    this.#db
+      .prepare(
+        `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})
        ON CONFLICT(${keyColumns[0]}) DO UPDATE SET json = excluded.json`
-    ).run(...keyValues, JSON.stringify(value));
+      )
+      .run(...keyValues, JSON.stringify(value));
   }
   #parse<T>(row: unknown): T | undefined {
     const json = (row as { json?: unknown } | undefined)?.json;
-    return typeof json === "string" ? JSON.parse(json) as T : undefined;
+    return typeof json === "string" ? (JSON.parse(json) as T) : undefined;
   }
 }
 
 function assertSynchronousTransactionResult<T>(result: T): T {
-  if (result !== null && (typeof result === "object" || typeof result === "function") &&
-      "then" in result && typeof result.then === "function") {
+  if (
+    result !== null &&
+    (typeof result === "object" || typeof result === "function") &&
+    "then" in result &&
+    typeof result.then === "function"
+  ) {
     throw new TypeError("Store.transaction callback must be synchronous");
   }
   return result;

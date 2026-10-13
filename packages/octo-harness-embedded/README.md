@@ -13,26 +13,23 @@ The package requires Node.js 24 or newer. Electron hosts call it from the main p
 ## Minimal setup
 
 ```ts
-import {
-  createEmbeddedHarness,
-  resolveEmbeddedHome,
-} from '@mininglamp-oss/octo-harness-embedded'
+import { createEmbeddedHarness, resolveEmbeddedHome } from "@mininglamp-oss/octo-harness-embedded";
 
 const harness = createEmbeddedHarness({
-  appId: 'customer-fde',
-  home: resolveEmbeddedHome('customer-fde'),
-})
+  appId: "customer-fde",
+  home: resolveEmbeddedHome("customer-fde")
+});
 
 await harness.startAccount({
-  subject: { type: 'user', id: session.uid },
+  subject: { type: "user", id: session.uid },
   tenants: session.spaces.map((space) => ({
     id: space.spaceId,
     name: space.name,
-    serverUrl: 'https://octo.example.com',
-    agentWorkUrl: 'https://octo.example.com/agentworker/api',
+    serverUrl: "https://octo.example.com",
+    agentWorkUrl: "https://octo.example.com/agentworker/api"
   })),
-  getHumanToken: () => session.token,
-})
+  getHumanToken: () => session.token
+});
 ```
 
 `getHumanToken()` returns the logged-in user's Human Token. For each authorized Space, the SDK calls `POST /v1/runtime_enrollments` with `Token` and `X-Space-ID`, exchanges the one-time grant, registers the Runtime, and persists only the resulting Runtime credential. Human tokens and grants are never written to disk, argv, environment variables, logs, or health events.
@@ -66,10 +63,10 @@ The Home layout is deliberately split between one installation identity and isol
 
 ```ts
 const unsubscribe = harness.onHealth((health) => {
-  console.log(health.phase, health.cloud.connectedProfiles)
-})
+  console.log(health.phase, health.cloud.connectedProfiles);
+});
 
-const snapshot = harness.health()
+const snapshot = harness.health();
 ```
 
 `running` means the local daemon is ready and every authorized profile is online. `degraded` means the local runtime is usable but one or more profiles are offline or failed. Health values never contain credentials or inspect capabilities.
@@ -77,9 +74,9 @@ const snapshot = harness.health()
 ## Logout, account switch, and quit
 
 ```ts
-await harness.stop('logout')
-await harness.stop('account-switch')
-await harness.stop('quit')
+await harness.stop("logout");
+await harness.stop("account-switch");
+await harness.stop("quit");
 ```
 
 Calls are serialized. A stop aborts pending enrollment, drains active work, closes Runtime connections, then shuts down the owned process tree. A failed shutdown blocks a subsequent account start rather than mixing two account sessions.

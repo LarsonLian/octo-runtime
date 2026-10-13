@@ -70,7 +70,10 @@ export class ZcodeAppServerRpcError extends Error {
 }
 
 export class ZcodeAppServerProcessError extends Error {
-  constructor(message: string, readonly exit: ProcessExit) {
+  constructor(
+    message: string,
+    readonly exit: ProcessExit
+  ) {
     super(message);
     this.name = "ZcodeAppServerProcessError";
   }
@@ -141,13 +144,20 @@ export class ZcodeEventNormalizer {
   }
 }
 
-export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerState): CanonicalEvent[] {
+export function normalizeZcodeEvent(
+  event: ZcodeSessionEvent,
+  state: NormalizerState
+): CanonicalEvent[] {
   const payload = asRecord(event.payload) ?? {};
   const events: CanonicalEvent[] = [];
   const ensureStep = (): void => {
     if (state.stepStarted) return;
     state.stepStarted = true;
-    events.push({ protocolVersion: 2, type: "model_step.started", payload: { stepId: state.stepId } });
+    events.push({
+      protocolVersion: 2,
+      type: "model_step.started",
+      payload: { stepId: state.stepId }
+    });
   };
 
   if (event.type === "turn.started") {
@@ -163,15 +173,28 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
       if (!text) return events;
       if (!state.finalMessageStarted) {
         state.finalMessageStarted = true;
-        events.push({ protocolVersion: 2,
+        events.push({
+          protocolVersion: 2,
           type: "message.create",
-          payload: { messageId: `${state.stepId}:final`, role: "assistant", status: "streaming", channel: "final", stepId: state.stepId }
+          payload: {
+            messageId: `${state.stepId}:final`,
+            role: "assistant",
+            status: "streaming",
+            channel: "final",
+            stepId: state.stepId
+          }
         });
       }
       appendPublicText(state, text);
-      events.push({ protocolVersion: 2,
+      events.push({
+        protocolVersion: 2,
         type: "message.delta",
-        payload: { messageId: `${state.stepId}:final`, text, channel: "final", stepId: state.stepId }
+        payload: {
+          messageId: `${state.stepId}:final`,
+          text,
+          channel: "final",
+          stepId: state.stepId
+        }
       });
       return events;
     }
@@ -180,7 +203,8 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
       if (!text) return events;
       if (!state.reasoningMessageStarted) {
         state.reasoningMessageStarted = true;
-        events.push({ protocolVersion: 2,
+        events.push({
+          protocolVersion: 2,
           type: "message.create",
           payload: {
             messageId: `${state.stepId}:reasoning`,
@@ -192,7 +216,8 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
           }
         });
       }
-      events.push({ protocolVersion: 2,
+      events.push({
+        protocolVersion: 2,
         type: "message.delta",
         payload: {
           messageId: `${state.stepId}:reasoning`,
@@ -224,12 +249,25 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
     const kind = stringField(payload, "kind") ?? "progress";
     if (kind === "batch") {
       const ids = Array.isArray(payload.toolCallIds) ? payload.toolCallIds.filter(isString) : [];
-      const status = numberField(payload, "errorCount") && numberField(payload, "errorCount")! > 0 ? "failed" : "completed";
+      const status =
+        numberField(payload, "errorCount") && numberField(payload, "errorCount")! > 0
+          ? "failed"
+          : "completed";
       for (const id of ids) {
         const tool = state.tools.get(id);
         if (!tool || tool.terminal) continue;
         tool.terminal = true;
-        events.push({ protocolVersion: 2, type: "tool_call.update", payload: { id, name: tool.name, args: tool.input, status: canonicalTerminalStatus(status), stepId: state.stepId } });
+        events.push({
+          protocolVersion: 2,
+          type: "tool_call.update",
+          payload: {
+            id,
+            name: tool.name,
+            args: tool.input,
+            status: canonicalTerminalStatus(status),
+            stepId: state.stepId
+          }
+        });
       }
       return events;
     }
@@ -250,7 +288,11 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
       if (payload.input !== undefined) tool.input = payload.input;
     }
     if (tool.terminal) return events;
-    if (kind !== "result" && kind !== "error" && (kind === "scheduled" || !toolCreated(events, state, id))) {
+    if (
+      kind !== "result" &&
+      kind !== "error" &&
+      (kind === "scheduled" || !toolCreated(events, state, id))
+    ) {
       const created = ensureToolCreated(state, id);
       if (created) events.push(created);
     }
@@ -259,7 +301,8 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
       return events;
     }
     if (kind === "progress") {
-      events.push({ protocolVersion: 2,
+      events.push({
+        protocolVersion: 2,
         type: "tool_call.delta",
         payload: {
           id,
@@ -271,19 +314,33 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
     }
     if (kind === "result") {
       tool.terminal = true;
-      events.push({ protocolVersion: 2, type: "tool_call.update", payload: { id, name: tool.name, args: tool.input, status: canonicalTerminalStatus("completed"), output: payload.result, stepId: state.stepId } });
+      events.push({
+        protocolVersion: 2,
+        type: "tool_call.update",
+        payload: {
+          id,
+          name: tool.name,
+          args: tool.input,
+          status: canonicalTerminalStatus("completed"),
+          output: payload.result,
+          stepId: state.stepId
+        }
+      });
       return events;
     }
     if (kind === "error") {
       tool.terminal = true;
-      events.push({ protocolVersion: 2,
+      events.push({
+        protocolVersion: 2,
         type: "tool_call.update",
         payload: {
           id,
           name: tool.name,
           args: tool.input,
           status: canonicalTerminalStatus("failed"),
-          error: asRecord(payload.error) ?? { message: printableValue(payload.error, "ZCode tool failed") },
+          error: asRecord(payload.error) ?? {
+            message: printableValue(payload.error, "ZCode tool failed")
+          },
           stepId: state.stepId
         }
       });
@@ -293,7 +350,15 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
 
   if (event.type === "session.updated") {
     const usage = asRecord(payload.usage);
-    if (usage) events.push({ protocolVersion: 2, type: "usage.update", payload: { ...usage, ...(payload.contextWindow !== undefined ? { contextWindow: payload.contextWindow } : {}) } });
+    if (usage)
+      events.push({
+        protocolVersion: 2,
+        type: "usage.update",
+        payload: {
+          ...usage,
+          ...(payload.contextWindow !== undefined ? { contextWindow: payload.contextWindow } : {})
+        }
+      });
     return events;
   }
 
@@ -305,30 +370,44 @@ export function normalizeZcodeEvent(event: ZcodeSessionEvent, state: NormalizerS
     if (usage) events.push({ protocolVersion: 2, type: "usage.update", payload: { ...usage } });
     if (state.stepStarted && !state.stepFinished) {
       state.stepFinished = true;
-      events.push({ protocolVersion: 2,
+      events.push({
+        protocolVersion: 2,
         type: "model_step.finished",
         payload: {
           stepId: state.stepId,
-          status: canonicalTerminalStatus(failed ? "failed" : cancelled ? "cancelled" : "completed"),
-          finishReason: resultType,
+          status: canonicalTerminalStatus(
+            failed ? "failed" : cancelled ? "cancelled" : "completed"
+          ),
+          finishReason: resultType
         }
       });
     }
     if (state.reasoningMessageStarted) {
-      events.push({ protocolVersion: 2,
+      events.push({
+        protocolVersion: 2,
         type: "message.update",
-        payload: { messageId: `${state.stepId}:reasoning`, role: "assistant", status: failed ? "failed" : cancelled ? "stopped" : "completed" }
+        payload: {
+          messageId: `${state.stepId}:reasoning`,
+          role: "assistant",
+          status: failed ? "failed" : cancelled ? "stopped" : "completed"
+        }
       });
     }
     if (state.finalMessageStarted) {
-      events.push({ protocolVersion: 2,
+      events.push({
+        protocolVersion: 2,
         type: "message.update",
-        payload: { messageId: `${state.stepId}:final`, role: "assistant", status: failed ? "failed" : cancelled ? "stopped" : "completed" }
+        payload: {
+          messageId: `${state.stepId}:final`,
+          role: "assistant",
+          status: failed ? "failed" : cancelled ? "stopped" : "completed"
+        }
       });
     }
     if (failed) {
       const error = asRecord(payload.error);
-      events.push({ protocolVersion: 2,
+      events.push({
+        protocolVersion: 2,
         type: "run.failed",
         payload: {
           adapterType: "zcode-gui",
@@ -357,35 +436,54 @@ export async function* runZcodeAppServerTurn({
   spawnFn?: ZcodeAppServerSpawn;
   approvalBridge?: AcpApprovalBridge;
 }): AsyncGenerator<CanonicalEvent> {
-  if (request.approvalMode === "assisted" || (request.approvalMode === "ask" && !approvalBridge)) throw new Error("APPROVAL_MODE_UNSUPPORTED");
-  if (request.agentConfig.model) throw new Error("EXECUTION_SELECTION_UNSUPPORTED: zcode independent model selection is not qualified");
+  if (request.approvalMode === "assisted" || (request.approvalMode === "ask" && !approvalBridge))
+    throw new Error("APPROVAL_MODE_UNSUPPORTED");
+  if (request.agentConfig.model)
+    throw new Error(
+      "EXECUTION_SELECTION_UNSUPPORTED: zcode independent model selection is not qualified"
+    );
   const autoApprove = request.approvalMode === "full_access";
   const client = new ZcodeAppServerClient({
     spec,
     spawnFn,
     requestTimeoutMs: requestTimeout(request),
     autoApprove,
-    permissionHandler: approvalBridge ? async (params, write) => {
-      const permission = {
-        toolCall: { title: typeof params.reason === "string" ? params.reason : "ZCode tool permission" },
-        options: [{ kind: "allow_once", optionId: "allow" }, { kind: "reject_once", optionId: "deny" }]
-      };
-      try {
-        const result = await approvalBridge.requestPermission(permission);
-        await write({ decision: (result.outcome as { optionId?: string })?.optionId === "allow" ? "allow" : "deny" });
-        approvalBridge.responseWritten(permission);
-      } catch (error) {
-        approvalBridge.responseFailed(permission, error instanceof Error ? error : new Error(String(error)));
-        throw error;
-      }
-    } : undefined
+    permissionHandler: approvalBridge
+      ? async (params, write) => {
+          const permission = {
+            toolCall: {
+              title: typeof params.reason === "string" ? params.reason : "ZCode tool permission"
+            },
+            options: [
+              { kind: "allow_once", optionId: "allow" },
+              { kind: "reject_once", optionId: "deny" }
+            ]
+          };
+          try {
+            const result = await approvalBridge.requestPermission(permission);
+            await write({
+              decision:
+                (result.outcome as { optionId?: string })?.optionId === "allow" ? "allow" : "deny"
+            });
+            approvalBridge.responseWritten(permission);
+          } catch (error) {
+            approvalBridge.responseFailed(
+              permission,
+              error instanceof Error ? error : new Error(String(error))
+            );
+            throw error;
+          }
+        }
+      : undefined
   });
   approvalBridge?.bindTransport(() => client.close());
   let sessionId: string | undefined;
   let terminal = false;
   const abort = (): void => {
     if (sessionId) client.notify("session/stop", { sessionId });
-    const timer = setTimeout(() => { void client.close(); }, CLOSE_GRACE_MS);
+    const timer = setTimeout(() => {
+      void client.close();
+    }, CLOSE_GRACE_MS);
     timer.unref();
   };
   if (request.signal?.aborted) abort();
@@ -428,22 +526,28 @@ export async function* runZcodeAppServerTurn({
     });
 
     const input = resumeFallback ? freshFallbackInputText(request) : providerInputText(request);
-    const content = request.controlInstructions ? `${input}\n\n${request.controlInstructions}` : input;
+    const content = request.controlInstructions
+      ? `${input}\n\n${request.controlInstructions}`
+      : input;
     const sendResult = await client.request("session/send", { sessionId, content });
-    if (asRecord(sendResult)?.accepted === false) throw new Error("ZCode session/send was not accepted");
+    if (asRecord(sendResult)?.accepted === false)
+      throw new Error("ZCode session/send was not accepted");
 
-    yield { protocolVersion: 2,
+    yield {
+      protocolVersion: 2,
       type: "session.update",
       payload: {
         providerSession: {
           sessionId,
           resumable: true,
           ...(resumed ? { resumeOutcome: "resumed" } : {}),
-          ...(resumeFallback ? {
-            resumeOutcome: "fresh_fallback",
-            resumeFallback,
-            contextInputVariant: request.freshFallbackModelInput ? "recovery" : "primary"
-          } : {})
+          ...(resumeFallback
+            ? {
+                resumeOutcome: "fresh_fallback",
+                resumeFallback,
+                contextInputVariant: request.freshFallbackModelInput ? "recovery" : "primary"
+              }
+            : {})
         }
       }
     };
@@ -466,9 +570,14 @@ export async function* runZcodeAppServerTurn({
   } catch (error) {
     if (!terminal) {
       if (request.signal?.aborted) {
-        yield { protocolVersion: 2, type: "run.cancelled", payload: { reason: String(request.signal.reason ?? "cancelled") } };
+        yield {
+          protocolVersion: 2,
+          type: "run.cancelled",
+          payload: { reason: String(request.signal.reason ?? "cancelled") }
+        };
       } else {
-        yield { protocolVersion: 2,
+        yield {
+          protocolVersion: 2,
           type: "run.failed",
           payload: {
             adapterType: "zcode-gui",
@@ -491,7 +600,10 @@ class ZcodeAppServerClient {
   readonly #events = new AsyncQueue<ZcodeSessionEvent>();
   readonly #requestTimeoutMs: number;
   readonly #autoApprove: boolean;
-  readonly #permissionHandler?: (params: JsonRecord, write: (result: JsonRecord) => Promise<void>) => Promise<void>;
+  readonly #permissionHandler?: (
+    params: JsonRecord,
+    write: (result: JsonRecord) => Promise<void>
+  ) => Promise<void>;
   readonly #exitPromise: Promise<ProcessExit>;
   #resolveExit!: (exit: ProcessExit) => void;
   #nextId = 1;
@@ -511,12 +623,17 @@ class ZcodeAppServerClient {
     spawnFn: ZcodeAppServerSpawn;
     requestTimeoutMs: number;
     autoApprove: boolean;
-    permissionHandler?: (params: JsonRecord, write: (result: JsonRecord) => Promise<void>) => Promise<void>;
+    permissionHandler?: (
+      params: JsonRecord,
+      write: (result: JsonRecord) => Promise<void>
+    ) => Promise<void>;
   }) {
     this.#requestTimeoutMs = requestTimeoutMs;
     this.#autoApprove = autoApprove;
     this.#permissionHandler = permissionHandler;
-    this.#exitPromise = new Promise(resolve => { this.#resolveExit = resolve; });
+    this.#exitPromise = new Promise((resolve) => {
+      this.#resolveExit = resolve;
+    });
     this.#child = spawnFn(spec.command, spec.args, {
       cwd: spec.cwd,
       env: spec.env,
@@ -526,16 +643,17 @@ class ZcodeAppServerClient {
     this.#child.stderr.on("data", (value: string | Buffer) => {
       this.#stderr = (this.#stderr + value.toString()).slice(-STDERR_TAIL_LIMIT);
     });
-    this.#child.stdin.on("error", error => this.#failAll(error));
-    createInterface({ input: this.#child.stdout }).on("line", line => this.#receiveLine(line));
-    this.#child.once("error", error => {
+    this.#child.stdin.on("error", (error) => this.#failAll(error));
+    createInterface({ input: this.#child.stdout }).on("line", (line) => this.#receiveLine(line));
+    this.#child.once("error", (error) => {
       this.#resolveExit({ code: null, signal: null });
       this.#failAll(error);
     });
     this.#child.once("exit", (code, signal) => {
       const exit = { code, signal };
       this.#resolveExit(exit);
-      if (!this.#closed) this.#failAll(new ZcodeAppServerProcessError(this.processErrorMessage(exit), exit));
+      if (!this.#closed)
+        this.#failAll(new ZcodeAppServerProcessError(this.processErrorMessage(exit), exit));
     });
   }
 
@@ -547,7 +665,12 @@ class ZcodeAppServerClient {
     this.#activeSession = sessionId;
   }
 
-  request(method: string, params: JsonRecord, onWritten?: () => void, requestId?: RpcId): Promise<unknown> {
+  request(
+    method: string,
+    params: JsonRecord,
+    onWritten?: () => void,
+    requestId?: RpcId
+  ): Promise<unknown> {
     const id = requestId ?? this.reserveRequestId();
     let timer: NodeJS.Timeout;
     const result = new Promise<unknown>((resolve, reject) => {
@@ -581,7 +704,10 @@ class ZcodeAppServerClient {
   }
 
   processErrorMessage(exit: ProcessExit): string {
-    return this.#stderr.trim() || `ZCode app-server exited before a terminal event: ${exit.code ?? exit.signal ?? "unknown"}`;
+    return (
+      this.#stderr.trim() ||
+      `ZCode app-server exited before a terminal event: ${exit.code ?? exit.signal ?? "unknown"}`
+    );
   }
 
   async close(): Promise<void> {
@@ -613,12 +739,16 @@ class ZcodeAppServerClient {
       this.#pending.delete(id);
       const error = asRecord(message.error);
       if (error) {
-        pending.reject(new ZcodeAppServerRpcError(
-          pending.method,
-          typeof error.code === "string" || typeof error.code === "number" ? error.code : "ZCODE_RPC_ERROR",
-          stringField(error, "message") ?? "ZCode RPC failed",
-          error.detail
-        ));
+        pending.reject(
+          new ZcodeAppServerRpcError(
+            pending.method,
+            typeof error.code === "string" || typeof error.code === "number"
+              ? error.code
+              : "ZCODE_RPC_ERROR",
+            stringField(error, "message") ?? "ZCode RPC failed",
+            error.detail
+          )
+        );
       } else {
         pending.resolve(message.result);
       }
@@ -636,7 +766,12 @@ class ZcodeAppServerClient {
     if (!sessionId || !type || sessionId !== this.#activeSession) return;
     if (seq !== undefined && seq <= this.#lastSeq) return;
     if (seq !== undefined) this.#lastSeq = seq;
-    this.#events.push({ sessionId, type, ...(seq !== undefined ? { seq } : {}), payload: asRecord(params?.payload) });
+    this.#events.push({
+      sessionId,
+      type,
+      ...(seq !== undefined ? { seq } : {}),
+      payload: asRecord(params?.payload)
+    });
   }
 
   #handleServerRequest(id: RpcId, method: string, params: JsonRecord): void {
@@ -650,24 +785,41 @@ class ZcodeAppServerClient {
     }
     if (method === "interaction/requestPermission") {
       if (this.#permissionHandler) {
-        void this.#permissionHandler(params, result => new Promise<void>((resolve, reject) => {
-          this.#child.stdin.write(`${JSON.stringify({ id, result })}\n`, error => error ? reject(error) : resolve());
-        })).catch(error => this.#failAll(error instanceof Error ? error : new Error(String(error))));
+        void this.#permissionHandler(
+          params,
+          (result) =>
+            new Promise<void>((resolve, reject) => {
+              this.#child.stdin.write(`${JSON.stringify({ id, result })}\n`, (error) =>
+                error ? reject(error) : resolve()
+              );
+            })
+        ).catch((error) =>
+          this.#failAll(error instanceof Error ? error : new Error(String(error)))
+        );
         return;
       }
-      this.#reply(id, this.#autoApprove
-        ? { decision: "allow" }
-        : { decision: "deny", reason: "Octo Harness unattended policy denied this tool request" });
+      this.#reply(
+        id,
+        this.#autoApprove
+          ? { decision: "allow" }
+          : { decision: "deny", reason: "Octo Harness unattended policy denied this tool request" }
+      );
       return;
     }
     if (method === "interaction/requestUserInput") {
       const planApproval = asRecord(params.schema)?.interaction === "plan_approval";
-      this.#reply(id, this.#autoApprove && planApproval
-        ? { action: "accept", content: { answer_0: "approve" } }
-        : { action: "decline", reason: "Octo Harness has no interactive input channel for ZCode" });
+      this.#reply(
+        id,
+        this.#autoApprove && planApproval
+          ? { action: "accept", content: { answer_0: "approve" } }
+          : { action: "decline", reason: "Octo Harness has no interactive input channel for ZCode" }
+      );
       return;
     }
-    this.#write({ id, error: { code: -32601, message: `unsupported ZCode client request: ${method}` } });
+    this.#write({
+      id,
+      error: { code: -32601, message: `unsupported ZCode client request: ${method}` }
+    });
   }
 
   #reply(id: RpcId, result: unknown): void {
@@ -676,7 +828,7 @@ class ZcodeAppServerClient {
 
   #write(message: JsonRecord, onWritten?: () => void): void {
     if (this.#child.stdin.destroyed) return;
-    this.#child.stdin.write(`${JSON.stringify(message)}\n`, error => {
+    this.#child.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
       if (!error) onWritten?.();
     });
   }
@@ -695,7 +847,8 @@ function ensureToolCreated(state: NormalizerState, id: string): CanonicalEvent |
   const tool = state.tools.get(id);
   if (!tool || tool.created) return undefined;
   tool.created = true;
-  return { protocolVersion: 2,
+  return {
+    protocolVersion: 2,
     type: "tool_call.create",
     payload: {
       id,
@@ -708,8 +861,10 @@ function ensureToolCreated(state: NormalizerState, id: string): CanonicalEvent |
 }
 
 function toolCreated(events: CanonicalEvent[], state: NormalizerState, id: string): boolean {
-  return events.some(event => event.type === "tool_call.create" && event.payload.id === id)
-    || state.tools.get(id)?.created === true;
+  return (
+    events.some((event) => event.type === "tool_call.create" && event.payload.id === id) ||
+    state.tools.get(id)?.created === true
+  );
 }
 
 function appendPublicText(state: NormalizerState, value: string): void {
@@ -734,7 +889,10 @@ function requestTimeout(request: InvokeRequest): number {
 }
 
 function failureReason(error: unknown): string {
-  if (error instanceof ZcodeAppServerRpcError) return `rpc_${String(error.code).replace(/[^A-Za-z0-9]+/g, "_").toLowerCase()}`;
+  if (error instanceof ZcodeAppServerRpcError)
+    return `rpc_${String(error.code)
+      .replace(/[^A-Za-z0-9]+/g, "_")
+      .toLowerCase()}`;
   return "session_resume_failed";
 }
 
@@ -745,11 +903,16 @@ function errorCode(error: unknown): string | number {
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason ?? "cancelled"));
+  if (signal?.aborted)
+    throw signal.reason instanceof Error
+      ? signal.reason
+      : new Error(String(signal.reason ?? "cancelled"));
 }
 
 function isTerminal(event: CanonicalEvent): boolean {
-  return event.type === "run.completed" || event.type === "run.failed" || event.type === "run.cancelled";
+  return (
+    event.type === "run.completed" || event.type === "run.failed" || event.type === "run.cancelled"
+  );
 }
 
 function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
@@ -773,11 +936,13 @@ function defaultSpawn(
 }
 
 function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function asRecord(value: unknown): JsonRecord | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : undefined;
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : undefined;
 }
 
 function stringField(value: JsonRecord | undefined, key: string): string | undefined {

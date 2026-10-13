@@ -1,4 +1,8 @@
-import type { CanonicalEvent, InvokeRequest, InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
+import type {
+  CanonicalEvent,
+  InvokeRequest,
+  InteractionResponse
+} from "@mininglamp-oss/octo-harness-protocol";
 import type { HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
 
 export type EmbeddedPhase =
@@ -41,7 +45,9 @@ export interface AuthorizedTenant {
   serverUrl: string;
   agentWorkUrl: string;
   /** Trusted host configuration for Harness-owned material and output transport. */
-  businessServiceBindings?: Partial<Record<"task" | "discussion", { serviceSubjectId: string; url: string }>>;
+  businessServiceBindings?: Partial<
+    Record<"task" | "discussion", { serviceSubjectId: string; url: string }>
+  >;
 }
 
 export interface StartAccountOptions {
@@ -94,7 +100,12 @@ export interface EmbeddedHarness {
   listAdapters(): Promise<HostedAdapterMetadata[]>;
   cancelRun(runId: string): Promise<{ cancelled: boolean }>;
   respondRun(runId: string, response: InteractionResponse): Promise<void>;
-  subscribeRun(input: { runId: string; streamId?: string; afterSeq?: number; signal?: AbortSignal }): AsyncIterable<Record<string, unknown>>;
+  subscribeRun(input: {
+    runId: string;
+    streamId?: string;
+    afterSeq?: number;
+    signal?: AbortSignal;
+  }): AsyncIterable<Record<string, unknown>>;
   startAccount(options: StartAccountOptions): Promise<EmbeddedHealth>;
   reconcileTenants(tenants: readonly AuthorizedTenant[]): Promise<EmbeddedHealth>;
   resetTenant(tenantId: string): Promise<EmbeddedHealth>;

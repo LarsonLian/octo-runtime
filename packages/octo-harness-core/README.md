@@ -4,11 +4,11 @@
 
 ## 模型
 
-| 对象 | 含义 |
-|---|---|
-| Agent | 本地可执行的 adapter 配置 |
-| AgentSession | `namespace + agentId + sessionKey` 标识的连续上下文 |
-| AgentRun | 一次排队、执行、取消并进入终态的调用 |
+| 对象          | 含义                                                  |
+| ------------- | ----------------------------------------------------- |
+| Agent         | 本地可执行的 adapter 配置                             |
+| AgentSession  | `namespace + agentId + sessionKey` 标识的连续上下文   |
+| AgentRun      | 一次排队、执行、取消并进入终态的调用                  |
 | EventEnvelope | 带 run ID、session ID 与单 Run seq 的 canonical event |
 
 `submitAgentRun` 使用 `(agentSessionId, trigger.occurrenceId)` 去重。相同 occurrence 与相同请求返回原 Run；请求内容不同则冲突。同一 Session 的 Run 按 `runNo` FIFO，任何时刻最多一个 active Run。

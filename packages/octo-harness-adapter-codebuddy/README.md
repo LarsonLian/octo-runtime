@@ -74,11 +74,11 @@ adapter 不创建 Chat、Task 或 Trigger。
 
 ## 配置
 
-| Agent revision 配置 | `agentConfig` 字段 | 作用 |
-|---|---|---|
-| `--workdir DIR` | `workdir` | 作为 ACP cwd，也是代码目标目录；本身不限制对其他宿主路径的读取 |
-| `--model MODEL` | `model` | 仅在 `session/new` 新建会话时传入 |
-| `--permission-mode MODE` | `permissionMode` | 传给 `codebuddy --permission-mode`，默认 `acceptEdits` |
+| Agent revision 配置      | `agentConfig` 字段 | 作用                                                           |
+| ------------------------ | ------------------ | -------------------------------------------------------------- |
+| `--workdir DIR`          | `workdir`          | 作为 ACP cwd，也是代码目标目录；本身不限制对其他宿主路径的读取 |
+| `--model MODEL`          | `model`            | 仅在 `session/new` 新建会话时传入                              |
+| `--permission-mode MODE` | `permissionMode`   | 传给 `codebuddy --permission-mode`，默认 `acceptEdits`         |
 
 恢复会话经由 `session/load`，不会重设 model——原会话自行保留模型上下文。
 

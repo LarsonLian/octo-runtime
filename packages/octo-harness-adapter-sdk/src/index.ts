@@ -7,8 +7,8 @@ import { promisify } from "node:util";
 import type { AdapterInvocationContext } from "./activity.js";
 import { invocationEnvironment } from "./environment.js";
 import { mapReasoningEffort, reasoningLevelMap, type ReasoningLevelMap } from "./reasoning.js";
-export type { AdapterInvocationContext,ProviderActivity } from "./activity.js";
-export { invocationEnvironment,invocationEnvs } from "./environment.js";
+export type { AdapterInvocationContext, ProviderActivity } from "./activity.js";
+export { invocationEnvironment, invocationEnvs } from "./environment.js";
 
 import {
   isTerminal,
@@ -16,7 +16,12 @@ import {
   type InvokeRequest
 } from "@mininglamp-oss/octo-harness-protocol";
 
-export { freshFallbackInputText,hasImageInput,providerInputParts,providerInputText } from "@mininglamp-oss/octo-harness-protocol";
+export {
+  freshFallbackInputText,
+  hasImageInput,
+  providerInputParts,
+  providerInputText
+} from "@mininglamp-oss/octo-harness-protocol";
 export type {
   CanonicalEvent,
   InvokeRequest,
@@ -24,11 +29,18 @@ export type {
   MessageExposure,
   MessageProvenance
 } from "@mininglamp-oss/octo-harness-protocol";
-export { acpToolTerminalStatus,normalizeAcpToolUpdate } from "./acp-tool.js";
+export { acpToolTerminalStatus, normalizeAcpToolUpdate } from "./acp-tool.js";
 export { AcpTurnNormalizer } from "./acp-turn.js";
 export { AcpApprovalBridge } from "./approval.js";
 export { sanitizePublicValue } from "./public-display.js";
-export { DEFAULT_REASONING_LEVEL_MAPS,OMNI_REASONING_LEVELS,mapReasoningEffort,reasoningLevelMap,type OmniReasoningLevel,type ReasoningLevelMap } from "./reasoning.js";
+export {
+  DEFAULT_REASONING_LEVEL_MAPS,
+  OMNI_REASONING_LEVELS,
+  mapReasoningEffort,
+  reasoningLevelMap,
+  type OmniReasoningLevel,
+  type ReasoningLevelMap
+} from "./reasoning.js";
 
 export interface AdapterMetadata {
   type: string;
@@ -91,25 +103,41 @@ interface ProcessExit {
  * Validate and freeze an adapter definition. Freezing makes the metadata and
  * `invoke` reference immutable so a loaded adapter cannot be mutated at runtime.
  */
-export function defineAdapter<TAdapter extends Adapter>(adapter: TAdapter, levels: ReasoningLevelMap | null = reasoningLevelMap(adapter.metadata.type)): Readonly<TAdapter> {
+export function defineAdapter<TAdapter extends Adapter>(
+  adapter: TAdapter,
+  levels: ReasoningLevelMap | null = reasoningLevelMap(adapter.metadata.type)
+): Readonly<TAdapter> {
   if (!adapter?.metadata?.type || typeof adapter.invoke !== "function") {
     throw new TypeError("adapter requires metadata.type and invoke(req)");
   }
   const invoke = adapter.invoke;
-  return Object.freeze({ ...adapter, async *invoke(request: InvokeRequest, context?: AdapterInvocationContext) {
+  return Object.freeze({
+    ...adapter,
+    async *invoke(request: InvokeRequest, context?: AdapterInvocationContext) {
       const requested = request.agentConfig.effort;
       const native = mapReasoningEffort(adapter.metadata.type, requested, levels);
       if (requested !== undefined) {
-        if (native === undefined || native !== requested) yield {
-          protocolVersion: 2 as const, type: "run.notice" as const,
-          payload: { noticeId: `${request.invocationId}:reasoning`, code: "config_warning" as const,
-            severity: native === undefined ? "warning" as const : "info" as const,
-            params: { warningCode: native === undefined ? "REASONING_EFFORT_NOT_APPLIED" : "REASONING_EFFORT_DOWNGRADED" } }
-        };
+        if (native === undefined || native !== requested)
+          yield {
+            protocolVersion: 2 as const,
+            type: "run.notice" as const,
+            payload: {
+              noticeId: `${request.invocationId}:reasoning`,
+              code: "config_warning" as const,
+              severity: native === undefined ? ("warning" as const) : ("info" as const),
+              params: {
+                warningCode:
+                  native === undefined
+                    ? "REASONING_EFFORT_NOT_APPLIED"
+                    : "REASONING_EFFORT_DOWNGRADED"
+              }
+            }
+          };
       }
       // Keep the original four-level request intact. Only native carriers map it.
       yield* invoke.call(adapter, request, context);
-    } });
+    }
+  });
 }
 
 /**
@@ -123,7 +151,9 @@ export function defineAdapter<TAdapter extends Adapter>(adapter: TAdapter, level
  * the request; transports with a response protocol must report acknowledgement
  * separately.
  */
-export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TNative>): AsyncGenerator<TNative> {
+export async function* spawnJsonLines<TNative>(
+  options: SpawnJsonLinesOptions<TNative>
+): AsyncGenerator<TNative> {
   const { command, args = [], cwd, env, input, signal, parseLine, onInputWritten } = options;
   const child = spawn(command, args, {
     cwd,
@@ -146,7 +176,10 @@ export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TN
     }, 1_000);
     killTimer.unref();
   };
-  options.onSpawn?.(() => { if (child.exitCode === null) abort(); return Promise.resolve(); });
+  options.onSpawn?.(() => {
+    if (child.exitCode === null) abort();
+    return Promise.resolve();
+  });
   signal?.addEventListener("abort", abort, { once: true });
   if (signal?.aborted) abort();
   let stderr = "";
@@ -158,10 +191,16 @@ export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TN
   // would incorrectly classify a synchronous write failure as dispatched.
   let controlError: Error | undefined;
   const handlers = new Set<Promise<void>>();
-  child.stdin.on("error", error => { controlError ??= error; abort(); });
-  const write = (response: unknown): Promise<void> => new Promise((resolve, reject) => {
-    child.stdin.write(`${JSON.stringify(response)}\n`, error => error ? reject(error) : resolve());
+  child.stdin.on("error", (error) => {
+    controlError ??= error;
+    abort();
   });
+  const write = (response: unknown): Promise<void> =>
+    new Promise((resolve, reject) => {
+      child.stdin.write(`${JSON.stringify(response)}\n`, (error) =>
+        error ? reject(error) : resolve()
+      );
+    });
   if (options.controlHandler) child.stdin.write(input ?? "", onInputWritten);
   else child.stdin.end(input, onInputWritten);
 
@@ -173,7 +212,7 @@ export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TN
       const event = parseLine(line);
       if (event !== null) {
         if (options.controlHandler) {
-          const task = options.controlHandler(event, write).catch(error => {
+          const task = options.controlHandler(event, write).catch((error) => {
             controlError ??= error instanceof Error ? error : new Error(String(error));
             abort();
           });
@@ -200,7 +239,7 @@ export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TN
       abort();
       await Promise.race([
         exitPromise.catch(() => undefined),
-        new Promise<void>(resolve => setTimeout(resolve, 1_000))
+        new Promise<void>((resolve) => setTimeout(resolve, 1_000))
       ]);
       if (child.exitCode === null && child.signalCode === null) signalProcessTree(child, "SIGKILL");
     }
@@ -208,10 +247,7 @@ export async function* spawnJsonLines<TNative>(options: SpawnJsonLinesOptions<TN
   }
 }
 
-function signalProcessTree(
-  child: ReturnType<typeof spawn>,
-  signal: NodeJS.Signals
-): void {
+function signalProcessTree(child: ReturnType<typeof spawn>, signal: NodeJS.Signals): void {
   if (process.platform !== "win32" && child.pid !== undefined) {
     try {
       process.kill(-child.pid, signal);
@@ -225,7 +261,10 @@ function signalProcessTree(
 
 /** Raised when a provider subprocess exits non-zero; carries the exit code/signal alongside the captured stderr message. */
 export class ProviderProcessError extends Error {
-  constructor(message: string, readonly exit: ProcessExit) {
+  constructor(
+    message: string,
+    readonly exit: ProcessExit
+  ) {
     super(message);
     this.name = "ProviderProcessError";
   }
@@ -236,7 +275,7 @@ export function parseJsonLine(line: string): Record<string, unknown> | null {
   try {
     const value: unknown = JSON.parse(line);
     return value !== null && typeof value === "object" && !Array.isArray(value)
-      ? value as Record<string, unknown>
+      ? (value as Record<string, unknown>)
       : null;
   } catch {
     return null;
@@ -261,7 +300,11 @@ export function createJsonCliAdapter<TNative = Record<string, unknown>>(
       const spec = await buildCommand(request);
       let terminal = false;
       try {
-        yield { protocolVersion: 2, type: "message.create", payload: { role: "assistant", status: "streaming" } };
+        yield {
+          protocolVersion: 2,
+          type: "message.create",
+          payload: { role: "assistant", status: "streaming" }
+        };
         for await (const native of spawnJsonLines({
           ...spec,
           cwd: spec.cwd ?? request.workdir,
@@ -295,15 +338,20 @@ export function createJsonCliAdapter<TNative = Record<string, unknown>>(
  * directly; a bare name is searched across `PATH` (`;`-separated on Windows).
  * Returns the first executable match, else `command_not_found`.
  */
-export async function probeCommand(command: string, { env = process.env }: { env?: NodeJS.ProcessEnv } = {}): Promise<ProbeResult> {
-  const candidates = isAbsolute(command) || command.includes("/") || command.includes("\\")
-    ? [command]
-    : (env.PATH ?? "").split(delimiter).flatMap(directory => {
-      const extensions = process.platform === "win32" && !/\.[^\\/]+$/.test(command)
-        ? ["", ...(env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";")]
-        : [""];
-      return extensions.map(extension => resolve(directory, command + extension));
-    });
+export async function probeCommand(
+  command: string,
+  { env = process.env }: { env?: NodeJS.ProcessEnv } = {}
+): Promise<ProbeResult> {
+  const candidates =
+    isAbsolute(command) || command.includes("/") || command.includes("\\")
+      ? [command]
+      : (env.PATH ?? "").split(delimiter).flatMap((directory) => {
+          const extensions =
+            process.platform === "win32" && !/\.[^\\/]+$/.test(command)
+              ? ["", ...(env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";")]
+              : [""];
+          return extensions.map((extension) => resolve(directory, command + extension));
+        });
   for (const candidate of candidates) {
     try {
       await access(candidate, constants.X_OK);
@@ -311,11 +359,16 @@ export async function probeCommand(command: string, { env = process.env }: { env
       let version: string | null = null;
       try {
         const { stdout } = await promisify(execFile)(resolve(candidate), ["--version"], {
-          env, timeout: 2_000, maxBuffer: 4096, windowsHide: true
+          env,
+          timeout: 2_000,
+          maxBuffer: 4096,
+          windowsHide: true
         });
         const output = stdout.trim();
         // Keep a version label, not arbitrary CLI banners or diagnostics.
-        version = output.match(/(?:^|\s)v?(\d+\.\d+(?:\.\d+)?(?:[-+][A-Za-z0-9.-]+)?)(?=\s|$)/)?.[1] ?? null;
+        version =
+          output.match(/(?:^|\s)v?(\d+\.\d+(?:\.\d+)?(?:[-+][A-Za-z0-9.-]+)?)(?=\s|$)/)?.[1] ??
+          null;
       } catch {
         // Executable availability does not imply support for --version.
       }

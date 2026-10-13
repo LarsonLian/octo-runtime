@@ -46,17 +46,24 @@ export function discoverZcodeBin(env: NodeJS.ProcessEnv = process.env): string |
   if (pathCommand) return pathCommand;
 
   const home = homedir();
-  const candidates = process.platform === "win32"
-    ? [join(env.LOCALAPPDATA ?? join(home, "AppData", "Local"), "Programs", "ZCode", "resources", "glm", "zcode.cjs")]
-    : process.platform === "darwin"
+  const candidates =
+    process.platform === "win32"
       ? [
-          "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs",
-          join(home, "Applications", "ZCode.app", "Contents", "Resources", "glm", "zcode.cjs")
+          join(
+            env.LOCALAPPDATA ?? join(home, "AppData", "Local"),
+            "Programs",
+            "ZCode",
+            "resources",
+            "glm",
+            "zcode.cjs"
+          )
         ]
-      : [
-          "/opt/ZCode/resources/glm/zcode.cjs",
-          "/usr/share/zcode/resources/glm/zcode.cjs"
-        ];
+      : process.platform === "darwin"
+        ? [
+            "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs",
+            join(home, "Applications", "ZCode.app", "Contents", "Resources", "glm", "zcode.cjs")
+          ]
+        : ["/opt/ZCode/resources/glm/zcode.cjs", "/usr/share/zcode/resources/glm/zcode.cjs"];
   return candidates.find(existsSync);
 }
 
@@ -86,7 +93,12 @@ export function buildZcodeCommand(
   }
   const args = [...(appServerArgs ?? DEFAULT_APP_SERVER_ARGS)];
   return isJavaScriptEntry(zcodeBin)
-    ? { command: process.execPath, args: [zcodeBin, ...args], cwd: request.workdir, env: invocationEnvironment(request) }
+    ? {
+        command: process.execPath,
+        args: [zcodeBin, ...args],
+        cwd: request.workdir,
+        env: invocationEnvironment(request)
+      }
     : { command: zcodeBin, args, cwd: request.workdir, env: invocationEnvironment(request) };
 }
 
@@ -94,7 +106,8 @@ export async function probeZcodeGui(env: NodeJS.ProcessEnv = process.env): Promi
   const zcodeBin = discoverZcodeBin(env);
   if (!zcodeBin) return probeCommand("zcode", { env });
   if (!isJavaScriptEntry(zcodeBin)) return probeCommand(zcodeBin, { env });
-  if (!existsSync(zcodeBin)) return { available: false, command: zcodeBin, reason: "command_not_found" };
+  if (!existsSync(zcodeBin))
+    return { available: false, command: zcodeBin, reason: "command_not_found" };
   let version: string | null = null;
   try {
     const { stdout } = await promisify(execFile)(process.execPath, [zcodeBin, "--version"], {
@@ -103,7 +116,8 @@ export async function probeZcodeGui(env: NodeJS.ProcessEnv = process.env): Promi
       maxBuffer: 4_096,
       windowsHide: true
     });
-    version = stdout.match(/(?:^|\s)v?(\d+\.\d+(?:\.\d+)?(?:[-+][A-Za-z0-9.-]+)?)(?=\s|$)/)?.[1] ?? null;
+    version =
+      stdout.match(/(?:^|\s)v?(\d+\.\d+(?:\.\d+)?(?:[-+][A-Za-z0-9.-]+)?)(?=\s|$)/)?.[1] ?? null;
   } catch {
     // Availability is distinct from version support, matching the shared probe contract.
   }
@@ -125,11 +139,18 @@ export function createZcodeGuiAdapter({
       type: "zcode-gui",
       capabilities: ["react"],
       agentSources: ["provisioned"],
-      executionFeatures: ["session.serialize", "session.resume_recovery", "tool.canonical", executionFeatures.INTERACTION_RESPONSE, executionFeatures.APPROVAL_ASK, executionFeatures.APPROVAL_FULL_ACCESS],
+      executionFeatures: [
+        "session.serialize",
+        "session.resume_recovery",
+        "tool.canonical",
+        executionFeatures.INTERACTION_RESPONSE,
+        executionFeatures.APPROVAL_ASK,
+        executionFeatures.APPROVAL_FULL_ACCESS
+      ],
       processModel: "subprocess-per-invocation",
       transport: "zcode-ndjson-rpc/stdio"
     },
-    probe: () => command ? probeCommand(command) : probeZcodeGui(),
+    probe: () => (command ? probeCommand(command) : probeZcodeGui()),
     async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
       const bridge = responders.get(invocationId);
       if (!bridge) throw new Error("INTERACTION_NOT_ACTIVE");
@@ -142,16 +163,28 @@ export function createZcodeGuiAdapter({
       responders.set(request.invocationId, bridge);
       try {
         const spec = buildZcodeCommand(request, command, appServerArgs);
-        yield* bridge.stream(runZcodeAppServerTurn({ request, spec, context, approvalBridge: bridge, ...(spawnFn ? { spawnFn } : {}) }));
-      } finally { bridge.close("execution_lost"); responders.delete(request.invocationId); }
+        yield* bridge.stream(
+          runZcodeAppServerTurn({
+            request,
+            spec,
+            context,
+            approvalBridge: bridge,
+            ...(spawnFn ? { spawnFn } : {})
+          })
+        );
+      } finally {
+        bridge.close("execution_lost");
+        responders.delete(request.invocationId);
+      }
     }
   });
 }
 
 function findOnPath(command: string, env: NodeJS.ProcessEnv): string | undefined {
-  const extensions = process.platform === "win32"
-    ? ["", ...(env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";")]
-    : [""];
+  const extensions =
+    process.platform === "win32"
+      ? ["", ...(env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";")]
+      : [""];
   for (const directory of (env.PATH ?? "").split(delimiter)) {
     if (!directory) continue;
     for (const extension of extensions) {

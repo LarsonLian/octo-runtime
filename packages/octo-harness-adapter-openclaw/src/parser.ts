@@ -61,7 +61,7 @@ interface UsageLike {
 
 function record(value: unknown): JsonRecord | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as JsonRecord
+    ? (value as JsonRecord)
     : null;
 }
 
@@ -100,8 +100,14 @@ function parseJson(text: string): unknown {
 
 /** Resolve a tool call id across the several field names OpenClaw uses, defaulting to "tool" when none is present. */
 function toolId(native: JsonRecord): string {
-  return string(native.callId) || string(native.toolCallId) || string(native.tool_call_id) ||
-    string(native.tool_use_id) || string(native.id) || "tool";
+  return (
+    string(native.callId) ||
+    string(native.toolCallId) ||
+    string(native.tool_call_id) ||
+    string(native.tool_use_id) ||
+    string(native.id) ||
+    "tool"
+  );
 }
 
 /** Parse one OpenClaw stdout line into a frame, or null if the line is not a recognized event. */
@@ -153,7 +159,8 @@ export function tryParseOpenClawEvent(line: string): OpenClawFrame | null {
       if (!["error", "failed", "cancelled"].includes(phase)) return null;
       return {
         kind: phase === "cancelled" ? "cancelled" : "failure",
-        message: string(native.message) || string(native.error) || `OpenClaw lifecycle phase=${phase}`
+        message:
+          string(native.message) || string(native.error) || `OpenClaw lifecycle phase=${phase}`
       };
     }
     default:
@@ -166,7 +173,7 @@ export function tryParseOpenClawFinalBlob(text: string): OpenClawFinalFrame | nu
   const native = record(parseJson(text.trim()));
   if (!native || !Array.isArray(native.payloads)) return null;
   const reply = native.payloads
-    .map(payload => string(record(payload)?.text))
+    .map((payload) => string(record(payload)?.text))
     .filter(Boolean)
     .join("\n");
   const meta = record(native.meta);
@@ -189,7 +196,7 @@ function transcriptText(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content
-    .map(block => string(record(block)?.text))
+    .map((block) => string(record(block)?.text))
     .filter(Boolean)
     .join("\n");
 }
@@ -287,28 +294,35 @@ export class OpenClawTranscriptNormalizer {
   normalize(frame: OpenClawTranscriptFrame): CanonicalEvent[] {
     if (frame.kind === "tool-result") {
       const stepId = this.toolSteps.get(frame.id);
-      return [{ protocolVersion: 2,
-        type: "tool_call.update",
-        payload: {
-          id: frame.id,
-          ...(frame.name ? { name: frame.name } : {}),
-          status: canonicalTerminalStatus(frame.isError ? "failed" : "completed"),
-          output: frame.output,
-          ...(stepId ? { stepId } : {}),
-          ...(frame.durationMs === undefined ? {} : { durationMs: frame.durationMs })
+      return [
+        {
+          protocolVersion: 2,
+          type: "tool_call.update",
+          payload: {
+            id: frame.id,
+            ...(frame.name ? { name: frame.name } : {}),
+            status: canonicalTerminalStatus(frame.isError ? "failed" : "completed"),
+            output: frame.output,
+            ...(stepId ? { stepId } : {}),
+            ...(frame.durationMs === undefined ? {} : { durationMs: frame.durationMs })
+          }
         }
-      }];
+      ];
     }
 
-    const events: CanonicalEvent[] = [{ protocolVersion: 2,
-      type: "model_step.started",
-      payload: {
-        stepId: frame.stepId,
-        ...(frame.startedAtMs === undefined ? {} : { startedAtMs: frame.startedAtMs })
+    const events: CanonicalEvent[] = [
+      {
+        protocolVersion: 2,
+        type: "model_step.started",
+        payload: {
+          stepId: frame.stepId,
+          ...(frame.startedAtMs === undefined ? {} : { startedAtMs: frame.startedAtMs })
+        }
       }
-    }];
+    ];
     for (const thought of frame.reasoning) {
-      events.push({ protocolVersion: 2,
+      events.push({
+        protocolVersion: 2,
         type: "message.delta",
         payload: {
           text: thought,
@@ -321,16 +335,28 @@ export class OpenClawTranscriptNormalizer {
       });
     }
     if (frame.text) {
-      events.push({ protocolVersion: 2, type: "message.delta", payload: { text: frame.text, channel: "final", stepId: frame.stepId } });
+      events.push({
+        protocolVersion: 2,
+        type: "message.delta",
+        payload: { text: frame.text, channel: "final", stepId: frame.stepId }
+      });
     }
     for (const tool of frame.tools) {
       this.toolSteps.set(tool.id, frame.stepId);
-      events.push({ protocolVersion: 2,
+      events.push({
+        protocolVersion: 2,
         type: "tool_call.create",
-        payload: { status: "running", id: tool.id, name: tool.name, args: tool.args, stepId: frame.stepId }
+        payload: {
+          status: "running",
+          id: tool.id,
+          name: tool.name,
+          args: tool.args,
+          stepId: frame.stepId
+        }
       });
     }
-    events.push({ protocolVersion: 2,
+    events.push({
+      protocolVersion: 2,
       type: "model_step.finished",
       payload: {
         stepId: frame.stepId,
@@ -348,14 +374,33 @@ export function normalizeOpenClawFrame(frame: OpenClawFrame): CanonicalEvent[] {
   // The parser preserves OpenClaw's native differences; this function only exposes provider-neutral canonical events upward.
   switch (frame.kind) {
     case "text":
-      return [{ protocolVersion: 2, type: "message.delta", payload: { text: frame.text, channel: "final" } }];
+      return [
+        {
+          protocolVersion: 2,
+          type: "message.delta",
+          payload: { text: frame.text, channel: "final" }
+        }
+      ];
     case "tool-call":
-      return [{ protocolVersion: 2, type: "tool_call.create", payload: { status: "running", id: frame.id, name: frame.name, args: frame.args } }];
+      return [
+        {
+          protocolVersion: 2,
+          type: "tool_call.create",
+          payload: { status: "running", id: frame.id, name: frame.name, args: frame.args }
+        }
+      ];
     case "tool-result":
-      return [{ protocolVersion: 2,
-        type: "tool_call.update",
-        payload: { id: frame.id, status: canonicalTerminalStatus(frame.isError ? "error" : "completed"), output: frame.output }
-      }];
+      return [
+        {
+          protocolVersion: 2,
+          type: "tool_call.update",
+          payload: {
+            id: frame.id,
+            status: canonicalTerminalStatus(frame.isError ? "error" : "completed"),
+            output: frame.output
+          }
+        }
+      ];
     case "usage":
       return [{ protocolVersion: 2, type: "usage.update", payload: usagePayload(frame) }];
     default:

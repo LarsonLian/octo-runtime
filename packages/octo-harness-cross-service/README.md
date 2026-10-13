@@ -2,11 +2,11 @@
 
 Octo Harness 的跨平台、当前用户级原生服务管理器。运行时固定为 Node.js 24 或更高版本，不支持 Deno/Bun。包内直接实现三个后端，不包含 `cross-service` 源码，也不依赖在线运行时：
 
-| 平台 | 原生管理器 | 安装位置 | 自启动时机 |
-|---|---|---|---|
-| macOS | LaunchAgent / `launchctl` | `~/Library/LaunchAgents/<label>.plist` | 用户登录 |
-| Linux | systemd user / `systemctl --user` | `~/.config/systemd/user/<unit>.service` | user manager 启动 |
-| Windows | 当前用户 Task Scheduler / `schtasks.exe` | `%LOCALAPPDATA%\OctoHarness\services\<id>.xml` | 指定用户登录 |
+| 平台    | 原生管理器                               | 安装位置                                       | 自启动时机        |
+| ------- | ---------------------------------------- | ---------------------------------------------- | ----------------- |
+| macOS   | LaunchAgent / `launchctl`                | `~/Library/LaunchAgents/<label>.plist`         | 用户登录          |
+| Linux   | systemd user / `systemctl --user`        | `~/.config/systemd/user/<unit>.service`        | user manager 启动 |
+| Windows | 当前用户 Task Scheduler / `schtasks.exe` | `%LOCALAPPDATA%\OctoHarness\services\<id>.xml` | 指定用户登录      |
 
 它只管理 `install`、`uninstall`、`enable`、`disable`、`start`、`stop`、`restart`、`inspect` 和 `probe`。应用日志、daemon IPC、凭证兑换、健康检查仍由 `octo-harness daemon` / `doctor` 负责。
 
@@ -23,7 +23,8 @@ const spec = {
   command: "/opt/homebrew/opt/node@24/bin/node",
   args: [
     "/opt/homebrew/lib/node_modules/@mininglamp-oss/octo-harness/apps/daemon/dist/launcher.js",
-    "--home", "/Users/alice/.octo-harness"
+    "--home",
+    "/Users/alice/.octo-harness"
   ],
   workingDirectory: "/Users/alice/.octo-harness",
   stdoutPath: "/Users/alice/.octo-harness/logs/service.stdout.log",
@@ -49,7 +50,8 @@ await service.install({
   command: "C:\\Program Files\\nodejs\\node.exe",
   args: [
     "C:\\Users\\alice\\AppData\\Roaming\\npm\\node_modules\\@mininglamp-oss\\octo-harness\\apps\\daemon\\dist\\launcher.js",
-    "--home", "C:\\Users\\alice\\AppData\\Local\\OctoHarness"
+    "--home",
+    "C:\\Users\\alice\\AppData\\Local\\OctoHarness"
   ],
   workingDirectory: "C:\\Users\\alice\\AppData\\Local\\OctoHarness",
   enabled: true,
@@ -61,17 +63,17 @@ await service.install({
 
 这里的成功只表示原生服务管理器达到了目标状态。包本身不负责等待 daemon IPC、Runtime Online 或 provider 可用：
 
-| 调用 | 调用成功后的可观察效果 | 明确不保证 |
-|---|---|---|
-| `probe()` | 已确认当前 OS 用户能够访问对应的原生管理器 | 不检查服务是否安装，也不写任何配置 |
-| `inspect(spec)` | 返回原生定义、enable、进程状态、PID/退出码和配置漂移快照 | 不修复漂移，不检查 IPC 和云端状态 |
-| `install(spec)` | 原生定义和自启动设置与 `spec` 一致；重复执行得到相同目标状态 | 首次安装不会启动进程；原本 stopped 的服务仍为 stopped |
-| `enable(spec)` | 下次用户登录或 user manager 激活时允许自动启动 | 不启动当前进程 |
-| `disable(spec)` | 后续不再自动启动 | 不停止已经运行的进程 |
-| `start(spec)` | 原生管理器已接受启动请求；已运行时为成功 no-op | 不代表 daemon socket 已创建或 Runtime 已 Online |
-| `stop(spec)` | 当前实例已停止，服务定义和 enable 状态仍保留 | 不删除凭证、数据库、outbox 或日志 |
-| `restart(spec)` | 已停止旧实例并启动替换进程；原本 stopped 时等价于 start | 不等待替换进程完成 IPC/云端就绪 |
-| `uninstall(spec)` | 当前实例停止，原生注册和管理定义被删除 | 不清理 Harness Home 内的凭证和业务数据 |
+| 调用              | 调用成功后的可观察效果                                       | 明确不保证                                            |
+| ----------------- | ------------------------------------------------------------ | ----------------------------------------------------- |
+| `probe()`         | 已确认当前 OS 用户能够访问对应的原生管理器                   | 不检查服务是否安装，也不写任何配置                    |
+| `inspect(spec)`   | 返回原生定义、enable、进程状态、PID/退出码和配置漂移快照     | 不修复漂移，不检查 IPC 和云端状态                     |
+| `install(spec)`   | 原生定义和自启动设置与 `spec` 一致；重复执行得到相同目标状态 | 首次安装不会启动进程；原本 stopped 的服务仍为 stopped |
+| `enable(spec)`    | 下次用户登录或 user manager 激活时允许自动启动               | 不启动当前进程                                        |
+| `disable(spec)`   | 后续不再自动启动                                             | 不停止已经运行的进程                                  |
+| `start(spec)`     | 原生管理器已接受启动请求；已运行时为成功 no-op               | 不代表 daemon socket 已创建或 Runtime 已 Online       |
+| `stop(spec)`      | 当前实例已停止，服务定义和 enable 状态仍保留                 | 不删除凭证、数据库、outbox 或日志                     |
+| `restart(spec)`   | 已停止旧实例并启动替换进程；原本 stopped 时等价于 start      | 不等待替换进程完成 IPC/云端就绪                       |
+| `uninstall(spec)` | 当前实例停止，原生注册和管理定义被删除                       | 不清理 Harness Home 内的凭证和业务数据                |
 
 更新一个正在运行的定义时，后端会在写入新定义后替换进程，让新 command/args/策略真正生效；更新一个已经停止的定义时不会顺便启动它。`start` / `restart` 要求服务已安装且已 enable，错误分别使用 `NOT_INSTALLED` 与 `SERVICE_DISABLED`。
 

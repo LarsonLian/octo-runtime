@@ -17,7 +17,12 @@ import {
 } from "@mininglamp-oss/octo-harness-protocol";
 import { InvocationExperience } from "./experience.js";
 import { hostLog } from "./host-log.js";
-import { ACTIVITY_CAPABILITY, AdapterWatchdogTimeoutError, InvocationWatchdog, WATCHDOG_CAPABILITY } from "./watchdog.js";
+import {
+  ACTIVITY_CAPABILITY,
+  AdapterWatchdogTimeoutError,
+  InvocationWatchdog,
+  WATCHDOG_CAPABILITY
+} from "./watchdog.js";
 
 /** Provider-neutral metadata the Host uses for registration and capability discovery. */
 export interface HostedAdapterMetadata {
@@ -68,63 +73,93 @@ export class AdapterHost {
   readonly #acceptedTerminals = new Set<string>();
   /** Register an adapter by `metadata.type`; the same type cannot be overwritten twice. */
   register(adapter: HostedAdapter): void {
-    if (this.#adapters.has(adapter.metadata.type)) throw new Error(`duplicate adapter: ${adapter.metadata.type}`);
+    if (this.#adapters.has(adapter.metadata.type))
+      throw new Error(`duplicate adapter: ${adapter.metadata.type}`);
     this.#adapters.set(adapter.metadata.type, adapter);
   }
 
   /** List registered adapters, for Agent registration and control-plane display. */
   list(): HostedAdapterMetadata[] {
-    return [...this.#adapters.values()].map(adapter => ({ ...adapter.metadata, executionFeatures: [...new Set([...adapter.metadata.executionFeatures, WATCHDOG_CAPABILITY])] }));
+    return [...this.#adapters.values()].map((adapter) => ({
+      ...adapter.metadata,
+      executionFeatures: [...new Set([...adapter.metadata.executionFeatures, WATCHDOG_CAPABILITY])]
+    }));
   }
 
   /** Report installed provider identity separately from adapter registration. */
   async describe(): Promise<HostedAdapterMetadata[]> {
-    return Promise.all([...this.#adapters.values()].map(async adapter => {
-      let probe: Record<string, unknown> = {};
-      let unavailableReason: string | null = adapter.probe ? "probe_invalid" : "probe_missing";
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        const result: unknown = await Promise.race([
-          Promise.resolve().then(() => adapter.probe?.()),
-          new Promise<undefined>(resolve => { timer = setTimeout(() => {
-              unavailableReason = "probe_timeout";
-              resolve(undefined);
-            }, 3_000); })
-        ]);
-        if (result && typeof result === "object") probe = result as Record<string, unknown>;
-        if (probe.available === false) unavailableReason = typeof probe.reason === "string" ? probe.reason : "provider_unavailable";
-      } catch {
-        unavailableReason = "probe_failed";
-        // A failed probe must not make the whole adapter host unavailable.
-      } finally {
-        if (timer) clearTimeout(timer);
-      }
-      const available = probe.available === true && typeof probe.command === "string" && probe.command.length > 0;
-      return {
-        ...adapter.metadata,
-        executionFeatures: [...new Set([...adapter.metadata.executionFeatures, WATCHDOG_CAPABILITY])],
-        available,
-        unavailableReason: available ? null : unavailableReason,
-        providerPath: available ? probe.command as string : null,
-        providerVersion: typeof probe.version === "string" ? probe.version : null
-      };
-    }));
+    return Promise.all(
+      [...this.#adapters.values()].map(async (adapter) => {
+        let probe: Record<string, unknown> = {};
+        let unavailableReason: string | null = adapter.probe ? "probe_invalid" : "probe_missing";
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const result: unknown = await Promise.race([
+            Promise.resolve().then(() => adapter.probe?.()),
+            new Promise<undefined>((resolve) => {
+              timer = setTimeout(() => {
+                unavailableReason = "probe_timeout";
+                resolve(undefined);
+              }, 3_000);
+            })
+          ]);
+          if (result && typeof result === "object") probe = result as Record<string, unknown>;
+          if (probe.available === false)
+            unavailableReason =
+              typeof probe.reason === "string" ? probe.reason : "provider_unavailable";
+        } catch {
+          unavailableReason = "probe_failed";
+          // A failed probe must not make the whole adapter host unavailable.
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+        const available =
+          probe.available === true && typeof probe.command === "string" && probe.command.length > 0;
+        return {
+          ...adapter.metadata,
+          executionFeatures: [
+            ...new Set([...adapter.metadata.executionFeatures, WATCHDOG_CAPABILITY])
+          ],
+          available,
+          unavailableReason: available ? null : unavailableReason,
+          providerPath: available ? (probe.command as string) : null,
+          providerVersion: typeof probe.version === "string" ? probe.version : null
+        };
+      })
+    );
   }
 
   /** Invoke an adapter and emit lifecycle-corrected canonical events upstream. */
   async *invoke(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
     assertInvokeRequest(request);
     const registered = this.#adapters.get(adapterType);
-    if (!registered || !adapterApprovalModes(registered.metadata.executionFeatures).includes(request.approvalMode)) {
-      throw new Error(`APPROVAL_MODE_UNSUPPORTED: ${adapterType} does not advertise ${request.approvalMode}`);
+    if (
+      !registered ||
+      !adapterApprovalModes(registered.metadata.executionFeatures).includes(request.approvalMode)
+    ) {
+      throw new Error(
+        `APPROVAL_MODE_UNSUPPORTED: ${adapterType} does not advertise ${request.approvalMode}`
+      );
     }
-    if (hasImageInput(request) && !registered?.metadata.executionFeatures.includes(executionFeatures.INPUT_IMAGE)) {
-      throw new Error(`UNSUPPORTED_INPUT_MODALITY: ${adapterType} does not implement native image input`);
+    if (
+      hasImageInput(request) &&
+      !registered?.metadata.executionFeatures.includes(executionFeatures.INPUT_IMAGE)
+    ) {
+      throw new Error(
+        `UNSUPPORTED_INPUT_MODALITY: ${adapterType} does not implement native image input`
+      );
     }
-    if (request.approvalMode !== "full_access" && (!registered?.metadata.executionFeatures.includes(executionFeatures.INTERACTION_RESPONSE) || typeof registered.respondInteraction !== "function")) {
-      throw new Error(`APPROVAL_MODE_UNSUPPORTED: ${adapterType} does not implement execution-time approval responses`);
+    if (
+      request.approvalMode !== "full_access" &&
+      (!registered?.metadata.executionFeatures.includes(executionFeatures.INTERACTION_RESPONSE) ||
+        typeof registered.respondInteraction !== "function")
+    ) {
+      throw new Error(
+        `APPROVAL_MODE_UNSUPPORTED: ${adapterType} does not implement execution-time approval responses`
+      );
     }
-    if (!registered?.metadata.agentSources.includes(request.agentSource)) throw new Error("AGENT_SOURCE_UNSUPPORTED: " + adapterType);
+    if (!registered?.metadata.agentSources.includes(request.agentSource))
+      throw new Error("AGENT_SOURCE_UNSUPPORTED: " + adapterType);
     const experience = new InvocationExperience();
     const provider = this.#invokeProvider(adapterType, request);
     let pending = provider.next();
@@ -136,9 +171,28 @@ export class AdapterHost {
         const next = await pending;
         if (next.done) break;
         const event = next.value;
-        if (event.type.startsWith("message.") && event.payload.channel === "final" && event.payload.text) finalBody = true;
-        if (event.type === "run.completed" && !finalBody && typeof event.payload.text === "string" && event.payload.text) {
-          const finalMessage: CanonicalEvent = { protocolVersion: 2, type: "message.update", payload: { messageId: `${request.runId}:final`, channel: "final", status: "completed", text: event.payload.text } };
+        if (
+          event.type.startsWith("message.") &&
+          event.payload.channel === "final" &&
+          event.payload.text
+        )
+          finalBody = true;
+        if (
+          event.type === "run.completed" &&
+          !finalBody &&
+          typeof event.payload.text === "string" &&
+          event.payload.text
+        ) {
+          const finalMessage: CanonicalEvent = {
+            protocolVersion: 2,
+            type: "message.update",
+            payload: {
+              messageId: `${request.runId}:final`,
+              channel: "final",
+              status: "completed",
+              text: event.payload.text
+            }
+          };
           for (const projected of experience.accept(finalMessage)) yield projected;
         }
         for (const projected of experience.accept(event)) yield projected;
@@ -150,7 +204,10 @@ export class AdapterHost {
     }
   }
 
-  async *#invokeProvider(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
+  async *#invokeProvider(
+    adapterType: string,
+    request: InvokeRequest
+  ): AsyncGenerator<CanonicalEvent> {
     const adapter = this.#adapters.get(adapterType);
     if (!adapter) throw new Error(`unknown adapter: ${adapterType}`);
     const controller = new AbortController();
@@ -159,75 +216,135 @@ export class AdapterHost {
     let terminal: CanonicalEvent | undefined;
     let outcome = "stopped";
     const identity = {
-      ...(typeof request.runMetadata?.profile === "string" ? { profile: request.runMetadata.profile } : {}),
-      ...(typeof request.runMetadata?.runtimeId === "string" ? { runtimeId: request.runMetadata.runtimeId } : {}),
-      runId: request.runId, invocationId: request.invocationId, agentSessionId: request.agentSessionId, adapterType
+      ...(typeof request.runMetadata?.profile === "string"
+        ? { profile: request.runMetadata.profile }
+        : {}),
+      ...(typeof request.runMetadata?.runtimeId === "string"
+        ? { runtimeId: request.runMetadata.runtimeId }
+        : {}),
+      runId: request.runId,
+      invocationId: request.invocationId,
+      agentSessionId: request.agentSessionId,
+      adapterType
     };
-    const watchdog = new InvocationWatchdog(request.runtimeLimits, controller,
+    const watchdog = new InvocationWatchdog(
+      request.runtimeLimits,
+      controller,
       adapter.metadata.executionFeatures.includes(ACTIVITY_CAPABILITY),
-      diagnostic => hostLog("watchdog", { ...identity,
-        ...diagnostic,
-        data: { ...diagnostic.data, agentRevisionId: request.runMetadata?.agentRevisionId }
-      }));
+      (diagnostic) =>
+        hostLog("watchdog", {
+          ...identity,
+          ...diagnostic,
+          data: { ...diagnostic.data, agentRevisionId: request.runMetadata?.agentRevisionId }
+        })
+    );
     let iterator: AsyncIterator<CanonicalEvent> | undefined;
     let cleanup: Promise<unknown> | undefined;
     let cleanupWait: Promise<void> | undefined;
-    const closeIterator = (): Promise<unknown> => cleanup ??= Promise.resolve().then(() => iterator?.return?.()).catch(() => undefined);
-    const waitCleanup = (): Promise<void> => cleanupWait ??= boundedCleanup(closeIterator(), watchdog.limits.cancelGraceMs);
+    const closeIterator = (): Promise<unknown> =>
+      (cleanup ??= Promise.resolve()
+        .then(() => iterator?.return?.())
+        .catch(() => undefined));
+    const waitCleanup = (): Promise<void> =>
+      (cleanupWait ??= boundedCleanup(closeIterator(), watchdog.limits.cancelGraceMs));
     // The timer can fire while a consumer is paused at yield.
-    const onAbort = () => { void closeIterator(); };
+    const onAbort = () => {
+      void closeIterator();
+    };
     controller.signal.addEventListener("abort", onAbort, { once: true });
     const messages = new Map<string, MessageState>();
     const anonymousMessages = new Map<string, string>();
     let messageNumber = 0;
     const context: AdapterInvocationContext = {
-      reportActivity: activity => watchdog.activity(activity)
+      reportActivity: (activity) => watchdog.activity(activity)
     };
 
     // A provider may emit only deltas; here the host fills in the message lifecycle and stabilizes the messageId.
-    const prepareMessage = (event: CanonicalEvent): { prefix: CanonicalEvent[]; event: CanonicalEvent } => {
-      const isMessage = event.type === "message.create"
-        || event.type === "message.delta"
-        || event.type === "message.update";
+    const prepareMessage = (
+      event: CanonicalEvent
+    ): { prefix: CanonicalEvent[]; event: CanonicalEvent } => {
+      const isMessage =
+        event.type === "message.create" ||
+        event.type === "message.delta" ||
+        event.type === "message.update";
       if (!isMessage) return { prefix: [], event };
       const previous = event.payload.messageId ? messages.get(event.payload.messageId) : undefined;
       const channel = event.payload.channel ?? previous?.channel ?? "final";
       const segmentKey = `${channel}:${event.payload.stepId ?? ""}`;
       const currentAnonymous = anonymousMessages.get(segmentKey);
-      const messageId = event.payload.messageId ?? (currentAnonymous && messages.get(currentAnonymous)?.open && event.type !== "message.create"
-        ? currentAnonymous : `${request.runId}:${channel}:message:${++messageNumber}`);
+      const messageId =
+        event.payload.messageId ??
+        (currentAnonymous && messages.get(currentAnonymous)?.open && event.type !== "message.create"
+          ? currentAnonymous
+          : `${request.runId}:${channel}:message:${++messageNumber}`);
       if (!event.payload.messageId) anonymousMessages.set(segmentKey, messageId);
       const state = messages.get(messageId);
-      const stepId = typeof event.payload.stepId === "string" ? event.payload.stepId : state?.stepId;
-      const analysisMetadata = channel === "analysis" ? {
-        exposure: event.payload.exposure ?? "unknown",
-        provenance: event.payload.provenance ?? { provider: adapterType, nativeEvent: "unknown" }
-      } : {};
+      const stepId =
+        typeof event.payload.stepId === "string" ? event.payload.stepId : state?.stepId;
+      const analysisMetadata =
+        channel === "analysis"
+          ? {
+              exposure: event.payload.exposure ?? "unknown",
+              provenance: event.payload.provenance ?? {
+                provider: adapterType,
+                nativeEvent: "unknown"
+              }
+            }
+          : {};
       const prepared: CanonicalEvent = {
         ...event,
         payload: { ...event.payload, channel, messageId, ...analysisMetadata }
       };
-      const prefix: CanonicalEvent[] = !state && event.type !== "message.create"
-        ? [{ protocolVersion: 2,
-          type: "message.create",
-          payload: { role: "assistant", status: "streaming", channel, messageId, ...(stepId ? { stepId } : {}), ...analysisMetadata }
-        }]
-        : [];
-      const closed = event.type === "message.update" && ["completed", "failed", "cancelled", "canceled", "stopped"].includes(String(event.payload.status));
-      messages.set(messageId, { messageId, channel, open: !closed, ...(stepId ? { stepId } : {}), ...analysisMetadata });
+      const prefix: CanonicalEvent[] =
+        !state && event.type !== "message.create"
+          ? [
+              {
+                protocolVersion: 2,
+                type: "message.create",
+                payload: {
+                  role: "assistant",
+                  status: "streaming",
+                  channel,
+                  messageId,
+                  ...(stepId ? { stepId } : {}),
+                  ...analysisMetadata
+                }
+              }
+            ]
+          : [];
+      const closed =
+        event.type === "message.update" &&
+        ["completed", "failed", "cancelled", "canceled", "stopped"].includes(
+          String(event.payload.status)
+        );
+      messages.set(messageId, {
+        messageId,
+        channel,
+        open: !closed,
+        ...(stepId ? { stepId } : {}),
+        ...analysisMetadata
+      });
       return { prefix, event: prepared };
     };
 
-    const closeMessages = (status: string, stepId?: string, onlyAnonymous = false): CanonicalEvent[] => {
+    const closeMessages = (
+      status: string,
+      stepId?: string,
+      onlyAnonymous = false
+    ): CanonicalEvent[] => {
       const closed: CanonicalEvent[] = [];
       for (const state of messages.values()) {
         if (!state.open || (stepId !== undefined && state.stepId !== stepId)) continue;
         if (onlyAnonymous && ![...anonymousMessages.values()].includes(state.messageId)) continue;
         state.open = false;
-        closed.push({ protocolVersion: 2,
+        closed.push({
+          protocolVersion: 2,
           type: "message.update",
           payload: {
-            role: "assistant", status, channel: state.channel, messageId: state.messageId,
+            role: "assistant",
+            status,
+            channel: state.channel,
+            messageId: state.messageId,
             ...(state.stepId ? { stepId: state.stepId } : {}),
             ...(state.exposure ? { exposure: state.exposure } : {}),
             ...(state.provenance ? { provenance: state.provenance } : {})
@@ -238,7 +355,8 @@ export class AdapterHost {
     };
 
     try {
-      iterator = adapter.invoke({ ...request, signal: controller.signal }, context)[Symbol.asyncIterator]();
+      const invocation = adapter.invoke({ ...request, signal: controller.signal }, context);
+      iterator = invocation[Symbol.asyncIterator]();
       while (true) {
         if (controller.signal.aborted) throw controller.signal.reason;
         const pendingNext = iterator.next();
@@ -249,30 +367,42 @@ export class AdapterHost {
         if (next.done) break;
         const adapterEvent = next.value;
         assertCanonicalEvent(adapterEvent);
-        const event: CanonicalEvent = adapterEvent.type === "run.failed"
-          ? { protocolVersion: 2,
-            type: "run.failed",
-            payload: failurePayload(adapterEvent.payload, {
-              stage: "provider.invoke",
-              defaultDomain: "provider",
-              runId: request.runId,
-              source: { component: "octo-harness", adapter: adapterType }
-            })
-          }
-          : adapterEvent;
+        const event: CanonicalEvent =
+          adapterEvent.type === "run.failed"
+            ? {
+                protocolVersion: 2,
+                type: "run.failed",
+                payload: failurePayload(adapterEvent.payload, {
+                  stage: "provider.invoke",
+                  defaultDomain: "provider",
+                  runId: request.runId,
+                  source: { component: "octo-harness", adapter: adapterType }
+                })
+              }
+            : adapterEvent;
         watchdog.canonical(event);
         if (terminal) throw new Error(`${adapterType} emitted after terminal event`);
         if (isTerminal(event)) {
           terminal = event;
           // A later user cancellation cannot replace an accepted provider terminal.
           this.#acceptedTerminals.add(request.invocationId);
-        }
-        else {
+        } else {
           // Placeholder creates do not establish a provider message boundary.
-          if (event.type === "message.create" && !event.payload.messageId && !event.payload.text) continue;
-          if (event.type === "message.update" && !event.payload.messageId && !event.payload.text
-            && ["completed", "failed", "cancelled", "canceled", "stopped"].includes(String(event.payload.status))) {
-            for (const closed of closeMessages(String(event.payload.status), typeof event.payload.stepId === "string" ? event.payload.stepId : undefined)) yield closed;
+          if (event.type === "message.create" && !event.payload.messageId && !event.payload.text)
+            continue;
+          if (
+            event.type === "message.update" &&
+            !event.payload.messageId &&
+            !event.payload.text &&
+            ["completed", "failed", "cancelled", "canceled", "stopped"].includes(
+              String(event.payload.status)
+            )
+          ) {
+            for (const closed of closeMessages(
+              String(event.payload.status),
+              typeof event.payload.stepId === "string" ? event.payload.stepId : undefined
+            ))
+              yield closed;
             continue;
           }
           if (event.type === "tool_call.create") {
@@ -280,48 +410,86 @@ export class AdapterHost {
             anonymousMessages.clear();
           }
           if (event.type === "model_step.finished") {
-            for (const closed of closeMessages(event.payload.status, event.payload.stepId)) yield closed;
+            for (const closed of closeMessages(event.payload.status, event.payload.stepId))
+              yield closed;
           }
           const prepared = prepareMessage(event);
           for (const prefix of prepared.prefix) yield prefix;
           yield prepared.event;
         }
       }
-      terminal ??= { protocolVersion: 2, type: "run.cancelled", payload: { reason: "adapter_stream_ended" } };
-      const messageStatus = terminal.type === "run.completed" ? "completed" : terminal.type === "run.failed" ? "failed" : "cancelled";
+      terminal ??= {
+        protocolVersion: 2,
+        type: "run.cancelled",
+        payload: { reason: "adapter_stream_ended" }
+      };
+      const messageStatus =
+        terminal.type === "run.completed"
+          ? "completed"
+          : terminal.type === "run.failed"
+            ? "failed"
+            : "cancelled";
       outcome = messageStatus;
       for (const event of closeMessages(messageStatus)) yield event;
       yield terminal;
     } catch (caught) {
-      const error = controller.signal.reason instanceof AdapterWatchdogTimeoutError ? controller.signal.reason : caught;
-      const userCancelled = controller.signal.aborted && !(controller.signal.reason instanceof AdapterWatchdogTimeoutError);
+      const error =
+        controller.signal.reason instanceof AdapterWatchdogTimeoutError
+          ? controller.signal.reason
+          : caught;
+      const userCancelled =
+        controller.signal.aborted &&
+        !(controller.signal.reason instanceof AdapterWatchdogTimeoutError);
       outcome = userCancelled ? "stopped" : "failed";
-      if (error instanceof AdapterWatchdogTimeoutError && error.timeoutReason === "cleanup_timeout") {
-        try { hostLog("watchdog", { ...identity, event: "timeout", data: { ...watchdog.snapshot(), timeoutReason: error.timeoutReason, timeoutMs: error.timeoutMs } }); } catch { /* best effort */ }
+      if (
+        error instanceof AdapterWatchdogTimeoutError &&
+        error.timeoutReason === "cleanup_timeout"
+      ) {
+        try {
+          hostLog("watchdog", {
+            ...identity,
+            event: "timeout",
+            data: {
+              ...watchdog.snapshot(),
+              timeoutReason: error.timeoutReason,
+              timeoutMs: error.timeoutMs
+            }
+          });
+        } catch {
+          /* best effort */
+        }
       }
       watchdog.dispose();
       if (!controller.signal.aborted) controller.abort(error);
       await waitCleanup();
       for (const event of closeMessages(userCancelled ? "cancelled" : "failed")) yield event;
       if (userCancelled) {
-        yield { protocolVersion: 2, type: "run.cancelled", payload: { reason: String(controller.signal.reason ?? "cancelled") } };
+        yield {
+          protocolVersion: 2,
+          type: "run.cancelled",
+          payload: { reason: String(controller.signal.reason ?? "cancelled") }
+        };
       } else if (terminal?.type === "run.failed") {
         yield terminal;
       } else {
         const code = errorCode(error);
-        yield { protocolVersion: 2,
+        yield {
+          protocolVersion: 2,
           type: "run.failed",
-          payload: failurePayload({
-            message: errorMessage(error),
-            adapterType,
-            ...(code ? { code } : {}),
-            ...watchdogFailureDetails(error)
-          }, {
-            stage: "adapter.invoke",
-            defaultDomain: "adapter",
-            runId: request.runId,
-            source: { component: "octo-harness", adapter: adapterType }
-          })
+          payload: failurePayload(
+            {
+              message: errorMessage(error),
+              adapterType,
+              ...(code ? { code } : {}),
+              ...watchdogFailureDetails(error)
+            },
+            {
+              stage: "adapter.invoke",
+              defaultDomain: "adapter",
+              runId: request.runId,
+              source: { component: "octo-harness", adapter: adapterType }
+            }
+          )
         };
       }
     } finally {
@@ -362,7 +530,9 @@ export class AdapterHost {
       throw new Error(`adapter does not support interaction responses: ${adapter.metadata.type}`);
     }
     if (!adapter.metadata.executionFeatures.includes(executionFeatures.INTERACTION_RESPONSE)) {
-      throw new Error(`adapter did not declare interaction response capability: ${adapter.metadata.type}`);
+      throw new Error(
+        `adapter did not declare interaction response capability: ${adapter.metadata.type}`
+      );
     }
     await adapter.respondInteraction(invocationId, response);
   }
@@ -373,7 +543,7 @@ export class AdapterHost {
     for (const controller of this.#active.values()) controller.abort(reason);
     if (this.#active.size === 0) return;
     const deadline = Date.now() + timeoutMs;
-    await new Promise<void>(resolve => {
+    await new Promise<void>((resolve) => {
       const check = (): void => {
         if (this.#active.size === 0 || Date.now() >= deadline) {
           resolve();
@@ -391,10 +561,10 @@ function errorMessage(error: unknown): string {
 }
 
 function errorCode(error: unknown): string | undefined {
-  return error !== null
-    && typeof error === "object"
-    && "code" in error
-    && typeof error.code === "string"
+  return error !== null &&
+    typeof error === "object" &&
+    "code" in error &&
+    typeof error.code === "string"
     ? error.code
     : undefined;
 }
@@ -402,42 +572,73 @@ function errorCode(error: unknown): string | undefined {
 async function waitForNext<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
   let onAbort: () => void = () => {};
   try {
-    return await Promise.race([pending, new Promise<never>((_resolve, reject) => {
-      onAbort = () => reject(signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason ?? "cancelled")));
-      if (signal.aborted) onAbort();
-      else signal.addEventListener("abort", onAbort, { once: true });
-    })]);
-  } finally { signal.removeEventListener("abort", onAbort); }
+    return await Promise.race([
+      pending,
+      new Promise<never>((_resolve, reject) => {
+        onAbort = () =>
+          reject(
+            signal.reason instanceof Error
+              ? signal.reason
+              : new Error(String(signal.reason ?? "cancelled"))
+          );
+        if (signal.aborted) onAbort();
+        else signal.addEventListener("abort", onAbort, { once: true });
+      })
+    ]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
 }
 
 async function boundedCleanup(cleanup: Promise<unknown>, graceMs: number): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await Promise.race([cleanup, new Promise<void>(resolve => { timer = setTimeout(resolve, graceMs); })]);
-  } finally { if (timer) clearTimeout(timer); }
+    await Promise.race([
+      cleanup,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, graceMs);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
-async function withCleanupDeadline<T>(pending: Promise<T>, graceMs: number, controller: AbortController): Promise<T> {
+async function withCleanupDeadline<T>(
+  pending: Promise<T>,
+  graceMs: number,
+  controller: AbortController
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await Promise.race([pending, new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => {
-        const error = new AdapterWatchdogTimeoutError("cleanup", graceMs, "cleanup_timeout");
-        reject(error);
-        controller.abort(error);
-      }, graceMs);
-    })]);
-  } finally { if (timer) clearTimeout(timer); }
+    return await Promise.race([
+      pending,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          const error = new AdapterWatchdogTimeoutError("cleanup", graceMs, "cleanup_timeout");
+          reject(error);
+          controller.abort(error);
+        }, graceMs);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function watchdogFailureDetails(error: unknown): Record<string, unknown> {
   return error instanceof AdapterWatchdogTimeoutError
-    ? { timeoutStage: error.timeoutStage, timeoutMs: error.timeoutMs, timeoutReason: error.timeoutReason, watchdog: error.evidence }
+    ? {
+        timeoutStage: error.timeoutStage,
+        timeoutMs: error.timeoutMs,
+        timeoutReason: error.timeoutReason,
+        watchdog: error.evidence
+      }
     : {};
 }
 
 export { spawnAdapterHost } from "./process.js";
-export type { AdapterHostProcess,SpawnAdapterHostOptions } from "./process.js";
+export type { AdapterHostProcess, SpawnAdapterHostOptions } from "./process.js";
 export {
   AdapterHostRpcClient,
   AdapterHostRpcServer,

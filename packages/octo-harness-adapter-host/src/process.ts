@@ -76,7 +76,11 @@ export async function spawnAdapterHost({
   };
 }
 
-function waitForReady<T>(operation: Promise<T>, timeoutMs: number, signal?: AbortSignal): Promise<T> {
+function waitForReady<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  signal?: AbortSignal
+): Promise<T> {
   if (signal?.aborted) return Promise.reject(new Error("adapter-host spawn cancelled"));
   return new Promise<T>((resolve, reject) => {
     let settled = false;
@@ -89,13 +93,15 @@ function waitForReady<T>(operation: Promise<T>, timeoutMs: number, signal?: Abor
     };
     const onAbort = (): void => finish(() => reject(new Error("adapter-host spawn cancelled")));
     const timer = setTimeout(
-      () => finish(() => reject(new Error(`adapter-host readiness timed out after ${timeoutMs}ms`))),
+      () =>
+        finish(() => reject(new Error(`adapter-host readiness timed out after ${timeoutMs}ms`))),
       timeoutMs
     );
     signal?.addEventListener("abort", onAbort, { once: true });
     operation.then(
-      value => finish(() => resolve(value)),
-      error => finish(() => reject(error instanceof Error ? error : new Error(errorMessage(error))))
+      (value) => finish(() => resolve(value)),
+      (error) =>
+        finish(() => reject(error instanceof Error ? error : new Error(errorMessage(error))))
     );
   });
 }
@@ -116,8 +122,8 @@ function hasExited(child: HostedChild): boolean {
 async function waitForExit(child: HostedChild, timeoutMs: number): Promise<void> {
   if (hasExited(child)) return;
   await Promise.race([
-    new Promise<void>(resolve => child.once("exit", () => resolve())),
-    new Promise<void>(resolve => setTimeout(resolve, timeoutMs))
+    new Promise<void>((resolve) => child.once("exit", () => resolve())),
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))
   ]);
 }
 

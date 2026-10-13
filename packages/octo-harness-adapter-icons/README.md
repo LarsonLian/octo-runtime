@@ -3,12 +3,16 @@
 Provider/adapter brand icons for Octo Harness, delivered as **framework-neutral
 inline SVG strings** so downstream React / Electron / vanilla apps can bundle
 them directly — no copying image files, no local path resolution. This is the
-lucide *core* model: icons are data, not a UI framework binding.
+lucide _core_ model: icons are data, not a UI framework binding.
 
 ## 安装 & 使用
 
 ```ts
-import { getAdapterIcon, adapterIcons, codexIcon } from "@mininglamp-oss/octo-harness-adapter-icons";
+import {
+  getAdapterIcon,
+  adapterIcons,
+  codexIcon
+} from "@mininglamp-oss/octo-harness-adapter-icons";
 
 // 按 adapter type 查询(未命中返回 undefined,消费方 fallback 到默认图标)
 const icon = getAdapterIcon("codex");
@@ -31,20 +35,20 @@ function AdapterIcon({ type }: { type: string }) {
 
 ## 覆盖的 adapter 类型(12,全部)
 
-| type | 名称 | 类型 |
-| --- | --- | --- |
-| `antigravity` | Antigravity | 彩色 |
-| `codex` | Codex | 彩色 |
-| `claude-code` | Claude Code | 彩色 |
-| `codebuddy` | CodeBuddy | 彩色 |
-| `hermes` | Hermes | 单色 |
-| `kimi-code` | Kimi Code | 彩色 |
-| `mcode` | MiniMax Code | 彩色 |
-| `opencode` | OpenCode | 单色 |
-| `openclaw` | OpenClaw | 彩色 |
-| `qodercli` | Qoder | 彩色 |
-| `qoderclicn` | Qoder CN | 彩色(Qoder 底图 + 右下角 CN 角标) |
-| `zcode-gui` | ZCode | 单色(ZCode 官方 Z 字形) |
+| type          | 名称         | 类型                              |
+| ------------- | ------------ | --------------------------------- |
+| `antigravity` | Antigravity  | 彩色                              |
+| `codex`       | Codex        | 彩色                              |
+| `claude-code` | Claude Code  | 彩色                              |
+| `codebuddy`   | CodeBuddy    | 彩色                              |
+| `hermes`      | Hermes       | 单色                              |
+| `kimi-code`   | Kimi Code    | 彩色                              |
+| `mcode`       | MiniMax Code | 彩色                              |
+| `opencode`    | OpenCode     | 单色                              |
+| `openclaw`    | OpenClaw     | 彩色                              |
+| `qodercli`    | Qoder        | 彩色                              |
+| `qoderclicn`  | Qoder CN     | 彩色(Qoder 底图 + 右下角 CN 角标) |
+| `zcode-gui`   | ZCode        | 单色(ZCode 官方 Z 字形)           |
 
 `config/adapters.json` 中的每个 adapter type 均有对应图标,`getAdapterIcon`
 对全部 12 类都返回结果。

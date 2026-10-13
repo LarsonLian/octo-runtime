@@ -45,8 +45,14 @@ export async function callDaemon<T = unknown>(
   try {
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("daemon connection timed out")), timeoutMs);
-      socket.once("connect", () => { clearTimeout(timer); resolve(); });
-      socket.once("error", error => { clearTimeout(timer); reject(error); });
+      socket.once("connect", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      socket.once("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
     });
     socket.write(`${JSON.stringify({ jsonrpc: "2.0", id, ...request })}\n`);
     return await new Promise<T>((resolve, reject) => {
@@ -59,21 +65,30 @@ export async function callDaemon<T = unknown>(
         if (newline < 0) return;
         clearTimeout(timer);
         try {
-          const response = JSON.parse(buffered.slice(0, newline)) as { result?: T; error?: { message?: string } };
+          const response = JSON.parse(buffered.slice(0, newline)) as {
+            result?: T;
+            error?: { message?: string };
+          };
           if (response.error) throw new Error(response.error.message ?? "daemon request failed");
           resolve(response.result as T);
         } catch (error) {
           reject(error);
         }
       });
-      socket.once("end", () => { clearTimeout(timer); reject(new Error("daemon closed before responding")); });
+      socket.once("end", () => {
+        clearTimeout(timer);
+        reject(new Error("daemon closed before responding"));
+      });
     });
   } finally {
     socket.destroy();
   }
 }
 
-export async function probeDaemon(socketPath: string, timeoutMs = 2_000): Promise<DaemonStatus | undefined> {
+export async function probeDaemon(
+  socketPath: string,
+  timeoutMs = 2_000
+): Promise<DaemonStatus | undefined> {
   try {
     return await callDaemon<DaemonStatus>(socketPath, { method: "status" }, timeoutMs);
   } catch {

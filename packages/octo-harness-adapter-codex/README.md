@@ -127,17 +127,17 @@ Agent revision 的 `execution_profile.agent_config` 提供 `workdir`、`model`�
 
 以下字段通过 `agent create` 或 `agentConfig` 传入：
 
-| 字段 | 作用 | 默认 |
-|---|---|---|
-| `workdir` | Codex 进程 / thread / turn 的 cwd | 必填 |
-| `model` | 传给 thread 与 turn | 由 Codex 配置决定 |
-| `thinking` | 映射为 turn 的 `effort`；`disabled` 兼容映射为 `low` | 由 Codex 配置决定 |
-| `sandbox` | `read-only` / `workspace-write` / `danger-full-access` | `workspace-write` |
-| `autoApprove` | 显式为 `false` 时启用 Worker durable interaction；未配置或为 `true` 时兼容既有自动应答 | 自动应答 |
-| `dangerouslyBypassPermissions` | 为 `true` 时强制 sandbox 为 `danger-full-access`，优先级高于 `sandbox` | `false` |
-| `providerOptions.reasoningSummary` | reasoning summary 采集偏好 `auto/concise/detailed/none` | `auto`（`thinking:disabled` 时为 `none`） |
-| `providerOptions.appServerRequestTimeoutMs` | 单个 RPC 的超时 | `30000` |
-| `providerOptions.finalizationTimeoutMs` | 原生 `final_answer` 完成且无未完成 item/交互后，等待轮次结束的上限；新活动取消计时 | `15000` |
+| 字段                                        | 作用                                                                                   | 默认                                      |
+| ------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `workdir`                                   | Codex 进程 / thread / turn 的 cwd                                                      | 必填                                      |
+| `model`                                     | 传给 thread 与 turn                                                                    | 由 Codex 配置决定                         |
+| `thinking`                                  | 映射为 turn 的 `effort`；`disabled` 兼容映射为 `low`                                   | 由 Codex 配置决定                         |
+| `sandbox`                                   | `read-only` / `workspace-write` / `danger-full-access`                                 | `workspace-write`                         |
+| `autoApprove`                               | 显式为 `false` 时启用 Worker durable interaction；未配置或为 `true` 时兼容既有自动应答 | 自动应答                                  |
+| `dangerouslyBypassPermissions`              | 为 `true` 时强制 sandbox 为 `danger-full-access`，优先级高于 `sandbox`                 | `false`                                   |
+| `providerOptions.reasoningSummary`          | reasoning summary 采集偏好 `auto/concise/detailed/none`                                | `auto`（`thinking:disabled` 时为 `none`） |
+| `providerOptions.appServerRequestTimeoutMs` | 单个 RPC 的超时                                                                        | `30000`                                   |
+| `providerOptions.finalizationTimeoutMs`     | 原生 `final_answer` 完成且无未完成 item/交互后，等待轮次结束的上限；新活动取消计时     | `15000`                                   |
 
 最终答复完成后超过收尾期限，适配器请求 `turn/interrupt`，再等待最多 2 秒；没有终态则结束本次子进程。已有答复保留，异常以 `CODEX_FINALIZATION_TIMEOUT` 上报，不伪造成功、不重新提交问题。中断期间若收到正常 `completed`，仍按成功结束。原生中断或超时均需验证后续 `thread/resume`；该策略仅用于 Codex。
 

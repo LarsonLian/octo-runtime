@@ -81,9 +81,7 @@
             "include": [
               {
                 "resource_id": "a01f99ce-fb3b-424a-bc22-1df495b6409c",
-                "components": [
-                  "skill:review"
-                ]
+                "components": ["skill:review"]
               }
             ],
             "exclude": []
@@ -496,10 +494,7 @@
           "name": "selection",
           "payload": {
             "mode": "candidates",
-            "runtime_ids": [
-              "runtime-1",
-              "runtime-2"
-            ],
+            "runtime_ids": ["runtime-1", "runtime-2"],
             "strategy": "preferred_failover",
             "offline_behavior": "wait"
           }
@@ -622,10 +617,7 @@
           "name": "selection",
           "payload": {
             "mode": "candidates",
-            "runtime_ids": [
-              "runtime-1",
-              "runtime-1"
-            ],
+            "runtime_ids": ["runtime-1", "runtime-1"],
             "strategy": "preferred_failover"
           }
         }
@@ -718,10 +710,7 @@
             "include": [
               {
                 "resource_id": "b9300677-4cbd-44b2-8938-9a03ac3d88c3",
-                "components": [
-                  "skill:writer",
-                  "mcp:docs"
-                ]
+                "components": ["skill:writer", "mcp:docs"]
               }
             ],
             "exclude": []
@@ -2226,7 +2215,7 @@
                   "small_exp": 1e-7,
                   "small_decimal": 0.000001,
                   "large_decimal": 100000000000000000000,
-                  "large_exp": 1e+21,
+                  "large_exp": 1e21,
                   "rounded": 333333333.3333333,
                   "integer_rounding": 9007199254740992
                 }
@@ -2257,10 +2246,7 @@
                     "value": "ordinary-own-key"
                   },
                   "constructor": "ordinary-value",
-                  "data": [
-                    "<>&/",
-                    "😀"
-                  ]
+                  "data": ["<>&/", "😀"]
                 }
               }
             ]
@@ -2443,10 +2429,7 @@
                 "source": {
                   "nested": [
                     {
-                      "data": [
-                        "valid",
-                        "\udfff"
-                      ]
+                      "data": ["valid", "\udfff"]
                     }
                   ]
                 }
@@ -2550,9 +2533,7 @@
       "approval_mode": "ask",
       "model": "model-1",
       "effort": "high",
-      "required_execution_features": [
-        "tool.mcp.dynamic"
-      ],
+      "required_execution_features": ["tool.mcp.dynamic"],
       "runtime_limits": {
         "run_timeout_ms": 100
       },
@@ -2582,10 +2563,7 @@
       "adapter_type": "codex",
       "workdir": "/workspace",
       "approval_mode": "ask",
-      "required_execution_features": [
-        "tool.mcp.dynamic",
-        "tool.mcp.dynamic"
-      ]
+      "required_execution_features": ["tool.mcp.dynamic", "tool.mcp.dynamic"]
     }
   },
   {
@@ -2638,9 +2616,7 @@
       "adapter_type": "codex",
       "workdir": "/workspace",
       "approval_mode": "ask",
-      "required_execution_features": [
-        ""
-      ]
+      "required_execution_features": [""]
     },
     "error": "RESOLVED_EXECUTION_PLAN_INVALID"
   },
@@ -2652,9 +2628,7 @@
       "adapter_type": "codex",
       "workdir": "/workspace",
       "approval_mode": "ask",
-      "required_execution_features": [
-        1
-      ]
+      "required_execution_features": [1]
     },
     "error": "RESOLVED_EXECUTION_PLAN_INVALID"
   },
@@ -2666,11 +2640,7 @@
       "adapter_type": "codex",
       "workdir": "/workspace",
       "approval_mode": "ask",
-      "required_execution_features": [
-        [
-          "tool.mcp.dynamic"
-        ]
-      ]
+      "required_execution_features": [["tool.mcp.dynamic"]]
     },
     "error": "RESOLVED_EXECUTION_PLAN_INVALID"
   },
@@ -2682,9 +2652,7 @@
       "adapter_type": "codex",
       "workdir": "/workspace",
       "approval_mode": "ask",
-      "required_execution_features": [
-        null
-      ]
+      "required_execution_features": [null]
     },
     "error": "RESOLVED_EXECUTION_PLAN_INVALID"
   },
@@ -2854,10 +2822,7 @@
         "tool": {
           "type": "stdio",
           "command": "node",
-          "args": [
-            "server.mjs",
-            ""
-          ],
+          "args": ["server.mjs", ""],
           "env": {
             "MODE": "test",
             "EMPTY": ""
@@ -3598,10 +3563,7 @@
         "tool": {
           "type": "stdio",
           "command": "node",
-          "args": [
-            "ok",
-            1
-          ]
+          "args": ["ok", 1]
         }
       }
     },

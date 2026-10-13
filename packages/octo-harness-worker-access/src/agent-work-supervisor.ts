@@ -12,15 +12,12 @@ interface RuntimeEntry {
   error?: string;
 }
 
-/** Owns all profile connections while keeping provider capacity machine-scoped. */
+/** 管理各 profile 的独立连接，并在这些 Runtime 之间共享本机执行容量。 */
 export class AgentWorkSupervisor {
   readonly #entries: RuntimeEntry[];
   readonly #admission: SharedRunAdmission;
 
-  constructor(
-    options: AgentWorkRuntimeOptions[],
-    host: AdapterHostRpc
-  ) {
+  constructor(options: AgentWorkRuntimeOptions[], host: AdapterHostRpc) {
     const limit = options[0]?.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS;
     this.#admission = new SharedRunAdmission(limit);
     this.#entries = options.map((item, index) => ({
@@ -30,15 +27,15 @@ export class AgentWorkSupervisor {
   }
 
   get status(): Record<string, unknown> {
-    const runtimes: Array<Record<string, unknown>> = this.#entries.map(entry => ({
+    const runtimes: Array<Record<string, unknown>> = this.#entries.map((entry) => ({
       ...entry.runtime.status,
       ...(entry.error ? { error: entry.error } : {})
     }));
     return {
       enabled: runtimes.length > 0,
-      connected: runtimes.length > 0 && runtimes.every(runtime => runtime["connected"] === true),
+      connected: runtimes.length > 0 && runtimes.every((runtime) => runtime["connected"] === true),
       totalProfiles: runtimes.length,
-      connectedProfiles: runtimes.filter(runtime => runtime["connected"] === true).length,
+      connectedProfiles: runtimes.filter((runtime) => runtime["connected"] === true).length,
       activeRuns: this.#admission.active,
       maxConcurrentRuns: this.#admission.limit,
       runtimes
@@ -46,36 +43,43 @@ export class AgentWorkSupervisor {
   }
 
   async start(): Promise<void> {
-    await Promise.all(this.#entries.map(async entry => {
-      try {
-        await entry.runtime.start();
-        entry.error = undefined;
-      } catch (error) {
-        entry.error = errorMessage(error);
-        await entry.runtime.close().catch(() => undefined);
-      }
-    }));
+    await Promise.all(
+      this.#entries.map(async (entry) => {
+        try {
+          await entry.runtime.start();
+          entry.error = undefined;
+        } catch (error) {
+          entry.error = errorMessage(error);
+          await entry.runtime.close().catch(() => undefined);
+        }
+      })
+    );
   }
 
   beginDrain(): void {
     for (const entry of this.#entries) entry.runtime.beginDrain();
   }
 
-  readRunEvents(runId: string, streamId?: string, after = 0): ReturnType<AgentWorkRuntime["readRunEvents"]> {
-    const entry = this.#entries.find(item => item.runtime.hasRun(runId));
+  readRunEvents(
+    runId: string,
+    streamId?: string,
+    after = 0
+  ): ReturnType<AgentWorkRuntime["readRunEvents"]> {
+    const entry = this.#entries.find((item) => item.runtime.hasRun(runId));
     if (!entry) throw new Error("STREAM_EXPIRED");
     return entry.runtime.readRunEvents(runId, streamId, after);
   }
 
   async waitForDrained(timeoutMs: number): Promise<void> {
-    await Promise.all(this.#entries.map(entry => entry.runtime.waitForDrained(timeoutMs)));
+    await Promise.all(this.#entries.map((entry) => entry.runtime.waitForDrained(timeoutMs)));
   }
 
   async close(): Promise<void> {
-    await Promise.all(this.#entries.map(entry => entry.runtime.close()));
+    await Promise.all(this.#entries.map((entry) => entry.runtime.close()));
   }
 }
 
+/** 按入队顺序分配容量；等待可取消，释放函数幂等，避免重复释放导致超额执行。 */
 export class SharedRunAdmission implements RunAdmission {
   readonly limit: number;
   #active = 0;
@@ -87,7 +91,8 @@ export class SharedRunAdmission implements RunAdmission {
   }> = [];
 
   constructor(limit: number) {
-    if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("shared maxConcurrentRuns must be positive");
+    if (!Number.isSafeInteger(limit) || limit < 1)
+      throw new Error("shared maxConcurrentRuns must be positive");
     this.limit = limit;
   }
 
@@ -96,7 +101,8 @@ export class SharedRunAdmission implements RunAdmission {
   }
 
   acquire(signal: AbortSignal): Promise<() => void> {
-    if (signal.aborted) return Promise.reject(new Error("Run admission aborted", { cause: signal.reason }));
+    if (signal.aborted)
+      return Promise.reject(new Error("Run admission aborted", { cause: signal.reason }));
     return new Promise((resolve, reject) => {
       const waiter = {
         resolve,

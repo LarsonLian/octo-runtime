@@ -53,20 +53,39 @@ export class LaunchdUserBackend implements ServiceBackend {
 
   /** Report whether `launchctl` can address this user's `gui/<uid>` domain; no plist is written. */
   async probe(): Promise<ServiceProbe> {
-    if (this.#platform !== "darwin") return { supported: false, manager: this.kind, detail: "requires macOS" };
+    if (this.#platform !== "darwin")
+      return { supported: false, manager: this.kind, detail: "requires macOS" };
     if (this.#uid < 0 || !this.#homeDirectory) {
-      return { supported: false, manager: this.kind, detail: "current user home or uid is unavailable" };
+      return {
+        supported: false,
+        manager: this.kind,
+        detail: "current user home or uid is unavailable"
+      };
     }
     try {
-      const result = await runCommand(this.#runner, this.kind, this.#launchctl, ["print", this.#domain()], {
-        checked: false,
-        env: this.#environment
-      });
+      const result = await runCommand(
+        this.#runner,
+        this.kind,
+        this.#launchctl,
+        ["print", this.#domain()],
+        {
+          checked: false,
+          env: this.#environment
+        }
+      );
       return result.exitCode === 0
         ? { supported: true, manager: this.kind }
-        : { supported: false, manager: this.kind, detail: (result.stderr || result.stdout).trim() || "launchd user domain is unavailable" };
+        : {
+            supported: false,
+            manager: this.kind,
+            detail: (result.stderr || result.stdout).trim() || "launchd user domain is unavailable"
+          };
     } catch (error) {
-      return { supported: false, manager: this.kind, detail: error instanceof Error ? error.message : String(error) };
+      return {
+        supported: false,
+        manager: this.kind,
+        detail: error instanceof Error ? error.message : String(error)
+      };
     }
   }
 
@@ -77,7 +96,13 @@ export class LaunchdUserBackend implements ServiceBackend {
     const definitionPath = this.#definitionPath(label);
     const actual = await readDefinition(definitionPath);
     if (actual === undefined) {
-      return { manager: this.kind, state: "not_installed", enabled: false, definitionPath, drift: ["definition_missing"] };
+      return {
+        manager: this.kind,
+        state: "not_installed",
+        enabled: false,
+        definitionPath,
+        drift: ["definition_missing"]
+      };
     }
 
     const disabled = await this.#disabled(label);
@@ -106,7 +131,10 @@ export class LaunchdUserBackend implements ServiceBackend {
     // Remember whether launchd already owns an instance. This lets a changed
     // definition take effect without turning install into an implicit first start.
     const wasLoaded = (await this.#print(label)).exitCode === 0;
-    const changed = await writeDefinition(definitionPath, renderLaunchdPlistNormalized(normalized, label));
+    const changed = await writeDefinition(
+      definitionPath,
+      renderLaunchdPlistNormalized(normalized, label)
+    );
     await this.#setEnabled(label, normalized.enabled);
     if (changed && wasLoaded) {
       // launchd does not reload changed plist bytes in place. Replace a loaded
@@ -141,13 +169,23 @@ export class LaunchdUserBackend implements ServiceBackend {
     const normalized = await this.#installed(spec);
     const label = launchdLabel(normalized);
     if (await this.#disabled(label)) {
-      throw new ServiceError("SERVICE_DISABLED", "launchd service is disabled; call enable before start", { backend: this.kind });
+      throw new ServiceError(
+        "SERVICE_DISABLED",
+        "launchd service is disabled; call enable before start",
+        { backend: this.kind }
+      );
     }
     const printed = await this.#print(label);
     const state = printed.exitCode === 0 ? parseLaunchdPrint(printed.stdout).state : undefined;
     if (state === "running") return;
     if (printed.exitCode === 0) {
-      await runCommand(this.#runner, this.kind, this.#launchctl, ["kickstart", this.#target(label)], { env: this.#environment });
+      await runCommand(
+        this.#runner,
+        this.kind,
+        this.#launchctl,
+        ["kickstart", this.#target(label)],
+        { env: this.#environment }
+      );
     } else {
       await this.#bootstrap(this.#definitionPath(label));
     }
@@ -164,25 +202,39 @@ export class LaunchdUserBackend implements ServiceBackend {
     const normalized = await this.#installed(spec);
     const label = launchdLabel(normalized);
     if (await this.#disabled(label)) {
-      throw new ServiceError("SERVICE_DISABLED", "launchd service is disabled; call enable before restart", { backend: this.kind });
+      throw new ServiceError(
+        "SERVICE_DISABLED",
+        "launchd service is disabled; call enable before restart",
+        { backend: this.kind }
+      );
     }
     if ((await this.#print(label)).exitCode === 0) {
-      await runCommand(this.#runner, this.kind, this.#launchctl, ["kickstart", "-k", this.#target(label)], { env: this.#environment });
+      await runCommand(
+        this.#runner,
+        this.kind,
+        this.#launchctl,
+        ["kickstart", "-k", this.#target(label)],
+        { env: this.#environment }
+      );
     } else {
       await this.#bootstrap(this.#definitionPath(label));
     }
   }
 
   #normalize(spec: ServiceSpec): NormalizedServiceSpec {
-    if (this.#platform !== "darwin") throw new ServiceError("UNSUPPORTED_PLATFORM", "launchd backend requires macOS");
-    if (this.#uid < 0 || !this.#homeDirectory) throw new ServiceError("MANAGER_UNAVAILABLE", "current user home or uid is unavailable");
+    if (this.#platform !== "darwin")
+      throw new ServiceError("UNSUPPORTED_PLATFORM", "launchd backend requires macOS");
+    if (this.#uid < 0 || !this.#homeDirectory)
+      throw new ServiceError("MANAGER_UNAVAILABLE", "current user home or uid is unavailable");
     return normalizeServiceSpec(spec, "darwin");
   }
 
   async #installed(spec: ServiceSpec): Promise<NormalizedServiceSpec> {
     const normalized = this.#normalize(spec);
-    if (await readDefinition(this.#definitionPath(launchdLabel(normalized))) === undefined) {
-      throw new ServiceError("NOT_INSTALLED", "launchd service is not installed", { backend: this.kind });
+    if ((await readDefinition(this.#definitionPath(launchdLabel(normalized)))) === undefined) {
+      throw new ServiceError("NOT_INSTALLED", "launchd service is not installed", {
+        backend: this.kind
+      });
     }
     return normalized;
   }
@@ -191,8 +243,12 @@ export class LaunchdUserBackend implements ServiceBackend {
     return join(this.#homeDirectory, "Library", "LaunchAgents", `${label}.plist`);
   }
 
-  #domain(): string { return `gui/${this.#uid}`; }
-  #target(label: string): string { return `${this.#domain()}/${label}`; }
+  #domain(): string {
+    return `gui/${this.#uid}`;
+  }
+  #target(label: string): string {
+    return `${this.#domain()}/${label}`;
+  }
 
   #print(label: string) {
     return runCommand(this.#runner, this.kind, this.#launchctl, ["print", this.#target(label)], {
@@ -202,25 +258,45 @@ export class LaunchdUserBackend implements ServiceBackend {
   }
 
   async #disabled(label: string): Promise<boolean> {
-    const result = await runCommand(this.#runner, this.kind, this.#launchctl, ["print-disabled", this.#domain()], {
-      checked: false,
-      env: this.#environment
-    });
+    const result = await runCommand(
+      this.#runner,
+      this.kind,
+      this.#launchctl,
+      ["print-disabled", this.#domain()],
+      {
+        checked: false,
+        env: this.#environment
+      }
+    );
     if (result.exitCode !== 0) return false;
-    const match = result.stdout.match(new RegExp(`["']?${escapeRegExp(label)}["']?\\s*=>\\s*(true|false)`));
+    const match = result.stdout.match(
+      new RegExp(`["']?${escapeRegExp(label)}["']?\\s*=>\\s*(true|false)`)
+    );
     return match?.[1] === "true";
   }
 
   #setEnabled(label: string, enabled: boolean): Promise<unknown> {
-    return runCommand(this.#runner, this.kind, this.#launchctl, [enabled ? "enable" : "disable", this.#target(label)], {
-      env: this.#environment
-    });
+    return runCommand(
+      this.#runner,
+      this.kind,
+      this.#launchctl,
+      [enabled ? "enable" : "disable", this.#target(label)],
+      {
+        env: this.#environment
+      }
+    );
   }
 
   #bootstrap(definitionPath: string): Promise<unknown> {
-    return runCommand(this.#runner, this.kind, this.#launchctl, ["bootstrap", this.#domain(), definitionPath], {
-      env: this.#environment
-    });
+    return runCommand(
+      this.#runner,
+      this.kind,
+      this.#launchctl,
+      ["bootstrap", this.#domain(), definitionPath],
+      {
+        env: this.#environment
+      }
+    );
   }
 
   async #bootout(label: string): Promise<void> {
@@ -239,17 +315,21 @@ export function renderLaunchdPlist(spec: ServiceSpec): string {
 
 function renderLaunchdPlistNormalized(spec: NormalizedServiceSpec, label: string): string {
   const programArguments = [spec.command, ...spec.args]
-    .map(value => `      <string>${escapeXml(value)}</string>`)
+    .map((value) => `      <string>${escapeXml(value)}</string>`)
     .join("\n");
   const environment = Object.entries(spec.environment)
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `      <key>${escapeXml(key)}</key>\n      <string>${escapeXml(value)}</string>`)
+    .map(
+      ([key, value]) =>
+        `      <key>${escapeXml(key)}</key>\n      <string>${escapeXml(value)}</string>`
+    )
     .join("\n");
-  const keepAlive = spec.restart.policy === "always"
-    ? "    <true/>"
-    : spec.restart.policy === "on-failure"
-      ? "    <dict>\n      <key>SuccessfulExit</key>\n      <false/>\n    </dict>"
-      : "    <false/>";
+  const keepAlive =
+    spec.restart.policy === "always"
+      ? "    <true/>"
+      : spec.restart.policy === "on-failure"
+        ? "    <dict>\n      <key>SuccessfulExit</key>\n      <false/>\n    </dict>"
+        : "    <false/>";
   // RunAtLoad expresses autostart in the plist; launchctl's per-user disabled
   // override is the authoritative switch used by enable/disable.
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -285,7 +365,11 @@ function launchdLabel(spec: NormalizedServiceSpec): string {
   return label;
 }
 
-function parseLaunchdPrint(output: string): { state?: string; pid?: number; lastExitCode?: number } {
+function parseLaunchdPrint(output: string): {
+  state?: string;
+  pid?: number;
+  lastExitCode?: number;
+} {
   const state = output.match(/^\s*state\s*=\s*([^\r\n]+)$/m)?.[1]?.trim();
   const pid = parseOptionalInt(output.match(/^\s*pid\s*=\s*(\d+)$/m)?.[1]);
   const lastExitCode = parseOptionalInt(output.match(/^\s*last exit code\s*=\s*(-?\d+)$/m)?.[1]);

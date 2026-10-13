@@ -31,9 +31,13 @@ export class HarnessDaemon extends EventEmitter {
   async recover(): Promise<void> {
     for (const run of this.#store.listAgentRuns()) {
       if (run.status === "running") {
-        await this.#engine.terminalizeRun(run.id, { protocolVersion: 2,
+        await this.#engine.terminalizeRun(run.id, {
+          protocolVersion: 2,
           type: "run.failed",
-          payload: { code: "daemon_restarted", message: "daemon restarted while provider was active" }
+          payload: {
+            code: "daemon_restarted",
+            message: "daemon restarted while provider was active"
+          }
         });
       } else if (run.status === "queued") {
         this.#schedule(run.id);
@@ -62,7 +66,7 @@ export class HarnessDaemon extends EventEmitter {
           `daemon drain timed out with ${this.#admitting} admitting and ${this.#pending.size} active Runs`
         );
       }
-      await new Promise<void>(resolve => setTimeout(resolve, HEAD_POLL_MS));
+      await new Promise<void>((resolve) => setTimeout(resolve, HEAD_POLL_MS));
     }
   }
 
@@ -86,7 +90,8 @@ export class HarnessDaemon extends EventEmitter {
     this.#admitting += 1;
     try {
       const result = await this.#engine.submitAgentRun(input);
-      if (!result.deduplicated && !TERMINAL.has(result.agentRun.status)) this.#schedule(result.agentRun.id);
+      if (!result.deduplicated && !TERMINAL.has(result.agentRun.status))
+        this.#schedule(result.agentRun.id);
       return {
         accepted: !result.deduplicated,
         deduplicated: result.deduplicated,
@@ -107,13 +112,14 @@ export class HarnessDaemon extends EventEmitter {
         return this.#engine.executeRun(runId);
       })
       .catch(async (error: unknown) => {
-        await this.#engine.terminalizeRun(runId, { protocolVersion: 2,
+        await this.#engine.terminalizeRun(runId, {
+          protocolVersion: 2,
           type: "run.failed",
           payload: { code: "daemon_execution_error", message: errorMessage(error) }
         });
         return { run: this.#store.getAgentRun(runId), error };
       })
-      .then(result => {
+      .then((result) => {
         this.emit("agent_run.terminal", { runId, status: this.#store.getAgentRun(runId)?.status });
         for (const resolve of this.#waiters.get(runId) ?? []) resolve(result);
         this.#waiters.delete(runId);
@@ -128,7 +134,7 @@ export class HarnessDaemon extends EventEmitter {
       const run = this.#store.getAgentRun(runId);
       if (!run || TERMINAL.has(run.status)) return;
       if (this.#engine.canExecute(runId)) return;
-      await new Promise<void>(resolve => setTimeout(resolve, HEAD_POLL_MS));
+      await new Promise<void>((resolve) => setTimeout(resolve, HEAD_POLL_MS));
     }
     throw new Error("daemon stopped before AgentRun became executable");
   }
@@ -137,7 +143,7 @@ export class HarnessDaemon extends EventEmitter {
     const run = this.#store.getAgentRun(runId);
     if (!run) throw new Error(`agent run not found: ${runId}`);
     if (TERMINAL.has(run.status)) return { run, events: this.#store.getEvents(runId) };
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       const waiters = this.#waiters.get(runId) ?? [];
       waiters.push(resolve);
       this.#waiters.set(runId, waiters);

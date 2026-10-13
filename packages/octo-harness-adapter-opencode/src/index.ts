@@ -6,7 +6,14 @@ import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
  * Both transports normalize provider output into canonical events.
  */
 import { createAcpAdapter } from "@mininglamp-oss/octo-harness-adapter-acp";
-import { createJsonCliAdapter, probeCommand, providerInputText, type AdapterInvocationContext, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import {
+  createJsonCliAdapter,
+  probeCommand,
+  providerInputText,
+  type AdapterInvocationContext,
+  type CanonicalEvent,
+  type InvokeRequest
+} from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { executionFeatures } from "@mininglamp-oss/octo-harness-protocol";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -54,12 +61,14 @@ interface OpenCodeNativeEvent extends OpenCodePart {
  *
  */
 export async function buildOpenCodeCommand(req: InvokeRequest, command = "opencode") {
-  if (req.approvalMode !== "full_access") throw new Error("APPROVAL_MODE_UNSUPPORTED: opencode permission transport is not qualified");
+  if (req.approvalMode !== "full_access")
+    throw new Error("APPROVAL_MODE_UNSUPPORTED: opencode permission transport is not qualified");
   const directory = await mkdtemp(join(tmpdir(), "octo-harness-opencode-"));
   const instructions = join(directory, "instructions.md");
   await writeFile(instructions, req.controlInstructions, { mode: 0o600 });
   let inline: Record<string, unknown> = {};
-  if (process.env.OPENCODE_CONFIG_CONTENT) inline = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) as Record<string, unknown>;
+  if (process.env.OPENCODE_CONFIG_CONTENT)
+    inline = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) as Record<string, unknown>;
   const configuredInstructions = Array.isArray(inline.instructions)
     ? inline.instructions.filter((value): value is string => typeof value === "string")
     : [];
@@ -74,7 +83,9 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
   if (variant && variant !== "enabled" && variant !== "disabled") args.push("--variant", variant);
   args.push(providerInputText(req));
   return {
-    command, args, env: { OPENCODE_CONFIG_CONTENT: JSON.stringify(inline), OPENCODE_CLIENT: "octo-harness" },
+    command,
+    args,
+    env: { OPENCODE_CONFIG_CONTENT: JSON.stringify(inline), OPENCODE_CLIENT: "octo-harness" },
     rpcMethod: "process.argv",
     providerSessionId: req.providerSession?.sessionId,
     cleanup: () => rm(directory, { recursive: true, force: true })
@@ -87,12 +98,17 @@ export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEv
   const part: OpenCodePart = native.part ?? native;
   const sessionId = native.sessionID ?? native.sessionId ?? native.part?.sessionID;
   if ((native.type === "step_start" || native.type === "session.created") && sessionId) {
-    events.push({ protocolVersion: 2, type: "session.update", payload: { providerSession: { sessionId, resumable: true } } });
+    events.push({
+      protocolVersion: 2,
+      type: "session.update",
+      payload: { providerSession: { sessionId, resumable: true } }
+    });
   }
   const stepId = part.messageID;
   const timestamp = providerTimestamp(native.timestamp);
   if ((native.type === "step_start" || part.type === "step-start") && stepId) {
-    events.push({ protocolVersion: 2,
+    events.push({
+      protocolVersion: 2,
       type: "model_step.started",
       payload: { stepId, ...(timestamp === undefined ? {} : { startedAtMs: timestamp }) }
     });
@@ -100,10 +116,22 @@ export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEv
   const toolState = part.state;
   const toolId = part.callID ?? part.id;
   if ((native.type === "text" || part.type === "text") && typeof part.text === "string") {
-    events.push({ protocolVersion: 2, type: "message.delta", payload: { text: part.text, ...(stepId ? { stepId, messageId: `opencode:${part.id ?? `${stepId}:answer`}` } : part.id ? { messageId: `opencode:${part.id}` } : {}) } });
+    events.push({
+      protocolVersion: 2,
+      type: "message.delta",
+      payload: {
+        text: part.text,
+        ...(stepId
+          ? { stepId, messageId: `opencode:${part.id ?? `${stepId}:answer`}` }
+          : part.id
+            ? { messageId: `opencode:${part.id}` }
+            : {})
+      }
+    });
   }
   if ((native.type === "reasoning" || part.type === "reasoning") && typeof part.text === "string") {
-    events.push({ protocolVersion: 2,
+    events.push({
+      protocolVersion: 2,
       type: "message.delta",
       payload: {
         text: part.text,
@@ -115,15 +143,39 @@ export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEv
     });
   }
   if (part.type === "tool" && toolState?.status === "running" && toolId && part.tool) {
-    const args = isRecord(toolState.input) ? toolState.input : toolState.input == null ? {} : { value: toolState.input };
-    events.push({ protocolVersion: 2, type: "tool_call.create", payload: { status: "running", id: toolId, name: part.tool, args, ...(stepId ? { stepId } : {}) } });
+    const args = isRecord(toolState.input)
+      ? toolState.input
+      : toolState.input == null
+        ? {}
+        : { value: toolState.input };
+    events.push({
+      protocolVersion: 2,
+      type: "tool_call.create",
+      payload: {
+        status: "running",
+        id: toolId,
+        name: part.tool,
+        args,
+        ...(stepId ? { stepId } : {})
+      }
+    });
   }
-  if (part.type === "tool" && toolId && toolState?.status && ["completed", "error"].includes(toolState.status)) {
-    const args = isRecord(toolState.input) ? toolState.input : toolState.input == null ? {} : { value: toolState.input };
+  if (
+    part.type === "tool" &&
+    toolId &&
+    toolState?.status &&
+    ["completed", "error"].includes(toolState.status)
+  ) {
+    const args = isRecord(toolState.input)
+      ? toolState.input
+      : toolState.input == null
+        ? {}
+        : { value: toolState.input };
     const durationMs = toolDurationMs(toolState.time);
     // A terminal-only OpenCode frame carries enough identity to let the
     // projector create the item without inventing a duplicate start event.
-    events.push({ protocolVersion: 2,
+    events.push({
+      protocolVersion: 2,
       type: "tool_call.update",
       payload: {
         id: toolId,
@@ -136,7 +188,8 @@ export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEv
     });
   }
   if ((native.type === "step_finish" || part.type === "step-finish") && stepId) {
-    events.push({ protocolVersion: 2,
+    events.push({
+      protocolVersion: 2,
       type: "model_step.finished",
       payload: {
         stepId,
@@ -147,10 +200,27 @@ export function normalizeOpenCodeEvent(native: OpenCodeNativeEvent): CanonicalEv
     });
   }
   if (native.type === "step_finish" || part.type === "step-finish") {
-    events.push({ protocolVersion: 2, type: "usage.update", payload: { ...(part.tokens ?? native.usage ?? {}), cost: part.cost, ...(stepId ? { stepId } : {}) } });
-    if (part.reason === "stop") events.push({ protocolVersion: 2, type: "run.completed", payload: {} });
+    events.push({
+      protocolVersion: 2,
+      type: "usage.update",
+      payload: {
+        ...(part.tokens ?? native.usage ?? {}),
+        cost: part.cost,
+        ...(stepId ? { stepId } : {})
+      }
+    });
+    if (part.reason === "stop")
+      events.push({ protocolVersion: 2, type: "run.completed", payload: {} });
   }
-  if (native.type === "error") events.push({ protocolVersion: 2, type: "run.failed", payload: { message: native.error?.data?.message ?? native.error?.message ?? "OpenCode failed", providerError: native.error } });
+  if (native.type === "error")
+    events.push({
+      protocolVersion: 2,
+      type: "run.failed",
+      payload: {
+        message: native.error?.data?.message ?? native.error?.message ?? "OpenCode failed",
+        providerError: native.error
+      }
+    });
   return events;
 }
 
@@ -162,7 +232,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Return OpenCode's provider-measured whole-millisecond tool duration. */
 function toolDurationMs(time: { start?: unknown; end?: unknown } | undefined): number | undefined {
   if (typeof time?.start !== "number" || typeof time.end !== "number") return undefined;
-  if (!Number.isSafeInteger(time.start) || !Number.isSafeInteger(time.end) || time.end < time.start) return undefined;
+  if (!Number.isSafeInteger(time.start) || !Number.isSafeInteger(time.end) || time.end < time.start)
+    return undefined;
   return time.end - time.start;
 }
 
@@ -181,22 +252,44 @@ export class OpenCodeEventNormalizer {
   readonly #tools = new Set<string>();
 
   normalize(native: OpenCodeNativeEvent): CanonicalEvent[] {
-    return normalizeOpenCodeEvent(native).flatMap(event => {
-      if (event.type === "message.delta" && typeof event.payload.messageId === "string" && typeof event.payload.text === "string") {
+    return normalizeOpenCodeEvent(native).flatMap((event) => {
+      if (
+        event.type === "message.delta" &&
+        typeof event.payload.messageId === "string" &&
+        typeof event.payload.text === "string"
+      ) {
         const id = event.payload.messageId;
         const previous = this.#text.get(id);
         const text = event.payload.text;
         this.#text.set(id, text);
         if (previous === undefined) return [event];
         if (previous === text) return [];
-        if (text.startsWith(previous)) return [{ ...event, payload: { ...event.payload, text: text.slice(previous.length) } }];
-        return [{ protocolVersion: 2, type: "message.update", payload: { ...event.payload, status: "streaming" } }];
+        if (text.startsWith(previous))
+          return [{ ...event, payload: { ...event.payload, text: text.slice(previous.length) } }];
+        return [
+          {
+            protocolVersion: 2,
+            type: "message.update",
+            payload: { ...event.payload, status: "streaming" }
+          }
+        ];
       }
       if (event.type === "tool_call.create") {
         const id = event.payload.id;
         if (this.#tools.has(id)) {
           const output = (native.part ?? native).state?.output;
-          return output === undefined ? [] : [{ protocolVersion: 2, type: "tool_call.delta", payload: { id, outputSnapshot: typeof output === "string" ? output : JSON.stringify(output) } }];
+          return output === undefined
+            ? []
+            : [
+                {
+                  protocolVersion: 2,
+                  type: "tool_call.delta",
+                  payload: {
+                    id,
+                    outputSnapshot: typeof output === "string" ? output : JSON.stringify(output)
+                  }
+                }
+              ];
         }
         this.#tools.add(id);
       }
@@ -206,26 +299,67 @@ export class OpenCodeEventNormalizer {
 }
 
 export function createOpenCodeAdapter({ command = "opencode" }: { command?: string } = {}) {
-  const interactive = createAcpAdapter({ type: "opencode", provider: "opencode", command, args: ["acp"],
-    env: () => ({ OPENCODE_CLIENT: "octo-harness", OPENCODE_CONFIG_CONTENT: JSON.stringify({
-        ...(process.env.OPENCODE_CONFIG_CONTENT ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : {}), permission: "ask"
-      }) })
+  const interactive = createAcpAdapter({
+    type: "opencode",
+    provider: "opencode",
+    command,
+    args: ["acp"],
+    env: () => ({
+      OPENCODE_CLIENT: "octo-harness",
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({
+        ...(process.env.OPENCODE_CONFIG_CONTENT
+          ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT)
+          : {}),
+        permission: "ask"
+      })
+    })
   });
   const options: Parameters<typeof createJsonCliAdapter<OpenCodeNativeEvent>>[0] = {
-    metadata: { type: "opencode", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["session.serialize", "tool.canonical",  executionFeatures.INTERACTION_RESPONSE, executionFeatures.APPROVAL_ASK, executionFeatures.APPROVAL_FULL_ACCESS] },
-    probe: () => probeCommand(command), buildCommand: (req: InvokeRequest) => buildOpenCodeCommand(req, command), normalize: normalizeOpenCodeEvent,
-    onSuccess: (): CanonicalEvent[] => [{ protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "completed" } }, { protocolVersion: 2, type: "run.completed", payload: {} }]
+    metadata: {
+      type: "opencode",
+      capabilities: ["react"],
+      agentSources: ["provisioned"],
+      executionFeatures: [
+        "session.serialize",
+        "tool.canonical",
+        executionFeatures.INTERACTION_RESPONSE,
+        executionFeatures.APPROVAL_ASK,
+        executionFeatures.APPROVAL_FULL_ACCESS
+      ]
+    },
+    probe: () => probeCommand(command),
+    buildCommand: (req: InvokeRequest) => buildOpenCodeCommand(req, command),
+    normalize: normalizeOpenCodeEvent,
+    onSuccess: (): CanonicalEvent[] => [
+      {
+        protocolVersion: 2,
+        type: "message.update",
+        payload: { role: "assistant", status: "completed" }
+      },
+      { protocolVersion: 2, type: "run.completed", payload: {} }
+    ]
   };
   const adapter = createJsonCliAdapter<OpenCodeNativeEvent>(options);
-  return { ...adapter, respondInteraction: interactive.respondInteraction, async *invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncGenerator<CanonicalEvent> {
-      if (request.approvalMode === "assisted") throw new Error("APPROVAL_MODE_UNSUPPORTED: opencode has no qualified assisted policy");
+  return {
+    ...adapter,
+    respondInteraction: interactive.respondInteraction,
+    async *invoke(
+      request: InvokeRequest,
+      context?: AdapterInvocationContext
+    ): AsyncGenerator<CanonicalEvent> {
+      if (request.approvalMode === "assisted")
+        throw new Error("APPROVAL_MODE_UNSUPPORTED: opencode has no qualified assisted policy");
       if (request.approvalMode === "ask") {
         yield* interactive.invoke(request);
         return;
       }
       const normalizer = new OpenCodeEventNormalizer();
-      yield* createJsonCliAdapter<OpenCodeNativeEvent>({ ...options, normalize: native => normalizer.normalize(native) }).invoke(request, context);
-    } };
+      yield* createJsonCliAdapter<OpenCodeNativeEvent>({
+        ...options,
+        normalize: (native) => normalizer.normalize(native)
+      }).invoke(request, context);
+    }
+  };
 }
 
 export const opencodeAdapter = createOpenCodeAdapter();

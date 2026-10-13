@@ -1,5 +1,5 @@
 {
-  "name": "@mininglamp-oss/octo-harness-im",
+  "name": "@mininglamp-oss/octo-harness-channel-im",
   "version": "0.1.0",
   "type": "module",
   "exports": {

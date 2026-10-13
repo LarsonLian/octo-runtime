@@ -1,5 +1,9 @@
 import { invocationEnvironment } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { canonicalTerminalStatus, executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
+import {
+  canonicalTerminalStatus,
+  executionFeatures,
+  type InteractionResponse
+} from "@mininglamp-oss/octo-harness-protocol";
 /**
  * CodeBuddy adapter: wraps the CodeBuddy CLI spoken over ACP (Agent Client
  * Protocol) as JSON-RPC 2.0 on stdio, and normalizes its `session/update`
@@ -42,44 +46,74 @@ interface CodeBuddyUpdate extends AcpUpdate {
 export function normalizeCodeBuddyUpdate(update: CodeBuddyUpdate): CanonicalEvent[] {
   const type = update.sessionUpdate ?? update.type;
   if (type === "agent_message_chunk" || type === "agent_thought_chunk") {
-    const text = isRecord(update.content) && typeof update.content.text === "string" ? update.content.text : update.text;
+    const text =
+      isRecord(update.content) && typeof update.content.text === "string"
+        ? update.content.text
+        : update.text;
     if (typeof text !== "string") return [];
-    return [{ protocolVersion: 2,
-      type: "message.delta",
-      payload: type === "agent_thought_chunk"
-        ? {
-          // agent_thought_chunk is CodeBuddy's presentation-facing ACP reasoning stream.
-          text,
-          channel: "analysis",
-          exposure: "public_reasoning",
-          provenance: { provider: "codebuddy", nativeEvent: "agent_thought_chunk" }
-        }
-        : { text, channel: "final" }
-    }];
+    return [
+      {
+        protocolVersion: 2,
+        type: "message.delta",
+        payload:
+          type === "agent_thought_chunk"
+            ? {
+                // agent_thought_chunk is CodeBuddy's presentation-facing ACP reasoning stream.
+                text,
+                channel: "analysis",
+                exposure: "public_reasoning",
+                provenance: { provider: "codebuddy", nativeEvent: "agent_thought_chunk" }
+              }
+            : { text, channel: "final" }
+      }
+    ];
   }
   if (type === "tool_call") {
     if (!update.toolCallId) return [];
     if (acpToolTerminalStatus(update.status)) return normalizeAcpToolUpdate(update);
     const value = update.rawInput ?? update.input;
     const args = isRecord(value) ? value : value == null ? {} : { value };
-    return [{ protocolVersion: 2,
-      type: "tool_call.create",
-      payload: { status: "running", id: update.toolCallId, name: update.name ?? update.title ?? "provider_tool", args }
-    }];
+    return [
+      {
+        protocolVersion: 2,
+        type: "tool_call.create",
+        payload: {
+          status: "running",
+          id: update.toolCallId,
+          name: update.name ?? update.title ?? "provider_tool",
+          args
+        }
+      }
+    ];
   }
   if (type === "tool_call_update") {
     return normalizeAcpToolUpdate(update);
   }
-  if (type === "usage") return [{ protocolVersion: 2, type: "usage.update", payload: { ...update.usage, model: update.model } }];
+  if (type === "usage")
+    return [
+      {
+        protocolVersion: 2,
+        type: "usage.update",
+        payload: { ...update.usage, model: update.model }
+      }
+    ];
   return [];
 }
 
 function isTerminalToolStatus(status: unknown): boolean {
-  return typeof status === "string" && ["completed", "failed", "error", "cancelled", "canceled", "stopped"].includes(status.toLowerCase());
+  return (
+    typeof status === "string" &&
+    ["completed", "failed", "error", "cancelled", "canceled", "stopped"].includes(
+      status.toLowerCase()
+    )
+  );
 }
 
 function isCancelledStopReason(reason: unknown): boolean {
-  return typeof reason === "string" && ["cancelled", "canceled", "interrupted", "aborted"].includes(reason.toLowerCase());
+  return (
+    typeof reason === "string" &&
+    ["cancelled", "canceled", "interrupted", "aborted"].includes(reason.toLowerCase())
+  );
 }
 
 /**
@@ -88,10 +122,25 @@ function isCancelledStopReason(reason: unknown): boolean {
  * new one. The final message/run terminals are synthesized here because ACP
  * prompt streams end silently rather than with a terminal.
  */
-export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, command = "codebuddy" }: { acpClientFactory?: typeof spawnAcpClient; command?: string } = {}) {
+export function createCodeBuddyAdapter({
+  acpClientFactory = spawnAcpClient,
+  command = "codebuddy"
+}: { acpClientFactory?: typeof spawnAcpClient; command?: string } = {}) {
   const responders = new Map<string, AcpApprovalBridge>();
   return defineAdapter({
-    metadata: { type: "codebuddy", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["session.serialize", "tool.canonical", executionFeatures.INTERACTION_RESPONSE, executionFeatures.APPROVAL_ASK, executionFeatures.APPROVAL_ASSISTED, executionFeatures.APPROVAL_FULL_ACCESS] },
+    metadata: {
+      type: "codebuddy",
+      capabilities: ["react"],
+      agentSources: ["provisioned"],
+      executionFeatures: [
+        "session.serialize",
+        "tool.canonical",
+        executionFeatures.INTERACTION_RESPONSE,
+        executionFeatures.APPROVAL_ASK,
+        executionFeatures.APPROVAL_ASSISTED,
+        executionFeatures.APPROVAL_FULL_ACCESS
+      ]
+    },
     probe: () => probeCommand(command),
     async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
       const bridge = responders.get(invocationId);
@@ -103,13 +152,18 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
       const permissions = new AcpApprovalBridge(req);
       responders.set(req.invocationId, permissions);
       async function* execute(): AsyncGenerator<CanonicalEvent> {
-        const client = await Promise.resolve(acpClientFactory({
-          command, args: ["--acp", "--permission-mode", codeBuddyPermissionMode(req.approvalMode)],
-          env: invocationEnvironment(req),
-          cwd: req.workdir, signal: req.signal, permissionHandler: params => permissions.requestPermission(params),
-          onPermissionResponseWritten: params => permissions.responseWritten(params),
-          onPermissionResponseFailed: (params, error) => permissions.responseFailed(params, error)
-        }));
+        const client = await Promise.resolve(
+          acpClientFactory({
+            command,
+            args: ["--acp", "--permission-mode", codeBuddyPermissionMode(req.approvalMode)],
+            env: invocationEnvironment(req),
+            cwd: req.workdir,
+            signal: req.signal,
+            permissionHandler: (params) => permissions.requestPermission(params),
+            onPermissionResponseWritten: (params) => permissions.responseWritten(params),
+            onPermissionResponseFailed: (params, error) => permissions.responseFailed(params, error)
+          })
+        );
         permissions.bindTransport(() => client.close());
         try {
           await client.initialize();
@@ -123,21 +177,32 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
 
           const requestOptions = {
             requestId: sessionRequestId,
-            ...(requestedSessionId ? { timeoutMs: 600_000 } : {}),
+            ...(requestedSessionId ? { timeoutMs: 600_000 } : {})
           };
           const sessionResult = await client.request(sessionMethod, sessionParams, requestOptions);
           if (requestedSessionId) {
             session = { id: requestedSessionId };
           } else {
-            const sessionId = isRecord(sessionResult) && typeof sessionResult.sessionId === "string"
-              ? sessionResult.sessionId
-              : undefined;
+            const sessionId =
+              isRecord(sessionResult) && typeof sessionResult.sessionId === "string"
+                ? sessionResult.sessionId
+                : undefined;
             if (!sessionId) throw new Error("ACP session/new returned no sessionId");
             session = { id: sessionId };
           }
           // The AgentSession stores only the provider sessionId; both the
           // new and resume paths converge on the same ACP prompt stream.
-          yield { protocolVersion: 2, type: "session.update", payload: { providerSession: { sessionId: session.id, resumable: true, model: req.agentConfig?.model } } };
+          yield {
+            protocolVersion: 2,
+            type: "session.update",
+            payload: {
+              providerSession: {
+                sessionId: session.id,
+                resumable: true,
+                model: req.agentConfig?.model
+              }
+            }
+          };
           const prompt = `${providerInputText(req)}\n\n${req.controlInstructions}`;
           const promptParams = acpPromptParams(session.id, prompt);
           const promptRequestId = client.reserveRequestId();
@@ -148,52 +213,84 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
           const turn = new AcpTurnNormalizer("codebuddy");
           for await (const update of client.prompt(session.id, prompt, {
             requestId: promptRequestId,
-            params: promptParams,
+            params: promptParams
           })) {
             if (update.type === "prompt_result") {
               promptStopReason = update.stopReason;
               promptFinishReason = update.finishReason;
               continue;
             }
-            const events = turn.normalize(update.sessionUpdate ?? update.type, normalizeCodeBuddyUpdate(update));
+            const events = turn.normalize(
+              update.sessionUpdate ?? update.type,
+              normalizeCodeBuddyUpdate(update)
+            );
             for (const event of events) {
               const toolID = typeof event.payload.id === "string" ? event.payload.id : undefined;
               if (event.type === "tool_call.create" && toolID) activeToolIds.add(toolID);
-              if (event.type === "tool_call.update" && toolID && isTerminalToolStatus(event.payload.status)) activeToolIds.delete(toolID);
+              if (
+                event.type === "tool_call.update" &&
+                toolID &&
+                isTerminalToolStatus(event.payload.status)
+              )
+                activeToolIds.delete(toolID);
               yield event;
             }
           }
           const cancelled = isCancelledStopReason(promptStopReason);
           if (cancelled) {
             for (const id of activeToolIds) {
-              yield { protocolVersion: 2, type: "tool_call.update", payload: { id, status: canonicalTerminalStatus("cancelled") } };
+              yield {
+                protocolVersion: 2,
+                type: "tool_call.update",
+                payload: { id, status: canonicalTerminalStatus("cancelled") }
+              };
             }
           }
-          for (const event of turn.finish(promptFinishReason ?? promptStopReason, cancelled ? "cancelled" : "completed")) yield event;
-          const terminalMessage: CanonicalEvent = { protocolVersion: 2,
+          for (const event of turn.finish(
+            promptFinishReason ?? promptStopReason,
+            cancelled ? "cancelled" : "completed"
+          ))
+            yield event;
+          const terminalMessage: CanonicalEvent = {
+            protocolVersion: 2,
             type: "message.update",
             payload: { role: "assistant", status: cancelled ? "stopped" : "completed" }
           };
           yield terminalMessage;
           yield cancelled
-            ? { protocolVersion: 2, type: "run.cancelled", payload: { reason: promptStopReason ?? "cancelled", ...(promptFinishReason ? { finishReason: promptFinishReason } : {}) } }
+            ? {
+                protocolVersion: 2,
+                type: "run.cancelled",
+                payload: {
+                  reason: promptStopReason ?? "cancelled",
+                  ...(promptFinishReason ? { finishReason: promptFinishReason } : {})
+                }
+              }
             : { protocolVersion: 2, type: "run.completed", payload: {} };
         } finally {
           await client.close?.();
         }
       }
-      try { yield* permissions.stream(execute()); }
-      finally { permissions.close("execution_lost"); responders.delete(req.invocationId); }
+      try {
+        yield* permissions.stream(execute());
+      } finally {
+        permissions.close("execution_lost");
+        responders.delete(req.invocationId);
+      }
     }
   });
 }
 
 export function codeBuddyPermissionMode(mode: InvokeRequest["approvalMode"]): string {
   switch (mode) {
-    case "ask": return "default";
-    case "assisted": return "auto";
-    case "full_access": return "bypassPermissions";
-    default: throw new Error("APPROVAL_MODE_UNSUPPORTED");
+    case "ask":
+      return "default";
+    case "assisted":
+      return "auto";
+    case "full_access":
+      return "bypassPermissions";
+    default:
+      throw new Error("APPROVAL_MODE_UNSUPPORTED");
   }
 }
 

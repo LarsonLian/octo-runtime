@@ -44,21 +44,22 @@ import {
   type CanonicalEvent
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
 
-interface NativeEvent { type?: string; text?: string; }
+interface NativeEvent {
+  type?: string;
+  text?: string;
+}
 
 export const exampleAdapter = createJsonCliAdapter<NativeEvent>({
   metadata: { type: "example", capabilities: [] },
   probe: () => probeCommand("example-cli"),
-  buildCommand: request => ({
+  buildCommand: (request) => ({
     command: "example-cli",
     args: ["--json"],
     cwd: request.workdir,
     input: providerInputText(request)
   }),
   normalize: (native): CanonicalEvent[] =>
-    native.type === "text"
-      ? [{ type: "message.delta", payload: { text: native.text ?? "" } }]
-      : [],
+    native.type === "text" ? [{ type: "message.delta", payload: { text: native.text ?? "" } }] : [],
   onSuccess: () => [
     { type: "message.update", payload: { status: "completed" } },
     { type: "run.finished", payload: {} }

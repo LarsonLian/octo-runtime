@@ -1,4 +1,16 @@
-import { defineAdapter, hasImageInput, invocationEnvironment, mapReasoningEffort, parseJsonLine, probeCommand, providerInputText, spawnJsonLines, type CanonicalEvent, type CommandSpec, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import {
+  defineAdapter,
+  hasImageInput,
+  invocationEnvironment,
+  mapReasoningEffort,
+  parseJsonLine,
+  probeCommand,
+  providerInputText,
+  spawnJsonLines,
+  type CanonicalEvent,
+  type CommandSpec,
+  type InvokeRequest
+} from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,11 +42,26 @@ export interface AntigravityNativeEvent {
   event?: string;
   conversation_id?: string;
   step_update?: NativeStep;
-  result?: { conversation_id?: string; status?: string; response?: string; error?: string; usage?: NativeUsage };
+  result?: {
+    conversation_id?: string;
+    status?: string;
+    response?: string;
+    error?: string;
+    usage?: NativeUsage;
+  };
 }
 
-interface MessageState { id: string; text: string; done: boolean }
-interface ToolState { id: string; name: string; args: Record<string, unknown>; done: boolean }
+interface MessageState {
+  id: string;
+  text: string;
+  done: boolean;
+}
+interface ToolState {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+  done: boolean;
+}
 
 export class AntigravityEventNormalizer {
   readonly #messages = new Map<number, MessageState>();
@@ -44,22 +71,38 @@ export class AntigravityEventNormalizer {
   #result: AntigravityNativeEvent["result"];
   #finished = false;
 
-  constructor(readonly invocationId: string, readonly resumed = false) {}
+  constructor(
+    readonly invocationId: string,
+    readonly resumed = false
+  ) {}
 
-  get hasResult(): boolean { return this.#result !== undefined; }
+  get hasResult(): boolean {
+    return this.#result !== undefined;
+  }
 
   normalize(native: AntigravityNativeEvent): CanonicalEvent[] {
     if (this.#result || this.#finished) return [];
     const events: CanonicalEvent[] = [];
-    const sessionId = native.conversation_id ?? native.step_update?.conversation_id ?? native.result?.conversation_id;
+    const sessionId =
+      native.conversation_id ??
+      native.step_update?.conversation_id ??
+      native.result?.conversation_id;
     if (sessionId && sessionId !== this.#sessionId) {
       this.#sessionId = sessionId;
-      events.push({ protocolVersion: 2, type: "session.update", payload: { providerSession: { sessionId, resumable: true } } });
+      events.push({
+        protocolVersion: 2,
+        type: "session.update",
+        payload: { providerSession: { sessionId, resumable: true } }
+      });
     }
     if (native.event === "result") {
-      if (!native.result || typeof native.result.status !== "string"
-        || (native.result.response !== undefined && typeof native.result.response !== "string")
-        || (native.result.error !== undefined && typeof native.result.error !== "string")) throw new Error("ANTIGRAVITY_RESULT_INVALID");
+      if (
+        !native.result ||
+        typeof native.result.status !== "string" ||
+        (native.result.response !== undefined && typeof native.result.response !== "string") ||
+        (native.result.error !== undefined && typeof native.result.error !== "string")
+      )
+        throw new Error("ANTIGRAVITY_RESULT_INVALID");
       this.#result = native.result;
       const response = native.result.response;
       if (typeof response === "string" && response) {
@@ -69,9 +112,16 @@ export class AntigravityEventNormalizer {
           const message = this.#message(-1, events);
           message.text = response;
           events.push(this.#snapshot(message, "streaming"));
-        } else if (messages.map(message => message.text).join("") !== response && last.text !== response) {
-          const prefix = messages.slice(0, -1).map(message => message.text).join("");
-          last.text = prefix && response.startsWith(prefix) ? response.slice(prefix.length) : response;
+        } else if (
+          messages.map((message) => message.text).join("") !== response &&
+          last.text !== response
+        ) {
+          const prefix = messages
+            .slice(0, -1)
+            .map((message) => message.text)
+            .join("");
+          last.text =
+            prefix && response.startsWith(prefix) ? response.slice(prefix.length) : response;
           last.done = false;
           events.push(this.#snapshot(last, "streaming"));
         }
@@ -90,11 +140,18 @@ export class AntigravityEventNormalizer {
       if (typeof step.text_delta === "string" && step.text_delta) {
         const message = this.#message(index, events);
         message.text += step.text_delta;
-        events.push({ protocolVersion: 2, type: "message.delta", payload: { messageId: message.id, channel: "final", text: step.text_delta } });
+        events.push({
+          protocolVersion: 2,
+          type: "message.delta",
+          payload: { messageId: message.id, channel: "final", text: step.text_delta }
+        });
       }
       if (done) {
         const message = this.#messages.get(index);
-        if (message) { message.done = true; events.push(this.#snapshot(message, "completed")); }
+        if (message) {
+          message.done = true;
+          events.push(this.#snapshot(message, "completed"));
+        }
       }
     } else if (step.step_type === "tool" && (done || step.state?.toUpperCase() === "ACTIVE")) {
       let tool = this.#tools.get(index);
@@ -102,21 +159,43 @@ export class AntigravityEventNormalizer {
       if (!tool) {
         const name = step.tool_name ?? step.tool_info?.name;
         if (!name) return events;
-        tool = { id: `antigravity:${this.invocationId}:tool:${index}`, name, args: normalizeToolInput(step.tool_info?.parameters ?? {}), done: false };
+        tool = {
+          id: `antigravity:${this.invocationId}:tool:${index}`,
+          name,
+          args: normalizeToolInput(step.tool_info?.parameters ?? {}),
+          done: false
+        };
         this.#tools.set(index, tool);
-        events.push({ protocolVersion: 2, type: "tool_call.create", payload: { id: tool.id, name, args: tool.args, status: "running" } });
+        events.push({
+          protocolVersion: 2,
+          type: "tool_call.create",
+          payload: { id: tool.id, name, args: tool.args, status: "running" }
+        });
       }
       if (done) {
         tool.done = true;
-        events.push({ protocolVersion: 2, type: "tool_call.update", payload: {
-            id: tool.id, status: step.tool_info?.error ? "failed" : "completed",
+        events.push({
+          protocolVersion: 2,
+          type: "tool_call.update",
+          payload: {
+            id: tool.id,
+            status: step.tool_info?.error ? "failed" : "completed",
             ...(step.tool_info?.output !== undefined ? { output: step.tool_info.output } : {}),
             ...(step.tool_info?.error ? { error: step.tool_info.error } : {})
-          } });
+          }
+        });
       } else if (step.tool_info?.output !== undefined) {
-        events.push({ protocolVersion: 2, type: "tool_call.delta", payload: {
-            id: tool.id, outputSnapshot: typeof step.tool_info.output === "string" ? step.tool_info.output : JSON.stringify(step.tool_info.output)
-          } });
+        events.push({
+          protocolVersion: 2,
+          type: "tool_call.delta",
+          payload: {
+            id: tool.id,
+            outputSnapshot:
+              typeof step.tool_info.output === "string"
+                ? step.tool_info.output
+                : JSON.stringify(step.tool_info.output)
+          }
+        });
       }
     }
     return events;
@@ -127,18 +206,36 @@ export class AntigravityEventNormalizer {
     this.#finished = true;
     const result = this.#result;
     const status = result?.status?.toUpperCase();
-    const isCancelled = cancelled || status === "CANCELED" || status === "CANCELLED" || status === "INTERRUPTED";
-    const response = [...this.#messages.values()].map(message => message.text).join("");
-    const succeeded = !error && !isCancelled && status === "SUCCESS" && !result?.error && !!result?.response?.trim();
+    const isCancelled =
+      cancelled || status === "CANCELED" || status === "CANCELLED" || status === "INTERRUPTED";
+    const response = [...this.#messages.values()].map((message) => message.text).join("");
+    const succeeded =
+      !error &&
+      !isCancelled &&
+      status === "SUCCESS" &&
+      !result?.error &&
+      !!result?.response?.trim();
     const events: CanonicalEvent[] = [];
     for (const message of this.#messages.values()) {
-      if (!message.done) events.push(this.#snapshot(message, succeeded ? "completed" : isCancelled ? "cancelled" : "failed"));
+      if (!message.done)
+        events.push(
+          this.#snapshot(message, succeeded ? "completed" : isCancelled ? "cancelled" : "failed")
+        );
     }
     for (const tool of this.#tools.values()) {
-      if (!tool.done) events.push({ protocolVersion: 2, type: "tool_call.update", payload: { id: tool.id, status: isCancelled ? "cancelled" : "failed" } });
+      if (!tool.done)
+        events.push({
+          protocolVersion: 2,
+          type: "tool_call.update",
+          payload: { id: tool.id, status: isCancelled ? "cancelled" : "failed" }
+        });
     }
     // Result usage is cumulative on resumed sessions; only DONE steps belong to this invocation.
-    const usages = this.#usage.size ? [...this.#usage.values()] : !this.resumed && result?.usage ? [result.usage] : [];
+    const usages = this.#usage.size
+      ? [...this.#usage.values()]
+      : !this.resumed && result?.usage
+        ? [result.usage]
+        : [];
     if (usages.length) {
       const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
       for (const native of usages) {
@@ -149,13 +246,26 @@ export class AntigravityEventNormalizer {
       }
       events.push({ protocolVersion: 2, type: "usage.update", payload: usage });
     }
-    events.push(isCancelled
-      ? { protocolVersion: 2, type: "run.cancelled", payload: {} }
-      : succeeded ? { protocolVersion: 2, type: "run.completed", payload: {} }
-        : { protocolVersion: 2, type: "run.failed", payload: {
-            code: "ANTIGRAVITY_EXECUTION_FAILED",
-            message: error instanceof Error ? error.message : result?.error || (result ? `Antigravity returned ${status ?? "INVALID"}${response.trim() ? "" : " without an answer"}` : "Antigravity exited without a result event")
-          } });
+    events.push(
+      isCancelled
+        ? { protocolVersion: 2, type: "run.cancelled", payload: {} }
+        : succeeded
+          ? { protocolVersion: 2, type: "run.completed", payload: {} }
+          : {
+              protocolVersion: 2,
+              type: "run.failed",
+              payload: {
+                code: "ANTIGRAVITY_EXECUTION_FAILED",
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : result?.error ||
+                      (result
+                        ? `Antigravity returned ${status ?? "INVALID"}${response.trim() ? "" : " without an answer"}`
+                        : "Antigravity exited without a result event")
+              }
+            }
+    );
     return events;
   }
 
@@ -164,13 +274,30 @@ export class AntigravityEventNormalizer {
     if (!message) {
       message = { id: `antigravity:${this.invocationId}:message:${index}`, text: "", done: false };
       this.#messages.set(index, message);
-      events.push({ protocolVersion: 2, type: "message.create", payload: { messageId: message.id, role: "assistant", channel: "final", status: "streaming" } });
+      events.push({
+        protocolVersion: 2,
+        type: "message.create",
+        payload: { messageId: message.id, role: "assistant", channel: "final", status: "streaming" }
+      });
     }
     return message;
   }
 
-  #snapshot(message: MessageState, status: "streaming" | "completed" | "failed" | "cancelled"): CanonicalEvent {
-    return { protocolVersion: 2, type: "message.update", payload: { messageId: message.id, role: "assistant", channel: "final", status, text: message.text } };
+  #snapshot(
+    message: MessageState,
+    status: "streaming" | "completed" | "failed" | "cancelled"
+  ): CanonicalEvent {
+    return {
+      protocolVersion: 2,
+      type: "message.update",
+      payload: {
+        messageId: message.id,
+        role: "assistant",
+        channel: "final",
+        status,
+        text: message.text
+      }
+    };
   }
 }
 
@@ -180,52 +307,118 @@ function tokens(value: number | undefined): number {
 
 function normalizeToolInput(parameters: Record<string, unknown>): Record<string, unknown> {
   const input = { ...parameters };
-  for (const [from, to] of [["CommandLine", "command"], ["AbsolutePath", "file_path"], ["TargetFile", "file_path"], ["CodeContent", "content"], ["TargetContent", "old_string"], ["ReplacementContent", "new_string"]]) {
-    if (!(to in input) && from in input) { input[to] = input[from]; delete input[from]; }
+  for (const [from, to] of [
+    ["CommandLine", "command"],
+    ["AbsolutePath", "file_path"],
+    ["TargetFile", "file_path"],
+    ["CodeContent", "content"],
+    ["TargetContent", "old_string"],
+    ["ReplacementContent", "new_string"]
+  ]) {
+    if (!(to in input) && from in input) {
+      input[to] = input[from];
+      delete input[from];
+    }
   }
   return input;
 }
 
 const managedFlags = new Set([
-  "-p", "--print", "--prompt", "-i", "--prompt-interactive", "-c", "--continue",
-  "--conversation", "--model", "--effort", "--agent", "--input-format", "--output-format",
-  "--dangerously-skip-permissions", "--mode", "--print-timeout", "--log-file", "--add-dir", "--project", "--new-project", "--sandbox"
+  "-p",
+  "--print",
+  "--prompt",
+  "-i",
+  "--prompt-interactive",
+  "-c",
+  "--continue",
+  "--conversation",
+  "--model",
+  "--effort",
+  "--agent",
+  "--input-format",
+  "--output-format",
+  "--dangerously-skip-permissions",
+  "--mode",
+  "--print-timeout",
+  "--log-file",
+  "--add-dir",
+  "--project",
+  "--new-project",
+  "--sandbox"
 ]);
 
-export function buildAntigravityCommand(request: InvokeRequest, command = "agy", commandArgsPrefix: string[] = [], logPath?: string): CommandSpec {
-  if (request.approvalMode !== "full_access") throw new Error("APPROVAL_MODE_UNSUPPORTED: antigravity only supports full_access");
+export function buildAntigravityCommand(
+  request: InvokeRequest,
+  command = "agy",
+  commandArgsPrefix: string[] = [],
+  logPath?: string
+): CommandSpec {
+  if (request.approvalMode !== "full_access")
+    throw new Error("APPROVAL_MODE_UNSUPPORTED: antigravity only supports full_access");
   if (request.signal?.aborted) throw new Error("ANTIGRAVITY_CANCELLED_BEFORE_START");
   if (hasImageInput(request)) throw new Error("ANTIGRAVITY_IMAGE_INPUT_UNSUPPORTED");
   for (const arg of commandArgsPrefix) {
-    if (managedFlags.has(arg.split("=")[0]) || /^-[pic].+/.test(arg)) throw new Error(`ANTIGRAVITY_MANAGED_ARGUMENT: ${arg.split("=")[0]}`);
+    if (managedFlags.has(arg.split("=")[0]) || /^-[pic].+/.test(arg))
+      throw new Error(`ANTIGRAVITY_MANAGED_ARGUMENT: ${arg.split("=")[0]}`);
   }
   const effort = mapReasoningEffort("antigravity", request.agentConfig.effort);
-  const args = [...commandArgsPrefix, "--input-format", "stream-json", "--output-format", "stream-json", "--dangerously-skip-permissions", "--mode", "accept-edits", "--print-timeout", "0"];
+  const args = [
+    ...commandArgsPrefix,
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--dangerously-skip-permissions",
+    "--mode",
+    "accept-edits",
+    "--print-timeout",
+    "0"
+  ];
   if (logPath) args.push("--log-file", logPath);
-  if (request.providerSession?.sessionId) args.push("--conversation", request.providerSession.sessionId);
+  if (request.providerSession?.sessionId)
+    args.push("--conversation", request.providerSession.sessionId);
   if (request.agentConfig.model) args.push("--model", request.agentConfig.model);
   if (effort) args.push("--effort", effort);
   // agy has no system-prompt flag. Keep the documented user-channel degradation explicit and never rewrite AGENTS.md.
   const content = request.controlInstructions
-    ? [{ type: "text", text: `Harness control instructions (apply to this turn):\n${request.controlInstructions}` }, { type: "text", text: `User input:\n${providerInputText(request)}` }]
+    ? [
+        {
+          type: "text",
+          text: `Harness control instructions (apply to this turn):\n${request.controlInstructions}`
+        },
+        { type: "text", text: `User input:\n${providerInputText(request)}` }
+      ]
     : providerInputText(request);
   const input = `${JSON.stringify({ event: "user", message: { content } })}\n`;
-  return { command, args, input, cwd: request.workdir, };
+  return { command, args, input, cwd: request.workdir };
 }
 
 export function antigravityLogError(log: string): string | undefined {
-  if (/timed out waiting for response/i.test(log)) return "ANTIGRAVITY_TIMEOUT: CLI timed out waiting for the response";
+  if (/timed out waiting for response/i.test(log))
+    return "ANTIGRAVITY_TIMEOUT: CLI timed out waiting for the response";
   const match = /exiting agent loop due to error:\s*([^\r\n]+)/i.exec(log);
-  if (match && /not logged|authentication required/i.test(match[1])) return "ANTIGRAVITY_AUTH_REQUIRED: agy could not read the signed-in account; open agy in your terminal and check the active account";
+  if (match && /not logged|authentication required/i.test(match[1]))
+    return "ANTIGRAVITY_AUTH_REQUIRED: agy could not read the signed-in account; open agy in your terminal and check the active account";
   return match ? `ANTIGRAVITY_PROVIDER_ERROR: ${match[1].slice(0, 1000)}` : undefined;
 }
 
-export function createAntigravityAdapter({ command = "agy", commandArgsPrefix = [] }: { command?: string; commandArgsPrefix?: string[] } = {}) {
+export function createAntigravityAdapter({
+  command = "agy",
+  commandArgsPrefix = []
+}: { command?: string; commandArgsPrefix?: string[] } = {}) {
   return defineAdapter({
-    metadata: { type: "antigravity", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["approval.full_access", "session.serialize", "tool.canonical"], processModel: "subprocess-per-invocation", transport: "ndjson/stdio" },
+    metadata: {
+      type: "antigravity",
+      capabilities: ["react"],
+      agentSources: ["provisioned"],
+      executionFeatures: ["approval.full_access", "session.serialize", "tool.canonical"],
+      processModel: "subprocess-per-invocation",
+      transport: "ndjson/stdio"
+    },
     probe: async () => {
       const result = await probeCommand(command);
-      if (result.available && (!result.version || compareVersion(result.version, "1.3.3") < 0)) return { ...result, available: false, reason: "provider_version_unsupported" };
+      if (result.available && (!result.version || compareVersion(result.version, "1.3.3") < 0))
+        return { ...result, available: false, reason: "provider_version_unsupported" };
       return result;
     },
     async *invoke(request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
@@ -236,7 +429,10 @@ export function createAntigravityAdapter({ command = "agy", commandArgsPrefix = 
       const abort = () => controller.abort();
       request.signal?.addEventListener("abort", abort, { once: true });
       if (request.signal?.aborted) abort();
-      const normalizer = new AntigravityEventNormalizer(request.invocationId, !!request.providerSession?.sessionId);
+      const normalizer = new AntigravityEventNormalizer(
+        request.invocationId,
+        !!request.providerSession?.sessionId
+      );
       let providerError: Error | undefined;
       let pendingLogCheck: Promise<void> | undefined;
       const checkLog = async () => {
@@ -245,20 +441,35 @@ export function createAntigravityAdapter({ command = "agy", commandArgsPrefix = 
         pendingLogCheck = (async () => {
           try {
             const error = antigravityLogError(await readFile(logPath, "utf8"));
-            if (error && !normalizer.hasResult) { providerError = new Error(error); controller.abort(); }
-          } catch { /* The CLI has not created its log yet. */ }
+            if (error && !normalizer.hasResult) {
+              providerError = new Error(error);
+              controller.abort();
+            }
+          } catch {
+            /* The CLI has not created its log yet. */
+          }
         })();
-        try { await pendingLogCheck; } finally { pendingLogCheck = undefined; }
+        try {
+          await pendingLogCheck;
+        } finally {
+          pendingLogCheck = undefined;
+        }
       };
-      const timer = setInterval(() => { void checkLog(); }, 250);
+      const timer = setInterval(() => {
+        void checkLog();
+      }, 250);
       timer.unref();
       const spec = buildAntigravityCommand(request, command, commandArgsPrefix, logPath);
       try {
-        for await (const native of spawnJsonLines({ ...spec, env: invocationEnvironment(request, spec.env), signal: controller.signal,
+        for await (const native of spawnJsonLines({
+          ...spec,
+          env: invocationEnvironment(request, spec.env),
+          signal: controller.signal,
           parseLine: (line): AntigravityNativeEvent | null => {
             if (!line.trim()) return null;
             const value = parseJsonLine(line);
-            if (!value || typeof value.event !== "string") throw new Error("ANTIGRAVITY_OUTPUT_INVALID: expected an NDJSON event");
+            if (!value || typeof value.event !== "string")
+              throw new Error("ANTIGRAVITY_OUTPUT_INVALID: expected an NDJSON event");
             return value;
           }
         })) {
@@ -285,7 +496,9 @@ function compareVersion(version: string, minimum: string): number {
   if (!match) return -1;
   const current = match.slice(1).map(Number);
   const expected = minimum.split(".").map(Number);
-  for (let i = 0; i < 3; i++) { if (current[i] !== expected[i]) return current[i] - expected[i]; }
+  for (let i = 0; i < 3; i++) {
+    if (current[i] !== expected[i]) return current[i] - expected[i];
+  }
   return 0;
 }
 

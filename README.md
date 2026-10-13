@@ -37,7 +37,7 @@ flowchart TB
 
 图中的 AgentRun IPC 是执行语义；现有底层接口为 `AdapterHostRpc`，通过 stdio NDJSON JSON-RPC 传输 `invoke`、`cancel`、`interaction.respond`，返回 `invoke.event` / `invoke.done`。接入层先校验并转换为 `InvokeRequest`，再调用 Daemon 注入的共享 Host 客户端。Daemon 对外的 UDS / Windows Pipe 控制接口与这条内部 Host IPC 是两层不同的传输。
 
-当前本地链路为 `IM Server WS → octo-harness-im → AdapterHostRpc → adapter-host → Adapter`，最终文本通过 IM WS 一次回发。IM 包本地分配 eventId/runId，使用固定 Context v3、发起人元数据与 fullAccess；不调用旧 `octo-agent-access`，不等待 Worker 下发或 SSE。图中到 AgentWorkerAccess 的虚线是可选业务登记目标，当前不执行。远程执行仍由 Worker 接入包处理。本地助理同样通过 Host IPC 执行；外部业务可订阅本地源事件流。
+当前本地链路为 `IM Server WS → octo-harness-channel-im → AdapterHostRpc → adapter-host → Adapter`，最终文本通过 IM WS 一次回发。IM 包本地分配 eventId/runId，使用固定 Context v3、发起人元数据与 fullAccess；不调用旧 `octo-agent-access`，不等待 Worker 下发或 SSE。图中到 AgentWorkerAccess 的虚线是可选业务登记目标，当前不执行。远程执行仍由 Worker 接入包处理。本地助理同样通过 Host IPC 执行；外部业务可订阅本地源事件流。
 
 ## 模块责任边界
 
@@ -47,7 +47,7 @@ flowchart TB
 | [Daemon 启动器](apps/daemon/README.md) | 配置解析、启动与信号转发 | Worker WS 业务实现 |
 | [Daemon 包](packages/octo-harness-daemon/README.md) | 接入模块装配、共享 Host 生命周期、本地 IPC、观测和本地执行调度 | IM 会话和消息投递、Worker 传输实现 |
 | [Worker 接入](packages/octo-harness-worker-access/README.md) | 注册、Worker WS、重连、命令校验、远端准备回执、执行事件回传 | 拉起第二个 Host、IM Server WS |
-| [IM 接入](packages/octo-harness-im/README.md) | bf_token 注册、IM WS、私聊会话、/session、/reset、最终文本回发 | 直接调用 provider、独立 Daemon、聊天 SQLite 的隐式引入 |
+| [IM 接入](packages/octo-harness-channel-im/README.md) | bf_token 注册、IM WS、私聊会话、/session、/reset、最终文本回发 | 直接调用 provider、独立 Daemon、聊天 SQLite 的隐式引入 |
 | [Adapter Host](packages/octo-harness-adapter-host/README.md) | 统一 IPC、invocation 生命周期、调用和取消、标准事件 | 消息来源、群聊规则、Worker 注册 |
 | [Context Builder](packages/octo-harness-context-builder/README.md) | 上下文构造；Node 子入口提供本地准备、编译、压缩 | Worker HTTP 回执、IM 投递、Run 创建 |
 | [Core](packages/octo-harness-core/README.md) | 本地 AgentSession/AgentRun 状态与通用执行引擎 | IM/Loop 业务模型、WS 接入 |
@@ -70,7 +70,7 @@ apps/
 packages/
   octo-harness-daemon/              模块装配、本地 IPC、共享 Host 生命周期
   octo-harness-worker-access/       Worker WS 接入与远端执行编排
-  octo-harness-im/                  IM 专用 WS、私聊会话与结果回发
+  octo-harness-channel-im/                  IM 专用 WS、私聊会话与结果回发
   octo-harness-adapter-host/        共享执行 Host + NDJSON RPC
   octo-harness-context-builder/     通用上下文构造与 Node 准备工具
   octo-harness-core/                本地执行状态与引擎
@@ -151,6 +151,15 @@ pnpm test
 ```
 
 测试使用 fake provider 和临时 SQLite，不调用真实模型。
+
+新增或修改代码后，使用 Prettier 格式化本次改动的文件，再检查格式。例如：
+
+```bash
+pnpm format 'packages/octo-harness-channel-im/src/**/*.ts' test/im-runtime.test.js
+pnpm format:check 'packages/octo-harness-channel-im/src/**/*.ts' test/im-runtime.test.js
+```
+
+`format` 和 `format:check` 均需传入文件或 glob；格式化不替代类型检查、ESLint 和测试。
 
 ## ZCode GUI Adapter
 

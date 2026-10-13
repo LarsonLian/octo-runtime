@@ -67,20 +67,34 @@ export function resolveEmbeddedHome(
   if (platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
     if (!localAppData) {
-      throw new EmbeddedHarnessError("HOME_UNAVAILABLE", "home", false, "LOCALAPPDATA is required on Windows");
+      throw new EmbeddedHarnessError(
+        "HOME_UNAVAILABLE",
+        "home",
+        false,
+        "LOCALAPPDATA is required on Windows"
+      );
     }
     return win32.join(localAppData, slug, "OctoHarness");
   }
-  if (platform === "darwin") return join(userHome, "Library", "Application Support", slug, "octo-harness");
-  return join(env.XDG_STATE_HOME?.trim() || join(userHome, ".local", "state"), slug, "octo-harness");
+  if (platform === "darwin")
+    return join(userHome, "Library", "Application Support", slug, "octo-harness");
+  return join(
+    env.XDG_STATE_HOME?.trim() || join(userHome, ".local", "state"),
+    slug,
+    "octo-harness"
+  );
 }
 
-export function embeddedHomePaths(homeInput: string, platform: NodeJS.Platform = process.platform): EmbeddedHomePaths {
+export function embeddedHomePaths(
+  homeInput: string,
+  platform: NodeJS.Platform = process.platform
+): EmbeddedHomePaths {
   const home = validateHome(homeInput, platform);
   const run = join(home, "run");
-  const socket = platform === "win32"
-    ? `\\\\.\\pipe\\octo-harness-embedded-${createHash("sha256").update(home.toLowerCase()).digest("hex").slice(0, 16)}`
-    : join(home, "sockets", "octo-harness-daemon.sock");
+  const socket =
+    platform === "win32"
+      ? `\\\\.\\pipe\\octo-harness-embedded-${createHash("sha256").update(home.toLowerCase()).digest("hex").slice(0, 16)}`
+      : join(home, "sockets", "octo-harness-daemon.sock");
   return {
     home,
     machineFile: join(home, "machine.json"),
@@ -96,16 +110,27 @@ export function embeddedHomePaths(homeInput: string, platform: NodeJS.Platform =
 
 export function accountKeyFor(subjectType: string, subjectId: string): string {
   if (subjectType !== "user" || !subjectId.trim()) {
-    throw new EmbeddedHarnessError("SUBJECT_INVALID", "home", false, "a stable user subject is required");
+    throw new EmbeddedHarnessError(
+      "SUBJECT_INVALID",
+      "home",
+      false,
+      "a stable user subject is required"
+    );
   }
   return base32Hash(`${subjectType}\0${subjectId.trim()}`, 20);
 }
 
 export function profileNameFor(appId: string, tenantId: string): string {
-  if (!tenantId.trim()) throw new EmbeddedHarnessError("TENANT_INVALID", "home", false, "tenant id is required");
+  if (!tenantId.trim())
+    throw new EmbeddedHarnessError("TENANT_INVALID", "home", false, "tenant id is required");
   const name = `${appSlug(appId)}-${base32Hash(tenantId.trim(), 20)}`;
   if (!PROFILE_PATTERN.test(name)) {
-    throw new EmbeddedHarnessError("PROFILE_INVALID", "home", false, `generated profile is invalid: ${name}`);
+    throw new EmbeddedHarnessError(
+      "PROFILE_INVALID",
+      "home",
+      false,
+      `generated profile is invalid: ${name}`
+    );
   }
   return name;
 }
@@ -122,7 +147,8 @@ export function accountPaths(paths: EmbeddedHomePaths, accountKey: string): Embe
 }
 
 export function profilePaths(account: EmbeddedAccountPaths, name: string): EmbeddedProfilePaths {
-  if (!PROFILE_PATTERN.test(name)) throw new EmbeddedHarnessError("PROFILE_INVALID", "home", false, `invalid profile: ${name}`);
+  if (!PROFILE_PATTERN.test(name))
+    throw new EmbeddedHarnessError("PROFILE_INVALID", "home", false, `invalid profile: ${name}`);
   const root = join(account.root, name);
   return {
     name,
@@ -134,12 +160,18 @@ export function profilePaths(account: EmbeddedAccountPaths, name: string): Embed
 }
 
 export function ensureEmbeddedHome(paths: EmbeddedHomePaths): MachineIdentity {
-  for (const directory of [paths.home, paths.run, join(paths.home, "accounts")]) mkdirSync(directory, { recursive: true });
+  for (const directory of [paths.home, paths.run, join(paths.home, "accounts")])
+    mkdirSync(directory, { recursive: true });
   if (process.platform !== "win32") mkdirSync(dirname(paths.socket), { recursive: true });
   if (existsSync(paths.machineFile)) {
     const machine = readJson<MachineIdentity>(paths.machineFile);
     if (machine.schema_version !== 1 || !MACHINE_PATTERN.test(machine.machine_id)) {
-      throw new EmbeddedHarnessError("MACHINE_INVALID", "home", false, `invalid machine identity: ${paths.machineFile}`);
+      throw new EmbeddedHarnessError(
+        "MACHINE_INVALID",
+        "home",
+        false,
+        `invalid machine identity: ${paths.machineFile}`
+      );
     }
     return machine;
   }
@@ -149,17 +181,32 @@ export function ensureEmbeddedHome(paths: EmbeddedHomePaths): MachineIdentity {
 }
 
 export function ensureAccount(account: EmbeddedAccountPaths, profiles: readonly string[]): void {
-  if (profiles.length === 0) throw new EmbeddedHarnessError("TENANTS_EMPTY", "home", false, "at least one authorized tenant is required");
+  if (profiles.length === 0)
+    throw new EmbeddedHarnessError(
+      "TENANTS_EMPTY",
+      "home",
+      false,
+      "at least one authorized tenant is required"
+    );
   mkdirSync(account.logs, { recursive: true });
   for (const profile of profiles) {
     const paths = profilePaths(account, profile);
     mkdirSync(dirname(paths.identityFile), { recursive: true });
     mkdirSync(dirname(paths.credentialFile), { recursive: true });
   }
-  const existing = existsSync(account.configFile) ? readJson<Record<string, unknown>>(account.configFile) : {};
-  const currentDefault = typeof existing.default_profile === "string" ? existing.default_profile : undefined;
-  const defaultProfile = currentDefault && profiles.includes(currentDefault) ? currentDefault : [...profiles].sort()[0];
-  writeJsonAtomic(account.configFile, { ...existing, schema_version: 1, default_profile: defaultProfile, channel: "stable" });
+  const existing = existsSync(account.configFile)
+    ? readJson<Record<string, unknown>>(account.configFile)
+    : {};
+  const currentDefault =
+    typeof existing.default_profile === "string" ? existing.default_profile : undefined;
+  const defaultProfile =
+    currentDefault && profiles.includes(currentDefault) ? currentDefault : [...profiles].sort()[0];
+  writeJsonAtomic(account.configFile, {
+    ...existing,
+    schema_version: 1,
+    default_profile: defaultProfile,
+    channel: "stable"
+  });
 }
 
 export function acquireOwnerLock(paths: EmbeddedHomePaths): OwnerLock {
@@ -171,12 +218,21 @@ export function acquireOwnerLock(paths: EmbeddedHomePaths): OwnerLock {
     fd = acquire();
   } catch (error) {
     if (!isNodeError(error, "EEXIST") || lockOwnerAlive(paths.ownerLock)) {
-      throw new EmbeddedHarnessError("HOME_LOCKED", "home", false, "Embedded Harness Home is owned by another process", { cause: error });
+      throw new EmbeddedHarnessError(
+        "HOME_LOCKED",
+        "home",
+        false,
+        "Embedded Harness Home is owned by another process",
+        { cause: error }
+      );
     }
     rmSync(paths.ownerLock, { force: true });
     fd = acquire();
   }
-  writeFileSync(fd, `${JSON.stringify({ schema_version: 1, pid: process.pid, nonce, created_at: new Date().toISOString() })}\n`);
+  writeFileSync(
+    fd,
+    `${JSON.stringify({ schema_version: 1, pid: process.pid, nonce, created_at: new Date().toISOString() })}\n`
+  );
   fsyncSync(fd);
   let released = false;
   return {
@@ -199,7 +255,9 @@ export function readJson<T>(path: string): T {
   try {
     return JSON.parse(readFileSync(path, "utf8")) as T;
   } catch (error) {
-    throw new EmbeddedHarnessError("LOCAL_STATE_INVALID", "home", false, `cannot read ${path}`, { cause: error });
+    throw new EmbeddedHarnessError("LOCAL_STATE_INVALID", "home", false, `cannot read ${path}`, {
+      cause: error
+    });
   }
 }
 
@@ -230,24 +288,50 @@ export function removeFile(path: string): void {
 function validateHome(homeInput: string, platform: NodeJS.Platform): string {
   const pathApi = platform === "win32" ? win32 : { isAbsolute, resolve, parse };
   if (!homeInput.trim() || !pathApi.isAbsolute(homeInput)) {
-    throw new EmbeddedHarnessError("HOME_INVALID", "home", false, "Embedded Harness Home must be an absolute path");
+    throw new EmbeddedHarnessError(
+      "HOME_INVALID",
+      "home",
+      false,
+      "Embedded Harness Home must be an absolute path"
+    );
   }
   const home = pathApi.resolve(homeInput);
   const root = pathApi.parse(home).root;
-  if (home === root) throw new EmbeddedHarnessError("HOME_INVALID", "home", false, "filesystem root cannot be used as Embedded Harness Home");
+  if (home === root)
+    throw new EmbeddedHarnessError(
+      "HOME_INVALID",
+      "home",
+      false,
+      "filesystem root cannot be used as Embedded Harness Home"
+    );
   if (platform === "win32") {
     const input = homeInput.replaceAll("/", "\\");
     if (input.startsWith("\\\\") || input.startsWith("\\\\?\\") || /^[A-Za-z]:[^\\]/.test(input)) {
-      throw new EmbeddedHarnessError("HOME_UNSUPPORTED", "home", false, "Windows Embedded Harness Home must be a local absolute path");
+      throw new EmbeddedHarnessError(
+        "HOME_UNSUPPORTED",
+        "home",
+        false,
+        "Windows Embedded Harness Home must be a local absolute path"
+      );
     }
   }
   return home;
 }
 
 function appSlug(appId: string): string {
-  const slug = appId.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+  const slug = appId
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
   if (!slug || !/^[a-z0-9]/.test(slug)) {
-    throw new EmbeddedHarnessError("APP_ID_INVALID", "home", false, "appId must contain an ASCII letter or digit");
+    throw new EmbeddedHarnessError(
+      "APP_ID_INVALID",
+      "home",
+      false,
+      "appId must contain an ASCII letter or digit"
+    );
   }
   return slug;
 }
@@ -286,7 +370,13 @@ function renameWithRetry(source: string, target: string): void {
     }
   }
   rmSync(source, { force: true });
-  throw new EmbeddedHarnessError("WRITE_FAILED", "home", true, `cannot atomically replace ${target}`, { cause: lastError });
+  throw new EmbeddedHarnessError(
+    "WRITE_FAILED",
+    "home",
+    true,
+    `cannot atomically replace ${target}`,
+    { cause: lastError }
+  );
 }
 
 function lockOwnerAlive(path: string): boolean {
@@ -301,5 +391,7 @@ function lockOwnerAlive(path: string): boolean {
 }
 
 function isNodeError(error: unknown, code: string): boolean {
-  return error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === code;
+  return (
+    error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === code
+  );
 }

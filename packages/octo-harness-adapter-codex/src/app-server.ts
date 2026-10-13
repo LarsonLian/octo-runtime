@@ -1,5 +1,9 @@
 import { invocationEnvs, mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { canonicalTerminalStatus, contextHash, providerInputParts } from "@mininglamp-oss/octo-harness-protocol";
+import {
+  canonicalTerminalStatus,
+  contextHash,
+  providerInputParts
+} from "@mininglamp-oss/octo-harness-protocol";
 import { codexEnvironmentConfig } from "./environment.js";
 /**
  * Codex app-server transport and event adaptation layer.
@@ -103,7 +107,10 @@ export class CodexAppServerRpcError extends Error {
 
 /** Error for when the subprocess exits without producing a run terminal, preserving exit code/signal. */
 export class CodexAppServerProcessError extends Error {
-  constructor(message: string, readonly exit: ProcessExit) {
+  constructor(
+    message: string,
+    readonly exit: ProcessExit
+  ) {
     super(message);
     this.name = "CodexAppServerProcessError";
   }
@@ -138,8 +145,15 @@ export async function* runCodexAppServerTurn({
 }): AsyncGenerator<CanonicalEvent> {
   const requestTimeoutMs = appServerRequestTimeout(request);
   const interactive = request.approvalMode !== "full_access";
-  let client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, interactive, request, context);
-  onInteractionResponder?.(response => client.respondInteraction(response));
+  let client = new CodexAppServerClient(
+    spec,
+    spawnFn,
+    requestTimeoutMs,
+    interactive,
+    request,
+    context
+  );
+  onInteractionResponder?.((response) => client.respondInteraction(response));
   let terminal = false;
 
   try {
@@ -153,16 +167,26 @@ export async function* runCodexAppServerTurn({
       onInteractionResponder?.(undefined);
       await client.close();
       throwIfAborted(request.signal);
-      client = new CodexAppServerClient(spec, spawnFn, requestTimeoutMs, interactive, request, context);
-      onInteractionResponder?.(response => client.respondInteraction(response));
+      client = new CodexAppServerClient(
+        spec,
+        spawnFn,
+        requestTimeoutMs,
+        interactive,
+        request,
+        context
+      );
+      onInteractionResponder?.((response) => client.respondInteraction(response));
       await initializeClient(client);
     }
     client.notify("initialized");
     let environmentConfig: JsonRecord | undefined;
     if (Object.keys(invocationEnvs(request)).length) {
-      const result = recordValue(await client.request("config/read", { includeLayers: false, cwd: request.workdir }));
+      const result = recordValue(
+        await client.request("config/read", { includeLayers: false, cwd: request.workdir })
+      );
       const config = recordValue(result?.config);
-      if (!config) throw new Error("CONTEXT_ENVS_UNAVAILABLE: provider effective configuration is missing");
+      if (!config)
+        throw new Error("CONTEXT_ENVS_UNAVAILABLE: provider effective configuration is missing");
       environmentConfig = codexEnvironmentConfig(request, config);
     }
 
@@ -174,7 +198,10 @@ export async function* runCodexAppServerTurn({
 
     if (requestedSessionId) {
       try {
-        threadResult = await client.request("thread/resume", threadParams(request, { threadId: requestedSessionId }, environmentConfig));
+        threadResult = await client.request(
+          "thread/resume",
+          threadParams(request, { threadId: requestedSessionId }, environmentConfig)
+        );
         resumed = true;
       } catch (error) {
         // A failed resume does not abort this turn; record a low-cardinality reason and fall back to a fresh thread.
@@ -183,7 +210,10 @@ export async function* runCodexAppServerTurn({
     }
 
     if (!threadResult) {
-      threadResult = await client.request("thread/start", threadParams(request, { sessionStartSource: "startup" }, environmentConfig));
+      threadResult = await client.request(
+        "thread/start",
+        threadParams(request, { sessionStartSource: "startup" }, environmentConfig)
+      );
     }
 
     let threadId = extractThreadId(threadResult);
@@ -191,13 +221,19 @@ export async function* runCodexAppServerTurn({
     client.setActiveThread(threadId);
     let turnResult: unknown;
     try {
-      turnResult = await client.request("turn/start", turnParams(request, threadId, resumeFallback !== undefined));
+      turnResult = await client.request(
+        "turn/start",
+        turnParams(request, threadId, resumeFallback !== undefined)
+      );
     } catch (error) {
       // Some corrupt sessions pass thread/resume but only reveal the missing rollout at turn/start.
       if (!resumed || !isThreadNotFound(error)) throw error;
       resumeFallback = "turn_start_thread_not_found";
       resumed = false;
-      threadResult = await client.request("thread/start", threadParams(request, { sessionStartSource: "startup" }, environmentConfig));
+      threadResult = await client.request(
+        "thread/start",
+        threadParams(request, { sessionStartSource: "startup" }, environmentConfig)
+      );
       threadId = extractThreadId(threadResult);
       if (!threadId) {
         throw new Error("codex fresh fallback returned no thread id", { cause: error });
@@ -213,36 +249,55 @@ export async function* runCodexAppServerTurn({
     // 原生技能启用且 turn/start 已获确认，才报告本轮应用证据；loaded 不表示技能已实际调用。
     const compilation = recordValue(request.runMetadata?.contextCompilation);
     if (compilation) {
-      yield { protocolVersion: 2, type: "context.applied", payload: {
-          schema: "octo.context-application/v1", compiler_version: "octo.context-compiler/v4", catalog_version: "octo.context-catalog/v3",
-          context_hash: String(compilation.context_hash), compiled_hash: String(compilation.compiled_hash),
-          run_id: String(compilation.run_id), lease_id: String(compilation.lease_id), fencing_token: Number(compilation.fencing_token),
-          adapter_type: "codex", provider_session_id: threadId, provider_ack: "turn/start"
-        } };
+      yield {
+        protocolVersion: 2,
+        type: "context.applied",
+        payload: {
+          schema: "octo.context-application/v1",
+          compiler_version: "octo.context-compiler/v4",
+          catalog_version: "octo.context-catalog/v3",
+          context_hash: String(compilation.context_hash),
+          compiled_hash: String(compilation.compiled_hash),
+          run_id: String(compilation.run_id),
+          lease_id: String(compilation.lease_id),
+          fencing_token: Number(compilation.fencing_token),
+          adapter_type: "codex",
+          provider_session_id: threadId,
+          provider_ack: "turn/start"
+        }
+      };
     }
 
     // Must come after turn/start: otherwise the Core would persist a provider session that cannot be executed.
-    yield { protocolVersion: 2,
+    yield {
+      protocolVersion: 2,
       type: "session.update",
       payload: {
         providerSession: {
           sessionId: threadId,
           resumable: true,
           ...(resumed ? { resumeOutcome: "resumed" } : {}),
-          ...(resumeFallback ? {
-            resumeOutcome: "fresh_fallback",
-            resumeFallback,
-            contextInputVariant: request.freshFallbackModelInputParts || request.freshFallbackModelInput ? "recovery" : "primary"
-          } : {})
+          ...(resumeFallback
+            ? {
+                resumeOutcome: "fresh_fallback",
+                resumeFallback,
+                contextInputVariant:
+                  request.freshFallbackModelInputParts || request.freshFallbackModelInput
+                    ? "recovery"
+                    : "primary"
+              }
+            : {})
         }
       }
     };
     for await (const event of client.events()) {
       // The thread RPC response already produced the authoritative initial
       // update. Later lifecycle outcomes (such as compaction) must pass through.
-      if (event.type === "session.update"
-        && event.payload.providerSession?.sessionId === threadId
-        && event.payload.providerSession.resumeOutcome === undefined) {
+      if (
+        event.type === "session.update" &&
+        event.payload.providerSession?.sessionId === threadId &&
+        event.payload.providerSession.resumeOutcome === undefined
+      ) {
         continue;
       }
       terminal ||= isTerminalEvent(event);
@@ -253,30 +308,33 @@ export async function* runCodexAppServerTurn({
     if (!terminal) {
       // Ending without a terminal in the queue is a protocol/process anomaly and must not be disguised as success.
       const exit = await client.exit();
-      throw new CodexAppServerProcessError(
-        client.processErrorMessage(exit),
-        exit
-      );
+      throw new CodexAppServerProcessError(client.processErrorMessage(exit), exit);
     }
   } catch (error) {
     if (!terminal) {
       // AbortSignal takes priority in deciding cancelled semantics; all other errors project uniformly to provider run.failed.
       if (request.signal?.aborted) {
-        yield { protocolVersion: 2,
+        yield {
+          protocolVersion: 2,
           type: "run.cancelled",
           payload: { reason: String(request.signal.reason ?? "cancelled") }
         };
       } else {
         const code = stringErrorCode(error);
-        yield { protocolVersion: 2,
+        yield {
+          protocolVersion: 2,
           type: "run.failed",
           payload: {
             message: client.errorMessage(error),
             adapterType: "codex",
             ...(code ? { code } : {}),
-            ...(code === "RPC_TIMEOUT" ? {
-              timeoutStage: "rpc", timeoutReason: "rpc_timeout", timeoutMs: requestTimeoutMs
-            } : {})
+            ...(code === "RPC_TIMEOUT"
+              ? {
+                  timeoutStage: "rpc",
+                  timeoutReason: "rpc_timeout",
+                  timeoutMs: requestTimeoutMs
+                }
+              : {})
           }
         };
       }
@@ -298,23 +356,23 @@ function initializeClient(client: CodexAppServerClient): Promise<unknown> {
     capabilities: {
       experimentalApi: true,
       requestAttestation: false,
-      optOutNotificationMethods: [
-        "mcpServer/startupStatus/updated",
-        "remoteControl/status/changed"
-      ]
+      optOutNotificationMethods: ["mcpServer/startupStatus/updated", "remoteControl/status/changed"]
     }
   });
 }
 
 function isInitializeTimeout(error: unknown): boolean {
-  return error instanceof Error && /^codex app-server initialize timed out after \d+ms$/.test(error.message);
+  return (
+    error instanceof Error &&
+    /^codex app-server initialize timed out after \d+ms$/.test(error.message)
+  );
 }
 
 function stringErrorCode(error: unknown): string | undefined {
-  return error !== null
-    && typeof error === "object"
-    && "code" in error
-    && typeof error.code === "string"
+  return error !== null &&
+    typeof error === "object" &&
+    "code" in error &&
+    typeof error.code === "string"
     ? error.code
     : undefined;
 }
@@ -354,66 +412,154 @@ export class CodexEventNormalizer {
     switch (native.method) {
       case "turn/plan/updated": {
         const plan = Array.isArray(params.plan) ? params.plan : [];
-        return [{ protocolVersion: 2, type: "plan.updated", payload: {
-            planId: "codex:plan", revision: ++this.#planRevision,
-            explanation: typeof params.explanation === "string" ? params.explanation.slice(0, 4096) : null,
-            steps: plan.slice(0, 200).map(value => {
-              const step = recordValue(value) ?? {};
-              const status = step.status === "inProgress" ? "in_progress" : step.status === "completed" ? "completed" : "pending";
-              return { text: String(step.step ?? "").slice(0, 4096), status };
-            })
-          } }];
+        return [
+          {
+            protocolVersion: 2,
+            type: "plan.updated",
+            payload: {
+              planId: "codex:plan",
+              revision: ++this.#planRevision,
+              explanation:
+                typeof params.explanation === "string" ? params.explanation.slice(0, 4096) : null,
+              steps: plan.slice(0, 200).map((value) => {
+                const step = recordValue(value) ?? {};
+                const status =
+                  step.status === "inProgress"
+                    ? "in_progress"
+                    : step.status === "completed"
+                      ? "completed"
+                      : "pending";
+                return { text: String(step.step ?? "").slice(0, 4096), status };
+              })
+            }
+          }
+        ];
       }
       case "item/mcpToolCall/progress": {
         const id = itemId(params);
-        return id && typeof params.message === "string" ? [{ protocolVersion: 2, type: "tool_call.progress", payload: { id, progress: { message: params.message.slice(0, 4096) } } }] : [];
+        return id && typeof params.message === "string"
+          ? [
+              {
+                protocolVersion: 2,
+                type: "tool_call.progress",
+                payload: { id, progress: { message: params.message.slice(0, 4096) } }
+              }
+            ]
+          : [];
       }
       case "model/rerouted":
-        return typeof params.fromModel === "string" && typeof params.toModel === "string" ? [{ protocolVersion: 2, type: "run.notice", payload: { noticeId: `codex:notice:${++this.#noticeNumber}`, code: "model_rerouted", severity: "info", params: { fromModel: params.fromModel.slice(0, 191), toModel: params.toModel.slice(0, 191) } } }] : [];
+        return typeof params.fromModel === "string" && typeof params.toModel === "string"
+          ? [
+              {
+                protocolVersion: 2,
+                type: "run.notice",
+                payload: {
+                  noticeId: `codex:notice:${++this.#noticeNumber}`,
+                  code: "model_rerouted",
+                  severity: "info",
+                  params: {
+                    fromModel: params.fromModel.slice(0, 191),
+                    toModel: params.toModel.slice(0, 191)
+                  }
+                }
+              }
+            ]
+          : [];
       case "thread/started": {
-        const threadId = stringValue(params.threadId)
-          || stringValue(recordValue(params.thread)?.id)
-          || stringValue(recordValue(params.thread)?.sessionId);
-        return threadId ? [{ protocolVersion: 2,
-          type: "session.update",
-          payload: { providerSession: { sessionId: threadId, resumable: true } }
-        }] : [];
+        const threadId =
+          stringValue(params.threadId) ||
+          stringValue(recordValue(params.thread)?.id) ||
+          stringValue(recordValue(params.thread)?.sessionId);
+        return threadId
+          ? [
+              {
+                protocolVersion: 2,
+                type: "session.update",
+                payload: { providerSession: { sessionId: threadId, resumable: true } }
+              }
+            ]
+          : [];
       }
       case "thread/compacted": {
-        const threadId = stringValue(params.threadId)
-          || stringValue(recordValue(params.thread)?.id)
-          || stringValue(recordValue(params.thread)?.sessionId);
-        return threadId ? [{ protocolVersion: 2, type: "run.notice", payload: { noticeId: `codex:notice:${++this.#noticeNumber}`, code: "context_compacted", severity: "info", params: {} } }, { protocolVersion: 2,
-          type: "session.update",
-          payload: {
-            providerSession: {
-              sessionId: threadId,
-              resumable: true,
-              resumeOutcome: "compacted"
-            }
-          }
-        }] : [];
+        const threadId =
+          stringValue(params.threadId) ||
+          stringValue(recordValue(params.thread)?.id) ||
+          stringValue(recordValue(params.thread)?.sessionId);
+        return threadId
+          ? [
+              {
+                protocolVersion: 2,
+                type: "run.notice",
+                payload: {
+                  noticeId: `codex:notice:${++this.#noticeNumber}`,
+                  code: "context_compacted",
+                  severity: "info",
+                  params: {}
+                }
+              },
+              {
+                protocolVersion: 2,
+                type: "session.update",
+                payload: {
+                  providerSession: {
+                    sessionId: threadId,
+                    resumable: true,
+                    resumeOutcome: "compacted"
+                  }
+                }
+              }
+            ]
+          : [];
       }
       case "turn/started":
         this.#beginTurn(params);
         return [];
       case "item/agentMessage/delta":
-        return textDelta(params, this.#channelFor(params), undefined, undefined, this.#stepFor(params));
+        return textDelta(
+          params,
+          this.#channelFor(params),
+          undefined,
+          undefined,
+          this.#stepFor(params)
+        );
       case "item/reasoning/summaryTextDelta":
-        return textDelta(params, "analysis", "public_summary", "item/reasoning/summaryTextDelta", this.#stepFor(params));
+        return textDelta(
+          params,
+          "analysis",
+          "public_summary",
+          "item/reasoning/summaryTextDelta",
+          this.#stepFor(params)
+        );
       case "item/reasoning/textDelta":
-        return textDelta(params, "analysis", "private_reasoning", "item/reasoning/textDelta", this.#stepFor(params));
+        return textDelta(
+          params,
+          "analysis",
+          "private_reasoning",
+          "item/reasoning/textDelta",
+          this.#stepFor(params)
+        );
       case "item/plan/delta":
-        return textDelta(params, "analysis", "public_plan", "item/plan/delta", this.#stepFor(params));
+        return textDelta(
+          params,
+          "analysis",
+          "public_plan",
+          "item/plan/delta",
+          this.#stepFor(params)
+        );
       case "item/commandExecution/outputDelta":
       case "item/fileChange/outputDelta": {
         const id = itemId(params);
         const delta = stringValue(params.delta);
         const stepId = this.#stepFor(params);
-        return id && delta ? [{ protocolVersion: 2,
-          type: "tool_call.delta",
-          payload: { id, outputDelta: delta, ...(stepId ? { stepId } : {}) }
-        }] : [];
+        return id && delta
+          ? [
+              {
+                protocolVersion: 2,
+                type: "tool_call.delta",
+                payload: { id, outputDelta: delta, ...(stepId ? { stepId } : {}) }
+              }
+            ]
+          : [];
       }
       case "thread/tokenUsage/updated":
         return usageEvents(params);
@@ -427,7 +573,19 @@ export class CodexEventNormalizer {
           ...turnCompletedEvents(recordValue(params.turn))
         ];
       case "error": {
-        if (params.willRetry === true) return [{ protocolVersion: 2, type: "run.notice", payload: { noticeId: `codex:notice:${++this.#noticeNumber}`, code: "retry_scheduled", severity: "warning", params: { attempt: ++this.#attempt } } }];
+        if (params.willRetry === true)
+          return [
+            {
+              protocolVersion: 2,
+              type: "run.notice",
+              payload: {
+                noticeId: `codex:notice:${++this.#noticeNumber}`,
+                code: "retry_scheduled",
+                severity: "warning",
+                params: { attempt: ++this.#attempt }
+              }
+            }
+          ];
         // ErrorNotification is an in-turn diagnostic. Codex may still recover
         // after a failed tool and emit more items; turn/completed is the only
         // authoritative turn terminal.
@@ -438,10 +596,15 @@ export class CodexEventNormalizer {
           const id = itemId(params);
           const delta = stringValue(params.delta);
           const stepId = this.#stepFor(params);
-          return id && delta ? [{ protocolVersion: 2,
-            type: "tool_call.delta",
-            payload: { id, argsDelta: delta, ...(stepId ? { stepId } : {}) }
-          }] : [];
+          return id && delta
+            ? [
+                {
+                  protocolVersion: 2,
+                  type: "tool_call.delta",
+                  payload: { id, argsDelta: delta, ...(stepId ? { stepId } : {}) }
+                }
+              ]
+            : [];
         }
         return [];
       }
@@ -482,7 +645,20 @@ export class CodexEventNormalizer {
     }
 
     const type = stringValue(item.type);
-    if (type === "contextCompaction" && id) return [{ protocolVersion: 2, type: "activity.started", payload: { activityId: `codex:compaction:${id}`, kind: "compacting", subject: { type: "run" }, source: "provider", info: {} } }];
+    if (type === "contextCompaction" && id)
+      return [
+        {
+          protocolVersion: 2,
+          type: "activity.started",
+          payload: {
+            activityId: `codex:compaction:${id}`,
+            kind: "compacting",
+            subject: { type: "run" },
+            source: "provider",
+            info: {}
+          }
+        }
+      ];
     if (type !== "reasoning" && type !== "plan" && type !== "agentMessage") return [];
     this.#toolBatchStepId = undefined;
     const started = this.#ensureActiveStep(params);
@@ -499,17 +675,47 @@ export class CodexEventNormalizer {
     const id = stringValue(item.id);
     if (stringValue(item.type) === "contextCompaction" && id) {
       const threadId = stringValue(params.threadId);
-      return [{ protocolVersion: 2, type: "activity.finished", payload: { activityId: `codex:compaction:${id}`, status: "completed" } },
-      { protocolVersion: 2, type: "run.notice", payload: { noticeId: `codex:compaction:${id}`, code: "context_compacted", severity: "info", params: {} } },
-      ...(threadId ? [{ protocolVersion: 2 as const, type: "session.update" as const, payload: {
-          providerSession: { sessionId: threadId, resumable: true, resumeOutcome: "compacted" as const }
-        } }] : [])];
+      return [
+        {
+          protocolVersion: 2,
+          type: "activity.finished",
+          payload: { activityId: `codex:compaction:${id}`, status: "completed" }
+        },
+        {
+          protocolVersion: 2,
+          type: "run.notice",
+          payload: {
+            noticeId: `codex:compaction:${id}`,
+            code: "context_compacted",
+            severity: "info",
+            params: {}
+          }
+        },
+        ...(threadId
+          ? [
+              {
+                protocolVersion: 2 as const,
+                type: "session.update" as const,
+                payload: {
+                  providerSession: {
+                    sessionId: threadId,
+                    resumable: true,
+                    resumeOutcome: "compacted" as const
+                  }
+                }
+              }
+            ]
+          : [])
+      ];
     }
     const stepId = id ? this.#itemSteps.get(id) : undefined;
     const channel = id ? this.#itemChannels.get(id) : undefined;
     const events = itemCompletedEvents(item, stepId, channel);
-    if (stringValue(item.type) === "agentMessage" && (channel ?? agentMessageChannel(item)) === "final"
-      && stepId === this.#activeStepId) {
+    if (
+      stringValue(item.type) === "agentMessage" &&
+      (channel ?? agentMessageChannel(item)) === "final" &&
+      stepId === this.#activeStepId
+    ) {
       events.push(...this.#finishActiveStep("completed", "stop"));
     }
     return events;
@@ -531,10 +737,13 @@ export class CodexEventNormalizer {
     const stepId = this.#activeStepId;
     if (!stepId) return [];
     this.#activeStepId = undefined;
-    return [{ protocolVersion: 2,
-      type: "model_step.finished",
-      payload: { stepId, status: canonicalTerminalStatus(status), finishReason }
-    }];
+    return [
+      {
+        protocolVersion: 2,
+        type: "model_step.finished",
+        payload: { stepId, status: canonicalTerminalStatus(status), finishReason }
+      }
+    ];
   }
 
   #stepFor(params: JsonRecord): string | undefined {
@@ -544,7 +753,7 @@ export class CodexEventNormalizer {
 
   #channelFor(params: JsonRecord): MessageChannel {
     const id = itemId(params);
-    return id ? this.#itemChannels.get(id) ?? "final" : "final";
+    return id ? (this.#itemChannels.get(id) ?? "final") : "final";
   }
 }
 
@@ -567,7 +776,9 @@ function interactionKind(method: string): "approval" | "question" | "elicitation
 
 /** Keep provider-owned request ids opaque while producing a short, ASCII database key. */
 function codexInteractionId(id: RpcId, invocationId: string, sequence: number): string {
-  return `codex:${createHash("sha256").update(JSON.stringify([invocationId, id, sequence])).digest("hex")}`;
+  return `codex:${createHash("sha256")
+    .update(JSON.stringify([invocationId, id, sequence]))
+    .digest("hex")}`;
 }
 
 function automaticServerRequestResult(method: string): unknown {
@@ -594,42 +805,53 @@ function displaySafeInteractionRequest(method: string, params: JsonRecord): Json
   }
   if (method === "applyPatchApproval") {
     const changes = recordValue(params.fileChanges);
-    if (changes) request.files = Object.keys(changes).slice(0, 100).map(value => boundedString(value));
+    if (changes)
+      request.files = Object.keys(changes)
+        .slice(0, 100)
+        .map((value) => boundedString(value));
   }
   if (method === "item/permissions/requestApproval") {
     request.permissions = boundedJson(params.permissions);
   }
   if (method === "item/tool/requestUserInput") {
     request.questions = Array.isArray(params.questions)
-      ? params.questions.slice(0, 50).map(question => {
-        const value = recordValue(question) ?? {};
-        return {
-          id: boundedString(value.id),
-          header: boundedString(value.header),
-          question: boundedString(value.question),
-          isOther: value.isOther === true,
-          isSecret: value.isSecret === true,
-          options: Array.isArray(value.options)
-            ? value.options.slice(0, 50).map(option => {
-              const entry = recordValue(option) ?? {};
-              return { label: boundedString(entry.label), description: boundedString(entry.description) };
-            })
-            : null
-        };
-      })
+      ? params.questions.slice(0, 50).map((question) => {
+          const value = recordValue(question) ?? {};
+          return {
+            id: boundedString(value.id),
+            header: boundedString(value.header),
+            question: boundedString(value.question),
+            isOther: value.isOther === true,
+            isSecret: value.isSecret === true,
+            options: Array.isArray(value.options)
+              ? value.options.slice(0, 50).map((option) => {
+                  const entry = recordValue(option) ?? {};
+                  return {
+                    label: boundedString(entry.label),
+                    description: boundedString(entry.description)
+                  };
+                })
+              : null
+          };
+        })
       : [];
   }
   if (method === "mcpServer/elicitation/request") {
     for (const key of ["serverName", "mode", "title", "description", "message", "url"] as const) {
-      if (params[key] !== undefined && params[key] !== null) request[key] = boundedString(params[key]);
+      if (params[key] !== undefined && params[key] !== null)
+        request[key] = boundedString(params[key]);
     }
-    if (params.requestedSchema !== undefined) request.requestedSchema = boundedJson(params.requestedSchema);
+    if (params.requestedSchema !== undefined)
+      request.requestedSchema = boundedJson(params.requestedSchema);
     // Provider `_meta` and user-verification challenges are deliberately not projected.
   }
   return sanitizePublicValue(request) as JsonRecord;
 }
 
-function providerInteractionReply(pending: PendingInteraction, response: InteractionResponse): JsonRecord {
+function providerInteractionReply(
+  pending: PendingInteraction,
+  response: InteractionResponse
+): JsonRecord {
   const { method, params } = pending;
   switch (method) {
     case "item/commandExecution/requestApproval":
@@ -649,7 +871,13 @@ function providerInteractionReply(pending: PendingInteraction, response: Interac
     }
     case "mcpServer/elicitation/request":
       if (response.outcome === "declined" || response.outcome === "cancelled") {
-        return { result: { action: response.outcome === "declined" ? "decline" : "cancel", content: null, _meta: null } };
+        return {
+          result: {
+            action: response.outcome === "declined" ? "decline" : "cancel",
+            content: null,
+            _meta: null
+          }
+        };
       }
       if (response.outcome !== "accepted" && response.outcome !== "answered") {
         throw new Error("unsupported elicitation outcome");
@@ -660,12 +888,15 @@ function providerInteractionReply(pending: PendingInteraction, response: Interac
         return {
           error: {
             code: -32001,
-            message: response.outcome === "declined" ? "user declined input" : "user cancelled input"
+            message:
+              response.outcome === "declined" ? "user declined input" : "user cancelled input"
           }
         };
       }
       if (response.outcome !== "answered") {
-        throw new Error(`request_user_input requires answered outcome, received: ${response.outcome}`);
+        throw new Error(
+          `request_user_input requires answered outcome, received: ${response.outcome}`
+        );
       }
       return { result: { answers: questionAnswers(params, response.value) } };
     default:
@@ -710,16 +941,19 @@ function questionAnswers(params: JsonRecord, value: unknown): JsonRecord {
     if (!id) continue;
     const raw = source[id];
     const wrapped = recordValue(raw);
-    const answers = typeof raw === "string"
-      ? [raw]
-      : Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string")
-        : Array.isArray(wrapped?.answers)
-          ? wrapped.answers.filter((item): item is string => typeof item === "string")
-          : [];
+    const answers =
+      typeof raw === "string"
+        ? [raw]
+        : Array.isArray(raw)
+          ? raw.filter((item): item is string => typeof item === "string")
+          : Array.isArray(wrapped?.answers)
+            ? wrapped.answers.filter((item): item is string => typeof item === "string")
+            : [];
     if (answers.length === 0) throw new TypeError(`missing answer for Codex question: ${id}`);
     entries.push([id, { answers }]);
   }
-  if (entries.length === 0) throw new TypeError("request_user_input contained no answerable questions");
+  if (entries.length === 0)
+    throw new TypeError("request_user_input contained no answerable questions");
   return Object.fromEntries(entries);
 }
 
@@ -749,13 +983,14 @@ function boundedJson(value: unknown, depth = 0): unknown {
   if (value === null || typeof value === "boolean" || typeof value === "number") return value;
   if (typeof value === "string") return boundedString(value);
   if (depth >= 6) return "[truncated]";
-  if (Array.isArray(value)) return value.slice(0, 100).map(item => boundedJson(item, depth + 1));
+  if (Array.isArray(value)) return value.slice(0, 100).map((item) => boundedJson(item, depth + 1));
   const record = recordValue(value);
   if (!record) return boundedString(value);
-  return Object.fromEntries(Object.entries(record).slice(0, 100).map(([key, item]) => [
-    boundedString(key, 256),
-    boundedJson(item, depth + 1)
-  ]));
+  return Object.fromEntries(
+    Object.entries(record)
+      .slice(0, 100)
+      .map(([key, item]) => [boundedString(key, 256), boundedJson(item, depth + 1)])
+  );
 }
 
 /**
@@ -805,16 +1040,27 @@ class CodexAppServerClient {
   }
 
   #finalizationFailure(): CanonicalEvent {
-    return { protocolVersion: 2, type: "run.failed", payload: {
-        code: "CODEX_FINALIZATION_TIMEOUT", adapterType: "codex",
-        message: "Codex final answer completed but the turn did not finish before the finalization deadline",
-        timeoutStage: "rpc", timeoutReason: "rpc_timeout", timeoutMs: this.#finalizationTimeoutMs
-      } };
+    return {
+      protocolVersion: 2,
+      type: "run.failed",
+      payload: {
+        code: "CODEX_FINALIZATION_TIMEOUT",
+        adapterType: "codex",
+        message:
+          "Codex final answer completed but the turn did not finish before the finalization deadline",
+        timeoutStage: "rpc",
+        timeoutReason: "rpc_timeout",
+        timeoutMs: this.#finalizationTimeoutMs
+      }
+    };
   }
 
   #watchFinalization(method: string, params: JsonRecord): void {
     if (this.#terminal || this.#closed || this.#finalizationTimedOut) return;
-    if (method === "turn/completed") { this.#clearFinalizationTimer(); return; }
+    if (method === "turn/completed") {
+      this.#clearFinalizationTimer();
+      return;
+    }
     if (method === "item/started") {
       const id = stringValue(recordValue(params.item)?.id);
       if (id) this.#openItems.add(id);
@@ -829,13 +1075,25 @@ class CodexAppServerClient {
     const item = recordValue(params.item);
     const id = stringValue(item?.id);
     if (id) this.#openItems.delete(id);
-    if (item?.type !== "agentMessage" || item.phase !== "final_answer"
-      || params.threadId !== this.#activeThreadId || notificationTurnId(params) !== this.#activeTurnId
-      || this.#openItems.size || this.#interactions.size || !this.#activeThreadId || !this.#activeTurnId) return;
+    if (
+      item?.type !== "agentMessage" ||
+      item.phase !== "final_answer" ||
+      params.threadId !== this.#activeThreadId ||
+      notificationTurnId(params) !== this.#activeTurnId ||
+      this.#openItems.size ||
+      this.#interactions.size ||
+      !this.#activeThreadId ||
+      !this.#activeTurnId
+    )
+      return;
     this.#clearFinalizationTimer();
-    const configured = recordValue(this.invocation.agentConfig.providerOptions)?.finalizationTimeoutMs;
-    const timeoutMs = typeof configured === "number" && Number.isFinite(configured) && configured > 0
-      ? configured : FINALIZATION_TIMEOUT_MS;
+    const configured = recordValue(
+      this.invocation.agentConfig.providerOptions
+    )?.finalizationTimeoutMs;
+    const timeoutMs =
+      typeof configured === "number" && Number.isFinite(configured) && configured > 0
+        ? configured
+        : FINALIZATION_TIMEOUT_MS;
     this.#finalizationTimeoutMs = timeoutMs;
     this.#finalizationTimer = setTimeout(() => {
       this.#finalizationTimedOut = true;
@@ -846,8 +1104,11 @@ class CodexAppServerClient {
         this.#queue.push(this.#finalizationFailure());
         this.#queue.close();
       }, FINALIZATION_INTERRUPT_GRACE_MS);
-      void this.request("turn/interrupt", { threadId: this.#activeThreadId, turnId: this.#activeTurnId },
-        FINALIZATION_INTERRUPT_GRACE_MS).catch(() => undefined);
+      void this.request(
+        "turn/interrupt",
+        { threadId: this.#activeThreadId, turnId: this.#activeTurnId },
+        FINALIZATION_INTERRUPT_GRACE_MS
+      ).catch(() => undefined);
     }, timeoutMs);
   }
 
@@ -865,16 +1126,21 @@ class CodexAppServerClient {
     this.#terminal = true;
     this.#clearFinalizationTimer();
     this.#invalidateInteractions("run_cancelled");
-    this.#queue.push({ protocolVersion: 2,
+    this.#queue.push({
+      protocolVersion: 2,
       type: "run.cancelled",
       payload: { reason: String(this.#signal?.reason ?? "cancelled") }
     });
     this.#queue.close();
     if (this.#activeThreadId && this.#activeTurnId) {
-      void this.request("turn/interrupt", {
-        threadId: this.#activeThreadId,
-        turnId: this.#activeTurnId
-      }, 1_000).catch(() => undefined);
+      void this.request(
+        "turn/interrupt",
+        {
+          threadId: this.#activeThreadId,
+          turnId: this.#activeTurnId
+        },
+        1_000
+      ).catch(() => undefined);
     }
     this.#abortTimer = setTimeout(() => signalProcessTree(this.#child, "SIGTERM"), 250);
     this.#abortTimer.unref?.();
@@ -892,21 +1158,21 @@ class CodexAppServerClient {
     this.#interactive = interactive;
     const signal = invocation.signal;
     this.#signal = signal;
-    this.#exitPromise = new Promise(resolve => {
+    this.#exitPromise = new Promise((resolve) => {
       this.#resolveExit = resolve;
     });
     this.#child = spawnFn(spec.command, spec.args, { cwd: spec.cwd, env: spec.env });
 
     // The app-server protocol requires one JSON-RPC frame per line; readline handles chunk boundaries.
     this.#reader = createInterface({ input: this.#child.stdout });
-    this.#reader.on("line", line => this.#handleLine(line));
+    this.#reader.on("line", (line) => this.#handleLine(line));
     this.#child.stderr.setEncoding("utf8");
     this.#child.stderr.on("data", (chunk: string | Buffer) => {
       this.#stderr = (this.#stderr + chunk.toString()).slice(-STDERR_TAIL_LIMIT);
     });
 
     // spawn error and normal/abnormal close are watched separately, but both ultimately reject pending RPCs and close the event stream.
-    this.#child.once("error", error => this.#handleProcessError(error));
+    this.#child.once("error", (error) => this.#handleProcessError(error));
     this.#child.once("close", (code, exitSignal) => this.#handleExit({ code, signal: exitSignal }));
     if (signal?.aborted) queueMicrotask(this.#abortListener);
     else signal?.addEventListener("abort", this.#abortListener, { once: true });
@@ -935,7 +1201,9 @@ class CodexAppServerClient {
     }
     if (pending.expiresAt <= Date.now()) return Promise.reject(new Error("INTERACTION_EXPIRED"));
     if (pending.responding) {
-      return Promise.reject(new Error(`codex interaction response is already in flight: ${response.interactionId}`));
+      return Promise.reject(
+        new Error(`codex interaction response is already in flight: ${response.interactionId}`)
+      );
     }
 
     let reply: JsonRecord;
@@ -948,7 +1216,7 @@ class CodexAppServerClient {
     return new Promise((resolve, reject) => {
       this.#write(
         { jsonrpc: "2.0", id: pending.rpcId, ...reply },
-        error => {
+        (error) => {
           pending.responding = false;
           reject(error);
         },
@@ -959,10 +1227,16 @@ class CodexAppServerClient {
           }
           clearTimeout(pending.timer);
           this.#interactions.delete(response.interactionId);
-          this.#queue.push({ protocolVersion: 2, type: "interaction.resolved", payload: {
-              interactionId: response.interactionId, executionInstanceId: this.invocation.invocationId,
-              status: "resolved", outcome: response.outcome
-            } });
+          this.#queue.push({
+            protocolVersion: 2,
+            type: "interaction.resolved",
+            payload: {
+              interactionId: response.interactionId,
+              executionInstanceId: this.invocation.invocationId,
+              status: "resolved",
+              outcome: response.outcome
+            }
+          });
           resolve();
         }
       );
@@ -985,22 +1259,29 @@ class CodexAppServerClient {
     }
     const id = requestId ?? this.reserveRequestId();
     if (this.#pending.has(id)) {
-      return Promise.reject(new Error(`codex app-server request id ${String(id)} is already pending`));
+      return Promise.reject(
+        new Error(`codex app-server request id ${String(id)} is already pending`)
+      );
     }
     return new Promise((resolve, reject) => {
       // Register pending before writing stdin, so a synchronous reply from a test server/local process cannot arrive first.
       const timer = setTimeout(() => {
         if (!this.#pending.delete(id)) return;
-        reject(Object.assign(new Error(`codex app-server ${method} timed out after ${timeoutMs}ms`), {
-          code: "RPC_TIMEOUT", timeoutStage: "rpc", timeoutReason: "rpc_timeout", timeoutMs
-        }));
+        reject(
+          Object.assign(new Error(`codex app-server ${method} timed out after ${timeoutMs}ms`), {
+            code: "RPC_TIMEOUT",
+            timeoutStage: "rpc",
+            timeoutReason: "rpc_timeout",
+            timeoutMs
+          })
+        );
       }, timeoutMs);
       this.#pending.set(id, { method, resolve, reject, timer });
       // onWritten is deliberately passed through to #write instead of running
       // before it; callers use it as the transport-written observation boundary.
       this.#write(
         { jsonrpc: "2.0", id, method, params },
-        error => {
+        (error) => {
           const pending = this.#pending.get(id);
           if (!pending) return;
           this.#pending.delete(id);
@@ -1089,7 +1370,11 @@ class CodexAppServerClient {
         this.#terminal = true;
         this.#clearFinalizationTimer();
         if (this.#finalizationGraceTimer) clearTimeout(this.#finalizationGraceTimer);
-        this.#queue.push(this.#finalizationTimedOut && event.type !== "run.completed" ? this.#finalizationFailure() : event);
+        this.#queue.push(
+          this.#finalizationTimedOut && event.type !== "run.completed"
+            ? this.#finalizationFailure()
+            : event
+        );
         this.#queue.close();
       } else this.#queue.push(event);
     }
@@ -1104,12 +1389,14 @@ class CodexAppServerClient {
     this.context?.reportActivity?.({ kind: "transport_response", method: "rpc_response" });
     const error = recordValue(message.error);
     if (error) {
-      pending.reject(new CodexAppServerRpcError(
-        pending.method,
-        numberValue(error.code) ?? -32000,
-        stringValue(error.message) || "unknown app-server error",
-        error.data
-      ));
+      pending.reject(
+        new CodexAppServerRpcError(
+          pending.method,
+          numberValue(error.code) ?? -32000,
+          stringValue(error.message) || "unknown app-server error",
+          error.data
+        )
+      );
       return;
     }
     pending.resolve(message.result);
@@ -1141,8 +1428,12 @@ class CodexAppServerClient {
       this.#queue.fail(new Error("APPROVAL_PENDING_LIMIT_EXCEEDED"));
       return;
     }
-    const interactionId = codexInteractionId(id, this.invocation.invocationId, this.#nextInteractionId++);
-    if ([...this.#interactions.values()].some(pending => pending.rpcId === id)) {
+    const interactionId = codexInteractionId(
+      id,
+      this.invocation.invocationId,
+      this.#nextInteractionId++
+    );
+    if ([...this.#interactions.values()].some((pending) => pending.rpcId === id)) {
       this.#write({
         jsonrpc: "2.0",
         id,
@@ -1153,31 +1444,62 @@ class CodexAppServerClient {
     const expiresAt = Date.now() + 600_000;
     const timer = setTimeout(() => {
       this.#interactions.delete(interactionId);
-      this.#queue.push({ protocolVersion: 2, type: "interaction.resolved", payload: {
-          interactionId, executionInstanceId: this.invocation.invocationId, status: "expired", reasonCode: "approval_timeout"
-        } });
+      this.#queue.push({
+        protocolVersion: 2,
+        type: "interaction.resolved",
+        payload: {
+          interactionId,
+          executionInstanceId: this.invocation.invocationId,
+          status: "expired",
+          reasonCode: "approval_timeout"
+        }
+      });
       this.#rejectServerRequest(id, method);
       this.#queue.fail(new Error("INTERACTION_EXPIRED"));
     }, 600_000);
     timer.unref?.();
-    this.#interactions.set(interactionId, { rpcId: id, method, params, responding: false, timer, expiresAt });
+    this.#interactions.set(interactionId, {
+      rpcId: id,
+      method,
+      params,
+      responding: false,
+      timer,
+      expiresAt
+    });
     const display = displaySafeInteractionRequest(method, params);
-    this.#queue.push({ protocolVersion: 2,
+    this.#queue.push({
+      protocolVersion: 2,
       type: "interaction.requested",
       payload: {
         interactionId,
         kind,
         executionInstanceId: this.invocation.invocationId,
         expiresAt: new Date(expiresAt).toISOString(),
-        request: kind === "approval" ? {
-          schema: "octo.approval-request/v1",
-          policy: { mode: this.invocation.approvalMode, hash: contextHash(this.invocation.context) },
-          operation: { kind: method.includes("fileChange") || method === "applyPatchApproval" ? "file_change" : "command_execution", summary: typeof display.command === "string" && display.command ? Array.from(display.command).slice(0, 500).join("") : "Approve provider operation", ...(typeof params.itemId === "string" ? { toolCallId: params.itemId } : {}) },
-          requestedPermissions: [],
-          allowedOutcomes: ["accepted", "declined", "cancelled"],
-          grantScope: "request",
-          providerDetails: display
-        } : display
+        request:
+          kind === "approval"
+            ? {
+                schema: "octo.approval-request/v1",
+                policy: {
+                  mode: this.invocation.approvalMode,
+                  hash: contextHash(this.invocation.context)
+                },
+                operation: {
+                  kind:
+                    method.includes("fileChange") || method === "applyPatchApproval"
+                      ? "file_change"
+                      : "command_execution",
+                  summary:
+                    typeof display.command === "string" && display.command
+                      ? Array.from(display.command).slice(0, 500).join("")
+                      : "Approve provider operation",
+                  ...(typeof params.itemId === "string" ? { toolCallId: params.itemId } : {})
+                },
+                requestedPermissions: [],
+                allowedOutcomes: ["accepted", "declined", "cancelled"],
+                grantScope: "request",
+                providerDetails: display
+              }
+            : display
       }
     });
     if (!this.#interactive && kind === "approval") {
@@ -1189,18 +1511,30 @@ class CodexAppServerClient {
         return;
       }
       this.#interactions.get(interactionId)!.responding = true;
-      this.#write({ jsonrpc: "2.0", id, result: automatic }, error => {
-        this.#invalidateInteractions("response_delivery_failed");
-        this.#queue.fail(error);
-      }, () => {
-        const pending = this.#interactions.get(interactionId);
-        if (!pending) return;
-        clearTimeout(pending.timer);
-        this.#interactions.delete(interactionId);
-        this.#queue.push({ protocolVersion: 2, type: "interaction.resolved", payload: {
-            interactionId, executionInstanceId: this.invocation.invocationId, status: "resolved", outcome: "accepted", reasonCode: "full_access_policy"
-          } });
-      });
+      this.#write(
+        { jsonrpc: "2.0", id, result: automatic },
+        (error) => {
+          this.#invalidateInteractions("response_delivery_failed");
+          this.#queue.fail(error);
+        },
+        () => {
+          const pending = this.#interactions.get(interactionId);
+          if (!pending) return;
+          clearTimeout(pending.timer);
+          this.#interactions.delete(interactionId);
+          this.#queue.push({
+            protocolVersion: 2,
+            type: "interaction.resolved",
+            payload: {
+              interactionId,
+              executionInstanceId: this.invocation.invocationId,
+              status: "resolved",
+              outcome: "accepted",
+              reasonCode: "full_access_policy"
+            }
+          });
+        }
+      );
     }
   }
 
@@ -1213,11 +1547,7 @@ class CodexAppServerClient {
     });
   }
 
-  #write(
-    message: JsonRecord,
-    onError?: (error: Error) => void,
-    onWritten?: () => void
-  ): void {
+  #write(message: JsonRecord, onError?: (error: Error) => void, onWritten?: () => void): void {
     if (this.#closed || this.#exited) {
       onError?.(new Error("codex app-server is closed"));
       return;
@@ -1229,7 +1559,7 @@ class CodexAppServerClient {
       onError?.(error instanceof Error ? error : new Error(String(error)));
       return;
     }
-    this.#child.stdin.write(line, error => {
+    this.#child.stdin.write(line, (error) => {
       // Writable completion means local acceptance of the bytes. Only a later
       // frame with the same JSON-RPC id can acknowledge a request.
       if (error) onError?.(error);
@@ -1264,19 +1594,49 @@ class CodexAppServerClient {
         this.#lastUsage = tokens;
         this.context?.reportActivity?.({ kind: "turn_progress", method: "usage" });
       }
-    } else if (["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/reasoning/textDelta", "item/plan/delta"].includes(method) && stringValue(params.delta)) {
+    } else if (
+      [
+        "item/agentMessage/delta",
+        "item/reasoning/summaryTextDelta",
+        "item/reasoning/textDelta",
+        "item/plan/delta"
+      ].includes(method) &&
+      stringValue(params.delta)
+    ) {
       this.context?.reportActivity?.({ kind: "turn_progress", method: "text_delta" });
-    } else if ((["item/commandExecution/outputDelta", "item/fileChange/outputDelta"].includes(method) || isToolArgsDeltaMethod(method)) && stringValue(params.delta) && itemId(params)) {
-      this.context?.reportActivity?.({ kind: "turn_progress", method: "tool_delta", toolCallId: itemId(params) });
+    } else if (
+      (["item/commandExecution/outputDelta", "item/fileChange/outputDelta"].includes(method) ||
+        isToolArgsDeltaMethod(method)) &&
+      stringValue(params.delta) &&
+      itemId(params)
+    ) {
+      this.context?.reportActivity?.({
+        kind: "turn_progress",
+        method: "tool_delta",
+        toolCallId: itemId(params)
+      });
     } else if (method === "item/started" || method === "item/completed") {
       const item = recordValue(params.item);
       const id = stringValue(item?.id);
-      if (!id || !item || !(["agentMessage", "reasoning", "plan"].includes(stringValue(item.type)) || toolDescriptor(item))) return;
+      if (
+        !id ||
+        !item ||
+        !(
+          ["agentMessage", "reasoning", "plan"].includes(stringValue(item.type)) ||
+          toolDescriptor(item)
+        )
+      )
+        return;
       const key = `${method}:${id}`;
       if (this.#seenItems.has(key)) return;
-      if (this.#seenItems.size >= 4096) this.#seenItems.delete(this.#seenItems.values().next().value!);
+      if (this.#seenItems.size >= 4096)
+        this.#seenItems.delete(this.#seenItems.values().next().value!);
       this.#seenItems.add(key);
-      this.context?.reportActivity?.({ kind: "turn_progress", method: "item_lifecycle", ...(toolDescriptor(item) ? { toolCallId: id } : {}) });
+      this.context?.reportActivity?.({
+        kind: "turn_progress",
+        method: "item_lifecycle",
+        ...(toolDescriptor(item) ? { toolCallId: id } : {})
+      });
     }
   }
 
@@ -1301,9 +1661,16 @@ class CodexAppServerClient {
   #invalidateInteractions(reasonCode: string): void {
     for (const [interactionId, pending] of this.#interactions) {
       clearTimeout(pending.timer);
-      this.#queue.push({ protocolVersion: 2, type: "interaction.resolved", payload: {
-          interactionId, executionInstanceId: this.invocation.invocationId, status: "invalidated", reasonCode
-        } });
+      this.#queue.push({
+        protocolVersion: 2,
+        type: "interaction.resolved",
+        payload: {
+          interactionId,
+          executionInstanceId: this.invocation.invocationId,
+          status: "invalidated",
+          reasonCode
+        }
+      });
     }
     this.#interactions.clear();
   }
@@ -1400,7 +1767,11 @@ function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS
 }
 
 /** Shared params for thread/start and thread/resume; the permission policy is fixed at the thread level. */
-function threadParams(request: InvokeRequest, extra: JsonRecord, environmentConfig?: JsonRecord): JsonRecord {
+function threadParams(
+  request: InvokeRequest,
+  extra: JsonRecord,
+  environmentConfig?: JsonRecord
+): JsonRecord {
   return {
     ...extra,
     cwd: request.workdir,
@@ -1424,9 +1795,13 @@ function turnParams(request: InvokeRequest, threadId: string, freshFallback = fa
   const effort = mapReasoningEffort("codex", request.agentConfig.effort);
   return {
     threadId,
-    input: [...providerInputParts(request, freshFallback).map(part => part.type === "image"
-      ? { type: "image", url: `data:${part.mimeType};base64,${part.data}` }
-      : { type: "text", text: part.text, text_elements: [] })],
+    input: [
+      ...providerInputParts(request, freshFallback).map((part) =>
+        part.type === "image"
+          ? { type: "image", url: `data:${part.mimeType};base64,${part.data}` }
+          : { type: "text", text: part.text, text_elements: [] }
+      )
+    ],
     cwd: request.workdir,
     ...(request.agentConfig.model ? { model: request.agentConfig.model } : {}),
     ...(effort ? { effort } : {}),
@@ -1441,9 +1816,7 @@ function turnParams(request: InvokeRequest, threadId: string, freshFallback = fa
  */
 function codexReasoningSummary(request: InvokeRequest): string {
   const configured = recordValue(request.agentConfig.providerOptions)?.reasoningSummary;
-  const value = typeof configured === "string"
-    ? configured
-    : "auto";
+  const value = typeof configured === "string" ? configured : "auto";
   if (!["auto", "concise", "detailed", "none"].includes(value)) {
     throw new Error(`unsupported Codex reasoning summary: ${value}`);
   }
@@ -1451,13 +1824,15 @@ function codexReasoningSummary(request: InvokeRequest): string {
 }
 
 function codexSandbox(request: InvokeRequest): string {
-  const value = request.approvalMode === "full_access"
-    ? "danger-full-access"
-    : request.agentConfig.sandbox ?? "workspace-write";
+  const value =
+    request.approvalMode === "full_access"
+      ? "danger-full-access"
+      : (request.agentConfig.sandbox ?? "workspace-write");
   if (!["read-only", "workspace-write", "danger-full-access"].includes(value)) {
     throw new Error(`unsupported Codex sandbox mode: ${value}`);
   }
-  if (request.approvalMode !== "full_access" && value === "danger-full-access") throw new Error("APPROVAL_SANDBOX_CONFLICT");
+  if (request.approvalMode !== "full_access" && value === "danger-full-access")
+    throw new Error("APPROVAL_SANDBOX_CONFLICT");
   return value;
 }
 
@@ -1482,19 +1857,24 @@ function textDelta(
   const text = stringValue(params.delta);
   if (!text) return [];
   const id = itemId(params);
-  return [{ protocolVersion: 2,
-    type: "message.delta",
-    payload: {
-      text,
-      channel,
-      ...(id ? { messageId: id } : {}),
-      ...(stepId ? { stepId } : {}),
-      ...(exposure && nativeEvent ? {
-        exposure,
-        provenance: { provider: "codex", nativeEvent }
-      } : {})
+  return [
+    {
+      protocolVersion: 2,
+      type: "message.delta",
+      payload: {
+        text,
+        channel,
+        ...(id ? { messageId: id } : {}),
+        ...(stepId ? { stepId } : {}),
+        ...(exposure && nativeEvent
+          ? {
+              exposure,
+              provenance: { provider: "codex", nativeEvent }
+            }
+          : {})
+      }
     }
-  }];
+  ];
 }
 
 /** usage carries both this turn's increment (last) and the provider cumulative value (total). */
@@ -1503,16 +1883,19 @@ function usageEvents(params: JsonRecord): CanonicalEvent[] {
   const last = recordValue(tokenUsage?.last);
   const total = recordValue(tokenUsage?.total);
   if (!last && !total) return [];
-  return [{ protocolVersion: 2,
-    type: "usage.update",
-    payload: {
-      ...(last ?? total ?? {}),
-      ...(total ? { cumulative: total } : {}),
-      ...(typeof tokenUsage?.modelContextWindow === "number"
-        ? { modelContextWindow: tokenUsage.modelContextWindow }
-        : {})
+  return [
+    {
+      protocolVersion: 2,
+      type: "usage.update",
+      payload: {
+        ...(last ?? total ?? {}),
+        ...(total ? { cumulative: total } : {}),
+        ...(typeof tokenUsage?.modelContextWindow === "number"
+          ? { modelContextWindow: tokenUsage.modelContextWindow }
+          : {})
+      }
     }
-  }];
+  ];
 }
 
 /** item started only creates the lifecycle object; it does not guess the final output here. */
@@ -1522,34 +1905,54 @@ function itemStartedEvents(item: JsonRecord | undefined, stepId?: string): Canon
   const id = stringValue(item.id);
   if (type === "agentMessage") {
     const channel = agentMessageChannel(item);
-    return [{ protocolVersion: 2,
-      type: "message.create",
-      payload: {
-        role: "assistant", status: "streaming", channel,
-        ...(id ? { messageId: id } : {}), ...(stepId ? { stepId } : {})
+    return [
+      {
+        protocolVersion: 2,
+        type: "message.create",
+        payload: {
+          role: "assistant",
+          status: "streaming",
+          channel,
+          ...(id ? { messageId: id } : {}),
+          ...(stepId ? { stepId } : {})
+        }
       }
-    }];
+    ];
   }
   if (type === "reasoning" || type === "plan") {
     const exposure: MessageExposure = type === "plan" ? "public_plan" : "unknown";
-    return [{ protocolVersion: 2,
-      type: "message.create",
-      payload: {
-        role: "assistant",
-        status: "streaming",
-        channel: "analysis",
-        exposure,
-        provenance: { provider: "codex", nativeEvent: "item/started" },
-        ...(id ? { messageId: id } : {}),
-        ...(stepId ? { stepId } : {})
+    return [
+      {
+        protocolVersion: 2,
+        type: "message.create",
+        payload: {
+          role: "assistant",
+          status: "streaming",
+          channel: "analysis",
+          exposure,
+          provenance: { provider: "codex", nativeEvent: "item/started" },
+          ...(id ? { messageId: id } : {}),
+          ...(stepId ? { stepId } : {})
+        }
       }
-    }];
+    ];
   }
   const tool = toolDescriptor(item);
-  return tool ? [{ protocolVersion: 2,
-    type: "tool_call.create",
-    payload: { status: "running", id: tool.id, name: tool.name, args: tool.args, ...(stepId ? { stepId } : {}) }
-  }] : [];
+  return tool
+    ? [
+        {
+          protocolVersion: 2,
+          type: "tool_call.create",
+          payload: {
+            status: "running",
+            id: tool.id,
+            name: tool.name,
+            args: tool.args,
+            ...(stepId ? { stepId } : {})
+          }
+        }
+      ]
+    : [];
 }
 
 /** item completed closes the corresponding message/tool lifecycle and attaches the provider's final snapshot. */
@@ -1563,49 +1966,57 @@ function itemCompletedEvents(
   const id = stringValue(item.id);
   if (type === "agentMessage") {
     const channel = knownChannel ?? agentMessageChannel(item);
-    return [{ protocolVersion: 2,
-      type: "message.update",
-      payload: {
-        role: "assistant",
-        status: "completed",
-        channel,
-        ...(id ? { messageId: id } : {}),
-        ...(stepId ? { stepId } : {}),
-        ...(stringValue(item.text) ? { text: stringValue(item.text) } : {})
+    return [
+      {
+        protocolVersion: 2,
+        type: "message.update",
+        payload: {
+          role: "assistant",
+          status: "completed",
+          channel,
+          ...(id ? { messageId: id } : {}),
+          ...(stepId ? { stepId } : {}),
+          ...(stringValue(item.text) ? { text: stringValue(item.text) } : {})
+        }
       }
-    }];
+    ];
   }
   if (type === "reasoning" || type === "plan") {
     const exposure: MessageExposure = type === "plan" ? "public_plan" : "public_summary";
-    const text = type === "plan"
-      ? stringValue(item.text)
-      : stringArray(item.summary).join("\n") || undefined;
-    return [{ protocolVersion: 2,
-      type: "message.update",
-      payload: {
-        role: "assistant",
-        status: "completed",
-        channel: "analysis",
-        exposure,
-        provenance: { provider: "codex", nativeEvent: "item/completed" },
-        ...(id ? { messageId: id } : {}),
-        ...(stepId ? { stepId } : {}),
-        ...(text ? { text } : {})
+    const text =
+      type === "plan" ? stringValue(item.text) : stringArray(item.summary).join("\n") || undefined;
+    return [
+      {
+        protocolVersion: 2,
+        type: "message.update",
+        payload: {
+          role: "assistant",
+          status: "completed",
+          channel: "analysis",
+          exposure,
+          provenance: { provider: "codex", nativeEvent: "item/completed" },
+          ...(id ? { messageId: id } : {}),
+          ...(stepId ? { stepId } : {}),
+          ...(text ? { text } : {})
+        }
       }
-    }];
+    ];
   }
   const tool = toolDescriptor(item);
   if (!tool) return [];
-  return [{ protocolVersion: 2,
-    type: "tool_call.update",
-    payload: {
-      id: tool.id,
-      status: canonicalTerminalStatus(toolStatus(item)),
-      output: toolOutput(item),
-      ...(stepId ? { stepId } : {}),
-      ...(typeof item.exitCode === "number" ? { exitCode: item.exitCode } : {})
+  return [
+    {
+      protocolVersion: 2,
+      type: "tool_call.update",
+      payload: {
+        id: tool.id,
+        status: canonicalTerminalStatus(toolStatus(item)),
+        output: toolOutput(item),
+        ...(stepId ? { stepId } : {}),
+        ...(typeof item.exitCode === "number" ? { exitCode: item.exitCode } : {})
+      }
     }
-  }];
+  ];
 }
 
 // Codex exposes its UI phase on agentMessage items. Normalize that provider
@@ -1622,10 +2033,13 @@ function turnCompletedEvents(turn: JsonRecord | undefined): CanonicalEvent[] {
   }
   if (status === "failed") {
     const error = recordValue(turn?.error);
-    return [{ protocolVersion: 2,
-      type: "run.failed",
-      payload: { message: stringValue(error?.message) || "Codex turn failed" }
-    }];
+    return [
+      {
+        protocolVersion: 2,
+        type: "run.failed",
+        payload: { message: stringValue(error?.message) || "Codex turn failed" }
+      }
+    ];
   }
   return [{ protocolVersion: 2, type: "run.completed", payload: {} }];
 }
@@ -1637,7 +2051,9 @@ function turnCompletedEvents(turn: JsonRecord | undefined): CanonicalEvent[] {
  * fields as much as possible. An unknown item returns undefined rather than
  * impersonating a tool, avoiding the Core persisting an unexplainable lifecycle.
  */
-function toolDescriptor(item: JsonRecord): { id: string; name: string; args: JsonRecord } | undefined {
+function toolDescriptor(
+  item: JsonRecord
+): { id: string; name: string; args: JsonRecord } | undefined {
   const id = stringValue(item.id);
   if (!id) return undefined;
   switch (stringValue(item.type)) {
@@ -1726,10 +2142,12 @@ function toolOutput(item: JsonRecord): unknown {
 function extractThreadId(value: unknown): string {
   const result = recordValue(value);
   const thread = recordValue(result?.thread);
-  return stringValue(result?.threadId)
-    || stringValue(result?.sessionId)
-    || stringValue(thread?.id)
-    || stringValue(thread?.sessionId);
+  return (
+    stringValue(result?.threadId) ||
+    stringValue(result?.sessionId) ||
+    stringValue(thread?.id) ||
+    stringValue(thread?.sessionId)
+  );
 }
 
 function extractTurnId(value: unknown): string {
@@ -1738,9 +2156,11 @@ function extractTurnId(value: unknown): string {
 }
 
 function itemId(params: JsonRecord): string {
-  return stringValue(params.itemId)
-    || stringValue(params.callId)
-    || stringValue(recordValue(params.item)?.id);
+  return (
+    stringValue(params.itemId) ||
+    stringValue(params.callId) ||
+    stringValue(recordValue(params.item)?.id)
+  );
 }
 
 function notificationTurnId(params: JsonRecord): string {
@@ -1760,11 +2180,15 @@ function turnStepStatus(turn: JsonRecord | undefined): string {
 
 function isToolArgsDeltaMethod(method: string): boolean {
   // Only accept known item namespaces, to avoid misprojecting an unrelated delta as tool arguments.
-  return /^item\/(?:functionCall|toolCall|mcpToolCall|dynamicToolCall)\/(?:argumentsDelta|argsDelta|inputDelta|parametersDelta)$/.test(method);
+  return /^item\/(?:functionCall|toolCall|mcpToolCall|dynamicToolCall)\/(?:argumentsDelta|argsDelta|inputDelta|parametersDelta)$/.test(
+    method
+  );
 }
 
 function isTerminalEvent(event: CanonicalEvent): boolean {
-  return event.type === "run.completed" || event.type === "run.failed" || event.type === "run.cancelled";
+  return (
+    event.type === "run.completed" || event.type === "run.failed" || event.type === "run.cancelled"
+  );
 }
 
 function isThreadNotFound(error: unknown): boolean {
@@ -1779,7 +2203,9 @@ function rpcFailureReason(error: unknown): string {
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (!signal?.aborted) return;
-  throw signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason ?? "cancelled"));
+  throw signal.reason instanceof Error
+    ? signal.reason
+    : new Error(String(signal.reason ?? "cancelled"));
 }
 
 function parseRecord(line: string): JsonRecord | undefined {
@@ -1793,7 +2219,7 @@ function parseRecord(line: string): JsonRecord | undefined {
 
 function recordValue(value: unknown): JsonRecord | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as JsonRecord
+    ? (value as JsonRecord)
     : undefined;
 }
 
@@ -1806,7 +2232,9 @@ function numberValue(value: unknown): number | undefined {
 }
 
 function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function rpcId(value: unknown): RpcId | undefined {
@@ -1817,7 +2245,7 @@ async function waitForExit(exit: Promise<ProcessExit>, timeoutMs: number): Promi
   let timer: NodeJS.Timeout | undefined;
   return Promise.race([
     exit.then(() => true),
-    new Promise<boolean>(resolve => {
+    new Promise<boolean>((resolve) => {
       timer = setTimeout(() => resolve(false), timeoutMs);
     })
   ]).finally(() => {

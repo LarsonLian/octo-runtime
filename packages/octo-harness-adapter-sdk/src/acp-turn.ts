@@ -1,4 +1,7 @@
-import { canonicalTerminalStatus, type CanonicalEvent } from "@mininglamp-oss/octo-harness-protocol";
+import {
+  canonicalTerminalStatus,
+  type CanonicalEvent
+} from "@mininglamp-oss/octo-harness-protocol";
 import { acpToolTerminalStatus } from "./acp-tool.js";
 
 const MAX_STEP_PUBLIC_TEXT_CHARS = 1_000;
@@ -26,26 +29,36 @@ export class AcpTurnNormalizer {
   }
 
   normalize(nativeType: unknown, normalized: CanonicalEvent[]): CanonicalEvent[] {
-    const semantic = normalized.some(event => event.type.startsWith("message.") || event.type.startsWith("tool_call."));
+    const semantic = normalized.some(
+      (event) => event.type.startsWith("message.") || event.type.startsWith("tool_call.")
+    );
     if (!semantic) return normalized;
 
-    const startsModelOutput = nativeType === "agent_message_chunk"
-      || nativeType === "agent_thought_chunk"
-      || nativeType === "tool_call";
+    const startsModelOutput =
+      nativeType === "agent_message_chunk" ||
+      nativeType === "agent_thought_chunk" ||
+      nativeType === "tool_call";
     const events: CanonicalEvent[] = [];
-    if (startsModelOutput && this.#toolsCompleted) events.push(...this.#finishStep("tool-calls", "completed"));
+    if (startsModelOutput && this.#toolsCompleted)
+      events.push(...this.#finishStep("tool-calls", "completed"));
     events.push(...this.#ensureStep());
 
     const stepId = this.#stepId;
     for (const event of normalized) {
       if (event.type === "message.delta") {
         const channel = event.payload.channel ?? "final";
-        if (this.#message && this.#message.channel !== channel) events.push(...this.#closeMessage());
+        if (this.#message && this.#message.channel !== channel)
+          events.push(...this.#closeMessage());
         if (!this.#message) {
           const base = `${stepId}:${channel === "analysis" ? "reasoning" : "answer"}`;
           const count = (this.#segments.get(base) ?? 0) + 1;
           this.#segments.set(base, count);
-          this.#message = { ...event.payload, stepId, channel, messageId: count === 1 ? base : `${base}:${count}` };
+          this.#message = {
+            ...event.payload,
+            stepId,
+            channel,
+            messageId: count === 1 ? base : `${base}:${count}`
+          };
         }
         events.push({
           ...event,
@@ -69,7 +82,11 @@ export class AcpTurnNormalizer {
         this.#toolsCompleted = false;
         continue;
       }
-      if (event.type === "tool_call.update" && toolId && acpToolTerminalStatus(event.payload.status) !== undefined) {
+      if (
+        event.type === "tool_call.update" &&
+        toolId &&
+        acpToolTerminalStatus(event.payload.status) !== undefined
+      ) {
         this.#seenTools.add(toolId);
         this.#stepHasTool = true;
         events.push(...this.#closeMessage());
@@ -88,9 +105,10 @@ export class AcpTurnNormalizer {
   }
 
   finish(finishReason: string | undefined, status: string): CanonicalEvent[] {
-    const reason = this.#stepHasTool && this.#stepPublicText.length === 0
-      ? "tool-calls"
-      : finishReason ?? "end_turn";
+    const reason =
+      this.#stepHasTool && this.#stepPublicText.length === 0
+        ? "tool-calls"
+        : (finishReason ?? "end_turn");
     return this.#finishStep(reason, status);
   }
 
@@ -103,12 +121,13 @@ export class AcpTurnNormalizer {
   #finishStep(finishReason: string, status: string): CanonicalEvent[] {
     if (!this.#stepId) return [];
     const closed = this.#closeMessage(status);
-    const event: CanonicalEvent = { protocolVersion: 2,
+    const event: CanonicalEvent = {
+      protocolVersion: 2,
       type: "model_step.finished",
       payload: {
         stepId: this.#stepId,
         status: canonicalTerminalStatus(status),
-        finishReason,
+        finishReason
       }
     };
     this.#stepId = undefined;
@@ -122,7 +141,13 @@ export class AcpTurnNormalizer {
     if (!this.#message) return [];
     const { text: _text, ...payload } = this.#message;
     this.#message = undefined;
-    return [{ protocolVersion: 2, type: "message.update", payload: { ...payload, status: canonicalTerminalStatus(status) } }];
+    return [
+      {
+        protocolVersion: 2,
+        type: "message.update",
+        payload: { ...payload, status: canonicalTerminalStatus(status) }
+      }
+    ];
   }
 
   #appendPublicText(value: unknown): void {

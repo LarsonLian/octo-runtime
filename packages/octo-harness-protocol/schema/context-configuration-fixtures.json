@@ -553,10 +553,7 @@
             "name": "selection",
             "payload": {
               "mode": "candidates",
-              "runtime_ids": [
-                "device-a",
-                "device-b"
-              ],
+              "runtime_ids": ["device-a", "device-b"],
               "strategy": "preferred_failover",
               "offline_behavior": "wait"
             }
@@ -607,10 +604,7 @@
             "name": "selection",
             "payload": {
               "mode": "candidates",
-              "runtime_ids": [
-                "device-a",
-                "device-b"
-              ],
+              "runtime_ids": ["device-a", "device-b"],
               "strategy": "preferred_failover",
               "offline_behavior": "wait"
             }
@@ -648,10 +642,7 @@
             "name": "selection",
             "payload": {
               "mode": "candidates",
-              "runtime_ids": [
-                "device-a",
-                "device-b"
-              ],
+              "runtime_ids": ["device-a", "device-b"],
               "strategy": "preferred_failover",
               "offline_behavior": "wait"
             }

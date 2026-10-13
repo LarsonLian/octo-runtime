@@ -16,7 +16,11 @@ export { ServiceError, type ServiceErrorCode, type ServiceErrorOptions } from ".
 export { LaunchdUserBackend, renderLaunchdPlist } from "./launchd.js";
 export { NodeCommandRunner } from "./runner.js";
 export { SystemdUserBackend, renderSystemdUnit } from "./systemd.js";
-export { WindowsUserTaskBackend, quoteWindowsArgument, renderWindowsTaskXml } from "./windows-task.js";
+export {
+  WindowsUserTaskBackend,
+  quoteWindowsArgument,
+  renderWindowsTaskXml
+} from "./windows-task.js";
 export { normalizeServiceSpec } from "./common.js";
 export type {
   CommandOptions,
@@ -49,9 +53,12 @@ export function createServiceBackend(options: ServiceBackendOptions = {}): Servi
   const homeDirectory = options.homeDirectory ?? homedir();
   const shared = { ...options, platform, runner, homeDirectory };
   switch (platform) {
-    case "darwin": return new LaunchdUserBackend(shared);
-    case "linux": return new SystemdUserBackend(shared);
-    case "win32": return new WindowsUserTaskBackend(shared);
+    case "darwin":
+      return new LaunchdUserBackend(shared);
+    case "linux":
+      return new SystemdUserBackend(shared);
+    case "win32":
+      return new WindowsUserTaskBackend(shared);
     default:
       throw new ServiceError("UNSUPPORTED_PLATFORM", `unsupported service platform: ${platform}`);
   }

@@ -13,7 +13,11 @@ const MAX_CAPTURE_CHARS = 64 * 1024;
  */
 export class NodeCommandRunner implements CommandRunner {
   /** Spawn without a shell, ignore stdin, and capture bounded stdout/stderr. */
-  run(command: string, args: readonly string[], options: CommandOptions = {}): Promise<CommandResult> {
+  run(
+    command: string,
+    args: readonly string[],
+    options: CommandOptions = {}
+  ): Promise<CommandResult> {
     return new Promise((resolve, reject) => {
       const child = spawn(command, [...args], {
         cwd: options.cwd,
@@ -27,12 +31,13 @@ export class NodeCommandRunner implements CommandRunner {
       let settled = false;
       let timedOut = false;
       const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-      const timer = timeoutMs > 0
-        ? setTimeout(() => {
-            timedOut = true;
-            child.kill("SIGKILL");
-          }, timeoutMs)
-        : undefined;
+      const timer =
+        timeoutMs > 0
+          ? setTimeout(() => {
+              timedOut = true;
+              child.kill("SIGKILL");
+            }, timeoutMs)
+          : undefined;
       timer?.unref();
 
       child.stdout.setEncoding("utf8");
@@ -43,13 +48,13 @@ export class NodeCommandRunner implements CommandRunner {
       child.stderr.on("data", (chunk: string | Buffer) => {
         stderr = appendBounded(stderr, chunk.toString());
       });
-      child.once("error", error => {
+      child.once("error", (error) => {
         if (settled) return;
         settled = true;
         if (timer) clearTimeout(timer);
         reject(error);
       });
-      child.once("close", code => {
+      child.once("close", (code) => {
         if (settled) return;
         settled = true;
         if (timer) clearTimeout(timer);
@@ -58,7 +63,9 @@ export class NodeCommandRunner implements CommandRunner {
           args: [...args],
           exitCode: timedOut ? 124 : (code ?? 1),
           stdout,
-          stderr: timedOut ? appendBounded(stderr, `\ncommand timed out after ${timeoutMs}ms`) : stderr
+          stderr: timedOut
+            ? appendBounded(stderr, `\ncommand timed out after ${timeoutMs}ms`)
+            : stderr
         });
       });
     });

@@ -7,7 +7,12 @@ import { invocationEnvironment } from "@mininglamp-oss/octo-harness-adapter-sdk"
  * app-server transport. Per-run developer instructions travel in native thread
  * params, so app-server sees the complete state database and plugin runtime.
  */
-import { defineAdapter, probeCommand, type AdapterInvocationContext, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import {
+  defineAdapter,
+  probeCommand,
+  type AdapterInvocationContext,
+  type InvokeRequest
+} from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
 import { parse } from "smol-toml";
 import { readFileSync } from "node:fs";
@@ -50,9 +55,7 @@ const COMPUTER_USE_MCP_SERVERS = ["computer-use", "node_repl"] as const;
 
 /** Why a shared CODEX_HOME does not currently expose computer use, or `undefined` when it does. */
 export type ComputerUseUnavailableReason =
-  | "config_missing"
-  | "mcp_server_absent"
-  | "mcp_server_disabled";
+  "config_missing" | "mcp_server_absent" | "mcp_server_disabled";
 
 /** One computer-use MCP server as declared in the shared config.toml. */
 export interface ComputerUseMcpServer {
@@ -88,7 +91,10 @@ export interface ComputerUseProvisioning {
 export const COMPUTER_USE_CAPABILITY = "tool.computer_use";
 
 /** Pure classification of a config.toml body; empty text means the config is missing or unreadable. */
-function parseComputerUseProvisioning(codexHome: string, configText: string): ComputerUseProvisioning {
+function parseComputerUseProvisioning(
+  codexHome: string,
+  configText: string
+): ComputerUseProvisioning {
   if (!configText) return { available: false, codexHome, servers: [], reason: "config_missing" };
 
   const config = parse(configText) as {
@@ -109,7 +115,8 @@ function parseComputerUseProvisioning(codexHome: string, configText: string): Co
     });
   }
 
-  if (servers.length === 0) return { available: false, codexHome, servers, reason: "mcp_server_absent" };
+  if (servers.length === 0)
+    return { available: false, codexHome, servers, reason: "mcp_server_absent" };
   if (!servers.some((server) => server.enabled)) {
     return { available: false, codexHome, servers, reason: "mcp_server_disabled" };
   }
@@ -146,7 +153,10 @@ export async function detectComputerUseProvisioning(
   env: NodeJS.ProcessEnv = process.env
 ): Promise<ComputerUseProvisioning> {
   const codexHome = resolveCodexHome(env);
-  return parseComputerUseProvisioning(codexHome, await readOptional(join(codexHome, "config.toml")));
+  return parseComputerUseProvisioning(
+    codexHome,
+    await readOptional(join(codexHome, "config.toml"))
+  );
 }
 
 /**
@@ -203,9 +213,23 @@ function nativeCapacityOverrides(request: InvokeRequest): string[] {
   if (!value) return [];
   const window = value.contextWindow;
   const reserve = value.outputReserveTokens;
-  if (value.management !== "provider_native" || typeof window !== "number" || !Number.isSafeInteger(window) || window < 1024
-    || typeof reserve !== "number" || !Number.isSafeInteger(reserve) || reserve < 0 || reserve >= window) throw new TypeError("CONTEXT_CAPACITY_UNAVAILABLE");
-  return ["-c", `model_context_window=${window}`, "-c", `model_auto_compact_token_limit=${window - reserve}`];
+  if (
+    value.management !== "provider_native" ||
+    typeof window !== "number" ||
+    !Number.isSafeInteger(window) ||
+    window < 1024 ||
+    typeof reserve !== "number" ||
+    !Number.isSafeInteger(reserve) ||
+    reserve < 0 ||
+    reserve >= window
+  )
+    throw new TypeError("CONTEXT_CAPACITY_UNAVAILABLE");
+  return [
+    "-c",
+    `model_context_window=${window}`,
+    "-c",
+    `model_auto_compact_token_limit=${window - reserve}`
+  ];
 }
 
 export function createCodexAdapter({
@@ -230,9 +254,9 @@ export function createCodexAdapter({
     executionFeatures.APPROVAL_ASSISTED,
     executionFeatures.APPROVAL_FULL_ACCESS,
     executionFeatures.INPUT_IMAGE
-
   ];
-  if (detectComputerUseProvisioningSync(env).available) adapterCapabilities.push(COMPUTER_USE_CAPABILITY);
+  if (detectComputerUseProvisioningSync(env).available)
+    adapterCapabilities.push(COMPUTER_USE_CAPABILITY);
   const interactionResponders = new Map<string, CodexInteractionResponder>();
   return defineAdapter({
     metadata: {
@@ -260,7 +284,10 @@ export function createCodexAdapter({
         if (responder) {
           activeResponder = responder;
           interactionResponders.set(request.invocationId, responder);
-        } else if (!activeResponder || interactionResponders.get(request.invocationId) === activeResponder) {
+        } else if (
+          !activeResponder ||
+          interactionResponders.get(request.invocationId) === activeResponder
+        ) {
           interactionResponders.delete(request.invocationId);
           activeResponder = undefined;
         }

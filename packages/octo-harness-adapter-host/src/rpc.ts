@@ -1,7 +1,11 @@
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
-import type { CanonicalEvent, InteractionResponse, InvokeRequest } from "@mininglamp-oss/octo-harness-protocol";
+import type {
+  CanonicalEvent,
+  InteractionResponse,
+  InvokeRequest
+} from "@mininglamp-oss/octo-harness-protocol";
 import type { AdapterHost, HostedAdapterMetadata } from "./index.js";
 
 type JsonRecord = Record<string, unknown>;
@@ -68,12 +72,16 @@ class AsyncQueue<T> implements AsyncIterableIterator<T> {
   }
 }
 
-function writer(output: Writable, trace?: RpcTrace, onError?: (error: Error) => void): (value: RpcMessage) => void {
-  return value => {
+function writer(
+  output: Writable,
+  trace?: RpcTrace,
+  onError?: (error: Error) => void
+): (value: RpcMessage) => void {
+  return (value) => {
     try {
       const frame = JSON.stringify(value);
       trace?.("send", frame);
-      output.write(`${frame}\n`, error => {
+      output.write(`${frame}\n`, (error) => {
         if (error) onError?.(error);
       });
     } catch (error) {
@@ -96,24 +104,30 @@ export class AdapterHostRpcServer {
 
   constructor({ host, output, trace }: { host: AdapterHost; output: Writable; trace?: RpcTrace }) {
     this.#host = host;
-    const send = writer(output, trace, error => this.#close(error));
-    this.#send = value => { if (!this.#closed) send(value); };
+    const send = writer(output, trace, (error) => this.#close(error));
+    this.#send = (value) => {
+      if (!this.#closed) send(value);
+    };
     this.#trace = trace;
-    output.on("error", error => this.#close(error));
+    output.on("error", (error) => this.#close(error));
   }
 
   /** Start consuming the input stream; each line must be one complete JSON-RPC object. */
   listen(input: Readable): void {
     const lines = createInterface({ input });
     lines.on("close", () => this.#close(new Error("adapter-host parent connection closed")));
-    input.on("error", error => this.#close(error));
-    lines.on("line", line => {
+    input.on("error", (error) => this.#close(error));
+    lines.on("line", (line) => {
       if (this.#closed) return;
       this.#trace?.("receive", line);
       try {
         void this.#dispatch(asRpcMessage(JSON.parse(line)));
       } catch (error) {
-        this.#send({ jsonrpc: "2.0", error: { code: -32700, message: errorMessage(error) }, id: null });
+        this.#send({
+          jsonrpc: "2.0",
+          error: { code: -32700, message: errorMessage(error) },
+          id: null
+        });
       }
     });
   }
@@ -127,7 +141,11 @@ export class AdapterHostRpcServer {
         return;
       }
       if (method === "probe") {
-        this.#send({ jsonrpc: "2.0", id, result: await this.#host.probe(requiredString(params.adapterType, "adapterType")) });
+        this.#send({
+          jsonrpc: "2.0",
+          id,
+          result: await this.#host.probe(requiredString(params.adapterType, "adapterType"))
+        });
         return;
       }
       if (method === "cancel") {
@@ -174,9 +192,17 @@ export class AdapterHostRpcServer {
     try {
       for await (const event of this.#host.invoke(adapterType, request)) {
         if (this.#closed) break;
-        this.#send({ jsonrpc: "2.0", method: "invoke.event", params: { invocationId: request.invocationId, event } });
+        this.#send({
+          jsonrpc: "2.0",
+          method: "invoke.event",
+          params: { invocationId: request.invocationId, event }
+        });
       }
-      this.#send({ jsonrpc: "2.0", method: "invoke.done", params: { invocationId: request.invocationId } });
+      this.#send({
+        jsonrpc: "2.0",
+        method: "invoke.done",
+        params: { invocationId: request.invocationId }
+      });
     } catch (error) {
       this.#send({
         jsonrpc: "2.0",
@@ -201,9 +227,9 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
   #closedError?: Error;
 
   constructor({ input, output, trace }: { input: Readable; output: Writable; trace?: RpcTrace }) {
-    this.#send = writer(output, trace, error => this.close(error));
+    this.#send = writer(output, trace, (error) => this.close(error));
     const lines = createInterface({ input });
-    lines.on("line", line => {
+    lines.on("line", (line) => {
       trace?.("receive", line);
       try {
         this.#receive(asRpcMessage(JSON.parse(line)));
@@ -212,8 +238,8 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
       }
     });
     lines.on("close", () => this.close(new Error("adapter-host connection closed")));
-    input.on("error", error => this.close(error));
-    output.on("error", error => this.close(error));
+    input.on("error", (error) => this.close(error));
+    output.on("error", (error) => this.close(error));
   }
 
   #receive(message: RpcMessage): void {
@@ -246,11 +272,23 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
     if (signal?.aborted) return Promise.reject(abortError(signal));
     const id = randomUUID();
     const promise = new Promise<unknown>((resolve, reject) => {
-      const cleanup = (): void => { signal?.removeEventListener("abort", onAbort); this.#pending.delete(id); };
-      const onAbort = (): void => { cleanup(); reject(abortError(signal!)); };
+      const cleanup = (): void => {
+        signal?.removeEventListener("abort", onAbort);
+        this.#pending.delete(id);
+      };
+      const onAbort = (): void => {
+        cleanup();
+        reject(abortError(signal!));
+      };
       this.#pending.set(id, {
-        resolve: value => { cleanup(); resolve(value); },
-        reject: error => { cleanup(); reject(error); }
+        resolve: (value) => {
+          cleanup();
+          resolve(value);
+        },
+        reject: (error) => {
+          cleanup();
+          reject(error);
+        }
       });
       signal?.addEventListener("abort", onAbort, { once: true });
     });
@@ -293,7 +331,11 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
     // AbortSignal 只留在本进程；跨进程发送明确的 cancel RPC，不能序列化成空对象。
     const onAbort = (): void => {
       queue.close(abortError(signal!));
-      void this.request("cancel", { invocationId: request.invocationId, reason: "caller_aborted" }, AbortSignal.timeout(2000)).catch(() => undefined);
+      void this.request(
+        "cancel",
+        { invocationId: request.invocationId, reason: "caller_aborted" },
+        AbortSignal.timeout(2000)
+      ).catch(() => undefined);
     };
     signal?.addEventListener("abort", onAbort, { once: true });
     try {
@@ -308,11 +350,11 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
       queue.close();
     }
   }
-
 }
 
 function asRpcMessage(value: unknown): RpcMessage {
-  if (!isRecord(value) || value.jsonrpc !== "2.0") throw new TypeError("expected a JSON-RPC 2.0 object");
+  if (!isRecord(value) || value.jsonrpc !== "2.0")
+    throw new TypeError("expected a JSON-RPC 2.0 object");
   return value as RpcMessage;
 }
 
@@ -321,7 +363,8 @@ function isRecord(value: unknown): value is JsonRecord {
 }
 
 function requiredString(value: unknown, name: string): string {
-  if (typeof value !== "string" || value.length === 0) throw new TypeError(`${name} must be a non-empty string`);
+  if (typeof value !== "string" || value.length === 0)
+    throw new TypeError(`${name} must be a non-empty string`);
   return value;
 }
 
@@ -335,4 +378,6 @@ function errorCode(error: unknown): number {
   return isRecord(error) && typeof error.code === "number" ? error.code : -32000;
 }
 
-function abortError(signal: AbortSignal): Error { return signal.reason instanceof Error ? signal.reason : new Error("adapter invocation aborted"); }
+function abortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error("adapter invocation aborted");
+}

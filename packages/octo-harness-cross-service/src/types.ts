@@ -11,13 +11,7 @@ export type ServiceBackendKind = "launchd-user" | "systemd-user" | "windows-user
 
 /** Manager-level process state. This does not imply daemon IPC or cloud readiness. */
 export type ServiceState =
-  | "not_installed"
-  | "stopped"
-  | "starting"
-  | "running"
-  | "stopping"
-  | "failed"
-  | "unknown";
+  "not_installed" | "stopped" | "starting" | "running" | "stopping" | "failed" | "unknown";
 
 /** Portable restart modes accepted by the service contract. */
 export type ServiceRestartPolicy = "always" | "on-failure" | "never";

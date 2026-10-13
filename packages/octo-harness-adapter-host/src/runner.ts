@@ -7,11 +7,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { hostLog } from "./host-log.js";
-import {
-  AdapterHost,
-  AdapterHostRpcServer,
-  type HostedAdapter
-} from "./index.js";
+import { AdapterHost, AdapterHostRpcServer, type HostedAdapter } from "./index.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -28,10 +24,13 @@ interface AdapterManifest {
   adapters: AdapterManifestEntry[];
 }
 
-process.on("uncaughtExceptionMonitor", error => hostLog("error", { message: error.message, stack: error.stack }));
+process.on("uncaughtExceptionMonitor", (error) =>
+  hostLog("error", { message: error.message, stack: error.stack })
+);
 
 const index = process.argv.indexOf("--manifest");
-if (index < 0 || !process.argv[index + 1]) throw new Error("usage: octo-harness-adapter-host --manifest <file>");
+if (index < 0 || !process.argv[index + 1])
+  throw new Error("usage: octo-harness-adapter-host --manifest <file>");
 
 const manifestPath = resolve(process.argv[index + 1]);
 const rawManifest: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
@@ -39,9 +38,10 @@ const manifest = parseManifest(rawManifest);
 const host = new AdapterHost();
 
 for (const entry of manifest.adapters) {
-  const specifier = entry.module.startsWith(".") || entry.module.startsWith("/")
-    ? pathToFileURL(resolve(dirname(manifestPath), entry.module)).href
-    : entry.module;
+  const specifier =
+    entry.module.startsWith(".") || entry.module.startsWith("/")
+      ? pathToFileURL(resolve(dirname(manifestPath), entry.module)).href
+      : entry.module;
   const loaded: unknown = await import(specifier);
   const moduleExports = asRecord(loaded, `adapter module ${entry.module}`);
   const exported = moduleExports[entry.exportName];
@@ -51,9 +51,7 @@ for (const entry of manifest.adapters) {
 
   // The manifest is a dynamic plugin boundary: validate the factory and adapter
   // shape before handing the instance to the host for registration.
-  const instance: unknown = entry.factory
-    ? callFactory(exported, entry.options, entry)
-    : exported;
+  const instance: unknown = entry.factory ? callFactory(exported, entry.options, entry) : exported;
   if (!isHostedAdapter(instance)) {
     throw new TypeError(`${entry.module}#${entry.exportName} is not an Octo Harness adapter`);
   }
@@ -67,17 +65,25 @@ for (const entry of manifest.adapters) {
     event: "adapter.registered",
     message: "adapter registered",
     adapterType: instance.metadata.type,
-    data: { capabilities: instance.metadata.capabilities, agentSources: instance.metadata.agentSources, executionFeatures: instance.metadata.executionFeatures }
+    data: {
+      capabilities: instance.metadata.capabilities,
+      agentSources: instance.metadata.agentSources,
+      executionFeatures: instance.metadata.executionFeatures
+    }
   });
 }
 
-new AdapterHostRpcServer({ host, output: process.stdout, trace: (direction, frame) => hostLog(direction, frame) }).listen(process.stdin);
+new AdapterHostRpcServer({
+  host,
+  output: process.stdout,
+  trace: (direction, frame) => hostLog(direction, frame)
+}).listen(process.stdin);
 hostLog("lifecycle", {
   level: "info",
   scope: "adapter-host.lifecycle",
   event: "adapter-host.ready",
   message: "adapter host ready",
-  data: { manifest_path: manifestPath, adapters: host.list().map(adapter => adapter.type) }
+  data: { manifest_path: manifestPath, adapters: host.list().map((adapter) => adapter.type) }
 });
 
 let stopping = false;
@@ -100,7 +106,8 @@ process.stdin.once("close", stop);
 function parseManifest(value: unknown): AdapterManifest {
   const record = asRecord(value, "adapter manifest");
   if (record.version !== 1) throw new TypeError("adapter manifest.version must be 1");
-  if (!Array.isArray(record.adapters)) throw new TypeError("adapter manifest.adapters must be an array");
+  if (!Array.isArray(record.adapters))
+    throw new TypeError("adapter manifest.adapters must be an array");
   return {
     version: 1,
     adapters: record.adapters.map((item, position) => {
@@ -110,7 +117,10 @@ function parseManifest(value: unknown): AdapterManifest {
         module: requiredString(entry.module, `adapters[${position}].module`),
         exportName: optionalString(entry.export) ?? "default",
         factory: entry.factory === true,
-        options: entry.options === undefined ? {} : asRecord(entry.options, `adapters[${position}].options`),
+        options:
+          entry.options === undefined
+            ? {}
+            : asRecord(entry.options, `adapters[${position}].options`),
         ...(type ? { type } : {})
       };
     })
@@ -119,7 +129,9 @@ function parseManifest(value: unknown): AdapterManifest {
 
 function callFactory(value: unknown, options: JsonRecord, entry: AdapterManifestEntry): unknown {
   if (typeof value !== "function") {
-    throw new TypeError(`${entry.module}#${entry.exportName} is marked as a factory but is not callable`);
+    throw new TypeError(
+      `${entry.module}#${entry.exportName} is marked as a factory but is not callable`
+    );
   }
   const factory = value as (factoryOptions: JsonRecord) => unknown;
   return factory(options);
@@ -129,12 +141,20 @@ function callFactory(value: unknown, options: JsonRecord, entry: AdapterManifest
  * an `invoke` method are required, so any conforming object can be a hosted adapter. */
 function isHostedAdapter(value: unknown): value is HostedAdapter {
   if (!isRecord(value) || !isRecord(value.metadata)) return false;
-  return typeof value.metadata.type === "string" &&
-    Array.isArray(value.metadata.agentSources) && value.metadata.agentSources.length > 0 && value.metadata.agentSources.every(source => source === "preset" || source === "provisioned") &&
-    Array.isArray(value.metadata.executionFeatures) && value.metadata.executionFeatures.every(feature => typeof feature === "string") &&
+  return (
+    typeof value.metadata.type === "string" &&
+    Array.isArray(value.metadata.agentSources) &&
+    value.metadata.agentSources.length > 0 &&
+    value.metadata.agentSources.every(
+      (source) => source === "preset" || source === "provisioned"
+    ) &&
+    Array.isArray(value.metadata.executionFeatures) &&
+    value.metadata.executionFeatures.every((feature) => typeof feature === "string") &&
     Array.isArray(value.metadata.capabilities) &&
-    value.metadata.capabilities.length === 1 && value.metadata.capabilities[0] === "react" &&
-    typeof value.invoke === "function";
+    value.metadata.capabilities.length === 1 &&
+    value.metadata.capabilities[0] === "react" &&
+    typeof value.invoke === "function"
+  );
 }
 
 function asRecord(value: unknown, name: string): JsonRecord {
@@ -147,7 +167,8 @@ function isRecord(value: unknown): value is JsonRecord {
 }
 
 function requiredString(value: unknown, name: string): string {
-  if (typeof value !== "string" || value.length === 0) throw new TypeError(`${name} must be a non-empty string`);
+  if (typeof value !== "string" || value.length === 0)
+    throw new TypeError(`${name} must be a non-empty string`);
   return value;
 }
 

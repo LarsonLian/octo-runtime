@@ -53,6 +53,9 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-zcode-gui':
         specifier: workspace:*
         version: link:packages/octo-harness-adapter-zcode-gui
+      '@mininglamp-oss/octo-harness-channel-im':
+        specifier: workspace:*
+        version: link:packages/octo-harness-channel-im
       '@mininglamp-oss/octo-harness-context-builder':
         specifier: workspace:*
         version: link:packages/octo-harness-context-builder
@@ -65,9 +68,6 @@ importers:
       '@mininglamp-oss/octo-harness-daemon':
         specifier: workspace:*
         version: link:packages/octo-harness-daemon
-      '@mininglamp-oss/octo-harness-im':
-        specifier: workspace:*
-        version: link:packages/octo-harness-im
       '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
         version: link:packages/octo-harness-protocol
@@ -93,6 +93,9 @@ importers:
       eslint:
         specifier: ^10.9.1
         version: 10.9.1(jiti@2.7.0)
+      prettier:
+        specifier: 3.9.6
+        version: 3.9.6
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -336,6 +339,25 @@ importers:
         specifier: workspace:*
         version: link:../octo-harness-adapter-sdk
 
+  packages/octo-harness-channel-im:
+    dependencies:
+      '@mininglamp-oss/octo-harness-adapter-host':
+        specifier: workspace:*
+        version: link:../octo-harness-adapter-host
+      '@mininglamp-oss/octo-harness-context-builder':
+        specifier: workspace:*
+        version: link:../octo-harness-context-builder
+      '@mininglamp-oss/octo-harness-protocol':
+        specifier: workspace:*
+        version: link:../octo-harness-protocol
+      ws:
+        specifier: ^8.18.3
+        version: 8.21.3
+    devDependencies:
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+
   packages/octo-harness-context-builder:
     dependencies:
       '@mininglamp-oss/octo-harness-protocol':
@@ -361,15 +383,15 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-harness-adapter-sdk
+      '@mininglamp-oss/octo-harness-channel-im':
+        specifier: workspace:*
+        version: link:../octo-harness-channel-im
       '@mininglamp-oss/octo-harness-context-builder':
         specifier: workspace:*
         version: link:../octo-harness-context-builder
       '@mininglamp-oss/octo-harness-core':
         specifier: workspace:*
         version: link:../octo-harness-core
-      '@mininglamp-oss/octo-harness-im':
-        specifier: workspace:*
-        version: link:../octo-harness-im
       '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
         version: link:../octo-harness-protocol
@@ -394,25 +416,6 @@ importers:
       '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
         version: link:../octo-harness-protocol
-
-  packages/octo-harness-im:
-    dependencies:
-      '@mininglamp-oss/octo-harness-adapter-host':
-        specifier: workspace:*
-        version: link:../octo-harness-adapter-host
-      '@mininglamp-oss/octo-harness-context-builder':
-        specifier: workspace:*
-        version: link:../octo-harness-context-builder
-      '@mininglamp-oss/octo-harness-protocol':
-        specifier: workspace:*
-        version: link:../octo-harness-protocol
-      ws:
-        specifier: ^8.18.3
-        version: 8.21.3
-    devDependencies:
-      '@types/ws':
-        specifier: ^8.18.1
-        version: 8.18.1
 
   packages/octo-harness-protocol:
     devDependencies:

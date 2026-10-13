@@ -52,7 +52,10 @@ export function formatRuntimeDeviceInfo(input: RuntimeDeviceInfoInput): RuntimeD
       break;
     case "linux":
       osName = normalized(input.linuxPrettyName) || "Linux";
-      kernel = platformRelease && !osName.includes(platformRelease) ? `Linux ${platformRelease}` : undefined;
+      kernel =
+        platformRelease && !osName.includes(platformRelease)
+          ? `Linux ${platformRelease}`
+          : undefined;
       break;
     case "win32": {
       const platformVersion = normalized(input.platformVersion);
@@ -69,20 +72,24 @@ export function formatRuntimeDeviceInfo(input: RuntimeDeviceInfoInput): RuntimeD
   const cpuModel = normalized(input.cpuModel);
   return {
     os: withOptionalSuffix(osName, kernel),
-    arch: limited(cpuModel && cpuModel.toLowerCase() !== architecture.toLowerCase()
-      ? `${architecture} / ${cpuModel}`
-      : architecture),
+    arch: limited(
+      cpuModel && cpuModel.toLowerCase() !== architecture.toLowerCase()
+        ? `${architecture} / ${cpuModel}`
+        : architecture
+    ),
     hostname: limited(normalized(input.hostname) || "unknown")
   };
 }
 
 function macOSProductVersion(): string | undefined {
   try {
-    return execFileSync("/usr/bin/sw_vers", ["-productVersion"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 2_000
-    }).trim() || undefined;
+    return (
+      execFileSync("/usr/bin/sw_vers", ["-productVersion"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 2_000
+      }).trim() || undefined
+    );
   } catch {
     return undefined;
   }
@@ -91,7 +98,10 @@ function macOSProductVersion(): string | undefined {
 function linuxPrettyName(): string | undefined {
   try {
     const contents = readFileSync("/etc/os-release", "utf8");
-    const raw = contents.split(/\r?\n/).find(line => line.startsWith("PRETTY_NAME="))?.slice("PRETTY_NAME=".length);
+    const raw = contents
+      .split(/\r?\n/)
+      .find((line) => line.startsWith("PRETTY_NAME="))
+      ?.slice("PRETTY_NAME=".length);
     if (!raw) return undefined;
     if (raw.startsWith('"') && raw.endsWith('"')) {
       try {

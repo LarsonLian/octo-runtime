@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { subscribeDaemonRun, invokeDaemonRun } from "./run-stream.js";
 import { callDaemon } from "./runtime-contract.js";
-import type { CanonicalEvent, InvokeRequest, InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
+import type {
+  CanonicalEvent,
+  InvokeRequest,
+  InteractionResponse
+} from "@mininglamp-oss/octo-harness-protocol";
 import type { HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
 import { EmbeddedHarnessError, asEmbeddedError } from "./errors.js";
 import { ensureTenantEnrollment, resetTenantEnrollment } from "./enrollment.js";
@@ -66,7 +70,13 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
 
   reconcileTenants(tenants: readonly AuthorizedTenant[]): Promise<EmbeddedHealth> {
     return this.#enqueue(async () => {
-      if (!this.#active) throw new EmbeddedHarnessError("ACCOUNT_NOT_RUNNING", "daemon", false, "no embedded account is active");
+      if (!this.#active)
+        throw new EmbeddedHarnessError(
+          "ACCOUNT_NOT_RUNNING",
+          "daemon",
+          false,
+          "no embedded account is active"
+        );
       return this.#startAccount({ ...this.#active.input, tenants });
     });
   }
@@ -74,9 +84,21 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
   resetTenant(tenantId: string): Promise<EmbeddedHealth> {
     return this.#enqueue(async () => {
       const active = this.#active;
-      if (!active) throw new EmbeddedHarnessError("ACCOUNT_NOT_RUNNING", "daemon", false, "no embedded account is active");
+      if (!active)
+        throw new EmbeddedHarnessError(
+          "ACCOUNT_NOT_RUNNING",
+          "daemon",
+          false,
+          "no embedded account is active"
+        );
       const profile = active.tenantProfiles.get(tenantId);
-      if (!profile) throw new EmbeddedHarnessError("TENANT_NOT_ACTIVE", "profile", false, `tenant is not active: ${tenantId}`);
+      if (!profile)
+        throw new EmbeddedHarnessError(
+          "TENANT_NOT_ACTIVE",
+          "profile",
+          false,
+          `tenant is not active: ${tenantId}`
+        );
       const input = active.input;
       const account = active.account;
       await this.#stop("reconfigure");
@@ -105,18 +127,29 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
 
   cancelRun(runId: string): Promise<{ cancelled: boolean }> {
     if (!this.#active) return Promise.reject(new Error("HOST_NOT_RUNNING"));
-    return callDaemon(this.#active.supervised.paths.socket, { method: "agent_run.cancel", params: { run_id: runId } });
+    return callDaemon(this.#active.supervised.paths.socket, {
+      method: "agent_run.cancel",
+      params: { run_id: runId }
+    });
   }
 
   async respondRun(runId: string, response: InteractionResponse): Promise<void> {
     if (!this.#active) throw new Error("HOST_NOT_RUNNING");
-    await callDaemon(this.#active.supervised.paths.socket, { method: "agent_run.respond", params: { run_id: runId, response } });
+    await callDaemon(this.#active.supervised.paths.socket, {
+      method: "agent_run.respond",
+      params: { run_id: runId, response }
+    });
   }
 
-  async *subscribeRun(input: { runId: string; streamId?: string; afterSeq?: number; signal?: AbortSignal }): AsyncIterable<Record<string, unknown>> {
-    const active=this.#active;
+  async *subscribeRun(input: {
+    runId: string;
+    streamId?: string;
+    afterSeq?: number;
+    signal?: AbortSignal;
+  }): AsyncIterable<Record<string, unknown>> {
+    const active = this.#active;
     if (!active) throw new Error("HOST_NOT_RUNNING");
-    yield* subscribeDaemonRun(active.supervised.paths.socket,input);
+    yield* subscribeDaemonRun(active.supervised.paths.socket, input);
   }
 
   onHealth(listener: (health: EmbeddedHealth) => void): () => void {
@@ -154,12 +187,16 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
       this.#ownerLock = lock;
       const machine = ensureEmbeddedHome(this.#paths);
       const account = accountPaths(this.#paths, accountKey);
-      const tenantProfiles = new Map(tenants.map(tenant => [tenant.id, profileNameFor(this.#options.appId, tenant.id)]));
+      const tenantProfiles = new Map(
+        tenants.map((tenant) => [tenant.id, profileNameFor(this.#options.appId, tenant.id)])
+      );
       ensureAccount(account, [...tenantProfiles.values()]);
       this.#emit({
         ...this.#snapshot,
         machineId: machine.machine_id,
-        profiles: tenants.map(tenant => profileHealth(tenant.id, tenantProfiles.get(tenant.id)!, "pending")),
+        profiles: tenants.map((tenant) =>
+          profileHealth(tenant.id, tenantProfiles.get(tenant.id)!, "pending")
+        ),
         cloud: { totalProfiles: tenants.length, connectedProfiles: 0, allConnected: false },
         observedAt: Date.now()
       });
@@ -189,7 +226,11 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
             observedAt: Date.now()
           });
         } catch (error) {
-          const embeddedError = asEmbeddedError(error, { code: "ENROLLMENT_FAILED", scope: "enrollment", retryable: true });
+          const embeddedError = asEmbeddedError(error, {
+            code: "ENROLLMENT_FAILED",
+            scope: "enrollment",
+            retryable: true
+          });
           firstEnrollmentError ??= embeddedError;
           this.#patchProfile(tenant.id, {
             state: embeddedError.code === "AUTH_REJECTED" ? "unauthorized" : "error",
@@ -209,7 +250,16 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
           });
         }
       }
-      if (successful.length === 0) throw firstEnrollmentError ?? new EmbeddedHarnessError("NO_PROFILES", "enrollment", false, "no tenant profile could be enrolled");
+      if (successful.length === 0)
+        throw (
+          firstEnrollmentError ??
+          new EmbeddedHarnessError(
+            "NO_PROFILES",
+            "enrollment",
+            false,
+            "no tenant profile could be enrolled"
+          )
+        );
       ensureAccount(account, successful);
       this.#emit({ ...this.#snapshot, phase: "starting", observedAt: Date.now() });
       const started = await startEmbeddedRuntime({
@@ -219,13 +269,33 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
         profiles: successful,
         nonce: lock.nonce
       });
-      this.#active = { input: { ...input, tenants }, account, tenantProfiles, supervised: started.supervised, signature };
+      this.#active = {
+        input: { ...input, tenants },
+        account,
+        tenantProfiles,
+        supervised: started.supervised,
+        signature
+      };
       started.supervised.child.once("exit", () => {
-        if (generation !== this.#generation || this.#snapshot.phase === "stopping" || this.#snapshot.phase === "stopped") return;
-        this.#emitError(new EmbeddedHarnessError("DAEMON_EXITED", "daemon", true, "embedded runtime exited unexpectedly"));
+        if (
+          generation !== this.#generation ||
+          this.#snapshot.phase === "stopping" ||
+          this.#snapshot.phase === "stopped"
+        )
+          return;
+        this.#emitError(
+          new EmbeddedHarnessError(
+            "DAEMON_EXITED",
+            "daemon",
+            true,
+            "embedded runtime exited unexpectedly"
+          )
+        );
       });
       this.#applyDaemonStatus(started.status);
-      this.#pollTimer = setInterval(() => { void this.#refreshHealth(); }, this.#options.healthPollIntervalMs ?? 5_000);
+      this.#pollTimer = setInterval(() => {
+        void this.#refreshHealth();
+      }, this.#options.healthPollIntervalMs ?? 5_000);
       this.#pollTimer.unref();
       return this.#snapshot;
     } catch (error) {
@@ -234,7 +304,11 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
         lock?.release();
         if (this.#ownerLock === lock) this.#ownerLock = undefined;
       }
-      const embeddedError = asEmbeddedError(error, { code: "START_FAILED", scope: "daemon", retryable: true });
+      const embeddedError = asEmbeddedError(error, {
+        code: "START_FAILED",
+        scope: "daemon",
+        retryable: true
+      });
       this.#emitError(embeddedError);
       throw embeddedError;
     }
@@ -263,7 +337,14 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
     if (!active) return;
     const status = await runtimeStatus(active.supervised);
     if (!status) {
-      this.#emitError(new EmbeddedHarnessError("DAEMON_UNREACHABLE", "daemon", true, "embedded daemon is not reachable"));
+      this.#emitError(
+        new EmbeddedHarnessError(
+          "DAEMON_UNREACHABLE",
+          "daemon",
+          true,
+          "embedded daemon is not reachable"
+        )
+      );
       return;
     }
     this.#applyDaemonStatus(status);
@@ -272,19 +353,23 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
   #applyDaemonStatus(status: Awaited<ReturnType<typeof runtimeStatus>> & {}): void {
     const runtimes = status.agentWork?.runtimes ?? [];
     let connected = 0;
-    const profiles = this.#snapshot.profiles.map(profile => {
-      const runtime = runtimes.find(item => item.profile === profile.profile || item.runtimeId === profile.runtimeId);
+    const profiles = this.#snapshot.profiles.map((profile) => {
+      const runtime = runtimes.find(
+        (item) => item.profile === profile.profile || item.runtimeId === profile.runtimeId
+      );
       if (runtime?.connected) connected += 1;
       if (profile.state === "error" || profile.state === "unauthorized") return profile;
       return {
         ...profile,
-        state: runtime?.connected ? "online" as const : "offline" as const,
+        state: runtime?.connected ? ("online" as const) : ("offline" as const),
         reasonCode: runtime?.error ? "RUNTIME_CONNECTION_FAILED" : undefined,
         observedAt: Date.now()
       };
     });
     const allConnected = profiles.length > 0 && connected === profiles.length;
-    const hasProfileFailure = profiles.some(profile => profile.state === "error" || profile.state === "unauthorized");
+    const hasProfileFailure = profiles.some(
+      (profile) => profile.state === "error" || profile.state === "unauthorized"
+    );
     this.#emit({
       ...this.#snapshot,
       phase: allConnected && !hasProfileFailure ? "running" : "degraded",
@@ -308,7 +393,9 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
   #patchProfile(tenantId: string, patch: Partial<ProfileHealth>): void {
     this.#emit({
       ...this.#snapshot,
-      profiles: this.#snapshot.profiles.map(profile => profile.tenantId === tenantId ? { ...profile, ...patch } : profile),
+      profiles: this.#snapshot.profiles.map((profile) =>
+        profile.tenantId === tenantId ? { ...profile, ...patch } : profile
+      ),
       observedAt: Date.now()
     });
   }
@@ -338,7 +425,10 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
 
   #enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.#queue.then(operation, operation);
-    this.#queue = result.then(() => undefined, () => undefined);
+    this.#queue = result.then(
+      () => undefined,
+      () => undefined
+    );
     return result;
   }
 }
@@ -355,23 +445,47 @@ function emptyHealth(home: string, generation = 0): EmbeddedHealth {
   };
 }
 
-function profileHealth(tenantId: string, profile: string, state: ProfileHealth["state"]): ProfileHealth {
+function profileHealth(
+  tenantId: string,
+  profile: string,
+  state: ProfileHealth["state"]
+): ProfileHealth {
   return { tenantId, profile, state, observedAt: Date.now() };
 }
 
 function validateTenants(tenants: readonly AuthorizedTenant[]): AuthorizedTenant[] {
-  if (tenants.length === 0) throw new EmbeddedHarnessError("TENANTS_EMPTY", "home", false, "at least one authorized tenant is required");
+  if (tenants.length === 0)
+    throw new EmbeddedHarnessError(
+      "TENANTS_EMPTY",
+      "home",
+      false,
+      "at least one authorized tenant is required"
+    );
   const ids = new Set<string>();
-  return tenants.map(tenant => {
+  return tenants.map((tenant) => {
     const id = tenant.id.trim();
-    if (!id || ids.has(id)) throw new EmbeddedHarnessError("TENANT_INVALID", "home", false, `tenant id is empty or duplicated: ${id}`);
+    if (!id || ids.has(id))
+      throw new EmbeddedHarnessError(
+        "TENANT_INVALID",
+        "home",
+        false,
+        `tenant id is empty or duplicated: ${id}`
+      );
     ids.add(id);
     return { ...tenant, id };
   });
 }
 
 function tenantSignature(accountKey: string, tenants: readonly AuthorizedTenant[]): string {
-  return JSON.stringify([accountKey, ...tenants
-    .map(tenant => [tenant.id, tenant.serverUrl, tenant.agentWorkUrl, JSON.stringify(tenant.businessServiceBindings)])
-    .sort((left, right) => left[0].localeCompare(right[0]))]);
+  return JSON.stringify([
+    accountKey,
+    ...tenants
+      .map((tenant) => [
+        tenant.id,
+        tenant.serverUrl,
+        tenant.agentWorkUrl,
+        JSON.stringify(tenant.businessServiceBindings)
+      ])
+      .sort((left, right) => left[0].localeCompare(right[0]))
+  ]);
 }

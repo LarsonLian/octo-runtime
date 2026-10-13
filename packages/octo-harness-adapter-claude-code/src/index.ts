@@ -1,4 +1,7 @@
-import { invocationEnvironment, mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import {
+  invocationEnvironment,
+  mapReasoningEffort
+} from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * Claude Code local CLI transport and event normalization layer.
@@ -65,7 +68,12 @@ interface ClaudeNativeEvent {
   is_error?: boolean;
   result?: string;
   request_id?: string;
-  request?: { subtype?: string; tool_name?: string; input?: Record<string, unknown>; tool_use_id?: string };
+  request?: {
+    subtype?: string;
+    tool_name?: string;
+    input?: Record<string, unknown>;
+    tool_use_id?: string;
+  };
 }
 
 /**
@@ -92,11 +100,14 @@ export async function buildClaudeCommand(
   const args = [
     ...commandArgsPrefix,
     "--print",
-    "--input-format", "stream-json",
-    "--output-format", "stream-json",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
     "--verbose",
     "--include-partial-messages",
-    "--append-system-prompt-file", promptFile
+    "--append-system-prompt-file",
+    promptFile
   ];
   if (req.providerSession?.sessionId) args.push("--resume", req.providerSession.sessionId);
   if (req.agentConfig?.model) args.push("--model", req.agentConfig.model);
@@ -116,10 +127,14 @@ export async function buildClaudeCommand(
 
 export function claudePermissionMode(mode: InvokeRequest["approvalMode"]): string {
   switch (mode) {
-    case "ask": return "default";
-    case "assisted": return "auto";
-    case "full_access": return "bypassPermissions";
-    default: throw new Error("APPROVAL_MODE_UNSUPPORTED");
+    case "ask":
+      return "default";
+    case "assisted":
+      return "auto";
+    case "full_access":
+      return "bypassPermissions";
+    default:
+      throw new Error("APPROVAL_MODE_UNSUPPORTED");
   }
 }
 
@@ -156,19 +171,40 @@ export class ClaudeEventNormalizer {
   normalize(native: ClaudeNativeEvent): CanonicalEvent[] {
     // compact_boundary 是历史已被 Provider 压缩的确认；不得据此重发当前用户 turn。
     if (native.type === "system" && native.subtype === "compact_boundary" && native.session_id) {
-      return [{ protocolVersion: 2, type: "run.notice", payload: {
-          noticeId: `claude:compaction:${native.session_id}:${++this.#compactionNumber}`, code: "context_compacted", severity: "info", params: {}
-        } }, { protocolVersion: 2, type: "session.update", payload: {
-          providerSession: { sessionId: native.session_id, resumable: true, resumeOutcome: "compacted" }
-        } }];
+      return [
+        {
+          protocolVersion: 2,
+          type: "run.notice",
+          payload: {
+            noticeId: `claude:compaction:${native.session_id}:${++this.#compactionNumber}`,
+            code: "context_compacted",
+            severity: "info",
+            params: {}
+          }
+        },
+        {
+          protocolVersion: 2,
+          type: "session.update",
+          payload: {
+            providerSession: {
+              sessionId: native.session_id,
+              resumable: true,
+              resumeOutcome: "compacted"
+            }
+          }
+        }
+      ];
     }
     if (native.type === "system" && native.session_id) {
       if (native.session_id === this.#publishedSessionId) return [];
       this.#publishedSessionId = native.session_id;
-      return [{ protocolVersion: 2,
-        type: "session.update",
-        payload: { providerSession: { sessionId: native.session_id, resumable: true } }
-      }];
+      return [
+        {
+          protocolVersion: 2,
+          type: "session.update",
+          payload: { providerSession: { sessionId: native.session_id, resumable: true } }
+        }
+      ];
     }
 
     if (native.type === "stream_event") {
@@ -185,20 +221,34 @@ export class ClaudeEventNormalizer {
       this.#completedMessages.add(stepId);
       for (const [index, block] of (native.message?.content ?? []).entries()) {
         if (block.type === "text" && block.text) {
-          events.push({ protocolVersion: 2, type: "message.update", payload: { messageId: `claude:${stepId}:text:${index}`, stepId, status: "completed", text: block.text, channel: "final" } });
-        }
-        if (block.type === "thinking" && block.thinking) {
-          events.push({ protocolVersion: 2,
+          events.push({
+            protocolVersion: 2,
             type: "message.update",
             payload: {
-              messageId: `claude:${stepId}:thinking:${index}`, stepId, status: "completed",
+              messageId: `claude:${stepId}:text:${index}`,
+              stepId,
+              status: "completed",
+              text: block.text,
+              channel: "final"
+            }
+          });
+        }
+        if (block.type === "thinking" && block.thinking) {
+          events.push({
+            protocolVersion: 2,
+            type: "message.update",
+            payload: {
+              messageId: `claude:${stepId}:thinking:${index}`,
+              stepId,
+              status: "completed",
               text: block.thinking,
               ...claudeAnalysisMetadata("public_reasoning", "assistant.content.thinking")
             }
           });
         }
         if (block.type === "tool_use" && block.id && block.name) {
-          events.push({ protocolVersion: 2,
+          events.push({
+            protocolVersion: 2,
             type: "tool_call.create",
             payload: { status: "running", id: block.id, name: block.name, args: block.input ?? {} }
           });
@@ -213,14 +263,21 @@ export class ClaudeEventNormalizer {
         if (block.type !== "tool_result" || !block.tool_use_id) continue;
         const output = claudeToolResultOutput(block.content);
         const stepId = this.#toolSteps.get(block.tool_use_id);
-        events.push({ protocolVersion: 2,
+        events.push({
+          protocolVersion: 2,
           type: "tool_call.update",
           payload: {
             id: block.tool_use_id,
             status: canonicalTerminalStatus(block.is_error ? "error" : "completed"),
             ...(stepId ? { stepId } : {}),
             ...(output === undefined ? {} : { output }),
-            ...(block.is_error ? { error: { message: typeof output === "string" ? output : "Claude tool call failed" } } : {})
+            ...(block.is_error
+              ? {
+                  error: {
+                    message: typeof output === "string" ? output : "Claude tool call failed"
+                  }
+                }
+              : {})
           }
         });
         this.#toolSteps.delete(block.tool_use_id);
@@ -232,17 +289,21 @@ export class ClaudeEventNormalizer {
       const events = this.#finishActiveSteps(native.is_error ? "failed" : "completed");
       events.push(
         { protocolVersion: 2, type: "usage.update", payload: native.usage ?? {} },
-        { protocolVersion: 2,
+        {
+          protocolVersion: 2,
           type: "message.update",
           payload: {
             role: "assistant",
             status: native.is_error ? "failed" : "completed",
             channel: "final",
             // Partial mode already delivered all visible text incrementally; overwriting here would drop pre-tool progress in the UI.
-            ...(!this.#sawPartialMessages && typeof native.result === "string" ? { text: native.result } : {})
+            ...(!this.#sawPartialMessages && typeof native.result === "string"
+              ? { text: native.result }
+              : {})
           }
         },
-        { protocolVersion: 2,
+        {
+          protocolVersion: 2,
           type: native.is_error ? "run.failed" : "run.completed",
           payload: native.is_error ? { message: native.result ?? "Claude Code failed" } : {}
         }
@@ -283,13 +344,27 @@ export class ClaudeEventNormalizer {
     if (event.type === "content_block_start") {
       const block = event.content_block;
       if (block?.type === "text" && typeof event.index === "number") {
-        const stepId = this.#messageIds.get(scope) ?? `claude:${scope}:message-${++this.#messageSequence}`;
+        const stepId =
+          this.#messageIds.get(scope) ?? `claude:${scope}:message-${++this.#messageSequence}`;
         this.#messageIds.set(scope, stepId);
         const messageId = `claude:${stepId}:text:${event.index}`;
         const blocks = this.#textBlocks.get(scope) ?? new Map<number, string>();
         this.#textBlocks.set(scope, blocks);
         blocks.set(event.index, messageId);
-        return [{ protocolVersion: 2, type: "message.create", payload: { role: "assistant", status: "streaming", channel: "final", messageId, stepId, ...(block.text ? { text: block.text } : {}) } }];
+        return [
+          {
+            protocolVersion: 2,
+            type: "message.create",
+            payload: {
+              role: "assistant",
+              status: "streaming",
+              channel: "final",
+              messageId,
+              stepId,
+              ...(block.text ? { text: block.text } : {})
+            }
+          }
+        ];
       }
       if (block?.type === "thinking" && typeof event.index === "number") {
         let blocks = this.#thinkingBlocks.get(scope);
@@ -297,21 +372,26 @@ export class ClaudeEventNormalizer {
           blocks = new Map();
           this.#thinkingBlocks.set(scope, blocks);
         }
-        const providerMessageId = this.#messageIds.get(scope) ?? `message-${++this.#messageSequence}`;
+        const providerMessageId =
+          this.#messageIds.get(scope) ?? `message-${++this.#messageSequence}`;
         const messageId = `claude:${providerMessageId}:thinking:${event.index}`;
         blocks.set(event.index, messageId);
-        return [{ protocolVersion: 2,
-          type: "message.create",
-          payload: {
-            role: "assistant",
-            status: "streaming",
-            messageId,
-            stepId: providerMessageId,
-            ...claudeAnalysisMetadata("public_reasoning", "stream_event.thinking_start")
+        return [
+          {
+            protocolVersion: 2,
+            type: "message.create",
+            payload: {
+              role: "assistant",
+              status: "streaming",
+              messageId,
+              stepId: providerMessageId,
+              ...claudeAnalysisMetadata("public_reasoning", "stream_event.thinking_start")
+            }
           }
-        }];
+        ];
       }
-      if (block?.type !== "tool_use" || typeof event.index !== "number" || !block.id || !block.name) return [];
+      if (block?.type !== "tool_use" || typeof event.index !== "number" || !block.id || !block.name)
+        return [];
       let blocks = this.#toolBlocks.get(scope);
       if (!blocks) {
         blocks = new Map();
@@ -320,37 +400,61 @@ export class ClaudeEventNormalizer {
       blocks.set(event.index, block.id);
       const stepId = this.#messageIds.get(scope);
       if (stepId) this.#toolSteps.set(block.id, stepId);
-      return [{ protocolVersion: 2,
-        type: "tool_call.create",
-        payload: { status: "running", id: block.id, name: block.name, args: block.input ?? {}, ...(stepId ? { stepId } : {}) }
-      }];
+      return [
+        {
+          protocolVersion: 2,
+          type: "tool_call.create",
+          payload: {
+            status: "running",
+            id: block.id,
+            name: block.name,
+            args: block.input ?? {},
+            ...(stepId ? { stepId } : {})
+          }
+        }
+      ];
     }
 
     if (event.type === "content_block_stop" && typeof event.index === "number") {
       const textId = this.#textBlocks.get(scope)?.get(event.index);
       if (textId) {
         this.#textBlocks.get(scope)?.delete(event.index);
-        return [{ protocolVersion: 2, type: "message.update", payload: { messageId: textId, channel: "final", status: "completed", stepId: this.#messageIds.get(scope) } }];
+        return [
+          {
+            protocolVersion: 2,
+            type: "message.update",
+            payload: {
+              messageId: textId,
+              channel: "final",
+              status: "completed",
+              stepId: this.#messageIds.get(scope)
+            }
+          }
+        ];
       }
       const messageId = this.#thinkingBlocks.get(scope)?.get(event.index);
       if (!messageId) return [];
       this.#thinkingBlocks.get(scope)?.delete(event.index);
-      return [{ protocolVersion: 2,
-        type: "message.update",
-        payload: {
-          role: "assistant",
-          status: "completed",
-          messageId,
-          ...(this.#messageIds.get(scope) ? { stepId: this.#messageIds.get(scope) } : {}),
-          ...claudeAnalysisMetadata("public_reasoning", "stream_event.thinking_stop")
+      return [
+        {
+          protocolVersion: 2,
+          type: "message.update",
+          payload: {
+            role: "assistant",
+            status: "completed",
+            messageId,
+            ...(this.#messageIds.get(scope) ? { stepId: this.#messageIds.get(scope) } : {}),
+            ...claudeAnalysisMetadata("public_reasoning", "stream_event.thinking_stop")
+          }
         }
-      }];
+      ];
     }
 
     if (event.type !== "content_block_delta") return [];
     const delta = event.delta;
     if (delta?.type === "text_delta" && delta.text) {
-      const stepId = this.#messageIds.get(scope) ?? `claude:${scope}:message-${++this.#messageSequence}`;
+      const stepId =
+        this.#messageIds.get(scope) ?? `claude:${scope}:message-${++this.#messageSequence}`;
       this.#messageIds.set(scope, stepId);
       const index = event.index ?? 0;
       const blocks = this.#textBlocks.get(scope) ?? new Map<number, string>();
@@ -358,32 +462,48 @@ export class ClaudeEventNormalizer {
       const messageId = blocks.get(index) ?? `claude:${stepId}:text:${index}`;
       blocks.set(index, messageId);
       this.#appendPublicText(scope, delta.text);
-      return [{ protocolVersion: 2,
-        type: "message.delta",
-        payload: { text: delta.text, channel: "final", messageId, stepId }
-      }];
+      return [
+        {
+          protocolVersion: 2,
+          type: "message.delta",
+          payload: { text: delta.text, channel: "final", messageId, stepId }
+        }
+      ];
     }
     if (delta?.type === "thinking_delta" && delta.thinking) {
-      const messageId = typeof event.index === "number"
-        ? this.#thinkingBlocks.get(scope)?.get(event.index)
-        : undefined;
-      return [{ protocolVersion: 2,
-        type: "message.delta",
-        payload: {
-          text: delta.thinking,
-          ...(messageId ? { messageId } : {}),
-          ...(this.#messageIds.get(scope) ? { stepId: this.#messageIds.get(scope) } : {}),
-          ...claudeAnalysisMetadata("public_reasoning", "stream_event.thinking_delta")
+      const messageId =
+        typeof event.index === "number"
+          ? this.#thinkingBlocks.get(scope)?.get(event.index)
+          : undefined;
+      return [
+        {
+          protocolVersion: 2,
+          type: "message.delta",
+          payload: {
+            text: delta.thinking,
+            ...(messageId ? { messageId } : {}),
+            ...(this.#messageIds.get(scope) ? { stepId: this.#messageIds.get(scope) } : {}),
+            ...claudeAnalysisMetadata("public_reasoning", "stream_event.thinking_delta")
+          }
         }
-      }];
+      ];
     }
-    if (delta?.type === "input_json_delta" && delta.partial_json && typeof event.index === "number") {
+    if (
+      delta?.type === "input_json_delta" &&
+      delta.partial_json &&
+      typeof event.index === "number"
+    ) {
       const id = this.#toolBlocks.get(scope)?.get(event.index);
       const stepId = this.#messageIds.get(scope);
-      return id ? [{ protocolVersion: 2,
-        type: "tool_call.delta",
-        payload: { id, argsDelta: delta.partial_json, ...(stepId ? { stepId } : {}) }
-      }] : [];
+      return id
+        ? [
+            {
+              protocolVersion: 2,
+              type: "tool_call.delta",
+              payload: { id, argsDelta: delta.partial_json, ...(stepId ? { stepId } : {}) }
+            }
+          ]
+        : [];
     }
     return [];
   }
@@ -394,20 +514,28 @@ export class ClaudeEventNormalizer {
     const finishReason = this.#finishReasons.get(scope);
     const closed: CanonicalEvent[] = [];
     for (const messageId of this.#textBlocks.get(scope)?.values() ?? []) {
-      closed.push({ protocolVersion: 2, type: "message.update", payload: { messageId, channel: "final", stepId, status: canonicalTerminalStatus(status) } });
+      closed.push({
+        protocolVersion: 2,
+        type: "message.update",
+        payload: { messageId, channel: "final", stepId, status: canonicalTerminalStatus(status) }
+      });
     }
     this.#textBlocks.delete(scope);
     this.#messageIds.delete(scope);
     this.#finishReasons.delete(scope);
     this.#publicTexts.delete(scope);
-    return [...closed, { protocolVersion: 2,
-      type: "model_step.finished",
-      payload: {
-        stepId,
-        status: canonicalTerminalStatus(status),
-        ...(finishReason ? { finishReason } : {}),
+    return [
+      ...closed,
+      {
+        protocolVersion: 2,
+        type: "model_step.finished",
+        payload: {
+          stepId,
+          status: canonicalTerminalStatus(status),
+          ...(finishReason ? { finishReason } : {})
+        }
       }
-    }];
+    ];
   }
 
   #appendPublicText(scope: string, delta: string): void {
@@ -419,7 +547,8 @@ export class ClaudeEventNormalizer {
 
   #finishActiveSteps(status: string): CanonicalEvent[] {
     const events: CanonicalEvent[] = [];
-    for (const scope of [...this.#messageIds.keys()]) events.push(...this.#finishStep(scope, status));
+    for (const scope of [...this.#messageIds.keys()])
+      events.push(...this.#finishStep(scope, status));
     return events;
   }
 }
@@ -441,7 +570,11 @@ function claudeToolResultOutput(content: unknown): unknown {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return content;
   const text = content
-    .map(item => item !== null && typeof item === "object" && "text" in item ? (item as { text?: unknown }).text : undefined)
+    .map((item) =>
+      item !== null && typeof item === "object" && "text" in item
+        ? (item as { text?: unknown }).text
+        : undefined
+    )
     .filter((item): item is string => typeof item === "string")
     .join("\n");
   return text || content;
@@ -461,7 +594,14 @@ export function createClaudeCodeAdapter({
       type: "claude-code",
       capabilities: ["react"],
       agentSources: ["provisioned"],
-      executionFeatures: ["session.serialize", "tool.canonical",  executionFeatures.INTERACTION_RESPONSE, executionFeatures.APPROVAL_ASK, executionFeatures.APPROVAL_ASSISTED, executionFeatures.APPROVAL_FULL_ACCESS],
+      executionFeatures: [
+        "session.serialize",
+        "tool.canonical",
+        executionFeatures.INTERACTION_RESPONSE,
+        executionFeatures.APPROVAL_ASK,
+        executionFeatures.APPROVAL_ASSISTED,
+        executionFeatures.APPROVAL_FULL_ACCESS
+      ],
       processModel: "subprocess-per-invocation",
       transport: "ndjson/stdio"
     },
@@ -475,17 +615,25 @@ export function createClaudeCodeAdapter({
       if (responders.has(request.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
       const permissions = new AcpApprovalBridge(request);
       responders.set(request.invocationId, permissions);
-      try { yield* permissions.stream(execute(request, permissions)); }
-      finally { permissions.close("execution_lost"); responders.delete(request.invocationId); }
+      try {
+        yield* permissions.stream(execute(request, permissions));
+      } finally {
+        permissions.close("execution_lost");
+        responders.delete(request.invocationId);
+      }
     }
   });
 
-  async function* execute(request: InvokeRequest, permissions: AcpApprovalBridge): AsyncGenerator<CanonicalEvent> {
+  async function* execute(
+    request: InvokeRequest,
+    permissions: AcpApprovalBridge
+  ): AsyncGenerator<CanonicalEvent> {
     const spec = await buildClaudeCommand(request, command, commandArgsPrefix);
     // The normalizer must not be hoisted to an adapter singleton: one adapter may run several invocations concurrently.
     const normalizer = new ClaudeEventNormalizer();
     try {
-      yield { protocolVersion: 2,
+      yield {
+        protocolVersion: 2,
         type: "message.create",
         payload: { role: "assistant", status: "streaming", channel: "final" }
       };
@@ -494,31 +642,53 @@ export function createClaudeCodeAdapter({
         cwd: request.workdir,
         env: invocationEnvironment(request),
         signal: request.signal,
-        onSpawn: close => permissions.bindTransport(close),
-        endInputWhen: native => native.type === "result",
+        onSpawn: (close) => permissions.bindTransport(close),
+        endInputWhen: (native) => native.type === "result",
         controlHandler: async (native, write) => {
           if (native.type !== "control_request") return;
           if (!native.request_id || native.request?.subtype !== "can_use_tool") {
             throw new Error("CLAUDE_CONTROL_REQUEST_UNSUPPORTED");
           }
           const params = {
-            toolCall: { toolCallId: native.request.tool_use_id, title: native.request.tool_name ?? "Claude tool" },
-            providerDetails: { provider: "claude-code", method: "can_use_tool", title: native.request.tool_name,
-              ...(typeof native.request.input?.command === "string" ? { command: native.request.input.command } : {}),
-              ...(typeof native.request.input?.file_path === "string" ? { files: [native.request.input.file_path] } : {}) },
-            options: [{ kind: "allow_once", optionId: "allow" }, { kind: "reject_once", optionId: "deny" }]
+            toolCall: {
+              toolCallId: native.request.tool_use_id,
+              title: native.request.tool_name ?? "Claude tool"
+            },
+            providerDetails: {
+              provider: "claude-code",
+              method: "can_use_tool",
+              title: native.request.tool_name,
+              ...(typeof native.request.input?.command === "string"
+                ? { command: native.request.input.command }
+                : {}),
+              ...(typeof native.request.input?.file_path === "string"
+                ? { files: [native.request.input.file_path] }
+                : {})
+            },
+            options: [
+              { kind: "allow_once", optionId: "allow" },
+              { kind: "reject_once", optionId: "deny" }
+            ]
           };
           try {
             const decision = await permissions.requestPermission(params);
             const allowed = (decision.outcome as { optionId?: string })?.optionId === "allow";
-            await write({ type: "control_response", response: {
-                subtype: "success", request_id: native.request_id,
-                response: allowed ? { behavior: "allow", updatedInput: native.request.input ?? {} }
+            await write({
+              type: "control_response",
+              response: {
+                subtype: "success",
+                request_id: native.request_id,
+                response: allowed
+                  ? { behavior: "allow", updatedInput: native.request.input ?? {} }
                   : { behavior: "deny", message: "User declined tool execution", interrupt: false }
-              } });
+              }
+            });
             permissions.responseWritten(params);
           } catch (error) {
-            permissions.responseFailed(params, error instanceof Error ? error : new Error(String(error)));
+            permissions.responseFailed(
+              params,
+              error instanceof Error ? error : new Error(String(error))
+            );
             throw error;
           }
         },
@@ -526,7 +696,12 @@ export function createClaudeCodeAdapter({
       })) {
         const events = normalizer.normalize(native);
         yield* events;
-        if (events.some(event => ["run.completed", "run.failed", "run.cancelled"].includes(event.type))) return;
+        if (
+          events.some((event) =>
+            ["run.completed", "run.failed", "run.cancelled"].includes(event.type)
+          )
+        )
+          return;
       }
     } finally {
       await spec.cleanup();

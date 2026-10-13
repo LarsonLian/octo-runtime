@@ -79,32 +79,49 @@ export function loadManagedAgentWorksFromRoot(
   if (root.schema_version !== 1) throw new Error("unsupported Harness Home config schema");
   const defaultProfile = requiredString(root.default_profile, "default_profile");
   const uniqueProfiles = [...new Set(profiles)];
-  if (!uniqueProfiles.includes(defaultProfile)) throw new Error(`default profile ${defaultProfile} is missing`);
+  if (!uniqueProfiles.includes(defaultProfile))
+    throw new Error(`default profile ${defaultProfile} is missing`);
   for (const profile of uniqueProfiles) {
     if (!isProfileName(profile)) throw new Error(`Harness Home profile is invalid: ${profile}`);
   }
-  const orderedProfiles = [defaultProfile, ...uniqueProfiles.filter(profile => profile !== defaultProfile)];
+  const orderedProfiles = [
+    defaultProfile,
+    ...uniqueProfiles.filter((profile) => profile !== defaultProfile)
+  ];
   const runtimes = orderedProfiles
-    .map(profile => loadManagedProfile(rootPath, profile, options))
+    .map((profile) => loadManagedProfile(rootPath, profile, options))
     .filter((runtime): runtime is AgentWorkRuntimeOptions => runtime !== undefined);
   assertUniqueRuntimeBindings(runtimes);
   return runtimes;
 }
 
-function loadManagedProfile(home: string, profile: string, options: { discoverLocalOpenClaw?: boolean }): AgentWorkRuntimeOptions | undefined {
+function loadManagedProfile(
+  home: string,
+  profile: string,
+  options: { discoverLocalOpenClaw?: boolean }
+): AgentWorkRuntimeOptions | undefined {
   if (!isProfileName(profile)) {
     throw new Error(`Harness Home profile is invalid: ${profile}`);
   }
   const profileRoot = join(home, profile);
   const config = readJsonRequired<ProfileConfiguration>(join(profileRoot, "config.json"));
   const identity = readJsonRequired<RuntimeIdentity>(join(profileRoot, "identity", "runtime.json"));
-  if (config.schema_version !== 1 || config.profile !== profile) throw new Error(`managed profile ${profile} is invalid`);
-  if (identity.schema_version !== 1 || identity.profile !== profile) throw new Error(`managed Runtime identity for ${profile} is invalid`);
+  if (config.schema_version !== 1 || config.profile !== profile)
+    throw new Error(`managed profile ${profile} is invalid`);
+  if (identity.schema_version !== 1 || identity.profile !== profile)
+    throw new Error(`managed Runtime identity for ${profile} is invalid`);
   const baseUrl = optionalString(config.agent_work_url);
   if (!baseUrl) return undefined;
-  const credential = readJsonRequired<RuntimeCredential>(join(profileRoot, "credentials", "runtime-token.json"));
-  if (credential.schema_version !== 1) throw new Error(`managed Runtime credential for ${profile} is invalid`);
-  const adapterConfigurations = readAdapterConfigurations(profileRoot, config.adapters, options.discoverLocalOpenClaw);
+  const credential = readJsonRequired<RuntimeCredential>(
+    join(profileRoot, "credentials", "runtime-token.json")
+  );
+  if (credential.schema_version !== 1)
+    throw new Error(`managed Runtime credential for ${profile} is invalid`);
+  const adapterConfigurations = readAdapterConfigurations(
+    profileRoot,
+    config.adapters,
+    options.discoverLocalOpenClaw
+  );
   return {
     profile,
     baseUrl,
@@ -124,70 +141,102 @@ function readAdapterConfigurations(
 ): NonNullable<AgentWorkRuntimeOptions["adapterConfigurations"]> {
   const adapters = objectValue(adaptersValue);
   if (!adapters) return {};
-  return Object.fromEntries(Object.entries(adapters)
-    .filter(([type]) => !discoverLocalOpenClaw || type !== "openclaw")
-    .map(([adapterType, value]) => {
-    if (!/^[a-z0-9][a-z0-9-]{0,127}$/.test(adapterType)) {
-      throw new Error(`managed adapter type is invalid: ${adapterType}`);
-    }
-    const adapter = objectValue(value);
-    const execution = objectValue(adapter?.execution) as AdapterExecutionManifest | undefined;
-    if (!execution) throw new Error(`managed ${adapterType} adapter execution manifest is missing`);
-    const publicOptions = stringRecord(execution.provider_options, `${adapterType} provider_options`);
-    assertNoCredentialLikeOptions(publicOptions, adapterType);
-    const credentialRef = optionalString(execution.credential_ref);
-    const credentialOptions = credentialRef
-      ? readCredentialOptions(profileRoot, credentialRef, adapterType)
-      : {};
-    if (Object.hasOwn(execution, "managed_workspace")) throw new TypeError("LOCAL_PLUGIN_CONFIGURATION_REQUIRED");
-    return [adapterType, {
-      ...(optionalString(execution.provider_agent_id)
-        ? { providerAgentId: optionalString(execution.provider_agent_id) }
-        : {}),
-      providerOptions: { ...publicOptions, ...credentialOptions }
-    }];
-  }));
+  return Object.fromEntries(
+    Object.entries(adapters)
+      .filter(([type]) => !discoverLocalOpenClaw || type !== "openclaw")
+      .map(([adapterType, value]) => {
+        if (!/^[a-z0-9][a-z0-9-]{0,127}$/.test(adapterType)) {
+          throw new Error(`managed adapter type is invalid: ${adapterType}`);
+        }
+        const adapter = objectValue(value);
+        const execution = objectValue(adapter?.execution) as AdapterExecutionManifest | undefined;
+        if (!execution)
+          throw new Error(`managed ${adapterType} adapter execution manifest is missing`);
+        const publicOptions = stringRecord(
+          execution.provider_options,
+          `${adapterType} provider_options`
+        );
+        assertNoCredentialLikeOptions(publicOptions, adapterType);
+        const credentialRef = optionalString(execution.credential_ref);
+        const credentialOptions = credentialRef
+          ? readCredentialOptions(profileRoot, credentialRef, adapterType)
+          : {};
+        if (Object.hasOwn(execution, "managed_workspace"))
+          throw new TypeError("LOCAL_PLUGIN_CONFIGURATION_REQUIRED");
+        return [
+          adapterType,
+          {
+            ...(optionalString(execution.provider_agent_id)
+              ? { providerAgentId: optionalString(execution.provider_agent_id) }
+              : {}),
+            providerOptions: { ...publicOptions, ...credentialOptions }
+          }
+        ];
+      })
+  );
 }
 
-function readBusinessServiceBindings(value: unknown): Partial<Record<"task" | "discussion", BusinessServiceBinding>> {
+function readBusinessServiceBindings(
+  value: unknown
+): Partial<Record<"task" | "discussion", BusinessServiceBinding>> {
   if (value === undefined) return {};
   const entries = objectValue(value);
-  if (!entries || Object.keys(entries).some(key => !["task", "discussion"].includes(key))) throw new TypeError("BUSINESS_SERVICE_BINDING_INVALID");
+  if (!entries || Object.keys(entries).some((key) => !["task", "discussion"].includes(key)))
+    throw new TypeError("BUSINESS_SERVICE_BINDING_INVALID");
   const result: Partial<Record<"task" | "discussion", BusinessServiceBinding>> = {};
   for (const kind of ["task", "discussion"] as const) {
     if (entries[kind] === undefined) continue;
     const binding = objectValue(entries[kind]);
-    if (!binding || Object.keys(binding).some(key => !["serviceSubjectId", "url"].includes(key))
-      || typeof binding.serviceSubjectId !== "string" || !binding.serviceSubjectId || binding.serviceSubjectId.length > 96 || typeof binding.url !== "string") throw new TypeError("BUSINESS_SERVICE_BINDING_INVALID");
+    if (
+      !binding ||
+      Object.keys(binding).some((key) => !["serviceSubjectId", "url"].includes(key)) ||
+      typeof binding.serviceSubjectId !== "string" ||
+      !binding.serviceSubjectId ||
+      binding.serviceSubjectId.length > 96 ||
+      typeof binding.url !== "string"
+    )
+      throw new TypeError("BUSINESS_SERVICE_BINDING_INVALID");
     const url = new URL(binding.url);
-    if (url.username || url.password || url.hash || !["http:", "https:"].includes(url.protocol)) throw new TypeError("BUSINESS_SERVICE_BINDING_INVALID");
+    if (url.username || url.password || url.hash || !["http:", "https:"].includes(url.protocol))
+      throw new TypeError("BUSINESS_SERVICE_BINDING_INVALID");
     result[kind] = { serviceSubjectId: binding.serviceSubjectId, url: url.href };
   }
   return result;
 }
 
-function readCredentialOptions(profileRoot: string, credentialRef: string, adapterType: string): Record<string, string> {
+function readCredentialOptions(
+  profileRoot: string,
+  credentialRef: string,
+  adapterType: string
+): Record<string, string> {
   const credentialsRoot = realpathSync(join(profileRoot, "credentials"));
   const credentialPath = realpathSync(resolve(profileRoot, credentialRef));
   const relativeCredential = relative(credentialsRoot, credentialPath);
   if (relativeCredential.startsWith("..") || isAbsolute(relativeCredential)) {
-    throw new Error(`managed ${adapterType} credential_ref resolves outside the profile credentials directory`);
+    throw new Error(
+      `managed ${adapterType} credential_ref resolves outside the profile credentials directory`
+    );
   }
   const credential = readJsonRequired<AdapterCredentialManifest>(credentialPath);
-  if (credential.schema_version !== 1) throw new Error(`managed ${adapterType} credential is invalid`);
+  if (credential.schema_version !== 1)
+    throw new Error(`managed ${adapterType} credential is invalid`);
   return stringRecord(credential.provider_options, `${adapterType} credential provider_options`);
 }
 
 function stringRecord(value: unknown, name: string): Record<string, string> {
   const record = objectValue(value);
   if (!record) throw new Error(`managed ${name} is required`);
-  return Object.fromEntries(Object.entries(record).map(([key, entry]) => [key, requiredString(entry, `${name}.${key}`)]));
+  return Object.fromEntries(
+    Object.entries(record).map(([key, entry]) => [key, requiredString(entry, `${name}.${key}`)])
+  );
 }
 
 function assertNoCredentialLikeOptions(options: Record<string, string>, adapterType: string): void {
   for (const key of Object.keys(options)) {
     if (/(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|CREDENTIAL)/i.test(key)) {
-      throw new Error(`managed ${adapterType} public provider_options contains credential-like key ${key}`);
+      throw new Error(
+        `managed ${adapterType} public provider_options contains credential-like key ${key}`
+      );
     }
   }
 }
@@ -199,7 +248,9 @@ function assertUniqueRuntimeBindings(runtimes: AgentWorkRuntimeOptions[]): void 
     const binding = `${new URL(runtime.baseUrl).toString()}\u0000${runtime.runtimeId}`;
     const existing = bindings.get(binding);
     if (existing) {
-      throw new Error(`profiles ${existing} and ${runtime.profile} use the same Agent Work Runtime binding`);
+      throw new Error(
+        `profiles ${existing} and ${runtime.profile} use the same Agent Work Runtime binding`
+      );
     }
     bindings.set(binding, runtime.profile ?? "default");
   }
@@ -207,10 +258,10 @@ function assertUniqueRuntimeBindings(runtimes: AgentWorkRuntimeOptions[]): void 
 
 function discoverProfiles(home: string): string[] {
   return readdirSync(home, { withFileTypes: true })
-    .filter(entry => entry.isDirectory())
-    .map(entry => entry.name)
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
     .filter(isProfileName)
-    .filter(profile => existsSync(join(home, profile, "config.json")))
+    .filter((profile) => existsSync(join(home, profile, "config.json")))
     .sort();
 }
 
@@ -244,10 +295,12 @@ function optionalString(value: unknown): string | undefined {
 
 function objectValue(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : undefined;
 }
 
 function isNodeError(error: unknown, code: string): boolean {
-  return error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === code;
+  return (
+    error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === code
+  );
 }

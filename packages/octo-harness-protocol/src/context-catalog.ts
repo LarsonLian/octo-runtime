@@ -2,7 +2,8 @@ import type { ContextEnvelope } from "./generated/protocol-types.js";
 import { assertContextEnvelope } from "./context.js";
 
 export const CONTEXT_CATALOG_VERSION = "octo.context-catalog/v3" as const;
-export type ContextStage = "validate" | "merge" | "resolve" | "dispatch" | "prepare" | "compile" | "apply";
+export type ContextStage =
+  "validate" | "merge" | "resolve" | "dispatch" | "prepare" | "compile" | "apply";
 export type ContextOutput = "execution" | "routing" | "policy" | "materials" | "instructions";
 export interface ContextTypeDefinition {
   readonly namespace: string;
@@ -10,17 +11,40 @@ export interface ContextTypeDefinition {
   readonly schemaRef: string;
   readonly persistent: boolean;
   readonly trustedOnly: boolean;
-  readonly merge: "replace" | "model_choices" | "limit_fields" | "env_keys" | "reference_identity" | "runtime_behavior";
+  readonly merge:
+    | "replace"
+    | "model_choices"
+    | "limit_fields"
+    | "env_keys"
+    | "reference_identity"
+    | "runtime_behavior";
   readonly mandatory: "equal" | "runtime_subset" | "required_resources";
   readonly stages: readonly ContextStage[];
   readonly outputs: readonly ContextOutput[];
 }
 
-function entry(namespace: string, name: string, schema: string, persistent: boolean,
-  stages: ContextStage[], outputs: ContextOutput[], mandatory: ContextTypeDefinition["mandatory"] = "equal",
-  merge: ContextTypeDefinition["merge"] = "replace", trustedOnly = false): ContextTypeDefinition {
-  return Object.freeze({ namespace, name, schemaRef: `#/definitions/${schema}`, persistent, trustedOnly,
-    merge, mandatory, stages: Object.freeze(["validate", "merge", ...stages] as ContextStage[]), outputs: Object.freeze(outputs) });
+function entry(
+  namespace: string,
+  name: string,
+  schema: string,
+  persistent: boolean,
+  stages: ContextStage[],
+  outputs: ContextOutput[],
+  mandatory: ContextTypeDefinition["mandatory"] = "equal",
+  merge: ContextTypeDefinition["merge"] = "replace",
+  trustedOnly = false
+): ContextTypeDefinition {
+  return Object.freeze({
+    namespace,
+    name,
+    schemaRef: `#/definitions/${schema}`,
+    persistent,
+    trustedOnly,
+    merge,
+    mandatory,
+    stages: Object.freeze(["validate", "merge", ...stages] as ContextStage[]),
+    outputs: Object.freeze(outputs)
+  });
 }
 
 /**
@@ -28,16 +52,99 @@ function entry(namespace: string, name: string, schema: string, persistent: bool
  * 目录只描述数据语义；宿主负责检查处理器是否可用，并验证调用身份与资源权限。
  */
 export const CONTEXT_TYPE_CATALOG: readonly ContextTypeDefinition[] = Object.freeze([
-  entry("octo.execution", "adapter", "ContextAdapterPayload", true, ["resolve", "dispatch", "prepare", "compile", "apply"], ["execution"]),
-  entry("octo.execution", "model", "ContextModelPayload", true, ["resolve", "dispatch", "prepare", "compile", "apply"], ["execution"], "equal", "model_choices"),
-  entry("octo.execution", "workspace", "ContextWorkspacePayload", true, ["resolve", "dispatch", "prepare", "compile", "apply"], ["execution"]),
-  entry("octo.execution", "envs", "ContextEnvsPayload", true, ["resolve", "dispatch", "prepare", "compile", "apply"], ["execution"], "equal", "env_keys"),
-  entry("octo.execution", "limits", "ContextLimitsPayload", true, ["resolve", "dispatch", "prepare", "compile", "apply"], ["execution"], "equal", "limit_fields"),
-  entry("octo.runtime", "selection", "ContextRuntimeSelectionPayload", true, ["resolve", "dispatch", "prepare", "compile"], ["routing"], "runtime_subset", "runtime_behavior"),
-  entry("octo.security", "approval_policy", "ContextApprovalPolicyPayload", true, ["resolve", "dispatch", "prepare", "compile", "apply"], ["policy"]),
-  entry("octo.content", "inline", "ContextInlinePayload", false, ["prepare", "compile"], ["materials"]),
-  entry("octo.content", "references", "ContextReferencesPayload", true, ["resolve", "prepare", "compile"], ["materials"], "required_resources", "reference_identity"),
-  entry("octo.control", "instructions", "ContextInstructionsPayload", false, ["compile", "apply"], ["instructions"], "equal", "replace", true)
+  entry(
+    "octo.execution",
+    "adapter",
+    "ContextAdapterPayload",
+    true,
+    ["resolve", "dispatch", "prepare", "compile", "apply"],
+    ["execution"]
+  ),
+  entry(
+    "octo.execution",
+    "model",
+    "ContextModelPayload",
+    true,
+    ["resolve", "dispatch", "prepare", "compile", "apply"],
+    ["execution"],
+    "equal",
+    "model_choices"
+  ),
+  entry(
+    "octo.execution",
+    "workspace",
+    "ContextWorkspacePayload",
+    true,
+    ["resolve", "dispatch", "prepare", "compile", "apply"],
+    ["execution"]
+  ),
+  entry(
+    "octo.execution",
+    "envs",
+    "ContextEnvsPayload",
+    true,
+    ["resolve", "dispatch", "prepare", "compile", "apply"],
+    ["execution"],
+    "equal",
+    "env_keys"
+  ),
+  entry(
+    "octo.execution",
+    "limits",
+    "ContextLimitsPayload",
+    true,
+    ["resolve", "dispatch", "prepare", "compile", "apply"],
+    ["execution"],
+    "equal",
+    "limit_fields"
+  ),
+  entry(
+    "octo.runtime",
+    "selection",
+    "ContextRuntimeSelectionPayload",
+    true,
+    ["resolve", "dispatch", "prepare", "compile"],
+    ["routing"],
+    "runtime_subset",
+    "runtime_behavior"
+  ),
+  entry(
+    "octo.security",
+    "approval_policy",
+    "ContextApprovalPolicyPayload",
+    true,
+    ["resolve", "dispatch", "prepare", "compile", "apply"],
+    ["policy"]
+  ),
+  entry(
+    "octo.content",
+    "inline",
+    "ContextInlinePayload",
+    false,
+    ["prepare", "compile"],
+    ["materials"]
+  ),
+  entry(
+    "octo.content",
+    "references",
+    "ContextReferencesPayload",
+    true,
+    ["resolve", "prepare", "compile"],
+    ["materials"],
+    "required_resources",
+    "reference_identity"
+  ),
+  entry(
+    "octo.control",
+    "instructions",
+    "ContextInstructionsPayload",
+    false,
+    ["compile", "apply"],
+    ["instructions"],
+    "equal",
+    "replace",
+    true
+  )
 ]);
 
 export function contextTypeDefinition(namespace: string, name: string): ContextTypeDefinition {
@@ -46,11 +153,18 @@ export function contextTypeDefinition(namespace: string, name: string): ContextT
   return definition;
 }
 
-export function findContextTypeDefinition(namespace: string, name: string): ContextTypeDefinition | undefined {
-  return CONTEXT_TYPE_CATALOG.find(item => item.namespace === namespace && item.name === name);
+export function findContextTypeDefinition(
+  namespace: string,
+  name: string
+): ContextTypeDefinition | undefined {
+  return CONTEXT_TYPE_CATALOG.find((item) => item.namespace === namespace && item.name === name);
 }
 
-export function assertContextProcessorCoverage(context: ContextEnvelope, stage: ContextStage, supportedKeys: ReadonlySet<string>): void {
+export function assertContextProcessorCoverage(
+  context: ContextEnvelope,
+  stage: ContextStage,
+  supportedKeys: ReadonlySet<string>
+): void {
   assertContextEnvelope(context);
   for (const item of context.items) {
     const definition = findContextTypeDefinition(item.namespace, item.name);

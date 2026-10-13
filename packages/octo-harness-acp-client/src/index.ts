@@ -35,7 +35,8 @@ export interface AcpRequestOptions {
   requestId?: number;
 }
 
-export type AcpPromptContent = { type: "text"; text: string } | { type: "image"; mimeType: string; data: string };
+export type AcpPromptContent =
+  { type: "text"; text: string } | { type: "image"; mimeType: string; data: string };
 
 /** Build the exact params serialized by `session/new`. */
 export function acpNewSessionParams({ cwd, model }: { cwd: string; model?: string }): JsonRecord {
@@ -43,15 +44,29 @@ export function acpNewSessionParams({ cwd, model }: { cwd: string; model?: strin
 }
 
 /** Build the exact params serialized by `session/load`. */
-export function acpLoadSessionParams(sessionId: string, { cwd = process.cwd() }: { cwd?: string } = {}): JsonRecord {
+export function acpLoadSessionParams(
+  sessionId: string,
+  { cwd = process.cwd() }: { cwd?: string } = {}
+): JsonRecord {
   return { sessionId, cwd, mcpServers: [] };
 }
 
 /** Build the exact params serialized by `session/prompt`. */
-export function acpPromptParams(sessionId: string, input: string | readonly AcpPromptContent[]): JsonRecord {
-  return { sessionId, prompt: typeof input === "string" ? [{ type: "text", text: input }] : input.map(part =>
-    part.type === "image" ? { type: "image", mimeType: part.mimeType, data: part.data } : { type: "text", text: part.text }
-  ) };
+export function acpPromptParams(
+  sessionId: string,
+  input: string | readonly AcpPromptContent[]
+): JsonRecord {
+  return {
+    sessionId,
+    prompt:
+      typeof input === "string"
+        ? [{ type: "text", text: input }]
+        : input.map((part) =>
+            part.type === "image"
+              ? { type: "image", mimeType: part.mimeType, data: part.data }
+              : { type: "text", text: part.text }
+          )
+  };
 }
 
 /**
@@ -114,7 +129,17 @@ export class AcpClient {
   #stderr = "";
   #closed = false;
 
-  constructor({ child, permissionHandler, onPermissionResponseWritten, onPermissionResponseFailed }: { child: ChildProcessWithoutNullStreams; permissionHandler?: PermissionHandler; onPermissionResponseWritten?: (params: JsonRecord) => void; onPermissionResponseFailed?: (params: JsonRecord, error: Error) => void }) {
+  constructor({
+    child,
+    permissionHandler,
+    onPermissionResponseWritten,
+    onPermissionResponseFailed
+  }: {
+    child: ChildProcessWithoutNullStreams;
+    permissionHandler?: PermissionHandler;
+    onPermissionResponseWritten?: (params: JsonRecord) => void;
+    onPermissionResponseFailed?: (params: JsonRecord, error: Error) => void;
+  }) {
     this.#child = child;
     this.#permission = permissionHandler ?? denyPermission;
     this.#permissionWritten = onPermissionResponseWritten;
@@ -124,7 +149,7 @@ export class AcpClient {
       // Keep only the tail; stderr is diagnostic context for a failure, not a log sink.
       this.#stderr = (this.#stderr + value.toString()).slice(-8192);
     });
-    createInterface({ input: child.stdout }).on("line", line => {
+    createInterface({ input: child.stdout }).on("line", (line) => {
       try {
         this.#receive(asRecord(JSON.parse(line)));
       } catch (error) {
@@ -142,18 +167,26 @@ export class AcpClient {
     // The write callback confirms acceptance by Node's stdin stream. It does not
     // imply that the ACP peer parsed the frame; the matching JSON-RPC response
     // remains the acknowledgement boundary.
-    const failed = (error: Error): void => { onFailed?.(error); this.#failAll(error); };
+    const failed = (error: Error): void => {
+      onFailed?.(error);
+      this.#failAll(error);
+    };
     try {
-      this.#child.stdin.write(`${JSON.stringify(message)}\n`, error => {
+      this.#child.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
         if (error) failed(error);
         else onWritten?.();
       });
-    } catch (error) { failed(toError(error)); }
+    } catch (error) {
+      failed(toError(error));
+    }
   }
 
   /** Dispatch one inbound JSON-RPC message: response by id, `session/update` notification, or an inbound permission request. */
   #receive(message: JsonRecord): void {
-    if (typeof message.id === "number" && (message.result !== undefined || message.error !== undefined)) {
+    if (
+      typeof message.id === "number" &&
+      (message.result !== undefined || message.error !== undefined)
+    ) {
       const pending = this.#pending.get(message.id);
       if (!pending) return;
       this.#pending.delete(message.id);
@@ -170,18 +203,29 @@ export class AcpClient {
     }
 
     const method = typeof message.method === "string" ? message.method : "";
-    if ((typeof message.id === "number" || typeof message.id === "string") && method === "session/request_permission") {
+    if (
+      (typeof message.id === "number" || typeof message.id === "string") &&
+      method === "session/request_permission"
+    ) {
       const params = asRecord(message.params);
       // ACP inverts the usual call direction for permissions: the provider
       // sends the request and the client must reply with a response.
-      void Promise.resolve().then(() => this.#permission(params)).then(
-        result => this.#send({ jsonrpc: "2.0", id: message.id, result }, () => this.#permissionWritten?.(params), error => this.#permissionFailed?.(params, error)),
-        error => this.#send({
-          jsonrpc: "2.0",
-          id: message.id,
-          error: { code: -32000, message: errorMessage(error) }
-        })
-      );
+      void Promise.resolve()
+        .then(() => this.#permission(params))
+        .then(
+          (result) =>
+            this.#send(
+              { jsonrpc: "2.0", id: message.id, result },
+              () => this.#permissionWritten?.(params),
+              (error) => this.#permissionFailed?.(params, error)
+            ),
+          (error) =>
+            this.#send({
+              jsonrpc: "2.0",
+              id: message.id,
+              error: { code: -32000, message: errorMessage(error) }
+            })
+        );
     }
   }
 
@@ -223,11 +267,11 @@ export class AcpClient {
     let timer: NodeJS.Timeout | undefined;
     const request = new Promise<unknown>((resolve, reject) => {
       this.#pending.set(id, {
-        resolve: value => {
+        resolve: (value) => {
           if (timer) clearTimeout(timer);
           resolve(value);
         },
-        reject: error => {
+        reject: (error) => {
           if (timer) clearTimeout(timer);
           reject(error);
         }
@@ -260,7 +304,11 @@ export class AcpClient {
     input: { cwd: string; model?: string },
     options: AcpRequestOptions = {}
   ): Promise<JsonRecord & { id: string; sessionId: string }> {
-    const result = await this.request<JsonRecord>("session/new", acpNewSessionParams(input), options);
+    const result = await this.request<JsonRecord>(
+      "session/new",
+      acpNewSessionParams(input),
+      options
+    );
     const sessionId = stringField(result, "sessionId");
     if (!sessionId) throw new Error("ACP session/new returned no sessionId");
     return { ...result, id: sessionId, sessionId };
@@ -301,22 +349,28 @@ export class AcpClient {
   ): AsyncGenerator<AcpUpdate> {
     const queue = new AsyncQueue<AcpUpdate>();
     this.#updates.set(sessionId, queue);
-    const result = this.request<JsonRecord>(
-      "session/prompt",
-      params,
-      { timeoutMs: 8 * 60 * 60 * 1000, onWritten, requestId }
-    ).then(value => {
-      if (isRecord(value.usage)) {
-        queue.push({ type: "usage", usage: value.usage, ...(typeof value.model === "string" ? { model: value.model } : {}) });
-      }
-      queue.push({
-        ...value,
-        type: "prompt_result",
-        ...(typeof value.stopReason === "string" ? { stopReason: value.stopReason } : {}),
-        ...(typeof value.finishReason === "string" ? { finishReason: value.finishReason } : {})
-      });
-      queue.end();
-    }).catch(error => queue.end(toError(error)));
+    const result = this.request<JsonRecord>("session/prompt", params, {
+      timeoutMs: 8 * 60 * 60 * 1000,
+      onWritten,
+      requestId
+    })
+      .then((value) => {
+        if (isRecord(value.usage)) {
+          queue.push({
+            type: "usage",
+            usage: value.usage,
+            ...(typeof value.model === "string" ? { model: value.model } : {})
+          });
+        }
+        queue.push({
+          ...value,
+          type: "prompt_result",
+          ...(typeof value.stopReason === "string" ? { stopReason: value.stopReason } : {}),
+          ...(typeof value.finishReason === "string" ? { finishReason: value.finishReason } : {})
+        });
+        queue.end();
+      })
+      .catch((error) => queue.end(toError(error)));
 
     try {
       for await (const update of queue) yield update;
@@ -338,13 +392,18 @@ export class AcpClient {
     this.#failAll(new Error("ACP client closed"));
     if (this.#child.exitCode !== null) return;
     signalProcessTree(this.#child, "SIGTERM");
-    await new Promise<void>(resolve => {
-      const done = (): void => { clearTimeout(timer); this.#child.removeListener("exit", done); resolve(); };
+    await new Promise<void>((resolve) => {
+      const done = (): void => {
+        clearTimeout(timer);
+        this.#child.removeListener("exit", done);
+        resolve();
+      };
       const timer = setTimeout(done, 1000);
       this.#child.once("exit", done);
       if (this.#child.exitCode !== null || this.#child.signalCode !== null) done();
     });
-    if (this.#child.exitCode === null && this.#child.signalCode === null) signalProcessTree(this.#child, "SIGKILL");
+    if (this.#child.exitCode === null && this.#child.signalCode === null)
+      signalProcessTree(this.#child, "SIGKILL");
   }
 }
 
@@ -366,15 +425,31 @@ function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS
  * whole tree; aborting `signal` closes the client (and thus the process).
  */
 export function spawnAcpClient(options: SpawnAcpClientOptions): AcpClient {
-  const { command, args = [], cwd, env, signal, permissionHandler, onPermissionResponseWritten, onPermissionResponseFailed } = options;
+  const {
+    command,
+    args = [],
+    cwd,
+    env,
+    signal,
+    permissionHandler,
+    onPermissionResponseWritten,
+    onPermissionResponseFailed
+  } = options;
   const child = spawn(command, args, {
     cwd,
     env: { ...process.env, ...env },
     stdio: ["pipe", "pipe", "pipe"],
     detached: process.platform !== "win32"
   });
-  const client = new AcpClient({ child, permissionHandler, onPermissionResponseWritten, onPermissionResponseFailed });
-  const abort = (): void => { void client.close(); };
+  const client = new AcpClient({
+    child,
+    permissionHandler,
+    onPermissionResponseWritten,
+    onPermissionResponseFailed
+  });
+  const abort = (): void => {
+    void client.close();
+  };
   if (signal?.aborted) abort();
   else signal?.addEventListener("abort", abort, { once: true });
   child.once("close", () => signal?.removeEventListener("abort", abort));
@@ -388,10 +463,11 @@ export function spawnAcpClient(options: SpawnAcpClientOptions): AcpClient {
  */
 function denyPermission(params: JsonRecord): JsonRecord {
   const options = Array.isArray(params.options) ? params.options.filter(isRecord) : [];
-  const selected = options.find(option => {
-    const label = stringField(option, "kind") ?? stringField(option, "name") ?? "";
-    return /reject|deny/i.test(label);
-  }) ?? options.at(-1);
+  const selected =
+    options.find((option) => {
+      const label = stringField(option, "kind") ?? stringField(option, "name") ?? "";
+      return /reject|deny/i.test(label);
+    }) ?? options.at(-1);
   return selected
     ? { outcome: { outcome: "selected", optionId: selected.optionId ?? selected.id } }
     : { outcome: { outcome: "cancelled" } };
