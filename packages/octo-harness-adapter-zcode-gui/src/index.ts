@@ -1,3 +1,4 @@
+import { invocationEnvironment } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -70,23 +71,23 @@ export function buildZcodeCommand(
       command,
       args: [...(appServerArgs ?? DEFAULT_APP_SERVER_ARGS)],
       cwd: request.workdir,
-      env: { ...process.env }
+      env: invocationEnvironment(request)
     };
   }
 
-  const zcodeBin = discoverZcodeBin();
+  const zcodeBin = discoverZcodeBin(invocationEnvironment(request));
   if (!zcodeBin) {
     return {
       command: "zcode",
       args: [...(appServerArgs ?? DEFAULT_APP_SERVER_ARGS)],
       cwd: request.workdir,
-      env: { ...process.env }
+      env: invocationEnvironment(request)
     };
   }
   const args = [...(appServerArgs ?? DEFAULT_APP_SERVER_ARGS)];
   return isJavaScriptEntry(zcodeBin)
-    ? { command: process.execPath, args: [zcodeBin, ...args], cwd: request.workdir, env: { ...process.env } }
-    : { command: zcodeBin, args, cwd: request.workdir, env: { ...process.env } };
+    ? { command: process.execPath, args: [zcodeBin, ...args], cwd: request.workdir, env: invocationEnvironment(request) }
+    : { command: zcodeBin, args, cwd: request.workdir, env: invocationEnvironment(request) };
 }
 
 export async function probeZcodeGui(env: NodeJS.ProcessEnv = process.env): Promise<ProbeResult> {

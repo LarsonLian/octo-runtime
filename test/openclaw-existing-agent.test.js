@@ -62,7 +62,7 @@ for (const { agentSource, target, workdir } of [
    return {};
   }
  };
- const request={protocolVersion:2,invocationId:"i",runId:"r",agentSessionId:"s",workdir,prompt:"work",approvalMode:"full_access",agentSource, agentConfig:{providerAgentId:target,providerOptions:{OPENCLAW_GATEWAY_URL:"ws://127.0.0.1:18789",OPENCLAW_GATEWAY_TOKEN:"fixture",OPENCLAW_GATEWAY_DEVICE_ID:"d",OPENCLAW_GATEWAY_PUBLIC_KEY:"p",OPENCLAW_GATEWAY_PRIVATE_KEY:"k"}}};
+ const request={context:{schema:"octo.context-envelope/v3",items:[]},protocolVersion:2,invocationId:"i",runId:"r",agentSessionId:"s",workdir,prompt:"work",approvalMode:"full_access",agentSource, agentConfig:{providerAgentId:target,providerOptions:{OPENCLAW_GATEWAY_URL:"ws://127.0.0.1:18789",OPENCLAW_GATEWAY_TOKEN:"fixture",OPENCLAW_GATEWAY_DEVICE_ID:"d",OPENCLAW_GATEWAY_PUBLIC_KEY:"p",OPENCLAW_GATEWAY_PRIVATE_KEY:"k"}}};
  const events=[];
  for await(const event of createOpenClawAdapter({clientFactory:()=>client}).invoke(request))events.push(event);
  assert.equal(events.at(-1).type,"run.completed");

@@ -1,4 +1,5 @@
-import { mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { codexEnvironmentConfig } from "./environment.js";
+import { invocationEnvs, mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus, contextHash, providerInputParts } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * Codex app-server transport and event adaptation layer.
@@ -173,6 +174,13 @@ export async function* runCodexAppServerTurn({
       await measureProviderStage(context, "initialize", "initialize", () => initializeClient(client));
     }
     client.notify("initialized");
+    let environmentConfig: JsonRecord | undefined;
+    if (Object.keys(invocationEnvs(request)).length) {
+      const result = recordValue(await client.request("config/read", { includeLayers: false, cwd: request.workdir }));
+      const config = recordValue(result?.config);
+      if (!config) throw new Error("CONTEXT_ENVS_UNAVAILABLE: provider effective configuration is missing");
+      environmentConfig = codexEnvironmentConfig(request, config);
+    }
 
 
     // Phase 2: providerSession.sessionId is the Codex thread ID, kept opaque to the Core.
@@ -187,7 +195,7 @@ export async function* runCodexAppServerTurn({
           client,
           context,
           method: "thread/resume",
-          params: threadParams(request, { threadId: requestedSessionId }),
+          params: threadParams(request, { threadId: requestedSessionId }, environmentConfig),
           providerSessionId: requestedSessionId
         });
         resumed = true;
@@ -202,7 +210,7 @@ export async function* runCodexAppServerTurn({
         client,
         context,
         method: "thread/start",
-        params: threadParams(request, { sessionStartSource: "startup" })
+        params: threadParams(request, { sessionStartSource: "startup" }, environmentConfig)
       });
     }
 
@@ -232,7 +240,7 @@ export async function* runCodexAppServerTurn({
         client,
         context,
         method: "thread/start",
-        params: threadParams(request, { sessionStartSource: "startup" })
+        params: threadParams(request, { sessionStartSource: "startup" }, environmentConfig)
       });
       threadId = extractThreadId(threadResult);
       if (!threadId) {
@@ -1559,7 +1567,7 @@ function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS
 }
 
 /** Shared params for thread/start and thread/resume; the permission policy is fixed at the thread level. */
-function threadParams(request: InvokeRequest, extra: JsonRecord): JsonRecord {
+function threadParams(request: InvokeRequest, extra: JsonRecord, environmentConfig?: JsonRecord): JsonRecord {
   return {
     ...extra,
     cwd: request.workdir,
@@ -1568,6 +1576,7 @@ function threadParams(request: InvokeRequest, extra: JsonRecord): JsonRecord {
     // Dynamic MCP tools are untrusted until Codex asks the client to approve them. `never`
     // rejects those calls before the existing reverse-request handler can answer them.
     approvalPolicy: request.approvalMode === "assisted" ? "on-request" : "untrusted",
+    ...(environmentConfig ? { config: environmentConfig } : {}),
     developerInstructions: request.controlInstructions
   };
 }

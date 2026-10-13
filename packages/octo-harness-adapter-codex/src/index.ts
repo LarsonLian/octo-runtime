@@ -1,3 +1,4 @@
+import { invocationEnvironment } from "@mininglamp-oss/octo-harness-adapter-sdk";
 /**
  * Assembly entry point for the Codex adapter.
  *
@@ -185,12 +186,13 @@ export function buildCodexCommand(
   appServerArgs = buildCodexAppServerArgs(),
   env: NodeJS.ProcessEnv = process.env
 ): CodexAppServerCommand {
-  const realHome = env.CODEX_HOME || join(homedir(), ".codex");
+  const runEnv = invocationEnvironment(req, {}, env);
+  const realHome = runEnv.CODEX_HOME || join(homedir(), ".codex");
   return {
     command,
     args: [...appServerArgs, ...nativeCapacityOverrides(req)],
     cwd: req.workdir,
-    env: { ...env, CODEX_HOME: realHome },
+    env: { ...runEnv, CODEX_HOME: realHome },
     cleanup: () => undefined
   };
 }

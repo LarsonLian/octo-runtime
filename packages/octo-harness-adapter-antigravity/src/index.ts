@@ -1,3 +1,4 @@
+import { invocationEnvironment } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -262,7 +263,7 @@ export function createAntigravityAdapter({ command = "agy", commandArgsPrefix = 
       let first = true;
       try {
         await context?.observe({ event: "provider.input", rpcMethod: "process.stdin", carrier: spec.providerInput });
-        for await (const native of spawnJsonLines({ ...spec, signal: controller.signal,
+        for await (const native of spawnJsonLines({ ...spec, env: invocationEnvironment(request, spec.env), signal: controller.signal,
           onInputWritten: () => observeBestEffort(context, { event: "provider.dispatch.written", rpcMethod: "process.stdin" }),
           parseLine: (line): AntigravityNativeEvent | null => {
             if (!line.trim()) return null;

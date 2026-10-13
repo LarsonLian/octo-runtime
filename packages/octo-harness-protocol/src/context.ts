@@ -1,4 +1,4 @@
-import type { ApprovalMode, ContextEnvelope, ContextItem, McpServers, ResolvedExecutionPlan } from "./generated/protocol-types.js";
+import type { ApprovalMode, ContextEnvsPayload, ContextEnvelope, ContextItem, McpServers, ResolvedExecutionPlan } from "./generated/protocol-types.js";
 import { RUNTIME_SELECTION_SCHEMA } from "./runtime-selection.js";
 import { assertContextExtensionsSnapshot } from "./context-extensions.js";
 
@@ -66,6 +66,7 @@ export function mergeContext(defaults: ContextEnvelope, overrides: ContextEnvelo
     if (previous && item.namespace === "octo.execution" && ["model", "limits"].includes(item.name)) {
       next.payload = { ...previous.payload, ...next.payload };
     }
+    if (previous && item.namespace === "octo.execution" && item.name === "envs") next.payload = { ...mergeContextEnvs(previous.payload, next.payload) };
     if (previous && item.namespace === "octo.runtime" && item.name === "selection") {
       for (const field of ["offline_behavior", "failover"]) if (next.payload[field] === undefined && previous.payload[field] !== undefined) next.payload[field] = previous.payload[field];
     }
@@ -80,8 +81,9 @@ export function mergeContext(defaults: ContextEnvelope, overrides: ContextEnvelo
 export function assertResolvedExecutionPlan(value: unknown): asserts value is ResolvedExecutionPlan {
   object(value, "RESOLVED_EXECUTION_PLAN_REQUIRED");
   assertJsonValue(value);
-  fields(value, ["agent_source", "adapter_type", "provider_agent_id", "workdir", "workspace", "approval_mode", "model", "effort", "required_capabilities", "required_execution_features", "runtime_limits", "provider_compatibility", "context_extensions"]);
+  fields(value, ["agent_source", "adapter_type", "provider_agent_id", "workdir", "workspace", "approval_mode", "model", "effort", "required_capabilities", "required_execution_features", "runtime_limits", "provider_compatibility", "context_extensions", "envs"]);
   if (value.context_extensions !== undefined) assertContextExtensionsSnapshot(value.context_extensions);
+  if (value.envs !== undefined) assertContextEnvs(value.envs);
   assertAgentSource(value.agent_source);
   text(value.adapter_type);
   assertProviderAgent(value.adapter_type, value.provider_agent_id);
@@ -188,6 +190,7 @@ export function mergeReferences(base: Record<string, unknown>[], next: Record<st
 }
 
 function publicPayload(namespace: string, name: string, value: Record<string, unknown>): void {
+  if (namespace === "octo.execution" && name === "envs") { assertContextEnvs(value); return; }
   if (namespace === "octo.resources") throw new TypeError("CONTEXT_TYPE_REMOVED");
   if (namespace === "octo.execution" && name === "model") {
     fields(value, ["selection", "reasoning"]);
@@ -338,4 +341,26 @@ function sorted(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sorted);
   if (isObject(value)) return Object.fromEntries(Object.keys(value).sort().map(key => [key, sorted(value[key])]));
   return value;
+}
+
+/** Environment names are values in a list, never dynamic protocol object keys. */
+export function assertContextEnvs(value: unknown): asserts value is ContextEnvsPayload {
+  object(value, "CONTEXT_SCHEMA_INVALID");
+  fields(value, ["env_variables"]);
+  if (!Array.isArray(value.env_variables) || value.env_variables.length > 128) throw new TypeError("CONTEXT_SCHEMA_INVALID");
+  const keys = new Set<string>();
+  for (const entry of value.env_variables) {
+    object(entry, "CONTEXT_SCHEMA_INVALID");
+    fields(entry, ["key", "value"]);
+    if (typeof entry.key !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(entry.key)
+      || typeof entry.value !== "string" || entry.value.includes("\0") || keys.has(entry.key)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
+    keys.add(entry.key);
+  }
+}
+
+export function mergeContextEnvs(base: unknown, overrides: unknown): ContextEnvsPayload {
+  assertContextEnvs(base);
+  assertContextEnvs(overrides);
+  const entries = new Map([...base.env_variables, ...overrides.env_variables].map(entry => [entry.key, entry.value]));
+  return { env_variables: [...entries].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, value]) => ({ key, value })) };
 }

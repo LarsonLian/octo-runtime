@@ -1,3 +1,4 @@
+import { invocationEnvironment } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus, providerInputParts } from "@mininglamp-oss/octo-harness-protocol";
 import { createHash } from "node:crypto";
 import {
@@ -179,7 +180,7 @@ export function createAcpAdapter(
       const client = acpClientFactory({
         command,
         args: [...args],
-        env: definition.env?.(request),
+        env: invocationEnvironment(request, definition.env?.(request)),
         cwd: request.workdir,
         permissionHandler: params => bridge.requestPermission(params),
         onPermissionResponseWritten: params => bridge.responseWritten(params),

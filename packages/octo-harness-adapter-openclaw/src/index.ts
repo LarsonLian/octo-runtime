@@ -1,4 +1,4 @@
-import { mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { invocationEnvs, mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus, executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
 import { randomUUID } from "node:crypto";
 import {
@@ -73,6 +73,7 @@ export function composeOpenClawPrompt(req: InvokeRequest): string {
 }
 
 export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGatewayInvocation {
+  if (Object.keys(invocationEnvs(req)).length) throw new Error("CONTEXT_ENVS_UNSUPPORTED: openclaw gateway has no per-run environment carrier");
   const gatewayUrl = requiredOption(req, OPENCLAW_PROVIDER_OPTIONS.url);
   const token = requiredOption(req, OPENCLAW_PROVIDER_OPTIONS.token);
   const device: OpenClawDeviceIdentity = {

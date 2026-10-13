@@ -1,5 +1,5 @@
 import type { ContextConfiguration, ContextEnvelope, ContextItem } from "./generated/protocol-types.js";
-import { assertContextEnvelope, canonicalContext, mergeContext, mergeReferences, CONTEXT_SCHEMA } from "./context.js";
+import { assertContextEnvelope, canonicalContext, mergeContext, mergeContextEnvs, assertContextEnvs, mergeReferences, CONTEXT_SCHEMA } from "./context.js";
 import { findContextTypeDefinition } from "./context-catalog.js";
 
 const empty = (): ContextEnvelope => ({ schema: CONTEXT_SCHEMA, items: [] });
@@ -36,11 +36,21 @@ export function resolveContextConfiguration(configuration: ContextConfiguration,
       const selected = items.get(key) ?? { ...required, payload: {} };
       selected.payload = structuredClone(selected.payload);
       for (const [field, constraint] of Object.entries(required.payload)) {
-        const override = supplied?.payload[field];
+        const override = supplied && Object.hasOwn(supplied.payload, field) ? supplied.payload[field] : undefined;
         if (override !== undefined && !equal(constraint, override)) conflict(`${key}.${field}`);
-        selected.payload[field] = structuredClone(constraint);
+        selected.payload = { ...selected.payload, [field]: structuredClone(constraint) };
       }
       items.set(key, selected);
+    } else if (key === "octo.execution/envs") {
+      const requiredPayload = required.payload;
+      assertContextEnvs(requiredPayload);
+      const suppliedPayload = supplied?.payload ?? { env_variables: [] };
+      assertContextEnvs(suppliedPayload);
+      const requested = new Map(suppliedPayload.env_variables.map(entry => [entry.key, entry.value]));
+      for (const entry of requiredPayload.env_variables) {
+        if (requested.has(entry.key) && requested.get(entry.key) !== entry.value) conflict(`${key}.${entry.key}`);
+      }
+      items.set(key, { ...required, payload: { ...mergeContextEnvs(items.get(key)?.payload ?? { env_variables: [] }, requiredPayload) } });
     } else if (key === "octo.content/references") {
       const selected = items.get(key);
       const references = required.payload.entries as Record<string, unknown>[];

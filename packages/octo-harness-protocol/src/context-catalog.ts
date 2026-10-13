@@ -10,7 +10,7 @@ export interface ContextTypeDefinition {
   readonly schemaRef: string;
   readonly persistent: boolean;
   readonly trustedOnly: boolean;
-  readonly merge: "replace" | "model_choices" | "limit_fields" | "reference_identity" | "runtime_behavior";
+  readonly merge: "replace" | "model_choices" | "limit_fields" | "env_keys" | "reference_identity" | "runtime_behavior";
   readonly mandatory: "equal" | "runtime_subset" | "required_resources";
   readonly stages: readonly ContextStage[];
   readonly outputs: readonly ContextOutput[];
@@ -31,6 +31,7 @@ export const CONTEXT_TYPE_CATALOG: readonly ContextTypeDefinition[] = Object.fre
   entry("octo.execution", "adapter", "ContextAdapterPayload", true, ["resolve", "dispatch", "prepare", "compile", "apply"], ["execution"]),
   entry("octo.execution", "model", "ContextModelPayload", true, ["resolve", "dispatch", "prepare", "compile", "apply"], ["execution"], "equal", "model_choices"),
   entry("octo.execution", "workspace", "ContextWorkspacePayload", true, ["resolve", "dispatch", "prepare", "compile", "apply"], ["execution"]),
+  entry("octo.execution", "envs", "ContextEnvsPayload", true, ["resolve", "dispatch", "prepare", "compile", "apply"], ["execution"], "equal", "env_keys"),
   entry("octo.execution", "limits", "ContextLimitsPayload", true, ["resolve", "dispatch", "prepare", "compile", "apply"], ["execution"], "equal", "limit_fields"),
   entry("octo.runtime", "selection", "ContextRuntimeSelectionPayload", true, ["resolve", "dispatch", "prepare", "compile"], ["routing"], "runtime_subset", "runtime_behavior"),
   entry("octo.security", "approval_policy", "ContextApprovalPolicyPayload", true, ["resolve", "dispatch", "prepare", "compile", "apply"], ["policy"]),

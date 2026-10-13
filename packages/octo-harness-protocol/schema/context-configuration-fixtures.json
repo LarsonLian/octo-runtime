@@ -741,5 +741,251 @@
       "items": []
     },
     "error": "CONTEXT_CONFIGURATION_TYPE_FORBIDDEN"
+  },
+  {
+    "name": "envs-merge-per-key",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v3",
+        "items": [
+          {
+            "namespace": "octo.execution",
+            "name": "envs",
+            "payload": {
+              "env_variables": [
+                {
+                  "key": "A",
+                  "value": "default"
+                },
+                {
+                  "key": "B",
+                  "value": "preserved"
+                },
+                {
+                  "key": "FIXED",
+                  "value": "default"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v3",
+        "items": [
+          {
+            "namespace": "octo.execution",
+            "name": "envs",
+            "payload": {
+              "env_variables": [
+                {
+                  "key": "FIXED",
+                  "value": "required"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [
+              {
+                "key": "A",
+                "value": "request"
+              },
+              {
+                "key": "EMPTY",
+                "value": ""
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "expected": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [
+              {
+                "key": "A",
+                "value": "request"
+              },
+              {
+                "key": "B",
+                "value": "preserved"
+              },
+              {
+                "key": "EMPTY",
+                "value": ""
+              },
+              {
+                "key": "FIXED",
+                "value": "required"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "envs-mandatory-conflict",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v3",
+        "items": [
+          {
+            "namespace": "octo.execution",
+            "name": "envs",
+            "payload": {
+              "env_variables": [
+                {
+                  "key": "A",
+                  "value": "default"
+                },
+                {
+                  "key": "B",
+                  "value": "preserved"
+                },
+                {
+                  "key": "FIXED",
+                  "value": "default"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v3",
+        "items": [
+          {
+            "namespace": "octo.execution",
+            "name": "envs",
+            "payload": {
+              "env_variables": [
+                {
+                  "key": "FIXED",
+                  "value": "required"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [
+              {
+                "key": "FIXED",
+                "value": "changed"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_MANDATORY_CONFLICT"
+  },
+  {
+    "name": "envs-empty-list-preserves-defaults",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v3",
+        "items": [
+          {
+            "namespace": "octo.execution",
+            "name": "envs",
+            "payload": {
+              "env_variables": [
+                {
+                  "key": "A",
+                  "value": "default"
+                },
+                {
+                  "key": "B",
+                  "value": "preserved"
+                },
+                {
+                  "key": "FIXED",
+                  "value": "default"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v3",
+        "items": [
+          {
+            "namespace": "octo.execution",
+            "name": "envs",
+            "payload": {
+              "env_variables": [
+                {
+                  "key": "FIXED",
+                  "value": "required"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": []
+          }
+        }
+      ]
+    },
+    "expected": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [
+              {
+                "key": "A",
+                "value": "default"
+              },
+              {
+                "key": "B",
+                "value": "preserved"
+              },
+              {
+                "key": "FIXED",
+                "value": "required"
+              }
+            ]
+          }
+        }
+      ]
+    }
   }
 ]

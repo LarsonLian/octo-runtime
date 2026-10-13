@@ -1960,6 +1960,7 @@ export interface ResolvedExecutionPlan1 {
   agent_source: AgentSource;
   required_execution_features?: string[];
   context_extensions?: ContextExtensionsSnapshot;
+  envs?: ContextEnvsPayload;
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -1978,6 +1979,21 @@ export interface ContextExtensionResult1 {
   status: "material" | "ignored";
   reason?: "not_configured" | "disabled" | "unsupported_version";
   text?: string;
+}
+/**
+ * Run 级环境变量列表；以 key 标识变量，按 key 合并，不进入模型输入。
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextEnvsPayload".
+ */
+export interface ContextEnvsPayload {
+  /**
+   * @maxItems 128
+   */
+  env_variables: {
+    key: string;
+    value: string;
+  }[];
 }
 /**
  * Provider-native provenance written by the adapter. Audience projectors use it to audit public exposure and clients cannot override it.

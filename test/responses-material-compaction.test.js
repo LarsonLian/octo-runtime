@@ -46,9 +46,9 @@ test("host capacity is mandatory for an unknown model and env_key owns credentia
 });
 
 test("Codex receives trusted capacity and native history compaction threshold",()=>{
- const command=buildCodexCommand({workdir:"/tmp",runMetadata:{contextCapacity:{contextWindow:8192,outputReserveTokens:2048,management:"provider_native"}}},"codex",["app-server"],{});
+ const command=buildCodexCommand({context:{schema:"octo.context-envelope/v3",items:[]},workdir:"/tmp",runMetadata:{contextCapacity:{contextWindow:8192,outputReserveTokens:2048,management:"provider_native"}}},"codex",["app-server"],{});
  assert.ok(command.args.includes("model_context_window=8192"));assert.ok(command.args.includes("model_auto_compact_token_limit=6144"));
- assert.throws(()=>buildCodexCommand({workdir:"/tmp",runMetadata:{contextCapacity:{contextWindow:0}}}),/CONTEXT_CAPACITY_UNAVAILABLE/);
+ assert.throws(()=>buildCodexCommand({context:{schema:"octo.context-envelope/v3",items:[]},workdir:"/tmp",runMetadata:{contextCapacity:{contextWindow:0}}}),/CONTEXT_CAPACITY_UNAVAILABLE/);
 });
 
 test("native contextCompaction completion persists resumable history evidence",async()=>{

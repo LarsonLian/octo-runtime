@@ -9,7 +9,7 @@ import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext, ty
 import type { PreparedTaskMaterials } from "./task-materials.js";
 
 export const CONTEXT_COMPILER_VERSION = "octo.context-compiler/v4" as const;
-const preparationKeys = new Set(["octo.execution/adapter", "octo.execution/model", "octo.execution/workspace", "octo.execution/limits", "octo.runtime/selection", "octo.security/approval_policy", "octo.content/inline", "octo.content/references"]);
+const preparationKeys = new Set(["octo.execution/adapter", "octo.execution/model", "octo.execution/workspace", "octo.execution/limits", "octo.execution/envs", "octo.runtime/selection", "octo.security/approval_policy", "octo.content/inline", "octo.content/references"]);
 const compilationKeys = new Set([...preparationKeys, "octo.control/instructions"]);
 
 export type ContextPipelineReceipt = ContextPreparationReceipt;
@@ -25,7 +25,7 @@ const stages: readonly ContextStageDefinition[] = [
   { id: "continuity", dependsOn: ["materials"] }
 ];
 const preparationOwners: Readonly<Record<string, ContextPreparationStage>> = {
-  "octo.execution/adapter": "capabilities", "octo.execution/model": "capabilities", "octo.execution/workspace": "capabilities", "octo.execution/limits": "capabilities", "octo.runtime/selection": "capabilities", "octo.security/approval_policy": "capabilities",
+  "octo.execution/adapter": "capabilities", "octo.execution/model": "capabilities", "octo.execution/workspace": "capabilities", "octo.execution/limits": "capabilities", "octo.execution/envs": "capabilities", "octo.runtime/selection": "capabilities", "octo.security/approval_policy": "capabilities",
   "octo.content/inline": "materials", "octo.content/references": "materials"
 };
 export interface ContextConsumption { key: string; stage: "prepare" | "compile"; processor: string }

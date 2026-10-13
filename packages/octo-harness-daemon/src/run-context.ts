@@ -1,10 +1,10 @@
 import { assertContextExtensionsSnapshot } from '@mininglamp-oss/octo-harness-protocol';
-import { assertContextEnvelope, assertResolvedExecutionPlan, contextItem, type ContextEnvelope, type ContextSelectionEntry, type ResolvedExecutionPlan } from "@mininglamp-oss/octo-harness-protocol";
+import { assertContextEnvelope, assertContextEnvs, assertResolvedExecutionPlan, contextItem, type ContextEnvelope, type ContextSelectionEntry, type ResolvedExecutionPlan } from "@mininglamp-oss/octo-harness-protocol";
 
 function executionValues(context: ContextEnvelope): Record<string, Record<string, unknown>> {
   const result: Record<string, Record<string, unknown>> = {};
   for (const item of [...context.items].sort((a, b) => `${a.namespace}/${a.name}` < `${b.namespace}/${b.name}` ? -1 : `${a.namespace}/${a.name}` > `${b.namespace}/${b.name}` ? 1 : 0)) {
-    if (item.namespace === "octo.execution" && ["adapter", "workspace", "limits"].includes(item.name)) result[item.name] = item.payload;
+    if (item.namespace === "octo.execution" && ["adapter", "workspace", "limits", "envs"].includes(item.name)) result[item.name] = item.payload;
     if (item.namespace === "octo.security" && item.name === "approval_policy") result.approval_policy = item.payload;
     if (item.namespace === "octo.runtime" && item.name === "selection") result.runtime = item.payload;
     if (item.namespace === "octo.execution" && item.name === "model") {
@@ -37,6 +37,10 @@ export function assertFrozenContextPlan(context: ContextEnvelope, plan: Resolved
   match("approval_policy", "mode", plan.approval_mode);
   match("model", "id", plan.model);
   match("reasoning", "effort", plan.effort);
+  const envs = execution.envs ?? { env_variables: [] };
+  assertContextEnvs(envs);
+  const plannedEnvs = new Map((plan.envs?.env_variables ?? []).map(entry => [entry.key, entry.value]));
+  if (envs.env_variables.length !== plannedEnvs.size || envs.env_variables.some(entry => plannedEnvs.get(entry.key) !== entry.value)) throw new TypeError("CONTEXT_PLAN_MISMATCH");
   const limits = execution.limits ?? {};
   for (const property of new Set([...Object.keys(limits), ...Object.keys(plan.runtime_limits ?? {})])) {
     if (limits[property] !== (plan.runtime_limits as Record<string, unknown> | undefined)?.[property]) throw new TypeError("CONTEXT_PLAN_MISMATCH");

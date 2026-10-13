@@ -1,3 +1,4 @@
+import { invocationEnvironment } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus, executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * CodeBuddy adapter: wraps the CodeBuddy CLI spoken over ACP (Agent Client
@@ -114,6 +115,7 @@ export function createCodeBuddyAdapter({ acpClientFactory = spawnAcpClient, comm
       let outcome = "interrupted";
       const client = await measureProviderStage(context, "cli_spawn", "spawn", () => Promise.resolve(acpClientFactory({
         command, args: ["--acp", "--permission-mode", codeBuddyPermissionMode(req.approvalMode)],
+        env: invocationEnvironment(req),
         cwd: req.workdir, signal: req.signal, permissionHandler: params => permissions.requestPermission(params),
         onPermissionResponseWritten: params => permissions.responseWritten(params),
         onPermissionResponseFailed: (params, error) => permissions.responseFailed(params, error)

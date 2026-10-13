@@ -1,3 +1,4 @@
+import { invocationEnvironment } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 /**
@@ -521,6 +522,7 @@ export function createClaudeCodeAdapter({
         for await (const native of spawnJsonLines<ClaudeNativeEvent>({
           ...spec,
           cwd: request.workdir,
+          env: invocationEnvironment(request),
           signal: request.signal,
           onSpawn: close => permissions.bindTransport(close),
           endInputWhen: native => native.type === "result",

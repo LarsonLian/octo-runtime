@@ -4904,5 +4904,917 @@
       "schema": "octo.context-envelope/v1",
       "items": []
     }
+  },
+  {
+    "name": "envs-literal",
+    "valid": true,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [
+              {
+                "key": "API_TOKEN",
+                "value": "fixture-value"
+              },
+              {
+                "key": "EMPTY",
+                "value": ""
+              },
+              {
+                "key": "LITERAL",
+                "value": "${NO_EXPANSION}"
+              },
+              {
+                "key": "UNICODE",
+                "value": "中文\nline"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "expected_canonical": "{\"items\":[{\"name\":\"envs\",\"namespace\":\"octo.execution\",\"payload\":{\"env_variables\":[{\"key\":\"API_TOKEN\",\"value\":\"fixture-value\"},{\"key\":\"EMPTY\",\"value\":\"\"},{\"key\":\"LITERAL\",\"value\":\"${NO_EXPANSION}\"},{\"key\":\"UNICODE\",\"value\":\"中文\\nline\"}]}}],\"schema\":\"octo.context-envelope/v3\"}",
+    "expected_hash": "sha256:8e0e74baceffee682d792028798312d826d4e69c459349d5de49ab95a0b8a2e4"
+  },
+  {
+    "name": "envs-empty",
+    "valid": true,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": []
+          }
+        }
+      ]
+    },
+    "expected_canonical": "{\"items\":[{\"name\":\"envs\",\"namespace\":\"octo.execution\",\"payload\":{\"env_variables\":[]}}],\"schema\":\"octo.context-envelope/v3\"}",
+    "expected_hash": "sha256:8ebc501f193ce27aa3ae6240237b35aabf4f74209c3f39f52fc74ee542097b42"
+  },
+  {
+    "name": "envs-number",
+    "valid": false,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [
+              {
+                "key": "PORT",
+                "value": 123
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
+  },
+  {
+    "name": "envs-null",
+    "valid": false,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [
+              {
+                "key": "KEY",
+                "value": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
+  },
+  {
+    "name": "envs-nul",
+    "valid": false,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [
+              {
+                "key": "KEY",
+                "value": "bad\u0000value"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
+  },
+  {
+    "name": "envs-invalid-name",
+    "valid": false,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [
+              {
+                "key": "BAD=KEY",
+                "value": "value"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
+  },
+  {
+    "name": "envs-leading-digit",
+    "valid": false,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [
+              {
+                "key": "1BAD",
+                "value": "value"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
+  },
+  {
+    "name": "envs-too-many",
+    "valid": false,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [
+              {
+                "key": "KEY_0",
+                "value": "v"
+              },
+              {
+                "key": "KEY_1",
+                "value": "v"
+              },
+              {
+                "key": "KEY_2",
+                "value": "v"
+              },
+              {
+                "key": "KEY_3",
+                "value": "v"
+              },
+              {
+                "key": "KEY_4",
+                "value": "v"
+              },
+              {
+                "key": "KEY_5",
+                "value": "v"
+              },
+              {
+                "key": "KEY_6",
+                "value": "v"
+              },
+              {
+                "key": "KEY_7",
+                "value": "v"
+              },
+              {
+                "key": "KEY_8",
+                "value": "v"
+              },
+              {
+                "key": "KEY_9",
+                "value": "v"
+              },
+              {
+                "key": "KEY_10",
+                "value": "v"
+              },
+              {
+                "key": "KEY_11",
+                "value": "v"
+              },
+              {
+                "key": "KEY_12",
+                "value": "v"
+              },
+              {
+                "key": "KEY_13",
+                "value": "v"
+              },
+              {
+                "key": "KEY_14",
+                "value": "v"
+              },
+              {
+                "key": "KEY_15",
+                "value": "v"
+              },
+              {
+                "key": "KEY_16",
+                "value": "v"
+              },
+              {
+                "key": "KEY_17",
+                "value": "v"
+              },
+              {
+                "key": "KEY_18",
+                "value": "v"
+              },
+              {
+                "key": "KEY_19",
+                "value": "v"
+              },
+              {
+                "key": "KEY_20",
+                "value": "v"
+              },
+              {
+                "key": "KEY_21",
+                "value": "v"
+              },
+              {
+                "key": "KEY_22",
+                "value": "v"
+              },
+              {
+                "key": "KEY_23",
+                "value": "v"
+              },
+              {
+                "key": "KEY_24",
+                "value": "v"
+              },
+              {
+                "key": "KEY_25",
+                "value": "v"
+              },
+              {
+                "key": "KEY_26",
+                "value": "v"
+              },
+              {
+                "key": "KEY_27",
+                "value": "v"
+              },
+              {
+                "key": "KEY_28",
+                "value": "v"
+              },
+              {
+                "key": "KEY_29",
+                "value": "v"
+              },
+              {
+                "key": "KEY_30",
+                "value": "v"
+              },
+              {
+                "key": "KEY_31",
+                "value": "v"
+              },
+              {
+                "key": "KEY_32",
+                "value": "v"
+              },
+              {
+                "key": "KEY_33",
+                "value": "v"
+              },
+              {
+                "key": "KEY_34",
+                "value": "v"
+              },
+              {
+                "key": "KEY_35",
+                "value": "v"
+              },
+              {
+                "key": "KEY_36",
+                "value": "v"
+              },
+              {
+                "key": "KEY_37",
+                "value": "v"
+              },
+              {
+                "key": "KEY_38",
+                "value": "v"
+              },
+              {
+                "key": "KEY_39",
+                "value": "v"
+              },
+              {
+                "key": "KEY_40",
+                "value": "v"
+              },
+              {
+                "key": "KEY_41",
+                "value": "v"
+              },
+              {
+                "key": "KEY_42",
+                "value": "v"
+              },
+              {
+                "key": "KEY_43",
+                "value": "v"
+              },
+              {
+                "key": "KEY_44",
+                "value": "v"
+              },
+              {
+                "key": "KEY_45",
+                "value": "v"
+              },
+              {
+                "key": "KEY_46",
+                "value": "v"
+              },
+              {
+                "key": "KEY_47",
+                "value": "v"
+              },
+              {
+                "key": "KEY_48",
+                "value": "v"
+              },
+              {
+                "key": "KEY_49",
+                "value": "v"
+              },
+              {
+                "key": "KEY_50",
+                "value": "v"
+              },
+              {
+                "key": "KEY_51",
+                "value": "v"
+              },
+              {
+                "key": "KEY_52",
+                "value": "v"
+              },
+              {
+                "key": "KEY_53",
+                "value": "v"
+              },
+              {
+                "key": "KEY_54",
+                "value": "v"
+              },
+              {
+                "key": "KEY_55",
+                "value": "v"
+              },
+              {
+                "key": "KEY_56",
+                "value": "v"
+              },
+              {
+                "key": "KEY_57",
+                "value": "v"
+              },
+              {
+                "key": "KEY_58",
+                "value": "v"
+              },
+              {
+                "key": "KEY_59",
+                "value": "v"
+              },
+              {
+                "key": "KEY_60",
+                "value": "v"
+              },
+              {
+                "key": "KEY_61",
+                "value": "v"
+              },
+              {
+                "key": "KEY_62",
+                "value": "v"
+              },
+              {
+                "key": "KEY_63",
+                "value": "v"
+              },
+              {
+                "key": "KEY_64",
+                "value": "v"
+              },
+              {
+                "key": "KEY_65",
+                "value": "v"
+              },
+              {
+                "key": "KEY_66",
+                "value": "v"
+              },
+              {
+                "key": "KEY_67",
+                "value": "v"
+              },
+              {
+                "key": "KEY_68",
+                "value": "v"
+              },
+              {
+                "key": "KEY_69",
+                "value": "v"
+              },
+              {
+                "key": "KEY_70",
+                "value": "v"
+              },
+              {
+                "key": "KEY_71",
+                "value": "v"
+              },
+              {
+                "key": "KEY_72",
+                "value": "v"
+              },
+              {
+                "key": "KEY_73",
+                "value": "v"
+              },
+              {
+                "key": "KEY_74",
+                "value": "v"
+              },
+              {
+                "key": "KEY_75",
+                "value": "v"
+              },
+              {
+                "key": "KEY_76",
+                "value": "v"
+              },
+              {
+                "key": "KEY_77",
+                "value": "v"
+              },
+              {
+                "key": "KEY_78",
+                "value": "v"
+              },
+              {
+                "key": "KEY_79",
+                "value": "v"
+              },
+              {
+                "key": "KEY_80",
+                "value": "v"
+              },
+              {
+                "key": "KEY_81",
+                "value": "v"
+              },
+              {
+                "key": "KEY_82",
+                "value": "v"
+              },
+              {
+                "key": "KEY_83",
+                "value": "v"
+              },
+              {
+                "key": "KEY_84",
+                "value": "v"
+              },
+              {
+                "key": "KEY_85",
+                "value": "v"
+              },
+              {
+                "key": "KEY_86",
+                "value": "v"
+              },
+              {
+                "key": "KEY_87",
+                "value": "v"
+              },
+              {
+                "key": "KEY_88",
+                "value": "v"
+              },
+              {
+                "key": "KEY_89",
+                "value": "v"
+              },
+              {
+                "key": "KEY_90",
+                "value": "v"
+              },
+              {
+                "key": "KEY_91",
+                "value": "v"
+              },
+              {
+                "key": "KEY_92",
+                "value": "v"
+              },
+              {
+                "key": "KEY_93",
+                "value": "v"
+              },
+              {
+                "key": "KEY_94",
+                "value": "v"
+              },
+              {
+                "key": "KEY_95",
+                "value": "v"
+              },
+              {
+                "key": "KEY_96",
+                "value": "v"
+              },
+              {
+                "key": "KEY_97",
+                "value": "v"
+              },
+              {
+                "key": "KEY_98",
+                "value": "v"
+              },
+              {
+                "key": "KEY_99",
+                "value": "v"
+              },
+              {
+                "key": "KEY_100",
+                "value": "v"
+              },
+              {
+                "key": "KEY_101",
+                "value": "v"
+              },
+              {
+                "key": "KEY_102",
+                "value": "v"
+              },
+              {
+                "key": "KEY_103",
+                "value": "v"
+              },
+              {
+                "key": "KEY_104",
+                "value": "v"
+              },
+              {
+                "key": "KEY_105",
+                "value": "v"
+              },
+              {
+                "key": "KEY_106",
+                "value": "v"
+              },
+              {
+                "key": "KEY_107",
+                "value": "v"
+              },
+              {
+                "key": "KEY_108",
+                "value": "v"
+              },
+              {
+                "key": "KEY_109",
+                "value": "v"
+              },
+              {
+                "key": "KEY_110",
+                "value": "v"
+              },
+              {
+                "key": "KEY_111",
+                "value": "v"
+              },
+              {
+                "key": "KEY_112",
+                "value": "v"
+              },
+              {
+                "key": "KEY_113",
+                "value": "v"
+              },
+              {
+                "key": "KEY_114",
+                "value": "v"
+              },
+              {
+                "key": "KEY_115",
+                "value": "v"
+              },
+              {
+                "key": "KEY_116",
+                "value": "v"
+              },
+              {
+                "key": "KEY_117",
+                "value": "v"
+              },
+              {
+                "key": "KEY_118",
+                "value": "v"
+              },
+              {
+                "key": "KEY_119",
+                "value": "v"
+              },
+              {
+                "key": "KEY_120",
+                "value": "v"
+              },
+              {
+                "key": "KEY_121",
+                "value": "v"
+              },
+              {
+                "key": "KEY_122",
+                "value": "v"
+              },
+              {
+                "key": "KEY_123",
+                "value": "v"
+              },
+              {
+                "key": "KEY_124",
+                "value": "v"
+              },
+              {
+                "key": "KEY_125",
+                "value": "v"
+              },
+              {
+                "key": "KEY_126",
+                "value": "v"
+              },
+              {
+                "key": "KEY_127",
+                "value": "v"
+              },
+              {
+                "key": "KEY_128",
+                "value": "v"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
+  },
+  {
+    "name": "plan-envs",
+    "valid": true,
+    "resolved_execution_plan": {
+      "agent_source": "provisioned",
+      "adapter_type": "codex",
+      "workdir": "/workspace",
+      "approval_mode": "ask",
+      "envs": {
+        "env_variables": [
+          {
+            "key": "API_TOKEN",
+            "value": "fixture-value"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "plan-envs-invalid",
+    "valid": false,
+    "resolved_execution_plan": {
+      "agent_source": "provisioned",
+      "adapter_type": "codex",
+      "workdir": "/workspace",
+      "approval_mode": "ask",
+      "envs": {
+        "env_variables": [
+          {
+            "key": "KEY",
+            "value": null
+          }
+        ]
+      }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
+  },
+  {
+    "name": "envs-dictionary-rejected",
+    "valid": false,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "API_TOKEN": "v"
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
+  },
+  {
+    "name": "envs-missing-list",
+    "valid": false,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {}
+        }
+      ]
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
+  },
+  {
+    "name": "envs-list-is-dictionary",
+    "valid": false,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": {
+              "API_TOKEN": "v"
+            }
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
+  },
+  {
+    "name": "envs-list-null",
+    "valid": false,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": null
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
+  },
+  {
+    "name": "envs-duplicate-key",
+    "valid": false,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [
+              {
+                "key": "A",
+                "value": "first"
+              },
+              {
+                "key": "A",
+                "value": "second"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
+  },
+  {
+    "name": "envs-missing-value",
+    "valid": false,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [
+              {
+                "key": "A"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
+  },
+  {
+    "name": "envs-extra-entry-field",
+    "valid": false,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [
+              {
+                "key": "A",
+                "value": "v",
+                "extra": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
+  },
+  {
+    "name": "envs-extra-payload-field",
+    "valid": false,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [],
+            "extra": true
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
+  },
+  {
+    "name": "envs-key-not-string",
+    "valid": false,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "envs",
+          "payload": {
+            "env_variables": [
+              {
+                "key": 7,
+                "value": "v"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   }
 ]

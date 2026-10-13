@@ -63,6 +63,10 @@ ajv.addKeyword("x-octo-unique-resource-refs", {
   type: "object",
   validate: (enabled, value) => !enabled || !Array.isArray(value.entries) || new Set(value.entries.map(entry => entry.resource_ref)).size === value.entries.length
 });
+ajv.addKeyword("x-octo-unique-env-keys", {
+  type: "object",
+  validate: (enabled, value) => !enabled || !Array.isArray(value.env_variables) || new Set(value.env_variables.map(entry => entry?.key)).size === value.env_variables.length
+});
 ajv.addSchema(schema);
 const validateContextSchema = ajv.compile({ $ref: `${schema.$id}#/definitions/ContextEnvelope` });
 const validatePlanSchema = ajv.compile({ $ref: `${schema.$id}#/definitions/ResolvedExecutionPlan` });

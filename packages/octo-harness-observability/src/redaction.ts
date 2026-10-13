@@ -99,6 +99,7 @@ function redactValue(
         });
   }
   const output: Record<string, unknown> = {};
+  const envContext = (value as Record<string, unknown>).namespace === "octo.execution" && (value as Record<string, unknown>).name === "envs";
   const image = (value as Record<string, unknown>).type === "image" || typeof (value as Record<string, unknown>).mimeType === "string" && String((value as Record<string, unknown>).mimeType).startsWith("image/");
   for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
     if (image && ["data", "data_base64", "content_b64"].includes(key)) {
@@ -106,7 +107,7 @@ function redactValue(
       continue;
     }
     const nestedPath = `${path}.${normalizedKey(key) || "field"}`;
-    if (credentialKey(key)) {
+    if (credentialKey(key) || key === "envs" || key === "shell_environment_policy.set" || (parentKey === "shell_environment_policy" && key === "set") || (envContext && key === "payload")) {
       state.excluded.add(nestedPath);
       continue;
     }

@@ -461,6 +461,25 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.execution"
+              },
+              "name": {
+                "const": "envs"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextEnvsPayload"
+              }
+            }
+          }
         }
       ],
       "not": {
@@ -1711,6 +1730,9 @@
         },
         "context_extensions": {
           "$ref": "#/definitions/ContextExtensionsSnapshot"
+        },
+        "envs": {
+          "$ref": "#/definitions/ContextEnvsPayload"
         }
       },
       "if": {
@@ -4147,6 +4169,40 @@
           "format": "date-time"
         }
       }
+    },
+    "ContextEnvsPayload": {
+      "title": "ContextEnvsPayload",
+      "description": "Run 级环境变量列表；以 key 标识变量，按 key 合并，不进入模型输入。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "env_variables"
+      ],
+      "properties": {
+        "env_variables": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "value"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              "value": {
+                "type": "string",
+                "pattern": "^[^\\u0000]*$"
+              }
+            }
+          }
+        }
+      },
+      "x-octo-unique-env-keys": true
     }
   }
 }

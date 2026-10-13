@@ -1,3 +1,5 @@
+import { invocationEnvironment } from "./environment.js";
+export { invocationEnvs, invocationEnvironment } from "./environment.js";
 import { mapReasoningEffort, reasoningLevelMap, type ReasoningLevelMap } from "./reasoning.js";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
@@ -491,6 +493,7 @@ export function createJsonCliAdapter<TNative = Record<string, unknown>>(
         for await (const native of spawnJsonLines({
           ...spec,
           cwd: spec.cwd ?? request.workdir,
+          env: invocationEnvironment(request, spec.env),
           signal: request.signal,
           onInputWritten: () => {
             // A stream write is a transport milestone, not provider acceptance.

@@ -62,6 +62,7 @@ export function resolveLocalContext(defaults: ContextEnvelope, submitted: Contex
   const model = (choices?.selection as Record<string, unknown> | undefined)?.id;
   const effort = (choices?.reasoning as Record<string, unknown> | undefined)?.effort;
   const limits = contextItem(effectiveContext, "octo.execution", "limits")?.payload;
+  const envs = contextItem(effectiveContext, "octo.execution", "envs")?.payload;
   const plan = {
     agent_source: agentSource,
     adapter_type: adapter,
@@ -71,7 +72,8 @@ export function resolveLocalContext(defaults: ContextEnvelope, submitted: Contex
     approval_mode: contextItem(effectiveContext, "octo.security", "approval_policy")!.payload.mode,
     ...(typeof model === "string" ? { model } : {}),
     ...(typeof effort === "string" ? { effort } : {}),
-    ...(limits ? { runtime_limits: structuredClone(limits) } : {})
+    ...(limits ? { runtime_limits: structuredClone(limits) } : {}),
+    ...(envs ? { envs: structuredClone(envs) } : {})
   };
   assertResolvedExecutionPlan(plan);
   localRuntimeLimits(plan);
