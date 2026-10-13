@@ -1,13 +1,9 @@
-import type { ContextConfiguration, ContextEnvelope, ContextItem, ContextCapabilityReference, ContextCapabilitySelectionPayload } from "./generated/protocol-types.js";
-import { assertContextEnvelope, canonicalContext, mergeContext, mergeReferences, CONTEXT_SCHEMA, RESOURCE_CONTEXT_KINDS } from "./context.js";
+import type { ContextConfiguration, ContextEnvelope, ContextItem } from "./generated/protocol-types.js";
+import { assertContextEnvelope, canonicalContext, mergeContext, mergeReferences, CONTEXT_SCHEMA } from "./context.js";
 import { findContextTypeDefinition } from "./context-catalog.js";
 
 const empty = (): ContextEnvelope => ({ schema: CONTEXT_SCHEMA, items: [] });
 const keyOf = (item: ContextItem): string => `${item.namespace}/${item.name}`;
-const resourceId = (item: { resource_id: string }): string => item.resource_id;
-const selection = (envelope: ContextEnvelope, name: string): ContextCapabilitySelectionPayload | undefined =>
-  envelope.items.find(item => item.namespace === "octo.resources" && item.name === name)?.payload as ContextCapabilitySelectionPayload | undefined;
-
 /** 校验可持久化配置；身份、资源权限和强制来源仍由 Worker 验证。 */
 export function assertContextConfiguration(value: unknown): asserts value is ContextConfiguration {
   if (!value || typeof value !== "object" || Array.isArray(value)
@@ -35,7 +31,6 @@ export function resolveContextConfiguration(configuration: ContextConfiguration,
   const items = new Map(effective.items.map(item => [keyOf(item), item]));
   for (const required of configuration.mandatory.items) {
     const key = keyOf(required);
-    if (required.namespace === "octo.resources") continue;
     const supplied = request.items.find(item => keyOf(item) === key);
     if (key === "octo.execution/model" || key === "octo.execution/limits") {
       const selected = items.get(key) ?? { ...required, payload: {} };
@@ -62,38 +57,6 @@ export function resolveContextConfiguration(configuration: ContextConfiguration,
       items.set(key, structuredClone(required));
     }
   }
-  for (const name of Object.keys(RESOURCE_CONTEXT_KINDS)) {
-  const required = selection(configuration.mandatory, name);
-  const resources = new Map<string, ContextCapabilityReference>();
-  for (const layer of [configuration.defaults, configuration.mandatory, request]) {
-    const scope = selection(layer, name);
-    for (const excluded of scope?.exclude ?? []) {
-      const key = resourceId(excluded);
-      if (required?.include.some(item => resourceId(item) === key)) conflict(`octo.resources/${name}.${key}`);
-      resources.delete(key);
-    }
-    for (const reference of scope?.include ?? []) resources.set(resourceId(reference), structuredClone(reference));
-  }
-  const supplied = selection(request, name);
-  for (const excluded of required?.exclude ?? []) {
-    const key = resourceId(excluded);
-    if (supplied?.include.some(item => resourceId(item) === key)) conflict(`octo.resources/${name}.${key}`);
-    resources.delete(key);
-  }
-  for (const forced of required?.include ?? []) {
-    const key = resourceId(forced);
-    const override = supplied?.include.find(item => resourceId(item) === key);
-    if (override && (forced.invoke && override.invoke === false || !componentsContain(override.components, forced.components))) conflict(`octo.resources/${name}.${key}`);
-    const chosen = resources.get(key) ?? structuredClone(forced);
-    if (forced.invoke) chosen.invoke = true;
-    if (!componentsContain(chosen.components, forced.components)) chosen.components = structuredClone(forced.components);
-    resources.set(key, chosen);
-  }
-  const key = `octo.resources/${name}`;
-  if (items.has(key) || required || resources.size) items.set(key, { namespace: "octo.resources", name, payload: {
-    include: [...resources.values()].sort((a, b) => resourceId(a) < resourceId(b) ? -1 : resourceId(a) > resourceId(b) ? 1 : 0), exclude: []
-  } });
-  }
   return JSON.parse(canonicalContext({ schema: CONTEXT_SCHEMA, items: [...items.values()] })) as ContextEnvelope;
 }
 
@@ -112,10 +75,5 @@ function sort(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sort);
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => [key, sort(item)]));
   return value;
-}
-function componentsContain(selected?: string[], required?: string[]): boolean {
-  if (selected === undefined) return true;
-  if (required === undefined) return false;
-  return required.every(component => selected.includes(component));
 }
 function conflict(key: string): never { throw new TypeError(`CONTEXT_MANDATORY_CONFLICT: ${key}`); }

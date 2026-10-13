@@ -1,4 +1,4 @@
-import { canonicalMcpServers, mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * Claude Code local CLI transport and event normalization layer.
@@ -92,23 +92,6 @@ export async function buildClaudeCommand(
   // The control prompt goes through Claude's dedicated file argument while the
   // user prompt is still fed via stdin, so the two never get conflated.
   await writeFile(promptFile, req.controlInstructions, { mode: 0o600 });
-  if (req.mcpServers && Object.keys(req.mcpServers).length > 0) {
-    const mcpFile = join(directory, "mcp.json");
-    const mcpServers = Object.fromEntries(Object.entries(canonicalMcpServers(req.mcpServers)).map(([name, server]) => [
-      name,
-      server.type === "stdio"
-        ? {
-            type: "stdio",
-            command: server.command,
-            ...(server.args ? { args: server.args } : {}),
-            ...(server.env ? { env: server.env } : {}),
-            ...(server.cwd ? { cwd: server.cwd } : {})
-          }
-        : { type: "http", url: server.url, ...(server.headers ? { headers: server.headers } : {}) }
-    ]));
-    await writeFile(mcpFile, JSON.stringify({ mcpServers }), { mode: 0o600 });
-    commandArgsPrefix = [...commandArgsPrefix, "--mcp-config", mcpFile, "--strict-mcp-config"];
-  }
   // Only --include-partial-messages produces thinking/text/input_json deltas;
   // plain stream-json still delivers whole assistant blocks, which cannot
   // satisfy the local Chat's real-time streaming requirement.
@@ -498,7 +481,7 @@ export function createClaudeCodeAdapter({
       type: "claude-code",
       capabilities: ["react"],
       agentSources: ["provisioned"],
-      executionFeatures: ["session.serialize", "tool.canonical", executionFeatures.MCP_DYNAMIC, executionFeatures.INTERACTION_RESPONSE, executionFeatures.APPROVAL_ASK, executionFeatures.APPROVAL_ASSISTED, executionFeatures.APPROVAL_FULL_ACCESS],
+      executionFeatures: ["session.serialize", "tool.canonical",  executionFeatures.INTERACTION_RESPONSE, executionFeatures.APPROVAL_ASK, executionFeatures.APPROVAL_ASSISTED, executionFeatures.APPROVAL_FULL_ACCESS],
       processModel: "subprocess-per-invocation",
       transport: "ndjson/stdio"
     },

@@ -430,44 +430,11 @@ test("reference-only selections cannot masquerade as resolved model content", ()
   }), /CONTEXT_SCHEMA_INVALID/);
 });
 
-test("Agent Work envelope maps a validated immutable MCP plan without exposing it in context", () => {
-  const mcpServers = {
-    team: {
-      type: "streamable_http",
-      url: "https://worker.example.test/mcp/team",
-      headers: { Authorization: "Bearer run-scoped" },
-      required: true,
-      toolTimeoutMs: 120_000
-    },
-    local: {
-      type: "stdio",
-      command: "node",
-      args: ["server.mjs"],
-      env: { MODE: "test" }
-    }
-  };
-  const source = withExecutionPlan(envelope, {
-    ...envelope.resolved_execution_plan, mcp_servers: mcpServers
-  });
-
-  const mapped = mapExecutionEnvelope(source);
-  assert.deepEqual(mapped.request.mcpServers, mcpServers);
-  assert.notEqual(mapped.request.mcpServers, mcpServers);
-  assert.equal(mapped.request.context.mcpServers, undefined);
-  mapped.request.mcpServers.team.headers.Authorization = "changed";
-  assert.equal(mcpServers.team.headers.Authorization, "Bearer run-scoped");
-});
-
-test("Agent Work envelope omits empty MCP plans and rejects malformed plans", () => {
-  const withPlan = mcpServers => mapExecutionEnvelope(withExecutionPlan(envelope, {
-    ...envelope.resolved_execution_plan, mcp_servers: mcpServers
-  }));
-
-  assert.equal(withPlan({}).request.mcpServers, undefined);
-  assert.throws(
-    () => withPlan({ team: { type: "streamable_http", url: "file:///tmp/mcp" } }),
-    /absolute HTTP URL/
-  );
+test("Agent Work envelope rejects all cloud MCP configuration before invocation", () => {
+  for (const mcp_servers of [{}, { team: { type: "streamable_http", url: "https://worker.example/mcp" } }]) {
+    assert.throws(() => mapExecutionEnvelope(withExecutionPlan(envelope, { ...envelope.resolved_execution_plan, mcp_servers })), /CONTEXT_SCHEMA_INVALID/);
+  }
+  assert.equal(mapExecutionEnvelope(envelope).request.mcpServers, undefined);
 });
 
 test("fresh execution never reaches an adapter with a provider session", () => {

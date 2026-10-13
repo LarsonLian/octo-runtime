@@ -5,8 +5,8 @@
     "instructions": [
       "审核 <文本> & 中文 😀"
     ],
-    "default_skills": [],
-    "hash": "sha256:612cb208d9ca9e45264a26a5b3ca2d51e9bc265030f0748ca71066b00b86bf09"
+    "hash": "sha256:ae21e9166e44d2ba0570f79ee89d61a4452fa0546e882717722e4255cd6a790c",
+    "canonical": "{\"instructions\":[\"审核 <文本> & 中文 😀\"],\"scenario_id\":\"doc.selection.review\",\"version\":1}"
   },
   {
     "scenario_id": "doc.selection.review",
@@ -14,7 +14,7 @@
     "instructions": [
       "审核 <文本> & 中文 😀"
     ],
-    "default_skills": [],
-    "hash": "sha256:9cea0edc1099c0acf4d0c4a1565b64ad21a34e0fe0e414b0a5ea82e5ac54b104"
+    "hash": "sha256:4267dd8676c4168886b812454fb2f3776e671512a7d52b3afd27240b8178a593",
+    "canonical": "{\"instructions\":[\"审核 <文本> & 中文 😀\"],\"scenario_id\":\"doc.selection.review\",\"version\":2}"
   }
 ]

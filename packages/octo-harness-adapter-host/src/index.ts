@@ -162,7 +162,6 @@ export class AdapterHost {
       throw new Error(`APPROVAL_MODE_UNSUPPORTED: ${adapterType} does not implement execution-time approval responses`);
     }
     if (!registered?.metadata.agentSources.includes(request.agentSource)) throw new Error("AGENT_SOURCE_UNSUPPORTED: " + adapterType);
-    if (request.skills?.length && !registered.metadata.executionFeatures.includes("context.capabilities")) throw new Error("CONTEXT_COMPONENT_UNAVAILABLE: skills");
     const experience = new InvocationExperience();
     const provider = this.#invokeProvider(adapterType, request);
     let pending = provider.next();
@@ -191,10 +190,6 @@ export class AdapterHost {
   async *#invokeProvider(adapterType: string, request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
     const adapter = this.#adapters.get(adapterType);
     if (!adapter) throw new Error(`unknown adapter: ${adapterType}`);
-    if (request.mcpServers && Object.keys(request.mcpServers).length > 0
-      && !adapter.metadata.executionFeatures.includes(executionFeatures.MCP_DYNAMIC)) {
-      throw new Error(`adapter ${adapterType} does not support dynamic MCP configuration`);
-    }
     const controller = new AbortController();
     this.#active.set(request.invocationId, controller);
     this.#activeAdapters.set(request.invocationId, adapter);

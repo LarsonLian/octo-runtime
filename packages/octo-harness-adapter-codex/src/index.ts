@@ -6,12 +6,12 @@
  * app-server transport. Per-run developer instructions travel in native thread
  * params, so app-server sees the complete state database and plugin runtime.
  */
-import { canonicalMcpServers, defineAdapter, probeCommand, type AdapterInvocationContext, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { executionFeatures, contextItem, runMcpServerHash, type InteractionResponse, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
-import { parse, stringify } from "smol-toml";
-import { readFileSync, mkdirSync, copyFileSync, writeFileSync, lstatSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { defineAdapter, probeCommand, type AdapterInvocationContext, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
+import { parse } from "smol-toml";
+import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   buildCodexAppServerArgs,
@@ -42,68 +42,6 @@ async function readOptional(file: string): Promise<string> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
     throw error;
   }
-}
-
-/**
- * Symlink resources that exist in the real CODEX_HOME into the temp directory.
- *
- * Only a missing source is tolerated; errors such as EACCES or a target conflict
- * must not be swallowed, otherwise we get a Codex process that looks launchable
- * but actually lacks its auth or session state.
- */
-async function linkOptional(
-  source: string,
-  target: string,
-  type: Parameters<typeof symlink>[2]
-): Promise<void> {
-  try {
-    await symlink(source, target, type);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-}
-
-/**
- * Construct a shadow CODEX_HOME for compatibility tests and callers that need
- * a standalone config overlay. Production app-server invocations intentionally
- * do not use it: current Codex versions keep startup state databases in HOME,
- * and a partial shadow triggers state backfill and lock waits.
- *
- * Design goals:
- * 1. harness instructions affect only this turn and never rewrite the user's
- *    real config.toml;
- * 2. auth, session rollout, skills and rules are still provided by the real HOME;
- * 3. on normal completion, failure or cancellation the caller can always delete
- *    the temp directory via cleanup.
- *
- * This is a config overlay, not filesystem or security isolation: the symlinks
- * are live aliases of the real resources, so Codex writes through these paths
- * land in the real HOME. It is also not equivalent to Aily's per-session state
- * mirror: state SQLite, hooks, the MCP bridge and the skill allowlist are not yet
- * copied; see the README for the exact boundary.
- */
-export async function createCodexInvocationHome(
-  instructions: string,
-  env: NodeJS.ProcessEnv = process.env
-): Promise<{ home: string; cleanup: () => Promise<void> }> {
-  const real = env.CODEX_HOME || join(homedir(), ".codex");
-  const shadow = await mkdtemp(join(tmpdir(), "octo-harness-codex-"));
-
-  // Copy the config, then override only the private developer instructions; the real config.toml stays read-only.
-  const configText = await readOptional(join(real, "config.toml"));
-  const config = configText ? parse(configText) : {};
-  config.developer_instructions = instructions;
-  await writeFile(join(shadow, "config.toml"), stringify(config), { mode: 0o600 });
-
-  // sessions needs a stable real path so thread/resume can find the previous turn's rollout.
-  await mkdir(join(real, "sessions"), { recursive: true });
-  await Promise.all([
-    linkOptional(join(real, "auth.json"), join(shadow, "auth.json"), "file"),
-    linkOptional(join(real, "sessions"), join(shadow, "sessions"), "dir"),
-    linkOptional(join(real, "skills"), join(shadow, "skills"), "dir"),
-    linkOptional(join(real, "rules"), join(shadow, "rules"), "dir")
-  ]);
-  return { home: shadow, cleanup: () => rm(shadow, { recursive: true, force: true }) };
 }
 
 /** MCP servers that ChatGPT.app provisions to carry computer-use capability, in preference order. */
@@ -248,13 +186,11 @@ export function buildCodexCommand(
   env: NodeJS.ProcessEnv = process.env
 ): CodexAppServerCommand {
   const realHome = env.CODEX_HOME || join(homedir(), ".codex");
-  const codexHome = req.skills !== undefined ? prepareScopedCodexHome(req, realHome) : realHome;
-  const mcp = codexMcpOverrides(req.mcpServers, env, req);
   return {
     command,
-    args: [...appServerArgs, ...mcp.args, ...nativeCapacityOverrides(req)],
+    args: [...appServerArgs, ...nativeCapacityOverrides(req)],
     cwd: req.workdir,
-    env: { ...env, ...mcp.env, CODEX_HOME: codexHome },
+    env: { ...env, CODEX_HOME: realHome },
     cleanup: () => undefined
   };
 }
@@ -270,118 +206,6 @@ function nativeCapacityOverrides(request: InvokeRequest): string[] {
   return ["-c", `model_context_window=${window}`, "-c", `model_auto_compact_token_limit=${window - reserve}`];
 }
 
-function prepareScopedCodexHome(request: InvokeRequest, realHome: string): string {
-  if (!request.providerStateDir) throw new TypeError("SKILL_SCOPE_INVALID");
-  const home = join(request.providerStateDir, "codex");
-  mkdirSync(home, { recursive: true, mode: 0o700 });
-  if (lstatSync(home).isSymbolicLink()) throw new TypeError("PROVIDER_HOME_INVALID");
-  let config: Record<string, unknown> = {};
-  try { config = parse(readFileSync(join(realHome, "config.toml"), "utf8")); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  for (const key of ["skills", "plugins", "mcp_servers", "developer_instructions", "hooks"]) delete config[key];
-  config.features = { ...(typeof config.features === "object" ? config.features : {}), apps: false, plugins: false };
-  writeFileSync(join(home, "config.toml"), stringify(config), { mode: 0o600 });
-  try { copyFileSync(join(realHome, "auth.json"), join(home, "auth.json")); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  return home;
-}
-
-/** Build process-local Codex config overrides without placing secret values in argv. */
-export function codexMcpOverrides(
-  servers: McpServers | undefined,
-  inheritedEnv: NodeJS.ProcessEnv = process.env,
-  invocation?: Pick<InvokeRequest, "approvalMode" | "context" | "runMetadata">
-): { args: string[]; env: NodeJS.ProcessEnv } {
-  servers = canonicalMcpServers(servers);
-  if (!servers || Object.keys(servers).length === 0) return { args: [], env: {} };
-  const env: NodeJS.ProcessEnv = {};
-  const forwarded = new Map<string, string>();
-  const configured: Record<string, Record<string, unknown>> = {};
-  const fullAccess = invocation?.approvalMode === "full_access"
-    && contextItem(invocation.context, "octo.security", "approval_policy")?.payload.mode === "full_access";
-
-  Object.entries(servers).forEach(([name, server], serverIndex) => {
-    const entry: Record<string, unknown> = {};
-    if (server.type === "stdio") {
-      entry.command = server.command;
-      if (server.args) entry.args = server.args;
-      if (server.cwd) entry.cwd = server.cwd;
-      if (server.env) {
-        if (server.env.PLUGIN_ROOT !== undefined && server.env.PLUGIN_DATA !== undefined) {
-          entry.env = server.env;
-        } else {
-          for (const [key, value] of Object.entries(server.env)) {
-            const prior = forwarded.get(key);
-            if (prior !== undefined && prior !== value) {
-              throw new Error(`dynamic MCP stdio environment variable ${key} has conflicting values`);
-            }
-            forwarded.set(key, value);
-            env[key] = value;
-          }
-          entry.env_vars = Object.keys(server.env);
-        }
-      }
-    } else {
-      entry.url = server.url;
-      const headerVariables: Record<string, string> = {};
-      Object.entries(server.headers ?? {}).forEach(([header, value], headerIndex) => {
-        const variable = `OCTO_HARNESS_MCP_${serverIndex}_HEADER_${headerIndex}`;
-        env[variable] = value;
-        headerVariables[header] = variable;
-      });
-      if (Object.keys(headerVariables).length > 0) entry.env_http_headers = headerVariables;
-    }
-    if (server.required !== undefined) entry.required = server.required;
-    if (server.startupTimeoutMs !== undefined) entry.startup_timeout_sec = server.startupTimeoutMs / 1000;
-    if (server.toolTimeoutMs !== undefined) entry.tool_timeout_sec = server.toolTimeoutMs / 1000;
-    if (fullAccess && isFrozenRunMcp(invocation, servers, name)) {
-      // Approval policy applies equally to all authorized, frozen HTTP MCP servers.
-      // Authentication and resource/tool authorization remain the server's responsibility.
-      entry.default_tools_approval_mode = "approve";
-    }
-    configured[name] = entry;
-  });
-
-  // Do not copy inherited values into the returned overlay. buildCodexCommand
-  // merges this object on top of inheritedEnv exactly once.
-  void inheritedEnv;
-  return { args: ["-c", `mcp_servers=${tomlValue(configured)}`], env };
-}
-
-function isFrozenRunMcp(invocation: Pick<InvokeRequest, "runMetadata"> | undefined, servers: McpServers, name: string): boolean {
-  const server = servers[name];
-  if (server?.type !== "streamable_http") return false;
-  const frozen = invocation?.runMetadata?.frozenMcpServers;
-  return !!frozen && typeof frozen === "object" && !Array.isArray(frozen)
-    && (frozen as Record<string, unknown>)[name] === runMcpServerHash(server);
-}
-
-function tomlValue(value: unknown): string {
-  if (typeof value === "string") return JSON.stringify(value);
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (Array.isArray(value)) return `[${value.map(tomlValue).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value).map(([key, item]) => `${JSON.stringify(key)}=${tomlValue(item)}`).join(",")}}`;
-  }
-  throw new TypeError("unsupported Codex MCP config value");
-}
-
-/**
- * Create the Codex adapter.
- *
- * command/appServerArgs/spawnFn are all injectable, mainly to test the real
- * stdin/stdout JSON-RPC without connecting to a real Codex service in tests. The
- * production defaults always run `codex app-server --listen stdio://`.
- * Provider observation is forwarded to the transport unchanged because only
- * the app-server layer knows the final JSON-RPC params and write/response
- * boundaries.
- *
- * `tool.computer_use` is advertised only when the CODEX_HOME this adapter will
- * use already carries ChatGPT.app's computer-use MCP provisioning. Detection runs
- * once here (at creation/registration), which is the same cadence at which
- * `host.list()` snapshots capabilities for the Agent Work Runtime; `env` is
- * injectable so tests can pin the inspected home.
- */
 export function createCodexAdapter({
   command = "codex",
   appServerArgs = buildCodexAppServerArgs(),
@@ -398,13 +222,13 @@ export function createCodexAdapter({
     "session.serialize",
     "session.resume_recovery",
     "activity.turn-progress",
-    executionFeatures.MCP_DYNAMIC,
+
     executionFeatures.INTERACTION_RESPONSE,
     executionFeatures.APPROVAL_ASK,
     executionFeatures.APPROVAL_ASSISTED,
     executionFeatures.APPROVAL_FULL_ACCESS,
     executionFeatures.INPUT_IMAGE
-    , "context.capabilities"
+
   ];
   if (detectComputerUseProvisioningSync(env).available) adapterCapabilities.push(COMPUTER_USE_CAPABILITY);
   const interactionResponders = new Map<string, CodexInteractionResponder>();
@@ -427,8 +251,7 @@ export function createCodexAdapter({
       if (interactionResponders.has(request.invocationId)) {
         throw new Error(`duplicate active Codex invocation: ${request.invocationId}`);
       }
-      // The transport owns cleanup as well as observation ordering, so the
-      // shadow home cannot be deleted while its final RPC is still in flight.
+      // The transport owns subprocess cleanup and observation ordering.
       const spec = buildCodexCommand(request, command, appServerArgs, env);
       let activeResponder: CodexInteractionResponder | undefined;
       const onInteractionResponder = (responder: CodexInteractionResponder | undefined): void => {

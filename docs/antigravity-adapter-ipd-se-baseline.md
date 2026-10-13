@@ -96,7 +96,7 @@ Antigravity 是执行引擎，Gemini 是用户希望使用的模型系列。引�
 
 已依据 [Antigravity 官方 headless 文档](https://antigravity.google/docs/cli/headless/) 固定 stdin 合同：`{ "event": "user", "message": { "content": ... } }`。CLI 无独立 system-prompt 参数，因此把控制指令和用户输入作为两个带标签的 text block 放入同一 user 消息；这属于明确的 user-channel 指令降级，不提供原生 system role 的隔离保证。`provider.input` 记录实际输入载体；自动测试验证消息结构及用户文件保留，真实账户调用仍待验证。每次调用拥有独立 normalizer 和临时日志目录，完成、失败与取消均清理目录。
 
-动态 MCP、Harness 准备的 skills / skillRoots、图片输入在启动前明确拒绝；不静默丢弃，也不把 CLI 本机静态配置声明为 Harness 动态能力。程序版本低于 1.3.3、未知版本或未经资格验证的预发布版本标记为不可用。
+共享 `InvokeRequest` 已删除动态 MCP、skills 和 skillRoots 字段，旧字段在协议边界直接拒绝。本地工具由原生 Runtime 管理；Adapter 不安装或注入工具。图片输入仍在启动前明确拒绝。程序版本低于 1.3.3、未知版本或未经资格验证的预发布版本标记为不可用。
 
 ### 4.3 事件转换与结束判定
 

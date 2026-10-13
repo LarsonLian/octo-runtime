@@ -30,6 +30,28 @@ export type ContextItem = {namespace: string; name: string; payload: Record<stri
 export type PersistentContextEnvelope = ContextEnvelope;
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "PublicObjectMaterial".
+ */
+export type PublicObjectMaterial = {
+  resource_ref: string;
+  object_type: "task" | "discussion" | "discussion_comment" | "discussion_reply" | "local_file" | "drive_file";
+  object_id?: string;
+  origin: "mention" | "attachment" | "object_action" | "source_entity";
+  revision?: string;
+  byte_size: number;
+  digest: string;
+  object_scope?: {
+    type: "user" | "teamspace";
+    id: string;
+  };
+  selector?: {
+    mode: "core" | "content" | "history" | "chain" | "metadata";
+    start?: number;
+    end?: number;
+  };
+};
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextModelSelectionPayload".
  */
 export type ContextModelSelectionPayload = {
@@ -125,13 +147,6 @@ export type ResolvedRuntimeSelection = ResolvedRuntimeSelection1;
  */
 export type ResolvedExecutionPlan = ResolvedExecutionPlan1;
 /**
- * Named MCP servers frozen for one invocation.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "McpServers".
- */
-export type McpServers = Record<string, McpServer>;
-/**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "AgentSource".
  */
@@ -176,6 +191,13 @@ export type ContextSyncResult = ContextSyncResult1;
  * via the `definition` "McpServer".
  */
 export type McpServer = McpStdioServer | McpStreamableHttpServer;
+/**
+ * Named MCP servers frozen for one invocation.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "McpServers".
+ */
+export type McpServers = Record<string, McpServer>;
 /**
  * Ordered provider-native user input. Image bytes are materialized only for the invocation, never used as a text fallback.
  *
@@ -1614,28 +1636,20 @@ export interface RunContextProjection {
   preparation_status: "unknown" | "prepared";
   application_status: "unknown" | "applied";
   invocation_status: "unknown";
-  /**
-   * @maxItems 64
-   */
-  loaded_skills: string[];
   model_uses_provider_default: boolean;
   effort_uses_provider_default: boolean;
+  /**
+   * Frozen inline object facts proven by a matching preparation receipt. Source fields are provenance claims, not access grants. No contents, local handles, paths or credentials are exposed; application is separately evidenced by application_status.
+   *
+   * @maxItems 32
+   */
+  object_materials?: PublicObjectMaterial[];
   execution: {
     adapter_type: string;
     model?: string;
     effort?: string;
     approval_mode: "ask" | "assisted" | "full_access";
-    workspace_mode: "fixed" | "random";
-    /**
-     * @maxItems 32
-     */
-    resources: {
-      resource_id: string;
-      kind: "agent_plugin" | "skill" | "connector" | "knowledge";
-      digest: string;
-      sources: ("agent_default" | "agent_mandatory" | "request" | "scenario_policy")[];
-      revision: number;
-    }[];
+    workspace_mode: "fixed" | "random" | "none";
   };
   scenario?: ScenarioProjection;
 }
@@ -1669,10 +1683,6 @@ export interface ContextPreparationReceipt {
   /**
    * @maxItems 32
    */
-  resources: PreparedCapabilityReceipt[];
-  /**
-   * @maxItems 32
-   */
   materials: PreparedMaterialReceipt[];
   continuity?: ChannelContextSnapshotRef;
   /**
@@ -1680,21 +1690,6 @@ export interface ContextPreparationReceipt {
    */
   warnings: string[];
   scenario_policy_hash?: string;
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "PreparedCapabilityReceipt".
- */
-export interface PreparedCapabilityReceipt {
-  resource_id: string;
-  digest: string;
-  root: string;
-  data: string;
-  /**
-   * @maxItems 64
-   */
-  components: string[];
-  revision: number;
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -1737,7 +1732,7 @@ export interface ChannelContextSnapshotRef {
   recovery_completeness?: "complete" | "partial" | "unavailable";
 }
 /**
- * Adapter evidence emitted only after Provider accepts the invocation. Loaded skills require native discovery and scope confirmation. Invocation remains unknown without a native execution event. No private paths, credentials or instruction text are permitted.
+ * Adapter evidence emitted only after Provider accepts the invocation. No plugin installation evidence, private paths, credentials or instruction text are permitted.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextApplicationEvidence".
@@ -1754,10 +1749,6 @@ export interface ContextApplicationEvidence {
   adapter_type: "codex";
   provider_session_id: string;
   provider_ack: "turn/start";
-  /**
-   * @maxItems 64
-   */
-  loaded_skills: string[];
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -1774,83 +1765,6 @@ export interface ContextAdapterPayload {
 export interface ContextModelPayload {
   selection?: ContextModelSelectionPayload;
   reasoning?: ContextReasoningPayload;
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextCapabilityReference".
- */
-export interface ContextCapabilityReference {
-  resource_id: string;
-  invoke?: boolean;
-  /**
-   * @maxItems 64
-   */
-  components?: string[];
-}
-/**
- * Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextCapabilitySelectionPayload".
- */
-export interface ContextCapabilitySelectionPayload {
-  /**
-   * @maxItems 32
-   */
-  include: ContextCapabilityReference[];
-  /**
-   * @maxItems 32
-   */
-  exclude: ContextResourceIdentity[];
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextResourceIdentity".
- */
-export interface ContextResourceIdentity {
-  resource_id: string;
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ResolvedCapabilityResource".
- */
-export interface ResolvedCapabilityResource {
-  resource_id: string;
-  kind: "agent_plugin" | "skill" | "connector" | "knowledge";
-  digest: string;
-  files: {
-    [k: string]: ResolvedResourceFile;
-  };
-  sources: ("agent_default" | "agent_mandatory" | "request" | "scenario_policy")[];
-  invoke: boolean;
-  components?: string[];
-  revision: number;
-  /**
-   * Ephemeral per-server credentials returned by authorized resource preparation; never part of files or digest.
-   */
-  mcp_credentials?: {
-    [k: string]: {
-      [k: string]: string;
-    };
-  };
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ResolvedResourceFile".
- */
-export interface ResolvedResourceFile {
-  content_base64: string;
-  executable: boolean;
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "PreparedSkill".
- */
-export interface PreparedSkill {
-  name: string;
-  description: string;
-  path: string;
-  invoke: boolean;
 }
 /**
  * Snake-case frozen watchdog limits, with the same bounds as RuntimeLimits. Legacy enforcement=observe cannot be combined with v2 settings.
@@ -2036,16 +1950,11 @@ export interface ResolvedExecutionPlan1 {
   adapter_type: string;
   workdir: string;
   workspace?: ContextWorkspacePayload;
-  /**
-   * @maxItems 32
-   */
-  resources?: ResolvedCapabilityResource[];
   model?: string;
   effort?: string;
   approval_mode: ApprovalMode;
   required_capabilities?: "react"[];
   runtime_limits?: ContextLimitsPayload;
-  mcp_servers?: McpServers;
   provider_compatibility?: Record<string, unknown>;
   provider_agent_id?: string;
   agent_source: AgentSource;
@@ -2633,10 +2542,6 @@ export interface InvokeRequestWire {
   context: ContextEnvelope;
   runMetadata?: Record<string, unknown>;
   approvalMode: ApprovalMode;
-  mcpServers?: McpServers;
-  skills?: PreparedSkill[];
-  skillRoots?: string[];
-  providerStateDir?: string;
   providerSession?: ProviderSession;
   runtimeLimits?: RuntimeLimits;
   agentConfig: AgentConfig;
@@ -2737,108 +2642,6 @@ export interface RunNoticePayload {
   relatedItemId?: string;
 }
 /**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextSkillsReference".
- */
-export interface ContextSkillsReference {
-  resource_id: string;
-  invoke?: boolean;
-}
-/**
- * Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextSkillsPayload".
- */
-export interface ContextSkillsPayload {
-  /**
-   * @maxItems 32
-   */
-  include: ContextSkillsReference[];
-  /**
-   * @maxItems 32
-   */
-  exclude: ContextResourceIdentity[];
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextAgentPluginsReference".
- */
-export interface ContextAgentPluginsReference {
-  resource_id: string;
-  invoke?: boolean;
-  /**
-   * @maxItems 64
-   */
-  components?: string[];
-}
-/**
- * Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextAgentPluginsPayload".
- */
-export interface ContextAgentPluginsPayload {
-  /**
-   * @maxItems 32
-   */
-  include: ContextAgentPluginsReference[];
-  /**
-   * @maxItems 32
-   */
-  exclude: ContextResourceIdentity[];
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextKnowledgeReference".
- */
-export interface ContextKnowledgeReference {
-  resource_id: string;
-}
-/**
- * Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextKnowledgePayload".
- */
-export interface ContextKnowledgePayload {
-  /**
-   * @maxItems 32
-   */
-  include: ContextKnowledgeReference[];
-  /**
-   * @maxItems 32
-   */
-  exclude: ContextResourceIdentity[];
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextConnectorsReference".
- */
-export interface ContextConnectorsReference {
-  resource_id: string;
-  /**
-   * @maxItems 64
-   */
-  components?: string[];
-}
-/**
- * Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextConnectorsPayload".
- */
-export interface ContextConnectorsPayload {
-  /**
-   * @maxItems 32
-   */
-  include: ContextConnectorsReference[];
-  /**
-   * @maxItems 32
-   */
-  exclude: ContextResourceIdentity[];
-}
-/**
  * Untrusted inline selection text with optional resource reference, source metadata and summary. Source metadata is not an authorization claim.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -2905,14 +2708,6 @@ export interface ScenarioPolicy {
    * @maxItems 32
    */
   instructions: string[];
-  /**
-   * @maxItems 32
-   */
-  default_skills: {
-    resource_id: string;
-    invoke: boolean;
-    [k: string]: unknown;
-  }[];
   [k: string]: unknown;
 }
 /**
@@ -2926,14 +2721,48 @@ export interface ScenarioPolicySnapshot {
    * @maxItems 32
    */
   instructions: string[];
-  /**
-   * @maxItems 32
-   */
-  default_skills: {
-    resource_id: string;
-    invoke: boolean;
-    [k: string]: unknown;
-  }[];
   hash: string;
   [k: string]: unknown;
+}
+/**
+ * Business authorization intent; never a tool installation definition.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ToolAuthorization".
+ */
+export interface ToolAuthorization {
+  service_subject_id: string;
+  /**
+   * @minItems 1
+   * @maxItems 128
+   */
+  allowed_tools: [string, ...string[]];
+  /**
+   * @minItems 1
+   * @maxItems 128
+   */
+  resource_refs: [string, ...string[]];
+}
+/**
+ * Run lease-bound credentials delivered over the authenticated Runtime channel. Never enter provider configuration, prompts or logs.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "IssuedToolAuthorization".
+ */
+export interface IssuedToolAuthorization {
+  service_subject_id: string;
+  /**
+   * @minItems 1
+   * @maxItems 128
+   */
+  allowed_tools: [string, ...string[]];
+  /**
+   * @minItems 1
+   * @maxItems 128
+   */
+  resource_refs: [string, ...string[]];
+  token: string;
+  octo_space_id: string;
+  namespace: string;
+  expires_at: string;
 }

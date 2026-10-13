@@ -47,7 +47,7 @@ test("preset preparation creates no workspace or provider directory and rejects 
   const prepared = await prepareRunContext(plan, options);
   assert.equal(prepared.workdir, "");
   assert.equal(prepared.providerStateDir, "");
-  assert.deepEqual(prepared.receipt, { workspace_mode: "none", workspace_path: "", provider_state_dir: "", resources: [], warnings: [] });
+  assert.deepEqual(prepared.receipt, { workspace_mode: "none", workspace_path: "", provider_state_dir: "", warnings: [] });
   assert.deepEqual(await readdir(options.stateRoot), []);
-  await assert.rejects(prepareRunContext({ ...plan, resources: [{}] }, options), /CONTEXT_WORKSPACE_INVALID/);
+  await assert.rejects(prepareRunContext({ ...plan, resources: [{}] }, options), /CONTEXT_SCHEMA_INVALID|CONTEXT_WORKSPACE_INVALID/);
 });

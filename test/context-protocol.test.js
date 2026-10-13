@@ -94,7 +94,6 @@ for (const fixture of fixtures) {
         if (plan.mcp_servers !== undefined) assert.doesNotThrow(() => assertMcpServers(plan.mcp_servers));
       } else {
         assert.throws(() => assertResolvedExecutionPlan(plan), error => error instanceof TypeError && error.message === fixture.error);
-        if (fixture.name.startsWith("plan-mcp-")) assert.throws(() => assertMcpServers(plan.mcp_servers), error => error instanceof TypeError && error.message === fixture.error);
       }
     });
     continue;

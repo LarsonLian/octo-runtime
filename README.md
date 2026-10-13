@@ -13,6 +13,14 @@ Octo Harness 是 provider-neutral 的本地 Agent Runtime。它把 Codex、Claud
 | Octo Harness | invocation、provider adapter、canonical events、本地可靠 outbox | Chat/Task/Attempt/Trigger 业务表 |
 | Channel Gateway | 外部事件归一化、Trigger Occurrence、IM delivery | AgentRun 生命周期 |
 
+本地用户或原生 Runtime 管理 Skill、Plugin、MCP 和 Connector 的安装、配置、进程及审批。Harness 不下载 FileBundle，不安装工具，不生成工具配置，也不覆盖原生 Runtime 已有的插件配置。OpenClaw 使用已经存在的本地 Agent。OKF 业务记忆由 Loop 管理；Harness 只处理普通材料、会话连续性和执行工作目录。
+
+云端只提供授权意图与短期凭据。Runtime 通过独立的 `/v1/runtime/context/authorizations/resolve` 接口取得授权；授权不包含工具地址、命令或配置模板。任务材料读取与产物归档使用本地 `business_service_bindings` 配置的业务服务连接。其他授权必须由宿主实现 `receiveToolAuthorizations` 接收；没有接收器时，带有此类授权的 Run 会拒绝执行。凭据不会写入模型输入或 Provider 配置。
+
+同一服务主体的授权按操作划分。Harness 只消费材料读取、材料快照检查及产物准备/提交/失败操作；例如同一 Loop 授权中的 `knowledge_*` 或 `task_apply_action` 仍交给本地授权接收器，不能因为已经配置 task/discussion 连接而忽略。
+
+当前 Run 固定为 `schema_version=7`，Context 固定为 `octo.context-envelope/v3`。本次删除的云端资源选择、`mcp_servers`、`default_skills` 和插件应用证据不提供兼容路径。模块的 Alpha/Beta/Stable 状态以[生态架构成熟度](../README.md)为准，方案见[本地插件责任改造](docs/24-local-plugin-ownership-refactor.md)。
+
 `namespace` 用来隔离业务语义，例如 `loop`、`autopilot`、`webhook`、`im`。稳定会话由 `(namespace, agent_id, session_key)` 唯一确定；`trigger_occurrence_id` 表示一次外部触发事实，并用于同一会话内的提交去重。
 
 ## 代码结构

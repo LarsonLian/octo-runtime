@@ -95,7 +95,7 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
     key: sessionKey,
     agentId,
     permissionMode: req.approvalMode === "full_access" ? "full" : "guarded",
-    ...(!usesExistingAgent(req) ? { cwd: req.workdir } : {}),
+
     idempotencyKey: `${requestId}-session`,
     ...(model ? { model } : {}),
     ...(thinking ? { thinkingLevel: thinking } : {})
@@ -105,7 +105,7 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
     agentId,
     sessionKey,
     deliver: false,
-    ...(!usesExistingAgent(req) ? { promptMode: "minimal" } : {}),
+
     idempotencyKey: requestId,
     ...(req.controlInstructions ? { extraSystemPrompt: req.controlInstructions } : {}),
     ...(model ? { model } : {}),
@@ -125,7 +125,7 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
       kind: "json_params",
       content: {
         operations: [
-          ...(!usesExistingAgent(req) ? [{ method: "config.get", params: {} }] : [{ method: "agents.list", params: {} }]),
+          { method: "agents.list", params: {} },
           { method: "sessions.create", params: createParams },
           { method: "sessions.messages.subscribe", params: { key: sessionKey, agentId } },
           { method: "agent", params: agentParams }
@@ -419,53 +419,18 @@ function normalizeFinalResponse(value: unknown, state: StreamState): {
   };
 }
 
-function assertRuntimeGatewayContract(value: unknown, externalBinding = false): void {
+function assertRuntimeGatewayContract(value: unknown): void {
   const hello = asRecord(value);
   const features = asRecord(hello?.features);
   const methods = Array.isArray(features?.methods) ? features.methods : [];
   const events = Array.isArray(features?.events) ? features.events : [];
   if (hello?.protocol !== 4) throw new Error(`unsupported OpenClaw Gateway protocol: ${String(hello?.protocol)}`);
   const requiredMethods = ["sessions.create", "sessions.messages.subscribe", "agent", "agent.wait", "sessions.abort"];
-  if (!externalBinding) requiredMethods.unshift("config.get");
-  else requiredMethods.unshift("agents.list");
+  requiredMethods.unshift("agents.list");
   for (const method of requiredMethods) {
     if (!methods.includes(method)) throw new Error(`OpenClaw Gateway does not advertise required method ${method}`);
   }
   if (!events.includes("agent")) throw new Error("OpenClaw Gateway does not advertise the agent event stream");
-}
-
-function usesExistingAgent(req: InvokeRequest): boolean {
-  // Work App's default assistant selects the user's existing main even when its Octo definition is provisioned.
-  return req.agentSource === "preset" || req.agentConfig.providerAgentId === "main";
-}
-
-function assertRuntimeIsolationConfig(value: unknown, invocation: OpenClawGatewayInvocation): void {
-  const snapshot = asRecord(value);
-  const config = asRecord(snapshot?.config) ?? snapshot;
-  const agents = asRecord(config?.agents);
-  const defaults = asRecord(agents?.defaults);
-  const entries = asRecord(agents?.entries);
-  const agent = asRecord(entries?.[invocation.agentId]);
-  const tools = asRecord(agent?.tools);
-  const memory = asRecord(agent?.memory);
-  const search = asRecord(memory?.search);
-  const expectedWorkspace = invocation.runnerWorkspace;
-  if (defaults?.skipBootstrap !== true) throw new Error("OpenClaw Gateway isolation drift: agents.defaults.skipBootstrap must be true");
-  if (!agent) throw new Error(`OpenClaw Gateway isolation drift: agent ${invocation.agentId} is missing`);
-  if (agent.contextInjection !== "never") throw new Error("OpenClaw Gateway isolation drift: contextInjection must be never");
-  if (!Array.isArray(agent.skills) || agent.skills.length !== 0) throw new Error("OpenClaw Gateway isolation drift: skills must be empty");
-  if (!Array.isArray(tools?.deny) || !tools.deny.includes("group:memory")) {
-    throw new Error("OpenClaw Gateway isolation drift: memory tools must be denied");
-  }
-  if (!tools.deny.includes("ask_user")) {
-    throw new Error("OpenClaw Gateway isolation drift: ask_user must be denied for unattended runs");
-  }
-  if (search?.rememberAcrossConversations !== false) {
-    throw new Error("OpenClaw Gateway isolation drift: cross-conversation memory must be disabled");
-  }
-  if (expectedWorkspace && nonEmptyString(agent.workspace) !== expectedWorkspace) {
-    throw new Error("OpenClaw Gateway isolation drift: runner workspace does not match the profile configuration");
-  }
 }
 
 export interface OpenClawGatewayClientLike {
@@ -503,8 +468,7 @@ async function* invokeOpenClawGateway(
 
   try {
     const hello = await client.connect();
-    const externalBinding = usesExistingAgent(req);
-    assertRuntimeGatewayContract(hello, externalBinding);
+    assertRuntimeGatewayContract(hello);
     if (req.approvalMode === "ask") {
       const features = asRecord(asRecord(hello)?.features);
       if (!Array.isArray(features?.methods) || !features.methods.includes("exec.approval.resolve")
@@ -514,10 +478,7 @@ async function* invokeOpenClawGateway(
         throw new Error("APPROVAL_MODE_UNSUPPORTED: OpenClaw Gateway has no approval transport");
       }
     }
-    if (!externalBinding) {
-      await client.request("config.get", {}, { timeoutMs: 10_000, signal: req.signal })
-        .then(value => assertRuntimeIsolationConfig(value, invocation));
-    } else await assertExistingAgent(client, invocation.agentId, req.signal);
+    await assertExistingAgent(client, invocation.agentId, req.signal);
     const created = asRecord(await client.request("sessions.create", invocation.createParams, {
       timeoutMs: 30_000,
       signal: req.signal
@@ -677,7 +638,7 @@ async function* invokeOpenClawGateway(
           await controlClient.request("sessions.abort", abortParams, { timeoutMs: 5_000 });
         } catch {
           recoveryClient = clientFactory(invocation.gateway);
-          assertRuntimeGatewayContract(await recoveryClient.connect(), usesExistingAgent(req));
+          assertRuntimeGatewayContract(await recoveryClient.connect());
           controlClient = recoveryClient;
           await controlClient.request("sessions.abort", abortParams, { timeoutMs: 5_000 });
         }
@@ -738,7 +699,7 @@ export function createOpenClawAdapter(
     let client: OpenClawGatewayClientLike | undefined;
     try {
       client = clientFactory(await loadLocalOpenClawGateway());
-      assertRuntimeGatewayContract(await client.connect(), true);
+      assertRuntimeGatewayContract(await client.connect());
       await assertExistingAgent(client, "main");
       return { available: true, command: "openclaw-gateway" };
     } catch (error) { return { available: false, command: "openclaw-gateway", reason: localGatewayFailure(error) }; }

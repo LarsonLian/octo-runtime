@@ -99,12 +99,12 @@ test("Runtime uploads actual bytes; a lost commit receipt and retries reuse dura
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   const plan = { workdir: directory, mcp_servers: { octo_task: { type: "streamable_http", url: `http://127.0.0.1:${server.address().port}/mcp/team`, headers: { Authorization: "Bearer run-grant" } } } };
-  assert.deepEqual(await archiveTaskOutputs(plan, "task-1", "run-1", new AbortController().signal), [{ output_id: "page-1", ...receipt }]);
-  assert.deepEqual(await archiveTaskOutputs(plan, "task-1", "run-1", new AbortController().signal), [{ output_id: "page-1", ...receipt }]);
+  assert.deepEqual(await archiveTaskOutputs({ workdir: plan.workdir }, "task-1", "run-1", new AbortController().signal, undefined, plan.mcp_servers.octo_task), [{ output_id: "page-1", ...receipt }]);
+  assert.deepEqual(await archiveTaskOutputs({ workdir: plan.workdir }, "task-1", "run-1", new AbortController().signal, undefined, plan.mcp_servers.octo_task), [{ output_id: "page-1", ...receipt }]);
   assert.equal(uploads, 1);
   assert.equal(calls.filter(call => call.method === "tools/call" && call.params.name === "task_commit_output").length, 1);
   await writeFile(join(directory, entry.relative_path), "changed after manifest");
-  const failure = await archiveTaskOutputs(plan, "task-1", "run-1", new AbortController().signal);
+  const failure = await archiveTaskOutputs({ workdir: plan.workdir }, "task-1", "run-1", new AbortController().signal, undefined, plan.mcp_servers.octo_task);
   assert.deepEqual(failure, [{ output_id: "page-1", status: "failed", error_code: "TASK_OUTPUT_INTEGRITY_MISMATCH" }]);
   assert.equal(uploads, 1);
 });
@@ -130,6 +130,6 @@ test("upload failures never produce saved receipts or call commit", async t => {
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   const plan = { workdir: directory, mcp_servers: { octo_task: { type: "streamable_http", url: `http://127.0.0.1:${server.address().port}/mcp/team` } } };
-  assert.deepEqual(await archiveTaskOutputs(plan, "task-1", "run-1", new AbortController().signal), [{ output_id: "page-1", status: "failed", error_code: "TASK_OUTPUT_UPLOAD_FAILED" }]);
+  assert.deepEqual(await archiveTaskOutputs({ workdir: plan.workdir }, "task-1", "run-1", new AbortController().signal, undefined, plan.mcp_servers.octo_task), [{ output_id: "page-1", status: "failed", error_code: "TASK_OUTPUT_UPLOAD_FAILED" }]);
   assert.deepEqual(tools, ["task_prepare_output", "task_fail_output"]);
 });

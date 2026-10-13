@@ -174,7 +174,6 @@ export async function* runCodexAppServerTurn({
     }
     client.notify("initialized");
 
-    if (request.skills !== undefined) await applySkillScope(client, request, context);
 
     // Phase 2: providerSession.sessionId is the Codex thread ID, kept opaque to the Core.
     const requestedSessionId = request.providerSession?.sessionId;
@@ -261,8 +260,7 @@ export async function* runCodexAppServerTurn({
         schema: "octo.context-application/v1", compiler_version: "octo.context-compiler/v4", catalog_version: "octo.context-catalog/v3",
         context_hash: String(compilation.context_hash), compiled_hash: String(compilation.compiled_hash),
         run_id: String(compilation.run_id), lease_id: String(compilation.lease_id), fencing_token: Number(compilation.fencing_token),
-        adapter_type: "codex", provider_session_id: threadId, provider_ack: "turn/start",
-        loaded_skills: (request.skills ?? []).map(skill => skill.name)
+        adapter_type: "codex", provider_session_id: threadId, provider_ack: "turn/start"
       } };
     }
 
@@ -1586,31 +1584,12 @@ function turnParams(request: InvokeRequest, threadId: string, freshFallback = fa
     threadId,
     input: [...providerInputParts(request, freshFallback).map(part => part.type === "image"
       ? { type: "image", url: `data:${part.mimeType};base64,${part.data}` }
-      : { type: "text", text: part.text, text_elements: [] }),
-      ...(request.skills ?? []).filter(skill => skill.invoke).map(skill => ({ type: "skill", name: skill.name, path: skill.path }))],
+      : { type: "text", text: part.text, text_elements: [] })],
     cwd: request.workdir,
     ...(request.agentConfig.model ? { model: request.agentConfig.model } : {}),
     ...(effort ? { effort } : {}),
     summary: codexReasoningSummary(request)
   };
-}
-
-async function applySkillScope(client: CodexAppServerClient, request: InvokeRequest, context?: AdapterInvocationContext): Promise<void> {
-  await observedRequest({ client, context, method: "skills/extraRoots/set", params: { extraRoots: request.skillRoots ?? [] } });
-  const result = recordValue(await observedRequest({ client, context, method: "skills/list", params: { cwds: [request.workdir], forceReload: true } }));
-  const discovered = Array.isArray(result?.data) ? result.data.flatMap(entry => {
-    const value = recordValue(entry);
-    return Array.isArray(value?.skills) ? value.skills.map(recordValue).filter(Boolean) : [];
-  }) : [];
-  const paths = new Set((request.skills ?? []).map(skill => skill.path));
-  for (const skill of discovered) {
-    if (typeof skill?.path !== "string") throw new TypeError("CODEX_SKILL_DISCOVERY_INVALID");
-    const enabled = paths.has(skill.path);
-    if (skill.enabled !== enabled) await observedRequest({ client, context, method: "skills/config/write", params: { path: skill.path, enabled } });
-  }
-  for (const expected of request.skills ?? []) {
-    if (!discovered.some(skill => skill?.path === expected.path && skill.name === expected.name)) throw new TypeError("CODEX_SKILL_UNAVAILABLE: " + expected.name);
-  }
 }
 
 /**

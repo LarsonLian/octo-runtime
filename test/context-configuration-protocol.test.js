@@ -59,8 +59,7 @@ test("configuration rejects unknown fields and persistent trusted controls", () 
   }
 });
 
-test("resource kinds with the same UUID are independent identities", () => {
+test("removed resource configuration cannot enter any Agent layer", () => {
   const defaults = { schema: "octo.context-envelope/v3", items: ["agent_plugins", "skills", "connectors"].map(name => ({namespace:"octo.resources",name,payload:{include:[{resource_id: "ae67cb3e-0d16-4bb2-9a4e-bb563cb707af"}],exclude:[]}})) };
-  const result = resolveContextConfiguration({defaults,mandatory:{...defaults,items:[]}}, {...defaults,items:[]});
-  assert.equal(result.items.length, 3);
+  assert.throws(() => resolveContextConfiguration({defaults,mandatory:{...defaults,items:[]}}, {...defaults,items:[]}), /CONTEXT_TYPE_REMOVED/);
 });

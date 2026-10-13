@@ -20,7 +20,6 @@ import {
   buildCodexCommand,
   CodexEventNormalizer,
   createCodexAdapter,
-  createCodexInvocationHome,
   normalizeCodexEvent
 } from "@mininglamp-oss/octo-harness-adapter-codex";
 import {
@@ -75,29 +74,10 @@ function acpPermissionFixture(createAdapter, options) {
   return { adapter, state };
 }
 
-const openClawGatewayMethods = ["config.get", "agents.list", "sessions.create", "sessions.messages.subscribe", "agent", "agent.wait", "sessions.abort"];
+const openClawGatewayMethods = ["agents.list", "sessions.create", "sessions.messages.subscribe", "agent", "agent.wait", "sessions.abort"];
 
 function openClawGatewayHello() {
   return { type: "hello-ok", protocol: 4, features: { methods: openClawGatewayMethods, events: ["agent"] } };
-}
-
-function openClawIsolationConfig(agentId = "octo-openclaw-runner") {
-  return {
-    config: {
-      agents: {
-        defaults: { skipBootstrap: true },
-        entries: {
-          [agentId]: {
-            workspace: "/managed/openclaw-runner",
-            contextInjection: "never",
-            skills: [],
-            tools: { deny: ["group:memory", "ask_user"] },
-            memory: { search: { rememberAcrossConversations: false } }
-          }
-        }
-      }
-    }
-  };
 }
 
 test("best-effort observations handle rejection and provider output excludes private reasoning", async () => {
@@ -776,8 +756,9 @@ test("control instructions use private provider-native carriers", async () => {
   const config = JSON.parse(opencode.env.OPENCODE_CONFIG_CONTENT);
   assert.equal(await readFile(config.instructions.at(-1), "utf8"), "CONTROL"); await opencode.cleanup();
 
-  const codex = await createCodexInvocationHome("CONTROL", {});
-  assert.match(await readFile(`${codex.home}/config.toml`, "utf8"), /CONTROL/); await codex.cleanup();
+  const codex = buildCodexCommand(request, "codex", [], { CODEX_HOME: "/native/codex-home" });
+  assert.equal(codex.env.CODEX_HOME, "/native/codex-home");
+  assert.equal(codex.args.some(arg => arg.includes("mcp") || arg.includes("skill")), false);
 
   const openclaw = buildOpenClawGatewayInvocation({
     ...request,
@@ -795,8 +776,8 @@ test("control instructions use private provider-native carriers", async () => {
   assert.equal(openclaw.agentParams.message, "work");
   assert.equal(openclaw.agentParams.extraSystemPrompt, "CONTROL");
   assert.equal(openclaw.agentParams.cwd, undefined);
-  assert.equal(openclaw.agentParams.promptMode, "minimal");
-  assert.equal(openclaw.createParams.cwd, request.workdir);
+  assert.equal(openclaw.agentParams.promptMode, undefined);
+  assert.equal(openclaw.createParams.cwd, undefined);
   assert.equal(openclaw.createParams.model, "provider/model");
   assert.equal(openclaw.createParams.thinkingLevel, "medium");
   assert.equal(JSON.stringify(openclaw.providerInput).includes("SECRET_TOKEN"), false);
@@ -903,7 +884,7 @@ test("OpenClaw Gateway adapter isolates run events, deduplicates seq, and stream
     onEvent(next) { listener = next; return () => { listener = () => {}; }; },
     async request(method, params, options = {}) {
       requests.push({ method, params });
-      if (method === "config.get") return openClawIsolationConfig();
+      if (method === "agents.list") return { agents: [{ id: "octo-openclaw-runner" }] };
       if (method === "sessions.create") return { ok: true, key: params.key, sessionId: "gateway-session" };
       if (method === "agent.wait") return { status: "ok", runId: params.runId };
       if (method !== "agent") return { status: "completed" };
@@ -941,8 +922,8 @@ test("OpenClaw Gateway adapter isolates run events, deduplicates seq, and stream
   assert.equal(events.filter(event => event.type === "message.delta" && event.payload.channel === "final").map(event => event.payload.text).join(""), "hello");
   assert.deepEqual(events.filter(event => event.type.startsWith("tool_call.")).map(event => event.type), ["tool_call.create", "tool_call.update"]);
   assert.equal(events.at(-1).type, "run.completed");
-  assert.deepEqual(requests.slice(0, 4).map(entry => entry.method), ["config.get", "sessions.create", "sessions.messages.subscribe", "agent"]);
-  assert.equal(requests[1].params.cwd, request.workdir);
+  assert.deepEqual(requests.slice(0, 4).map(entry => entry.method), ["agents.list", "sessions.create", "sessions.messages.subscribe", "agent"]);
+  assert.equal(requests[1].params.cwd, undefined);
   assert.equal(requests[3].params.cwd, undefined);
   assert.ok(requests.some(entry => entry.method === "agent.wait"));
   assert.deepEqual(observations.find(observation => observation.data?.diagnostic)?.data.diagnostic, {
@@ -1004,7 +985,7 @@ test("OpenClaw Gateway adapter reconciles a final RPC result when live events ar
     onEvent() { return () => {}; },
     async request(method, params, options = {}) {
       requests.push({ method, params });
-      if (method === "config.get") return openClawIsolationConfig();
+      if (method === "agents.list") return { agents: [{ id: "octo-openclaw-runner" }] };
       if (method === "sessions.create") return { ok: true, key: params.key };
       if (method === "sessions.messages.subscribe") return { status: "subscribed" };
       if (method === "agent") {
@@ -1043,78 +1024,12 @@ test("OpenClaw Gateway adapter reconciles a final RPC result when live events ar
     }
   })) events.push(event);
 
-  assert.deepEqual(requests.slice(0, 4).map(entry => entry.method), ["config.get", "sessions.create", "sessions.messages.subscribe", "agent"]);
+  assert.deepEqual(requests.slice(0, 4).map(entry => entry.method), ["agents.list", "sessions.create", "sessions.messages.subscribe", "agent"]);
   assert.equal(events.filter(event => event.type === "message.delta").map(event => event.payload.text).join(""), "fallback result");
   assert.deepEqual(events.find(event => event.type === "usage.update")?.payload, {
     inputTokens: 3, outputTokens: 2, provider: "anthropic", model: "tencent/glm-5.3"
   });
   assert.equal(events.at(-1).type, "run.completed");
-});
-
-test("OpenClaw Gateway adapter fails before session creation when isolation config drifts", async () => {
-  const requests = [];
-  const drifted = openClawIsolationConfig();
-  drifted.config.agents.defaults.skipBootstrap = false;
-  const client = {
-    connect: async () => openClawGatewayHello(),
-    onEvent() { return () => {}; },
-    async request(method) {
-      requests.push(method);
-      if (method === "config.get") return drifted;
-      throw new Error(`unexpected request ${method}`);
-    },
-    close: async () => {}
-  };
-  const events = [];
-  for await (const event of createOpenClawAdapter({ clientFactory: () => client }).invoke({
-    ...request,
-    agentSource: "provisioned", agentConfig: {
-      providerAgentId: "octo-openclaw-runner",
-      providerOptions: {
-        OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
-        OPENCLAW_GATEWAY_TOKEN: "token",
-        OPENCLAW_GATEWAY_DEVICE_ID: "device",
-        OPENCLAW_GATEWAY_PUBLIC_KEY: "public",
-        OPENCLAW_GATEWAY_PRIVATE_KEY: "private"
-      }
-    }
-  })) events.push(event);
-
-  assert.deepEqual(requests, ["config.get"]);
-  assert.match(events.at(-1).payload.message, /skipBootstrap must be true/);
-});
-
-test("OpenClaw Gateway adapter rejects a runner that can pause on ask_user", async () => {
-  const requests = [];
-  const drifted = openClawIsolationConfig();
-  drifted.config.agents.entries["octo-openclaw-runner"].tools.deny = ["group:memory"];
-  const client = {
-    connect: async () => openClawGatewayHello(),
-    onEvent() { return () => {}; },
-    async request(method) {
-      requests.push(method);
-      if (method === "config.get") return drifted;
-      throw new Error(`unexpected request ${method}`);
-    },
-    close: async () => {}
-  };
-  const events = [];
-  for await (const event of createOpenClawAdapter({ clientFactory: () => client }).invoke({
-    ...request,
-    agentSource: "provisioned", agentConfig: {
-      providerAgentId: "octo-openclaw-runner",
-      providerOptions: {
-        OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
-        OPENCLAW_GATEWAY_TOKEN: "token",
-        OPENCLAW_GATEWAY_DEVICE_ID: "device",
-        OPENCLAW_GATEWAY_PUBLIC_KEY: "public",
-        OPENCLAW_GATEWAY_PRIVATE_KEY: "private"
-      }
-    }
-  })) events.push(event);
-
-  assert.deepEqual(requests, ["config.get"]);
-  assert.match(events.at(-1).payload.message, /ask_user must be denied for unattended runs/);
 });
 
 test("OpenClaw Gateway adapter refuses success when agent.wait confirms a different terminal", async () => {
@@ -1123,7 +1038,7 @@ test("OpenClaw Gateway adapter refuses success when agent.wait confirms a differ
     connect: async () => openClawGatewayHello(),
     onEvent(next) { listener = next; return () => {}; },
     async request(method, params, options = {}) {
-      if (method === "config.get") return openClawIsolationConfig();
+      if (method === "agents.list") return { agents: [{ id: "octo-openclaw-runner" }] };
       if (method === "sessions.create") return { key: params.key };
       if (method === "sessions.messages.subscribe") return { status: "subscribed" };
       if (method === "agent.wait") return { runId: params.runId, status: "error", endedAt: Date.now(), error: "failed" };
@@ -1166,7 +1081,7 @@ test("OpenClaw Gateway adapter confirms abort before emitting run.cancelled", as
     onEvent(next) { listener = next; return () => {}; },
     request(method, params, options = {}) {
       requests.push(method);
-      if (method === "config.get") return Promise.resolve(openClawIsolationConfig());
+      if (method === "agents.list") return Promise.resolve({ agents: [{ id: "octo-openclaw-runner" }] });
       if (method === "sessions.create") return Promise.resolve({ key: params.key });
       if (method === "sessions.messages.subscribe") return Promise.resolve({ status: "subscribed" });
       if (method === "sessions.abort") return Promise.resolve({ aborted: true });
@@ -1216,7 +1131,7 @@ test("OpenClaw Gateway adapter stops without abort RPC when cancelled before age
     onEvent() { return () => {}; },
     async request(method) {
       requests.push(method);
-      if (method === "config.get") throw new Error("aborted");
+      if (method === "agents.list") throw new Error("aborted");
       throw new Error(`unexpected request ${method}`);
     },
     close: async () => {}
@@ -1237,7 +1152,7 @@ test("OpenClaw Gateway adapter stops without abort RPC when cancelled before age
     }
   })) events.push(event);
 
-  assert.deepEqual(requests, ["config.get"]);
+  assert.deepEqual(requests, ["agents.list"]);
   assert.equal(events.at(-1).type, "run.cancelled");
   assert.equal(events.some(event => event.type === "run.failed"), false);
 });
@@ -1251,7 +1166,7 @@ test("OpenClaw Gateway adapter reconnects and reconciles an accepted run after s
     connect: async () => hello,
     onEvent(next) { listener = next; return () => { listener = () => {}; }; },
     async request(method, params, options = {}) {
-      if (method === "config.get") return openClawIsolationConfig();
+      if (method === "agents.list") return { agents: [{ id: "octo-openclaw-runner" }] };
       if (method === "sessions.create") return { key: params.key };
       if (method === "sessions.messages.subscribe") return { status: "subscribed" };
       if (method === "agent") {
@@ -1306,7 +1221,7 @@ test("OpenClaw Gateway adapter fails reconciliation when non-terminal timeouts r
     connect: async () => hello,
     onEvent() { return () => {}; },
     async request(method, params, options = {}) {
-      if (method === "config.get") return openClawIsolationConfig();
+      if (method === "agents.list") return { agents: [{ id: "octo-openclaw-runner" }] };
       if (method === "sessions.create") return { key: params.key };
       if (method === "sessions.messages.subscribe") return { status: "subscribed" };
       if (method === "agent") {

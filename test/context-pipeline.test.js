@@ -21,8 +21,8 @@ function fixture(overrides = {}, options = {}) {
   let receipt;
   const ports = {
     prepareInput: async () => { calls.push("input"); return { text: "hello" }; },
-    prepareCapabilities: async () => { calls.push("capabilities"); return { workdir: "/workspace", providerStateDir: "/state", skills: [], skillRoots: [], mcpServers: {}, receipt: {
-      workspace_mode: "fixed", workspace_path: "/workspace", provider_state_dir: "/state", resources: [], warnings: []
+    prepareCapabilities: async () => { calls.push("capabilities"); return { workdir: "/workspace", providerStateDir: "/state", receipt: {
+      workspace_mode: "fixed", workspace_path: "/workspace", provider_state_dir: "/state", warnings: []
     } }; },
     prepareMaterials: async () => { calls.push("materials"); },
     prepareContinuity: async () => { calls.push("continuity"); },

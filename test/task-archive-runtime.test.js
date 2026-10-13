@@ -1,3 +1,4 @@
+import { toolIntent, issuedGrant } from "./tool-authorizations-fixture.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
@@ -26,6 +27,7 @@ test("real Runtime uploads a declared deliverable before durable terminal and re
       uploaded.push({ path: request.url, body: Buffer.concat(chunks) });
       response.writeHead(request.url === "/upload/run-2" ? 503 : 200); response.end(); return;
     }
+    if (request.url === "/v1/runtime/context/authorizations/resolve") { response.writeHead(200, { "Content-Type": "application/json" }); response.end(JSON.stringify({ data: { authorizations: [issuedGrant()] } })); return; }
     response.setHeader("Content-Type", "application/json");
     if (request.url !== "/mcp/team") {
       response.end(JSON.stringify({ runtime: { profile: "default", runtime_id: "runtime-1", protocol_version: 2 } })); return;
@@ -35,7 +37,7 @@ test("real Runtime uploads a declared deliverable before durable terminal and re
     let result;
     if (rpc.method === "initialize") result = { protocolVersion: "2025-03-26" };
     else if (rpc.params.name === "task_get_materials") result = { structuredContent: {
-      task: { id: "task-1", row_version: 7, handler_epoch: 2, title: "任务" }, attachments: [], timeline: []
+      task: { task_id: "task-1", row_version: 7, handler_epoch: 2, title: "任务" }, attachments: [], timeline: []
     } };
     else if (rpc.params.name === "task_prepare_output") result = { structuredContent: {
       ticket_id: rpc.params.arguments.manifest.output_id, upload_url: `http://127.0.0.1:${server.address().port}/upload/${rpc.params.arguments.manifest.output_id}`,
@@ -74,7 +76,7 @@ test("real Runtime uploads a declared deliverable before durable terminal and re
   });
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }), profile: "default", baseUrl, token: "runtime-grant", runtimeName: "archive-fixture", storePath: join(directory, "runtime.db") }, {
+      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }), businessServiceBindings: { task: { serviceSubjectId: "loop", url: `${baseUrl}/mcp/team` } }, profile: "default", baseUrl, token: "runtime-grant", runtimeName: "archive-fixture", storePath: join(directory, "runtime.db") }, {
     list: async () => [{ type: "codex", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["tool.mcp.dynamic"] }], cancel: async () => ({ cancelled: true }),
     async *invoke(_adapter, request) {
       assert.match(request.controlInstructions, /task-output-manifest/);
@@ -92,13 +94,11 @@ test("real Runtime uploads a declared deliverable before durable terminal and re
   for (const number of [1, 2]) {
     const resource = { namespace: "octo.content", name: "references", payload: { entries: [{ resource_ref: "task:task-1/materials", resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_id: "task-1", handler_epoch: 2 }
     }] } };
-    const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: directory, approval_mode: "ask", mcp_servers: { octo_task: {
-      type: "streamable_http", url: `${baseUrl}/mcp/team`, headers: { Authorization: "Bearer run-grant" }
-    } } };
+    const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: directory, approval_mode: "ask" };
     socket.send(wire("runtime.command", { server_seq: number, command_id: `command-${number}`, run_id: `run-${number}`, type: "run.start", lease_id: `lease-${number}`, fencing_token: number,
       payload: { schema_version: 7, effective_context: executionContext(plan, [resource]), context_configuration_version: 1,
         resolved_execution_plan: plan, resolved_runtime_selection: resolvedRuntimeSelection(), run_id: `run-${number}`, agent_session_id: "conversation-1",
-        agent_run_request: { context: contextEnvelope([resource]), namespace: "task", agent_id: "agent-1", agent_revision_id: "revision-1", session_affinity_key: "conversation-1",
+        agent_run_request: { tool_authorizations: [toolIntent], context: contextEnvelope([resource]), namespace: "task", agent_id: "agent-1", agent_revision_id: "revision-1", session_affinity_key: "conversation-1",
           trigger: { kind: "message", occurrence_id: `message-${number}` }, input: { prompt: "生成页面" } }, agent_revision: {} } }));
     await waitFor(() => events.some(event => event.type === "run.completed" && event.run_id === `run-${number}`));
   }

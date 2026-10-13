@@ -1,6 +1,7 @@
 export * from "./runtime-core.js";
 export * from "./server.js";
 export * from "./agent-work-runtime.js";
+export * from "./tool-authorizations.js";
 export * from "./agent-work-store.js";
 export * from "./context-pipeline.js";
 export * from "./context-compaction.js";

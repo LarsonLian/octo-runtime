@@ -27,13 +27,13 @@ test("trusted output errors retain only bounded business codes", async t => {
   await assert.rejects(client.call("discussion_prepare_output", {}), /^TypeError: TASK_MCP_TOOL_FAILED$/);
 });
 
-test("Discussion text-only result needs no manifest or plugin", async t => {
+test("Discussion text-only result needs no manifest or business binding", async t => {
   const workdir = await mkdtemp(join(tmpdir(), "oh-discussion-text-"));
   t.after(() => rm(workdir, { recursive: true, force: true }));
   assert.deepEqual(await archiveDiscussionOutputs({ workdir }, "run-1", new AbortController().signal), []);
 });
 
-test("Discussion declared outputs require trusted plugin and use independent tools", async t => {
+test("Discussion declared outputs require trusted business binding and use independent tools", async t => {
   const workdir = await mkdtemp(join(tmpdir(), "oh-discussion-file-"));
   t.after(() => rm(workdir, { recursive: true, force: true }));
   const bytes = Buffer.from("shared output");
@@ -41,7 +41,7 @@ test("Discussion declared outputs require trusted plugin and use independent too
   await mkdir(join(workdir, ".octo/discussion-outputs"), { recursive: true });
   await writeFile(join(workdir, "result.txt"), bytes);
   await writeFile(join(workdir, discussionOutputManifestPath("run-1")), JSON.stringify({ schema: DISCUSSION_OUTPUT_SCHEMA, outputs: [output] }));
-  await assert.rejects(archiveDiscussionOutputs({ workdir }, "run-1", new AbortController().signal), /DISCUSSION_OUTPUT_PLUGIN_REQUIRED/);
+  await assert.rejects(archiveDiscussionOutputs({ workdir }, "run-1", new AbortController().signal), /BUSINESS_SERVICE_BINDING_REQUIRED/);
   const calls = [];
   const server = createServer(async (request, response) => {
     const chunks = [];
@@ -69,7 +69,7 @@ test("Discussion declared outputs require trusted plugin and use independent too
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   const plan = { workdir, mcp_servers: { p_012345abcdef_octo_discussion: { type: "streamable_http", url: `http://127.0.0.1:${server.address().port}/mcp`, headers: { Authorization: "Bearer test-run-grant" } } } };
-  const receipts = await archiveDiscussionOutputs(plan, "run-1", new AbortController().signal);
+  const receipts = await archiveDiscussionOutputs({ workdir: plan.workdir }, "run-1", new AbortController().signal, plan.mcp_servers.p_012345abcdef_octo_discussion);
   assert.deepEqual(calls, ["discussion_prepare_output", "discussion_commit_output"]);
   assert.equal(receipts[0].status, "saved");
 });

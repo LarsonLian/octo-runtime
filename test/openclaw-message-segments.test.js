@@ -5,10 +5,10 @@ import { createOpenClawAdapter } from "@mininglamp-oss/octo-harness-adapter-open
 test("OpenClaw Gateway preserves new thought phases, native answer IDs and commentary snapshots", async () => {
   let listener;
   const client = {
-    connect: async () => ({ protocol: 4, features: { methods: ["config.get", "sessions.create", "sessions.messages.subscribe", "agent", "agent.wait", "sessions.abort"], events: ["agent"] } }),
+    connect: async () => ({ protocol: 4, features: { methods: ["agents.list", "sessions.create", "sessions.messages.subscribe", "agent", "agent.wait", "sessions.abort"], events: ["agent"] } }),
     onEvent(fn) { listener = fn; return () => {}; }, close: async () => {},
     async request(method, params, options = {}) {
-      if (method === "config.get") return { config: { agents: { defaults: { skipBootstrap: true }, entries: { runner: { contextInjection: "never", skills: [], tools: { deny: ["group:memory", "ask_user"] }, memory: { search: { rememberAcrossConversations: false } } } } } } };
+      if (method === "agents.list") return { agents: [{ id: "runner" }] };
       if (method === "sessions.create") return { key: params.key };
       if (method !== "agent") return { status: "ok" };
       const runId = params.idempotencyKey;

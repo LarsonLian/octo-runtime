@@ -37,6 +37,8 @@ export interface AuthorizedTenant {
   name?: string;
   serverUrl: string;
   agentWorkUrl: string;
+  /** Trusted host configuration for Harness-owned material and output transport. */
+  businessServiceBindings?: Partial<Record<"task" | "discussion", { serviceSubjectId: string; url: string }>>;
 }
 
 export interface StartAccountOptions {

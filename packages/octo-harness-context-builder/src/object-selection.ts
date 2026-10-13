@@ -6,7 +6,7 @@ import {
 export const OBJECT_SELECTION_MAX_ITEMS = 32;
 export const OBJECT_SELECTION_MAX_TEXT_BYTES = 32768;
 export const SELECTION_OBJECT_TYPES = [
-  'task', 'discussion', 'discussion_comment', 'discussion_reply', 'skill', 'local_file', 'drive_file',
+  'task', 'discussion', 'discussion_comment', 'discussion_reply', 'local_file', 'drive_file',
 ] as const;
 export type SelectionObjectType = typeof SELECTION_OBJECT_TYPES[number];
 export type SelectionOrigin = 'mention' | 'attachment' | 'object_action' | 'source_entity';
@@ -18,7 +18,7 @@ export interface ObjectSelection {
   /** A scope claim is provenance, not authorization. The business adapter must verify it. */
   object_scope?: { type: 'user' | 'teamspace'; id: string };
   label: string;
-  intent: 'context' | 'use_capability';
+  intent: 'context';
   /** Business adapters validate the object-specific range before collecting material. */
   selector?: { mode: 'core' | 'content' | 'history' | 'chain' | 'metadata'; start?: number; end?: number };
   revision?: string;
@@ -58,9 +58,8 @@ export function assertObjectSelectionSnapshot(value: unknown): asserts value is 
     if (!selection || !identifier(selection.selection_id) || !identifier(selection.object_id)
       || !SELECTION_OBJECT_TYPES.includes(selection.object_type) || !origins.has(selection.origin)
       || typeof selection.label !== 'string' || !selection.label.trim() || encoder.encode(selection.label).length > 512
-      || !['context', 'use_capability'].includes(selection.intent) || !revision(selection.revision)
+      || selection.intent !== 'context' || !revision(selection.revision)
       || selections.has(selection.selection_id)) invalid();
-    if (selection.intent === 'use_capability' && (selection.object_type !== 'skill' || selection.revision !== undefined || selection.selector !== undefined)) invalid();
     if (selection.object_scope !== undefined && (!selection.object_scope
       || !['user', 'teamspace'].includes(selection.object_scope.type) || !identifier(selection.object_scope.id))) invalid();
     const selector = selection.selector;
@@ -91,7 +90,7 @@ export function assertObjectSelectionSnapshot(value: unknown): asserts value is 
       references.set(ref, identity);
     } else invalid();
   }
-  if (input.selections.some(selection => selection.intent === 'context' && !seen.has(selection.selection_id))) {
+  if (input.selections.some(selection => !seen.has(selection.selection_id))) {
     throw new TypeError('OBJECT_SELECTION_MATERIAL_MISSING');
   }
 }
@@ -108,15 +107,11 @@ export function buildObjectSelectionContext(snapshot: ObjectSelectionSnapshot): 
   assertObjectSelectionSnapshot(snapshot);
   const inline: ContextSelectionEntry[] = [];
   const references: ContextReferenceEntry[] = [];
-  const skills = new Set<string>();
   const materials = new Map(snapshot.materials.map(material => [material.selection_id, material]));
   const prepared = new Map<string, string>();
   const refIds = new Set<string>();
   for (const selection of snapshot.selections) {
-    if (selection.intent === 'use_capability') {
-      skills.add(selection.object_id);
-      continue;
-    }
+
     const material = materials.get(selection.selection_id)!;
     const identity = materialIdentity(selection);
     // Repeated nodes may share one contribution, but cannot select different captured bytes or resolver plans.
@@ -143,9 +138,6 @@ export function buildObjectSelectionContext(snapshot: ObjectSelectionSnapshot): 
   const context: ContextEnvelope = { schema: 'octo.context-envelope/v3', items: [] };
   if (inline.length) context.items.push({ namespace: 'octo.content', name: 'inline', payload: { entries: inline } });
   if (references.length) context.items.push({ namespace: 'octo.content', name: 'references', payload: { entries: references } });
-  if (skills.size) context.items.push({ namespace: 'octo.resources', name: 'skills', payload: {
-    include: [...skills].map(resource_id => ({ resource_id, invoke: true })), exclude: [],
-  } });
   assertContextEnvelope(context);
   return context;
 }

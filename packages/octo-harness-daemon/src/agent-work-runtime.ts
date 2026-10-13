@@ -1,5 +1,4 @@
 import { channelAwarenessInstructions, type ChannelAwareness } from "./channel-awareness.js";
-import { rm } from "node:fs/promises";
 import { scenarioInstructions } from "./scenario-context.js";
 import type { ScenarioRequest, ScenarioPolicySnapshot } from "@mininglamp-oss/octo-harness-protocol";
 import { createHash, randomUUID } from "node:crypto";
@@ -26,30 +25,26 @@ import type {
   ContextSyncResult,
   InteractionResponse,
   InvokeRequest,
-  McpServers,
   ProviderSession,
   ResolvedExecutionPlan,
   ResolvedRuntimeSelection
 } from "@mininglamp-oss/octo-harness-protocol";
 import {
   RUNTIME_RUN_CONTRACT,
-  runMcpServerHash,
   assertChannelContextAppend,
   assertChannelContextDescriptor,
   assertContextSyncResult,
   assertInteractionResponse,
-  assertMcpServers,
   assertContextEnvelope,
   assertResolvedExecutionPlan,
   assertResolvedRuntimeSelection,
-  executionFeatures,
   contextItem,
   failurePayload,
   modelPartsFromInput
 } from "@mininglamp-oss/octo-harness-protocol";
 import { resolveRuntimeInputImages } from "./input-images.js";
 import { AgentWorkStore } from "./agent-work-store.js";
-import { prepareRunContext, recordContextPreparation, resolveRunResources, type PreparedRunContext } from "./context-preparation.js";
+import { prepareRunContext, recordContextPreparation, type PreparedRunContext } from "./context-preparation.js";
 import { ContextPipeline } from "./context-pipeline.js";
 import { createClaudeMaterialCompactionPort } from "./anthropic-material-compaction.js";
 import { createCodexMaterialCompactionPort } from "./responses-material-compaction.js";
@@ -58,6 +53,8 @@ import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext } f
 import { prepareTaskMaterials, type PreparedTaskMaterials } from "./task-materials.js";
 import { archiveTaskOutputs, safeOutputError, taskOutputInstructions } from "./task-outputs.js";
 import { archiveDiscussionOutputs, discussionOutputInstructions } from "./discussion-outputs.js";
+import { businessServiceConnections, resolveToolAuthorizations, unconsumedToolAuthorizations, type BusinessServiceBinding, type BusinessServiceConnections } from "./tool-authorizations.js";
+import type { IssuedToolAuthorization, ToolAuthorization } from "@mininglamp-oss/octo-harness-protocol";
 import { prepareTeamInput } from "./team-input.js";
 import type { OutboxRow } from "./agent-work-store.js";
 import { collectRuntimeDeviceInfo } from "./device-info.js";
@@ -111,6 +108,12 @@ export interface AgentWorkRuntimeOptions {
   /** Trusted local profile label; never used as an authorization claim. */
   profile: string;
   baseUrl: string;
+  /** Endpoints configured by the local host, never supplied by a Run. */
+  businessServiceBindings?: Partial<Record<"task" | "discussion", BusinessServiceBinding>>;
+  /** A native tool's existing credential receiver; must not install or rewrite tool configuration. */
+  receiveToolAuthorizations?: (grants: readonly IssuedToolAuthorization[], identity: {
+    runId: string; leaseId: string; fencingToken: number; signal: AbortSignal;
+  }) => Promise<void>;
   token: string;
   runtimeId?: string;
   runtimeName: string;
@@ -216,7 +219,7 @@ export interface ChannelContextRuntimeOptions extends ChannelContextStoreOptions
 /** Immutable execution description received from Agent Work before local mapping. */
 export interface ExecutionEnvelope {
   schema_version: 7;
-  internal_context?: { channel_awareness?: ChannelAwareness; scenario_policy?: ScenarioPolicySnapshot; continuity?: ChannelContextDescriptor; resource_sources?: Record<string, ("request" | "agent_default" | "agent_mandatory" | "scenario_policy")[]> };
+  internal_context?: { channel_awareness?: ChannelAwareness; scenario_policy?: ScenarioPolicySnapshot; continuity?: ChannelContextDescriptor };
   effective_context: ContextEnvelope;
   context_configuration_version: number;
   resolved_execution_plan: ResolvedExecutionPlan;
@@ -228,6 +231,7 @@ export interface ExecutionEnvelope {
   continuity_mode?: "continue" | "fresh";
   provider_session?: ProviderSession;
   agent_run_request: {
+    tool_authorizations?: ToolAuthorization[];
     scenario?: ScenarioRequest;
     namespace: string;
     agent_id: string;
@@ -1652,14 +1656,10 @@ export class AgentWorkRuntime {
     this.#acceptingRuns.set(command.run_id, accepting);
     let releaseAdmission: (() => void) | undefined;
     let admissionHandedOff = false;
-    const cliCleanupPaths: string[] = [];
-    const cleanupCli = async (): Promise<void> => {
-      const results = await Promise.allSettled(cliCleanupPaths.splice(0).map(path => rm(path, { recursive: true, force: true })));
-      if (results.some(result => result.status === "rejected")) this.#log({ level: "warn", scope: "runtime.context", event: "runtime.cli_cleanup.failed", message: "Run command files could not all be removed" });
-    };
     try {
       let request: InvokeRequest;
       let outputPlan: ResolvedExecutionPlan;
+      let services: BusinessServiceConnections = {};
       let adapterType: string;
       let agentSessionId: string;
       let leaseId: string;
@@ -1697,9 +1697,7 @@ export class AgentWorkRuntime {
         if (requiredCapabilities.some(capability => !localCapabilities?.has(capability))) throw new TypeError("ADAPTER_REQUIRED_CAPABILITY_MISSING");
         const materialEntries = contextItem(executionEnvelope.effective_context, "octo.content", "references")?.payload.entries;
         const contentResources = Array.isArray(materialEntries) ? materialEntries : [];
-        if (Array.isArray(contentResources) && contentResources.length > 0 && !localCapabilities?.has(executionFeatures.MCP_DYNAMIC)) {
-          throw new TypeError("TASK_MCP_ADAPTER_UNSUPPORTED");
-        }
+
         const input = executionEnvelope.agent_run_request.input;
         const hasImages = Array.isArray(input.parts) && input.parts.some(part => part && typeof part === "object" && (part as Record<string, unknown>).type === "image");
         if (hasImages && !localCapabilities?.has("input.image")) throw new TypeError("UNSUPPORTED_INPUT_MODALITY");
@@ -1716,27 +1714,30 @@ export class AgentWorkRuntime {
             ...(Array.isArray(contentResources) && contentResources.length
               ? [{ text: taskOutputInstructions(executionEnvelope.run_id), source: "platform_policy" as const }] : [])
           ],
-          prepareInput: signal => resolveRuntimeInputImages(input, {
+          prepareInput: async signal => {
+            const grants = await resolveToolAuthorizations(executionEnvelope.agent_run_request.tool_authorizations ?? [], {
+              baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
+              runId: command.run_id, leaseId, fencingToken, signal
+            });
+            services = businessServiceConnections(grants, this.#options.businessServiceBindings);
+            const nativeGrants = unconsumedToolAuthorizations(grants, this.#options.businessServiceBindings);
+            if (nativeGrants.length && !this.#options.receiveToolAuthorizations) throw new TypeError("TOOL_AUTHORIZATION_RECEIVER_UNSUPPORTED");
+            if (this.#options.receiveToolAuthorizations && nativeGrants.length) await this.#options.receiveToolAuthorizations(nativeGrants, { runId: command.run_id, leaseId, fencingToken, signal });
+            return resolveRuntimeInputImages(input, {
             baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
             runId: command.run_id, leaseId, fencingToken, signal
-          }),
+            });
+          },
           prepareCapabilities: async signal => {
-            const selected = executionEnvelope.effective_context.items.filter(item => item.namespace === "octo.resources").flatMap(item => item.payload.include as unknown[]);
-            if (selected.length) {
-              executionEnvelope.resolved_execution_plan.resources = await resolveRunResources({
-                baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
-                runId: command.run_id, leaseId, fencingToken, signal
-              });
-            } else executionEnvelope.resolved_execution_plan.resources = [];
             assertFrozenContextPlan(executionEnvelope.effective_context, executionEnvelope.resolved_execution_plan);
             return prepareRunContext(executionEnvelope.resolved_execution_plan, {
               stateRoot: join(dirname(this.#options.storePath), "context"),
               agentSessionId: executionEnvelope.agent_session_id,
-              agentId: executionEnvelope.agent_run_request.agent_id, store, signal, registerCleanup: path => cliCleanupPaths.push(path)
+              agentId: executionEnvelope.agent_run_request.agent_id, store, signal
             });
           },
           prepareMaterials: signal => prepareTaskMaterials(executionEnvelope.effective_context,
-            executionEnvelope.resolved_execution_plan, signal, { runId: command.run_id, store }),
+            services.task, signal, { runId: command.run_id, store }),
           prepareContinuity: signal => this.#prepareChannelContext(command.run_id,
             executionEnvelope, adapterTypeForContext, signal, epoch),
           ...((this.#options.createMaterialCompactionPort || ["codex", "claude-code"].includes(adapterTypeForContext)) ? {
@@ -1793,8 +1794,7 @@ export class AgentWorkRuntime {
         request = mapped.request;
         // 归档必须使用实际准备并封存的 MCP（含临时 Run grant），原始命令尚未包含资源组件。
         const compiledPlan = prepared.compiled.executionPlan ?? executionEnvelope.resolved_execution_plan;
-        const preparedOutputResources = prepared.compiled.preparedResources ?? prepared.capabilities;
-        outputPlan = { ...compiledPlan, workdir: request.workdir ?? "", mcp_servers: { ...compiledPlan.mcp_servers, ...preparedOutputResources.mcpServers } };
+        outputPlan = { ...compiledPlan, workdir: request.workdir ?? "" };
         request.runMetadata ??= {};
         request.runMetadata.contextCompilation = {
           compiler_version: prepared.receipt.compiler_version, catalog_version: prepared.receipt.catalog_version,
@@ -1933,11 +1933,11 @@ export class AgentWorkRuntime {
         archiving: false
       });
       if (!accepting.acknowledged) this.#ackCommand(command, true);
-      const execution = this.#execute(command, adapterType, request, outputPlan, releaseAdmission);
+      const execution = this.#execute(command, adapterType, request, outputPlan, services, releaseAdmission);
       admissionHandedOff = true;
       this.#executionTasks.add(execution);
-      void execution.finally(async () => {
-        await cleanupCli();
+      void execution.finally(() => {
+
         clearTimeout(deadlineTimer);
         this.#executionTasks.delete(execution);
       });
@@ -1950,7 +1950,7 @@ export class AgentWorkRuntime {
       this.#ackCommand(command, false, failure);
     } finally {
       if (!admissionHandedOff) {
-        await cleanupCli();
+
         clearTimeout(deadlineTimer);
         releaseAdmission?.();
       }
@@ -2076,6 +2076,7 @@ export class AgentWorkRuntime {
     adapterType: string,
     request: InvokeRequest,
     outputPlan: ResolvedExecutionPlan,
+    services: BusinessServiceConnections,
     releaseAdmission?: () => void
   ): Promise<void> {
     const store = this.#store;
@@ -2153,11 +2154,11 @@ export class AgentWorkRuntime {
           active.archiving = true;
           try {
             mapped.payload.task_output_receipts = discussionOutput
-              ? await archiveDiscussionOutputs(outputPlan, command.run_id, active.outputController.signal)
+              ? await archiveDiscussionOutputs(outputPlan, command.run_id, active.outputController.signal, services.discussion)
               : await archiveTaskOutputs(
               outputPlan,
               taskRef.task_id as string, command.run_id, active.outputController.signal,
-              delivery => { mapped.payload.task_delivery = delivery; }
+              delivery => { mapped.payload.task_delivery = delivery; }, services.task
             );
           } catch (error) {
             const code = error instanceof Error && /^DISCUSSION_[A-Z_]+$/.test(error.message) ? error.message : safeOutputError(error);
@@ -2488,7 +2489,7 @@ export function mapExecutionEnvelope(
     throw new TypeError("fresh execution envelope must not carry provider_session");
   }
   const profile = preparedCompilation?.executionPlan ?? executionProfile(envelope);
-  const preparedResources = preparedCompilation?.preparedResources ?? preparedContext;
+  const preparedResources = preparedCompilation?.preparedWorkspace ?? preparedContext;
   const definition = asRecord(envelope.agent_revision.definition);
   const adapterType = executionAdapterType(envelope);
   const agentConfig: AgentConfig = {
@@ -2497,12 +2498,8 @@ export function mapExecutionEnvelope(
     ...(profile.effort ? { effort: profile.effort } : {})
   };
   const runtimeLimits = mapExecutionRuntimeLimits(profile.runtime_limits);
-  const mcpServers = mapExecutionMcpServers({ ...profile.mcp_servers, ...preparedResources?.mcpServers });
-  const frozenMcpServers = Object.fromEntries(Object.entries({ ...profile.mcp_servers, ...preparedResources?.mcpServers }).flatMap(([name, server]) => {
-    return server?.type === "streamable_http" ? [[name, runMcpServerHash(server)]] : [];
-  }));
   const workdir = preparedResources?.workdir ?? profile.workdir;
-  if ((!workdir && profile.agent_source !== "preset") || profile.resources?.length && !preparedResources) throw new TypeError("CONTEXT_PREPARATION_REQUIRED");
+  if ((!workdir && profile.agent_source !== "preset")) throw new TypeError("CONTEXT_PREPARATION_REQUIRED");
   const content = envelope.agent_run_request.input;
   if (Object.hasOwn(content, "context_refs") || Object.hasOwn(content, "channel_context")) throw new TypeError("LEGACY_CONTEXT_INPUT_REJECTED");
   const compiled = preparedCompilation ?? compileRunContext(envelope.effective_context, taskMaterials?.selections);
@@ -2541,8 +2538,7 @@ export function mapExecutionEnvelope(
     ...(envelope.provider_epoch === undefined ? {} : { providerEpoch: envelope.provider_epoch }),
     ...(envelope.continuity_mode === undefined ? {} : { continuityMode: envelope.continuity_mode }),
     ...(contextSnapshot ? { contextSnapshot: contextSnapshot.ref } : {}),
-    ...(taskMaterials ? { taskMaterials: structuredClone(taskMaterials.refs) } : {}),
-    frozenMcpServers
+    ...(taskMaterials ? { taskMaterials: structuredClone(taskMaterials.refs) } : {})
   };
   return {
     adapterType,
@@ -2570,7 +2566,6 @@ export function mapExecutionEnvelope(
         contextSnapshot: contextSnapshot.ref
       } : {}),
       workdir,
-      ...(preparedContext ? { skills: preparedContext.skills, skillRoots: preparedContext.skillRoots, providerStateDir: preparedContext.providerStateDir } : {}),
       controlInstructions: preparedCompilation ? compiled.controlInstructions
         : [stringValue(definition.instructions), compiled.controlInstructions,
           ...channelAwarenessInstructions(envelope.internal_context?.channel_awareness).map(entry => entry.text),
@@ -2578,7 +2573,6 @@ export function mapExecutionEnvelope(
       context: structuredClone(envelope.effective_context),
       runMetadata: { ...context, ...(compiled.modelCapacity ? { contextCapacity: compiled.modelCapacity } : {}) },
       approvalMode: profile.approval_mode,
-      ...(mcpServers ? { mcpServers } : {}),
       ...(envelope.provider_session && contextSnapshot?.selectedVariant !== "recovery"
         ? { providerSession: envelope.provider_session }
         : {}),
@@ -2588,17 +2582,9 @@ export function mapExecutionEnvelope(
   };
 }
 
-function mapExecutionMcpServers(value: unknown): McpServers | undefined {
-  if (value === undefined || value === null) return undefined;
-  assertMcpServers(value);
-  if (Object.keys(value).length === 0) return undefined;
-  // The execution envelope remains an immutable dispatch fact. Clone the
-  // validated scalar-only contract before adapter-specific materialization.
-  return structuredClone(value);
-}
-
 function assertExecutionEnvelopeContract(envelope: ExecutionEnvelope): void {
   if (envelope?.schema_version !== 7) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
+  if (envelope.internal_context && ["knowledge_snapshot", "resource_sources"].some(key => Object.hasOwn(envelope.internal_context!, key))) throw new TypeError("CONTEXT_TYPE_REMOVED");
   assertContextEnvelope(envelope.agent_run_request?.context);
   assertContextEnvelope(envelope.effective_context);
   assertResolvedExecutionPlan(envelope.resolved_execution_plan);

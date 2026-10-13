@@ -1,10 +1,146 @@
 [
-  {"name":"knowledge-selection","valid":true,"context":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.resources","name":"knowledge","payload":{"include":[{"resource_id":"a01f99ce-fb3b-424a-bc22-1df495b6409c"}],"exclude":[]}}]}},
-  {"name":"knowledge-rejects-invoke-field","valid":false,"error":"CONTEXT_SCHEMA_INVALID","context":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.resources","name":"knowledge","payload":{"include":[{"resource_id":"a01f99ce-fb3b-424a-bc22-1df495b6409c","invoke":false}],"exclude":[]}}]}},
-  {"name":"skills-reject-components","valid":false,"error":"CONTEXT_SCHEMA_INVALID","context":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.resources","name":"skills","payload":{"include":[{"resource_id":"a01f99ce-fb3b-424a-bc22-1df495b6409c","components":[]}],"exclude":[]}}]}},
-  {"name":"connector-rejects-skill-component","valid":false,"error":"CONTEXT_SCHEMA_INVALID","context":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.resources","name":"connectors","payload":{"include":[{"resource_id":"a01f99ce-fb3b-424a-bc22-1df495b6409c","components":["skill:review"]}],"exclude":[]}}]}},
-  {"name":"model-requires-subchoice","valid":false,"error":"CONTEXT_SCHEMA_INVALID","context":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"model","payload":{}}]}},
-  {"name":"reference-identity-duplicated","valid":false,"error":"CONTEXT_SCHEMA_INVALID","context":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.content","name":"references","payload":{"entries":[{"resource_ref":"task:1","resolver":"mcp","locator":{"server_ref":"octo_task","tool":"task_get_materials"}},{"resource_ref":"task:1","resolver":"mcp","locator":{"server_ref":"octo_task","tool":"task_get_materials"}}]}}]}},
+  {
+    "name": "knowledge-selection",
+    "valid": false,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.resources",
+          "name": "knowledge",
+          "payload": {
+            "include": [
+              {
+                "resource_id": "a01f99ce-fb3b-424a-bc22-1df495b6409c"
+              }
+            ],
+            "exclude": []
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_TYPE_REMOVED"
+  },
+  {
+    "name": "knowledge-rejects-invoke-field",
+    "valid": false,
+    "error": "CONTEXT_TYPE_REMOVED",
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.resources",
+          "name": "knowledge",
+          "payload": {
+            "include": [
+              {
+                "resource_id": "a01f99ce-fb3b-424a-bc22-1df495b6409c",
+                "invoke": false
+              }
+            ],
+            "exclude": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "skills-reject-components",
+    "valid": false,
+    "error": "CONTEXT_TYPE_REMOVED",
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.resources",
+          "name": "skills",
+          "payload": {
+            "include": [
+              {
+                "resource_id": "a01f99ce-fb3b-424a-bc22-1df495b6409c",
+                "components": []
+              }
+            ],
+            "exclude": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "connector-rejects-skill-component",
+    "valid": false,
+    "error": "CONTEXT_TYPE_REMOVED",
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.resources",
+          "name": "connectors",
+          "payload": {
+            "include": [
+              {
+                "resource_id": "a01f99ce-fb3b-424a-bc22-1df495b6409c",
+                "components": [
+                  "skill:review"
+                ]
+              }
+            ],
+            "exclude": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "model-requires-subchoice",
+    "valid": false,
+    "error": "CONTEXT_SCHEMA_INVALID",
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "model",
+          "payload": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "reference-identity-duplicated",
+    "valid": false,
+    "error": "CONTEXT_SCHEMA_INVALID",
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.content",
+          "name": "references",
+          "payload": {
+            "entries": [
+              {
+                "resource_ref": "task:1",
+                "resolver": "mcp",
+                "locator": {
+                  "server_ref": "octo_task",
+                  "tool": "task_get_materials"
+                }
+              },
+              {
+                "resource_ref": "task:1",
+                "resolver": "mcp",
+                "locator": {
+                  "server_ref": "octo_task",
+                  "tool": "task_get_materials"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
   {
     "name": "empty-context",
     "valid": true,
@@ -499,7 +635,7 @@
   {
     "name": "plugin-duplicate-resource",
     "valid": false,
-    "error": "CONTEXT_SCHEMA_INVALID",
+    "error": "CONTEXT_TYPE_REMOVED",
     "context": {
       "schema": "octo.context-envelope/v3",
       "items": [
@@ -524,7 +660,7 @@
   {
     "name": "plugin-include-exclude-conflict",
     "valid": false,
-    "error": "CONTEXT_SCHEMA_INVALID",
+    "error": "CONTEXT_TYPE_REMOVED",
     "context": {
       "schema": "octo.context-envelope/v3",
       "items": [
@@ -550,7 +686,7 @@
   {
     "name": "plugin-invalid-exclude-id",
     "valid": false,
-    "error": "CONTEXT_SCHEMA_INVALID",
+    "error": "CONTEXT_TYPE_REMOVED",
     "context": {
       "schema": "octo.context-envelope/v3",
       "items": [
@@ -571,7 +707,7 @@
   },
   {
     "name": "plugin-selection",
-    "valid": true,
+    "valid": false,
     "context": {
       "schema": "octo.context-envelope/v3",
       "items": [
@@ -593,12 +729,11 @@
         }
       ]
     },
-    "expected_canonical": "{\"items\":[{\"name\":\"agent_plugins\",\"namespace\":\"octo.resources\",\"payload\":{\"exclude\":[],\"include\":[{\"components\":[\"skill:writer\",\"mcp:docs\"],\"resource_id\":\"b9300677-4cbd-44b2-8938-9a03ac3d88c3\"}]}}],\"schema\":\"octo.context-envelope/v3\"}",
-    "expected_hash": "sha256:e8831d028182f57145065870687161c3c189d093162ba99629eb81b5f89da712"
+    "error": "CONTEXT_TYPE_REMOVED"
   },
   {
     "name": "skill-selection",
-    "valid": true,
+    "valid": false,
     "context": {
       "schema": "octo.context-envelope/v3",
       "items": [
@@ -617,12 +752,11 @@
         }
       ]
     },
-    "expected_canonical": "{\"items\":[{\"name\":\"skills\",\"namespace\":\"octo.resources\",\"payload\":{\"exclude\":[],\"include\":[{\"invoke\":true,\"resource_id\":\"b9300677-4cbd-44b2-8938-9a03ac3d88c3\"}]}}],\"schema\":\"octo.context-envelope/v3\"}",
-    "expected_hash": "sha256:99444903b502fca5927dc20f08dc619079d970bfbcc05be9433f415b1e5db422"
+    "error": "CONTEXT_TYPE_REMOVED"
   },
   {
     "name": "connector-selection",
-    "valid": true,
+    "valid": false,
     "context": {
       "schema": "octo.context-envelope/v3",
       "items": [
@@ -640,8 +774,7 @@
         }
       ]
     },
-    "expected_canonical": "{\"items\":[{\"name\":\"connectors\",\"namespace\":\"octo.resources\",\"payload\":{\"exclude\":[{\"resource_id\":\"46b42b42-29cd-4a39-8564-e780bb665a8b\"}],\"include\":[]}}],\"schema\":\"octo.context-envelope/v3\"}",
-    "expected_hash": "sha256:9a3dd5c0ef4c77b1242769bd9a67d839a364f6feff8617a823b769556e207f57"
+    "error": "CONTEXT_TYPE_REMOVED"
   },
   {
     "name": "limits-boundaries",
@@ -2665,18 +2798,19 @@
   },
   {
     "name": "plan-mcp-empty",
-    "valid": true,
+    "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
       "adapter_type": "codex",
       "workdir": "/workspace",
       "approval_mode": "ask",
       "mcp_servers": {}
-    }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-minimal",
-    "valid": true,
+    "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
       "adapter_type": "codex",
@@ -2688,11 +2822,12 @@
           "command": "node"
         }
       }
-    }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-minimal",
-    "valid": true,
+    "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
       "adapter_type": "codex",
@@ -2704,11 +2839,12 @@
           "url": "https://mcp.example.test/rpc"
         }
       }
-    }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-all-fields",
-    "valid": true,
+    "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
       "adapter_type": "codex",
@@ -2732,11 +2868,12 @@
           "toolTimeoutMs": 3600000
         }
       }
-    }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-all-fields",
-    "valid": true,
+    "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
       "adapter_type": "codex",
@@ -2755,7 +2892,8 @@
           "toolTimeoutMs": 100
         }
       }
-    }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-not-object",
@@ -2767,7 +2905,7 @@
       "approval_mode": "ask",
       "mcp_servers": []
     },
-    "error": "mcpServers must be an object"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-server-not-object",
@@ -2781,7 +2919,7 @@
         "tool": []
       }
     },
-    "error": "mcpServers.tool must be an object"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-invalid-name",
@@ -2798,7 +2936,7 @@
         }
       }
     },
-    "error": "mcpServers contains an invalid server name"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-empty-name",
@@ -2815,11 +2953,11 @@
         }
       }
     },
-    "error": "mcpServers contains an invalid server name"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-name-max",
-    "valid": true,
+    "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
       "adapter_type": "codex",
@@ -2831,7 +2969,8 @@
           "command": "node"
         }
       }
-    }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-name-over-max",
@@ -2848,11 +2987,11 @@
         }
       }
     },
-    "error": "mcpServers contains an invalid server name"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-server-count-32",
-    "valid": true,
+    "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
       "adapter_type": "codex",
@@ -2988,7 +3127,8 @@
           "command": "node"
         }
       }
-    }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-server-count-33",
@@ -3133,7 +3273,7 @@
         }
       }
     },
-    "error": "mcpServers must not contain more than 32 servers"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-missing-type",
@@ -3149,7 +3289,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.type is unsupported"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-unknown-transport",
@@ -3166,7 +3306,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.type is unsupported"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-missing-command",
@@ -3182,7 +3322,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.command must be a non-empty string"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-empty-command",
@@ -3199,7 +3339,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.command must be a non-empty string"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-nonstring-command",
@@ -3216,7 +3356,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.command must be a non-empty string"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-missing-url",
@@ -3232,7 +3372,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.url must be a non-empty string"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-empty-url",
@@ -3249,7 +3389,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.url must be a non-empty string"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-nonstring-url",
@@ -3266,7 +3406,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.url must be a non-empty string"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-malformed-url",
@@ -3283,7 +3423,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.url must be an absolute HTTP URL"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-non-http-url",
@@ -3300,7 +3440,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.url must be an absolute HTTP URL"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-http-field",
@@ -3318,7 +3458,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.url is unsupported"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-stdio-field",
@@ -3336,7 +3476,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.command is unsupported"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-unknown-field",
@@ -3354,7 +3494,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.token is unsupported"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-legacy-timeout",
@@ -3372,7 +3512,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.tool_timeout_ms is unsupported"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-legacy-type",
@@ -3390,7 +3530,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.transport is unsupported"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-empty-cwd",
@@ -3408,7 +3548,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.cwd must be a non-empty string when present"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-invalid-required",
@@ -3426,7 +3566,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.required must be boolean when present"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-invalid-required",
@@ -3444,7 +3584,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.required must be boolean when present"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-invalid-args",
@@ -3465,11 +3605,11 @@
         }
       }
     },
-    "error": "mcpServers.tool.args must be an array of strings"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-args-128",
-    "valid": true,
+    "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
       "adapter_type": "codex",
@@ -3611,7 +3751,8 @@
           ]
         }
       }
-    }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-args-129",
@@ -3759,7 +3900,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.args must be an array of strings"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-env-not-object",
@@ -3777,7 +3918,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.env must be a string map"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-env-nonstring",
@@ -3797,11 +3938,11 @@
         }
       }
     },
-    "error": "mcpServers.tool.env must be a string map"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-env-128",
-    "valid": true,
+    "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
       "adapter_type": "codex",
@@ -3943,7 +4084,8 @@
           }
         }
       }
-    }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-env-129",
@@ -4091,7 +4233,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.env must be a string map"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-headers-not-object",
@@ -4109,7 +4251,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.headers must be a string map"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-headers-nonstring",
@@ -4129,11 +4271,11 @@
         }
       }
     },
-    "error": "mcpServers.tool.headers must be a string map"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-headers-64",
-    "valid": true,
+    "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
       "adapter_type": "codex",
@@ -4211,7 +4353,8 @@
           }
         }
       }
-    }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-headers-65",
@@ -4295,11 +4438,11 @@
         }
       }
     },
-    "error": "mcpServers.tool.headers must be a string map"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-startupTimeoutMs-bounds",
-    "valid": true,
+    "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
       "adapter_type": "codex",
@@ -4312,7 +4455,8 @@
           "startupTimeoutMs": 300000
         }
       }
-    }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-startupTimeoutMs-below-min",
@@ -4330,7 +4474,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.startupTimeoutMs is out of range"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-startupTimeoutMs-over-max",
@@ -4348,7 +4492,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.startupTimeoutMs is out of range"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-startupTimeoutMs-fractional",
@@ -4366,7 +4510,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.startupTimeoutMs is out of range"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-startupTimeoutMs-string",
@@ -4384,11 +4528,11 @@
         }
       }
     },
-    "error": "mcpServers.tool.startupTimeoutMs is out of range"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-toolTimeoutMs-bounds",
-    "valid": true,
+    "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
       "adapter_type": "codex",
@@ -4401,7 +4545,8 @@
           "toolTimeoutMs": 3600000
         }
       }
-    }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-toolTimeoutMs-below-min",
@@ -4419,7 +4564,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.toolTimeoutMs is out of range"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-toolTimeoutMs-over-max",
@@ -4437,7 +4582,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.toolTimeoutMs is out of range"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-toolTimeoutMs-fractional",
@@ -4455,7 +4600,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.toolTimeoutMs is out of range"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-stdio-toolTimeoutMs-string",
@@ -4473,11 +4618,11 @@
         }
       }
     },
-    "error": "mcpServers.tool.toolTimeoutMs is out of range"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-startupTimeoutMs-bounds",
-    "valid": true,
+    "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
       "adapter_type": "codex",
@@ -4490,7 +4635,8 @@
           "startupTimeoutMs": 300000
         }
       }
-    }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-startupTimeoutMs-below-min",
@@ -4508,7 +4654,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.startupTimeoutMs is out of range"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-startupTimeoutMs-over-max",
@@ -4526,7 +4672,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.startupTimeoutMs is out of range"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-startupTimeoutMs-fractional",
@@ -4544,7 +4690,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.startupTimeoutMs is out of range"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-startupTimeoutMs-string",
@@ -4562,11 +4708,11 @@
         }
       }
     },
-    "error": "mcpServers.tool.startupTimeoutMs is out of range"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-toolTimeoutMs-bounds",
-    "valid": true,
+    "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
       "adapter_type": "codex",
@@ -4579,7 +4725,8 @@
           "toolTimeoutMs": 3600000
         }
       }
-    }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-toolTimeoutMs-below-min",
@@ -4597,7 +4744,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.toolTimeoutMs is out of range"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-toolTimeoutMs-over-max",
@@ -4615,7 +4762,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.toolTimeoutMs is out of range"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-toolTimeoutMs-fractional",
@@ -4633,7 +4780,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.toolTimeoutMs is out of range"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-toolTimeoutMs-string",
@@ -4651,11 +4798,11 @@
         }
       }
     },
-    "error": "mcpServers.tool.toolTimeoutMs is out of range"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-url-length-4096",
-    "valid": true,
+    "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
       "adapter_type": "codex",
@@ -4667,11 +4814,12 @@
           "url": "https://mcp.example.test/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         }
       }
-    }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-astral-url-length-4096",
-    "valid": true,
+    "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
       "adapter_type": "codex",
@@ -4683,7 +4831,8 @@
           "url": "https://mcp.example.test/😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
         }
       }
-    }
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-url-length-4097",
@@ -4700,7 +4849,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.url must not exceed 4096 characters"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "plan-mcp-http-astral-url-length-4097",
@@ -4717,7 +4866,7 @@
         }
       }
     },
-    "error": "mcpServers.tool.url must not exceed 4096 characters"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "removed-aggregate-config",

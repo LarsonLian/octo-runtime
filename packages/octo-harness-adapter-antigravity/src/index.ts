@@ -201,8 +201,6 @@ export function buildAntigravityCommand(request: InvokeRequest, command = "agy",
   if (request.approvalMode !== "full_access") throw new Error("APPROVAL_MODE_UNSUPPORTED: antigravity only supports full_access");
   if (request.signal?.aborted) throw new Error("ANTIGRAVITY_CANCELLED_BEFORE_START");
   if (hasImageInput(request)) throw new Error("ANTIGRAVITY_IMAGE_INPUT_UNSUPPORTED");
-  if (request.mcpServers && Object.keys(request.mcpServers).length) throw new Error("ANTIGRAVITY_DYNAMIC_MCP_UNSUPPORTED");
-  if (request.skills?.length || request.skillRoots?.length) throw new Error("ANTIGRAVITY_DYNAMIC_SKILLS_UNSUPPORTED");
   for (const arg of commandArgsPrefix) {
     if (managedFlags.has(arg.split("=")[0]) || /^-[pic].+/.test(arg)) throw new Error(`ANTIGRAVITY_MANAGED_ARGUMENT: ${arg.split("=")[0]}`);
   }

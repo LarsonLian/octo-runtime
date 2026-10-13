@@ -92,7 +92,8 @@ test("Human Token enrollment persists a loadable account-scoped profile", async 
       tenant: {
         id: "space-1",
         serverUrl: "https://im-test.deepminer.com.cn",
-        agentWorkUrl: "https://im-test.deepminer.com.cn/agentworker/api"
+        agentWorkUrl: "https://im-test.deepminer.com.cn/agentworker/api",
+        businessServiceBindings: { task: { serviceSubjectId: "loop", url: "https://local-config.test/mcp/task" } }
       },
       profile,
       machine,
@@ -109,6 +110,8 @@ test("Human Token enrollment persists a loadable account-scoped profile", async 
     assert.equal(runtimes.length, 1);
     assert.equal(runtimes[0].runtimeId, "runtime-1");
     assert.equal(runtimes[0].profile, profileName);
+    assert.deepEqual(runtimes[0].businessServiceBindings, { task: { serviceSubjectId: "loop", url: "https://local-config.test/mcp/task" } });
+    assert.equal(calls.some(call => String(call.init.body).includes("local-config.test")), false);
     calls.length = 0;
     const reused = await ensureTenantEnrollment({
       subject: { type: "user", id: "uid-123" },
@@ -120,6 +123,7 @@ test("Human Token enrollment persists a loadable account-scoped profile", async 
       signal: new AbortController().signal
     });
     assert.equal(reused.reused, true);
+    assert.deepEqual(loadManagedAgentWorksFromRoot(account.root, [profileName])[0].businessServiceBindings, {});
     assert.equal(calls.length, 1);
     assert.deepEqual(JSON.parse(calls[0].init.body).capabilities.run_contract, RUNTIME_RUN_CONTRACT);
     calls.length = 0;

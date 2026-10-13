@@ -31,7 +31,6 @@ test("Antigravity builds an isolated stdin carrier, exact model and explicit yol
 test("Antigravity rejects unsupported permissions and managed arguments before spawn", async () => {
   for (const mode of ["ask", "assisted"]) assert.throws(() => buildAntigravityCommand({ ...request, approvalMode: mode }), /APPROVAL_MODE_UNSUPPORTED/);
   for (const flag of ["--mode=plan", "--conversation", "--output-format=text", "--dangerously-skip-permissions", "-psecret"]) assert.throws(() => buildAntigravityCommand(request, "agy", [flag]), /MANAGED_ARGUMENT/);
-  assert.throws(() => buildAntigravityCommand({ ...request, mcpServers: { server: { type: "stdio", command: "test" } } }), /DYNAMIC_MCP_UNSUPPORTED/);
   const host = new AdapterHost(); host.register(create());
   await assert.rejects(collect(host.invoke("antigravity", { ...request, approvalMode: "ask" })), /APPROVAL_MODE_UNSUPPORTED/);
 });

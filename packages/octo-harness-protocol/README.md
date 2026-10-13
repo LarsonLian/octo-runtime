@@ -90,11 +90,13 @@ pnpm build                            # 3. 构建
 
 `CONTEXT_TYPE_CATALOG` 定义每种类型的 schema、持久性、合并、强制约束、阶段和输出。`assertContextProcessorCoverage` 用于阶段开始前核对处理器；目录本身不证明宿主已经部署资源下载或 Provider 支持。
 
-`ContextConfiguration` 包含 defaults 与 mandatory。使用 `assertContextConfiguration` 验证持久配置，再用 `resolveContextConfiguration(configuration, request)` 解析有效项。adapter/model/workspace/runtime/approval_policy 沿当前独立类型合并，limits 按字段覆盖。资源 selection 使用 include 添加/替换、exclude 删除，空 include/exclude 表示不增删。mandatory 检查原始请求，冲突必须拒绝；内部能力要求由可信执行计划提供。
+`ContextConfiguration` 包含 defaults 与 mandatory。使用 `assertContextConfiguration` 验证持久配置，再用 `resolveContextConfiguration(configuration, request)` 解析有效项。adapter/model/workspace/runtime/approval_policy 沿当前独立类型合并，limits 按字段覆盖。mandatory 检查原始请求，冲突必须拒绝；内部能力要求由可信执行计划提供。
 
-资源引用使用 kind、UUID resource_id、可选 invoke/components，不接收 version/revision。include 的 kind/resource_id 必须唯一，include/exclude 不得交叉；JSON Schema 消费者必须实现 `x-octo-capability-selection` 语义关键字。随机目录声明仅使用 `{mode:"random"}`，不得携带 scope 或 path。Runtime 在 AgentSession 首次运行时创建目录，后续运行复用；不同 AgentSession 使用独立目录。实际路径由 Runtime 准备，不能以空 workdir 启动 Provider。
+随机目录声明仅使用 `{mode:"random"}`，不得携带 scope 或 path。Runtime 在 AgentSession 首次运行时创建目录，后续运行复用；不同 AgentSession 使用独立目录。实际路径由 Runtime 准备，不能以空 workdir 启动 Provider。
 
-Worker 在首次准备时读取最新 FileBundle 并冻结完整字节；同 Run 恢复仍检查授权，使用原 revision/digest。Runtime 根据完整 base64 文件映射物化目录并保留执行位。共享摘要样例位于 `schema/file-bundle-resolved-fixtures.json`。
+Skill、Plugin、MCP 和 Connector 由本地用户或原生 Runtime 安装与配置。`octo.resources` 及旧云端安装字段直接拒绝；执行计划不包含 `resources` 或 `mcp_servers`，应用证据不包含 `loaded_skills`。Context 继续表达普通材料、workspace、limits、approval 和 continuity。
+
+`ToolAuthorization` 只包含 `service_subject_id`、`allowed_tools` 与 `resource_refs`。独立授权接口返回 `IssuedToolAuthorization`，增加短期 `token`、`octo_space_id`、`namespace` 与 `expires_at`；不允许携带地址、命令或配置模板。凭据只能进入本地已配置的业务连接或宿主授权接收器，不能进入 `InvokeRequest`、Context 编译结果或模型输入。
 
 这些公开函数不执行 ACL 检查、签发凭据、下载资源或构造 Provider system prompt。处理阶段和跨项目验收见 [ContextPipeline 基线](../../../docs/62-octo-context-compiler-se-baseline.md)。
 

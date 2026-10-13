@@ -80,7 +80,7 @@ export function mergeContext(defaults: ContextEnvelope, overrides: ContextEnvelo
 export function assertResolvedExecutionPlan(value: unknown): asserts value is ResolvedExecutionPlan {
   object(value, "RESOLVED_EXECUTION_PLAN_REQUIRED");
   assertJsonValue(value);
-  fields(value, ["agent_source", "adapter_type", "provider_agent_id", "workdir", "workspace", "resources", "approval_mode", "model", "effort", "required_capabilities", "required_execution_features", "runtime_limits", "mcp_servers", "provider_compatibility", "context_extensions"]);
+  fields(value, ["agent_source", "adapter_type", "provider_agent_id", "workdir", "workspace", "approval_mode", "model", "effort", "required_capabilities", "required_execution_features", "runtime_limits", "provider_compatibility", "context_extensions"]);
   if (value.context_extensions !== undefined) assertContextExtensionsSnapshot(value.context_extensions);
   assertAgentSource(value.agent_source);
   text(value.adapter_type);
@@ -90,7 +90,6 @@ export function assertResolvedExecutionPlan(value: unknown): asserts value is Re
   if (!value.workdir && value.agent_source !== "preset" && (!isObject(value.workspace) || value.workspace.mode !== "random")) throw new TypeError("RESOLVED_EXECUTION_PLAN_INVALID");
   if (isObject(value.workspace) && value.workspace.mode === "none" && (value.agent_source !== "preset" || value.workdir !== "")) throw new TypeError("RESOLVED_EXECUTION_PLAN_INVALID");
   if (value.agent_source === "preset" && typeof value.provider_agent_id !== "string") throw new TypeError("PRESET_AGENT_TARGET_REQUIRED");
-  if (value.resources !== undefined) assertCapabilityResources(value.resources);
   assertApprovalMode(value.approval_mode);
   for (const property of ["model", "effort"]) if (value[property] !== undefined) text(value[property]);
   if (value.required_capabilities !== undefined && (!Array.isArray(value.required_capabilities) || value.required_capabilities.some(item => typeof item !== "string" || !item))) throw new TypeError("RESOLVED_EXECUTION_PLAN_INVALID");
@@ -101,7 +100,6 @@ export function assertResolvedExecutionPlan(value: unknown): asserts value is Re
     object(value.runtime_limits, "RESOLVED_EXECUTION_PLAN_INVALID");
     limits(value.runtime_limits);
   }
-  if (value.mcp_servers !== undefined) assertMcpServers(value.mcp_servers);
 }
 
 export function assertMcpServers(value: unknown): asserts value is McpServers {
@@ -184,20 +182,13 @@ export function assertJsonValue(value: unknown): void {
   json(value, 0);
 }
 
-export const RESOURCE_CONTEXT_KINDS: Readonly<Record<string, string>> = Object.freeze({ skills: "skill", agent_plugins: "agent_plugin", knowledge: "knowledge", connectors: "connector" });
-
-export function contextResourceReferences(context: ContextEnvelope): (Record<string, unknown> & {kind: string; resource_id: string})[] {
-  return context.items.filter(item => item.namespace === "octo.resources" && Object.hasOwn(RESOURCE_CONTEXT_KINDS, item.name))
-    .flatMap(item => (item.payload.include as Record<string, unknown>[]).map(value => ({ ...value, kind: RESOURCE_CONTEXT_KINDS[item.name], resource_id: String(value.resource_id) })))
-    .sort((a, b) => `${a.kind}/${a.resource_id}` < `${b.kind}/${b.resource_id}` ? -1 : `${a.kind}/${a.resource_id}` > `${b.kind}/${b.resource_id}` ? 1 : 0);
-}
-
 export function mergeReferences(base: Record<string, unknown>[], next: Record<string, unknown>[]): Record<string, unknown>[] {
   const entries = new Map([...base, ...next].map(entry => [String(entry.resource_ref), structuredClone(entry)]));
   return [...entries].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, entry]) => entry);
 }
 
 function publicPayload(namespace: string, name: string, value: Record<string, unknown>): void {
+  if (namespace === "octo.resources") throw new TypeError("CONTEXT_TYPE_REMOVED");
   if (namespace === "octo.execution" && name === "model") {
     fields(value, ["selection", "reasoning"]);
     if (!Object.keys(value).length) throw new TypeError("CONTEXT_SCHEMA_INVALID");
@@ -209,29 +200,6 @@ function publicPayload(namespace: string, name: string, value: Record<string, un
   }
   if ((namespace === "octo.execution" && ["adapter", "workspace", "limits"].includes(name)) || (namespace === "octo.runtime" && name === "selection") || (namespace === "octo.security" && name === "approval_policy")) {
     executionField(namespace, name, value);
-    return;
-  }
-  if (namespace === "octo.resources" && Object.hasOwn(RESOURCE_CONTEXT_KINDS, name)) {
-    const kind = RESOURCE_CONTEXT_KINDS[name];
-    fields(value, ["include", "exclude"]);
-    const seen = new Set<string>();
-    for (const list of ["include", "exclude"]) {
-      const entries = value[list];
-      if (!Array.isArray(entries) || entries.length > 32) throw new TypeError("CONTEXT_SCHEMA_INVALID");
-      for (const entry of entries) {
-        object(entry, "CONTEXT_SCHEMA_INVALID");
-        const allowed = ["resource_id"];
-        if (list === "include" && ["skill", "agent_plugin"].includes(kind)) allowed.push("invoke");
-        if (list === "include" && ["agent_plugin", "connector"].includes(kind)) allowed.push("components");
-        fields(entry, allowed);
-        if (typeof entry.resource_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(entry.resource_id)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
-        const key = entry.resource_id;
-        if (seen.has(key)) throw new TypeError("CONTEXT_SCHEMA_INVALID");
-        seen.add(key);
-        if (entry.invoke !== undefined && typeof entry.invoke !== "boolean") throw new TypeError("CONTEXT_SCHEMA_INVALID");
-        if (entry.components !== undefined) { stringList(entry.components, 64); if (entry.components.some(component => !/^(skill|mcp):[a-z0-9][a-z0-9._-]{0,95}$/.test(component) || (kind === "connector" && !component.startsWith("mcp:")))) throw new TypeError("CONTEXT_SCHEMA_INVALID"); }
-      }
-    }
     return;
   }
   if ((namespace === "octo.content" && ["inline", "references"].includes(name)) || (namespace === "octo.control" && name === "instructions")) {
@@ -323,37 +291,6 @@ function integer(value: unknown, minimum: number, maximum = Number.MAX_SAFE_INTE
 
 function stringList(value: unknown, maximum: number, minimum = 0): asserts value is string[] {
   if (!Array.isArray(value) || value.length < minimum || value.length > maximum || value.some(item => typeof item !== "string" || !item) || new Set(value).size !== value.length) throw new TypeError("CONTEXT_SCHEMA_INVALID");
-}
-
-export function assertCapabilityResources(value: unknown): void {
-  if (!Array.isArray(value) || value.length > 32) throw new TypeError("CONTEXT_RESOURCE_INVALID");
-  for (const resource of value) {
-    object(resource, "CONTEXT_RESOURCE_INVALID");
-    fields(resource, ["resource_id", "kind", "revision", "digest", "files", "sources", "invoke", "components", "mcp_credentials"]);
-    if (resource.mcp_credentials !== undefined) {
-      object(resource.mcp_credentials, "CONTEXT_RESOURCE_INVALID");
-      if (Object.keys(resource.mcp_credentials).length > 32) throw new TypeError("CONTEXT_RESOURCE_INVALID");
-      for (const headers of Object.values(resource.mcp_credentials)) assertStringRecord(headers, "mcp_credentials", 64);
-    }
-    text(resource.resource_id); integer(resource.revision, 1);
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(resource.resource_id)) throw new TypeError("CONTEXT_RESOURCE_INVALID");
-    if (!["agent_plugin", "skill", "connector", "knowledge"].includes(String(resource.kind)) || typeof resource.digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(resource.digest) || typeof resource.invoke !== "boolean") throw new TypeError("CONTEXT_RESOURCE_INVALID");
-    object(resource.files, "CONTEXT_RESOURCE_INVALID");
-    if (Object.keys(resource.files).length > 256 || new TextEncoder().encode(JSON.stringify(resource.files)).length > 16_777_216) throw new TypeError("CONTEXT_RESOURCE_BUDGET_EXCEEDED");
-    const paths = Object.keys(resource.files);
-    for (const path of paths) {
-      const parts = path.split("/");
-      for (let index = 1; index < parts.length; index++) if (Object.hasOwn(resource.files, parts.slice(0, index).join("/"))) throw new TypeError("CONTEXT_RESOURCE_INVALID");
-    }
-    for (const [path, content] of Object.entries(resource.files)) {
-      if (!path || path.startsWith("/") || path.includes("\\") || path.split("/").some(segment => !segment || segment === "." || segment === "..") || path.includes("\0") ) throw new TypeError("CONTEXT_RESOURCE_INVALID");
-      object(content, "CONTEXT_RESOURCE_INVALID"); fields(content, ["content_base64", "executable"]);
-      if (typeof content.content_base64 !== "string" || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(content.content_base64) || typeof content.executable !== "boolean") throw new TypeError("CONTEXT_RESOURCE_INVALID");
-    }
-    stringList(resource.sources, 4, 1);
-    if (resource.sources.some(source => !["agent_default", "agent_mandatory", "request", "scenario_policy"].includes(source))) throw new TypeError("CONTEXT_RESOURCE_INVALID");
-    if (resource.components !== undefined) stringList(resource.components, 64);
-  }
 }
 
 function assertProviderAgent(type: string, id: unknown): void {

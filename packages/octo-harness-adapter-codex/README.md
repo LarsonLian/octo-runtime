@@ -85,7 +85,7 @@ provisioning 的具体形态：
 
 关键约束：
 
-- **必须使用真实 `CODEX_HOME`**。`[mcp_servers.computer-use].command` 是按 `CODEX_HOME` 解析的相对路径，一旦走 shadow HOME（临时目录），该相对路径失效，computer use 直接不可用。这也是 production 不使用 `createCodexInvocationHome` 的又一原因。
+- **必须使用真实 `CODEX_HOME`**。`[mcp_servers.computer-use].command` 是按 `CODEX_HOME` 解析的相对路径；临时 HOME 会使该相对路径失效。Adapter 不创建 shadow HOME，不安装或覆盖用户配置的插件。
 - **能力传递性依赖 ChatGPT.app 存在**。`node_repl` 指向 `/Applications/ChatGPT.app/...`；卸载 ChatGPT.app 后即使保留 config 也会失效。
 - **`probe` 只查 codex 可执行文件**，probe 通过并不代表 computer use 可用。用导出的 `detectComputerUseProvisioning(env)` 对将要使用的同一 `CODEX_HOME` 做检查：它读取 `config.toml`，收集 `computer-use` / `node_repl` 这两个由 ChatGPT.app 写入的 MCP server，返回 `{ available, codexHome, servers, reason? }`。`available` 为「至少一个相关 server 存在且未被显式 `enabled = false` 关闭」；`reason` 为 `config_missing` / `mcp_server_absent` / `mcp_server_disabled`，便于在开跑前给出「先安装 / 启动 ChatGPT.app」或「computer-use 已 provisioning 但被禁用」而非 turn 中静默的 tool-not-found。检查停留在配置层：`computer-use` 的 command 是 Codex 按 provider 内部基准目录解析的相对路径（实测落在 `<CODEX_HOME>/computer-use/…` 而非 `<CODEX_HOME>` 下），因此 helper 原样报告声明的 `command` / `cwd`，不猜绝对路径去 stat。
 
@@ -163,7 +163,6 @@ Codex 没有专用的“默认模型环境变量”。默认模型来自 `$CODEX
 - **workdir 不是沙箱**。真正的文件与网络边界由 Codex 自身 sandbox 叠加外部隔离（容器 / VM / 独立用户）决定。`danger-full-access` 仅应在已具备外部隔离的执行节点上使用。
 - **审批自动 accept 不是权限系统**。`accept` 只是无人值守下的协议兼容，实际可执行的操作取决于 sandbox、OS 用户、网络策略与可用凭证的交集。当前未将审批转发至任何人工决策链。
 - **同一 thread 不支持被两个调用并发 resume**。适配器与 host 均未按 thread 串行化，也无跨进程文件锁；并发 resume 属不支持场景，调用方需在 Core / 调度层保证同一 session 同时仅有一个 active run。
-- **shadow HOME 不隔离凭证与会话文件**。symlink 是活别名，Codex 的写入会落到真实的 `sessions/`、`skills/` 等目录。
 - **RPC 超时不是整轮超时**。若 app-server 保持连接、`turn/start` 已响应却始终不发终态，适配器自身不会结束，整轮预算需由上层 Host / Core 控制。
 - **`probe` 仅检查可执行文件**，不验证 app-server API 版本、认证、网络、模型额度或 workdir 权限。
 - **进程按直接 PID 回收**（stdin EOF → SIGTERM → SIGKILL 阶梯），不做 POSIX 进程组级 kill。宿主崩溃需依赖外部 supervisor。
@@ -174,4 +173,4 @@ Codex 没有专用的“默认模型环境变量”。默认模型来自 `$CODEX
 - 事件契约与三层事件模型：[Protocol](../octo-harness-protocol/README.md)
 - 适配器的调用生命周期与终态兜底：[Adapter Host](../octo-harness-adapter-host/README.md)
 - provider adapter 概览与编写指南：[docs/05](../../docs/05-provider-adapters.md)、[docs/08](../../docs/08-adapter-authoring.md)
-- 源码：[`src/index.ts`](src/index.ts)（装配 + shadow HOME）、[`src/app-server.ts`](src/app-server.ts)（协议状态机 + JSON-RPC client + 事件映射）
+- 源码：[`src/index.ts`](src/index.ts)（本地配置装配）、[`src/app-server.ts`](src/app-server.ts)（协议状态机 + JSON-RPC client + 事件映射）

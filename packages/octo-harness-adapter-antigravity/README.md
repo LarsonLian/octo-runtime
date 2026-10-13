@@ -28,7 +28,7 @@ CLI result usage 可能覆盖整个会话，优先统计本轮 DONE step usage�
 
 `--print-timeout 0` 由本机 1.3.3 帮助确认可用；执行时限与取消仍由 Harness watchdog 管理。取消通过 SDK 回收 POSIX 进程组，并在 1 秒后对仍运行的进程升级为 SIGKILL。Windows 的后代进程回收尚未做实机资格验证。
 
-动态 MCP、Harness 准备的技能和图片输入目前不支持，收到这些输入会在启动前拒绝，不会静默丢弃。CLI 本机已有配置继续由 CLI 管理。命令构建接受合法 `--effort` 参数；Work App 首期只开放模型选择，推理强度控件待真实模型资格验证后开放。
+共享 InvokeRequest 已删除动态 MCP 与 Harness 准备的技能字段，旧字段在协议边界直接拒绝。CLI 本机已有配置继续由 CLI 管理；Adapter 不安装或注入工具。图片输入目前不支持，启动前拒绝。命令构建接受合法 `--effort` 参数；Work App 首期只开放模型选择，推理强度控件待真实模型资格验证后开放。
 
 ## 验证
 

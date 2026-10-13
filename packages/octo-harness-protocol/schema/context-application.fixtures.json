@@ -10,22 +10,12 @@
     "fencing_token": 1,
     "adapter_type": "codex",
     "provider_session_id": "thread-1",
-    "provider_ack": "turn/start",
-    "loaded_skills": [
-      "proof"
-    ]
+    "provider_ack": "turn/start"
   },
   "cases": [
     {
       "name": "accepted native acknowledgement",
       "patch": {},
-      "valid": true
-    },
-    {
-      "name": "no selected skills",
-      "patch": {
-        "loaded_skills": []
-      },
       "valid": true
     },
     {
@@ -70,23 +60,6 @@
       "valid": false
     },
     {
-      "name": "missing loaded evidence",
-      "patch": {
-        "loaded_skills": null
-      },
-      "valid": false
-    },
-    {
-      "name": "duplicate skill",
-      "patch": {
-        "loaded_skills": [
-          "proof",
-          "proof"
-        ]
-      },
-      "valid": false
-    },
-    {
       "name": "private path",
       "patch": {
         "workspace_path": "/private"
@@ -99,6 +72,13 @@
         "adapter_type": "claude"
       },
       "valid": false
+    },
+    {
+      "name": "removed package evidence rejected",
+      "valid": false,
+      "patch": {
+        "loaded_skills": []
+      }
     }
   ]
 }

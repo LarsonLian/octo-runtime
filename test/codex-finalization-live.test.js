@@ -15,7 +15,7 @@ test("real Codex finalization interruption preserves the answer and resumes the 
     const events = [];
     const started = Date.now();
     for await (const event of adapter.invoke(invokeRequest({ modelInput: input, prompt: input,
-      workdir: directory, providerStateDir: directory, skills: [], providerSession,
+      workdir: directory, providerSession,
       signal: AbortSignal.timeout(80_000), controlInstructions: "Answer the question directly. Do not call tools.",
       agentConfig: { providerOptions: { finalizationTimeoutMs: timeoutMs } }
     }))) events.push(event);

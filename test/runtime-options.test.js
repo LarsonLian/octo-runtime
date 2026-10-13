@@ -77,13 +77,6 @@ test("managed profile loads OpenClaw adapter credentials without serializing the
             OPENCLAW_RUNNER_WORKSPACE: workspace
           },
           credential_ref: "credentials/openclaw-gateway.json",
-          managed_workspace: {
-            path: workspace,
-            root: "adapters/openclaw",
-            active_when_url: "ws://127.0.0.1:18789/",
-            require_empty: true,
-            require_read_only: true
-          }
         }
       }
     };
@@ -110,13 +103,12 @@ test("managed profile loads OpenClaw adapter credentials without serializing the
     assert.equal(paths.agentWorks[0].adapterConfigurations.openclaw.providerOptions.OPENCLAW_RUNNER_WORKSPACE, workspace);
     assert.equal(paths.agentWorks[0].adapterConfigurations.openclaw.providerAgentId, "octo-openclaw-runner");
     assert.equal(daemonRuntimeArguments(paths).includes("gateway-secret"), false);
-    if (process.platform !== "win32") {
-      await chmod(workspace, 0o755);
-      assert.throws(() => resolveDaemonRuntimePaths(["--home", home], {}), /workspace must be read-only/);
-    }
-    await writeFile(join(workspace, "unexpected.txt"), "unexpected");
-    if (process.platform !== "win32") await chmod(workspace, 0o555);
-    assert.throws(() => resolveDaemonRuntimePaths(["--home", home], {}), /workspace must be empty/);
+    await chmod(workspace, 0o755);
+    await writeFile(join(workspace, "user-owned-skill.txt"), "native configuration stays untouched");
+    assert.doesNotThrow(() => resolveDaemonRuntimePaths(["--home", home], {}));
+    config.adapters.openclaw.execution.managed_workspace = { path: workspace };
+    await writeFile(configPath, JSON.stringify(config));
+    assert.throws(() => resolveDaemonRuntimePaths(["--home", home], {}), /LOCAL_PLUGIN_CONFIGURATION_REQUIRED/);
   } finally {
     if (process.platform !== "win32") await chmod(workspace, 0o755).catch(() => undefined);
     await rm(home, { recursive: true, force: true });

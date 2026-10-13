@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { ResolvedExecutionPlan } from "@mininglamp-oss/octo-harness-protocol";
-import { TaskMcpClient, taskMcpServer } from "./task-materials.js";
+import type { ResolvedExecutionPlan, McpStreamableHttpServer } from "@mininglamp-oss/octo-harness-protocol";
+import { TaskMcpClient } from "./task-materials.js";
 
 export const TASK_OUTPUT_SCHEMA = "octo.task-output-manifest/v1";
 export const TASK_OUTPUT_LIMITS = Object.freeze({ maxFiles: 32, maxFileBytes: 100 * 1024 * 1024, maxTotalBytes: 256 * 1024 * 1024, maxManifestBytes: 64 * 1024 });
@@ -131,12 +131,13 @@ async function loadTaskOutputManifest(workdir: string, runId: string): Promise<T
   return manifest;
 }
 
-export async function archiveTaskOutputs(plan: ResolvedExecutionPlan, taskId: string, runId: string, signal: AbortSignal, onDelivery?: (delivery: TaskDelivery) => void): Promise<TaskOutputReceipt[]> {
+export async function archiveTaskOutputs(plan: ResolvedExecutionPlan, taskId: string, runId: string, signal: AbortSignal, onDelivery?: (delivery: TaskDelivery) => void, server?: McpStreamableHttpServer): Promise<TaskOutputReceipt[]> {
   const manifest = await loadTaskOutputManifest(plan.workdir, runId);
   const outputs = manifest.outputs;
   onDelivery?.(manifest.delivery ?? { output_kind: "agent_report" });
   if (outputs.length === 0) return [];
-  const client = new TaskMcpClient(taskMcpServer(plan), signal);
+  if (!server) throw new TypeError("BUSINESS_SERVICE_BINDING_REQUIRED");
+  const client = new TaskMcpClient(server, signal);
   return archiveOutputEntries(plan.workdir, outputs, client, "task", { task_id: taskId }, signal);
 }
 

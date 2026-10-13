@@ -409,82 +409,6 @@
           "if": {
             "properties": {
               "namespace": {
-                "const": "octo.resources"
-              },
-              "name": {
-                "const": "skills"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "payload": {
-                "$ref": "#/definitions/ContextSkillsPayload"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "namespace": {
-                "const": "octo.resources"
-              },
-              "name": {
-                "const": "agent_plugins"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "payload": {
-                "$ref": "#/definitions/ContextAgentPluginsPayload"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "namespace": {
-                "const": "octo.resources"
-              },
-              "name": {
-                "const": "knowledge"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "payload": {
-                "$ref": "#/definitions/ContextKnowledgePayload"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "namespace": {
-                "const": "octo.resources"
-              },
-              "name": {
-                "const": "connectors"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "payload": {
-                "$ref": "#/definitions/ContextConnectorsPayload"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "namespace": {
                 "const": "octo.content"
               },
               "name": {
@@ -538,7 +462,17 @@
             }
           }
         }
-      ]
+      ],
+      "not": {
+        "properties": {
+          "namespace": {
+            "const": "octo.resources"
+          }
+        },
+        "required": [
+          "namespace"
+        ]
+      }
     },
     "ContextEnvelope": {
       "title": "ContextEnvelope",
@@ -596,7 +530,6 @@
         "preparation_status",
         "application_status",
         "invocation_status",
-        "loaded_skills",
         "execution",
         "model_uses_provider_default",
         "effort_uses_provider_default"
@@ -633,20 +566,19 @@
         "invocation_status": {
           "const": "unknown"
         },
-        "loaded_skills": {
-          "type": "array",
-          "maxItems": 64,
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9._-]{0,95}$"
-          }
-        },
         "model_uses_provider_default": {
           "type": "boolean"
         },
         "effort_uses_provider_default": {
           "type": "boolean"
+        },
+        "object_materials": {
+          "description": "Frozen inline object facts proven by a matching preparation receipt. Source fields are provenance claims, not access grants. No contents, local handles, paths or credentials are exposed; application is separately evidenced by application_status.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/definitions/PublicObjectMaterial"
+          }
         },
         "execution": {
           "type": "object",
@@ -654,8 +586,7 @@
           "required": [
             "adapter_type",
             "approval_mode",
-            "workspace_mode",
-            "resources"
+            "workspace_mode"
           ],
           "properties": {
             "adapter_type": {
@@ -680,58 +611,9 @@
             "workspace_mode": {
               "enum": [
                 "fixed",
-                "random"
+                "random",
+                "none"
               ]
-            },
-            "resources": {
-              "type": "array",
-              "maxItems": 32,
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "resource_id",
-                  "kind",
-                  "revision",
-                  "digest",
-                  "sources"
-                ],
-                "properties": {
-                  "resource_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "kind": {
-                    "enum": [
-                      "agent_plugin",
-                      "skill",
-                      "connector",
-                      "knowledge"
-                    ]
-                  },
-                  "digest": {
-                    "type": "string",
-                    "pattern": "^sha256:[a-f0-9]{64}$"
-                  },
-                  "sources": {
-                    "type": "array",
-                    "uniqueItems": true,
-                    "items": {
-                      "enum": [
-                        "agent_default",
-                        "agent_mandatory",
-                        "request",
-                        "scenario_policy"
-                      ]
-                    }
-                  },
-                  "revision": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 9007199254740991
-                  }
-                }
-              }
             }
           }
         },
@@ -739,6 +621,129 @@
           "$ref": "#/definitions/ScenarioProjection"
         }
       }
+    },
+    "PublicObjectMaterial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_ref",
+        "object_type",
+        "origin",
+        "byte_size",
+        "digest"
+      ],
+      "properties": {
+        "resource_ref": {
+          "type": "string",
+          "pattern": "^selection-[a-zA-Z0-9][a-zA-Z0-9_.:@-]{0,190}$"
+        },
+        "object_type": {
+          "enum": [
+            "task",
+            "discussion",
+            "discussion_comment",
+            "discussion_reply",
+            "local_file",
+            "drive_file"
+          ]
+        },
+        "object_id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:@-]{0,190}$"
+        },
+        "origin": {
+          "enum": [
+            "mention",
+            "attachment",
+            "object_action",
+            "source_entity"
+          ]
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:@-]{0,190}$"
+        },
+        "byte_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "object_scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "id"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "user",
+                "teamspace"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:@-]{0,190}$"
+            }
+          }
+        },
+        "selector": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "core",
+                "content",
+                "history",
+                "chain",
+                "metadata"
+              ]
+            },
+            "start": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "end": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "object_type": {
+                "const": "local_file"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "object_id"
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "object_id"
+            ]
+          }
+        }
+      ]
     },
     "ContextPreparationReceipt": {
       "title": "ContextPreparationReceipt",
@@ -756,7 +761,6 @@
         "workspace_mode",
         "workspace_path",
         "provider_state_dir",
-        "resources",
         "materials",
         "warnings"
       ],
@@ -801,13 +805,6 @@
         "provider_state_dir": {
           "type": "string"
         },
-        "resources": {
-          "type": "array",
-          "maxItems": 32,
-          "items": {
-            "$ref": "#/definitions/PreparedCapabilityReceipt"
-          }
-        },
         "materials": {
           "type": "array",
           "maxItems": 32,
@@ -834,7 +831,7 @@
     },
     "ContextApplicationEvidence": {
       "title": "ContextApplicationEvidence",
-      "description": "Adapter evidence emitted only after Provider accepts the invocation. Loaded skills require native discovery and scope confirmation. Invocation remains unknown without a native execution event. No private paths, credentials or instruction text are permitted.",
+      "description": "Adapter evidence emitted only after Provider accepts the invocation. No plugin installation evidence, private paths, credentials or instruction text are permitted.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -848,8 +845,7 @@
         "fencing_token",
         "adapter_type",
         "provider_session_id",
-        "provider_ack",
-        "loaded_skills"
+        "provider_ack"
       ],
       "properties": {
         "schema": {
@@ -891,60 +887,6 @@
         },
         "provider_ack": {
           "const": "turn/start"
-        },
-        "loaded_skills": {
-          "type": "array",
-          "maxItems": 64,
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9._-]{0,95}$"
-          }
-        }
-      }
-    },
-    "PreparedCapabilityReceipt": {
-      "title": "PreparedCapabilityReceipt",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "resource_id",
-        "revision",
-        "digest",
-        "root",
-        "data",
-        "components"
-      ],
-      "properties": {
-        "resource_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "digest": {
-          "type": "string",
-          "pattern": "^sha256:[a-f0-9]{64}$"
-        },
-        "root": {
-          "type": "string",
-          "minLength": 1
-        },
-        "data": {
-          "type": "string",
-          "minLength": 1
-        },
-        "components": {
-          "type": "array",
-          "maxItems": 64,
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "revision": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
         }
       }
     },
@@ -1074,46 +1016,6 @@
                           },
                           "name": {
                             "const": "approval_policy"
-                          }
-                        }
-                      },
-                      {
-                        "properties": {
-                          "namespace": {
-                            "const": "octo.resources"
-                          },
-                          "name": {
-                            "const": "skills"
-                          }
-                        }
-                      },
-                      {
-                        "properties": {
-                          "namespace": {
-                            "const": "octo.resources"
-                          },
-                          "name": {
-                            "const": "agent_plugins"
-                          }
-                        }
-                      },
-                      {
-                        "properties": {
-                          "namespace": {
-                            "const": "octo.resources"
-                          },
-                          "name": {
-                            "const": "knowledge"
-                          }
-                        }
-                      },
-                      {
-                        "properties": {
-                          "namespace": {
-                            "const": "octo.resources"
-                          },
-                          "name": {
-                            "const": "connectors"
                           }
                         }
                       },
@@ -1286,160 +1188,6 @@
           }
         }
       ]
-    },
-    "ContextCapabilityReference": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "resource_id"
-      ],
-      "properties": {
-        "resource_id": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-        },
-        "invoke": {
-          "type": "boolean"
-        },
-        "components": {
-          "type": "array",
-          "uniqueItems": true,
-          "maxItems": 64,
-          "items": {
-            "type": "string",
-            "pattern": "^(skill|mcp):[a-z0-9][a-z0-9._-]{0,95}$"
-          }
-        }
-      }
-    },
-    "ContextCapabilitySelectionPayload": {
-      "description": "Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.",
-      "x-octo-capability-selection": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "include",
-        "exclude"
-      ],
-      "properties": {
-        "include": {
-          "type": "array",
-          "maxItems": 32,
-          "items": {
-            "$ref": "#/definitions/ContextCapabilityReference"
-          }
-        },
-        "exclude": {
-          "type": "array",
-          "maxItems": 32,
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/definitions/ContextResourceIdentity"
-          }
-        }
-      }
-    },
-    "ResolvedCapabilityResource": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "resource_id",
-        "kind",
-        "revision",
-        "digest",
-        "files",
-        "sources",
-        "invoke"
-      ],
-      "properties": {
-        "resource_id": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-        },
-        "kind": {
-          "enum": [
-            "agent_plugin",
-            "skill",
-            "connector",
-            "knowledge"
-          ]
-        },
-        "digest": {
-          "type": "string",
-          "pattern": "^sha256:[a-f0-9]{64}$"
-        },
-        "files": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/definitions/ResolvedResourceFile"
-          }
-        },
-        "sources": {
-          "type": "array",
-          "items": {
-            "enum": [
-              "agent_default",
-              "agent_mandatory",
-              "request",
-              "scenario_policy"
-            ]
-          }
-        },
-        "invoke": {
-          "type": "boolean"
-        },
-        "components": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "revision": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
-        },
-        "mcp_credentials": {
-          "description": "Ephemeral per-server credentials returned by authorized resource preparation; never part of files or digest.",
-          "type": "object",
-          "maxProperties": 32,
-          "additionalProperties": {
-            "type": "object",
-            "maxProperties": 64,
-            "additionalProperties": {
-              "type": "string",
-              "maxLength": 4096
-            }
-          }
-        }
-      }
-    },
-    "PreparedSkill": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "name",
-        "description",
-        "path",
-        "invoke"
-      ],
-      "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1
-        },
-        "description": {
-          "type": "string",
-          "minLength": 1
-        },
-        "path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "invoke": {
-          "type": "boolean"
-        }
-      }
     },
     "ContextLimitsPayload": {
       "description": "Snake-case frozen watchdog limits, with the same bounds as RuntimeLimits. Legacy enforcement=observe cannot be combined with v2 settings.",
@@ -1921,13 +1669,6 @@
         "workspace": {
           "$ref": "#/definitions/ContextWorkspacePayload"
         },
-        "resources": {
-          "type": "array",
-          "maxItems": 32,
-          "items": {
-            "$ref": "#/definitions/ResolvedCapabilityResource"
-          }
-        },
         "model": {
           "type": "string",
           "minLength": 1
@@ -1948,9 +1689,6 @@
         },
         "runtime_limits": {
           "$ref": "#/definitions/ContextLimitsPayload"
-        },
-        "mcp_servers": {
-          "$ref": "#/definitions/McpServers"
         },
         "provider_compatibility": {
           "type": "object",
@@ -3590,25 +3328,6 @@
         "approvalMode": {
           "$ref": "#/definitions/ApprovalMode"
         },
-        "mcpServers": {
-          "$ref": "#/definitions/McpServers"
-        },
-        "skills": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/PreparedSkill"
-          }
-        },
-        "skillRoots": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "providerStateDir": {
-          "type": "string"
-        },
         "providerSession": {
           "$ref": "#/definitions/ProviderSession"
         },
@@ -3981,35 +3700,6 @@
         "provisioned"
       ]
     },
-    "ContextResourceIdentity": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "resource_id"
-      ],
-      "properties": {
-        "resource_id": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-        }
-      }
-    },
-    "ResolvedResourceFile": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "content_base64",
-        "executable"
-      ],
-      "properties": {
-        "content_base64": {
-          "type": "string"
-        },
-        "executable": {
-          "type": "boolean"
-        }
-      }
-    },
     "ContextModelSelectionPayload": {
       "type": "object",
       "additionalProperties": false,
@@ -4044,190 +3734,6 @@
           }
         }
       ]
-    },
-    "ContextSkillsReference": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "resource_id"
-      ],
-      "properties": {
-        "resource_id": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-        },
-        "invoke": {
-          "type": "boolean"
-        }
-      }
-    },
-    "ContextSkillsPayload": {
-      "description": "Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.",
-      "x-octo-capability-selection": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "include",
-        "exclude"
-      ],
-      "properties": {
-        "include": {
-          "type": "array",
-          "maxItems": 32,
-          "items": {
-            "$ref": "#/definitions/ContextSkillsReference"
-          }
-        },
-        "exclude": {
-          "type": "array",
-          "maxItems": 32,
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/definitions/ContextResourceIdentity"
-          }
-        }
-      }
-    },
-    "ContextAgentPluginsReference": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "resource_id"
-      ],
-      "properties": {
-        "resource_id": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-        },
-        "invoke": {
-          "type": "boolean"
-        },
-        "components": {
-          "type": "array",
-          "uniqueItems": true,
-          "maxItems": 64,
-          "items": {
-            "type": "string",
-            "pattern": "^(skill|mcp):[a-z0-9][a-z0-9._-]{0,95}$"
-          }
-        }
-      }
-    },
-    "ContextAgentPluginsPayload": {
-      "description": "Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.",
-      "x-octo-capability-selection": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "include",
-        "exclude"
-      ],
-      "properties": {
-        "include": {
-          "type": "array",
-          "maxItems": 32,
-          "items": {
-            "$ref": "#/definitions/ContextAgentPluginsReference"
-          }
-        },
-        "exclude": {
-          "type": "array",
-          "maxItems": 32,
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/definitions/ContextResourceIdentity"
-          }
-        }
-      }
-    },
-    "ContextKnowledgeReference": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "resource_id"
-      ],
-      "properties": {
-        "resource_id": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-        }
-      }
-    },
-    "ContextKnowledgePayload": {
-      "description": "Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.",
-      "x-octo-capability-selection": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "include",
-        "exclude"
-      ],
-      "properties": {
-        "include": {
-          "type": "array",
-          "maxItems": 32,
-          "items": {
-            "$ref": "#/definitions/ContextKnowledgeReference"
-          }
-        },
-        "exclude": {
-          "type": "array",
-          "maxItems": 32,
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/definitions/ContextResourceIdentity"
-          }
-        }
-      }
-    },
-    "ContextConnectorsReference": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "resource_id"
-      ],
-      "properties": {
-        "resource_id": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-        },
-        "components": {
-          "type": "array",
-          "uniqueItems": true,
-          "maxItems": 64,
-          "items": {
-            "type": "string",
-            "pattern": "^mcp:[a-z0-9][a-z0-9._-]{0,95}$"
-          }
-        }
-      }
-    },
-    "ContextConnectorsPayload": {
-      "description": "Includes and excludes identify resources by kind and UUID; no caller-selected revision. Consumers enforce duplicate and overlap checks.",
-      "x-octo-capability-selection": true,
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "include",
-        "exclude"
-      ],
-      "properties": {
-        "include": {
-          "type": "array",
-          "maxItems": 32,
-          "items": {
-            "$ref": "#/definitions/ContextConnectorsReference"
-          }
-        },
-        "exclude": {
-          "type": "array",
-          "maxItems": 32,
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/definitions/ContextResourceIdentity"
-          }
-        }
-      }
     },
     "ContextInlineEntry": {
       "description": "Untrusted inline selection text with optional resource reference, source metadata and summary. Source metadata is not an authorization claim.",
@@ -4380,33 +3886,11 @@
             "type": "string",
             "minLength": 1
           }
-        },
-        "default_skills": {
-          "type": "array",
-          "maxItems": 32,
-          "items": {
-            "type": "object",
-            "additionalProperties": true,
-            "properties": {
-              "resource_id": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "invoke": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "resource_id",
-              "invoke"
-            ]
-          }
         }
       },
       "required": [
         "enabled",
-        "instructions",
-        "default_skills"
+        "instructions"
       ]
     },
     "ScenarioPolicySnapshot": {
@@ -4431,27 +3915,6 @@
             "minLength": 1
           }
         },
-        "default_skills": {
-          "type": "array",
-          "maxItems": 32,
-          "items": {
-            "type": "object",
-            "additionalProperties": true,
-            "properties": {
-              "resource_id": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "invoke": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "resource_id",
-              "invoke"
-            ]
-          }
-        },
         "hash": {
           "type": "string",
           "pattern": "^sha256:[a-f0-9]{64}$"
@@ -4461,7 +3924,6 @@
         "scenario_id",
         "version",
         "instructions",
-        "default_skills",
         "hash"
       ]
     },
@@ -4580,6 +4042,109 @@
           "items": {
             "$ref": "#/definitions/ContextExtensionResult"
           }
+        }
+      }
+    },
+    "ToolAuthorization": {
+      "title": "ToolAuthorization",
+      "description": "Business authorization intent; never a tool installation definition.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "service_subject_id",
+        "allowed_tools",
+        "resource_refs"
+      ],
+      "properties": {
+        "service_subject_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "allowed_tools": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "resource_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      }
+    },
+    "IssuedToolAuthorization": {
+      "title": "IssuedToolAuthorization",
+      "description": "Run lease-bound credentials delivered over the authenticated Runtime channel. Never enter provider configuration, prompts or logs.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "service_subject_id",
+        "allowed_tools",
+        "resource_refs",
+        "token",
+        "octo_space_id",
+        "namespace",
+        "expires_at"
+      ],
+      "properties": {
+        "service_subject_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "allowed_tools": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "resource_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "octo_space_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     }

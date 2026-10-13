@@ -15,6 +15,7 @@ const REQUEST_TIMEOUT_MS = 15_000;
 const PROTOCOL_VERSION = 2;
 
 interface ProfileConfiguration {
+  business_service_bindings?: AuthorizedTenant["businessServiceBindings"];
   schema_version: 1;
   profile: string;
   server_url: string;
@@ -57,6 +58,9 @@ export async function ensureTenantEnrollment(options: {
   const fetchImplementation = options.fetchImplementation ?? fetch;
   const saved = readProfile(options.profile);
   if (isHealthy(saved, options.tenant, options.profile.name)) {
+    if (JSON.stringify(saved.config.business_service_bindings) !== JSON.stringify(options.tenant.businessServiceBindings)) {
+      writeJsonAtomic(options.profile.configFile, { ...saved.config, business_service_bindings: options.tenant.businessServiceBindings });
+    }
     try {
       await registerRuntime(fetchImplementation, options.tenant.agentWorkUrl, {
         profile: options.profile.name,
@@ -134,6 +138,7 @@ export async function ensureTenantEnrollment(options: {
     profile: options.profile.name,
     server_url: normalizeUrl(options.tenant.serverUrl),
     agent_work_url: normalizeUrl(options.tenant.agentWorkUrl),
+    ...(options.tenant.businessServiceBindings ? { business_service_bindings: options.tenant.businessServiceBindings } : {}),
     octo_space_id: octoSpaceId,
     runtime_name: runtimeName
   } satisfies ProfileConfiguration);

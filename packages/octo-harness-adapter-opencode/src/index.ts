@@ -1,4 +1,4 @@
-import { canonicalMcpServers, mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { mapReasoningEffort } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
 /**
  * OpenCode adapter: wraps the OpenCode CLI (`opencode run --format json
@@ -6,7 +6,7 @@ import { canonicalTerminalStatus } from "@mininglamp-oss/octo-harness-protocol";
  * Both transports normalize provider output into canonical events.
  */
 import { createJsonCliAdapter, probeCommand, providerInputText, type AdapterInvocationContext, type CanonicalEvent, type InvokeRequest } from "@mininglamp-oss/octo-harness-adapter-sdk";
-import { executionFeatures, type McpServers } from "@mininglamp-oss/octo-harness-protocol";
+import { executionFeatures } from "@mininglamp-oss/octo-harness-protocol";
 import { createAcpAdapter } from "@mininglamp-oss/octo-harness-adapter-acp";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -68,10 +68,6 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
     : [];
   // Inject harness context via a temporary instructions file, without rewriting the user's existing OpenCode config.
   inline.instructions = [...configuredInstructions, instructions];
-  if (req.mcpServers && Object.keys(req.mcpServers).length > 0) {
-    const configuredMcp = isRecord(inline.mcp) ? inline.mcp : {};
-    inline.mcp = { ...configuredMcp, ...openCodeMcpConfig(req.mcpServers) };
-  }
   // Reasoning output and non-interactive tool approval are mandatory parts of
   // this adapter's provider contract.
   const args = ["run", "--format", "json", "--thinking", "--auto"];
@@ -232,7 +228,7 @@ export function createOpenCodeAdapter({ command = "opencode" }: { command?: stri
     }) })
   });
   const options: Parameters<typeof createJsonCliAdapter<OpenCodeNativeEvent>>[0] = {
-    metadata: { type: "opencode", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["session.serialize", "tool.canonical", executionFeatures.MCP_DYNAMIC, executionFeatures.INTERACTION_RESPONSE, executionFeatures.APPROVAL_ASK, executionFeatures.APPROVAL_FULL_ACCESS] },
+    metadata: { type: "opencode", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["session.serialize", "tool.canonical",  executionFeatures.INTERACTION_RESPONSE, executionFeatures.APPROVAL_ASK, executionFeatures.APPROVAL_FULL_ACCESS] },
     probe: () => probeCommand(command), buildCommand: (req: InvokeRequest) => buildOpenCodeCommand(req, command), normalize: normalizeOpenCodeEvent,
     onSuccess: (): CanonicalEvent[] => [{ protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "completed" } }, { protocolVersion: 2, type: "run.completed", payload: {} }]
   };
@@ -246,31 +242,6 @@ export function createOpenCodeAdapter({ command = "opencode" }: { command?: stri
     const normalizer = new OpenCodeEventNormalizer();
     yield* createJsonCliAdapter<OpenCodeNativeEvent>({ ...options, normalize: native => normalizer.normalize(native) }).invoke(request, context);
   } };
-}
-
-/** Convert the canonical transport-neutral shape to OpenCode's native config. */
-export function openCodeMcpConfig(servers: McpServers): Record<string, unknown> {
-  servers = canonicalMcpServers(servers);
-  return Object.fromEntries(Object.entries(servers).map(([name, server]) => [
-    name,
-    server.type === "stdio"
-      ? {
-          type: "local",
-          command: [server.command, ...(server.args ?? [])],
-          ...(server.cwd ? { cwd: server.cwd } : {}),
-          ...(server.env ? { environment: server.env } : {}),
-          enabled: true,
-          ...(server.toolTimeoutMs ? { timeout: server.toolTimeoutMs } : {})
-        }
-      : {
-          type: "remote",
-          url: server.url,
-          ...(server.headers ? { headers: server.headers } : {}),
-          oauth: false,
-          enabled: true,
-          ...(server.toolTimeoutMs ? { timeout: server.toolTimeoutMs } : {})
-        }
-  ]));
 }
 
 function redactOpenCodeInlineConfig(inline: Record<string, unknown>): Record<string, unknown> {

@@ -19,7 +19,7 @@ test('Go/TS strategy hashes match, tampering and missing snapshot cannot compile
  assert.notEqual(snapshots[0].hash,snapshots[1].hash);
 });
 test('optional unknown metadata ignored, known policy budget still enforced',()=>{
- assert.doesNotThrow(()=>assertScenarioPolicy({enabled:true,instructions:[],default_skills:[],future_metadata:true}));
+ assert.doesNotThrow(()=>assertScenarioPolicy({enabled:true,instructions:[],future_metadata:true}));
  assert.throws(()=>assertScenarioPolicy({enabled:true,instructions:['中'.repeat(6000)],default_skills:[]}),/INVALID/);
 });
 test('registry is deterministic, has no fallback, enforces captured selection budget',()=>{
@@ -33,11 +33,11 @@ test('registry is deterministic, has no fallback, enforces captured selection bu
 test('Loop scenarios validate v3 without document selection and match Go policy hashes',()=>{
  const empty={schema:'octo.context-envelope/v3',items:[]};
  for (const [scenario_id,builder_id,hash] of [
-  ['loop_discussion','loop-discussion','sha256:b0b84b16d6d80f6da24ada596fbd314af70f51f5b921ca83e0bef292a697c728'],
-  ['loop_task','loop-task','sha256:acda241c0bccbf581221f07e10aba538e99e39c25f7e113f125b6acca22b4c08'],
+  ['loop_discussion','loop-discussion','sha256:' + createHash('sha256').update(JSON.stringify({instructions:[],scenario_id:'loop_discussion',version:1})).digest('hex')],
+  ['loop_task','loop-task','sha256:' + createHash('sha256').update(JSON.stringify({instructions:[],scenario_id:'loop_task',version:1})).digest('hex')],
  ]) {
   const request={scenario_id,builder_id,builder_version:'1'};
-  const snapshot={scenario_id,version:1,instructions:[],default_skills:[],hash};
+  const snapshot={scenario_id,version:1,instructions:[],hash};
   assert.doesNotThrow(()=>assertScenarioRequest(request,empty));
   assert.throws(()=>assertScenarioRequest({...request,builder_id:'doc-selection'},empty),/UNSUPPORTED/);
   assert.throws(()=>assertScenarioRequest(request,{schema:'octo.context-envelope/v2',items:[]}),/CONTEXT/);

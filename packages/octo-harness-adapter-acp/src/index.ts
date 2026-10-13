@@ -2,7 +2,6 @@ import { canonicalTerminalStatus, providerInputParts } from "@mininglamp-oss/oct
 import { createHash } from "node:crypto";
 import {
   AcpApprovalBridge,
-  canonicalMcpServers,
   AcpTurnNormalizer,
   acpToolTerminalStatus,
   normalizeAcpToolUpdate,
@@ -212,7 +211,7 @@ export function createAcpAdapter(
         let sessionParams = requestedSessionId
           ? acpLoadSessionParams(requestedSessionId, { cwd: request.workdir })
           : acpNewSessionParams({ cwd: request.workdir });
-        sessionParams.mcpServers = acpMcpServers(request);
+        sessionParams.mcpServers = [];
         let sessionRequestId = client.reserveRequestId();
         let sessionResult: JsonRecord = {};
         await observeInput(context, sessionMethod, sessionParams, sessionRequestId, requestedSessionId);
@@ -233,7 +232,7 @@ export function createAcpAdapter(
             resumeFallback = "session_load_not_found";
             sessionMethod = "session/new";
             sessionParams = acpNewSessionParams({ cwd: request.workdir });
-            sessionParams.mcpServers = acpMcpServers(request);
+            sessionParams.mcpServers = [];
             sessionRequestId = client.reserveRequestId();
             await observeInput(context, sessionMethod, sessionParams, sessionRequestId);
             result = await client.request<JsonRecord>(sessionMethod, sessionParams, {
@@ -407,12 +406,6 @@ export function createAcpAdapter(
         await client.close();
       }
   }
-}
-
-function acpMcpServers(request: InvokeRequest): JsonRecord[] {
-  return Object.entries(canonicalMcpServers(request.mcpServers)).map(([name, server]) => server.type === "stdio"
-    ? { name, command: server.command, args: server.args ?? [], env: Object.entries(server.env ?? {}).map(([name, value]) => ({ name, value })) }
-    : { name, type: server.type, url: server.url, headers: Object.entries(server.headers ?? {}).map(([name, value]) => ({ name, value })) });
 }
 
 async function observeInput(

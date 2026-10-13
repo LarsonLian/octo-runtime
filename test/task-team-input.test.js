@@ -7,7 +7,7 @@ import { contextEnvelope, executionContext, resolvedRuntimeSelection } from "./a
 
 const ref = { resource_ref: "task:task-1/materials", task_id: "task-1", task_version: 18, handler_epoch: 3, digest: `sha256:${"a".repeat(64)}` };
 const materials = { refs: [ref], selections: [{ resource_ref: ref.resource_ref, text: JSON.stringify({
-  task: { id: "task-1", row_version: 18, handler_epoch: 3 }, attachments: [{ id: "att-1", version_id: "fv-1" }]
+  task: { task_id: "task-1", row_version: 18, handler_epoch: 3 }, attachments: [{ id: "att-1", version_id: "fv-1" }]
 }) }] };
 const input = { task_id:"task-1",conversation_id:"tconv-1",
   coordination: { team_session_id: "team-session-1", delegation_id: "delegation-1", source_run_id: "source-1", target_alias: "designer" }, payload: {
@@ -42,12 +42,8 @@ test("task handoff rejects local paths, credentials and unavailable attachment v
   assert.throws(() => prepareTeamInput(changed, "coordination.delegate_handoff", materials), /TEAM_TASK_ATTACHMENT_UNAVAILABLE/);
 });
 
-test("frozen Run plan binds separate Loop and Access endpoints for handoff and mailbox", () => {
-  const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "/target-runtime/workspace", approval_mode: "full_access", mcp_servers: {
-    octo_task: { type: "streamable_http", url: "https://loop.test/mcp/task", headers: { Authorization: "Bearer target-only-grant", "X-Space-ID":"space-1", "X-Namespace":"task" }, required: true }
-  } };
-  plan.mcp_servers.octo_team = structuredClone(plan.mcp_servers.octo_task);
-  plan.mcp_servers.octo_team.url="https://access.test/mcp/team";
+test("Team handoff and mailbox preserve facts without carrying tool configuration", () => {
+  const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "/target-runtime/workspace", approval_mode: "full_access" };
   const resource = { namespace: "octo.content", name: "references", payload: { entries: [{ resource_ref: ref.resource_ref,
     resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_id: "task-1", handler_epoch: 3 }
   }] } };
@@ -61,7 +57,7 @@ test("frozen Run plan binds separate Loop and Access endpoints for handoff and m
   assert.doesNotMatch(request.modelInput, /target-only-grant/);
   assert.doesNotMatch(request.controlInstructions, /使用需求附件/);
   assert.equal(request.workdir, "/target-runtime/workspace");
-  assert.match(JSON.stringify(buildCodexCommand(request).args), /octo_team.*default_tools_approval_mode.*approve/);
+  assert.doesNotMatch(JSON.stringify(buildCodexCommand(request).args), /mcp_servers|octo_team/);
   const mailbox = { task_id:input.task_id,conversation_id:input.conversation_id, coordination: input.coordination, message: { child_run_id: "target-run", status: "completed",
     messages: [{ item_id: "item-1", text: "页面已生成" }], task_output_receipts: [{ output_id: "page-1", status: "saved", attachment_id: "att-page", file_id: "file-page", file_version_id: "fv-page" }]
   } };
@@ -71,7 +67,7 @@ test("frozen Run plan binds separate Loop and Access endpoints for handoff and m
   assert.match(wake.modelInput, /fv-page/);
   assert.match(wake.modelInput, /页面已生成/);
   assert.doesNotMatch(wake.modelInput, /target-only-grant/);
-  assert.match(JSON.stringify(buildCodexCommand(wake).args), /octo_team.*default_tools_approval_mode.*approve/);
+  assert.doesNotMatch(JSON.stringify(buildCodexCommand(wake).args), /mcp_servers|octo_team/);
 });
 
 test("Access coordination node carries bounded facts and requires frozen operation identity", () => {

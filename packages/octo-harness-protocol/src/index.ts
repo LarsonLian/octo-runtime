@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
-export { runMcpServerHash } from "./context-hash.js";
 export { contextHash } from "./context-hash.js";
 export { assertContextExtensionsSnapshot } from './context-extensions.js';
 export type { ContextExtensionsSnapshot, ContextExtensionResult } from './generated/protocol-types.js';
+export type { ToolAuthorization, IssuedToolAuthorization } from './generated/protocol-types.js';
 import { assertExperiencePayload } from "./experience.js";
 import { assertModelInputParts, assertImageRecoveryParts, hasImageInput } from "./multimodal.js";
 export { IMAGE_INPUT_LIMITS, IMAGE_INPUT_MIME_TYPES, assertModelInputParts, providerInputParts, hasImageInput, modelPartsFromInput } from "./multimodal.js";
-import { assertAgentSource, assertApprovalMode, assertContextEnvelope, assertJsonValue, assertMcpServers, contextItem } from "./context.js";
-export { APPROVAL_MODES, CONTEXT_SCHEMA, CONTEXT_MAX_BYTES, CONTEXT_MAX_ITEMS, RUNTIME_RUN_CONTRACT, RESOURCE_CONTEXT_KINDS, assertAgentSource, assertApprovalMode, assertContextEnvelope, assertCapabilityResources, assertMcpServers, assertResolvedExecutionPlan, canonicalContext, contextItem, contextResourceReferences, mergeContext } from "./context.js";
+import { assertAgentSource, assertApprovalMode, assertContextEnvelope, assertJsonValue, contextItem } from "./context.js";
+export { APPROVAL_MODES, CONTEXT_SCHEMA, CONTEXT_MAX_BYTES, CONTEXT_MAX_ITEMS, RUNTIME_RUN_CONTRACT, assertAgentSource, assertApprovalMode, assertContextEnvelope, assertMcpServers, assertResolvedExecutionPlan, canonicalContext, contextItem, mergeContext } from "./context.js";
 export { RUNTIME_SELECTION_SCHEMA, assertResolvedRuntimeSelection } from "./runtime-selection.js";
 export { CONTEXT_CATALOG_VERSION, CONTEXT_TYPE_CATALOG, contextTypeDefinition, findContextTypeDefinition, assertContextProcessorCoverage } from "./context-catalog.js";
 export type { ContextStage, ContextOutput, ContextTypeDefinition } from "./context-catalog.js";
@@ -62,18 +62,11 @@ export type {
   ContextReferencesPayload,
   ContextInlineEntry,
   ContextReferenceEntry,
-  ContextResourceIdentity,
-  ResolvedResourceFile,
-  ContextCapabilityReference,
-  ContextCapabilitySelectionPayload,
-  ResolvedCapabilityResource,
-  PreparedSkill,
   ContextEnvelope,
   ContextConfiguration,
   ContextPreparationReceipt,
   ContextApplicationEvidence,
   RunContextProjection,
-  PreparedCapabilityReceipt,
   PreparedMaterialReceipt,
   ContextAdapterPayload,
   ContextModelPayload,
@@ -408,7 +401,6 @@ export const executionFeatures = Object.freeze({
   MESSAGE_APPEND: "message.append",
   TOOL_CANONICAL: "tool.canonical",
   REATTACH: "run.reattach",
-  MCP_DYNAMIC: "tool.mcp.dynamic",
   INTERACTION_RESPONSE: "interaction.response",
   INPUT_IMAGE: "input.image"
 } as const);
@@ -633,16 +625,9 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
   }
   const workspace = contextItem(request.context, "octo.execution", "workspace")?.payload;
   if (workspace?.mode === "fixed" && workspace.path !== request.workdir) throw new TypeError("CONTEXT_PLAN_MISMATCH");
-  if (request.skills !== undefined && (!Array.isArray(request.skills) || request.skills.length > 0)) {
-    if (!Array.isArray(request.skills)) throw new TypeError("SKILL_SCOPE_INVALID");
-    for (const skill of request.skills) {
-      if (!isRecord(skill) || typeof skill.name !== "string" || !skill.name || typeof skill.description !== "string" || !skill.description || typeof skill.path !== "string" || !skill.path.startsWith("/") || typeof skill.invoke !== "boolean") throw new TypeError("SKILL_SCOPE_INVALID");
-    }
-    if (!Array.isArray(request.skillRoots) || request.skillRoots.some(root => typeof root !== "string" || !root.startsWith("/")) || typeof request.providerStateDir !== "string" || !request.providerStateDir.startsWith("/")) throw new TypeError("SKILL_SCOPE_INVALID");
-  }
+  if (["skills", "skillRoots", "providerStateDir", "mcpServers"].some(key => Object.hasOwn(request, key))) throw new TypeError("LOCAL_PLUGIN_CONFIGURATION_REQUIRED");
   if (typeof request.controlInstructions !== "string") throw new TypeError("InvokeRequest.controlInstructions must be a string");
   if (request.runtimeLimits !== undefined) assertRuntimeLimits(request.runtimeLimits);
-  if (request.mcpServers !== undefined) assertMcpServers(request.mcpServers);
   for (const key of ["invocationId", "agentSessionId", "runId", "prompt"] as const) {
     if (typeof request[key] !== "string" || request[key].length === 0) {
       throw new TypeError(`InvokeRequest.${key} must be a non-empty string`);

@@ -1,6 +1,7 @@
-import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
+import type { BusinessServiceBinding } from "./tool-authorizations.js";
 
 const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const RESERVED_PROFILE_NAMES = new Set([
@@ -23,6 +24,7 @@ interface HarnessHomeConfiguration {
 }
 
 interface ProfileConfiguration {
+  business_service_bindings?: unknown;
   schema_version?: unknown;
   profile?: unknown;
   agent_work_url?: unknown;
@@ -46,7 +48,6 @@ interface AdapterExecutionManifest {
   provider_agent_id?: unknown;
   provider_options?: unknown;
   credential_ref?: unknown;
-  managed_workspace?: unknown;
 }
 
 interface AdapterCredentialManifest {
@@ -110,6 +111,7 @@ function loadManagedProfile(home: string, profile: string, options: { discoverLo
     token: requiredString(credential.access_token, "access_token"),
     runtimeId: requiredString(identity.runtime_id, "runtime_id"),
     runtimeName: optionalString(config.runtime_name) ?? "octo-harness-local",
+    businessServiceBindings: readBusinessServiceBindings(config.business_service_bindings),
     storePath: join(profileRoot, "agent-work.db"),
     channelContext: {
       store: "sqlite",
@@ -143,8 +145,7 @@ function readAdapterConfigurations(
     const credentialOptions = credentialRef
       ? readCredentialOptions(profileRoot, credentialRef, adapterType)
       : {};
-    const managedWorkspace = objectValue(execution.managed_workspace);
-    if (managedWorkspace) assertReadyManagedWorkspace(profileRoot, adapterType, managedWorkspace);
+    if (Object.hasOwn(execution, "managed_workspace")) throw new TypeError("LOCAL_PLUGIN_CONFIGURATION_REQUIRED");
     return [adapterType, {
       ...(optionalString(execution.provider_agent_id)
         ? { providerAgentId: optionalString(execution.provider_agent_id) }
@@ -154,9 +155,21 @@ function readAdapterConfigurations(
   }));
 }
 
-function isLoopbackUrl(value: string): boolean {
-  const hostname = new URL(value).hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+function readBusinessServiceBindings(value: unknown): Partial<Record<"task" | "discussion", BusinessServiceBinding>> {
+  if (value === undefined) return {};
+  const entries = objectValue(value);
+  if (!entries || Object.keys(entries).some(key => !["task", "discussion"].includes(key))) throw new TypeError("BUSINESS_SERVICE_BINDING_INVALID");
+  const result: Partial<Record<"task" | "discussion", BusinessServiceBinding>> = {};
+  for (const kind of ["task", "discussion"] as const) {
+    if (entries[kind] === undefined) continue;
+    const binding = objectValue(entries[kind]);
+    if (!binding || Object.keys(binding).some(key => !["serviceSubjectId", "url"].includes(key))
+      || typeof binding.serviceSubjectId !== "string" || !binding.serviceSubjectId || binding.serviceSubjectId.length > 96 || typeof binding.url !== "string") throw new TypeError("BUSINESS_SERVICE_BINDING_INVALID");
+    const url = new URL(binding.url);
+    if (url.username || url.password || url.hash || !["http:", "https:"].includes(url.protocol)) throw new TypeError("BUSINESS_SERVICE_BINDING_INVALID");
+    result[kind] = { serviceSubjectId: binding.serviceSubjectId, url: url.href };
+  }
+  return result;
 }
 
 function readCredentialOptions(profileRoot: string, credentialRef: string, adapterType: string): Record<string, string> {
@@ -169,36 +182,6 @@ function readCredentialOptions(profileRoot: string, credentialRef: string, adapt
   const credential = readJsonRequired<AdapterCredentialManifest>(credentialPath);
   if (credential.schema_version !== 1) throw new Error(`managed ${adapterType} credential is invalid`);
   return stringRecord(credential.provider_options, `${adapterType} credential provider_options`);
-}
-
-function assertReadyManagedWorkspace(
-  profileRoot: string,
-  adapterType: string,
-  guard: Record<string, unknown>
-): void {
-  const activeWhenUrl = optionalString(guard.active_when_url);
-  if (activeWhenUrl && !isLoopbackUrl(activeWhenUrl)) return;
-  const workspace = requiredString(guard.path, `${adapterType} managed_workspace.path`);
-  const root = requiredString(guard.root, `${adapterType} managed_workspace.root`);
-  const managedRootPath = resolve(profileRoot, root);
-  const relativeRoot = relative(profileRoot, managedRootPath);
-  if (relativeRoot.startsWith("..") || isAbsolute(relativeRoot)) {
-    throw new Error(`managed ${adapterType} workspace root resolves outside its profile`);
-  }
-  const managedRoot = realpathSync(managedRootPath);
-  const workspaceStat = lstatSync(workspace);
-  if (workspaceStat.isSymbolicLink()) throw new Error(`managed ${adapterType} workspace must not be a symbolic link`);
-  const actualWorkspace = realpathSync(workspace);
-  const relativeWorkspace = relative(managedRoot, actualWorkspace);
-  if (relativeWorkspace.startsWith("..") || isAbsolute(relativeWorkspace)) {
-    throw new Error(`managed ${adapterType} workspace resolves outside its profile root`);
-  }
-  if (guard.require_empty === true && readdirSync(actualWorkspace).length > 0) {
-    throw new Error(`managed ${adapterType} workspace must be empty`);
-  }
-  if (guard.require_read_only === true && process.platform !== "win32" && (statSync(actualWorkspace).mode & 0o222) !== 0) {
-    throw new Error(`managed ${adapterType} workspace must be read-only`);
-  }
 }
 
 function stringRecord(value: unknown, name: string): Record<string, string> {

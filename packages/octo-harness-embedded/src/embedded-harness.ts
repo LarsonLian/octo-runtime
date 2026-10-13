@@ -342,6 +342,6 @@ function validateTenants(tenants: readonly AuthorizedTenant[]): AuthorizedTenant
 
 function tenantSignature(accountKey: string, tenants: readonly AuthorizedTenant[]): string {
   return JSON.stringify([accountKey, ...tenants
-    .map(tenant => [tenant.id, tenant.serverUrl, tenant.agentWorkUrl])
+    .map(tenant => [tenant.id, tenant.serverUrl, tenant.agentWorkUrl, JSON.stringify(tenant.businessServiceBindings)])
     .sort((left, right) => left[0].localeCompare(right[0]))]);
 }

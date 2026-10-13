@@ -14,8 +14,16 @@ Octo Harness 是 Agent Worker 的执行节点，不是业务调度器。统一�
 | AutoPilot schedule/misfire | AutoPilot service |
 | Webhook endpoint/filter/event | Webhook service |
 | Provider process、invocation、native event translation | Octo Harness |
+| Skill、Plugin、MCP、Connector 安装与配置 | 本地用户或原生 Runtime |
+| OKF 业务记忆 | Loop service |
 
 Harness 不能根据输入猜测“这是 Chat 还是 Task”，也不能创建业务 Task。上游只提交 namespace、Agent、session key、trigger occurrence 与输入。
+
+Harness 不接收云端插件包、安装路径、启动命令或 MCP 配置。适配器直接调用已经完成本地配置的原生 Runtime；Harness 不替用户修改插件配置。工作目录准备仍由 Harness 执行，但不创建插件物化目录或工具 CLI 包装器。
+
+业务服务提交的 `tool_authorizations` 只声明服务主体、允许操作和对象范围。Worker 根据 Run 身份、租约与 fencing 签发短期授权；Runtime 从独立授权接口获取凭据。平台材料读取与产物归档的地址来自本地 `business_service_bindings`，其他授权通过宿主接收器交给本地已配置的工具。授权不进入 Context 编译结果或模型输入。
+
+本地连接只消费 Harness 实现的具体操作，不消费整个服务主体的授权。同一 Loop 主体仍有知识或业务动作授权时，Runtime 必须将剩余操作交给本地接收器；接收器缺失时拒绝 Run，不以已配置业务连接作为授权已交付的证据。
 
 ## 统一对象
 

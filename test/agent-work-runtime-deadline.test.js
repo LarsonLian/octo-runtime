@@ -1,3 +1,4 @@
+import { toolIntent, issuedGrant } from "./tool-authorizations-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -17,6 +18,7 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task 
   const timers = new Set();
   const server = createServer(async (request, response) => {
     for await (const _chunk of request) { /* Consume HTTP body. */ }
+    if (request.url === "/v1/runtime/context/authorizations/resolve") { response.writeHead(200, { "Content-Type": "application/json" }); response.end(JSON.stringify({ data: { authorizations: [issuedGrant()] } })); return; }
     if (request.url === "/v1/runtime/context/prepare" || request.url === "/task-mcp") {
       const timer = setTimeout(() => {
         timers.delete(timer);
@@ -68,10 +70,10 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task 
           name: "output.txt", media_type: "text/plain", size: content.length,
           sha256: createHash("sha256").update(content).digest("hex"), role: "output" }]
       }));
-      plan.mcp_servers = { octo_task: { type: "streamable_http", url: `http://127.0.0.1:${server.address().port}/task-mcp` } };
+      envelope.agent_run_request.tool_authorizations = [toolIntent];
     }
     runtime = new AgentWorkRuntime({ profile: "default", baseUrl: `http://127.0.0.1:${server.address().port}`,
-      token: "fixture-only", runtimeName: "runtime-deadline", storePath: join(directory, "state.db"),
+      ...(task ? { businessServiceBindings: { task: { serviceSubjectId: "loop", url: `http://127.0.0.1:${server.address().port}/task-mcp` } } } : {}), token: "fixture-only", runtimeName: "runtime-deadline", storePath: join(directory, "state.db"),
       ...(compactionPort ? { createMaterialCompactionPort: compactionPort } : {}) }, {
       list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [], available: true }],
       cancel: async () => ({ cancelled: true }),

@@ -16,7 +16,7 @@ const baseRequest = { protocolVersion: 2,
   agentSource: "provisioned", agentConfig: {}
 };
 
-test("dynamic MCP contract accepts stdio and Streamable HTTP servers", () => {
+test("local transports validate while remote execution cannot configure MCP", () => {
   const mcpServers = {
     local: {
       type: "stdio",
@@ -36,8 +36,11 @@ test("dynamic MCP contract accepts stdio and Streamable HTTP servers", () => {
   };
 
   assert.doesNotThrow(() => assertMcpServers(mcpServers));
-  assert.doesNotThrow(() => assertInvokeRequest({ ...baseRequest, mcpServers }));
-  assert.equal(executionFeatures.MCP_DYNAMIC, "tool.mcp.dynamic");
+  assert.throws(() => assertInvokeRequest({ ...baseRequest, mcpServers }), /LOCAL_PLUGIN_CONFIGURATION_REQUIRED/);
+  for (const [key, value] of [["skills", []], ["skillRoots", []], ["providerStateDir", "/tmp"]]) {
+    assert.throws(() => assertInvokeRequest({ ...baseRequest, [key]: value }), /LOCAL_PLUGIN_CONFIGURATION_REQUIRED/);
+  }
+  assert.equal(executionFeatures.MCP_DYNAMIC, undefined);
 });
 
 test("dynamic MCP contract rejects unknown transports, fields, names, and malformed URLs", () => {

@@ -1,11 +1,9 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { access, chmod, mkdir, open, readFile, rename, rm, rmdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const OPENCLAW_RUNNER_AGENT_ID_PREFIX = "octo-runner-run-";
-const OPENCLAW_AGENT_ID_MAX_LENGTH = 64;
 const OPENCLAW_AGENT_ID = /^[a-z0-9_][a-z0-9_-]{0,63}$/;
 const RESERVED_PROFILE_NAMES = new Set([
   "config.json",
@@ -60,13 +58,6 @@ export interface AdapterExecutionConfiguration {
   provider_agent_id?: string;
   provider_options: Record<string, string>;
   credential_ref?: string;
-  managed_workspace?: {
-    path: string;
-    root: string;
-    active_when_url?: string;
-    require_empty?: boolean;
-    require_read_only?: boolean;
-  };
 }
 
 export interface OpenClawGatewayCredential {
@@ -160,24 +151,6 @@ export function harnessPaths(home: string, profile: string): HarnessPaths {
       : join(absoluteHome, "sockets", "octo-harness-daemon.sock"),
     logs: join(absoluteHome, "logs")
   };
-}
-
-export function defaultOpenClawRunnerAgentId(runtimeId: string): string {
-  const identity = runtimeId.startsWith("runtime_") ? runtimeId.slice("runtime_".length) : runtimeId;
-  const direct = `${OPENCLAW_RUNNER_AGENT_ID_PREFIX}${identity}`;
-  if (isValidOpenClawAgentId(direct)) return direct;
-
-  const slug = identity
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  const digest = createHash("sha256").update(runtimeId).digest("hex").slice(0, 10);
-  const maxSlugLength = OPENCLAW_AGENT_ID_MAX_LENGTH
-    - OPENCLAW_RUNNER_AGENT_ID_PREFIX.length
-    - digest.length
-    - 1;
-  const shortenedSlug = slug.slice(0, maxSlugLength).replace(/-+$/g, "");
-  return `${OPENCLAW_RUNNER_AGENT_ID_PREFIX}${shortenedSlug}-${digest}`;
 }
 
 export function isValidOpenClawAgentId(value: string): boolean {
