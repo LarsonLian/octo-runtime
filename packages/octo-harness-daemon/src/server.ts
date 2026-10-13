@@ -344,10 +344,15 @@ export async function startDaemonServer({
     // A connection id scopes transport evidence only. AgentRun, AgentSession and
     // invocation ids retain their domain meanings and may span other transports.
     const connectionId = `conn_${randomUUID()}`;
+    const input = createInterface({ input: socket });
+    // A client may disconnect before an RPC finishes; close only its transport.
+    socket.on("error", () => socket.destroy());
+    input.on("error", () => socket.destroy());
     socket.once("close", () => {
       connections.delete(socket);
+      input.close();
     });
-    createInterface({ input: socket }).once("line", (line) => {
+    input.once("line", (line) => {
       void handleRequestLine({
         line,
         socket,
@@ -475,7 +480,8 @@ async function handleRequestLine({
       runtime,
       agentWorkSupervisor
     });
-    socket.end(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result })}\n`);
+    if (!socket.destroyed && socket.writable)
+      socket.end(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result })}\n`);
   } catch (error) {
     console.error("daemon control request failed", {
       connection_id: connectionId,
@@ -484,13 +490,14 @@ async function handleRequestLine({
       code: (error as NodeJS.ErrnoException).code
     });
     const rpcError = error as NodeJS.ErrnoException;
-    socket.end(
-      `${JSON.stringify({
-        jsonrpc: "2.0",
-        id: request?.id,
-        error: { message: errorMessage(error), code: rpcError.code }
-      })}\n`
-    );
+    if (!socket.destroyed && socket.writable)
+      socket.end(
+        `${JSON.stringify({
+          jsonrpc: "2.0",
+          id: request?.id,
+          error: { message: errorMessage(error), code: rpcError.code }
+        })}\n`
+      );
   }
 }
 
