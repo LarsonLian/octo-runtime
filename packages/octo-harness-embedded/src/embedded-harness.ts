@@ -213,7 +213,7 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
             tenant,
             profile: profilePaths(account, profile),
             machine,
-            getHumanToken: input.getHumanToken,
+            getHumanToken: input.getHumanToken.bind(input),
             fetchImplementation: this.#options.fetchImplementation,
             signal: abort.signal
           });

@@ -190,7 +190,11 @@ test("embedded SDK starts and cooperatively stops the shared daemon core", { tim
         serverUrl: "https://im-test.deepminer.com.cn",
         agentWorkUrl: "https://im-test.deepminer.com.cn/agentworker/api"
       })),
-      getHumanToken: () => "human-smoke"
+      getHumanToken() {
+        assert.equal(this.subject.id, "uid-smoke");
+        assert.equal(this.tenants.length, 2);
+        return "human-smoke";
+      }
     });
     assert.equal(health.local.ready, true);
     assert.equal(health.profiles.length, 2);
