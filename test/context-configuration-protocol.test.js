@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
-  CONTEXT_TYPE_CATALOG, CONTEXT_CATALOG_VERSION, assertContextConfiguration,
-  assertContextEnvelope, assertContextProcessorCoverage, canonicalContext,
+  CONTEXT_TYPE_CATALOG, assertContextConfiguration,
+  assertContextEnvelope, canonicalContext,
   contextTypeDefinition, resolveContextConfiguration
 } from "../packages/octo-harness-protocol/dist/index.js";
 
@@ -29,26 +29,20 @@ for (const fixture of fixtures) {
 }
 
 test("catalog covers every schema branch, including grouped capability namespaces", () => {
-  const keys = schema.definitions.ContextItem.allOf.flatMap(branch =>
+  const keys = schema.definitions.ContextItem.allOf.filter(branch => branch.if.properties.name).flatMap(branch =>
     (branch.if.properties.namespace.enum ?? [branch.if.properties.namespace.const]).map(namespace => `${namespace}/${branch.if.properties.name.const}`));
   assert.deepEqual(CONTEXT_TYPE_CATALOG.map(item => `${item.namespace}/${item.name}`).sort(), keys.sort());
   for (const item of CONTEXT_TYPE_CATALOG) {
     assert.ok(schema.definitions[item.schemaRef.split("/").at(-1)]);
-    assert.ok(Object.isFrozen(item.stages));
     assert.ok(Object.isFrozen(item));
   }
-  assert.equal(CONTEXT_CATALOG_VERSION, "octo.context-catalog/v3");
   assert.throws(() => contextTypeDefinition("unknown", "selection"), /CONTEXT_TYPE_UNSUPPORTED/);
 });
 
-test("processor coverage enforces independent execution and material types", () => {
-  const context = { schema: "octo.context-envelope/v3", items: [
-    {namespace:"octo.content", name:"inline", payload:{entries:[{text:"material"}]}},
-    { namespace: "octo.runtime", name: "selection", payload: {mode:"explicit",runtime_id:"device"} }
-  ] };
-  assert.doesNotThrow(() => assertContextProcessorCoverage(context, "compile", new Set(["octo.content/inline", "octo.runtime/selection"])));
-  assert.throws(() => assertContextProcessorCoverage(context, "dispatch", new Set()), /CONTEXT_PROCESSOR_UNAVAILABLE: dispatch: octo.runtime\/selection/);
-  assert.throws(() => assertContextProcessorCoverage(context, "compile", new Set()), /CONTEXT_PROCESSOR_UNAVAILABLE: compile/);
+test("business material types cannot become persistent execution defaults", () => {
+  assert.equal(contextTypeDefinition("octo.content", "inline").persistent, false);
+  assert.equal(contextTypeDefinition("octo.content", "references").persistent, false);
+  assert.equal(contextTypeDefinition("octo.runtime", "selection").persistent, true);
 });
 
 test("configuration rejects unknown fields and persistent trusted controls", () => {

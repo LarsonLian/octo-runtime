@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 import { assertInvokeRequest, assertResolvedExecutionPlan } from "@mininglamp-oss/octo-harness-protocol";
-import { prepareRunContext } from "../packages/octo-harness-context-builder/dist/context-preparation.js";
+import { prepareRunContext } from "@mininglamp-oss/octo-harness-adapter-host";
 import { AgentWorkStore } from "../packages/octo-harness-worker-access/dist/agent-work-store.js";
 
 const request = {

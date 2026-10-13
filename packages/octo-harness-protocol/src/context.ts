@@ -7,7 +7,6 @@ import type {
   ResolvedExecutionPlan
 } from "./generated/protocol-types.js";
 import { RUNTIME_SELECTION_SCHEMA } from "./runtime-selection.js";
-import { assertContextExtensionsSnapshot } from "./context-extensions.js";
 
 export const CONTEXT_SCHEMA = "octo.context-envelope/v3" as const;
 export const RUNTIME_RUN_CONTRACT = Object.freeze({
@@ -137,11 +136,8 @@ export function assertResolvedExecutionPlan(
     "required_execution_features",
     "runtime_limits",
     "provider_compatibility",
-    "context_extensions",
     "envs"
   ]);
-  if (value.context_extensions !== undefined)
-    assertContextExtensionsSnapshot(value.context_extensions);
   if (value.envs !== undefined) assertContextEnvs(value.envs);
   assertAgentSource(value.agent_source);
   text(value.adapter_type);

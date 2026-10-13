@@ -1,4 +1,5 @@
 import test from "node:test";
+import { renderModelContexts } from "@mininglamp-oss/octo-harness-protocol";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -128,7 +129,8 @@ test("a schema2 run consumes frozen Context without disrupting heartbeat livenes
   assert.equal(request.approvalMode, "ask");
   assert.equal(request.controlInstructions, "Keep runtime work scoped.");
   assert.equal(request.prompt, "[Current message]\nKeep the connection healthy");
-  assert.match(request.modelInput, /Frozen background for the liveness run/);
+  assert.equal(request.modelInput, request.prompt);
+  assert.match(renderModelContexts(request.context), /Frozen background for the liveness run/);
   assert.doesNotMatch(request.prompt, /Frozen background/);
   assert.equal(request.runMetadata.runtimeId, "runtime-liveness");
   assert.equal(request.context.schema, "octo.context-envelope/v3");

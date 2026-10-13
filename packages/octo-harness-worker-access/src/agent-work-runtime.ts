@@ -3,23 +3,8 @@ import type {
   HostedAdapterMetadata
 } from "@mininglamp-oss/octo-harness-adapter-host";
 import { DEFAULT_RUNTIME_LIMITS } from "@mininglamp-oss/octo-harness-adapter-host";
-import { createClaudeMaterialCompactionPort } from "@mininglamp-oss/octo-harness-context-builder/anthropic-material-compaction";
-import {
-  FileMaterialCompactionStore,
-  compactContextMaterials,
-  type MaterialCompactionPort
-} from "@mininglamp-oss/octo-harness-context-builder/context-compaction";
-import {
-  prepareRunContext,
-  type PreparedRunContext
-} from "@mininglamp-oss/octo-harness-context-builder/context-preparation";
-import { resolveRuntimeInputImages } from "@mininglamp-oss/octo-harness-context-builder/input-images";
-import { createCodexMaterialCompactionPort } from "@mininglamp-oss/octo-harness-context-builder/responses-material-compaction";
-import {
-  assertFrozenContextPlan,
-  compileRunContext,
-  type CompiledRunContext
-} from "@mininglamp-oss/octo-harness-context-builder/run-context";
+import { prepareRunContext, type PreparedRunContext } from "@mininglamp-oss/octo-harness-adapter-host";
+import { resolveRuntimeInputImages } from "./input-images.js";
 import type {
   AgentConfig,
   CanonicalEvent,
@@ -31,7 +16,6 @@ import type {
   ProviderSession,
   ResolvedExecutionPlan,
   ResolvedRuntimeSelection,
-  ScenarioPolicySnapshot,
   ScenarioRequest,
   ToolAuthorization
 } from "@mininglamp-oss/octo-harness-protocol";
@@ -42,6 +26,9 @@ import {
   assertResolvedExecutionPlan,
   assertResolvedRuntimeSelection,
   contextItem,
+  contextHash,
+  contextControlInstructions,
+  assertFrozenContextPlan,
   failurePayload,
   modelPartsFromInput
 } from "@mininglamp-oss/octo-harness-protocol";
@@ -54,12 +41,11 @@ import { performance } from "node:perf_hooks";
 import WebSocket from "ws";
 import type { ReplayEvent } from "./agent-work-store.js";
 import { AgentWorkStore, StreamGapError } from "./agent-work-store.js";
-import { ContextPipeline } from "./context-pipeline.js";
+
 import { recordContextPreparation } from "./context-preparation-receipt.js";
 import { collectRuntimeDeviceInfo } from "./device-info.js";
 import { REQUEST_ID_HEADER, createRequestId, responseRequestId } from "./request-id.js";
-import { scenarioInstructions } from "./scenario-context.js";
-import { prepareTaskMaterials, type PreparedTaskMaterials } from "./task-materials.js";
+
 import {
   businessServiceConnections,
   resolveToolAuthorizations,
@@ -164,12 +150,7 @@ export interface AgentWorkRuntimeOptions {
   /** Maximum provider invocations admitted concurrently on this device. */
   maxConcurrentRuns?: number;
   reconcileMs?: number;
-  /** 仅由可信宿主提供已资格验证的无工具摘要/精确计量能力，不能从 Context 传入。 */
-  createMaterialCompactionPort?: (request: {
-    envelope: ExecutionEnvelope;
-    compiled: CompiledRunContext;
-    signal: AbortSignal;
-  }) => Promise<MaterialCompactionPort>;
+
 }
 
 export type RuntimeConnectionState =
@@ -215,7 +196,7 @@ export interface RunAdmission {
 /** Immutable execution description received from Agent Work before local mapping. */
 export interface ExecutionEnvelope {
   schema_version: 7;
-  internal_context?: { scenario_policy?: ScenarioPolicySnapshot };
+  internal_context?: Record<string, unknown>;
   effective_context: ContextEnvelope;
   context_configuration_version: number;
   resolved_execution_plan: ResolvedExecutionPlan;
@@ -1474,201 +1455,50 @@ export class AgentWorkRuntime {
           );
         if (hasImages && !localCapabilities?.has("input.image"))
           throw new TypeError("UNSUPPORTED_INPUT_MODALITY");
-        const materialEntries = contextItem(
-          executionEnvelope.effective_context,
-          "octo.content",
-          "references"
-        )?.payload.entries;
         store.upsertRun({
-          runId: command.run_id,
-          agentSessionId: executionEnvelope.agent_session_id,
-          commandId: command.command_id,
-          leaseId,
-          fencingToken
+          runId: command.run_id, agentSessionId: executionEnvelope.agent_session_id,
+          commandId: command.command_id, leaseId, fencingToken
         });
-        // 完成执行绑定和 Adapter 能力检查后，为统一管线注入宿主能力；封存确认前不调用模型。
-        const pipeline = new ContextPipeline({
-          scenarioPolicyHash: executionEnvelope.internal_context?.scenario_policy?.hash,
-          trustedInstructions: [
-            ...(stringValue(asRecord(executionEnvelope.agent_revision.definition).instructions)
-              ? [
-                  {
-                    text: stringValue(
-                      asRecord(executionEnvelope.agent_revision.definition).instructions
-                    )!,
-                    source: "revision" as const
-                  }
-                ]
-              : []),
-            ...scenarioInstructions(
-              executionEnvelope.agent_run_request.scenario,
-              executionEnvelope.internal_context?.scenario_policy,
-              executionEnvelope.agent_run_request.context
-            )
-          ],
-          prepareInput: async (signal) => {
-            const grants = await resolveToolAuthorizations(
-              executionEnvelope.agent_run_request.tool_authorizations ?? [],
-              {
-                baseUrl: this.#options.baseUrl,
-                headers: this.#headers(true, createRequestId()),
-                runId: command.run_id,
-                leaseId,
-                fencingToken,
-                signal
-              }
-            );
-            services = businessServiceConnections(grants, this.#options.businessServiceBindings);
-            const nativeGrants = unconsumedToolAuthorizations(
-              grants,
-              this.#options.businessServiceBindings
-            );
-            if (nativeGrants.length && !this.#options.receiveToolAuthorizations)
-              throw new TypeError("TOOL_AUTHORIZATION_RECEIVER_UNSUPPORTED");
-            if (this.#options.receiveToolAuthorizations && nativeGrants.length)
-              await this.#options.receiveToolAuthorizations(nativeGrants, {
-                runId: command.run_id,
-                leaseId,
-                fencingToken,
-                signal
-              });
-            return resolveRuntimeInputImages(input, {
-              baseUrl: this.#options.baseUrl,
-              headers: this.#headers(true, createRequestId()),
-              runId: command.run_id,
-              leaseId,
-              fencingToken,
-              signal
-            });
-          },
-          prepareCapabilities: async (signal) => {
-            assertFrozenContextPlan(
-              executionEnvelope.effective_context,
-              executionEnvelope.resolved_execution_plan
-            );
-            return prepareRunContext(executionEnvelope.resolved_execution_plan, {
-              stateRoot: join(dirname(this.#options.storePath), "context"),
-              agentSessionId: executionEnvelope.agent_session_id,
-              agentId: executionEnvelope.agent_run_request.agent_id,
-              store,
-              signal
-            });
-          },
-          prepareMaterials: (signal) =>
-            prepareTaskMaterials(executionEnvelope.effective_context, services.task, signal, {
-              runId: command.run_id,
-              store
-            }),
-          prepareContinuity: () => Promise.resolve(undefined),
-          ...(this.#options.createMaterialCompactionPort ||
-          ["codex", "claude-code"].includes(adapterTypeForContext)
-            ? {
-                prepareCompiled: async (
-                  compiled: CompiledRunContext,
-                  signal: AbortSignal
-                ): Promise<CompiledRunContext> => {
-                  if (!compiled.modelContent) return compiled;
-                  const port = this.#options.createMaterialCompactionPort
-                    ? await this.#options.createMaterialCompactionPort({
-                        envelope: executionEnvelope,
-                        compiled,
-                        signal
-                      })
-                    : await (
-                        adapterTypeForContext === "claude-code"
-                          ? createClaudeMaterialCompactionPort
-                          : createCodexMaterialCompactionPort
-                      )({
-                        model: compiled.executionPlan?.model,
-                        protectedInput: executionInputText(input),
-                        instructions: compiled.controlInstructions,
-                        signal
-                      });
-                  const sourceRefs = Array.isArray(materialEntries)
-                    ? materialEntries.map((entry) => {
-                        const value = asRecord(entry);
-                        return { resource_ref: value.resource_ref, type: value.type };
-                      })
-                    : [];
-                  const compacted = await compactContextMaterials({
-                    runId: command.run_id,
-                    material: compiled.modelContent,
-                    signal,
-                    port,
-                    sourceRefs,
-                    protectedIdentity: createHash("sha256")
-                      .update(
-                        JSON.stringify({
-                          input,
-                          instructions: compiled.controlInstructions,
-                          plan: compiled.executionPlan,
-                          internalContext: executionEnvelope.internal_context,
-                          providerSession: executionEnvelope.provider_session
-                        })
-                      )
-                      .digest("hex"),
-                    store: new FileMaterialCompactionStore(
-                      join(dirname(this.#options.storePath), "context", "compactions")
-                    )
-                  });
-                  return {
-                    ...compiled,
-                    modelContent: compacted.material,
-                    ...(port.measurementMode === "provider_native"
-                      ? {
-                          modelCapacity: {
-                            model: port.model,
-                            contextWindow: port.contextWindow,
-                            outputReserveTokens: port.outputReserveTokens,
-                            source: port.capacitySource ?? "trusted_host",
-                            management: "provider_native" as const
-                          }
-                        }
-                      : {}),
-                    ...(compacted.receipt ? { materialCompaction: compacted.receipt } : {})
-                  };
-                }
-              }
-            : {}),
-          seal: (receipt, signal) =>
-            recordContextPreparation(receipt, {
-              baseUrl: this.#options.baseUrl,
-              headers: this.#headers(true, createRequestId()),
-              runId: command.run_id,
-              leaseId,
-              fencingToken,
-              signal
-            })
-        });
-        const prepared = await pipeline.prepare(
-          executionEnvelope.effective_context,
-          executionEnvelope.resolved_execution_plan,
-          { runId: command.run_id, leaseId, fencingToken },
-          controller.signal
+        const grants = await resolveToolAuthorizations(
+          executionEnvelope.agent_run_request.tool_authorizations ?? [], {
+            baseUrl: this.#options.baseUrl,
+            headers: this.#headers(true, createRequestId()),
+            runId: command.run_id, leaseId, fencingToken, signal: controller.signal
+          }
         );
+        services = businessServiceConnections(grants, this.#options.businessServiceBindings);
+        const nativeGrants = unconsumedToolAuthorizations(grants, this.#options.businessServiceBindings);
+        if (nativeGrants.length && !this.#options.receiveToolAuthorizations)
+          throw new TypeError("TOOL_AUTHORIZATION_RECEIVER_UNSUPPORTED");
+        if (this.#options.receiveToolAuthorizations && nativeGrants.length)
+          await this.#options.receiveToolAuthorizations(nativeGrants, {
+            runId: command.run_id, leaseId, fencingToken, signal: controller.signal
+          });
+        const preparedInput = await resolveRuntimeInputImages(input, {
+          baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
+          runId: command.run_id, leaseId, fencingToken, signal: controller.signal
+        });
+        const preparedWorkspace = await prepareRunContext(executionEnvelope.resolved_execution_plan, {
+          stateRoot: join(dirname(this.#options.storePath), "context"),
+          agentSessionId: executionEnvelope.agent_session_id,
+          agentId: executionEnvelope.agent_run_request.agent_id, store, signal: controller.signal
+        });
+        await recordContextPreparation({
+          ...preparedWorkspace.receipt,
+          context_hash: contextHash(executionEnvelope.effective_context),
+          run_id: command.run_id, lease_id: leaseId, fencing_token: fencingToken
+        }, {
+          baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
+          runId: command.run_id, leaseId, fencingToken, signal: controller.signal
+        });
         throwIfAcceptingAborted(controller.signal);
         this.#assertCurrentLifecycle(epoch);
-        const mapped = mapExecutionEnvelope(
-          {
-            ...executionEnvelope,
-            agent_run_request: { ...executionEnvelope.agent_run_request, input: prepared.input }
-          },
-          prepared.materials,
-          prepared.capabilities,
-          prepared.compiled
-        );
+        const mapped = mapExecutionEnvelope({
+          ...executionEnvelope,
+          agent_run_request: { ...executionEnvelope.agent_run_request, input: preparedInput }
+        }, preparedWorkspace);
         request = mapped.request;
-        // 归档必须使用实际准备并封存的 MCP（含临时 Run grant），原始命令尚未包含资源组件。
         request.runMetadata ??= {};
-        request.runMetadata.contextCompilation = {
-          compiler_version: prepared.receipt.compiler_version,
-          catalog_version: prepared.receipt.catalog_version,
-          context_hash: prepared.receipt.context_hash,
-          compiled_hash: prepared.receipt.compiled_hash,
-          run_id: command.run_id,
-          lease_id: leaseId,
-          fencing_token: fencingToken
-        };
         // profile 由已认证的本地 Runtime 连接决定，不接受 AgentRun 自报的归属。
         if (this.#options.profile) request.runMetadata.profile = this.#options.profile;
         request.runMetadata.runtimeId = this.#runtimeId;
@@ -2096,9 +1926,7 @@ export function accumulateFinalText(current: string, event: CanonicalEvent): str
 /** Map the supplied unified context into an adapter InvokeRequest. No chat history is fetched or stored. */
 export function mapExecutionEnvelope(
   envelope: ExecutionEnvelope,
-  taskMaterials?: PreparedTaskMaterials,
-  preparedContext?: PreparedRunContext,
-  preparedCompilation?: CompiledRunContext
+  preparedContext?: PreparedRunContext
 ): { adapterType: string; request: InvokeRequest } {
   assertExecutionEnvelopeContract(envelope);
   if (
@@ -2131,8 +1959,8 @@ export function mapExecutionEnvelope(
   if (envelope.continuity_mode === "fresh" && envelope.provider_session) {
     throw new TypeError("fresh execution envelope must not carry provider_session");
   }
-  const profile = preparedCompilation?.executionPlan ?? executionProfile(envelope);
-  const preparedResources = preparedCompilation?.preparedWorkspace ?? preparedContext;
+  const profile = executionProfile(envelope);
+  const preparedResources = preparedContext;
   const definition = asRecord(envelope.agent_revision.definition);
   const adapterType = executionAdapterType(envelope);
   const agentConfig: AgentConfig = {
@@ -2147,9 +1975,7 @@ export function mapExecutionEnvelope(
   const content = envelope.agent_run_request.input;
   if (Object.hasOwn(content, "context_refs") || Object.hasOwn(content, "channel_context"))
     throw new TypeError("LEGACY_CONTEXT_INPUT_REJECTED");
-  const compiled =
-    preparedCompilation ?? compileRunContext(envelope.effective_context, taskMaterials?.selections);
-  const compiledModelContent = compiled.modelContent;
+
   const displayPrompt = renderDisplayExecutionInputPrompt(content);
   const reply = asRecord(content.reply_to);
   const quotedText = stringValue(reply.text)
@@ -2157,7 +1983,7 @@ export function mapExecutionEnvelope(
     : "";
   const imageParts = modelPartsFromInput(
     content,
-    [compiledModelContent, quotedText, "[Current message]"].filter(Boolean).join("\n\n")
+    [quotedText, "[Current message]"].filter(Boolean).join("\n\n")
   );
   const context = {
     schemaVersion: envelope.schema_version,
@@ -2181,8 +2007,7 @@ export function mapExecutionEnvelope(
       ? {}
       : { sessionGeneration: envelope.session_generation }),
     ...(envelope.provider_epoch === undefined ? {} : { providerEpoch: envelope.provider_epoch }),
-    ...(envelope.continuity_mode === undefined ? {} : { continuityMode: envelope.continuity_mode }),
-    ...(taskMaterials ? { taskMaterials: structuredClone(taskMaterials.refs) } : {})
+    ...(envelope.continuity_mode === undefined ? {} : { continuityMode: envelope.continuity_mode })
   };
   return {
     adapterType,
@@ -2200,25 +2025,19 @@ export function mapExecutionEnvelope(
         ? {}
         : { continuityMode: envelope.continuity_mode }),
       prompt: displayPrompt,
-      modelInput: [compiledModelContent, displayPrompt].filter(Boolean).join("\n\n"),
+      modelInput: displayPrompt,
       ...(imageParts ? { modelInputParts: imageParts } : {}),
       workdir,
-      controlInstructions: preparedCompilation
-        ? compiled.controlInstructions
-        : [stringValue(definition.instructions), compiled.controlInstructions]
-            .filter(Boolean)
-            .join("\n\n"),
+      controlInstructions: [stringValue(definition.instructions), contextControlInstructions(envelope.effective_context)]
+        .filter(Boolean).join("\n\n"),
       context: structuredClone(envelope.effective_context),
-      runMetadata: {
-        ...context,
-        ...(compiled.modelCapacity ? { contextCapacity: compiled.modelCapacity } : {})
-      },
+      runMetadata: context,
       approvalMode: profile.approval_mode,
       ...(envelope.provider_session ? { providerSession: envelope.provider_session } : {}),
       ...(Object.keys(runtimeLimits).length > 0 ? { runtimeLimits } : {}),
       agentConfig: {
         ...agentConfig,
-        ...(compiled.modelCapacity?.model ? { model: compiled.modelCapacity.model } : {}),
+
         workdir
       }
     }

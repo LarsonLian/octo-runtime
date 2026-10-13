@@ -53,7 +53,7 @@ export type ProtocolMode2 = "native" | "canonical";
 export type HostControl =
   | {
       type: "evidence";
-      name: "session" | "context.applied";
+      name: "session";
       payload: {
         [k: string]: unknown;
       };
@@ -232,11 +232,6 @@ export type ResolvedExecutionPlan = ResolvedExecutionPlan1;
  */
 export type AgentSource = "preset" | "provisioned";
 /**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextExtensionResult".
- */
-export type ContextExtensionResult = ContextExtensionResult1;
-/**
  * Display-only fields permitted by assertApprovalRequest. Values remain inert provider metadata and do not redefine commands, permissions or grant scope.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -349,7 +344,6 @@ export interface CanonicalEventWire {
   protocolVersion: 2;
   type:
     | "session.update"
-    | "context.applied"
     | "usage.update"
     | "model_step.started"
     | "model_step.finished"
@@ -2017,29 +2011,15 @@ export interface RunContextProjection {
     approval_mode: "ask" | "assisted" | "full_access";
     workspace_mode: "fixed" | "random" | "none";
   };
-  scenario?: ScenarioProjection;
 }
 /**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ScenarioProjection".
- */
-export interface ScenarioProjection {
-  scenario_id: string;
-  policy_version: number;
-  policy_hash: string;
-  [k: string]: unknown;
-}
-/**
- * Durable Runtime preparation evidence, sealed before Adapter invocation and fenced by the active Run lease. Private paths must not be exposed by product projections.
+ * Workspace preparation for the current Run lease and frozen execution Context; it does not prove Provider use of model context.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextPreparationReceipt".
  */
 export interface ContextPreparationReceipt {
-  compiler_version: "octo.context-compiler/v4";
-  catalog_version: "octo.context-catalog/v3";
   context_hash: string;
-  compiled_hash: string;
   run_id: string;
   lease_id: string;
   fencing_token: number;
@@ -2047,74 +2027,9 @@ export interface ContextPreparationReceipt {
   workspace_path: string;
   provider_state_dir: string;
   /**
-   * @maxItems 32
-   */
-  materials: PreparedMaterialReceipt[];
-  continuity?: ChannelContextSnapshotRef;
-  /**
    * @maxItems 256
    */
   warnings: string[];
-  scenario_policy_hash?: string;
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "PreparedMaterialReceipt".
- */
-export interface PreparedMaterialReceipt {
-  resource_ref: string;
-  task_id: string;
-  task_version: number;
-  handler_epoch: number;
-  digest: string;
-}
-/**
- * Traceable reference to frozen provider-visible context. The primary and recovery hashes cover their exact rendered bytes.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ChannelContextSnapshotRef".
- */
-export interface ChannelContextSnapshotRef {
-  snapshot_id: string;
-  scope_key: string;
-  consumer_key: string;
-  session_generation: number;
-  /**
-   * Original descriptor generation when recovery promotes the effective consumer generation.
-   */
-  source_session_generation?: number;
-  trigger_message_id: string;
-  trigger_seq?: number;
-  serializer_version: string;
-  rendered_sha256: string;
-  completeness: "complete" | "partial" | "unavailable";
-  /**
-   * Hash of the frozen bounded cold projection used when provider resume falls back to a fresh session.
-   */
-  recovery_rendered_sha256?: string;
-  /**
-   * Completeness of the frozen cold recovery projection.
-   */
-  recovery_completeness?: "complete" | "partial" | "unavailable";
-}
-/**
- * Adapter evidence emitted only after Provider accepts the invocation. No plugin installation evidence, private paths, credentials or instruction text are permitted.
- *
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextApplicationEvidence".
- */
-export interface ContextApplicationEvidence {
-  schema: "octo.context-application/v1";
-  compiler_version: "octo.context-compiler/v4";
-  catalog_version: "octo.context-catalog/v3";
-  context_hash: string;
-  compiled_hash: string;
-  run_id: string;
-  lease_id: string;
-  fencing_token: number;
-  adapter_type: "codex";
-  provider_session_id: string;
-  provider_ack: "turn/start";
 }
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -2325,26 +2240,7 @@ export interface ResolvedExecutionPlan1 {
   provider_agent_id?: string;
   agent_source: AgentSource;
   required_execution_features?: string[];
-  context_extensions?: ContextExtensionsSnapshot;
   envs?: ContextEnvsPayload;
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ContextExtensionsSnapshot".
- */
-export interface ContextExtensionsSnapshot {
-  configuration_version: string;
-  /**
-   * @maxItems 32
-   */
-  items: ContextExtensionResult[];
-}
-export interface ContextExtensionResult1 {
-  namespace: string;
-  name: string;
-  status: "material" | "ignored";
-  reason?: "not_configured" | "disabled" | "unsupported_version";
-  text?: string;
 }
 /**
  * Run 级环境变量列表；以 key 标识变量，按 key 合并，不进入模型输入。
@@ -2659,6 +2555,35 @@ export interface ContextSyncResult1 {
   through_seq?: number;
 }
 /**
+ * Traceable reference to frozen provider-visible context. The primary and recovery hashes cover their exact rendered bytes.
+ *
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ChannelContextSnapshotRef".
+ */
+export interface ChannelContextSnapshotRef {
+  snapshot_id: string;
+  scope_key: string;
+  consumer_key: string;
+  session_generation: number;
+  /**
+   * Original descriptor generation when recovery promotes the effective consumer generation.
+   */
+  source_session_generation?: number;
+  trigger_message_id: string;
+  trigger_seq?: number;
+  serializer_version: string;
+  rendered_sha256: string;
+  completeness: "complete" | "partial" | "unavailable";
+  /**
+   * Hash of the frozen bounded cold projection used when provider resume falls back to a fresh session.
+   */
+  recovery_rendered_sha256?: string;
+  /**
+   * Completeness of the frozen cold recovery projection.
+   */
+  recovery_completeness?: "complete" | "partial" | "unavailable";
+}
+/**
  * Result of advancing the consumer cursor with version CAS after terminal durability.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
@@ -2926,32 +2851,6 @@ export interface ScenarioRequest {
    * 当前场景构建合同版本固定为 1，与 Run/Context 版本独立。
    */
   builder_version: string;
-  [k: string]: unknown;
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ScenarioPolicy".
- */
-export interface ScenarioPolicy {
-  enabled: boolean;
-  /**
-   * @maxItems 32
-   */
-  instructions: string[];
-  [k: string]: unknown;
-}
-/**
- * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
- * via the `definition` "ScenarioPolicySnapshot".
- */
-export interface ScenarioPolicySnapshot {
-  scenario_id: string;
-  version: number;
-  /**
-   * @maxItems 32
-   */
-  instructions: string[];
-  hash: string;
   [k: string]: unknown;
 }
 /**

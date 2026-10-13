@@ -1,6 +1,6 @@
 # @mininglamp-oss/octo-harness-protocol
 
-> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../docs/context-llm-injection.md) 与 [IPD-SE 0.3](../../../docs/event-context-rendering-ipd-se.md)；旧链路退出仍待完成。
+> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../docs/context-llm-injection.md) 与 [IPD-SE](../../../docs/event-context-rendering-ipd-se.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
 
 Octo Harness 的协议包：定义 Core、Adapter Host 与所有 provider 适配器共用的类型契约与运行时校验，包括 `InvokeRequest`、`CanonicalEvent`、`EventEnvelope`、provider 会话与 capability。它与具体 provider 及传输方式均无关。
 
@@ -92,19 +92,19 @@ pnpm build                            # 3. 构建
 
 内置 Context 各类型是否进入 LLM 提示词及目标通道，必须遵循 [Context v3 的 LLM 注入约束](../../docs/context-llm-injection.md)。执行参数不进入提示词；inline、references 和 extra 进入普通上下文块；已授权 control instructions 使用独立控制通道。固定格式内部使用 `指引: ...`、`数据: ...` 换行纯文本，不要求 XML。
 
-运行合同固定采用 schema 7，选路快照为 `octo.runtime-selection/v2`，Context 信封固定为 `octo.context-envelope/v3`，Compiler 为 v4、Catalog 为 v3。新增可选场景元数据不升级 Run/Context 版本；未知可选字段忽略，已识别字段继续校验。旧 `mode=binding` 不再接受；通过 candidates 或 explicit 声明设备意图，授权候选由 Worker 固定。
+运行合同固定采用 schema 7，选路快照为 `octo.runtime-selection/v2`，Context 信封固定为 `octo.context-envelope/v3`。Compiler/Catalog 版本与编译应用协议已删除。新增可选场景元数据不升级 Run/Context 版本；通过 candidates 或 explicit 声明设备意图，授权候选由 Worker 固定。
 
-`CONTEXT_TYPE_CATALOG` 定义每种类型的 schema、持久性、合并、强制约束、阶段和输出。`assertContextProcessorCoverage` 用于阶段开始前核对处理器；目录本身不证明宿主已经部署资源下载或 Provider 支持。
+`CONTEXT_TYPE_CATALOG` 只记录已定义类型的 schema、持久性与可信通道。处理阶段和覆盖检查已删除。`renderModelContexts` 只按白名单 pattern 保序拼接，不执行目录覆盖或业务检查；全新 extra 不需要注册。
 
 `ContextConfiguration` 包含 defaults 与 mandatory。使用 `assertContextConfiguration` 验证持久配置，再用 `resolveContextConfiguration(configuration, request)` 解析有效项。adapter/model/workspace/runtime/approval_policy 沿当前独立类型合并，limits 按字段覆盖。mandatory 检查原始请求，冲突必须拒绝；内部能力要求由可信执行计划提供。
 
 随机目录声明仅使用 `{mode:"random"}`，不得携带 scope 或 path。Runtime 在 AgentSession 首次运行时创建目录，后续运行复用；不同 AgentSession 使用独立目录。实际路径由 Runtime 准备，不能以空 workdir 启动 Provider。
 
-Skill、Plugin、MCP 和 Connector 由本地用户或原生 Runtime 安装与配置。`octo.resources` 及旧云端安装字段直接拒绝；执行计划不包含 `resources` 或 `mcp_servers`，应用证据不包含 `loaded_skills`。Context 继续表达普通材料、workspace、limits、approval 和 continuity。
+Skill、Plugin、MCP 和 Connector 由本地用户或原生 Runtime 安装与配置。`octo.resources` 及旧云端安装字段直接拒绝；执行计划不包含 `resources` 或 `mcp_servers`。Context 表达发起方选择的普通材料以及独立执行配置；不生成 continuity 或编译应用证据。
 
-`ToolAuthorization` 只包含 `service_subject_id`、`allowed_tools` 与 `resource_refs`。独立授权接口返回 `IssuedToolAuthorization`，增加短期 `token`、`octo_space_id`、`namespace` 与 `expires_at`；不允许携带地址、命令或配置模板。凭据只能进入本地已配置的业务连接或宿主授权接收器，不能进入 `InvokeRequest`、Context 编译结果或模型输入。
+`ToolAuthorization` 只包含 `service_subject_id`、`allowed_tools` 与 `resource_refs`。独立授权接口返回 `IssuedToolAuthorization`，增加短期 `token`、`octo_space_id`、`namespace` 与 `expires_at`；不允许携带地址、命令或配置模板。凭据只能进入本地已配置的业务连接或宿主授权接收器，不能进入模型输入。
 
-这些公开函数不执行 ACL 检查、签发凭据、下载资源或构造 Provider system prompt。处理阶段和跨项目验收见 [ContextPipeline 基线](../../../docs/62-octo-context-compiler-se-baseline.md)。
+这些公开函数不执行 ACL 检查、签发凭据或下载资源。职责与验收见 [Event Context IPD-SE](../../../docs/event-context-rendering-ipd-se.md)；旧 Pipeline 文档只保留历史背景。
 
 ## 相关设计
 

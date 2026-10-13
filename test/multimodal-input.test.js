@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 import { HarnessEngine, MemoryStore } from "@mininglamp-oss/octo-harness-core";
 import { assertModelInputParts, assertInvokeRequest, modelPartsFromInput, providerInputParts, failurePayload } from "@mininglamp-oss/octo-harness-protocol";
-import { resolveRuntimeInputImages } from "../packages/octo-harness-context-builder/dist/input-images.js";
+import { resolveRuntimeInputImages } from "../packages/octo-harness-worker-access/dist/input-images.js";
 import { mapExecutionEnvelope } from "../packages/octo-harness-worker-access/dist/agent-work-runtime.js";
 import { invokeRequest, contextEnvelope, executionContext, resolvedRuntimeSelection } from "./agent-work-runtime-fixture.js";
 import { visualInputImages } from "../test-support/multimodal-images.mjs";

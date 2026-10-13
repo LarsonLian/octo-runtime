@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import type { PreparedTaskMaterials } from "./task-materials.js";
 
 export interface ReplayEvent {
   runId: string;
@@ -51,7 +50,6 @@ const TERMINALS = new Set(["run.completed", "run.failed", "run.cancelled"]);
 export class AgentWorkStore {
   readonly #runs = new Map<string, MemoryRun>();
   readonly #commands = new Map<string, { receipt: CommandReceipt; expires: number }>();
-  readonly #materials = new Map<string, { hash: string; json: string }>();
   readonly #workspaces = new Map<string, string>();
   readonly #epoch = randomUUID();
   #bytes = 0;
@@ -72,23 +70,6 @@ export class AgentWorkStore {
   // 进程重启后 epoch 改变，旧订阅游标不能误用到新事件流。
   streamId(runId: string): string {
     return `host:${this.#epoch}:${runId}`;
-  }
-  getTaskMaterialSnapshot(runId: string, hash: string): PreparedTaskMaterials | undefined {
-    const v = this.#materials.get(runId);
-    if (!v) return undefined;
-    if (v.hash !== hash) throw new TypeError("CONTEXT_MATERIAL_SNAPSHOT_CONFLICT");
-    return JSON.parse(v.json) as PreparedTaskMaterials;
-  }
-  // 同一 Run 的材料内容与上下文哈希必须保持一致，重试不能悄悄换成新版本。
-  putTaskMaterialSnapshot(runId: string, hash: string, value: PreparedTaskMaterials): void {
-    const json = JSON.stringify(value);
-    if (!runId || !/^sha256:[a-f0-9]{64}$/.test(hash) || Buffer.byteLength(json) > 3 * 65536)
-      throw new TypeError("TASK_MATERIAL_SNAPSHOT_INVALID");
-    const prior = this.#materials.get(runId);
-    if (prior && (prior.hash !== hash || prior.json !== json))
-      throw new TypeError("CONTEXT_MATERIAL_SNAPSHOT_CONFLICT");
-    if (!prior && this.#materials.size >= 128) throw new Error("MATERIAL_CAPACITY_EXHAUSTED");
-    this.#materials.set(runId, { hash, json });
   }
   conversationWorkspace(key: string, candidate: string): { path: string; created: boolean } {
     const prior = this.#workspaces.get(key);
@@ -165,7 +146,6 @@ export class AgentWorkStore {
     if (r) r.paused = true;
   }
   discardRun(id: string): boolean {
-    this.#materials.delete(id);
     const r = this.#runs.get(id);
     if (!r) return false;
     this.#bytes -= r.bytes;
@@ -299,7 +279,6 @@ export class AgentWorkStore {
   close(): void {
     this.#runs.clear();
     this.#commands.clear();
-    this.#materials.clear();
     this.#workspaces.clear();
     this.#bytes = 0;
   }

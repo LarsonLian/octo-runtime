@@ -345,30 +345,7 @@
         }
       ]
     },
-    "expected": {
-      "schema": "octo.context-envelope/v3",
-      "items": [
-        {
-          "namespace": "octo.content",
-          "name": "references",
-          "payload": {
-            "entries": [
-              {
-                "resource_ref": "task:1",
-                "resolver": "mcp",
-                "locator": {
-                  "server_ref": "octo_task",
-                  "tool": "task_get_materials"
-                },
-                "params": {
-                  "expected_version": 2
-                }
-              }
-            ]
-          }
-        }
-      ]
-    }
+    "error": "CONTEXT_CONFIGURATION_TYPE_FORBIDDEN"
   },
   {
     "name": "mandatory-reference-conflict",
@@ -426,7 +403,7 @@
         }
       ]
     },
-    "error": "CONTEXT_MANDATORY_CONFLICT"
+    "error": "CONTEXT_CONFIGURATION_TYPE_FORBIDDEN"
   },
   {
     "name": "empty",
@@ -553,7 +530,10 @@
             "name": "selection",
             "payload": {
               "mode": "candidates",
-              "runtime_ids": ["device-a", "device-b"],
+              "runtime_ids": [
+                "device-a",
+                "device-b"
+              ],
               "strategy": "preferred_failover",
               "offline_behavior": "wait"
             }
@@ -604,7 +584,10 @@
             "name": "selection",
             "payload": {
               "mode": "candidates",
-              "runtime_ids": ["device-a", "device-b"],
+              "runtime_ids": [
+                "device-a",
+                "device-b"
+              ],
               "strategy": "preferred_failover",
               "offline_behavior": "wait"
             }
@@ -642,7 +625,10 @@
             "name": "selection",
             "payload": {
               "mode": "candidates",
-              "runtime_ids": ["device-a", "device-b"],
+              "runtime_ids": [
+                "device-a",
+                "device-b"
+              ],
               "strategy": "preferred_failover",
               "offline_behavior": "wait"
             }

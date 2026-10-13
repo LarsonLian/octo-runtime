@@ -10,7 +10,7 @@ export interface WorkspaceAssignments {
   conversationWorkspace(key: string, candidate: string): { path: string; created: boolean };
 }
 
-export interface ContextPreparationReceipt {
+export interface WorkspacePreparationReceipt {
   workspace_mode: "fixed" | "random" | "none";
   workspace_path: string;
   provider_state_dir: string;
@@ -20,7 +20,7 @@ export interface ContextPreparationReceipt {
 export interface PreparedRunContext {
   workdir: string;
   providerStateDir: string;
-  receipt: ContextPreparationReceipt;
+  receipt: WorkspacePreparationReceipt;
 }
 
 /**

@@ -1,4 +1,4 @@
-import type { ContextPreparationReceipt } from "@mininglamp-oss/octo-harness-context-builder/context-preparation";
+import type { ContextPreparationReceipt } from "@mininglamp-oss/octo-harness-protocol";
 
 /**
  * 使用当前 run/lease/fence 向 Worker 提交准备回执；仅 HTTP 成功确认后返回。

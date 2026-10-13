@@ -1,4 +1,5 @@
 export { NodeEmbeddedHarness } from "./embedded-harness.js";
+export { prepareRunContext } from "@mininglamp-oss/octo-harness-adapter-host";
 export { EmbeddedHarnessError } from "./errors.js";
 export { EMBEDDED_HARNESS_VERSION } from "./version.js";
 export { accountKeyFor, embeddedHomePaths, profileNameFor, resolveEmbeddedHome } from "./home.js";

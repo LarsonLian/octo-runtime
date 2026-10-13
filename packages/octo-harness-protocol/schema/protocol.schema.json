@@ -51,7 +51,6 @@
         "type": {
           "enum": [
             "session.update",
-            "context.applied",
             "usage.update",
             "model_step.started",
             "model_step.finished",
@@ -260,27 +259,12 @@
             },
             "name": {
               "enum": [
-                "session",
-                "context.applied"
+                "session"
               ]
             },
             "payload": {
               "type": "object",
               "additionalProperties": true
-            }
-          },
-          "if": {
-            "properties": {
-              "name": {
-                "const": "context.applied"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "payload": {
-                "$ref": "#/definitions/ContextApplicationEvidence"
-              }
             }
           }
         },
@@ -1277,9 +1261,6 @@
               ]
             }
           }
-        },
-        "scenario": {
-          "$ref": "#/definitions/ScenarioProjection"
         }
       }
     },
@@ -1408,35 +1389,21 @@
     },
     "ContextPreparationReceipt": {
       "title": "ContextPreparationReceipt",
-      "description": "Durable Runtime preparation evidence, sealed before Adapter invocation and fenced by the active Run lease. Private paths must not be exposed by product projections.",
+      "description": "Workspace preparation for the current Run lease and frozen execution Context; it does not prove Provider use of model context.",
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "compiler_version",
-        "catalog_version",
         "context_hash",
-        "compiled_hash",
         "run_id",
         "lease_id",
         "fencing_token",
         "workspace_mode",
         "workspace_path",
         "provider_state_dir",
-        "materials",
         "warnings"
       ],
       "properties": {
-        "compiler_version": {
-          "const": "octo.context-compiler/v4"
-        },
-        "catalog_version": {
-          "const": "octo.context-catalog/v3"
-        },
         "context_hash": {
-          "type": "string",
-          "pattern": "^sha256:[a-f0-9]{64}$"
-        },
-        "compiled_hash": {
           "type": "string",
           "pattern": "^sha256:[a-f0-9]{64}$"
         },
@@ -1466,16 +1433,6 @@
         "provider_state_dir": {
           "type": "string"
         },
-        "materials": {
-          "type": "array",
-          "maxItems": 32,
-          "items": {
-            "$ref": "#/definitions/PreparedMaterialReceipt"
-          }
-        },
-        "continuity": {
-          "$ref": "#/definitions/ChannelContextSnapshotRef"
-        },
         "warnings": {
           "type": "array",
           "maxItems": 256,
@@ -1483,107 +1440,6 @@
             "type": "string",
             "maxLength": 4096
           }
-        },
-        "scenario_policy_hash": {
-          "type": "string",
-          "pattern": "^sha256:[a-f0-9]{64}$"
-        }
-      }
-    },
-    "ContextApplicationEvidence": {
-      "title": "ContextApplicationEvidence",
-      "description": "Adapter evidence emitted only after Provider accepts the invocation. No plugin installation evidence, private paths, credentials or instruction text are permitted.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "schema",
-        "compiler_version",
-        "catalog_version",
-        "context_hash",
-        "compiled_hash",
-        "run_id",
-        "lease_id",
-        "fencing_token",
-        "adapter_type",
-        "provider_session_id",
-        "provider_ack"
-      ],
-      "properties": {
-        "schema": {
-          "const": "octo.context-application/v1"
-        },
-        "compiler_version": {
-          "const": "octo.context-compiler/v4"
-        },
-        "catalog_version": {
-          "const": "octo.context-catalog/v3"
-        },
-        "context_hash": {
-          "type": "string",
-          "pattern": "^sha256:[a-f0-9]{64}$"
-        },
-        "compiled_hash": {
-          "type": "string",
-          "pattern": "^sha256:[a-f0-9]{64}$"
-        },
-        "run_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "lease_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "fencing_token": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
-        },
-        "adapter_type": {
-          "const": "codex"
-        },
-        "provider_session_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "provider_ack": {
-          "const": "turn/start"
-        }
-      }
-    },
-    "PreparedMaterialReceipt": {
-      "title": "PreparedMaterialReceipt",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "resource_ref",
-        "task_id",
-        "task_version",
-        "handler_epoch",
-        "digest"
-      ],
-      "properties": {
-        "resource_ref": {
-          "type": "string",
-          "minLength": 1
-        },
-        "task_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "task_version": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
-        },
-        "handler_epoch": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
-        },
-        "digest": {
-          "type": "string",
-          "pattern": "^sha256:[a-f0-9]{64}$"
         }
       }
     },
@@ -2369,9 +2225,6 @@
             "type": "string",
             "minLength": 1
           }
-        },
-        "context_extensions": {
-          "$ref": "#/definitions/ContextExtensionsSnapshot"
         },
         "envs": {
           "$ref": "#/definitions/ContextEnvsPayload"
@@ -4535,179 +4388,6 @@
         "builder_id",
         "builder_version"
       ]
-    },
-    "ScenarioPolicy": {
-      "type": "object",
-      "additionalProperties": true,
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "instructions": {
-          "type": "array",
-          "maxItems": 32,
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
-      },
-      "required": [
-        "enabled",
-        "instructions"
-      ]
-    },
-    "ScenarioPolicySnapshot": {
-      "type": "object",
-      "additionalProperties": true,
-      "properties": {
-        "scenario_id": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 96
-        },
-        "version": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
-        },
-        "instructions": {
-          "type": "array",
-          "maxItems": 32,
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "hash": {
-          "type": "string",
-          "pattern": "^sha256:[a-f0-9]{64}$"
-        }
-      },
-      "required": [
-        "scenario_id",
-        "version",
-        "instructions",
-        "hash"
-      ]
-    },
-    "ScenarioProjection": {
-      "type": "object",
-      "additionalProperties": true,
-      "properties": {
-        "scenario_id": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 96
-        },
-        "policy_version": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
-        },
-        "policy_hash": {
-          "type": "string",
-          "pattern": "^sha256:[a-f0-9]{64}$"
-        }
-      },
-      "required": [
-        "scenario_id",
-        "policy_version",
-        "policy_hash"
-      ]
-    },
-    "ContextExtensionResult": {
-      "title": "ContextExtensionResult",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "namespace",
-        "name",
-        "status"
-      ],
-      "properties": {
-        "namespace": {
-          "type": "string",
-          "pattern": "^[a-z0-9][a-z0-9._-]*$",
-          "maxLength": 96
-        },
-        "name": {
-          "type": "string",
-          "pattern": "^[a-z0-9][a-z0-9._-]*$",
-          "maxLength": 96
-        },
-        "status": {
-          "enum": [
-            "material",
-            "ignored"
-          ]
-        },
-        "reason": {
-          "enum": [
-            "not_configured",
-            "disabled",
-            "unsupported_version"
-          ]
-        },
-        "text": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "status": {
-                "const": "material"
-              }
-            }
-          },
-          "then": {
-            "required": [
-              "text"
-            ],
-            "not": {
-              "required": [
-                "reason"
-              ]
-            }
-          },
-          "else": {
-            "required": [
-              "reason"
-            ],
-            "not": {
-              "required": [
-                "text"
-              ]
-            }
-          }
-        }
-      ]
-    },
-    "ContextExtensionsSnapshot": {
-      "title": "ContextExtensionsSnapshot",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "configuration_version",
-        "items"
-      ],
-      "properties": {
-        "configuration_version": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 96
-        },
-        "items": {
-          "type": "array",
-          "maxItems": 32,
-          "items": {
-            "$ref": "#/definitions/ContextExtensionResult"
-          }
-        }
-      }
     },
     "ToolAuthorization": {
       "title": "ToolAuthorization",

@@ -363,9 +363,6 @@ importers:
       '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
         version: link:../octo-harness-protocol
-      smol-toml:
-        specifier: ^1.8.1
-        version: 1.9.1
 
   packages/octo-harness-core:
     dependencies:
@@ -386,9 +383,6 @@ importers:
       '@mininglamp-oss/octo-harness-channel-im':
         specifier: workspace:*
         version: link:../octo-harness-channel-im
-      '@mininglamp-oss/octo-harness-context-builder':
-        specifier: workspace:*
-        version: link:../octo-harness-context-builder
       '@mininglamp-oss/octo-harness-core':
         specifier: workspace:*
         version: link:../octo-harness-core
@@ -428,9 +422,6 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-host':
         specifier: workspace:*
         version: link:../octo-harness-adapter-host
-      '@mininglamp-oss/octo-harness-context-builder':
-        specifier: workspace:*
-        version: link:../octo-harness-context-builder
       '@mininglamp-oss/octo-harness-core':
         specifier: workspace:*
         version: link:../octo-harness-core
@@ -862,10 +853,6 @@ packages:
 
   smol-toml@1.8.0:
     resolution: {integrity: sha512-kCZr2V3ch9i00x8zXRhjUNVcjG9ijES5dDudkXvUVCT5QlJNQWElSJdZqyPemffHoLNUYwOcou0Fy+ojN0uHSQ==}
-    engines: {node: '>= 18'}
-
-  smol-toml@1.9.1:
-    resolution: {integrity: sha512-j7WyPdf0CJoutMzMoPLF/bVXHtKZIT9Rb4eGeEbWw8X2t5oirjPgpL+OpaENZrILYaXqYwnVH+qgUwVbl+pUJQ==}
     engines: {node: '>= 18'}
 
   tinyglobby@0.2.17:
@@ -1355,8 +1342,6 @@ snapshots:
   shebang-regex@3.0.0: {}
 
   smol-toml@1.8.0: {}
-
-  smol-toml@1.9.1: {}
 
   tinyglobby@0.2.17:
     dependencies:

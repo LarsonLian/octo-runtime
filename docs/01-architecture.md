@@ -21,7 +21,7 @@ Harness 不能根据输入猜测“这是 Chat 还是 Task”，也不能创建�
 
 Harness 不接收云端插件包、安装路径、启动命令或 MCP 配置。适配器直接调用已经完成本地配置的原生 Runtime；Harness 不替用户修改插件配置。工作目录准备仍由 Harness 执行，但不创建插件物化目录或工具 CLI 包装器。
 
-业务服务提交的 `tool_authorizations` 只声明服务主体、允许操作和对象范围。Worker 根据 Run 身份、租约与 fencing 签发短期授权；Runtime 从独立授权接口获取凭据。平台材料读取与产物归档的地址来自本地 `business_service_bindings`，其他授权通过宿主接收器交给本地已配置的工具。授权不进入 Context 编译结果或模型输入。
+业务服务提交的 `tool_authorizations` 只声明服务主体、允许操作和对象范围。Worker 根据 Run 身份、租约与 fencing 签发短期授权；Runtime 从独立授权接口获取凭据。平台材料读取与产物归档的地址来自本地 `business_service_bindings`，其他授权通过宿主接收器交给本地已配置的工具。授权不进入模型输入。
 
 本地连接只消费 Harness 实现的具体操作，不消费整个服务主体的授权。同一 Loop 主体仍有知识或业务动作授权时，Runtime 必须将剩余操作交给本地接收器；接收器缺失时拒绝 Run，不以已配置业务连接作为授权已交付的证据。
 
@@ -31,7 +31,7 @@ Event 发起方决定本轮模型上下文的内容、顺序和发送时机。�
 
 Worker、daemon、worker-access、Host、Adapter 只校验、转发并固定渲染本轮快照。底层不得按 `sessionId`、run 序号或 hash 缓存、补齐、合并、去重或省略模型上下文。两个不同 Event 显式发送相同 item 时，两轮均须传递；原 Event 的幂等重投仍复用原快照。空模型上下文是有效输入，不要求执行配置也为空。
 
-`sessionId` 存在不保证 Provider resume 成功。reset、新建 Provider 会话或恢复失败后，业务方负责重新提供所需背景；执行层返回真实恢复结果，不从历史 Event 自动补背景。分类矩阵见 [LLM 注入约束](context-llm-injection.md)，详细 MUST / MUST NOT 与验收见 [全局 IPD-SE 基线](../../docs/event-context-rendering-ipd-se.md)。M1 renderer 已实施，旧执行侧 Pipeline 退出仍待完成。
+`sessionId` 存在不保证 Provider resume 成功。reset、新建 Provider 会话或恢复失败后，业务方负责重新提供所需背景；执行层返回真实恢复结果，不从历史 Event 自动补背景。分类矩阵见 [LLM 注入约束](context-llm-injection.md)，详细 MUST / MUST NOT 与验收见 [全局 IPD-SE 基线](../../docs/event-context-rendering-ipd-se.md)。Compiler/Pipeline、材料预取与摘要、扩展投影及编译回执已删除。Host 只按白名单 pattern 保序拼接本轮数据，不执行业务检查。
 
 ## 统一对象
 

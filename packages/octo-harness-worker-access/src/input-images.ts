@@ -15,7 +15,7 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-/** Keep durable envelopes as references; image bytes live only in the invocation. */
+/** Authorized image transport; bytes live only in the invocation. */
 export async function resolveRuntimeInputImages(
   input: Record<string, unknown>,
   options: RuntimeImageReadOptions

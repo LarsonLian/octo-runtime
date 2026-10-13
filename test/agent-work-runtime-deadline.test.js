@@ -1,9 +1,8 @@
-import { toolIntent, issuedGrant } from "./tool-authorizations-fixture.js";
+import { issuedGrant } from "./tool-authorizations-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
@@ -11,12 +10,14 @@ import { AgentWorkRuntime } from "../apps/daemon/dist/agent-work-runtime.js";
 import { contextEnvelope, executionContext, resolvedRuntimeSelection, wire, waitFor } from "./agent-work-runtime-fixture.js";
 
 // 真实 HTTP/WS 准备和派发链路，仅替换 Provider，验证总时限不会在阶段切换时重置。
-async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task = false, compactionPort }, verify) {
+async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, contexts = [] }, verify) {
   const directory = await mkdtemp(join(tmpdir(), "octo-run-deadline-"));
   const frames = [];
   const calls = [];
+  const httpPaths = [];
   const timers = new Set();
   const server = createServer(async (request, response) => {
+    httpPaths.push(request.url);
     for await (const _chunk of request) { /* Consume HTTP body. */ }
     if (request.url === "/v1/runtime/context/authorizations/resolve") { response.writeHead(200, { "Content-Type": "application/json" }); response.end(JSON.stringify({ data: { authorizations: [issuedGrant()] } })); return; }
     if (request.url === "/v1/runtime/context/prepare" || request.url === "/task-mcp") {
@@ -40,11 +41,10 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task 
     runtime_limits: { run_timeout_ms: timeout, enforcement: "enforce" } };
   const envelope = {
     schema_version: 7, context_configuration_version: 1,
-    effective_context: executionContext(plan, compactionPort ? [{ namespace: "octo.content", name: "inline",
-      payload: { entries: [{ text: "material to measure" }] } }] : []), resolved_execution_plan: plan,
+    effective_context: executionContext(plan, contexts), resolved_execution_plan: plan,
     resolved_runtime_selection: resolvedRuntimeSelection("runtime-deadline"),
     run_id: "run-deadline", agent_session_id: "session-deadline",
-    agent_run_request: { context: contextEnvelope(), namespace: "test", agent_id: "agent-deadline",
+    agent_run_request: { context: contextEnvelope(contexts), namespace: "test", agent_id: "agent-deadline",
       agent_revision_id: "revision-deadline", session_affinity_key: "deadline",
       trigger: { kind: "test", occurrence_id: "deadline" }, input: { prompt: "Return done" } },
     agent_revision: { definition: { instructions: "Return done" } }
@@ -61,32 +61,19 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task 
   let runtime;
   try {
     await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-    if (task) {
-      const content = Buffer.from("deadline output");
-      await writeFile(join(directory, "output.txt"), content);
-      await mkdir(join(directory, ".octo/task-outputs"), { recursive: true });
-      await writeFile(join(directory, ".octo/task-outputs/run-deadline.json"), JSON.stringify({
-        schema: "octo.task-output-manifest/v1", outputs: [{ output_id: "proof", relative_path: "output.txt",
-          name: "output.txt", media_type: "text/plain", size: content.length,
-          sha256: createHash("sha256").update(content).digest("hex"), role: "output" }]
-      }));
-      envelope.agent_run_request.tool_authorizations = [toolIntent];
-    }
     runtime = new AgentWorkRuntime({ profile: "default", baseUrl: `http://127.0.0.1:${server.address().port}`,
-      ...(task ? { businessServiceBindings: { task: { serviceSubjectId: "loop", url: `http://127.0.0.1:${server.address().port}/task-mcp` } } } : {}), token: "fixture-only", runtimeName: "runtime-deadline", storePath: join(directory, "state.db"),
-      ...(compactionPort ? { createMaterialCompactionPort: compactionPort } : {}) }, {
+      token: "fixture-only", runtimeName: "runtime-deadline", storePath: join(directory, "state.db"), }, {
       list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [], available: true }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_type, request) {
         calls.push(request);
-        if (task) request.runMetadata.taskMaterials = [{ task_id: "task-deadline" }];
         yield* invoke(request);
       }
     }, admission);
     await runtime.start();
     const events = () => frames.filter(frame => frame.type === "run.event_batch").flatMap(frame => frame.payload.events);
     const ack = () => frames.find(frame => frame.type === "command.ack")?.payload;
-    await verify({ calls, frames, events, ack });
+    await verify({ calls, frames, events, ack, httpPaths });
   } finally {
     await runtime?.close();
     for (const timer of timers) clearTimeout(timer);
@@ -107,7 +94,6 @@ test("Run deadline includes HTTP context preparation and prevents provider dispa
     assert.equal(calls.length, 0);
   });
 });
-
 test("Run deadline subtracts preparation time from provider watchdog", async () => {
   await exercise({ timeout: 800, sealDelay: 120, invoke: async function* () {
     yield { protocolVersion: 2, type: "run.completed", payload: {} };
@@ -119,19 +105,6 @@ test("Run deadline subtracts preparation time from provider watchdog", async () 
   });
 });
 
-test("Run deadline preserves classification when compaction transport throws AbortError", async () => {
-  await exercise({ compactionPort: async ({ signal }) => ({ model: "fixture", contextWindow: 100_000,
-    outputReserveTokens: 1000, summaryInputLimit: 10_000, toolsDisabled: true,
-    measureInputTokens: () => new Promise((_resolve, reject) => {
-      signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
-    }), countTokens: async () => 10, summarize: async () => { throw Error("unexpected summary"); }
-  }), invoke: async function* () { throw Error("unexpected dispatch"); } }, async ({ ack, calls }) => {
-    await waitFor(() => ack(), 3_000);
-    assert.equal(ack().accepted, false);
-    assert.equal(ack().error.code, "ADAPTER_RUN_DEADLINE", JSON.stringify(ack()));
-    assert.equal(calls.length, 0);
-  });
-});
 
 test("Run deadline cancels admission before dispatch", async () => {
   const admission = { acquire: signal => new Promise((_resolve, reject) => {
@@ -169,5 +142,23 @@ test("Run deadline classifies thrown provider errors after cancellation", async 
   } }, async ({ events }) => {
     await waitFor(() => events().some(event => event.type === "run.failed"), 3_000);
     assert.equal(events().find(event => event.type === "run.failed").payload.code, "ADAPTER_RUN_DEADLINE");
+  });
+});
+
+test("remote execution forwards full Context without material reads or a compiler receipt", async () => {
+  const contexts = [
+    { namespace: "extra.project", name: "current", guidance: "Use the supplied full project data.", payload: { nested: { complete: true }, unregistered: "retained" } },
+    { namespace: "octo.content", name: "references", payload: { entries: [{ resource_ref: "task", resolver: "mcp", locator: { server_ref: "octo_task", tool: "task_get_materials" }, params: { task_id: "t1" } }] } }
+  ];
+  await exercise({ timeout: 2000, contexts, invoke: async function* () {
+    yield { protocolVersion: 2, type: "run.completed", payload: {} };
+  } }, async ({ calls, events, httpPaths }) => {
+    await waitFor(() => events().some(event => event.type === "run.completed"), 3000);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].context.items.filter(item => item.namespace.startsWith("extra.") || item.namespace === "octo.content"), contexts);
+    assert.equal(calls[0].modelInput, calls[0].prompt);
+    assert.equal(calls[0].runMetadata.contextCompilation, undefined);
+    assert.equal(httpPaths.filter(path => path === "/v1/runtime/context/prepare").length, 1);
+    assert.ok(!httpPaths.some(path => path.includes("mcp") || path.includes("compaction")));
   });
 });

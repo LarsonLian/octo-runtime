@@ -17,7 +17,7 @@ The Event producer decides which model context items to send on each run, includ
 
 Worker, daemon, worker-access, Host, and adapters validate and forward the current Event snapshot. Host renders only its injectable items, preserving their content and order. They must not cache, supplement, merge, deduplicate, or suppress model context based on session IDs, run numbers, or hashes. Identical items explicitly sent in distinct Events are sent in both runs; Event idempotency remains unchanged.
 
-A provider `sessionId` does not prove resume succeeded. After reset, a new Provider session, or resume failure, the business producer provides the necessary background again. The execution layer reports actual session/recovery results and does not reconstruct background from previous Events. See [Context injection rules](docs/context-llm-injection.md) and the [ecosystem IPD-SE baseline](../docs/event-context-rendering-ipd-se.md). The renderer is implemented in M1; retirement of the old execution pipeline remains pending.
+A provider `sessionId` does not prove resume succeeded. After reset, a new Provider session, or resume failure, the business producer provides the necessary background again. The execution layer reports actual session/recovery results and does not reconstruct background from previous Events. See [Context injection rules](docs/context-llm-injection.md) and the [ecosystem IPD-SE baseline](../docs/event-context-rendering-ipd-se.md). Compiler/Pipeline, material prefetch/summarization, extension projection and compilation receipts have been removed. Host only matches namespace/name allowlist patterns and renders the current items.
 
 ## Production Flow
 

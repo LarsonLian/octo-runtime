@@ -3,7 +3,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { prepareRunContext } from "../packages/octo-harness-context-builder/dist/context-preparation.js";
+import { prepareRunContext } from "../packages/octo-harness-adapter-host/dist/index.js";
 import { AgentWorkStore } from "../packages/octo-harness-worker-access/dist/agent-work-store.js";
 
 async function fixture(t) {

@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { contextHash, resolveContextConfiguration } from "../packages/octo-harness-protocol/dist/index.js";
 import { resolveLocalContext } from "../packages/octo-harness-core/dist/context.js";
-import { assertFrozenContextPlan, compileRunContext } from "../packages/octo-harness-context-builder/dist/run-context.js";
-import { ContextCompiler } from "../packages/octo-harness-worker-access/dist/context-pipeline.js";
+import { assertFrozenContextPlan, renderModelContexts, contextControlInstructions } from "../packages/octo-harness-protocol/dist/index.js";
 import { createJsonCliAdapter, invocationEnvironment } from "../packages/octo-harness-adapter-sdk/dist/index.js";
 import { buildCodexCommand } from "../packages/octo-harness-adapter-codex/dist/index.js";
 import { codexEnvironmentConfig } from "../packages/octo-harness-adapter-codex/dist/environment.js";
@@ -15,7 +14,7 @@ const envPayload = values => ({ env_variables: Object.entries(values).map(([key,
 const envContext = values => ({ schema: "octo.context-envelope/v3", items: [{ namespace: "octo.execution", name: "envs", payload: envPayload(values) }] });
 const request = envs => invokeRequest({ context: envContext(envs) });
 
-test("envs freezes into local plan and compiler without becoming prompt or instructions", () => {
+test("envs freezes into local execution plan without becoming prompt or instructions", () => {
   const defaults = { schema: "octo.context-envelope/v3", items: [
     { namespace: "octo.execution", name: "adapter", payload: { type: "codex" } },
     { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: process.cwd() } }
@@ -28,11 +27,8 @@ test("envs freezes into local plan and compiler without becoming prompt or instr
     if (envs === undefined) delete changed.envs;
     assert.throws(() => assertFrozenContextPlan(effectiveContext, changed), /CONTEXT_PLAN_MISMATCH/);
   }
-  const compiled = new ContextCompiler().compile(effectiveContext);
-  assert.deepEqual(compiled, compileRunContext(effectiveContext));
-  assert.deepEqual(compiled.execution.envs, resolvedExecutionPlan.envs);
-  assert.equal(compiled.modelContent, "");
-  assert.equal(compiled.controlInstructions, "");
+  assert.equal(renderModelContexts(effectiveContext), "");
+  assert.equal(contextControlInstructions(effectiveContext), "");
   assert.notEqual(contextHash(envContext({ A: "1" })), contextHash(envContext({ A: "2" })));
 });
 

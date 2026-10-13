@@ -150,17 +150,18 @@ test("per-Run approval overrides are frozen and do not change Agent defaults", a
   assert.equal(store.getAgent(agent.id).defaultContext.items.find(item => item.name === "approval_policy").payload.mode, "ask");
 });
 
-test("occurrence hashing uses canonical submitted Context, not item order or current defaults", async () => {
+test("occurrence hashing preserves item order and freezes original defaults", async () => {
   const { engine, store } = capturingEngine();
   const agent = await engine.registerAgent({ agentSource: "provisioned", name: "hash", defaultContext: defaultContext() });
   const context = { schema: "octo.context-envelope/v3", items: [ { namespace: "octo.security", name: "approval_policy", payload: { mode: "ask" } }, { namespace: "octo.execution", name: "model", payload: { selection: { id: "override" } } } ] };
   const first = await engine.submitAgentRun(submission(agent.id, "hash", context));
   await engine.replaceDefaultContext({ agentId: agent.id, expectedVersion: 1, context: defaultContext("assisted", "changed") });
-  const reordered = { items: [...context.items].reverse().map(item => ({ payload: item.payload, name: item.name, namespace: item.namespace })), schema: context.schema };
+  const reordered = { items: context.items.map(item => ({ payload: item.payload, name: item.name, namespace: item.namespace })), schema: context.schema };
   const duplicate = await engine.submitAgentRun(submission(agent.id, "hash", reordered));
   assert.equal(duplicate.agentRun.id, first.agentRun.id);
   assert.equal(duplicate.agentRun.contextHash, first.agentRun.contextHash);
   assert.equal(duplicate.agentRun.contextDefaultsVersion, 1);
+  await assert.rejects(engine.submitAgentRun(submission(agent.id, "hash", { ...context, items: [...context.items].reverse() })), /different AgentRun request/);
   const changed = structuredClone(context);
   changed.items.find(item => item.name === "model").payload.selection.id = "different";
   await assert.rejects(engine.submitAgentRun(submission(agent.id, "hash", changed)), /different AgentRun request/);
@@ -213,12 +214,11 @@ test("register and submit reject legacy contracts and unsupported trusted Contex
   await assert.rejects(engine.submitAgentRun({ ...submission(agent.id), approvalMode: "full_access" }), /LEGACY_RUN_CONTRACT_REJECTED/);
   for (const item of [
     { namespace: "octo.control", name: "instructions", payload: { entries: [{ text: "trusted?", source: "agent_configuration" }] } },
-    { namespace: "octo.content", name: "inline", payload: { entries: [{ text: "material" }] } },
     { namespace: "octo.runtime", name: "selection", payload: { mode: "explicit", runtime_id: "remote" } }
   ]) {
     const context = { schema: "octo.context-envelope/v3", items: [item] };
     await assert.rejects(engine.submitAgentRun(submission(agent.id, "unsupported", context)), /LOCAL_CONTEXT_TYPE_UNSUPPORTED/);
-    await assert.rejects(engine.registerAgent({ agentSource: "provisioned", name: "unsupported", defaultContext: item.namespace === "octo.execution" ? { ...defaultContext(), items: [{ ...item, payload: { ...defaultContext().items[0].payload, ...item.payload } }] } : { ...defaultContext(), items: [...defaultContext().items, item] } }), /LOCAL_CONTEXT_TYPE_UNSUPPORTED/);
+    await assert.rejects(engine.registerAgent({ agentSource: "provisioned", name: "unsupported", defaultContext: { ...defaultContext(), items: [...defaultContext().items, item] } }), /LOCAL_CONTEXT_TYPE_UNSUPPORTED|CONTEXT_CONFIGURATION_TYPE_FORBIDDEN/);
   }
   assert.equal(store.listAgentRuns().length, 0);
   assert.equal(store.listAgentSessions().length, 0);

@@ -16,7 +16,6 @@
     "ajv": "^8.17.1",
     "yaml": "^2.8.1",
     "@mininglamp-oss/octo-harness-worker-access": "workspace:*",
-    "@mininglamp-oss/octo-harness-context-builder": "workspace:*",
     "@mininglamp-oss/octo-harness-channel-im": "workspace:*"
   },
   "types": "./dist/index.d.ts",

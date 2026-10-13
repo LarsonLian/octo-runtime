@@ -14,7 +14,9 @@ worker-access 必须校验并转发模型上下文，不得追加场景指引、
 
 Host 必须通过单一纯函数，将可注入 item 按固定开始/结束标记及 `contexts` / `context-item` 外层标记拼接。item 内部使用换行纯文本 `指引: ...`、`数据: ...`，不添加子标签、不做 XML 实体转义，也不要求严格 XML。执行配置不注入模型上下文块；合法 `extra.*` item 的指引和 payload 完整注入，不增加逐业务 Compiler、Resolver 或字段投影配置。
 
-详细设计见 [Event Context 与 Host 固定渲染：IPD-SE 基线](../docs/event-context-rendering-ipd-se.md)，包含 FEAT、MUST / MUST NOT、协议细节、删除/迁移清单和验收条件。Harness M1 共享协议与 Host renderer 已通过针对性自动验证；旧链路删除及跨项目验收尚未完成，见 [里程碑记录](docs/context-rendering-milestones.md)。下文模块表描述现有实现；其中 Context Builder 的执行编译/压缩和 worker-access 的 Pipeline 是待退出职责。Run 7 / Context v3 保持不变，拟议字段变化必须同步生产者和消费者，不增加旧版兼容。
+Host renderer 只匹配白名单 pattern：`extra.*/*`、`octo.content/inline`、`octo.content/references`。renderer 不校验业务字段、不查处理器、不检查场景材料、不解引用、不压缩。接纳边界仍处理协议格式和执行权限；必要 adapter 等执行配置独立解析。Compiler/Pipeline、材料预取与摘要、扩展字段投影及编译回执已删除，不保留旧路径或兼容升级。
+
+详细设计见 [Event Context 与 Host 固定渲染：IPD-SE 基线](../docs/event-context-rendering-ipd-se.md)，验证状态见 [里程碑记录](docs/context-rendering-milestones.md)。Run 7 / Context v3 保持不变；传输字段沿用 `context` / `effective_context`，其中 `items` 是本轮列表，渲染文本使用 `contexts` 外层标记。
 
 ## 基础架构
 
@@ -63,7 +65,7 @@ flowchart TB
 | [Worker 接入](packages/octo-harness-worker-access/README.md) | 注册、Worker WS、重连、命令校验、远端准备回执、执行事件回传 | 拉起第二个 Host、IM Server WS |
 | [IM 接入](packages/octo-harness-channel-im/README.md) | bf_token 注册、IM WS、私聊会话、/session、/reset、最终文本回发 | 直接调用 provider、独立 Daemon、聊天 SQLite 的隐式引入 |
 | [Adapter Host](packages/octo-harness-adapter-host/README.md) | 统一 IPC、invocation 生命周期、调用和取消、标准事件 | 消息来源、群聊规则、Worker 注册 |
-| [Context Builder](packages/octo-harness-context-builder/README.md) | 上下文构造；Node 子入口提供本地准备、编译、压缩 | Worker HTTP 回执、IM 投递、Run 创建 |
+| [Context Builder](packages/octo-harness-context-builder/README.md) | 发起侧可选上下文构造工具 | 执行编译、材料预取与压缩、Run 创建 |
 | [Core](packages/octo-harness-core/README.md) | 本地 AgentSession/AgentRun 状态与通用执行引擎 | IM/Loop 业务模型、WS 接入 |
 | [Protocol](packages/octo-harness-protocol/README.md) | InvokeRequest、CanonicalEvent、Context 和校验合同 | 网络连接、进程和业务存储 |
 | [Embedded](packages/octo-harness-embedded/README.md) | 宿主 SDK、运行时接入、生命周期和本地 IPC 桥 | IM 业务实现、provider 协议分支 |
@@ -86,7 +88,7 @@ packages/
   octo-harness-worker-access/       Worker WS 接入与远端执行编排
   octo-harness-channel-im/                  IM 专用 WS、私聊会话与结果回发
   octo-harness-adapter-host/        共享执行 Host + NDJSON RPC
-  octo-harness-context-builder/     通用上下文构造与 Node 准备工具
+  octo-harness-context-builder/     发起侧上下文构造工具
   octo-harness-core/                本地执行状态与引擎
   octo-harness-protocol/            统一执行和 Context 合同
   octo-harness-embedded/            宿主集成 SDK

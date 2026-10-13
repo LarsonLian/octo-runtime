@@ -38,3 +38,26 @@
 - Host 四轮集成测试验证同一 Provider 会话的背景、空上下文、显式重复均按当轮渲染；Work App 四轮回归验证原始输入、当轮 Context 和 Provider 会话复用。
 
 验证：Protocol / IM 构建通过；Harness model-context、im-runtime、context-protocol 测试通过；Work App 会话服务 10 项测试及 TypeScript 检查通过；Worker `go test ./...`、Loop clients 测试通过。本记录不证明远端旧编译链路已删除或真实环境已验收。
+
+## M3 破坏性删除执行侧上下文加工
+
+日期：2026-10-13。源码删除及自动验证完成，真实业务写入验收单独记录。
+
+- 删除 Compiler/Pipeline、执行侧场景追加、材料预取与缓存、三种材料压缩实现、扩展处理器与字段投影、context.applied 及编译版本/消费证据。
+- Host renderer 只匹配白名单 pattern、保留 item 顺序并拼接文本，不执行业务校验；场景元数据不要求 selection。
+- 工作区准备迁入 adapter-host，授权图片读取迁入 worker-access，执行计划一致性检查归 Protocol；保留执行身份、租约、fencing 和工作区确认。
+- Worker 同步窄化准备回执及生成 OpenAPI；Work App 的 SDK 删除旧扩展与场景应用字段，不保留兼容路径。
+
+验证：Harness 全量测试 820 项，815 通过、5 跳过、0 失败，构建通过；Worker 和 Loop `go test ./...` 通过，Worker 构建通过；Work App 类型检查和构建通过。Work App 全量测试有 1 项 project-notifications 异步用例失败，该文件单独重跑 5 项通过；不据此声明全量零失败。
+
+## M4 本地问一问使用 Host 的 CLI 环境
+
+日期：2026-10-13。使用本机已安装的 octo-cli 0.18.0 与 Codex skills，不新增工具安装或测试 MCP。
+
+- Host main 进程从 App 当前配置 Host 的 runtime-onboarding 取得登录用户 UK，作为本次执行的 OCTO_BOT_TOKEN / OCTO_TOKEN；API_BASE_URL 取 App Host。环境值不写入提示词、IPC 或会话记录。
+- 问一问发起方直接构造 extra.ui/page 与 extra.drive/directory，不请求旧 MCP delegation，不携带其工具授权。目录指引由业务方提供，模型通过安装的 CLI 自行执行。
+- 真实界面请求由 Codex 使用 exec_command 读取本机 skills、生成 Markdown、上传并读取网盘目录。文件 skills-list-a47dcc30.md，网盘文件 ID 2028，个人空间根目录，5,986 字节；下载内容包含 octo-shared 和 octo-drive。所有调用均为 exec_command，无 MCP 工具调用。
+
+验证：会话、Host 环境、问一问及本地发送相关 65 项测试通过，Work App 构建与类型检查通过。验证脚本为 Work App 的 scripts/test-ask-cli-drive-live.mjs。另一次 Marketplace mode mine 查询返回 AUTH_REQUIRED，未通过，不将平台拥有的 skills 列表与本机安装列表混为同一结果。
+
+后一次补测遇到本地 daemon socket ECONNREFUSED，执行以 HOST_EXECUTION_FAILED 结束；该次不计为通过，当前进程可用性需要单独复核。

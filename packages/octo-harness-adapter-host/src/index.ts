@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+export { prepareRunContext, type PreparedRunContext, type WorkspaceAssignments } from "./execution-preparation.js";
 import type {
   AdapterInvocationContext,
   AdapterOutput

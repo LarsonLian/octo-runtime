@@ -9,7 +9,6 @@ import {
   mergeContext,
   mergeContextEnvs,
   assertContextEnvs,
-  mergeReferences,
   CONTEXT_SCHEMA
 } from "./context.js";
 import { findContextTypeDefinition } from "./context-catalog.js";
@@ -81,20 +80,6 @@ export function resolveContextConfiguration(
           ...mergeContextEnvs(items.get(key)?.payload ?? { env_variables: [] }, requiredPayload)
         }
       });
-    } else if (key === "octo.content/references") {
-      const selected = items.get(key);
-      const references = required.payload.entries as Record<string, unknown>[];
-      for (const entry of references) {
-        const override = (supplied?.payload.entries as Record<string, unknown>[] | undefined)?.find(
-          (value) => value.resource_ref === entry.resource_ref
-        );
-        if (override && !equal(override, entry)) conflict(`${key}.${String(entry.resource_ref)}`);
-      }
-      const entries = mergeReferences(
-        (selected?.payload.entries ?? []) as Record<string, unknown>[],
-        references
-      );
-      items.set(key, { ...required, payload: { entries } });
     } else if (key === "octo.runtime/selection") {
       items.set(
         key,

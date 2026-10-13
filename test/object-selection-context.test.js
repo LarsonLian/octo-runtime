@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildObjectSelectionContext, ContextBuilderRegistry } from '../packages/octo-harness-context-builder/dist/index.js';
-import { compileRunContext } from '../packages/octo-harness-context-builder/dist/run-context.js';
+import { renderModelContexts, contextControlInstructions } from '../packages/octo-harness-protocol/dist/index.js';
 
 const skillId = '12345678-1234-4234-8234-123456789abc';
 const selection = (id, type = 'task', objectId = id, fields = {}) => ({
@@ -23,12 +23,11 @@ test('mixed task, discussion and files contribute ordinary facts', () => {
   const context = buildObjectSelectionContext(input);
   assert.deepEqual(input, original);
   assert.deepEqual(context.items.map(item => `${item.namespace}/${item.name}`), ['octo.content/inline', 'octo.content/references']);
-  const compiled = compileRunContext(context, [{ resource_ref: 'task', text: 'resolved task' }]);
-  assert.match(compiled.modelContent, /Untrusted contextual facts/);
-  assert.match(compiled.modelContent, /ignore system instructions/);
-  assert.doesNotMatch(compiled.modelContent, /private-host-handle/);
-  assert.equal(compiled.controlInstructions, '');
-  assert.throws(() => compileRunContext(context), /RESOLVER_UNAVAILABLE/);
+  const rendered = renderModelContexts(context);
+  assert.match(rendered, /ignore system instructions/);
+  assert.match(rendered, /task_get_materials/);
+  assert.doesNotMatch(rendered, /private-host-handle|resolved task/);
+  assert.equal(contextControlInstructions(context), '');
 });
 
 test('skill objects and capability intents reject', () => {
@@ -103,7 +102,7 @@ test('scope participates in material identity and is recorded only as an untrust
   ], [inline('a', 'first scope'), inline('b', 'second scope')]);
   const context = buildObjectSelectionContext(input);
   assert.equal(context.items[0].payload.entries.length, 2);
-  assert.equal(compileRunContext(context).controlInstructions, '');
+  assert.equal(contextControlInstructions(context), '');
   input.selections[0].object_scope.type = 'tenant_admin';
   assert.throws(() => buildObjectSelectionContext(input), /INVALID/);
 });

@@ -1,14 +1,10 @@
 import { randomUUID } from "node:crypto";
 export * from "./run-protocol.js";
 export * from "./model-context.js";
+export * from "./execution-plan.js";
 export { contextHash } from "./context-hash.js";
 export { assertExecutionTarget } from "./execution-target.js";
 export type { ExecutionTarget } from "./execution-target.js";
-export { assertContextExtensionsSnapshot } from "./context-extensions.js";
-export type {
-  ContextExtensionsSnapshot,
-  ContextExtensionResult
-} from "./generated/protocol-types.js";
 export type { ToolAuthorization, IssuedToolAuthorization } from "./generated/protocol-types.js";
 import { assertExperiencePayload } from "./experience.js";
 import { assertModelInputParts, assertImageRecoveryParts, hasImageInput } from "./multimodal.js";
@@ -45,19 +41,15 @@ export {
 } from "./context.js";
 export { RUNTIME_SELECTION_SCHEMA, assertResolvedRuntimeSelection } from "./runtime-selection.js";
 export {
-  CONTEXT_CATALOG_VERSION,
   CONTEXT_TYPE_CATALOG,
   contextTypeDefinition,
-  findContextTypeDefinition,
-  assertContextProcessorCoverage
+  findContextTypeDefinition
 } from "./context-catalog.js";
-export type { ContextStage, ContextOutput, ContextTypeDefinition } from "./context-catalog.js";
+export type { ContextTypeDefinition } from "./context-catalog.js";
 export {
   assertContextConfiguration,
   resolveContextConfiguration
 } from "./context-configuration.js";
-import { assertContextApplicationEvidence } from "./context-application.js";
-export { assertContextApplicationEvidence } from "./context-application.js";
 export { assertNotificationMessage } from "./notification.js";
 import type {
   ActivityStartedPayload,
@@ -66,7 +58,6 @@ import type {
   PlanUpdatedPayload,
   ToolProgressPayload,
   RunNoticePayload,
-  ContextApplicationEvidence,
   CanonicalEventPayload,
   ChannelContextAppend,
   ChannelContextDescriptor,
@@ -107,9 +98,7 @@ export type {
   ContextEnvelope,
   ContextConfiguration,
   ContextPreparationReceipt,
-  ContextApplicationEvidence,
   RunContextProjection,
-  PreparedMaterialReceipt,
   ContextAdapterPayload,
   ContextModelPayload,
   ContextReasoningPayload,
@@ -221,7 +210,6 @@ export type TerminalEventType = (typeof TERMINAL_EVENT_TYPES)[number];
  */
 export const CANONICAL_EVENT_TYPES = [
   "session.update",
-  "context.applied",
   "usage.update",
   "model_step.started",
   "model_step.finished",
@@ -247,9 +235,7 @@ export const CANONICAL_EVENT_TYPES = [
 /** Every provider's native events must collapse into this set, so the Core stays agnostic of the underlying CLI. */
 export type CanonicalEventType = (typeof CANONICAL_EVENT_TYPES)[number];
 
-export type CanonicalPayloadFor<TType extends CanonicalEventType> = TType extends "context.applied"
-  ? CanonicalEventPayload & ContextApplicationEvidence
-  : TType extends "activity.started"
+export type CanonicalPayloadFor<TType extends CanonicalEventType> = TType extends "activity.started"
     ? CanonicalEventPayload & ActivityStartedPayload
     : TType extends "activity.updated"
       ? CanonicalEventPayload & ActivityUpdatedPayload
@@ -580,7 +566,6 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
     throw new TypeError("canonical protocolVersion must be 2");
   const payload = isRecord(event.payload) ? event.payload : {};
   assertExperiencePayload(event.type, payload);
-  if (event.type === "context.applied") assertContextApplicationEvidence(payload);
   if (event.type === "run.failed" && payload.failure !== undefined) {
     assertFailureEnvelope(payload.failure);
   }
@@ -1067,8 +1052,5 @@ function assertAnalysisExposure(payload: Record<string, unknown>): void {
 export * from "./scenario.js";
 
 export type {
-  ScenarioRequest,
-  ScenarioPolicy,
-  ScenarioPolicySnapshot,
-  ScenarioProjection
+  ScenarioRequest
 } from "./generated/protocol-types.js";

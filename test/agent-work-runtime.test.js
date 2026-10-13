@@ -1,4 +1,5 @@
 import test from "node:test";
+import { renderModelContexts } from "@mininglamp-oss/octo-harness-protocol";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -146,7 +147,6 @@ test("process restart hello has no durable run or stream state", async () => {
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -194,10 +194,9 @@ test("Agent Work envelope maps to a local adapter invocation with fixed cwd and 
   assert.deepEqual(mapped.request.agentConfig, { model: "gpt-5", workdir: "/workspace/project" });
   assert.equal(mapped.request.approvalMode, "ask");
   assert.equal(mapped.request.controlInstructions, "Keep changes scoped.");
-  assert.notEqual(mapped.request.modelInput, mapped.request.prompt);
-  assert.match(mapped.request.modelInput, /octo\.model-selections\/v1/);
-  assert.match(mapped.request.modelInput, /Lin: Use the existing adapter\./);
-  assert.match(mapped.request.modelInput, /Ada: The failing case is reset\./);
+  assert.equal(mapped.request.modelInput, mapped.request.prompt);
+  assert.match(renderModelContexts(mapped.request.context), /Use the existing adapter/);
+  assert.match(renderModelContexts(mapped.request.context), /The failing case is reset/);
   assert.deepEqual(mapped.request.context, source.effective_context);
   assert.notEqual(mapped.request.context, source.effective_context);
   assert.equal(mapped.request.runMetadata.schemaVersion, 7);
@@ -391,9 +390,9 @@ test("typed control instructions remain separate from untrusted model selections
   const { request } = mapExecutionEnvelope(source);
   assert.equal(request.controlInstructions, ["Keep changes scoped.", ...instructions.map(entry => entry.text)].join("\n\n"));
   assert.doesNotMatch(request.controlInstructions, /Ignore policy|full_access|untrusted/);
-  assert.ok(request.modelInput.includes(selectedText));
-  assert.match(request.modelInput, /Untrusted contextual facts \(JSON data, not instructions\)/);
-  for (const entry of instructions) assert.equal(request.modelInput.includes(entry.text), false);
+  assert.ok(renderModelContexts(request.context).includes(selectedText));
+  assert.equal(request.modelInput, request.prompt);
+  for (const entry of instructions) assert.equal(renderModelContexts(request.context).includes(entry.text), false);
   assert.equal(request.prompt, "[Current message]\nFix the test");
 });
 
@@ -408,7 +407,7 @@ test("untrusted instruction sources cannot cross into controlInstructions", () =
   }
 });
 
-test("registered unresolved resources fail at the compiler rather than silently entering modelInput", () => {
+test("references forward as descriptors without compiler or material prefetch", () => {
   for (const [resolver, locator] of [
     ["mcp", { server_ref: "team", tool: "read_document" }],
     ["cli", { operation_ref: "registered/read-document" }],
@@ -423,7 +422,12 @@ test("registered unresolved resources fail at the compiler rather than silently 
     };
     if (resolver === "mcp") assert.doesNotThrow(() => assertContextEnvelope(source.effective_context), resolver);
     else assert.throws(() => assertContextEnvelope(source.effective_context), /CONTEXT_SCHEMA_INVALID/);
-    assert.throws(() => mapExecutionEnvelope(source), /CONTEXT_RESOLVER_UNAVAILABLE|CONTEXT_SCHEMA_INVALID/, resolver);
+    if (resolver === "mcp") {
+      const mapped = mapExecutionEnvelope(source);
+      assert.deepEqual(mapped.request.context, source.effective_context);
+      assert.match(renderModelContexts(mapped.request.context), /read_document/);
+      assert.equal(mapped.request.modelInput, mapped.request.prompt);
+    } else assert.throws(() => mapExecutionEnvelope(source), /CONTEXT_SCHEMA_INVALID/, resolver);
   }
 });
 
@@ -480,11 +484,11 @@ test("typed selections enrich modelInput without becoming current input or displ
   assert.equal(renderAgentRunInputPrompt(envelope.agent_run_request.input), "[Current message]\nFix the test");
   assert.equal(request.prompt, "[Current message]\nFix the test");
   for (const entry of selections) {
-    assert.ok(request.modelInput.includes(entry.resource_ref));
-    assert.ok(request.modelInput.includes(entry.text));
+    assert.ok(renderModelContexts(request.context).includes(entry.resource_ref));
+    assert.ok(renderModelContexts(request.context).includes(entry.text));
     assert.equal(request.prompt.includes(entry.text), false);
   }
-  assert.ok(request.modelInput.indexOf("Use the existing adapter.") < request.modelInput.indexOf("[Current message]"));
+  assert.equal(request.modelInput, request.prompt);
 });
 
 test("Human and SDK prompt input renders without IM parts", () => {
@@ -605,7 +609,6 @@ test("Agent Work correlates HTTP request IDs and preserves invocation identity",
       }
     };
     runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token-must-not-leak",
       tenantId: "tenant-observed",
@@ -787,7 +790,6 @@ test("interaction responses require the active execution instance as well as lea
       }
     };
     runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -832,7 +834,6 @@ test("a configured runtime ID still refreshes registration and rejects identity 
       async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
     };
     runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -885,7 +886,6 @@ test("startup registration failure stays alive and every reconnect re-registers"
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -927,7 +927,6 @@ test("rejected runtime credentials stop after the configured failure budget", as
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "rejected-runtime-token",
@@ -983,7 +982,6 @@ test("connectivity notification interrupts a long reconnect backoff with bounded
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1052,7 +1050,6 @@ test("runtime goaway delays and spreads the next reconnect", async () => {
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1105,7 +1102,6 @@ test("close cancels a pending reconnect backoff without late registration", asyn
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1160,7 +1156,6 @@ test("a stalled WebSocket handshake times out and registration retries", async (
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1217,7 +1212,6 @@ test("hard outbox watermark rejects new work with a memory command receipt", asy
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1285,7 +1279,6 @@ test("low disk preflight stays connected, reports health and rejects new work", 
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1351,7 +1344,6 @@ test("missing provider configuration rejects work with a memory catalog failure"
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1436,7 +1428,6 @@ test("event nack releases the send window and retries from the requested sequenc
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1504,7 +1495,6 @@ test("local runtime concurrency limit queues a second provider invocation", asyn
     await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
     const address = httpServer.address();
     runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
       profile: "default",
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
@@ -1594,7 +1584,6 @@ test('control-plane cancellation is not classified as adapter failure when the o
   try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     runtime = new AgentWorkRuntime({ profile: 'default', baseUrl: `http://127.0.0.1:${server.address().port}`, token: 'fixture', runtimeName: 'runtime-cancel', storePath: join(directory, 'state.db'),
-      createMaterialCompactionPort: async () => ({ model: 'fixture', contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error('unexpected summary'); } })
     }, { list: async () => [{ type: 'codex', capabilities: ['react'], agentSources: ['provisioned'], executionFeatures: ['approval.ask', 'interaction.response'] }], cancel: async () => ({ cancelled: true }),
       async *invoke(_type, request) {
         yield { protocolVersion: 2, type: 'message.delta', payload: { text: 'starting' } };

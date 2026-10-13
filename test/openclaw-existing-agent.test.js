@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadLocalOpenClawGateway, createOpenClawAdapter } from "../packages/octo-harness-adapter-openclaw/dist/index.js";
 import { assertContextEnvelope, assertResolvedExecutionPlan, mergeContext } from "../packages/octo-harness-protocol/dist/index.js";
-import { assertFrozenContextPlan } from "../packages/octo-harness-context-builder/dist/run-context.js";
+import { assertFrozenContextPlan } from "../packages/octo-harness-protocol/dist/index.js";
 import { loadManagedAgentWorksFromRoot } from "../packages/octo-harness-daemon/dist/index.js";
 import { HarnessEngine, MemoryStore } from "../packages/octo-harness-core/dist/index.js";
 

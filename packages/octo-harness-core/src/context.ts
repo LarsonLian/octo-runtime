@@ -35,7 +35,7 @@ export function assertLocalContext(context: unknown): asserts context is Context
   for (const item of context.items) {
     if (!findContextTypeDefinition(item.namespace, item.name)) continue;
     if (
-      item.namespace === "octo.execution" ||
+      item.namespace === "octo.execution" || item.namespace === "octo.content" ||
       (item.namespace === "octo.security" && item.name === "approval_policy")
     )
       continue;
@@ -54,6 +54,8 @@ export function resolveLocalContext(
   assertAgentSource(agentSource);
   assertLocalContext(defaults);
   assertLocalContext(submitted);
+  if (defaults.items.some(item => item.namespace !== "octo.execution" && item.namespace !== "octo.security"))
+    throw new TypeError("CONTEXT_CONFIGURATION_TYPE_FORBIDDEN");
   let effectiveContext = mergeContext(defaults, submitted);
   if (!contextItem(effectiveContext, "octo.security", "approval_policy")) {
     effectiveContext = mergeContext(effectiveContext, {
@@ -151,8 +153,8 @@ export function assertRunSnapshot(run: AgentRun, previous?: AgentRun): void {
   }
   assertLocalContext(run.context);
   const resolved = resolveLocalContext(
-    run.effectiveContext,
     { schema: run.effectiveContext.schema, items: [] },
+    run.effectiveContext,
     run.resolvedExecutionPlan.agent_source
   );
   if (

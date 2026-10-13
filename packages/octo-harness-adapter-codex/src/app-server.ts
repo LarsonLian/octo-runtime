@@ -259,34 +259,6 @@ export async function* runCodexAppServerTurn({
     if (turnId) client.setActiveTurn(turnId);
     context?.reportActivity?.({ kind: "turn_started", method: "turn_start" });
 
-    // 原生技能启用且 turn/start 已获确认，才报告本轮应用证据；loaded 不表示技能已实际调用。
-    const compilation = recordValue(request.runMetadata?.contextCompilation);
-    if (compilation) {
-      const evidence: CanonicalEvent = {
-        protocolVersion: 2,
-        type: "context.applied",
-        payload: {
-          schema: "octo.context-application/v1",
-          compiler_version: "octo.context-compiler/v4",
-          catalog_version: "octo.context-catalog/v3",
-          context_hash: String(compilation.context_hash),
-          compiled_hash: String(compilation.compiled_hash),
-          run_id: String(compilation.run_id),
-          lease_id: String(compilation.lease_id),
-          fencing_token: Number(compilation.fencing_token),
-          adapter_type: "codex",
-          provider_session_id: threadId,
-          provider_ack: "turn/start"
-        }
-      };
-      yield context?.protocolMode === "native"
-        ? {
-            kind: "control",
-            control: { type: "evidence", name: "context.applied", payload: evidence.payload }
-          }
-        : evidence;
-    }
-
     // Must come after turn/start: otherwise the Core would persist a provider session that cannot be executed.
     const session: CanonicalEvent = {
       protocolVersion: 2,

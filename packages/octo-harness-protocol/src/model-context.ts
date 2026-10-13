@@ -2,15 +2,13 @@ import { assertContextEnvelope, contextItem } from "./context.js";
 import type { ContextEnvelope, ContextItem } from "./generated/protocol-types.js";
 
 export function isModelContextItem(item: ContextItem): boolean {
-  return (
-    (item.namespace.startsWith("extra.") && item.namespace.length > 6) ||
-    (item.namespace === "octo.content" && ["inline", "references"].includes(item.name))
-  );
+  return MODEL_CONTEXT_PATTERNS.some(pattern => pattern.test(item.namespace + "/" + item.name));
 }
+
+const MODEL_CONTEXT_PATTERNS = [/^extra\.[^/]+\/[^/]+$/, /^octo\.content\/(inline|references)$/];
 
 /** A display format for model input, not an XML document or a business resolver. */
 export function renderModelContexts(context: ContextEnvelope): string {
-  assertContextEnvelope(context);
   const items = context.items.filter(isModelContextItem);
   if (!items.length) return "";
   return [

@@ -44,17 +44,27 @@
     "AdapterProtocolSupport": [
       {
         "protocol": "codex.app-server",
-        "modes": ["native", "canonical"],
-        "nativeMethods": ["item/commandExecution/requestApproval", "item/tool/requestUserInput"]
+        "modes": [
+          "native",
+          "canonical"
+        ],
+        "nativeMethods": [
+          "item/commandExecution/requestApproval",
+          "item/tool/requestUserInput"
+        ]
       },
       {
         "protocol": "acp",
-        "modes": ["canonical"],
+        "modes": [
+          "canonical"
+        ],
         "nativeMethods": []
       },
       {
         "protocol": "example.native",
-        "modes": ["native"],
+        "modes": [
+          "native"
+        ],
         "nativeMethods": []
       }
     ],
@@ -89,19 +99,11 @@
       {
         "type": "evidence",
         "name": "session",
-        "payload": { "providerSession": { "sessionId": "native-session", "resumable": true } }
-      },
-      {
-        "type": "evidence",
-        "name": "context.applied",
         "payload": {
-          "schema": "octo.context-application/v1",
-          "compiler_version": "octo.context-compiler/v4",
-          "catalog_version": "octo.context-catalog/v3",
-          "context_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "compiled_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "run_id": "run-1", "lease_id": "lease-1", "fencing_token": 1,
-          "adapter_type": "codex", "provider_session_id": "thread-native", "provider_ack": "turn/start"
+          "providerSession": {
+            "sessionId": "native-session",
+            "resumable": true
+          }
         }
       },
       {
@@ -203,7 +205,9 @@
               "text": "answer"
             }
           },
-          "extension": ["preserved"]
+          "extension": [
+            "preserved"
+          ]
         }
       },
       {
@@ -388,18 +392,27 @@
       },
       {
         "protocol": "codex",
-        "modes": ["native", "native"],
+        "modes": [
+          "native",
+          "native"
+        ],
         "nativeMethods": []
       },
       {
         "protocol": "codex",
-        "modes": ["auto"],
+        "modes": [
+          "auto"
+        ],
         "nativeMethods": []
       },
       {
         "protocol": "acp",
-        "modes": ["canonical"],
-        "nativeMethods": ["fake"]
+        "modes": [
+          "canonical"
+        ],
+        "nativeMethods": [
+          "fake"
+        ]
       }
     ],
     "NativeInteractionResponse": [
@@ -464,6 +477,23 @@
         "requested_after_seq": -1,
         "oldest_seq": 5,
         "latest_seq": 10
+      },
+      {
+        "type": "evidence",
+        "name": "context.applied",
+        "payload": {
+          "schema": "octo.context-application/v1",
+          "compiler_version": "octo.context-compiler/v4",
+          "catalog_version": "octo.context-catalog/v3",
+          "context_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "compiled_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "run_id": "run-1",
+          "lease_id": "lease-1",
+          "fencing_token": 1,
+          "adapter_type": "codex",
+          "provider_session_id": "thread-native",
+          "provider_ack": "turn/start"
+        }
       }
     ],
     "HostFrame": [

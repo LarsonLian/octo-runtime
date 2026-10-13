@@ -1,5 +1,4 @@
 import { assertJsonValue } from "./context.js";
-import { assertContextApplicationEvidence } from "./context-application.js";
 import { assertCanonicalEvent, type CanonicalEvent, type InvokeRequest } from "./index.js";
 import type {
   ProtocolMode,
@@ -222,16 +221,9 @@ export function assertHostControl(value: unknown): asserts value is HostControl 
   if (
     value.type === "evidence" &&
     exactKeys(value, ["type", "name", "payload"]) &&
-    ["session", "context.applied"].includes(String(value.name)) &&
+    value.name === "session" &&
     isRecord(value.payload)
   ) {
-    if (value.name === "context.applied") {
-      try {
-        assertContextApplicationEvidence(value.payload);
-      } catch {
-        throw protocolError("HOST_CONTROL_INVALID");
-      }
-    }
     return;
   }
   if (
