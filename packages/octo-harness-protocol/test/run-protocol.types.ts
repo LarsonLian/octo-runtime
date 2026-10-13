@@ -4,13 +4,13 @@ function consume(frame: HostFrame): unknown {
   if (frame.kind === "native") {
     const mode: "native" = frame.protocol_mode;
     // @ts-expect-error A native frame has no canonical event.
-    frame.event;
+    void frame.event;
     return [mode, frame.payload, frame.messageKind];
   }
   if (frame.kind === "canonical") {
     const mode: "canonical" = frame.protocol_mode;
     // @ts-expect-error A canonical frame has no native payload.
-    frame.payload;
+    void frame.payload;
     return [mode, frame.event];
   }
   const mode: ProtocolMode = frame.protocol_mode;
