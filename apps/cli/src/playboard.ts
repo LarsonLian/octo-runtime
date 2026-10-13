@@ -13,6 +13,7 @@ import {
   assertInvokeRequest,
   assertModelInputParts,
   contextControlInstructions,
+  contextItem,
   isHostTerminal,
   mergeContext,
   type ContextEnvelope,
@@ -21,6 +22,30 @@ import {
 } from "@mininglamp-oss/octo-harness-protocol";
 
 const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
+
+/** CLI shorthand resolves execution defaults before entering the strict Context contract. */
+function playboardContext(value: unknown): ContextEnvelope {
+  if (isRecord(value) && Array.isArray(value.items)) {
+    value = {
+      ...value,
+      items: value.items.map((item: unknown) => {
+        if (
+          isRecord(item) &&
+          item.namespace === "octo.execution" &&
+          item.name === "adapter" &&
+          isRecord(item.payload) &&
+          item.payload.type === "openclaw" &&
+          !Object.hasOwn(item.payload, "provider_agent_id")
+        ) {
+          return { ...item, payload: { ...item.payload, provider_agent_id: "main" } };
+        }
+        return item;
+      })
+    };
+  }
+  assertContextEnvelope(value);
+  return value;
+}
 
 export interface PlayboardOptions {
   input: NodeJS.ReadableStream;
@@ -40,7 +65,7 @@ export function preparePlayboard(value: unknown): {
     "inputs",
     "contexts",
     "sessionId",
-    "protocolMode",
+    "protocol_mode",
     "agentSource",
     "providerSession",
     "continuityMode"
@@ -49,12 +74,13 @@ export function preparePlayboard(value: unknown): {
     throw new TypeError(`playboard request accepts only: ${fields.join(", ")}`);
   }
   assertModelInputParts(value.inputs);
-  assertContextEnvelope(value.contexts);
-  const protocolMode = value.protocolMode ?? "native";
+  const contexts = playboardContext(value.contexts);
+  const protocolMode = value.protocol_mode ?? "native";
   if (protocolMode !== "native" && protocolMode !== "canonical") {
-    throw new TypeError("protocolMode must be native or canonical");
+    throw new TypeError("protocol_mode must be native or canonical");
   }
-  const agentSource = value.agentSource ?? "provisioned";
+  const adapterType = contextItem(contexts, "octo.execution", "adapter")?.payload.type;
+  const agentSource = value.agentSource ?? (adapterType === "openclaw" ? "preset" : "provisioned");
   assertAgentSource(agentSource);
   if (
     value.sessionId !== undefined &&
@@ -113,7 +139,7 @@ export function preparePlayboard(value: unknown): {
     defaults,
     {
       schema: CONTEXT_SCHEMA,
-      items: value.contexts.items.filter(
+      items: contexts.items.filter(
         (item) =>
           item.namespace === "octo.execution" ||
           (item.namespace === "octo.security" && item.name === "approval_policy")
@@ -121,7 +147,7 @@ export function preparePlayboard(value: unknown): {
     },
     agentSource
   );
-  const context = mergeContext(defaults, value.contexts);
+  const context = mergeContext(defaults, contexts);
   const prompt = value.inputs
     .map((part) => (part.type === "text" ? part.text : "[Image]"))
     .join("\n\n");

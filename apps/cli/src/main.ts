@@ -978,11 +978,14 @@ function selectedRuntimeStatus(
 function helpText(group?: string): string {
   if (group === "playboard") {
     return `Usage: octo-harness playboard [--manifest PATH] < request.json\n\n` +
+      `For development, testing, and integration debugging only.\n` +
+      `Do not integrate production applications by spawning this CLI subcommand.\n\n` +
       `Read one complete JSON request from stdin, spawn an independent Host, and stream NDJSON HostFrames.\n` +
       `No login, Access, Worker, or daemon is required. This runs real providers.\n` +
       `Required: inputs (ModelInputPart[]), contexts (Context v3 envelope).\n` +
-      `Optional: sessionId, protocolMode (native by default, or canonical), agentSource, providerSession, continuityMode.\n` +
+      `Optional: sessionId, protocol_mode (native by default, or canonical), agentSource, providerSession, continuityMode.\n` +
       `Defaults: codex, current working directory, approval ask, 120-second run timeout.\n` +
+      `OpenClaw defaults: existing main agent, preset source, provider-owned workspace.\n` +
       `Execution settings are overridden by contexts. Pending interactions fail explicitly in this one-shot mode.\n` +
       `--manifest selects an adapter manifest; defaults to the bundled adapters.\n` +
       `See apps/cli/README.md for a complete here-string example.`;

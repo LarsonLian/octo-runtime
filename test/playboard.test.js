@@ -19,7 +19,7 @@ const input = (text = "hello", overrides = {}) => ({
 });
 const echoInput = (text = "hello", extra = []) =>
   input(text, {
-    protocolMode: "canonical",
+    protocol_mode: "canonical",
     contexts: context([item("octo.execution", "adapter", { type: "playboard-test" }), ...extra])
   });
 
@@ -132,13 +132,53 @@ test("playboard maps one snapshot and never invents provider continuity", () => 
   });
 });
 
+test("OpenClaw shorthand selects an existing agent without injecting a caller workspace", () => {
+  const adapter = (payload) => context([item("octo.execution", "adapter", payload)]);
+  const submitted = input("hello", {
+    protocol_mode: "canonical",
+    contexts: adapter({ type: "openclaw" })
+  });
+  const snapshot = structuredClone(submitted);
+  const prepared = preparePlayboard(submitted);
+  assert.deepEqual(submitted, snapshot);
+  assert.equal(prepared.adapterType, "openclaw");
+  assert.equal(prepared.protocolMode, "canonical");
+  assert.equal(prepared.request.agentSource, "preset");
+  assert.equal(prepared.request.agentConfig.providerAgentId, "main");
+  assert.equal(prepared.request.workdir, "");
+  assert.ok(!prepared.request.context.items.some((entry) => entry.name === "workspace"));
+  assert.deepEqual(
+    prepared.request.context.items.find((entry) => entry.name === "adapter").payload,
+    { type: "openclaw", provider_agent_id: "main" }
+  );
+  const explicit = preparePlayboard({
+    ...submitted,
+    agentSource: "provisioned",
+    contexts: adapter({ type: "openclaw", provider_agent_id: "researcher" })
+  });
+  assert.equal(explicit.request.agentSource, "provisioned");
+  assert.equal(explicit.request.agentConfig.providerAgentId, "researcher");
+  assert.equal(explicit.request.workdir, process.cwd());
+  for (const provider_agent_id of [null, undefined, "", " ", "../main", 42]) {
+    assert.throws(
+      () =>
+        preparePlayboard({
+          ...submitted,
+          contexts: adapter({ type: "openclaw", provider_agent_id })
+        }),
+      /CONTEXT_SCHEMA_INVALID/
+    );
+  }
+});
+
 test("invalid input, old context, and invalid continuity fail before execution", () => {
   for (const value of [
     null,
     [],
     input(""),
     input("hello", { inputs: [] }),
-    input("hello", { protocolMode: "other" }),
+    input("hello", { protocol_mode: "other" }),
+    input("hello", { protocolMode: "canonical" }),
     input("hello", { contexts: { schema: "octo.context-envelope/v2", items: [] } }),
     input("hello", { sessionId: 3 }),
     input("hello", { continuityMode: "continue" }),
@@ -185,7 +225,7 @@ test("independent Host renders ordered business context, keeps control separate,
 for (const protocolMode of ["native", "canonical"]) {
   test(`real Codex adapter emits ${protocolMode} frames through standalone Host`, async (t) => {
     const settings = await fixture(t);
-    const result = await execute(settings, input("normal", { protocolMode }));
+    const result = await execute(settings, input("normal", { protocol_mode: protocolMode }));
     assert.equal(result.code, 0, result.stderr);
     terminal(result, "completed");
     assert.ok(result.frames.some((frame) => frame.kind === protocolMode));
@@ -199,7 +239,7 @@ for (const protocolMode of ["native", "canonical"]) {
   });
   test(`${protocolMode} pending interaction fails without hanging or auto-approving`, async (t) => {
     const settings = await fixture(t);
-    const result = await execute(settings, input("approval", { protocolMode }));
+    const result = await execute(settings, input("approval", { protocol_mode: protocolMode }));
     assert.equal(result.code, 1);
     assert.match(result.stderr, /PLAYBOARD_INTERACTION_REQUIRED/);
     assert.ok(result.frames.length > 0);
@@ -247,7 +287,7 @@ test("malformed stdin, unknown arguments and unsupported native mode fail clearl
   const args = await execute(settings, echoInput(), { args: ["--unknown", "value"] });
   assert.equal(args.code, 1);
   assert.match(args.stderr, /accepts only/);
-  const unsupported = await execute(settings, { ...echoInput(), protocolMode: "native" });
+  const unsupported = await execute(settings, { ...echoInput(), protocol_mode: "native" });
   assert.equal(unsupported.code, 1);
   assert.equal(unsupported.stdout, "");
   assert.match(unsupported.stderr, /PROTOCOL_MODE_UNSUPPORTED/);

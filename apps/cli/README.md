@@ -124,6 +124,9 @@ octo-harness agent-run cancel <agent-run-id>
 
 ## Playboard: standalone local trials
 
+For development, testing, and integration debugging only. Do not integrate production
+applications by spawning this CLI subcommand.
+
 `playboard` reads **one complete JSON object** from stdin, starts its own adapter-host,
 streams one `HostFrame` per stdout line (NDJSON), then exits and closes the Host.
 It uses real adapters/providers without login, enrollment, Access, Worker, a daemon,
@@ -137,7 +140,7 @@ octo-harness playboard <<< '{
   "inputs": [{ "type": "text", "text": "Reply with OK. Do not use tools." }],
   "contexts": { "schema": "octo.context-envelope/v3", "items": [] },
   "sessionId": "playboard-demo",
-  "protocolMode": "canonical"
+  "protocol_mode": "canonical"
 }'
 ```
 
@@ -150,8 +153,8 @@ No extra summary is appended to stdout. Help is available with `playboard --help
 | `inputs` | Required, non-empty `ModelInputPart[]`. Text is `{ "type": "text", "text": "..." }`; images use the existing validated base64/mimeType/byteSize/sha256 contract. |
 | `contexts` | Required Context v3 envelope. Empty `items` is valid. Business context retains its submitted order and is rendered by the shared Host. |
 | `sessionId` | Optional local caller session identity, otherwise generated. Reusing it does not restore history or a provider session. Each invocation gets fresh run/invocation IDs. |
-| `protocolMode` | `native` (default) or `canonical`. Native preserves provider payloads; unsupported modes fail without fallback. |
-| `agentSource` | `provisioned` (default) or `preset`, subject to adapter support. |
+| `protocol_mode` | `native` (default) or `canonical`. Native preserves provider payloads; unsupported modes fail without fallback. |
+| `agentSource` | `provisioned` (default), or `preset` (default for OpenClaw), subject to adapter support. |
 | `providerSession` | Optional opaque provider binding, including a non-empty `sessionId`. Pass back the real binding returned in Host events to request continuation. |
 | `continuityMode` | Defaults to `continue` when `providerSession` is supplied, otherwise `fresh`. Explicit `continue` requires the binding; `fresh` forbids it. The provider determines whether resume succeeds. |
 
@@ -167,6 +170,19 @@ settings in `contexts.items`, for example:
   { "namespace": "extra.playboard", "name": "background", "payload": { "text": "Only this turn's background." } }
 ]
 ```
+
+OpenClaw uses an existing local agent and its provider-owned workspace by default:
+
+```bash
+node apps/cli/dist/index.js playboard <<< '{"inputs":[{"type":"text","text":"回复 OK"}],"contexts":{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.execution","name":"adapter","payload":{"type":"openclaw"}}]},"protocol_mode":"canonical"}'
+```
+
+For this CLI shorthand, an omitted `provider_agent_id` resolves to `main` before
+Context validation. To select another existing agent, add `"provider_agent_id":"researcher"`
+to the adapter payload. Explicit invalid IDs are rejected; a missing agent is never
+created or replaced with another target. The adapter reads the local OpenClaw Gateway
+configuration and verifies the target exists. Other protocol entry points still require
+an explicit OpenClaw `provider_agent_id`.
 
 Workspace selection uses the local resolver: provisioned runs require a fixed absolute
 path; random workspace allocation is not provided. Model, reasoning, limits, envs,
