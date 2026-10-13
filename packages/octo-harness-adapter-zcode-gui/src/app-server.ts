@@ -1,4 +1,5 @@
 import {
+  initialControlInstructions,
   freshFallbackInputText,
   providerInputText,
   type AcpApprovalBridge,
@@ -526,8 +527,8 @@ export async function* runZcodeAppServerTurn({
     });
 
     const input = resumeFallback ? freshFallbackInputText(request) : providerInputText(request);
-    const content = request.controlInstructions
-      ? `${input}\n\n${request.controlInstructions}`
+    const content = initialControlInstructions(request, !resumed)
+      ? `${input}\n\n${initialControlInstructions(request, !resumed)}`
       : input;
     const sendResult = await client.request("session/send", { sessionId, content });
     if (asRecord(sendResult)?.accepted === false)

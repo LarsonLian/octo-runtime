@@ -150,3 +150,21 @@ test("Codex real app-server identifies three native images in supplied order", {
     console.log(JSON.stringify({ evidence: "codex-native-three-image", providerSession: events.find(event => event.type === "session.update")?.payload.providerSession, images: images.map(({ sha256, byteSize }) => ({ sha256, byteSize })), answer: parsed }));
   } finally { await rm(workdir, { recursive: true, force: true }); }
 });
+
+for (const scenario of ["first", "resume", "reset", "missing-session"]) {
+  test(`Codex injects mandatory instructions only at session start: ${scenario}`, async () => {
+    const server = codexFixture({ fallback: scenario === "missing-session" });
+    const adapter = createCodexAdapter({ command: "fixture", spawnFn: server.spawnFn });
+    const events = await collect(adapter.invoke(invokeRequest({
+      controlInstructions: "我是个人助理",
+      ...(scenario === "resume" || scenario === "missing-session" ? { providerSession: { sessionId: "previous" } } : {})
+    })));
+    assert.equal(events.at(-1).type, "run.completed");
+    const resume = server.frames.find(frame => frame.method === "thread/resume");
+    if (resume) assert.equal(Object.hasOwn(resume.params, "developerInstructions"), false);
+    const start = server.frames.find(frame => frame.method === "thread/start");
+    if (scenario === "resume") assert.equal(start, undefined);
+    else assert.equal(start.params.developerInstructions, "我是个人助理");
+    assert.doesNotMatch(JSON.stringify(server.frames.find(frame => frame.method === "turn/start").params.input), /我是个人助理/);
+  });
+}

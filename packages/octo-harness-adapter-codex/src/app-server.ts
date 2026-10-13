@@ -1917,7 +1917,7 @@ function threadParams(
     // rejects those calls before the existing reverse-request handler can answer them.
     approvalPolicy: request.approvalMode === "assisted" ? "on-request" : "untrusted",
     ...(environmentConfig ? { config: environmentConfig } : {}),
-    developerInstructions: request.controlInstructions
+    ...(extra.threadId ? {} : { developerInstructions: request.controlInstructions })
   };
 }
 

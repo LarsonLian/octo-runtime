@@ -1,4 +1,5 @@
 import {
+  initialControlInstructions,
   defineAdapter,
   hasImageInput,
   invocationEnvironment,
@@ -380,11 +381,11 @@ export function buildAntigravityCommand(
   if (request.agentConfig.model) args.push("--model", request.agentConfig.model);
   if (effort) args.push("--effort", effort);
   // agy has no system-prompt flag. Keep the documented user-channel degradation explicit and never rewrite AGENTS.md.
-  const content = request.controlInstructions
+  const content = initialControlInstructions(request)
     ? [
         {
           type: "text",
-          text: `Harness control instructions (apply to this turn):\n${request.controlInstructions}`
+          text: `Harness control instructions (apply throughout this session):\n${initialControlInstructions(request)}`
         },
         { type: "text", text: `User input:\n${providerInputText(request)}` }
       ]

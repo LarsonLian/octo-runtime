@@ -1,4 +1,5 @@
 import {
+  initialControlInstructions,
   invocationEnvironment,
   invocationMcpServers,
   assertMcpOptions,
@@ -112,7 +113,7 @@ export async function buildClaudeCommand(
   const promptFile = join(directory, "system-prompt.txt");
   // The control prompt goes through Claude's dedicated file argument while the
   // user prompt is still fed via stdin, so the two never get conflated.
-  await writeFile(promptFile, req.controlInstructions, { mode: 0o600 });
+  await writeFile(promptFile, initialControlInstructions(req), { mode: 0o600 });
   if (Object.keys(servers).length) {
     const mcpFile = join(directory, "mcp.json");
     const mcpServers = Object.fromEntries(
@@ -143,8 +144,7 @@ export async function buildClaudeCommand(
     "stream-json",
     "--verbose",
     "--include-partial-messages",
-    "--append-system-prompt-file",
-    promptFile
+    ...(initialControlInstructions(req) ? ["--append-system-prompt-file", promptFile] : [])
   ];
   if (req.providerSession?.sessionId) args.push("--resume", req.providerSession.sessionId);
   if (req.agentConfig?.model) args.push("--model", req.agentConfig.model);

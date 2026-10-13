@@ -1,4 +1,5 @@
-import { invocationEnvironment } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import {
+  initialControlInstructions, invocationEnvironment } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import {
   canonicalTerminalStatus,
   executionFeatures,
@@ -203,7 +204,7 @@ export function createCodeBuddyAdapter({
               }
             }
           };
-          const prompt = `${providerInputText(req)}\n\n${req.controlInstructions}`;
+          const prompt = `${providerInputText(req)}\n\n${initialControlInstructions(req)}`;
           const promptParams = acpPromptParams(session.id, prompt);
           const promptRequestId = client.reserveRequestId();
 

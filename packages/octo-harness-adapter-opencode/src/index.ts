@@ -1,4 +1,5 @@
 import {
+  initialControlInstructions,
   mapReasoningEffort,
   invocationEnvironment,
   invocationMcpServers,
@@ -73,7 +74,7 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
   assertMcpOptions(servers, "opencode", ["toolTimeoutMs"]);
   const directory = await mkdtemp(join(tmpdir(), "octo-harness-opencode-"));
   const instructions = join(directory, "instructions.md");
-  await writeFile(instructions, req.controlInstructions, { mode: 0o600 });
+  await writeFile(instructions, initialControlInstructions(req), { mode: 0o600 });
   let inline: Record<string, unknown> = {};
   if (runEnv.OPENCODE_CONFIG_CONTENT)
     inline = JSON.parse(runEnv.OPENCODE_CONFIG_CONTENT) as Record<string, unknown>;
@@ -81,7 +82,7 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
     ? inline.instructions.filter((value): value is string => typeof value === "string")
     : [];
   // Inject harness context via a temporary instructions file, without rewriting the user's existing OpenCode config.
-  inline.instructions = [...configuredInstructions, instructions];
+  if (initialControlInstructions(req)) inline.instructions = [...configuredInstructions, instructions];
   if (Object.keys(servers).length) {
     inline.mcp = {
       ...(isRecord(inline.mcp) ? inline.mcp : {}),

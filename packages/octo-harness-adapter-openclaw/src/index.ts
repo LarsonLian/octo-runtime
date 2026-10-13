@@ -1,4 +1,5 @@
 import {
+  initialControlInstructions,
   AcpApprovalBridge,
   defineAdapter,
   invocationEnvs,
@@ -115,7 +116,7 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
     deliver: false,
 
     idempotencyKey: requestId,
-    ...(req.controlInstructions ? { extraSystemPrompt: req.controlInstructions } : {}),
+    ...(initialControlInstructions(req) ? { extraSystemPrompt: initialControlInstructions(req) } : {}),
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),
     ...(timeout === undefined ? {} : { timeout: Math.max(0, Math.floor(timeout)) })

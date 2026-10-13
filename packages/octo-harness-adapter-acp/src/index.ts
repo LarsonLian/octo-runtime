@@ -6,6 +6,7 @@ import {
   type AcpUpdate
 } from "@mininglamp-oss/octo-harness-acp-client";
 import {
+  initialControlInstructions,
   AcpApprovalBridge,
   AcpTurnNormalizer,
   acpToolTerminalStatus,
@@ -372,11 +373,11 @@ export function createAcpAdapter(
       // Preserve the legacy text call while mixed prompts retain every block's position.
       const prompt =
         input.length === 1 && input[0]?.type === "text"
-          ? `${input[0].text}${request.controlInstructions ? `\n\n${request.controlInstructions}` : ""}`
+          ? `${input[0].text}${initialControlInstructions(request, !requestedSessionId || resumeFallback !== undefined) ? `\n\n${initialControlInstructions(request, !requestedSessionId || resumeFallback !== undefined)}` : ""}`
           : [
               ...input,
-              ...(request.controlInstructions
-                ? [{ type: "text" as const, text: request.controlInstructions }]
+              ...(initialControlInstructions(request, !requestedSessionId || resumeFallback !== undefined)
+                ? [{ type: "text" as const, text: initialControlInstructions(request, !requestedSessionId || resumeFallback !== undefined) }]
                 : [])
             ];
       const promptParams = acpPromptParams(sessionId, prompt);

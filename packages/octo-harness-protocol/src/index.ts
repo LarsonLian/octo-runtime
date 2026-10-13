@@ -302,6 +302,11 @@ export function providerInputText(request: InvokeRequest): string {
   return request.modelInput;
 }
 
+/** Inject trusted instructions only when starting a provider session, including a fresh restart. */
+export function initialControlInstructions(request: InvokeRequest, freshSession = !request.providerSession?.sessionId): string {
+  return freshSession ? request.controlInstructions : "";
+}
+
 /** Exact alternate input for a provider that could not resume its session. */
 export function freshFallbackInputText(request: InvokeRequest): string {
   if (request.freshFallbackImagesUnavailable)
