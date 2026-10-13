@@ -45,6 +45,28 @@ test("local discovery handles a later install, JSON5, token rotation and removed
  await assert.rejects(loadLocalOpenClawGateway(home),/config_not_found/);
 });
 
+test("local discovery rejects malformed device identities", async (t) => {
+  const home = await mkdtemp(join(tmpdir(), "octo-openclaw-identity-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  await mkdir(join(home, ".openclaw"));
+  await writeFile(
+    join(home, ".openclaw", "openclaw.json"),
+    JSON.stringify({ gateway: { auth: { token: "fixture" } } })
+  );
+  const root = join(home, ".octo-harness", "identity");
+  await mkdir(root, { recursive: true });
+  for (const device of [
+    null,
+    [],
+    { deviceId: "device", publicKey: "public" },
+    { deviceId: 42, publicKey: "public", privateKey: "private" },
+    { deviceId: "device", publicKey: "public", privateKey: "" }
+  ]) {
+    await writeFile(join(root, "openclaw-device.json"), JSON.stringify(device));
+    await assert.rejects(loadLocalOpenClawGateway(home), /device_identity_invalid/);
+  }
+});
+
 for (const { agentSource, target, workdir } of [
  { agentSource: "preset", target: "researcher", workdir: "" },
  { agentSource: "provisioned", target: "main", workdir: "/workspace" }

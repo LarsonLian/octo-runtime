@@ -73,7 +73,7 @@ export async function loadLocalOpenClawGateway(home = homedir()): Promise<OpenCl
   const address = isIP(localHost) === 6 ? `[${localHost}]` : localHost;
   const root = join(home, ".octo-harness", "identity");
   const path = join(root, "openclaw-device.json");
-  let device: OpenClawDeviceIdentity;
+  let device: unknown;
   try {
     device = JSON.parse(await readFile(path, "utf8"));
   } catch (error) {
@@ -97,12 +97,7 @@ export async function loadLocalOpenClawGateway(home = homedir()): Promise<OpenCl
       throw new LocalGatewayError("device_identity_invalid");
     }
   }
-  if (
-    ![device?.deviceId, device?.publicKey, device?.privateKey].every(
-      (value) => typeof value === "string" && value.length > 0
-    )
-  )
-    throw new LocalGatewayError("device_identity_invalid");
+  assertDeviceIdentity(device);
   return {
     url: `ws://${address}:${port}`,
     token,
@@ -110,6 +105,17 @@ export async function loadLocalOpenClawGateway(home = homedir()): Promise<OpenCl
     connectTimeoutMs: 1_000,
     requestTimeoutMs: 1_000
   };
+}
+
+function assertDeviceIdentity(value: unknown): asserts value is OpenClawDeviceIdentity {
+  const identity = record(value);
+  if (
+    !identity ||
+    ![identity.deviceId, identity.publicKey, identity.privateKey].every(
+      (field) => typeof field === "string" && field.length > 0
+    )
+  )
+    throw new LocalGatewayError("device_identity_invalid");
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
