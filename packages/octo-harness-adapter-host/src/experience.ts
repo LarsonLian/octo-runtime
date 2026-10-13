@@ -87,7 +87,7 @@ export class InvocationExperience {
       }
     }
     if (event.type === "run.notice" && payload.code === "retry_scheduled")
-      output.push(...this.#begin(`retry:${payload.noticeId}`, "retrying", { type: "run" }));
+      output.push(...this.#begin(`retry:${event.payload.noticeId}`, "retrying", { type: "run" }));
     if (event.type === "activity.started") {
       for (const [id, active] of this.#active) {
         if (
@@ -107,18 +107,20 @@ export class InvocationExperience {
           output.push(...this.#finish(id, "superseded"));
       }
       output.push(
-        ...this.#begin(`tool:${payload.id}`, "executing_tool", {
+        ...this.#begin(`tool:${event.payload.id}`, "executing_tool", {
           type: "tool",
           id: String(payload.id)
         })
       );
     }
     if (event.type === "tool_call.update")
-      output.push(...this.#finish(`tool:${payload.id}`, canonicalTerminalStatus(payload.status)));
+      output.push(
+        ...this.#finish(`tool:${event.payload.id}`, canonicalTerminalStatus(payload.status))
+      );
     if (event.type === "interaction.requested")
       output.push(
         ...this.#begin(
-          `interaction:${payload.interactionId}`,
+          `interaction:${event.payload.interactionId}`,
           payload.kind === "approval" ? "waiting_approval" : "waiting_input",
           { type: "interaction", id: String(payload.interactionId) }
         )
