@@ -15,9 +15,11 @@
     "@mininglamp-oss/octo-harness-observability": "workspace:*",
     "@mininglamp-oss/octo-harness-protocol": "workspace:*",
     "ajv": "^8.17.1",
-    "smol-toml": "^1.8.0",
     "ws": "^8.18.3",
-    "yaml": "^2.8.1"
+    "yaml": "^2.8.1",
+    "@mininglamp-oss/octo-harness-worker-access": "workspace:*",
+    "@mininglamp-oss/octo-harness-context-builder": "workspace:*",
+    "@mininglamp-oss/octo-harness-im": "workspace:*"
   },
   "devDependencies": {
     "@types/ws": "^8.18.1"

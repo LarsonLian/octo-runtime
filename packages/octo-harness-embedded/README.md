@@ -56,7 +56,7 @@ The Home layout is deliberately split between one installation identity and isol
 ```
 
 - Every account and tenant on the same app Home shares the same stable `machine_id`.
-- Every tenant has its own profile, `runtime_id`, Runtime credential, outbox, and channel context.
+- Every tenant has its own profile, `runtime_id`, Runtime credential, WSS connection, and bounded in-memory replay window.
 - All authorized tenants for the current account stay connected through one daemon and adapter-host.
 - Switching the UI's current tenant does not call the SDK and does not restart the daemon.
 - Switching accounts calls `stop('account-switch')` first. The new account cannot start until the old process tree and connections are gone.
@@ -108,3 +108,9 @@ Both reuse the same `startDaemonServer`, Agent Work supervisor, adapter-host, st
 ## Scope
 
 The package does not own login UI, SSO, tenant selection, Electron IPC, or renderer state. Hosts provide a stable user ID, a Human Token provider, and the complete authorized Space list. See [`docs/14-embedded-sdk-design.md`](../../docs/14-embedded-sdk-design.md) for the full design and acceptance criteria.
+
+## 模块责任边界
+
+- 负责：为 Node/Electron 宿主提供运行时生命周期、账户隔离和本地 IPC 接入。
+- 不负责：在 renderer 存放凭据、IM 消息处理、绕过 Host 的 provider 执行。
+- 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。

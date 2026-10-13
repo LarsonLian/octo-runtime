@@ -1,6 +1,6 @@
 import { RUNTIME_RUN_CONTRACT } from "@mininglamp-oss/octo-harness-protocol";
 import { readFileSync } from "node:fs";
-import { collectRuntimeDeviceInfo } from "@mininglamp-oss/octo-harness-daemon-app";
+import { collectRuntimeDeviceInfo } from "@mininglamp-oss/octo-harness-worker-access";
 import {
   REQUEST_ID_HEADER,
   createRequestId,

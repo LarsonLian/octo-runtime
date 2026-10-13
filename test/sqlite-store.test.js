@@ -17,7 +17,7 @@ test("SqliteStore persists unified AgentSession and AgentRun state across reopen
   const dir = await mkdtemp(join(tmpdir(), "oh-sqlite-"));
   try {
     const file = join(dir, "state.db");
-    const store = SqliteStore.open(file);
+    const store = SqliteStore.open(file, { recordRunEvents: true });
     await store.transaction(() => {
       store.putAgent(agentRecord("a1", "A"));
       store.putAgentSession({
@@ -35,7 +35,7 @@ test("SqliteStore persists unified AgentSession and AgentRun state across reopen
     });
     store.close();
 
-    const reopened = SqliteStore.open(file);
+    const reopened = SqliteStore.open(file, { recordRunEvents: true });
     assert.equal(reopened.getAgent("a1").name, "A");
     assert.equal(reopened.getAgent("a1").contextDefaultsVersion, 1);
     assert.deepEqual(reopened.getAgent("a1").defaultContext, context);

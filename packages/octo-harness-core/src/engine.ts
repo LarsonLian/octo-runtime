@@ -268,7 +268,7 @@ export class HarnessEngine {
           delete session.activeRunId;
           this.store.putAgentSession(session);
         }
-        this.store.putAgentRun(run);
+        if (isTerminal(event) || event.type === "session.update") this.store.putAgentRun(run);
       });
     }
     return { run, events: this.store.getEvents(run.id) };

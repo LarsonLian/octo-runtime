@@ -91,3 +91,9 @@ try {
 - CodeBuddy 完整接入教程：[CodeBuddy Adapter](../octo-harness-adapter-codebuddy/README.md)
 - 事件契约与三层事件模型：[Protocol](../octo-harness-protocol/README.md)
 - Adapter 编写指南：[Adapter Authoring](../../docs/08-adapter-authoring.md)
+
+## 模块责任边界
+
+- 负责：实现 ACP 传输、请求关联与协议交互。
+- 不负责：业务 Context 决策、IM/Worker 接入。
+- 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。

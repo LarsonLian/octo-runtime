@@ -18,3 +18,9 @@ Provider session 从 `session.update` 保存到 AgentSession，并在下一次 I
 ## 非职责
 
 Core 不定义 Chat、Task、TaskAttempt、Trigger scheduler、父子任务、IM delivery 或业务 retry。生产部署的 AgentSession/AgentRun 权威在 Agent Worker；本包的 SQLite store 不能与 Worker 同时充当控制面。
+
+## 模块责任边界
+
+- 负责：维护本地执行状态和引擎，经注入的 adapter 调用能力执行。
+- 不负责：Worker/IM WS、群聊、业务投递。
+- 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。

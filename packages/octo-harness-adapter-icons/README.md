@@ -76,3 +76,9 @@ third-party redraws.
   中的 `zcode-mark-mono.svg`,保留原始字形与比例,由消费方通过 mask 适配主题颜色。
 - **mcode**:使用 LobeHub 的 MiniMax 彩色 mark。
 - **antigravity**:使用 LobeHub 的 `antigravity-color.svg`，保留渐变 A 形、透明背景和 SVG filters。来源为 [lobe-icons](https://github.com/lobehub/lobe-icons)，本次定位 commit `c385b2b8d1f9e19aa86e628d4e23c91ee1111a47`；代码许可证为 MIT，品牌归属不变。实际素材校验值见接入验收记录。
+
+## 模块责任边界
+
+- 负责：提供适配器品牌图标资源。
+- 不负责：执行、协议连接与运行时状态。
+- 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。

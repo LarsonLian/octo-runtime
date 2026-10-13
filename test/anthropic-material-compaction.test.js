@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtemp, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createAnthropicMaterialCompactionPort,createClaudeMaterialCompactionPort} from '../packages/octo-harness-daemon/dist/anthropic-material-compaction.js';
-import {compactContextMaterials} from '../packages/octo-harness-daemon/dist/context-compaction.js';
+import {createAnthropicMaterialCompactionPort,createClaudeMaterialCompactionPort} from '../packages/octo-harness-context-builder/dist/anthropic-material-compaction.js';
+import {compactContextMaterials} from '../packages/octo-harness-context-builder/dist/context-compaction.js';
 const base={model:'qwen3.8-flash',baseUrl:'https://provider.example',apiKey:'private-fixture',auth:'bearer',contextWindow:1000000,maxInputTokens:991808,capacitySource:'official',protectedInput:'current request',instructions:'trusted instructions'};
 
 test('Anthropic-compatible missing count endpoint uses actual one-token no-tool usage and cache totals',async()=>{

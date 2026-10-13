@@ -106,7 +106,7 @@ test("clock change detection compares wall and monotonic elapsed time", () => {
   assert.equal(clockChanged(Number.NaN, 5_000, 10_000), false);
 });
 
-test("process restart hello excludes stale non-terminal runs but retains pending terminal delivery", async () => {
+test("process restart hello has no durable run or stream state", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-restart-ownership-"));
   const storePath = join(directory, "agent-work.db");
   const persisted = AgentWorkStore.open(storePath);
@@ -134,7 +134,7 @@ test("process restart hello excludes stale non-terminal runs but retains pending
       const frame = JSON.parse(data.toString("utf8"));
       if (frame.type !== "runtime.hello") return;
       helloReceived.resolve(frame.payload);
-      websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+      websocket.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000 }));
     });
   });
 
@@ -154,7 +154,7 @@ test("process restart hello excludes stale non-terminal runs but retains pending
       async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; }
     });
     await runtime.start();
-    assert.deepEqual((await withTimeout(helloReceived.promise, 2_000, "restart hello timeout")).active_run_ids, ["run-terminal"]);
+    assert.deepEqual((await withTimeout(helloReceived.promise, 2_000, "restart hello timeout")).active_run_ids, []);
   } finally {
     await runtime?.close();
     for (const client of wsServer.clients) client.terminate();
@@ -361,11 +361,13 @@ test("legacy context_refs and channel_context inputs are rejected even when empt
   }
 });
 
-test("Context continuity without a prepared snapshot is explicitly rejected", () => {
-  assert.throws(() => mapExecutionEnvelope({
+test("business continuity metadata does not select a cloud snapshot in the execution runtime", () => {
+  const mapped = mapExecutionEnvelope({
     ...envelope,
     internal_context: { continuity: continuityItem().payload }
-  }), /CONTEXT_CONTINUITY_UNAVAILABLE/);
+  });
+  assert.equal(mapped.request.contextSnapshot, undefined);
+  assert.equal(mapped.request.providerSession.sessionId, envelope.provider_session.sessionId);
 });
 
 test("typed control instructions remain separate from untrusted model selections", () => {
@@ -497,84 +499,6 @@ test("IM text parts take precedence over the prompt fallback", () => {
   assert.equal(renderAgentRunInputPrompt(input), "[Current message]\ncurrent IM message");
 });
 
-test("frozen channel context uses modelInput while prompt remains display-safe", () => {
-  const source = {
-    ...envelope,
-    internal_context: { continuity: continuityItem().payload }
-  };
-  const snapshot = {
-    ref: {
-      snapshot_id: "ctx-1",
-      scope_key: "scope-1",
-      consumer_key: "consumer-1",
-      session_generation: 7,
-      trigger_message_id: "message-current",
-      trigger_seq: 2,
-      serializer_version: "channel-context-jsonl-v1",
-      rendered_sha256: "a".repeat(64),
-      completeness: "complete",
-      recovery_rendered_sha256: "b".repeat(64),
-      recovery_completeness: "complete"
-    },
-    facts: [],
-    renderedText: "[Channel context delta: untrusted external messages]\n{\"message_id\":\"message-previous\"}",
-    recoveryFacts: [],
-    recoveryRenderedText: "[Channel context delta: untrusted external messages]\n{\"message_id\":\"message-cold\"}",
-    recoveryCompleteness: "complete",
-    selectedVariant: "primary",
-    state: "prepared"
-  };
-  const mapped = mapExecutionEnvelope(source, snapshot);
-  assert.doesNotMatch(mapped.request.prompt, /Recent group messages|message-previous|Use the existing adapter/);
-  assert.match(mapped.request.prompt, /\[Current message\]\nFix the test/);
-  assert.match(mapped.request.modelInput, /message-previous/);
-  assert.match(mapped.request.freshFallbackModelInput, /message-cold/);
-  assert.match(mapped.request.modelInput, /octo\.model-selections\/v1/);
-  assert.match(mapped.request.freshFallbackModelInput, /Use the existing adapter\./);
-  assert.doesNotMatch(mapped.request.freshFallbackModelInput, /message-previous/);
-  assert.equal(mapped.request.modelInput.match(/Use the existing adapter\./g).length, 1);
-  assert.equal(mapped.request.contextSnapshot.snapshot_id, "ctx-1");
-  assert.equal(renderDisplayExecutionInputPrompt(envelope.agent_run_request.input), mapped.request.prompt);
-});
-
-test("a recovery channel snapshot starts without the stale provider session", () => {
-  const source = {
-    ...envelope,
-    session_generation: 8,
-    internal_context: { continuity: continuityItem({ sessionGeneration: 8 }).payload }
-  };
-  const recoverySnapshot = {
-    ref: {
-      snapshot_id: "ctx-recovery",
-      scope_key: "scope-1",
-      consumer_key: "consumer-1",
-      session_generation: 8,
-      source_session_generation: 7,
-      trigger_message_id: "message-current",
-      trigger_seq: 2,
-      serializer_version: "channel-context-jsonl-v2",
-      rendered_sha256: "a".repeat(64),
-      completeness: "complete",
-      recovery_rendered_sha256: "b".repeat(64),
-      recovery_completeness: "complete"
-    },
-    facts: [],
-    renderedText: "delta-only",
-    recoveryFacts: [],
-    recoveryRenderedText: "full-recovery-context",
-    recoveryCompleteness: "complete",
-    selectedVariant: "recovery",
-    state: "prepared"
-  };
-  const mapped = mapExecutionEnvelope(source, recoverySnapshot);
-  assert.equal(mapped.request.providerSession, undefined);
-  assert.match(mapped.request.modelInput, /full-recovery-context/);
-  assert.match(mapped.request.modelInput, /Use the existing adapter\./);
-  assert.match(mapped.request.freshFallbackModelInput, /full-recovery-context/);
-  assert.doesNotMatch(mapped.request.prompt, /full-recovery-context|Use the existing adapter/);
-  assert.doesNotMatch(mapped.request.modelInput, /delta-only/);
-});
-
 test("runtime terminal mapping never duplicates final message text", () => {
   assert.deepEqual(mapRuntimeEvent({ protocolVersion: 2, type: "run.completed", payload: {} }), { protocolVersion: 2, type: "run.completed", payload: {} });
   assert.deepEqual(mapRuntimeEvent({ protocolVersion: 2, type: "run.cancelled", payload: { reason: "cancelled" } }).payload, { reasonCode: "cancelled" });
@@ -651,7 +575,7 @@ test("Agent Work observability correlates WSS, AgentRun, occurrence, invocation 
     websocket.on("message", data => {
       const message = JSON.parse(data.toString("utf8"));
       if (message.type === "runtime.hello") {
-        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000 }));
         websocket.send(wire("runtime.command", {
           server_seq: 1,
           command_id: "command-observed",
@@ -823,7 +747,7 @@ test("interaction responses require the active execution instance as well as lea
     websocket.on("message", data => {
       const frame = JSON.parse(data.toString("utf8"));
       if (frame.type === "runtime.hello") {
-        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000 }));
         websocket.send(wire("runtime.command", {
           server_seq: 1,
           command_id: "command-interaction-start",
@@ -990,7 +914,7 @@ test("startup registration failure stays alive and every reconnect re-registers"
   wsServer.on("connection", websocket => {
     connections += 1;
     websocket.once("message", () => {
-      websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+      websocket.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000 }));
       if (connections === 1) setTimeout(() => websocket.close(1012, "worker restart"), 10);
     });
   });
@@ -1090,7 +1014,7 @@ test("connectivity notification interrupts a long reconnect backoff with bounded
   wsServer.on("connection", websocket => {
     connections += 1;
     if (connections === 1) firstSocket = websocket;
-    websocket.once("message", () => websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 })));
+    websocket.once("message", () => websocket.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000 })));
   });
 
   try {
@@ -1130,87 +1054,6 @@ test("connectivity notification interrupts a long reconnect backoff with bounded
   }
 });
 
-test("reconnect terminal authority cancels local execution and discards its outbox", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-terminal-authority-"));
-  const httpServer = createServer();
-  const wsServer = new WebSocketServer({ noServer: true });
-  const providerRelease = deferred();
-  const cancelled = deferred();
-  let connections = 0;
-  let runtime;
-  httpServer.on("request", async (request, response) => {
-    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
-    for await (const _chunk of request) { /* Consume registration. */ }
-    response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", runtime_id: "runtime-terminal-authority", protocol_version: 2 } }));
-  });
-  httpServer.on("upgrade", (request, socket, head) => {
-    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
-  });
-  wsServer.on("connection", websocket => {
-    connections += 1;
-    const connectionNumber = connections;
-    websocket.on("message", data => {
-      const frame = JSON.parse(data.toString("utf8"));
-      if (frame.type === "runtime.hello" && connectionNumber === 1) {
-        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000, authoritative_terminal_runs: [] }));
-        websocket.send(wire("runtime.command", runtimeCommand("authority", 1, "runtime-terminal-authority")));
-      } else if (frame.type === "run.event_batch" && connectionNumber === 1) {
-        websocket.close(1012, "worker restarted after committing terminal");
-      } else if (frame.type === "runtime.hello" && connectionNumber === 2) {
-        assert.ok(frame.payload.active_run_ids.includes("run-authority"));
-        websocket.send(wire("runtime.welcome", {
-          heartbeat_every_ms: 60_000,
-          authoritative_terminal_runs: [{
-            run_id: "run-authority",
-            status: "failed",
-            terminal_event_id: "event-server-terminal"
-          }]
-        }));
-      }
-    });
-  });
-
-  try {
-    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
-    const address = httpServer.address();
-    runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
-      profile: "default",
-      baseUrl: `http://127.0.0.1:${address.port}`,
-      token: "runtime-token",
-      runtimeName: "runtime-terminal-authority",
-      storePath: join(directory, "agent-work.db"),
-      reconnectFirstMs: 5,
-      reconnectMs: 5,
-      reconnectMaxMs: 5
-    }, {
-      list: async () => [{ type: "codex", available: true, capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] }],
-      cancel: async (_invocationId, reason) => {
-        assert.match(reason, /authoritative server terminal: failed/);
-        providerRelease.resolve();
-        cancelled.resolve();
-        return { cancelled: true };
-      },
-      async *invoke() {
-        yield { protocolVersion: 2, type: "message.delta", payload: { text: "partial local output" } };
-        await providerRelease.promise;
-      }
-    });
-    await runtime.start();
-    await withTimeout(cancelled.promise, 2_000, "authoritative cancellation timeout");
-    await waitFor(() => runtime.status.activeRuns === 0 && runtime.status.outboxPending === 0, 2_000);
-    assert.equal(runtime.status.connectionState, "online");
-  } finally {
-    providerRelease.resolve();
-    await runtime?.close();
-    for (const client of wsServer.clients) client.terminate();
-    await new Promise(resolve => wsServer.close(() => resolve()));
-    await new Promise(resolve => httpServer.close(() => resolve()));
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
 test("runtime goaway delays and spreads the next reconnect", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-goaway-"));
   const httpServer = createServer();
@@ -1231,7 +1074,7 @@ test("runtime goaway delays and spreads the next reconnect", async () => {
   wsServer.on("connection", websocket => {
     connections += 1;
     websocket.once("message", () => {
-      websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+      websocket.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000 }));
       if (connections === 1) {
         setTimeout(() => {
           goawayAt = Date.now();
@@ -1293,7 +1136,7 @@ test("close cancels a pending reconnect backoff without late registration", asyn
   });
   wsServer.on("connection", websocket => {
     socket = websocket;
-    websocket.once("message", () => websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 })));
+    websocket.once("message", () => websocket.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000 })));
   });
 
   try {
@@ -1381,7 +1224,7 @@ test("a stalled WebSocket handshake times out and registration retries", async (
   }
 });
 
-test("hard outbox watermark rejects new work with a durable command receipt", async () => {
+test("hard outbox watermark rejects new work with a memory command receipt", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-hard-limit-"));
   const httpServer = createServer();
   const wsServer = new WebSocketServer({ noServer: true });
@@ -1401,7 +1244,7 @@ test("hard outbox watermark rejects new work with a durable command receipt", as
     websocket.on("message", data => {
       const frame = JSON.parse(data.toString("utf8"));
       if (frame.type === "runtime.hello") {
-        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000 }));
         websocket.send(wire("runtime.command", runtimeCommand("hard", 1, "runtime-hard-limit")));
       } else if (frame.type === "command.ack" && frame.payload.command_id === "command-hard") {
         rejection.resolve(frame.payload);
@@ -1464,7 +1307,7 @@ test("low disk preflight stays connected, reports health and rejects new work", 
       const frame = JSON.parse(data.toString("utf8"));
       if (frame.type === "runtime.hello") {
         helloReceived.resolve(frame.payload);
-        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000, authoritative_terminal_runs: [] }));
+        websocket.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000, authoritative_terminal_runs: [] }));
       } else if (frame.type === "runtime.health") {
         healthReceived.resolve(frame.payload);
         if (!commandSent) {
@@ -1514,66 +1357,7 @@ test("low disk preflight stays connected, reports health and rejects new work", 
   }
 });
 
-test("store open failure keeps the control plane online with migration_failed health", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "oh-runtime-store-failed-"));
-  const httpServer = createServer();
-  const wsServer = new WebSocketServer({ noServer: true });
-  const helloReceived = deferred();
-  const healthReceived = deferred();
-  let runtime;
-  httpServer.on("request", async (request, response) => {
-    if (request.url === "/v1/runtime/context/prepare") { request.resume(); response.writeHead(200); response.end("{}"); return; }
-    for await (const _chunk of request) { /* Consume registration. */ }
-    response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ runtime: { profile: "default", runtime_id: "runtime-store-failed", protocol_version: 2 } }));
-  });
-  httpServer.on("upgrade", (request, socket, head) => {
-    wsServer.handleUpgrade(request, socket, head, websocket => wsServer.emit("connection", websocket, request));
-  });
-  wsServer.on("connection", websocket => {
-    websocket.on("message", data => {
-      const frame = JSON.parse(data.toString("utf8"));
-      if (frame.type === "runtime.hello") {
-        helloReceived.resolve(frame.payload);
-        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000, authoritative_terminal_runs: [] }));
-      } else if (frame.type === "runtime.health") {
-        healthReceived.resolve(frame.payload);
-      }
-    });
-  });
-  try {
-    await new Promise(resolve => httpServer.listen(0, "127.0.0.1", resolve));
-    const address = httpServer.address();
-    runtime = new AgentWorkRuntime({
-      createMaterialCompactionPort: async () => ({ model: "fixture", contextWindow: 1000000, outputReserveTokens: 1000, summaryInputLimit: 60000, toolsDisabled: true, measureInputTokens: async () => 100, countTokens: async () => 100, summarize: async () => { throw Error("unexpected summary"); } }),
-      profile: "default",
-      baseUrl: `http://127.0.0.1:${address.port}`,
-      token: "runtime-token",
-      runtimeName: "runtime-store-failed",
-      storePath: directory
-    }, {
-      list: async () => [],
-      cancel: async () => ({ cancelled: true }),
-      async *invoke() { throw new Error("store unavailable work must not start"); }
-    });
-    await runtime.start();
-    const hello = await withTimeout(helloReceived.promise, 2_000, "store failure hello timeout");
-    const health = await withTimeout(healthReceived.promise, 2_000, "store failure health timeout");
-    assert.equal(hello.store_health.state, "migration_failed");
-    assert.equal(hello.store_health.accepting_new_runs, false);
-    assert.equal(health.state, "migration_failed");
-    assert.equal(runtime.status.connected, true);
-    assert.equal(runtime.status.storeHealth.state, "migration_failed");
-  } finally {
-    await runtime?.close();
-    for (const client of wsServer.clients) client.terminate();
-    await new Promise(resolve => wsServer.close(() => resolve()));
-    await new Promise(resolve => httpServer.close(() => resolve()));
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test("missing provider configuration rejects work with a durable catalog failure", async () => {
+test("missing provider configuration rejects work with a memory catalog failure", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-provider-missing-"));
   const storePath = join(directory, "agent-work.db");
   const httpServer = createServer();
@@ -1594,7 +1378,7 @@ test("missing provider configuration rejects work with a durable catalog failure
     websocket.on("message", data => {
       const frame = JSON.parse(data.toString("utf8"));
       if (frame.type === "runtime.hello") {
-        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000 }));
         websocket.send(wire("runtime.command", runtimeCommand("provider-missing", 1, "runtime-provider-missing")));
       } else if (frame.type === "command.ack" && frame.payload.command_id === "command-provider-missing") {
         rejection.resolve(frame.payload);
@@ -1627,7 +1411,7 @@ test("missing provider configuration rejects work with a durable catalog failure
     await runtime.close();
     runtime = undefined;
     const store = AgentWorkStore.open(storePath);
-    assert.equal(store.getCommandReceipt("command-provider-missing")?.error?.failure?.code, "OH-PRV-4008");
+    assert.equal(store.getCommandReceipt("command-provider-missing"), undefined);
     store.close();
   } finally {
     await runtime?.close();
@@ -1661,7 +1445,7 @@ test("event nack releases the send window and retries from the requested sequenc
     websocket.on("message", data => {
       const frame = JSON.parse(data.toString("utf8"));
       if (frame.type === "runtime.hello") {
-        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000 }));
         websocket.send(wire("runtime.command", runtimeCommand("event-nack", 1, "runtime-event-nack")));
         return;
       }
@@ -1745,7 +1529,7 @@ test("local runtime concurrency limit queues a second provider invocation", asyn
     websocket.on("message", data => {
       const frame = JSON.parse(data.toString("utf8"));
       if (frame.type === "runtime.hello") {
-        websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        websocket.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000 }));
         websocket.send(wire("runtime.command", runtimeCommand("first", 1, "runtime-capacity")));
       } else if (frame.type === "command.ack" && frame.payload.command_id === "command-first") {
         firstAccepted.resolve(frame.payload);
@@ -1830,7 +1614,7 @@ test('control-plane cancellation is not classified as adapter failure when the o
   sockets.on('connection', ws => ws.on('message', data => {
     const frame = JSON.parse(data.toString());
     if (frame.type === 'runtime.hello') {
-      ws.send(wire('runtime.welcome', { heartbeat_every_ms: 60000 }));
+      ws.send(wire('runtime.welcome', { resume_cursors: [], heartbeat_every_ms: 60000 }));
       ws.send(wire('runtime.command', { server_seq: 1, command_id: 'start-cancel', run_id: 'run-cancel', type: 'run.start', lease_id: 'lease-cancel', fencing_token: 1,
         payload: withExecutionPlan({ ...envelope, run_id: 'run-cancel', resolved_runtime_selection: resolvedRuntimeSelection('runtime-cancel') }, { agent_source: 'provisioned', adapter_type: 'codex', workdir: process.cwd(), approval_mode: 'ask' }) }));
     }
@@ -1864,16 +1648,4 @@ test('control-plane cancellation is not classified as adapter failure when the o
     await new Promise(resolve => server.close(resolve));
     await rm(directory, { recursive: true, force: true });
   }
-});
-
-test('GROUP.md group and subchannel snapshots reach the provider initial control instructions', async () => {
-  const { createHash } = await import('node:crypto');
-  const source = structuredClone(envelope);
-  const document = (kind, content, subchannel_id) => ({ kind, content, group_id: 'g1', ...(subchannel_id ? { subchannel_id } : {}), version: 2, digest: `sha256:${createHash('sha256').update(content).digest('hex')}` });
-  source.internal_context = { channel_awareness: { space_id: 's1', endpoint_id: 'ep1', conversation_id: 'topic:g1:t1', documents: [document('group', 'GROUP_RULE'), document('subchannel', 'SUBCHANNEL_RULE', 't1')] } };
-  const mapped = mapExecutionEnvelope(source);
-  assert.match(mapped.request.controlInstructions, /GROUP_RULE/);
-  assert.match(mapped.request.controlInstructions, /SUBCHANNEL_RULE/);
-  assert.ok(mapped.request.controlInstructions.indexOf('GROUP_RULE') < mapped.request.controlInstructions.indexOf('SUBCHANNEL_RULE'));
-  assert.ok(!mapped.request.prompt.includes('GROUP_RULE'));
 });

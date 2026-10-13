@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { assertScenarioRequest, assertScenarioSnapshot, canonicalScenarioPolicy, type ScenarioRequest, type ScenarioPolicySnapshot, type ContextEnvelope } from '@mininglamp-oss/octo-harness-protocol';
-import type { TrustedContextInstruction } from './run-context.js';
+import type { TrustedContextInstruction } from '@mininglamp-oss/octo-harness-context-builder/run-context';
 export function scenarioInstructions(request: ScenarioRequest | undefined, snapshot: ScenarioPolicySnapshot | undefined, context: ContextEnvelope): TrustedContextInstruction[] {
   if (!request && !snapshot) return [];
   if (!request || !snapshot) throw new TypeError('SCENARIO_POLICY_MISMATCH');

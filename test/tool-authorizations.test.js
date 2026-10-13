@@ -5,8 +5,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
-import { AgentWorkRuntime } from "../packages/octo-harness-daemon/dist/agent-work-runtime.js";
-import { businessServiceConnections, resolveToolAuthorizations, unconsumedToolAuthorizations } from "../packages/octo-harness-daemon/dist/tool-authorizations.js";
+import { AgentWorkRuntime } from "../packages/octo-harness-worker-access/dist/agent-work-runtime.js";
+import { businessServiceConnections, resolveToolAuthorizations, unconsumedToolAuthorizations } from "../packages/octo-harness-worker-access/dist/tool-authorizations.js";
 import { contextEnvelope, executionContext, resolvedRuntimeSelection, waitFor, wire } from "./agent-work-runtime-fixture.js";
 import { issuedGrant, toolIntent } from "./tool-authorizations-fixture.js";
 
@@ -76,7 +76,7 @@ for (const hasReceiver of [false, true]) test(`Runtime mixed Loop scopes ${hasRe
     socket = client;
     client.on("message", data => {
       const frame = JSON.parse(data.toString());
-      if (frame.type === "runtime.hello") client.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+      if (frame.type === "runtime.hello") client.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000 }));
       if (frame.type === "command.ack") acks.push(frame.payload);
     });
   });

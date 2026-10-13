@@ -100,3 +100,9 @@ OpenCode 没有固定的专用默认模型环境变量。`OPENCODE_CONFIG` 可�
 - Provider adapter 总览：[Provider Adapters](../../docs/05-provider-adapters.md)
 - Prompt 与 workdir 约定：[Prompt And Workdir](../../docs/04-prompt-and-workdir.md)
 - Adapter 编写指南：[Adapter Authoring](../../docs/08-adapter-authoring.md)
+
+## 模块责任边界
+
+- 负责：将 opencode 原生执行协议映射为 InvokeRequest / CanonicalEvent，由 adapter-host 调用。
+- 不负责：Worker/IM WS、聊天历史、Event/AgentRun 登记。
+- 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。

@@ -49,7 +49,7 @@ for (const scenario of [
   { name: "bound pool excludes local Runtime", error: "RUNTIME_SELECTION_TARGET_MISMATCH", modify: envelope => { envelope.resolved_runtime_selection = structuredClone(boundPool); envelope.resolved_runtime_selection.authorized_candidates[1].runtime_id = "another-runtime"; } },
   { name: "effective Context target disagrees", error: "RUNTIME_SELECTION_CONTEXT_MISMATCH", modify: envelope => { envelope.effective_context.items.push({ namespace: "octo.runtime", name: "selection", payload: { mode: "explicit", runtime_id: "foreign-runtime" } }); } }
 ]) {
-  test(`daemon rejects ${scenario.name} before context sync or invocation and persists replay rejection`, { timeout: 5_000 }, async () => {
+  test(`daemon rejects ${scenario.name} before context sync or invocation and deduplicates replay rejection in memory`, { timeout: 5_000 }, async () => {
     const payload = executionEnvelope();
     payload.internal_context = { continuity: continuityItem().payload };
     scenario.modify(payload);
@@ -72,8 +72,7 @@ for (const scenario of [
       const store = AgentWorkStore.open(fixture.storePath);
       try {
         const persisted = store.getCommandReceipt(command.command_id);
-        assert.equal(persisted.accepted, false);
-        assert.equal(persisted.error.message, scenario.error);
+        assert.equal(persisted, undefined);
         assert.deepEqual(store.activeRunIds(), []);
       } finally {
         store.close();
@@ -169,7 +168,7 @@ async function startFixture({ rejectRegistration = false, openClawProbeState } =
     socket.on("message", data => {
       const frame = JSON.parse(data.toString("utf8"));
       if (frame.type === "runtime.hello") {
-        socket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        socket.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000 }));
         ready.resolve();
       }
       if (frame.type === "context.sync_request") fixture.contextSyncs += 1;

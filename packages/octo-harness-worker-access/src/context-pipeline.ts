@@ -3,9 +3,10 @@ import {
   CONTEXT_CATALOG_VERSION, assertContextProcessorCoverage, assertContextExtensionsSnapshot, contextHash, findContextTypeDefinition,
   type ContextEnvelope, type ResolvedExecutionPlan, type ContextPreparationReceipt
 } from "@mininglamp-oss/octo-harness-protocol";
-import type { PreparedChannelContextSnapshot } from "./channel-context-store.js";
-import type { PreparedRunContext } from "./context-preparation.js";
-import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext, type TrustedContextInstruction } from "./run-context.js";
+import type { ChannelContextSnapshotRef } from "@mininglamp-oss/octo-harness-protocol";
+interface ContinuityReceipt { ref: ChannelContextSnapshotRef }
+import type { PreparedRunContext } from "@mininglamp-oss/octo-harness-context-builder/context-preparation";
+import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext, type TrustedContextInstruction } from "@mininglamp-oss/octo-harness-context-builder/run-context";
 import type { PreparedTaskMaterials } from "./task-materials.js";
 
 export const CONTEXT_COMPILER_VERSION = "octo.context-compiler/v4" as const;
@@ -91,7 +92,7 @@ export interface ContextPipelinePorts<Input> {
   prepareInput(signal: AbortSignal): Promise<Input>;
   prepareCapabilities(signal: AbortSignal): Promise<PreparedRunContext>;
   prepareMaterials(signal: AbortSignal): Promise<PreparedTaskMaterials | undefined>;
-  prepareContinuity(signal: AbortSignal): Promise<PreparedChannelContextSnapshot | undefined>;
+  prepareContinuity(signal: AbortSignal): Promise<ContinuityReceipt | undefined>;
   prepareCompiled?(compiled: CompiledRunContext, signal: AbortSignal): Promise<CompiledRunContext>;
   seal(receipt: ContextPipelineReceipt, signal: AbortSignal): Promise<void>;
 }
@@ -131,7 +132,7 @@ export class ContextPipeline<Input> {
     runId: string; leaseId: string; fencingToken: number;
   }, signal: AbortSignal): Promise<{
     input: Input; capabilities: PreparedRunContext; materials?: PreparedTaskMaterials;
-    continuity?: PreparedChannelContextSnapshot; compiled: CompiledRunContext;
+    continuity?: ContinuityReceipt; compiled: CompiledRunContext;
     receipt: ContextPipelineReceipt; consumption: ContextConsumption[];
   }> {
     signal.throwIfAborted();
@@ -144,7 +145,7 @@ export class ContextPipeline<Input> {
     // 复制本次 Context 与可信贡献，避免异步准备期间原对象被修改而改变编译依据。
     const frozen = structuredClone(context);
     const instructions = structuredClone(this.ports.trustedInstructions ?? []);
-    const outputs: { input?: Input; capabilities?: PreparedRunContext; materials?: PreparedTaskMaterials; continuity?: PreparedChannelContextSnapshot } = {};
+    const outputs: { input?: Input; capabilities?: PreparedRunContext; materials?: PreparedTaskMaterials; continuity?: ContinuityReceipt } = {};
     const consumption: ContextConsumption[] = [];
     for (const id of order) {
       await boundedStage(id, budgets[id], signal, async stageSignal => {

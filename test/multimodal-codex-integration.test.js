@@ -7,8 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 import { createCodexAdapter } from "@mininglamp-oss/octo-harness-adapter-codex";
-import { resolveRuntimeInputImages } from "../packages/octo-harness-daemon/dist/input-images.js";
-import { mapExecutionEnvelope } from "../packages/octo-harness-daemon/dist/agent-work-runtime.js";
+import { resolveRuntimeInputImages } from "../packages/octo-harness-context-builder/dist/input-images.js";
+import { mapExecutionEnvelope } from "../packages/octo-harness-worker-access/dist/agent-work-runtime.js";
 import { contextEnvelope, executionContext, resolvedRuntimeSelection } from "./agent-work-runtime-fixture.js";
 import { visualInputImages } from "../test-support/multimodal-images.mjs";
 

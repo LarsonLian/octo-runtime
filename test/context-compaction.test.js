@@ -3,7 +3,7 @@ import test from 'node:test';
 import { mkdtemp, rm, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { compactContextMaterials, FileMaterialCompactionStore } from '../packages/octo-harness-daemon/dist/context-compaction.js';
+import { compactContextMaterials, FileMaterialCompactionStore } from '../packages/octo-harness-context-builder/dist/context-compaction.js';
 
 async function fixture(t, overrides = {}) {
   const root = await mkdtemp(join(tmpdir(), 'octo-compaction-test-'));

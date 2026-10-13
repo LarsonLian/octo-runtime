@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { subscribeDaemonRun, invokeDaemonRun } from "./run-stream.js";
+import { callDaemon } from "./runtime-contract.js";
+import type { CanonicalEvent, InvokeRequest, InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
+import type { HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
 import { EmbeddedHarnessError, asEmbeddedError } from "./errors.js";
 import { ensureTenantEnrollment, resetTenantEnrollment } from "./enrollment.js";
 import {
@@ -87,6 +91,32 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
 
   health(): EmbeddedHealth {
     return this.#snapshot;
+  }
+
+  async *invoke(adapterType: string, request: InvokeRequest): AsyncIterable<CanonicalEvent> {
+    if (!this.#active) throw new Error("HOST_NOT_RUNNING");
+    yield* invokeDaemonRun(this.#active.supervised.paths.socket, adapterType, request);
+  }
+
+  listAdapters(): Promise<HostedAdapterMetadata[]> {
+    if (!this.#active) return Promise.reject(new Error("HOST_NOT_RUNNING"));
+    return callDaemon(this.#active.supervised.paths.socket, { method: "adapter.list" });
+  }
+
+  cancelRun(runId: string): Promise<{ cancelled: boolean }> {
+    if (!this.#active) return Promise.reject(new Error("HOST_NOT_RUNNING"));
+    return callDaemon(this.#active.supervised.paths.socket, { method: "agent_run.cancel", params: { run_id: runId } });
+  }
+
+  async respondRun(runId: string, response: InteractionResponse): Promise<void> {
+    if (!this.#active) throw new Error("HOST_NOT_RUNNING");
+    await callDaemon(this.#active.supervised.paths.socket, { method: "agent_run.respond", params: { run_id: runId, response } });
+  }
+
+  async *subscribeRun(input: { runId: string; streamId?: string; afterSeq?: number; signal?: AbortSignal }): AsyncIterable<Record<string, unknown>> {
+    const active=this.#active;
+    if (!active) throw new Error("HOST_NOT_RUNNING");
+    yield* subscribeDaemonRun(active.supervised.paths.socket,input);
   }
 
   onHealth(listener: (health: EmbeddedHealth) => void): () => void {

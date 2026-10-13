@@ -90,7 +90,7 @@ Inspect 的每个事件信封用两个一等字段定位：
 | 7 | `adapter.canonical` | `outbound` | adapter 映射后的 canonical 事件（Host 修正前） | `message.delta` 等 canonical 枚举（见下表） |
 | 8 | `host.canonical` | `outbound` | Host 生命周期修正后的 canonical 事件（补 `message.create`、稳定 `messageId`、兜底终态） | 同上 |
 | 9 | `wire.daemon_host` | `outbound` | host → daemon 的 RPC 帧 | `invoke.event`、`invoke.done` |
-| 10 | `runtime.outbox` | `outbound` | 事件写入 SQLite Outbox、组成 `run.event_batch`；终态在此映射为 Agent Work 词汇 | `run.started`、`run.completed`、`run.failed`、`run.cancelled` |
+| 10 | `runtime.outbox` | `outbound` | 事件写入内存重放窗口、组成 `run.event_batch`；终态在此映射为 Agent Work 词汇 | `run.started`、`run.completed`、`run.failed`、`run.cancelled` |
 | 11 | `worker.transport` | `outbound` | `run.event_batch` 经 WSS 投递 Worker 并等待 durable ACK | `transport.message.sent`、`event.ack`、`event.nack` |
 
 ```mermaid
@@ -364,3 +364,9 @@ Crash report 使用 `uncaughtExceptionMonitor`，不会吞掉或改变 Node 原�
 - Adapter observation 注入边界：[Adapter Host](../octo-harness-adapter-host/README.md)
 - Adapter 采集 helper：[Adapter SDK](../octo-harness-adapter-sdk/README.md)
 - 设计依据与完整安全合同：[Daemon Local Logging And Tracing Design](../../../docs/46-octo-harness-daemon-local-logging-and-tracing-design.html)
+
+## 模块责任边界
+
+- 负责：提供日志、追踪、脱敏与诊断基础能力。
+- 不负责：业务聊天历史、执行调度、消息投递。
+- 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。

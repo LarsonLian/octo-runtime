@@ -14,7 +14,7 @@ stdin/stdout NDJSON JSON-RPC 向 daemon 提供统一的 `list`、`probe`、`invo
 ```text
 CLI
   -> Unix socket
-daemon（invocation、outbox、执行恢复）
+daemon（invocation、内存源流、执行生命周期）
   -> stdio NDJSON JSON-RPC
 adapter-host（插件加载、调用生命周期）
   -> n 个 adapter 模块
@@ -35,7 +35,7 @@ adapter package、更新 [adapter manifest](../../config/adapters.json)，并让
 
 ### 1. 保护有状态控制面
 
-Agent Worker 持有 AgentSession/AgentRun 权威；daemon 只持有本地 invocation、可靠 outbox
+Agent Worker 持有 AgentSession/AgentRun 权威；daemon 只持有本地 invocation、有界内存重放窗口
 和执行恢复。adapter 则包含动态模块、第三方
 依赖、provider CLI 子进程和 native event parser，故障概率与资源行为更不可控。
 
@@ -64,7 +64,7 @@ adapter，并把 canonical event stream 返回给 daemon。
 
 terminal lifecycle 有两层责任：连接正常时，host 保证 adapter event stream 只产生一个
 terminal event；host 在 terminal 前失联时，RPC client 会让 pending invocation 失败，
-daemon 再为尚未终态的 Run 持久化 `run.error`。已经终态的 Run 不会被重复终态化。
+daemon 再为尚未终态的 Run 记录失败终态。已经终态的 Run 不会被重复终态化。
 
 ### 4. 解耦 daemon 与 Adapter 运行时
 
@@ -184,3 +184,9 @@ pnpm test
 
 相关架构与传输说明见 [Current Modules And Transport Flow](../../docs/02-module-and-transport-flow.md)
 和 [Pnpm Monorepo](../../docs/03-monorepo.md)。
+
+## 模块责任边界
+
+- 负责：作为独立进程加载 adapter-host 并接入 stdio IPC。
+- 不负责：创建业务 AgentRun、群聊和连接管理。
+- 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。

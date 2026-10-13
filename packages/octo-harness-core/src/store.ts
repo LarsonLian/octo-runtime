@@ -124,12 +124,15 @@ export class MemoryStore implements Store {
 /** Breaking v1 store: only unified AgentSession and AgentRun state is persisted. */
 export class SqliteStore implements Store {
   readonly #db: DatabaseSync;
+  readonly #recordRunEvents: boolean;
+  readonly #events = new Map<string, { entries: EventEnvelope[]; bytes: number; at: number }>();
+  #eventBytes = 0;
   #depth = 0;
   #savepoint = 0;
 
-  private constructor(db: DatabaseSync) { this.#db = db; }
+  private constructor(db: DatabaseSync, recordRunEvents: boolean) { this.#db = db; this.#recordRunEvents = recordRunEvents; }
 
-  static open(file: string): SqliteStore {
+  static open(file: string, options: { recordRunEvents?: boolean } = {}): SqliteStore {
     const db = openWalDatabase(file);
     db.exec(`
       CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, json TEXT NOT NULL);
@@ -148,14 +151,15 @@ export class SqliteStore implements Store {
         json TEXT NOT NULL,
         UNIQUE (agent_session_id, trigger_occurrence_id)
       );
-      CREATE TABLE IF NOT EXISTS agent_run_events (
+    `);
+    if (options.recordRunEvents === true) db.exec(`CREATE TABLE IF NOT EXISTS agent_run_events (
         run_id TEXT NOT NULL,
         seq INTEGER NOT NULL,
         json TEXT NOT NULL,
         PRIMARY KEY (run_id, seq)
       );
     `);
-    return new SqliteStore(db);
+    return new SqliteStore(db, options.recordRunEvents === true);
   }
 
   getAgent(id: string): Agent | undefined { return this.#readOne<Agent>("agents", id); }
@@ -195,10 +199,35 @@ export class SqliteStore implements Store {
   }
 
   getEvents(runId: string): EventEnvelope[] {
+    if (!this.#recordRunEvents) {
+      const stream = this.#events.get(runId);
+      if (!stream || Date.now() - stream.at > 120_000) return [];
+      return structuredClone(stream.entries);
+    }
     return this.#db.prepare("SELECT json FROM agent_run_events WHERE run_id = ? ORDER BY seq").all(runId)
       .map(row => this.#parse<EventEnvelope>(row)!);
   }
   appendEvent(event: EventEnvelope): boolean {
+    if (!this.#recordRunEvents) {
+      const now = Date.now();
+      for (const [id, stream] of this.#events) if (now - stream.at > 120_000) { this.#eventBytes -= stream.bytes; this.#events.delete(id); }
+      let stream = this.#events.get(event.runId);
+      if (!stream) {
+        if (this.#events.size >= 128) throw new Error("STREAM_CAPACITY_EXHAUSTED");
+        stream = { entries: [], bytes: 0, at: now };this.#events.set(event.runId, stream);
+      }
+      if (stream.entries.some(item => item.seq === event.seq)) return false;
+      const bytes = Buffer.byteLength(JSON.stringify(event));
+      if (bytes > 256 << 10) throw new Error("STREAM_EVENT_TOO_LARGE");
+      stream.entries.push(structuredClone(event));stream.bytes += bytes;stream.at = now;this.#eventBytes += bytes;
+      const drop = (value: typeof stream): void => { const item=value.entries.shift();if(item){const bytes=Buffer.byteLength(JSON.stringify(item));value.bytes-=bytes;this.#eventBytes-=bytes;} };
+      while (stream.bytes > 4 << 20 || stream.entries.length > 4096) drop(stream);
+      while (this.#eventBytes > 64 << 20) {
+        const oldest = [...this.#events.values()].filter(value => value.entries.length).sort((a,b) => a.at-b.at)[0];
+        if (!oldest) break;drop(oldest);
+      }
+      return true;
+    }
     return this.#db.prepare(
       "INSERT OR IGNORE INTO agent_run_events (run_id, seq, json) VALUES (?, ?, ?)"
     ).run(event.runId, event.seq, JSON.stringify(event)).changes > 0;

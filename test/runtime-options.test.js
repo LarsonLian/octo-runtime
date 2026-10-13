@@ -299,39 +299,6 @@ test("Agent Work reconnect timing is configurable and survives launcher argv ser
   }
 });
 
-test("channel context rollout flags are independent and use a separate database", async () => {
-  const home = await mkdtemp(join(tmpdir(), "oh-managed-context-"));
-  try {
-    await writeManagedRuntime(home);
-    const paths = resolveDaemonRuntimePaths([
-    "--home", home,
-    "--channel-context-store", "sqlite",
-    "--channel-context-projection", "delta",
-    "--channel-context-provider-persistence", "append_only",
-    "--channel-context-db", ".tmp/channel-context-custom.db",
-    "--channel-context-snapshot-retention-ms", "604800000",
-    "--channel-context-active-snapshot-timeout-ms", "86400000",
-    "--channel-context-max-projected-messages", "25"
-    ], {});
-    assert.deepEqual(paths.agentWorks[0].channelContext, {
-      store: "sqlite",
-      projection: "delta",
-      providerPersistence: "append_only",
-      storePath: resolve(".tmp/channel-context-custom.db"),
-      snapshotRetentionMs: 604800000,
-      activeSnapshotTimeoutMs: 86400000,
-      maxProjectedMessages: 25
-    });
-    const args = daemonRuntimeArguments(paths);
-    assert.equal(args[args.indexOf("--channel-context-store") + 1], "sqlite");
-    assert.equal(args[args.indexOf("--channel-context-snapshot-retention-ms") + 1], "604800000");
-    assert.equal(args[args.indexOf("--channel-context-active-snapshot-timeout-ms") + 1], "86400000");
-    assert.equal(args[args.indexOf("--channel-context-max-projected-messages") + 1], "25");
-  } finally {
-    await rm(home, { recursive: true, force: true });
-  }
-});
-
 test("managed Home discovers multiple profile Runtimes without putting credentials in argv", async () => {
   const home = await mkdtemp(join(tmpdir(), "oh-managed-profiles-"));
   try {

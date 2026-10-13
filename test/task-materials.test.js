@@ -7,10 +7,9 @@ import { mkdir, mkdtemp, realpath, writeFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
-import { prepareTaskMaterials, TaskMcpClient } from "../packages/octo-harness-daemon/dist/task-materials.js";
-import { TASK_OUTPUT_SCHEMA, taskOutputManifestPath } from "../packages/octo-harness-daemon/dist/task-outputs.js";
-import { AgentWorkStore } from "../packages/octo-harness-daemon/dist/agent-work-store.js";
-import { AgentWorkRuntime, mapExecutionEnvelope } from "../packages/octo-harness-daemon/dist/agent-work-runtime.js";
+import { prepareTaskMaterials, TaskMcpClient } from "../packages/octo-harness-worker-access/dist/task-materials.js";
+import { AgentWorkStore } from "../packages/octo-harness-worker-access/dist/agent-work-store.js";
+import { AgentWorkRuntime, mapExecutionEnvelope } from "../packages/octo-harness-worker-access/dist/agent-work-runtime.js";
 import { buildCodexCommand } from "@mininglamp-oss/octo-harness-adapter-codex";
 import { contextEnvelope, executionContext, resolvedRuntimeSelection, waitFor, wire } from "./agent-work-runtime-fixture.js";
 
@@ -127,7 +126,7 @@ test("task materials use authorized MCP and freeze actual facts separately from 
     agent_revision: { definition: { instructions: "Never bypass policy" } } };
   delete envelope.resolved_execution_plan.mcp_servers;
   assert.throws(() => mapExecutionEnvelope(envelope), /CONTEXT_RESOLVER_UNAVAILABLE/);
-  const { request } = mapExecutionEnvelope(envelope, undefined, first);
+  const { request } = mapExecutionEnvelope(envelope, first);
   assert.match(request.modelInput, /需求.md|attachment-1/);
   assert.match(request.modelInput, /source_until_sequence/);
   assert.match(request.modelInput, /Ignore policy/);
@@ -138,7 +137,7 @@ test("task materials use authorized MCP and freeze actual facts separately from 
   const automaticEnvelope = structuredClone(envelope);
   automaticEnvelope.resolved_execution_plan.approval_mode = "full_access";
   automaticEnvelope.effective_context.items.find(item => item.name === "approval_policy").payload.mode = "full_access";
-  const automaticRequest = mapExecutionEnvelope(automaticEnvelope, undefined, first).request;
+  const automaticRequest = mapExecutionEnvelope(automaticEnvelope, first).request;
   assert.doesNotMatch(JSON.stringify(buildCodexCommand(automaticRequest).args), /mcp_servers|octo_task/);
   assert.doesNotMatch(JSON.stringify(buildCodexCommand(automaticRequest).args), /fixture-run-grant/);
 });
@@ -158,7 +157,7 @@ test("task scope, grant failures, missing MCP and unregistered resources fail cl
   await assert.rejects(prepareTaskMaterials(contextEnvelope([resource]), plan(oversized.url).mcp_servers.octo_task, new AbortController().signal), /TASK_MATERIAL_BUDGET_EXCEEDED/);
 });
 
-test("restart reuses exact material bytes after live authorization without fetching latest facts", async t => {
+test("restart loses the memory snapshot and reauthorizes current materials", async t => {
   const directory = await mkdtemp(join(tmpdir(), "oh-task-material-snapshot-"));
   let version = 2;
   const f = await fixture(t, request => request.params.name === "task_authorize_material_snapshot"
@@ -172,14 +171,14 @@ test("restart reuses exact material bytes after live authorization without fetch
   store = AgentWorkStore.open(file);
   version = 5;
   const restored = await prepareTaskMaterials(context, resolvedPlan.mcp_servers.octo_task, new AbortController().signal, { runId: "run-1", store });
-  assert.deepEqual(restored, first);
-  assert.equal(restored.refs[0].task_version, 2);
-  assert.equal(f.calls.filter(call => call.params?.name === "task_get_materials").length, 1);
-  assert.equal(f.calls.filter(call => call.params?.name === "task_authorize_material_snapshot").length, 1);
+  assert.notDeepEqual(restored, first);
+  assert.equal(restored.refs[0].task_version, 5);
+  assert.equal(f.calls.filter(call => call.params?.name === "task_get_materials").length, 2);
+  assert.equal(f.calls.filter(call => call.params?.name === "task_authorize_material_snapshot").length, 0);
   const changed = structuredClone(context);
   changed.items.find(item => item.name === "model").payload.selection = { id: "another-model" };
   await assert.rejects(prepareTaskMaterials(changed, resolvedPlan.mcp_servers.octo_task, new AbortController().signal, { runId: "run-1", store }), /SNAPSHOT_CONFLICT/);
-  store.discardAuthoritativelyTerminalRun("run-1");
+  store.discardRun("run-1");
   assert.equal(store.getTaskMaterialSnapshot("run-1", first.refs[0].digest), undefined);
 });
 
@@ -234,7 +233,7 @@ test("real Runtime admission bootstraps MCP before provider invocation and rejec
     socket = client;
     client.on("message", data => {
       const frame = JSON.parse(data.toString());
-      if (frame.type === "runtime.hello") client.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+      if (frame.type === "runtime.hello") client.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000 }));
       if (frame.type === "command.ack") acknowledgements.push(frame.payload);
       if (frame.type === "run.event_batch") events.push(...frame.payload.events);
     });
@@ -252,7 +251,6 @@ test("real Runtime admission bootstraps MCP before provider invocation and rejec
       assert.ok(f.calls.some(call => call.method === "tools/call"));
       invocations.push(request);
       await mkdir(join(request.workdir, ".octo/task-outputs"), { recursive: true });
-      await writeFile(join(request.workdir, taskOutputManifestPath(request.runId)), JSON.stringify({ schema: TASK_OUTPUT_SCHEMA, outputs: [], delivery: { output_kind: "code_review_report", review_verdict: "approved" } }));
       yield { protocolVersion: 2, type: "run.completed", payload: {} };
     }
   });
@@ -286,8 +284,8 @@ test("real Runtime admission bootstraps MCP before provider invocation and rejec
   assert.equal(invocations[0].workdir.split("/").at(-1), "workdir");
   await waitFor(() => events.some(event => event.type === "run.completed"));
   const completed = events.find(event => event.type === "run.completed");
-  assert.deepEqual(completed.payload.task_output_receipts, []);
-  assert.deepEqual(completed.payload.task_delivery, { output_kind: "code_review_report", review_verdict: "approved" });
+  assert.equal(completed.payload.task_output_receipts, undefined);
+  assert.equal(completed.payload.task_delivery, undefined);
   const failure = await fixture(t, () => material(1), 403);
   const bad = command(2, failure.url);
   bad.payload.resolved_execution_plan.mcp_servers = { bad: { type: "streamable_http", url: failure.url } };

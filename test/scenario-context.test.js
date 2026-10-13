@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { canonicalScenarioPolicy, assertScenarioPolicy, assertScenarioRequest } from '../packages/octo-harness-protocol/dist/index.js';
-import { scenarioInstructions } from '../packages/octo-harness-daemon/dist/scenario-context.js';
+import { scenarioInstructions } from '../packages/octo-harness-worker-access/dist/scenario-context.js';
 import { ContextBuilderRegistry } from '../packages/octo-harness-context-builder/dist/index.js';
 const snapshots = JSON.parse(readFileSync(new URL('../packages/octo-harness-protocol/schema/scenario-policy-fixtures.json', import.meta.url)));
 const request = { scenario_id: 'doc.selection.review', builder_id: 'doc-selection', builder_version: '1' };

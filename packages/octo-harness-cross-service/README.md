@@ -116,3 +116,9 @@ const backend = createServiceBackend({
   homeDirectory: "/tmp/test-home"
 });
 ```
+
+## 模块责任边界
+
+- 负责：管理 launchd/systemd/Windows 用户服务的生命周期。
+- 不负责：AgentRun 执行、WS 连接、IM 业务。
+- 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。

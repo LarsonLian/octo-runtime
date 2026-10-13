@@ -96,3 +96,9 @@ Agent 建议通过 `execution_profile.runtime_limits.model_idle_timeout_ms: 6000
 - 事件契约与三层事件模型：[Protocol](../octo-harness-protocol/README.md)
 - 跨进程 RPC 时序与多节点设想：[Transport And Multi-node](../../docs/09-transport-and-multinode.md)
 - 整体架构：[Architecture](../../docs/01-architecture.md)
+
+## 模块责任边界
+
+- 负责：通过 AdapterHostRpc 统一 invoke、cancel、probe 和交互响应，管理适配器与事件生命周期。
+- 不负责：Worker 注册、IM 消息、群聊和业务调度。
+- 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。

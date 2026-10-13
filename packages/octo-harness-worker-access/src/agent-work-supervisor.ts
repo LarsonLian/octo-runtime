@@ -63,6 +63,12 @@ export class AgentWorkSupervisor {
     for (const entry of this.#entries) entry.runtime.beginDrain();
   }
 
+  readRunEvents(runId: string, streamId?: string, after = 0): ReturnType<AgentWorkRuntime["readRunEvents"]> {
+    const entry = this.#entries.find(item => item.runtime.hasRun(runId));
+    if (!entry) throw new Error("STREAM_EXPIRED");
+    return entry.runtime.readRunEvents(runId, streamId, after);
+  }
+
   async waitForDrained(timeoutMs: number): Promise<void> {
     await Promise.all(this.#entries.map(entry => entry.runtime.waitForDrained(timeoutMs)));
   }

@@ -2,8 +2,8 @@
 // 运行：node scripts/verify-material-compaction-live.mjs；证据只写入忽略目录 .run。
 import {mkdir,writeFile} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
-import {createCodexMaterialCompactionPort} from '../packages/octo-harness-daemon/dist/responses-material-compaction.js';
-import {compactContextMaterials,FileMaterialCompactionStore} from '../packages/octo-harness-daemon/dist/context-compaction.js';
+import {createCodexMaterialCompactionPort} from '../packages/octo-harness-context-builder/dist/responses-material-compaction.js';
+import {compactContextMaterials,FileMaterialCompactionStore} from '../packages/octo-harness-context-builder/dist/context-compaction.js';
 import {createCodexAdapter} from '../packages/octo-harness-adapter-codex/dist/index.js';
 import {invokeRequest} from '../test/agent-work-runtime-fixture.js';
 const root=resolve('.run/context-compaction-live');

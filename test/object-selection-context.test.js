@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildObjectSelectionContext, ContextBuilderRegistry } from '../packages/octo-harness-context-builder/dist/index.js';
-import { compileRunContext } from '../packages/octo-harness-daemon/dist/run-context.js';
+import { compileRunContext } from '../packages/octo-harness-context-builder/dist/run-context.js';
 
 const skillId = '12345678-1234-4234-8234-123456789abc';
 const selection = (id, type = 'task', objectId = id, fields = {}) => ({

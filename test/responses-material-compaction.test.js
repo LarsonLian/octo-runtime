@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createResponsesMaterialCompactionPort, createCodexMaterialCompactionPort } from "../packages/octo-harness-daemon/dist/responses-material-compaction.js";
+import { createResponsesMaterialCompactionPort, createCodexMaterialCompactionPort } from "../packages/octo-harness-context-builder/dist/responses-material-compaction.js";
 import { buildCodexCommand } from "../packages/octo-harness-adapter-codex/dist/index.js";
 
 const base = {model:"known",baseUrl:"https://provider.example/v1",apiKey:"private-test-key",contextWindow:8192,capacitySource:"trusted-test",protectedInput:"retain current input",instructions:"trusted control"};

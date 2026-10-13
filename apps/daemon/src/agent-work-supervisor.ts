@@ -1,1 +1,1 @@
-export * from "@mininglamp-oss/octo-harness-daemon";
+export * from "@mininglamp-oss/octo-harness-worker-access/agent-work-supervisor";

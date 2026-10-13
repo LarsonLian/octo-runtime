@@ -1,13 +1,9 @@
-# Octo Harness Daemon
+# Daemon 启动入口
 
-daemon 组合 adapter-host、本地诊断 store、Unix socket 与可选 Agent Worker Runtime。
+## 责任边界
 
-生产模式下：
+- 负责：解析配置、启动现有 Daemon、转发信号，接入既有用户服务管理。
+- 不负责：不承载 Worker WS 业务实现，不为 IM 建第二套启动器。
+- 接口与现状：实现分别由 daemon、worker-access、adapter-host 包持有。原有小型转导出文件仅用于现有入口调用。
 
-1. 通过认证 WSS 接收 Worker 的 `run.start/cancel`。
-2. durable 接受命令后 ACK。
-3. 将 execution envelope 映射为 `InvokeRequest`。
-4. 调用 adapter-host 并把 canonical events 写入可靠 outbox。
-5. 收到 Worker durable ACK 后清理 outbox。
-
-daemon 不拥有业务 Task/Chat/Trigger，也不生成 session key。Worker 是 AgentSession/AgentRun 权威，本地数据库只记录执行恢复与诊断数据。
+整体架构见 [根 README](../../README.md)。

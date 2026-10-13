@@ -1,4 +1,4 @@
-import { channelAwarenessInstructions, type ChannelAwareness } from "./channel-awareness.js";
+import { recordContextPreparation } from "./context-preparation-receipt.js";
 import { scenarioInstructions } from "./scenario-context.js";
 import type { ScenarioRequest, ScenarioPolicySnapshot } from "@mininglamp-oss/octo-harness-protocol";
 import { createHash, randomUUID } from "node:crypto";
@@ -20,9 +20,7 @@ import {
 import type {
   AgentConfig,
   CanonicalEvent,
-  ChannelContextDescriptor,
   ContextEnvelope,
-  ContextSyncResult,
   InteractionResponse,
   InvokeRequest,
   ProviderSession,
@@ -31,9 +29,6 @@ import type {
 } from "@mininglamp-oss/octo-harness-protocol";
 import {
   RUNTIME_RUN_CONTRACT,
-  assertChannelContextAppend,
-  assertChannelContextDescriptor,
-  assertContextSyncResult,
   assertInteractionResponse,
   assertContextEnvelope,
   assertResolvedExecutionPlan,
@@ -42,31 +37,19 @@ import {
   failurePayload,
   modelPartsFromInput
 } from "@mininglamp-oss/octo-harness-protocol";
-import { resolveRuntimeInputImages } from "./input-images.js";
-import { AgentWorkStore } from "./agent-work-store.js";
-import { prepareRunContext, recordContextPreparation, type PreparedRunContext } from "./context-preparation.js";
+import { resolveRuntimeInputImages } from "@mininglamp-oss/octo-harness-context-builder/input-images";
+import { AgentWorkStore, StreamGapError } from "./agent-work-store.js";
+import { prepareRunContext, type PreparedRunContext } from "@mininglamp-oss/octo-harness-context-builder/context-preparation";
 import { ContextPipeline } from "./context-pipeline.js";
-import { createClaudeMaterialCompactionPort } from "./anthropic-material-compaction.js";
-import { createCodexMaterialCompactionPort } from "./responses-material-compaction.js";
-import { compactContextMaterials, FileMaterialCompactionStore, type MaterialCompactionPort } from "./context-compaction.js";
-import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext } from "./run-context.js";
+import { createClaudeMaterialCompactionPort } from "@mininglamp-oss/octo-harness-context-builder/anthropic-material-compaction";
+import { createCodexMaterialCompactionPort } from "@mininglamp-oss/octo-harness-context-builder/responses-material-compaction";
+import { compactContextMaterials, FileMaterialCompactionStore, type MaterialCompactionPort } from "@mininglamp-oss/octo-harness-context-builder/context-compaction";
+import { assertFrozenContextPlan, compileRunContext, type CompiledRunContext } from "@mininglamp-oss/octo-harness-context-builder/run-context";
 import { prepareTaskMaterials, type PreparedTaskMaterials } from "./task-materials.js";
-import { archiveTaskOutputs, safeOutputError, taskOutputInstructions } from "./task-outputs.js";
-import { archiveDiscussionOutputs, discussionOutputInstructions } from "./discussion-outputs.js";
 import { businessServiceConnections, resolveToolAuthorizations, unconsumedToolAuthorizations, type BusinessServiceBinding, type BusinessServiceConnections } from "./tool-authorizations.js";
 import type { IssuedToolAuthorization, ToolAuthorization } from "@mininglamp-oss/octo-harness-protocol";
-import { prepareTeamInput } from "./team-input.js";
-import type { OutboxRow } from "./agent-work-store.js";
+import type { ReplayEvent } from "./agent-work-store.js";
 import { collectRuntimeDeviceInfo } from "./device-info.js";
-import {
-  ChannelContextStore,
-  ChannelContextConsumerBusyError,
-  ChannelContextStaleGenerationError,
-  channelScopeKey,
-  composeProviderModelInput,
-  type ChannelContextStoreOptions,
-  type PreparedChannelContextSnapshot
-} from "./channel-context-store.js";
 
 const MIN_PROTOCOL_VERSION = 2;
 const MAX_PROTOCOL_VERSION = 2;
@@ -89,12 +72,10 @@ const DEFAULT_RECONCILE_MS = 5 * 60_000;
 const DEFAULT_MINIMUM_FREE_BYTES = 512 * 1024 * 1024;
 const DEFAULT_DISK_CHECK_MS = 30_000;
 const PUMP_POLL_MS = 50;
+const ADMISSION_POLL_MS = 25;
 const DEFAULT_NACK_RETRY_MS = 1_000;
 const MAX_NACK_RETRY_MS = 30_000;
 const BACKPRESSURE_POLL_MS = 100;
-const DEFAULT_CONTEXT_SYNC_TIMEOUT_MS = 3_000;
-const DEFAULT_CONTEXT_SYNC_LIMIT = 40;
-const CONTEXT_BUSY_POLL_MS = 25;
 /** Terminal events must be able to reach durable storage and close out the run;
  * they bypass the soft-watermark backpressure. */
 const TERMINAL_OUTBOX_TYPES = new Set(["run.completed", "run.failed", "run.cancelled"]);
@@ -157,7 +138,6 @@ export interface AgentWorkRuntimeOptions {
   /** Maximum provider invocations admitted concurrently on this device. */
   maxConcurrentRuns?: number;
   reconcileMs?: number;
-  channelContext?: ChannelContextRuntimeOptions;
   /** 仅由可信宿主提供已资格验证的无工具摘要/精确计量能力，不能从 Context 传入。 */
   createMaterialCompactionPort?: (request: {
     envelope: ExecutionEnvelope; compiled: CompiledRunContext; signal: AbortSignal;
@@ -207,19 +187,10 @@ export interface RunAdmission {
   acquire(signal: AbortSignal): Promise<() => void>;
 }
 
-/** Controls local persistence and projection of channel context presented to a provider. */
-export interface ChannelContextRuntimeOptions extends ChannelContextStoreOptions {
-  store: "memory" | "sqlite";
-  projection: "window" | "delta";
-  providerPersistence: "ephemeral" | "append_only";
-  storePath: string;
-  syncTimeoutMs?: number;
-}
-
 /** Immutable execution description received from Agent Work before local mapping. */
 export interface ExecutionEnvelope {
   schema_version: 7;
-  internal_context?: { channel_awareness?: ChannelAwareness; scenario_policy?: ScenarioPolicySnapshot; continuity?: ChannelContextDescriptor };
+  internal_context?: { scenario_policy?: ScenarioPolicySnapshot };
   effective_context: ContextEnvelope;
   context_configuration_version: number;
   resolved_execution_plan: ResolvedExecutionPlan;
@@ -283,7 +254,6 @@ interface ActiveRun {
   leaseId: string;
   fencingToken: number;
   outputController: AbortController;
-  archiving: boolean;
 }
 
 interface AcceptingRun {
@@ -293,28 +263,12 @@ interface AcceptingRun {
   acknowledged: boolean;
 }
 
-interface PendingContextSync {
-  scopeKey: string;
-  triggerMessageId: string;
-  triggerSeq?: number;
-  afterSeq?: number;
-  resolve: () => void;
-  reject: (error: Error) => void;
-  timer: NodeJS.Timeout;
-  signal?: AbortSignal;
-  onAbort?: () => void;
-}
-
 /**
  * The local Agent Work runtime: registers with the control plane, holds a
  * WebSocket for commands, executes accepted Runs through the adapter host, and
- * ships their events out of the durable outbox with cumulative ACK semantics.
- *
- * Durability contract: each event is written to the SQLite outbox before it is
- * sent; a cumulative `event.ack{run_id, seq}` first releases the send window
- * (received) and then, on the durable ACK, deletes confirmed rows. Unacked events
- * survive restart and replay with a stable event_id. Channel-context commits are
- * gated on the successful terminal's durable ACK.
+ * relays original events from a bounded process-local replay window.
+ * Reconnect uses source cursors; restart or overflow reports an explicit gap.
+ * Completion does not wait for a cloud event ACK.
  */
 export class AgentWorkRuntime {
   readonly #options: AgentWorkRuntimeOptions;
@@ -326,7 +280,6 @@ export class AgentWorkRuntime {
   readonly #activeRuns = new Map<string, ActiveRun>();
   readonly #acceptingCommandIds = new Set<string>();
   readonly #acceptingRuns = new Map<string, AcceptingRun>();
-  readonly #authoritativeTerminalRuns = new Set<string>();
   readonly #messageHandlers = new Set<Promise<void>>();
   readonly #executionTasks = new Set<Promise<void>>();
   readonly #adapterCapabilities = new Map<string, Set<string>>();
@@ -334,14 +287,9 @@ export class AgentWorkRuntime {
   #adapterProbe?: NodeJS.Timeout;
   #adapterProbePending = false;
   #adapterRegistrationDirty = false;
-  /** `${runId}:${seq}` already sent on this connection and awaiting ACK; cleared
-   * on reconnect so the sender replays them. */
-  readonly #inFlight = new Set<string>();
+  /** Bounded retransmission delays for explicitly rejected batches. */
   readonly #nackBackoff = new Map<string, { attempt: number; retryAt: number }>();
-  readonly #pendingContextSyncs = new Map<string, PendingContextSync>();
-  readonly #latestContextSyncByScope = new Map<string, string>();
   #store?: AgentWorkStore;
-  #contextStore?: ChannelContextStore;
   #runtimeId = "";
   #socket?: WebSocket;
   #connectingSocket?: WebSocket;
@@ -440,7 +388,6 @@ export class AgentWorkRuntime {
   /** Return operational state only. Endpoint credentials and message content are excluded. */
   get status(): Record<string, unknown> {
     const store = this.#store;
-    const contextStats = this.#contextStore?.stats();
     return {
       enabled: true,
       ...(this.#options.profile ? { profile: this.#options.profile } : {}),
@@ -470,21 +417,6 @@ export class AgentWorkRuntime {
         minimumFreeBytes: this.#storeHealth.minimumFreeBytes,
         errorCode: this.#storeHealth.errorCode ?? null
       },
-      channelContext: {
-        store: this.#options.channelContext?.store ?? "memory",
-        projection: this.#options.channelContext?.projection ?? "window",
-        providerPersistence: this.#options.channelContext?.providerPersistence ?? "append_only",
-        scopes: contextStats?.scopes ?? 0,
-        messages: contextStats?.messages ?? 0,
-        snapshots: contextStats?.snapshots ?? 0,
-        activeSnapshots: contextStats?.activeSnapshots ?? 0,
-        serializerVersion: contextStats?.serializerVersion ?? null,
-        retentionMs: contextStats?.retentionMs ?? null,
-        snapshotRetentionMs: contextStats?.snapshotRetentionMs ?? null,
-        activeSnapshotTimeoutMs: contextStats?.activeSnapshotTimeoutMs ?? null,
-        dbBytes: contextStats?.dbBytes ?? 0,
-        walBytes: contextStats?.walBytes ?? 0
-      }
     };
   }
 
@@ -505,12 +437,6 @@ export class AgentWorkRuntime {
       this.#adapterCapabilities.set(adapter.type, new Set(adapter.executionFeatures));
     }
     await this.#openStore();
-    if (this.#options.channelContext?.store === "sqlite") {
-      this.#contextStore = ChannelContextStore.open(
-        this.#options.channelContext.storePath,
-        this.#options.channelContext
-      );
-    }
     this.#startRecoveryProbe(epoch);
     this.#startDiskProbe(epoch);
     this.#adapterProbe = setInterval(() => { void this.#refreshOpenClaw(epoch); }, this.#options.adapterProbeMs ?? 5_000);
@@ -538,12 +464,6 @@ export class AgentWorkRuntime {
     this.#reconcileTimer = setInterval(() => {
       try {
         this.#store?.reconcile();
-        const protectedRunIds = new Set([
-          ...(this.#store?.pendingTerminalAckRunIds() ?? []),
-          ...this.#activeRuns.keys(),
-          ...this.#acceptingRuns.keys()
-        ]);
-        this.#contextStore?.reconcile(Date.now(), protectedRunIds);
       } catch (error) {
         this.#markStoreUnavailable(error);
         this.#reportError("agent_work.outbox.reconcile_failed", "Agent Work outbox reconcile failed", error);
@@ -553,7 +473,7 @@ export class AgentWorkRuntime {
 
   /**
    * Stop accepting work, cancel local invocations and close transports/stores.
-   * Durable, unacknowledged outbox rows are intentionally retained for replay.
+   * The process-local replay window is discarded on shutdown.
    */
   async close(): Promise<void> {
     if (this.#stopped && !this.#store) return;
@@ -586,23 +506,15 @@ export class AgentWorkRuntime {
       await this.#host.cancel(run.invocationId, "runtime shutdown").catch(() => undefined);
     }
     this.#socket?.close(1000, "runtime shutdown");
-    for (const requestId of [...this.#pendingContextSyncs.keys()]) {
-      this.#resolveContextSync(requestId, new RuntimeStoppingError());
-    }
-    this.#latestContextSyncByScope.clear();
     await this.#loop?.catch(() => undefined);
     await this.#pump?.catch(() => undefined);
     await Promise.allSettled([...this.#messageHandlers]);
     await Promise.allSettled([...this.#executionTasks]);
-    // Unacked events stay in the outbox and replay after restart; here we only
-    // release the connection and handles.
+    // Release the in-memory replay window; there is no restart recovery.
     this.#store?.close();
     this.#store = undefined;
-    this.#contextStore?.close();
-    this.#contextStore = undefined;
     this.#acceptingCommandIds.clear();
     this.#acceptingRuns.clear();
-    this.#authoritativeTerminalRuns.clear();
   }
 
   /** Reject future run.start commands while allowing cancellation and replay. */
@@ -630,7 +542,6 @@ export class AgentWorkRuntime {
 
   async #register(adapterTypes: string[], signal?: AbortSignal, updateOnly = false): Promise<{ runtimeId: string; protocolVersion: number }> {
     if (!updateOnly) this.#connectionState = "registering";
-    const contextStats = this.#contextStore?.stats();
     const sentRequestId = createRequestId();
     this.#log({
       level: "info",
@@ -667,18 +578,6 @@ export class AgentWorkRuntime {
               ...(adapter.processModel ? { process_model: adapter.processModel } : {}),
               ...(adapter.transport ? { transport: adapter.transport } : {})
             })),
-            channel_context: {
-              protocol_version: 1,
-              store: this.#options.channelContext?.store ?? "memory",
-              projection: this.#options.channelContext?.projection ?? "window",
-              provider_persistence: this.#options.channelContext?.providerPersistence ?? "append_only",
-              ...(contextStats ? {
-                serializer_version: contextStats.serializerVersion,
-                message_retention_ms: contextStats.retentionMs,
-                snapshot_retention_ms: contextStats.snapshotRetentionMs,
-                active_snapshot_timeout_ms: contextStats.activeSnapshotTimeoutMs
-              } : {})
-            }
           }
         }),
         signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000)
@@ -879,10 +778,8 @@ export class AgentWorkRuntime {
     });
     this.#send("runtime.hello", {
       last_acked_command_seq: this.#store?.lastAckedCommandSeq ?? 0,
-      // A persisted non-terminal row does not prove that a provider invocation
-      // survived a process restart. Only live in-memory work and terminal rows
-      // awaiting durable ACK are still owned by this Runtime connection.
       active_run_ids: this.#activeRunIds(),
+      replay_run_ids: this.#store?.retainedRunIds() ?? [],
       runtime_version: RUNTIME_VERSION,
       protocol_version_min: MIN_PROTOCOL_VERSION,
       protocol_version_max: MAX_PROTOCOL_VERSION,
@@ -918,7 +815,6 @@ export class AgentWorkRuntime {
       this.#reconnectReset = undefined;
       // No event loss on disconnect: clear the in-flight markers so reconnect
       // replays everything from the lowest unacked seq.
-      this.#inFlight.clear();
       this.#nackBackoff.clear();
       if (!this.#isCurrentLifecycle(epoch)) return;
       let serverReconnectAfterMs = this.#serverReconnectAfterMs;
@@ -1106,9 +1002,7 @@ export class AgentWorkRuntime {
   #activeRunIds(): string[] {
     return [...new Set([
       ...this.#activeRuns.keys(),
-      ...this.#acceptingRuns.keys(),
-      ...(this.#store?.pendingTerminalAckRunIds() ?? [])
-    ])];
+      ...this.#acceptingRuns.keys(),    ])];
   }
 
   #sendRuntimeHealth(): void {
@@ -1222,29 +1116,22 @@ export class AgentWorkRuntime {
         ack: envelope.ack
       }
     });
-    if (envelope.type === "context.append") {
-      assertChannelContextAppend(envelope.payload);
-      this.#contextStore?.append(envelope.payload);
-      return;
-    }
-    if (envelope.type === "context.sync_result") {
-      assertContextSyncResult(envelope.payload);
-      const pending = this.#pendingContextSyncs.get(envelope.payload.request_id);
-      if (!pending
-        || this.#latestContextSyncByScope.get(pending.scopeKey) !== envelope.payload.request_id
-        || !matchesPendingContextSync(pending, envelope.payload)) return;
-      this.#contextStore?.applySyncResult(envelope.payload);
-      this.#resolveContextSync(envelope.payload.request_id);
-      return;
-    }
     if (envelope.type === "runtime.welcome") {
       const payload = asRecord(envelope.payload);
       const everyMs = typeof payload.heartbeat_every_ms === "number" ? payload.heartbeat_every_ms : 30_000;
-      await this.#applyAuthoritativeTerminalRuns(payload.authoritative_terminal_runs);
-      // received ACK only proves that the previous Worker process held the
-      // batch in memory. A new socket may point at a restarted Worker, so the
-      // local Outbox must replay every row not covered by durable ACK.
-      this.#store?.prepareReplayAfterReconnect();
+      if (!Array.isArray(payload.resume_cursors)) throw new Error("runtime.welcome requires resume_cursors");
+      for (const value of payload.resume_cursors) {
+        const cursor = asRecord(value);
+        const runId = stringValue(cursor.run_id);
+        if (!runId) throw new Error("invalid resume cursor");
+        if (cursor.expired === true) { this.#store?.pauseCloudStream(runId); continue; }
+        try { this.#store?.resume(runId, Number(cursor.after_seq)); }
+        catch (error) {
+          if (!(error instanceof StreamGapError)) throw error;
+          this.#store?.pauseCloudStream(runId);
+          this.#trySend("run.stream_gap", { run_id: runId });
+        }
+      }
       this.#connected = true;
       this.#connectionState = "online";
       this.#connectionReason = "none";
@@ -1278,11 +1165,6 @@ export class AgentWorkRuntime {
       this.#kickSender();
       return;
     }
-    if (envelope.type === "runtime.health_ack") {
-      const payload = asRecord(envelope.payload);
-      await this.#applyAuthoritativeTerminalRuns(payload.authoritative_terminal_runs, "runtime.health_ack");
-      return;
-    }
     if (envelope.type === "runtime.goaway") {
       const payload = asRecord(envelope.payload);
       const retryAfterMs = Number(payload.retry_after_ms);
@@ -1311,70 +1193,6 @@ export class AgentWorkRuntime {
       await this.#acceptCommand(envelope.payload as RuntimeCommand, epoch);
       return;
     }
-    if (envelope.type === "event.ack") {
-      const payload = asRecord(envelope.payload);
-      const runId = String(payload.run_id);
-      const received = Number(payload.received_through_seq);
-      const durable = Number(payload.durable_through_seq);
-      const store = this.#store;
-      if (store) {
-        // received_through_seq: the batch is safely held in Worker memory —
-        // release the send window (do not delete the outbox yet).
-        if (Number.isFinite(received)) {
-          const outcome = store.advanceReceived(runId, received);
-          if (!outcome.advanced && outcome.reason === "ack_beyond_produced") {
-            this.#reportError("agent_work.ack.rejected", "Agent Work received ACK was out of range", new Error("ack_beyond_produced"), { run_id: runId, seq: received });
-          }
-          const prefix = `${runId}:`;
-          for (const key of [...this.#inFlight]) {
-            if (key.startsWith(prefix) && Number(key.slice(prefix.length)) <= received) this.#inFlight.delete(key);
-          }
-          this.#nackBackoff.delete(runId);
-        }
-        // durable_through_seq: aggregated state committed cloud-side — only now
-        // may confirmed outbox rows be deleted.
-        if (Number.isFinite(durable) && durable > 0) {
-          const inspection = store.inspectDurableAck(runId, durable);
-          if (inspection.advanced) {
-            let contextCommitted = true;
-            if (inspection.terminal?.type === "run.completed") {
-              const snapshot = this.#contextStore?.getSnapshot(runId);
-              if (snapshot) {
-                const grant = payload.context_commit_granted === true;
-                const authoritativeStatus = stringValue(payload.authoritative_terminal_status);
-                const authoritativeEventId = stringValue(payload.authoritative_terminal_event_id);
-                const grantMatchesTerminal = grant
-                  && authoritativeStatus === "completed"
-                  && authoritativeEventId === inspection.terminal.eventId;
-                if (!grantMatchesTerminal) {
-                  this.#contextStore?.markFailed(runId);
-                  this.#reportError("channel_context.commit_not_granted", "channel context commit was not granted", new Error("commit_not_granted"), {
-                    run_id: runId,
-                    authoritative_status: authoritativeStatus ?? "missing"
-                  });
-                } else {
-                  const result = this.#contextStore!.commitSnapshot(runId);
-                  if (!result.committed) {
-                    this.#reportError("channel_context.commit_rejected", "channel context cursor commit was rejected", new Error(result.reason), { run_id: runId });
-                    contextCommitted = false;
-                  }
-                }
-              }
-            } else if (inspection.terminal) {
-              this.#contextStore?.markFailed(runId);
-            }
-            // Commit context first: if it fails, leave terminal in the outbox so
-            // the durable ACK can be replayed after reconnect. Both operations are idempotent.
-            if (contextCommitted) store.advanceDurable(runId, durable);
-          } else if (inspection.reason === "ack_beyond_produced") {
-            this.#reportError("agent_work.ack.rejected", "Agent Work durable ACK was out of range", new Error("ack_beyond_produced"), { run_id: runId, seq: durable });
-          }
-        }
-        // ACK released capacity and may unblock more sendable rows.
-        this.#kickSender();
-      }
-      return;
-    }
     if (envelope.type === "event.nack") {
       const payload = asRecord(envelope.payload);
       const runId = stringValue(payload.run_id);
@@ -1382,9 +1200,15 @@ export class AgentWorkRuntime {
       if (!runId || !Number.isSafeInteger(resumeFromSeq) || resumeFromSeq < 1) {
         throw new Error("Agent Work event.nack requires run_id and a positive resume_from_seq");
       }
-      const prefix = `${runId}:`;
-      for (const key of [...this.#inFlight]) {
-        if (key.startsWith(prefix) && Number(key.slice(prefix.length)) >= resumeFromSeq) this.#inFlight.delete(key);
+      if (["RUN_EXPIRED", "RUN_NOT_FOUND", "STALE_RUN_EVENT", "RUN_TERMINAL"].includes(String(payload.code))) {
+        this.#store?.pauseCloudStream(runId); return;
+      }
+      try { this.#store?.resume(runId,resumeFromSeq-1); }
+      catch (error) {
+        if (!(error instanceof StreamGapError)) throw error;
+        this.#store?.pauseCloudStream(runId);
+        this.#trySend("run.stream_gap", { run_id: runId });
+        return;
       }
       const previous = this.#nackBackoff.get(runId);
       const attempt = (previous?.attempt ?? 0) + 1;
@@ -1420,46 +1244,6 @@ export class AgentWorkRuntime {
   #beginRecovery(trigger: RuntimeRecoveryTrigger): void {
     if (this.#recoveryStartedAt === undefined) this.#recoveryStartedAt = performance.now();
     if (trigger !== "transport" || !this.#recoveryTrigger) this.#recoveryTrigger = trigger;
-  }
-
-  async #applyAuthoritativeTerminalRuns(value: unknown, source = "runtime.welcome"): Promise<void> {
-    if (value === undefined) return;
-    if (!Array.isArray(value)) throw new Error(`${source} authoritative_terminal_runs must be an array`);
-    for (const item of value) {
-      const authority = asRecord(item);
-      const runId = stringValue(authority.run_id);
-      const status = stringValue(authority.status);
-      const terminalEventId = stringValue(authority.terminal_event_id);
-      if (!runId || !status || !["completed", "failed", "cancelled"].includes(status)) {
-        throw new Error(`${source} contains an invalid authoritative terminal run`);
-      }
-      this.#authoritativeTerminalRuns.add(runId);
-      const accepting = this.#acceptingRuns.get(runId);
-      accepting?.controller.abort(new AuthoritativeTerminalRunError(runId, status));
-      const active = this.#activeRuns.get(runId);
-      if (active) {
-        active.outputController.abort(new AuthoritativeTerminalRunError(runId, status));
-        await this.#host.cancel(active.invocationId, `authoritative server terminal: ${status}`).catch(error => {
-          this.#reportError("adapter.invoke.authoritative_cancel_failed", "failed to cancel an authoritatively terminal invocation", error, {
-            run_id: runId,
-            authoritative_status: status,
-            authoritative_terminal_event_id: terminalEventId ?? "unavailable"
-          });
-        });
-      }
-      this.#store?.discardAuthoritativelyTerminalRun(runId);
-      this.#contextStore?.markFailed(runId);
-      this.#log({
-        level: "warn",
-        scope: "agent-work.reconciliation",
-        event: "agent_run.authoritative_terminal_applied",
-        message: "stopped local execution after authoritative server terminal",
-        runId,
-        invocationId: active?.invocationId,
-        data: { authoritative_status: status, authoritative_terminal_event_id: terminalEventId ?? "unavailable" }
-      });
-      if (!active && !accepting) this.#authoritativeTerminalRuns.delete(runId);
-    }
   }
 
   async #acceptCommand(command: RuntimeCommand, epoch: number): Promise<void> {
@@ -1526,7 +1310,6 @@ export class AgentWorkRuntime {
       const active = this.#activeRuns.get(command.run_id);
       if (active) {
         active.outputController.abort(new ControlPlaneRunCancelledError());
-        if (active.archiving) { this.#ackCommand(command, true); return; }
         const cancelled = (await this.#host.cancel(active.invocationId, "control plane cancel")).cancelled;
         this.#ackCommand(command, true, cancelled ? undefined : { code: "RUN_NOT_ACTIVE" });
         return;
@@ -1535,12 +1318,10 @@ export class AgentWorkRuntime {
       if (accepting) {
         const failure = { code: "RUN_CANCELLED_BEFORE_START", message: "run cancelled while waiting for admission" };
         this.#store?.recordCommandReceipt(accepting.commandId, accepting.serverSeq, false, failure);
-        this.#contextStore?.markFailed(command.run_id);
         accepting.controller.abort(new AcceptingRunCancelledError());
         this.#ackCommand(command, true);
         return;
       }
-      this.#contextStore?.markFailed(command.run_id);
       this.#ackCommand(command, true, { code: "RUN_NOT_ACTIVE" });
       return;
     }
@@ -1658,7 +1439,6 @@ export class AgentWorkRuntime {
     let admissionHandedOff = false;
     try {
       let request: InvokeRequest;
-      let outputPlan: ResolvedExecutionPlan;
       let services: BusinessServiceConnections = {};
       let adapterType: string;
       let agentSessionId: string;
@@ -1695,24 +1475,19 @@ export class AgentWorkRuntime {
         const requiredCapabilities = executionEnvelope.resolved_execution_plan.required_execution_features ?? [];
         const localCapabilities = this.#adapterCapabilities.get(adapterTypeForContext);
         if (requiredCapabilities.some(capability => !localCapabilities?.has(capability))) throw new TypeError("ADAPTER_REQUIRED_CAPABILITY_MISSING");
-        const materialEntries = contextItem(executionEnvelope.effective_context, "octo.content", "references")?.payload.entries;
-        const contentResources = Array.isArray(materialEntries) ? materialEntries : [];
-
         const input = executionEnvelope.agent_run_request.input;
         const hasImages = Array.isArray(input.parts) && input.parts.some(part => part && typeof part === "object" && (part as Record<string, unknown>).type === "image");
         if (hasImages && !localCapabilities?.has("input.image")) throw new TypeError("UNSUPPORTED_INPUT_MODALITY");
+        const materialEntries = contextItem(executionEnvelope.effective_context, "octo.content", "references")?.payload.entries;
+        store.upsertRun({ runId: command.run_id, agentSessionId: executionEnvelope.agent_session_id,
+          commandId: command.command_id, leaseId, fencingToken });
         // 完成执行绑定和 Adapter 能力检查后，为统一管线注入宿主能力；封存确认前不调用模型。
         const pipeline = new ContextPipeline({
           scenarioPolicyHash: executionEnvelope.internal_context?.scenario_policy?.hash,
           trustedInstructions: [
             ...(stringValue(asRecord(executionEnvelope.agent_revision.definition).instructions)
               ? [{ text: stringValue(asRecord(executionEnvelope.agent_revision.definition).instructions)!, source: "revision" as const }] : []),
-            ...channelAwarenessInstructions(executionEnvelope.internal_context?.channel_awareness),
             ...scenarioInstructions(executionEnvelope.agent_run_request.scenario, executionEnvelope.internal_context?.scenario_policy, executionEnvelope.agent_run_request.context),
-            ...(executionEnvelope.agent_run_request.scenario?.scenario_id === "loop_discussion"
-              ? [{ text: discussionOutputInstructions(executionEnvelope.run_id), source: "platform_policy" as const }] : []),
-            ...(Array.isArray(contentResources) && contentResources.length
-              ? [{ text: taskOutputInstructions(executionEnvelope.run_id), source: "platform_policy" as const }] : [])
           ],
           prepareInput: async signal => {
             const grants = await resolveToolAuthorizations(executionEnvelope.agent_run_request.tool_authorizations ?? [], {
@@ -1738,8 +1513,7 @@ export class AgentWorkRuntime {
           },
           prepareMaterials: signal => prepareTaskMaterials(executionEnvelope.effective_context,
             services.task, signal, { runId: command.run_id, store }),
-          prepareContinuity: signal => this.#prepareChannelContext(command.run_id,
-            executionEnvelope, adapterTypeForContext, signal, epoch),
+          prepareContinuity: () => Promise.resolve(undefined),
           ...((this.#options.createMaterialCompactionPort || ["codex", "claude-code"].includes(adapterTypeForContext)) ? {
             prepareCompiled: async (compiled: CompiledRunContext, signal: AbortSignal): Promise<CompiledRunContext> => {
               if (!compiled.modelContent) return compiled;
@@ -1790,11 +1564,9 @@ export class AgentWorkRuntime {
         const mapped = mapExecutionEnvelope({
           ...executionEnvelope,
           agent_run_request: { ...executionEnvelope.agent_run_request, input: prepared.input }
-        }, prepared.continuity, prepared.materials, prepared.capabilities, prepared.compiled);
+        }, prepared.materials, prepared.capabilities, prepared.compiled);
         request = mapped.request;
         // 归档必须使用实际准备并封存的 MCP（含临时 Run grant），原始命令尚未包含资源组件。
-        const compiledPlan = prepared.compiled.executionPlan ?? executionEnvelope.resolved_execution_plan;
-        outputPlan = { ...compiledPlan, workdir: request.workdir ?? "" };
         request.runMetadata ??= {};
         request.runMetadata.contextCompilation = {
           compiler_version: prepared.receipt.compiler_version, catalog_version: prepared.receipt.catalog_version,
@@ -1859,16 +1631,10 @@ export class AgentWorkRuntime {
         });
       } catch (error) {
         if (error instanceof RuntimeStoppingError) {
-          this.#contextStore?.markFailed(command.run_id);
-          return;
-        }
-        if (error instanceof AuthoritativeTerminalRunError) {
-          this.#contextStore?.markFailed(command.run_id);
-          return;
+            return;
         }
         if (error instanceof AcceptingRunCancelledError) {
-          this.#contextStore?.markFailed(command.run_id);
-          const failure = store.getCommandReceipt(command.command_id)?.error
+            const failure = store.getCommandReceipt(command.command_id)?.error
             ?? { code: "RUN_CANCELLED_BEFORE_START", message: "run cancelled while waiting for admission" };
           if (!store.getCommandReceipt(command.command_id)) {
             store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
@@ -1876,17 +1642,9 @@ export class AgentWorkRuntime {
           this.#ackCommand(command, false, failure);
           return;
         }
-        this.#contextStore?.markFailed(command.run_id);
         const deadlineError: unknown = controller.signal.reason;
         const failure = deadlineError instanceof RunTotalDeadlineError
           ? runDeadlineFailure(deadlineError, command.run_id, "context.preparation")
-          : error instanceof ChannelContextStaleGenerationError
-          ? {
-              code: "STALE_CONTEXT_GENERATION",
-              message: error.message,
-              requested_generation: error.requestedGeneration,
-              latest_generation: error.latestGeneration
-            }
           : error instanceof ProviderConfigurationMissingError
             ? failurePayload({ code: "PROVIDER_CONFIG_MISSING" }, {
                 stage: "provider.configuration",
@@ -1896,6 +1654,10 @@ export class AgentWorkRuntime {
               })
             : { code: "INVALID_EXECUTION_ENVELOPE", message: errorMessage(error) };
         store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
+        if (store.runExists(command.run_id)) {
+          store.pauseCloudStream(command.run_id);
+          store.allocateAndAppend(command.run_id, 'run.failed', { code: failure.code });
+        }
         this.#ackCommand(command, false, failure);
         return;
       }
@@ -1907,7 +1669,7 @@ export class AgentWorkRuntime {
         const position = [...this.#acceptingRuns.keys()].indexOf(command.run_id);
         const available = Math.max(0, maxConcurrentRuns - this.#activeRuns.size);
         if (position >= 0 && position < available) break;
-        await abortableDelay(CONTEXT_BUSY_POLL_MS, controller.signal);
+        await abortableDelay(ADMISSION_POLL_MS, controller.signal);
       }
       this.#assertCurrentLifecycle(epoch);
       releaseAdmission = await this.#runAdmission?.acquire(controller.signal);
@@ -1930,10 +1692,9 @@ export class AgentWorkRuntime {
         leaseId,
         fencingToken,
         outputController: controller,
-        archiving: false
       });
       if (!accepting.acknowledged) this.#ackCommand(command, true);
-      const execution = this.#execute(command, adapterType, request, outputPlan, services, releaseAdmission);
+      const execution = this.#execute(command, adapterType, request, releaseAdmission);
       admissionHandedOff = true;
       this.#executionTasks.add(execution);
       void execution.finally(() => {
@@ -1944,7 +1705,6 @@ export class AgentWorkRuntime {
     } catch (error) {
       const deadlineError: unknown = controller.signal.reason;
       if (!(deadlineError instanceof RunTotalDeadlineError)) throw error;
-      this.#contextStore?.markFailed(command.run_id);
       const failure = runDeadlineFailure(deadlineError, command.run_id, "runtime.admission");
       store.recordCommandReceipt(command.command_id, command.server_seq, false, failure);
       this.#ackCommand(command, false, failure);
@@ -1958,7 +1718,6 @@ export class AgentWorkRuntime {
       if (this.#acceptingRuns.get(command.run_id)?.controller === controller) {
         this.#acceptingRuns.delete(command.run_id);
       }
-      if (!this.#activeRuns.has(command.run_id)) this.#authoritativeTerminalRuns.delete(command.run_id);
     }
   }
 
@@ -1998,71 +1757,6 @@ export class AgentWorkRuntime {
     }
   }
 
-  async #prepareChannelContext(
-    runId: string,
-    envelope: ExecutionEnvelope,
-    adapterType: string,
-    signal: AbortSignal,
-    epoch: number
-  ): Promise<PreparedChannelContextSnapshot | undefined> {
-    const descriptorValue = envelope.internal_context?.continuity;
-    if (descriptorValue === undefined) return undefined;
-    assertChannelContextDescriptor(descriptorValue);
-    const descriptor = descriptorValue;
-    const contextStore = this.#contextStore;
-    if (!contextStore) return undefined;
-
-    // Reliable trigger path repairs a dropped best-effort append before selection.
-	contextStore.append({ agent_id: envelope.agent_run_request.agent_id, scope: descriptor.scope, facts: [descriptor.trigger_fact] });
-    const adapterCapabilities = this.#adapterCapabilities.get(adapterType);
-    // Initial history is supplied by the App; Worker does not proxy business history.
-    while (this.#isCurrentLifecycle(epoch)) {
-      throwIfAcceptingAborted(signal);
-      try {
-        const snapshot = contextStore.prepareSnapshot(runId, descriptor);
-        if (!this.#usesAppendOnlyDelta()) return contextStore.selectColdProjection(runId);
-        // A provider with no serializable session starts cold on every turn.
-        // Give it the bounded full projection without promoting the context
-        // generation, because no previously resumed session became invalid.
-        if (!adapterCapabilities?.has("session.serialize")) {
-          return contextStore.selectColdProjection(runId);
-        }
-        // A resumable provider without same-turn recovery cannot safely consume
-        // only a delta if its saved session has disappeared. Start it cold with
-        // the bounded recovery projection instead of rejecting the whole Run.
-        if (envelope.provider_session
-          && !adapterCapabilities.has("session.resume_recovery")) {
-          return contextStore.selectRecovery(runId);
-        }
-        return snapshot;
-      } catch (error) {
-        if (!(error instanceof ChannelContextConsumerBusyError)) throw error;
-        await abortableDelay(CONTEXT_BUSY_POLL_MS, signal);
-      }
-    }
-    throw new RuntimeStoppingError();
-  }
-
-  #resolveContextSync(requestId: string, error?: Error): void {
-    const pending = this.#pendingContextSyncs.get(requestId);
-    if (!pending) return;
-    clearTimeout(pending.timer);
-    if (pending.signal && pending.onAbort) pending.signal.removeEventListener("abort", pending.onAbort);
-    this.#pendingContextSyncs.delete(requestId);
-    if (this.#latestContextSyncByScope.get(pending.scopeKey) === requestId) {
-      this.#latestContextSyncByScope.delete(pending.scopeKey);
-    }
-    if (error) pending.reject(error);
-    else pending.resolve();
-  }
-
-  #usesAppendOnlyDelta(): boolean {
-    const options = this.#options.channelContext;
-    return options?.store === "sqlite"
-      && options.projection === "delta"
-      && options.providerPersistence === "append_only";
-  }
-
   #isCurrentLifecycle(epoch: number): boolean {
     return !this.#stopped && epoch === this.#lifecycleEpoch;
   }
@@ -2075,17 +1769,12 @@ export class AgentWorkRuntime {
     command: RuntimeCommand,
     adapterType: string,
     request: InvokeRequest,
-    outputPlan: ResolvedExecutionPlan,
-    services: BusinessServiceConnections,
     releaseAdmission?: () => void
   ): Promise<void> {
     const store = this.#store;
     if (!store) return;
-    let finalText = "";
     let terminal = false;
-    let contextSnapshot = this.#contextStore?.markSubmitted(command.run_id);
     let started = false;
-    let recoverySessionReported = false;
     const invocationStartedAt = process.hrtime.bigint();
     let firstPublicProgress = false;
     // Keep execution, invocation, business namespace, and trigger occurrence
@@ -2107,31 +1796,14 @@ export class AgentWorkRuntime {
     });
     const appendStarted = (): void => {
       if (started) return;
-      store.allocateAndAppend(command.run_id, "run.started", contextSnapshot
-        ? contextEventFields(contextSnapshot)
-        : {});
+      store.allocateAndAppend(command.run_id, "run.started", {});
       started = true;
       this.#kickSender();
     };
     try {
       for await (const providerEvent of this.#host.invoke(adapterType, request)) {
-        if (this.#authoritativeTerminalRuns.has(command.run_id)) break;
-        let event = providerEvent;
+        const event = providerEvent;
         if (event.type === "run.started" || event.type === "run.queued") continue;
-        if (contextSnapshot && selectsRecoveryInput(event)) {
-          if (started && contextSnapshot.selectedVariant !== "recovery") {
-            throw new Error("provider selected channel context recovery after run.started was persisted");
-          }
-          contextSnapshot = this.#contextStore?.selectRecovery(command.run_id) ?? contextSnapshot;
-        }
-        if (contextSnapshot?.selectedVariant === "recovery"
-          && contextSnapshot.ref.source_session_generation !== undefined
-          && !recoverySessionReported
-          && event.type === "session.update"
-          && stringValue(asRecord(event.payload.providerSession).sessionId)) {
-          event = recoverySessionUpdate(event);
-          recoverySessionReported = true;
-        }
         appendStarted();
         const publicMessage = event.type.startsWith("message.") && typeof event.payload.text === "string" && event.payload.text.length > 0
           && (event.payload.channel !== "analysis" || ["public_reasoning", "public_summary", "public_plan"].includes(String(event.payload.exposure)));
@@ -2141,45 +1813,10 @@ export class AgentWorkRuntime {
             runId: command.run_id, invocationId: request.invocationId, adapterType, message: "First public text or tool event",
             data: { canonical_event_type: event.type, elapsed_ms: Number(process.hrtime.bigint() - invocationStartedAt) / 1e6, clock: "runtime_monotonic" } });
         }
-        finalText = accumulateFinalText(finalText, event);
         const mapped = mapRuntimeEvent(event);
         if (TERMINAL_OUTBOX_TYPES.has(mapped.type) && request.signal?.reason instanceof RunTotalDeadlineError) {
           mapped.type = "run.failed";
           mapped.payload = runDeadlineFailure(request.signal.reason, command.run_id, "adapter.invoke");
-        }
-        const taskRef = Array.isArray(request.runMetadata?.taskMaterials) ? asRecord(request.runMetadata.taskMaterials[0]) : {};
-        const discussionOutput = (command.payload as ExecutionEnvelope).agent_run_request.scenario?.scenario_id === "loop_discussion";
-        if (mapped.type === "run.completed" && (typeof taskRef.task_id === "string" || discussionOutput)) {
-          const active = this.#activeRuns.get(command.run_id)!;
-          active.archiving = true;
-          try {
-            mapped.payload.task_output_receipts = discussionOutput
-              ? await archiveDiscussionOutputs(outputPlan, command.run_id, active.outputController.signal, services.discussion)
-              : await archiveTaskOutputs(
-              outputPlan,
-              taskRef.task_id as string, command.run_id, active.outputController.signal,
-              delivery => { mapped.payload.task_delivery = delivery; }, services.task
-            );
-          } catch (error) {
-            const code = error instanceof Error && /^DISCUSSION_[A-Z_]+$/.test(error.message) ? error.message : safeOutputError(error);
-            mapped.payload.task_output_receipts = [{ output_id: "manifest", status: "failed", error_code: code }];
-          }
-          active.archiving = false;
-          if (this.#authoritativeTerminalRuns.has(command.run_id)) break;
-          if (active.outputController.signal.aborted) {
-            const reason: unknown = active.outputController.signal.reason;
-            mapped.type = reason instanceof RunTotalDeadlineError ? "run.failed" : "run.cancelled";
-            mapped.payload = reason instanceof RunTotalDeadlineError
-              ? runDeadlineFailure(reason, command.run_id, "task.output.archive")
-              : { reasonCode: "cancelled" };
-          }
-          const failed = ((mapped.payload.task_output_receipts ?? []) as { status: string }[]).filter(receipt => receipt.status === "failed");
-          if (failed.length) {
-            store.allocateAndAppend(command.run_id, "run.notice", {
-              noticeId: `task-output-${command.run_id}`, code: "config_warning", severity: "warning",
-              params: { warningCode: "TASK_OUTPUT_SAVE_FAILED" }
-            });
-          }
         }
         this.#log({
           level: "debug",
@@ -2192,12 +1829,8 @@ export class AgentWorkRuntime {
           adapterType,
           data: { canonical_event_type: event.type, outbox_event_type: mapped.type }
         });
-        if (contextSnapshot && TERMINAL_OUTBOX_TYPES.has(mapped.type)) {
-          Object.assign(mapped.payload, contextEventFields(contextSnapshot));
-        }
         // Terminal events bypass soft-watermark backpressure so a Run can still
         // reach durable storage and close out under sustained backpressure.
-        if (!TERMINAL_OUTBOX_TYPES.has(mapped.type)) await this.#awaitOutboxCapacity(command.run_id);
         store.allocateAndAppend(command.run_id, mapped.type, mapped.payload);
         terminal ||= TERMINAL_OUTBOX_TYPES.has(mapped.type);
         this.#kickSender();
@@ -2214,11 +1847,10 @@ export class AgentWorkRuntime {
         durationMs: elapsedMilliseconds(invocationStartedAt)
       });
     } catch (error) {
-      if (this.#authoritativeTerminalRuns.has(command.run_id)) return;
       if (this.#markStoreUnavailable(error)) return;
       if (request.signal?.reason instanceof ControlPlaneRunCancelledError) {
         appendStarted();
-        const payload = { reasonCode: "cancelled", ...(contextSnapshot ? contextEventFields(contextSnapshot) : {}) };
+        const payload = { reasonCode: "cancelled" };
         store.allocateAndAppend(command.run_id, "run.cancelled", payload);
         this.#kickSender();
         return;
@@ -2249,7 +1881,6 @@ export class AgentWorkRuntime {
             source: { component: "octo-harness", adapter: adapterType }
           }),
         };
-        if (contextSnapshot) Object.assign(payload, contextEventFields(contextSnapshot));
         store.allocateAndAppend(command.run_id, "run.failed", payload);
         this.#kickSender();
       } catch (appendError) {
@@ -2257,27 +1888,12 @@ export class AgentWorkRuntime {
         this.#reportError("agent_work.outbox.failure_record_failed", "failed to record run failure", appendError, { run_id: command.run_id });
       }
     } finally {
-      // Success remains submitted until the terminal outbox row receives a durable ACK.
-      if (!terminal) this.#contextStore?.markFailed(command.run_id);
       this.#activeRuns.delete(command.run_id);
-      this.#authoritativeTerminalRuns.delete(command.run_id);
       releaseAdmission?.();
     }
   }
 
-  /** Soft-watermark backpressure: pause reading further events from the provider
-   * until the outbox drains below the threshold or the Run ends. */
-  async #awaitOutboxCapacity(runId: string): Promise<void> {
-    const store = this.#store;
-    const softWatermark = this.#options.softWatermarkBytes ?? DEFAULT_SOFT_WATERMARK_BYTES;
-    while (store && !this.#stopped && this.#activeRuns.has(runId) && store.outboxBytes() >= softWatermark) {
-      await delay(BACKPRESSURE_POLL_MS);
-    }
-  }
-
-  /** Send unacked events in (run_id, seq) order as run.event_batch frames when
-   * connected; on disconnect it waits rather than dropping. Contiguous rows of
-   * a single run are coalesced into one batch (the wire transport unit). */
+  /** Relay retained events in source order. Reconnect uses the Worker's memory cursor. */
   async #senderLoop(epoch: number): Promise<void> {
     const window = this.#options.sendWindow ?? DEFAULT_SEND_WINDOW;
     while (this.#isCurrentLifecycle(epoch)) {
@@ -2287,7 +1903,7 @@ export class AgentWorkRuntime {
           const now = Date.now();
           const rows = store.listSendable(window).filter(row => {
             const retry = this.#nackBackoff.get(row.runId);
-            return (!retry || retry.retryAt <= now) && !this.#inFlight.has(`${row.runId}:${row.seq}`);
+            return (!retry || retry.retryAt <= now);
           });
           for (const batch of coalesceBatches(rows)) {
             if (this.#socket?.readyState !== WebSocket.OPEN) break;
@@ -2311,12 +1927,16 @@ export class AgentWorkRuntime {
               break;
             }
             for (const row of batch.events) {
-              this.#inFlight.add(`${row.runId}:${row.seq}`);
               store.markSent(row.runId, row.seq);
             }
           }
         }
       } catch (error) {
+        if (error instanceof StreamGapError) {
+          store?.pauseCloudStream(error.runId);
+          this.#trySend("run.stream_gap", { run_id: error.runId });
+          continue;
+        }
         if (!this.#markStoreUnavailable(error)) {
           this.#reportError("agent_work.outbox.sender_failed", "Agent Work outbox sender failed", error);
         }
@@ -2324,6 +1944,13 @@ export class AgentWorkRuntime {
       await this.#waitKick(PUMP_POLL_MS);
     }
   }
+
+  readRunEvents(runId: string, streamId?: string, after = 0): { streamId: string; latestSeq: number; events: ReplayEvent[]; terminal: boolean } {
+    if (!this.#store) throw new Error("STREAM_EXPIRED");
+    return { ...this.#store.read(runId, streamId, after), terminal: this.#store.terminalType(runId) !== undefined };
+  }
+
+  hasRun(runId: string): boolean { return this.#store?.runExists(runId) ?? false; }
 
   #waitKick(ms: number): Promise<void> {
     return new Promise<void>(resolve => {
@@ -2458,13 +2085,9 @@ export function accumulateFinalText(current: string, event: CanonicalEvent): str
   return text;
 }
 
-/** Map a control-plane execution envelope into an adapter type + `InvokeRequest`.
- * When a prepared channel-context snapshot is present the prompt is split: a
- * product-visible display prompt plus a `modelInput` that prepends the delta (or
- * the recovery/cold projection as `freshFallbackModelInput`). */
+/** Map the supplied unified context into an adapter InvokeRequest. No chat history is fetched or stored. */
 export function mapExecutionEnvelope(
   envelope: ExecutionEnvelope,
-  contextSnapshot?: PreparedChannelContextSnapshot,
   taskMaterials?: PreparedTaskMaterials,
   preparedContext?: PreparedRunContext,
   preparedCompilation?: CompiledRunContext
@@ -2503,21 +2126,11 @@ export function mapExecutionEnvelope(
   const content = envelope.agent_run_request.input;
   if (Object.hasOwn(content, "context_refs") || Object.hasOwn(content, "channel_context")) throw new TypeError("LEGACY_CONTEXT_INPUT_REJECTED");
   const compiled = preparedCompilation ?? compileRunContext(envelope.effective_context, taskMaterials?.selections);
-  const teamInput = prepareTeamInput(content, envelope.agent_run_request.trigger.kind, taskMaterials);
-  const compiledModelContent = [compiled.modelContent, teamInput?.modelContent].filter(Boolean).join("\n\n");
-  if (envelope.internal_context?.continuity && !contextSnapshot) throw new TypeError("CONTEXT_CONTINUITY_UNAVAILABLE");
-  const displayPrompt = teamInput ? `[Current message]\n${teamInput.displayText}` : renderDisplayExecutionInputPrompt(content);
-  const modelContext = (text: string): string => [text, compiledModelContent].filter(Boolean).join("\n\n");
-  const contextHasImages = (facts: PreparedChannelContextSnapshot["facts"]): boolean => facts.some(fact => fact.parts.some(part => part.type === "image"));
-  if (contextSnapshot && contextHasImages(contextSnapshot.selectedVariant === "recovery" ? contextSnapshot.recoveryFacts : contextSnapshot.facts)) {
-    throw new TypeError("ARTIFACT_UNAVAILABLE: channel context images have no authorized materialized source");
-  }
-  const primaryContext = contextSnapshot ? modelContext(contextSnapshot.selectedVariant === "recovery"
-    ? contextSnapshot.recoveryRenderedText : contextSnapshot.renderedText) : compiledModelContent;
+  const compiledModelContent = compiled.modelContent;
+  const displayPrompt = renderDisplayExecutionInputPrompt(content);
   const reply = asRecord(content.reply_to);
   const quotedText = stringValue(reply.text) ? `[Quoted message from ${stringValue(reply.author_name) ?? stringValue(reply.author_id) ?? "unknown"}]\n${stringValue(reply.text)}` : "";
-  const imageParts = modelPartsFromInput(content, [primaryContext, quotedText, "[Current message]"].filter(Boolean).join("\n\n"));
-  const recoveryParts = contextSnapshot ? modelPartsFromInput(content, [modelContext(contextSnapshot.recoveryRenderedText), quotedText, "[Current message]"].filter(Boolean).join("\n\n")) : undefined;
+  const imageParts = modelPartsFromInput(content, [compiledModelContent, quotedText, "[Current message]"].filter(Boolean).join("\n\n"));
   const context = {
     schemaVersion: envelope.schema_version,
     namespace: envelope.agent_run_request.namespace,
@@ -2537,7 +2150,6 @@ export function mapExecutionEnvelope(
     ...(envelope.session_generation === undefined ? {} : { sessionGeneration: envelope.session_generation }),
     ...(envelope.provider_epoch === undefined ? {} : { providerEpoch: envelope.provider_epoch }),
     ...(envelope.continuity_mode === undefined ? {} : { continuityMode: envelope.continuity_mode }),
-    ...(contextSnapshot ? { contextSnapshot: contextSnapshot.ref } : {}),
     ...(taskMaterials ? { taskMaterials: structuredClone(taskMaterials.refs) } : {})
   };
   return {
@@ -2551,29 +2163,15 @@ export function mapExecutionEnvelope(
       ...(envelope.provider_epoch === undefined ? {} : { providerEpoch: envelope.provider_epoch }),
       ...(envelope.continuity_mode === undefined ? {} : { continuityMode: envelope.continuity_mode }),
       prompt: displayPrompt,
-      modelInput: composeProviderModelInput(compiledModelContent, displayPrompt),
+      modelInput: [compiledModelContent, displayPrompt].filter(Boolean).join("\n\n"),
       ...(imageParts ? { modelInputParts: imageParts } : {}),
-      ...(recoveryParts ? { freshFallbackModelInputParts: recoveryParts } : {}),
-      ...(contextSnapshot && contextHasImages(contextSnapshot.recoveryFacts) ? { freshFallbackImagesUnavailable: true } : {}),
-      ...(contextSnapshot ? {
-        modelInput: composeProviderModelInput(
-          modelContext(contextSnapshot.selectedVariant === "recovery"
-            ? contextSnapshot.recoveryRenderedText
-            : contextSnapshot.renderedText),
-          displayPrompt
-        ),
-        freshFallbackModelInput: composeProviderModelInput(modelContext(contextSnapshot.recoveryRenderedText), displayPrompt),
-        contextSnapshot: contextSnapshot.ref
-      } : {}),
       workdir,
       controlInstructions: preparedCompilation ? compiled.controlInstructions
-        : [stringValue(definition.instructions), compiled.controlInstructions,
-          ...channelAwarenessInstructions(envelope.internal_context?.channel_awareness).map(entry => entry.text),
-          ...(taskMaterials ? [taskOutputInstructions(envelope.run_id)] : [])].filter(Boolean).join("\n\n"),
+        : [stringValue(definition.instructions), compiled.controlInstructions].filter(Boolean).join("\n\n"),
       context: structuredClone(envelope.effective_context),
       runMetadata: { ...context, ...(compiled.modelCapacity ? { contextCapacity: compiled.modelCapacity } : {}) },
       approvalMode: profile.approval_mode,
-      ...(envelope.provider_session && contextSnapshot?.selectedVariant !== "recovery"
+      ...(envelope.provider_session
         ? { providerSession: envelope.provider_session }
         : {}),
       ...(Object.keys(runtimeLimits).length > 0 ? { runtimeLimits } : {}),
@@ -2733,67 +2331,6 @@ function requiredSafeInteger(value: unknown, name: string): number {
   return Number(value);
 }
 
-function matchesPendingContextSync(pending: PendingContextSync, result: ContextSyncResult): boolean {
-  if (channelScopeKey(result.scope) !== pending.scopeKey) return false;
-  if (result.facts.some(fact => fact.message_id === pending.triggerMessageId)) return false;
-  if (pending.triggerSeq !== undefined) {
-    if (result.through_seq !== undefined && result.through_seq >= pending.triggerSeq) return false;
-    if (result.facts.some(fact => fact.message_seq !== undefined && fact.message_seq >= pending.triggerSeq!)) return false;
-  }
-  if (pending.afterSeq !== undefined) {
-    if (result.through_seq !== undefined && result.through_seq < pending.afterSeq) return false;
-    if (result.facts.some(fact => fact.message_seq !== undefined && fact.message_seq <= pending.afterSeq!)) return false;
-  }
-  return true;
-}
-
-function selectsRecoveryInput(event: CanonicalEvent): boolean {
-  if (event.type !== "session.update") return false;
-  const providerSession = asRecord(event.payload.providerSession);
-  return providerSession.resumeOutcome === "fresh_fallback"
-    && providerSession.contextInputVariant === "recovery";
-}
-
-/** Mark a preselected cold session so Agent Worker advances the context epoch
- * exactly as it does for a provider-reported resume fallback. */
-function recoverySessionUpdate(
-  event: Extract<CanonicalEvent, { type: "session.update" }>
-): Extract<CanonicalEvent, { type: "session.update" }> {
-  const providerSession = asRecord(event.payload.providerSession);
-  const sessionId = stringValue(providerSession.sessionId);
-  if (!sessionId) return event;
-  return { protocolVersion: 2,
-    type: "session.update",
-    payload: {
-      ...event.payload,
-      providerSession: {
-        ...providerSession,
-        sessionId,
-        resumeOutcome: "fresh_fallback",
-        contextInputVariant: "recovery"
-      }
-    }
-  };
-}
-
-function contextEventFields(snapshot: PreparedChannelContextSnapshot): Record<string, unknown> {
-  const recovery = snapshot.selectedVariant === "recovery";
-  return {
-    context_snapshot_id: snapshot.ref.snapshot_id,
-    context_snapshot_sha256: recovery
-      ? snapshot.ref.recovery_rendered_sha256
-      : snapshot.ref.rendered_sha256,
-    context_completeness: recovery
-      ? snapshot.recoveryCompleteness
-      : snapshot.ref.completeness,
-    context_input_variant: recovery ? "recovery" : "delta",
-    context_session_generation: snapshot.ref.session_generation,
-    ...(snapshot.ref.source_session_generation === undefined
-      ? {}
-      : { context_source_session_generation: snapshot.ref.source_session_generation })
-  };
-}
-
 class RuntimeStoppingError extends Error {
   constructor() {
     super("Agent Work runtime is stopping");
@@ -2822,12 +2359,6 @@ class RuntimeRecoverySignal extends Error {
   }
 }
 
-class AuthoritativeTerminalRunError extends Error {
-  constructor(readonly runId: string, readonly status: string) {
-    super(`Run ${runId} is already authoritatively ${status}`);
-    this.name = "AuthoritativeTerminalRunError";
-  }
-}
 
 class ControlPlaneRunCancelledError extends Error {
   constructor() { super("RUN_CANCELLED"); this.name = "ControlPlaneRunCancelledError"; }
@@ -3007,13 +2538,13 @@ function sameStoreHealth(left: RuntimeStoreHealth, right: RuntimeStoreHealth): b
 
 interface EventBatch {
   runId: string;
-  events: OutboxRow[];
+  events: ReplayEvent[];
 }
 
 /** Group ordered outbox rows into contiguous per-run batches. A batch breaks on
  * a run change or a seq gap so each frame carries a single run with a contiguous
  * first_seq..last_seq range, matching the run.event_batch wire contract. */
-function coalesceBatches(rows: OutboxRow[]): EventBatch[] {
+function coalesceBatches(rows: ReplayEvent[]): EventBatch[] {
   const batches: EventBatch[] = [];
   let current: EventBatch | undefined;
   for (const row of rows) {

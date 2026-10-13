@@ -18,6 +18,7 @@
     "build": "tsc -p tsconfig.json && node scripts/copy-manifest.mjs"
   },
   "dependencies": {
+    "@mininglamp-oss/octo-harness-protocol": "workspace:*",
     "@mininglamp-oss/octo-harness-adapter-host": "workspace:*",
     "@mininglamp-oss/octo-harness-daemon": "workspace:*"
   },

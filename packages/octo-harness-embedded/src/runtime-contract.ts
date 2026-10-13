@@ -48,7 +48,7 @@ export async function callDaemon<T = unknown>(
       socket.once("connect", () => { clearTimeout(timer); resolve(); });
       socket.once("error", error => { clearTimeout(timer); reject(error); });
     });
-    socket.write(`${JSON.stringify({ id, ...request })}\n`);
+    socket.write(`${JSON.stringify({ jsonrpc: "2.0", id, ...request })}\n`);
     return await new Promise<T>((resolve, reject) => {
       let buffered = "";
       const timer = setTimeout(() => reject(new Error("daemon response timed out")), timeoutMs);

@@ -114,3 +114,9 @@ Claude Code 的默认模型环境变量是 `ANTHROPIC_MODEL`，网关地址常�
 - 适配器的调用生命周期与终态兜底：[Adapter Host](../octo-harness-adapter-host/README.md)
 - provider adapter 概览与编写指南：[docs/05](../../docs/05-provider-adapters.md)、[docs/08](../../docs/08-adapter-authoring.md)
 - 源码：[`src/index.ts`](src/index.ts)
+
+## 模块责任边界
+
+- 负责：将 claude-code 原生执行协议映射为 InvokeRequest / CanonicalEvent，由 adapter-host 调用。
+- 不负责：Worker/IM WS、聊天历史、Event/AgentRun 登记。
+- 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。

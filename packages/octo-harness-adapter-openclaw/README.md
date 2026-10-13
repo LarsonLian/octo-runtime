@@ -37,3 +37,9 @@ printf '%s' "$OPENCLAW_GATEWAY_TOKEN" | \
 - 原生工具审批通过已有 interaction 合同回传，不证明工具已经安装。
 
 协议版本或所需公开 method/event 缺失时拒绝执行。当前完整责任与验收见[本地插件责任改造](../../docs/24-local-plugin-ownership-refactor.md)。
+
+## 模块责任边界
+
+- 负责：将 openclaw 原生执行协议映射为 InvokeRequest / CanonicalEvent，由 adapter-host 调用。
+- 不负责：Worker/IM WS、聊天历史、Event/AgentRun 登记。
+- 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。

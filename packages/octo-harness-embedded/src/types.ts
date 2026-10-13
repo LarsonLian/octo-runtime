@@ -1,3 +1,6 @@
+import type { CanonicalEvent, InvokeRequest, InteractionResponse } from "@mininglamp-oss/octo-harness-protocol";
+import type { HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
+
 export type EmbeddedPhase =
   | "idle"
   | "preparing-home"
@@ -87,6 +90,11 @@ export interface EmbeddedHealth {
 }
 
 export interface EmbeddedHarness {
+  invoke(adapterType: string, request: InvokeRequest): AsyncIterable<CanonicalEvent>;
+  listAdapters(): Promise<HostedAdapterMetadata[]>;
+  cancelRun(runId: string): Promise<{ cancelled: boolean }>;
+  respondRun(runId: string, response: InteractionResponse): Promise<void>;
+  subscribeRun(input: { runId: string; streamId?: string; afterSeq?: number; signal?: AbortSignal }): AsyncIterable<Record<string, unknown>>;
   startAccount(options: StartAccountOptions): Promise<EmbeddedHealth>;
   reconcileTenants(tenants: readonly AuthorizedTenant[]): Promise<EmbeddedHealth>;
   resetTenant(tenantId: string): Promise<EmbeddedHealth>;

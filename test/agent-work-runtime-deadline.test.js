@@ -53,7 +53,7 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, task 
     const frame = JSON.parse(raw.toString());
     frames.push(frame);
     if (frame.type === "runtime.hello") {
-      websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+      websocket.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000 }));
       websocket.send(wire("runtime.command", { server_seq: 1, command_id: "command-deadline", run_id: "run-deadline",
         type: "run.start", payload: envelope, lease_id: "lease-deadline", fencing_token: 1 }));
     }
@@ -169,17 +169,5 @@ test("Run deadline classifies thrown provider errors after cancellation", async 
   } }, async ({ events }) => {
     await waitFor(() => events().some(event => event.type === "run.failed"), 3_000);
     assert.equal(events().find(event => event.type === "run.failed").payload.code, "ADAPTER_RUN_DEADLINE");
-  });
-});
-
-test("Run deadline remains active through task output archiving", async () => {
-  await exercise({ task: true, invoke: async function* () {
-    yield { protocolVersion: 2, type: "run.completed", payload: {} };
-  } }, async ({ events }) => {
-    await waitFor(() => events().some(event => event.type === "run.failed"), 3_000);
-    const failure = events().find(event => event.type === "run.failed");
-    assert.equal(failure.payload.code, "ADAPTER_RUN_DEADLINE");
-    assert.equal(failure.payload.timeoutStage, "task.output.archive");
-    assert.ok(!events().some(event => event.type === "run.completed"));
   });
 });

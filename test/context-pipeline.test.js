@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { contextHash } from "../packages/octo-harness-protocol/dist/index.js";
-import { ContextCompiler, ContextPipeline, orderContextPreparationStages } from "../packages/octo-harness-daemon/dist/context-pipeline.js";
+import { ContextCompiler, ContextPipeline, orderContextPreparationStages } from "../packages/octo-harness-worker-access/dist/context-pipeline.js";
 
 const context = { schema: "octo.context-envelope/v3", items: [
   { namespace: "octo.execution", name: "adapter", payload: { type: "codex" } }, { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: "/workspace" } }, { namespace: "octo.security", name: "approval_policy", payload: { mode: "ask" } }

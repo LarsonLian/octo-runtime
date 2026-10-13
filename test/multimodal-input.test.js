@@ -5,8 +5,8 @@ import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
 import { HarnessEngine, MemoryStore } from "@mininglamp-oss/octo-harness-core";
 import { assertModelInputParts, assertInvokeRequest, modelPartsFromInput, providerInputParts, failurePayload } from "@mininglamp-oss/octo-harness-protocol";
 import { redactCredentials } from "@mininglamp-oss/octo-harness-observability";
-import { resolveRuntimeInputImages } from "../packages/octo-harness-daemon/dist/input-images.js";
-import { mapExecutionEnvelope } from "../packages/octo-harness-daemon/dist/agent-work-runtime.js";
+import { resolveRuntimeInputImages } from "../packages/octo-harness-context-builder/dist/input-images.js";
+import { mapExecutionEnvelope } from "../packages/octo-harness-worker-access/dist/agent-work-runtime.js";
 import { invokeRequest, contextEnvelope, executionContext, resolvedRuntimeSelection } from "./agent-work-runtime-fixture.js";
 import { visualInputImages } from "../test-support/multimodal-images.mjs";
 
@@ -89,11 +89,6 @@ test("daemon preserves mixed ordering and excludes materialized bytes from run m
   assert.equal(request.runMetadata.input.parts[1].source, undefined);
   assert.doesNotThrow(() => assertInvokeRequest(request));
   assert.equal(envelope.agent_run_request.input.parts[1].source.data, image.data);
-  const snapshot = { ref: {}, facts: [], recoveryFacts: [{ parts: [{ type: "image", url: "https://example.test/old.png" }] }], renderedText: "", recoveryRenderedText: "historical image reference", selectedVariant: "primary" };
-  const recoveryRequest = mapExecutionEnvelope(envelope, snapshot).request;
-  assert.equal(recoveryRequest.freshFallbackImagesUnavailable, true);
-  assert.throws(() => providerInputParts(recoveryRequest, true), /ARTIFACT_UNAVAILABLE/);
-  assert.throws(() => mapExecutionEnvelope(envelope, { ...snapshot, selectedVariant: "recovery" }), /ARTIFACT_UNAVAILABLE/);
 });
 
 test("Core failed image dispatch releases the session so subsequent text can run", async () => {

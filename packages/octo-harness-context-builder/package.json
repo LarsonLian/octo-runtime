@@ -1,6 +1,46 @@
 {
- "name":"@mininglamp-oss/octo-harness-context-builder", "version":"0.1.0", "type":"module",
- "exports":"./dist/index.js", "types":"./dist/index.d.ts", "files":["dist"],
- "scripts":{"build":"tsc -p tsconfig.json"},
- "dependencies":{"@mininglamp-oss/octo-harness-protocol":"workspace:*"}
+  "name": "@mininglamp-oss/octo-harness-context-builder",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./context-preparation": {
+      "types": "./dist/context-preparation.d.ts",
+      "import": "./dist/context-preparation.js"
+    },
+    "./context-compaction": {
+      "types": "./dist/context-compaction.d.ts",
+      "import": "./dist/context-compaction.js"
+    },
+    "./run-context": {
+      "types": "./dist/run-context.d.ts",
+      "import": "./dist/run-context.js"
+    },
+    "./input-images": {
+      "types": "./dist/input-images.d.ts",
+      "import": "./dist/input-images.js"
+    },
+    "./anthropic-material-compaction": {
+      "types": "./dist/anthropic-material-compaction.d.ts",
+      "import": "./dist/anthropic-material-compaction.js"
+    },
+    "./responses-material-compaction": {
+      "types": "./dist/responses-material-compaction.d.ts",
+      "import": "./dist/responses-material-compaction.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mininglamp-oss/octo-harness-protocol": "workspace:*",
+    "smol-toml": "^1.8.1"
+  }
 }

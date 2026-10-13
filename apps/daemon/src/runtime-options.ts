@@ -176,38 +176,6 @@ function resolveAgentWorkOptions(
       ["--agent-work-db"],
       env.OCTO_HARNESS_AGENT_WORK_DB ?? managed?.storePath
     ) ?? join(home, "agent-work.db")),
-    channelContext: {
-      store: enumOption(
-        args,
-        ["--channel-context-store"],
-        env.OCTO_HARNESS_CHANNEL_CONTEXT_STORE ?? managed?.channelContext?.store ?? "sqlite",
-        ["memory", "sqlite"]
-      ),
-      projection: enumOption(
-        args,
-        ["--channel-context-projection"],
-        env.OCTO_HARNESS_CHANNEL_CONTEXT_PROJECTION ?? managed?.channelContext?.projection ?? "delta",
-        ["window", "delta"]
-      ),
-      providerPersistence: enumOption(
-        args,
-        ["--channel-context-provider-persistence"],
-        env.OCTO_HARNESS_CHANNEL_CONTEXT_PROVIDER_PERSISTENCE ?? managed?.channelContext?.providerPersistence ?? "append_only",
-        ["ephemeral", "append_only"]
-      ),
-      storePath: resolve(optionalOption(
-        args,
-        ["--channel-context-db"],
-        env.OCTO_HARNESS_CHANNEL_CONTEXT_DB ?? managed?.channelContext?.storePath
-      ) ?? join(home, "channel-context.db")),
-      ...optionalNumber(args, ["--channel-context-retention-ms"], env.OCTO_HARNESS_CHANNEL_CONTEXT_RETENTION_MS, "retentionMs"),
-      ...optionalNumber(args, ["--channel-context-snapshot-retention-ms"], env.OCTO_HARNESS_CHANNEL_CONTEXT_SNAPSHOT_RETENTION_MS, "snapshotRetentionMs"),
-      ...optionalNumber(args, ["--channel-context-active-snapshot-timeout-ms"], env.OCTO_HARNESS_CHANNEL_CONTEXT_ACTIVE_SNAPSHOT_TIMEOUT_MS, "activeSnapshotTimeoutMs"),
-      ...optionalNumber(args, ["--channel-context-max-scope-messages"], env.OCTO_HARNESS_CHANNEL_CONTEXT_MAX_SCOPE_MESSAGES, "maxMessagesPerScope"),
-      ...optionalNumber(args, ["--channel-context-max-projected-messages"], env.OCTO_HARNESS_CHANNEL_CONTEXT_MAX_PROJECTED_MESSAGES, "maxProjectedMessages"),
-      ...optionalNumber(args, ["--channel-context-max-projected-bytes"], env.OCTO_HARNESS_CHANNEL_CONTEXT_MAX_PROJECTED_BYTES, "maxProjectedBytes"),
-      ...optionalNumber(args, ["--channel-context-sync-timeout-ms"], env.OCTO_HARNESS_CHANNEL_CONTEXT_SYNC_TIMEOUT_MS, "syncTimeoutMs")
-    },
     ...optionalNumber(args, ["--agent-work-send-window"], env.OCTO_HARNESS_AGENT_WORK_SEND_WINDOW, "sendWindow"),
     ...optionalNumber(args, ["--agent-work-soft-bytes"], env.OCTO_HARNESS_AGENT_WORK_SOFT_BYTES, "softWatermarkBytes"),
     ...optionalNumber(args, ["--agent-work-hard-bytes"], env.OCTO_HARNESS_AGENT_WORK_HARD_BYTES, "hardWatermarkBytes"),
@@ -313,18 +281,11 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[
       "--agent-work-url", serializedRuntime.baseUrl,
       "--agent-work-runtime-name", serializedRuntime.runtimeName,
       "--agent-work-db", serializedRuntime.storePath,
-      "--channel-context-store", serializedRuntime.channelContext?.store ?? "sqlite",
-      "--channel-context-projection", serializedRuntime.channelContext?.projection ?? "delta",
-      "--channel-context-provider-persistence", serializedRuntime.channelContext?.providerPersistence ?? "append_only",
-      "--channel-context-db", serializedRuntime.channelContext?.storePath ?? resolve("channel-context.db")
     );
     if (serializedRuntime.runtimeId) args.push("--agent-work-runtime-id", serializedRuntime.runtimeId);
   } else if (commonRuntime) {
     args.push(
       "--agent-work-runtime-name", commonRuntime.runtimeName,
-      "--channel-context-store", commonRuntime.channelContext?.store ?? "sqlite",
-      "--channel-context-projection", commonRuntime.channelContext?.projection ?? "delta",
-      "--channel-context-provider-persistence", commonRuntime.channelContext?.providerPersistence ?? "append_only"
     );
   }
   if (commonRuntime) pushAgentWorkTuningArguments(args, commonRuntime);
@@ -342,13 +303,6 @@ function pushAgentWorkTuningArguments(args: string[], runtime: AgentWorkRuntimeO
   pushNumberOption(args, "--agent-work-reconnect-min-ms", runtime.reconnectMs);
   pushNumberOption(args, "--agent-work-reconnect-max-ms", runtime.reconnectMaxMs);
   pushNumberOption(args, "--agent-work-max-concurrent-runs", runtime.maxConcurrentRuns);
-  pushNumberOption(args, "--channel-context-retention-ms", runtime.channelContext?.retentionMs);
-  pushNumberOption(args, "--channel-context-snapshot-retention-ms", runtime.channelContext?.snapshotRetentionMs);
-  pushNumberOption(args, "--channel-context-active-snapshot-timeout-ms", runtime.channelContext?.activeSnapshotTimeoutMs);
-  pushNumberOption(args, "--channel-context-max-scope-messages", runtime.channelContext?.maxMessagesPerScope);
-  pushNumberOption(args, "--channel-context-max-projected-messages", runtime.channelContext?.maxProjectedMessages);
-  pushNumberOption(args, "--channel-context-max-projected-bytes", runtime.channelContext?.maxProjectedBytes);
-  pushNumberOption(args, "--channel-context-sync-timeout-ms", runtime.channelContext?.syncTimeoutMs);
 }
 
 function pushNumberOption(args: string[], name: string, value: number | undefined): void {
@@ -393,17 +347,6 @@ function enumValue<const TValue extends string>(
   name: string
 ): TValue {
   if (!allowed.includes(value as TValue)) throw new Error(`${name} must be one of: ${allowed.join(", ")}`);
-  return value as TValue;
-}
-
-function enumOption<const TValue extends string>(
-  args: string[],
-  names: string[],
-  fallback: string,
-  allowed: readonly TValue[]
-): TValue {
-  const value = option(args, names, fallback);
-  if (!allowed.includes(value as TValue)) throw new Error(`${names[0]} must be one of: ${allowed.join(", ")}`);
   return value as TValue;
 }
 

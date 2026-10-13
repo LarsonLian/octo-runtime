@@ -3,7 +3,9 @@ import { lstat, mkdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { assertResolvedExecutionPlan, type ResolvedExecutionPlan } from "@mininglamp-oss/octo-harness-protocol";
-import type { AgentWorkStore } from "./agent-work-store.js";
+export interface WorkspaceAssignments {
+  conversationWorkspace(key: string, candidate: string): { path: string; created: boolean };
+}
 
 export interface ContextPreparationReceipt {
   workspace_mode: "fixed" | "random" | "none";
@@ -24,7 +26,7 @@ export interface PreparedRunContext {
  * 返回的路径属于 Runtime 私有视图；本地准备完成不表示 Worker 已确认或 Provider 已应用。
  */
 export async function prepareRunContext(plan: ResolvedExecutionPlan, options: {
-  stateRoot: string; agentSessionId: string; agentId: string; store: AgentWorkStore; signal?: AbortSignal;
+  stateRoot: string; agentSessionId: string; agentId: string; store: WorkspaceAssignments; signal?: AbortSignal;
   registerCleanup?: (path: string) => void;
   workspaceRoot?: string;
 }): Promise<PreparedRunContext> {
@@ -77,23 +79,4 @@ async function realDirectory(path: string): Promise<string> {
 function inside(root: string, path: string): void {
   const part = relative(root, path);
   if (part === ".." || part.startsWith(".." + sep) || isAbsolute(part)) throw new TypeError("CONTEXT_PACKAGE_PATH_ESCAPE");
-}
-
-/**
- * 使用当前 run/lease/fence 向 Worker 提交准备回执；仅 HTTP 成功确认后返回。
- * 拒绝、取消或响应未知均抛错，调用方不能据本地资源存在就启动 Provider。
- */
-export async function recordContextPreparation(receipt: ContextPreparationReceipt, options: {
-  baseUrl: string; headers: Record<string, string>; runId: string; leaseId: string; fencingToken: number; signal: AbortSignal;
-}): Promise<void> {
-  const response = await fetch(options.baseUrl.replace(/\/$/, "") + "/v1/runtime/context/prepare", {
-    method: "POST", headers: { ...options.headers, "Content-Type": "application/json" }, redirect: "error",
-    signal: AbortSignal.any([options.signal, AbortSignal.timeout(30_000)]),
-    body: JSON.stringify({ run_id: options.runId, lease_id: options.leaseId, fencing_token: options.fencingToken, preparation: receipt })
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => undefined) as { error?: { code?: string } } | undefined;
-    throw new Error(body?.error?.code ?? "CONTEXT_PREPARATION_REJECTED");
-  }
-  await response.body?.cancel();
 }

@@ -44,7 +44,7 @@ async function startFixture(t, { silentFirst = false, welcomeOnFirst = true, dis
       if (frame.type === "runtime.hello") {
         state.helloRuntimeIds.push(frame.runtime_id);
         if (connection !== 1 || welcomeOnFirst) {
-          websocket.send(wire("runtime.welcome", { heartbeat_every_ms: 10 }));
+          websocket.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 10 }));
           if (dispatchRun) {
             const plan = { agent_source: "provisioned", adapter_type: "fake", workdir: process.cwd(), approval_mode: "ask", required_execution_features: ["tool.canonical"] };
             const items = [{ namespace: "octo.content", name: "inline", payload: { entries: [

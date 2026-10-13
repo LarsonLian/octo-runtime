@@ -35,3 +35,9 @@ CLI result usage 可能覆盖整个会话，优先统计本轮 DONE step usage�
 - `test/antigravity-adapter.test.js` 使用假 CLI 验证参数、事件、错误、续接、取消、日志清理与用户文件保留。
 - [IPD-SE 基线](../../docs/antigravity-adapter-ipd-se-baseline.md) 定义范围与验收要求。
 - 真实账户调用、工具执行、会话恢复与线上测试环境闭环须另行记录；自动测试通过不代表这些场景已通过。
+
+## 模块责任边界
+
+- 负责：将 antigravity 原生执行协议映射为 InvokeRequest / CanonicalEvent，由 adapter-host 调用。
+- 不负责：Worker/IM WS、聊天历史、Event/AgentRun 登记。
+- 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。

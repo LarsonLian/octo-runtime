@@ -1,3 +1,6 @@
+import { HostRunService } from "./host-run-service.js";
+import { assertInteractionResponse, type InvokeRequest } from "@mininglamp-oss/octo-harness-protocol";
+import { ImRuntime, loadImBots, type ImBotConfig } from "@mininglamp-oss/octo-harness-im";
 import net, { type Server } from "node:net";
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
@@ -21,8 +24,8 @@ import {
   type AdapterHostRpc,
   type AdapterHostProcess,
 } from "@mininglamp-oss/octo-harness-adapter-host";
-import type { AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
-import { AgentWorkSupervisor } from "./agent-work-supervisor.js";
+import type { AgentWorkRuntimeOptions } from "@mininglamp-oss/octo-harness-worker-access/agent-work-runtime";
+import { AgentWorkSupervisor } from "@mininglamp-oss/octo-harness-worker-access/agent-work-supervisor";
 import { createDiagnosticBundle } from "./diagnostic-bundle.js";
 import { InspectServer } from "./inspect-server.js";
 import { renderLocalMetrics } from "./local-metrics.js";
@@ -39,6 +42,8 @@ export {
 } from "./live-event-bus.js";
 
 export interface StartDaemonServerOptions {
+  /** Optional IM bot configuration; otherwise read <home>/im.json. */
+  imBots?: ImBotConfig[];
   homePath?: string;
   pidPath?: string;
   /** Enables the interactive console sink when launched in the foreground. */
@@ -118,6 +123,7 @@ export interface DaemonApplication {
  */
 export async function startDaemonServer({
   homePath,
+  imBots,
   pidPath,
   socketPath,
   storePath,
@@ -136,6 +142,7 @@ export async function startDaemonServer({
       adapterHostRestartDelaysMs.some(delay => !Number.isFinite(delay) || delay < 1)) {
     throw new Error("adapterHostRestartDelaysMs must contain positive delays");
   }
+  const configuredImBots = imBots ?? loadImBots(homePath ?? dirname(storePath));
   // Construct observability before every other owned resource. Startup failures
   // are otherwise the most difficult failures to diagnose and would leave no
   // durable evidence.
@@ -196,7 +203,7 @@ export async function startDaemonServer({
 
   let store: SqliteStore;
   try {
-    store = SqliteStore.open(storePath);
+    store = SqliteStore.open(storePath, { recordRunEvents: process.env.OCTO_RECORD_RUN_STEPS === "1" });
   } catch (error) {
     await invocationManifest.close();
     await releasePid();
@@ -293,7 +300,7 @@ export async function startDaemonServer({
     }
     return hostProcess;
   };
-  const host: AdapterHostRpc = {
+  const transportHost: AdapterHostRpc = {
     list: async () => readyHost().client.list(),
     probe: async adapterType => readyHost().client.probe(adapterType),
     cancel: async (invocationId, reason) => readyHost().client.cancel(invocationId, reason),
@@ -433,6 +440,9 @@ export async function startDaemonServer({
   }
 
   monitorAdapterHost(hostProcess);
+  const host = new HostRunService(transportHost);
+  const imRuntimes = configuredImBots.map(config => new ImRuntime(config, { host }));
+  Object.defineProperty(runtime, "im", { enumerable: true, get: () => imRuntimes.map(im => im.status) });
   const engine = new HarnessEngine({ store, host });
   const daemon = new HarnessDaemon({ engine, store });
   const configuredAgentWorks = agentWorks ?? (agentWork ? [agentWork] : []);
@@ -445,6 +455,7 @@ export async function startDaemonServer({
     adapterHost: runtime.adapterHost,
     adapters: runtime.adapters,
     watchdogMetrics,
+    im: imRuntimes.map(im => im.status),
     agentWork: agentWorkSupervisor?.status ?? { enabled: false, runtimes: [] },
     lifecycle: daemon.status
   });
@@ -553,6 +564,7 @@ export async function startDaemonServer({
     // 0600 restricts it to the current host account (there is no RBAC above it).
     if (process.platform !== "win32") await chmod(socketPath, 0o600);
     await agentWorkSupervisor?.start();
+    await Promise.all(imRuntimes.map(im => im.start()));
     observability.log({
       level: "info",
       scope: "daemon.lifecycle",
@@ -580,7 +592,9 @@ export async function startDaemonServer({
       data: { error: errorMessage(error) }
     });
     daemon.stop();
+    await Promise.allSettled(imRuntimes.map(im => im.close()));
     await agentWorkSupervisor?.close();
+    await host.close();
     await inspect.close();
     await hostRestartTask?.catch(() => undefined);
     await hostProcess.close();
@@ -617,8 +631,10 @@ export async function startDaemonServer({
         message: "daemon stopping"
       });
       daemon.stop();
-      await agentWorkSupervisor?.close();
-      await inspect.close();
+      await Promise.allSettled(imRuntimes.map(im => im.close()));
+    await agentWorkSupervisor?.close();
+      await host.close();
+    await inspect.close();
       for (const connection of connections) connection.destroy();
       await new Promise<void>(resolve => server.close(() => resolve()));
       await hostRestartTask?.catch(() => undefined);
@@ -658,7 +674,7 @@ async function handleRequestLine({
   socket: net.Socket;
   daemon: HarnessDaemon;
   store: Store;
-  host: AdapterHostRpc;
+  host: HostRunService;
   runtime: DaemonRuntimeInfo;
   agentWorkSupervisor: AgentWorkSupervisor | undefined;
   observability: LocalObservability;
@@ -694,6 +710,16 @@ async function handleRequestLine({
       await streamLiveEvents({ request, socket, events });
       return;
     }
+    if (request.method === "agent_run.invoke" || request.method === "agent_run.subscribe") {
+      if ((JSON.parse(line) as Record<string, unknown>).jsonrpc !== "2.0") throw new Error("JSON-RPC 2.0 required");
+      if (request.method === "agent_run.invoke") {
+        const invocation = request.params?.request as InvokeRequest;
+        host.submit(requiredString(request.params?.adapter_type, "adapter_type"), invocation);
+        request.params = { run_id: invocation.runId };
+      }
+      await streamAgentRun(request, socket, host);
+      return;
+    }
     const result = await dispatch({
       request, daemon, store, host, runtime, agentWorkSupervisor, observability, inspect, events
     });
@@ -714,7 +740,7 @@ async function handleRequestLine({
         }
       });
     }
-    socket.end(`${JSON.stringify({ id: request.id, result })}\n`);
+    socket.end(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result })}\n`);
   } catch (error) {
     observability.log({
       level: "error",
@@ -732,7 +758,7 @@ async function handleRequestLine({
     });
     const rpcError = error as NodeJS.ErrnoException;
     socket.end(`${JSON.stringify({
-      id: request?.id,
+      jsonrpc: "2.0", id: request?.id,
       error: { message: errorMessage(error), code: rpcError.code }
     })}\n`);
   }
@@ -742,6 +768,43 @@ async function handleRequestLine({
  * Emit the currently retained in-memory event snapshot and optionally follow it.
  * No SQLite query is involved; a disconnected client owns no queued payloads.
  */
+async function streamAgentRun(request: DaemonRequest, socket: net.Socket, host: HostRunService): Promise<void> {
+  const runId = requiredString(request.params?.run_id, "run_id");
+  let streamId = optionalString(request.params?.stream_id);
+  const cursor = request.params?.after_seq ?? 0;
+  if (typeof cursor !== "number") throw new Error("STREAM_CURSOR_INVALID");
+  let after: number = cursor;
+  const release = host.acquireSubscription();
+  const subscriptionId = `sub_${randomUUID()}`;
+  let started = false;
+  socket.setTimeout(0); // Model silence is not a stalled socket write.
+  try {
+    while (!socket.destroyed) {
+      const page = host.read(runId, streamId, after);
+      streamId = page.stream_id;
+      if (!started) {
+        await writeSocketLine(socket, { jsonrpc: "2.0", id: request.id, result: { subscription_id: subscriptionId, ...page, events: undefined } });
+        started = true;
+      }
+      for (const value of page.events) {
+        await writeSocketLine(socket, { jsonrpc: "2.0", method: "agent_run.event", params: {
+          subscription_id: subscriptionId, run_id: runId, stream_id: streamId, seq: value.seq, event: value.event
+        } });
+        after = value.seq;
+      }
+      if ((page.terminal || request.params?.follow === false) && after >= page.latest_seq) { socket.end(); return; }
+      if (!page.events.length) await new Promise<void>(resolve => {
+        const done = (): void => { clearTimeout(timer); socket.off("close", done); resolve(); };
+        const timer = setTimeout(done, 100); socket.once("close", done);
+      });
+    }
+  } catch (error) {
+    if (!socket.destroyed) socket.end(`${JSON.stringify({ jsonrpc: "2.0", ...(started
+      ? { method: "agent_run.stream_error", params: { subscription_id: subscriptionId, run_id: runId, stream_id: streamId, code: errorMessage(error), ...((error as { data?: object }).data ?? {}) } }
+      : { id: request.id, error: { code: -32001, message: errorMessage(error), data: (error as { data?: object }).data } }) })}\n`);
+  } finally { release(); }
+}
+
 async function streamLiveEvents({
   request,
   socket,
@@ -863,7 +926,7 @@ async function dispatch({
   request: DaemonRequest;
   daemon: HarnessDaemon;
   store: Store;
-  host: AdapterHostRpc;
+  host: HostRunService;
   runtime: DaemonRuntimeInfo;
   agentWorkSupervisor: AgentWorkSupervisor | undefined;
   observability: LocalObservability;
@@ -889,6 +952,7 @@ async function dispatch({
     case "lifecycle.drain": {
       const timeoutMs = positiveInteger(params.timeoutMs, "timeoutMs", DEFAULT_DRAIN_TIMEOUT_MS);
       daemon.beginDrain();
+      host.beginDrain();
       agentWorkSupervisor?.beginDrain();
       await Promise.all([
         daemon.waitForDrained(timeoutMs),
@@ -937,13 +1001,21 @@ async function dispatch({
       return store.listAgentSessions();
     case "agent_session.get":
       return store.getAgentSession(requiredString(params.agentSessionId, "agentSessionId")) ?? null;
+    case "agent_run.submit":
+      return host.submit(requiredString(params.adapter_type, "adapter_type"), params.request as InvokeRequest);
+    case "agent_run.respond":
+      assertInteractionResponse(params.response);
+      await host.respond(requiredString(params.run_id, "run_id"), params.response);
+      return { accepted: true };
     case "agent_run.list":
       return store.listAgentRuns();
     case "agent_run.get":
+      if (params.run_id !== undefined) return host.get(requiredString(params.run_id, "run_id"));
       return store.getAgentRun(requiredString(params.runId, "runId")) ?? null;
     case "agent_run.wait":
       return daemon.waitForRun(requiredString(params.runId, "runId"));
     case "agent_run.cancel":
+      if (params.run_id !== undefined) return host.cancelRun(requiredString(params.run_id, "run_id"), optionalString(params.reason));
       return daemon.cancelRun(requiredString(params.runId, "runId"), optionalString(params.reason));
     default:
       throw Object.assign(new Error(`unknown daemon method: ${request.method}`), { code: "method_not_found" });

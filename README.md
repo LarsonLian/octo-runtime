@@ -1,49 +1,90 @@
 # Octo Harness
 
-Octo Harness 是 provider-neutral 的本地 Agent Runtime。它把 Codex、Claude Code、CodeBuddy、OpenCode 和 OpenClaw local 统一成一套 invocation 与 canonical event 协议，但不拥有 IM、Loop、AutoPilot、Webhook 等业务的任务模型或调度状态。
+Octo Harness 是 provider-neutral 的本地 Agent Runtime。现有 `octo-harness` CLI 管理 Daemon；Daemon 装配接入模块并管理共享 adapter-host。Worker、IM 和本地助理的执行最终都使用同一套 `InvokeRequest` / `CanonicalEvent` 和 Host IPC，不为不同业务创建另一套 provider 执行器。
 
-生产链路只有一种执行抽象：Agent Worker 创建 `AgentSession` 和 `AgentRun`，并在 Worker 内用统一 Coordination Ledger 组织 Team/Delegation/Mailbox；Harness 只接收 `run.start`，调用 provider，并把事件与 opaque provider session 回传。Buddy、IM 和 Loop 只是上游产品形态，不是 Harness 的多套执行或协调模式。
+## 基础架构
 
-## 责任边界
+下图定义模块边界。`octo-runtime-daemon` 是图中的运行时角色名称，实际沿用本仓库的 `octo-harness-daemon` 和 CLI，不另建 Runtime 项目。Worker 与 IM 接入已拆为独立包。当前 IM 实现私聊单轮执行、会话复用和重置；群聊、GROUP.md 及云端 Event 登记仍属后续范围。
 
-| 组件 | 持有 | 不持有 |
+```mermaid
+flowchart TB
+    subgraph APPLICATION["应用层"]
+        LOOP["Loop<br/>mention 场景（@Eva 助理）"]
+        CHAT["聊天"]
+    end
+
+    subgraph INFRA["Infra 层"]
+        AW["AgentWorkerAccess"]
+        IM["IM Server"]
+    end
+
+    subgraph D["Runtime 层：octo-runtime-daemon"]
+        A["子模块 1：远程执行接入"]
+        B["子模块 2：IM 接入<br/>群聊 / 会话 / GROUP.md 上下文"]
+        H["Host：统一执行内核"]
+        AD["Adapters（Codex/CC/Openclaw/Qoder）"]
+    end
+
+    LOOP <-->|"直接发起 AgentRun / 消费执行事件"| AW
+    CHAT <-->|"消息收发 / 多端同步"| IM
+    AW <-->|"执行协议 WS"| A
+    IM <-->|"IM 专用协议 WS"| B
+    B -.->|"记录 event / 获取 AgentRun"| AW
+    A <-->|"内部 IPC：AgentRun 协议"| H
+    B <-->|"内部 IPC：AgentRun 协议"| H
+    H <--> AD
+```
+
+图中的 AgentRun IPC 是执行语义；现有底层接口为 `AdapterHostRpc`，通过 stdio NDJSON JSON-RPC 传输 `invoke`、`cancel`、`interaction.respond`，返回 `invoke.event` / `invoke.done`。接入层先校验并转换为 `InvokeRequest`，再调用 Daemon 注入的共享 Host 客户端。Daemon 对外的 UDS / Windows Pipe 控制接口与这条内部 Host IPC 是两层不同的传输。
+
+当前本地链路为 `IM Server WS → octo-harness-im → AdapterHostRpc → adapter-host → Adapter`，最终文本通过 IM WS 一次回发。IM 包本地分配 eventId/runId，使用固定 Context v3、发起人元数据与 fullAccess；不调用旧 `octo-agent-access`，不等待 Worker 下发或 SSE。图中到 AgentWorkerAccess 的虚线是可选业务登记目标，当前不执行。远程执行仍由 Worker 接入包处理。本地助理同样通过 Host IPC 执行；外部业务可订阅本地源事件流。
+
+## 模块责任边界
+
+| 模块 | 负责 | 不负责 |
 |---|---|---|
-| 业务服务 | namespace 内的触发规则、父子任务、重试、投递策略 | provider 进程和恢复协议 |
-| Agent Worker | Agent/Team、Delegation/Mailbox、AgentSession/AgentRun、run graph、lease 与生命周期 | Loop Task、IM 会话/消息、Webhook 定义、产品 delivery |
-| Octo Harness | invocation、provider adapter、canonical events、本地可靠 outbox | Chat/Task/Attempt/Trigger 业务表 |
-| Channel Gateway | 外部事件归一化、Trigger Occurrence、IM delivery | AgentRun 生命周期 |
+| [CLI](apps/cli/README.md) | 现有命令入口、Home/profile、服务启动停止、诊断 | IM 协议、provider 执行实现 |
+| [Daemon 启动器](apps/daemon/README.md) | 配置解析、启动与信号转发 | Worker WS 业务实现 |
+| [Daemon 包](packages/octo-harness-daemon/README.md) | 接入模块装配、共享 Host 生命周期、本地 IPC、观测和本地执行调度 | IM 会话和消息投递、Worker 传输实现 |
+| [Worker 接入](packages/octo-harness-worker-access/README.md) | 注册、Worker WS、重连、命令校验、远端准备回执、执行事件回传 | 拉起第二个 Host、IM Server WS |
+| [IM 接入](packages/octo-harness-im/README.md) | bf_token 注册、IM WS、私聊会话、/session、/reset、最终文本回发 | 直接调用 provider、独立 Daemon、聊天 SQLite 的隐式引入 |
+| [Adapter Host](packages/octo-harness-adapter-host/README.md) | 统一 IPC、invocation 生命周期、调用和取消、标准事件 | 消息来源、群聊规则、Worker 注册 |
+| [Context Builder](packages/octo-harness-context-builder/README.md) | 上下文构造；Node 子入口提供本地准备、编译、压缩 | Worker HTTP 回执、IM 投递、Run 创建 |
+| [Core](packages/octo-harness-core/README.md) | 本地 AgentSession/AgentRun 状态与通用执行引擎 | IM/Loop 业务模型、WS 接入 |
+| [Protocol](packages/octo-harness-protocol/README.md) | InvokeRequest、CanonicalEvent、Context 和校验合同 | 网络连接、进程和业务存储 |
+| [Embedded](packages/octo-harness-embedded/README.md) | 宿主 SDK、运行时接入、生命周期和本地 IPC 桥 | IM 业务实现、provider 协议分支 |
+| [Observability](packages/octo-harness-observability/README.md) / [Inspect Web](apps/inspect-web/README.md) | 日志、诊断和观测展示 | 业务消息历史、执行权威 |
+| [Cross Service](packages/octo-harness-cross-service/README.md) | OS 用户级服务管理 | Run 调度、连接协议 |
+| [Adapters / SDK / ACP](packages/README.md) | provider 协议转换、进程与 transport 工具 | Worker/IM 连接和业务决策 |
 
-本地用户或原生 Runtime 管理 Skill、Plugin、MCP 和 Connector 的安装、配置、进程及审批。Harness 不下载 FileBundle，不安装工具，不生成工具配置，也不覆盖原生 Runtime 已有的插件配置。OpenClaw 使用已经存在的本地 Agent。OKF 业务记忆由 Loop 管理；Harness 只处理普通材料、会话连续性和执行工作目录。
+一个 Harness Home 管理一个 Daemon 和 adapter-host，多 profile 共享 Host。新入口复用现有 CLI、Home 和服务管理，不按 Codex 会话或工作目录另起一套默认运行时。当前 Embedded Home 可按 appId 隔离，不能把不同 Home 宣称为已自动合并的全局单实例。
 
-云端只提供授权意图与短期凭据。Runtime 通过独立的 `/v1/runtime/context/authorizations/resolve` 接口取得授权；授权不包含工具地址、命令或配置模板。任务材料读取与产物归档使用本地 `business_service_bindings` 配置的业务服务连接。其他授权必须由宿主实现 `receiveToolAuthorizations` 接收；没有接收器时，带有此类授权的 Run 会拒绝执行。凭据不会写入模型输入或 Provider 配置。
-
-同一服务主体的授权按操作划分。Harness 只消费材料读取、材料快照检查及产物准备/提交/失败操作；例如同一 Loop 授权中的 `knowledge_*` 或 `task_apply_action` 仍交给本地授权接收器，不能因为已经配置 task/discussion 连接而忽略。
-
-当前 Run 固定为 `schema_version=7`，Context 固定为 `octo.context-envelope/v3`。本次删除的云端资源选择、`mcp_servers`、`default_skills` 和插件应用证据不提供兼容路径。模块的 Alpha/Beta/Stable 状态以[生态架构成熟度](../README.md)为准，方案见[本地插件责任改造](docs/24-local-plugin-ownership-refactor.md)。
-
-`namespace` 用来隔离业务语义，例如 `loop`、`autopilot`、`webhook`、`im`。稳定会话由 `(namespace, agent_id, session_key)` 唯一确定；`trigger_occurrence_id` 表示一次外部触发事实，并用于同一会话内的提交去重。
+当前 Run 固定为 `schema_version=7`，Context 固定为 `octo.context-envelope/v3`，不增加旧协议回退。技能、插件、MCP 的安装与配置由本地宿主或原生 Runtime 管理。凭据不进入模型输入。旧 Channel context、聊天 SQLite 和相关业务实现已移出；参考快照位于同级 `octo-channel-design-reference/`，不参与构建。源执行事件使用有界内存窗口，不等待 durable ACK。
 
 ## 代码结构
 
 ```text
 apps/
-  daemon/              Worker WSS Runtime、可靠 outbox、本地诊断 socket
-  cli/                 daemon 运维与本地 AgentRun 诊断
-  adapter-host/        独立 provider host 进程
-installers/
-  posix/install.sh     macOS/Linux 一键安装 stage-0
-  windows/install.ps1  Windows 一键安装 stage-0
+  cli/                             现有运维 CLI
+  daemon/                          启动与配置入口
+  adapter-host/                    Host 进程入口
+  inspect-web/                     诊断 UI
 packages/
-  octo-harness-protocol/            invoke / canonical event contract
-  octo-harness-core/                AgentSession / AgentRun reference engine
-  octo-harness-daemon/              单会话 FIFO、执行与恢复
-  octo-harness-adapter-host/        invocation lifecycle + NDJSON RPC
-  octo-harness-adapter-sdk/         adapter helpers
-  octo-harness-adapter-*/           provider adapters
-  octo-harness-cross-service/       launchd/systemd user/Task Scheduler 生命周期
+  octo-harness-daemon/              模块装配、本地 IPC、共享 Host 生命周期
+  octo-harness-worker-access/       Worker WS 接入与远端执行编排
+  octo-harness-im/                  IM 专用 WS、私聊会话与结果回发
+  octo-harness-adapter-host/        共享执行 Host + NDJSON RPC
+  octo-harness-context-builder/     通用上下文构造与 Node 准备工具
+  octo-harness-core/                本地执行状态与引擎
+  octo-harness-protocol/            统一执行和 Context 合同
+  octo-harness-embedded/            宿主集成 SDK
+  octo-harness-adapter-*/           provider adapters 与共享 SDK
+  octo-harness-acp-client/          ACP transport
+  octo-harness-observability/       观测基础设施
+  octo-harness-cross-service/       原生用户服务管理
 ```
 
-Core 中的 SQLite `AgentSession`/`AgentRun` 是单机 reference profile 的诊断投影。接入 Agent Worker 时，Worker 数据库是云端唯一权威，Harness 的 `agent-work.db` 只保存尚未 durable ACK 的命令/事件，不能成为第二套控制面。
+每个模块的责任边界见对应 README；完整包索引见 [packages](packages/README.md)，可执行入口见 [apps](apps/README.md)。
 
 ## 一键安装
 
@@ -56,7 +97,7 @@ Core 中的 SQLite `AgentSession`/`AgentRun` 是单机 reference profile 的诊�
 | macOS / Linux | `npm install -g @mininglamp-oss/octo-harness`；shim 位于 `<npm prefix -g>/bin/octo-harness` | `~/.octo-harness/` |
 | Windows | `npm install -g @mininglamp-oss/octo-harness`；shim 位于 `<npm prefix -g>\octo-harness.cmd` | `%LOCALAPPDATA%\OctoHarness\` |
 
-安装器会验证全局 shim，并在需要时自动把 npm global bin 加入 macOS/Linux shell profile 或 Windows 当前用户 PATH，所以安装后可直接用 `octo-harness` 调试。Harness Home 只保存 profile、`runtime_id`、设备凭证、SQLite/outbox、PID/socket 和日志。`octo-harness daemon uninstall` 会停止并真实删除原生用户服务定义，但保留这些数据；卸载 npm package 也不会删除 Harness Home。当前 CLI 不提供 purge 数据命令。
+安装器会验证全局 shim，并在需要时自动把 npm global bin 加入 macOS/Linux shell profile 或 Windows 当前用户 PATH，所以安装后可直接用 `octo-harness` 调试。Harness Home 只保存 profile、`runtime_id`、设备凭证、本地状态、PID/socket 和日志。`octo-harness daemon uninstall` 会停止并真实删除原生用户服务定义，但保留这些数据；卸载 npm package 也不会删除 Harness Home。当前 CLI 不提供 purge 数据命令。
 
 ### macOS / Linux
 
@@ -82,7 +123,7 @@ curl -fsSL https://im-test.deepminer.com.cn/octo-harness/install.sh \
 3. 同版本 CLI 的 `login` 从 stdin 消费一次性 token，只创建或对账选中 profile 唯一的永久 `runtime_id` 与设备凭证。
 4. 安装器显式调用 `daemon install`，通过用户级原生管理器安装自启动：macOS LaunchAgent、Linux systemd user service、Windows 当前用户 Task Scheduler；service definition 使用绝对 Node 与 daemon 入口路径，不依赖 shell PATH。
 5. 安装器再调用 `daemon start --wait-online`；CLI 分别等待本地 IPC Ready 和云端 Runtime Online，任一步失败都返回非零。
-6. 重跑时先取得 Home 与 npm prefix 安装锁；若旧 CLI 已存在，先执行 `login --prepare-update` drain/stop，再更新 npm package，最后由新 CLI 依次执行 login、install、start。npm 更新或更新后的流程失败会尝试 `login --recover-update` 恢复 service；全过程不创建第二个 Runtime，也不覆盖已有身份和 durable outbox。已有 identity 时可省略 token 重跑。
+6. 重跑时先取得 Home 与 npm prefix 安装锁；若旧 CLI 已存在，先执行 `login --prepare-update` drain/stop，再更新 npm package，最后由新 CLI 依次执行 login、install、start。npm 更新或更新后的流程失败会尝试 `login --recover-update` 恢复 service；全过程不创建第二个 Runtime，也不覆盖已有身份和已有本地状态。已有 identity 时可省略 token 重跑。
 
 把 token 直接放在位置参数里最适合 Web 页面生成“复制即安装”的一次性命令，但它会进入 shell/PowerShell 历史。更安全的人工安装方式是省略第二个参数，安装器会从 TTY/SecureString 隐藏读取 token：
 

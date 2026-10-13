@@ -104,3 +104,9 @@ Skill、Plugin、MCP 和 Connector 由本地用户或原生 Runtime 安装与配
 
 - 事件生命周期与 JSON-RPC 映射：[Architecture](../../docs/01-architecture.md)
 - 为何选用 JSON Schema：[Protocol Schema And Codegen](../../docs/10-protocol-schema-codegen.md)
+
+## 模块责任边界
+
+- 负责：定义和校验统一执行、事件与 Context 合同。
+- 不负责：连接管理、provider 执行、业务状态。
+- 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。

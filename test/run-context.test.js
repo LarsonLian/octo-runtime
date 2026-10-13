@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertFrozenContextPlan, compileRunContext } from "../packages/octo-harness-daemon/dist/run-context.js";
+import { assertFrozenContextPlan, compileRunContext } from "../packages/octo-harness-context-builder/dist/run-context.js";
 
 const context = { schema: "octo.context-envelope/v3", items: [
   { namespace: "octo.execution", name: "adapter", payload: { type: "codex" } }, { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: "/workspace" } }, { namespace: "octo.security", name: "approval_policy", payload: { mode: "ask" } }

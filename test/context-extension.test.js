@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { assertContextEnvelope, assertContextExtensionsSnapshot, contextHash, mergeContext, resolveContextConfiguration } from '../packages/octo-harness-protocol/dist/index.js';
-import { ContextCompiler } from '../packages/octo-harness-daemon/dist/context-pipeline.js';
-import { compileRunContext } from '../packages/octo-harness-daemon/dist/run-context.js';
+import { ContextCompiler } from '../packages/octo-harness-worker-access/dist/context-pipeline.js';
+import { compileRunContext } from '../packages/octo-harness-context-builder/dist/run-context.js';
 
 const empty = () => ({ schema: 'octo.context-envelope/v3', items: [] });
 const external = () => ({ ...empty(), items: [{ namespace: 'eva.project', name: 'current', payload: { type: { nested: true }, project_id: 'p1' } }] });

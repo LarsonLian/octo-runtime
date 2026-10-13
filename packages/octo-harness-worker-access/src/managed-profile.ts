@@ -113,12 +113,6 @@ function loadManagedProfile(home: string, profile: string, options: { discoverLo
     runtimeName: optionalString(config.runtime_name) ?? "octo-harness-local",
     businessServiceBindings: readBusinessServiceBindings(config.business_service_bindings),
     storePath: join(profileRoot, "agent-work.db"),
-    channelContext: {
-      store: "sqlite",
-      projection: "delta",
-      providerPersistence: "append_only",
-      storePath: join(profileRoot, "channel-context.db")
-    },
     ...(Object.keys(adapterConfigurations).length ? { adapterConfigurations } : {})
   };
 }

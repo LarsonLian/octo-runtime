@@ -149,7 +149,7 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
     socket.on("message", data => {
       const message = JSON.parse(data.toString("utf8"));
       if (message.type === "runtime.hello") {
-        socket.send(wire("runtime.welcome", { heartbeat_every_ms: 60_000 }));
+        socket.send(wire("runtime.welcome", { resume_cursors: [], heartbeat_every_ms: 60_000 }));
       }
     });
   });

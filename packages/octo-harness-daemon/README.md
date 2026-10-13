@@ -1,5 +1,11 @@
-# @mininglamp-oss/octo-harness-daemon
+# Daemon 装配与本地执行
 
-围绕 reference Core 的单机 FIFO 执行器。它调度已经存在的 AgentRun、等待终态、取消 invocation，并在启动时恢复本地未完成 Run。
+## 责任边界
 
-它不运行 cron/event/webhook scheduler，不创建 Loop Task，不判断 Chat/Task 类型。生产模式由 Agent Worker 下发 `run.start`，对应实现位于 `apps/daemon/src/agent-work-runtime.ts`；本包主要服务本地 reference profile 和测试。
+- 负责：管理共享 adapter-host 进程及重启、本地 UDS/Pipe 控制接口、reference Run 调度、诊断与观测。通过注入同一个 AdapterHostRpc 装配 Worker 和 IM 接入模块。HostRunService 提供本地源流的序号、短窗口重放、终态查询和取消；不保存聊天历史。
+- 不负责：Worker WS、注册和远端命令处理实现归 worker-access；IM 业务归 IM 包。不得为新入口复制 Host 或 provider 执行逻辑。
+- 接口与现状：server.ts 是装配根，runtime-core.ts 是本地调度。index.ts 为现有 SDK 消费者保留转导出；转导出不代表实现仍由 Daemon 持有。
+
+整体架构见 [根 README](../../README.md)。
+
+本地 Run API：`agent_run.submit` / `invoke` / `subscribe` / `get` / `cancel` / `respond`，使用 UDS/Windows Pipe。源流查询使用 `run_id`，订阅带 `stream_id` 和 `after_seq`；断开订阅不取消 Run。现有 `runId` reference 查询仍由本地调度处理。详细实现范围见 [本地流方案](../../docs/26-channel-local-stream-and-ack-plan.md)。

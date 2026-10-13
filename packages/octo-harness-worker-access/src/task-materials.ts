@@ -87,7 +87,7 @@ export class TaskMcpClient {
       }
     } catch (error) {
       this.#signal.throwIfAborted();
-      if (retryDeadline?.aborted) throw new TypeError("TASK_RESULT_BINDING_PENDING");
+      if (retryDeadline?.aborted) throw new TypeError("TASK_RESULT_BINDING_PENDING", { cause: error });
       throw error;
     }
   }
