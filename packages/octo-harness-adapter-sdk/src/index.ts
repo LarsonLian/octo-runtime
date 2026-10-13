@@ -110,7 +110,7 @@ export function defineAdapter<TAdapter extends Adapter>(
   if (!adapter?.metadata?.type || typeof adapter.invoke !== "function") {
     throw new TypeError("adapter requires metadata.type and invoke(req)");
   }
-  const invoke = adapter.invoke;
+  const invoke = adapter.invoke.bind(adapter);
   return Object.freeze({
     ...adapter,
     async *invoke(request: InvokeRequest, context?: AdapterInvocationContext) {
@@ -135,7 +135,7 @@ export function defineAdapter<TAdapter extends Adapter>(
           };
       }
       // Keep the original four-level request intact. Only native carriers map it.
-      yield* invoke.call(adapter, request, context);
+      yield* invoke(request, context);
     }
   });
 }

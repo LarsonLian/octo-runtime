@@ -55,3 +55,31 @@ test('ACP override records no native setter even when another transport of the a
   for await (const event of adapter.invoke(request)) events.push(event);
   assert.equal(events[0].payload.params.warningCode, 'REASONING_EFFORT_NOT_APPLIED');
 });
+
+test("adapter wrapper preserves the original invoke receiver and context", async () => {
+  const context = { reportActivity() {} };
+  const original = {
+    metadata: {
+      type: "receiver-fixture",
+      capabilities: [],
+      executionFeatures: [],
+      agentSources: ["provisioned"]
+    },
+    marker: "original receiver",
+    async *invoke(input, invocationContext) {
+      assert.equal(this, original);
+      assert.equal(this.marker, "original receiver");
+      assert.equal(input, request);
+      assert.equal(invocationContext, context);
+      yield { protocolVersion: 2, type: "run.completed", payload: {} };
+    }
+  };
+  const wrapped = defineAdapter(original, null);
+  original.invoke = async function* () {
+    throw new Error("replacement invoke must not be called");
+  };
+  const events = [];
+  for await (const event of wrapped.invoke(request, context)) events.push(event);
+  assert.equal(events.at(-1).type, "run.completed");
+  assert.equal(Object.isFrozen(wrapped), true);
+});
