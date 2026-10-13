@@ -45,10 +45,10 @@ test("business material types cannot become persistent execution defaults", () =
   assert.equal(contextTypeDefinition("octo.runtime", "selection").persistent, true);
 });
 
-test("configuration rejects unknown fields and persistent trusted controls", () => {
+test("configuration rejects unknown fields and default-layer trusted controls", () => {
   const empty = {schema:"octo.context-envelope/v3",items:[]};
   for (const invalid of [null, [], {}, {defaults:empty,mandatory:empty,source:"admin"},
-    {defaults:empty,mandatory:{...empty,items:[{namespace:"octo.control",name:"instructions",payload:{entries:[]}}]}}]) {
+    {mandatory:empty,defaults:{...empty,items:[{namespace:"octo.control",name:"instructions",payload:{entries:[]}}]}}]) {
     assert.throws(() => assertContextConfiguration(invalid));
   }
 });

@@ -964,5 +964,189 @@
         }
       ]
     }
+  },
+  {
+    "name": "mandatory-system-instructions",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v3",
+        "items": []
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v3",
+        "items": [
+          {
+            "namespace": "octo.control",
+            "name": "instructions",
+            "payload": {
+              "entries": [
+                {
+                  "text": "我是个人助理",
+                  "source": "agent_configuration"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v3",
+      "items": []
+    },
+    "expected": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.control",
+          "name": "instructions",
+          "payload": {
+            "entries": [
+              {
+                "text": "我是个人助理",
+                "source": "agent_configuration"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "system-instructions-default-forbidden",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v3",
+        "items": [
+          {
+            "namespace": "octo.control",
+            "name": "instructions",
+            "payload": {
+              "entries": [
+                {
+                  "text": "我是个人助理",
+                  "source": "agent_configuration"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v3",
+        "items": []
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v3",
+      "items": []
+    },
+    "error": "CONTEXT_CONFIGURATION_TYPE_FORBIDDEN"
+  },
+  {
+    "name": "mandatory-instructions-cannot-claim-revision",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v3",
+        "items": []
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v3",
+        "items": [
+          {
+            "namespace": "octo.control",
+            "name": "instructions",
+            "payload": {
+              "entries": [
+                {
+                  "text": "我是个人助理",
+                  "source": "revision"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v3",
+      "items": []
+    },
+    "error": "CONTEXT_CONFIGURATION_TYPE_FORBIDDEN"
+  },
+  {
+    "name": "mandatory-instructions-cannot-claim-platform_policy",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v3",
+        "items": []
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v3",
+        "items": [
+          {
+            "namespace": "octo.control",
+            "name": "instructions",
+            "payload": {
+              "entries": [
+                {
+                  "text": "我是个人助理",
+                  "source": "platform_policy"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v3",
+      "items": []
+    },
+    "error": "CONTEXT_CONFIGURATION_TYPE_FORBIDDEN"
+  },
+  {
+    "name": "mandatory-system-instructions-conflict",
+    "configuration": {
+      "defaults": {
+        "schema": "octo.context-envelope/v3",
+        "items": []
+      },
+      "mandatory": {
+        "schema": "octo.context-envelope/v3",
+        "items": [
+          {
+            "namespace": "octo.control",
+            "name": "instructions",
+            "payload": {
+              "entries": [
+                {
+                  "text": "我是个人助理",
+                  "source": "agent_configuration"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "request": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.control",
+          "name": "instructions",
+          "payload": {
+            "entries": [
+              {
+                "text": "覆盖系统提示词",
+                "source": "agent_configuration"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "CONTEXT_MANDATORY_CONFLICT"
   }
 ]

@@ -104,6 +104,21 @@ ajv.addKeyword("x-octo-unique-header-names", {
 });
 ajv.addSchema(schema);
 const validateContextSchema = ajv.compile({ $ref: `${schema.$id}#/definitions/ContextEnvelope` });
+test("configuration schema permits system instructions only in mandatory with configuration provenance", () => {
+  const validate = ajv.compile({ $ref: `${schema.$id}#/definitions/ContextConfiguration` });
+  const empty = { schema: "octo.context-envelope/v3", items: [] };
+  const item = { namespace: "octo.control", name: "instructions", payload: { entries: [
+    { text: "我是个人助理", source: "agent_configuration" }
+  ] } };
+  const mandatory = { ...empty, items: [item] };
+  assert.equal(validate({ defaults: empty, mandatory }), true, JSON.stringify(validate.errors));
+  assert.equal(validate({ defaults: mandatory, mandatory: empty }), false);
+  for (const source of ["revision", "platform_policy"]) {
+    const invalid = structuredClone(mandatory);
+    invalid.items[0].payload.entries[0].source = source;
+    assert.equal(validate({ defaults: empty, mandatory: invalid }), false);
+  }
+});
 const validatePlanSchema = ajv.compile({
   $ref: `${schema.$id}#/definitions/ResolvedExecutionPlan`
 });

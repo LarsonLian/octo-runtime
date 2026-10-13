@@ -1973,13 +1973,13 @@ export interface ContextEnvelope {
   items: ContextItem[];
 }
 /**
- * Agent defaults and mandatory constraints, stored under one external configuration version. Validation and resolution do not authorize the writer or referenced resources. Ephemeral content and trusted instructions cannot be persisted here.
+ * Agent defaults and mandatory constraints, stored under one external configuration version. Authorized configuration writers may persist system instructions in mandatory with source agent_configuration. Ephemeral business content and default-layer instructions are forbidden; callers cannot submit trusted control instructions.
  *
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextConfiguration".
  */
 export interface ContextConfiguration {
-  defaults: PersistentContextEnvelope;
+  defaults: ContextEnvelope;
   mandatory: PersistentContextEnvelope;
 }
 /**

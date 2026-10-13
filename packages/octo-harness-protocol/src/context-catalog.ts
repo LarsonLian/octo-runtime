@@ -34,7 +34,7 @@ export const CONTEXT_TYPE_CATALOG: readonly ContextTypeDefinition[] = Object.fre
   entry("octo.security", "approval_policy", "ContextApprovalPolicyPayload", true),
   entry("octo.content", "inline", "ContextInlinePayload", false),
   entry("octo.content", "references", "ContextReferencesPayload", false),
-  entry("octo.control", "instructions", "ContextInstructionsPayload", false, true)
+  entry("octo.control", "instructions", "ContextInstructionsPayload", true, true)
 ]);
 
 export function contextTypeDefinition(namespace: string, name: string): ContextTypeDefinition {

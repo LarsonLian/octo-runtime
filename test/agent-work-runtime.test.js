@@ -407,6 +407,24 @@ test("untrusted instruction sources cannot cross into controlInstructions", () =
   }
 });
 
+test("mandatory system instructions reach the control channel with empty business context", () => {
+  const source = {
+    ...envelope,
+    agent_revision: { definition: { instructions: "" } },
+    effective_context: executionContext(executionPlan, [
+      { namespace: "octo.control", name: "instructions", payload: { entries: [
+        { text: "我是个人助理", source: "agent_configuration" }
+      ] } }
+    ]),
+    agent_run_request: { ...envelope.agent_run_request, context: contextEnvelope([]) }
+  };
+  const { request } = mapExecutionEnvelope(source);
+  assert.equal(request.controlInstructions, "我是个人助理");
+  assert.equal(renderModelContexts(request.context), "");
+  assert.equal(request.modelInput, request.prompt);
+  assert.doesNotMatch(request.prompt, /我是个人助理/);
+});
+
 test("references forward as descriptors without compiler or material prefetch", () => {
   for (const [resolver, locator] of [
     ["mcp", { server_ref: "team", tool: "read_document" }],

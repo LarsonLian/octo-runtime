@@ -29,11 +29,16 @@ export function assertContextConfiguration(value: unknown): asserts value is Con
 }
 
 function validateLayers(configuration: ContextConfiguration): void {
-  for (const envelope of [configuration.defaults, configuration.mandatory]) {
+  for (const [layer, envelope] of [configuration.defaults, configuration.mandatory].entries()) {
     assertContextEnvelope(envelope);
     for (const item of envelope.items) {
       if (!findContextTypeDefinition(item.namespace, item.name)?.persistent)
         throw new TypeError("CONTEXT_CONFIGURATION_TYPE_FORBIDDEN");
+      if (item.namespace === "octo.control") {
+        const entries = item.payload.entries as { source: string }[];
+        if (layer === 0 || entries.some(entry => entry.source !== "agent_configuration"))
+          throw new TypeError("CONTEXT_CONFIGURATION_TYPE_FORBIDDEN");
+      }
     }
   }
 }

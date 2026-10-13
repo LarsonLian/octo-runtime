@@ -1166,7 +1166,7 @@
     },
     "ContextConfiguration": {
       "title": "ContextConfiguration",
-      "description": "Agent defaults and mandatory constraints, stored under one external configuration version. Validation and resolution do not authorize the writer or referenced resources. Ephemeral content and trusted instructions cannot be persisted here.",
+      "description": "Agent defaults and mandatory constraints, stored under one external configuration version. Authorized configuration writers may persist system instructions in mandatory with source agent_configuration. Ephemeral business content and default-layer instructions are forbidden; callers cannot submit trusted control instructions.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -1175,7 +1175,27 @@
       ],
       "properties": {
         "defaults": {
-          "$ref": "#/definitions/PersistentContextEnvelope"
+          "allOf": [
+            {
+              "$ref": "#/definitions/PersistentContextEnvelope"
+            },
+            {
+              "properties": {
+                "items": {
+                  "items": {
+                    "not": {
+                      "properties": {
+                        "namespace": {
+                          "const": "octo.control"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "tsType": "ContextEnvelope"
         },
         "mandatory": {
           "$ref": "#/definitions/PersistentContextEnvelope"
@@ -1473,10 +1493,27 @@
               "items": {
                 "allOf": [
                   {
-                    "not": {
+                    "if": {
                       "properties": {
                         "namespace": {
                           "const": "octo.control"
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "payload": {
+                          "properties": {
+                            "entries": {
+                              "items": {
+                                "properties": {
+                                  "source": {
+                                    "const": "agent_configuration"
+                                  }
+                                }
+                              }
+                            }
+                          }
                         }
                       }
                     }
