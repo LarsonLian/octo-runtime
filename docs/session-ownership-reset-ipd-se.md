@@ -324,9 +324,11 @@ type ResetOutcome = {
 | --- | --- | --- |
 | Work main / SQLite / renderer / Ask | 控制命令在配置和模型调用前分流；持久幂等回执及系统提示；清空当前 session、Provider 和配置绑定；下一普通请求冻结新 session；Ask 保留页面 conversation 绑定 | reset、续聊、历史幂等、活动 Run 迟到回写及 Ask 等 52 项相关测试通过；真实 Electron CDP 登录 im-test，输入框发送控制命令、同一 conversation 保持、重载后两条提示、零 AgentRun 通过 |
 | 边缘 IM | Octo 和 Wecom 共用即时控制分支；daemon 注入独立 SQLite；持久化 pending 绑定、control ID 和普通输入快照；排队请求冻结旧身份；迟到 Provider 更新不恢复当前绑定 | Harness 114 项相关测试通过，含 Octo 二进制 WS、Wecom 原请求 stream 回复、活动执行 reset 和 SQLite 重开幂等 |
-| Loop 业务 | 普通会话及任务执行在事务内冻结 session；reset 清空原 conversation 的全部目标绑定并保存控制消息；不创建 Event / WorkExecution；出站只使用保存的 session | 全量 Go 测试通过，含 reset 原子事务、重复请求和无执行产物断言 |
+| Loop 业务 | 普通会话及任务执行在事务内冻结 session；reset 清空原 conversation 的全部目标绑定并保存控制消息；不创建 Event / WorkExecution；出站只使用保存的 session | 全量 Go 测试通过；固定本机 `octo_agent_app_loop` 真实 MySQL 回滚事务验证续聊复用、reset 换新和 conversation 隔离，不保留测试数据 |
 | Worker / worker-access / Core | 入站字段统一 `session_id`；缺省取 `conversation_id`；显式空/null 拒绝；公开业务 session 与内部作用域分离；workspace 使用 `session_scope_id`；移除公开执行层 reset/resolve 路由 | Worker domain、repository、service、handler 测试通过；作用域隔离与缺省/非法 ID 测试；Harness Core 和 envelope 映射测试 |
 | 合同和构建 | SDK 控制回执允许没有 execution；Go、TS、SQL、OpenAPI 同步；Run=7、Context=v3 保持 | Worker、Loop、Harness、Work 构建及本机重启；Work typecheck:all 和 kit 测试通过 |
+
+最终全量回归：Harness 899 项中 890 项通过、9 项按测试条件跳过；Work 1546 项通过、1 项跳过；Worker 和 Loop `go test ./...` 均通过。Work kit 测试独立通过。桌面全量测试首次与 Harness clean/build 同时执行，出现临时缺失 dist 的模块加载错误；等待构建完成后全量重跑通过。
 
 存储边界：`octo_agent_app_loop.conversation_session_binding` 只属于 Loop 业务服务；Work 使用自己的 `sessions.db`，IM daemon 使用插件的 `im-sessions.db`。Agent Access 不持有 conversation 当前 session 映射。Worker 只持有每个冻结 session 的执行状态和 Provider 连续性，不分配业务会话的 reset 绑定。
 
