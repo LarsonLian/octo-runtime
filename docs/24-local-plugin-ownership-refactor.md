@@ -347,6 +347,7 @@ Harness 的本地 `businessServiceBindings` 只绑定框架自身的任务材料
 - 四个固定本机自有库已 drop、重建、校验并启动。Worker 为 30 张表，Loop 为 30 张表，Access 为 11 张表，Channel 为 10 张表；其中各服务含自身结构管理表。FileBundle 两表及 `prepared_resources_json` 不存在；OKF 三表仅存在于 Loop。
 - 使用真实 im-test 登录态，CDP 验证本地 Runtime 接入、插件桥方法消失、桌面与窄窗口展示、Loop OKF 创建/提交/读取/版本冲突拒绝、普通 Codex Run 完成。
 - Ask 目录准备与执行预检通过；返回一项目录范围授权，没有 connector Context。该结果不表示原生工具授权接收已实现。
+- Loop 的真实 Task Run 已完成材料准备和文本报告。联调修复了缺少 Run 来源登记、任务 `task_id` 和 Team 附件 `attachment_id` 的合同错配；来源登记继续校验冻结事件、真实 Access 回执及任务版本。Harness 最终构建和 20 项针对性测试通过，Loop 修复后全量 test、race、vet 和构建通过。文件产物上传与 Team 完整协作仍需另行验收。
 - 已确认的本地 Harness `context/resources` 缓存移至同目录的 `resources.retired-20261012`，不再作为有效资源目录。未删除原生插件目录、共用对象存储或未核实内容的 `plugin-data`。
 
 当前 Alpha 限制：

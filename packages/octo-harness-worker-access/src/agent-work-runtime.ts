@@ -195,9 +195,9 @@ export interface ExecutionEnvelope {
   session_generation?: number;
   provider_epoch?: number;
   continuity_mode?: "continue" | "fresh";
-    execution_target?: import('@mininglamp-oss/octo-harness-protocol').ExecutionTarget;
   provider_session?: ProviderSession;
   agent_run_request: {
+    execution_target?: import('@mininglamp-oss/octo-harness-protocol').ExecutionTarget;
     tool_authorizations?: ToolAuthorization[];
     scenario?: ScenarioRequest;
     namespace: string;
