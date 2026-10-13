@@ -297,16 +297,16 @@ type ResetOutcome = {
 
 | WP | 内容与依赖 | 完成证据 | 当前状态 |
 | --- | --- | --- | --- |
-| WP-01 合同与盘点 | 锁定 session 字段映射、作用域、长度、控制结果、活动 Run 策略；盘点实际 Channel 和所有发起入口 | 同源合同草案、完整入口清单、数据库 / 索引影响表 | 方案完成，细项待评审 |
-| WP-02 业务存储 | F01；依赖 WP-01；映射、Event 快照、reset 幂等、控制提示原子化 | AC01～04、AC07、AC10、AC12～13 的存储测试 | 待实施 |
-| WP-03 Work App | F03；依赖 WP-02；main / SQLite / preload / renderer / Ask 全链路分流 | AC08～10、AC18～19；真实 Electron CDP 本地 reset 抓包 | 待实施 |
-| WP-04 全 Channel | F02、F06；依赖 WP-02；Octo、Wecom、宿主接线与部署入口逐项覆盖 | AC05～07、AC15、AC17、AC21；实际原会话回复证据 | 待实施 |
-| WP-05 云端与执行层 | F04、F05；依赖 WP-01；Loop、Worker、schema、SDK、Harness、Adapter 同步切换 | AC11～16、AC20；旧 reset / affinity 派生路径退出清单 | 待实施 |
-| WP-06 集成与说明 | 依赖 WP-03～05；构建受影响项目、重启进程、真实测试、更新规范与 README | AC22 和逐入口 / Adapter 验收矩阵；未通过项明确记录 | 待实施 |
+| WP-01 合同与盘点 | 锁定 session 字段映射、作用域、长度、控制结果、活动 Run 策略；盘点实际 Channel 和所有发起入口 | 同源合同、入口清单、数据库 / 索引影响 | 已实施；ID 上限 512 字节 |
+| WP-02 业务存储 | F01；映射、Event 快照、reset 幂等、控制提示原子化 | 存储及迟到事件回归测试 | 已实施 |
+| WP-03 Work App | F03；main / SQLite / preload / renderer / Ask 全链路分流 | 单元测试及真实 Electron CDP | 已实施并实测 |
+| WP-04 全 Channel | F02、F06；Octo、Wecom、宿主接线 | 两种平台协议 socket 测试、持久化测试 | 已实施；线上群聊未实测 |
+| WP-05 云端与执行层 | F04、F05；Loop、Worker、schema、SDK、Harness 同步切换 | Go、Core、envelope 合同测试 | 已实施 |
+| WP-06 集成与说明 | 构建、重启、真实测试、更新规范 | 第 12 节的证据和限制 | 本机完成；非云端部署 |
 
 破坏性更新遵循项目基线，不设计旧协议自动转换、双写或版本回退。本方案不授权删除现有用户聊天历史；实施前须明确存储切换方案和获准重建的数据范围，不能把协议破坏性更新等同于可以删除业务记录。
 
-真实 IM 联调使用项目规定的 im-test 测试环境和测试会话；真实 Octo Work UI 用 CDP 驱动 renderer。文档阶段仅做源码核对及链接 / 追踪检查，不执行平台消息发送，也不声称任何 AC 已通过。
+真实 Octo Work UI 使用 CDP 驱动 im-test 登录的 renderer；本次没有发送线上群聊消息，平台验证范围见第 12 节。
 
 ## 11. 评审项与风险
 
