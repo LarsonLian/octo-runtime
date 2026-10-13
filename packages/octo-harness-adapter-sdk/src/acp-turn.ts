@@ -139,7 +139,8 @@ export class AcpTurnNormalizer {
 
   #closeMessage(status = "completed"): CanonicalEvent[] {
     if (!this.#message) return [];
-    const { text: _text, ...payload } = this.#message;
+    const payload = { ...this.#message };
+    delete payload.text;
     this.#message = undefined;
     return [
       {
