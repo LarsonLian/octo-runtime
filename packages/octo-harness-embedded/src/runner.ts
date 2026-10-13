@@ -43,7 +43,6 @@ application = await startDaemonServer({
   storePath: session.store_path,
   manifestPath,
   hostEntrypoint,
-  inspectHost: "127.0.0.1",
   agentWorks
 });
 writeJsonAtomic(session.supervisor_state, {

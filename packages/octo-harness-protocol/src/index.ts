@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 export { contextHash } from "./context-hash.js";
+export { assertExecutionTarget } from './execution-target.js';
+export type { ExecutionTarget } from './execution-target.js';
 export { assertContextExtensionsSnapshot } from './context-extensions.js';
 export type { ContextExtensionsSnapshot, ContextExtensionResult } from './generated/protocol-types.js';
 export type { ToolAuthorization, IssuedToolAuthorization } from './generated/protocol-types.js';

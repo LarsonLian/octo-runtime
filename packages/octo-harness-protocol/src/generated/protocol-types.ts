@@ -257,6 +257,19 @@ export type ContextReferenceEntry = {
   authorization_ref?: string;
   revision?: string;
 };
+/**
+ * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
+ * via the `definition` "ExecutionTarget".
+ */
+export type ExecutionTarget =
+  | {
+      target_kind: "standard_harness_agent";
+    }
+  | {
+      target_kind: "ability_provider";
+      executor_id: string;
+      provider_binding_ref: string;
+    };
 
 /**
  * Serializable data shapes for the Octo Harness NDJSON protocol. Runtime behavior remains hand-written in src/index.ts, and this schema is the source of truth for generated TypeScript types. The x-octo-unicode-scalar-strings semantic keyword requires every JSON string value and object member name to contain Unicode scalar values only: unpaired UTF-16 surrogates are rejected, not repaired or normalized. Consumers must enforce this protocol-wide rule even when validating a definition directly.

@@ -6,9 +6,9 @@ function fixture(invoke){return new HostRunService({invoke,list:async()=>[],prob
 test('local submit is retained before first subscribe, never requires Worker, and rejects duplicate execution',async()=>{
  let count=0;const host=fixture(async function*(){count++;yield{protocolVersion:2,type:'message.delta',payload:{text:'private',channel:'analysis',exposure:'private_reasoning'}};yield{protocolVersion:2,type:'message.delta',payload:{text:'answer',channel:'final'}};yield{protocolVersion:2,type:'run.completed',payload:{}};});
  const input=invokeRequest(),accepted=host.submit('codex',input);await waitFor(()=>host.get(input.runId).terminal);
- const page=host.read(input.runId,accepted.stream_id,0);assert.deepEqual(page.events.map(e=>e.seq),[1,2]);assert.equal(page.events[0].event.payload.text,'answer');
+ const page=host.read(input.runId,accepted.stream_id,0);assert.deepEqual(page.events.map(e=>e.seq),[1,2,3]);assert.equal(page.events[0].event.payload.text,'private');assert.equal(page.events[1].event.payload.text,'answer');
  assert.throws(()=>host.submit('codex',input),/RUN_ALREADY_ACCEPTED/);assert.equal(count,1);assert.equal(host.read(input.runId,accepted.stream_id,1).events[0].seq,2);
- assert.throws(()=>host.read(input.runId,'stale',0),/STREAM_EXPIRED/);assert.throws(()=>host.read(input.runId,accepted.stream_id,3),/STREAM_CURSOR_INVALID/);await host.close();
+ assert.throws(()=>host.read(input.runId,'stale',0),/STREAM_EXPIRED/);assert.throws(()=>host.read(input.runId,accepted.stream_id,4),/STREAM_CURSOR_INVALID/);await host.close();
 });
 test('byte pressure creates an explicit gap while terminal state remains independently queryable',async()=>{
  const host=fixture(async function*(){for(let i=0;i<100;i++)yield{protocolVersion:2,type:'message.delta',payload:{text:'x'.repeat(65536),channel:'final'}};yield{protocolVersion:2,type:'run.completed',payload:{}};});

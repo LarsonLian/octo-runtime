@@ -62,8 +62,7 @@ export class HostRunService implements AdapterHostRpc {
   }
   #append(run: Run, event: CanonicalEvent): void {
     if (run.terminal) return;
-    // Public replay sequences exclude private reasoning before allocating a cursor.
-    if (event.payload.exposure === "private_reasoning" || event.payload.channel === "analysis") return;
+    // Consumers own persistence and presentation filtering; replay retains the complete event.
     const safe = structuredClone(event), bytes = Buffer.byteLength(JSON.stringify(safe));
     if (bytes > 256 << 10) throw new Error("STREAM_EVENT_TOO_LARGE");
     const now = Date.now(); run.updated = now;

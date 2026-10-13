@@ -4203,6 +4203,47 @@
         }
       },
       "x-octo-unique-env-keys": true
+    },
+    "ExecutionTarget": {
+      "title": "ExecutionTarget",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "target_kind"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "target_kind": {
+              "const": "standard_harness_agent"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "target_kind",
+            "executor_id",
+            "provider_binding_ref"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "target_kind": {
+              "const": "ability_provider"
+            },
+            "executor_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96
+            },
+            "provider_binding_ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        }
+      ]
     }
   }
 }
