@@ -25,14 +25,13 @@ const hostEntrypoint =
 const agentWorks = loadManagedAgentWorksFromRoot(session.account_root, session.profiles, {
   discoverLocalOpenClaw: true
 });
-let application: DaemonApplication | undefined;
 let stopping = false;
 
 const stop = (): void => {
   if (stopping) return;
   stopping = true;
   clearInterval(controlTimer);
-  void application?.close().then(
+  void application.close().then(
     () => process.exit(0),
     (error) => {
       console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
@@ -41,7 +40,7 @@ const stop = (): void => {
   );
 };
 
-application = await startDaemonServer({
+const application: DaemonApplication = await startDaemonServer({
   homePath: session.home,
   pidPath: session.pid_path,
   socketPath: session.socket_path,
