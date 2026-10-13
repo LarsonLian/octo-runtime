@@ -25,6 +25,14 @@ Harness 不接收云端插件包、安装路径、启动命令或 MCP 配置。�
 
 本地连接只消费 Harness 实现的具体操作，不消费整个服务主体的授权。同一 Loop 主体仍有知识或业务动作授权时，Runtime 必须将剩余操作交给本地接收器；接收器缺失时拒绝 Run，不以已配置业务连接作为授权已交付的证据。
 
+## 每轮 Context 的归属
+
+Event 发起方决定本轮模型上下文的内容、顺序和发送时机。是否发送 selection、项目背景、任务状态、引用或 extra，完全由业务方决定。业务方可以首次提供必要背景，续聊无变化时传空、有变化时只发本轮需要的项，也可以显式重复发送。必要的 adapter 等执行配置继续按执行合同和 defaults/mandatory 规则解析、校验，不进入 LLM 上下文块，不使业务项变成必填。
+
+Worker、daemon、worker-access、Host、Adapter 只校验、转发并固定渲染本轮快照。底层不得按 `sessionId`、run 序号或 hash 缓存、补齐、合并、去重或省略模型上下文。两个不同 Event 显式发送相同 item 时，两轮均须传递；原 Event 的幂等重投仍复用原快照。空模型上下文是有效输入，不要求执行配置也为空。
+
+`sessionId` 存在不保证 Provider resume 成功。reset、新建 Provider 会话或恢复失败后，业务方负责重新提供所需背景；执行层返回真实恢复结果，不从历史 Event 自动补背景。分类矩阵见 [LLM 注入约束](context-llm-injection.md)，详细 MUST / MUST NOT 与验收见 [全局 IPD-SE 基线](../../docs/event-context-rendering-ipd-se.md)。M1 renderer 已实施，旧执行侧 Pipeline 退出仍待完成。
+
 ## 统一对象
 
 ```mermaid

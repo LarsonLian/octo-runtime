@@ -1,5 +1,7 @@
 # @mininglamp-oss/octo-harness-adapter-qoderclicn
 
+> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../docs/context-llm-injection.md) 与 [IPD-SE 0.3](../../../docs/event-context-rendering-ipd-se.md)；旧链路退出仍待完成。
+
 Qoder CN CLI ACP adapter，adapter type 为 `qoderclicn`。每次调用启动 `qoderclicn --yolo --acp`，通过通用 ACP adapter 完成 session 创建/恢复、模型选择、prompt 流、model step 重建和 canonical event 转换。
 
 这是 Qoder 的中国区（CN）发行版，行为与 Qoder CLI 一致，但以独立的 `qoderclicn` 二进制分发，并注册为独立 adapter type，方便 Runtime 显式选择 CN 版本。

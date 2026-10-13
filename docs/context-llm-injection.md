@@ -21,8 +21,10 @@ item 内部仅输出换行纯文本 `指引: ...`、`数据: ...`。不添加 gu
 
 ## Resume 与本轮上下文
 
-发起方建议在首次运行提供必要背景；同一 Provider 会话成功续接后，未变化且仍有效的背景无需每轮重复发送。发起方本轮没有新上下文时提交空 items；当前选区、任务状态或对象发生变化时只提交本轮需要的项。必要重复或重新说明由发起方决定。
+**MUST**：发起方决定每轮模型上下文的内容、顺序和发送时机。selection、项目背景、任务状态、引用及 extra 均由业务方选择；即使页面存在选区或状态发生变化，框架也不要求发送。业务方可以首次提供必要背景、续聊无变化时传空、有变化时只发本轮需要的项，也可以显式重复。必要的 adapter 等执行配置仍按执行合同和 defaults/mandatory 规则校验，不进入 LLM 上下文块，不使业务项变成必填。
 
-Host 不按 sessionId 自动丢弃 context，也不保存上下文去重缓存。sessionId 不能证明 Provider 已保存每项信息，更不能证明 resume 成功。reset、新建 Provider 会话或恢复失败需要重新提供必要背景；不得让空 Context 的执行声称已恢复旧背景。
+**MUST NOT**：Worker、daemon、worker-access、Host 和 Adapter 不得按 sessionId、run 序号或 hash 缓存、补齐、合并、去重或省略模型上下文。Host 只渲染本轮快照；两个不同 Event 显式发送相同 item 时两轮均须注入。原 Event 的幂等重投仍复用原快照，不产生新的业务采集。
+
+空模型上下文是有效输入，不表示缺失；执行配置可以同时存在，renderer 仍返回空字符串。sessionId 不保证 Provider 已保存背景或 resume 成功。reset、新建 Provider 会话或恢复失败后，由业务方重新提供所需背景；底层报告真实会话／恢复结果，不从历史 Event 自动补背景，也不得声称空输入已恢复旧背景。
 
 总体方案、代码退出清单和验收见 [Event Context IPD-SE](../../docs/event-context-rendering-ipd-se.md)。本文约束模型输入，native/canonical 输出模式不影响注入分类。

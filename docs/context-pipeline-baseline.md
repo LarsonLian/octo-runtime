@@ -1,5 +1,7 @@
 # Harness 统一 Context 处理实施基线
 
+> 2026-10-13 全局 Context 约束：每轮模型上下文由业务发起方决定，selection 等业务项可不发送；可传空、只传当轮需要的项或显式重复。必要的 adapter 等执行配置独立校验且不注入 LLM。底层只转发并渲染本轮快照，不按 sessionId 缓存、补齐、合并、去重或省略；reset、新建 Provider 会话或 resume 失败后，由业务方重新提供必要背景。详见 [Event Context IPD-SE 0.3](../../docs/event-context-rendering-ipd-se.md)。本文原有 Compiler/Pipeline、材料预取、场景自动追加与此约束冲突的内容仅保留历史背景；旧链路退出尚未完成。
+
 > 2026-10-13：后续目标改为发起方构造 Event Context、接入层转发、Host 固定渲染。新约束、代码退出清单和验收见 [Event Context IPD-SE 0.2](../../docs/event-context-rendering-ipd-se.md)。本文为历史 Pipeline 实施记录，不作为新增编译阶段的依据；新方案尚未实施。
 
 本文保留 v1 实施历史；当前 v2 合同与验证状态见 [Context v2 验证记录](context-simplification-validation.md)，不再以本文旧类型清单作为在线协议。

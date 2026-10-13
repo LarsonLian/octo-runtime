@@ -6,11 +6,15 @@ Octo Harness 是 provider-neutral 的本地 Agent Runtime。现有 `octo-harness
 
 Event 发起方必须完成 awareness 采集、材料选择、指引编写和 Context 构造，并随 Event 保存同一份协议快照。后续 Run 与 Host 沿用其内容和顺序，重投不得重新采集业务状态。
 
+每轮模型上下文完全由业务发起方决定：selection、项目背景、任务状态或 extra 均非框架必填项。业务方可以首次发送必要背景，续聊无变化时传空，有变化时仅发送本轮需要的项，也可以显式重复发送。必要的 adapter 等执行配置仍按执行合同及 defaults/mandatory 校验，不注入 LLM 上下文块。
+
+底层只转发、渲染本轮数据，不按 `sessionId`、run 序号或 hash 缓存、补齐、合并、去重或省略模型上下文。两个不同 Event 显式发送相同 item 时均须传递；原 Event 幂等重投仍复用原快照。`sessionId` 存在不保证 resume 成功；reset、新建 Provider 会话或恢复失败后，业务方负责重新提供所需背景，底层返回真实结果，不自动补背景。
+
 worker-access 必须校验并转发模型上下文，不得追加场景指引、预取任务材料或调用模型摘要。执行配置解析、身份与授权校验、工作区和图片准备、租约、会话及取消仍由对应执行模块负责。
 
 Host 必须通过单一纯函数，将可注入 item 按固定开始/结束标记及 `contexts` / `context-item` 外层标记拼接。item 内部使用换行纯文本 `指引: ...`、`数据: ...`，不添加子标签、不做 XML 实体转义，也不要求严格 XML。执行配置不注入模型上下文块；合法 `extra.*` item 的指引和 payload 完整注入，不增加逐业务 Compiler、Resolver 或字段投影配置。
 
-详细设计见 [Event Context 与 Host 固定渲染：IPD-SE 基线](../docs/event-context-rendering-ipd-se.md)，包含 FEAT、MUST / MUST NOT、协议细节、删除/迁移清单和验收条件。**当前为设计评审稿，尚未实施本次代码改造。** 下文模块表描述现有实现；其中 Context Builder 的执行编译/压缩和 worker-access 的 Pipeline 是待退出职责。Run 7 / Context v3 保持不变，拟议字段变化必须同步生产者和消费者，不增加旧版兼容。
+详细设计见 [Event Context 与 Host 固定渲染：IPD-SE 基线](../docs/event-context-rendering-ipd-se.md)，包含 FEAT、MUST / MUST NOT、协议细节、删除/迁移清单和验收条件。Harness M1 共享协议与 Host renderer 已通过针对性自动验证；旧链路删除及跨项目验收尚未完成，见 [里程碑记录](docs/context-rendering-milestones.md)。下文模块表描述现有实现；其中 Context Builder 的执行编译/压缩和 worker-access 的 Pipeline 是待退出职责。Run 7 / Context v3 保持不变，拟议字段变化必须同步生产者和消费者，不增加旧版兼容。
 
 ## 基础架构
 

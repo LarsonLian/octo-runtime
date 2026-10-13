@@ -1,5 +1,7 @@
 # Context v3 可选扩展
 
+> 2026-10-13 全局 Context 约束：每轮模型上下文由业务发起方决定，selection 等业务项可不发送；可传空、只传当轮需要的项或显式重复。必要的 adapter 等执行配置独立校验且不注入 LLM。底层只转发并渲染本轮快照，不按 sessionId 缓存、补齐、合并、去重或省略；reset、新建 Provider 会话或 resume 失败后，由业务方重新提供必要背景。详见 [Event Context IPD-SE 0.3](../../docs/event-context-rendering-ipd-se.md)。本文原有 Compiler/Pipeline、材料预取、场景自动追加与此约束冲突的内容仅保留历史背景；旧链路退出尚未完成。
+
 > 2026-10-13：本文记录当前字段投影实现。后续设计按 [Event Context IPD-SE 0.2](../../docs/event-context-rendering-ipd-se.md) 收敛：合法 `extra.*` 由 Host 完整渲染，退出 Worker 字段投影及扩展编译快照。新方案尚未实施，不能把该目标视为当前 API 已支持。
 
 Context 保持 `octo.context-envelope/v3` 的 `schema + items`，Run 保持 `schema_version=7`。协议允许结构合法的未知 `namespace/name`；未知 item 计入数量、字节预算、canonical hash，并在中转时完整保留。已登记类型继续执行自己的 payload 校验。
