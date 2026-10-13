@@ -218,7 +218,7 @@ export interface ExecutionEnvelope {
     namespace: string;
     agent_id: string;
     session_id: string;
-    trigger: { kind: string; occurrence_id: string; occurred_at?: string };
+    trigger: { kind: string; occurrence_id?: string; occurred_at?: string };
     input: Record<string, unknown>;
     context: ContextEnvelope;
     execution_policy?: Record<string, unknown>;
