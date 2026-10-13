@@ -1,3 +1,5 @@
+// 运行时回归：用加密 WS 验证入站授权、会话排队、即时取消与交互回传。
+// 此测试证明协议与编排行为，不能代替真实 IM 客户端验收。
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -13,8 +15,10 @@ import {
   diffieHellman
 } from "node:crypto";
 import { WebSocketServer } from "ws";
-import { ImRuntime, loadImBots } from "../packages/octo-harness-channel-im/dist/index.js";
+import { ImRuntime } from "../packages/octo-harness-channel-im/dist/index.js";
+import { loadCliImConfiguration } from "../apps/daemon/dist/im-config.js";
 import { waitFor } from "./agent-work-runtime-fixture.js";
+import { imCardProfile } from "./fixtures/im-card-profile.js";
 const md5 = (s) => createHash("md5").update(s).digest("hex");
 const str = (s) => {
   const b = Buffer.from(s),
@@ -74,6 +78,23 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   const iv = Buffer.from("0123456789abcdef");
   const replies = [],
     calls = [];
+  const cancellations = [],
+    responses = [];
+  let releaseInteraction, releaseCancellation;
+  const cards = [],
+    actions = [],
+    acknowledged = [],
+    polls = new Set();
+  let eventNo = 0;
+  let failFirstAck = true;
+  const flushPolls = () => {
+    for (const poll of polls) {
+      const batch = actions.filter((action) => action.event_id > poll.cursor);
+      if (!batch.length) continue;
+      poll.res.end(JSON.stringify({ results: batch }));
+      polls.delete(poll);
+    }
+  };
   const crypt = (text, decrypt = false) => {
     const cipher = decrypt
       ? createDecipheriv("aes-128-cbc", key, iv)
@@ -98,6 +119,34 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
           ws_url: `ws://127.0.0.1:${server.address().port}`
         })
       );
+    } else if (req.url === "/v1/bot/card/profile") res.end(JSON.stringify(imCardProfile()));
+    else if (req.url === "/v1/bot/sendMessage") {
+      const body = JSON.parse(Buffer.concat(chunks));
+      const messageId = String(2000 + cards.length);
+      cards.push({ messageId, frame: body.payload.data });
+      res.end(JSON.stringify({ message_id: messageId }));
+    } else if (req.url === "/v1/bot/events") {
+      const body = JSON.parse(Buffer.concat(chunks));
+      const poll = { res, cursor: body.event_id };
+      polls.add(poll);
+      const timer = setTimeout(() => {
+        polls.delete(poll);
+        res.end('{"results":[]}');
+      }, 1500);
+      res.once("close", () => {
+        clearTimeout(timer);
+        polls.delete(poll);
+      });
+      flushPolls();
+    } else if (/^\/v1\/bot\/events\/\d+\/ack$/.test(req.url)) {
+      if (failFirstAck) {
+        failFirstAck = false;
+        res.statusCode = 500;
+        res.end("{}");
+        return;
+      }
+      acknowledged.push(Number(req.url.split("/").at(-2)));
+      res.end("{}");
     } else res.end("{}");
   });
   const ws = new WebSocketServer({ server });
@@ -172,13 +221,49 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   const host = {
     list: async () => [],
     probe: async () => ({}),
-    cancel: async () => ({ cancelled: true }),
-    respondInteraction: async () => {},
+    cancel: async (invocationId) => {
+      cancellations.push(invocationId);
+      releaseCancellation?.();
+      releaseInteraction?.();
+      return { cancelled: true };
+    },
+    respondInteraction: async (invocationId, response) => {
+      responses.push({ invocationId, response });
+      releaseInteraction?.();
+    },
     async *invoke(adapter, request) {
       assert.equal(adapter, "codex");
-      assert.equal(request.approvalMode, "full_access");
+      assert.equal(request.approvalMode, "ask");
       assert.equal(request.runMetadata.actorId, "owner");
       calls.push(request);
+      if (request.prompt === "approval") {
+        const gate = new Promise((resolve) => (releaseInteraction = resolve));
+        yield {
+          protocolVersion: 2,
+          type: "interaction.requested",
+          payload: {
+            interactionId: "interaction-fixture",
+            executionInstanceId: "instance",
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            kind: "approval",
+            request: { operation: { summary: "Approve fixture" } }
+          }
+        };
+        await gate;
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
+        return;
+      }
+      if (request.prompt === "wait" || request.prompt === "card-wait") {
+        await new Promise((resolve) => (releaseCancellation = resolve));
+        yield { protocolVersion: 2, type: "run.cancelled", payload: {} };
+        return;
+      }
+      if (request.prompt === "retry-card") {
+        if (calls.filter((call) => call.prompt === "retry-card").length === 1)
+          yield { protocolVersion: 2, type: "run.failed", payload: {} };
+        else yield { protocolVersion: 2, type: "run.completed", payload: {} };
+        return;
+      }
       yield {
         protocolVersion: 2,
         type: "session.update",
@@ -201,10 +286,14 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   const runtime = new ImRuntime(
     {
       id: "fixture",
+      type: "octo",
+      enabled: true,
+      allowedSenderIds: ["owner", "other"],
       apiUrl: `http://127.0.0.1:${server.address().port}`,
       botId: "bot",
       spaceId: "space",
-      tokenFile,
+      token: "bf_fixture",
+      approvalMode: "ask",
       adapterType: "codex",
       workdir: dir,
       context: { schema: "octo.context-envelope/v3", items: [] }
@@ -220,21 +309,21 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   await runtime.start();
   assert.equal(runtime.status.connected, true);
   let seq = 0;
-  const send = (content) => {
+  const send = (content, sender = "owner", channel = "bot") => {
     const n = ++seq,
       id = BigInt(1000 + n),
       stamp = 12345,
       clientNo = `incoming-${n}`,
       payload = crypt(JSON.stringify({ type: 1, content, space_id: "space" }));
-    const hash = md5(crypt(`${id}${n}${clientNo}${stamp}ownerbot1${payload}`));
+    const hash = md5(crypt(`${id}${n}${clientNo}${stamp}${sender}${channel}1${payload}`));
     conn.send(
       pack(
         0x52,
         Buffer.concat([
           Buffer.from([0]),
           str(hash),
-          str("owner"),
-          str("bot"),
+          str(sender),
+          str(channel),
           Buffer.from([1]),
           u32(0),
           str(clientNo),
@@ -262,6 +351,68 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   assert.equal(calls[1].providerSession, undefined);
   assert.equal(calls[1].agentSessionId, session);
   assert.equal(calls[1].sessionGeneration, 2);
+  send("approval");
+  await waitFor(() => replies.some((reply) => reply.includes("/approve interaction-fixture")));
+  send("/approve interaction-fixture", "stranger");
+  send("/approve interaction-fixture", "other");
+  await waitFor(() => replies.some((reply) => reply.includes("不属于当前会话")));
+  assert.equal(responses.length, 0);
+  send("/approve interaction-fixture");
+  await waitFor(() => responses.length === 1 && !runtime.status.sessions[0].active);
+  assert.equal(responses[0].invocationId, calls[2].invocationId);
+  assert.equal(responses[0].response.outcome, "accepted");
+  send("wait");
+  await waitFor(() => !!releaseCancellation);
+  send("/stop");
+  await waitFor(
+    () => cancellations.length === 1 && replies.some((reply) => reply.includes("本轮执行已中断"))
+  );
+  assert.equal(cancellations[0], calls[3].invocationId);
+  assert.equal(calls.length, 4, "control messages must not invoke another model run");
+  const push = (eventType, data) => {
+    const id = ++eventNo;
+    actions.push({ event_id: id, event_type: eventType, event_data: data });
+    flushPolls();
+    return id;
+  };
+  send("card-wait");
+  await waitFor(
+    () => calls.length === 5 && cards.some((card) => card.frame.reasoningId === calls[4].runId)
+  );
+  const current = cards.find((card) => card.frame.reasoningId === calls[4].runId);
+  const callback = {
+    message_id: current.messageId,
+    channel_id: "owner",
+    channel_type: 1,
+    operator_uid: "owner",
+    space_id: "space",
+    action_id: "reasoning_stop"
+  };
+  const unknown = push("doc_comment_mention", {});
+  const forged = push("card_action", {
+    ...callback,
+    operator_uid: "stranger",
+    inputs: { operator_uid: "owner" }
+  });
+  const stopped = push("card_action", callback);
+  await waitFor(() => cancellations.length === 2 && acknowledged.includes(stopped), 5000);
+  assert.equal(cancellations[1], calls[4].invocationId);
+  assert.ok(!acknowledged.includes(unknown));
+  assert.ok(!acknowledged.includes(forged));
+  send("retry-card");
+  await waitFor(
+    () => calls.length === 6 && cards.some((card) => card.frame.reasoningId === calls[5].runId)
+  );
+  const failed = cards.find((card) => card.frame.reasoningId === calls[5].runId);
+  const retry = push("card_action", {
+    ...callback,
+    message_id: failed.messageId,
+    action_id: "reasoning_retry"
+  });
+  await waitFor(() => calls.length === 7 && acknowledged.includes(retry), 5000);
+  assert.notEqual(calls[6].runId, calls[5].runId);
+  assert.equal(calls[6].runMetadata.triggerOccurrenceId, `card_action:${retry}`);
+  assert.equal(calls[6].prompt, "retry-card");
 });
 
 test("duplicate bot identities fail before opening connections", async (t) => {
@@ -269,6 +420,7 @@ test("duplicate bot identities fail before opening connections", async (t) => {
   t.after(() => rm(dir, { recursive: true, force: true }));
   const bot = {
     id: "a",
+    type: "octo",
     apiUrl: "https://im.example/api",
     botId: "bot",
     spaceId: "s",
@@ -278,5 +430,5 @@ test("duplicate bot identities fail before opening connections", async (t) => {
     context: { schema: "octo.context-envelope/v3", items: [] }
   };
   await writeFile(join(dir, "im.json"), JSON.stringify({ bots: [bot, { ...bot, id: "b" }] }));
-  assert.throws(() => loadImBots(dir), /IM_BOT_DUPLICATED/);
+  assert.throws(() => loadCliImConfiguration(dir), /IM_BOT_DUPLICATED/);
 });

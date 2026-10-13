@@ -165,6 +165,9 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-host':
         specifier: workspace:*
         version: link:../../packages/octo-harness-adapter-host
+      '@mininglamp-oss/octo-harness-channel-im':
+        specifier: workspace:*
+        version: link:../../packages/octo-harness-channel-im
       '@mininglamp-oss/octo-harness-context-builder':
         specifier: workspace:*
         version: link:../../packages/octo-harness-context-builder
@@ -347,6 +350,9 @@ importers:
       '@mininglamp-oss/octo-harness-context-builder':
         specifier: workspace:*
         version: link:../octo-harness-context-builder
+      '@mininglamp-oss/octo-harness-core':
+        specifier: workspace:*
+        version: link:../octo-harness-core
       '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
         version: link:../octo-harness-protocol

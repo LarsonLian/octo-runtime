@@ -19,3 +19,4 @@ export type {
   SubmitAgentRunResult
 } from "./engine.js";
 export type { LocalAgentConfig } from "./context.js";
+export { resolveLocalContext, localRuntimeLimits } from "./context.js";

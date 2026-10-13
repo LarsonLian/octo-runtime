@@ -4,11 +4,12 @@
 import { inspect } from "node:util";
 import { resolveDaemonRuntimePaths } from "./runtime-options.js";
 import { startDaemonServer, type DaemonApplication } from "./server.js";
+import { loadCliImConfiguration } from "./im-config.js";
 
 const runtimePaths = resolveDaemonRuntimePaths();
 let app: DaemonApplication | undefined;
 try {
-  app = await startDaemonServer(runtimePaths);
+  app = await startDaemonServer({ ...runtimePaths, ...loadCliImConfiguration(runtimePaths.homePath!) });
 } catch (error) {
   const verbose = process.argv.includes("--verbose");
   const message = error instanceof Error ? error.message : String(error);

@@ -1,3 +1,7 @@
+/**
+ * WuKong 传输：负责 Bot 注册、加密握手、二进制帧编解码和收发确认。
+ * 保留原通道的协议兼容性；授权、Context 和执行策略由上层处理。
+ */
 import {
   createCipheriv,
   createDecipheriv,

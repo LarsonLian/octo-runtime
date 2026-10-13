@@ -67,6 +67,34 @@ octo-harness daemon status
 - 生命周期命令作用于整个 Home。daemon 自动发现 Home 下包含合法 `config.json` 的 profile，并由一个 supervisor 管理各自的 credential、`runtime_id`、WSS 和内存重放窗口。
 - 锁屏不会结束已登录用户的服务；注销会结束 macOS LaunchAgent 和默认 Windows 用户任务。Linux 注销后是否继续取决于管理员是否启用 linger。
 
+## IM 默认接入
+
+本节仅描述 CLI 选择的文件入口。客户 App 经 packages/SDK 显式提供配置与凭据，自己决定 Home、账号目录及启停；共享 Daemon 不自动读取 `im.json`。IM 平台连接器不是 MCP 连接器，职责见 [Channel IM README](../../packages/octo-harness-channel-im/README.md)。
+
+```bash
+octo-harness --home <绝对路径> daemon run
+```
+
+CLI 在进程入口调用文件适配，读取 `<home>/im.json`；不存在时接入列表为空。格式为 `{ "bots": [ ... ] }`，`type` 必须显式为 octo 或 wecom，不兼容无 type 的旧配置。
+
+| 字段                                        | CLI 文件入口含义                                                                                       |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| id / type / enabled                         | 稳定接入身份、IM 平台；缺省 enabled:false，不连接。                                                    |
+| apiUrl / botId / spaceId                    | Octo API、Bot 与 Space 身份；企业微信不填写。                                                          |
+| token 或 tokenFile                          | Octo bf_token 或凭据文件；相对文件路径由此显式文件入口按 Home 解析。                                   |
+| appBot / appSecret 或 appSecretFile / wsUrl | 企业微信 Bot 与凭据；详情见多平台设计。                                                                |
+| adapterType / workdir                       | 执行 defaults，与 IM 平台 type 独立；缺失时文件 loader 补默认值并原子写回。                            |
+| context                                     | 可选 Context v3，执行 adapter、模型/思考强度、workspace、approval 按协议解析；材料由每轮 IM 流程构造。 |
+| model / approvalMode / runTimeoutMs         | 可选执行 defaults；IM 构造 Context 时 approval 缺省 full_access，runTimeout 缺省 120 秒。              |
+| allowedSenderIds / groupIds                 | 可选发送者与 Octo 父群准入；Octo 群/话题还要求真实 @Bot。                                              |
+| groupRules / historyLimit / cards / typing  | Octo 规则/有限历史与呈现开关；其他平台不使用。                                                         |
+
+文件 loader 对缺省 adapter 写入 codex（Context 已指定 adapter 时用该值）；缺省 workdir 使用 Context 固定目录，否则分配 Home 内的独立工作区，仅显式启用的自动分配目录才创建。该目录和补配置行为属于选用文件入口的宿主，不是公共 Runtime 的目录约定。凭据文件及包含明文凭据的配置文件须为 POSIX 0600；空凭据、空文件或不存在的凭据文件表示等待就绪。
+
+当前 CLI 启动时发现一次配置，最多 16 个接入并拒绝重复身份。**没有文件 watcher 或 CLI reload 命令**，编辑/创建 im.json 不会自动更新运行中的列表。已登记的未就绪凭据在退避重试时重新读取；新增/更新/移除使用 SDK 或 Daemon 的 im.upsert/im.remove/im.status，见 [动态接入](../../packages/octo-harness-channel-im/README.md#动态接入本地设备新增-agent)。SIGHUP 仍用于关闭。
+
+配置示例与企业微信协议见 [多平台设计](../../packages/octo-harness-channel-im/docs/multi-platform-design.md)。文件路径、账号和 WorkApp 会话设置不自动传播到其他宿主。
+
 ## Doctor
 
 ```bash

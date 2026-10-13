@@ -4,7 +4,7 @@ import {
   type AdapterHostRpc
 } from "@mininglamp-oss/octo-harness-adapter-host";
 import { HarnessEngine, SqliteStore, type Store } from "@mininglamp-oss/octo-harness-core";
-import { ImRuntime, loadImBots, type ImBotConfig } from "@mininglamp-oss/octo-harness-channel-im";
+import { ImChannelManager, type ImBotConfig, type ImCredentialSource } from "@mininglamp-oss/octo-harness-channel-im";
 import {
   assertInteractionResponse,
   assertNativeInteractionResponse,
@@ -24,8 +24,9 @@ import { InvocationManifest } from "./invocation-manifest.js";
 import { HarnessDaemon } from "./runtime-core.js";
 
 export interface StartDaemonServerOptions {
-  /** Optional IM bot configuration; otherwise read <home>/im.json. */
+  /** 宿主显式提供 IM 登记；省略即关闭接入，公共 Daemon 不自动发现客户配置文件。 */
   imBots?: ImBotConfig[];
+  imCredentials?: ImCredentialSource;
   homePath?: string;
   pidPath?: string;
   /** Enables foreground lifecycle messages when launched in the foreground. */
@@ -83,6 +84,7 @@ export interface DaemonApplication {
   hostProcess: AdapterHostProcess;
   runtime: DaemonRuntimeInfo;
   agentWorkSupervisor?: AgentWorkSupervisor;
+  im: ImChannelManager;
   close(): Promise<void>;
 }
 
@@ -95,6 +97,7 @@ export interface DaemonApplication {
 export async function startDaemonServer({
   homePath,
   imBots,
+  imCredentials,
   pidPath,
   socketPath,
   storePath,
@@ -112,7 +115,8 @@ export async function startDaemonServer({
   ) {
     throw new Error("adapterHostRestartDelaysMs must contain positive delays");
   }
-  const configuredImBots = imBots ?? loadImBots(homePath ?? dirname(storePath));
+  // 配置来源属于宿主：CLI 可读 im.json，SDK 应用可动态登记，Daemon 只接收结果。
+  const configuredImBots = imBots ?? [];
   let releasePid = (): Promise<void> => Promise.resolve();
   let invocationManifest: InvocationManifest;
   const invocationManifestPath = join(homePath ?? dirname(storePath), "run", "invocations.json");
@@ -326,10 +330,10 @@ export async function startDaemonServer({
 
   monitorAdapterHost(hostProcess);
   const host = new HostRunService(transportHost);
-  const imRuntimes = configuredImBots.map((config) => new ImRuntime(config, { host }));
+  const im = new ImChannelManager({ host, ...(imCredentials ? { credentials: imCredentials } : {}) });
   Object.defineProperty(runtime, "im", {
     enumerable: true,
-    get: () => imRuntimes.map((im) => im.status)
+    get: () => im.status
   });
   const engine = new HarnessEngine({ store, host });
   const daemon = new HarnessDaemon({ engine, store });
@@ -360,6 +364,7 @@ export async function startDaemonServer({
         store,
         host,
         runtime,
+        im,
         agentWorkSupervisor,
         connectionId
       });
@@ -376,7 +381,7 @@ export async function startDaemonServer({
     // 0600 restricts it to the current host account (there is no RBAC above it).
     if (process.platform !== "win32") await chmod(socketPath, 0o600);
     await agentWorkSupervisor?.start();
-    await Promise.all(imRuntimes.map((im) => im.start()));
+    for (const config of configuredImBots) await im.upsert(config, 1);
     if (consoleOutput)
       console.error("daemon ready", {
         pid: process.pid,
@@ -390,7 +395,7 @@ export async function startDaemonServer({
     hostRestartAbort?.abort();
     if (hostStableReset) clearTimeout(hostStableReset);
     daemon.stop();
-    await Promise.allSettled(imRuntimes.map((im) => im.close()));
+    await im.close();
     await agentWorkSupervisor?.close();
     await host.close();
     await hostRestartTask?.catch(() => undefined);
@@ -412,13 +417,14 @@ export async function startDaemonServer({
     },
     runtime,
     agentWorkSupervisor,
+    im,
     async close(): Promise<void> {
       shuttingDown = true;
       hostRestartAbort?.abort();
       if (hostStableReset) clearTimeout(hostStableReset);
       if (consoleOutput) console.error("daemon stopping");
       daemon.stop();
-      await Promise.allSettled(imRuntimes.map((im) => im.close()));
+      await im.close();
       await agentWorkSupervisor?.close();
       await host.close();
       for (const connection of connections) connection.destroy();
@@ -442,6 +448,7 @@ async function handleRequestLine({
   store,
   host,
   runtime,
+  im,
   agentWorkSupervisor,
   connectionId
 }: {
@@ -451,6 +458,7 @@ async function handleRequestLine({
   store: Store;
   host: HostRunService;
   runtime: DaemonRuntimeInfo;
+  im: ImChannelManager;
   agentWorkSupervisor: AgentWorkSupervisor | undefined;
   connectionId: string;
 }): Promise<void> {
@@ -478,6 +486,7 @@ async function handleRequestLine({
       store,
       host,
       runtime,
+      im,
       agentWorkSupervisor
     });
     if (!socket.destroyed && socket.writable)
@@ -680,6 +689,7 @@ async function dispatch({
   store,
   host,
   runtime,
+  im,
   agentWorkSupervisor
 }: {
   request: DaemonRequest;
@@ -687,10 +697,18 @@ async function dispatch({
   store: Store;
   host: HostRunService;
   runtime: DaemonRuntimeInfo;
+  im: ImChannelManager;
   agentWorkSupervisor: AgentWorkSupervisor | undefined;
 }): Promise<unknown> {
   const params = request.params ?? {};
   switch (request.method) {
+    case "im.status":
+      return im.status;
+    case "im.upsert":
+      return im.upsert(params.config as ImBotConfig, positiveInteger(params.revision, "revision", 1));
+    case "im.remove":
+      await im.remove(requiredString(params.id, "id"), positiveInteger(params.revision, "revision", 1));
+      return { removed: true };
     case "status":
       return {
         ready: runtime.adapterHost.state === "ready",

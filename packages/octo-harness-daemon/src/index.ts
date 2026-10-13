@@ -7,6 +7,8 @@ export * from "@mininglamp-oss/octo-harness-worker-access/managed-profile";
 export * from "@mininglamp-oss/octo-harness-worker-access/tool-authorizations";
 export * from "./runtime-core.js";
 export * from "./server.js";
+export type { ImBotConfig, ImCredentialSource } from "@mininglamp-oss/octo-harness-channel-im";
 
 
 export * from "./host-run-service.js";
+export { loadImBots, configuredCredential } from "@mininglamp-oss/octo-harness-channel-im";

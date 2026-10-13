@@ -9,6 +9,7 @@ import {
   type InteractionResponse
 } from "@mininglamp-oss/octo-harness-protocol";
 import type { HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
+import type { ImBotConfig } from "@mininglamp-oss/octo-harness-daemon";
 import { EmbeddedHarnessError, asEmbeddedError } from "./errors.js";
 import { ensureTenantEnrollment, resetTenantEnrollment } from "./enrollment.js";
 import {
@@ -118,6 +119,31 @@ export class NodeEmbeddedHarness implements EmbeddedHarness {
 
   health(): EmbeddedHealth {
     return this.#snapshot;
+  }
+
+  /** 宿主显式登记/更新一个 Bot；与账号切换串行，且只允许绑定已激活的 Octo 租户。 */
+  upsertImBot(config: ImBotConfig, revision: number): Promise<Record<string, unknown>> {
+    const snapshot = structuredClone(config);
+    return this.#enqueue(async () => {
+      const active = this.#active;
+      if (!active) throw new Error("HOST_NOT_RUNNING");
+      if (snapshot.type === "octo" && !active.tenantProfiles.has(snapshot.spaceId)) throw new Error("TENANT_NOT_ACTIVE");
+      return callDaemon(active.supervised.paths.socket, { method: "im.upsert", params: { config: snapshot, revision } });
+    });
+  }
+
+  /** 移除指定连接；递增 revision 防止迟到的旧登记重新启用它，不停止执行宿主。 */
+  removeImBot(id: string, revision: number): Promise<void> {
+    return this.#enqueue(async () => {
+      if (!this.#active) throw new Error("HOST_NOT_RUNNING");
+      await callDaemon(this.#active.supervised.paths.socket, { method: "im.remove", params: { id, revision } });
+    });
+  }
+
+  /** 查询接入与脱敏投递状态；连接在线不等于执行成功或客户端已经展示。 */
+  imStatus(): Promise<Record<string, unknown>[]> {
+    if (!this.#active) return Promise.reject(new Error("HOST_NOT_RUNNING"));
+    return callDaemon(this.#active.supervised.paths.socket, { method: "im.status" });
   }
 
   async *invokeFrames(

@@ -7,6 +7,7 @@ import type {
   InteractionResponse
 } from "@mininglamp-oss/octo-harness-protocol";
 import type { HostedAdapterMetadata } from "@mininglamp-oss/octo-harness-adapter-host";
+import type { ImBotConfig } from "@mininglamp-oss/octo-harness-daemon";
 
 export type EmbeddedPhase =
   | "idle"
@@ -99,6 +100,9 @@ export interface EmbeddedHealth {
 }
 
 export interface EmbeddedHarness {
+  upsertImBot(config: ImBotConfig, revision: number): Promise<Record<string, unknown>>;
+  removeImBot(id: string, revision: number): Promise<void>;
+  imStatus(): Promise<Record<string, unknown>[]>;
   invoke: HostInvoke;
   invokeFrames(
     adapterType: string,
