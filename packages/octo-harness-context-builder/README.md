@@ -1,5 +1,7 @@
 # 上下文构造与本地准备
 
+> 目标职责见 [Event Context IPD-SE 0.2](../../../docs/event-context-rendering-ipd-se.md)：本包保留发起侧构造工具；编译与材料摘要计划删除，工作区和图片准备迁入执行模块。以下记录当前实现，尚未实施本次退出清单。
+
 ## 责任边界
 
 - 负责：根入口提供浏览器可用的场景上下文构造。context-preparation、run-context、context-compaction、input-images 和两种 material-compaction 子入口提供 Node 侧执行准备工具。

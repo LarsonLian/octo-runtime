@@ -1,5 +1,7 @@
 # Harness 统一 Context 处理实施基线
 
+> 2026-10-13：后续目标改为发起方构造 Event Context、接入层转发、Host 固定渲染。新约束、代码退出清单和验收见 [Event Context IPD-SE 0.2](../../docs/event-context-rendering-ipd-se.md)。本文为历史 Pipeline 实施记录，不作为新增编译阶段的依据；新方案尚未实施。
+
 本文保留 v1 实施历史；当前 v2 合同与验证状态见 [Context v2 验证记录](context-simplification-validation.md)，不再以本文旧类型清单作为在线协议。
 
 日期：2026-10-08（Asia/Shanghai）。版本：`0.3`。状态：统一入口、阶段预算、材料恢复与 Codex 原生应用证据已实现。其他 Adapter 仍按各自已验证的能力拒绝不支持的资源类型。

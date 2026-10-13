@@ -1,5 +1,7 @@
 # Context v3 可选扩展
 
+> 2026-10-13：本文记录当前字段投影实现。后续设计按 [Event Context IPD-SE 0.2](../../docs/event-context-rendering-ipd-se.md) 收敛：合法 `extra.*` 由 Host 完整渲染，退出 Worker 字段投影及扩展编译快照。新方案尚未实施，不能把该目标视为当前 API 已支持。
+
 Context 保持 `octo.context-envelope/v3` 的 `schema + items`，Run 保持 `schema_version=7`。协议允许结构合法的未知 `namespace/name`；未知 item 计入数量、字节预算、canonical hash，并在中转时完整保留。已登记类型继续执行自己的 payload 校验。
 
 Octo 的固定类型目录负责标品处理、持久化及 mandatory 约束。消费阶段使用 `findContextTypeDefinition` 查询可选处理能力；没有定义时跳过该阶段。显式要求标品定义的接口 `contextTypeDefinition` 仍会拒绝未知类型。未知类型不能直接保存为 defaults 或 mandatory。

@@ -34,6 +34,7 @@ import {
   type MessageProvenance
 } from "@mininglamp-oss/octo-harness-protocol";
 import { InvocationExperience } from "./experience.js";
+import { withModelContexts } from "./model-input.js";
 import { hostLog } from "./host-log.js";
 import {
   ACTIVITY_CAPABILITY,
@@ -262,7 +263,7 @@ export class AdapterHost {
         "Invocation already executed; subscribe to the retained stream"
       );
     run.started = true;
-    const frozenRequest = { ...run.request!, signal: request.signal };
+    const frozenRequest = withModelContexts({ ...run.request!, signal: request.signal });
     run.request = undefined;
     return this.#streamInvocation(adapterType, frozenRequest, receipt);
   }

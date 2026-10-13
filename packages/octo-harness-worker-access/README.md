@@ -1,5 +1,7 @@
 # Worker 接入
 
+> 目标职责见 [Event Context IPD-SE 0.2](../../../docs/event-context-rendering-ipd-se.md)：模型上下文只校验和转发，场景追加、任务材料预取、Compiler/Pipeline 与摘要计划退出；授权、租约、工作区及执行管理继续保留。以下记录当前实现，尚未实施本次退出清单。
+
 ## 责任边界
 
 - 负责：管理 Worker 注册、profile、WS 建连重连、远端命令与准备回执、执行 envelope 转换和事件回传。构造 AgentWorkRuntime / AgentWorkSupervisor 时由宿主传入 AdapterHostRpc。

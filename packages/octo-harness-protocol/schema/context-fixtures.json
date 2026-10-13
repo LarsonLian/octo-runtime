@@ -183,8 +183,8 @@
         }
       ]
     },
-    "expected_canonical": "{\"items\":[{\"name\":\"adapter\",\"namespace\":\"octo.execution\",\"payload\":{\"type\":\"codex\"}},{\"name\":\"model\",\"namespace\":\"octo.execution\",\"payload\":{\"reasoning\":{\"effort\":\"high\"},\"selection\":{\"id\":\"configured-model\"}}},{\"name\":\"approval_policy\",\"namespace\":\"octo.security\",\"payload\":{\"mode\":\"ask\"}}],\"schema\":\"octo.context-envelope/v3\"}",
-    "expected_hash": "sha256:640d161b37536eadbc1f29eef8c6af31f5a9a8cde54fb3e560c3efe6e7cdd13d"
+    "expected_canonical": "{\"items\":[{\"name\":\"adapter\",\"namespace\":\"octo.execution\",\"payload\":{\"type\":\"codex\"}},{\"name\":\"approval_policy\",\"namespace\":\"octo.security\",\"payload\":{\"mode\":\"ask\"}},{\"name\":\"model\",\"namespace\":\"octo.execution\",\"payload\":{\"reasoning\":{\"effort\":\"high\"},\"selection\":{\"id\":\"configured-model\"}}}],\"schema\":\"octo.context-envelope/v3\"}",
+    "expected_hash": "sha256:7b8a11b44b9dce8a4da8c359f17cd905bc0be848038e4db2ce3a5c2851897812"
   },
   {
     "name": "provider-default",
@@ -5778,5 +5778,69 @@
       ]
     },
     "error": "CONTEXT_SCHEMA_INVALID"
+  },
+  {
+    "name": "extra-guidance-and-order",
+    "valid": true,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "extra.document",
+          "name": "selection",
+          "guidance": "理解选区 <>&\n保留原文",
+          "payload": {
+            "text": "中文",
+            "values": [2, 1]
+          }
+        },
+        {
+          "namespace": "extra.project",
+          "name": "current",
+          "payload": {
+            "project_id": "p1"
+          }
+        }
+      ]
+    },
+    "expected_canonical": "{\"items\":[{\"guidance\":\"理解选区 <>&\\n保留原文\",\"name\":\"selection\",\"namespace\":\"extra.document\",\"payload\":{\"text\":\"中文\",\"values\":[2,1]}},{\"name\":\"current\",\"namespace\":\"extra.project\",\"payload\":{\"project_id\":\"p1\"}}],\"schema\":\"octo.context-envelope/v3\"}",
+    "expected_hash": "sha256:975f141811c8582b25ee3efa9cdac50cca5e5ab2ffeee07f34d0f2d04da26c04"
+  },
+  {
+    "name": "guidance-null",
+    "valid": false,
+    "error": "CONTEXT_SCHEMA_INVALID",
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "extra.document",
+          "name": "selection",
+          "guidance": null,
+          "payload": {
+            "text": "中文",
+            "values": [2, 1]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "execution-guidance-forbidden",
+    "valid": false,
+    "error": "CONTEXT_GUIDANCE_FORBIDDEN",
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "adapter",
+          "guidance": "not model data",
+          "payload": {
+            "type": "codex"
+          }
+        }
+      ]
+    }
   }
 ]

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 export * from "./run-protocol.js";
+export * from "./model-context.js";
 export { contextHash } from "./context-hash.js";
 export { assertExecutionTarget } from "./execution-target.js";
 export type { ExecutionTarget } from "./execution-target.js";

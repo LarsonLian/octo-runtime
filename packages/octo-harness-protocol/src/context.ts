@@ -39,7 +39,7 @@ export function assertContextEnvelope(value: unknown): asserts value is ContextE
   const keys = new Set<string>();
   for (const item of value.items) {
     object(item, "CONTEXT_SCHEMA_INVALID");
-    fields(item, ["namespace", "name", "payload"]);
+    fields(item, ["namespace", "name", "guidance", "payload"]);
     for (const property of ["namespace", "name"]) {
       const text = item[property];
       if (typeof text !== "string" || text.length > 96 || !/^[a-z0-9][a-z0-9._-]*$/.test(text))
@@ -48,6 +48,15 @@ export function assertContextEnvelope(value: unknown): asserts value is ContextE
     const key = JSON.stringify([item.namespace, item.name]);
     if (keys.has(key)) throw new TypeError("CONTEXT_KEY_DUPLICATED");
     keys.add(key);
+    if (item.guidance !== undefined) {
+      if (typeof item.guidance !== "string") throw new TypeError("CONTEXT_SCHEMA_INVALID");
+      if (
+        ["octo.execution", "octo.runtime", "octo.security", "octo.control"].includes(
+          String(item.namespace)
+        )
+      )
+        throw new TypeError("CONTEXT_GUIDANCE_FORBIDDEN");
+    }
     object(item.payload, "CONTEXT_SCHEMA_INVALID");
     publicPayload(item.namespace as string, item.name as string, item.payload);
   }
@@ -68,17 +77,7 @@ export function canonicalContext(context: ContextEnvelope): string {
   return JSON.stringify(
     sorted({
       schema: context.schema,
-      items: [...context.items].sort((left, right) =>
-        left.namespace < right.namespace
-          ? -1
-          : left.namespace > right.namespace
-            ? 1
-            : left.name < right.name
-              ? -1
-              : left.name > right.name
-                ? 1
-                : 0
-      )
+      items: context.items
     })
   );
 }

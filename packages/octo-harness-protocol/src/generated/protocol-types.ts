@@ -102,7 +102,7 @@ export type ApprovalMode = "ask" | "assisted" | "full_access";
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextItem".
  */
-export type ContextItem = {namespace: string; name: string; payload: Record<string, unknown>};
+export type ContextItem = {namespace: string; name: string; guidance?: string; payload: Record<string, unknown>};
 /**
  * This interface was referenced by `OctoHarnessProtocolSchema`'s JSON-Schema
  * via the `definition` "PersistentContextEnvelope".

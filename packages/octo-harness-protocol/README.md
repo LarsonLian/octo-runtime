@@ -88,6 +88,8 @@ pnpm build                            # 3. 构建
 
 ## Context 统一处理合同
 
+内置 Context 各类型是否进入 LLM 提示词及目标通道，必须遵循 [Context v3 的 LLM 注入约束](../../docs/context-llm-injection.md)。执行参数不进入提示词；inline、references 和 extra 进入普通上下文块；已授权 control instructions 使用独立控制通道。固定格式内部使用 `指引: ...`、`数据: ...` 换行纯文本，不要求 XML。
+
 运行合同固定采用 schema 7，选路快照为 `octo.runtime-selection/v2`，Context 信封固定为 `octo.context-envelope/v3`，Compiler 为 v4、Catalog 为 v3。新增可选场景元数据不升级 Run/Context 版本；未知可选字段忽略，已识别字段继续校验。旧 `mode=binding` 不再接受；通过 candidates 或 explicit 声明设备意图，授权候选由 Worker 固定。
 
 `CONTEXT_TYPE_CATALOG` 定义每种类型的 schema、持久性、合并、强制约束、阶段和输出。`assertContextProcessorCoverage` 用于阶段开始前核对处理器；目录本身不证明宿主已经部署资源下载或 Provider 支持。
