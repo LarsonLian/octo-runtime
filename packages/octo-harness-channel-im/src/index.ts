@@ -1,4 +1,3 @@
-import { compileRunContext } from "@mininglamp-oss/octo-harness-context-builder/run-context";
 import { randomUUID } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
@@ -6,6 +5,7 @@ import type { AdapterHostRpc } from "@mininglamp-oss/octo-harness-adapter-host";
 import {
   assertContextEnvelope,
   assertInvokeRequest,
+  contextControlInstructions,
   type ContextEnvelope,
   type ProviderSession
 } from "@mininglamp-oss/octo-harness-protocol";
@@ -226,7 +226,6 @@ export class ImRuntime {
     session.lastEventId = `evt_${randomUUID()}`;
     session.lastRunId = `run_${randomUUID()}`;
     const invocationId = `invoke_${randomUUID()}`;
-    const compiled = compileRunContext(this.config.context);
     const request = {
       protocolVersion: 2 as const,
       invocationId,
@@ -236,8 +235,8 @@ export class ImRuntime {
       providerEpoch: session.generation,
       agentSource: "provisioned" as const,
       prompt,
-      modelInput: [compiled.modelContent, prompt].filter(Boolean).join("\n\n"),
-      controlInstructions: compiled.controlInstructions ?? "",
+      modelInput: prompt,
+      controlInstructions: contextControlInstructions(this.config.context),
       context: structuredClone(this.config.context),
       workdir: this.config.workdir,
       approvalMode: "full_access" as const,

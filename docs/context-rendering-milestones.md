@@ -27,3 +27,14 @@
 - 更新全局 AGENTS、生态 README/IPD-SE、Harness 架构及全部模块 README、Worker/Loop/Work App README，以及关联架构和历史 Context 文档入口。IPD-SE 增加 AC-21～25，明确三轮输入、重复、不发 selection、恢复失败与执行配置边界。
 
 验证：文档差异与本次新增相对链接检查；本里程碑不修改运行时代码，不以文档同步宣称新增 AC 已通过。
+
+## M2 本地入口退出调用前编译与 Go 合同同步
+
+日期：2026-10-13。状态：源码与针对性自动验证完成；远端 Pipeline 退出仍待完成。
+
+- Work App 和 IM 直接传递当轮结构化 Context 与原始模型输入，不再调用 compileRunContext 或拼接模型上下文前缀；可信控制指令独立传递。
+- Work App 的 Provider 会话配置 hash 只覆盖执行配置及控制指令；业务 Context 变化、传空和显式重复均不阻断 resume。
+- Worker / Loop 同步可选 guidance，Worker canonical/hash 及配置合并保留 item 顺序；同步共享正反 fixtures。
+- Host 四轮集成测试验证同一 Provider 会话的背景、空上下文、显式重复均按当轮渲染；Work App 四轮回归验证原始输入、当轮 Context 和 Provider 会话复用。
+
+验证：Protocol / IM 构建通过；Harness model-context、im-runtime、context-protocol 测试通过；Work App 会话服务 10 项测试及 TypeScript 检查通过；Worker `go test ./...`、Loop clients 测试通过。本记录不证明远端旧编译链路已删除或真实环境已验收。

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   renderModelContexts,
+  contextControlInstructions,
   contextHash,
   assertContextEnvelope
 } from "../packages/octo-harness-protocol/dist/index.js";
@@ -96,6 +97,41 @@ test("references are displayed without a resolver and controls remain separate",
   const rendered = renderModelContexts(context);
   assert.match(rendered, /task_get_materials/);
   assert.doesNotMatch(rendered, /control-only/);
+  assert.equal(contextControlInstructions(context), "control-only");
+});
+
+test("Host renders each run independently without deduplicating resumed context", async () => {
+  const received = [];
+  const host = new AdapterHost();
+  host.register({
+    metadata: {
+      type: "fixture",
+      capabilities: [],
+      agentSources: ["provisioned"],
+      executionFeatures: ["approval.full_access"],
+      protocolSupport: { protocol: "fixture", modes: ["canonical"], nativeMethods: [] }
+    },
+    async *invoke(request) {
+      received.push(request);
+      yield { protocolVersion: 2, type: "run.completed", payload: {} };
+    }
+  });
+  const snapshots = [envelope([extra]), envelope(), envelope([extra]), envelope([extra])];
+  for (const [index, context] of snapshots.entries()) {
+    const request = invokeRequest({
+      invocationId: "invoke-context-" + index,
+      runId: "run-context-" + index,
+      agentSessionId: "same-session",
+      providerSession: { adapterType: "fixture", sessionId: "same-provider-session" },
+      context,
+      approvalMode: "full_access"
+    });
+    for await (const event of host.invoke("fixture", request, { protocolMode: "canonical" })) void event;
+    const rendered = renderModelContexts(context);
+    assert.equal(received[index].modelInput, [rendered, request.modelInput].filter(Boolean).join("\n\n"));
+    assert.deepEqual(received[index].context, context);
+  }
+  assert.equal(received.length, 4);
 });
 
 test("Host freezes contexts and injects once for both modes and image input", async () => {
