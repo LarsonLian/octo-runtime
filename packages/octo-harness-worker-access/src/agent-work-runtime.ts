@@ -24,6 +24,7 @@ import type {
   AgentConfig,
   CanonicalEvent,
   ContextEnvelope,
+  ExecutionTarget,
   InteractionResponse,
   InvokeRequest,
   IssuedToolAuthorization,
@@ -226,7 +227,7 @@ export interface ExecutionEnvelope {
   continuity_mode?: "continue" | "fresh";
   provider_session?: ProviderSession;
   agent_run_request: {
-    execution_target?: import("@mininglamp-oss/octo-harness-protocol").ExecutionTarget;
+    execution_target?: ExecutionTarget;
     tool_authorizations?: ToolAuthorization[];
     scenario?: ScenarioRequest;
     namespace: string;
