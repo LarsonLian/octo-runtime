@@ -176,6 +176,31 @@ test("approval requests reject legacy flat objects and incomplete typed requests
   }
 });
 
+test("provider approval options require string identifiers and kinds", () => {
+  const payload = approvalPayload("invoke-provider-options");
+  payload.request.grantScope = "provider";
+  payload.request.providerDetails = {
+    provider: "openclaw",
+    method: "exec.approval.resolve",
+    options: [
+      { optionId: "allow-once", kind: "allow_once" },
+      { optionId: "allow-always", kind: "allow_always" },
+      { optionId: "deny", kind: "reject_once" }
+    ]
+  };
+  const event = { protocolVersion: 2, type: "interaction.requested", payload };
+  assert.doesNotThrow(() => assertCanonicalEvent(event));
+  for (const option of [
+    { optionId: 42, kind: "allow_once" },
+    { optionId: "allow-once", kind: null },
+    { optionId: { value: "allow-once" }, kind: "allow_once" },
+    { optionId: "allow-once", kind: ["allow_once"] }
+  ]) {
+    payload.request.providerDetails.options[0] = option;
+    assert.throws(() => assertCanonicalEvent(event), /APPROVAL_GRANT_SCOPE_UNSUPPORTED/);
+  }
+});
+
 test("resolved interactions require instance identity and either an outcome or an invalidation reason", () => {
   const payload = { interactionId: "interaction-contract", executionInstanceId: "invoke-contract", status: "resolved", outcome: "accepted" };
   for (const field of ["interactionId", "executionInstanceId"]) {

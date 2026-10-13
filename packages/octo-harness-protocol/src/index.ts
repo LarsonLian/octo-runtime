@@ -766,6 +766,8 @@ export function assertApprovalRequest(value: unknown): asserts value is Record<s
       details.options.some(
         (option) =>
           !isRecord(option) ||
+          typeof option.optionId !== "string" ||
+          typeof option.kind !== "string" ||
           !["allow-once:allow_once", "allow-always:allow_always", "deny:reject_once"].includes(
             `${option.optionId}:${option.kind}`
           )
