@@ -429,7 +429,10 @@ export class CodexEventNormalizer {
                     : step.status === "completed"
                       ? "completed"
                       : "pending";
-                return { text: String(step.step ?? "").slice(0, 4096), status };
+                return {
+                  text: typeof step.step === "string" ? step.step.slice(0, 4096) : "",
+                  status
+                };
               })
             }
           }

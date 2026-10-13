@@ -33,3 +33,24 @@ test("Codex maps plan revisions, MCP progress and safe retry notices", () => {
   assert.equal(retry[0].payload.params.attempt, 2);
   assert.doesNotMatch(JSON.stringify(retry), /secret/);
 });
+
+test("Codex plan text accepts strings without coercing malformed values", () => {
+  const normalizer = new CodexEventNormalizer();
+  const [event] = normalizer.normalize({
+    method: "turn/plan/updated",
+    params: {
+      plan: [
+        { step: "x".repeat(5000), status: "completed" },
+        { step: { text: "unexpected object" } },
+        { step: 42 },
+        null
+      ]
+    }
+  });
+  assert.deepEqual(event.payload.steps, [
+    { text: "x".repeat(4096), status: "completed" },
+    { text: "", status: "pending" },
+    { text: "", status: "pending" },
+    { text: "", status: "pending" }
+  ]);
+});
