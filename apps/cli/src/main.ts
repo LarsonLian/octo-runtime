@@ -84,7 +84,6 @@ const DEFAULT_WAIT_MS = 30_000;
 const BOOLEAN_FLAGS = new Set([
   "enrollTokenStdin",
   "force",
-  "follow",
   "help",
   "json",
   "noAutostart",
@@ -92,7 +91,6 @@ const BOOLEAN_FLAGS = new Set([
   "prepareUpdate",
   "quiet",
   "recoverUpdate",
-  "sensitive",
   "start",
   "verbose",
   "waitDrained",

@@ -18,7 +18,7 @@ Before a state-changing command, determine and state:
 
 One Harness Home runs one daemon and adapter-host and can contain multiple trusted profiles. Each profile owns a server-assigned `runtime_id`, Runtime credential, WSS connection, and durable outbox. All profiles share `<home>/machine.json`; its `machine_id` is an untrusted installation grouping label, never ownership proof or a unique Runtime key. Use separate OS accounts for mutually untrusted identities.
 
-Run `octo-harness help` and the relevant `octo-harness <group> --help` before relying on an option that may have changed. Normal successful output is JSON; `events` defaults to source-marked terminal lines (`--json` emits raw envelopes), and `inspect` prints its loopback URL. Errors go to stderr and return nonzero.
+Run `octo-harness help` and the relevant `octo-harness <group> --help` before relying on an option that may have changed. Normal successful output is JSON. Errors go to stderr and return nonzero.
 
 ## Choose The Correct Workflow
 

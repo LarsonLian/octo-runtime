@@ -71,7 +71,7 @@ const unsubscribe = harness.onHealth((health) => {
 const snapshot = harness.health();
 ```
 
-`running` means the local daemon is ready and every authorized profile is online. `degraded` means the local runtime is usable but one or more profiles are offline or failed. Health values never contain credentials or inspect capabilities.
+`running` means the local daemon is ready and every authorized profile is online. `degraded` means the local runtime is usable but one or more profiles are offline or failed. Health values never contain credentials.
 
 ## Logout, account switch, and quit
 

@@ -86,7 +86,7 @@ const TERMINAL_OUTBOX_TYPES = new Set(["run.completed", "run.failed", "run.cance
 /**
  * Configuration for the optional bridge between a local adapter host and the
  * Agent Work control plane. Authentication values are transport inputs only and
- * must never be copied into observability records.
+ * must never be copied into debug logs.
  */
 export interface AgentWorkRuntimeOptions {
   /** Trusted local profile label; never used as an authorization claim. */
@@ -2380,7 +2380,7 @@ export function reconnectDelayWithServerHintMs(
   return floor + Math.floor(Math.max(0, Math.min(0.999999999, random())) * jitterRange);
 }
 
-/** Stable transport reason used by status, local metrics and support bundles. */
+/** Stable transport reason used by Runtime status. */
 export function connectionFailureReason(error: unknown): RuntimeConnectionReason {
   if (error instanceof RuntimeCredentialRejectedError) return "auth";
   const code =

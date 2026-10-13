@@ -74,7 +74,7 @@ octo-harness doctor
 octo-harness --home /path/to/work-home --profile work doctor
 ```
 
-`doctor` 是服务诊断入口，当前检查 Node.js 版本、profile/identity/credential 文件、POSIX credential mode、service program 绝对路径、原生 manager、definition drift、本地 IPC 和所选 Runtime 的云端连接。所有检查通过返回 0，否则返回 1，并为失败项输出 remediation。`logs` 用于看执行数据，不替代 doctor。
+`doctor` 是服务诊断入口，当前检查 Node.js 版本、profile/identity/credential 文件、POSIX credential mode、service program 绝对路径、原生 manager、definition drift、本地 IPC 和所选 Runtime 的云端连接。所有检查通过返回 0，否则返回 1，并为失败项输出 remediation。Host 调试日志用于看执行数据，不替代 doctor。
 
 ## 本地数据与 Run 诊断
 

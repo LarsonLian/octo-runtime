@@ -44,7 +44,15 @@ test("CLI exposes Runtime operations and unified AgentSession/AgentRun inspectio
     assert.deepEqual(await cli(["agent-run", "list"]), []);
     await assert.rejects(cli(["agent-run", "events", "missing"]), /unknown command/);
     await assert.rejects(cli(["agent-run", "stream", "missing"]), /unknown command/);
+    await assert.rejects(cli(["inspect"]), /unknown command/);
+    await assert.rejects(cli(["inspect", "stop"]), /unknown command/);
+    await assert.rejects(cli(["events"]), /unknown command/);
+    await assert.rejects(cli(["logs"]), /unknown command/);
     await assert.rejects(cli(["logs", "open"]), /unknown command/);
+    await assert.rejects(cli(["logs", "path"]), /unknown command/);
+    await assert.rejects(cli(["logs", "query"]), /unknown command/);
+    await assert.rejects(cli(["diagnostics"]), /unknown command/);
+    await assert.rejects(cli(["diagnostics", "bundle"]), /unknown command/);
     await assert.rejects(cli(["chat", "create", "--agent", "a-1"]), /unknown command/);
     await assert.rejects(cli(["task", "list"]), /unknown command/);
     await assert.rejects(cli(["trigger", "list"]), /unknown command/);
