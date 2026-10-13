@@ -55,9 +55,10 @@
 日期：2026-10-13。使用本机已安装的 octo-cli 0.18.0 与 Codex skills，不新增工具安装或测试 MCP。
 
 - Host main 进程从 App 当前配置 Host 的 runtime-onboarding 取得登录用户 UK，作为本次执行的 OCTO_BOT_TOKEN / OCTO_TOKEN；API_BASE_URL 取 App Host。环境值不写入提示词、IPC 或会话记录。
+- 同会话只读目录请求成功返回 identity.bot_kind=user_key、identity.source=env:OCTO_TOKEN，证实真实 CLI 使用用户 UK；诊断 Run 为 run_c54a3fae-a784-4f8e-b2ee-5fbdbbc4bd29，completed。
 - 问一问发起方直接构造 extra.ui/page 与 extra.drive/directory，不请求旧 MCP delegation，不携带其工具授权。目录指引由业务方提供，模型通过安装的 CLI 自行执行。
-- 真实界面请求由 Codex 使用 exec_command 读取本机 skills、生成 Markdown、上传并读取网盘目录。文件 skills-list-a47dcc30.md，网盘文件 ID 2028，个人空间根目录，5,986 字节；下载内容包含 octo-shared 和 octo-drive。所有调用均为 exec_command，无 MCP 工具调用。
+- 真实界面按“把我当前 skills 列表写入 Markdown，保存到当前网盘目录”发起，Codex 生成当前会话 53 项 skills 并上传。文件 skills-list-1c1d0dd9.md，网盘文件 ID 2031，个人空间根目录，22,213 字节；已独立下载核对内容，并检查个人空间文件行截图。Run 为 run_9fef5984-fcd8-4cf8-bdc4-f016c478ffdd，completed，9 次调用全部为 exec_command，无 MCP 工具调用。
 
-验证：会话、Host 环境、问一问及本地发送相关 65 项测试通过，Work App 构建与类型检查通过。验证脚本为 Work App 的 scripts/test-ask-cli-drive-live.mjs。另一次 Marketplace mode mine 查询返回 AUTH_REQUIRED，未通过，不将平台拥有的 skills 列表与本机安装列表混为同一结果。
+验证：会话、Host 环境、问一问及本地发送相关 65 项测试通过，Work App 构建与类型检查通过；本次三个相关文件 33 项再次通过。验证脚本为 Work App 的 scripts/test-ask-cli-drive-live.mjs，按文件关联原执行，不受同一会话后续诊断影响。先前本机目录列表文件 skills-list-a47dcc30.md（ID 2028）保留为历史结果。另一次 Marketplace mode mine 查询返回 AUTH_REQUIRED，未通过，不将平台拥有的 skills 列表与当前会话列表混为同一结果。
 
-后一次补测遇到本地 daemon socket ECONNREFUSED，执行以 HOST_EXECUTION_FAILED 结束；该次不计为通过，当前进程可用性需要单独复核。
+中间一次补测遇到本地 daemon socket ECONNREFUSED，执行以 HOST_EXECUTION_FAILED 结束；该次不计为通过。daemon 断连修复 faeab97 后恢复运行，重新完成上述原句用例；末次检查 phase=running、cloudConnected=true，Runtime 为 runtime_73b443cb-29c0-4488-988d-ef7908d57f19。具体身份补核与接口限制见 [Work App 验收记录](../../octo-harness-work-app/docs/validation/event-context-cli-2026-10-13/README.md)。
