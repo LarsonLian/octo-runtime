@@ -18,6 +18,7 @@ octo-runtime extraset sse-demo <<'JSON'
   }
 }
 JSON
+
 octo-runtime daemon restart
 octo-runtime extra status
 ```

@@ -1,8 +1,38 @@
-# Extra 插件：设计原理、目标与使用场景
+# Extras 插件：背景、架构边界与技术方案
+
+## 背景：为什么需要 extras
+
+octo-runtime 为设备提供统一的本地执行能力。设备上的 AdapterHost 承载执行内核，各个业务入口通过同一个 `AdapterHost.invoke()` 提交执行请求。无论请求来自宿主应用、IM、飞书还是团队共享入口，业务入口使用的执行合同相同。
+
+外部系统的接入方式属于具体业务实现。例如，打通 Octo IM 需要处理 Octo 的认证、消息与结果投递；打通飞书需要处理飞书的账号、事件与消息协议；把本机 Runtime 共享给团队使用，需要实现对应的授权、请求接收与结果回传。这些业务可以使用不同的连接方式和内部结构，但最终都调用统一的 `AdapterHost.invoke()`。框架无需理解这些外部系统，也不应为每种业务接入增加一套执行内核。
+
+extras 机制让宿主按需装配这些业务能力，并统一管理插件的加载、卸载和资源清理。每个 extra 是可插拔的能力，负责自己的业务接入；框架只提供执行入口和生命周期合同。一个插件可以自行管理多个账号、几十条 WS、重连与路由，框架不规定这些连接的数量、组织方式或业务状态。
+
+**没有任何 extra，不影响框架使用。** 宿主仍可直接调用 `AdapterHost.invoke()`，本地执行能力不依赖外部系统接入、插件加载或云端连接。extras 是可选的业务扩展，不是框架运行的前置条件。
+
+## 设备、Runtime 与 extras 的归属
+
+同一设备的一个 Runtime Home 由一个 daemon 同时承载多个 profile；每个 profile 对应一个独立 Runtime 身份。daemon 共享一个 AdapterHost 执行内核，AdapterHost 运行在独立子进程中。多个 profile 不要求各自启动 daemon。
+
+个人使用与团队共享可以分别使用 `personal` 和 `team` profile。移除团队 Runtime/profile 的操作必须只处理该 Runtime 的注册、凭据、配置和运行资源，不影响个人 Runtime，也不卸载公共 daemon。移除单个 Runtime/profile 与卸载整个设备的公共运行服务是不同操作；这里规定操作边界，不表示单独移除功能已经完成。
+
+extras 属于 Host，不挂靠 Runtime/profile，也不要求插件账号绑定 Runtime。宿主选择要加载的插件；插件自行决定怎样与外部系统交互，随后通过注入的 `AdapterHost.invoke()` 执行请求。Runtime 身份管理与插件业务接入分别遵循各自合同。
+
+```text
+Runtime Home / Host
+  ├─ 一个 daemon
+  │   ├─ Runtime：profile personal
+  │   ├─ Runtime：profile team
+  │   └─ extras：按宿主配置加载的业务插件
+  └─ 共享 AdapterHost 执行内核（独立子进程）
+       └─ AdapterHost.invoke()
+```
+
+目录命名统一采用 `extras`。CLI 的目标配置位置是 `<home>/extras/<插件名>/config.json`，不放在 profile 下。当前实现仍读取 `<home>/default/extra/`，目录调整尚未完成；下文的 CLI 操作说明保留当前可执行路径。
 
 ## 目标
 
-Extra 是本地 Runtime 上可装配的业务入口。Runtime、IPC Host 和 Provider Adapter 在本地独立存在；加载 Extra 不要求云端注册。Extra 通过宿主注入的执行能力提交请求，自己实现触发、连接、认证、业务状态和结果投递。
+Extra 是 Host 上可装配的业务能力。Runtime、IPC Host 和 Provider Adapter 在本地独立存在；加载 Extra 不要求云端注册。Extra 通过宿主注入的执行能力提交请求，自己实现触发、连接、认证、业务状态和结果投递。
 
 本次提供统一加载器、CLI JSON 配置入口和 `octo-runtime-extra-sse-demo` 示例。现有 channel-im、worker-access 仍使用原来的模块合同；本次没有声称完成它们的拆包或最终远程链路评审。
 
@@ -74,6 +104,25 @@ lambda 返回或 Promise 完成表示初始化完成，不表示插件卸载。�
 公开状态只报告生命周期和脱敏错误码，不公开配置、Token 或第三方异常原文。`loaded` 不证明云端已登记或 WS 正常，业务连接健康需要插件自己的证据。本次最小 context 没有新增通用业务状态 API。
 
 ## CLI 的统一配置入口
+
+### 启动汇总的目标格式（待实现）
+
+`daemon run/start/restart` 的启动汇总使用英文，按本次实际查找和加载的结果显示。`Runtimes` 与 `Extras` 平级；Runtime 项使用 `profile: <name>`，本地加载结果不取决于是否连接云端。Extras 不展开插件内部账号、WS 或路由。
+
+```text
+✅ AdapterHost execution kernel started
+
+Runtimes
+  ✅ profile: personal — loaded
+  ✅ profile: team — loaded
+
+Extras
+  ✅ octo-channel — loaded
+```
+
+成功使用 ✅，失败使用 ❌，尚未完成加载使用 ❓。extra 的 `loaded` 只表示插件初始化函数完成，不证明内部连接全部成功。未声明任何插件时，extras 为空是有效配置，不报告缺失，也不阻止框架使用。此格式为目标要求，当前尚未统一到上述三个命令。
+
+### 当前 CLI 操作
 
 CLI 是个人设备的 headless 运维入口。普通用户由 Desktop App 静默准备配置并启动 Runtime，无需使用 CLI，也无需让 App 调用 CLI。
 
@@ -174,7 +223,9 @@ native 是默认模式，返回 HostFrame；显式 canonical 返回 CanonicalEve
 | 场景 | 插件内部负责 |
 | --- | --- |
 | Octo Channel | Octo 认证、多个 WS、消息转换、卡片与结果投递 |
+| 飞书接入 | 飞书认证、事件接收、消息转换与结果投递 |
 | WeCom Channel | 企微认证、连接与消息协议 |
+| 团队共享入口 | 共享授权、请求接收、业务身份与结果回传 |
 | CI / 自建系统 | 触发、可信业务身份、请求构造和回传 |
 | 本地目录监听 / 定时任务 | 本地事件、调度与结果处理 |
 | HTTP SSE 示例 | HTTP、Bearer、请求转交与流编码 |
