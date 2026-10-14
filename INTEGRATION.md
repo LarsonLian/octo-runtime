@@ -78,7 +78,7 @@ octo-harness --home "$HARNESS_HOME" daemon start
 
 # 仅需要验收云端连接时，额外等待选中 Runtime 在线
 octo-harness --home "$HARNESS_HOME" --profile "$HARNESS_PROFILE" \
-  daemon start --wait-online --timeout-ms 30000
+  daemon start --wait-online
 
 # 查询、重启、停止
 octo-harness --home "$HARNESS_HOME" daemon status
@@ -93,7 +93,7 @@ octo-harness --home "$HARNESS_HOME" daemon uninstall
 
 原生服务对应 macOS LaunchAgent、Linux systemd user service、Windows 当前用户 Task Scheduler。`daemon start` 要求服务已经安装且启用；`daemon install --no-autostart` 可关闭登录自启。
 
-`stop`、`restart` 和 `uninstall` 默认先关闭新 Run 准入并等待活动 Run。`--force` 跳过该等待。`--timeout-ms` 单位为毫秒，支持 1 到 600000 的整数。`--wait-online` 检查所选 Runtime 的 WSS 在线，而不仅是进程存在。
+`stop`、`restart` 和 `uninstall` 直接停止本地服务，不等待活动 Run 完成。`--wait-online` 检查所选 Runtime 的 WSS 在线，而不仅是进程存在。
 
 前台调试使用：
 

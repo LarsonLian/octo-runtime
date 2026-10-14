@@ -64,6 +64,7 @@ class InMemoryServiceBackend {
   }
 
   async stop() {
+    if (this.app) assert.equal(this.app.daemon.status.draining, false);
     if (this.app) await this.app.close();
     this.app = undefined;
     if (this.state !== "not_installed") this.state = "stopped";
@@ -184,7 +185,7 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
 
     const initialInstall = await invoke(["daemon", "install"]);
     assert.equal(initialInstall.value.service.state, "stopped");
-    const initialStart = await invoke(["daemon", "start", "--wait-online", "--timeout-ms", "5000"]);
+    const initialStart = await invoke(["daemon", "start", "--wait-online"]);
     assert.equal(initialStart.value.readiness.modules["worker-access"].state.connected, true);
     assert.equal(backend.state, "running");
     assert.equal(backend.enabled, true);
@@ -232,7 +233,7 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
     );
     assert.doesNotMatch(JSON.stringify(backend.spec), /octo_runtime_fixture_secret/);
 
-    const restarted = await invoke(["daemon", "restart", "--timeout-ms", "5000"]);
+    const restarted = await invoke(["daemon", "restart"]);
     assert.equal(restarted.value.action, "restart");
     assert.equal(restarted.value.readiness.ready, true);
     assert.deepEqual(
@@ -240,7 +241,7 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
       ["default", "work"]
     );
 
-    const prepared = await invoke(["login", "--prepare-update", "--wait-drained", "--timeout-ms", "5000"]);
+    const prepared = await invoke(["login", "--prepare-update"]);
     assert.equal(prepared.value.service_was_running, true);
     assert.equal(backend.state, "stopped");
     assert.deepEqual(backend.spec.args.slice(-2), ["--home", home]);
@@ -252,15 +253,15 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
     assert.equal(repeated.value.enrolled, false);
     assert.equal(enrollmentCount, 2);
 
-    const stopped = await invoke(["daemon", "stop", "--timeout-ms", "5000"]);
+    const stopped = await invoke(["daemon", "stop"]);
     assert.equal(stopped.value.service.state, "stopped");
     await assert.rejects(access(join(home, "octo-daemon.pid")), error => error.code === "ENOENT");
 
-    const started = await invoke(["daemon", "start", "--timeout-ms", "5000"]);
+    const started = await invoke(["daemon", "start"]);
     assert.equal(started.value.action, "start");
     assert.equal(started.value.readiness.ready, true);
 
-    const uninstalled = await invoke(["daemon", "uninstall", "--timeout-ms", "5000"]);
+    const uninstalled = await invoke(["daemon", "uninstall"]);
     assert.equal(uninstalled.value.action, "uninstall");
     assert.equal(uninstalled.value.service.state, "not_installed");
     assert.equal(uninstalled.value.data_preserved, true);
@@ -281,11 +282,11 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
     assert.equal(backend.state, "stopped");
     assert.equal(enrollmentCount, 2);
 
-    const startedOnline = await invoke(["daemon", "start", "--wait-online", "--timeout-ms", "5000"]);
+    const startedOnline = await invoke(["daemon", "start", "--wait-online"]);
     assert.equal(startedOnline.value.action, "start");
     assert.equal(startedOnline.value.service.state, "running");
     assert.equal(startedOnline.value.readiness.modules["worker-access"].state.connected, true);
-    await invoke(["daemon", "stop", "--timeout-ms", "5000"]);
+    await invoke(["daemon", "stop"]);
 
     let foregroundArgs;
     const foreground = await invoke(["daemon", "run"], {

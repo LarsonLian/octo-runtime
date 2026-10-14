@@ -79,6 +79,14 @@ test("CLI command help is local and describes adapter operations", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const cli = join(root, "apps/cli/dist/index.js");
 
+  for (const group of ["daemon", "login"]) {
+    const help = await execute(process.execPath, [cli, group, "--help"]);
+    assert.doesNotMatch(help.stdout, /--force|--timeout-ms|--wait-drained/);
+  }
+  for (const option of ["--force", "--timeout-ms=5000", "--wait-drained"]) {
+    await assert.rejects(execute(process.execPath, [cli, "daemon", "stop", option]), /unknown option/);
+  }
+
   const adapterHelp = await execute(process.execPath, [cli, "adapter", "--help"]);
   assert.match(adapterHelp.stdout, /adapter connect openclaw/);
   assert.doesNotMatch(adapterHelp.stdout, /adapter setup/);

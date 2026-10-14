@@ -83,7 +83,6 @@ interface CliContext {
 const DEFAULT_WAIT_MS = 30_000;
 const BOOLEAN_FLAGS = new Set([
   "enrollTokenStdin",
-  "force",
   "help",
   "json",
   "noAutostart",
@@ -93,7 +92,6 @@ const BOOLEAN_FLAGS = new Set([
   "recoverUpdate",
   "start",
   "verbose",
-  "waitDrained",
   "waitOnline"
 ]);
 
@@ -332,16 +330,6 @@ async function prepareUpdate(context: CliContext): Promise<CommandResult> {
   const spec = await daemonServiceSpec(context);
   const current = await context.service.backend.inspect(spec);
   const wasRunning = ["running", "starting"].includes(current.state);
-  if (wasRunning && context.flags.waitDrained === true) {
-    try {
-      await callDaemon(context.paths.socket, {
-        method: "lifecycle.drain",
-        params: { timeoutMs: numericFlag(context.flags.timeoutMs, DEFAULT_WAIT_MS) }
-      });
-    } catch (error) {
-      throw new Error("daemon could not drain before update", { cause: error });
-    }
-  }
   if (wasRunning) await context.service.backend.stop(spec);
   const journal: UpdateJournal = {
     schema_version: 1,
@@ -399,14 +387,8 @@ async function runDaemonCommand(context: CliContext, action: string | undefined)
     throw new Error("daemon action must be install, uninstall, run, start, stop, restart, or status");
   }
   if (selected === "stop") {
-    if (context.flags.force !== true && await tryDaemonStatus(context.paths.socket)) {
-      await callDaemon(context.paths.socket, {
-        method: "lifecycle.drain",
-        params: { timeoutMs: numericFlag(context.flags.timeoutMs, DEFAULT_WAIT_MS) }
-      });
-    }
     await context.service.backend.stop(spec);
-    await waitForDaemonStopped(context, numericFlag(context.flags.timeoutMs, 15_000));
+    await waitForDaemonStopped(context, 15_000);
     return { value: { ok: true, action: "stop", service: await context.service.backend.inspect(spec) } };
   }
   const onlineRuntime = context.flags.waitOnline === true
@@ -414,19 +396,13 @@ async function runDaemonCommand(context: CliContext, action: string | undefined)
     : undefined;
   await verifyServiceProgram(spec);
   if (selected === "restart") {
-    if (context.flags.force !== true && await tryDaemonStatus(context.paths.socket)) {
-      await callDaemon(context.paths.socket, {
-        method: "lifecycle.drain",
-        params: { timeoutMs: numericFlag(context.flags.timeoutMs, DEFAULT_WAIT_MS) }
-      });
-    }
     await context.service.backend.restart(spec);
   } else {
     await context.service.backend.start(spec);
   }
   const readiness = onlineRuntime
     ? await waitForDaemonOnline(context, onlineRuntime.identity, onlineRuntime.profileConfig)
-    : await waitForDaemonReady(context, numericFlag(context.flags.timeoutMs, DEFAULT_WAIT_MS));
+    : await waitForDaemonReady(context, DEFAULT_WAIT_MS);
   return {
     value: {
       ok: true,
@@ -470,15 +446,9 @@ async function uninstallDaemonService(context: CliContext): Promise<CommandResul
     const before = await context.service.backend.inspect(spec);
     const application = await tryDaemonStatus(context.paths.socket);
     const managedProcessActive = ["running", "starting", "stopping"].includes(before.state);
-    if (context.flags.force !== true && application && managedProcessActive) {
-      await callDaemon(context.paths.socket, {
-        method: "lifecycle.drain",
-        params: { timeoutMs: numericFlag(context.flags.timeoutMs, DEFAULT_WAIT_MS) }
-      });
-    }
     await context.service.backend.uninstall(spec);
     if (application && managedProcessActive) {
-      await waitForDaemonStopped(context, numericFlag(context.flags.timeoutMs, 15_000));
+      await waitForDaemonStopped(context, 15_000);
     }
     return {
       value: {
@@ -680,7 +650,7 @@ async function waitForDaemonOnline(
   if (!profile.agent_work_url) {
     throw new Error("--wait-online requires agent_work_url from enrollment or --agent-work-url");
   }
-  const timeoutMs = numericFlag(context.flags.timeoutMs, DEFAULT_WAIT_MS);
+  const timeoutMs = DEFAULT_WAIT_MS;
   const deadline = Date.now() + timeoutMs;
   let last: Record<string, unknown> | undefined;
   while (Date.now() < deadline) {
@@ -800,6 +770,7 @@ function parseArguments(args: string[]): { flags: Flags; positionals: string[] }
       flags[key] = true;
       continue;
     }
+    if (["force", "timeoutMs", "waitDrained"].includes(key)) throw new Error(`unknown option --${rawKey}`);
     const next = args[index + 1];
     flags[key] = separator >= 0 ? argument.slice(separator + 1) : next && !next.startsWith("--") ? args[++index] : true;
     if ((key === "agentIdentity" || key === "agentName") && (typeof flags[key] !== "string" || !flags[key])) throw new Error(`--${rawKey} requires a nonempty value`);
@@ -827,15 +798,6 @@ async function daemonServiceSpec(context: CliContext, enabled = true) {
     context.paths,
     enabled
   );
-}
-
-function numericFlag(value: FlagValue | undefined, fallback: number): number {
-  if (value === undefined) return fallback;
-  const numeric = typeof value === "string" ? Number(value) : Number.NaN;
-  if (!Number.isSafeInteger(numeric) || numeric < 1 || numeric > 10 * 60_000) {
-    throw new Error("--timeout-ms must be an integer between 1 and 600000");
-  }
-  return numeric;
 }
 
 function enumFlag<const TValue extends string>(
@@ -895,7 +857,7 @@ function helpText(group?: string): string {
       `  --agent-work-url is the Worker API root and defaults to SERVER_URL/agentworker/api.\n\n` +
       `OpenClaw: [--openclaw-home PATH | --gateway-url URL]; use OPENCLAW_GATEWAY_TOKEN with enrollment stdin.\n\n` +
       `Installer-only update modes:\n` +
-      `  --prepare-update [--wait-drained] [--timeout-ms MS]\n` +
+      `  --prepare-update\n` +
       `  --recover-update [--start]\n\n` +
       `Login writes Runtime identity, credentials and its OpenClaw connection source; an unavailable Gateway does not block login. Service lifecycle uses 'daemon install' and 'daemon start'.\n\n` +
       `Profiles are for trusted identities of the same OS user; use separate OS users/homes for isolation.`;
@@ -903,10 +865,11 @@ function helpText(group?: string): string {
   if (group === "daemon") {
     return `Usage: octo-harness [--home PATH] daemon install|uninstall|run|start|stop|restart|status [options]\n\n` +
       `  install [--no-autostart]\n` +
-      `  uninstall [--force] [--timeout-ms MS]\n` +
+      `  uninstall\n` +
       `  run [--quiet] [--verbose]\n` +
-      `  start [--wait-online] [--timeout-ms MS]\n` +
-      `  stop|restart [--force] [--wait-online] [--timeout-ms MS]\n\n` +
+      `  start [--wait-online]\n` +
+      `  stop\n` +
+      `  restart [--wait-online]\n\n` +
       `Uninstall removes the native service but preserves Harness Home identity, credentials, databases, and logs.`;
   }
   if (group === "doctor") {
