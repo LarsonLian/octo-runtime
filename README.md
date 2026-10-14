@@ -52,7 +52,7 @@ Host 必须通过单一纯函数，将可注入 item 按固定开始/结束标�
 
 Host renderer 只匹配白名单 pattern：`extra.*/*`、`octo.content/inline`、`octo.content/references`。renderer 不校验业务字段、不查处理器、不检查场景材料、不解引用、不压缩。接纳边界仍处理协议格式和执行权限；必要 adapter 等执行配置独立解析。Compiler/Pipeline、材料预取与摘要、扩展字段投影及编译回执已删除，不保留旧路径或兼容升级。
 
-详细设计见 [Event Context 与 Host 固定渲染：IPD-SE 基线](../docs/event-context-rendering-ipd-se.md)，验证状态见 [里程碑记录](docs/context-rendering-milestones.md)。Run 7 / Context v3 保持不变；传输字段沿用 `context` / `effective_context`，其中 `items` 是本轮列表，渲染文本使用 `contexts` 外层标记。
+详细设计见 [Event Context 与 Host 固定渲染：IPD-SE 基线](../docs/event-context-rendering-ipd-se.md)，当前注入规则见 [LLM 注入约束](docs/context-llm-injection.md)。Run 7 / Context v3 保持不变；传输字段沿用 `context` / `effective_context`，其中 `items` 是本轮列表，渲染文本使用 `contexts` 外层标记。
 
 ## 基础架构
 
@@ -254,7 +254,7 @@ printf '%s\n' 'octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN' | pnpm cli -- \
 pnpm daemon -- --home "$PWD/.tmp/harness-home"
 ```
 
-The daemon reads each profile's `octo_runtime_` credential from its protected file. Worker derives the Runtime identity, Space, and owner subject from that credential. Runtime persists only the connection fields it needs (`runtime_id`, `credential_id`, optional `octo_space_id`, and the protected credential); ownership and creator fields remain server-side authorization and audit data. Each profile has a distinct Runtime identity; all profiles share `<home>/machine.json`, whose `machine_id` is only an untrusted installation grouping label. One Home runs one daemon and adapter-host. Mutually untrusted users must use separate OS accounts. See [Runtime owners and provider discovery](docs/runtime-owner-provider-contract.md) for enrollment authorization and adapter object fields.
+The local SDK initializes a stable identity for each profile without cloud enrollment. Profiles share the Home-level `machine_id`, an untrusted installation grouping label rather than a credential. One Home runs one daemon and adapter-host. Mutually untrusted users must use separate OS accounts. See [Runtime and machine identity](docs/runtime-machine-identity-spec.md) and [current local boundaries](docs/runtime-local-and-online-contract.md). The former Worker access package has been removed.
 
 本地运维命令：
 
@@ -292,4 +292,4 @@ Provider 返回的 Codex thread ID、Claude session UUID 或 OpenCode session ID
 - [Provider Adapters](docs/05-provider-adapters.md)
 - [Runtime 与 OpenClaw 连接统一合同](docs/15-openclaw-external-agent-binding-design.md)
 - [Transport And Multi-node](docs/09-transport-and-multinode.md)
-- [Agent Worker Runtime](docs/13-agent-work-runtime.md)
+- [Local Runtime Boundaries](docs/runtime-local-and-online-contract.md)

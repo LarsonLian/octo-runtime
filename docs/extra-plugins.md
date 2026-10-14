@@ -34,7 +34,7 @@ Runtime Home / Host
 
 Extra 是 Host 上可装配的业务能力。Runtime、IPC Host 和 Provider Adapter 在本地独立存在；加载 Extra 不要求云端注册。Extra 通过宿主注入的执行能力提交请求，自己实现触发、连接、认证、业务状态和结果投递。
 
-本次提供统一加载器、CLI JSON 配置入口和 `octo-runtime-extra-sse-demo` 示例。现有 channel-im、worker-access 仍使用原来的模块合同；本次没有声称完成它们的拆包或最终远程链路评审。
+当前提供统一加载器、CLI JSON 配置入口和 `octo-runtime-extra-sse-demo` 示例。Octo 与 WeCom 的代码分别位于 `octo-runtime-extra-channel-gateway` 和 `octo-runtime-extra-channel-wecom`；具体导出及配置以各包为准，不能把对象式模块工厂直接当作函数式 Extra。旧 worker-access 已移除。
 
 ## 插件是什么
 

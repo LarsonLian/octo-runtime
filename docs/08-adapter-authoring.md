@@ -2,7 +2,7 @@
 
 ## 最小契约
 
-一个 adapter 的必需部分只有两项：静态元数据 `metadata`，以及把 provider 原生输出转换成 Octo Runtime 规范事件流的 `invoke`。`metadata` 必须包含字符串 `type` 和能力数组 `capabilities`，没有额外能力时也要传空数组。`probe` 是建议实现的可选项；如果省略，Host 会把探测结果标记为 `unchecked`，不代表 provider 已经确认可用。
+一个 adapter 提供静态元数据 `metadata` 和 `invoke`。元数据包含 `type`、`capabilities`、`agentSources` 和 `executionFeatures`；`defineAdapter` 在未声明输出模式时补 canonical-only 的 `protocolSupport`。`probe` 是可选项；省略时 Host 标记为 `unchecked`，不代表 Provider 已确认可用。
 
 ```js
 import { defineAdapter, probeCommand } from "@mininglamp-oss/octo-runtime-adapter-sdk";
@@ -10,15 +10,17 @@ import { defineAdapter, probeCommand } from "@mininglamp-oss/octo-runtime-adapte
 export const adapter = defineAdapter({
   metadata: {
     type: "my-provider",
-    capabilities: ["session.serialize"]
+    capabilities: ["react"],
+    agentSources: ["provisioned"],
+    executionFeatures: ["session.serialize"]
   },
   probe: () => probeCommand("my-provider"),
   async *invoke(request) {
-    yield { type: "session.update", payload: { providerSession: { sessionId: "..." } } };
-    yield { type: "message.create", payload: { role: "assistant", status: "streaming" } };
-    yield { type: "message.delta", payload: { text: "result" } };
-    yield { type: "message.update", payload: { role: "assistant", status: "completed" } };
-    yield { type: "run.finished", payload: {} };
+    yield { protocolVersion: 2, type: "session.update", payload: { providerSession: { sessionId: "..." } } };
+    yield { protocolVersion: 2, type: "message.create", payload: { role: "assistant", status: "streaming" } };
+    yield { protocolVersion: 2, type: "message.delta", payload: { text: "result" } };
+    yield { protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "completed" } };
+    yield { protocolVersion: 2, type: "run.completed", payload: {} };
   }
 });
 ```
@@ -33,9 +35,11 @@ export const adapter = defineAdapter({
 4. 在可能的情况下，先发出 create 事件，再发出对应的 delta；Host 的补齐逻辑只用于安全兜底。
 5. 每次调用只产生一个终态事件；Host 会等异步生成器清理完成后再向上游转发该事件。
 6. 必须响应 `request.signal`，把取消请求传递给直接启动的 provider 子进程并完成资源清理。当前 SDK 只负责向直接子进程请求终止，不保证进程一定退出；生产 adapter 必须补齐超时后的 `SIGKILL` 升级，以及整个进程组或后代进程树的回收。
-7. 控制指令应优先通过 provider 原生的 system、developer 或配置通道传递。Provider 没有独立载体时，可以使用明确记录的兼容降级；例如 OpenClaw local 会把控制指令与用户输入分段放入同一个 user message，但不得把这种降级宣称为原生 system role。
+7. 控制指令应优先通过 Provider 原生的 system、developer 或配置通道传递。Provider 没有独立载体时，必须明确记录所用载体；例如 Antigravity 将控制指令和用户输入放入同一 user 消息的不同 text block，不得宣称为原生 system role。OpenClaw 使用原生额外系统提示载体。
 8. Token 和其他敏感值不得出现在命令行参数、prompt、事件 payload 或工作目录中。
-9. `metadata.capabilities` 只能声明已经端到端实现并验证过的能力，不能把规划中的能力提前写入。
+9. `metadata.capabilities` 表达公开行为；会话、审批等放到 `executionFeatures`，输出模式放到 `protocolSupport`。只能声明已实现的支持范围，并单独记录真实 Provider 验证范围。
+
+上例演示 canonical 事件生成；调用 Host 时显式指定 `{ protocolMode: "canonical" }`。需要 native 时实现 Driver 与独立控制帧，不能直接声明支持后继续只返回 canonical 事件。详情见 [模式合同](27-native-canonical-protocol-contract.md)。
 
 ## Adapter 接入验收清单
 

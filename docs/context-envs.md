@@ -1,6 +1,6 @@
 # Run 环境变量 Context
 
-`octo.execution/envs` 是标准 Context 项，用于向本次 AgentRun 的本地 Provider 进程传入环境变量。Context 保持 `octo.context-envelope/v3`，Run 保持 `schema_version=7`，Adapter transport 保持 `protocolVersion=2`。Catalog v3、Compiler v4 不变；不新增 Runtime 能力准入字段。
+`octo.execution/envs` 是标准 Context 项，用于向本次 AgentRun 的本地 Provider 进程传入环境变量。Context 保持 `octo.context-envelope/v3`，Run 保持 `schema_version=7`，Adapter transport 保持 `protocolVersion=2`；不新增 Runtime 能力准入字段。
 
 ## 请求格式
 
@@ -20,7 +20,7 @@
 }
 ```
 
-`payload.env_variables` 必须是 `{ key, value }` 条目列表。环境变量名放在条目的 `key` 值中，不作为协议 JSON 属性名。字典形状不再接受。Agent 的 `context_configuration.defaults`、`mandatory` 以及单次 Run 的请求 context 均使用同一格式。
+`payload.env_variables` 必须是 `{ key, value }` 条目列表。环境变量名放在条目的 `key` 值中，不作为协议 JSON 属性名。字典形状不再接受。业务方使用的 `ContextConfiguration.defaults`、`mandatory` 以及单次 Run 的请求 context 均使用同一格式；Worker 不再保存 Agent 配置。
 
 - key 必须匹配 `[A-Za-z_][A-Za-z0-9_]*`；value 必须是字符串且不含 NUL。
 - 同一列表内的 `key` 不得重复，即使值相同也拒绝。条目不得缺少 `key` 或 `value`，不得增加未知字段。
@@ -31,9 +31,9 @@
 
 ## 合并与冻结
 
-Worker 和本地 Runtime 按 key 合并 defaults 与 request。请求中的同名 key 覆盖默认值，未提交的 key 保留。mandatory 逐 key 约束：请求显式提交不同值时返回 `CONTEXT_MANDATORY_CONFLICT`；未提交时补入强制值，不限制请求增加其他 key。
+业务发起方使用共享配置合同按 key 合并 defaults 与 request。请求中的同名 key 覆盖默认值，未提交的 key 保留。mandatory 逐 key 约束：请求显式提交不同值时返回 `CONTEXT_MANDATORY_CONFLICT`；未提交时补入强制值，不限制请求增加其他 key。本地 `resolveLocalContext` 提供 defaults 与 request 的解析；不要据此要求执行层读取业务 Agent 配置。
 
-有效值以同一列表结构进入 `effective_context` 与 `resolved_execution_plan.envs`，参与 context hash、compiled hash 和会话配置指纹。Runtime 在准备阶段检查两份数据是否一致，防止冻结后篡改。变量变更会改变会话配置指纹，沿用现有会话连续性处理。
+有效值以同一列表结构进入 `effective_context` 与 `resolved_execution_plan.envs`，参与 context hash。Runtime 在准备阶段检查两份数据是否一致，防止冻结后篡改。会话复用策略由调用方按执行配置决定；不再使用 Compiler 或 compiled hash。
 
 ## 运行时范围与优先级
 

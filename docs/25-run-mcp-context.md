@@ -2,7 +2,7 @@
 
 本协议允许在 Context 中指定本轮 MCP 连接。HostApp 负责 Skills、知识库组件、CLI、插件和 MCP 程序的安装与更新；原生运行时负责连接 HTTP 服务或启动已安装的 stdio 程序。Runtime 不通过此配置下载或安装组件。
 
-本协议取代 24 号方案中“Run / Context 不得携带 MCP 连接配置”的限制。FileBundle、资源下载、旧 `InvokeRequest.mcpServers` 和旧执行计划 `mcp_servers` 不恢复。Run 保持 7，Context 保持 v3；直接更新当前合同，不提供旧格式兼容。
+本轮连接通过 `octo.execution/mcp` 提供。Runtime 不使用 FileBundle、资源下载、旧 `InvokeRequest.mcpServers` 或旧执行计划 `mcp_servers`。Run 保持 7，Context 保持 v3；不提供旧格式兼容。
 
 ## Context 字段
 
@@ -58,16 +58,15 @@ Schema 结构参考 [Agent Plugins 官方 MCP schema](https://agent-plugins.org/
 ## 配置位置与冻结
 
 - 临时配置：本次 Run 的 `context.items`。
-- Agent 默认配置：配置接口的 `configuration.defaults.items`。
-- Agent 强制配置：配置接口的 `configuration.mandatory.items`。
-- Worker 存储：`agent_context_configurations.configuration_json`，通过 `octo_space_id + agent_id` 关联 Agent；不在 Agent 主表或 revision 字段中。
-- 本地 Runtime Agent：注册时的 `defaultContext`，后续通过 `replaceDefaultContext()` 修改。
+- 默认／强制配置：业务方持有的 `ContextConfiguration.defaults.items` 和 `mandatory.items`，在发起请求前按共享合同解析。
+- Worker 接收有效 Context 和执行计划；不再持有 Agent 配置表或提供 Agent 配置管理。
+- 本地 Core 的 `resolveLocalContext(defaults, submitted, agentSource)` 解析调用方提供的 defaults 与本轮请求；Runtime 不再注册本地业务 Agent 或提供 `replaceDefaultContext()`。
 
 defaults 和请求按 server 名称合并；同名 server 整项替换，不深合并 headers、env 或 transport 字段。mandatory 也按 server 名称约束：mandatory 同名 server 完整覆盖请求值，不因值不同报错。空 map 不删除 defaults 或原生本地 MCP。
 
-执行计划使用 `mcp: { mcpServers: ... }` 冻结未展开的模板，并与有效 Context 核对。环境值仅在执行主机准备 invocation 时读取，不回写 Context、执行计划或原生配置文件。框架不从上一轮补 MCP 配置；Worker 的会话兼容性标识包含 MCP 模板。MCP 配置和 envs 不渲染到模型上下文。
+执行计划使用 `mcp: { mcpServers: ... }` 冻结未展开的模板，并与有效 Context 核对。环境值仅在执行主机准备 invocation 时读取，不回写 Context、执行计划或原生配置文件。框架不从上一轮补 MCP 配置；调用方根据本轮执行配置决定会话复用。MCP 配置和 envs 不渲染到模型上下文。
 
-现有 Context JSON 字段可存储此扩展，不需要数据库结构迁移或删库。
+此扩展使用现有 Context 和执行计划字段，不要求 Runtime 新增数据库或业务配置存储。
 
 ## 环境与变量
 

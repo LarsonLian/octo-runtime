@@ -70,4 +70,4 @@ HostApp alone decides whether and how to install Runtime and Provider dependenci
 
 Credentials stay in protected host/profile storage and outside renderer, model text, public logs, argv and service definitions. A workdir is a Provider cwd, not an OS sandbox. Mutually untrusted users need an appropriate OS security boundary.
 
-See [integration](INTEGRATION.md), [deployment](DEPLOYMENTS.md), [operations](docs/07-operations.md) and [verified implementation scope](docs/validation/daemon-package-modules-2026-10-14.md).
+See [integration](INTEGRATION.md), [deployment](DEPLOYMENTS.md), [operations](docs/07-operations.md) and [current local runtime boundaries](docs/runtime-local-and-online-contract.md). Historical package verification does not validate later package splits.

@@ -35,7 +35,7 @@ CLI result usage 可能覆盖整个会话，优先统计本轮 DONE step usage�
 ## 验证
 
 - `test/antigravity-adapter.test.js` 使用假 CLI 验证参数、事件、错误、续接、取消、日志清理与用户文件保留。
-- [IPD-SE 基线](../../docs/antigravity-adapter-ipd-se-baseline.md) 定义范围与验收要求。
+- [Adapter 开发指南](../../docs/08-adapter-authoring.md) 说明接入合同与验收要求。
 - 真实账户调用、工具执行、会话恢复与线上测试环境闭环须另行记录；自动测试通过不代表这些场景已通过。
 
 ## 模块责任边界

@@ -20,10 +20,10 @@ Runtime 的安装决策继续归 HostApp。OpenClaw Agent 的人格、记忆、�
 
 ## 注册与连接配置
 
-1. SDK 在本地初始化 Runtime Runtime 并保存身份；Worker 注册仅在宿主明确启用时发生。现有 CLI 的 enrollment 引导不是 SDK 前置条件。
+1. SDK 在本地初始化 Runtime 并保存身份，不要求 Worker 注册。当前 Worker 接入包已移除；CLI 中保留的 enrollment 操作不能作为 SDK 前置条件。
 2. 初始化该 Runtime 的 OpenClaw 连接来源，探测 Gateway 可用性。OpenClaw 缺失、未启动或认证失败只影响该 Provider 的可用状态，不阻止 Runtime 上线或其他 Provider 执行。
 3. 本地配置保存到 `<harness-home>/<profile>/adapters/openclaw/connection.json`。内置 Runtime 使用账户目录下对应的 profile，不能退回另一账户或默认 Home 的连接。
-4. 仅启用 Worker 注册时上报 Provider 能力、可用状态和错误原因，不上报 Gateway token 或私钥。纯本地探测无需上报；周期探测与实际执行读取相同 Runtime 配置。
+4. 本地探测和实际执行读取同一 Runtime 配置。外部业务若报告可用状态，不得上报 Gateway token 或私钥；本地探测本身不需要云端上报。
 
 支持两种连接来源：
 
@@ -38,7 +38,7 @@ Runtime 的安装决策继续归 HostApp。OpenClaw Agent 的人格、记忆、�
 
 ```text
 业务方提交 Context（Provider 类型 + provider_agent_id）
-  → 本地 SDK 直接提交 Host；远程入口才按 Worker Runtime 选择和授权合同路由
+  → 本地 SDK 或业务扩展提交共享 Host
   → Runtime 读取自己 profile 的 Provider 连接配置
   → Adapter 建立认证连接、验证目标 Agent、发起执行
   → 统一 Host 事件、审批、取消和终态回传
@@ -59,7 +59,7 @@ Runtime 的安装决策继续归 HostApp。OpenClaw Agent 的人格、记忆、�
 
 `provider_agent_id` 随执行计划解析和冻结，不进入模型提示词。本地连接配置不得设置或覆盖目标 Agent。Gateway 探测检查协议与公开执行能力，不要求存在名为 `main` 的 Agent；执行时验证本轮指定的目标。目标缺失必须明确失败，不切换到其他 Agent。
 
-统一执行接口不表示各 Provider 能力相同。OpenClaw Adapter 声明 `metadata.workspace: false`，忽略 `octo.execution/workspace` 和 `workdir`，不检查或创建本地工作区、不分配随机目录、不覆盖目标 Agent 的原生工作区。远程路径中 Runtime 提交 `workspace_mode: "none"` 准备回执，Worker 按该合同校验；本地调用不增加 Worker 回执门槛。Context 快照不改写，审批模式、环境变量和恢复等能力按实际支持范围校验。业务上下文由每轮发起方决定，不补齐、缓存或重复注入。
+统一执行接口不表示各 Provider 能力相同。OpenClaw Adapter 声明 `metadata.workspace: false`，忽略 `octo.execution/workspace` 和 `workdir`，不检查或创建本地工作区、不分配随机目录、不覆盖目标 Agent 的原生工作区。本地调用不增加 Worker 回执门槛。Context 快照不改写，审批模式、环境变量和恢复等能力按实际支持范围校验。业务上下文由每轮发起方决定，显式重复照常传递，不自动补齐、缓存或追加。
 
 ## 操作入口
 

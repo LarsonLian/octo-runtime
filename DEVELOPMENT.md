@@ -73,7 +73,7 @@ IM 测试独立提供 channel-im 与 Bot 配置，不启用 Worker。分别记�
 
 验证本地 IPC、真实回复、完整源事件与应用 SQLite 的一致性，以及历史界面回显。Worker 默认关闭时上述路径仍应成功。额外验证 IM 时保持独立配置。
 
-当前已复核证据见 [2026-10-14 包解耦验证](docs/validation/daemon-package-modules-2026-10-14.md)。持久化设备在线 toggle、最终设备链路和全部 Provider 的验收不在该记录的已完成范围内。
+当前包与接入边界见 [Runtime 合同](docs/runtime-local-and-online-contract.md)。包拆分后的构建、进程重启和真实环境验收需针对最终工作树单独记录，不能复用旧包验证结论。
 
 ## 6. 排障与结果记录
 

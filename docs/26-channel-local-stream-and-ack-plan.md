@@ -1,16 +1,16 @@
 # Channel 专项：本地 invoke、内存续流与 ACK
 
-日期：2026-10-13。关联：[Infra 瘦身方案](25-thin-infra-agentworker-plan.md)。
+本页说明本地 Channel 的执行流和回执边界，架构见 [Runtime 合同](runtime-local-and-online-contract.md)。
 
-2026-10-14 接入更新：daemon 本地 SDK 与共享 Host 独立运行；channel-im 按宿主选择携带和显式启用，不要求 Worker 包或设备注册。源流和 ACK 结论保持，包／状态语义见 [Runtime 合同](runtime-local-and-online-contract.md)。
+daemon 本地 SDK 与共享 Host 独立运行；Octo 与 WeCom 接入按宿主选择携带和显式启用，不要求 Worker 包或设备注册。
 
 ## 1. 接入边界
 
 所有本地 IM 和本地助理都调用本机 Host，不将本机输出上传云端再经 SSE 拉回。
 
-`octo-runtime-daemon` 分开装配 Worker 远程接入和 IM 接入。Worker 模块使用执行协议 WS；IM 模块使用 IM 专用 WS，负责消息映射、会话、群聊上下文和 GROUP.md 的业务策略。二者调用同一个 Host，复用 adapter、取消和交互能力。
+业务接入使用注入的共享 Host，复用 Adapter、取消和交互能力。Octo 与 WeCom 协议分别位于 `octo-runtime-extra-channel-gateway` 和 `octo-runtime-extra-channel-wecom`；当前仓库不再提供 Worker 接入包。
 
-目前 `octo-runtime-channel-im` 已有私聊入站、会话复用、重置、Codex invoke 和 IM 回发；群聊、GROUP.md、卡片和 typing 属于后续 IM 专项目标，不能当作已经实现。旧云端 Channel 项目中仍存在的通知业务与旧执行路径不属于新的本地聊天执行链，不能作为本地回复的回退。
+Octo 接入已有私聊、显式群／话题触发、可选 GROUP.md／历史读取、会话复用与重置、模板进度卡、typing 和最终文本回发。WeCom 使用自身的 stream 回复协议。代码支持不等于线上闭环验收；群／话题、规则／历史及按钮的实际验证范围以专项记录为准，见 [Octo 接入说明](../packages/octo-runtime-extra-channel-gateway/README.md)。
 
 Work App 使用 daemon SDK 的 `invoke()` 和既有唯一 preload 桥。renderer 不获取登录 token，kit 通过 Provider 注入的 Port 调用。业务自行消费完整 CanonicalEvent，自己保存和投递。
 

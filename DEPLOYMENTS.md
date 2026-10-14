@@ -72,4 +72,4 @@ pnpm pack --dry-run
 
 Human Token 用于明确的业务授权与注册 grant 请求；enrollment grant 用于注册；Runtime credential 用于已启用的 Worker 接入；IM Bot 与 Provider 凭据分别独立。凭据不进入 Git、公开日志、命令参数、service definition、renderer 或模型 Context。
 
-验收分别检查本地 IPC、真实执行、注册回执、设备实际连接和 IM 连接，不能用一个 online 状态代替全部证据。现有范围见 [验证记录](docs/validation/daemon-package-modules-2026-10-14.md)。
+验收分别检查本地 IPC、真实执行及已启用扩展的实际连接，不能用一个 online 状态代替全部证据。当前能力边界见 [Runtime 合同](docs/runtime-local-and-online-contract.md)；包拆分后的发布验收需单独执行。

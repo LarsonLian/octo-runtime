@@ -13,9 +13,9 @@ Run `schema_version=7` 和 Context `octo.context-envelope/v3` 保持不变。配
 ## 移除范围
 
 1. daemon 不再创建 `state.db`，不再构造 `HarnessEngine` 或领域 store，删除 Agent 注册、业务 Session 查询、本地 Run 历史查询及重启恢复实现。
-2. core 保留执行配置解析和模型上下文固定渲染，删除 `Store`、`MemoryStore`、`SqliteStore`、SQLite helper 和业务执行引擎。不得用无限增长的 Map 替代数据库。
+2. core 保留执行配置解析；模型上下文固定渲染属于 Adapter Host。删除 `Store`、`MemoryStore`、`SqliteStore`、SQLite helper 和业务执行引擎。不得用无限增长的 Map 替代数据库。
 3. 删除 `OCTO_RECORD_RUN_STEPS`，不提供 Run 事件落盘开关。
-4. worker-access 删除 `agent-work.db` 路径和伪数据库打开、隔离、迁移逻辑。运行目录显式使用 `root`，用于工作区准备和磁盘空间探测。
+4. 不再提供 `agent-work.db` 或其他远程执行历史数据库；旧 worker-access 包现已移除。
 5. 内置 IM channel 使用进程内会话映射，删除 `im-sessions.db`。映射丢失后创建新会话，不声称恢复旧 Provider 会话。IM 映射和消息去重必须设置容量及过期限制。
 6. 删除数据库参数、生成路径、导出和对应依赖接线。旧数据库不读取、不迁移，不自动删除用户文件。
 
@@ -23,7 +23,7 @@ Run `schema_version=7` 和 Context `octo.context-envelope/v3` 保持不变。配
 
 执行状态包含活动调用、取消信号、交互句柄及有限事件回放，不是历史数据库。
 
-Host 和 worker-access 各自的回放窗口保留现有限制：最多 128 个 Run，单 Run 最多 4 MiB 或 4096 条事件，总事件序列化大小最多 64 MiB，单事件最多 256 KiB，事件保留 120 秒。Host 接收中的调用也必须计入 Run 容量。超过窗口时淘汰旧事件，游标落在窗口外时返回明确缺口；不得伪造完整续传。
+Host 回放窗口保留现有限制：最多 128 个 Run，单 Run 最多 4 MiB 或 4096 条事件，总事件序列化大小最多 64 MiB，单事件最多 256 KiB，事件保留 120 秒。Host 接收中的调用也必须计入 Run 容量。超过窗口时淘汰旧事件，游标落在窗口外时返回明确缺口；不得伪造完整续传。
 
 IM 会话映射最多 1024 项、总序列化大小 4 MiB、保留 24 小时；消息回执最多 4096 项、总量 16 MiB、保留 120 秒；reset 去重最多 4096 项、总量 1 MiB、保留 120 秒。超限淘汰最早映射。定时清理间隔为 10 秒，访问时也检查过期。单个 IM Bot 的活动会话最多 128 个，排队消息最多 64 个；活动会话继续使用自己的执行句柄，模块停止时释放。模块重新创建且映射已过期或被淘汰时创建新会话。
 
@@ -44,7 +44,9 @@ IM 会话映射最多 1024 项、总序列化大小 4 MiB、保留 24 小时；�
 
 ## 实现与验证记录
 
-2026-10-14：本方案的代码移除已实施。core 只导出执行配置解析函数；daemon 不再构造领域引擎或 store；worker-access 使用运行目录和内存回放；内置 IM 模块使用有界内存映射。SQLite 导入、旧 store 导出、数据库路径参数和 Run 落盘开关已删除。没有读取、转换或删除用户遗留数据库。
+当前 core 只导出执行配置解析函数；daemon 不再构造领域引擎或 store，Channel 使用有界内存映射。SQLite 导入、旧 store 导出、数据库路径参数和 Run 落盘开关已删除。
+
+以下是 2026-10-14 SQLite 移除时的验证记录，没有读取、转换或删除用户遗留数据库。记录早于后续包拆分，不作为新包的重新构建或线上验收证据。
 
 - `pnpm build` 和 `pnpm exec tsc -p tsconfig.json --noEmit` 通过。
 - 最终全量测试使用 `node --test --test-concurrency=4 --test-timeout=60000`：891 项，882 项通过，9 项跳过，0 项失败。默认并发的一轮出现 CLI 生命周期用例挂起；该用例独立重跑通过，随后上述全量重跑通过。跳过项不能计作实测成功。

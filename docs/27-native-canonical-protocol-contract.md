@@ -2,7 +2,7 @@
 
 2026-10-14 包边界更新：本地 SDK 已合入 daemon，embedded 独立包已删除。模式选择与源流合同不变；本地调用不要求 Worker 注册或在线。统一原则见 [Runtime 合同](runtime-local-and-online-contract.md)。下文原里程碑仍保留其当时验证范围。
 
-> 2026-10-13 全局 Context 约束：每轮模型上下文由业务发起方决定，selection 等业务项可不发送；可传空、只传当轮需要的项或显式重复。必要的 adapter 等执行配置独立校验且不注入 LLM。底层只转发并渲染本轮快照，不按 sessionId 缓存、补齐、合并、去重或省略；reset、新建 Provider 会话或 resume 失败后，由业务方重新提供必要背景。详见 [Event Context IPD-SE 0.3](../../docs/event-context-rendering-ipd-se.md)。本文原有 Compiler/Pipeline、材料预取、场景自动追加与此约束冲突的内容仅保留历史背景；旧链路退出尚未完成。
+每轮模型上下文由业务发起方决定，允许空值、当轮增量或显式重复。Host 只渲染本轮快照，不按 session 缓存或补齐背景；Compiler/Pipeline、预取和字段投影已删除。详见 [LLM 注入约束](context-llm-injection.md)。
 
 日期：2026-10-13（Asia/Shanghai）。设计基线：`OCTO-RUN-DUAL-PROTOCOL-BL-01`。
 依据：[IPD-SE 设计基线](../../docs/runtime-agentrun-native-canonical-ipd-se.md)。
@@ -10,9 +10,9 @@
 ## 1. 当前交付边界
 
 WP-DP-01～05 的执行代码已接线：Protocol、SDK、Codex/Claude Driver、Host、RPC、
-Daemon、Embedded、Core、Worker Runtime、Work App 和 IM。公共 `invoke` 默认 native，
+Daemon 本地 SDK、Work App 和 IM。公共 `invoke` 默认 native，
 现有业务消费者显式 canonical；native 不创建或调用 Canonical Normalizer。
-Worker 提交入口在接纳前拒绝 `protocol_mode: "native"`，本期不开放 WP-DP-06。
+当前仓库已移除 Worker 接入包，不提供远端 native 执行入口。
 本轮无数据库模型变更，不需要删库，也没有建立兼容、回退或双写路径。
 代码及自动化测试与真实环境发布验收分开记录；未做的实机验证不记为通过。
 
@@ -77,9 +77,7 @@ RPC 在 prepare 和唯一执行声明成功后 ACK，再消费同一执行的源
 | `adapter-host/src/rpc.ts`                                   | 接纳前拒绝不支持的选择；将 RPC ACK 与帧流绑定到同一执行     |
 | `daemon/src/server.ts`、`adapter-host/src/host-run-service.ts` | 转发冻结模式，缓冲原帧，按 Host 控制事实维护终态            |
 | `daemon/src/runtime/daemon-runtime.ts`、`run-stream.ts`      | 显式传递选择；续流继承回执模式；为 canonical 暴露类型化视图 |
-| `core/src/engine.ts`                                        | 现有事件调度显式选择 canonical                              |
-| `worker-access/src/agent-work-runtime.ts`                   | 现有远端消费显式 canonical；远端 native 在接纳边界拒绝      |
-| `channel-im/src/index.ts`                                   | 执行、final 文本与投递链路显式 canonical                    |
+| `extra-channel-*/src/execution/dispatcher.ts`               | 执行、final 文本与投递链路显式 canonical                    |
 | Work App `src/main/agent-conversation-service.ts`           | 主对话、统一交互和回放保持 canonical                        |
 | Work App `src/main/daemon-runtime-service.ts`、`index.ts`     | 代理传递明确选择，避免在通用 SDK 中按调用者名称选模式       |
 | Provider 内部 `adapter.invoke`                              | 仍为 Driver 与转换器的内部边界，不以旧签名推导 native 可用  |
@@ -116,6 +114,8 @@ native 日志只记录元数据、数量、字节和转换次数，
 
 ## 5. 验证与未完成项
 
+本节保留 2026-10-13 的执行证据，早于 Worker 接入移除和 Channel 拆包；其中的旧包名、测试数量和跨仓库结果不是当前工作树的重新验收结论。
+
 新增 `schema/run-protocol-fixtures.json` 为同源样例。测试同时运行 JSON Schema 和运行时校验，
 覆盖默认值、非法值、协议不匹配、原生字段保留、混装载荷、Provider 错误、Host 终态事实、
 身份与代次漂移、序列缺口、pending 期限和 canonical 类型化消费。
@@ -149,8 +149,7 @@ node --test packages/octo-runtime-protocol/test/*.test.js test/protocol.test.js
 868 项，863 通过，5 跳过，0 失败；Runtime 全量构建及 Protocol 判别类型检查通过。
 Worker `go test ./...` 与 `make build` 通过；OpenAPI 已同步生成。
 Work App `pnpm build` 及对话、Embedded、认证、切 Space 守卫 36 项测试通过。
-修改文件 ESLint 通过；全仓 lint 仍有 `context-builder/src/object-selection.ts` 两处
-既有 `no-control-regex` 错误，本轮未修改该文件。
+当时修改文件 ESLint 通过；全仓 lint 在旧 Context Builder 中有两处 `no-control-regex` 错误。该包现已删除，不将这份历史结果当作当前 lint 状态。
 
 真实验证脚本：`scripts/verify-dual-protocol-live.mjs`，只输出验收元数据。
 Codex CLI 0.154.0、Claude Code 2.1.293，均采用 provisioned / full_access：

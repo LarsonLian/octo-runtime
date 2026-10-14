@@ -1,53 +1,40 @@
-# 05 Provider Adapters
+# Provider Adapters
 
-## Capability Matrix
+可加载实现以 [adapters.json](../config/adapters.json) 为准，完整包入口见 [Packages Guide](../packages/README.md)。下面描述当前传输和执行边界，具体认证及原生参数见各包 README。
 
-| Adapter | Native transport | Resume | Fork capability | Default permission |
-|---|---|---|---|---|
-| [`codex`](../packages/octo-runtime-adapter-codex/README.md) | app-server JSON-RPC 2.0 stdio | `thread/resume`，失败 fresh fallback | not exposed | workspace-write sandbox |
-| [`claude-code`](../packages/octo-runtime-adapter-claude-code/README.md) | `claude --print --output-format stream-json` | `--resume <uuid>` | not exposed | `bypassPermissions` + external isolation required |
-| [`codebuddy`](../packages/octo-runtime-adapter-codebuddy/README.md) | ACP JSON-RPC stdio | `session/load` | not declared | `acceptEdits` + deny fallback |
-| [`opencode`](../packages/octo-runtime-adapter-opencode/README.md) | `opencode run --format json --thinking --auto` | `--session <id>` | not exposed | adapter always auto-approves |
-| [`openclaw`](../packages/octo-runtime-adapter-openclaw/README.md) | Gateway WS protocol v4 RPC + events | isolated session per AgentRun | not exposed | dedicated OpenClaw agent policy |
-| [`zcode-gui`](../packages/octo-runtime-adapter-zcode-gui/README.md) | ZCode private NDJSON RPC stdio | `session/resume`，失败 fresh fallback | not exposed | `build` fail-closed；显式 auto-approve / `yolo` |
+## 传输与输出
 
-上层按 capability 做决策，不按 adapter type 写分支。虽然 Codex、Claude Code 和 OpenCode 原生 transport 可 fork，当前 host 没有 fork RPC，因此 adapters 不声明 `session.fork`；新增完整 host/daemon/CLI 流程后才能打开该 capability。
+| Adapter | 原生传输 | Host 输出模式 |
+| --- | --- | --- |
+| [Codex](../packages/octo-runtime-adapter-codex/README.md) | app-server JSON-RPC stdio | native / canonical |
+| [Claude Code](../packages/octo-runtime-adapter-claude-code/README.md) | stream-json stdio | native / canonical |
+| [CodeBuddy](../packages/octo-runtime-adapter-codebuddy/README.md) | ACP stdio | canonical |
+| [OpenCode](../packages/octo-runtime-adapter-opencode/README.md) | full_access 使用 JSON CLI，ask 使用 ACP | canonical |
+| [OpenClaw](../packages/octo-runtime-adapter-openclaw/README.md) | Gateway WebSocket RPC 与事件 | canonical |
+| [ZCode](../packages/octo-runtime-adapter-zcode-gui/README.md) | 私有 NDJSON RPC stdio | canonical |
+| [Antigravity](../packages/octo-runtime-adapter-antigravity/README.md) | agy stream-json stdio | canonical |
+| Hermes、Kimi Code、MCode、Qoder CLI、Qoder CN | ACP stdio | canonical |
 
-## Native Event Mapping
+Host 公共 `invoke` 默认 native。使用 canonical-only Adapter，或需要统一事件的业务方，必须显式指定 `{ protocolMode: "canonical" }`。模式不支持时在接纳前拒绝，不从 canonical 重建原生输出，见 [输出模式合同](27-native-canonical-protocol-contract.md)。当前仓库不再提供 Worker 远程接入包。
 
-Codex：`thread.started -> session.update`；agent message 的原生 `phase=commentary` 归一为 `channel=commentary`，`phase=final_answer` 归一为 `channel=final`；reasoning/plan 分别按授权级别进入 `channel=analysis`；command/tool item -> tool lifecycle；`turn.completed -> usage + run.finished`。下游只消费这些 canonical 字段，不读取 Codex 原生 phase。
+`capabilities` 描述公开行为，`executionFeatures` 描述实际执行特性，`agentSources` 声明来源支持；可用状态由真实 probe 单独判断。详见 [来源与能力](agent-source-and-react-capabilities-requirements.md)。Host 当前没有公开 fork 流程，不因 Provider 原生具有 fork 就声明端到端支持。
 
-Claude Code：system init -> session update，assistant content blocks -> text/tool create events，user tool result blocks -> tool update，result -> usage/message terminal/run terminal。
+## 会话与权限
 
-CodeBuddy：ACP `session/update` 的 `agent_message_chunk` 和 `agent_thought_chunk` 映射为 final/analysis channels；tool_call/update 保留 ID；prompt result usage 映射 usage update。
+Codex 使用 `thread/resume`，Claude Code 使用 `--resume`，ACP 使用 Provider 支持的 `session/load`；恢复和 fresh fallback 取决于对应实现。调用方保存 opaque Provider session；存在 session ID 不保证恢复成功。新会话所需背景由调用方提供。
 
-OpenCode：step start/finish -> `model_step.started/finished`（并从 step start 更新 session），text/reasoning part -> final/public reasoning analysis delta，tool part state -> tool lifecycle，step finish 同时更新 usage；同一原生 `messageID` 作为 `stepId` 关联一轮中的 reasoning/tool/text。进程成功退出后产生 message update/run finished，结构化 provider error 进入 run.error。
+OpenClaw 为每次调用建立隔离 session，验证本轮 `provider_agent_id` 指向已有 Agent，通过 `sessions.messages.subscribe` 取流、`agent` 执行、`agent.wait` 确认终态、`sessions.abort` 取消。它不创建 Agent、不验证旧 runner 隔离配置、不改写原生工作区，也不传 Harness cwd。见 [连接合同](15-openclaw-external-agent-binding-design.md)。
 
-OpenClaw：adapter 先用 `config.get` 验证隔离配置，再用 `sessions.create.cwd` 建立绑定 Runtime workdir 的唯一 session，调用 `sessions.messages.subscribe` 打开完整事件流，最后调用 `agent`；Gateway 的 assistant/thinking/tool/usage/lifecycle streams 映射为公共事件。终态必须经 `agent.wait` 确认，取消通过 `sessions.abort` 收敛为 `run.stopped`。
+权限使用本轮 `approvalMode`。Adapter 按支持范围映射 ask／assisted／full_access，无法表达时明确拒绝。Claude Code 和 CodeBuddy 只在 full_access 下使用 bypass；OpenCode 只在 full_access 下使用自动执行 CLI，ask 使用交互 ACP。不能把某个引擎的默认权限写成整个 Runtime 的默认权限。
 
-## Custom / Remote Integrations
+## Canonical 事件
 
-上层契约 `InvokeRequest -> AsyncIterable<CanonicalEvent>` 与传输无关，因此可以实现非本地 CLI 的适配器（例如通过 HTTPS + SSE 接入 Dify 这类远程编排/应用平台）。**但当前不建议这样做。**
+Adapter 将原生消息、工具、活动、用量、交互和终态转换为规范事件，保留实际身份与公开性。Codex commentary 与 final、ACP thought 与正文等分别映射到对应通道；未知工具中间状态不能被当作终态。Host 等待执行器清理后发布终态，不把命令 ACK 或订阅断开解释成执行完成。
 
-原因在于定位歧义：本项目的目标是**统一本地 Agent CLI**——代码执行、工具调用与文件操作发生在 adapter-host 所在节点。远程应用平台是一个能力边界与权限模型均不透明的“黑盒工作流服务”，把它与本地适配器并列会让使用者误判系统的安全与执行语义；同时远程集成将执行与凭证移出本机边界，`workdir`、sandbox、进程隔离等本地约束不再适用，取消与终态语义也更弱。
+native 模式保留 Provider 原始消息结构，由独立 Host control 表达执行状态。业务消费者不能直接用原生 payload 中的 `completed` 字样推断 Host 已完成。
 
-若确需自行接入此类集成，除事件翻译外，**该适配器必须在 agent 配置层显式声明其 capability 能力包与限制**（如是否支持 `session.serialize`、是否具备文件/工具能力、可用的取消语义），使上层按 capability 而非按 adapter type 做决策与限制。注意当前 `capabilities` 仅为 metadata、尚未在运行时强制校验，能力边界目前依赖约定而非强制。
+## 配置与验证
 
-## Local Verification On 2026-08-28
+`agentConfig.effort` 使用统一 `low / medium / high / xhigh`；缺省时保留 Provider 默认值。原生转换、降档及未应用提示见 [思考强度映射](reasoning-level-mapping.md)。MCP 通过 [本轮 Context 执行配置](25-run-mcp-context.md) 提供，不触发插件安装。
 
-本机版本：Codex CLI `0.149.0`、Claude Code `2.1.145`、CodeBuddy `2.140.0`、OpenCode `1.18.21`。这四个 adapter 都完成了隔离目录 live invocation：
-
-- Codex：provider thread `01a046e3-...`，有 usage 和 run.finished。
-- Claude Code：provider session `bfcc9bd7-...`，有 usage 和 run.finished。
-- CodeBuddy：ACP session `a370c065-...`，analysis/final chunks 和 run.finished。
-- OpenCode：使用 `opencode/hy3-free`，session `ses_fb9185921ffe...`，有 usage 和 run.finished。
-
-OpenClaw Gateway adapter 使用 fake Gateway 完成 RPC、runId 隔离、seq 去重、tool、session、最终响应回退和取消契约测试。此前本机 `OpenClaw 2026.9.4` 的真实模型验证包含托管 runner 和 `sessions.create.cwd`；该执行方式已经删除，历史结果不能证明当前已有 Agent 接入链路通过。当前 Adapter 保留用户的原生 workspace、Skill 和 memory，不创建 Agent 或修改 Gateway 配置；真实已有 Agent 与线上 Worker 联合验收需要按当前合同执行。
-
-这证明当前机器上的真实 wire shape 可被 parser 消费；不是未来版本兼容承诺。升级 provider 后先运行 tests，再做一个只读 live smoke test。
-
-## Adding Provider Options
-
-`agentConfig.effort` 承载 Runtime 统一档位 `low / medium / high / xhigh`，不是原生提供方档位。未配置时保留提供方默认值，不补 `medium`。原生档位转换仅在 adapter 生成命令或 RPC 参数时发生，不修改 Context、执行快照或 Core 中的用户选择。旧 `thinking` 配置仍不允许。
-
-默认映射与验证见 [Adapter SDK reasoning.ts](../packages/octo-runtime-adapter-sdk/src/reasoning.ts)，行为与验收见 [思考强度映射](reasoning-level-mapping.md)。其他 provider-specific 配置也由相应 adapter 读取，不进入 Core 分支。OpenClaw 的详细行为见 [OpenClaw Gateway Adapter](06-openclaw-local-adapter.md)。
+新增 Adapter 按 [开发指南](08-adapter-authoring.md) 补齐声明、原生事件与成功／失败／取消／恢复测试。代码支持和 fixture 通过不能替代真实 Provider 与 im-test 验收；已有实测范围见对应 `docs/validation/` 记录。

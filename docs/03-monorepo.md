@@ -22,11 +22,11 @@ apps/
 
 packages/
   octo-runtime-protocol/             canonical protocol
-  octo-runtime-core/                 domain engine and stores
+  octo-runtime-core/                 local execution context resolution
   octo-runtime-daemon/               local SDK, lifecycle, IPC and optional modules
-  octo-runtime-worker-access/        optional enrollment / current Worker transport
-  octo-runtime-channel-im/           optional IM integration
-  octo-runtime-context-builder/      producer-side context helpers
+  octo-runtime-extra-channel-gateway/ optional Octo IM integration
+  octo-runtime-extra-channel-wecom/   optional WeCom integration
+  octo-runtime-extra-sse-demo/        optional HTTP/SSE invocation example
   octo-runtime-adapter-host/         adapter lifecycle and RPC library
   octo-runtime-adapter-sdk/          adapter authoring helpers
   octo-runtime-acp-client/           reusable ACP client
@@ -39,12 +39,12 @@ packages/
 apps -> packages
 octo-runtime-adapter-* -> octo-runtime-adapter-sdk / provider protocol helpers
 octo-runtime-daemon -> local Host / Core / Protocol dependencies
-optional worker-access / channel-im -> shared Host and protocol contracts
+optional extras -> shared Host and protocol contracts
 HostApp composition -> explicitly selected optional factories
 octo-runtime-adapter-host -> octo-runtime-protocol
 ```
 
-daemon 的生产依赖不得引入 worker-access 或 channel-im；HostApp 额外携带并显式登记／启用所需工厂。标准 CLI 根包携带这些包不代表客户 SDK 必须部署它们。
+daemon 的生产依赖不引入业务 Channel；HostApp 额外携带并显式启用所需扩展。标准 CLI 根包携带扩展不代表客户 SDK 必须部署它们。旧 worker-access 和 Context Builder 包已移除。
 
 `packages/*` 不应 import `apps/*`。provider 命令构造、native event parser、session codec 和权限适配必须留在 `packages/octo-runtime-adapter-*`；apps 只做配置、进程启动和 I/O 装配。
 
@@ -132,7 +132,7 @@ Core、daemon 和 CLI 不应增加 `if adapterType === "foo"`。新增 provider 
 ## 新增 App
 
 1. 创建 `apps/<name>/package.json` 和 `src/index.ts`。
-2. package 标记 `private: true`，命名为 `@octo-runtime-ai/<name>` 或 `@octo-runtime-ai/<name>-app`。
+2. package 标记 `private: true`，命名采用当前 scope `@mininglamp-oss/<name>`；与库包同名时追加 `-app`，例如 `@mininglamp-oss/octo-runtime-daemon-app`。
 3. 使用 `workspace:*` 依赖需要的 runtime packages。
 4. 在 app package 中提供 `start` script；需要统一入口时再加入根 scripts。
 

@@ -1,44 +1,22 @@
 # Prompt、上下文与 Workdir
 
-> 2026-10-14 新基线：Agent Revision 已移除。系统 instructions 保存到 ContextConfiguration.mandatory；默认 ensure 写入“我是个人助理”。只在底层会话首轮注入，续聊不重复；重置或新建底层会话重新注入。下文涉及 Revision 的内容仅为历史记录。
+当前合同为 Run `schema_version=7`、Context `octo.context-envelope/v3`。业务方准备本轮输入及上下文，Runtime 不查询 Agent Revision、不生成业务背景，也不从工作目录反推业务状态。
 
+## 模型输入
 
-Provider 输入由 AgentRun 的冻结输入与 Agent revision 共同构造，不从 workdir 文件反推业务状态。
+- `prompt` 保存可展示的本轮请求；`modelInput` 和可选 `modelInputParts` 承载实际模型输入。
+- 业务方在 `context.items` 中显式提供本轮背景、引用或 `extra.*`。Host 冻结请求后，使用 [model-input.ts](../packages/octo-runtime-adapter-host/src/model-input.ts) 保序渲染，再放到模型输入前面。
+- 执行配置不进入模型文本；可信 `controlInstructions` 使用独立通道。控制指令的原生载体和新建／恢复会话行为由 Adapter 实现，不能把该行为扩展为普通业务 Context 的首轮缓存。
+- 引用只渲染描述，不自动读取正文。业务方需要正文时，在发起请求前自行完成授权和取材。
 
-Reference Core 生成：
+业务方可以提交空模型上下文，也可以在两个不同 Event 中显式提交相同内容。Host 每轮都使用本轮快照，不根据 session、Run 序号或 hash 补齐、去重或省略。Provider 恢复失败时，业务方决定并提供新会话需要的背景。
 
-```json
-{
-  "schema": "octo-runtime.agent-run-context/v1",
-  "agent": { "id": "agent_1", "name": "reviewer" },
-  "agent_session": {
-    "id": "asess_1",
-    "namespace": "loop",
-    "session_key": "v1/task/task_42",
-    "generation": 1
-  },
-  "agent_run": {
-    "id": "arun_1",
-    "run_no": 2,
-    "trigger": {
-      "kind": "loop_dispatch",
-      "occurrenceId": "loop_attempt_2"
-    },
-    "input": { "prompt": "Review the change" }
-  }
-}
-```
+请求形状见 [Protocol Schema](../packages/octo-runtime-protocol/schema/protocol.schema.json)，分类规则见 [LLM 注入约束](context-llm-injection.md)。
 
-这里没有 Chat、Task 或 Attempt 的通用字段。Loop 若需要 task metadata，应把它作为 namespace-owned input/context 传入，而不是要求 Runtime 查询 Loop 数据库。
+## 工作目录
 
-Agent Worker Runtime 将 execution envelope 映射为：
+工作目录来自已解析的执行配置，准备入口为 [execution-preparation.ts](../packages/octo-runtime-adapter-host/src/execution-preparation.ts)。工作目录只是执行位置，不是权限或隔离边界；sandbox、宿主账户及审批仍按各自合同执行。
 
-- `agent_run_request.input`：本轮冻结输入；
-- `agent_revision.definition.instructions`：Agent 固定指令；
-- `agent_revision.execution_profile.workdir`：provider cwd；
-- `provider_session`：opaque resume data；
-- 可选 channel context snapshot：用于 provider model input，但不改变产品可显示 prompt。
+OpenClaw 声明 `metadata.workspace: false`，保留目标 Agent 的原生工作区，忽略 Harness 工作目录；不为它创建随机目录或传递 `cwd`。详见 [OpenClaw 连接合同](15-openclaw-external-agent-binding-design.md)。
 
-`prompt` 是产品可显示的当前请求；`modelInput` 可以额外包含已经冻结的频道上下文。二者分离避免隐藏上下文被重复显示或重复追加。
-
-Workdir 只是子进程 cwd，不是安全边界，也不保存 AgentRun 权威状态。权限由 provider sandbox、容器/VM、宿主账户和最小凭证建立。
+Runtime 不在工作目录保存业务 Run 历史。完整事件、聊天历史和 Provider 会话绑定由消费应用保存，见 [纯执行实体](15-stateless-executor-design.md)。
