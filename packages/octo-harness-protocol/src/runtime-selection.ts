@@ -10,7 +10,6 @@ export function assertResolvedRuntimeSelection(
   assertJsonValue(value);
   fields(value, [
     "schema",
-    "context_configuration_version",
     "selection_mode",
     "explicit_runtime_id",
     "authorized_candidates",
@@ -24,7 +23,6 @@ export function assertResolvedRuntimeSelection(
     !["candidates", "none"].includes(value.failover as string)
   )
     invalid();
-  positiveInteger(value.context_configuration_version);
   if (value.selection_mode === "explicit") text(value.explicit_runtime_id);
   else if (Object.hasOwn(value, "explicit_runtime_id")) invalid();
   if (value.selection_mode === "explicit" && value.failover !== "none") invalid();

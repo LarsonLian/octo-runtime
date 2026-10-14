@@ -40,8 +40,7 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, conte
     workspace: { mode: "fixed", path: directory }, workdir: directory,
     runtime_limits: { run_timeout_ms: timeout, enforcement: "enforce" } };
   const envelope = {
-    schema_version: 7, session_scope_id: "fixture-scope", context_configuration_version: 1,
-    effective_context: executionContext(plan, contexts), resolved_execution_plan: plan,
+    schema_version: 7, session_scope_id: "fixture-scope", effective_context: executionContext(plan, contexts), resolved_execution_plan: plan,
     resolved_runtime_selection: resolvedRuntimeSelection("runtime-deadline"),
     run_id: "run-deadline", agent_session_id: "session-deadline",
     agent_run_request: { context: contextEnvelope(contexts), namespace: "test", agent_id: "agent-deadline",

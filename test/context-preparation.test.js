@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { prepareRunContext } from "../packages/octo-harness-adapter-host/dist/index.js";
+import { createOpenClawAdapter } from "../packages/octo-harness-adapter-openclaw/dist/index.js";
 import { AgentWorkStore } from "../packages/octo-harness-worker-access/dist/agent-work-store.js";
 
 async function fixture(t) {
@@ -45,4 +46,28 @@ test("fixed workspaces preserve user-managed runtime files", async t => {
   await writeFile(config, '{"user":"configured"}');
   await f.prepare({ workdir: f.root, workspace: { mode: "fixed", path: f.root } });
   assert.equal(await readFile(config, "utf8"), '{"user":"configured"}');
+});
+
+test("OpenClaw workspace declaration skips fixed and random directory preparation", async t => {
+  const f = await fixture(t);
+  const adapter = createOpenClawAdapter();
+  assert.equal(adapter.metadata.workspace, false);
+  const before = await readdir(f.root);
+  for (const agent_source of ["preset", "provisioned"]) {
+    for (const workspace of [{ mode: "fixed", path: join(f.root, "missing-non-git") }, { mode: "random" }]) {
+      const plan = { ...f.plan, agent_source, adapter_type: "openclaw", provider_agent_id: "main", workspace, workdir: workspace.path ?? "" };
+      const prepared = await prepareRunContext(plan, {
+        ...f.options,
+        stateRoot: join(f.root, "unused-state"),
+        workspace: adapter.metadata.workspace,
+        store: { conversationWorkspace() { assert.fail("OpenClaw must not allocate a workspace"); } }
+      });
+      assert.equal(prepared.workdir, plan.workdir);
+      assert.equal(prepared.providerStateDir, "");
+      assert.deepEqual(prepared.receipt, {
+        workspace_mode: "none", workspace_path: "", provider_state_dir: "", warnings: ["CONTEXT_WORKSPACE_IGNORED"]
+      });
+      assert.deepEqual(await readdir(f.root), before);
+    }
+  }
 });

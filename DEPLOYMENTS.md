@@ -1,147 +1,75 @@
-# Octo Harness Deployment
+# Octo Harness 部署
 
-本文档说明本地 `npm link`、连接 `octo-agent-worker` 和 npm 全局发行约定。最终用户的一键入口见根 [README](README.md) 与 [installers](installers/README.md)。
+日期：2026-10-14。部署选择由 HostApp 决定。本地 Runtime 存在与云端登记独立，统一原则见 [Runtime 合同](docs/runtime-local-and-online-contract.md)。
 
-## 1. 本地编译并 link
+## 1. 客户 App 的最小部署
 
-要求 Node.js 24+、pnpm 11。首次 checkout 或依赖变化后先安装 workspace 依赖：
+Eva2.0 等客户仅需要本地执行时，依赖 `@mininglamp-oss/octo-harness-daemon` 及其本地生产依赖。无需携带 worker-access、channel-im、标品 Work App 代码或独立 embedded 包；不通过 apps/cli 承载 SDK。
+
+源码构建与独立部署示例：
 
 ```bash
-corepack enable
 pnpm install --frozen-lockfile
+pnpm build
+pnpm --filter @mininglamp-oss/octo-harness-daemon deploy --prod /absolute/staging/daemon
+node scripts/verify-daemon-deployment.mjs /absolute/staging/daemon
 ```
 
-在仓库根目录执行：
+验证脚本检查可选包缺席、本地实际执行和缺失模块失败隔离；它不是云端或所有 Provider 的端到端验收。
+
+HostApp 提供固定版本的 Node 24+、SDK runner、adapter manifest、adapter-host 入口和所需 Provider。具体 `distribution` 参数见 [接入指南](INTEGRATION.md#2-作为-sdk-接入独立-app)。Runtime 与 Provider 缺失时返回状态，由 HostApp 决定安装；执行层不自动下载。
+
+程序文件与 app-owned Home 分离。Home 保存本地身份、profile、IPC 运行状态和日志；仅云端模块启用后才需要注册凭据。同一产品账号／租户的稳定身份应保留，不因未注册或离线更换。
+
+## 2. 可选接入的发行物
+
+| 场景 | 额外部署 | 启动 |
+| --- | --- | --- |
+| 本地加 IM | channel-im 及其生产依赖 | 登记 `createImModule` 并显式启动 |
+| 标品 Worker 接入 | worker-access 及其生产依赖 | 登记 `createWorkerAccessModule` 并显式启动 |
+| 仅本地 | 无接入包 | 仅启动本地账号 Runtime |
+
+模块工厂通过注入的共享 Host 工作，不复制本地执行器。部署包或登记工厂不自动连接；模块配置与凭据由 HostApp 在显式启动时提供。停止连接不停止本地 Host。
+
+Work App 的准备脚本分别部署 `sdk/`、`sdk/modules/worker-access` 和 `sdk/modules/channel-im`。其历史资源目录名 `embedded-runtime` 不代表仍依赖 embedded 包。详细布局见 [Work App 内置 Runtime](../octo-harness-work-app/docs/embedded-runtime.md)。
+
+最终 access 只负责注册；现有 Worker 工厂仍组合注册与 WS 执行，最终拆分待评审。持久化设备在线 toggle 也尚待实施，不把发行物中的可选模块当作默认启用政策。
+
+## 3. 独立 CLI 的 link 与发行
+
+根 `@mininglamp-oss/octo-harness` 包是标品运维 CLI 装配，携带可复用的 workspace packages。它不是客户仅本地 SDK 的最小依赖树。
+
+源码全局 link：
 
 ```bash
 npm link --foreground-scripts
-```
-
-根包的 `prepare` lifecycle 会先执行完整的 `pnpm build`；构建成功后，npm 再创建全局
-package symlink 和以下命令：
-
-```text
-octo-harness          -> apps/cli/dist/index.js
-octo-harness-daemon   -> apps/daemon/dist/launcher.js
-```
-
-验证 link：
-
-```bash
 command -v octo-harness
-command -v octo-harness-daemon
-octo-harness help
+octo-harness --help
 ```
 
-link 指向当前 checkout，但运行的是编译后的 `dist/*.js`。修改 TypeScript 源码后执行
-`pnpm build`；只有 `package.json` 的 bin/link 元数据发生变化时才需要重新执行 `npm link`。
+prepare 会构建 workspace，CLI 指向编译后的 dist。修改源码后构建并重启受影响进程；全局链接不能替代正在运行应用的重启。
 
-移除全局 link：
+取消 link：
 
 ```bash
 npm unlink --global @mininglamp-oss/octo-harness
 ```
 
-## 2. 连接 octo-agent-worker
-
-`octo-harness login` 先以 `octo_enroll_` 向 agent-worker 换取设备凭证，再调用
-`/v1/runtime/register`。先启动依赖 `octo-auth` 的 agent-worker：
+发布时先发布运行依赖 packages，再发布根 CLI；pnpm pack／publish 将 workspace 依赖转换为版本范围。版本和 registry 可用性必须由发布方验证，源码存在不等于版本已发布。
 
 ```bash
-cd ../octo-agent-worker
-cp .env.example .env
-# 编辑 MYSQL_DSN、OCTO_APP_SERVER_URL 和 DEVICE_CREDENTIAL_HMAC_KEY。
-./start.sh
-```
-
-使用 Octo Web 生成的一次性 token 完成源码 profile；`server-url` 是 Octo Web 来源，
-`agent-work-url` 是 Worker API 根地址；直连本机 Worker 时不带网关的 `/api` 前缀：
-
-```bash
-printf '%s\n' 'octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN' | octo-harness \
-  --home "$PWD/.tmp/harness-home" login \
-  --server-url https://im-test.deepminer.com.cn \
-  --agent-work-url http://127.0.0.1:8092 \
-  --enroll-token-stdin
-
-octo-harness --home "$PWD/.tmp/harness-home" daemon run
-```
-
-另一个终端检查连接：
-
-```bash
-octo-harness status
-```
-
-`status.agentWork.connected` 应为 `true`，并返回 login 已写入的 `runtimeId`。daemon 从
-Harness Home 读取 server URL、Runtime ID 和受保护的 device credential；service argv 与
-Environment variables do not carry secrets. One Home discovers multiple profiles with separate `runtime_id`, credential, WSS, and outbox, sharing one adapter-host and one Home-global `machine_id`. The machine label is not an authentication key. Mutually untrusted users require separate OS accounts.
-
-## 3. Token 约定
-
-凭证交换是单向的：Human token 只用于创建短期 enrollment，`octo_enroll_` 只用于一次
-设备注册，最终 `octo_runtime_` 只保存在 Worker hash 与 Harness mode 0600 文件中。它不能用
-以下凭证代替：
-
-- `INTERNAL_CREDENTIALS_JSON` 中任一 namespace-scoped service token：agent-worker 业务执行 API 的凭证；
-- Codex、Claude Code、CodeBuddy 等 provider token：模型执行凭证，由各 provider CLI 独立管理；
-- IM/Bot token：消息通道凭证，与 Runtime transport 无关。
-
-不要把 device token 写入 `config/adapters.json`、Agent revision、workdir、命令参数、service
-definition 或 Git。重新授权时使用新的 Human enrollment；Worker 可以单独撤销一台设备凭证。
-
-## 4. 发布包结构
-
-根包 `@mininglamp-oss/octo-harness` 是面向安装者的 CLI 包，只发布：
-
-```text
-apps/cli/dist/
-apps/daemon/dist/
-apps/adapter-host/dist/
-config/adapters.json
-README.md
-DEPLOYMENTS.md
-```
-
-可复用的 `@mininglamp-oss/octo-harness-*` packages 是根包的运行时依赖。正式发布时应先发布
-这些 workspace packages，再发布根 CLI 包；apps 自身保持 private，因为它们已经由根包承载。
-
-发布前验证：
-
-```bash
-pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm lint
 pnpm test
 pnpm pack --dry-run
 ```
 
-发布顺序示例，registry 和 access 策略按实际环境配置：
+当前 CLI／一键安装器保留显式 enrollment、原生服务管理和 `--wait-online` 验收流程，并可能恢复已保存云端 profile 的连接。它们不是本地 Runtime 存在或 SDK 启动的必要条件。操作见 [CLI](apps/cli/README.md)和[安装器](installers/README.md)。
 
-```bash
-pnpm --recursive --filter "./packages/**" publish
-pnpm publish
-```
+## 4. 真实联调与凭据
 
-workspace dependency protocol 由 pnpm 在 pack/publish 时转换为实际版本范围，因此正式发布使用
-pnpm，不直接用 npm 发布 workspace。当前实现仍是 single-node reference deployment；多节点生产
-部署还需要事务数据库、outbox、worker lease/fencing、控制面鉴权和完整可观测性，详见
-[`ARCHITECTURE.md`](ARCHITECTURE.md) 与 [`docs/07-operations.md`](docs/07-operations.md)。
+真实接口调试使用 `https://im-test.deepminer.com.cn/`，Worker API 根地址为 `https://im-test.deepminer.com.cn/agentworker/api`。本轮服务端操作范围仅 Worker；旧 Loop／Channel／MCP Access 目录不构成部署或数据库操作依据。
 
-发布后全局安装并启动：
+Human Token 用于明确的业务授权与注册 grant 请求；enrollment grant 用于注册；Runtime credential 用于已启用的 Worker 接入；IM Bot 与 Provider 凭据分别独立。凭据不进入 Git、公开日志、命令参数、service definition、renderer 或模型 Context。
 
-```bash
-npm install --global @mininglamp-oss/octo-harness
-octo-harness daemon run
-```
-
-全局 npm prefix 管理 CLI 与 daemon 程序文件；`~/.octo-harness`（Windows 为 `%LOCALAPPDATA%\OctoHarness`）只保存 profile、`runtime_id`、credential、数据库、PID/socket 和日志。原生 service 保存绝对 Node 与 daemon entrypoint 路径，不依赖交互 shell PATH；Node/npm prefix 变化后重跑 installer/login 以重写 service definition。
-
-项目内安装并启动：
-
-```bash
-npm install @mininglamp-oss/octo-harness
-npx octo-harness daemon run
-```
-
-包名用于安装和依赖声明；`octo-harness` 是稳定的可执行命令名。
+验收分别检查本地 IPC、真实执行、注册回执、设备实际连接和 IM 连接，不能用一个 online 状态代替全部证据。现有范围见 [验证记录](docs/validation/daemon-package-modules-2026-10-14.md)。

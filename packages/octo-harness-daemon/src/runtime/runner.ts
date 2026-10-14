@@ -1,18 +1,17 @@
 #!/usr/bin/env node
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import {
-  loadManagedAgentWorksFromRoot,
-  startDaemonServer,
-  type DaemonApplication
-} from "@mininglamp-oss/octo-harness-daemon";
+import { join } from "node:path";
+import { readAdapterConfigurations } from "@mininglamp-oss/octo-harness-adapter-host";
+import { startDaemonServer } from "../server.js";
+import type { DaemonModuleRegistration } from "../modules.js";
 import { readJson, writeJsonAtomic } from "./home.js";
-import type { EmbeddedRunnerSession } from "./runtime-contract.js";
+import type { DaemonRunnerSession } from "./runtime-contract.js";
 
 const sessionIndex = process.argv.indexOf("--session");
 const sessionPath = sessionIndex >= 0 ? process.argv[sessionIndex + 1] : undefined;
-if (!sessionPath) throw new Error("usage: octo-harness-embedded-runner --session <path>");
-const session = readJson<EmbeddedRunnerSession>(sessionPath);
+if (!sessionPath) throw new Error("usage: octo-harness-daemon-runner --session <path>");
+const session = readJson<DaemonRunnerSession>(sessionPath);
 if (session.schema_version !== 1 || !session.nonce || !Number.isSafeInteger(session.parent_pid)) {
   throw new Error("embedded runner session is invalid");
 }
@@ -22,8 +21,19 @@ const manifestPath =
 const hostEntrypoint =
   session.adapter_host_entrypoint ??
   fileURLToPath(import.meta.resolve("@mininglamp-oss/octo-harness-adapter-host/runner"));
-const agentWorks = loadManagedAgentWorksFromRoot(session.account_root, session.profiles, {
-  discoverLocalOpenClaw: true
+const profiles = session.profiles.map((profile) => {
+  const root = join(session.account_root, profile);
+  const identity = readJson<{ runtime_id: string; octo_space_id: string }>(
+    join(root, "identity", "runtime.json")
+  );
+  const config = readJson<{ adapters?: unknown }>(join(root, "config.json"));
+  return {
+    tenantId: identity.octo_space_id,
+    profile,
+    root,
+    runtimeId: identity.runtime_id,
+    adapterConfigurations: readAdapterConfigurations(root, config.adapters)
+  };
 });
 let stopping = false;
 
@@ -31,7 +41,9 @@ const stop = (): void => {
   if (stopping) return;
   stopping = true;
   clearInterval(controlTimer);
-  void application.close().then(
+  void (async () => {
+    await application.close();
+  })().then(
     () => process.exit(0),
     (error) => {
       console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
@@ -40,21 +52,34 @@ const stop = (): void => {
   );
 };
 
-const application: DaemonApplication = await startDaemonServer({
-  homePath: session.home,
-  pidPath: session.pid_path,
+const application = await startDaemonServer({
+  homePath: session.account_root,
   socketPath: session.socket_path,
   storePath: session.store_path,
   manifestPath,
   hostEntrypoint,
-  agentWorks
+  localRuntimes: profiles,
+  account: {
+    subject: session.subject,
+    profiles,
+    machineId: readJson<{ machine_id: string }>(join(session.home, "machine.json")).machine_id
+  },
+  modules: session.modules.map((descriptor) => ({
+    id: descriptor.id,
+    create: async (context, config) => {
+      const loaded = (await import(descriptor.module)) as Record<string, unknown>;
+      const create = loaded[descriptor.exportName] as DaemonModuleRegistration["create"];
+      if (typeof create !== "function") throw new Error("DAEMON_MODULE_FACTORY_MISSING");
+      return create(context, config);
+    }
+  }))
 });
 writeJsonAtomic(session.supervisor_state, {
   schema_version: 1,
   nonce: session.nonce,
   parent_pid: session.parent_pid,
   runner_pid: process.pid,
-  daemon_pid: process.pid,
+  host_pid: process.pid,
   adapter_host_pid: application.hostProcess.child.pid ?? null,
   started_at: new Date().toISOString()
 });

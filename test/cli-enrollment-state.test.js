@@ -107,7 +107,7 @@ test("registration failure preserves the enrolled identity for a credential-prov
   }
 });
 
-test("OpenClaw connect stores a verified local binding without creating or configuring the Agent", async t => {
+test("OpenClaw connect saves a Runtime connection without binding or configuring an Agent", async t => {
   const home = await mkdtemp(join(tmpdir(), "oh-openclaw-config-"));
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
   await once(server, "listening");
@@ -173,24 +173,21 @@ test("OpenClaw connect stores a verified local binding without creating or confi
     const externalOutput = [];
     await runCli([
       "--home", home, "--profile", "default", "adapter", "connect", "openclaw",
-      "--binding-id", "binding_external_fixture",
       "--gateway-url", `ws://127.0.0.1:${address.port}`,
-      "--agent-id", "openclaw-external-agent",
-      "--workspace", "/srv/openclaw-agent",
       "--token-stdin"
     ], { input: Readable.from(["gateway-token\n"]), output: value => externalOutput.push(JSON.parse(value)) });
-    assert.equal(externalOutput[0].kind, "external");
-    assert.equal(externalOutput[0].binding_id, "binding_external_fixture");
+    assert.equal(externalOutput[0].source, "gateway");
+    assert.equal(externalOutput[0].available, true);
     const externalProfile = JSON.parse(await readFile(join(home, "default/config.json"), "utf8"));
-    assert.equal(externalProfile.adapters.openclaw.kind, "external");
-    assert.equal(externalProfile.adapters.openclaw.binding_id, "binding_external_fixture");
-    assert.equal(externalProfile.adapters.openclaw.agent_id, "openclaw-external-agent");
-    assert.equal(externalProfile.adapters.openclaw.execution.provider_agent_id, "openclaw-external-agent");
-    assert.equal(externalProfile.adapters.openclaw.execution.managed_workspace, undefined);
-    assert.deepEqual(calledMethods, ["connect", "agents.list"]);
-    assert.equal(JSON.stringify(externalProfile).includes("gateway-token"), false);
-    const credential = JSON.parse(await readFile(join(home, "default/credentials/openclaw-gateway.json"), "utf8"));
-    assert.equal(credential.access_token, rotatedGatewayToken);
+    assert.equal(externalProfile.adapters, undefined);
+    const connection = JSON.parse(await readFile(join(home, "default/adapters/openclaw/connection.json"), "utf8"));
+    assert.equal(connection.source, "gateway");
+    assert.equal(connection.agent_id, undefined);
+    assert.deepEqual(calledMethods.slice(-2), ["connect", "agents.list"]);
+    assert.equal(JSON.stringify(connection).includes("gateway-token"), false);
+    const credential = JSON.parse(await readFile(join(home, "default", connection.credential_ref), "utf8"));
+    assert.equal(credential.access_token, "gateway-token");
+
   } finally {
     await rm(home, { recursive: true, force: true });
   }

@@ -1,6 +1,22 @@
 # Octo Harness
 
-Octo Harness 是 provider-neutral 的本地 Agent Runtime。现有 `octo-harness` CLI 管理 Daemon；Daemon 装配接入模块并管理共享 adapter-host。Worker、IM 和本地助理的执行最终都使用同一套 `InvokeRequest` / `CanonicalEvent` 和 Host IPC，不为不同业务创建另一套 provider 执行器。
+Octo Harness 是 provider-neutral 的本地 Agent Runtime。本地接入使用 `HostApp → daemon 包的 SDK → IPC → Host → Adapter`。本地 Runtime ID 在初始化时生成并保存；Host socket 就绪即为本地启动成功。云端注册和对外连接由宿主显式控制，不是本地运行的前置条件。
+
+`octo-harness-embedded` 独立包已移除，其本地生命周期与 IPC API 收入 `octo-harness-daemon`。daemon 包不依赖 worker-access 或 channel-im；客户可以只部署 daemon 及其本地执行依赖。标准产品由 HostApp 另行携带可选连接包，通过模块配置显式启动。当前 SDK 的本地控制进程仍使用 daemon server；下面记录的最终对外进程职责和在线 toggle 按各自里程碑验收，不能从本次包合并推断已经全部实现。
+
+## 设计原则与实施状态
+
+2026-10-14：统一原则及事实判定见 [Runtime 本地存在与按需在线合同](docs/runtime-local-and-online-contract.md)。设备存在、本地初始化、本地就绪、注册、允许在线、实际连接及执行完成分别判断。云端登记不决定本地存在；access 最终链路仍待评审。
+
+`octo-harness-daemon` 是对外交互子模块的装配层。宿主指定是否启用模块、凭据来源及目标服务，daemon 按配置动态加载模块并管理连接；各入口复用同一个 Host。纯本地启动不激活对外模块；当前 SDK 的本地控制进程仍由 daemon 包 server 承载。导入 SDK 或接入 package 本身不激活 WS，也不发起注册。
+
+设备／Runtime 注册由显式操作触发，access 的已确认职责仅为注册。设备持续在线所需的 WS、heartbeat、关闭及失效合同仍待评审；不得把现有 `worker-access` 包的全部职责直接等同于最终 access 定义。
+
+待实施的 Work App 设备管理要求：提供本地持久化的“允许当前设备在线”toggle。关闭时不加载设备连接模块，已有设备连接停止；本地 Host 继续执行。重启按已保存的用户选择恢复配置，登录或 Host 启动不能自行开启。设备连接和 IM channel-adapter 分别启用，注册 ACK、设备在线、频道在线和本地就绪分别报告。
+
+CLI 要提供显式 IM 频道配置入口，保存 channel 类型、目录／执行 Context、Bot 凭据引用与启用状态，再由 daemon 启动已启用频道。设备／Runtime 注册是独立命令，候选名称为 `octo-harness devices register`；最终参数待冻结。上述命令是目标入口，不表示当前命令树已全部交付。频道配置不隐式注册设备，注册不隐式开启全部连接。
+
+业务方决定五元组和本轮 Context，应用 defaults 并检查 mandatory。SDK、daemon、注册模块、通用连接层和 Host 不读取 Agent 业务配置。启动、注册和本地调用没有 Agent prepare／ensure／默认创建流程。详见 [需求与验收基线](../docs/local-runtime-ipc-on-demand-ipd-se.md)。
 
 ## Context 方案设计约束
 
@@ -20,40 +36,23 @@ Host renderer 只匹配白名单 pattern：`extra.*/*`、`octo.content/inline`�
 
 ## 基础架构
 
-下图定义模块边界。`octo-runtime-daemon` 是图中的运行时角色名称，实际沿用本仓库的 `octo-harness-daemon` 和 CLI，不另建 Runtime 项目。Worker 与 IM 接入已拆为独立包。当前 IM 实现私聊单轮执行、会话复用和重置；群聊、GROUP.md 及云端 Event 登记仍属后续范围。
+以下为目标拓扑；注册与设备连接的最终 access 合同待架构评审。
 
 ```mermaid
-flowchart TB
-    subgraph APPLICATION["应用层"]
-        LOOP["Loop<br/>mention 场景（@Eva 助理）"]
-        CHAT["聊天"]
-    end
-
-    subgraph INFRA["Infra 层"]
-        AW["AgentWorkerAccess"]
-        IM["IM Server"]
-    end
-
-    subgraph D["Runtime 层：octo-runtime-daemon"]
-        A["子模块 1：远程执行接入"]
-        B["子模块 2：IM 接入<br/>群聊 / 会话 / GROUP.md 上下文"]
-        H["Host：统一执行内核"]
-        AD["Adapters（Codex/CC/Openclaw/Qoder）"]
-    end
-
-    LOOP <-->|"直接发起 AgentRun / 消费执行事件"| AW
-    CHAT <-->|"消息收发 / 多端同步"| IM
-    AW <-->|"执行协议 WS"| A
-    IM <-->|"IM 专用协议 WS"| B
-    B -.->|"记录 event / 获取 AgentRun"| AW
-    A <-->|"内部 IPC：AgentRun 协议"| H
-    B <-->|"内部 IPC：AgentRun 协议"| H
-    H <--> AD
+flowchart LR
+    APP["HostApp：业务策略与本地配置"] --> SDK["daemon 包：本地生命周期 SDK"]
+    SDK -->|"本地 IPC"| HOST["统一 Host"]
+    HOST --> AD["Provider Adapters"]
+    APP -->|"显式外部接入配置"| D["daemon：模块 / token / 目标服务装配"]
+    D -->|"按需加载"| IM["channel-adapter"]
+    IM <-->|"IM WS"| SERVER["IM 服务"]
+    IM -->|"共享 Host 执行入口"| HOST
+    D -->|"显式注册"| REGISTER["设备 + Runtime 注册模块"]
+    REGISTER --> WORKER["注册服务"]
+    D -.->|"本地在线 toggle 控制；合同待评审"| DEVICE["设备对外连接模块"]
 ```
 
-图中的 AgentRun IPC 是执行语义；现有底层接口为 `AdapterHostRpc`，通过 stdio NDJSON JSON-RPC 传输 `invoke`、`cancel`、`interaction.respond`，返回 `invoke.event` / `invoke.done`。接入层先校验并转换为 `InvokeRequest`，再调用 Daemon 注入的共享 Host 客户端。Daemon 对外的 UDS / Windows Pipe 控制接口与这条内部 Host IPC 是两层不同的传输。
-
-当前本地链路为 `IM Server WS → octo-harness-channel-im → AdapterHostRpc → adapter-host → Adapter`，最终文本通过 IM WS 一次回发。IM 包本地分配 eventId/runId，使用固定 Context v3、发起人元数据与 fullAccess；不调用旧 `octo-agent-access`，不等待 Worker 下发或 SSE。图中到 AgentWorkerAccess 的虚线是可选业务登记目标，当前不执行。远程执行仍由 Worker 接入包处理。本地助理同样通过 Host IPC 执行；外部业务可订阅本地源事件流。
+Host IPC 承载 invoke、取消、审批／问答答复和执行事件。daemon 使用 Host 提供的执行入口；业务来源不同不产生第二套 Provider 执行器。Context v3 的内容和顺序由业务发起方确定，通用连接层只校验和转发。关闭某个对外模块不得停止仍供本地 IPC 使用的 Host。
 
 ## 模块责任边界
 
@@ -61,18 +60,17 @@ flowchart TB
 |---|---|---|
 | [CLI](apps/cli/README.md) | 现有命令入口、Home/profile、服务启动停止、诊断 | IM 协议、provider 执行实现 |
 | [Daemon 启动器](apps/daemon/README.md) | 配置解析、启动与信号转发 | Worker WS 业务实现 |
-| [Daemon 包](packages/octo-harness-daemon/README.md) | 接入模块装配、共享 Host 生命周期、本地 IPC、观测和本地执行调度 | IM 会话和消息投递、Worker 传输实现 |
-| [Worker 接入](packages/octo-harness-worker-access/README.md) | 注册、Worker WS、重连、命令校验、远端准备回执、执行事件回传 | 拉起第二个 Host、IM Server WS |
+| [Daemon 包](packages/octo-harness-daemon/README.md) | 本地生命周期 SDK、IPC 与共享 Host；按宿主配置动态装配可选连接模块 | 决定宿主启用哪些模块、依赖 worker-access、处理业务 Context、另建 Host 执行器 |
+| [Worker 接入](packages/octo-harness-worker-access/README.md) | 现有包包含注册、Worker WS 和远程执行；最终拆分与设备连接合同待评审 | 将现有全部能力当作已批准的 access 职责、默认激活、拉起第二个 Host |
 | [IM 接入](packages/octo-harness-channel-im/README.md) | bf_token 注册、IM WS、私聊会话、/session、/reset、最终文本回发 | 直接调用 provider、独立 Daemon、聊天 SQLite 的隐式引入 |
 | [Adapter Host](packages/octo-harness-adapter-host/README.md) | 统一 IPC、invocation 生命周期、调用和取消、标准事件 | 消息来源、群聊规则、Worker 注册 |
 | [Context Builder](packages/octo-harness-context-builder/README.md) | 发起侧可选上下文构造工具 | 执行编译、材料预取与压缩、Run 创建 |
 | [Core](packages/octo-harness-core/README.md) | 本地 AgentSession/AgentRun 状态与通用执行引擎 | IM/Loop 业务模型、WS 接入 |
 | [Protocol](packages/octo-harness-protocol/README.md) | InvokeRequest、CanonicalEvent、Context 和校验合同 | 网络连接、进程和业务存储 |
-| [Embedded](packages/octo-harness-embedded/README.md) | 宿主 SDK、运行时接入、生命周期和本地 IPC 桥 | IM 业务实现、provider 协议分支 |
 | [Cross Service](packages/octo-harness-cross-service/README.md) | OS 用户级服务管理 | Run 调度、连接协议 |
 | [Adapters / SDK / ACP](packages/README.md) | provider 协议转换、进程与 transport 工具 | Worker/IM 连接和业务决策 |
 
-一个 Harness Home 管理一个 Daemon 和 adapter-host，多 profile 共享 Host。新入口复用现有 CLI、Home 和服务管理，不按 Codex 会话或工作目录另起一套默认运行时。当前 Embedded Home 可按 appId 隔离，不能把不同 Home 宣称为已自动合并的全局单实例。
+当前一个 SDK 账号的多个 profile 共享 Host；是否激活对外模块由 HostApp 决定。本地控制进程与对外专用进程的进一步拆分另行验收。新入口复用现有 CLI、Home 和服务管理，不按 Codex 会话或工作目录另起一套默认运行时。当前 app-owned Home 可按 appId 隔离，不能把不同 Home 宣称为已自动合并的全局单实例。
 
 当前 Run 固定为 `schema_version=7`，Context 固定为 `octo.context-envelope/v3`，不增加旧协议回退。技能、插件及 MCP 程序的安装与更新由 HostApp 管理；本轮 MCP 连接配置通过 `octo.execution/mcp` 传入，由 adapter 转换，见 [Run MCP 合同](docs/25-run-mcp-context.md)。凭据不进入模型输入。旧 Channel context、聊天 SQLite 和相关业务实现已移出；参考快照位于同级 `octo-channel-design-reference/`，不参与构建。源执行事件使用有界内存窗口，不等待 durable ACK。
 
@@ -84,14 +82,13 @@ apps/
   daemon/                          启动与配置入口
   adapter-host/                    Host 进程入口
 packages/
-  octo-harness-daemon/              模块装配、本地 IPC、共享 Host 生命周期
-  octo-harness-worker-access/       Worker WS 接入与远端执行编排
-  octo-harness-channel-im/                  IM 专用 WS、私聊会话与结果回发
+  octo-harness-daemon/              本地生命周期 SDK、IPC、可选模块装配
+  octo-harness-worker-access/       现有 Worker 接入；最终职责拆分待评审
+  octo-harness-channel-im/          IM 专用 WS、私聊会话与结果回发
   octo-harness-adapter-host/        共享执行 Host + NDJSON RPC
   octo-harness-context-builder/     发起侧上下文构造工具
   octo-harness-core/                本地执行状态与引擎
   octo-harness-protocol/            统一执行和 Context 合同
-  octo-harness-embedded/            宿主集成 SDK
   octo-harness-adapter-*/           provider adapters 与共享 SDK
   octo-harness-acp-client/          ACP transport
   octo-harness-cross-service/       原生用户服务管理
@@ -100,6 +97,8 @@ packages/
 每个模块的责任边界见对应 README；完整包索引见 [packages](packages/README.md)，可执行入口见 [apps](apps/README.md)。
 
 ## 一键安装
+
+本节保留现有安装器的操作说明，尚待按最终架构期望改造。其 enrollment、自启动和 `--wait-online` 流程不是本地 Host 的启动合同。目标要求安装、本地启动、频道启用与设备注册分别控制；不得从安装成功推断设备在线。
 
 面向最终用户的入口按平台拆分。两个位置参数固定为 `server-url`、`enrollment-token`；token 是短期、单次使用的设备 enrollment grant，不是 Human Session、`bf_` Bot key 或永久 Runtime Bearer token。
 
@@ -271,6 +270,6 @@ Provider 返回的 Codex thread ID、Claude session UUID 或 OpenCode session ID
 - [Module And Transport Flow](docs/02-module-and-transport-flow.md)
 - [Prompt And Workdir](docs/04-prompt-and-workdir.md)
 - [Provider Adapters](docs/05-provider-adapters.md)
-- [OpenClaw External Agent Binding](docs/15-openclaw-external-agent-binding-design.md)
+- [Runtime 与 OpenClaw 连接统一合同](docs/15-openclaw-external-agent-binding-design.md)
 - [Transport And Multi-node](docs/09-transport-and-multinode.md)
 - [Agent Worker Runtime](docs/13-agent-work-runtime.md)

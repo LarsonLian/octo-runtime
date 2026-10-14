@@ -56,63 +56,13 @@ test("managed Runtime requires the bound profile and discovers 128-character nam
   }
 });
 
-test("managed profile loads OpenClaw adapter credentials without serializing them into service argv", async () => {
+test("managed Runtime passes only its connection root, never Gateway credentials or an Agent target", async t => {
   const home = await mkdtemp(join(tmpdir(), "oh-managed-openclaw-"));
-  const workspace = join(home, "default/adapters/openclaw/octo-runner.workspace");
-  try {
-    await writeManagedRuntime(home);
-    const configPath = join(home, "default/config.json");
-    const config = JSON.parse(await import("node:fs/promises").then(module => module.readFile(configPath, "utf8")));
-    config.adapters = {
-      openclaw: {
-        schema_version: 1,
-        gateway_url: "ws://127.0.0.1:18789/",
-        agent_id: "octo-openclaw-runner",
-        workspace: join(home, "default/adapters/openclaw/octo-runner.workspace"),
-        credential_ref: "credentials/openclaw-gateway.json",
-        execution: {
-          provider_agent_id: "octo-openclaw-runner",
-          provider_options: {
-            OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789/",
-            OPENCLAW_RUNNER_WORKSPACE: workspace
-          },
-          credential_ref: "credentials/openclaw-gateway.json",
-        }
-      }
-    };
-    await writeFile(configPath, JSON.stringify(config));
-    await writeFile(join(home, "default/credentials/openclaw-gateway.json"), JSON.stringify({
-      schema_version: 1,
-      access_token: "gateway-secret",
-      device_id: "device-id",
-      public_key: "public-key",
-      private_key: "private-key",
-      issued_at: new Date().toISOString(),
-      provider_options: {
-        OPENCLAW_GATEWAY_TOKEN: "gateway-secret",
-        OPENCLAW_GATEWAY_DEVICE_ID: "device-id",
-        OPENCLAW_GATEWAY_PUBLIC_KEY: "public-key",
-        OPENCLAW_GATEWAY_PRIVATE_KEY: "private-key"
-      }
-    }));
-    await mkdir(workspace, { recursive: true });
-    if (process.platform !== "win32") await chmod(workspace, 0o555);
-
-    const paths = resolveDaemonRuntimePaths(["--home", home], {});
-    assert.equal(paths.agentWorks[0].adapterConfigurations.openclaw.providerOptions.OPENCLAW_GATEWAY_TOKEN, "gateway-secret");
-    assert.equal(paths.agentWorks[0].adapterConfigurations.openclaw.providerOptions.OPENCLAW_RUNNER_WORKSPACE, workspace);
-    assert.equal(paths.agentWorks[0].adapterConfigurations.openclaw.providerAgentId, "octo-openclaw-runner");
-    assert.equal(daemonRuntimeArguments(paths).includes("gateway-secret"), false);
-    await chmod(workspace, 0o755);
-    await writeFile(join(workspace, "user-owned-skill.txt"), "native configuration stays untouched");
-    assert.doesNotThrow(() => resolveDaemonRuntimePaths(["--home", home], {}));
-    config.adapters.openclaw.execution.managed_workspace = { path: workspace };
-    await writeFile(configPath, JSON.stringify(config));
-    assert.throws(() => resolveDaemonRuntimePaths(["--home", home], {}), /LOCAL_PLUGIN_CONFIGURATION_REQUIRED/);
-  } finally {
-    if (process.platform !== "win32") await chmod(workspace, 0o755).catch(() => undefined);
-    await rm(home, { recursive: true, force: true });
-  }
+  t.after(() => rm(home, {recursive:true,force:true}));
+  await writeManagedRuntime(home);
+  const paths = resolveDaemonRuntimePaths(["--home",home], {});
+  assert.deepEqual(paths.agentWorks[0].adapterConfigurations.openclaw, {providerOptions:{OPENCLAW_RUNTIME_ROOT:join(home,"default")}});
+  assert.equal(daemonRuntimeArguments(paths).some(value=>value.includes("TOKEN")),false);
 });
 
 test("daemon runtime options resolve environment defaults to absolute paths", () => {

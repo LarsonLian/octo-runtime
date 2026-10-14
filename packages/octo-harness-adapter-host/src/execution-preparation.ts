@@ -38,10 +38,26 @@ export async function prepareRunContext(
     signal?: AbortSignal;
     registerCleanup?: (path: string) => void;
     workspaceRoot?: string;
+    workspace?: boolean;
   }
 ): Promise<PreparedRunContext> {
   assertResolvedExecutionPlan(plan);
   options.signal?.throwIfAborted();
+  if (options.workspace === false) {
+    return {
+      workdir: plan.workdir,
+      providerStateDir: "",
+      receipt: {
+        workspace_mode: "none",
+        workspace_path: "",
+        provider_state_dir: "",
+        warnings:
+          plan.workspace?.mode === "none" || (!plan.workspace && !plan.workdir)
+            ? []
+            : ["CONTEXT_WORKSPACE_IGNORED"]
+      }
+    };
+  }
   const stateRoot = await privateDirectory(options.stateRoot);
   const workspace =
     plan.workspace ??
@@ -59,15 +75,10 @@ export async function prepareRunContext(
     };
   }
   if (workspace.mode === "random") {
-    const nativeWorkspace = plan.adapter_type === "openclaw";
     const workspaces = await privateDirectory(
-      nativeWorkspace
-        ? join(stateRoot, "workspaces")
-        : (options.workspaceRoot ?? join(homedir(), "OctoWork"))
+      options.workspaceRoot ?? join(homedir(), "OctoWork")
     );
-    const proposed = nativeWorkspace
-      ? join(workspaces, randomUUID())
-      : join(workspaces, `agent-${randomUUID()}`, "workdir");
+    const proposed = join(workspaces, `agent-${randomUUID()}`, "workdir");
     const chosen = options.store.conversationWorkspace(options.agentSessionId, proposed);
     if (chosen.created) {
       await privateDirectory(dirname(chosen.path));

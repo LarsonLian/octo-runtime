@@ -49,10 +49,8 @@ async function call(method, params = {}) {
 
 try {
   const configs = loadImBots(home);
-  const existing = await call("im.status");
   for (const config of configs) {
     const secret = configuredCredential(config);
-    const revision = (existing.find((item) => item.id === config.id)?.revision ?? 0) + 1;
     let value;
     if (config.type === "octo") {
       const { tokenFile: _file, ...bot } = config;
@@ -61,7 +59,7 @@ try {
       const { appSecretFile: _file, ...bot } = config;
       value = { ...bot, appSecret: secret };
     }
-    const status = await call("im.upsert", { config: value, revision });
+    const status = await call("im.upsert", { config: value });
     console.log(
       JSON.stringify({
         id: status.id,

@@ -6,6 +6,7 @@ import {
   mapReasoningEffort,
   providerInputText,
   type AdapterInvocationContext,
+  type AdapterProbeOptions,
   type CanonicalEvent,
   type InvokeRequest
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
@@ -21,7 +22,7 @@ import {
   type OpenClawGatewayEvent,
   type OpenClawGatewayOptions
 } from "./gateway.js";
-import { loadLocalOpenClawGateway, localGatewayFailure } from "./local-gateway.js";
+import { resolveOpenClawGateway, localGatewayFailure } from "./local-gateway.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -30,16 +31,12 @@ export const OPENCLAW_PROVIDER_OPTIONS = {
   token: "OPENCLAW_GATEWAY_TOKEN",
   deviceId: "OPENCLAW_GATEWAY_DEVICE_ID",
   publicKey: "OPENCLAW_GATEWAY_PUBLIC_KEY",
-  privateKey: "OPENCLAW_GATEWAY_PRIVATE_KEY",
-  agentId: "OPENCLAW_AGENT_ID",
-  workspace: "OPENCLAW_RUNNER_WORKSPACE",
-  bindingId: "OCTO_EXTERNAL_BINDING_ID"
+  privateKey: "OPENCLAW_GATEWAY_PRIVATE_KEY"
 } as const;
 
 export interface OpenClawGatewayInvocation {
   gateway: OpenClawGatewayOptions;
   agentId: string;
-  runnerWorkspace?: string;
   sessionKey: string;
   requestId: string;
   reconciliationDeadlineAt: number;
@@ -91,7 +88,6 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
   const agentId = req.agentConfig.providerAgentId;
   if (!agentId || !/^[a-z0-9_][a-z0-9_-]{0,63}$/.test(agentId))
     throw new Error("OpenClaw provider_agent_id is required");
-  const runnerWorkspace = option(req, OPENCLAW_PROVIDER_OPTIONS.workspace);
   const sessionKey = `agent:${agentId}:octo-run:${req.runId}:${randomUUID()}`;
   const requestId = `octo-harness-${req.runId}-${randomUUID()}`;
   const message = composeOpenClawPrompt(req);
@@ -116,7 +112,9 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
     deliver: false,
 
     idempotencyKey: requestId,
-    ...(initialControlInstructions(req) ? { extraSystemPrompt: initialControlInstructions(req) } : {}),
+    ...(initialControlInstructions(req)
+      ? { extraSystemPrompt: initialControlInstructions(req) }
+      : {}),
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),
     ...(timeout === undefined ? {} : { timeout: Math.max(0, Math.floor(timeout)) })
@@ -124,7 +122,6 @@ export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGate
   return {
     gateway: { url: gatewayUrl, token, device },
     agentId,
-    ...(runnerWorkspace ? { runnerWorkspace } : {}),
     sessionKey,
     requestId,
     reconciliationDeadlineAt: Date.now() + timeoutMilliseconds + reconciliationGraceMilliseconds,
@@ -989,13 +986,12 @@ export function createOpenClawAdapter({
   clientFactory = (options) => new OpenClawGatewayClient(options)
 }: { clientFactory?: GatewayClientFactory } = {}) {
   const responders = new Map<string, AcpApprovalBridge>();
-  let pendingProbe: Promise<{ available: boolean; command: string; reason?: string }> | undefined;
-  const probeGateway = async () => {
+  const probeGateway = async (options?: AdapterProbeOptions) => {
     let client: OpenClawGatewayClientLike | undefined;
     try {
-      client = clientFactory(await loadLocalOpenClawGateway());
+      client = clientFactory(await resolveOpenClawGateway(options?.providerOptions));
       assertRuntimeGatewayContract(await client.connect());
-      await assertExistingAgent(client, "main");
+      await client.request("agents.list", {});
       return { available: true, command: "openclaw-gateway" };
     } catch (error) {
       return { available: false, command: "openclaw-gateway", reason: localGatewayFailure(error) };
@@ -1006,6 +1002,7 @@ export function createOpenClawAdapter({
   return defineAdapter({
     metadata: {
       type: "openclaw",
+      workspace: false,
       processModel: "websocket-per-invocation",
       transport: "openclaw-gateway-rpc",
       capabilities: ["react"],
@@ -1018,11 +1015,7 @@ export function createOpenClawAdapter({
         executionFeatures.APPROVAL_FULL_ACCESS
       ]
     },
-    probe() {
-      return (pendingProbe ??= probeGateway().finally(() => {
-        pendingProbe = undefined;
-      }));
-    },
+    probe: probeGateway,
     async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {
       const bridge = responders.get(invocationId);
       if (!bridge) throw new Error("INTERACTION_NOT_ACTIVE");
@@ -1035,26 +1028,21 @@ export function createOpenClawAdapter({
       if (req.approvalMode === "assisted")
         throw new Error("APPROVAL_MODE_UNSUPPORTED: OpenClaw has no qualified assisted policy");
       if (responders.has(req.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
-      if (!option(req, OPENCLAW_PROVIDER_OPTIONS.url)) {
-        const gateway = await loadLocalOpenClawGateway();
-        req = {
-          ...req,
-          agentConfig: {
-            ...req.agentConfig,
-            providerOptions: {
-              [OPENCLAW_PROVIDER_OPTIONS.url]: gateway.url,
-              [OPENCLAW_PROVIDER_OPTIONS.token]: gateway.token,
-              [OPENCLAW_PROVIDER_OPTIONS.deviceId]: gateway.device.deviceId,
-              [OPENCLAW_PROVIDER_OPTIONS.publicKey]: gateway.device.publicKey,
-              [OPENCLAW_PROVIDER_OPTIONS.privateKey]: gateway.device.privateKey
-            }
+      const gateway = await resolveOpenClawGateway(req.agentConfig.providerOptions);
+      req = {
+        ...req,
+        agentConfig: {
+          ...req.agentConfig,
+          providerOptions: {
+            ...req.agentConfig.providerOptions,
+            [OPENCLAW_PROVIDER_OPTIONS.url]: gateway.url,
+            [OPENCLAW_PROVIDER_OPTIONS.token]: gateway.token,
+            [OPENCLAW_PROVIDER_OPTIONS.deviceId]: gateway.device.deviceId,
+            [OPENCLAW_PROVIDER_OPTIONS.publicKey]: gateway.device.publicKey,
+            [OPENCLAW_PROVIDER_OPTIONS.privateKey]: gateway.device.privateKey
           }
-        };
-      }
-      if (req.agentSource === "preset" && req.workdir)
-        throw new Error(
-          "CONTEXT_WORKSPACE_UNSUPPORTED: preset OpenClaw uses its provider workspace"
-        );
+        }
+      };
       const invocation = buildOpenClawGatewayInvocation(req);
       const bridge = new AcpApprovalBridge(req, 600_000, {
         providerDecisions: true,
@@ -1084,7 +1072,14 @@ async function assertExistingAgent(
     throw new Error(`OpenClaw agent ${agentId} is missing`);
 }
 
-export { loadLocalOpenClawGateway } from "./local-gateway.js";
+export {
+  loadLocalOpenClawGateway,
+  configureOpenClawConnection,
+  resolveOpenClawGateway,
+  OPENCLAW_RUNTIME_ROOT,
+  type OpenClawConnectionInput,
+  type OpenClawConnection
+} from "./local-gateway.js";
 
 export {
   OpenClawGatewayClient,

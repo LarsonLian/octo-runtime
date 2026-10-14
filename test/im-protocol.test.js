@@ -642,22 +642,25 @@ test("Delivery retries use one effect key and never rerun execution", async () =
   );
 });
 
-test("Dynamic endpoints isolate revisions, wait for credentials, and remove idempotently", async (t) => {
+test("Dynamic endpoints update independently, wait for credentials, and remove idempotently", async (t) => {
   const manager = new ImChannelManager({ host: { cancel: async () => ({ cancelled: true }) } });
   t.after(() => manager.close());
-  await manager.upsert(config(), 1);
-  await manager.upsert(config({ id: "b", botId: "other" }), 1);
-  await manager.upsert(Object.fromEntries(Object.entries(config()).reverse()), 1);
+  await manager.upsert(config());
+  await manager.upsert(config({ id: "b", botId: "other" }));
+  await manager.upsert(Object.fromEntries(Object.entries(config()).reverse()));
   assert.ok(manager.status.every((endpoint) => endpoint.state === "waiting_credentials"));
-  await manager.upsert(config({ token: "invalid" }), 2);
+  await manager.upsert(config({ token: "invalid" }));
   assert.equal(manager.status[0].state, "authentication_failed");
   assert.equal(manager.status[1].state, "waiting_credentials");
-  await assert.rejects(manager.upsert(config(), 1), /IM_CONFIG_STALE/);
-  await assert.rejects(manager.upsert(config({ token: "changed" }), 2), /IM_REVISION_CONFLICT/);
-  await manager.remove("a", 3);
-  await manager.remove("a", 3);
+  await manager.upsert(config());
+  assert.equal(manager.status[0].state, "waiting_credentials");
+  await assert.rejects(manager.upsert(config({ id: "duplicate" })), /IM_BOT_DUPLICATED/);
+  await manager.remove("a");
+  await manager.remove("a");
   assert.equal(manager.status.length, 1);
-  await assert.rejects(manager.upsert(config(), 3), /IM_CONFIG_STALE/);
+  await manager.upsert(config());
+  assert.equal(manager.status.length, 2);
+  assert.ok(manager.status.every(endpoint => !("revision" in endpoint)));
   assert.ok(!JSON.stringify(manager.status).includes("token"));
 });
 

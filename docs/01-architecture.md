@@ -1,93 +1,58 @@
-# Octo Harness 目标架构
+# Octo Harness 架构
 
-Octo Harness 是 Agent Worker 的执行节点，不是业务调度器。统一模型只有 `AgentSession -> AgentRun -> Invocation -> CanonicalEvent`。
+日期：2026-10-14。统一原则见 [Runtime 本地存在与按需在线合同](runtime-local-and-online-contract.md)，实现证据见 [包解耦验证](validation/daemon-package-modules-2026-10-14.md)。
 
-## 权威边界
+## 本地执行是独立能力
 
-| 领域 | 权威组件 |
-|---|---|
-| Agent 定义与 revision | Agent Worker |
-| AgentSession、provider resume、reset generation | Agent Worker |
-| AgentRun、lease、fencing、执行状态 | Agent Worker |
-| Loop Task/Attempt/父子关系/调度 | Loop service |
-| IM occurrence、conversation address、delivery | Channel Gateway |
-| AutoPilot schedule/misfire | AutoPilot service |
-| Webhook endpoint/filter/event | Webhook service |
-| Provider process、invocation、native event translation | Octo Harness |
-| 所有 Runtime 的安装决策（含内置 Harness、原生 Provider 及其运行依赖） | 宿主应用 HostApp |
-| Skill、Plugin、MCP、Connector 安装与配置 | 本地用户或原生 Runtime |
-| OKF 业务记忆 | Loop service |
-
-Harness 不能根据输入猜测“这是 Chat 还是 Task”，也不能创建业务 Task。上游只提交 namespace、Agent、session key、trigger occurrence 与输入。
-
-所有 Runtime 的安装统一由宿主应用 `HostApp` 决定。HostApp 决定是否安装、安装哪些 Runtime、版本及安装方式。SDK、Harness、daemon、adapter-host 和 Adapter 只能执行 HostApp 明确指定的安装方案，不得自行决定下载或安装。Runtime 缺失或版本不满足要求时，执行层必须向 HostApp 返回明确状态，由 HostApp 决定后续安装操作；注册、探测和 Run 执行不得隐式触发安装。
-
-Harness 不接收云端插件包、安装路径、启动命令或 MCP 配置。适配器直接调用已经完成本地配置的原生 Runtime；Harness 不替用户修改插件配置。工作目录准备仍由 Harness 执行，但不创建插件物化目录或工具 CLI 包装器。
-
-业务服务提交的 `tool_authorizations` 只声明服务主体、允许操作和对象范围。Worker 根据 Run 身份、租约与 fencing 签发短期授权；Runtime 从独立授权接口获取凭据。平台材料读取与产物归档的地址来自本地 `business_service_bindings`，其他授权通过宿主接收器交给本地已配置的工具。授权不进入模型输入。
-
-本地连接只消费 Harness 实现的具体操作，不消费整个服务主体的授权。同一 Loop 主体仍有知识或业务动作授权时，Runtime 必须将剩余操作交给本地接收器；接收器缺失时拒绝 Run，不以已配置业务连接作为授权已交付的证据。
-
-## 每轮 Context 的归属
-
-Event 发起方决定本轮模型上下文的内容、顺序和发送时机。是否发送 selection、项目背景、任务状态、引用或 extra，完全由业务方决定。业务方可以首次提供必要背景，续聊无变化时传空、有变化时只发本轮需要的项，也可以显式重复发送。必要的 adapter 等执行配置继续按执行合同和 defaults/mandatory 规则解析、校验，不进入 LLM 上下文块，不使业务项变成必填。
-
-Worker、daemon、worker-access、Host、Adapter 只校验、转发并固定渲染本轮快照。底层不得按 `sessionId`、run 序号或 hash 缓存、补齐、合并、去重或省略模型上下文。两个不同 Event 显式发送相同 item 时，两轮均须传递；原 Event 的幂等重投仍复用原快照。空模型上下文是有效输入，不要求执行配置也为空。
-
-`sessionId` 存在不保证 Provider resume 成功。reset、新建 Provider 会话或恢复失败后，业务方负责重新提供所需背景；执行层返回真实恢复结果，不从历史 Event 自动补背景。分类矩阵见 [LLM 注入约束](context-llm-injection.md)，详细 MUST / MUST NOT 与验收见 [全局 IPD-SE 基线](../../docs/event-context-rendering-ipd-se.md)。Compiler/Pipeline、材料预取与摘要、扩展投影及编译回执已删除。Host 只按白名单 pattern 保序拼接本轮数据，不执行业务检查。
-
-## 统一对象
+设备客观存在。Runtime 经 HostApp 安装并初始化后即有稳定本地身份，不以 Worker 登记或 online 为存在条件。本地就绪、云端注册、允许在线、实际连接和执行完成分别判断。
 
 ```mermaid
 flowchart LR
-  B[Business scheduler] -->|submit| S[AgentSession]
-  S --> R[AgentRun]
-  R --> L[Lease / fencing]
-  L --> I[Harness Invocation]
-  I --> P[Provider session]
-  I --> E[Canonical events]
-  E --> R
-  R --> B
+  APP["HostApp：业务请求与启用策略"] --> SDK["daemon 包本地 SDK"]
+  SDK --> IPC["本地控制 IPC"]
+  IPC --> H["共享 Host"]
+  H --> A["Provider Adapter"]
+  APP --> M["显式启动可选模块"]
+  M --> IM["channel-im"]
+  M --> W["worker-access：现有实现，最终划分待评审"]
+  IM --> H
+  W --> H
 ```
 
-- `AgentSession`：`(namespace, agent_id, session_key)` 唯一，保存 generation 与 opaque provider session。
-- `AgentRun`：一次可排队、执行、取消并进入终态的执行；同一 session 内按 run number/FIFO 串行。
-- `Invocation`：Harness 本地一次 provider 调用。重派或失败恢复可能产生新的 invocation，但不会改变业务对象语义。
-- `ProviderSession`：Codex thread、Claude UUID、OpenCode session 等 provider 私有恢复数据。
-- `TriggerOccurrenceID`：上游一次触发事实的稳定 ID。重复提交相同请求返回原 Run；同 ID 不同 payload 必须冲突。
+原 embedded 独立包已删除，本地 SDK 合入 daemon；daemon 不依赖 Worker／IM 包。当前 SDK 的本地子进程仍使用 daemon server。按需的是对外模块激活；对外专用进程的物理拆分另行验收。
 
-## 状态
+## 权威边界
 
-Worker 的完整状态机为：
+| 领域 | 责任组件 |
+| --- | --- |
+| Agent 定义、业务 Target、五元组、defaults／mandatory、本轮 Context | 业务发起方 |
+| Runtime 安装、版本、发行物和接入启用决策 | HostApp |
+| 本地 Runtime 身份、账号／租户隔离、IPC 与模块生命周期 | daemon SDK |
+| Invocation、原生 Provider 会话结果、取消、交互与标准事件 | Host／Adapter |
+| 本地聊天 Session、完整事件、Provider binding 与展示投影 | 宿主业务存储 |
+| 云端 Runtime 登记、凭据校验和独立远程执行控制 | Worker |
+| IM 协议、频道消息及投递 | channel-im 与频道业务层 |
 
-```text
-queued -> leased -> running -> interacting -> cancelling
-   \          \         \           \          \
-    +----------------------------------> completed | failed | cancelled | expired
-```
+本地调用不查询 Worker Agent registry，不等待自动创建或 prepare／ensure。Worker 的远程身份、权限、租约及 fencing 合同仍有效；不能把远程准入要求扩展为本地存在或启动条件。
 
-Harness canonical terminal 映射：
+一个 Home 的多个 profile 可共享 Host，但不同 app-owned Home 不自动合并。Runtime ID、Agent ID、Provider session ID 及 credential 分别承担身份或认证语义。
 
-| Harness event | AgentRun terminal |
-|---|---|
-| `run.finished` | `completed` |
-| `run.error` | `failed` |
-| `run.stopped` | `cancelled` |
+## 每轮 Context 与执行配置
 
-Task 的业务状态不能复制 AgentRun 状态。Loop 可把 Run 完成投影为待审核，IM 可把完成结果投递到群聊，两者都不改变 Run 终态。
+Run 固定为 7，Context 固定为 `octo.context-envelope/v3`。发起方决定 selection、背景、引用、任务状态和 extra 的发送时机、内容及顺序，并保存业务需要的快照。空模型上下文有效；不同 Event 显式重复的 item 均须传递。
 
-## Reset 与恢复
+必要 adapter 等执行项按执行合同校验，不进入模型文本。底层不从 Agent 配置补 defaults，不按 sessionId、run 序号或 hash 缓存、补齐、合并、去重或省略上下文。Host renderer 只按 namespace/name 白名单保序拼接，不调用业务校验器、预取、投影或摘要。
 
-`POST /v1/agent_session/reset` 由 Worker 执行：
+Provider session 由实际执行结果产生，作为 opaque 数据保存。存在 sessionId 不保证恢复成功；reset、新建会话或恢复失败时由业务方决定重新发送必要背景。详见 [Context 分类](context-llm-injection.md)及[全局基线](../../docs/event-context-rendering-ipd-se.md)。
 
-1. 校验 expected generation。
-2. 增加 generation、provider epoch 和 context epoch。
-3. 清空 `provider_session`。
-4. 取消旧 generation 中尚未开始的 Run；按参数请求取消 active Run。
-5. 按 trigger occurrence 保存 reset receipt，使重试返回同一结果。
+## 安装与工具授权
 
-下一次 `run.start` 不带 provider session，provider 创建新 thread/session；Harness 从 `session.update` 收到新值并回传 Worker。外部 `--resume` 参数始终来自 Worker 的 AgentSession，不来自 IM、Loop 或 Harness 自行拼接。
+所有 Runtime 及运行依赖的安装方案由 HostApp 决定。SDK、Host、Adapter 只能执行明确方案；缺失或版本不符时返回状态，不在启动、注册、探测或执行时隐式安装。
 
-## Reference Core
+原生插件与 MCP 的安装由宿主／用户管理。显式提交的 `octo.execution/mcp` 执行配置按 [Run MCP 合同](25-run-mcp-context.md)转换，不表示 Harness 接管云端插件分发。凭据及可信控制信息走独立执行通道，不进入模型 Context。
 
-`packages/octo-harness-core` 保留单机 reference profile，用于 adapter 合同测试。它只有 Agent、AgentSession、AgentRun 和 EventEnvelope；生产接入时 Worker 数据库仍是唯一权威。
+## 事件、终态与恢复
+
+本地 invoke 经 IPC 返回原始 CanonicalEvent；命令受理与真实终态分别判断。Host 提供有界事件窗口和原游标修复，不是聊天历史库。应用消费并保存完整事件；重启或窗口覆盖后明确返回不可恢复状态，不自动重执行或伪造完成。
+
+远程事件及 lease／fencing 由独立 Worker 合同管理，不给纯本地调用新增 Worker 前置条件。reference Core 的本地 FIFO 与 SQLite 用于诊断，不承担全局业务权威。具体流程见 [模块与传输](02-module-and-transport-flow.md)。

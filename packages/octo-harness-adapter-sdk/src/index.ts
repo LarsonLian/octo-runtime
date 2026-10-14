@@ -54,6 +54,8 @@ export {
 export interface AdapterMetadata {
   /** Local implementation support; not a remote runtime admission feature. */
   mcp?: boolean;
+  /** False ignores octo.execution/workspace; the Provider owns its workspace. */
+  workspace?: boolean;
   protocolSupport?: AdapterProtocolSupport;
   type: string;
   capabilities: string[];
@@ -61,6 +63,11 @@ export interface AdapterMetadata {
   executionFeatures: string[];
   processModel?: string;
   transport?: string;
+}
+
+/** Trusted local connection settings; never sourced from model Context. */
+export interface AdapterProbeOptions {
+  providerOptions?: Record<string, string>;
 }
 
 export interface ProbeResult {
@@ -72,7 +79,7 @@ export interface ProbeResult {
 
 export interface Adapter<TOutput extends AdapterOutput = AdapterOutput> {
   metadata: AdapterMetadata;
-  probe?: () => Promise<ProbeResult>;
+  probe?: (options?: AdapterProbeOptions) => Promise<ProbeResult>;
   /** Execute one provider turn, optionally reporting watchdog progress. */
   invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncIterable<TOutput>;
 }
@@ -97,7 +104,7 @@ export interface JsonCliAdapterOptions<TNative> {
   metadata: AdapterMetadata;
   buildCommand: (request: InvokeRequest) => CommandSpec | Promise<CommandSpec>;
   normalize: (event: TNative, request: InvokeRequest) => CanonicalEvent[] | undefined;
-  probe?: () => Promise<ProbeResult>;
+  probe?: (options?: AdapterProbeOptions) => Promise<ProbeResult>;
   onSuccess?: (request: InvokeRequest) => CanonicalEvent[];
 }
 

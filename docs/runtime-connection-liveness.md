@@ -1,25 +1,23 @@
 # Runtime Connection Liveness
 
-The default Worker advertises a 30-second heartbeat cadence. Harness sends
-`runtime.heartbeat` on that cadence; heartbeat ACKs are not proof of a new
-database write. Worker may acknowledge from memory between its 120-second
-persistence intervals.
+Date: 2026-10-14. This describes the current optional worker-access implementation, not the final device connection contract. See [Runtime local/online contract](runtime-local-and-online-contract.md).
 
-Harness independently terminates a WebSocket after 60 seconds without any
-server message. This receive watchdog also covers a socket that opened but
-never received `runtime.welcome`. Every inbound message resets the timer;
-outbound heartbeats do not. The timer is cleared on disconnect or shutdown.
-Embedders can override `AgentWorkRuntimeOptions.receiveTimeoutMs` when using a
-different server heartbeat cadence.
+## Scope
 
-Timeout enters the existing automatic reconnect loop, using the configured
-load-balanced endpoint, device credential, and runtime ID. It does not enroll a
-new device. Reconnect registration still writes to the Worker database, and
-unacknowledged outbox events retain the existing replay behavior.
+HostApp explicitly enables the Worker module before registration and connectivity are relevant. A local Runtime retains its identity and remains usable through local IPC when that module is disabled, registration fails or the connection drops. IM has independent configuration and liveness.
 
-Worker database stale detection is independent of this local watchdog. With a
-120-second persistence interval and 300-second DB stale TTL, healthy replicas
-can continue to use persisted readiness between heartbeat writes. If reconnect
-never succeeds after a Worker service-instance failure, DB stale cleanup is delayed until
-the stale TTL and reconciliation schedule permit it. All Worker replicas must
-use consistent presence settings.
+Registration ACK, module startup acceptance and a historical connected value do not prove continuing device presence. Health reports actual module state separately from local readiness.
+
+## Current Receive Watchdog
+
+worker-access defaults to a 60-second receive timeout. Every inbound server message resets the watchdog; outbound heartbeat sends do not. It also detects an opened socket that never receives runtime.welcome. The timer is cleared on disconnect or shutdown.
+
+The heartbeat interval is taken from the current welcome payload, with a 30-second fallback. Direct users can supply `AgentWorkRuntimeOptions.receiveTimeoutMs` when an explicitly configured service needs a different cadence.
+
+After timeout, an enabled module uses its existing reconnect logic and saved Runtime identity. It does not initialize a new local Runtime as a connectivity repair. Stopping the module stops its connection attempts while preserving the shared local Host.
+
+## Persistence And Pending Contract
+
+The current event relay is a bounded process-local window, not a durable outbox or a guarantee of replay after restart. Server presence persistence and stale cleanup are separate concerns; their policies belong to current Worker configuration, not local startup readiness.
+
+Final access registration responsibilities, device WS/heartbeat ownership, offline invalidation and the persisted Work App online switch are pending review or implementation. Current watchdog behavior is implementation evidence, not approval of that final architecture.

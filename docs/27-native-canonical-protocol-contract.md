@@ -1,5 +1,7 @@
 # native / canonical 实施记录与 Protocol 合同
 
+2026-10-14 包边界更新：本地 SDK 已合入 daemon，embedded 独立包已删除。模式选择与源流合同不变；本地调用不要求 Worker 注册或在线。统一原则见 [Runtime 合同](runtime-local-and-online-contract.md)。下文原里程碑仍保留其当时验证范围。
+
 > 2026-10-13 全局 Context 约束：每轮模型上下文由业务发起方决定，selection 等业务项可不发送；可传空、只传当轮需要的项或显式重复。必要的 adapter 等执行配置独立校验且不注入 LLM。底层只转发并渲染本轮快照，不按 sessionId 缓存、补齐、合并、去重或省略；reset、新建 Provider 会话或 resume 失败后，由业务方重新提供必要背景。详见 [Event Context IPD-SE 0.3](../../docs/event-context-rendering-ipd-se.md)。本文原有 Compiler/Pipeline、材料预取、场景自动追加与此约束冲突的内容仅保留历史背景；旧链路退出尚未完成。
 
 日期：2026-10-13（Asia/Shanghai）。设计基线：`OCTO-RUN-DUAL-PROTOCOL-BL-01`。
@@ -73,13 +75,13 @@ RPC 在 prepare 和唯一执行声明成功后 ACK，再消费同一执行的源
 | 已接线的调用点                                              | 当前行为                                                    |
 | ----------------------------------------------------------- | ----------------------------------------------------------- |
 | `adapter-host/src/rpc.ts`                                   | 接纳前拒绝不支持的选择；将 RPC ACK 与帧流绑定到同一执行     |
-| `daemon/src/server.ts`、`host-run-service.ts`               | 转发冻结模式，缓冲原帧，按 Host 控制事实维护终态            |
-| `embedded/src/embedded-harness.ts`、`run-stream.ts`         | 显式传递选择；续流继承回执模式；为 canonical 暴露类型化视图 |
+| `daemon/src/server.ts`、`adapter-host/src/host-run-service.ts` | 转发冻结模式，缓冲原帧，按 Host 控制事实维护终态            |
+| `daemon/src/runtime/daemon-runtime.ts`、`run-stream.ts`      | 显式传递选择；续流继承回执模式；为 canonical 暴露类型化视图 |
 | `core/src/engine.ts`                                        | 现有事件调度显式选择 canonical                              |
 | `worker-access/src/agent-work-runtime.ts`                   | 现有远端消费显式 canonical；远端 native 在接纳边界拒绝      |
 | `channel-im/src/index.ts`                                   | 执行、final 文本与投递链路显式 canonical                    |
 | Work App `src/main/agent-conversation-service.ts`           | 主对话、统一交互和回放保持 canonical                        |
-| Work App `src/main/embedded-harness-service.ts`、`index.ts` | 代理传递明确选择，避免在通用 SDK 中按调用者名称选模式       |
+| Work App `src/main/daemon-runtime-service.ts`、`index.ts`     | 代理传递明确选择，避免在通用 SDK 中按调用者名称选模式       |
 | Provider 内部 `adapter.invoke`                              | 仍为 Driver 与转换器的内部边界，不以旧签名推导 native 可用  |
 
 Daemon 缓冲真实 HostFrame，保留原身份、模式、序号和载荷。窗口：每 Run 4 MiB / 4096 帧，

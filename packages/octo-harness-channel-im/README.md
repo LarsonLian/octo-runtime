@@ -1,4 +1,6 @@
-# IM 接入
+# IM 接入 （已通过架构评审）
+
+现行设计见 [Runtime 本地存在与按需在线合同](../../docs/runtime-local-and-online-contract.md)。HostApp 决定携带和启用哪些包；本地 Runtime 身份与云端登记独立。
 
 **术语：本包的 connector 是 IM 平台连接器，不是 MCP 连接器。** `connectors/octo` 与 `connectors/wecom` 适配 IM 协议；不管理 MCP Server 或模型工具。多类型配置、默认 Codex、平台专属与公共领域边界见 [多平台 IM 方案](docs/multi-platform-design.md)。
 
@@ -36,16 +38,15 @@ await channels.upsert(
     spaceId,
     workdir: absoluteWorkdir,
     context: { schema: "octo.context-envelope/v3", items: [] }
-  },
-  1
+  }
 );
 ```
 
-`ImRuntime(config, dependencies)` 保留 `start()/close()/status`；`ImChannelManager` 提供 `upsert(config, revision)/remove(id, revision)/status/close()`。共享执行端口只要求履行调用合同，客户 App 无需启动 CLI 或创建默认文件。内部凭据函数返回 `undefined` 表示未就绪，凭据不进入 Context、模型输入、卡片或状态。
+`ImRuntime(config, dependencies)` 保留 `start()/close()/status`；`ImChannelManager` 提供 `upsert(config)/remove(id)/status/close()`。共享执行端口只要求履行调用合同，客户 App 无需启动 CLI 或创建默认文件。内部凭据函数返回 `undefined` 表示未就绪，凭据不进入 Context、模型输入、卡片或状态。
 
 执行配置使用现有 `resolveLocalContext`：IM 边缘业务节点构造 Context 时提供 defaults，本轮 `octo.execution/*` 与 `octo.security/approval_policy` 按已有协议解析。缺省 adapter 为 `codex`，IM 审批策略为 `full_access`，运行上限为 120 秒；显式审批策略、模型和 reasoning effort 可由标准 item 提供。此默认值仅属于 IM 入口，不修改其他入口或执行协议的默认策略。执行项不进入模型正文。程序接入须显式提供工作目录，或通过 Context 提供固定 workspace；缺少工作区时报告准备失败，不自行采用 App 当前目录。
 
-[Embedded SDK](../octo-harness-embedded/README.md) 已增加 `upsertImBot(config, revision)`、`removeImBot(id, revision)`、`imStatus()`，对应 Daemon RPC `im.upsert/im.remove/im.status`。SDK 须先启动；Octo 接入要求 space 属于当前活跃账号授权租户，账号/租户退出由宿主关闭接入。
+[daemon SDK](../octo-harness-daemon/README.md) 接收本包的 `createImModule` 工厂描述。宿主显式 `startModule("channel-im", {})`，再通过 `requestModule("channel-im", "upsert" | "remove" | "status", params)` 操作。仅携带本包或登记工厂不建联；不需要 worker-access。Octo 接入要求 space 属于当前活跃账号授权租户，账号/租户退出由宿主关闭接入。
 
 `loadImBots(home)` 和 `configuredCredential(config)` 是**显式选择的文件入口适配器**。CLI 在自己的进程入口使用它们；共享 Daemon 未提供 `imBots` 时接入列表为空，不读取 `im.json`。客户 App 可以自行选择文件适配，也可以完全不用文件。CLI 默认值与落盘规则见 [CLI README](../../apps/cli/README.md#im-默认接入)。
 
@@ -58,13 +59,13 @@ await channels.upsert(
 | 未显式启用接入                         | 不连接 IM Server，也不执行入站消息。                                                        |
 | 已启用，但凭据为空/未取得              | 状态为 `waiting_credentials`，退避后重新调用注入的凭据来源，不影响其他 Bot。                |
 | 宿主选择文件适配，文件不存在或内容为空 | 凭据适配返回未就绪；同一路径稍后取得有效内容可被重试读取。                                  |
-| 凭据格式、注册身份或认证拒绝           | `authentication_failed`，不以无限网络重试掩盖；宿主更新凭据并提高 revision 后重新激活。     |
+| 凭据格式、注册身份或认证拒绝           | `authentication_failed`，不以无限网络重试掩盖；宿主更新凭据后重新激活。 |
 | 本地新增 Bot/Agent 接入                | 宿主调用 SDK 或 RPC `upsert`，只增加该实例，不扫描目录。                                    |
-| 更新已有接入                           | 新 revision 关闭旧连接、取消该实例活动调用并清理关联，然后按新配置启动；其他实例保持运行。  |
-| 移除/撤权                              | `remove(id, revision)` 关闭该实例；相同移除 revision 幂等，旧 revision 不能恢复已移除配置。 |
+| 更新已有接入                           | 关闭旧连接、取消该实例活动调用并清理关联，然后按提交配置启动；其他实例保持运行。 |
+| 移除/撤权                              | `remove(id)` 关闭并移除该实例；实例不存在时直接成功。 |
 | CLI 的 im.json 被编辑                  | 没有文件 watcher 或 CLI reload 命令；文件不会自动转为动态登记。SIGHUP 仍用于关闭。          |
 
-revision 必须为正整数并递增；相同 revision 仅允许相同配置，旧配置被拒绝。一个 manager 最多 16 个活动接入，累计接入身份/移除代次记录上限 4096；超过上限明确拒绝。配置更新采用关闭受影响实例再替换，**不承诺该 Bot 的在途 Run 无损迁移**。
+管理操作按调用顺序串行执行，不使用配置版本。一个 manager 最多登记 16 个接入实例；超过上限明确拒绝。配置更新采用关闭受影响实例再替换，**不承诺该 Bot 的在途 Run 无损迁移**。
 
 ## 会话与限制
 
@@ -136,7 +137,7 @@ Run 保持 `schema_version=7`，Context 保持 `octo.context-envelope/v3`。独�
 | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | IM Channel（边缘 IM 业务发起方）                                               | 直连 IM Server，负责认证、消息/地址、触发与 Agent 路由、明确范围内的 IM 数据获取与 Context 协议构造、IM 会话关联、发起执行、公开呈现及文本/卡片/typing/附件投递     |
 | Docs / PPT / Loop 等其他业务入口                                               | 各自接纳领域事件、构造协议、发起 AgentRun、判断业务变化并回写原对象；需要 IM 通知时调用本包纯投递能力，不经过 IM 聊天处理器                                         |
-| HostApp / 入口装配层（CLI 或 Embedded SDK 等）                                 | 决定配置、凭据、账号存储与启动策略，装配共享执行能力和 Channel，管理身份变化和生命周期；无需承担本包的逐轮 IM 数据构造，共享 Daemon 不决定客户 App 的目录与接入方式 |
+| HostApp / 入口装配层（CLI 或 daemon 本地 SDK 等）                                 | 决定配置、凭据、账号存储与启动策略，装配共享执行能力和 Channel，管理身份变化和生命周期；无需承担本包的逐轮 IM 数据构造，共享 Daemon 不决定客户 App 的目录与接入方式 |
 | AgentRun 统一执行链路（Protocol / 执行配置解析入口 / Host / Provider Adapter） | 校验执行合同及必要配置，准备执行资源，统一分类封装模型输入，调用 Provider，报告实际会话/恢复结果与标准事件；当前由 Host 复用协议 renderer 按白名单固定渲染本轮数据  |
 | Access / Worker 集成入口（选用远端执行时）                                     | 远端接纳、路由、租约和执行权交接；IM 复用该入口，不建立另一套云端登记或调度                                                                                         |
 

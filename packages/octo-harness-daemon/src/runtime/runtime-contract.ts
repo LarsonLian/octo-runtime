@@ -1,12 +1,15 @@
 import { createConnection } from "node:net";
+import type { DaemonModuleDescriptor, AccountSubject } from "./types.js";
 
-export interface EmbeddedRunnerSession {
+export interface DaemonRunnerSession {
   schema_version: 1;
   nonce: string;
   parent_pid: number;
   home: string;
   account_root: string;
   profiles: string[];
+  subject: AccountSubject;
+  modules: readonly DaemonModuleDescriptor[];
   socket_path: string;
   pid_path: string;
   store_path: string;
@@ -21,18 +24,7 @@ export interface DaemonStatus {
   ready?: boolean;
   pid?: number;
   adapterHost?: { pid?: number | null; state?: string };
-  agentWork?: {
-    enabled?: boolean;
-    connected?: boolean;
-    totalProfiles?: number;
-    connectedProfiles?: number;
-    runtimes?: Array<{
-      profile?: string;
-      runtimeId?: string;
-      connected?: boolean;
-      error?: string;
-    }>;
-  };
+  modules?: Record<string, unknown>;
 }
 
 export async function callDaemon<T = unknown>(

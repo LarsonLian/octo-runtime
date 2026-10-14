@@ -48,7 +48,7 @@ Antigravity 是执行引擎，Gemini 是用户希望使用的模型系列。引�
 | B02 | [SDK](../packages/octo-harness-adapter-sdk/src/index.ts) 提供 `metadata`、`probe`、`invoke`；没有统一的模型目录查询方法 | 不得在方案中假定已有 `listModels` 接口；动态模型目录需单独设计传输合同 |
 | B03 | [Host](../packages/octo-harness-adapter-host/src/index.ts) 按 `executionFeatures` 检查审批模式；非 `full_access` 要求交互响应接线 | 仅支持无提示 CLI 执行时，不能声明 `ask` / `assisted` 已可用 |
 | B04 | [协议](../packages/octo-harness-protocol/src/context.ts) 为 Run `schema_version=7`、Context `octo.context-envelope/v3` | 沿用当前协议和统一编译产物；不新增旧版本识别、转换、双写或版本协商 |
-| B05 | [嵌入式构建](../packages/octo-harness-embedded/scripts/copy-manifest.mjs) 复制 Harness 清单；[App 打包脚本](../../octo-harness-work-app/scripts/prepare-embedded-runtime.mjs) 从相邻 Harness 准备运行时 | 源码新增成功不等于桌面内置运行时已更新；必须验证打包、重启和重新注册 |
+| B05 | [daemon 本地 SDK 构建](../packages/octo-harness-daemon/scripts/copy-manifest.mjs) 复制 Harness 清单；[App 打包脚本](../../octo-harness-work-app/scripts/prepare-embedded-runtime.mjs) 从相邻 Harness 准备运行时 | 源码新增成功不等于桌面内置 Runtime 已更新；必须构建、重启并验证本地执行，仅启用云端接入时另验注册 |
 | B06 | [共享图标包](../packages/octo-harness-adapter-icons/README.md) 输出内联 SVG；[App 图标解析](../../octo-harness-work-app/src/renderer/src/lib/provider-icons.ts) 消费该包 | Logo 只维护一个来源，不在 App 重复拷贝一份 |
 | B07 | [模型设置](../../octo-harness-work-app/src/renderer/src/settings/ModelSettings.tsx) 按 Runtime 上报的 adapter 生成引擎面板 | 不能只向静态列表加名称；必须确保实际发现、可用状态与设置面板贯通 |
 | B08 | [模型配置](../../octo-harness-work-app/src/shared/model-settings.ts) 支持每个 Runtime / 引擎的原生模型 ID 与默认模型；[能力判断](../../octo-harness-work-app/src/renderer/src/lib/execution-context.ts) 目前仅向 Codex、Claude Code 开放 model / effort | 必须补模型资格与调用链测试；effort 是否开放取决于实测，不与模型选择捆绑承诺 |

@@ -1,3 +1,5 @@
+import { configureOpenClawConnection, OPENCLAW_RUNTIME_ROOT } from "@mininglamp-oss/octo-harness-adapter-openclaw";
+import { defaultHarnessHome, harnessPaths } from "./state.js";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,6 +54,7 @@ export interface PlayboardOptions {
   output?: (line: string) => void | Promise<void>;
   env?: NodeJS.ProcessEnv;
   manifest?: string;
+  runtimeRoot?: string;
 }
 
 /** One caller-owned snapshot, with no persistent session or daemon state. */
@@ -200,6 +203,11 @@ export async function runPlayboard(options: PlayboardOptions): Promise<number> {
     throw new TypeError("playboard stdin must contain one complete JSON object");
   }
   const { adapterType, protocolMode, request } = preparePlayboard(value);
+  if (adapterType === "openclaw") {
+    const runtimeRoot = options.runtimeRoot ?? harnessPaths(defaultHarnessHome(options.env), "default").profileRoot;
+    await configureOpenClawConnection(runtimeRoot, {}, options.env);
+    request.agentConfig.providerOptions = { [OPENCLAW_RUNTIME_ROOT]: runtimeRoot };
+  }
   const output = options.output ?? writeLine;
   const controller = new AbortController();
   let interrupted = 0;

@@ -1990,7 +1990,6 @@ export interface ContextConfiguration {
  */
 export interface RunContextProjection {
   run_id: string;
-  context_configuration_version: number;
   context_hash: string;
   actual_runtime_id?: string;
   preparation_status: "unknown" | "prepared";
@@ -2203,7 +2202,6 @@ export interface ChannelMessageFlags {
 }
 export interface ResolvedRuntimeSelection1 {
   schema: "octo.runtime-selection/v2";
-  context_configuration_version: number;
   selection_mode: "explicit" | "candidates";
   explicit_runtime_id?: string;
   /**

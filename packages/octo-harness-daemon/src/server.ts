@@ -4,7 +4,12 @@ import {
   type AdapterHostRpc
 } from "@mininglamp-oss/octo-harness-adapter-host";
 import { HarnessEngine, SqliteStore, type Store } from "@mininglamp-oss/octo-harness-core";
-import { ImChannelManager, SqliteImSessionStore, type ImBotConfig, type ImCredentialSource } from "@mininglamp-oss/octo-harness-channel-im";
+import {
+  DaemonModules,
+  type DaemonModuleRegistration,
+  type DaemonModuleContext
+} from "./modules.js";
+import type { AdapterProbeOptions } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import {
   assertInteractionResponse,
   assertNativeInteractionResponse,
@@ -12,21 +17,25 @@ import {
   resolveHostInvokeWireOptions,
   type InvokeRequest
 } from "@mininglamp-oss/octo-harness-protocol";
-import type { AgentWorkRuntimeOptions } from "@mininglamp-oss/octo-harness-worker-access/agent-work-runtime";
-import { AgentWorkSupervisor } from "@mininglamp-oss/octo-harness-worker-access/agent-work-supervisor";
+
 import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, open, readFile, rm } from "node:fs/promises";
 import net, { type Server } from "node:net";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
-import { HostRunService } from "./host-run-service.js";
+import { HostRunService } from "@mininglamp-oss/octo-harness-adapter-host";
 import { InvocationManifest } from "./invocation-manifest.js";
 import { HarnessDaemon } from "./runtime-core.js";
 
 export interface StartDaemonServerOptions {
-  /** 宿主显式提供 IM 登记；省略即关闭接入，公共 Daemon 不自动发现客户配置文件。 */
-  imBots?: ImBotConfig[];
-  imCredentials?: ImCredentialSource;
+  modules?: DaemonModuleRegistration[];
+  account?: DaemonModuleContext["account"];
+  localRuntimes?: Array<{
+    profile: string;
+    runtimeId?: string;
+    root: string;
+    adapterConfigurations?: Record<string, AdapterProbeOptions>;
+  }>;
   homePath?: string;
   pidPath?: string;
   /** Enables foreground lifecycle messages when launched in the foreground. */
@@ -35,10 +44,7 @@ export interface StartDaemonServerOptions {
   storePath: string;
   manifestPath: string;
   hostEntrypoint: string;
-  /** Enabled managed profiles. All runtimes share this daemon and adapter host. */
-  agentWorks?: AgentWorkRuntimeOptions[];
-  /** Compatibility input for embedders that configure one unmanaged runtime. */
-  agentWork?: AgentWorkRuntimeOptions;
+
   /** Test/embedding override for the capped adapter-host restart schedule. */
   adapterHostRestartDelaysMs?: readonly number[];
   /** Maximum adapter-host RPC readiness handshake time. */
@@ -60,6 +66,10 @@ export interface DaemonRuntimeInfo {
   };
   adapters: string[];
 }
+
+type RuntimeConfigurations = (
+  metadata?: InvokeRequest["runMetadata"]
+) => Record<string, AdapterProbeOptions> | undefined;
 
 interface DaemonRequest {
   id?: unknown;
@@ -83,32 +93,32 @@ export interface DaemonApplication {
   engine: HarnessEngine;
   hostProcess: AdapterHostProcess;
   runtime: DaemonRuntimeInfo;
-  agentWorkSupervisor?: AgentWorkSupervisor;
-  im: ImChannelManager;
+  modules: DaemonModules;
   close(): Promise<void>;
 }
 
 /**
  * Bring up the full daemon: open the SQLite store, spawn the adapter-host child,
- * build engine + daemon, optionally start the Agent Work runtime, and listen on
+ * build engine + daemon, register optional modules, and listen on
  * the Unix control socket. Partial-startup failures unwind in reverse. Each socket
  * connection carries exactly one request line (see `handleRequestLine`).
  */
 export async function startDaemonServer({
   homePath,
-  imBots,
-  imCredentials,
+  modules: registrations = [],
+  account,
+  localRuntimes = [],
   pidPath,
   socketPath,
   storePath,
   manifestPath,
   hostEntrypoint,
   consoleOutput = false,
-  agentWorks,
-  agentWork,
+
   adapterHostRestartDelaysMs = DEFAULT_ADAPTER_HOST_RESTART_DELAYS_MS,
   adapterHostReadyTimeoutMs
 }: StartDaemonServerOptions): Promise<DaemonApplication> {
+  DaemonModules.validate(registrations);
   if (
     adapterHostRestartDelaysMs.length === 0 ||
     adapterHostRestartDelaysMs.some((delay) => !Number.isFinite(delay) || delay < 1)
@@ -116,7 +126,7 @@ export async function startDaemonServer({
     throw new Error("adapterHostRestartDelaysMs must contain positive delays");
   }
   // 配置来源属于宿主：CLI 可读 im.json，SDK 应用可动态登记，Daemon 只接收结果。
-  const configuredImBots = imBots ?? [];
+
   let releasePid = (): Promise<void> => Promise.resolve();
   let invocationManifest: InvocationManifest;
   const invocationManifestPath = join(homePath ?? dirname(storePath), "run", "invocations.json");
@@ -216,16 +226,61 @@ export async function startDaemonServer({
     }
     return hostProcess;
   };
+
+  const localConfigurations = (
+    metadata?: InvokeRequest["runMetadata"]
+  ): Record<string, AdapterProbeOptions> | undefined => {
+    const selected =
+      metadata?.runtimeId || metadata?.profile
+        ? localRuntimes.find(
+            (item) =>
+              (!metadata.runtimeId || item.runtimeId === metadata.runtimeId) &&
+              (!metadata.profile || item.profile === metadata.profile)
+          )
+        : localRuntimes[0];
+    if (
+      (metadata?.runtimeId || metadata?.profile) &&
+      !selected &&
+      !(localRuntimes.length === 0 && !metadata.runtimeId && metadata.profile === "default")
+    )
+      throw new Error("RUNTIME_CONFIGURATION_NOT_FOUND");
+    return (
+      selected?.adapterConfigurations ?? {
+        openclaw: {
+          providerOptions: {
+            OPENCLAW_RUNTIME_ROOT: selected
+              ? selected.root
+              : join(homePath ?? dirname(storePath), "default")
+          }
+        }
+      }
+    );
+  };
+  const withLocalConfiguration = (adapterType: string, request: InvokeRequest): InvokeRequest => {
+    const configuration = localConfigurations(request.runMetadata)?.[adapterType];
+    return configuration
+      ? {
+          ...request,
+          agentConfig: {
+            ...request.agentConfig,
+            providerOptions: {
+              ...request.agentConfig.providerOptions,
+              ...configuration.providerOptions
+            }
+          }
+        }
+      : request;
+  };
   const transportHost: AdapterHostRpc = {
-    list: async () => readyHost().client.list(),
-    probe: async (adapterType) => readyHost().client.probe(adapterType),
+    list: async (configurations) =>
+      readyHost().client.list(configurations ?? localConfigurations()),
+    probe: async (adapterType, options) =>
+      readyHost().client.probe(adapterType, options ?? localConfigurations()?.[adapterType]),
     cancel: async (invocationId, reason) => readyHost().client.cancel(invocationId, reason),
     respondInteraction: async (invocationId, response) =>
       readyHost().client.respondInteraction(invocationId, response),
     respondNative: async (invocationId, response) =>
       readyHost().client.respondNative(invocationId, response),
-    prepare: (adapterType, request, options) =>
-      readyHost().client.prepare(adapterType, request, options),
     invoke: createHostInvoke((type, request, options) =>
       transportHost.invokeFrames(type, request, options)
     ),
@@ -236,7 +291,11 @@ export async function startDaemonServer({
         adapterType
       });
       try {
-        for await (const event of readyHost().client.invokeFrames(adapterType, request, options)) {
+        for await (const event of readyHost().client.invokeFrames(
+          adapterType,
+          withLocalConfiguration(adapterType, request),
+          options
+        )) {
           yield event;
         }
       } finally {
@@ -330,19 +389,13 @@ export async function startDaemonServer({
 
   monitorAdapterHost(hostProcess);
   const host = new HostRunService(transportHost);
-  const imSessions = new SqliteImSessionStore(join(homePath ?? dirname(storePath), "im-sessions.db"));
-  const im = new ImChannelManager({ host, sessions: imSessions, ...(imCredentials ? { credentials: imCredentials } : {}) });
-  Object.defineProperty(runtime, "im", {
-    enumerable: true,
-    get: () => im.status
+  const modules = new DaemonModules(registrations, {
+    host,
+    homePath: homePath ?? dirname(storePath),
+    account
   });
   const engine = new HarnessEngine({ store, host });
   const daemon = new HarnessDaemon({ engine, store });
-  const configuredAgentWorks = agentWorks ?? (agentWork ? [agentWork] : []);
-  const agentWorkSupervisor =
-    configuredAgentWorks.length > 0
-      ? new AgentWorkSupervisor(configuredAgentWorks, host)
-      : undefined;
   const connections = new Set<net.Socket>();
   const server = net.createServer((socket) => {
     connections.add(socket);
@@ -365,8 +418,8 @@ export async function startDaemonServer({
         store,
         host,
         runtime,
-        im,
-        agentWorkSupervisor,
+        modules,
+        resolveConfigurations: localConfigurations,
         connectionId
       });
     });
@@ -381,8 +434,7 @@ export async function startDaemonServer({
     // The Unix socket is the only local access boundary for the control plane;
     // 0600 restricts it to the current host account (there is no RBAC above it).
     if (process.platform !== "win32") await chmod(socketPath, 0o600);
-    await agentWorkSupervisor?.start();
-    for (const config of configuredImBots) await im.upsert(config, 1);
+    modules.startConfigured();
     if (consoleOutput)
       console.error("daemon ready", {
         pid: process.pid,
@@ -396,9 +448,7 @@ export async function startDaemonServer({
     hostRestartAbort?.abort();
     if (hostStableReset) clearTimeout(hostStableReset);
     daemon.stop();
-    await im.close();
-    imSessions.close();
-    await agentWorkSupervisor?.close();
+    await modules.close();
     await host.close();
     await hostRestartTask?.catch(() => undefined);
     await hostProcess.close();
@@ -418,17 +468,14 @@ export async function startDaemonServer({
       return hostProcess;
     },
     runtime,
-    agentWorkSupervisor,
-    im,
+    modules,
     async close(): Promise<void> {
       shuttingDown = true;
       hostRestartAbort?.abort();
       if (hostStableReset) clearTimeout(hostStableReset);
       if (consoleOutput) console.error("daemon stopping");
       daemon.stop();
-      await im.close();
-      imSessions.close();
-      await agentWorkSupervisor?.close();
+      await modules.close();
       await host.close();
       for (const connection of connections) connection.destroy();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -451,8 +498,8 @@ async function handleRequestLine({
   store,
   host,
   runtime,
-  im,
-  agentWorkSupervisor,
+  modules,
+  resolveConfigurations,
   connectionId
 }: {
   line: string;
@@ -461,8 +508,8 @@ async function handleRequestLine({
   store: Store;
   host: HostRunService;
   runtime: DaemonRuntimeInfo;
-  im: ImChannelManager;
-  agentWorkSupervisor: AgentWorkSupervisor | undefined;
+  modules: DaemonModules;
+  resolveConfigurations: RuntimeConfigurations;
   connectionId: string;
 }): Promise<void> {
   let request: DaemonRequest | undefined;
@@ -489,8 +536,8 @@ async function handleRequestLine({
       store,
       host,
       runtime,
-      im,
-      agentWorkSupervisor
+      modules,
+      resolveConfigurations
     });
     if (!socket.destroyed && socket.writable)
       socket.end(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result })}\n`);
@@ -692,32 +739,37 @@ async function dispatch({
   store,
   host,
   runtime,
-  im,
-  agentWorkSupervisor
+  modules,
+  resolveConfigurations
 }: {
   request: DaemonRequest;
   daemon: HarnessDaemon;
   store: Store;
   host: HostRunService;
   runtime: DaemonRuntimeInfo;
-  im: ImChannelManager;
-  agentWorkSupervisor: AgentWorkSupervisor | undefined;
+  modules: DaemonModules;
+  resolveConfigurations: RuntimeConfigurations;
 }): Promise<unknown> {
   const params = request.params ?? {};
   switch (request.method) {
-    case "im.status":
-      return im.status;
-    case "im.upsert":
-      return im.upsert(params.config as ImBotConfig, positiveInteger(params.revision, "revision", 1));
-    case "im.remove":
-      await im.remove(requiredString(params.id, "id"), positiveInteger(params.revision, "revision", 1));
-      return { removed: true };
+    case "module.start":
+      return modules.start(requiredString(params.id, "id"), params.config);
+    case "module.stop":
+      await modules.stop(requiredString(params.id, "id"));
+      return { stopped: true };
+    case "module.status":
+      return modules.status;
+    case "module.request":
+      return modules.request(requiredString(params.id, "id"), {
+        method: requiredString(params.method, "method"),
+        params: params.params as Record<string, unknown> | undefined
+      });
     case "status":
       return {
         ready: runtime.adapterHost.state === "ready",
         pid: process.pid,
         ...runtime,
-        agentWork: agentWorkSupervisor?.status ?? { enabled: false, runtimes: [] },
+        modules: modules.status,
         lifecycle: daemon.status,
         counts: {
           agentSessions: store.listAgentSessions().length,
@@ -728,21 +780,25 @@ async function dispatch({
       const timeoutMs = positiveInteger(params.timeoutMs, "timeoutMs", DEFAULT_DRAIN_TIMEOUT_MS);
       daemon.beginDrain();
       host.beginDrain();
-      agentWorkSupervisor?.beginDrain();
+
       await Promise.all([
         daemon.waitForDrained(timeoutMs),
-        ...(agentWorkSupervisor ? [agentWorkSupervisor.waitForDrained(timeoutMs)] : [])
+        host.drain(timeoutMs),
+        modules.drain(timeoutMs)
       ]);
       return {
         drained: true,
         local: daemon.status,
-        agentWork: agentWorkSupervisor?.status ?? { enabled: false, runtimes: [] }
+        modules: modules.status
       };
     }
     case "adapter.list":
-      return host.list();
+      return host.list(resolveConfigurations(params));
     case "adapter.probe":
-      return host.probe(requiredString(params.adapterType, "adapterType"));
+      return host.probe(
+        requiredString(params.adapterType, "adapterType"),
+        resolveConfigurations(params)?.[requiredString(params.adapterType, "adapterType")]
+      );
     case "agent_session.list":
       return store.listAgentSessions();
     case "agent_session.get":

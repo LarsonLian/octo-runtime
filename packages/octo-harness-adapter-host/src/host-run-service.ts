@@ -1,4 +1,4 @@
-import type { AdapterHostRpc } from "@mininglamp-oss/octo-harness-adapter-host";
+import type { AdapterHostRpc } from "./rpc.js";
 import {
   assertInvokeRequest,
   createHostInvoke,
@@ -27,6 +27,8 @@ interface Run {
   updated: number;
   events: SourceEvent[];
   terminal?: HostFrame;
+  source: AsyncGenerator<HostFrame>;
+  first: HostFrame;
 }
 const TTL = 120_000,
   MAX_RUN_BYTES = 4 << 20,
@@ -43,12 +45,13 @@ export class HostRunService implements AdapterHostRpc {
   #subscribers = 0;
   #draining = false;
   #tasks = new Set<Promise<void>>();
+  #starting = new Set<string>();
   constructor(readonly transport: AdapterHostRpc) {}
-  list(): ReturnType<AdapterHostRpc["list"]> {
-    return this.transport.list();
+  list(...args: Parameters<AdapterHostRpc["list"]>): ReturnType<AdapterHostRpc["list"]> {
+    return this.transport.list(...args);
   }
-  probe(adapterType: string): Promise<unknown> {
-    return this.transport.probe(adapterType);
+  probe(...args: Parameters<AdapterHostRpc["probe"]>): Promise<unknown> {
+    return this.transport.probe(...args);
   }
   cancel(invocationId: string, reason?: string): ReturnType<AdapterHostRpc["cancel"]> {
     return this.transport.cancel(invocationId, reason);
@@ -59,13 +62,6 @@ export class HostRunService implements AdapterHostRpc {
   respondNative(invocationId: string, response: NativeInteractionResponse): Promise<void> {
     return this.transport.respondNative(invocationId, response);
   }
-  prepare(
-    adapterType: string,
-    request: InvokeRequest,
-    options: HostInvokeOptions = {}
-  ): Promise<HostRunReceipt> {
-    return this.transport.prepare(adapterType, request, options);
-  }
   async #begin(
     adapterType: string,
     request: InvokeRequest,
@@ -74,14 +70,31 @@ export class HostRunService implements AdapterHostRpc {
     assertInvokeRequest(request);
     this.#prune();
     if (this.#draining) throw new Error("DAEMON_DRAINING");
-    if (this.#runs.has(request.runId)) throw new Error("RUN_ALREADY_ACCEPTED");
+    if (this.#runs.has(request.runId) || this.#starting.has(request.runId)) throw new Error("RUN_ALREADY_ACCEPTED");
     if (this.#runs.size >= 128) throw new Error("RUN_CAPACITY_EXHAUSTED");
-    const receipt = await this.prepare(adapterType, request, options);
-    if (this.#runs.has(request.runId)) throw new Error("RUN_ALREADY_ACCEPTED");
-    if (this.#draining) throw new Error("DAEMON_DRAINING");
-    if (this.#runs.size >= 128) throw new Error("RUN_CAPACITY_EXHAUSTED");
+    this.#starting.add(request.runId);
+    const source = this.transport.invokeFrames(adapterType, request, options);
+    let first: HostFrame;
+    try {
+      const frame = await source.next();
+      if (frame.done) throw new Error("HOST_ENDED_WITHOUT_RECEIPT");
+      first = frame.value;
+    } catch (error) {
+      await source.return(undefined).catch(() => undefined);
+      throw error;
+    } finally {
+      this.#starting.delete(request.runId);
+    }
+    if (this.#draining) {
+      await source.return(undefined);
+      throw new Error("HOST_DRAINING");
+    }
+    const { run_id, invocation_id, stream_id, agent_session_id, session_generation, protocol_mode, protocol } = first;
+    const receipt: HostRunReceipt = { run_id, invocation_id, stream_id, agent_session_id, session_generation, protocol_mode, protocol };
     const run: Run = {
       receipt,
+      source,
+      first,
       streamId: receipt.stream_id,
       invocationId: request.invocationId,
       next: 1,
@@ -107,7 +120,9 @@ export class HostRunService implements AdapterHostRpc {
     options: HostInvokeOptions
   ): AsyncGenerator<HostFrame> {
     try {
-      for await (const event of this.transport.invokeFrames(adapterType, request, options)) {
+      this.#append(run, run.first);
+      yield run.first;
+      for await (const event of run.source) {
         this.#append(run, event);
         yield event;
       }
@@ -133,6 +148,7 @@ export class HostRunService implements AdapterHostRpc {
       }
       throw error;
     } finally {
+      await run.source.return(undefined).catch(() => undefined);
       // A consumer abandoning the generator cannot leave a live provider behind.
       if (!run.terminal) {
         await this.transport
@@ -274,12 +290,24 @@ export class HostRunService implements AdapterHostRpc {
   beginDrain(): void {
     this.#draining = true;
   }
+  async drain(timeoutMs: number): Promise<{ drained: boolean }> {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60000) throw new Error("DRAIN_TIMEOUT_INVALID");
+    this.beginDrain();
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        Promise.allSettled([...this.#tasks]),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("HOST_DRAIN_TIMEOUT")), timeoutMs); })
+      ]);
+      return { drained: true };
+    } finally { if (timer) clearTimeout(timer); }
+  }
   async close(): Promise<void> {
     this.beginDrain();
     await Promise.allSettled(
       [...this.#runs.values()]
         .filter((run) => !run.terminal)
-        .map((run) => this.cancel(run.invocationId, "Daemon shutdown"))
+        .map((run) => this.cancel(run.invocationId, "Host shutdown"))
     );
     await Promise.allSettled([...this.#tasks]);
     this.#runs.clear();

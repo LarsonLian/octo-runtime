@@ -2,6 +2,8 @@
 
 日期：2026-10-13。关联：[Infra 瘦身方案](25-thin-infra-agentworker-plan.md)。
 
+2026-10-14 接入更新：daemon 本地 SDK 与共享 Host 独立运行；channel-im 按宿主选择携带和显式启用，不要求 Worker 包或设备注册。源流和 ACK 结论保持，包／状态语义见 [Runtime 合同](runtime-local-and-online-contract.md)。
+
 ## 1. 接入边界
 
 所有本地 IM 和本地助理都调用本机 Host，不将本机输出上传云端再经 SSE 拉回。
@@ -10,7 +12,7 @@
 
 目前 `octo-harness-channel-im` 已有私聊入站、会话复用、重置、Codex invoke 和 IM 回发；群聊、GROUP.md、卡片和 typing 属于后续 IM 专项目标，不能当作已经实现。旧云端 Channel 项目中仍存在的通知业务与旧执行路径不属于新的本地聊天执行链，不能作为本地回复的回退。
 
-Work App 使用 Embedded SDK 的 `invoke()` 和既有唯一 preload 桥。renderer 不获取登录 token，kit 通过 Provider 注入的 Port 调用。业务自行消费完整 CanonicalEvent，自己保存和投递。
+Work App 使用 daemon SDK 的 `invoke()` 和既有唯一 preload 桥。renderer 不获取登录 token，kit 通过 Provider 注入的 Port 调用。业务自行消费完整 CanonicalEvent，自己保存和投递。
 
 ## 2. ACK 结论
 

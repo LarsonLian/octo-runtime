@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, resolve, win32 } from "node:path";
-import { EmbeddedHarnessError } from "./errors.js";
+import { DaemonRuntimeError } from "./errors.js";
 
 const PROFILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const MACHINE_PATTERN = /^machine_[0-9a-f-]{36}$/;
@@ -23,7 +23,7 @@ export interface MachineIdentity {
   machine_id: string;
 }
 
-export interface EmbeddedHomePaths {
+export interface DaemonHomePaths {
   home: string;
   machineFile: string;
   run: string;
@@ -35,7 +35,7 @@ export interface EmbeddedHomePaths {
   shutdownFile: string;
 }
 
-export interface EmbeddedAccountPaths {
+export interface DaemonAccountPaths {
   accountKey: string;
   root: string;
   configFile: string;
@@ -43,7 +43,7 @@ export interface EmbeddedAccountPaths {
   logs: string;
 }
 
-export interface EmbeddedProfilePaths {
+export interface DaemonProfilePaths {
   name: string;
   root: string;
   configFile: string;
@@ -56,7 +56,7 @@ export interface OwnerLock {
   release(): void;
 }
 
-export function resolveEmbeddedHome(
+export function resolveDaemonHome(
   appId: string,
   options: { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv; userHome?: string } = {}
 ): string {
@@ -67,7 +67,7 @@ export function resolveEmbeddedHome(
   if (platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
     if (!localAppData) {
-      throw new EmbeddedHarnessError(
+      throw new DaemonRuntimeError(
         "HOME_UNAVAILABLE",
         "home",
         false,
@@ -85,10 +85,10 @@ export function resolveEmbeddedHome(
   );
 }
 
-export function embeddedHomePaths(
+export function daemonHomePaths(
   homeInput: string,
   platform: NodeJS.Platform = process.platform
-): EmbeddedHomePaths {
+): DaemonHomePaths {
   const home = validateHome(homeInput, platform);
   const run = join(home, "run");
   const socket =
@@ -110,7 +110,7 @@ export function embeddedHomePaths(
 
 export function accountKeyFor(subjectType: string, subjectId: string): string {
   if (subjectType !== "user" || !subjectId.trim()) {
-    throw new EmbeddedHarnessError(
+    throw new DaemonRuntimeError(
       "SUBJECT_INVALID",
       "home",
       false,
@@ -122,10 +122,10 @@ export function accountKeyFor(subjectType: string, subjectId: string): string {
 
 export function profileNameFor(appId: string, tenantId: string): string {
   if (!tenantId.trim())
-    throw new EmbeddedHarnessError("TENANT_INVALID", "home", false, "tenant id is required");
+    throw new DaemonRuntimeError("TENANT_INVALID", "home", false, "tenant id is required");
   const name = `${appSlug(appId)}-${base32Hash(tenantId.trim(), 20)}`;
   if (!PROFILE_PATTERN.test(name)) {
-    throw new EmbeddedHarnessError(
+    throw new DaemonRuntimeError(
       "PROFILE_INVALID",
       "home",
       false,
@@ -135,7 +135,7 @@ export function profileNameFor(appId: string, tenantId: string): string {
   return name;
 }
 
-export function accountPaths(paths: EmbeddedHomePaths, accountKey: string): EmbeddedAccountPaths {
+export function accountPaths(paths: DaemonHomePaths, accountKey: string): DaemonAccountPaths {
   const root = join(paths.home, "accounts", accountKey);
   return {
     accountKey,
@@ -146,9 +146,9 @@ export function accountPaths(paths: EmbeddedHomePaths, accountKey: string): Embe
   };
 }
 
-export function profilePaths(account: EmbeddedAccountPaths, name: string): EmbeddedProfilePaths {
+export function profilePaths(account: DaemonAccountPaths, name: string): DaemonProfilePaths {
   if (!PROFILE_PATTERN.test(name))
-    throw new EmbeddedHarnessError("PROFILE_INVALID", "home", false, `invalid profile: ${name}`);
+    throw new DaemonRuntimeError("PROFILE_INVALID", "home", false, `invalid profile: ${name}`);
   const root = join(account.root, name);
   return {
     name,
@@ -159,14 +159,14 @@ export function profilePaths(account: EmbeddedAccountPaths, name: string): Embed
   };
 }
 
-export function ensureEmbeddedHome(paths: EmbeddedHomePaths): MachineIdentity {
+export function ensureDaemonHome(paths: DaemonHomePaths): MachineIdentity {
   for (const directory of [paths.home, paths.run, join(paths.home, "accounts")])
     mkdirSync(directory, { recursive: true });
   if (process.platform !== "win32") mkdirSync(dirname(paths.socket), { recursive: true });
   if (existsSync(paths.machineFile)) {
     const machine = readJson<MachineIdentity>(paths.machineFile);
     if (machine.schema_version !== 1 || !MACHINE_PATTERN.test(machine.machine_id)) {
-      throw new EmbeddedHarnessError(
+      throw new DaemonRuntimeError(
         "MACHINE_INVALID",
         "home",
         false,
@@ -180,9 +180,9 @@ export function ensureEmbeddedHome(paths: EmbeddedHomePaths): MachineIdentity {
   return machine;
 }
 
-export function ensureAccount(account: EmbeddedAccountPaths, profiles: readonly string[]): void {
+export function ensureAccount(account: DaemonAccountPaths, profiles: readonly string[]): void {
   if (profiles.length === 0)
-    throw new EmbeddedHarnessError(
+    throw new DaemonRuntimeError(
       "TENANTS_EMPTY",
       "home",
       false,
@@ -209,7 +209,7 @@ export function ensureAccount(account: EmbeddedAccountPaths, profiles: readonly 
   });
 }
 
-export function acquireOwnerLock(paths: EmbeddedHomePaths): OwnerLock {
+export function acquireOwnerLock(paths: DaemonHomePaths): OwnerLock {
   mkdirSync(paths.run, { recursive: true });
   const nonce = randomUUID();
   const acquire = (): number => openSync(paths.ownerLock, "wx", 0o600);
@@ -218,7 +218,7 @@ export function acquireOwnerLock(paths: EmbeddedHomePaths): OwnerLock {
     fd = acquire();
   } catch (error) {
     if (!isNodeError(error, "EEXIST") || lockOwnerAlive(paths.ownerLock)) {
-      throw new EmbeddedHarnessError(
+      throw new DaemonRuntimeError(
         "HOME_LOCKED",
         "home",
         false,
@@ -255,7 +255,7 @@ export function readJson<T>(path: string): T {
   try {
     return JSON.parse(readFileSync(path, "utf8")) as T;
   } catch (error) {
-    throw new EmbeddedHarnessError("LOCAL_STATE_INVALID", "home", false, `cannot read ${path}`, {
+    throw new DaemonRuntimeError("LOCAL_STATE_INVALID", "home", false, `cannot read ${path}`, {
       cause: error
     });
   }
@@ -288,7 +288,7 @@ export function removeFile(path: string): void {
 function validateHome(homeInput: string, platform: NodeJS.Platform): string {
   const pathApi = platform === "win32" ? win32 : { isAbsolute, resolve, parse };
   if (!homeInput.trim() || !pathApi.isAbsolute(homeInput)) {
-    throw new EmbeddedHarnessError(
+    throw new DaemonRuntimeError(
       "HOME_INVALID",
       "home",
       false,
@@ -298,7 +298,7 @@ function validateHome(homeInput: string, platform: NodeJS.Platform): string {
   const home = pathApi.resolve(homeInput);
   const root = pathApi.parse(home).root;
   if (home === root)
-    throw new EmbeddedHarnessError(
+    throw new DaemonRuntimeError(
       "HOME_INVALID",
       "home",
       false,
@@ -307,7 +307,7 @@ function validateHome(homeInput: string, platform: NodeJS.Platform): string {
   if (platform === "win32") {
     const input = homeInput.replaceAll("/", "\\");
     if (input.startsWith("\\\\") || input.startsWith("\\\\?\\") || /^[A-Za-z]:[^\\]/.test(input)) {
-      throw new EmbeddedHarnessError(
+      throw new DaemonRuntimeError(
         "HOME_UNSUPPORTED",
         "home",
         false,
@@ -326,7 +326,7 @@ function appSlug(appId: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 48);
   if (!slug || !/^[a-z0-9]/.test(slug)) {
-    throw new EmbeddedHarnessError(
+    throw new DaemonRuntimeError(
       "APP_ID_INVALID",
       "home",
       false,
@@ -370,7 +370,7 @@ function renameWithRetry(source: string, target: string): void {
     }
   }
   rmSync(source, { force: true });
-  throw new EmbeddedHarnessError(
+  throw new DaemonRuntimeError(
     "WRITE_FAILED",
     "home",
     true,

@@ -55,8 +55,7 @@ async function startFixture(t, { silentFirst = false, welcomeOnFirst = true, dis
               server_seq: 1, command_id: "command-liveness", run_id: "run-liveness", type: "run.start",
               lease_id: "lease-liveness", fencing_token: 1,
               payload: {
-                schema_version: 7, session_scope_id: "fixture-scope", context_configuration_version: 1,
-                resolved_runtime_selection: resolvedRuntimeSelection("runtime-liveness"),
+                schema_version: 7, session_scope_id: "fixture-scope", resolved_runtime_selection: resolvedRuntimeSelection("runtime-liveness"),
                 effective_context: executionContext(plan, [...items, { namespace: "octo.control", name: "instructions", payload: { entries: [{ text: "Keep runtime work scoped.", source: "agent_configuration" }] } }]), resolved_execution_plan: plan,
                 run_id: "run-liveness", agent_session_id: "session-liveness",
                 agent_run_request: {

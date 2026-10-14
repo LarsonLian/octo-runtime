@@ -329,7 +329,7 @@ Harness 的本地 `businessServiceBindings` 只绑定框架自身的任务材料
 - Harness：`packages/octo-harness-daemon/src/context-preparation.ts`、`tool-authorizations.ts`、`context-pipeline.ts`、`agent-work-runtime.ts`。
 - 共享协议：`packages/octo-harness-protocol/schema/protocol.schema.json`、`src/context.ts`、`context-catalog.ts`、`context-configuration.ts`、`context-application.ts`。
 - Worker：`internal/service/run_capability_svc.go`、`internal/domain/context_preparation.go`、`internal/handler/router.go`、`migrations/001_init.sql`。
-- Work App：`src/main/ask-context-service.ts`、`team-submission.ts`、`agent-management-service.ts`、`embedded-harness-service.ts`。整个 `packages/plugin-kit` 已删除。
+- Work App：`src/main/ask-context-service.ts`、`team-submission.ts`、`agent-management-service.ts`；原 `embedded-harness-service.ts` 在 2026-10-14 的包解耦中迁为 `daemon-runtime-service.ts`，当前本地与按需接入原则见 [Runtime 合同](runtime-local-and-online-contract.md)。整个 `packages/plugin-kit` 已删除。
 - OKF 当前实现：Loop 的 `internal/domain/knowledge*.go`、`internal/service/knowledge*.go`、`internal/handler/knowledge_handler.go`、`knowledge_mcp.go` 和 `internal/repository/knowledge_repo.go`。
 - Work App OKF 接线：`packages/knowledge-kit/src/electron/knowledge-service.ts` 和 `src/main/index.ts`。
 - Loop：`internal/service/object_selection_context.go`，以及此次新增的 OKF 业务实现。

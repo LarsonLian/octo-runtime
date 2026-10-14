@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
-import { watchLineLimit } from "@mininglamp-oss/octo-harness-adapter-sdk";
+import { watchLineLimit, type AdapterProbeOptions } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import {
   assertHostFrame,
   createHostInvoke,
@@ -29,16 +29,11 @@ export type RpcTrace = (direction: RpcTraceDirection, frame: string) => void;
 
 /** Stable client contract used by daemon-owned host lifecycle wrappers. */
 export interface AdapterHostRpc {
-  list(): Promise<HostedAdapterMetadata[]>;
-  probe(adapterType: string): Promise<unknown>;
+  list(configurations?: Record<string, AdapterProbeOptions>): Promise<HostedAdapterMetadata[]>;
+  probe(adapterType: string, options?: AdapterProbeOptions): Promise<unknown>;
   cancel(invocationId: string, reason?: string): Promise<{ cancelled: boolean }>;
   respondInteraction(invocationId: string, response: InteractionResponse): Promise<void>;
   respondNative(invocationId: string, response: NativeInteractionResponse): Promise<void>;
-  prepare(
-    adapterType: string,
-    request: InvokeRequest,
-    options?: HostInvokeOptions
-  ): Promise<HostRunReceipt>;
   invoke: HostInvoke;
   invokeFrames(
     adapterType: string,
@@ -183,14 +178,21 @@ export class AdapterHostRpcServer {
     const { id = null, method, params = {} } = message;
     try {
       if (method === "list") {
-        this.#send({ jsonrpc: "2.0", id, result: await this.#host.describe() });
+        this.#send({
+          jsonrpc: "2.0",
+          id,
+          result: await this.#host.describe(probeConfigurations(params.configurations))
+        });
         return;
       }
       if (method === "probe") {
         this.#send({
           jsonrpc: "2.0",
           id,
-          result: await this.#host.probe(requiredString(params.adapterType, "adapterType"))
+          result: await this.#host.probe(
+            requiredString(params.adapterType, "adapterType"),
+            probeOptions(params.options)
+          )
         });
         return;
       }
@@ -221,15 +223,6 @@ export class AdapterHostRpcServer {
           params.response as NativeInteractionResponse
         );
         this.#send({ jsonrpc: "2.0", id, result: {} });
-        return;
-      }
-      if (method === "prepare") {
-        const receipt = this.#host.prepare(
-          requiredString(params.adapterType, "adapterType"),
-          params.request as InvokeRequest,
-          resolveHostInvokeWireOptions(params.options)
-        );
-        this.#send({ jsonrpc: "2.0", id, result: receipt });
         return;
       }
       if (method === "invoke") {
@@ -416,12 +409,12 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
     this.#invocations.clear();
   }
 
-  list(): Promise<HostedAdapterMetadata[]> {
-    return this.request("list");
+  list(configurations?: Record<string, AdapterProbeOptions>): Promise<HostedAdapterMetadata[]> {
+    return this.request("list", { configurations });
   }
 
-  probe(adapterType: string): Promise<unknown> {
-    return this.request("probe", { adapterType });
+  probe(adapterType: string, options?: AdapterProbeOptions): Promise<unknown> {
+    return this.request("probe", { adapterType, options });
   }
 
   cancel(invocationId: string, reason?: string): Promise<{ cancelled: boolean }> {
@@ -434,23 +427,6 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
   async respondNative(invocationId: string, response: NativeInteractionResponse): Promise<void> {
     await this.request("native.respond", { invocationId, response });
   }
-  async prepare(
-    adapterType: string,
-    request: InvokeRequest,
-    options: HostInvokeOptions = {}
-  ): Promise<HostRunReceipt> {
-    const { signal: _signal, ...wireRequest } = request;
-    void _signal;
-    const receipt = await this.request("prepare", {
-      adapterType,
-      request: wireRequest,
-      options: serializeHostInvokeOptions(options)
-    });
-    assertHostRunReceipt(receipt);
-    assertReceiptRequest(receipt, request, options);
-    return receipt;
-  }
-
   /** Await the invoke ACK first, then keep yielding this invocation's event notifications until done. */
   async *invokeFrames(
     adapterType: string,
@@ -575,4 +551,28 @@ function traceFrame(message: RpcMessage, raw: string): string {
     });
   }
   return raw;
+}
+
+function probeOptions(value: unknown): AdapterProbeOptions | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new TypeError("invalid probe options");
+  const options = value as AdapterProbeOptions;
+  if (
+    options.providerOptions !== undefined &&
+    (!options.providerOptions ||
+      typeof options.providerOptions !== "object" ||
+      Array.isArray(options.providerOptions) ||
+      Object.values(options.providerOptions).some((v) => typeof v !== "string"))
+  )
+    throw new TypeError("invalid probe provider options");
+  return options;
+}
+function probeConfigurations(value: unknown): Record<string, AdapterProbeOptions> | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new TypeError("invalid probe configurations");
+  return Object.fromEntries(
+    Object.entries(value).map(([type, options]) => [type, probeOptions(options) ?? {}])
+  );
 }

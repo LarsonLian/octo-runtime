@@ -4,7 +4,6 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const OPENCLAW_AGENT_ID = /^[a-z0-9_][a-z0-9_-]{0,63}$/;
 const RESERVED_PROFILE_NAMES = new Set([
   "config.json",
   "credentials",
@@ -34,38 +33,7 @@ export interface ProfileConfiguration {
   runtime_name: string;
   agent_identity?: string;
   agent_name?: string;
-  adapters?: {
-    openclaw?: OpenClawAdapterConfiguration;
-  };
-}
-
-export interface OpenClawAdapterConfiguration {
-  schema_version: 1;
-  /** External binding mode: OpenClaw owns the Agent definition and lifecycle. */
-  kind?: "external";
-  /** Cloud-side ExternalAgentBinding identifier, when this profile was paired from Octo Work. */
-  binding_id?: string;
-  gateway_url: string;
-  agent_id: string;
-  workspace: string;
-  credential_ref: "credentials/openclaw-gateway.json";
-  execution: AdapterExecutionConfiguration;
-}
-
-export interface AdapterExecutionConfiguration {
-  provider_agent_id?: string;
-  provider_options: Record<string, string>;
-  credential_ref?: string;
-}
-
-export interface OpenClawGatewayCredential {
-  schema_version: 1;
-  access_token: string;
-  device_id: string;
-  public_key: string;
-  private_key: string;
-  issued_at: string;
-  provider_options: Record<string, string>;
+  adapters?: Record<string, { execution: { provider_options: Record<string, string>; credential_ref?: string } }>;
 }
 
 export interface RuntimeIdentity {
@@ -106,7 +74,6 @@ export interface HarnessPaths {
   profileConfig: string;
   identity: string;
   credential: string;
-  openclawCredential: string;
   openclawRoot: string;
   updateJournal: string;
   setupLock: string;
@@ -139,7 +106,6 @@ export function harnessPaths(home: string, profile: string): HarnessPaths {
     profileConfig: join(profileRoot, "config.json"),
     identity: join(profileRoot, "identity", "runtime.json"),
     credential: join(profileRoot, "credentials", "runtime-token.json"),
-    openclawCredential: join(profileRoot, "credentials", "openclaw-gateway.json"),
     openclawRoot: join(profileRoot, "adapters", "openclaw"),
     updateJournal: join(absoluteHome, "run", "update.json"),
     setupLock: join(absoluteHome, "run", "setup.lock"),
@@ -149,10 +115,6 @@ export function harnessPaths(home: string, profile: string): HarnessPaths {
       : join(absoluteHome, "sockets", "octo-harness-daemon.sock"),
     logs: join(absoluteHome, "logs")
   };
-}
-
-export function isValidOpenClawAgentId(value: string): boolean {
-  return OPENCLAW_AGENT_ID.test(value);
 }
 
 /** Call under the Home setup lock; this label is shared by all profiles, not an authentication key. */

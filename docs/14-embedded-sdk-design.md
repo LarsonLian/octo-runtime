@@ -1,5 +1,7 @@
 # Octo Harness Embedded SDK 初始版方案
 
+> 历史方案，2026-10-14 起不作为当前接入合同：embedded 独立包已删除，本地 API 合入 [daemon 包](../packages/octo-harness-daemon/README.md)，enrollment 移入可选 worker-access。当前本地启动不注册、不要求 Human Token；以 [接入说明](../INTEGRATION.md#2-作为-sdk-接入独立-app) 为准。本文保留原设计记录。
+
 > 2026-10-13 全局 Context 约束：每轮模型上下文由业务发起方决定，selection 等业务项可不发送；可传空、只传当轮需要的项或显式重复。必要的 adapter 等执行配置独立校验且不注入 LLM。底层只转发并渲染本轮快照，不按 sessionId 缓存、补齐、合并、去重或省略；reset、新建 Provider 会话或 resume 失败后，由业务方重新提供必要背景。详见 [Event Context IPD-SE 0.3](../../docs/event-context-rendering-ipd-se.md)。本文原有 Compiler/Pipeline、材料预取、场景自动追加与此约束冲突的内容仅保留历史背景；旧链路退出尚未完成。
 
 > 状态：Draft

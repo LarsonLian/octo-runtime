@@ -4,10 +4,16 @@ This contract is a breaking reset. There is no legacy schema or string-adapter
 upgrade support. The Worker owns fresh-schema creation; never reset Octo/auth
 or Gateway databases as part of a Runtime reset.
 
+## Local Existence And Optional Cloud Binding
+
+The daemon SDK initializes a stable local Runtime ID before enrollment. Local IPC execution does not need a Human Token, cloud owner record or Runtime credential. Registration and reconnection reuse that ID; failed cloud access does not remove it. See [local/online contract](runtime-local-and-online-contract.md).
+
+The following owner/provider rules govern enabled cloud registration and discovery, not local Runtime existence or startup. Cloud registration reports an authorized view of an existing local object.
+
 ## Local Binding
 
-Each profile persists `runtime_id`, `credential_id`, and optional `octo_space_id`
-in `identity/runtime.json`. Credentials remain in the protected credential file.
+Each profile persists its local `runtime_id` and tenant binding in
+`identity/runtime.json`; enabled enrollment adds credential binding metadata. Credentials remain in the protected credential file.
 Harness deliberately does not persist `owner_subject_type`, `owner_subject_id`,
 or `created_by_octo_uid`: Worker binds those fields to the Runtime credential and
 uses them for authorization and audit. They are not required to register or
@@ -37,9 +43,7 @@ Profile is client-reported metadata, not authority or a globally unique key.
 Do not add `(machine_id, profile)` uniqueness: different Homes may share names.
 Consumers can display `MacBook / work` versus `MacBook / personal`, keeping the
 Runtime ID for duplicate labels. Hostname and Runtime name stay unchanged.
-No compatibility upgrade is shipped: use a fresh local Worker schema and fresh
-profile identities/credentials. Preserve Home-global machine identity, and
-do not reset Octo/auth or Gateway databases.
+No compatibility upgrade is shipped. Any explicitly authorized schema reset has its own target list; ordinary startup, credential renewal and reconnect preserve local Runtime identity. Do not infer a database or Home reset from this contract.
 
 An enrollment's authorized owner is server-controlled.
 `POST /v1/runtime_enrollments` accepts optional `kind` and
@@ -106,10 +110,11 @@ unknown metadata is `null`. `unavailable_reason` identifies missing commands or
 failed/missing/timed out probes without exposing exception messages. Probe failures do not prevent other adapters from
 loading. Unprobed adapters are not advertised as available. Discovery runs via
 the existing adapter-host RPC boundary, not by spawning providers in the daemon.
-Restart the daemon to refresh installed metadata. Executable availability is
+Configured Provider connections are probed periodically with their Runtime-local settings; OpenClaw probe and execution read the same profile connection. Restart the daemon to refresh other installed metadata. Executable availability is
 not proof of provider authentication or successful execution.
 
 Worker registration rejects string lists, and readiness only accepts a matching
-`provider_type` with `available: true`. Channel context capabilities remain
-unchanged. Local paths are descriptive, potentially sensitive metadata and are
+`provider_type` with `available: true`. This remote routing check is not a local IPC readiness requirement. Local paths are descriptive, potentially sensitive metadata and are
 never commands for the Worker to execute.
+
+OpenClaw follows the same Runtime ownership and routing contract. See [Runtime 与 OpenClaw 连接统一合同](15-openclaw-external-agent-binding-design.md) for local connection sources, credentials and Context target selection.

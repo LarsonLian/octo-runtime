@@ -1,5 +1,7 @@
 # Runtime and Machine Identity Review
 
+Historical review against the baselines below. Its enrollment-centered creation and test counts are not the current SDK startup contract. Current local identity and optional registration rules are in [Runtime local/online contract](runtime-local-and-online-contract.md); the original findings and verification scope remain unchanged.
+
 Branch: `feat/runtime-machine-identity`.
 Harness baseline: `ae243d47b265d9206299344b085203c3141f284b`.
 Worker baseline: `e2165593bd72c7638b3fc121109372be1fbf1a13`.

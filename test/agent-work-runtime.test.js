@@ -47,7 +47,6 @@ const contentItems = [{
 const envelope = {
   schema_version: 7, session_scope_id: "fixture-scope",
   effective_context: executionContext(executionPlan, [...contentItems, { namespace: "octo.control", name: "instructions", payload: { entries: [{ text: "Keep changes scoped.", source: "agent_configuration" }] } }]),
-  context_configuration_version: 1,
   resolved_execution_plan: executionPlan,
   resolved_runtime_selection: resolvedRuntimeSelection(),
   run_id: "run-1",
@@ -223,15 +222,11 @@ test("execution envelope rejects schema 1/2 and missing frozen contract fields",
   for (const [field, error] of [
     ["effective_context", /CONTEXT_REQUIRED/],
     ["resolved_execution_plan", /RESOLVED_EXECUTION_PLAN_REQUIRED/],
-    ["resolved_runtime_selection", /RESOLVED_RUNTIME_SELECTION_REQUIRED/],
-    ["context_configuration_version", /CONTEXT_CONFIGURATION_VERSION_REQUIRED/]
+    ["resolved_runtime_selection", /RESOLVED_RUNTIME_SELECTION_REQUIRED/]
   ]) {
     const source = structuredClone(envelope);
     delete source[field];
     assert.throws(() => mapExecutionEnvelope(source), error);
-  }
-  for (const version of [0, -1, 1.5, "1", null]) {
-    assert.throws(() => mapExecutionEnvelope({ ...envelope, context_configuration_version: version }), /CONTEXT_CONFIGURATION_VERSION_REQUIRED/);
   }
   assert.throws(() => mapExecutionEnvelope({
     ...envelope, agent_run_request: { ...envelope.agent_run_request, context: {} }

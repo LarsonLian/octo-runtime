@@ -70,7 +70,6 @@ export function contextEnvelope(items = []) {
 export function resolvedRuntimeSelection(runtimeId = "runtime-1") {
   return {
     schema: "octo.runtime-selection/v2",
-    context_configuration_version: 1,
     selection_mode: "explicit",
     explicit_runtime_id: runtimeId,
     authorized_candidates: [{ runtime_id: runtimeId, priority: 1, owner_subject_type: "user", owner_subject_id: "user-1" }],

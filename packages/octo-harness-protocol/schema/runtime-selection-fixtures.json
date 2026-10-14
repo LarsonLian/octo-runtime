@@ -4,7 +4,6 @@
     "valid": true,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -24,7 +23,6 @@
     "valid": true,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "candidates",
       "authorized_candidates": [
         {
@@ -49,7 +47,6 @@
     "valid": true,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "candidates",
       "authorized_candidates": [
         {
@@ -74,7 +71,6 @@
     "valid": true,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -93,7 +89,6 @@
     "name": "schema-missing",
     "valid": false,
     "selection": {
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -113,7 +108,6 @@
     "valid": false,
     "selection": {
       "schema": null,
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -132,7 +126,6 @@
     "name": "schema-case",
     "valid": false,
     "selection": {
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -149,70 +142,10 @@
     }
   },
   {
-    "name": "context_configuration_version-missing",
-    "valid": false,
-    "selection": {
-      "schema": "octo.runtime-selection/v2",
-      "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
-      "authorized_candidates": [
-        {
-          "runtime_id": "runtime-1",
-          "priority": 1,
-          "owner_subject_type": "user",
-          "owner_subject_id": "user-1"
-        }
-      ],
-      "offline_behavior": "wait",
-      "failover": "none"
-    }
-  },
-  {
-    "name": "context_configuration_version-null",
-    "valid": false,
-    "selection": {
-      "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": null,
-      "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
-      "authorized_candidates": [
-        {
-          "runtime_id": "runtime-1",
-          "priority": 1,
-          "owner_subject_type": "user",
-          "owner_subject_id": "user-1"
-        }
-      ],
-      "offline_behavior": "wait",
-      "failover": "none"
-    }
-  },
-  {
-    "name": "context_configuration_version-case",
-    "valid": false,
-    "selection": {
-      "schema": "octo.runtime-selection/v2",
-      "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
-      "authorized_candidates": [
-        {
-          "runtime_id": "runtime-1",
-          "priority": 1,
-          "owner_subject_type": "user",
-          "owner_subject_id": "user-1"
-        }
-      ],
-      "offline_behavior": "wait",
-      "failover": "none",
-      "CONTEXT_CONFIGURATION_VERSION": 1
-    }
-  },
-  {
     "name": "selection_mode-missing",
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
         {
@@ -231,7 +164,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": null,
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -251,7 +183,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
         {
@@ -271,7 +202,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "offline_behavior": "wait",
@@ -283,7 +213,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": null,
@@ -296,7 +225,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "offline_behavior": "wait",
@@ -316,7 +244,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -335,7 +262,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -355,7 +281,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -375,7 +300,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -394,7 +318,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -414,7 +337,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -434,87 +356,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v1",
-      "context_configuration_version": 1,
-      "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
-      "authorized_candidates": [
-        {
-          "runtime_id": "runtime-1",
-          "priority": 1,
-          "owner_subject_type": "user",
-          "owner_subject_id": "user-1"
-        }
-      ],
-      "offline_behavior": "wait",
-      "failover": "none"
-    }
-  },
-  {
-    "name": "zero-version",
-    "valid": false,
-    "selection": {
-      "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 0,
-      "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
-      "authorized_candidates": [
-        {
-          "runtime_id": "runtime-1",
-          "priority": 1,
-          "owner_subject_type": "user",
-          "owner_subject_id": "user-1"
-        }
-      ],
-      "offline_behavior": "wait",
-      "failover": "none"
-    }
-  },
-  {
-    "name": "unsafe-version",
-    "valid": false,
-    "selection": {
-      "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 9007199254740992,
-      "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
-      "authorized_candidates": [
-        {
-          "runtime_id": "runtime-1",
-          "priority": 1,
-          "owner_subject_type": "user",
-          "owner_subject_id": "user-1"
-        }
-      ],
-      "offline_behavior": "wait",
-      "failover": "none"
-    }
-  },
-  {
-    "name": "quoted-version",
-    "valid": false,
-    "selection": {
-      "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": "1",
-      "selection_mode": "explicit",
-      "explicit_runtime_id": "runtime-1",
-      "authorized_candidates": [
-        {
-          "runtime_id": "runtime-1",
-          "priority": 1,
-          "owner_subject_type": "user",
-          "owner_subject_id": "user-1"
-        }
-      ],
-      "offline_behavior": "wait",
-      "failover": "none"
-    }
-  },
-  {
-    "name": "fractional-version",
-    "valid": false,
-    "selection": {
-      "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1.1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -534,7 +375,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "binding",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -554,7 +394,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -574,7 +413,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -594,7 +432,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -615,7 +452,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -639,7 +475,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "",
       "authorized_candidates": [
@@ -659,7 +494,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [],
@@ -672,7 +506,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -692,7 +525,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -712,7 +544,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -732,7 +563,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -752,7 +582,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -772,7 +601,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "explicit",
       "explicit_runtime_id": "runtime-1",
       "authorized_candidates": [
@@ -813,7 +641,6 @@
     "valid": false,
     "selection": {
       "schema": "octo.runtime-selection/v2",
-      "context_configuration_version": 1,
       "selection_mode": "candidates",
       "authorized_candidates": [
         {

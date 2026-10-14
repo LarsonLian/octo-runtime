@@ -1,39 +1,25 @@
-# Transport And Multi-node
+# 可选远程传输与多节点边界
 
-The multi-node contract keeps one authority: Agent Worker owns AgentSession,
-AgentRun, placement, lease and fencing. Harness nodes are replaceable executors.
+日期：2026-10-14。本文仅约束已启用的远程执行接入，本地 SDK 独立执行见 [Runtime 合同](runtime-local-and-online-contract.md)。
 
-```text
-business scheduler -> Agent Worker -> authenticated WSS -> Harness Runtime
-                                     <- ACK / events ----
-```
+## 接入与权威
 
-## Downlink
+HostApp 明确启用 worker-access 后，当前模块才执行注册与 Worker WS 接入。该包现有实现仍组合注册、连接和远程执行；access 注册职责与设备 WS／heartbeat 的最终划分待评审。
 
-`run.start` carries a frozen execution envelope containing `run_id`,
-`agent_session_id`, Agent revision, AgentRun request, lease/fencing metadata and
-optional opaque provider session. `run.cancel` addresses the Worker Run ID.
+Worker 按其当前执行合同校验身份、租户、Runtime 权限、租约与 fencing，并管理对应远程执行。业务 Agent 定义、五元组、defaults／mandatory、业务 Event 和结果投递由发起应用承担。Worker 不成为所有本地调用的必经入口。
 
-A command ACK only means the runtime durably accepted the command. Duplicate
-commands must return the same acceptance result and never start a second
-invocation.
+多个 Worker 实例之间的路由、租约和 fencing 必须遵循服务端合同。Provider 进程不能自行声明远程执行所有权。某个 Runtime 连接到某个实例，不表示该实例可跨租户执行，也不表示允许重复派发有副作用的工作。
 
-## Uplink
+## 回执与事件
 
-`run.event` carries `run_id`, monotonic `seq`, stable event ID and canonical
-event. Worker returns cumulative received and durable ACKs. Harness retains outbox
-rows until durable ACK and replays them after reconnect.
+命令接纳只证明接收，真实终态才证明执行结果。取消接纳与取消完成同样分开判断。
 
-## Placement And Recovery
+Host 与当前 Worker 接入事件 relay 使用有界内存。不要把旧方案中的 durable outbox、逐事件 durable ACK 或重启后完整重放当作现行能力。断流修复使用原源游标；缺口与过期明确返回错误，不重新 invoke。
 
-- Worker chooses an eligible Runtime and owns lease expiration.
-- fencing prevents an obsolete Runtime from committing events after reassignment.
-- Runtime hello reports active Run IDs for reconciliation.
-- Same AgentSession is serialized by Worker.
-- Provider session stays on Worker AgentSession and follows the next valid lease.
-- Lost local processes are not silently resumed; Worker decides terminalization
-  or reassignment.
+业务应用需要历史或可靠投递时自行持久化原始事件和业务状态。云端连接、注册 ACK 和事件接收均不能替代业务保存或消息投递证据。
 
-Loop, AutoPilot, Webhook and IM schedulers never connect directly to a Harness
-node. They submit AgentRuns to Worker, which keeps routing and execution lifecycle
-independent from business scheduling.
+## 故障隔离
+
+Worker 断线不删除本地 Runtime 身份，不取消本地 Host 就绪；IM 使用独立配置和连接。设备离线失效、heartbeat 与最终模块归属按待评审合同实施，不能以现有实现推导已批准的最终方案。
+
+多节点验证应分别覆盖路由、授权、租约失效、源流缺口、连接恢复和重复副作用防护。当前本地验证不宣称这些场景全部通过。

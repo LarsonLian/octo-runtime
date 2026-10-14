@@ -1,10 +1,10 @@
 # Infra 瘦身：AgentWorker 作为唯一云端执行入口
 
-日期：2026-10-13。当前分支破坏性更新，不迁移历史执行数据，不提供旧协议回退。
+日期：2026-10-14。按最新本地 Runtime 与业务归属决定更新；旧四张业务表和 schema ownership 已退出。统一原则见 [Runtime 合同](runtime-local-and-online-contract.md)。当前分支破坏性更新，不迁移历史数据，不提供旧协议回退。
 
 ## 1. 最终责任边界
 
-撤销 `octo-agent-access`。服务调用方使用 `octo-agent-worker` 完成 Agent 配置、Runtime 注册、寻址、单次 AgentRun 与执行交互。依据 2026-10-13 后续澄清，指定单个 Agent 的 TriggerEvent 接入与一对一调用记录从 Access 迁入 Worker，保存谁、在什么情况下、发起了什么调用。Automation、TeamSession、handoff、Webhook 编排进入 `octo-agent-app-loop`。
+撤销独立 `octo-agent-access`。Worker 只承担已登记 Runtime、凭据授权及独立远程执行，不管理业务 Agent 定义、defaults／mandatory 或业务 Event／ActionExecution。发起方准备五元组并保存业务触发和本轮快照；本地执行直接使用 SDK／Host，不经过 Worker。业务编排归宿主或相应业务系统，本轮服务端操作仅涉及 Worker。
 
 本地助理和 IM 都调用本机 Host。Work App 普通聊天不会先创建 Loop WorkExecution，再订阅云端 SSE。Loop 仅负责其自身云端业务，例如 mention、任务、讨论、定时器和 Webhook。
 
@@ -40,29 +40,25 @@ flowchart TB
 
 ## 2. Worker 保留与删除
 
-唯一根 DDL `octo-agent-worker/migrations/001_init.sql` 保留 7 张应用表：5 张控制配置表，以及 2 张轻量发起记录表：
+当前 Worker 根 DDL 仅保留三张业务表：
 
 | 表 | 用途 |
 | --- | --- |
-| agents | Agent 身份与配置入口 |
-| agent_context_configurations | Context defaults / mandatory |
-| runtimes | 已注册设备信息 |
-| runtime_credentials | Runtime 身份凭据 |
-| runtime_enrollments | 注册流程 |
-| event_record | 单 Agent TriggerEvent 的发起事实、身份、输入与幂等键 |
-| action_execution | 一对一 AgentRun 调用指针与生命周期状态 |
+| runtimes | 已登记 Runtime 信息与实际作用域 |
+| runtime_credentials | Runtime 注册与连接凭据 |
+| runtime_enrollments | 显式注册授权流程 |
 
-另有迁移器自己的 `gorp_migrations`、`octo_schema_ownership` 两张元数据表。一次 TriggerEvent 接入新增一条发起记录和一条调用记录；生命周期变化更新调用状态，步骤、delta、工具输出和完整 CanonicalEvent 均不进入这两表。执行内存、交互、准备回执、Runtime 命令与在线租约驻有界内存，心跳和输出事件热路径不逐条写 MySQL。
+`agents`、`agent_context_configurations`、`event_record`、`action_execution` 及依赖已退出当前设计和根 DDL。迁移账本独立保留；`octo_schema_ownership`、数据库归属认领及外来表扫描已移除。迁移锁与账本按 Worker 当前迁移合同处理。
 
-删除步骤和输出 DDL、持久执行事件 repository、archive、projection、presentation、checkpoint、Redis 事件流、离线自动重派和定时归档删除器。不存在 ACK 后删除执行大表的替代实现，也不把 MySQL 换成另一种云端执行日志库。轻量发起记录不保证输出投递，也不承载 Automation 或 Team 编排。
+注册存储不决定本地 Runtime 是否存在。独立执行、交互、准备回执与源事件窗口按各自合同管理，不新增业务 Event 持久化门槛、输出大表、durable outbox 或自动归档删除器。完整历史与业务可靠投递由消费应用承担。
 
 `octo-agent-access` 不再包含可运行服务、DDL 或部署清单；原数据库及本机网关路由退出运行。
 
 ## 3. 本地执行与业务存储
 
-Daemon 的 Host 包装同一个 Adapter Host RPC 内核。远程 Worker 接入、内置 IM 接入和 Embedded SDK 使用同一执行、取消与交互能力。
+Daemon 的 Host 包装同一个 Adapter Host RPC 内核。远程 Worker 接入、内置 IM 接入和 daemon SDK 使用同一执行、取消与交互能力。
 
-普通本地调用使用 `agent_run.invoke`：一次 JSON-RPC 2.0 请求启动执行，同一 IPC 连接收到一次响应和后续 `agent_run.event` notification。Embedded SDK 对外暴露 `invoke(adapterType, request): AsyncIterable<CanonicalEvent>`。这不是 HTTP/SSE 包装；`agent_run.subscribe` 只用于已执行 Run 的断线修复，不再次提交执行。
+普通本地调用使用 `agent_run.invoke`：一次 JSON-RPC 2.0 请求启动执行，同一 IPC 连接收到一次响应和后续 `agent_run.event` notification。daemon SDK 对外暴露 `invoke(adapterType, request): AsyncIterable<CanonicalEvent>`。这不是 HTTP/SSE 包装；`agent_run.subscribe` 只用于已执行 Run 的断线修复，不再次提交执行。
 
 Work App main 是聊天业务的所有者。账户、Space、Owner 隔离的本地 SQLite 保存：
 
@@ -81,7 +77,7 @@ Host 默认最多 128 个 Run、每 Run 4 MiB / 4096 条事件、总事件 64 Mi
 
 断流后沿相同 `run_id + stream_id + after_seq` 补发。源变更返回 `STREAM_EXPIRED`，窗口覆盖返回 `STREAM_GAP`，已淘汰 Run 返回不可用。SDK 只在已有源身份的连接中断后尝试修复，不能自动重新 invoke。无逐事件 ACK，不需要 SQLite outbox INSERT/DELETE。
 
-Worker/Host 重启后不恢复旧执行事件或副作用。通过 TriggerEvent 发起的调用保留幂等键和原 Run 指针，不重复启动；执行内存已丢失且终态未确认时返回 `RUN_OUTCOME_UNKNOWN`，不能把回执当作可恢复的输出流。普通本地 invoke 的去重由宿主业务管理。需要业务可靠投递的应用自行承担持久状态。取消响应只表示受理，终态仍由执行事件确认。
+Worker/Host 重启后不恢复旧执行事件或副作用。幂等语义由发起应用及独立执行合同承担，不依赖已删除的 Worker Event／ActionExecution 表。执行内存丢失且终态未确认时明确返回不可确认结果，不能把回执当作可恢复的输出流。普通本地 invoke 的去重由宿主业务管理。需要业务可靠投递的应用自行承担持久状态。取消响应只表示受理，终态仍由执行事件确认。
 
 ## 5. Automation、Team 与外部执行扩展
 
@@ -95,7 +91,7 @@ Run 保持 7，Context 保持 `octo.context-envelope/v3`。环境覆盖使用已
 
 ## 6. 验收
 
-1. Worker 根 DDL 只有 7 张控制配置表和 2 张轻量发起记录表，无步骤、输出、归档大表及自动删除执行数据逻辑；表行数不随输出事件条数增长。
+1. Worker 根 DDL 仅保留 runtimes、runtime_credentials、runtime_enrollments 三张业务表，四张废弃业务表及 schema ownership 已删除；不保存步骤、输出或完整业务事件。
 2. Access 服务、DDL 和网关入口退出；业务代码位于 Loop 或宿主应用。
 3. Runtime 真实注册、远程单 Run、普通本地聊天都能执行；本地聊天不创建 Loop 执行、不请求云端 Run SSE。
 4. 本地 SQLite 与实际 invoke 的完整 CanonicalEvent 相等，能重开会话；正文 delta 和 run-items 只是投影。

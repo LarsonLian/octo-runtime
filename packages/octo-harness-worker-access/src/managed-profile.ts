@@ -47,7 +47,6 @@ interface RuntimeCredential {
 }
 
 interface AdapterExecutionManifest {
-  provider_agent_id?: unknown;
   provider_options?: unknown;
   credential_ref?: unknown;
 }
@@ -74,8 +73,7 @@ export function loadManagedAgentWorks(
 /** Load only an explicit allowlist from a normal profile root. */
 export function loadManagedAgentWorksFromRoot(
   rootPath: string,
-  profiles: readonly string[],
-  options: { discoverLocalOpenClaw?: boolean } = {}
+  profiles: readonly string[]
 ): AgentWorkRuntimeOptions[] {
   const root = readJsonRequired<HarnessHomeConfiguration>(join(rootPath, "config.json"));
   if (root.schema_version !== 1) throw new Error("unsupported Harness Home config schema");
@@ -91,17 +89,13 @@ export function loadManagedAgentWorksFromRoot(
     ...uniqueProfiles.filter((profile) => profile !== defaultProfile)
   ];
   const runtimes = orderedProfiles
-    .map((profile) => loadManagedProfile(rootPath, profile, options))
+    .map((profile) => loadManagedProfile(rootPath, profile))
     .filter((runtime): runtime is AgentWorkRuntimeOptions => runtime !== undefined);
   assertUniqueRuntimeBindings(runtimes);
   return runtimes;
 }
 
-function loadManagedProfile(
-  home: string,
-  profile: string,
-  options: { discoverLocalOpenClaw?: boolean }
-): AgentWorkRuntimeOptions | undefined {
+function loadManagedProfile(home: string, profile: string): AgentWorkRuntimeOptions | undefined {
   if (!isProfileName(profile)) {
     throw new Error(`Harness Home profile is invalid: ${profile}`);
   }
@@ -112,8 +106,20 @@ function loadManagedProfile(
     throw new Error(`managed profile ${profile} is invalid`);
   if (identity.schema_version !== 1 || identity.profile !== profile)
     throw new Error(`managed Runtime identity for ${profile} is invalid`);
-  if (config.agent_identity !== undefined && (typeof config.agent_identity !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,190}$/.test(config.agent_identity))) throw new Error("invalid profile agent_identity");
-  if (config.agent_name !== undefined && (typeof config.agent_name !== "string" || !config.agent_name || config.agent_name.trim() !== config.agent_name || Buffer.byteLength(config.agent_name) > 255)) throw new Error("invalid profile agent_name");
+  if (
+    config.agent_identity !== undefined &&
+    (typeof config.agent_identity !== "string" ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,190}$/.test(config.agent_identity))
+  )
+    throw new Error("invalid profile agent_identity");
+  if (
+    config.agent_name !== undefined &&
+    (typeof config.agent_name !== "string" ||
+      !config.agent_name ||
+      config.agent_name.trim() !== config.agent_name ||
+      Buffer.byteLength(config.agent_name) > 255)
+  )
+    throw new Error("invalid profile agent_name");
   const baseUrl = optionalString(config.agent_work_url);
   if (!baseUrl) return undefined;
   const credential = readJsonRequired<RuntimeCredential>(
@@ -121,11 +127,7 @@ function loadManagedProfile(
   );
   if (credential.schema_version !== 1)
     throw new Error(`managed Runtime credential for ${profile} is invalid`);
-  const adapterConfigurations = readAdapterConfigurations(
-    profileRoot,
-    config.adapters,
-    options.discoverLocalOpenClaw
-  );
+  const adapterConfigurations = readAdapterConfigurations(profileRoot, config.adapters);
   return {
     profile,
     baseUrl,
@@ -142,15 +144,19 @@ function loadManagedProfile(
 
 function readAdapterConfigurations(
   profileRoot: string,
-  adaptersValue: unknown,
-  discoverLocalOpenClaw = false
+  adaptersValue: unknown
 ): NonNullable<AgentWorkRuntimeOptions["adapterConfigurations"]> {
   const adapters = objectValue(adaptersValue);
-  if (!adapters) return {};
-  return Object.fromEntries(
-    Object.entries(adapters)
-      .filter(([type]) => !discoverLocalOpenClaw || type !== "openclaw")
-      .map(([adapterType, value]) => {
+  const connections = { openclaw: { providerOptions: { OPENCLAW_RUNTIME_ROOT: profileRoot } } };
+  if (!adapters) return connections;
+  if (adapters.openclaw !== undefined)
+    throw new Error(
+      "OpenClaw uses adapters/openclaw/connection.json; remove the obsolete external binding and configure this Runtime connection"
+    );
+  return {
+    ...connections,
+    ...Object.fromEntries(
+      Object.entries(adapters).map(([adapterType, value]) => {
         if (!/^[a-z0-9][a-z0-9-]{0,127}$/.test(adapterType)) {
           throw new Error(`managed adapter type is invalid: ${adapterType}`);
         }
@@ -172,14 +178,12 @@ function readAdapterConfigurations(
         return [
           adapterType,
           {
-            ...(optionalString(execution.provider_agent_id)
-              ? { providerAgentId: optionalString(execution.provider_agent_id) }
-              : {}),
             providerOptions: { ...publicOptions, ...credentialOptions }
           }
         ];
       })
-  );
+    )
+  };
 }
 
 function readBusinessServiceBindings(

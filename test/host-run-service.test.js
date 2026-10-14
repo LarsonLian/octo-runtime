@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
-import { HostRunService } from "../packages/octo-harness-daemon/dist/host-run-service.js";
+import { AdapterHost, HostRunService } from "@mininglamp-oss/octo-harness-adapter-host";
 import { invokeRequest, waitFor } from "./agent-work-runtime-fixture.js";
 function fixture(invoke, modes = ["canonical"]) {
   const provider = new AdapterHost();
@@ -22,7 +21,6 @@ function fixture(invoke, modes = ["canonical"]) {
   return new HostRunService({
     invoke: provider.invoke,
     invokeFrames: provider.invokeFrames.bind(provider),
-    prepare: async (...args) => provider.prepare(...args),
     list: async () => provider.list(),
     probe: async () => ({}),
     cancel: async (id, reason) => ({ cancelled: provider.cancel(id, reason) }),

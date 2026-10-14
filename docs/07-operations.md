@@ -1,76 +1,53 @@
-# Operations
+# Runtime 运维
 
-## Start
+日期：2026-10-14。先区分本地、注册、设备连接和 IM 连接，见 [Runtime 合同](runtime-local-and-online-contract.md)。调试涉及真实服务时使用 `https://im-test.deepminer.com.cn/`。
+
+## 启动与检查
+
+客户 App 使用 [daemon SDK](../INTEGRATION.md#2-作为-sdk-接入独立-app)，本地启动不需要 Worker URL 或 Runtime credential。HostApp 明确提供发行物和 Provider 安装方案。
+
+独立 CLI 前台诊断：
 
 ```bash
-export OCTO_HARNESS_HOME=/absolute/runtime/state
-export OCTO_HARNESS_AGENT_WORK_URL=http://127.0.0.1:8092
-export OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN=runtime-token
-export OCTO_HARNESS_AGENT_WORK_TENANT_ID=tenant-1
-export OCTO_HARNESS_AGENT_WORK_SUBJECT_ID=device-1
-pnpm daemon
+octo-harness --home /absolute/runtime/state daemon run
+octo-harness --home /absolute/runtime/state status
+octo-harness --home /absolute/runtime/state adapter list
+octo-harness --home /absolute/runtime/state adapter probe codex
 ```
 
-The daemon and CLI must use the same `OCTO_HARNESS_HOME`.
+已保存云端 profile 的 CLI 装配仍可能恢复 Worker 接入；客户仅本地 SDK 不依赖这套 CLI 流程。CLI `doctor` 同时检查云端项，整体非零不能直接判定本地 Host 不可用。
 
-## Inspect
+SDK 查看 `health.local.ready`、`adapterHostReady`、本地 profiles 与 `health.modules`。模块启动返回值不等于在线证据；Worker 实际连接看相应模块 `state.runtimes[].connected`，IM 看频道自己的状态。
+
+## 排障顺序
+
+| 故障 | 检查与恢复 |
+| --- | --- |
+| 本地 IPC 不可用 | 检查有效就绪响应、runner／Host 入口、owner lock、进程和日志；socket 文件不能证明就绪 |
+| Host 就绪但无法执行 | 检查 Adapter probe、实际 Provider 安装／认证、执行配置、工作目录与权限 |
+| 可选包缺失或加载失败 | 检查 HostApp 是否携带并显式启用了正确工厂；报错不触发自动安装 |
+| 注册失败 | 检查真实账号／租户授权、服务地址与回执；保留本地 Runtime ID，不清空 Home |
+| Worker 或 IM 断线 | 只处理对应模块；检查 DNS、TLS、鉴权与其连接状态，本地执行继续独立判断 |
+| 输出断流 | 沿原 run／stream 游标修复；缺口或过期明确失败，不重新 invoke |
+| 取消已受理 | 等待执行终态并确认 Provider 回收；不把请求成功显示为已完成 |
+| 历史缺失 | 检查宿主业务事件存储；Host 内存窗口不是完整历史库 |
+
+不要因为设备离线删除 identity、创建新的 Runtime 或重装 Provider。注册凭据重置与聊天会话 reset 分别处理，均不能代替具体故障诊断。
+
+## 本地日志
+
+启动前设置 `OCTO_RUNTIME_DEBUG=1` 可开启 Host 本地诊断输出：
 
 ```bash
-pnpm cli status
-pnpm cli adapter list
-pnpm cli adapter probe opencode
-pnpm cli agent-session list
-pnpm cli agent-run list
-pnpm cli agent-run get <agent-run-id>
-pnpm cli agent-run cancel <agent-run-id> --reason operator_cancel
-```
-
-For local Host debugging, set the environment variable before starting Harness:
-
-```bash
-OCTO_RUNTIME_DEBUG=1 octo-harness daemon run
-# With a custom Home:
 OCTO_RUNTIME_DEBUG=1 octo-harness --home /absolute/runtime/state daemon run
-tail -f /absolute/runtime/state/logs/adapter-host.log
 ```
 
-Only the exact value `1` enables file logging. Otherwise no debug log directory or
-file is created. The Host appends lifecycle, watchdog and stdio RPC records to
-`<Harness Home>/logs/adapter-host.log`; restarted Host processes use the same file.
-The default Home is `~/.octo-harness` (or `%LOCALAPPDATA%/OctoHarness` on Windows).
-Set the variable in the service environment when running Harness as a native service.
-Changing a shell environment does not change an already running daemon.
+检查有效运行 Home 的 `logs/adapter-host.log`；SDK 账号隔离时使用对应账号运行目录。修改 shell 环境不会改变已运行进程，必须重启受影响实例。
 
-The file is local debug output and may contain invocation input and output. It is
-created with owner-only permissions. There is no automatic rotation or retention;
-remove the file when no longer needed. A write failure reports once on stderr and
-does not interrupt execution. There is no Provider-native capture, observation ring,
-subscriber transport, Inspect HTTP/WebSocket server or support-bundle service.
-Use Worker for the authoritative production lifecycle and complete trajectory.
+日志可能包含调用输入与输出，不能公开传播凭据或完整业务内容。当前源流与远程 relay 没有 durable outbox；不使用“清 outbox／修 durable ACK 水位”作为本版运维步骤。
 
-## Health Signals
+## 验收证据
 
-- Worker WSS connected state and runtime ID.
-- active invocation count and command ACK sequence.
-- event outbox bytes/rows and durable ACK lag.
-- adapter-host PID/readiness.
-- channel context cache size/gap state when enabled.
-- provider process duration, terminal event and cancellation latency.
+分别记录本地 IPC 就绪、注册回执、设备实际连接、频道实际连接、真实 Provider 终态及业务保存结果。云端探针不能替代本地执行验证；fixture 测试不能替代真实 im-test 与桌面 renderer 联调。
 
-Keep local debug logs private because they can contain execution data.
-
-## Recovery Runbook
-
-Run `octo-harness doctor` and `octo-harness status` first. Enable Host debug logging
-when reproducing a problem, and correlate its timestamps and invocation IDs with Worker.
-
-| Incident | Evidence | Recovery decision |
-| --- | --- | --- |
-| Local database unavailable | `storeHealth`, `dbBytes`, `walBytes`, error code | Stop new Run admission. Preserve a corrupt database under its quarantine name, restart after storage repair, and confirm `storeHealth.state=healthy`. |
-| Orphan provider execution | adapter-host restart count, invocation ID, terminal timestamp | Confirm the old process group was reaped before retrying. Use the authoritative Worker terminal state to avoid duplicate execution. |
-| Reconnect storm | `connectionState`, reconnect attempt, connected profile counts | Verify randomized backoff is increasing and dependency health is stable. Do not restart the whole fleet simultaneously. |
-| DNS, TLS, or clock failure | `connectionReason`, recovery trigger, bounded error code | Treat `dns`, `tls`, `clock_change`, and `auth` separately. Never bypass certificate validation; repair name resolution, trust, system time, or credentials before retrying. |
-| Offline budget exhausted | oldest outbox age, pending rows/bytes, last ACK | Restore connectivity or free local storage. Acknowledge or replay only through the protocol; never edit outbox rows manually. |
-| Dependency degradation | HTTP status, bounded error code, timeout stage | Identify whether auth, Worker, Redis, MySQL, or the provider is degraded. Recover that dependency before raising retry limits. |
-| Outbox watermark pressure | pending bytes/rows, oldest age, database and WAL bytes | Remove the upstream ACK blockage. New work remains rejected at the hard watermark until durable ACK cleanup lowers usage. |
-| Evidence timeline disagreement | generation, server sequence, ACK, occurrence/run/invocation IDs | Order facts by source timestamp and sequence, then accept Worker terminal authority. Use the Host debug log when additional execution evidence is needed. |
+现有验证见 [2026-10-14 包解耦记录](validation/daemon-package-modules-2026-10-14.md)。Work App 的持久化在线 toggle 和最终 access／设备 WS 划分仍未完成，不以当前模块工厂验证代替其验收。

@@ -77,8 +77,7 @@ test("daemon preserves mixed ordering and excludes materialized bytes from run m
   const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "/tmp", approval_mode: "full_access" };
   const content = input(); content.parts[1].source = source(image); content.reply_to = { text: "quoted instruction", author_name: "Lin" };
   const envelope = {
-    schema_version: 7, session_scope_id: "fixture-scope", effective_context: executionContext(plan), context_configuration_version: 1,
-    resolved_execution_plan: plan, resolved_runtime_selection: resolvedRuntimeSelection(),
+    schema_version: 7, session_scope_id: "fixture-scope", effective_context: executionContext(plan), resolved_execution_plan: plan, resolved_runtime_selection: resolvedRuntimeSelection(),
     run_id: "run-1", agent_session_id: "session-1",
     agent_run_request: { namespace: "work", agent_id: "a", session_id: "v1/work/test", trigger: { kind: "manual", occurrence_id: "message-1" }, input: content, context: contextEnvelope() }
   };

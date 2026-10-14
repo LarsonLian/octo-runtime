@@ -2,39 +2,40 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { closeSync, existsSync, openSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { EmbeddedHarnessError } from "./errors.js";
+import { DaemonRuntimeError } from "./errors.js";
 import {
   removeFile,
   writeJsonAtomic,
-  type EmbeddedAccountPaths,
-  type EmbeddedHomePaths
+  type DaemonAccountPaths,
+  type DaemonHomePaths
 } from "./home.js";
 import {
   callDaemon,
   probeDaemon,
   type DaemonStatus,
-  type EmbeddedRunnerSession
+  type DaemonRunnerSession
 } from "./runtime-contract.js";
-import type { EmbeddedHarnessOptions } from "./types.js";
+import type { AccountSubject, DaemonRuntimeOptions } from "./types.js";
 
 export interface SupervisedRuntime {
   child: ChildProcess;
   nonce: string;
-  paths: EmbeddedHomePaths;
+  paths: DaemonHomePaths;
 }
 
-export async function startEmbeddedRuntime(options: {
-  sdk: EmbeddedHarnessOptions;
-  paths: EmbeddedHomePaths;
-  account: EmbeddedAccountPaths;
+export async function startManagedDaemon(options: {
+  sdk: DaemonRuntimeOptions;
+  paths: DaemonHomePaths;
+  account: DaemonAccountPaths;
   profiles: readonly string[];
+  subject: AccountSubject;
   nonce: string;
 }): Promise<{ supervised: SupervisedRuntime; status: DaemonStatus }> {
   const nodePath = resolveNode(options.sdk);
   const runnerPath =
     options.sdk.distribution?.runnerPath ?? fileURLToPath(new URL("./runner.js", import.meta.url));
   if (!existsSync(runnerPath)) {
-    throw new EmbeddedHarnessError(
+    throw new DaemonRuntimeError(
       "DISTRIBUTION_MISSING",
       "distribution",
       false,
@@ -42,13 +43,15 @@ export async function startEmbeddedRuntime(options: {
     );
   }
   removeFile(options.paths.shutdownFile);
-  const session: EmbeddedRunnerSession = {
+  const session: DaemonRunnerSession = {
     schema_version: 1,
     nonce: options.nonce,
     parent_pid: process.pid,
     home: options.paths.home,
     account_root: options.account.root,
     profiles: [...options.profiles],
+    subject: options.subject,
+    modules: options.sdk.modules ?? [],
     socket_path: options.paths.socket,
     pid_path: options.paths.pidFile,
     store_path: options.account.storeFile,
@@ -67,7 +70,7 @@ export async function startEmbeddedRuntime(options: {
   let child: ChildProcess;
   try {
     child = spawn(nodePath, [runnerPath, "--session", options.paths.sessionFile], {
-      argv0: "octo-harness-embedded",
+      argv0: "octo-harness-daemon",
       cwd: dirname(runnerPath),
       detached: false,
       shell: false,
@@ -83,7 +86,7 @@ export async function startEmbeddedRuntime(options: {
   const deadline = Date.now() + startupTimeout;
   for (;;) {
     if (child.exitCode !== null || child.signalCode !== null) {
-      throw new EmbeddedHarnessError(
+      throw new DaemonRuntimeError(
         "DAEMON_EXITED",
         "daemon",
         true,
@@ -93,8 +96,8 @@ export async function startEmbeddedRuntime(options: {
     const status = await probeDaemon(options.paths.socket);
     if (status?.ready) return { supervised, status };
     if (Date.now() >= deadline) {
-      await stopEmbeddedRuntime(supervised).catch(() => undefined);
-      throw new EmbeddedHarnessError(
+      await stopManagedDaemon(supervised).catch(() => undefined);
+      throw new DaemonRuntimeError(
         "DAEMON_START_TIMEOUT",
         "daemon",
         true,
@@ -105,7 +108,7 @@ export async function startEmbeddedRuntime(options: {
   }
 }
 
-export async function stopEmbeddedRuntime(supervised: SupervisedRuntime): Promise<void> {
+export async function stopManagedDaemon(supervised: SupervisedRuntime): Promise<void> {
   try {
     await callDaemon(
       supervised.paths.socket,
@@ -125,7 +128,7 @@ export async function stopEmbeddedRuntime(supervised: SupervisedRuntime): Promis
   }
   await terminateOwnedChild(supervised.child);
   if (!(await waitForExit(supervised.child, 5_000))) {
-    throw new EmbeddedHarnessError(
+    throw new DaemonRuntimeError(
       "SHUTDOWN_INCOMPLETE",
       "shutdown",
       false,
@@ -133,7 +136,7 @@ export async function stopEmbeddedRuntime(supervised: SupervisedRuntime): Promis
     );
   }
   if (await probeDaemon(supervised.paths.socket, 500)) {
-    throw new EmbeddedHarnessError(
+    throw new DaemonRuntimeError(
       "SHUTDOWN_INCOMPLETE",
       "shutdown",
       false,
@@ -150,7 +153,7 @@ export async function runtimeStatus(
   return probeDaemon(supervised.paths.socket);
 }
 
-function resolveNode(options: EmbeddedHarnessOptions): string {
+function resolveNode(options: DaemonRuntimeOptions): string {
   const explicit = options.distribution?.nodePath;
   if (explicit) return assertNode24(explicit);
   const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
@@ -163,7 +166,7 @@ function resolveNode(options: EmbeddedHarnessOptions): string {
       if (existsSync(candidate)) return assertNode24(candidate);
     }
     if (!options.development) {
-      throw new EmbeddedHarnessError(
+      throw new DaemonRuntimeError(
         "NODE_RUNTIME_MISSING",
         "distribution",
         false,
@@ -177,7 +180,7 @@ function resolveNode(options: EmbeddedHarnessOptions): string {
     const pathNode = findOnPath(process.platform === "win32" ? "node.exe" : "node");
     if (pathNode) return assertNode24(pathNode);
   }
-  throw new EmbeddedHarnessError(
+  throw new DaemonRuntimeError(
     "NODE_RUNTIME_MISSING",
     "distribution",
     false,
@@ -187,7 +190,7 @@ function resolveNode(options: EmbeddedHarnessOptions): string {
 
 function assertNode24(path: string): string {
   if (!existsSync(path))
-    throw new EmbeddedHarnessError(
+    throw new DaemonRuntimeError(
       "NODE_RUNTIME_MISSING",
       "distribution",
       false,
@@ -200,7 +203,7 @@ function assertNode24(path: string): string {
   });
   const version = String(result.stdout || result.stderr).trim();
   if (result.status !== 0 || Number(/^v?(\d+)/.exec(version)?.[1] ?? 0) < 24) {
-    throw new EmbeddedHarnessError(
+    throw new DaemonRuntimeError(
       "NODE_RUNTIME_INVALID",
       "distribution",
       false,
@@ -218,7 +221,7 @@ function findOnPath(executable: string): string | undefined {
   return undefined;
 }
 
-export function childEnvironment(paths: EmbeddedHomePaths): NodeJS.ProcessEnv {
+export function childEnvironment(paths: DaemonHomePaths): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH ?? "",
     HOME: process.env.HOME ?? process.env.USERPROFILE ?? "",
@@ -307,7 +310,7 @@ function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
   });
 }
 
-function cleanup(paths: EmbeddedHomePaths): void {
+function cleanup(paths: DaemonHomePaths): void {
   for (const path of [paths.shutdownFile, paths.sessionFile, paths.supervisorState])
     removeFile(path);
 }

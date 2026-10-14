@@ -32,7 +32,7 @@ import {
   failurePayload,
   modelPartsFromInput
 } from "@mininglamp-oss/octo-harness-protocol";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, statfs } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
@@ -50,8 +50,7 @@ import {
   businessServiceConnections,
   resolveToolAuthorizations,
   unconsumedToolAuthorizations,
-  type BusinessServiceBinding,
-  type BusinessServiceConnections
+  type BusinessServiceBinding
 } from "./tool-authorizations.js";
 
 const MIN_PROTOCOL_VERSION = 2;
@@ -113,7 +112,6 @@ export interface AgentWorkRuntimeOptions {
   adapterConfigurations?: Record<
     string,
     {
-      providerAgentId?: string;
       providerOptions: Record<string, string>;
     }
   >;
@@ -437,7 +435,7 @@ export class AgentWorkRuntime {
     this.#serverReconnectProtected = false;
     const epoch = ++this.#lifecycleEpoch;
     this.#adapterCapabilities.clear();
-    const adapters = await this.#host.list();
+    const adapters = await this.#host.list(this.#options.adapterConfigurations);
     this.#adapters = adapters;
     for (const adapter of adapters) {
       this.#adapterCapabilities.set(adapter.type, new Set(adapter.executionFeatures));
@@ -446,7 +444,7 @@ export class AgentWorkRuntime {
     this.#startRecoveryProbe(epoch);
     this.#startDiskProbe(epoch);
     this.#adapterProbe = setInterval(() => {
-      void this.#refreshOpenClaw(epoch);
+      void this.#refreshAdapters(epoch);
     }, this.#options.adapterProbeMs ?? 5_000);
     try {
       await this.#registerAndConnect(epoch);
@@ -1389,7 +1387,6 @@ export class AgentWorkRuntime {
     let admissionHandedOff = false;
     try {
       let request: InvokeRequest;
-      let services: BusinessServiceConnections = {};
       let adapterType: string;
       let agentSessionId: string;
       let leaseId: string;
@@ -1456,47 +1453,82 @@ export class AgentWorkRuntime {
         if (hasImages && !localCapabilities?.has("input.image"))
           throw new TypeError("UNSUPPORTED_INPUT_MODALITY");
         store.upsertRun({
-          runId: command.run_id, agentSessionId: executionEnvelope.agent_session_id,
-          commandId: command.command_id, leaseId, fencingToken
+          runId: command.run_id,
+          agentSessionId: executionEnvelope.agent_session_id,
+          commandId: command.command_id,
+          leaseId,
+          fencingToken
         });
         const grants = await resolveToolAuthorizations(
-          executionEnvelope.agent_run_request.tool_authorizations ?? [], {
+          executionEnvelope.agent_run_request.tool_authorizations ?? [],
+          {
             baseUrl: this.#options.baseUrl,
             headers: this.#headers(true, createRequestId()),
-            runId: command.run_id, leaseId, fencingToken, signal: controller.signal
+            runId: command.run_id,
+            leaseId,
+            fencingToken,
+            signal: controller.signal
           }
         );
-        services = businessServiceConnections(grants, this.#options.businessServiceBindings);
-        const nativeGrants = unconsumedToolAuthorizations(grants, this.#options.businessServiceBindings);
+        businessServiceConnections(grants, this.#options.businessServiceBindings);
+        const nativeGrants = unconsumedToolAuthorizations(
+          grants,
+          this.#options.businessServiceBindings
+        );
         if (nativeGrants.length && !this.#options.receiveToolAuthorizations)
           throw new TypeError("TOOL_AUTHORIZATION_RECEIVER_UNSUPPORTED");
         if (this.#options.receiveToolAuthorizations && nativeGrants.length)
           await this.#options.receiveToolAuthorizations(nativeGrants, {
-            runId: command.run_id, leaseId, fencingToken, signal: controller.signal
+            runId: command.run_id,
+            leaseId,
+            fencingToken,
+            signal: controller.signal
           });
         const preparedInput = await resolveRuntimeInputImages(input, {
-          baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
-          runId: command.run_id, leaseId, fencingToken, signal: controller.signal
+          baseUrl: this.#options.baseUrl,
+          headers: this.#headers(true, createRequestId()),
+          runId: command.run_id,
+          leaseId,
+          fencingToken,
+          signal: controller.signal
         });
-        const preparedWorkspace = await prepareRunContext(executionEnvelope.resolved_execution_plan, {
-          stateRoot: join(dirname(this.#options.storePath), "context"),
-          agentSessionId: executionEnvelope.session_scope_id,
-          agentId: executionEnvelope.agent_run_request.agent_id, store, signal: controller.signal
-        });
-        await recordContextPreparation({
-          ...preparedWorkspace.receipt,
-          context_hash: contextHash(executionEnvelope.effective_context),
-          run_id: command.run_id, lease_id: leaseId, fencing_token: fencingToken
-        }, {
-          baseUrl: this.#options.baseUrl, headers: this.#headers(true, createRequestId()),
-          runId: command.run_id, leaseId, fencingToken, signal: controller.signal
-        });
+        const preparedWorkspace = await prepareRunContext(
+          executionEnvelope.resolved_execution_plan,
+          {
+            stateRoot: join(dirname(this.#options.storePath), "context"),
+            agentSessionId: executionEnvelope.session_scope_id,
+            agentId: executionEnvelope.agent_run_request.agent_id,
+            store,
+            signal: controller.signal,
+            workspace: adapter.workspace
+          }
+        );
+        await recordContextPreparation(
+          {
+            ...preparedWorkspace.receipt,
+            context_hash: contextHash(executionEnvelope.effective_context),
+            run_id: command.run_id,
+            lease_id: leaseId,
+            fencing_token: fencingToken
+          },
+          {
+            baseUrl: this.#options.baseUrl,
+            headers: this.#headers(true, createRequestId()),
+            runId: command.run_id,
+            leaseId,
+            fencingToken,
+            signal: controller.signal
+          }
+        );
         throwIfAcceptingAborted(controller.signal);
         this.#assertCurrentLifecycle(epoch);
-        const mapped = mapExecutionEnvelope({
-          ...executionEnvelope,
-          agent_run_request: { ...executionEnvelope.agent_run_request, input: preparedInput }
-        }, preparedWorkspace);
+        const mapped = mapExecutionEnvelope(
+          {
+            ...executionEnvelope,
+            agent_run_request: { ...executionEnvelope.agent_run_request, input: preparedInput }
+          },
+          preparedWorkspace
+        );
         request = mapped.request;
         request.runMetadata ??= {};
         // profile 由已认证的本地 Runtime 连接决定，不接受 AgentRun 自报的归属。
@@ -1504,12 +1536,9 @@ export class AgentWorkRuntime {
         request.runMetadata.runtimeId = this.#runtimeId;
         adapterType = mapped.adapterType;
         const adapterConfiguration = this.#options.adapterConfigurations?.[adapterType];
-        if (adapterConfiguration && adapterType !== "openclaw") {
+        if (adapterConfiguration) {
           request.agentConfig = {
             ...request.agentConfig,
-            ...(adapterConfiguration.providerAgentId
-              ? { providerAgentId: adapterConfiguration.providerAgentId }
-              : {}),
             providerOptions: {
               ...request.agentConfig.providerOptions,
               ...adapterConfiguration.providerOptions
@@ -1614,26 +1643,41 @@ export class AgentWorkRuntime {
     }
   }
 
-  async #refreshOpenClaw(epoch: number): Promise<void> {
+  async #refreshAdapters(epoch: number): Promise<void> {
     if (this.#adapterProbePending || !this.#isCurrentLifecycle(epoch)) return;
-    const adapter = this.#adapters.find((item) => item.type === "openclaw");
-    if (!adapter) return;
     this.#adapterProbePending = true;
     try {
-      let result: { available?: boolean; reason?: string };
-      try {
-        result = (await this.#host.probe("openclaw")) as typeof result;
-      } catch {
-        result = { available: false, reason: "probe_failed" };
-      }
-      if (!this.#isCurrentLifecycle(epoch)) return;
-      const available = result?.available === true;
-      const reason = available ? null : (result?.reason ?? "probe_failed");
-      if (adapter.available !== available || adapter.unavailableReason !== reason) {
-        adapter.available = available;
-        adapter.unavailableReason = reason;
-        adapter.providerPath = available ? "openclaw-gateway" : null;
-        this.#adapterRegistrationDirty = true;
+      for (const adapter of this.#adapters) {
+        const configuration = this.#options.adapterConfigurations?.[adapter.type];
+        if (!configuration) continue;
+        let result: {
+          available?: boolean;
+          reason?: string;
+          command?: string;
+          version?: string | null;
+        };
+        try {
+          result = (await this.#host.probe(adapter.type, configuration)) as typeof result;
+        } catch {
+          result = { available: false, reason: "probe_failed" };
+        }
+        if (!this.#isCurrentLifecycle(epoch)) return;
+        const available = result?.available === true;
+        const reason = available ? null : (result?.reason ?? "probe_failed");
+        const path = available ? (result.command ?? adapter.providerPath ?? null) : null;
+        const version = result.version ?? null;
+        if (
+          adapter.available !== available ||
+          adapter.unavailableReason !== reason ||
+          adapter.providerPath !== path ||
+          adapter.providerVersion !== version
+        ) {
+          adapter.available = available;
+          adapter.unavailableReason = reason;
+          adapter.providerPath = path;
+          adapter.providerVersion = version;
+          this.#adapterRegistrationDirty = true;
+        }
       }
       if (this.#adapterRegistrationDirty && this.#connectionState === "online") {
         await this.#register([...this.#adapterCapabilities.keys()], undefined, true);
@@ -1968,7 +2012,7 @@ export function mapExecutionEnvelope(
   };
   const runtimeLimits = mapExecutionRuntimeLimits(profile.runtime_limits);
   const workdir = preparedResources?.workdir ?? profile.workdir;
-  if (!workdir && profile.agent_source !== "preset")
+  if (!workdir && profile.agent_source !== "preset" && adapterType !== "openclaw")
     throw new TypeError("CONTEXT_PREPARATION_REQUIRED");
   const content = envelope.agent_run_request.input;
   if (Object.hasOwn(content, "context_refs") || Object.hasOwn(content, "channel_context"))
@@ -2059,13 +2103,6 @@ function assertExecutionEnvelopeContract(envelope: ExecutionEnvelope): void {
   assertResolvedExecutionPlan(envelope.resolved_execution_plan);
   assertResolvedRuntimeSelection(envelope.resolved_runtime_selection);
   assertFrozenContextPlan(envelope.effective_context, envelope.resolved_execution_plan);
-  if (
-    !Number.isSafeInteger(envelope.context_configuration_version) ||
-    envelope.context_configuration_version < 1 ||
-    envelope.context_configuration_version !==
-      envelope.resolved_runtime_selection.context_configuration_version
-  )
-    throw new TypeError("CONTEXT_CONFIGURATION_VERSION_REQUIRED");
   const contextSelection = contextItem(
     envelope.effective_context,
     "octo.runtime",

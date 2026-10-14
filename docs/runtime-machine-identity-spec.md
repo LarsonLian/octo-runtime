@@ -1,23 +1,27 @@
 # Runtime and Machine Identity
 
-The subsequent [owner/provider contract](runtime-owner-provider-contract.md)
-moves Runtime ownership to Worker-managed subject fields and replaces adapter
-name lists with provider objects. Harness does not persist ownership fields.
+Date: 2026-10-14. See the normative [local/online contract](runtime-local-and-online-contract.md).
 
-- Breaking reset only; no legacy identity compatibility is required.
-- Each profile stores the server-generated runtime_id and credential_id. Remove system_id and device_id.
-- Persist one machine_id in <home>/machine.json, shared across all profiles. This is an untrusted installation grouping label, never an authentication key.
-- Same-machine profiles in the same Space or different Spaces must retain separate Runtime identities and credentials.
-- Ordinary login, restart, registration, and reconnect reuse Runtime identity. Ordinary login does not enroll again.
-- Enrollment grant retries are idempotent. Renewal with a new grant sends the saved runtime_id and proves possession of its Runtime credential; authorized user, Space, and machine binding must match.
-- Credentials stay in protected profile files and must not enter argv, service definitions, environment variables, logs, or provider input.
-- Preserve connection recovery, durable outbox, and AgentSession/AgentRun semantics.
-- Use branch feat/runtime-machine-identity and review against the pre-change HEAD; fix actionable findings.
-- No online E2E or deployment changes. Reset only the local Worker database with a recovery backup.
+## Local Identity
 
-## Contract
+The daemon SDK creates or reads a stable `runtime_id` during local profile initialization. It is not assigned as a consequence of successful cloud enrollment. The same app-owned Home, subject and tenant profile retains its ID across restarts, module shutdown, failed registration and reconnect.
 
-Exchange octo_enroll_ at POST /v1/runtimes/enroll using machine_id, required profile (1-128 characters), and optional runtime_id plus X-Runtime-Token. Retries/renewals must match the enrolled profile exactly.
-The response contains runtime and credential; use the octo_runtime_ credential to refresh registration and connect.
-Registration also requires profile. Store the returned profile in the identity binding and reject local/server mismatches rather than upgrading old identities. This subsequent breaking change uses branch `feat/runtime-profile`.
-Keep <home>/<profile>/identity/runtime.json and <home>/<profile>/credentials/runtime-token.json separate from the Home-global machine label.
+The Home stores one `machine_id` in `machine.json`. This is an untrusted installation grouping label, not a hardware fingerprint, authorization key or universal device identity. Multiple Runtime profiles can share it; different app Homes are not automatically merged.
+
+Runtime ID, business Agent ID, Provider session ID and Runtime credential have different meanings. Local Runtime existence does not prove IPC readiness, Provider availability or remote authorization.
+
+## Optional Registration
+
+worker-access registers the existing local Runtime ID. Its identity and protected credential files remain separate. Before registration, a local Runtime need not have a credential ID or cloud owner record.
+
+Registration must validate the caller, tenant, owner and real object scope. A locally supplied Runtime ID is not authorization. See [owner/provider contract](runtime-owner-provider-contract.md).
+
+Normal credential reset and renewed SDK enrollment preserve the local Runtime ID. Chat session reset does not reset Runtime identity. Explicit destruction of local identity is a separate operation and must not be an automatic connectivity repair.
+
+The standalone CLI retains its existing enrollment-centered bootstrap and is not the customer SDK startup contract. Final CLI and online-toggle migration is tracked separately.
+
+## Storage And Recovery
+
+Keep profile identity and Runtime credential files separate from the Home-level machine label. Human Tokens and enrollment grants do not become local model context; protected Runtime credentials are only needed for enabled cloud access.
+
+Source event windows are bounded memory, not a durable outbox. Business applications own history and Provider session storage appropriate to their execution path. Reconnect or registration failure never justifies silently changing Runtime identity.

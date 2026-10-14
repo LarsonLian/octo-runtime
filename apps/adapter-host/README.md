@@ -37,8 +37,8 @@ adapter package、更新 [adapter manifest](../../config/adapters.json)，并让
 
 ### 1. 保护有状态控制面
 
-Agent Worker 持有 AgentSession/AgentRun 权威；daemon 只持有本地 invocation、有界内存重放窗口
-和执行恢复。adapter 则包含动态模块、第三方
+Worker 只管理相应远程执行；本地调用不依赖 Worker 注册或在线。本地控制服务管理 invocation、有界内存源窗口
+和断流修复，业务应用保存会话与历史。统一原则见 [Runtime 合同](../../docs/runtime-local-and-online-contract.md)。adapter 则包含动态模块、第三方
 依赖、provider CLI 子进程和 native event parser，故障概率与资源行为更不可控。
 
 独立进程避免 adapter 加载失败、未捕获异常或执行层崩溃直接成为 daemon 进程内的异常。

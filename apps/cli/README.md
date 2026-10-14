@@ -1,8 +1,20 @@
 # Octo Harness CLI
 
+现行设计见 [Runtime 本地存在与按需在线合同](../../docs/runtime-local-and-online-contract.md)。当前 CLI／原生服务仍保留云端 profile 引导与连接恢复，最终频道配置和在线开关尚待实施；客户 SDK 无需使用该 CLI。
+
 > 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../docs/context-llm-injection.md) 与 [IPD-SE 0.3](../../../docs/event-context-rendering-ipd-se.md)；旧链路退出仍待完成。
 
 `octo-harness` 是当前 OS 用户的 Runtime 登录、服务生命周期和本地诊断入口。运行时要求 Node.js 24 或更高版本。
+
+## 最终架构期望
+
+2026-10-14 目标：先初始化并保存稳定的本地 Runtime ID，本地 Host IPC 就绪即为启动成功。注册由独立显式命令触发，不再是安装、启动或本地调用的前置条件，不创建默认 Agent。
+
+CLI 需要提供 IM 频道配置入口，保存 channel 类型、目录／执行 Context、Bot 凭据引用及启用状态。daemon 根据配置选择模块、token 和目标服务，仅启动已启用的长连接。设备／Runtime 注册使用独立命令，候选名称为 `octo-harness devices register`，最终命令名与参数待冻结。配置频道不隐式注册设备，注册也不隐式启用所有连接。
+
+设备在线选择保存本地，与 IM 频道启用独立；关闭时不加载设备连接并停止已有连接，本地 Host 继续运行。access 目前仅确认设备与 Runtime 注册职责，设备 WS／heartbeat 等对外链路待最终架构评审。验收分别记录本地就绪、注册 ACK、设备连接和频道连接。详见 [IPD-SE 基线](../../../docs/local-runtime-ipc-on-demand-ipd-se.md)。
+
+下文保留现有 CLI 的命令及文件入口说明。`login`、profile 自动发现和 `--wait-online` 尚需按上述目标改造；它们不能作为最终默认在线行为或纯本地启动合同。目标命令尚未全部交付。
 
 ## 全局参数
 
@@ -13,7 +25,7 @@
 
 macOS/Linux 默认 Home 是 `~/.octo-harness`，Windows 是 `%LOCALAPPDATA%\OctoHarness`。一个 Home 运行一个 daemon，并可包含多个 profile；每个 profile 独立保存 Runtime 身份、credential、WSS 与内存重放窗口。不同 OS 用户或互不信任的身份仍必须使用不同 OS account。
 
-## 登录
+## 现有登录入口（待改造）
 
 首次登录从 stdin 读取一次性 `octo_enroll_` grant：
 
@@ -67,7 +79,7 @@ octo-harness daemon status
 - 生命周期命令作用于整个 Home。daemon 自动发现 Home 下包含合法 `config.json` 的 profile，并由一个 supervisor 管理各自的 credential、`runtime_id`、WSS 和内存重放窗口。
 - 锁屏不会结束已登录用户的服务；注销会结束 macOS LaunchAgent 和默认 Windows 用户任务。Linux 注销后是否继续取决于管理员是否启用 linger。
 
-## IM 默认接入
+## 显式 IM 文件接入
 
 本节仅描述 CLI 选择的文件入口。客户 App 经 packages/SDK 显式提供配置与凭据，自己决定 Home、账号目录及启停；共享 Daemon 不自动读取 `im.json`。IM 平台连接器不是 MCP 连接器，职责见 [Channel IM README](../../packages/octo-harness-channel-im/README.md)。
 
@@ -118,7 +130,7 @@ octo-harness agent-run wait <agent-run-id>
 octo-harness agent-run cancel <agent-run-id>
 ```
 
-这些命令通过 Home 级 Unix socket 或 Windows named pipe 读取本地状态。生产权威状态和完整 trajectory 由 Agent Worker / Octo Server API 负责。
+这些命令通过 Home 级 Unix socket 或 Windows named pipe 读取本地状态。Worker 仅管理对应远程执行，源事件窗口不能当作完整历史；本地会话及完整 trajectory 由宿主业务存储负责。
 
 调试时在启动前设置 `OCTO_RUNTIME_DEBUG=1`，Host 日志直接追加到 `$OCTO_HARNESS_HOME/logs/adapter-host.log`。默认关闭；该开关通过进程环境传递到 daemon 和 Host。
 
@@ -180,8 +192,7 @@ node apps/cli/dist/index.js playboard <<< '{"inputs":[{"type":"text","text":"回
 For this CLI shorthand, an omitted `provider_agent_id` resolves to `main` before
 Context validation. To select another existing agent, add `"provider_agent_id":"researcher"`
 to the adapter payload. Explicit invalid IDs are rejected; a missing agent is never
-created or replaced with another target. The adapter reads the local OpenClaw Gateway
-configuration and verifies the target exists. Other protocol entry points still require
+created or replaced with another target. The adapter reads the selected Runtime profile’s connection source and verifies the target exists. Other protocol entry points still require
 an explicit OpenClaw `provider_agent_id`.
 
 Workspace selection uses the local resolver: provisioned runs require a fixed absolute
@@ -233,6 +244,21 @@ One Harness Home runs one daemon and adapter-host. Each discovered profile has i
 - 不负责：实现 Worker/IM 协议、直接启动每个 provider。
 - 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。
 
-### 注册默认助理或分身
+### 已撤回的注册 Agent 行为
 
-`login` 支持 `--agent-identit=bot_123 --agent_name=云端分身`（规范拼写为 `--agent-identity` / `--agent-name`）。省略 identity 使用 `main`；重复登录沿用已保存的 profile 身份。Worker 按 Space、Runtime owner、identity 幂等创建 Agent，名称只在创建时使用；重复注册不覆盖云端已有配置。参数保存进 profile，daemon 重连继续透传。修改运行中 profile 后重启对应 daemon，使其加载新值。OpenClaw `adapter connect openclaw` 的 `--agent-id` 省略时为 `main`，与 Octo identity 独立。
+原 `--agent-identity`／`--agent-name` 及注册时创建默认 `main` Agent 的行为退出，不属于最终 CLI 合同。Runtime 注册只登记设备与 Runtime；助手、分身及其 defaults／mandatory 由业务方管理。CLI 参数、profile 字段和重连请求中的旧 Agent 创建信息须同步删除，不提供旧路径兼容。OpenClaw 的 `provider_agent_id` 仍是本轮执行选择，与本次删除 Worker Agent registry 不同。
+
+
+## Runtime 的 OpenClaw 连接
+
+`login` 注册 Runtime 后保存并探测其本地 OpenClaw 连接。缺失或不可用的 Gateway 不阻止 Runtime 注册。连接存于 `<home>/<profile>/adapters/openclaw/connection.json`；凭据存于该 profile 的 `credentials` 目录。
+
+```sh
+octo-harness --home /path/to/harness --profile work adapter connect openclaw --openclaw-home /path/to/openclaw
+octo-harness --home /path/to/harness --profile work adapter connect openclaw --gateway-url ws://127.0.0.1:18789 --token-stdin
+octo-harness --home /path/to/harness --profile work adapter probe openclaw
+```
+
+显式参数优先；无参数时复用已保存连接，首次初始化读取 `OPENCLAW_HOME` 或成对的 `OPENCLAW_GATEWAY_URL` / `OPENCLAW_GATEWAY_TOKEN`，否则使用 `~/.openclaw`。`login` 也接受 `--openclaw-home` / `--gateway-url`；enrollment token 与 Gateway token 不可同时占用 stdin。
+
+`playboard` 支持 `--home` 和 `--profile`，无须登录即可使用该 profile 的连接来源。完整概念与执行合同见 [统一合同](../../docs/15-openclaw-external-agent-binding-design.md)。

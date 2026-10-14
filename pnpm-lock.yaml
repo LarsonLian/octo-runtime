@@ -359,6 +359,9 @@ importers:
       '@mininglamp-oss/octo-harness-core':
         specifier: workspace:*
         version: link:../octo-harness-core
+      '@mininglamp-oss/octo-harness-daemon':
+        specifier: workspace:*
+        version: link:../octo-harness-daemon
       '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
         version: link:../octo-harness-protocol
@@ -392,36 +395,18 @@ importers:
       '@mininglamp-oss/octo-harness-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-harness-adapter-sdk
-      '@mininglamp-oss/octo-harness-channel-im':
-        specifier: workspace:*
-        version: link:../octo-harness-channel-im
       '@mininglamp-oss/octo-harness-core':
         specifier: workspace:*
         version: link:../octo-harness-core
       '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
         version: link:../octo-harness-protocol
-      '@mininglamp-oss/octo-harness-worker-access':
-        specifier: workspace:*
-        version: link:../octo-harness-worker-access
       ajv:
         specifier: ^8.17.1
         version: 8.20.0
       yaml:
         specifier: ^2.8.1
         version: 2.9.1
-
-  packages/octo-harness-embedded:
-    dependencies:
-      '@mininglamp-oss/octo-harness-adapter-host':
-        specifier: workspace:*
-        version: link:../octo-harness-adapter-host
-      '@mininglamp-oss/octo-harness-daemon':
-        specifier: workspace:*
-        version: link:../octo-harness-daemon
-      '@mininglamp-oss/octo-harness-protocol':
-        specifier: workspace:*
-        version: link:../octo-harness-protocol
 
   packages/octo-harness-protocol:
     devDependencies:
@@ -437,6 +422,9 @@ importers:
       '@mininglamp-oss/octo-harness-core':
         specifier: workspace:*
         version: link:../octo-harness-core
+      '@mininglamp-oss/octo-harness-daemon':
+        specifier: workspace:*
+        version: link:../octo-harness-daemon
       '@mininglamp-oss/octo-harness-protocol':
         specifier: workspace:*
         version: link:../octo-harness-protocol

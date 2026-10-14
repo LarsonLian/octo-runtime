@@ -1,96 +1,71 @@
 # Architecture
 
-Octo Harness is a provider-neutral execution runtime. Agent Worker is the control-plane authority for Agent/Team coordination, `AgentSession`, and `AgentRun`; Harness maps a leased run to one provider invocation and streams canonical events back. Product Task, Conversation, projection, and delivery state remain outside both Worker coordination and Harness.
+Octo Harness is a provider-neutral local Agent Runtime. A locally initialized Runtime has its own stable identity whether or not HostApp registers it or permits online access. Cloud registration, device connectivity and IM connectivity are optional integrations, not local execution prerequisites.
 
-## Invariants
+The current normative package and state contract is [Runtime local existence and optional online access](docs/runtime-local-and-online-contract.md). This document describes the current implementation; pending changes are explicitly identified there.
 
-1. There is no Chat/Task execution split. Every invocation belongs to one `AgentRun` and one `AgentSession`.
-2. Product schedulers own business state. Loop owns Task/Attempt/parent-child state; IM owns channel occurrences and delivery; AutoPilot owns schedules; Webhook owns endpoint events.
-3. `(namespace, agent_id, session_key)` identifies a durable AgentSession. `(agent_session_id, trigger_occurrence_id)` identifies a submission occurrence.
-4. Provider resume data is opaque. Harness forwards `providerSession`; it does not parse or synthesize provider thread IDs.
-5. A run has one ordered event stream and one terminal outcome.
-6. The production Harness outbox is a delivery/recovery ledger, not a second cloud authority.
-7. The host application (`HostApp`) owns all Runtime installation decisions, including the embedded Harness Runtime, native Provider Runtimes, and their runtime dependencies. HostApp decides whether to install, which Runtimes and versions to install, and how to install them. SDK, Harness, daemon, adapter-host, and adapters may execute an installation plan explicitly selected by HostApp; they must not independently download or install Runtimes. Missing or unsuitable Runtimes must be reported to HostApp, without implicit installation during registration, probing, or Run execution.
-
-## Per-Run Context Ownership
-
-The Event producer decides which model context items to send on each run, including selection, project background, task state, or extra items. It may send necessary background initially, an empty model context on subsequent runs, only the items needed now, or explicit repetitions. Required adapter and other execution settings remain subject to execution validation and defaults/mandatory rules; they do not enter the LLM context block or make business context mandatory.
-
-Worker, daemon, worker-access, Host, and adapters validate and forward the current Event snapshot. Host renders only its injectable items, preserving their content and order. They must not cache, supplement, merge, deduplicate, or suppress model context based on session IDs, run numbers, or hashes. Identical items explicitly sent in distinct Events are sent in both runs; Event idempotency remains unchanged.
-
-A provider `sessionId` does not prove resume succeeded. After reset, a new Provider session, or resume failure, the business producer provides the necessary background again. The execution layer reports actual session/recovery results and does not reconstruct background from previous Events. See [Context injection rules](docs/context-llm-injection.md) and the [ecosystem IPD-SE baseline](../docs/event-context-rendering-ipd-se.md). Compiler/Pipeline, material prefetch/summarization, extension projection and compilation receipts have been removed. Host only matches namespace/name allowlist patterns and renders the current items.
-
-## Production Flow
+## Local Execution
 
 ```text
-IM / Loop / AutoPilot / Webhook
-        | submit AgentRun(namespace, agent_id, session_key,
-        |                 trigger_occurrence_id, input)
-        v
-Agent Worker
-  AgentSession -> AgentRun -> lease/fencing -> run.start
-        |
-        | authenticated WSS command
-        v
-Octo Harness daemon
-  durable inbox/outbox -> adapter-host -> provider process
-        |
-        | run.event(seq), provider session update, terminal event
-        v
-Agent Worker -> business projection / Channel delivery
+HostApp business request
+  -> octo-harness-daemon local SDK
+  -> local control IPC
+  -> shared HostRunService / adapter-host
+  -> Provider Adapter
+  -> already installed Provider
 ```
 
-The daemon acknowledges command acceptance before model completion. Event ACKs separately distinguish received and durably committed sequence numbers. Reconnect reports active run IDs so Worker can reconcile accepted-but-lost invocations.
+The independent embedded package has been removed. Its local identity, Home, supervision and stream APIs now live in the daemon package. The current SDK still starts a daemon package control process. Removal of a package layer does not establish a separate cloud-only process.
 
-## Identity
+HostApp selects the subject and tenant profiles, installation plan, execution target, business defaults/mandatory and current Context. SDK startup creates or reads local Runtime identity without Human Token, enrollment or Worker availability. Valid IPC readiness establishes local readiness; a socket file alone does not.
 
-| Identity | Owner | Lifetime |
-|---|---|---|
-| `session_key` | business namespace | stable logical context key |
-| `agent_session_id` | Agent Worker | one session generation lineage |
-| `agent_run_id` | Agent Worker | one execution |
-| `invocation_id` | Harness | one local provider process/call |
-| provider `sessionId` | provider | opaque resume identity |
-
-`/reset` never rewrites a provider ID. Worker advances generation/epochs and clears the binding; the next invocation starts without resume state and a later `session.update` installs the new provider ID.
-
-## Runtime Modules
-
-| Module | Responsibility |
-|---|---|
-| `octo-harness-protocol` | `InvokeRequest`, provider session, canonical events |
-| `octo-harness-adapter-host` | adapter registry, invoke/cancel, event lifecycle correction |
-| `octo-harness-adapter-*` | provider command construction and native event normalization |
-| `apps/daemon/agent-work-runtime` | Worker WSS, command acceptance, durable outbox, ACK/reconnect |
-| `octo-harness-core` | single-node AgentSession/AgentRun reference engine |
-| `octo-harness-daemon` | reference FIFO execution and recovery |
-
-Provider adapters never create AgentSessions, AgentRuns, Loop Tasks, trigger occurrences, delivery intents, or business retries.
-
-## Canonical Events
+## Optional Integrations
 
 ```text
-run.queued -> run.running
-session.update?
-message.create -> message.delta* -> message.update
-tool_call.create -> tool_call.delta* -> tool_call.update
-usage.update*
-run.finished | run.error | run.stopped
+HostApp explicitly enables module
+  -> daemon loads factory and supplies shared Host
+  -> channel-im: IM connection and message handling
+  -> worker-access: current enrollment + Worker WS + remote execution
 ```
 
-Provider-native events are translated to `CanonicalEvent`. The runtime adds `runId`, `agentSessionId`, monotonic `seq`, timestamp and envelope ID before persistence/transmission. Consumers deduplicate on `(run_id, seq)`. Terminal normalization guarantees exactly one terminal event.
+daemon has no production dependency on either optional package. Module descriptors do not load or connect their factories. Explicit start activates one module; stopping it preserves local execution. A module startup ACK means acceptance, not successful registration or connectivity.
 
-## Reference Profile
+The final access responsibility is registration only. The device WS/heartbeat contract and its final module ownership are pending review. The existing worker-access implementation must not be presented as that completed architecture.
 
-The repository includes an in-process Core and SQLite store for adapter tests and standalone diagnosis. Its model is only `Agent`, `AgentSession`, `AgentRun`, and `EventEnvelope`. It intentionally contains no Trigger, Chat, Task, or TaskAttempt tables. In integrated deployments, Worker remains authoritative even when the local diagnostic store is enabled.
+## Ownership
 
-## Security And Availability
+| Concern | Owner |
+| --- | --- |
+| Runtime installation, versions and enabled integrations | HostApp |
+| Business Agent definitions, target, five-tuple and defaults/mandatory | Business producer |
+| Local identity and runtime/module lifecycle | daemon SDK and package |
+| Provider invocation, interaction, cancellation and source events | Shared Host / Adapter |
+| Local conversation history and Provider session binding | HostApp business storage |
+| Registered Runtime authorization and optional remote execution control | Worker, within its current contract |
+| IM addressing, channel sessions and message delivery | Channel integration and its business layer |
 
-- Runtime tokens are environment-only secrets.
-- Workdir is a provider cwd, not an operating-system boundary.
-- Provider bypass modes require external sandboxing.
-- Local SQLite assumes one daemon writer.
-- Production placement uses Worker leases/fencing; a provider subprocess cannot claim cloud ownership.
-- Event outbox rows are removed only after durable ACK.
+Remote execution retains identity, authorization, lease and fencing validation. These are not prerequisites for direct local invocation. Runtime ID is not Agent ID or a credential; Home-level machine ID is an untrusted installation grouping label.
 
-See [docs/13-agent-work-runtime.md](docs/13-agent-work-runtime.md) for the concrete Worker transport.
+## Context And Sessions
+
+Run remains `schema_version=7`; Context remains `octo.context-envelope/v3`. The Event producer chooses the content, order and timing of each model context snapshot, including empty or explicitly repeated items. Execution configuration is independently validated and does not enter model text.
+
+Worker, SDK, daemon, Host and Adapter validate and forward the current snapshot. They do not supplement, merge, deduplicate or suppress model context using session IDs, hashes or previous runs. Host only renders allowlisted namespace/name patterns in order. See [Context rules](docs/context-llm-injection.md) and [IPD-SE](../docs/event-context-rendering-ipd-se.md).
+
+Provider session data is opaque. Its presence does not prove resume success. After reset, a new Provider session or failed recovery, the business producer decides and supplies necessary background again; the execution layer reports the real outcome.
+
+## Streams And Recovery
+
+Host source streams and the current remote relay use bounded memory. They are not a durable outbox or a complete conversation archive. Applications persist complete events and business history as needed. Resume uses the original run/stream cursor; gaps and expired streams fail explicitly without a second invocation.
+
+Command or module acceptance does not prove execution completion. Consumers observe the actual terminal event; cancellation acceptance also requires a final outcome. Cloud connectivity does not prove output persistence or business delivery.
+
+The Core/SQLite reference engine remains useful for local diagnostics and tests. It does not make Worker a universal authority over local conversations or business Agent definitions.
+
+## Installation And Security
+
+HostApp alone decides whether and how to install Runtime and Provider dependencies. Execution layers may perform an explicitly selected plan; missing dependencies return a concrete status without implicit downloads.
+
+Credentials stay in protected host/profile storage and outside renderer, model text, public logs, argv and service definitions. A workdir is a Provider cwd, not an OS sandbox. Mutually untrusted users need an appropriate OS security boundary.
+
+See [integration](INTEGRATION.md), [deployment](DEPLOYMENTS.md), [operations](docs/07-operations.md) and [verified implementation scope](docs/validation/daemon-package-modules-2026-10-14.md).

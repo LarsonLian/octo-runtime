@@ -930,7 +930,12 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
       throw new TypeError(`InvokeRequest.${key} must be a non-empty string`);
     }
   }
-  if (typeof request.workdir !== "string" || (!request.workdir && request.agentSource !== "preset"))
+  const providerWorkspace =
+    contextItem(request.context, "octo.execution", "adapter")?.payload.type === "openclaw";
+  if (
+    typeof request.workdir !== "string" ||
+    (!request.workdir && request.agentSource !== "preset" && !providerWorkspace)
+  )
     throw new TypeError("InvokeRequest.workdir is required for provisioned execution");
   if (typeof request.modelInput !== "string" || request.modelInput.length === 0) {
     throw new TypeError("InvokeRequest.modelInput must be a non-empty string");

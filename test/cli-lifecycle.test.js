@@ -185,7 +185,7 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
     const initialInstall = await invoke(["daemon", "install"]);
     assert.equal(initialInstall.value.service.state, "stopped");
     const initialStart = await invoke(["daemon", "start", "--wait-online", "--timeout-ms", "5000"]);
-    assert.equal(initialStart.value.readiness.agentWork.connected, true);
+    assert.equal(initialStart.value.readiness.modules["worker-access"].state.connected, true);
     assert.equal(backend.state, "running");
     assert.equal(backend.enabled, true);
     assert.deepEqual(backend.spec.environment, { PATH: "/test/provider/bin:/usr/bin:/bin", OCTO_RUNTIME_DEBUG: "1" });
@@ -208,7 +208,7 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
     const status = await invoke(["daemon", "status"]);
     assert.equal(status.value.service.state, "running");
     assert.equal(status.value.application.lifecycle.draining, false);
-    assert.equal(status.value.application.agentWork.runtimes[0].runtimeId, identity.runtime_id);
+    assert.equal(status.value.application.modules["worker-access"].state.runtimes[0].runtimeId, identity.runtime_id);
 
     const doctor = await invoke(["doctor"]);
     assert.equal(doctor.exitCode, 0);
@@ -236,7 +236,7 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
     assert.equal(restarted.value.action, "restart");
     assert.equal(restarted.value.readiness.ready, true);
     assert.deepEqual(
-      restarted.value.readiness.agentWork.runtimes.map(runtime => runtime.profile).sort(),
+      restarted.value.readiness.modules["worker-access"].state.runtimes.map(runtime => runtime.profile).sort(),
       ["default", "work"]
     );
 
@@ -284,7 +284,7 @@ test("login and service CLI complete enrollment, online readiness, lifecycle, do
     const startedOnline = await invoke(["daemon", "start", "--wait-online", "--timeout-ms", "5000"]);
     assert.equal(startedOnline.value.action, "start");
     assert.equal(startedOnline.value.service.state, "running");
-    assert.equal(startedOnline.value.readiness.agentWork.connected, true);
+    assert.equal(startedOnline.value.readiness.modules["worker-access"].state.connected, true);
     await invoke(["daemon", "stop", "--timeout-ms", "5000"]);
 
     let foregroundArgs;

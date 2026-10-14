@@ -1,49 +1,26 @@
 # @mininglamp-oss/octo-harness-adapter-openclaw
 
-> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../docs/context-llm-injection.md) 与 [IPD-SE](../../../docs/event-context-rendering-ipd-se.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
+OpenClaw Provider 的统一 Runtime Adapter。通过认证 WebSocket Gateway protocol v4 执行已有 Agent，回传统一 Host 事件。
 
-Octo Harness 的 OpenClaw Gateway adapter。Adapter 连接用户已经配置的 Agent，通过公开 Gateway protocol v4 执行并回传 canonical events。
+## 连接与目标
 
-## 责任边界
+Runtime 的连接描述保存到 `<harness-home>/<profile>/adapters/openclaw/connection.json`，token 与设备私钥保存在该 profile 的 `credentials` 目录。支持自动发现、指定 OpenClaw Home、显式 URL 与 token。每次探测和调用重新读取连接来源与凭据。
 
-本地用户或 OpenClaw 管理 Agent 的 persona、Skill、Plugin、MCP、memory、tools、workspace 和原生审批。Harness 不创建 Agent，不调用 `config.patch`，不清空 workspace，也不设置 Gateway 的 `skipBootstrap`。
-
-每次 Run 通过 `agents.list` 验证 Agent 存在。不存在时拒绝执行，不创建或修复 Agent。`sessions.create` 和 `agent` 不覆盖已有 Agent 的工作目录。模型、推理强度和本次输入仍按执行请求传入。
-
-## 连接已有 Agent
-
-先完成 Harness profile 登录，再保存本地连接与独立凭据：
-
-```bash
-printf '%s' "$OPENCLAW_GATEWAY_TOKEN" | \
-  octo-harness --profile <profile> adapter connect openclaw \
-    --binding-id <octo-external-binding-id> \
-    --gateway-url wss://gateway.example.com \
-    --agent-id research-agent \
-    --workspace /srv/openclaw/research-agent \
-    --token-stdin
+```sh
+octo-harness --profile work adapter connect openclaw --openclaw-home /path/to/openclaw
+octo-harness --profile work adapter connect openclaw --gateway-url ws://127.0.0.1:18789 --token-stdin
 ```
 
-`--agent-id` 可省略，缺省连接已有的 `main`；目标不存在仍拒绝执行。
+无参数时复用已保存连接或初始化默认来源。首次初始化可使用 `OPENCLAW_HOME`，或成对提供 `OPENCLAW_GATEWAY_URL` 和 `OPENCLAW_GATEWAY_TOKEN`。连接失败仅使该 Provider 不可用。
 
-`--workspace` 记录已有 Agent 的本地连接信息，不创建目录或覆盖执行工作目录。远程 Gateway 必须使用 `wss://`。Gateway token 和 device private key 只保存在 profile credential，不进入云端 revision、模型输入或 provider observation。
+目标 Agent 由本轮 Context 的 `octo.execution/adapter.payload.provider_agent_id` 指定。探测不要求 `main` 存在，执行时验证实际目标；不自动创建 Agent或回退到其他目标。
 
-旧 `adapter setup openclaw`、`adapter openclaw configure/init` 和托管 runner 迁移已删除。用户通过 OpenClaw 自己的管理入口完成安装和配置。
+完整定义与示例见 [统一合同](../../docs/15-openclaw-external-agent-binding-design.md)。
 
-## 执行合同
+## 执行边界
 
-- 一次 AgentRun 使用一条已认证 WebSocket 和一个唯一 session key。
-- Adapter 在 `agent` 前调用 `sessions.messages.subscribe`，接收完整增量事件。
-- user input 进入 `message`，本次控制上下文进入 `extraSystemPrompt`。
-- 事件按 runId 隔离、按 seq 去重。未知 stream 忽略。
-- lifecycle terminal 由 `agent.wait` 确认。取消通过 `sessions.abort` 处理，断线后按 runId 对账。
-- 若事件流缺失但 `agent` RPC 返回完整结果，Adapter 从实际结果补齐 final text、usage 和终态。
-- 原生工具审批通过已有 interaction 合同回传，不证明工具已经安装。
+OpenClaw 管理 Agent 的 persona、Skill、Plugin、MCP、memory、tools、workspace 和原生审批。Harness 不调用 `config.patch`、不清空 workspace，也不设置 `skipBootstrap`。
 
-协议版本或所需公开 method/event 缺失时拒绝执行。当前完整责任与验收见[本地插件责任改造](../../docs/24-local-plugin-ownership-refactor.md)。
+Adapter 声明 `metadata.workspace: false`，忽略 `octo.execution/workspace` 和 `workdir`，对 `preset` 与 `provisioned` 一致。Runtime 不检查或创建请求中的目录，不分配随机工作区，也不为 OpenClaw 创建 Provider 状态目录；准备回执使用 `workspace_mode: "none"`，被忽略的工作区配置记录为 `CONTEXT_WORKSPACE_IGNORED`。Gateway 的 `sessions.create` 和 `agent` 请求不携带 cwd/workspace，实际工作区始终由目标 OpenClaw Agent 管理。Context 格式、冻结计划一致性和执行身份校验继续生效。
 
-## 模块责任边界
-
-- 负责：将 openclaw 原生执行协议映射为 InvokeRequest / CanonicalEvent，由 adapter-host 调用。
-- 不负责：Worker/IM WS、聊天历史、Event/AgentRun 登记。
-- 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。
+Adapter 检查协议版本和公开执行能力，将原生事件映射为 canonical events，通过统一 interaction 合同处理审批、取消与恢复对账。Provider 原生配置不因调用而被永久改写。

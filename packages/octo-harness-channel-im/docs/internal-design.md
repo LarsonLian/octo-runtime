@@ -13,7 +13,7 @@ src/
   lifecycle/
     configuration.ts               平台配置校验与真实接入身份
     file-config.ts                 宿主显式选用的文件入口及凭据适配
-    manager.ts                     revision、登记/更新/移除与关闭
+    manager.ts                     串行登记/更新/移除与关闭
   application/im-channel.ts        去重、会话、排队、命令、交互与单轮编排
   execution/dispatcher.ts           现有 core 执行配置解析 → InvokeRequest
   presentation/

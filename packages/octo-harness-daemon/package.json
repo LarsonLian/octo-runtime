@@ -6,6 +6,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./runtime/*": {
+      "types": "./dist/runtime/*.d.ts",
+      "import": "./dist/runtime/*.js"
     }
   },
   "dependencies": {
@@ -14,15 +18,13 @@
     "@mininglamp-oss/octo-harness-core": "workspace:*",
     "@mininglamp-oss/octo-harness-protocol": "workspace:*",
     "ajv": "^8.17.1",
-    "yaml": "^2.8.1",
-    "@mininglamp-oss/octo-harness-worker-access": "workspace:*",
-    "@mininglamp-oss/octo-harness-channel-im": "workspace:*"
+    "yaml": "^2.8.1"
   },
   "types": "./dist/index.d.ts",
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json && node scripts/copy-manifest.mjs"
   }
 }

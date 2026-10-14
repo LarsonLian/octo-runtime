@@ -1,5 +1,7 @@
 # 03 Pnpm Monorepo
 
+当前包边界见 [Runtime 合同](runtime-local-and-online-contract.md)。embedded 独立包已删除，本地 SDK 合入 daemon；客户不需要 apps/cli 或可选 Worker／IM 包。
+
 Octo Harness 使用 pnpm workspace 管理多项目。workspace 边界由根目录 [pnpm-workspace.yaml](../pnpm-workspace.yaml) 定义：
 
 ```yaml
@@ -21,7 +23,10 @@ apps/
 packages/
   octo-harness-protocol/             canonical protocol
   octo-harness-core/                 domain engine and stores
-  octo-harness-daemon/               scheduling/runtime library
+  octo-harness-daemon/               local SDK, lifecycle, IPC and optional modules
+  octo-harness-worker-access/        optional enrollment / current Worker transport
+  octo-harness-channel-im/           optional IM integration
+  octo-harness-context-builder/      producer-side context helpers
   octo-harness-adapter-host/         adapter lifecycle and RPC library
   octo-harness-adapter-sdk/          adapter authoring helpers
   octo-harness-acp-client/           reusable ACP client
@@ -33,9 +38,13 @@ packages/
 ```text
 apps -> packages
 octo-harness-adapter-* -> octo-harness-adapter-sdk / provider protocol helpers
-octo-harness-daemon -> octo-harness-core -> octo-harness-protocol
+octo-harness-daemon -> local Host / Core / Protocol dependencies
+optional worker-access / channel-im -> shared Host and protocol contracts
+HostApp composition -> explicitly selected optional factories
 octo-harness-adapter-host -> octo-harness-protocol
 ```
+
+daemon 的生产依赖不得引入 worker-access 或 channel-im；HostApp 额外携带并显式登记／启用所需工厂。标准 CLI 根包携带这些包不代表客户 SDK 必须部署它们。
 
 `packages/*` 不应 import `apps/*`。provider 命令构造、native event parser、session codec 和权限适配必须留在 `packages/octo-harness-adapter-*`；apps 只做配置、进程启动和 I/O 装配。
 
@@ -59,7 +68,7 @@ dist/index.d.ts.map
 
 可发布 package 的 `exports` 指向 `dist/index.js`，`types` 指向 `dist/index.d.ts`。因此本地 workspace 链接和 npm 安装使用同一套公开入口，不依赖 TypeScript 源文件或 ts-node loader。
 
-VS Code 配置位于 [.vscode/settings.json](../.vscode/settings.json)，固定使用 workspace TypeScript SDK 和 flat-config ESLint。安装推荐的 ESLint 扩展后，编辑器诊断应与命令行一致。
+IDE 应使用 workspace TypeScript SDK 和本仓库的 flat-config ESLint，使编辑器诊断与命令行一致；编辑器个人配置不属于 Runtime 发布合同。
 
 ## 安装与常用命令
 

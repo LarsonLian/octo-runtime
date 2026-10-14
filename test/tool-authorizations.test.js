@@ -102,8 +102,7 @@ for (const hasReceiver of [false, true]) test(`Runtime mixed Loop scopes ${hasRe
   const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: directory, approval_mode: "ask" };
   socket.send(wire("runtime.command", { server_seq: 1, command_id: "command-1", run_id: "run-1", type: "run.start", lease_id: "lease-1", fencing_token: 1,
     payload: { schema_version: 7, session_scope_id: "fixture-scope", run_id: "run-1", agent_session_id: "session-1", effective_context: executionContext(plan),
-      resolved_execution_plan: plan, resolved_runtime_selection: resolvedRuntimeSelection(), context_configuration_version: 1,
-      agent_run_request: { namespace: "task", agent_id: "agent-1", session_id: "session-1", context: contextEnvelope(),
+      resolved_execution_plan: plan, resolved_runtime_selection: resolvedRuntimeSelection(), agent_run_request: { namespace: "task", agent_id: "agent-1", session_id: "session-1", context: contextEnvelope(),
         trigger: { kind: "message", occurrence_id: "message-1" }, input: { text: "native tool" }, tool_authorizations: [intent] },  }
   }));
   await waitFor(() => acks.length);

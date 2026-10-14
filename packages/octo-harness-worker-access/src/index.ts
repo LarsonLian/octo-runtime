@@ -6,3 +6,5 @@ export * from "./device-info.js";
 export * from "./tool-authorizations.js";
 export * from "./context-preparation-receipt.js";
 export * from "./input-images.js";
+export * from "./enrollment.js";
+export * from "./daemon-module.js";

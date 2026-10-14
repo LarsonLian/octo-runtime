@@ -1,7 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
+export { HostRunService } from "./host-run-service.js";
+export { readAdapterConfigurations } from "./runtime-configuration.js";
+export { startHostSocketServer, streamHostRun, type HostSocketRequest } from "./socket-server.js";
 export { prepareRunContext, type PreparedRunContext, type WorkspaceAssignments } from "./execution-preparation.js";
 import type {
   AdapterInvocationContext,
+  AdapterProbeOptions,
   AdapterOutput
 } from "@mininglamp-oss/octo-harness-adapter-sdk";
 import {
@@ -46,6 +50,8 @@ import {
 
 /** Provider-neutral metadata the Host uses for registration and capability discovery. */
 export interface HostedAdapterMetadata {
+  /** False skips Harness workspace preparation for this Provider. */
+  workspace?: boolean;
   protocolSupport?: AdapterProtocolSupport;
   type: string;
   capabilities: string[];
@@ -66,7 +72,7 @@ export interface HostedAdapterMetadata {
  */
 export interface HostedAdapter {
   metadata: HostedAdapterMetadata;
-  probe?: () => unknown;
+  probe?: (options?: AdapterProbeOptions) => unknown;
   /** Execute a turn and report progress for host deadline enforcement. */
   invoke(request: InvokeRequest, context?: AdapterInvocationContext): AsyncIterable<AdapterOutput>;
   /** Resume a provider request that paused this exact active invocation. */
@@ -125,7 +131,7 @@ export class AdapterHost {
   }
 
   /** Report installed provider identity separately from adapter registration. */
-  async describe(): Promise<HostedAdapterMetadata[]> {
+  async describe(configurations: Record<string, AdapterProbeOptions> = {}): Promise<HostedAdapterMetadata[]> {
     return Promise.all(
       [...this.#adapters.values()].map(async (adapter) => {
         let probe: Record<string, unknown> = {};
@@ -133,7 +139,7 @@ export class AdapterHost {
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
           const result: unknown = await Promise.race([
-            Promise.resolve().then(() => adapter.probe?.()),
+            Promise.resolve().then(() => adapter.probe?.(configurations[adapter.metadata.type])),
             new Promise<undefined>((resolve) => {
               timer = setTimeout(() => {
                 unavailableReason = "probe_timeout";
@@ -817,11 +823,11 @@ export class AdapterHost {
   }
 
   /** Run the adapter's own environment probe; return an unchecked-available status when there is no probe. */
-  probe(adapterType: string): unknown {
+  probe(adapterType: string, options?: AdapterProbeOptions): unknown {
     const adapter = this.#adapters.get(adapterType);
     if (!adapter) throw new Error(`unknown adapter: ${adapterType}`);
     if (!adapter.probe) return { available: true, adapterType, unchecked: true };
-    return adapter.probe();
+    return adapter.probe(options);
   }
 
   /** Abort an active invocation; returns false when that invocation no longer exists or has already ended. */

@@ -1209,7 +1209,6 @@
       "additionalProperties": false,
       "required": [
         "run_id",
-        "context_configuration_version",
         "context_hash",
         "preparation_status",
         "application_status",
@@ -1222,10 +1221,6 @@
         "run_id": {
           "type": "string",
           "minLength": 1
-        },
-        "context_configuration_version": {
-          "type": "integer",
-          "minimum": 1
         },
         "context_hash": {
           "type": "string",
@@ -2110,7 +2105,6 @@
       "additionalProperties": false,
       "required": [
         "schema",
-        "context_configuration_version",
         "selection_mode",
         "authorized_candidates",
         "offline_behavior",
@@ -2119,11 +2113,6 @@
       "properties": {
         "schema": {
           "const": "octo.runtime-selection/v2"
-        },
-        "context_configuration_version": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
         },
         "selection_mode": {
           "enum": [

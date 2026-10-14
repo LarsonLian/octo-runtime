@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadLocalOpenClawGateway, createOpenClawAdapter } from "../packages/octo-harness-adapter-openclaw/dist/index.js";
+import { loadLocalOpenClawGateway, configureOpenClawConnection, createOpenClawAdapter } from "../packages/octo-harness-adapter-openclaw/dist/index.js";
 import { assertContextEnvelope, assertResolvedExecutionPlan, mergeContext } from "../packages/octo-harness-protocol/dist/index.js";
 import { assertFrozenContextPlan } from "../packages/octo-harness-protocol/dist/index.js";
-import { loadManagedAgentWorksFromRoot } from "../packages/octo-harness-daemon/dist/index.js";
+import { loadManagedAgentWorksFromRoot } from "../packages/octo-harness-worker-access/dist/index.js";
 import { HarnessEngine, MemoryStore } from "../packages/octo-harness-core/dist/index.js";
+import { AdapterHost } from "../packages/octo-harness-adapter-host/dist/index.js";
 
 test("OpenClaw target validation, replacement and frozen-plan consistency", () => {
  const envelope = payload => ({ schema:"octo.context-envelope/v3", items:[{ namespace: "octo.execution", name: "adapter", payload: payload }] });
@@ -25,6 +26,7 @@ test("OpenClaw target validation, replacement and frozen-plan consistency", () =
 test("local discovery handles a later install, JSON5, token rotation and removed configuration", async t => {
  const home=await mkdtemp(join(tmpdir(),"octo-openclaw-"));
  t.after(()=>rm(home,{recursive:true,force:true}));
+ await configureOpenClawConnection(home, {openclawHome:join(home,".openclaw")});
  await assert.rejects(loadLocalOpenClawGateway(home),/config_not_found/);
  await mkdir(join(home,".openclaw"));
  const config=join(home,".openclaw","openclaw.json");
@@ -53,7 +55,8 @@ test("local discovery rejects malformed device identities", async (t) => {
     join(home, ".openclaw", "openclaw.json"),
     JSON.stringify({ gateway: { auth: { token: "fixture" } } })
   );
-  const root = join(home, ".octo-harness", "identity");
+  await configureOpenClawConnection(home, {openclawHome:join(home,".openclaw")});
+  const root = join(home, "credentials");
   await mkdir(root, { recursive: true });
   for (const device of [
     null,
@@ -69,8 +72,10 @@ test("local discovery rejects malformed device identities", async (t) => {
 
 for (const { agentSource, target, workdir } of [
  { agentSource: "preset", target: "researcher", workdir: "" },
- { agentSource: "provisioned", target: "main", workdir: "/workspace" }
-]) test(`existing ${target} invocation from ${agentSource} preserves provider configuration`, async () => {
+ { agentSource: "preset", target: "researcher", workdir: "/missing/non-git-directory" },
+ { agentSource: "provisioned", target: "main", workdir: "/missing/non-git-directory" },
+ { agentSource: "provisioned", target: "main", workdir: "" }
+]) test(`existing ${target} invocation from ${agentSource} ignores workdir ${JSON.stringify(workdir)}`, async () => {
  const calls=[];
  const client={
   connect:async()=>({protocol:4,features:{methods:["agents.list","sessions.create","sessions.messages.subscribe","agent","agent.wait","sessions.abort"],events:["agent"]}}),
@@ -84,13 +89,20 @@ for (const { agentSource, target, workdir } of [
    return {};
   }
  };
- const request={context:{schema:"octo.context-envelope/v3",items:[]},protocolVersion:2,invocationId:"i",runId:"r",agentSessionId:"s",workdir,prompt:"work",approvalMode:"full_access",agentSource, agentConfig:{providerAgentId:target,providerOptions:{OPENCLAW_GATEWAY_URL:"ws://127.0.0.1:18789",OPENCLAW_GATEWAY_TOKEN:"fixture",OPENCLAW_GATEWAY_DEVICE_ID:"d",OPENCLAW_GATEWAY_PUBLIC_KEY:"p",OPENCLAW_GATEWAY_PRIVATE_KEY:"k"}}};
+ const request={context:{schema:"octo.context-envelope/v3",items:[
+  {namespace:"octo.execution",name:"adapter",payload:{type:"openclaw",provider_agent_id:target}},
+  {namespace:"octo.execution",name:"workspace",payload:workdir ? {mode:"fixed",path:workdir} : {mode:"random"}}
+ ]},protocolVersion:2,invocationId:"i",runId:"r",agentSessionId:"s",workdir,prompt:"work",modelInput:"work",controlInstructions:"",approvalMode:"full_access",agentSource, agentConfig:{providerAgentId:target,providerOptions:{OPENCLAW_GATEWAY_URL:"ws://127.0.0.1:18789",OPENCLAW_GATEWAY_TOKEN:"fixture",OPENCLAW_GATEWAY_DEVICE_ID:"d",OPENCLAW_GATEWAY_PUBLIC_KEY:"p",OPENCLAW_GATEWAY_PRIVATE_KEY:"k"}}};
+ const host=new AdapterHost();
+ host.register(createOpenClawAdapter({clientFactory:()=>client}));
+ assert.equal(host.list()[0].workspace,false);
  const events=[];
- for await(const event of createOpenClawAdapter({clientFactory:()=>client}).invoke(request))events.push(event);
+ for await(const event of host.invoke("openclaw",request,{protocolMode:"canonical"}))events.push(event);
  assert.equal(events.at(-1).type,"run.completed");
  assert.equal(calls.find(c=>c.method==="agent").params.agentId,target);
  assert.equal(calls.find(c=>c.method==="agent").params.promptMode,undefined);
  assert.equal(calls.find(c=>c.method==="sessions.create").params.cwd,undefined);
+ for(const {params} of calls) for(const key of ["cwd","workdir","workspace"]) assert.equal(params[key],undefined);
  assert.equal(calls.some(c=>["config.get","config.patch","agents.create"].includes(c.method)),false);
 });
 
@@ -105,7 +117,7 @@ test("local Harness dispatch freezes the Context target ahead of legacy agent co
  assert.equal(submitted.agentRun.resolvedExecutionPlan.provider_agent_id,"main");
 });
 
-test("embedded local discovery ignores an unusable historical OpenClaw profile", async t => {
+test("managed Runtime rejects obsolete external bindings without ignoring local configuration", async t => {
  const home=await mkdtemp(join(tmpdir(),"octo-openclaw-profile-"));
  t.after(()=>rm(home,{recursive:true,force:true}));
  await mkdir(join(home,"default","identity"),{recursive:true});
@@ -115,7 +127,8 @@ test("embedded local discovery ignores an unusable historical OpenClaw profile",
  await writeFile(join(home,"default","identity","runtime.json"),JSON.stringify({schema_version:1,profile:"default",runtime_id:"r"}));
  await writeFile(join(home,"default","credentials","runtime-token.json"),JSON.stringify({schema_version:1,access_token:"fixture"}));
  assert.throws(()=>loadManagedAgentWorksFromRoot(home,["default"]));
- const runtimes=loadManagedAgentWorksFromRoot(home,["default"],{discoverLocalOpenClaw:true});
+ await writeFile(join(home,"default","config.json"),JSON.stringify({schema_version:1,profile:"default",agent_work_url:"https://worker.example"}));
+ const runtimes=loadManagedAgentWorksFromRoot(home,["default"]);
  assert.equal(runtimes.length,1);
- assert.equal(runtimes[0].adapterConfigurations,undefined);
+ assert.deepEqual(runtimes[0].adapterConfigurations.openclaw,{providerOptions:{OPENCLAW_RUNTIME_ROOT:join(home,"default")}});
 });

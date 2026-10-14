@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentWorkRuntimeOptions } from "./agent-work-runtime.js";
 import { loadManagedAgentWorks } from "./managed-profile.js";
-import type { StartDaemonServerOptions } from "./server.js";
+import type { StandardDaemonOptions } from "./server.js";
 
 /**
  * Resolve all daemon runtime paths and options from CLI args and env, defaulting
@@ -15,7 +15,7 @@ import type { StartDaemonServerOptions } from "./server.js";
 export function resolveDaemonRuntimePaths(
   args = process.argv.slice(2),
   env: NodeJS.ProcessEnv = process.env
-): StartDaemonServerOptions {
+): StandardDaemonOptions {
   const home = resolve(option(args, ["--home"], env.OCTO_HARNESS_HOME ?? defaultHarnessHome(env)));
   const requestedProfile = optionalOption(args, ["--profile"], undefined);
   const managed = loadManagedAgentWorks(home, requestedProfile);
@@ -144,7 +144,7 @@ function optionalNumber(
  * launcher and the daemon share one resolution pass. Only emit Agent Work flags
  * when it is enabled; optional numeric knobs are omitted when unset.
  */
-export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[] {
+export function daemonRuntimeArguments(paths: StandardDaemonOptions): string[] {
   const args = [
     ...(paths.homePath ? ["--home", paths.homePath] : []),
     ...(paths.pidPath ? ["--pid-file", paths.pidPath] : []),
@@ -154,7 +154,7 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[
     "--manifest", paths.manifestPath,
     "--adapter-host", paths.hostEntrypoint
   ];
-  const serializedRuntime = paths.agentWork ?? (paths.agentWorks?.length === 1 ? paths.agentWorks[0] : undefined);
+  const serializedRuntime = paths.agentWorks?.length === 1 ? paths.agentWorks[0] : undefined;
   const commonRuntime = serializedRuntime ?? paths.agentWorks?.[0];
   if (serializedRuntime) {
     args.push(
