@@ -7,7 +7,7 @@ import { createInterface } from "node:readline";
 import test from "node:test";
 import { invocationEnvironment } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
 import { codexEnvironmentConfig } from "../packages/octo-runtime-adapter-codex/dist/environment.js";
-import { invokeRequest } from "./agent-work-runtime-fixture.js";
+import { invokeRequest } from "./runtime-fixture.js";
 
 // Native app-server and a real stdio MCP child; no model turn or credentials required.
 test("native Codex passes Run envs through its MCP whitelist", { skip: process.env.OCTO_RUN_CODEX_ENVS_LIVE !== "1", timeout: 30000 }, async () => {

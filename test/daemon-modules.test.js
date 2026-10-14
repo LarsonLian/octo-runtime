@@ -48,7 +48,7 @@ test("optional modules load only on demand and share the local Host", async () =
   const modules = new DaemonModules(
     [
       {
-        id: "channel-im",
+        id: "channel-gateway",
         create(context, config) {
           calls.push({ host: context.host, config });
           return {
@@ -66,12 +66,12 @@ test("optional modules load only on demand and share the local Host", async () =
   );
   modules.startConfigured();
   assert.deepEqual(calls, []);
-  assert.deepEqual(modules.status, { "channel-im": { phase: "disabled" } });
-  await modules.start("channel-im", { bot: "test" });
-  assert.equal(await modules.request("channel-im", { method: "status" }), "status");
+  assert.deepEqual(modules.status, { "channel-gateway": { phase: "disabled" } });
+  await modules.start("channel-gateway", { bot: "test" });
+  assert.equal(await modules.request("channel-gateway", { method: "status" }), "status");
   assert.equal(calls[0].host, host);
-  await modules.stop("channel-im");
-  assert.deepEqual(modules.status, { "channel-im": { phase: "disabled" } });
+  await modules.stop("channel-gateway");
+  assert.deepEqual(modules.status, { "channel-gateway": { phase: "disabled" } });
   await modules.close();
 });
 

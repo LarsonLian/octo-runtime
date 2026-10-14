@@ -1,3 +1,4 @@
+import { createInputInvoke } from "@mininglamp-oss/octo-runtime-core";
 import { createHash, randomUUID } from "node:crypto";
 export { HostRunService } from "./host-run-service.js";
 export { readAdapterConfigurations } from "./runtime-configuration.js";
@@ -10,7 +11,6 @@ import type {
 } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
   adapterApprovalModes,
-  createHostInvoke,
   assertProtocolSupport,
   assertAdapterProtocolSupport,
   assertHostFrame,
@@ -95,7 +95,7 @@ interface MessageState {
  * a single terminal, and turns cancellation into an AbortSignal.
  */
 export class AdapterHost {
-  readonly invoke = createHostInvoke((type, request, options) =>
+  readonly invoke = createInputInvoke((type, request, options) =>
     this.invokeFrames(type, request, options)
   );
   readonly #adapters = new Map<string, HostedAdapter>();

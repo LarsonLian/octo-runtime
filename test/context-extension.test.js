@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assertContextEnvelope, contextHash, mergeContext, resolveContextConfiguration, renderModelContexts } from '../packages/octo-runtime-protocol/dist/index.js';
+import { assertContextEnvelope, contextHash, mergeContext, resolveContextConfiguration } from '../packages/octo-runtime-protocol/dist/index.js';
+import { renderModelContexts } from "../packages/octo-runtime-adapter-host/dist/model-input.js";
 
 const empty = () => ({ schema: 'octo.context-envelope/v3', items: [] });
 const external = () => ({ ...empty(), items: [{ namespace: 'eva.project', name: 'current', payload: { type: { nested: true }, project_id: 'p1' } }] });

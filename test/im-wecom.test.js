@@ -1,17 +1,18 @@
 // 企业微信回归：验证鉴权/心跳、连接替换、消息映射及思考帧到最终回复的 ACK 顺序。
 // 客户端是否显示原生气泡仍以真实平台验收记录为准。
 import test from "node:test";
+import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-core";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { setTimeout as delay, setImmediate as settle } from "node:timers/promises";
 import { WebSocketServer } from "ws";
-import { WecomConnection } from "../packages/octo-runtime-channel-im/dist/connectors/wecom/connection.js";
-import { ImRuntime } from "../packages/octo-runtime-channel-im/dist/index.js";
-import { WecomStreamSession } from "../packages/octo-runtime-channel-im/dist/connectors/wecom/stream-session.js";
+import { WecomConnection } from "../packages/octo-runtime-extra-channel-wecom/dist/transport/connection.js";
+import { ImRuntime } from "../packages/octo-runtime-extra-channel-wecom/dist/index.js";
+import { WecomStreamSession } from "../packages/octo-runtime-extra-channel-wecom/dist/transport/stream-session.js";
 import {
   validateImConfig,
   imBotIdentity
-} from "../packages/octo-runtime-channel-im/dist/lifecycle/configuration.js";
+} from "../packages/octo-runtime-extra-channel-wecom/dist/lifecycle/configuration.js";
 
 async function fixture(t, handle, options = {}) {
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
@@ -155,7 +156,9 @@ test("shared runtime dispatches WeCom text to Codex and replies using the origin
       host: {
         cancel: async () => ({ cancelled: true }),
         respondInteraction: async () => {},
-        async *invoke(type, request) {
+        async *invoke(input, environment) {
+          const { adapterType: type, request } = prepareInvokeInput(input);
+          request.signal = environment?.signal;
           calls.push(request);
           assert.equal(type, "codex");
           assert.equal(request.context.schema, "octo.context-envelope/v3");
@@ -271,11 +274,11 @@ test("shared runtime dispatches WeCom text to Codex and replies using the origin
   assert.notEqual(calls[1].agentSessionId, oldSession);
 });
 
-test("im.json is a list, preserves omitted defaults and honors explicit disabled", async (t) => {
+test("wecom.json is a list, preserves omitted defaults and honors explicit disabled", async (t) => {
   const { mkdtemp, readFile, writeFile, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const { loadImBots } = await import("../packages/octo-runtime-channel-im/dist/index.js");
+  const { loadImBots } = await import("../packages/octo-runtime-extra-channel-wecom/dist/index.js");
   const home = await mkdtemp(join(tmpdir(), "im-defaults-"));
   t.after(() => rm(home, { recursive: true, force: true }));
   const bot = {
@@ -285,10 +288,10 @@ test("im.json is a list, preserves omitted defaults and honors explicit disabled
     app_secret: "secret",
     adapter: { workdir: home }
   };
-  await writeFile(join(home, "im.json"), JSON.stringify([bot]), { mode: 0o600 });
+  await writeFile(join(home, "wecom.json"), JSON.stringify([bot]), { mode: 0o600 });
   const [config] = loadImBots(home);
   assert.deepEqual(config, bot);
-  assert.deepEqual(JSON.parse(await readFile(join(home, "im.json"), "utf8")), [bot]);
+  assert.deepEqual(JSON.parse(await readFile(join(home, "wecom.json"), "utf8")), [bot]);
   let reads = 0;
   const runtime = new ImRuntime(config, {
     host: {},
@@ -305,7 +308,7 @@ test("im.json is a list, preserves omitted defaults and honors explicit disabled
 
 test("execution Context overrides default adapter and maps reasoning to agentConfig", async () => {
   const { createImInvocation } =
-    await import("../packages/octo-runtime-channel-im/dist/execution/dispatcher.js");
+    await import("../packages/octo-runtime-extra-channel-wecom/dist/execution/dispatcher.js");
   const config = {
     type: "wecom",
     enabled: true,
@@ -349,7 +352,7 @@ test("execution Context overrides default adapter and maps reasoning to agentCon
 
 test("IM constructs full_access approval Context for both platforms and honors explicit policies", async () => {
   const { createImInvocation } =
-    await import("../packages/octo-runtime-channel-im/dist/execution/dispatcher.js");
+    await import("../packages/octo-runtime-extra-channel-wecom/dist/execution/dispatcher.js");
   const message = {
     messageId: "m",
     senderId: "u",
@@ -358,7 +361,7 @@ test("IM constructs full_access approval Context for both platforms and honors e
     text: "test"
   };
   const context = { schema: "octo.context-envelope/v3", items: [] };
-  for (const type of ["octo", "wecom"]) {
+  for (const type of ["wecom"]) {
     const config = { bot_id: "test", type, adapter: { workdir: process.cwd() } };
     const invoke = (config, context) =>
       createImInvocation(

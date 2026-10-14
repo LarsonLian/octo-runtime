@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startDaemonServer } from "@mininglamp-oss/octo-runtime-daemon";
-import { createImModule } from "@mininglamp-oss/octo-runtime-channel-im/daemon-module";
+import { createImModule } from "@mininglamp-oss/octo-runtime-extra-channel-gateway/daemon-module";
 import { callDaemon } from "../packages/octo-runtime-daemon/dist/runtime/runtime-contract.js";
 
 test("Daemon IM RPC dynamically manages one endpoint and never discovers client Home files", async (t) => {
@@ -16,7 +16,7 @@ test("Daemon IM RPC dynamically manages one endpoint and never discovers client 
   const socketPath = join(home, "daemon.sock");
   const app = await startDaemonServer({
     homePath: home,
-    modules: [{ id: "channel-im", create: createImModule }],
+    modules: [{ id: "channel-gateway", create: createImModule }],
     socketPath,
     homePath: home,
     manifestPath: join(root, "test/fixtures/adapters.json"),
@@ -28,14 +28,14 @@ test("Daemon IM RPC dynamically manages one endpoint and never discovers client 
   });
   await callDaemon(socketPath, {
     method: "module.start",
-    params: { id: "channel-im", config: {} }
+    params: { id: "channel-gateway", config: {} }
   });
   const rpc = (method, params) =>
     method === "status"
       ? callDaemon(socketPath, { method })
       : callDaemon(socketPath, {
           method: "module.request",
-          params: { id: "channel-im", method: method.slice(3), params }
+          params: { id: "channel-gateway", method: method.slice(3), params }
         });
   assert.deepEqual(await rpc("im.status"), []);
   const config = {

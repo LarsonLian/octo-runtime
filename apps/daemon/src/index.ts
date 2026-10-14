@@ -12,7 +12,7 @@ const runtimePaths = resolveDaemonRuntimePaths();
 let app: DaemonApplication | undefined;
 try {
   const im = loadCliImConfiguration(runtimePaths.homePath!);
-  await initializeCliImAdapters(runtimePaths.homePath!, im.imBots);
+  await initializeCliImAdapters(runtimePaths.homePath!, [...im.imBots, ...im.wecomBots]);
   const extras = await readExtraDirectory(join(runtimePaths.homePath!, "default", "extra"));
   app = await startDaemonServer({ ...runtimePaths, ...im, extras });
 } catch (error) {

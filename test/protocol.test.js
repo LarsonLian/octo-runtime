@@ -11,7 +11,7 @@ import {
   assertResolvedExecutionPlan,
   messageExposure
 } from "../packages/octo-runtime-protocol/dist/index.js";
-import { approvalPayload, contextEnvelope, continuityItem, executionContext, invokeRequest } from "./agent-work-runtime-fixture.js";
+import { approvalPayload, contextEnvelope, continuityItem, executionContext, invokeRequest } from "./runtime-fixture.js";
 
 test("interaction contracts require a stable request id and bounded response outcome", () => {
   assert.doesNotThrow(() => assertCanonicalEvent({ protocolVersion: 2,

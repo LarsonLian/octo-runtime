@@ -1,55 +1,25 @@
-import {
-  startDaemonServer as startLocalDaemon,
-  type StartDaemonServerOptions
-} from "@mininglamp-oss/octo-runtime-daemon";
-import {
-  createWorkerAccessModule,
-  type AgentWorkRuntimeOptions
-} from "@mininglamp-oss/octo-runtime-worker-access";
-import { createImModule } from "@mininglamp-oss/octo-runtime-channel-im/daemon-module";
-import type { ImBotConfig, ImCredentialSource } from "@mininglamp-oss/octo-runtime-channel-im";
+import { startDaemonServer as startLocalDaemon, type StartDaemonServerOptions } from "@mininglamp-oss/octo-runtime-daemon";
+import { createImModule as createGatewayModule } from "@mininglamp-oss/octo-runtime-extra-channel-gateway/daemon-module";
+import { createImModule as createWecomModule } from "@mininglamp-oss/octo-runtime-extra-channel-wecom/daemon-module";
+import type { ImBotConfig, ImCredentialSource } from "@mininglamp-oss/octo-runtime-extra-channel-gateway";
+import type { ImBotConfig as WecomBotConfig, ImCredentialSource as WecomCredentialSource } from "@mininglamp-oss/octo-runtime-extra-channel-wecom";
 
 export * from "@mininglamp-oss/octo-runtime-daemon";
-export * from "@mininglamp-oss/octo-runtime-worker-access";
-
 export interface StandardDaemonOptions extends StartDaemonServerOptions {
-  agentWorks?: AgentWorkRuntimeOptions[];
   imBots?: ImBotConfig[];
   imCredentials?: ImCredentialSource;
+  wecomBots?: WecomBotConfig[];
+  wecomCredentials?: WecomCredentialSource;
 }
 
 export function startDaemonServer(options: StandardDaemonOptions) {
-  const { agentWorks = [], imBots = [], imCredentials, ...local } = options;
+  const { imBots = [], imCredentials, wecomBots = [], wecomCredentials, ...local } = options;
   return startLocalDaemon({
     ...local,
-    localRuntimes:
-      local.localRuntimes ??
-      agentWorks.map((runtime) => ({
-        profile: runtime.profile,
-        runtimeId: runtime.runtimeId,
-        root: runtime.root,
-        adapterConfigurations: runtime.adapterConfigurations
-      })),
     modules: [
       ...(local.modules ?? []),
-      ...(agentWorks.length
-        ? [
-            {
-              id: "worker-access",
-              create: createWorkerAccessModule,
-              config: { runtimes: agentWorks }
-            }
-          ]
-        : []),
-      ...(imBots.length
-        ? [
-            {
-              id: "channel-im",
-              create: createImModule,
-              config: { bots: imBots, credentials: imCredentials }
-            }
-          ]
-        : [])
+      ...(imBots.length ? [{ id: "channel-gateway", create: createGatewayModule, config: { bots: imBots, credentials: imCredentials } }] : []),
+      ...(wecomBots.length ? [{ id: "channel-wecom", create: createWecomModule, config: { bots: wecomBots, credentials: wecomCredentials } }] : [])
     ]
   });
 }

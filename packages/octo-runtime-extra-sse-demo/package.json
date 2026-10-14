@@ -18,6 +18,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@mininglamp-oss/octo-runtime-core": "workspace:*",
     "@mininglamp-oss/octo-runtime-protocol": "workspace:*"
   },
   "devDependencies": {

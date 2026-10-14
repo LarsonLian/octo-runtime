@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildClaudeCommand } from "@mininglamp-oss/octo-runtime-adapter-claude-code";
 import { buildOpenCodeCommand } from "@mininglamp-oss/octo-runtime-adapter-opencode";
 import { readFile } from "node:fs/promises";
-import { invokeRequest } from "./agent-work-runtime-fixture.js";
+import { invokeRequest } from "./runtime-fixture.js";
 
 for (const resumed of [false, true]) {
   test(`Claude system prompt is injected only on first run: resumed=${resumed}`, async () => {

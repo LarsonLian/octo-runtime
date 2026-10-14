@@ -10,7 +10,7 @@ import { buildClaudeCommand } from "../packages/octo-runtime-adapter-claude-code
 import { invocationEnvironment } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
 import { invocationMcpServers } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
 import { spawnAcpClient } from "../packages/octo-runtime-acp-client/dist/index.js";
-import { invokeRequest } from "./agent-work-runtime-fixture.js";
+import { invokeRequest } from "./runtime-fixture.js";
 import { startMcpHttpServer } from "../test-support/mcp/http-server.mjs";
 
 const enabled = process.env.OCTO_RUN_MCP_LIVE === "1";

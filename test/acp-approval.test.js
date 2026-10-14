@@ -1,3 +1,4 @@
+import { createHostInvoke as preparedTestInvoke } from "@mininglamp-oss/octo-runtime-protocol";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AcpApprovalBridge } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
@@ -85,6 +86,6 @@ test("Host rejects an approval capability declaration with no response implement
   const host = new AdapterHost();
   let started = false;
   host.register({ metadata: { protocolSupport: { protocol: ("broken") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "broken", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access", "interaction.response"] }, async *invoke() { started = true; yield { protocolVersion: 2, type: "run.completed", payload: {} }; } });
-  await assert.rejects(async () => { for await (const event of host.invoke("broken", request, { protocolMode: "canonical" })) assert.fail(event.type); }, /APPROVAL_MODE_UNSUPPORTED/);
+  await assert.rejects(async () => { for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("broken", request, { protocolMode: "canonical" })) assert.fail(event.type); }, /APPROVAL_MODE_UNSUPPORTED/);
   assert.equal(started, false);
 });

@@ -13,6 +13,7 @@
     }
   },
   "dependencies": {
+    "@mininglamp-oss/octo-runtime-core": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
     "@mininglamp-oss/octo-runtime-protocol": "workspace:*",

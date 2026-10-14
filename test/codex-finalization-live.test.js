@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCodexAdapter } from "@mininglamp-oss/octo-runtime-adapter-codex";
-import { invokeRequest } from "./agent-work-runtime-fixture.js";
+import { invokeRequest } from "./runtime-fixture.js";
 
 test("real Codex finalization interruption preserves the answer and resumes the thread", {
   skip: process.env.OCTO_CODEX_FINALIZATION_LIVE !== "1", timeout: 180_000

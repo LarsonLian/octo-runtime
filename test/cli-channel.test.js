@@ -9,8 +9,8 @@ import {
   validateImConfig,
   loadImBots,
   ImRuntime
-} from "../packages/octo-runtime-channel-im/dist/index.js";
-import { createImInvocation } from "../packages/octo-runtime-channel-im/dist/execution/dispatcher.js";
+} from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
+import { createImInvocation } from "../packages/octo-runtime-extra-channel-gateway/dist/execution/dispatcher.js";
 import { initializeCliImAdapters } from "../apps/daemon/dist/im-config.js";
 
 const octo = (workdir, overrides = {}) => ({

@@ -1,3 +1,4 @@
+import { createInputInvoke } from "@mininglamp-oss/octo-runtime-core";
 import {
   spawnAdapterHost,
   type AdapterHostProcess,
@@ -12,7 +13,6 @@ import type { AdapterProbeOptions } from "@mininglamp-oss/octo-runtime-adapter-s
 import {
   assertInteractionResponse,
   assertNativeInteractionResponse,
-  createHostInvoke,
   resolveHostInvokeWireOptions,
   type InvokeRequest
 } from "@mininglamp-oss/octo-runtime-protocol";
@@ -264,7 +264,7 @@ export async function startDaemonServer({
       readyHost().client.respondInteraction(invocationId, response),
     respondNative: async (invocationId, response) =>
       readyHost().client.respondNative(invocationId, response),
-    invoke: createHostInvoke((type, request, options) =>
+    invoke: createInputInvoke((type, request, options) =>
       transportHost.invokeFrames(type, request, options)
     ),
     async *invokeFrames(adapterType, request, options) {

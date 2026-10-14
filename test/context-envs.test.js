@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { contextHash, resolveContextConfiguration } from "../packages/octo-runtime-protocol/dist/index.js";
 import { resolveLocalContext } from "../packages/octo-runtime-core/dist/context.js";
-import { assertFrozenContextPlan, renderModelContexts, contextControlInstructions } from "../packages/octo-runtime-protocol/dist/index.js";
+import { assertFrozenContextPlan, contextControlInstructions } from "../packages/octo-runtime-protocol/dist/index.js";
+import { renderModelContexts } from "../packages/octo-runtime-adapter-host/dist/model-input.js";
 import { createJsonCliAdapter, invocationEnvironment } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
 import { buildCodexCommand } from "../packages/octo-runtime-adapter-codex/dist/index.js";
 import { codexEnvironmentConfig } from "../packages/octo-runtime-adapter-codex/dist/environment.js";
 import { buildZcodeCommand } from "../packages/octo-runtime-adapter-zcode-gui/dist/index.js";
 import { buildOpenClawGatewayInvocation } from "../packages/octo-runtime-adapter-openclaw/dist/index.js";
-import { invokeRequest } from "./agent-work-runtime-fixture.js";
+import { invokeRequest } from "./runtime-fixture.js";
 
 const envPayload = values => ({ env_variables: Object.entries(values).map(([key, value]) => ({ key, value })) });
 const envContext = values => ({ schema: "octo.context-envelope/v3", items: [{ namespace: "octo.execution", name: "envs", payload: envPayload(values) }] });

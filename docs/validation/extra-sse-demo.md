@@ -1,8 +1,22 @@
 # Extra SSE 演示验证记录
 
+## 2026-10-15 统一输入与拆包复验
+
+对外输入已统一为协议包 `InvokeInput` TS class / JSON 对象。CLI playboard、AdapterHost、SDK、gateway、wecom 和 SSE 入口复用同一校验与执行解析；完整字段见 [Invoke 合同](../../packages/octo-runtime-protocol/docs/invoke-input.md)。原先 `{adapterType, request, options}` HTTP 包装已删除。
+
+Gateway 与 WeCom 已拆为两个独立 extra 包；worker-access 已移至生态目录外的独立本地备份仓库，不再默认装配。旧记录中的迁移范围和 DTO 示例保留历史含义。
+
+- Runtime 构建与类型检查通过；全量 731 测试中 724 通过、7 跳过、0 失败。
+- Desktop 构建与类型检查通过；全量 1615 测试中 1614 通过、1 跳过、0 失败。
+- 字段映射验证主输入/恢复输入的图片字节、完整 Provider 扩展参数、身份、代次和 metadata 保留。
+- 已重启真实 Work App。CDP 确认登录 im-test、本地 Runtime 正常；真实 SDK 本地聊天执行完成，完整 canonical 事件相等、重复调用被阻止、renderer 显示最终答复。
+- Gateway 真实 im-test 注册与连接通过；Codex 执行完成，遗留数据库未被写入。
+- SSE 用统一 JSON 经重启后的桌面 daemon / Codex 执行完成；错误 Bearer 拒绝，卸载释放端口，共享 Host 保持 ready。
+- WeCom 协议及生命周期自动测试通过；本轮未使用真实企业微信账号进行实机验证。
+
 ## 实现范围
 
-统一函数式 Extra 加载器、CLI `extraset`、CLI daemon 启动配置读取、SDK JSON 声明传递，以及原生 HTTP/Bearer/SSE 演示插件。本次不改变 Run=7、Context=v3，不迁移 channel-im 或 worker-access，不默认启用 Work App 的 demo。
+统一函数式 Extra 加载器、CLI `extraset`、CLI daemon 启动配置读取、SDK JSON 声明传递，以及原生 HTTP/Bearer/SSE 演示插件。本次不改变 Run=7、Context=v3，不迁移 channel-gateway 或 worker-access，不默认启用 Work App 的 demo。
 
 ## 自动验证
 

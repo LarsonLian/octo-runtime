@@ -5,9 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startDaemonServer } from "@mininglamp-oss/octo-runtime-daemon";
-import { createImModule } from "@mininglamp-oss/octo-runtime-channel-im/daemon-module";
+import { createImModule } from "@mininglamp-oss/octo-runtime-extra-channel-gateway/daemon-module";
 import { callDaemon } from "../apps/cli/dist/main.js";
-import { invokeRequest, waitFor } from "./agent-work-runtime-fixture.js";
+import { invokeRequest, waitFor } from "./runtime-fixture.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 async function files(directory) {
@@ -25,7 +25,7 @@ test("Runtime source and built packages do not load a SQL driver or expose a dom
     }
   }
   const core = await import("@mininglamp-oss/octo-runtime-core");
-  assert.deepEqual(Object.keys(core).sort(), ["localRuntimeLimits", "resolveLocalContext"]);
+  assert.deepEqual(Object.keys(core).sort(), ["createInputInvoke", "localRuntimeLimits", "prepareInvokeInput", "resolveLocalContext"]);
 });
 
 test("daemon executes with IM enabled without databases and does not recover old Runs", async t => {
@@ -36,7 +36,7 @@ test("daemon executes with IM enabled without databases and does not recover old
     socketPath: join(home, "sockets", "daemon.sock"),
     manifestPath: join(root, "test/fixtures/adapters.json"),
     hostEntrypoint: join(root, "apps/adapter-host/dist/index.js"),
-    modules: [{ id: "channel-im", create: createImModule, config: { bots: [] } }]
+    modules: [{ id: "channel-gateway", create: createImModule, config: { bots: [] } }]
   };
   let app = await startDaemonServer(options);
   try {

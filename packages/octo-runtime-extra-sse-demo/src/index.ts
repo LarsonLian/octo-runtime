@@ -4,14 +4,13 @@ import { isIP } from "node:net";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
-  assertInvokeRequest,
-  resolveHostInvokeOptions,
-  type InvokeRequest
+  InvokeInput
 } from "@mininglamp-oss/octo-runtime-protocol";
+import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-core";
 import type { ExtraContext, JsonObject } from "@mininglamp-oss/octo-runtime-daemon";
 
 export const name = "sse-demo";
-const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_BODY_BYTES = 16 * 1024 * 1024;
 
 /** Initializes once; HTTP routing, authentication and delivery belong to this extra. */
 export default async function load(ctx: ExtraContext, config: JsonObject): Promise<void> {
@@ -94,27 +93,14 @@ export default async function load(ctx: ExtraContext, config: JsonObject): Promi
         if (size > MAX_BODY_BYTES) return jsonError(res, 413, "PAYLOAD_TOO_LARGE");
         chunks.push(bytes);
       }
-      let payload: { adapterType: string; request: InvokeRequest; options?: unknown };
+      let payload: InvokeInput;
       try {
-        payload = JSON.parse(Buffer.concat(chunks).toString("utf8")) as typeof payload;
-        if (
-          !payload ||
-          typeof payload.adapterType !== "string" ||
-          !payload.adapterType.trim() ||
-          !payload.request ||
-          typeof payload.request !== "object" ||
-          Array.isArray(payload.request)
-        )
-          throw new Error();
-        if (Object.hasOwn(payload.request, "signal")) throw new Error();
-        payload.request = { ...payload.request, signal: controller.signal };
-        assertInvokeRequest(payload.request);
-        resolveHostInvokeOptions(payload.options);
+        payload = InvokeInput.check(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+        prepareInvokeInput(payload);
       } catch {
         return jsonError(res, 400, "INVALID_INVOKE_PAYLOAD");
       }
       controller.signal.throwIfAborted();
-      const options = resolveHostInvokeOptions(payload.options);
       res.writeHead(200, {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache"
@@ -124,9 +110,8 @@ export default async function load(ctx: ExtraContext, config: JsonObject): Promi
         (async function* () {
           try {
             for await (const event of ctx.adapterHost.invoke(
-              payload.adapterType,
-              payload.request,
-              options
+              payload,
+              { signal: controller.signal }
             )) {
               yield `data: ${JSON.stringify(event)}\n\n`;
             }

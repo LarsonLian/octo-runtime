@@ -1,5 +1,5 @@
 import type {
-  HostInvoke,
+  InputInvoke,
   HostFrame,
   HostInvokeOptions,
   NativeInteractionResponse,
@@ -104,7 +104,7 @@ export interface DaemonRuntime {
     method: string,
     params?: Record<string, unknown>
   ): Promise<T>;
-  invoke: HostInvoke;
+  invoke: InputInvoke;
   invokeFrames(
     adapterType: string,
     request: InvokeRequest,

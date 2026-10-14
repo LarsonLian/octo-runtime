@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { ExtraPlugins, readExtraDirectory } from "../packages/octo-runtime-daemon/dist/index.js";
-import { createHostInvoke } from "../packages/octo-runtime-protocol/dist/index.js";
+import { createInputInvoke } from "../packages/octo-runtime-core/dist/index.js";
 import { invokeDaemonRun } from "../packages/octo-runtime-daemon/dist/runtime/run-stream.js";
 import { callDaemon } from "../packages/octo-runtime-daemon/dist/runtime/runtime-contract.js";
 import { runCli } from "../apps/cli/dist/main.js";
@@ -78,7 +78,7 @@ try {
   });
   // Inject the real desktop daemon's IPC execution port, rather than a mock Provider.
   extras = new ExtraPlugins(await readExtraDirectory(join(home, "default/extra")), {
-    invoke: createHostInvoke((type, request, options) =>
+    invoke: createInputInvoke((type, request, options) =>
       invokeDaemonRun(socket, type, request, options)
     )
   });
@@ -109,7 +109,13 @@ try {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ adapterType: "codex", request, options: { protocolMode: "canonical" } }),
+    body: JSON.stringify({
+      inputs: [{ type: "text", text: prompt }],
+      contexts: { schema: "octo.context-envelope/v3", items: [{ namespace: "octo.execution", name: "adapter", payload: { type: "codex" } }] },
+      sessionId: request.agentSessionId,
+      protocol_mode: "canonical",
+      approvalMode: "full_access"
+    }),
     signal: AbortSignal.timeout(90000)
   });
   assert.equal(response.status, 200);

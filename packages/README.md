@@ -1,5 +1,7 @@
 # Packages 与责任边界
 
+品牌图标已抽取为同级独立项目 [octo-runtime-adapter-icons](../../octo-runtime-adapter-icons/README.md)。本仓仅将其作为图标覆盖测试的开发依赖；运行测试前需先构建该项目。
+
 现行设计见 [Runtime 本地存在与按需在线合同](../docs/runtime-local-and-online-contract.md)。HostApp 决定携带和启用哪些包；本地 Runtime 身份与云端登记独立。
 
 > 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../docs/context-llm-injection.md) 与 [IPD-SE](../../docs/event-context-rendering-ipd-se.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
@@ -16,7 +18,6 @@
 | [octo-runtime-adapter-codex](octo-runtime-adapter-codex/README.md)             | provider 协议适配，由 adapter-host 调用                                                                                                                              |
 | [octo-runtime-adapter-hermes](octo-runtime-adapter-hermes/README.md)           | provider 协议适配，由 adapter-host 调用                                                                                                                              |
 | [octo-runtime-adapter-host](octo-runtime-adapter-host/README.md)               | 通过 AdapterHostRpc 统一 invoke、cancel、probe 和交互响应，管理适配器与事件生命周期                                                                                  |
-| [octo-runtime-adapter-icons](octo-runtime-adapter-icons/README.md)             | 提供适配器品牌图标资源                                                                                                                                               |
 | [octo-runtime-adapter-kimi-code](octo-runtime-adapter-kimi-code/README.md)     | provider 协议适配，由 adapter-host 调用                                                                                                                              |
 | [octo-runtime-adapter-mcode](octo-runtime-adapter-mcode/README.md)             | provider 协议适配，由 adapter-host 调用                                                                                                                              |
 | [octo-runtime-adapter-openclaw](octo-runtime-adapter-openclaw/README.md)       | provider 协议适配，由 adapter-host 调用                                                                                                                              |
@@ -25,13 +26,14 @@
 | [octo-runtime-adapter-qoderclicn](octo-runtime-adapter-qoderclicn/README.md)   | provider 协议适配，由 adapter-host 调用                                                                                                                              |
 | [octo-runtime-adapter-sdk](octo-runtime-adapter-sdk/README.md)                 | 提供适配器共用的进程、流解析和事件辅助工具                                                                                                                           |
 | [octo-runtime-adapter-zcode-gui](octo-runtime-adapter-zcode-gui/README.md)     | provider 协议适配，由 adapter-host 调用                                                                                                                              |
-| [octo-runtime-context-builder](octo-runtime-context-builder/README.md)         | 根入口提供浏览器可用的场景上下文构造。context-preparation、run-context、context-compaction、input-images 和两种 material-compaction 子入口提供 Node 侧执行准备工具。 |
 | [octo-runtime-core](octo-runtime-core/README.md)                               | 解析并校验本轮执行配置，不保存业务 Agent、Session 或 Run                                                                                                                |
 | [octo-runtime-cross-service](octo-runtime-cross-service/README.md)             | 管理 launchd/systemd/Windows 用户服务的生命周期                                                                                                                      |
-| [octo-runtime-daemon](octo-runtime-daemon/README.md) | Node/Electron 本地生命周期、账户隔离与 IPC；管理共享 Host，按宿主配置加载可选模块。生产依赖不包含 worker-access 或 channel-im。 |
-| [octo-runtime-channel-im](octo-runtime-channel-im/README.md)                   | 读取本地 bf_token、连接 IM 专用 WS、管理私聊会话与 /reset，经共享 AdapterHostRpc 执行后回发最终文本。                                                                |
+| [octo-runtime-daemon](octo-runtime-daemon/README.md) | Node/Electron 本地生命周期、账户隔离与 IPC；管理共享 Host，按宿主配置加载可选模块。生产依赖不包含 worker-access 或 channel-gateway。 |
+| [octo-runtime-extra-channel-gateway](octo-runtime-extra-channel-gateway/README.md)                   | 读取本地 bf_token、连接 IM 专用 WS、管理私聊会话与 /reset，经共享 AdapterHostRpc 执行后回发最终文本。                                                                |
 | [octo-runtime-protocol](octo-runtime-protocol/README.md)                       | 定义和校验统一执行、事件与 Context 合同                                                                                                                              |
-| [octo-runtime-worker-access](octo-runtime-worker-access/README.md)             | 管理 Worker 注册、profile、WS 建连重连、远端命令与准备回执、执行 envelope 转换和事件回传。构造 AgentWorkRuntime / AgentWorkSupervisor 时由宿主传入 AdapterHostRpc。  |
+| [octo-runtime-extra-channel-wecom](octo-runtime-extra-channel-wecom/README.md) | 企业微信专用 WebSocket、原生 stream 回复与独立生命周期；不依赖 gateway。 |
+
+worker-access 预研已移到生态目录外的独立仓库 `../../octo-runtime-worker-access`，只作备份，不参与 workspace、构建、打包或宿主加载。
 
 ## Provider Agent 配置
 

@@ -34,12 +34,12 @@ RuntimeDevice 的管理职责是管理到底由谁与远程服务建立连接，
 
 | 连接方式 | 职责 | 状态与接入说明 |
 | --- | --- | --- |
-| `im-channel` | 通过 IM 频道管理与外部系统的连接 | 下文现有 SDK 使用 `channel-im` 包和模块名；IM 连接独立于 Worker 接入 |
+| `im-channel` | 通过 IM 频道管理与外部系统的连接 | 下文现有 SDK 使用 `channel-gateway` 包和模块名；IM 连接独立于 Worker 接入 |
 | 独立 `agent-access` | 通过独立接入模块把 Runtime 公开为远程可见、可按授权访问的执行对象 | 尚未通过评审；最终职责、接口及实现需评审确定 |
 
 AdapterHost 决策的是外部连接方式。两种方式均以已有 RuntimeDevice 为基础；启用、停用或切换连接不创建设备存在的事实，也不删除本地身份。是否公开 Runtime 及访问范围仍受 HostApp 授权策略约束。
 
-现有 `worker-access` 组合注册、Worker WS 与远程执行。下文保留其当前 API 示例；这些示例不代表独立 `agent-access` 已通过评审或已经实现。
+现有 `worker-access` 组合注册、Worker WS 与远程执行。其实现和旧 API 示例已迁到生态目录外独立仓库，当前产品不加载它。
 
 接入方必须分别判断以下事实：
 
@@ -66,7 +66,7 @@ AdapterHost 决策的是外部连接方式。两种方式均以已有 RuntimeDev
 | SDK／模块配置契约 | SDK 接收配置对象，SDK／模块按对应接口校验结构和字段语义；跨进程参数还须满足对应 IPC 的序列化要求 |
 | SDK／模块内部运行状态 | SDK／模块按自己的约定管理 Home 内的 Runtime 身份、凭据及进程状态；这不规定宿主模块配置的来源 |
 
-以 IM 接入为例，宿主读取配置并构造 Bot 配置对象后，可以通过 `startModule("channel-im", { bots })` 启动模块，或者在模块已启动时调用 `requestModule("channel-im", "upsert", { config })` 应用配置。`config` 是一个对象参数，不是配置文件路径。读取远程配置平台、解析文件或从数据库恢复配置的逻辑属于宿主；数据源发生变化后，也由宿主决定是否及何时重新调用 SDK。
+以 IM 接入为例，宿主读取配置并构造 Bot 配置对象后，可以通过 `startModule("channel-gateway", { bots })` 启动模块，或者在模块已启动时调用 `requestModule("channel-gateway", "upsert", { config })` 应用配置。`config` 是一个对象参数，不是配置文件路径。读取远程配置平台、解析文件或从数据库恢复配置的逻辑属于宿主；数据源发生变化后，也由宿主决定是否及何时重新调用 SDK。
 
 **CLI 的默认文件加载行为不构成 SDK 接入要求。** 本文第 1.4 节的 `<home>/im.json` 是 CLI 的保存与加载约定；客户桌面 App 可以使用自己的 store，再通过 SDK 下发配置，无需创建或同步该文件。参考 Octo Work 把 IM 通道配置保存到应用自己的 SQLite，恢复时读取并通过 SDK 应用；SQLite 同样只是该 App 的选择，不是第三方宿主的必需依赖。
 
@@ -367,33 +367,9 @@ export async function startRuntime(session: {
 
 本地启动创建 Home、machine_id、隔离 profile 和稳定 Runtime ID，然后启动本地 IPC 与共享 Host。不申请 enrollment、不发送设备上报、不读取 Human Token，也不加载 worker-access。Eva2.0 可直接复用 daemon 包及其生产依赖，不需要拷贝 worker-access 或原 embedded 代码。
 
-标准产品需要云端接入时，由 HostApp 额外安装并携带 worker-access。在创建 SDK 时登记工厂位置；登记本身不启用：
+Worker 接入预研已迁到生态目录外的 `octo-runtime-worker-access` 独立仓库，仅作备份，不参与当前发行物。
 
-```ts
-const standardRuntime = createDaemonRuntime({
-  appId: "standard-app",
-  home: resolveDaemonHome("standard-app"),
-  modules: [{
-    id: "worker-access",
-    module: import.meta.resolve("@mininglamp-oss/octo-runtime-worker-access/daemon-module"),
-    exportName: "createWorkerAccessModule"
-  }]
-});
-await standardRuntime.startAccount({ subject, tenants });
-// 仅在宿主明确启用时调用；凭据只在 main/Node 宿主及本地 IPC 内传递。
-await standardRuntime.startModule("worker-access", {
-  registrations: [{
-    id: tenants[0].id,
-    humanToken: currentHumanToken,
-    serverUrl: "https://im-test.deepminer.com.cn",
-    agentWorkUrl: "https://im-test.deepminer.com.cn/agentworker/api"
-  }]
-});
-```
-
-该工厂承接现有 enrollment 和 Worker 连接实现，最终 access/设备 WS 职责仍待架构评审。模块注册和连接失败只反映在模块状态，不改变本地 ready。Human Token 和一次性 grant 不落盘，长期 Runtime credential 留在 worker-access 管理的 profile 中；注册沿用本地 Runtime ID，不创建 Agent。
-
-IM 接入独立携带 channel-im 并登记其 `createImModule` 工厂。宿主显式 `startModule("channel-im", { bots })` 或启动后通过 `requestModule("channel-im", "upsert", { config })` 添加 bot。不需要同时携带或启用 worker-access。
+IM 接入独立携带 channel-gateway 并登记其 `createImModule` 工厂。宿主显式 `startModule("channel-gateway", { bots })` 或启动后通过 `requestModule("channel-gateway", "upsert", { config })` 添加 bot。不需要同时携带或启用 worker-access。
 
 参考实现：[Octo Work DaemonRuntimeService](../octo-work-app/src/main/daemon-runtime-service.ts)。正式桌面宿主通过 `DaemonRuntimeOptions.distribution` 指定已安装的 Node、runner、manifest 和 adapter-host 入口；SDK 不自动安装这些依赖。公开类型见 [SDK 类型](packages/octo-runtime-daemon/src/runtime/types.ts)。
 
@@ -428,7 +404,7 @@ export function watchRuntime(publish: (health: DaemonHealth) => void) {
 | 关闭一个连接模块 | `stopModule(id)`，停止对应远程连接，本地设备身份保留，Host 继续工作 |
 | 操作已启用模块 | `requestModule(id, method, params)` |
 
-普通 stop 保留本地身份和已保存凭据。重新 enrollment 属于 worker-access：显式 `requestModule("worker-access", "reset", { tenantId })` 清理目标凭据，再由宿主显式启动该模块重新注册；本地 Runtime ID 保持稳定。此操作不是聊天会话 reset。
+普通 stop 保留本地身份。聊天 reset 与本地 Runtime 生命周期独立；当前主项目不执行 Worker 重新 enrollment。
 
 ### 2.4 业务目标与执行配置
 
@@ -541,17 +517,9 @@ export async function* invokeLocalAgent(input: {
 
 默认 `invoke()` 为 native 模式，返回 `HostFrame`；上述示例显式选择 canonical。使用原生交互时对应 `respondNativeRun()`。缺失终态、流异常或主动结束消费，都应由 App 处理为明确的中断状态。
 
-### 2.6 可选远程执行：Worker 接入
+### 2.6 可选 Channel
 
-远程路径为 `业务应用 → Worker 执行 API → 已连接 Runtime → 共享 Host → Adapter`。其中“已连接”是本次远程执行的条件，不是 RuntimeDevice 存在的条件。RuntimeDevice 按 HostApp 策略管理参与连接的 Runtime 与接入模块；当前 Worker 接入通过显式启用 worker-access 执行。客户只需本地或 IM 时不携带 worker-access。
-
-当前 Worker 的执行入口是 `POST /v1/agent_run/submit`，执行流与查询分别为 `GET /v1/agent_run/event_stream`、`GET /v1/agent_run/get`，取消为 `POST /v1/agent_run/cancel`。交互按当前 interaction 合同处理。服务地址、认证主体、权限、请求体及查询参数以 [Worker 路由](../octo-agent-worker/internal/handler/router.go)和[当前 OpenAPI](../octo-agent-worker/openapi/swagger.yaml)为准；不能将本地 InvokeRequest 直接当作远程提交体。
-
-旧 `/v1/events`、Worker Agent default／configuration 及业务 Event／ActionExecution 记录入口已退出本轮设计，本文不再提供这些调用示例。业务方保存自己的触发事实、幂等语义和本轮快照，并提交准备完成的 Run；执行不先创建 Worker 业务记录。
-
-远程提交、取消、模块启动的接纳均不是执行终态。调用方必须消费真实执行事件；实时流与有界内存窗口不能当作永久历史或可靠业务投递。连接失败不删除本地身份，也不影响独立本地 invoke。
-
-现有 `createWorkerAccessModule` 仍承接注册、Worker WS 与远程执行，最终 access／设备 WS 职责待架构评审。注册沿用 SDK 本地 Runtime ID，但不能把当前工厂当作最终注册专用模块或宣称所有远程场景已经验收。
+Octo 使用 `octo-runtime-extra-channel-gateway`，企业微信使用 `octo-runtime-extra-channel-wecom`。两个包各自持有 transport、配置与生命周期；宿主按业务选择各自工厂。没有统一 connector registry。
 
 ### 2.7 会话和 Context 接入规则
 
@@ -577,39 +545,6 @@ Octo Work 的 `AgentWorkClient` 是宿主私有封装，不是 Runtime 发布的
 
 更多字段见 [SDK 导出](packages/octo-runtime-daemon/src/runtime/index.ts)、[SDK 类型](packages/octo-runtime-daemon/src/runtime/types.ts)、[执行协议](packages/octo-runtime-protocol/src/index.ts)、[Worker 路由](../octo-agent-worker/internal/handler/router.go) 及 [Runtime 合同](docs/runtime-local-and-online-contract.md)。
 
-## 3. 可选远程登记：注册 Runtime
+## 3. 预研归档
 
-需要让 Runtime 接入远程服务时，先在管理端或 App 登录流程中获取一次性 enrollment grant，再通过 stdin 注册。这一步登记已有本地执行身份，不是创建设备存在的事实，也不是本地执行或 channel 配置的前置条件。
-
-以下是现有 `worker-access` 路径的 CLI 操作，不代表尚未通过评审的独立 `agent-access` 接口：
-
-当前实现限制：CLI 原生服务安装仍要求 profile 身份，并会恢复已保存的云端 profile；这些现有装配行为需要按本地启动与可选连接的职责边界调整，不代表 daemon／Host 在设计上依赖云端。最终显式频道／设备在线配置仍按独立里程碑实施。
-
-```bash
-printf '%s\n' 'octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN' | octo-runtime \
-  --profile "$HARNESS_PROFILE" login \
-  --server-url https://im-test.deepminer.com.cn \
-  --agent-work-url https://im-test.deepminer.com.cn/agentworker/api \
-  --enroll-token-stdin \
-  --runtime-name "本机 Runtime"
-```
-
-| 参数 | 说明 |
-| --- | --- |
-| `--server-url` | Octo 服务根地址 |
-| `--agent-work-url` | Worker API 根地址；省略时为 `SERVER_URL/agentworker/api` |
-| `--enroll-token-stdin` | 从 stdin 读取一次性 `octo_enroll_` grant |
-| `--runtime-name` | 首次注册的 Runtime 展示名 |
-
-`login` 是现有 CLI 的显式云端注册入口，完成设备凭据保存，不创建或 ensure 业务 Agent。CLI 仍保留 enrollment 中心的引导；客户 SDK 在本地初始化时先产生身份，不能把 CLI 登录当作 SDK 前置条件。重复登录已有 profile 复用身份。需要指定配置目录时可额外传入 `--home "$HARNESS_HOME"`。
-
-Human Token、enrollment grant 和 Runtime credential 是三种不同凭据。CLI 首次登录需要 grant，不能直接传 Human Token 或 Bot key。程序调用时将 grant 直接写入子进程 stdin；不要把真实凭据拼进 argv、脚本或日志。上面的 Token 是占位符。
-
-仅在需要验收云端连接且原生服务已安装时，额外等待选中 Runtime 在线：
-
-```bash
-octo-runtime --profile "$HARNESS_PROFILE" \
-  daemon start --wait-online
-```
-
-`--wait-online` 验证实际 WSS 连接，不用于判断设备是否存在或本地 Host 是否可执行。
+旧 Worker enrollment、CLI 远程注册及相关安装示例位于生态目录外的 `octo-runtime-worker-access/archive`，仅作历史参考，不保证可用。当前主项目不携带或加载该插件。

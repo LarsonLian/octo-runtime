@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
-import { invokeRequest } from "../test/agent-work-runtime-fixture.js";
+import { invokeRequest } from "../test/runtime-fixture.js";
+import { invocationInput } from "../packages/octo-runtime-protocol/dist/index.js";
 
 const sdk = resolve(process.argv[2]);
 const packages = await readdir(join(sdk, "node_modules/.pnpm"));
 assert.equal(
-  packages.some((name) => /octo-runtime-(worker-access|channel-im|embedded)/.test(name)),
+  packages.some((name) => /octo-runtime-(worker-access|channel-gateway|embedded)/.test(name)),
   false
 );
 // Import the deployed SDK, so Node cannot resolve workspace-only dependencies.
@@ -36,7 +37,7 @@ async function execute(runId) {
     runMetadata: { runtimeId: runtime.health().profiles[0].runtimeId }
   });
   const events = [];
-  for await (const event of runtime.invoke("test", request, { protocolMode: "canonical" }))
+  for await (const event of runtime.invoke(invocationInput(request, "canonical", "test")))
     events.push(event);
   assert.equal(events.at(-1).type, "run.completed");
 }

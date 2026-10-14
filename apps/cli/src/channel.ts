@@ -5,8 +5,9 @@ import {
   validateImConfig,
   validateImBots,
   type ImBotConfig
-} from "@mininglamp-oss/octo-runtime-channel-im";
+} from "@mininglamp-oss/octo-runtime-extra-channel-gateway";
 import { withSetupLock, writeJsonAtomic, type RuntimePaths } from "./state.js";
+import { imBotIdentity as wecomIdentity, readImBots as readWecomBots, validateImConfig as validateWecomConfig, validateImBots as validateWecomBots, type WecomBotConfig } from "@mininglamp-oss/octo-runtime-extra-channel-wecom";
 
 /** One complete Bot object per invocation; im.json is a list of these objects. */
 export async function configureChannel(
@@ -23,21 +24,25 @@ export async function configureChannel(
     if (size > 1024 * 1024) throw new Error("IM_CONFIG_INPUT_TOO_LARGE");
     chunks.push(bytes);
   }
-  let config: ImBotConfig;
+  let config: ImBotConfig | WecomBotConfig;
   try {
     config = JSON.parse(Buffer.concat(chunks).toString("utf8"));
   } catch {
     throw new Error("channel configure stdin must contain one valid JSON object");
   }
-  validateImConfig(config);
+  const wecom = config.type === "wecom";
+  if (wecom) validateWecomConfig(config as WecomBotConfig);
+  else validateImConfig(config as ImBotConfig);
   return withSetupLock(paths, async () => {
-    const bots = readImBots(paths.home);
-    const key = imBotIdentity(config);
-    const index = bots.findIndex((bot) => imBotIdentity(bot) === key);
+    const identity = (bot: ImBotConfig | WecomBotConfig) => bot.type === "wecom" ? wecomIdentity(bot) : imBotIdentity(bot);
+    const bots: (ImBotConfig | WecomBotConfig)[] = wecom ? readWecomBots(paths.home) : readImBots(paths.home);
+    const key = identity(config);
+    const index = bots.findIndex((bot) => identity(bot) === key);
     if (index < 0) bots.push(config);
     else bots[index] = config;
-    validateImBots(bots);
-    const file = join(paths.home, "im.json");
+    if (wecom) validateWecomBots(bots);
+    else validateImBots(bots);
+    const file = join(paths.home, wecom ? "wecom.json" : "im.json");
     await writeJsonAtomic(file, bots);
     return {
       saved: true,

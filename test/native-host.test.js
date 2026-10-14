@@ -1,3 +1,4 @@
+import { createHostInvoke as preparedTestInvoke } from "@mininglamp-oss/octo-runtime-protocol";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
@@ -21,7 +22,7 @@ import {
   NativeInteractionBridge,
   watchLineLimit
 } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
-import { invokeRequest } from "./agent-work-runtime-fixture.js";
+import { invokeRequest } from "./runtime-fixture.js";
 const codex = fileURLToPath(new URL("../test-support/fake-native-codex.mjs", import.meta.url));
 const claude = fileURLToPath(
   new URL("../test-support/claude/fake-permission-cli.js", import.meta.url)
@@ -50,7 +51,7 @@ test("default native retains provider response and notification fields and never
   };
   try {
     const host = codexHost(),
-      frames = await collect(host.invoke("codex", input()));
+      frames = await collect(preparedTestInvoke((...args) => host.invokeFrames(...args))("codex", input()));
     for (const frame of frames) assertHostFrame(frame);
     assert.equal(conversions, 0);
     assert.ok(
@@ -83,7 +84,7 @@ test("default native retains provider response and notification fields and never
     assert.equal(frames.at(-1).control.state, "completed");
     assert.doesNotMatch(JSON.stringify(frames), /excluded|other-thread/);
     await assert.rejects(
-      collect(host.invoke("codex", input())),
+      collect(preparedTestInvoke((...args) => host.invokeFrames(...args))("codex", input())),
       (error) => error.code === "EXECUTION_IDENTITY_CONFLICT"
     );
   } finally {
@@ -103,7 +104,7 @@ test("explicit canonical runs the converter and retains the existing terminal se
 });
 
 test("native raw RPC errors retain numeric codes and nested data before Host failure", async () => {
-  const frames = await collect(codexHost().invoke("codex", input("rpc-error")));
+  const frames = await collect(preparedTestInvoke((...args) => codexHost().invokeFrames(...args))("codex", input("rpc-error")));
   assert.deepEqual(
     frames.find((frame) => frame.kind === "native" && frame.payload.error).payload.error,
     { code: -32123, message: "original error", data: { nested: [1, "raw"] } }
@@ -114,7 +115,7 @@ test("native raw RPC errors retain numeric codes and nested data before Host fai
 
 for (const scenario of ["unknown", "eof"])
   test(`native ${scenario} handles unsupported requests and missing terminal`, async () => {
-    const frames = await collect(codexHost().invoke("codex", input(scenario)));
+    const frames = await collect(preparedTestInvoke((...args) => codexHost().invokeFrames(...args))("codex", input(scenario)));
     assert.equal(frames.at(-1).control.state, scenario === "unknown" ? "completed" : "failed");
     assert.equal(frames.filter(isHostTerminal).length, 1);
   });
@@ -127,7 +128,7 @@ test("native pending approvals reject widened grants, duplicates, wrong-mode and
     requestId: 42,
     payload: { jsonrpc: "2.0", id: 42, result: { decision: "accept" } }
   };
-  for await (const frame of host.invoke("codex", request)) {
+  for await (const frame of preparedTestInvoke((...args) => host.invokeFrames(...args))("codex", request)) {
     frames.push(frame);
     if (
       frame.kind === "control" &&
@@ -181,7 +182,7 @@ test("native cancellation and abandoned consumers converge with one terminal and
   const host = codexHost(),
     controller = new AbortController(),
     frames = [];
-  for await (const frame of host.invoke("codex", input("hang", { signal: controller.signal }))) {
+  for await (const frame of preparedTestInvoke((...args) => host.invokeFrames(...args))("codex", input("hang", { signal: controller.signal }))) {
     frames.push(frame);
     if (frame.kind === "native" && frame.payload.method === "item/agentMessage/delta")
       controller.abort("test cancelled");
@@ -190,7 +191,7 @@ test("native cancellation and abandoned consumers converge with one terminal and
   assert.equal(frames.filter(isHostTerminal).length, 1);
   assert.equal(host.cancel("invoke-test"), false);
   const second = codexHost(),
-    iterator = second.invoke("codex", input("hang"));
+    iterator = preparedTestInvoke((...args) => second.invokeFrames(...args))("codex", input("hang"));
   await iterator.next();
   await iterator.return();
   assert.equal(second.cancel("invoke-test"), false);
@@ -210,7 +211,7 @@ for (const mode of ["ask", "full_access"])
     const request = input("normal", { approvalMode: mode });
     const frames = [];
     try {
-      for await (const frame of host.invoke("claude-code", request)) {
+      for await (const frame of preparedTestInvoke((...args) => host.invokeFrames(...args))("claude-code", request)) {
         frames.push(frame);
         if (
           mode === "ask" &&
@@ -286,11 +287,11 @@ test("RPC native admission rejects unsupported mode before ACK; genuine native f
   const client = new AdapterHostRpcClient({ input: downstream, output: upstream });
   try {
     await assert.rejects(
-      collect(client.invoke("canonical-only", input())),
+      collect(preparedTestInvoke((...args) => client.invokeFrames(...args))("canonical-only", input())),
       (error) => error.code === "PROTOCOL_MODE_UNSUPPORTED"
     );
     assert.equal(invokes, 0);
-    const frames = await collect(client.invoke("codex", input()));
+    const frames = await collect(preparedTestInvoke((...args) => client.invokeFrames(...args))("codex", input()));
     assert.equal(frames.at(-1).control.state, "completed");
     assert.ok(frames.some((frame) => frame.kind === "native"));
     assert.doesNotMatch(
@@ -363,7 +364,7 @@ test("cancelling a native pending request invalidates it and rejects late replie
   const host = codexHost(),
     request = input("approval", { approvalMode: "ask" }),
     frames = [];
-  for await (const frame of host.invoke("codex", request)) {
+  for await (const frame of preparedTestInvoke((...args) => host.invokeFrames(...args))("codex", request)) {
     frames.push(frame);
     if (frame.control?.status === "pending") host.cancel(request.invocationId, "test cancelled");
   }
@@ -408,7 +409,7 @@ test("invalid driver frames preserve continuous sequence for failure controls", 
       yield { kind: "native", messageKind: "notification", payload: { invalid: undefined } };
     }
   });
-  const frames = await collect(host.invoke("invalid", input()));
+  const frames = await collect(preparedTestInvoke((...args) => host.invokeFrames(...args))("invalid", input()));
   assert.deepEqual(
     frames.map((frame) => frame.seq),
     frames.map((_, i) => i + 1)

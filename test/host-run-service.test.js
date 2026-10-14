@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { AdapterHost, HostRunService } from "@mininglamp-oss/octo-runtime-adapter-host";
-import { invokeRequest, waitFor } from "./agent-work-runtime-fixture.js";
+import { invokeRequest, waitFor } from "./runtime-fixture.js";
 function fixture(invoke, modes = ["canonical"]) {
   const provider = new AdapterHost();
   provider.register({

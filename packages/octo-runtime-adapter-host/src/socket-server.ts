@@ -1,3 +1,4 @@
+import { createInputInvoke } from "@mininglamp-oss/octo-runtime-core";
 import { chmod, lstat, mkdir, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import net from "node:net";
@@ -5,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { spawnAdapterHost } from "./process.js";
 import { HostRunService } from "./host-run-service.js";
 import type { AdapterHostRpc } from "./rpc.js";
-import { createHostInvoke, resolveHostInvokeWireOptions, type InvokeRequest } from "@mininglamp-oss/octo-runtime-protocol";
+import { resolveHostInvokeWireOptions, type InvokeRequest } from "@mininglamp-oss/octo-runtime-protocol";
 import type { AdapterProbeOptions } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 
 export interface HostSocketRequest {
@@ -43,7 +44,7 @@ export async function startHostSocketServer(options: {
     cancel: (id, reason) => processHost.client.cancel(id, reason),
     respondInteraction: (id, response) => processHost.client.respondInteraction(id, response),
     respondNative: (id, response) => processHost.client.respondNative(id, response),
-    invoke: createHostInvoke((type, request, opts) => transport.invokeFrames(type, request, opts)),
+    invoke: createInputInvoke((type, request, opts) => transport.invokeFrames(type, request, opts)),
     invokeFrames: (type, request, opts) => processHost.client.invokeFrames(type, configure(type, request), opts)
   };
   const host = new HostRunService(transport);

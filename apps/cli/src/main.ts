@@ -11,30 +11,19 @@ import { createHash, randomUUID } from "node:crypto";
 import { access, stat } from "node:fs/promises";
 import net from "node:net";
 import { arch, hostname, platform as osPlatform, release } from "node:os";
-import {
-  exchangeRuntimeEnrollment,
-  normalizeServerUrl,
-  registerEnrolledRuntime,
-  type EnrollmentResult
-} from "./enrollment.js";
 import { resolveServiceControl, verifyServiceProgram, type ServiceControlOptions } from "./service-control.js";
 import {
   assertHomeConfiguration,
   defaultRuntimeHome,
   ensureMachineIdentity,
   runtimePaths,
-  migrateLegacyProfileLayout,
   prepareRuntimeDirectories,
   readJsonFile,
   reconcileHomeConfiguration,
-  removeIfPresent,
   withSetupLock,
   writeJsonAtomic,
   type RuntimeHomeConfiguration,
   type RuntimePaths,
-  type ProfileConfiguration,
-  type RuntimeCredential,
-  type RuntimeIdentity,
   type UpdateJournal
 } from "./state.js";
 
@@ -178,164 +167,17 @@ async function dispatchCli(context: CliContext): Promise<CommandResult> {
 
 async function runLogin(context: CliContext): Promise<CommandResult> {
   return withSetupLock(context.paths, async () => {
-    const homeConfiguration = await readJsonFile<RuntimeHomeConfiguration>(context.paths.rootConfig);
-    assertHomeConfiguration(homeConfiguration);
-    if (context.flags.prepareUpdate === true && context.flags.recoverUpdate === true) {
-      throw new Error("--prepare-update and --recover-update are mutually exclusive update modes");
-    }
-    if (context.flags.prepareUpdate === true) {
-      await prepareRuntimeDirectories(context.paths);
-      return prepareUpdate(context);
-    }
-    if (context.flags.recoverUpdate === true) {
-      await prepareRuntimeDirectories(context.paths);
-      return recoverUpdate(context);
-    }
-    await migrateLegacyProfileLayout(
-      context.paths,
-      Boolean(await tryDaemonStatus(context.paths.socket))
-    );
     await prepareRuntimeDirectories(context.paths);
-    return reconcileSetup(context);
+    if (context.flags.prepareUpdate === true && context.flags.recoverUpdate === true)
+      throw new Error("--prepare-update and --recover-update are mutually exclusive update modes");
+    if (context.flags.prepareUpdate === true) return prepareUpdate(context);
+    if (context.flags.recoverUpdate === true) return recoverUpdate(context);
+    if (context.flags.enrollTokenStdin || context.flags.serverUrl || context.flags.agentWorkUrl || context.flags.waitOnline)
+      throw new Error("Worker enrollment has moved to the standalone worker-access archive");
+    await ensureMachineIdentity(context.paths);
+    await reconcileHomeConfiguration(context.paths, context.profile, enumFlag(context.flags.channel, ["stable", "beta"] as const, "stable"));
+    return { value: { ok: true, home: context.home, profile: context.profile, local: true } };
   });
-}
-
-async function reconcileSetup(context: CliContext): Promise<CommandResult> {
-  const channel = enumFlag(context.flags.channel, ["stable", "beta"] as const, "stable");
-  let identity = await readJsonFile<RuntimeIdentity>(context.paths.identity);
-  let profileConfig = await readJsonFile<ProfileConfiguration>(context.paths.profileConfig);
-  const agentIdentity = optionalString(context.flags.agentIdentity) ?? profileConfig?.agent_identity ?? "main";
-  const agentName = optionalString(context.flags.agentName) ?? profileConfig?.agent_name;
-  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,190}$/.test(agentIdentity)) throw new Error("invalid --agent-identity");
-  if (agentName !== undefined && (!agentName || agentName.trim() !== agentName || Buffer.byteLength(agentName) > 255)) throw new Error("invalid --agent-name");
-  let enrolled = false;
-  const enrollmentToken = context.flags.enrollTokenStdin === true
-    ? await readEnrollmentToken(context.input)
-    : undefined;
-
-  if (!identity || enrollmentToken) {
-    if (identity) {
-      validateIdentity(identity, context.profile);
-      if (!profileConfig) throw new Error(`profile config is missing: ${context.paths.profileConfig}`);
-      validateProfileConfiguration(profileConfig, context.profile);
-    }
-    const requestedServerUrl = optionalString(context.flags.serverUrl) ?? profileConfig?.server_url;
-    if (!requestedServerUrl) throw new Error("first login requires --server-url");
-    if (!enrollmentToken) throw new Error("first login requires --enroll-token-stdin");
-    const serverUrl = normalizeServerUrl(requestedServerUrl);
-    const requestedAgentWorkUrl = optionalString(context.flags.agentWorkUrl);
-    const serverChanged = Boolean(identity && profileConfig && serverUrl !== profileConfig.server_url);
-    const agentWorkUrl = requestedAgentWorkUrl
-      ?? (serverChanged ? undefined : profileConfig?.agent_work_url);
-    const resolvedAgentWorkUrl = normalizeServerUrl(agentWorkUrl ?? `${serverUrl}/agentworker/api`);
-    const runtimeName = optionalString(context.flags.runtimeName)
-      ?? profileConfig?.runtime_name
-      ?? (hostname() || "Octo Runtime Runtime");
-    const machine = await ensureMachineIdentity(context.paths);
-    const credential = identity ? await readJsonFile<RuntimeCredential>(context.paths.credential) : undefined;
-    if (identity && !credential?.access_token) {
-      throw new Error("existing profile re-enrollment requires its Runtime credential");
-    }
-    const enrollmentOptions = {
-      serverUrl,
-      enrollmentToken,
-      profile: context.profile,
-      runtimeName,
-      agentIdentity, agentName,
-      machineId: machine.machine_id,
-      runtimeId: identity?.runtime_id,
-      runtimeToken: credential?.access_token,
-      agentWorkUrl: resolvedAgentWorkUrl,
-      fetchImplementation: context.fetchImplementation
-    };
-    const result = await exchangeRuntimeEnrollment(enrollmentOptions);
-    // Enrollment already created the durable Runtime identity and credential.
-    // Persist them before registration so a retry can prove and reuse that identity.
-    ({ identity, profileConfig } = await persistEnrollment(context, serverUrl, result, runtimeName, agentIdentity, agentName));
-    await registerEnrolledRuntime(enrollmentOptions, result);
-    enrolled = true;
-  } else {
-    validateIdentity(identity, context.profile);
-    if (!profileConfig) throw new Error(`profile config is missing: ${context.paths.profileConfig}`);
-    validateProfileConfiguration(profileConfig, context.profile);
-    const requestedServer = optionalString(context.flags.serverUrl);
-    if (requestedServer && normalizeServerUrl(requestedServer) !== profileConfig.server_url) {
-      throw new Error("this profile is already enrolled with a different server; use another trusted profile or re-enroll explicitly");
-    }
-    const agentWorkUrl = optionalString(context.flags.agentWorkUrl);
-    if (agentWorkUrl && normalizeServerUrl(agentWorkUrl) !== profileConfig.agent_work_url) {
-      throw new Error("this profile is already bound to a different Agent Worker; re-enroll with a fresh token");
-    }
-  }
-
-  if (!enrolled && (context.flags.agentIdentity !== undefined || context.flags.agentName !== undefined)) {
-    profileConfig = { ...profileConfig, agent_identity: agentIdentity, ...(agentName ? { agent_name: agentName } : {}) };
-    await writeJsonAtomic(context.paths.profileConfig, profileConfig);
-    const credential = await readJsonFile<RuntimeCredential>(context.paths.credential);
-    await registerEnrolledRuntime({ serverUrl: profileConfig.server_url, enrollmentToken: "", profile: context.profile, runtimeName: profileConfig.runtime_name, machineId: "", agentIdentity, agentName, agentWorkUrl: profileConfig.agent_work_url, fetchImplementation: context.fetchImplementation }, {
-      profile: context.profile, runtimeId: identity.runtime_id, credentialId: identity.credential_id, accessToken: credential?.access_token, agentWorkUrl: profileConfig.agent_work_url
-    });
-  }
-  const openclaw = await configureRuntimeOpenClaw(context);
-  await reconcileHomeConfiguration(context.paths, context.profile, channel);
-  await removeIfPresent(context.paths.updateJournal);
-  return {
-    value: {
-      ok: true,
-      enrolled,
-      openclaw,
-      profile: context.profile,
-      runtime_id: identity.runtime_id,
-      agent_identity: agentIdentity,
-      server_url: profileConfig.server_url
-    }
-  };
-}
-
-async function persistEnrollment(
-  context: CliContext,
-  serverUrl: string,
-  result: EnrollmentResult,
-  runtimeName: string,
-  agentIdentity: string,
-  agentName?: string
-): Promise<{ identity: RuntimeIdentity; profileConfig: ProfileConfiguration }> {
-  const now = new Date().toISOString();
-  const previousProfileConfig = await readJsonFile<ProfileConfiguration>(context.paths.profileConfig);
-  const agentWorkUrl = result.agentWorkUrl ? normalizeServerUrl(result.agentWorkUrl) : undefined;
-  if (agentWorkUrl && !result.accessToken) {
-    throw new Error("Agent Work enrollment requires agent_work_url and runtime access token together");
-  }
-  const identity: RuntimeIdentity = {
-    schema_version: 1,
-    profile: result.profile,
-    runtime_id: result.runtimeId,
-    credential_id: result.credentialId,
-    ...(result.octoSpaceId ? { octo_space_id: result.octoSpaceId } : {}),
-    enrolled_at: now
-  };
-  const profileConfig: ProfileConfiguration = {
-    schema_version: 1,
-    profile: context.profile,
-    server_url: serverUrl,
-    ...(agentWorkUrl ? { agent_work_url: agentWorkUrl } : {}),
-    ...(result.octoSpaceId ? { octo_space_id: result.octoSpaceId } : {}),
-    runtime_name: runtimeName,
-    agent_identity: agentIdentity,
-    ...(agentName ? { agent_name: agentName } : {}),
-    ...(previousProfileConfig?.adapters ? { adapters: previousProfileConfig.adapters } : {})
-  };
-  const credential: RuntimeCredential = {
-    schema_version: 1,
-    ...(result.accessToken ? { access_token: result.accessToken } : {}),
-    issued_at: now,
-    ...(result.expiresAt ? { expires_at: result.expiresAt } : {})
-  };
-  // Identity is written last so incomplete local state is never treated as enrolled.
-  await writeJsonAtomic(context.paths.credential, credential);
-  await writeJsonAtomic(context.paths.profileConfig, profileConfig);
-  await writeJsonAtomic(context.paths.identity, identity);
-  return { identity, profileConfig };
 }
 
 async function prepareUpdate(context: CliContext): Promise<CommandResult> {
@@ -403,18 +245,14 @@ async function runDaemonCommand(context: CliContext, action: string | undefined)
     await waitForDaemonStopped(context, 15_000);
     return { value: { ok: true, action: "stop", service: await context.service.backend.inspect(spec) } };
   }
-  const onlineRuntime = context.flags.waitOnline === true
-    ? await loadInstalledRuntime(context)
-    : undefined;
+  if (context.flags.waitOnline) throw new Error("Worker cloud connections are no longer built in");
   await verifyServiceProgram(spec);
   if (selected === "restart") {
     await context.service.backend.restart(spec);
   } else {
     await context.service.backend.start(spec);
   }
-  const readiness = onlineRuntime
-    ? await waitForDaemonOnline(context, onlineRuntime.identity, onlineRuntime.profileConfig)
-    : await waitForDaemonReady(context, DEFAULT_WAIT_MS);
+  const readiness = await waitForDaemonReady(context, DEFAULT_WAIT_MS);
   return {
     value: {
       ok: true,
@@ -473,33 +311,12 @@ async function uninstallDaemonService(context: CliContext): Promise<CommandResul
   });
 }
 
-async function loadInstalledRuntime(
-  context: CliContext
-): Promise<{ identity: RuntimeIdentity; profileConfig: ProfileConfiguration }> {
+async function loadInstalledRuntime(context: CliContext): Promise<void> {
   const homeConfiguration = await readJsonFile<RuntimeHomeConfiguration>(context.paths.rootConfig);
-  if (!homeConfiguration) {
-    throw new Error(`Runtime Home is not configured: ${context.home}; run octo-runtime login first`);
-  }
+  if (!homeConfiguration) throw new Error("Runtime Home is not configured; run octo-runtime login first");
   assertHomeConfiguration(homeConfiguration);
-  const identity = await readJsonFile<RuntimeIdentity>(context.paths.identity);
-  if (!identity) throw new Error(`runtime identity is missing: ${context.paths.identity}; run octo-runtime login first`);
-  validateIdentity(identity, context.profile);
-
-  const profileConfig = await readJsonFile<ProfileConfiguration>(context.paths.profileConfig);
-  if (!profileConfig) throw new Error(`profile config is missing: ${context.paths.profileConfig}; run octo-runtime login first`);
-  validateProfileConfiguration(profileConfig, context.profile);
-
-  const credential = await readJsonFile<RuntimeCredential>(context.paths.credential);
-  if (!credential || credential.schema_version !== 1 || !credential.issued_at) {
-    throw new Error(`runtime credential is missing or invalid: ${context.paths.credential}; run octo-runtime login first`);
-  }
-  if (profileConfig.agent_work_url && !credential.access_token) {
-    throw new Error(`runtime access token is missing: ${context.paths.credential}; re-enroll this Runtime Home`);
-  }
-  return { identity, profileConfig };
 }
 
-/** Configure the Runtime connection independently of any provider Agent. */
 async function runAdapterConnectCommand(context: CliContext, adapterType: string | undefined): Promise<CommandResult> {
   if (adapterType !== "openclaw") throw new Error(`adapter connect is not supported for ${adapterType ?? "a missing adapter type"}`);
   return withSetupLock(context.paths, async () => {
@@ -540,21 +357,8 @@ async function runDoctor(context: CliContext): Promise<CommandResult> {
   const checks: Array<Record<string, unknown>> = [];
   const nodeMajor = Number(process.versions.node.split(".")[0]);
   checks.push(check("node.version", nodeMajor >= 24, `Node.js ${process.versions.node}`, "Install Node.js 24 or newer"));
-  const profileConfig = await inspectJson<ProfileConfiguration>(context.paths.profileConfig);
-  checks.push(check("profile.config", profileConfig.ok, profileConfig.detail, "Run login with a valid enrollment token"));
-  const identity = await inspectJson<RuntimeIdentity>(context.paths.identity);
-  checks.push(check("runtime.identity", identity.ok, identity.detail, "Run login with a fresh enrollment token"));
-  const credential = await inspectJson<RuntimeCredential>(context.paths.credential);
-  checks.push(check("runtime.credential", credential.ok, credential.detail, "Re-enroll or restore the credential file"));
-  if (process.platform !== "win32" && credential.ok) {
-    const file = await stat(context.paths.credential);
-    checks.push(check(
-      "credential.permissions",
-      (file.mode & 0o077) === 0,
-      `mode ${(file.mode & 0o777).toString(8)}`,
-      `chmod 600 ${context.paths.credential}`
-    ));
-  }
+  const homeConfig = await inspectJson<RuntimeHomeConfiguration>(context.paths.rootConfig);
+  checks.push(check("home.config", homeConfig.ok, homeConfig.detail, "Run octo-runtime login"));
   const spec = await daemonServiceSpec(context);
   const program = await pathCheck(spec.command, spec.args?.[0]);
   checks.push(check("service.program", program.ok, program.detail, "Rerun the installer to repair absolute program paths"));
@@ -571,15 +375,6 @@ async function runDoctor(context: CliContext): Promise<CommandResult> {
   }
   const application = await tryDaemonStatus(context.paths.socket);
   checks.push(check("daemon.ipc", Boolean(application), application ? "ready" : "not reachable", "Run octo-runtime daemon start"));
-  const agentWork = selectedRuntimeStatus(application, identity.value?.runtime_id);
-  if (agentWork?.enabled === true) {
-    checks.push(check(
-      "runtime.cloud",
-      agentWork.connected === true,
-      agentWork.connected === true ? `online as ${String(agentWork.runtimeId)}` : "not connected",
-      "Inspect daemon logs and verify the server credential"
-    ));
-  }
   const ok = checks.every(item => item.ok === true);
   return { value: { ok, profile: context.profile, home: context.home, checks }, exitCode: ok ? 0 : 1 };
 }
@@ -650,29 +445,6 @@ async function waitForDaemonReady(context: CliContext, timeoutMs: number): Promi
   throw new Error(`daemon did not become ready within ${timeoutMs}ms`, { cause: lastError });
 }
 
-async function waitForDaemonOnline(
-  context: CliContext,
-  identity: RuntimeIdentity,
-  profile: ProfileConfiguration
-): Promise<Record<string, unknown>> {
-  if (!profile.agent_work_url) {
-    throw new Error("--wait-online requires agent_work_url from enrollment or --agent-work-url");
-  }
-  const timeoutMs = DEFAULT_WAIT_MS;
-  const deadline = Date.now() + timeoutMs;
-  let last: Record<string, unknown> | undefined;
-  while (Date.now() < deadline) {
-    last = await tryDaemonStatus(context.paths.socket);
-    const agentWork = selectedRuntimeStatus(last, identity.runtime_id);
-    if (last?.ready === true && agentWork?.connected === true && agentWork.runtimeId === identity.runtime_id) return last;
-    await context.sleep(100);
-  }
-  const agentWork = selectedRuntimeStatus(last, identity.runtime_id);
-  throw new Error(
-    `runtime ${identity.runtime_id} did not become cloud-online within ${timeoutMs}ms (connected=${agentWork?.connected === true})`
-  );
-}
-
 async function waitForDaemonStopped(context: CliContext, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -708,32 +480,6 @@ async function connectDaemon(socketPath: string): Promise<net.Socket> {
     throw error;
   }
   return socket;
-}
-
-async function readEnrollmentToken(input: NodeJS.ReadableStream): Promise<string> {
-  let value = "";
-  for await (const chunk of input) {
-    value += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
-    if (Buffer.byteLength(value) > 16 * 1024) throw new Error("enrollment token input is too large");
-  }
-  value = value.trim();
-  if (!value.startsWith("octo_enroll_") || value.length <= "octo_enroll_".length) {
-    throw new Error("stdin must contain one valid octo_enroll_ enrollment token");
-  }
-  return value;
-}
-
-function validateIdentity(value: RuntimeIdentity, profile: string): void {
-  if (value.schema_version !== 1 || value.profile !== profile || !value.runtime_id || !value.credential_id || "system_id" in value || "device_id" in value) {
-    throw new Error("runtime identity is invalid; refusing automatic re-enrollment");
-  }
-}
-
-function validateProfileConfiguration(value: ProfileConfiguration, profile: string): void {
-  if (value.schema_version !== 1 || value.profile !== profile || !value.server_url) {
-    throw new Error("profile config is invalid");
-  }
-  if (value.adapters?.openclaw !== undefined) throw new Error("OpenClaw uses adapters/openclaw/connection.json; remove the obsolete external binding and configure this Runtime connection");
 }
 
 async function inspectJson<T>(path: string): Promise<{ ok: boolean; detail: string; value?: T }> {
@@ -826,21 +572,6 @@ function objectValue(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function selectedRuntimeStatus(
-  application: Record<string, unknown> | undefined,
-  runtimeId: string | undefined
-): Record<string, unknown> | undefined {
-  const modules = objectValue(application?.modules);
-  const workerAccess = objectValue(modules?.['worker-access']);
-  const agentWork = objectValue(workerAccess?.state);
-  if (!agentWork) return undefined;
-  if (!runtimeId || agentWork.runtimeId === runtimeId) return agentWork;
-  const runtimes = Array.isArray(agentWork.runtimes) ? agentWork.runtimes : [];
-  return runtimes
-    .map(objectValue)
-    .find(status => status?.runtimeId === runtimeId);
-}
-
 function helpText(group?: string): string {
   if (group === "channel") {
     return `Usage: octo-runtime [--home PATH] channel configure < bot.json\n\n` +
@@ -865,32 +596,21 @@ function helpText(group?: string): string {
       `See apps/cli/README.md for a complete here-string example.`;
   }
   if (group === "login") {
-    return `Usage: octo-runtime [--home PATH] [--profile NAME] login [options]\n\n` +
-      `First login:\n` +
-      `  --agent-identity ID   Agent identity (default: main); also --agent-identit\n` +
-      `  --agent-name NAME     Initial display name; also --agent_name\n` +
-      `  --server-url URL --enroll-token-stdin [--agent-work-url URL]\n\n` +
-      `  --agent-work-url is the Worker API root and defaults to SERVER_URL/agentworker/api.\n\n` +
-      `OpenClaw: [--openclaw-home PATH | --gateway-url URL]; use OPENCLAW_GATEWAY_TOKEN with enrollment stdin.\n\n` +
-      `Installer-only update modes:\n` +
-      `  --prepare-update\n` +
-      `  --recover-update [--start]\n\n` +
-      `Login writes Runtime identity, credentials and its OpenClaw connection source; an unavailable Gateway does not block login. Service lifecycle uses 'daemon install' and 'daemon start'.\n\n` +
-      `Profiles are for trusted identities of the same OS user; use separate OS users/homes for isolation.`;
+    return "Usage: octo-runtime [--home PATH] [--profile NAME] login\n\nInitialize the local Runtime Home. Worker enrollment is maintained only in the standalone archive.\nInstaller update modes: --prepare-update | --recover-update [--start]";
   }
   if (group === "daemon") {
     return `Usage: octo-runtime [--home PATH] daemon install|uninstall|run|start|stop|restart|status [options]\n\n` +
       `  install [--no-autostart]\n` +
       `  uninstall\n` +
       `  run [--quiet] [--verbose]\n` +
-      `  start [--wait-online]\n` +
+      `  start\n` +
       `  stop\n` +
-      `  restart [--wait-online]\n\n` +
+      `  restart\n\n` +
       `Uninstall removes the native service but preserves Runtime Home identity, credentials, databases, and logs.`;
   }
   if (group === "doctor") {
     return `Usage: octo-runtime [--home PATH] [--profile NAME] doctor\n\n` +
-      `Checks Node.js, profile identity and credential protection, the native user service, daemon IPC, and cloud connection.`;
+      `Checks Node.js, local Home configuration, the native user service and daemon IPC.`;
   }
   if (group === "status") {
     return `Usage: octo-runtime [--home PATH] status\n\n` +

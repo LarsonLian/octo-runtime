@@ -36,7 +36,7 @@ try {
   const status = await callDaemon(socketPath, { method: "status" });
   assert.equal(status.ready, true);
   assert.equal(status.storePath, undefined);
-  const channels = status.modules["channel-im"]?.state ?? [];
+  const channels = status.modules["channel-gateway"]?.state ?? [];
   assert.ok(channels.some(channel => channel.type === "octo" && channel.connected), "Live IM registration and connection required");
   const legacyFiles = (await readdir(home)).filter(name => /\.(?:db|sqlite)(?:-wal|-shm)?$/.test(name));
   const before = await Promise.all(legacyFiles.map(async name => ({ name, mtime: (await stat(join(home, name))).mtimeMs })));

@@ -6,7 +6,7 @@ Octo Runtime 是 provider-neutral 的本地 Agent Runtime。本地接入使用 `
 
 架构评审指出，原项目名称容易被理解为自研 ReAct 的 Agent 框架，与项目实际作用和价值不符。项目现统一命名为 **Octo Runtime**，包使用 `octo-runtime-*`，CLI 使用 `octo-runtime`。独立 CLI 默认 Home 为 `~/.octo-runtime`；Octo Work 保持产品名称，默认 Home 改为 `~/.octo-runtime-work`，本次本机改造将已有数据整目录移动到新位置。改造范围与验证记录见 [命名改造方案](../docs/octo-runtime-rename-ipd-se.md)。本地改名不表示新 npm 包或线上安装路由已经发布。
 
-`octo-runtime-embedded` 独立包已移除，其本地生命周期与 IPC API 收入 `octo-runtime-daemon`。daemon 包不依赖 worker-access 或 channel-im；客户可以只部署 daemon 及其本地执行依赖。标准产品由 HostApp 另行携带可选连接包，通过模块配置显式启动。当前 SDK 的本地控制进程仍使用 daemon server；下面记录的最终对外进程职责和在线 toggle 按各自里程碑验收，不能从本次包合并推断已经全部实现。
+`octo-runtime-embedded` 独立包已移除，其本地生命周期与 IPC API 收入 `octo-runtime-daemon`。daemon 包不依赖 worker-access 或 channel-gateway；客户可以只部署 daemon 及其本地执行依赖。标准产品由 HostApp 另行携带可选连接包，通过模块配置显式启动。当前 SDK 的本地控制进程仍使用 daemon server；下面记录的最终对外进程职责和在线 toggle 按各自里程碑验收，不能从本次包合并推断已经全部实现。
 
 ## 设计原则与实施状态
 
@@ -14,7 +14,7 @@ Octo Runtime 是 provider-neutral 的本地 Agent Runtime。本地接入使用 `
 
 **SDK 接收符合接口契约的配置对象，配置从哪里读取、如何保存、何时更新，完全由宿主开发者决定。** 宿主可以使用内存、本地文件、SQLite、其他数据库、自定义 store 或远程配置平台，也可以组合多个来源。SDK 接入不要求宿主使用指定配置文件、固定文件名、目录或存储产品。
 
-宿主负责读取、解析和按自身规则合并配置，再通过 SDK 设置模块。例如，IM 配置可以通过 `startModule("channel-im", { bots })` 传入，也可以在模块启动后通过 `requestModule("channel-im", "upsert", { config })` 应用。这里的 `config` 是配置对象；跨进程序列化不意味着宿主必须提供 JSON 文件。SDK 和模块仍按各自契约校验配置结构、字段语义及执行权限。
+宿主负责读取、解析和按自身规则合并配置，再通过 SDK 设置模块。例如，IM 配置可以通过 `startModule("channel-gateway", { bots })` 传入，也可以在模块启动后通过 `requestModule("channel-gateway", "upsert", { config })` 应用。这里的 `config` 是配置对象；跨进程序列化不意味着宿主必须提供 JSON 文件。SDK 和模块仍按各自契约校验配置结构、字段语义及执行权限。
 
 **CLI 的配置文件约定属于 CLI 入口，不是 SDK 的接入要求。** CLI 可以选择把 IM 配置保存到 `<home>/im.json`，启动时解析后调用模块；桌面 App 或其他宿主可以从自己的 store 或配置平台取得同类对象，通过 SDK 应用。更换配置来源不需要改变模块的配置契约。
 
@@ -26,7 +26,7 @@ Octo Runtime 是 provider-neutral 的本地 Agent Runtime。本地接入使用 `
 
 `octo-runtime-daemon` 是对外交互子模块的装配层。宿主指定是否启用模块、凭据来源及目标服务，daemon 按配置动态加载模块并管理连接；各入口复用同一个 Host。纯本地启动不激活对外模块；当前 SDK 的本地控制进程仍由 daemon 包 server 承载。导入 SDK 或接入 package 本身不激活 WS，也不发起注册。
 
-设备／Runtime 注册由显式操作触发，access 的已确认职责仅为注册。设备持续在线所需的 WS、heartbeat、关闭及失效合同仍待评审；不得把现有 `worker-access` 包的全部职责直接等同于最终 access 定义。
+设备／Runtime 注册由显式操作触发，access 的已确认职责仅为注册。设备持续在线所需的 WS、heartbeat、关闭及失效合同仍待评审；`worker-access` 预研已移到生态目录外独立仓库，仅作备份；当前 CLI 和 Work App 不再加载它。
 
 待实施的 Work App 设备管理要求：提供本地持久化的“允许当前设备在线”toggle。关闭时不加载设备连接模块，已有设备连接停止；本地 Host 继续执行。重启按已保存的用户选择恢复配置，登录或 Host 启动不能自行开启。设备连接和 IM channel-adapter 分别启用，注册 ACK、设备在线、频道在线和本地就绪分别报告。
 
@@ -46,7 +46,7 @@ Event 发起方必须完成 awareness 采集、材料选择、指引编写和 Co
 
 底层只转发、渲染本轮数据，不按 `sessionId`、run 序号或 hash 缓存、补齐、合并、去重或省略模型上下文。两个不同 Event 显式发送相同 item 时均须传递；原 Event 幂等重投仍复用原快照。`sessionId` 存在不保证 resume 成功；reset、新建 Provider 会话或恢复失败后，业务方负责重新提供所需背景，底层返回真实结果，不自动补背景。
 
-worker-access 必须校验并转发模型上下文，不得追加场景指引、预取任务材料或调用模型摘要。执行配置解析、身份与授权校验、工作区和图片准备、租约、会话及取消仍由对应执行模块负责。
+接入扩展必须校验并转发模型上下文，不得追加场景指引、预取任务材料或调用模型摘要。执行配置解析、身份与授权校验、工作区和图片准备、租约、会话及取消仍由对应执行模块负责。
 
 Host 必须通过单一纯函数，将可注入 item 按固定开始/结束标记及 `contexts` / `context-item` 外层标记拼接。item 内部使用换行纯文本 `指引: ...`、`数据: ...`，不添加子标签、不做 XML 实体转义，也不要求严格 XML。执行配置不注入模型上下文块；合法 `extra.*` item 的指引和 payload 完整注入，不增加逐业务 Compiler、Resolver 或字段投影配置。
 
@@ -81,10 +81,9 @@ Host IPC 承载 invoke、取消、审批／问答答复和执行事件。daemon 
 | [CLI](apps/cli/README.md) | 现有命令入口、Home/profile、服务启动停止、诊断 | IM 协议、provider 执行实现 |
 | [Daemon 启动器](apps/daemon/README.md) | 配置解析、启动与信号转发 | Worker WS 业务实现 |
 | [Daemon 包](packages/octo-runtime-daemon/README.md) | 本地生命周期 SDK、IPC 与共享 Host；按宿主配置动态装配可选连接模块 | 决定宿主启用哪些模块、依赖 worker-access、处理业务 Context、另建 Host 执行器 |
-| [Worker 接入](packages/octo-runtime-worker-access/README.md) | 现有包包含注册、Worker WS 和远程执行；最终拆分与设备连接合同待评审 | 将现有全部能力当作已批准的 access 职责、默认激活、拉起第二个 Host |
-| [IM 接入](packages/octo-runtime-channel-im/README.md) | bf_token 注册、IM WS、私聊会话、/session、/reset、最终文本回发 | 直接调用 provider、独立 Daemon、聊天 SQLite 的隐式引入 |
+| [WeCom Channel](packages/octo-runtime-extra-channel-wecom/README.md) | 企业微信连接、原生 stream 回复和独立生命周期 | Octo IM 协议、跨平台 connector 分发 |
+| [IM 接入](packages/octo-runtime-extra-channel-gateway/README.md) | bf_token 注册、IM WS、私聊会话、/session、/reset、最终文本回发 | 直接调用 provider、独立 Daemon、聊天 SQLite 的隐式引入 |
 | [Adapter Host](packages/octo-runtime-adapter-host/README.md) | 统一 IPC、invocation 生命周期、调用和取消、标准事件 | 消息来源、群聊规则、Worker 注册 |
-| [Context Builder](packages/octo-runtime-context-builder/README.md) | 发起侧可选上下文构造工具 | 执行编译、材料预取与压缩、Run 创建 |
 | [Core](packages/octo-runtime-core/README.md) | 执行配置解析与校验 | IM/Loop 业务模型、WS 接入 |
 | [Protocol](packages/octo-runtime-protocol/README.md) | InvokeRequest、CanonicalEvent、Context 和校验合同 | 网络连接、进程和业务存储 |
 | [Cross Service](packages/octo-runtime-cross-service/README.md) | OS 用户级服务管理 | Run 调度、连接协议 |
@@ -103,10 +102,9 @@ apps/
   adapter-host/                    Host 进程入口
 packages/
   octo-runtime-daemon/              本地生命周期 SDK、IPC、可选模块装配
-  octo-runtime-worker-access/       现有 Worker 接入；最终职责拆分待评审
-  octo-runtime-channel-im/          IM 专用 WS、私聊会话与结果回发
+  octo-runtime-extra-channel-gateway/  Octo IM 专用连接、会话与结果回发
+  octo-runtime-extra-channel-wecom/    企业微信专用连接、会话与 stream 回复
   octo-runtime-adapter-host/        共享执行 Host + NDJSON RPC
-  octo-runtime-context-builder/     发起侧上下文构造工具
   octo-runtime-core/                执行配置解析
   octo-runtime-protocol/            统一执行和 Context 合同
   octo-runtime-adapter-*/           provider adapters 与共享 SDK
@@ -116,62 +114,9 @@ packages/
 
 每个模块的责任边界见对应 README；完整包索引见 [packages](packages/README.md)，可执行入口见 [apps](apps/README.md)。
 
-## 一键安装
+## 安装与本地初始化
 
-本节保留现有安装器的操作说明，尚待按最终架构期望改造。其 enrollment、自启动和 `--wait-online` 流程不是本地 Host 的启动合同。目标要求安装、本地启动、频道启用与设备注册分别控制；不得从安装成功推断设备在线。
-
-面向最终用户的入口按平台拆分。两个位置参数固定为 `server-url`、`enrollment-token`；token 是短期、单次使用的设备 enrollment grant，不是 Human Session、`bf_` Bot key 或永久 Runtime Bearer token。
-
-程序与运行状态刻意分离。CLI 走 npm 全局安装，Runtime Home 不保存程序版本：
-
-| 平台 | CLI / package | Runtime Home |
-|---|---|---|
-| macOS / Linux | `npm install -g @mininglamp-oss/octo-runtime`；shim 位于 `<npm prefix -g>/bin/octo-runtime` | `~/.octo-runtime/` |
-| Windows | `npm install -g @mininglamp-oss/octo-runtime`；shim 位于 `<npm prefix -g>\octo-runtime.cmd` | `%LOCALAPPDATA%\OctoRuntime\` |
-
-安装器会验证全局 shim，并在需要时自动把 npm global bin 加入 macOS/Linux shell profile 或 Windows 当前用户 PATH，所以安装后可直接用 `octo-runtime` 调试。Runtime Home 只保存 profile、`runtime_id`、设备凭证、本地状态、PID/socket 和日志。`octo-runtime daemon uninstall` 会停止并真实删除原生用户服务定义，但保留这些数据；卸载 npm package 也不会删除 Runtime Home。当前 CLI 不提供 purge 数据命令。
-
-### macOS / Linux
-
-```bash
-curl -fsSL https://im-test.deepminer.com.cn/octo-runtime/install.sh \
-  | sh -s -- \
-      "https://im-test.deepminer.com.cn" \
-      "octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN"
-```
-
-### Windows PowerShell
-
-```powershell
-& ([scriptblock]::Create((irm https://im-test.deepminer.com.cn/octo-runtime/install.ps1))) `
-  "https://im-test.deepminer.com.cn" `
-  "octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN"
-```
-
-命令成功后应达到以下状态：
-
-1. 检查 Node.js 24+ 与 npm；macOS/Linux 可用已有 Homebrew 安装 `node@24`，Windows 可用已有 `winget` 安装当前 Node LTS。Linux 不会自动使用 `sudo` 或添加第三方软件源。
-2. stable 默认执行 `npm install -g @mininglamp-oss/octo-runtime@latest`，beta 对应 npm `beta` tag，并确保 CLI shim 可从 PATH 直接调用。
-3. 同版本 CLI 的 `login` 从 stdin 消费一次性 token，只创建或对账选中 profile 唯一的永久 `runtime_id` 与设备凭证。
-4. 安装器显式调用 `daemon install`，通过用户级原生管理器安装自启动：macOS LaunchAgent、Linux systemd user service、Windows 当前用户 Task Scheduler；service definition 使用绝对 Node 与 daemon 入口路径，不依赖 shell PATH。
-5. 安装器再调用 `daemon start --wait-online`；CLI 分别等待本地 IPC Ready 和云端 Runtime Online，任一步失败都返回非零。
-6. 重跑时先取得 Home 与 npm prefix 安装锁；若旧 CLI 已存在，先执行 `login --prepare-update` drain/stop，再更新 npm package，最后由新 CLI 依次执行 login、install、start。npm 更新或更新后的流程失败会尝试 `login --recover-update` 恢复 service；全过程不创建第二个 Runtime，也不覆盖已有身份和已有本地状态。已有 identity 时可省略 token 重跑。
-
-把 token 直接放在位置参数里最适合 Web 页面生成“复制即安装”的一次性命令，但它会进入 shell/PowerShell 历史。更安全的人工安装方式是省略第二个参数，安装器会从 TTY/SecureString 隐藏读取 token：
-
-```bash
-curl -fsSL https://im-test.deepminer.com.cn/octo-runtime/install.sh \
-  | sh -s -- "https://im-test.deepminer.com.cn"
-```
-
-```powershell
-& ([scriptblock]::Create((irm https://im-test.deepminer.com.cn/octo-runtime/install.ps1))) `
-  "https://im-test.deepminer.com.cn"
-```
-
-安装器源码、npm 发布合同、PATH 与提权边界见 [installers](installers/README.md)。它们是 stage-0，只负责 Node/npm 检查、全局安装和调用 `octo-runtime login`；凭证、service 与 readiness 状态机留在 TypeScript CLI，并通过 `@mininglamp-oss/octo-runtime-cross-service` 操作原生用户服务。
-
-客户端闭环已由 `login`、受保护的 profile、用户级 service 和 online readiness 组成；公开安装前仍需发布 npm package、部署安装脚本，并在 ingress 暴露 Agent Worker 的 enrollment/register/WSS 路由。
+HostApp 决定安装方案。旧 Worker enrollment 安装脚本已迁入生态目录外的 `octo-runtime-worker-access/archive/installers`，不属于当前发行物。源码构建或全局 link 后，执行 `octo-runtime login` 初始化本地 Home，再按需要运行 `daemon install` 或 `daemon run`。详见 [安装说明](installers/README.md)。
 
 ## 源码开发与验证
 
@@ -190,8 +135,8 @@ pnpm test
 新增或修改代码后，使用 Prettier 格式化本次改动的文件，再检查格式。例如：
 
 ```bash
-pnpm format 'packages/octo-runtime-channel-im/src/**/*.ts' test/im-runtime.test.js
-pnpm format:check 'packages/octo-runtime-channel-im/src/**/*.ts' test/im-runtime.test.js
+pnpm format 'packages/octo-runtime-extra-channel-gateway/src/**/*.ts' test/im-runtime.test.js
+pnpm format:check 'packages/octo-runtime-extra-channel-gateway/src/**/*.ts' test/im-runtime.test.js
 ```
 
 `format` 和 `format:check` 均需传入文件或 glob；格式化不替代类型检查、ESLint 和测试。
@@ -242,16 +187,11 @@ adapter 不感知 `octo-auth`；Human/Runtime 身份与 AgentRun 授权由 Agent
 
 ## 启动 Runtime
 
-源码调试也先走 enrollment。下面示例让 Octo Human 身份由测试环境验证，同时把 Runtime 注册到本机 Agent Worker；一次性 token 通过 stdin 传递：
+源码调试初始化本地 Home，再启动 daemon：
 
 ```bash
-printf '%s\n' 'octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN' | pnpm cli -- \
-  --home "$PWD/.tmp/harness-home" login \
-  --server-url https://im-test.deepminer.com.cn \
-  --agent-work-url http://127.0.0.1:8092 \
-  --enroll-token-stdin
-
-pnpm daemon -- --home "$PWD/.tmp/harness-home"
+pnpm cli -- --home "$PWD/.tmp/runtime-home" login
+pnpm daemon -- --home "$PWD/.tmp/runtime-home"
 ```
 
 The local SDK initializes a stable identity for each profile without cloud enrollment. Profiles share the Home-level `machine_id`, an untrusted installation grouping label rather than a credential. One Home runs one daemon and adapter-host. Mutually untrusted users must use separate OS accounts. See [Runtime and machine identity](docs/runtime-machine-identity-spec.md) and [current local boundaries](docs/runtime-local-and-online-contract.md). The former Worker access package has been removed.
@@ -262,8 +202,7 @@ The local SDK initializes a stable identity for each profile without cloud enrol
 pnpm cli status
 pnpm cli adapter list
 pnpm cli adapter probe codex
-pnpm cli agent-session list
-pnpm cli agent-run list
+pnpm cli agent-run get RUN_ID
 ```
 
 启动前设置 `OCTO_RUNTIME_DEBUG=1`，Host 日志会直接追加到 `$OCTO_RUNTIME_HOME/logs/adapter-host.log`（Home 默认 `~/.octo-runtime`）。默认关闭；没有内存观测队列、Provider I/O 采集或 Inspect 服务。

@@ -1,4 +1,4 @@
-import { imBotIdentity } from "../packages/octo-runtime-channel-im/dist/index.js";
+import { imBotIdentity } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
 // 协议与展示回归：验证 Context、公开事件投影、卡片合同、终态和投递幂等。
 // 服务端 0.4.1 schema fixture 防止合法 TypeScript 对象生成不合法卡片报文。
 import test from "node:test";
@@ -10,24 +10,24 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
   ImChannelManager,
   build_im_contexts
-} from "../packages/octo-runtime-channel-im/dist/index.js";
+} from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
 import {
   ImRunProjector,
   compactRunes,
   toolPreview
-} from "../packages/octo-runtime-channel-im/dist/presentation/run-projector.js";
+} from "../packages/octo-runtime-extra-channel-gateway/dist/presentation/run-projector.js";
 import {
   buildReasoningFrame,
   formatDuration
-} from "../packages/octo-runtime-channel-im/dist/connectors/octo/reasoning-frame.js";
-import { selectReasoningTemplate } from "../packages/octo-runtime-channel-im/dist/connectors/octo/cards.js";
-import { OctoConnector } from "../packages/octo-runtime-channel-im/dist/connectors/octo/connector.js";
-import { CardSession } from "../packages/octo-runtime-channel-im/dist/connectors/octo/card-session.js";
-import { parseCardAction } from "../packages/octo-runtime-channel-im/dist/connectors/octo/card-action.js";
-import { ImDeliveryDispatcher } from "../packages/octo-runtime-channel-im/dist/delivery/dispatcher.js";
-import { ProgressScheduler } from "../packages/octo-runtime-channel-im/dist/delivery/scheduler.js";
-import { TypingController } from "../packages/octo-runtime-channel-im/dist/presentation/typing.js";
-import { createImInvocation } from "../packages/octo-runtime-channel-im/dist/execution/dispatcher.js";
+} from "../packages/octo-runtime-extra-channel-gateway/dist/transport/reasoning-frame.js";
+import { selectReasoningTemplate } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/cards.js";
+import { OctoConnector } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/connector.js";
+import { CardSession } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/card-session.js";
+import { parseCardAction } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/card-action.js";
+import { ImDeliveryDispatcher } from "../packages/octo-runtime-extra-channel-gateway/dist/delivery/dispatcher.js";
+import { ProgressScheduler } from "../packages/octo-runtime-extra-channel-gateway/dist/delivery/scheduler.js";
+import { TypingController } from "../packages/octo-runtime-extra-channel-gateway/dist/presentation/typing.js";
+import { createImInvocation } from "../packages/octo-runtime-extra-channel-gateway/dist/execution/dispatcher.js";
 
 const template = { ref: { id: "ai.reasoning-process", version: "0.4.0" }, maxPayloadBytes: 16384 };
 const event = (type, payload = {}) => ({ protocolVersion: 2, type, payload });

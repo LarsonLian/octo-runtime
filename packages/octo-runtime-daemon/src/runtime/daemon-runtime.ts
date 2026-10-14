@@ -1,7 +1,7 @@
+import { createInputInvoke } from "@mininglamp-oss/octo-runtime-core";
 import { subscribeDaemonRun, invokeDaemonRun } from "./run-stream.js";
 import { callDaemon } from "./runtime-contract.js";
 import {
-  createHostInvoke,
   type HostFrame,
   type HostInvokeOptions,
   type NativeInteractionResponse,
@@ -49,7 +49,7 @@ interface ActiveAccount {
 }
 
 export class NodeDaemonRuntime implements DaemonRuntime {
-  readonly invoke = createHostInvoke((type, request, options) =>
+  readonly invoke = createInputInvoke((type, request, options) =>
     this.invokeFrames(type, request, options)
   );
   readonly #options: DaemonRuntimeOptions;

@@ -4,9 +4,9 @@ import { readFile, stat } from "node:fs/promises";
 import {
   assertContextEnvelope,
   assertFrozenContextPlan,
-  resolveContextConfiguration,
-  renderModelContexts
+  resolveContextConfiguration
 } from "../packages/octo-runtime-protocol/dist/index.js";
+import { renderModelContexts } from "../packages/octo-runtime-adapter-host/dist/model-input.js";
 import {
   invocationMcpServers,
   expandMcpValue,
@@ -17,7 +17,7 @@ import { buildCodexCommand } from "../packages/octo-runtime-adapter-codex/dist/i
 import { buildClaudeCommand } from "../packages/octo-runtime-adapter-claude-code/dist/index.js";
 import { buildOpenCodeCommand } from "../packages/octo-runtime-adapter-opencode/dist/index.js";
 import { createAcpAdapter } from "../packages/octo-runtime-adapter-acp/dist/index.js";
-import { invokeRequest } from "./agent-work-runtime-fixture.js";
+import { invokeRequest } from "./runtime-fixture.js";
 
 const envelope = (mcpServers) => ({
   schema: "octo.context-envelope/v3",
@@ -87,7 +87,10 @@ test("MCP defaults replace whole servers and mandatory checks original request b
   const servers = effective.items[0].payload.mcpServers;
   assert.deepEqual(servers.x, { type: "stdio", command: "node" });
   assert.ok(servers.retained && servers.locked);
-  const forced = resolveContextConfiguration({ defaults, mandatory }, envelope({ locked: remote({ Extra: "no" }) }));
+  const forced = resolveContextConfiguration(
+    { defaults, mandatory },
+    envelope({ locked: remote({ Extra: "no" }) })
+  );
   assert.deepEqual(forced.items[0].payload.mcpServers.locked, remote());
 });
 

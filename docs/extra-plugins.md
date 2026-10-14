@@ -208,9 +208,9 @@ const runtime = createDaemonRuntime({
 ```text
 POST http://127.0.0.1:3002（不按 URL 路径路由）
   -> Authorization: Bearer <config.token>
-  -> 解析 { adapterType, request, options? }
-  -> 校验现有 InvokeRequest，补本地 AbortSignal
-  -> ctx.adapterHost.invoke(adapterType, request, options)
+  -> 解析 InvokeInput JSON（与 CLI / SDK 相同）
+  -> 校验统一协议，创建本地 AbortSignal
+  -> ctx.adapterHost.invoke(input, {signal})
   -> 每个原始输出编码为 SSE data
 ```
 

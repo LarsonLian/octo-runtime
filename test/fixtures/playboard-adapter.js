@@ -31,11 +31,13 @@ export const playboardAdapter = {
         type: "message.delta",
         payload: { text: "after consumer closed" }
       };
-      await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+      if (!signal.aborted)
+        await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
       return;
     }
     if (request.prompt === "hang") {
-      await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+      if (!signal.aborted)
+        await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
       return;
     }
     yield {

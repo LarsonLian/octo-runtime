@@ -35,37 +35,15 @@ CLI 提供 `channel configure`，从 stdin 读取一个 Bot JSON 对象，支持
 
 macOS/Linux 默认 Home 是 `~/.octo-runtime`，Windows 是 `%LOCALAPPDATA%\OctoRuntime`。一个 Home 运行一个 daemon，并可包含多个 profile；每个 profile 独立保存 Runtime 身份、credential、WSS 与内存重放窗口。不同 OS 用户或互不信任的身份仍必须使用不同 OS account。
 
-## 现有登录入口（待改造）
-
-首次登录从 stdin 读取一次性 `octo_enroll_` grant：
+## 本地初始化
 
 ```bash
-printf '%s\n' 'octo_enroll_...' | octo-runtime login \
-  --server-url https://im-test.deepminer.com.cn \
-  --enroll-token-stdin
+octo-runtime login
 ```
 
-`login` 只完成 Runtime 身份闭环：
+`login` 只初始化本地 Home 配置和 machine identity，不连接 Worker。原 enrollment 和 Worker 远程连接实现已迁到生态目录外的独立预研备份仓库。原 `--server-url`、`--enroll-token-stdin` 和 `--wait-online` 不再执行云端接入。
 
-1. Persist one Home-global `machine_id` in `machine.json`, shared by every profile.
-2. Exchange an enrollment grant at `/v1/runtimes/enroll` with the selected `profile` for a server-assigned `runtime_id` and directly bound `octo_runtime_` credential; refresh capabilities at `/v1/runtime/register` with that same profile and save the returned identity.
-
-`machine_id` is an untrusted installation grouping label, not a hardware proof or a unique Runtime key. New profiles get distinct Runtime IDs even within the same Space. Renewal uses the saved Runtime ID and credential, and cannot change the trusted server or Worker endpoint.
-
-enrollment grant 和设备 credential 都不会进入 CLI argv、service definition 或输出。重复执行同一 profile 的 `login` 只对账身份，不重新 enrollment。服务安装与启动必须显式使用 `daemon install` 和 `daemon start`。常用开关：
-
-```text
---agent-work-url URL    覆盖 Worker API 根地址；默认使用 SERVER_URL/agentworker/api
---runtime-name NAME     首次注册显示名
---channel stable|beta   记录安装 channel，默认 stable
-```
-
-安装器还专用以下更新模式，不建议人工日常调用：
-
-```bash
-octo-runtime login --prepare-update
-octo-runtime login --recover-update --start
-```
+服务安装、启动与连接启用由宿主分别明确选择。现有更新恢复入口 `login --prepare-update`、`login --recover-update --start` 只用于本地服务生命周期。
 
 ## Daemon 生命周期
 
@@ -104,7 +82,7 @@ CLI 读取 `<home>/im.json` 的顶层数组，文件不存在时接入列表为�
 | `allowed_sender_ids` / `group_ids` | 可选发送者与 Octo 群准入 |
 | `group_rules` / `history_limit` / `cards` / `typing` | Octo 的规则、历史与展示设置 |
 
-文件变更在 daemon 重启后加载。SDK 宿主自行提供配置和凭据，可使用 [动态接入接口](../../packages/octo-runtime-channel-im/README.md#动态接入本地设备新增-agent)；共享 daemon 不扫描配置文件。
+文件变更在 daemon 重启后加载。SDK 宿主自行提供配置和凭据，可使用 [动态接入接口](../../packages/octo-runtime-extra-channel-gateway/README.md#动态接入本地设备新增-agent)；共享 daemon 不扫描配置文件。
 
 ## Doctor
 

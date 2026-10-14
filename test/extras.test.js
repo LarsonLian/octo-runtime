@@ -17,7 +17,8 @@ import {
 } from "../packages/octo-runtime-daemon/dist/index.js";
 import loadSse, { name as sseName } from "../packages/octo-runtime-extra-sse-demo/dist/index.js";
 import { runCli, callDaemon } from "../apps/cli/dist/main.js";
-import { invokeRequest, waitFor } from "./agent-work-runtime-fixture.js";
+import { invokeRequest, waitFor } from "./runtime-fixture.js";
+import { invocationInput } from "@mininglamp-oss/octo-runtime-protocol";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const modulePath = join(root, "packages/octo-runtime-extra-sse-demo/dist/index.js");
@@ -31,7 +32,8 @@ async function freePort() {
 }
 function payload() {
   const { signal, ...request } = invokeRequest({ approvalMode: "full_access" });
-  return { adapterType: "test", request, options: { protocolMode: "canonical" } };
+  request.context.items.push({ namespace: "octo.execution", name: "adapter", payload: { type: "test" } });
+  return invocationInput(request, "canonical");
 }
 function post(port, value = payload(), auth = `Bearer ${token}`, path = "/") {
   return fetch(`http://127.0.0.1:${port}${path}`, {
@@ -246,13 +248,12 @@ test(
         }
       ],
       {
-        async *invoke(type, request) {
+        async *invoke(input, environment) {
           calls++;
-          assert.equal(type, "test");
-          assert.deepEqual(request.context, { schema: "octo.context-envelope/v3", items: [] });
+          assert.equal(input.contexts.items[0].payload.type, "test");
           yield { kind: "control", marker: "started" };
           await new Promise((resolve) =>
-            request.signal.addEventListener("abort", resolve, { once: true })
+            environment.signal.addEventListener("abort", resolve, { once: true })
           );
           cancelled++;
         }
@@ -267,9 +268,9 @@ test(
           .status,
         405
       );
-      for (const invalid of ["bad", {}, { ...payload(), options: { protocolMode: "wrong" } }])
+      for (const invalid of ["bad", {}, { ...payload(), protocol_mode: "wrong" }])
         assert.equal((await post(port, invalid)).status, 400);
-      assert.equal((await post(port, "x".repeat(1024 * 1024 + 1))).status, 413);
+      assert.equal((await post(port, "x".repeat(16 * 1024 * 1024 + 1))).status, 413);
       assert.equal(calls, 0);
       const abort = new AbortController();
       const response = await fetch(`http://127.0.0.1:${port}`, {

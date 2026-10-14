@@ -1,13 +1,14 @@
+import { createHostInvoke as preparedTestInvoke } from "@mininglamp-oss/octo-runtime-protocol";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  renderModelContexts,
   contextControlInstructions,
   contextHash,
   assertContextEnvelope
 } from "../packages/octo-runtime-protocol/dist/index.js";
+import { renderModelContexts } from "../packages/octo-runtime-adapter-host/dist/model-input.js";
 import { AdapterHost } from "../packages/octo-runtime-adapter-host/dist/index.js";
-import { invokeRequest } from "./agent-work-runtime-fixture.js";
+import { invokeRequest } from "./runtime-fixture.js";
 
 const envelope = (items = []) => ({ schema: "octo.context-envelope/v3", items });
 const extra = {
@@ -126,9 +127,13 @@ test("Host renders each run independently without deduplicating resumed context"
       context,
       approvalMode: "full_access"
     });
-    for await (const event of host.invoke("fixture", request, { protocolMode: "canonical" })) void event;
+    for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("fixture", request, { protocolMode: "canonical" }))
+      void event;
     const rendered = renderModelContexts(context);
-    assert.equal(received[index].modelInput, [rendered, request.modelInput].filter(Boolean).join("\n\n"));
+    assert.equal(
+      received[index].modelInput,
+      [rendered, request.modelInput].filter(Boolean).join("\n\n")
+    );
     assert.deepEqual(received[index].context, context);
   }
   assert.equal(received.length, 4);

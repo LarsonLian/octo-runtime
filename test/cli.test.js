@@ -13,7 +13,7 @@ import {
   adapterHostRestartDelayMs,
   startDaemonServer
 } from "@mininglamp-oss/octo-runtime-daemon-app";
-import { waitFor, invokeRequest } from "./agent-work-runtime-fixture.js";
+import { waitFor, invokeRequest } from "./runtime-fixture.js";
 
 const execute = promisify(execFile);
 const emptyContext = () => ({ schema: "octo.context-envelope/v3", items: [] });

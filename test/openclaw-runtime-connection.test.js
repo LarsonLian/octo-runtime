@@ -1,3 +1,4 @@
+import { createHostInvoke as preparedTestInvoke } from "@mininglamp-oss/octo-runtime-protocol";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, writeFile, rm, stat } from "node:fs/promises";
@@ -172,7 +173,7 @@ test("shared Host probes and invokes each Runtime connection and uses only the C
     }
   };
   const events = [];
-  for await (const event of client.invoke("openclaw", request, { protocolMode: "canonical" }))
+  for await (const event of preparedTestInvoke((...args) => client.invokeFrames(...args))("openclaw", request, { protocolMode: "canonical" }))
     events.push(event);
   assert.equal(events.at(-1).type, "run.completed");
   const call = observed.at(-1);

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { preparePlayboard } from "../apps/cli/dist/playboard.js";
-import { assertHostFrame, isHostTerminal } from "@mininglamp-oss/octo-runtime-protocol";
+import { assertHostFrame, isHostTerminal, assertCanonicalEvent, isTerminal } from "@mininglamp-oss/octo-runtime-protocol";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const cli = join(root, "apps/cli/dist/index.js");
@@ -74,7 +74,7 @@ function execute({ directory, manifest }, value, { args = [], signalOnFrame = fa
     child.on("error", reject);
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
-      if (signalOnFrame && !signalled && stdout.includes('"kind":"canonical"')) {
+      if (signalOnFrame && !signalled && stdout.includes('"type":"message.delta"')) {
         signalled = true;
         child.kill("SIGINT");
       }
@@ -97,15 +97,16 @@ function execute({ directory, manifest }, value, { args = [], signalOnFrame = fa
 }
 
 function terminal(result, state) {
-  result.frames.forEach(assertHostFrame);
-  assert.equal(result.frames.filter(isHostTerminal).length, 1);
-  assert.equal(result.frames.at(-1).control.state, state);
+  result.frames.forEach(frame => 'kind' in frame ? assertHostFrame(frame) : assertCanonicalEvent(frame));
+  assert.equal(result.frames.filter(frame => 'kind' in frame ? isHostTerminal(frame) : isTerminal(frame)).length, 1);
+  const last = result.frames.at(-1);
+  assert.equal('kind' in last ? last.control.state : last.type, 'kind' in last ? state : `run.${state}`);
 }
 function observed(result) {
   return JSON.parse(
     result.frames.find(
-      (frame) => frame.kind === "canonical" && frame.event.type === "message.delta"
-    ).event.payload.text
+      (frame) => frame.type === "message.delta"
+    ).payload.text
   );
 }
 
@@ -184,11 +185,11 @@ test("invalid input, old context, and invalid continuity fail before execution",
     input("hello", { continuityMode: "continue" }),
     input("hello", { providerSession: {} }),
     input("hello", { providerSession: { sessionId: "x", resumable: "yes" } }),
-    input("hello", { continuityMode: "fresh", providerSession: { sessionId: "x" } }),
-    input("hello", { extra: true })
+    input("hello", { continuityMode: "fresh", providerSession: { sessionId: "x" } })
   ]) {
     assert.throws(() => preparePlayboard(value));
   }
+  assert.equal(preparePlayboard(input("hello", { extra: true })).request.modelInput, "hello");
 });
 
 test("independent Host renders ordered business context, keeps control separate, and persists no Runtime state", async (t) => {
@@ -228,8 +229,8 @@ for (const protocolMode of ["native", "canonical"]) {
     const result = await execute(settings, input("normal", { protocol_mode: protocolMode }));
     assert.equal(result.code, 0, result.stderr);
     terminal(result, "completed");
-    assert.ok(result.frames.some((frame) => frame.kind === protocolMode));
-    assert.ok(result.frames.every((frame) => frame.protocol_mode === protocolMode));
+    assert.ok(result.frames.some((frame) => protocolMode === "native" ? frame.kind === "native" : frame.type === "run.completed"));
+    assert.ok(result.frames.every((frame) => protocolMode === "native" ? frame.protocol_mode === "native" : !('kind' in frame)));
     if (protocolMode === "native") {
       assert.deepEqual(
         result.frames.find((frame) => frame.kind === "native").payload.result.future,
@@ -244,7 +245,7 @@ for (const protocolMode of ["native", "canonical"]) {
     assert.match(result.stderr, /PLAYBOARD_INTERACTION_REQUIRED/);
     assert.ok(result.frames.length > 0);
     assert.ok(
-      !result.frames.some((frame) => isHostTerminal(frame) && frame.control.state === "completed")
+      !result.frames.some((frame) => 'kind' in frame ? isHostTerminal(frame) && frame.control.state === "completed" : frame.type === "run.completed")
     );
   });
 }
@@ -268,10 +269,10 @@ test("Ctrl+C cancels execution and reaps the independent Host", async (t) => {
   const result = await execute(settings, echoInput("hang"), { signalOnFrame: true });
   assert.equal(result.code, 130, result.stderr);
   const frame = result.frames.find(
-    (frame) => frame.kind === "canonical" && frame.event.type === "message.delta"
+    (frame) => frame.type === "message.delta"
   );
   if (frame)
-    assert.throws(() => process.kill(JSON.parse(frame.event.payload.text).hostPid, 0), {
+    assert.throws(() => process.kill(JSON.parse(frame.payload.text).hostPid, 0), {
       code: "ESRCH"
     });
 });
@@ -306,8 +307,8 @@ test("closing the NDJSON consumer cleans up Host and provider execution", async 
     output += chunk;
     for (const line of output.split("\n").slice(0, -1)) {
       const frame = JSON.parse(line);
-      if (frame.kind === "canonical" && frame.event.type === "message.delta") {
-        hostPid = JSON.parse(frame.event.payload.text).hostPid;
+      if (frame.type === "message.delta") {
+        hostPid = JSON.parse(frame.payload.text).hostPid;
         child.stdout.destroy();
         break;
       }

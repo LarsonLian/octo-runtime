@@ -15,9 +15,10 @@ import {
   diffieHellman
 } from "node:crypto";
 import { WebSocketServer } from "ws";
-import { ImRuntime } from "../packages/octo-runtime-channel-im/dist/index.js";
+import { ImRuntime } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
 import { loadCliImConfiguration } from "../apps/daemon/dist/im-config.js";
-import { waitFor } from "./agent-work-runtime-fixture.js";
+import { waitFor } from "./runtime-fixture.js";
+import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-core";
 import { imCardProfile } from "./fixtures/im-card-profile.js";
 const md5 = (s) => createHash("md5").update(s).digest("hex");
 const str = (s) => {
@@ -235,7 +236,9 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
       responses.push({ invocationId, response });
       releaseInteraction?.();
     },
-    async *invoke(adapter, request) {
+    async *invoke(input, environment) {
+      const { adapterType: adapter, request } = prepareInvokeInput(input);
+      request.signal = environment?.signal;
       assert.equal(adapter, "codex");
       assert.equal(request.approvalMode, "ask");
       assert.equal(request.runMetadata.actorId, "owner");

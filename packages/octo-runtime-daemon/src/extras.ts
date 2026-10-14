@@ -8,7 +8,7 @@ export type ExtraDisposer = () => void | Promise<void>;
 
 /** This execution environment is unrelated to the model Context envelope. */
 export interface ExtraContext {
-  readonly adapterHost: Pick<HostRunService, "invoke">;
+  readonly adapterHost: Pick<HostRunService, "invoke" | "cancel" | "respondInteraction">;
   readonly signal: AbortSignal;
   onDispose(dispose: ExtraDisposer): void;
 }

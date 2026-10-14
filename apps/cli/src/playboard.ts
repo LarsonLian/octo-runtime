@@ -1,53 +1,19 @@
-import { configureOpenClawConnection, OPENCLAW_RUNTIME_ROOT } from "@mininglamp-oss/octo-runtime-adapter-openclaw";
+import {
+  configureOpenClawConnection,
+  OPENCLAW_RUNTIME_ROOT
+} from "@mininglamp-oss/octo-runtime-adapter-openclaw";
 import { defaultRuntimeHome, runtimePaths } from "./state.js";
-import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   spawnAdapterHost,
   type AdapterHostProcess
 } from "@mininglamp-oss/octo-runtime-adapter-host";
-import { localRuntimeLimits, resolveLocalContext } from "@mininglamp-oss/octo-runtime-core";
-import {
-  CONTEXT_SCHEMA,
-  assertAgentSource,
-  assertContextEnvelope,
-  assertInvokeRequest,
-  assertModelInputParts,
-  contextControlInstructions,
-  contextItem,
-  isHostTerminal,
-  mergeContext,
-  type ContextEnvelope,
-  type InvokeRequest,
-  type ProviderSession
-} from "@mininglamp-oss/octo-runtime-protocol";
+import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-core";
+export { prepareInvokeInput as preparePlayboard } from "@mininglamp-oss/octo-runtime-core";
+import { isHostTerminal, isTerminal, invocationInput } from "@mininglamp-oss/octo-runtime-protocol";
 
 const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
-
-/** CLI shorthand resolves execution defaults before entering the strict Context contract. */
-function playboardContext(value: unknown): ContextEnvelope {
-  if (isRecord(value) && Array.isArray(value.items)) {
-    value = {
-      ...value,
-      items: value.items.map((item: unknown) => {
-        if (
-          isRecord(item) &&
-          item.namespace === "octo.execution" &&
-          item.name === "adapter" &&
-          isRecord(item.payload) &&
-          item.payload.type === "openclaw" &&
-          !Object.hasOwn(item.payload, "provider_agent_id")
-        ) {
-          return { ...item, payload: { ...item.payload, provider_agent_id: "main" } };
-        }
-        return item;
-      })
-    };
-  }
-  assertContextEnvelope(value);
-  return value;
-}
 
 export interface PlayboardOptions {
   input: NodeJS.ReadableStream;
@@ -55,131 +21,6 @@ export interface PlayboardOptions {
   env?: NodeJS.ProcessEnv;
   manifest?: string;
   runtimeRoot?: string;
-}
-
-/** One caller-owned snapshot, with no persistent session or daemon state. */
-export function preparePlayboard(value: unknown): {
-  adapterType: string;
-  protocolMode: "native" | "canonical";
-  request: InvokeRequest;
-} {
-  if (!isRecord(value)) throw new TypeError("playboard request must be a JSON object");
-  const fields = [
-    "inputs",
-    "contexts",
-    "sessionId",
-    "protocol_mode",
-    "agentSource",
-    "providerSession",
-    "continuityMode"
-  ];
-  if (Object.keys(value).some((key) => !fields.includes(key))) {
-    throw new TypeError(`playboard request accepts only: ${fields.join(", ")}`);
-  }
-  assertModelInputParts(value.inputs);
-  const contexts = playboardContext(value.contexts);
-  const protocolMode = value.protocol_mode ?? "native";
-  if (protocolMode !== "native" && protocolMode !== "canonical") {
-    throw new TypeError("protocol_mode must be native or canonical");
-  }
-  const adapterType = contextItem(contexts, "octo.execution", "adapter")?.payload.type;
-  const agentSource = value.agentSource ?? (adapterType === "openclaw" ? "preset" : "provisioned");
-  assertAgentSource(agentSource);
-  if (
-    value.sessionId !== undefined &&
-    (typeof value.sessionId !== "string" || !value.sessionId.trim())
-  ) {
-    throw new TypeError("sessionId must be a non-empty string");
-  }
-  const continuityMode = value.continuityMode ?? (value.providerSession ? "continue" : "fresh");
-  if (continuityMode !== "fresh" && continuityMode !== "continue") {
-    throw new TypeError("continuityMode must be fresh or continue");
-  }
-  let providerSession: ProviderSession | undefined;
-  if (value.providerSession !== undefined) {
-    if (
-      !isRecord(value.providerSession) ||
-      typeof value.providerSession.sessionId !== "string" ||
-      !value.providerSession.sessionId.trim()
-    ) {
-      throw new TypeError("providerSession.sessionId must be a non-empty string");
-    }
-    if (
-      value.providerSession.resumable !== undefined &&
-      typeof value.providerSession.resumable !== "boolean"
-    ) {
-      throw new TypeError("providerSession.resumable must be a boolean");
-    }
-    providerSession = structuredClone(value.providerSession) as ProviderSession;
-  }
-  if (continuityMode === "fresh" && providerSession)
-    throw new TypeError("fresh execution cannot carry providerSession");
-  if (continuityMode === "continue" && !providerSession)
-    throw new TypeError(
-      "continue requires providerSession; sessionId alone cannot resume a provider"
-    );
-
-  const defaults: ContextEnvelope = {
-    schema: CONTEXT_SCHEMA,
-    items: [
-      { namespace: "octo.execution", name: "adapter", payload: { type: "codex" } },
-      ...(agentSource === "provisioned"
-        ? [
-            {
-              namespace: "octo.execution",
-              name: "workspace",
-              payload: { mode: "fixed", path: process.cwd() }
-            }
-          ]
-        : []),
-      { namespace: "octo.security", name: "approval_policy", payload: { mode: "ask" } },
-      { namespace: "octo.execution", name: "limits", payload: { run_timeout_ms: 120_000 } }
-    ]
-  };
-  // Resolve only execution settings here. Business items and control instructions
-  // retain their complete current-turn snapshot for the Host's shared renderer.
-  const { resolvedExecutionPlan: plan } = resolveLocalContext(
-    defaults,
-    {
-      schema: CONTEXT_SCHEMA,
-      items: contexts.items.filter(
-        (item) =>
-          item.namespace === "octo.execution" ||
-          (item.namespace === "octo.security" && item.name === "approval_policy")
-      )
-    },
-    agentSource
-  );
-  const context = mergeContext(defaults, contexts);
-  const prompt = value.inputs
-    .map((part) => (part.type === "text" ? part.text : "[Image]"))
-    .join("\n\n");
-  if (!prompt.trim()) throw new TypeError("inputs must contain non-empty text or an image");
-  const request: InvokeRequest = {
-    protocolVersion: 2,
-    invocationId: `invoke_${randomUUID()}`,
-    runId: `run_${randomUUID()}`,
-    agentSessionId: value.sessionId ?? `playboard_${randomUUID()}`,
-    agentSource,
-    continuityMode,
-    ...(providerSession ? { providerSession } : {}),
-    prompt,
-    modelInput: prompt,
-    modelInputParts: structuredClone(value.inputs),
-    context,
-    controlInstructions: contextControlInstructions(context),
-    workdir: plan.workdir,
-    approvalMode: plan.approval_mode,
-    runtimeLimits: localRuntimeLimits(plan),
-    agentConfig: {
-      workdir: plan.workdir,
-      ...(plan.model ? { model: plan.model } : {}),
-      ...(plan.effort ? { effort: plan.effort } : {}),
-      ...(plan.provider_agent_id ? { providerAgentId: plan.provider_agent_id } : {})
-    }
-  };
-  assertInvokeRequest(request);
-  return { adapterType: plan.adapter_type, protocolMode, request };
 }
 
 export async function runPlayboard(options: PlayboardOptions): Promise<number> {
@@ -202,9 +43,10 @@ export async function runPlayboard(options: PlayboardOptions): Promise<number> {
   } catch {
     throw new TypeError("playboard stdin must contain one complete JSON object");
   }
-  const { adapterType, protocolMode, request } = preparePlayboard(value);
+  const { adapterType, protocolMode, request } = prepareInvokeInput(value);
   if (adapterType === "openclaw") {
-    const runtimeRoot = options.runtimeRoot ?? runtimePaths(defaultRuntimeHome(options.env), "default").profileRoot;
+    const runtimeRoot =
+      options.runtimeRoot ?? runtimePaths(defaultRuntimeHome(options.env), "default").profileRoot;
     await configureOpenClawConnection(runtimeRoot, {}, options.env);
     request.agentConfig.providerOptions = { [OPENCLAW_RUNTIME_ROOT]: runtimeRoot };
   }
@@ -240,26 +82,33 @@ export async function runPlayboard(options: PlayboardOptions): Promise<number> {
     if (startupDiagnostics) process.stderr.write(startupDiagnostics);
     host.child.stderr.on("data", (chunk: string) => process.stderr.write(chunk));
     let exitCode = 1;
-    for await (const frame of host.client.invokeFrames(
-      adapterType,
-      { ...request, signal: controller.signal },
-      { protocolMode }
+    for await (const frame of host.client.invoke(
+      invocationInput(request, protocolMode, adapterType),
+      { signal: controller.signal }
     )) {
       await output(JSON.stringify(frame));
       if (
-        (frame.kind === "control" &&
+        ("kind" in frame &&
+          frame.kind === "control" &&
           frame.control.type === "interaction" &&
           frame.control.status === "pending") ||
-        (frame.kind === "canonical" && frame.event.type === "interaction.requested")
+        (!("kind" in frame) && frame.type === "interaction.requested")
       ) {
         throw new Error(
           "PLAYBOARD_INTERACTION_REQUIRED: one-shot stdin cannot answer provider interactions"
         );
       }
-      if (isHostTerminal(frame) && frame.kind === "control" && frame.control.type === "state") {
+      if (
+        "kind" in frame &&
+        isHostTerminal(frame) &&
+        frame.kind === "control" &&
+        frame.control.type === "state"
+      ) {
         exitCode =
           frame.control.state === "completed" ? 0 : frame.control.state === "cancelled" ? 130 : 1;
       }
+      if (!("kind" in frame) && isTerminal(frame))
+        exitCode = frame.type === "run.completed" ? 0 : frame.type === "run.cancelled" ? 130 : 1;
     }
     return interrupted || exitCode;
   } catch (error) {
@@ -280,8 +129,4 @@ function writeLine(line: string): Promise<void> {
   return new Promise((resolve, reject) => {
     process.stdout.write(`${line}\n`, (error) => (error ? reject(error) : resolve()));
   });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

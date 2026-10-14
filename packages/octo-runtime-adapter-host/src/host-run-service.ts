@@ -1,7 +1,7 @@
+import { createInputInvoke } from "@mininglamp-oss/octo-runtime-core";
 import type { AdapterHostRpc } from "./rpc.js";
 import {
   assertInvokeRequest,
-  createHostInvoke,
   assertHostFrameIdentity,
   isHostTerminal,
   type HostFrame,
@@ -37,7 +37,7 @@ const TTL = 120_000,
 
 /** One process-local event authority around the existing adapter-host IPC client. */
 export class HostRunService implements AdapterHostRpc {
-  readonly invoke = createHostInvoke((type, request, options) =>
+  readonly invoke = createInputInvoke((type, request, options) =>
     this.invokeFrames(type, request, options)
   );
   #runs = new Map<string, Run>();

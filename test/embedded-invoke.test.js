@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { invokeDaemonRun } from "../packages/octo-runtime-daemon/dist/runtime/run-stream.js";
 import { callDaemon } from "../packages/octo-runtime-daemon/dist/runtime/runtime-contract.js";
-import { invokeRequest } from "./agent-work-runtime-fixture.js";
+import { invokeRequest } from "./runtime-fixture.js";
 import { canonicalEvents } from "../packages/octo-runtime-protocol/dist/index.js";
 
 async function fixture(t, handler) {

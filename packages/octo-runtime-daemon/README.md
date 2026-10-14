@@ -4,7 +4,7 @@
 
 ## 当前包接入
 
-`octo-runtime-embedded` 已移除。本地生命周期与 IPC API 合入本包的 `src/runtime`，enrollment 移入可选 worker-access。本包及其生产依赖不含 worker-access 或 channel-im。
+`octo-runtime-embedded` 已移除。本地生命周期与 IPC API 合入本包的 `src/runtime`，enrollment 移入可选 worker-access。本包及其生产依赖不含 worker-access 或 channel-gateway。
 
 ```ts
 import { createDaemonRuntime, resolveDaemonHome } from '@mininglamp-oss/octo-runtime-daemon';
@@ -21,8 +21,10 @@ await runtime.stop('quit');
 
 | 模块 ID | 额外包 / 工厂 | 配置 |
 | --- | --- | --- |
-| `worker-access` | `octo-runtime-worker-access/daemon-module` / `createWorkerAccessModule` | `registrations` 或显式 `runtimes`；现有职责仍未通过最终评审 |
-| `channel-im` | `octo-runtime-channel-im/daemon-module` / `createImModule` | `bots`；可独立启用，无需 Worker 包 |
+| `channel-gateway` | `octo-runtime-extra-channel-gateway/daemon-module` / `createImModule` | Octo `bots` |
+| `channel-wecom` | `octo-runtime-extra-channel-wecom/daemon-module` / `createImModule` | 企业微信 `bots` |
+
+worker-access 已移出生态目录，作为独立预研备份，不再由标准 CLI 或 Work App 装配。
 
 模块启动异步执行，`startModule` 返回启动接纳状态；实际结果看 `health.modules[id].phase` 和模块 `state`，不能把返回值当作云端在线 ACK。连接失败不改变 `health.local.ready`；缺少已启用模块时报告错误，不隐式安装。关闭账号或应用时停止所有已启用模块并回收共享 Host。
 

@@ -1,11 +1,11 @@
+import { createInputInvoke } from "@mininglamp-oss/octo-runtime-core";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
 import { watchLineLimit, type AdapterProbeOptions } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
   assertHostFrame,
-  createHostInvoke,
-  type HostInvoke,
+  type InputInvoke,
   assertHostRunReceipt,
   assertHostFrameIdentity,
   isHostTerminal,
@@ -34,7 +34,7 @@ export interface AdapterHostRpc {
   cancel(invocationId: string, reason?: string): Promise<{ cancelled: boolean }>;
   respondInteraction(invocationId: string, response: InteractionResponse): Promise<void>;
   respondNative(invocationId: string, response: NativeInteractionResponse): Promise<void>;
-  invoke: HostInvoke;
+  invoke: InputInvoke;
   invokeFrames(
     adapterType: string,
     request: InvokeRequest,
@@ -309,7 +309,7 @@ export class AdapterHostRpcServer {
 
 /** The async client for AdapterHostRpcServer; it also reassembles invoke notifications back into an AsyncGenerator. */
 export class AdapterHostRpcClient implements AdapterHostRpc {
-  readonly invoke = createHostInvoke((type, request, options) =>
+  readonly invoke = createInputInvoke((type, request, options) =>
     this.invokeFrames(type, request, options)
   );
   readonly #send: (value: RpcMessage) => void;

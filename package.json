@@ -45,7 +45,6 @@
     "@mininglamp-oss/octo-runtime-adapter-codex": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-hermes": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
-    "@mininglamp-oss/octo-runtime-adapter-icons": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-kimi-code": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-mcode": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-openclaw": "workspace:*",
@@ -53,16 +52,16 @@
     "@mininglamp-oss/octo-runtime-adapter-qodercli": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-qoderclicn": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-zcode-gui": "workspace:*",
-    "@mininglamp-oss/octo-runtime-channel-im": "workspace:*",
-    "@mininglamp-oss/octo-runtime-context-builder": "workspace:*",
+    "@mininglamp-oss/octo-runtime-extra-channel-gateway": "workspace:*",
     "@mininglamp-oss/octo-runtime-core": "workspace:*",
     "@mininglamp-oss/octo-runtime-cross-service": "workspace:*",
     "@mininglamp-oss/octo-runtime-daemon": "workspace:*",
     "@mininglamp-oss/octo-runtime-protocol": "workspace:*",
-    "@mininglamp-oss/octo-runtime-worker-access": "workspace:*",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "@mininglamp-oss/octo-runtime-extra-channel-wecom": "workspace:*"
   },
   "devDependencies": {
+    "@mininglamp-oss/octo-runtime-adapter-icons": "link:../octo-runtime-adapter-icons",
     "@eslint/js": "^10.0.1",
     "@mininglamp-oss/octo-runtime-acp-client": "workspace:*",
     "@mininglamp-oss/octo-runtime-daemon-app": "workspace:*",
