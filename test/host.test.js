@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { PassThrough, Writable } from "node:stream";
-import { AdapterHost, AdapterHostRpcClient, AdapterHostRpcServer, spawnAdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
-import { contextHash } from "@mininglamp-oss/octo-harness-protocol";
+import { AdapterHost, AdapterHostRpcClient, AdapterHostRpcServer, spawnAdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
+import { contextHash } from "@mininglamp-oss/octo-runtime-protocol";
 
 const request = {
   protocolVersion: 2,

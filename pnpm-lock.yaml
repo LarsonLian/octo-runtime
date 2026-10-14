@@ -8,72 +8,75 @@ importers:
 
   .:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-acp':
+      '@mininglamp-oss/octo-runtime-adapter-acp':
         specifier: workspace:*
-        version: link:packages/octo-harness-adapter-acp
-      '@mininglamp-oss/octo-harness-adapter-antigravity':
+        version: link:packages/octo-runtime-adapter-acp
+      '@mininglamp-oss/octo-runtime-adapter-antigravity':
         specifier: workspace:*
-        version: link:packages/octo-harness-adapter-antigravity
-      '@mininglamp-oss/octo-harness-adapter-claude-code':
+        version: link:packages/octo-runtime-adapter-antigravity
+      '@mininglamp-oss/octo-runtime-adapter-claude-code':
         specifier: workspace:*
-        version: link:packages/octo-harness-adapter-claude-code
-      '@mininglamp-oss/octo-harness-adapter-codebuddy':
+        version: link:packages/octo-runtime-adapter-claude-code
+      '@mininglamp-oss/octo-runtime-adapter-codebuddy':
         specifier: workspace:*
-        version: link:packages/octo-harness-adapter-codebuddy
-      '@mininglamp-oss/octo-harness-adapter-codex':
+        version: link:packages/octo-runtime-adapter-codebuddy
+      '@mininglamp-oss/octo-runtime-adapter-codex':
         specifier: workspace:*
-        version: link:packages/octo-harness-adapter-codex
-      '@mininglamp-oss/octo-harness-adapter-hermes':
+        version: link:packages/octo-runtime-adapter-codex
+      '@mininglamp-oss/octo-runtime-adapter-hermes':
         specifier: workspace:*
-        version: link:packages/octo-harness-adapter-hermes
-      '@mininglamp-oss/octo-harness-adapter-host':
+        version: link:packages/octo-runtime-adapter-hermes
+      '@mininglamp-oss/octo-runtime-adapter-host':
         specifier: workspace:*
-        version: link:packages/octo-harness-adapter-host
-      '@mininglamp-oss/octo-harness-adapter-icons':
+        version: link:packages/octo-runtime-adapter-host
+      '@mininglamp-oss/octo-runtime-adapter-icons':
         specifier: workspace:*
-        version: link:packages/octo-harness-adapter-icons
-      '@mininglamp-oss/octo-harness-adapter-kimi-code':
+        version: link:packages/octo-runtime-adapter-icons
+      '@mininglamp-oss/octo-runtime-adapter-kimi-code':
         specifier: workspace:*
-        version: link:packages/octo-harness-adapter-kimi-code
-      '@mininglamp-oss/octo-harness-adapter-mcode':
+        version: link:packages/octo-runtime-adapter-kimi-code
+      '@mininglamp-oss/octo-runtime-adapter-mcode':
         specifier: workspace:*
-        version: link:packages/octo-harness-adapter-mcode
-      '@mininglamp-oss/octo-harness-adapter-openclaw':
+        version: link:packages/octo-runtime-adapter-mcode
+      '@mininglamp-oss/octo-runtime-adapter-openclaw':
         specifier: workspace:*
-        version: link:packages/octo-harness-adapter-openclaw
-      '@mininglamp-oss/octo-harness-adapter-opencode':
+        version: link:packages/octo-runtime-adapter-openclaw
+      '@mininglamp-oss/octo-runtime-adapter-opencode':
         specifier: workspace:*
-        version: link:packages/octo-harness-adapter-opencode
-      '@mininglamp-oss/octo-harness-adapter-qodercli':
+        version: link:packages/octo-runtime-adapter-opencode
+      '@mininglamp-oss/octo-runtime-adapter-qodercli':
         specifier: workspace:*
-        version: link:packages/octo-harness-adapter-qodercli
-      '@mininglamp-oss/octo-harness-adapter-qoderclicn':
+        version: link:packages/octo-runtime-adapter-qodercli
+      '@mininglamp-oss/octo-runtime-adapter-qoderclicn':
         specifier: workspace:*
-        version: link:packages/octo-harness-adapter-qoderclicn
-      '@mininglamp-oss/octo-harness-adapter-zcode-gui':
+        version: link:packages/octo-runtime-adapter-qoderclicn
+      '@mininglamp-oss/octo-runtime-adapter-zcode-gui':
         specifier: workspace:*
-        version: link:packages/octo-harness-adapter-zcode-gui
-      '@mininglamp-oss/octo-harness-channel-im':
+        version: link:packages/octo-runtime-adapter-zcode-gui
+      '@mininglamp-oss/octo-runtime-channel-im':
         specifier: workspace:*
-        version: link:packages/octo-harness-channel-im
-      '@mininglamp-oss/octo-harness-context-builder':
+        version: link:packages/octo-runtime-channel-im
+      '@mininglamp-oss/octo-runtime-context-builder':
         specifier: workspace:*
-        version: link:packages/octo-harness-context-builder
-      '@mininglamp-oss/octo-harness-core':
+        version: link:packages/octo-runtime-context-builder
+      '@mininglamp-oss/octo-runtime-core':
         specifier: workspace:*
-        version: link:packages/octo-harness-core
-      '@mininglamp-oss/octo-harness-cross-service':
+        version: link:packages/octo-runtime-core
+      '@mininglamp-oss/octo-runtime-cross-service':
         specifier: workspace:*
-        version: link:packages/octo-harness-cross-service
-      '@mininglamp-oss/octo-harness-daemon':
+        version: link:packages/octo-runtime-cross-service
+      '@mininglamp-oss/octo-runtime-daemon':
         specifier: workspace:*
-        version: link:packages/octo-harness-daemon
-      '@mininglamp-oss/octo-harness-protocol':
+        version: link:packages/octo-runtime-daemon
+      '@mininglamp-oss/octo-runtime-extra-sse-demo':
         specifier: workspace:*
-        version: link:packages/octo-harness-protocol
-      '@mininglamp-oss/octo-harness-worker-access':
+        version: link:packages/octo-runtime-extra-sse-demo
+      '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
-        version: link:packages/octo-harness-worker-access
+        version: link:packages/octo-runtime-protocol
+      '@mininglamp-oss/octo-runtime-worker-access':
+        specifier: workspace:*
+        version: link:packages/octo-runtime-worker-access
       ws:
         specifier: ^8.18.3
         version: 8.21.3
@@ -81,10 +84,10 @@ importers:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.9.1(jiti@2.7.0))
-      '@mininglamp-oss/octo-harness-acp-client':
+      '@mininglamp-oss/octo-runtime-acp-client':
         specifier: workspace:*
-        version: link:packages/octo-harness-acp-client
-      '@mininglamp-oss/octo-harness-daemon-app':
+        version: link:packages/octo-runtime-acp-client
+      '@mininglamp-oss/octo-runtime-daemon-app':
         specifier: workspace:*
         version: link:apps/daemon
       '@types/node':
@@ -105,205 +108,214 @@ importers:
 
   apps/adapter-host:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-claude-code':
+      '@mininglamp-oss/octo-runtime-adapter-claude-code':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-claude-code
-      '@mininglamp-oss/octo-harness-adapter-codebuddy':
+        version: link:../../packages/octo-runtime-adapter-claude-code
+      '@mininglamp-oss/octo-runtime-adapter-codebuddy':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-codebuddy
-      '@mininglamp-oss/octo-harness-adapter-codex':
+        version: link:../../packages/octo-runtime-adapter-codebuddy
+      '@mininglamp-oss/octo-runtime-adapter-codex':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-codex
-      '@mininglamp-oss/octo-harness-adapter-hermes':
+        version: link:../../packages/octo-runtime-adapter-codex
+      '@mininglamp-oss/octo-runtime-adapter-hermes':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-hermes
-      '@mininglamp-oss/octo-harness-adapter-host':
+        version: link:../../packages/octo-runtime-adapter-hermes
+      '@mininglamp-oss/octo-runtime-adapter-host':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-host
-      '@mininglamp-oss/octo-harness-adapter-kimi-code':
+        version: link:../../packages/octo-runtime-adapter-host
+      '@mininglamp-oss/octo-runtime-adapter-kimi-code':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-kimi-code
-      '@mininglamp-oss/octo-harness-adapter-mcode':
+        version: link:../../packages/octo-runtime-adapter-kimi-code
+      '@mininglamp-oss/octo-runtime-adapter-mcode':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-mcode
-      '@mininglamp-oss/octo-harness-adapter-openclaw':
+        version: link:../../packages/octo-runtime-adapter-mcode
+      '@mininglamp-oss/octo-runtime-adapter-openclaw':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-openclaw
-      '@mininglamp-oss/octo-harness-adapter-opencode':
+        version: link:../../packages/octo-runtime-adapter-openclaw
+      '@mininglamp-oss/octo-runtime-adapter-opencode':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-opencode
-      '@mininglamp-oss/octo-harness-adapter-qodercli':
+        version: link:../../packages/octo-runtime-adapter-opencode
+      '@mininglamp-oss/octo-runtime-adapter-qodercli':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-qodercli
-      '@mininglamp-oss/octo-harness-adapter-qoderclicn':
+        version: link:../../packages/octo-runtime-adapter-qodercli
+      '@mininglamp-oss/octo-runtime-adapter-qoderclicn':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-qoderclicn
-      '@mininglamp-oss/octo-harness-adapter-zcode-gui':
+        version: link:../../packages/octo-runtime-adapter-qoderclicn
+      '@mininglamp-oss/octo-runtime-adapter-zcode-gui':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-zcode-gui
+        version: link:../../packages/octo-runtime-adapter-zcode-gui
 
   apps/cli:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-host':
+      '@mininglamp-oss/octo-runtime-adapter-host':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-host
-      '@mininglamp-oss/octo-harness-adapter-openclaw':
+        version: link:../../packages/octo-runtime-adapter-host
+      '@mininglamp-oss/octo-runtime-adapter-openclaw':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-openclaw
-      '@mininglamp-oss/octo-harness-core':
+        version: link:../../packages/octo-runtime-adapter-openclaw
+      '@mininglamp-oss/octo-runtime-channel-im':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-core
-      '@mininglamp-oss/octo-harness-cross-service':
+        version: link:../../packages/octo-runtime-channel-im
+      '@mininglamp-oss/octo-runtime-core':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-cross-service
-      '@mininglamp-oss/octo-harness-daemon-app':
+        version: link:../../packages/octo-runtime-core
+      '@mininglamp-oss/octo-runtime-cross-service':
+        specifier: workspace:*
+        version: link:../../packages/octo-runtime-cross-service
+      '@mininglamp-oss/octo-runtime-daemon':
+        specifier: workspace:*
+        version: link:../../packages/octo-runtime-daemon
+      '@mininglamp-oss/octo-runtime-daemon-app':
         specifier: workspace:*
         version: link:../daemon
-      '@mininglamp-oss/octo-harness-protocol':
+      '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-protocol
-      '@mininglamp-oss/octo-harness-worker-access':
+        version: link:../../packages/octo-runtime-protocol
+      '@mininglamp-oss/octo-runtime-worker-access':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-worker-access
+        version: link:../../packages/octo-runtime-worker-access
 
   apps/daemon:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-host':
+      '@mininglamp-oss/octo-runtime-adapter-host':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-adapter-host
-      '@mininglamp-oss/octo-harness-channel-im':
+        version: link:../../packages/octo-runtime-adapter-host
+      '@mininglamp-oss/octo-runtime-adapter-openclaw':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-channel-im
-      '@mininglamp-oss/octo-harness-context-builder':
+        version: link:../../packages/octo-runtime-adapter-openclaw
+      '@mininglamp-oss/octo-runtime-channel-im':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-context-builder
-      '@mininglamp-oss/octo-harness-core':
+        version: link:../../packages/octo-runtime-channel-im
+      '@mininglamp-oss/octo-runtime-context-builder':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-core
-      '@mininglamp-oss/octo-harness-daemon':
+        version: link:../../packages/octo-runtime-context-builder
+      '@mininglamp-oss/octo-runtime-daemon':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-daemon
-      '@mininglamp-oss/octo-harness-protocol':
+        version: link:../../packages/octo-runtime-daemon
+      '@mininglamp-oss/octo-runtime-extra-sse-demo':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-protocol
-      '@mininglamp-oss/octo-harness-worker-access':
+        version: link:../../packages/octo-runtime-extra-sse-demo
+      '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
-        version: link:../../packages/octo-harness-worker-access
+        version: link:../../packages/octo-runtime-protocol
+      '@mininglamp-oss/octo-runtime-worker-access':
+        specifier: workspace:*
+        version: link:../../packages/octo-runtime-worker-access
 
-  packages/octo-harness-acp-client: {}
+  packages/octo-runtime-acp-client: {}
 
-  packages/octo-harness-adapter-acp:
+  packages/octo-runtime-adapter-acp:
     dependencies:
-      '@mininglamp-oss/octo-harness-acp-client':
+      '@mininglamp-oss/octo-runtime-acp-client':
         specifier: workspace:*
-        version: link:../octo-harness-acp-client
-      '@mininglamp-oss/octo-harness-adapter-sdk':
+        version: link:../octo-runtime-acp-client
+      '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-sdk
+        version: link:../octo-runtime-adapter-sdk
 
-  packages/octo-harness-adapter-antigravity:
+  packages/octo-runtime-adapter-antigravity:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-sdk':
+      '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-sdk
-      '@mininglamp-oss/octo-harness-protocol':
+        version: link:../octo-runtime-adapter-sdk
+      '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
-        version: link:../octo-harness-protocol
+        version: link:../octo-runtime-protocol
 
-  packages/octo-harness-adapter-claude-code:
+  packages/octo-runtime-adapter-claude-code:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-sdk':
+      '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-sdk
+        version: link:../octo-runtime-adapter-sdk
 
-  packages/octo-harness-adapter-codebuddy:
+  packages/octo-runtime-adapter-codebuddy:
     dependencies:
-      '@mininglamp-oss/octo-harness-acp-client':
+      '@mininglamp-oss/octo-runtime-acp-client':
         specifier: workspace:*
-        version: link:../octo-harness-acp-client
-      '@mininglamp-oss/octo-harness-adapter-sdk':
+        version: link:../octo-runtime-acp-client
+      '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-sdk
+        version: link:../octo-runtime-adapter-sdk
 
-  packages/octo-harness-adapter-codex:
+  packages/octo-runtime-adapter-codex:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-sdk':
+      '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-sdk
+        version: link:../octo-runtime-adapter-sdk
       smol-toml:
         specifier: ^1.4.2
         version: 1.8.0
 
-  packages/octo-harness-adapter-hermes:
+  packages/octo-runtime-adapter-hermes:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-acp':
+      '@mininglamp-oss/octo-runtime-adapter-acp':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-acp
+        version: link:../octo-runtime-adapter-acp
 
-  packages/octo-harness-adapter-host:
+  packages/octo-runtime-adapter-host:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-antigravity':
+      '@mininglamp-oss/octo-runtime-adapter-antigravity':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-antigravity
-      '@mininglamp-oss/octo-harness-adapter-claude-code':
+        version: link:../octo-runtime-adapter-antigravity
+      '@mininglamp-oss/octo-runtime-adapter-claude-code':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-claude-code
-      '@mininglamp-oss/octo-harness-adapter-codebuddy':
+        version: link:../octo-runtime-adapter-claude-code
+      '@mininglamp-oss/octo-runtime-adapter-codebuddy':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-codebuddy
-      '@mininglamp-oss/octo-harness-adapter-codex':
+        version: link:../octo-runtime-adapter-codebuddy
+      '@mininglamp-oss/octo-runtime-adapter-codex':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-codex
-      '@mininglamp-oss/octo-harness-adapter-hermes':
+        version: link:../octo-runtime-adapter-codex
+      '@mininglamp-oss/octo-runtime-adapter-hermes':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-hermes
-      '@mininglamp-oss/octo-harness-adapter-kimi-code':
+        version: link:../octo-runtime-adapter-hermes
+      '@mininglamp-oss/octo-runtime-adapter-kimi-code':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-kimi-code
-      '@mininglamp-oss/octo-harness-adapter-mcode':
+        version: link:../octo-runtime-adapter-kimi-code
+      '@mininglamp-oss/octo-runtime-adapter-mcode':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-mcode
-      '@mininglamp-oss/octo-harness-adapter-openclaw':
+        version: link:../octo-runtime-adapter-mcode
+      '@mininglamp-oss/octo-runtime-adapter-openclaw':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-openclaw
-      '@mininglamp-oss/octo-harness-adapter-opencode':
+        version: link:../octo-runtime-adapter-openclaw
+      '@mininglamp-oss/octo-runtime-adapter-opencode':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-opencode
-      '@mininglamp-oss/octo-harness-adapter-qodercli':
+        version: link:../octo-runtime-adapter-opencode
+      '@mininglamp-oss/octo-runtime-adapter-qodercli':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-qodercli
-      '@mininglamp-oss/octo-harness-adapter-qoderclicn':
+        version: link:../octo-runtime-adapter-qodercli
+      '@mininglamp-oss/octo-runtime-adapter-qoderclicn':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-qoderclicn
-      '@mininglamp-oss/octo-harness-adapter-sdk':
+        version: link:../octo-runtime-adapter-qoderclicn
+      '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-sdk
-      '@mininglamp-oss/octo-harness-adapter-zcode-gui':
+        version: link:../octo-runtime-adapter-sdk
+      '@mininglamp-oss/octo-runtime-adapter-zcode-gui':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-zcode-gui
-      '@mininglamp-oss/octo-harness-protocol':
+        version: link:../octo-runtime-adapter-zcode-gui
+      '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
-        version: link:../octo-harness-protocol
+        version: link:../octo-runtime-protocol
 
-  packages/octo-harness-adapter-icons: {}
+  packages/octo-runtime-adapter-icons: {}
 
-  packages/octo-harness-adapter-kimi-code:
+  packages/octo-runtime-adapter-kimi-code:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-acp':
+      '@mininglamp-oss/octo-runtime-adapter-acp':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-acp
+        version: link:../octo-runtime-adapter-acp
 
-  packages/octo-harness-adapter-mcode:
+  packages/octo-runtime-adapter-mcode:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-acp':
+      '@mininglamp-oss/octo-runtime-adapter-acp':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-acp
+        version: link:../octo-runtime-adapter-acp
 
-  packages/octo-harness-adapter-openclaw:
+  packages/octo-runtime-adapter-openclaw:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-sdk':
+      '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-sdk
+        version: link:../octo-runtime-adapter-sdk
       json5:
         specifier: 2.2.3
         version: 2.2.3
@@ -315,56 +327,56 @@ importers:
         specifier: ^8.18.1
         version: 8.18.1
 
-  packages/octo-harness-adapter-opencode:
+  packages/octo-runtime-adapter-opencode:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-acp':
+      '@mininglamp-oss/octo-runtime-adapter-acp':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-acp
-      '@mininglamp-oss/octo-harness-adapter-sdk':
+        version: link:../octo-runtime-adapter-acp
+      '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-sdk
+        version: link:../octo-runtime-adapter-sdk
 
-  packages/octo-harness-adapter-qodercli:
+  packages/octo-runtime-adapter-qodercli:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-acp':
+      '@mininglamp-oss/octo-runtime-adapter-acp':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-acp
+        version: link:../octo-runtime-adapter-acp
 
-  packages/octo-harness-adapter-qoderclicn:
+  packages/octo-runtime-adapter-qoderclicn:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-acp':
+      '@mininglamp-oss/octo-runtime-adapter-acp':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-acp
+        version: link:../octo-runtime-adapter-acp
 
-  packages/octo-harness-adapter-sdk:
+  packages/octo-runtime-adapter-sdk:
     dependencies:
-      '@mininglamp-oss/octo-harness-protocol':
+      '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
-        version: link:../octo-harness-protocol
+        version: link:../octo-runtime-protocol
 
-  packages/octo-harness-adapter-zcode-gui:
+  packages/octo-runtime-adapter-zcode-gui:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-sdk':
+      '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-sdk
+        version: link:../octo-runtime-adapter-sdk
 
-  packages/octo-harness-channel-im:
+  packages/octo-runtime-channel-im:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-host':
+      '@mininglamp-oss/octo-runtime-adapter-host':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-host
-      '@mininglamp-oss/octo-harness-context-builder':
+        version: link:../octo-runtime-adapter-host
+      '@mininglamp-oss/octo-runtime-context-builder':
         specifier: workspace:*
-        version: link:../octo-harness-context-builder
-      '@mininglamp-oss/octo-harness-core':
+        version: link:../octo-runtime-context-builder
+      '@mininglamp-oss/octo-runtime-core':
         specifier: workspace:*
-        version: link:../octo-harness-core
-      '@mininglamp-oss/octo-harness-daemon':
+        version: link:../octo-runtime-core
+      '@mininglamp-oss/octo-runtime-daemon':
         specifier: workspace:*
-        version: link:../octo-harness-daemon
-      '@mininglamp-oss/octo-harness-protocol':
+        version: link:../octo-runtime-daemon
+      '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
-        version: link:../octo-harness-protocol
+        version: link:../octo-runtime-protocol
       ws:
         specifier: ^8.18.3
         version: 8.21.3
@@ -373,34 +385,31 @@ importers:
         specifier: ^8.18.1
         version: 8.18.1
 
-  packages/octo-harness-context-builder:
+  packages/octo-runtime-context-builder:
     dependencies:
-      '@mininglamp-oss/octo-harness-protocol':
+      '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
-        version: link:../octo-harness-protocol
+        version: link:../octo-runtime-protocol
 
-  packages/octo-harness-core:
+  packages/octo-runtime-core:
     dependencies:
-      '@mininglamp-oss/octo-harness-protocol':
+      '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
-        version: link:../octo-harness-protocol
+        version: link:../octo-runtime-protocol
 
-  packages/octo-harness-cross-service: {}
+  packages/octo-runtime-cross-service: {}
 
-  packages/octo-harness-daemon:
+  packages/octo-runtime-daemon:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-host':
+      '@mininglamp-oss/octo-runtime-adapter-host':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-host
-      '@mininglamp-oss/octo-harness-adapter-sdk':
+        version: link:../octo-runtime-adapter-host
+      '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-sdk
-      '@mininglamp-oss/octo-harness-core':
+        version: link:../octo-runtime-adapter-sdk
+      '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
-        version: link:../octo-harness-core
-      '@mininglamp-oss/octo-harness-protocol':
-        specifier: workspace:*
-        version: link:../octo-harness-protocol
+        version: link:../octo-runtime-protocol
       ajv:
         specifier: ^8.17.1
         version: 8.20.0
@@ -408,26 +417,33 @@ importers:
         specifier: ^2.8.1
         version: 2.9.1
 
-  packages/octo-harness-protocol:
+  packages/octo-runtime-extra-sse-demo:
+    dependencies:
+      '@mininglamp-oss/octo-runtime-protocol':
+        specifier: workspace:*
+        version: link:../octo-runtime-protocol
+    devDependencies:
+      '@mininglamp-oss/octo-runtime-daemon':
+        specifier: workspace:*
+        version: link:../octo-runtime-daemon
+
+  packages/octo-runtime-protocol:
     devDependencies:
       json-schema-to-typescript:
         specifier: ^16.0.0
         version: 16.0.0
 
-  packages/octo-harness-worker-access:
+  packages/octo-runtime-worker-access:
     dependencies:
-      '@mininglamp-oss/octo-harness-adapter-host':
+      '@mininglamp-oss/octo-runtime-adapter-host':
         specifier: workspace:*
-        version: link:../octo-harness-adapter-host
-      '@mininglamp-oss/octo-harness-core':
+        version: link:../octo-runtime-adapter-host
+      '@mininglamp-oss/octo-runtime-daemon':
         specifier: workspace:*
-        version: link:../octo-harness-core
-      '@mininglamp-oss/octo-harness-daemon':
+        version: link:../octo-runtime-daemon
+      '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
-        version: link:../octo-harness-daemon
-      '@mininglamp-oss/octo-harness-protocol':
-        specifier: workspace:*
-        version: link:../octo-harness-protocol
+        version: link:../octo-runtime-protocol
       ws:
         specifier: ^8.18.3
         version: 8.21.3

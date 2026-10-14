@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ZcodeEventNormalizer } from "@mininglamp-oss/octo-harness-adapter-zcode-gui";
+import { ZcodeEventNormalizer } from "@mininglamp-oss/octo-runtime-adapter-zcode-gui";
 
 test("ZCode terminal-only tools retain identity without inventing a start", () => {
  for (const kind of ["result", "error"]) {

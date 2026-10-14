@@ -1,6 +1,8 @@
 # Runtime 本地存在与按需在线合同
 
-日期：2026-10-14。本文是当前 Harness 包边界、接入与状态判断的统一说明；目标验收见 [IPD-SE](../../docs/local-runtime-ipc-on-demand-ipd-se.md)。Run 固定为 7，Context 固定为 `octo.context-envelope/v3`，各协议版本独立。
+日期：2026-10-14。本文是当前 Runtime 包边界、接入与状态判断的统一说明；目标验收见 [IPD-SE](../../docs/local-runtime-ipc-on-demand-ipd-se.md)。Run 固定为 7，Context 固定为 `octo.context-envelope/v3`，各协议版本独立。
+
+第二次评审的目标边界见 [本地设备与函数式 extra](../../docs/architecture-review-2-device-extra-2026-10-14.md)：对外业务扩展按统一函数入口加载，Octo 与 WeCom 分包，设备身份独立于外部账号绑定。本文下述 profile 身份和对象式模块 API 描述当前实现，尚未完成该目标。旧“access 最终只负责注册”表述不再作为冻结结论；注册、心跳和远程执行的插件划分仍待评审。
 
 ## 1. 设计原则
 
@@ -32,7 +34,7 @@ SDK 在同一 app-owned Home、subject 和 tenant profile 中复用 Runtime ID�
 
 ## 3. 包与进程边界
 
-`octo-harness-embedded` 独立包已删除。本地身份、Home、子进程监督、IPC 和执行流 API 合入 `octo-harness-daemon/src/runtime`。这保留了可复用的本地能力，移除了独立 embedded 包层级。
+`octo-runtime-embedded` 独立包已删除。本地身份、Home、子进程监督、IPC 和执行流 API 合入 `octo-runtime-daemon/src/runtime`。这保留了可复用的本地能力，移除了独立 embedded 包层级。
 
 | 接入范围 | HostApp 携带的包 | 启用方式 |
 | --- | --- | --- |
@@ -80,4 +82,4 @@ Host 源事件和当前远程 relay 使用有界内存，不是永久历史或 d
 - [SDK 与 CLI 接入指南](../INTEGRATION.md)：当前 API、身份、生命周期、invoke 和可选模块。
 - [架构](../ARCHITECTURE.md)与[模块流程](02-module-and-transport-flow.md)：本地和可选远程路径。
 - [部署](../DEPLOYMENTS.md)与[运维](07-operations.md)：最小发行物、凭据和分层排障。
-- [Work App 内置 Runtime](../../octo-harness-work-app/docs/embedded-runtime.md)：宿主组合与发行物。
+- [Work App 内置 Runtime](../../octo-work-app/docs/embedded-runtime.md)：宿主组合与发行物。

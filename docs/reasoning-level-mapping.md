@@ -1,10 +1,10 @@
-# Harness 思考强度默认映射
+# Runtime 思考强度默认映射
 
-2026-10-11 决定：Harness 对外固定 `low / medium / high / xhigh`。用户选择与实际原生参数分开保存；不因某个 adapter 缺少原生档位而隐藏选择器或拒绝整次运行。
+2026-10-11 决定：Runtime 对外固定 `low / medium / high / xhigh`。用户选择与实际原生参数分开保存；不因某个 adapter 缺少原生档位而隐藏选择器或拒绝整次运行。
 
 ## 默认表
 
-唯一维护点为 `packages/octo-harness-adapter-sdk/src/reasoning.ts`。表随代码发布，不增加远端配置服务、UI 设置、运行时能力准入或协议协商。
+唯一维护点为 `packages/octo-runtime-adapter-sdk/src/reasoning.ts`。表随代码发布，不增加远端配置服务、UI 设置、运行时能力准入或协议协商。
 
 | Adapter / 执行通道 | low | medium | high | xhigh |
 | --- | --- | --- | --- | --- |
@@ -17,7 +17,7 @@
 
 OpenClaw、OpenCode 使用保守的三挡默认基线；这不声明所有底层模型只有三挡。其高级档位依赖底层模型，当前不动态发现、探测或重试切换档位。本机 Claude Code 帮助已列出 `xhigh`，因此保留四挡映射。
 
-ACP 路径包含 Hermes、Kimi Code、MiniMax Code、Qoder 与 Qoder CN。目前 Harness 未实现这些通道的原生强度 setter；“原生默认”不代表提供方产品永远不支持强度。
+ACP 路径包含 Hermes、Kimi Code、MiniMax Code、Qoder 与 Qoder CN。目前 Runtime 未实现这些通道的原生强度 setter；“原生默认”不代表提供方产品永远不支持强度。
 
 ## 数据与执行边界
 
@@ -30,9 +30,9 @@ ACP 路径包含 Hermes、Kimi Code、MiniMax Code、Qoder 与 Qoder CN。目前
 
 ## 本轮验证
 
-- 本次 Harness 构建通过；全量自动化 908 通过、5 跳过。随后补充日志持久化字段，相关 87 项测试通过（含新增落盘测试）。
+- 本次 Runtime 构建通过；全量自动化 908 通过、5 跳过。随后补充日志持久化字段，相关 87 项测试通过（含新增落盘测试）。
 - 本次 Work App 构建与类型检查通过；相关 29 项测试通过。全量 1422 通过、1 跳过、1 失败：并行工作新增 IPC 后，contracts.test.ts 方法数量断言仍期待 149，实际 153；该项不记录为通过。
-- 已重启桌面应用与内置 Harness，通过真实 renderer / CDP 确认 Runtime 在线、cloudConnected=true。
+- 已重启桌面应用与内置 Runtime，通过真实 renderer / CDP 确认 Runtime 在线、cloudConnected=true。
 - 实际环境：登录与 IM 为 https://im-test.deepminer.com.cn，Worker 为 http://127.0.0.1:8091/agentworker/api。这是本机服务与 im-test 身份联调，不是云端服务部署。
 - MiniMax xhigh 请求已接受，真实 Run `arun_79660aec33d548ed82100cabfae354f1` 的 REASONING_EFFORT_NOT_APPLIED 提示经过 Worker 持久化，并在真实 renderer 显示。提供方运行最终 failed，未返回测试标记；只确认默认执行路径已启动和未应用提示链路，不记为提供方执行成功，失败根因未确认。
 - Codex xhigh 真实 Run `arun_1a7b802605b34e62b275bac0f7b30908` completed，返回 OCTO_REASONING_XHIGH_OK。

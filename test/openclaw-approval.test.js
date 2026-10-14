@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createOpenClawAdapter } from '../packages/octo-harness-adapter-openclaw/dist/index.js';
-import { assertApprovalRequest } from '../packages/octo-harness-protocol/dist/index.js';
+import { createOpenClawAdapter } from '../packages/octo-runtime-adapter-openclaw/dist/index.js';
+import { assertApprovalRequest } from '../packages/octo-runtime-protocol/dist/index.js';
 
 function fixture({ decisions = ['allow-once', 'allow-always', 'deny'], ttl = 60000, snapshot = false } = {}) {
   let listener, finish, session, runId;

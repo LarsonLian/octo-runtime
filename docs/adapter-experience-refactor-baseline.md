@@ -4,7 +4,7 @@
 
 状态：核心修复已实施并按问题提交；完整线上与逐 Provider 资格验收尚未完成。实现记录见 [实施与验收记录](adapter-experience-implementation-2026-10-09.md)。本文中的“必须”和“不得”仍是验收要求，不表示所有场景均已通过。
 
-适用项目：`octo-harness`、`octo-agent-worker`、`octo-harness-work-app`。读者为 Adapter、Host、Worker 投影和 Work App 的开发与测试人员。
+适用项目：`octo-runtime`、`octo-agent-worker`、`octo-work-app`。读者为 Adapter、Host、Worker 投影和 Work App 的开发与测试人员。
 
 范围解释：本基线将需求中的“不大概当前的统一协议”暂按“不大改当前统一协议”处理。本轮直接修正当前版本，不设计旧版本兼容层；沿用现有 CanonicalEvent 与 Presentation 事件、字段和版本。若该解释与需求原意不同，必须先修订本节，再实施受影响部分。
 
@@ -38,7 +38,7 @@
 | 主名称 | 本文含义 |
 | --- | --- |
 | Provider 原生事件 | Codex app-server、ACP、CLI 或 Gateway 发出的事件；由 Adapter 解释 |
-| CanonicalEvent | Adapter 与 Host 输出、Harness 持久化并发送给 Worker 的统一执行事件 |
+| CanonicalEvent | Adapter 与 Host 输出、Runtime 持久化并发送给 Worker 的统一执行事件 |
 | 根 Run | 一次执行的权威生命周期；工具结束、消息结束不等于根 Run 结束 |
 | 消息段 | 具有独立 `messageId` 的文本对象；同一段允许增量与快照更新 |
 | 模型轮次 | 由 `model_step.started/finished` 表达的轮次关联；不等于思考活动 |
@@ -47,7 +47,7 @@
 | Presentation | Worker 对外提供的公开投影，例如 `text.patch`、`tool.upsert`、`activity.upsert` |
 | 终态 | 根 Run、工具和模型轮次的 completed、failed、cancelled；activity 另有 superseded |
 
-协议依据是当前工作区的 [protocol.schema.json](../packages/octo-harness-protocol/schema/protocol.schema.json)、[生成类型](../packages/octo-harness-protocol/src/generated/protocol-types.ts)及[运行时校验](../packages/octo-harness-protocol/src/index.ts)。本基线不另定义 payload。
+协议依据是当前工作区的 [protocol.schema.json](../packages/octo-runtime-protocol/schema/protocol.schema.json)、[生成类型](../packages/octo-runtime-protocol/src/generated/protocol-types.ts)及[运行时校验](../packages/octo-runtime-protocol/src/index.ts)。本基线不另定义 payload。
 
 必须特别区分两种 `update`：
 
@@ -64,14 +64,14 @@
 
 | 编号 | 已核实事实 | 影响与定位 |
 | --- | --- | --- |
-| F01 | ACP 和 CodeBuddy 将原生 in_progress 传入 `canonicalTerminalStatus()`，最小复现输出 failed | 运行中工具被提前收口；[ACP](../packages/octo-harness-adapter-acp/src/index.ts)、[CodeBuddy](../packages/octo-harness-adapter-codebuddy/src/index.ts) |
-| F02 | Host 收到 `message.update(status=streaming)` 后，结束对应 activity 为 completed | 流式快照替换导致活动提前结束；[InvocationExperience](../packages/octo-harness-adapter-host/src/experience.ts) |
-| F03 | Host 对缺失 messageId 的消息使用 `${runId}:${channel}` | 不同消息段可能合并；[Host 消息补全](../packages/octo-harness-adapter-host/src/index.ts) |
-| F04 | OpenClaw Gateway 路径复用 analysis 消息身份，并基本以整次调用表达一个 step | 工具后的新思考仍归入旧消息；[OpenClaw 转换](../packages/octo-harness-adapter-openclaw/src/index.ts) |
+| F01 | ACP 和 CodeBuddy 将原生 in_progress 传入 `canonicalTerminalStatus()`，最小复现输出 failed | 运行中工具被提前收口；[ACP](../packages/octo-runtime-adapter-acp/src/index.ts)、[CodeBuddy](../packages/octo-runtime-adapter-codebuddy/src/index.ts) |
+| F02 | Host 收到 `message.update(status=streaming)` 后，结束对应 activity 为 completed | 流式快照替换导致活动提前结束；[InvocationExperience](../packages/octo-runtime-adapter-host/src/experience.ts) |
+| F03 | Host 对缺失 messageId 的消息使用 `${runId}:${channel}` | 不同消息段可能合并；[Host 消息补全](../packages/octo-runtime-adapter-host/src/index.ts) |
+| F04 | OpenClaw Gateway 路径复用 analysis 消息身份，并基本以整次调用表达一个 step | 工具后的新思考仍归入旧消息；[OpenClaw 转换](../packages/octo-runtime-adapter-openclaw/src/index.ts) |
 | F05 | Claude Code、ACP 等路径将普通文本直接归为 final；Codex 保留 commentary 与 final 的区别 | 前导说明与最终回答缺少相同的分段语义；不得据此假定所有 Provider 都有原生 channel |
-| F06 | 前端思考预览要求 analysis 的 firstSeq 晚于本组最后一个工具的 firstSeq | 复用旧思考 ID 后，新内容可能不再成为当前预览；[过程投影](../../octo-harness-work-app/src/renderer/src/surfaces/execution-process.ts) |
-| F07 | Work App 在执行结束后默认折叠过程 | “页面没有显示”不能直接判为“转换丢失”；[Transcript](../../octo-harness-work-app/src/renderer/src/surfaces/Transcript.tsx) |
-| F08 | Host 已在等待首个 Provider 结果前输出 starting；Runtime 的上下文准备发生在进入该调用之前 | starting 不覆盖全部提交等待；[Host](../packages/octo-harness-adapter-host/src/index.ts)、[Runtime](../packages/octo-harness-daemon/src/agent-work-runtime.ts) |
+| F06 | 前端思考预览要求 analysis 的 firstSeq 晚于本组最后一个工具的 firstSeq | 复用旧思考 ID 后，新内容可能不再成为当前预览；[过程投影](../../octo-work-app/src/renderer/src/surfaces/execution-process.ts) |
+| F07 | Work App 在执行结束后默认折叠过程 | “页面没有显示”不能直接判为“转换丢失”；[Transcript](../../octo-work-app/src/renderer/src/surfaces/Transcript.tsx) |
+| F08 | Host 已在等待首个 Provider 结果前输出 starting；Runtime 的上下文准备发生在进入该调用之前 | starting 不覆盖全部提交等待；[Host](../packages/octo-runtime-adapter-host/src/index.ts)、[Runtime](../packages/octo-runtime-daemon/src/agent-work-runtime.ts) |
 
 对上一轮分析的校正：向 Host 直接注入 `tool_call.update(status=running)` 可以复现错误收口，但该输入本身违反现有正式协议。修复必须将中间状态挡在 Adapter／校验边界，不能通过允许非终态 update 改写协议。Host 的 streaming 消息快照问题则属于合法消息更新的消费错误。
 
@@ -97,7 +97,7 @@
 Provider 原生事件
   → Adapter：解释状态、保留身份、转换文本与工具事实
   → Host：校验合同、补齐合法生命周期、管理活动
-  → Harness Runtime：持久化、发送、维持根 Run 权威状态
+  → Runtime Runtime：持久化、发送、维持根 Run 权威状态
   → Worker：脱敏、公开投影、快照与重放
   → Work App：当前活动、过程分组、折叠与计时
 ```
@@ -212,7 +212,7 @@ Work App 必须同时满足：
 | P2：补齐消费者 | Worker 公开投影与恢复；Work App 活动选择、启动反馈、过程入口 | A10—A14 通过；不新增公共事件或字段 |
 | P3：真实联调 | 逐个 Adapter 的原生→CanonicalEvent→Presentation→DOM 证据 | A15—A17 通过；未覆盖项逐项列明 |
 
-实现顺序不表示可以将中间不一致版本作为最终交付。Harness、Worker、Work App 必须以同一基线联合验证，不承诺新旧组件混用。
+实现顺序不表示可以将中间不一致版本作为最终交付。Runtime、Worker、Work App 必须以同一基线联合验证，不承诺新旧组件混用。
 
 本轮只补齐既有协议的生产与消费，不修改 schema 表达范围。若实现发现必须新增字段才能表达已确定需求，必须停止该扩展、记录缺口并修订基线；其他不依赖该扩展的修复继续进行。
 
@@ -242,7 +242,7 @@ Work App 必须同时满足：
 
 校验与自动化要求：
 
-1. Harness 执行适用的类型检查、构建、协议／Adapter／Host／Runtime 测试；Worker 执行投影与受影响服务的 Go 测试。
+1. Runtime 执行适用的类型检查、构建、协议／Adapter／Host／Runtime 测试；Worker 执行投影与受影响服务的 Go 测试。
 2. Work App 修改 UI 或真实接口后，必须执行 tsc、Vitest、build，并通过 CDP 驱动真实 Electron renderer 验证。
 3. 调试必须使用 im-test 体系。若 Worker 由本地覆盖，报告必须明确写“im-test 登录＋本地 Worker”，不能标成线上 Worker 验收。
 4. 后续正式联调必须包含线上测试环境 Worker；其凭据、服务版本或可用性未满足时，记录阻塞范围，不将本地替代结果记为通过。

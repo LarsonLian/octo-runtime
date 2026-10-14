@@ -4,17 +4,17 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  harnessPaths,
+  runtimePaths,
   assertProfileName,
   migrateLegacyProfileLayout,
   readJsonFile,
   reconcileHomeConfiguration
 } from "../apps/cli/dist/state.js";
 
-test("direct profile names cannot collide with Harness Home infrastructure", () => {
+test("direct profile names cannot collide with Runtime Home infrastructure", () => {
   assert.doesNotThrow(() => assertProfileName("space-spade-user"));
-  assert.throws(() => assertProfileName("logs"), /conflicts with Harness Home infrastructure/);
-  assert.throws(() => assertProfileName("STATE.DB"), /conflicts with Harness Home infrastructure/);
+  assert.throws(() => assertProfileName("logs"), /conflicts with Runtime Home infrastructure/);
+  assert.throws(() => assertProfileName("STATE.DB"), /conflicts with Runtime Home infrastructure/);
 });
 
 test("profile labels accept exactly 1-128 characters", () => {
@@ -28,7 +28,7 @@ test("profile labels accept exactly 1-128 characters", () => {
 
 test("legacy Home-global Runtime state migrates into default without losing the older profile copy", async () => {
   const home = await mkdtemp(join(tmpdir(), "oh-profile-layout-"));
-  const paths = harnessPaths(home, "default");
+  const paths = runtimePaths(home, "default");
   try {
     await mkdir(join(home, "profiles/default/identity"), { recursive: true });
     await mkdir(join(home, "profiles/default/credentials"), { recursive: true });
@@ -55,7 +55,8 @@ test("legacy Home-global Runtime state migrates into default without losing the 
     assert.equal(await migrateLegacyProfileLayout(paths), true);
     assert.equal(await readFile(paths.identity, "utf8"), "current-identity");
     assert.equal(await readFile(paths.credential, "utf8"), "current-credential");
-    assert.equal(await readFile(join(paths.profileRoot, "agent-work.db"), "utf8"), "current-outbox");
+    assert.equal(await readFile(join(home, "agent-work.db"), "utf8"), "current-outbox");
+    await assert.rejects(access(join(paths.profileRoot, "agent-work.db")), { code: "ENOENT" });
     assert.equal(
       await readFile(join(home, "run/profile-layout-v1-backup/default/overridden/identity/runtime.json"), "utf8"),
       "stale-identity"
@@ -72,12 +73,12 @@ test("legacy Home-global Runtime state migrates into default without losing the 
   }
 });
 
-test("legacy migration refuses to move live daemon databases", async () => {
+test("obsolete database files do not trigger profile migration", async () => {
   const home = await mkdtemp(join(tmpdir(), "oh-profile-layout-live-"));
-  const paths = harnessPaths(home, "default");
+  const paths = runtimePaths(home, "default");
   try {
     await writeFile(join(home, "agent-work.db"), "live-outbox");
-    await assert.rejects(migrateLegacyProfileLayout(paths, true), /stop the daemon/);
+    assert.equal(await migrateLegacyProfileLayout(paths, true), false);
     assert.equal(await readFile(join(home, "agent-work.db"), "utf8"), "live-outbox");
   } finally {
     await rm(home, { recursive: true, force: true });

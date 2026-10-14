@@ -18,7 +18,7 @@ const RESERVED_PROFILE_NAMES = new Set([
   "state.db"
 ]);
 
-export interface HarnessHomeConfiguration {
+export interface RuntimeHomeConfiguration {
   schema_version: 1;
   default_profile: string;
   channel: "stable" | "beta";
@@ -66,7 +66,7 @@ export interface UpdateJournal {
   recovered_at?: string;
 }
 
-export interface HarnessPaths {
+export interface RuntimePaths {
   home: string;
   rootConfig: string;
   machine: string;
@@ -82,19 +82,19 @@ export interface HarnessPaths {
   logs: string;
 }
 
-export function defaultHarnessHome(
+export function defaultRuntimeHome(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform
 ): string {
-  if (env.OCTO_HARNESS_HOME?.trim()) return resolve(env.OCTO_HARNESS_HOME.trim());
+  if (env.OCTO_RUNTIME_HOME?.trim()) return resolve(env.OCTO_RUNTIME_HOME.trim());
   if (platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
-    if (localAppData) return resolve(localAppData, "OctoHarness");
+    if (localAppData) return resolve(localAppData, "OctoRuntime");
   }
-  return resolve(env.HOME?.trim() || homedir(), ".octo-harness");
+  return resolve(env.HOME?.trim() || homedir(), ".octo-runtime");
 }
 
-export function harnessPaths(home: string, profile: string): HarnessPaths {
+export function runtimePaths(home: string, profile: string): RuntimePaths {
   assertProfileName(profile);
   const absoluteHome = resolve(home);
   const profileRoot = join(absoluteHome, profile);
@@ -111,14 +111,14 @@ export function harnessPaths(home: string, profile: string): HarnessPaths {
     setupLock: join(absoluteHome, "run", "setup.lock"),
     pid: join(absoluteHome, "octo-daemon.pid"),
     socket: process.platform === "win32"
-      ? `\\\\.\\pipe\\octo-harness-${portableHomeId(absoluteHome)}`
-      : join(absoluteHome, "sockets", "octo-harness-daemon.sock"),
+      ? `\\\\.\\pipe\\octo-runtime-${portableHomeId(absoluteHome)}`
+      : join(absoluteHome, "sockets", "octo-runtime-daemon.sock"),
     logs: join(absoluteHome, "logs")
   };
 }
 
 /** Call under the Home setup lock; this label is shared by all profiles, not an authentication key. */
-export async function ensureMachineIdentity(paths: HarnessPaths): Promise<MachineIdentity> {
+export async function ensureMachineIdentity(paths: RuntimePaths): Promise<MachineIdentity> {
   const existing = await readJsonFile<MachineIdentity>(paths.machine);
   if (existing !== undefined) {
     if (!existing || existing.schema_version !== 1 || !/^machine_[0-9a-f-]{36}$/.test(existing.machine_id)) {
@@ -136,11 +136,11 @@ export function assertProfileName(profile: string): void {
     throw new Error("--profile must start with a letter or digit and contain only letters, digits, dot, underscore, or hyphen (maximum 128 characters)");
   }
   if (RESERVED_PROFILE_NAMES.has(profile.toLowerCase())) {
-    throw new Error(`--profile conflicts with Harness Home infrastructure: ${profile}`);
+    throw new Error(`--profile conflicts with Runtime Home infrastructure: ${profile}`);
   }
 }
 
-export async function prepareHarnessDirectories(paths: HarnessPaths): Promise<void> {
+export async function prepareRuntimeDirectories(paths: RuntimePaths): Promise<void> {
   await Promise.all([
     secureDirectory(paths.home),
     secureDirectory(join(paths.home, "run")),
@@ -154,14 +154,12 @@ export async function prepareHarnessDirectories(paths: HarnessPaths): Promise<vo
 }
 
 /** Upgrade the former Home-global Runtime files and profiles/<name> layout. */
-export async function migrateLegacyProfileLayout(paths: HarnessPaths, daemonRunning = false): Promise<boolean> {
+export async function migrateLegacyProfileLayout(paths: RuntimePaths, daemonRunning = false): Promise<boolean> {
   const legacyProfileRoot = join(paths.home, "profiles", basename(paths.profileRoot));
   const legacyGlobalFiles = basename(paths.profileRoot) === "default"
     ? [
       [join(paths.home, "identity", "runtime.json"), paths.identity],
       [join(paths.home, "credentials", "runtime-token.json"), paths.credential],
-      ...["agent-work.db", "agent-work.db-wal", "agent-work.db-shm"].map(name => [join(paths.home, name), join(paths.profileRoot, name)]),
-      ...["channel-context.db", "channel-context.db-wal", "channel-context.db-shm"].map(name => [join(paths.home, name), join(paths.profileRoot, name)])
     ]
     : [];
   const hasLegacyProfile = await pathExists(legacyProfileRoot);
@@ -221,7 +219,7 @@ export async function removeIfPresent(path: string): Promise<void> {
   await rm(path, { force: true });
 }
 
-export async function withSetupLock<T>(paths: HarnessPaths, action: () => Promise<T>): Promise<T> {
+export async function withSetupLock<T>(paths: RuntimePaths, action: () => Promise<T>): Promise<T> {
   await secureDirectory(dirname(paths.setupLock));
   const release = await acquireProcessLock(paths.setupLock);
   try {
@@ -232,13 +230,13 @@ export async function withSetupLock<T>(paths: HarnessPaths, action: () => Promis
 }
 
 export async function reconcileHomeConfiguration(
-  paths: HarnessPaths,
+  paths: RuntimePaths,
   profile: string,
   channel: "stable" | "beta"
-): Promise<HarnessHomeConfiguration> {
-  const existing = await readJsonFile<HarnessHomeConfiguration>(paths.rootConfig);
+): Promise<RuntimeHomeConfiguration> {
+  const existing = await readJsonFile<RuntimeHomeConfiguration>(paths.rootConfig);
   assertHomeConfiguration(existing);
-  const value: HarnessHomeConfiguration = {
+  const value: RuntimeHomeConfiguration = {
     schema_version: 1,
     default_profile: existing?.default_profile ?? profile,
     channel,
@@ -248,11 +246,11 @@ export async function reconcileHomeConfiguration(
 }
 
 export function assertHomeConfiguration(
-  configuration: HarnessHomeConfiguration | undefined
+  configuration: RuntimeHomeConfiguration | undefined
 ): void {
   if (!configuration) return;
   if (configuration.schema_version !== 1) {
-    throw new Error("unsupported Harness Home config schema");
+    throw new Error("unsupported Runtime Home config schema");
   }
   assertProfileName(configuration.default_profile);
 

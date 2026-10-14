@@ -24,7 +24,7 @@
 - 允许空模型上下文、只发送本轮需要的项及显式重复；必要 adapter 等执行配置仍独立校验，且不进入 LLM 上下文块。
 - 底层不得按 sessionId、run 序号或 hash 缓存、补齐、合并、去重或省略本轮数据；原 Event 幂等重投仍复用原快照。
 - reset、新建 Provider 会话或 resume 失败后，由业务方重新提供必要背景；底层返回真实结果，不自动补齐。
-- 更新全局 AGENTS、生态 README/IPD-SE、Harness 架构及全部模块 README、Worker/Loop/Work App README，以及关联架构和历史 Context 文档入口。IPD-SE 增加 AC-21～25，明确三轮输入、重复、不发 selection、恢复失败与执行配置边界。
+- 更新全局 AGENTS、生态 README/IPD-SE、Runtime 架构及全部模块 README、Worker/Loop/Work App README，以及关联架构和历史 Context 文档入口。IPD-SE 增加 AC-21～25，明确三轮输入、重复、不发 selection、恢复失败与执行配置边界。
 
 验证：文档差异与本次新增相对链接检查；本里程碑不修改运行时代码，不以文档同步宣称新增 AC 已通过。
 
@@ -37,7 +37,7 @@
 - Worker / Loop 同步可选 guidance，Worker canonical/hash 及配置合并保留 item 顺序；同步共享正反 fixtures。
 - Host 四轮集成测试验证同一 Provider 会话的背景、空上下文、显式重复均按当轮渲染；Work App 四轮回归验证原始输入、当轮 Context 和 Provider 会话复用。
 
-验证：Protocol / IM 构建通过；Harness model-context、im-runtime、context-protocol 测试通过；Work App 会话服务 10 项测试及 TypeScript 检查通过；Worker `go test ./...`、Loop clients 测试通过。本记录不证明远端旧编译链路已删除或真实环境已验收。
+验证：Protocol / IM 构建通过；Runtime model-context、im-runtime、context-protocol 测试通过；Work App 会话服务 10 项测试及 TypeScript 检查通过；Worker `go test ./...`、Loop clients 测试通过。本记录不证明远端旧编译链路已删除或真实环境已验收。
 
 ## M3 破坏性删除执行侧上下文加工
 
@@ -48,7 +48,7 @@
 - 工作区准备迁入 adapter-host，授权图片读取迁入 worker-access，执行计划一致性检查归 Protocol；保留执行身份、租约、fencing 和工作区确认。
 - Worker 同步窄化准备回执及生成 OpenAPI；Work App 的 SDK 删除旧扩展与场景应用字段，不保留兼容路径。
 
-验证：Harness 全量测试 820 项，815 通过、5 跳过、0 失败，构建通过；Worker 和 Loop `go test ./...` 通过，Worker 构建通过；Work App 类型检查和构建通过。Work App 全量测试有 1 项 project-notifications 异步用例失败，该文件单独重跑 5 项通过；不据此声明全量零失败。
+验证：Runtime 全量测试 820 项，815 通过、5 跳过、0 失败，构建通过；Worker 和 Loop `go test ./...` 通过，Worker 构建通过；Work App 类型检查和构建通过。Work App 全量测试有 1 项 project-notifications 异步用例失败，该文件单独重跑 5 项通过；不据此声明全量零失败。
 
 ## M4 本地问一问使用 Host 的 CLI 环境
 
@@ -61,4 +61,4 @@
 
 验证：会话、Host 环境、问一问及本地发送相关 65 项测试通过，Work App 构建与类型检查通过；本次三个相关文件 33 项再次通过。验证脚本为 Work App 的 scripts/test-ask-cli-drive-live.mjs，按文件关联原执行，不受同一会话后续诊断影响。先前本机目录列表文件 skills-list-a47dcc30.md（ID 2028）保留为历史结果。另一次 Marketplace mode mine 查询返回 AUTH_REQUIRED，未通过，不将平台拥有的 skills 列表与当前会话列表混为同一结果。
 
-中间一次补测遇到本地 daemon socket ECONNREFUSED，执行以 HOST_EXECUTION_FAILED 结束；该次不计为通过。daemon 断连修复 faeab97 后恢复运行，重新完成上述原句用例；末次检查 phase=running、cloudConnected=true，Runtime 为 runtime_73b443cb-29c0-4488-988d-ef7908d57f19。具体身份补核与接口限制见 [Work App 验收记录](../../octo-harness-work-app/docs/validation/event-context-cli-2026-10-13/README.md)。
+中间一次补测遇到本地 daemon socket ECONNREFUSED，执行以 HOST_EXECUTION_FAILED 结束；该次不计为通过。daemon 断连修复 faeab97 后恢复运行，重新完成上述原句用例；末次检查 phase=running、cloudConnected=true，Runtime 为 runtime_73b443cb-29c0-4488-988d-ef7908d57f19。具体身份补核与接口限制见 [Work App 验收记录](../../octo-work-app/docs/validation/event-context-cli-2026-10-13/README.md)。

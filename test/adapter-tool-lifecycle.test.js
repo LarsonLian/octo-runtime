@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeAcpUpdate } from "@mininglamp-oss/octo-harness-adapter-acp";
-import { normalizeCodeBuddyUpdate } from "@mininglamp-oss/octo-harness-adapter-codebuddy";
+import { normalizeAcpUpdate } from "@mininglamp-oss/octo-runtime-adapter-acp";
+import { normalizeCodeBuddyUpdate } from "@mininglamp-oss/octo-runtime-adapter-codebuddy";
 
 for (const [provider, normalize] of [["ACP", update => normalizeAcpUpdate(update, "fixture")], ["CodeBuddy", normalizeCodeBuddyUpdate]]) {
   test(`${provider}: intermediate tool updates retain running state and replace output`, () => {

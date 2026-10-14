@@ -8,12 +8,12 @@ import {
   configureOpenClawConnection,
   loadLocalOpenClawGateway,
   createOpenClawAdapter
-} from "@mininglamp-oss/octo-harness-adapter-openclaw";
+} from "@mininglamp-oss/octo-runtime-adapter-openclaw";
 import {
   AdapterHost,
   AdapterHostRpcClient,
   AdapterHostRpcServer
-} from "@mininglamp-oss/octo-harness-adapter-host";
+} from "@mininglamp-oss/octo-runtime-adapter-host";
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "oh-connections-"));

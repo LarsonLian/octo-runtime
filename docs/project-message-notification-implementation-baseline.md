@@ -1,20 +1,20 @@
-# 项目消息通知：Harness 实施约束
+# 项目消息通知：Runtime 实施约束
 
-日期：2026-10-08（Asia/Shanghai）。状态：首版公共消息合同已实现；第 5 节记录实际交付，下文第 1–4 节保留最初实施约束。当前范围以 [首版实现基线](../../octo-harness-work-app/docs/project-message-notification-v1.md) 为准。
+日期：2026-10-08（Asia/Shanghai）。状态：首版公共消息合同已实现；第 5 节记录实际交付，下文第 1–4 节保留最初实施约束。当前范围以 [首版实现基线](../../octo-work-app/docs/project-message-notification-v1.md) 为准。
 
-公共需求、术语、候选交互和验收条款见 [工作项目消息通知基线](../../octo-harness-work-app/docs/project-message-notification-baseline.md)。本文只定义 Harness 的责任边界，不新增另一份消息通知需求事实源。
+公共需求、术语、候选交互和验收条款见 [工作项目消息通知基线](../../octo-work-app/docs/project-message-notification-baseline.md)。本文只定义 Runtime 的责任边界，不新增另一份消息通知需求事实源。
 
 ## 1. 已明确的执行要求
 
-用户要求同时修改 octo-harness-work-app、octo-harness、octo-agent-worker；不建设旧版本兼容层；每个 feat 完成后直接 commit。消息通知的首版渠道、事件和内容模式仍以公共基线中的决策为准。
+用户要求同时修改 octo-work-app、octo-runtime、octo-agent-worker；不建设旧版本兼容层；每个 feat 完成后直接 commit。消息通知的首版渠道、事件和内容模式仍以公共基线中的决策为准。
 
 新契约变更必须同时覆盖 schema、类型生成、导出、校验、事件生产者及 Worker 消费方。不得新增旧字段回退、双版本解码或自动降级。验收不覆盖新旧组件混合运行。
 
 直接升级不授权删除历史任务、对话、执行或外部消息，也不授权发布或推送。涉及存储变化时，所属服务必须提供必要迁移。
 
-## 2. Harness 职责
+## 2. Runtime 职责
 
-Harness 负责将 Provider 执行事实表达为统一协议。通知需求涉及的执行终态、人工交互和公开结果必须能够被 Worker 按稳定标识读取及判断。具体新增或调整的字段、事件和标识在技术设计中明确；本文件不虚构尚未决定的协议结构。
+Runtime 负责将 Provider 执行事实表达为统一协议。通知需求涉及的执行终态、人工交互和公开结果必须能够被 Worker 按稳定标识读取及判断。具体新增或调整的字段、事件和标识在技术设计中明确；本文件不虚构尚未决定的协议结构。
 
 必须保持以下边界：
 
@@ -22,7 +22,7 @@ Harness 负责将 Provider 执行事实表达为统一协议。通知需求涉�
 - 等待人工输入不能一律表达为等待批准；交互类型必须保持其实际语义。
 - 供通知使用的公开结果不能包含私有推理、原始执行上下文或凭据。
 - 同一执行事件的重投与新的业务执行必须能被消费方区分。
-- Harness 不拥有 WorkProject、通知规则、项目权限、接收位置或通知发送队列。
+- Runtime 不拥有 WorkProject、通知规则、项目权限、接收位置或通知发送队列。
 - 不在 Provider Adapter 中直接发送群聊或 Webhook 通知，也不依赖桌面 renderer 的连接状态产生执行事实。
 
 已有事实满足需求时，技术设计必须记录复用依据；需要修改时，改动必须连接实际生产和消费路径，不以闲置字段证明已经修改该仓库。
@@ -35,7 +35,7 @@ Harness 负责将 Provider 执行事实表达为统一协议。通知需求涉�
 | 事实生产 | 正常完成、失败、取消及纳入范围的人工交互由实际生命周期产生；重连不伪造新的完成 |
 | 公开结果 | 结果明确归属执行，完整性和内容边界可核对；缺失结果不伪造摘要 |
 | 重投行为 | 同一事件稳定标识在重投时保持一致；新的执行不被误去重 |
-| 跨仓库核对 | Worker 定向测试与 Harness 合同一致；记录对应提交，不能只验证本仓库类型编译 |
+| 跨仓库核对 | Worker 定向测试与 Runtime 合同一致；记录对应提交，不能只验证本仓库类型编译 |
 
 验证按本仓库适用的构建、类型检查和定向测试执行。完整通知送达验收由三个项目联合完成；仅产生执行事件不等于通知已发送。
 
@@ -50,8 +50,8 @@ Harness 负责将 Provider 执行事实表达为统一协议。通知需求涉�
 ## 5. 首版实现与验证记录
 
 - `58dc565` 定义 `NotificationMessage`：`octo.notification.v1`，必填八个字段，禁止额外字段；schema、生成类型、导出和运行时校验同步。
-- `9aa6423` 增加浏览器安全的 `@mininglamp-oss/octo-harness-protocol/notification` 导出。Work App 的真实 Agent Access 客户端用该入口校验发送记录，未引入 Node 模块到 renderer。
+- `9aa6423` 增加浏览器安全的 `@mininglamp-oss/octo-runtime-protocol/notification` 导出。Work App 的真实 Agent Access 客户端用该入口校验发送记录，未引入 Node 模块到 renderer。
 - 已有执行终态及 `message/final` 公开结果满足首版事实来源要求，因此复用原生命周期；没有重复 final 正文，也没有 Provider 直接向外发送。
 - 构建及消息校验测试通过，覆盖正式/测试消息、空正文、额外字段、错误长度及无效 Unicode。Go 服务镜像同一消息结构；HTTP 管理合同由 Agent Access 提供。
 
-Harness 合同可被实际消费者使用，不代表真实群已经收到消息。跨仓库联合验证和未验收项见首版实现基线第 6 节。三个项目按匹配版本直接升级。
+Runtime 合同可被实际消费者使用，不代表真实群已经收到消息。跨仓库联合验证和未验收项见首版实现基线第 6 节。三个项目按匹配版本直接升级。

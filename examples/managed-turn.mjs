@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline/promises";
-import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
-import { createCodexAdapter } from "@mininglamp-oss/octo-harness-adapter-codex";
-import { createClaudeCodeAdapter } from "@mininglamp-oss/octo-harness-adapter-claude-code";
+import { AdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
+import { createCodexAdapter } from "@mininglamp-oss/octo-runtime-adapter-codex";
+import { createClaudeCodeAdapter } from "@mininglamp-oss/octo-runtime-adapter-claude-code";
 
 const [adapterType = "codex", mode = "native", prompt = "Reply with OK"] = process.argv.slice(2);
 if (!["codex", "claude-code"].includes(adapterType) || !["native", "canonical"].includes(mode))

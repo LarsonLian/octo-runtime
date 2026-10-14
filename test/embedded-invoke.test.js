@@ -4,10 +4,10 @@ import { createServer } from "node:net";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { invokeDaemonRun } from "../packages/octo-harness-daemon/dist/runtime/run-stream.js";
-import { callDaemon } from "../packages/octo-harness-daemon/dist/runtime/runtime-contract.js";
+import { invokeDaemonRun } from "../packages/octo-runtime-daemon/dist/runtime/run-stream.js";
+import { callDaemon } from "../packages/octo-runtime-daemon/dist/runtime/runtime-contract.js";
 import { invokeRequest } from "./agent-work-runtime-fixture.js";
-import { canonicalEvents } from "../packages/octo-harness-protocol/dist/index.js";
+import { canonicalEvents } from "../packages/octo-runtime-protocol/dist/index.js";
 
 async function fixture(t, handler) {
   const root = await mkdtemp(join(tmpdir(), "octo-invoke-")),

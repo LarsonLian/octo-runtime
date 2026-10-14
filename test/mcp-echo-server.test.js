@@ -20,7 +20,7 @@ test("stdio echo MCP server lists and calls its deterministic tool", async t => 
   server.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "octo_echo", arguments: { value: "integration-ok" } } })}\n`);
 
   await waitFor(() => responses.length === 3);
-  assert.equal(responses[0].result.serverInfo.name, "octo-harness-echo");
+  assert.equal(responses[0].result.serverInfo.name, "octo-runtime-echo");
   assert.equal(responses[1].result.tools[0].name, "octo_echo");
   assert.equal(responses[2].result.content[0].text, "octo-echo:integration-ok");
 

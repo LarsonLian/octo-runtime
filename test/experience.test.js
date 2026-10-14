@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
-import { CodexEventNormalizer } from "../packages/octo-harness-adapter-codex/dist/app-server.js";
+import { AdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
+import { CodexEventNormalizer } from "../packages/octo-runtime-adapter-codex/dist/app-server.js";
 
 test("host emits activity without persisting private analysis and closes every activity", async () => {
   const host = new AdapterHost();

@@ -4,12 +4,12 @@
 
 | Adapter | Native transport | Resume | Fork capability | Default permission |
 |---|---|---|---|---|
-| [`codex`](../packages/octo-harness-adapter-codex/README.md) | app-server JSON-RPC 2.0 stdio | `thread/resume`，失败 fresh fallback | not exposed | workspace-write sandbox |
-| [`claude-code`](../packages/octo-harness-adapter-claude-code/README.md) | `claude --print --output-format stream-json` | `--resume <uuid>` | not exposed | `bypassPermissions` + external isolation required |
-| [`codebuddy`](../packages/octo-harness-adapter-codebuddy/README.md) | ACP JSON-RPC stdio | `session/load` | not declared | `acceptEdits` + deny fallback |
-| [`opencode`](../packages/octo-harness-adapter-opencode/README.md) | `opencode run --format json --thinking --auto` | `--session <id>` | not exposed | adapter always auto-approves |
-| [`openclaw`](../packages/octo-harness-adapter-openclaw/README.md) | Gateway WS protocol v4 RPC + events | isolated session per AgentRun | not exposed | dedicated OpenClaw agent policy |
-| [`zcode-gui`](../packages/octo-harness-adapter-zcode-gui/README.md) | ZCode private NDJSON RPC stdio | `session/resume`，失败 fresh fallback | not exposed | `build` fail-closed；显式 auto-approve / `yolo` |
+| [`codex`](../packages/octo-runtime-adapter-codex/README.md) | app-server JSON-RPC 2.0 stdio | `thread/resume`，失败 fresh fallback | not exposed | workspace-write sandbox |
+| [`claude-code`](../packages/octo-runtime-adapter-claude-code/README.md) | `claude --print --output-format stream-json` | `--resume <uuid>` | not exposed | `bypassPermissions` + external isolation required |
+| [`codebuddy`](../packages/octo-runtime-adapter-codebuddy/README.md) | ACP JSON-RPC stdio | `session/load` | not declared | `acceptEdits` + deny fallback |
+| [`opencode`](../packages/octo-runtime-adapter-opencode/README.md) | `opencode run --format json --thinking --auto` | `--session <id>` | not exposed | adapter always auto-approves |
+| [`openclaw`](../packages/octo-runtime-adapter-openclaw/README.md) | Gateway WS protocol v4 RPC + events | isolated session per AgentRun | not exposed | dedicated OpenClaw agent policy |
+| [`zcode-gui`](../packages/octo-runtime-adapter-zcode-gui/README.md) | ZCode private NDJSON RPC stdio | `session/resume`，失败 fresh fallback | not exposed | `build` fail-closed；显式 auto-approve / `yolo` |
 
 上层按 capability 做决策，不按 adapter type 写分支。虽然 Codex、Claude Code 和 OpenCode 原生 transport 可 fork，当前 host 没有 fork RPC，因此 adapters 不声明 `session.fork`；新增完整 host/daemon/CLI 流程后才能打开该 capability。
 
@@ -23,7 +23,7 @@ CodeBuddy：ACP `session/update` 的 `agent_message_chunk` 和 `agent_thought_ch
 
 OpenCode：step start/finish -> `model_step.started/finished`（并从 step start 更新 session），text/reasoning part -> final/public reasoning analysis delta，tool part state -> tool lifecycle，step finish 同时更新 usage；同一原生 `messageID` 作为 `stepId` 关联一轮中的 reasoning/tool/text。进程成功退出后产生 message update/run finished，结构化 provider error 进入 run.error。
 
-OpenClaw：adapter 先用 `config.get` 验证隔离配置，再用 `sessions.create.cwd` 建立绑定 Harness workdir 的唯一 session，调用 `sessions.messages.subscribe` 打开完整事件流，最后调用 `agent`；Gateway 的 assistant/thinking/tool/usage/lifecycle streams 映射为公共事件。终态必须经 `agent.wait` 确认，取消通过 `sessions.abort` 收敛为 `run.stopped`。
+OpenClaw：adapter 先用 `config.get` 验证隔离配置，再用 `sessions.create.cwd` 建立绑定 Runtime workdir 的唯一 session，调用 `sessions.messages.subscribe` 打开完整事件流，最后调用 `agent`；Gateway 的 assistant/thinking/tool/usage/lifecycle streams 映射为公共事件。终态必须经 `agent.wait` 确认，取消通过 `sessions.abort` 收敛为 `run.stopped`。
 
 ## Custom / Remote Integrations
 
@@ -48,6 +48,6 @@ OpenClaw Gateway adapter 使用 fake Gateway 完成 RPC、runId 隔离、seq 去
 
 ## Adding Provider Options
 
-`agentConfig.effort` 承载 Harness 统一档位 `low / medium / high / xhigh`，不是原生提供方档位。未配置时保留提供方默认值，不补 `medium`。原生档位转换仅在 adapter 生成命令或 RPC 参数时发生，不修改 Context、执行快照或 Core 中的用户选择。旧 `thinking` 配置仍不允许。
+`agentConfig.effort` 承载 Runtime 统一档位 `low / medium / high / xhigh`，不是原生提供方档位。未配置时保留提供方默认值，不补 `medium`。原生档位转换仅在 adapter 生成命令或 RPC 参数时发生，不修改 Context、执行快照或 Core 中的用户选择。旧 `thinking` 配置仍不允许。
 
-默认映射与验证见 [Adapter SDK reasoning.ts](../packages/octo-harness-adapter-sdk/src/reasoning.ts)，行为与验收见 [思考强度映射](reasoning-level-mapping.md)。其他 provider-specific 配置也由相应 adapter 读取，不进入 Core 分支。OpenClaw 的详细行为见 [OpenClaw Gateway Adapter](06-openclaw-local-adapter.md)。
+默认映射与验证见 [Adapter SDK reasoning.ts](../packages/octo-runtime-adapter-sdk/src/reasoning.ts)，行为与验收见 [思考强度映射](reasoning-level-mapping.md)。其他 provider-specific 配置也由相应 adapter 读取，不进入 Core 分支。OpenClaw 的详细行为见 [OpenClaw Gateway Adapter](06-openclaw-local-adapter.md)。

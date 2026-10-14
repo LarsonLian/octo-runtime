@@ -5,7 +5,7 @@ import {
   createZcodeGuiAdapter,
   discoverZcodeBin,
   ZcodeEventNormalizer
-} from "@mininglamp-oss/octo-harness-adapter-zcode-gui";
+} from "@mininglamp-oss/octo-runtime-adapter-zcode-gui";
 
 const fixture = fileURLToPath(new URL("../test-support/zcode/fake-zcode-app-server.js", import.meta.url));
 

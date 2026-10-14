@@ -29,16 +29,16 @@ test("POSIX installer exposes the macOS/Linux positional-argument contract witho
 
   await assert.rejects(
     execute("sh", [posixInstallerPath, "https://server.invalid", "octo_enroll_test"], {
-      env: { ...process.env, OCTO_HARNESS_PROFILE: ".." }
+      env: { ...process.env, OCTO_RUNTIME_PROFILE: ".." }
     }),
     error => error.code === 2 && /must start with a letter or digit/.test(error.stderr)
   );
 
   await assert.rejects(
     execute("sh", [posixInstallerPath, "https://server.invalid", "octo_enroll_test"], {
-      env: { ...process.env, OCTO_HARNESS_PROFILE: "logs" }
+      env: { ...process.env, OCTO_RUNTIME_PROFILE: "logs" }
     }),
-    error => error.code === 2 && /conflicts with Harness Home infrastructure/.test(error.stderr)
+    error => error.code === 2 && /conflicts with Runtime Home infrastructure/.test(error.stderr)
   );
 });
 
@@ -85,12 +85,12 @@ test("installers use global npm, pass enrollment through stdin, and keep login i
   assert.match(posixInstaller, /printf '%s\\n' "\$ENROLLMENT_TOKEN" \| "\$CLI"/);
   assert.match(windowsInstaller, /\$EnrollmentToken \| & \$cli @loginArguments/);
   for (const source of [posixInstaller, windowsInstaller]) {
-    assert.match(source, /@mininglamp-oss\/octo-harness/);
+    assert.match(source, /@mininglamp-oss\/octo-runtime/);
     assert.match(source, /24/);
     assert.match(source, /--enroll-token-stdin/);
     assert.match(source, /login --help/);
     assert.doesNotMatch(source, /--token[= ]/);
-    assert.doesNotMatch(source, /OCTO_HARNESS_INSTALL_ROOT/);
+    assert.doesNotMatch(source, /OCTO_RUNTIME_INSTALL_ROOT/);
     assert.doesNotMatch(source, /versions\//);
   }
   assert.match(posixInstaller, /--home "\$HARNESS_HOME"/);
@@ -133,7 +133,7 @@ printf '%s\\n' "$*" >> "$FAKE_NPM_LOG"
 if [ "$1" = "prefix" ]; then printf '%s\\n' "$FAKE_NPM_PREFIX"; fi
 if [ "$1" = "install" ] && [ "\${FAKE_NPM_FAIL:-0}" = "1" ]; then exit 9; fi
 `,
-    "octo-harness": `#!/bin/sh
+    "octo-runtime": `#!/bin/sh
 if [ "$1" = "login" ] && [ "$2" = "--help" ]; then
   printf '%s\\n' 'login --enroll-token-stdin --prepare-update --recover-update'
   exit 0
@@ -163,7 +163,7 @@ if [ "\${FAKE_LOGIN_FAIL:-0}" = "1" ]; then exit 7; fi
 `
   };
   await Promise.all(Object.entries(executables).map(async ([name, contents]) => {
-    const target = name === "octo-harness" ? join(npmPrefix, "bin", name) : join(fakeBin, name);
+    const target = name === "octo-runtime" ? join(npmPrefix, "bin", name) : join(fakeBin, name);
     await writeFile(target, contents, "utf8");
     await chmod(target, 0o755);
   }));
@@ -173,7 +173,7 @@ if [ "\${FAKE_LOGIN_FAIL:-0}" = "1" ]; then exit 7; fi
     PATH: `${fakeBin}:/usr/bin:/bin`,
     SHELL: "/bin/zsh",
     HOME: userHome,
-    OCTO_HARNESS_HOME: harnessHome,
+    OCTO_RUNTIME_HOME: harnessHome,
     FAKE_NPM_PREFIX: npmPrefix,
     FAKE_NPM_LOG: npmLog,
     FAKE_SETUP_LOG: setupLog
@@ -182,7 +182,7 @@ if [ "\${FAKE_LOGIN_FAIL:-0}" = "1" ]; then exit 7; fi
     env: installerEnvironment
   });
 
-  assert.match(await readFile(npmLog, "utf8"), /install --global --no-audit --no-fund @mininglamp-oss\/octo-harness@latest/);
+  assert.match(await readFile(npmLog, "utf8"), /install --global --no-audit --no-fund @mininglamp-oss\/octo-runtime@latest/);
   const setupInvocation = await readFile(setupLog, "utf8");
   assert.match(setupInvocation, /PREPARE .*login --prepare-update --wait-drained/);
   assert.match(setupInvocation, new RegExp(`LOGIN --home ${harnessHome.replaceAll("/", "\\/")} --profile default login`));
@@ -235,7 +235,7 @@ test("root README publishes POSIX and Windows one-line commands", async () => {
   assert.match(readme, /"https:\/\/im-test\.deepminer\.com\.cn"/);
   assert.match(readme, /"octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN"/);
   assert.match(readme, /npm install -g/);
-  assert.doesNotMatch(readme, /~\/\.local\/share\/octo-harness/);
+  assert.doesNotMatch(readme, /~\/\.local\/share\/octo-runtime/);
 });
 
 test("published root package requires Node.js 24 and excludes compiler metadata", async () => {

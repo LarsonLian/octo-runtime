@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { WebSocketServer } from "ws";
-import { AgentWorkRuntime, AgentWorkStore } from "../packages/octo-harness-worker-access/dist/index.js";
-import { RUNTIME_RUN_CONTRACT } from "../packages/octo-harness-protocol/dist/index.js";
+import { AgentWorkRuntime, AgentWorkStore } from "../packages/octo-runtime-worker-access/dist/index.js";
+import { RUNTIME_RUN_CONTRACT } from "../packages/octo-runtime-protocol/dist/index.js";
 import { contextEnvelope, continuityItem, deferred, executionContext, resolvedRuntimeSelection, waitFor, wire, withTimeout } from "./agent-work-runtime-fixture.js";
 
 const runtimeId = "本机 Runtime/🎯";
@@ -68,7 +68,7 @@ for (const scenario of [
       assert.equal(fixture.contextSyncs, 0);
       assert.equal(fixture.invocations.length, 0);
       await fixture.runtime.close();
-      const store = AgentWorkStore.open(fixture.storePath);
+      const store = new AgentWorkStore();
       try {
         const persisted = store.getCommandReceipt(command.command_id);
         assert.equal(persisted, undefined);
@@ -124,7 +124,7 @@ for (const agent_source of ["preset", "provisioned"]) {
         await fixture.runtime.start();
         await fixture.ready.promise;
         await waitFor(() => fixture.lastCapabilities.adapters.find(a => a.provider_type === "openclaw")?.available);
-        const directory = join(fixture.storePath, "..");
+        const directory = fixture.root;
         const before = await readdir(directory);
         const payload = executionEnvelope();
         const path = join(directory, "missing-non-git");
@@ -177,11 +177,11 @@ test("OpenClaw availability refresh preserves the device connection and other ad
 
 async function startFixture({ rejectRegistration = false, openClawProbeState, adapterConfigurations } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-selection-"));
-  const storePath = join(directory, "agent-work.db");
+  const runtimeRoot = directory;
   const server = createServer();
   const wsServer = new WebSocketServer({ noServer: true });
   const ready = deferred();
-  const fixture = { storePath, ready, registrations: 0, upgrades: 0, contextSyncs: 0, preparations: [], receipts: [], invocations: [], socket: undefined };
+  const fixture = { root: runtimeRoot, ready, registrations: 0, upgrades: 0, contextSyncs: 0, preparations: [], receipts: [], invocations: [], socket: undefined };
   server.on("request", async (request, response) => {
     let body = "";
     for await (const chunk of request) body += chunk;
@@ -218,7 +218,7 @@ async function startFixture({ rejectRegistration = false, openClawProbeState, ad
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   fixture.runtime = new AgentWorkRuntime({
     profile: "default", baseUrl: `http://127.0.0.1:${server.address().port}`, token: "runtime-test-token",
-    runtimeId, runtimeName: "selection-test", storePath, initialReconnectDelayMs: 60_000, reconnectDelayMs: 60_000,
+    runtimeId, runtimeName: "selection-test", root: runtimeRoot, initialReconnectDelayMs: 60_000, reconnectDelayMs: 60_000,
     ...(adapterConfigurations ? {adapterConfigurations} : {}),
     ...(openClawProbeState ? { adapterProbeMs: 20, adapterConfigurations: {openclaw:{providerOptions:{OPENCLAW_RUNTIME_ROOT:directory}}} } : {})
   }, {
@@ -280,7 +280,7 @@ test("Runtime applies local Provider connection options without replacing the fr
     assert.equal(request.agentConfig.providerAgentId, "researcher");
     assert.equal(
       request.agentConfig.providerOptions.OPENCLAW_RUNTIME_ROOT,
-      join(fixture.storePath, "..")
+      fixture.root
     );
     assert.equal(JSON.stringify(request.context).includes("OPENCLAW_RUNTIME_ROOT"), false);
   } finally {

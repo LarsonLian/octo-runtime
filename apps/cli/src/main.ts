@@ -1,10 +1,12 @@
+import { configureChannel } from "./channel.js";
+import { setExtra } from "./extras.js";
 import {
   configureOpenClawConnection,
   createOpenClawAdapter,
   OPENCLAW_RUNTIME_ROOT,
   type OpenClawConnectionInput
-} from "@mininglamp-oss/octo-harness-adapter-openclaw";
-import type { ServiceBackend } from "@mininglamp-oss/octo-harness-cross-service";
+} from "@mininglamp-oss/octo-runtime-adapter-openclaw";
+import type { ServiceBackend } from "@mininglamp-oss/octo-runtime-cross-service";
 import { createHash, randomUUID } from "node:crypto";
 import { access, stat } from "node:fs/promises";
 import net from "node:net";
@@ -18,18 +20,18 @@ import {
 import { resolveServiceControl, verifyServiceProgram, type ServiceControlOptions } from "./service-control.js";
 import {
   assertHomeConfiguration,
-  defaultHarnessHome,
+  defaultRuntimeHome,
   ensureMachineIdentity,
-  harnessPaths,
+  runtimePaths,
   migrateLegacyProfileLayout,
-  prepareHarnessDirectories,
+  prepareRuntimeDirectories,
   readJsonFile,
   reconcileHomeConfiguration,
   removeIfPresent,
   withSetupLock,
   writeJsonAtomic,
-  type HarnessHomeConfiguration,
-  type HarnessPaths,
+  type RuntimeHomeConfiguration,
+  type RuntimePaths,
   type ProfileConfiguration,
   type RuntimeCredential,
   type RuntimeIdentity,
@@ -69,7 +71,7 @@ interface CliContext {
   env: NodeJS.ProcessEnv;
   home: string;
   profile: string;
-  paths: HarnessPaths;
+  paths: RuntimePaths;
   flags: Flags;
   positionals: string[];
   service: ReturnType<typeof resolveServiceControl>;
@@ -108,13 +110,13 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
       input: dependencies.input ?? process.stdin,
       output: dependencies.output,
       env: dependencies.env,
-      runtimeRoot: harnessPaths(optionalString(flags.home) ?? defaultHarnessHome(dependencies.env, dependencies.platform), optionalString(flags.profile) ?? "default").profileRoot,
+      runtimeRoot: runtimePaths(optionalString(flags.home) ?? defaultRuntimeHome(dependencies.env, dependencies.platform), optionalString(flags.profile) ?? "default").profileRoot,
       manifest: flags.manifest === undefined ? undefined : requiredFlag(flags.manifest, "manifest")
     });
   }
   const profile = optionalString(flags.profile) ?? "default";
-  const home = optionalString(flags.home) ?? defaultHarnessHome(dependencies.env, dependencies.platform);
-  const paths = harnessPaths(home, profile);
+  const home = optionalString(flags.home) ?? defaultRuntimeHome(dependencies.env, dependencies.platform);
+  const paths = runtimePaths(home, profile);
   const output = dependencies.output ?? (value => process.stdout.write(`${value}\n`));
   const context: CliContext = {
     env: dependencies.env ?? process.env,
@@ -131,7 +133,7 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
     runForegroundDaemon: dependencies.runForegroundDaemon ?? (async daemonArgs => {
       const originalArgv = process.argv;
       const originalExitCode = process.exitCode;
-      process.argv = [process.execPath, originalArgv[1] ?? "octo-harness", ...daemonArgs];
+      process.argv = [process.execPath, originalArgv[1] ?? "octo-runtime", ...daemonArgs];
       process.exitCode = undefined;
       try {
         await import("../../daemon/dist/launcher.js");
@@ -155,6 +157,16 @@ async function dispatchCli(context: CliContext): Promise<CommandResult> {
   if (!group || group === "help" || context.flags.help === true) {
     return { value: helpText(group === "help" ? action : group) };
   }
+  if (group === "extraset") {
+    if (context.positionals.length !== 2 || Object.keys(context.flags).some(key => key !== "home"))
+      throw new Error("extraset accepts a name and --home; pass the complete JSON object on stdin");
+    return { value: await setExtra(context.paths, required(action, "extra-name"), context.input) };
+  }
+  if (group === "channel" && action === "configure") {
+    if (context.positionals.length !== 2 || Object.keys(context.flags).some(key => key !== "home"))
+      throw new Error("channel configure accepts only --home; pass one Bot JSON object on stdin");
+    return { value: await configureChannel(context.paths, context.input) };
+  }
   if (group === "login") return runLogin(context);
   if (group === "adapter" && action === "connect") return runAdapterConnectCommand(context, id);
   if (group === "daemon") return runDaemonCommand(context, action);
@@ -166,24 +178,24 @@ async function dispatchCli(context: CliContext): Promise<CommandResult> {
 
 async function runLogin(context: CliContext): Promise<CommandResult> {
   return withSetupLock(context.paths, async () => {
-    const homeConfiguration = await readJsonFile<HarnessHomeConfiguration>(context.paths.rootConfig);
+    const homeConfiguration = await readJsonFile<RuntimeHomeConfiguration>(context.paths.rootConfig);
     assertHomeConfiguration(homeConfiguration);
     if (context.flags.prepareUpdate === true && context.flags.recoverUpdate === true) {
       throw new Error("--prepare-update and --recover-update are mutually exclusive update modes");
     }
     if (context.flags.prepareUpdate === true) {
-      await prepareHarnessDirectories(context.paths);
+      await prepareRuntimeDirectories(context.paths);
       return prepareUpdate(context);
     }
     if (context.flags.recoverUpdate === true) {
-      await prepareHarnessDirectories(context.paths);
+      await prepareRuntimeDirectories(context.paths);
       return recoverUpdate(context);
     }
     await migrateLegacyProfileLayout(
       context.paths,
       Boolean(await tryDaemonStatus(context.paths.socket))
     );
-    await prepareHarnessDirectories(context.paths);
+    await prepareRuntimeDirectories(context.paths);
     return reconcileSetup(context);
   });
 }
@@ -218,7 +230,7 @@ async function reconcileSetup(context: CliContext): Promise<CommandResult> {
     const resolvedAgentWorkUrl = normalizeServerUrl(agentWorkUrl ?? `${serverUrl}/agentworker/api`);
     const runtimeName = optionalString(context.flags.runtimeName)
       ?? profileConfig?.runtime_name
-      ?? (hostname() || "Octo Harness Runtime");
+      ?? (hostname() || "Octo Runtime Runtime");
     const machine = await ensureMachineIdentity(context.paths);
     const credential = identity ? await readJsonFile<RuntimeCredential>(context.paths.credential) : undefined;
     if (identity && !credential?.access_token) {
@@ -418,9 +430,9 @@ async function installDaemonService(context: CliContext): Promise<CommandResult>
     await loadInstalledRuntime(context);
     const autostart = context.flags.noAutostart !== true;
 
-    const homeConfiguration = await readJsonFile<HarnessHomeConfiguration>(context.paths.rootConfig);
+    const homeConfiguration = await readJsonFile<RuntimeHomeConfiguration>(context.paths.rootConfig);
     assertHomeConfiguration(homeConfiguration);
-    if (!homeConfiguration) throw new Error("Harness Home config is missing; run octo-harness login first");
+    if (!homeConfiguration) throw new Error("Runtime Home config is missing; run octo-runtime login first");
     const spec = context.service.spec(context.paths, autostart);
     await verifyServiceProgram(spec);
     const probe = await context.service.backend.probe();
@@ -464,25 +476,25 @@ async function uninstallDaemonService(context: CliContext): Promise<CommandResul
 async function loadInstalledRuntime(
   context: CliContext
 ): Promise<{ identity: RuntimeIdentity; profileConfig: ProfileConfiguration }> {
-  const homeConfiguration = await readJsonFile<HarnessHomeConfiguration>(context.paths.rootConfig);
+  const homeConfiguration = await readJsonFile<RuntimeHomeConfiguration>(context.paths.rootConfig);
   if (!homeConfiguration) {
-    throw new Error(`Harness Home is not configured: ${context.home}; run octo-harness login first`);
+    throw new Error(`Runtime Home is not configured: ${context.home}; run octo-runtime login first`);
   }
   assertHomeConfiguration(homeConfiguration);
   const identity = await readJsonFile<RuntimeIdentity>(context.paths.identity);
-  if (!identity) throw new Error(`runtime identity is missing: ${context.paths.identity}; run octo-harness login first`);
+  if (!identity) throw new Error(`runtime identity is missing: ${context.paths.identity}; run octo-runtime login first`);
   validateIdentity(identity, context.profile);
 
   const profileConfig = await readJsonFile<ProfileConfiguration>(context.paths.profileConfig);
-  if (!profileConfig) throw new Error(`profile config is missing: ${context.paths.profileConfig}; run octo-harness login first`);
+  if (!profileConfig) throw new Error(`profile config is missing: ${context.paths.profileConfig}; run octo-runtime login first`);
   validateProfileConfiguration(profileConfig, context.profile);
 
   const credential = await readJsonFile<RuntimeCredential>(context.paths.credential);
   if (!credential || credential.schema_version !== 1 || !credential.issued_at) {
-    throw new Error(`runtime credential is missing or invalid: ${context.paths.credential}; run octo-harness login first`);
+    throw new Error(`runtime credential is missing or invalid: ${context.paths.credential}; run octo-runtime login first`);
   }
   if (profileConfig.agent_work_url && !credential.access_token) {
-    throw new Error(`runtime access token is missing: ${context.paths.credential}; re-enroll this Harness Home`);
+    throw new Error(`runtime access token is missing: ${context.paths.credential}; re-enroll this Runtime Home`);
   }
   return { identity, profileConfig };
 }
@@ -554,11 +566,11 @@ async function runDoctor(context: CliContext): Promise<CommandResult> {
       "service.definition",
       service.state !== "not_installed" && service.drift.length === 0,
       `${service.state}; drift=${service.drift.join(",") || "none"}`,
-      "Run octo-harness daemon install to reconcile the service definition"
+      "Run octo-runtime daemon install to reconcile the service definition"
     ));
   }
   const application = await tryDaemonStatus(context.paths.socket);
-  checks.push(check("daemon.ipc", Boolean(application), application ? "ready" : "not reachable", "Run octo-harness daemon start"));
+  checks.push(check("daemon.ipc", Boolean(application), application ? "ready" : "not reachable", "Run octo-runtime daemon start"));
   const agentWork = selectedRuntimeStatus(application, identity.value?.runtime_id);
   if (agentWork?.enabled === true) {
     checks.push(check(
@@ -574,30 +586,26 @@ async function runDoctor(context: CliContext): Promise<CommandResult> {
 
 function daemonRequest(group: string, action: string | undefined, id: string | undefined, flags: Flags): CliRequest {
   if (group === "status") return { method: "status" };
+  if (group === "extra" && action === "status") return { method: "extra.status" };
+  if (group === "extra" && (action === "load" || action === "unload"))
+    return { method: `extra.${action}`, params: { name: required(id, "extra-name") } };
   if (group === "adapter" && action === "list") return { method: "adapter.list" };
   if (group === "adapter" && action === "probe") {
     return { method: "adapter.probe", params: { adapterType: required(id, "adapter-type") } };
   }
-  if (group === "agent-session" && action && ["list", "get"].includes(action)) {
-    return action === "list"
-      ? { method: "agent_session.list" }
-      : { method: "agent_session.get", params: { agentSessionId: required(id, "agent-session-id") } };
-  }
-  if (group === "agent-run" && action && ["list", "get", "wait"].includes(action)) {
-    return action === "list"
-      ? { method: "agent_run.list" }
-      : { method: `agent_run.${action}`, params: { runId: required(id, "agent-run-id") } };
+  if (group === "agent-run" && action === "get") {
+    return { method: "agent_run.get", params: { run_id: required(id, "run-id") } };
   }
   if (group === "agent-run" && action === "cancel") {
     return {
       method: "agent_run.cancel",
       params: {
-        runId: required(id, "agent-run-id"),
+        run_id: required(id, "run-id"),
         reason: optionalString(flags.reason) ?? "cancelled_by_operator"
       }
     };
   }
-  throw new Error("unknown command; run octo-harness help");
+  throw new Error("unknown command; run octo-runtime help");
 }
 
 export async function callDaemon<T = unknown>(socketPath: string, request: CliRequest): Promise<T> {
@@ -693,7 +701,7 @@ async function connectDaemon(socketPath: string): Promise<net.Socket> {
     socket.destroy();
     const code = (error as NodeJS.ErrnoException).code;
     if (code && ["ENOENT", "ECONNREFUSED", "EINVAL"].includes(code)) {
-      throw new Error(`cannot connect to Octo Harness daemon at ${socketPath}; start it with: octo-harness daemon start`, {
+      throw new Error(`cannot connect to Octo Runtime daemon at ${socketPath}; start it with: octo-runtime daemon start`, {
         cause: error
       });
     }
@@ -764,13 +772,13 @@ function parseArguments(args: string[]): { flags: Flags; positionals: string[] }
     const rawKey = argument.slice(2, separator < 0 ? undefined : separator);
     const normalizedKey = rawKey.replace(/[-_]([a-z])/g, (_match: string, character: string) => character.toUpperCase());
     const key = normalizedKey === "agentIdentit" ? "agentIdentity" : normalizedKey;
+    if (["force", "timeoutMs", "waitDrained"].includes(key)) throw new Error(`unknown option --${rawKey}`);
     if ((key === "agentIdentity" || key === "agentName") && Object.hasOwn(flags, key)) throw new Error(`duplicate --${rawKey}`);
     if (BOOLEAN_FLAGS.has(key)) {
       if (separator >= 0) throw new Error(`--${rawKey} does not accept a value`);
       flags[key] = true;
       continue;
     }
-    if (["force", "timeoutMs", "waitDrained"].includes(key)) throw new Error(`unknown option --${rawKey}`);
     const next = args[index + 1];
     flags[key] = separator >= 0 ? argument.slice(separator + 1) : next && !next.startsWith("--") ? args[++index] : true;
     if ((key === "agentIdentity" || key === "agentName") && (typeof flags[key] !== "string" || !flags[key])) throw new Error(`--${rawKey} requires a nonempty value`);
@@ -792,7 +800,7 @@ function optionalString(value: FlagValue | undefined): string | undefined {
 }
 
 async function daemonServiceSpec(context: CliContext, enabled = true) {
-  const configuration = await readJsonFile<HarnessHomeConfiguration>(context.paths.rootConfig);
+  const configuration = await readJsonFile<RuntimeHomeConfiguration>(context.paths.rootConfig);
   assertHomeConfiguration(configuration);
   return context.service.spec(
     context.paths,
@@ -834,8 +842,16 @@ function selectedRuntimeStatus(
 }
 
 function helpText(group?: string): string {
+  if (group === "channel") {
+    return `Usage: octo-runtime [--home PATH] channel configure < bot.json\n\n` +
+      `Read one Bot object from stdin and add or replace it in the im.json array by platform, server and bot_id.\n` +
+      `Fields: type, api_url, bot_id, bf_token, adapter. enabled defaults to true.\n` +
+      `adapter: adapter_type (default codex), absolute workdir, optional model/effort.\n` +
+      `OpenClaw: adapter_type=openclaw, optional provider_agent_id (default main), no workdir.\n` +
+      `After saving, run daemon run in the foreground or daemon restart for an installed native service.`;
+  }
   if (group === "playboard") {
-    return `Usage: octo-harness playboard [--manifest PATH] [--home PATH] [--profile NAME] < request.json\n\n` +
+    return `Usage: octo-runtime playboard [--manifest PATH] [--home PATH] [--profile NAME] < request.json\n\n` +
       `For development, testing, and integration debugging only.\n` +
       `Do not integrate production applications by spawning this CLI subcommand.\n\n` +
       `Read one complete JSON request from stdin, spawn an independent Host, and stream NDJSON HostFrames.\n` +
@@ -849,7 +865,7 @@ function helpText(group?: string): string {
       `See apps/cli/README.md for a complete here-string example.`;
   }
   if (group === "login") {
-    return `Usage: octo-harness [--home PATH] [--profile NAME] login [options]\n\n` +
+    return `Usage: octo-runtime [--home PATH] [--profile NAME] login [options]\n\n` +
       `First login:\n` +
       `  --agent-identity ID   Agent identity (default: main); also --agent-identit\n` +
       `  --agent-name NAME     Initial display name; also --agent_name\n` +
@@ -863,49 +879,50 @@ function helpText(group?: string): string {
       `Profiles are for trusted identities of the same OS user; use separate OS users/homes for isolation.`;
   }
   if (group === "daemon") {
-    return `Usage: octo-harness [--home PATH] daemon install|uninstall|run|start|stop|restart|status [options]\n\n` +
+    return `Usage: octo-runtime [--home PATH] daemon install|uninstall|run|start|stop|restart|status [options]\n\n` +
       `  install [--no-autostart]\n` +
       `  uninstall\n` +
       `  run [--quiet] [--verbose]\n` +
       `  start [--wait-online]\n` +
       `  stop\n` +
       `  restart [--wait-online]\n\n` +
-      `Uninstall removes the native service but preserves Harness Home identity, credentials, databases, and logs.`;
+      `Uninstall removes the native service but preserves Runtime Home identity, credentials, databases, and logs.`;
   }
   if (group === "doctor") {
-    return `Usage: octo-harness [--home PATH] [--profile NAME] doctor\n\n` +
+    return `Usage: octo-runtime [--home PATH] [--profile NAME] doctor\n\n` +
       `Checks Node.js, profile identity and credential protection, the native user service, daemon IPC, and cloud connection.`;
   }
   if (group === "status") {
-    return `Usage: octo-harness [--home PATH] status\n\n` +
+    return `Usage: octo-runtime [--home PATH] status\n\n` +
       `Reads the daemon's local application status over IPC. Use 'daemon status' to include native service state.`;
   }
   if (group === "adapter") {
-    return `Usage: octo-harness [--home PATH] [--profile NAME] adapter list\n` +
-      `       octo-harness [--home PATH] [--profile NAME] adapter probe <adapter-type>\n` +
-      `       octo-harness [--home PATH] --profile NAME adapter connect openclaw [--openclaw-home PATH | --gateway-url URL --token-stdin]\n\n` +
+    return `Usage: octo-runtime [--home PATH] [--profile NAME] adapter list\n` +
+      `       octo-runtime [--home PATH] [--profile NAME] adapter probe <adapter-type>\n` +
+      `       octo-runtime [--home PATH] --profile NAME adapter connect openclaw [--openclaw-home PATH | --gateway-url URL --token-stdin]\n\n` +
       `adapter connect saves a Runtime-local OpenClaw connection and probes its availability. Select provider_agent_id in Context.\n` +
-      `Connect requires a logged-in Harness profile. Tokens are read from stdin or OPENCLAW_GATEWAY_TOKEN and stored separately. Without flags, reuse the saved connection or discover OPENCLAW_HOME / ~/.openclaw.`;
-  }
-  if (group === "agent-session") {
-    return `Usage: octo-harness [--home PATH] agent-session list|get <agent-session-id>`;
+      `Connect requires a logged-in Runtime profile. Tokens are read from stdin or OPENCLAW_GATEWAY_TOKEN and stored separately. Without flags, reuse the saved connection or discover OPENCLAW_HOME / ~/.openclaw.`;
   }
   if (group === "agent-run") {
-    return `Usage: octo-harness [--home PATH] agent-run list|get|wait|cancel [agent-run-id] [options]\n\n` +
+    return `Usage: octo-runtime [--home PATH] agent-run get|cancel [agent-run-id] [options]\n\n` +
       `  cancel <agent-run-id> [--reason TEXT]`;
   }
-  return `Octo Harness CLI\n\n` +
+  if (group === "extraset") return "Usage: octo-runtime [--home PATH] extraset <name> < config.json\n\nWrites the complete {module, enabled?, config} object; restart the daemon to apply. Configuration and tokens are never echoed.";
+  if (group === "extra") return "Usage: octo-runtime [--home PATH] extra status|load|unload [name]\n\nUses the declarations read at startup. Restart after extraset to apply new configuration.";
+  return `Octo Runtime CLI\n\n` +
     `Global: --home PATH; --profile NAME; --verbose\n\n` +
-    `  octo-harness login --help\n` +
-    `  octo-harness playboard < request.json\n` +
-    `  octo-harness daemon install|uninstall|run|start|stop|restart|status\n` +
-    `  octo-harness doctor [--json]\n` +
-    `  octo-harness status\n` +
-    `  octo-harness adapter list\n` +
-    `  octo-harness adapter probe <type>\n` +
-    `  octo-harness adapter connect openclaw [--openclaw-home PATH | --gateway-url URL --token-stdin]\n` +
-    `  octo-harness agent-session list|get ID\n` +
-    `  octo-harness agent-run list|get|wait|cancel ID`;
+    `  octo-runtime login --help\n` +
+    `  octo-runtime playboard < request.json\n` +
+    `  octo-runtime channel configure < bot.json\n` +
+    `  octo-runtime extraset <name> < config.json\n` +
+    `  octo-runtime extra status|load|unload [name]\n` +
+    `  octo-runtime daemon install|uninstall|run|start|stop|restart|status\n` +
+    `  octo-runtime doctor [--json]\n` +
+    `  octo-runtime status\n` +
+    `  octo-runtime adapter list\n` +
+    `  octo-runtime adapter probe <type>\n` +
+    `  octo-runtime adapter connect openclaw [--openclaw-home PATH | --gateway-url URL --token-stdin]\n` +
+    `  octo-runtime agent-run get|cancel ID`;
 }
 
 export function runtimeFingerprint(): string {

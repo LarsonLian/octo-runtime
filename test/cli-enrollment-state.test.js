@@ -568,7 +568,7 @@ test("login persists a 128-character profile and rejects missing or mismatched i
 });
 
 test("Agent identity and display name survive CLI registration, profile loading and repeated login", async () => {
-  const { loadManagedAgentWorks } = await import("../packages/octo-harness-worker-access/dist/managed-profile.js");
+  const { loadManagedAgentWorks } = await import("../packages/octo-runtime-worker-access/dist/managed-profile.js");
   const home = await mkdtemp(join(tmpdir(), "oh-agent-identity-"));
   const registrations = [];
   const fetchImplementation = async (input, init) => {

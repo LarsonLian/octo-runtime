@@ -1,3 +1,4 @@
+import { imBotIdentity } from "../packages/octo-runtime-channel-im/dist/index.js";
 // 协议与展示回归：验证 Context、公开事件投影、卡片合同、终态和投递幂等。
 // 服务端 0.4.1 schema fixture 防止合法 TypeScript 对象生成不合法卡片报文。
 import test from "node:test";
@@ -9,24 +10,24 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
   ImChannelManager,
   build_im_contexts
-} from "../packages/octo-harness-channel-im/dist/index.js";
+} from "../packages/octo-runtime-channel-im/dist/index.js";
 import {
   ImRunProjector,
   compactRunes,
   toolPreview
-} from "../packages/octo-harness-channel-im/dist/presentation/run-projector.js";
+} from "../packages/octo-runtime-channel-im/dist/presentation/run-projector.js";
 import {
   buildReasoningFrame,
   formatDuration
-} from "../packages/octo-harness-channel-im/dist/connectors/octo/reasoning-frame.js";
-import { selectReasoningTemplate } from "../packages/octo-harness-channel-im/dist/connectors/octo/cards.js";
-import { OctoConnector } from "../packages/octo-harness-channel-im/dist/connectors/octo/connector.js";
-import { CardSession } from "../packages/octo-harness-channel-im/dist/connectors/octo/card-session.js";
-import { parseCardAction } from "../packages/octo-harness-channel-im/dist/connectors/octo/card-action.js";
-import { ImDeliveryDispatcher } from "../packages/octo-harness-channel-im/dist/delivery/dispatcher.js";
-import { ProgressScheduler } from "../packages/octo-harness-channel-im/dist/delivery/scheduler.js";
-import { TypingController } from "../packages/octo-harness-channel-im/dist/presentation/typing.js";
-import { createImInvocation } from "../packages/octo-harness-channel-im/dist/execution/dispatcher.js";
+} from "../packages/octo-runtime-channel-im/dist/connectors/octo/reasoning-frame.js";
+import { selectReasoningTemplate } from "../packages/octo-runtime-channel-im/dist/connectors/octo/cards.js";
+import { OctoConnector } from "../packages/octo-runtime-channel-im/dist/connectors/octo/connector.js";
+import { CardSession } from "../packages/octo-runtime-channel-im/dist/connectors/octo/card-session.js";
+import { parseCardAction } from "../packages/octo-runtime-channel-im/dist/connectors/octo/card-action.js";
+import { ImDeliveryDispatcher } from "../packages/octo-runtime-channel-im/dist/delivery/dispatcher.js";
+import { ProgressScheduler } from "../packages/octo-runtime-channel-im/dist/delivery/scheduler.js";
+import { TypingController } from "../packages/octo-runtime-channel-im/dist/presentation/typing.js";
+import { createImInvocation } from "../packages/octo-runtime-channel-im/dist/execution/dispatcher.js";
 
 const template = { ref: { id: "ai.reasoning-process", version: "0.4.0" }, maxPayloadBytes: 16384 };
 const event = (type, payload = {}) => ({ protocolVersion: 2, type, payload });
@@ -40,12 +41,9 @@ const validateReasoningFrame = new Ajv({ allErrors: true }).compile(
 const config = (overrides = {}) => ({
   type: "octo",
   enabled: true,
-  id: "a",
-  apiUrl: "http://127.0.0.1:1",
-  botId: "bot",
-  spaceId: "s",
-  adapterType: "codex",
-  workdir: "/tmp",
+  api_url: "http://127.0.0.1:1",
+  bot_id: "bot",
+  adapter: { adapter_type: "codex", workdir: "/tmp" },
   ...overrides
 });
 const profile = () => ({
@@ -453,7 +451,10 @@ test("Group/topic rules become ordered v3 items; history excludes the trigger an
       res.end("{}");
     }
   });
-  const bot = config({ apiUrl: f.apiUrl, groupRules: true, historyLimit: 20 });
+  const bot = {
+    ...config({ api_url: f.apiUrl, group_rules: true, history_limit: 20 }),
+    spaceId: "s"
+  };
   const message = {
     messageId: "9",
     messageSeq: 9,
@@ -574,7 +575,7 @@ test("Cards create/edit one stable message with monotone card_seq and persistent
   const abort = new AbortController();
   t.after(() => abort.abort());
   const connector = new OctoConnector(
-    config({ apiUrl: f.apiUrl }),
+    config({ api_url: f.apiUrl }),
     "bf_fixture",
     abort.signal,
     async () => {}
@@ -646,21 +647,22 @@ test("Dynamic endpoints update independently, wait for credentials, and remove i
   const manager = new ImChannelManager({ host: { cancel: async () => ({ cancelled: true }) } });
   t.after(() => manager.close());
   await manager.upsert(config());
-  await manager.upsert(config({ id: "b", botId: "other" }));
+  await manager.upsert(config({ bot_id: "other" }));
   await manager.upsert(Object.fromEntries(Object.entries(config()).reverse()));
   assert.ok(manager.status.every((endpoint) => endpoint.state === "waiting_credentials"));
-  await manager.upsert(config({ token: "invalid" }));
+  await manager.upsert(config({ bf_token: "invalid" }));
   assert.equal(manager.status[0].state, "authentication_failed");
   assert.equal(manager.status[1].state, "waiting_credentials");
   await manager.upsert(config());
   assert.equal(manager.status[0].state, "waiting_credentials");
-  await assert.rejects(manager.upsert(config({ id: "duplicate" })), /IM_BOT_DUPLICATED/);
-  await manager.remove("a");
-  await manager.remove("a");
+  await manager.upsert(config());
+  assert.equal(manager.status.length, 2, "same Bot replaces one entry");
+  await manager.remove(imBotIdentity(config()));
+  await manager.remove(imBotIdentity(config()));
   assert.equal(manager.status.length, 1);
   await manager.upsert(config());
   assert.equal(manager.status.length, 2);
-  assert.ok(manager.status.every(endpoint => !("revision" in endpoint)));
+  assert.ok(manager.status.every((endpoint) => !("revision" in endpoint)));
   assert.ok(!JSON.stringify(manager.status).includes("token"));
 });
 

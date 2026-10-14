@@ -1,17 +1,16 @@
 import {
   startDaemonServer as startLocalDaemon,
   type StartDaemonServerOptions
-} from "@mininglamp-oss/octo-harness-daemon";
+} from "@mininglamp-oss/octo-runtime-daemon";
 import {
   createWorkerAccessModule,
   type AgentWorkRuntimeOptions
-} from "@mininglamp-oss/octo-harness-worker-access";
-import { createImModule } from "@mininglamp-oss/octo-harness-channel-im/daemon-module";
-import type { ImBotConfig, ImCredentialSource } from "@mininglamp-oss/octo-harness-channel-im";
-import { dirname } from "node:path";
+} from "@mininglamp-oss/octo-runtime-worker-access";
+import { createImModule } from "@mininglamp-oss/octo-runtime-channel-im/daemon-module";
+import type { ImBotConfig, ImCredentialSource } from "@mininglamp-oss/octo-runtime-channel-im";
 
-export * from "@mininglamp-oss/octo-harness-daemon";
-export * from "@mininglamp-oss/octo-harness-worker-access";
+export * from "@mininglamp-oss/octo-runtime-daemon";
+export * from "@mininglamp-oss/octo-runtime-worker-access";
 
 export interface StandardDaemonOptions extends StartDaemonServerOptions {
   agentWorks?: AgentWorkRuntimeOptions[];
@@ -28,7 +27,7 @@ export function startDaemonServer(options: StandardDaemonOptions) {
       agentWorks.map((runtime) => ({
         profile: runtime.profile,
         runtimeId: runtime.runtimeId,
-        root: dirname(runtime.storePath),
+        root: runtime.root,
         adapterConfigurations: runtime.adapterConfigurations
       })),
     modules: [

@@ -1,0 +1,29 @@
+{
+  "name": "@mininglamp-oss/octo-runtime-daemon",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./runtime/*": {
+      "types": "./dist/runtime/*.d.ts",
+      "import": "./dist/runtime/*.js"
+    }
+  },
+  "dependencies": {
+    "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
+    "@mininglamp-oss/octo-runtime-protocol": "workspace:*",
+    "ajv": "^8.17.1",
+    "yaml": "^2.8.1"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-manifest.mjs"
+  }
+}

@@ -1,0 +1,4649 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:mininglamp-oss:octo-runtime:protocol-schema",
+  "title": "OctoRuntimeProtocolSchema",
+  "description": "Serializable data shapes for the Octo Runtime NDJSON protocol. Runtime behavior remains hand-written in src/index.ts, and this schema is the source of truth for generated TypeScript types. The x-octo-unicode-scalar-strings semantic keyword requires every JSON string value and object member name to contain Unicode scalar values only: unpaired UTF-16 surrogates are rejected, not repaired or normalized. Consumers must enforce this protocol-wide rule even when validating a definition directly.",
+  "x-octo-unicode-scalar-strings": true,
+  "type": "object",
+  "additionalProperties": false,
+  "definitions": {
+    "RunProtocolErrorCode": {
+      "title": "RunProtocolErrorCode",
+      "enum": [
+        "PROTOCOL_MODE_INVALID",
+        "PROTOCOL_MODE_UNSUPPORTED",
+        "EXECUTION_PROTOCOL_MISMATCH",
+        "EXECUTION_IDENTITY_CONFLICT",
+        "NATIVE_METHOD_UNSUPPORTED",
+        "NATIVE_RESPONSE_INVALID",
+        "INTERACTION_NOT_ACTIVE",
+        "HOST_EXECUTION_FAILED",
+        "HOST_ENDED_WITHOUT_TERMINAL",
+        "STREAM_GAP",
+        "STREAM_EXPIRED",
+        "REMOTE_NATIVE_UNSUPPORTED",
+        "HOST_FRAME_INVALID",
+        "HOST_CONTROL_INVALID",
+        "HOST_RECEIPT_INVALID",
+        "PROTOCOL_SUPPORT_INVALID"
+      ]
+    },
+    "ProtocolMode": {
+      "title": "ProtocolMode",
+      "enum": [
+        "native",
+        "canonical"
+      ]
+    },
+    "CanonicalEventWire": {
+      "title": "CanonicalEventWire",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion",
+        "type",
+        "payload"
+      ],
+      "properties": {
+        "protocolVersion": {
+          "const": 2
+        },
+        "type": {
+          "enum": [
+            "session.update",
+            "usage.update",
+            "model_step.started",
+            "model_step.finished",
+            "message.create",
+            "message.delta",
+            "message.update",
+            "tool_call.create",
+            "tool_call.delta",
+            "tool_call.update",
+            "activity.started",
+            "activity.updated",
+            "activity.finished",
+            "plan.updated",
+            "tool_call.progress",
+            "run.notice",
+            "interaction.requested",
+            "interaction.resolved",
+            "run.queued",
+            "run.started",
+            "run.completed",
+            "run.failed",
+            "run.cancelled"
+          ]
+        },
+        "payload": {
+          "$ref": "#/definitions/CanonicalEventPayload"
+        }
+      }
+    },
+    "HostInvokeOptions": {
+      "title": "HostInvokeOptions",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolMode": {
+          "$ref": "#/definitions/ProtocolMode",
+          "default": "native"
+        },
+        "protocol": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "HostInvokeWireOptions": {
+      "title": "HostInvokeWireOptions",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocol_mode": {
+          "$ref": "#/definitions/ProtocolMode",
+          "default": "native"
+        },
+        "protocol": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "HostRunReceipt": {
+      "title": "HostRunReceipt",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "invocation_id",
+        "stream_id",
+        "agent_session_id",
+        "session_generation",
+        "protocol_mode",
+        "protocol"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "invocation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "stream_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "agent_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "session_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "protocol_mode": {
+          "$ref": "#/definitions/ProtocolMode"
+        },
+        "protocol": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "AdapterProtocolSupport": {
+      "title": "AdapterProtocolSupport",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "modes",
+        "nativeMethods"
+      ],
+      "properties": {
+        "protocol": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "modes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/ProtocolMode"
+          }
+        },
+        "nativeMethods": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "modes": {
+            "not": {
+              "contains": {
+                "const": "native"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "nativeMethods": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    "NativeInteractionResponse": {
+      "title": "NativeInteractionResponse",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "payload"
+      ],
+      "properties": {
+        "requestId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "HostControl": {
+      "title": "HostControl",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "name",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "evidence"
+            },
+            "name": {
+              "enum": [
+                "session"
+              ]
+            },
+            "payload": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "state"
+          ],
+          "properties": {
+            "type": {
+              "const": "state"
+            },
+            "state": {
+              "enum": [
+                "running",
+                "completed",
+                "failed",
+                "cancelled",
+                "lost"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "code",
+            "message"
+          ],
+          "properties": {
+            "type": {
+              "const": "error"
+            },
+            "code": {
+              "$ref": "#/definitions/RunProtocolErrorCode"
+            },
+            "message": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "requestId",
+            "status"
+          ],
+          "properties": {
+            "type": {
+              "const": "interaction"
+            },
+            "requestId": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "resolved",
+                "expired",
+                "invalidated"
+              ]
+            },
+            "expiresAt": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "if": {
+            "properties": {
+              "status": {
+                "const": "pending"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "expiresAt"
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "requested_after_seq",
+            "oldest_seq",
+            "latest_seq"
+          ],
+          "properties": {
+            "type": {
+              "const": "gap"
+            },
+            "requested_after_seq": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "oldest_seq": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "latest_seq": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        }
+      ]
+    },
+    "HostFrame": {
+      "title": "HostFrame",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/NativeHostFrame"
+        },
+        {
+          "$ref": "#/definitions/CanonicalHostFrame"
+        },
+        {
+          "$ref": "#/definitions/ControlHostFrame"
+        }
+      ]
+    },
+    "NativeHostFrame": {
+      "title": "NativeHostFrame",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "invocation_id",
+        "stream_id",
+        "agent_session_id",
+        "session_generation",
+        "seq",
+        "protocol_mode",
+        "protocol",
+        "kind",
+        "messageKind",
+        "payload"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "invocation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "stream_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "agent_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "session_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "protocol_mode": {
+          "const": "native"
+        },
+        "protocol": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "kind": {
+          "const": "native"
+        },
+        "messageKind": {
+          "enum": [
+            "response",
+            "notification",
+            "request",
+            "message"
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "CanonicalHostFrame": {
+      "title": "CanonicalHostFrame",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "invocation_id",
+        "stream_id",
+        "agent_session_id",
+        "session_generation",
+        "seq",
+        "protocol_mode",
+        "protocol",
+        "kind",
+        "event"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "invocation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "stream_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "agent_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "session_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "protocol_mode": {
+          "const": "canonical"
+        },
+        "protocol": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "kind": {
+          "const": "canonical"
+        },
+        "event": {
+          "$ref": "#/definitions/CanonicalEventWire"
+        }
+      }
+    },
+    "ControlHostFrame": {
+      "title": "ControlHostFrame",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "invocation_id",
+        "stream_id",
+        "agent_session_id",
+        "session_generation",
+        "seq",
+        "protocol_mode",
+        "protocol",
+        "kind",
+        "control"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "invocation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "stream_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "agent_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "session_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "protocol_mode": {
+          "$ref": "#/definitions/ProtocolMode"
+        },
+        "protocol": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "kind": {
+          "const": "control"
+        },
+        "control": {
+          "$ref": "#/definitions/HostControl"
+        }
+      }
+    },
+    "NotificationMessage": {
+      "title": "NotificationMessage",
+      "description": "Public, channel-neutral project notification. No runtime context, reasoning, credentials, or tool payloads belong in this envelope.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "eventId",
+        "event",
+        "occurredAt",
+        "projectId",
+        "sourceId",
+        "title",
+        "text"
+      ],
+      "properties": {
+        "schema": {
+          "const": "octo.notification.v2"
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "event": {
+          "enum": [
+            "task.event",
+            "execution.succeeded",
+            "execution.failed",
+            "notification.test"
+          ]
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "sourceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "evt_type": {
+          "type": "integer",
+          "minimum": 101,
+          "maximum": 115
+        },
+        "task": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "title",
+            "status",
+            "row_version",
+            "handler_epoch"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "title": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "backlog",
+                "todo",
+                "in_progress",
+                "done",
+                "cancelled"
+              ]
+            },
+            "row_version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "handler_epoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "responsible_party": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "current_handler": {
+              "type": [
+                "object",
+                "null"
+              ]
+            }
+          }
+        },
+        "taskEvent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "sequence",
+            "evt_type",
+            "actor",
+            "summary",
+            "payload"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "sequence": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "evt_type": {
+              "type": "integer",
+              "minimum": 101,
+              "maximum": 115
+            },
+            "actor": {
+              "type": "object"
+            },
+            "task_conversation_id": {
+              "type": "string"
+            },
+            "source_run_id": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "payload": {
+              "type": "object"
+            }
+          }
+        },
+        "timeline": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "eventId",
+              "sequence",
+              "evt_type",
+              "summary"
+            ],
+            "properties": {
+              "eventId": {
+                "type": "string"
+              },
+              "sequence": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "evt_type": {
+                "type": "integer",
+                "minimum": 101,
+                "maximum": 115
+              },
+              "summary": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "timelineTruncated": {
+          "type": "boolean"
+        },
+        "timelineThroughSequence": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "event": {
+                "const": "task.event"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "evt_type",
+              "task",
+              "taskEvent",
+              "timeline",
+              "timelineThroughSequence"
+            ]
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "evt_type"
+                  ]
+                },
+                {
+                  "required": [
+                    "task"
+                  ]
+                },
+                {
+                  "required": [
+                    "taskEvent"
+                  ]
+                },
+                {
+                  "required": [
+                    "timeline"
+                  ]
+                },
+                {
+                  "required": [
+                    "timelineThroughSequence"
+                  ]
+                },
+                {
+                  "required": [
+                    "timelineTruncated"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "ApprovalMode": {
+      "title": "ApprovalMode",
+      "type": "string",
+      "enum": [
+        "ask",
+        "assisted",
+        "full_access"
+      ]
+    },
+    "ContextItem": {
+      "title": "ContextItem",
+      "description": "Open Context item. Built-in types retain their payload contracts; unknown optional types are preserved and ignored by unsupported consumers.",
+      "tsType": "{ namespace: string; name: string; guidance?: string; payload: Record<string, unknown> }",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "name",
+        "payload"
+      ],
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "maxLength": 96
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "maxLength": 96
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": true,
+          "tsType": "Record<string, unknown>"
+        },
+        "guidance": {
+          "type": "string",
+          "description": "Producer-authored context guidance, rendered as ordinary model input."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.execution"
+              },
+              "name": {
+                "const": "adapter"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextAdapterPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.execution"
+              },
+              "name": {
+                "const": "model"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextModelPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.execution"
+              },
+              "name": {
+                "const": "workspace"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextWorkspacePayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.execution"
+              },
+              "name": {
+                "const": "limits"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextLimitsPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.runtime"
+              },
+              "name": {
+                "const": "selection"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextRuntimeSelectionPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.security"
+              },
+              "name": {
+                "const": "approval_policy"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextApprovalPolicyPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.content"
+              },
+              "name": {
+                "const": "inline"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextInlinePayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.content"
+              },
+              "name": {
+                "const": "references"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextReferencesPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.control"
+              },
+              "name": {
+                "const": "instructions"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextInstructionsPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.execution"
+              },
+              "name": {
+                "const": "envs"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextEnvsPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "namespace": {
+                "enum": [
+                  "octo.execution",
+                  "octo.runtime",
+                  "octo.security",
+                  "octo.control"
+                ]
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "guidance"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "namespace": {
+                "const": "octo.execution"
+              },
+              "name": {
+                "const": "mcp"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/definitions/ContextMcpPayload"
+              }
+            }
+          }
+        }
+      ],
+      "not": {
+        "properties": {
+          "namespace": {
+            "const": "octo.resources"
+          }
+        },
+        "required": [
+          "namespace"
+        ]
+      }
+    },
+    "ContextEnvelope": {
+      "title": "ContextEnvelope",
+      "description": "In addition to draft-07 validation, every consumer must enforce the x-octo semantic keywords: unique ordered namespace/name tuples, compact UTF-8 JSON byte budget, JSON nesting depth with the envelope at depth zero, and Unicode scalar strings in every nested value and object key. Canonical hashing uses ECMAScript JSON number serialization, including -0 becoming 0 and normalized exponent notation; object keys are sorted by UTF-16 code units before ECMAScript integer-index enumeration. U+2028/U+2029 and non-ASCII scalar values are not escaped or Unicode-normalized.",
+      "type": "object",
+      "additionalProperties": false,
+      "x-octo-unique-type-keys": true,
+      "x-octo-max-json-bytes": 65536,
+      "x-octo-max-json-depth": 32,
+      "x-octo-unicode-scalar-strings": true,
+      "required": [
+        "schema",
+        "items"
+      ],
+      "properties": {
+        "schema": {
+          "const": "octo.context-envelope/v3"
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/definitions/ContextItem"
+          }
+        }
+      }
+    },
+    "ContextConfiguration": {
+      "title": "ContextConfiguration",
+      "description": "Agent defaults and mandatory constraints, stored under one external configuration version. Authorized configuration writers may persist system instructions in mandatory with source agent_configuration. Ephemeral business content and default-layer instructions are forbidden; callers cannot submit trusted control instructions.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "defaults",
+        "mandatory"
+      ],
+      "properties": {
+        "defaults": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PersistentContextEnvelope"
+            },
+            {
+              "properties": {
+                "items": {
+                  "items": {
+                    "not": {
+                      "properties": {
+                        "namespace": {
+                          "const": "octo.control"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "tsType": "ContextEnvelope"
+        },
+        "mandatory": {
+          "$ref": "#/definitions/PersistentContextEnvelope"
+        }
+      }
+    },
+    "RunContextProjection": {
+      "title": "RunContextProjection",
+      "description": "Public Context facts. Preparation is distinct from Adapter application or invocation. This projection excludes resource files, trusted instruction text, credentials and Runtime paths.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "context_hash",
+        "preparation_status",
+        "application_status",
+        "invocation_status",
+        "execution",
+        "model_uses_provider_default",
+        "effort_uses_provider_default"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "context_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "actual_runtime_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preparation_status": {
+          "enum": [
+            "unknown",
+            "prepared"
+          ]
+        },
+        "application_status": {
+          "enum": [
+            "unknown",
+            "applied"
+          ]
+        },
+        "invocation_status": {
+          "const": "unknown"
+        },
+        "model_uses_provider_default": {
+          "type": "boolean"
+        },
+        "effort_uses_provider_default": {
+          "type": "boolean"
+        },
+        "object_materials": {
+          "description": "Frozen inline object facts proven by a matching preparation receipt. Source fields are provenance claims, not access grants. No contents, local handles, paths or credentials are exposed; application is separately evidenced by application_status.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/definitions/PublicObjectMaterial"
+          }
+        },
+        "execution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "adapter_type",
+            "approval_mode",
+            "workspace_mode"
+          ],
+          "properties": {
+            "adapter_type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "effort": {
+              "type": "string",
+              "minLength": 1
+            },
+            "approval_mode": {
+              "enum": [
+                "ask",
+                "assisted",
+                "full_access"
+              ]
+            },
+            "workspace_mode": {
+              "enum": [
+                "fixed",
+                "random",
+                "none"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "PublicObjectMaterial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_ref",
+        "object_type",
+        "origin",
+        "byte_size",
+        "digest"
+      ],
+      "properties": {
+        "resource_ref": {
+          "type": "string",
+          "pattern": "^selection-[a-zA-Z0-9][a-zA-Z0-9_.:@-]{0,190}$"
+        },
+        "object_type": {
+          "enum": [
+            "task",
+            "discussion",
+            "discussion_comment",
+            "discussion_reply",
+            "local_file",
+            "drive_file"
+          ]
+        },
+        "object_id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:@-]{0,190}$"
+        },
+        "origin": {
+          "enum": [
+            "mention",
+            "attachment",
+            "object_action",
+            "source_entity"
+          ]
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:@-]{0,190}$"
+        },
+        "byte_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "object_scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "id"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "user",
+                "teamspace"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:@-]{0,190}$"
+            }
+          }
+        },
+        "selector": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "core",
+                "content",
+                "history",
+                "chain",
+                "metadata"
+              ]
+            },
+            "start": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "end": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "object_type": {
+                "const": "local_file"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "object_id"
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "object_id"
+            ]
+          }
+        }
+      ]
+    },
+    "ContextPreparationReceipt": {
+      "title": "ContextPreparationReceipt",
+      "description": "Workspace preparation for the current Run lease and frozen execution Context; it does not prove Provider use of model context.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context_hash",
+        "run_id",
+        "lease_id",
+        "fencing_token",
+        "workspace_mode",
+        "workspace_path",
+        "provider_state_dir",
+        "warnings"
+      ],
+      "properties": {
+        "context_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lease_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "workspace_mode": {
+          "enum": [
+            "fixed",
+            "random",
+            "none"
+          ]
+        },
+        "workspace_path": {
+          "type": "string"
+        },
+        "provider_state_dir": {
+          "type": "string"
+        },
+        "warnings": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        }
+      }
+    },
+    "PersistentContextEnvelope": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ContextEnvelope"
+        },
+        {
+          "properties": {
+            "items": {
+              "items": {
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "namespace": {
+                          "const": "octo.control"
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "payload": {
+                          "properties": {
+                            "entries": {
+                              "items": {
+                                "properties": {
+                                  "source": {
+                                    "const": "agent_configuration"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "not": {
+                      "properties": {
+                        "namespace": {
+                          "const": "octo.content"
+                        },
+                        "name": {
+                          "const": "inline"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "anyOf": [
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.execution"
+                          },
+                          "name": {
+                            "const": "adapter"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.execution"
+                          },
+                          "name": {
+                            "const": "model"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.execution"
+                          },
+                          "name": {
+                            "const": "workspace"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.execution"
+                          },
+                          "name": {
+                            "const": "limits"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.runtime"
+                          },
+                          "name": {
+                            "const": "selection"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.security"
+                          },
+                          "name": {
+                            "const": "approval_policy"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.content"
+                          },
+                          "name": {
+                            "const": "inline"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.content"
+                          },
+                          "name": {
+                            "const": "references"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "namespace": {
+                            "const": "octo.control"
+                          },
+                          "name": {
+                            "const": "instructions"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "tsType": "ContextEnvelope"
+    },
+    "ContextAdapterPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider_agent_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_][a-z0-9_-]{0,63}$"
+        }
+      },
+      "if": {
+        "properties": {
+          "type": {
+            "const": "openclaw"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "provider_agent_id"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "provider_agent_id"
+          ]
+        }
+      }
+    },
+    "ContextModelPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "selection": {
+          "$ref": "#/definitions/ContextModelSelectionPayload"
+        },
+        "reasoning": {
+          "$ref": "#/definitions/ContextReasoningPayload"
+        }
+      }
+    },
+    "ContextReasoningPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "type": "string",
+          "minLength": 1
+        },
+        "use_provider_default": {
+          "const": true
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "effort"
+          ],
+          "not": {
+            "required": [
+              "use_provider_default"
+            ]
+          }
+        },
+        {
+          "required": [
+            "use_provider_default"
+          ],
+          "not": {
+            "required": [
+              "effort"
+            ]
+          }
+        }
+      ]
+    },
+    "ContextWorkspacePayload": {
+      "description": "fixed uses the supplied path; random creates a workspace on the AgentSession's first run and reuses it for subsequent runs; none delegates workspace ownership to a preset Agent.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "path"
+          ],
+          "properties": {
+            "mode": {
+              "const": "fixed"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "const": "random"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "mode"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "const": "none"
+            }
+          }
+        }
+      ]
+    },
+    "ContextLimitsPayload": {
+      "description": "Snake-case frozen watchdog limits, with the same bounds as RuntimeLimits. Legacy enforcement=observe cannot be combined with v2 settings.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "first_frame_timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 1800000
+        },
+        "model_idle_timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3600000
+        },
+        "model_idle_warning_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3600000
+        },
+        "model_idle_policy": {
+          "enum": [
+            "enforce",
+            "observe"
+          ]
+        },
+        "tool_timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 86400000
+        },
+        "tool_wall_timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 86400000
+        },
+        "run_timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 86400000
+        },
+        "cancel_grace_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000
+        },
+        "enforcement": {
+          "enum": [
+            "enforce",
+            "observe"
+          ]
+        }
+      },
+      "if": {
+        "required": [
+          "enforcement"
+        ],
+        "properties": {
+          "enforcement": {
+            "const": "observe"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "model_idle_policy"
+              ]
+            },
+            {
+              "required": [
+                "model_idle_warning_ms"
+              ]
+            },
+            {
+              "required": [
+                "tool_wall_timeout_ms"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "ContextRuntimeSelectionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "candidates",
+            "explicit"
+          ]
+        },
+        "runtime_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runtime_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "strategy": {
+          "const": "preferred_failover"
+        },
+        "offline_behavior": {
+          "enum": [
+            "wait",
+            "fail"
+          ]
+        },
+        "failover": {
+          "enum": [
+            "candidates",
+            "none"
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "mode": {
+              "const": "candidates"
+            }
+          },
+          "required": [
+            "runtime_ids",
+            "strategy"
+          ],
+          "not": {
+            "required": [
+              "runtime_id"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "mode": {
+              "const": "explicit"
+            }
+          },
+          "required": [
+            "runtime_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "runtime_ids"
+                ]
+              },
+              {
+                "required": [
+                  "strategy"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "ContextApprovalPolicyPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "$ref": "#/definitions/ApprovalMode"
+        }
+      }
+    },
+    "ContextSelectionEntry": {
+      "description": "Untrusted inline selection text with optional resource reference, source metadata and summary. Source metadata is not an authorization claim.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": [
+            "object",
+            "string"
+          ],
+          "additionalProperties": true
+        },
+        "summary": {
+          "type": "string"
+        }
+      }
+    },
+    "ContextResourceEntry": {
+      "description": "Declarative MCP resource operation. Only deployed scoped operations may execute; schema validation does not authorize access.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_ref",
+        "resolver",
+        "locator"
+      ],
+      "properties": {
+        "resource_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resolver": {
+          "const": "mcp"
+        },
+        "locator": {
+          "type": "object"
+        },
+        "params": {
+          "description": "Frozen non-secret JSON parameters supplied by the authenticated resolver plan, not model-generated commands.",
+          "type": "object",
+          "additionalProperties": true,
+          "tsType": "Record<string, unknown>"
+        },
+        "authorization_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "properties": {
+            "locator": {
+              "$ref": "#/definitions/ContextMcpLocator"
+            }
+          }
+        }
+      ]
+    },
+    "ContextMcpLocator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "server_ref",
+        "tool"
+      ],
+      "properties": {
+        "server_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tool": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ContextInstructionEntry": {
+      "description": "Minimal control instruction: non-empty text plus a source label. The source label is not proof of trust; authenticated upstream configuration must authorize it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "source"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "enum": [
+            "agent_configuration",
+            "platform_policy"
+          ]
+        }
+      }
+    },
+    "ContextInstructionsPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entries"
+      ],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ContextInstructionEntry"
+          }
+        }
+      }
+    },
+    "ContextContinuityPayload": {
+      "description": "A channel continuity descriptor. The x-octo-matching-trigger-fields keyword requires trigger_fact.message_id == trigger_message_id and matching presence/value of trigger_fact.message_seq and trigger_seq.",
+      "x-octo-matching-trigger-fields": true,
+      "allOf": [
+        {
+          "$ref": "#/definitions/ChannelContextDescriptor"
+        },
+        {
+          "properties": {
+            "session_generation": {
+              "maximum": 9007199254740991
+            },
+            "trigger_seq": {
+              "maximum": 9007199254740991
+            },
+            "trigger_fact": {
+              "properties": {
+                "message_seq": {
+                  "maximum": 9007199254740991
+                },
+                "occurred_at_ms": {
+                  "maximum": 9007199254740991
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ResolvedRuntimeSelection": {
+      "title": "ResolvedRuntimeSelection",
+      "description": "Worker-frozen Context runtime candidates. Explicit selection cannot fail over.",
+      "x-octo-unicode-scalar-strings": true,
+      "x-octo-runtime-selection-invariants": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "selection_mode",
+        "authorized_candidates",
+        "offline_behavior",
+        "failover"
+      ],
+      "properties": {
+        "schema": {
+          "const": "octo.runtime-selection/v2"
+        },
+        "selection_mode": {
+          "enum": [
+            "explicit",
+            "candidates"
+          ]
+        },
+        "explicit_runtime_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "authorized_candidates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "runtime_id",
+              "priority",
+              "owner_subject_type",
+              "owner_subject_id"
+            ],
+            "properties": {
+              "runtime_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 191
+              },
+              "priority": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "owner_subject_type": {
+                "enum": [
+                  "user",
+                  "teamspace"
+                ]
+              },
+              "owner_subject_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 191
+              }
+            }
+          }
+        },
+        "offline_behavior": {
+          "enum": [
+            "wait",
+            "fail"
+          ]
+        },
+        "failover": {
+          "enum": [
+            "candidates",
+            "none"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "selection_mode": {
+                "const": "explicit"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "explicit_runtime_id"
+            ],
+            "properties": {
+              "authorized_candidates": {
+                "maxItems": 1
+              },
+              "failover": {
+                "const": "none"
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "explicit_runtime_id"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "ResolvedExecutionPlan": {
+      "title": "ResolvedExecutionPlan",
+      "x-octo-unicode-scalar-strings": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agent_source",
+        "adapter_type",
+        "workdir",
+        "approval_mode"
+      ],
+      "properties": {
+        "adapter_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workdir": {
+          "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/definitions/ContextWorkspacePayload"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "effort": {
+          "type": "string",
+          "minLength": 1
+        },
+        "approval_mode": {
+          "$ref": "#/definitions/ApprovalMode"
+        },
+        "required_capabilities": {
+          "type": "array",
+          "items": {
+            "const": "react",
+            "type": "string"
+          }
+        },
+        "runtime_limits": {
+          "$ref": "#/definitions/ContextLimitsPayload"
+        },
+        "provider_compatibility": {
+          "type": "object",
+          "additionalProperties": true,
+          "tsType": "Record<string, unknown>"
+        },
+        "provider_agent_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_][a-z0-9_-]{0,63}$"
+        },
+        "agent_source": {
+          "$ref": "#/definitions/AgentSource"
+        },
+        "required_execution_features": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "envs": {
+          "$ref": "#/definitions/ContextEnvsPayload"
+        },
+        "mcp": {
+          "$ref": "#/definitions/ContextMcpPayload"
+        }
+      },
+      "if": {
+        "properties": {
+          "agent_source": {
+            "const": "provisioned"
+          },
+          "workdir": {
+            "const": ""
+          }
+        },
+        "required": [
+          "agent_source",
+          "workdir"
+        ]
+      },
+      "then": {
+        "required": [
+          "workspace"
+        ],
+        "properties": {
+          "workspace": {
+            "properties": {
+              "mode": {
+                "const": "random"
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "adapter_type": {
+                "const": "openclaw"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "provider_agent_id"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "provider_agent_id"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "agent_source": {
+                "const": "preset"
+              }
+            },
+            "required": [
+              "agent_source"
+            ]
+          },
+          "then": {
+            "required": [
+              "provider_agent_id"
+            ]
+          }
+        }
+      ]
+    },
+    "MessageChannel": {
+      "title": "MessageChannel",
+      "description": "Provider-neutral assistant output channel. analysis is reasoning-class content gated by exposure; commentary is public in-run progress; final is answer content delivered only after the Run reaches a completed terminal state.",
+      "type": "string",
+      "enum": [
+        "analysis",
+        "commentary",
+        "final"
+      ]
+    },
+    "MessageExposure": {
+      "title": "MessageExposure",
+      "description": "Adapter-authenticated classification of analysis content. public_reasoning, public_summary, and public_plan may enter a public Presentation; missing values are unknown.",
+      "type": "string",
+      "enum": [
+        "public_reasoning",
+        "public_summary",
+        "public_plan",
+        "private_reasoning",
+        "unknown"
+      ]
+    },
+    "MessageProvenance": {
+      "title": "MessageProvenance",
+      "description": "Provider-native provenance written by the adapter. Audience projectors use it to audit public exposure and clients cannot override it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "nativeEvent"
+      ],
+      "properties": {
+        "provider": {
+          "description": "Adapter or provider type that produced the message.",
+          "type": "string"
+        },
+        "nativeEvent": {
+          "description": "Provider-native event type that was normalized.",
+          "type": "string"
+        }
+      }
+    },
+    "FailureAction": {
+      "title": "FailureAction",
+      "description": "A catalog-controlled recovery action. Clients render labelKey and must not execute arbitrary commands from this object.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "labelKey"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "retry",
+            "retry_later",
+            "update_credentials",
+            "change_model",
+            "check_runtime",
+            "install_dependency",
+            "fix_permissions",
+            "contact_admin"
+          ]
+        },
+        "labelKey": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "FailureSource": {
+      "title": "FailureSource",
+      "description": "Low-cardinality component identity. It intentionally excludes hostnames, paths, accounts, and tenant data.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "component"
+      ],
+      "properties": {
+        "component": {
+          "type": "string",
+          "enum": [
+            "octo-runtime",
+            "octo-agent-worker"
+          ]
+        },
+        "adapter": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "FailureCause": {
+      "title": "FailureCause",
+      "description": "Sanitized machine-readable root cause. Raw stderr, response bodies, paths, and credentials are forbidden.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reasonCode"
+      ],
+      "properties": {
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "httpStatus": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599
+        }
+      }
+    },
+    "FailureEnvelope": {
+      "title": "FailureEnvelope",
+      "description": "Versioned, safe failure fact shared by Runtime, Worker, and channel projectors. Public codes are immutable catalog identifiers; dynamic diagnostics stay outside this object.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "code",
+        "reasonCode",
+        "category",
+        "stage",
+        "messageKey",
+        "params",
+        "retryable",
+        "action",
+        "diagnosticId",
+        "source",
+        "occurredAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^OH-[A-Z]{3}-[0-9]{4}$"
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "stage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "messageKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "params": {
+          "type": "object",
+          "description": "Catalog-allowlisted presentation parameters only.",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "retryAfterMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "action": {
+          "$ref": "#/definitions/FailureAction"
+        },
+        "diagnosticId": {
+          "type": "string",
+          "pattern": "^diag_[0-9a-f]{32}$"
+        },
+        "source": {
+          "$ref": "#/definitions/FailureSource"
+        },
+        "cause": {
+          "$ref": "#/definitions/FailureCause"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "ProviderSession": {
+      "title": "ProviderSession",
+      "description": "Provider-owned session resume data. Core treats sessionId and adapter extension fields as opaque.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "sessionId"
+      ],
+      "properties": {
+        "sessionId": {
+          "description": "Opaque provider session identifier.",
+          "type": "string"
+        },
+        "resumable": {
+          "description": "Whether the provider declares that later invocations can resume this session.",
+          "type": "boolean"
+        },
+        "resumeOutcome": {
+          "description": "Continuity outcome for this session update. Compaction applies to the next turn; fresh fallback applies to the current turn.",
+          "type": "string",
+          "enum": [
+            "new",
+            "resumed",
+            "fresh_fallback",
+            "compacted"
+          ]
+        },
+        "resumeFallback": {
+          "description": "Low-cardinality reason for a fresh resume fallback.",
+          "type": "string"
+        },
+        "contextInputVariant": {
+          "description": "Frozen context input variant actually selected for the current provider turn.",
+          "type": "string",
+          "enum": [
+            "primary",
+            "recovery"
+          ]
+        }
+      }
+    },
+    "RuntimeLimits": {
+      "title": "RuntimeLimits",
+      "description": "Runtime-owned phase-aware invocation watchdog budgets.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "firstFrameTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 1800000
+        },
+        "modelIdleTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3600000
+        },
+        "modelIdleWarningMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3600000
+        },
+        "modelIdlePolicy": {
+          "type": "string",
+          "enum": [
+            "observe",
+            "enforce"
+          ]
+        },
+        "toolTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 86400000
+        },
+        "toolWallTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 86400000
+        },
+        "runTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 86400000
+        },
+        "cancelGraceMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000
+        },
+        "enforcement": {
+          "type": "string",
+          "enum": [
+            "observe",
+            "enforce"
+          ]
+        }
+      }
+    },
+    "AgentConfig": {
+      "title": "AgentConfig",
+      "description": "Adapter-internal configuration derived from the resolved execution plan, not a public source of run model or approval choices. Legacy permission and thinking fields are forbidden.",
+      "type": "object",
+      "additionalProperties": true,
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "permissionMode"
+            ]
+          },
+          {
+            "required": [
+              "autoApprove"
+            ]
+          },
+          {
+            "required": [
+              "dangerouslyBypassPermissions"
+            ]
+          },
+          {
+            "required": [
+              "thinking"
+            ]
+          }
+        ]
+      },
+      "properties": {
+        "workdir": {
+          "description": "Default provider CLI working directory. It is a cwd, not a filesystem security boundary.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Model identifier.",
+          "type": "string"
+        },
+        "sandbox": {
+          "description": "Provider sandbox mode identifier.",
+          "type": "string"
+        },
+        "providerAgentId": {
+          "description": "Provider-side agent identifier.",
+          "type": "string"
+        },
+        "effort": {
+          "description": "Optional provider reasoning effort identifier. Provider adapters may define an explicit default.",
+          "type": "string"
+        },
+        "timeoutSeconds": {
+          "description": "Invocation timeout in seconds.",
+          "type": "number"
+        },
+        "openclawConfigPath": {
+          "description": "OpenClaw configuration path.",
+          "type": "string"
+        },
+        "openclawStateDir": {
+          "description": "OpenClaw state directory.",
+          "type": "string"
+        },
+        "providerOptions": {
+          "description": "Provider-specific extension options passed through unchanged by Core.",
+          "type": "object",
+          "additionalProperties": true,
+          "tsType": "Record<string, unknown>"
+        }
+      }
+    },
+    "CanonicalEventPayload": {
+      "title": "CanonicalEventPayload",
+      "description": "Shared canonical event payload. The open dictionary carries structured tool, surface, and usage fields while common lifecycle fields remain explicit.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "providerSession": {
+          "$ref": "#/definitions/ProviderSession"
+        },
+        "channel": {
+          "$ref": "#/definitions/MessageChannel"
+        },
+        "exposure": {
+          "$ref": "#/definitions/MessageExposure"
+        },
+        "provenance": {
+          "$ref": "#/definitions/MessageProvenance"
+        },
+        "messageId": {
+          "description": "Stable message identifier.",
+          "type": "string"
+        },
+        "stepId": {
+          "description": "Stable model-step identifier used to associate messages and tool calls with one provider turn.",
+          "type": "string"
+        },
+        "role": {
+          "description": "Message role, such as assistant.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Tool call or run status identifier.",
+          "type": "string"
+        },
+        "text": {
+          "description": "Text delta or complete text.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Termination or error reason.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable diagnostic message.",
+          "type": "string"
+        },
+        "failure": {
+          "$ref": "#/definitions/FailureEnvelope"
+        }
+      }
+    },
+    "InteractionRequestedPayload": {
+      "title": "InteractionRequestedPayload",
+      "description": "Provider-neutral request that pauses one active invocation until an interaction response is returned through the Adapter Host.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "interactionId",
+        "kind",
+        "request",
+        "executionInstanceId",
+        "expiresAt"
+      ],
+      "properties": {
+        "executionInstanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "interactionId": {
+          "description": "Stable invocation-scoped interaction identifier.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "approval",
+            "question",
+            "elicitation"
+          ]
+        },
+        "request": {
+          "description": "Display-safe provider request projected for the responding product.",
+          "type": "object",
+          "additionalProperties": true,
+          "tsType": "Record<string, unknown>"
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "approval"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "request": {
+            "$ref": "#/definitions/ApprovalRequest"
+          }
+        }
+      }
+    },
+    "ApprovalRequest": {
+      "description": "Supported profile: original native request approval with requestedPermissions=[] only. Non-empty permission instances fail with APPROVAL_PERMISSION_UNSUPPORTED; consumers must not fabricate them. Details are allowlisted inert metadata. The compact UTF-8 JSON budget is enforced by x-octo-max-json-bytes.",
+      "type": "object",
+      "additionalProperties": false,
+      "x-octo-max-json-bytes": 65536,
+      "x-octo-unicode-scalar-strings": true,
+      "required": [
+        "schema",
+        "policy",
+        "operation",
+        "requestedPermissions",
+        "allowedOutcomes",
+        "grantScope"
+      ],
+      "properties": {
+        "schema": {
+          "const": "octo.approval-request/v1"
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "hash"
+          ],
+          "properties": {
+            "mode": {
+              "$ref": "#/definitions/ApprovalMode"
+            },
+            "hash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            }
+          }
+        },
+        "operation": {
+          "$ref": "#/definitions/ApprovalOperation"
+        },
+        "requestedPermissions": {
+          "type": "array",
+          "maxItems": 0,
+          "items": false
+        },
+        "reason": {
+          "type": "string"
+        },
+        "allowedOutcomes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "accepted",
+              "declined",
+              "cancelled"
+            ]
+          }
+        },
+        "grantScope": {
+          "enum": [
+            "request",
+            "provider"
+          ]
+        },
+        "providerDetails": {
+          "$ref": "#/definitions/ApprovalDisplayDetails"
+        }
+      }
+    },
+    "ApprovalOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "summary"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "command_execution",
+            "file_change",
+            "tool_execution",
+            "permission_grant",
+            "context_access"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "x-octo-max-utf16-length": 8192
+        },
+        "toolCallId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "details": {
+          "$ref": "#/definitions/ApprovalDisplayDetails"
+        }
+      }
+    },
+    "ApprovalDisplayDetails": {
+      "description": "Display-only fields permitted by assertApprovalRequest. Values remain inert provider metadata and do not redefine commands, permissions or grant scope.",
+      "type": "object",
+      "additionalProperties": false,
+      "tsType": "Record<string, unknown>",
+      "properties": {
+        "provider": {},
+        "method": {},
+        "itemId": {},
+        "approvalId": {},
+        "reason": {},
+        "command": {},
+        "cwd": {},
+        "grantRoot": {},
+        "files": {},
+        "toolCallId": {},
+        "title": {},
+        "description": {},
+        "options": {}
+      }
+    },
+    "InteractionResolvedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "interactionId",
+        "executionInstanceId",
+        "status"
+      ],
+      "properties": {
+        "interactionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "executionInstanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "status": {
+          "enum": [
+            "resolved",
+            "expired",
+            "invalidated"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "accepted",
+            "declined",
+            "cancelled",
+            "answered"
+          ]
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "if": {
+        "properties": {
+          "status": {
+            "const": "resolved"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "outcome"
+        ]
+      },
+      "else": {
+        "required": [
+          "reasonCode"
+        ]
+      }
+    },
+    "ModelStepStartedPayload": {
+      "title": "ModelStepStartedPayload",
+      "description": "Starts one provider model round. A round may contain public reasoning, tool calls, and text output.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "stepId"
+      ],
+      "properties": {
+        "stepId": {
+          "description": "Stable identifier reused by model_step.finished and child events.",
+          "type": "string"
+        },
+        "startedAtMs": {
+          "description": "Provider-observed round content-start timestamp in Unix milliseconds.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ModelStepFinishedPayload": {
+      "title": "ModelStepFinishedPayload",
+      "description": "Finishes one provider model round and records why control returned to the harness.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "stepId",
+        "status"
+      ],
+      "properties": {
+        "stepId": {
+          "description": "Stable identifier from model_step.started.",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "finishReason": {
+          "description": "Provider-normalized reason such as tool-calls or stop.",
+          "type": "string"
+        },
+        "endedAtMs": {
+          "description": "Provider-observed round finish timestamp in Unix milliseconds.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ToolCallCreatePayload": {
+      "title": "ToolCallCreatePayload",
+      "description": "Formal tool_call.create payload. args preserves the original structured input, including args.command for shell tools.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "name",
+        "args",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "description": "Stable tool call identifier reused by later delta and update events.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Tool name normalized across providers.",
+          "type": "string"
+        },
+        "args": {
+          "description": "Original structured input known when the tool call starts. Streaming providers may begin empty and append argsDelta.",
+          "type": "object",
+          "additionalProperties": true,
+          "tsType": "Record<string, unknown>"
+        },
+        "status": {
+          "const": "running"
+        }
+      }
+    },
+    "ToolCallDeltaPayload": {
+      "title": "ToolCallDeltaPayload",
+      "description": "Formal tool_call.delta payload. argsDelta is an ordered raw JSON fragment and must be concatenated before parsing.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "description": "Stable identifier from the corresponding tool_call.create event.",
+          "type": "string"
+        },
+        "argsDelta": {
+          "description": "Raw JSON argument fragment; do not parse fragments independently.",
+          "type": "string"
+        },
+        "outputDelta": {
+          "description": "Tool output text fragment.",
+          "type": "string"
+        },
+        "outputSnapshot": {
+          "type": "string",
+          "description": "Full replacement of a provider rolling output snapshot; never an activity or a terminal status."
+        }
+      }
+    },
+    "ToolCallUpdatePayload": {
+      "title": "ToolCallUpdatePayload",
+      "description": "Formal tool_call.update payload that closes the tool lifecycle and carries its final result.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "description": "Stable identifier from the corresponding tool_call.create event.",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "output": {
+          "description": "Final tool output as text or structured JSON.",
+          "tsType": "unknown"
+        },
+        "error": {
+          "description": "Structured error details.",
+          "type": "object",
+          "additionalProperties": true,
+          "tsType": "Record<string, unknown>"
+        },
+        "exitCode": {
+          "description": "Process exit code for command tools.",
+          "type": "integer"
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "RunIdentity": {
+      "title": "RunIdentity",
+      "description": "Stable run identity used by envelopes without requiring the complete domain object.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "agentSessionId"
+      ],
+      "properties": {
+        "id": {
+          "description": "Run identifier.",
+          "type": "string"
+        },
+        "agentSessionId": {
+          "description": "Owning Agent Worker session identifier.",
+          "type": "string"
+        }
+      }
+    },
+    "ChannelScope": {
+      "title": "ChannelScope",
+      "description": "Platform-neutral channel isolation key. account_id may be null but remains explicit; an absent thread_id selects the conversation root.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenant_id",
+        "endpoint_id",
+        "channel",
+        "account_id",
+        "bot_id",
+        "conversation_id"
+      ],
+      "properties": {
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "endpoint_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "channel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "account_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conversation_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "ChannelMessagePart": {
+      "title": "ChannelMessagePart",
+      "description": "Normalized platform message part. type and text are common fields; connector extensions remain untrusted external data.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    },
+    "ChannelMessageSender": {
+      "title": "ChannelMessageSender",
+      "description": "Normalized sender fact without platform credentials.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ChannelMessageFlags": {
+      "title": "ChannelMessageFlags",
+      "description": "Common message flags that affect context projection. Self and control messages are excluded from provider-visible context.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "self": {
+          "type": "boolean"
+        },
+        "control": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ChannelMessageFact": {
+      "title": "ChannelMessageFact",
+      "description": "A platform-neutral message fact in the rebuildable channel journal. Message content is always untrusted external input.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "message_id",
+        "sender",
+        "occurred_at_ms",
+        "parts"
+      ],
+      "properties": {
+        "message_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message_seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sender": {
+          "$ref": "#/definitions/ChannelMessageSender"
+        },
+        "occurred_at_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "parts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/ChannelMessagePart"
+          }
+        },
+        "flags": {
+          "$ref": "#/definitions/ChannelMessageFlags"
+        }
+      }
+    },
+    "ChannelContextAppend": {
+      "title": "ChannelContextAppend",
+      "description": "Idempotent context-only batch appended by agent-worker to its bound daemon.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agent_id",
+        "scope",
+        "facts"
+      ],
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "scope": {
+          "$ref": "#/definitions/ChannelScope"
+        },
+        "facts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/definitions/ChannelMessageFact"
+          }
+        },
+        "gap_after_seq": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "ContextSyncRequest": {
+      "title": "ContextSyncRequest",
+      "description": "Bounded backfill requested by the daemon after cold start or gap detection. It never carries platform tokens.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "run_id",
+        "scope",
+        "trigger_message_id",
+        "limit"
+      ],
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "$ref": "#/definitions/ChannelScope"
+        },
+        "trigger_message_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trigger_seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "after_seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      }
+    },
+    "ContextSyncResult": {
+      "title": "ContextSyncResult",
+      "description": "Bounded history result. complete means only that the requested window was returned, not that the local journal is authoritative.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "scope",
+        "facts",
+        "completeness"
+      ],
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "$ref": "#/definitions/ChannelScope"
+        },
+        "facts": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/definitions/ChannelMessageFact"
+          }
+        },
+        "completeness": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "through_seq": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "completeness": {
+                "const": "unavailable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "facts": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ChannelContextDescriptor": {
+      "title": "ChannelContextDescriptor",
+      "description": "Snapshot selection descriptor in ExecutionEnvelope. Scope, consumer_key, and session_generation isolate the consumption cursor.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "consumer_key",
+        "session_generation",
+        "trigger_message_id",
+        "trigger_fact"
+      ],
+      "properties": {
+        "scope": {
+          "$ref": "#/definitions/ChannelScope"
+        },
+        "consumer_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "trigger_message_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trigger_seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "trigger_fact": {
+          "$ref": "#/definitions/ChannelMessageFact"
+        }
+      }
+    },
+    "ChannelContextSnapshotRef": {
+      "title": "ChannelContextSnapshotRef",
+      "description": "Traceable reference to frozen provider-visible context. The primary and recovery hashes cover their exact rendered bytes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot_id",
+        "scope_key",
+        "consumer_key",
+        "session_generation",
+        "trigger_message_id",
+        "serializer_version",
+        "rendered_sha256",
+        "completeness"
+      ],
+      "properties": {
+        "snapshot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consumer_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_session_generation": {
+          "description": "Original descriptor generation when recovery promotes the effective consumer generation.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "trigger_message_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trigger_seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "serializer_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rendered_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "completeness": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "recovery_rendered_sha256": {
+          "description": "Hash of the frozen bounded cold projection used when provider resume falls back to a fresh session.",
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "recovery_completeness": {
+          "description": "Completeness of the frozen cold recovery projection.",
+          "type": "string",
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        }
+      }
+    },
+    "ContextCommitResult": {
+      "title": "ContextCommitResult",
+      "description": "Result of advancing the consumer cursor with version CAS after terminal durability.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot_id",
+        "committed"
+      ],
+      "properties": {
+        "snapshot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "committed": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "already_committed",
+            "snapshot_not_found",
+            "snapshot_not_submitted",
+            "consumer_advanced",
+            "snapshot_failed"
+          ]
+        }
+      }
+    },
+    "McpStdioServer": {
+      "title": "McpStdioServer",
+      "description": "A per-invocation MCP server launched as a child process by the provider.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "command"
+      ],
+      "properties": {
+        "type": {
+          "const": "stdio"
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 128
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^\\u0000]*$"
+          },
+          "maxProperties": 128,
+          "tsType": "Record<string, string>",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          }
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "startupTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 300000
+        },
+        "toolTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3600000
+        }
+      }
+    },
+    "McpStreamableHttpServer": {
+      "title": "McpStreamableHttpServer",
+      "description": "A per-invocation Streamable HTTP MCP endpoint. Header values are sensitive and must never enter logs or canonical events.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "url"
+      ],
+      "properties": {
+        "type": {
+          "const": "streamable_http"
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "anyOf": [
+            {
+              "x-octo-http-url": true
+            },
+            {
+              "pattern": "\\$\\$?\\{[A-Za-z_][A-Za-z0-9_]*\\}"
+            }
+          ],
+          "description": "Absolute HTTP(S) endpoint or environment template; the resolved endpoint is validated again before connecting.",
+          "tsType": "string"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^\\r\\n\\u0000]*$"
+          },
+          "maxProperties": 64,
+          "tsType": "Record<string, string>",
+          "propertyNames": {
+            "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$"
+          },
+          "x-octo-unique-header-names": true
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "startupTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 300000
+        },
+        "toolTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3600000
+        }
+      }
+    },
+    "McpServer": {
+      "title": "McpServer",
+      "description": "Provider-neutral per-invocation MCP server definition.",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/McpStdioServer"
+        },
+        {
+          "$ref": "#/definitions/McpStreamableHttpServer"
+        }
+      ]
+    },
+    "McpServers": {
+      "title": "McpServers",
+      "description": "Dynamic server-name map. No business-specific names are enumerated. Each value must match one closed transport variant.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/McpServer"
+      },
+      "maxProperties": 32,
+      "tsType": "Record<string, McpServer>"
+    },
+    "ModelInputPart": {
+      "title": "ModelInputPart",
+      "description": "Ordered provider-native user input. Image bytes are materialized only for the invocation, never used as a text fallback.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "text"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "text"
+            },
+            "text": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "mimeType",
+            "data",
+            "byteSize",
+            "sha256"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "image"
+            },
+            "mimeType": {
+              "enum": [
+                "image/png",
+                "image/jpeg",
+                "image/webp"
+              ]
+            },
+            "data": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2796204
+            },
+            "byteSize": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2097152
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "InvokeRequestWire": {
+      "title": "InvokeRequestWire",
+      "description": "Serializable execution request sent from Core to Adapter Host. AbortSignal is added in src/index.ts because it cannot cross a process boundary.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "invocationId",
+        "agentSessionId",
+        "runId",
+        "prompt",
+        "workdir",
+        "controlInstructions",
+        "context",
+        "agentConfig",
+        "modelInput",
+        "approvalMode",
+        "protocolVersion",
+        "agentSource"
+      ],
+      "properties": {
+        "invocationId": {
+          "description": "Active Adapter Host invocation identifier and cancellation target.",
+          "type": "string"
+        },
+        "agentSessionId": {
+          "description": "Long-lived Agent Worker session identifier for this execution context.",
+          "type": "string"
+        },
+        "runId": {
+          "description": "Run identifier for this execution.",
+          "type": "string"
+        },
+        "sessionGeneration": {
+          "description": "Worker-owned AgentSession generation that fences stale continuity updates.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "providerEpoch": {
+          "description": "Worker-owned provider binding epoch for this Run.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "continuityMode": {
+          "description": "Caller continuity intent. Fresh invocations must not carry providerSession.",
+          "type": "string",
+          "enum": [
+            "continue",
+            "fresh"
+          ]
+        },
+        "prompt": {
+          "description": "Display-safe current request or task description. It excludes hidden channel context and provider control parameters.",
+          "type": "string"
+        },
+        "modelInput": {
+          "description": "Required exact provider-visible user turn.",
+          "type": "string"
+        },
+        "modelInputParts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "tsType": "ModelInputPart[]",
+          "items": {
+            "$ref": "#/definitions/ModelInputPart"
+          }
+        },
+        "freshFallbackModelInputParts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "tsType": "ModelInputPart[]",
+          "items": {
+            "$ref": "#/definitions/ModelInputPart"
+          }
+        },
+        "freshFallbackImagesUnavailable": {
+          "description": "Recovery includes historical images whose bytes are unavailable. Adapters must fail before sending a fresh prompt.",
+          "type": "boolean"
+        },
+        "freshFallbackModelInput": {
+          "description": "Frozen alternate user turn for the first turn of a fresh provider session after resume fails.",
+          "type": "string"
+        },
+        "contextSnapshot": {
+          "$ref": "#/definitions/ChannelContextSnapshotRef"
+        },
+        "workdir": {
+          "description": "Provider process cwd. Sandboxing, containers, or host permissions provide the actual access boundary.",
+          "type": "string"
+        },
+        "controlInstructions": {
+          "description": "Trusted session instructions. Adapters inject them only when starting a provider session; resuming an existing session must not inject or clear them.",
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/definitions/ContextEnvelope"
+        },
+        "runMetadata": {
+          "type": "object",
+          "additionalProperties": true,
+          "tsType": "Record<string, unknown>"
+        },
+        "approvalMode": {
+          "$ref": "#/definitions/ApprovalMode"
+        },
+        "providerSession": {
+          "$ref": "#/definitions/ProviderSession"
+        },
+        "runtimeLimits": {
+          "$ref": "#/definitions/RuntimeLimits"
+        },
+        "agentConfig": {
+          "$ref": "#/definitions/AgentConfig"
+        },
+        "protocolVersion": {
+          "const": 2
+        },
+        "agentSource": {
+          "$ref": "#/definitions/AgentSource"
+        }
+      }
+    },
+    "ActivityInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "messageKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "retryAfterMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": []
+    },
+    "ActivitySubject": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "run"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "message"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 191
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "tool"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 191
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "interaction"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 191
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        }
+      ]
+    },
+    "ActivityStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activityId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "kind": {
+          "enum": [
+            "starting",
+            "thinking",
+            "executing_tool",
+            "responding",
+            "waiting_approval",
+            "waiting_input",
+            "compacting",
+            "retrying",
+            "working"
+          ]
+        },
+        "subject": {
+          "$ref": "#/definitions/ActivitySubject"
+        },
+        "source": {
+          "enum": [
+            "provider",
+            "harness"
+          ]
+        },
+        "info": {
+          "$ref": "#/definitions/ActivityInfo"
+        },
+        "startedAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "activityId",
+        "kind",
+        "subject",
+        "source",
+        "info"
+      ]
+    },
+    "ActivityUpdatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activityId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "info": {
+          "$ref": "#/definitions/ActivityInfo"
+        }
+      },
+      "required": [
+        "activityId",
+        "info"
+      ]
+    },
+    "ActivityFinishedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activityId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "failed",
+            "cancelled",
+            "superseded"
+          ]
+        },
+        "endedAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "activityId",
+        "status"
+      ]
+    },
+    "PlanUpdatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "planId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "explanation": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4096
+        },
+        "steps": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "in_progress",
+                  "completed",
+                  "blocked",
+                  "cancelled"
+                ]
+              }
+            },
+            "required": [
+              "text",
+              "status"
+            ]
+          }
+        }
+      },
+      "required": [
+        "planId",
+        "revision",
+        "explanation",
+        "steps"
+      ]
+    },
+    "ToolProgressPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "progress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "completed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "unit": {
+              "enum": [
+                "items",
+                "bytes",
+                "steps"
+              ]
+            }
+          },
+          "required": []
+        }
+      },
+      "required": [
+        "id",
+        "progress"
+      ]
+    },
+    "RunNoticePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "noticeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "code": {
+          "enum": [
+            "retry_scheduled",
+            "context_compacted",
+            "model_rerouted",
+            "config_warning"
+          ]
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning"
+          ]
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "relatedActivityId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        },
+        "relatedItemId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191
+        }
+      },
+      "required": [
+        "noticeId",
+        "code",
+        "severity",
+        "params"
+      ]
+    },
+    "AgentSource": {
+      "title": "AgentSource",
+      "type": "string",
+      "enum": [
+        "preset",
+        "provisioned"
+      ]
+    },
+    "ContextModelSelectionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "use_provider_default": {
+          "const": true
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "id"
+          ],
+          "not": {
+            "required": [
+              "use_provider_default"
+            ]
+          }
+        },
+        {
+          "required": [
+            "use_provider_default"
+          ],
+          "not": {
+            "required": [
+              "id"
+            ]
+          }
+        }
+      ]
+    },
+    "ContextInlineEntry": {
+      "description": "Untrusted inline selection text with optional resource reference, source metadata and summary. Source metadata is not an authorization claim.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": [
+            "object",
+            "string"
+          ],
+          "additionalProperties": true
+        },
+        "summary": {
+          "type": "string"
+        }
+      }
+    },
+    "ContextReferenceEntry": {
+      "description": "Declarative MCP resource operation. Only deployed scoped operations may execute; schema validation does not authorize access.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_ref",
+        "resolver",
+        "locator"
+      ],
+      "properties": {
+        "resource_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resolver": {
+          "const": "mcp"
+        },
+        "locator": {
+          "type": "object"
+        },
+        "params": {
+          "description": "Frozen non-secret JSON parameters supplied by the authenticated resolver plan, not model-generated commands.",
+          "type": "object",
+          "additionalProperties": true,
+          "tsType": "Record<string, unknown>"
+        },
+        "authorization_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "properties": {
+            "locator": {
+              "$ref": "#/definitions/ContextMcpLocator"
+            }
+          }
+        }
+      ]
+    },
+    "ContextInlinePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entries"
+      ],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/ContextInlineEntry"
+          }
+        }
+      }
+    },
+    "ContextReferencesPayload": {
+      "type": "object",
+      "x-octo-unique-resource-refs": true,
+      "additionalProperties": false,
+      "required": [
+        "entries"
+      ],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/ContextReferenceEntry"
+          }
+        }
+      }
+    },
+    "ScenarioRequest": {
+      "type": "object",
+      "description": "Run 的业务场景引用，复用 Run v7 与 Context v3。文档选区使用 doc.selection.review；Loop 使用 loop_discussion 或 loop_task。",
+      "additionalProperties": true,
+      "properties": {
+        "scenario_id": {
+          "type": "string",
+          "description": "业务场景：doc.selection.review、loop_discussion、loop_task。Loop 场景不要求文档选区元数据。",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "builder_id": {
+          "type": "string",
+          "description": "与场景固定对应：doc-selection、loop-discussion、loop-task。",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "builder_version": {
+          "type": "string",
+          "description": "当前场景构建合同版本固定为 1，与 Run/Context 版本独立。",
+          "minLength": 1,
+          "maxLength": 96
+        }
+      },
+      "required": [
+        "scenario_id",
+        "builder_id",
+        "builder_version"
+      ]
+    },
+    "ToolAuthorization": {
+      "title": "ToolAuthorization",
+      "description": "Business authorization intent; never a tool installation definition.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "service_subject_id",
+        "allowed_tools",
+        "resource_refs"
+      ],
+      "properties": {
+        "service_subject_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "allowed_tools": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "resource_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      }
+    },
+    "IssuedToolAuthorization": {
+      "title": "IssuedToolAuthorization",
+      "description": "Run lease-bound credentials delivered over the authenticated Runtime channel. Never enter provider configuration, prompts or logs.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "service_subject_id",
+        "allowed_tools",
+        "resource_refs",
+        "token",
+        "octo_space_id",
+        "namespace",
+        "expires_at"
+      ],
+      "properties": {
+        "service_subject_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "allowed_tools": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "resource_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "octo_space_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "ContextEnvsPayload": {
+      "title": "ContextEnvsPayload",
+      "description": "Run 级环境变量列表；以 key 标识变量，按 key 合并，不进入模型输入。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "env_variables"
+      ],
+      "properties": {
+        "env_variables": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "value"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              "value": {
+                "type": "string",
+                "pattern": "^[^\\u0000]*$"
+              }
+            }
+          }
+        }
+      },
+      "x-octo-unique-env-keys": true
+    },
+    "ExecutionTarget": {
+      "title": "ExecutionTarget",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "target_kind"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "target_kind": {
+              "const": "standard_harness_agent"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "target_kind",
+            "executor_id",
+            "provider_binding_ref"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "target_kind": {
+              "const": "ability_provider"
+            },
+            "executor_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96
+            },
+            "provider_binding_ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        }
+      ]
+    },
+    "ContextMcpPayload": {
+      "title": "ContextMcpPayload",
+      "description": "Run-scoped MCP connection templates. Server names are dynamic keys; values are validated by transport. Variables resolve only in the execution environment, never in the model context.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mcpServers"
+      ],
+      "properties": {
+        "mcpServers": {
+          "$ref": "#/definitions/McpServers"
+        }
+      }
+    }
+  }
+}

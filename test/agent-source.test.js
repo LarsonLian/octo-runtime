@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
-import { assertInvokeRequest, assertResolvedExecutionPlan } from "@mininglamp-oss/octo-harness-protocol";
-import { prepareRunContext } from "@mininglamp-oss/octo-harness-adapter-host";
-import { AgentWorkStore } from "../packages/octo-harness-worker-access/dist/agent-work-store.js";
+import { AdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
+import { assertInvokeRequest, assertResolvedExecutionPlan } from "@mininglamp-oss/octo-runtime-protocol";
+import { prepareRunContext } from "@mininglamp-oss/octo-runtime-adapter-host";
+import { AgentWorkStore } from "../packages/octo-runtime-worker-access/dist/agent-work-store.js";
 
 const request = {
   protocolVersion: 2, invocationId: "source-invocation", runId: "source-run", agentSessionId: "source-session",
@@ -40,7 +40,7 @@ test("public react does not bypass adapter source admission", async () => {
 
 test("preset preparation creates no workspace or provider directory and rejects filesystem resources", async t => {
   const root = await mkdtemp(join(tmpdir(), "octo-source-"));
-  const store = AgentWorkStore.open(join(root, "runtime.db"));
+  const store = new AgentWorkStore();
   t.after(async () => { store.close(); await rm(root, { recursive: true, force: true }); });
   const plan = { agent_source: "preset", adapter_type: "openclaw", provider_agent_id: "main", workdir: "", workspace: { mode: "none" }, approval_mode: "full_access" };
   const options = { stateRoot: join(root, "state"), agentSessionId: "session", agentId: "agent", store };

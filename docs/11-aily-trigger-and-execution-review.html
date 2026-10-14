@@ -52,14 +52,14 @@
   <div>
     <div class="eyebrow">Research refresh / target architecture</div>
     <h1>Aily 触发研究与 Octo 统一 AgentRun 架构</h1>
-    <p>保留 Aily 多入口、任务协作与 provider resume 的研究证据；Octo 的目标定义直接统一为 AgentSession / AgentRun，业务调度不进入 Engine Worker 或 Harness。</p>
+    <p>保留 Aily 多入口、任务协作与 provider resume 的研究证据；Octo 的目标定义直接统一为 AgentSession / AgentRun，业务调度不进入 Engine Worker 或 Runtime。</p>
   </div>
 </header>
 <main>
   <section>
     <h2>结论</h2>
     <p class="lead">Aily 展示了 manual、event、schedule 与 IM 等入口可以驱动长期工作，也说明业务 Task 与本地 provider invocation 不是同一个对象。Octo 不复制 Aily 的 Task Run / Session Run 多层状态机，而是在 Worker 中保留一个执行实体 <strong>AgentRun</strong>。</p>
-    <div class="callout"><strong>统一调用：</strong>业务服务提交 <code>namespace + agent_id + session_key + trigger_occurrence_id + input</code>。Worker 解析 AgentSession、排队和 lease；Harness 只执行。</div>
+    <div class="callout"><strong>统一调用：</strong>业务服务提交 <code>namespace + agent_id + session_key + trigger_occurrence_id + input</code>。Worker 解析 AgentSession、排队和 lease；Runtime 只执行。</div>
   </section>
 
   <section>
@@ -67,7 +67,7 @@
     <div class="grid">
       <article><div class="owner business">Business</div><h3>Loop / AutoPilot / Webhook / IM</h3><p>拥有触发器、父子任务、业务 attempt、投递策略和业务状态。每次应执行的事实由它们决定。</p></article>
       <article><div class="owner">Control</div><h3>Agent Worker</h3><p>拥有 Agent、revision、AgentSession、AgentRun、状态机、lease、fencing 与 provider resume binding。</p></article>
-      <article><div class="owner runtime">Runtime</div><h3>Octo Harness</h3><p>拥有 invocation、provider 子进程、事件翻译、可靠 outbox；不拥有业务调度。</p></article>
+      <article><div class="owner runtime">Runtime</div><h3>Octo Runtime</h3><p>拥有 invocation、provider 子进程、事件翻译、可靠 outbox；不拥有业务调度。</p></article>
     </div>
   </section>
 
@@ -79,7 +79,7 @@
         <tr><td>Trigger / Auto</td><td>入口规则和 occurrence 必须 durable</td><td>规则与 occurrence 留在业务 namespace；命中后提交 AgentRun</td></tr>
         <tr><td>Task / Task Run</td><td>长期交付与某次执行不可混同</td><td>Loop 持有 Task/Attempt；每次尝试引用一个 Worker AgentRun</td></tr>
         <tr><td>Session Run</td><td>每轮消息、工具和终态需要稳定归属</td><td>统一为 AgentRun，不再建立第二套 SessionRun</td></tr>
-        <tr><td>Invocation</td><td>本地调用要可取消、可观测</td><td>Harness 本地 invocation；不是业务 Run</td></tr>
+        <tr><td>Invocation</td><td>本地调用要可取消、可观测</td><td>Runtime 本地 invocation；不是业务 Run</td></tr>
         <tr><td>Provider Session</td><td>恢复标识由 provider 定义</td><td>opaque 数据保存在 Worker AgentSession</td></tr>
       </tbody>
     </table>
@@ -108,7 +108,7 @@ Examples:
       <tbody>
         <tr><td>业务工作</td><td>todo / in progress / review / blocked / done</td><td>Loop 等业务服务</td></tr>
         <tr><td>AgentRun</td><td>queued / leased / running / interacting / cancelling / terminal</td><td>Agent Worker</td></tr>
-        <tr><td>Invocation</td><td>accepted / executing / stopped</td><td>Harness</td></tr>
+        <tr><td>Invocation</td><td>accepted / executing / stopped</td><td>Runtime</td></tr>
         <tr><td>Delivery</td><td>pending / delivered / failed</td><td>Channel Gateway / delivery worker</td></tr>
       </tbody>
     </table>
@@ -120,9 +120,9 @@ Examples:
     <pre><code>Business scheduler
   -> Agent Worker: submit AgentRun
   -> Worker DB: get/create AgentSession, dedupe occurrence, queue Run
-  -> Harness: run.start + lease/fencing + optional provider_session
+  -> Runtime: run.start + lease/fencing + optional provider_session
   -> Provider: start or resume
-  <- Harness: run.event(seq), session.update, terminal
+  <- Runtime: run.event(seq), session.update, terminal
   <- Worker: durable ACK and authoritative state
   <- Business: projection / delivery</code></pre>
     <p>IM 与 schedule 的差异止于业务入口和最终 delivery。进入 Worker 后它们执行完全相同的 AgentRun 协议。</p>
@@ -130,9 +130,9 @@ Examples:
 
   <section>
     <h2>Reset</h2>
-    <p>Worker reset 增加 session generation/provider epoch、清空 provider session，并按策略取消旧 Run。下一次调用没有 resume ID，provider 创建新 thread/session，再由 <code>session.update</code> 回写。Harness 和业务服务都不自行拼接 provider thread ID。</p>
+    <p>Worker reset 增加 session generation/provider epoch、清空 provider session，并按策略取消旧 Run。下一次调用没有 resume ID，provider 创建新 thread/session，再由 <code>session.update</code> 回写。Runtime 和业务服务都不自行拼接 provider thread ID。</p>
   </section>
 </main>
-<footer>Octo Harness research note · unified AgentSession / AgentRun target model</footer>
+<footer>Octo Runtime research note · unified AgentSession / AgentRun target model</footer>
 </body>
 </html>

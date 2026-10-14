@@ -1,13 +1,13 @@
-import { configureOpenClawConnection, OPENCLAW_RUNTIME_ROOT } from "@mininglamp-oss/octo-harness-adapter-openclaw";
-import { defaultHarnessHome, harnessPaths } from "./state.js";
+import { configureOpenClawConnection, OPENCLAW_RUNTIME_ROOT } from "@mininglamp-oss/octo-runtime-adapter-openclaw";
+import { defaultRuntimeHome, runtimePaths } from "./state.js";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   spawnAdapterHost,
   type AdapterHostProcess
-} from "@mininglamp-oss/octo-harness-adapter-host";
-import { localRuntimeLimits, resolveLocalContext } from "@mininglamp-oss/octo-harness-core";
+} from "@mininglamp-oss/octo-runtime-adapter-host";
+import { localRuntimeLimits, resolveLocalContext } from "@mininglamp-oss/octo-runtime-core";
 import {
   CONTEXT_SCHEMA,
   assertAgentSource,
@@ -21,7 +21,7 @@ import {
   type ContextEnvelope,
   type InvokeRequest,
   type ProviderSession
-} from "@mininglamp-oss/octo-harness-protocol";
+} from "@mininglamp-oss/octo-runtime-protocol";
 
 const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 
@@ -204,7 +204,7 @@ export async function runPlayboard(options: PlayboardOptions): Promise<number> {
   }
   const { adapterType, protocolMode, request } = preparePlayboard(value);
   if (adapterType === "openclaw") {
-    const runtimeRoot = options.runtimeRoot ?? harnessPaths(defaultHarnessHome(options.env), "default").profileRoot;
+    const runtimeRoot = options.runtimeRoot ?? runtimePaths(defaultRuntimeHome(options.env), "default").profileRoot;
     await configureOpenClawConnection(runtimeRoot, {}, options.env);
     request.agentConfig.providerOptions = { [OPENCLAW_RUNTIME_ROOT]: runtimeRoot };
   }

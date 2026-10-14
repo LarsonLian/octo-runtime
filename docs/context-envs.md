@@ -31,9 +31,9 @@
 
 ## 合并与冻结
 
-Worker 和本地 Harness 按 key 合并 defaults 与 request。请求中的同名 key 覆盖默认值，未提交的 key 保留。mandatory 逐 key 约束：请求显式提交不同值时返回 `CONTEXT_MANDATORY_CONFLICT`；未提交时补入强制值，不限制请求增加其他 key。
+Worker 和本地 Runtime 按 key 合并 defaults 与 request。请求中的同名 key 覆盖默认值，未提交的 key 保留。mandatory 逐 key 约束：请求显式提交不同值时返回 `CONTEXT_MANDATORY_CONFLICT`；未提交时补入强制值，不限制请求增加其他 key。
 
-有效值以同一列表结构进入 `effective_context` 与 `resolved_execution_plan.envs`，参与 context hash、compiled hash 和会话配置指纹。Harness 在准备阶段检查两份数据是否一致，防止冻结后篡改。变量变更会改变会话配置指纹，沿用现有会话连续性处理。
+有效值以同一列表结构进入 `effective_context` 与 `resolved_execution_plan.envs`，参与 context hash、compiled hash 和会话配置指纹。Runtime 在准备阶段检查两份数据是否一致，防止冻结后篡改。变量变更会改变会话配置指纹，沿用现有会话连续性处理。
 
 ## 运行时范围与优先级
 

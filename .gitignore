@@ -30,8 +30,8 @@ yarn-error.log*
 .env.*
 !.env.example
 
-# Octo Harness runtime state
-.octo-harness/
+# Octo Runtime runtime state
+.octo-runtime/
 
 # Temporary and packaged artifacts
 .tmp/

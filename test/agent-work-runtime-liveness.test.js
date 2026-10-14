@@ -1,5 +1,5 @@
 import test from "node:test";
-import { renderModelContexts } from "@mininglamp-oss/octo-harness-protocol";
+import { renderModelContexts } from "@mininglamp-oss/octo-runtime-protocol";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -95,7 +95,7 @@ async function startFixture(t, { silentFirst = false, welcomeOnFirst = true, dis
     token: "runtime-token",
     runtimeId: "runtime-liveness",
     runtimeName: "runtime-liveness",
-    storePath: join(directory, "agent-work.db"),
+    root: directory,
     receiveTimeoutMs: 100,
     reconnectFirstMs: 5,
     reconnectMs: 5,
@@ -163,7 +163,7 @@ test("receive timeout rejects non-positive or non-finite values", () => {
       baseUrl: "https://im-test.deepminer.com.cn/agentworker",
       token: "runtime-token",
       runtimeName: "runtime-liveness",
-      storePath: "unused.db",
+      root: process.cwd(),
       receiveTimeoutMs
     }, host), /receiveTimeoutMs must be finite and positive/);
   }
@@ -173,8 +173,8 @@ test("Agent Work Runtime requires an explicit valid profile", () => {
   for (const profile of [undefined, null, 123, "", "a/b", "a\n", "a".repeat(129)]) {
     assert.throws(() => new AgentWorkRuntime({
       profile, baseUrl: "http://localhost:3000", token: "runtime-token",
-      runtimeName: "MacBook", storePath: "unused.db"
-    }, host), /valid Harness profile/);
+      runtimeName: "MacBook", root: process.cwd()
+    }, host), /valid Runtime profile/);
   }
 });
 
@@ -199,7 +199,7 @@ test("missing, mismatched or rejected server profiles fail before WSS and do not
       await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
       const runtime = new AgentWorkRuntime({
         profile: "work", baseUrl: `http://127.0.0.1:${server.address().port}`,
-        token: "runtime-token", runtimeName: "MacBook", storePath: join(directory, "agent-work.db")
+        token: "runtime-token", runtimeName: "MacBook", root: directory
       }, host);
       try {
         await assert.rejects(runtime.start(), /profile/);

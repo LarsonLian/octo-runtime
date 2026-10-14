@@ -6,28 +6,28 @@ import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import {
   createJsonCliAdapter
-} from "../packages/octo-harness-adapter-sdk/dist/index.js";
-import { createCodeBuddyAdapter } from "@mininglamp-oss/octo-harness-adapter-codebuddy";
-import { acpModelSelectionRequest, createAcpAdapter, normalizeAcpUpdate } from "@mininglamp-oss/octo-harness-adapter-acp";
-import { hermesAdapter } from "@mininglamp-oss/octo-harness-adapter-hermes";
-import { kimiCodeAdapter } from "@mininglamp-oss/octo-harness-adapter-kimi-code";
-import { mcodeAdapter } from "@mininglamp-oss/octo-harness-adapter-mcode";
-import { qoderCliAdapter } from "@mininglamp-oss/octo-harness-adapter-qodercli";
-import { qoderCliCnAdapter } from "@mininglamp-oss/octo-harness-adapter-qoderclicn";
+} from "../packages/octo-runtime-adapter-sdk/dist/index.js";
+import { createCodeBuddyAdapter } from "@mininglamp-oss/octo-runtime-adapter-codebuddy";
+import { acpModelSelectionRequest, createAcpAdapter, normalizeAcpUpdate } from "@mininglamp-oss/octo-runtime-adapter-acp";
+import { hermesAdapter } from "@mininglamp-oss/octo-runtime-adapter-hermes";
+import { kimiCodeAdapter } from "@mininglamp-oss/octo-runtime-adapter-kimi-code";
+import { mcodeAdapter } from "@mininglamp-oss/octo-runtime-adapter-mcode";
+import { qoderCliAdapter } from "@mininglamp-oss/octo-runtime-adapter-qodercli";
+import { qoderCliCnAdapter } from "@mininglamp-oss/octo-runtime-adapter-qoderclicn";
 import {
   buildCodexCommand,
   CodexEventNormalizer,
   createCodexAdapter,
   normalizeCodexEvent
-} from "@mininglamp-oss/octo-harness-adapter-codex";
+} from "@mininglamp-oss/octo-runtime-adapter-codex";
 import {
   buildClaudeCommand,
   ClaudeEventNormalizer,
   createClaudeCodeAdapter,
   normalizeClaudeEvent
-} from "@mininglamp-oss/octo-harness-adapter-claude-code";
-import { buildOpenCodeCommand, createOpenCodeAdapter, normalizeOpenCodeEvent } from "@mininglamp-oss/octo-harness-adapter-opencode";
-import { contextHash } from "@mininglamp-oss/octo-harness-protocol";
+} from "@mininglamp-oss/octo-runtime-adapter-claude-code";
+import { buildOpenCodeCommand, createOpenCodeAdapter, normalizeOpenCodeEvent } from "@mininglamp-oss/octo-runtime-adapter-opencode";
+import { contextHash } from "@mininglamp-oss/octo-runtime-protocol";
 import {
   buildOpenClawGatewayInvocation,
   createOpenClawDeviceIdentity,
@@ -37,7 +37,7 @@ import {
   tryParseOpenClawEvent,
   tryParseOpenClawFinalBlob,
   tryParseOpenClawTranscriptLine
-} from "@mininglamp-oss/octo-harness-adapter-openclaw";
+} from "@mininglamp-oss/octo-runtime-adapter-openclaw";
 
 const request = { protocolVersion: 2, invocationId: "inv-1", agentSessionId: "session-1", runId: "run-1", prompt: "work", modelInput: "work", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "CONTROL", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} };
 

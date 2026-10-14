@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeCodexEvent } from "@mininglamp-oss/octo-harness-adapter-codex";
+import { normalizeCodexEvent } from "@mininglamp-oss/octo-runtime-adapter-codex";
 
 function completed(item) {
   return normalizeCodexEvent({ method: "item/completed", params: { item } })[0].payload;

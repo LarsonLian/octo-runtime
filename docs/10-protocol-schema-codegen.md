@@ -2,7 +2,7 @@
 
 ## 当前状态与目标
 
-`@mininglamp-oss/octo-harness-protocol` 的数据形状类型（`ProviderSession`、`AgentConfig`、`CanonicalEventPayload`、`RunIdentity`、`InvokeRequest` 的可序列化部分）现在以 **JSON Schema 为唯一来源**，通过 codegen 生成 TypeScript 类型：
+`@mininglamp-oss/octo-runtime-protocol` 的数据形状类型（`ProviderSession`、`AgentConfig`、`CanonicalEventPayload`、`RunIdentity`、`InvokeRequest` 的可序列化部分）现在以 **JSON Schema 为唯一来源**，通过 codegen 生成 TypeScript 类型：
 
 ```text
 schema/protocol.schema.json   ← 协议真值（draft-07，中文 description）
@@ -12,9 +12,9 @@ src/generated/protocol-types.ts   ← 生成的 TS 类型，勿手改
 src/index.ts   ← 运行时常量/函数、泛型 CanonicalEvent、带 signal 的 InvokeRequest
 ```
 
-目标是：当 daemon 后续被抽取为独立的 Go/Rust 二进制后（见 [octo-harness-daemon 演进备注](../packages/octo-harness-daemon/README.md)），**同一份 schema 可再生成 Go struct**，让跨语言的 `daemon -> host -> n*adapter` 两端共享一份结构定义，而不必手工同步类型。当前阶段只生成 TS，Go 生成留待引入 Go daemon 时接入。
+目标是：当 daemon 后续被抽取为独立的 Go/Rust 二进制后（见 [octo-runtime-daemon 演进备注](../packages/octo-runtime-daemon/README.md)），**同一份 schema 可再生成 Go struct**，让跨语言的 `daemon -> host -> n*adapter` 两端共享一份结构定义，而不必手工同步类型。当前阶段只生成 TS，Go 生成留待引入 Go daemon 时接入。
 
-这一步不改变任何公共导出面：`@mininglamp-oss/octo-harness-protocol` 导出的类型名与运行时函数全部保持不变，Core、Adapter Host 和所有 provider adapter 无需改动。
+这一步不改变任何公共导出面：`@mininglamp-oss/octo-runtime-protocol` 导出的类型名与运行时函数全部保持不变，Core、Adapter Host 和所有 provider adapter 无需改动。
 
 ## 为什么用 schema 生成，而不是继续手写 TS
 
@@ -52,13 +52,13 @@ schema 只描述**可 JSON 序列化的数据形状**。以下三类留在 `src/
 
 ```bash
 # 改协议：编辑 schema
-$EDITOR packages/octo-harness-protocol/schema/protocol.schema.json
+$EDITOR packages/octo-runtime-protocol/schema/protocol.schema.json
 
 # 重新生成 TS（build 前会自动执行）
-pnpm --filter @mininglamp-oss/octo-harness-protocol gen
+pnpm --filter @mininglamp-oss/octo-runtime-protocol gen
 
 # 构建（内含 gen）
-pnpm --filter @mininglamp-oss/octo-harness-protocol build
+pnpm --filter @mininglamp-oss/octo-runtime-protocol build
 ```
 
 `src/generated/protocol-types.ts` 带 `勿手改` 横幅；任何改动都应通过 schema 完成。后续引入 Go daemon 时，在 `scripts/` 下追加一个 Go 生成器读取同一份 schema 即可。

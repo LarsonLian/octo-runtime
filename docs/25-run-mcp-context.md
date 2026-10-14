@@ -1,6 +1,6 @@
 # Run MCP 执行配置（2026-10-14）
 
-本协议允许在 Context 中指定本轮 MCP 连接。HostApp 负责 Skills、知识库组件、CLI、插件和 MCP 程序的安装与更新；原生运行时负责连接 HTTP 服务或启动已安装的 stdio 程序。Harness 不通过此配置下载或安装组件。
+本协议允许在 Context 中指定本轮 MCP 连接。HostApp 负责 Skills、知识库组件、CLI、插件和 MCP 程序的安装与更新；原生运行时负责连接 HTTP 服务或启动已安装的 stdio 程序。Runtime 不通过此配置下载或安装组件。
 
 本协议取代 24 号方案中“Run / Context 不得携带 MCP 连接配置”的限制。FileBundle、资源下载、旧 `InvokeRequest.mcpServers` 和旧执行计划 `mcp_servers` 不恢复。Run 保持 7，Context 保持 v3；直接更新当前合同，不提供旧格式兼容。
 
@@ -21,7 +21,7 @@
             "headers": {
               "Authorization": "Bearer ${BUSINESS_TOKEN}",
               "X-Space-ID": "${SPACE_ID}",
-              "X-Client": "octo-harness"
+              "X-Client": "octo-runtime"
             }
           }
         }
@@ -38,7 +38,7 @@
 }
 ```
 
-`BUSINESS_TOKEN` 可以来自运行 Harness 的进程环境，也可以由调用方通过本轮 `envs` 设置。配置中的 URL 必须是原始字符串，不是 Markdown 链接。
+`BUSINESS_TOKEN` 可以来自运行 Runtime 的进程环境，也可以由调用方通过本轮 `envs` 设置。配置中的 URL 必须是原始字符串，不是 Markdown 链接。
 
 `mcpServers` 是动态 key 的 map，不枚举 business、task 或其他业务名称。名称采用跨 adapter 的可移植字符集：`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`，最多 32 个 server；空对象合法。每个 value 按 `type` 严格校验，未知字段、未知 transport、混合 transport 字段均拒绝。
 
@@ -61,7 +61,7 @@ Schema 结构参考 [Agent Plugins 官方 MCP schema](https://agent-plugins.org/
 - Agent 默认配置：配置接口的 `configuration.defaults.items`。
 - Agent 强制配置：配置接口的 `configuration.mandatory.items`。
 - Worker 存储：`agent_context_configurations.configuration_json`，通过 `octo_space_id + agent_id` 关联 Agent；不在 Agent 主表或 revision 字段中。
-- 本地 Harness Agent：注册时的 `defaultContext`，后续通过 `replaceDefaultContext()` 修改。
+- 本地 Runtime Agent：注册时的 `defaultContext`，后续通过 `replaceDefaultContext()` 修改。
 
 defaults 和请求按 server 名称合并；同名 server 整项替换，不深合并 headers、env 或 transport 字段。mandatory 也按 server 名称约束：mandatory 同名 server 完整覆盖请求值，不因值不同报错。空 map 不删除 defaults 或原生本地 MCP。
 
@@ -73,7 +73,7 @@ defaults 和请求按 server 名称合并；同名 server 整项替换，不深�
 
 本轮环境按“父进程继承值 → Run envs → adapter 内部覆盖值”组合，后者优先；每次 invocation 独立，不修改全局 `process.env`。stdio server 显式配置的 `env` 再覆盖传给该 MCP 子进程的同名变量。
 
-准备环境后，Harness 在 `command`、`args` 元素、`cwd`、`env` 值、`url` 和 `headers` 值中展开 `${NAME}`。server 名称、字段名称、header 名称和 env key 不展开。变量名采用 `[A-Za-z_][A-Za-z0-9_]*`。
+准备环境后，Runtime 在 `command`、`args` 元素、`cwd`、`env` 值、`url` 和 `headers` 值中展开 `${NAME}`。server 名称、字段名称、header 名称和 env key 不展开。变量名采用 `[A-Za-z_][A-Za-z0-9_]*`。
 
 - `$${NAME}` 解析为字面量 `${NAME}`。Claude Code 会在连接时再次展开占位符，无法可靠保留这类最终值；该 adapter 对最终值含 `${` 的配置报 `MCP_LITERAL_UNSUPPORTED`，避免改变字面量或凭据。Codex、Kimi、MCode 已实测保留字面量。
 - 仅替换一遍，不递归展开替换结果，不解释 shell 表达式。
@@ -96,7 +96,7 @@ defaults 和请求按 server 名称合并；同名 server 整项替换，不深�
 | OpenCode | `OPENCODE_CONFIG_CONTENT.mcp` | stdio 转 local，HTTP 转 remote，保留本地原生配置加载 |
 | 未实现 MCP 的 adapter | 无 | 非空本轮 MCP 配置明确报 `MCP_UNSUPPORTED`，不静默忽略 |
 
-Harness 对本轮 server 的转换不改变审批策略。连接成功不授予业务权限，也不自动批准工具调用。
+Runtime 对本轮 server 的转换不改变审批策略。连接成功不授予业务权限，也不自动批准工具调用。
 
 不同原生运行时对本地同名配置的合并行为需以实机验证为准。Codex 在本轮传入完整同名 server 配置；CC / OpenCode 的配置优先级仍受原生加载器控制。需要确定隔离的配置应使用不与本地配置冲突的 server 名称。
 

@@ -10,7 +10,7 @@ import {
   assertInvokeRequest,
   assertResolvedExecutionPlan,
   messageExposure
-} from "../packages/octo-harness-protocol/dist/index.js";
+} from "../packages/octo-runtime-protocol/dist/index.js";
 import { approvalPayload, contextEnvelope, continuityItem, executionContext, invokeRequest } from "./agent-work-runtime-fixture.js";
 
 test("interaction contracts require a stable request id and bounded response outcome", () => {
@@ -379,15 +379,15 @@ test("tool call protocol preserves complete and streamed command inputs", () => 
   const claude = [
     { protocolVersion: 2, type: "tool_call.create", payload: { status: "running", id: "tool-claude", name: "Bash", args: {} } },
     { protocolVersion: 2, type: "tool_call.delta", payload: { id: "tool-claude", argsDelta: '{"command":"printf ' } },
-    { protocolVersion: 2, type: "tool_call.delta", payload: { id: "tool-claude", argsDelta: 'octo-harness-ok"}' } },
-    { protocolVersion: 2, type: "tool_call.update", payload: { id: "tool-claude", status: "completed", output: "octo-harness-ok" } }
+    { protocolVersion: 2, type: "tool_call.delta", payload: { id: "tool-claude", argsDelta: 'octo-runtime-ok"}' } },
+    { protocolVersion: 2, type: "tool_call.update", payload: { id: "tool-claude", status: "completed", output: "octo-runtime-ok" } }
   ];
   for (const event of claude) assert.doesNotThrow(() => assertCanonicalEvent(event));
   const streamedArgs = claude
     .filter(event => event.type === "tool_call.delta")
     .map(event => event.payload.argsDelta)
     .join("");
-  assert.equal(JSON.parse(streamedArgs).command, "printf octo-harness-ok");
+  assert.equal(JSON.parse(streamedArgs).command, "printf octo-runtime-ok");
 });
 
 test("tool call protocol rejects events that cannot reconstruct a command lifecycle", () => {

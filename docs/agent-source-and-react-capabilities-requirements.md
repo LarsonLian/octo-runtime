@@ -2,13 +2,13 @@
 
 日期：2026-10-09（Asia/Shanghai）。状态：当前分支已实施，CodeBuddy 与 OpenClaw 真实调用验收通过。
 
-本文使用 technical-writing-zh 记录需求、执行合同和验收依据。实现覆盖 Worker、Harness、Work App 和配置管理页；当前分支实现不表示生产环境已部署。
+本文使用 technical-writing-zh 记录需求、执行合同和验收依据。实现覆盖 Worker、Runtime、Work App 和配置管理页；当前分支实现不表示生产环境已部署。
 
 ## 1. 已确认需求
 
 | 项目 | 已确认要求 |
 | --- | --- |
-| 行为能力 | Octo Harness 对外的 `capabilities` 当前只包含 `react`；默认值为 `["react"]` |
+| 行为能力 | Octo Runtime 对外的 `capabilities` 当前只包含 `react`；默认值为 `["react"]` |
 | Agent 提供方式 | 新增 `agent_source`，仅接受 `preset`、`provisioned` |
 | 类型边界 | `agent_source` 不放入 `capabilities`；执行路径也不放入 `capabilities` |
 | 分类删除 | 不恢复 Agent 的 `assistant / expert` 分类，不用这项分类控制任务候选或执行权限 |
@@ -17,7 +17,7 @@
 
 `react` 表示执行方能够依据任务输入，调用已配置且获授权的工具，观察工具结果，并继续处理直至本次执行结束。该声明不保证每次执行都调用工具，也不保证任何特定工具、图片输入、审批方式、文件系统或会话恢复机制。
 
-默认 `["react"]` 的范围是本轮 Harness 接入合同。不能据此自动给所有云端 `ability_provider` 或任意第三方 RAG 服务标记 `react`。这些执行方是否具备该行为，仍需独立确认。
+默认 `["react"]` 的范围是本轮 Runtime 接入合同。不能据此自动给所有云端 `ability_provider` 或任意第三方 RAG 服务标记 `react`。这些执行方是否具备该行为，仍需独立确认。
 
 ## 2. `agent_source` 的含义
 
@@ -32,8 +32,8 @@
 
 | 场景 | 执行路径 | `agent_source` |
 | --- | --- | --- |
-| Octo 定义由 Codex、CC、MiMo、Pi 等基础执行方承载 | WS 连接 Harness daemon | `provisioned` |
-| 调用 OpenClaw 已有 Agent | WS 连接 Harness daemon | `preset` |
+| Octo 定义由 Codex、CC、MiMo、Pi 等基础执行方承载 | WS 连接 Runtime daemon | `provisioned` |
+| 调用 OpenClaw 已有 Agent | WS 连接 Runtime daemon | `preset` |
 | 云端根据 Octo 定义运行 Agent | `ability_provider` | `provisioned` |
 | 云端调用接入方预置的 RAG Agent | `ability_provider` | `preset` |
 
@@ -74,13 +74,13 @@ Agent 的 `agent_source` 与 adapter 支持范围不是同一个字段含义。�
 
 当前 ContextPipeline 已统一执行准备、编译、消费检查和回执封存。本次应修改这条管线的合同与映射，不另建一条 preset 专用上下文管线。
 
-## 5. Octo Harness 改造需求
+## 5. Octo Runtime 改造需求
 
 ### 5.1 Protocol 与 Adapter SDK
 
 Protocol 必须定义 `agent_source` 的两种取值，并在实际执行合同中校验。来源缺失、未知或与执行目标不匹配时，应在 provider 启动前返回可定位的错误。
 
-公开 `capabilities` 必须使用粗粒度语义。本轮 Harness 只声明 `react`，不把 `preset`、`provisioned`、文件系统、会话恢复或 MCP 标签混入该数组。
+公开 `capabilities` 必须使用粗粒度语义。本轮 Runtime 只声明 `react`，不把 `preset`、`provisioned`、文件系统、会话恢复或 MCP 标签混入该数组。
 
 底层执行约束保留在 `executionFeatures` / `execution_features`。本次请求显式需要的条件使用 `required_execution_features`，公开行为条件使用 `required_capabilities`。审批、图片、MCP、skills、会话恢复和 watchdog 仍按实际执行特性检查。
 
@@ -136,19 +136,19 @@ Protocol、PreparedRunContext、准备回执和 InvokeRequest 必须能够表示
 | Agent 模型、创建与查询 | 新增 `agent_source`，公开 capabilities 按粗粒度语义表达 |
 | Runtime 注册与读取 | 接收新的行为能力与来源支持信息，保留独立的可用状态 |
 | 执行前检查与调度 | 检查来源、preset 目标和本次执行条件；不再把细粒度标签当作 Agent 业务能力 |
-| Run 快照与命令下发 | 冻结来源及目标引用，传入 Harness 合同 |
+| Run 快照与命令下发 | 冻结来源及目标引用，传入 Runtime 合同 |
 | Context 计划 | 移除“所有 Agent 都有工作目录”的前提；保留明确请求的执行约束 |
 | 客户端 | 按提供方式收集配置；preset 选择已有 Agent，provisioned 提供定义和执行配置 |
 
 Agent 默认配置不得再次无条件要求会话恢复、文件系统或特定工具注入能力。本次输入确实依赖这些机制时，执行层仍需检查并拒绝不支持的目标。
 
-`ability_provider` 与 Harness 是独立执行路径。`agent_source` 可以跨路径使用，但本轮 Harness 默认 ReAct 声明不能替代云端执行方的资格确认。执行路径字段名称本轮不重新定义，也不复用已删除的专家/助理分类。
+`ability_provider` 与 Runtime 是独立执行路径。`agent_source` 可以跨路径使用，但本轮 Runtime 默认 ReAct 声明不能替代云端执行方的资格确认。执行路径字段名称本轮不重新定义，也不复用已删除的专家/助理分类。
 
 ## 7. 验收条件
 
 | 场景 | 通过条件 |
 | --- | --- |
-| 能力发现 | Harness adapter 对外 capabilities 为 `["react"]`，不含旧细粒度标签；可用状态独立保留 |
+| 能力发现 | Runtime adapter 对外 capabilities 为 `["react"]`，不含旧细粒度标签；可用状态独立保留 |
 | CodeBuddy 普通执行 | 在目标可用、审批方式受支持且未要求恢复时，普通 ReAct 调用不会因缺少恢复能力被默认拦截 |
 | 明确要求恢复 | 接入实现不支持请求的恢复机制时拒绝，不能因公开声明 react 而放行 |
 | provisioned 调用 | 观测到 Octo 定义和编译输入实际应用，不只验证生成的字符串 |
@@ -159,32 +159,32 @@ Agent 默认配置不得再次无条件要求会话恢复、文件系统或特�
 | 重试与恢复 | 沿用已冻结来源和目标；保留既有上下文一致性、授权和 fencing 约束 |
 | 云端边界 | 第三方服务不因接入或来源取值而被自动标记为 ReAct |
 
-验收包含 TypeScript/Go 同源合同测试、Worker preflight、daemon/Adapter Host 拒绝路径，以及连接 im-test 的真实 Harness 执行。实际运行结果需记录所验证的 provider 版本；未验证的接入不能作为已实现事实。
+验收包含 TypeScript/Go 同源合同测试、Worker preflight、daemon/Adapter Host 拒绝路径，以及连接 im-test 的真实 Runtime 执行。实际运行结果需记录所验证的 provider 版本；未验证的接入不能作为已实现事实。
 
 ## 8. 已采用的实现选择
 
 1. `agent_source` 属于 Agent 稳定身份，创建后不可修改；每次 Run 冻结来源和目标。需要改变来源时创建新的 Agent。
-2. Harness 当前公开能力仅为 `["react"]`。细粒度执行条件保留在单独的内部字段，不新增公开 delegation/handoff 能力。
+2. Runtime 当前公开能力仅为 `["react"]`。细粒度执行条件保留在单独的内部字段，不新增公开 delegation/handoff 能力。
 3. `workspace.mode: "none"` 表示不需要 Octo 本机工作目录。准备回执中的工作目录和 provider 状态目录均为空；需要本机资源物化的请求必须明确失败。
 4. OpenClaw 保留受控 runner，并按 `provisioned` 处理。`preset` 分支不套用 runner 隔离配置，不覆盖永久定义，不传入本机 cwd。
 5. 直接修改现有建库 schema 和本地数据库字段，不新增 migration，不添加启动时旧合同升级逻辑。
 
 ## 9. 实现依据
 
-- [Adapter SDK 元数据](../packages/octo-harness-adapter-sdk/src/index.ts)
-- [Adapter Host](../packages/octo-harness-adapter-host/src/index.ts)
-- [Protocol schema 源文件](../packages/octo-harness-protocol/schema/protocol.schema.json)
-- [Protocol 校验](../packages/octo-harness-protocol/src/index.ts)
-- [Runtime 注册、准入与 InvokeRequest 映射](../packages/octo-harness-daemon/src/agent-work-runtime.ts)
-- [统一 ContextPipeline](../packages/octo-harness-daemon/src/context-pipeline.ts)
-- [Context 准备产物](../packages/octo-harness-daemon/src/context-preparation.ts)
-- [OpenClaw adapter](../packages/octo-harness-adapter-openclaw/src/index.ts)
+- [Adapter SDK 元数据](../packages/octo-runtime-adapter-sdk/src/index.ts)
+- [Adapter Host](../packages/octo-runtime-adapter-host/src/index.ts)
+- [Protocol schema 源文件](../packages/octo-runtime-protocol/schema/protocol.schema.json)
+- [Protocol 校验](../packages/octo-runtime-protocol/src/index.ts)
+- [Runtime 注册、准入与 InvokeRequest 映射](../packages/octo-runtime-daemon/src/agent-work-runtime.ts)
+- [统一 ContextPipeline](../packages/octo-runtime-daemon/src/context-pipeline.ts)
+- [Context 准备产物](../packages/octo-runtime-daemon/src/context-preparation.ts)
+- [OpenClaw adapter](../packages/octo-runtime-adapter-openclaw/src/index.ts)
 - [既有 Context 管线基线](context-pipeline-baseline.md)
 - [既有 OpenClaw 接入方案](15-openclaw-external-agent-binding-design.md)，本文以 preset 替代其中来源名称 external；网络桥和已有 Agent 绑定的区别仍需保留。
 
 ## 10. 当前分支验收结果
 
-测试环境为 `https://im-test.deepminer.com.cn`，通过已登录的 Work App renderer 调用真实 Worker、Agent Access 和内置 Harness。
+测试环境为 `https://im-test.deepminer.com.cn`，通过已登录的 Work App renderer 调用真实 Worker、Agent Access 和内置 Runtime。
 
 | 场景 | 实际结果 |
 | --- | --- |
@@ -197,10 +197,10 @@ Agent 默认配置不得再次无条件要求会话恢复、文件系统或特�
 | 管理页配置 | 创建、发布与 Context 保存真实成功；1440px 和 390px 宽度下无横向溢出，preset OpenClaw 目录输入禁用 |
 | 拒绝路径 | 来源缺失或未知、adapter 来源不匹配、preset 目标缺失、无目录请求依赖本机资源等测试通过；显式要求恢复时仍拒绝不具备该特性的 CodeBuddy |
 
-Harness 全量测试通过：830 项通过、4 项跳过。Worker 全量 Go 测试通过。管理页 12 项测试通过。本次客户端相关 46 项测试通过，feature kit 测试通过；Harness、Work App 和管理页构建通过。
+Runtime 全量测试通过：830 项通过、4 项跳过。Worker 全量 Go 测试通过。管理页 12 项测试通过。本次客户端相关 46 项测试通过，feature kit 测试通过；Runtime、Work App 和管理页构建通过。
 
 Context 三张表在现有建表脚本中显式使用 `utf8mb4_unicode_ci`，当前开发库直接修正为相同规则，没有新增迁移。独立 MySQL 测试库以 `utf8mb4_0900_ai_ci` 为库默认规则执行新建库回归，实际验证 Agent、revision、Context 的就绪关联查询通过。
 
 客户端全量测试仍有独立的 presentation v2 样例与当前 v3 实现不匹配的 5 项失败；不将相关测试报告为通过。另一次并行构建期间出现 protocol 产物暂时缺失，单独重跑本次相关测试通过。
 
-真实 Run：CodeBuddy `arun_f09219fa25014b969312f6b4b943def9`，OpenClaw `arun_6f953ef43a57467d93cbde5561f88d7f`。受控 OpenClaw runner 的分支测试通过，本轮未重新进行其独立实机验收。云端 `ability_provider` 的执行实现不在本次 Harness 改造范围内。
+真实 Run：CodeBuddy `arun_f09219fa25014b969312f6b4b943def9`，OpenClaw `arun_6f953ef43a57467d93cbde5561f88d7f`。受控 OpenClaw runner 的分支测试通过，本轮未重新进行其独立实机验收。云端 `ability_provider` 的执行实现不在本次 Runtime 改造范围内。

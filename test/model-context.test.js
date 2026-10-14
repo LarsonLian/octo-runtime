@@ -5,8 +5,8 @@ import {
   contextControlInstructions,
   contextHash,
   assertContextEnvelope
-} from "../packages/octo-harness-protocol/dist/index.js";
-import { AdapterHost } from "../packages/octo-harness-adapter-host/dist/index.js";
+} from "../packages/octo-runtime-protocol/dist/index.js";
+import { AdapterHost } from "../packages/octo-runtime-adapter-host/dist/index.js";
 import { invokeRequest } from "./agent-work-runtime-fixture.js";
 
 const envelope = (items = []) => ({ schema: "octo.context-envelope/v3", items });

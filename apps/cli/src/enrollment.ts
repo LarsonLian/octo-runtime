@@ -1,10 +1,10 @@
-import { RUNTIME_RUN_CONTRACT } from "@mininglamp-oss/octo-harness-protocol";
-import { collectRuntimeDeviceInfo } from "@mininglamp-oss/octo-harness-worker-access";
+import { RUNTIME_RUN_CONTRACT } from "@mininglamp-oss/octo-runtime-protocol";
+import { collectRuntimeDeviceInfo } from "@mininglamp-oss/octo-runtime-worker-access";
 import {
   REQUEST_ID_HEADER,
   createRequestId,
   responseRequestId
-} from "@mininglamp-oss/octo-harness-worker-access/request-id";
+} from "@mininglamp-oss/octo-runtime-worker-access/request-id";
 import { readFileSync } from "node:fs";
 import { assertProfileName } from "./state.js";
 
@@ -132,7 +132,7 @@ function packageVersion(): string {
     version?: unknown;
   };
   if (typeof metadata.version !== "string" || !metadata.version.trim()) {
-    throw new Error("Octo Harness package version is missing");
+    throw new Error("Octo Runtime package version is missing");
   }
   return metadata.version;
 }

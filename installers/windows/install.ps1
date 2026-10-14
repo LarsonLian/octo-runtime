@@ -16,41 +16,41 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $MinimumNodeMajor = 24
-$PackageName = "@mininglamp-oss/octo-harness"
+$PackageName = "@mininglamp-oss/octo-runtime"
 $LockStreams = @()
 $PreparedUpdate = $false
-$Channel = if ($env:OCTO_HARNESS_CHANNEL) { $env:OCTO_HARNESS_CHANNEL } else { "stable" }
-$Profile = if ($env:OCTO_HARNESS_PROFILE) { $env:OCTO_HARNESS_PROFILE } else { "default" }
-$HarnessHome = if ($env:OCTO_HARNESS_HOME) {
-  $env:OCTO_HARNESS_HOME
+$Channel = if ($env:OCTO_RUNTIME_CHANNEL) { $env:OCTO_RUNTIME_CHANNEL } else { "stable" }
+$Profile = if ($env:OCTO_RUNTIME_PROFILE) { $env:OCTO_RUNTIME_PROFILE } else { "default" }
+$HarnessHome = if ($env:OCTO_RUNTIME_HOME) {
+  $env:OCTO_RUNTIME_HOME
 } else {
-  Join-Path $env:LOCALAPPDATA "OctoHarness"
+  Join-Path $env:LOCALAPPDATA "OctoRuntime"
 }
 
 function Show-Usage {
   @"
-Install Octo Harness for the current Windows user.
+Install Octo Runtime for the current Windows user.
 
 Usage:
-  & ([scriptblock]::Create((irm https://SERVER/octo-harness/install.ps1))) ``
+  & ([scriptblock]::Create((irm https://SERVER/octo-runtime/install.ps1))) ``
     "https://SERVER" "octo_enroll_..."
 
 On first install, the enrollment token may be omitted and entered securely.
 An already enrolled profile can be repaired or updated without another token.
 Environment overrides:
-  OCTO_HARNESS_CHANNEL       stable (default) or beta
-  OCTO_HARNESS_PROFILE       profile name (default: default)
-  OCTO_HARNESS_HOME          state directory (default: %LOCALAPPDATA%\OctoHarness)
-  OCTO_HARNESS_NPM_SPEC      npm package spec used instead of the channel default
+  OCTO_RUNTIME_CHANNEL       stable (default) or beta
+  OCTO_RUNTIME_PROFILE       profile name (default: default)
+  OCTO_RUNTIME_HOME          state directory (default: %LOCALAPPDATA%\OctoRuntime)
+  OCTO_RUNTIME_NPM_SPEC      npm package spec used instead of the channel default
 "@
 }
 
 function Write-InstallerInfo([string]$Message) {
-  Write-Host "[octo-harness] $Message"
+  Write-Host "[octo-runtime] $Message"
 }
 
 function Fail([string]$Message) {
-  throw "[octo-harness] $Message"
+  throw "[octo-runtime] $Message"
 }
 
 function Refresh-ProcessPath {
@@ -155,16 +155,16 @@ if (-not [Uri]::TryCreate($ServerUrl, [UriKind]::Absolute, [ref]$parsedServerUrl
 }
 $ServerUrl = $ServerUrl.TrimEnd("/")
 if ($Channel -notin @("stable", "beta")) {
-  Fail "OCTO_HARNESS_CHANNEL must be stable or beta"
+  Fail "OCTO_RUNTIME_CHANNEL must be stable or beta"
 }
 if ($Profile -notmatch "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$") {
-  Fail "OCTO_HARNESS_PROFILE must start with a letter or digit, use only supported characters, and not exceed 64 characters"
+  Fail "OCTO_RUNTIME_PROFILE must start with a letter or digit, use only supported characters, and not exceed 64 characters"
 }
 if ($Profile.ToLowerInvariant() -in @("config.json", "credentials", "identity", "machine.json", "logs", "octo-daemon.pid", "profiles", "run", "setup", "sockets", "state.db")) {
-  Fail "OCTO_HARNESS_PROFILE conflicts with Harness Home infrastructure"
+  Fail "OCTO_RUNTIME_PROFILE conflicts with Runtime Home infrastructure"
 }
 if (-not (Test-FullyQualifiedWindowsPath $HarnessHome)) {
-  Fail "OCTO_HARNESS_HOME must be an absolute path"
+  Fail "OCTO_RUNTIME_HOME must be an absolute path"
 }
 
 $profileIdentity = Join-Path $HarnessHome "$Profile\identity\runtime.json"
@@ -191,8 +191,8 @@ try {
   if (-not $npm) { Fail "npm is required but was not installed with Node.js" }
 
   $npmTag = if ($Channel -eq "stable") { "latest" } else { "beta" }
-  $npmSpec = if ($env:OCTO_HARNESS_NPM_SPEC) {
-    $env:OCTO_HARNESS_NPM_SPEC
+  $npmSpec = if ($env:OCTO_RUNTIME_NPM_SPEC) {
+    $env:OCTO_RUNTIME_NPM_SPEC
   } else {
     "$PackageName@$npmTag"
   }
@@ -200,7 +200,7 @@ try {
     $npmSpecUri = $null
     if (-not [Uri]::TryCreate($npmSpec, [UriKind]::Absolute, [ref]$npmSpecUri) -or
         $npmSpecUri.UserInfo -or $npmSpecUri.Query -or $npmSpecUri.Fragment) {
-      Fail "OCTO_HARNESS_NPM_SPEC URL must not contain user info, query, or fragment"
+      Fail "OCTO_RUNTIME_NPM_SPEC URL must not contain user info, query, or fragment"
     }
   }
 
@@ -223,13 +223,13 @@ try {
   }
 
   New-Item -ItemType Directory -Path $HarnessHome -Force | Out-Null
-  $homeLock = Open-InstallerLock -PathValue (Join-Path $HarnessHome ".installer.lock") -Description "Harness Home installer"
+  $homeLock = Open-InstallerLock -PathValue (Join-Path $HarnessHome ".installer.lock") -Description "Runtime Home installer"
   $LockStreams += $homeLock
-  $globalLock = Open-InstallerLock -PathValue (Join-Path $npmPrefix ".octo-harness-installer.lock") -Description "npm global package installer"
+  $globalLock = Open-InstallerLock -PathValue (Join-Path $npmPrefix ".octo-runtime-installer.lock") -Description "npm global package installer"
   $LockStreams += $globalLock
 
-  $cli = Join-Path $npmPrefix "octo-harness.cmd"
-  $cliEntrypoint = Join-Path $npmPrefix "node_modules\@mininglamp-oss\octo-harness\apps\cli\dist\index.js"
+  $cli = Join-Path $npmPrefix "octo-runtime.cmd"
+  $cliEntrypoint = Join-Path $npmPrefix "node_modules\@mininglamp-oss\octo-runtime\apps\cli\dist\index.js"
   $existingCliCommand = $null
   $existingCliPrefixArguments = @()
   if (Test-Path -LiteralPath $cli -PathType Leaf) {
@@ -255,11 +255,11 @@ try {
     }
     $PreparedUpdate = $true
   } elseif ($homeHasRuntime) {
-    Fail "Harness Home contains Runtime state but the current npm prefix has no usable CLI. Stop the existing daemon and repair or remove the legacy npm link before retrying"
+    Fail "Runtime Home contains Runtime state but the current npm prefix has no usable CLI. Stop the existing daemon and repair or remove the legacy npm link before retrying"
   }
 
-  if ($env:OCTO_HARNESS_NPM_SPEC) {
-    Write-InstallerInfo "Installing the configured OCTO_HARNESS_NPM_SPEC with npm"
+  if ($env:OCTO_RUNTIME_NPM_SPEC) {
+    Write-InstallerInfo "Installing the configured OCTO_RUNTIME_NPM_SPEC with npm"
   } else {
     Write-InstallerInfo "Installing $PackageName@$npmTag with npm"
   }
@@ -283,10 +283,10 @@ try {
         if ($LASTEXITCODE -eq 0) {
           Write-InstallerInfo "Restored the previous service after the failed npm update"
         } else {
-          Write-Warning "Automatic service recovery failed; repair the npm package, then run 'octo-harness login --recover-update --start'"
+          Write-Warning "Automatic service recovery failed; repair the npm package, then run 'octo-runtime login --recover-update --start'"
         }
       } else {
-        Write-Warning "Automatic service recovery could not find a CLI; repair the npm package, then run 'octo-harness login --recover-update --start'"
+        Write-Warning "Automatic service recovery could not find a CLI; repair the npm package, then run 'octo-runtime login --recover-update --start'"
       }
     }
     Fail "npm install failed (exit $npmInstallExit)"
@@ -299,7 +299,7 @@ try {
 
   $loginHelp = (& $cli login --help 2>&1 | Out-String)
   if ($LASTEXITCODE -ne 0) {
-    Fail "the installed package does not provide 'octo-harness login'"
+    Fail "the installed package does not provide 'octo-runtime login'"
   }
   if ($loginHelp -notmatch "--enroll-token-stdin" -or
       $loginHelp -notmatch "--prepare-update" -or
@@ -325,10 +325,10 @@ try {
       if ($LASTEXITCODE -eq 0) {
         Write-InstallerInfo "Restored the service after the updated login failed"
       } else {
-        Write-Warning "Service recovery also failed; repair the package, then run 'octo-harness login --recover-update --start'"
+        Write-Warning "Service recovery also failed; repair the package, then run 'octo-runtime login --recover-update --start'"
       }
     }
-    Fail "octo-harness login failed (exit $loginExit); rerun this installer after correcting the reported problem"
+    Fail "octo-runtime login failed (exit $loginExit); rerun this installer after correcting the reported problem"
   }
 
   Write-InstallerInfo "Installing the current-user daemon service"
@@ -338,7 +338,7 @@ try {
     if ($PreparedUpdate) {
       & $cli --home $HarnessHome --profile $Profile login --recover-update --start
     }
-    Fail "daemon service installation failed (exit $serviceInstallExit); run 'octo-harness daemon install' after correcting the reported problem"
+    Fail "daemon service installation failed (exit $serviceInstallExit); run 'octo-runtime daemon install' after correcting the reported problem"
   }
 
   Write-InstallerInfo "Starting the daemon and waiting for cloud readiness"
@@ -348,11 +348,11 @@ try {
     if ($PreparedUpdate) {
       & $cli --home $HarnessHome --profile $Profile login --recover-update --start
     }
-    Fail "daemon startup failed (exit $daemonStartExit); run 'octo-harness daemon start --wait-online' after correcting the reported problem"
+    Fail "daemon startup failed (exit $daemonStartExit); run 'octo-runtime daemon start --wait-online' after correcting the reported problem"
   }
 
   Write-InstallerInfo "Installation complete"
-  Write-InstallerInfo "Run: octo-harness --home `"$HarnessHome`" --profile `"$Profile`" doctor"
+  Write-InstallerInfo "Run: octo-runtime --home `"$HarnessHome`" --profile `"$Profile`" doctor"
 } finally {
   $EnrollmentToken = $null
   foreach ($lockStream in $LockStreams) {

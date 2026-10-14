@@ -8,19 +8,19 @@
 
 | 概念 | 定义与归属 |
 | --- | --- |
-| Harness Runtime | 本地初始化即存在的执行对象，以稳定 `runtime_id` 标识；注册与远程寻址可选。一个 Runtime 对应 Harness Home 中的一个 profile；多个 Runtime 可以共用本地控制服务和 Adapter Host。 |
+| Runtime Runtime | 本地初始化即存在的执行对象，以稳定 `runtime_id` 标识；注册与远程寻址可选。一个 Runtime 对应 Runtime Home 中的一个 profile；多个 Runtime 可以共用本地控制服务和 Adapter Host。 |
 | Provider Runtime | 实际执行任务的引擎或服务。OpenClaw、Codex 等处于同一执行层；Provider 可以由进程启动，也可以通过认证连接访问。 |
-| Provider 类型 | 标识执行实现，例如 `openclaw`。当前协议沿用 `adapter_type` / `provider_type`；本次不新增含义重复的 `provider_id`。每个 Harness Runtime 对每个 Provider 类型保存一份连接配置。 |
+| Provider 类型 | 标识执行实现，例如 `openclaw`。当前协议沿用 `adapter_type` / `provider_type`；本次不新增含义重复的 `provider_id`。每个 Runtime Runtime 对每个 Provider 类型保存一份连接配置。 |
 | Adapter | 把 Provider 的执行协议转换成统一 Host 事件的实现。OpenClaw 使用认证 WebSocket Gateway RPC，不使用 SSE。 |
-| Provider 连接配置 | 属于 Harness Runtime 的本地信息，包括连接来源、地址、凭据引用和设备身份。由本地宿主管理，不属于 Agent 定义或模型上下文。 |
+| Provider 连接配置 | 属于 Runtime Runtime 的本地信息，包括连接来源、地址、凭据引用和设备身份。由本地宿主管理，不属于 Agent 定义或模型上下文。 |
 | 目标 Agent | Provider 内的执行目标，由 Context 的 `provider_agent_id` 指定。多个 Agent 可共享一个 Runtime 的同一连接。 |
-| Agent 来源 | `preset` 表示调用已有 Agent；`provisioned` 表示按该来源合同执行。来源与传输方式、连接配置相互独立；来源声明不意味着 Harness 可以隐式安装 Runtime 或创建 OpenClaw Agent。 |
+| Agent 来源 | `preset` 表示调用已有 Agent；`provisioned` 表示按该来源合同执行。来源与传输方式、连接配置相互独立；来源声明不意味着 Runtime 可以隐式安装 Runtime 或创建 OpenClaw Agent。 |
 
 Runtime 的安装决策继续归 HostApp。OpenClaw Agent 的人格、记忆、插件和原生 workspace 继续归 OpenClaw 管理。
 
 ## 注册与连接配置
 
-1. SDK 在本地初始化 Harness Runtime 并保存身份；Worker 注册仅在宿主明确启用时发生。现有 CLI 的 enrollment 引导不是 SDK 前置条件。
+1. SDK 在本地初始化 Runtime Runtime 并保存身份；Worker 注册仅在宿主明确启用时发生。现有 CLI 的 enrollment 引导不是 SDK 前置条件。
 2. 初始化该 Runtime 的 OpenClaw 连接来源，探测 Gateway 可用性。OpenClaw 缺失、未启动或认证失败只影响该 Provider 的可用状态，不阻止 Runtime 上线或其他 Provider 执行。
 3. 本地配置保存到 `<harness-home>/<profile>/adapters/openclaw/connection.json`。内置 Runtime 使用账户目录下对应的 profile，不能退回另一账户或默认 Home 的连接。
 4. 仅启用 Worker 注册时上报 Provider 能力、可用状态和错误原因，不上报 Gateway token 或私钥。纯本地探测无需上报；周期探测与实际执行读取相同 Runtime 配置。
@@ -65,14 +65,14 @@ Runtime 的安装决策继续归 HostApp。OpenClaw Agent 的人格、记忆、�
 
 ```sh
 # 已注册 Runtime：自动发现，或复用已保存来源
-octo-harness --home /path/to/harness --profile work adapter connect openclaw
+octo-runtime --home /path/to/harness --profile work adapter connect openclaw
 
 # 指定 OpenClaw Home（包含 openclaw.json 的目录）
-octo-harness --home /path/to/harness --profile work adapter connect openclaw \
+octo-runtime --home /path/to/harness --profile work adapter connect openclaw \
   --openclaw-home /path/to/openclaw
 
 # 显式 URL；stdin 只包含 Gateway token
-octo-harness --home /path/to/harness --profile work adapter connect openclaw \
+octo-runtime --home /path/to/harness --profile work adapter connect openclaw \
   --gateway-url ws://127.0.0.1:18789 --token-stdin
 ```
 

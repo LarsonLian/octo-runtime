@@ -31,32 +31,32 @@
 
 | 仓库 | 提交 | 内容 |
 | --- | --- | --- |
-| Harness | `7b2827a` | ACP／CodeBuddy 非终态工具映射 |
-| Harness | `8f58d88`、`ff0c6dd` | 工具状态校验及提交分支定位校正 |
-| Harness | `ec2cdcf` | streaming 消息活动生命周期 |
-| Harness | `989a9e5` | 真实进展驱动活动切换 |
-| Harness | `28e3e29`、`13de54a` | ACP／CodeBuddy 消息分段与终态工具边界 |
-| Harness | `be0f01a` | Claude 消息块身份 |
-| Harness | `16c0158` | OpenClaw 思考分段与原生身份 |
-| Harness | `552b259` | OpenCode 快照与消息身份 |
-| Harness | `ee9a818`、`4a85ecb`、`89abdaa` | Host 匿名身份及补全过程顺序 |
-| Harness | `47ce16d` | ZCode 终态工具 |
-| Harness | `1469b5a` | 准备与首个公开进展耗时 |
-| Harness | `a3f65f7` | 未知 ACP 工具状态去敏诊断 |
+| Runtime | `7b2827a` | ACP／CodeBuddy 非终态工具映射 |
+| Runtime | `8f58d88`、`ff0c6dd` | 工具状态校验及提交分支定位校正 |
+| Runtime | `ec2cdcf` | streaming 消息活动生命周期 |
+| Runtime | `989a9e5` | 真实进展驱动活动切换 |
+| Runtime | `28e3e29`、`13de54a` | ACP／CodeBuddy 消息分段与终态工具边界 |
+| Runtime | `be0f01a` | Claude 消息块身份 |
+| Runtime | `16c0158` | OpenClaw 思考分段与原生身份 |
+| Runtime | `552b259` | OpenCode 快照与消息身份 |
+| Runtime | `ee9a818`、`4a85ecb`、`89abdaa` | Host 匿名身份及补全过程顺序 |
+| Runtime | `47ce16d` | ZCode 终态工具 |
+| Runtime | `1469b5a` | 准备与首个公开进展耗时 |
+| Runtime | `a3f65f7` | 未知 ACP 工具状态去敏诊断 |
 | Worker | `21b1d7e` | 根终态后拒绝重启活动 |
 | Worker | `4e74c30` | 终态工具不虚构开始时间 |
 | Work App | `59ca8a7` | 运行顺序及明确过程入口 |
 | Work App | `d70b0fe` | 将陈旧流测试样例对齐已存在的 v3 合同 |
 | Work App | `1380f35` | 指定引擎与 preset Agent 的真实联调脚本 |
 
-隔离提交复查发现过仅新增行在脏工作区中的定位偏差，已用独立纠正提交修复。最终另外导出 Harness 已提交版本，独立安装依赖、构建和跑全量测试；下表的 824 项结果来自该提交版本，不依赖并行工作区文件。
+隔离提交复查发现过仅新增行在脏工作区中的定位偏差，已用独立纠正提交修复。最终另外导出 Runtime 已提交版本，独立安装依赖、构建和跑全量测试；下表的 824 项结果来自该提交版本，不依赖并行工作区文件。
 
 ## 3. 自动化验证
 
 | 验证对象 | 结果与边界 |
 | --- | --- |
-| Harness 最终已提交源码快照 | 构建通过；824 项测试通过，4 项跳过，0 失败 |
-| Harness 联调工作区较早完整回归 | 831 项通过，4 项跳过；包含其他工作流未提交测试，不能与独立快照计数直接比较 |
+| Runtime 最终已提交源码快照 | 构建通过；824 项测试通过，4 项跳过，0 失败 |
+| Runtime 联调工作区较早完整回归 | 831 项通过，4 项跳过；包含其他工作流未提交测试，不能与独立快照计数直接比较 |
 | Worker | runprojection、runaggregation、service 三个 Go 包通过；两项新增行为尚未加载到实机运行的 Worker 进程 |
 | Work App | tsc、build 通过；Vitest 1332 项通过，1 项跳过；工作区包含并行修改 |
 | UI 专项 | 47 项通过；运行顺序、折叠、复制、失败、活动优先级覆盖 |
@@ -103,8 +103,8 @@ A01—A09 的关键语义已有专项自动化覆盖；A10—A14 有专项测试
 
 ## 6. 证据与复现
 
-[脱敏证据目录](../../octo-harness-work-app/docs/validation/adapter-experience-2026-10-09/) 包含按 Provider 保存的事件身份、通道、状态、相对时点、运行 ID 和检查结果，以及裁掉侧栏的执行区域截图。未归档 token、模型密钥或私有推理。`provider-blockers.json` 记录失败原因摘要，不包含网关额度详情或请求原文。
+[脱敏证据目录](../../octo-work-app/docs/validation/adapter-experience-2026-10-09/) 包含按 Provider 保存的事件身份、通道、状态、相对时点、运行 ID 和检查结果，以及裁掉侧栏的执行区域截图。未归档 token、模型密钥或私有推理。`provider-blockers.json` 记录失败原因摘要，不包含网关额度详情或请求原文。
 
-[真实联调脚本](../../octo-harness-work-app/scripts/test-adapter-experience-e2e.mjs) 默认通过 UI 选择引擎。指定 `OCTO_ADAPTER_E2E_DIRECT_TYPE` 可通过现有 main bridge 提交；preset 路径同时指定已有 Agent ID。脚本的失败清理只取消自己创建且尚未取得终态的测试执行。
+[真实联调脚本](../../octo-work-app/scripts/test-adapter-experience-e2e.mjs) 默认通过 UI 选择引擎。指定 `OCTO_ADAPTER_E2E_DIRECT_TYPE` 可通过现有 main bridge 提交；preset 路径同时指定已有 Agent ID。脚本的失败清理只取消自己创建且尚未取得终态的测试执行。
 
 每次修复继续遵循：针对性测试 → 单独 commit → 受影响真实路径回归 → 更新资格记录。线上路由与 Provider 配置满足后，优先补齐第 5 节，而不是将当前“部分覆盖”直接改为“完成”。

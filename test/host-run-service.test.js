@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AdapterHost, HostRunService } from "@mininglamp-oss/octo-harness-adapter-host";
+import { AdapterHost, HostRunService } from "@mininglamp-oss/octo-runtime-adapter-host";
 import { invokeRequest, waitFor } from "./agent-work-runtime-fixture.js";
 function fixture(invoke, modes = ["canonical"]) {
   const provider = new AdapterHost();
@@ -29,6 +29,55 @@ function fixture(invoke, modes = ["canonical"]) {
   });
 }
 const input = () => invokeRequest({ approvalMode: "full_access" });
+test("drain waits for direct invocation streams and closes admission", async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const host = fixture(async function* () {
+    await gate;
+    yield { protocolVersion: 2, type: "run.completed", payload: {} };
+  });
+  const invocation = (async () => {
+    for await (const frame of host.invokeFrames("fixture", input(), { protocolMode: "canonical" })) void frame;
+  })();
+  try {
+    await waitFor(() => host.status.activeRuns === 1);
+    await assert.rejects(host.drain(25), /HOST_DRAIN_TIMEOUT/);
+    await assert.rejects(host.submit("fixture", input(), { protocolMode: "canonical" }), /DAEMON_DRAINING/);
+    release();
+    await invocation;
+    assert.deepEqual(await host.drain(1000), { drained: true });
+  } finally { release(); await invocation; await host.close(); }
+});
+test("Host counts pending handshakes toward capacity and releases expired terminal runs", async t => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const host = new HostRunService({
+    async *invokeFrames(_adapter, request) {
+      await gate;
+      const identity = {
+        run_id: request.runId, invocation_id: request.invocationId, stream_id: request.runId,
+        agent_session_id: request.agentSessionId, session_generation: 0,
+        protocol_mode: "canonical", protocol: "fixture.canonical"
+      };
+      yield { ...identity, seq: 1, kind: "control", control: { type: "state", state: "accepted" } };
+      yield { ...identity, seq: 2, kind: "control", control: { type: "state", state: "completed" } };
+    },
+    cancel: async () => ({ cancelled: true })
+  });
+  t.after(() => host.close());
+  const pending = Array.from({ length: 128 }, (_, index) => host.submit("fixture", {
+    ...input(), runId: `capacity-${index}`, invocationId: `invocation-${index}`
+  }));
+  assert.equal(host.status.admittingRuns, 128);
+  await assert.rejects(host.submit("fixture", { ...input(), runId: "overflow" }), /RUN_CAPACITY_EXHAUSTED/);
+  release();
+  await Promise.all(pending);
+  await waitFor(() => host.status.activeRuns === 0);
+  const now = Date.now();
+  t.mock.method(Date, "now", () => now + 120_000);
+  assert.throws(() => host.get("capacity-0"), /RUN_NOT_AVAILABLE/);
+  await host.submit("fixture", { ...input(), runId: "fresh", invocationId: "fresh" });
+});
 test("local submit retains source frames before subscribe and never executes on replay", async () => {
   let count = 0;
   const host = fixture(async function* () {

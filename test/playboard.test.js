@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { preparePlayboard } from "../apps/cli/dist/playboard.js";
-import { assertHostFrame, isHostTerminal } from "@mininglamp-oss/octo-harness-protocol";
+import { assertHostFrame, isHostTerminal } from "@mininglamp-oss/octo-runtime-protocol";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const cli = join(root, "apps/cli/dist/index.js");
@@ -39,7 +39,7 @@ async function fixture(t) {
         },
         {
           type: "codex",
-          module: join(root, "packages/octo-harness-adapter-codex/dist/index.js"),
+          module: join(root, "packages/octo-runtime-adapter-codex/dist/index.js"),
           export: "createCodexAdapter",
           factory: true,
           options: {
@@ -59,7 +59,7 @@ function execute({ directory, manifest }, value, { args = [], signalOnFrame = fa
       cwd: directory,
       env: {
         ...process.env,
-        OCTO_HARNESS_HOME: join(directory, "unconfigured-home"),
+        OCTO_RUNTIME_HOME: join(directory, "unconfigured-home"),
         OCTO_RUNTIME_DEBUG: "0"
       },
       stdio: ["pipe", "pipe", "pipe"]
@@ -191,7 +191,7 @@ test("invalid input, old context, and invalid continuity fail before execution",
   }
 });
 
-test("independent Host renders ordered business context, keeps control separate, and persists no Harness state", async (t) => {
+test("independent Host renders ordered business context, keeps control separate, and persists no Runtime state", async (t) => {
   const settings = await fixture(t);
   const contexts = [
     item("extra.playboard", "second", { text: "business-b" }),

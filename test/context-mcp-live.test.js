@@ -5,11 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { buildCodexCommand } from "../packages/octo-harness-adapter-codex/dist/index.js";
-import { buildClaudeCommand } from "../packages/octo-harness-adapter-claude-code/dist/index.js";
-import { invocationEnvironment } from "../packages/octo-harness-adapter-sdk/dist/index.js";
-import { invocationMcpServers } from "../packages/octo-harness-adapter-sdk/dist/index.js";
-import { spawnAcpClient } from "../packages/octo-harness-acp-client/dist/index.js";
+import { buildCodexCommand } from "../packages/octo-runtime-adapter-codex/dist/index.js";
+import { buildClaudeCommand } from "../packages/octo-runtime-adapter-claude-code/dist/index.js";
+import { invocationEnvironment } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
+import { invocationMcpServers } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
+import { spawnAcpClient } from "../packages/octo-runtime-acp-client/dist/index.js";
 import { invokeRequest } from "./agent-work-runtime-fixture.js";
 import { startMcpHttpServer } from "../test-support/mcp/http-server.mjs";
 

@@ -2,7 +2,7 @@
 
 当前包边界见 [Runtime 合同](runtime-local-and-online-contract.md)。embedded 独立包已删除，本地 SDK 合入 daemon；客户不需要 apps/cli 或可选 Worker／IM 包。
 
-Octo Harness 使用 pnpm workspace 管理多项目。workspace 边界由根目录 [pnpm-workspace.yaml](../pnpm-workspace.yaml) 定义：
+Octo Runtime 使用 pnpm workspace 管理多项目。workspace 边界由根目录 [pnpm-workspace.yaml](../pnpm-workspace.yaml) 定义：
 
 ```yaml
 packages:
@@ -21,34 +21,34 @@ apps/
   adapter-host/         manifest-driven adapter host executable
 
 packages/
-  octo-harness-protocol/             canonical protocol
-  octo-harness-core/                 domain engine and stores
-  octo-harness-daemon/               local SDK, lifecycle, IPC and optional modules
-  octo-harness-worker-access/        optional enrollment / current Worker transport
-  octo-harness-channel-im/           optional IM integration
-  octo-harness-context-builder/      producer-side context helpers
-  octo-harness-adapter-host/         adapter lifecycle and RPC library
-  octo-harness-adapter-sdk/          adapter authoring helpers
-  octo-harness-acp-client/           reusable ACP client
-  octo-harness-adapter-*/            provider adapter definitions
+  octo-runtime-protocol/             canonical protocol
+  octo-runtime-core/                 domain engine and stores
+  octo-runtime-daemon/               local SDK, lifecycle, IPC and optional modules
+  octo-runtime-worker-access/        optional enrollment / current Worker transport
+  octo-runtime-channel-im/           optional IM integration
+  octo-runtime-context-builder/      producer-side context helpers
+  octo-runtime-adapter-host/         adapter lifecycle and RPC library
+  octo-runtime-adapter-sdk/          adapter authoring helpers
+  octo-runtime-acp-client/           reusable ACP client
+  octo-runtime-adapter-*/            provider adapter definitions
 ```
 
 依赖方向：
 
 ```text
 apps -> packages
-octo-harness-adapter-* -> octo-harness-adapter-sdk / provider protocol helpers
-octo-harness-daemon -> local Host / Core / Protocol dependencies
+octo-runtime-adapter-* -> octo-runtime-adapter-sdk / provider protocol helpers
+octo-runtime-daemon -> local Host / Core / Protocol dependencies
 optional worker-access / channel-im -> shared Host and protocol contracts
 HostApp composition -> explicitly selected optional factories
-octo-harness-adapter-host -> octo-harness-protocol
+octo-runtime-adapter-host -> octo-runtime-protocol
 ```
 
 daemon 的生产依赖不得引入 worker-access 或 channel-im；HostApp 额外携带并显式登记／启用所需工厂。标准 CLI 根包携带这些包不代表客户 SDK 必须部署它们。
 
-`packages/*` 不应 import `apps/*`。provider 命令构造、native event parser、session codec 和权限适配必须留在 `packages/octo-harness-adapter-*`；apps 只做配置、进程启动和 I/O 装配。
+`packages/*` 不应 import `apps/*`。provider 命令构造、native event parser、session codec 和权限适配必须留在 `packages/octo-runtime-adapter-*`；apps 只做配置、进程启动和 I/O 装配。
 
-发布型 package 的目录名与 npm 非 scope 部分完全一致。例如目录 `packages/octo-harness-core` 发布为 `@mininglamp-oss/octo-harness-core`，目录 `packages/octo-harness-adapter-openclaw` 发布为 `@mininglamp-oss/octo-harness-adapter-openclaw`。这样仓库导航、workspace filter、依赖列表和 registry 搜索使用同一名称。
+发布型 package 的目录名与 npm 非 scope 部分完全一致。例如目录 `packages/octo-runtime-core` 发布为 `@mininglamp-oss/octo-runtime-core`，目录 `packages/octo-runtime-adapter-openclaw` 发布为 `@mininglamp-oss/octo-runtime-adapter-openclaw`。这样仓库导航、workspace filter、依赖列表和 registry 搜索使用同一名称。
 
 ## TypeScript 构建约定
 
@@ -93,13 +93,13 @@ pnpm --recursive list --depth -1
 运行单个 app：
 
 ```bash
-pnpm --filter @mininglamp-oss/octo-harness-adapter-host-app start
+pnpm --filter @mininglamp-oss/octo-runtime-adapter-host-app start
 ```
 
 查看单个 package 的依赖：
 
 ```bash
-pnpm --filter @mininglamp-oss/octo-harness-adapter-codex list
+pnpm --filter @mininglamp-oss/octo-runtime-adapter-codex list
 ```
 
 内部依赖必须使用 `workspace:*`：
@@ -107,7 +107,7 @@ pnpm --filter @mininglamp-oss/octo-harness-adapter-codex list
 ```json
 {
   "dependencies": {
-    "@mininglamp-oss/octo-harness-adapter-sdk": "workspace:*"
+    "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*"
   }
 }
 ```
@@ -118,8 +118,8 @@ pnpm --filter @mininglamp-oss/octo-harness-adapter-codex list
 
 以 `foo` provider 为例：
 
-1. 创建 `packages/octo-harness-adapter-foo/package.json`、`src/index.ts` 和 `README.md`。
-2. 包名使用 `@mininglamp-oss/octo-harness-adapter-foo`，依赖 `@mininglamp-oss/octo-harness-adapter-sdk: workspace:*`。
+1. 创建 `packages/octo-runtime-adapter-foo/package.json`、`src/index.ts` 和 `README.md`。
+2. 包名使用 `@mininglamp-oss/octo-runtime-adapter-foo`，依赖 `@mininglamp-oss/octo-runtime-adapter-sdk: workspace:*`。
 3. 实现 metadata、probe、invoke、session 和 canonical event mapping。
 4. 在 [config/adapters.json](../config/adapters.json) 注册 adapter type/module/export。
 5. 在 `apps/adapter-host/package.json` 增加 workspace dependency，确保运行 host 能 import 它。
@@ -132,7 +132,7 @@ Core、daemon 和 CLI 不应增加 `if adapterType === "foo"`。新增 provider 
 ## 新增 App
 
 1. 创建 `apps/<name>/package.json` 和 `src/index.ts`。
-2. package 标记 `private: true`，命名为 `@octo-harness-ai/<name>` 或 `@octo-harness-ai/<name>-app`。
+2. package 标记 `private: true`，命名为 `@octo-runtime-ai/<name>` 或 `@octo-runtime-ai/<name>-app`。
 3. 使用 `workspace:*` 依赖需要的 runtime packages。
 4. 在 app package 中提供 `start` script；需要统一入口时再加入根 scripts。
 

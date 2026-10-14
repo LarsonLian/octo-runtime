@@ -15,7 +15,7 @@ import {
   diffieHellman
 } from "node:crypto";
 import { WebSocketServer } from "ws";
-import { ImRuntime } from "../packages/octo-harness-channel-im/dist/index.js";
+import { ImRuntime } from "../packages/octo-runtime-channel-im/dist/index.js";
 import { loadCliImConfiguration } from "../apps/daemon/dist/im-config.js";
 import { waitFor } from "./agent-work-runtime-fixture.js";
 import { imCardProfile } from "./fixtures/im-card-profile.js";
@@ -105,6 +105,10 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
     ]).toString(decrypt ? "utf8" : "base64");
   };
   const server = createServer(async (req, res) => {
+    if (req.url === "/v1/auth/verify-bot") {
+      res.end(JSON.stringify({ bot_uid: "bot", space_id: "space" }));
+      return;
+    }
     assert.equal(req.headers.authorization, "Bearer bf_fixture");
     const chunks = [];
     for await (const c of req) chunks.push(c);
@@ -285,17 +289,14 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   };
   const runtime = new ImRuntime(
     {
-      id: "fixture",
       type: "octo",
       enabled: true,
-      allowedSenderIds: ["owner", "other"],
-      apiUrl: `http://127.0.0.1:${server.address().port}`,
-      botId: "bot",
-      spaceId: "space",
-      token: "bf_fixture",
-      approvalMode: "ask",
-      adapterType: "codex",
-      workdir: dir,
+      allowed_sender_ids: ["owner", "other"],
+      api_url: `http://127.0.0.1:${server.address().port}`,
+      bot_id: "bot",
+      bf_token: "bf_fixture",
+      approval_mode: "ask",
+      adapter: { adapter_type: "codex", workdir: dir },
       context: { schema: "octo.context-envelope/v3", items: [] }
     },
     { host }
@@ -424,16 +425,13 @@ test("duplicate bot identities fail before opening connections", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "oh-im-config-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const bot = {
-    id: "a",
     type: "octo",
-    apiUrl: "https://im.example/api",
-    botId: "bot",
-    spaceId: "s",
-    tokenFile: "token",
-    adapterType: "codex",
-    workdir: dir,
+    api_url: "https://im.example/api",
+    bot_id: "bot",
+    bf_token_file: "token",
+    adapter: { adapter_type: "codex", workdir: dir },
     context: { schema: "octo.context-envelope/v3", items: [] }
   };
-  await writeFile(join(dir, "im.json"), JSON.stringify({ bots: [bot, { ...bot, id: "b" }] }));
+  await writeFile(join(dir, "im.json"), JSON.stringify([bot, { ...bot }]));
   assert.throws(() => loadCliImConfiguration(dir), /IM_BOT_DUPLICATED/);
 });

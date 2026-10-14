@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { InvocationExperience } from "../packages/octo-harness-adapter-host/dist/experience.js";
-import { AdapterHost } from "../packages/octo-harness-adapter-host/dist/index.js";
+import { InvocationExperience } from "../packages/octo-runtime-adapter-host/dist/experience.js";
+import { AdapterHost } from "../packages/octo-runtime-adapter-host/dist/index.js";
 
 const metadata = { messageId: "thought", channel: "analysis", exposure: "public_reasoning", provenance: { provider: "fixture", nativeEvent: "thought" } };
 test("streaming message snapshots keep one activity until an explicit terminal", () => {

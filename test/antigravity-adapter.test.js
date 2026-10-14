@@ -4,9 +4,9 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertCanonicalEvent } from "@mininglamp-oss/octo-harness-protocol";
-import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
-import { AntigravityEventNormalizer, antigravityLogError, buildAntigravityCommand, createAntigravityAdapter } from "@mininglamp-oss/octo-harness-adapter-antigravity";
+import { assertCanonicalEvent } from "@mininglamp-oss/octo-runtime-protocol";
+import { AdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
+import { AntigravityEventNormalizer, antigravityLogError, buildAntigravityCommand, createAntigravityAdapter } from "@mininglamp-oss/octo-runtime-adapter-antigravity";
 
 const request = { protocolVersion: 2, invocationId: "inv-agy", agentSessionId: "session-agy", runId: "run-agy", prompt: "display", modelInput: "actual user input", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "CONTROL", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} };
 const fixture = fileURLToPath(new URL("./fixtures/antigravity-cli.mjs", import.meta.url));
@@ -24,7 +24,7 @@ test("Antigravity builds an isolated stdin carrier, exact model and explicit yol
   assert.equal(spec.args[spec.args.indexOf("--print-timeout") + 1], "0");
   assert.ok(!spec.args.join(" ").includes("CONTROL"));
   assert.ok(!spec.args.includes("--continue"));
-  assert.deepEqual(JSON.parse(spec.input), { event: "user", message: { content: [{ type: "text", text: "Harness control instructions (apply throughout this session):\nCONTROL" }, { type: "text", text: "User input:\nactual user input" }] } });
+  assert.deepEqual(JSON.parse(spec.input), { event: "user", message: { content: [{ type: "text", text: "Runtime control instructions (apply throughout this session):\nCONTROL" }, { type: "text", text: "User input:\nactual user input" }] } });
   const resumed = buildAntigravityCommand({ ...request, providerSession: { sessionId: "conversation-specific" } });
   assert.equal(resumed.args[resumed.args.indexOf("--conversation") + 1], "conversation-specific");
   assert.equal(resumed.args[resumed.args.indexOf("--conversation") + 1], "conversation-specific");

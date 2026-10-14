@@ -61,7 +61,7 @@ async function exercise({ timeout = 150, sealDelay = 0, invoke, admission, conte
   try {
     await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
     runtime = new AgentWorkRuntime({ profile: "default", baseUrl: `http://127.0.0.1:${server.address().port}`,
-      token: "fixture-only", runtimeName: "runtime-deadline", storePath: join(directory, "state.db"), }, {
+      token: "fixture-only", runtimeName: "runtime-deadline", root: directory, }, {
       list: async () => [{ type: "fake", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [], available: true }],
       cancel: async () => ({ cancelled: true }),
       async *invoke(_type, request) {

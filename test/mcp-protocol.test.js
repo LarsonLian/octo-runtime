@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { assertInvokeRequest, assertMcpServers, executionFeatures } from "@mininglamp-oss/octo-harness-protocol";
+import { assertInvokeRequest, assertMcpServers, executionFeatures } from "@mininglamp-oss/octo-runtime-protocol";
 
 const baseRequest = { protocolVersion: 2,
   invocationId: "invoke-1",

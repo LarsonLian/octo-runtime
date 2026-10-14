@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import test from "node:test";
-import { invocationEnvironment } from "../packages/octo-harness-adapter-sdk/dist/index.js";
-import { codexEnvironmentConfig } from "../packages/octo-harness-adapter-codex/dist/environment.js";
+import { invocationEnvironment } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
+import { codexEnvironmentConfig } from "../packages/octo-runtime-adapter-codex/dist/environment.js";
 import { invokeRequest } from "./agent-work-runtime-fixture.js";
 
 // Native app-server and a real stdio MCP child; no model turn or credentials required.

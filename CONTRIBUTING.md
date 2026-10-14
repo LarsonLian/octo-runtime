@@ -1,4 +1,4 @@
-# Contributing to Octo Harness
+# Contributing to Octo Runtime
 
 Thanks for your interest in contributing. This document covers everything you
 need to get productive.
@@ -27,7 +27,7 @@ need to get productive.
 
 ```bash
 # From the repository root
-cd octo-harness
+cd octo-runtime
 pnpm install
 pnpm build
 pnpm typecheck
@@ -56,7 +56,7 @@ model is invoked.
 
 ```bash
 # Terminal A
-pnpm daemon      # state at ~/.octo-harness/state.db (override with OCTO_HARNESS_HOME)
+pnpm daemon      # state at ~/.octo-runtime/state.db (override with OCTO_RUNTIME_HOME)
 
 # Terminal B
 pnpm cli status
@@ -67,19 +67,19 @@ pnpm cli adapter probe codex
 ## Project Structure
 
 ```
-octo-harness/
+octo-runtime/
 ├── apps/
 │   ├── cli/                 # Unix socket CLI client
 │   ├── daemon/              # composition root + control plane + worker
 │   └── adapter-host/        # standalone provider host process
 ├── packages/
-│   ├── octo-harness-protocol/            # canonical event / invoke contract (JSON Schema → TS)
-│   ├── octo-harness-core/                # HarnessEngine + Store (domain core)
-│   ├── octo-harness-daemon/              # queue, scheduler, recovery
-│   ├── octo-harness-adapter-host/        # host lifecycle + NDJSON RPC
-│   ├── octo-harness-adapter-sdk/         # adapter helpers + subprocess runtime
-│   ├── octo-harness-acp-client/          # CodeBuddy ACP JSON-RPC client
-│   └── octo-harness-adapter-*/           # per-provider adapters
+│   ├── octo-runtime-protocol/            # canonical event / invoke contract (JSON Schema → TS)
+│   ├── octo-runtime-core/                # HarnessEngine + Store (domain core)
+│   ├── octo-runtime-daemon/              # queue, scheduler, recovery
+│   ├── octo-runtime-adapter-host/        # host lifecycle + NDJSON RPC
+│   ├── octo-runtime-adapter-sdk/         # adapter helpers + subprocess runtime
+│   ├── octo-runtime-acp-client/          # CodeBuddy ACP JSON-RPC client
+│   └── octo-runtime-adapter-*/           # per-provider adapters
 ├── config/adapters.json     # adapter manifest
 ├── test/                    # contract and integration tests
 ├── ARCHITECTURE.md          # design document
@@ -109,7 +109,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full design, and
 
 ### Boundaries
 
-- The domain core (`octo-harness-core`) must not import IPC, stdio, child
+- The domain core (`octo-runtime-core`) must not import IPC, stdio, child
   processes or a concrete provider. It depends only on the `Store` and
   `HarnessHost` ports.
 - Provider differences live inside adapters. Do not add
@@ -153,8 +153,8 @@ There are no git hooks in this repo yet, so run these manually before pushing:
 
 Adapters are the only place provider specifics may live. In brief:
 
-1. Create `packages/octo-harness-adapter-<name>/` and depend on
-   `octo-harness-adapter-sdk` (for CLI providers) or the relevant client.
+1. Create `packages/octo-runtime-adapter-<name>/` and depend on
+   `octo-runtime-adapter-sdk` (for CLI providers) or the relevant client.
 2. Implement `build*Command` (generic `InvokeRequest` → provider input) and
    `normalize*Event` (native stream → `CanonicalEvent`). Report the opaque
    provider session through a `session.update` event so continuations resume.

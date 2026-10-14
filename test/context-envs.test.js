@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { contextHash, resolveContextConfiguration } from "../packages/octo-harness-protocol/dist/index.js";
-import { resolveLocalContext } from "../packages/octo-harness-core/dist/context.js";
-import { assertFrozenContextPlan, renderModelContexts, contextControlInstructions } from "../packages/octo-harness-protocol/dist/index.js";
-import { createJsonCliAdapter, invocationEnvironment } from "../packages/octo-harness-adapter-sdk/dist/index.js";
-import { buildCodexCommand } from "../packages/octo-harness-adapter-codex/dist/index.js";
-import { codexEnvironmentConfig } from "../packages/octo-harness-adapter-codex/dist/environment.js";
-import { buildZcodeCommand } from "../packages/octo-harness-adapter-zcode-gui/dist/index.js";
-import { buildOpenClawGatewayInvocation } from "../packages/octo-harness-adapter-openclaw/dist/index.js";
+import { contextHash, resolveContextConfiguration } from "../packages/octo-runtime-protocol/dist/index.js";
+import { resolveLocalContext } from "../packages/octo-runtime-core/dist/context.js";
+import { assertFrozenContextPlan, renderModelContexts, contextControlInstructions } from "../packages/octo-runtime-protocol/dist/index.js";
+import { createJsonCliAdapter, invocationEnvironment } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
+import { buildCodexCommand } from "../packages/octo-runtime-adapter-codex/dist/index.js";
+import { codexEnvironmentConfig } from "../packages/octo-runtime-adapter-codex/dist/environment.js";
+import { buildZcodeCommand } from "../packages/octo-runtime-adapter-zcode-gui/dist/index.js";
+import { buildOpenClawGatewayInvocation } from "../packages/octo-runtime-adapter-openclaw/dist/index.js";
 import { invokeRequest } from "./agent-work-runtime-fixture.js";
 
 const envPayload = values => ({ env_variables: Object.entries(values).map(([key, value]) => ({ key, value })) });

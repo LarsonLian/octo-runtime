@@ -14,7 +14,7 @@ The following owner/provider rules govern enabled cloud registration and discove
 
 Each profile persists its local `runtime_id` and tenant binding in
 `identity/runtime.json`; enabled enrollment adds credential binding metadata. Credentials remain in the protected credential file.
-Harness deliberately does not persist `owner_subject_type`, `owner_subject_id`,
+Runtime deliberately does not persist `owner_subject_type`, `owner_subject_id`,
 or `created_by_octo_uid`: Worker binds those fields to the Runtime credential and
 uses them for authorization and audit. They are not required to register or
 connect a Runtime.
@@ -26,13 +26,13 @@ subject. An owner may have many Runtimes, and one Home installation's
 ## Profile Name Binding
 
 The breaking `feat/runtime-profile` contract requires `profile` on both
-`POST /v1/runtimes/enroll` and `POST /v1/runtime/register`. Harness sends the
+`POST /v1/runtimes/enroll` and `POST /v1/runtime/register`. Runtime sends the
 selected local profile name automatically, including `default`. Names are
 1-128 ASCII characters, starting with a letter/digit; remaining characters may
-also be `.`, `_`, `-`. Harness Home infrastructure names remain reserved.
+also be `.`, `_`, `-`. Runtime Home infrastructure names remain reserved.
 Worker stores `profile VARCHAR(128) NOT NULL` and returns it on Runtime queries.
 
-Harness stores the returned profile in `identity/runtime.json` as the binding
+Runtime stores the returned profile in `identity/runtime.json` as the binding
 snapshot; it must exactly match the existing profile configuration/directory.
 Missing/mismatched profiles in local identity or server responses are rejected,
 not inferred or upgraded. Same-grant retries and credential-proven renewals must
@@ -57,7 +57,7 @@ change an existing Runtime's Space or owner.
 The human issuer may send
 `{"kind":"cloud","owner_subject_type":"organization","owner_subject_id":"engineering"}`
 to `POST /v1/runtime_enrollments`; missing kind defaults to `local`. The
-enrollment selects the server-side Runtime kind. Harness metadata registration
+enrollment selects the server-side Runtime kind. Runtime metadata registration
 does not rewrite it, so a cloud Runtime remains cloud after login/reconnect.
 Re-enrollment requires a grant with matching kind.
 

@@ -5,10 +5,10 @@ import {
   CONTEXT_TYPE_CATALOG, assertContextConfiguration,
   assertContextEnvelope, canonicalContext,
   contextTypeDefinition, resolveContextConfiguration
-} from "../packages/octo-harness-protocol/dist/index.js";
+} from "../packages/octo-runtime-protocol/dist/index.js";
 
-const schema = JSON.parse(readFileSync(new URL("../packages/octo-harness-protocol/schema/protocol.schema.json", import.meta.url), "utf8"));
-const fixtures = JSON.parse(readFileSync(new URL("../packages/octo-harness-protocol/schema/context-configuration-fixtures.json", import.meta.url), "utf8"));
+const schema = JSON.parse(readFileSync(new URL("../packages/octo-runtime-protocol/schema/protocol.schema.json", import.meta.url), "utf8"));
+const fixtures = JSON.parse(readFileSync(new URL("../packages/octo-runtime-protocol/schema/context-configuration-fixtures.json", import.meta.url), "utf8"));
 for (const fixture of fixtures) {
   test(`configuration contract: ${fixture.name}`, () => {
     const original = structuredClone(fixture);

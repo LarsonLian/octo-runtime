@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { InvocationWatchdog } from "../packages/octo-harness-adapter-host/dist/watchdog.js";
-import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
-import { assertRuntimeLimits } from "@mininglamp-oss/octo-harness-protocol";
+import { InvocationWatchdog } from "../packages/octo-runtime-adapter-host/dist/watchdog.js";
+import { AdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
+import { assertRuntimeLimits } from "@mininglamp-oss/octo-runtime-protocol";
 
 function fixture(limits = {}, native = true) {
   let now = 0;

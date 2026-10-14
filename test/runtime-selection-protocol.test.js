@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
-import { RUNTIME_RUN_CONTRACT, RUNTIME_SELECTION_SCHEMA, assertResolvedRuntimeSelection } from "../packages/octo-harness-protocol/dist/index.js";
+import { RUNTIME_RUN_CONTRACT, RUNTIME_SELECTION_SCHEMA, assertResolvedRuntimeSelection } from "../packages/octo-runtime-protocol/dist/index.js";
 import { resolvedRuntimeSelection } from "./agent-work-runtime-fixture.js";
 
-const fixtures = JSON.parse(readFileSync(new URL("../packages/octo-harness-protocol/schema/runtime-selection-fixtures.json", import.meta.url), "utf8"));
-const schema = JSON.parse(readFileSync(new URL("../packages/octo-harness-protocol/schema/protocol.schema.json", import.meta.url), "utf8"));
+const fixtures = JSON.parse(readFileSync(new URL("../packages/octo-runtime-protocol/schema/runtime-selection-fixtures.json", import.meta.url), "utf8"));
+const schema = JSON.parse(readFileSync(new URL("../packages/octo-runtime-protocol/schema/protocol.schema.json", import.meta.url), "utf8"));
 const require = createRequire(import.meta.resolve("eslint"));
 const Ajv = require("ajv");
 const ajv = new Ajv({ allErrors: true, logger: false });

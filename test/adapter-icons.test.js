@@ -9,7 +9,7 @@ import {
   claudeCodeIcon,
   openclawIcon,
   qoderCliCnIcon
-} from "@mininglamp-oss/octo-harness-adapter-icons";
+} from "@mininglamp-oss/octo-runtime-adapter-icons";
 
 const configUrl = new URL("../config/adapters.json", import.meta.url);
 

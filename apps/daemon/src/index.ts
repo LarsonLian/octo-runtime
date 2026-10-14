@@ -4,12 +4,17 @@
 import { inspect } from "node:util";
 import { resolveDaemonRuntimePaths } from "./runtime-options.js";
 import { startDaemonServer, type DaemonApplication } from "./server.js";
-import { loadCliImConfiguration } from "./im-config.js";
+import { initializeCliImAdapters, loadCliImConfiguration } from "./im-config.js";
+import { readExtraDirectory } from "@mininglamp-oss/octo-runtime-daemon";
+import { join } from "node:path";
 
 const runtimePaths = resolveDaemonRuntimePaths();
 let app: DaemonApplication | undefined;
 try {
-  app = await startDaemonServer({ ...runtimePaths, ...loadCliImConfiguration(runtimePaths.homePath!) });
+  const im = loadCliImConfiguration(runtimePaths.homePath!);
+  await initializeCliImAdapters(runtimePaths.homePath!, im.imBots);
+  const extras = await readExtraDirectory(join(runtimePaths.homePath!, "default", "extra"));
+  app = await startDaemonServer({ ...runtimePaths, ...im, extras });
 } catch (error) {
   const verbose = process.argv.includes("--verbose");
   const message = error instanceof Error ? error.message : String(error);

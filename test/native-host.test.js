@@ -6,21 +6,21 @@ import {
   AdapterHost,
   AdapterHostRpcClient,
   AdapterHostRpcServer
-} from "@mininglamp-oss/octo-harness-adapter-host";
+} from "@mininglamp-oss/octo-runtime-adapter-host";
 import {
   createCodexAdapter,
   CodexEventNormalizer
-} from "@mininglamp-oss/octo-harness-adapter-codex";
+} from "@mininglamp-oss/octo-runtime-adapter-codex";
 import {
   createClaudeCodeAdapter,
   ClaudeEventNormalizer
-} from "@mininglamp-oss/octo-harness-adapter-claude-code";
-import { assertHostFrame, isHostTerminal } from "../packages/octo-harness-protocol/dist/index.js";
+} from "@mininglamp-oss/octo-runtime-adapter-claude-code";
+import { assertHostFrame, isHostTerminal } from "../packages/octo-runtime-protocol/dist/index.js";
 import {
   DriverQueue,
   NativeInteractionBridge,
   watchLineLimit
-} from "../packages/octo-harness-adapter-sdk/dist/index.js";
+} from "../packages/octo-runtime-adapter-sdk/dist/index.js";
 import { invokeRequest } from "./agent-work-runtime-fixture.js";
 const codex = fileURLToPath(new URL("../test-support/fake-native-codex.mjs", import.meta.url));
 const claude = fileURLToPath(

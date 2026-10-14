@@ -7,17 +7,17 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import net from "node:net";
-import { startDaemonServer } from "@mininglamp-oss/octo-harness-daemon-app";
+import { startDaemonServer } from "@mininglamp-oss/octo-runtime-daemon-app";
 
 const execute = promisify(execFile);
 
 test("a broken IPC client closes only its connection and leaves the daemon ready", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const home = await mkdtemp(join(tmpdir(), "oh-ipc-error-"));
-  const socketPath = join(home, "sockets", "octo-harness-daemon.sock");
+  const socketPath = join(home, "sockets", "octo-runtime-daemon.sock");
   const app = await startDaemonServer({
     socketPath,
-    storePath: join(home, "state.db"),
+    homePath: home,
     manifestPath: join(root, "test/fixtures/adapters.json"),
     hostEntrypoint: join(root, "apps/adapter-host/dist/index.js")
   });
@@ -31,7 +31,7 @@ test("a broken IPC client closes only its connection and leaves the daemon ready
     await closed;
     const status = JSON.parse((await execute(
       process.execPath, [join(root, "apps/cli/dist/index.js"), "status"],
-      { cwd: root, env: { ...process.env, OCTO_HARNESS_HOME: home } }
+      { cwd: root, env: { ...process.env, OCTO_RUNTIME_HOME: home } }
     )).stdout);
     assert.equal(status.ready, true);
   } finally {

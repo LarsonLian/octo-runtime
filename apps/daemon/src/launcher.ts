@@ -8,7 +8,7 @@ import { daemonRuntimeArguments, resolveDaemonRuntimePaths } from "./runtime-opt
 const entrypoint = fileURLToPath(new URL("./index.js", import.meta.url));
 const runtimePaths = resolveDaemonRuntimePaths();
 const child = spawn(process.execPath, [entrypoint, ...daemonRuntimeArguments(runtimePaths), ...(process.argv.includes("--verbose") ? ["--verbose"] : [])], {
-  argv0: "octo-harness-daemon",
+  argv0: "octo-runtime-daemon",
   env: process.env,
   stdio: "inherit"
 });

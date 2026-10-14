@@ -1,0 +1,16 @@
+{
+  "name": "@mininglamp-oss/octo-runtime-adapter-qodercli",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@mininglamp-oss/octo-runtime-adapter-acp": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

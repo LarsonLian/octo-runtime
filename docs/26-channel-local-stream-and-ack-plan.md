@@ -10,7 +10,7 @@
 
 `octo-runtime-daemon` 分开装配 Worker 远程接入和 IM 接入。Worker 模块使用执行协议 WS；IM 模块使用 IM 专用 WS，负责消息映射、会话、群聊上下文和 GROUP.md 的业务策略。二者调用同一个 Host，复用 adapter、取消和交互能力。
 
-目前 `octo-harness-channel-im` 已有私聊入站、会话复用、重置、Codex invoke 和 IM 回发；群聊、GROUP.md、卡片和 typing 属于后续 IM 专项目标，不能当作已经实现。旧云端 Channel 项目中仍存在的通知业务与旧执行路径不属于新的本地聊天执行链，不能作为本地回复的回退。
+目前 `octo-runtime-channel-im` 已有私聊入站、会话复用、重置、Codex invoke 和 IM 回发；群聊、GROUP.md、卡片和 typing 属于后续 IM 专项目标，不能当作已经实现。旧云端 Channel 项目中仍存在的通知业务与旧执行路径不属于新的本地聊天执行链，不能作为本地回复的回退。
 
 Work App 使用 daemon SDK 的 `invoke()` 和既有唯一 preload 桥。renderer 不获取登录 token，kit 通过 Provider 注入的 Port 调用。业务自行消费完整 CanonicalEvent，自己保存和投递。
 

@@ -18,7 +18,7 @@ input.on("line", line => {
       respond(request.id, {
         protocolVersion: request.params?.protocolVersion ?? "2025-06-18",
         capabilities: { tools: {} },
-        serverInfo: { name: "octo-harness-echo", version: "1.0.0" }
+        serverInfo: { name: "octo-runtime-echo", version: "1.0.0" }
       });
       break;
     case "ping":
@@ -28,7 +28,7 @@ input.on("line", line => {
       respond(request.id, {
         tools: [{
           name: "octo_echo",
-          description: "Returns a deterministic Octo Harness MCP integration marker.",
+          description: "Returns a deterministic Octo Runtime MCP integration marker.",
           inputSchema: {
             type: "object",
             properties: { value: { type: "string" } },

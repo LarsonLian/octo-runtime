@@ -1,4 +1,4 @@
-# Octo Harness 开发与联调
+# Octo Runtime 开发与联调
 
 日期：2026-10-14。当前架构见 [Runtime 合同](docs/runtime-local-and-online-contract.md)和[架构说明](ARCHITECTURE.md)。
 
@@ -24,13 +24,13 @@ pnpm lint
 pnpm test
 ```
 
-修改 package 元数据、入口、manifest 或 TypeScript 后，使用当前构建物并重启受影响进程。修改协议还须同步 Worker、Harness 和桌面应用，按根 AGENTS.md 验证内置 Runtime；npm link 完成不等于旧进程已替换。
+修改 package 元数据、入口、manifest 或 TypeScript 后，使用当前构建物并重启受影响进程。修改协议还须同步 Worker、Runtime 和桌面应用，按根 AGENTS.md 验证内置 Runtime；npm link 完成不等于旧进程已替换。
 
 可选源码 CLI link：
 
 ```bash
 npm link --foreground-scripts
-octo-harness --help
+octo-runtime --help
 ```
 
 CLI 是运维入口，客户 SDK 不依赖其 app launcher 或原生服务安装。
@@ -51,11 +51,11 @@ CLI 是运维入口，客户 SDK 不依赖其 app launcher 或原生服务安装
 独立生产部署验证：
 
 ```bash
-pnpm --filter @mininglamp-oss/octo-harness-daemon deploy --prod /absolute/staging/daemon
+pnpm --filter @mininglamp-oss/octo-runtime-daemon deploy --prod /absolute/staging/daemon
 node scripts/verify-daemon-deployment.mjs /absolute/staging/daemon
 ```
 
-前台 CLI 诊断可使用 `octo-harness --home /absolute/test-home daemon run`，一次本地 Adapter 调试可使用 `playboard`。已保存云端 profile 的 CLI 仍可能恢复 Worker 连接，因此不能拿该 Home 代替“未携带 Worker 包”的最小部署证明。
+前台 CLI 诊断可使用 `octo-runtime --home /absolute/test-home daemon run`，一次本地 Adapter 调试可使用 `playboard`。已保存云端 profile 的 CLI 仍可能恢复 Worker 连接，因此不能拿该 Home 代替“未携带 Worker 包”的最小部署证明。
 
 ## 4. 可选真实接入验证
 

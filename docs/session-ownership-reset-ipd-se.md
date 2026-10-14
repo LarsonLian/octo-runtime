@@ -2,18 +2,18 @@
 
 版本：0.2。日期：2026-10-14（Asia/Shanghai）。状态：已实施，验证范围见第 12 节。
 
-本文采用项目裁剪的 RR → SR → FEAT → AC → WP 追踪链。范围覆盖业务 Event 发起方、全部已接入 IM Channel、Octo Work 本地会话、Loop 会话入口、Worker、Harness 与 Adapter。第 8 节区分已核对源码和待盘点部署，不把历史架构文档中的服务名称当作当前运行事实。
+本文采用项目裁剪的 RR → SR → FEAT → AC → WP 追踪链。范围覆盖业务 Event 发起方、全部已接入 IM Channel、Octo Work 本地会话、Loop 会话入口、Worker、Runtime 与 Adapter。第 8 节区分已核对源码和待盘点部署，不把历史架构文档中的服务名称当作当前运行事实。
 
 ## 1. 决策与范围
 
 ### 1.1 已确认的方向
 
-1. `conversation_id` 是稳定的业务会话身份。业务方可以使用群聊、子区或私聊地址构造该标识，无须向 Harness 申请一个 conversation UUID。
+1. `conversation_id` 是稳定的业务会话身份。业务方可以使用群聊、子区或私聊地址构造该标识，无须向 Runtime 申请一个 conversation UUID。
 2. 业务方拥有 `conversation_id → 当前 session_id` 的映射。Channel 插件、Octo Work main 和云端会话业务服务，分别管理自己拥有的会话；Worker、daemon 和 Adapter 不接管该映射。
 3. 业务方在构造触发 AgentRun 的 Event 时确定执行 `session_id`，并随 Event 冻结。首次执行生成；普通续聊复用；reset 后生成新的值。同一 Event 重投不得重新生成。
 4. 简单接入方可以省略 `session_id`，此时按 `conversation_id` 确定本次执行会话。已支持 reset 的官方入口必须显式发送执行 session，不能在 reset 后漏传并回到旧默认值。
 5. `/reset` 由业务入口拦截。成功后返回固定正文：**会话已经重置**。命令自身不创建 AgentRun，不进入模型输入，不产生模型计费。
-6. Octo Work 本地会话的 reset 完全在本机完成：通过本地 IPC 更新 SQLite，并生成本地控制提示；不请求 Worker、云端 Event 接口、Harness invoke 或 Provider。后续普通消息才触发执行。
+6. Octo Work 本地会话的 reset 完全在本机完成：通过本地 IPC 更新 SQLite，并生成本地控制提示；不请求 Worker、云端 Event 接口、Runtime invoke 或 Provider。后续普通消息才触发执行。
 7. reset 保留 `conversation_id`、聊天历史、既有 Run 与产物。业务方决定新 session 首轮需要提交哪些背景；底层不得从旧 Event 或聊天记录自动补背景。
 
 ### 1.2 本方案选择的具体实现
@@ -56,7 +56,7 @@
 
 会话映射至少位于已经验证的租户、业务 namespace、owner / 接入账号、endpoint / bot、执行目标作用域内，再按 `conversation_id` 查找。不同机器人收到同一用户的 `dm-uid` 不得复用执行上下文；群聊子区与主区必须隔离。多人共享的群聊不能额外按每位发言人切成不同 session，除非该业务明确采用个人会话策略。
 
-生成 session 推荐使用带前缀的 UUID。`conversation_id + 随机串` 也成立，但须满足统一长度和字符约束，不把 UID 等业务标识作为路径直接拼接。Harness 视 session 为不透明标识。
+生成 session 推荐使用带前缀的 UUID。`conversation_id + 随机串` 也成立，但须满足统一长度和字符约束，不把 UID 等业务标识作为路径直接拼接。Runtime 视 session 为不透明标识。
 
 ### 2.3 执行合同
 
@@ -105,17 +105,17 @@ flowchart TD
     R --> A[原会话显示：会话已经重置]
     C -->|否| E[创建执行 Event：生成或复用 session 并冻结快照]
     E --> X[本地 Host 或远端 Worker 执行入口]
-    X --> H[Harness / Adapter]
+    X --> H[Runtime / Adapter]
     H --> P[Provider 新建或恢复会话]
 ```
 
 | FEAT | 模块职责 | 改造边界 |
 | --- | --- | --- |
-| F01 业务映射与快照 | 获取当前 session、延迟分配、原子保存、控制幂等、Run 身份冻结 | 可共享 helper 和存储 port；数据由业务所属节点管理，不放进 Harness Core 的中心会话服务 |
+| F01 业务映射与快照 | 获取当前 session、延迟分配、原子保存、控制幂等、Run 身份冻结 | 可共享 helper 和存储 port；数据由业务所属节点管理，不放进 Runtime Core 的中心会话服务 |
 | F02 Channel 控制入口 | 归一化消息、校验发送者和目标、识别命令、保存 reset、返回原会话 | 在 buildContext / createImInvocation 前短路；平台 connector 只适配地址与投递 |
 | F03 Work App 本地会话 | main 操作 SQLite；preload 暴露控制能力；renderer 显示本地控制提示 | 沿用唯一 `octoWork` 桥；kit 经 Port 注入；不调云端、不启动模型 |
 | F04 Loop / 云端业务入口 | 拥有其会话映射，在业务事务中保存 session 与执行 Event | 不覆盖 Work App 本地映射；命令识别早于 WorkExecution 和 Event 创建 |
-| F05 Worker / Harness / Adapter | 接纳冻结 session、按作用域查执行状态、保持执行可靠性、准确报告 resume | 不解析 reset，不记录 conversation 的“当前 session”，不自动补业务背景 |
+| F05 Worker / Runtime / Adapter | 接纳冻结 session、按作用域查执行状态、保持执行可靠性、准确报告 resume | 不解析 reset，不记录 conversation 的“当前 session”，不自动补业务背景 |
 | F06 回执、展示与验收 | 控制操作持久化、IM 回复投递、历史提示、覆盖每个入口 | 无假 Run、无假 assistant 模型输出；实际投递结果与本地状态成功分别记录 |
 
 运行状态仍有明确持有方：本地 Work App / IM 插件保存其 Provider 绑定；远端 Worker 在现有有界内存执行状态中保存远端绑定。绑定由逻辑 session 和执行配置作用域索引，不能只用 conversation 查 resume。Worker 的持久 Event / Action 账本保存调用身份和指针，不因此恢复持久 AgentSession / Run 日志表。
@@ -233,18 +233,18 @@ reset 后创建新的 Provider 对话，不带旧 resume 标识；Adapter 不能
 
 | 模块与已核对文件 | 当前事实 | 目标改造 |
 | --- | --- | --- |
-| [IM application](../packages/octo-harness-channel-im/src/application/im-channel.ts)、[contracts](../packages/octo-harness-channel-im/src/contracts.ts) | session 在内存 Map；首次收消息生成 ID；reset 排在 `tail` 后，只加 generation、清 handle，回复含内部 ID | 引入业务存储 port；首次执行 Event 延迟分配；reset 将当前绑定置空；独立控制接纳；固定成功文案与持久幂等 |
-| [IM dispatcher](../packages/octo-harness-channel-im/src/execution/dispatcher.ts) | 构造 Event / Run ID，`agentSessionId` 取 `session.id`，请求携带 providerSession | 构造前分配并持久化业务 session；冻结 Event，不在重投时重新生成；只携带匹配该 session 的 handle |
-| [connector registry](../packages/octo-harness-channel-im/src/connectors/registry.ts)、[Octo](../packages/octo-harness-channel-im/src/connectors/octo/channel.ts)、[Wecom](../packages/octo-harness-channel-im/src/connectors/wecom/channel.ts) | 当前注册两类 connector，都提供 reply；Octo 区分 direct / thread / group，Wecom 区分单聊 / 群聊 | 验证命令归一化、子区地址、权限和原会话回包；全部平台共用控制逻辑 |
-| [IM delivery](../packages/octo-harness-channel-im/src/delivery/dispatcher.ts)、[ports](../packages/octo-harness-channel-im/src/ports.ts)、[manager](../packages/octo-harness-channel-im/src/lifecycle/manager.ts) | 投递回执也在内存；宿主依赖当前没有业务 session 存储 port | 注入持久化映射和控制回执存储；重启只恢复未完成回复；CLI / daemon / SDK 宿主装配一并接线 |
-| [Work App service](../../octo-harness-work-app/src/main/agent-conversation-service.ts) | 首次 send 已独立生成 `conv_*` 与 `as_*`；本地 invoke；异步执行持有可变 record；无会话 `/reset` 分支 | 在普通执行前处理控制命令；新 session 在 Event 快照时分配；执行捕获不可变身份；旧 Run 保存不得覆盖新映射 |
-| [LocalChatStore](../../octo-harness-work-app/src/main/local-chat-store.ts) | SQLite 独立存 conversation；`save(record, clientMessageId)` 依赖执行 submission / receipt | 增加不依赖 Run 的会话更新、reset 幂等和控制提示事务；保存 Event session；将会话绑定更新与旧 Run 投影更新分开 |
-| [Work App contracts](../../octo-harness-work-app/src/shared/contracts.ts)、[ConversationView](../../octo-harness-work-app/src/renderer/src/surfaces/ConversationView.tsx)、[starter](../../octo-harness-work-app/src/renderer/src/hooks/useConversationStarter.ts) | `SendMessageResult` 必须含 executionId；消息 role 只有 user / assistant | 控制结果使用独立判别分支，无 executionId；系统提示不创建模型占位、不订阅 Run、不显示运行计时；通过唯一 preload 桥接 main |
-| [AskSessionService](../../octo-harness-work-app/src/main/ask-session-service.ts)、[AskPanel](../../octo-harness-work-app/src/renderer/src/chrome/AskPanel.tsx) | `action=reset` 当前删除页面绑定 | `/reset` 复用本地 conversation 重置；页面解除绑定属于另一业务动作，不借同名动作替换 conversation |
+| [IM application](../packages/octo-runtime-channel-im/src/application/im-channel.ts)、[contracts](../packages/octo-runtime-channel-im/src/contracts.ts) | session 在内存 Map；首次收消息生成 ID；reset 排在 `tail` 后，只加 generation、清 handle，回复含内部 ID | 引入业务存储 port；首次执行 Event 延迟分配；reset 将当前绑定置空；独立控制接纳；固定成功文案与持久幂等 |
+| [IM dispatcher](../packages/octo-runtime-channel-im/src/execution/dispatcher.ts) | 构造 Event / Run ID，`agentSessionId` 取 `session.id`，请求携带 providerSession | 构造前分配并持久化业务 session；冻结 Event，不在重投时重新生成；只携带匹配该 session 的 handle |
+| [connector registry](../packages/octo-runtime-channel-im/src/connectors/registry.ts)、[Octo](../packages/octo-runtime-channel-im/src/connectors/octo/channel.ts)、[Wecom](../packages/octo-runtime-channel-im/src/connectors/wecom/channel.ts) | 当前注册两类 connector，都提供 reply；Octo 区分 direct / thread / group，Wecom 区分单聊 / 群聊 | 验证命令归一化、子区地址、权限和原会话回包；全部平台共用控制逻辑 |
+| [IM delivery](../packages/octo-runtime-channel-im/src/delivery/dispatcher.ts)、[ports](../packages/octo-runtime-channel-im/src/ports.ts)、[manager](../packages/octo-runtime-channel-im/src/lifecycle/manager.ts) | 投递回执也在内存；宿主依赖当前没有业务 session 存储 port | 注入持久化映射和控制回执存储；重启只恢复未完成回复；CLI / daemon / SDK 宿主装配一并接线 |
+| [Work App service](../../octo-work-app/src/main/agent-conversation-service.ts) | 首次 send 已独立生成 `conv_*` 与 `as_*`；本地 invoke；异步执行持有可变 record；无会话 `/reset` 分支 | 在普通执行前处理控制命令；新 session 在 Event 快照时分配；执行捕获不可变身份；旧 Run 保存不得覆盖新映射 |
+| [LocalChatStore](../../octo-work-app/src/main/local-chat-store.ts) | SQLite 独立存 conversation；`save(record, clientMessageId)` 依赖执行 submission / receipt | 增加不依赖 Run 的会话更新、reset 幂等和控制提示事务；保存 Event session；将会话绑定更新与旧 Run 投影更新分开 |
+| [Work App contracts](../../octo-work-app/src/shared/contracts.ts)、[ConversationView](../../octo-work-app/src/renderer/src/surfaces/ConversationView.tsx)、[starter](../../octo-work-app/src/renderer/src/hooks/useConversationStarter.ts) | `SendMessageResult` 必须含 executionId；消息 role 只有 user / assistant | 控制结果使用独立判别分支，无 executionId；系统提示不创建模型占位、不订阅 Run、不显示运行计时；通过唯一 preload 桥接 main |
+| [AskSessionService](../../octo-work-app/src/main/ask-session-service.ts)、[AskPanel](../../octo-work-app/src/renderer/src/chrome/AskPanel.tsx) | `action=reset` 当前删除页面绑定 | `/reset` 复用本地 conversation 重置；页面解除绑定属于另一业务动作，不借同名动作替换 conversation |
 | [Loop conversation](../../octo-agent-app-loop/internal/service/conversation_svc.go)、[task conversation](../../octo-agent-app-loop/internal/service/task_conversation_svc.go)、[event mapping](../../octo-agent-app-loop/internal/clients/event_mapping.go)、[worker invocation](../../octo-agent-app-loop/internal/clients/worker_invocation.go) | 云端业务会话创建 WorkExecution / Event；出站 mapping 根据 conversation 派生 `session_affinity_key` | 业务事务冻结 session；reset 在创建执行前短路；出站只传已冻结值，不在重投时从 conversation 重新派生 |
 | Loop `internal/automation` 的 Event / Trigger / Team 路径 | 仍使用 `SessionAffinityKey`；Team 成员有派生 key | 同步消费新 session 合同；由编排业务层管理成员 session；不能替换 coordination 的 team_session_id、operation_key 或 delegation_id |
 | [Worker TriggerEvent](../../octo-agent-worker/internal/domain/trigger_event.go)、[trigger service](../../octo-agent-worker/internal/service/trigger_event_svc.go)、[run service](../../octo-agent-worker/internal/service/agent_run_svc.go)、[domain](../../octo-agent-worker/internal/domain/work.go)、[memory store](../../octo-agent-worker/internal/repository/execution_memory.go) | 入站是 affinity key；Worker 在内存创建 `asess`；reset / fresh policy 保留原 ID 并推进 generation；轻量调用账本持久化 | 接收和归一化业务 session，写入调用快照；内存索引与持久账本作用域同步；退出通过 Worker reset / fresh 改业务连续性的路径；保留运行租约与 stale-event 校验，不恢复执行大表 |
-| Harness protocol / worker-access / core / embedded / adapter-host / 各 Adapter | 已有 `agentSessionId` 和 opaque ProviderSession 传递；reference Core 可自行创建 session | 统一使用冻结身份；审计 reference 入口默认值和直接调用；新 session 不继承旧 handle；不要机械删除独立的 provider epoch / transport generation |
+| Runtime protocol / worker-access / core / embedded / adapter-host / 各 Adapter | 已有 `agentSessionId` 和 opaque ProviderSession 传递；reference Core 可自行创建 session | 统一使用冻结身份；审计 reference 入口默认值和直接调用；新 session 不继承旧 handle；不要机械删除独立的 provider epoch / transport generation |
 | schema、SDK、OpenAPI、示例与架构说明 | 历史文档存在 Worker 拥有 reset generation 的规则 | 在实施里程碑同步改写规范、生成合同和样例；历史验证记录保留历史含义，不能把本方案当作已上线说明 |
 
 ### 8.1 Work App 控制回执建议
@@ -301,7 +301,7 @@ type ResetOutcome = {
 | WP-02 业务存储 | F01；映射、Event 快照、reset 幂等、控制提示原子化 | 存储及迟到事件回归测试 | 已实施 |
 | WP-03 Work App | F03；main / SQLite / preload / renderer / Ask 全链路分流 | 单元测试及真实 Electron CDP | 已实施并实测 |
 | WP-04 全 Channel | F02、F06；Octo、Wecom、宿主接线 | 两种平台协议 socket 测试、持久化测试 | 已实施；线上群聊未实测 |
-| WP-05 云端与执行层 | F04、F05；Loop、Worker、schema、SDK、Harness 同步切换 | Go、Core、envelope 合同测试 | 已实施 |
+| WP-05 云端与执行层 | F04、F05；Loop、Worker、schema、SDK、Runtime 同步切换 | Go、Core、envelope 合同测试 | 已实施 |
 | WP-06 集成与说明 | 构建、重启、真实测试、更新规范 | 第 12 节的证据和限制 | 本机完成；非云端部署 |
 
 破坏性更新遵循项目基线，不设计旧协议自动转换、双写或版本回退。本方案不授权删除现有用户聊天历史；实施前须明确存储切换方案和获准重建的数据范围，不能把协议破坏性更新等同于可以删除业务记录。
@@ -323,12 +323,12 @@ type ResetOutcome = {
 | 模块 | 已实现的行为 | 本次验证 |
 | --- | --- | --- |
 | Work main / SQLite / renderer / Ask | 控制命令在配置和模型调用前分流；持久幂等回执及系统提示；清空当前 session、Provider 和配置绑定；下一普通请求冻结新 session；Ask 保留页面 conversation 绑定 | reset、续聊、历史幂等、活动 Run 迟到回写及 Ask 等 52 项相关测试通过；真实 Electron CDP 登录 im-test，输入框发送控制命令、同一 conversation 保持、重载后两条提示、零 AgentRun 通过 |
-| 边缘 IM | Octo 和 Wecom 共用即时控制分支；daemon 注入独立 SQLite；持久化 pending 绑定、control ID 和普通输入快照；排队请求冻结旧身份；迟到 Provider 更新不恢复当前绑定 | Harness 114 项相关测试通过，含 Octo 二进制 WS、Wecom 原请求 stream 回复、活动执行 reset 和 SQLite 重开幂等 |
+| 边缘 IM | Octo 和 Wecom 共用即时控制分支；daemon 注入独立 SQLite；持久化 pending 绑定、control ID 和普通输入快照；排队请求冻结旧身份；迟到 Provider 更新不恢复当前绑定 | Runtime 114 项相关测试通过，含 Octo 二进制 WS、Wecom 原请求 stream 回复、活动执行 reset 和 SQLite 重开幂等 |
 | Loop 业务 | 普通会话及任务执行在事务内冻结 session；reset 清空原 conversation 的全部目标绑定并保存控制消息；不创建 Event / WorkExecution；出站只使用保存的 session | 全量 Go 测试通过；固定本机 `octo_agent_app_loop` 真实 MySQL 回滚事务验证续聊复用、reset 换新和 conversation 隔离，不保留测试数据 |
-| Worker / worker-access / Core | 入站字段统一 `session_id`；缺省取 `conversation_id`；显式空/null 拒绝；公开业务 session 与内部作用域分离；workspace 使用 `session_scope_id`；移除公开执行层 reset/resolve 路由 | Worker domain、repository、service、handler 测试通过；作用域隔离与缺省/非法 ID 测试；Harness Core 和 envelope 映射测试 |
-| 合同和构建 | SDK 控制回执允许没有 execution；Go、TS、SQL、OpenAPI 同步；Run=7、Context=v3 保持 | Worker、Loop、Harness、Work 构建及本机重启；Work typecheck:all 和 kit 测试通过 |
+| Worker / worker-access / Core | 入站字段统一 `session_id`；缺省取 `conversation_id`；显式空/null 拒绝；公开业务 session 与内部作用域分离；workspace 使用 `session_scope_id`；移除公开执行层 reset/resolve 路由 | Worker domain、repository、service、handler 测试通过；作用域隔离与缺省/非法 ID 测试；Runtime Core 和 envelope 映射测试 |
+| 合同和构建 | SDK 控制回执允许没有 execution；Go、TS、SQL、OpenAPI 同步；Run=7、Context=v3 保持 | Worker、Loop、Runtime、Work 构建及本机重启；Work typecheck:all 和 kit 测试通过 |
 
-最终全量回归：Harness 899 项中 890 项通过、9 项按测试条件跳过；Work 1546 项通过、1 项跳过；Worker 和 Loop `go test ./...` 均通过。Work kit 测试独立通过。桌面全量测试首次与 Harness clean/build 同时执行，出现临时缺失 dist 的模块加载错误；等待构建完成后全量重跑通过。
+最终全量回归：Runtime 899 项中 890 项通过、9 项按测试条件跳过；Work 1546 项通过、1 项跳过；Worker 和 Loop `go test ./...` 均通过。Work kit 测试独立通过。桌面全量测试首次与 Runtime clean/build 同时执行，出现临时缺失 dist 的模块加载错误；等待构建完成后全量重跑通过。
 
 重启后实测：Worker、Loop 健康检查就绪；桌面内置运行时已连接云端。本地控制回执再次验证通过，`conversation.changed` 同时刷新会话列表与详情。随后真实本地模型执行完成，23 条 canonical 事件与 SQLite 完全一致，重复提交没有再次 invoke，重载后的答案正常显示。验证脚本等待实际会话导航完成，避免冷启动默认路由覆盖过早的点击。
 
@@ -338,4 +338,4 @@ type ResetOutcome = {
 
 第 8 节和 WP 表保留设计时的盘点与追踪信息；最终事实以本节的证据及限制为准。本机联调不代表云端服务已部署。
 
-设计依据：[Event Context IPD-SE](../../docs/event-context-rendering-ipd-se.md)、[当前 Harness 架构](01-architecture.md)。历史 reset/generation 文档不覆盖本次业务映射归属。
+设计依据：[Event Context IPD-SE](../../docs/event-context-rendering-ipd-se.md)、[当前 Runtime 架构](01-architecture.md)。历史 reset/generation 文档不覆盖本次业务映射归属。

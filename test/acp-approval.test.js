@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AcpApprovalBridge } from "../packages/octo-harness-adapter-sdk/dist/index.js";
+import { AcpApprovalBridge } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
 
 const request = { protocolVersion: 2, invocationId: "instance-1", agentSessionId: "session-1", runId: "run-1", prompt: "hello", modelInput: "hello", controlInstructions: "", approvalMode: "ask", context: { schema: "octo.context-envelope/v3", items: [] }, agentSource: "provisioned", agentConfig: {}, workdir: "/tmp" };
 const permission = { toolCall: { toolCallId: "tool-1", title: "Read a file" }, options: [{ kind: "allow_once", optionId: "allow" }, { kind: "reject_once", optionId: "deny" }, { kind: "allow_always", optionId: "always" }] };
@@ -81,7 +81,7 @@ test("full access never grants an allow-always option when allow-once is unavail
 });
 
 test("Host rejects an approval capability declaration with no response implementation", async () => {
-  const { AdapterHost } = await import("@mininglamp-oss/octo-harness-adapter-host");
+  const { AdapterHost } = await import("@mininglamp-oss/octo-runtime-adapter-host");
   const host = new AdapterHost();
   let started = false;
   host.register({ metadata: { protocolSupport: { protocol: ("broken") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "broken", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access", "interaction.response"] }, async *invoke() { started = true; yield { protocolVersion: 2, type: "run.completed", payload: {} }; } });

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DaemonModules } from "../packages/octo-harness-daemon/dist/index.js";
-import { createDaemonRuntime } from "../packages/octo-harness-daemon/dist/index.js";
+import { DaemonModules } from "../packages/octo-runtime-daemon/dist/index.js";
+import { createDaemonRuntime } from "../packages/octo-runtime-daemon/dist/index.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";

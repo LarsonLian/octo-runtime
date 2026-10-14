@@ -1,0 +1,119 @@
+# @mininglamp-oss/octo-runtime-adapter-host
+
+> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../docs/context-llm-injection.md) 与 [IPD-SE](../../../docs/event-context-rendering-ipd-se.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
+
+Octo Runtime 的适配器宿主（Adapter Host）：统一管理各 provider 适配器的注册与调用，并在调用边界上保证消息生命周期完整、事件合法、且每次运行只产生一个终态事件。
+
+## 定位与职责
+
+不同的 Agent provider（Codex、Claude Code、CodeBuddy、OpenCode 等）在事件格式、生命周期语义和取消方式上存在显著差异：部分只输出增量文本而不标记消息的开始与结束；部分在异常退出时不产生任何收尾事件；取消机制也各不相同。若由领域核心（`octo-runtime-core`）直接对接这些差异，核心逻辑会被大量 provider 分支污染，且每接入一个新 provider 都需改动核心。
+
+适配器宿主将这些差异收敛在单一边界上，提供模式声明、接纳、调用、取消与对应模式的交互响应。默认 native 交付真实原生载荷及独立 Host 控制帧；显式 canonical 提供统一事件视图。两个模式共用执行与资源清理，并以唯一 Host 控制终态收尾。
+
+宿主本身不涉及排队、调度、持久化或业务建模，这些职责属于 daemon 与 core。
+
+## 工作原理
+
+Core 传入统一的 `InvokeRequest` 并显式选择 canonical。以下流程说明 canonical 消费；native 分支保留 Provider 消息，不执行消息补全或 Canonical 转换。
+
+```mermaid
+sequenceDiagram
+    participant Core
+    participant Host as AdapterHost
+    participant Adapter
+    participant CLI as Provider CLI
+
+    Core->>Host: invoke("codex", InvokeRequest, canonical)
+    Host->>Host: 校验请求并创建 AbortController
+    Host->>Adapter: invoke(request, signal)
+    Adapter->>CLI: 启动子进程 / 发起请求
+
+    loop 流式事件
+        CLI-->>Adapter: 原生输出（可能仅含增量）
+        Adapter-->>Host: CanonicalEvent
+        Host->>Host: 补全缺失的 message.create<br/>并分配稳定的 messageId
+        Host-->>Core: 规整后的事件
+    end
+
+    CLI-->>Adapter: 结束 / 异常退出 / 被取消
+    Host->>Host: 关闭仍处于打开状态的消息<br/>并归一为单一 run 终态
+    Host-->>Core: run.completed / run.failed / run.cancelled
+```
+
+规整过程遵循三条约束：
+
+1. **消息生命周期完整**：即使适配器仅发送 `message.delta`，宿主也会补全起始的 `message.create` 与结束的 `message.update`，并确保同一条消息始终使用同一 `messageId`，使上层无需自行推断消息归属。
+2. **终态唯一**：正常结束为 `run.completed`，错误为 `run.failed`，取消为 `run.cancelled`；缺失 Provider 终态报告失败。完整帧流另外携带唯一 Host 控制终态，连接结束本身不能作为成功依据。
+3. **取消经由 AbortSignal**：`cancel(invocationId)` 触发对应调用的 `AbortController`，由适配器负责将其传导至子进程或协议层；上层无需了解 provider 的进程模型。
+
+适配器宿主作为 daemon 启动的独立子进程运行：宿主进程内的 `AdapterHostRpcServer` 依据 manifest 加载适配器并对外提供服务，daemon 通过 `spawnAdapterHost` 建立 `AdapterHostRpcClient`，两者以 stdio 上的 NDJSON JSON-RPC 2.0 通信。这条子进程边界是宿主的运行方式，Core 面向的始终是同一组 `invoke/list/cancel` 契约。
+
+## 使用
+
+宿主要加载的适配器由 manifest（`config/adapters.json`）声明。正常运行时由 daemon 负责拉起宿主子进程并与之通信，无需手工实例化；如需在自定义进程中直接驱动，使用 `spawnAdapterHost`：
+
+```ts
+import { spawnAdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
+import type { InvokeRequest } from "@mininglamp-oss/octo-runtime-protocol";
+
+const host = await spawnAdapterHost({
+  entrypoint: "apps/adapter-host/dist/index.js",
+  manifest: "config/adapters.json"
+});
+
+const request: InvokeRequest = {
+  invocationId: "invoke-1",
+  protocolVersion: 2,
+  agentSessionId: "session-1",
+  sessionGeneration: 0,
+  runId: "run-1",
+  prompt: "Inspect this repository",
+  workdir: process.cwd(),
+  modelInput: "Inspect this repository",
+  controlInstructions: "",
+  context: { schema: "octo.context-envelope/v3", items: [] },
+  approvalMode: "full_access",
+  agentSource: "provisioned",
+  agentConfig: {}
+};
+
+for await (const event of host.client.invoke("codex", request, { protocolMode: "canonical" })) {
+  console.log(event.type, event.payload);
+}
+
+await host.close();
+```
+
+省略 `protocolMode` 时，`invoke` 返回 native `HostFrame`，不运行 canonical 转换器。
+`invokeFrames` 在两种模式下都返回带身份与连续序号的完整帧；显式 canonical 的 `invoke`
+是 `canonicalEvents` 类型化视图。模式、协议与能力在 ACK 前校验，`prepare` 不启动 Provider。
+当前执行的原生反向请求通过 `respondNative(invocationId, { requestId, payload })` 回复，
+`payload` 为完整 Provider 响应。终态、过期、重复响应和扩大授权范围的响应均拒绝。
+本地 native 支持 Codex app-server 和 Claude stream-json；其他 Adapter 声明 canonical-only。
+可运行样例见 `examples/managed-turn.mjs`，支持 native / canonical 与 SIGINT 取消。
+
+`spawnAdapterHost` 以首次 `list` 成功作为就绪握手：manifest 错误或可执行文件缺失会在此阶段即时暴露，而非延迟到首次调用。
+
+## 约束与注意事项
+
+模型阶段的 canonical 事件静默时限默认是 **300 秒**（`modelIdleTimeoutMs: 300_000`）。
+Agent 建议通过 `execution_profile.runtime_limits.model_idle_timeout_ms: 600000` 显式配置为
+**600 秒**；daemon 映射后传入 Host 的 `InvokeRequest.runtimeLimits.modelIdleTimeoutMs`。
+显式值优先，未覆盖的字段使用各自默认值。完整配置与生效范围见
+[Agent 执行超时](../../docs/13-agent-work-runtime.md#agent-执行超时)。
+
+- **独立进程并非安全沙箱**：同一宿主内的多个适配器仍共享同一 Node.js 进程与宿主账号。强隔离需依赖容器、独立系统用户或“一适配器一进程”。
+- **同类型适配器不可重复注册**：`register` 对重复的 `metadata.type` 直接抛错。
+- **`probe` 仅做能力探测**：未实现 `probe` 的适配器返回“未校验但可用”，不代表 provider 实际可运行。
+
+## 相关文档
+
+- 事件契约与三层事件模型：[Protocol](../octo-runtime-protocol/README.md)
+- 跨进程 RPC 时序与多节点设想：[Transport And Multi-node](../../docs/09-transport-and-multinode.md)
+- 整体架构：[Architecture](../../docs/01-architecture.md)
+
+## 模块责任边界
+
+- 负责：通过 AdapterHostRpc 统一 invoke、cancel、probe 和交互响应，管理适配器与事件生命周期。
+- 不负责：Worker 注册、IM 消息、群聊和业务调度。
+- 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。

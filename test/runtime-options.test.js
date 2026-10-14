@@ -67,19 +67,19 @@ test("managed Runtime passes only its connection root, never Gateway credentials
 
 test("daemon runtime options resolve environment defaults to absolute paths", () => {
   const home = resolve(".tmp/runtime-home");
-  const paths = resolveDaemonRuntimePaths([], { OCTO_HARNESS_HOME: home });
+  const paths = resolveDaemonRuntimePaths([], { OCTO_RUNTIME_HOME: home });
 
-  assert.equal(paths.socketPath, `${home}/sockets/octo-harness-daemon.sock`);
-  assert.equal(paths.storePath, `${home}/state.db`);
+  assert.equal(paths.socketPath, `${home}/sockets/octo-runtime-daemon.sock`);
+  assert.equal(Object.hasOwn(paths, "storePath"), false);
   assert.equal(paths.manifestPath, resolve("config/adapters.json"));
   assert.equal(paths.hostEntrypoint, resolve("apps/adapter-host/dist/index.js"));
 });
 
-test("daemon runtime keeps all local paths under one supplied Harness Home", () => {
+test("daemon runtime keeps all local paths under one supplied Runtime Home", () => {
   const paths = resolveDaemonRuntimePaths(["--home", unmanagedHome], {});
 
-  assert.equal(paths.socketPath, resolve(unmanagedHome, "sockets/octo-harness-daemon.sock"));
-  assert.equal(paths.storePath, resolve(unmanagedHome, "state.db"));
+  assert.equal(paths.socketPath, resolve(unmanagedHome, "sockets/octo-runtime-daemon.sock"));
+  assert.equal(Object.hasOwn(paths, "storePath"), false);
 });
 
 test("foreground console output survives launcher argv serialization", () => {
@@ -92,19 +92,17 @@ test("foreground console output survives launcher argv serialization", () => {
 test("daemon runtime argv uses explicit options and normalizes the legacy host alias", () => {
   const paths = resolveDaemonRuntimePaths([
     "--socket", "runtime/custom.sock",
-    "--store", "runtime/custom.json",
     "--manifest", "runtime/adapters.json",
     "--host-entrypoint", "runtime/host.js"
   ], {
-    OCTO_HARNESS_HOME: "ignored",
-    OCTO_HARNESS_ADAPTER_HOST: "ignored-host.js"
+    OCTO_RUNTIME_HOME: "ignored",
+    OCTO_RUNTIME_ADAPTER_HOST: "ignored-host.js"
   });
 
   assert.deepEqual(daemonRuntimeArguments(paths), [
     "--home", resolve("ignored"),
     "--pid-file", resolve("ignored/octo-daemon.pid"),
     "--socket", resolve("runtime/custom.sock"),
-    "--store", resolve("runtime/custom.json"),
     "--manifest", resolve("runtime/adapters.json"),
     "--adapter-host", resolve("runtime/host.js"),
 
@@ -113,14 +111,14 @@ test("daemon runtime argv uses explicit options and normalizes the legacy host a
 
 test("Agent Work runtime mode is opt-in and rejects environment credentials", () => {
   const home = resolve(".tmp/runtime-home");
-  assert.equal(resolveDaemonRuntimePaths([], { OCTO_HARNESS_HOME: home }).agentWork, undefined);
+  assert.equal(resolveDaemonRuntimePaths([], { OCTO_RUNTIME_HOME: home }).agentWork, undefined);
   assert.throws(
     () => resolveDaemonRuntimePaths([], {
-      OCTO_HARNESS_HOME: home,
-      OCTO_HARNESS_AGENT_WORK_URL: "http://127.0.0.1:8092",
-      OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN: "environment-token-must-be-ignored"
+      OCTO_RUNTIME_HOME: home,
+      OCTO_RUNTIME_AGENT_WORK_URL: "http://127.0.0.1:8092",
+      OCTO_RUNTIME_AGENT_WORK_RUNTIME_TOKEN: "environment-token-must-be-ignored"
     }),
-    /credential is missing from the managed Harness Home/
+    /credential is missing from the managed Runtime Home/
   );
 });
 
@@ -134,7 +132,7 @@ test("managed Runtime binding ignores process-level endpoint and identity overri
       "--agent-work-runtime-id", "runtime-from-flag",
       "--agent-work-runtime-name", "linked-runtime",
       "--agent-work-fingerprint", "linked:fingerprint"
-    ], { OCTO_HARNESS_AGENT_WORK_URL: "http://ignored:8092" });
+    ], { OCTO_RUNTIME_AGENT_WORK_URL: "http://ignored:8092" });
 
     const runtime = paths.agentWorks[0];
     assert.equal(runtime.baseUrl, "https://worker.example");
@@ -160,7 +158,7 @@ test("Agent Work reconnect timing is configurable and survives launcher argv ser
       "--home", home,
       "--agent-work-reconnect-first-ms", "750",
       "--agent-work-reconnect-min-ms", "15000"
-    ], { OCTO_HARNESS_AGENT_WORK_RECONNECT_MAX_MS: "45000" });
+    ], { OCTO_RUNTIME_AGENT_WORK_RECONNECT_MAX_MS: "45000" });
 
     assert.equal(paths.agentWorks[0].reconnectFirstMs, 750);
     assert.equal(paths.agentWorks[0].reconnectMs, 15_000);

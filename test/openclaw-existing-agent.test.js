@@ -3,12 +3,11 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadLocalOpenClawGateway, configureOpenClawConnection, createOpenClawAdapter } from "../packages/octo-harness-adapter-openclaw/dist/index.js";
-import { assertContextEnvelope, assertResolvedExecutionPlan, mergeContext } from "../packages/octo-harness-protocol/dist/index.js";
-import { assertFrozenContextPlan } from "../packages/octo-harness-protocol/dist/index.js";
-import { loadManagedAgentWorksFromRoot } from "../packages/octo-harness-worker-access/dist/index.js";
-import { HarnessEngine, MemoryStore } from "../packages/octo-harness-core/dist/index.js";
-import { AdapterHost } from "../packages/octo-harness-adapter-host/dist/index.js";
+import { loadLocalOpenClawGateway, configureOpenClawConnection, createOpenClawAdapter } from "../packages/octo-runtime-adapter-openclaw/dist/index.js";
+import { assertContextEnvelope, assertResolvedExecutionPlan, mergeContext } from "../packages/octo-runtime-protocol/dist/index.js";
+import { assertFrozenContextPlan } from "../packages/octo-runtime-protocol/dist/index.js";
+import { loadManagedAgentWorksFromRoot } from "../packages/octo-runtime-worker-access/dist/index.js";
+import { AdapterHost } from "../packages/octo-runtime-adapter-host/dist/index.js";
 
 test("OpenClaw target validation, replacement and frozen-plan consistency", () => {
  const envelope = payload => ({ schema:"octo.context-envelope/v3", items:[{ namespace: "octo.execution", name: "adapter", payload: payload }] });
@@ -106,16 +105,6 @@ for (const { agentSource, target, workdir } of [
  assert.equal(calls.some(c=>["config.get","config.patch","agents.create"].includes(c.method)),false);
 });
 
-test("local Harness dispatch freezes the Context target ahead of legacy agent configuration", async () => {
- const requests=[];
- const host={list:()=>[{type:"openclaw"}],async *invoke(_type,request){requests.push(request);yield {protocolVersion:2,type:"run.completed",payload:{}};}};
- const engine=new HarnessEngine({store:new MemoryStore(),host});
- const agent=await engine.registerAgent({name:"existing",agentSource:"provisioned",config:{providerAgentId:"old-runner"},defaultContext:{schema:"octo.context-envelope/v3",items:[ { namespace: "octo.execution", name: "adapter", payload: {type:"openclaw",provider_agent_id:"main"} }, { namespace: "octo.execution", name: "workspace", payload: {mode:"fixed",path:"/workspace"} }, { namespace: "octo.security", name: "approval_policy", payload: {mode:"full_access"} } ]}});
- const submitted=await engine.submitAgentRun({namespace:"local",agentId:agent.id,sessionId:"v1/task/existing",trigger:{kind:"manual",occurrenceId:"once"},input:{prompt:"work"},context:{schema:"octo.context-envelope/v3",items:[]}});
- await engine.executeRun(submitted.agentRun.id);
- assert.equal(requests[0].agentConfig.providerAgentId,"main");
- assert.equal(submitted.agentRun.resolvedExecutionPlan.provider_agent_id,"main");
-});
 
 test("managed Runtime rejects obsolete external bindings without ignoring local configuration", async t => {
  const home=await mkdtemp(join(tmpdir(),"octo-openclaw-profile-"));

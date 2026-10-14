@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { defineAdapter, mapReasoningEffort, DEFAULT_REASONING_LEVEL_MAPS, OMNI_REASONING_LEVELS } from '../packages/octo-harness-adapter-sdk/dist/index.js';
-import { buildClaudeCommand } from '@mininglamp-oss/octo-harness-adapter-claude-code';
-import { buildOpenCodeCommand } from '@mininglamp-oss/octo-harness-adapter-opencode';
-import { buildOpenClawGatewayInvocation } from '@mininglamp-oss/octo-harness-adapter-openclaw';
-import { buildAntigravityCommand } from '@mininglamp-oss/octo-harness-adapter-antigravity';
-import { assertCanonicalEvent } from '@mininglamp-oss/octo-harness-protocol';
+import { defineAdapter, mapReasoningEffort, DEFAULT_REASONING_LEVEL_MAPS, OMNI_REASONING_LEVELS } from '../packages/octo-runtime-adapter-sdk/dist/index.js';
+import { buildClaudeCommand } from '@mininglamp-oss/octo-runtime-adapter-claude-code';
+import { buildOpenCodeCommand } from '@mininglamp-oss/octo-runtime-adapter-opencode';
+import { buildOpenClawGatewayInvocation } from '@mininglamp-oss/octo-runtime-adapter-openclaw';
+import { buildAntigravityCommand } from '@mininglamp-oss/octo-runtime-adapter-antigravity';
+import { assertCanonicalEvent } from '@mininglamp-oss/octo-runtime-protocol';
 
 const request = { protocolVersion: 2, invocationId: 'reasoning-test', runId: 'reasoning-run', agentSessionId: 'reasoning-session', agentSource: 'provisioned', context: { schema: 'octo.context-envelope/v3', items: [] }, workdir: process.cwd(), controlInstructions: '', modelInput: 'hello', prompt: 'hello', approvalMode: 'full_access', agentConfig: { effort: 'xhigh' } };
 

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { AgentWorkStore, StreamGapError } from "../apps/daemon/dist/agent-work-store.js";
 
 function store() {
-  const value = AgentWorkStore.open("unused.db");
+  const value = new AgentWorkStore();
   value.upsertRun({ runId: "run", commandId: "command", leaseId: "lease", fencingToken: 7 });
   return value;
 }
@@ -15,7 +15,7 @@ test("event replay uses source identity and sequence without ACK or SQLite write
   const directory = await mkdtemp(join(tmpdir(), "octo-memory-replay-"));
   try {
     const path = join(directory, "events.db");
-    const value = AgentWorkStore.open(path);
+    const value = new AgentWorkStore();
     value.upsertRun({ runId: "run", commandId: "command", leaseId: "lease", fencingToken: 7 });
     value.allocateAndAppend("run", "run.started", {});
     const identity = value.allocateAndAppend("run", "message.delta", { channel: "final", text: "hello" });
@@ -31,7 +31,7 @@ test("event replay uses source identity and sequence without ACK or SQLite write
     assert.equal(value.read("run", value.streamId("run"), 1).events[0].payload.text, "hello");
     await assert.rejects(access(path), { code: "ENOENT" });
     await assert.rejects(access(`${path}-wal`), { code: "ENOENT" });
-    const restarted = AgentWorkStore.open(path);
+    const restarted = new AgentWorkStore();
     assert.throws(() => restarted.read("run", value.streamId("run"), 1), /STREAM_EXPIRED/);
     value.close();restarted.close();
   } finally { await rm(directory, { recursive: true, force: true }); }

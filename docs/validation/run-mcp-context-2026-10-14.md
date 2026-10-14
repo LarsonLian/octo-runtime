@@ -7,7 +7,7 @@
 | 范围 | 命令 / 方法 | 结果 |
 | --- | --- | --- |
 | Harness 构建与生成类型 | `pnpm build` | 通过 |
-| Harness 完整测试 | `node --test test/*.test.js packages/octo-harness-protocol/test/*.test.js` | 871 项，862 通过、9 跳过、0 失败；原生 MCP 测试默认跳过，另行运行 |
+| Harness 完整测试 | `node --test test/*.test.js packages/octo-runtime-protocol/test/*.test.js` | 871 项，862 通过、9 跳过、0 失败；原生 MCP 测试默认跳过，另行运行 |
 | MCP 合同 | Schema / TypeScript / Go 共用 Context fixtures | 通过；包含动态名称、模板 URL、非法结构、重复 header 和 transport 混合字段 |
 | 执行行为 | `test/context-mcp.test.js` | 通过；覆盖 defaults / mandatory、冻结核对、单次变量展开、并发隔离、不注入模型、Adapter 映射与 ACP 恢复 / fallback |
 | 修改的 TypeScript 实现 | ESLint | 通过 |

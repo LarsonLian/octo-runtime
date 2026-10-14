@@ -1,1 +1,1 @@
-export * from "@mininglamp-oss/octo-harness-worker-access/managed-profile";
+export * from "@mininglamp-oss/octo-runtime-worker-access/managed-profile";

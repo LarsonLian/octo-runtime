@@ -14,17 +14,17 @@ import {
   mergeContext,
   assertInvokeRequest,
   assertResolvedExecutionPlan
-} from "../packages/octo-harness-protocol/dist/index.js";
+} from "../packages/octo-runtime-protocol/dist/index.js";
 
 const fixtures = JSON.parse(
   readFileSync(
-    new URL("../packages/octo-harness-protocol/schema/context-fixtures.json", import.meta.url),
+    new URL("../packages/octo-runtime-protocol/schema/context-fixtures.json", import.meta.url),
     "utf8"
   )
 );
 const schema = JSON.parse(
   readFileSync(
-    new URL("../packages/octo-harness-protocol/schema/protocol.schema.json", import.meta.url),
+    new URL("../packages/octo-runtime-protocol/schema/protocol.schema.json", import.meta.url),
     "utf8"
   )
 );

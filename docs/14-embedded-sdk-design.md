@@ -1,23 +1,23 @@
-# Octo Harness Embedded SDK 初始版方案
+# Octo Runtime Embedded SDK 初始版方案
 
-> 历史方案，2026-10-14 起不作为当前接入合同：embedded 独立包已删除，本地 API 合入 [daemon 包](../packages/octo-harness-daemon/README.md)，enrollment 移入可选 worker-access。当前本地启动不注册、不要求 Human Token；以 [接入说明](../INTEGRATION.md#2-作为-sdk-接入独立-app) 为准。本文保留原设计记录。
+> 历史方案，2026-10-14 起不作为当前接入合同：embedded 独立包已删除，本地 API 合入 [daemon 包](../packages/octo-runtime-daemon/README.md)，enrollment 移入可选 worker-access。当前本地启动不注册、不要求 Human Token；以 [接入说明](../INTEGRATION.md#2-作为-sdk-接入独立-app) 为准。本文保留原设计记录。
 
 > 2026-10-13 全局 Context 约束：每轮模型上下文由业务发起方决定，selection 等业务项可不发送；可传空、只传当轮需要的项或显式重复。必要的 adapter 等执行配置独立校验且不注入 LLM。底层只转发并渲染本轮快照，不按 sessionId 缓存、补齐、合并、去重或省略；reset、新建 Provider 会话或 resume 失败后，由业务方重新提供必要背景。详见 [Event Context IPD-SE 0.3](../../docs/event-context-rendering-ipd-se.md)。本文原有 Compiler/Pipeline、材料预取、场景自动追加与此约束冲突的内容仅保留历史背景；旧链路退出尚未完成。
 
 > 状态：Draft
 >
-> 目标包：`@mininglamp-oss/octo-harness-embedded`
+> 目标包：`@mininglamp-oss/octo-runtime-embedded`
 >
-> 适用场景：Octo Work、Runtime Register Demo、FDE/甲方桌面端、IDE 宿主及其他需要随应用内置 Harness Runtime 的 Node.js 宿主。
+> 适用场景：Octo Work、Runtime Register Demo、FDE/甲方桌面端、IDE 宿主及其他需要随应用内置 Runtime Runtime 的 Node.js 宿主。
 
 ## 1. 决策摘要
 
-初始版提供一个与 Electron 无关的 Node.js Embedded SDK，把 Harness Home、Runtime enrollment、
+初始版提供一个与 Electron 无关的 Node.js Embedded SDK，把 Runtime Home、Runtime enrollment、
 daemon/adapter-host 生命周期、跨平台 IPC、健康状态和异常回收统一封装。宿主只提供产品标识、
 Home 根目录、当前账号可访问的租户集合和 Human Token。SDK使用每个租户的 Space ID 自行完成
 `Token + X-Space-ID` 授权、一次性 enrollment grant、Runtime enroll/register 与凭据修复。
 
-包名确定为 **`@mininglamp-oss/octo-harness-embedded`**，不使用 `daemon-kit`：对宿主而言它是完整的
+包名确定为 **`@mininglamp-oss/octo-runtime-embedded`**，不使用 `daemon-kit`：对宿主而言它是完整的
 可嵌入 Runtime SDK，daemon 只是其内部复用的一层；`kit` 容易让人误以为这是工具函数集合，
 `embedded` 能直接表达生命周期和发行方式。
 
@@ -31,17 +31,17 @@ Home 根目录、当前账号可访问的租户集合和 Human Token。SDK使用
     └── accounts/
         ├── <subject-key-A>/
         │   ├── config.json                  # 账号级 default_profile
-        │   ├── state.db  logs/
+        │   ├── logs/
         │   ├── <app>-<tenant-1>/             # profile -> runtime-1
         │   └── <app>-<tenant-2>/             # profile -> runtime-2
         └── <subject-key-B>/
             ├── config.json
-            ├── state.db  logs/
+            ├── logs/
             └── <app>-<tenant-3>/             # 非当前账号时不加载
 ```
 
 - **账号内多租户常驻**：当前账号所有已授权租户各有独立 profile、Runtime identity、credential、
-  outbox 和 channel context；共享一个 daemon、adapter-host 和安装级全局 `machine_id`。
+  执行目录和有界内存回放窗口；共享一个 daemon、adapter-host 和安装级全局 `machine_id`。
 - **切租户不影响 Runtime**：切换产品当前租户只是宿主 UI/请求上下文变化，不停止 daemon，
   不断开其他租户 WSS，也不改变 `default_profile`。
 - **切账号完全隔离**：切账号必须先等待旧账号 `stop()` 完成；旧 daemon、adapter-host、定时器、
@@ -60,7 +60,7 @@ Home 根目录、当前账号可访问的租户集合和 Human Token。SDK使用
 2. 同一账号的多个已授权租户可同时在线，切换当前租户不触发 daemon 重启。
 3. 切换账号时提供可等待、可验证、fail-closed 的完整停止边界。
 4. 提供同步 health 快照和订阅通道，宿主无需轮询或解析 daemon 原始响应。
-5. 保持 Harness machine/profile 文件 schema，Embedded SDK统一增加账号目录定位层；凭据不进入
+5. 保持 Runtime machine/profile 文件 schema，Embedded SDK统一增加账号目录定位层；凭据不进入
    renderer、argv、环境变量或日志。
 6. 支持 macOS、Windows；Linux 保留同构实现和自动化测试。
 7. 用同一实现替换 Octo Work、Runtime Register Demo 中重复的 Home/enrollment/supervisor 逻辑；
@@ -88,7 +88,7 @@ await harness.startAccount({ subject: { type: 'user', id: user.id }, tenants, ge
 甲方已有自己的应用数据目录时可直接传绝对路径：
 
 ```ts
-const harness = createEmbeddedHarness({ appId: 'customer-fde', home: join(appDataPath, 'octo-harness') })
+const harness = createEmbeddedHarness({ appId: 'customer-fde', home: join(appDataPath, 'octo-runtime') })
 await harness.startAccount({ subject, tenants, getHumanToken: () => auth.token })
 ```
 
@@ -97,12 +97,12 @@ await harness.startAccount({ subject, tenants, getHumanToken: () => auth.token }
 
 | 平台 | 默认 Home 根 |
 | --- | --- |
-| macOS | `~/Library/Application Support/<appId>/octo-harness` |
-| Windows | `%LOCALAPPDATA%\<appId>\OctoHarness` |
-| Linux | `$XDG_STATE_HOME/<appId>/octo-harness`，未设置时回退 `~/.local/state/<appId>/octo-harness` |
+| macOS | `~/Library/Application Support/<appId>/octo-runtime` |
+| Windows | `%LOCALAPPDATA%\<appId>\OctoRuntime` |
+| Linux | `$XDG_STATE_HOME/<appId>/octo-runtime`，未设置时回退 `~/.local/state/<appId>/octo-runtime` |
 
 传入的 `home` 必须是绝对路径。SDK 不接受 `~`、相对路径、未展开环境变量或系统根目录，
-并拒绝与 standalone `~/.octo-harness` 相同的路径。
+并拒绝与 standalone `~/.octo-runtime` 相同的路径。
 
 ## 4. 公共 API 草案
 
@@ -179,17 +179,17 @@ Human Token、甲方 JWT 和密码不进入 SDK 持久化层。SDK从 token prov
 `apps/daemon` 不直接使用完整 Embedded SDK，也不重写 daemon。两种运行方式共享同一个公共启动内核：
 
 ```text
-@mininglamp-oss/octo-harness-daemon       # 公共 daemon/runtime 内核
+@mininglamp-oss/octo-runtime-daemon       # 公共 daemon/runtime 内核
   ├── apps/daemon                         # standalone 进程壳
   │     参数解析 + 系统服务 + signal/console
-  └── @mininglamp-oss/octo-harness-embedded
+  └── @mininglamp-oss/octo-runtime-embedded
         账号/租户编排 + Human Token enrollment + app-owned supervisor + health
 ```
 
 具体复用规则：
 
-- `startDaemonServer()`、Agent Work 多 Runtime supervisor、adapter-host、store、drain/close 只保留
-  在 `packages/octo-harness-daemon` 一份，standalone 与 embedded 都调用它。
+- `startDaemonServer()`、Agent Work 多 Runtime supervisor、adapter-host、drain/close 只保留
+  在 `packages/octo-runtime-daemon` 一份，standalone 与 embedded 都调用它。
 - standalone 的 `apps/daemon` 继续读取普通 Home 一级 profile，并由 LaunchAgent/systemd/Task Scheduler
   管理；它不知道 Human Token、账号切换或 `accounts/`。
 - embedded runner 从当前账号根和显式 allowlist 解析 profiles，把结果作为 `agentWorks` 传给同一个
@@ -210,7 +210,7 @@ Human Token、甲方 JWT 和密码不进入 SDK 持久化层。SDK从 token prov
 <home>/machine.json
 ```
 
-因此同一应用安装中的所有账号和租户 profile 共享一个 `machine_id`。这符合 Harness 既有合同：
+因此同一应用安装中的所有账号和租户 profile 共享一个 `machine_id`。这符合 Runtime 既有合同：
 `machine_id` 只是安装分组标签，不是认证主键；每个 profile 的 `runtime_id` 和 Runtime credential
 才是独立身份。
 
@@ -231,13 +231,12 @@ Human Token、甲方 JWT 和密码不进入 SDK 持久化层。SDK从 token prov
 subject-key = base32(sha256(subject.type + "\0" + subject.id))[0..20]
 ```
 
-账号根固定为 `<home>/accounts/<subject-key>/`。该账号的 `config.json`、daemon store、日志和所有
-profile 都在这个目录内；profile identity、credential、outbox 和 channel context 继续使用既有文件
-schema。PID、socket/named pipe、owner lock 和 supervisor state 位于 Home 全局瞬态目录，因为任一时刻
+账号根固定为 `<home>/accounts/<subject-key>/`。该账号的 `config.json`、日志和所有
+profile 都在这个目录内；profile identity 和 credential 使用既有 JSON 文件 schema。执行状态和事件回放不落盘。PID、socket/named pipe、owner lock 和 supervisor state 位于 Home 全局瞬态目录，因为任一时刻
 只允许一个账号的 daemon 运行。切换账号时这些瞬态资源必须完全回收后才能复用。
 
 这里的“完全隔离”指 SDK 保证不同账号不会同时运行，不共享 Runtime credential、profile 数据、
-daemon store、网络连接或状态投影，并阻止新账号 SDK 加载旧账号 profile；全局 `machine_id` 是唯一
+进程内执行状态、网络连接或状态投影，并阻止新账号 SDK 加载旧账号 profile；全局 `machine_id` 是唯一
 明确共享项。它不是同一操作系统用户内的恶意代码安全边界：运行在同一 OS 账号下的其他进程仍受
 该账号文件权限支配。互不信任的本机用户必须使用不同 OS 账号。
 
@@ -255,7 +254,7 @@ tenant-hash = base32(sha256(tenant.id))[0..20]
 账号键已由父目录隔离，因此 profile 不再重复携带账号哈希。profile 不包含明文用户 ID 或任意长度的
 租户 ID，始终满足 1-128 ASCII 字符限制。
 profile 是客户端标签，不是授权依据；真正的 Space 和 owner 由 Worker 根据 grant/Runtime credential
-绑定和校验。SDK不在 Harness profile config 中新增 `owner_subject_*` 权威字段。
+绑定和校验。SDK不在 Runtime profile config 中新增 `owner_subject_*` 权威字段。
 
 SDK启动 daemon 时生成仅本次账号会话有效的 profile allowlist。daemon/runner只加载 allowlist 中、
 同时存在完整 identity/credential 的 profile；历史账号目录、其他账号 profile 和未授权租户都不会被
@@ -392,8 +391,8 @@ Electron 宿主只需在 main 中订阅，再通过自己已有的单一 preload
 SDK统一解析 IPC 地址：
 
 ```text
-macOS/Linux: <home>/sockets/octo-harness-daemon.sock
-Windows:     \\.\pipe\octo-harness-embedded-<sha256(home)[0..16]>
+macOS/Linux: <home>/sockets/octo-runtime-daemon.sock
+Windows:     \\.\pipe\octo-runtime-embedded-<sha256(home)[0..16]>
 ```
 
 - named pipe 只由规范化后的绝对全局 Home 派生，避免 Windows AF_UNIX 路径长度限制；账号切换时地址稳定，
@@ -404,7 +403,7 @@ Windows:     \\.\pipe\octo-harness-embedded-<sha256(home)[0..16]>
 - 正常退出固定先走 socket `lifecycle.drain`，再由平台 supervisor 请求 runner 退出，超时后才做进程树
   回收；Unix 可以使用 signal，Windows 使用 shutdown control + 已验证归属的进程树回收。不调用
   standalone `daemon install`，也不创建 LaunchAgent/systemd/Task Scheduler 服务。
-- SDK只管理当前全局 Home 中由本次 generation 启动或明确采纳的进程，不停止 standalone Harness，
+- SDK只管理当前全局 Home 中由本次 generation 启动或明确采纳的进程，不停止 standalone Runtime，
   不扫描系统中的其他 daemon。
 
 ### 8.1 Windows 运行时合同
@@ -413,10 +412,10 @@ Windows 不能套用 Unix 的路径、signal 和文件权限假设。初始版�
 
 #### Home 与路径
 
-- 默认 Home 使用 `%LOCALAPPDATA%\<appId>\OctoHarness`，不写 `%PROGRAMFILES%`、安装目录、当前工作目录
+- 默认 Home 使用 `%LOCALAPPDATA%\<appId>\OctoRuntime`，不写 `%PROGRAMFILES%`、安装目录、当前工作目录
   或系统临时目录；同一 Windows OS 用户下不同登录账号继续共享根 `machine.json`。
 - 接受宿主传入的带空格、中文和长路径绝对路径，但拒绝相对路径、驱动器相对路径（如 `C:foo`）、
-  设备路径、系统盘根目录以及 UNC/网络盘。SQLite、owner lock 和原子替换不承诺在网络文件系统上可靠。
+  设备路径、系统盘根目录以及 UNC/网络盘。owner lock 和原子替换不承诺在网络文件系统上可靠。
 - 账号和 profile 目录只使用 SDK生成的 ASCII 哈希段，禁止保留设备名（`CON`、`NUL`、`COM1` 等）、
   尾随点/空格、冒号/ADS、反斜杠和大小写归一化碰撞进入路径。
 - 所有子进程均使用结构化 `spawn(executable, argv, { shell: false })`；不得拼接命令行字符串，路径含空格
@@ -425,7 +424,7 @@ Windows 不能套用 Unix 的路径、signal 和文件权限假设。初始版�
 #### IPC 与单实例锁
 
 - daemon 控制面固定使用 named pipe：
-  `\\.\pipe\octo-harness-embedded-<sha256(normalized-home)[0..16]>`。哈希输入使用规范化绝对路径并按
+  `\\.\pipe\octo-runtime-embedded-<sha256(normalized-home)[0..16]>`。哈希输入使用规范化绝对路径并按
   Windows 大小写不敏感规则统一，账号切换时 pipe 名不变。
 - Windows 不创建、探测或删除 `.sock` 文件；named pipe 断开即释放，不以“删除旧 socket”判断是否退出。
 - owner lock 使用 `run/embedded-owner.lock` 的排他创建、owner PID、随机 session nonce 和创建时间。遇到
@@ -440,7 +439,7 @@ Windows 不能套用 Unix 的路径、signal 和文件权限假设。初始版�
   关联。最小环境需要保留 `SystemRoot`、`SystemDrive`、`COMSPEC`、`PATHEXT`、`TEMP`、`TMP`、
   `USERPROFILE`、`APPDATA`、`LOCALAPPDATA` 和 `PATH`，环境变量键按大小写不敏感方式去重。
 - 正常退出先通过 named pipe 调用 `lifecycle.drain`，再发送 SDK自有的 runner shutdown 控制；等待 daemon
-  主动关闭 Runtime WSS、adapter-host、SQLite 和 pipe。Windows 不把 `SIGTERM` 当作可靠的主退出机制。
+  主动关闭 Runtime WSS、adapter-host 和 pipe。Windows 不把 `SIGTERM` 当作可靠的主退出机制。
 - 协作退出超时后，只能对上述已验证归属的 runner 根 PID 执行进程树回收（等价于
   `taskkill /PID <pid> /T /F`）；回收后必须再次验证所有记录 PID 和 named pipe 均不可达，才允许启动
   新账号。无法证明回收完整时返回 `SHUTDOWN_INCOMPLETE`。
@@ -465,7 +464,7 @@ Windows 不能套用 Unix 的路径、signal 和文件权限假设。初始版�
 新增公开包：
 
 ```text
-packages/octo-harness-embedded/
+packages/octo-runtime-embedded/
 ├── src/index.ts             # createEmbeddedHarness / resolveEmbeddedHome
 ├── src/home.ts              # 全局 Home/machine、accounts/<subject>/<profile>、原子写入、owner lock
 ├── src/enrollment.ts        # enroll/register/verify/repair
@@ -480,16 +479,16 @@ packages/octo-harness-embedded/
 
 - `private: false`，发布编译后的 `dist`，不导出仓库内 TypeScript 源路径。
 - Node.js `>=24`，不依赖 Electron、React 或任一宿主应用。
-- 依赖固定兼容范围的 `octo-harness-daemon`、`adapter-host`、protocol 包。
+- 依赖固定兼容范围的 `octo-runtime-daemon`、`adapter-host`、protocol 包。
 - 高层 API 是唯一推荐入口；低层 Home/enrollment/supervisor 模块不在初始版承诺稳定。
 - 包版本与冻结的 daemon/adapter 版本写入 runtime manifest；宿主构建不得隐式使用相邻仓库 HEAD。
 
 另提供构建期命令，例如：
 
 ```bash
-octo-harness-embedded prepare \
+octo-runtime-embedded prepare \
   --target win32-x64 \
-  --output resources/octo-harness-runtime
+  --output resources/octo-runtime-runtime
 ```
 
 它负责冻结 daemon、adapter-host、adapters、manifest 和校验过的 Node runtime。宿主的打包工具只需把
@@ -577,7 +576,7 @@ Home、allowlist 或进程句柄。每个网络请求和等待循环都绑定当
   stale socket/named pipe 阻塞。
 - Windows Defender 风格的短暂 `EPERM`/`EBUSY`、Task Manager 强杀、锁文件遗留、named pipe 已占用、
   PATH 缺失和环境变量键大小写混用均有自动化或安装机验证。
-- standalone `~/.octo-harness` 同时运行时互不停止、互不复用 identity。
+- standalone `~/.octo-runtime` 同时运行时互不停止、互不复用 identity。
 
 ### 12.5 凭据与可观测性
 

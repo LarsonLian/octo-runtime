@@ -9,10 +9,10 @@
 独立 CLI 前台诊断：
 
 ```bash
-octo-harness --home /absolute/runtime/state daemon run
-octo-harness --home /absolute/runtime/state status
-octo-harness --home /absolute/runtime/state adapter list
-octo-harness --home /absolute/runtime/state adapter probe codex
+octo-runtime --home /absolute/runtime/state daemon run
+octo-runtime --home /absolute/runtime/state status
+octo-runtime --home /absolute/runtime/state adapter list
+octo-runtime --home /absolute/runtime/state adapter probe codex
 ```
 
 已保存云端 profile 的 CLI 装配仍可能恢复 Worker 接入；客户仅本地 SDK 不依赖这套 CLI 流程。CLI `doctor` 同时检查云端项，整体非零不能直接判定本地 Host 不可用。
@@ -39,7 +39,7 @@ SDK 查看 `health.local.ready`、`adapterHostReady`、本地 profiles 与 `heal
 启动前设置 `OCTO_RUNTIME_DEBUG=1` 可开启 Host 本地诊断输出：
 
 ```bash
-OCTO_RUNTIME_DEBUG=1 octo-harness --home /absolute/runtime/state daemon run
+OCTO_RUNTIME_DEBUG=1 octo-runtime --home /absolute/runtime/state daemon run
 ```
 
 检查有效运行 Home 的 `logs/adapter-host.log`；SDK 账号隔离时使用对应账号运行目录。修改 shell 环境不会改变已运行进程，必须重启受影响实例。

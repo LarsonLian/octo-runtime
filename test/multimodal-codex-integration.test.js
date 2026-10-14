@@ -5,10 +5,10 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
-import { createCodexAdapter } from "@mininglamp-oss/octo-harness-adapter-codex";
-import { resolveRuntimeInputImages } from "../packages/octo-harness-worker-access/dist/input-images.js";
-import { mapExecutionEnvelope } from "../packages/octo-harness-worker-access/dist/agent-work-runtime.js";
+import { AdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
+import { createCodexAdapter } from "@mininglamp-oss/octo-runtime-adapter-codex";
+import { resolveRuntimeInputImages } from "../packages/octo-runtime-worker-access/dist/input-images.js";
+import { mapExecutionEnvelope } from "../packages/octo-runtime-worker-access/dist/agent-work-runtime.js";
 import { contextEnvelope, executionContext, resolvedRuntimeSelection } from "./agent-work-runtime-fixture.js";
 import { visualInputImages } from "../test-support/multimodal-images.mjs";
 

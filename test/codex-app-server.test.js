@@ -5,8 +5,8 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createCodexAdapter } from "@mininglamp-oss/octo-harness-adapter-codex";
-import { contextHash } from "../packages/octo-harness-protocol/dist/index.js";
+import { createCodexAdapter } from "@mininglamp-oss/octo-runtime-adapter-codex";
+import { contextHash } from "../packages/octo-runtime-protocol/dist/index.js";
 import { codexAppServerFixture, invokeRequest, withTimeout } from "./agent-work-runtime-fixture.js";
 
 const fixture = fileURLToPath(new URL("../test-support/fake-codex-cancellation.mjs", import.meta.url));

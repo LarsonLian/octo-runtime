@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertFrozenContextPlan, renderModelContexts, contextControlInstructions, assertScenarioRequest } from "../packages/octo-harness-protocol/dist/index.js";
+import { assertFrozenContextPlan, renderModelContexts, contextControlInstructions, assertScenarioRequest } from "../packages/octo-runtime-protocol/dist/index.js";
 
 test("scenario metadata does not require a document selection in this run", () => {
   assert.doesNotThrow(() => assertScenarioRequest(

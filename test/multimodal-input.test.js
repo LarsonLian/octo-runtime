@@ -1,11 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
-import { HarnessEngine, MemoryStore } from "@mininglamp-oss/octo-harness-core";
-import { assertModelInputParts, assertInvokeRequest, modelPartsFromInput, providerInputParts, failurePayload } from "@mininglamp-oss/octo-harness-protocol";
-import { resolveRuntimeInputImages } from "../packages/octo-harness-worker-access/dist/input-images.js";
-import { mapExecutionEnvelope } from "../packages/octo-harness-worker-access/dist/agent-work-runtime.js";
+import { AdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
+import { assertModelInputParts, assertInvokeRequest, modelPartsFromInput, providerInputParts, failurePayload } from "@mininglamp-oss/octo-runtime-protocol";
+import { resolveRuntimeInputImages } from "../packages/octo-runtime-worker-access/dist/input-images.js";
+import { mapExecutionEnvelope } from "../packages/octo-runtime-worker-access/dist/agent-work-runtime.js";
 import { invokeRequest, contextEnvelope, executionContext, resolvedRuntimeSelection } from "./agent-work-runtime-fixture.js";
 import { visualInputImages } from "../test-support/multimodal-images.mjs";
 
@@ -89,28 +88,6 @@ test("daemon preserves mixed ordering and excludes materialized bytes from run m
   assert.equal(envelope.agent_run_request.input.parts[1].source.data, image.data);
 });
 
-test("Core failed image dispatch releases the session so subsequent text can run", async () => {
-  const store = new MemoryStore();
-  let rejectImage = true;
-  const captured = [];
-  const host = { list: () => [{ type: "test" }], cancel: () => true, async *invoke(_adapter, request) {
-    if (rejectImage) throw new Error("UNSUPPORTED_INPUT_MODALITY");
-    captured.push(request);
-    yield { protocolVersion: 2, type: "run.completed", payload: {} };
-  } };
-  const engine = new HarnessEngine({ store, host });
-  const agent = await engine.registerAgent({ agentSource: "provisioned", name: "test", defaultContext: contextEnvelope([ { namespace: "octo.execution", name: "adapter", payload: { type: "test" } }, { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: process.cwd() } }, { namespace: "octo.security", name: "approval_policy", payload: { mode: "full_access" } } ]) });
-  const submit = occurrenceId => ({ namespace: "local", agentId: agent.id, sessionId: "v1/task/image", trigger: { kind: "manual", occurrenceId }, context: contextEnvelope(), input: {} });
-  const mixed = input(); mixed.parts[1].source = source(image);
-  const first = await engine.submitAgentRun({ ...submit("image"), input: mixed });
-  await assert.rejects(engine.executeRun(first.agentRun.id), /UNSUPPORTED_INPUT_MODALITY/);
-  assert.equal(store.getAgentRun(first.agentRun.id).status, "failed");
-  assert.equal(store.getAgentSession(first.agentSession.id).activeRunId, undefined);
-  rejectImage = false;
-  const second = await engine.submitAgentRun({ ...submit("text"), input: { prompt: "text still works" } });
-  await engine.executeRun(second.agentRun.id);
-  assert.equal(captured[0].modelInput, "text still works");
-});
 
 test("image failures keep actionable reasons", () => {
   for (const code of ["UNSUPPORTED_INPUT_MODALITY", "IMAGE_LIMIT_EXCEEDED", "ARTIFACT_UNAVAILABLE", "ARTIFACT_INTEGRITY_MISMATCH", "ARTIFACT_ACCESS_DENIED"]) {

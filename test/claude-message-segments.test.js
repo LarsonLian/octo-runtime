@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ClaudeEventNormalizer } from "@mininglamp-oss/octo-harness-adapter-claude-code";
+import { ClaudeEventNormalizer } from "@mininglamp-oss/octo-runtime-adapter-claude-code";
 
 test("Claude preserves message/block identity and closes each streamed text segment", () => {
   const n = new ClaudeEventNormalizer();

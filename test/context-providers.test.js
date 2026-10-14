@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ContextProviderRegistry } from '../packages/octo-harness-context-builder/dist/index.js';
+import { ContextProviderRegistry } from '../packages/octo-runtime-context-builder/dist/index.js';
 
 const scope = { identity: 'tenant/user', generation: 1 };
 const context = text => ({ schema: 'octo.context-envelope/v3', items: [{ namespace: 'octo.content', name: 'inline', payload: { entries: [{ text }] } }] });

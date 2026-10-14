@@ -1,6 +1,6 @@
 # Mention 选择上下文里程碑
 
-日期：2026-10-12。当前 main。需求与模块分配见 [Work App IPD-SE](../../octo-harness-work-app/docs/mention-selection-context-ipd-se.md)。
+日期：2026-10-12。当前 main。需求与模块分配见 [Work App IPD-SE](../../octo-work-app/docs/mention-selection-context-ipd-se.md)。
 
 ## Milestone 1：纯构建合同
 
@@ -22,7 +22,7 @@
 
 ### 验证记录
 
-定向 Context、配置合并、场景、Pipeline 与新增对象选择测试共 256 项通过；Work App 定向回归 58 项通过。Harness 完整 `pnpm build`、Work App `pnpm typecheck` 与 `pnpm build` 通过。此次只新增纯构建能力，没有 UI 和业务接口改造，尚未进行业务材料的实机闭环验收。
+定向 Context、配置合并、场景、Pipeline 与新增对象选择测试共 256 项通过；Work App 定向回归 58 项通过。Runtime 完整 `pnpm build`、Work App `pnpm typecheck` 与 `pnpm build` 通过。此次只新增纯构建能力，没有 UI 和业务接口改造，尚未进行业务材料的实机闭环验收。
 
 ## Milestone 4：集成来源字段边界
 

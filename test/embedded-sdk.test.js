@@ -3,9 +3,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { RUNTIME_RUN_CONTRACT } from "../packages/octo-harness-daemon/dist/index.js";
-import { loadManagedAgentWorksFromRoot } from "../packages/octo-harness-worker-access/dist/index.js";
-import { createDaemonRuntime } from "../packages/octo-harness-daemon/dist/runtime/index.js";
+import { RUNTIME_RUN_CONTRACT } from "../packages/octo-runtime-daemon/dist/index.js";
+import { loadManagedAgentWorksFromRoot } from "../packages/octo-runtime-worker-access/dist/index.js";
+import { createDaemonRuntime } from "../packages/octo-runtime-daemon/dist/runtime/index.js";
 import {
   accountKeyFor,
   accountPaths,
@@ -16,8 +16,8 @@ import {
   profilePaths,
   readJson,
   resolveDaemonHome
-} from "../packages/octo-harness-daemon/dist/runtime/home.js";
-import { ensureTenantEnrollment } from "../packages/octo-harness-worker-access/dist/enrollment.js";
+} from "../packages/octo-runtime-daemon/dist/runtime/home.js";
+import { ensureTenantEnrollment } from "../packages/octo-runtime-worker-access/dist/enrollment.js";
 
 test("daemon Home keeps one machine identity across account roots", () => {
   const root = mkdtempSync(join(tmpdir(), "octo-embedded-home-"));
@@ -40,9 +40,9 @@ test("Windows paths use LOCALAPPDATA and a Home-derived named pipe", () => {
     platform: "win32",
     env: { LOCALAPPDATA: "C:\\Users\\Alice Zhang\\AppData\\Local" }
   });
-  assert.equal(home, "C:\\Users\\Alice Zhang\\AppData\\Local\\customer-fde\\OctoHarness");
+  assert.equal(home, "C:\\Users\\Alice Zhang\\AppData\\Local\\customer-fde\\OctoRuntime");
   const paths = daemonHomePaths(home, "win32");
-  assert.match(paths.socket, /^\\\\\.\\pipe\\octo-harness-embedded-[0-9a-f]{16}$/);
+  assert.match(paths.socket, /^\\\\\.\\pipe\\octo-runtime-embedded-[0-9a-f]{16}$/);
   assert.throws(
     () => daemonHomePaths("\\\\server\\share\\octo", "win32"),
     (error) => error?.code === "HOME_UNSUPPORTED"
@@ -248,7 +248,7 @@ test(
 
 test("daemon runtime preserves proxy routing and debug logging without unrelated credentials", async () => {
   const { childEnvironment } =
-    await import("../packages/octo-harness-daemon/dist/runtime/supervisor.js");
+    await import("../packages/octo-runtime-daemon/dist/runtime/supervisor.js");
   const values = {
     OCTO_RUNTIME_DEBUG: "1",
     NO_PROXY: "localhost,127.0.0.1",
@@ -260,7 +260,7 @@ test("daemon runtime preserves proxy routing and debug logging without unrelated
     Object.assign(process.env, values);
     const env = childEnvironment({ home: "/tmp/harness" });
     assert.equal(env.OCTO_RUNTIME_DEBUG, "1");
-    assert.equal(env.OCTO_HARNESS_LOG_DIR, undefined);
+    assert.equal(env.OCTO_RUNTIME_LOG_DIR, undefined);
     assert.equal(env.NO_PROXY, values.NO_PROXY);
     assert.equal(env.https_proxy, values.https_proxy);
     assert.equal(env.OCTO_TEST_PRIVATE_TOKEN, undefined);

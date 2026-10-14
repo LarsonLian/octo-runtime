@@ -6,10 +6,10 @@ import {
   createServiceBackend,
   type ServiceBackend,
   type ServiceSpec
-} from "@mininglamp-oss/octo-harness-cross-service";
-import type { HarnessPaths } from "./state.js";
+} from "@mininglamp-oss/octo-runtime-cross-service";
+import type { RuntimePaths } from "./state.js";
 
-export const HARNESS_SERVICE_ID = "cn.mininglamp.octo-harness.daemon";
+export const RUNTIME_SERVICE_ID = "cn.mininglamp.octo-runtime.daemon";
 
 export interface ServiceControlOptions {
   backend?: ServiceBackend;
@@ -22,7 +22,7 @@ export interface ServiceControlOptions {
 
 export function resolveServiceControl(options: ServiceControlOptions = {}): {
   backend: ServiceBackend;
-  spec(paths: HarnessPaths, enabled?: boolean, daemonArgs?: string[]): ServiceSpec;
+  spec(paths: RuntimePaths, enabled?: boolean, daemonArgs?: string[]): ServiceSpec;
 } {
   const platform = options.platform ?? process.platform;
   const environment = options.environment ?? process.env;
@@ -35,7 +35,7 @@ export function resolveServiceControl(options: ServiceControlOptions = {}): {
   });
   return {
     backend,
-    spec(paths: HarnessPaths, enabled = true, daemonArgs: string[] = []): ServiceSpec {
+    spec(paths: RuntimePaths, enabled = true, daemonArgs: string[] = []): ServiceSpec {
       const output = platform === "win32"
         ? {}
         : {
@@ -43,8 +43,8 @@ export function resolveServiceControl(options: ServiceControlOptions = {}): {
             stderrPath: resolve(paths.logs, "service.err.log")
           };
       return {
-        id: HARNESS_SERVICE_ID,
-        description: "Octo Harness daemon",
+        id: RUNTIME_SERVICE_ID,
+        description: "Octo Runtime daemon",
         command: nodeExecutable,
         args: [daemonEntrypoint, "--home", paths.home, ...daemonArgs],
         workingDirectory: paths.home,
@@ -56,9 +56,9 @@ export function resolveServiceControl(options: ServiceControlOptions = {}): {
         restart: { policy: "on-failure", delaySeconds: 5, maxBurst: 5 },
         timeoutStopSeconds: 45,
         names: {
-          launchdLabel: HARNESS_SERVICE_ID,
-          systemdUnit: `${HARNESS_SERVICE_ID}.service`,
-          windowsTaskName: "\\OctoHarness.daemon"
+          launchdLabel: RUNTIME_SERVICE_ID,
+          systemdUnit: `${RUNTIME_SERVICE_ID}.service`,
+          windowsTaskName: "\\OctoRuntime.daemon"
         },
         ...output
       };

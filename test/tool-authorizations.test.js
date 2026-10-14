@@ -5,8 +5,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
-import { AgentWorkRuntime } from "../packages/octo-harness-worker-access/dist/agent-work-runtime.js";
-import { businessServiceConnections, resolveToolAuthorizations, unconsumedToolAuthorizations } from "../packages/octo-harness-worker-access/dist/tool-authorizations.js";
+import { AgentWorkRuntime } from "../packages/octo-runtime-worker-access/dist/agent-work-runtime.js";
+import { businessServiceConnections, resolveToolAuthorizations, unconsumedToolAuthorizations } from "../packages/octo-runtime-worker-access/dist/tool-authorizations.js";
 import { contextEnvelope, executionContext, resolvedRuntimeSelection, waitFor, wire } from "./agent-work-runtime-fixture.js";
 import { issuedGrant, toolIntent } from "./tool-authorizations-fixture.js";
 
@@ -82,7 +82,7 @@ for (const hasReceiver of [false, true]) test(`Runtime mixed Loop scopes ${hasRe
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
-  const runtime = new AgentWorkRuntime({ profile: "default", baseUrl, token: "fixture", runtimeName: "fixture", storePath: join(directory, "runtime.db"),
+  const runtime = new AgentWorkRuntime({ profile: "default", baseUrl, token: "fixture", runtimeName: "fixture", root: directory,
     businessServiceBindings: { task: { serviceSubjectId: "loop", url: `${baseUrl}/locally-configured-task` } },
     ...(hasReceiver ? { receiveToolAuthorizations: async (grants, identity) => received.push({ grants, identity }) } : {})
   }, {

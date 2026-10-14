@@ -1,8 +1,8 @@
 import test from "node:test";
-import { AcpTurnNormalizer } from "../packages/octo-harness-adapter-sdk/dist/index.js";
+import { AcpTurnNormalizer } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
 import assert from "node:assert/strict";
-import { createAcpAdapter } from "@mininglamp-oss/octo-harness-adapter-acp";
-import { createCodeBuddyAdapter } from "@mininglamp-oss/octo-harness-adapter-codebuddy";
+import { createAcpAdapter } from "@mininglamp-oss/octo-runtime-adapter-acp";
+import { createCodeBuddyAdapter } from "@mininglamp-oss/octo-runtime-adapter-codebuddy";
 
 for (const provider of ["ACP", "CodeBuddy"]) {
   test(`${provider}: text and thoughts retain segments across tool rounds`, async () => {

@@ -8,7 +8,7 @@ import type { StandardDaemonOptions } from "./server.js";
 
 /**
  * Resolve all daemon runtime paths and options from CLI args and env, defaulting
- * everything under `$OCTO_HARNESS_HOME` (~/.octo-harness). CLI args win over env,
+ * everything under `$OCTO_RUNTIME_HOME` (~/.octo-runtime). CLI args win over env,
  * env over defaults. Also the single source of truth the CLI uses to locate the
  * daemon socket, so both sides always agree on the path.
  */
@@ -16,7 +16,7 @@ export function resolveDaemonRuntimePaths(
   args = process.argv.slice(2),
   env: NodeJS.ProcessEnv = process.env
 ): StandardDaemonOptions {
-  const home = resolve(option(args, ["--home"], env.OCTO_HARNESS_HOME ?? defaultHarnessHome(env)));
+  const home = resolve(option(args, ["--home"], env.OCTO_RUNTIME_HOME ?? defaultRuntimeHome(env)));
   const requestedProfile = optionalOption(args, ["--profile"], undefined);
   const managed = loadManagedAgentWorks(home, requestedProfile);
   const selectedAgentWorks = managed === undefined
@@ -26,23 +26,22 @@ export function resolveDaemonRuntimePaths(
       .filter((runtime): runtime is AgentWorkRuntimeOptions => runtime !== undefined);
   return {
     homePath: home,
-    pidPath: resolve(option(args, ["--pid-file"], env.OCTO_HARNESS_PID_FILE ?? join(home, "octo-daemon.pid"))),
+    pidPath: resolve(option(args, ["--pid-file"], env.OCTO_RUNTIME_PID_FILE ?? join(home, "octo-daemon.pid"))),
     consoleOutput: booleanOption(args, "--console", false),
     socketPath: resolve(option(
       args,
       ["--socket"],
-      env.OCTO_HARNESS_SOCKET ?? defaultSocketPath(home)
+      env.OCTO_RUNTIME_SOCKET ?? defaultSocketPath(home)
     )),
-    storePath: resolve(option(args, ["--store"], env.OCTO_HARNESS_STORE ?? join(home, "state.db"))),
     manifestPath: resolve(option(
       args,
       ["--manifest"],
-      env.OCTO_HARNESS_MANIFEST ?? fileURLToPath(new URL("../../../config/adapters.json", import.meta.url))
+      env.OCTO_RUNTIME_MANIFEST ?? fileURLToPath(new URL("../../../config/adapters.json", import.meta.url))
     )),
     hostEntrypoint: resolve(option(
       args,
       ["--adapter-host", "--host-entrypoint"],
-      env.OCTO_HARNESS_ADAPTER_HOST ?? fileURLToPath(new URL("../../adapter-host/dist/index.js", import.meta.url))
+      env.OCTO_RUNTIME_ADAPTER_HOST ?? fileURLToPath(new URL("../../adapter-host/dist/index.js", import.meta.url))
     )),
     ...(selectedAgentWorks.length ? { agentWorks: selectedAgentWorks } : {})
   };
@@ -60,63 +59,59 @@ function resolveAgentWorkOptions(
   home: string,
   managed: AgentWorkRuntimeOptions | undefined
 ): AgentWorkRuntimeOptions | undefined {
-  const baseUrl = managed?.baseUrl ?? optionalOption(args, ["--agent-work-url"], env.OCTO_HARNESS_AGENT_WORK_URL);
+  const baseUrl = managed?.baseUrl ?? optionalOption(args, ["--agent-work-url"], env.OCTO_RUNTIME_AGENT_WORK_URL);
   if (!baseUrl) return undefined;
-  if (!managed?.token) throw new Error("Agent Work Runtime credential is missing from the managed Harness Home");
+  if (!managed?.token) throw new Error("Agent Work Runtime credential is missing from the managed Runtime Home");
   const token = managed.token;
   return {
     profile: managed.profile,
     baseUrl,
     token,
-    runtimeId: managed?.runtimeId ?? optionalOption(args, ["--agent-work-runtime-id"], env.OCTO_HARNESS_AGENT_WORK_RUNTIME_ID),
+    runtimeId: managed?.runtimeId ?? optionalOption(args, ["--agent-work-runtime-id"], env.OCTO_RUNTIME_AGENT_WORK_RUNTIME_ID),
     runtimeName: optionalOption(
       args,
       ["--agent-work-runtime-name"],
-      env.OCTO_HARNESS_AGENT_WORK_RUNTIME_NAME ?? managed?.runtimeName
-    ) ?? "octo-harness-local",
+      env.OCTO_RUNTIME_AGENT_WORK_RUNTIME_NAME ?? managed?.runtimeName
+    ) ?? "octo-runtime-local",
     ...(managed?.adapterConfigurations ? { adapterConfigurations: managed.adapterConfigurations } : {}),
-    storePath: resolve(optionalOption(
-      args,
-      ["--agent-work-db"],
-      env.OCTO_HARNESS_AGENT_WORK_DB ?? managed?.storePath
-    ) ?? join(home, "agent-work.db")),
-    ...optionalNumber(args, ["--agent-work-send-window"], env.OCTO_HARNESS_AGENT_WORK_SEND_WINDOW, "sendWindow"),
-    ...optionalNumber(args, ["--agent-work-soft-bytes"], env.OCTO_HARNESS_AGENT_WORK_SOFT_BYTES, "softWatermarkBytes"),
-    ...optionalNumber(args, ["--agent-work-hard-bytes"], env.OCTO_HARNESS_AGENT_WORK_HARD_BYTES, "hardWatermarkBytes"),
+    root: managed.root,
+    ...optionalNumber(args, ["--agent-work-send-window"], env.OCTO_RUNTIME_AGENT_WORK_SEND_WINDOW, "sendWindow"),
+    ...optionalNumber(args, ["--agent-work-soft-bytes"], env.OCTO_RUNTIME_AGENT_WORK_SOFT_BYTES, "softWatermarkBytes"),
+    ...optionalNumber(args, ["--agent-work-hard-bytes"], env.OCTO_RUNTIME_AGENT_WORK_HARD_BYTES, "hardWatermarkBytes"),
     ...optionalNumber(
       args,
       ["--agent-work-minimum-free-bytes"],
-      env.OCTO_HARNESS_AGENT_WORK_MINIMUM_FREE_BYTES,
+      env.OCTO_RUNTIME_AGENT_WORK_MINIMUM_FREE_BYTES,
       "minimumFreeBytes"
     ),
     ...optionalNumber(
       args,
       ["--agent-work-disk-check-ms"],
-      env.OCTO_HARNESS_AGENT_WORK_DISK_CHECK_MS,
+      env.OCTO_RUNTIME_AGENT_WORK_DISK_CHECK_MS,
       "diskCheckMs"
     ),
     ...optionalNumber(
       args,
       ["--agent-work-reconnect-first-ms"],
-      env.OCTO_HARNESS_AGENT_WORK_RECONNECT_FIRST_MS,
+      env.OCTO_RUNTIME_AGENT_WORK_RECONNECT_FIRST_MS,
       "reconnectFirstMs"
     ),
     ...optionalNumber(
       args,
       ["--agent-work-reconnect-min-ms"],
-      env.OCTO_HARNESS_AGENT_WORK_RECONNECT_MIN_MS,
+      env.OCTO_RUNTIME_AGENT_WORK_RECONNECT_MIN_MS,
       "reconnectMs"
     ),
     ...optionalNumber(
       args,
       ["--agent-work-reconnect-max-ms"],
-      env.OCTO_HARNESS_AGENT_WORK_RECONNECT_MAX_MS,
+      env.OCTO_RUNTIME_AGENT_WORK_RECONNECT_MAX_MS,
       "reconnectMaxMs"
     ),
     ...optionalNumber(
       args,
       ["--agent-work-max-concurrent-runs"],
-      env.OCTO_HARNESS_AGENT_WORK_MAX_CONCURRENT_RUNS,
+      env.OCTO_RUNTIME_AGENT_WORK_MAX_CONCURRENT_RUNS,
       "maxConcurrentRuns"
     )
   };
@@ -150,7 +145,6 @@ export function daemonRuntimeArguments(paths: StandardDaemonOptions): string[] {
     ...(paths.pidPath ? ["--pid-file", paths.pidPath] : []),
     ...(paths.consoleOutput ? ["--console"] : []),
     "--socket", paths.socketPath,
-    "--store", paths.storePath,
     "--manifest", paths.manifestPath,
     "--adapter-host", paths.hostEntrypoint
   ];
@@ -160,7 +154,6 @@ export function daemonRuntimeArguments(paths: StandardDaemonOptions): string[] {
     args.push(
       "--agent-work-url", serializedRuntime.baseUrl,
       "--agent-work-runtime-name", serializedRuntime.runtimeName,
-      "--agent-work-db", serializedRuntime.storePath,
     );
     if (serializedRuntime.runtimeId) args.push("--agent-work-runtime-id", serializedRuntime.runtimeId);
   } else if (commonRuntime) {
@@ -213,13 +206,13 @@ function optionalOption(
   return value || undefined;
 }
 
-function defaultHarnessHome(env: NodeJS.ProcessEnv): string {
-  if (process.platform === "win32" && env.LOCALAPPDATA?.trim()) return join(env.LOCALAPPDATA.trim(), "OctoHarness");
-  return join(env.HOME?.trim() || homedir(), ".octo-harness");
+function defaultRuntimeHome(env: NodeJS.ProcessEnv): string {
+  if (process.platform === "win32" && env.LOCALAPPDATA?.trim()) return join(env.LOCALAPPDATA.trim(), "OctoRuntime");
+  return join(env.HOME?.trim() || homedir(), ".octo-runtime");
 }
 
 function defaultSocketPath(home: string): string {
-  if (process.platform !== "win32") return join(home, "sockets", "octo-harness-daemon.sock");
+  if (process.platform !== "win32") return join(home, "sockets", "octo-runtime-daemon.sock");
   const id = createHash("sha256").update(home.toLowerCase()).digest("hex").slice(0, 16);
-  return `\\\\.\\pipe\\octo-harness-${id}`;
+  return `\\\\.\\pipe\\octo-runtime-${id}`;
 }

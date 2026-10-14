@@ -8,7 +8,7 @@ Context 保持 `octo.context-envelope/v3` 的 `schema + items`，Run 保持 `sch
 
 Octo 的固定类型目录负责标品处理、持久化及 mandatory 约束。消费阶段使用 `findContextTypeDefinition` 查询可选处理能力；没有定义时跳过该阶段。显式要求标品定义的接口 `contextTypeDefinition` 仍会拒绝未知类型。未知类型不能直接保存为 defaults 或 mandatory。
 
-外部材料由 Worker 的可信 `context_extensions` 配置按租户及完整类型键解析。Worker 把配置版本、ignored 原因或选定字段的 JSON 文本固定到 `ResolvedExecutionPlan.context_extensions`。Harness 校验快照完整对应信封中的非标品 item，只把 material 结果编译为不可信来源材料。ignored 原始 payload 不进入模型。配置不能接管 `octo` 或 `octo.*`。
+外部材料由 Worker 的可信 `context_extensions` 配置按租户及完整类型键解析。Worker 把配置版本、ignored 原因或选定字段的 JSON 文本固定到 `ResolvedExecutionPlan.context_extensions`。Runtime 校验快照完整对应信封中的非标品 item，只把 material 结果编译为不可信来源材料。ignored 原始 payload 不进入模型。配置不能接管 `octo` 或 `octo.*`。
 
 材料编译和 compiled hash 包含处理快照。公开投影只显示类型、配置版本和处理状态，不显示正文；准备回执不代表模型已完成业务操作。
 

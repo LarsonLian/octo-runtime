@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildObjectSelectionContext, ContextBuilderRegistry } from '../packages/octo-harness-context-builder/dist/index.js';
-import { renderModelContexts, contextControlInstructions } from '../packages/octo-harness-protocol/dist/index.js';
+import { buildObjectSelectionContext, ContextBuilderRegistry } from '../packages/octo-runtime-context-builder/dist/index.js';
+import { renderModelContexts, contextControlInstructions } from '../packages/octo-runtime-protocol/dist/index.js';
 
 const skillId = '12345678-1234-4234-8234-123456789abc';
 const selection = (id, type = 'task', objectId = id, fields = {}) => ({

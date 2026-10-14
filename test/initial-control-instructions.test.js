@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildClaudeCommand } from "@mininglamp-oss/octo-harness-adapter-claude-code";
-import { buildOpenCodeCommand } from "@mininglamp-oss/octo-harness-adapter-opencode";
+import { buildClaudeCommand } from "@mininglamp-oss/octo-runtime-adapter-claude-code";
+import { buildOpenCodeCommand } from "@mininglamp-oss/octo-runtime-adapter-opencode";
 import { readFile } from "node:fs/promises";
 import { invokeRequest } from "./agent-work-runtime-fixture.js";
 

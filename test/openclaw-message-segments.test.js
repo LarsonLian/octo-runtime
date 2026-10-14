@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createOpenClawAdapter } from "@mininglamp-oss/octo-harness-adapter-openclaw";
+import { createOpenClawAdapter } from "@mininglamp-oss/octo-runtime-adapter-openclaw";
 
 test("OpenClaw Gateway preserves new thought phases, native answer IDs and commentary snapshots", async () => {
   let listener;

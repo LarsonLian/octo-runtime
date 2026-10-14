@@ -5,13 +5,13 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { setTimeout as delay, setImmediate as settle } from "node:timers/promises";
 import { WebSocketServer } from "ws";
-import { WecomConnection } from "../packages/octo-harness-channel-im/dist/connectors/wecom/connection.js";
-import { ImRuntime } from "../packages/octo-harness-channel-im/dist/index.js";
-import { WecomStreamSession } from "../packages/octo-harness-channel-im/dist/connectors/wecom/stream-session.js";
+import { WecomConnection } from "../packages/octo-runtime-channel-im/dist/connectors/wecom/connection.js";
+import { ImRuntime } from "../packages/octo-runtime-channel-im/dist/index.js";
+import { WecomStreamSession } from "../packages/octo-runtime-channel-im/dist/connectors/wecom/stream-session.js";
 import {
   validateImConfig,
   imBotIdentity
-} from "../packages/octo-harness-channel-im/dist/lifecycle/configuration.js";
+} from "../packages/octo-runtime-channel-im/dist/lifecycle/configuration.js";
 
 async function fixture(t, handle, options = {}) {
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
@@ -118,20 +118,25 @@ test("server replacement closes the old connection without reconnecting", async 
 });
 
 test("typed IM config keeps execution settings optional and rejects platform field mixing", () => {
-  const config = { id: "wecom", type: "wecom", ...credentials };
+  const config = {
+    type: "wecom",
+    bot_id: credentials.appBot,
+    app_secret: credentials.appSecret,
+    adapter: { workdir: process.cwd() }
+  };
   validateImConfig(config);
   assert.throws(() => validateImConfig({ ...config, type: "unknown" }), /IM_TYPE_INVALID/);
   assert.throws(
     () => validateImConfig({ ...config, spaceId: "fake-octo-space" }),
     /IM_CONFIG_UNKNOWN_FIELD/
   );
-  validateImConfig({ ...config, adapterType: "codex" });
-  validateImConfig({ ...config, appSecret: "", appSecretFile: "" });
+  validateImConfig({ ...config, adapter: { ...config.adapter, adapter_type: "codex" } });
+  validateImConfig({ ...config, app_secret: "" });
   assert.throws(
-    () => validateImConfig({ ...config, appSecretFile: "secret" }),
+    () => validateImConfig({ ...config, app_secret_file: "secret" }),
     /IM_CREDENTIAL_SOURCE_CONFLICT/
   );
-  assert.notEqual(imBotIdentity(config), imBotIdentity({ ...config, appBot: "other" }));
+  assert.notEqual(imBotIdentity(config), imBotIdentity({ ...config, bot_id: "other" }));
 });
 
 test("shared runtime dispatches WeCom text to Codex and replies using the original req_id", async (t) => {
@@ -139,13 +144,12 @@ test("shared runtime dispatches WeCom text to Codex and replies using the origin
   const calls = [];
   const runtime = new ImRuntime(
     {
-      id: "wecom",
       type: "wecom",
       enabled: true,
-      ...credentials,
-      wsUrl: f.url,
-      adapterType: "codex",
-      workdir: process.cwd()
+      bot_id: credentials.appBot,
+      app_secret: credentials.appSecret,
+      ws_url: f.url,
+      adapter: { adapter_type: "codex", workdir: process.cwd() }
     },
     {
       host: {
@@ -238,42 +242,59 @@ test("shared runtime dispatches WeCom text to Codex and replies using the origin
   assert.equal(f.frames.length, count, "no progress after final reply");
   assert.equal(runtime.status.sessions.length, 1);
   const oldSession = calls[0].agentSessionId;
-  f.socket.send(JSON.stringify({ ...frame, headers: { req_id: "reset-1" }, body: { ...frame.body, msgid: "reset-1", text: { content: "/reset" } } }));
-  await until(() => f.frames.some(item => item.headers?.req_id === "reset-1" && item.body?.stream?.finish));
-  assert.equal(f.frames.find(item => item.headers?.req_id === "reset-1" && item.body?.stream?.finish).body.stream.content, "会话已经重置");
+  f.socket.send(
+    JSON.stringify({
+      ...frame,
+      headers: { req_id: "reset-1" },
+      body: { ...frame.body, msgid: "reset-1", text: { content: "/reset" } }
+    })
+  );
+  await until(() =>
+    f.frames.some((item) => item.headers?.req_id === "reset-1" && item.body?.stream?.finish)
+  );
+  assert.equal(
+    f.frames.find((item) => item.headers?.req_id === "reset-1" && item.body?.stream?.finish).body
+      .stream.content,
+    "会话已经重置"
+  );
   assert.equal(calls.length, 1);
-  f.socket.send(JSON.stringify({ ...frame, headers: { req_id: "next-1" }, body: { ...frame.body, msgid: "next-1", text: { content: "next" } } }));
-  await until(() => f.frames.some(item => item.headers?.req_id === "next-1" && item.body?.stream?.finish));
+  f.socket.send(
+    JSON.stringify({
+      ...frame,
+      headers: { req_id: "next-1" },
+      body: { ...frame.body, msgid: "next-1", text: { content: "next" } }
+    })
+  );
+  await until(() =>
+    f.frames.some((item) => item.headers?.req_id === "next-1" && item.body?.stream?.finish)
+  );
   assert.notEqual(calls[1].agentSessionId, oldSession);
 });
 
-test("im.json persists Codex defaults and disabled entries do not connect", async (t) => {
+test("im.json is a list, preserves omitted defaults and honors explicit disabled", async (t) => {
   const { mkdtemp, readFile, writeFile, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
-  const { join, isAbsolute } = await import("node:path");
-  const { loadImBots } = await import("../packages/octo-harness-channel-im/dist/index.js");
+  const { join } = await import("node:path");
+  const { loadImBots } = await import("../packages/octo-runtime-channel-im/dist/index.js");
   const home = await mkdtemp(join(tmpdir(), "im-defaults-"));
   t.after(() => rm(home, { recursive: true, force: true }));
-  await writeFile(
-    join(home, "im.json"),
-    JSON.stringify({ bots: [{ id: "wecom", type: "wecom", ...credentials }] }),
-    { mode: 0o600 }
-  );
+  const bot = {
+    type: "wecom",
+    bot_id: "test",
+    enabled: false,
+    app_secret: "secret",
+    adapter: { workdir: home }
+  };
+  await writeFile(join(home, "im.json"), JSON.stringify([bot]), { mode: 0o600 });
   const [config] = loadImBots(home);
-  assert.equal(config.enabled, false);
-  assert.equal(config.adapterType, "codex");
-  assert.equal(config.approvalMode, "full_access");
-  assert.ok(isAbsolute(config.workdir));
-  const stored = JSON.parse(await readFile(join(home, "im.json"), "utf8"));
-  assert.equal(stored.bots[0].adapterType, "codex");
-  assert.equal(stored.bots[0].enabled, false);
-  assert.equal(stored.bots[0].approvalMode, "full_access");
+  assert.deepEqual(config, bot);
+  assert.deepEqual(JSON.parse(await readFile(join(home, "im.json"), "utf8")), [bot]);
   let reads = 0;
   const runtime = new ImRuntime(config, {
     host: {},
     credentials: async () => {
       reads++;
-      return credentials.appSecret;
+      return "secret";
     }
   });
   t.after(() => runtime.close());
@@ -284,14 +305,13 @@ test("im.json persists Codex defaults and disabled entries do not connect", asyn
 
 test("execution Context overrides default adapter and maps reasoning to agentConfig", async () => {
   const { createImInvocation } =
-    await import("../packages/octo-harness-channel-im/dist/execution/dispatcher.js");
+    await import("../packages/octo-runtime-channel-im/dist/execution/dispatcher.js");
   const config = {
-    id: "wecom",
     type: "wecom",
     enabled: true,
-    ...credentials,
-    adapterType: "codex",
-    workdir: process.cwd()
+    bot_id: credentials.appBot,
+    app_secret: credentials.appSecret,
+    adapter: { adapter_type: "codex", workdir: process.cwd() }
   };
   const message = {
     messageId: "msg",
@@ -329,7 +349,7 @@ test("execution Context overrides default adapter and maps reasoning to agentCon
 
 test("IM constructs full_access approval Context for both platforms and honors explicit policies", async () => {
   const { createImInvocation } =
-    await import("../packages/octo-harness-channel-im/dist/execution/dispatcher.js");
+    await import("../packages/octo-runtime-channel-im/dist/execution/dispatcher.js");
   const message = {
     messageId: "m",
     senderId: "u",
@@ -339,7 +359,7 @@ test("IM constructs full_access approval Context for both platforms and honors e
   };
   const context = { schema: "octo.context-envelope/v3", items: [] };
   for (const type of ["octo", "wecom"]) {
-    const config = { id: "test", type, workdir: process.cwd() };
+    const config = { bot_id: "test", type, adapter: { workdir: process.cwd() } };
     const invoke = (config, context) =>
       createImInvocation(
         config,
@@ -357,7 +377,7 @@ test("IM constructs full_access approval Context for both platforms and honors e
       ).payload.mode,
       "full_access"
     );
-    assert.equal(invoke({ ...config, approvalMode: "ask" }, context).approvalMode, "ask");
+    assert.equal(invoke({ ...config, approval_mode: "ask" }, context).approvalMode, "ask");
     assert.equal(
       invoke(config, {
         ...context,

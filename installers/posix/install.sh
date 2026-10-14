@@ -5,7 +5,7 @@ set -eu
 set +x
 
 MINIMUM_NODE_MAJOR=24
-PACKAGE_NAME="@mininglamp-oss/octo-harness"
+PACKAGE_NAME="@mininglamp-oss/octo-runtime"
 TTY_ECHO_DISABLED=0
 ENROLLMENT_TOKEN=""
 NODE_BIN_OVERRIDE=""
@@ -19,29 +19,29 @@ PREPARED_UPDATE=0
 
 usage() {
   cat <<'EOF'
-Install Octo Harness for the current macOS or Linux user.
+Install Octo Runtime for the current macOS or Linux user.
 
 Usage:
-  curl -fsSL https://SERVER/octo-harness/install.sh \
+  curl -fsSL https://SERVER/octo-runtime/install.sh \
     | sh -s -- "https://SERVER" "octo_enroll_..."
 
 On first install, the enrollment token may be omitted and entered securely from the terminal.
 An already enrolled profile can be repaired or updated without another token.
 Environment overrides:
-  OCTO_HARNESS_CHANNEL       stable (default) or beta
-  OCTO_HARNESS_PROFILE       profile name (default: default)
-  OCTO_HARNESS_HOME          state directory (default: ~/.octo-harness)
-  OCTO_HARNESS_NPM_SPEC      npm package spec used instead of the channel default
-  OCTO_HARNESS_AGENT_WORK_URL  Agent Worker base (default: SERVER_URL/agentworker)
+  OCTO_RUNTIME_CHANNEL       stable (default) or beta
+  OCTO_RUNTIME_PROFILE       profile name (default: default)
+  OCTO_RUNTIME_HOME          state directory (default: ~/.octo-runtime)
+  OCTO_RUNTIME_NPM_SPEC      npm package spec used instead of the channel default
+  OCTO_RUNTIME_AGENT_WORK_URL  Agent Worker base (default: SERVER_URL/agentworker)
 EOF
 }
 
 info() {
-  printf '%s\n' "[octo-harness] $*"
+  printf '%s\n' "[octo-runtime] $*"
 }
 
 die() {
-  printf '%s\n' "[octo-harness] ERROR: $*" >&2
+  printf '%s\n' "[octo-runtime] ERROR: $*" >&2
   exit 2
 }
 
@@ -84,10 +84,10 @@ esac
 
 SERVER_URL=$1
 ENROLLMENT_TOKEN=${2:-}
-CHANNEL=${OCTO_HARNESS_CHANNEL:-stable}
-PROFILE=${OCTO_HARNESS_PROFILE:-default}
-HARNESS_HOME=${OCTO_HARNESS_HOME:-"$HOME/.octo-harness"}
-AGENT_WORK_URL=${OCTO_HARNESS_AGENT_WORK_URL:-}
+CHANNEL=${OCTO_RUNTIME_CHANNEL:-stable}
+PROFILE=${OCTO_RUNTIME_PROFILE:-default}
+HARNESS_HOME=${OCTO_RUNTIME_HOME:-"$HOME/.octo-runtime"}
+AGENT_WORK_URL=${OCTO_RUNTIME_AGENT_WORK_URL:-}
 
 PLATFORM=$(uname -s)
 case "$PLATFORM" in
@@ -115,21 +115,21 @@ case "$server_authority" in
 esac
 case "$CHANNEL" in
   stable|beta) ;;
-  *) die "OCTO_HARNESS_CHANNEL must be stable or beta" ;;
+  *) die "OCTO_RUNTIME_CHANNEL must be stable or beta" ;;
 esac
 case "$PROFILE" in
-  ""|[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*) die "OCTO_HARNESS_PROFILE must start with a letter or digit and contain only letters, digits, dot, underscore, or hyphen" ;;
+  ""|[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*) die "OCTO_RUNTIME_PROFILE must start with a letter or digit and contain only letters, digits, dot, underscore, or hyphen" ;;
 esac
-[ "${#PROFILE}" -le 64 ] || die "OCTO_HARNESS_PROFILE must not exceed 64 characters"
+[ "${#PROFILE}" -le 64 ] || die "OCTO_RUNTIME_PROFILE must not exceed 64 characters"
 profile_key=$(printf '%s' "$PROFILE" | tr '[:upper:]' '[:lower:]')
 case "$profile_key" in
   config.json|credentials|identity|machine.json|logs|octo-daemon.pid|profiles|run|setup|sockets|state.db)
-    die "OCTO_HARNESS_PROFILE conflicts with Harness Home infrastructure"
+    die "OCTO_RUNTIME_PROFILE conflicts with Runtime Home infrastructure"
     ;;
 esac
 case "$HARNESS_HOME" in
   /*) ;;
-  *) die "OCTO_HARNESS_HOME must be an absolute path" ;;
+  *) die "OCTO_RUNTIME_HOME must be an absolute path" ;;
 esac
 
 PROFILE_IDENTITY="$HARNESS_HOME/$PROFILE/identity/runtime.json"
@@ -219,7 +219,7 @@ persist_path_entry() {
   path_line="export PATH='$path_entry':\$PATH"
   if [ ! -f "$shell_profile" ] || ! grep -Fqx "$path_line" "$shell_profile"; then
     {
-      printf '\n# Added by the Octo Harness installer.\n'
+      printf '\n# Added by the Octo Runtime installer.\n'
       printf '%s\n' "$path_line"
     } >> "$shell_profile"
     info "Added npm global bin to $shell_profile"
@@ -265,16 +265,16 @@ case "$CHANNEL" in
   stable) npm_tag=latest ;;
   beta) npm_tag=beta ;;
 esac
-NPM_SPEC=${OCTO_HARNESS_NPM_SPEC:-"$PACKAGE_NAME@$npm_tag"}
+NPM_SPEC=${OCTO_RUNTIME_NPM_SPEC:-"$PACKAGE_NAME@$npm_tag"}
 case "$NPM_SPEC" in
   *://*)
     spec_without_scheme=${NPM_SPEC#*://}
     spec_authority=${spec_without_scheme%%/*}
     case "$spec_authority" in
-      *@*) die "OCTO_HARNESS_NPM_SPEC URL must not contain user info" ;;
+      *@*) die "OCTO_RUNTIME_NPM_SPEC URL must not contain user info" ;;
     esac
     case "$NPM_SPEC" in
-      *\?*|*\#*) die "OCTO_HARNESS_NPM_SPEC URL must not contain a query or fragment" ;;
+      *\?*|*\#*) die "OCTO_RUNTIME_NPM_SPEC URL must not contain a query or fragment" ;;
     esac
     ;;
 esac
@@ -305,13 +305,13 @@ fi
 mkdir -p "$HARNESS_HOME/run" "$NPM_PREFIX"
 chmod 700 "$HARNESS_HOME" "$HARNESS_HOME/run"
 HOME_LOCK_DIR="$HARNESS_HOME/run/installer.lock"
-GLOBAL_LOCK_DIR="$NPM_PREFIX/.octo-harness-installer.lock"
-acquire_lock "$HOME_LOCK_DIR" "Harness Home installer"
+GLOBAL_LOCK_DIR="$NPM_PREFIX/.octo-runtime-installer.lock"
+acquire_lock "$HOME_LOCK_DIR" "Runtime Home installer"
 HOME_LOCK_HELD=1
 acquire_lock "$GLOBAL_LOCK_DIR" "npm global package installer"
 GLOBAL_LOCK_HELD=1
 
-CLI="$NPM_PREFIX/bin/octo-harness"
+CLI="$NPM_PREFIX/bin/octo-runtime"
 CLI_ENTRYPOINT="$NPM_PREFIX/lib/node_modules/$PACKAGE_NAME/apps/cli/dist/index.js"
 if [ -x "$CLI" ]; then
   EXISTING_CLI_MODE=shim
@@ -339,11 +339,11 @@ if [ -n "$EXISTING_CLI_MODE" ]; then
   fi
   PREPARED_UPDATE=1
 elif [ "$HOME_HAS_RUNTIME" -eq 1 ]; then
-  die "Harness Home contains Runtime state but the current npm prefix has no usable CLI. Stop the existing daemon and repair or remove the legacy npm link before retrying"
+  die "Runtime Home contains Runtime state but the current npm prefix has no usable CLI. Stop the existing daemon and repair or remove the legacy npm link before retrying"
 fi
 
-if [ -n "${OCTO_HARNESS_NPM_SPEC:-}" ]; then
-  info "Installing the configured OCTO_HARNESS_NPM_SPEC with npm"
+if [ -n "${OCTO_RUNTIME_NPM_SPEC:-}" ]; then
+  info "Installing the configured OCTO_RUNTIME_NPM_SPEC with npm"
 else
   info "Installing $PACKAGE_NAME@$npm_tag with npm"
 fi
@@ -351,7 +351,7 @@ if npm install --global --no-audit --no-fund "$NPM_SPEC"; then
   :
 else
   npm_status=$?
-  printf '%s\n' "[octo-harness] ERROR: npm install failed with exit $npm_status" >&2
+  printf '%s\n' "[octo-runtime] ERROR: npm install failed with exit $npm_status" >&2
   if [ "$PREPARED_UPDATE" -eq 1 ]; then
     if run_existing_cli \
       --home "$HARNESS_HOME" \
@@ -359,7 +359,7 @@ else
       login --recover-update --start; then
       info "Restored the previous service after the failed npm update"
     else
-      printf '%s\n' "[octo-harness] ERROR: automatic service recovery failed; repair the npm package, then run 'octo-harness login --recover-update --start'" >&2
+      printf '%s\n' "[octo-runtime] ERROR: automatic service recovery failed; repair the npm package, then run 'octo-runtime login --recover-update --start'" >&2
     fi
   fi
   exit "$npm_status"
@@ -372,7 +372,7 @@ fi
 [ -x "$CLI" ] || die "npm completed but $CLI is missing or not executable"
 
 if ! LOGIN_HELP=$("$CLI" login --help 2>&1); then
-  die "the installed package does not provide 'octo-harness login'"
+  die "the installed package does not provide 'octo-runtime login'"
 fi
 case "$LOGIN_HELP" in
   *--enroll-token-stdin*) ;;
@@ -401,10 +401,10 @@ if ! printf '%s\n' "$ENROLLMENT_TOKEN" | "$CLI" \
     if "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" login --recover-update --start; then
       info "Restored the service after the updated login failed"
     else
-      printf '%s\n' "[octo-harness] ERROR: service recovery also failed; repair the package, then run 'octo-harness login --recover-update --start'" >&2
+      printf '%s\n' "[octo-runtime] ERROR: service recovery also failed; repair the package, then run 'octo-runtime login --recover-update --start'" >&2
     fi
   fi
-  die "octo-harness login failed; rerun this installer after correcting the reported problem"
+  die "octo-runtime login failed; rerun this installer after correcting the reported problem"
 fi
 
 ENROLLMENT_TOKEN=""
@@ -414,7 +414,7 @@ if ! "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" daemon install; then
   if [ "$PREPARED_UPDATE" -eq 1 ]; then
     "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" login --recover-update --start || true
   fi
-  die "daemon service installation failed; run 'octo-harness daemon install' after correcting the reported problem"
+  die "daemon service installation failed; run 'octo-runtime daemon install' after correcting the reported problem"
 fi
 
 info "Starting the daemon and waiting for cloud readiness"
@@ -422,8 +422,8 @@ if ! "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" daemon start --wait-onli
   if [ "$PREPARED_UPDATE" -eq 1 ]; then
     "$CLI" --home "$HARNESS_HOME" --profile "$PROFILE" login --recover-update --start || true
   fi
-  die "daemon startup failed; run 'octo-harness daemon start --wait-online' after correcting the reported problem"
+  die "daemon startup failed; run 'octo-runtime daemon start --wait-online' after correcting the reported problem"
 fi
 
 info "Installation complete"
-info "Run: octo-harness --home '$HARNESS_HOME' --profile '$PROFILE' doctor"
+info "Run: octo-runtime --home '$HARNESS_HOME' --profile '$PROFILE' doctor"

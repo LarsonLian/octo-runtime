@@ -1,14 +1,14 @@
-# @mininglamp-oss/octo-harness-adapter-host-app
+# @mininglamp-oss/octo-runtime-adapter-host-app
 
 > 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../docs/context-llm-injection.md) 与 [IPD-SE 0.3](../../../docs/event-context-rendering-ipd-se.md)；旧链路退出仍待完成。
 
-Octo Harness 的独立 adapter 执行进程。它从 manifest 动态加载多个 provider adapter，并通过
+Octo Runtime 的独立 adapter 执行进程。它从 manifest 动态加载多个 provider adapter，并通过
 stdin/stdout NDJSON JSON-RPC 向 daemon 提供统一的 `list`、`probe`、`invoke` 和 `cancel`
 能力。
 
 ## 架构约束
 
-**adapter-host 是 Octo Harness 的必要架构边界，不得为了减少一个进程而把 provider adapters
+**adapter-host 是 Octo Runtime 的必要架构边界，不得为了减少一个进程而把 provider adapters
 直接加载进 daemon。**
 
 必须保持以下依赖和运行方向：
@@ -30,7 +30,7 @@ adapter-host（插件加载、调用生命周期）
 当前单机拓扑是一个 daemon 启动一个长驻 adapter-host，该 host 加载 manifest 中的全部
 adapter。它不是每 workspace、每 adapter 或每 invocation 一个 host。
 
-daemon 不得直接依赖或 import `@mininglamp-oss/octo-harness-adapter-*`。新增 provider 时，应增加
+daemon 不得直接依赖或 import `@mininglamp-oss/octo-runtime-adapter-*`。新增 provider 时，应增加
 adapter package、更新 [adapter manifest](../../config/adapters.json)，并让本 app 负责动态加载。
 
 ## 为什么必须保留 Host
@@ -54,7 +54,7 @@ adapter，并把 canonical event stream 返回给 daemon。
 
 ### 3. 统一调用生命周期
 
-通用 [adapter-host library](../../packages/octo-harness-adapter-host/README.md) 在执行边界负责：
+通用 [adapter-host library](../../packages/octo-runtime-adapter-host/README.md) 在执行边界负责：
 
 - 校验 `InvokeRequest` 和 canonical event；
 - 补齐 message create/update 与稳定 message ID；
@@ -108,32 +108,32 @@ CLI 子进程可能继续存活，而 daemon 已将对应 Run 标记为 error。
 | 模块 | 负责 | 不负责 |
 |---|---|---|
 | `apps/adapter-host` | manifest 读取、动态 import、adapter 形状校验、启动 RPC server | AgentRun 权威状态和业务调度 |
-| `packages/octo-harness-adapter-host` | registry、invoke/cancel 生命周期、RPC client/server、host 子进程管理 | 选择部署 manifest |
-| `packages/octo-harness-adapter-*` | provider 命令、session 恢复、native event 到 canonical event 映射 | 全局 Run 状态 |
+| `packages/octo-runtime-adapter-host` | registry、invoke/cancel 生命周期、RPC client/server、host 子进程管理 | 选择部署 manifest |
+| `packages/octo-runtime-adapter-*` | provider 命令、session 恢复、native event 到 canonical event 映射 | 全局 Run 状态 |
 | `apps/daemon` | Store/Core/Daemon/Host client 装配、Unix socket 控制面 | 直接加载 provider adapter |
 
 ## 常见疑问（FAQ）
 
 ### daemon 拉起的到底是 app 还是 package？
 
-是 **`apps/adapter-host` 这个进程**，即 `node apps/adapter-host/dist/index.js --manifest config/adapters.json`。`packages/octo-harness-adapter-host` 是一个库，没有进程入口，不会被“拉起”，只能被 `import`。被拉起的 app 进程在其内部 `import` 了该库并使用其中的 `AdapterHost` 与 `AdapterHostRpcServer`。
+是 **`apps/adapter-host` 这个进程**，即 `node apps/adapter-host/dist/index.js --manifest config/adapters.json`。`packages/octo-runtime-adapter-host` 是一个库，没有进程入口，不会被“拉起”，只能被 `import`。被拉起的 app 进程在其内部 `import` 了该库并使用其中的 `AdapterHost` 与 `AdapterHostRpcServer`。
 
 ```text
 daemon 进程
   └─(spawn 子进程)→ apps/adapter-host 进程        ← 被拉起的是它
-                        └─ import packages/octo-harness-adapter-host   ← 只是被它引用的库
+                        └─ import packages/octo-runtime-adapter-host   ← 只是被它引用的库
 ```
 
 ### package 不是也导出了 `spawnAdapterHost` 吗，为什么说被拉起的不是它？
 
-`spawnAdapterHost()` 是 package 提供的一个**函数**，daemon 调用它来完成 spawn 动作（见 `apps/daemon/src/server.ts` 与 `packages/octo-harness-adapter-host/src/process.ts`）；但它 spawn 出来的**目标进程**是 app。也就是“用 package 里的函数，去拉起 app 里的进程”——函数是零件，被点火的是 app。
+`spawnAdapterHost()` 是 package 提供的一个**函数**，daemon 调用它来完成 spawn 动作（见 `apps/daemon/src/server.ts` 与 `packages/octo-runtime-adapter-host/src/process.ts`）；但它 spawn 出来的**目标进程**是 app。也就是“用 package 里的函数，去拉起 app 里的进程”——函数是零件，被点火的是 app。
 
 实际调用链：
 
 ```text
 apps/daemon/src/server.ts        spawnAdapterHost({ entrypoint, manifest })
   └─ entrypoint 默认解析为 apps/adapter-host/dist/index.js
-     （apps/daemon/src/runtime-options.ts，可用 OCTO_HARNESS_ADAPTER_HOST 覆盖）
+     （apps/daemon/src/runtime-options.ts，可用 OCTO_RUNTIME_ADAPTER_HOST 覆盖）
 packages/.../process.ts          spawn(node, [entrypoint, "--manifest", manifest])
   └─ 启动 apps/adapter-host 进程   ← 真正被拉起的进程
 ```
@@ -144,7 +144,7 @@ packages/.../process.ts          spawn(node, [entrypoint, "--manifest", manifest
 - **“加载哪些 adapter”是部署关注点**：app 依据 [manifest](../../config/adapters.json) 动态 `import()`，把这一决策留在 app，而不是塞进可复用的库。
 - **进程隔离**：app 作为 daemon 的子进程独立运行，把 provider 子进程挡在一道进程边界后面（参见上文“隔离边界”）。
 
-一句话概括：`packages/octo-harness-adapter-host` 是“引擎零件”，`apps/adapter-host` 是“装好能点火的整车”，daemon 点火的是后者。
+一句话概括：`packages/octo-runtime-adapter-host` 是“引擎零件”，`apps/adapter-host` 是“装好能点火的整车”，daemon 点火的是后者。
 
 ## 允许重新评估的条件
 
@@ -168,7 +168,7 @@ pnpm host
 直接运行 workspace app：
 
 ```bash
-pnpm --filter @mininglamp-oss/octo-harness-adapter-host-app start
+pnpm --filter @mininglamp-oss/octo-runtime-adapter-host-app start
 ```
 
 daemon 运行时可验证 host 握手和已加载 adapters：

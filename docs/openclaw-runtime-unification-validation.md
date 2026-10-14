@@ -15,10 +15,10 @@
 
 | 范围 | 结果 |
 | --- | --- |
-| Harness workspace 构建 | 通过 |
-| Harness 根类型检查 | 通过 |
+| Runtime workspace 构建 | 通过 |
+| Runtime 根类型检查 | 通过 |
 | 本次改动代码的 ESLint | 通过 |
-| Harness 与协议全量测试，`--test-concurrency=4` | 903 项：894 通过、9 按已有条件跳过、0 失败 |
+| Runtime 与协议全量测试，`--test-concurrency=4` | 903 项：894 通过、9 按已有条件跳过、0 失败 |
 | 桌面应用构建和类型检查 | 通过 |
 | 桌面 Runtime 与会话服务相关测试 | 24 项通过；修正测试类型后 Runtime 11 项再次通过 |
 | Worker 构建、domain/service 测试 | 通过 |

@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { chmod, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AdapterHost } from "../packages/octo-harness-adapter-host/dist/index.js";
-import { probeCommand } from "../packages/octo-harness-adapter-sdk/dist/index.js";
+import { AdapterHost } from "../packages/octo-runtime-adapter-host/dist/index.js";
+import { probeCommand } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
 
 test("provider discovery reports real executable path/version, not adapter version", async () => {
   const directory = await mkdtemp(join(tmpdir(), "octo-provider-discovery-"));

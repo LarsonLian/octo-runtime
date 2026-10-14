@@ -1,0 +1,26 @@
+{
+  "name": "@mininglamp-oss/octo-runtime-extra-sse-demo",
+  "version": "0.1.0",
+  "description": "Demonstration extra: native HTTP to AdapterHost invoke to SSE",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mininglamp-oss/octo-runtime-protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@mininglamp-oss/octo-runtime-daemon": "workspace:*"
+  }
+}

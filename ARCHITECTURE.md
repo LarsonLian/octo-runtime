@@ -1,6 +1,8 @@
 # Architecture
 
-Octo Harness is a provider-neutral local Agent Runtime. A locally initialized Runtime has its own stable identity whether or not HostApp registers it or permits online access. Cloud registration, device connectivity and IM connectivity are optional integrations, not local execution prerequisites.
+The function-based Extra loader is implemented alongside the existing modules. A package declares a stable name and a lambda `(ctx, config) => void | Promise<void>`; its scope owns disposal callbacks and uses the shared Host. CLI startup reads explicitly enabled JSON declarations, while SDK hosts supply their own objects. See [Extra design and scenarios](docs/extra-plugins.md). Existing channel-im and worker-access have not yet migrated to this contract.
+
+Octo Runtime is a provider-neutral local Agent Runtime. A locally initialized Runtime has its own stable identity whether or not HostApp registers it or permits online access. Cloud registration, device connectivity and IM connectivity are optional integrations, not local execution prerequisites.
 
 The current normative package and state contract is [Runtime local existence and optional online access](docs/runtime-local-and-online-contract.md). This document describes the current implementation; pending changes are explicitly identified there.
 
@@ -8,7 +10,7 @@ The current normative package and state contract is [Runtime local existence and
 
 ```text
 HostApp business request
-  -> octo-harness-daemon local SDK
+  -> octo-runtime-daemon local SDK
   -> local control IPC
   -> shared HostRunService / adapter-host
   -> Provider Adapter
@@ -30,7 +32,7 @@ HostApp explicitly enables module
 
 daemon has no production dependency on either optional package. Module descriptors do not load or connect their factories. Explicit start activates one module; stopping it preserves local execution. A module startup ACK means acceptance, not successful registration or connectivity.
 
-The final access responsibility is registration only. The device WS/heartbeat contract and its final module ownership are pending review. The existing worker-access implementation must not be presented as that completed architecture.
+The [second architecture review](../docs/architecture-review-2-device-extra-2026-10-14.md) sets the target: function-based extra packages own external business integrations, with Octo and WeCom in separate packages. The final allocation of registration, device heartbeat and remote execution remains pending review. The current module API and worker-access implementation must not be presented as that completed architecture.
 
 ## Ownership
 

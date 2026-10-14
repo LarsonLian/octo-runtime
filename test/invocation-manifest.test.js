@@ -8,7 +8,7 @@ import {
   InvocationManifest,
   processStartIdentity,
   reapOrphanedInvocationManifest
-} from "../packages/octo-harness-daemon/dist/invocation-manifest.js";
+} from "../packages/octo-runtime-daemon/dist/invocation-manifest.js";
 
 test("invocation manifest persists only process and invocation metadata", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-invocation-manifest-"));

@@ -3,7 +3,7 @@
 Historical review against the baselines below. Its enrollment-centered creation and test counts are not the current SDK startup contract. Current local identity and optional registration rules are in [Runtime local/online contract](runtime-local-and-online-contract.md); the original findings and verification scope remain unchanged.
 
 Branch: `feat/runtime-machine-identity`.
-Harness baseline: `ae243d47b265d9206299344b085203c3141f284b`.
+Runtime baseline: `ae243d47b265d9206299344b085203c3141f284b`.
 Worker baseline: `e2165593bd72c7638b3fc121109372be1fbf1a13`.
 Both reviews cover the complete working-tree change, including new files, against these pre-change baselines.
 
@@ -17,7 +17,7 @@ Both reviews cover the complete working-tree change, including new files, agains
 
 ## Verification
 
-Build, typecheck and lint passed. The full Harness suite has 209 tests: 207 passed, two existing opt-in tests skipped, no failures. Worker tests/vet and real local MySQL schema and identity tests passed, including eight concurrent first enrollments, retry/renewal/registration reuse, same-machine profile isolation, and rejection/revocation paths. The local Worker database was reset; online E2E and deployment changes were not performed. The bundled operation skill was updated and validated.
+Build, typecheck and lint passed. The full Runtime suite has 209 tests: 207 passed, two existing opt-in tests skipped, no failures. Worker tests/vet and real local MySQL schema and identity tests passed, including eight concurrent first enrollments, retry/renewal/registration reuse, same-machine profile isolation, and rejection/revocation paths. The local Worker database was reset; online E2E and deployment changes were not performed. The bundled operation skill was updated and validated.
 
 The local Worker pre-reset export is not a full data backup: it contains only the database definition. See the Worker repository's `docs/runtime-machine-identity-review.md` for the full cross-repository verification and database-reset record.
 

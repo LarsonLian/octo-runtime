@@ -1,4 +1,4 @@
-# Harness 统一 Context 处理实施基线
+# Runtime 统一 Context 处理实施基线
 
 > 2026-10-13 全局 Context 约束：每轮模型上下文由业务发起方决定，selection 等业务项可不发送；可传空、只传当轮需要的项或显式重复。必要的 adapter 等执行配置独立校验且不注入 LLM。底层只转发并渲染本轮快照，不按 sessionId 缓存、补齐、合并、去重或省略；reset、新建 Provider 会话或 resume 失败后，由业务方重新提供必要背景。详见 [Event Context IPD-SE 0.3](../../docs/event-context-rendering-ipd-se.md)。本文原有 Compiler/Pipeline、材料预取、场景自动追加与此约束冲突的内容仅保留历史背景；旧链路退出尚未完成。
 
@@ -14,16 +14,16 @@
 
 | 当前定位 | 已有职责 | 目标处理器 |
 | --- | --- | --- |
-| `packages/octo-harness-protocol/src/context.ts` | 校验、merge、canonical/hash、类型预算 | 公共目录与纯合同工具 |
-| `packages/octo-harness-core/src/context.ts` | 本地模式仅接受 execution/security 子集 | 本地管线配置；不隐式开放云端资源类型 |
-| `packages/octo-harness-daemon/src/run-context.ts` | 冻结计划检查、材料和控制编译 | verify 与 Compiler 起点 |
+| `packages/octo-runtime-protocol/src/context.ts` | 校验、merge、canonical/hash、类型预算 | 公共目录与纯合同工具 |
+| `packages/octo-runtime-core/src/context.ts` | 本地模式仅接受 execution/security 子集 | 本地管线配置；不隐式开放云端资源类型 |
+| `packages/octo-runtime-daemon/src/run-context.ts` | 冻结计划检查、材料和控制编译 | verify 与 Compiler 起点 |
 | `daemon/src/input-images.ts` | Artifact 租约读取，临时图片 source | 图片 Materializer，保持 input.parts |
 | `daemon/src/task-materials.ts` | 注册任务 MCP 读取及材料摘要 | prepare-time 任务资源处理器 |
 | `daemon/src/channel-context-store.ts` | 频道快照与连续性缓存 | continuity 处理器，保留原 cursor/epoch 规则 |
 | `daemon/src/agent-work-runtime.ts` | 准备编排与 InvokeRequest 映射 | 统一管线调用者，不重复拼接事实和指令 |
-| `packages/octo-harness-adapter-*` | Provider 原生输入映射 | applied/loaded 与兼容性证据消费者 |
+| `packages/octo-runtime-adapter-*` | Provider 原生输入映射 | applied/loaded 与兼容性证据消费者 |
 
-源码路径中的 `daemon/src` 均相对于 `packages/octo-harness-daemon/`。Pipeline 与 Compiler 位于现有 daemon 模块中，Protocol 只提供纯合同与校验。
+源码路径中的 `daemon/src` 均相对于 `packages/octo-runtime-daemon/`。Pipeline 与 Compiler 位于现有 daemon 模块中，Protocol 只提供纯合同与校验。
 
 ## 2. Protocol 与处理器注册
 
@@ -98,4 +98,4 @@ bootstrap/delta/inherit/recovery 与 fresh Provider Session 保留原语义。�
 
 Codex Adapter 在原生技能发现与启用成功、且 `turn/start` 获得确认后发送 `context.applied`。证据绑定编译摘要和当前 lease/fence，记录原生 Provider Session 与加载技能。Provider 启动失败或技能缺失时不得发送应用成功。此证据不证明技能或工具实际调用，公开 `invocation_status` 保持 `unknown`。
 
-完整 Harness 提交快照构建通过。提交快照完整测试共 806 项：802 通过，4 跳过，0 失败。新增用例覆盖阶段环、超时晚到、编译摘要稳定性、SQLite 关闭后恢复与撤权、原生技能和启动确认。同源应用证据 fixtures 在 TypeScript 与 Go 两端校验。真实三项目验收记录见 Work App 的 `docs/validation/context-pipeline-2026-10-08/`；测试与 Adapter 资格分别记录。
+完整 Runtime 提交快照构建通过。提交快照完整测试共 806 项：802 通过，4 跳过，0 失败。新增用例覆盖阶段环、超时晚到、编译摘要稳定性、SQLite 关闭后恢复与撤权、原生技能和启动确认。同源应用证据 fixtures 在 TypeScript 与 Go 两端校验。真实三项目验收记录见 Work App 的 `docs/validation/context-pipeline-2026-10-08/`；测试与 Adapter 资格分别记录。

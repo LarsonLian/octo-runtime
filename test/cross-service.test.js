@@ -14,28 +14,28 @@ import {
   renderLaunchdPlist,
   renderSystemdUnit,
   renderWindowsTaskXml
-} from "../packages/octo-harness-cross-service/dist/index.js";
+} from "../packages/octo-runtime-cross-service/dist/index.js";
 
 const unixSpec = {
-  id: "cn.mininglamp.octo-harness.daemon",
-  description: "Octo Harness daemon",
-  command: "/opt/octo harness/bin/octo-daemon",
+  id: "cn.mininglamp.octo-runtime.daemon",
+  description: "Octo Runtime daemon",
+  command: "/opt/octo runtime/bin/octo-daemon",
   args: ["run", "--profile", "trusted user", "literal&value"],
-  workingDirectory: "/Users/alice/.octo-harness",
+  workingDirectory: "/Users/alice/.octo-runtime",
   environment: { OCTO_PROFILE: "trusted & local" },
-  stdoutPath: "/Users/alice/.octo-harness/logs/service.out.log",
-  stderrPath: "/Users/alice/.octo-harness/logs/service.err.log",
+  stdoutPath: "/Users/alice/.octo-runtime/logs/service.out.log",
+  stderrPath: "/Users/alice/.octo-runtime/logs/service.err.log",
   enabled: true,
   restart: { policy: "on-failure", delaySeconds: 7, maxBurst: 4 },
   timeoutStopSeconds: 30
 };
 
 const windowsSpec = {
-  id: "cn.mininglamp.octo-harness.daemon",
-  description: "Octo Harness daemon",
-  command: "C:\\Program Files\\Octo Harness\\octo-daemon.exe",
+  id: "cn.mininglamp.octo-runtime.daemon",
+  description: "Octo Runtime daemon",
+  command: "C:\\Program Files\\Octo Runtime\\octo-daemon.exe",
   args: ["run", "--profile", "trusted user", "ends-with\\"],
-  workingDirectory: "C:\\Users\\alice\\.octo-harness",
+  workingDirectory: "C:\\Users\\alice\\.octo-runtime",
   enabled: true,
   restart: { policy: "on-failure", delaySeconds: 5, maxBurst: 4 }
 };
@@ -62,7 +62,7 @@ test("service specs reject relative paths, multiline text, and likely credential
 test("launchd renderer keeps executable and argv structured and escapes XML", () => {
   const plist = renderLaunchdPlist(unixSpec);
   assert.match(plist, /<key>ProgramArguments<\/key>\s*<array>/);
-  assert.match(plist, /<string>\/opt\/octo harness\/bin\/octo-daemon<\/string>/);
+  assert.match(plist, /<string>\/opt\/octo runtime\/bin\/octo-daemon<\/string>/);
   assert.match(plist, /<string>literal&amp;value<\/string>/);
   assert.match(plist, /<key>SuccessfulExit<\/key>\s*<false\/>/);
   assert.match(plist, /<key>EnvironmentVariables<\/key>/);
@@ -71,7 +71,7 @@ test("launchd renderer keeps executable and argv structured and escapes XML", ()
 
 test("systemd renderer quotes argv without a shell and applies lifecycle settings", () => {
   const unit = renderSystemdUnit(unixSpec);
-  assert.match(unit, /^ExecStart=:"\/opt\/octo harness\/bin\/octo-daemon" "run" "--profile" "trusted user" "literal&value"$/m);
+  assert.match(unit, /^ExecStart=:"\/opt\/octo runtime\/bin\/octo-daemon" "run" "--profile" "trusted user" "literal&value"$/m);
   assert.match(unit, /^Environment="OCTO_PROFILE=trusted & local"$/m);
   assert.match(unit, /^Restart=on-failure$/m);
   assert.match(unit, /^RestartSec=7s$/m);
@@ -86,7 +86,7 @@ test("Windows renderer uses a least-privilege current-user logon task", () => {
   assert.match(xml, /<LogonType>InteractiveToken<\/LogonType>/);
   assert.match(xml, /<RunLevel>LeastPrivilege<\/RunLevel>/);
   assert.match(xml, /<MultipleInstancesPolicy>IgnoreNew<\/MultipleInstancesPolicy>/);
-  assert.match(xml, /<Command>C:\\Program Files\\Octo Harness\\octo-daemon\.exe<\/Command>/);
+  assert.match(xml, /<Command>C:\\Program Files\\Octo Runtime\\octo-daemon\.exe<\/Command>/);
   assert.match(xml, /<Arguments>run --profile &quot;trusted user&quot; ends-with\\<\/Arguments>/);
   assert.match(xml, /<Interval>PT60S<\/Interval>/);
   assert.doesNotMatch(xml, /LocalSystem|SYSTEM|HighestAvailable/);
@@ -164,7 +164,7 @@ test("launchd install then start bootstraps the current user's LaunchAgent", asy
 
   const bootstrap = runner.calls.find(call => call.args[0] === "bootstrap");
   assert.deepEqual(bootstrap?.args.slice(0, 2), ["bootstrap", "gui/501"]);
-  assert.match(bootstrap?.args[2] ?? "", /Library\/LaunchAgents\/cn\.mininglamp\.octo-harness\.daemon\.plist$/);
+  assert.match(bootstrap?.args[2] ?? "", /Library\/LaunchAgents\/cn\.mininglamp\.octo-runtime\.daemon\.plist$/);
 });
 
 test("Windows install registers structured XML and inspect detects no drift", async t => {
@@ -203,7 +203,7 @@ test("Windows install registers structured XML and inspect detects no drift", as
 
   await backend.install(windowsSpec);
   const create = runner.calls.find(call => call.args[0] === "/Create");
-  assert.deepEqual(create?.args.slice(0, 4), ["/Create", "/TN", "\\OctoHarness.cn.mininglamp.octo-harness.daemon", "/XML"]);
+  assert.deepEqual(create?.args.slice(0, 4), ["/Create", "/TN", "\\OctoRuntime.cn.mininglamp.octo-runtime.daemon", "/XML"]);
   assert.equal(runner.calls.some(call => call.args[0] === "/Run"), false);
   assert.match(await readFile(join(definitionDirectory, `${windowsSpec.id}.xml`), "utf8"), /<LogonType>InteractiveToken<\/LogonType>/);
 

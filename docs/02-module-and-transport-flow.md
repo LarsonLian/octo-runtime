@@ -60,4 +60,4 @@ Worker／IM 独立启用。access 的已确认职责仅为注册；现有 Worker
 
 本地 Provider binding 由应用保存；远程 binding 由远程执行合同管理。opaque Provider session 存在不保证恢复成功。无论本地还是远程，reset／恢复失败后都由业务方决定重新提供背景。
 
-reference Core 的 FIFO 用于本地参考调度；远程队列、租约和 fencing 只约束相应远程执行。Harness 不拆分业务任务或自动重试业务副作用。
+reference Core 的 FIFO 用于本地参考调度；远程队列、租约和 fencing 只约束相应远程执行。Runtime 不拆分业务任务或自动重试业务副作用。

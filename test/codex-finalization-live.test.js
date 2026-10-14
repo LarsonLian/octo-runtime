@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createCodexAdapter } from "@mininglamp-oss/octo-harness-adapter-codex";
+import { createCodexAdapter } from "@mininglamp-oss/octo-runtime-adapter-codex";
 import { invokeRequest } from "./agent-work-runtime-fixture.js";
 
 test("real Codex finalization interruption preserves the answer and resumes the thread", {

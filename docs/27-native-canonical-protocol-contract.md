@@ -138,15 +138,15 @@ native 日志只记录元数据、数量、字节和转换次数，
 检查命令：
 
 ```sh
-pnpm --filter @mininglamp-oss/octo-harness-protocol build
-pnpm exec tsc -p packages/octo-harness-protocol/test/tsconfig.run-protocol.json
-node --test packages/octo-harness-protocol/test/*.test.js test/protocol.test.js
+pnpm --filter @mininglamp-oss/octo-runtime-protocol build
+pnpm exec tsc -p packages/octo-runtime-protocol/test/tsconfig.run-protocol.json
+node --test packages/octo-runtime-protocol/test/*.test.js test/protocol.test.js
 ```
 
 上次 Protocol 子包提交的 838 项通过/5 项跳过属于历史证据，不能作为本轮改造结果。
 本轮新增 native 执行、原始错误、交互、取消、拒绝、续流和零转换用例。最终运行
-`node --test --test-concurrency=4 test/*.test.js packages/octo-harness-protocol/test/*.test.js`：
-868 项，863 通过，5 跳过，0 失败；Harness 全量构建及 Protocol 判别类型检查通过。
+`node --test --test-concurrency=4 test/*.test.js packages/octo-runtime-protocol/test/*.test.js`：
+868 项，863 通过，5 跳过，0 失败；Runtime 全量构建及 Protocol 判别类型检查通过。
 Worker `go test ./...` 与 `make build` 通过；OpenAPI 已同步生成。
 Work App `pnpm build` 及对话、Embedded、认证、切 Space 守卫 36 项测试通过。
 修改文件 ESLint 通过；全仓 lint 仍有 `context-builder/src/object-selection.ts` 两处

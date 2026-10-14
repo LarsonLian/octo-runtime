@@ -1,10 +1,10 @@
 {
-  "name": "@mininglamp-oss/octo-harness-daemon-app",
+  "name": "@mininglamp-oss/octo-runtime-daemon-app",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "bin": {
-    "octo-harness-daemon": "dist/launcher.js"
+    "octo-runtime-daemon": "dist/launcher.js"
   },
   "exports": {
     ".": {
@@ -21,13 +21,14 @@
     "build": "tsc -p tsconfig.json && chmod +x dist/launcher.js"
   },
   "dependencies": {
-    "@mininglamp-oss/octo-harness-channel-im": "workspace:*",
-    "@mininglamp-oss/octo-harness-adapter-host": "workspace:*",
-    "@mininglamp-oss/octo-harness-core": "workspace:*",
-    "@mininglamp-oss/octo-harness-daemon": "workspace:*",
-    "@mininglamp-oss/octo-harness-protocol": "workspace:*",
-    "@mininglamp-oss/octo-harness-worker-access": "workspace:*",
-    "@mininglamp-oss/octo-harness-context-builder": "workspace:*"
+    "@mininglamp-oss/octo-runtime-extra-sse-demo": "workspace:*",
+    "@mininglamp-oss/octo-runtime-channel-im": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
+    "@mininglamp-oss/octo-runtime-daemon": "workspace:*",
+    "@mininglamp-oss/octo-runtime-protocol": "workspace:*",
+    "@mininglamp-oss/octo-runtime-worker-access": "workspace:*",
+    "@mininglamp-oss/octo-runtime-context-builder": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-openclaw": "workspace:*"
   },
   "types": "./dist/server.d.ts"
 }

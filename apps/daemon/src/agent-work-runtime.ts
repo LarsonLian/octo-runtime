@@ -1,1 +1,1 @@
-export * from "@mininglamp-oss/octo-harness-worker-access/agent-work-runtime";
+export * from "@mininglamp-oss/octo-runtime-worker-access/agent-work-runtime";

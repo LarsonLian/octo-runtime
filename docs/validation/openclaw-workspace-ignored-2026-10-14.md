@@ -12,7 +12,7 @@ OpenClaw Adapter 声明 `metadata.workspace: false`。Runtime 按声明跳过目
 - Worker `go build ./cmd/server ./cmd/migrate`：通过。
 - 修改的 TypeScript 实现文件 ESLint 与两个仓库 `git diff --check`：通过。
 - 本机真实 OpenClaw Gateway：playboard 使用 main、preset、fixed workspace `/tmp/octo-openclaw-ignored-nonexistent-non-git`，请求仅回复 OK、不使用工具。Run `run_34cab827-5a14-4414-a86a-0f8b241232a0` 返回 OK 和 `run.completed`，进程退出码 0；调用后指定目录仍不存在。
-- 本机测试 daemon `/tmp/octo-harness-im-codex-test` 按原 foreground run 方式重启，daemon PID 38634、Adapter Host PID 38635，均为 ready，IM 连接恢复 online，`draining: false`。该 Home 未安装 launchd service，使用进程重启而非安装新服务。
+- 本机测试 daemon `/tmp/octo-runtime-im-codex-test` 按原 foreground run 方式重启，daemon PID 38634、Adapter Host PID 38635，均为 ready，IM 连接恢复 online，`draining: false`。该 Home 未安装 launchd service，使用进程重启而非安装新服务。
 
 ## 验证范围
 

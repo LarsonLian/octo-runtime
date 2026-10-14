@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
+import { AdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
 import {
   createCodexAdapter,
   CodexEventNormalizer
-} from "@mininglamp-oss/octo-harness-adapter-codex";
+} from "@mininglamp-oss/octo-runtime-adapter-codex";
 import {
   createClaudeCodeAdapter,
   ClaudeEventNormalizer
-} from "@mininglamp-oss/octo-harness-adapter-claude-code";
-import { assertHostFrame, isHostTerminal } from "@mininglamp-oss/octo-harness-protocol";
+} from "@mininglamp-oss/octo-runtime-adapter-claude-code";
+import { assertHostFrame, isHostTerminal } from "@mininglamp-oss/octo-runtime-protocol";
 
 // Print evidence metadata only. Provider payloads stay in this process.
 const report = [];

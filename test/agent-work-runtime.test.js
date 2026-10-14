@@ -1,5 +1,5 @@
 import test from "node:test";
-import { renderModelContexts } from "@mininglamp-oss/octo-harness-protocol";
+import { renderModelContexts } from "@mininglamp-oss/octo-runtime-protocol";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -20,7 +20,7 @@ import {
 } from "../apps/daemon/dist/agent-work-runtime.js";
 import { AgentWorkStore } from "../apps/daemon/dist/agent-work-store.js";
 import { collectRuntimeDeviceInfo } from "../apps/daemon/dist/server.js";
-import { assertContextEnvelope, assertResolvedExecutionPlan } from "../packages/octo-harness-protocol/dist/index.js";
+import { assertContextEnvelope, assertResolvedExecutionPlan } from "../packages/octo-runtime-protocol/dist/index.js";
 import {
   approvalPayload, contextEnvelope, resolvedRuntimeSelection, continuityItem, deferred, executionContext,
   waitFor, wire, withExecutionPlan, withTimeout
@@ -110,8 +110,8 @@ test("clock change detection compares wall and monotonic elapsed time", () => {
 
 test("process restart hello has no durable run or stream state", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-restart-ownership-"));
-  const storePath = join(directory, "agent-work.db");
-  const persisted = AgentWorkStore.open(storePath);
+  const runtimeRoot = directory;
+  const persisted = new AgentWorkStore();
   persisted.upsertRun({ runId: "run-stale", commandId: "command-stale", leaseId: "lease-stale", fencingToken: 1 });
   persisted.allocateAndAppend("run-stale", "run.started", {});
   persisted.upsertRun({ runId: "run-terminal", commandId: "command-terminal", leaseId: "lease-terminal", fencingToken: 2 });
@@ -148,7 +148,7 @@ test("process restart hello has no durable run or stream state", async () => {
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-restart-ownership",
-      storePath
+      root: runtimeRoot
     }, {
       list: async () => [],
       cancel: async () => ({ cancelled: true }),
@@ -615,7 +615,7 @@ test("Agent Work correlates HTTP request IDs and preserves invocation identity",
       subjectId: "device-observed",
       runtimeName: "runtime-observed",
       profile: "work",
-      storePath: join(directory, "agent-work.db")
+      root: directory
     }, host);
     await runtime.start();
     await withTimeout(terminal.promise, 3_000, "terminal timeout");
@@ -796,7 +796,7 @@ test("interaction responses require the active execution instance as well as lea
       tenantId: "tenant-interaction",
       subjectId: "device-interaction",
       runtimeName: "runtime-interaction",
-      storePath: join(directory, "agent-work.db")
+      root: directory
     }, host);
     await runtime.start();
     await withTimeout(completed.promise, 5_000, "interaction command timeout");
@@ -841,7 +841,7 @@ test("a configured runtime ID still refreshes registration and rejects identity 
       subjectId: "device-identity",
       runtimeId: "runtime-expected",
       runtimeName: "runtime-identity",
-      storePath: join(directory, "agent-work.db")
+      root: directory
     }, host);
     await assert.rejects(
       runtime.start(),
@@ -890,7 +890,7 @@ test("startup registration failure stays alive and every reconnect re-registers"
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-reconnect",
-      storePath: join(directory, "agent-work.db"),
+      root: directory,
       reconnectFirstMs: 5,
       reconnectMs: 5,
       reconnectMaxMs: 5
@@ -931,7 +931,7 @@ test("rejected runtime credentials stop after the configured failure budget", as
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "rejected-runtime-token",
       runtimeName: "runtime-auth-rejected",
-      storePath: join(directory, "agent-work.db"),
+      root: directory,
       reconnectFirstMs: 5,
       reconnectMs: 5,
       reconnectMaxMs: 5,
@@ -986,7 +986,7 @@ test("connectivity notification interrupts a long reconnect backoff with bounded
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-fast-recovery",
-      storePath: join(directory, "agent-work.db"),
+      root: directory,
       reconnectFirstMs: 60_000,
       reconnectMs: 60_000,
       reconnectMaxMs: 60_000,
@@ -1054,7 +1054,7 @@ test("runtime goaway delays and spreads the next reconnect", async () => {
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-goaway",
-      storePath: join(directory, "agent-work.db"),
+      root: directory,
       reconnectFirstMs: 1,
       reconnectMs: 1,
       reconnectMaxMs: 1
@@ -1106,7 +1106,7 @@ test("close cancels a pending reconnect backoff without late registration", asyn
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-close-backoff",
-      storePath: join(directory, "agent-work.db"),
+      root: directory,
       reconnectFirstMs: 60_000,
       reconnectMs: 60_000,
       reconnectMaxMs: 60_000
@@ -1160,7 +1160,7 @@ test("a stalled WebSocket handshake times out and registration retries", async (
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-handshake-timeout",
-      storePath: join(directory, "agent-work.db"),
+      root: directory,
       reconnectFirstMs: 5,
       reconnectMs: 5,
       reconnectMaxMs: 5,
@@ -1216,7 +1216,7 @@ test("hard outbox watermark rejects new work with a memory command receipt", asy
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-hard-limit",
-      storePath: join(directory, "agent-work.db"),
+      root: directory,
       hardWatermarkBytes: 0
     }, {
       list: async () => [],
@@ -1283,7 +1283,7 @@ test("low disk preflight stays connected, reports health and rejects new work", 
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-low-disk",
-      storePath: join(directory, "agent-work.db"),
+      root: directory,
       minimumFreeBytes: Number.MAX_SAFE_INTEGER
     }, {
       list: async () => [],
@@ -1314,7 +1314,7 @@ test("low disk preflight stays connected, reports health and rejects new work", 
 
 test("missing provider configuration rejects work with a memory catalog failure", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oh-runtime-provider-missing-"));
-  const storePath = join(directory, "agent-work.db");
+  const runtimeRoot = directory;
   const httpServer = createServer();
   const wsServer = new WebSocketServer({ noServer: true });
   const rejection = deferred();
@@ -1348,7 +1348,7 @@ test("missing provider configuration rejects work with a memory catalog failure"
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-provider-missing",
-      storePath
+      root: runtimeRoot
     }, {
       list: async () => [{ type: "other", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [], available: true }],
       cancel: async () => ({ cancelled: true }),
@@ -1364,7 +1364,7 @@ test("missing provider configuration rejects work with a memory catalog failure"
     assert.equal(invocations, 0);
     await runtime.close();
     runtime = undefined;
-    const store = AgentWorkStore.open(storePath);
+    const store = new AgentWorkStore();
     assert.equal(store.getCommandReceipt("command-provider-missing"), undefined);
     store.close();
   } finally {
@@ -1432,7 +1432,7 @@ test("event nack releases the send window and retries from the requested sequenc
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-event-nack",
-      storePath: join(directory, "agent-work.db")
+      root: directory
     }, {
       list: async () => [{ type: "codex", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] }],
       cancel: async () => ({ cancelled: true }),
@@ -1499,7 +1499,7 @@ test("local runtime concurrency limit queues a second provider invocation", asyn
       baseUrl: `http://127.0.0.1:${address.port}`,
       token: "runtime-token",
       runtimeName: "runtime-capacity",
-      storePath: join(directory, "agent-work.db"),
+      root: directory,
       maxConcurrentRuns: 1
     }, {
       list: async () => [{ type: "codex", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] }],
@@ -1583,7 +1583,7 @@ test('control-plane cancellation is not classified as adapter failure when the o
   }));
   try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-    runtime = new AgentWorkRuntime({ profile: 'default', baseUrl: `http://127.0.0.1:${server.address().port}`, token: 'fixture', runtimeName: 'runtime-cancel', storePath: join(directory, 'state.db'),
+    runtime = new AgentWorkRuntime({ profile: 'default', baseUrl: `http://127.0.0.1:${server.address().port}`, token: 'fixture', runtimeName: 'runtime-cancel', root: directory,
     }, { list: async () => [{ type: 'codex', capabilities: ['react'], agentSources: ['provisioned'], executionFeatures: ['approval.ask', 'interaction.response'] }], cancel: async () => ({ cancelled: true }),
       async *invoke(_type, request) {
         yield { protocolVersion: 2, type: 'message.delta', payload: { text: 'starting' } };

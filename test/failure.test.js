@@ -5,9 +5,9 @@ import {
   assertFailureEnvelope,
   classifyFailure,
   failurePayload
-} from "../packages/octo-harness-protocol/dist/index.js";
+} from "../packages/octo-runtime-protocol/dist/index.js";
 
-const source = { component: "octo-harness", adapter: "fixture" };
+const source = { component: "octo-runtime", adapter: "fixture" };
 
 function classify(input, defaultDomain = "provider", stage = "provider.invoke") {
   return classifyFailure(input, {
@@ -41,7 +41,7 @@ test("global failure classifier covers runtime admission and adapter roots", () 
 
 test("Codex finalization timeout cannot retry an already answered turn", () => {
   const failure = classifyFailure({ code: "CODEX_FINALIZATION_TIMEOUT" }, {
-    defaultDomain: "adapter", stage: "adapter.invoke", source: { component: "octo-harness", adapter: "codex" }
+    defaultDomain: "adapter", stage: "adapter.invoke", source: { component: "octo-runtime", adapter: "codex" }
   });
   assert.equal(failure.retryable, false);
   assert.equal(failure.params.configParameter, "execution_profile.agent_config.providerOptions.finalizationTimeoutMs");
@@ -58,7 +58,7 @@ test("timeout causes have distinct public codes and actionable configuration pat
     ["RPC_TIMEOUT", "3013", "agent_config.providerOptions.appServerRequestTimeoutMs"]
   ];
   for (const [code, suffix, parameter] of cases) {
-    const context = { defaultDomain: "adapter", stage: "adapter.invoke", source: { component: "octo-harness", adapter: "codex" } };
+    const context = { defaultDomain: "adapter", stage: "adapter.invoke", source: { component: "octo-runtime", adapter: "codex" } };
     const payload = failurePayload({ code, timeoutMs: 3600000, timeoutStage: "run_deadline", timeoutReason: "run_deadline", watchdog: { elapsedMs: 3600000, secret: "private", openToolCount: 1 } }, context);
     assert.equal(payload.failure.code, `OH-ADP-${suffix}`);
     assert.equal(payload.failure.params.configParameter, `execution_profile.${parameter}`);

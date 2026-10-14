@@ -1,17 +1,17 @@
-# Octo Harness 部署
+# Octo Runtime 部署
 
 日期：2026-10-14。部署选择由 HostApp 决定。本地 Runtime 存在与云端登记独立，统一原则见 [Runtime 合同](docs/runtime-local-and-online-contract.md)。
 
 ## 1. 客户 App 的最小部署
 
-Eva2.0 等客户仅需要本地执行时，依赖 `@mininglamp-oss/octo-harness-daemon` 及其本地生产依赖。无需携带 worker-access、channel-im、标品 Work App 代码或独立 embedded 包；不通过 apps/cli 承载 SDK。
+Eva2.0 等客户仅需要本地执行时，依赖 `@mininglamp-oss/octo-runtime-daemon` 及其本地生产依赖。无需携带 worker-access、channel-im、标品 Work App 代码或独立 embedded 包；不通过 apps/cli 承载 SDK。
 
 源码构建与独立部署示例：
 
 ```bash
 pnpm install --frozen-lockfile
 pnpm build
-pnpm --filter @mininglamp-oss/octo-harness-daemon deploy --prod /absolute/staging/daemon
+pnpm --filter @mininglamp-oss/octo-runtime-daemon deploy --prod /absolute/staging/daemon
 node scripts/verify-daemon-deployment.mjs /absolute/staging/daemon
 ```
 
@@ -31,20 +31,20 @@ HostApp 提供固定版本的 Node 24+、SDK runner、adapter manifest、adapter
 
 模块工厂通过注入的共享 Host 工作，不复制本地执行器。部署包或登记工厂不自动连接；模块配置与凭据由 HostApp 在显式启动时提供。停止连接不停止本地 Host。
 
-Work App 的准备脚本分别部署 `sdk/`、`sdk/modules/worker-access` 和 `sdk/modules/channel-im`。其历史资源目录名 `embedded-runtime` 不代表仍依赖 embedded 包。详细布局见 [Work App 内置 Runtime](../octo-harness-work-app/docs/embedded-runtime.md)。
+Work App 的准备脚本分别部署 `sdk/`、`sdk/modules/worker-access` 和 `sdk/modules/channel-im`。其历史资源目录名 `embedded-runtime` 不代表仍依赖 embedded 包。详细布局见 [Work App 内置 Runtime](../octo-work-app/docs/embedded-runtime.md)。
 
 最终 access 只负责注册；现有 Worker 工厂仍组合注册与 WS 执行，最终拆分待评审。持久化设备在线 toggle 也尚待实施，不把发行物中的可选模块当作默认启用政策。
 
 ## 3. 独立 CLI 的 link 与发行
 
-根 `@mininglamp-oss/octo-harness` 包是标品运维 CLI 装配，携带可复用的 workspace packages。它不是客户仅本地 SDK 的最小依赖树。
+根 `@mininglamp-oss/octo-runtime` 包是标品运维 CLI 装配，携带可复用的 workspace packages。它不是客户仅本地 SDK 的最小依赖树。
 
 源码全局 link：
 
 ```bash
 npm link --foreground-scripts
-command -v octo-harness
-octo-harness --help
+command -v octo-runtime
+octo-runtime --help
 ```
 
 prepare 会构建 workspace，CLI 指向编译后的 dist。修改源码后构建并重启受影响进程；全局链接不能替代正在运行应用的重启。
@@ -52,7 +52,7 @@ prepare 会构建 workspace，CLI 指向编译后的 dist。修改源码后构�
 取消 link：
 
 ```bash
-npm unlink --global @mininglamp-oss/octo-harness
+npm unlink --global @mininglamp-oss/octo-runtime
 ```
 
 发布时先发布运行依赖 packages，再发布根 CLI；pnpm pack／publish 将 workspace 依赖转换为版本范围。版本和 registry 可用性必须由发布方验证，源码存在不等于版本已发布。

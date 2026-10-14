@@ -5,9 +5,9 @@ import { PassThrough, Writable } from "node:stream";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createCodexAdapter } from "@mininglamp-oss/octo-harness-adapter-codex";
-import { createAcpAdapter } from "@mininglamp-oss/octo-harness-adapter-acp";
-import { acpPromptParams } from "@mininglamp-oss/octo-harness-acp-client";
+import { createCodexAdapter } from "@mininglamp-oss/octo-runtime-adapter-codex";
+import { createAcpAdapter } from "@mininglamp-oss/octo-runtime-adapter-acp";
+import { acpPromptParams } from "@mininglamp-oss/octo-runtime-acp-client";
 import { invokeRequest } from "./agent-work-runtime-fixture.js";
 import { visualInputImages } from "../test-support/multimodal-images.mjs";
 

@@ -14,7 +14,7 @@ flowchart LR
   end
   Business -->|namespace + session_key + trigger_occurrence_id + input| S[AgentSession]
   S --> R[AgentRun]
-  R --> I[Harness Invocation]
+  R --> I[Runtime Invocation]
   I --> P[Provider Session]
   I --> E[Canonical Events]
   E --> R
@@ -28,7 +28,7 @@ flowchart LR
 | Aily Task | Aily/Loop 业务 | 由 Loop 类业务服务持有，不进入 Worker |
 | Aily Task Run/Attempt | Aily/Loop 业务尝试 | 业务记录引用 `agent_run_id` |
 | Aily Session Run | Aily 会话执行 | 统一为 `AgentRun` |
-| Aily Invocation | Runtime | Harness `invocation_id` |
+| Aily Invocation | Runtime | Runtime `invocation_id` |
 | Provider Session | Provider continuity | Worker `AgentSession.provider_session`，opaque |
 | Auto trigger record | AutoPilot | namespace-owned occurrence，提交 AgentRun |
 | Chat/IM message | Channel Gateway | IM occurrence + delivery，提交同一种 AgentRun |
@@ -46,7 +46,7 @@ AgentSession: (loop, agent_900, v1/task/task_42)
 Provider session: codex_thread_abc (opaque; reset 后替换)
 ```
 
-业务 retry 会创建新的 Loop attempt 与 AgentRun；它可以沿用 AgentSession 来继续 provider 上下文，也可以先 reset 再提交。Runtime 断线恢复不创建新的业务 attempt，由 Worker lease/fencing 与 Harness command recovery 处理。
+业务 retry 会创建新的 Loop attempt 与 AgentRun；它可以沿用 AgentSession 来继续 provider 上下文，也可以先 reset 再提交。Runtime 断线恢复不创建新的业务 attempt，由 Worker lease/fencing 与 Runtime command recovery 处理。
 
 ## 状态分离
 

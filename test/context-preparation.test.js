@@ -3,13 +3,13 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { prepareRunContext } from "../packages/octo-harness-adapter-host/dist/index.js";
-import { createOpenClawAdapter } from "../packages/octo-harness-adapter-openclaw/dist/index.js";
-import { AgentWorkStore } from "../packages/octo-harness-worker-access/dist/agent-work-store.js";
+import { prepareRunContext } from "../packages/octo-runtime-adapter-host/dist/index.js";
+import { createOpenClawAdapter } from "../packages/octo-runtime-adapter-openclaw/dist/index.js";
+import { AgentWorkStore } from "../packages/octo-runtime-worker-access/dist/agent-work-store.js";
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "octo-context-preparation-"));
-  const store = AgentWorkStore.open(join(root, "runtime.db"));
+  const store = new AgentWorkStore();
   t.after(async () => { store.close(); await rm(root, { recursive: true, force: true }); });
   const options = { workspaceRoot: join(root, "OctoWork"), stateRoot: root, agentSessionId: "session-1", agentId: "agent-1", store };
   const plan = { agent_source: "provisioned", adapter_type: "codex", workdir: "", approval_mode: "ask", workspace: { mode: "random" } };

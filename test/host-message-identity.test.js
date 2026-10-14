@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AdapterHost } from "../packages/octo-harness-adapter-host/dist/index.js";
+import { AdapterHost } from "../packages/octo-runtime-adapter-host/dist/index.js";
 
 test("Host scopes anonymous segments to tool boundaries and closes every channel at a step end", async () => {
   const host = new AdapterHost();

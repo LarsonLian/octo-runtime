@@ -1,4 +1,4 @@
-# Octo Harness 架构
+# Octo Runtime 架构
 
 日期：2026-10-14。统一原则见 [Runtime 本地存在与按需在线合同](runtime-local-and-online-contract.md)，实现证据见 [包解耦验证](validation/daemon-package-modules-2026-10-14.md)。
 
@@ -49,7 +49,7 @@ Provider session 由实际执行结果产生，作为 opaque 数据保存。存�
 
 所有 Runtime 及运行依赖的安装方案由 HostApp 决定。SDK、Host、Adapter 只能执行明确方案；缺失或版本不符时返回状态，不在启动、注册、探测或执行时隐式安装。
 
-原生插件与 MCP 的安装由宿主／用户管理。显式提交的 `octo.execution/mcp` 执行配置按 [Run MCP 合同](25-run-mcp-context.md)转换，不表示 Harness 接管云端插件分发。凭据及可信控制信息走独立执行通道，不进入模型 Context。
+原生插件与 MCP 的安装由宿主／用户管理。显式提交的 `octo.execution/mcp` 执行配置按 [Run MCP 合同](25-run-mcp-context.md)转换，不表示 Runtime 接管云端插件分发。凭据及可信控制信息走独立执行通道，不进入模型 Context。
 
 ## 事件、终态与恢复
 

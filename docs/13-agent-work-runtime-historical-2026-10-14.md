@@ -112,11 +112,11 @@ Codex 原生进展在归一化之前报告；仅 RPC 有响应、重试通知或
 ### Runtime 连接
 
 ```bash
-export OCTO_HARNESS_AGENT_WORK_URL=http://127.0.0.1:8092
-export OCTO_HARNESS_AGENT_WORK_RUNTIME_TOKEN=dev-runtime-token
-export OCTO_HARNESS_AGENT_WORK_TENANT_ID=tenant-1
-export OCTO_HARNESS_AGENT_WORK_SUBJECT_ID=device-local-1
-export OCTO_HARNESS_AGENT_WORK_RUNTIME_NAME=octo-harness-local
+export OCTO_RUNTIME_AGENT_WORK_URL=http://127.0.0.1:8092
+export OCTO_RUNTIME_AGENT_WORK_RUNTIME_TOKEN=dev-runtime-token
+export OCTO_RUNTIME_AGENT_WORK_TENANT_ID=tenant-1
+export OCTO_RUNTIME_AGENT_WORK_SUBJECT_ID=device-local-1
+export OCTO_RUNTIME_AGENT_WORK_RUNTIME_NAME=octo-runtime-local
 pnpm daemon
 ```
 
@@ -125,10 +125,10 @@ Runtime token 只通过环境变量注入，不写入 argv、manifest、Agent re
 可选 channel context：
 
 ```bash
-export OCTO_HARNESS_CHANNEL_CONTEXT_STORE=sqlite
-export OCTO_HARNESS_CHANNEL_CONTEXT_PROJECTION=delta
-export OCTO_HARNESS_CHANNEL_CONTEXT_PROVIDER_PERSISTENCE=append_only
-export OCTO_HARNESS_CHANNEL_CONTEXT_DB=/absolute/path/channel-context.db
+export OCTO_RUNTIME_CHANNEL_CONTEXT_STORE=sqlite
+export OCTO_RUNTIME_CHANNEL_CONTEXT_PROJECTION=delta
+export OCTO_RUNTIME_CHANNEL_CONTEXT_PROVIDER_PERSISTENCE=append_only
+export OCTO_RUNTIME_CHANNEL_CONTEXT_DB=/absolute/path/channel-context.db
 ```
 
 本地 `status` 只展示 Runtime 连接、active invocation、ACK 与缓存指标，不替代 Worker 的 Run 状态 API。

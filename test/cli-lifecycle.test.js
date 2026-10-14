@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { runCli } from "../apps/cli/dist/main.js";
 import { resolveDaemonRuntimePaths } from "../apps/daemon/dist/runtime-options.js";
-import { collectRuntimeDeviceInfo, startDaemonServer } from "@mininglamp-oss/octo-harness-daemon-app";
+import { collectRuntimeDeviceInfo, startDaemonServer } from "@mininglamp-oss/octo-runtime-daemon-app";
 import { wire } from "./agent-work-runtime-fixture.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -57,14 +57,14 @@ class InMemoryServiceBackend {
     const homeIndex = spec.args.indexOf("--home");
     const home = spec.args[homeIndex + 1];
     this.app = await startDaemonServer(resolveDaemonRuntimePaths(["--home", home], {
-      OCTO_HARNESS_MANIFEST: join(root, "test/fixtures/adapters.json"),
-      OCTO_HARNESS_ADAPTER_HOST: join(root, "apps/adapter-host/dist/index.js")
+      OCTO_RUNTIME_MANIFEST: join(root, "test/fixtures/adapters.json"),
+      OCTO_RUNTIME_ADAPTER_HOST: join(root, "apps/adapter-host/dist/index.js")
     }));
     this.state = "running";
   }
 
   async stop() {
-    if (this.app) assert.equal(this.app.daemon.status.draining, false);
+    if (this.app) assert.equal(this.app.host.status.draining, false);
     if (this.app) await this.app.close();
     this.app = undefined;
     if (this.state !== "not_installed") this.state = "stopped";

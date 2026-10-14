@@ -1,10 +1,10 @@
-# Context v2 与 FileBundle：Harness 验证记录
+# Context v2 与 FileBundle：Runtime 验证记录
 
 > 历史记录。本页描述已删除的 Context v2 与 FileBundle 实现，不作为当前接口或安装行为依据。当前合同为 Run=7、Context=v3；插件安装与配置由本地用户或原生 Runtime 管理，见[当前改造方案](24-local-plugin-ownership-refactor.md)。
 
 日期：2026-10-09（Asia/Shanghai）。状态：Context v2、FileBundle 准备与真实 Provider 压缩已验证；跨服务联合验收以工作应用基线记录为准。
 
-合同以 [IPD-SE 基线](../../octo-harness-work-app/docs/context-simplification-ipd-se-baseline.md) 和 [FileBundle 基线](../../octo-harness-work-app/docs/file-bundle-design-baseline.md) 为准。
+合同以 [IPD-SE 基线](../../octo-work-app/docs/context-simplification-ipd-se-baseline.md) 和 [FileBundle 基线](../../octo-work-app/docs/file-bundle-design-baseline.md) 为准。
 
 ## 已实现
 

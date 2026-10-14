@@ -9,7 +9,7 @@ Reference Core 生成：
 
 ```json
 {
-  "schema": "octo-harness.agent-run-context/v1",
+  "schema": "octo-runtime.agent-run-context/v1",
   "agent": { "id": "agent_1", "name": "reviewer" },
   "agent_session": {
     "id": "asess_1",
@@ -29,7 +29,7 @@ Reference Core 生成：
 }
 ```
 
-这里没有 Chat、Task 或 Attempt 的通用字段。Loop 若需要 task metadata，应把它作为 namespace-owned input/context 传入，而不是要求 Harness 查询 Loop 数据库。
+这里没有 Chat、Task 或 Attempt 的通用字段。Loop 若需要 task metadata，应把它作为 namespace-owned input/context 传入，而不是要求 Runtime 查询 Loop 数据库。
 
 Agent Worker Runtime 将 execution envelope 映射为：
 

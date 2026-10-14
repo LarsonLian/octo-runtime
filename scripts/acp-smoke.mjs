@@ -2,8 +2,8 @@
 
 const adapterType = process.argv[2];
 const adapters = {
-  hermes: async () => (await import("@mininglamp-oss/octo-harness-adapter-hermes")).hermesAdapter,
-  "kimi-code": async () => (await import("@mininglamp-oss/octo-harness-adapter-kimi-code")).kimiCodeAdapter
+  hermes: async () => (await import("@mininglamp-oss/octo-runtime-adapter-hermes")).hermesAdapter,
+  "kimi-code": async () => (await import("@mininglamp-oss/octo-runtime-adapter-kimi-code")).kimiCodeAdapter
 };
 
 if (!adapters[adapterType]) {

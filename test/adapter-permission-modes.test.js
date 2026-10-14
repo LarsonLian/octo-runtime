@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
-import { createClaudeCodeAdapter } from "@mininglamp-oss/octo-harness-adapter-claude-code";
-import { createZcodeGuiAdapter } from "@mininglamp-oss/octo-harness-adapter-zcode-gui";
-import { AdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
-import { adapterApprovalModes } from "@mininglamp-oss/octo-harness-protocol";
+import { createClaudeCodeAdapter } from "@mininglamp-oss/octo-runtime-adapter-claude-code";
+import { createZcodeGuiAdapter } from "@mininglamp-oss/octo-runtime-adapter-zcode-gui";
+import { AdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
+import { adapterApprovalModes } from "@mininglamp-oss/octo-runtime-protocol";
 
 const request = { protocolVersion: 2, invocationId: "permission-instance", agentSessionId: "session", runId: "run", prompt: "fixture", modelInput: "fixture", controlInstructions: "", workdir: process.cwd(), approvalMode: "ask", agentSource: "provisioned", agentConfig: {}, context: { schema: "octo.context-envelope/v3", items: [] } };
 

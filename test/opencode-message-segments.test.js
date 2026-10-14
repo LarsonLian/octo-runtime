@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { OpenCodeEventNormalizer } from "@mininglamp-oss/octo-harness-adapter-opencode";
+import { OpenCodeEventNormalizer } from "@mininglamp-oss/octo-runtime-adapter-opencode";
 
 test("OpenCode retains part IDs, replaces snapshots and does not replay tool starts", () => {
   const n = new OpenCodeEventNormalizer();

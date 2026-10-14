@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawnAdapterHost } from "@mininglamp-oss/octo-harness-adapter-host";
-import { startDaemonServer } from "@mininglamp-oss/octo-harness-daemon";
+import { spawnAdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
+import { startDaemonServer } from "@mininglamp-oss/octo-runtime-daemon";
 import { invokeRequest } from "./agent-work-runtime-fixture.js";
 
 const entrypoint = resolve("apps/adapter-host/dist/index.js");
@@ -13,7 +13,7 @@ const manifest = resolve("test/fixtures/adapters.json");
 for (const debug of [undefined, "0", "true", "1"]) {
   test(`Host file logging requires OCTO_RUNTIME_DEBUG=1 (value=${debug})`, async () => {
     const home = await mkdtemp(join(tmpdir(), "oh-debug-"));
-    const env = { ...process.env, OCTO_HARNESS_HOME: home };
+    const env = { ...process.env, OCTO_RUNTIME_HOME: home };
     delete env.OCTO_RUNTIME_DEBUG;
     if (debug !== undefined) env.OCTO_RUNTIME_DEBUG = debug;
     let host;
@@ -46,7 +46,7 @@ test("debug logging failure does not prevent Host readiness or invocation", asyn
   let host;
   try {
     await writeFile(join(home, "logs"), "not a directory");
-    host = await spawnAdapterHost({ entrypoint, manifest, env: { ...process.env, OCTO_HARNESS_HOME: home, OCTO_RUNTIME_DEBUG: "1" } });
+    host = await spawnAdapterHost({ entrypoint, manifest, env: { ...process.env, OCTO_RUNTIME_HOME: home, OCTO_RUNTIME_DEBUG: "1" } });
     const events = [];
     for await (const event of host.client.invoke("test", invokeRequest({ approvalMode: "full_access" }), { protocolMode: "canonical" })) events.push(event);
     assert.equal(events.at(-1).type, "run.completed");
@@ -64,7 +64,7 @@ test("daemon passes the selected Home and debug environment through Host restart
   let app;
   try {
     app = await startDaemonServer({ homePath: home, socketPath: join(home, "daemon.sock"),
-      storePath: join(home, "state.db"), hostEntrypoint: entrypoint, manifestPath: manifest,
+      homePath: home, hostEntrypoint: entrypoint, manifestPath: manifest,
       adapterHostRestartDelaysMs: [10] });
     const firstPid = app.hostProcess.child.pid;
     app.hostProcess.child.kill("SIGKILL");

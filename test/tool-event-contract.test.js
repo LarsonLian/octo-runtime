@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assertCanonicalEvent } from "@mininglamp-oss/octo-harness-protocol";
+import { assertCanonicalEvent } from "@mininglamp-oss/octo-runtime-protocol";
 
 test("tool events enforce the existing schema lifecycle at runtime", () => {
   for (const status of [undefined, "pending", "in_progress", "running", "unknown"]) {

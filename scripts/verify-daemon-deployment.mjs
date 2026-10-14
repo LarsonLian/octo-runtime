@@ -7,7 +7,7 @@ import { invokeRequest } from "../test/agent-work-runtime-fixture.js";
 const sdk = resolve(process.argv[2]);
 const packages = await readdir(join(sdk, "node_modules/.pnpm"));
 assert.equal(
-  packages.some((name) => /octo-harness-(worker-access|channel-im|embedded)/.test(name)),
+  packages.some((name) => /octo-runtime-(worker-access|channel-im|embedded)/.test(name)),
   false
 );
 // Import the deployed SDK, so Node cannot resolve workspace-only dependencies.
