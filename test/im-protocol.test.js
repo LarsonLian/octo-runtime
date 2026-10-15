@@ -620,7 +620,6 @@ test("Cards create/edit one stable message with monotone card_seq and persistent
   card.update(p.snapshot());
   await card.finish();
   assert.equal(card.messageId, "9223372036854775801");
-  assert.equal(card.terminalDelivered, false);
   p.accept(event("run.started"));
   p.accept(event("message.delta", { channel: "final", text: "answer" }));
   card.update(p.snapshot());
@@ -628,7 +627,6 @@ test("Cards create/edit one stable message with monotone card_seq and persistent
   p.accept(event("run.completed"));
   card.update(p.snapshot());
   await card.finish();
-  assert.equal(card.terminalDelivered, true);
   card.update({ ...p.snapshot(), terminal: undefined, phase: "thinking" });
   await card.finish();
   const sends = f.requests.filter((request) => request.path === "/v1/bot/sendMessage");
@@ -645,32 +643,6 @@ test("Cards create/edit one stable message with monotone card_seq and persistent
   assert.equal(edits[1].body.state, "completed");
   assert.ok(stopped > 0);
   assert.equal(f.requests.filter((request) => request.path === "/v1/bot/card/profile").length, 1);
-});
-
-test("A delivered progress card does not hide a failed terminal delivery", async () => {
-  let delivered = true;
-  const card = new CardSession(
-    { config: config(), reasoningTemplate: async () => selectReasoningTemplate(profile()) },
-    {
-      deliver: async () =>
-        delivered
-          ? { state: "delivered", messageId: "progress-card" }
-          : { state: "unknown", code: "IM_CARD_FAILED" }
-    },
-    { channelId: "peer", channelType: 1 },
-    "run",
-    () => {},
-    () => {}
-  );
-  const p = new ImRunProjector("run");
-  card.update(p.snapshot());
-  await card.finish();
-  assert.equal(card.messageId, "progress-card");
-  delivered = false;
-  p.accept(event("run.failed", { message: "spawn codex ENOENT" }));
-  card.update(p.snapshot());
-  await card.finish();
-  assert.equal(card.terminalDelivered, false);
 });
 
 test("Delivery retries use one effect key and never rerun execution", async () => {

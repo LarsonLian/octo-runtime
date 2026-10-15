@@ -2,6 +2,8 @@
 
 ## 2026-10-15
 
+- 按[任务](tasks/remove-adapter-host-app/brief.md)移除 Host app 启动壳，CLI daemon 与 SDK 统一启动 package runner；保留独立进程和全部 CLI 功能，更新发行物及测试。808 项回归通过、7 项跳过，离线安装、12 个 Adapter 加载及真实 Codex/OpenClaw 调用通过，范围见[记录](journal/shared/2026-10-15-remove-adapter-host-app.md)。
+
 - 落实 [CLI 设备级 extras 配置目录](tasks/device-extra-directory/brief.md)：唯一读取 `<home>/extras`，Extra 命令拒绝 profile，不增加旧布局探测或迁移；58 项相关回归与限定范围实机验证通过，见 [记录](journal/shared/2026-10-15-cli-extras-directory.md)。
 
 - 按[任务](tasks/unify-invoke-transport/brief.md)统一 Host、RPC、daemon 与 CLI 的输入及 signal 环境参数；执行准备只在 Host，删除旧三参数 HostInvoke/createHostInvoke 及无消费者的 wire-options，源帧与视图共用同一输入。[验收记录](journal/shared/2026-10-15-unify-invoke-transport.md)包含可重复 CLI 命令、真实 Playboard 和 Work App 结果及未覆盖范围。

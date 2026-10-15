@@ -65,7 +65,6 @@ export interface ImInboundMessage {
 }
 
 export interface ImPresentation {
-  readonly terminalDelivered?: boolean;
   update(snapshot: RunPresentation): void;
   finish(): Promise<void>;
 }

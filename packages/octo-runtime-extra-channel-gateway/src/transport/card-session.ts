@@ -14,7 +14,6 @@ import type { RunPresentation } from "../presentation/run-projector.js";
 export class CardSession {
   #messageId?: string;
   #seq = 0;
-  #terminalDelivered = false;
   readonly #scheduler: ProgressScheduler<RunPresentation>;
   readonly effectKey: string;
   constructor(
@@ -67,7 +66,6 @@ export class CardSession {
     if (receipt.state === "delivered") {
       // 后续更新绑定第一次成功发送的消息，不另起卡片；可见卡片接替 typing 提示。
       this.#messageId = receipt.messageId;
-      if (settled) this.#terminalDelivered = true;
       this.stopTyping();
     } else this.onDiagnostic(receipt.code ?? "IM_CARD_FAILED");
   }
@@ -77,8 +75,5 @@ export class CardSession {
   }
   get messageId(): string | undefined {
     return this.#messageId;
-  }
-  get terminalDelivered(): boolean {
-    return this.#terminalDelivered;
   }
 }

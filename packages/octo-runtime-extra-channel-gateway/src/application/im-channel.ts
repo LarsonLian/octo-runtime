@@ -565,8 +565,6 @@ export class ImRuntime {
     }
     if (this.#closed || this.#signal.aborted) return;
     const terminal = projector.snapshot().terminal;
-    // 失败原因已在终态卡片展示；只有卡片未送达时才发送文本兜底。
-    if (terminal === "failed" && presentation?.terminalDelivered) return;
     const text =
       terminal === "completed"
         ? projector.finalText || "本轮执行完成，未返回文本。"
