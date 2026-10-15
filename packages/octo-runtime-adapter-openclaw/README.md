@@ -4,7 +4,9 @@ OpenClaw Provider 的统一 Runtime Adapter。通过认证 WebSocket Gateway pro
 
 ## 连接与目标
 
-Runtime 的连接描述保存到 `<harness-home>/<profile>/adapters/openclaw/connection.json`，token 与设备私钥保存在该 profile 的 `credentials` 目录。支持自动发现、指定 OpenClaw Home、显式 URL 与 token。每次探测和调用重新读取连接来源与凭据。
+Runtime 的连接快照保存到 `<harness-home>/<profile>/adapters/openclaw/connection.json`，token 与设备私钥保存在该 profile 的 `credentials` 目录。自动发现只在 CLI 启动编排执行；CLI 保存 Home 来源，每次 daemon 启动重新读取 OpenClaw 配置并刷新快照，支持重启后跟随端口/token 轮换。probe 和 invoke 只读快照，不发现、不落盘。
+
+SDK 显式调用 `configureOpenClawConnection(profileRoot, {url, token})` 初始化连接和稳定设备身份，或通过 `providerOptions` 传入 `OPENCLAW_GATEWAY_URL`、`OPENCLAW_GATEWAY_TOKEN`、`OPENCLAW_GATEWAY_DEVICE_ID`、`OPENCLAW_GATEWAY_PUBLIC_KEY`、`OPENCLAW_GATEWAY_PRIVATE_KEY`。SDK 不读取 OpenClaw 配置或环境变量。远程地址要求 `wss://`；CLI/SDK 共用认证与执行路径。
 
 ```sh
 octo-runtime --profile work adapter connect openclaw --openclaw-home /path/to/openclaw

@@ -19,7 +19,7 @@ import { imBotIdentity, validateImConfig } from "../lifecycle/configuration.js";
 import { GatewayTransport } from "../transport/channel.js";
 import { createImInvocation } from "../execution/dispatcher.js";
 import { ImDeliveryDispatcher } from "../delivery/dispatcher.js";
-import { ImRunProjector } from "../presentation/run-projector.js";
+import { ImRunProjector, clampRunes } from "../presentation/run-projector.js";
 import { MemoryImSessionStore, type ImSessionStore } from "./session-store.js";
 
 export class ImRuntime {
@@ -538,7 +538,7 @@ export class ImRuntime {
         : terminal === "cancelled"
           ? "本轮执行已中断。"
           : terminal === "failed"
-            ? "本轮执行未成功，请查看运行记录。"
+            ? `执行失败：${clampRunes(projector.snapshot().failureDetail || "系统未返回具体原因，请查看运行记录。", 8000)}`
             : "本轮执行结果未知，请查看运行记录，避免重复执行。";
     // 最终文本拥有独立投递身份，即使进度卡投递失败，也必须尝试回复用户。
     await this.#reply(message, text, `final:${request.runId}`);

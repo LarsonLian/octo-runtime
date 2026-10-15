@@ -24,7 +24,8 @@ import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { HostRunService } from "@mininglamp-oss/octo-runtime-adapter-host";
 import { InvocationManifest } from "./invocation-manifest.js";
-import { ExtraPlugins, type ExtraRegistration } from "./extras.js";
+import { ExtraPlugins, type ExtraRegistration, type JsonObject } from "./extras.js";
+import { extraRegistration, type ExtraDescriptor } from "./extra-config.js";
 
 export interface StartDaemonServerOptions {
   extras?: readonly ExtraRegistration[];
@@ -115,6 +116,8 @@ export async function startDaemonServer({
   DaemonModules.validate(registrations);
   // Validate duplicate names before acquiring process resources.
   ExtraPlugins.validate(extraRegistrations);
+  if (registrations.some(entry => extraRegistrations.some(extra => extra.name === entry.id)))
+    throw new Error("EXTRA_MODULE_NAME_CONFLICT");
   if (
     adapterHostRestartDelaysMs.length === 0 ||
     adapterHostRestartDelaysMs.some((delay) => !Number.isFinite(delay) || delay < 1)
@@ -415,7 +418,18 @@ export async function startDaemonServer({
     // 0600 restricts it to the current host account (there is no RBAC above it).
     if (process.platform !== "win32") await chmod(socketPath, 0o600);
     modules.startConfigured();
-    await extras.loadConfigured();
+    await Promise.allSettled(extraRegistrations.filter(entry => entry.enabled !== false).map(async entry => {
+      if (consoleOutput) console.error("extra loading", { name: entry.name });
+      try {
+        await extras.load(entry.name);
+      } finally {
+        if (consoleOutput) console.error("extra startup result", { name: entry.name, ...extras.status[entry.name] });
+      }
+    }));
+    if (consoleOutput) {
+      for (const entry of extraRegistrations.filter(entry => entry.enabled === false))
+        console.error("extra startup result", { name: entry.name, phase: "disabled" });
+    }
     if (consoleOutput)
       console.error("daemon ready", {
         pid: process.pid,
@@ -465,7 +479,7 @@ export async function startDaemonServer({
       if (process.platform !== "win32") await rm(socketPath, { force: true });
       await releasePid();
       if (consoleOutput) console.error("daemon stopped");
-      if (extraError) throw extraError;
+      if (extraError) throw extraError instanceof Error ? extraError : new Error("EXTRA_DISPOSE_FAILED", { cause: extraError });
     }
   };
 }
@@ -725,6 +739,15 @@ async function dispatch({
 }): Promise<unknown> {
   const params = request.params ?? {};
   switch (request.method) {
+    case "extra.configure": {
+      const descriptor = params.descriptor as ExtraDescriptor;
+      const registration = extraRegistration(descriptor);
+      if (registration.name in modules.status) throw new Error("EXTRA_MODULE_NAME_CONFLICT");
+      await extras.configure(registration);
+      return extras.status;
+    }
+    case "extra.request":
+      return extras.request(requiredString(params.name, "name"), requiredString(params.method, "method"), params.params as JsonObject | undefined);
     case "extra.load":
       await extras.load(requiredString(params.name, "name"));
       return extras.status;

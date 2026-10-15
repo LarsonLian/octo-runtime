@@ -351,6 +351,15 @@ export async function* runCodexAppServerTurn({
             message: client.errorMessage(error),
             adapterType: "codex",
             ...(code ? { code } : {}),
+            ...(error instanceof CodexAppServerRpcError
+              ? {
+                  error: {
+                    code: error.code,
+                    message: error.message,
+                    ...(error.data === undefined ? {} : { data: error.data })
+                  }
+                }
+              : {}),
             ...(code === "RPC_TIMEOUT"
               ? {
                   timeoutStage: "rpc",
@@ -2173,7 +2182,10 @@ function turnCompletedEvents(turn: JsonRecord | undefined): CanonicalEvent[] {
       {
         protocolVersion: 2,
         type: "run.failed",
-        payload: { message: stringValue(error?.message) || "Codex turn failed" }
+        payload: {
+          message: stringValue(error?.message) || "Codex turn failed",
+          ...(error ? { error } : {})
+        }
       }
     ];
   }

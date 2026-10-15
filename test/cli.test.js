@@ -130,7 +130,8 @@ test("daemon PID file enforces one process per Runtime Home and is removed on cl
     const concise = await execute(process.execPath, [cli, "--home", home, "daemon", "run"])
       .then(() => undefined, error => error);
     assert.equal(concise.code, 1);
-    assert.match(concise.stderr, /^❌ Octo Runtime daemon is already running with pid \d+\n$/);
+    assert.match(concise.stderr, /extras discovered/);
+    assert.match(concise.stderr, /❌ Octo Runtime daemon is already running with pid \d+\n$/);
     assert.doesNotMatch(concise.stderr, /\n\s+at /);
 
     const verbose = await execute(process.execPath, [cli, "--verbose", "--home", home, "daemon", "run"])

@@ -8,6 +8,8 @@ timestamp: 2026-10-15T00:00:00Z
 
 # 审查范围与结论
 
+后续实施和验证见 [统一 Extra 接入实现记录](2026-10-15-plugin-sdk-app-integration.md)。以下保留审查时的历史状态。
+
 审查当前工作区的完整 `INTEGRATION.md`，并以 daemon SDK、CLI、Octo/WeCom Extra 实现和同级 `octo-work-app` 为交叉依据。工作区不存在 `octo-worker-app` 目录，本文使用接入文档已引用的 `octo-work-app`。文件存在其他进行中的修改，本记录只描述读取时的实现，不代表已发布版本。
 
 结论：文档尚不能作为完整的插件化接入指南。CLI 第 1.4 节已经使用 `extraset`，SDK 章节仍以对象式 `modules` 为主要接入方式，并且本地执行示例使用了已失效的公开方法签名。Octo Work 的本地调用已使用统一 `InvokeInput`，但 IM 装配仍使用 `modules`，没有迁移为函数式 `extras`。

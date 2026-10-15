@@ -2,6 +2,8 @@
 
 ## 2026-10-15
 
+- 将 OpenClaw 自动发现和刷新移到 CLI 启动编排，SDK 显式配置，Adapter 只读连接；见 [合同](rules/openclaw.md)与[验证记录](journal/shared/2026-10-15-openclaw-cli-discovery.md)。
+
 - 接入 octo-spec / OKF，补充中文 Agent 入口、规则索引与工作流。
 - 将架构正文迁入 `rules/architecture.md`，根目录仅保留导航。
 - 验证记录见 [接入与架构迁移](journal/shared/2026-10-15-okf-onboarding.md)。

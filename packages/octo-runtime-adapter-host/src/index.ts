@@ -1,5 +1,8 @@
 import { createInputInvoke } from "@mininglamp-oss/octo-runtime-core";
 import { createHash, randomUUID } from "node:crypto";
+import { constants } from "node:fs";
+import { access, stat } from "node:fs/promises";
+import { sanitizePublicValue } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 export { HostRunService } from "./host-run-service.js";
 export { readAdapterConfigurations } from "./runtime-configuration.js";
 export { startHostSocketServer, streamHostRun, type HostSocketRequest } from "./socket-server.js";
@@ -659,7 +662,7 @@ export class AdapterHost {
             ? {
                 protocolVersion: 2,
                 type: "run.failed",
-                payload: failurePayload(adapterEvent.payload, {
+                payload: await adapterFailurePayload(adapterEvent.payload, request.workdir, {
                   stage: "provider.invoke",
                   defaultDomain: "provider",
                   runId: request.runId,
@@ -727,6 +730,21 @@ export class AdapterHost {
         controller.signal.reason instanceof AdapterWatchdogTimeoutError
           ? controller.signal.reason
           : caught;
+      const failure = await adapterFailurePayload(
+        {
+          message: errorMessage(error),
+          adapterType,
+          ...(errorCode(error) ? { code: errorCode(error) } : {}),
+          ...watchdogFailureDetails(error)
+        },
+        request.workdir,
+        {
+          stage: "adapter.invoke",
+          defaultDomain: "adapter",
+          runId: request.runId,
+          source: { component: "octo-runtime", adapter: adapterType }
+        }
+      );
       const userCancelled =
         controller.signal.aborted &&
         !(controller.signal.reason instanceof AdapterWatchdogTimeoutError);
@@ -764,7 +782,7 @@ export class AdapterHost {
                 error.code === "HOST_ENDED_WITHOUT_TERMINAL"
                   ? "HOST_ENDED_WITHOUT_TERMINAL"
                   : "HOST_EXECUTION_FAILED",
-              message: errorMessage(error)
+              message: String(failure.message)
             }
           };
         yield {
@@ -783,24 +801,10 @@ export class AdapterHost {
       } else if (terminal?.type === "run.failed") {
         yield terminal;
       } else {
-        const code = errorCode(error);
         yield {
           protocolVersion: 2,
           type: "run.failed",
-          payload: failurePayload(
-            {
-              message: errorMessage(error),
-              adapterType,
-              ...(code ? { code } : {}),
-              ...watchdogFailureDetails(error)
-            },
-            {
-              stage: "adapter.invoke",
-              defaultDomain: "adapter",
-              runId: request.runId,
-              source: { component: "octo-runtime", adapter: adapterType }
-            }
-          )
+          payload: failure
         };
       }
     } finally {
@@ -897,6 +901,53 @@ function stableJson(value: unknown): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Keep the Adapter's failure detail; catalog normalization only adds classification. */
+async function adapterFailurePayload(
+  input: Record<string, unknown>,
+  workdir: string,
+  context: Parameters<typeof failurePayload>[1]
+): Promise<ReturnType<typeof failurePayload>> {
+  let detail = input;
+  // Node reports the same spawn errno for a missing command and a missing cwd.
+  if (["ENOENT", "ENOTDIR", "EACCES", "EPERM"].includes(String(input.code)) && workdir) {
+    let problem: string | undefined;
+    try {
+      if (!(await stat(workdir)).isDirectory()) problem = "配置的工作目录不是文件夹";
+      else await access(workdir, constants.X_OK);
+    } catch (error) {
+      const code = errorCode(error);
+      if (code === "ENOENT") problem = "配置的工作目录不存在";
+      else if (code === "ENOTDIR") problem = "配置的工作目录路径中包含非文件夹项";
+      else if (code === "EACCES" || code === "EPERM") problem = "没有进入配置工作目录的权限";
+    }
+    if (problem)
+      detail = {
+        ...input,
+        code: "ADAPTER_INVOCATION_FAILED",
+        message: `${problem}（adapter.workdir=${workdir}）。${typeof input.message === "string" ? input.message : ""}`,
+        error: input.error ?? { code: input.code, message: input.message }
+      };
+  }
+  const normalized = failurePayload(detail, {
+    ...context,
+    ...(detail !== input ? { defaultDomain: "adapter" as const } : {})
+  });
+  const safe = sanitizePublicValue(detail) as Record<string, unknown>;
+  const message =
+    typeof safe.message === "string" && safe.message.trim()
+      ? safe.message
+      : typeof safe.error === "string"
+        ? safe.error
+        : safe.error && typeof safe.error === "object"
+          ? JSON.stringify(safe.error, null, 2)
+          : normalized.message;
+  return {
+    ...safe,
+    ...normalized,
+    message
+  };
 }
 
 function errorCode(error: unknown): string | undefined {

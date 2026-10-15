@@ -38,6 +38,26 @@ const validateReasoningFrame = new Ajv({ allErrors: true }).compile(
     readFileSync(new URL("./fixtures/im-reasoning-contract.json", import.meta.url), "utf8")
   )
 );
+
+test("Failure cards show canonical errors before catalog text and keep diagnostics out of the reason budget", () => {
+  const projector = new ImRunProjector("failure");
+  const message = "Invalid API key. Please run /login. ".repeat(12) + "Bearer private-token";
+  projector.accept({ protocolVersion: 2, type: "run.failed", payload: { message } });
+  const snapshot = projector.snapshot();
+  assert.ok(snapshot.failureDetail.startsWith("Invalid API key. Please run /login."));
+  assert.ok(!snapshot.failureDetail.includes("private-token"));
+  for (const version of ["0.4.0", "0.4.1"]) {
+    const frame = buildReasoningFrame(snapshot, { ...template, ref: { ...template.ref, version } });
+    assert.equal(frame.errorTitle, "执行失败");
+    assert.match(frame.errorMessage, /^Invalid API key/);
+    assert.ok(Array.from(frame.errorMessage).length <= 121);
+    assert.match(frame.phases.at(-1).thought, /Please run \/login/);
+    assert.ok(validateReasoningFrame(frame), JSON.stringify(validateReasoningFrame.errors));
+  }
+  const objectError = new ImRunProjector("object-error");
+  objectError.accept({ protocolVersion: 2, type: "run.failed", payload: { error: { message: "custom adapter failure", code: 17 } } });
+  assert.match(buildReasoningFrame(objectError.snapshot(), template).errorMessage, /custom adapter failure/);
+});
 const config = (overrides = {}) => ({
   enabled: true,
   api_url: "http://127.0.0.1:1",

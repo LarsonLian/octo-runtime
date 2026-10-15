@@ -1,4 +1,5 @@
 import test from "node:test";
+import { randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -31,7 +32,7 @@ async function freePort() {
   return port;
 }
 function payload() {
-  const { signal, ...request } = invokeRequest({ approvalMode: "full_access" });
+  const { signal, ...request } = invokeRequest({ approvalMode: "full_access", runId: randomUUID(), invocationId: randomUUID() });
   request.context.items.push({ namespace: "octo.execution", name: "adapter", payload: { type: "test" } });
   return invocationInput(request, "canonical");
 }
@@ -119,6 +120,46 @@ test("failed initialization unwinds resources, failure is isolated and disabled 
   );
   await assert.rejects(mismatched.load("wrong"), /EXTRA_NAME_MISMATCH/);
   await mismatched.close();
+});
+
+test("Extra configuration updates serialize with requests and module changes reload resources", async () => {
+  const calls = [];
+  const plugin = { name: "managed", default(ctx, config) {
+    let value = config.value;
+    calls.push('load');
+    ctx.onDispose(() => calls.push('dispose'));
+    ctx.onConfigure(async next => { if (next.value === 'invalid') throw new Error('INVALID'); value = next.value; calls.push('configure'); });
+    ctx.onRequest(method => { assert.equal(method, 'status'); return { value }; });
+  } };
+  const entry = (value, module = 'first') => ({ name: 'managed', module, config: { value }, load: async () => plugin });
+  const extras = new ExtraPlugins([entry(1)], {});
+  try {
+    await extras.loadConfigured();
+    const update = extras.configure(entry(2));
+    const status = extras.request('managed', 'status');
+    await update;
+    assert.deepEqual(await status, { value: 2 });
+    assert.deepEqual(calls, ['load', 'configure']);
+    await assert.rejects(extras.configure(entry('invalid')), /INVALID/);
+    assert.deepEqual(await extras.request('managed', 'status'), { value: 2 });
+    await extras.configure(entry(3, 'second'));
+    assert.deepEqual(calls, ['load', 'configure', 'dispose', 'load']);
+    await extras.unload('managed');
+    await assert.rejects(extras.request('managed', 'status'), /EXTRA_NOT_LOADED/);
+  } finally { await extras.close(); }
+});
+
+test("unload cancels initialization queued before an instance exists", { timeout: 2000 }, async () => {
+  const extras = new ExtraPlugins([{
+    name: 'queued', config: {}, load: async () => ({ name: 'queued', async default(ctx) {
+      await new Promise(resolve => ctx.signal.addEventListener('abort', resolve, { once: true }));
+    } })
+  }], {});
+  const loading = extras.load('queued');
+  const unloaded = extras.unload('queued');
+  await assert.rejects(loading, /EXTRA_LOAD_CANCELLED/);
+  await unloaded;
+  await extras.close();
 });
 
 test("dispose keeps cleaning after an error, and shutdown aborts pending initialization", async () => {
@@ -309,17 +350,20 @@ test(
       ]),
       output() {}
     });
+    await runCli(["--home", home, "extraset", "missing"], {
+      input: Readable.from([JSON.stringify({ module: "octo-extra-does-not-exist", config: { token } })]),
+      output() {}
+    });
     for (let attempt = 0; attempt < 2; attempt++) {
       const child = spawn(
         process.execPath,
         [
-          join(root, "apps/daemon/dist/index.js"),
+          join(root, "apps/cli/dist/index.js"),
           "--home",
           home,
-          "--manifest",
-          join(root, "test/fixtures/adapters.json")
+          "daemon", "run"
         ],
-        { stdio: ["ignore", "ignore", "pipe"] }
+        { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, OCTO_RUNTIME_MANIFEST: join(root, "test/fixtures/adapters.json") } }
       );
       let errors = "";
       child.stderr.on("data", (bytes) => {
@@ -339,6 +383,14 @@ test(
         }
         assert.ok(response, "plugin listener did not start");
         assert.match(await response.text(), /run.completed/);
+        await waitFor(() => errors.includes("daemon ready"), 5000);
+        assert.match(errors, /extras scanning/);
+        assert.match(errors, /extras discovered/);
+        assert.match(errors, /extra loading/);
+        assert.match(errors, /phase: 'loaded'/);
+        assert.match(errors, /EXTRA_MODULE_NOT_FOUND/);
+        assert.ok(errors.includes(join(home, "default", "extra")));
+        assert.ok(!errors.includes(token));
       } finally {
         if (child.exitCode === null) {
           const exited = once(child, "exit");
@@ -394,6 +446,22 @@ test(
       await waitFor(() => runtime.health().extras?.[sseName]?.phase === "loaded", 5000);
       const response = await post(port);
       assert.match(await response.text(), /run.completed/);
+      assert.equal((await runtime.extraStatus())[sseName].phase, 'loaded');
+      await runtime.unloadExtra(sseName);
+      await assert.rejects(post(port));
+      await runtime.loadExtra(sseName);
+      await assert.rejects(runtime.requestExtra(sseName, 'status'), /EXTRA_REQUEST_UNSUPPORTED/);
+      const secondPort = await freePort();
+      await runtime.configureExtra({ name: sseName, module: modulePath, config: { port: secondPort, token } });
+      await assert.rejects(post(port));
+      assert.match(await (await post(secondPort)).text(), /run.completed/);
+      await runtime.stop('reconfigure');
+      await runtime.startAccount({ subject: { type: 'user', id: 'test' }, tenants: [{ id: 'test-space' }] });
+      assert.match(await (await post(secondPort)).text(), /run.completed/);
+      await runtime.startAccount({ subject: { type: 'user', id: 'other' }, tenants: [{ id: 'other-space' }] });
+      await assert.rejects(post(secondPort));
+      assert.match(await (await post(port)).text(), /run.completed/);
+      await runtime.unloadExtra(sseName);
     } finally {
       await runtime.stop();
     }

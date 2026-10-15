@@ -1,10 +1,9 @@
 import { setExtra } from "./extras.js";
 import {
-  configureOpenClawConnection,
   createOpenClawAdapter,
-  OPENCLAW_RUNTIME_ROOT,
-  type OpenClawConnectionInput
+  OPENCLAW_RUNTIME_ROOT
 } from "@mininglamp-oss/octo-runtime-adapter-openclaw";
+import { configureCliOpenClaw, type CliOpenClawInput } from "@mininglamp-oss/octo-runtime-daemon-app/openclaw";
 import type { ServiceBackend } from "@mininglamp-oss/octo-runtime-cross-service";
 import { createHash, randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
@@ -325,13 +324,13 @@ async function configureRuntimeOpenClaw(context: CliContext): Promise<Record<str
     if (context.flags[flag] !== undefined) throw new Error("OpenClaw connections do not accept binding, Agent or workspace settings; select provider_agent_id in Context");
   }
   if (context.flags.tokenStdin && context.flags.enrollTokenStdin) throw new Error("enrollment and Gateway tokens cannot share stdin; use OPENCLAW_GATEWAY_TOKEN for login");
-  const input: OpenClawConnectionInput = {};
+  const input: CliOpenClawInput = {};
   if (context.flags.openclawHome !== undefined) input.openclawHome = requiredFlag(context.flags.openclawHome, "openclaw-home");
   if (context.flags.gatewayUrl !== undefined) input.url = requiredFlag(context.flags.gatewayUrl, "gateway-url");
   if (context.flags.tokenStdin === true) input.token = await readSecret(context.input, "OpenClaw Gateway token");
   if (input.url !== undefined && input.token === undefined) input.token = context.env.OPENCLAW_GATEWAY_TOKEN;
   if (input.token !== undefined && input.url === undefined) input.url = context.env.OPENCLAW_GATEWAY_URL;
-  const connection = await configureOpenClawConnection(context.paths.profileRoot, input, context.env);
+  const connection = await configureCliOpenClaw(context.paths.profileRoot, input, context.env);
   const probe = await createOpenClawAdapter().probe({ providerOptions: { [OPENCLAW_RUNTIME_ROOT]: context.paths.profileRoot } });
   return { source: connection.source, available: probe.available, ...(probe.reason ? { reason: probe.reason } : {}) };
 }
@@ -375,7 +374,9 @@ async function runDoctor(context: CliContext): Promise<CommandResult> {
 
 function daemonRequest(group: string, action: string | undefined, id: string | undefined, flags: Flags): CliRequest {
   if (group === "status") return { method: "status" };
-  if (group === "extra" && action === "status") return { method: "extra.status" };
+  if (group === "extra" && action === "status") return id
+    ? { method: "extra.request", params: { name: id, method: "status" } }
+    : { method: "extra.status" };
   if (group === "extra" && (action === "load" || action === "unload"))
     return { method: `extra.${action}`, params: { name: required(id, "extra-name") } };
   if (group === "adapter" && action === "list") return { method: "adapter.list" };
@@ -608,7 +609,7 @@ function helpText(group?: string): string {
       `  cancel <agent-run-id> [--reason TEXT]`;
   }
   if (group === "extraset") return "Usage: octo-runtime [--home PATH] extraset <name> < config.json\n\nWrites the complete {module, enabled?, config} object; restart the daemon to apply. Configuration and tokens are never echoed.";
-  if (group === "extra") return "Usage: octo-runtime [--home PATH] extra status|load|unload [name]\n\nUses the declarations read at startup. Restart after extraset to apply new configuration.";
+  if (group === "extra") return "Usage: octo-runtime [--home PATH] extra status|load|unload [name]\n\nstatus lists plugin lifecycle; status <name> requests plugin business status (if supported). loaded does not imply a healthy external connection. Uses the declarations read at startup. Restart after extraset to apply new configuration.";
   return `Octo Runtime CLI\n\n` +
     `Global: --home PATH; --profile NAME; --verbose\n\n` +
     `  octo-runtime login --help\n` +

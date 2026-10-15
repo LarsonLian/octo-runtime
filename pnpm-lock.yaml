@@ -171,12 +171,18 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-host':
         specifier: workspace:*
         version: link:../../packages/octo-runtime-adapter-host
+      '@mininglamp-oss/octo-runtime-adapter-openclaw':
+        specifier: workspace:*
+        version: link:../../packages/octo-runtime-adapter-openclaw
       '@mininglamp-oss/octo-runtime-daemon':
         specifier: workspace:*
         version: link:../../packages/octo-runtime-daemon
       '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
         version: link:../../packages/octo-runtime-protocol
+      json5:
+        specifier: 2.2.3
+        version: 2.2.3
 
   packages/octo-runtime-acp-client: {}
 
@@ -293,9 +299,6 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-runtime-adapter-sdk
-      json5:
-        specifier: 2.2.3
-        version: 2.2.3
       ws:
         specifier: ^8.18.3
         version: 8.21.3
@@ -371,6 +374,9 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-host':
         specifier: workspace:*
         version: link:../octo-runtime-adapter-host
+      '@mininglamp-oss/octo-runtime-adapter-sdk':
+        specifier: workspace:*
+        version: link:../octo-runtime-adapter-sdk
       '@mininglamp-oss/octo-runtime-core':
         specifier: workspace:*
         version: link:../octo-runtime-core

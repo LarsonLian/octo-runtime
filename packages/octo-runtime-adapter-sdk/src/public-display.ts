@@ -23,7 +23,7 @@ function redactCredentialText(value: string): string {
     )
     .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [REDACTED]")
     .replace(
-      /\b(api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd|secret)\s*[:=]\s*[^\s,;&]+/gi,
+      /\b(api[_-]?key|(?:access[_-]?|refresh[_-]?|bf[_-]?)?token|password|passwd|secret)\s*["']?\s*[:=]\s*["']?[^\s,;&"'}]+/gi,
       "$1=[REDACTED]"
     )
     .replace(
@@ -31,5 +31,6 @@ function redactCredentialText(value: string): string {
       "$1[REDACTED]"
     )
     .replace(/\bsk-[A-Za-z0-9_-]{16,}\b/g, "[REDACTED]")
+    .replace(/\b(?:bf_|ghp_|xoxb-)[A-Za-z0-9_-]+\b/g, "[REDACTED]")
     .replace(/:\/\/[^/\s:@]+:[^@\s/]+@/g, "://[REDACTED]@");
 }

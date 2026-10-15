@@ -342,7 +342,22 @@ export class ClaudeEventNormalizer {
         {
           protocolVersion: 2,
           type: native.is_error ? "run.failed" : "run.completed",
-          payload: native.is_error ? { message: native.result ?? "Claude Code failed" } : {}
+          payload: native.is_error
+            ? {
+                message:
+                  native.result ||
+                  (Array.isArray(native.errors)
+                    ? native.errors
+                        .filter((error): error is string => typeof error === "string")
+                        .join("\n")
+                    : "") ||
+                  "Claude Code failed",
+                error: {
+                  ...(native.subtype ? { subtype: native.subtype } : {}),
+                  ...(native.errors ? { errors: native.errors } : {})
+                }
+              }
+            : {}
         }
       );
       return events;

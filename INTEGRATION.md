@@ -2,7 +2,7 @@
 
 本文介绍客户 App 的本地 SDK 接入，以及标品 CLI 的独立 Runtime 运维。接入以 RuntimeDevice 客观存在为前提：设备是否公开远程可见、是否连接远程服务，是独立的宿主策略和连接状态。本地身份与执行不依赖注册、设备 online 或 IM。完整合同见 [Runtime 本地存在与按需在线合同](.octospec/rules/runtime-lifecycle.md)。
 
-接口依据为 2026-10-14 当前工作区源码。参考 App 是同级目录的 [`octo-work-app`](../octo-work-app)，即本文参考的 Octo Work 实现。服务地址、Token、ID 和本地路径需要替换为实际配置。npm 安装命令以对应包版本已经发布到接入方可访问的 registry 为前提。
+接口依据为 2026-10-15 当前工作区源码。参考 App 是同级目录的 [`octo-work-app`](../octo-work-app)，即本文参考的 Octo Work 实现。服务地址、Token、ID 和本地路径需要替换为实际配置。npm 安装命令以对应包版本已经发布到接入方可访问的 registry 为前提。
 
 > **配置来源是宿主的选择，不是 SDK 的接入限制。** SDK 接收配置对象；宿主可以从任意 store 或配置平台读取配置。本文 CLI 的 JSON 文件、Home 目录及参考 App 的 SQLite 只是各入口的实现选择。详见第 0.2 节。
 
@@ -26,18 +26,18 @@ SDK 接入仍可能启动独立的 daemon、Host 或 Provider 子进程，部分
 
 RuntimeDevice 表示客观存在的 Runtime 设备。设备始终在那里；安装并初始化 Runtime 后，本地执行身份由本地保存。未注册、未公开远程可见、未连接远程服务或连接中断，都不意味着设备不存在，也不撤销已经保存的本地 Runtime 身份。停止进程只改变运行状态，设备及保存的身份仍然存在。
 
-RuntimeDevice 的管理职责是管理到底由谁与远程服务建立连接，以及是否让设备公开远程可见。HostApp 决定安装、授权和是否开放远程访问；AdapterHost 模块在宿主授权范围内决策通过哪种连接与外部系统打通，SDK／daemon 和接入模块执行选定的连接方案。远程服务中的登记记录用于远程发现和访问，不决定本地设备是否存在；公开远程可见也不意味着所有人都有调用权限。
+HostApp 决定安装、启用哪些 Extra，以及授权范围和是否开放远程访问。Extra 负责与外部系统建立连接、业务认证和结果投递；AdapterHost 只提供共享执行能力。远程服务中的登记记录用于远程发现和访问，不决定本地设备是否存在；公开远程可见也不意味着所有人都有调用权限。
 
-### 0.1 AdapterHost 的外部连接方式
+### 0.1 Extra 的外部接入方式
 
 当前架构讨论包含以下两种连接方式：
 
 | 连接方式 | 职责 | 状态与接入说明 |
 | --- | --- | --- |
-| `im-channel` | 通过 IM 频道管理与外部系统的连接 | 下文现有 SDK 使用 `channel-gateway` 包和模块名；IM 连接独立于 Worker 接入 |
+| IM Extra | 插件管理与外部 IM 的连接 | Octo 使用 `channel-gateway`，企业微信使用 `channel-wecom`；按第 2.6 节装配 |
 | 独立 `agent-access` | 通过独立接入模块把 Runtime 公开为远程可见、可按授权访问的执行对象 | 尚未通过评审；最终职责、接口及实现需评审确定 |
 
-AdapterHost 决策的是外部连接方式。两种方式均以已有 RuntimeDevice 为基础；启用、停用或切换连接不创建设备存在的事实，也不删除本地身份。是否公开 Runtime 及访问范围仍受 HostApp 授权策略约束。
+HostApp 选择接入插件，插件决定其内部连接方式。接入以已有 RuntimeDevice 为基础；启用、停用或切换插件不删除本地身份。是否公开 Runtime 及访问范围受宿主与插件业务授权策略约束。
 
 现有 `worker-access` 组合注册、Worker WS 与远程执行。其实现和旧 API 示例已迁到生态目录外独立仓库，当前产品不加载它。
 
@@ -66,7 +66,7 @@ AdapterHost 决策的是外部连接方式。两种方式均以已有 RuntimeDev
 | SDK／模块配置契约 | SDK 接收配置对象，SDK／模块按对应接口校验结构和字段语义；跨进程参数还须满足对应 IPC 的序列化要求 |
 | SDK／模块内部运行状态 | SDK／模块按自己的约定管理 Home 内的 Runtime 身份、凭据及进程状态；这不规定宿主模块配置的来源 |
 
-以 IM 接入为例，宿主读取配置并构造 Bot 配置对象后，可以通过 `startModule("channel-gateway", { bots })` 启动模块，或者在模块已启动时调用 `requestModule("channel-gateway", "upsert", { config })` 应用配置。`config` 是一个对象参数，不是配置文件路径。读取远程配置平台、解析文件或从数据库恢复配置的逻辑属于宿主；数据源发生变化后，也由宿主决定是否及何时重新调用 SDK。
+以 IM 接入为例，宿主读取配置并构造完整插件声明，通过 `configureExtra({ name, module, config: { bots } })` 加载或更新。`config` 是对象参数，不是文件路径；IM 插件对完整 Bot 列表做增量应用，不重连未变化的 Bot。读取数据源及决定更新时间属于宿主；完整示例见第 2.6 节。
 
 **CLI 的默认文件加载行为不构成 SDK 接入要求。** 本文第 1.4 节通过统一的 `extraset` 将插件声明保存到 `<home>/default/extra/<name>/config.json`，由 CLI daemon 启动时加载；客户桌面 App 可以使用自己的 store，再通过 SDK 下发配置，无需创建或同步该文件。参考 Octo Work 把 IM 通道配置保存到应用自己的 SQLite，恢复时读取并通过 SDK 应用；SQLite 同样只是该 App 的选择，不是第三方宿主的必需依赖。
 
@@ -74,7 +74,7 @@ AdapterHost 决策的是外部连接方式。两种方式均以已有 RuntimeDev
 
 ## 1. CLI 操作说明
 
-CLI 面向无显示器的独立设备，承担独立程序的部署与运维：拉起 daemon 和共享 AdapterHost，通过命令行配置多个 IM 接入，保存后重启 daemon 加载。IM 以插件模块方式装配到 daemon，由 daemon 管理连接与生命周期，并共用 AdapterHost 执行。远程登记是独立的可选步骤，放在本文最后。客户 App 使用 SDK 自行装配和管理生命周期；本地命令行执行可用 `playboard` 调试。IM 配置用法见第 1.4 节。
+CLI 面向独立设备的部署与运维：拉起 daemon 和共享 AdapterHost，通过 `extraset` 保存插件配置后重启加载。Extra 自己管理业务连接，daemon 管理插件生命周期。客户 App 使用 SDK 装配，见第 2 节；本地执行可用 `playboard` 调试。当前发行物不包含远程 Worker 接入。
 
 ### 1.1 安装
 
@@ -117,7 +117,7 @@ npm unlink -g @mininglamp-oss/octo-runtime
 | `--home PATH`    | 可选，指定 daemon／channel 配置所在的 Home 目录；省略时 macOS/Linux 为 `~/.octo-runtime`，Windows 为 `%LOCALAPPDATA%\OctoRuntime` |
 | `--profile NAME` | Runtime 配置名称，默认为 `default`                                                               |
 
-`--home` 仅选择 daemon／channel 配置所在的目录，不是设备身份、远程登记参数或 Provider 执行工作区，也不是必填参数。CLI 还会在选定目录保存相应运行状态。一个 Home 运行一个 daemon 和共享 adapter-host，可以包含多个 profile。每个 profile 有独立 `runtime_id`；仅启用云端接入时需要其设备凭据和 Worker 连接；daemon 启停作用于整个 Home。
+`--home` 选择 CLI 配置与运行状态目录，不是 Provider 执行工作区，也不是必填参数。一个 Home 运行一个 daemon 和共享 AdapterHost，可以包含多个 profile，每个 profile 有独立 `runtime_id`。Extra 属于 Host；`default/extra` 只是 CLI 的当前存储路径，`extraset` 不接受 `--profile`。daemon 启停作用于整个 Home。
 
 下文需要显式选择目录或 profile 的 Bash/zsh 示例使用以下变量；使用默认目录时可省略整个 `--home` 参数：
 
@@ -183,7 +183,11 @@ octo-runtime daemon uninstall
 
 CLI 将完整对象保存到 `<home>/default/extra/<name>/config.json`，POSIX 文件权限为 `0600`，不回显配置或凭据。**每次保存整体替换同名插件配置，不按 `bot_id` 合并。** 增删或修改 Bot 时，提交需要保留的完整 `config.bots` 数组。不同名称的 Extra 配置互不覆盖。
 
+单个与多个 Bot 使用相同格式：一个 Bot 为 `config.bots: [botA]`，多个为 `config.bots: [botA, botB]`。若上次保存 `[botA, botB]`，本次提交 `[botB]`，最终配置只保留 botB；提交 `[]` 表示不保留任何 Bot。整个声明中的其他字段也随本次提交覆盖，不从上次配置补齐。
+
 `module` 指向宿主已安装的插件包或绝对入口路径；`extraset` 只保存配置，不安装插件、不建立连接。通用入口校验声明格式，插件在加载时校验自己的 `config`。
+
+名称必须等于插件导出的稳定 `name`，否则加载返回 `EXTRA_NAME_MISMATCH`；第二个 Bot 应放进同一 `bots` 数组，不能改名为 `channel-gateway-2`。保存成功不表示插件加载或连接成功；重启后查询 `extra status`。`loaded` 只表示初始化完成，不证明每个 Bot 已在线。插件加载失败会报告脱敏错误码，本地 Host 可继续使用。不要同时通过对象模块和 Extra 装配同名连接；daemon 会拒绝名称冲突。
 
 **方案一：Codex 等本地引擎。** `adapter.workdir` 可省略，默认使用并创建 `~/octo-runtime/channels/{bot_id}`，同一 Agent 后续执行复用此目录；显式填写时必须是绝对路径。该默认路径不随 CLI `--home` 改变。
 
@@ -196,11 +200,12 @@ octo-runtime extraset channel-gateway <<'JSON'
       {
         "api_url": "https://im-test.deepminer.com.cn/api",
         "bot_id": "<BOT_ID>",
+        "bot_name": "本地助理",
         "bf_token": "<BF_TOKEN>",
         "adapter": {
           "adapter_type": "codex",
           "workdir": "/srv/octo/workspaces/dev",
-          "model": "<MODEL_ID>",
+          "model": "gpt-6.1-sol",
           "effort": "medium"
         }
       }
@@ -236,7 +241,7 @@ octo-runtime extraset channel-gateway <<'JSON'
 JSON
 ```
 
-OpenClaw Adapter 在探测或执行时按已配置的连接来源读取 Gateway 信息与凭据；默认来源为本机 `~/.openclaw/openclaw.json`，可通过 `OPENCLAW_HOME` 指定目录。工作区由 OpenClaw Agent 管理。
+OpenClaw 自动发现由 CLI 启动编排负责，默认读取 `~/.openclaw/openclaw.json`，首次可通过 `OPENCLAW_HOME` 指定目录。CLI 保存来源，每次 daemon 启动重新读取 URL/token 并保存连接快照，再认证探测；端口/token 轮换后重启即可。Adapter 的 probe/invoke 只读取快照，不自动发现或写文件。SDK 由宿主显式调用 `configureOpenClawConnection(profileRoot, {url, token})` 初始化连接与设备身份，或通过 `providerOptions` 传入 URL/token 及设备身份；详见 [OpenClaw 合同](.octospec/rules/openclaw.md)。工作区由 OpenClaw Agent 管理。
 
 以上两个示例是同名插件的替代配置，依次执行时后者会覆盖前者。若两个 Bot 要同时启用，将两个 Bot 对象放进同一个 `config.bots` 数组，一次提交完整配置。配置只保存在对应插件的 `extra/<name>/config.json`，不提供渠道专用配置文件。
 
@@ -271,17 +276,15 @@ octo-runtime status
 octo-runtime doctor
 octo-runtime adapter list
 octo-runtime adapter probe codex
-octo-runtime agent-session list
-octo-runtime agent-session get <agent-session-id>
-octo-runtime agent-run list
 octo-runtime agent-run get <run-id>
-octo-runtime agent-run wait <run-id>
 octo-runtime agent-run cancel <run-id>
 ```
 
-`doctor` 检查 Node、身份、凭据、原生服务、本地 IPC 和所选 Runtime 的云端连接，并提供失败项的修复建议。全部通过退出码为 0，否则为 1。
+`doctor` 检查 Node、Home 配置、原生服务程序/管理器/定义和本地 IPC，并提供失败项的修复建议。全部通过退出码为 0，否则为 1。它不验证 Bot 凭据、逐 Bot 连接或云端在线状态；前台运行未安装原生服务时，服务定义检查仍可能失败。
 
-普通命令的 stdout 为 JSON，可能跨多行；错误输出到 stderr 并返回非零。接入程序应先检查退出码，再解析完整 stdout。`daemon run` 是长期运行进程，不使用一次性 JSON 请求的等待方式。生产远程 Run 的业务状态使用第 2.6 节的 Worker 查询接口。
+`agent-run get/cancel` 仅针对当前进程中的在途或有界保留 Run；不提供会话列表、永久历史或跨重启等待。历史记录由消费应用保存。
+
+普通命令的 stdout 为 JSON，可能跨多行；错误输出到 stderr 并返回非零。接入程序应先检查退出码，再解析完整 stdout。`daemon run` 是长期运行进程，不使用一次性 JSON 请求的等待方式。
 
 ### 1.6 本地唤起 Agent：playboard <测试开发用>
 
@@ -344,24 +347,25 @@ adapter payload 使用 `{ "type": "openclaw", "provider_agent_id": "main" }`。p
 
 ## 2. 作为 SDK 接入独立 App
 
-独立 App 通过 daemon SDK 管理内置 Runtime，通过本地 SDK 或远程 Worker API 唤起 Agent。Node.js 服务和桌面 App 均可使用；纯浏览器不能直接运行 Node Runtime，需要由本机宿主或后端承接。
+独立 App 通过 daemon SDK 管理 Runtime 并本地调用 Agent，按需装配 Extra。Node.js 服务和桌面 App 均可使用；纯浏览器需要由具备 Node 能力的宿主或后端承接。远程调用必须由实际的业务插件提供，当前 SDK 不包含 Worker 接入。
 
 | 开发需求                                | 接入入口                                     |
 | --------------------------------------- | -------------------------------------------- |
 | 按宿主策略启动本地 Runtime          | `createDaemonRuntime()` + `startAccount()` |
-| 获取本地 Runtime ID 与独立模块状态 | `health()` / `onHealth()`                    |
+| 获取本地 Runtime ID 与插件生命周期状态 | `health()` / `onHealth()` / `extraStatus()` |
 | 探测本机执行引擎                        | `listAdapters(runtimeId)`                    |
-| 本机直接执行一轮 Agent                  | `invoke(adapterType, request, options)`      |
-| 从任意 App 经服务端远程调用 Agent       | Worker `POST /v1/agent_run/submit`                     |
-| 接收远程执行输出                        | Worker 当前执行流接口，SSE                   |
-| 取消和回复交互                          | 本地 SDK 方法或远程 Worker API               |
+| 本机直接执行一轮 Agent | `invoke(input, { signal })` |
+| 动态配置可选插件 | `configureExtra(descriptor)` |
+| 加载 / 卸载已声明插件 | `loadExtra(name)` / `unloadExtra(name)` |
+| 查询插件业务状态 | `requestExtra(name, method, params?)`，方法由插件定义 |
+| 取消和回复交互 | `cancelRun()` / `respondRun()` |
 
 ### 2.1 安装 SDK 与准备接入配置
 
 以下配置以对象参数交给 SDK，配置来源由宿主决定，详见第 0.2 节。Home 用于 SDK 的运行状态管理，不是要求宿主保存业务或 IM 模块配置的固定目录。
 
 ```bash
-pnpm add @mininglamp-oss/octo-runtime-daemon @mininglamp-oss/octo-runtime-protocol
+npm install @mininglamp-oss/octo-runtime-daemon @mininglamp-oss/octo-runtime-protocol
 ```
 
 宿主需要提供：
@@ -378,7 +382,7 @@ SDK 要求 Node.js 24+。桌面 App 在具有 Node 能力的宿主进程中使�
 
 Home 使用 SDK 的 `resolveDaemonHome(appId)` 或产品指定路径，与 standalone CLI 的 Home 分开。Octo Work 指定自己的 `~/.octo-runtime-work`；第三方 App 不需要复用这个目录名。
 
-### 2.2 本地启动与可选云端接入
+### 2.2 本地启动与宿主发行物
 
 SDK 由宿主管理生命周期：通过 `startAccount()` 启动本地 daemon／Host 子进程，通过 `stop("quit")` 在应用退出时回收。接入方无需先执行 CLI 的 `daemon install` 或 `daemon start`，也无需传入 `--foreground`。宿主应将正常退出流程接到 SDK 的 `stop()`；子进程对宿主存活的监测用于异常退出后的回收。
 
@@ -411,9 +415,23 @@ export async function startRuntime(session: {
 
 Worker 接入预研已迁到生态目录外的 `octo-runtime-worker-access` 独立仓库，仅作备份，不参与当前发行物。
 
-IM 接入独立携带 channel-gateway 并登记其 `createImModule` 工厂。宿主显式 `startModule("channel-gateway", { bots })` 或启动后通过 `requestModule("channel-gateway", "upsert", { config })` 添加 bot。不需要同时携带或启用 worker-access。
+IM 接入独立安装对应 Extra，通过 `extras` 初始声明或运行中的 `configureExtra` 装配，见第 2.6 节。不需要 Worker。渠道接入统一使用 Extra 声明，daemon/CLI 不提供渠道专用装配入口。
 
 参考实现：[Octo Work DaemonRuntimeService](../octo-work-app/src/main/daemon-runtime-service.ts)。正式桌面宿主通过 `DaemonRuntimeOptions.distribution` 指定已安装的 Node、runner、manifest 和 adapter-host 入口；SDK 不自动安装这些依赖。公开类型见 [SDK 类型](packages/octo-runtime-daemon/src/runtime/types.ts)。
+
+桌面正式包应随发行物准备以下布局，具体路径由宿主决定：
+
+```text
+resources/runtime/
+  node/bin/node                 # Windows 为 node.exe
+  sdk/dist/runtime/runner.js
+  sdk/dist/runtime/config/adapters.json
+  sdk/node_modules/@mininglamp-oss/octo-runtime-adapter-host/dist/runner.js
+  sdk/modules/extra-channel-gateway/dist/index.js
+  sdk/modules/extra-channel-wecom/dist/index.js
+```
+
+将前四项绝对路径依次传给 `distribution.nodePath/runnerPath/manifestPath/adapterHostEntrypoint`，插件默认入口绝对路径传给 `descriptor.module`。每个插件还必须携带生产依赖。参考 [Work App 打包脚本](../octo-work-app/scripts/prepare-embedded-runtime.mjs) 的独立 deploy 和固定 Node 准备。纯 Node 24 宿主可复用当前 Node；Electron 正式包不能依赖用户 PATH 中偶然存在的 Node。
 
 ### 2.3 获取 Runtime ID 和管理生命周期
 
@@ -424,7 +442,7 @@ export function currentRuntime(spaceId: string) {
   return {
     runtimeId: profile?.runtimeId,
     localReady: health.local.ready && health.local.adapterHostReady,
-    modules: health.modules,
+    extras: health.extras,
     phase: health.phase,
     problem: health.problem
   };
@@ -435,16 +453,17 @@ export function watchRuntime(publish: (health: DaemonHealth) => void) {
 }
 ```
 
-本地 Runtime ID 从 `health.profiles` 获取，不要求先连接 Worker 或查询云端列表。`running` 只表示本地就绪。可选连接状态查看 `health.modules`：Worker 的 `state.runtimes[].connected` 才表示当前连接；注册 ACK 和本地 profile 的 `ready` 均不能当作云端在线证据。远程可见策略由 HostApp 管理，不能从 `connected` 反推用户是否允许公开设备。`onHealth()` 立即发送当前快照，返回取消订阅函数。
+本地 Runtime ID 从 `health.profiles` 获取。`running` 只表示本地就绪，`health.extras[name].phase` 表示插件生命周期。逐 Bot 连接状态通过插件业务方法查询，见第 2.6 节；`loaded` 不等于在线。远程访问策略由宿主与业务插件决定。`onHealth()` 立即发送当前快照，返回取消订阅函数。
 
 | App 行为 | 调用方式 |
 | --- | --- |
 | UI 切换当前 Space | 按 tenantId 选择本地 Runtime；授权集合未变时不重启 |
-| 授权 Space 集合变化 | `reconcileTenants(完整新列表)`；当前实现重启，宿主重新应用已启用模块配置 |
+| 授权 Space 集合变化 | 先停止受影响连接，再 `reconcileTenants(完整新列表)`，以新授权范围重新应用插件配置 |
 | 切换账号 | `stop("account-switch")`，然后为新账号 `startAccount()` |
 | 退出登录 / App 退出 | `stop("logout")` / `stop("quit")` |
-| 关闭一个连接模块 | `stopModule(id)`，停止对应远程连接，本地设备身份保留，Host 继续工作 |
-| 操作已启用模块 | `requestModule(id, method, params)` |
+| 关闭一个插件 | `unloadExtra(name)`，保留设备身份和共享 Host |
+| 更新插件完整声明 | `configureExtra(descriptor)`；插件支持 onConfigure 时原位应用，否则只重启该插件 |
+| 查询插件业务状态 | `requestExtra(name, "status")`，要求该插件实现此方法 |
 
 普通 stop 保留本地身份。聊天 reset 与本地 Runtime 生命周期独立；当前主项目不执行 Worker 重新 enrollment。
 
@@ -456,7 +475,7 @@ HostApp 的业务层负责 Agent 定义、目标选择、defaults／mandatory、
 
 Worker 不负责 Agent registry、默认 Agent 自动创建或业务配置合并。业务授权由业务方处理；执行边界仍校验调用者、Runtime、租户及必要资源权限。不能用传入 Agent ID 替代认证。
 
-选择当前设备的本地 Runtime 时，使用本地 profile 和执行就绪状态；远程 online 不参与设备存在性判断。需要访问远程设备时，使用 Worker 当前 Runtime 查询合同选择已登记且有权访问的对象，并分别判断连接状态。云端列表是登记视图，不是所有本地设备／Runtime 的存在性清单；列表未返回某台设备不能推导该设备不存在。远程调用见第 2.6 节。
+选择当前设备的本地 Runtime 时，使用本地 profile 和执行就绪状态，远程 online 不参与设备存在性判断。若业务需要访问远程设备，必须另行装配实际提供发现、授权和调用能力的插件；本指南不提供已归档 Worker 路径的操作步骤。
 
 ### 2.5 本地唤起 Agent：调用 SDK invoke
 
@@ -466,6 +485,7 @@ Worker 不负责 Agent registry、默认 Agent 自动创建或业务配置合并
 import { randomUUID } from "node:crypto";
 import {
   assertInvokeRequest,
+  invocationInput,
   type CanonicalEvent,
   type InvokeRequest,
   type ProviderSession
@@ -520,7 +540,8 @@ export async function* invokeLocalAgent(input: {
   assertInvokeRequest(request);
 
   let terminal = false;
-  for await (const event of harness.invoke("codex", request, { protocolMode: "canonical" })) {
+  const execution = { ...invocationInput(request, "canonical", "codex"), protocol_mode: "canonical" as const };
+  for await (const event of harness.invoke(execution, { signal: input.signal })) {
     if (["run.completed", "run.failed", "run.cancelled"].includes(event.type)) terminal = true;
     yield event;
   }
@@ -543,13 +564,13 @@ export async function* invokeLocalAgent(input: {
 
 上例展示基础执行合同。接入业务 Agent 时，先解析其 defaults/mandatory，并把模型、工作区、审批等配置同时映射为一致的 Context 和执行字段。参考 [Octo Work prepareLocalAgentRun](../octo-work-app/src/main/local-agent-run-access.ts)，需要工作区准备时可调用 SDK 公开导出的 `prepareRunContext()`。
 
-本地 `invoke()` 不会自动创建 Worker 的业务 Event，也不会仅凭传入 `agentId` 自动实现云端 Agent 授权。需要服务端调度、授权和调用记录时使用远程路径。
+本地 `invoke()` 不会自动创建服务端业务 Event，也不会仅凭 `agentId` 自动授权。需要服务端调度、授权和调用记录时，由相应业务系统实现。
 
 返回值与控制方法：
 
 | SDK 方法或事件                                          | 说明                                                                              |
 | ------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `invoke(..., { protocolMode: "canonical" })`            | 返回 `CanonicalEvent` 异步流，适合跨 Provider 展示                                |
+| `invoke({ ...input, protocol_mode: "canonical" }, { signal })` | 返回 `CanonicalEvent` 异步流，适合跨 Provider 展示 |
 | `invokeFrames()`                                        | 返回带序号、stream ID 和协议信息的完整 `HostFrame`                                |
 | `session.update`                                        | 保存 `payload.providerSession`，供后续续聊使用                                    |
 | `interaction.requested`                                 | 显示审批/问答，再调用 `respondRun()`                                              |
@@ -559,9 +580,60 @@ export async function* invokeLocalAgent(input: {
 
 默认 `invoke()` 为 native 模式，返回 `HostFrame`；上述示例显式选择 canonical。使用原生交互时对应 `respondNativeRun()`。缺失终态、流异常或主动结束消费，都应由 App 处理为明确的中断状态。
 
-### 2.6 可选 Channel
+### 2.6 通过 SDK 装配可选 Extra
 
-Octo 使用 `octo-runtime-extra-channel-gateway`，企业微信使用 `octo-runtime-extra-channel-wecom`。两个包各自持有 transport、配置与生命周期；宿主按业务选择各自工厂。没有统一 connector registry。
+Octo 使用 `octo-runtime-extra-channel-gateway`，企业微信使用 `octo-runtime-extra-channel-wecom`。仅安装宿主选择的包，例如：
+
+```bash
+npm install @mininglamp-oss/octo-runtime-extra-channel-gateway
+```
+
+以下代码与前面的 harness 示例属于同一个宿主模块。宿主先完成 `startRuntime()`，再提交插件声明：
+
+```ts
+import { fileURLToPath } from "node:url";
+
+export async function configureIm() {
+  return harness.configureExtra({
+    name: "channel-gateway",
+    module: fileURLToPath(import.meta.resolve("@mininglamp-oss/octo-runtime-extra-channel-gateway")),
+    config: {
+      authorized_space_ids: ["<AUTHORIZED_SPACE_ID>"],
+      bots: [{
+        api_url: "https://im-test.deepminer.com.cn/api",
+        bot_id: "<BOT_ID>",
+        bot_name: "本地助理",
+        bf_token: "<BF_TOKEN>",
+        adapter: { adapter_type: "codex", workdir: "/absolute/workspace", model: "gpt-6.1-sol", effort: "medium" }
+      }]
+    }
+  });
+}
+
+export async function inspectIm() {
+  const lifecycle = await harness.extraStatus();
+  const bots = lifecycle["channel-gateway"]?.phase === "loaded"
+    ? await harness.requestExtra<Array<Record<string, unknown>>>("channel-gateway", "status")
+    : [];
+  return { lifecycle, bots };
+}
+
+export async function stopIm() {
+  await harness.unloadExtra("channel-gateway");
+}
+```
+
+`import.meta.resolve` 在宿主安装位置解析为绝对入口，避免 runner 从自身目录找不到宿主依赖。桌面正式包应改用发行物中的绝对路径。若希望启动时自动加载，可将同一声明放入 `createDaemonRuntime({ appId, home, extras: [...] })`。
+
+再次 `configureExtra` 提交同名完整声明即为更新。IM 插件校验整个 bots 数组，移除不再存在的 Bot，只更新变化项；未变化 Bot 保持连接。该操作不是数据库事务；应用失败可能已有部分变更，宿主应保留已保存配置、展示失败并允许重试。没有 onConfigure 钩子的插件或 module 发生变化时，只卸载并重载该插件，不重启共享 Host。
+
+SDK 与 CLI 使用同一覆盖语义：最终配置由本次完整声明决定。单个 Bot 仍为长度 1 的数组；未变化连接的复用不意味着保留本次声明中缺席的 Bot 或字段。
+
+`authorized_space_ids` 是 IM 插件业务字段，由受信宿主提供，不是底层框架的通用租户字段。Octo 认证返回的 Space 必须在列表内；空数组不授权任何 Space。独立设备若不限定账号租户范围可省略该字段，但 Bot 自身认证仍执行。修改授权列表会重建该插件的连接以重新鉴权。WeCom 配置接受同一范围字段，但不据此伪造其没有的 Octo 租户身份。
+
+SDK 保留成功应用的最新声明，用于同账号 reconfigure/runner 重启；load/unload 同步更新该 SDK 实例内的启用状态。它不替宿主持久化配置。logout/account-switch 会清除动态声明并恢复构造时的初始声明；账号相关插件宜在登录后通过 configureExtra 提交，由宿主在新账号恢复自身配置。插件状态只含生命周期与脱敏码，逐 Bot 状态来自插件自己的 status 方法。
+
+Work App 从账号 SQLite 读取配置，使用本节的统一入口。它的显式 Bot 启用独立于历史 `connectionsEnabled` 设置；该字段不是 IM 总开关。单 Bot 关闭在 IM 配置中操作，卸载整个插件使用 unloadExtra。不要让同一连接同时走 modules 和 extras。
 
 ### 2.7 会话和 Context 接入规则
 
@@ -569,9 +641,9 @@ Octo 使用 `octo-runtime-extra-channel-gateway`，企业微信使用 `octo-runt
 
 每轮模型上下文由 App 决定内容、顺序和发送时机。首次可发送背景，续聊无变化时可发送空列表，也可显式重复发送。底层不按 session ID 补齐、合并或去重模型上下文；adapter、runtime、workspace、model、limits、envs 和审批等执行项不注入模型文本。
 
-本地续聊保存真实 `providerSession`；远程续聊复用业务 `session_id`，Provider 绑定由执行链管理。session 标识存在不保证 Provider resume 成功。reset、新建 Provider 会话或恢复失败后，由 App 决定并重新提供必要背景。
+本地续聊保存真实 `providerSession`，不从业务 sessionId 重建绑定。session 标识存在不保证 Provider resume 成功。reset、新建 Provider 会话或恢复失败后，由 App 决定并重新提供必要背景。
 
-生命周期问题使用 `DaemonRuntimeError.code/scope/retryable` 或 health 的 `problem` 判断；执行流也可能抛出普通 Error。SDK 的本地流是有界内存窗口，Worker 远程 SSE 是实时流，两者都不能当作永久历史存储。
+生命周期问题使用 `DaemonRuntimeError.code/scope/retryable` 或 health 的 `problem` 判断；执行流也可能抛出普通 Error。SDK 的本地流是有界内存窗口，不能当作永久历史存储。
 
 ### 2.8 Octo Work 参考代码
 
@@ -580,12 +652,13 @@ Octo 使用 `octo-runtime-extra-channel-gateway`，企业微信使用 `octo-runt
 | [DaemonRuntimeService](../octo-work-app/src/main/daemon-runtime-service.ts)     | 本地生命周期、独立可选连接、当前 Runtime 选择和健康投影 |
 | [prepareLocalAgentRun](../octo-work-app/src/main/local-agent-run-access.ts)         | 解析 Agent 配置、选择 Adapter、准备工作区和构造 InvokeRequest            |
 | [AgentConversationService](../octo-work-app/src/main/agent-conversation-service.ts) | 本地事件消费、Provider session 保存、交互、取消与历史存储                |
-| [AgentWorkClient](../octo-work-app/src/main/agent-work-client.ts)                   | 宿主业务 API 封装、Runtime／远程请求与 Human Token/Space 请求头                        |
+| [ImChannelService](../octo-work-app/src/main/im-channel-service.ts) | 宿主 SQLite 配置、逐 Bot 应用与恢复 |
+| [ConversationRunTransport](../octo-work-app/src/main/conversation-run-transport.ts) | 已准备请求转换为统一 InvokeInput |
 | [宿主 main 入口](../octo-work-app/src/main/index.ts)                                | `notifyAuthChange` 统一处理认证变化，再调用 SDK 更新运行状态             |
 
-Octo Work 的 `AgentWorkClient` 是宿主私有封装，不是 Runtime 发布的 HTTP SDK。第三方 App 可参考其请求方式，自行封装第 2.4/2.6 节接口；本地执行则直接依赖公开 daemon SDK。
+Octo Work 的业务服务和 SQLite 是宿主实现，不是 Runtime SDK 的接入要求。第三方 App 直接依赖公开 daemon SDK，沿用自身配置和历史存储。
 
-更多字段见 [SDK 导出](packages/octo-runtime-daemon/src/runtime/index.ts)、[SDK 类型](packages/octo-runtime-daemon/src/runtime/types.ts)、[执行协议](packages/octo-runtime-protocol/src/index.ts)、[Worker 路由](../octo-agent-worker/internal/handler/router.go) 及 [Runtime 合同](.octospec/rules/runtime-lifecycle.md)。
+更多字段见 [SDK 导出](packages/octo-runtime-daemon/src/runtime/index.ts)、[SDK 类型](packages/octo-runtime-daemon/src/runtime/types.ts)、[执行协议](packages/octo-runtime-protocol/src/index.ts)、[Extra 合同](.octospec/rules/extras.md)及 [Runtime 合同](.octospec/rules/runtime-lifecycle.md)。
 
 ## 3. 预研归档
 

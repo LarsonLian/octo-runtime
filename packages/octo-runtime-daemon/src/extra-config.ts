@@ -50,6 +50,7 @@ export function extraRegistration(descriptor: ExtraDescriptor): ExtraRegistratio
   assertStoredExtra(stored);
   return {
     name,
+    module: stored.module,
     config: stored.config,
     enabled: stored.enabled,
     load: () =>
@@ -78,11 +79,13 @@ export async function readExtraDirectory(directory: string): Promise<ExtraRegist
       const stored: unknown = JSON.parse(await readFile(file, "utf8"));
       assertStoredExtra(stored);
       registrations.push(extraRegistration({ name: entry.name, ...stored }));
-    } catch {
+    } catch (error) {
+      const code = error instanceof Error && /^EXTRA_[A-Z_]+$/.test(error.message)
+        ? error.message : "EXTRA_CONFIG_READ_FAILED";
       registrations.push({
         name: entry.name,
         config: {},
-        load: () => Promise.reject(new Error("EXTRA_CONFIG_READ_FAILED"))
+        load: () => Promise.reject(new Error(code))
       });
     }
   }

@@ -22,6 +22,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*",
     "@mininglamp-oss/octo-runtime-daemon": "workspace:*",
     "@mininglamp-oss/octo-runtime-core": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",

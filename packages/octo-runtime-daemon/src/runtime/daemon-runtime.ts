@@ -1,4 +1,6 @@
 import { createInputInvoke } from "@mininglamp-oss/octo-runtime-core";
+import { extraRegistration, type ExtraDescriptor } from "../extra-config.js";
+import { assertExtraName, type ExtraStatus, type JsonObject } from "../extras.js";
 import { subscribeDaemonRun, invokeDaemonRun } from "./run-stream.js";
 import { callDaemon } from "./runtime-contract.js";
 import {
@@ -54,6 +56,7 @@ export class NodeDaemonRuntime implements DaemonRuntime {
   );
   readonly #options: DaemonRuntimeOptions;
   readonly #paths: DaemonHomePaths;
+  readonly #extras = new Map<string, ExtraDescriptor>();
   readonly #listeners = new Set<(health: DaemonHealth) => void>();
   #snapshot: DaemonHealth;
   #generation = 0;
@@ -67,6 +70,11 @@ export class NodeDaemonRuntime implements DaemonRuntime {
     this.#options = options;
     this.#paths = daemonHomePaths(options.home, options.platform);
     this.#snapshot = emptyHealth(this.#paths.home);
+    for (const descriptor of options.extras ?? []) {
+      extraRegistration(descriptor);
+      if (this.#extras.has(descriptor.name)) throw new Error("EXTRA_NAME_DUPLICATED");
+      this.#extras.set(descriptor.name, structuredClone(descriptor));
+    }
   }
 
   startAccount(options: StartAccountOptions): Promise<DaemonHealth> {
@@ -92,6 +100,57 @@ export class NodeDaemonRuntime implements DaemonRuntime {
 
   health(): DaemonHealth {
     return this.#snapshot;
+  }
+
+  configureExtra(descriptor: ExtraDescriptor): Promise<Record<string, ExtraStatus>> {
+    extraRegistration(descriptor);
+    const snapshot = structuredClone(descriptor);
+    return this.#enqueue(async () => {
+      const result = await this.#extraControl("extra.configure", { descriptor: snapshot });
+      this.#extras.set(snapshot.name, snapshot);
+      return result;
+    });
+  }
+
+  loadExtra(name: string): Promise<Record<string, ExtraStatus>> {
+    assertExtraName(name);
+    return this.#enqueue(async () => {
+      const result = await this.#extraControl("extra.load", { name });
+      const descriptor = this.#extras.get(name);
+      if (descriptor) this.#extras.set(name, { ...descriptor, enabled: true });
+      return result;
+    });
+  }
+
+  unloadExtra(name: string): Promise<Record<string, ExtraStatus>> {
+    assertExtraName(name);
+    return this.#enqueue(async () => {
+      const result = await this.#extraControl("extra.unload", { name });
+      const descriptor = this.#extras.get(name);
+      if (descriptor) this.#extras.set(name, { ...descriptor, enabled: false });
+      return result;
+    });
+  }
+
+  extraStatus(): Promise<Record<string, ExtraStatus>> {
+    return this.#enqueue(() => this.#extraControl("extra.status", {}));
+  }
+
+  requestExtra<T = unknown>(name: string, method: string, params: JsonObject = {}): Promise<T> {
+    const snapshot = structuredClone(params);
+    return this.#enqueue(async () => {
+      if (!this.#active) throw new Error("HOST_NOT_RUNNING");
+      return callDaemon<T>(this.#active.supervised.paths.socket, {
+        method: "extra.request", params: { name, method, params: snapshot }
+      }, 60_000);
+    });
+  }
+
+  async #extraControl(method: string, params: Record<string, unknown>): Promise<Record<string, ExtraStatus>> {
+    if (!this.#active) throw new Error("HOST_NOT_RUNNING");
+    const result = await callDaemon<Record<string, ExtraStatus>>(this.#active.supervised.paths.socket, { method, params }, 60_000);
+    this.#emit({ ...this.#snapshot, extras: result, observedAt: Date.now() });
+    return result;
   }
 
   startModule(id: string, config: unknown): Promise<unknown> {
@@ -199,7 +258,7 @@ export class NodeDaemonRuntime implements DaemonRuntime {
       }
       await this.#stop("reconfigure");
     }
-    if (this.#active) await this.#stop("account-switch");
+    if (this.#active) await this.#stop(accountKeyFor(this.#active.input.subject.type, this.#active.input.subject.id) === accountKey ? "reconfigure" : "account-switch");
 
     const generation = ++this.#generation;
     const abort = new AbortController();
@@ -234,7 +293,7 @@ export class NodeDaemonRuntime implements DaemonRuntime {
 
       this.#emit({ ...this.#snapshot, phase: "starting", observedAt: Date.now() });
       const started = await startManagedDaemon({
-        sdk: this.#options,
+        sdk: { ...this.#options, extras: [...this.#extras.values()] },
         paths: this.#paths,
         account,
         profiles: [...tenantProfiles.values()],
@@ -296,6 +355,10 @@ export class NodeDaemonRuntime implements DaemonRuntime {
     this.#emit({ ...this.#snapshot, phase: "stopping", observedAt: Date.now() });
     if (active) await stopManagedDaemon(active.supervised);
     this.#active = undefined;
+    if (reason === "logout" || reason === "account-switch") {
+      this.#extras.clear();
+      for (const descriptor of this.#options.extras ?? []) this.#extras.set(descriptor.name, structuredClone(descriptor));
+    }
     this.#ownerLock?.release();
     this.#ownerLock = undefined;
     this.#emit({

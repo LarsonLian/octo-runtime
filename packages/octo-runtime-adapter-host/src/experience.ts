@@ -183,10 +183,7 @@ export class InvocationExperience {
           ...output,
           { protocolVersion: 2, type: "run.cancelled", payload: { reasonCode: "cancelled" } }
         ];
-      return [
-        ...output,
-        { protocolVersion: 2, type: "run.failed", payload: { failure: payload.failure } }
-      ];
+      return [...output, event];
     }
     return [...output, event];
   }

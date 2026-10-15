@@ -5,7 +5,6 @@
   "exports": "./dist/index.js",
   "dependencies": {
     "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*",
-    "json5": "2.2.3",
     "ws": "^8.18.3"
   },
   "devDependencies": {

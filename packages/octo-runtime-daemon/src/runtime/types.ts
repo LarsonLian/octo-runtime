@@ -8,7 +8,7 @@ import type {
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type { HostedAdapterMetadata } from "@mininglamp-oss/octo-runtime-adapter-host";
 import type { ExtraDescriptor } from "../extra-config.js";
-import type { ExtraStatus } from "../extras.js";
+import type { ExtraStatus, JsonObject } from "../extras.js";
 export interface DaemonModuleDescriptor {
   id: string;
   module: string;
@@ -97,6 +97,11 @@ export interface DaemonHealth {
 }
 
 export interface DaemonRuntime {
+  configureExtra(descriptor: ExtraDescriptor): Promise<Record<string, ExtraStatus>>;
+  loadExtra(name: string): Promise<Record<string, ExtraStatus>>;
+  unloadExtra(name: string): Promise<Record<string, ExtraStatus>>;
+  extraStatus(): Promise<Record<string, ExtraStatus>>;
+  requestExtra<T = unknown>(name: string, method: string, params?: JsonObject): Promise<T>;
   startModule(id: string, config: unknown): Promise<unknown>;
   stopModule(id: string): Promise<void>;
   requestModule<T = unknown>(

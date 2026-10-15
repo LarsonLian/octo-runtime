@@ -210,6 +210,8 @@ export async function* spawnJsonLines<TNative>(
     child.once("error", reject);
     child.once("close", (code, exitSignal) => resolve({ code, signal: exitSignal }));
   });
+  // Spawn may fail before stdout closes and the generator reaches its exit await.
+  void exitPromise.catch(() => undefined);
   let killTimer: NodeJS.Timeout | undefined;
   let terminating = false;
   const abort = (): void => {

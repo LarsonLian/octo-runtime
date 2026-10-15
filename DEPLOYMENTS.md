@@ -1,6 +1,6 @@
 # Octo Runtime 部署
 
-日期：2026-10-14。部署选择由 HostApp 决定。本地 Runtime 存在与云端登记独立，统一原则见 [Runtime 合同](.octospec/rules/runtime-lifecycle.md)。
+日期：2026-10-15。部署选择由 HostApp 决定。本地 Runtime 存在与云端登记独立，统一原则见 [Runtime 合同](.octospec/rules/runtime-lifecycle.md)。
 
 ## 1. 客户 App 的最小部署
 
@@ -29,7 +29,7 @@ HostApp 提供固定版本的 Node 24+、SDK runner、adapter manifest、adapter
 | 企业微信 | extra-channel-wecom 及其生产依赖 | 显式提供 `channel-wecom` Extra 声明 |
 | 仅本地 | 无接入包 | 仅启动本地账号 Runtime |
 
-模块工厂通过注入的共享 Host 工作，不复制本地执行器。部署包或登记工厂不自动连接；模块配置与凭据由 HostApp 在显式启动时提供。停止连接不停止本地 Host。
+Extra 通过注入的共享 Host 执行，不复制本地执行器。安装包不代表已经启用；HostApp 显式提供初始 extras 声明或调用 configureExtra。Bot 配置与凭据由插件处理，停用插件不停止本地 Host。CLI 使用统一的 `<home>/default/extra/<name>/config.json`，SDK 宿主自行选择持久化来源。
 
 Work App 的准备脚本分别部署 `sdk/`、`sdk/modules/extra-channel-gateway` 和 `sdk/modules/extra-channel-wecom`。详细布局见 [Work App 内置 Runtime](../octo-work-app/docs/embedded-runtime.md)。
 

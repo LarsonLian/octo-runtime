@@ -2,7 +2,7 @@
 
 仅供演示的原生 Node HTTP Extra。稳定插件名称为 `sse-demo`，默认导出加载 lambda。设计和配置管理见 [Extra 插件说明](../../.octospec/rules/extras.md)。
 
-## CLI模式配置与启动
+## CLI 配置与启动
 
 在已经安装此包的 Runtime 发行物中：
 
@@ -23,9 +23,11 @@ octo-runtime daemon restart
 octo-runtime extra status
 ```
 
+声明保存在 `<home>/default/extra/sse-demo/config.json`，每次 `extraset` 整份替换，不合并内部字段；保存后重启 daemon 才应用。尚未安装后台服务时使用 `octo-runtime daemon run`。框架只校验声明与 JSON 结构，以下业务字段由本插件解释。
+
 `host` 缺省为 `127.0.0.1`，接受 IP 地址；`port` 缺省为 3002，范围 1–65535。`token` 必填、非空、不含空白。`Authorization` 必须为 `Bearer <token>`；认证失败返回 401 且不调用 Host。
 
-## SDK模式加载
+## SDK 装配
 
 宿主使用已安装的插件路径，明确声明加载配置：
 
@@ -48,7 +50,7 @@ await runtime.startAccount({
 });
 ```
 
-HostApp 决定安装路径和加载哪些插件。SDK 不自行下载安装 Runtime。
+HostApp 决定安装路径和加载哪些插件。SDK 不自行下载安装 Runtime，也不读写 CLI 配置文件。运行中可用 `runtime.configureExtra(descriptor)` 提交完整声明；本演示插件没有配置更新钩子，更新会重载该插件。通用状态与启停方法见 [SDK 对接指南](../../INTEGRATION.md#26-通过-sdk-装配可选-extra)。
 
 ## 统一调用
 

@@ -17,18 +17,20 @@ await runtime.stop('quit');
 
 宿主发布时可以只部署本包及其本地执行依赖，明确提供 Node、runner、manifest 和 adapter-host 入口；执行层不自动安装。
 
-需要连接时，HostApp 额外携带对应包，并在 `modules` 登记 `{ id, module, exportName }` 工厂描述。`startAccount` 只启动本地 IPC 和 Host；登记模块不导入它，也不建联。显式 `startModule(id, config)` 才加载工厂。凭据经本地 IPC 传递，不写入 runner session 或模型上下文。`requestModule(id, method, params)` 调用模块方法，`stopModule(id)` 只关闭该模块。
+需要外部接入时，HostApp 安装对应 Extra 包，构造完整声明 `{ name, module, enabled?, config }`。初始声明放入 `createDaemonRuntime({ appId, home, extras: [...] })`，启动账号时加载；运行中使用 `runtime.configureExtra(descriptor)`。SDK 不根据平台读取专用配置文件，不自行安装插件。
 
-| 模块 ID | 额外包 / 工厂 | 配置 |
-| --- | --- | --- |
-| `channel-gateway` | `octo-runtime-extra-channel-gateway/daemon-module` / `createImModule` | Octo `bots` |
-| `channel-wecom` | `octo-runtime-extra-channel-wecom/daemon-module` / `createImModule` | 企业微信 `bots` |
+| SDK 方法 | 行为 |
+| --- | --- |
+| `configureExtra(descriptor)` | 加载或更新同名完整声明，配置内部字段由插件解释 |
+| `extraStatus()` | 查询生命周期与脱敏错误；`loaded` 不证明业务连接在线 |
+| `requestExtra(name, method, params?)` | 将方法与 JSON 参数交给插件 |
+| `loadExtra(name)` / `unloadExtra(name)` | 控制当前 SDK 实例的插件启用状态，不替宿主持久化配置 |
 
-worker-access 已移出生态目录，作为独立预研备份，不再由标准 CLI 或 Work App 装配。
+Octo 使用 `channel-gateway`，企业微信使用 `channel-wecom`；两个插件都使用 `config.bots` 数组表达多个 Bot。插件按完整快照更新自身连接，daemon 不识别 Bot 字段。运行中的更新失败不保证业务副作用回滚。
 
-模块启动异步执行，`startModule` 返回启动接纳状态；实际结果看 `health.modules[id].phase` 和模块 `state`，不能把返回值当作云端在线 ACK。连接失败不改变 `health.local.ready`；缺少已启用模块时报告错误，不隐式安装。关闭账号或应用时停止所有已启用模块并回收共享 Host。
+SDK 宿主自行保存配置并在应用重启或账号变化后重新提供。CLI 是另一种宿主：`extraset <name>` 保存完整声明到 `<home>/default/extra/<name>/config.json`，每次整份替换，重启 daemon 后加载。CLI 文件不构成 SDK 的存储要求。
 
-直接使用 `startDaemonServer` 的宿主可注入 `modules: [{ id, create, config? }]`；只有显式提供 `config` 才在启动后激活。工厂通过 `context.host` 复用同一个 `HostRunService`，不自行创建 Host。
+直接使用 `startDaemonServer` 的 Node 宿主可通过 `extraRegistration(descriptor)` 构造 `extras` 声明，所有插件复用同一 Host。完整 SDK 示例见 [接入指南](../../INTEGRATION.md#26-通过-sdk-装配可选-extra)。
 
 生产隔离验证：`scripts/verify-daemon-deployment.mjs <pnpm-deploy-dir>` 实际检查 Worker/IM 缺席、启动并执行，再启用缺失模块，确认本地继续执行。完整示例见 [INTEGRATION](../../INTEGRATION.md#2-作为-sdk-接入独立-app)。
 

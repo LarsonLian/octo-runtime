@@ -39,18 +39,22 @@ Runtime 的安装决策继续归 HostApp。OpenClaw Agent 的人格、记忆、�
 ## 本地初始化与连接配置
 
 1. SDK 在本地初始化 Runtime 并保存身份，不要求 Worker 注册。CLI 的 login 初始化本地 Home，不执行云端 enrollment；当前 Worker 接入包已移除。
-2. 初始化该 Runtime 的 OpenClaw 连接来源，探测 Gateway 可用性。OpenClaw 缺失、未启动或认证失败只影响该 Provider 的可用状态，不阻止本地 Host 就绪或其他 Provider 执行。
+2. CLI 启动编排初始化或刷新该 Runtime 的 OpenClaw 连接，探测 Gateway 可用性。SDK 由宿主显式配置连接，不自动发现。OpenClaw 缺失、未启动或认证失败只影响该 Provider 的可用状态，不阻止本地 Host 就绪或其他 Provider 执行。
 3. 本地配置保存到 `<runtime-home>/<profile>/adapters/openclaw/connection.json`。内置 Runtime 使用账户目录下对应的 profile，不能退回另一账户或默认 Home 的连接。
 4. 本地探测和实际执行读取同一 Runtime 配置。外部业务若报告可用状态，不得上报 Gateway token 或私钥；本地探测本身不需要云端上报。
 
-支持两种连接来源：
+CLI 支持两种连接来源，执行层只消费解析后的 `gateway` 快照：
 
-- `home`：保存 OpenClaw Home 的绝对路径。每次探测和执行重新读取其中的 `openclaw.json`，使端口和 token 轮换生效。默认路径为用户目录下的 `.openclaw`；支持显式 `--openclaw-home PATH` 或首次初始化时的 `OPENCLAW_HOME`。
+- OpenClaw Home：CLI 读取 `openclaw.json`，解析 URL/token，配置未指定端口时使用 `18789`。默认目录为 `~/.openclaw`，可用 `--openclaw-home` 或首次发现时的 `OPENCLAW_HOME` 指定。CLI 将来源绝对路径和对应快照凭据引用保存在同目录的 `cli-source.json`；它不含 token。每次 CLI daemon 启动、连接命令及 OpenClaw playboard 都重新读取该来源并保存新快照，因此端口或 token 轮换后重启 daemon 即可生效。单纯端口可连接不作为 OpenClaw 可用证据。
 - `gateway`：保存显式 `ws://` / `wss://` 地址与本地凭据引用。token 通过 stdin 或 `OPENCLAW_GATEWAY_TOKEN` 提供，存入该 profile 的 `credentials` 目录。非回环地址必须使用 `wss://`。
 
-显式命令参数优先。无显式参数时复用已保存来源；首次初始化才读取环境变量或默认路径。`OPENCLAW_GATEWAY_URL` 与 `OPENCLAW_GATEWAY_TOKEN` 必须成对提供，不能与 OpenClaw Home 同时配置。显式来源不可用时不得悄悄改用默认实例。
+显式命令参数优先。无显式参数时刷新已保存的 Home 来源，或复用显式 Gateway；没有已保存连接才读取环境变量或默认目录。`OPENCLAW_GATEWAY_URL` 与 `OPENCLAW_GATEWAY_TOKEN` 必须成对提供，不能与 OpenClaw Home 同时配置。显式来源不可用不得改用默认实例。Home 刷新失败时，该次 CLI daemon 启动禁用此 Provider 配置，不使用旧快照。
 
-凭据文件以 `0600` 创建，设备身份保存到该 profile 的 `credentials/openclaw-device.json`。切换显式地址/token 时先写入新凭据，再原子替换连接描述，避免并发调用读到新地址与旧 token 的组合。既有调用继续使用已经解析的连接，新探测和调用读取新配置。启动、注册及探测不得重置 Gateway token，不自动改写 OpenClaw 配置。
+SDK 不读取 OpenClaw 配置或进程环境、不扫描端口。宿主可调用 `configureOpenClawConnection(profileRoot, {url, token})` 显式保存连接并初始化设备身份，也可直接通过 `providerOptions` 提供 URL/token 和设备身份。`loadLocalOpenClawGateway`、`resolveOpenClawGateway`、probe 和 invoke 只读取已配置数据；连接或设备身份缺失返回明确错误，不发现、不首次落盘、不自动修复。CLI 与 SDK 共用 URL 校验、设备身份校验、认证握手、能力探测及执行路径。
+
+`connection.json` 仅保存 `schema_version: 1`、`source: gateway`、`gateway_url` 和 `credential_ref`。旧 `source: home` 描述不自动转换；通过 CLI 显式 `adapter connect openclaw --openclaw-home PATH` 重新配置。`cli-source.json` 的凭据引用只用于确认来源仍对应当前快照；SDK 或 CLI 改为显式 URL/token 后，不再刷新先前的 Home 来源。
+
+凭据文件以 `0600` 创建，设备身份由显式配置操作初始化并保存到该 profile 的 `credentials/openclaw-device.json`。刷新地址/token 时先写入新凭据，再原子替换连接描述，避免并发调用读到新地址与旧 token 的组合。设备身份保持稳定。既有调用继续使用已经解析的连接，新探测和调用读取新快照。启动、注册及探测不得重置 Gateway token，不自动改写 OpenClaw 配置。
 
 ## 统一执行合同
 
@@ -94,7 +98,7 @@ octo-runtime --home /path/to/runtime --profile work adapter connect openclaw \
   --gateway-url ws://127.0.0.1:18789 --token-stdin
 ```
 
-`login` 仅初始化本地 Home，也可提交 OpenClaw 连接参数；它不执行云端 enrollment。Gateway token 由 stdin 或环境提供，不作为命令行明文参数。`adapter list`、`adapter probe openclaw` 与 `playboard --home ... --profile ...` 使用选定 profile 的连接。
+`login` 仅初始化本地 Home，不执行云端 enrollment 或 OpenClaw 配置。Gateway token 由 stdin 或环境提供，不作为命令行明文参数。`adapter list`、`adapter probe openclaw` 使用选定 profile 的已保存连接，刷新发生在 CLI daemon 启动编排；`playboard --home ... --profile ...` 在自己的启动编排刷新连接。
 
 连接命令返回保存结果和探测状态；`available: false` 表示连接尚不可用，不表示本地 Runtime 身份初始化失败。已删除的 `--binding-id`、`--agent-id` 和 `--workspace` 连接参数不再接受；目标 Agent 必须放在 Context 中。旧 `config.json.adapters.openclaw` 外部绑定不自动转换，需删除旧配置并通过上述入口设置连接。
 

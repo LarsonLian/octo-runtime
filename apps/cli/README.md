@@ -212,7 +212,7 @@ One Runtime Home runs one daemon and adapter-host. Each discovered profile has i
 
 ### 已撤回的注册 Agent 行为
 
-原 `--agent-identity`／`--agent-name` 及注册时创建默认 `main` Agent 的行为退出，不属于最终 CLI 合同。Runtime 注册只登记设备与 Runtime；助手、分身及其 defaults／mandatory 由业务方管理。CLI 参数、profile 字段和重连请求中的旧 Agent 创建信息须同步删除，不提供旧路径兼容。OpenClaw 的 `provider_agent_id` 仍是本轮执行选择，与本次删除 Worker Agent registry 不同。
+原 `--agent-identity`／`--agent-name` 及注册时创建默认 `main` Agent 的行为退出，不属于最终 CLI 合同。Runtime 注册只登记设备与 Runtime；助手、分身及其 defaults／mandatory 由业务方管理。CLI 参数、profile 字段和重连请求中的旧 Agent 创建信息须同步删除。OpenClaw 的 `provider_agent_id` 仍是本轮执行选择，与本次删除 Worker Agent registry 不同。
 
 
 ## Runtime 的 OpenClaw 连接

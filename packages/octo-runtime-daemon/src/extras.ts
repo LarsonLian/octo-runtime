@@ -5,12 +5,16 @@ export interface JsonObject {
   [key: string]: JsonValue;
 }
 export type ExtraDisposer = () => void | Promise<void>;
+export type ExtraRequestHandler = (method: string, params: JsonObject) => unknown;
+export type ExtraConfigureHandler = (config: JsonObject) => void | Promise<void>;
 
 /** This execution environment is unrelated to the model Context envelope. */
 export interface ExtraContext {
   readonly adapterHost: Pick<HostRunService, "invoke" | "cancel" | "respondInteraction">;
   readonly signal: AbortSignal;
   onDispose(dispose: ExtraDisposer): void;
+  onConfigure(handler: ExtraConfigureHandler): void;
+  onRequest(handler: ExtraRequestHandler): void;
 }
 
 export type ExtraPlugin = (context: ExtraContext, config: JsonObject) => void | Promise<void>;
@@ -20,6 +24,7 @@ export interface ExtraPluginModule {
 }
 export interface ExtraRegistration {
   name: string;
+  module?: string;
   load(): Promise<ExtraPluginModule>;
   config: JsonObject;
   enabled?: boolean;
@@ -35,6 +40,9 @@ interface ExtraInstance {
   disposing?: Promise<void>;
   sealed: boolean;
   disposalError?: AggregateError;
+  configure?: ExtraConfigureHandler;
+  request?: ExtraRequestHandler;
+  operations: Promise<unknown>;
 }
 
 export function assertExtraName(name: unknown): asserts name is string {
@@ -49,6 +57,8 @@ export class ExtraPlugins {
   readonly #statuses = new Map<string, ExtraStatus>();
   #closed = false;
   #closing?: Promise<void>;
+  readonly #queues = new Map<string, Promise<unknown>>();
+  readonly #loadEpochs = new Map<string, number>();
 
   static validate(registrations: readonly ExtraRegistration[]): void {
     const names = new Set<string>();
@@ -83,8 +93,63 @@ export class ExtraPlugins {
     );
   }
 
+  configure(registration: ExtraRegistration): Promise<void> {
+    const epoch = this.#loadEpochs.get(registration.name) ?? 0;
+    return this.#serial(registration.name, async () => {
+      ExtraPlugins.validate([registration]);
+      if (this.#closed) throw new Error("EXTRA_LOADER_CLOSED");
+      if (epoch !== (this.#loadEpochs.get(registration.name) ?? 0)) throw new Error("EXTRA_LOAD_CANCELLED");
+      const instance = this.#instances.get(registration.name);
+      const previous = this.#registrations.get(registration.name);
+      const sameModule = previous && (previous.load === registration.load ||
+        (registration.module !== undefined && previous.module === registration.module));
+      if (sameModule && registration.enabled !== false && instance?.configure && !instance.controller.signal.aborted) {
+        await instance.starting;
+        await this.#operation(instance, () => instance.configure!(structuredClone(registration.config)));
+        this.#registrations.set(registration.name, registration);
+        return;
+      }
+      await this.#unload(registration.name);
+      this.#registrations.set(registration.name, registration);
+      this.#statuses.set(registration.name, { phase: "disabled" });
+      if (registration.enabled !== false) await this.#load(registration.name, epoch);
+    });
+  }
+
+  request(name: string, method: string, params: JsonObject = {}): Promise<unknown> {
+    return this.#serial(name, async () => {
+      const instance = this.#instances.get(name);
+      if (!instance || instance.controller.signal.aborted) throw new Error("EXTRA_NOT_LOADED");
+      await instance.starting;
+      if (!instance.request) throw new Error("EXTRA_REQUEST_UNSUPPORTED");
+      return this.#operation(instance, () => instance.request!(method, structuredClone(params)));
+    });
+  }
+
+  #serial<T>(name: string, operation: () => Promise<T>): Promise<T> {
+    const task = (this.#queues.get(name) ?? Promise.resolve()).catch(() => undefined).then(operation);
+    this.#queues.set(name, task);
+    void task.finally(() => { if (this.#queues.get(name) === task) this.#queues.delete(name); }).catch(() => undefined);
+    return task;
+  }
+
+  #operation<T>(instance: ExtraInstance, operation: () => Promise<T> | T): Promise<T> {
+    const task = instance.operations.catch(() => undefined).then(() => {
+      instance.controller.signal.throwIfAborted();
+      return operation();
+    });
+    instance.operations = task;
+    return task;
+  }
+
   load(name: string): Promise<void> {
+    const epoch = this.#loadEpochs.get(name) ?? 0;
+    return this.#serial(name, () => this.#load(name, epoch));
+  }
+
+  #load(name: string, epoch: number): Promise<void> {
     if (this.#closed) return Promise.reject(new Error("EXTRA_LOADER_CLOSED"));
+    if (epoch !== (this.#loadEpochs.get(name) ?? 0)) return Promise.reject(new Error("EXTRA_LOAD_CANCELLED"));
     const registration = this.#registrations.get(name);
     if (!registration) return Promise.reject(new Error("EXTRA_NOT_REGISTERED"));
     if (this.#instances.has(name)) return Promise.reject(new Error("EXTRA_ALREADY_LOADED"));
@@ -92,6 +157,7 @@ export class ExtraPlugins {
       controller: new AbortController(),
       disposers: [],
       starting: Promise.resolve(),
+      operations: Promise.resolve(),
       sealed: false
     };
     this.#instances.set(name, instance);
@@ -110,6 +176,14 @@ export class ExtraPlugins {
               if (instance.sealed) throw new Error("EXTRA_ALREADY_DISPOSED");
               if (typeof dispose !== "function") throw new Error("EXTRA_DISPOSER_INVALID");
               instance.disposers.push(dispose);
+            },
+            onConfigure(handler) {
+              if (instance.sealed || instance.configure || typeof handler !== "function") throw new Error("EXTRA_CONFIGURE_HANDLER_INVALID");
+              instance.configure = handler;
+            },
+            onRequest(handler) {
+              if (instance.sealed || instance.request || typeof handler !== "function") throw new Error("EXTRA_REQUEST_HANDLER_INVALID");
+              instance.request = handler;
             }
           },
           structuredClone(registration.config)
@@ -123,8 +197,10 @@ export class ExtraPlugins {
         });
         // Never copy third-party error text or configuration secrets into public status.
         const code =
-          error instanceof Error && /^EXTRA_[A-Z_]+$/.test(error.message)
+          error instanceof Error && /^(?:EXTRA|IM|WECOM)_[A-Z0-9_]+$/.test(error.message)
             ? error.message
+            : error instanceof Error && "code" in error && error.code === "ERR_MODULE_NOT_FOUND"
+              ? "EXTRA_MODULE_NOT_FOUND"
             : "EXTRA_LOAD_FAILED";
         this.#statuses.set(name, {
           phase: "error",
@@ -138,6 +214,13 @@ export class ExtraPlugins {
   }
 
   unload(name: string): Promise<void> {
+    // Cancel queued initialization even when its AbortController does not exist yet.
+    this.#loadEpochs.set(name, (this.#loadEpochs.get(name) ?? 0) + 1);
+    this.#instances.get(name)?.controller.abort();
+    return this.#serial(name, () => this.#unload(name));
+  }
+
+  #unload(name: string): Promise<void> {
     const instance = this.#instances.get(name);
     if (!instance) return Promise.resolve();
     if (instance.disposing) return instance.disposing;
@@ -145,6 +228,7 @@ export class ExtraPlugins {
     this.#statuses.set(name, { phase: "disposing" });
     instance.disposing = (async () => {
       await instance.starting.catch(() => undefined);
+      await instance.operations.catch(() => undefined);
       try {
         await this.#dispose(instance);
         this.#statuses.set(name, { phase: "disposed" });
@@ -161,6 +245,7 @@ export class ExtraPlugins {
   close(): Promise<void> {
     if (this.#closing) return this.#closing;
     this.#closed = true;
+    for (const instance of this.#instances.values()) instance.controller.abort();
     this.#closing = (async () => {
       const results = await Promise.allSettled(
         [...this.#instances.keys()].reverse().map((name) => this.unload(name))

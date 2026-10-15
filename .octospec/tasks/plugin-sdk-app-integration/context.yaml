@@ -1,0 +1,18 @@
+rules:
+  - runtime-architecture
+  - runtime-engineering
+  - runtime-extras
+  - runtime-channel
+  - runtime-local-execution
+  - runtime-lifecycle
+  - runtime-invoke-input
+  - commit
+sources:
+  - .octospec/rules/architecture.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/local-execution.md
+  - .octospec/rules/runtime-lifecycle.md
+  - .octospec/rules/invoke-input.md
+  - .octospec/rules/collaboration.md

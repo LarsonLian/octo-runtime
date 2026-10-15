@@ -1075,6 +1075,9 @@ async function assertExistingAgent(
 export {
   loadLocalOpenClawGateway,
   configureOpenClawConnection,
+  readOpenClawConnection,
+  LocalGatewayError,
+  normalizeOpenClawGatewayUrl,
   resolveOpenClawGateway,
   OPENCLAW_RUNTIME_ROOT,
   type OpenClawConnectionInput,

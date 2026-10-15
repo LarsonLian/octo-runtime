@@ -1,7 +1,7 @@
 import {
-  configureOpenClawConnection,
   OPENCLAW_RUNTIME_ROOT
 } from "@mininglamp-oss/octo-runtime-adapter-openclaw";
+import { configureCliOpenClaw } from "@mininglamp-oss/octo-runtime-daemon-app/openclaw";
 import { defaultRuntimeHome, runtimePaths } from "./state.js";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,7 +47,7 @@ export async function runPlayboard(options: PlayboardOptions): Promise<number> {
   if (adapterType === "openclaw") {
     const runtimeRoot =
       options.runtimeRoot ?? runtimePaths(defaultRuntimeHome(options.env), "default").profileRoot;
-    await configureOpenClawConnection(runtimeRoot, {}, options.env);
+    await configureCliOpenClaw(runtimeRoot, {}, options.env);
     request.agentConfig.providerOptions = { [OPENCLAW_RUNTIME_ROOT]: runtimeRoot };
   }
   const output = options.output ?? writeLine;

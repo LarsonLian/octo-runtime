@@ -80,9 +80,11 @@ export default async function load(ctx: ExtraContext, config: JsonObject): Promi
 type ExtraPlugin = (ctx: ExtraContext, config: JsonObject) => void | Promise<void>;
 
 interface ExtraContext {
-  adapterHost: Pick<HostRunService, "invoke">;
+  adapterHost: Pick<HostRunService, "invoke" | "cancel" | "respondInteraction">;
   signal: AbortSignal;
   onDispose(dispose: () => void | Promise<void>): void;
+  onConfigure(handler: (config: JsonObject) => void | Promise<void>): void;
+  onRequest(handler: (method: string, params: JsonObject) => unknown | Promise<unknown>): void;
 }
 ```
 
@@ -117,7 +119,19 @@ lambda 返回或 Promise 完成表示初始化完成，不表示插件卸载。�
 
 插件必须让初始化和内部任务响应停止信号，自己的 disposer 等待内部任务退出。加载器不强行终止同进程 JavaScript，也不是插件沙箱。业务重连和是否重试外部副作用由插件处理；loader 不在失败时自动重新 invoke 或自动重启插件。
 
-公开状态只报告生命周期和脱敏错误码，不公开配置、Token 或第三方异常原文。`loaded` 不证明云端已登记或 WS 正常，业务连接健康需要插件自己的证据。本次最小 context 没有新增通用业务状态 API。
+公开状态只报告生命周期和脱敏错误码，不公开配置、Token 或第三方异常原文。`loaded` 不证明云端已登记或 WS 正常。插件可登记 `onRequest`，由 `requestExtra(name, method, params)` 转交业务查询；方法、返回数据和脱敏由插件定义，框架不定义 Bot 或通用在线状态。
+
+## SDK 动态管理
+
+`configureExtra(descriptor)` 校验并应用完整声明。相同 module 且插件登记 onConfigure 时，向该处理器提供完整 config；否则卸载并重载该插件。enabled=false 时卸载。操作不重启共享 Host，不安装或下载包。配置更新与业务请求按插件串行执行；卸载先通知停止，再等待在途处理与资源清理。处理器必须响应停止信号。
+
+`loadExtra`、`unloadExtra` 和 `extraStatus` 对应已声明插件的生命周期操作；`requestExtra` 只向已加载且登记 onRequest 的插件转交请求。更新失败拒绝请求，不承诺业务副作用事务回滚；宿主应展示应用失败并允许重试。CLI extraset 仍只写盘，重启生效，不等同于 SDK 动态配置。
+
+SDK 保留成功应用的最新声明供同账号重启恢复；load/unload 更新该实例内的启用状态。logout/account-switch 清除动态声明并恢复构造时的初始声明，宿主应在新账号登录后恢复自己的配置。宿主长期存储仍由宿主负责。
+
+IM 插件的 onConfigure 按完整 bots 数组删除缺失项、更新变化项，未变化连接保留。可选 authorized_space_ids 属于插件业务配置，Octo 以认证得到的真实 Space 校验；空列表不授权任何 Space，省略时不增加宿主租户限制。授权范围变化重建连接。status 业务查询返回脱敏的逐 Bot 状态。Work App 使用此路径，按账号 SQLite 保存和恢复配置。
+
+对象 modules 和函数式 extras 不能以同名同时装配，daemon 在取得进程资源前拒绝初始冲突，并拒绝动态配置时的冲突。
 
 ## 适用场景与边界
 
@@ -141,4 +155,4 @@ Provider Adapter 是执行的被调用实现，不属于这些业务入口。宿
 
 [加载与清理](../../packages/octo-runtime-daemon/src/extras.ts)、[声明校验](../../packages/octo-runtime-daemon/src/extra-config.ts)、[Octo 默认导出](../../packages/octo-runtime-extra-channel-gateway/src/extra.ts)、[WeCom 默认导出](../../packages/octo-runtime-extra-channel-wecom/src/extra.ts)、[生命周期测试](../../test/extras.test.js)。
 
-当前 CLI 读取 `<home>/default/extra/<name>/config.json`。曾提出的 Home 根 `extras/` 布局和三命令统一启动汇总均未实现，本合同不要求按那些目标路径配置。宿主自己的存储不受 CLI 文件位置约束。
+当前 CLI 读取 `<home>/default/extra/<name>/config.json`。前台 `daemon run` 默认输出扫描目录、发现条目和逐插件加载结果；`--quiet` 关闭输出。`extra status` 是生命周期，`extra status <name>` 转交插件的 status 业务查询，不把 loaded 推导成连接在线。曾提出的 Home 根 `extras/` 布局和三命令统一启动汇总均未实现，本合同不要求按那些目标路径配置。宿主自己的存储不受 CLI 文件位置约束。

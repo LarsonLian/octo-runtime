@@ -128,7 +128,7 @@ test("host holds terminal until adapter stream cleanup succeeds", async () => {
   assert.deepEqual(events.map(x => x.type), ["run.failed"]);
   assert.equal(events[0].payload.failure.code, "OH-ADP-3004");
   assert.equal(events[0].payload.failure.stage, "adapter.invoke");
-  assert.doesNotMatch(JSON.stringify(events[0]), /cleanup failed/);
+  assert.equal(events[0].payload.message, "cleanup failed");
 });
 
 test("host reports failure when adapter exits without terminal", async () => {
@@ -159,7 +159,9 @@ test("host classifies and redacts adapter-provided provider failures", async () 
   assert.equal(events.at(-1).payload.failure.reasonCode, "PROVIDER_HTTP_401");
   assert.equal(events.at(-1).payload.failure.code, "OH-PRV-4001");
   assert.equal(events.at(-1).payload.failure.source.adapter, "provider-fixture");
-  assert.doesNotMatch(JSON.stringify(events), /provider-secret|Authorization|providerError/);
+  assert.equal(events.at(-1).payload.message, "Authorization: Bearer [REDACTED]");
+  assert.deepEqual(events.at(-1).payload.providerError, { status: 401, token: "[REDACTED]" });
+  assert.doesNotMatch(JSON.stringify(events), /provider-secret/);
 });
 
 test("host normalizes unclassified analysis to an explicit fail-closed exposure", async () => {

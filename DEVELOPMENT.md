@@ -6,7 +6,7 @@
 
 先验证不依赖云端的本地身份、IPC 与真实执行，再按宿主选择分别验证 Worker 和 IM。注册失败、未启用设备在线或频道断线不能成为本地启动失败的理由。
 
-HostApp 负责安装计划、业务目标、defaults／mandatory 和每轮 Context；底层校验并转发协议，不补业务背景、不自动创建 Agent。Run 7 与 Context v3 独立保持，不提供旧路径兼容。
+HostApp 负责安装计划、业务目标、defaults／mandatory 和每轮 Context；底层校验并转发协议，不补业务背景、不自动创建 Agent。Run 7 与 Context v3 独立保持。更新范围及迁移方式遵循[基础架构规则](.octospec/rules/architecture.md)，历史重置授权不作为后续 Runtime 状态清理依据。
 
 fake Provider 和临时 SQLite 适用于合同测试。调试真实服务必须使用 `https://im-test.deepminer.com.cn/`；涉及桌面 UI／真实接口时还须驱动真实 renderer，单元测试不能代替实机验收。
 

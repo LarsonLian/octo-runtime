@@ -8,7 +8,7 @@ Octo Runtime 是 provider-neutral 的本地 Agent Runtime。本地接入使用 `
 
 架构评审指出，原项目名称容易被理解为自研 ReAct 的 Agent 框架，与项目实际作用和价值不符。项目现统一命名为 **Octo Runtime**，包使用 `octo-runtime-*`，CLI 使用 `octo-runtime`。独立 CLI 默认 Home 为 `~/.octo-runtime`；Octo Work 保持产品名称，默认 Home 改为 `~/.octo-runtime-work`，本次本机改造将已有数据整目录移动到新位置。改造范围与验证记录见 [命名改造方案](.octospec/journal/shared/architecture-evolution.md)。本地改名不表示新 npm 包或线上安装路由已经发布。
 
-`octo-runtime-embedded` 独立包已移除，其本地生命周期与 IPC API 收入 `octo-runtime-daemon`。daemon 包不依赖 worker-access 或 channel-gateway；客户可以只部署 daemon 及其本地执行依赖。标准产品由 HostApp 另行携带可选连接包，通过模块配置显式启动。当前 SDK 的本地控制进程仍使用 daemon server；下面记录的最终对外进程职责和在线 toggle 按各自里程碑验收，不能从本次包合并推断已经全部实现。
+`octo-runtime-embedded` 独立包已移除，其本地生命周期与 IPC API 收入 `octo-runtime-daemon`。daemon 包不依赖 worker-access 或 channel-gateway；客户可以只部署 daemon 及其本地执行依赖。标准产品由 HostApp 另行携带可选连接包，通过 Extra 声明显式装配。当前 SDK 的本地控制进程仍使用 daemon server；下面记录的最终对外进程职责和在线 toggle 按各自里程碑验收，不能从本次包合并推断已经全部实现。
 
 ## 客户系统融合：建议优先通过 SDK 接入
 
@@ -28,9 +28,9 @@ SDK 接入不表示所有执行都在宿主进程内完成；daemon、Host 和 P
 
 **SDK 接收符合接口契约的配置对象，配置从哪里读取、如何保存、何时更新，完全由宿主开发者决定。** 宿主可以使用内存、本地文件、SQLite、其他数据库、自定义 store 或远程配置平台，也可以组合多个来源。SDK 接入不要求宿主使用指定配置文件、固定文件名、目录或存储产品。
 
-宿主负责读取、解析和按自身规则合并配置，再通过 SDK 设置模块。例如，IM 配置可以通过 `startModule("channel-gateway", { bots })` 传入，也可以在模块启动后通过 `requestModule("channel-gateway", "upsert", { config })` 应用。这里的 `config` 是配置对象；跨进程序列化不意味着宿主必须提供 JSON 文件。SDK 和模块仍按各自契约校验配置结构、字段语义及执行权限。
+宿主负责读取配置，构造完整 Extra 声明 `{ name, module, config }`。IM 插件在 `config.bots` 数组中管理多个 Bot；宿主通过初始 `extras` 声明或 `configureExtra(descriptor)` 提交完整快照。SDK 校验声明和 JSON 结构，插件校验自己的业务字段，执行层继续校验执行权限。
 
-**CLI 的配置文件约定属于 CLI 入口，不是 SDK 的接入要求。** CLI 可以选择把 IM 配置保存到 `<home>/im.json`，启动时解析后调用模块；桌面 App 或其他宿主可以从自己的 store 或配置平台取得同类对象，通过 SDK 应用。更换配置来源不需要改变模块的配置契约。
+**CLI 的配置文件约定属于 CLI 入口，不是 SDK 的接入要求。** `extraset <name>` 保存完整 `{ module, enabled?, config }` 到 `<home>/default/extra/<name>/config.json`；每次整份替换，重启 daemon 后加载。CLI/daemon 不解释或合并 Bot 字段。SDK 宿主从自己的 store 构造同样的声明对象，无需创建此文件。
 
 配置来源自由与 SDK 的内部运行状态持久化是两层职责。SDK／模块仍可在选定 Home 下管理 Runtime 身份、设备凭据、PID/socket、日志等状态；这些内部文件不要求宿主把自己的模块配置也存到同一位置。详细边界见 [接入指南：配置来源与 SDK 契约](INTEGRATION.md#02-配置来源与-sdk-契约)。
 
@@ -60,7 +60,7 @@ Event 发起方必须完成 awareness 采集、材料选择、指引编写和 Co
 
 Host 必须通过单一纯函数，将可注入 item 按固定开始/结束标记及 `contexts` / `context-item` 外层标记拼接。item 内部使用换行纯文本 `指引: ...`、`数据: ...`，不添加子标签、不做 XML 实体转义，也不要求严格 XML。执行配置不注入模型上下文块；合法 `extra.*` item 的指引和 payload 完整注入，不增加逐业务 Compiler、Resolver 或字段投影配置。
 
-Host renderer 只匹配白名单 pattern：`extra.*/*`、`octo.content/inline`、`octo.content/references`。renderer 不校验业务字段、不查处理器、不检查场景材料、不解引用、不压缩。接纳边界仍处理协议格式和执行权限；必要 adapter 等执行配置独立解析。Compiler/Pipeline、材料预取与摘要、扩展字段投影及编译回执已删除，不保留旧路径或兼容升级。
+Host renderer 只匹配白名单 pattern：`extra.*/*`、`octo.content/inline`、`octo.content/references`。renderer 不校验业务字段、不查处理器、不检查场景材料、不解引用、不压缩。接纳边界仍处理协议格式和执行权限；必要 adapter 等执行配置独立解析。Compiler/Pipeline、材料预取与摘要、扩展字段投影及编译回执已删除。
 
 详细设计见 [Event Context 与 Host 固定渲染：IPD-SE 基线](.octospec/rules/context-input.md)，当前注入规则见 [LLM 注入约束](.octospec/rules/context-input.md)。Run 7 / Context v3 保持不变；传输字段沿用 `context` / `effective_context`，其中 `items` 是本轮列表，渲染文本使用 `contexts` 外层标记。
 

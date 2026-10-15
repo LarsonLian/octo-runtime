@@ -1,0 +1,14 @@
+rules:
+  - runtime-architecture
+  - runtime-engineering
+  - runtime-adapter-capabilities
+  - runtime-channel
+  - runtime-output-protocol
+  - runtime-protocol-schema
+sources:
+  - .octospec/rules/architecture.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/adapter-capabilities.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/output-protocol.md
+  - .octospec/rules/protocol-schema.md

@@ -20,7 +20,7 @@ supersedes: []
 
 本协议允许在 Context 中指定本轮 MCP 连接。HostApp 负责 Skills、知识库组件、CLI、插件和 MCP 程序的安装与更新；原生运行时负责连接 HTTP 服务或启动已安装的 stdio 程序。Runtime 不通过此配置下载或安装组件。
 
-连接通过 `octo.execution/mcp` 提供。Runtime 不使用 FileBundle、资源下载、旧 `InvokeRequest.mcpServers` 或旧执行计划 `mcp_servers`。Run 保持 7，Context 保持 v3；不提供旧格式兼容。
+连接通过 `octo.execution/mcp` 提供。Runtime 不使用 FileBundle、资源下载、旧 `InvokeRequest.mcpServers` 或旧执行计划 `mcp_servers`。Run 保持 7，Context 保持 v3。
 
 ## Context 字段
 

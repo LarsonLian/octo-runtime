@@ -3,6 +3,7 @@
  * 按消息/工具/模型轮次保留身份与顺序，仅公开协议允许的内容；不展示私有 reasoning。
  */
 import type { CanonicalEvent, FailureEnvelope } from "@mininglamp-oss/octo-runtime-protocol";
+import { sanitizePublicValue } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 
 export interface ProgressItem {
   id: string;
@@ -30,6 +31,8 @@ export interface RunPresentation {
   toolCallCount: number;
   modelStepCount: number;
   failure?: FailureEnvelope;
+  failureMessage?: string;
+  failureDetail?: string;
   resultUnknown?: boolean;
 }
 
@@ -47,6 +50,8 @@ export class ImRunProjector {
   #endedAt?: number;
   #terminal?: RunPresentation["terminal"];
   #failure?: FailureEnvelope;
+  #failureMessage?: string;
+  #failureDetail?: string;
   constructor(
     readonly runId: string,
     readonly allowToolPreview = false
@@ -198,6 +203,21 @@ export class ImRunProjector {
             : "cancelled";
       this.#endedAt = now;
       this.#failure = p.failure;
+      if (event.type === "run.failed") {
+        const message = sanitizePublicValue(p.message);
+        const error = sanitizePublicValue(p.error);
+        this.#failureMessage = typeof message === "string" && message.trim() ? message : undefined;
+        const detail =
+          typeof error === "string"
+            ? error
+            : error && typeof error === "object"
+              ? JSON.stringify(error, null, 2)
+              : undefined;
+        this.#failureDetail =
+          detail && detail !== this.#failureMessage
+            ? [this.#failureMessage, detail].filter(Boolean).join("\n")
+            : this.#failureMessage || detail;
+      }
       for (const item of this.#items.values())
         if (item.status === "running")
           item.status = this.#terminal === "completed" ? "completed" : "cancelled";
@@ -245,7 +265,9 @@ export class ImRunProjector {
       reasoningCount: items.filter((i) => i.kind === "reasoning").length,
       toolCallCount: items.filter((i) => i.kind === "tool").length,
       modelStepCount: items.filter((i) => i.kind === "model_step").length,
-      failure: this.#failure
+      failure: this.#failure,
+      failureMessage: this.#failureMessage,
+      failureDetail: this.#failureDetail
     };
   }
 }

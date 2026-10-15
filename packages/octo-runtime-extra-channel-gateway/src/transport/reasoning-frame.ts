@@ -281,10 +281,13 @@ export function buildReasoningFrame(
           ? " · 已保留完成步骤"
           : " · 展开查看失败前步骤");
     if (snapshot.terminal === "failed") {
-      frame.errorTitle = "生成失败";
-      frame.errorMessage = snapshot.failure
-        ? failureMessage(snapshot.failure.code)
-        : "任务执行失败，系统未返回具体原因。";
+      frame.errorTitle = "执行失败";
+      frame.errorMessage =
+        snapshot.failureMessage ||
+        snapshot.failureDetail ||
+        (snapshot.failure
+          ? failureMessage(snapshot.failure.code)
+          : "任务执行失败，系统未返回具体原因。");
       const actions: Record<string, string> = {
         retry: "重试",
         retry_later: "稍后重试",
@@ -296,12 +299,24 @@ export function buildReasoningFrame(
         contact_admin: "联系管理员"
       };
       const actionLabel = snapshot.failure ? actions[snapshot.failure.action.type] : "查看运行记录";
-      frame.errorMessage = clampRunes(
-        [frame.errorMessage, actionLabel, snapshot.failure?.code, snapshot.failure?.diagnosticId]
-          .filter(Boolean)
-          .join(" · "),
-        121
-      );
+      frame.phases = [
+        ...frame.phases.slice(-2).map((phase) => ({ ...phase, actions: phase.actions.slice(-3) })),
+        {
+          thought: snapshot.failureDetail || frame.errorMessage,
+          actions: [
+            {
+              tool: actionLabel || "查看运行记录",
+              detail:
+                [snapshot.failure?.code, snapshot.failure?.diagnosticId]
+                  .filter(Boolean)
+                  .join(" · ") || "系统未返回诊断编号",
+              statusGlyph: "!",
+              statusTone: "Attention"
+            }
+          ]
+        }
+      ];
+      frame.errorMessage = clampRunes(frame.errorMessage, 121);
     }
   }
   const thoughtMax = template.ref.version === "0.4.0" ? 4000 : 280;

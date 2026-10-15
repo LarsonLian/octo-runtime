@@ -1,9 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { link, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { isIP } from "node:net";
-import { homedir, networkInterfaces } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import JSON5 from "json5";
 import {
   createOpenClawDeviceIdentity,
   type OpenClawDeviceIdentity,
@@ -11,11 +8,13 @@ import {
 } from "./gateway.js";
 
 export const OPENCLAW_RUNTIME_ROOT = "OPENCLAW_RUNTIME_ROOT";
-export type OpenClawConnection =
-  | { schema_version: 1; source: "home"; openclaw_home: string }
-  | { schema_version: 1; source: "gateway"; gateway_url: string; credential_ref: string };
+export type OpenClawConnection = {
+  schema_version: 1;
+  source: "gateway";
+  gateway_url: string;
+  credential_ref: string;
+};
 export interface OpenClawConnectionInput {
-  openclawHome?: string;
   url?: string;
   token?: string;
 }
@@ -29,84 +28,55 @@ export class LocalGatewayError extends Error {
 /** A connection belongs to one Runtime profile, independently of the target Agent. */
 export async function configureOpenClawConnection(
   runtimeRoot: string,
-  input: OpenClawConnectionInput = {},
-  env: NodeJS.ProcessEnv = process.env
+  input: OpenClawConnectionInput
 ): Promise<OpenClawConnection> {
   const path = connectionPath(runtimeRoot);
-  const explicit = Object.values(input).some((value) => value !== undefined);
-  if (!explicit) {
-    const saved = await readOptional(path);
-    if (saved !== undefined) return assertConnection(saved);
-    input = {
-      openclawHome: env.OPENCLAW_HOME,
-      url: env.OPENCLAW_GATEWAY_URL,
-      token: env.OPENCLAW_GATEWAY_TOKEN
-    };
-  }
-  const connection = await connectionFromInput(runtimeRoot, input, env);
-  // Concurrent initial probes must agree on the same persisted source.
-  await writePrivateJson(path, connection, !explicit);
-  return assertConnection(await readOptional(path));
+  if (!input.url?.trim() || !input.token?.trim())
+    throw new LocalGatewayError("gateway_url_and_token_required");
+  const url = normalizeOpenClawGatewayUrl(input.url);
+  // A distinct credential file makes a source change atomic for concurrent readers.
+  const credentialRef = `credentials/openclaw-gateway-${randomUUID()}.json`;
+  await writePrivateJson(join(runtimeRoot, credentialRef), {
+    schema_version: 1,
+    access_token: input.token
+  });
+  const connection: OpenClawConnection = {
+    schema_version: 1,
+    source: "gateway",
+    gateway_url: url,
+    credential_ref: credentialRef
+  };
+  const devicePath = join(runtimeRoot, "credentials", "openclaw-device.json");
+  await writePrivateJson(devicePath, createOpenClawDeviceIdentity(), true);
+  assertDeviceIdentity(await readOptional(devicePath));
+  await writePrivateJson(path, connection);
+  return connection;
 }
 
-async function connectionFromInput(
-  runtimeRoot: string,
-  input: OpenClawConnectionInput,
-  env: NodeJS.ProcessEnv
-): Promise<OpenClawConnection> {
-  if (input.openclawHome !== undefined && (input.url !== undefined || input.token !== undefined))
-    throw new LocalGatewayError("connection_sources_conflict");
-  if (input.url !== undefined || input.token !== undefined) {
-    if (!input.url?.trim() || !input.token?.trim())
-      throw new LocalGatewayError("gateway_url_and_token_required");
-    const url = normalizeOpenClawGatewayUrl(input.url);
-    // A distinct credential file makes a source change atomic for concurrent readers.
-    const credentialRef = `credentials/openclaw-gateway-${randomUUID()}.json`;
-    await writePrivateJson(join(runtimeRoot, credentialRef), {
-      schema_version: 1,
-      access_token: input.token
-    });
-    return {
-      schema_version: 1,
-      source: "gateway",
-      gateway_url: url,
-      credential_ref: credentialRef
-    };
-  }
-  if (input.openclawHome !== undefined && !input.openclawHome.trim())
-    throw new LocalGatewayError("openclaw_home_invalid");
-  return {
-    schema_version: 1,
-    source: "home",
-    openclaw_home: resolve(input.openclawHome ?? join(env.HOME || homedir(), ".openclaw"))
-  };
+export async function readOpenClawConnection(
+  runtimeRoot: string
+): Promise<OpenClawConnection | undefined> {
+  const saved = await readOptional(connectionPath(runtimeRoot));
+  return saved === undefined ? undefined : assertConnection(saved);
 }
 
 /** Re-read both the source and credentials for every probe/invocation; never reset Gateway tokens. */
 export async function loadLocalOpenClawGateway(
   runtimeRoot: string
 ): Promise<OpenClawGatewayOptions> {
-  const connection = await configureOpenClawConnection(runtimeRoot);
-  let url: string, token: string;
-  if (connection.source === "home") {
-    ({ url, token } = await readOpenClawHome(connection.openclaw_home));
-  } else {
-    url = connection.gateway_url;
-    const credential = record(await readOptional(join(runtimeRoot, connection.credential_ref)));
-    if (
-      credential?.schema_version !== 1 ||
-      typeof credential.access_token !== "string" ||
-      !credential.access_token.trim()
-    )
-      throw new LocalGatewayError("gateway_credential_invalid");
-    token = credential.access_token;
-  }
+  const connection = await readOpenClawConnection(runtimeRoot);
+  if (!connection) throw new LocalGatewayError("runtime_configuration_missing");
+  const url = connection.gateway_url;
+  const credential = record(await readOptional(join(runtimeRoot, connection.credential_ref)));
+  if (
+    credential?.schema_version !== 1 ||
+    typeof credential.access_token !== "string" ||
+    !credential.access_token.trim()
+  )
+    throw new LocalGatewayError("gateway_credential_invalid");
+  const token = credential.access_token;
   const path = join(runtimeRoot, "credentials", "openclaw-device.json");
-  let device = await readOptional(path);
-  if (device === undefined) {
-    await writePrivateJson(path, createOpenClawDeviceIdentity(), true);
-    device = await readOptional(path);
-  }
+  const device = await readOptional(path);
   assertDeviceIdentity(device);
   return { url, token, device, connectTimeoutMs: 1_000, requestTimeoutMs: 1_000 };
 }
@@ -141,60 +111,6 @@ export async function resolveOpenClawGateway(
   };
 }
 
-async function readOpenClawHome(home: string): Promise<{ url: string; token: string }> {
-  let source: string;
-  try {
-    source = await readFile(join(home, "openclaw.json"), "utf8");
-  } catch (error) {
-    throw new LocalGatewayError(
-      (error as NodeJS.ErrnoException).code === "ENOENT" ? "config_not_found" : "config_unreadable"
-    );
-  }
-  let config: Record<string, unknown>;
-  try {
-    const parsed = record(JSON5.parse(source));
-    if (!parsed) throw new Error();
-    config = parsed;
-  } catch {
-    throw new LocalGatewayError("config_invalid");
-  }
-  const gateway = record(config.gateway);
-  if (
-    Object.hasOwn(config, "$include") ||
-    !gateway ||
-    (gateway.mode && gateway.mode !== "local") ||
-    record(gateway.tls)?.enabled
-  )
-    throw new LocalGatewayError("config_unsupported");
-  const auth = record(gateway.auth);
-  const token = auth?.token;
-  if (
-    (auth?.mode && auth.mode !== "token") ||
-    typeof token !== "string" ||
-    !token.trim() ||
-    token.includes("${")
-  )
-    throw new LocalGatewayError("auth_config_unsupported");
-  const port = gateway.port ?? 18789;
-  if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535)
-    throw new LocalGatewayError("config_invalid");
-  const bind = gateway.bind ?? "loopback";
-  const host = bind === "custom" ? gateway.customBindHost : "127.0.0.1";
-  const localAddresses = Object.values(networkInterfaces()).flatMap(
-    (entries) => entries?.map((entry) => entry.address) ?? []
-  );
-  if (
-    typeof bind !== "string" ||
-    !["loopback", "lan", "auto", "custom"].includes(bind) ||
-    typeof host !== "string" ||
-    !isIP(host) ||
-    !["127.0.0.1", "::1", "0.0.0.0", "::", ...localAddresses].includes(host)
-  )
-    throw new LocalGatewayError("local_address_unsupported");
-  const localHost = host === "0.0.0.0" ? "127.0.0.1" : host === "::" ? "::1" : host;
-  return { url: `ws://${isIP(localHost) === 6 ? `[${localHost}]` : localHost}:${port}`, token };
-}
-
 export function normalizeOpenClawGatewayUrl(value: string): string {
   let url: URL;
   try {
@@ -221,12 +137,6 @@ function connectionPath(root: string): string {
 function assertConnection(value: unknown): OpenClawConnection {
   const connection = record(value);
   if (connection?.schema_version !== 1) throw new LocalGatewayError("connection_config_invalid");
-  if (
-    connection.source === "home" &&
-    typeof connection.openclaw_home === "string" &&
-    isAbsolute(connection.openclaw_home)
-  )
-    return connection as unknown as OpenClawConnection;
   if (
     connection.source === "gateway" &&
     typeof connection.gateway_url === "string" &&

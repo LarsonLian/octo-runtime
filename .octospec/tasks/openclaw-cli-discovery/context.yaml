@@ -1,0 +1,14 @@
+rules:
+  - runtime-architecture
+  - runtime-openclaw
+  - runtime-lifecycle
+  - runtime-engineering
+  - runtime-adapter-capabilities
+  - runtime-local-execution
+  - runtime-invoke-input
+  - runtime-context-input
+  - runtime-environment
+  - runtime-mcp
+  - runtime-reasoning
+  - runtime-output-protocol
+  - commit
