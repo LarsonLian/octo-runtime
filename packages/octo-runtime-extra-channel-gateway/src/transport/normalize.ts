@@ -33,8 +33,17 @@ export function acceptsImMessage(
     !config.group_ids?.includes(groupScope(message.channelId).groupNo)
   )
     return false;
-  const mention = message.payload.mention as { uids?: unknown } | undefined;
-  return Array.isArray(mention?.uids) && mention.uids.includes(config.bot_id);
+  return mentionsBot(message.payload.mention, config.bot_id);
+}
+
+export function mentionsBot(value: unknown, botId: string): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const mention = value as Record<string, unknown>;
+  const flag = (value: unknown): boolean => value === 1 || value === true;
+  return (
+    (Array.isArray(mention.uids) && mention.uids.includes(botId)) ||
+    (flag(mention.ais) && !flag(mention.all) && !flag(mention.humans))
+  );
 }
 
 export function imSessionKey(config: ScopedOctoBotConfig, message: ImMessage): string {
