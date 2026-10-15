@@ -44,6 +44,8 @@ OpenClaw 声明两种来源，Adapter 边界都要求有效目标；公共 `Invo
 
 Provider 的 `available`、认证、目标 Agent、当前输入可执行性与执行完成分别判断。可用性以实际 probe 为准；标签和静态支持声明不能证明执行成功。
 
+产品选择的加载集合也独立于以上状态。CLI 与 SDK 嵌入代码分别决定集合；Host 不因框架支持更多类型或机器上探测到更多 Provider 就自行加载。SDK 不继承 CLI 全量清单，加载选择与依赖归属的改造尚未实施，见 [方案及影响](../tasks/adapter-composition-ownership/brief.md)。
+
 Host 按实际执行合同校验来源、模式、审批及输入。非空 MCP 配置在未支持的 Adapter 上明确报错。SDK 的 `mcp` 是本地实现支持标识，不新增远程 Runtime 能力准入门槛。不得将业务标签迁入 `executionFeatures` 以恢复已删除的能力体系。
 
 ## 协议删除边界

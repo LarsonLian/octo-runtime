@@ -124,6 +124,8 @@ pnpm --filter @mininglamp-oss/octo-runtime-adapter-codex list
 
 ## 新增 Adapter Package
 
+以下步骤描述当前实现。已确认的目标改造为 [CLI 与 SDK 分别选择集合](../tasks/adapter-composition-ownership/brief.md)：CLI 自管清单，SDK 嵌入代码自管选择，宿主 App 自行管理依赖、裁剪及打包，框架不承诺客户包体。实施后新增 Adapter 不应自动加载到所有客户产品；对接文档和加载代码的详细中文注释必须同步交付。在改造完成前，不能把下面的共享 JSON 当作长期责任划分。
+
 以 `foo` provider 为例：
 
 1. 创建 `packages/octo-runtime-adapter-foo/package.json`、`src/index.ts` 和 `README.md`。

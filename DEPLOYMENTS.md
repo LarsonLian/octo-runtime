@@ -4,6 +4,8 @@
 
 ## 1. 客户 App 的最小部署
 
+宿主 App 自行管理 Adapter 的生产依赖、依赖裁剪及安装包内容，并确保 SDK 选择加载的模块及必要依赖可解析。Runtime 不替客户修改依赖树，不承诺最终包体只包含所选 Adapter。已确认的改造将使 CLI 和 SDK 各自管理加载集合；当前仍有共享清单，详见 [接入说明](INTEGRATION.md#22-本地启动与宿主发行物)与[实施方案](.octospec/tasks/adapter-composition-ownership/brief.md)。加载选择、实际携带的模块和 Provider 安装必须分别说明。
+
 `packages/*` 全部是内部模块，不独立发布或供用户从 npm 引用。Eva2.0 等内部项目仅需要本地执行时，由维护者从源码构建 daemon 及其本地生产依赖，再手动拷贝发行目录并覆盖目标程序文件。这里的包名仅用于内部模块解析，不是独立 npm 产品。无需携带 worker-access、channel-gateway、标品 Work App 代码或独立 embedded 包；不通过 apps/cli 承载 SDK。
 
 源码构建与拷贝前的目录准备示例：

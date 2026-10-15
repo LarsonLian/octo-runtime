@@ -2,6 +2,8 @@
 
 ## 2026-10-15
 
+- 确认 [Adapter 装配归属](tasks/adapter-composition-ownership/brief.md)：CLI 与 SDK 嵌入代码各自选择，Host 按选择加载；配置载体由各自决定。依赖、裁剪和包体由宿主 App 自行管理，不作为 Runtime 的包体承诺。记录启动传递、缺包、空集合及已有 daemon 冲突的影响；对接文档、可运行示例和加载关键代码的详细中文注释为必须交付项。本次仅更新文档，未改代码或安装包。
+
 - 按[任务](tasks/remove-adapter-host-app/brief.md)移除 Host app 启动壳，CLI daemon 与 SDK 统一启动 package runner；保留独立进程和全部 CLI 功能，更新发行物及测试。808 项回归通过、7 项跳过，离线安装、12 个 Adapter 加载及真实 Codex/OpenClaw 调用通过，范围见[记录](journal/shared/2026-10-15-remove-adapter-host-app.md)。
 
 - 落实 [CLI 设备级 extras 配置目录](tasks/device-extra-directory/brief.md)：唯一读取 `<home>/extras`，Extra 命令拒绝 profile，不增加旧布局探测或迁移；58 项相关回归与限定范围实机验证通过，见 [记录](journal/shared/2026-10-15-cli-extras-directory.md)。

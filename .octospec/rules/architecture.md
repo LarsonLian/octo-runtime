@@ -91,6 +91,16 @@ Agent 定义、业务任务、会话历史及 Provider session binding 由业务
 
 这次目录收敛必须保留 `octo-runtime` 的现有命令、参数和执行行为。构建、测试及单一 npm 发行物必须携带 runner 与 Adapter 生产依赖，不得再依赖旧 app 路径。更新程序后使用原 Home、身份、profile 和配置，不为入口迁移重新初始化 Runtime。验收范围见 [移除 Host app 任务](../tasks/remove-adapter-host-app/brief.md)。
 
+#### Adapter 加载集合的归属
+
+CLI 与客户产品的 SDK 嵌入代码各自决定加载哪些 Adapter。各自使用 JSON、TS 或直接写代码均可；SDK 是产品内部嵌入实现，不独立发包，也不要求终端用户另行装配。框架支持的全部 Adapter 不等于产品本次加载集合，Host 只加载显式选择，不自行扩充。Provider 的安装仍由 HostApp 决定。
+
+通用执行层共享加载与校验机制，不共享产品默认全量清单。SDK 不得通过构建复制 CLI 清单而继承 CLI 的选择。生产依赖、依赖裁剪及最终包体由宿主 App 自行管理，Runtime 只要求选中模块可解析，不承诺产物只包含选中项，也不替客户调整依赖树。独立 Host 子进程与共同 runner 保留。
+
+此改造必须同步对接文档，并提供使用真实接口的完整加载示例。示例与加载关键实现必须用中文代码注释说明选择的用途、责任来源、字段、路径解析、子进程传递、失败与重启行为；只给一段无注释调用代码不满足交付要求。
+
+这是 2026-10-15 确认的目标约束，尚未实施。当前根清单、SDK 构建复制和 Host 全量依赖仍存在；变更步骤、迁移影响、失败行为及验收见 [Adapter 装配归属方案](../tasks/adapter-composition-ownership/brief.md)。
+
 ### Extra 外部接入插件
 
 每个 Extra 负责自己与外部系统的连接启动、认证、请求接收、业务路由、执行交互和结果投递。外部系统下发的请求由 Extra 转为统一执行请求，交给共享 AdapterHost；执行事件和结果由 Extra 按外部系统协议回传。

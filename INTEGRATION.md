@@ -380,6 +380,14 @@ Home 使用 SDK 的 `resolveDaemonHome(appId)` 或产品指定路径，与 stand
 
 ### 2.2 本地启动与宿主发行物
 
+#### Adapter 加载责任（改造约定，尚未实施）
+
+CLI 自己决定加载哪些 Adapter，客户产品的 SDK 嵌入代码也自己决定；框架支持的全部 Adapter 不是客户默认加载集合。下面的 manifest 布局和初始化示例仍描述当前实现，共享清单的改造尚未完成，不能将其当作最终加载接口。
+
+宿主 App 自行管理生产依赖、依赖裁剪和安装包内容，并确保选中模块及其必要依赖在正式包中能够解析。Runtime 只负责按选择加载和校验，不管理客户依赖树，也不保证“加载 5 个”就意味着“包里只有 5 个”。加载 Adapter 与安装、认证 Provider 是不同操作；安装决策始终属于 HostApp。
+
+改造交付时，本节必须补齐使用真实 API 的完整可运行示例，并在代码中逐段添加中文注释，说明为什么需要这段加载代码、谁维护选择、各字段用途、模块路径和打包前提、如何交给独立 Host、加载失败如何处理，以及停止和重启如何保持选择。实际加载关键实现同样必须有注释。此项为必要验收要求，详见 [装配方案与注释清单](.octospec/tasks/adapter-composition-ownership/brief.md)。
+
 SDK 由宿主管理生命周期：通过 `startAccount()` 启动本地 daemon／Host 子进程，通过 `stop("quit")` 在应用退出时回收。接入方无需先执行 CLI 的 `daemon install` 或 `daemon start`，也无需传入 `--foreground`。宿主应将正常退出流程接到 SDK 的 `stop()`；子进程对宿主存活的监测用于异常退出后的回收。
 
 Node.js 24+ 宿主仅使用本地执行时：

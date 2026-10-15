@@ -41,6 +41,8 @@
 
 ## 历史与取舍
 
+- [CLI 与 SDK 分别决定 Adapter 加载集合](tasks/adapter-composition-ownership/brief.md)：记录共享清单和全量依赖的问题、各产品自行选择的目标、实现步骤与兼容影响；本次只记录方案，代码尚未改造。
+
 - [移除 AdapterHost app 启动壳](tasks/remove-adapter-host-app/brief.md)：apps 收敛为 CLI 与 daemon，统一使用 package runner，保留独立 Host 进程及全部 CLI 功能；检查、离线安装与真实 Provider 结果见[验证记录](journal/shared/2026-10-15-remove-adapter-host-app.md)。
 
 - [CLI 构建 commit 信息](tasks/cli-build-commit/brief.md)：pnpm build 固化 Git 来源，版本与帮助显示 commit/dirty，发行包保留元数据。

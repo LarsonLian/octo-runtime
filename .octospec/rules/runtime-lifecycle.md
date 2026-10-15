@@ -44,6 +44,8 @@ HostApp 安装并初始化 Runtime 后，本地执行对象及稳定身份即存
 
 本地 SDK 位于 `octo-runtime-daemon/src/runtime`；独立 embedded 包已删除。daemon 的生产依赖只包含本地执行及协议所需包，不依赖业务 Channel。Octo 与 WeCom 由各自 `extra-channel-*` 包提供，宿主按需携带和启用。
 
+SDK 是客户程序内部的嵌入实现，不独立发包，也不要求终端用户另行维护 Adapter 装配文件。客户产品的嵌入代码应自行选择加载集合；当前构建仍复制 CLI 全量清单，尚待按 [Adapter 装配归属方案](../tasks/adapter-composition-ownership/brief.md)迁移。下文 manifest 路径与当前部署步骤描述现状，不代表该共享清单是必要架构边界。
+
 当前 `worker-access` 包已移除，不再提供 Worker 注册、WS、心跳或远程执行工厂。本地 SDK 不要求 Human Token、Worker URL 或 Runtime credential。其他产品的云端登记与设备在线能力必须使用其实际实现和回执，不能由本地 ready 推导。
 
 ## SDK 生命周期
