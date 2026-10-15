@@ -7,6 +7,7 @@ import type {
   CanonicalEvent,
   InteractionResponse,
   InvokeInput,
+  InvokeEnvironment,
   ProviderSession
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type { RunPresentation } from "./presentation/run-projector.js";
@@ -54,6 +55,7 @@ export interface ImInboundMessage {
   text: string;
   reply(text: string, effectKey?: string): Promise<void>;
   buildContext(signal: AbortSignal): Promise<ContextEnvelope>;
+  executionEnvironment?(): InvokeEnvironment;
   runMetadata?: Record<string, unknown>;
   beginPresentation?(
     runId: string,
@@ -63,6 +65,7 @@ export interface ImInboundMessage {
 }
 
 export interface ImPresentation {
+  readonly terminalDelivered?: boolean;
   update(snapshot: RunPresentation): void;
   finish(): Promise<void>;
 }
@@ -94,7 +97,7 @@ export type ImConnectionState =
 export interface ImExecutionPort {
   invoke(
     input: InvokeInput & { protocol_mode: "canonical" },
-    environment?: { signal?: AbortSignal }
+    environment?: InvokeEnvironment
   ): AsyncIterable<CanonicalEvent>;
   cancel(invocationId: string, reason?: string): Promise<{ cancelled: boolean }>;
   respondInteraction(invocationId: string, response: InteractionResponse): Promise<void>;

@@ -2,6 +2,7 @@ const SENSITIVE_OUTPUT_KEY =
   /(?:^|[_-])(?:authorization|proxy[_-]?authorization|cookie|set[_-]?cookie|token|access[_-]?token|refresh[_-]?token|secret|password|passwd|api[_-]?key|credential|private[_-]?key)(?:$|[_-])/i;
 
 export function sanitizePublicValue(value: unknown, key = "", depth = 0): unknown {
+  if (key === "executionEnvOverrides") return "[REDACTED]";
   if (SENSITIVE_OUTPUT_KEY.test(key)) return "[REDACTED]";
   if (typeof value === "string") return redactCredentialText(value);
   if (value === null || typeof value !== "object") return value;

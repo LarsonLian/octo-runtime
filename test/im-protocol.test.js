@@ -55,8 +55,15 @@ test("Failure cards show canonical errors before catalog text and keep diagnosti
     assert.ok(validateReasoningFrame(frame), JSON.stringify(validateReasoningFrame.errors));
   }
   const objectError = new ImRunProjector("object-error");
-  objectError.accept({ protocolVersion: 2, type: "run.failed", payload: { error: { message: "custom adapter failure", code: 17 } } });
-  assert.match(buildReasoningFrame(objectError.snapshot(), template).errorMessage, /custom adapter failure/);
+  objectError.accept({
+    protocolVersion: 2,
+    type: "run.failed",
+    payload: { error: { message: "custom adapter failure", code: 17 } }
+  });
+  assert.match(
+    buildReasoningFrame(objectError.snapshot(), template).errorMessage,
+    /custom adapter failure/
+  );
 });
 const config = (overrides = {}) => ({
   enabled: true,
@@ -613,6 +620,7 @@ test("Cards create/edit one stable message with monotone card_seq and persistent
   card.update(p.snapshot());
   await card.finish();
   assert.equal(card.messageId, "9223372036854775801");
+  assert.equal(card.terminalDelivered, false);
   p.accept(event("run.started"));
   p.accept(event("message.delta", { channel: "final", text: "answer" }));
   card.update(p.snapshot());
@@ -620,6 +628,7 @@ test("Cards create/edit one stable message with monotone card_seq and persistent
   p.accept(event("run.completed"));
   card.update(p.snapshot());
   await card.finish();
+  assert.equal(card.terminalDelivered, true);
   card.update({ ...p.snapshot(), terminal: undefined, phase: "thinking" });
   await card.finish();
   const sends = f.requests.filter((request) => request.path === "/v1/bot/sendMessage");

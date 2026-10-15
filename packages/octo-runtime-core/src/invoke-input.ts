@@ -8,10 +8,6 @@ import {
   contextControlInstructions,
   contextItem,
   InvokeInput,
-  createHostInvoke,
-  type HostFrame,
-  type HostInvokeOptions,
-  type InputInvoke,
   type ContextEnvelope,
   type InvokeRequest,
   type ProviderSession
@@ -161,34 +157,16 @@ export function prepareInvokeInput(value: unknown): {
     workdir: input.workdir ?? plan.workdir,
     approvalMode: input.approvalMode ?? plan.approval_mode,
     runtimeLimits: input.runtimeLimits ?? localRuntimeLimits(plan),
-    agentConfig: input.agentConfig ?? {
+    agentConfig: {
       workdir: plan.workdir,
       ...(plan.model ? { model: plan.model } : {}),
       ...(plan.effort ? { effort: plan.effort } : {}),
-      ...(plan.provider_agent_id ? { providerAgentId: plan.provider_agent_id } : {})
+      ...(plan.provider_agent_id ? { providerAgentId: plan.provider_agent_id } : {}),
+      ...input.agentConfig
     }
   };
   assertInvokeRequest(request);
   return { adapterType: plan.adapter_type, protocolMode, request };
-}
-
-/** All public ingress paths resolve the same JSON contract at the same boundary. */
-export function createInputInvoke(
-  source: (
-    type: string,
-    request: InvokeRequest,
-    options: HostInvokeOptions
-  ) => AsyncIterable<HostFrame>
-): InputInvoke {
-  const preparedInvoke = createHostInvoke(source);
-  return async function* (input: InvokeInput, environment: { signal?: AbortSignal } = {}) {
-    const prepared = prepareInvokeInput(input);
-    yield* preparedInvoke(
-      prepared.adapterType,
-      { ...prepared.request, signal: environment.signal },
-      { protocolMode: prepared.protocolMode }
-    );
-  } as InputInvoke;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -9,7 +9,7 @@ import {
 } from "./server.js";
 import { readExtraDirectory } from "@mininglamp-oss/octo-runtime-daemon";
 import { join } from "node:path";
-import { initializeCliOpenClaw } from "./openclaw.js";
+import { initializeCliOpenClaw, syncCliOpenClawToolEnvironment } from "./openclaw.js";
 import { access, readdir, readFile } from "node:fs/promises";
 
 const runtimePaths = resolveDaemonRuntimePaths();
@@ -81,10 +81,27 @@ try {
   const extraDirectory = join(home, "extras");
   if (runtimePaths.consoleOutput) console.error("extras scanning", { directory: extraDirectory });
   const extras = runtimePaths.executionOnly ? [] : await readExtraDirectory(extraDirectory);
-  if (runtimePaths.consoleOutput) console.error("extras discovered", {
-    count: extras.length,
-    entries: extras.map(({ name, enabled }) => ({ name, enabled: enabled !== false }))
-  });
+  for (const runtime of localRuntimes) {
+    try {
+      const result = await syncCliOpenClawToolEnvironment(runtime.root, extras);
+      if (result.file)
+        console.error("OpenClaw octo-cli environment", {
+          ...result,
+          notice: "Restart the OpenClaw Gateway manually to load dotenv changes."
+        });
+    } catch {
+      console.error("OpenClaw: OPENCLAW_TOOL_ENV_SYNC_FAILED");
+      runtime.adapterConfigurations = {
+        ...runtime.adapterConfigurations,
+        openclaw: { providerOptions: {} }
+      };
+    }
+  }
+  if (runtimePaths.consoleOutput)
+    console.error("extras discovered", {
+      count: extras.length,
+      entries: extras.map(({ name, enabled }) => ({ name, enabled: enabled !== false }))
+    });
   app = await startDaemonServer({ ...runtimePaths, localRuntimes, extras });
   if (!stopRequested && process.connected)
     process.send?.({ type: "daemon.ready" }, (error: Error | null) => { if (error) stop(); });

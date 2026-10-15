@@ -1,4 +1,12 @@
-import { readFile, mkdir, writeFile, rename } from "node:fs/promises";
+import { readFile, mkdir, writeFile, rename, lstat, chmod, rm } from "node:fs/promises";
+import { parseEnv, promisify } from "node:util";
+import { execFile } from "node:child_process";
+import type { ExtraRegistration } from "@mininglamp-oss/octo-runtime-daemon";
+import {
+  configuredCredential,
+  validateImBots,
+  octoCliEnvironment
+} from "@mininglamp-oss/octo-runtime-extra-channel-gateway";
 import { randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import { homedir, networkInterfaces } from "node:os";
@@ -25,12 +33,14 @@ export async function configureCliOpenClaw(
   env: NodeJS.ProcessEnv = process.env
 ) {
   const explicit = Object.values(input).some((value) => value !== undefined);
+  let savedConfigFile: string | undefined;
   if (!explicit) {
     const saved = await readOpenClawConnection(runtimeRoot);
     if (saved) {
       const origin = await readCliOrigin(runtimeRoot);
       if (origin?.credential_ref === saved.credential_ref) {
         input = { openclawHome: origin.openclaw_home };
+        savedConfigFile = origin.openclaw_config_path;
       } else {
         await loadLocalOpenClawGateway(runtimeRoot);
         return saved;
@@ -49,15 +59,45 @@ export async function configureCliOpenClaw(
     return configureOpenClawConnection(runtimeRoot, input);
   if (input.openclawHome !== undefined && !input.openclawHome.trim())
     throw new LocalGatewayError("openclaw_home_invalid");
-  const home = resolve(input.openclawHome ?? join(env.HOME || homedir(), ".openclaw"));
-  const connection = await readOpenClawHome(home);
+  let configFile = env.OPENCLAW_CONFIG_PATH;
+  if (input.openclawHome === undefined && !configFile && !env.OPENCLAW_STATE_DIR) {
+    try {
+      const output = await promisify(execFile)("openclaw", ["config", "file", "--json"], {
+        env,
+        timeout: 5000,
+        maxBuffer: 64 * 1024
+      });
+      const discovered = record(JSON.parse(output.stdout));
+      if (typeof discovered?.path === "string") configFile = discovered.path;
+    } catch {
+      /* An absent optional CLI falls back to the established local source. */
+    }
+  }
+  const expand = (path: string) => resolve(path.replace(/^~(?=\/|$)/, env.HOME || homedir()));
+  const home = expand(
+    input.openclawHome ??
+      env.OPENCLAW_STATE_DIR ??
+      join(env.HOME || homedir(), env.OPENCLAW_PROFILE ? `.openclaw-${env.OPENCLAW_PROFILE}` : ".openclaw")
+  );
+  const activeConfig =
+    savedConfigFile ??
+    (input.openclawHome !== undefined
+      ? join(home, "openclaw.json")
+      : configFile
+        ? expand(configFile)
+        : join(home, "openclaw.json"));
+  const connection = await readOpenClawHome(home, activeConfig);
   const saved = await configureOpenClawConnection(runtimeRoot, connection);
   const directory = join(runtimeRoot, "adapters", "openclaw");
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const temporary = join(directory, `.cli-source-${randomUUID()}.tmp`);
   await writeFile(
     temporary,
-    JSON.stringify({ openclaw_home: home, credential_ref: saved.credential_ref }),
+    JSON.stringify({
+      openclaw_home: home,
+      openclaw_config_path: activeConfig,
+      credential_ref: saved.credential_ref
+    }),
     { mode: 0o600 }
   );
   await rename(temporary, join(directory, "cli-source.json"));
@@ -66,18 +106,97 @@ export async function configureCliOpenClaw(
 
 async function readCliOrigin(
   root: string
-): Promise<{ openclaw_home: string; credential_ref: string } | undefined> {
+): Promise<
+  { openclaw_home: string; openclaw_config_path?: string; credential_ref: string } | undefined
+> {
   try {
     const value = record(
       JSON.parse(await readFile(join(root, "adapters", "openclaw", "cli-source.json"), "utf8"))
     );
     if (typeof value?.openclaw_home !== "string" || typeof value?.credential_ref !== "string")
       throw new LocalGatewayError("cli_source_invalid");
-    return { openclaw_home: value.openclaw_home, credential_ref: value.credential_ref };
+    return {
+      openclaw_home: value.openclaw_home,
+      ...(typeof value.openclaw_config_path === "string"
+        ? { openclaw_config_path: value.openclaw_config_path }
+        : {}),
+      credential_ref: value.credential_ref
+    };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw new LocalGatewayError("cli_source_invalid");
   }
+}
+
+/** CLI startup only. One instance has one shared dotenv identity; last configured Bot wins. */
+export async function syncCliOpenClawToolEnvironment(
+  runtimeRoot: string,
+  extras: readonly ExtraRegistration[]
+): Promise<{ file?: string; written: boolean; restartRequired: boolean }> {
+  const channel = extras.find(
+    (extra) => extra.name === "channel-gateway" && extra.enabled !== false
+  );
+  if (!channel || channel.config.bots === undefined)
+    return { written: false, restartRequired: false };
+  const bots = channel.config.bots;
+  validateImBots(bots);
+  let values: Record<string, string> | undefined;
+  for (const bot of bots) {
+    if (bot.enabled === false) continue;
+    const token = configuredCredential(bot);
+    if (!token) throw new Error("IM_CREDENTIALS_REQUIRED");
+    values = Object.fromEntries(
+      octoCliEnvironment(bot.api_url, token).env_variables.map(({ key, value }) => [key, value])
+    );
+  }
+  if (!values) return { written: false, restartRequired: false };
+  const origin = await readCliOrigin(runtimeRoot);
+  const connection = await readOpenClawConnection(runtimeRoot);
+  if (!origin || origin.credential_ref !== connection?.credential_ref)
+    return { written: false, restartRequired: false };
+  const file = join(origin.openclaw_home, ".env");
+  const directory = await lstat(origin.openclaw_home);
+  if (!directory.isDirectory()) throw new Error("OPENCLAW_ENV_DIRECTORY_INVALID");
+  let previous = "";
+  try {
+    const info = await lstat(file);
+    if (!info.isFile()) throw new Error("OPENCLAW_ENV_FILE_INVALID");
+    previous = await readFile(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  // Remove only complete managed assignments, including quoted multiline values.
+  const retained = previous.replace(
+    /^[\t ]*(?:export[\t ]+)?(?:OCTO_BOT_TOKEN|OCTO_API_BASE_URL)[\t ]*=[\t ]*(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\r\n]*)(?:[\t ]*#[^\r\n]*)?[\t ]*(?:\r?\n|$)/gm,
+    ""
+  );
+  const content =
+    retained +
+    (retained && !retained.endsWith("\n") ? "\n" : "") +
+    Object.entries(values)
+      .map(([key, value]) => `${key}=${JSON.stringify(value)}\n`)
+      .join("");
+  const before = parseEnv(previous),
+    after = parseEnv(content);
+  if (
+    Object.entries(before).some(
+      ([key, value]) => !Object.hasOwn(values, key) && after[key] !== value
+    ) ||
+    Object.entries(values).some(([key, value]) => after[key] !== value)
+  )
+    throw new Error("OPENCLAW_ENV_UPDATE_INVALID");
+  if (content === previous) {
+    await chmod(file, 0o600);
+    return { file, written: false, restartRequired: true };
+  }
+  const temporary = join(origin.openclaw_home, `.octo-env-${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporary, content, { mode: 0o600, flag: "wx" });
+    await rename(temporary, file);
+  } finally {
+    await rm(temporary, { force: true });
+  }
+  return { file, written: true, restartRequired: true };
 }
 
 /** An absent optional Provider must not prevent the CLI daemon from starting. */
@@ -104,10 +223,13 @@ export async function initializeCliOpenClaw(
   }
 }
 
-async function readOpenClawHome(home: string): Promise<{ url: string; token: string }> {
+async function readOpenClawHome(
+  home: string,
+  configFile = join(home, "openclaw.json")
+): Promise<{ url: string; token: string }> {
   let source: string;
   try {
-    source = await readFile(join(home, "openclaw.json"), "utf8");
+    source = await readFile(configFile, "utf8");
   } catch (error) {
     throw new LocalGatewayError(
       (error as NodeJS.ErrnoException).code === "ENOENT" ? "config_not_found" : "config_unreadable"

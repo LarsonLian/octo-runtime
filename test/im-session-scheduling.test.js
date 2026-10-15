@@ -83,6 +83,39 @@ for (const [name, suffix, transportName, platform] of channels) {
     return { runtime, calls, replies, controls, diagnostics, send };
   }
 
+  if (name === "Octo")
+    test("Octo only suppresses failure text after the terminal card is delivered", async (t) => {
+      const f = await fixture(t, async function* () {
+        yield {
+          protocolVersion: 2,
+          type: "run.failed",
+          payload: { message: "spawn codex ENOENT" }
+        };
+      });
+      for (const delivered of [true, false, undefined, "throws"]) {
+        const before = f.replies.length;
+        f.send("failure", `failure-${delivered}`, {
+          beginPresentation: () => {
+            let terminalDelivered = false;
+            return {
+              get terminalDelivered() {
+                return terminalDelivered;
+              },
+              update() {},
+              async finish() {
+                if (delivered === "throws") throw new Error("card failed");
+                terminalDelivered = delivered;
+              }
+            };
+          }
+        });
+        await settle();
+        assert.equal(f.runtime.status.sessions.length, 0);
+        assert.equal(f.replies.length - before, delivered === true ? 0 : 1);
+        if (delivered !== true) assert.match(f.replies.at(-1).text, /执行失败：spawn codex ENOENT/);
+      }
+    });
+
   test(`${name} serves 10,000 distinct daily sessions without retaining idle schedulers`, async (t) => {
     const f = await fixture(t);
     let warmedHeap;

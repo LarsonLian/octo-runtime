@@ -1,4 +1,5 @@
-import { createHostInvoke as preparedTestInvoke } from "@mininglamp-oss/octo-runtime-protocol";
+import { preparedFrames } from "./runtime-fixture.js";
+import { preparedTestInvoke } from "./runtime-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, writeFile, rm, stat, readdir } from "node:fs/promises";
@@ -338,7 +339,7 @@ test("shared Host probes and invokes each Runtime connection and uses only the C
     }
   };
   const events = [];
-  for await (const event of preparedTestInvoke((...args) => client.invokeFrames(...args))(
+  for await (const event of preparedTestInvoke((...args) => preparedFrames(client, ...args))(
     "openclaw",
     request,
     { protocolMode: "canonical" }
@@ -368,7 +369,7 @@ test("shared Host probes and invokes each Runtime connection and uses only the C
   request.invocationId = "invoke-sdk";
   request.agentConfig.providerOptions = direct;
   const sdkEvents = [];
-  for await (const event of preparedTestInvoke((...args) => client.invokeFrames(...args))(
+  for await (const event of preparedTestInvoke((...args) => preparedFrames(client, ...args))(
     "openclaw",
     request,
     { protocolMode: "canonical" }

@@ -11,16 +11,6 @@
         "protocol": "codex.app-server"
       }
     ],
-    "HostInvokeWireOptions": [
-      {},
-      {
-        "protocol_mode": "native"
-      },
-      {
-        "protocol_mode": "canonical",
-        "protocol": "claude-code.stream-json"
-      }
-    ],
     "HostRunReceipt": [
       {
         "run_id": "run-1",
@@ -313,25 +303,6 @@
       {
         "protocolMode": "native",
         "protocol_mode": "native"
-      }
-    ],
-    "HostInvokeWireOptions": [
-      null,
-      [],
-      {
-        "protocol_mode": null
-      },
-      {
-        "protocol_mode": ""
-      },
-      {
-        "protocol_mode": "CANONICAL"
-      },
-      {
-        "protocolMode": "native"
-      },
-      {
-        "protocol": 17
       }
     ],
     "HostRunReceipt": [

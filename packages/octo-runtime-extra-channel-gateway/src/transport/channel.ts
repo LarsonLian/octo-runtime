@@ -3,12 +3,7 @@
  * 此通道就是 IM 事件发起方；只处理 IM 归属，不合成文档评论或其他领域请求。
  */
 import { CONTEXT_SCHEMA } from "@mininglamp-oss/octo-runtime-protocol";
-import type {
-  ChannelCallbacks,
-  OctoBotConfig,
-  ImRunControls,
-  ImAddress
-} from "../contracts.js";
+import type { ChannelCallbacks, OctoBotConfig, ImRunControls, ImAddress } from "../contracts.js";
 import type { ImCredentialSource } from "../ports.js";
 import { imBotIdentity } from "../lifecycle/configuration.js";
 import { verifyBotIdentity } from "./auth.js";
@@ -22,11 +17,14 @@ import { ImDeliveryDispatcher } from "../delivery/dispatcher.js";
 import { fetchBotEvents, ackBotEvent } from "./api/events.js";
 import { parseCardAction } from "./card-action.js";
 import { setTimeout as delay } from "node:timers/promises";
+import { octoCliEnvironment } from "../execution/tool-environment.js";
 
 /** Octo IM 平台连接器：WuKong 与 Octo REST 适配；不是 MCP 连接器。 */
 export class GatewayTransport {
   identity: string;
   readonly botId: string;
+  #detachAbort?: () => void;
+  #closing?: Promise<void>;
   #connection?: WukongConnection;
   #spaceId = "";
   get scopedConfig() {
@@ -72,6 +70,7 @@ export class GatewayTransport {
     this.#spaceId = principal.space_id;
     this.identity = `${imBotIdentity(this.config)}:${encodeURIComponent(this.#spaceId)}`;
     const registration = await registerBot(this.config.api_url, token, signal);
+    const toolEnvironment = octoCliEnvironment(this.config.api_url, token);
     if (signal.aborted) return;
     if (registration.robot_id !== this.config.bot_id) throw new Error("IM_BOT_IDENTITY_MISMATCH");
     const connection = new WukongConnection(
@@ -85,6 +84,10 @@ export class GatewayTransport {
           conversationKind:
             message.channelType === 1 ? "direct" : message.channelType === 5 ? "thread" : "group",
           text: String(message.payload.content),
+          executionEnvironment: () => {
+            if (this.#closed || signal.aborted) throw new Error("IM_CONNECTION_REPLACED");
+            return { executionEnvOverrides: structuredClone(toolEnvironment) };
+          },
           runMetadata: {
             spaceId: this.#spaceId,
             botId: this.config.bot_id,
@@ -163,9 +166,15 @@ export class GatewayTransport {
       (address, typingSignal) => this.#api!.typing(address, typingSignal),
       () => this.callbacks.onDiagnostic?.("IM_TYPING_FAILED")
     );
+    const abort = (): void => {
+      void connection.close();
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    this.#detachAbort = () => signal.removeEventListener("abort", abort);
+    if (signal.aborted) return;
     await connection.connect(registration);
     if (signal.aborted) {
-      connection.close();
+      await connection.close();
       return;
     }
     this.#connected = true;
@@ -254,12 +263,24 @@ export class GatewayTransport {
       }
     }
   }
-  close(): void {
+  close(): Promise<void> {
+    if (this.#closing) return this.#closing;
     this.#closed = true;
     this.#connected = false;
     this.#abort.abort();
-    this.#typing?.close();
-    this.#connection?.close();
-    this.#bindings.clear();
+    this.#detachAbort?.();
+    this.#closing = Promise.resolve().then(async () => {
+      const results = await Promise.allSettled([
+        Promise.resolve().then(() => this.#typing?.close()),
+        Promise.resolve().then(() => this.#connection?.close()),
+        this.#polling
+      ]);
+      const errors = results
+        .filter((result) => result.status === "rejected")
+        .map((result): unknown => result.reason);
+      if (errors.length) throw new AggregateError(errors, "IM_TRANSPORT_DISPOSE_FAILED");
+      this.#bindings.clear();
+    });
+    return this.#closing;
   }
 }

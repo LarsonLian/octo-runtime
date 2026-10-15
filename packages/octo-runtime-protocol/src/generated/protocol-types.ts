@@ -45,7 +45,6 @@ export type MessageChannel = "analysis" | "commentary" | "final";
  */
 export type MessageExposure = "public_reasoning" | "public_summary" | "public_plan" | "private_reasoning" | "unknown";
 export type ProtocolMode1 = "native" | "canonical";
-export type ProtocolMode2 = "native" | "canonical";
 /**
  * This interface was referenced by `OctoRuntimeProtocolSchema`'s JSON-Schema
  * via the `definition` "HostControl".
@@ -513,14 +512,6 @@ export interface FailureCause {
  */
 export interface HostInvokeOptions {
   protocolMode?: ProtocolMode1;
-  protocol?: string;
-}
-/**
- * This interface was referenced by `OctoRuntimeProtocolSchema`'s JSON-Schema
- * via the `definition` "HostInvokeWireOptions".
- */
-export interface HostInvokeWireOptions {
-  protocol_mode?: ProtocolMode2;
   protocol?: string;
 }
 /**
@@ -2601,6 +2592,7 @@ export interface McpStreamableHttpServer {
  * via the `definition` "InvokeRequestWire".
  */
 export interface InvokeRequestWire {
+  executionEnvOverrides?: ContextEnvsPayload1;
   /**
    * Active Adapter Host invocation identifier and cancellation target.
    */
@@ -2667,6 +2659,18 @@ export interface InvokeRequestWire {
   agentConfig: AgentConfig;
   protocolVersion: 2;
   agentSource: AgentSource;
+}
+/**
+ * Run 级环境变量列表；以 key 标识变量，按 key 合并，不进入模型输入。
+ */
+export interface ContextEnvsPayload1 {
+  /**
+   * @maxItems 128
+   */
+  env_variables: {
+    key: string;
+    value: string;
+  }[];
 }
 /**
  * This interface was referenced by `OctoRuntimeProtocolSchema`'s JSON-Schema

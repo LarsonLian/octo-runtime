@@ -21,10 +21,11 @@ const octo = (workdir, overrides = {}) => ({
   ...overrides
 });
 
-test("CLI and daemon composition have no channel-specific configuration contract", async () => {
+test("generic extra configuration stays independent; CLI OpenClaw tool preparation is the only channel dependency", async () => {
   for (const app of ["cli", "daemon"]) {
     const manifest = JSON.parse(await readFile(new URL(`../apps/${app}/package.json`, import.meta.url), "utf8"));
-    assert.ok(!Object.keys(manifest.dependencies).some((name) => name.includes("-extra-")));
+    assert.deepEqual(Object.keys(manifest.dependencies).filter((name) => name.includes("-extra-")),
+      app === "daemon" ? ["@mininglamp-oss/octo-runtime-extra-channel-gateway"] : []);
   }
   const daemon = await readFile(new URL("../apps/daemon/src/index.ts", import.meta.url), "utf8");
   assert.doesNotMatch(daemon, /im-config|imBots|wecomBots|initializeCliImAdapters/);

@@ -1,4 +1,10 @@
 rules:
+  - id: runtime-protocol-design
+    priority: 95
+    load_bearing: true
+    inject_when:
+      paths: ["packages/octo-runtime-protocol/**", "packages/octo-runtime-core/**", "packages/octo-runtime-adapter-*/**", "packages/octo-runtime-daemon/**", "packages/octo-runtime-extra-*/**", "apps/**"]
+      touches: [protocol, invocation, interaction, adapter, architecture]
   - id: runtime-adapter-metadata
     priority: 90
     load_bearing: true

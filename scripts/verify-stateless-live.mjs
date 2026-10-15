@@ -1,3 +1,4 @@
+import { invocationInput } from "@mininglamp-oss/octo-runtime-protocol";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
@@ -51,7 +52,7 @@ try {
     approvalMode: "full_access", agentSource: "provisioned", agentConfig: {},
     workdir: process.cwd(), signal: AbortSignal.timeout(90_000)
   };
-  for await (const frame of invokeDaemonRun(socketPath, "codex", request, { protocolMode: "canonical" })) {
+  for await (const frame of invokeDaemonRun(socketPath, invocationInput(request, "canonical", "codex"), { signal: request.signal })) {
     if (frame.kind === "canonical" && frame.event.type === "message.delta" && frame.event.payload.channel === "final")
       answer += frame.event.payload.text ?? "";
     if (frame.kind === "control" && frame.control.type === "state") terminal = frame.control.state;

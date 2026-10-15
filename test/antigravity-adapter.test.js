@@ -1,4 +1,5 @@
-import { createHostInvoke as preparedTestInvoke } from "@mininglamp-oss/octo-runtime-protocol";
+import { preparedFrames } from "./runtime-fixture.js";
+import { preparedTestInvoke } from "./runtime-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -36,7 +37,7 @@ test("Antigravity rejects unsupported permissions and managed arguments before s
   for (const mode of ["ask", "assisted"]) assert.throws(() => buildAntigravityCommand({ ...request, approvalMode: mode }), /APPROVAL_MODE_UNSUPPORTED/);
   for (const flag of ["--mode=plan", "--conversation", "--output-format=text", "--dangerously-skip-permissions", "-psecret"]) assert.throws(() => buildAntigravityCommand(request, "agy", [flag]), /MANAGED_ARGUMENT/);
   const host = new AdapterHost(); host.register(create());
-  await assert.rejects(collect(preparedTestInvoke((...args) => host.invokeFrames(...args))("antigravity", { ...request, approvalMode: "ask" }, { protocolMode: "canonical" })), /APPROVAL_MODE_UNSUPPORTED/);
+  await assert.rejects(collect(preparedTestInvoke((...args) => preparedFrames(host, ...args))("antigravity", { ...request, approvalMode: "ask" }, { protocolMode: "canonical" })), /APPROVAL_MODE_UNSUPPORTED/);
 });
 
 test("Antigravity probe reports a missing executable without invoking a user CLI", async () => {

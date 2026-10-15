@@ -10,7 +10,11 @@ export function invocationEnvs(request: InvokeRequest): Record<string, string> {
     env_variables: []
   };
   assertContextEnvs(envs);
-  return Object.fromEntries(envs.env_variables.map(({ key, value }) => [key, value]));
+  const overrides = request.executionEnvOverrides ?? { env_variables: [] };
+  assertContextEnvs(overrides);
+  return Object.fromEntries(
+    [...envs.env_variables, ...overrides.env_variables].map(({ key, value }) => [key, value])
+  );
 }
 
 /** Each invocation owns its environment. Adapter transport settings take precedence. */

@@ -237,6 +237,10 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
       releaseInteraction?.();
     },
     async *invoke(input, environment) {
+      assert.deepEqual(environment.executionEnvOverrides?.env_variables, [
+        { key: "OCTO_BOT_TOKEN", value: "bf_fixture" },
+        { key: "OCTO_API_BASE_URL", value: `http://127.0.0.1:${server.address().port}` }
+      ]);
       const { adapterType: adapter, request } = prepareInvokeInput(input);
       request.signal = environment?.signal;
       assert.equal(adapter, "codex");

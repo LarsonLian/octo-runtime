@@ -9,6 +9,7 @@ import {
   type ApprovalMode,
   type CanonicalEvent,
   type ContextEnvelope,
+  type ContextEnvsPayload,
   type HostFrame,
   type InvokeRequest,
   type ModelInputPart,
@@ -16,6 +17,7 @@ import {
   type RuntimeLimits
 } from "./index.js";
 import { assertJsonValue } from "./context.js";
+import { canonicalEvents } from "./run-protocol.js";
 
 /**
  * Public JSON invocation contract shared by CLI, SDK and channels.
@@ -76,9 +78,40 @@ export class InvokeInput {
   }
 }
 
-/** Process-local cancellation is deliberately outside the serializable JSON input. */
+/** Local ingress execution settings, outside caller-owned JSON and Context. */
 export interface InvokeEnvironment {
   signal?: AbortSignal;
+  /** Trusted per-invocation values; forwarded privately across the Host process boundary. */
+  executionEnvOverrides?: ContextEnvsPayload;
+}
+
+export type InputFrames = (
+  input: InvokeInput,
+  environment?: InvokeEnvironment
+) => AsyncGenerator<HostFrame>;
+
+/** Stable correlation IDs for cancellation and stream reconnection, without resolving execution. */
+export function identifyInvokeInput(input: InvokeInput) {
+  return {
+    ...input,
+    invocationId: input.invocationId ?? globalThis.crypto.randomUUID(),
+    runId: input.runId ?? globalThis.crypto.randomUUID(),
+    sessionId: input.sessionId ?? globalThis.crypto.randomUUID()
+  };
+}
+
+/** Select a view of one source stream; execution preparation belongs to the Host. */
+export function createInputInvoke(source: InputFrames): InputInvoke {
+  return async function* (input: InvokeInput, environment?: InvokeEnvironment) {
+    environment?.signal?.throwIfAborted();
+    const frames = source(input, environment);
+    try {
+      if (input.protocol_mode === "canonical") yield* canonicalEvents(frames);
+      else yield* frames;
+    } finally {
+      environment?.signal?.throwIfAborted();
+    }
+  } as InputInvoke;
 }
 export interface InputInvoke {
   (
@@ -89,10 +122,7 @@ export interface InputInvoke {
     input: InvokeInput & { protocol_mode?: "native" },
     environment?: InvokeEnvironment
   ): AsyncGenerator<HostFrame>;
-  (
-    input: InvokeInput,
-    environment?: InvokeEnvironment
-  ): AsyncGenerator<CanonicalEvent | HostFrame>;
+  (input: InvokeInput, environment?: InvokeEnvironment): AsyncGenerator<CanonicalEvent | HostFrame>;
 }
 
 export function assertInvokeInput(value: unknown): asserts value is InvokeInput {
@@ -108,6 +138,8 @@ export function assertInvokeInput(value: unknown): asserts value is InvokeInput 
     );
   if (Object.hasOwn(input, "signal"))
     throw new TypeError("signal belongs to the local invoke environment");
+  if (Object.hasOwn(input, "executionEnvOverrides"))
+    throw new TypeError("executionEnvOverrides belongs to the local invoke environment");
   assertModelInputParts(input.inputs);
   assertContextEnvelope(input.contexts);
   for (const key of [
@@ -211,6 +243,7 @@ export function invocationInput(
   const {
     protocolVersion: _version,
     signal: _signal,
+    executionEnvOverrides: _executionEnvOverrides,
     agentSessionId,
     context,
     modelInputParts,
@@ -218,6 +251,7 @@ export function invocationInput(
   } = request;
   void _version;
   void _signal;
+  void _executionEnvOverrides;
   const contexts = structuredClone(context);
   if (adapterType) {
     const adapter = contexts.items.find(

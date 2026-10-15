@@ -1,3 +1,4 @@
+import { preparedSubmit } from "./runtime-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
@@ -25,7 +26,7 @@ test("Runtime source and built packages do not load a SQL driver or expose a dom
     }
   }
   const core = await import("@mininglamp-oss/octo-runtime-core");
-  assert.deepEqual(Object.keys(core).sort(), ["createInputInvoke", "localRuntimeLimits", "prepareInvokeInput", "resolveLocalContext"]);
+  assert.deepEqual(Object.keys(core).sort(), ["localRuntimeLimits", "prepareInvokeInput", "resolveLocalContext"]);
 });
 
 test("daemon executes with IM enabled without databases and does not recover old Runs", async t => {
@@ -41,7 +42,7 @@ test("daemon executes with IM enabled without databases and does not recover old
   let app = await startDaemonServer(options);
   try {
     const request = invokeRequest({ approvalMode: "full_access" });
-    await app.host.submit("test", request, { protocolMode: "canonical" });
+    await preparedSubmit(app.host, "test", request, { protocolMode: "canonical" });
     await waitFor(() => app.host.get(request.runId).terminal);
     assert.equal(app.host.get(request.runId).terminal.control.state, "completed");
     const status = await callDaemon(options.socketPath, { method: "status" });

@@ -1,4 +1,4 @@
-import { createInputInvoke } from "@mininglamp-oss/octo-runtime-core";
+import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-core";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { access, stat } from "node:fs/promises";
@@ -13,6 +13,9 @@ import type {
   AdapterOutput
 } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
+  createInputInvoke,
+  type InvokeInput,
+  type InvokeEnvironment,
   adapterApprovalModes,
   assertProtocolSupport,
   assertAdapterProtocolSupport,
@@ -97,8 +100,8 @@ interface MessageState {
  * a single terminal, and turns cancellation into an AbortSignal.
  */
 export class AdapterHost {
-  readonly invoke = createInputInvoke((type, request, options) =>
-    this.invokeFrames(type, request, options)
+  readonly invoke = createInputInvoke((input, environment) =>
+    this.invokeFrames(input, environment)
   );
   readonly #adapters = new Map<string, HostedAdapter>();
   readonly #active = new Map<string, AbortController>();
@@ -183,7 +186,7 @@ export class AdapterHost {
   }
 
   /** Admission runs before RPC acknowledgement and never starts a provider. */
-  prepare(
+  #prepare(
     adapterType: string,
     request: InvokeRequest,
     options: HostInvokeOptions = {}
@@ -260,11 +263,15 @@ export class AdapterHost {
 
   /** Public invocations default to native; canonical consumers explicitly select their view. */
   invokeFrames(
-    adapterType: string,
-    request: InvokeRequest,
-    options: HostInvokeOptions = {}
+    input: InvokeInput,
+    environment: InvokeEnvironment = {}
   ): AsyncGenerator<HostFrame> {
-    const receipt = this.prepare(adapterType, request, options);
+    environment.signal?.throwIfAborted();
+    const { adapterType, request, protocolMode } = prepareInvokeInput(input);
+    request.signal = environment.signal;
+    if (environment.executionEnvOverrides)
+      request.executionEnvOverrides = structuredClone(environment.executionEnvOverrides);
+    const receipt = this.#prepare(adapterType, request, { protocolMode });
     const run = this.#runs.get(request.invocationId)!;
     if (run.started)
       throw protocolError(
@@ -310,10 +317,10 @@ export class AdapterHost {
       receipt.protocol_mode === "canonical"
         ? this.#invokeCanonical(adapterType, request)
         : this.#invokeProvider(adapterType, request, "native");
-    let pending = source.next();
-    void pending.catch(() => undefined);
     try {
       yield frame({ kind: "control", control: { type: "state", state: "running" } });
+      let pending = source.next();
+      void pending.catch(() => undefined);
       while (true) {
         const next = await pending;
         if (next.done) break;

@@ -1,0 +1,35 @@
+rules:
+  - runtime-architecture
+  - runtime-extras
+  - runtime-channel
+  - runtime-engineering
+  - runtime-lifecycle
+  - runtime-protocol-design
+  - runtime-invoke-input
+  - runtime-local-execution
+  - runtime-context-input
+  - runtime-session-reset
+  - runtime-stateless
+  - commit
+sources:
+  - .octospec/rules/architecture.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/runtime-lifecycle.md
+  - .octospec/rules/collaboration.md
+  - .octospec/journal/shared/2026-10-15-integration-plugin-gap-review.md
+  - .octospec/journal/shared/2026-10-15-plugin-sdk-app-integration.md
+  - packages/octo-runtime-daemon/src/extras.ts
+  - packages/octo-runtime-extra-channel-gateway/src/extra.ts
+  - packages/octo-runtime-extra-channel-gateway/src/lifecycle/manager.ts
+  - packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts
+  - packages/octo-runtime-extra-channel-wecom/src/extra.ts
+  - packages/octo-runtime-extra-channel-wecom/src/application/im-channel.ts
+  - packages/octo-runtime-extra-sse-demo/src/index.ts
+  - .octospec/rules/protocol-design.md
+  - .octospec/rules/invoke-input.md
+  - .octospec/rules/local-execution.md
+  - .octospec/rules/context-input.md
+  - .octospec/rules/session-reset.md
+  - .octospec/rules/stateless-execution.md

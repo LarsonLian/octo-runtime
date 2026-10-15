@@ -1,10 +1,11 @@
-import { createHostInvoke as preparedTestInvoke } from "@mininglamp-oss/octo-runtime-protocol";
+import { preparedFrames } from "./runtime-fixture.js";
+import { preparedTestInvoke } from "./runtime-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { PassThrough, Writable } from "node:stream";
 import { AdapterHost, AdapterHostRpcClient, AdapterHostRpcServer, spawnAdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
-import { contextHash } from "@mininglamp-oss/octo-runtime-protocol";
+import { contextHash, invocationInput } from "@mininglamp-oss/octo-runtime-protocol";
 
 const request = {
   protocolVersion: 2,
@@ -27,7 +28,7 @@ async function assertClosedRpcCalls(client, failure) {
     () => client.probe("fixture"),
     () => client.cancel("closed-invocation"),
     () => client.respondInteraction("closed-invocation", { interactionId: "closed-interaction", outcome: "accepted" }),
-    () => preparedTestInvoke((...args) => client.invokeFrames(...args))("fixture", { ...request, invocationId: "closed-invocation" }, { protocolMode: "canonical" }).next()
+    () => preparedTestInvoke((...args) => preparedFrames(client, ...args))("fixture", { ...request, invocationId: "closed-invocation" }, { protocolMode: "canonical" }).next()
   ]) {
     const result = await Promise.race([
       call().then(() => assert.fail("closed RPC call unexpectedly succeeded"), error => error),
@@ -56,12 +57,12 @@ test("host rejects missing mandatory invocation inputs and untyped context befor
     const invalid = { ...request };
     delete invalid[field];
     await assert.rejects(async () => {
-      for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("contract", invalid, { protocolMode: "canonical" })) assert.fail(`unexpected ${event.type}`);
+      for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("contract", invalid, { protocolMode: "canonical" })) assert.fail(`unexpected ${event.type}`);
     }, reason);
   }
   for (const context of [{}, { profile: "work", runtimeId: "runtime-work" }]) {
     await assert.rejects(async () => {
-      for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("contract", { ...request, context }, { protocolMode: "canonical" })) assert.fail(`unexpected ${event.type}`);
+      for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("contract", { ...request, context }, { protocolMode: "canonical" })) assert.fail(`unexpected ${event.type}`);
     }, /CONTEXT_SCHEMA_INVALID|CONTEXT_UNKNOWN_FIELD/);
   }
   assert.equal(invoked, false);
@@ -88,7 +89,7 @@ test("host rejects legacy prompt, permission and reasoning contracts before disp
     [{ agentSource: "provisioned", agentConfig: { thinking: "high", effort: "high" } }, /LEGACY_REASONING_CONFIG_REJECTED/]
   ]) {
     await assert.rejects(async () => {
-      for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("legacy", { ...request, ...overrides }, { protocolMode: "canonical" })) assert.fail(`unexpected ${event.type}`);
+      for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("legacy", { ...request, ...overrides }, { protocolMode: "canonical" })) assert.fail(`unexpected ${event.type}`);
     }, reason);
   }
   assert.equal(invoked, false);
@@ -113,7 +114,7 @@ test("host requires both declared interaction capability and a responder for ask
     });
     for (const approvalMode of ["ask", "assisted"]) {
       await assert.rejects(async () => {
-        for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))(type, { ...request, approvalMode }, { protocolMode: "canonical" })) assert.fail(`unexpected ${event.type}`);
+        for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))(type, { ...request, approvalMode }, { protocolMode: "canonical" })) assert.fail(`unexpected ${event.type}`);
       }, /APPROVAL_MODE_UNSUPPORTED/);
     }
   }
@@ -124,7 +125,7 @@ test("host requires both declared interaction capability and a responder for ask
 test("host holds terminal until adapter stream cleanup succeeds", async () => {
   const host = new AdapterHost();
   host.register({ metadata: { protocolSupport: { protocol: ("bad") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "bad", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; throw new Error("cleanup failed"); } });
-  const events = []; for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("bad", request, { protocolMode: "canonical" })) { if (!event.type.startsWith("activity.")) events.push(event); };
+  const events = []; for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("bad", request, { protocolMode: "canonical" })) { if (!event.type.startsWith("activity.")) events.push(event); };
   assert.deepEqual(events.map(x => x.type), ["run.failed"]);
   assert.equal(events[0].payload.failure.code, "OH-ADP-3004");
   assert.equal(events[0].payload.failure.stage, "adapter.invoke");
@@ -134,7 +135,7 @@ test("host holds terminal until adapter stream cleanup succeeds", async () => {
 test("host reports failure when adapter exits without terminal", async () => {
   const host = new AdapterHost();
   host.register({ metadata: { protocolSupport: { protocol: ("short") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "short", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke() { yield { protocolVersion: 2, type: "message.create", payload: {} }; } });
-  const events = []; for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("short", request, { protocolMode: "canonical" })) { if (!event.type.startsWith("activity.")) events.push(event); };
+  const events = []; for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("short", request, { protocolMode: "canonical" })) { if (!event.type.startsWith("activity.")) events.push(event); };
   assert.equal(events.at(-1).type, "run.failed");
 });
 
@@ -155,7 +156,7 @@ test("host classifies and redacts adapter-provided provider failures", async () 
   });
 
   const events = [];
-  for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("provider-fixture", request, { protocolMode: "canonical" })) { if (!event.type.startsWith("activity.")) events.push(event); };
+  for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("provider-fixture", request, { protocolMode: "canonical" })) { if (!event.type.startsWith("activity.")) events.push(event); };
   assert.equal(events.at(-1).payload.failure.reasonCode, "PROVIDER_HTTP_401");
   assert.equal(events.at(-1).payload.failure.code, "OH-PRV-4001");
   assert.equal(events.at(-1).payload.failure.source.adapter, "provider-fixture");
@@ -174,7 +175,7 @@ test("host normalizes unclassified analysis to an explicit fail-closed exposure"
     }
   });
   const events = [];
-  for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("legacy", request, { protocolMode: "canonical" })) { if (!event.type.startsWith("activity.")) events.push(event); };
+  for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("legacy", request, { protocolMode: "canonical" })) { if (!event.type.startsWith("activity.")) events.push(event); };
   const analysis = events.filter(event => event.type.startsWith("message."));
   assert.equal(analysis.length, 0);
   for (const event of analysis) {
@@ -203,7 +204,7 @@ test("host keeps step-scoped analysis messages separate and closes each round", 
     }
   });
   const events = [];
-  for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("steps", request, { protocolMode: "canonical" })) { if (!event.type.startsWith("activity.")) events.push(event); };
+  for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("steps", request, { protocolMode: "canonical" })) { if (!event.type.startsWith("activity.")) events.push(event); };
   const analysisCreates = events.filter(event => event.type === "message.create" && event.payload.channel === "analysis");
   const analysisUpdates = events.filter(event => event.type === "message.update" && event.payload.channel === "analysis");
   assert.deepEqual(analysisCreates.map(event => event.payload.messageId), ["step-1:reasoning", "step-2:reasoning"]);
@@ -220,7 +221,7 @@ test("host cancellation aborts provider and emits stopped once", async () => {
     await new Promise((_, reject) => req.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
   } });
   const events = [];
-  const consume = (async () => { for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("slow", { ...request, invocationId: "cancel-me" }, { protocolMode: "canonical" })) { if (!event.type.startsWith("activity.")) events.push(event); }; })();
+  const consume = (async () => { for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("slow", { ...request, invocationId: "cancel-me" }, { protocolMode: "canonical" })) { if (!event.type.startsWith("activity.")) events.push(event); }; })();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(host.cancel("cancel-me", "test_cancel"), true);
   await consume;
@@ -235,7 +236,7 @@ test("host watchdog fails a provider that never emits its first protocol frame",
     async *invoke() { await new Promise(() => {}); }
   });
   const events = [];
-  for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("silent-start", {
+  for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("silent-start", {
     ...request,
     invocationId: "watchdog-start",
     runtimeLimits: {
@@ -270,7 +271,7 @@ test("host watchdog uses the tool budget while a canonical tool call is open", a
     }
   });
   const events = [];
-  for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("silent-tool", {
+  for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("silent-tool", {
     ...request,
     invocationId: "watchdog-tool",
     runtimeLimits: {
@@ -304,7 +305,7 @@ test("host shutdown aborts every active provider invocation before returning", a
   } });
   const invocations = ["shutdown-1", "shutdown-2"].map(invocationId => (async () => {
     const events = [];
-    for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("slow", { ...request, invocationId, runId: invocationId }, { protocolMode: "canonical" })) { if (!event.type.startsWith("activity.")) events.push(event); };
+    for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("slow", { ...request, invocationId, runId: invocationId }, { protocolMode: "canonical" })) { if (!event.type.startsWith("activity.")) events.push(event); };
     return events;
   })());
   await new Promise(resolve => setImmediate(resolve));
@@ -349,7 +350,7 @@ test("RPC failed Writable callback rejects pending calls and invoke ACK without 
   assert.equal(output.listenerCount("error"), 1);
   const failure = Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
   const rejectedCall = assert.rejects(client.list(), error => error === failure);
-  const iterator = preparedTestInvoke((...args) => client.invokeFrames(...args))("fixture", { ...request, invocationId: "pending-ack" }, { protocolMode: "canonical" });
+  const iterator = preparedTestInvoke((...args) => preparedFrames(client, ...args))("fixture", { ...request, invocationId: "pending-ack" }, { protocolMode: "canonical" });
   const rejectedInvoke = assert.rejects(iterator.next(), error => error === failure);
   assert.deepEqual(frames.map(frame => frame.method), ["list", "invoke"]);
   failWrite(failure);
@@ -372,7 +373,7 @@ test("RPC failed Writable callback rejects an acknowledged invocation waiting fo
   const client = new AdapterHostRpcClient({ input, output, trace: (_direction, frame) => frames.push(JSON.parse(frame)) });
   testContext.after(() => { client.close(); input.destroy(); output.destroy(); });
   const failure = Object.assign(new Error("write EPIPE after invoke ACK"), { code: "EPIPE" });
-  const iterator = preparedTestInvoke((...args) => client.invokeFrames(...args))("fixture", { ...request, invocationId: "acknowledged-invoke" }, { protocolMode: "canonical" });
+  const iterator = preparedTestInvoke((...args) => preparedFrames(client, ...args))("fixture", { ...request, invocationId: "acknowledged-invoke" }, { protocolMode: "canonical" });
   const rejectedInvoke = assert.rejects(iterator.next(), error => error === failure);
   const acknowledgement = { jsonrpc: "2.0", id: frames[0].id, result: { run_id: request.runId, invocation_id: "acknowledged-invoke", stream_id: "host:fixture", agent_session_id: request.agentSessionId, session_generation: 0, protocol_mode: "canonical", protocol: "fixture.canonical" } };
   input.write(`${JSON.stringify(acknowledgement)}\n`);
@@ -398,7 +399,7 @@ test("RPC output error closes pending calls and invocations even when write call
   assert.equal(output.listenerCount("error"), 1);
   const failure = Object.assign(new Error("output EPIPE"), { code: "EPIPE" });
   const rejectedCall = assert.rejects(client.list(), error => error === failure);
-  const iterator = preparedTestInvoke((...args) => client.invokeFrames(...args))("fixture", { ...request, invocationId: "output-error-invoke" }, { protocolMode: "canonical" });
+  const iterator = preparedTestInvoke((...args) => preparedFrames(client, ...args))("fixture", { ...request, invocationId: "output-error-invoke" }, { protocolMode: "canonical" });
   const rejectedInvoke = assert.rejects(iterator.next(), error => error === failure);
   output.emit("error", failure);
   await Promise.all([rejectedCall, rejectedInvoke]);
@@ -417,7 +418,7 @@ test("RPC synchronous Writable throw rejects all pending work and later calls wi
   const client = new AdapterHostRpcClient({ input, output, trace: (_direction, frame) => frames.push(JSON.parse(frame)) });
   testContext.after(() => { client.close(); input.destroy(); output.destroy(); });
   const rejectedCall = assert.rejects(client.list(), error => error === failure);
-  const iterator = preparedTestInvoke((...args) => client.invokeFrames(...args))("fixture", { ...request, invocationId: "synchronous-error-invoke" }, { protocolMode: "canonical" });
+  const iterator = preparedTestInvoke((...args) => preparedFrames(client, ...args))("fixture", { ...request, invocationId: "synchronous-error-invoke" }, { protocolMode: "canonical" });
   const rejectedInvoke = assert.rejects(iterator.next(), error => error === failure);
   await Promise.all([rejectedCall, rejectedInvoke]);
   await new Promise(resolve => setImmediate(resolve));
@@ -444,7 +445,7 @@ test("RPC server closes active providers when its output fails", { timeout: 5_00
   const frames = [];
   new AdapterHostRpcServer({ host, output, trace: (_direction, frame) => frames.push(JSON.parse(frame)) }).listen(input);
   testContext.after(async () => { input.destroy(); output.destroy(); await host.shutdown(); });
-  input.write(`${JSON.stringify({ jsonrpc: "2.0", id: "invoke-1", method: "invoke", params: { adapterType: "broken-output", request, options: { protocol_mode: "canonical" } } })}\n`);
+  input.write(`${JSON.stringify({ jsonrpc: "2.0", id: "invoke-1", method: "invoke", params: { input: invocationInput(request, "canonical", "broken-output") } })}\n`);
   await providerStarted;
   output.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" }));
   await providerAborted;
@@ -500,7 +501,7 @@ test("RPC interaction responses resume the same active ask invocation", { timeou
     serverToClient.end();
   });
 
-  const iterator = preparedTestInvoke((...args) => client.invokeFrames(...args))("interactive", { ...request, invocationId: "rpc-interactive", approvalMode: "ask" }, { protocolMode: "canonical" });
+  const iterator = preparedTestInvoke((...args) => preparedFrames(client, ...args))("interactive", { ...request, invocationId: "rpc-interactive", approvalMode: "ask" }, { protocolMode: "canonical" });
   let interaction;
   while (!interaction) {
     const next = await iterator.next();
@@ -532,9 +533,9 @@ test("RPC keeps AbortSignal local and cancels both pending ACK and active stream
     t.after(() => { client.close(); input.destroy(); output.destroy(); });
     const controller = new AbortController();
     const reason = new Error("shared run deadline");
-    const iterator = preparedTestInvoke((...args) => client.invokeFrames(...args))("fixture", { ...request, invocationId: "abort-" + acknowledged, signal: controller.signal }, { protocolMode: "canonical" });
+    const iterator = preparedTestInvoke((...args) => preparedFrames(client, ...args))("fixture", { ...request, invocationId: "abort-" + acknowledged, signal: controller.signal }, { protocolMode: "canonical" });
     const pending = iterator.next();
-    assert.equal(Object.hasOwn(frames[0].params.request, "signal"), false);
+    assert.equal(Object.hasOwn(frames[0].params.input, "signal"), false);
     if (acknowledged) {
       input.write(JSON.stringify({ jsonrpc: "2.0", id: frames[0].id, result: { run_id: request.runId, invocation_id: "abort-" + acknowledged, stream_id: "host:fixture", agent_session_id: request.agentSessionId, session_generation: 0, protocol_mode: "canonical", protocol: "fixture.canonical" } }) + "\n");
       await new Promise(resolve => setImmediate(resolve));
@@ -554,6 +555,6 @@ test("pre-aborted RPC invocation sends no Provider command", async t => {
   const client = new AdapterHostRpcClient({ input, output });
   t.after(() => { client.close(); input.destroy(); output.destroy(); });
   const controller = new AbortController(); controller.abort(new Error("cancelled before dispatch"));
-  await assert.rejects(preparedTestInvoke((...args) => client.invokeFrames(...args))("fixture", { ...request, signal: controller.signal }, { protocolMode: "canonical" }).next(), /cancelled before dispatch/);
+  await assert.rejects(preparedTestInvoke((...args) => preparedFrames(client, ...args))("fixture", { ...request, signal: controller.signal }, { protocolMode: "canonical" }).next(), /cancelled before dispatch/);
   assert.deepEqual(frames, []);
 });

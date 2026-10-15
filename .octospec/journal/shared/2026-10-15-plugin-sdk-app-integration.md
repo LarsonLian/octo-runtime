@@ -8,6 +8,8 @@ timestamp: 2026-10-15T03:45:00Z
 
 # 实施结果
 
+后续用户已调整架构决策：不再要求原地增量配置和通用业务 RPC，改由宿主卸载、修改配置、重新加载，Extra 增加必备状态能力。见 [责任边界决策](../../tasks/extra-responsibility-boundary/brief.md)。本文保留当时实现及验证事实，不作为继续扩展 `onConfigure` / `onRequest` 的依据；新决策尚未实施，不能沿用本文测试结论证明新接口通过。
+
 对应 [接入差异审查](2026-10-15-integration-plugin-gap-review.md) 和 [任务简报](../../tasks/plugin-sdk-app-integration/brief.md)。记录基于当前工作区，不代表发布版本或远端交付。
 
 | 审查项 | 修正 |

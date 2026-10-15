@@ -44,7 +44,10 @@ export async function registerBot(
       ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
       : AbortSignal.timeout(15_000),
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ agent_platform: "octo-runtime-extra-channel-gateway", agent_version: "0.1.0" })
+    body: JSON.stringify({
+      agent_platform: "octo-runtime-extra-channel-gateway",
+      agent_version: "0.1.0"
+    })
   });
   if (!response.ok) {
     await response.body?.cancel();
@@ -134,6 +137,7 @@ function frame(kind: number, body: Buffer, flags = 0): Buffer {
 /** 每个机器人独占 WuKong v4 连接和加密状态；此层只处理传输，不调用模型。 */
 export class WukongConnection {
   #socket?: WebSocket;
+  #closing?: Promise<void>;
   #key?: Buffer;
   #iv?: Buffer;
   #version = 0;
@@ -389,9 +393,18 @@ export class WukongConnection {
       });
     });
   }
-  close(): void {
+  close(): Promise<void> {
+    if (this.#closing) return this.#closing;
     this.#closed = true;
     if (this.#heartbeat) clearInterval(this.#heartbeat);
-    this.#socket?.close();
+    const socket = this.#socket;
+    this.#closing =
+      !socket || socket.readyState === WebSocket.CLOSED
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => {
+            socket.once("close", resolve);
+            socket.terminate();
+          });
+    return this.#closing;
   }
 }

@@ -57,7 +57,7 @@ daemon 的生产依赖不引入业务 Channel；HostApp 额外携带并显式启
 
 `packages/*` 不应 import `apps/*`。provider 命令构造、native event parser、session codec 和权限适配必须留在 `packages/octo-runtime-adapter-*`；apps 只做配置、进程启动和 I/O 装配。
 
-发布型 package 的目录名与 npm 非 scope 部分完全一致。例如目录 `packages/octo-runtime-core` 发布为 `@mininglamp-oss/octo-runtime-core`，目录 `packages/octo-runtime-adapter-openclaw` 发布为 `@mininglamp-oss/octo-runtime-adapter-openclaw`。这样仓库导航、workspace filter、依赖列表和 registry 搜索使用同一名称。
+内部 package 的目录名与包名非 scope 部分一致，均标记 private，不独立发布到 npm。对外只发布根 CLI `@mininglamp-oss/octo-runtime`；`pnpm pack:release` 将内部编译模块及生产依赖一起打包，内部模块发行版本统一采用根版本号。源码 workspace 依赖仍保持 `workspace:*`，宿主 SDK 可从源码构建部署，详见 [部署说明](../../DEPLOYMENTS.md)。
 
 ## TypeScript 构建约定
 
@@ -75,7 +75,7 @@ dist/index.d.ts
 dist/index.d.ts.map
 ```
 
-可发布 package 的 `exports` 指向 `dist/index.js`，`types` 指向 `dist/index.d.ts`。因此本地 workspace 链接和 npm 安装使用同一套公开入口，不依赖 TypeScript 源文件或 ts-node loader。
+内部 package 的 `exports` 指向 `dist/index.js`，`types` 指向 `dist/index.d.ts`，供 workspace 与手动拷贝的内部发行目录解析模块，不依赖 TypeScript 源文件或 ts-node loader。这些入口不构成独立 npm SDK；内部项目单独使用时由维护者手动拷贝、覆盖同次构建的程序目录。
 
 IDE 应使用 workspace TypeScript SDK 和本仓库的 flat-config ESLint，使编辑器诊断与命令行一致；编辑器个人配置不属于 Runtime 发布合同。
 

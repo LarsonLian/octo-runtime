@@ -1,4 +1,5 @@
-import { createHostInvoke as preparedTestInvoke } from "@mininglamp-oss/octo-runtime-protocol";
+import { preparedFrames } from "./runtime-fixture.js";
+import { preparedTestInvoke } from "./runtime-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { InvocationExperience } from "../packages/octo-runtime-adapter-host/dist/experience.js";
@@ -26,7 +27,7 @@ test("Host closes a still-streaming snapshot on root completion", async () => {
     yield { protocolVersion: 2, type: "run.completed", payload: {} };
   } });
   const events = [];
-  for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("snapshot", { protocolVersion: 2, invocationId: "i", agentSessionId: "s", runId: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} }, { protocolMode: "canonical" })) events.push(event);
+  for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("snapshot", { protocolVersion: 2, invocationId: "i", agentSessionId: "s", runId: "r", prompt: "p", modelInput: "p", workdir: process.cwd(), context: { schema: "octo.context-envelope/v3", items: [] }, controlInstructions: "", approvalMode: "full_access", agentSource: "provisioned", agentConfig: {} }, { protocolMode: "canonical" })) events.push(event);
   assert.deepEqual(events.filter(e => e.type === "message.update").map(e => e.payload.status), ["streaming", "completed"]);
   assert.equal(events.filter(e => e.type === "activity.started" && e.payload.kind === "thinking").length, 1);
   assert.equal(events.at(-1).type, "run.completed");

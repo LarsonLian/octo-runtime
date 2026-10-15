@@ -8,6 +8,8 @@ export class ImChannelManager {
   readonly #endpoints = new Map<string, ImRuntime>();
   #queue: Promise<void> = Promise.resolve();
   #closed = false;
+  #closing?: Promise<void>;
+  readonly #abort = new AbortController();
   constructor(readonly dependencies: ImModuleDependencies) {}
   get status(): Record<string, unknown>[] {
     return [...this.#endpoints.values()].map((runtime) => ({ ...runtime.status }));
@@ -19,8 +21,15 @@ export class ImChannelManager {
       const key = imBotIdentity(snapshot);
       const current = this.#endpoints.get(key);
       if (!current && this.#endpoints.size >= 16) throw new Error("IM_ENDPOINT_CAPACITY_EXHAUSTED");
-      const runtime = new ImRuntime(snapshot, this.dependencies);
       await current?.close();
+      if (this.#closed) throw new Error("IM_MANAGER_CLOSED");
+      const runtime = new ImRuntime(snapshot, {
+        ...this.dependencies,
+        signal: AbortSignal.any([
+          this.#abort.signal,
+          ...(this.dependencies.signal ? [this.dependencies.signal] : [])
+        ])
+      });
       this.#endpoints.set(key, runtime);
       await runtime.start();
       return { ...runtime.status };
@@ -43,10 +52,24 @@ export class ImChannelManager {
     );
     return task;
   }
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    if (this.#closing) return this.#closing;
     this.#closed = true;
-    await this.#queue;
-    await Promise.allSettled([...this.#endpoints.values()].map((runtime) => runtime.close()));
-    this.#endpoints.clear();
+    // Cancel initialization before waiting for the queue it is blocking.
+    this.#abort.abort();
+    this.#closing = (async () => {
+      await this.#queue;
+      const results = await Promise.allSettled(
+        [...this.#endpoints.values()].map((runtime) =>
+          Promise.resolve().then(() => runtime.close())
+        )
+      );
+      const errors = results
+        .filter((result) => result.status === "rejected")
+        .map((result): unknown => result.reason);
+      if (errors.length) throw new AggregateError(errors, "IM_DISPOSE_FAILED");
+      this.#endpoints.clear();
+    })();
+    return this.#closing;
   }
 }

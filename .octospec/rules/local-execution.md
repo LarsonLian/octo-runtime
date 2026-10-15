@@ -18,7 +18,7 @@ supersedes: []
 
 # 本地执行与传输
 
-公共入口为 `invoke(input, { signal? })`，其中 input 是 [InvokeInput](invoke-input.md)。SDK、Host、CLI playboard 和各 Extra 共用解析入口。内部 `invokeFrames(adapterType, request, options)` 仍用于已准备请求的帧传输；它不是公共 JSON 请求形状。
+公共入口为 `invoke(input, environment)`，其中 input 是 [InvokeInput](invoke-input.md)。本地 environment 支持取消 signal，以及渠道工具所需的独立 executionEnvOverrides；详见 [环境合同](environment.md)。SDK、RPC 和 CLI playboard 转发原输入，只有 Host 解析执行配置。内部 `invokeFrames(input, environment)` 返回同一执行的完整源帧，不再接受 adapterType/request/options 三参数，不另行准备执行。
 
 ```mermaid
 sequenceDiagram
@@ -31,8 +31,9 @@ sequenceDiagram
   S->>D: 初始化身份并启动控制进程
   D->>H: 启动并确认实际就绪
   A->>S: invoke(InvokeInput, environment)
-  S->>D: 已解析请求与输出模式
-  D->>H: stdio RPC
+  S->>D: InvokeInput 与可信执行环境
+  D->>H: stdio RPC 转发同一输入
+  H->>H: 唯一解析、校验和执行准备
   H->>P: 新建或恢复本轮执行
   P-->>A: 经 Host/daemon/SDK 返回选定模式与真实终态
 ```
@@ -52,6 +53,8 @@ CLI `playboard` 也经过 daemon：启动本次临时 daemon，经 UDS/Pipe 执�
 | Extra 到外部系统 | 插件自身的传输、认证和投递合同 |
 
 `agent_run.invoke` 和 `agent_run.subscribe` 强制 JSON-RPC 2.0；不能把 CLI 普通控制路径的简化编码推广为所有 IPC 的合同。流式 notification 包含源身份、连续序号与完整 HostFrame。
+
+执行 RPC 的 params 使用 `input`，不再传 `adapter_type / adapterType + request + options`。signal 不进入 params，客户端将 abort 映射为 cancel；服务端为本次 invocation 维护 AbortController，覆盖 ACK 在途取消和传输关闭。仅有必要的可信 executionEnvOverrides 以独立环境字段传输，不注入模型。CLI / Playboard / Work App 验证入口见[统一调用任务](../tasks/unify-invoke-transport/brief.md)。
 
 ## 接纳、续流与终态
 

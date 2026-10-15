@@ -17,18 +17,18 @@ await runtime.stop('quit');
 
 宿主发布时可以只部署本包及其本地执行依赖，明确提供 Node、runner、manifest 和 adapter-host 入口；执行层不自动安装。
 
-需要外部接入时，HostApp 安装对应 Extra 包，构造完整声明 `{ name, module, enabled?, config }`。初始声明放入 `createDaemonRuntime({ appId, home, extras: [...] })`，启动账号时加载；运行中使用 `runtime.configureExtra(descriptor)`。SDK 不根据平台读取专用配置文件，不自行安装插件。
+需要外部接入时，HostApp 安装对应 Extra 包，构造完整声明 `{ name, module, enabled?, config }`。初始声明放入 `createDaemonRuntime({ appId, home, extras: [...] })`，启动账号时加载；运行中使用 `runtime.loadExtra(descriptor)`。SDK 不根据平台读取专用配置文件，不自行安装插件。
 
 | SDK 方法 | 行为 |
 | --- | --- |
-| `configureExtra(descriptor)` | 加载或更新同名完整声明，配置内部字段由插件解释 |
+| `loadExtra(descriptor)` | 加载完整声明；已加载时拒绝，不隐式更新或重载 |
 | `extraStatus()` | 查询生命周期与脱敏错误；`loaded` 不证明业务连接在线 |
-| `requestExtra(name, method, params?)` | 将方法与 JSON 参数交给插件 |
-| `loadExtra(name)` / `unloadExtra(name)` | 控制当前 SDK 实例的插件启用状态，不替宿主持久化配置 |
+| `extraStatus(name)` | 查询插件自定义 JSON 对象，默认 `{}`；同步回调经 IPC 返回 |
+| `unloadExtra(name)` | 通知停止并等待已有 onDispose 清理；失败如实报告 |
 
-Octo 使用 `channel-gateway`，企业微信使用 `channel-wecom`；两个插件都使用 `config.bots` 数组表达多个 Bot。插件按完整快照更新自身连接，daemon 不识别 Bot 字段。运行中的更新失败不保证业务副作用回滚。
+Octo 使用 `channel-gateway`，企业微信使用 `channel-wecom`；两个插件都使用 `config.bots` 数组表达多个 Bot。宿主卸载对应 Extra、保存完整配置、重新加载，同一插件内连接整体重建，其他插件和共享 Host 不重启。插件通过同步 `ctx.onStatus` 返回内部快照，继续通过 `ctx.onDispose` 清理；没有原地配置钩子或通用业务 RPC。daemon 不识别 Bot 字段，加载失败不回滚宿主持久配置。
 
-SDK 宿主自行保存配置并在应用重启或账号变化后重新提供。CLI 是另一种宿主：`extraset <name>` 保存完整声明到 `<home>/extras/<name>/config.json`，每次整份替换，重启 daemon 后加载。CLI 文件不构成 SDK 的存储要求。
+SDK 宿主自行保存配置并在应用重启或账号变化后重新提供。CLI 是另一种宿主：先 `extra unload <name>`，用 `extraset <name>` 保存完整声明到 `<home>/extras/<name>/config.json`，再 `extra load <name>` 读取新文件加载。CLI 文件不构成 SDK 的存储要求。
 
 直接使用 `startDaemonServer` 的 Node 宿主可通过 `extraRegistration(descriptor)` 构造 `extras` 声明，所有插件复用同一 Host。完整 SDK 示例见 [接入指南](../../INTEGRATION.md#26-通过-sdk-装配可选-extra)。
 

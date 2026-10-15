@@ -1,9 +1,7 @@
 import type {
   InputInvoke,
-  HostFrame,
-  HostInvokeOptions,
+  InputFrames,
   NativeInteractionResponse,
-  InvokeRequest,
   InteractionResponse
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type { HostedAdapterMetadata } from "@mininglamp-oss/octo-runtime-adapter-host";
@@ -97,11 +95,10 @@ export interface DaemonHealth {
 }
 
 export interface DaemonRuntime {
-  configureExtra(descriptor: ExtraDescriptor): Promise<Record<string, ExtraStatus>>;
-  loadExtra(name: string): Promise<Record<string, ExtraStatus>>;
+  loadExtra(descriptor: ExtraDescriptor): Promise<Record<string, ExtraStatus>>;
   unloadExtra(name: string): Promise<Record<string, ExtraStatus>>;
   extraStatus(): Promise<Record<string, ExtraStatus>>;
-  requestExtra<T = unknown>(name: string, method: string, params?: JsonObject): Promise<T>;
+  extraStatus(name: string): Promise<JsonObject>;
   startModule(id: string, config: unknown): Promise<unknown>;
   stopModule(id: string): Promise<void>;
   requestModule<T = unknown>(
@@ -110,11 +107,7 @@ export interface DaemonRuntime {
     params?: Record<string, unknown>
   ): Promise<T>;
   invoke: InputInvoke;
-  invokeFrames(
-    adapterType: string,
-    request: InvokeRequest,
-    options?: HostInvokeOptions
-  ): AsyncGenerator<HostFrame>;
+  invokeFrames: InputFrames;
   listAdapters(runtimeId?: string): Promise<HostedAdapterMetadata[]>;
   cancelRun(runId: string): Promise<{ cancelled: boolean }>;
   respondRun(runId: string, response: InteractionResponse): Promise<void>;

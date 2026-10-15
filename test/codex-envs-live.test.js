@@ -15,14 +15,14 @@ test("native Codex passes Run envs through its MCP whitelist", { skip: process.e
   const script = join(root, "mcp.cjs");
   const receipt = join(root, "receipt.json");
   await writeFile(script, `const fs=require('node:fs');const rl=require('node:readline').createInterface({input:process.stdin});
-fs.writeFileSync(${JSON.stringify(receipt)},JSON.stringify({value:process.env.OCTO_ENVS_NATIVE_TEST,empty:process.env.OCTO_ENVS_EMPTY}));
+fs.writeFileSync(${JSON.stringify(receipt)},JSON.stringify({value:process.env.OCTO_ENVS_NATIVE_TEST,empty:process.env.OCTO_ENVS_EMPTY,tool:process.env.OCTO_TOOL_OVERRIDE_TEST}));
 rl.on('line',line=>{const m=JSON.parse(line);if(m.id===undefined)return;let result={};
 if(m.method==='initialize')result={protocolVersion:'2024-11-05',capabilities:{tools:{}},serverInfo:{name:'env-test',version:'1'}};
 if(m.method==='tools/list')result={tools:[]};console.log(JSON.stringify({jsonrpc:'2.0',id:m.id,result}));});`);
   await writeFile(join(root, "config.toml"), `[mcp_servers.env_test]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(script)}]\nrequired = true\n`);
   const request = invokeRequest({ workdir: root, context: { schema: "octo.context-envelope/v3", items: [
     { namespace: "octo.execution", name: "envs", payload: { env_variables: [{ key: "OCTO_ENVS_NATIVE_TEST", value: "native-literal" }, { key: "OCTO_ENVS_EMPTY", value: "" }] } }
-  ] } });
+  ] }, executionEnvOverrides: { env_variables: [{ key: "OCTO_TOOL_OVERRIDE_TEST", value: "internal-only" }, { key: "OCTO_ENVS_NATIVE_TEST", value: "trusted-override" }] } });
   const child = spawn("codex", ["app-server"], { cwd: root, env: invocationEnvironment(request, { CODEX_HOME: root }), stdio: ["pipe", "pipe", "pipe"] });
   child.stderr.resume();
   let next = 0;
@@ -52,7 +52,7 @@ if(m.method==='tools/list')result={tools:[]};console.log(JSON.stringify({jsonrpc
     for (let attempt = 0; attempt < 100; attempt++) {
       try { observed = JSON.parse(await readFile(receipt, "utf8")); break; } catch { await new Promise(resolve => setTimeout(resolve, 50)); }
     }
-    assert.deepEqual(observed, { value: "native-literal", empty: "" });
+    assert.deepEqual(observed, { value: "trusted-override", empty: "", tool: "internal-only" });
     const unchanged = await rpc("config/read", { includeLayers: false, cwd: root });
     assert.equal(unchanged.config.mcp_servers.env_test.env_vars?.includes("OCTO_ENVS_NATIVE_TEST") ?? false, false);
   } finally {

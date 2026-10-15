@@ -44,8 +44,9 @@ export class WecomStreamSession {
     this.#tail = operation.catch(() => undefined);
     return operation;
   }
-  close(): void {
+  close(): Promise<void> {
     this.#closed = true;
     this.#sealed = true;
+    return this.#tail;
   }
 }

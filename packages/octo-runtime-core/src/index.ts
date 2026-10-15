@@ -1,2 +1,2 @@
 export { resolveLocalContext, localRuntimeLimits } from "./context.js";
-export { prepareInvokeInput, createInputInvoke } from "./invoke-input.js";
+export { prepareInvokeInput } from "./invoke-input.js";

@@ -3,6 +3,7 @@
  * 装配由宿主显式完成；导入本包不会读配置目录、建立连接或启动 AgentRun。
  */
 export { ImRuntime } from "./application/im-channel.js";
+export { octoCliEnvironment } from "./execution/tool-environment.js";
 export { default, name } from "./extra.js";
 export { ImChannelManager } from "./lifecycle/manager.js";
 export { MemoryImSessionStore } from "./application/session-store.js";
@@ -14,7 +15,4 @@ export type { ImMessage, BotRegistration } from "./transport/wukong.js";
 export type * from "./contracts.js";
 export type * from "./ports.js";
 export * as imApi from "./transport/api/index.js";
-export {
-  validateImBots,
-  configuredCredential
-} from "./lifecycle/file-config.js";
+export { validateImBots, configuredCredential } from "./lifecycle/file-config.js";

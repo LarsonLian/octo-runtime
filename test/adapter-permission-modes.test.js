@@ -1,4 +1,5 @@
-import { createHostInvoke as preparedTestInvoke } from "@mininglamp-oss/octo-runtime-protocol";
+import { preparedFrames } from "./runtime-fixture.js";
+import { preparedTestInvoke } from "./runtime-fixture.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -33,7 +34,7 @@ test("host rejects undeclared permission mode before provider invocation", async
   let invoked = false;
   host.register({ metadata: { protocolSupport: { protocol: ("two-mode") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "two-mode", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.full_access", "interaction.response"] },
     async respondInteraction() {}, async *invoke() { invoked = true; } });
-  await assert.rejects(async () => { for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("two-mode", { ...request, approvalMode: "assisted" }, { protocolMode: "canonical" })) assert.fail(event.type); }, /APPROVAL_MODE_UNSUPPORTED/);
+  await assert.rejects(async () => { for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("two-mode", { ...request, approvalMode: "assisted" }, { protocolMode: "canonical" })) assert.fail(event.type); }, /APPROVAL_MODE_UNSUPPORTED/);
   assert.equal(invoked, false);
 });
 

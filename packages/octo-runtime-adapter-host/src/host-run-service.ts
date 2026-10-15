@@ -1,14 +1,14 @@
-import { createInputInvoke } from "@mininglamp-oss/octo-runtime-core";
 import type { AdapterHostRpc } from "./rpc.js";
 import {
-  assertInvokeRequest,
+  createInputInvoke,
+  identifyInvokeInput,
   assertHostFrameIdentity,
   isHostTerminal,
   type HostFrame,
   type HostRunReceipt,
-  type HostInvokeOptions,
+  type InvokeInput,
+  type InvokeEnvironment,
   type NativeInteractionResponse,
-  type InvokeRequest,
   type InteractionResponse
 } from "@mininglamp-oss/octo-runtime-protocol";
 
@@ -37,8 +37,8 @@ const TTL = 120_000,
 
 /** One process-local event authority around the existing adapter-host IPC client. */
 export class HostRunService implements AdapterHostRpc {
-  readonly invoke = createInputInvoke((type, request, options) =>
-    this.invokeFrames(type, request, options)
+  readonly invoke = createInputInvoke((input, environment) =>
+    this.invokeFrames(input, environment)
   );
   #runs = new Map<string, Run>();
   #bytes = 0;
@@ -74,18 +74,16 @@ export class HostRunService implements AdapterHostRpc {
     return this.transport.respondNative(invocationId, response);
   }
   async #begin(
-    adapterType: string,
-    request: InvokeRequest,
-    options: HostInvokeOptions
+    input: ReturnType<typeof identifyInvokeInput>,
+    environment: InvokeEnvironment
   ): Promise<Run> {
-    assertInvokeRequest(request);
     this.#prune();
     if (this.#draining) throw new Error("DAEMON_DRAINING");
-    if (this.#runs.has(request.runId) || this.#starting.has(request.runId))
+    if (this.#runs.has(input.runId) || this.#starting.has(input.runId))
       throw new Error("RUN_ALREADY_ACCEPTED");
     if (this.#runs.size + this.#starting.size >= 128) throw new Error("RUN_CAPACITY_EXHAUSTED");
-    const source = this.transport.invokeFrames(adapterType, request, options);
-    this.#starting.add(request.runId);
+    const source = this.transport.invokeFrames(input, environment);
+    this.#starting.add(input.runId);
     let first: HostFrame;
     try {
       const frame = await source.next();
@@ -95,7 +93,7 @@ export class HostRunService implements AdapterHostRpc {
       await source.return(undefined).catch(() => undefined);
       throw error;
     } finally {
-      this.#starting.delete(request.runId);
+      this.#starting.delete(input.runId);
     }
     if (this.#draining) {
       await source.return(undefined);
@@ -124,26 +122,23 @@ export class HostRunService implements AdapterHostRpc {
       source,
       first,
       streamId: receipt.stream_id,
-      invocationId: request.invocationId,
+      invocationId: input.invocationId,
       next: 1,
       bytes: 0,
       updated: Date.now(),
       events: []
     };
-    this.#runs.set(request.runId, run);
+    this.#runs.set(input.runId, run);
     return run;
   }
   async *invokeFrames(
-    adapterType: string,
-    request: InvokeRequest,
-    options: HostInvokeOptions = {}
+    input: InvokeInput,
+    environment: InvokeEnvironment = {}
   ): AsyncGenerator<HostFrame> {
-    const run = await this.#begin(adapterType, request, options);
-    yield* this.#execute(adapterType, request, run);
+    const run = await this.#begin(identifyInvokeInput(input), environment);
+    yield* this.#execute(run);
   }
   async *#execute(
-    adapterType: string,
-    request: InvokeRequest,
     run: Run
   ): AsyncGenerator<HostFrame> {
     try {
@@ -179,7 +174,7 @@ export class HostRunService implements AdapterHostRpc {
       // A consumer abandoning the generator cannot leave a live provider behind.
       if (!run.terminal) {
         await this.transport
-          .cancel(request.invocationId, "Host stream consumer closed")
+          .cancel(run.invocationId, "Host stream consumer closed")
           .catch(() => undefined);
         this.#append(run, {
           ...run.receipt,
@@ -191,13 +186,12 @@ export class HostRunService implements AdapterHostRpc {
     }
   }
   async submit(
-    adapterType: string,
-    request: InvokeRequest,
-    options: HostInvokeOptions = {}
+    input: InvokeInput,
+    environment: InvokeEnvironment = {}
   ): Promise<HostRunReceipt> {
-    const run = await this.#begin(adapterType, request, options);
+    const run = await this.#begin(identifyInvokeInput(input), environment);
     const task = (async (): Promise<void> => {
-      for await (const event of this.#execute(adapterType, request, run)) void event;
+      for await (const event of this.#execute(run)) void event;
     })().catch(() => undefined);
     this.#tasks.add(task);
     void task.finally(() => this.#tasks.delete(task));

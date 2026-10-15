@@ -1,23 +1,21 @@
-import { createInputInvoke } from "@mininglamp-oss/octo-runtime-core";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
 import { watchLineLimit, type AdapterProbeOptions } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
+  createInputInvoke,
+  type InputFrames,
+  type InvokeInput,
+  type InvokeEnvironment,
   assertHostFrame,
   type InputInvoke,
   assertHostRunReceipt,
   assertHostFrameIdentity,
   isHostTerminal,
-  serializeHostInvokeOptions,
-  resolveHostInvokeWireOptions,
-  resolveHostInvokeOptions,
   type HostFrame,
   type HostRunReceipt,
-  type HostInvokeOptions,
   type NativeInteractionResponse,
-  type InteractionResponse,
-  type InvokeRequest
+  type InteractionResponse
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type { AdapterHost, HostedAdapterMetadata } from "./index.js";
 
@@ -35,11 +33,7 @@ export interface AdapterHostRpc {
   respondInteraction(invocationId: string, response: InteractionResponse): Promise<void>;
   respondNative(invocationId: string, response: NativeInteractionResponse): Promise<void>;
   invoke: InputInvoke;
-  invokeFrames(
-    adapterType: string,
-    request: InvokeRequest,
-    options?: HostInvokeOptions
-  ): AsyncGenerator<HostFrame>;
+  invokeFrames: InputFrames;
 }
 
 interface RpcMessage extends JsonRecord {
@@ -130,6 +124,7 @@ function writer(
  * a notification event stream.
  */
 export class AdapterHostRpcServer {
+  readonly #controllers = new Map<string, AbortController>();
   readonly #host: AdapterHost;
   readonly #send: (value: RpcMessage) => void;
   readonly #trace: RpcTrace | undefined;
@@ -197,14 +192,15 @@ export class AdapterHostRpcServer {
         return;
       }
       if (method === "cancel") {
+        const invocationId = requiredString(params.invocationId, "invocationId");
+        const reason = typeof params.reason === "string" ? params.reason : undefined;
+        const controller = this.#controllers.get(invocationId);
+        controller?.abort(new Error(reason ?? "cancelled"));
         this.#send({
           jsonrpc: "2.0",
           id,
           result: {
-            cancelled: this.#host.cancel(
-              requiredString(params.invocationId, "invocationId"),
-              typeof params.reason === "string" ? params.reason : undefined
-            )
+            cancelled: this.#host.cancel(invocationId, reason) || !!controller
           }
         });
         return;
@@ -225,14 +221,26 @@ export class AdapterHostRpcServer {
         this.#send({ jsonrpc: "2.0", id, result: {} });
         return;
       }
-      if (method === "invoke") {
-        const request = params.request as InvokeRequest;
-        const adapterType = requiredString(params.adapterType, "adapterType");
-        const options = resolveHostInvokeWireOptions(params.options);
-        const receipt = this.#host.prepare(adapterType, request, options);
-        const source = this.#host.invokeFrames(adapterType, request, options);
+      if (method === "invoke" || method === "invoke.with-environment") {
+        const input = params.input as InvokeInput;
+        const invocationId = requiredString(input?.invocationId, "invocationId");
+        if (this.#controllers.has(invocationId)) throw new Error("EXECUTION_IDENTITY_CONFLICT");
+        const controller = new AbortController();
+        const source = this.#host.invokeFrames(input, {
+          signal: controller.signal,
+          ...(method === "invoke.with-environment"
+            ? { executionEnvOverrides: params.executionEnvOverrides as InvokeEnvironment["executionEnvOverrides"] }
+            : {})
+        });
+        this.#controllers.set(invocationId, controller);
+        let first: IteratorResult<HostFrame>;
+        try { first = await source.next(); }
+        catch (error) { this.#controllers.delete(invocationId); throw error; }
+        if (first.done) { this.#controllers.delete(invocationId); throw new Error("HOST_ENDED_WITHOUT_RECEIPT"); }
+        const { run_id, invocation_id, stream_id, agent_session_id, session_generation, protocol_mode, protocol } = first.value;
+        const receipt = { run_id, invocation_id, stream_id, agent_session_id, session_generation, protocol_mode, protocol };
         this.#send({ jsonrpc: "2.0", id, result: receipt });
-        void this.#streamInvoke(request, source);
+        void this.#streamInvoke(invocationId, (async function* () { yield first.value; yield* source; })());
         return;
       }
       throw Object.assign(new Error(`unknown method: ${method}`), { code: -32601 });
@@ -251,7 +259,7 @@ export class AdapterHostRpcServer {
     }
   }
 
-  async #streamInvoke(request: InvokeRequest, source: AsyncIterable<HostFrame>): Promise<void> {
+  async #streamInvoke(invocationId: string, source: AsyncIterable<HostFrame>): Promise<void> {
     if (this.#closed) return;
     try {
       for await (const event of source) {
@@ -259,27 +267,31 @@ export class AdapterHostRpcServer {
         this.#send({
           jsonrpc: "2.0",
           method: "invoke.event",
-          params: { invocationId: request.invocationId, event }
+          params: { invocationId, event }
         });
         if (this.#output.writableNeedDrain) await this.#waitForDrain();
       }
       this.#send({
         jsonrpc: "2.0",
         method: "invoke.done",
-        params: { invocationId: request.invocationId }
+        params: { invocationId }
       });
     } catch (error) {
       this.#send({
         jsonrpc: "2.0",
         method: "invoke.done",
-        params: { invocationId: request.invocationId, error: { message: errorMessage(error) } }
+        params: { invocationId, error: { message: errorMessage(error) } }
       });
+    } finally {
+      this.#controllers.delete(invocationId);
     }
   }
 
   #close(error: Error): void {
     if (this.#closed) return;
     this.#closed = true;
+    for (const controller of this.#controllers.values()) controller.abort(error);
+    this.#controllers.clear();
     void this.#host.shutdown(error.message).catch(() => undefined);
   }
   #waitForDrain(): Promise<void> {
@@ -309,8 +321,8 @@ export class AdapterHostRpcServer {
 
 /** The async client for AdapterHostRpcServer; it also reassembles invoke notifications back into an AsyncGenerator. */
 export class AdapterHostRpcClient implements AdapterHostRpc {
-  readonly invoke = createInputInvoke((type, request, options) =>
-    this.invokeFrames(type, request, options)
+  readonly invoke = createInputInvoke((input, environment) =>
+    this.invokeFrames(input, environment)
   );
   readonly #send: (value: RpcMessage) => void;
   readonly #pending = new Map<string, Deferred<unknown>>();
@@ -429,36 +441,37 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
   }
   /** Await the invoke ACK first, then keep yielding this invocation's event notifications until done. */
   async *invokeFrames(
-    adapterType: string,
-    request: InvokeRequest,
-    options: HostInvokeOptions = {}
+    input: InvokeInput,
+    environment: InvokeEnvironment = {}
   ): AsyncGenerator<HostFrame> {
-    const { signal, ...wireRequest } = request;
+    const { signal, executionEnvOverrides } = environment;
+    const invocationId = input.invocationId ?? randomUUID();
+    const wireInput = { ...input, invocationId };
     if (signal?.aborted) throw abortError(signal);
-    if (this.#invocations.has(request.invocationId)) throw new Error("EXECUTION_IDENTITY_CONFLICT");
+    if (this.#invocations.has(invocationId)) throw new Error("EXECUTION_IDENTITY_CONFLICT");
     const queue = new AsyncQueue<HostFrame>();
     let terminal = false;
     let accepted = false;
-    this.#invocations.set(request.invocationId, queue);
+    this.#invocations.set(invocationId, queue);
     // AbortSignal 只留在本进程；跨进程发送明确的 cancel RPC，不能序列化成空对象。
     const onAbort = (): void => {
       queue.close(abortError(signal!));
       void this.request(
         "cancel",
-        { invocationId: request.invocationId, reason: "caller_aborted" },
+        { invocationId, reason: "caller_aborted" },
         AbortSignal.timeout(2000)
       ).catch(() => undefined);
     };
     signal?.addEventListener("abort", onAbort, { once: true });
     try {
       const receipt = await this.request(
-        "invoke",
-        { adapterType, request: wireRequest, options: serializeHostInvokeOptions(options) },
+        executionEnvOverrides?.env_variables.length ? "invoke.with-environment" : "invoke",
+        { input: wireInput, ...(executionEnvOverrides ? { executionEnvOverrides } : {}) },
         signal
       );
       assertHostRunReceipt(receipt);
       accepted = true;
-      assertReceiptRequest(receipt, request, options);
+      assertReceiptInput(receipt, wireInput);
       let seq = 0;
       for await (const event of queue) {
         if (signal?.aborted) throw abortError(signal);
@@ -471,31 +484,28 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
       if (!terminal) throw new Error("HOST_ENDED_WITHOUT_TERMINAL");
     } finally {
       signal?.removeEventListener("abort", onAbort);
-      this.#invocations.delete(request.invocationId);
+      this.#invocations.delete(invocationId);
       queue.close();
       if (accepted && !terminal && !signal?.aborted)
         await this.request(
           "cancel",
-          { invocationId: request.invocationId, reason: "consumer_closed" },
+          { invocationId, reason: "consumer_closed" },
           AbortSignal.timeout(2000)
         ).catch(() => undefined);
     }
   }
 }
 
-function assertReceiptRequest(
+function assertReceiptInput(
   receipt: HostRunReceipt,
-  request: InvokeRequest,
-  options: HostInvokeOptions
+  input: InvokeInput
 ): void {
-  const selected = resolveHostInvokeOptions(options);
   if (
-    receipt.run_id !== request.runId ||
-    receipt.invocation_id !== request.invocationId ||
-    receipt.agent_session_id !== request.agentSessionId ||
-    receipt.session_generation !== (request.sessionGeneration ?? 0) ||
-    receipt.protocol_mode !== selected.protocolMode ||
-    (selected.protocol !== undefined && receipt.protocol !== selected.protocol)
+    (input.runId !== undefined && receipt.run_id !== input.runId) ||
+    receipt.invocation_id !== input.invocationId ||
+    (input.sessionId !== undefined && receipt.agent_session_id !== input.sessionId) ||
+    receipt.session_generation !== (input.sessionGeneration ?? 0) ||
+    receipt.protocol_mode !== (input.protocol_mode ?? "native")
   )
     throw new Error("EXECUTION_IDENTITY_CONFLICT");
 }
@@ -533,12 +543,13 @@ function abortError(signal: AbortSignal): Error {
 function traceFrame(message: RpcMessage, raw: string): string {
   const params = message.params ?? {};
   const event = isRecord(params.event) ? params.event : {};
-  const options = isRecord(params.options) ? params.options : {};
+  const input = isRecord(params.input) ? params.input : {};
   if (
+    message.method === "invoke.with-environment" ||
     message.method === "native.respond" ||
     event.protocol_mode === "native" ||
     (isRecord(message.result) && message.result.protocol_mode === "native") ||
-    (["invoke", "prepare"].includes(message.method ?? "") && options.protocol_mode !== "canonical")
+    (message.method === "invoke" && input.protocol_mode !== "canonical")
   ) {
     return JSON.stringify({
       jsonrpc: message.jsonrpc,

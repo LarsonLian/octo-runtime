@@ -1,5 +1,29 @@
 import { EventEmitter } from "node:events";
 import { PassThrough, Writable } from "node:stream";
+import { invocationInput, canonicalEvents, assertInvokeRequest } from "@mininglamp-oss/octo-runtime-protocol";
+
+export function preparedFrames(host, type, request, options = {}) {
+  assertInvokeRequest(request);
+  return host.invokeFrames(invocationInput(request, options.protocolMode ?? "native", type), {
+    signal: request.signal,
+    executionEnvOverrides: request.executionEnvOverrides
+  });
+}
+
+export function preparedSubmit(host, type, request, options = {}) {
+  return host.submit(invocationInput(request, options.protocolMode ?? "native", type), {
+    signal: request.signal,
+    executionEnvOverrides: request.executionEnvOverrides
+  });
+}
+
+export function preparedTestInvoke(source) {
+  return async function* (type, request, options = {}) {
+    const frames = source(type, request, options);
+    if (options.protocolMode === "canonical") yield* canonicalEvents(frames);
+    else yield* frames;
+  };
+}
 
 export function codexAppServerFixture({ method = "item/commandExecution/requestApproval", holdResponseWrites = false, turnStartError, skills = [] } = {}) {
   const child = new EventEmitter();

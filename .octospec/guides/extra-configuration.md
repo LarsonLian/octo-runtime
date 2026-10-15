@@ -9,6 +9,8 @@ implementation_baseline: df63c8f
 
 # Extra 配置与调用
 
+本文描述宿主编排卸载、修改配置和重新加载的入口。状态能力必备且默认 `{}`，没有原地更新与通用业务 RPC。详见 [Extra 规则](../rules/extras.md)和[责任边界决策](../tasks/extra-responsibility-boundary/brief.md)。
+
 CLI 是个人设备的 headless 运维入口。普通用户由 Desktop App 静默准备配置并启动 Runtime，无需使用 CLI，也无需让 App 调用 CLI。
 
 ```sh
@@ -37,7 +39,7 @@ octo-runtime extraset sse-demo <<< '{"module":"@mininglamp-oss/octo-runtime-extr
 ~/.octo-runtime/extras/sse-demo/config.json
 ```
 
-不用手工创建额外配置文件，也不用为每个平台新增 CLI 命令。`--home` 可选择另一 Runtime Home。此次配置入口固定使用该 Home 的 `extras`，不接受 `--profile`。CLI 输出文件位置和 `restart_required`，不回显配置。
+不用手工创建额外配置文件，也不用为每个平台新增 CLI 命令。`--home` 可选择另一 Runtime Home。配置入口固定使用该 Home 的 `extras`，不接受 `--profile`。CLI 输出文件位置和 `reload_required`，不回显配置。
 
 同一 Home 下只有上述一个配置源；profile 不分区 Extra，CLI 不探测其他位置，不合并或回退。原因与计划见 [CLI 设备级目录决策](../tasks/device-extra-directory/brief.md)。
 
@@ -49,7 +51,7 @@ Octo 与 WeCom 的多个 Bot 放在同一插件的 `config.bots` 数组中；添
 
 配置文件权限为 0600；读取适配器拒绝权限不符合要求的文件。stdin 和配置文件限制为 1 MiB。名称检查避免目录穿越；新包和 Runtime 的安装决策仍由 HostApp 作出。
 
-写入不改变当前实例，重启应用配置：
+写入不改变当前实例。初次启动 daemon 后加载，或重启读取启用声明：
 
 ```sh
 octo-runtime daemon restart
@@ -72,7 +74,7 @@ CLI 通过 `status` 查看 daemon 状态；SDK 的 `extraStatus()` 查询插件�
 await runtime.extraStatus("channel-gateway");
 ```
 
-Octo 返回逐 Bot 的 `state`、`connected` 和脱敏 `error`。`IM_BOT_TOKEN_INVALID` 表示凭据格式错误（例如仍是 `<BF_TOKEN>` 占位符），`IM_AUTH_HTTP_401` 表示服务拒绝鉴权。`api_url` 必须是纯 URL，不能填写 Markdown 链接。
+Octo 返回 `{ bots: [...] }`，每个 Bot 含 `enabled`、`state`、`connected` 和脱敏 `error`；停用项仍可见。SSE 返回 `{ listening, host, port, activeRequests }`；这些字段由各插件定义，CLI 不统一解释。`IM_BOT_TOKEN_INVALID` 表示凭据格式错误（例如仍是 `<BF_TOKEN>` 占位符），`IM_AUTH_HTTP_401` 表示服务拒绝鉴权。`api_url` 必须是纯 URL，不能填写 Markdown 链接。
 
 ```sh
 # 在此通过 extraset sse-demo 保存最新完整声明
@@ -100,9 +102,9 @@ const runtime = createDaemonRuntime({
 
 宿主按既有 SDK 合同启动账号。声明随受保护的 runner session 传入子进程；同账号重启恢复最新成功声明，Desktop App 下一次启动仍须从自己的存储构造配置。本次没有将 demo 默认启用到 Work App。
 
-启动账号后也可调用 `runtime.configureExtra(descriptor)` 动态装配完整声明。相同 module 且插件登记 onConfigure 时原位更新，其他情况只重载该插件。SDK 的 loadExtra/unloadExtra/extraStatus 控制生命周期；requestExtra 把方法和 JSON 参数交给插件的 onRequest。各方法不写 CLI 配置文件。应用失败会拒绝请求，不保证插件内部业务副作用回滚。
+启动账号后调用 `runtime.loadExtra(descriptor)` 加载完整声明；更新由宿主先等待 `runtime.unloadExtra(name)`，修改并保存自己的配置，再加载最新声明。`extraStatus()` 查询生命周期，`extraStatus(name)` 查询插件同步回调返回的自定义 JSON 对象，默认 `{}`。没有通用业务请求接口，也不自动重载。SDK 不写 CLI 文件；加载失败不回滚宿主已保存配置。
 
-IM 插件支持完整 bots 增量应用和 status 查询；宿主传入 authorized_space_ids 约束 Octo 认证得到的租户。Work App 已使用统一 Extra，SQLite 只属于宿主。完整的 Node 与桌面发行接入见 [接入指南](../../INTEGRATION.md#26-通过-sdk-装配可选-extra)。
+IM 插件加载完整 bots，重载会重新建立该插件内连接；宿主传入 authorized_space_ids 约束 Octo 认证得到的租户。Work App 已使用统一 Extra，SQLite 只属于宿主，逐 Bot 界面操作转换为所属 Extra 的整体重载。完整的 Node 与桌面发行接入见 [接入指南](../../INTEGRATION.md#26-通过-sdk-装配可选-extra)。
 
 已有 Node 宿主还可使用 `startDaemonServer({ extras })`，通过 `extraRegistration(descriptor)` 构造动态声明，或直接注入 `ExtraRegistration.load` 工厂。各方式都复用同一个 Host。
 

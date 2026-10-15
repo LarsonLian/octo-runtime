@@ -14,9 +14,7 @@ import {
   assertProtocolSupport,
   canonicalEvents,
   isHostTerminal,
-  resolveHostInvokeOptions,
-  resolveHostInvokeWireOptions,
-  serializeHostInvokeOptions
+  resolveHostInvokeOptions
 } from "../dist/index.js";
 
 const fixtures = JSON.parse(
@@ -32,7 +30,6 @@ const ajv = new Ajv({ strict: false, logger: false });
 ajv.addSchema(schema);
 const validators = {
   HostInvokeOptions: resolveHostInvokeOptions,
-  HostInvokeWireOptions: resolveHostInvokeWireOptions,
   HostRunReceipt: assertHostRunReceipt,
   AdapterProtocolSupport: assertAdapterProtocolSupport,
   NativeInteractionResponse: assertNativeInteractionResponse,
@@ -56,22 +53,15 @@ for (const [name, validateRuntime] of Object.entries(validators)) {
   });
 }
 
-test("only omission defaults to native; serialization freezes an explicit selector", () => {
+test("only omission defaults to native; resolved options freeze an explicit selector", () => {
   assert.deepEqual(resolveHostInvokeOptions(), { protocolMode: "native" });
-  assert.deepEqual(serializeHostInvokeOptions(), { protocol_mode: "native" });
-  assert.deepEqual(resolveHostInvokeWireOptions(), { protocolMode: "native" });
   for (const mode of [undefined, null, "", "auto", false]) {
     assert.throws(
       () => resolveHostInvokeOptions({ protocolMode: mode }),
       (error) => error.code === "PROTOCOL_MODE_INVALID"
     );
-    assert.throws(
-      () => resolveHostInvokeWireOptions({ protocol_mode: mode }),
-      (error) => error.code === "PROTOCOL_MODE_INVALID"
-    );
   }
   const input = { protocolMode: "canonical", protocol: "codex.app-server" };
-  assert.deepEqual(resolveHostInvokeWireOptions(serializeHostInvokeOptions(input)), input);
   const resolved = resolveHostInvokeOptions(input);
   input.protocolMode = "native";
   assert.equal(resolved.protocolMode, "canonical");

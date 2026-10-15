@@ -23,7 +23,7 @@ octo-runtime daemon restart
 octo-runtime extra status
 ```
 
-声明保存在 `<home>/extras/sse-demo/config.json`，每次 `extraset` 整份替换，不合并内部字段；保存后重启 daemon 才应用。尚未安装后台服务时使用 `octo-runtime daemon run`。框架只校验声明与 JSON 结构，以下业务字段由本插件解释。
+声明保存在 `<home>/extras/sse-demo/config.json`，每次 `extraset` 整份替换，不合并内部字段。运行中更新按 `extra unload sse-demo`、`extraset sse-demo`、`extra load sse-demo` 执行；load 读取新文件。尚未安装后台服务时使用 `octo-runtime daemon run`。框架只校验声明与 JSON 结构，以下业务字段由本插件解释。
 
 `host` 缺省为 `127.0.0.1`，接受 IP 地址；`port` 缺省为 3002，范围 1–65535。`token` 必填、非空、不含空白。`Authorization` 必须为 `Bearer <token>`；认证失败返回 401 且不调用 Host。
 
@@ -50,7 +50,9 @@ await runtime.startAccount({
 });
 ```
 
-HostApp 决定安装路径和加载哪些插件。SDK 不自行下载安装 Runtime，也不读写 CLI 配置文件。运行中可用 `runtime.configureExtra(descriptor)` 提交完整声明；本演示插件没有配置更新钩子，更新会重载该插件。通用状态与启停方法见 [SDK 对接指南](../../INTEGRATION.md#26-通过-sdk-装配可选-extra)。
+HostApp 决定安装路径和加载哪些插件。SDK 不自行下载安装 Runtime，也不读写 CLI 配置文件。更新时先 `runtime.unloadExtra("sse-demo")`，保存配置，再 `runtime.loadExtra(descriptor)`；不隐式重载。通用状态与启停方法见 [SDK 对接指南](../../INTEGRATION.md#26-通过-sdk-装配可选-extra)。
+
+`runtime.extraStatus("sse-demo")` 或 `extra status sse-demo` 同步读取插件内存并返回 `{ listening, host?, port?, activeRequests, errors }`：分别表示 HTTP 是否监听、有效绑定 IP、有效端口、当前请求数和脱敏错误码。配置错误或端口占用时跳过监听，Extra 仍可加载，`listening: false`，`errors` 说明原因。状态不包含 Bearer Token，也不保证 Provider 可用；宿主自行解释这些字段。
 
 ## 统一调用
 

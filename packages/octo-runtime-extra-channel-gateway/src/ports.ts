@@ -11,6 +11,8 @@ export type ImCredentialSource = (
 ) => Promise<string | undefined>;
 export interface ImModuleDependencies {
   host: ImExecutionPort;
+  /** Owning Extra/manager lifetime; aborts connections, execution and delivery. */
+  signal?: AbortSignal;
   authorizeSpace?: (spaceId: string) => void;
   credentials?: ImCredentialSource;
   sessions?: ImSessionStore;

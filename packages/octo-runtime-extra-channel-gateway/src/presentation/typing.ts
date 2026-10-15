@@ -13,6 +13,8 @@ interface TypingEntry {
 export class TypingController {
   readonly #entries = new Map<string, TypingEntry>();
   #closed = false;
+  #closing?: Promise<void>;
+  readonly #tasks = new Set<Promise<void>>();
   constructor(
     readonly send: (address: ImAddress, signal: AbortSignal) => Promise<void>,
     readonly onError: () => void,
@@ -29,11 +31,13 @@ export class TypingController {
         const active = this.#entries.get(key);
         if (!active || active.sending) return;
         active.sending = true;
-        void this.send(address, abort.signal)
+        const task = this.send(address, abort.signal)
           .catch(() => this.onError())
           .finally(() => {
             active.sending = false;
+            this.#tasks.delete(task);
           });
+        this.#tasks.add(task);
       };
       entry = {
         leases: new Map(),
@@ -63,7 +67,8 @@ export class TypingController {
     entry.leases.set(leaseId, timer);
     return release;
   }
-  close(): void {
+  close(): Promise<void> {
+    if (this.#closing) return this.#closing;
     this.#closed = true;
     for (const entry of this.#entries.values()) {
       clearInterval(entry.timer);
@@ -71,6 +76,8 @@ export class TypingController {
       for (const timer of entry.leases.values()) clearTimeout(timer);
     }
     this.#entries.clear();
+    this.#closing = Promise.all([...this.#tasks]).then(() => undefined);
+    return this.#closing;
   }
   get activeAddresses(): number {
     return this.#entries.size;

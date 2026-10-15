@@ -1,4 +1,5 @@
-import { createHostInvoke as preparedTestInvoke } from "@mininglamp-oss/octo-runtime-protocol";
+import { preparedFrames } from "./runtime-fixture.js";
+import { preparedTestInvoke } from "./runtime-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { InvocationWatchdog } from "../packages/octo-runtime-adapter-host/dist/watchdog.js";
@@ -41,7 +42,7 @@ test("late user cancellation cannot replace a terminal during cleanup", { timeou
     yield { protocolVersion: 2, type: "run.completed", payload: {} };
     markCleaning(); await cleanup;
   } });
-  const stream = preparedTestInvoke((...args) => host.invokeFrames(...args))("terminal-race", { ...request, invocationId: "terminal-race" }, { protocolMode: "canonical" });
+  const stream = preparedTestInvoke((...args) => preparedFrames(host, ...args))("terminal-race", { ...request, invocationId: "terminal-race" }, { protocolMode: "canonical" });
   const pending = (async () => { while (true) { const next = await stream.next(); if (next.done || next.value.type.startsWith("run.")) return next; } })();
   await Promise.race([cleaning, pending.then(() => assert.fail("terminal delivered before cleanup"))]);
   assert.equal(host.cancel("terminal-race"), false);
@@ -190,7 +191,7 @@ test("host preserves a single pending next during activity and ignores failing d
     }};
   }});
   const events=[];
-  for await(const e of preparedTestInvoke((...args) => host.invokeFrames(...args))("native",{...request,runtimeLimits:{modelIdleTimeoutMs:100,modelIdleWarningMs:100,runTimeoutMs:1000}}, { protocolMode: "canonical" }))events.push(e);
+  for await(const e of preparedTestInvoke((...args) => preparedFrames(host, ...args))("native",{...request,runtimeLimits:{modelIdleTimeoutMs:100,modelIdleWarningMs:100,runTimeoutMs:1000}}, { protocolMode: "canonical" }))events.push(e);
   assert.equal(peak,1); assert.equal(calls,2); assert.equal(events.at(-1).type,"run.completed");
 });
 
@@ -198,7 +199,7 @@ test("host hard deadline aborts provider even when its consumer is paused", asyn
   let signal;
   const host=new AdapterHost();
   host.register({metadata:{ protocolSupport: { protocol: ("paused") + '.canonical', modes: ['canonical'], nativeMethods: [] },type:"paused",agentSources:["provisioned"],executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"]},async *invoke(req){signal=req.signal; yield { protocolVersion: 2,type:"message.create",payload:{}}; await new Promise(()=>{});}});
-  const iterator=preparedTestInvoke((...args) => host.invokeFrames(...args))("paused",{...request,runtimeLimits:{runTimeoutMs:100,cancelGraceMs:100,modelIdlePolicy:"observe"}}, { protocolMode: "canonical" });
+  const iterator=preparedTestInvoke((...args) => preparedFrames(host, ...args))("paused",{...request,runtimeLimits:{runTimeoutMs:100,cancelGraceMs:100,modelIdlePolicy:"observe"}}, { protocolMode: "canonical" });
   await iterator.next(); await new Promise(r=>setTimeout(r,130));
   assert.equal(signal.aborted,true); assert.equal(signal.reason.timeoutReason,"run_deadline");
   const events=[]; for await(const e of iterator)events.push(e);
@@ -209,7 +210,7 @@ test("host bounds cleanup after terminal and timeout wins over provider stopped 
   const host=new AdapterHost();
   host.register({metadata:{ protocolSupport: { protocol: ("cleanup") + '.canonical', modes: ['canonical'], nativeMethods: [] },type:"cleanup",agentSources:["provisioned"],executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"]},async *invoke(){yield { protocolVersion: 2,type:"run.completed",payload:{}};await new Promise(()=>{});}});
   const events=[];
-  for await(const e of preparedTestInvoke((...args) => host.invokeFrames(...args))("cleanup",{...request,runtimeLimits:{cancelGraceMs:100}}, { protocolMode: "canonical" })) if (!e.type.startsWith("activity.")) events.push(e);
+  for await(const e of preparedTestInvoke((...args) => preparedFrames(host, ...args))("cleanup",{...request,runtimeLimits:{cancelGraceMs:100}}, { protocolMode: "canonical" })) if (!e.type.startsWith("activity.")) events.push(e);
   assert.equal(events.length,1);
   assert.equal(events[0].payload.failure.params.timeoutReason,"cleanup_timeout");
 });

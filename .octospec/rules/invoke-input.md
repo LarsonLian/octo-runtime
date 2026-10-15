@@ -22,7 +22,9 @@ supersedes: []
 
 只有 `inputs`、`contexts` 必填；其他字段可选。默认值在执行边界解析，不写回调用方对象。未知可选扩展忽略，已识别字段继续校验。Context=v3、Run schema_version=7、内部 Adapter protocolVersion=2 是三个独立合同；统一包装不机械修改版本。
 
-调用链收敛目标：AdapterHost.invoke 和 RpcClient.invoke 共用输入合同，RPC 负责传输，Host 统一解析并进入同一条执行链。不得按调用入口或 native/canonical 模式另建输入解析与执行准备路径。当前实现仍包含 createInputInvoke 对内部 InvokeRequest 的转换及 RPC prepare / invokeFrames 接口，不能将此目标写成已完成事实；具体澄清见[任务](../tasks/remove-context-snapshot/brief.md)。
+AdapterHost.invoke、RpcClient.invoke 和 daemon SDK 共用 `invoke(input, environment)`。RPC 传输原输入，只有 Host 调用 prepareInvokeInput 解析执行默认值和内部请求；不得按入口或 native/canonical 模式另建执行准备路径。createInputInvoke 只选择同一源流视图，invokeFrames 也使用同一个 input/environment；旧三参数 HostInvoke/createHostInvoke、HostInvokeWireOptions 和模式序列化函数已删除。signal 留在 environment，RPC 映射为 cancel，服务端用自己的 AbortController 接回同一 Host 流程。实施与验收范围见[任务](../tasks/unify-invoke-transport/brief.md)。
+
+提前取消必须在发送 RPC 或启动 Provider 前失败。执行中取消沿原 invocationId 发送；接纳期间服务端也持有同一 AbortController，不能因回执尚未送达而丢失取消。客户端停止消费或连接断开时执行既有取消和资源清理合同；源帧的回执、排序和终态校验继续有效。
 
 ## 完整顶层字段
 

@@ -1,4 +1,5 @@
-import { createHostInvoke as preparedTestInvoke } from "@mininglamp-oss/octo-runtime-protocol";
+import { preparedFrames } from "./runtime-fixture.js";
+import { preparedTestInvoke } from "./runtime-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -22,7 +23,7 @@ for (const debug of [undefined, "0", "true", "1"]) {
       host = await spawnAdapterHost({ entrypoint, manifest, env });
       assert.equal(host.child.stdio.length, 3);
       const events = [];
-      for await (const event of preparedTestInvoke((...args) => host.client.invokeFrames(...args))("test", invokeRequest({ prompt: "debug-log-fixture", approvalMode: "full_access" }), { protocolMode: "canonical" })) events.push(event);
+      for await (const event of preparedTestInvoke((...args) => preparedFrames(host.client, ...args))("test", invokeRequest({ prompt: "debug-log-fixture", approvalMode: "full_access" }), { protocolMode: "canonical" })) events.push(event);
       assert.equal(events.at(-1).type, "run.completed");
       await host.close();
       if (debug === "1") {
@@ -49,7 +50,7 @@ test("debug logging failure does not prevent Host readiness or invocation", asyn
     await writeFile(join(home, "logs"), "not a directory");
     host = await spawnAdapterHost({ entrypoint, manifest, env: { ...process.env, OCTO_RUNTIME_HOME: home, OCTO_RUNTIME_DEBUG: "1" } });
     const events = [];
-    for await (const event of preparedTestInvoke((...args) => host.client.invokeFrames(...args))("test", invokeRequest({ approvalMode: "full_access" }), { protocolMode: "canonical" })) events.push(event);
+    for await (const event of preparedTestInvoke((...args) => preparedFrames(host.client, ...args))("test", invokeRequest({ approvalMode: "full_access" }), { protocolMode: "canonical" })) events.push(event);
     assert.equal(events.at(-1).type, "run.completed");
     assert.match(host.stderr(), /unable to write adapter-host debug log/);
   } finally {

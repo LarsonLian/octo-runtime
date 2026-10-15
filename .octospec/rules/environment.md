@@ -68,6 +68,14 @@ Codex 的 shell 覆盖保留已有环境策略，仅补入指定值和必要的 
 
 环境变量中的值不会被编译成模型材料或控制指令。Host 调试日志会剔除 envs payload、执行计划 envs 和 Codex 原生 shell 注入值，不依赖变量名是否包含 token/secret。请求和执行快照仍保存这些值；此能力不是凭据保险库，也不承诺阻止工具主动输出环境变量。
 
+## Channel Gateway 的工具环境
+
+渠道为 octo-cli 提供的两个 OCTO 变量使用独立 `InvokeEnvironment.executionEnvOverrides`，不写入 Context envs。Core 将其复制到内部 InvokeRequest 的同名字段，Host RPC 使用 `invoke.with-environment` 传递；旧 Host 不认识该方法时明确拒绝，不回退普通 invoke。条目格式沿用 env payload，独立限制 128 项和 65,536 字节，已识别值必须校验。
+
+Adapter SDK 合并顺序为继承环境、Context envs、独立覆盖、Adapter 固定传输设置。Codex 原生 shell 与本地 MCP 白名单使用合并后的本轮值。内部字段不由 `invocationInput` 转为公共 JSON，不进入 Context hash、模型输入或渠道业务快照；带覆盖的 RPC 请求只记录脱敏摘要。该字段不是远程授权机制。
+
+OpenClaw 使用 CLI dotenv 预配置，保持每轮非空 envs 不支持的现状；共享文件按配置顺序后写覆盖前写，不承诺多 Bot 按轮隔离，详见 [渠道合同](channel-integration.md)。桌面应用的身份选择及 Context envs 用法保留。
+
 ## 验证入口
 
 - `node --test test/context-protocol.test.js test/context-configuration-protocol.test.js test/context-envs.test.js`：Schema/TypeScript 校验、跨语言共享样例、合并约束、计划一致性、并发 CLI 子进程、模型输入隔离和日志脱敏。

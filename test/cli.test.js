@@ -1,3 +1,4 @@
+import { preparedSubmit } from "./runtime-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -101,7 +102,6 @@ test("CLI command help is local and describes adapter operations", async () => {
   );
 });
 
-async function unusedLoopbackPort() {
 test("CLI help, version and removed commands never initialize Home or start a daemon", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const cli = join(root, "apps/cli/dist/index.js");
@@ -153,6 +153,7 @@ test("CLI help, version and removed commands never initialize Home or start a da
   }
 });
 
+async function unusedLoopbackPort() {
   const server = net.createServer();
   await new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -220,7 +221,7 @@ test("daemon terminalizes in-flight work and restarts adapter-host without exiti
   });
   try {
     const request = invokeRequest({ modelInput: "wait-for-host-exit", prompt: "wait-for-host-exit", approvalMode: "full_access" });
-    await app.host.submit("test", request, { protocolMode: "canonical" });
+    await preparedSubmit(app.host, "test", request, { protocolMode: "canonical" });
     await waitFor(() => app.host.status.activeRuns === 1);
     const originalPid = app.hostProcess.child.pid;
     assert.equal(app.hostProcess.child.kill("SIGKILL"), true);
@@ -233,7 +234,7 @@ test("daemon terminalizes in-flight work and restarts adapter-host without exiti
     )).stdout);
     assert.equal(restartingStatus.ready, false);
     assert.equal(restartingStatus.adapterHost.state, "restarting");
-    await assert.rejects(app.host.submit("test", invokeRequest({
+    await assert.rejects(preparedSubmit(app.host, "test", invokeRequest({
       runId: "unavailable", invocationId: "unavailable-invocation", approvalMode: "full_access"
     }), { protocolMode: "canonical" }), /restarting/);
     await waitFor(() => app.runtime.adapterHost.state === "ready" && app.hostProcess.child.pid !== originalPid);

@@ -6,8 +6,6 @@ export interface JsonObject {
 }
 export type ExtraDisposer = () => void | Promise<void>;
 export type ExtraStatusHandler = () => JsonObject;
-export type ExtraRequestHandler = (method: string, params: JsonObject) => unknown;
-export type ExtraConfigureHandler = (config: JsonObject) => void | Promise<void>;
 
 /** This execution environment is unrelated to the model Context envelope. */
 export interface ExtraContext {
@@ -15,8 +13,6 @@ export interface ExtraContext {
   readonly signal: AbortSignal;
   onDispose(dispose: ExtraDisposer): void;
   onStatus(handler: ExtraStatusHandler): void;
-  onConfigure(handler: ExtraConfigureHandler): void;
-  onRequest(handler: ExtraRequestHandler): void;
 }
 
 export type ExtraPlugin = (context: ExtraContext, config: JsonObject) => void | Promise<void>;
@@ -44,9 +40,6 @@ interface ExtraInstance {
   disposalError?: AggregateError;
   status: ExtraStatusHandler;
   statusRegistered: boolean;
-  configure?: ExtraConfigureHandler;
-  request?: ExtraRequestHandler;
-  operations: Promise<unknown>;
 }
 
 export function assertExtraName(name: unknown): asserts name is string {
@@ -97,39 +90,6 @@ export class ExtraPlugins {
     );
   }
 
-  configure(registration: ExtraRegistration): Promise<void> {
-    const epoch = this.#loadEpochs.get(registration.name) ?? 0;
-    return this.#serial(registration.name, async () => {
-      ExtraPlugins.validate([registration]);
-      if (this.#closed) throw new Error("EXTRA_LOADER_CLOSED");
-      if (epoch !== (this.#loadEpochs.get(registration.name) ?? 0)) throw new Error("EXTRA_LOAD_CANCELLED");
-      const instance = this.#instances.get(registration.name);
-      const previous = this.#registrations.get(registration.name);
-      const sameModule = previous && (previous.load === registration.load ||
-        (registration.module !== undefined && previous.module === registration.module));
-      if (sameModule && registration.enabled !== false && instance?.configure && !instance.controller.signal.aborted) {
-        await instance.starting;
-        await this.#operation(instance, () => instance.configure!(structuredClone(registration.config)));
-        this.#registrations.set(registration.name, registration);
-        return;
-      }
-      await this.#unload(registration.name);
-      this.#registrations.set(registration.name, registration);
-      this.#statuses.set(registration.name, { phase: "disabled" });
-      if (registration.enabled !== false) await this.#load(registration.name, epoch);
-    });
-  }
-
-  request(name: string, method: string, params: JsonObject = {}): Promise<unknown> {
-    return this.#serial(name, async () => {
-      const instance = this.#instances.get(name);
-      if (!instance || instance.controller.signal.aborted) throw new Error("EXTRA_NOT_LOADED");
-      await instance.starting;
-      if (!instance.request) throw new Error("EXTRA_REQUEST_UNSUPPORTED");
-      return this.#operation(instance, () => instance.request!(method, structuredClone(params)));
-    });
-  }
-
   inspect(name: string): Promise<JsonObject> {
     assertExtraName(name);
     return this.#serial(name, async () => {
@@ -154,18 +114,20 @@ export class ExtraPlugins {
     return task;
   }
 
-  #operation<T>(instance: ExtraInstance, operation: () => Promise<T> | T): Promise<T> {
-    const task = instance.operations.catch(() => undefined).then(() => {
-      instance.controller.signal.throwIfAborted();
-      return operation();
-    });
-    instance.operations = task;
-    return task;
-  }
-
-  load(name: string): Promise<void> {
+  load(name: string, registration?: ExtraRegistration): Promise<void> {
+    assertExtraName(name);
     const epoch = this.#loadEpochs.get(name) ?? 0;
-    return this.#serial(name, () => this.#load(name, epoch));
+    return this.#serial(name, () => {
+      if (registration) {
+        ExtraPlugins.validate([registration]);
+        if (registration.name !== name) throw new Error("EXTRA_NAME_MISMATCH");
+        if (this.#closed) throw new Error("EXTRA_LOADER_CLOSED");
+        if (epoch !== (this.#loadEpochs.get(name) ?? 0)) throw new Error("EXTRA_LOAD_CANCELLED");
+        if (this.#instances.has(name)) throw new Error("EXTRA_ALREADY_LOADED");
+        this.#registrations.set(name, registration);
+      }
+      return this.#load(name, epoch);
+    });
   }
 
   #load(name: string, epoch: number): Promise<void> {
@@ -178,7 +140,6 @@ export class ExtraPlugins {
       controller: new AbortController(),
       disposers: [],
       starting: Promise.resolve(),
-      operations: Promise.resolve(),
       status: () => ({}),
       statusRegistered: false,
       sealed: false
@@ -204,14 +165,6 @@ export class ExtraPlugins {
               if (instance.sealed || instance.statusRegistered || typeof handler !== "function") throw new Error("EXTRA_STATUS_HANDLER_INVALID");
               instance.status = handler;
               instance.statusRegistered = true;
-            },
-            onConfigure(handler) {
-              if (instance.sealed || instance.configure || typeof handler !== "function") throw new Error("EXTRA_CONFIGURE_HANDLER_INVALID");
-              instance.configure = handler;
-            },
-            onRequest(handler) {
-              if (instance.sealed || instance.request || typeof handler !== "function") throw new Error("EXTRA_REQUEST_HANDLER_INVALID");
-              instance.request = handler;
             }
           },
           structuredClone(registration.config)
@@ -234,7 +187,7 @@ export class ExtraPlugins {
           phase: "error",
           error: cleanupFailed ? "EXTRA_DISPOSE_FAILED" : code
         });
-        if (!instance.disposing) this.#instances.delete(name);
+        if (!instance.disposing && !instance.disposalError) this.#instances.delete(name);
         throw error;
       }
     });
@@ -256,7 +209,6 @@ export class ExtraPlugins {
     this.#statuses.set(name, { phase: "disposing" });
     instance.disposing = (async () => {
       await instance.starting.catch(() => undefined);
-      await instance.operations.catch(() => undefined);
       try {
         await this.#dispose(instance);
         this.#statuses.set(name, { phase: "disposed" });
@@ -264,7 +216,7 @@ export class ExtraPlugins {
         this.#statuses.set(name, { phase: "error", error: "EXTRA_DISPOSE_FAILED" });
         throw error;
       } finally {
-        this.#instances.delete(name);
+        if (!instance.disposalError) this.#instances.delete(name);
       }
     })();
     return instance.disposing;

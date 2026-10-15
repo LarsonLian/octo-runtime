@@ -69,6 +69,9 @@ test("lambda scope loads once, keeps running after return, and disposes in rever
   );
   await extras.loadConfigured();
   assert.equal(extras.status.example.phase, "loaded");
+  assert.deepEqual(await extras.inspect('example'), {});
+  assert.equal('onConfigure' in context, false);
+  assert.equal('onRequest' in context, false);
   await assert.rejects(extras.load("example"), /EXTRA_ALREADY_LOADED/);
   await Promise.all([extras.unload("example"), extras.unload("example")]);
   assert.equal(context.signal.aborted, true);
@@ -122,31 +125,50 @@ test("failed initialization unwinds resources, failure is isolated and disabled 
   await mismatched.close();
 });
 
-test("Extra configuration updates serialize with requests and module changes reload resources", async () => {
+test("host unloads before loading a new snapshot; status is synchronous and isolated per Extra", async () => {
   const calls = [];
   const plugin = { name: "managed", default(ctx, config) {
-    let value = config.value;
-    calls.push('load');
-    ctx.onDispose(() => calls.push('dispose'));
-    ctx.onConfigure(async next => { if (next.value === 'invalid') throw new Error('INVALID'); value = next.value; calls.push('configure'); });
-    ctx.onRequest(method => { assert.equal(method, 'status'); return { value }; });
+    calls.push(`load:${config.value}`);
+    ctx.onDispose(() => calls.push(`dispose:${config.value}`));
+    ctx.onStatus(() => ({ value: config.value }));
   } };
   const entry = (value, module = 'first') => ({ name: 'managed', module, config: { value }, load: async () => plugin });
-  const extras = new ExtraPlugins([entry(1)], {});
+  const extras = new ExtraPlugins([entry(1), { name: 'other', config: {}, load: async () => ({ name: 'other', default(ctx) { ctx.onDispose(() => calls.push('other:dispose')); } }) }], {});
   try {
     await extras.loadConfigured();
-    const update = extras.configure(entry(2));
-    const status = extras.request('managed', 'status');
-    await update;
+    await assert.rejects(extras.load('managed', entry(2)), /EXTRA_ALREADY_LOADED/);
+    assert.deepEqual(await extras.inspect('managed'), { value: 1 });
+    const unloaded = extras.unload('managed');
+    const loaded = extras.load('managed', entry(2));
+    const status = extras.inspect('managed');
+    await unloaded;
+    await loaded;
     assert.deepEqual(await status, { value: 2 });
-    assert.deepEqual(calls, ['load', 'configure']);
-    await assert.rejects(extras.configure(entry('invalid')), /INVALID/);
-    assert.deepEqual(await extras.request('managed', 'status'), { value: 2 });
-    await extras.configure(entry(3, 'second'));
-    assert.deepEqual(calls, ['load', 'configure', 'dispose', 'load']);
+    assert.deepEqual(calls, ['load:1', 'dispose:1', 'load:2']);
+    assert.equal(extras.status.other.phase, 'loaded');
+    assert.deepEqual(await extras.inspect('other'), {});
     await extras.unload('managed');
-    await assert.rejects(extras.request('managed', 'status'), /EXTRA_NOT_LOADED/);
+    await assert.rejects(extras.inspect('managed'), /EXTRA_NOT_LOADED/);
   } finally { await extras.close(); }
+});
+
+test('status returns a JSON snapshot and hides callback failures without changing lifecycle', async () => {
+  for (const result of [{ nested: { value: 1 } }, [], { missing: undefined }, { value: Infinity }, Promise.resolve({})]) {
+    const extras = new ExtraPlugins([{ name: 'status-test', config: {}, load: async () => ({ name: 'status-test', default(ctx) { ctx.onStatus(() => result); } }) }], {});
+    await extras.loadConfigured();
+    try {
+      if (result.nested) {
+        const snapshot = await extras.inspect('status-test');
+        snapshot.nested.value = 2;
+        assert.equal(result.nested.value, 1);
+      } else await assert.rejects(extras.inspect('status-test'), /EXTRA_STATUS_FAILED/);
+      assert.equal(extras.status['status-test'].phase, 'loaded');
+    } finally { await extras.close(); }
+  }
+  const extras = new ExtraPlugins([{ name: 'broken-status', config: {}, load: async () => ({ name: 'broken-status', default(ctx) { ctx.onStatus(() => { throw new Error('private-token'); }); } }) }], {});
+  await extras.loadConfigured();
+  await assert.rejects(extras.inspect('broken-status'), error => error.message === 'EXTRA_STATUS_FAILED');
+  await extras.close();
 });
 
 test("unload cancels initialization queued before an instance exists", { timeout: 2000 }, async () => {
@@ -160,6 +182,18 @@ test("unload cancels initialization queued before an instance exists", { timeout
   await assert.rejects(loading, /EXTRA_LOAD_CANCELLED/);
   await unloaded;
   await extras.close();
+});
+
+test('failed cleanup prevents reload and remains visible without affecting another Extra', async () => {
+  const broken = { name: 'cleanup-failure', config: {}, load: async () => ({ name: 'cleanup-failure', default(ctx) { ctx.onDispose(() => { throw new Error('cleanup'); }); } }) };
+  const extras = new ExtraPlugins([broken, { name: 'healthy', config: {}, load: async () => ({ name: 'healthy', default() {} }) }], {});
+  await extras.loadConfigured();
+  await assert.rejects(extras.unload(broken.name), /EXTRA_DISPOSE_FAILED/);
+  await assert.rejects(extras.load(broken.name, broken), /EXTRA_ALREADY_LOADED/);
+  await assert.rejects(extras.inspect(broken.name), /EXTRA_NOT_LOADED/);
+  assert.equal(extras.status.healthy.phase, 'loaded');
+  assert.deepEqual(await extras.inspect('healthy'), {});
+  await assert.rejects(extras.close(), /EXTRA_DISPOSE_FAILED/);
 });
 
 test("dispose keeps cleaning after an error, and shutdown aborts pending initialization", async () => {
@@ -203,7 +237,7 @@ test(
   "extraset saves arbitrary plugin JSON privately, replaces fully, rejects invalid envelopes and auto-loads after daemon restart",
   { timeout: 20_000 },
   async (t) => {
-    const home = await mkdtemp(join(tmpdir(), "extra-cli-"));
+    const home = await mkdtemp(join('/tmp', "extra-cli-"));
     t.after(() => rm(home, { recursive: true, force: true }));
     const port = await freePort(),
       outputs = [];
@@ -235,7 +269,7 @@ test(
     }
     const options = {
       homePath: home,
-      socketPath: join(home, "daemon.sock"),
+      socketPath: join(home, "sockets/octo-runtime-daemon.sock"),
       manifestPath: join(root, "test/fixtures/adapters.json"),
       hostEntrypoint: join(root, "apps/adapter-host/dist/index.js")
     };
@@ -258,7 +292,21 @@ test(
         await callDaemon(options.socketPath, { method: "extra.unload", params: { name: sseName } });
         await assert.rejects(post(port));
         assert.equal((await callDaemon(options.socketPath, { method: "status" })).ready, true);
-        await callDaemon(options.socketPath, { method: "extra.load", params: { name: sseName } });
+        const updatedPort = await freePort();
+        await set({ ...stored, config: { ...stored.config, port: updatedPort } });
+        await callDaemon(options.socketPath, {
+          method: "extra.load",
+          params: { descriptor: { name: sseName, ...stored, config: { ...stored.config, port: updatedPort } } }
+        });
+        await assert.rejects(post(port));
+        const status = await callDaemon(options.socketPath, {
+          method: "extra.status",
+          params: { name: sseName }
+        });
+        assert.equal(status.port, updatedPort);
+        assert.match(await (await post(updatedPort)).text(), /run.completed/);
+        await callDaemon(options.socketPath, { method: 'extra.unload', params: { name: sseName } });
+        await set(stored);
       } finally {
         await app.close();
       }
@@ -325,6 +373,7 @@ test(
       await waitFor(() => cancelled === 1);
       const active = await post(port);
       await active.body.getReader().read();
+      assert.equal((await extras.inspect(sseName)).activeRequests, 1);
       await extras.unload(sseName);
       assert.equal(cancelled, 2);
       await assert.rejects(post(port));
@@ -406,7 +455,16 @@ test(
   }
 );
 
-test("occupied HTTP port fails only the extra and does not close the existing server", async () => {
+test('invalid SSE config is reported in status without failing the Extra', async () => {
+  const extras = new ExtraPlugins([{ name: sseName, config: { host: 'bad', port: 0 }, load: async () => ({ name: sseName, default: loadSse }) }], {});
+  try {
+    await extras.loadConfigured();
+    assert.equal(extras.status[sseName].phase, 'loaded');
+    assert.deepEqual(await extras.inspect(sseName), { listening: false, activeRequests: 0, errors: ['SSE_HOST_INVALID', 'SSE_PORT_INVALID', 'SSE_TOKEN_REQUIRED'] });
+  } finally { await extras.close(); }
+});
+
+test("occupied HTTP port reports an internal error and does not close the existing server", async () => {
   const server = createServer();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = server.address().port;
@@ -416,7 +474,9 @@ test("occupied HTTP port fails only the extra and does not close the existing se
   );
   try {
     await extras.loadConfigured();
-    assert.equal(extras.status[sseName].phase, "error");
+    assert.equal(extras.status[sseName].phase, "loaded");
+    assert.deepEqual((await extras.inspect(sseName)).errors, ['SSE_ADDRESS_IN_USE']);
+    assert.equal((await extras.inspect(sseName)).listening, false);
     assert.equal(server.listening, true);
   } finally {
     await extras.close();
@@ -449,10 +509,11 @@ test(
       assert.equal((await runtime.extraStatus())[sseName].phase, 'loaded');
       await runtime.unloadExtra(sseName);
       await assert.rejects(post(port));
-      await runtime.loadExtra(sseName);
-      await assert.rejects(runtime.requestExtra(sseName, 'status'), /EXTRA_REQUEST_UNSUPPORTED/);
+      await runtime.loadExtra({ name: sseName, module: modulePath, config: { port, token } });
+      assert.deepEqual(await runtime.extraStatus(sseName), { listening: true, host: '127.0.0.1', port, activeRequests: 0, errors: [] });
       const secondPort = await freePort();
-      await runtime.configureExtra({ name: sseName, module: modulePath, config: { port: secondPort, token } });
+      await runtime.unloadExtra(sseName);
+      await runtime.loadExtra({ name: sseName, module: modulePath, config: { port: secondPort, token } });
       await assert.rejects(post(port));
       assert.match(await (await post(secondPort)).text(), /run.completed/);
       await runtime.stop('reconfigure');

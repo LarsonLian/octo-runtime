@@ -8,6 +8,8 @@ timestamp: 2026-10-15T00:00:00Z
 
 # 检查范围
 
+后续状态：重复执行入口已按[统一输入任务](../../tasks/unify-invoke-transport/brief.md)收敛，只有 Host 解析执行配置。SDK、RPC 和 CLI 不再准备 InvokeRequest。Work App 也已移除旧场景依赖并完成真实 renderer 执行，见[验收记录](2026-10-15-unify-invoke-transport.md)。以下建议保留原检查时含义，不能据此判断当前入口仍为三参数。
+
 检查当前本地 Runtime 的协议定义和生产调用者，以及桌面消费边界。第 1 项按[计划字段任务](../../tasks/remove-unused-plan-fields/brief.md)删除，第 2 项按[业务场景任务](../../tasks/remove-business-scenarios/brief.md)删除，第 3 项按[快照任务](../../tasks/remove-context-snapshot/brief.md)删除；重复执行参数和统一调用链尚待收敛，不将占位、仅格式校验或单测当作端到端执行支持。
 
 ## 优先处理

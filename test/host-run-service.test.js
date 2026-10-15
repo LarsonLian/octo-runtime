@@ -1,3 +1,4 @@
+import { preparedFrames, preparedSubmit } from "./runtime-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { AdapterHost, HostRunService } from "@mininglamp-oss/octo-runtime-adapter-host";
@@ -36,12 +37,12 @@ test("drain waits for direct invocation streams and closes admission", async () 
     yield { protocolVersion: 2, type: "run.completed", payload: {} };
   });
   const invocation = (async () => {
-    for await (const frame of host.invokeFrames("fixture", input(), { protocolMode: "canonical" })) void frame;
+    for await (const frame of preparedFrames(host, "fixture", input(), { protocolMode: "canonical" })) void frame;
   })();
   try {
     await waitFor(() => host.status.activeRuns === 1);
     await assert.rejects(host.drain(25), /HOST_DRAIN_TIMEOUT/);
-    await assert.rejects(host.submit("fixture", input(), { protocolMode: "canonical" }), /DAEMON_DRAINING/);
+    await assert.rejects(preparedSubmit(host, "fixture", input(), { protocolMode: "canonical" }), /DAEMON_DRAINING/);
     release();
     await invocation;
     assert.deepEqual(await host.drain(1000), { drained: true });
@@ -51,11 +52,11 @@ test("Host counts pending handshakes toward capacity and releases expired termin
   let release;
   const gate = new Promise(resolve => { release = resolve; });
   const host = new HostRunService({
-    async *invokeFrames(_adapter, request) {
+    async *invokeFrames(request) {
       await gate;
       const identity = {
         run_id: request.runId, invocation_id: request.invocationId, stream_id: request.runId,
-        agent_session_id: request.agentSessionId, session_generation: 0,
+        agent_session_id: request.sessionId, session_generation: 0,
         protocol_mode: "canonical", protocol: "fixture.canonical"
       };
       yield { ...identity, seq: 1, kind: "control", control: { type: "state", state: "accepted" } };
@@ -64,18 +65,18 @@ test("Host counts pending handshakes toward capacity and releases expired termin
     cancel: async () => ({ cancelled: true })
   });
   t.after(() => host.close());
-  const pending = Array.from({ length: 128 }, (_, index) => host.submit("fixture", {
+  const pending = Array.from({ length: 128 }, (_, index) => preparedSubmit(host, "fixture", {
     ...input(), runId: `capacity-${index}`, invocationId: `invocation-${index}`
   }));
   assert.equal(host.status.admittingRuns, 128);
-  await assert.rejects(host.submit("fixture", { ...input(), runId: "overflow" }), /RUN_CAPACITY_EXHAUSTED/);
+  await assert.rejects(preparedSubmit(host, "fixture", { ...input(), runId: "overflow" }), /RUN_CAPACITY_EXHAUSTED/);
   release();
   await Promise.all(pending);
   await waitFor(() => host.status.activeRuns === 0);
   const now = Date.now();
   t.mock.method(Date, "now", () => now + 120_000);
   assert.throws(() => host.get("capacity-0"), /RUN_NOT_AVAILABLE/);
-  await host.submit("fixture", { ...input(), runId: "fresh", invocationId: "fresh" });
+  await preparedSubmit(host, "fixture", { ...input(), runId: "fresh", invocationId: "fresh" });
 });
 test("local submit retains source frames before subscribe and never executes on replay", async () => {
   let count = 0;
@@ -99,7 +100,7 @@ test("local submit retains source frames before subscribe and never executes on 
     yield { protocolVersion: 2, type: "run.completed", payload: {} };
   });
   const request = input(),
-    accepted = await host.submit("fixture", request, { protocolMode: "canonical" });
+    accepted = await preparedSubmit(host, "fixture", request, { protocolMode: "canonical" });
   await waitFor(() => host.get(request.runId).terminal);
   const page = host.read(request.runId, accepted.stream_id, 0);
   assert.deepEqual(
@@ -119,7 +120,7 @@ test("local submit retains source frames before subscribe and never executes on 
   assert.equal(page.events.at(-1).event.control.state, "completed");
   assert.equal(page.protocol_mode, "canonical");
   await assert.rejects(
-    host.submit("fixture", request, { protocolMode: "canonical" }),
+    preparedSubmit(host, "fixture", request, { protocolMode: "canonical" }),
     /RUN_ALREADY_ACCEPTED/
   );
   assert.deepEqual(host.read(request.runId, accepted.stream_id, 1).events, page.events.slice(1));
@@ -139,7 +140,7 @@ test("byte pressure reports a gap while terminal state remains independently que
     yield { protocolVersion: 2, type: "run.completed", payload: {} };
   });
   const request = input();
-  await host.submit("fixture", request, { protocolMode: "canonical" });
+  await preparedSubmit(host, "fixture", request, { protocolMode: "canonical" });
   await waitFor(() => host.get(request.runId).terminal);
   assert.throws(
     () => host.read(request.runId, undefined, 0),
@@ -163,7 +164,7 @@ test("unsupported native is rejected before acceptance and never invokes a canon
     count++;
   });
   await assert.rejects(
-    host.submit("fixture", input()),
+    preparedSubmit(host, "fixture", input()),
     (error) => error.code === "PROTOCOL_MODE_UNSUPPORTED"
   );
   assert.throws(() => host.get(input().runId), /RUN_NOT_AVAILABLE/);
@@ -186,7 +187,7 @@ test("native replay retains original payload and source identity without executi
     ["native"]
   );
   const request = input(),
-    accepted = await host.submit("fixture", request);
+    accepted = await preparedSubmit(host, "fixture", request);
   await waitFor(() => host.get(request.runId).terminal);
   const first = host.read(request.runId, accepted.stream_id, 0);
   assert.equal(first.protocol_mode, "native");

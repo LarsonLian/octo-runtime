@@ -18,6 +18,10 @@ supersedes: []
 
 # Runtime 本地存在与接入边界
 
+## 设备与虚拟身份的最新边界
+
+Runtime ID 表示设备上的虚拟身份，machineId 关联设备安装实例。实体设备、Host 就绪、虚拟身份初始化和对外归属是不同事实。本文的 subject／tenant profile 与 startAccount 描述当前 SDK 实现，不再作为所有宿主必须采用的身份模型。个人／组织归属由对应业务接入管理，Extra 与 Channel 不以 profile 为归属范围。目标及迁移边界见 [设计澄清](../tasks/device-virtual-runtime-boundary/brief.md)；现有身份保护仍然有效，尚未实施参数与存储迁移。
+
 本文按当前源码说明本地身份、SDK 与状态。Run 固定为 7，Context 固定为 `octo.context-envelope/v3`，各协议版本独立。
 
 ## 本地存在

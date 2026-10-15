@@ -14,7 +14,7 @@ Octo Runtime 的适配器宿主（Adapter Host）：统一管理各 provider 适
 
 ## 工作原理
 
-Core 传入统一的 `InvokeRequest` 并显式选择 canonical。以下流程说明 canonical 消费；native 分支保留 Provider 消息，不执行消息补全或 Canonical 转换。
+调用方传入统一的 `InvokeInput` 并显式选择 canonical。只有 Host 解析执行配置并生成内部 Adapter 请求。以下流程说明 canonical 消费；native 保留 Provider 消息，不执行 Canonical 转换。
 
 ```mermaid
 sequenceDiagram
@@ -23,7 +23,7 @@ sequenceDiagram
     participant Adapter
     participant CLI as Provider CLI
 
-    Core->>Host: invoke("codex", InvokeRequest, canonical)
+    Core->>Host: invoke(InvokeInput, environment)
     Host->>Host: 校验请求并创建 AbortController
     Host->>Adapter: invoke(request, signal)
     Adapter->>CLI: 启动子进程 / 发起请求
@@ -54,39 +54,38 @@ sequenceDiagram
 
 ```ts
 import { spawnAdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
-import type { InvokeRequest } from "@mininglamp-oss/octo-runtime-protocol";
+import type { InvokeInput } from "@mininglamp-oss/octo-runtime-protocol";
 
 const host = await spawnAdapterHost({
   entrypoint: "apps/adapter-host/dist/index.js",
   manifest: "config/adapters.json"
 });
 
-const request: InvokeRequest = {
+const input: InvokeInput = {
   invocationId: "invoke-1",
-  protocolVersion: 2,
-  agentSessionId: "session-1",
+  sessionId: "session-1",
   sessionGeneration: 0,
   runId: "run-1",
-  prompt: "Inspect this repository",
+  inputs: [{ type: "text", text: "Inspect this repository" }],
   workdir: process.cwd(),
-  modelInput: "Inspect this repository",
   controlInstructions: "",
-  context: { schema: "octo.context-envelope/v3", items: [] },
+  contexts: { schema: "octo.context-envelope/v3", items: [] },
+  protocol_mode: "canonical",
   approvalMode: "full_access",
   agentSource: "provisioned",
   agentConfig: {}
 };
 
-for await (const event of host.client.invoke("codex", request, { protocolMode: "canonical" })) {
+for await (const event of host.client.invoke({ ...input, protocol_mode: "canonical" }, { signal: AbortSignal.timeout(120000) })) {
   console.log(event.type, event.payload);
 }
 
 await host.close();
 ```
 
-省略 `protocolMode` 时，`invoke` 返回 native `HostFrame`，不运行 canonical 转换器。
+省略 `protocol_mode` 时，`invoke` 返回 native `HostFrame`，不运行 canonical 转换器。
 `invokeFrames` 在两种模式下都返回带身份与连续序号的完整帧；显式 canonical 的 `invoke`
-是 `canonicalEvents` 类型化视图。模式、协议与能力在 ACK 前校验，`prepare` 不启动 Provider。
+是 `canonicalEvents` 类型化视图。两者使用相同 input/environment；只有 Host 解析执行配置，RPC 只传输。模式与实际执行支持在 ACK 前校验，私有接纳逻辑不启动 Provider。signal 不序列化，由客户端映射为取消 RPC。
 当前执行的原生反向请求通过 `respondNative(invocationId, { requestId, payload })` 回复，
 `payload` 为完整 Provider 响应。终态、过期、重复响应和扩大授权范围的响应均拒绝。
 本地 native 支持 Codex app-server 和 Claude stream-json；其他 Adapter 声明 canonical-only。

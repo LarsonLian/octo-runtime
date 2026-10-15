@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { ExtraPlugins, readExtraDirectory } from "../packages/octo-runtime-daemon/dist/index.js";
-import { createInputInvoke } from "../packages/octo-runtime-core/dist/index.js";
+import { createInputInvoke } from "../packages/octo-runtime-protocol/dist/index.js";
 import { invokeDaemonRun } from "../packages/octo-runtime-daemon/dist/runtime/run-stream.js";
 import { callDaemon } from "../packages/octo-runtime-daemon/dist/runtime/runtime-contract.js";
 import { runCli } from "../apps/cli/dist/main.js";
@@ -78,12 +78,13 @@ try {
   });
   // Inject the real desktop daemon's IPC execution port, rather than a mock Provider.
   extras = new ExtraPlugins(await readExtraDirectory(join(home, "extras")), {
-    invoke: createInputInvoke((type, request, options) =>
-      invokeDaemonRun(socket, type, request, options)
+    invoke: createInputInvoke((input, environment) =>
+      invokeDaemonRun(socket, input, environment)
     )
   });
   await extras.loadConfigured();
   assert.equal(extras.status["sse-demo"].phase, "loaded");
+  assert.deepEqual(await extras.inspect('sse-demo'), { listening: true, host: '127.0.0.1', port, activeRequests: 0, errors: [] });
   const endpoint = `http://127.0.0.1:${port}`;
   assert.equal((await fetch(endpoint, { method: "POST", body: "{}" })).status, 401);
   const marker = `EXTRA_SSE_${randomUUID().slice(0, 8)}`;
@@ -113,6 +114,8 @@ try {
       inputs: [{ type: "text", text: prompt }],
       contexts: { schema: "octo.context-envelope/v3", items: [{ namespace: "octo.execution", name: "adapter", payload: { type: "codex" } }] },
       sessionId: request.agentSessionId,
+      runId: request.runId,
+      invocationId: request.invocationId,
       protocol_mode: "canonical",
       approvalMode: "full_access"
     }),

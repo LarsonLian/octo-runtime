@@ -1,4 +1,3 @@
-import { createInputInvoke } from "@mininglamp-oss/octo-runtime-core";
 import {
   spawnAdapterHost,
   type AdapterHostProcess,
@@ -13,8 +12,10 @@ import type { AdapterProbeOptions } from "@mininglamp-oss/octo-runtime-adapter-s
 import {
   assertInteractionResponse,
   assertNativeInteractionResponse,
-  resolveHostInvokeWireOptions,
-  type InvokeRequest
+  createInputInvoke,
+  contextItem,
+  type InvokeInput,
+  type InvokeEnvironment
 } from "@mininglamp-oss/octo-runtime-protocol";
 
 import { randomUUID } from "node:crypto";
@@ -24,7 +25,7 @@ import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { HostRunService } from "@mininglamp-oss/octo-runtime-adapter-host";
 import { InvocationManifest } from "./invocation-manifest.js";
-import { ExtraPlugins, type ExtraRegistration, type JsonObject } from "./extras.js";
+import { ExtraPlugins, type ExtraRegistration } from "./extras.js";
 import { extraRegistration, type ExtraDescriptor } from "./extra-config.js";
 
 export interface StartDaemonServerOptions {
@@ -69,7 +70,7 @@ export interface DaemonRuntimeInfo {
 }
 
 type RuntimeConfigurations = (
-  metadata?: InvokeRequest["runMetadata"]
+  metadata?: InvokeInput["runMetadata"]
 ) => Record<string, AdapterProbeOptions> | undefined;
 
 interface DaemonRequest {
@@ -220,7 +221,7 @@ export async function startDaemonServer({
   };
 
   const localConfigurations = (
-    metadata?: InvokeRequest["runMetadata"]
+    metadata?: InvokeInput["runMetadata"]
   ): Record<string, AdapterProbeOptions> | undefined => {
     const selected =
       metadata?.runtimeId || metadata?.profile
@@ -248,7 +249,9 @@ export async function startDaemonServer({
       }
     );
   };
-  const withLocalConfiguration = (adapterType: string, request: InvokeRequest): InvokeRequest => {
+  const withLocalConfiguration = (request: InvokeInput): InvokeInput => {
+    const selectedAdapter = contextItem(request.contexts, "octo.execution", "adapter")?.payload.type;
+    const adapterType = typeof selectedAdapter === "string" ? selectedAdapter : "codex";
     const configuration = localConfigurations(request.runMetadata)?.[adapterType];
     return configuration
       ? {
@@ -256,7 +259,7 @@ export async function startDaemonServer({
           agentConfig: {
             ...request.agentConfig,
             providerOptions: {
-              ...request.agentConfig.providerOptions,
+              ...request.agentConfig?.providerOptions,
               ...configuration.providerOptions
             }
           }
@@ -273,26 +276,27 @@ export async function startDaemonServer({
       readyHost().client.respondInteraction(invocationId, response),
     respondNative: async (invocationId, response) =>
       readyHost().client.respondNative(invocationId, response),
-    invoke: createInputInvoke((type, request, options) =>
-      transportHost.invokeFrames(type, request, options)
+    invoke: createInputInvoke((input, environment) =>
+      transportHost.invokeFrames(input, environment)
     ),
-    async *invokeFrames(adapterType, request, options) {
+    async *invokeFrames(input, environment) {
+      const invocationId = requiredString(input.invocationId, "invocationId");
+      const selectedAdapter = contextItem(input.contexts, "octo.execution", "adapter")?.payload.type;
       await invocationManifest.begin({
-        invocationId: request.invocationId,
-        runId: request.runId,
-        adapterType
+        invocationId,
+        runId: requiredString(input.runId, "runId"),
+        adapterType: typeof selectedAdapter === "string" ? selectedAdapter : "codex"
       });
       try {
         for await (const event of readyHost().client.invokeFrames(
-          adapterType,
-          withLocalConfiguration(adapterType, request),
-          options
+          withLocalConfiguration(input),
+          environment
         )) {
           yield event;
         }
       } finally {
         try {
-          await invocationManifest.end(request.invocationId);
+          await invocationManifest.end(invocationId);
         } catch (error) {
           console.error("failed to remove completed invocation from the manifest", {
             error: errorMessage(error)
@@ -428,6 +432,10 @@ export async function startDaemonServer({
       if (consoleOutput) console.error("extra loading", { name: entry.name });
       try {
         await extras.load(entry.name);
+        if (consoleOutput) {
+          try { console.error("extra internal status", JSON.stringify({ name: entry.name, status: await extras.inspect(entry.name) })); }
+          catch { console.error("extra internal status", { name: entry.name, error: "EXTRA_STATUS_FAILED" }); }
+        }
       } finally {
         if (consoleOutput) console.error("extra startup result", { name: entry.name, ...extras.status[entry.name] });
       }
@@ -517,13 +525,10 @@ async function handleRequestLine({
       if ((JSON.parse(line) as Record<string, unknown>).jsonrpc !== "2.0")
         throw new Error("JSON-RPC 2.0 required");
       if (request.method === "agent_run.invoke") {
-        const invocation = request.params?.request as InvokeRequest;
-        await host.submit(
-          requiredString(request.params?.adapter_type, "adapter_type"),
-          invocation,
-          resolveHostInvokeWireOptions(request.params?.options)
-        );
-        request.params = { run_id: invocation.runId };
+        const receipt = await host.submit(request.params?.input as InvokeInput, {
+          executionEnvOverrides: request.params?.executionEnvOverrides as InvokeEnvironment["executionEnvOverrides"]
+        });
+        request.params = { run_id: receipt.run_id };
       }
       await streamAgentRun(request, socket, host);
       return;
@@ -745,18 +750,13 @@ async function dispatch({
 }): Promise<unknown> {
   const params = request.params ?? {};
   switch (request.method) {
-    case "extra.configure": {
+    case "extra.load": {
       const descriptor = params.descriptor as ExtraDescriptor;
       const registration = extraRegistration(descriptor);
       if (registration.name in modules.status) throw new Error("EXTRA_MODULE_NAME_CONFLICT");
-      await extras.configure(registration);
+      await extras.load(registration.name, registration);
       return extras.status;
     }
-    case "extra.request":
-      return extras.request(requiredString(params.name, "name"), requiredString(params.method, "method"), params.params as JsonObject | undefined);
-    case "extra.load":
-      await extras.load(requiredString(params.name, "name"));
-      return extras.status;
     case "extra.unload":
       await extras.unload(requiredString(params.name, "name"));
       return extras.status;
@@ -804,9 +804,8 @@ async function dispatch({
       );
     case "agent_run.submit":
       return host.submit(
-        requiredString(params.adapter_type, "adapter_type"),
-        params.request as InvokeRequest,
-        resolveHostInvokeWireOptions(params.options)
+        params.input as InvokeInput,
+        { executionEnvOverrides: params.executionEnvOverrides as InvokeEnvironment["executionEnvOverrides"] }
       );
     case "agent_run.native.respond":
       assertNativeInteractionResponse(params.response);

@@ -1,4 +1,3 @@
-import { createInputInvoke } from "@mininglamp-oss/octo-runtime-core";
 import { chmod, lstat, mkdir, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import net from "node:net";
@@ -6,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { spawnAdapterHost } from "./process.js";
 import { HostRunService } from "./host-run-service.js";
 import type { AdapterHostRpc } from "./rpc.js";
-import { resolveHostInvokeWireOptions, type InvokeRequest } from "@mininglamp-oss/octo-runtime-protocol";
+import { createInputInvoke, contextItem, type InvokeInput, type InvokeEnvironment } from "@mininglamp-oss/octo-runtime-protocol";
 import type { AdapterProbeOptions } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 
 export interface HostSocketRequest {
@@ -34,9 +33,11 @@ export async function startHostSocketServer(options: {
     }
   }
   const processHost = await spawnAdapterHost({ entrypoint: options.hostEntrypoint, manifest: options.manifestPath, env: { ...process.env, OCTO_RUNTIME_HOME: options.homePath } });
-  const configure = (type: string, request: InvokeRequest): InvokeRequest => {
+  const configure = (request: InvokeInput): InvokeInput => {
+    const adapterType = contextItem(request.contexts, "octo.execution", "adapter")?.payload.type;
+    const type = typeof adapterType === "string" ? adapterType : "codex";
     const config = options.configurations?.(typeof request.runMetadata?.runtimeId === "string" ? request.runMetadata.runtimeId : undefined)?.[type];
-    return config ? { ...request, agentConfig: { ...request.agentConfig, providerOptions: { ...request.agentConfig.providerOptions, ...config.providerOptions } } } : request;
+    return config ? { ...request, agentConfig: { ...request.agentConfig, providerOptions: { ...request.agentConfig?.providerOptions, ...config.providerOptions } } } : request;
   };
   const transport: AdapterHostRpc = {
     list: configs => processHost.client.list(configs ?? options.configurations?.()),
@@ -44,8 +45,8 @@ export async function startHostSocketServer(options: {
     cancel: (id, reason) => processHost.client.cancel(id, reason),
     respondInteraction: (id, response) => processHost.client.respondInteraction(id, response),
     respondNative: (id, response) => processHost.client.respondNative(id, response),
-    invoke: createInputInvoke((type, request, opts) => transport.invokeFrames(type, request, opts)),
-    invokeFrames: (type, request, opts) => processHost.client.invokeFrames(type, configure(type, request), opts)
+    invoke: createInputInvoke((input, environment) => transport.invokeFrames(input, environment)),
+    invokeFrames: (input, environment) => processHost.client.invokeFrames(configure(input), environment)
   };
   const host = new HostRunService(transport);
   const connections = new Set<net.Socket>();
@@ -78,9 +79,8 @@ export async function startHostSocketServer(options: {
       request = value as HostSocketRequest;
       const params = request.params ?? {};
       if (request.method === "agent_run.invoke") {
-        const invocation = params.request as InvokeRequest;
-        await host.submit(String(params.adapter_type), invocation, resolveHostInvokeWireOptions(params.options));
-        await streamHostRun({ ...request, params: { run_id: invocation.runId } }, socket, host);
+        const receipt = await host.submit(params.input as InvokeInput, { executionEnvOverrides: params.executionEnvOverrides as InvokeEnvironment["executionEnvOverrides"] });
+        await streamHostRun({ ...request, params: { run_id: receipt.run_id } }, socket, host);
         return;
       }
       if (request.method === "agent_run.subscribe") { await streamHostRun(request, socket, host); return; }

@@ -1,3 +1,4 @@
+import { invocationInput } from "@mininglamp-oss/octo-runtime-protocol";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:net";
@@ -110,7 +111,7 @@ test("local invoke repairs IPC disconnect without submitting again or losing ful
   });
   const received = [];
   for await (const value of canonicalEvents(
-    invokeDaemonRun(path, "codex", request, { protocolMode: "canonical" })
+    invokeDaemonRun(path, invocationInput(request, "canonical", "codex"), { signal: request.signal })
   ))
     received.push(value);
   assert.deepEqual(received, canonical);
@@ -133,9 +134,7 @@ test("source expiration fails explicitly and never reinvokes the adapter", async
     socket.end();
   });
   await assert.rejects(async () => {
-    for await (const value of invokeDaemonRun(path, "codex", request, {
-      protocolMode: "canonical"
-    }))
+    for await (const value of invokeDaemonRun(path, invocationInput(request, "canonical", "codex"), { signal: request.signal }))
       void value;
   }, /STREAM_EXPIRED/);
   assert.deepEqual(
@@ -176,7 +175,7 @@ test("lost acceptance ACK recovers the original native stream without a second i
     socket.end();
   });
   const received = [];
-  for await (const frame of invokeDaemonRun(path, "codex", request)) received.push(frame);
+  for await (const frame of invokeDaemonRun(path, invocationInput(request, "native", "codex"), { signal: request.signal })) received.push(frame);
   assert.deepEqual(received, frames);
   assert.deepEqual(calls, ["agent_run.invoke", "agent_run.get", "agent_run.subscribe"]);
 });

@@ -19,6 +19,7 @@ import {
   assertAgentSource,
   assertApprovalMode,
   assertContextEnvelope,
+  assertContextEnvs,
   assertJsonValue,
   contextItem
 } from "./context.js";
@@ -235,32 +236,32 @@ export const CANONICAL_EVENT_TYPES = [
 export type CanonicalEventType = (typeof CANONICAL_EVENT_TYPES)[number];
 
 export type CanonicalPayloadFor<TType extends CanonicalEventType> = TType extends "activity.started"
-    ? CanonicalEventPayload & ActivityStartedPayload
-    : TType extends "activity.updated"
-      ? CanonicalEventPayload & ActivityUpdatedPayload
-      : TType extends "activity.finished"
-        ? CanonicalEventPayload & ActivityFinishedPayload
-        : TType extends "plan.updated"
-          ? CanonicalEventPayload & PlanUpdatedPayload
-          : TType extends "tool_call.progress"
-            ? CanonicalEventPayload & ToolProgressPayload
-            : TType extends "run.notice"
-              ? CanonicalEventPayload & RunNoticePayload
-              : TType extends "model_step.started"
-                ? CanonicalEventPayload & ModelStepStartedPayload
-                : TType extends "model_step.finished"
-                  ? CanonicalEventPayload & ModelStepFinishedPayload
-                  : TType extends "interaction.requested"
-                    ? CanonicalEventPayload & InteractionRequestedPayload
-                    : TType extends "interaction.resolved"
-                      ? CanonicalEventPayload & InteractionResolvedPayload
-                      : TType extends "tool_call.create"
-                        ? CanonicalEventPayload & ToolCallCreatePayload
-                        : TType extends "tool_call.delta"
-                          ? CanonicalEventPayload & ToolCallDeltaPayload
-                          : TType extends "tool_call.update"
-                            ? CanonicalEventPayload & ToolCallUpdatePayload
-                            : CanonicalEventPayload;
+  ? CanonicalEventPayload & ActivityStartedPayload
+  : TType extends "activity.updated"
+    ? CanonicalEventPayload & ActivityUpdatedPayload
+    : TType extends "activity.finished"
+      ? CanonicalEventPayload & ActivityFinishedPayload
+      : TType extends "plan.updated"
+        ? CanonicalEventPayload & PlanUpdatedPayload
+        : TType extends "tool_call.progress"
+          ? CanonicalEventPayload & ToolProgressPayload
+          : TType extends "run.notice"
+            ? CanonicalEventPayload & RunNoticePayload
+            : TType extends "model_step.started"
+              ? CanonicalEventPayload & ModelStepStartedPayload
+              : TType extends "model_step.finished"
+                ? CanonicalEventPayload & ModelStepFinishedPayload
+                : TType extends "interaction.requested"
+                  ? CanonicalEventPayload & InteractionRequestedPayload
+                  : TType extends "interaction.resolved"
+                    ? CanonicalEventPayload & InteractionResolvedPayload
+                    : TType extends "tool_call.create"
+                      ? CanonicalEventPayload & ToolCallCreatePayload
+                      : TType extends "tool_call.delta"
+                        ? CanonicalEventPayload & ToolCallDeltaPayload
+                        : TType extends "tool_call.update"
+                          ? CanonicalEventPayload & ToolCallUpdatePayload
+                          : CanonicalEventPayload;
 
 /** The smallest event unit an adapter emits to the Host; the payload narrows by type for the tool lifecycle. */
 export type CanonicalEvent<TType extends CanonicalEventType = CanonicalEventType> =
@@ -301,7 +302,10 @@ export function providerInputText(request: InvokeRequest): string {
 }
 
 /** Inject trusted instructions only when starting a provider session, including a fresh restart. */
-export function initialControlInstructions(request: InvokeRequest, freshSession = !request.providerSession?.sessionId): string {
+export function initialControlInstructions(
+  request: InvokeRequest,
+  freshSession = !request.providerSession?.sessionId
+): string {
   return freshSession ? request.controlInstructions : "";
 }
 
@@ -877,6 +881,11 @@ export function assertInvokeRequest(request: unknown): asserts request is Invoke
   if ("appendInstructions" in request) throw new TypeError("LEGACY_RUN_CONTRACT_REJECTED");
   assertAgentSource(request.agentSource);
   assertContextEnvelope(request.context);
+  if (request.executionEnvOverrides !== undefined) {
+    assertContextEnvs(request.executionEnvOverrides);
+    if (Buffer.byteLength(JSON.stringify(request.executionEnvOverrides)) > 65_536)
+      throw new TypeError("EXECUTION_ENV_TOO_LARGE");
+  }
   assertApprovalMode(request.approvalMode);
   const modelChoices = contextItem(request.context, "octo.execution", "model")?.payload;
   const approvalPolicy = contextItem(request.context, "octo.security", "approval_policy")?.payload;

@@ -4,12 +4,11 @@ import {
   assertHostFrameIdentity,
   assertHostRunReceipt,
   isHostTerminal,
-  serializeHostInvokeOptions,
-  resolveHostInvokeOptions,
+  identifyInvokeInput,
   type HostFrame,
   type HostRunReceipt,
-  type HostInvokeOptions,
-  type InvokeRequest
+  type InvokeInput,
+  type InvokeEnvironment
 } from "@mininglamp-oss/octo-runtime-protocol";
 import { callDaemon } from "./runtime-contract.js";
 
@@ -21,7 +20,7 @@ export async function* subscribeDaemonRun(
     streamId?: string;
     afterSeq?: number;
     signal?: AbortSignal;
-    invocation?: { adapterType: string; request: InvokeRequest; options?: HostInvokeOptions };
+    invocation?: { input: InvokeInput; executionEnvOverrides?: InvokeEnvironment["executionEnvOverrides"] };
   }
 ): AsyncIterable<Record<string, unknown>> {
   if (input.signal?.aborted) return;
@@ -39,9 +38,7 @@ export async function* subscribeDaemonRun(
       method: input.invocation ? "agent_run.invoke" : "agent_run.subscribe",
       params: input.invocation
         ? {
-            adapter_type: input.invocation.adapterType,
-            request: input.invocation.request,
-            options: serializeHostInvokeOptions(input.invocation.options)
+            ...input.invocation
           }
         : {
             run_id: input.runId,
@@ -87,12 +84,11 @@ export async function* subscribeDaemonRun(
 /** A single local invoke RPC returns its canonical notifications; replay only repairs IPC loss. */
 export async function* invokeDaemonRun(
   socketPath: string,
-  adapterType: string,
-  request: InvokeRequest,
-  options: HostInvokeOptions = {}
+  input: InvokeInput,
+  environment: InvokeEnvironment = {}
 ): AsyncGenerator<HostFrame> {
-  const resolved = resolveHostInvokeOptions(options);
-  const { signal, ...wireRequest } = request;
+  const request = identifyInvokeInput(input);
+  const { signal, executionEnvOverrides } = environment;
   if (signal?.aborted)
     throw signal.reason instanceof Error ? signal.reason : new Error("caller_aborted");
   let receipt: HostRunReceipt | undefined;
@@ -119,7 +115,7 @@ export async function* invokeDaemonRun(
           afterSeq: after,
           signal,
           ...(!streamId
-            ? { invocation: { adapterType, request: wireRequest, options: resolved } }
+            ? { invocation: { input: request, ...(executionEnvOverrides ? { executionEnvOverrides } : {}) } }
             : {})
         })) {
           if (frame.result) {
@@ -127,10 +123,9 @@ export async function* invokeDaemonRun(
             if (
               metadata.run_id !== request.runId ||
               metadata.invocation_id !== request.invocationId ||
-              metadata.agent_session_id !== request.agentSessionId ||
+              metadata.agent_session_id !== request.sessionId ||
               metadata.session_generation !== (request.sessionGeneration ?? 0) ||
-              metadata.protocol_mode !== resolved.protocolMode ||
-              (resolved.protocol && metadata.protocol !== resolved.protocol) ||
+              metadata.protocol_mode !== (request.protocol_mode ?? "native") ||
               !metadata.stream_id ||
               (streamId && streamId !== metadata.stream_id)
             )
@@ -188,10 +183,9 @@ export async function* invokeDaemonRun(
           );
           if (
             info.invocation_id !== request.invocationId ||
-            info.protocol_mode !== resolved.protocolMode ||
-            info.agent_session_id !== request.agentSessionId ||
-            info.session_generation !== (request.sessionGeneration ?? 0) ||
-            (resolved.protocol && info.protocol !== resolved.protocol)
+            info.protocol_mode !== (request.protocol_mode ?? "native") ||
+            info.agent_session_id !== request.sessionId ||
+            info.session_generation !== (request.sessionGeneration ?? 0)
           )
             throw new Error("EXECUTION_IDENTITY_CONFLICT", { cause: error });
           receipt = info;

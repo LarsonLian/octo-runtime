@@ -1,3 +1,4 @@
+import { preparedFrames } from "./runtime-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
@@ -20,7 +21,7 @@ async function failed(adapter, workdir = process.cwd()) {
   const host = new AdapterHost();
   host.register(adapter);
   const events = [];
-  for await (const frame of host.invokeFrames(
+  for await (const frame of preparedFrames(host,
     adapter.metadata.type,
     invokeRequest({ workdir, approvalMode: "full_access" }),
     { protocolMode: "canonical" }

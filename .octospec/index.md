@@ -7,6 +7,7 @@
 | 主题 | 入口 |
 | --- | --- |
 | 总体责任边界 | [基础架构](rules/architecture.md) |
+| 总体协议、调用时序与审批／追问往返 | [协议与调用设计](rules/protocol-design.md) |
 | 身份、Home、profile、安装与生命周期 | [本地 Runtime](rules/runtime-lifecycle.md) |
 | 公共输入、默认值与多模态 | [InvokeInput](rules/invoke-input.md) |
 | IPC、执行接纳与断流修复 | [本地执行](rules/local-execution.md) |
@@ -44,6 +45,8 @@
 
 - [CLI 设备级 Extra 配置目录](tasks/device-extra-directory/brief.md)：记录 CLI 唯一配置源、SDK 宿主边界与实施计划。
 
+- [统一 Host/RPC 执行输入](tasks/unify-invoke-transport/brief.md)：沿用 InvokeInput 与 signal，RPC 只传输，Host 唯一解析；[验收记录](journal/shared/2026-10-15-unify-invoke-transport.md)包含 CLI、Playboard 和 Work App 命令及真实结果。
+
 - [删除通用执行渠道快照](tasks/remove-context-snapshot/brief.md)：删除 contextSnapshot、渠道快照引用类型及转发；业务自行保存材料，另记录 Host 与 RPC 统一调用链的目标。
 
 - [删除通用协议业务场景](tasks/remove-business-scenarios/brief.md)：删除场景白名单、ScenarioRequest 及 Node/browser 导出；Channel Gateway Extra 保留业务接入职责，不为 Work App 测试程序保留旧合同。
@@ -51,7 +54,9 @@
 - [删除业务能力合同](tasks/remove-business-capability-contract/brief.md)：移除自有 capabilities、执行计划能力标签及 ExecutionTarget 预留设计；验证结果单独记录。
 - [后续协议简化检查](journal/shared/2026-10-15-protocol-simplification-review.md)：核实业务场景、渠道快照和内部派生参数的真实调用链；其中未消费计划字段按[后续任务](tasks/remove-unused-plan-fields/brief.md)删除，其余为建议。
 
+- [实体设备与虚拟 Runtime 归属澄清](tasks/device-virtual-runtime-boundary/brief.md)：按用户架构图复盘设备、虚拟身份与 profile 混用问题，明确 Host 级 Extra、业务归属与迁移验收；本次为文档决策，代码待改造。
 - [Playboard 统一 daemon 执行](tasks/playboard-daemon-execution/brief.md)：记录绕过 daemon、重复装配 OpenClaw 的问题与改造原因；当前工作树已统一临时 daemon、两层 RPC 和资源隔离，见[验证记录](journal/shared/2026-10-15-playboard-daemon-execution.md)。
+- [Extra 责任边界决策](tasks/extra-responsibility-boundary/brief.md)：复盘原地更新和业务 RPC 的过度设计，明确宿主编排、必备状态及改造验收；当前代码已按新接口调整，后续 [dispose 修复验证](journal/shared/2026-10-15-extra-dispose-repair.md)单独记录。
 - [架构演进](journal/shared/architecture-evolution.md)：Git 节点、已撤回设计的问题和当前替代。
 - [历史验证摘要](journal/shared/provider-validation-history.md)：原文日期的真实证据、失败及未验收边界。
 - [31 份材料审查表](tasks/consolidate-runtime-knowledge/migration-review.md)：每份旧文档的去向与理由。

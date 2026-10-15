@@ -3,9 +3,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startTemporaryDaemon } from "./temporary-daemon.js";
 import { invokeDaemonRun } from "@mininglamp-oss/octo-runtime-daemon/runtime/run-stream";
-import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-core";
-export { prepareInvokeInput as preparePlayboard } from "@mininglamp-oss/octo-runtime-core";
-import { createHostInvoke, isHostTerminal, isTerminal } from "@mininglamp-oss/octo-runtime-protocol";
+import { type InvokeInput, identifyInvokeInput, createInputInvoke, isHostTerminal, isTerminal } from "@mininglamp-oss/octo-runtime-protocol";
 
 const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 
@@ -38,13 +36,15 @@ export async function runPlayboard(options: PlayboardOptions): Promise<number> {
   } catch {
     throw new TypeError("playboard stdin must contain one complete JSON object");
   }
-  const { adapterType, protocolMode, request } = prepareInvokeInput(value);
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new TypeError("playboard stdin must contain one JSON input object");
+  const input = identifyInvokeInput(value as InvokeInput);
   const profile = options.profile ?? "default";
   const home = options.home ?? defaultRuntimeHome(options.env);
   runtimePaths(home, profile); // Validate the selected profile before starting resources.
-  if (request.runMetadata?.profile !== undefined && request.runMetadata.profile !== profile)
+  if (input.runMetadata?.profile !== undefined && input.runMetadata.profile !== profile)
     throw new Error("RUNTIME_CONFIGURATION_NOT_FOUND: request profile differs from --profile");
-  request.runMetadata = { ...request.runMetadata, profile };
+  input.runMetadata = { ...input.runMetadata, profile };
   const output = options.output ?? writeLine;
   const controller = new AbortController();
   let interrupted = 0;
@@ -74,14 +74,13 @@ export async function runPlayboard(options: PlayboardOptions): Promise<number> {
       signal: controller.signal
     });
     const socket = daemon.socket;
-    const invoke = createHostInvoke((type, prepared, wireOptions) =>
-      invokeDaemonRun(socket, type, prepared, wireOptions)
+    const invoke = createInputInvoke((input, environment) =>
+      invokeDaemonRun(socket, input, environment)
     );
     let exitCode = 1;
     for await (const frame of invoke(
-      adapterType,
-      { ...request, signal: controller.signal },
-      { protocolMode }
+      input,
+      { signal: controller.signal }
     )) {
       await output(JSON.stringify(frame));
       if (

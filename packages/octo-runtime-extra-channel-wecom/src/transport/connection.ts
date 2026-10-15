@@ -58,6 +58,7 @@ export class WecomConnection {
   readonly #heartbeatIntervalMs: number;
   readonly #requestTimeoutMs: number;
   #socket?: WebSocket;
+  #closing?: Promise<void>;
   #heartbeat?: NodeJS.Timeout;
   #ping?: Promise<void>;
   #closed = false;
@@ -258,11 +259,12 @@ export class WecomConnection {
   #fail(code: string): void {
     const notify = !this.#closed;
     if (!this.#closed) this.#status.error ??= code;
-    this.close();
+    void this.close();
     if (notify) this.callbacks.onDisconnect?.(this.#status.error ?? code);
   }
 
-  close(): void {
+  close(): Promise<void> {
+    if (this.#closing) return this.#closing;
     this.#closed = true;
     this.#status.connected = false;
     if (this.#heartbeat) clearInterval(this.#heartbeat);
@@ -271,6 +273,14 @@ export class WecomConnection {
       pending.reject(new Error(this.#status.error ?? "WECOM_CLOSED"));
     }
     this.#pending.clear();
-    this.#socket?.terminate();
+    const socket = this.#socket;
+    this.#closing =
+      !socket || socket.readyState === WebSocket.CLOSED
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => {
+            socket.once("close", resolve);
+            socket.terminate();
+          });
+    return this.#closing;
   }
 }

@@ -13,6 +13,8 @@ import { WecomStreamSession } from "./stream-session.js";
 export class WecomTransport {
   readonly identity: string;
   readonly botId: string;
+  #detachAbort?: () => void;
+  #closing?: Promise<void>;
   #connection?: WecomConnection;
   readonly #streams = new Set<WecomStreamSession>();
   constructor(
@@ -39,8 +41,14 @@ export class WecomTransport {
       }
     );
     this.#connection = connection;
+    const abort = (): void => {
+      void connection.close();
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    this.#detachAbort = () => signal.removeEventListener("abort", abort);
+    if (signal.aborted) return;
     await connection.connect({ appBot: this.config.bot_id, appSecret: secret });
-    if (signal.aborted) connection.close();
+    if (signal.aborted) await connection.close();
   }
   #receive(frame: WecomMessageFrame, connection: WecomConnection): void {
     const body = frame.body;
@@ -84,10 +92,21 @@ export class WecomTransport {
         })
     });
   }
-  close(): void {
-    for (const stream of this.#streams) stream.close();
-    this.#streams.clear();
-    this.#connection?.close();
+  close(): Promise<void> {
+    if (this.#closing) return this.#closing;
+    this.#detachAbort?.();
+    this.#closing = Promise.resolve().then(async () => {
+      const results = await Promise.allSettled([
+        ...[...this.#streams].map((stream) => Promise.resolve().then(() => stream.close())),
+        Promise.resolve().then(() => this.#connection?.close())
+      ]);
+      const errors = results
+        .filter((result) => result.status === "rejected")
+        .map((result): unknown => result.reason);
+      if (errors.length) throw new AggregateError(errors, "IM_TRANSPORT_DISPOSE_FAILED");
+      this.#streams.clear();
+    });
+    return this.#closing;
   }
 }
 

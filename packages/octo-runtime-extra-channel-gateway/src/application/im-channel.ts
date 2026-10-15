@@ -6,7 +6,8 @@ import { invocationInput } from "@mininglamp-oss/octo-runtime-protocol";
 import { randomUUID } from "node:crypto";
 import type {
   InteractionRequestedPayload,
-  InteractionResponse
+  InteractionResponse,
+  InvokeEnvironment
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type {
   ImBotConfig,
@@ -41,6 +42,8 @@ export class ImRuntime {
   #reconnect?: NodeJS.Timeout;
   #connecting?: Promise<void>;
   #abort = new AbortController();
+  #signal = this.#abort.signal;
+  #closing?: Promise<void>;
   #connectionAbort?: AbortController;
   #error?: string;
   #pending = 0;
@@ -76,11 +79,18 @@ export class ImRuntime {
     };
   }
   async start(): Promise<void> {
+    if (this.#closing) await this.#closing;
+    this.dependencies.signal?.throwIfAborted();
     if (this.config.enabled === false) return;
     if (!this.#closed) return this.#connecting;
     this.#closed = false;
+    this.#closing = undefined;
     this.#abort = new AbortController();
-    this.#delivery = new ImDeliveryDispatcher(this.#abort.signal);
+    this.#signal = AbortSignal.any([
+      this.#abort.signal,
+      ...(this.dependencies.signal ? [this.dependencies.signal] : [])
+    ]);
+    this.#delivery = new ImDeliveryDispatcher(this.#signal);
     this.#connecting = this.#connect();
     try {
       await this.#connecting;
@@ -89,11 +99,12 @@ export class ImRuntime {
     }
   }
   async #connect(): Promise<void> {
-    if (this.#closed) return;
+    if (this.#closed || this.#signal.aborted) return;
     this.#connectionAbort?.abort();
-    this.#connector?.close();
+    await this.#connector?.close();
+    if (this.#closed || this.#signal.aborted) return;
     this.#connectionAbort = new AbortController();
-    const signal = AbortSignal.any([this.#abort.signal, this.#connectionAbort.signal]);
+    const signal = AbortSignal.any([this.#signal, this.#connectionAbort.signal]);
     const credentials =
       this.dependencies.credentials ?? ((config) => Promise.resolve(config.bf_token));
     const connector = new GatewayTransport(this.config, credentials, {
@@ -109,7 +120,7 @@ export class ImRuntime {
         this.#error = code;
         if (!retryable) {
           this.#connectionAbort?.abort();
-          connector.close();
+          void connector.close().catch(() => this.#diagnostic("IM_DISPOSE_FAILED"));
           this.#state = "stopped";
           if (this.#reconnect) {
             clearTimeout(this.#reconnect);
@@ -126,7 +137,7 @@ export class ImRuntime {
     try {
       await connector.start(signal);
       if (signal.aborted) {
-        connector.close();
+        await connector.close();
         return;
       }
       this.#state = "online";
@@ -139,7 +150,7 @@ export class ImRuntime {
           ? error.message
           : "IM_CONNECTION_FAILED";
       this.#connectionAbort.abort();
-      connector.close();
+      await connector.close();
       this.#error = code;
       if (this.#reconnect) {
         clearTimeout(this.#reconnect);
@@ -173,7 +184,7 @@ export class ImRuntime {
     }
   }
   #scheduleReconnect(): void {
-    if (this.#closed || this.#reconnect) return;
+    if (this.#closed || this.#signal.aborted || this.#reconnect) return;
     this.#reconnect = setTimeout(
       () => {
         this.#reconnect = undefined;
@@ -312,7 +323,7 @@ export class ImRuntime {
     return controls;
   }
   #enqueue(message: ImInboundMessage, key: string, occurrenceId?: string): boolean {
-    if (this.#closed || this.#pending >= 64) {
+    if (this.#closed || this.#signal.aborted || this.#pending >= 64) {
       this.#diagnostic("IM_INBOUND_CAPACITY_EXHAUSTED");
       return false;
     }
@@ -361,7 +372,7 @@ export class ImRuntime {
     effectKey: string,
     requireDelivered = false
   ): Promise<void> {
-    if (this.#closed || !this.#delivery) return;
+    if (this.#closed || this.#signal.aborted || !this.#delivery) return;
     const receipt = await this.#delivery.deliver(effectKey, () => message.reply(text, effectKey));
     if (receipt.state !== "delivered") {
       this.#diagnostic(receipt.code ?? "IM_DELIVERY_FAILED");
@@ -420,7 +431,7 @@ export class ImRuntime {
     occurrenceId?: string,
     executionSession: ImSession = session
   ): Promise<void> {
-    if (this.#closed || !this.#delivery) return;
+    if (this.#closed || this.#signal.aborted || !this.#delivery) return;
     const prompt = message.text.trim();
     if (!prompt) return;
     if (prompt === "/session") {
@@ -432,17 +443,19 @@ export class ImRuntime {
       return;
     }
     let prepared: ReturnType<typeof createImInvocation>;
+    let environment: InvokeEnvironment;
     try {
+      environment = message.executionEnvironment?.() ?? {};
       if (session.id === executionSession.id)
         executionSession.providerSession = session.providerSession;
       // 每轮重新构造材料快照；Provider session 只续接执行，不承载或缓存 Context。
       prepared = createImInvocation(
         this.config,
         message,
-        await message.buildContext(this.#abort.signal),
+        await message.buildContext(this.#signal),
         key,
         executionSession,
-        this.#abort.signal,
+        this.#signal,
         occurrenceId
       );
       if (session.id === prepared.request.agentSessionId) {
@@ -450,6 +463,8 @@ export class ImRuntime {
         session.lastRunId = prepared.request.runId;
         this.#saveBinding(key, session);
       }
+      message.executionEnvironment?.();
+      if (prepared.adapterType === "openclaw") environment = {};
       const snapshot = { ...prepared.request };
       delete snapshot.signal;
       this.#sessionStore.remember(key, occurrenceId ?? message.messageId, {
@@ -467,7 +482,7 @@ export class ImRuntime {
       );
       return;
     }
-    if (this.#closed) return;
+    if (this.#closed || this.#signal.aborted) return;
     const { request } = prepared;
     const projector = new ImRunProjector(request.runId, message.conversationKind === "direct");
     const controls = this.#runControls(message, key, request.invocationId);
@@ -481,9 +496,9 @@ export class ImRuntime {
     try {
       for await (const event of this.dependencies.host.invoke(
         { ...invocationInput(request, "canonical"), protocol_mode: "canonical" },
-        { signal: request.signal }
+        { ...environment, signal: request.signal }
       )) {
-        if (this.#closed) break;
+        if (this.#closed || this.#signal.aborted) break;
         if (event.type === "session.update" && session.id === request.agentSessionId) {
           session.providerSession = event.payload.providerSession;
           this.#saveBinding(key, session);
@@ -548,8 +563,10 @@ export class ImRuntime {
         this.#diagnostic("IM_PRESENTATION_FAILED", request.runId);
       }
     }
-    if (this.#closed) return;
+    if (this.#closed || this.#signal.aborted) return;
     const terminal = projector.snapshot().terminal;
+    // 失败原因已在终态卡片展示；只有卡片未送达时才发送文本兜底。
+    if (terminal === "failed" && presentation?.terminalDelivered) return;
     const text =
       terminal === "completed"
         ? projector.finalText || "本轮执行完成，未返回文本。"
@@ -570,8 +587,8 @@ export class ImRuntime {
       lastRunId: session.lastRunId
     });
   }
-  async close(): Promise<void> {
-    if (this.#closed) return;
+  close(): Promise<void> {
+    if (this.#closing) return this.#closing;
     this.#closed = true;
     this.#state = "stopped";
     this.#abort.abort();
@@ -580,18 +597,32 @@ export class ImRuntime {
       clearTimeout(this.#reconnect);
       this.#reconnect = undefined;
     }
-    this.#connector?.close();
-    await Promise.allSettled(
-      [...this.#sessions.values()]
-        .filter((s) => s.activeInvocationId)
-        .map((s) => this.dependencies.host.cancel(s.activeInvocationId!, "IM shutdown"))
-    );
-    await this.#connecting;
-    await Promise.allSettled([...this.#sessions.values()].map((s) => s.tail));
-    this.#sessions.clear();
-    this.#seen.clear();
-    this.#interactions.clear();
-    this.#connector = undefined;
-    if (!this.dependencies.sessions) this.#sessionStore.close?.();
+    this.#closing = Promise.resolve().then(async () => {
+      const errors: unknown[] = [];
+      const attempt = async (operation: () => unknown): Promise<void> => {
+        try {
+          await operation();
+        } catch (error) {
+          errors.push(error);
+        }
+      };
+      await attempt(() => this.#connector?.close());
+      await Promise.all(
+        [...this.#sessions.values()]
+          .filter((session) => session.activeInvocationId)
+          .map((session) =>
+            attempt(() => this.dependencies.host.cancel(session.activeInvocationId!, "IM shutdown"))
+          )
+      );
+      await attempt(() => this.#connecting);
+      await Promise.all([...this.#sessions.values()].map((session) => attempt(() => session.tail)));
+      if (!this.dependencies.sessions) await attempt(() => this.#sessionStore.close?.());
+      if (errors.length) throw new AggregateError(errors, "IM_DISPOSE_FAILED");
+      this.#sessions.clear();
+      this.#seen.clear();
+      this.#interactions.clear();
+      this.#connector = undefined;
+    });
+    return this.#closing;
   }
 }

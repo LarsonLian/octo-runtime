@@ -12,6 +12,10 @@ SDK 提供 configureExtra/loadExtra/unloadExtra/extraStatus/requestExtra；插�
 
 Work App 使用统一 Extra，保留 SQLite、逐 Bot 编辑/停用/删除、连接状态、授权、账号切换和重启恢复。显式 Bot 启用不受历史 connectionsEnabled 字段阻止，保留现有测试确认的行为。仅迁移当前业务装配，不回退其他工作区修改。
 
+# 后续决策
+
+本任务的原地配置与业务 RPC 方案已由用户确认的 [Extra 责任边界决策](../extra-responsibility-boundary/brief.md)收敛。保留本文的实施历史；后续以宿主卸载、修改配置和重载，以及默认空对象的必备状态能力为目标。新目标尚未实施。
+
 # 验收
 
 配置更新不重启 Host 或无变化 Bot；业务失败可观察；关闭清理与并发操作有序；声明和配置不泄漏到公共健康。SDK/插件/App 测试与构建通过；真实 renderer 使用 im-test 验证并记录实际边界。同步接入指南、Extra 规则与配置指南。

@@ -96,22 +96,6 @@
         }
       }
     },
-    "HostInvokeWireOptions": {
-      "title": "HostInvokeWireOptions",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "protocol_mode": {
-          "$ref": "#/definitions/ProtocolMode",
-          "default": "native"
-        },
-        "protocol": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        }
-      }
-    },
     "HostRunReceipt": {
       "title": "HostRunReceipt",
       "type": "object",
@@ -3727,6 +3711,10 @@
         "agentSource"
       ],
       "properties": {
+        "executionEnvOverrides": {
+          "description": "Trusted ingress execution environment, independent of business Context; never render or persist in business snapshots.",
+          "$ref": "#/definitions/ContextEnvsPayload"
+        },
         "invocationId": {
           "description": "Active Adapter Host invocation identifier and cancellation target.",
           "type": "string"

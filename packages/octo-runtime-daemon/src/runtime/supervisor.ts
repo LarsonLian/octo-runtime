@@ -109,14 +109,16 @@ export async function startManagedDaemon(options: {
 }
 
 export async function stopManagedDaemon(supervised: SupervisedRuntime): Promise<void> {
+  let cleanupFailed = false;
   try {
     await callDaemon(
       supervised.paths.socket,
       { method: "lifecycle.drain", params: { timeoutMs: 5_000 } },
       7_000
     );
-  } catch {
-    // Shutdown must continue even if the local control endpoint is unavailable.
+  } catch (error) {
+    cleanupFailed = error instanceof Error && error.message === "EXTRA_DISPOSE_FAILED";
+    // Shutdown must continue even if cleanup fails or the endpoint is unavailable.
   }
   writeJsonAtomic(supervised.paths.shutdownFile, {
     nonce: supervised.nonce,
@@ -124,6 +126,7 @@ export async function stopManagedDaemon(supervised: SupervisedRuntime): Promise<
   });
   if (await waitForExit(supervised.child, 5_000)) {
     cleanup(supervised.paths);
+    if (cleanupFailed) throw new DaemonRuntimeError("EXTRA_DISPOSE_FAILED", "shutdown", false, "Extra cleanup failed before process exit");
     return;
   }
   await terminateOwnedChild(supervised.child);
@@ -144,6 +147,7 @@ export async function stopManagedDaemon(supervised: SupervisedRuntime): Promise<
     );
   }
   cleanup(supervised.paths);
+  if (cleanupFailed) throw new DaemonRuntimeError("EXTRA_DISPOSE_FAILED", "shutdown", false, "Extra cleanup failed before process exit");
 }
 
 export async function runtimeStatus(

@@ -58,6 +58,16 @@ SDK 不读取 OpenClaw 配置或进程环境、不扫描端口。宿主可调用
 
 ## 统一执行合同
 
+### Octo CLI 工具环境的 CLI 预配置
+
+仅针对 channel-gateway 使用 octo-cli，CLI daemon 启动编排按渠道配置更新已定位 OpenClaw 实例的全局 `.env`，写入 `OCTO_BOT_TOKEN` 和去掉末尾 `/api` 的 `OCTO_API_BASE_URL`。这是对既有“CLI 不改写 Provider 配置”要求的明确例外，限于这两个环境变量，不修改 `openclaw.json`、Gateway 认证、设备身份或其他凭据。详见 [渠道方案](../tasks/channel-octo-cli-environment/brief.md)。
+
+目录解析复用当前 CLI 来源与实例选择；`openclaw config file --json` 可用于确认实际配置文件。全局 dotenv 的位置按该实例 state dir 确定；配置文件父目录与 state dir 相同时写同目录 `.env`，两者不同时写实际加载的 state dir，不能仅按文件名猜测。仅有远程 Gateway 地址时，不得写本机默认目录冒充远端配置。
+
+同一 `.env` 按配置处理顺序后写覆盖前写；不同目录独立处理。CLI 保留其他变量及注释，幂等更新两项，以 `0600` 权限原子保存，输出不含值。Gateway 重启由人工处理，不自动重启或声称热生效。官方加载规则通常不覆盖进程已存在的同名值，因此写盘成功和实际加载成功分别报告；人工重启后以工具实际请求核验。
+
+该文件属于实例共享环境，所有继承该环境的 Agent/工具使用最后写入的身份，不提供多 Bot 按轮隔离。OpenClaw Gateway 的每轮 Context envs 仍按现有不支持合同处理；CLI 落盘不是对该协议能力的实现，也不将这两个变量回填到 Context 或每轮执行覆盖。
+
 ```text
 业务方提交 Context（Provider 类型 + provider_agent_id）
   → 本地 SDK 或业务扩展提交共享 Host

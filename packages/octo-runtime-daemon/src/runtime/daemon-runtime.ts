@@ -1,13 +1,11 @@
-import { createInputInvoke } from "@mininglamp-oss/octo-runtime-core";
+import { createInputInvoke, type InvokeInput, type InvokeEnvironment } from "@mininglamp-oss/octo-runtime-protocol";
 import { extraRegistration, type ExtraDescriptor } from "../extra-config.js";
 import { assertExtraName, type ExtraStatus, type JsonObject } from "../extras.js";
 import { subscribeDaemonRun, invokeDaemonRun } from "./run-stream.js";
 import { callDaemon } from "./runtime-contract.js";
 import {
   type HostFrame,
-  type HostInvokeOptions,
   type NativeInteractionResponse,
-  type InvokeRequest,
   type InteractionResponse
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type { HostedAdapterMetadata } from "@mininglamp-oss/octo-runtime-adapter-host";
@@ -51,8 +49,8 @@ interface ActiveAccount {
 }
 
 export class NodeDaemonRuntime implements DaemonRuntime {
-  readonly invoke = createInputInvoke((type, request, options) =>
-    this.invokeFrames(type, request, options)
+  readonly invoke = createInputInvoke((input, environment) =>
+    this.invokeFrames(input, environment)
   );
   readonly #options: DaemonRuntimeOptions;
   readonly #paths: DaemonHomePaths;
@@ -62,6 +60,16 @@ export class NodeDaemonRuntime implements DaemonRuntime {
   #generation = 0;
   #queue: Promise<void> = Promise.resolve();
   #active?: ActiveAccount;
+  #extraEpoch = 0;
+  readonly #extraNameEpoch = new Map<string, number>();
+  #loadingExtra?: {
+    name: string;
+    active: ActiveAccount;
+    cancelled: boolean;
+    finished: boolean;
+    settled: Promise<void>;
+    interrupt?: Promise<void>;
+  };
   #ownerLock?: OwnerLock;
   #abort?: AbortController;
   #pollTimer?: NodeJS.Timeout;
@@ -78,11 +86,24 @@ export class NodeDaemonRuntime implements DaemonRuntime {
   }
 
   startAccount(options: StartAccountOptions): Promise<DaemonHealth> {
-    return this.#enqueue(() => this.#startAccount(options));
+    const changing = this.#active && this.#active.signature !== tenantSignature(
+      accountKeyFor(options.subject.type, options.subject.id), validateTenants(options.tenants)
+    );
+    const interrupted = changing ? this.#interruptExtras() : undefined;
+    return this.#enqueue(async () => {
+      await interrupted;
+      return this.#startAccount(options);
+    });
   }
 
   reconcileTenants(tenants: readonly AuthorizedTenant[]): Promise<DaemonHealth> {
+    const active = this.#active;
+    const changing = active && active.signature !== tenantSignature(
+      accountKeyFor(active.input.subject.type, active.input.subject.id), validateTenants(tenants)
+    );
+    const interrupted = changing ? this.#interruptExtras() : undefined;
     return this.#enqueue(async () => {
+      await interrupted;
       if (!this.#active)
         throw new DaemonRuntimeError(
           "ACCOUNT_NOT_RUNNING",
@@ -95,36 +116,57 @@ export class NodeDaemonRuntime implements DaemonRuntime {
   }
 
   stop(reason: "logout" | "account-switch" | "quit" | "reconfigure" = "quit"): Promise<void> {
-    return this.#enqueue(() => this.#stop(reason));
+    const interrupted = this.#interruptExtras();
+    return this.#enqueue(async () => {
+      await interrupted;
+      return this.#stop(reason);
+    });
   }
 
   health(): DaemonHealth {
     return this.#snapshot;
   }
 
-  configureExtra(descriptor: ExtraDescriptor): Promise<Record<string, ExtraStatus>> {
+  loadExtra(descriptor: ExtraDescriptor): Promise<Record<string, ExtraStatus>> {
     extraRegistration(descriptor);
-    const snapshot = structuredClone(descriptor);
+    const snapshot = structuredClone({ ...descriptor, enabled: true });
+    const epoch = this.#extraEpoch;
+    const nameEpoch = this.#extraNameEpoch.get(snapshot.name);
     return this.#enqueue(async () => {
-      const result = await this.#extraControl("extra.configure", { descriptor: snapshot });
-      this.#extras.set(snapshot.name, snapshot);
-      return result;
-    });
-  }
-
-  loadExtra(name: string): Promise<Record<string, ExtraStatus>> {
-    assertExtraName(name);
-    return this.#enqueue(async () => {
-      const result = await this.#extraControl("extra.load", { name });
-      const descriptor = this.#extras.get(name);
-      if (descriptor) this.#extras.set(name, { ...descriptor, enabled: true });
-      return result;
+      if (epoch !== this.#extraEpoch || nameEpoch !== this.#extraNameEpoch.get(snapshot.name)) {
+        throw new Error("EXTRA_LOAD_CANCELLED");
+      }
+      if (!this.#active) throw new Error("HOST_NOT_RUNNING");
+      let finish!: () => void;
+      const settled = new Promise<void>((resolve) => { finish = resolve; });
+      const loading = { name: snapshot.name, active: this.#active, cancelled: false, finished: false, settled };
+      this.#loadingExtra = loading;
+      try {
+        const result = await this.#extraControl("extra.load", { descriptor: snapshot });
+        if (loading.cancelled) throw new Error("EXTRA_LOAD_CANCELLED");
+        this.#extras.set(snapshot.name, snapshot);
+        return result;
+      } catch (error) {
+        if (loading.cancelled && !(error instanceof Error && error.message === "EXTRA_DISPOSE_FAILED")) {
+          throw new Error("EXTRA_LOAD_CANCELLED", { cause: error });
+        }
+        throw error;
+      } finally {
+        loading.finished = true;
+        finish();
+        if (this.#loadingExtra === loading) this.#loadingExtra = undefined;
+      }
     });
   }
 
   unloadExtra(name: string): Promise<Record<string, ExtraStatus>> {
     assertExtraName(name);
+    this.#extraNameEpoch.set(name, (this.#extraNameEpoch.get(name) ?? 0) + 1);
+    const active = this.#active;
+    const interrupted = this.#interruptLoadingExtra(name);
     return this.#enqueue(async () => {
+      await interrupted;
+      if (active && this.#active !== active) throw new Error("EXTRA_ACCOUNT_CHANGED");
       const result = await this.#extraControl("extra.unload", { name });
       const descriptor = this.#extras.get(name);
       if (descriptor) this.#extras.set(name, { ...descriptor, enabled: false });
@@ -132,16 +174,44 @@ export class NodeDaemonRuntime implements DaemonRuntime {
     });
   }
 
-  extraStatus(): Promise<Record<string, ExtraStatus>> {
-    return this.#enqueue(() => this.#extraControl("extra.status", {}));
+  #interruptExtras(): Promise<void> | undefined {
+    ++this.#extraEpoch;
+    return this.#interruptLoadingExtra();
   }
 
-  requestExtra<T = unknown>(name: string, method: string, params: JsonObject = {}): Promise<T> {
-    const snapshot = structuredClone(params);
+  #interruptLoadingExtra(name?: string): Promise<void> | undefined {
+    const loading = this.#loadingExtra;
+    if (!loading || (name !== undefined && loading.name !== name)) return undefined;
+    loading.cancelled = true;
+    if (loading.interrupt) return loading.interrupt;
+    // The load and stop use separate IPC connections. Observe acceptance before
+    // sending unload, so a fast unload cannot overtake the load on the wire.
+    const socket = loading.active.supervised.paths.socket;
+    loading.interrupt = (async () => {
+      while (!loading.finished) {
+        const status = await callDaemon<Record<string, ExtraStatus>>(socket, { method: "extra.status" });
+        if (loading.finished) return;
+        if (status[loading.name]?.phase === "loading" || status[loading.name]?.phase === "loaded") {
+          await callDaemon(socket, { method: "extra.unload", params: { name: loading.name } }, 60_000);
+          return;
+        }
+        await Promise.race([loading.settled, new Promise<void>((resolve) => setTimeout(resolve, 10))]);
+      }
+    })().catch(() => {
+      // The serialized unload/drain below reports the final cleanup result.
+    });
+    return loading.interrupt;
+  }
+
+  extraStatus(): Promise<Record<string, ExtraStatus>>;
+  extraStatus(name: string): Promise<JsonObject>;
+  extraStatus(name?: string): Promise<Record<string, ExtraStatus> | JsonObject> {
+    if (name === undefined) return this.#enqueue(() => this.#extraControl("extra.status", {}));
+    assertExtraName(name);
     return this.#enqueue(async () => {
       if (!this.#active) throw new Error("HOST_NOT_RUNNING");
-      return callDaemon<T>(this.#active.supervised.paths.socket, {
-        method: "extra.request", params: { name, method, params: snapshot }
+      return callDaemon<JsonObject>(this.#active.supervised.paths.socket, {
+        method: "extra.status", params: { name }
       }, 60_000);
     });
   }
@@ -189,12 +259,11 @@ export class NodeDaemonRuntime implements DaemonRuntime {
   }
 
   async *invokeFrames(
-    adapterType: string,
-    request: InvokeRequest,
-    options: HostInvokeOptions = {}
+    input: InvokeInput,
+    environment: InvokeEnvironment = {}
   ): AsyncGenerator<HostFrame> {
     if (!this.#active) throw new Error("HOST_NOT_RUNNING");
-    yield* invokeDaemonRun(this.#active.supervised.paths.socket, adapterType, request, options);
+    yield* invokeDaemonRun(this.#active.supervised.paths.socket, input, environment);
   }
 
   listAdapters(runtimeId?: string): Promise<HostedAdapterMetadata[]> {
@@ -353,7 +422,14 @@ export class NodeDaemonRuntime implements DaemonRuntime {
     this.#pollTimer = undefined;
     const active = this.#active;
     this.#emit({ ...this.#snapshot, phase: "stopping", observedAt: Date.now() });
-    if (active) await stopManagedDaemon(active.supervised);
+    let cleanupError: DaemonRuntimeError | undefined;
+    if (active) {
+      try { await stopManagedDaemon(active.supervised); }
+      catch (error) {
+        if (!(error instanceof DaemonRuntimeError) || error.code !== "EXTRA_DISPOSE_FAILED") throw error;
+        cleanupError = error;
+      }
+    }
     this.#active = undefined;
     if (reason === "logout" || reason === "account-switch") {
       this.#extras.clear();
@@ -365,6 +441,7 @@ export class NodeDaemonRuntime implements DaemonRuntime {
       ...emptyHealth(this.#paths.home, this.#generation),
       phase: "stopped"
     });
+    if (cleanupError) throw cleanupError;
   }
 
   async #refreshHealth(): Promise<void> {

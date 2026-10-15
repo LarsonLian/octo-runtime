@@ -18,6 +18,8 @@ supersedes: []
 
 # native / canonical 输出合同
 
+完整调用时序、各层回答接口及审批／追问往返见 [总体协议与调用设计](protocol-design.md)。本文维护输出模式、帧和源流规则。
+
 公共输入见 [InvokeInput](invoke-input.md)。Run=7、Context=v3、Adapter transport=2 版本独立；本地默认 native，业务消费者显式选择 canonical。当前不提供 Worker 远端 native 接入。
 
 ## 1. 已实现的合同
@@ -66,10 +68,10 @@ Driver 维护唯一控制者，响应写入确认后才发布 resolved；重复 
 
 ## 2. 执行入口与消费者
 
-`AdapterHost.prepare` 校验请求、权限、模式和协议，冻结身份及输入，不启动 Provider。
-RPC 在 prepare 和唯一执行声明成功后 ACK，再消费同一执行的源帧。
+Host 在唯一执行源内解析输入、校验执行模式和配置，冻结身份及输入；prepare 为私有实现，不再对外暴露两阶段调用。
+RPC 从同一源的首个状态帧取得回执并 ACK，继续消费后才启动 Provider。
 `invoke(input)` 默认返回 native 源帧；`invoke({ ...input, protocol_mode: "canonical" })` 返回 canonical 类型化视图。
-`invokeFrames(type, request, options)` 是内部已准备请求入口；`createHostInvoke` 负责其输出选择，公共 JSON 不接受 `{adapterType, request, options}` 包装。Host、RPC、daemon SDK 不按消费者名字选择模式。
+`invokeFrames(input, environment)` 使用相同输入，返回完整源帧；`createInputInvoke` 只负责 native/canonical 输出视图，不解析执行配置。旧 HostInvoke/createHostInvoke 三参数合同已删除。Host、RPC、daemon SDK 不按消费者名字选择模式。
 同一接纳身份改模式、改请求或重复执行均拒绝；恢复用已有源窗口订阅。
 
 | 已接线的调用点                                              | 当前行为                                                    |

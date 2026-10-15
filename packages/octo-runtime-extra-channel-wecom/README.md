@@ -41,8 +41,12 @@ JSON
 
 ## SDK 装配
 
-默认导出为 Extra 加载函数，稳定名称为 `channel-wecom`。宿主构造 `{ name: "channel-wecom", module, config: { bots } }`，通过初始 `extras` 声明或运行中的 `runtime.configureExtra(descriptor)` 装配。`module` 使用宿主已安装插件的绝对入口；SDK 不读写 CLI 配置文件。
+默认导出为 Extra 加载函数，稳定名称为 `channel-wecom`。宿主构造 `{ name: "channel-wecom", module, config: { bots } }`，通过初始 `extras` 声明或运行中的 `runtime.loadExtra(descriptor)` 装配。`module` 使用宿主已安装插件的绝对入口；SDK 不读写 CLI 配置文件。
 
-动态更新提交完整数组，插件保留未变化连接、更新变化项并移除缺席项。通过 `runtime.requestExtra("channel-wecom", "status")` 查询 Bot 状态，`runtime.extraStatus()` 查询生命周期。完整示例见 [SDK 对接指南](../../INTEGRATION.md#26-通过-sdk-装配可选-extra)。
+宿主卸载本插件、保存完整配置并重新加载，插件内连接整体重建。CLI 使用 `extra unload channel-wecom`、`extraset channel-wecom`、`extra load channel-wecom`，load 读取最新文件。
+
+`runtime.extraStatus("channel-wecom")` 或 `extra status channel-wecom` 返回本插件自己的 `{ "bots": [...], "errors": [...] }`。有效项包含 `connection_key`、`type: "wecom"`、`enabled`、`connected`、`state`、脱敏 `error`、`deliveries`、`sessions`，可包含已解析的 `botId`。停用项仍可见，`enabled: false`、`state: "stopped"`、`connected: false`。错误配置跳过连接，状态项返回从零开始的 `config_index`、`state: "config_error"` 和脱敏错误码，`errors` 同时记录位置及错误码；有效 Bot 继续初始化。列表或授权配置错误记录在 `errors`，不建立连接。状态同步读取内存，由宿主解释，不依赖 Octo 状态模型。`runtime.extraStatus()` 查询生命周期。完整示例见 [SDK 对接指南](../../INTEGRATION.md#26-通过-sdk-装配可选-extra)。
 
 本包作为 Event 发起方提交本轮 Context，空输入与显式重复有效；不会按会话补齐上下文。执行配置独立校验，不进入模型文本。Run=7、Context=v3。会话与回执使用有界内存，不承诺跨重启恢复；真实企业微信客户端显示效果需平台验收。
+
+卸载会取消正在建联、执行和投递的任务，并等待连接及任务清理结束。重复关闭等待同一次清理；任一资源清理失败仍尝试其他资源，最终向宿主返回 `EXTRA_DISPOSE_FAILED`，不能把它当作可忽略的配置错误后立即重载。
