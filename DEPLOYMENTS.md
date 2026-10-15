@@ -4,9 +4,9 @@
 
 ## 1. 客户 App 的最小部署
 
-Eva2.0 等客户仅需要本地执行时，依赖 `@mininglamp-oss/octo-runtime-daemon` 及其本地生产依赖。无需携带 worker-access、channel-gateway、标品 Work App 代码或独立 embedded 包；不通过 apps/cli 承载 SDK。
+`packages/*` 全部是内部模块，不独立发布或供用户从 npm 引用。Eva2.0 等内部项目仅需要本地执行时，由维护者从源码构建 daemon 及其本地生产依赖，再手动拷贝发行目录并覆盖目标程序文件。这里的包名仅用于内部模块解析，不是独立 npm 产品。无需携带 worker-access、channel-gateway、标品 Work App 代码或独立 embedded 包；不通过 apps/cli 承载 SDK。
 
-源码构建与独立部署示例：
+源码构建与拷贝前的目录准备示例：
 
 ```bash
 pnpm install --frozen-lockfile
@@ -20,6 +20,8 @@ node scripts/verify-daemon-deployment.mjs /absolute/staging/daemon
 HostApp 提供固定版本的 Node 24+、SDK runner、adapter manifest、adapter-host 入口和所需 Provider。具体 `distribution` 参数见 [接入指南](INTEGRATION.md#2-作为-sdk-接入独立-app)。Runtime 与 Provider 缺失时返回状态，由 HostApp 决定安装；执行层不自动下载。
 
 程序文件与 app-owned Home 分离。Home 保存本地身份、profile、IPC 运行状态和日志；仅云端模块启用后才需要注册凭据。同一产品账号／租户的稳定身份应保留，不因未注册或离线更换。
+
+手动覆盖必须以同次构建的完整程序目录为单位，避免混用旧依赖；停止相关进程后覆盖程序文件，再重启。不得覆盖或删除目标 Home、身份与配置。
 
 ## 2. 可选接入的发行物
 
@@ -55,16 +57,40 @@ prepare 会构建 workspace，CLI 指向编译后的 dist。修改源码后构�
 npm unlink --global @mininglamp-oss/octo-runtime
 ```
 
-发布时先发布运行依赖 packages，再发布根 CLI；pnpm pack／publish 将 workspace 依赖转换为版本范围。版本和 registry 可用性必须由发布方验证，源码存在不等于版本已发布。
+对外只发布 `@mininglamp-oss/octo-runtime`。内部 packages 标记为 private，不独立发布；发行脚本将生产依赖实体化并随 CLI 打入一个 tarball。内部模块的发行版本统一取根 package.json，不要求分别升级 workspace 版本。安装端不需要 pnpm 或构建工具，也不访问内部包 registry；根包不提供 SDK exports。源码 SDK 集成仍按第 1 节由宿主自行构建部署。
 
 ```bash
 pnpm typecheck
 pnpm lint
 pnpm test
-pnpm pack --dry-run
+pnpm pack:release
+node scripts/verify-release.mjs ./dist/release/mininglamp-oss-octo-runtime-1.0.0.tgz
+# 核对产物并完成隔离安装验收后，只发布生成的 tarball
+npm publish ./dist/release/mininglamp-oss-octo-runtime-1.0.0.tgz --access public
 ```
 
-当前 CLI 初始化本地 Home 并提供原生服务管理；Worker enrollment 和一键云端安装脚本已归档。操作见 [CLI](apps/cli/README.md)和[安装说明](installers/README.md)。
+发布新版本先修改根 package.json 的 version，再重新执行 pack:release；上面文件名中的版本随之替换。不要直接 npm publish 或 pnpm publish workspace 根目录。
+
+使用者安装：
+
+```bash
+npm install -g @mininglamp-oss/octo-runtime
+octo-runtime --help
+```
+
+项目内 `npm install @mininglamp-oss/octo-runtime` 后，通过 `npx octo-runtime` 调用。更新使用 `npm install -g @mininglamp-oss/octo-runtime@latest`，并重启受影响的 Runtime 进程。程序更新保留原 Home、身份与配置；安装包不会自动安装 Provider。
+
+已安装系统服务且 Node 路径、npm 全局安装路径、Runtime Home 与服务定义均未变化时，升级不需要再次 `daemon install`：
+
+```bash
+npm install -g @mininglamp-oss/octo-runtime@latest
+octo-runtime daemon restart
+octo-runtime daemon status
+```
+
+系统服务保存 Node 与 daemon 入口的绝对路径。切换 nvm Node 版本、npm prefix、由源码 link 改成 npm 安装，或者更改 Home／服务定义时，需要重新执行 `octo-runtime daemon install` 更新注册，再重启。自定义 Home 的命令应始终带相同的 `--home PATH`。升级应安排在没有运行中任务的时段。
+
+独立 CLI 的安装入口统一为 npm，不提供多系统安装脚本，也不在安装时执行云端登记或建立设备在线关系。本地 Home 初始化和原生用户服务管理由 CLI 提供；登录、登记和共享由按需启用的业务 Extra 负责。操作见 [CLI](apps/cli/README.md)。
 
 ## 4. 真实联调与凭据
 

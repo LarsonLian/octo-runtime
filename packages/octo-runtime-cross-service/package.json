@@ -1,6 +1,7 @@
 {
   "name": "@mininglamp-oss/octo-runtime-cross-service",
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "private": true,
   "description": "Native user-service lifecycle backends for Octo Runtime",
   "type": "module",
   "exports": "./dist/index.js",

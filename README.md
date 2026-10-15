@@ -125,7 +125,16 @@ packages/
 
 ## 安装与本地初始化
 
-HostApp 决定安装方案。旧 Worker enrollment 安装脚本已迁入生态目录外的 `octo-runtime-worker-access/archive/installers`，不属于当前发行物。源码构建或全局 link 后，直接运行 `octo-runtime daemon install` 或 `octo-runtime daemon run`。详见 [安装说明](installers/README.md)。
+独立 CLI 通过 npm 安装，要求 Node.js 24+：
+
+```bash
+npm install -g @mininglamp-oss/octo-runtime
+octo-runtime --help
+```
+
+安装完成后，按需运行 `octo-runtime daemon run` 前台启动，或通过 `octo-runtime daemon install` 配置本机用户服务。npm 安装不执行云端登记，也不要求设备在线；登录、登记和共享由可选业务 Extra 负责。程序更新保留已有 Home、身份与配置。
+
+HostApp 集成时自行决定安装方案与版本。源码开发、全局 link 和发行步骤见 [部署说明](DEPLOYMENTS.md)，本地服务操作见 [CLI](apps/cli/README.md)。
 
 ## 源码开发与验证
 

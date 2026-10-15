@@ -1,1 +1,1 @@
-export const DAEMON_RUNTIME_VERSION = "0.1.0";
+export const DAEMON_RUNTIME_VERSION = "1.0.0";

@@ -1,6 +1,6 @@
 {
   "name": "@mininglamp-oss/octo-runtime-daemon-app",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -25,6 +25,7 @@
     "build": "tsc -p tsconfig.json && chmod +x dist/launcher.js"
   },
   "dependencies": {
+    "@mininglamp-oss/octo-runtime-extra-channel-gateway": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-openclaw": "workspace:*",
     "json5": "2.2.3",
     "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",

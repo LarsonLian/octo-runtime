@@ -111,7 +111,7 @@ When operating from this checkout, use these sources instead of guessing version
 - [Deployments](../../DEPLOYMENTS.md) for build, link, package, and release procedures.
 - [Project overview](../../README.md) for ownership boundaries, runtime architecture, and source debugging.
 
-Publishing or installer rollout is a separate external mutation. Read the deployment procedure and perform its full validation sequence, but do not publish packages or deploy installers without an explicit request.
+Publishing is a separate external mutation. Read the deployment procedure and perform its full validation sequence, but do not publish packages without an explicit request.
 
 ## Verify The Outcome
 

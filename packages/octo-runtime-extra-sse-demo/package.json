@@ -1,6 +1,7 @@
 {
   "name": "@mininglamp-oss/octo-runtime-extra-sse-demo",
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "private": true,
   "description": "Demonstration extra: native HTTP to AdapterHost invoke to SSE",
   "type": "module",
   "exports": {
