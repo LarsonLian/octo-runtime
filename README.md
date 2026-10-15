@@ -8,6 +8,18 @@ Octo Runtime 是 provider-neutral 的本地 Agent Runtime。本地接入使用 `
 
 `octo-runtime-embedded` 独立包已移除，其本地生命周期与 IPC API 收入 `octo-runtime-daemon`。daemon 包不依赖 worker-access 或 channel-gateway；客户可以只部署 daemon 及其本地执行依赖。标准产品由 HostApp 另行携带可选连接包，通过模块配置显式启动。当前 SDK 的本地控制进程仍使用 daemon server；下面记录的最终对外进程职责和在线 toggle 按各自里程碑验收，不能从本次包合并推断已经全部实现。
 
+## 客户系统融合：建议优先通过 SDK 接入
+
+**对于需要融入客户现有系统的 FDE 项目，建议客户系统直接通过 Octo Runtime 的 daemon SDK 接入 Adapter 执行能力。** 宿主应用调用 SDK，经 IPC 由 Host 调用对应 Adapter；相比把 `octo-runtime` CLI／CMD 可执行程序作为业务调用入口，这种方式更适合持续会话、交互审批和应用内运行管理。
+
+- **接口明确**：通过类型化请求、结构化事件和错误处理执行结果，减少命令拼接、参数转义、终端输出解析和退出码映射的集成代码。
+- **生命周期可控**：宿主统一安排启动、停止、取消和交互答复，把执行状态接入自己的 UI 与业务流程，便于处理应用退出和执行中断。
+- **复用客户配置体系**：宿主沿用已有数据库、配置平台或自定义 store，按 SDK 契约传入配置，便于与客户的身份、权限和租户管理流程衔接。
+- **测试与诊断更直接**：围绕请求、事件和终态验证业务行为，便于将运行 ID、错误和执行事件关联到客户系统的日志与监控。
+- **便于定制和维护**：把 SDK 与 Adapter 依赖纳入客户应用的版本管理和发布流程，减少对全局 CLI、shell 环境和人工操作步骤的依赖。
+
+SDK 接入不表示所有执行都在宿主进程内完成；daemon、Host 和 Provider 仍可能使用独立子进程，部分 Adapter 仍依赖 Provider CLI。Runtime 及运行依赖的安装方案由 HostApp 决定。CLI 适合独立设备部署与运维、脚本操作和人工诊断；需要融合客户业务的应用优先采用 SDK。
+
 ## 设计原则与实施状态
 
 ### 配置来源由宿主决定：SDK 的灵活性
