@@ -23,7 +23,9 @@ test('both channels load as extras and dispose their own resources', async () =>
   for (const [name, load] of [[gatewayName, gatewayExtra], [wecomName, wecomExtra]]) {
     assert.ok(['channel-gateway', 'channel-wecom'].includes(name));
     const disposers = [];
-    await load({ adapterHost: {}, signal: new AbortController().signal, onDispose: dispose => disposers.push(dispose), onConfigure() {}, onRequest() {} }, { bots: [] });
+    let status;
+    await load({ adapterHost: {}, signal: new AbortController().signal, onDispose: dispose => disposers.push(dispose), onStatus: callback => { status = callback; }, onConfigure() {}, onRequest() {} }, { bots: [] });
+    assert.deepEqual(status(), { bots: [], errors: [] });
     assert.equal(disposers.length, 1);
     await disposers[0]();
   }

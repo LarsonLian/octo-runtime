@@ -69,3 +69,5 @@ Provider session 不保证恢复成功。业务方管理 binding 与 reset，并
 CLI 不提供 `login` 命令及其旧更新入口。`daemon install` 与 `daemon run` 共用默认 Home 解析，首次使用时只创建缺失的本地配置及 machine identity，保留已有配置和身份。裸 `daemon` 只显示帮助；前台运行必须显式使用 `daemon run`。登录、登记和共享属于可选业务 Extra，不能作为本地安装和执行的条件。
 
 `daemon start` 在 Home 安装锁内预检原生用户服务；仅 `not_installed` 时复用安装流程并启用自启，然后后台启动并等待本地 IPC 就绪。已安装服务不重装、不自动修复 drift、不改变禁用状态；手动 `install` 仍可用于修复定义。此流程不安装 Provider 或其他 Runtime 依赖。
+
+CLI 服务管理默认显示即时步骤和简短结果；显式 `--json` 返回完整 JSON 且无进度输出。启动摘要区分识别到的 Adapter、已初始化 Extra 与 loading/error 等阶段。`status` 和 `daemon status` 查询每个已加载 Extra 的自定义 JSON，查询失败独立标为 `status_error`，不因单项错误丢失整体结果。`extraget <name>` 仅返回完整持久配置，不加载插件；运行状态和配置不混淆。

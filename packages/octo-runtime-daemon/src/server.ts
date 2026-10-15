@@ -761,7 +761,7 @@ async function dispatch({
       await extras.unload(requiredString(params.name, "name"));
       return extras.status;
     case "extra.status":
-      return extras.status;
+      return params.name === undefined ? extras.status : extras.inspect(requiredString(params.name, "name"));
     case "module.start":
       return modules.start(requiredString(params.id, "id"), params.config);
     case "module.stop":

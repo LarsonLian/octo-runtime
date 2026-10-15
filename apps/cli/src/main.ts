@@ -1,9 +1,11 @@
-import { setExtra } from "./extras.js";
+import { getExtra, setExtra } from "./extras.js";
 import { cliVersion, helpText, validateCommand } from "./help.js";
+import { formatDaemonResult } from "./daemon-output.js";
 import type { ServiceBackend } from "@mininglamp-oss/octo-runtime-cross-service";
 import { createHash, randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
 import net from "node:net";
+import { join } from "node:path";
 import { arch, hostname, platform as osPlatform, release } from "node:os";
 import { resolveServiceControl, verifyServiceProgram, type ServiceControlOptions } from "./service-control.js";
 import {
@@ -35,6 +37,7 @@ interface CliResponse {
 
 interface CommandResult {
   value?: unknown;
+  diagnostic?: string;
   exitCode?: number;
   streamed?: boolean;
 }
@@ -44,6 +47,7 @@ export interface CliDependencies extends ServiceControlOptions {
   fetchImplementation?: typeof fetch;
   input?: NodeJS.ReadableStream;
   output?: (value: string) => void;
+  errorOutput?: (value: string) => void;
   sleep?: (milliseconds: number) => Promise<void>;
   runForegroundDaemon?: (args: string[]) => Promise<number | void>;
 }
@@ -134,8 +138,13 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
   };
 
   const result = await dispatchCli(context);
+  if (result.diagnostic) {
+    (dependencies.errorOutput ?? (value => process.stderr.write(`${value}\n`)))(result.diagnostic);
+  }
   if (!result.streamed && result.value !== undefined) {
-    output(typeof result.value === "string" ? result.value : JSON.stringify(result.value, null, 2));
+    output(positionals[0] === "daemon" && flags.json !== true && typeof result.value !== "string"
+      ? formatDaemonResult(result.value)
+      : typeof result.value === "string" ? result.value : JSON.stringify(result.value, null, 2));
   }
   return result.exitCode ?? 0;
 }
@@ -145,6 +154,11 @@ async function dispatchCli(context: CliContext): Promise<CommandResult> {
   if (group === "extraset") {
     return { value: await setExtra(context.paths, required(action, "extra-name"), context.input) };
   }
+  if (group === "extraget") return {
+    value: await getExtra(context.paths, required(action, "extra-name")),
+    diagnostic: `Config file: ${join(context.home, "default", "extra", action, "config.json")}`
+  };
+  if (group === "status") return { value: await readRuntimeStatus(context.paths.socket) };
   if (group === "daemon") return runDaemonCommand(context, action);
   if (group === "doctor") return runDoctor(context);
   const request = daemonRequest(group, action, id);
@@ -169,25 +183,33 @@ async function runDaemonCommand(context: CliContext, action: string | undefined)
   const spec = await daemonServiceSpec(context);
   if (selected === "status") {
     const service = await context.service.backend.inspect(spec);
-    const application = await tryDaemonStatus(context.paths.socket);
+    const application = await readRuntimeStatus(context.paths.socket).catch(() => undefined);
     return { value: { service, application: application ?? { ready: false } } };
   }
   if (!["start", "stop", "restart"].includes(selected)) {
     throw new Error("daemon action must be install, uninstall, run, start, stop, restart, or status");
   }
   if (selected === "stop") {
+    daemonProgress(context, "Stopping background service...");
     await context.service.backend.stop(spec);
+    daemonProgress(context, "Waiting for backend to stop...");
     await waitForDaemonStopped(context, 15_000);
     return { value: { ok: true, action: "stop", service: await context.service.backend.inspect(spec) } };
   }
   if (context.flags.waitOnline) throw new Error("Worker cloud connections are no longer built in");
-  if (selected === "start") await installDaemonService(context, true);
+  if (selected === "start") {
+    daemonProgress(context, "Checking background service...");
+    await installDaemonService(context, true);
+  }
   await verifyServiceProgram(spec);
   if (selected === "restart") {
+    daemonProgress(context, "Restarting background service...");
     await context.service.backend.restart(spec);
   } else {
+    daemonProgress(context, "Starting backend in the background...");
     await context.service.backend.start(spec);
   }
+  daemonProgress(context, "Waiting for local backend readiness...");
   const readiness = await waitForDaemonReady(context, DEFAULT_WAIT_MS);
   return {
     value: {
@@ -204,7 +226,10 @@ async function installDaemonService(context: CliContext, onlyIfMissing = false):
     if (onlyIfMissing) {
       const spec = await daemonServiceSpec(context);
       const service = await context.service.backend.inspect(spec);
-      if (service.state !== "not_installed") return {};
+      if (service.state !== "not_installed") {
+        daemonProgress(context, "Background service is already installed.");
+        return {};
+      }
     }
     await ensureLocalRuntime(context);
     const autostart = onlyIfMissing || context.flags.noAutostart !== true;
@@ -214,7 +239,9 @@ async function installDaemonService(context: CliContext, onlyIfMissing = false):
     if (!probe.supported) {
       throw new Error(`${probe.manager} is unavailable: ${probe.detail ?? "unsupported user session"}`);
     }
+    daemonProgress(context, `Installing background service (${probe.manager})...`);
     await context.service.backend.install(spec);
+    daemonProgress(context, autostart ? "Enabling start at login..." : "Disabling start at login...");
     if (autostart) await context.service.backend.enable(spec);
     else await context.service.backend.disable(spec);
     return {
@@ -233,6 +260,7 @@ async function uninstallDaemonService(context: CliContext): Promise<CommandResul
     const before = await context.service.backend.inspect(spec);
     const application = await tryDaemonStatus(context.paths.socket);
     const managedProcessActive = ["running", "starting", "stopping"].includes(before.state);
+    daemonProgress(context, "Stopping and removing background service...");
     await context.service.backend.uninstall(spec);
     if (application && managedProcessActive) {
       await waitForDaemonStopped(context, 15_000);
@@ -246,6 +274,28 @@ async function uninstallDaemonService(context: CliContext): Promise<CommandResul
       }
     };
   });
+}
+
+function daemonProgress(context: CliContext, message: string): void {
+  if (context.flags.json !== true) context.output(message);
+}
+
+async function readRuntimeStatus(socketPath: string): Promise<Record<string, unknown>> {
+  const application = await callDaemon<Record<string, unknown>>(socketPath, { method: "status" });
+  const extras = application.extras;
+  if (!extras || typeof extras !== "object" || Array.isArray(extras)) return application;
+  const entries = await Promise.all(Object.entries(extras).map(async ([name, value]) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [name, value] as const;
+    const lifecycle = value as Record<string, unknown>;
+    if (lifecycle.phase !== "loaded") return [name, lifecycle] as const;
+    try {
+      const status = await callDaemon(socketPath, { method: "extra.status", params: { name } });
+      return [name, { ...lifecycle, status }] as const;
+    } catch {
+      return [name, { ...lifecycle, status_error: "EXTRA_STATUS_FAILED" }] as const;
+    }
+  }));
+  return { ...application, extras: Object.fromEntries(entries) };
 }
 
 // Call under the Home setup lock; existing configuration and identity stay intact.

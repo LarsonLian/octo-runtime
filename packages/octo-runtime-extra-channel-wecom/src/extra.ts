@@ -48,6 +48,7 @@ export default async function load(context: ExtraContext, config: JsonObject): P
     }
   };
   context.onDispose(() => channels?.close());
+  context.onStatus(() => JSON.parse(JSON.stringify({ bots: channels?.status ?? [], errors: [] })) as JsonObject);
   context.onConfigure(configure);
   context.onRequest((method) => {
     if (method !== "status") throw new Error("IM_EXTRA_METHOD_NOT_FOUND");

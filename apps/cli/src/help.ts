@@ -31,6 +31,7 @@ const commands: Command = {
     } },
     doctor: { description: "Check local configuration, service, and daemon health", flags: { "--json": "Output diagnostic checks as JSON (default)" } },
     extraset: { description: "Save a complete Extra plugin configuration from stdin", usage: "<name> < config.json", details: "Reads {module, enabled?, config}. Restart the daemon to apply changes. Credentials are never echoed." },
+    extraget: { description: "Print a saved Extra plugin configuration as complete JSON", usage: "<name>", details: "Reads the saved {module, enabled?, config} object without loading the plugin.\nPrints the configuration file path to stderr; stdout contains only JSON." },
     status: { description: "Show local runtime status" },
     version: { description: "Print the installed CLI version" },
     help: { description: "Help about any command", usage: "[command]" },
@@ -43,6 +44,12 @@ const globalFlags: Record<string, string> = {
   "--profile NAME": "Runtime profile (default: default)",
   "--verbose": "Write detailed diagnostics to stderr"
 };
+
+for (const command of Object.values(commands.children!.daemon.children!)) {
+  if (command !== commands.children!.daemon.children!.run) {
+    command.flags = { ...command.flags, "--json": "Output JSON without progress messages" };
+  }
+}
 
 export function commandAt(path: string[]): Command {
   let command = commands;
@@ -92,7 +99,7 @@ export function validateCommand(positionals: string[], flags: Record<string, str
     if (!allowed.has(key) || (key === "version" && path.length)) throw new Error(`unknown option --${key}`);
   }
   if (!help && !command.children) {
-    const expected = ["extraset"].includes(path[0]) || path.join(" ") === "adapter probe" ? 1 : 0;
+    const expected = ["extraset", "extraget"].includes(path[0]) || path.join(" ") === "adapter probe" ? 1 : 0;
     if (requested.length !== path.length + expected) throw new Error(`invalid arguments; run ${["octo-runtime", ...path, "--help"].join(" ")}`);
   }
   return { path, help: help || Boolean(command.children) };

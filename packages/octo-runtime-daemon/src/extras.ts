@@ -5,6 +5,7 @@ export interface JsonObject {
   [key: string]: JsonValue;
 }
 export type ExtraDisposer = () => void | Promise<void>;
+export type ExtraStatusHandler = () => JsonObject;
 export type ExtraRequestHandler = (method: string, params: JsonObject) => unknown;
 export type ExtraConfigureHandler = (config: JsonObject) => void | Promise<void>;
 
@@ -13,6 +14,7 @@ export interface ExtraContext {
   readonly adapterHost: Pick<HostRunService, "invoke" | "cancel" | "respondInteraction">;
   readonly signal: AbortSignal;
   onDispose(dispose: ExtraDisposer): void;
+  onStatus(handler: ExtraStatusHandler): void;
   onConfigure(handler: ExtraConfigureHandler): void;
   onRequest(handler: ExtraRequestHandler): void;
 }
@@ -40,6 +42,8 @@ interface ExtraInstance {
   disposing?: Promise<void>;
   sealed: boolean;
   disposalError?: AggregateError;
+  status: ExtraStatusHandler;
+  statusRegistered: boolean;
   configure?: ExtraConfigureHandler;
   request?: ExtraRequestHandler;
   operations: Promise<unknown>;
@@ -126,6 +130,23 @@ export class ExtraPlugins {
     });
   }
 
+  inspect(name: string): Promise<JsonObject> {
+    assertExtraName(name);
+    return this.#serial(name, async () => {
+      const instance = this.#instances.get(name);
+      if (!instance || instance.controller.signal.aborted) throw new Error("EXTRA_NOT_LOADED");
+      await instance.starting;
+      instance.controller.signal.throwIfAborted();
+      try {
+        const value = instance.status();
+        assertStatusObject(value);
+        return structuredClone(value);
+      } catch {
+        throw new Error("EXTRA_STATUS_FAILED");
+      }
+    });
+  }
+
   #serial<T>(name: string, operation: () => Promise<T>): Promise<T> {
     const task = (this.#queues.get(name) ?? Promise.resolve()).catch(() => undefined).then(operation);
     this.#queues.set(name, task);
@@ -158,6 +179,8 @@ export class ExtraPlugins {
       disposers: [],
       starting: Promise.resolve(),
       operations: Promise.resolve(),
+      status: () => ({}),
+      statusRegistered: false,
       sealed: false
     };
     this.#instances.set(name, instance);
@@ -176,6 +199,11 @@ export class ExtraPlugins {
               if (instance.sealed) throw new Error("EXTRA_ALREADY_DISPOSED");
               if (typeof dispose !== "function") throw new Error("EXTRA_DISPOSER_INVALID");
               instance.disposers.push(dispose);
+            },
+            onStatus(handler) {
+              if (instance.sealed || instance.statusRegistered || typeof handler !== "function") throw new Error("EXTRA_STATUS_HANDLER_INVALID");
+              instance.status = handler;
+              instance.statusRegistered = true;
             },
             onConfigure(handler) {
               if (instance.sealed || instance.configure || typeof handler !== "function") throw new Error("EXTRA_CONFIGURE_HANDLER_INVALID");
@@ -280,4 +308,20 @@ export class ExtraPlugins {
       throw instance.disposalError;
     }
   }
+}
+
+function assertStatusObject(value: unknown): asserts value is JsonObject {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("EXTRA_STATUS_JSON_REQUIRED");
+  const seen = new Set<object>();
+  const visit = (item: unknown): void => {
+    if (item === null || typeof item === "string" || typeof item === "boolean") return;
+    if (typeof item === "number" && Number.isFinite(item)) return;
+    if (!item || typeof item !== "object" || seen.has(item) ||
+      (!Array.isArray(item) && Object.getPrototypeOf(item) !== Object.prototype))
+      throw new Error("EXTRA_STATUS_JSON_REQUIRED");
+    seen.add(item);
+    for (const child of Object.values(item)) visit(child);
+    seen.delete(item);
+  };
+  visit(value);
 }

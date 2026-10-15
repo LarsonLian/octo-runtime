@@ -8,6 +8,16 @@ daemon 子命令顺序为 `start`、`stop`、`restart`、`status`、`install`、
 
 ## Extra plugins
 
+`octo-runtime extraget <name>` 向 stderr 输出一行 `Config file: <绝对路径>`，stdout 只输出保存的完整 `{module, enabled?, config}` JSON，可重定向到文件，也可作为后续 `extraset` 输入。不加载模块、不启动 daemon、不补默认字段；读取继续校验名称、权限、大小和声明结构。输出保留原配置内容，包括其中的凭据。
+
+```sh
+octo-runtime extraget channel-gateway > channel-gateway.json
+octo-runtime daemon status
+octo-runtime daemon status --json
+```
+
+`status` 与 `daemon status --json` 在每个已加载 Extra 的生命周期旁添加 `status`，原样保留插件的 JSON；`daemon status` 的终端摘要也展开这些 JSON。未加载插件仅显示真实生命周期；查询失败提供 `status_error: EXTRA_STATUS_FAILED`，不冒充空状态。这里的运行状态与 `extraget` 读取的持久配置分开。
+
 `octo-runtime extraset <name>` 从 stdin 读取完整 `{module, enabled?, config}` 并以 0600 权限替换 `HOME/default/extra/<name>/config.json`，不回显配置或启动插件。保存后执行 `octo-runtime daemon restart` 应用变更。CLI 不再提供 `extra status/load/unload`；嵌入式宿主继续通过 SDK 管理插件生命周期。
 
 The native HTTP/Bearer/SSE demonstration and full here-string examples are documented in [Extra plugins](../../.octospec/rules/extras.md). This is a generic configuration command, not a platform-specific setup flow.
@@ -48,6 +58,8 @@ macOS/Linux 默认 Home 是 `~/.octo-runtime`，Windows 是 `%LOCALAPPDATA%\Octo
 CLI 不提供 `login` 命令及其更新入口。登录、登记和共享属于按需接入的 Extra，不是设备本地存在、安装或执行的条件。
 
 ## Daemon 生命周期
+
+服务管理命令默认输出即时进度与简短摘要。`start` 在安装前、后台启动前及等待 IPC 就绪时分别提示；启动后列出识别到的 Adapter、已加载 Extra 和其他 Extra 的真实阶段。Extra 的 loaded 只表示初始化完成，不代表外部连接在线。使用 `--json` 输出完整结构化结果并关闭进度，例如 `octo-runtime daemon start --json`；前台 `run` 保持已有日志输出。
 
 ```bash
 octo-runtime daemon install
@@ -200,7 +212,7 @@ One Runtime Home runs one daemon and adapter-host. Each discovered profile has i
 
 `octo-daemon.pid` contains only a process PID. Profile identity is stored in `identity/runtime.json`; POSIX credentials use mode `0600`. Existing `system_id`/`device_id` identities are unsupported after this breaking reset: freshly enroll profiles against the recreated Worker database. Program files do not live inside Runtime Home.
 
-除帮助文本外，普通命令的正常结果输出 JSON。错误输出到 stderr 并返回非零。`--help` 和 `daemon --help` 不依赖网络或已运行 daemon。
+daemon 服务管理命令默认输出终端摘要，显式 `--json` 输出 JSON；其他普通控制命令仍输出 JSON。错误输出到 stderr 并返回非零。`--help` 和 `daemon --help` 不依赖网络或已运行 daemon。
 
 ## 模块责任边界
 

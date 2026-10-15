@@ -32,6 +32,7 @@ export default async function load(ctx: ExtraContext, config: JsonObject): Promi
     );
   });
 
+  ctx.onStatus(() => ({ listening: server.listening, host, port, activeRequests: requests.size, errors: [] }));
   ctx.onDispose(async () => {
     for (const request of requests) request.abort();
     const closed = new Promise<void>((resolve, reject) => {

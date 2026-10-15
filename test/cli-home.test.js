@@ -8,8 +8,8 @@ import net from "node:net";
 import { Readable } from "node:stream";
 import { runCli } from "../apps/cli/dist/main.js";
 
-for (const state of ["fresh", "not_installed", "stopped", "running", "failed", "unknown", "disabled", "unsupported", "install_failure"]) {
-  test(`daemon start precheck handles ${state} services`, async (t) => {
+for (const [state, json] of ["fresh", "not_installed", "stopped", "running", "failed", "unknown", "disabled", "unsupported", "install_failure"].flatMap(state => [[state, false], [state, true]])) {
+  test(`daemon start precheck handles ${state} services (${json ? "JSON" : "terminal"})`, async (t) => {
     const home = await mkdtemp(join(tmpdir(), "octo-start-"));
     t.after(() => rm(home, { recursive: true, force: true }));
     const calls = [];
@@ -37,6 +37,7 @@ for (const state of ["fresh", "not_installed", "stopped", "running", "failed", "
         return { supported: state !== "unsupported", manager: "test", detail: "no user session" };
       },
       install: async (spec) => {
+        if (!json) assert.ok(outputs.some(value => value.startsWith("Installing background service")));
         calls.push("install");
         assert.equal(spec.workingDirectory, home);
         assert.equal(spec.enabled, true);
@@ -45,11 +46,15 @@ for (const state of ["fresh", "not_installed", "stopped", "running", "failed", "
       },
       enable: async () => { calls.push("enable"); },
       start: async () => {
+        if (!json) assert.ok(outputs.includes("Starting backend in the background..."));
         calls.push("start");
         if (state === "disabled") throw new Error("service is disabled");
         await mkdir(join(home, "sockets"), { recursive: true });
         server = net.createServer(socket => {
-          socket.once("data", () => socket.end(`${JSON.stringify({ result: { ready: true } })}\n`));
+          socket.once("data", () => socket.end(`${JSON.stringify({ result: {
+            ready: true, adapters: ["codex", "claude-code"],
+            extras: { active: { phase: "loaded" }, pending: { phase: "loading" }, broken: { phase: "failed" } }
+          } })}\n`));
         });
         await new Promise((resolve, reject) => {
           server.once("error", reject);
@@ -57,20 +62,32 @@ for (const state of ["fresh", "not_installed", "stopped", "running", "failed", "
         });
       }
     };
-    const start = () => runCli(["--home", home, "daemon", "start"], {
-      backend, output: value => outputs.push(JSON.parse(value)),
+    const start = () => runCli(["--home", home, "daemon", "start", ...(json ? ["--json"] : [])], {
+      backend, output: value => outputs.push(json ? JSON.parse(value) : value),
       runForegroundDaemon: async () => { assert.fail("start must use the native background service"); }
     });
     if (["disabled", "unsupported", "install_failure"].includes(state)) {
       await assert.rejects(start(), state === "disabled" ? /service is disabled/ : state === "unsupported" ? /test is unavailable/ : /installation failed/);
       assert.deepEqual(calls, state === "disabled" ? ["start"] : state === "unsupported" ? ["probe"] : ["probe", "install"]);
-      assert.deepEqual(outputs, []);
+      if (json) assert.deepEqual(outputs, []);
+      else assert.doesNotMatch(outputs.join("\n"), /successfully/);
     } else {
       assert.equal(await start(), 0);
       assert.deepEqual(calls, missing ? ["probe", "install", "enable", "start"] : ["start"]);
-      assert.equal(outputs.length, 1);
-      assert.equal(outputs[0].action, "start");
-      assert.equal(outputs[0].readiness.ready, true);
+      if (json) {
+        assert.equal(outputs.length, 1);
+        assert.equal(outputs[0].action, "start");
+        assert.equal(outputs[0].readiness.ready, true);
+      } else {
+        assert.equal(outputs[0], "Checking background service...");
+        const summary = outputs.at(-1);
+        assert.match(summary, /Backend started successfully/);
+        assert.match(summary, /Adapters \(2\): codex, claude-code/);
+        assert.match(summary, /Active Extras: active\n/);
+        assert.match(summary, /pending: loading/);
+        assert.match(summary, /broken: failed/);
+        assert.equal(outputs.some(value => value.startsWith("Installing background service")), missing);
+      }
     }
     if (state === "fresh") {
       assert.equal(JSON.parse(await readFile(join(home, "config.json"), "utf8")).schema_version, 1);
