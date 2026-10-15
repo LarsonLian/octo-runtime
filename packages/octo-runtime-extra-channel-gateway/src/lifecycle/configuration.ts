@@ -99,13 +99,6 @@ export function validateImConfig(config: ImBotConfig): void {
       config.group_ids.some((id) => typeof id !== "string" || !id))
   )
     throw new Error("IM_CONFIG_INVALID");
-  if (
-    config.history_limit !== undefined &&
-    (!Number.isInteger(config.history_limit) ||
-      config.history_limit < 0 ||
-      config.history_limit > 100)
-  )
-    throw new Error("IM_CONFIG_INVALID");
   for (const key of ["cards", "typing", "group_rules"] as const)
     if (config[key] !== undefined && typeof config[key] !== "boolean")
       throw new Error("IM_CONFIG_INVALID");

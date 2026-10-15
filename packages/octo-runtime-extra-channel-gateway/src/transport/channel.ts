@@ -111,13 +111,14 @@ export class GatewayTransport {
               this.#spaceId
             );
           },
-          buildContext: async (turnSignal) => ({
+          buildContext: async (turnSignal, options) => ({
             schema: CONTEXT_SCHEMA,
             items: await build_im_contexts(
               this.scopedConfig,
               message,
               token,
-              AbortSignal.any([signal, turnSignal])
+              AbortSignal.any([signal, turnSignal]),
+              options
             )
           }),
           beginPresentation: (runId, onDiagnostic, controls) => {

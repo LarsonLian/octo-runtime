@@ -478,7 +478,7 @@ test("Group/topic rules become ordered v3 items; history excludes the trigger an
     }
   });
   const bot = {
-    ...config({ api_url: f.apiUrl, group_rules: true, history_limit: 20 }),
+    ...config({ api_url: f.apiUrl, group_rules: true }),
     spaceId: "s"
   };
   const message = {
@@ -489,7 +489,10 @@ test("Group/topic rules become ordered v3 items; history excludes the trigger an
     channelType: 5,
     payload: { type: 1, content: "request" }
   };
-  const read = () => build_im_contexts(bot, message, "bf_fixture", new AbortController().signal);
+  const read = () =>
+    build_im_contexts(bot, message, "bf_fixture", new AbortController().signal, {
+      initialSession: true
+    });
   const items = await read();
   assert.deepEqual(
     items.map((item) => [item.namespace, item.name]),
@@ -499,10 +502,7 @@ test("Group/topic rules become ordered v3 items; history excludes the trigger an
       ["extra.im", "history"]
     ]
   );
-  assert.deepEqual(
-    items[2].payload.entries.map((entry) => entry.message_seq),
-    [3, 7]
-  );
+  assert.equal(items[2].payload.text, "peer：text 3\npeer：text 7");
   assert.equal(items[0].payload.text, "group text");
   assert.equal(items[1].payload.version, 2);
   const again = await read();
@@ -513,7 +513,10 @@ test("Group/topic rules become ordered v3 items; history excludes the trigger an
   mode = "forbidden";
   await assert.rejects(read(), (error) => error.status === 403);
   mode = "history_failure";
-  await assert.rejects(read(), (error) => error.status === 500);
+  assert.equal(
+    (await read()).some((item) => item.name === "history"),
+    false
+  );
 });
 
 test("Empty Context remains empty and per-run snapshots do not mutate the caller", async () => {
@@ -558,7 +561,7 @@ test("Empty Context remains empty and per-run snapshots do not mutate the caller
   assert.equal(first.approvalMode, "full_access");
 });
 
-test("Standard execution items override IM defaults without entering the request text", () => {
+test("Execution choices preserve the fixed IM Agent directory without entering request text", () => {
   const context = {
     schema: "octo.context-envelope/v3",
     items: [
@@ -566,7 +569,7 @@ test("Standard execution items override IM defaults without entering the request
       {
         namespace: "octo.execution",
         name: "workspace",
-        payload: { mode: "fixed", path: "/tmp/explicit" }
+        payload: { mode: "fixed", path: "/tmp" }
       },
       {
         namespace: "octo.execution",
@@ -587,9 +590,22 @@ test("Standard execution items override IM defaults without entering the request
   assert.equal(adapterType, "claude-code");
   assert.equal(request.agentConfig.model, "model");
   assert.equal(request.agentConfig.effort, "high");
-  assert.equal(request.workdir, "/tmp/explicit");
+  assert.equal(request.workdir, "/tmp");
   assert.equal(request.approvalMode, "assisted");
   assert.equal(request.modelInput, "request");
+  context.items.find((item) => item.name === "workspace").payload.path = "/tmp/other";
+  assert.throws(
+    () =>
+      createImInvocation(
+        config(),
+        { text: "request", senderId: "actor", conversationId: "channel", messageId: "m" },
+        context,
+        "key",
+        { id: "session", generation: 2 },
+        new AbortController().signal
+      ),
+    /IM_AGENT_WORKDIR_FIXED/
+  );
 });
 
 test("Cards create/edit one stable message with monotone card_seq and persistent terminal", async (t) => {

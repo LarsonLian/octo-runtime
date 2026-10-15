@@ -4,8 +4,7 @@
  */
 // Adapted from Mininglamp-OSS/openclaw-channel-octo/src/api-fetch.ts.
 import type { ChannelType } from "./types.js";
-import { DEFAULT_TIMEOUT_MS, parseOctoJson } from "./client.js";
-import { OctoApiError } from "./errors.js";
+import { DEFAULT_TIMEOUT_MS, postJson } from "./client.js";
 
 // Fetch the groups the bot belongs to
 export async function fetchBotGroups(params: {
@@ -124,6 +123,7 @@ export async function getChannelMessages(params: {
   limit?: number;
   startMessageSeq?: number;
   endMessageSeq?: number;
+  pullMode?: 0 | 1;
   signal?: AbortSignal;
   log?: { info?: (msg: string) => void; error?: (msg: string) => void };
 }): Promise<
@@ -139,45 +139,34 @@ export async function getChannelMessages(params: {
     payload?: SyncMessagePayload;
   }>
 > {
-  const url = `${params.apiUrl.replace(/\/+$/, "")}/v1/bot/messages/sync`;
   const limit = params.limit ?? 20;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${params.botToken}`
-    },
-    body: JSON.stringify({
+  const data = await postJson<{
+    messages?: Array<{
+      from_uid?: string;
+      message_id?: string;
+      message_seq?: number;
+      timestamp?: number;
+      payload?: string | SyncMessagePayload;
+    }>;
+  }>(
+    params.apiUrl,
+    params.botToken,
+    "/v1/bot/messages/sync",
+    {
       channel_id: params.channelId,
       channel_type: params.channelType,
       limit,
       start_message_seq: params.startMessageSeq ?? 0,
       end_message_seq: params.endMessageSeq ?? 0,
-      pull_mode: 1 // 1 = pull up (newer messages)
-    }),
-    signal: AbortSignal.any([
+      pull_mode: params.pullMode ?? 1
+    },
+    AbortSignal.any([
       AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
       ...(params.signal ? [params.signal] : [])
-    ])
-  });
-
-  if (!response.ok) {
-    throw OctoApiError.from(response, "/v1/bot/messages/sync", await response.text());
-  }
-
-  const text = await response.text();
-  const data = text
-    ? parseOctoJson<{
-        messages?: Array<{
-          from_uid?: string;
-          message_id?: string;
-          message_seq?: number;
-          timestamp?: number;
-          payload?: string | SyncMessagePayload;
-        }>;
-      }>(text)
-    : {};
-  if (!Array.isArray(data.messages)) throw new Error("IM_HISTORY_PROTOCOL_INVALID");
+    ]),
+    { maxResponseBytes: 1 << 20, logRateLimit: false }
+  );
+  if (!Array.isArray(data?.messages)) throw new Error("IM_HISTORY_PROTOCOL_INVALID");
   const messages = data.messages;
   return messages.map((m) => {
     // payload is base64-encoded JSON string

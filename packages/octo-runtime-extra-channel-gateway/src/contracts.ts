@@ -46,7 +46,6 @@ export interface OctoBotConfig extends ImCommonConfig {
   bf_token_file?: string;
   group_ids?: string[];
   group_rules?: boolean;
-  history_limit?: number;
   cards?: boolean;
   typing?: boolean;
 }
@@ -63,7 +62,10 @@ export interface ImInboundMessage {
   conversationKind: "direct" | "group" | "thread";
   text: string;
   reply(text: string, effectKey?: string): Promise<void>;
-  buildContext(signal: AbortSignal): Promise<ContextEnvelope>;
+  buildContext(
+    signal: AbortSignal,
+    options?: { initialSession: boolean }
+  ): Promise<ContextEnvelope>;
   executionEnvironment?(): InvokeEnvironment;
   runMetadata?: Record<string, unknown>;
   beginPresentation?(
@@ -128,6 +130,8 @@ export interface ImSession {
   activeInvocationId?: string;
   pending: number;
   tail: Promise<void>;
+  /** 同代次排队快照共享资格对象；reset 替换对象，不修改旧请求。 */
+  initialization?: { attempted: boolean };
 }
 
 export type DeliveryState = "pending" | "delivered" | "failed" | "unknown";

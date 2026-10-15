@@ -61,6 +61,10 @@ JSON
 
 本地引擎省略 `adapter.workdir` 时，插件使用并创建 `~/octo-runtime/channels/{bot_id}`。OpenClaw 不填 `workdir`，可选 `provider_agent_id` 默认 `main`；连接配置由宿主通过 Adapter 配置入口准备。未知扩展字段保留并忽略，不代表已经应用；已识别字段继续校验。
 
+IM Agent 使用固定工作目录，任务 Context 的 workspace 不得覆盖；reset 只切换会话和 Provider binding。新会话首次普通输入自动尝试一次读取当前 DM/群/话题此前最多 15 条消息，裁剪为最多 1500 Unicode 字符的纯文本背景。失败或空结果继续当前任务，同一会话后续不再自动拉取；reset 后下一条普通消息重新获得一次资格，也可以包含 reset 前历史。不提供旧 `history_limit` 模式，不新增上下文或 binding 持久化。
+
+群/话题须通过发送者及范围准入，并在本条消息中真实点名当前 Bot UID，或提供纯 `mention.ais=1` 的 @所有AI。all/humans 置位时抑制单独 ais 路径，直接 UID 点名仍有效。正文名称、Markdown 示例及前一条消息的 @ 不构成触发，不提供免 @ 开关。
+
 ## 长任务与 Codex 重试
 
 IM 默认总时限为一天，工具无输出时限也为一天；本轮 Context 的 `octo.execution/limits` 可以显式覆盖。Host 的首帧、模型空闲及工具独立 wall 时限仍按既有合同生效，任务总期限由 Extra 独立计时。重试只拿剩余时长，不会重新获得完整一天。

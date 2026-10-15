@@ -259,6 +259,7 @@ export class ImRuntime {
           session.id = binding.id;
           session.generation = binding.generation;
           session.providerSession = binding.providerSession;
+          session.initialization = { attempted: false };
           session.lastRunId = undefined;
           void this.#reply(message, "会话已经重置", `control:${message.messageId}`, true).catch(
             () => {
@@ -305,9 +306,11 @@ export class ImRuntime {
   #session(key: string): ImSession {
     let session = this.#sessions.get(key);
     if (!session) {
+      const binding = this.#sessionStore.read(key);
       session = {
         generation: 1,
-        ...this.#sessionStore.read(key),
+        ...binding,
+        initialization: { attempted: binding?.initialContextPrepared === true },
         pending: 0,
         tail: Promise.resolve()
       };
@@ -356,7 +359,11 @@ export class ImRuntime {
     const session = this.#session(key);
     try {
       if (message.text.trim() !== "/session" && !session.id) {
-        const binding = { id: `as_${randomUUID()}`, generation: session.generation };
+        const binding = {
+          id: `as_${randomUUID()}`,
+          generation: session.generation,
+          initialContextPrepared: session.initialization?.attempted === true
+        };
         this.#sessionStore.save(key, binding);
         session.id = binding.id;
       }
@@ -460,11 +467,15 @@ export class ImRuntime {
       environment = message.executionEnvironment?.() ?? {};
       if (session.id === executionSession.id)
         executionSession.providerSession = session.providerSession;
-      // 每轮重新构造材料快照；Provider session 只续接执行，不承载或缓存 Context。
+      const initialization = executionSession.initialization!;
+      const initialSession = !initialization.attempted;
+      initialization.attempted = true;
+      if (session.id === executionSession.id) this.#saveBinding(key, session);
+      // 资格先占用再异步读取；同代次队列共享标记，重试只使用本轮冻结快照。
       prepared = createImInvocation(
         this.config,
         message,
-        await message.buildContext(this.#signal),
+        await message.buildContext(this.#signal, { initialSession }),
         key,
         executionSession,
         this.#signal,
@@ -636,7 +647,8 @@ export class ImRuntime {
       generation: session.generation,
       providerSession: session.providerSession,
       lastEventId: session.lastEventId,
-      lastRunId: session.lastRunId
+      lastRunId: session.lastRunId,
+      initialContextPrepared: session.initialization?.attempted === true
     });
   }
   close(): Promise<void> {

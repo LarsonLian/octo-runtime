@@ -14,6 +14,7 @@ export interface ImSessionBinding {
   providerSession?: ProviderSession;
   lastEventId?: string;
   lastRunId?: string;
+  initialContextPrepared?: boolean;
 }
 export interface ImSessionStore {
   read(key: string): ImSessionBinding | undefined;

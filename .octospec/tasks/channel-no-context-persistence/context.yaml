@@ -1,0 +1,12 @@
+rules:
+  - runtime-architecture
+  - runtime-stateless
+  - runtime-session-reset
+  - runtime-channel
+  - runtime-context-input
+  - runtime-engineering
+sources:
+  - packages/octo-runtime-extra-channel-gateway/src/application/session-store.ts
+  - packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts
+  - packages/octo-runtime-extra-channel-gateway/src/delivery/dispatcher.ts
+status: decision-recorded-no-code-change

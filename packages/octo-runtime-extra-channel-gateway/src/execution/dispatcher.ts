@@ -38,6 +38,11 @@ export function createImInvocation(
   const defaultWorkdir = join(homedir(), "octo-runtime", "channels", config.bot_id);
   const workdir =
     config.adapter.workdir ?? (agentSource === "provisioned" ? defaultWorkdir : undefined);
+  const submittedWorkspace = context.items.find(
+    (item) => item.namespace === "octo.execution" && item.name === "workspace"
+  );
+  if (submittedWorkspace && submittedWorkspace.payload.path !== workdir)
+    throw new Error("IM_AGENT_WORKDIR_FIXED");
   const defaults: ContextEnvelope = {
     schema: context.schema,
     items: [
@@ -89,11 +94,38 @@ export function createImInvocation(
     ]
   };
   // 执行默认值经现有 resolver 解析；本轮业务材料仍保持原顺序，不按会话补齐或去重。
-  const { effectiveContext: snapshot, resolvedExecutionPlan: plan } = resolveLocalContext(
-    defaults,
-    context,
-    agentSource
-  );
+  let resolved;
+  try {
+    resolved = resolveLocalContext(defaults, context, agentSource);
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      error.message !== "CONTEXT_BUDGET_EXCEEDED" ||
+      !context.items.some(
+        (item) =>
+          item.namespace === "extra.im" &&
+          item.name === "history" &&
+          item.payload.automatic === true
+      )
+    )
+      throw error;
+    resolved = resolveLocalContext(
+      defaults,
+      {
+        ...context,
+        items: context.items.filter(
+          (item) =>
+            !(
+              item.namespace === "extra.im" &&
+              item.name === "history" &&
+              item.payload.automatic === true
+            )
+        )
+      },
+      agentSource
+    );
+  }
+  const { effectiveContext: snapshot, resolvedExecutionPlan: plan } = resolved;
   const eventId = `evt_${randomUUID()}`,
     runId = `run_${randomUUID()}`;
   const prompt = message.text.trim();
