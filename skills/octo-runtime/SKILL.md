@@ -1,6 +1,6 @@
 ---
 name: octo-runtime
-description: Operate, build, link, diagnose, and troubleshoot the Octo Runtime local Agent Runtime with the octo-runtime CLI. Use for enrollment, Runtime Home or profile selection, daemon services, provider adapters, logs, local AgentSession or AgentRun inspection, and source deployments. Do not use it as the cloud control plane for creating Runs, resetting Sessions, or managing business triggers.
+description: Operate, build, link, diagnose, and troubleshoot the Octo Runtime local Agent Runtime with the octo-runtime CLI. Use for Runtime Home or profile selection, daemon services, provider adapters, logs, local AgentRun inspection, and source deployments. Do not use it as the cloud control plane for creating Runs, resetting Sessions, or managing business triggers.
 ---
 
 # Octo Runtime
@@ -13,7 +13,7 @@ Before a state-changing command, determine and state:
 
 - whether this is an installed package or this source checkout;
 - the Runtime Home, using `--home PATH` consistently when it is not the platform default;
-- the profile for `login` or `doctor`, if it is not `default`;
+- the profile for adapter configuration or `doctor`, if it is not `default`;
 - whether the daemon runs in the foreground or through the native user service.
 
 One Runtime Home runs one daemon and adapter-host and can contain multiple trusted profiles. Each profile owns a server-assigned `runtime_id`, Runtime credential, WSS connection, and durable outbox. All profiles share `<home>/machine.json`; its `machine_id` is an untrusted installation grouping label, never ownership proof or a unique Runtime key. Use separate OS accounts for mutually untrusted identities.
@@ -36,21 +36,11 @@ octo-runtime adapter probe codex
 
 Use `doctor` for installation, identity, credential permissions, native-service drift, IPC, or cloud-connectivity failures. Use `status` for the daemon's application state. Use `daemon status` when native service state also matters. Do not substitute log inspection for a failing `doctor` check.
 
-### Enroll Or Reconcile A Runtime
+### Prepare The Local Home
 
-Use `login` only when the user asks to enroll or reconcile a Runtime. Read the enrollment grant from stdin; do not place a real `octo_enroll_` token in argv, logs, source files, or chat output.
+CLI 不提供 `login` 命令。直接运行 `octo-runtime daemon install` 或 `octo-runtime daemon run`；两者共用默认 Home，按需创建缺失的本地配置和 machine identity，保留已有配置、身份和凭据。显式 `--home` 优先于 `OCTO_RUNTIME_HOME`，然后使用平台默认目录。
 
-```bash
-printf '%s\n' 'octo_enroll_REPLACE_WITH_ONE_TIME_TOKEN' | octo-runtime login \
-  --server-url https://example.invalid \
-  --enroll-token-stdin
-```
-
-When Worker and Octo Web use different origins, pass `--agent-work-url`. For source debugging without a native service, follow the current `login --help` flags and run `octo-runtime --home PATH daemon run` in the foreground.
-
-Never print or copy `<home>/<profile>/credentials/runtime-token.json`. The final `octo_runtime_` credential binds directly to the Runtime and belongs only in its protected profile file and Worker-side hash. It is not interchangeable with service, provider, Human, or bot credentials.
-
-Ordinary login reuses the saved Runtime without enrollment. Renewal with a fresh grant must use the existing trusted server and Worker and prove possession of the saved Runtime credential. Use a new profile for a different binding. Legacy `system_id`/`device_id` identities require fresh enrollment after the breaking Worker database reset; do not attempt a compatibility migration.
+登录、登记与共享属于可选 Extra，不是本地设备存在或执行的条件。不得以本地就绪推导云端注册或连接成功，也不得按历史重置说明删除现有身份。
 
 ### Manage The Daemon
 
@@ -128,7 +118,7 @@ Publishing or installer rollout is a separate external mutation. Read the deploy
 Match verification to the operation:
 
 - build/link: check command resolution, resolved symlink target, and `octo-runtime help`;
-- enrollment/service login: run `doctor`, `daemon status`, and when requested verify the selected Runtime is online;
+- local initialization/service installation: run `doctor`, `daemon status`, and check actual local IPC readiness;
 - adapter issue: run `adapter list` and probe only the affected adapter;
 - Run issue: capture the Run state, canonical events, and scoped logs without exposing credentials or unnecessary sensitive fields.
 

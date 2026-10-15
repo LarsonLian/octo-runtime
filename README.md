@@ -40,7 +40,7 @@ SDK 接入不表示所有执行都在宿主进程内完成；daemon、Host 和 P
 
 `octo-runtime-daemon` 是对外交互子模块的装配层。宿主指定是否启用模块、凭据来源及目标服务，daemon 按配置动态加载模块并管理连接；各入口复用同一个 Host。纯本地启动不激活对外模块；当前 SDK 的本地控制进程仍由 daemon 包 server 承载。导入 SDK 或接入 package 本身不激活 WS，也不发起注册。
 
-当前仓库没有 Worker 远程接入包。`login` 初始化本地 Home，不执行云端 enrollment。Octo 与 WeCom 由可选 Extra 包实现；设备共享访问的最终方案仍待确定，旧提议和撤回理由见 [架构演进](.octospec/journal/shared/architecture-evolution.md)。
+当前仓库没有 Worker 远程接入包，也不提供 `login` 命令。本地安装和运行自动准备缺失的 Home 配置。Octo 与 WeCom 由可选 Extra 包实现；设备共享访问的最终方案仍待确定，旧提议和撤回理由见 [架构演进](.octospec/journal/shared/architecture-evolution.md)。
 
 业务方决定五元组和本轮 Context，应用 defaults 并检查 mandatory。SDK、daemon、注册模块、通用连接层和 Host 不读取 Agent 业务配置。启动、注册和本地调用没有 Agent prepare／ensure／默认创建流程。详见 [需求与验收基线](.octospec/rules/runtime-lifecycle.md)。
 
@@ -123,7 +123,7 @@ packages/
 
 ## 安装与本地初始化
 
-HostApp 决定安装方案。旧 Worker enrollment 安装脚本已迁入生态目录外的 `octo-runtime-worker-access/archive/installers`，不属于当前发行物。源码构建或全局 link 后，执行 `octo-runtime login` 初始化本地 Home，再按需要运行 `daemon install` 或 `daemon run`。详见 [安装说明](installers/README.md)。
+HostApp 决定安装方案。旧 Worker enrollment 安装脚本已迁入生态目录外的 `octo-runtime-worker-access/archive/installers`，不属于当前发行物。源码构建或全局 link 后，直接运行 `octo-runtime daemon install` 或 `octo-runtime daemon run`。详见 [安装说明](installers/README.md)。
 
 ## 源码开发与验证
 
@@ -194,11 +194,10 @@ adapter 不感知 `octo-auth`；Human/Runtime 身份与 AgentRun 授权由 Agent
 
 ## 启动 Runtime
 
-源码调试初始化本地 Home，再启动 daemon：
+源码调试直接启动 daemon：
 
 ```bash
-pnpm cli -- --home "$PWD/.tmp/runtime-home" login
-pnpm daemon -- --home "$PWD/.tmp/runtime-home"
+pnpm cli -- --home "$PWD/.tmp/runtime-home" daemon run
 ```
 
 The local SDK initializes a stable identity for each profile without cloud enrollment. Profiles share the Home-level `machine_id`, an untrusted installation grouping label rather than a credential. One Home runs one daemon and adapter-host. Mutually untrusted users must use separate OS accounts. See [Runtime and machine identity](.octospec/rules/runtime-lifecycle.md) and [current local boundaries](.octospec/rules/runtime-lifecycle.md). The former Worker access package has been removed.

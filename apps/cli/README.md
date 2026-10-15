@@ -24,7 +24,7 @@ CLI 统一使用 `extraset <name>` 从 stdin 接收完整插件声明 `{ module,
 
 设备在线选择保存本地，与 IM 频道启用独立；关闭时不加载设备连接并停止已有连接，本地 Host 继续运行。access 目前仅确认设备与 Runtime 注册职责，设备 WS／heartbeat 等对外链路待最终架构评审。验收分别记录本地就绪、注册 ACK、设备连接和频道连接。详见 [IPD-SE 基线](../../.octospec/rules/runtime-lifecycle.md)。
 
-下文保留现有 CLI 的命令及文件入口说明。`login`、profile 自动发现和 `--wait-online` 尚需按上述目标改造；它们不能作为最终默认在线行为或纯本地启动合同。目标命令尚未全部交付。
+下文说明现有 CLI 入口。设备注册等目标命令尚未全部交付；本地安装和运行无需登录。
 
 ## 全局参数
 
@@ -37,13 +37,9 @@ macOS/Linux 默认 Home 是 `~/.octo-runtime`，Windows 是 `%LOCALAPPDATA%\Octo
 
 ## 本地初始化
 
-```bash
-octo-runtime login
-```
+直接执行 `octo-runtime daemon install` 或 `octo-runtime daemon run`。两者使用相同的默认 Runtime Home，也支持 `--home PATH` 与 `OCTO_RUNTIME_HOME`；首次使用自动创建缺失的本地配置和 machine identity，已有配置与身份保持原样。
 
-`login` 只初始化本地 Home 配置和 machine identity，不连接 Worker。原 enrollment 和 Worker 远程连接实现已迁到生态目录外的独立预研备份仓库。原 `--server-url`、`--enroll-token-stdin` 和 `--wait-online` 不再执行云端接入。
-
-服务安装、启动与连接启用由宿主分别明确选择。现有更新恢复入口 `login --prepare-update`、`login --recover-update --start` 只用于本地服务生命周期。
+CLI 不提供 `login` 命令及其更新入口。登录、登记和共享属于按需接入的 Extra，不是设备本地存在、安装或执行的条件。
 
 ## Daemon 生命周期
 
@@ -57,7 +53,7 @@ octo-runtime daemon restart
 octo-runtime daemon status
 ```
 
-- `install` 把已完成 `login` 的 Runtime Home 注册为当前用户的原生服务，也可重复执行以修复 definition drift；默认启用登录自启但不启动，可用 `--no-autostart` 禁用自启。
+- `install` 准备缺失的本地默认配置，把 Runtime Home 注册为当前用户的原生服务，也可重复执行以修复 definition drift；默认启用登录自启但不启动，可用 `--no-autostart` 禁用自启。
 - `uninstall` 直接停止并从原生服务管理器中真实删除服务：systemd user unit、macOS LaunchAgent 或 Windows 当前用户计划任务。身份、credential、本地状态和日志全部保留。
 - `run` 在前台运行并响应 `SIGINT`/`SIGTERM`；PID 文件保证一个 Home 只有一个 daemon。
 - `run` 默认在 stderr 输出彩色、脱敏的生命周期状态；`--quiet` 关闭终端输出，`--verbose`
@@ -204,7 +200,7 @@ One Runtime Home runs one daemon and adapter-host. Each discovered profile has i
 
 `octo-daemon.pid` contains only a process PID. Profile identity is stored in `identity/runtime.json`; POSIX credentials use mode `0600`. Existing `system_id`/`device_id` identities are unsupported after this breaking reset: freshly enroll profiles against the recreated Worker database. Program files do not live inside Runtime Home.
 
-除帮助文本外，普通命令的正常结果输出 JSON。错误输出到 stderr 并返回非零。`--help` 和 `login --help` 不依赖网络或已运行 daemon。
+除帮助文本外，普通命令的正常结果输出 JSON。错误输出到 stderr 并返回非零。`--help` 和 `daemon --help` 不依赖网络或已运行 daemon。
 
 ## 模块责任边界
 
@@ -219,7 +215,7 @@ One Runtime Home runs one daemon and adapter-host. Each discovered profile has i
 
 ## Runtime 的 OpenClaw 连接
 
-`login` 注册 Runtime 后保存并探测其本地 OpenClaw 连接。缺失或不可用的 Gateway 不阻止 Runtime 注册。连接存于 `<home>/<profile>/adapters/openclaw/connection.json`；凭据存于该 profile 的 `credentials` 目录。
+CLI daemon 启动时准备并探测本地 OpenClaw 连接。缺失或不可用的 Gateway 不阻止本地 Host 就绪。连接存于 `<home>/<profile>/adapters/openclaw/connection.json`；凭据存于该 profile 的 `credentials` 目录。
 
 ```sh
 octo-runtime --home /path/to/harness --profile work adapter connect openclaw --openclaw-home /path/to/openclaw
@@ -227,6 +223,6 @@ octo-runtime --home /path/to/harness --profile work adapter connect openclaw --g
 octo-runtime --home /path/to/harness --profile work adapter probe openclaw
 ```
 
-显式参数优先；无参数时复用已保存连接，首次初始化读取 `OPENCLAW_HOME` 或成对的 `OPENCLAW_GATEWAY_URL` / `OPENCLAW_GATEWAY_TOKEN`，否则使用 `~/.openclaw`。`login` 也接受 `--openclaw-home` / `--gateway-url`；enrollment token 与 Gateway token 不可同时占用 stdin。
+显式连接参数优先；无参数时复用已保存连接，首次初始化读取 `OPENCLAW_HOME` 或成对的 `OPENCLAW_GATEWAY_URL` / `OPENCLAW_GATEWAY_TOKEN`，否则使用 `~/.openclaw`。显式配置使用 `adapter connect openclaw`。
 
 `playboard` 支持 `--home` 和 `--profile`，无须登录即可使用该 profile 的连接来源。完整概念与执行合同见 [统一合同](../../.octospec/rules/openclaw.md)。

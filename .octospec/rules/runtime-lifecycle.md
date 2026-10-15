@@ -66,4 +66,4 @@ Provider session 不保证恢复成功。业务方管理 binding 与 reset，并
 
 [home.ts](../../packages/octo-runtime-daemon/src/runtime/home.ts) 管理 app-owned Home 与账号路径。Home 级 machine 分组、profile Runtime ID、业务 Agent ID、业务 session ID 和 Provider session ID 不可互换。会话 reset 不删除 Runtime 身份。
 
-CLI 的 `login` 现为本地 Home 初始化，旧 enrollment 参数明确拒绝。方法名称中残留的 enrollment 字样不代表当前有云端接入实现；不得将旧注册教程恢复为 SDK 前置条件。
+CLI 不提供 `login` 命令及其旧更新入口。`daemon install` 与 `daemon run` 共用默认 Home 解析，首次使用时只创建缺失的本地配置及 machine identity，保留已有配置和身份；显式 `adapter connect openclaw` 同样不依赖登录。登录、登记和共享属于可选业务 Extra，不能作为本地安装和执行的条件。

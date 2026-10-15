@@ -19,10 +19,8 @@ import {
   readJsonFile,
   reconcileHomeConfiguration,
   withSetupLock,
-  writeJsonAtomic,
   type RuntimeHomeConfiguration,
-  type RuntimePaths,
-  type UpdateJournal
+  type RuntimePaths
 } from "./state.js";
 
 type FlagValue = string | boolean;
@@ -71,15 +69,11 @@ interface CliContext {
 
 const DEFAULT_WAIT_MS = 30_000;
 const BOOLEAN_FLAGS = new Set([
-  "enrollTokenStdin",
   "help",
   "json",
   "noAutostart",
   "tokenStdin",
-  "prepareUpdate",
   "quiet",
-  "recoverUpdate",
-  "start",
   "verbose",
   "waitOnline"
 ]);
@@ -150,7 +144,6 @@ async function dispatchCli(context: CliContext): Promise<CommandResult> {
       throw new Error("extraset accepts a name and --home; pass the complete JSON object on stdin");
     return { value: await setExtra(context.paths, required(action, "extra-name"), context.input) };
   }
-  if (group === "login") return runLogin(context);
   if (group === "adapter" && action === "connect") return runAdapterConnectCommand(context, id);
   if (group === "daemon") return runDaemonCommand(context, action);
   if (group === "doctor") return runDoctor(context);
@@ -159,63 +152,10 @@ async function dispatchCli(context: CliContext): Promise<CommandResult> {
   return { value: await callDaemon(context.paths.socket, request) };
 }
 
-async function runLogin(context: CliContext): Promise<CommandResult> {
-  return withSetupLock(context.paths, async () => {
-    await prepareRuntimeDirectories(context.paths);
-    if (context.flags.prepareUpdate === true && context.flags.recoverUpdate === true)
-      throw new Error("--prepare-update and --recover-update are mutually exclusive update modes");
-    if (context.flags.prepareUpdate === true) return prepareUpdate(context);
-    if (context.flags.recoverUpdate === true) return recoverUpdate(context);
-    if (context.flags.enrollTokenStdin || context.flags.serverUrl || context.flags.agentWorkUrl || context.flags.waitOnline)
-      throw new Error("Worker enrollment has moved to the standalone worker-access archive");
-    await ensureMachineIdentity(context.paths);
-    await reconcileHomeConfiguration(context.paths, context.profile, enumFlag(context.flags.channel, ["stable", "beta"] as const, "stable"));
-    return { value: { ok: true, home: context.home, profile: context.profile, local: true } };
-  });
-}
-
-async function prepareUpdate(context: CliContext): Promise<CommandResult> {
-  const spec = await daemonServiceSpec(context);
-  const current = await context.service.backend.inspect(spec);
-  const wasRunning = ["running", "starting"].includes(current.state);
-  if (wasRunning) await context.service.backend.stop(spec);
-  const journal: UpdateJournal = {
-    schema_version: 1,
-    phase: "prepared",
-    profile: context.profile,
-    service_was_running: wasRunning,
-    prepared_at: new Date().toISOString()
-  };
-  await writeJsonAtomic(context.paths.updateJournal, journal);
-  return { value: { ok: true, prepared: true, service_was_running: wasRunning } };
-}
-
-async function recoverUpdate(context: CliContext): Promise<CommandResult> {
-  const journal = await readJsonFile<UpdateJournal>(context.paths.updateJournal);
-  const spec = await daemonServiceSpec(context);
-  await verifyServiceProgram(spec);
-  await context.service.backend.install(spec);
-  const shouldStart = context.flags.start === true && (journal?.service_was_running ?? true);
-  if (shouldStart) {
-    await context.service.backend.enable(spec);
-    await context.service.backend.start(spec);
-    await waitForDaemonReady(context, DEFAULT_WAIT_MS);
-  }
-  const recovered: UpdateJournal = {
-    schema_version: 1,
-    phase: "recovered",
-    profile: context.profile,
-    service_was_running: journal?.service_was_running ?? false,
-    prepared_at: journal?.prepared_at ?? new Date().toISOString(),
-    recovered_at: new Date().toISOString()
-  };
-  await writeJsonAtomic(context.paths.updateJournal, recovered);
-  return { value: { ok: true, recovered: true, started: shouldStart } };
-}
-
 async function runDaemonCommand(context: CliContext, action: string | undefined): Promise<CommandResult> {
   const selected = action ?? "run";
   if (selected === "run") {
+    await withSetupLock(context.paths, () => ensureLocalRuntime(context));
     const exitCode = await context.runForegroundDaemon([
       "--home", context.home,
       ...(context.flags.quiet === true ? [] : ["--console"]),
@@ -259,12 +199,8 @@ async function runDaemonCommand(context: CliContext, action: string | undefined)
 
 async function installDaemonService(context: CliContext): Promise<CommandResult> {
   return withSetupLock(context.paths, async () => {
-    await loadInstalledRuntime(context);
+    await ensureLocalRuntime(context);
     const autostart = context.flags.noAutostart !== true;
-
-    const homeConfiguration = await readJsonFile<RuntimeHomeConfiguration>(context.paths.rootConfig);
-    assertHomeConfiguration(homeConfiguration);
-    if (!homeConfiguration) throw new Error("Runtime Home config is missing; run octo-runtime login first");
     const spec = context.service.spec(context.paths, autostart);
     await verifyServiceProgram(spec);
     const probe = await context.service.backend.probe();
@@ -305,16 +241,21 @@ async function uninstallDaemonService(context: CliContext): Promise<CommandResul
   });
 }
 
-async function loadInstalledRuntime(context: CliContext): Promise<void> {
+// Call under the Home setup lock; existing configuration and identity stay intact.
+async function ensureLocalRuntime(context: CliContext): Promise<void> {
   const homeConfiguration = await readJsonFile<RuntimeHomeConfiguration>(context.paths.rootConfig);
-  if (!homeConfiguration) throw new Error("Runtime Home is not configured; run octo-runtime login first");
   assertHomeConfiguration(homeConfiguration);
+  await ensureMachineIdentity(context.paths);
+  await prepareRuntimeDirectories(context.paths);
+  if (homeConfiguration === undefined) {
+    await reconcileHomeConfiguration(context.paths, context.profile, "stable");
+  }
 }
 
 async function runAdapterConnectCommand(context: CliContext, adapterType: string | undefined): Promise<CommandResult> {
   if (adapterType !== "openclaw") throw new Error(`adapter connect is not supported for ${adapterType ?? "a missing adapter type"}`);
   return withSetupLock(context.paths, async () => {
-    await loadInstalledRuntime(context);
+    await ensureLocalRuntime(context);
     const result = await configureRuntimeOpenClaw(context);
     return { value: { ok: true, profile: context.profile, ...result } };
   });
@@ -324,7 +265,6 @@ async function configureRuntimeOpenClaw(context: CliContext): Promise<Record<str
   for (const flag of ["bindingId", "agentId", "workspace"]) {
     if (context.flags[flag] !== undefined) throw new Error("OpenClaw connections do not accept binding, Agent or workspace settings; select provider_agent_id in Context");
   }
-  if (context.flags.tokenStdin && context.flags.enrollTokenStdin) throw new Error("enrollment and Gateway tokens cannot share stdin; use OPENCLAW_GATEWAY_TOKEN for login");
   const input: CliOpenClawInput = {};
   if (context.flags.openclawHome !== undefined) input.openclawHome = requiredFlag(context.flags.openclawHome, "openclaw-home");
   if (context.flags.gatewayUrl !== undefined) input.url = requiredFlag(context.flags.gatewayUrl, "gateway-url");
@@ -352,7 +292,7 @@ async function runDoctor(context: CliContext): Promise<CommandResult> {
   const nodeMajor = Number(process.versions.node.split(".")[0]);
   checks.push(check("node.version", nodeMajor >= 24, `Node.js ${process.versions.node}`, "Install Node.js 24 or newer"));
   const homeConfig = await inspectJson<RuntimeHomeConfiguration>(context.paths.rootConfig);
-  checks.push(check("home.config", homeConfig.ok, homeConfig.detail, "Run octo-runtime login"));
+  checks.push(check("home.config", homeConfig.ok, homeConfig.detail, "Run octo-runtime daemon install or daemon run"));
   const spec = await daemonServiceSpec(context);
   const program = await pathCheck(spec.command, spec.args?.[0]);
   checks.push(check("service.program", program.ok, program.detail, "Rerun the installer to repair absolute program paths"));
@@ -550,18 +490,6 @@ async function daemonServiceSpec(context: CliContext, enabled = true) {
   );
 }
 
-function enumFlag<const TValue extends string>(
-  value: FlagValue | undefined,
-  allowed: readonly TValue[],
-  fallback: TValue
-): TValue {
-  if (value === undefined) return fallback;
-  if (typeof value !== "string" || !allowed.includes(value as TValue)) {
-    throw new Error(`value must be one of: ${allowed.join(", ")}`);
-  }
-  return value as TValue;
-}
-
 function helpText(group?: string): string {
   if (group === "playboard") {
     return `Usage: octo-runtime playboard [--manifest PATH] [--home PATH] [--profile NAME] < request.json\n\n` +
@@ -578,9 +506,6 @@ function helpText(group?: string): string {
       `--manifest selects an adapter manifest; defaults to the bundled adapters.\n` +
       `See apps/cli/README.md for a complete here-string example.`;
   }
-  if (group === "login") {
-    return "Usage: octo-runtime [--home PATH] [--profile NAME] login\n\nInitialize the local Runtime Home. Worker enrollment is maintained only in the standalone archive.\nInstaller update modes: --prepare-update | --recover-update [--start]";
-  }
   if (group === "daemon") {
     return `Usage: octo-runtime [--home PATH] daemon install|uninstall|run|start|stop|restart|status [options]\n\n` +
       `  install [--no-autostart]\n` +
@@ -589,6 +514,7 @@ function helpText(group?: string): string {
       `  start\n` +
       `  stop\n` +
       `  restart\n\n` +
+      `Install and run use the same default Runtime Home and initialize missing local defaults without login.\n` +
       `Uninstall removes the native service but preserves Runtime Home identity, credentials, databases, and logs.`;
   }
   if (group === "doctor") {
@@ -604,7 +530,7 @@ function helpText(group?: string): string {
       `       octo-runtime [--home PATH] [--profile NAME] adapter probe <adapter-type>\n` +
       `       octo-runtime [--home PATH] --profile NAME adapter connect openclaw [--openclaw-home PATH | --gateway-url URL --token-stdin]\n\n` +
       `adapter connect saves a Runtime-local OpenClaw connection and probes its availability. Select provider_agent_id in Context.\n` +
-      `Connect requires a logged-in Runtime profile. Tokens are read from stdin or OPENCLAW_GATEWAY_TOKEN and stored separately. Without flags, reuse the saved connection or discover OPENCLAW_HOME / ~/.openclaw.`;
+      `Connect initializes missing local Home defaults. Tokens are read from stdin or OPENCLAW_GATEWAY_TOKEN and stored separately. Without flags, reuse the saved connection or discover OPENCLAW_HOME / ~/.openclaw.`;
   }
   if (group === "agent-run") {
     return `Usage: octo-runtime [--home PATH] agent-run get|cancel [agent-run-id] [options]\n\n` +
@@ -614,7 +540,6 @@ function helpText(group?: string): string {
   if (group === "extra") return "Usage: octo-runtime [--home PATH] extra status|load|unload [name]\n\nstatus lists plugin lifecycle; status <name> requests plugin business status (if supported). loaded does not imply a healthy external connection. Uses the declarations read at startup. Restart after extraset to apply new configuration.";
   return `Octo Runtime CLI\n\n` +
     `Global: --home PATH; --profile NAME; --verbose\n\n` +
-    `  octo-runtime login --help\n` +
     `  octo-runtime playboard < request.json\n` +
     `  octo-runtime extraset <name> < config.json\n` +
     `  octo-runtime extra status|load|unload [name]\n` +

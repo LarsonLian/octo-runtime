@@ -38,7 +38,7 @@ Runtime 的安装决策继续归 HostApp。OpenClaw Agent 的人格、记忆、�
 
 ## 本地初始化与连接配置
 
-1. SDK 在本地初始化 Runtime 并保存身份，不要求 Worker 注册。CLI 的 login 初始化本地 Home，不执行云端 enrollment；当前 Worker 接入包已移除。
+1. SDK 在本地初始化 Runtime 并保存身份，不要求 Worker 注册。CLI 的 daemon install/run 自动准备缺失的本地 Home 配置，不提供 login 命令；当前 Worker 接入包已移除。
 2. CLI 启动编排初始化或刷新该 Runtime 的 OpenClaw 连接，探测 Gateway 可用性。SDK 由宿主显式配置连接，不自动发现。OpenClaw 缺失、未启动或认证失败只影响该 Provider 的可用状态，不阻止本地 Host 就绪或其他 Provider 执行。
 3. 本地配置保存到 `<runtime-home>/<profile>/adapters/openclaw/connection.json`。内置 Runtime 使用账户目录下对应的 profile，不能退回另一账户或默认 Home 的连接。
 4. 本地探测和实际执行读取同一 Runtime 配置。外部业务若报告可用状态，不得上报 Gateway token 或私钥；本地探测本身不需要云端上报。
@@ -98,7 +98,7 @@ octo-runtime --home /path/to/runtime --profile work adapter connect openclaw \
   --gateway-url ws://127.0.0.1:18789 --token-stdin
 ```
 
-`login` 仅初始化本地 Home，不执行云端 enrollment 或 OpenClaw 配置。Gateway token 由 stdin 或环境提供，不作为命令行明文参数。`adapter list`、`adapter probe openclaw` 使用选定 profile 的已保存连接，刷新发生在 CLI daemon 启动编排；`playboard --home ... --profile ...` 通过临时 daemon 复用该编排，跳过渠道 Extra 加载及渠道工具 dotenv 同步，不自行管理 OpenClaw 连接或启动 Gateway。
+本地 Home 无需登录即可使用。Gateway token 由 stdin 或环境提供，不作为命令行明文参数。`adapter list`、`adapter probe openclaw` 使用选定 profile 的已保存连接，刷新发生在 CLI daemon 启动编排；`playboard --home ... --profile ...` 通过临时 daemon 复用该编排，跳过渠道 Extra 加载及渠道工具 dotenv 同步，不自行管理 OpenClaw 连接或启动 Gateway。
 
 连接命令返回保存结果和探测状态；`available: false` 表示连接尚不可用，不表示本地 Runtime 身份初始化失败。已删除的 `--binding-id`、`--agent-id` 和 `--workspace` 连接参数不再接受；目标 Agent 必须放在 Context 中。旧 `config.json.adapters.openclaw` 外部绑定不自动转换，需删除旧配置并通过上述入口设置连接。
 

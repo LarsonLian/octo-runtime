@@ -57,15 +57,6 @@ export interface RuntimeCredential {
   expires_at?: string;
 }
 
-export interface UpdateJournal {
-  schema_version: 1;
-  phase: "prepared" | "recovered";
-  profile: string;
-  service_was_running: boolean;
-  prepared_at: string;
-  recovered_at?: string;
-}
-
 export interface RuntimePaths {
   home: string;
   rootConfig: string;
@@ -75,7 +66,6 @@ export interface RuntimePaths {
   identity: string;
   credential: string;
   openclawRoot: string;
-  updateJournal: string;
   setupLock: string;
   pid: string;
   socket: string;
@@ -107,7 +97,6 @@ export function runtimePaths(home: string, profile: string): RuntimePaths {
     identity: join(profileRoot, "identity", "runtime.json"),
     credential: join(profileRoot, "credentials", "runtime-token.json"),
     openclawRoot: join(profileRoot, "adapters", "openclaw"),
-    updateJournal: join(absoluteHome, "run", "update.json"),
     setupLock: join(absoluteHome, "run", "setup.lock"),
     pid: join(absoluteHome, "octo-daemon.pid"),
     socket: process.platform === "win32"

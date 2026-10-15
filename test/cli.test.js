@@ -79,10 +79,13 @@ test("CLI command help is local and describes adapter operations", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const cli = join(root, "apps/cli/dist/index.js");
 
-  for (const group of ["daemon", "login"]) {
+  for (const group of ["daemon"]) {
     const help = await execute(process.execPath, [cli, group, "--help"]);
     assert.doesNotMatch(help.stdout, /--force|--timeout-ms|--wait-drained/);
   }
+  await assert.rejects(execute(process.execPath, [cli, "login"]), /unknown command/);
+  const help = await execute(process.execPath, [cli, "--help"]);
+  assert.doesNotMatch(help.stdout, /octo-runtime login/);
   for (const option of ["--force", "--timeout-ms=5000", "--wait-drained"]) {
     await assert.rejects(execute(process.execPath, [cli, "daemon", "stop", option]), /unknown option/);
   }

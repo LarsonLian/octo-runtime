@@ -4,4 +4,4 @@ HostApp 明确选择 Runtime、Provider 及版本，执行层不隐式下载或�
 
 旧 Worker enrollment 一键安装脚本已随预研迁到生态目录外的 `octo-runtime-worker-access/archive/installers`，只作参考备份，不属于当前 Runtime 发行物。
 
-CLI 本地初始化为 `octo-runtime login`，随后按需要执行 `daemon install` 或 `daemon run`。它不注册 Worker，不恢复旧 Worker 连接，也没有云端 `--wait-online` 验收步骤。
+直接执行 `octo-runtime daemon install` 或 `octo-runtime daemon run`，两者共用默认 Runtime Home，自动准备缺失的本地配置与 machine identity，保留已有数据。CLI 不提供 `login` 命令；登录、登记及共享由按需接入的 Extra 负责。
