@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { StartDaemonServerOptions } from "./server.js";
 
-export function resolveDaemonRuntimePaths(args = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): StartDaemonServerOptions {
+export function resolveDaemonRuntimePaths(args = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): StartDaemonServerOptions & { executionOnly: boolean; profile: string } {
   const defaultHome = process.platform === "win32" && env.LOCALAPPDATA?.trim()
     ? join(env.LOCALAPPDATA.trim(), "OctoRuntime") : join(env.HOME?.trim() || homedir(), ".octo-runtime");
   const home = resolve(option(args, ["--home"], env.OCTO_RUNTIME_HOME ?? defaultHome));
@@ -12,6 +12,9 @@ export function resolveDaemonRuntimePaths(args = process.argv.slice(2), env: Nod
     ? `\\\\.\\pipe\\octo-runtime-${createHash("sha256").update(home.toLowerCase()).digest("hex").slice(0, 16)}`
     : join(home, "sockets", "octo-runtime-daemon.sock");
   return {
+    executionOnly: args.includes("--execution-only"),
+    profile: option(args, ["--profile"], "default"),
+    ...(args.includes("--state-directory") ? { stateDirectory: resolve(option(args, ["--state-directory"], "")) } : {}),
     homePath: home,
     pidPath: resolve(option(args, ["--pid-file"], env.OCTO_RUNTIME_PID_FILE ?? join(home, "octo-daemon.pid"))),
     consoleOutput: args.includes("--console"),
@@ -21,8 +24,11 @@ export function resolveDaemonRuntimePaths(args = process.argv.slice(2), env: Nod
   };
 }
 
-export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[] {
+export function daemonRuntimeArguments(paths: StartDaemonServerOptions & { executionOnly?: boolean; profile?: string }): string[] {
   return [
+    ...(paths.executionOnly ? ["--execution-only"] : []),
+    ...(paths.profile ? ["--profile", paths.profile] : []),
+    ...(paths.stateDirectory ? ["--state-directory", paths.stateDirectory] : []),
     ...(paths.homePath ? ["--home", paths.homePath] : []),
     ...(paths.pidPath ? ["--pid-file", paths.pidPath] : []),
     ...(paths.consoleOutput ? ["--console"] : []),

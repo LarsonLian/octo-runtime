@@ -22,7 +22,7 @@ export const playboardAdapter = {
     yield {
       protocolVersion: 2,
       type: "message.delta",
-      payload: { text: JSON.stringify({ ...wire, hostPid: process.pid }) }
+      payload: { text: JSON.stringify({ ...wire, hostPid: process.pid, daemonPid: process.ppid }) }
     };
     if (request.prompt === "broken-pipe") {
       await new Promise((resolve) => setTimeout(resolve, 150));

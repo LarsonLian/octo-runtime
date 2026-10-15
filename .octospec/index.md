@@ -40,6 +40,7 @@
 
 ## 历史与取舍
 
+- [Playboard 统一 daemon 执行](tasks/playboard-daemon-execution/brief.md)：记录绕过 daemon、重复装配 OpenClaw 的问题与改造原因；当前工作树已统一临时 daemon、两层 RPC 和资源隔离，见[验证记录](journal/shared/2026-10-15-playboard-daemon-execution.md)。
 - [架构演进](journal/shared/architecture-evolution.md)：Git 节点、已撤回设计的问题和当前替代。
 - [历史验证摘要](journal/shared/provider-validation-history.md)：原文日期的真实证据、失败及未验收边界。
 - [31 份材料审查表](tasks/consolidate-runtime-knowledge/migration-review.md)：每份旧文档的去向与理由。

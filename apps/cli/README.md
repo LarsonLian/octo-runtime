@@ -105,10 +105,12 @@ octo-runtime agent-run cancel <agent-run-id>
 For development, testing, and integration debugging only. Do not integrate production
 applications by spawning this CLI subcommand.
 
-`playboard` reads **one complete JSON object** from stdin, starts its own adapter-host,
-streams one `HostFrame` per stdout line (NDJSON), then exits and closes the Host.
-It uses real adapters/providers without login, enrollment, Access, Worker, a daemon,
-or a Runtime database. Provider installation and authentication are still required.
+`playboard` 从 stdin 读取一个完整 JSON，通过统一启动入口拉起临时 daemon，
+经 Unix Socket / Windows Named Pipe 执行并输出 NDJSON，结束后回收本次 daemon、Host 和临时状态。
+无需登录、enrollment、Access、Worker 或预先启动 daemon。已有常驻 daemon 不参与本次执行。
+临时执行复用所选 Home/profile 的 Provider 装配，不加载已配置 Extra，不同步渠道工具凭据。
+Provider 安装、认证以及 OpenClaw Gateway 等外部服务仍须预先就绪。
+既有 Home、profile、身份和 Provider 连接配置不随临时执行销毁。
 It does not install providers. Provider tools can act on your workspace.
 
 For Bash/zsh, a complete example is:
@@ -158,7 +160,7 @@ node apps/cli/dist/index.js playboard <<< '{"inputs":[{"type":"text","text":"回
 For this CLI shorthand, an omitted `provider_agent_id` resolves to `main` before
 Context validation. To select another existing agent, add `"provider_agent_id":"researcher"`
 to the adapter payload. Explicit invalid IDs are rejected; a missing agent is never
-created or replaced with another target. The adapter reads the selected Runtime profile’s connection source and verifies the target exists. Other protocol entry points still require
+created or replaced with another target. daemon 的统一启动编排刷新所选 profile 的连接；Adapter 只读取装配后的配置并验证目标。Other protocol entry points still require
 an explicit OpenClaw `provider_agent_id`.
 
 Workspace selection uses the local resolver: provisioned runs require a fixed absolute

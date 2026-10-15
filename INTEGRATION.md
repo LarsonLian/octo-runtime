@@ -288,7 +288,7 @@ octo-runtime agent-run cancel <run-id>
 
 ### 1.6 本地唤起 Agent：playboard <测试开发用>
 
-`playboard` 用于本地开发和调试：从 stdin 读取一个完整 JSON 对象，启动独立 Host，执行一轮后退出。无需登录或运行 daemon，但 Provider 必须预先安装并完成认证。
+`playboard` 用于本地开发和调试：从 stdin 读取一个完整 JSON 对象，通过统一启动编排拉起临时 daemon，经本地 socket 执行一轮后退出并回收本次进程和状态。无需登录或预先启动 daemon，Provider 必须预先安装并完成认证。临时执行不加载已配置 Extra，不停止常驻实例，不销毁既有 Home/profile 或身份。
 
 ```bash
 octo-runtime playboard <<'JSON'
@@ -329,7 +329,7 @@ JSON
 }
 ```
 
-stdout 为 NDJSON，每行一个 `HostFrame`，canonical 事件位于 `frame.event`。退出码：0 完成，1 校验/启动/Provider/交互失败，130 取消或 Ctrl+C，143 SIGTERM。输入上限为 16 MiB。
+stdout 为 NDJSON，native 模式每行一个 `HostFrame`，canonical 模式每行一个 `CanonicalEvent`。诊断写 stderr。退出码：0 完成，1 校验/启动/Provider/交互失败，130 取消或 Ctrl+C，143 SIGTERM。输入上限为 16 MiB。
 
 出现审批或问答时，playboard 输出交互 frame 后以 `PLAYBOARD_INTERACTION_REQUIRED` 失败，不继续接收答复。独立 App 的持续会话和交互使用 SDK。
 
@@ -341,7 +341,7 @@ octo-runtime --home "$HARNESS_HOME" --profile "$HARNESS_PROFILE" \
 octo-runtime --home "$HARNESS_HOME" --profile "$HARNESS_PROFILE" adapter probe openclaw
 ```
 
-adapter payload 使用 `{ "type": "openclaw", "provider_agent_id": "main" }`。playboard 支持 `--home` / `--profile` 选择连接来源；该调用仍为独立本地调试，不通过 daemon 调度。
+adapter payload 使用 `{ "type": "openclaw", "provider_agent_id": "main" }`。playboard 支持 `--home` / `--profile` 选择连接来源，由临时 daemon 的统一启动编排装配连接，playboard 不另做 OpenClaw 配置解析。启动 Octo daemon 不表示自动启动 OpenClaw Gateway；Gateway 必须已可访问。
 
 完整命令参见 [CLI 使用说明](apps/cli/README.md)。
 

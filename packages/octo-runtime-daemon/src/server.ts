@@ -39,6 +39,8 @@ export interface StartDaemonServerOptions {
   }>;
   homePath?: string;
   pidPath?: string;
+  /** Process-owned state, separate from persistent Home/profile configuration. */
+  stateDirectory?: string;
   /** Enables foreground lifecycle messages when launched in the foreground. */
   consoleOutput?: boolean;
   socketPath: string;
@@ -105,6 +107,7 @@ export async function startDaemonServer({
   account,
   localRuntimes = [],
   pidPath,
+  stateDirectory,
   socketPath,
   manifestPath,
   hostEntrypoint,
@@ -128,7 +131,7 @@ export async function startDaemonServer({
 
   let releasePid = (): Promise<void> => Promise.resolve();
   let invocationManifest: InvocationManifest;
-  const invocationManifestPath = join(homePath ?? dirname(socketPath), "run", "invocations.json");
+  const invocationManifestPath = join(stateDirectory ?? join(homePath ?? dirname(socketPath), "run"), "invocations.json");
   try {
     if (pidPath) releasePid = await acquirePidFile(pidPath);
     if (process.platform !== "win32") {
@@ -166,6 +169,9 @@ export async function startDaemonServer({
         ? { readyTimeoutMs: adapterHostReadyTimeoutMs }
         : {})
     });
+    const diagnostics = spawned.stderr();
+    if (diagnostics) process.stderr.write(diagnostics);
+    spawned.child.stderr.on("data", (chunk: string) => process.stderr.write(chunk));
     await invocationManifest.setAdapterHost(spawned.child.pid, hostEntrypoint);
     return spawned;
   };

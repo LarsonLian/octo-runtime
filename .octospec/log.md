@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- 实施 [Playboard 统一 daemon 执行](tasks/playboard-daemon-execution/brief.md)：移除 CLI 的 Provider 特殊装配，复用 daemon 启动与本地 RPC，隔离 PID/socket/账本，保留既有配置和常驻实例。构建、类型、lint、全量回归和真实 Codex/OpenClaw 执行通过，线上环境与未验收边界见[验证记录](journal/shared/2026-10-15-playboard-daemon-execution.md)。
+
+- 记录 [Playboard 统一 daemon 执行决策](tasks/playboard-daemon-execution/brief.md)：复盘直接启动 Host、重复 Provider 装配及 RPC 层次混淆，明确临时 daemon、状态隔离与验收要求；本次仅写入 OKF，代码和线上验收待实施。
+
 - 修复 Alpha review F2：Octo/WeCom 回收闲置会话调度条目，移除累计 128 个会话门槛，旧卡片重试进入当前队列。双渠道分别验证模拟每日一万个会话，追加 [评审修正状态](journal/shared/2026-10-15-alpha-code-review.md)及[验证记录](journal/shared/2026-10-15-im-session-scheduling-release.md)；完整 AdapterHost 无缓存目标、S1/F1 保持待实施。
 
 - 将 OpenClaw 自动发现和刷新移到 CLI 启动编排，SDK 显式配置，Adapter 只读连接；见 [合同](rules/openclaw.md)与[验证记录](journal/shared/2026-10-15-openclaw-cli-discovery.md)。

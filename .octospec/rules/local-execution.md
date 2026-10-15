@@ -41,6 +41,8 @@ sequenceDiagram
 
 ## 传输边界
 
+CLI `playboard` 也经过 daemon：启动本次临时 daemon，经 UDS/Pipe 执行，daemon 通过 stdio `AdapterHostRpcClient` 调用自己的 Host。它不直接启动 Host，不复用常驻 daemon，不单独装配 OpenClaw。统一 CLI 启动编排选择 profile 并准备 Provider；临时执行跳过 Extra 加载及渠道工具环境同步。socket、PID 和执行账本使用独立临时目录，Home/profile 的配置与身份保留。决策与验收见 [Playboard 改造](../tasks/playboard-daemon-execution/brief.md)。
+
 | 边界 | 当前实现 |
 | --- | --- |
 | CLI 普通控制请求 | UDS / Windows Pipe 的单行 JSON 请求，响应使用 JSON-RPC 形状 |

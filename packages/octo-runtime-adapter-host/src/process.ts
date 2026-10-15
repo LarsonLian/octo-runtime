@@ -133,7 +133,10 @@ function signalProcessTree(child: HostedChild, signal: NodeJS.Signals): void {
       process.kill(-child.pid, signal);
       return;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      const code = (error as NodeJS.ErrnoException).code;
+      // The group may already be gone before Node delivers the child's exit.
+      // Fall back only to the child we own; never select another process group.
+      if (code !== "ESRCH" && code !== "EPERM") throw error;
     }
   }
   child.kill(signal);

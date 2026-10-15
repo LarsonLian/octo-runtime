@@ -1,17 +1,11 @@
-import {
-  OPENCLAW_RUNTIME_ROOT
-} from "@mininglamp-oss/octo-runtime-adapter-openclaw";
-import { configureCliOpenClaw } from "@mininglamp-oss/octo-runtime-daemon-app/openclaw";
 import { defaultRuntimeHome, runtimePaths } from "./state.js";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  spawnAdapterHost,
-  type AdapterHostProcess
-} from "@mininglamp-oss/octo-runtime-adapter-host";
+import { startTemporaryDaemon } from "./temporary-daemon.js";
+import { invokeDaemonRun } from "@mininglamp-oss/octo-runtime-daemon/runtime/run-stream";
 import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-core";
 export { prepareInvokeInput as preparePlayboard } from "@mininglamp-oss/octo-runtime-core";
-import { isHostTerminal, isTerminal, invocationInput } from "@mininglamp-oss/octo-runtime-protocol";
+import { createHostInvoke, isHostTerminal, isTerminal } from "@mininglamp-oss/octo-runtime-protocol";
 
 const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 
@@ -20,7 +14,8 @@ export interface PlayboardOptions {
   output?: (line: string) => void | Promise<void>;
   env?: NodeJS.ProcessEnv;
   manifest?: string;
-  runtimeRoot?: string;
+  home?: string;
+  profile?: string;
 }
 
 export async function runPlayboard(options: PlayboardOptions): Promise<number> {
@@ -44,12 +39,12 @@ export async function runPlayboard(options: PlayboardOptions): Promise<number> {
     throw new TypeError("playboard stdin must contain one complete JSON object");
   }
   const { adapterType, protocolMode, request } = prepareInvokeInput(value);
-  if (adapterType === "openclaw") {
-    const runtimeRoot =
-      options.runtimeRoot ?? runtimePaths(defaultRuntimeHome(options.env), "default").profileRoot;
-    await configureCliOpenClaw(runtimeRoot, {}, options.env);
-    request.agentConfig.providerOptions = { [OPENCLAW_RUNTIME_ROOT]: runtimeRoot };
-  }
+  const profile = options.profile ?? "default";
+  const home = options.home ?? defaultRuntimeHome(options.env);
+  runtimePaths(home, profile); // Validate the selected profile before starting resources.
+  if (request.runMetadata?.profile !== undefined && request.runMetadata.profile !== profile)
+    throw new Error("RUNTIME_CONFIGURATION_NOT_FOUND: request profile differs from --profile");
+  request.runMetadata = { ...request.runMetadata, profile };
   const output = options.output ?? writeLine;
   const controller = new AbortController();
   let interrupted = 0;
@@ -67,24 +62,26 @@ export async function runPlayboard(options: PlayboardOptions): Promise<number> {
   if (!options.output) process.stdout.on("error", onOutputError);
   process.once("SIGINT", onInterrupt);
   process.once("SIGTERM", onTerminate);
-  let host: AdapterHostProcess | undefined;
+  let daemon: Awaited<ReturnType<typeof startTemporaryDaemon>> | undefined;
   try {
-    host = await spawnAdapterHost({
-      entrypoint: fileURLToPath(new URL("../../adapter-host/dist/index.js", import.meta.url)),
+    daemon = await startTemporaryDaemon({
+      home,
+      profile,
       manifest: options.manifest
         ? resolve(options.manifest)
         : fileURLToPath(new URL("../../../config/adapters.json", import.meta.url)),
       env: options.env ?? process.env,
       signal: controller.signal
     });
-    // Host diagnostics never share the NDJSON output channel.
-    const startupDiagnostics = host.stderr();
-    if (startupDiagnostics) process.stderr.write(startupDiagnostics);
-    host.child.stderr.on("data", (chunk: string) => process.stderr.write(chunk));
+    const socket = daemon.socket;
+    const invoke = createHostInvoke((type, prepared, wireOptions) =>
+      invokeDaemonRun(socket, type, prepared, wireOptions)
+    );
     let exitCode = 1;
-    for await (const frame of host.client.invoke(
-      invocationInput(request, protocolMode, adapterType),
-      { signal: controller.signal }
+    for await (const frame of invoke(
+      adapterType,
+      { ...request, signal: controller.signal },
+      { protocolMode }
     )) {
       await output(JSON.stringify(frame));
       if (
@@ -116,7 +113,7 @@ export async function runPlayboard(options: PlayboardOptions): Promise<number> {
     throw error;
   } finally {
     try {
-      await host?.close();
+      await daemon?.close();
     } finally {
       if (!options.output) process.stdout.removeListener("error", onOutputError);
       process.removeListener("SIGINT", onInterrupt);

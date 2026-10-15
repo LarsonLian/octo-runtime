@@ -97,7 +97,8 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
       input: dependencies.input ?? process.stdin,
       output: dependencies.output,
       env: dependencies.env,
-      runtimeRoot: runtimePaths(optionalString(flags.home) ?? defaultRuntimeHome(dependencies.env, dependencies.platform), optionalString(flags.profile) ?? "default").profileRoot,
+      home: optionalString(flags.home) ?? defaultRuntimeHome(dependencies.env, dependencies.platform),
+      profile: optionalString(flags.profile) ?? "default",
       manifest: flags.manifest === undefined ? undefined : requiredFlag(flags.manifest, "manifest")
     });
   }
@@ -566,8 +567,9 @@ function helpText(group?: string): string {
     return `Usage: octo-runtime playboard [--manifest PATH] [--home PATH] [--profile NAME] < request.json\n\n` +
       `For development, testing, and integration debugging only.\n` +
       `Do not integrate production applications by spawning this CLI subcommand.\n\n` +
-      `Read one complete JSON request from stdin, spawn an independent Host, and stream NDJSON HostFrames.\n` +
-      `No login, Access, Worker, or daemon is required. This runs real providers.\n` +
+      `Read one complete JSON request from stdin, start a temporary daemon, and stream NDJSON events over local IPC.\n` +
+      `No login, Access, Worker, or pre-running daemon is required. This runs real providers.\n` +
+      `The temporary daemon owns its Host and socket; configured Extras are not loaded.\n` +
       `Required: inputs (ModelInputPart[]), contexts (Context v3 envelope).\n` +
       `Optional: sessionId, protocol_mode (native by default, or canonical), agentSource, providerSession, continuityMode.\n` +
       `Defaults: codex, current working directory, approval ask, 120-second run timeout.\n` +

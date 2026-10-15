@@ -14,10 +14,31 @@ import { access, readdir, readFile } from "node:fs/promises";
 
 const runtimePaths = resolveDaemonRuntimePaths();
 let app: DaemonApplication | undefined;
+let stopRequested = false;
+let starting = true;
+let closing: Promise<void> | undefined;
+const stop = (): void => {
+  stopRequested = true;
+  if (starting || closing) return;
+  closing = (app?.close() ?? Promise.resolve()).then(
+    () => { process.exitCode ??= 0; },
+    () => {
+      console.error("daemon shutdown failed");
+      process.exitCode = 1;
+    }
+  ).finally(() => { if (process.connected) process.disconnect(); });
+};
+process.on("SIGINT", stop);
+process.on("SIGTERM", stop);
+process.on("SIGHUP", stop);
+// A temporary daemon must also stop when its owning CLI disappears.
+if (process.connected) process.once("disconnect", stop);
 try {
   const home = runtimePaths.homePath!;
-  const profiles = new Set(["default"]);
-  for (const entry of await readdir(home, { withFileTypes: true }).catch((error) => {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(runtimePaths.profile))
+    throw new Error("invalid runtime profile");
+  const profiles = new Set([runtimePaths.executionOnly ? runtimePaths.profile : "default"]);
+  for (const entry of runtimePaths.executionOnly ? [] : await readdir(home, { withFileTypes: true }).catch((error) => {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   })) {
@@ -59,43 +80,21 @@ try {
   }
   const extraDirectory = join(home, "default", "extra");
   if (runtimePaths.consoleOutput) console.error("extras scanning", { directory: extraDirectory });
-  const extras = await readExtraDirectory(extraDirectory);
+  const extras = runtimePaths.executionOnly ? [] : await readExtraDirectory(extraDirectory);
   if (runtimePaths.consoleOutput) console.error("extras discovered", {
     count: extras.length,
     entries: extras.map(({ name, enabled }) => ({ name, enabled: enabled !== false }))
   });
   app = await startDaemonServer({ ...runtimePaths, localRuntimes, extras });
+  if (!stopRequested && process.connected)
+    process.send?.({ type: "daemon.ready" }, (error: Error | null) => { if (error) stop(); });
 } catch (error) {
   const verbose = process.argv.includes("--verbose");
   const message = error instanceof Error ? error.message : String(error);
   console.error(verbose ? inspect(error, { depth: null, colors: false }) : `❌ ${message}`);
   process.exitCode = 1;
-}
-
-if (app) {
-  let stopping = false;
-  const stop = (): void => {
-    if (stopping) return;
-    stopping = true;
-    // The signal handler must return immediately; the actual cleanup still runs
-    // serially through this single close() promise.
-    void app.close().then(
-      () => process.exit(0),
-      (error) => {
-        console.error("daemon shutdown failed", {
-          error: error instanceof Error ? error.message : String(error)
-        });
-        console.error(
-          JSON.stringify({
-            event: "daemon.shutdown.failed",
-            error: error instanceof Error ? error.message : String(error)
-          })
-        );
-        process.exit(1);
-      }
-    );
-  };
-  process.on("SIGINT", stop);
-  process.on("SIGTERM", stop);
-  process.on("SIGHUP", stop);
+} finally {
+  starting = false;
+  if (stopRequested) stop();
+  else if (!app && process.connected) process.disconnect();
 }

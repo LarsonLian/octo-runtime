@@ -5,3 +5,4 @@ export * from "./modules.js";
 export * from "./extras.js";
 export * from "./extra-config.js";
 export * from "./runtime/index.js";
+export { reapOrphanedInvocationManifest } from "./invocation-manifest.js";

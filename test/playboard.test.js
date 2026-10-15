@@ -1,11 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { preparePlayboard } from "../apps/cli/dist/playboard.js";
+import { startTemporaryDaemon } from "../apps/cli/dist/temporary-daemon.js";
+import { startDaemonServer } from "@mininglamp-oss/octo-runtime-daemon";
+import { callDaemon } from "@mininglamp-oss/octo-runtime-daemon/runtime/runtime-contract";
+import { once } from "node:events";
+import { WebSocketServer } from "ws";
 import { assertHostFrame, isHostTerminal, assertCanonicalEvent, isTerminal } from "@mininglamp-oss/octo-runtime-protocol";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -33,6 +38,12 @@ async function fixture(t) {
       version: 1,
       adapters: [
         {
+          type: "openclaw",
+          module: join(root, "packages/octo-runtime-adapter-openclaw/dist/index.js"),
+          export: "createOpenClawAdapter",
+          factory: true
+        },
+        {
           type: "playboard-test",
           module: join(root, "test/fixtures/playboard-adapter.js"),
           export: "playboardAdapter"
@@ -53,14 +64,18 @@ async function fixture(t) {
   return { directory, manifest };
 }
 
-function execute({ directory, manifest }, value, { args = [], signalOnFrame = false } = {}) {
+function execute({ directory, manifest }, value, { args = [], signalOnFrame = false, env = {} } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cli, "playboard", "--manifest", manifest, ...args], {
       cwd: directory,
       env: {
         ...process.env,
+        OPENCLAW_GATEWAY_URL: undefined,
+        OPENCLAW_GATEWAY_TOKEN: undefined,
+        OPENCLAW_HOME: join(directory, "absent-openclaw"),
         OCTO_RUNTIME_HOME: join(directory, "unconfigured-home"),
-        OCTO_RUNTIME_DEBUG: "0"
+        OCTO_RUNTIME_DEBUG: "0",
+        ...env
       },
       stdio: ["pipe", "pipe", "pipe"]
     });
@@ -192,7 +207,7 @@ test("invalid input, old context, and invalid continuity fail before execution",
   assert.equal(preparePlayboard(input("hello", { extra: true })).request.modelInput, "hello");
 });
 
-test("independent Host renders ordered business context, keeps control separate, and persists no Runtime state", async (t) => {
+test("temporary daemon renders ordered context and leaves no identity or process state", async (t) => {
   const settings = await fixture(t);
   const contexts = [
     item("extra.playboard", "second", { text: "business-b" }),
@@ -216,6 +231,8 @@ test("independent Host renders ordered business context, keeps control separate,
   assert.match(result.stderr, /playboard fixture diagnostic/);
   assert.doesNotMatch(result.stdout, /playboard fixture diagnostic/);
   assert.throws(() => process.kill(wire.hostPid, 0), { code: "ESRCH" });
+  assert.throws(() => process.kill(wire.daemonPid, 0), { code: "ESRCH" });
+  assert.equal(wire.runMetadata.profile, "default");
   const repeated = await execute(settings, request);
   assert.equal(observed(repeated).modelInput, wire.modelInput);
   const empty = await execute(settings, { ...echoInput(), sessionId: "same-session" });
@@ -224,7 +241,7 @@ test("independent Host renders ordered business context, keeps control separate,
 });
 
 for (const protocolMode of ["native", "canonical"]) {
-  test(`real Codex adapter emits ${protocolMode} frames through standalone Host`, async (t) => {
+  test(`real Codex adapter emits ${protocolMode} frames through temporary daemon IPC`, async (t) => {
     const settings = await fixture(t);
     const result = await execute(settings, input("normal", { protocol_mode: protocolMode }));
     assert.equal(result.code, 0, result.stderr);
@@ -264,17 +281,21 @@ test("provider failure and deadline exit nonzero with terminal frames", async (t
   }
 });
 
-test("Ctrl+C cancels execution and reaps the independent Host", async (t) => {
+test("Ctrl+C cancels execution and reaps the temporary daemon and Host", async (t) => {
   const settings = await fixture(t);
   const result = await execute(settings, echoInput("hang"), { signalOnFrame: true });
   assert.equal(result.code, 130, result.stderr);
   const frame = result.frames.find(
     (frame) => frame.type === "message.delta"
   );
-  if (frame)
+  if (frame) {
     assert.throws(() => process.kill(JSON.parse(frame.payload.text).hostPid, 0), {
       code: "ESRCH"
     });
+    assert.throws(() => process.kill(JSON.parse(frame.payload.text).daemonPid, 0), {
+      code: "ESRCH"
+    });
+  }
 });
 
 test("malformed stdin, unknown arguments and unsupported native mode fail clearly", async (t) => {
@@ -329,4 +350,177 @@ test("closing the NDJSON consumer cleans up Host and provider execution", async 
   assert.equal(code, 1);
   assert.equal(typeof hostPid, "number");
   assert.throws(() => process.kill(hostPid, 0), { code: "ESRCH" });
+});
+
+test("temporary IPC and parallel playboards preserve a resident daemon and persistent profile", async (t) => {
+  const settings = await fixture(t);
+  const home = join(settings.directory, "unconfigured-home");
+  const profileRoot = join(home, "work");
+  await mkdir(join(profileRoot, "identity"), { recursive: true });
+  const identity = join(profileRoot, "identity/runtime.json");
+  await writeFile(identity, "existing-runtime-identity\n");
+  const extra = join(home, "default/extra");
+  await mkdir(extra, { recursive: true });
+  // Parsing this file would fail: temporary execution must not load the channels.
+  await writeFile(join(extra, "channel-gateway.json"), "not valid JSON");
+  const resident = await startDaemonServer({
+    homePath: home,
+    socketPath: join(settings.directory, "resident.sock"),
+    manifestPath: settings.manifest,
+    hostEntrypoint: join(root, "apps/adapter-host/dist/index.js")
+  });
+  try {
+    const ledger = join(home, "run/invocations.json");
+    const before = await readFile(ledger, "utf8");
+    const temporary = await startTemporaryDaemon({
+      home, profile: "work", manifest: settings.manifest,
+      env: { ...process.env, OPENCLAW_HOME: join(settings.directory, "absent-openclaw"), OPENCLAW_GATEWAY_URL: undefined, OPENCLAW_GATEWAY_TOKEN: undefined },
+      signal: new AbortController().signal
+    });
+    const status = await callDaemon(temporary.socket, { method: "status" });
+    assert.equal(status.ready, true);
+    assert.deepEqual(status.extras, {});
+    assert.notEqual(status.adapterHost.pid, resident.hostProcess.child.pid);
+    await temporary.close();
+    assert.throws(() => process.kill(status.pid, 0), { code: "ESRCH" });
+    assert.throws(() => process.kill(status.adapterHost.pid, 0), { code: "ESRCH" });
+    if (process.platform !== "win32") await assert.rejects(stat(temporary.socket), { code: "ENOENT" });
+    const runs = await Promise.all([
+      execute(settings, echoInput(), { args: ["--profile", "work"] }),
+      execute(settings, echoInput(), { args: ["--profile", "work"] })
+    ]);
+    for (const run of runs) {
+      assert.equal(run.code, 0, run.stderr);
+      terminal(run, "completed");
+      assert.equal(observed(run).runMetadata.profile, "work");
+    }
+    assert.notEqual(observed(runs[0]).daemonPid, observed(runs[1]).daemonPid);
+    assert.equal(await readFile(ledger, "utf8"), before);
+    assert.equal(await readFile(identity, "utf8"), "existing-runtime-identity\n");
+    assert.equal((await callDaemon(resident.runtime.socketPath, { method: "status" })).ready, true);
+    const conflict = await execute(settings, { ...echoInput(), runMetadata: { profile: "other" } });
+    assert.equal(conflict.code, 1);
+    assert.match(conflict.stderr, /request profile differs/);
+  } finally {
+    await resident.close();
+  }
+});
+
+test("OpenClaw uses daemon startup configuration, refreshes its source and retains device identity", async (t) => {
+  const settings = await fixture(t);
+  const gateway = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  await once(gateway, "listening");
+  t.after(() => {
+    for (const client of gateway.clients) client.terminate();
+    return new Promise((resolve) => gateway.close(resolve));
+  });
+  let token = "first-test-token";
+  const authenticated = [];
+  const methods = [];
+  gateway.on("connection", (socket) => {
+    socket.send(JSON.stringify({ type: "event", event: "connect.challenge", payload: { nonce: "playboard", ts: Date.now() } }));
+    socket.on("message", (data) => {
+      const frame = JSON.parse(data.toString());
+      methods.push(frame.method);
+      let payload = {};
+      if (frame.method === "connect") {
+        authenticated.push(frame.params.auth.token);
+        const ok = frame.params.auth.token === token;
+        socket.send(JSON.stringify({ type: "res", id: frame.id, ok, ...(ok ? { payload: {
+          type: "hello-ok", protocol: 4,
+          features: { methods: ["agents.list", "sessions.create", "sessions.messages.subscribe", "agent", "agent.wait", "sessions.abort"], events: ["agent"] }
+        } } : { error: { message: "test authentication failed" } }) }));
+        return;
+      }
+      if (frame.method === "agents.list") payload = { agents: [{ id: "main" }] };
+      if (frame.method === "sessions.create") payload = { key: frame.params.key };
+      if (frame.method === "agent") payload = { status: "ok", result: { payloads: [{ text: "gateway-result" }] } };
+      if (frame.method === "agent.wait") payload = { status: "ok" };
+      socket.send(JSON.stringify({ type: "res", id: frame.id, ok: true, payload }));
+    });
+  });
+  const source = join(settings.directory, "provider");
+  await mkdir(source);
+  const config = join(source, "openclaw.json");
+  const save = () => writeFile(config, JSON.stringify({ gateway: { port: gateway.address().port, auth: { token } } }));
+  await save();
+  const request = input("hello", {
+    protocol_mode: "canonical",
+    contexts: context([
+      item("octo.execution", "adapter", { type: "openclaw" }),
+      item("octo.security", "approval_policy", { mode: "full_access" })
+    ])
+  });
+  const profile = join(settings.directory, "unconfigured-home/work");
+  const run = () => execute(settings, request, { args: ["--profile", "work"], env: { OPENCLAW_HOME: source } });
+  const first = await run();
+  assert.equal(first.code, 0, first.stderr);
+  terminal(first, "completed");
+  assert.match(first.stdout, /gateway-result/);
+  const deviceFile = join(profile, "credentials/openclaw-device.json");
+  const device = await readFile(deviceFile, "utf8");
+  token = "rotated-test-token";
+  await save();
+  const second = await run();
+  assert.equal(second.code, 0, second.stderr);
+  terminal(second, "completed");
+  assert.ok(authenticated.includes(token));
+  assert.equal(await readFile(deviceFile, "utf8"), device);
+  assert.ok(methods.includes("sessions.messages.subscribe"));
+  const unreachableConfig = JSON.stringify({ gateway: { port: 1, auth: { token } } });
+  await writeFile(config, unreachableConfig);
+  const unavailable = await run();
+  assert.equal(unavailable.code, 1);
+  terminal(unavailable, "failed");
+  assert.equal(await readFile(config, "utf8"), unreachableConfig);
+  assert.equal(await readFile(deviceFile, "utf8"), device);
+});
+
+test("daemon startup failure removes temporary process state and keeps stdout empty", async (t) => {
+  const settings = await fixture(t);
+  const isolated = await mkdtemp(join(process.platform === "darwin" ? "/tmp" : tmpdir(), "op-state-"));
+  t.after(() => rm(isolated, { recursive: true, force: true }));
+  const result = await execute({ ...settings, manifest: join(settings.directory, "missing-manifest.json") }, echoInput(), {
+    env: { TMPDIR: isolated, TEMP: isolated, TMP: isolated }
+  });
+  assert.equal(result.code, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /ENOENT/);
+  assert.deepEqual(await readdir(isolated), []);
+});
+
+test("cancelling daemon startup waits for resource cleanup and preserves prepared configuration", async (t) => {
+  const settings = await fixture(t);
+  const gateway = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  await once(gateway, "listening");
+  t.after(() => {
+    for (const client of gateway.clients) client.terminate();
+    return new Promise((resolve) => gateway.close(resolve));
+  });
+  const controller = new AbortController();
+  // Hold the Provider probe at its authentication handshake, then cancel startup.
+  gateway.once("connection", () => controller.abort());
+  const home = join(settings.directory, "runtime");
+  const isolated = await mkdtemp(join(process.platform === "darwin" ? "/tmp" : tmpdir(), "op-state-"));
+  t.after(() => rm(isolated, { recursive: true, force: true }));
+  const temporaryVariable = process.platform === "win32" ? "TEMP" : "TMPDIR";
+  const previous = process.env[temporaryVariable];
+  process.env[temporaryVariable] = isolated;
+  try {
+    await assert.rejects(startTemporaryDaemon({
+    home, profile: "work", manifest: settings.manifest,
+    env: {
+      ...process.env,
+      OPENCLAW_HOME: undefined,
+      OPENCLAW_GATEWAY_URL: `ws://127.0.0.1:${gateway.address().port}`,
+      OPENCLAW_GATEWAY_TOKEN: "test-startup-token"
+    },
+    signal: controller.signal
+    }), /startup cancelled/);
+  } finally {
+    if (previous === undefined) delete process.env[temporaryVariable];
+    else process.env[temporaryVariable] = previous;
+  }
+  assert.deepEqual(await readdir(isolated), []);
+  assert.ok(await stat(join(home, "work/credentials/openclaw-device.json")));
 });
