@@ -2828,27 +2828,6 @@ export interface ContextReferencesPayload {
   entries: [ContextReferenceEntry, ...ContextReferenceEntry[]];
 }
 /**
- * Run 的业务场景引用，复用 Run v7 与 Context v3。文档选区使用 doc.selection.review；Loop 使用 loop_discussion 或 loop_task。
- *
- * This interface was referenced by `OctoRuntimeProtocolSchema`'s JSON-Schema
- * via the `definition` "ScenarioRequest".
- */
-export interface ScenarioRequest {
-  /**
-   * 业务场景：doc.selection.review、loop_discussion、loop_task。Loop 场景不要求文档选区元数据。
-   */
-  scenario_id: string;
-  /**
-   * 与场景固定对应：doc-selection、loop-discussion、loop-task。
-   */
-  builder_id: string;
-  /**
-   * 当前场景构建合同版本固定为 1，与 Run/Context 版本独立。
-   */
-  builder_version: string;
-  [k: string]: unknown;
-}
-/**
  * Business authorization intent; never a tool installation definition.
  *
  * This interface was referenced by `OctoRuntimeProtocolSchema`'s JSON-Schema

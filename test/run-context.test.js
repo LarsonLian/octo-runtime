@@ -1,14 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertFrozenContextPlan, contextControlInstructions, assertScenarioRequest } from "../packages/octo-runtime-protocol/dist/index.js";
+import { assertFrozenContextPlan, contextControlInstructions } from "../packages/octo-runtime-protocol/dist/index.js";
 import { renderModelContexts } from "../packages/octo-runtime-adapter-host/dist/model-input.js";
-
-test("scenario metadata does not require a document selection in this run", () => {
-  assert.doesNotThrow(() => assertScenarioRequest(
-    { scenario_id: "doc.selection.review", builder_id: "doc-selection", builder_version: "1" },
-    { schema: "octo.context-envelope/v3", items: [] }
-  ));
-});
 
 const context = { schema: "octo.context-envelope/v3", items: [
   { namespace: "octo.execution", name: "adapter", payload: { type: "codex" } }, { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: "/workspace" } }, { namespace: "octo.security", name: "approval_policy", payload: { mode: "ask" } }

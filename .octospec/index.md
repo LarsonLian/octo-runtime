@@ -40,6 +40,8 @@
 
 ## 历史与取舍
 
+- [删除通用协议业务场景](tasks/remove-business-scenarios/brief.md)：删除场景白名单、ScenarioRequest 及 Node/browser 导出；Channel Gateway Extra 保留业务接入职责，不为 Work App 测试程序保留旧合同。
+
 - [删除业务能力合同](tasks/remove-business-capability-contract/brief.md)：移除自有 capabilities、执行计划能力标签及 ExecutionTarget 预留设计；验证结果单独记录。
 - [后续协议简化检查](journal/shared/2026-10-15-protocol-simplification-review.md)：核实业务场景、渠道快照和内部派生参数的真实调用链；其中未消费计划字段按[后续任务](tasks/remove-unused-plan-fields/brief.md)删除，其余为建议。
 

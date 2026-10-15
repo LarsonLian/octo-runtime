@@ -1052,9 +1052,3 @@ function assertAnalysisExposure(payload: Record<string, unknown>): void {
     }
   }
 }
-
-export * from "./scenario.js";
-
-export type {
-  ScenarioRequest
-} from "./generated/protocol-types.js";

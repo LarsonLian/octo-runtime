@@ -2,6 +2,8 @@
 
 ## 2026-10-15
 
+- 按[任务](tasks/remove-business-scenarios/brief.md)删除通用协议的 ScenarioRequest、场景常量、builder 白名单和校验导出；业务自行构造 Context，Channel Gateway Extra 仍为业务接入层，Work App 测试程序不构成兼容约束。验证结果见[记录](journal/shared/2026-10-15-remove-business-scenarios.md)。
+
 - 按[任务](tasks/remove-unused-plan-fields/brief.md)删除未消费的 required_execution_features 和 provider_compatibility；同步 schema、生成类型、校验及样例。补充场景白名单、渠道快照和内部派生参数的[调用链澄清](journal/shared/2026-10-15-protocol-simplification-review.md)，验证及未完成范围见[记录](journal/shared/2026-10-15-remove-unused-plan-fields.md)。
 
 - 按[任务简报](tasks/remove-business-capability-contract/brief.md)删除自有 Adapter capabilities、执行计划 required_capabilities 和 ExecutionTarget 预留设计；业务标签归业务方，真实执行与 Provider 原生握手协议独立保留。现行规则改为 [Adapter 执行元数据](rules/adapter-metadata.md)，验证范围见[实施记录](journal/shared/2026-10-15-remove-business-capability-contract.md)。

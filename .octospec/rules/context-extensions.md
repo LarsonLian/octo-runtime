@@ -42,6 +42,8 @@ Host 的 [renderModelContexts](../../packages/octo-runtime-adapter-host/src/mode
 
 ## 责任边界
 
+Runtime 通用协议不定义业务场景、builder 注册表或场景白名单，不导出 `ScenarioRequest` 或 `assertScenarioRequest`。文档评审、Loop 等业务自行构造本轮 Context，不能要求 Runtime 为新增业务场景修改 schema。Channel Gateway Extra 属于业务接入层，可以在自身包内采集、构造和校验所属业务数据；这些业务规则不得进入 Core、Host 或通用协议包。
+
 业务采集和授权由发起方实现，不是 Runtime 注册阶段或会话恢复阶段的隐式动作。底层不按 sessionId、Run 序号或 hash 缓存、补齐、合并、去重或省略模型上下文。两个不同 Event 显式重复提交同一 item 时，两轮均须传递。
 
 执行配置使用已定义的 `octo.execution/*` 等类型，不能靠 `extra.*` 文本授予权限或代替配置。defaults／mandatory 的支持范围由 [ContextConfiguration 校验器](../../packages/octo-runtime-protocol/src/context-configuration.ts) 定义，不因未知扩展能转发就允许把它保存为强制配置。
