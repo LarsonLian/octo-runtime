@@ -41,6 +41,8 @@
 
 ## 历史与取舍
 
+- [移除 AdapterHost app 启动壳](tasks/remove-adapter-host-app/brief.md)：apps 收敛为 CLI 与 daemon，统一使用 package runner，保留独立 Host 进程及全部 CLI 功能。
+
 - [CLI 构建 commit 信息](tasks/cli-build-commit/brief.md)：pnpm build 固化 Git 来源，版本与帮助显示 commit/dirty，发行包保留元数据。
 
 - [CLI 设备级 Extra 配置目录](tasks/device-extra-directory/brief.md)：记录 CLI 唯一配置源、SDK 宿主边界与实施计划。

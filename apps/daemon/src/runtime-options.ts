@@ -20,7 +20,7 @@ export function resolveDaemonRuntimePaths(args = process.argv.slice(2), env: Nod
     consoleOutput: args.includes("--console"),
     socketPath: option(args, ["--socket"], env.OCTO_RUNTIME_SOCKET ?? socket),
     manifestPath: resolve(option(args, ["--manifest"], env.OCTO_RUNTIME_MANIFEST ?? fileURLToPath(new URL("../../../config/adapters.json", import.meta.url)))),
-    hostEntrypoint: resolve(option(args, ["--adapter-host", "--host-entrypoint"], env.OCTO_RUNTIME_ADAPTER_HOST ?? fileURLToPath(new URL("../../adapter-host/dist/index.js", import.meta.url))))
+    hostEntrypoint: resolve(option(args, ["--adapter-host", "--host-entrypoint"], env.OCTO_RUNTIME_ADAPTER_HOST ?? fileURLToPath(import.meta.resolve("@mininglamp-oss/octo-runtime-adapter-host/runner"))))
   };
 }
 

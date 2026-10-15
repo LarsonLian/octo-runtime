@@ -367,7 +367,7 @@ test("temporary IPC and parallel playboards preserve a resident daemon and persi
     homePath: home,
     socketPath: join(settings.directory, "resident.sock"),
     manifestPath: settings.manifest,
-    hostEntrypoint: join(root, "apps/adapter-host/dist/index.js")
+    hostEntrypoint: join(root, "packages/octo-runtime-adapter-host/dist/runner.js")
   });
   try {
     const ledger = join(home, "run/invocations.json");

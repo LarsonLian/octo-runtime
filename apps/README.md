@@ -7,7 +7,8 @@
 | 入口 | 负责 | 实现依赖 |
 |---|---|---|
 | [cli](cli/README.md) | 运维、Home/profile、原生服务与诊断 | cross-service、daemon |
-| [daemon](daemon/README.md) | 配置、进程启动、信号转发 | daemon 装配 worker-access 与共享 Host |
-| [adapter-host](adapter-host/README.md) | 独立 Host 进程与 stdio IPC | adapter-host、Adapters |
+| [daemon](daemon/README.md) | 配置、进程启动、信号转发 | daemon 与共享 Host |
 
-沿用已有 CLI，不为 IM 或本地助理新增 Runtime 项目。Worker 与 IM 是 packages 中的接入模块，所有 AgentRun 通过同一个 adapter-host 执行。IM 包当前仅骨架。
+apps 只保留 CLI 与 daemon。daemon 直接解析 `@mininglamp-oss/octo-runtime-adapter-host/runner` 并启动独立子进程，通过 stdio RPC 调用共享 Host；SDK 使用同一个 runner。Host 的独立进程边界不要求独立 app 包，详见 [AdapterHost](../packages/octo-runtime-adapter-host/README.md)。
+
+外部业务接入由 packages 中的 Extra 提供，所有执行复用共享 Host。`octo-runtime` 及其子命令保持原有用法。

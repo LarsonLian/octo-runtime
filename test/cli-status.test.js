@@ -74,7 +74,7 @@ test("status includes each loaded Extra JSON and isolates lifecycle and query fa
   const expected = { bots: [{ connected: true, state: "online" }], custom: { nested: [1, false, null] } };
   const app = await startDaemonServer({ homePath: home, socketPath,
     manifestPath: join(root, "test/fixtures/adapters.json"),
-    hostEntrypoint: join(root, "apps/adapter-host/dist/index.js"),
+    hostEntrypoint: join(root, "packages/octo-runtime-adapter-host/dist/runner.js"),
     extras: [registration("healthy", ctx => ctx.onStatus(() => expected)),
       registration("empty", () => {}),
       registration("broken-status", ctx => ctx.onStatus(() => { throw new Error("private-do-not-show"); })),

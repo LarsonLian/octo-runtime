@@ -34,7 +34,7 @@ test("tool overrides cross a real Host subprocess and reach child tools without 
   t.after(() => rm(root, { recursive: true, force: true }));
   const manifest = join(root, "adapters.json");
   await writeFile(manifest, JSON.stringify({ version: 1, adapters: [{ type: "tool-env", module: resolve("test/fixtures/tool-environment-adapter.js"), export: "adapter" }] }));
-  const host = await spawnAdapterHost({ entrypoint: resolve("apps/adapter-host/dist/index.js"), manifest,
+  const host = await spawnAdapterHost({ entrypoint: resolve("packages/octo-runtime-adapter-host/dist/runner.js"), manifest,
     env: { ...process.env, OCTO_RUNTIME_HOME: root, OCTO_RUNTIME_DEBUG: "1", OCTO_BOT_TOKEN: "wrong-device", OCTO_API_BASE_URL: "wrong-device" } });
   t.after(() => host.close());
   const original = structuredClone(context);

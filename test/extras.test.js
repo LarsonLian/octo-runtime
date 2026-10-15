@@ -271,7 +271,7 @@ test(
       homePath: home,
       socketPath: join(home, "sockets/octo-runtime-daemon.sock"),
       manifestPath: join(root, "test/fixtures/adapters.json"),
-      hostEntrypoint: join(root, "apps/adapter-host/dist/index.js")
+      hostEntrypoint: join(root, "packages/octo-runtime-adapter-host/dist/runner.js")
     };
     for (let attempt = 0; attempt < 2; attempt++) {
       const app = await startDaemonServer({

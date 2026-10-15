@@ -27,7 +27,6 @@ packages:
 apps/
   cli/                  面向用户的 Unix socket CLI
   daemon/               daemon executable 与装配根
-  adapter-host/         manifest-driven adapter host executable
 
 packages/
   octo-runtime-protocol/             canonical protocol
@@ -36,7 +35,7 @@ packages/
   octo-runtime-extra-channel-gateway/ optional Octo IM integration
   octo-runtime-extra-channel-wecom/   optional WeCom integration
   octo-runtime-extra-sse-demo/        optional HTTP/SSE invocation example
-  octo-runtime-adapter-host/         adapter lifecycle and RPC library
+  octo-runtime-adapter-host/         adapter lifecycle, RPC and standalone runner
   octo-runtime-adapter-sdk/          adapter authoring helpers
   octo-runtime-acp-client/           reusable ACP client
   octo-runtime-adapter-*/            provider adapter definitions
@@ -99,10 +98,10 @@ pnpm cli status
 pnpm --recursive list --depth -1
 ```
 
-运行单个 app：
+单独运行 Host runner（通常由 daemon 自动启动）：
 
 ```bash
-pnpm --filter @mininglamp-oss/octo-runtime-adapter-host-app start
+pnpm host
 ```
 
 查看单个 package 的依赖：
@@ -131,7 +130,7 @@ pnpm --filter @mininglamp-oss/octo-runtime-adapter-codex list
 2. 包名使用 `@mininglamp-oss/octo-runtime-adapter-foo`，依赖 `@mininglamp-oss/octo-runtime-adapter-sdk: workspace:*`。
 3. 实现 metadata、probe、invoke、session 和 canonical event mapping。
 4. 在 [config/adapters.json](../../config/adapters.json) 注册 adapter type/module/export。
-5. 按实际装配入口，在 `apps/adapter-host/package.json` 和 `packages/octo-runtime-adapter-host/package.json` 增加所需 workspace dependency，确保独立进程与 SDK 内置 Host 都能解析模块。
+5. 在 `packages/octo-runtime-adapter-host/package.json` 增加所需 workspace dependency；标准 CLI 发行时同步根生产依赖，确保 runner 在源码和发行物中都能解析模块。CLI daemon 与 SDK 都独立启动该 package runner。
 6. 若根测试直接 import 该包，在根 `devDependencies` 增加 workspace dependency。
 7. 在 `test/` 添加 native event、success/error/cancel/session resume 契约测试。
 8. README 至少说明包的作用、设计原则、适用场景、明确边界和最小用法，并在 [Packages And Adapter Guide](../../packages/README.md) 与 provider matrix 中建立入口。

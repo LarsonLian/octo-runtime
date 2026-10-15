@@ -50,14 +50,31 @@ sequenceDiagram
 
 ## 使用
 
+### 独立进程入口
+
+CLI daemon 与 SDK 都通过 package exports 解析 `@mininglamp-oss/octo-runtime-adapter-host/runner`，用 Node 启动独立子进程。`apps/` 只保留 CLI 与 daemon，不再另建 Host app。runner 读取 manifest、动态加载并校验 Adapter、启动 stdio RPC server；库提供注册、调用生命周期、RPC 和子进程管理。
+
+```text
+CLI → UDS / Pipe → daemon → stdio NDJSON JSON-RPC → package runner → Provider Adapter
+```
+
+一个 daemon 共享一个 Host 子进程，Host 按 manifest 加载多个 Adapter 模块；不是每个 Adapter 或每次调用启动一个常驻 Host。Provider CLI 进程由各 Adapter 管理。daemon 继续保留 Host 就绪握手、取消、异常收口与重启监督；Host 重启不重放中断调用。
+
+独立进程用于隔离 Adapter 加载或崩溃对 daemon 的影响，不是安全沙箱。多个 Adapter 仍共享 Host 进程和宿主用户权限。目录收敛不改变该进程边界，也不修改已有 Home、身份、profile 或配置。宿主指定的入口覆盖继续有效。
+
+在源码仓库可用 `pnpm host` 单独运行 runner；正常使用只需启动 daemon。新增 Adapter 时在本包声明生产依赖并更新 manifest。
+
+### 自定义宿主
+
 宿主要加载的适配器由 manifest（`config/adapters.json`）声明。正常运行时由 daemon 负责拉起宿主子进程并与之通信，无需手工实例化；如需在自定义进程中直接驱动，使用 `spawnAdapterHost`：
 
 ```ts
 import { spawnAdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
 import type { InvokeInput } from "@mininglamp-oss/octo-runtime-protocol";
+import { fileURLToPath } from "node:url";
 
 const host = await spawnAdapterHost({
-  entrypoint: "apps/adapter-host/dist/index.js",
+  entrypoint: fileURLToPath(import.meta.resolve("@mininglamp-oss/octo-runtime-adapter-host/runner")),
   manifest: "config/adapters.json"
 });
 

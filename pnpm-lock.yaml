@@ -103,45 +103,6 @@ importers:
         specifier: ^8.68.0
         version: 8.68.0(eslint@10.9.1(jiti@2.7.0))(typescript@6.0.3)
 
-  apps/adapter-host:
-    dependencies:
-      '@mininglamp-oss/octo-runtime-adapter-claude-code':
-        specifier: workspace:*
-        version: link:../../packages/octo-runtime-adapter-claude-code
-      '@mininglamp-oss/octo-runtime-adapter-codebuddy':
-        specifier: workspace:*
-        version: link:../../packages/octo-runtime-adapter-codebuddy
-      '@mininglamp-oss/octo-runtime-adapter-codex':
-        specifier: workspace:*
-        version: link:../../packages/octo-runtime-adapter-codex
-      '@mininglamp-oss/octo-runtime-adapter-hermes':
-        specifier: workspace:*
-        version: link:../../packages/octo-runtime-adapter-hermes
-      '@mininglamp-oss/octo-runtime-adapter-host':
-        specifier: workspace:*
-        version: link:../../packages/octo-runtime-adapter-host
-      '@mininglamp-oss/octo-runtime-adapter-kimi-code':
-        specifier: workspace:*
-        version: link:../../packages/octo-runtime-adapter-kimi-code
-      '@mininglamp-oss/octo-runtime-adapter-mcode':
-        specifier: workspace:*
-        version: link:../../packages/octo-runtime-adapter-mcode
-      '@mininglamp-oss/octo-runtime-adapter-openclaw':
-        specifier: workspace:*
-        version: link:../../packages/octo-runtime-adapter-openclaw
-      '@mininglamp-oss/octo-runtime-adapter-opencode':
-        specifier: workspace:*
-        version: link:../../packages/octo-runtime-adapter-opencode
-      '@mininglamp-oss/octo-runtime-adapter-qodercli':
-        specifier: workspace:*
-        version: link:../../packages/octo-runtime-adapter-qodercli
-      '@mininglamp-oss/octo-runtime-adapter-qoderclicn':
-        specifier: workspace:*
-        version: link:../../packages/octo-runtime-adapter-qoderclicn
-      '@mininglamp-oss/octo-runtime-adapter-zcode-gui':
-        specifier: workspace:*
-        version: link:../../packages/octo-runtime-adapter-zcode-gui
-
   apps/cli:
     dependencies:
       '@mininglamp-oss/octo-runtime-adapter-host':

@@ -9,7 +9,7 @@ import { spawnAdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
 import { startDaemonServer } from "@mininglamp-oss/octo-runtime-daemon";
 import { invokeRequest } from "./runtime-fixture.js";
 
-const entrypoint = resolve("apps/adapter-host/dist/index.js");
+const entrypoint = resolve("packages/octo-runtime-adapter-host/dist/runner.js");
 const manifest = resolve("test/fixtures/adapters.json");
 
 for (const debug of [undefined, "0", "true", "1"]) {

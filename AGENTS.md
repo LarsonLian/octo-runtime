@@ -6,7 +6,7 @@
 
 ## 目录与命令
 
-- `apps/`：CLI、daemon 和 adapter-host 入口。
+- `apps/`：CLI 和 daemon 入口；独立 Host 子进程使用 adapter-host package 的 runner。
 - `packages/`：协议、执行内核、daemon SDK、Provider Adapter 和 Extra。
 - `test/`：跨包测试；包内测试按各包目录维护。
 - `.octospec/rules/`、`.octospec/guides/`：当前合同与操作指南；历史结论放 journal。

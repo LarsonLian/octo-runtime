@@ -20,7 +20,7 @@ test("Daemon IM RPC dynamically manages one endpoint and never discovers client 
     socketPath,
     homePath: home,
     manifestPath: join(root, "test/fixtures/adapters.json"),
-    hostEntrypoint: join(root, "apps/adapter-host/dist/index.js")
+    hostEntrypoint: join(root, "packages/octo-runtime-adapter-host/dist/runner.js")
   });
   t.after(async () => {
     await app.close();

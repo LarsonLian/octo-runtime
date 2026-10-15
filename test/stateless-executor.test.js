@@ -36,7 +36,7 @@ test("daemon executes with IM enabled without databases and does not recover old
     homePath: home,
     socketPath: join(home, "sockets", "daemon.sock"),
     manifestPath: join(root, "test/fixtures/adapters.json"),
-    hostEntrypoint: join(root, "apps/adapter-host/dist/index.js"),
+    hostEntrypoint: join(root, "packages/octo-runtime-adapter-host/dist/runner.js"),
     modules: [{ id: "channel-gateway", create: createImModule, config: { bots: [] } }]
   };
   let app = await startDaemonServer(options);

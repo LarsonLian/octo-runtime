@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
@@ -21,6 +21,8 @@ try {
   const installed = join(directory, process.platform === "win32" ? "node_modules" : "lib/node_modules",
     "@mininglamp-oss/octo-runtime");
   const metadata = JSON.parse(await readFile(join(installed, "package.json"), "utf8"));
+  assert.deepEqual((await readdir(join(installed, "apps"))).sort(), ["cli", "daemon"]);
+  await access(join(installed, "node_modules/@mininglamp-oss/octo-runtime-adapter-host/dist/runner.js"));
   assert.deepEqual(metadata.exports, {});
   assert.equal(metadata.scripts, undefined);
   for (const [name, version] of Object.entries(metadata.dependencies)) {

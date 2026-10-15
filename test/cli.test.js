@@ -30,7 +30,7 @@ test("CLI exposes Runtime operations and process-local Run controls", async () =
     socketPath: join(home, "sockets", "octo-runtime-daemon.sock"),
     homePath: home,
     manifestPath: join(root, "test/fixtures/adapters.json"),
-    hostEntrypoint: join(root, "apps/adapter-host/dist/index.js")
+    hostEntrypoint: join(root, "packages/octo-runtime-adapter-host/dist/runner.js")
   });
   const cli = async args => JSON.parse((await execute(
     process.execPath, [join(root, "apps/cli/dist/index.js"), ...args],
@@ -175,7 +175,7 @@ test("daemon PID file enforces one process per Runtime Home and is removed on cl
     socketPath: join(home, "sockets", "octo-runtime-daemon.sock"),
     homePath: home,
     manifestPath: join(root, "test/fixtures/adapters.json"),
-    hostEntrypoint: join(root, "apps/adapter-host/dist/index.js")
+    hostEntrypoint: join(root, "packages/octo-runtime-adapter-host/dist/runner.js")
   };
   const app = await startDaemonServer(options);
   try {
@@ -216,7 +216,7 @@ test("daemon terminalizes in-flight work and restarts adapter-host without exiti
     socketPath: join(home, "sockets", "octo-runtime-daemon.sock"),
     homePath: home,
     manifestPath: join(root, "test/fixtures/adapters.json"),
-    hostEntrypoint: join(root, "apps/adapter-host/dist/index.js"),
+    hostEntrypoint: join(root, "packages/octo-runtime-adapter-host/dist/runner.js"),
     adapterHostRestartDelaysMs: [500, 100, 100, 100]
   });
   try {

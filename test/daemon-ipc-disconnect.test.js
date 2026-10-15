@@ -19,7 +19,7 @@ test("a broken IPC client closes only its connection and leaves the daemon ready
     socketPath,
     homePath: home,
     manifestPath: join(root, "test/fixtures/adapters.json"),
-    hostEntrypoint: join(root, "apps/adapter-host/dist/index.js")
+    hostEntrypoint: join(root, "packages/octo-runtime-adapter-host/dist/runner.js")
   });
   const accepted = new Promise(resolve => app.server.once("connection", resolve));
   const client = net.createConnection(socketPath);

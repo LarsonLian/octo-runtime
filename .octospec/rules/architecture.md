@@ -87,6 +87,10 @@ Agent 定义、业务任务、会话历史及 Provider session binding 由业务
 
 当前 AdapterHost 运行在独立子进程中，daemon 负责启动和管理它。SDK、内部 IPC 和 Extra 都复用该内核，不为每种外部系统另建执行内核。
 
+可执行 app 只保留 `apps/cli` 与 `apps/daemon`。AdapterHost 的子进程入口统一使用 `@mininglamp-oss/octo-runtime-adapter-host/runner`，不再维护 `apps/adapter-host` 启动壳。独立进程边界与独立 workspace 包是两件事：daemon 必须继续通过 stdio RPC 调用 Host，不得将 Provider Adapter 内联到 daemon 进程。CLI daemon 和 SDK 必须解析同一个 package runner；宿主显式指定的 Host 入口覆盖仍然有效。
+
+这次目录收敛必须保留 `octo-runtime` 的现有命令、参数和执行行为。构建、测试及单一 npm 发行物必须携带 runner 与 Adapter 生产依赖，不得再依赖旧 app 路径。更新程序后使用原 Home、身份、profile 和配置，不为入口迁移重新初始化 Runtime。验收范围见 [移除 Host app 任务](../tasks/remove-adapter-host-app/brief.md)。
+
 ### Extra 外部接入插件
 
 每个 Extra 负责自己与外部系统的连接启动、认证、请求接收、业务路由、执行交互和结果投递。外部系统下发的请求由 Extra 转为统一执行请求，交给共享 AdapterHost；执行事件和结果由 Extra 按外部系统协议回传。
