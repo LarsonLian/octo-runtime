@@ -241,7 +241,7 @@ test("shared runtime dispatches WeCom text to Codex and replies using the origin
   const count = f.frames.length;
   await delay(600);
   assert.equal(f.frames.length, count, "no progress after final reply");
-  assert.equal(runtime.status.sessions.length, 1);
+  assert.equal(runtime.status.sessions.length, 0);
   const oldSession = calls[0].agentSessionId;
   f.socket.send(
     JSON.stringify({

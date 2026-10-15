@@ -10,6 +10,8 @@ export interface ImSessionBinding {
   id?: string;
   generation: number;
   providerSession?: ProviderSession;
+  lastEventId?: string;
+  lastRunId?: string;
 }
 export interface ImSessionStore {
   read(key: string): ImSessionBinding | undefined;

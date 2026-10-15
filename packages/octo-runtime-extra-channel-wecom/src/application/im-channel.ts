@@ -12,7 +12,8 @@ import type {
   ImBotConfig,
   ImConnectionState,
   ImSession,
-  ImInboundMessage
+  ImInboundMessage,
+  ImRunControls
 } from "../contracts.js";
 import type { ImModuleDependencies } from "../ports.js";
 import { imBotIdentity, validateImConfig } from "../lifecycle/configuration.js";
@@ -92,8 +93,7 @@ export class ImRuntime {
     this.#connectionAbort = new AbortController();
     const signal = AbortSignal.any([this.#abort.signal, this.#connectionAbort.signal]);
     const credentials =
-      this.dependencies.credentials ??
-      ((config) => Promise.resolve(config.app_secret));
+      this.dependencies.credentials ?? ((config) => Promise.resolve(config.app_secret));
     const connector = new WecomTransport(this.config, credentials, {
       authorizeSpace: this.dependencies.authorizeSpace,
       onMessage: (message) => {
@@ -228,12 +228,58 @@ export class ImRuntime {
       );
       return;
     }
-    let session = this.#sessions.get(key);
-    if (!session) {
-      if (this.#sessions.size >= 128) {
-        this.#diagnostic("IM_SESSION_CAPACITY_EXHAUSTED");
+    let session: ImSession | undefined;
+    try {
+      session = this.#session(key);
+      if (command === "/reset") {
+        try {
+          const binding = this.#sessionStore.reset(key, message.messageId);
+          session.id = binding.id;
+          session.generation = binding.generation;
+          session.providerSession = binding.providerSession;
+          session.lastRunId = undefined;
+          void this.#reply(message, "会话已经重置", `control:${message.messageId}`, true).catch(
+            () => {
+              this.#seen.delete(dedupe);
+              this.#diagnostic("IM_RESET_REPLY_FAILED");
+            }
+          );
+        } catch {
+          this.#seen.delete(dedupe);
+          void this.#reply(
+            message,
+            "会话重置失败，请重试。",
+            `reset-failed:${message.messageId}`
+          ).catch(() => this.#diagnostic("IM_RESET_FAILED"));
+        }
         return;
       }
+      if (command === "/stop" || command === "/cancel") {
+        // 控制命令绕过普通消息队列，否则 stop 会排在待取消的长任务之后。
+        const invocationId = session.activeInvocationId;
+        void (async () => {
+          const cancelled = invocationId
+            ? (await this.dependencies.host.cancel(invocationId, "IM user stop")).cancelled
+            : false;
+          await this.#reply(
+            message,
+            cancelled ? "已请求停止本轮执行。" : "当前没有可停止的执行。",
+            `control:${message.messageId}`
+          );
+        })().catch(() => this.#diagnostic("IM_CANCEL_FAILED"));
+        return;
+      }
+      this.#enqueue(message, key);
+    } catch {
+      this.#seen.delete(dedupe);
+      this.#diagnostic("IM_SESSION_STORE_FAILED");
+    } finally {
+      if (session) this.#releaseSession(key, session);
+    }
+  }
+  #session(key: string): ImSession {
+    let session = this.#sessions.get(key);
+    if (!session) {
       session = {
         generation: 1,
         ...this.#sessionStore.read(key),
@@ -242,57 +288,28 @@ export class ImRuntime {
       };
       this.#sessions.set(key, session);
     }
-    if (command === "/reset") {
-      try {
-        const binding = this.#sessionStore.reset(key, message.messageId);
-        session.id = binding.id;
-        session.generation = binding.generation;
-        session.providerSession = binding.providerSession;
-        session.lastRunId = undefined;
-        void this.#reply(message, "会话已经重置", `control:${message.messageId}`, true).catch(
-          () => {
-            this.#seen.delete(dedupe);
-            this.#diagnostic("IM_RESET_REPLY_FAILED");
-          }
-        );
-      } catch {
-        this.#seen.delete(dedupe);
-        void this.#reply(
-          message,
-          "会话重置失败，请重试。",
-          `reset-failed:${message.messageId}`
-        ).catch(() => this.#diagnostic("IM_RESET_FAILED"));
-      }
-      return;
-    }
-    if (command === "/stop" || command === "/cancel") {
-      // 控制命令绕过普通消息队列，否则 stop 会排在待取消的长任务之后。
-      const invocationId = session.activeInvocationId;
-      void (async () => {
-        const cancelled = invocationId
-          ? (await this.dependencies.host.cancel(invocationId, "IM user stop")).cancelled
-          : false;
-        await this.#reply(
-          message,
-          cancelled ? "已请求停止本轮执行。" : "当前没有可停止的执行。",
-          `control:${message.messageId}`
-        );
-      })().catch(() => this.#diagnostic("IM_CANCEL_FAILED"));
-      return;
-    }
-    try {
-      this.#enqueue(message, key, session);
-    } catch {
-      this.#seen.delete(dedupe);
-      this.#diagnostic("IM_SESSION_STORE_FAILED");
-    }
+    return session;
   }
-  #enqueue(
+  #releaseSession(key: string, session: ImSession): void {
+    if (!session.pending && !session.activeInvocationId && this.#sessions.get(key) === session)
+      this.#sessions.delete(key);
+  }
+  #runControls(
     message: ImInboundMessage,
     key: string,
-    session: ImSession,
-    occurrenceId?: string
-  ): boolean {
+    invocationId: string
+  ): ImRunControls & { failed: boolean } {
+    const controls = {
+      failed: false,
+      cancel: async () =>
+        this.#sessions.get(key)?.activeInvocationId === invocationId &&
+        (await this.dependencies.host.cancel(invocationId, "IM card stop")).cancelled,
+      retry: (senderId: string, id: string): boolean =>
+        controls.failed && this.#enqueue({ ...message, senderId }, key, id)
+    };
+    return controls;
+  }
+  #enqueue(message: ImInboundMessage, key: string, occurrenceId?: string): boolean {
     if (this.#closed || this.#pending >= 64) {
       this.#diagnostic("IM_INBOUND_CAPACITY_EXHAUSTED");
       return false;
@@ -311,24 +328,30 @@ export class ImRuntime {
       );
       return false;
     }
-    if (message.text.trim() !== "/session" && !session.id) {
-      const binding = { id: `as_${randomUUID()}`, generation: session.generation };
-      this.#sessionStore.save(key, binding);
-      session.id = binding.id;
+    const session = this.#session(key);
+    try {
+      if (message.text.trim() !== "/session" && !session.id) {
+        const binding = { id: `as_${randomUUID()}`, generation: session.generation };
+        this.#sessionStore.save(key, binding);
+        session.id = binding.id;
+      }
+      const executionSession = { ...session };
+      this.#queuedOccurrences.add(queuedKey);
+      session.pending++;
+      this.#pending++;
+      session.tail = session.tail
+        .then(() => this.#turn(message, key, session, occurrenceId, executionSession))
+        .catch(() => this.#diagnostic("IM_TURN_FAILED"))
+        .finally(() => {
+          this.#queuedOccurrences.delete(queuedKey);
+          session.pending--;
+          this.#pending--;
+          this.#releaseSession(key, session);
+        });
+      return true;
+    } finally {
+      this.#releaseSession(key, session);
     }
-    const executionSession = { ...session };
-    this.#queuedOccurrences.add(queuedKey);
-    session.pending++;
-    this.#pending++;
-    session.tail = session.tail
-      .then(() => this.#turn(message, key, session, occurrenceId, executionSession))
-      .catch(() => this.#diagnostic("IM_TURN_FAILED"))
-      .finally(() => {
-        this.#queuedOccurrences.delete(queuedKey);
-        session.pending--;
-        this.#pending--;
-      });
-    return true;
   }
   async #reply(
     message: ImInboundMessage,
@@ -420,6 +443,11 @@ export class ImRuntime {
         this.#abort.signal,
         occurrenceId
       );
+      if (session.id === prepared.request.agentSessionId) {
+        session.lastEventId = executionSession.lastEventId;
+        session.lastRunId = prepared.request.runId;
+        this.#saveBinding(key, session);
+      }
       const snapshot = { ...prepared.request };
       delete snapshot.signal;
       this.#sessionStore.remember(key, occurrenceId ?? message.messageId, {
@@ -439,35 +467,24 @@ export class ImRuntime {
     }
     if (this.#closed) return;
     const { request } = prepared;
-    if (session.id === request.agentSessionId) {
-      session.lastEventId = executionSession.lastEventId;
-      session.lastRunId = request.runId;
-    }
     const projector = new ImRunProjector(request.runId, message.conversationKind === "direct");
+    const controls = this.#runControls(message, key, request.invocationId);
     const presentation = message.beginPresentation?.(
       request.runId,
       (code) => this.#diagnostic(code, request.runId),
-      {
-        cancel: async () =>
-          session.activeInvocationId === request.invocationId &&
-          (await this.dependencies.host.cancel(request.invocationId, "IM card stop")).cancelled,
-        retry: (senderId, id) =>
-          projector.snapshot().terminal === "failed" &&
-          this.#enqueue({ ...message, senderId }, key, session, id)
-      }
+      controls
     );
     presentation?.update(projector.snapshot());
     session.activeInvocationId = request.invocationId;
     try {
-      for await (const event of this.dependencies.host.invoke({ ...invocationInput(request, "canonical"), protocol_mode: "canonical" }, { signal: request.signal })) {
+      for await (const event of this.dependencies.host.invoke(
+        { ...invocationInput(request, "canonical"), protocol_mode: "canonical" },
+        { signal: request.signal }
+      )) {
         if (this.#closed) break;
         if (event.type === "session.update" && session.id === request.agentSessionId) {
           session.providerSession = event.payload.providerSession;
-          this.#sessionStore.save(key, {
-            id: session.id,
-            generation: session.generation,
-            providerSession: session.providerSession
-          });
+          this.#saveBinding(key, session);
         }
         // 只有执行策略与事件策略均为 full_access 的审批才是自动处理的审计记录。
         // 问题/elicitation 仍须展示并交回原交互入口，不能一并过滤。
@@ -506,6 +523,7 @@ export class ImRuntime {
         if (event.type === "interaction.resolved")
           this.#interactions.delete(event.payload.interactionId);
         projector.accept(event);
+        controls.failed = projector.snapshot().terminal === "failed";
         presentation?.update(projector.snapshot());
       }
       if (!projector.snapshot().terminal) throw new Error("IM_RUN_WITHOUT_TERMINAL");
@@ -540,6 +558,15 @@ export class ImRuntime {
             : "本轮执行结果未知，请查看运行记录，避免重复执行。";
     // 最终文本拥有独立投递身份，即使进度卡投递失败，也必须尝试回复用户。
     await this.#reply(message, text, `final:${request.runId}`);
+  }
+  #saveBinding(key: string, session: ImSession): void {
+    this.#sessionStore.save(key, {
+      id: session.id,
+      generation: session.generation,
+      providerSession: session.providerSession,
+      lastEventId: session.lastEventId,
+      lastRunId: session.lastRunId
+    });
   }
   async close(): Promise<void> {
     if (this.#closed) return;

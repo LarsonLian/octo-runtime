@@ -2,6 +2,8 @@
 
 ## 2026-10-15
 
+- 修复 Alpha review F2：Octo/WeCom 回收闲置会话调度条目，移除累计 128 个会话门槛，旧卡片重试进入当前队列。双渠道分别验证模拟每日一万个会话，追加 [评审修正状态](journal/shared/2026-10-15-alpha-code-review.md)及[验证记录](journal/shared/2026-10-15-im-session-scheduling-release.md)；完整 AdapterHost 无缓存目标、S1/F1 保持待实施。
+
 - 将 OpenClaw 自动发现和刷新移到 CLI 启动编排，SDK 显式配置，Adapter 只读连接；见 [合同](rules/openclaw.md)与[验证记录](journal/shared/2026-10-15-openclaw-cli-discovery.md)。
 
 - 接入 octo-spec / OKF，补充中文 Agent 入口、规则索引与工作流。

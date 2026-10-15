@@ -32,6 +32,14 @@ supersedes: []
 
 ## 当前内置 IM 存储
 
+### 调度状态与业务 binding 分开
+
+Octo 与 WeCom 的 `ImRuntime.#sessions` 只登记有排队或在途执行的调度对象，不是历史会话列表，不设累计 128 个会话的接待门槛。当前队列计数为零且没有活动 invocation 时立即删除；准备失败、Provider 异常、控制命令和拒绝入队也执行同一释放检查。终态后的最终投递仍属于当前队列工作，投递结束后再释放。
+
+状态查询的 `sessions` 只返回上述在途条目。`/session` 从业务 store 恢复 binding 和最近 Run 元数据；回收调度对象不主动 reset 或删除业务 binding。卡片 cancel 按当前 key 与 invocation 查找；retry 重新进入当前队列，不能捕获并重新使用已经释放的调度对象。
+
+单设备每天一万个 Session 表示累计接待量，不等于一万个并发模型执行。已有每 Bot 64 条待处理消息限制继续约束在途消息，不随历史会话数量消耗；默认 store 的容量和期限仍是下述独立业务合同。此修复不代表 AdapterHost 的历史源窗口已经移除，也不承诺默认内存 store 保存一天内全部一万个 binding。
+
 当前 [Octo 接入模块](../../packages/octo-runtime-extra-channel-gateway/src/daemon-module.ts) 使用 [MemoryImSessionStore](../../packages/octo-runtime-extra-channel-gateway/src/application/session-store.ts)，不创建 `im-sessions.db`，不承诺跨进程恢复。WeCom 包使用自己的同类内存实现。
 
 | 数据 | 数量上限 | 序列化大小上限 | 保留时间 |
@@ -47,6 +55,7 @@ Work App 的业务会话和完整事件保存在它自己的存储中，不属�
 ## 验证入口
 
 - [im-session-store.test.js](../../test/im-session-store.test.js)：映射、reset、容量、过期与关闭。
+- [im-session-scheduling.test.js](../../test/im-session-scheduling.test.js)：两种渠道分别接待一万个不同会话、闲置回收、续聊、卡片重试、失败、排队、reset 与关闭；使用 `--expose-gc` 时额外断言预热后堆内存增长。
 - [im-runtime.test.js](../../test/im-runtime.test.js)、[im-wecom.test.js](../../test/im-wecom.test.js)：入口控制命令与执行行为。
 - [stateless-executor.test.js](../../test/stateless-executor.test.js)：daemon 不创建数据库、重启不恢复旧 Run。
 

@@ -341,7 +341,7 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   send("hello");
   await waitFor(() => replies.length === 1);
   assert.equal(replies[0], "完整答复");
-  const session = runtime.status.sessions[0].sessionId;
+  const session = calls[0].agentSessionId;
   send("/session");
   await waitFor(() => replies.length === 2);
   assert.match(replies[1], new RegExp(session));
@@ -361,7 +361,7 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   await waitFor(() => replies.some((reply) => reply.includes("不属于当前会话")));
   assert.equal(responses.length, 0);
   send("/approve interaction-fixture");
-  await waitFor(() => responses.length === 1 && !runtime.status.sessions[0].active);
+  await waitFor(() => responses.length === 1 && runtime.status.sessions.length === 0);
   assert.equal(responses[0].invocationId, calls[2].invocationId);
   assert.equal(responses[0].response.outcome, "accepted");
   send("wait");
