@@ -4,6 +4,18 @@ Octo Harness 是 provider-neutral 的本地 Agent Runtime。它把 Codex、Claud
 
 生产链路只有一种执行抽象：Agent Worker 创建 `AgentSession` 和 `AgentRun`，并在 Worker 内用统一 Coordination Ledger 组织 Team/Delegation/Mailbox；Harness 只接收 `run.start`，调用 provider，并把事件与 opaque provider session 回传。Buddy、IM 和 Loop 只是上游产品形态，不是 Harness 的多套执行或协调模式。
 
+## 客户系统融合：建议优先通过 SDK 接入
+
+**对于需要融入客户现有系统的 FDE 项目，建议客户系统直接通过 Harness SDK 接入 Adapter 执行能力。** 宿主应用调用 SDK，由 Harness／Host 调用对应 Adapter；相比把 `octo-harness` CLI／CMD 可执行程序作为业务调用入口，这种方式更适合持续会话、交互审批和应用内运行管理。
+
+- **接口明确**：通过类型化请求、结构化事件和错误处理执行结果，减少命令拼接、参数转义、终端输出解析和退出码映射的集成代码。
+- **生命周期可控**：宿主统一安排启动、停止、取消和交互答复，把执行状态接入自己的 UI 与业务流程，便于处理应用退出和执行中断。
+- **复用客户配置体系**：宿主沿用已有数据库、配置平台或自定义 store，按 SDK 契约传入配置，便于与客户的身份、权限和租户管理流程衔接。
+- **测试与诊断更直接**：围绕请求、事件和终态验证业务行为，便于将运行 ID、错误和执行事件关联到客户系统的日志与监控。
+- **便于定制和维护**：把 SDK 与 Adapter 依赖纳入客户应用的版本管理和发布流程，减少对全局 CLI、shell 环境和人工操作步骤的依赖。
+
+SDK 接入不表示所有执行都在宿主进程内完成；Harness／Host 和 Provider 仍可能使用独立子进程，部分 Adapter 仍依赖 Provider CLI。Runtime 及运行依赖的安装方案由 HostApp 决定。CLI 适合独立设备部署与运维、脚本操作和人工诊断；需要融合客户业务的应用优先采用 SDK。
+
 ## 责任边界
 
 | 组件 | 持有 | 不持有 |
