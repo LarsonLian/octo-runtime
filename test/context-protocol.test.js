@@ -244,22 +244,18 @@ test("Shared Unicode and number fixtures preserve ECMAScript canonical bytes", (
   );
 });
 
-test("Resolved plans reject malformed Unicode strings and nested property names", () => {
+test("Resolved plans reject malformed Unicode strings", () => {
   const plan = {
     agent_source: "provisioned",
     adapter_type: "codex",
     workdir: "/tmp",
     approval_mode: "ask",
-    provider_compatibility: { label: "😀\u2028\u2029" }
+    model: "😀\u2028\u2029"
   };
   assert.equal(validateDefinition("ResolvedExecutionPlan", plan), true);
   assert.doesNotThrow(() => assertResolvedExecutionPlan(plan));
-  for (const compatibility of [
-    { label: "\uD800" },
-    { ["\uDC00"]: "value" },
-    { nested: [{ label: "\uDFFF" }] }
-  ]) {
-    const invalid = { ...plan, provider_compatibility: compatibility };
+  for (const model of ["\uD800", "\uDC00", "\uDFFF"]) {
+    const invalid = { ...plan, model };
     assert.equal(validateDefinition("ResolvedExecutionPlan", invalid), false);
     assert.throws(() => assertResolvedExecutionPlan(invalid), /CONTEXT_SCHEMA_INVALID/);
   }

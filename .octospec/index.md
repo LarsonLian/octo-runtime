@@ -41,7 +41,7 @@
 ## 历史与取舍
 
 - [删除业务能力合同](tasks/remove-business-capability-contract/brief.md)：移除自有 capabilities、执行计划能力标签及 ExecutionTarget 预留设计；验证结果单独记录。
-- [后续协议简化检查](journal/shared/2026-10-15-protocol-simplification-review.md)：检查未消费的计划字段、业务场景白名单、渠道快照和重复执行参数；仅记录建议，尚未实施。
+- [后续协议简化检查](journal/shared/2026-10-15-protocol-simplification-review.md)：核实业务场景、渠道快照和内部派生参数的真实调用链；其中未消费计划字段按[后续任务](tasks/remove-unused-plan-fields/brief.md)删除，其余为建议。
 
 - [Playboard 统一 daemon 执行](tasks/playboard-daemon-execution/brief.md)：记录绕过 daemon、重复装配 OpenClaw 的问题与改造原因；当前工作树已统一临时 daemon、两层 RPC 和资源隔离，见[验证记录](journal/shared/2026-10-15-playboard-daemon-execution.md)。
 - [架构演进](journal/shared/architecture-evolution.md)：Git 节点、已撤回设计的问题和当前替代。

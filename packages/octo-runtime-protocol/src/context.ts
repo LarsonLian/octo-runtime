@@ -139,9 +139,7 @@ export function assertResolvedExecutionPlan(
     "approval_mode",
     "model",
     "effort",
-    "required_execution_features",
     "runtime_limits",
-    "provider_compatibility",
     "envs",
     "mcp"
   ]);
@@ -172,14 +170,6 @@ export function assertResolvedExecutionPlan(
   assertApprovalMode(value.approval_mode);
   for (const property of ["model", "effort"])
     if (value[property] !== undefined) text(value[property]);
-  if (
-    value.required_execution_features !== undefined &&
-    (!Array.isArray(value.required_execution_features) ||
-      value.required_execution_features.some((item) => typeof item !== "string" || !item))
-  )
-    throw new TypeError("RESOLVED_EXECUTION_PLAN_INVALID");
-  for (const property of ["runtime_limits", "provider_compatibility"])
-    if (value[property] !== undefined) object(value[property], "RESOLVED_EXECUTION_PLAN_INVALID");
   if (value.runtime_limits !== undefined) {
     object(value.runtime_limits, "RESOLVED_EXECUTION_PLAN_INVALID");
     limits(value.runtime_limits);

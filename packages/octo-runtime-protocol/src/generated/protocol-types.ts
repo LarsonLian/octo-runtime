@@ -2220,10 +2220,8 @@ export interface ResolvedExecutionPlan1 {
   effort?: string;
   approval_mode: ApprovalMode;
   runtime_limits?: ContextLimitsPayload;
-  provider_compatibility?: Record<string, unknown>;
   provider_agent_id?: string;
   agent_source: AgentSource;
-  required_execution_features?: string[];
   envs?: ContextEnvsPayload;
   mcp?: ContextMcpPayload;
 }

@@ -48,7 +48,7 @@ Host 按实际执行合同校验来源、模式、审批及输入。非空 MCP �
 
 ## 协议删除边界
 
-- 执行计划不再定义 `required_capabilities`；schema、生成类型和运行时字段白名单同步删除。提交该字段按未知执行计划字段拒绝，不转换为 `required_execution_features`。
+- 执行计划不再定义 `required_capabilities`、`required_execution_features` 或 `provider_compatibility`；schema、生成类型和运行时字段白名单同步删除。提交这些字段按未知执行计划字段拒绝，不进行改名转换。
 - 删除整个 `ExecutionTarget` 类型及校验器，不保留 `standard_harness_agent` / `ability_provider` 分支、`executor_id`、`provider_binding_ref`。通过既有 adapter 选择执行实现，Provider Agent 目标仍使用 `providerAgentId`。
 - SDK、AdapterHost 加载、发现和桌面映射不再输出或要求自有 capabilities 字段；旧额外标签不参与执行判断，也不作为新合同的一部分。
 - ACP 的 `agentCapabilities` / `clientCapabilities`、MCP 握手和 Codex app-server 初始化中的 capabilities 属于 Provider 原生协议，按原协议处理。

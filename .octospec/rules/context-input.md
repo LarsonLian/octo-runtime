@@ -52,7 +52,7 @@ renderer 只匹配 namespace/name 的白名单 pattern，保序输出全部数�
 
 ## 输入与工作目录
 
-执行计划已删除 `required_capabilities`，不能用业务标签约束本地执行。`required_execution_features` 仅表达真实执行要求，不承接旧业务标签。模型侧需要标签时由业务方显式放入合适的业务 Context，是否发送及如何使用均由业务决定，底层不据此进行能力匹配。完整边界见 [Adapter 元数据](adapter-metadata.md)。
+执行计划已删除 `required_capabilities`、`required_execution_features` 和 `provider_compatibility`。后两者没有实际执行消费者，不作为预留能力合同。模型侧需要标签时由业务方显式放入合适的业务 Context，是否发送及如何使用均由业务决定，底层不据此进行能力匹配。完整边界见 [Adapter 元数据](adapter-metadata.md)。
 
 公共入口使用 [InvokeInput](invoke-input.md)：`inputs` 保留本轮 text/image，`contexts` 保存业务方提交的 Context v3。Core 只解析本轮必要执行默认值；Host 冻结内部请求后，`withModelContexts` 将本轮渲染文本放在主输入及调用方显式提供的恢复输入之前，不查询业务历史。
 

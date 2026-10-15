@@ -2244,24 +2244,12 @@
         "runtime_limits": {
           "$ref": "#/definitions/ContextLimitsPayload"
         },
-        "provider_compatibility": {
-          "type": "object",
-          "additionalProperties": true,
-          "tsType": "Record<string, unknown>"
-        },
         "provider_agent_id": {
           "type": "string",
           "pattern": "^[a-z0-9_][a-z0-9_-]{0,63}$"
         },
         "agent_source": {
           "$ref": "#/definitions/AgentSource"
-        },
-        "required_execution_features": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
         },
         "envs": {
           "$ref": "#/definitions/ContextEnvsPayload"
