@@ -647,6 +647,32 @@ test("Cards create/edit one stable message with monotone card_seq and persistent
   assert.equal(f.requests.filter((request) => request.path === "/v1/bot/card/profile").length, 1);
 });
 
+test("A delivered progress card does not hide a failed terminal delivery", async () => {
+  let delivered = true;
+  const card = new CardSession(
+    { config: config(), reasoningTemplate: async () => selectReasoningTemplate(profile()) },
+    {
+      deliver: async () =>
+        delivered
+          ? { state: "delivered", messageId: "progress-card" }
+          : { state: "unknown", code: "IM_CARD_FAILED" }
+    },
+    { channelId: "peer", channelType: 1 },
+    "run",
+    () => {},
+    () => {}
+  );
+  const p = new ImRunProjector("run");
+  card.update(p.snapshot());
+  await card.finish();
+  assert.equal(card.messageId, "progress-card");
+  delivered = false;
+  p.accept(event("run.failed", { message: "spawn codex ENOENT" }));
+  card.update(p.snapshot());
+  await card.finish();
+  assert.equal(card.terminalDelivered, false);
+});
+
 test("Delivery retries use one effect key and never rerun execution", async () => {
   const delivery = new ImDeliveryDispatcher(new AbortController().signal);
   let attempts = 0;
