@@ -308,7 +308,7 @@ test("malformed stdin, unknown arguments and unsupported native mode fail clearl
   }
   const args = await execute(settings, echoInput(), { args: ["--unknown", "value"] });
   assert.equal(args.code, 1);
-  assert.match(args.stderr, /accepts only/);
+  assert.match(args.stderr, /unknown option/);
   const unsupported = await execute(settings, { ...echoInput(), protocol_mode: "native" });
   assert.equal(unsupported.code, 1);
   assert.equal(unsupported.stdout, "");

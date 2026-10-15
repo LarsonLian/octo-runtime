@@ -257,15 +257,13 @@ octo-runtime daemon restart
 
 首次使用系统后台服务时，先执行 `octo-runtime daemon install`，再执行 `octo-runtime daemon start`。
 
-daemon 启动后可查询或控制插件：
+daemon 启动后可查询本地状态：
 
 ```bash
-octo-runtime extra status
-octo-runtime extra unload channel-gateway
-octo-runtime extra load channel-gateway
+octo-runtime status
 ```
 
-`extra load` 使用 daemon 本次启动时读入的声明；修改 `extraset` 配置后必须重启 daemon 才会应用。`unload` 只卸载当前运行的插件；持久停用需重新提交完整声明，设置顶层 `enabled: false`，然后重启。
+修改配置通过 `extraset <name>` 保存完整声明，再执行 `daemon restart` 应用。持久停用保存顶层 `enabled: false` 后重启。CLI 不再提供 extra status/load/unload；SDK 宿主继续管理单插件生命周期。
 
 ### 1.5 查询状态和执行记录 <测试开发用>
 
@@ -276,8 +274,6 @@ octo-runtime status
 octo-runtime doctor
 octo-runtime adapter list
 octo-runtime adapter probe codex
-octo-runtime agent-run get <run-id>
-octo-runtime agent-run cancel <run-id>
 ```
 
 `doctor` 检查 Node、Home 配置、原生服务程序/管理器/定义和本地 IPC，并提供失败项的修复建议。全部通过退出码为 0，否则为 1。它不验证 Bot 凭据、逐 Bot 连接或云端在线状态；前台运行未安装原生服务时，服务定义检查仍可能失败。
@@ -336,8 +332,7 @@ stdout 为 NDJSON，native 模式每行一个 `HostFrame`，canonical 模式每�
 OpenClaw 可先配置 profile 的连接，再通过 Context 指定已有 Agent：
 
 ```bash
-octo-runtime --home "$HARNESS_HOME" --profile "$HARNESS_PROFILE" \
-  adapter connect openclaw --openclaw-home /absolute/openclaw-home
+# daemon 启动前设置 OPENCLAW_HOME，或由 SDK 宿主显式配置连接
 octo-runtime --home "$HARNESS_HOME" --profile "$HARNESS_PROFILE" adapter probe openclaw
 ```
 

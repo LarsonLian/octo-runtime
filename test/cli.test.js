@@ -53,7 +53,7 @@ test("CLI exposes Runtime operations and process-local Run controls", async () =
     await assert.rejects(cli(["logs", "query"]), /unknown command/);
     await assert.rejects(cli(["diagnostics"]), /unknown command/);
     await assert.rejects(cli(["diagnostics", "bundle"]), /unknown command/);
-    await assert.rejects(cli(["chat", "create", "--agent", "a-1"]), /unknown command/);
+    await assert.rejects(cli(["chat", "create", "--agent", "a-1"]), /unknown option/);
     await assert.rejects(cli(["task", "list"]), /unknown command/);
     await assert.rejects(cli(["trigger", "list"]), /unknown command/);
   } finally {
@@ -91,7 +91,8 @@ test("CLI command help is local and describes adapter operations", async () => {
   }
 
   const adapterHelp = await execute(process.execPath, [cli, "adapter", "--help"]);
-  assert.match(adapterHelp.stdout, /adapter connect openclaw/);
+  assert.match(adapterHelp.stdout, /Available Commands:\n  list\s+.*\n  probe/);
+  assert.doesNotMatch(adapterHelp.stdout, /connect/);
   assert.doesNotMatch(adapterHelp.stdout, /adapter setup/);
   assert.doesNotMatch(adapterHelp.stdout, /openclaw configure|openclaw init/);
   await assert.rejects(
@@ -101,6 +102,54 @@ test("CLI command help is local and describes adapter operations", async () => {
 });
 
 async function unusedLoopbackPort() {
+test("CLI help, version and removed commands never initialize Home or start a daemon", async () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const cli = join(root, "apps/cli/dist/index.js");
+  const directory = await mkdtemp(join(tmpdir(), "oh-cli-help-"));
+  const home = join(directory, "absent");
+  const version = JSON.parse(await readFile(join(root, "package.json"), "utf8")).version;
+  const run = args => execute(process.execPath, [cli, "--home", home, ...args], { timeout: 5000 });
+  try {
+    for (const args of [[], ["--help"], ["-h"], ["help"]]) {
+      const { stdout, stderr } = await run(args);
+      assert.ok(stdout.startsWith(`Octo Runtime CLI (${version})\n`));
+      assert.match(stdout, /Manage the local Agent runtime/);
+      assert.match(stdout, /Usage:\n/);
+      assert.match(stdout, /Flags:\n/);
+      assert.doesNotMatch(stdout, /agent-run|adapter connect|extra status/);
+      assert.equal(stderr, "");
+      const list = stdout.split("Available Commands:\n")[1].split("\n\n")[0];
+      assert.match(list, /\n  playboard\s+[^\n]+$/);
+    }
+    for (const args of [["--version"], ["-v"], ["version"]]) {
+      assert.equal((await run(args)).stdout.trim(), version);
+    }
+    const daemon = (await run(["daemon"])).stdout;
+    assert.equal(daemon, (await run(["daemon", "--help"])).stdout);
+    assert.equal(daemon, (await run(["help", "daemon"])).stdout);
+    assert.deepEqual([...daemon.matchAll(/^  (start|stop|restart|status|install|uninstall|run)\s/gm)].map(match => match[1]),
+      ["start", "stop", "restart", "status", "install", "uninstall", "run"]);
+    for (const action of ["start", "stop", "restart", "status", "install", "uninstall", "run"]) {
+      assert.match((await run(["daemon", action, "--help"])).stdout, new RegExp(`Usage:\\n  octo-runtime daemon ${action}`));
+    }
+    const playboard = (await run(["playboard", "--help"])).stdout;
+    assert.match(playboard, /Examples:/);
+    assert.match(playboard, /octo.context-envelope\/v3/);
+    assert.match(playboard, /Reference:/);
+    for (const args of [["extra", "status"], ["extra", "load", "x"], ["extra", "unload", "x"],
+      ["adapter", "connect", "openclaw"], ["agent-run", "get", "x"], ["agent-run", "cancel", "x"],
+      ["daemon", "missing", "--help"], ["help", "missing"]]) {
+      await assert.rejects(run(args), /unknown command/);
+    }
+    for (const args of [["daemon", "--quiet"], ["daemon", "start", "--bogus"], ["--home"], ["status", "extra"]]) {
+      await assert.rejects(run(args));
+    }
+    assert.equal(existsSync(home), false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
   const server = net.createServer();
   await new Promise((resolve, reject) => {
     server.once("error", reject);

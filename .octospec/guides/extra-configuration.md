@@ -51,7 +51,7 @@ Octo 与 WeCom 的多个 Bot 放在同一插件的 `config.bots` 数组中；添
 
 ```sh
 octo-runtime daemon restart
-octo-runtime extra status
+octo-runtime status
 ```
 
 没有安装后台服务时，可使用现有前台入口：
@@ -64,20 +64,20 @@ octo-runtime daemon run
 
 前台 `daemon run` 默认向 stderr 输出扫描目录、声明数量与名称、逐插件 loading 和启动结果；`--quiet` 关闭这些日志。日志不输出配置和凭据。缺少模块报告 `EXTRA_MODULE_NOT_FOUND`，配置权限错误报告 `EXTRA_CONFIG_PERMISSIONS_INVALID`。
 
-`extra status` 查询插件生命周期；`loaded` 仅表示初始化返回，不代表外部连接在线。支持业务状态的插件可按名称查询，例如：
+CLI 通过 `status` 查看 daemon 状态；SDK 的 `extraStatus()` 查询插件生命周期，`extraStatus(name)` 查询内部状态。`loaded` 仅表示初始化返回，不代表外部连接在线。例如宿主中：
 
-```sh
-octo-runtime extra status channel-gateway
+```ts
+await runtime.extraStatus("channel-gateway");
 ```
 
 Octo 返回逐 Bot 的 `state`、`connected` 和脱敏 `error`。`IM_BOT_TOKEN_INVALID` 表示凭据格式错误（例如仍是 `<BF_TOKEN>` 占位符），`IM_AUTH_HTTP_401` 表示服务拒绝鉴权。`api_url` 必须是纯 URL，不能填写 Markdown 链接。
 
 ```sh
-octo-runtime extra unload sse-demo
-octo-runtime extra load sse-demo
+# 在此通过 extraset sse-demo 保存最新完整声明
+octo-runtime daemon restart
 ```
 
-这两个操作只控制当前启动时读到的声明，不改持久化配置。重新 load 使用本次启动的配置快照；修改配置后必须重启。持久停用通过 `extraset` 写入 `enabled: false` 并重启。
+重启读取最新持久化声明。持久停用通过 `extraset` 保存 `enabled: false` 后重启；这会重启整个 daemon。需要单插件生命周期控制的宿主使用 SDK。
 
 ## SDK 与 Desktop App
 

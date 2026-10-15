@@ -1,9 +1,5 @@
 import { setExtra } from "./extras.js";
-import {
-  createOpenClawAdapter,
-  OPENCLAW_RUNTIME_ROOT
-} from "@mininglamp-oss/octo-runtime-adapter-openclaw";
-import { configureCliOpenClaw, type CliOpenClawInput } from "@mininglamp-oss/octo-runtime-daemon-app/openclaw";
+import { cliVersion, helpText, validateCommand } from "./help.js";
 import type { ServiceBackend } from "@mininglamp-oss/octo-runtime-cross-service";
 import { createHash, randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
@@ -70,6 +66,7 @@ interface CliContext {
 const DEFAULT_WAIT_MS = 30_000;
 const BOOLEAN_FLAGS = new Set([
   "help",
+  "version",
   "json",
   "noAutostart",
   "tokenStdin",
@@ -82,8 +79,18 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
   const normalizedArgs = [...args];
   if (normalizedArgs[0] === "--") normalizedArgs.shift();
   const { positionals, flags } = parseArguments(normalizedArgs);
+  const output = dependencies.output ?? (value => process.stdout.write(`${value}\n`));
+  const command = validateCommand(positionals, flags);
+  if (flags.version === true || (positionals[0] === "version" && flags.help !== true)) {
+    output(cliVersion);
+    return 0;
+  }
+  if (command.help) {
+    output(helpText(command.path));
+    return 0;
+  }
   if (positionals[0] === "playboard" && flags.help !== true) {
-    if (positionals.length !== 1 || Object.keys(flags).some(key => !["manifest", "home", "profile"].includes(key))) {
+    if (positionals.length !== 1 || Object.keys(flags).some(key => !["manifest", "home", "profile", "verbose"].includes(key))) {
       throw new Error("playboard accepts only --manifest, --home and --profile; pass the request JSON on stdin");
     }
     const { runPlayboard } = await import("./playboard.js");
@@ -99,7 +106,6 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
   const profile = optionalString(flags.profile) ?? "default";
   const home = optionalString(flags.home) ?? defaultRuntimeHome(dependencies.env, dependencies.platform);
   const paths = runtimePaths(home, profile);
-  const output = dependencies.output ?? (value => process.stdout.write(`${value}\n`));
   const context: CliContext = {
     env: dependencies.env ?? process.env,
     home: paths.home,
@@ -136,24 +142,19 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
 
 async function dispatchCli(context: CliContext): Promise<CommandResult> {
   const [group, action, id] = context.positionals;
-  if (!group || group === "help" || context.flags.help === true) {
-    return { value: helpText(group === "help" ? action : group) };
-  }
   if (group === "extraset") {
-    if (context.positionals.length !== 2 || Object.keys(context.flags).some(key => key !== "home"))
-      throw new Error("extraset accepts a name and --home; pass the complete JSON object on stdin");
     return { value: await setExtra(context.paths, required(action, "extra-name"), context.input) };
   }
-  if (group === "adapter" && action === "connect") return runAdapterConnectCommand(context, id);
   if (group === "daemon") return runDaemonCommand(context, action);
   if (group === "doctor") return runDoctor(context);
-  const request = daemonRequest(group, action, id, context.flags);
+  const request = daemonRequest(group, action, id);
   if (group === "adapter") request.params = { ...request.params, profile: context.profile };
   return { value: await callDaemon(context.paths.socket, request) };
 }
 
 async function runDaemonCommand(context: CliContext, action: string | undefined): Promise<CommandResult> {
-  const selected = action ?? "run";
+  if (!action) return { value: helpText(["daemon"]) };
+  const selected = action;
   if (selected === "run") {
     await withSetupLock(context.paths, () => ensureLocalRuntime(context));
     const exitCode = await context.runForegroundDaemon([
@@ -258,41 +259,6 @@ async function ensureLocalRuntime(context: CliContext): Promise<void> {
   }
 }
 
-async function runAdapterConnectCommand(context: CliContext, adapterType: string | undefined): Promise<CommandResult> {
-  if (adapterType !== "openclaw") throw new Error(`adapter connect is not supported for ${adapterType ?? "a missing adapter type"}`);
-  return withSetupLock(context.paths, async () => {
-    await ensureLocalRuntime(context);
-    const result = await configureRuntimeOpenClaw(context);
-    return { value: { ok: true, profile: context.profile, ...result } };
-  });
-}
-
-async function configureRuntimeOpenClaw(context: CliContext): Promise<Record<string, unknown>> {
-  for (const flag of ["bindingId", "agentId", "workspace"]) {
-    if (context.flags[flag] !== undefined) throw new Error("OpenClaw connections do not accept binding, Agent or workspace settings; select provider_agent_id in Context");
-  }
-  const input: CliOpenClawInput = {};
-  if (context.flags.openclawHome !== undefined) input.openclawHome = requiredFlag(context.flags.openclawHome, "openclaw-home");
-  if (context.flags.gatewayUrl !== undefined) input.url = requiredFlag(context.flags.gatewayUrl, "gateway-url");
-  if (context.flags.tokenStdin === true) input.token = await readSecret(context.input, "OpenClaw Gateway token");
-  if (input.url !== undefined && input.token === undefined) input.token = context.env.OPENCLAW_GATEWAY_TOKEN;
-  if (input.token !== undefined && input.url === undefined) input.url = context.env.OPENCLAW_GATEWAY_URL;
-  const connection = await configureCliOpenClaw(context.paths.profileRoot, input, context.env);
-  const probe = await createOpenClawAdapter().probe({ providerOptions: { [OPENCLAW_RUNTIME_ROOT]: context.paths.profileRoot } });
-  return { source: connection.source, available: probe.available, ...(probe.reason ? { reason: probe.reason } : {}) };
-}
-
-async function readSecret(input: NodeJS.ReadableStream, label: string): Promise<string> {
-  let value = "";
-  for await (const chunk of input) {
-    value += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
-    if (Buffer.byteLength(value) > 64 * 1024) throw new Error(`${label} input is too large`);
-  }
-  value = value.trim();
-  if (!value) throw new Error(`stdin must contain one ${label}`);
-  return value;
-}
-
 async function runDoctor(context: CliContext): Promise<CommandResult> {
   const checks: Array<Record<string, unknown>> = [];
   const nodeMajor = Number(process.versions.node.split(".")[0]);
@@ -319,28 +285,11 @@ async function runDoctor(context: CliContext): Promise<CommandResult> {
   return { value: { ok, profile: context.profile, home: context.home, checks }, exitCode: ok ? 0 : 1 };
 }
 
-function daemonRequest(group: string, action: string | undefined, id: string | undefined, flags: Flags): CliRequest {
+function daemonRequest(group: string, action: string | undefined, id: string | undefined): CliRequest {
   if (group === "status") return { method: "status" };
-  if (group === "extra" && action === "status") return id
-    ? { method: "extra.request", params: { name: id, method: "status" } }
-    : { method: "extra.status" };
-  if (group === "extra" && (action === "load" || action === "unload"))
-    return { method: `extra.${action}`, params: { name: required(id, "extra-name") } };
   if (group === "adapter" && action === "list") return { method: "adapter.list" };
   if (group === "adapter" && action === "probe") {
     return { method: "adapter.probe", params: { adapterType: required(id, "adapter-type") } };
-  }
-  if (group === "agent-run" && action === "get") {
-    return { method: "agent_run.get", params: { run_id: required(id, "run-id") } };
-  }
-  if (group === "agent-run" && action === "cancel") {
-    return {
-      method: "agent_run.cancel",
-      params: {
-        run_id: required(id, "run-id"),
-        reason: optionalString(flags.reason) ?? "cancelled_by_operator"
-      }
-    };
   }
   throw new Error("unknown command; run octo-runtime help");
 }
@@ -451,7 +400,8 @@ function parseArguments(args: string[]): { flags: Flags; positionals: string[] }
   const flags: Flags = {};
   const positionals: string[] = [];
   for (let index = 0; index < args.length; index++) {
-    const argument = args[index];
+    const argument = args[index] === "-h" ? "--help" : args[index] === "-v" ? "--version" : args[index];
+    if (argument.startsWith("-") && !argument.startsWith("--")) throw new Error(`unknown option ${argument}`);
     if (!argument.startsWith("--")) {
       positionals.push(argument);
       continue;
@@ -460,6 +410,7 @@ function parseArguments(args: string[]): { flags: Flags; positionals: string[] }
     const rawKey = argument.slice(2, separator < 0 ? undefined : separator);
     const normalizedKey = rawKey.replace(/[-_]([a-z])/g, (_match: string, character: string) => character.toUpperCase());
     const key = normalizedKey === "agentIdentit" ? "agentIdentity" : normalizedKey;
+    if (!["home", "profile", "manifest", ...BOOLEAN_FLAGS].includes(key)) throw new Error(`unknown option --${rawKey}`);
     if (["force", "timeoutMs", "waitDrained"].includes(key)) throw new Error(`unknown option --${rawKey}`);
     if ((key === "agentIdentity" || key === "agentName") && Object.hasOwn(flags, key)) throw new Error(`duplicate --${rawKey}`);
     if (BOOLEAN_FLAGS.has(key)) {
@@ -468,7 +419,8 @@ function parseArguments(args: string[]): { flags: Flags; positionals: string[] }
       continue;
     }
     const next = args[index + 1];
-    flags[key] = separator >= 0 ? argument.slice(separator + 1) : next && !next.startsWith("--") ? args[++index] : true;
+    flags[key] = separator >= 0 ? argument.slice(separator + 1) : next && !next.startsWith("-") ? args[++index] : true;
+    if (typeof flags[key] !== "string" || !flags[key]) throw new Error(`--${rawKey} requires a nonempty value`);
     if ((key === "agentIdentity" || key === "agentName") && (typeof flags[key] !== "string" || !flags[key])) throw new Error(`--${rawKey} requires a nonempty value`);
   }
   return { flags, positionals };
@@ -496,68 +448,6 @@ async function daemonServiceSpec(context: CliContext, enabled = true) {
   );
 }
 
-function helpText(group?: string): string {
-  if (group === "playboard") {
-    return `Usage: octo-runtime playboard [--manifest PATH] [--home PATH] [--profile NAME] < request.json\n\n` +
-      `For development, testing, and integration debugging only.\n` +
-      `Do not integrate production applications by spawning this CLI subcommand.\n\n` +
-      `Read one complete JSON request from stdin, start a temporary daemon, and stream NDJSON events over local IPC.\n` +
-      `No login, Access, Worker, or pre-running daemon is required. This runs real providers.\n` +
-      `The temporary daemon owns its Host and socket; configured Extras are not loaded.\n` +
-      `Required: inputs (ModelInputPart[]), contexts (Context v3 envelope).\n` +
-      `Optional: sessionId, protocol_mode (native by default, or canonical), agentSource, providerSession, continuityMode.\n` +
-      `Defaults: codex, current working directory, approval ask, 120-second run timeout.\n` +
-      `OpenClaw defaults: existing main agent, preset source, provider-owned workspace.\n` +
-      `Execution settings are overridden by contexts. Pending interactions fail explicitly in this one-shot mode.\n` +
-      `--manifest selects an adapter manifest; defaults to the bundled adapters.\n` +
-      `See apps/cli/README.md for a complete here-string example.`;
-  }
-  if (group === "daemon") {
-    return `Usage: octo-runtime [--home PATH] daemon install|uninstall|run|start|stop|restart|status [options]\n\n` +
-      `  install [--no-autostart]\n` +
-      `  uninstall\n` +
-      `  run [--quiet] [--verbose]\n` +
-      `  start\n` +
-      `  stop\n` +
-      `  restart\n\n` +
-      `Start installs a missing native user service, then starts it in the background and waits for local IPC readiness.\n` +
-      `Install and run use the same default Runtime Home and initialize missing local defaults without login.\n` +
-      `Uninstall removes the native service but preserves Runtime Home identity, credentials, databases, and logs.`;
-  }
-  if (group === "doctor") {
-    return `Usage: octo-runtime [--home PATH] [--profile NAME] doctor\n\n` +
-      `Checks Node.js, local Home configuration, the native user service and daemon IPC.`;
-  }
-  if (group === "status") {
-    return `Usage: octo-runtime [--home PATH] status\n\n` +
-      `Reads the daemon's local application status over IPC. Use 'daemon status' to include native service state.`;
-  }
-  if (group === "adapter") {
-    return `Usage: octo-runtime [--home PATH] [--profile NAME] adapter list\n` +
-      `       octo-runtime [--home PATH] [--profile NAME] adapter probe <adapter-type>\n` +
-      `       octo-runtime [--home PATH] --profile NAME adapter connect openclaw [--openclaw-home PATH | --gateway-url URL --token-stdin]\n\n` +
-      `adapter connect saves a Runtime-local OpenClaw connection and probes its availability. Select provider_agent_id in Context.\n` +
-      `Connect initializes missing local Home defaults. Tokens are read from stdin or OPENCLAW_GATEWAY_TOKEN and stored separately. Without flags, reuse the saved connection or discover OPENCLAW_HOME / ~/.openclaw.`;
-  }
-  if (group === "agent-run") {
-    return `Usage: octo-runtime [--home PATH] agent-run get|cancel [agent-run-id] [options]\n\n` +
-      `  cancel <agent-run-id> [--reason TEXT]`;
-  }
-  if (group === "extraset") return "Usage: octo-runtime [--home PATH] extraset <name> < config.json\n\nWrites the complete {module, enabled?, config} object; restart the daemon to apply. Configuration and tokens are never echoed.";
-  if (group === "extra") return "Usage: octo-runtime [--home PATH] extra status|load|unload [name]\n\nstatus lists plugin lifecycle; status <name> requests plugin business status (if supported). loaded does not imply a healthy external connection. Uses the declarations read at startup. Restart after extraset to apply new configuration.";
-  return `Octo Runtime CLI\n\n` +
-    `Global: --home PATH; --profile NAME; --verbose\n\n` +
-    `  octo-runtime playboard < request.json\n` +
-    `  octo-runtime extraset <name> < config.json\n` +
-    `  octo-runtime extra status|load|unload [name]\n` +
-    `  octo-runtime daemon install|uninstall|run|start|stop|restart|status\n` +
-    `  octo-runtime doctor [--json]\n` +
-    `  octo-runtime status\n` +
-    `  octo-runtime adapter list\n` +
-    `  octo-runtime adapter probe <type>\n` +
-    `  octo-runtime adapter connect openclaw [--openclaw-home PATH | --gateway-url URL --token-stdin]\n` +
-    `  octo-runtime agent-run get|cancel ID`;
-}
 
 export function runtimeFingerprint(): string {
   return createHash("sha256")

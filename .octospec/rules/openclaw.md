@@ -52,7 +52,7 @@ CLI 支持两种连接来源，执行层只消费解析后的 `gateway` 快照�
 
 SDK 不读取 OpenClaw 配置或进程环境、不扫描端口。宿主可调用 `configureOpenClawConnection(profileRoot, {url, token})` 显式保存连接并初始化设备身份，也可直接通过 `providerOptions` 提供 URL/token 和设备身份。`loadLocalOpenClawGateway`、`resolveOpenClawGateway`、probe 和 invoke 只读取已配置数据；连接或设备身份缺失返回明确错误，不发现、不首次落盘、不自动修复。CLI 与 SDK 共用 URL 校验、设备身份校验、认证握手、能力探测及执行路径。
 
-`connection.json` 仅保存 `schema_version: 1`、`source: gateway`、`gateway_url` 和 `credential_ref`。旧 `source: home` 描述不自动转换；通过 CLI 显式 `adapter connect openclaw --openclaw-home PATH` 重新配置。`cli-source.json` 的凭据引用只用于确认来源仍对应当前快照；SDK 或 CLI 改为显式 URL/token 后，不再刷新先前的 Home 来源。
+`connection.json` 仅保存 `schema_version: 1`、`source: gateway`、`gateway_url` 和 `credential_ref`。旧 `source: home` 描述不自动转换；由宿主通过 SDK 显式重新配置。`cli-source.json` 的凭据引用只用于确认来源仍对应当前快照；SDK 或 CLI 改为显式 URL/token 后，不再刷新先前的 Home 来源。
 
 凭据文件以 `0600` 创建，设备身份由显式配置操作初始化并保存到该 profile 的 `credentials/openclaw-device.json`。刷新地址/token 时先写入新凭据，再原子替换连接描述，避免并发调用读到新地址与旧 token 的组合。设备身份保持稳定。既有调用继续使用已经解析的连接，新探测和调用读取新快照。启动、注册及探测不得重置 Gateway token，不自动改写 OpenClaw 配置。
 
@@ -85,22 +85,14 @@ SDK 不读取 OpenClaw 配置或进程环境、不扫描端口。宿主可调用
 
 ## 操作入口
 
+CLI 不再提供 adapter connect；宿主使用既有 SDK 连接配置接口。CLI daemon 启动时复用已保存连接，首次发现可通过 OPENCLAW_HOME 或成对的 OPENCLAW_GATEWAY_URL / OPENCLAW_GATEWAY_TOKEN 环境变量指定来源。已有身份与连接不自动重置，旧格式由宿主显式迁移。
+
 ```sh
-# 已初始化本地 Home/profile：自动发现，或复用已保存来源
-octo-runtime --home /path/to/runtime --profile work adapter connect openclaw
-
-# 指定 OpenClaw Home（包含 openclaw.json 的目录）
-octo-runtime --home /path/to/runtime --profile work adapter connect openclaw \
-  --openclaw-home /path/to/openclaw
-
-# 显式 URL；stdin 只包含 Gateway token
-octo-runtime --home /path/to/runtime --profile work adapter connect openclaw \
-  --gateway-url ws://127.0.0.1:18789 --token-stdin
+octo-runtime --home /path/to/runtime --profile work adapter probe openclaw
 ```
 
-本地 Home 无需登录即可使用。Gateway token 由 stdin 或环境提供，不作为命令行明文参数。`adapter list`、`adapter probe openclaw` 使用选定 profile 的已保存连接，刷新发生在 CLI daemon 启动编排；`playboard --home ... --profile ...` 通过临时 daemon 复用该编排，跳过渠道 Extra 加载及渠道工具 dotenv 同步，不自行管理 OpenClaw 连接或启动 Gateway。
+本地 Home 无需登录即可使用。adapter list、adapter probe 使用选定 profile 的已保存连接，刷新发生在 CLI daemon 启动编排；playboard 通过临时 daemon 复用该编排，跳过渠道 Extra 加载及渠道工具 dotenv 同步，不自行启动 Gateway。目标 Agent 放在 Context 中。
 
-连接命令返回保存结果和探测状态；`available: false` 表示连接尚不可用，不表示本地 Runtime 身份初始化失败。已删除的 `--binding-id`、`--agent-id` 和 `--workspace` 连接参数不再接受；目标 Agent 必须放在 Context 中。旧 `config.json.adapters.openclaw` 外部绑定不自动转换，需删除旧配置并通过上述入口设置连接。
 
 ## 目标省略的当前实现
 

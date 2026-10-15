@@ -1,8 +1,14 @@
 # Octo Runtime CLI
 
+管理本地 Agent Runtime、Provider Adapter 和后台服务。直接执行 `octo-runtime` 显示用途、发行版本及命令列表；`octo-runtime --version`（或 `-v`、`version`）输出根 `package.json` 的版本。
+
+帮助采用 `Usage`、`Available Commands`、`Flags` 与 `Global Flags` 分层格式。命令组 `octo-runtime daemon` 和 `octo-runtime adapter` 默认显示帮助；启动前台进程必须显式执行 `octo-runtime daemon run`。使用 `octo-runtime help daemon start` 或 `octo-runtime daemon start --help` 查看具体命令。
+
+daemon 子命令顺序为 `start`、`stop`、`restart`、`status`、`install`、`uninstall`、`run`。开发调试命令 `playboard` 排在主帮助末尾，`playboard --help` 包含完整请求示例与本文件路径。
+
 ## Extra plugins
 
-`octo-runtime extraset <name>` reads a complete `{module, enabled?, config}` JSON object from stdin and replaces `HOME/default/extra/<name>/config.json` with mode 0600. It does not echo configuration or start the plugin. Restart the daemon to apply; `extra status|load|unload [name]` controls the declarations already read at startup.
+`octo-runtime extraset <name>` 从 stdin 读取完整 `{module, enabled?, config}` 并以 0600 权限替换 `HOME/default/extra/<name>/config.json`，不回显配置或启动插件。保存后执行 `octo-runtime daemon restart` 应用变更。CLI 不再提供 `extra status/load/unload`；嵌入式宿主继续通过 SDK 管理插件生命周期。
 
 The native HTTP/Bearer/SSE demonstration and full here-string examples are documented in [Extra plugins](../../.octospec/rules/extras.md). This is a generic configuration command, not a platform-specific setup flow.
 
@@ -84,12 +90,6 @@ octo-runtime --home /path/to/work-home --profile work doctor
 octo-runtime status
 octo-runtime adapter list
 octo-runtime adapter probe codex
-octo-runtime agent-session list
-octo-runtime agent-session get <agent-session-id>
-octo-runtime agent-run list
-octo-runtime agent-run get <agent-run-id>
-octo-runtime agent-run wait <agent-run-id>
-octo-runtime agent-run cancel <agent-run-id>
 ```
 
 这些命令通过 Home 级 Unix socket 或 Windows named pipe 读取本地状态。Worker 仅管理对应远程执行，源事件窗口不能当作完整历史；本地会话及完整 trajectory 由宿主业务存储负责。
@@ -218,11 +218,9 @@ One Runtime Home runs one daemon and adapter-host. Each discovered profile has i
 CLI daemon 启动时准备并探测本地 OpenClaw 连接。缺失或不可用的 Gateway 不阻止本地 Host 就绪。连接存于 `<home>/<profile>/adapters/openclaw/connection.json`；凭据存于该 profile 的 `credentials` 目录。
 
 ```sh
-octo-runtime --home /path/to/harness --profile work adapter connect openclaw --openclaw-home /path/to/openclaw
-octo-runtime --home /path/to/harness --profile work adapter connect openclaw --gateway-url ws://127.0.0.1:18789 --token-stdin
 octo-runtime --home /path/to/harness --profile work adapter probe openclaw
 ```
 
-显式连接参数优先；无参数时复用已保存连接，首次初始化读取 `OPENCLAW_HOME` 或成对的 `OPENCLAW_GATEWAY_URL` / `OPENCLAW_GATEWAY_TOKEN`，否则使用 `~/.openclaw`。显式配置使用 `adapter connect openclaw`。
+CLI 不再提供 `adapter connect`。启动时复用已保存连接，首次初始化读取 `OPENCLAW_HOME` 或成对的 `OPENCLAW_GATEWAY_URL` / `OPENCLAW_GATEWAY_TOKEN`，否则使用 `~/.openclaw`。宿主通过 SDK 显式管理连接配置。
 
 `playboard` 支持 `--home` 和 `--profile`，无须登录即可使用该 profile 的连接来源。完整概念与执行合同见 [统一合同](../../.octospec/rules/openclaw.md)。
