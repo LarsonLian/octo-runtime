@@ -37,7 +37,7 @@ macOS/Linux 默认 Home 是 `~/.octo-runtime`，Windows 是 `%LOCALAPPDATA%\Octo
 
 ## 本地初始化
 
-直接执行 `octo-runtime daemon install` 或 `octo-runtime daemon run`。两者使用相同的默认 Runtime Home，也支持 `--home PATH` 与 `OCTO_RUNTIME_HOME`；首次使用自动创建缺失的本地配置和 machine identity，已有配置与身份保持原样。
+直接执行 `octo-runtime daemon start` 后台启动，或执行 `octo-runtime daemon run` 前台运行。`start` 在原生用户服务缺失时自动安装并启用服务，无需先手动执行 `install`。这些入口使用相同的默认 Runtime Home，也支持 `--home PATH` 与 `OCTO_RUNTIME_HOME`；首次使用自动创建缺失的本地配置和 machine identity，已有配置与身份保持原样。
 
 CLI 不提供 `login` 命令及其更新入口。登录、登记和共享属于按需接入的 Extra，不是设备本地存在、安装或执行的条件。
 
@@ -58,7 +58,7 @@ octo-runtime daemon status
 - `run` 在前台运行并响应 `SIGINT`/`SIGTERM`；PID 文件保证一个 Home 只有一个 daemon。
 - `run` 默认在 stderr 输出彩色、脱敏的生命周期状态；`--quiet` 关闭终端输出，`--verbose`
   显示详细 operational records 和完整启动异常堆栈。RPC/provider 敏感内容仍只进入受保护日志。
-- `start` 只启动已安装且已启用的原生用户服务，不创建 detached 子进程；`--wait-online` 会继续等待所选 `runtime_id` 的 WSS Online。
+- `start` 先检查原生用户服务，未安装时自动安装并启用登录自启，再由系统服务管理器后台启动；已安装时沿用原有启动逻辑，不重装或修改自启设置。等待本地 IPC 就绪后返回。已禁用的服务仍明确报错；`--wait-online` 不再支持。
 - `stop`、`restart` 直接操作原生服务，不等待活动 Run 完成。
 - 生命周期命令作用于整个 Home。daemon 自动发现 Home 下包含合法 `config.json` 的 profile，并由一个 supervisor 管理各自的 credential、`runtime_id`、WSS 和内存重放窗口。
 - 锁屏不会结束已登录用户的服务；注销会结束 macOS LaunchAgent 和默认 Windows 用户任务。Linux 注销后是否继续取决于管理员是否启用 linger。

@@ -67,3 +67,5 @@ Provider session 不保证恢复成功。业务方管理 binding 与 reset，并
 [home.ts](../../packages/octo-runtime-daemon/src/runtime/home.ts) 管理 app-owned Home 与账号路径。Home 级 machine 分组、profile Runtime ID、业务 Agent ID、业务 session ID 和 Provider session ID 不可互换。会话 reset 不删除 Runtime 身份。
 
 CLI 不提供 `login` 命令及其旧更新入口。`daemon install` 与 `daemon run` 共用默认 Home 解析，首次使用时只创建缺失的本地配置及 machine identity，保留已有配置和身份；显式 `adapter connect openclaw` 同样不依赖登录。登录、登记和共享属于可选业务 Extra，不能作为本地安装和执行的条件。
+
+`daemon start` 在 Home 安装锁内预检原生用户服务；仅 `not_installed` 时复用安装流程并启用自启，然后后台启动并等待本地 IPC 就绪。已安装服务不重装、不自动修复 drift、不改变禁用状态；手动 `install` 仍可用于修复定义。此流程不安装 Provider 或其他 Runtime 依赖。

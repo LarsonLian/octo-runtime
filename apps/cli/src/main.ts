@@ -180,6 +180,7 @@ async function runDaemonCommand(context: CliContext, action: string | undefined)
     return { value: { ok: true, action: "stop", service: await context.service.backend.inspect(spec) } };
   }
   if (context.flags.waitOnline) throw new Error("Worker cloud connections are no longer built in");
+  if (selected === "start") await installDaemonService(context, true);
   await verifyServiceProgram(spec);
   if (selected === "restart") {
     await context.service.backend.restart(spec);
@@ -197,10 +198,15 @@ async function runDaemonCommand(context: CliContext, action: string | undefined)
   };
 }
 
-async function installDaemonService(context: CliContext): Promise<CommandResult> {
+async function installDaemonService(context: CliContext, onlyIfMissing = false): Promise<CommandResult> {
   return withSetupLock(context.paths, async () => {
+    if (onlyIfMissing) {
+      const spec = await daemonServiceSpec(context);
+      const service = await context.service.backend.inspect(spec);
+      if (service.state !== "not_installed") return {};
+    }
     await ensureLocalRuntime(context);
-    const autostart = context.flags.noAutostart !== true;
+    const autostart = onlyIfMissing || context.flags.noAutostart !== true;
     const spec = context.service.spec(context.paths, autostart);
     await verifyServiceProgram(spec);
     const probe = await context.service.backend.probe();
@@ -514,6 +520,7 @@ function helpText(group?: string): string {
       `  start\n` +
       `  stop\n` +
       `  restart\n\n` +
+      `Start installs a missing native user service, then starts it in the background and waits for local IPC readiness.\n` +
       `Install and run use the same default Runtime Home and initialize missing local defaults without login.\n` +
       `Uninstall removes the native service but preserves Runtime Home identity, credentials, databases, and logs.`;
   }
