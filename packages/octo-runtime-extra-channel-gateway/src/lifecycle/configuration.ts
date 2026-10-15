@@ -9,15 +9,14 @@ export function validateImConfig(config: ImBotConfig): void {
     throw new Error("IM_TYPE_INVALID");
   if (typeof config.bot_id !== "string" || !config.bot_id.trim())
     throw new Error("IM_BOT_ID_REQUIRED");
+  if (
+    config.bot_name !== undefined &&
+    (typeof config.bot_name !== "string" || !config.bot_name.trim())
+  )
+    throw new Error("IM_BOT_NAME_INVALID");
   const adapter = config.adapter;
   if (!adapter || typeof adapter !== "object" || Array.isArray(adapter))
     throw new Error("IM_ADAPTER_REQUIRED");
-  if (
-    Object.keys(adapter).some(
-      (key) => !["adapter_type", "workdir", "model", "effort", "provider_agent_id"].includes(key)
-    )
-  )
-    throw new Error("IM_ADAPTER_UNKNOWN_FIELD");
   for (const value of [
     adapter.adapter_type,
     adapter.model,
@@ -26,6 +25,14 @@ export function validateImConfig(config: ImBotConfig): void {
   ])
     if (value !== undefined && (typeof value !== "string" || !value.trim()))
       throw new Error("IM_EXECUTION_CONFIG_INVALID");
+  if (
+    adapter.workdir === undefined &&
+    (config.bot_id === "." ||
+      config.bot_id === ".." ||
+      /[/\\]/.test(config.bot_id) ||
+      config.bot_id.includes("\0"))
+  )
+    throw new Error("IM_BOT_ID_PATH_INVALID");
   if (adapter.adapter_type === "openclaw") {
     if (adapter.workdir !== undefined) throw new Error("IM_OPENCLAW_WORKDIR_UNSUPPORTED");
     if (
@@ -34,7 +41,10 @@ export function validateImConfig(config: ImBotConfig): void {
     )
       throw new Error("IM_PROVIDER_AGENT_ID_INVALID");
   } else {
-    if (typeof adapter.workdir !== "string" || !isAbsolute(adapter.workdir))
+    if (
+      adapter.workdir !== undefined &&
+      (typeof adapter.workdir !== "string" || !isAbsolute(adapter.workdir))
+    )
       throw new Error("IM_WORKDIR_ABSOLUTE_REQUIRED");
     if (adapter.provider_agent_id !== undefined)
       throw new Error("IM_PROVIDER_AGENT_ID_UNSUPPORTED");
@@ -56,27 +66,7 @@ export function validateImConfig(config: ImBotConfig): void {
     throw new Error("IM_CONFIG_INVALID");
   if (config.enabled !== undefined && typeof config.enabled !== "boolean")
     throw new Error("IM_CONFIG_INVALID");
-  const fields = [
-    "bot_id",
-    "type",
-    "enabled",
-    "adapter",
-    "context",
-    "approval_mode",
-    "run_timeout_ms",
-    "allowed_sender_ids"
-  ];
   if (config.type === "octo") {
-    fields.push(
-      "api_url",
-      "bf_token",
-      "bf_token_file",
-      "group_ids",
-      "group_rules",
-      "history_limit",
-      "cards",
-      "typing"
-    );
     if (typeof config.api_url !== "string" || !config.api_url.trim())
       throw new Error("IM_API_URL_INVALID");
     validateUrl(config.api_url, "https:", "http:");
@@ -98,8 +88,6 @@ export function validateImConfig(config: ImBotConfig): void {
         throw new Error("IM_CONFIG_INVALID");
     validateCredential(config.bf_token, config.bf_token_file);
   }
-  if (Object.keys(config).some((key) => !fields.includes(key)))
-    throw new Error("IM_CONFIG_UNKNOWN_FIELD");
 }
 
 /** Stable local lookup key, not a caller-supplied identity or authorization token. */

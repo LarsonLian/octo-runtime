@@ -3,6 +3,9 @@
  * IM 默认值属于此发起入口；Context 的统一渲染与 prompt 封装交给共享执行层。
  */
 import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
   assertContextEnvelope,
   assertInvokeRequest,
@@ -12,6 +15,7 @@ import {
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type { ImBotConfig, ImInboundMessage, ImSession } from "../contracts.js";
 import { resolveLocalContext, localRuntimeLimits } from "@mininglamp-oss/octo-runtime-core";
+import { validateImConfig } from "../lifecycle/configuration.js";
 
 export function createImInvocation(
   config: ImBotConfig,
@@ -22,6 +26,7 @@ export function createImInvocation(
   signal: AbortSignal,
   occurrenceId = message.messageId
 ): { request: InvokeRequest; adapterType: string } {
+  validateImConfig(config);
   assertContextEnvelope(context);
   if (!session.id) throw new Error("IM_SESSION_NOT_ALLOCATED");
   const selectedAdapter =
@@ -30,6 +35,9 @@ export function createImInvocation(
     config.adapter.adapter_type ??
     "codex";
   const agentSource = selectedAdapter === "openclaw" ? "preset" : "provisioned";
+  const defaultWorkdir = join(homedir(), "octo-runtime", "channels", config.bot_id);
+  const workdir =
+    config.adapter.workdir ?? (agentSource === "provisioned" ? defaultWorkdir : undefined);
   const defaults: ContextEnvelope = {
     schema: context.schema,
     items: [
@@ -53,12 +61,12 @@ export function createImInvocation(
         name: "limits",
         payload: { run_timeout_ms: config.run_timeout_ms ?? 120_000 }
       },
-      ...(config.adapter.workdir
+      ...(workdir
         ? [
             {
               namespace: "octo.execution",
               name: "workspace",
-              payload: { mode: "fixed", path: config.adapter.workdir }
+              payload: { mode: "fixed", path: workdir }
             }
           ]
         : []),
@@ -121,6 +129,12 @@ export function createImInvocation(
     signal
   };
   assertInvokeRequest(request);
+  if (
+    config.adapter.workdir === undefined &&
+    agentSource === "provisioned" &&
+    plan.workdir === defaultWorkdir
+  )
+    mkdirSync(defaultWorkdir, { recursive: true, mode: 0o700 });
   session.lastEventId = eventId;
   session.lastRunId = runId;
   return { request, adapterType: plan.adapter_type };

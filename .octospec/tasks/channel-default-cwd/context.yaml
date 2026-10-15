@@ -1,0 +1,11 @@
+rules:
+  - runtime-architecture
+  - runtime-channel
+  - runtime-context-input
+  - runtime-engineering
+  - runtime-invoke-input
+  - runtime-extras
+sources:
+  - packages/octo-runtime-extra-channel-gateway/src
+  - apps/cli/src/extras.ts
+  - test/cli-channel.test.js

@@ -26,13 +26,16 @@ export async function configureChannel(
   }
   let config: ImBotConfig | WecomBotConfig;
   try {
-    config = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    config = JSON.parse(Buffer.concat(chunks).toString("utf8")) as ImBotConfig | WecomBotConfig;
   } catch {
     throw new Error("channel configure stdin must contain one valid JSON object");
   }
   const wecom = config.type === "wecom";
   if (wecom) validateWecomConfig(config as WecomBotConfig);
-  else validateImConfig(config as ImBotConfig);
+  else {
+    validateImConfig(config as ImBotConfig);
+    (config as ImBotConfig).bot_name ??= config.bot_id;
+  }
   return withSetupLock(paths, async () => {
     const identity = (bot: ImBotConfig | WecomBotConfig) => bot.type === "wecom" ? wecomIdentity(bot) : imBotIdentity(bot);
     const bots: (ImBotConfig | WecomBotConfig)[] = wecom ? readWecomBots(paths.home) : readImBots(paths.home);
@@ -48,6 +51,7 @@ export async function configureChannel(
       saved: true,
       file,
       bot_id: config.bot_id,
+      ...(!wecom ? { bot_name: (config as ImBotConfig).bot_name } : {}),
       count: bots.length,
       action: index < 0 ? "added" : "updated",
       restart_required: true

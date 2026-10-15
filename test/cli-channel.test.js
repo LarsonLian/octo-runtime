@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { runCli } from "../apps/cli/dist/main.js";
+import { ExtraPlugins, readExtraDirectory } from "../packages/octo-runtime-daemon/dist/index.js";
 import {
   validateImConfig,
   loadImBots,
@@ -20,6 +22,24 @@ const octo = (workdir, overrides = {}) => ({
   bf_token: "bf_fixture",
   adapter: { workdir },
   ...overrides
+});
+
+test("extraset without workdir can be loaded by channel-gateway", async (t) => {
+  const home = await mkdtemp(join(tmpdir(), "extraset-cwd-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  await runCli(["--home", home, "extraset", "channel-gateway"], {
+    input: Readable.from([
+      JSON.stringify({
+        module: "@mininglamp-oss/octo-runtime-extra-channel-gateway",
+        config: { bots: [octo(undefined, { enabled: false })] }
+      })
+    ]),
+    output() {}
+  });
+  const extras = new ExtraPlugins(await readExtraDirectory(join(home, "default", "extra")), {});
+  t.after(() => extras.close());
+  await extras.loadConfigured();
+  assert.equal(extras.status["channel-gateway"].phase, "loaded");
 });
 
 test("CLI persists an array, updates just one scoped Bot, protects credentials and preserves file on invalid input", async (t) => {
@@ -38,16 +58,15 @@ test("CLI persists an array, updates just one scoped Bot, protects credentials a
   const updated = { ...first, adapter: { workdir: home, model: "test", effort: "high" } };
   await configure(updated);
   const file = join(home, "im.json");
-  assert.deepEqual(JSON.parse(await readFile(file, "utf8")), [updated, second]);
-  assert.deepEqual(loadImBots(home), [updated, second]);
+  const expected = [updated, second].map((bot) => ({ ...bot, bot_name: bot.bot_id }));
+  assert.deepEqual(JSON.parse(await readFile(file, "utf8")), expected);
+  assert.deepEqual(loadImBots(home), expected);
   assert.doesNotMatch(outputs.join("\n"), /bf_fixture/);
   if (process.platform !== "win32") assert.equal((await stat(file)).mode & 0o777, 0o600);
   const before = await readFile(file, "utf8");
   for (const invalid of [
     "{bad",
     [first],
-    { ...first, id: "obsolete" },
-    { ...first, space_id: "untrusted" },
     { ...first, adapter: { workdir: "relative" } },
     { ...first, adapter: { adapter_type: "openclaw", workdir: home } }
   ]) {
@@ -58,14 +77,42 @@ test("CLI persists an array, updates just one scoped Bot, protects credentials a
   await assert.rejects(configure(first), /IM_CONFIG_LIST_REQUIRED/);
 });
 
-test("configuration requires absolute workspace for local engines and rejects obsolete/unknown fields", () => {
-  for (const workdir of ["", "~", "~/work", ".", "relative", undefined]) {
+test("channel names default to identity and arbitrary plugin fields survive scoped updates", async (t) => {
+  const home = await mkdtemp(join(tmpdir(), "cli-channel-names-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const configure = (bot) => runCli(["--home", home, "channel", "configure"], {
+    input: Readable.from([JSON.stringify(bot)]), output() {}
+  });
+  const first = octo(home, {
+    bot_name: "本地助理",
+    custom: { nested: [1, true, null, { value: "preserved" }] },
+    adapter: { workdir: home, custom_option: { value: 42 } }
+  });
+  const second = octo(home, { bot_id: "other" });
+  await configure(first);
+  await configure(second);
+  await configure({ ...first, bot_name: "新名称" });
+  assert.deepEqual(loadImBots(home), [
+    { ...first, bot_name: "新名称" }, { ...second, bot_name: "other" }
+  ]);
+  const runtime = new ImRuntime(second, { host: {} });
+  t.after(() => runtime.close());
+  assert.equal(runtime.status.bot_name, "other");
+  assert.equal(second.bot_name, undefined);
+  const named = new ImRuntime(first, { host: {} });
+  t.after(() => named.close());
+  assert.equal(named.status.bot_name, "本地助理");
+  for (const bot_name of [null, "", "  ", 123, {}, []]) {
+    assert.throws(() => validateImConfig({ ...first, bot_name }), /IM_BOT_NAME_INVALID/);
+  }
+});
+
+test("configuration allows omitted workspace and requires absolute explicit paths", () => {
+  validateImConfig(octo(undefined));
+  for (const workdir of ["", "~", "~/work", ".", "relative"]) {
     assert.throws(() => validateImConfig(octo(workdir)), /IM_WORKDIR_ABSOLUTE_REQUIRED/);
   }
-  assert.throws(
-    () => validateImConfig(octo("/tmp", { adapter: { workdir: "/tmp", openclaw_home: "/tmp" } })),
-    /IM_ADAPTER_UNKNOWN_FIELD/
-  );
+  validateImConfig(octo("/tmp", { adapter: { workdir: "/tmp", custom: { arbitrary: true } } }));
   assert.throws(
     () =>
       validateImConfig(
@@ -73,6 +120,35 @@ test("configuration requires absolute workspace for local engines and rejects ob
       ),
     /IM_PROVIDER_AGENT_ID_INVALID/
   );
+});
+
+test("omitted channel workspace is created per Bot and remains stable across events", async (t) => {
+  const botId = `cwd-test-${randomUUID()}`;
+  const expected = join(homedir(), "octo-runtime", "channels", botId);
+  t.after(() => rm(expected, { recursive: true, force: true }));
+  const config = octo(undefined, { bot_id: botId });
+  const context = { schema: "octo.context-envelope/v3", items: [] };
+  for (const messageId of ["first", "second"]) {
+    const { request } = createImInvocation(
+      config,
+      { messageId, senderId: "u", conversationId: "c", conversationKind: "direct", text: "hello" },
+      context,
+      "key",
+      { id: "as_test", generation: 1 },
+      new AbortController().signal
+    );
+    assert.equal(request.workdir, expected);
+    assert.equal(request.agentConfig.workdir, expected);
+    assert.equal(
+      request.context.items.find((item) => item.name === "workspace").payload.path,
+      expected
+    );
+    assert.ok((await stat(expected)).isDirectory());
+  }
+  assert.equal(config.adapter.workdir, undefined);
+  for (const bot_id of ["..", ".", "../escape", "/tmp/escape", "a\\b"]) {
+    assert.throws(() => validateImConfig(octo(undefined, { bot_id })), /IM_BOT_ID_PATH_INVALID/);
+  }
 });
 
 test("default-enabled endpoint waits for credentials, while explicit disabled does not read credentials", async (t) => {

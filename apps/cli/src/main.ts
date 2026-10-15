@@ -576,7 +576,7 @@ function helpText(group?: string): string {
   if (group === "channel") {
     return `Usage: octo-runtime [--home PATH] channel configure < bot.json\n\n` +
       `Read one Bot object from stdin and add or replace it in the im.json array by platform, server and bot_id.\n` +
-      `Fields: type, api_url, bot_id, bf_token, adapter. enabled defaults to true.\n` +
+      `Fields: type, api_url, bot_id, bot_name, bf_token, adapter. bot_name defaults to bot_id; enabled defaults to true.\n` +
       `adapter: adapter_type (default codex), absolute workdir, optional model/effort.\n` +
       `OpenClaw: adapter_type=openclaw, optional provider_agent_id (default main), no workdir.\n` +
       `After saving, run daemon run in the foreground or daemon restart for an installed native service.`;

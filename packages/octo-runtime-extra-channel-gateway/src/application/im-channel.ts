@@ -50,6 +50,7 @@ export class ImRuntime {
   ) {
     validateImConfig(config);
     this.config = structuredClone(config);
+    this.config.bot_name ??= this.config.bot_id;
     this.#sessionStore = dependencies.sessions ?? new MemoryImSessionStore();
   }
   get status(): Record<string, unknown> {
@@ -57,6 +58,7 @@ export class ImRuntime {
       ...this.#connector?.status,
       connection_key: imBotIdentity(this.config),
       type: this.config.type,
+      bot_name: this.config.bot_name,
       enabled: this.config.enabled !== false,
       botId: this.#connector?.botId,
       connected: this.#state === "online",

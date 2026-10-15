@@ -21,6 +21,7 @@ export interface ImAdapterConfig {
 
 export interface ImCommonConfig {
   bot_id: string;
+  bot_name?: string;
   enabled?: boolean;
   adapter: ImAdapterConfig;
   context?: ContextEnvelope;
