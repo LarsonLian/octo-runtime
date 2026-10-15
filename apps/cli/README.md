@@ -187,7 +187,7 @@ approves or waits for a reply on closed stdin. Ctrl+C cancels and cleans up the 
 Exit codes: `0` completed, `1` validation/startup/provider/interaction failure,
 `130` cancelled or interrupted, `143` SIGTERM. An interrupted or rejected stream may
 end without a terminal frame; consumers must also check the process exit code/stderr.
-Requests are limited to 16 MiB, including embedded images.
+Requests are limited to 32 MiB of UTF-8 JSON, including embedded images and Context.
 
 `--manifest /absolute/adapters.json` selects an explicit adapter manifest for adapter
 experiments or fake-provider tests; the default is the bundled `config/adapters.json`,

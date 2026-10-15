@@ -7,7 +7,7 @@ import { InvokeInput } from "@mininglamp-oss/octo-runtime-protocol";
 import type { ExtraContext, JsonObject } from "@mininglamp-oss/octo-runtime-daemon";
 
 export const name = "sse-demo";
-const MAX_BODY_BYTES = 16 * 1024 * 1024;
+import { INVOKE_REQUEST_MAX_BYTES } from "@mininglamp-oss/octo-runtime-protocol";
 
 /** Initializes once; HTTP routing, authentication and delivery belong to this extra. */
 export default async function load(ctx: ExtraContext, config: JsonObject): Promise<void> {
@@ -104,17 +104,36 @@ export default async function load(ctx: ExtraContext, config: JsonObject): Promi
         res.setHeader("Allow", "POST");
         return jsonError(res, 405, "POST_REQUIRED");
       }
-      const chunks: Buffer[] = [];
+      let body = Buffer.alloc(0);
       let size = 0;
+      let tooLarge = false;
       for await (const chunk of req) {
         const bytes = chunk as Buffer;
-        size += bytes.length;
-        if (size > MAX_BODY_BYTES) return jsonError(res, 413, "PAYLOAD_TOO_LARGE");
-        chunks.push(bytes);
+        const nextSize = size + bytes.length;
+        if (tooLarge || nextSize > INVOKE_REQUEST_MAX_BYTES) {
+          if (!tooLarge) {
+            tooLarge = true;
+            body = Buffer.alloc(0);
+            const discardTimer = setTimeout(() => req.destroy(), 5000);
+            discardTimer.unref();
+            req.once("end", () => clearTimeout(discardTimer));
+            req.once("close", () => clearTimeout(discardTimer));
+          }
+          continue;
+        }
+        if (nextSize > body.length) {
+          const expanded = Buffer.allocUnsafe(Math.min(INVOKE_REQUEST_MAX_BYTES, Math.max(65536, body.length * 2, nextSize)));
+          body.copy(expanded, 0, 0, size);
+          body = expanded;
+        }
+        bytes.copy(body, size);
+        size = nextSize;
       }
+      if (tooLarge) return jsonError(res, 413, "INVOKE_REQUEST_TOO_LARGE");
       let payload: InvokeInput;
       try {
-        payload = InvokeInput.check(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+        payload = InvokeInput.check(JSON.parse(body.toString("utf8", 0, size)));
+        body = Buffer.alloc(0);
       } catch {
         return jsonError(res, 400, "INVALID_INVOKE_PAYLOAD");
       }

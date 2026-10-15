@@ -5,7 +5,7 @@ import { startTemporaryDaemon } from "./temporary-daemon.js";
 import { invokeDaemonRun } from "@mininglamp-oss/octo-runtime-daemon/runtime/run-stream";
 import { type InvokeInput, identifyInvokeInput, createInputInvoke, isHostTerminal, isTerminal } from "@mininglamp-oss/octo-runtime-protocol";
 
-const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
+import { INVOKE_REQUEST_MAX_BYTES } from "@mininglamp-oss/octo-runtime-protocol";
 
 export interface PlayboardOptions {
   input: NodeJS.ReadableStream;
@@ -22,17 +22,24 @@ export async function runPlayboard(options: PlayboardOptions): Promise<number> {
       "playboard requires a JSON request on stdin; use <<< '...JSON...' or < request.json"
     );
   }
-  const chunks: Buffer[] = [];
+  let body = Buffer.alloc(0);
   let size = 0;
   for await (const chunk of options.input) {
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += bytes.length;
-    if (size > MAX_REQUEST_BYTES) throw new TypeError("playboard request exceeds 16 MiB");
-    chunks.push(bytes);
+    const nextSize = size + bytes.length;
+    if (nextSize > INVOKE_REQUEST_MAX_BYTES) throw new TypeError("INVOKE_REQUEST_TOO_LARGE");
+    if (nextSize > body.length) {
+      const expanded = Buffer.allocUnsafe(Math.min(INVOKE_REQUEST_MAX_BYTES, Math.max(65536, body.length * 2, nextSize)));
+      body.copy(expanded, 0, 0, size);
+      body = expanded;
+    }
+    bytes.copy(body, size);
+    size = nextSize;
   }
   let value: unknown;
   try {
-    value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    value = JSON.parse(body.toString("utf8", 0, size));
+    body = Buffer.alloc(0);
   } catch {
     throw new TypeError("playboard stdin must contain one complete JSON object");
   }

@@ -359,7 +359,7 @@ test(
       );
       for (const invalid of ["bad", {}, { ...payload(), protocol_mode: "wrong" }])
         assert.equal((await post(port, invalid)).status, 400);
-      assert.equal((await post(port, "x".repeat(16 * 1024 * 1024 + 1))).status, 413);
+      assert.equal((await post(port, "x".repeat(32 * 1024 * 1024 + 1))).status, 413);
       assert.equal(calls, 0);
       const abort = new AbortController();
       const response = await fetch(`http://127.0.0.1:${port}`, {

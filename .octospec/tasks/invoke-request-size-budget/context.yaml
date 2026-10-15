@@ -19,9 +19,9 @@ sources:
   - packages/octo-runtime-protocol/src/multimodal.ts
   - packages/octo-runtime-adapter-host/src/rpc.ts
   - packages/octo-runtime-daemon/src/runtime/run-stream.ts
-status: planned-not-implemented
+status: implemented-targeted-and-live-verified
 decisions:
-  max_request_bytes: 5242880
+  max_request_bytes: 33554432
   size_measurement: utf8-serialized-complete-request
   max_image_bytes: 2097152
   max_images_per_array: 4

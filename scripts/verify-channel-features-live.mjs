@@ -5,8 +5,12 @@ import { readFile, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { crc32, deflateSync } from "node:zlib";
-import { AdapterHost } from "../packages/octo-runtime-adapter-host/dist/index.js";
-import { createCodexAdapter } from "../packages/octo-runtime-adapter-codex/dist/index.js";
+import { startDaemonServer } from "../packages/octo-runtime-daemon/dist/server.js";
+import { invokeDaemonRun } from "../packages/octo-runtime-daemon/dist/runtime/run-stream.js";
+import { callDaemon } from "../packages/octo-runtime-daemon/dist/runtime/runtime-contract.js";
+import { canonicalEvents } from "../packages/octo-runtime-protocol/dist/index.js";
+import { fileURLToPath } from "node:url";
+import { randomBytes } from "node:crypto";
 import { prepareInvokeInput } from "../packages/octo-runtime-core/dist/index.js";
 import { ImRuntime } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
 import { verifyBotIdentity } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/auth.js";
@@ -64,8 +68,30 @@ async function cli(account, args, body) {
   }
 }
 const directory = await mkdtemp(join(tmpdir(), "octo-channel-live-"));
-const host = new AdapterHost();
-host.register(createCodexAdapter());
+let daemon;
+const socket = join(directory, "daemon.sock");
+const activeRuns = new Map();
+const host = {
+  async *invoke(input, environment) {
+    activeRuns.set(input.invocationId, input.runId);
+    try {
+      yield* canonicalEvents(invokeDaemonRun(socket, input, environment));
+    } finally {
+      activeRuns.delete(input.invocationId);
+    }
+  },
+  cancel: (id) =>
+    callDaemon(socket, {
+      method: "agent_run.cancel",
+      params: { run_id: activeRuns.get(id) ?? id }
+    }),
+  respondInteraction: (id, response) =>
+    callDaemon(socket, {
+      method: "agent_run.respond",
+      params: { run_id: activeRuns.get(id) ?? id, response }
+    }),
+  shutdown: () => daemon?.close()
+};
 const calls = [],
   diagnostics = [],
   received = [];
@@ -140,6 +166,33 @@ async function createTestGroup() {
   }
 }
 try {
+  const manifest = join(directory, "adapters.json");
+  await writeFile(
+    manifest,
+    JSON.stringify({
+      version: 1,
+      adapters: [
+        {
+          type: "codex",
+          module: fileURLToPath(
+            new URL("../packages/octo-runtime-adapter-codex/dist/index.js", import.meta.url)
+          ),
+          export: "createCodexAdapter",
+          factory: true
+        }
+      ]
+    })
+  );
+  daemon = await startDaemonServer({
+    socketPath: socket,
+    manifestPath: manifest,
+    homePath: directory,
+    hostEntrypoint: fileURLToPath(
+      new URL("../packages/octo-runtime-adapter-host/dist/runner.js", import.meta.url)
+    )
+  });
+  assert.ok(daemon.hostProcess.child.pid && daemon.hostProcess.child.pid !== process.pid);
+  report.independentHost = true;
   group = await createTestGroup();
   assert.ok(group.group_no);
   report.groupId = group.group_no;
@@ -295,18 +348,20 @@ try {
     return Buffer.concat([length, body, crc]);
   };
   const header = Buffer.alloc(13);
-  header.writeUInt32BE(128, 0);
-  header.writeUInt32BE(128, 4);
+  header.writeUInt32BE(512, 0);
+  header.writeUInt32BE(512, 4);
   header[8] = 8;
   header[9] = 2;
-  const pixels = Buffer.alloc(128 * (128 * 3 + 1));
-  for (let y = 0; y < 128; y++)
-    for (let x = 0; x < 128; x++) {
-      const p = y * 385 + 1 + x * 3;
-      pixels[p] = y < 64 ? 0 : 255;
-      pixels[p + 1] = y < 64 ? 0 : 255;
-      pixels[p + 2] = y < 64 ? 255 : 0;
+  const pixels = randomBytes(512 * (512 * 3 + 1));
+  for (let y = 0; y < 512; y++) {
+    pixels[y * 1537] = 0;
+    for (let x = 0; x < 512; x++) {
+      const p = y * 1537 + 1 + x * 3;
+      pixels[p] = (pixels[p] % 64) + (y < 256 ? 0 : 192);
+      pixels[p + 1] = (pixels[p + 1] % 64) + (y < 256 ? 0 : 192);
+      pixels[p + 2] = (pixels[p + 2] % 64) + (y < 256 ? 192 : 0);
     }
+  }
   const png = Buffer.concat([
     Buffer.from("89504e470d0a1a0a", "hex"),
     chunk("IHDR", header),
@@ -314,14 +369,16 @@ try {
     chunk("IEND", Buffer.alloc(0))
   ]);
   const file = join(directory, "fixture.png");
+  assert.ok(png.length > 512 * 1024 && png.length < 2 * 1024 * 1024);
+  report.imageBytes = png.length;
   await writeFile(file, png);
   const uploaded = await cli(sender, ["file", "upload", "--file", file]);
   assert.ok(uploaded.url);
   await send(channel, 2, {
     type: 2,
     url: uploaded.url,
-    width: 128,
-    height: 128,
+    width: 512,
+    height: 512,
     mention: { uids: [receiver.id] }
   });
   await wait(() => report.imageTerminal && runtime.status.sessions.length === 0, 180000);

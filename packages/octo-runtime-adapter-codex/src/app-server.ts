@@ -2,6 +2,9 @@ import { invocationEnvs, mapReasoningEffort } from "@mininglamp-oss/octo-runtime
 import {
   canonicalTerminalStatus,
   contextHash,
+  assertJsonByteLimit,
+  INVOKE_REQUEST_MAX_BYTES,
+  hasImageInput,
   providerInputParts
 } from "@mininglamp-oss/octo-runtime-protocol";
 import { codexEnvironmentConfig } from "./environment.js";
@@ -226,7 +229,10 @@ export async function* runCodexAppServerTurn({
       try {
         threadResult = await client.request(
           "thread/resume",
-          threadParams(request, { threadId: requestedSessionId }, environmentConfig)
+          threadParams(request, {
+            threadId: requestedSessionId,
+            ...(context?.protocolMode !== "native" ? { excludeTurns: true } : {})
+          }, environmentConfig)
         );
         resumed = true;
       } catch (error) {
@@ -1219,7 +1225,9 @@ class CodexAppServerClient {
     this.#child = spawnFn(spec.command, spec.args, { cwd: spec.cwd, env: spec.env });
 
     // The app-server protocol requires one JSON-RPC frame per line; readline handles chunk boundaries.
-    this.#removeLineGuard = watchLineLimit(this.#child.stdout, 256 * 1024, (error) => {
+    const transportLimit = !this.#native && hasImageInput(invocation)
+      ? INVOKE_REQUEST_MAX_BYTES : 256 * 1024;
+    this.#removeLineGuard = watchLineLimit(this.#child.stdout, transportLimit, (error) => {
       this.#reader.close();
       this.#child.stdout.destroy();
       this.#handleProcessError(error);
@@ -1502,14 +1510,14 @@ class CodexAppServerClient {
 
   /** Dispatch one stdout frame. Ordering of the checks matters: a response may also lack a method. */
   #handleLine(line: string): void {
-    if (Buffer.byteLength(line) > 256 * 1024) {
+    const message = parseRecord(line);
+    if (Buffer.byteLength(line) > 256 * 1024 && !this.#isBoundedInputEcho(message)) {
       const error = new Error("STREAM_EVENT_TOO_LARGE");
       this.#rejectPending(error);
       this.#queue.fail(error);
       signalProcessTree(this.#child, "SIGTERM");
       return;
     }
-    const message = parseRecord(line);
     if (!message) return;
     const id = rpcId(message.id);
     if (id !== undefined && ("result" in message || "error" in message)) {
@@ -1573,6 +1581,45 @@ class CodexAppServerClient {
         );
         this.#queue.close();
       } else this.#queue.push(event);
+    }
+  }
+
+  #isBoundedInputEcho(message: JsonRecord | undefined): boolean {
+    if (this.#native || !message) return false;
+    const method = stringValue(message.method);
+    const id = rpcId(message.id);
+    const pending = id === undefined ? undefined : this.#pending.get(id);
+    const item = recordValue(recordValue(message.params)?.item);
+    const carrier =
+      ((method === "item/started" || method === "item/completed") && item?.type === "userMessage") ||
+      ["turn/started", "turn/completed", "codex/event/user_message"].includes(method ?? "") ||
+      (pending && ["thread/start", "thread/resume", "turn/start"].includes(pending.method));
+    if (!carrier) return false;
+    const images = new Set(
+      [...(this.invocation.modelInputParts ?? []), ...(this.invocation.freshFallbackModelInputParts ?? [])]
+        .filter(part => part.type === "image")
+        .map(part => `data:${part.mimeType};base64,${part.data}`)
+    );
+    let matched = false;
+    // Only identical submitted image URLs are exempt from canonical event sizing.
+    // The original provider message still reaches the normalizer unchanged.
+    const withoutEcho = (value: unknown, depth = 0): unknown => {
+      if (depth > 64) throw new Error("JSON_DEPTH_EXCEEDED");
+      if (typeof value === "string" && images.has(value)) {
+        matched = true;
+        return "[submitted image]";
+      }
+      if (Array.isArray(value)) return value.map(item => withoutEcho(item, depth + 1));
+      if (value && typeof value === "object") return Object.fromEntries(
+        Object.entries(value).map(([key, item]) => [key, withoutEcho(item, depth + 1)])
+      );
+      return value;
+    };
+    try {
+      assertJsonByteLimit(withoutEcho(message), 256 * 1024, "STREAM_EVENT_TOO_LARGE");
+      return matched;
+    } catch {
+      return false;
     }
   }
 

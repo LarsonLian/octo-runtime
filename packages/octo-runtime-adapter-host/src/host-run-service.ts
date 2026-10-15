@@ -1,6 +1,7 @@
 import type { AdapterHostRpc } from "./rpc.js";
 import {
   createInputInvoke,
+  assertInvokeRequestSize,
   identifyInvokeInput,
   assertHostFrameIdentity,
   isHostTerminal,
@@ -77,6 +78,7 @@ export class HostRunService implements AdapterHostRpc {
     input: ReturnType<typeof identifyInvokeInput>,
     environment: InvokeEnvironment
   ): Promise<Run> {
+    assertInvokeRequestSize(input, environment);
     this.#prune();
     if (this.#draining) throw new Error("DAEMON_DRAINING");
     if (this.#runs.has(input.runId) || this.#starting.has(input.runId))

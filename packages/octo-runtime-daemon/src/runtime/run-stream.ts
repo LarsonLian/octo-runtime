@@ -5,6 +5,8 @@ import {
   assertHostRunReceipt,
   isHostTerminal,
   identifyInvokeInput,
+  assertJsonByteLimit,
+  INVOKE_REQUEST_MAX_BYTES,
   type HostFrame,
   type HostRunReceipt,
   type InvokeInput,
@@ -20,10 +22,26 @@ export async function* subscribeDaemonRun(
     streamId?: string;
     afterSeq?: number;
     signal?: AbortSignal;
-    invocation?: { input: InvokeInput; executionEnvOverrides?: InvokeEnvironment["executionEnvOverrides"] };
+    invocation?: {
+      input: InvokeInput;
+      executionEnvOverrides?: InvokeEnvironment["executionEnvOverrides"];
+    };
   }
 ): AsyncIterable<Record<string, unknown>> {
   if (input.signal?.aborted) return;
+  const wireRequest = {
+    jsonrpc: "2.0",
+    id: randomUUID(),
+    method: input.invocation ? "agent_run.invoke" : "agent_run.subscribe",
+    params: input.invocation
+      ? { ...input.invocation }
+      : {
+          run_id: input.runId,
+          ...(input.streamId ? { stream_id: input.streamId } : {}),
+          after_seq: input.afterSeq ?? 0
+        }
+  };
+  assertJsonByteLimit(wireRequest, INVOKE_REQUEST_MAX_BYTES, "INVOKE_REQUEST_TOO_LARGE");
   const socket = createConnection(socketPath);
   const abort = (): void => {
     socket.destroy();
@@ -31,22 +49,7 @@ export async function* subscribeDaemonRun(
   input.signal?.addEventListener("abort", abort, { once: true });
   socket.setEncoding("utf8");
   socket.setTimeout(5000, () => socket.destroy(new Error("HOST_STREAM_HANDSHAKE_TIMEOUT")));
-  socket.write(
-    `${JSON.stringify({
-      jsonrpc: "2.0",
-      id: randomUUID(),
-      method: input.invocation ? "agent_run.invoke" : "agent_run.subscribe",
-      params: input.invocation
-        ? {
-            ...input.invocation
-          }
-        : {
-            run_id: input.runId,
-            ...(input.streamId ? { stream_id: input.streamId } : {}),
-            after_seq: input.afterSeq ?? 0
-          }
-    })}\n`
-  );
+  socket.write(`${JSON.stringify(wireRequest)}\n`);
   let pending = "",
     started = false;
   try {
@@ -115,7 +118,12 @@ export async function* invokeDaemonRun(
           afterSeq: after,
           signal,
           ...(!streamId
-            ? { invocation: { input: request, ...(executionEnvOverrides ? { executionEnvOverrides } : {}) } }
+            ? {
+                invocation: {
+                  input: request,
+                  ...(executionEnvOverrides ? { executionEnvOverrides } : {})
+                }
+              }
             : {})
         })) {
           if (frame.result) {

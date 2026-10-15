@@ -14,6 +14,7 @@ import type {
 } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
   createInputInvoke,
+  assertInvokeRequestSize,
   type InvokeInput,
   type InvokeEnvironment,
   adapterApprovalModes,
@@ -267,6 +268,7 @@ export class AdapterHost {
     environment: InvokeEnvironment = {}
   ): AsyncGenerator<HostFrame> {
     environment.signal?.throwIfAborted();
+    assertInvokeRequestSize(input, environment);
     const { adapterType, request, protocolMode } = prepareInvokeInput(input);
     request.signal = environment.signal;
     if (environment.executionEnvOverrides)

@@ -1,9 +1,15 @@
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
-import { watchLineLimit, type AdapterProbeOptions } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+import {
+  watchLineLimit,
+  readBoundedLines,
+  type AdapterProbeOptions
+} from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
   createInputInvoke,
+  INVOKE_REQUEST_MAX_BYTES,
+  assertJsonByteLimit,
   type InputFrames,
   type InvokeInput,
   type InvokeEnvironment,
@@ -144,26 +150,44 @@ export class AdapterHostRpcServer {
 
   /** Start consuming the input stream; each line must be one complete JSON-RPC object. */
   listen(input: Readable): void {
-    const removeGuard = watchLineLimit(input, 512 * 1024, (error) => {
-      this.#close(error);
-      input.destroy(error);
-    });
-    const lines = createInterface({ input });
-    lines.once("close", removeGuard);
-    lines.on("close", () => this.#close(new Error("adapter-host parent connection closed")));
-    input.on("error", (error) => this.#close(error));
-    lines.on("line", (line) => {
-      if (this.#closed) return;
-      try {
-        const message = asRpcMessage(JSON.parse(line));
-        this.#trace?.("receive", traceFrame(message, line));
-        void this.#dispatch(message);
-      } catch (error) {
+    readBoundedLines(input, INVOKE_REQUEST_MAX_BYTES, {
+      onTooLarge: () =>
         this.#send({
           jsonrpc: "2.0",
-          error: { code: -32700, message: errorMessage(error) },
-          id: null
-        });
+          id: null,
+          error: {
+            code: -32000,
+            message: "INVOKE_REQUEST_TOO_LARGE",
+            data: { code: "INVOKE_REQUEST_TOO_LARGE" }
+          }
+        }),
+      onError: (error) => this.#close(error),
+      onClose: () => this.#close(new Error("adapter-host parent connection closed")),
+      onLine: (line) => {
+        if (this.#closed) return;
+        try {
+          const message = asRpcMessage(JSON.parse(line));
+          if (
+            message.method !== "invoke" &&
+            message.method !== "invoke.with-environment" &&
+            Buffer.byteLength(line) > 512 * 1024
+          ) {
+            this.#send({
+              jsonrpc: "2.0",
+              id: message.id ?? null,
+              error: { code: -32000, message: "RPC_REQUEST_TOO_LARGE" }
+            });
+            return;
+          }
+          this.#trace?.("receive", traceFrame(message, line));
+          void this.#dispatch(message);
+        } catch (error) {
+          this.#send({
+            jsonrpc: "2.0",
+            error: { code: -32700, message: errorMessage(error) },
+            id: null
+          });
+        }
       }
     });
   }
@@ -229,18 +253,50 @@ export class AdapterHostRpcServer {
         const source = this.#host.invokeFrames(input, {
           signal: controller.signal,
           ...(method === "invoke.with-environment"
-            ? { executionEnvOverrides: params.executionEnvOverrides as InvokeEnvironment["executionEnvOverrides"] }
+            ? {
+                executionEnvOverrides:
+                  params.executionEnvOverrides as InvokeEnvironment["executionEnvOverrides"]
+              }
             : {})
         });
         this.#controllers.set(invocationId, controller);
         let first: IteratorResult<HostFrame>;
-        try { first = await source.next(); }
-        catch (error) { this.#controllers.delete(invocationId); throw error; }
-        if (first.done) { this.#controllers.delete(invocationId); throw new Error("HOST_ENDED_WITHOUT_RECEIPT"); }
-        const { run_id, invocation_id, stream_id, agent_session_id, session_generation, protocol_mode, protocol } = first.value;
-        const receipt = { run_id, invocation_id, stream_id, agent_session_id, session_generation, protocol_mode, protocol };
+        try {
+          first = await source.next();
+        } catch (error) {
+          this.#controllers.delete(invocationId);
+          throw error;
+        }
+        if (first.done) {
+          this.#controllers.delete(invocationId);
+          throw new Error("HOST_ENDED_WITHOUT_RECEIPT");
+        }
+        const {
+          run_id,
+          invocation_id,
+          stream_id,
+          agent_session_id,
+          session_generation,
+          protocol_mode,
+          protocol
+        } = first.value;
+        const receipt = {
+          run_id,
+          invocation_id,
+          stream_id,
+          agent_session_id,
+          session_generation,
+          protocol_mode,
+          protocol
+        };
         this.#send({ jsonrpc: "2.0", id, result: receipt });
-        void this.#streamInvoke(invocationId, (async function* () { yield first.value; yield* source; })());
+        void this.#streamInvoke(
+          invocationId,
+          (async function* () {
+            yield first.value;
+            yield* source;
+          })()
+        );
         return;
       }
       throw Object.assign(new Error(`unknown method: ${method}`), { code: -32601 });
@@ -347,6 +403,7 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
       }
     });
     lines.on("close", () => this.close(new Error("adapter-host connection closed")));
+    lines.on("error", (error) => this.close(error));
     input.on("error", (error) => this.close(error));
     output.on("error", (error) => this.close(error));
   }
@@ -385,7 +442,22 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
   request<T = unknown>(method: string, params: JsonRecord = {}, signal?: AbortSignal): Promise<T> {
     if (this.#closedError) return Promise.reject(this.#closedError);
     if (signal?.aborted) return Promise.reject(abortError(signal));
+    signal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(30_000)]);
     const id = randomUUID();
+    const message: RpcMessage = { jsonrpc: "2.0", id, method, params };
+    try {
+      assertJsonByteLimit(
+        message,
+        method === "invoke" || method === "invoke.with-environment"
+          ? INVOKE_REQUEST_MAX_BYTES
+          : 512 * 1024,
+        method === "invoke" || method === "invoke.with-environment"
+          ? "INVOKE_REQUEST_TOO_LARGE"
+          : "RPC_REQUEST_TOO_LARGE"
+      );
+    } catch (error) {
+      return Promise.reject(error instanceof Error ? error : new Error("RPC_REQUEST_INVALID"));
+    }
     const promise = new Promise<unknown>((resolve, reject) => {
       const cleanup = (): void => {
         signal?.removeEventListener("abort", onAbort);
@@ -393,7 +465,7 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
       };
       const onAbort = (): void => {
         cleanup();
-        reject(abortError(signal!));
+        reject(abortError(signal));
       };
       this.#pending.set(id, {
         resolve: (value) => {
@@ -407,7 +479,7 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
       });
       signal?.addEventListener("abort", onAbort, { once: true });
     });
-    this.#send({ jsonrpc: "2.0", id, method, params });
+    this.#send(message);
     return promise as Promise<T>;
   }
 
@@ -496,10 +568,7 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
   }
 }
 
-function assertReceiptInput(
-  receipt: HostRunReceipt,
-  input: InvokeInput
-): void {
+function assertReceiptInput(receipt: HostRunReceipt, input: InvokeInput): void {
   if (
     (input.runId !== undefined && receipt.run_id !== input.runId) ||
     receipt.invocation_id !== input.invocationId ||

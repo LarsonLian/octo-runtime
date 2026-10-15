@@ -22,7 +22,8 @@ import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, open, readFile, rm } from "node:fs/promises";
 import net, { type Server } from "node:net";
 import { dirname, join } from "node:path";
-import { createInterface } from "node:readline";
+import { readBoundedLines } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+import { INVOKE_REQUEST_MAX_BYTES } from "@mininglamp-oss/octo-runtime-protocol";
 import { HostRunService } from "@mininglamp-oss/octo-runtime-adapter-host";
 import { InvocationManifest } from "./invocation-manifest.js";
 import { ExtraPlugins, type ExtraRegistration } from "./extras.js";
@@ -397,15 +398,17 @@ export async function startDaemonServer({
     // A connection id scopes transport evidence only. AgentRun, AgentSession and
     // invocation ids retain their domain meanings and may span other transports.
     const connectionId = `conn_${randomUUID()}`;
-    const input = createInterface({ input: socket });
     // A client may disconnect before an RPC finishes; close only its transport.
     socket.on("error", () => socket.destroy());
-    input.on("error", () => socket.destroy());
     socket.once("close", () => {
       connections.delete(socket);
-      input.close();
+      stopInput();
     });
-    input.once("line", (line) => {
+    const stopInput = readBoundedLines(socket, INVOKE_REQUEST_MAX_BYTES, {
+      onError: () => socket.destroy(), onClose: () => {},
+      onTooLarge: () => socket.end(`${JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "INVOKE_REQUEST_TOO_LARGE" } })}\n`),
+      onLine: (line) => {
+      stopInput();
       void handleRequestLine({
         line,
         socket,
@@ -416,6 +419,7 @@ export async function startDaemonServer({
         resolveConfigurations: localConfigurations,
         connectionId
       });
+      }
     });
   });
 

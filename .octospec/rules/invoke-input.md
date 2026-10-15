@@ -69,7 +69,7 @@ AdapterHost.invoke、RpcClient.invoke 和 daemon SDK 共用 `invoke(input, envir
 | byteSize | image 必填：解码字节数，必须与 data 一致。 |
 | sha256 | image 必填：原字节 SHA-256，64 位小写十六进制，必须一致。 |
 
-每组最多 4 张图片，单图最多 2MiB，图片总字节最多 8MiB。CLI/SSE 整体 JSON 上限 16MiB，超限明确拒绝，不截断。Provider 不支持图片时明确报错。主输入和恢复输入显式提交相同图片属于业务选择，框架不自动去重。
+每组最多 4 张图片，单图最多 2 MiB，图片总字节最多 8 MiB。所有执行入口整体请求上限 32 MiB，按实际 UTF-8 JSON 计量，包含 Context、base64、显式恢复输入、可信执行环境和各跳包装；换行分隔符不计。等于上限接纳，超限在发送或 Provider 启动前以 INVOKE_REQUEST_TOO_LARGE 拒绝，不截断、不杀共享 Host。接收器有界丢弃异常超长行，未终止的故障传输有有限关闭期限。请求预算不扩大输出事件或源流窗口。Provider 不支持图片时明确报错。主输入和恢复输入显式提交相同图片属于业务选择，框架不自动去重，实际传输字节分别计费。实现与验证见[请求容量专项](../tasks/invoke-request-size-budget/brief.md)。
 
 ## Context
 
