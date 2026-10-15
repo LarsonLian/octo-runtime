@@ -15,6 +15,7 @@ coverage/
 .turbo/
 .nx/
 .eslintcache
+.impeccable/critique/
 
 # Logs and process files
 *.log
