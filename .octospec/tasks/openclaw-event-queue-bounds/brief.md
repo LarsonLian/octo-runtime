@@ -10,7 +10,7 @@ timestamp: 2026-10-16T00:00:00Z
 
 ## 状态与目标
 
-状态：首版计划，未实施。来自[长期运行审查](../../guides/runtime-long-running-review-plan.md)第 1 项。用户期望先过滤显著降低流量，再加固定阈值保证极端情况下仍有上限；不预设过滤一定降低某个数量级，验收记录实际被过滤数量。
+状态：已实施，针对性回归和真实 Gateway 正常调用通过，见[交付记录](../../journal/shared/2026-10-16-openclaw-queue-bounds-delivery.md)。来自[长期运行审查](../../guides/runtime-long-running-review-plan.md)第 1 项。先过滤无关流量，再加固定阈值保证极端情况下仍有上限；不预设过滤一定降低某个数量级，验收记录实际被过滤数量。
 
 [OpenClaw Adapter](../../../packages/octo-runtime-adapter-openclaw/src/index.ts) 的 EventQueue 当前无字节和条数上限，onEvent 接收所有广播，消费循环才过滤 runId。已复现暂停消费后，一万条其他 runId 事件使 GC 后堆增加约 40.8 MiB。目标是无关事件不保留，相关事件也不能无限堆积。
 

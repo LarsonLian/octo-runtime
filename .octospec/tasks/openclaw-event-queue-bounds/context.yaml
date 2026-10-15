@@ -12,7 +12,7 @@ sources:
   - .octospec/rules/engineering.md
   - packages/octo-runtime-adapter-openclaw/src/index.ts
   - packages/octo-runtime-adapter-sdk/src/native.ts
-status: planned-not-implemented
+status: implemented-targeted-and-gateway-verified
 decisions:
   prefilter_irrelevant_events: true
   queue_max_count: 4096

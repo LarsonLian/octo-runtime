@@ -11,6 +11,12 @@ export class DriverQueue<T> implements AsyncIterable<T> {
   #closed = false;
   #error?: Error;
   #waiter?: { resolve: (value: IteratorResult<T>) => void; reject: (error: Error) => void };
+  constructor(
+    private readonly options: {
+      discardOnFailure?: boolean;
+      onFailure?: (error: Error) => void;
+    } = {}
+  ) {}
   push(value: T): void {
     if (this.#closed) return;
     const bytes = Buffer.byteLength(JSON.stringify(value));
@@ -30,11 +36,13 @@ export class DriverQueue<T> implements AsyncIterable<T> {
     if (this.#closed) return;
     this.#closed = true;
     this.#error = error;
+    if (error && this.options.discardOnFailure) this.drain();
     if (this.#waiter) {
       if (error) this.#waiter.reject(error);
       else this.#waiter.resolve({ value: undefined, done: true });
       this.#waiter = undefined;
     }
+    if (error) this.options.onFailure?.(error);
   }
   fail(error: Error): void {
     this.close(error);

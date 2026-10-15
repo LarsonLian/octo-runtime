@@ -1,6 +1,7 @@
 import {
   initialControlInstructions,
   AcpApprovalBridge,
+  DriverQueue,
   defineAdapter,
   invocationEnvs,
   mapReasoningEffort,
@@ -135,22 +136,6 @@ interface EventQueueItem {
   error?: Error;
   done?: true;
   result?: unknown;
-}
-
-class EventQueue {
-  readonly #items: EventQueueItem[] = [];
-  readonly #waiters: Array<(value: EventQueueItem) => void> = [];
-
-  push(value: EventQueueItem): void {
-    const waiter = this.#waiters.shift();
-    if (waiter) waiter(value);
-    else this.#items.push(value);
-  }
-
-  next(): Promise<EventQueueItem> {
-    const value = this.#items.shift();
-    return value ? Promise.resolve(value) : new Promise((resolve) => this.#waiters.push(resolve));
-  }
 }
 
 interface StreamState {
@@ -604,14 +589,79 @@ async function* invokeOpenClawGateway(
   permissions: AcpApprovalBridge
 ): AsyncGenerator<CanonicalEvent> {
   const client = clientFactory(invocation.gateway);
-  permissions.bindTransport(() => client.close());
-  const queue = new EventQueue();
+  const requestAbort = new AbortController();
+  let resourceFailure = false;
+  let terminal: "completed" | "failed" | "cancelled" | undefined;
+  let closing: Promise<void> | undefined;
+  const stop = (cancel = false): Promise<void> => {
+    if (closing) return closing;
+    unsubscribe();
+    requestAbort.abort();
+    closing = (async () => {
+      if (cancel && agentAccepted)
+        await client
+          .request(
+            "sessions.abort",
+            {
+              key: providerSessionKey,
+              runId: acceptedRunId,
+              agentId: invocation.agentId
+            },
+            { timeoutMs: 5000 }
+          )
+          .catch(() => undefined);
+      await client.close();
+    })();
+    // A paused consumer must not leave a rejected cleanup promise unobserved.
+    void closing.catch(() => undefined);
+    return closing;
+  };
+  permissions.bindTransport(() => stop(!terminal));
+  const queue = new DriverQueue<EventQueueItem>({
+    discardOnFailure: true,
+    onFailure: () => {
+      resourceFailure = true;
+      void stop(true);
+    }
+  });
+  const iterator = queue[Symbol.asyncIterator]();
   let acceptedRunId = invocation.requestId;
   let agentAccepted = false;
   const seenApprovals = new Set<string>();
   const activeApprovals = new Map<string, JsonRecord>();
   let providerSessionKey = invocation.sessionKey;
-  const unsubscribe = client.onEvent((event) => queue.push({ event }));
+  const routedApprovals = new Set<string>();
+  const acceptEvent = (event: OpenClawGatewayEvent): void => {
+    if (closing) return;
+    const payload = asRecord(event.payload);
+    if (event.event === "agent") {
+      const runId = nonEmptyString(payload?.runId);
+      if (runId !== acceptedRunId && runId !== invocation.requestId) return;
+    } else if (event.event === "exec.approval.requested") {
+      const request = asRecord(payload?.request);
+      const id = nonEmptyString(payload?.id);
+      if (!id || routedApprovals.has(id) || request?.sessionKey !== providerSessionKey) return;
+      if (
+        request.runId &&
+        request.runId !== acceptedRunId &&
+        request.runId !== invocation.requestId
+      )
+        return;
+      if (routedApprovals.size >= 1024) {
+        queue.fail(new Error("APPROVAL_WAIT_UNAVAILABLE"));
+        return;
+      }
+      routedApprovals.add(id);
+    } else if (event.event === "exec.approval.resolved") {
+      const id = nonEmptyString(payload?.id);
+      // A resolution can arrive before the consumer has processed its request.
+      if (!id || (!routedApprovals.has(id) && !activeApprovals.has(id))) return;
+    } else return;
+    queue.push({ event });
+  };
+  const unsubscribe = client.onEvent(acceptEvent);
+  const onAbort = (): void => queue.fail(new Error("OpenClaw invocation aborted"));
+  req.signal?.addEventListener("abort", onAbort, { once: true });
   const state: StreamState = {
     lastSeq: -1,
     assistantText: "",
@@ -622,8 +672,6 @@ async function* invokeOpenClawGateway(
     messages: new Map(),
     tools: new Set()
   };
-  let terminal: "completed" | "failed" | "cancelled" | undefined;
-
   try {
     const hello = await client.connect();
     assertRuntimeGatewayContract(hello);
@@ -665,8 +713,7 @@ async function* invokeOpenClawGateway(
       );
       if (!Array.isArray(pending))
         throw new Error("OpenClaw Gateway returned invalid pending approvals");
-      for (const payload of pending)
-        queue.push({ event: { event: "exec.approval.requested", payload } });
+      for (const payload of pending) acceptEvent({ event: "exec.approval.requested", payload });
     }
     yield {
       protocolVersion: 2,
@@ -683,7 +730,7 @@ async function* invokeOpenClawGateway(
     const request = client.request("agent", invocation.agentParams, {
       expectFinal: true,
       timeoutMs: null,
-      signal: req.signal,
+      signal: AbortSignal.any([requestAbort.signal, ...(req.signal ? [req.signal] : [])]),
       onAccepted: (value) => {
         agentAccepted = true;
         const runId = nonEmptyString(asRecord(value)?.runId);
@@ -696,7 +743,9 @@ async function* invokeOpenClawGateway(
     );
 
     while (!terminal) {
-      const item = await queue.next();
+      const next = await iterator.next();
+      if (next.done) throw new Error("OpenClaw event queue closed before terminal");
+      const item = next.value;
       if (item.error) throw item.error;
       if (item.done) {
         const reconciled = normalizeFinalResponse(item.result, state);
@@ -933,7 +982,7 @@ async function* invokeOpenClawGateway(
       return;
     }
     let message = error instanceof Error ? error.message : String(error);
-    if (agentAccepted && terminal !== "failed" && terminal !== "cancelled") {
+    if (!resourceFailure && agentAccepted && terminal !== "failed" && terminal !== "cancelled") {
       const recoveryClient = clientFactory(invocation.gateway);
       try {
         assertRuntimeGatewayContract(await recoveryClient.connect());
@@ -977,8 +1026,12 @@ async function* invokeOpenClawGateway(
     };
     yield { protocolVersion: 2, type: "run.failed", payload: { message, adapterType: "openclaw" } };
   } finally {
-    unsubscribe();
-    await client.close();
+    req.signal?.removeEventListener("abort", onAbort);
+    queue.close();
+    queue.drain();
+    routedApprovals.clear();
+    activeApprovals.clear();
+    await stop(!terminal);
   }
 }
 
