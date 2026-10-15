@@ -18,6 +18,12 @@ supersedes: []
 
 # 渠道接入与业务投递
 
+## IM Agent 业务边界
+
+Channel Gateway 是长期 IM Agent 的业务入口，管理固定 Agent workdir、频道与 session/binding 映射、reset、本轮历史与 mention 指引以及结果投递。固定目录和 reset 的关系是架构决策，不是通用 Host 的功能计划。sessionId 改变不产生新目录；Host 已有其他目录准备能力也不构成 IM 的每会话目录需求。
+
+通用 `AdapterHost.invoke` 处理已给定的一次执行，不管理上述 IM 策略。修改请求、会话或目录行为时必须先区分业务与执行责任，见[架构边界与评审要求](../guides/im-agent-invocation-boundary.md)。
+
 ## 长任务与故障恢复改造状态
 
 2026-10-15 用户明确：Octo IM 的主要场景是长任务，约一分钟的短任务很少。Channel Gateway 已把默认总时限从 120 秒改为一天，Bot 配置范围与协议一致为 100..86400000 ms。任务总期限与连续故障恢复预算分开，业务重试由 Extra 决策，Adapter 提供结构化证据，Host 保持单次执行合同。首期针对 Codex，不自动扩展到其他 Extra。
@@ -28,6 +34,14 @@ Octo 与 WeCom 使用各自的可选 Extra 包，通过注入的共享 Host 执�
 
 ## 本轮输入
 
+Octo 群/话题消息必须通过真实发送者、Space 与群范围准入，且本条入站消息满足以下真实 mention 条件之一，才有资格进入既有命令处理或任务调度：`payload.mention.uids` 包含当前 Bot ID；或 `payload.mention.ais` 为数字 1/布尔 true，且 all/humans 均未置位。all/humans 同样只把数字 1/布尔 true 视为置位，存在这些标记时抑制单独的 ais 路径，但不覆盖有效的当前 Bot UID 点名。具体矩阵及实施计划见[Mention 入站方案](../tasks/channel-mention-context/inbound-trigger.md)。
+
+`@所有AI` 是用户显式选择的 mention，已实现；它不属于免 @。无真实 mention 元数据时不触发。已有 session、前一条消息的 @、正文名称及历史 mention 均不放宽门槛。接收端不得扫描正文中的 `@名字`、`@[uid:name]` 或 Markdown 代码/报告来补造 mention；发送前标记由发送端按其协议转换为元数据。独立图片遵循同一规则，先准入再下载。2026-10-16 已实现 UID/ais 共用准入及 Codex 独立图片接线，实际验收见[交付记录](../journal/shared/2026-10-16-channel-features-delivery.md)。
+
+发送端漏填 mention、传输层丢字段或接收端错误解析，分别在对应责任模块修复。Gateway 不为前两类缺陷新增正文猜测、别名匹配或免 @ 回退；按[基础架构的责任归属原则](architecture.md)检查完整链路。无元数据的普通文本继续作为未触发消息处理，不为提示发送端缺陷而在群中额外回复。
+
+2026-10-16 架构决策：明确拒绝群/话题免 @ 需求，不提供账号级、群级或会话级关闭 mention 门槛的配置，也不读取外部免 @ 偏好来绕过准入。这不是延期需求或预留扩展。群聊中的普通交流不应启动 Agent；增加可关闭的触发门槛会放大误触发、执行成本及 Bot 相互触发风险。旧插件的相关能力仅作为历史调查依据，不构成功能对齐目标。
+
 Octo 与 WeCom 的 Bot 配置不包含渠道 `type`；平台由加载的 Extra 包确定。`adapter.adapter_type` 继续用于选择执行引擎，状态和执行元数据中的平台由插件自身输出。
 
 Octo 插件配置只校验已识别字段，未知扩展字段保留并忽略，不使用字段白名单拒绝整个配置。可选 `bot_name` 为本地展示名称，省略时使用 `bot_id`，不参与身份或授权。CLI/daemon 统一经 Extra 声明装配，不提供渠道专用命令或文件读取。`extraset` 原样保存并替换整份插件声明，多机器人由插件自己的 `config.bots` 数组表达；Bot 校验、默认值与连接管理属于插件。
@@ -36,7 +50,13 @@ Octo 插件配置只校验已识别字段，未知扩展字段保留并忽略，
 
 渠道使用公共 InvokeInput 并显式选择 canonical，保存 Provider binding，处理交互与 reset。源事件及 payload 必须完整交给消费应用；UI 展示过滤不应裁剪原始历史数据。
 
-Octo Channel Gateway 的本地引擎省略 `adapter.workdir` 时，由渠道入口使用并创建 `~/octo-runtime/channels/{bot_id}`，不随配置 Home 或会话变化。显式目录必须是绝对路径；Context workspace 仍按执行配置解析规则覆盖默认值。OpenClaw 保留 Provider 自有工作区。
+IM 后台配置对应的 Agent 使用固定目录，不按任务选择或改变 workdir。Octo Channel Gateway 的本地引擎省略 Agent 配置中的 `adapter.workdir` 时，由渠道入口使用并创建 `~/octo-runtime/channels/{bot_id}`，不随配置 Home、任务或会话变化。显式 Agent 目录必须是绝对路径；任务级 workdir 或 workspace Context 不得覆盖该 Agent 的目录。OpenClaw 保留 Provider Agent 自有固定工作区。显式更新 Agent 配置与提交任务是不同操作。
+
+以上为 IM 架构约束，替代此前“Context workspace 可覆盖 IM 默认目录”的规则表述；通用 Host 的配置解析能力不因此改变。IM 请求入口已在 resolver 前校验任务 workspace，指定不同目录时返回 IM_AGENT_WORKDIR_FIXED，不把固定目录作为可被任务替换的 defaults。
+
+新逻辑会话在首条普通输入准备时只自动尝试一次最近历史：最多 15 条、总计 1500 Unicode 码点，取当前触发之前同一 DM/群/话题的纯文本。先占用有界会话标记再异步读取，失败、空结果和准备失败均不恢复资格；正常续聊不重拉。reset 后允许补旧聊天，重试使用冻结输入，不新增本地历史持久库。
+
+出站普通回复不自动 @ 发起者。显式真人通知由模型理解需求、按需查询身份，在成功 final 普通正文中输出 `@[uid:displayName]`。Channel 用结构化 Markdown 解析排除代码和引用，再校验当前成员并转换为人类协议 `content + mention.uids/entities`，经原连接统一发送。失败目标退为普通 @名字，不阻断正文、不另发失败提示或补发。模型出站 Bot 与广播仍不开放；进度、工具、thinking 和失败终态不转换。Channel 对新 session 或无 Provider binding 的调用显式提交 mention 指引；历史的一次资格不受指引重提影响。
 
 ## Octo CLI 的渠道执行环境
 

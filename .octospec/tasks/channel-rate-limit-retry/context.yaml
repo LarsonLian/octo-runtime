@@ -1,0 +1,13 @@
+rules:
+  - runtime-architecture
+  - runtime-channel
+  - runtime-stateless
+  - runtime-session-reset
+  - runtime-engineering
+sources:
+  - .octospec/tasks/im-long-running-retry/brief.md
+  - packages/octo-runtime-extra-channel-gateway/src/transport/api/client.ts
+  - packages/octo-runtime-extra-channel-gateway/src/delivery/dispatcher.ts
+  - packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts
+  - packages/octo-runtime-adapter-codex/src/app-server.ts
+status: coordination-only-implementation-in-other-codex-task

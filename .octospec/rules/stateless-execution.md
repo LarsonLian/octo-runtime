@@ -43,6 +43,8 @@ daemon/Host 重启后旧 stream 不恢复，不自动重放业务请求，不从
 
 Octo 和 WeCom 各自使用有界内存会话映射，具体容量及 reset 见 [会话合同](session-reset.md)。这些业务映射不属于通用 Host 的持久历史。映射失效后创建新会话，不能声称已恢复旧 Provider 会话。
 
+2026-10-15 用户对 Channel Gateway 再次确认：不新增 Context、聊天正文、输入图片、业务 Provider binding 或投递账本的本地持久化，不在 Adapter 建业务状态库；在途与连接状态保持有界内存。需要新会话背景时由 Channel 调用 API 获取当前频道此前 15 条并显式提交 extra Context；此策略于 2026-10-16 实施，一次资格保存在现有有界 binding 中。Provider 原生存储、现有身份和配置不因本决策删除或重置。依据、代价与验收见[不持久化决策](../tasks/channel-no-context-persistence/brief.md)及[历史 Context 专项](../tasks/channel-new-session-history/brief.md)。
+
 ## 保留的文件
 
 配置、受保护凭据、machine/Runtime 身份、PID/socket、监督状态和 `invocations.json` 可以保留。后者用于孤儿进程清理，不保存 Run 输入或事件历史。Provider 自身的数据库及原生会话文件仍由 Provider 管理。

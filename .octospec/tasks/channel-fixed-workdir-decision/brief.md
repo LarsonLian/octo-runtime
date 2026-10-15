@@ -12,7 +12,7 @@ timestamp: 2026-10-16T00:00:00Z
 
 2026-10-15 用户明确：“每会话工作目录”是伪需求，不实施。Agent 像 OpenClaw 一样使用固定 workdir；/reset 只切换会话身份及 Provider binding，不切换或清理工作目录。本决策撤回本轮助手将会话目录分区列为缺口的建议。
 
-本文件记录决策依据与评估，不新增随机目录模式，不要求重构现有工作区，不修改代码或宣称完成线上验收。当前实现已有固定目录基础，见[默认目录任务](../channel-default-cwd/brief.md)。
+本文件记录架构决策依据与评估。2026-10-16 已在 IM 请求入口补齐任务目录不可覆盖校验；im-test 验证 reset 前后目录一致。没有新增目录生命周期或重构既有工作区，见[交付验收记录](../../journal/shared/2026-10-16-channel-features-delivery.md)及[默认目录任务](../channel-default-cwd/brief.md)。
 
 2026-10-16 分类纠正：本文件是已接受的 IM Agent 架构决策，不是待开发 plan，不参与功能计划准备度评分。保留历史专项路径以便追溯；实际规则已写入[架构合同](../../rules/architecture.md)、[渠道合同](../../rules/channel-integration.md)与[会话合同](../../rules/session-reset.md)。
 
@@ -41,6 +41,6 @@ timestamp: 2026-10-16T00:00:00Z
 
 依据：[请求目录选择](../../../packages/octo-runtime-extra-channel-gateway/src/execution/dispatcher.ts)、[reset 与迟到更新](../../../packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts)、[会话规则](../../rules/session-reset.md)、[Context 工作目录规则](../../rules/context-input.md)。
 
-后续涉及目录或会话的实现变更，按此架构约束回归：同一 IM Agent 在不同频道及 reset 前后 workdir 相同，Provider session 按合同换新，原文件仍存在；reset 不取消，旧排队身份及迟到更新保持既有约束。其他通用调用方的合法目录配置仍应有效，不能被 IM 策略覆盖。这些是一致性核对项，不是新增功能待办。需要真实调试时连接 https://im-test.deepminer.com.cn/；本轮只改文档。
+后续涉及目录或会话的实现变更，按此架构约束回归：同一 IM Agent 在不同频道及 reset 前后 workdir 相同，Provider session 按合同换新，原文件仍存在；reset 不取消，旧排队身份及迟到更新保持既有约束。其他通用调用方的合法目录配置仍应有效，不能被 IM 策略覆盖。这些是一致性核对项，不是新增功能待办。需要真实调试时连接 https://im-test.deepminer.com.cn/。
 
-任务携带不同 workdir/workspace 时也不得改变 IM Agent 目录；Agent 配置显式变更另行处理。当前 resolver 合并路径不代表上述不可覆盖约束已强制实现，核对位置及状态见[渠道规则](../../rules/channel-integration.md)。
+任务携带不同 workdir/workspace 时由 IM 请求入口报 IM_AGENT_WORKDIR_FIXED；Agent 配置显式变更另行处理。通用 resolver 与 Host 目录能力不变，核对位置及状态见[渠道规则](../../rules/channel-integration.md)。

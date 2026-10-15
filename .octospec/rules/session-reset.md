@@ -30,6 +30,10 @@ supersedes: []
 
 新 session 所需的背景由下一轮业务发起方明确提供，执行层不读取旧 Event 或聊天历史自动补齐。
 
+2026-10-15 用户确认 IM Agent 固定 workdir；每会话目录不是需求。reset 只切业务 session、代次和 Provider binding，不切目录或删除产物；延迟分配的现有实现不应改成修改旧 Provider 的 opaque ID。2026-10-16 进一步明确这是 IM 层的架构决策，不是功能计划，也不要求通用 Host 限制其他调用方的合法目录配置。决策依据及共享文件、并发影响评估见[固定目录决策](../tasks/channel-fixed-workdir-decision/brief.md)，分层责任见[IM Agent 与 invoke 边界](../guides/im-agent-invocation-boundary.md)。
+
+IM reset 不要求无历史对话。已实施的[历史策略](../tasks/channel-new-session-history/brief.md)为：下一条普通输入可补 reset 前的最近聊天，每新 session 仅自动尝试一次，最多 15 条/1500 字符；失败或空结果也消耗本次资格，当前任务空历史继续。正常续聊不自动重新拉取；重试复用冻结快照。一次性资格由 Channel 在有界会话状态中管理，Host/Adapter 不去重或补齐 Context，不增加持久 reset 屏障。2026-10-16 im-test 已验证 reset 后补旧历史且工作目录不变，详见[交付记录](../journal/shared/2026-10-16-channel-features-delivery.md)。
+
 ## 当前内置 IM 存储
 
 ### 调度状态与业务 binding 分开

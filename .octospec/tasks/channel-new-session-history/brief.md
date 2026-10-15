@@ -14,13 +14,13 @@ timestamp: 2026-10-16T00:00:00Z
 
 2026-10-16 用户确认：IM 的 /reset 不要求无历史对话，下一条普通输入仍可补 reset 之前的聊天；历史获取失败就空历史继续，历史只影响算法效果，不作为业务执行前置条件。正常续聊不重新拉取，每个新 session 自动补历史只尝试一次。最多 15 条纯文本历史，总计 1500 字符，从最新向更早保留，边界消息允许部分保留并标记截断。
 
-本文件为已选设计，尚未实施或线上验收。自动补取与裁剪由 IM-Channel 执行，复用已有鉴权 API；不依赖模型自行记住首次查询，也不强制启动 CLI 子进程。模型后续按需使用 octo-cli 查询属于另一个显式工具行为，不受自动补取次数限制。
+2026-10-16 已实施会话内一次资格、历史 API 范围和 1500 字符裁剪。im-test 隔离群实测最近 15 条、续聊不重拉、reset 后旧历史及话题隔离；并发与失败资格由自动化验证。自动补取与裁剪由 IM-Channel 执行，复用已有鉴权 API；不依赖模型自行记住首次查询，也不强制启动 CLI 子进程。模型后续按需使用 octo-cli 查询属于另一个显式工具行为，不受自动补取次数限制。详见[交付验收记录](../../journal/shared/2026-10-16-channel-features-delivery.md)。
 
 ## 现状与问题
 
 [im-channel](../../../packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts) 保存 session.update 返回的 Provider binding，默认 [MemoryImSessionStore](../../../packages/octo-runtime-extra-channel-gateway/src/application/session-store.ts) 受数量、字节和 TTL 限制。进程内续聊可以恢复 binding；重启、过期或淘汰后会分配新业务 session。Provider 原生历史是否仍在，不等于 Channel 仍有对应 binding。
 
-[build_im_contexts](../../../packages/octo-runtime-extra-channel-gateway/src/transport/contexts.ts) 已支持配置 history_limit 时逐轮读历史并构造 extra.im/history；当前没有“新会话默认此前 15 条”的业务策略。[消息 API](../../../packages/octo-runtime-extra-channel-gateway/src/transport/api/conversations.ts) 已有 limit 和序号范围参数，但 pull_mode 与上界的真实组合是否返回最近 15 条，仍须线上验证。
+[build_im_contexts](../../../packages/octo-runtime-extra-channel-gateway/src/transport/contexts.ts) 已替换旧 history_limit 逐轮策略：仅由 Channel 的 initialSession 资格触发，构造 extra.im/history。[消息 API](../../../packages/octo-runtime-extra-channel-gateway/src/transport/api/conversations.ts) 使用 start_message_seq=触发序号-1、end_message_seq=0、pull_mode=0 和 limit=15；im-test 已验证该组合确实取得最接近触发消息的此前记录。
 
 ## 目标行为
 
@@ -57,7 +57,7 @@ timestamp: 2026-10-16T00:00:00Z
 
 Provider 在一次调用内才报告 fresh_fallback 时，沿用调用方显式恢复输入及现有合同；不要求 Adapter 临时读取 IM，不为补背景另起调用或重放已产生副作用的任务。历史不足本身不新增失败条件。fresh_fallback 结果事件不自动重置本次历史补取标记；Channel 后续显式新建会话时再分配新资格。
 
-示意输入只表示 Context 形状，不是已实现的新字段合同：
+示意输入表示现有 Context v3 的业务 item，不是新顶层字段：
 
 ```json
 {

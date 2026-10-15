@@ -12,14 +12,14 @@ timestamp: 2026-10-16T00:00:00Z
 
 2026-10-15 用户进一步确认：本专项仅支持 Codex Adapter，且只支持独立图片消息。OpenClaw、Claude Code（cc）和其他 Adapter 不在本期图片支持范围；富文本内图片、合并转发内图片及其他媒体解析不纳入。本结论替代初稿的 Codex/OpenClaw 范围及消息形态待决项，不推断其他产品的所有原生能力。
 
-本文件为初版开发简报，未修改代码或完成线上验收。图片支持不要求持久化 Context、不要求每会话工作目录，也不自动扩大到其他 Adapter、WeCom 或所有媒体消息类型。
+2026-10-16 已实施独立图片准入、受限下载和真实 image inputs 接线，并在 im-test 隔离群完成上传、WS 入站、下载、真实 Codex 识图与回复闭环。DM 的真实图片收发尚未单独验证；自动化覆盖 DM 输入及非 Codex 拒绝。图片支持不要求持久化 Context、不要求每会话工作目录，也不自动扩大到其他 Adapter、WeCom 或所有媒体消息类型。详见[交付验收记录](../../journal/shared/2026-10-16-channel-features-delivery.md)。
 
 ## 当前依据
 
-- [入站准入](../../../packages/octo-runtime-extra-channel-gateway/src/transport/normalize.ts) 只接受 type=1 且 content 为字符串的文本；[Channel](../../../packages/octo-runtime-extra-channel-gateway/src/transport/channel.ts) 将 content 转成 text。
-- [请求构造](../../../packages/octo-runtime-extra-channel-gateway/src/execution/dispatcher.ts) 当前只提供文本，没有把入站图片传成 modelInputParts。
+- [入站准入](../../../packages/octo-runtime-extra-channel-gateway/src/transport/normalize.ts) 接受 type=1 文本与 type=2 独立图片；[Channel](../../../packages/octo-runtime-extra-channel-gateway/src/transport/channel.ts) 仅在通过准入后绑定图片下载回调。
+- [图片下载](../../../packages/octo-runtime-extra-channel-gateway/src/transport/image-input.ts) 校验地址、实际格式、流式大小与取消；[IM 执行入口](../../../packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts) 在调用前生成 modelInputParts，并在非 Codex 情况下于下载前拒绝。
 - [InvokeInput 合同](../../rules/invoke-input.md) 已有 text/image part，支持 PNG、JPEG、WebP；每组最多 4 张，单图 2 MiB，总计 8 MiB。沿用现有合同，图片字节不得转成说明文本或 URL 后声称模型已看到图片。
-- [Codex app-server](../../../packages/octo-runtime-adapter-codex/src/app-server.ts) 已有 image part 到 data URL 的转换；完整 Channel 链路仍需接通。本期不调查或改造 OpenClaw 图片附件路径。
+- [Codex app-server](../../../packages/octo-runtime-adapter-codex/src/app-server.ts) 已有 image part 到 data URL 的转换，本次直接复用。本期不调查或改造 OpenClaw 图片附件路径。文件头、尺寸与完整尾部检查不是完整图片解码器，Provider 仍可能报告更深层的损坏错误。
 
 ## 开发范围
 

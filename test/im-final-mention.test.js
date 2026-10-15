@@ -158,7 +158,8 @@ test("transport resolves topic members once and sends mention with final text on
 });
 
 test("application uses final mention conversion only for successful final replies, not progress or failures", async (t) => {
-  let receive;
+  let receive,
+    fail = false;
   t.mock.method(GatewayTransport.prototype, "start", async function () {
     receive = (m) => this.callbacks.onMessage(m);
   });
@@ -184,7 +185,13 @@ test("application uses final mention conversion only for successful final replie
             type: "message.delta",
             payload: { channel: "final", text: "完成 @[u:李白]" }
           };
-          yield { protocolVersion: 2, type: "run.completed", payload: {} };
+          yield fail
+            ? {
+                protocolVersion: 2,
+                type: "run.failed",
+                payload: { message: "@[u:李白] fixture failure" }
+              }
+            : { protocolVersion: 2, type: "run.completed", payload: {} };
         },
         async cancel() {
           return { cancelled: false };
@@ -195,7 +202,7 @@ test("application uses final mention conversion only for successful final replie
   );
   await runtime.start();
   t.after(() => runtime.close());
-  receive({
+  const message = {
     messageId: "m",
     text: "task",
     senderId: "owner",
@@ -210,8 +217,14 @@ test("application uses final mention conversion only for successful final replie
     async replyFinal(text) {
       final.push(text);
     }
-  });
+  };
+  receive(message);
   for (let i = 0; i < 40 && runtime.status.sessions.length; i++) await settle();
   assert.deepEqual(final, ["完成 @[u:李白]"]);
   assert.deepEqual(normal, []);
+  fail = true;
+  receive({ ...message, messageId: "failed" });
+  for (let i = 0; i < 40 && runtime.status.sessions.length; i++) await settle();
+  assert.deepEqual(final, ["完成 @[u:李白]"]);
+  assert.equal(normal.length, 1, "failed terminal uses the ordinary reply path");
 });

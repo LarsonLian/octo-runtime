@@ -60,6 +60,10 @@ renderer 只匹配 namespace/name 的白名单 pattern，保序输出全部数�
 
 工作目录由已解析的执行配置与 [execution-preparation.ts](../../packages/octo-runtime-adapter-host/src/execution-preparation.ts) 准备。固定目录按合同检查，随机目录按执行配置创建；cwd 不是权限或操作系统隔离边界。OpenClaw 的 `workspace: false` 跳过目录准备，保留 Provider 原生工作区，Context 快照仍保持原值。
 
+本段描述通用执行能力，不代表 IM 产品需要每会话目录。IM Agent 固定 workdir 的策略由 Channel 选择；新 session 或 reset 不改变目录。通用调用方仍可按自身业务显式选择合法目录，Host 不按 sessionId 推导路径。两层职责见[IM Agent 与 invoke 边界](../guides/im-agent-invocation-boundary.md)。
+
+对 IM 后台配置对应的 Agent，目录来自 Agent 配置，其任务提交的 workdir 或 workspace Context 不得改变该目录。此约束由 IM 业务入口负责，不能转成通用 renderer 改写业务 Context，或全局禁止其他调用方显式配置工作目录。
+
 ## 当前核对入口
 
 - [renderer](../../packages/octo-runtime-adapter-host/src/model-input.ts)：只按白名单选择 item，数组保序，payload 对象键排序后输出 JSON，不投影或丢字段。

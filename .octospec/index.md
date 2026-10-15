@@ -6,7 +6,7 @@
 
 | 主题 | 入口 |
 | --- | --- |
-| 总体责任边界 | [基础架构](rules/architecture.md) |
+| 总体责任边界与按合同归属修复问题 | [基础架构](rules/architecture.md) |
 | 总体协议、调用时序与审批／追问往返 | [协议与调用设计](rules/protocol-design.md) |
 | 身份、Home、profile、安装与生命周期 | [本地 Runtime](rules/runtime-lifecycle.md) |
 | 公共输入、默认值与多模态 | [InvokeInput](rules/invoke-input.md) |
@@ -35,11 +35,27 @@
 - [Adapter 开发](guides/adapter-authoring.md)：接口示例和验收。
 - [Provider 实现矩阵](guides/providers.md)：传输、模式及权限差异。
 - [Extra 配置与调用](guides/extra-configuration.md)：当前 CLI 路径、SDK 和 SSE 示例。
+- [IM Agent 与通用 invoke 的责任边界](guides/im-agent-invocation-boundary.md)：长期 Agent 的业务策略与单次执行能力分层；固定 workdir 与 reset 是 IM 架构决策，不是每会话目录功能计划。
 - [本地运维](guides/operations.md)：真实状态、排障和日志。
 
 宿主接入与部署仍由根目录 [INTEGRATION.md](../INTEGRATION.md) 和 [DEPLOYMENTS.md](../DEPLOYMENTS.md) 提供入口；包 README 保留包级用法。
 
 ## 历史与取舍
+
+- [Channel 六项决策实施与测试环境验收](journal/shared/2026-10-16-channel-features-delivery.md)：当前分支分批实现 Codex 独立图片、新会话一次历史、原生 Mention 与固定目录校验；全仓回归及 im-test 群/话题、真实 Codex 识图和客户端高亮通过，限制逐项记录。
+
+- [协议责任与拒绝跨模块猜测兜底](journal/shared/2026-10-16-contract-responsibility-decision.md)：从业务与合同定位问题，在责任模块修复；发送端漏填 mention 不由接收端正文匹配补救，旧实现的兼容动机不是复制设计的理由。
+
+2026-10-15 Channel 讨论拆分为六项，包含功能计划、架构决策和协作核对，不能统一按开发 plan 评分。2026-10-16 明确固定 workdir 与 reset 为已接受的架构决策，不是待开发功能；各项实现与验收状态以正文为准：
+
+| 专项 | 已确认结论与待决边界 |
+| --- | --- |
+| [1. Codex 独立图片输入](tasks/channel-image-input/brief.md) | 仅 Codex、仅独立图片消息；OpenClaw/cc、富文本及转发内图片不纳入，复用 inputs 图片 part |
+| [2. 新会话历史 Context](tasks/channel-new-session-history/brief.md) | 每新 session 只尝试一次，最多 15 条/1500 字符纯文本；reset 仍补旧聊天，失败空历史继续，正常续聊不重拉 |
+| [3. 不持久化上下文](tasks/channel-no-context-persistence/brief.md) | 有界内存，不新增历史、Context、binding 或投递账本持久化 |
+| [4. 限流与重试](tasks/channel-rate-limit-retry/brief.md) | 区分 API/Provider/Channel 重试，衔接另一 Codex 任务，不重复实现 |
+| [5. 固定工作目录架构决策](tasks/channel-fixed-workdir-decision/brief.md) | 已接受的 IM 架构约束，不是开发 plan；一个 IM 后台 Agent 固定目录，任务/session/reset 均不改变；不扩大为通用 Host 的目录限制 |
+| [6. Mention 身份与能力](tasks/channel-mention-context/brief.md) | 入站支持真实 UID 点名及纯 ais 的 @所有AI，拒绝正文匹配与免 @；出站真人点名由模型查 UID、Channel 随 final 发送，普通回复不自动 @；模型出站广播与 Bot 目标待决 |
 
 - [IM 长任务时限与 Codex 故障重试](tasks/im-long-running-retry/brief.md)：已实施一天默认值与独立恢复预算；Extra 重试工具/交互前的明确 Codex 暂态失败，Host 保持单次执行。真实 Codex 受控 503 恢复通过，真实 IM 收发、一天持续运行与工具后恢复仍待验收。
 
@@ -80,7 +96,7 @@
 | --- | --- |
 | `rules/` | `type: Rule`，当前必须遵守的合同 |
 | `guides/` | `type: Guide`，操作与实现参考；本仓采用的 OKF 扩展类型 |
-| `tasks/<slug>/` | `type: Task`，目标、范围、取舍与验收 |
+| `tasks/<slug>/` | 开发任务使用 `type: Task`；保留原路径的纯架构决策使用 `type: Guide` 并链接现行规则，不因位于 tasks 就视为待开发功能 |
 | `journal/shared/` | `type: Journal`，历史事实、学习及验证结果 |
 | `learnings/pending/` | 仅放未决知识，完成后回写规则 |
 

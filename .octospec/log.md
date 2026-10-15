@@ -1,10 +1,40 @@
 # 工程知识变更记录
 
+## 2026-10-16
+
+- 在当前 main 分批交付 Channel 决策：真实 UID/ais 准入、Codex 独立图片、新会话一次历史、fixed workdir 校验及 final 真人 Mention。保留有界内存与既有重试，回写架构责任边界；840 项自动化通过，im-test 群/话题、真实 Codex 图片和客户端高亮已验收，详见[交付记录](journal/shared/2026-10-16-channel-features-delivery.md)。
+
+- 将“谁的模块有问题就修谁”写入[基础架构](rules/architecture.md)：从业务意图与协议责任定位根因，生产、传输和消费各负其责，拒绝下游通过猜测正文或放宽准入掩盖上游缺陷。同步 Channel 规则与 Mention 计划，记录[决策依据和评审思路](journal/shared/2026-10-16-contract-responsibility-decision.md)。本次只更新架构文档，不修改功能代码。
+
+- 按用户新决定支持入站 `@所有AI`，新增[真实 Mention 入站方案与计划](tasks/channel-mention-context/inbound-trigger.md)：复用旧 OpenClaw 插件的直接 UID 或纯 ais 判断，all/humans 抑制 ais 路径，拒绝正文名称/标记猜测、免 @ 及代理身份。同步渠道规则、图片专项、Mention 协议和总览，替代此前“仅 UID、广播不触发”的中间结论；模型出站广播仍未开放。本次只更新计划，未修改功能代码或发送线上消息。
+
+- 按用户决定，将群/话题免 @ 明确记为[已拒绝的架构需求](rules/channel-integration.md)：不提供账号、群或会话级开关，不读取外部免 @ 偏好绕过准入，不作为延期项。同步图片及 Mention 专项，避免将旧插件能力误作对齐目标。本次仅更新文档。
+
+- 核对旧 OpenClaw 插件的 mention 门槛及免 @ 例外，按用户要求明确[图片专项](tasks/channel-image-input/brief.md)和渠道规则：群/话题须由本条消息显式 mention 当前 Bot UID，活跃 session、相邻 @ 文本、正文名称及广播标记不放宽准入；先准入再下载图片。当前文本实现已有该门槛，图片尚待实施。本次仅更新文档。
+
+- 按用户澄清，撤回[历史专项](tasks/channel-new-session-history/brief.md)中旧 history_limit 的兼容与迁移要求：项目全新且尚无人使用，直接采用一次补取及 15 条/1500 字符策略，同步配置和测试，不保留旧模式。仅更新计划文档。
+
+- 收敛[新会话历史计划](tasks/channel-new-session-history/brief.md)：IM reset 后仍可补旧聊天，每新 session 只自动尝试一次；失败也消耗资格，空历史继续任务，正常续聊不重拉。最多 15 条纯文本、总计 1500 字符，从最新向更早选取，边界消息保留部分并标记截断。由 Channel 处理并发资格与重试快照，通用 Host 不缓存去重。同步会话规则、相关专项及总览，本次仅文档更新，见[记录](journal/shared/2026-10-16-new-session-history-once.md)。
+
+- 明确 IM 固定目录归属后台配置对应的 Agent，任务 workdir/workspace 不得切换目录；修正渠道规则中“Context 可覆盖默认目录”的历史表述，同步架构、责任矩阵、固定目录记录及总览。区分架构约束与当前 resolver 合并实现，不声称覆盖限制已强制实施。本次只改文档，见[责任边界记录](journal/shared/2026-10-16-im-agent-invoke-boundary.md)。
+
+- 纠正 IM Agent 与通用 `AdapterHost.invoke` 的职责混用，新增[责任矩阵与评审要求](guides/im-agent-invocation-boundary.md)，同步架构、渠道、输入、工作目录及会话规则。将[固定 workdir/reset](tasks/channel-fixed-workdir-decision/brief.md)归类为已接受的 IM 架构决策，不作为功能计划评分；通用目录配置能力不构成 IM 每会话目录需求，IM 固定目录也不限制其他合法调用方。本次仅改文档，见[记录](journal/shared/2026-10-16-im-agent-invoke-boundary.md)。
+
+- 按用户决策收敛 [Mention 计划](tasks/channel-mention-context/brief.md)：模型找不到合适目标时自行降级普通 @名字 或纯文本，不强制追问、不展示点名失败；仅处理 final 文本，代码内容保持原样。发送前点名校验失败不阻断正文，复用最终回复链，不新增模型重跑或补发流程。同步首次 guidance、JSON 样例、协议及验收条件，见[决策记录](journal/shared/2026-10-16-mention-best-effort-decision.md)。本次仅更新文档。
+
 ## 2026-10-15
 
-- 实施 [IM 长任务与 Codex 重试改造](tasks/im-long-running-retry/brief.md)：默认一天、工具无输出时限一天，Extra 管理连续恢复与累计重试上限；工具/交互前的 Codex 暂态失败可新建尝试，原生提示仅计入恢复预算，Host 保持单次执行。真实 Codex 受控 503 后恢复成功；真实 IM 收发及一天持续运行未验收。按用户要求移除 Runtime 与 Work App 的 adapter-icons 依赖，详见[验证记录](journal/shared/2026-10-15-im-long-running-retry.md)。
+- 更新 [mention 专项](tasks/channel-mention-context/brief.md)：核对人类客户端与旧渠道源码，选择模型查 UID、最终回答输出 `@[uid:displayName]`、Channel 转换为原生消息体并统一发送；补齐[协议依据](tasks/channel-mention-context/protocol.md)、[首次 Context 指引](tasks/channel-mention-context/context-guidance.md)和 JSON 样例，修正强制 CLI 发总结及仅靠服务端解析标记的假设。Bot/广播继续待决；本次只改文档，验证范围见[记录](journal/shared/2026-10-15-mention-protocol-context-decision.md)。
 
 - 创建[第三方 Adapter/Extra 飞书开发指南](https://my.feishu.cn/docx/IW30d2KL6o137ExHKHRc2yrJngh)，补齐公开类型、完整示例、Agent Run 和兼容边界。按用户要求从普通 --help 隐藏高级 --manifest，解析继续支持；19 项针对性回归及隔离示例执行结果见[记录](journal/shared/2026-10-15-third-party-plugin-guide.md)。
+
+- 用户确认 [mention 第一项决策](tasks/channel-mention-context/brief.md)：DM/群/话题普通回复不自动 @ 真人或 Bot 发起者；记录通知噪声、Bot 互相触发及去重/限流无法阻止循环的依据。保留底层 API，原生 reply 通知行为待核对，主动 @ 其他成员的必要性继续待决。本次只更新文档。
+
+- 用户进一步收敛[图片专项](tasks/channel-image-input/brief.md)：仅 Codex、仅独立图片消息，每条消息提交一张图片，不要求附带文本；OpenClaw/cc、富文本及转发内图片均不纳入。同步范围、验收与目录，替代初稿的 Codex/OpenClaw 范围；本次只更新文档。
+
+- 按用户对齐拆分 Channel 六个初版专项：[图片](tasks/channel-image-input/brief.md)、[新会话此前 15 条历史](tasks/channel-new-session-history/brief.md)、[不持久化](tasks/channel-no-context-persistence/brief.md)、[限流重试协作](tasks/channel-rate-limit-retry/brief.md)、[固定 workdir 决策评估](tasks/channel-fixed-workdir-decision/brief.md)、[mention 身份来源](tasks/channel-mention-context/brief.md)。确认 Codex/OpenClaw 图片范围、有界内存与固定 Agent 工作区，撤回新增持久绑定及每会话目录建议；reset 历史边界和 mention 接线仍待决。本次只更新 OKF，未修改业务代码或执行线上调试；检查结果见[文档验证记录](journal/shared/2026-10-15-channel-six-topic-alignment.md)。
+
+- 实施 [IM 长任务与 Codex 重试改造](tasks/im-long-running-retry/brief.md)：默认一天、工具无输出时限一天，Extra 管理连续恢复与累计重试上限；工具/交互前的 Codex 暂态失败可新建尝试，原生提示仅计入恢复预算，Host 保持单次执行。真实 Codex 受控 503 后恢复成功；真实 IM 收发及一天持续运行未验收。按用户要求移除 Runtime 与 Work App 的 adapter-icons 依赖，详见[验证记录](journal/shared/2026-10-15-im-long-running-retry.md)。
 
 - 开放单一 npm 发行包的 `/extra` 与 `/protocol`，提供完整 Extra 和执行协议类型及校验工具；隔离安装的外部 TS 插件编译、加载及真实 Codex Agent Run 通过。另记录 CLI TS 内置集合加 `extra_adapters.json` 的第三方 Adapter 追加目标，加载改造与 `/adapter` 尚未实施。范围和回归环境缺失见[记录](journal/shared/2026-10-15-public-plugin-contracts.md)。
 

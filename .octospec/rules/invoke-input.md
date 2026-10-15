@@ -24,6 +24,8 @@ supersedes: []
 
 AdapterHost.invoke、RpcClient.invoke 和 daemon SDK 共用 `invoke(input, environment)`。RPC 传输原输入，只有 Host 调用 prepareInvokeInput 解析执行默认值和内部请求；不得按入口或 native/canonical 模式另建执行准备路径。createInputInvoke 只选择同一源流视图，invokeFrames 也使用同一个 input/environment；旧三参数 HostInvoke/createHostInvoke、HostInvokeWireOptions 和模式序列化函数已删除。signal 留在 environment，RPC 映射为 cancel，服务端用自己的 AbortController 接回同一 Host 流程。实施与验收范围见[任务](../tasks/unify-invoke-transport/brief.md)。
 
+这是通用单次执行合同，不是长期 IM Agent 管理接口。sessionId 标识会话，不决定 workdir；Provider 会话续接与目录选择分别按本轮输入及真实 Provider 约束处理。IM 固定工作目录、reset 和历史采集由 Channel 负责，不能推导为通用 Host 按 session 建目录或补业务背景。详见[责任边界](../guides/im-agent-invocation-boundary.md)。
+
 提前取消必须在发送 RPC 或启动 Provider 前失败。执行中取消沿原 invocationId 发送；接纳期间服务端也持有同一 AbortController，不能因回执尚未送达而丢失取消。客户端停止消费或连接断开时执行既有取消和资源清理合同；源帧的回执、排序和终态校验继续有效。
 
 ## 完整顶层字段
