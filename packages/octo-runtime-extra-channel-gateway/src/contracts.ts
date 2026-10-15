@@ -8,6 +8,7 @@ import type {
   InteractionResponse,
   InvokeInput,
   InvokeEnvironment,
+  ModelInputPart,
   ProviderSession
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type { RunPresentation } from "./presentation/run-projector.js";
@@ -61,6 +62,7 @@ export interface ImInboundMessage {
   conversationId: string;
   conversationKind: "direct" | "group" | "thread";
   text: string;
+  buildInputs?(signal: AbortSignal): Promise<ModelInputPart[]>;
   reply(text: string, effectKey?: string): Promise<void>;
   buildContext(
     signal: AbortSignal,

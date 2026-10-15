@@ -1,0 +1,31 @@
+rules:
+  - runtime-architecture
+  - runtime-channel
+  - runtime-context-input
+  - runtime-invoke-input
+  - runtime-stateless
+  - runtime-engineering
+sources:
+  - packages/octo-runtime-extra-channel-gateway/src/transport/normalize.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/channel.ts
+  - packages/octo-runtime-extra-channel-gateway/src/execution/dispatcher.ts
+  - packages/octo-runtime-adapter-codex/src/app-server.ts
+  - packages/octo-runtime-adapter-openclaw/src/index.ts
+  - packages/octo-runtime-adapter-claude-code/src/index.ts
+status: design-selected-not-implemented
+decisions:
+  group_topic_trigger: current-bot-uid-or-pure-ais-in-payload-mention
+  shared_trigger_plan: .octospec/tasks/channel-mention-context/inbound-trigger.md
+  check_trigger_before_image_download: true
+  active_session_bypasses_mention: false
+  adjacent_message_mention_authorizes_image: false
+scope:
+  adapter: codex
+  message_form: standalone-image
+  images_per_message: 1
+  excluded:
+    - openclaw-image-input
+    - claude-code-image-input
+    - rich-text-images
+    - forwarded-images
+    - historical-image-download

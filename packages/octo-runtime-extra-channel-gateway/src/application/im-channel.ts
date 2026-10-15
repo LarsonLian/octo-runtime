@@ -3,6 +3,8 @@
  * 管理会话、排队、取消和交互归属；平台协议交给 connector，领域业务交给发起方。
  */
 import { randomUUID } from "node:crypto";
+import { assertModelInputParts } from "@mininglamp-oss/octo-runtime-protocol";
+import { ImImageInputError } from "../transport/image-input.js";
 import { performance } from "node:perf_hooks";
 import type {
   InteractionRequestedPayload,
@@ -452,7 +454,7 @@ export class ImRuntime {
   ): Promise<void> {
     if (this.#closed || this.#signal.aborted || !this.#delivery) return;
     const prompt = message.text.trim();
-    if (!prompt) return;
+    if (!prompt && !message.buildInputs) return;
     if (prompt === "/session") {
       await this.#reply(
         message,
@@ -481,6 +483,16 @@ export class ImRuntime {
         this.#signal,
         occurrenceId
       );
+      if (message.buildInputs) {
+        if (prepared.adapterType !== "codex")
+          throw new ImImageInputError("本期仅 Codex 支持独立图片输入，当前引擎不支持。");
+        const parts = await message.buildInputs(this.#signal);
+        assertModelInputParts(parts);
+        if (parts.length !== 1 || parts[0].type !== "image")
+          throw new ImImageInputError("每条独立图片消息只接收一张图片。");
+        prepared.request.modelInputParts = parts;
+        prepared.request.prompt = "[图片]";
+      }
       if (session.id === prepared.request.agentSessionId) {
         session.lastEventId = executionSession.lastEventId;
         session.lastRunId = prepared.request.runId;
@@ -496,11 +508,15 @@ export class ImRuntime {
         runId: prepared.request.runId,
         snapshot
       });
-    } catch {
+    } catch (error) {
       this.#diagnostic("IM_CONTEXT_PREPARATION_FAILED");
       await this.#reply(
         message,
-        "本轮输入或执行配置准备失败，尚未发起执行。请检查配置、会话权限或稍后重试。",
+        error instanceof ImImageInputError
+          ? error.message
+          : message.buildInputs
+            ? "图片输入准备失败，尚未发起执行。请检查图片或稍后重试。"
+            : "本轮输入或执行配置准备失败，尚未发起执行。请检查配置、会话权限或稍后重试。",
         `prepare:${occurrenceId ?? message.messageId}`
       );
       return;

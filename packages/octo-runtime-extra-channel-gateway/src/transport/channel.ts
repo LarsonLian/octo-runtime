@@ -18,6 +18,7 @@ import { fetchBotEvents, ackBotEvent } from "./api/events.js";
 import { parseCardAction } from "./card-action.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { octoCliEnvironment } from "../execution/tool-environment.js";
+import { downloadImageInput } from "./image-input.js";
 
 /** Octo IM 平台连接器：WuKong 与 Octo REST 适配；不是 MCP 连接器。 */
 export class GatewayTransport {
@@ -84,7 +85,18 @@ export class GatewayTransport {
           conversationId: message.channelId,
           conversationKind:
             message.channelType === 1 ? "direct" : message.channelType === 5 ? "thread" : "group",
-          text: String(message.payload.content),
+          text: message.payload.type === 2 ? "" : String(message.payload.content),
+          ...(message.payload.type === 2
+            ? {
+                buildInputs: (turnSignal: AbortSignal) =>
+                  downloadImageInput(
+                    message.payload.url,
+                    this.config.api_url,
+                    token,
+                    AbortSignal.any([signal, turnSignal])
+                  )
+              }
+            : {}),
           executionEnvironment: () => {
             if (this.#closed || signal.aborted) throw new Error("IM_CONNECTION_REPLACED");
             return { executionEnvOverrides: structuredClone(toolEnvironment) };

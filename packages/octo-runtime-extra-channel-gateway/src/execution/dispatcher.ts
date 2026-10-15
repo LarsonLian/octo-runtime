@@ -128,7 +128,7 @@ export function createImInvocation(
   const { effectiveContext: snapshot, resolvedExecutionPlan: plan } = resolved;
   const eventId = `evt_${randomUUID()}`,
     runId = `run_${randomUUID()}`;
-  const prompt = message.text.trim();
+  const prompt = message.buildInputs ? "[Image]" : message.text.trim();
   const request: InvokeRequest = {
     protocolVersion: 2,
     invocationId: `invoke_${randomUUID()}`,
