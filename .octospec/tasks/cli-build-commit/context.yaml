@@ -1,0 +1,15 @@
+rules:
+  - runtime-architecture
+  - runtime-lifecycle
+  - runtime-engineering
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/runtime-lifecycle.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+decisions:
+  - 构建时固化来源，不在 CLI 运行时读取调用者目录的 Git。
+  - 未提交改动附带 dirty；无 Git 来源显示 unknown。

@@ -1,5 +1,7 @@
 # Octo Runtime CLI
 
+`pnpm build` 固化当前源码的 Git commit。`octo-runtime`、`octo-runtime --version` 和 `octo-runtime version` 显示版本及 `commit:<12 位短 SHA>`；工作树有未提交修改时附带 `(dirty)`。安装包携带构建元数据，不依赖运行目录的 Git；无 Git 来源时显示 `commit:unknown`。
+
 管理本地 Agent Runtime、Provider Adapter 和后台服务。直接执行 `octo-runtime` 显示用途、发行版本及命令列表；`octo-runtime --version`（或 `-v`、`version`）输出根 `package.json` 的版本。
 
 帮助采用 `Usage`、`Available Commands`、`Flags` 与 `Global Flags` 分层格式。命令组 `octo-runtime daemon` 和 `octo-runtime adapter` 默认显示帮助；启动前台进程必须显式执行 `octo-runtime daemon run`。使用 `octo-runtime help daemon start` 或 `octo-runtime daemon start --help` 查看具体命令。

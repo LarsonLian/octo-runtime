@@ -4,6 +4,14 @@ import { fileURLToPath } from "node:url";
 // Read the public release package, rather than the private CLI workspace version.
 const releasePackage = JSON.parse(readFileSync(new URL("../../../package.json", import.meta.url), "utf8")) as { version: string };
 export const cliVersion = releasePackage.version;
+let buildInfo: { commit: string | null; dirty: boolean | null } = { commit: null, dirty: null };
+try {
+  buildInfo = JSON.parse(readFileSync(new URL("./build-info.json", import.meta.url), "utf8")) as typeof buildInfo;
+} catch (error) {
+  if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+}
+const cliCommitInfo = `commit:${buildInfo.commit?.slice(0, 12) ?? "unknown"}${buildInfo.dirty ? " (dirty)" : ""}`;
+export const cliVersionInfo = `${cliVersion}\n${cliCommitInfo}`;
 
 interface Command {
   description: string;
@@ -70,7 +78,7 @@ export function helpText(path: string[] = []): string {
   const command = commandAt(path);
   const invocation = ["octo-runtime", ...path].join(" ");
   const sections = [
-    ...(path.length ? [] : [`Octo Runtime CLI (${cliVersion})`]),
+    ...(path.length ? [] : [`Octo Runtime CLI (${cliVersion})\n${cliCommitInfo}`]),
     command.description,
     ...(command.details ? [command.details] : []),
     `Usage:\n  ${invocation}${command.children ? " [command]" : command.usage ? ` ${command.usage}` : ""} [flags]`,

@@ -11,6 +11,7 @@
   "files": [
     "apps/adapter-host/dist/**/*.js",
     "apps/cli/dist/**/*.js",
+    "apps/cli/dist/build-info.json",
     "apps/cli/README.md",
     "apps/daemon/dist/**/*.js",
     "config/adapters.json",

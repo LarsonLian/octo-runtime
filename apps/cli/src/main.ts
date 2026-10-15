@@ -1,5 +1,5 @@
 import { getExtra, setExtra } from "./extras.js";
-import { cliVersion, helpText, validateCommand } from "./help.js";
+import { cliVersionInfo, helpText, validateCommand } from "./help.js";
 import { formatDaemonResult } from "./daemon-output.js";
 import type { ServiceBackend } from "@mininglamp-oss/octo-runtime-cross-service";
 import { createHash, randomUUID } from "node:crypto";
@@ -86,7 +86,7 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
   const output = dependencies.output ?? (value => process.stdout.write(`${value}\n`));
   const command = validateCommand(positionals, flags);
   if (flags.version === true || (positionals[0] === "version" && flags.help !== true)) {
-    output(cliVersion);
+    output(cliVersionInfo);
     return 0;
   }
   if (command.help) {

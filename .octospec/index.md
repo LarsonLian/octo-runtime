@@ -40,6 +40,8 @@
 
 ## 历史与取舍
 
+- [CLI 构建 commit 信息](tasks/cli-build-commit/brief.md)：pnpm build 固化 Git 来源，版本与帮助显示 commit/dirty，发行包保留元数据。
+
 - [CLI 设备级 Extra 配置目录](tasks/device-extra-directory/brief.md)：记录 CLI 唯一配置源、SDK 宿主边界与实施计划。
 
 - [删除通用执行渠道快照](tasks/remove-context-snapshot/brief.md)：删除 contextSnapshot、渠道快照引用类型及转发；业务自行保存材料，另记录 Host 与 RPC 统一调用链的目标。
