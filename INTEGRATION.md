@@ -68,7 +68,7 @@ HostApp 选择接入插件，插件决定其内部连接方式。接入以已有
 
 以 IM 接入为例，宿主读取配置并构造完整插件声明，通过 `configureExtra({ name, module, config: { bots } })` 加载或更新。`config` 是对象参数，不是文件路径；IM 插件对完整 Bot 列表做增量应用，不重连未变化的 Bot。读取数据源及决定更新时间属于宿主；完整示例见第 2.6 节。
 
-**CLI 的默认文件加载行为不构成 SDK 接入要求。** 本文第 1.4 节通过统一的 `extraset` 将插件声明保存到 `<home>/default/extra/<name>/config.json`，由 CLI daemon 启动时加载；客户桌面 App 可以使用自己的 store，再通过 SDK 下发配置，无需创建或同步该文件。参考 Octo Work 把 IM 通道配置保存到应用自己的 SQLite，恢复时读取并通过 SDK 应用；SQLite 同样只是该 App 的选择，不是第三方宿主的必需依赖。
+**CLI 的默认文件加载行为不构成 SDK 接入要求。** 本文第 1.4 节通过统一的 `extraset` 将插件声明保存到 `<home>/extras/<name>/config.json`，由 CLI daemon 启动时加载；客户桌面 App 可以使用自己的 store，再通过 SDK 下发配置，无需创建或同步该文件。参考 Octo Work 把 IM 通道配置保存到应用自己的 SQLite，恢复时读取并通过 SDK 应用；SQLite 同样只是该 App 的选择，不是第三方宿主的必需依赖。
 
 当前部分模块仍会在 Home/profile 下读写 `config.json`、Runtime 身份及设备凭据等内部文件。上述原则不表示 SDK 完全不访问磁盘，也不表示现有内部状态格式已经移除；它说明的是**宿主配置来源与模块执行能力分离**。宿主仍需满足所调用 API 的字段、认证、授权和生命周期要求。
 
@@ -117,7 +117,7 @@ npm unlink -g @mininglamp-oss/octo-runtime
 | `--home PATH`    | 可选，指定 daemon／channel 配置所在的 Home 目录；省略时 macOS/Linux 为 `~/.octo-runtime`，Windows 为 `%LOCALAPPDATA%\OctoRuntime` |
 | `--profile NAME` | Runtime 配置名称，默认为 `default`                                                               |
 
-`--home` 选择 CLI 配置与运行状态目录，不是 Provider 执行工作区，也不是必填参数。一个 Home 运行一个 daemon 和共享 AdapterHost，可以包含多个 profile，每个 profile 有独立 `runtime_id`。Extra 属于 Host；`default/extra` 只是 CLI 的当前存储路径，`extraset` 不接受 `--profile`。daemon 启停作用于整个 Home。
+`--home` 选择 CLI 配置与运行状态目录，不是 Provider 执行工作区，也不是必填参数。一个 Home 运行一个 daemon 和共享 AdapterHost，可以包含多个 profile，每个 profile 有独立 `runtime_id`。Extra 属于 Host；`<home>/extras` 是 CLI 唯一配置目录，`extraset` 和 `extraget` 不接受 `--profile`，不探测其他位置，不合并或回退。daemon 启停作用于整个 Home。SDK 宿主自行提供声明；目录选择原因见 [CLI 决策](.octospec/tasks/device-extra-directory/brief.md)。
 
 下文需要显式选择目录或 profile 的 Bash/zsh 示例使用以下变量；使用默认目录时可省略整个 `--home` 参数：
 
@@ -181,7 +181,7 @@ octo-runtime daemon uninstall
 
 使用 `octo-runtime extraset <name>`，从 stdin 提交完整的 `{ module, enabled?, config }` JSON 对象。Octo IM 使用 `channel-gateway` 插件，其配置为 `config.bots` 数组，可包含多个 Bot；插件级和 Bot 级的 `enabled` 均默认 `true`。
 
-CLI 将完整对象保存到 `<home>/default/extra/<name>/config.json`，POSIX 文件权限为 `0600`，不回显配置或凭据。**每次保存整体替换同名插件配置，不按 `bot_id` 合并。** 增删或修改 Bot 时，提交需要保留的完整 `config.bots` 数组。不同名称的 Extra 配置互不覆盖。
+CLI 将完整对象保存到 `<home>/extras/<name>/config.json`，POSIX 文件权限为 `0600`，不回显配置或凭据。**每次保存整体替换同名插件配置，不按 `bot_id` 合并。** 增删或修改 Bot 时，提交需要保留的完整 `config.bots` 数组。不同名称的 Extra 配置互不覆盖。
 
 单个与多个 Bot 使用相同格式：一个 Bot 为 `config.bots: [botA]`，多个为 `config.bots: [botA, botB]`。若上次保存 `[botA, botB]`，本次提交 `[botB]`，最终配置只保留 botB；提交 `[]` 表示不保留任何 Bot。整个声明中的其他字段也随本次提交覆盖，不从上次配置补齐。
 

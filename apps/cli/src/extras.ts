@@ -26,7 +26,7 @@ export async function setExtra(
     throw new Error("extraset stdin must contain one valid JSON object");
   }
   assertStoredExtra(value);
-  const file = join(paths.home, "default", "extra", name, "config.json");
+  const file = join(paths.home, "extras", name, "config.json");
   return withSetupLock(paths, async () => {
     await writeJsonAtomic(file, value);
     return { saved: true, name, file, restart_required: true };
@@ -35,7 +35,7 @@ export async function setExtra(
 
 export async function getExtra(paths: RuntimePaths, name: string): Promise<StoredExtra> {
   assertExtraName(name);
-  const entries = await readExtraDirectory(join(paths.home, "default", "extra"));
+  const entries = await readExtraDirectory(join(paths.home, "extras"));
   const entry = entries.find(item => item.name === name);
   if (!entry) throw new Error("EXTRA_NOT_REGISTERED");
   if (!entry.module) await entry.load();

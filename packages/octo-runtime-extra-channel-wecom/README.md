@@ -31,7 +31,7 @@ octo-runtime extraset channel-wecom <<'JSON'
 JSON
 ```
 
-保存到 `<home>/default/extra/channel-wecom/config.json`，POSIX 权限为 `0600`。每次 `extraset` 替换完整声明，不追加或合并。多个 Bot 放在同一个 `config.bots` 数组中；修改时必须提交希望保留的全部 Bot，插件名固定为 `channel-wecom`。
+保存到 `<home>/extras/channel-wecom/config.json`，POSIX 权限为 `0600`。每次 `extraset` 替换完整声明，不追加或合并。多个 Bot 放在同一个 `config.bots` 数组中；修改时必须提交希望保留的全部 Bot，插件名固定为 `channel-wecom`。
 
 单个 Bot 同样写为 `config.bots: [bot]`，没有单对象格式。上次为 `[botA, botB]`，本次为 `[botB]`，覆盖后只保留 botB；`[]` 表示没有 Bot。省略字段不从旧声明补齐。
 

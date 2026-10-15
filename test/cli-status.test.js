@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, chmod } from "node:fs/promises";
+import { mkdtemp, rm, chmod, mkdir, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +8,36 @@ import { Readable } from "node:stream";
 import { startDaemonServer } from "@mininglamp-oss/octo-runtime-daemon";
 import { runCli, callDaemon } from "../apps/cli/dist/main.js";
 import { waitFor } from "./runtime-fixture.js";
+
+test("Extra configuration belongs to Home even when the default profile changes", async t => {
+  const home = await mkdtemp(join(tmpdir(), "extra-device-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const legacyDirectory = join(home, "default", "extra", "example");
+  await mkdir(legacyDirectory, { recursive: true });
+  const legacyFile = join(legacyDirectory, "config.json");
+  const legacy = JSON.stringify({ module: "legacy-extra", config: { legacy: true } });
+  await writeFile(legacyFile, legacy, { mode: 0o600 });
+  const warnings = [];
+  const errorOutput = value => warnings.push(value);
+  await assert.rejects(runCli(["--home", home, "extraget", "example"], { output() {}, errorOutput }), /EXTRA_NOT_REGISTERED/);
+  assert.deepEqual(warnings, []);
+  const stored = { module: "device-extra", config: { shared: true } };
+  await runCli(["--home", home, "extraset", "example"], {
+    input: Readable.from([JSON.stringify(stored)]), output() {}, errorOutput
+  });
+  for (const profile of ["personal", "team"]) {
+    await writeFile(join(home, "config.json"), JSON.stringify({ schema_version: 1, default_profile: profile, channel: "stable" }));
+    let result;
+    await runCli(["--home", home, "extraget", "example"], { output: value => { result = JSON.parse(value); }, errorOutput() {} });
+    assert.deepEqual(result, stored);
+  }
+  assert.deepEqual(JSON.parse(await readFile(join(home, "extras", "example", "config.json"), "utf8")), stored);
+  assert.equal(await readFile(legacyFile, "utf8"), legacy);
+  for (const command of ["extraset", "extraget"]) {
+    await assert.rejects(runCli(["--home", home, "--profile", "team", command, "example"], { output() {} }), /--profile is not supported/);
+  }
+  await assert.rejects(runCli(["--home", home, "--profile", "extras", "adapter", "list"], { output() {} }), /infrastructure/);
+});
 
 test("extraget round trips the entire stored declaration without importing its module", async t => {
   const home = await mkdtemp(join(tmpdir(), "extra-get-"));
@@ -25,12 +55,12 @@ test("extraget round trips the entire stored declaration without importing its m
     });
     assert.equal(output.length, 1);
     assert.deepEqual(JSON.parse(output[0]), original);
-    assert.deepEqual(diagnostics, [`Config file: ${join(home, "default/extra/example/config.json")}`]);
+    assert.deepEqual(diagnostics, [`Config file: ${join(home, "extras/example/config.json")}`]);
   }
   await assert.rejects(runCli(["--home", home, "extraget", "missing"]), /EXTRA_NOT_REGISTERED/);
   await assert.rejects(runCli(["--home", home, "extraget", ".."]));
   if (process.platform !== "win32") {
-    await chmod(join(home, "default/extra/example/config.json"), 0o644);
+    await chmod(join(home, "extras/example/config.json"), 0o644);
     await assert.rejects(runCli(["--home", home, "extraget", "example"]), /EXTRA_CONFIG_PERMISSIONS_INVALID/);
   }
 });

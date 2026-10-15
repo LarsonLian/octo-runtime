@@ -30,8 +30,8 @@ const commands: Command = {
       run: { description: "Run the daemon in the foreground", flags: { "--quiet": "Suppress terminal lifecycle output" } }
     } },
     doctor: { description: "Check local configuration, service, and daemon health", flags: { "--json": "Output diagnostic checks as JSON (default)" } },
-    extraset: { description: "Save a complete Extra plugin configuration from stdin", usage: "<name> < config.json", details: "Reads {module, enabled?, config}. Restart the daemon to apply changes. Credentials are never echoed." },
-    extraget: { description: "Print a saved Extra plugin configuration as complete JSON", usage: "<name>", details: "Reads the saved {module, enabled?, config} object without loading the plugin.\nPrints the configuration file path to stderr; stdout contains only JSON." },
+    extraset: { description: "Save a complete Extra plugin configuration from stdin", usage: "<name> < config.json", details: "Reads {module, enabled?, config}. Saves to <home>/extras/<name>/config.json, shared by all profiles.\nRestart the daemon to apply changes. Credentials are never echoed." },
+    extraget: { description: "Print a saved Extra plugin configuration as complete JSON", usage: "<name>", details: "Reads <home>/extras/<name>/config.json without loading the plugin; profile directories are ignored.\nPrints the configuration file path to stderr; stdout contains only JSON." },
     status: { description: "Show local runtime status" },
     version: { description: "Print the installed CLI version" },
     help: { description: "Help about any command", usage: "[command]" },
@@ -92,6 +92,9 @@ export function validateCommand(positionals: string[], flags: Record<string, str
   const requested = positionals[0] === "help" ? positionals.slice(1) : positionals;
   const path = requested.slice(0, ["adapter", "daemon"].includes(requested[0]) ? 2 : 1);
   const command = commandAt(path);
+  if (!help && ["extraset", "extraget"].includes(path[0]) && flags.profile !== undefined) {
+    throw new Error("Extra configuration belongs to Runtime Home; --profile is not supported for extraset or extraget");
+  }
   if (help && requested.length > path.length && command.children) throw new Error("unexpected arguments for help");
   const allowed = new Set(["help", "version", "home", "profile", "verbose",
     ...Object.keys(command.flags ?? {}).map(flag => flag.split(" ")[0].slice(2).replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase()))]);

@@ -23,7 +23,7 @@ octo-runtime daemon restart
 octo-runtime extra status
 ```
 
-声明保存在 `<home>/default/extra/sse-demo/config.json`，每次 `extraset` 整份替换，不合并内部字段；保存后重启 daemon 才应用。尚未安装后台服务时使用 `octo-runtime daemon run`。框架只校验声明与 JSON 结构，以下业务字段由本插件解释。
+声明保存在 `<home>/extras/sse-demo/config.json`，每次 `extraset` 整份替换，不合并内部字段；保存后重启 daemon 才应用。尚未安装后台服务时使用 `octo-runtime daemon run`。框架只校验声明与 JSON 结构，以下业务字段由本插件解释。
 
 `host` 缺省为 `127.0.0.1`，接受 IP 地址；`port` 缺省为 3002，范围 1–65535。`token` 必填、非空、不含空白。`Authorization` 必须为 `Bearer <token>`；认证失败返回 401 且不调用 Host。
 

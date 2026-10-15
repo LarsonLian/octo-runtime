@@ -35,14 +35,14 @@ process.on("SIGHUP", stop);
 if (process.connected) process.once("disconnect", stop);
 try {
   const home = runtimePaths.homePath!;
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(runtimePaths.profile))
+  if (runtimePaths.profile.toLowerCase() === "extras" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(runtimePaths.profile))
     throw new Error("invalid runtime profile");
   const profiles = new Set([runtimePaths.executionOnly ? runtimePaths.profile : "default"]);
   for (const entry of runtimePaths.executionOnly ? [] : await readdir(home, { withFileTypes: true }).catch((error) => {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   })) {
-    if (!entry.isDirectory() || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(entry.name)) continue;
+    if (!entry.isDirectory() || entry.name.toLowerCase() === "extras" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(entry.name)) continue;
     try {
       const config: unknown = JSON.parse(
         await readFile(join(home, entry.name, "config.json"), "utf8")
@@ -78,7 +78,7 @@ try {
       }
     });
   }
-  const extraDirectory = join(home, "default", "extra");
+  const extraDirectory = join(home, "extras");
   if (runtimePaths.consoleOutput) console.error("extras scanning", { directory: extraDirectory });
   const extras = runtimePaths.executionOnly ? [] : await readExtraDirectory(extraDirectory);
   if (runtimePaths.consoleOutput) console.error("extras discovered", {

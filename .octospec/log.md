@@ -2,6 +2,8 @@
 
 ## 2026-10-15
 
+- 落实 [CLI 设备级 extras 配置目录](tasks/device-extra-directory/brief.md)：唯一读取 `<home>/extras`，Extra 命令拒绝 profile，不增加旧布局探测或迁移；58 项相关回归与限定范围实机验证通过，见 [记录](journal/shared/2026-10-15-cli-extras-directory.md)。
+
 - 按[任务](tasks/remove-context-snapshot/brief.md)删除通用执行协议的 contextSnapshot 和 ChannelContextSnapshotRef，同步 schema、生成类型、校验、Core 转发及测试；记录 Host/RPC 输入统一和 Host 单一执行链的目标，当前内部链路尚未改造。验证结果见[记录](journal/shared/2026-10-15-remove-context-snapshot.md)。
 
 - 按[任务](tasks/remove-business-scenarios/brief.md)删除通用协议的 ScenarioRequest、场景常量、builder 白名单和校验导出；业务自行构造 Context，Channel Gateway Extra 仍为业务接入层，Work App 测试程序不构成兼容约束。验证结果见[记录](journal/shared/2026-10-15-remove-business-scenarios.md)。

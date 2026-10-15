@@ -77,7 +77,7 @@ try {
     output() {}
   });
   // Inject the real desktop daemon's IPC execution port, rather than a mock Provider.
-  extras = new ExtraPlugins(await readExtraDirectory(join(home, "default/extra")), {
+  extras = new ExtraPlugins(await readExtraDirectory(join(home, "extras")), {
     invoke: createInputInvoke((type, request, options) =>
       invokeDaemonRun(socket, type, request, options)
     )

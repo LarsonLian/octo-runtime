@@ -47,7 +47,7 @@ test("extraset without workdir can be loaded by channel-gateway", async (t) => {
     ]),
     output() {}
   });
-  const extras = new ExtraPlugins(await readExtraDirectory(join(home, "default", "extra")), {});
+  const extras = new ExtraPlugins(await readExtraDirectory(join(home, "extras")), {});
   t.after(() => extras.close());
   await extras.loadConfigured();
   assert.equal(extras.status["channel-gateway"].phase, "loaded");
@@ -67,7 +67,7 @@ test("Extra config preserves Bot arrays, names and arbitrary plugin fields", asy
     adapter: { workdir: home, custom_option: { value: 42 } }
   });
   const second = octo(home, { bot_id: "other" });
-  const file = join(home, "default/extra/channel-gateway/config.json");
+  const file = join(home, "extras/channel-gateway/config.json");
   await configure([first, second]);
   assert.deepEqual(JSON.parse(await readFile(file, "utf8")).config.bots, [first, second]);
   await configure([second]);

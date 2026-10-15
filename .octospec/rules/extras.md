@@ -155,4 +155,6 @@ Provider Adapter 是执行的被调用实现，不属于这些业务入口。宿
 
 [加载与清理](../../packages/octo-runtime-daemon/src/extras.ts)、[声明校验](../../packages/octo-runtime-daemon/src/extra-config.ts)、[Octo 默认导出](../../packages/octo-runtime-extra-channel-gateway/src/extra.ts)、[WeCom 默认导出](../../packages/octo-runtime-extra-channel-wecom/src/extra.ts)、[生命周期测试](../../test/extras.test.js)。
 
-当前 CLI 读取 `<home>/default/extra/<name>/config.json`。前台 `daemon run` 默认输出扫描目录、发现条目和逐插件加载结果；`--quiet` 关闭输出。`extra status` 是生命周期，`extra status <name>` 转交插件的 status 业务查询，不把 loaded 推导成连接在线。曾提出的 Home 根 `extras/` 布局和三命令统一启动汇总均未实现，本合同不要求按那些目标路径配置。宿主自己的存储不受 CLI 文件位置约束。
+CLI 唯一配置源为 `<home>/extras/<name>/config.json`，由同一 Home 的 Host 管理；profile 只区分虚拟 Runtime，不分区 Extra。SDK 由宿主显式提供声明，不强制采用 CLI 的文件布局。extraset/extraget 拒绝 `--profile`；不得按 profile 搜索、回退或合并同名声明，否则用户可能修改未生效的文件。当前版本尚未发布，不增加旧布局探测、兼容、迁移或提示逻辑。决策与实施范围见 [设备级目录任务](../tasks/device-extra-directory/brief.md)。
+
+前台 `daemon run` 默认输出扫描目录、发现条目和逐插件加载结果；`--quiet` 关闭普通生命周期输出。插件生命周期与业务在线状态分别按真实证据报告。宿主自己的存储不受 CLI 文件位置约束。

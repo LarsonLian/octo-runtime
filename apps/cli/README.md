@@ -18,7 +18,7 @@ octo-runtime daemon status --json
 
 `status` 与 `daemon status --json` 在每个已加载 Extra 的生命周期旁添加 `status`，原样保留插件的 JSON；`daemon status` 的终端摘要也展开这些 JSON。未加载插件仅显示真实生命周期；查询失败提供 `status_error: EXTRA_STATUS_FAILED`，不冒充空状态。这里的运行状态与 `extraget` 读取的持久配置分开。
 
-`octo-runtime extraset <name>` 从 stdin 读取完整 `{module, enabled?, config}` 并以 0600 权限替换 `HOME/default/extra/<name>/config.json`，不回显配置或启动插件。保存后执行 `octo-runtime daemon restart` 应用变更。CLI 不再提供 `extra status/load/unload`；嵌入式宿主继续通过 SDK 管理插件生命周期。
+`octo-runtime extraset <name>` 从 stdin 读取完整 `{module, enabled?, config}` 并以 0600 权限替换 `HOME/extras/<name>/config.json`，不回显配置或启动插件。保存后执行 `octo-runtime daemon restart` 应用变更。CLI 不再提供 `extra status/load/unload`；嵌入式宿主继续通过 SDK 管理插件生命周期。
 
 The native HTTP/Bearer/SSE demonstration and full here-string examples are documented in [Extra plugins](../../.octospec/rules/extras.md). This is a generic configuration command, not a platform-specific setup flow.
 
@@ -32,7 +32,7 @@ The native HTTP/Bearer/SSE demonstration and full here-string examples are docum
 
 2026-10-14 目标：先初始化并保存稳定的本地 Runtime ID，本地 Host IPC 就绪即为启动成功。注册由独立显式命令触发，不再是安装、启动或本地调用的前置条件，不创建默认 Agent。
 
-CLI 统一使用 `extraset <name>` 从 stdin 接收完整插件声明 `{ module, enabled?, config }`，保存在 `<home>/default/extra/<name>/config.json`。框架只校验声明及 JSON 结构，业务配置由插件解释；同名插件每次整份替换。
+CLI 统一使用 `extraset <name>` 从 stdin 接收完整插件声明 `{ module, enabled?, config }`，保存在 `<home>/extras/<name>/config.json`。框架只校验声明及 JSON 结构，业务配置由插件解释；同名插件每次整份替换。
 
 渠道的 Bot 配置、凭据和执行设置由插件解释。多个 Bot 一次写入完整的 `config.bots` 数组。OpenClaw 连接由宿主通过通用 Adapter 配置入口明确配置，daemon 不根据 Bot 列表探测或写入 Provider 配置。示例见 [接入指南](../../INTEGRATION.md)。
 
@@ -83,7 +83,7 @@ octo-runtime daemon status
 
 ## Extra 配置
 
-`octo-runtime extraset <name> < config.json` 原子保存完整插件声明，POSIX 文件权限为 `0600`，输出不回显配置或凭据。CLI daemon 启动时统一读取 `<home>/default/extra/<name>/config.json`，不设置渠道专用文件入口。
+`octo-runtime extraset <name> < config.json` 原子保存完整插件声明，POSIX 文件权限为 `0600`，输出不回显配置或凭据。CLI daemon 启动时统一读取 `<home>/extras/<name>/config.json`，不设置渠道专用文件入口。
 
 `config` 是插件自己的 JSON 对象；CLI/daemon 不解释、合并或补写 Bot 字段。Octo 插件在 `config.bots` 数组中配置多个机器人，`bot_name` 的默认值也由该插件处理。重新执行 `extraset` 会替换整个插件声明，必须提交希望保留的完整数组；重启 daemon 后加载文件变更。SDK 宿主显式提供 Extra 声明，不扫描配置文件。
 

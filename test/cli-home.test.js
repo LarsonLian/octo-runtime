@@ -96,7 +96,7 @@ for (const [state, json] of ["fresh", "not_installed", "stopped", "running", "fa
       assert.equal(await readFile(join(home, "config.json"), "utf8"), config);
       assert.equal(await readFile(join(home, "machine.json"), "utf8"), machine);
     }
-    assert.deepEqual(JSON.parse(await readFile(join(home, "default", "extra", "example", "config.json"), "utf8")), extra);
+    assert.deepEqual(JSON.parse(await readFile(join(home, "extras", "example", "config.json"), "utf8")), extra);
   });
 }
 

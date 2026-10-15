@@ -28,7 +28,7 @@ await runtime.stop('quit');
 
 Octo 使用 `channel-gateway`，企业微信使用 `channel-wecom`；两个插件都使用 `config.bots` 数组表达多个 Bot。插件按完整快照更新自身连接，daemon 不识别 Bot 字段。运行中的更新失败不保证业务副作用回滚。
 
-SDK 宿主自行保存配置并在应用重启或账号变化后重新提供。CLI 是另一种宿主：`extraset <name>` 保存完整声明到 `<home>/default/extra/<name>/config.json`，每次整份替换，重启 daemon 后加载。CLI 文件不构成 SDK 的存储要求。
+SDK 宿主自行保存配置并在应用重启或账号变化后重新提供。CLI 是另一种宿主：`extraset <name>` 保存完整声明到 `<home>/extras/<name>/config.json`，每次整份替换，重启 daemon 后加载。CLI 文件不构成 SDK 的存储要求。
 
 直接使用 `startDaemonServer` 的 Node 宿主可通过 `extraRegistration(descriptor)` 构造 `extras` 声明，所有插件复用同一 Host。完整 SDK 示例见 [接入指南](../../INTEGRATION.md#26-通过-sdk-装配可选-extra)。
 

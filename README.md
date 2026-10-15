@@ -32,7 +32,7 @@ SDK 接入不表示所有执行都在宿主进程内完成；daemon、Host 和 P
 
 宿主负责读取配置，构造完整 Extra 声明 `{ name, module, config }`。IM 插件在 `config.bots` 数组中管理多个 Bot；宿主通过初始 `extras` 声明或 `configureExtra(descriptor)` 提交完整快照。SDK 校验声明和 JSON 结构，插件校验自己的业务字段，执行层继续校验执行权限。
 
-**CLI 的配置文件约定属于 CLI 入口，不是 SDK 的接入要求。** `extraset <name>` 保存完整 `{ module, enabled?, config }` 到 `<home>/default/extra/<name>/config.json`；每次整份替换，重启 daemon 后加载。CLI/daemon 不解释或合并 Bot 字段。SDK 宿主从自己的 store 构造同样的声明对象，无需创建此文件。
+**CLI 的配置文件约定属于 CLI 入口，不是 SDK 的接入要求。** `extraset <name>` 保存完整 `{ module, enabled?, config }` 到 `<home>/extras/<name>/config.json`；每次整份替换，重启 daemon 后加载。CLI/daemon 不解释或合并 Bot 字段。SDK 宿主从自己的 store 构造同样的声明对象，无需创建此文件。
 
 配置来源自由与 SDK 的内部运行状态持久化是两层职责。SDK／模块仍可在选定 Home 下管理 Runtime 身份、设备凭据、PID/socket、日志等状态；这些内部文件不要求宿主把自己的模块配置也存到同一位置。详细边界见 [接入指南：配置来源与 SDK 契约](INTEGRATION.md#02-配置来源与-sdk-契约)。
 

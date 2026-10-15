@@ -156,7 +156,7 @@ async function dispatchCli(context: CliContext): Promise<CommandResult> {
   }
   if (group === "extraget") return {
     value: await getExtra(context.paths, required(action, "extra-name")),
-    diagnostic: `Config file: ${join(context.home, "default", "extra", action, "config.json")}`
+    diagnostic: `Config file: ${join(context.home, "extras", action, "config.json")}`
   };
   if (group === "status") return { value: await readRuntimeStatus(context.paths.socket) };
   if (group === "daemon") return runDaemonCommand(context, action);

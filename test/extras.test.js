@@ -219,7 +219,7 @@ test(
     };
     await set({ ...stored, config: { ...stored.config, removed: true } });
     await set(stored);
-    const file = join(home, "default/extra/sse-demo/config.json");
+    const file = join(home, "extras/sse-demo/config.json");
     assert.deepEqual(JSON.parse(await readFile(file, "utf8")), stored);
     assert.doesNotMatch(outputs.join(""), new RegExp(token));
     if (process.platform !== "win32") assert.equal((await stat(file)).mode & 0o777, 0o600);
@@ -242,7 +242,7 @@ test(
     for (let attempt = 0; attempt < 2; attempt++) {
       const app = await startDaemonServer({
         ...options,
-        extras: await readExtraDirectory(join(home, "default/extra"))
+        extras: await readExtraDirectory(join(home, "extras"))
       });
       try {
         assert.equal(
@@ -265,7 +265,7 @@ test(
       await assert.rejects(post(port));
     }
     await writeFile(file, "invalid", { mode: 0o600 });
-    const entries = await readExtraDirectory(join(home, "default/extra"));
+    const entries = await readExtraDirectory(join(home, "extras"));
     const broken = new ExtraPlugins(entries, {});
     await broken.loadConfigured();
     assert.equal(broken.status[sseName].error, "EXTRA_CONFIG_READ_FAILED");
@@ -389,7 +389,7 @@ test(
         assert.match(errors, /extra loading/);
         assert.match(errors, /phase: 'loaded'/);
         assert.match(errors, /EXTRA_MODULE_NOT_FOUND/);
-        assert.ok(errors.includes(join(home, "default", "extra")));
+        assert.ok(errors.includes(join(home, "extras")));
         assert.ok(!errors.includes(token));
       } finally {
         if (child.exitCode === null) {

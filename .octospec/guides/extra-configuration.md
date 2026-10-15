@@ -34,10 +34,12 @@ octo-runtime extraset sse-demo <<< '{"module":"@mininglamp-oss/octo-runtime-extr
 命令接收完整对象，原子替换保存到：
 
 ```text
-~/.octo-runtime/default/extra/sse-demo/config.json
+~/.octo-runtime/extras/sse-demo/config.json
 ```
 
-不用手工创建额外配置文件，也不用为每个平台新增 CLI 命令。`--home` 可选择另一 Runtime Home。此次配置入口固定使用该 Home 的 `default/extra`，不接受 `--profile`。CLI 输出文件位置和 `restart_required`，不回显配置。
+不用手工创建额外配置文件，也不用为每个平台新增 CLI 命令。`--home` 可选择另一 Runtime Home。此次配置入口固定使用该 Home 的 `extras`，不接受 `--profile`。CLI 输出文件位置和 `restart_required`，不回显配置。
+
+同一 Home 下只有上述一个配置源；profile 不分区 Extra，CLI 不探测其他位置，不合并或回退。原因与计划见 [CLI 设备级目录决策](../tasks/device-extra-directory/brief.md)。
 
 外层声明只有 `module`、可选 `enabled` 和 `config`。`module` 指向宿主已安装的包、绝对入口路径或 file URL；不下载包，不加载网络 URL。`enabled` 缺省为 true；false 时不 import 插件。`config` 必须是 JSON 对象，内部字段由插件解释。设置操作替换完整声明，不做字段合并。
 

@@ -359,7 +359,7 @@ test("temporary IPC and parallel playboards preserve a resident daemon and persi
   await mkdir(join(profileRoot, "identity"), { recursive: true });
   const identity = join(profileRoot, "identity/runtime.json");
   await writeFile(identity, "existing-runtime-identity\n");
-  const extra = join(home, "default/extra");
+  const extra = join(home, "extras");
   await mkdir(extra, { recursive: true });
   // Parsing this file would fail: temporary execution must not load the channels.
   await writeFile(join(extra, "channel-gateway.json"), "not valid JSON");

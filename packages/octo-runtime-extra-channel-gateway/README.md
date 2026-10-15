@@ -38,7 +38,7 @@ octo-runtime extraset channel-gateway <<'JSON'
 JSON
 ```
 
-保存路径为 `<home>/default/extra/channel-gateway/config.json`，POSIX 权限为 `0600`。每次 `extraset` 替换完整声明，不追加 Bot、不按 `bot_id` 合并。添加、修改或删除时，必须包含希望保留的完整 `config.bots` 数组。插件名称固定为 `channel-gateway`，多个 Bot 不使用多个插件名。
+保存路径为 `<home>/extras/channel-gateway/config.json`，POSIX 权限为 `0600`。每次 `extraset` 替换完整声明，不追加 Bot、不按 `bot_id` 合并。添加、修改或删除时，必须包含希望保留的完整 `config.bots` 数组。插件名称固定为 `channel-gateway`，多个 Bot 不使用多个插件名。
 
 单个 Bot 也使用 `config.bots: [bot]`，没有单对象格式。上次为 `[botA, botB]`，本次为 `[botB]`，覆盖后只保留 botB；`[]` 表示没有 Bot。声明内省略的字段不会从旧配置补齐。
 
