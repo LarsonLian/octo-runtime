@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": false,
   "description": "Provider-neutral Agent runtime for unified execution through provider adapters",
+  "license": "Apache-2.0",
   "type": "module",
   "exports": {
     "./extra": {
@@ -30,7 +31,11 @@
   "packageManager": "pnpm@11.19.0",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@codex.mlamp.cn/dmwork/octo-runtime/octo-runtime.git"
+    "url": "git+https://github.com/Mininglamp-OSS/octo-runtime.git"
+  },
+  "homepage": "https://github.com/Mininglamp-OSS/octo-runtime#readme",
+  "bugs": {
+    "url": "https://github.com/Mininglamp-OSS/octo-runtime/issues"
   },
   "scripts": {
     "pack:release": "pnpm build && node scripts/pack-release.mjs",

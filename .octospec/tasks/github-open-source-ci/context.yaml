@@ -1,0 +1,16 @@
+rules:
+  - runtime-architecture
+  - runtime-engineering
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+decisions:
+  - 仅开源 octo-runtime 单一发行包，不发布内部 workspace。
+  - 组织通用检查沿用 Mininglamp-OSS/.github 的 v1 合同。
+  - 发布精确提交生成并验证过的 tgz，不直接发布仓库根目录。
+  - 用户明确按 octo-cli 采用 Apache-2.0，沿用版权方 Mininglamp Technology，Runtime 年份为 2026。

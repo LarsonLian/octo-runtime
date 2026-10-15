@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: 已校验的发行提交 SHA
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-ci-${{ github.workflow }}-${{ github.event.pull_request.number || inputs.ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: Build, test and package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        # 从 package.json 的 packageManager 读取 pnpm 版本。
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint && pnpm lint:names
+      - name: Typecheck and build
+        run: pnpm typecheck
+      - name: Check generated protocol and lockfile drift
+        run: git diff --exit-code -- pnpm-lock.yaml packages/octo-runtime-protocol/src/generated/protocol-types.ts
+      - name: Test
+        run: node --test test/*.test.js packages/octo-runtime-protocol/test/*.test.js
+      - name: Pack single distribution
+        id: pack
+        run: |
+          node scripts/pack-release.mjs
+          VERSION=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")
+          echo "archive=dist/release/mininglamp-oss-octo-runtime-$VERSION.tgz" >> "$GITHUB_OUTPUT"
+      - name: Verify offline installation and public API
+        env:
+          ARCHIVE: ${{ steps.pack.outputs.archive }}
+        run: node scripts/verify-release.mjs "$ARCHIVE"
+      - name: Upload verified npm archive
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: octo-runtime-release
+          path: ${{ steps.pack.outputs.archive }}
+          if-no-files-found: error
+          retention-days: 7

@@ -78,7 +78,7 @@ try {
   for (const file of ["config/adapters.json", "LICENSE", "NOTICE"]) {
     await mkdir(dirname(join(temporary, file)), { recursive: true });
     await cp(join(root, file), join(temporary, file)).catch(error => {
-      if (file === "config/adapters.json" || error.code !== "ENOENT") throw error;
+      if (file === "config/adapters.json" || file === "LICENSE" || error.code !== "ENOENT") throw error;
     });
   }
   await cp(join(root, "release/README.md"), join(temporary, "README.md"));
@@ -89,6 +89,10 @@ try {
     name: manifest.name,
     version: manifest.version,
     description: manifest.description,
+    repository: manifest.repository,
+    homepage: manifest.homepage,
+    bugs: manifest.bugs,
+    ...(manifest.license ? { license: manifest.license } : {}),
     type: "module",
     bin: manifest.bin,
     exports: manifest.exports,

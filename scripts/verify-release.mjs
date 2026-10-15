@@ -44,6 +44,11 @@ try {
     "@mininglamp-oss/octo-runtime"
   );
   const metadata = JSON.parse(await readFile(join(installed, "package.json"), "utf8"));
+  assert.equal(metadata.license, "Apache-2.0");
+  assert.equal(
+    await readFile(join(installed, "LICENSE"), "utf8"),
+    await readFile(join(root, "LICENSE"), "utf8")
+  );
   assert.deepEqual((await readdir(join(installed, "apps"))).sort(), ["cli", "daemon"]);
   await access(
     join(installed, "node_modules/@mininglamp-oss/octo-runtime-adapter-host/dist/runner.js")

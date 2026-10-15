@@ -21,3 +21,8 @@ import { InvokeInput, isTerminal } from "@mininglamp-oss/octo-runtime/protocol";
 根入口和未声明的内部子路径继续拒绝包名导入；不提供独立宿主 SDK 工厂。此限制不提供源码加密或文件访问隔离。第三方 Adapter 公开入口及 extra_adapters.json 加载仍待实施，不是本版本已有功能。
 Provider 程序由宿主或用户另行选择安装，安装此包不会自动下载 Provider。
 升级程序保留已有 Runtime Home、身份与配置；已运行的进程需要重启才能使用新版本。
+
+## 许可证
+
+本项目采用 Apache License 2.0，完整条款见随包分发的 `LICENSE` 文件。Copyright 2026 Mininglamp Technology。
+随包分发的第三方依赖保留各自许可证与版权声明。

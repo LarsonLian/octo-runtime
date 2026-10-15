@@ -251,3 +251,8 @@ Provider 返回的 Codex thread ID、Claude session UUID 或 OpenCode session ID
 - [Runtime 与 OpenClaw 连接统一合同](.octospec/rules/openclaw.md)
 - [Transport And Multi-node](.octospec/rules/local-execution.md)
 - [Local Runtime Boundaries](.octospec/rules/runtime-lifecycle.md)
+
+## 许可证
+
+本项目采用 [Apache License 2.0](LICENSE)。Copyright 2026 Mininglamp Technology。
+第三方依赖及引入的资源保留各自许可证与版权声明。
