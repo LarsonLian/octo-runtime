@@ -212,7 +212,7 @@ JSON
 
 `model`、`effort` 可省略，使用引擎默认值；`effort` 是思考强度。
 
-**方案二：OpenClaw。** `provider_agent_id` 是 OpenClaw 内部的 Agent ID，默认 `main`；不填写 `workdir`。
+**方案二：OpenClaw。** `provider_agent_id` 是 OpenClaw 内部的 Agent ID，默认 `main`；不填写 `workdir`。建议显式填写 `bot_name`，使用该 Agent 的 `IDENTITY.md` 中的名称，方便管理员在本地运行状态中识别机器人。此字段不自动读取 `IDENTITY.md`，也不修改远端机器人名称。
 
 ```bash
 octo-runtime extraset channel-gateway <<'JSON'
@@ -223,6 +223,7 @@ octo-runtime extraset channel-gateway <<'JSON'
       {
         "api_url": "https://im-test.deepminer.com.cn/api",
         "bot_id": "<OPENCLAW_BOT_ID>",
+        "bot_name": "OpenClaw 助理",
         "bf_token": "<OPENCLAW_BOT_BF_TOKEN>",
         "adapter": {
           "adapter_type": "openclaw",
