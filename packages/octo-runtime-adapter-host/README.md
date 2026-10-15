@@ -1,6 +1,6 @@
 # @mininglamp-oss/octo-runtime-adapter-host
 
-> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../docs/context-llm-injection.md) 与 [IPD-SE](../../../docs/event-context-rendering-ipd-se.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
+> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../.octospec/rules/context-input.md) 与 [IPD-SE](../../.octospec/rules/context-input.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
 
 Octo Runtime 的适配器宿主（Adapter Host）：统一管理各 provider 适配器的注册与调用，并在调用边界上保证消息生命周期完整、事件合法、且每次运行只产生一个终态事件。
 
@@ -108,8 +108,8 @@ await host.close();
 ## 相关文档
 
 - 事件契约与三层事件模型：[Protocol](../octo-runtime-protocol/README.md)
-- 跨进程 RPC 时序与多节点设想：[Transport And Multi-node](../../docs/09-transport-and-multinode.md)
-- 整体架构：[Architecture](../../docs/01-architecture.md)
+- 跨进程 RPC 时序与多节点设想：[Transport And Multi-node](../../.octospec/rules/local-execution.md)
+- 整体架构：[Architecture](../../.octospec/rules/architecture.md)
 
 ## 模块责任边界
 

@@ -2,9 +2,9 @@
 
 品牌图标已抽取为同级独立项目 [octo-runtime-adapter-icons](../../octo-runtime-adapter-icons/README.md)。本仓仅将其作为图标覆盖测试的开发依赖；运行测试前需先构建该项目。
 
-现行设计见 [Runtime 本地存在与按需在线合同](../docs/runtime-local-and-online-contract.md)。HostApp 决定携带和启用哪些包；本地 Runtime 身份与云端登记独立。
+现行设计见 [Runtime 本地存在与按需在线合同](../.octospec/rules/runtime-lifecycle.md)。HostApp 决定携带和启用哪些包；本地 Runtime 身份与云端登记独立。
 
-> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../docs/context-llm-injection.md) 与 [IPD-SE](../../docs/event-context-rendering-ipd-se.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
+> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../.octospec/rules/context-input.md) 与 [IPD-SE](../.octospec/rules/context-input.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
 
 接入模块通过统一 Host IPC 执行。Worker 接入、IM 接入和本地助理共享 adapter-host；IM 已实现最小私聊单轮链路。Daemon 负责装配，接入包不创建第二套 Host。
 

@@ -1,6 +1,6 @@
 # @mininglamp-oss/octo-runtime-acp-client
 
-> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../docs/context-llm-injection.md) 与 [IPD-SE](../../../docs/event-context-rendering-ipd-se.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
+> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../.octospec/rules/context-input.md) 与 [IPD-SE](../../.octospec/rules/context-input.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
 
 一个面向 ACP（Agent Client Protocol）本地 Agent CLI 的传输层客户端：负责启动子进程、发起请求、按序递交对方推送的通知流，并对反向的权限请求给出应答。
 
@@ -92,7 +92,7 @@ try {
 
 - CodeBuddy 完整接入教程：[CodeBuddy Adapter](../octo-runtime-adapter-codebuddy/README.md)
 - 事件契约与三层事件模型：[Protocol](../octo-runtime-protocol/README.md)
-- Adapter 编写指南：[Adapter Authoring](../../docs/08-adapter-authoring.md)
+- Adapter 编写指南：[Adapter Authoring](../../.octospec/guides/adapter-authoring.md)
 
 ## 模块责任边界
 

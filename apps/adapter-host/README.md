@@ -1,6 +1,6 @@
 # @mininglamp-oss/octo-runtime-adapter-host-app
 
-> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../docs/context-llm-injection.md) 与 [IPD-SE 0.3](../../../docs/event-context-rendering-ipd-se.md)；旧链路退出仍待完成。
+> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../.octospec/rules/context-input.md) 与 [IPD-SE 0.3](../../.octospec/rules/context-input.md)；执行侧旧 Compiler/Pipeline 已移除。
 
 Octo Runtime 的独立 adapter 执行进程。它从 manifest 动态加载多个 provider adapter，并通过
 stdin/stdout NDJSON JSON-RPC 向 daemon 提供统一的 `list`、`probe`、`invoke` 和 `cancel`
@@ -38,7 +38,7 @@ adapter package、更新 [adapter manifest](../../config/adapters.json)，并让
 ### 1. 保护有状态控制面
 
 Worker 只管理相应远程执行；本地调用不依赖 Worker 注册或在线。本地控制服务管理 invocation、有界内存源窗口
-和断流修复，业务应用保存会话与历史。统一原则见 [Runtime 合同](../../docs/runtime-local-and-online-contract.md)。adapter 则包含动态模块、第三方
+和断流修复，业务应用保存会话与历史。统一原则见 [Runtime 合同](../../.octospec/rules/runtime-lifecycle.md)。adapter 则包含动态模块、第三方
 依赖、provider CLI 子进程和 native event parser，故障概率与资源行为更不可控。
 
 独立进程避免 adapter 加载失败、未捕获异常或执行层崩溃直接成为 daemon 进程内的异常。
@@ -184,8 +184,8 @@ pnpm cli adapter list
 pnpm test
 ```
 
-相关架构与传输说明见 [Current Modules And Transport Flow](../../docs/02-module-and-transport-flow.md)
-和 [Pnpm Monorepo](../../docs/03-monorepo.md)。
+相关架构与传输说明见 [Current Modules And Transport Flow](../../.octospec/rules/local-execution.md)
+和 [Pnpm Monorepo](../../.octospec/guides/workspace.md)。
 
 ## 模块责任边界
 

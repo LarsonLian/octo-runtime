@@ -1,6 +1,6 @@
 # @mininglamp-oss/octo-runtime-adapter-codebuddy
 
-> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../docs/context-llm-injection.md) 与 [IPD-SE](../../../docs/event-context-rendering-ipd-se.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
+> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../.octospec/rules/context-input.md) 与 [IPD-SE](../../.octospec/rules/context-input.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
 
 Octo Runtime 的 CodeBuddy 适配器：将本地 CodeBuddy CLI 接入统一的 Runtime 调用模型，通过 ACP（Agent Client Protocol）与其对话，并将 CodeBuddy 的原生输出翻译为 Runtime 的 canonical event。
 
@@ -102,8 +102,8 @@ Agent Revision 使用 `execution_profile.agent_config.model`。新建 provider s
 
 - 底层 ACP 传输客户端：[ACP Client](../octo-runtime-acp-client/README.md)
 - 事件修整与终态兜底：[Adapter Host](../octo-runtime-adapter-host/README.md)
-- Provider adapter 总览：[Provider Adapters](../../docs/05-provider-adapters.md)
-- Adapter 编写指南：[Adapter Authoring](../../docs/08-adapter-authoring.md)
+- Provider adapter 总览：[Provider Adapters](../../.octospec/guides/providers.md)
+- Adapter 编写指南：[Adapter Authoring](../../.octospec/guides/adapter-authoring.md)
 
 ## 模块责任边界
 

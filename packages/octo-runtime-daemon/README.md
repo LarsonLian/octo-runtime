@@ -1,6 +1,6 @@
 # Daemon 本地 Runtime SDK 与可选模块装配
 
-本包提供本地 Runtime 生命周期与 IPC SDK，以及按宿主配置启用的对外模块装配。HostApp 决定启用哪些连接；daemon 执行模块生命周期并注入共享 Host。统一原则见 [Runtime 合同](../../docs/runtime-local-and-online-contract.md)。
+本包提供本地 Runtime 生命周期与 IPC SDK，以及按宿主配置启用的对外模块装配。HostApp 决定启用哪些连接；daemon 执行模块生命周期并注入共享 Host。统一原则见 [Runtime 合同](../../.octospec/rules/runtime-lifecycle.md)。
 
 ## 当前包接入
 
@@ -32,24 +32,23 @@ worker-access 已移出生态目录，作为独立预研备份，不再由标准
 
 生产隔离验证：`scripts/verify-daemon-deployment.mjs <pnpm-deploy-dir>` 实际检查 Worker/IM 缺席、启动并执行，再启用缺失模块，确认本地继续执行。完整示例见 [INTEGRATION](../../INTEGRATION.md#2-作为-sdk-接入独立-app)。
 
-> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../docs/context-llm-injection.md) 与 [IPD-SE](../../../docs/event-context-rendering-ipd-se.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
+> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../.octospec/rules/context-input.md) 与 [IPD-SE](../../.octospec/rules/context-input.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
 
 ## 责任边界
 
-2026-10-14 最终架构期望，实施中、待验收：
+当前实现的职责：
 
 - 宿主决定启用哪些对外模块、使用哪类 token、连接哪个服务。daemon 执行该配置，动态加载已启用模块，管理连接的启动、停止及真实状态。
-- channel-adapter 管理 IM 长连接和消息收发。access 的已确认职责仅为设备与 Runtime 注册，注册由用户或宿主显式操作发起。
-- 设备在线与 IM 频道启用分别控制。Work App 后续须在本地持久化“允许当前设备在线”选择；关闭时不加载设备连接，并停止已有对应连接。登录、导入 package 或启动 Host 不得自动开启。
+- Octo 和 WeCom Extra 管理各自的连接和消息收发。当前包不提供 Worker 设备注册或远程执行工厂。
 - 本地执行走 `HostApp → SDK → IPC → Host → Adapter`。纯本地调用无需启用对外模块；当前 SDK 仍使用 daemon 包的本地控制进程；对外入口复用 Host 执行能力，关闭连接不得停止仍供本地使用的 Host。
 - 五元组、Agent 定义及 defaults／mandatory 归业务方。daemon 不补齐业务 Context，不执行 Agent prepare／ensure，不安装宿主未指定的 Runtime。
 
-access 与设备 WS 的接口归属、heartbeat、关闭后云端状态失效及初始在线默认值仍待最终架构评审。现有 worker-access 的全部实现不能视为最终 access 的职责。
+设备共享访问的最终方案仍待确定；本地 ready 不证明已具备远程共享能力。
 
-## 现有实现与退出目标
+## 当前执行与源流
 
-当前包边界与可选装配已实现：`server.ts` 无 Worker/IM 静态依赖，模块工厂位于各接入包，SDK runner 按宿主描述动态加载。`server.ts`、`runtime-core.ts` 仍包含本地控制进程和 reference Run 调度；最终进程职责拆分及 Work App 持久化在线 toggle 尚待独立实施。`HostRunService` 位于 adapter-host，管理本地执行源流、短窗口重放、终态查询及取消，不保存聊天历史。
+daemon 不静态依赖 Worker/IM，工厂位于各接入包，SDK runner 按宿主描述动态加载。`HostRunService` 位于 adapter-host，管理执行源流、短窗口重放、终态查询及取消，不维护业务调度、聊天历史或持久 outbox。
 
-整体架构见 [Runtime README](../../README.md#设计原则与实施状态)，需求与验收见 [IPD-SE 基线](../../../docs/local-runtime-ipc-on-demand-ipd-se.md)。
+整体架构见 [Runtime README](../../README.md#设计原则与实施状态)，需求与验收见 [IPD-SE 基线](../../.octospec/rules/runtime-lifecycle.md)。
 
-原 daemon 控制接口包括 `agent_run.submit` / `invoke` / `subscribe` / `get` / `cancel` / `respond`，使用 UDS/Windows Pipe。目标本地执行与交互接口由 Host 提供。源流查询使用 `run_id`，订阅带 `stream_id` 和 `after_seq`；断开订阅不取消 Run。现有 reference Run 调度属于待调整实现，不为保留它新增业务 prepare 服务。历史实现范围见 [本地流方案](../../docs/26-channel-local-stream-and-ack-plan.md)。
+公共调用使用 `invoke(InvokeInput, environment)`。内部执行与订阅通过 UDS/Windows Pipe 的 JSON-RPC 2.0 传输；源流使用 `run_id`、`stream_id` 和 `after_seq`，断开订阅不取消 Run，修复连接不重新执行。见 [本地传输](../../.octospec/rules/local-execution.md) 和 [渠道接入](../../.octospec/rules/channel-integration.md)。

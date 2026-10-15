@@ -1,6 +1,6 @@
 # octo-runtime-extra-sse-demo
 
-仅供演示的原生 Node HTTP Extra。稳定插件名称为 `sse-demo`，默认导出加载 lambda。设计和配置管理见 [Extra 插件说明](../../docs/extra-plugins.md)。
+仅供演示的原生 Node HTTP Extra。稳定插件名称为 `sse-demo`，默认导出加载 lambda。设计和配置管理见 [Extra 插件说明](../../.octospec/rules/extras.md)。
 
 ## CLI模式配置与启动
 
@@ -52,7 +52,7 @@ HostApp 决定安装路径和加载哪些插件。SDK 不自行下载安装 Runt
 
 ## 统一调用
 
-所有 URL 路径接受同样的 POST。body 与 CLI playboard、SDK `invoke(input)`、AdapterHost `invoke(input)` 使用同一份 `InvokeInput` JSON；完整字段与默认值见 [协议](../octo-runtime-protocol/docs/invoke-input.md)。
+所有 URL 路径接受同样的 POST。body 与 CLI playboard、SDK `invoke(input)`、AdapterHost `invoke(input)` 使用同一份 `InvokeInput` JSON；完整字段与默认值见 [协议](../../.octospec/rules/invoke-input.md)。
 
 ```sh
 curl -N --fail-with-body 'http://127.0.0.1:3002' \

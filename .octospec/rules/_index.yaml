@@ -1,0 +1,115 @@
+rules:
+  - id: runtime-adapter-capabilities
+    priority: 90
+    load_bearing: true
+    inject_when:
+      paths: ["packages/octo-runtime-adapter-*/**","packages/octo-runtime-core/**","config/**"]
+      touches: ["adapter","agent-source"]
+  - id: runtime-architecture
+    priority: 100
+    load_bearing: true
+    inject_when:
+      paths: ["apps/**","packages/**","config/**","*.md",".octospec/**"]
+      touches: ["architecture","runtime","adapter","extra","context","installation"]
+  - id: runtime-channel
+    priority: 90
+    load_bearing: true
+    inject_when:
+      paths: ["packages/octo-runtime-extra-channel-*/**","test/im-*","test/channel-*"]
+      touches: ["channel","delivery","session"]
+  - id: commit
+    priority: 70
+    load_bearing: false
+    inject_when:
+      paths: ["**"]
+      touches: ["commit","git","documentation"]
+  - id: runtime-context-extensions
+    priority: 90
+    load_bearing: true
+    inject_when:
+      paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-host/**","test/context-extension*"]
+      touches: ["context","extension"]
+  - id: runtime-context-input
+    priority: 90
+    load_bearing: true
+    inject_when:
+      paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-core/**","packages/octo-runtime-adapter-*/**","packages/octo-runtime-extra-*/**","test/model-context*"]
+      touches: ["context","model-input","workspace"]
+  - id: runtime-engineering
+    priority: 80
+    load_bearing: false
+    inject_when:
+      paths: ["apps/**","packages/**","scripts/**","test/**","test-support/**"]
+      touches: ["typescript","protocol","testing","integration"]
+  - id: runtime-environment
+    priority: 90
+    load_bearing: true
+    inject_when:
+      paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-*/**","test/*envs*"]
+      touches: ["envs","context"]
+  - id: runtime-extras
+    priority: 90
+    load_bearing: true
+    inject_when:
+      paths: ["packages/octo-runtime-daemon/src/extra*","packages/octo-runtime-extra-*/**","apps/cli/src/extras.ts","apps/daemon/**","test/extras*"]
+      touches: ["extra","lifecycle","installation"]
+  - id: runtime-invoke-input
+    priority: 90
+    load_bearing: true
+    inject_when:
+      paths: ["apps/cli/**","packages/octo-runtime-core/**","packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-host/**","packages/octo-runtime-daemon/**","packages/octo-runtime-extra-*/**"]
+      touches: ["invoke","protocol","multimodal"]
+  - id: runtime-local-execution
+    priority: 90
+    load_bearing: true
+    inject_when:
+      paths: ["packages/octo-runtime-daemon/**","packages/octo-runtime-adapter-host/**","apps/**","test/host-run*","test/embedded-invoke*"]
+      touches: ["ipc","invoke","stream"]
+  - id: runtime-mcp
+    priority: 90
+    load_bearing: true
+    inject_when:
+      paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-*/**","test/context-mcp*"]
+      touches: ["mcp","context"]
+  - id: runtime-openclaw
+    priority: 90
+    load_bearing: true
+    inject_when:
+      paths: ["packages/octo-runtime-adapter-openclaw/**","packages/octo-runtime-core/src/invoke-input.ts","apps/cli/**","test/openclaw-*"]
+      touches: ["openclaw","adapter","workspace"]
+  - id: runtime-output-protocol
+    priority: 90
+    load_bearing: true
+    inject_when:
+      paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-host/**","packages/octo-runtime-daemon/**","packages/octo-runtime-adapter-sdk/**","test/native-*","test/host-*"]
+      touches: ["protocol","native","canonical","stream"]
+  - id: runtime-protocol-schema
+    priority: 90
+    load_bearing: true
+    inject_when:
+      paths: ["packages/octo-runtime-protocol/**","test/*protocol*","test/context-*"]
+      touches: ["protocol","schema"]
+  - id: runtime-reasoning
+    priority: 90
+    load_bearing: true
+    inject_when:
+      paths: ["packages/octo-runtime-adapter-*/**","test/*reasoning*"]
+      touches: ["reasoning","adapter"]
+  - id: runtime-lifecycle
+    priority: 90
+    load_bearing: true
+    inject_when:
+      paths: ["packages/octo-runtime-daemon/**","apps/daemon/**","apps/cli/**","test/*runtime*","test/embedded-*"]
+      touches: ["runtime","identity","lifecycle"]
+  - id: runtime-session-reset
+    priority: 90
+    load_bearing: true
+    inject_when:
+      paths: ["packages/octo-runtime-extra-channel-*/**","packages/octo-runtime-protocol/**","test/*session*","test/im-*"]
+      touches: ["session","reset"]
+  - id: runtime-stateless
+    priority: 90
+    load_bearing: true
+    inject_when:
+      paths: ["packages/octo-runtime-core/**","packages/octo-runtime-daemon/**","packages/octo-runtime-adapter-host/**","packages/octo-runtime-extra-channel-*/**","test/stateless-*"]
+      touches: ["storage","stream","stateless"]

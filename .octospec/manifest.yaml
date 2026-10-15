@@ -1,0 +1,6 @@
+schema_version: 1
+inherits: octo-spec@1.2.0
+tier: repo
+owner: octo-runtime
+# 上游 main 快照的 VERSION 为 1.2.0；记录提交以区分同版本的脚手架修订。
+source_revision: d456507bbd37cd4e3ac58671d07b89a61af35579

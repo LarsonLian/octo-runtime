@@ -1,6 +1,6 @@
 # Antigravity Adapter
 
-> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../docs/context-llm-injection.md) 与 [IPD-SE](../../../docs/event-context-rendering-ipd-se.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
+> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../.octospec/rules/context-input.md) 与 [IPD-SE](../../.octospec/rules/context-input.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
 
 通过本机 `agy` 的 stdin / stdout NDJSON 执行单轮请求。执行引擎类型为 `antigravity`，首期以 `agy 1.3.3` 为最低版本。
 
@@ -35,7 +35,7 @@ CLI result usage 可能覆盖整个会话，优先统计本轮 DONE step usage�
 ## 验证
 
 - `test/antigravity-adapter.test.js` 使用假 CLI 验证参数、事件、错误、续接、取消、日志清理与用户文件保留。
-- [Adapter 开发指南](../../docs/08-adapter-authoring.md) 说明接入合同与验收要求。
+- [Adapter 开发指南](../../.octospec/guides/adapter-authoring.md) 说明接入合同与验收要求。
 - 真实账户调用、工具执行、会话恢复与线上测试环境闭环须另行记录；自动测试通过不代表这些场景已通过。
 
 ## 模块责任边界

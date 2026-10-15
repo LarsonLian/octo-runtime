@@ -1,6 +1,6 @@
 # @mininglamp-oss/octo-runtime-adapter-claude-code
 
-> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../docs/context-llm-injection.md) 与 [IPD-SE](../../../docs/event-context-rendering-ipd-se.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
+> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../.octospec/rules/context-input.md) 与 [IPD-SE](../../.octospec/rules/context-input.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
 
 Octo Runtime 的 Claude Code 适配器：将本地 Claude Code CLI 接入统一的适配器契约，负责启动 `claude --print` 子进程、读取其流式输出、续跑上一轮会话，并将 Claude 的原生事件翻译为保序、去重、终态唯一的 `CanonicalEvent` 流。
 
@@ -114,7 +114,7 @@ Claude Code 的默认模型环境变量是 `ANTHROPIC_MODEL`，网关地址常�
 
 - 事件契约与三层事件模型：[Protocol](../octo-runtime-protocol/README.md)
 - 适配器的调用生命周期与终态兜底：[Adapter Host](../octo-runtime-adapter-host/README.md)
-- provider adapter 概览与编写指南：[docs/05](../../docs/05-provider-adapters.md)、[docs/08](../../docs/08-adapter-authoring.md)
+- provider adapter 概览与编写指南：[docs/05](../../.octospec/guides/providers.md)、[docs/08](../../.octospec/guides/adapter-authoring.md)
 - 源码：[`src/index.ts`](src/index.ts)
 
 ## 模块责任边界

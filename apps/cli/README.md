@@ -4,11 +4,11 @@
 
 `octo-runtime extraset <name>` reads a complete `{module, enabled?, config}` JSON object from stdin and replaces `HOME/default/extra/<name>/config.json` with mode 0600. It does not echo configuration or start the plugin. Restart the daemon to apply; `extra status|load|unload [name]` controls the declarations already read at startup.
 
-The native HTTP/Bearer/SSE demonstration and full here-string examples are documented in [Extra plugins](../../docs/extra-plugins.md). This is a generic configuration command, not a platform-specific setup flow.
+The native HTTP/Bearer/SSE demonstration and full here-string examples are documented in [Extra plugins](../../.octospec/rules/extras.md). This is a generic configuration command, not a platform-specific setup flow.
 
-现行设计见 [Runtime 本地存在与按需在线合同](../../docs/runtime-local-and-online-contract.md)。当前 CLI／原生服务仍保留云端 profile 引导与连接恢复，IM 配置入口已提供；最终在线开关尚待实施；客户 SDK 无需使用该 CLI。
+现行设计见 [Runtime 本地存在与按需在线合同](../../.octospec/rules/runtime-lifecycle.md)。当前 CLI／原生服务仍保留云端 profile 引导与连接恢复，IM 配置入口已提供；最终在线开关尚待实施；客户 SDK 无需使用该 CLI。
 
-> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../docs/context-llm-injection.md) 与 [IPD-SE 0.3](../../../docs/event-context-rendering-ipd-se.md)；旧链路退出仍待完成。
+> 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../.octospec/rules/context-input.md) 与 [IPD-SE 0.3](../../.octospec/rules/context-input.md)；执行侧旧 Compiler/Pipeline 已移除。
 
 `octo-runtime` 面向无显示器的独立设备，负责启动 daemon 和共享 AdapterHost、配置多个 IM 接入，以及 Runtime 登录、服务生命周期和本地诊断。IM 配置用法见接入指南第 1.4 节。运行时要求 Node.js 24 或更高版本。
 
@@ -22,7 +22,7 @@ CLI 提供 `channel configure`，从 stdin 读取一个 Bot JSON 对象，支持
 
 设备／Runtime 注册使用独立命令，候选名称为 `octo-runtime devices register`，最终命令名与参数待冻结。配置频道不隐式注册设备，注册也不隐式启用所有连接。
 
-设备在线选择保存本地，与 IM 频道启用独立；关闭时不加载设备连接并停止已有连接，本地 Host 继续运行。access 目前仅确认设备与 Runtime 注册职责，设备 WS／heartbeat 等对外链路待最终架构评审。验收分别记录本地就绪、注册 ACK、设备连接和频道连接。详见 [IPD-SE 基线](../../../docs/local-runtime-ipc-on-demand-ipd-se.md)。
+设备在线选择保存本地，与 IM 频道启用独立；关闭时不加载设备连接并停止已有连接，本地 Host 继续运行。access 目前仅确认设备与 Runtime 注册职责，设备 WS／heartbeat 等对外链路待最终架构评审。验收分别记录本地就绪、注册 ACK、设备连接和频道连接。详见 [IPD-SE 基线](../../.octospec/rules/runtime-lifecycle.md)。
 
 下文保留现有 CLI 的命令及文件入口说明。`login`、profile 自动发现和 `--wait-online` 尚需按上述目标改造；它们不能作为最终默认在线行为或纯本地启动合同。目标命令尚未全部交付。
 
@@ -74,6 +74,7 @@ CLI 读取 `<home>/im.json` 的顶层数组，文件不存在时接入列表为�
 | 字段 | 含义 |
 | --- | --- |
 | `type` / `bot_id` / `enabled` | 平台、Bot 身份、启用状态（默认 true） |
+| `bot_name` | Octo 本地展示名称，可选，默认使用 `bot_id`；不参与身份匹配 |
 | `api_url` / `bf_token` 或 `bf_token_file` | Octo API 与凭据；凭据文件相对路径按 Home 解析 |
 | `app_secret` 或 `app_secret_file` / `ws_url` | 企业微信凭据与可选网关 |
 | `adapter` | `adapter_type`（默认 codex）、绝对 `workdir`、可选 `model` / `effort`；OpenClaw 使用 `provider_agent_id`（默认 main），不填 workdir |
@@ -83,6 +84,8 @@ CLI 读取 `<home>/im.json` 的顶层数组，文件不存在时接入列表为�
 | `group_rules` / `history_limit` / `cards` / `typing` | Octo 的规则、历史与展示设置 |
 
 文件变更在 daemon 重启后加载。SDK 宿主自行提供配置和凭据，可使用 [动态接入接口](../../packages/octo-runtime-extra-channel-gateway/README.md#动态接入本地设备新增-agent)；共享 daemon 不扫描配置文件。
+
+Octo 插件只校验已识别字段，不拒绝未知扩展字段；CLI 原样保存扩展数据。`name` 不作为 `bot_name` 的别名。`channel configure` 按平台、API 地址和 `bot_id` 新增或替换一项，其他机器人保留；同一项按完整对象替换，不做字段合并。通用 `extraset` 则替换指定插件的整份 JSON 声明，框架不理解插件 `config` 的业务字段；配置多个机器人时，一次提交完整 `config.bots` 数组。
 
 ## Doctor
 
@@ -238,4 +241,4 @@ octo-runtime --home /path/to/harness --profile work adapter probe openclaw
 
 显式参数优先；无参数时复用已保存连接，首次初始化读取 `OPENCLAW_HOME` 或成对的 `OPENCLAW_GATEWAY_URL` / `OPENCLAW_GATEWAY_TOKEN`，否则使用 `~/.openclaw`。`login` 也接受 `--openclaw-home` / `--gateway-url`；enrollment token 与 Gateway token 不可同时占用 stdin。
 
-`playboard` 支持 `--home` 和 `--profile`，无须登录即可使用该 profile 的连接来源。完整概念与执行合同见 [统一合同](../../docs/15-openclaw-external-agent-binding-design.md)。
+`playboard` 支持 `--home` 和 `--profile`，无须登录即可使用该 profile 的连接来源。完整概念与执行合同见 [统一合同](../../.octospec/rules/openclaw.md)。

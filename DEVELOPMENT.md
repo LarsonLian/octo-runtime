@@ -1,6 +1,6 @@
 # Octo Runtime 开发与联调
 
-日期：2026-10-14。当前架构见 [Runtime 合同](docs/runtime-local-and-online-contract.md)和[架构说明](ARCHITECTURE.md)。
+日期：2026-10-14。当前架构见 [Runtime 合同](.octospec/rules/runtime-lifecycle.md)和[架构说明](ARCHITECTURE.md)。
 
 ## 1. 开发原则
 
@@ -73,10 +73,10 @@ IM 测试独立提供 channel-im 与 Bot 配置，不启用 Worker。分别记�
 
 验证本地 IPC、真实回复、完整源事件与应用 SQLite 的一致性，以及历史界面回显。Worker 默认关闭时上述路径仍应成功。额外验证 IM 时保持独立配置。
 
-当前包与接入边界见 [Runtime 合同](docs/runtime-local-and-online-contract.md)。包拆分后的构建、进程重启和真实环境验收需针对最终工作树单独记录，不能复用旧包验证结论。
+当前包与接入边界见 [Runtime 合同](.octospec/rules/runtime-lifecycle.md)。包拆分后的构建、进程重启和真实环境验收需针对最终工作树单独记录，不能复用旧包验证结论。
 
 ## 6. 排障与结果记录
 
-按照 [运维指南](docs/07-operations.md)区分身份、本地进程、Provider、注册、Worker 和 IM 故障。命令或模块接纳不是执行完成；云端 online 不是本地 ready；实时事件窗口不是 durable outbox。
+按照 [运维指南](.octospec/guides/operations.md)区分身份、本地进程、Provider、注册、Worker 和 IM 故障。命令或模块接纳不是执行完成；云端 online 不是本地 ready；实时事件窗口不是 durable outbox。
 
 记录场景、构建版本、实际服务地址、运行身份、真实终态和未验证项。历史研究中的注册必经、Worker Agent 配置、业务 Event API 或 durable ACK 不得作为现行接入依据。

@@ -1,0 +1,163 @@
+---
+type: Guide
+title: 工作区与开发组织
+description: pnpm workspace、包依赖、构建和新增项目步骤。
+tags: []
+timestamp: 2026-10-15T00:00:00Z
+implementation_baseline: df63c8f
+---
+
+# 工作区与开发组织
+
+当前包边界见 [Runtime 合同](../rules/runtime-lifecycle.md)。embedded 独立包已删除，本地 SDK 合入 daemon；客户不需要 apps/cli 或可选 IM 包。
+
+Octo Runtime 使用 pnpm workspace 管理多项目。workspace 边界由根目录 [pnpm-workspace.yaml](../../pnpm-workspace.yaml) 定义：
+
+```yaml
+packages:
+  - "apps/*"
+  - "packages/*"
+```
+
+根目录的 `.octospec/`、`config/` 和 `test/` 是仓库级资源，不是独立发布项目。
+
+## 目录职责
+
+```text
+apps/
+  cli/                  面向用户的 Unix socket CLI
+  daemon/               daemon executable 与装配根
+  adapter-host/         manifest-driven adapter host executable
+
+packages/
+  octo-runtime-protocol/             canonical protocol
+  octo-runtime-core/                 local execution context resolution
+  octo-runtime-daemon/               local SDK, lifecycle, IPC and optional modules
+  octo-runtime-extra-channel-gateway/ optional Octo IM integration
+  octo-runtime-extra-channel-wecom/   optional WeCom integration
+  octo-runtime-extra-sse-demo/        optional HTTP/SSE invocation example
+  octo-runtime-adapter-host/         adapter lifecycle and RPC library
+  octo-runtime-adapter-sdk/          adapter authoring helpers
+  octo-runtime-acp-client/           reusable ACP client
+  octo-runtime-adapter-*/            provider adapter definitions
+```
+
+依赖方向：
+
+```text
+apps -> packages
+octo-runtime-adapter-* -> octo-runtime-adapter-sdk / provider protocol helpers
+octo-runtime-daemon -> local Host / Core / Protocol dependencies
+optional extras -> shared Host and protocol contracts
+HostApp composition -> explicitly selected optional factories
+octo-runtime-adapter-host -> Core / Protocol / Adapter SDK / 内置 Provider Adapter
+```
+
+daemon 的生产依赖不引入业务 Channel；HostApp 额外携带并显式启用所需扩展。标准 CLI 根包携带扩展不代表客户 SDK 必须部署它们。旧 worker-access 和 Context Builder 包已移除。
+
+`packages/*` 不应 import `apps/*`。provider 命令构造、native event parser、session codec 和权限适配必须留在 `packages/octo-runtime-adapter-*`；apps 只做配置、进程启动和 I/O 装配。
+
+发布型 package 的目录名与 npm 非 scope 部分完全一致。例如目录 `packages/octo-runtime-core` 发布为 `@mininglamp-oss/octo-runtime-core`，目录 `packages/octo-runtime-adapter-openclaw` 发布为 `@mininglamp-oss/octo-runtime-adapter-openclaw`。这样仓库导航、workspace filter、依赖列表和 registry 搜索使用同一名称。
+
+## TypeScript 构建约定
+
+所有 app 和 package 的实现源码均为 `src/*.ts`，统一继承根目录的 [tsconfig.base.json](../../tsconfig.base.json)。当前采用 `strict`、`NodeNext` module/module resolution，并开启 declaration 与 source map 输出。
+
+每个 workspace 只把 `src/` 当作源码，把编译结果写到未提交 Git 的 `dist/`：
+
+```text
+src/index.ts
+   | pnpm build
+   v
+dist/index.js
+dist/index.js.map
+dist/index.d.ts
+dist/index.d.ts.map
+```
+
+可发布 package 的 `exports` 指向 `dist/index.js`，`types` 指向 `dist/index.d.ts`。因此本地 workspace 链接和 npm 安装使用同一套公开入口，不依赖 TypeScript 源文件或 ts-node loader。
+
+IDE 应使用 workspace TypeScript SDK 和本仓库的 flat-config ESLint，使编辑器诊断与命令行一致；编辑器个人配置不属于 Runtime 发布合同。
+
+## 安装与常用命令
+
+根 [package.json](../../package.json) 固定 `pnpm@11.19.0`：
+
+```bash
+pnpm install
+pnpm build
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm daemon
+pnpm cli status
+```
+
+查看 workspace：
+
+```bash
+pnpm --recursive list --depth -1
+```
+
+运行单个 app：
+
+```bash
+pnpm --filter @mininglamp-oss/octo-runtime-adapter-host-app start
+```
+
+查看单个 package 的依赖：
+
+```bash
+pnpm --filter @mininglamp-oss/octo-runtime-adapter-codex list
+```
+
+内部依赖必须使用 `workspace:*`：
+
+```json
+{
+  "dependencies": {
+    "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*"
+  }
+}
+```
+
+这样 pnpm 安装时只会链接当前 workspace package，不会意外从 registry 拉取同名旧版本。
+
+## 新增 Adapter Package
+
+以 `foo` provider 为例：
+
+1. 创建 `packages/octo-runtime-adapter-foo/package.json`、`src/index.ts` 和 `README.md`。
+2. 包名使用 `@mininglamp-oss/octo-runtime-adapter-foo`，依赖 `@mininglamp-oss/octo-runtime-adapter-sdk: workspace:*`。
+3. 实现 metadata、probe、invoke、session 和 canonical event mapping。
+4. 在 [config/adapters.json](../../config/adapters.json) 注册 adapter type/module/export。
+5. 按实际装配入口，在 `apps/adapter-host/package.json` 和 `packages/octo-runtime-adapter-host/package.json` 增加所需 workspace dependency，确保独立进程与 SDK 内置 Host 都能解析模块。
+6. 若根测试直接 import 该包，在根 `devDependencies` 增加 workspace dependency。
+7. 在 `test/` 添加 native event、success/error/cancel/session resume 契约测试。
+8. README 至少说明包的作用、设计原则、适用场景、明确边界和最小用法，并在 [Packages And Adapter Guide](../../packages/README.md) 与 provider matrix 中建立入口。
+
+Core、daemon 和 CLI 不应增加 `if adapterType === "foo"`。新增 provider 差异必须终止在 adapter contract 边界。
+
+## 新增 App
+
+1. 创建 `apps/<name>/package.json` 和 `src/index.ts`。
+2. package 标记 `private: true`，命名采用当前 scope `@mininglamp-oss/<name>`；与库包同名时追加 `-app`，例如 `@mininglamp-oss/octo-runtime-daemon-app`。
+3. 使用 `workspace:*` 依赖需要的 runtime packages。
+4. 在 app package 中提供 `start` script；需要统一入口时再加入根 scripts。
+
+App 可以选择不同 transport 或部署形式，但不能复制一份 Core/Adapter 业务逻辑。
+
+## Lockfile 与 CI
+
+仓库只提交根 `pnpm-lock.yaml`，不提交 `package-lock.json` 或子项目 lockfile。CI 推荐：
+
+```bash
+corepack enable
+corepack prepare pnpm@11.19.0 --activate
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm lint
+pnpm test
+```
+
+升级 pnpm 时应同时更新根 `packageManager`、CI 版本和 lockfile；升级 provider CLI 不需要修改 workspace lock，但必须重跑 adapter contract 和受控 live smoke test。

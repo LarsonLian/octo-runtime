@@ -1,6 +1,6 @@
 # Octo Runtime 接入指南
 
-本文介绍客户 App 的本地 SDK 接入，以及标品 CLI 的独立 Runtime 运维。接入以 RuntimeDevice 客观存在为前提：设备是否公开远程可见、是否连接远程服务，是独立的宿主策略和连接状态。本地身份与执行不依赖注册、设备 online 或 IM。完整合同见 [Runtime 本地存在与按需在线合同](docs/runtime-local-and-online-contract.md)。
+本文介绍客户 App 的本地 SDK 接入，以及标品 CLI 的独立 Runtime 运维。接入以 RuntimeDevice 客观存在为前提：设备是否公开远程可见、是否连接远程服务，是独立的宿主策略和连接状态。本地身份与执行不依赖注册、设备 online 或 IM。完整合同见 [Runtime 本地存在与按需在线合同](.octospec/rules/runtime-lifecycle.md)。
 
 接口依据为 2026-10-14 当前工作区源码。参考 App 是同级目录的 [`octo-work-app`](../octo-work-app)，即本文参考的 Octo Work 实现。服务地址、Token、ID 和本地路径需要替换为实际配置。npm 安装命令以对应包版本已经发布到接入方可访问的 registry 为前提。
 
@@ -68,7 +68,7 @@ AdapterHost 决策的是外部连接方式。两种方式均以已有 RuntimeDev
 
 以 IM 接入为例，宿主读取配置并构造 Bot 配置对象后，可以通过 `startModule("channel-gateway", { bots })` 启动模块，或者在模块已启动时调用 `requestModule("channel-gateway", "upsert", { config })` 应用配置。`config` 是一个对象参数，不是配置文件路径。读取远程配置平台、解析文件或从数据库恢复配置的逻辑属于宿主；数据源发生变化后，也由宿主决定是否及何时重新调用 SDK。
 
-**CLI 的默认文件加载行为不构成 SDK 接入要求。** 本文第 1.4 节的 `<home>/im.json` 是 CLI 的保存与加载约定；客户桌面 App 可以使用自己的 store，再通过 SDK 下发配置，无需创建或同步该文件。参考 Octo Work 把 IM 通道配置保存到应用自己的 SQLite，恢复时读取并通过 SDK 应用；SQLite 同样只是该 App 的选择，不是第三方宿主的必需依赖。
+**CLI 的默认文件加载行为不构成 SDK 接入要求。** 本文第 1.4 节通过统一的 `extraset` 将插件声明保存到 `<home>/default/extra/<name>/config.json`，由 CLI daemon 启动时加载；客户桌面 App 可以使用自己的 store，再通过 SDK 下发配置，无需创建或同步该文件。参考 Octo Work 把 IM 通道配置保存到应用自己的 SQLite，恢复时读取并通过 SDK 应用；SQLite 同样只是该 App 的选择，不是第三方宿主的必需依赖。
 
 当前部分模块仍会在 Home/profile 下读写 `config.json`、Runtime 身份及设备凭据等内部文件。上述原则不表示 SDK 完全不访问磁盘，也不表示现有内部状态格式已经移除；它说明的是**宿主配置来源与模块执行能力分离**。宿主仍需满足所调用 API 的字段、认证、授权和生命周期要求。
 
@@ -78,22 +78,37 @@ CLI 面向无显示器的独立设备，承担独立程序的部署与运维：�
 
 ### 1.1 安装
 
-要求 Node.js 24 或更高版本，执行：
+环境要求：
+
+- Node.js 24 或更高版本。
+- **整仓源码开发必须使用 pnpm 11 或更高版本**，具体版本以根目录 `package.json` 的 `packageManager` 为准。仓库内部依赖使用 `workspace:*`，构建脚本也依赖 pnpm；不支持用 npm 或 Yarn 替代整仓依赖安装和构建。
+- 安装已发布的 CLI 包可以使用 npm；源码完成 pnpm 安装和构建后，也可以使用 `npm link` 创建全局命令。
+
+安装已发布的 CLI 包：
 
 ```bash
 npm install -g @mininglamp-oss/octo-runtime
 octo-runtime --help
 ```
 
-从源码运行时，先构建，再使用编译后的入口：
+从源码运行时，在 `octo-runtime` 根目录先安装依赖并构建，再使用编译后的入口：
 
 ```bash
 pnpm install
 pnpm build
 node apps/cli/dist/index.js --help
+
+# 使用 npm link到全局
+npm link
+octo-runtime --help
+
+# 使用取消全局链接
+npm unlink -g @mininglamp-oss/octo-runtime
+
+
 ```
 
-源码构建要求 pnpm 11 或更高版本。后续示例统一使用 `octo-runtime`，源码环境可替换为 `node apps/cli/dist/index.js`。
+后续示例统一使用 `octo-runtime`，源码环境可替换为 `node apps/cli/dist/index.js`。
 
 ### 1.2 可选配置目录：Home 和 profile
 
@@ -160,26 +175,37 @@ octo-runtime daemon uninstall
 
 
 
-### 1.4 通过 CLI 配置和管理多个 IM 接入
+### 1.4 通过统一 Extra 入口配置和管理多个 IM 接入
 
 本节描述 CLI 的文件配置入口；通过 SDK 接入的 App 使用第 0.2 节的对象配置方式，不需要遵循这里的文件保存与加载约定。
 
-每次提交一个 Bot 配置。CLI 将它保存到 `<home>/im.json` 的数组中；相同平台、地址和 `bot_id` 更新已有项，其他项保留。`enabled` 默认 `true`，无需填写。
+使用 `octo-runtime extraset <name>`，从 stdin 提交完整的 `{ module, enabled?, config }` JSON 对象。Octo IM 使用 `channel-gateway` 插件，其配置为 `config.bots` 数组，可包含多个 Bot；插件级和 Bot 级的 `enabled` 均默认 `true`。
 
-**方案一：Codex 等本地引擎。** `workdir` 填绝对路径。
+CLI 将完整对象保存到 `<home>/default/extra/<name>/config.json`，POSIX 文件权限为 `0600`，不回显配置或凭据。**每次保存整体替换同名插件配置，不按 `bot_id` 合并。** 增删或修改 Bot 时，提交需要保留的完整 `config.bots` 数组。不同名称的 Extra 配置互不覆盖。
+
+`module` 指向宿主已安装的插件包或绝对入口路径；`extraset` 只保存配置，不安装插件、不建立连接。通用入口校验声明格式，插件在加载时校验自己的 `config`。
+
+**方案一：Codex 等本地引擎。** `adapter.workdir` 可省略，默认使用并创建 `~/octo-runtime/channels/{bot_id}`，同一 Agent 后续执行复用此目录；显式填写时必须是绝对路径。该默认路径不随 CLI `--home` 改变。
 
 ```bash
-octo-runtime channel configure <<'JSON'
+octo-runtime extraset channel-gateway <<'JSON'
 {
-  "type": "octo",
-  "api_url": "https://im-test.deepminer.com.cn/api",
-  "bot_id": "<BOT_ID>",
-  "bf_token": "<BF_TOKEN>",
-  "adapter": {
-    "adapter_type": "codex",
-    "workdir": "/srv/octo/workspaces/dev",
-    "model": "<MODEL_ID>",
-    "effort": "medium"
+  "module": "@mininglamp-oss/octo-runtime-extra-channel-gateway",
+  "config": {
+    "bots": [
+      {
+        "type": "octo",
+        "api_url": "https://im-test.deepminer.com.cn/api",
+        "bot_id": "<BOT_ID>",
+        "bf_token": "<BF_TOKEN>",
+        "adapter": {
+          "adapter_type": "codex",
+          "workdir": "/srv/octo/workspaces/dev",
+          "model": "<MODEL_ID>",
+          "effort": "medium"
+        }
+      }
+    ]
   }
 }
 JSON
@@ -190,23 +216,30 @@ JSON
 **方案二：OpenClaw。** `provider_agent_id` 是 OpenClaw 内部的 Agent ID，默认 `main`；不填写 `workdir`。
 
 ```bash
-octo-runtime channel configure <<'JSON'
+octo-runtime extraset channel-gateway <<'JSON'
 {
-  "type": "octo",
-  "api_url": "https://im-test.deepminer.com.cn/api",
-  "bot_id": "<OPENCLAW_BOT_ID>",
-  "bf_token": "<OPENCLAW_BOT_BF_TOKEN>",
-  "adapter": {
-    "adapter_type": "openclaw",
-    "provider_agent_id": "main"
+  "module": "@mininglamp-oss/octo-runtime-extra-channel-gateway",
+  "config": {
+    "bots": [
+      {
+        "type": "octo",
+        "api_url": "https://im-test.deepminer.com.cn/api",
+        "bot_id": "<OPENCLAW_BOT_ID>",
+        "bf_token": "<OPENCLAW_BOT_BF_TOKEN>",
+        "adapter": {
+          "adapter_type": "openclaw",
+          "provider_agent_id": "main"
+        }
+      }
+    ]
   }
 }
 JSON
 ```
 
-CLI 在 daemon 启动时自动读取本机 `openclaw.json` 的 Gateway 连接信息和 token。工作区由 OpenClaw Agent 管理。
+OpenClaw Adapter 在探测或执行时按已配置的连接来源读取 Gateway 信息与凭据；默认来源为本机 `~/.openclaw/openclaw.json`，可通过 `OPENCLAW_HOME` 指定目录。工作区由 OpenClaw Agent 管理。
 
-本地 `im.json` 是顶层 JSON 数组，每项就是上面提交的对象，不再包一层 `bots`。CLI 不向文件补写默认值。文件含凭据时权限为 `0600`。
+以上两个示例是同名插件的替代配置，依次执行时后者会覆盖前者。若两个 Bot 要同时启用，将两个 Bot 对象放进同一个 `config.bots` 数组，一次提交完整配置。本入口无需创建 `im.json`。
 
 配置保存后，选择前台或后台启动：
 
@@ -219,6 +252,16 @@ octo-runtime daemon restart
 ```
 
 首次使用系统后台服务时，先执行 `octo-runtime daemon install`，再执行 `octo-runtime daemon start`。
+
+daemon 启动后可查询或控制插件：
+
+```bash
+octo-runtime extra status
+octo-runtime extra unload channel-gateway
+octo-runtime extra load channel-gateway
+```
+
+`extra load` 使用 daemon 本次启动时读入的声明；修改 `extraset` 配置后必须重启 daemon 才会应用。`unload` 只卸载当前运行的插件；持久停用需重新提交完整声明，设置顶层 `enabled: false`，然后重启。
 
 ### 1.5 查询状态和执行记录 <测试开发用>
 
@@ -543,7 +586,7 @@ Octo 使用 `octo-runtime-extra-channel-gateway`，企业微信使用 `octo-runt
 
 Octo Work 的 `AgentWorkClient` 是宿主私有封装，不是 Runtime 发布的 HTTP SDK。第三方 App 可参考其请求方式，自行封装第 2.4/2.6 节接口；本地执行则直接依赖公开 daemon SDK。
 
-更多字段见 [SDK 导出](packages/octo-runtime-daemon/src/runtime/index.ts)、[SDK 类型](packages/octo-runtime-daemon/src/runtime/types.ts)、[执行协议](packages/octo-runtime-protocol/src/index.ts)、[Worker 路由](../octo-agent-worker/internal/handler/router.go) 及 [Runtime 合同](docs/runtime-local-and-online-contract.md)。
+更多字段见 [SDK 导出](packages/octo-runtime-daemon/src/runtime/index.ts)、[SDK 类型](packages/octo-runtime-daemon/src/runtime/types.ts)、[执行协议](packages/octo-runtime-protocol/src/index.ts)、[Worker 路由](../octo-agent-worker/internal/handler/router.go) 及 [Runtime 合同](.octospec/rules/runtime-lifecycle.md)。
 
 ## 3. 预研归档
 

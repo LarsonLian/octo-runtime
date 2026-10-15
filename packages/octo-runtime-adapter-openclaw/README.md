@@ -15,7 +15,7 @@ octo-runtime --profile work adapter connect openclaw --gateway-url ws://127.0.0.
 
 目标 Agent 由本轮 Context 的 `octo.execution/adapter.payload.provider_agent_id` 指定。探测不要求 `main` 存在，执行时验证实际目标；不自动创建 Agent或回退到其他目标。
 
-完整定义与示例见 [统一合同](../../docs/15-openclaw-external-agent-binding-design.md)。
+完整定义与示例见 [统一合同](../../.octospec/rules/openclaw.md)。
 
 ## 执行边界
 

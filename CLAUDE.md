@@ -1,47 +1,21 @@
-# CLAUDE.md - Octo Runtime
+# Octo Runtime 开发指引
 
-## Project
+本项目是内部 TypeScript monorepo，直接使用中文沟通和编写文档。
 
-Provider-neutral Agent Runtime for Agent Worker. The unified execution model is
-`AgentSession -> AgentRun -> Invocation -> CanonicalEvent`. Chat, Loop Task,
-TaskAttempt, Trigger scheduling and IM delivery belong to upstream business
-services and must not be introduced into Runtime persistence or APIs.
+项目目录、常用命令见 [AGENTS.md](AGENTS.md)，共享工程知识见 [.octospec/index.md](.octospec/index.md)，架构正文见 [基础架构规则](.octospec/rules/architecture.md)。修改前读取命中的规则全文。
 
-## Commands
+<!-- octospec:begin -->
+## octo-spec 工程规范
 
-- `pnpm build`
-- `pnpm typecheck`
-- `pnpm lint`
-- `pnpm test`
-- `pnpm daemon`
-- `pnpm cli <args>`
-- `pnpm host`
+本仓库将工程知识保存为 `.octospec/` 下的 OKF Markdown，供各编码 Agent 共用。
 
-## Engineering Rules
+1. 修改前读取 `.octospec/rules/_index.yaml`，按路径或任务标签读取命中的规则全文，优先处理 `load_bearing: true`。架构正文在 `.octospec/rules/architecture.md`。
+2. 全局规则位于 `.octospec/_global/`，由固定版本同步。同 `id` 的仓库规则覆盖全局规则；中文协作约定见 `rules/collaboration.md`。
+3. 非简单代码改动在 `.octospec/tasks/<slug>/brief.md` 记录目标、关键合同、范围和验收依据，在 `context.yaml` 记录实际读取的规则。已有明确需求按用户授权执行；仅在缺少关键决策时询问。
+4. 实现后对照规则与验收项检查 diff，按改动范围运行检查。真实接口调试必须连接线上测试环境，验证记录不得包含凭据。
+5. 收尾时将可复用结论回写规则，将验证结果写入 journal；`learnings/pending/` 只放待决问题。提交、推送、创建 MR 按用户授权执行。
 
-- Strict TypeScript ES modules; no explicit `any`.
-- Use type-only imports and explicit error handling.
-- Protocol wire types are generated from JSON Schema.
-- CLI to daemon is one-line JSON over Unix socket, not JSON-RPC.
-- daemon to adapter-host is NDJSON JSON-RPC 2.0 over stdio.
-- Provider differences stop inside `octo-runtime-adapter-*`.
-- Tests use fake providers and must not call real models.
+说明、任务、评审和提交描述直接使用中文；字段、命令及专有名称保留原文。Claude Code 可使用 `/octospec-plan`、`/octospec-go`、`/octospec-check`、`/octospec-finish`，其他 Agent 执行同一流程。
 
-## Architecture Invariants
-
-- Agent Worker owns production AgentSession/AgentRun state, lease and fencing.
-- Business services own namespace-specific scheduling and state.
-- Runtime owns local invocation, provider subprocesses and reliable event outbox.
-- `(namespace, agentId, sessionKey)` identifies a session.
-- `(agentSessionId, triggerOccurrenceId)` deduplicates run submission.
-- Agent session ID, Agent run ID, invocation ID and provider session ID never merge.
-- Provider session is opaque and is returned through `session.update`.
-- Events are ordered/deduplicated by `(runId, seq)`.
-- A run emits exactly one terminal event.
-- Workdir is a cwd, not a security boundary.
-- Runtime credentials are stored only in the owner-protected Runtime
-  Home credential file (POSIX mode 0600); they never enter argv, service
-  definitions, environment variables, logs, or provider input.
-
-The local Core/SQLite model is a reference profile, not a second production
-authority. It contains only Agent, AgentSession, AgentRun and EventEnvelope.
+此区块由 `.octospec/scripts/sync.sh` 从本仓库的 `AGENT-BLOCK.md` 同步；修改源文件后重新同步。
+<!-- octospec:end -->

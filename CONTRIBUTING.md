@@ -87,7 +87,7 @@ octo-runtime/
 ```
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full design, and
-[docs/](./docs) for the deep-dive guides.
+[docs/](.octospec/index.md) for the deep-dive guides.
 
 ## Code Style
 
@@ -162,7 +162,7 @@ Adapters are the only place provider specifics may live. In brief:
 4. Add a contract test with representative native events.
 
 The full walkthrough is in
-[docs/08-adapter-authoring.md](./docs/08-adapter-authoring.md).
+[docs/08-adapter-authoring.md](.octospec/guides/adapter-authoring.md).
 
 ## Security
 

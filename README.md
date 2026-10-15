@@ -1,10 +1,12 @@
 # Octo Runtime
 
-函数式业务扩展见 [Extra 插件设计与使用](docs/extra-plugins.md)。`octo-runtime extraset <name>` 从 stdin 保存完整 JSON 声明；daemon 重启后自动加载。原生 HTTP → Host → SSE 演示包为 [octo-runtime-extra-sse-demo](packages/octo-runtime-extra-sse-demo/README.md)。
+架构与开发约束见 [基础架构规则](.octospec/rules/architecture.md) 和 [OKF 工程知识目录](.octospec/index.md)。本项目使用中文维护内部工程说明。
+
+函数式业务扩展见 [Extra 插件设计与使用](.octospec/rules/extras.md)。`octo-runtime extraset <name>` 从 stdin 保存完整 JSON 声明；daemon 重启后自动加载。原生 HTTP → Host → SSE 演示包为 [octo-runtime-extra-sse-demo](packages/octo-runtime-extra-sse-demo/README.md)。
 
 Octo Runtime 是 provider-neutral 的本地 Agent Runtime。本地接入使用 `HostApp → daemon 包的 SDK → IPC → Host → Adapter`。本地 Runtime ID 在初始化时生成并保存；Host socket 就绪即为本地启动成功。云端注册和对外连接由宿主显式控制，不是本地运行的前置条件。
 
-架构评审指出，原项目名称容易被理解为自研 ReAct 的 Agent 框架，与项目实际作用和价值不符。项目现统一命名为 **Octo Runtime**，包使用 `octo-runtime-*`，CLI 使用 `octo-runtime`。独立 CLI 默认 Home 为 `~/.octo-runtime`；Octo Work 保持产品名称，默认 Home 改为 `~/.octo-runtime-work`，本次本机改造将已有数据整目录移动到新位置。改造范围与验证记录见 [命名改造方案](../docs/octo-runtime-rename-ipd-se.md)。本地改名不表示新 npm 包或线上安装路由已经发布。
+架构评审指出，原项目名称容易被理解为自研 ReAct 的 Agent 框架，与项目实际作用和价值不符。项目现统一命名为 **Octo Runtime**，包使用 `octo-runtime-*`，CLI 使用 `octo-runtime`。独立 CLI 默认 Home 为 `~/.octo-runtime`；Octo Work 保持产品名称，默认 Home 改为 `~/.octo-runtime-work`，本次本机改造将已有数据整目录移动到新位置。改造范围与验证记录见 [命名改造方案](.octospec/journal/shared/architecture-evolution.md)。本地改名不表示新 npm 包或线上安装路由已经发布。
 
 `octo-runtime-embedded` 独立包已移除，其本地生命周期与 IPC API 收入 `octo-runtime-daemon`。daemon 包不依赖 worker-access 或 channel-gateway；客户可以只部署 daemon 及其本地执行依赖。标准产品由 HostApp 另行携带可选连接包，通过模块配置显式启动。当前 SDK 的本地控制进程仍使用 daemon server；下面记录的最终对外进程职责和在线 toggle 按各自里程碑验收，不能从本次包合并推断已经全部实现。
 
@@ -34,21 +36,17 @@ SDK 接入不表示所有执行都在宿主进程内完成；daemon、Host 和 P
 
 ### 本地运行与按需在线
 
-2026-10-14：统一原则及事实判定见 [Runtime 本地存在与按需在线合同](docs/runtime-local-and-online-contract.md)。设备存在、本地初始化、本地就绪、注册、允许在线、实际连接及执行完成分别判断。云端登记不决定本地存在；access 最终链路仍待评审。
+本地身份、IPC 就绪、Provider 可用、外部连接和执行完成分别判断，依据见 [生命周期合同](.octospec/rules/runtime-lifecycle.md)。云端登记不决定本地存在。
 
 `octo-runtime-daemon` 是对外交互子模块的装配层。宿主指定是否启用模块、凭据来源及目标服务，daemon 按配置动态加载模块并管理连接；各入口复用同一个 Host。纯本地启动不激活对外模块；当前 SDK 的本地控制进程仍由 daemon 包 server 承载。导入 SDK 或接入 package 本身不激活 WS，也不发起注册。
 
-设备／Runtime 注册由显式操作触发，access 的已确认职责仅为注册。设备持续在线所需的 WS、heartbeat、关闭及失效合同仍待评审；`worker-access` 预研已移到生态目录外独立仓库，仅作备份；当前 CLI 和 Work App 不再加载它。
+当前仓库没有 Worker 远程接入包。`login` 初始化本地 Home，不执行云端 enrollment。Octo 与 WeCom 由可选 Extra 包实现；设备共享访问的最终方案仍待确定，旧提议和撤回理由见 [架构演进](.octospec/journal/shared/architecture-evolution.md)。
 
-待实施的 Work App 设备管理要求：提供本地持久化的“允许当前设备在线”toggle。关闭时不加载设备连接模块，已有设备连接停止；本地 Host 继续执行。重启按已保存的用户选择恢复配置，登录或 Host 启动不能自行开启。设备连接和 IM channel-adapter 分别启用，注册 ACK、设备在线、频道在线和本地就绪分别报告。
-
-CLI 要提供显式 IM 频道配置入口，保存 channel 类型、目录／执行 Context、Bot 凭据引用与启用状态，再由 daemon 启动已启用频道。设备／Runtime 注册是独立命令，候选名称为 `octo-runtime devices register`；最终参数待冻结。上述命令是目标入口，不表示当前命令树已全部交付。频道配置不隐式注册设备，注册不隐式开启全部连接。
-
-业务方决定五元组和本轮 Context，应用 defaults 并检查 mandatory。SDK、daemon、注册模块、通用连接层和 Host 不读取 Agent 业务配置。启动、注册和本地调用没有 Agent prepare／ensure／默认创建流程。详见 [需求与验收基线](../docs/local-runtime-ipc-on-demand-ipd-se.md)。
+业务方决定五元组和本轮 Context，应用 defaults 并检查 mandatory。SDK、daemon、注册模块、通用连接层和 Host 不读取 Agent 业务配置。启动、注册和本地调用没有 Agent prepare／ensure／默认创建流程。详见 [需求与验收基线](.octospec/rules/runtime-lifecycle.md)。
 
 ## 纯执行实体
 
-Runtime 不保存业务 Agent、Session 或 Run 历史，不依赖本地 SQLite。执行状态和事件回放使用有界内存；配置、凭据和进程清理元数据保留 JSON 文件。Provider 自身的存储不在此约束范围内。设计与验收见 [纯执行实体方案](docs/15-stateless-executor-design.md)。
+Runtime 不保存业务 Agent、Session 或 Run 历史，不依赖本地 SQLite。执行状态和事件回放使用有界内存；配置、凭据和进程清理元数据保留 JSON 文件。Provider 自身的存储不在此约束范围内。设计与验收见 [纯执行实体方案](.octospec/rules/stateless-execution.md)。
 
 ## Context 方案设计约束
 
@@ -64,11 +62,11 @@ Host 必须通过单一纯函数，将可注入 item 按固定开始/结束标�
 
 Host renderer 只匹配白名单 pattern：`extra.*/*`、`octo.content/inline`、`octo.content/references`。renderer 不校验业务字段、不查处理器、不检查场景材料、不解引用、不压缩。接纳边界仍处理协议格式和执行权限；必要 adapter 等执行配置独立解析。Compiler/Pipeline、材料预取与摘要、扩展字段投影及编译回执已删除，不保留旧路径或兼容升级。
 
-详细设计见 [Event Context 与 Host 固定渲染：IPD-SE 基线](../docs/event-context-rendering-ipd-se.md)，当前注入规则见 [LLM 注入约束](docs/context-llm-injection.md)。Run 7 / Context v3 保持不变；传输字段沿用 `context` / `effective_context`，其中 `items` 是本轮列表，渲染文本使用 `contexts` 外层标记。
+详细设计见 [Event Context 与 Host 固定渲染：IPD-SE 基线](.octospec/rules/context-input.md)，当前注入规则见 [LLM 注入约束](.octospec/rules/context-input.md)。Run 7 / Context v3 保持不变；传输字段沿用 `context` / `effective_context`，其中 `items` 是本轮列表，渲染文本使用 `contexts` 外层标记。
 
 ## 基础架构
 
-以下为目标拓扑；注册与设备连接的最终 access 合同待架构评审。
+当前入口共享同一执行内核，完整边界见 [架构规则](.octospec/rules/architecture.md)。
 
 ```mermaid
 flowchart LR
@@ -76,12 +74,9 @@ flowchart LR
     SDK -->|"本地 IPC"| HOST["统一 Host"]
     HOST --> AD["Provider Adapters"]
     APP -->|"显式外部接入配置"| D["daemon：模块 / token / 目标服务装配"]
-    D -->|"按需加载"| IM["channel-adapter"]
+    D -->|"按需加载"| IM["Octo / WeCom Extra"]
     IM <-->|"IM WS"| SERVER["IM 服务"]
     IM -->|"共享 Host 执行入口"| HOST
-    D -->|"显式注册"| REGISTER["设备 + Runtime 注册模块"]
-    REGISTER --> WORKER["注册服务"]
-    D -.->|"本地在线 toggle 控制；合同待评审"| DEVICE["设备对外连接模块"]
 ```
 
 Host IPC 承载 invoke、取消、审批／问答答复和执行事件。daemon 使用 Host 提供的执行入口；业务来源不同不产生第二套 Provider 执行器。Context v3 的内容和顺序由业务发起方确定，通用连接层只校验和转发。关闭某个对外模块不得停止仍供本地 IPC 使用的 Host。
@@ -103,7 +98,7 @@ Host IPC 承载 invoke、取消、审批／问答答复和执行事件。daemon 
 
 当前一个 SDK 账号的多个 profile 共享 Host；是否激活对外模块由 HostApp 决定。本地控制进程与对外专用进程的进一步拆分另行验收。新入口复用现有 CLI、Home 和服务管理，不按 Codex 会话或工作目录另起一套默认运行时。当前 app-owned Home 可按 appId 隔离，不能把不同 Home 宣称为已自动合并的全局单实例。
 
-当前 Run 固定为 `schema_version=7`，Context 固定为 `octo.context-envelope/v3`，不增加旧协议回退。技能、插件及 MCP 程序的安装与更新由 HostApp 管理；本轮 MCP 连接配置通过 `octo.execution/mcp` 传入，由 adapter 转换，见 [Run MCP 合同](docs/25-run-mcp-context.md)。凭据不进入模型输入。旧 Channel context、聊天 SQLite 和相关业务实现已移出；参考快照位于同级 `octo-channel-design-reference/`，不参与构建。源执行事件使用有界内存窗口，不等待 durable ACK。
+当前 Run 固定为 `schema_version=7`，Context 固定为 `octo.context-envelope/v3`，不增加旧协议回退。技能、插件及 MCP 程序的安装与更新由 HostApp 管理；本轮 MCP 连接配置通过 `octo.execution/mcp` 传入，由 adapter 转换，见 [Run MCP 合同](.octospec/rules/mcp.md)。凭据不进入模型输入。旧 Channel context、聊天 SQLite 和相关业务实现已移出；参考快照位于同级 `octo-channel-design-reference/`，不参与构建。源执行事件使用有界内存窗口，不等待 durable ACK。
 
 ## 代码结构
 
@@ -206,7 +201,7 @@ pnpm cli -- --home "$PWD/.tmp/runtime-home" login
 pnpm daemon -- --home "$PWD/.tmp/runtime-home"
 ```
 
-The local SDK initializes a stable identity for each profile without cloud enrollment. Profiles share the Home-level `machine_id`, an untrusted installation grouping label rather than a credential. One Home runs one daemon and adapter-host. Mutually untrusted users must use separate OS accounts. See [Runtime and machine identity](docs/runtime-machine-identity-spec.md) and [current local boundaries](docs/runtime-local-and-online-contract.md). The former Worker access package has been removed.
+The local SDK initializes a stable identity for each profile without cloud enrollment. Profiles share the Home-level `machine_id`, an untrusted installation grouping label rather than a credential. One Home runs one daemon and adapter-host. Mutually untrusted users must use separate OS accounts. See [Runtime and machine identity](.octospec/rules/runtime-lifecycle.md) and [current local boundaries](.octospec/rules/runtime-lifecycle.md). The former Worker access package has been removed.
 
 本地运维命令：
 
@@ -235,12 +230,12 @@ Provider 返回的 Codex thread ID、Claude session UUID 或 OpenCode session ID
 
 ## 进一步阅读
 
-- [Event Context 与 Host 固定渲染：IPD-SE 设计基线](../docs/event-context-rendering-ipd-se.md)
-- [业务会话、执行 Session 与本地 Reset：IPD-SE 实施与验证](docs/session-ownership-reset-ipd-se.md)
-- [Architecture](docs/01-architecture.md)
-- [Module And Transport Flow](docs/02-module-and-transport-flow.md)
-- [Prompt And Workdir](docs/04-prompt-and-workdir.md)
-- [Provider Adapters](docs/05-provider-adapters.md)
-- [Runtime 与 OpenClaw 连接统一合同](docs/15-openclaw-external-agent-binding-design.md)
-- [Transport And Multi-node](docs/09-transport-and-multinode.md)
-- [Local Runtime Boundaries](docs/runtime-local-and-online-contract.md)
+- [Event Context 与 Host 固定渲染：IPD-SE 设计基线](.octospec/rules/context-input.md)
+- [业务会话、执行 Session 与本地 Reset：IPD-SE 实施与验证](.octospec/rules/session-reset.md)
+- [Architecture](.octospec/rules/architecture.md)
+- [Module And Transport Flow](.octospec/rules/local-execution.md)
+- [Prompt And Workdir](.octospec/rules/context-input.md)
+- [Provider Adapters](.octospec/guides/providers.md)
+- [Runtime 与 OpenClaw 连接统一合同](.octospec/rules/openclaw.md)
+- [Transport And Multi-node](.octospec/rules/local-execution.md)
+- [Local Runtime Boundaries](.octospec/rules/runtime-lifecycle.md)
