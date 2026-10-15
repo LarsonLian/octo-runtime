@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
-import { request as httpRequest } from "node:http";
+import { request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { BlockList, isIP } from "node:net";
 import { IMAGE_INPUT_LIMITS, type ModelInputPart } from "@mininglamp-oss/octo-runtime-protocol";
@@ -122,7 +122,7 @@ export async function downloadImageInput(
     )
       throw new ImImageInputError("图片地址不可访问。");
     // DNS 校验结果固定到本次连接，重定向逐跳重新校验且不跨源发送 Bot 凭据。
-    const response = await new Promise<import("node:http").IncomingMessage>((resolve, reject) => {
+    const response = await new Promise<IncomingMessage>((resolve, reject) => {
       const request = (url.protocol === "https:" ? httpsRequest : httpRequest)(
         url,
         {
@@ -130,7 +130,7 @@ export async function downloadImageInput(
           headers: sameOrigin ? { Authorization: `Bearer ${token}` } : {},
           lookup: (_host, options, callback) => {
             const chosen = addresses[0];
-            if (options.all) callback(null, addresses as import("node:dns").LookupAddress[]);
+            if (options.all) callback(null, addresses);
             else callback(null, chosen.address, chosen.family);
           }
         },
@@ -160,7 +160,9 @@ export async function downloadImageInput(
     try {
       if (Number(response.headers["content-length"]) > IMAGE_INPUT_LIMITS.maxBytes)
         throw new ImImageInputError("图片超过 2 MiB 上限。");
-      for await (const chunk of response) {
+      for await (const value of response) {
+        const chunk: unknown = value;
+        if (!Buffer.isBuffer(chunk)) throw new ImImageInputError("图片下载返回了无效内容。");
         total += chunk.length;
         if (total > IMAGE_INPUT_LIMITS.maxBytes)
           throw new ImImageInputError("图片超过 2 MiB 上限。");
