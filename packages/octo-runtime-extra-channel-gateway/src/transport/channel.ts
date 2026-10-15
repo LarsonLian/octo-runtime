@@ -8,7 +8,7 @@ import type { ImCredentialSource } from "../ports.js";
 import { imBotIdentity } from "../lifecycle/configuration.js";
 import { verifyBotIdentity } from "./auth.js";
 import { registerBot, WukongConnection } from "./wukong.js";
-import { acceptsImMessage } from "./normalize.js";
+import { acceptsImMessage, groupScope } from "./normalize.js";
 import { build_im_contexts } from "./contexts.js";
 import { OctoConnector, stableEffectKey } from "./connector.js";
 import { CardSession } from "./card-session.js";
@@ -19,6 +19,9 @@ import { parseCardAction } from "./card-action.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { octoCliEnvironment } from "../execution/tool-environment.js";
 import { downloadImageInput } from "./image-input.js";
+import { prepareFinalMention } from "./mentions.js";
+import { getGroupMembers, type GroupMember } from "./api/conversations.js";
+import { getJson } from "./api/client.js";
 
 /** Octo IM 平台连接器：WuKong 与 Octo REST 适配；不是 MCP 连接器。 */
 export class GatewayTransport {
@@ -79,6 +82,7 @@ export class GatewayTransport {
       (message) => {
         if (this.#closed || !acceptsImMessage(this.scopedConfig, registration.owner_uid, message))
           return;
+        let finalReply: { key: string; value: ReturnType<typeof prepareFinalMention> } | undefined;
         this.callbacks.onMessage({
           messageId: message.messageId,
           senderId: message.fromUid,
@@ -121,6 +125,40 @@ export class GatewayTransport {
               text,
               key,
               this.#spaceId
+            );
+          },
+          replyFinal: async (text, effectKey) => {
+            if (this.#closed || signal.aborted) throw new Error("IM_CONNECTION_REPLACED");
+            if (finalReply?.key !== effectKey)
+              finalReply = {
+                key: effectKey,
+                value: prepareFinalMention(text, async () => {
+                  if ([2, 5].includes(message.channelType))
+                    return getGroupMembers({
+                      apiUrl: this.config.api_url,
+                      botToken: token,
+                      groupNo: groupScope(message.channelId).groupNo,
+                      signal
+                    });
+                  const peer = await getJson<GroupMember>(
+                    this.config.api_url,
+                    token,
+                    `/v1/bot/user/info?uid=${encodeURIComponent(message.fromUid)}`,
+                    AbortSignal.any([signal, AbortSignal.timeout(5000)]),
+                    { maxResponseBytes: 64 << 10, logRateLimit: false }
+                  );
+                  return peer?.uid === message.fromUid ? [peer] : [];
+                })
+              };
+            const result = await finalReply.value;
+            if (this.#closed || signal.aborted) throw new Error("IM_CONNECTION_REPLACED");
+            await connection.sendText(
+              message.channelId,
+              message.channelType,
+              result.text,
+              stableEffectKey(this.identity, message, effectKey, "text"),
+              this.#spaceId,
+              result.mention
             );
           },
           buildContext: async (turnSignal, options) => ({

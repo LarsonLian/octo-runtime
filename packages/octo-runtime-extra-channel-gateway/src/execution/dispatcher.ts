@@ -94,37 +94,29 @@ export function createImInvocation(
     ]
   };
   // 执行默认值经现有 resolver 解析；本轮业务材料仍保持原顺序，不按会话补齐或去重。
+  let submitted = context;
   let resolved;
-  try {
-    resolved = resolveLocalContext(defaults, context, agentSource);
-  } catch (error) {
-    if (
-      !(error instanceof Error) ||
-      error.message !== "CONTEXT_BUDGET_EXCEEDED" ||
-      !context.items.some(
-        (item) =>
-          item.namespace === "extra.im" &&
-          item.name === "history" &&
-          item.payload.automatic === true
-      )
-    )
-      throw error;
-    resolved = resolveLocalContext(
-      defaults,
-      {
-        ...context,
-        items: context.items.filter(
+  for (const optional of ["history", "mention-instructions", undefined]) {
+    try {
+      resolved = resolveLocalContext(defaults, submitted, agentSource);
+      break;
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "CONTEXT_BUDGET_EXCEEDED" || !optional)
+        throw error;
+      submitted = {
+        ...submitted,
+        items: submitted.items.filter(
           (item) =>
             !(
               item.namespace === "extra.im" &&
-              item.name === "history" &&
+              item.name === optional &&
               item.payload.automatic === true
             )
         )
-      },
-      agentSource
-    );
+      };
+    }
   }
+  if (!resolved) throw new Error("IM_EXECUTION_CONFIG_INVALID");
   const { effectiveContext: snapshot, resolvedExecutionPlan: plan } = resolved;
   const eventId = `evt_${randomUUID()}`,
     runId = `run_${randomUUID()}`;

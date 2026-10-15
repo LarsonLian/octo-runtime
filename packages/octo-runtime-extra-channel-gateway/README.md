@@ -67,6 +67,8 @@ IM Agent 使用固定工作目录，任务 Context 的 workspace 不得覆盖；
 
 独立图片消息（type=2）仅接入 Codex，每条一张，无需说明文字；群/话题图片自身仍须满足上述 mention 门槛。支持 PNG/JPEG/WebP，单图最多 2 MiB，先准入再下载，原字节经 `inputs` 传递。下载逐跳校验地址，仅向原 API 同源发送 Bot 凭据；不下载历史、富文本或转发中的图片，不写图片文件。其他引擎明确返回不支持，不静默转成文本执行。
 
+普通回复不自动 @ 发起者。用户明确要求通知真人时，模型可按首次 `extra.im/mention-instructions` 指引查询 UID，在成功的最终回答普通正文中输出 `@[uid:displayName]`；Channel 按当前群成员校验，转换成可读正文和原生 mention，一并通过原连接发送。代码块、行内代码、引用和进度不转换。查不到或无法确认真人时退为普通 @名字，正文继续发送；不另发 CLI 消息、不开放模型出站 Bot 点名或广播。历史只自动尝试一次；尚无 Provider binding 时，Channel 在下一次调用中显式重提短指引。
+
 ## 长任务与 Codex 重试
 
 IM 默认总时限为一天，工具无输出时限也为一天；本轮 Context 的 `octo.execution/limits` 可以显式覆盖。Host 的首帧、模型空闲及工具独立 wall 时限仍按既有合同生效，任务总期限由 Extra 独立计时。重试只拿剩余时长，不会重新获得完整一天。

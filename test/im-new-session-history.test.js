@@ -50,10 +50,14 @@ test("history fetches the closest fifteen older messages in the exact topic and 
     new AbortController().signal,
     { initialSession: true }
   );
-  assert.equal(items[0].payload.text, "peer：text97\npeer：text99");
+  assert.equal(
+    items.find((item) => item.name === "history").payload.text,
+    "peer：text97\npeer：text99"
+  );
   assert.equal(JSON.stringify(items).includes("never-download"), false);
   await build_im_contexts(config, incoming, "bf_fixture", new AbortController().signal, {
-    initialSession: false
+    initialSession: false,
+    mentionGuidance: true
   });
   assert.equal(calls, 1);
 });
@@ -77,11 +81,16 @@ test("history failure, malformed result, missing sequence and budget overflow co
     () => Response.json({ messages: "bad" })
   ]) {
     t.mock.method(globalThis, "fetch", async () => response());
-    assert.deepEqual(
-      await build_im_contexts(config, incoming, "bf_fixture", new AbortController().signal, {
-        initialSession: true
-      }),
-      []
+    const items = await build_im_contexts(
+      config,
+      incoming,
+      "bf_fixture",
+      new AbortController().signal,
+      { initialSession: true }
+    );
+    assert.equal(
+      items.some((item) => item.name === "history"),
+      false
     );
     t.mock.restoreAll();
   }
@@ -115,6 +124,7 @@ test("history failure, malformed result, missing sequence and budget overflow co
 test("session initialization is attempted once without a Provider binding, including queued reset races and failed preparation", async (t) => {
   let receive, release;
   const initializations = [],
+    guidance = [],
     calls = [],
     replies = [];
   t.mock.method(GatewayTransport.prototype, "start", async function () {
@@ -145,6 +155,7 @@ test("session initialization is attempted once without a Provider binding, inclu
       text: id,
       async buildContext(_signal, options) {
         initializations.push([id, options.initialSession]);
+        guidance.push(options.mentionGuidance);
         if (build) await build();
         return { schema, items: [] };
       },
@@ -186,4 +197,8 @@ test("session initialization is attempted once without a Provider binding, inclu
     ["failed", true],
     ["after-failure", false]
   ]);
+  assert.ok(
+    guidance.every(Boolean),
+    "without a Provider binding the short guide is explicit on each new invoke"
+  );
 });

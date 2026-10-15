@@ -64,9 +64,10 @@ export interface ImInboundMessage {
   text: string;
   buildInputs?(signal: AbortSignal): Promise<ModelInputPart[]>;
   reply(text: string, effectKey?: string): Promise<void>;
+  replyFinal?(text: string, effectKey: string): Promise<void>;
   buildContext(
     signal: AbortSignal,
-    options?: { initialSession: boolean }
+    options?: { initialSession: boolean; mentionGuidance?: boolean }
   ): Promise<ContextEnvelope>;
   executionEnvironment?(): InvokeEnvironment;
   runMetadata?: Record<string, unknown>;

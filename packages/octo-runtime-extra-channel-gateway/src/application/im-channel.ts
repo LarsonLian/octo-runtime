@@ -391,10 +391,15 @@ export class ImRuntime {
     message: ImInboundMessage,
     text: string,
     effectKey: string,
-    requireDelivered = false
+    requireDelivered = false,
+    final = false
   ): Promise<void> {
     if (this.#closed || this.#signal.aborted || !this.#delivery) return;
-    const receipt = await this.#delivery.deliver(effectKey, () => message.reply(text, effectKey));
+    const receipt = await this.#delivery.deliver(effectKey, () =>
+      final && message.replyFinal
+        ? message.replyFinal(text, effectKey)
+        : message.reply(text, effectKey)
+    );
     if (receipt.state !== "delivered") {
       this.#diagnostic(receipt.code ?? "IM_DELIVERY_FAILED");
       if (requireDelivered) throw new Error(receipt.code ?? "IM_DELIVERY_FAILED");
@@ -477,7 +482,10 @@ export class ImRuntime {
       prepared = createImInvocation(
         this.config,
         message,
-        await message.buildContext(this.#signal, { initialSession }),
+        await message.buildContext(this.#signal, {
+          initialSession,
+          mentionGuidance: initialSession || !executionSession.providerSession
+        }),
         key,
         executionSession,
         this.#signal,
@@ -655,7 +663,7 @@ export class ImRuntime {
             ? `执行失败：${clampRunes(projector.snapshot().failureDetail || "系统未返回具体原因，请查看运行记录。", 8000)}`
             : "本轮执行结果未知，请查看运行记录，避免重复执行。";
     // 最终文本拥有独立投递身份，即使进度卡投递失败，也必须尝试回复用户。
-    await this.#reply(message, text, `final:${rootRunId}`);
+    await this.#reply(message, text, `final:${rootRunId}`, false, terminal === "completed");
   }
   #saveBinding(key: string, session: ImSession): void {
     this.#sessionStore.save(key, {

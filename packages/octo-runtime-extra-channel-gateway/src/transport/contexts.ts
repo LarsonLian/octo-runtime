@@ -13,13 +13,14 @@ import { groupScope } from "./normalize.js";
 import { getGroupMd, getThreadMd, type RuleDocument } from "./api/rules.js";
 import { getChannelMessages } from "./api/conversations.js";
 import { OctoApiError } from "./api/errors.js";
+import { MENTION_GUIDANCE } from "./mentions.js";
 
 export async function build_im_contexts(
   config: ScopedOctoBotConfig,
   message: ImMessage,
   botToken: string,
   signal: AbortSignal,
-  options: { initialSession: boolean } = { initialSession: false }
+  options: { initialSession: boolean; mentionGuidance?: boolean } = { initialSession: false }
 ): Promise<ContextItem[]> {
   const items: ContextItem[] = structuredClone(config.context?.items ?? []);
   const source = {
@@ -68,6 +69,38 @@ export async function build_im_contexts(
           signal
         })
       );
+  }
+  if (
+    (options.mentionGuidance ?? options.initialSession) &&
+    !items.some((item) => item.namespace === "extra.im" && item.name === "mention-instructions")
+  ) {
+    const scope = [2, 5].includes(message.channelType) ? groupScope(message.channelId) : undefined;
+    const instructions: ContextItem = {
+      namespace: "extra.im",
+      name: "mention-instructions",
+      guidance: MENTION_GUIDANCE,
+      payload: {
+        source,
+        actorId: message.fromUid,
+        outputMarker: "@[uid:displayName]",
+        automatic: true,
+        ...(scope
+          ? {
+              memberLookup: {
+                groupNo: scope.groupNo,
+                argv: ["octo-cli", "group", "members", scope.groupNo],
+                fields: ["uid", "name", "robot"]
+              }
+            }
+          : {})
+      }
+    };
+    try {
+      assertContextEnvelope({ schema: CONTEXT_SCHEMA, items: [...items, instructions] });
+      items.push(instructions);
+    } catch {
+      /* 可选使用指引超预算时不影响当前输入。 */
+    }
   }
   // 历史是辅助材料；失败或超预算不能阻断当前消息，取消仍须向上传递。
   if (

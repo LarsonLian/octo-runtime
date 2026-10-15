@@ -78,6 +78,7 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   let conn, key;
   const iv = Buffer.from("0123456789abcdef");
   const replies = [],
+    payloads = [],
     calls = [];
   const cancellations = [],
     responses = [];
@@ -124,7 +125,9 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
           ws_url: `ws://127.0.0.1:${server.address().port}`
         })
       );
-    } else if (req.url === "/v1/bot/card/profile") res.end(JSON.stringify(imCardProfile()));
+    } else if (req.url === "/v1/bot/user/info?uid=owner")
+      res.end(JSON.stringify({ uid: "owner", name: "李白", robot: 0 }));
+    else if (req.url === "/v1/bot/card/profile") res.end(JSON.stringify(imCardProfile()));
     else if (req.url === "/v1/bot/sendMessage") {
       const body = JSON.parse(Buffer.concat(chunks));
       const messageId = String(2000 + cards.length);
@@ -213,6 +216,7 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
         assert.equal(hash, md5(crypt(`${seq}${clientNo}${channel}${type}${payload}`)));
         const value = JSON.parse(crypt(payload, true));
         assert.equal(value.space_id, "space");
+        payloads.push(value);
         replies.push(value.content);
         socket.send(
           pack(0x40, Buffer.concat([u64(100 + seq), u32(seq), u32(seq), Buffer.from([1])]))
@@ -288,7 +292,7 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
       yield {
         protocolVersion: 2,
         type: "message.update",
-        payload: { messageId: "answer", channel: "final", text: "完整答复" }
+        payload: { messageId: "answer", channel: "final", text: "完整答复 @[owner:李白]" }
       };
       assert.equal(replies.length, calls.length === 1 ? 0 : 3);
       yield { protocolVersion: 2, type: "run.completed", payload: {} };
@@ -344,7 +348,11 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   };
   send("hello");
   await waitFor(() => replies.length === 1);
-  assert.equal(replies[0], "完整答复");
+  assert.equal(replies[0], "完整答复 @李白");
+  assert.deepEqual(payloads[0].mention, {
+    uids: ["owner"],
+    entities: [{ uid: "owner", offset: 5, length: 3 }]
+  });
   const session = calls[0].agentSessionId;
   send("/session");
   await waitFor(() => replies.length === 2);
@@ -352,6 +360,8 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   send("/reset");
   await waitFor(() => replies.length === 3);
   assert.equal(replies[2], "会话已经重置");
+  assert.equal(payloads[1].mention, undefined);
+  assert.equal(payloads[2].mention, undefined);
   send("after reset");
   await waitFor(() => replies.length === 4);
   assert.equal(calls.length, 2);

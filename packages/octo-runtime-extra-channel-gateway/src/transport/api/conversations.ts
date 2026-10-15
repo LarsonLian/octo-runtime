@@ -4,7 +4,7 @@
  */
 // Adapted from Mininglamp-OSS/openclaw-channel-octo/src/api-fetch.ts.
 import type { ChannelType } from "./types.js";
-import { DEFAULT_TIMEOUT_MS, postJson } from "./client.js";
+import { DEFAULT_TIMEOUT_MS, postJson, getJson } from "./client.js";
 
 // Fetch the groups the bot belongs to
 export async function fetchBotGroups(params: {
@@ -44,22 +44,16 @@ export async function getGroupMembers(params: {
   apiUrl: string;
   botToken: string;
   groupNo: string; // 群 ID (channel_id)
+  signal?: AbortSignal;
   log?: { info?: (msg: string) => void; error?: (msg: string) => void };
 }): Promise<GroupMember[]> {
-  const url = `${params.apiUrl.replace(/\/+$/, "")}/v1/bot/groups/${params.groupNo}/members`;
-  const resp = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${params.botToken}`
-    },
-    signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS)
-  });
-  if (!resp.ok) {
-    const msg = `getGroupMembers failed: ${resp.status}`;
-    params.log?.error?.(`octo: ${msg}`);
-    throw new Error(msg);
-  }
-  const data = (await resp.json()) as { members?: GroupMember[] } | GroupMember[];
+  const data = await getJson<{ members?: GroupMember[] } | GroupMember[]>(
+    params.apiUrl,
+    params.botToken,
+    `/v1/bot/groups/${encodeURIComponent(params.groupNo)}/members`,
+    AbortSignal.any([AbortSignal.timeout(5000), ...(params.signal ? [params.signal] : [])]),
+    { maxResponseBytes: 1 << 20, logRateLimit: false }
+  );
   // Normalize to strict array to prevent silent failures
   const members =
     !Array.isArray(data) && Array.isArray(data?.members)

@@ -499,10 +499,11 @@ test("Group/topic rules become ordered v3 items; history excludes the trigger an
     [
       ["extra.im", "group-rules"],
       ["extra.im", "topic-rules"],
+      ["extra.im", "mention-instructions"],
       ["extra.im", "history"]
     ]
   );
-  assert.equal(items[2].payload.text, "peer：text 3\npeer：text 7");
+  assert.equal(items[3].payload.text, "peer：text 3\npeer：text 7");
   assert.equal(items[0].payload.text, "group text");
   assert.equal(items[1].payload.version, 2);
   const again = await read();

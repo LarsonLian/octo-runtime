@@ -12,6 +12,7 @@ import {
   randomUUID
 } from "node:crypto";
 import WebSocket from "ws";
+import type { ImTextMention } from "./mentions.js";
 
 export interface ImMessage {
   messageId: string;
@@ -354,7 +355,8 @@ export class WukongConnection {
     channelType: number,
     text: string,
     clientMsgNo: string = randomUUID(),
-    spaceId?: string
+    spaceId?: string,
+    mention?: ImTextMention
   ): Promise<string> {
     if (this.#socket?.readyState !== WebSocket.OPEN || !this.#key)
       return Promise.reject(new Error("IM_NOT_READY"));
@@ -366,7 +368,12 @@ export class WukongConnection {
       return Promise.reject(new Error("IM_SEND_CAPACITY_EXHAUSTED"));
     const seq = ++this.#seq,
       encrypted = this.#encrypt(
-        JSON.stringify({ type: 1, content: text, ...(spaceId ? { space_id: spaceId } : {}) })
+        JSON.stringify({
+          type: 1,
+          content: text,
+          ...(spaceId ? { space_id: spaceId } : {}),
+          ...(mention ? { mention } : {})
+        })
       );
     const body = new Writer()
       .byte(0)
