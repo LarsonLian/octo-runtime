@@ -4,7 +4,7 @@ export { ImChannelManager } from "./lifecycle/manager.js";
 export { MemoryImSessionStore } from "./application/session-store.js";
 export type { ImSessionStore, ImSessionBinding } from "./application/session-store.js";
 export { validateImConfig, imBotIdentity } from "./lifecycle/configuration.js";
-export { loadImBots, readImBots, validateImBots, configuredCredential } from "./lifecycle/file-config.js";
+export { validateImBots, configuredCredential } from "./lifecycle/file-config.js";
 export { WecomConnection } from "./transport/connection.js";
 export type { WecomCredentials, WecomConnectionOptions, WecomConnectionStatus } from "./transport/connection.js";
 export type * from "./contracts.js";

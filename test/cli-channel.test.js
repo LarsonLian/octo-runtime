@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -9,11 +9,9 @@ import { runCli } from "../apps/cli/dist/main.js";
 import { ExtraPlugins, readExtraDirectory } from "../packages/octo-runtime-daemon/dist/index.js";
 import {
   validateImConfig,
-  loadImBots,
   ImRuntime
 } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
 import { createImInvocation } from "../packages/octo-runtime-extra-channel-gateway/dist/execution/dispatcher.js";
-import { initializeCliImAdapters } from "../apps/daemon/dist/im-config.js";
 
 const octo = (workdir, overrides = {}) => ({
   type: "octo",
@@ -22,6 +20,20 @@ const octo = (workdir, overrides = {}) => ({
   bf_token: "bf_fixture",
   adapter: { workdir },
   ...overrides
+});
+
+test("CLI and daemon composition have no channel-specific configuration contract", async () => {
+  for (const app of ["cli", "daemon"]) {
+    const manifest = JSON.parse(await readFile(new URL(`../apps/${app}/package.json`, import.meta.url), "utf8"));
+    assert.ok(!Object.keys(manifest.dependencies).some((name) => name.includes("-extra-")));
+  }
+  const daemon = await readFile(new URL("../apps/daemon/src/index.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(daemon, /im-config|imBots|wecomBots|initializeCliImAdapters/);
+  assert.match(daemon, /readExtraDirectory/);
+  let help = "";
+  await runCli(["help"], { output: (line) => { help += line; } });
+  assert.doesNotMatch(help, /channel configure/);
+  assert.match(help, /extraset/);
 });
 
 test("extraset without workdir can be loaded by channel-gateway", async (t) => {
@@ -42,46 +54,13 @@ test("extraset without workdir can be loaded by channel-gateway", async (t) => {
   assert.equal(extras.status["channel-gateway"].phase, "loaded");
 });
 
-test("CLI persists an array, updates just one scoped Bot, protects credentials and preserves file on invalid input", async (t) => {
-  const home = await mkdtemp(join(tmpdir(), "cli-channel-"));
-  t.after(() => rm(home, { recursive: true, force: true }));
-  const outputs = [];
-  const configure = (config) =>
-    runCli(["--home", home, "channel", "configure"], {
-      input: Readable.from([typeof config === "string" ? config : JSON.stringify(config)]),
-      output: (line) => outputs.push(line)
-    });
-  const first = octo(home);
-  await configure(first);
-  const second = octo(home, { bot_id: "other", adapter: { adapter_type: "openclaw" } });
-  await configure(second);
-  const updated = { ...first, adapter: { workdir: home, model: "test", effort: "high" } };
-  await configure(updated);
-  const file = join(home, "im.json");
-  const expected = [updated, second].map((bot) => ({ ...bot, bot_name: bot.bot_id }));
-  assert.deepEqual(JSON.parse(await readFile(file, "utf8")), expected);
-  assert.deepEqual(loadImBots(home), expected);
-  assert.doesNotMatch(outputs.join("\n"), /bf_fixture/);
-  if (process.platform !== "win32") assert.equal((await stat(file)).mode & 0o777, 0o600);
-  const before = await readFile(file, "utf8");
-  for (const invalid of [
-    "{bad",
-    [first],
-    { ...first, adapter: { workdir: "relative" } },
-    { ...first, adapter: { adapter_type: "openclaw", workdir: home } }
-  ]) {
-    await assert.rejects(configure(invalid));
-    assert.equal(await readFile(file, "utf8"), before);
-  }
-  await writeFile(file, JSON.stringify({ bots: [first] }), { mode: 0o600 });
-  await assert.rejects(configure(first), /IM_CONFIG_LIST_REQUIRED/);
-});
-
-test("channel names default to identity and arbitrary plugin fields survive scoped updates", async (t) => {
+test("Extra config preserves Bot arrays, names and arbitrary plugin fields", async (t) => {
   const home = await mkdtemp(join(tmpdir(), "cli-channel-names-"));
   t.after(() => rm(home, { recursive: true, force: true }));
-  const configure = (bot) => runCli(["--home", home, "channel", "configure"], {
-    input: Readable.from([JSON.stringify(bot)]), output() {}
+  const configure = (bots) => runCli(["--home", home, "extraset", "channel-gateway"], {
+    input: Readable.from([JSON.stringify({
+      module: "@mininglamp-oss/octo-runtime-extra-channel-gateway", config: { bots }
+    })]), output() {}
   });
   const first = octo(home, {
     bot_name: "本地助理",
@@ -89,12 +68,12 @@ test("channel names default to identity and arbitrary plugin fields survive scop
     adapter: { workdir: home, custom_option: { value: 42 } }
   });
   const second = octo(home, { bot_id: "other" });
-  await configure(first);
-  await configure(second);
-  await configure({ ...first, bot_name: "新名称" });
-  assert.deepEqual(loadImBots(home), [
-    { ...first, bot_name: "新名称" }, { ...second, bot_name: "other" }
-  ]);
+  const file = join(home, "default/extra/channel-gateway/config.json");
+  await configure([first, second]);
+  assert.deepEqual(JSON.parse(await readFile(file, "utf8")).config.bots, [first, second]);
+  await configure([second]);
+  assert.deepEqual(JSON.parse(await readFile(file, "utf8")).config.bots, [second]);
+  if (process.platform !== "win32") assert.equal((await stat(file)).mode & 0o777, 0o600);
   const runtime = new ImRuntime(second, { host: {} });
   t.after(() => runtime.close());
   assert.equal(runtime.status.bot_name, "other");
@@ -201,25 +180,6 @@ test("nested execution settings reach Host and OpenClaw defaults to main with no
       assert.ok(!request.context.items.some((item) => item.name === "workspace"));
     } else assert.equal(request.workdir, "/tmp");
   }
-});
-
-test("daemon initializes local OpenClaw connection without parameters in Bot JSON", async (t) => {
-  const home = await mkdtemp(join(tmpdir(), "cli-openclaw-"));
-  t.after(() => rm(home, { recursive: true, force: true }));
-  await writeFile(
-    join(home, "openclaw.json"),
-    JSON.stringify({
-      gateway: { mode: "local", port: 18789, auth: { mode: "token", token: "fixture-gateway" } }
-    })
-  );
-  const bot = octo(home, { adapter: { adapter_type: "openclaw" } });
-  await initializeCliImAdapters(home, [bot], { OPENCLAW_HOME: home });
-  const saved = JSON.parse(
-    await readFile(join(home, "default/adapters/openclaw/connection.json"), "utf8")
-  );
-  assert.equal(saved.source, "home");
-  assert.equal(saved.openclaw_home, home);
-  assert.doesNotMatch(JSON.stringify(saved), /fixture-gateway/);
 });
 
 test("Octo verifies Bot and tenant before registering or connecting, without a configured space_id", async (t) => {

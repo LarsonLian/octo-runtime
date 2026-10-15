@@ -16,9 +16,9 @@ The native HTTP/Bearer/SSE demonstration and full here-string examples are docum
 
 2026-10-14 目标：先初始化并保存稳定的本地 Runtime ID，本地 Host IPC 就绪即为启动成功。注册由独立显式命令触发，不再是安装、启动或本地调用的前置条件，不创建默认 Agent。
 
-CLI 提供 `channel configure`，从 stdin 读取一个 Bot JSON 对象，支持 here-document、here-string 和文件重定向。输入与 SDK 的 `ImBotConfig` 一致，IM 字段位于顶层，执行设置位于 `adapter`。`im.json` 保存为顶层数组；按平台、地址和 `bot_id` 更新单项，其他项保留。无独立 `id` 或 `space_id`，`enabled` 默认 `true`。Octo 租户从 octo-auth 的 `verify-bot` 认证结果取得。
+CLI 统一使用 `extraset <name>` 从 stdin 接收完整插件声明 `{ module, enabled?, config }`，保存在 `<home>/default/extra/<name>/config.json`。框架只校验声明及 JSON 结构，业务配置由插件解释；同名插件每次整份替换。
 
-本地引擎要求绝对路径 `adapter.workdir`。OpenClaw 不填写 `workdir`，`provider_agent_id` 默认 `main`；CLI 在 daemon 启动时读取本机 `openclaw.json` 的 Gateway 连接和 token。保存后使用 `daemon run` 前台启动，或 `daemon restart` 重启已安装并启用的系统服务。完整示例见 [接入指南](../../INTEGRATION.md#14-通过-cli-配置和管理多个-im-接入)。
+渠道的 Bot 配置、凭据和执行设置由插件解释。多个 Bot 一次写入完整的 `config.bots` 数组。OpenClaw 连接由宿主通过通用 Adapter 配置入口明确配置，daemon 不根据 Bot 列表探测或写入 Provider 配置。示例见 [接入指南](../../INTEGRATION.md)。
 
 设备／Runtime 注册使用独立命令，候选名称为 `octo-runtime devices register`，最终命令名与参数待冻结。配置频道不隐式注册设备，注册也不隐式启用所有连接。
 
@@ -67,25 +67,11 @@ octo-runtime daemon status
 - 生命周期命令作用于整个 Home。daemon 自动发现 Home 下包含合法 `config.json` 的 profile，并由一个 supervisor 管理各自的 credential、`runtime_id`、WSS 和内存重放窗口。
 - 锁屏不会结束已登录用户的服务；注销会结束 macOS LaunchAgent 和默认 Windows 用户任务。Linux 注销后是否继续取决于管理员是否启用 linger。
 
-## 显式 IM 文件接入
+## Extra 配置
 
-CLI 读取 `<home>/im.json` 的顶层数组，文件不存在时接入列表为空。只接受当前格式，不转换旧 `bots` 包装或旧字段。`channel configure` 校验后原子保存，POSIX 文件权限为 `0600`；输出只包含保存结果，不回显凭据。最多 16 项，同一平台身份不得重复。读取时不补写默认值，也不创建工作目录。
+`octo-runtime extraset <name> < config.json` 原子保存完整插件声明，POSIX 文件权限为 `0600`，输出不回显配置或凭据。CLI daemon 启动时统一读取 `<home>/default/extra/<name>/config.json`，不设置渠道专用文件入口。
 
-| 字段 | 含义 |
-| --- | --- |
-| `type` / `bot_id` / `enabled` | 平台、Bot 身份、启用状态（默认 true） |
-| `bot_name` | Octo 本地展示名称，可选，默认使用 `bot_id`；不参与身份匹配 |
-| `api_url` / `bf_token` 或 `bf_token_file` | Octo API 与凭据；凭据文件相对路径按 Home 解析 |
-| `app_secret` 或 `app_secret_file` / `ws_url` | 企业微信凭据与可选网关 |
-| `adapter` | `adapter_type`（默认 codex）、绝对 `workdir`、可选 `model` / `effort`；OpenClaw 使用 `provider_agent_id`（默认 main），不填 workdir |
-| `context` | 可选 Context v3，由 IM 业务入口逐轮提交 |
-| `approval_mode` / `run_timeout_ms` | 可选执行设置，默认 full_access / 120000 毫秒 |
-| `allowed_sender_ids` / `group_ids` | 可选发送者与 Octo 群准入 |
-| `group_rules` / `history_limit` / `cards` / `typing` | Octo 的规则、历史与展示设置 |
-
-文件变更在 daemon 重启后加载。SDK 宿主自行提供配置和凭据，可使用 [动态接入接口](../../packages/octo-runtime-extra-channel-gateway/README.md#动态接入本地设备新增-agent)；共享 daemon 不扫描配置文件。
-
-Octo 插件只校验已识别字段，不拒绝未知扩展字段；CLI 原样保存扩展数据。`name` 不作为 `bot_name` 的别名。`channel configure` 按平台、API 地址和 `bot_id` 新增或替换一项，其他机器人保留；同一项按完整对象替换，不做字段合并。通用 `extraset` 则替换指定插件的整份 JSON 声明，框架不理解插件 `config` 的业务字段；配置多个机器人时，一次提交完整 `config.bots` 数组。
+`config` 是插件自己的 JSON 对象；CLI/daemon 不解释、合并或补写 Bot 字段。Octo 插件在 `config.bots` 数组中配置多个机器人，`bot_name` 的默认值也由该插件处理。重新执行 `extraset` 会替换整个插件声明，必须提交希望保留的完整数组；重启 daemon 后加载文件变更。SDK 宿主显式提供 Extra 声明，不扫描配置文件。
 
 ## Doctor
 

@@ -1,4 +1,3 @@
-import { configureChannel } from "./channel.js";
 import { setExtra } from "./extras.js";
 import {
   configureOpenClawConnection,
@@ -150,11 +149,6 @@ async function dispatchCli(context: CliContext): Promise<CommandResult> {
     if (context.positionals.length !== 2 || Object.keys(context.flags).some(key => key !== "home"))
       throw new Error("extraset accepts a name and --home; pass the complete JSON object on stdin");
     return { value: await setExtra(context.paths, required(action, "extra-name"), context.input) };
-  }
-  if (group === "channel" && action === "configure") {
-    if (context.positionals.length !== 2 || Object.keys(context.flags).some(key => key !== "home"))
-      throw new Error("channel configure accepts only --home; pass one Bot JSON object on stdin");
-    return { value: await configureChannel(context.paths, context.input) };
   }
   if (group === "login") return runLogin(context);
   if (group === "adapter" && action === "connect") return runAdapterConnectCommand(context, id);
@@ -567,14 +561,6 @@ function enumFlag<const TValue extends string>(
 }
 
 function helpText(group?: string): string {
-  if (group === "channel") {
-    return `Usage: octo-runtime [--home PATH] channel configure < bot.json\n\n` +
-      `Read one Bot object from stdin and add or replace it in the im.json array by platform, server and bot_id.\n` +
-      `Fields: type, api_url, bot_id, bot_name, bf_token, adapter. bot_name defaults to bot_id; enabled defaults to true.\n` +
-      `adapter: adapter_type (default codex), absolute workdir, optional model/effort.\n` +
-      `OpenClaw: adapter_type=openclaw, optional provider_agent_id (default main), no workdir.\n` +
-      `After saving, run daemon run in the foreground or daemon restart for an installed native service.`;
-  }
   if (group === "playboard") {
     return `Usage: octo-runtime playboard [--manifest PATH] [--home PATH] [--profile NAME] < request.json\n\n` +
       `For development, testing, and integration debugging only.\n` +
@@ -627,7 +613,6 @@ function helpText(group?: string): string {
     `Global: --home PATH; --profile NAME; --verbose\n\n` +
     `  octo-runtime login --help\n` +
     `  octo-runtime playboard < request.json\n` +
-    `  octo-runtime channel configure < bot.json\n` +
     `  octo-runtime extraset <name> < config.json\n` +
     `  octo-runtime extra status|load|unload [name]\n` +
     `  octo-runtime daemon install|uninstall|run|start|stop|restart|status\n` +

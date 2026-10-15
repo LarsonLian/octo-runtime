@@ -121,7 +121,7 @@ export async function startDaemonServer({
   ) {
     throw new Error("adapterHostRestartDelaysMs must contain positive delays");
   }
-  // 配置来源属于宿主：CLI 可读 im.json，SDK 应用可动态登记，Daemon 只接收结果。
+  // 配置来源属于宿主：CLI 读取统一 Extra 声明，SDK 应用可动态登记，Daemon 只接收结果。
 
   let releasePid = (): Promise<void> => Promise.resolve();
   let invocationManifest: InvocationManifest;

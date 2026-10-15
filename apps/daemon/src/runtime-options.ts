@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { StandardDaemonOptions } from "./server.js";
+import type { StartDaemonServerOptions } from "./server.js";
 
-export function resolveDaemonRuntimePaths(args = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): StandardDaemonOptions {
+export function resolveDaemonRuntimePaths(args = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): StartDaemonServerOptions {
   const defaultHome = process.platform === "win32" && env.LOCALAPPDATA?.trim()
     ? join(env.LOCALAPPDATA.trim(), "OctoRuntime") : join(env.HOME?.trim() || homedir(), ".octo-runtime");
   const home = resolve(option(args, ["--home"], env.OCTO_RUNTIME_HOME ?? defaultHome));
@@ -21,7 +21,7 @@ export function resolveDaemonRuntimePaths(args = process.argv.slice(2), env: Nod
   };
 }
 
-export function daemonRuntimeArguments(paths: StandardDaemonOptions): string[] {
+export function daemonRuntimeArguments(paths: StartDaemonServerOptions): string[] {
   return [
     ...(paths.homePath ? ["--home", paths.homePath] : []),
     ...(paths.pidPath ? ["--pid-file", paths.pidPath] : []),

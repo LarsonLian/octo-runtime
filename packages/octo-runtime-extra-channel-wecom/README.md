@@ -15,8 +15,8 @@ await channel.upsert({
 await channel.close();
 ```
 
-SDK 动态入口为 `./daemon-module` 的 `createImModule`，模块 ID 为 `channel-wecom`。支持 `upsert`、`remove`（`connection_key`）和 `status`。额外插件入口默认导出，`name='channel-wecom'`，配置为 `{ bots: [...] }`。HostApp 决定是否携带、何时启用及卸载。
+SDK 宿主通过通用 Extra 声明及 `configureExtra` 配置入口装配插件。插件入口默认导出，`name='channel-wecom'`，配置为 `{ bots: [...] }`。HostApp 决定是否携带、何时启用及卸载；daemon/CLI 不解释 Bot 字段。
 
-显式文件入口读取 `wecom.json`，凭据可以内联或用 `app_secret_file` 指定，含凭据的文件要求 0600。默认 WS 为 `wss://openws.work.weixin.qq.com`。连接探针为 `scripts/probe-wecom.mjs`。
+统一通过 Extra 声明配置，CLI 保存到 `<home>/default/extra/channel-wecom/config.json`；多个 Bot 放入同一 `config.bots` 数组。凭据可以内联或用 `app_secret_file` 指定，含凭据的文件要求 0600。默认 WS 为 `wss://openws.work.weixin.qq.com`。连接探针为 `scripts/probe-wecom.mjs`。
 
 本包作为 Event 发起方提交本轮 Context，空输入与显式重复有效；不会按会话补齐上下文。执行配置独立校验，不进入模型文本。Run=7、Context=v3。会话与回执使用有界内存，不承诺跨重启恢复；真实企业微信客户端显示效果需平台验收。

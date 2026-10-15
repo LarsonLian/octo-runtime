@@ -21,13 +21,9 @@
     "build": "tsc -p tsconfig.json && chmod +x dist/launcher.js"
   },
   "dependencies": {
-    "@mininglamp-oss/octo-runtime-extra-sse-demo": "workspace:*",
-    "@mininglamp-oss/octo-runtime-extra-channel-gateway": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
     "@mininglamp-oss/octo-runtime-daemon": "workspace:*",
-    "@mininglamp-oss/octo-runtime-protocol": "workspace:*",
-    "@mininglamp-oss/octo-runtime-adapter-openclaw": "workspace:*",
-    "@mininglamp-oss/octo-runtime-extra-channel-wecom": "workspace:*"
+    "@mininglamp-oss/octo-runtime-protocol": "workspace:*"
   },
   "types": "./dist/server.d.ts"
 }

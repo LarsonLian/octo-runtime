@@ -25,8 +25,8 @@ HostApp 提供固定版本的 Node 24+、SDK runner、adapter manifest、adapter
 
 | 场景 | 额外部署 | 启动 |
 | --- | --- | --- |
-| Octo IM | extra-channel-gateway 及其生产依赖 | 登记 `createImModule` 并显式启动 |
-| 企业微信 | extra-channel-wecom 及其生产依赖 | 登记 `createImModule` 并显式启动 |
+| Octo IM | extra-channel-gateway 及其生产依赖 | 显式提供 `channel-gateway` Extra 声明 |
+| 企业微信 | extra-channel-wecom 及其生产依赖 | 显式提供 `channel-wecom` Extra 声明 |
 | 仅本地 | 无接入包 | 仅启动本地账号 Runtime |
 
 模块工厂通过注入的共享 Host 工作，不复制本地执行器。部署包或登记工厂不自动连接；模块配置与凭据由 HostApp 在显式启动时提供。停止连接不停止本地 Host。

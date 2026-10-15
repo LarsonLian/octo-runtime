@@ -1,4 +1,4 @@
-/** One configuration contract for SDK, CLI stdin and im.json. */
+/** Octo 插件内部的 Bot 配置合同。 */
 import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { assertApprovalMode, assertContextEnvelope } from "@mininglamp-oss/octo-runtime-protocol";

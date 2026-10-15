@@ -16,7 +16,7 @@ import {
 } from "node:crypto";
 import { WebSocketServer } from "ws";
 import { ImRuntime } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
-import { loadCliImConfiguration } from "../apps/daemon/dist/im-config.js";
+import { validateImBots } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
 import { waitFor } from "./runtime-fixture.js";
 import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-core";
 import { imCardProfile } from "./fixtures/im-card-profile.js";
@@ -435,6 +435,5 @@ test("duplicate bot identities fail before opening connections", async (t) => {
     adapter: { adapter_type: "codex", workdir: dir },
     context: { schema: "octo.context-envelope/v3", items: [] }
   };
-  await writeFile(join(dir, "im.json"), JSON.stringify([bot, { ...bot }]));
-  assert.throws(() => loadCliImConfiguration(dir), /IM_BOT_DUPLICATED/);
+  assert.throws(() => validateImBots([bot, { ...bot }]), /IM_BOT_DUPLICATED/);
 });

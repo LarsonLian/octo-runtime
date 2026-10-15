@@ -274,11 +274,11 @@ test("shared runtime dispatches WeCom text to Codex and replies using the origin
   assert.notEqual(calls[1].agentSessionId, oldSession);
 });
 
-test("wecom.json is a list, preserves omitted defaults and honors explicit disabled", async (t) => {
-  const { mkdtemp, readFile, writeFile, rm } = await import("node:fs/promises");
+test("WeCom plugin validates Bot lists and honors explicit disabled", async (t) => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const { loadImBots } = await import("../packages/octo-runtime-extra-channel-wecom/dist/index.js");
+  const { validateImBots } = await import("../packages/octo-runtime-extra-channel-wecom/dist/index.js");
   const home = await mkdtemp(join(tmpdir(), "im-defaults-"));
   t.after(() => rm(home, { recursive: true, force: true }));
   const bot = {
@@ -288,10 +288,8 @@ test("wecom.json is a list, preserves omitted defaults and honors explicit disab
     app_secret: "secret",
     adapter: { workdir: home }
   };
-  await writeFile(join(home, "wecom.json"), JSON.stringify([bot]), { mode: 0o600 });
-  const [config] = loadImBots(home);
-  assert.deepEqual(config, bot);
-  assert.deepEqual(JSON.parse(await readFile(join(home, "wecom.json"), "utf8")), [bot]);
+  validateImBots([bot]);
+  const config = bot;
   let reads = 0;
   const runtime = new ImRuntime(config, {
     host: {},

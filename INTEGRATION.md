@@ -239,7 +239,7 @@ JSON
 
 OpenClaw Adapter 在探测或执行时按已配置的连接来源读取 Gateway 信息与凭据；默认来源为本机 `~/.openclaw/openclaw.json`，可通过 `OPENCLAW_HOME` 指定目录。工作区由 OpenClaw Agent 管理。
 
-以上两个示例是同名插件的替代配置，依次执行时后者会覆盖前者。若两个 Bot 要同时启用，将两个 Bot 对象放进同一个 `config.bots` 数组，一次提交完整配置。本入口无需创建 `im.json`。
+以上两个示例是同名插件的替代配置，依次执行时后者会覆盖前者。若两个 Bot 要同时启用，将两个 Bot 对象放进同一个 `config.bots` 数组，一次提交完整配置。配置只保存在对应插件的 `extra/<name>/config.json`，不提供渠道专用配置文件。
 
 配置保存后，选择前台或后台启动：
 

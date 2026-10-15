@@ -15,8 +15,6 @@ export type * from "./contracts.js";
 export type * from "./ports.js";
 export * as imApi from "./transport/api/index.js";
 export {
-  loadImBots,
-  readImBots,
   validateImBots,
   configuredCredential
 } from "./lifecycle/file-config.js";

@@ -12,7 +12,7 @@ import { callDaemon } from "../packages/octo-runtime-daemon/dist/runtime/runtime
 test("Daemon IM RPC dynamically manages one endpoint and never discovers client Home files", async (t) => {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const home = await mkdtemp(join(tmpdir(), "oh-im-rpc-"));
-  await writeFile(join(home, "im.json"), "invalid customer-owned file");
+  await writeFile(join(home, "customer-owned.json"), "invalid customer-owned file");
   const socketPath = join(home, "daemon.sock");
   const app = await startDaemonServer({
     homePath: home,

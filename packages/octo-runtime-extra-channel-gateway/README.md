@@ -22,8 +22,8 @@ await channel.upsert({
 await channel.close();
 ```
 
-SDK 动态管理入口为 `./daemon-module` 的 `createImModule`，模块 ID 为 `channel-gateway`。支持 `upsert`、`remove`（`connection_key`）和 `status`。HostApp 显式登记并启动，不因导入而连接。
+SDK 宿主通过通用 Extra 声明及 `configureExtra` 配置入口装配插件；Bot 数组和连接管理由插件解释，不在 daemon/CLI 添加平台分支。
 
-也可作为 extra 使用：入口默认导出插件，`name='channel-gateway'`，配置为 `{ bots: [...] }`，共享宿主执行端口并在卸载时关闭连接。文件入口只在宿主选择时读取 `im.json`，不主动扫描目录。
+统一通过 Extra 使用：入口默认导出插件，`name='channel-gateway'`，配置为 `{ bots: [...] }`，共享宿主执行端口并在卸载时关闭连接。CLI 保存完整声明到 `<home>/default/extra/channel-gateway/config.json`，SDK 显式传入声明；多个 Bot 放在同一 `config.bots` 数组中。
 
 凭据只用于连接，不进入模型输入或状态。会话和投递回执有界保存在内存中，不承诺跨进程恢复或 exactly-once。

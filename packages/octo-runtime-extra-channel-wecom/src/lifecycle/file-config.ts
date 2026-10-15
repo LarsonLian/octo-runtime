@@ -1,6 +1,5 @@
-/** CLI file adapter. SDK never discovers files unless its host selects this adapter. */
+/** 插件内部的 Bot 列表校验与凭据文件读取。 */
 import { readFileSync, statSync } from "node:fs";
-import { resolve } from "node:path";
 import type { ImBotConfig } from "../contracts.js";
 import { imBotIdentity, validateImConfig } from "./configuration.js";
 
@@ -13,35 +12,6 @@ export function validateImBots(value: unknown): asserts value is ImBotConfig[] {
     if (identities.has(identity)) throw new Error("IM_BOT_DUPLICATED");
     identities.add(identity);
   }
-}
-
-/** Reads a JSON array, without rewriting defaults or allocating workspaces. */
-export function readImBots(home: string): ImBotConfig[] {
-  const file = resolve(home, "wecom.json");
-  let text: string;
-  try {
-    text = readFileSync(file, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    throw new Error("IM_CONFIG_JSON_INVALID");
-  }
-  validateImBots(value);
-  if (value.some((bot) => !!bot.app_secret))
-    checkPrivateFile(file);
-  return value;
-}
-
-export function loadImBots(home: string): ImBotConfig[] {
-  return readImBots(home).map((bot) => ({
-    ...bot,
-    ...(bot.app_secret_file ? { app_secret_file: resolve(home, bot.app_secret_file) } : {})
-  }));
 }
 
 function checkPrivateFile(file: string): void {
