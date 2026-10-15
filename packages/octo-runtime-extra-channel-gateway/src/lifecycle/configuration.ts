@@ -5,8 +5,8 @@ import { assertApprovalMode, assertContextEnvelope } from "@mininglamp-oss/octo-
 import type { ImBotConfig } from "../contracts.js";
 
 export function validateImConfig(config: ImBotConfig): void {
-  if (!config || typeof config !== "object" || config.type !== "octo")
-    throw new Error("IM_TYPE_INVALID");
+  if (!config || typeof config !== "object" || Array.isArray(config))
+    throw new Error("IM_CONFIG_INVALID");
   if (typeof config.bot_id !== "string" || !config.bot_id.trim())
     throw new Error("IM_BOT_ID_REQUIRED");
   if (
@@ -66,28 +66,26 @@ export function validateImConfig(config: ImBotConfig): void {
     throw new Error("IM_CONFIG_INVALID");
   if (config.enabled !== undefined && typeof config.enabled !== "boolean")
     throw new Error("IM_CONFIG_INVALID");
-  if (config.type === "octo") {
-    if (typeof config.api_url !== "string" || !config.api_url.trim())
-      throw new Error("IM_API_URL_INVALID");
-    validateUrl(config.api_url, "https:", "http:");
-    if (
-      config.group_ids !== undefined &&
-      (!Array.isArray(config.group_ids) ||
-        config.group_ids.some((id) => typeof id !== "string" || !id))
-    )
+  if (typeof config.api_url !== "string" || !config.api_url.trim())
+    throw new Error("IM_API_URL_INVALID");
+  validateUrl(config.api_url, "https:", "http:");
+  if (
+    config.group_ids !== undefined &&
+    (!Array.isArray(config.group_ids) ||
+      config.group_ids.some((id) => typeof id !== "string" || !id))
+  )
+    throw new Error("IM_CONFIG_INVALID");
+  if (
+    config.history_limit !== undefined &&
+    (!Number.isInteger(config.history_limit) ||
+      config.history_limit < 0 ||
+      config.history_limit > 100)
+  )
+    throw new Error("IM_CONFIG_INVALID");
+  for (const key of ["cards", "typing", "group_rules"] as const)
+    if (config[key] !== undefined && typeof config[key] !== "boolean")
       throw new Error("IM_CONFIG_INVALID");
-    if (
-      config.history_limit !== undefined &&
-      (!Number.isInteger(config.history_limit) ||
-        config.history_limit < 0 ||
-        config.history_limit > 100)
-    )
-      throw new Error("IM_CONFIG_INVALID");
-    for (const key of ["cards", "typing", "group_rules"] as const)
-      if (config[key] !== undefined && typeof config[key] !== "boolean")
-        throw new Error("IM_CONFIG_INVALID");
-    validateCredential(config.bf_token, config.bf_token_file);
-  }
+  validateCredential(config.bf_token, config.bf_token_file);
 }
 
 /** Stable local lookup key, not a caller-supplied identity or authorization token. */

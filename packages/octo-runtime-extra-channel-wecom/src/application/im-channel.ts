@@ -56,7 +56,7 @@ export class ImRuntime {
     return {
       ...this.#connector?.status,
       connection_key: imBotIdentity(this.config),
-      type: this.config.type,
+      type: "wecom",
       enabled: this.config.enabled !== false,
       botId: this.#connector?.botId,
       connected: this.#state === "online",

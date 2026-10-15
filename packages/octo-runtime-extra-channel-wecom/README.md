@@ -8,7 +8,7 @@
 import { ImChannelManager } from '@mininglamp-oss/octo-runtime-extra-channel-wecom';
 const channel = new ImChannelManager({ host }); // invoke / cancel / respondInteraction
 await channel.upsert({
-  type: 'wecom', bot_id: botId, app_secret: secret,
+  bot_id: botId, app_secret: secret,
   adapter: { adapter_type: 'codex', workdir: absoluteWorkdir },
   context: { schema: 'octo.context-envelope/v3', items: [] }
 });

@@ -110,7 +110,7 @@ export function createImInvocation(
       ...message.runMetadata,
       // 可信身份覆盖可选 metadata，正文或自定义字段不能冒充当前发起人和会话。
       namespace: "im",
-      platform: config.type,
+      platform: "wecom",
       eventId,
       sessionKey,
       actorId: message.senderId,

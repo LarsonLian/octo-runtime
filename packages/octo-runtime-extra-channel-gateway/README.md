@@ -14,7 +14,7 @@
 import { ImChannelManager } from '@mininglamp-oss/octo-runtime-extra-channel-gateway';
 const channel = new ImChannelManager({ host }); // invoke / cancel / respondInteraction
 await channel.upsert({
-  type: 'octo', bot_id: botId, bf_token: token,
+  bot_id: botId, bf_token: token,
   api_url: 'https://im-test.deepminer.com.cn/api',
   adapter: { adapter_type: 'codex', workdir: absoluteWorkdir },
   context: { schema: 'octo.context-envelope/v3', items: [] }

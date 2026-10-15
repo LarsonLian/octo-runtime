@@ -5,8 +5,8 @@ import { assertApprovalMode, assertContextEnvelope } from "@mininglamp-oss/octo-
 import type { ImBotConfig } from "../contracts.js";
 
 export function validateImConfig(config: ImBotConfig): void {
-  if (!config || typeof config !== "object" || config.type !== "wecom")
-    throw new Error("IM_TYPE_INVALID");
+  if (!config || typeof config !== "object" || Array.isArray(config))
+    throw new Error("IM_CONFIG_INVALID");
   if (typeof config.bot_id !== "string" || !config.bot_id.trim())
     throw new Error("IM_BOT_ID_REQUIRED");
   const adapter = config.adapter;
@@ -58,7 +58,6 @@ export function validateImConfig(config: ImBotConfig): void {
     throw new Error("IM_CONFIG_INVALID");
   const fields = [
     "bot_id",
-    "type",
     "enabled",
     "adapter",
     "context",

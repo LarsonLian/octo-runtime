@@ -57,7 +57,7 @@ export class ImRuntime {
     return {
       ...this.#connector?.status,
       connection_key: imBotIdentity(this.config),
-      type: this.config.type,
+      type: "octo",
       bot_name: this.config.bot_name,
       enabled: this.config.enabled !== false,
       botId: this.#connector?.botId,

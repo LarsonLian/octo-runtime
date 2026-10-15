@@ -31,7 +31,6 @@ export interface ImCommonConfig {
 }
 
 export interface OctoBotConfig extends ImCommonConfig {
-  type: "octo";
   api_url: string;
   bf_token?: string;
   bf_token_file?: string;

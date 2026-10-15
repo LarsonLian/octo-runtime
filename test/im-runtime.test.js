@@ -292,7 +292,6 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   };
   const runtime = new ImRuntime(
     {
-      type: "octo",
       enabled: true,
       allowed_sender_ids: ["owner", "other"],
       api_url: `http://127.0.0.1:${server.address().port}`,
@@ -428,7 +427,6 @@ test("duplicate bot identities fail before opening connections", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "oh-im-config-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const bot = {
-    type: "octo",
     api_url: "https://im.example/api",
     bot_id: "bot",
     bf_token_file: "token",

@@ -3,14 +3,17 @@ import assert from 'node:assert/strict';
 import { validateImConfig as gatewayConfig, default as gatewayExtra, name as gatewayName } from '@mininglamp-oss/octo-runtime-extra-channel-gateway';
 import { validateImConfig as wecomConfig, default as wecomExtra, name as wecomName } from '@mininglamp-oss/octo-runtime-extra-channel-wecom';
 
-test('independent channels reject the other platform configuration', () => {
+test('independent channels accept Bots without type and validate platform fields', () => {
   const common = { bot_id: 'bot', adapter: { workdir: process.cwd() } };
-  const gateway = { ...common, type: 'octo', api_url: 'https://im-test.deepminer.com.cn/api' };
-  const wecom = { ...common, type: 'wecom' };
+  const gateway = { ...common, api_url: 'https://im-test.deepminer.com.cn/api' };
+  const wecom = { ...common };
   gatewayConfig(gateway);
   wecomConfig(wecom);
-  assert.throws(() => gatewayConfig(wecom), /IM_TYPE_INVALID/);
-  assert.throws(() => wecomConfig(gateway), /IM_TYPE_INVALID/);
+  for (const validate of [gatewayConfig, wecomConfig]) {
+    for (const invalid of [null, [], 'octo']) assert.throws(() => validate(invalid), /IM_CONFIG_INVALID/);
+  }
+  assert.throws(() => gatewayConfig(wecom), /IM_API_URL_INVALID/);
+  assert.throws(() => wecomConfig(gateway), /IM_CONFIG_UNKNOWN_FIELD/);
 });
 
 test('both channels load as extras and dispose their own resources', async () => {

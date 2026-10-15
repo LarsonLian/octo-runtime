@@ -14,7 +14,6 @@ import {
 import { createImInvocation } from "../packages/octo-runtime-extra-channel-gateway/dist/execution/dispatcher.js";
 
 const octo = (workdir, overrides = {}) => ({
-  type: "octo",
   api_url: "https://im-test.deepminer.com.cn/api",
   bot_id: "bot",
   bf_token: "bf_fixture",

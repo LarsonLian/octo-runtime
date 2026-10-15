@@ -39,7 +39,6 @@ test("Daemon IM RPC dynamically manages one endpoint and never discovers client 
         });
   assert.deepEqual(await rpc("im.status"), []);
   const config = {
-    type: "octo",
     enabled: true,
     api_url: "http://127.0.0.1:1",
     bot_id: "bot",

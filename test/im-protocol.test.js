@@ -39,7 +39,6 @@ const validateReasoningFrame = new Ajv({ allErrors: true }).compile(
   )
 );
 const config = (overrides = {}) => ({
-  type: "octo",
   enabled: true,
   api_url: "http://127.0.0.1:1",
   bot_id: "bot",

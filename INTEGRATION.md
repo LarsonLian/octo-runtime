@@ -194,7 +194,6 @@ octo-runtime extraset channel-gateway <<'JSON'
   "config": {
     "bots": [
       {
-        "type": "octo",
         "api_url": "https://im-test.deepminer.com.cn/api",
         "bot_id": "<BOT_ID>",
         "bf_token": "<BF_TOKEN>",
@@ -222,7 +221,6 @@ octo-runtime extraset channel-gateway <<'JSON'
   "config": {
     "bots": [
       {
-        "type": "octo",
         "api_url": "https://im-test.deepminer.com.cn/api",
         "bot_id": "<OPENCLAW_BOT_ID>",
         "bf_token": "<OPENCLAW_BOT_BF_TOKEN>",

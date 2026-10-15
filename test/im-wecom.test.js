@@ -120,13 +120,12 @@ test("server replacement closes the old connection without reconnecting", async 
 
 test("typed IM config keeps execution settings optional and rejects platform field mixing", () => {
   const config = {
-    type: "wecom",
     bot_id: credentials.appBot,
     app_secret: credentials.appSecret,
     adapter: { workdir: process.cwd() }
   };
   validateImConfig(config);
-  assert.throws(() => validateImConfig({ ...config, type: "unknown" }), /IM_TYPE_INVALID/);
+  assert.throws(() => validateImConfig({ ...config, type: "unknown" }), /IM_CONFIG_UNKNOWN_FIELD/);
   assert.throws(
     () => validateImConfig({ ...config, spaceId: "fake-octo-space" }),
     /IM_CONFIG_UNKNOWN_FIELD/
@@ -145,7 +144,6 @@ test("shared runtime dispatches WeCom text to Codex and replies using the origin
   const calls = [];
   const runtime = new ImRuntime(
     {
-      type: "wecom",
       enabled: true,
       bot_id: credentials.appBot,
       app_secret: credentials.appSecret,
@@ -282,7 +280,6 @@ test("WeCom plugin validates Bot lists and honors explicit disabled", async (t) 
   const home = await mkdtemp(join(tmpdir(), "im-defaults-"));
   t.after(() => rm(home, { recursive: true, force: true }));
   const bot = {
-    type: "wecom",
     bot_id: "test",
     enabled: false,
     app_secret: "secret",
@@ -308,7 +305,6 @@ test("execution Context overrides default adapter and maps reasoning to agentCon
   const { createImInvocation } =
     await import("../packages/octo-runtime-extra-channel-wecom/dist/execution/dispatcher.js");
   const config = {
-    type: "wecom",
     enabled: true,
     bot_id: credentials.appBot,
     app_secret: credentials.appSecret,
@@ -360,7 +356,7 @@ test("IM constructs full_access approval Context for both platforms and honors e
   };
   const context = { schema: "octo.context-envelope/v3", items: [] };
   for (const type of ["wecom"]) {
-    const config = { bot_id: "test", type, adapter: { workdir: process.cwd() } };
+    const config = { bot_id: "test", adapter: { workdir: process.cwd() } };
     const invoke = (config, context) =>
       createImInvocation(
         config,
