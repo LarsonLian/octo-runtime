@@ -81,9 +81,6 @@ importers:
       '@mininglamp-oss/octo-runtime-acp-client':
         specifier: workspace:*
         version: link:packages/octo-runtime-acp-client
-      '@mininglamp-oss/octo-runtime-adapter-icons':
-        specifier: link:../octo-runtime-adapter-icons
-        version: link:../octo-runtime-adapter-icons
       '@mininglamp-oss/octo-runtime-daemon-app':
         specifier: workspace:*
         version: link:apps/daemon
