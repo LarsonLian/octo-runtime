@@ -2547,35 +2547,6 @@ export interface ContextSyncResult1 {
   through_seq?: number;
 }
 /**
- * Traceable reference to frozen provider-visible context. The primary and recovery hashes cover their exact rendered bytes.
- *
- * This interface was referenced by `OctoRuntimeProtocolSchema`'s JSON-Schema
- * via the `definition` "ChannelContextSnapshotRef".
- */
-export interface ChannelContextSnapshotRef {
-  snapshot_id: string;
-  scope_key: string;
-  consumer_key: string;
-  session_generation: number;
-  /**
-   * Original descriptor generation when recovery promotes the effective consumer generation.
-   */
-  source_session_generation?: number;
-  trigger_message_id: string;
-  trigger_seq?: number;
-  serializer_version: string;
-  rendered_sha256: string;
-  completeness: "complete" | "partial" | "unavailable";
-  /**
-   * Hash of the frozen bounded cold projection used when provider resume falls back to a fresh session.
-   */
-  recovery_rendered_sha256?: string;
-  /**
-   * Completeness of the frozen cold recovery projection.
-   */
-  recovery_completeness?: "complete" | "partial" | "unavailable";
-}
-/**
  * Result of advancing the consumer cursor with version CAS after terminal durability.
  *
  * This interface was referenced by `OctoRuntimeProtocolSchema`'s JSON-Schema
@@ -2680,7 +2651,6 @@ export interface InvokeRequestWire {
    * Frozen alternate user turn for the first turn of a fresh provider session after resume fails.
    */
   freshFallbackModelInput?: string;
-  contextSnapshot?: ChannelContextSnapshotRef;
   /**
    * Provider process cwd. Sandboxing, containers, or host permissions provide the actual access boundary.
    */

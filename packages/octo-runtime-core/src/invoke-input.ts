@@ -144,7 +144,6 @@ export function prepareInvokeInput(value: unknown): {
       : {}),
     ...(input.providerEpoch !== undefined ? { providerEpoch: input.providerEpoch } : {}),
     ...(input.runMetadata ? { runMetadata: structuredClone(input.runMetadata) } : {}),
-    ...(input.contextSnapshot ? { contextSnapshot: structuredClone(input.contextSnapshot) } : {}),
     ...(input.freshFallbackModelInput !== undefined
       ? { freshFallbackModelInput: input.freshFallbackModelInput }
       : {}),

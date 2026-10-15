@@ -40,6 +40,8 @@
 
 ## 历史与取舍
 
+- [删除通用执行渠道快照](tasks/remove-context-snapshot/brief.md)：删除 contextSnapshot、渠道快照引用类型及转发；业务自行保存材料，另记录 Host 与 RPC 统一调用链的目标。
+
 - [删除通用协议业务场景](tasks/remove-business-scenarios/brief.md)：删除场景白名单、ScenarioRequest 及 Node/browser 导出；Channel Gateway Extra 保留业务接入职责，不为 Work App 测试程序保留旧合同。
 
 - [删除业务能力合同](tasks/remove-business-capability-contract/brief.md)：移除自有 capabilities、执行计划能力标签及 ExecutionTarget 预留设计；验证结果单独记录。

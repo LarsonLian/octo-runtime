@@ -2,6 +2,8 @@
 
 ## 2026-10-15
 
+- 按[任务](tasks/remove-context-snapshot/brief.md)删除通用执行协议的 contextSnapshot 和 ChannelContextSnapshotRef，同步 schema、生成类型、校验、Core 转发及测试；记录 Host/RPC 输入统一和 Host 单一执行链的目标，当前内部链路尚未改造。验证结果见[记录](journal/shared/2026-10-15-remove-context-snapshot.md)。
+
 - 按[任务](tasks/remove-business-scenarios/brief.md)删除通用协议的 ScenarioRequest、场景常量、builder 白名单和校验导出；业务自行构造 Context，Channel Gateway Extra 仍为业务接入层，Work App 测试程序不构成兼容约束。验证结果见[记录](journal/shared/2026-10-15-remove-business-scenarios.md)。
 
 - 按[任务](tasks/remove-unused-plan-fields/brief.md)删除未消费的 required_execution_features 和 provider_compatibility；同步 schema、生成类型、校验及样例。补充场景白名单、渠道快照和内部派生参数的[调用链澄清](journal/shared/2026-10-15-protocol-simplification-review.md)，验证及未完成范围见[记录](journal/shared/2026-10-15-remove-unused-plan-fields.md)。

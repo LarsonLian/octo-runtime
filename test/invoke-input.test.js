@@ -55,21 +55,7 @@ test("all prepared fields, primary/recovery images and provider extensions survi
       providerOptions: { custom: [1, { mode: "exact" }] },
       arbitraryProviderField: { preserve: true }
     },
-    runtimeLimits: { firstFrameTimeoutMs: 10000, runTimeoutMs: 120000, enforcement: "enforce" },
-    contextSnapshot: {
-      snapshot_id: "snap",
-      scope_key: "scope",
-      consumer_key: "consumer",
-      session_generation: 7,
-      source_session_generation: 6,
-      trigger_message_id: "message",
-      trigger_seq: 1,
-      serializer_version: "v3",
-      rendered_sha256: "a".repeat(64),
-      completeness: "complete",
-      recovery_rendered_sha256: "b".repeat(64),
-      recovery_completeness: "complete"
-    }
+    runtimeLimits: { firstFrameTimeoutMs: 10000, runTimeoutMs: 120000, enforcement: "enforce" }
   });
   const input = JSON.parse(JSON.stringify(invocationInput(request, "canonical")));
   const before = structuredClone(input);
@@ -77,6 +63,23 @@ test("all prepared fields, primary/recovery images and provider extensions survi
   assert.deepEqual(prepareInvokeInput(input).request, request);
   assert.deepEqual(input, before);
   assert.equal(input.inputs[1].data, image.data);
+});
+
+test("removed channel snapshot metadata is ignored and never forwarded to execution", () => {
+  for (const contextSnapshot of [{ snapshot_id: "old-reference" }, "unrecognized-extension"]) {
+    const input = {
+      inputs: [{ type: "text", text: "this turn only" }],
+      contexts: { schema: "octo.context-envelope/v3", items: [] },
+      contextSnapshot
+    };
+    const before = structuredClone(input);
+    assert.doesNotThrow(() => InvokeInput.check(input));
+    const prepared = prepareInvokeInput(input);
+    assert.equal(Object.hasOwn(prepared.request, "contextSnapshot"), false);
+    assert.equal(prepared.request.modelInput, "this turn only");
+    assert.deepEqual(prepared.request.context, input.contexts);
+    assert.deepEqual(input, before);
+  }
 });
 
 test("every ingress can use the same plain JSON and exact model parts reach the adapter", async () => {

@@ -3475,83 +3475,6 @@
         }
       }
     },
-    "ChannelContextSnapshotRef": {
-      "title": "ChannelContextSnapshotRef",
-      "description": "Traceable reference to frozen provider-visible context. The primary and recovery hashes cover their exact rendered bytes.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "snapshot_id",
-        "scope_key",
-        "consumer_key",
-        "session_generation",
-        "trigger_message_id",
-        "serializer_version",
-        "rendered_sha256",
-        "completeness"
-      ],
-      "properties": {
-        "snapshot_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "scope_key": {
-          "type": "string",
-          "minLength": 1
-        },
-        "consumer_key": {
-          "type": "string",
-          "minLength": 1
-        },
-        "session_generation": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "source_session_generation": {
-          "description": "Original descriptor generation when recovery promotes the effective consumer generation.",
-          "type": "integer",
-          "minimum": 1
-        },
-        "trigger_message_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "trigger_seq": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "serializer_version": {
-          "type": "string",
-          "minLength": 1
-        },
-        "rendered_sha256": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
-        },
-        "completeness": {
-          "type": "string",
-          "enum": [
-            "complete",
-            "partial",
-            "unavailable"
-          ]
-        },
-        "recovery_rendered_sha256": {
-          "description": "Hash of the frozen bounded cold projection used when provider resume falls back to a fresh session.",
-          "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
-        },
-        "recovery_completeness": {
-          "description": "Completeness of the frozen cold recovery projection.",
-          "type": "string",
-          "enum": [
-            "complete",
-            "partial",
-            "unavailable"
-          ]
-        }
-      }
-    },
     "ContextCommitResult": {
       "title": "ContextCommitResult",
       "description": "Result of advancing the consumer cursor with version CAS after terminal durability.",
@@ -3867,9 +3790,6 @@
         "freshFallbackModelInput": {
           "description": "Frozen alternate user turn for the first turn of a fresh provider session after resume fails.",
           "type": "string"
-        },
-        "contextSnapshot": {
-          "$ref": "#/definitions/ChannelContextSnapshotRef"
         },
         "workdir": {
           "description": "Provider process cwd. Sandboxing, containers, or host permissions provide the actual access boundary.",

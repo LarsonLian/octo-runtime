@@ -149,7 +149,6 @@ export type {
   ContextSyncRequest,
   ContextSyncResult,
   ChannelContextDescriptor,
-  ChannelContextSnapshotRef,
   ContextCommitResult,
   McpStdioServer,
   McpStreamableHttpServer,

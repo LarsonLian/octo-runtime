@@ -22,6 +22,8 @@ supersedes: []
 
 只有 `inputs`、`contexts` 必填；其他字段可选。默认值在执行边界解析，不写回调用方对象。未知可选扩展忽略，已识别字段继续校验。Context=v3、Run schema_version=7、内部 Adapter protocolVersion=2 是三个独立合同；统一包装不机械修改版本。
 
+调用链收敛目标：AdapterHost.invoke 和 RpcClient.invoke 共用输入合同，RPC 负责传输，Host 统一解析并进入同一条执行链。不得按调用入口或 native/canonical 模式另建输入解析与执行准备路径。当前实现仍包含 createInputInvoke 对内部 InvokeRequest 的转换及 RPC prepare / invokeFrames 接口，不能将此目标写成已完成事实；具体澄清见[任务](../tasks/remove-context-snapshot/brief.md)。
+
 ## 完整顶层字段
 
 | 字段 | 必填 / 默认 | 含义及内部映射 |
@@ -45,7 +47,6 @@ supersedes: []
 | runMetadata | 无 | JSON 业务/诊断信息，如 event、actor、channel；不注入模型，不作为授权凭据。 |
 | providerSession | 无 | Provider opaque 会话及其扩展字段，不从业务 sessionId 重建。 |
 | continuityMode | 有 providerSession 为 continue，否则 fresh | fresh 禁止携带 providerSession；continue 必须携带。以真实恢复结果为准。 |
-| contextSnapshot | 无 | 调用方明确提交的快照引用，不触发底层读取或材料预取。 |
 | freshFallbackModelInput | 无 | 调用方明确冻结的恢复文本，不从历史自动生成。 |
 | freshFallbackModelInputParts | 无 | 调用方明确提交的恢复 text/image 数组，结构同 inputs。 |
 | freshFallbackImagesUnavailable | 无 | 恢复图片字节不可得时明确阻止不完整 fresh fallback。 |
@@ -78,7 +79,7 @@ runtimeLimits 的数值字段均为毫秒：`firstFrameTimeoutMs` 首帧等待�
 
 providerSession 的 `sessionId` 是 Provider 句柄；`resumable` 是可选布尔值；`resumeOutcome` 为 new/resumed/fresh_fallback/compacted，表示真实连续性结果；`resumeFallback` 为回退原因；`contextInputVariant` 为 primary/recovery，标识实际采用输入；其他 Provider 扩展字段原样保留。业务 sessionId 和 Provider sessionId 不可互换。
 
-contextSnapshot 沿用 ChannelContextSnapshotRef：`snapshot_id` 快照 ID；`scope_key` 作用域键；`consumer_key` 消费游标键；`session_generation` 有效代次；`source_session_generation` 可选原代次；`trigger_message_id` 触发消息 ID；`trigger_seq` 可选序号；`serializer_version` 序列化版本；`rendered_sha256` 主投影 hash；`completeness` 为 complete/partial/unavailable；`recovery_rendered_sha256` 和 `recovery_completeness` 为可选恢复投影 hash 与完整性。引用不让框架自动补业务背景。
+通用执行协议不包含渠道快照引用、采集游标或投影 hash。`contextSnapshot` 和 `ChannelContextSnapshotRef` 已删除，Core 不校验、读取或转发它们。业务自行保存所需材料并显式构造本轮 inputs / contexts；渠道接入层可维护自身业务数据，不要求通用 Runtime 提供快照恢复合同。
 
 ## 大小与完整性
 

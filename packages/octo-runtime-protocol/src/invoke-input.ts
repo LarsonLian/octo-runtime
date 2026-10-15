@@ -8,7 +8,6 @@ import {
   type AgentSource,
   type ApprovalMode,
   type CanonicalEvent,
-  type ChannelContextSnapshotRef,
   type ContextEnvelope,
   type HostFrame,
   type InvokeRequest,
@@ -63,8 +62,6 @@ export class InvokeInput {
   declare providerSession?: ProviderSession;
   /** Fresh/continue intent; defaults to continue with providerSession, fresh otherwise. */
   declare continuityMode?: "fresh" | "continue";
-  /** Caller-provided frozen Context snapshot reference; framework does not fetch its content. */
-  declare contextSnapshot?: ChannelContextSnapshotRef;
   /** Caller-provided exact recovery text; no automatic history reconstruction. */
   declare freshFallbackModelInput?: string;
   /** Caller-provided recovery text/image parts; recovery images must be supplied explicitly. */
@@ -152,7 +149,7 @@ export function assertInvokeInput(value: unknown): asserts value is InvokeInput 
     typeof input.freshFallbackImagesUnavailable !== "boolean"
   )
     throw new TypeError("freshFallbackImagesUnavailable must be a boolean");
-  for (const key of ["agentConfig", "runMetadata", "providerSession", "contextSnapshot"])
+  for (const key of ["agentConfig", "runMetadata", "providerSession"])
     if (
       input[key] !== undefined &&
       (!input[key] || typeof input[key] !== "object" || Array.isArray(input[key]))
@@ -202,36 +199,6 @@ export function assertInvokeInput(value: unknown): asserts value is InvokeInput 
       !["primary", "recovery"].includes(session.contextInputVariant as string)
     )
       throw new TypeError("providerSession.contextInputVariant is invalid");
-  }
-  if (input.contextSnapshot) {
-    const snapshot = input.contextSnapshot as Record<string, unknown>;
-    for (const key of [
-      "snapshot_id",
-      "scope_key",
-      "consumer_key",
-      "trigger_message_id",
-      "serializer_version",
-      "rendered_sha256"
-    ])
-      if (typeof snapshot[key] !== "string" || !snapshot[key])
-        throw new TypeError(`contextSnapshot.${key} is required`);
-    for (const key of ["session_generation", "source_session_generation", "trigger_seq"])
-      if (
-        (key === "session_generation" || snapshot[key] !== undefined) &&
-        (!Number.isSafeInteger(snapshot[key]) || (snapshot[key] as number) < 0)
-      )
-        throw new TypeError(`contextSnapshot.${key} must be a non-negative safe integer`);
-    for (const key of ["completeness", "recovery_completeness"])
-      if (
-        (key === "completeness" || snapshot[key] !== undefined) &&
-        !["complete", "partial", "unavailable"].includes(snapshot[key] as string)
-      )
-        throw new TypeError(`contextSnapshot.${key} is invalid`);
-    if (
-      snapshot.recovery_rendered_sha256 !== undefined &&
-      typeof snapshot.recovery_rendered_sha256 !== "string"
-    )
-      throw new TypeError("contextSnapshot.recovery_rendered_sha256 must be a string");
   }
 }
 
