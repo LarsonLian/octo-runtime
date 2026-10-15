@@ -83,7 +83,7 @@ provisioning 的具体形态：
 2. **能力已 provisioning / 开启**（config 中相应条目存在）。
 3. **adapter 侧放行**——本适配器已默认满足：`buildCodexCommand` 复用真实 `CODEX_HOME`、`app-server.ts` 使用 `approvalPolicy: "untrusted"`，且不禁用任何 MCP server；默认自动接受受支持的反向审批，`autoApprove: false` 则交给 Worker durable interaction。`mcpToolCall` 事件已被 normalizer 统一映射为 `mcp__<server>__<tool>`。所以默认无需额外运行时开关，cua / computer-use 的工具调用会像普通 MCP 工具一样透传给上层。
 
-`createCodexAdapter` 在创建时用 `detectComputerUseProvisioningSync` 检查将要使用的 `CODEX_HOME`：若 computer use 已 provisioning 且启用，就在 `metadata.capabilities` 里加上 `tool.computer_use`（常量 `COMPUTER_USE_CAPABILITY`）。这条 capability 走 `host.list()` 进入 Agent Work Runtime 的能力集合（Runtime 在 `start()` 时快照，而非每个 run 重查），因此 Agent Worker 能据此知道该节点是否具备 computer use；控制面的 `describe()` 展示也会带上它（同一份 metadata）。检测在**每次 adapter-host 进程启动 / 注册时**跑一次——与 `list()` 快照的时机一致，不落任何持久化、不上云。若节点上后来才安装 / 开启 ChatGPT.app，重启 adapter-host 即可重新探测。
+`createCodexAdapter` 在创建时用 `detectComputerUseProvisioningSync` 检查将要使用的 `CODEX_HOME`：若 computer use 已 provisioning 且启用，就在 `metadata.executionFeatures` 加上 `tool.computer_use`（常量 `COMPUTER_USE_CAPABILITY`）。Host 的 `list()` / `describe()` 返回这一执行支持声明；业务调用方决定是否以及如何对外登记。检测在每次 adapter-host 启动 / 注册时执行，不为每轮调用重新探测，不创建业务能力标签或自有 capabilities。节点安装或启用情况变化后，重启 adapter-host 重新探测；声明不代表实际调用成功。
 
 关键约束：
 

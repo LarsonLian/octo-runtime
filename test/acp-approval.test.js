@@ -85,7 +85,7 @@ test("Host rejects an approval capability declaration with no response implement
   const { AdapterHost } = await import("@mininglamp-oss/octo-runtime-adapter-host");
   const host = new AdapterHost();
   let started = false;
-  host.register({ metadata: { protocolSupport: { protocol: ("broken") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "broken", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access", "interaction.response"] }, async *invoke() { started = true; yield { protocolVersion: 2, type: "run.completed", payload: {} }; } });
+  host.register({ metadata: { protocolSupport: { protocol: ("broken") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "broken", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access", "interaction.response"] }, async *invoke() { started = true; yield { protocolVersion: 2, type: "run.completed", payload: {} }; } });
   await assert.rejects(async () => { for await (const event of preparedTestInvoke((...args) => host.invokeFrames(...args))("broken", request, { protocolMode: "canonical" })) assert.fail(event.type); }, /APPROVAL_MODE_UNSUPPORTED/);
   assert.equal(started, false);
 });

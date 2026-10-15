@@ -227,7 +227,7 @@ test("unsupported adapters and native options fail explicitly", async () => {
   const adapter = defineAdapter({
     metadata: {
       type: "unsupported",
-      capabilities: [],
+
       executionFeatures: [],
       agentSources: ["provisioned"]
     },

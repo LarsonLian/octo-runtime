@@ -1,11 +1,11 @@
 ---
 type: Rule
-title: Agent 来源与执行能力
-description: 来源、能力声明与实际可用状态分别校验。
+title: Adapter 执行元数据与可用状态
+description: 仅声明真实执行支持，业务标签不属于本地 Runtime 合同。
 tags: ["adapter","agent-source"]
 timestamp: 2026-10-15T00:00:00Z
 implementation_baseline: df63c8f
-id: runtime-adapter-capabilities
+id: runtime-adapter-metadata
 tier: repo
 priority: 90
 load_bearing: true
@@ -16,7 +16,7 @@ source: self
 supersedes: []
 ---
 
-# Agent 来源与执行能力
+# Adapter 执行元数据与可用状态
 
 Agent 定义由业务方管理。Adapter 元数据与 probe 分别描述执行实现及实际可用状态；本地 SDK 不创建业务 Agent，也不读取 Worker Agent defaults／mandatory。当前仓库没有 Worker 接入注册工厂。
 
@@ -31,19 +31,28 @@ Agent 定义由业务方管理。Adapter 元数据与 probe 分别描述执行�
 
 OpenClaw 声明两种来源，Adapter 边界都要求有效目标；公共 `InvokeInput` 的准备层在省略目标时补 `main`，不能将此默认值理解为创建 Agent。当前实现验证并调用已有 Agent，不创建受控 runner、不修改 Agent 配置。它声明 `metadata.workspace: false`，使用原生工作区。详见 [OpenClaw 合同](openclaw.md)。
 
-## 能力与可用状态
+## 执行支持与可用状态
 
 [AdapterMetadata](../../packages/octo-runtime-adapter-sdk/src/index.ts) 区分以下字段：
 
-- `capabilities`：公开行为能力；当前内置 Adapter 使用 `react`。
 - `agentSources`：支持的 Agent 来源。
 - `executionFeatures`：会话、审批、图片等执行特性。
 - `protocolSupport`：native／canonical 输出模式及原生协议标识。
 - `mcp`、`workspace`：本地 MCP 配置支持和工作目录行为。
 
-`react` 只描述使用已配置、获授权工具并继续处理结果的行为，不保证每次调用工具，也不证明某项工具存在。Provider 的 `available`、认证、目标 Agent、当前输入可执行性与执行完成分别判断。
+自有 `metadata.capabilities` 已删除。`react` 没有可检查的本地执行定义，不作为默认值、发现结果、注册要求或准入条件。业务标签及其匹配由业务方管理，不在 SDK、Host、daemon 或 Adapter 内建立能力目录、AbilityProvider、Binding 或业务执行目标注册中心。
 
-Host 按实际执行合同校验来源、模式、审批及输入。非空 MCP 配置在未支持的 Adapter 上明确报错，不以 `react` 替代支持声明。SDK 的 `mcp` 是本地实现支持标识，不新增远程 Runtime 能力准入门槛。
+Provider 的 `available`、认证、目标 Agent、当前输入可执行性与执行完成分别判断。可用性以实际 probe 为准；标签和静态支持声明不能证明执行成功。
+
+Host 按实际执行合同校验来源、模式、审批及输入。非空 MCP 配置在未支持的 Adapter 上明确报错。SDK 的 `mcp` 是本地实现支持标识，不新增远程 Runtime 能力准入门槛。不得将业务标签迁入 `executionFeatures` 以恢复已删除的能力体系。
+
+## 协议删除边界
+
+- 执行计划不再定义 `required_capabilities`；schema、生成类型和运行时字段白名单同步删除。提交该字段按未知执行计划字段拒绝，不转换为 `required_execution_features`。
+- 删除整个 `ExecutionTarget` 类型及校验器，不保留 `standard_harness_agent` / `ability_provider` 分支、`executor_id`、`provider_binding_ref`。通过既有 adapter 选择执行实现，Provider Agent 目标仍使用 `providerAgentId`。
+- SDK、AdapterHost 加载、发现和桌面映射不再输出或要求自有 capabilities 字段；旧额外标签不参与执行判断，也不作为新合同的一部分。
+- ACP 的 `agentCapabilities` / `clientCapabilities`、MCP 握手和 Codex app-server 初始化中的 capabilities 属于 Provider 原生协议，按原协议处理。
+- Run=7、Context=v3、Adapter transport=2 不变。此次删除不触发 Home、Runtime 身份、profile、认证配置或 Provider 状态重建。
 
 模型上下文统一使用本轮 Context v3，由 Host 固定渲染；没有 Compiler/Pipeline 或来源专属的自动背景链路。Run 版本保持 7，Adapter transport 版本保持 2。
 

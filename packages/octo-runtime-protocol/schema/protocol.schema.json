@@ -2241,13 +2241,6 @@
         "approval_mode": {
           "$ref": "#/definitions/ApprovalMode"
         },
-        "required_capabilities": {
-          "type": "array",
-          "items": {
-            "const": "react",
-            "type": "string"
-          }
-        },
         "runtime_limits": {
           "$ref": "#/definitions/ContextLimitsPayload"
         },
@@ -4589,47 +4582,6 @@
         }
       },
       "x-octo-unique-env-keys": true
-    },
-    "ExecutionTarget": {
-      "title": "ExecutionTarget",
-      "oneOf": [
-        {
-          "type": "object",
-          "required": [
-            "target_kind"
-          ],
-          "additionalProperties": false,
-          "properties": {
-            "target_kind": {
-              "const": "standard_harness_agent"
-            }
-          }
-        },
-        {
-          "type": "object",
-          "required": [
-            "target_kind",
-            "executor_id",
-            "provider_binding_ref"
-          ],
-          "additionalProperties": false,
-          "properties": {
-            "target_kind": {
-              "const": "ability_provider"
-            },
-            "executor_id": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 96
-            },
-            "provider_binding_ref": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256
-            }
-          }
-        }
-      ]
     },
     "ContextMcpPayload": {
       "title": "ContextMcpPayload",

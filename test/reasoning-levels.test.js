@@ -40,7 +40,7 @@ test('native carriers receive mapped effort while the input request keeps xhigh'
 test('mapping and non-application use existing evidence and valid run notices, never claim application', async () => {
   for (const [type, expected] of [['openclaw', 'REASONING_EFFORT_DOWNGRADED'], ['mcode', 'REASONING_EFFORT_NOT_APPLIED']]) {
     let received;
-    const adapter = defineAdapter({ metadata: { type, capabilities: [], executionFeatures: [], agentSources: ['provisioned'] }, async *invoke(input) { received = input; yield { protocolVersion: 2, type: 'run.completed', payload: {} }; } });
+    const adapter = defineAdapter({ metadata: { type, executionFeatures: [], agentSources: ['provisioned'] }, async *invoke(input) { received = input; yield { protocolVersion: 2, type: 'run.completed', payload: {} }; } });
     const events = [];
     for await (const event of adapter.invoke(request)) { assertCanonicalEvent(event); events.push(event); }
     assert.equal(received, request);
@@ -50,7 +50,7 @@ test('mapping and non-application use existing evidence and valid run notices, n
 });
 
 test('ACP override records no native setter even when another transport of the adapter supports effort', async () => {
-  const adapter = defineAdapter({ metadata: { type: 'opencode', capabilities: [], executionFeatures: [], agentSources: ['provisioned'] }, async *invoke() { yield { protocolVersion: 2, type: 'run.completed', payload: {} }; } }, null);
+  const adapter = defineAdapter({ metadata: { type: 'opencode', executionFeatures: [], agentSources: ['provisioned'] }, async *invoke() { yield { protocolVersion: 2, type: 'run.completed', payload: {} }; } }, null);
   const events = [];
   for await (const event of adapter.invoke(request)) events.push(event);
   assert.equal(events[0].payload.params.warningCode, 'REASONING_EFFORT_NOT_APPLIED');
@@ -61,7 +61,7 @@ test("adapter wrapper preserves the original invoke receiver and context", async
   const original = {
     metadata: {
       type: "receiver-fixture",
-      capabilities: [],
+
       executionFeatures: [],
       agentSources: ["provisioned"]
     },

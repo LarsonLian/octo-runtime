@@ -188,7 +188,6 @@ export function createAcpAdapter(
       metadata: {
         mcp: true,
         type: definition.type,
-        capabilities: ["react"],
         agentSources: ["provisioned"],
         executionFeatures: [
           ...(definition.executionFeatures ?? ["session.serialize", "tool.canonical"]),

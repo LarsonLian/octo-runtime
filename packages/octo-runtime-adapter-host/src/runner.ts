@@ -66,7 +66,6 @@ for (const entry of manifest.adapters) {
     message: "adapter registered",
     adapterType: instance.metadata.type,
     data: {
-      capabilities: instance.metadata.capabilities,
       agentSources: instance.metadata.agentSources,
       executionFeatures: instance.metadata.executionFeatures
     }
@@ -137,7 +136,7 @@ function callFactory(value: unknown, options: JsonRecord, entry: AdapterManifest
   return factory(options);
 }
 
-/** Structural type guard: only `metadata.type`, a string `capabilities` array and
+/** Structural type guard: only `metadata.type`, execution metadata and
  * an `invoke` method are required, so any conforming object can be a hosted adapter. */
 function isHostedAdapter(value: unknown): value is HostedAdapter {
   if (!isRecord(value) || !isRecord(value.metadata)) return false;
@@ -150,9 +149,6 @@ function isHostedAdapter(value: unknown): value is HostedAdapter {
     ) &&
     Array.isArray(value.metadata.executionFeatures) &&
     value.metadata.executionFeatures.every((feature) => typeof feature === "string") &&
-    Array.isArray(value.metadata.capabilities) &&
-    value.metadata.capabilities.length === 1 &&
-    value.metadata.capabilities[0] === "react" &&
     typeof value.invoke === "function"
   );
 }

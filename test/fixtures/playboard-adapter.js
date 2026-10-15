@@ -6,7 +6,7 @@ export const playboardAdapter = {
       modes: ["canonical"],
       nativeMethods: []
     },
-    capabilities: ["react"],
+
     agentSources: ["provisioned", "preset"],
     executionFeatures: [
       "approval.ask",

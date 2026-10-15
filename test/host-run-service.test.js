@@ -12,7 +12,6 @@ function fixture(invoke, modes = ["canonical"]) {
         nativeMethods: []
       },
       type: "fixture",
-      capabilities: [],
       agentSources: ["provisioned"],
       executionFeatures: ["approval.full_access"]
     },

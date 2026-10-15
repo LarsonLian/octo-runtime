@@ -107,7 +107,6 @@ test("Host renders each run independently without deduplicating resumed context"
   host.register({
     metadata: {
       type: "fixture",
-      capabilities: [],
       agentSources: ["provisioned"],
       executionFeatures: ["approval.full_access"],
       protocolSupport: { protocol: "fixture", modes: ["canonical"], nativeMethods: [] }
@@ -146,7 +145,6 @@ test("Host freezes contexts and injects once for both modes and image input", as
     host.register({
       metadata: {
         type: "fixture",
-        capabilities: [],
         agentSources: ["provisioned"],
         executionFeatures: ["approval.full_access", "input.image"],
         protocolSupport: { protocol: "fixture", modes: ["native", "canonical"], nativeMethods: [] }

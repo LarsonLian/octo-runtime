@@ -547,7 +547,7 @@ test("OpenCode preserves model rounds and associates their reasoning, tools, and
 
 test("JSON CLI adapters reap a provider that stays alive after a semantic terminal", async () => {
   const adapter = createJsonCliAdapter({
-    metadata: { type: "semantic-terminal", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: [] },
+    metadata: { type: "semantic-terminal", agentSources: ["provisioned"], executionFeatures: [] },
     buildCommand: () => ({
       command: process.execPath,
       args: ["-e", "console.log(JSON.stringify({done:true}));setInterval(()=>{},1000)"]

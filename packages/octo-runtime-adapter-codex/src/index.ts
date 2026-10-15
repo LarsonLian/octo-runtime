@@ -289,7 +289,6 @@ export function createCodexAdapter({
         ]
       },
       type: "codex",
-      capabilities: ["react"],
       agentSources: ["provisioned"],
       executionFeatures: adapterCapabilities,
       processModel: "subprocess-per-invocation",

@@ -5,7 +5,7 @@ import { AdapterHost } from "../packages/octo-runtime-adapter-host/dist/index.js
 
 test("Host scopes anonymous segments to tool boundaries and closes every channel at a step end", async () => {
   const host = new AdapterHost();
-  host.register({ metadata: { protocolSupport: { protocol: ("identity") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "identity", capabilities: [], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke() {
+  host.register({ metadata: { protocolSupport: { protocol: ("identity") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "identity", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke() {
     const event = (type, payload) => ({ protocolVersion: 2, type, payload });
     yield event("message.create", { status: "streaming" });
     yield event("message.delta", { text: "before" });

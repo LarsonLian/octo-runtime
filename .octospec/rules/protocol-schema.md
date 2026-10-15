@@ -24,6 +24,8 @@ supersedes: []
 
 Schema 定义 ProviderSession、AgentConfig、Context、执行计划、Host 帧和 InvokeRequest wire 等数据形状。字段格式、权限和跨字段约束还由 Protocol 中相应的运行时校验器处理；生成 TypeScript 类型本身不会在运行时校验输入。
 
+自有 Adapter capabilities、执行计划 required_capabilities 以及 ExecutionTarget 预留设计已经删除。不得在 schema 或生成类型中保留 AbilityProvider、executor_id、provider_binding_ref 的占位定义。Provider 原生协议的同名 capabilities 不属于此次删除范围，见 [Adapter 元数据](adapter-metadata.md)。
+
 运行时常量、泛型 CanonicalEvent 以及带 `AbortSignal` 的 InvokeRequest 组合留在 [src/index.ts](../../packages/octo-runtime-protocol/src/index.ts)。函数、活对象及 AbortSignal 不通过 JSON wire 传输。
 
 当前 daemon 是 TypeScript 实现。跨仓库 Go 消费者的合同及生成流程由各消费者维护，不能把未来 Go daemon 写成当前实现或已批准的迁移目标。

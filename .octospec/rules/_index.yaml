@@ -1,5 +1,5 @@
 rules:
-  - id: runtime-adapter-capabilities
+  - id: runtime-adapter-metadata
     priority: 90
     load_bearing: true
     inject_when:

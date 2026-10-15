@@ -410,7 +410,6 @@ export function createAntigravityAdapter({
   return defineAdapter({
     metadata: {
       type: "antigravity",
-      capabilities: ["react"],
       agentSources: ["provisioned"],
       executionFeatures: ["approval.full_access", "session.serialize", "tool.canonical"],
       processModel: "subprocess-per-invocation",

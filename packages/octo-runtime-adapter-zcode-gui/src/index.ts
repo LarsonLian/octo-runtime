@@ -137,7 +137,6 @@ export function createZcodeGuiAdapter({
   return defineAdapter({
     metadata: {
       type: "zcode-gui",
-      capabilities: ["react"],
       agentSources: ["provisioned"],
       executionFeatures: [
         "session.serialize",

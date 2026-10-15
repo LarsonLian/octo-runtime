@@ -27,7 +27,7 @@ timestamp: 2026-10-15T00:00:00Z
 | `docs/25-run-mcp-context.md` | [rules/mcp.md](../../rules/mcp.md) | 保留字段、合并、模板展开、Adapter 限制和测试入口。 |
 | `docs/26-channel-local-stream-and-ack-plan.md` | [rules/channel-integration.md](../../rules/channel-integration.md) | 提炼渠道与 Host 边界；不将 Work App 的 SQLite 批写策略写成 Runtime 实现。 |
 | `docs/27-native-canonical-protocol-contract.md` | [rules/output-protocol.md](../../rules/output-protocol.md) | 保留帧、接纳、交互和源流合同；公共签名按源码更新，旧里程碑与验收归 journal。 |
-| `docs/agent-source-and-react-capabilities-requirements.md` | [rules/adapter-capabilities.md](../../rules/adapter-capabilities.md) | 保留来源和能力声明，区分代码支持与真实可用。 |
+| `docs/agent-source-and-react-capabilities-requirements.md` | [rules/adapter-metadata.md](../../rules/adapter-metadata.md) | 保留来源和能力声明，区分代码支持与真实可用。 |
 | `docs/context-envs.md` | [rules/environment.md](../../rules/environment.md) | 保留列表、合并、冻结、环境优先级及不支持路径。 |
 | `docs/context-extensions.md` | [rules/context-extensions.md](../../rules/context-extensions.md) | 保留未知可选字段与 extra 固定渲染边界。 |
 | `docs/context-llm-injection.md` | [rules/context-input.md](../../rules/context-input.md) | 保留完整分类矩阵与每轮业务归属，补当前输入/目录准备依据。 |

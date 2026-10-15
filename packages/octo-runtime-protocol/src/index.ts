@@ -4,8 +4,6 @@ export * from "./invoke-input.js";
 export * from "./model-context.js";
 export * from "./execution-plan.js";
 export { contextHash } from "./context-hash.js";
-export { assertExecutionTarget } from "./execution-target.js";
-export type { ExecutionTarget } from "./execution-target.js";
 export type { ToolAuthorization, IssuedToolAuthorization } from "./generated/protocol-types.js";
 import { assertExperiencePayload } from "./experience.js";
 import { assertModelInputParts, assertImageRecoveryParts, hasImageInput } from "./multimodal.js";
@@ -506,13 +504,7 @@ export const MESSAGE_CHANNELS: ReadonlySet<MessageChannel> = new Set([
   "final"
 ]);
 
-/**
- * Capability names an adapter may declare. A capability describes a real
- * end-to-end ability and should not be claimed just because the underlying CLI
- * happens to support it.
- */
-export const capabilities = Object.freeze({ REACT: "react" } as const);
-
+/** Execution features must describe support implemented by the Adapter and Host. */
 export const executionFeatures = Object.freeze({
   APPROVAL_ASK: "approval.ask",
   APPROVAL_ASSISTED: "approval.assisted",

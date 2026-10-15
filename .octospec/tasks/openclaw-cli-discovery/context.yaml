@@ -3,7 +3,7 @@ rules:
   - runtime-openclaw
   - runtime-lifecycle
   - runtime-engineering
-  - runtime-adapter-capabilities
+  - runtime-adapter-metadata
   - runtime-local-execution
   - runtime-invoke-input
   - runtime-context-input

@@ -58,7 +58,6 @@ export interface AdapterMetadata {
   workspace?: boolean;
   protocolSupport?: AdapterProtocolSupport;
   type: string;
-  capabilities: string[];
   agentSources: ("preset" | "provisioned")[];
   executionFeatures: string[];
   processModel?: string;

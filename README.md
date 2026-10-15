@@ -2,6 +2,8 @@
 
 架构与开发约束见 [基础架构规则](.octospec/rules/architecture.md) 和 [OKF 工程知识目录](.octospec/index.md)。本项目使用中文维护内部工程说明。
 
+业务标签由业务方管理。本地 Runtime 已删除自有 Adapter capabilities、执行计划 required_capabilities 和 ExecutionTarget / AbilityProvider 预留合同；执行元数据、协议支持、审批和原生 Provider 协商的边界见 [Adapter 元数据规则](.octospec/rules/adapter-metadata.md)。
+
 函数式业务扩展见 [Extra 插件设计与使用](.octospec/rules/extras.md)。`octo-runtime extraset <name>` 从 stdin 保存完整 JSON 声明；daemon 重启后自动加载。原生 HTTP → Host → SSE 演示包为 [octo-runtime-extra-sse-demo](packages/octo-runtime-extra-sse-demo/README.md)。
 
 Octo Runtime 是 provider-neutral 的本地 Agent Runtime。本地接入使用 `HostApp → daemon 包的 SDK → IPC → Host → Adapter`。本地 Runtime ID 在初始化时生成并保存；Host socket 就绪即为本地启动成功。云端注册和对外连接由宿主显式控制，不是本地运行的前置条件。

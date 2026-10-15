@@ -348,7 +348,6 @@ export function createOpenCodeAdapter({ command = "opencode" }: { command?: stri
     metadata: {
       mcp: true,
       type: "opencode",
-      capabilities: ["react"],
       agentSources: ["provisioned"],
       executionFeatures: [
         "session.serialize",

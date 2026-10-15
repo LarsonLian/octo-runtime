@@ -60,7 +60,7 @@ test("all Adapters preserve the same canonical failure detail and structured err
     const event = await failed({
       metadata: {
         type,
-        capabilities: ["react"],
+
         agentSources: ["provisioned"],
         executionFeatures: ["approval.full_access"],
         protocolSupport: { protocol: `${type}.canonical`, modes: ["canonical"], nativeMethods: [] }

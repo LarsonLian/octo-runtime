@@ -2522,7 +2522,7 @@
     }
   },
   {
-    "name": "plan-capabilities-empty",
+    "name": "plan-execution-features-empty",
     "valid": true,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
@@ -2533,7 +2533,7 @@
     }
   },
   {
-    "name": "plan-capabilities-duplicates",
+    "name": "plan-execution-features-duplicates",
     "valid": true,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
@@ -2574,7 +2574,7 @@
     "error": "APPROVAL_MODE_UNSUPPORTED"
   },
   {
-    "name": "plan-capabilities-string",
+    "name": "plan-execution-features-string",
     "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
@@ -2586,7 +2586,7 @@
     "error": "RESOLVED_EXECUTION_PLAN_INVALID"
   },
   {
-    "name": "plan-capabilities-empty-entry",
+    "name": "plan-execution-features-empty-entry",
     "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
@@ -2598,7 +2598,7 @@
     "error": "RESOLVED_EXECUTION_PLAN_INVALID"
   },
   {
-    "name": "plan-capabilities-nonstring-entry",
+    "name": "plan-execution-features-nonstring-entry",
     "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
@@ -2610,7 +2610,7 @@
     "error": "RESOLVED_EXECUTION_PLAN_INVALID"
   },
   {
-    "name": "plan-capabilities-nested-entry",
+    "name": "plan-execution-features-nested-entry",
     "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
@@ -2622,7 +2622,7 @@
     "error": "RESOLVED_EXECUTION_PLAN_INVALID"
   },
   {
-    "name": "plan-capabilities-null-entry",
+    "name": "plan-execution-features-null-entry",
     "valid": false,
     "resolved_execution_plan": {
       "agent_source": "provisioned",
@@ -6018,5 +6018,19 @@
         }
       ]
     }
+  },
+  {
+    "name": "plan-removed-business-capabilities",
+    "valid": false,
+    "resolved_execution_plan": {
+      "agent_source": "provisioned",
+      "adapter_type": "codex",
+      "workdir": "/workspace",
+      "approval_mode": "ask",
+      "required_capabilities": [
+        "react"
+      ]
+    },
+    "error": "CONTEXT_SCHEMA_INVALID"
   }
 ]

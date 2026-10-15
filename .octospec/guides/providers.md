@@ -26,7 +26,7 @@ implementation_baseline: df63c8f
 
 Host 公共 `invoke` 默认 native。使用 canonical-only Adapter，或需要统一事件的业务方，必须显式指定 `{ protocolMode: "canonical" }`。模式不支持时在接纳前拒绝，不从 canonical 重建原生输出，见 [输出模式合同](../rules/output-protocol.md)。当前仓库不再提供 Worker 远程接入包。
 
-`capabilities` 描述公开行为，`executionFeatures` 描述实际执行特性，`agentSources` 声明来源支持；可用状态由真实 probe 单独判断。详见 [来源与能力](../rules/adapter-capabilities.md)。Host 当前没有公开 fork 流程，不因 Provider 原生具有 fork 就声明端到端支持。
+`executionFeatures` 描述实际执行特性，`agentSources` 声明来源支持，`protocolSupport` 描述输出协议；可用状态由真实 probe 单独判断。详见 [执行元数据](../rules/adapter-metadata.md)。Host 当前没有公开 fork 流程，不因 Provider 原生具有 fork 就声明端到端支持。
 
 ## 会话与权限
 

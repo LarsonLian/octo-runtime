@@ -1005,7 +1005,6 @@ export function createOpenClawAdapter({
       workspace: false,
       processModel: "websocket-per-invocation",
       transport: "openclaw-gateway-rpc",
-      capabilities: ["react"],
       agentSources: ["preset", "provisioned"],
       executionFeatures: [
         "tool.canonical",

@@ -131,7 +131,6 @@ export function createCodeBuddyAdapter({
   return defineAdapter({
     metadata: {
       type: "codebuddy",
-      capabilities: ["react"],
       agentSources: ["provisioned"],
       executionFeatures: [
         "session.serialize",

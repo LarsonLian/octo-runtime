@@ -16,7 +16,7 @@
 | 未知可选项与业务 extra | [Context 扩展](rules/context-extensions.md) |
 | 本轮进程环境变量 | [envs](rules/environment.md) |
 | 本轮 MCP 连接 | [MCP](rules/mcp.md) |
-| Agent 来源、能力与实际可用性 | [Adapter 声明](rules/adapter-capabilities.md) |
+| Adapter 执行元数据与实际可用性 | [Adapter 声明](rules/adapter-metadata.md) |
 | OpenClaw profile 连接与目标 | [OpenClaw](rules/openclaw.md) |
 | 四挡 effort 与诚实回执 | [思考强度](rules/reasoning.md) |
 | 插件归属、装配与资源清理 | [Extra](rules/extras.md) |
@@ -39,6 +39,9 @@
 宿主接入与部署仍由根目录 [INTEGRATION.md](../INTEGRATION.md) 和 [DEPLOYMENTS.md](../DEPLOYMENTS.md) 提供入口；包 README 保留包级用法。
 
 ## 历史与取舍
+
+- [删除业务能力合同](tasks/remove-business-capability-contract/brief.md)：移除自有 capabilities、执行计划能力标签及 ExecutionTarget 预留设计；验证结果单独记录。
+- [后续协议简化检查](journal/shared/2026-10-15-protocol-simplification-review.md)：检查未消费的计划字段、业务场景白名单、渠道快照和重复执行参数；仅记录建议，尚未实施。
 
 - [Playboard 统一 daemon 执行](tasks/playboard-daemon-execution/brief.md)：记录绕过 daemon、重复装配 OpenClaw 的问题与改造原因；当前工作树已统一临时 daemon、两层 RPC 和资源隔离，见[验证记录](journal/shared/2026-10-15-playboard-daemon-execution.md)。
 - [架构演进](journal/shared/architecture-evolution.md)：Git 节点、已撤回设计的问题和当前替代。

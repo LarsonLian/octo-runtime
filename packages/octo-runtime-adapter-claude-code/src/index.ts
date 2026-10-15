@@ -651,7 +651,6 @@ export function createClaudeCodeAdapter({
         nativeMethods: ["managed-turn", "can_use_tool", "control_response", "cancel"]
       },
       type: "claude-code",
-      capabilities: ["react"],
       agentSources: ["provisioned"],
       executionFeatures: [
         "activity.turn-progress",

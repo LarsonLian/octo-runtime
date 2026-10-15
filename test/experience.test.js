@@ -6,7 +6,7 @@ import { CodexEventNormalizer } from "../packages/octo-runtime-adapter-codex/dis
 
 test("host emits activity without persisting private analysis and closes every activity", async () => {
   const host = new AdapterHost();
-  host.register({ metadata: { protocolSupport: { protocol: ("experience") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "experience", capabilities: ["react"], agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke() {
+  host.register({ metadata: { protocolSupport: { protocol: ("experience") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "experience", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke() {
     yield { protocolVersion: 2, type: "message.delta", payload: { channel: "analysis", exposure: "private_reasoning", provenance: { provider: "experience", nativeEvent: "reasoning" }, text: "secret-body" } };
     yield { protocolVersion: 2, type: "message.delta", payload: { channel: "commentary", text: "Looking at source" } };
     yield { protocolVersion: 2, type: "run.completed", payload: {} };

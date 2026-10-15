@@ -9,9 +9,11 @@ implementation_baseline: df63c8f
 
 # Adapter 开发指南
 
+接入前先读 [总体协议与调用设计](../rules/protocol-design.md)，确认调用入口、输出模式、审批／追问响应、取消及会话恢复的责任边界。
+
 ## 最小契约
 
-一个 adapter 提供静态元数据 `metadata` 和 `invoke`。元数据包含 `type`、`capabilities`、`agentSources` 和 `executionFeatures`；`defineAdapter` 在未声明输出模式时补 canonical-only 的 `protocolSupport`。`probe` 是可选项；省略时 Host 标记为 `unchecked`，不代表 Provider 已确认可用。
+一个 adapter 提供静态元数据 `metadata` 和 `invoke`。元数据包含 `type`、`agentSources` 和 `executionFeatures`；`defineAdapter` 在未声明输出模式时补 canonical-only 的 `protocolSupport`。`probe` 是可选项；省略时 Host 标记为 `unchecked`，不代表 Provider 已确认可用。
 
 ```js
 import { defineAdapter, probeCommand } from "@mininglamp-oss/octo-runtime-adapter-sdk";
@@ -19,7 +21,6 @@ import { defineAdapter, probeCommand } from "@mininglamp-oss/octo-runtime-adapte
 export const adapter = defineAdapter({
   metadata: {
     type: "my-provider",
-    capabilities: ["react"],
     agentSources: ["provisioned"],
     executionFeatures: ["session.serialize"]
   },
@@ -46,7 +47,7 @@ export const adapter = defineAdapter({
 6. 必须响应 `request.signal`，把取消请求传递给直接启动的 provider 子进程并完成资源清理。当前 SDK 只负责向直接子进程请求终止，不保证进程一定退出；生产 adapter 必须补齐超时后的 `SIGKILL` 升级，以及整个进程组或后代进程树的回收。
 7. 控制指令应优先通过 Provider 原生的 system、developer 或配置通道传递。Provider 没有独立载体时，必须明确记录所用载体；例如 Antigravity 将控制指令和用户输入放入同一 user 消息的不同 text block，不得宣称为原生 system role。OpenClaw 使用原生额外系统提示载体。
 8. Token 和其他敏感值不得出现在命令行参数、prompt、事件 payload 或工作目录中。
-9. `metadata.capabilities` 表达公开行为；会话、审批等放到 `executionFeatures`，输出模式放到 `protocolSupport`。只能声明已实现的支持范围，并单独记录真实 Provider 验证范围。
+9. 会话、审批等真实执行特性放到 `executionFeatures`，输出模式放到 `protocolSupport`。业务标签不进入 Adapter 元数据，不定义自有 capabilities 或 AbilityProvider 注册体系。只能声明已实现的支持范围，并单独记录真实 Provider 验证范围。
 
 上例演示 canonical 事件生成；调用 Host 时显式指定 `{ protocolMode: "canonical" }`。需要 native 时实现 Driver 与独立控制帧，不能直接声明支持后继续只返回 canonical 事件。详情见 [模式合同](../rules/output-protocol.md)。
 
