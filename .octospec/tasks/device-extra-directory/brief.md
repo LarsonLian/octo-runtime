@@ -26,7 +26,7 @@ CLI 保存、读取与 daemon 启动扫描只使用 `<home>/extras/<name>/config
 2. [x] 统一 CLI/daemon 路径，保留凭据权限与原子写入；保留 `extras` 基础目录名，不增加旧布局逻辑。
 3. [x] 同步现行规则、接入文档和示例，补充不同 profile、不同 Home、前台启动和临时执行的回归覆盖。
 4. [x] 构建、类型、lint、58 项相关回归及 im-test 实机验证，范围见 [验证记录](../../journal/shared/2026-10-15-cli-extras-directory.md)。
-5. [ ] 仅提交本需求的代码与文档，并推送当前分支。
+5. [x] 仅提交本需求的代码与文档；实现提交 `d7d5f8b` 已推送到 `origin/main`。
 
 # 验收
 

@@ -33,3 +33,7 @@ extraset、extraget、路径诊断和 daemon 扫描同步修改；Extra 命令�
 此证据覆盖新目录配置与真实本地执行；桌面 `connectionsEnabled=false`，没有验证 ChannelGateway 的远端注册、IM 建联或消息收发。未改 Run/Context 协议、SDK 存储合同或桌面 UI，不升级协议版本，不重启既有桌面或重建用户 Home。
 
 工作树已有其他开发内容；此次仅暂存本需求的路径、参数约束、回归和文档差异，其他修改保留。
+
+# 交付
+
+实现提交 `d7d5f8b`（`fix(cli): 将 Extra 配置统一到 Home 级 extras 目录`）已推送至 `origin/main`。此记录仅说明源码交付，没有安装全局 CLI 或修改用户 Runtime 服务。
