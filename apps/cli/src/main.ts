@@ -8,7 +8,7 @@ import {
 } from "@mininglamp-oss/octo-runtime-adapter-openclaw";
 import type { ServiceBackend } from "@mininglamp-oss/octo-runtime-cross-service";
 import { createHash, randomUUID } from "node:crypto";
-import { access, stat } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import net from "node:net";
 import { arch, hostname, platform as osPlatform, release } from "node:os";
 import { resolveServiceControl, verifyServiceProgram, type ServiceControlOptions } from "./service-control.js";
@@ -564,12 +564,6 @@ function enumFlag<const TValue extends string>(
     throw new Error(`value must be one of: ${allowed.join(", ")}`);
   }
   return value as TValue;
-}
-
-function objectValue(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
 }
 
 function helpText(group?: string): string {

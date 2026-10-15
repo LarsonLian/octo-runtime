@@ -7,8 +7,10 @@ import {
   type AgentConfig,
   type AgentSource,
   type ApprovalMode,
+  type CanonicalEvent,
   type ChannelContextSnapshotRef,
   type ContextEnvelope,
+  type HostFrame,
   type InvokeRequest,
   type ModelInputPart,
   type ProviderSession,
@@ -85,15 +87,15 @@ export interface InputInvoke {
   (
     input: InvokeInput & { protocol_mode: "canonical" },
     environment?: InvokeEnvironment
-  ): AsyncGenerator<import("./index.js").CanonicalEvent>;
+  ): AsyncGenerator<CanonicalEvent>;
   (
     input: InvokeInput & { protocol_mode?: "native" },
     environment?: InvokeEnvironment
-  ): AsyncGenerator<import("./index.js").HostFrame>;
+  ): AsyncGenerator<HostFrame>;
   (
     input: InvokeInput,
     environment?: InvokeEnvironment
-  ): AsyncGenerator<import("./index.js").CanonicalEvent | import("./index.js").HostFrame>;
+  ): AsyncGenerator<CanonicalEvent | HostFrame>;
 }
 
 export function assertInvokeInput(value: unknown): asserts value is InvokeInput {
@@ -247,6 +249,8 @@ export function invocationInput(
     modelInputParts,
     ...fields
   } = request;
+  void _version;
+  void _signal;
   const contexts = structuredClone(context);
   if (adapterType) {
     const adapter = contexts.items.find(

@@ -7,7 +7,7 @@ import { imBotIdentity, validateImConfig } from "./configuration.js";
 export function validateImBots(value: unknown): asserts value is ImBotConfig[] {
   if (!Array.isArray(value) || value.length > 16) throw new Error("IM_CONFIG_LIST_REQUIRED");
   const identities = new Set<string>();
-  for (const bot of value) {
+  for (const bot of value as ImBotConfig[]) {
     validateImConfig(bot);
     const identity = imBotIdentity(bot);
     if (identities.has(identity)) throw new Error("IM_BOT_DUPLICATED");

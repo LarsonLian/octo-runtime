@@ -71,28 +71,30 @@ export async function startHostSocketServer(options: {
   const handle = async (line: string, socket: net.Socket): Promise<void> => {
     let request: HostSocketRequest | undefined;
     try {
-      const value = JSON.parse(line);
-      if (value?.jsonrpc !== "2.0" || typeof value.method !== "string") throw new Error("HOST_RPC_INVALID");
-      request = value;
-      const params = request!.params ?? {};
-      if (request!.method === "agent_run.invoke") {
+      const value: unknown = JSON.parse(line);
+      if (!value || typeof value !== "object" || Array.isArray(value) ||
+          !("jsonrpc" in value) || value.jsonrpc !== "2.0" ||
+          !("method" in value) || typeof value.method !== "string") throw new Error("HOST_RPC_INVALID");
+      request = value as HostSocketRequest;
+      const params = request.params ?? {};
+      if (request.method === "agent_run.invoke") {
         const invocation = params.request as InvokeRequest;
         await host.submit(String(params.adapter_type), invocation, resolveHostInvokeWireOptions(params.options));
-        await streamHostRun({ ...request!, params: { run_id: invocation.runId } }, socket, host);
+        await streamHostRun({ ...request, params: { run_id: invocation.runId } }, socket, host);
         return;
       }
-      if (request!.method === "agent_run.subscribe") { await streamHostRun(request!, socket, host); return; }
+      if (request.method === "agent_run.subscribe") { await streamHostRun(request, socket, host); return; }
       let result: unknown;
-      switch (request!.method) {
+      switch (request.method) {
         case "status": result = { ready: !closing && processHost.child.exitCode === null && processHost.child.signalCode === null, pid: process.pid, adapterHost: { pid: processHost.child.pid, state: processHost.child.exitCode === null && processHost.child.signalCode === null ? "ready" : "stopped" } }; break;
         case "adapter.list": result = await host.list(options.configurations?.(typeof params.runtimeId === "string" ? params.runtimeId : undefined)); break;
         case "agent_run.cancel": result = await host.cancelRun(String(params.run_id)); break;
         case "agent_run.respond": await host.respond(String(params.run_id), params.response as Parameters<HostRunService["respond"]>[1]); result = {}; break;
         case "agent_run.native.respond": await host.respondNativeRun(String(params.run_id), params.response as Parameters<HostRunService["respondNativeRun"]>[1]); result = {}; break;
         case "lifecycle.drain": result = await host.drain(typeof params.timeoutMs === "number" ? params.timeoutMs : 5000); break;
-        default: if (!options.extension) throw new Error("HOST_METHOD_NOT_FOUND"); result = await options.extension(request!, host);
+        default: if (!options.extension) throw new Error("HOST_METHOD_NOT_FOUND"); result = await options.extension(request, host);
       }
-      if (!socket.destroyed) socket.end(`${JSON.stringify({ jsonrpc: "2.0", id: request!.id, result })}\n`);
+      if (!socket.destroyed) socket.end(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result })}\n`);
     } catch (error) {
       if (!socket.destroyed) socket.end(`${JSON.stringify({ jsonrpc: "2.0", id: request?.id, error: { code: -32001, message: error instanceof Error ? error.message : "HOST_REQUEST_FAILED" } })}\n`);
     }

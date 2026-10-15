@@ -422,7 +422,8 @@ export class ImRuntime {
         this.#abort.signal,
         occurrenceId
       );
-      const { signal: _signal, ...snapshot } = prepared.request;
+      const snapshot = { ...prepared.request };
+      delete snapshot.signal;
       this.#sessionStore.remember(key, occurrenceId ?? message.messageId, {
         text: message.text,
         sessionId: executionSession.id!,
@@ -439,7 +440,7 @@ export class ImRuntime {
       return;
     }
     if (this.#closed) return;
-    const { request, adapterType } = prepared;
+    const { request } = prepared;
     if (session.id === request.agentSessionId) {
       session.lastEventId = executionSession.lastEventId;
       session.lastRunId = request.runId;

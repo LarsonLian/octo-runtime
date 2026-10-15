@@ -139,13 +139,12 @@ export class HostRunService implements AdapterHostRpc {
     options: HostInvokeOptions = {}
   ): AsyncGenerator<HostFrame> {
     const run = await this.#begin(adapterType, request, options);
-    yield* this.#execute(adapterType, request, run, options);
+    yield* this.#execute(adapterType, request, run);
   }
   async *#execute(
     adapterType: string,
     request: InvokeRequest,
-    run: Run,
-    options: HostInvokeOptions
+    run: Run
   ): AsyncGenerator<HostFrame> {
     try {
       this.#append(run, run.first);
@@ -198,7 +197,7 @@ export class HostRunService implements AdapterHostRpc {
   ): Promise<HostRunReceipt> {
     const run = await this.#begin(adapterType, request, options);
     const task = (async (): Promise<void> => {
-      for await (const event of this.#execute(adapterType, request, run, options)) void event;
+      for await (const event of this.#execute(adapterType, request, run)) void event;
     })().catch(() => undefined);
     this.#tasks.add(task);
     void task.finally(() => this.#tasks.delete(task));
