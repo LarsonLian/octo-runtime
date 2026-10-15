@@ -2,6 +2,8 @@
 
 ## 2026-10-15
 
+- 实施 [IM 长任务与 Codex 重试改造](tasks/im-long-running-retry/brief.md)：默认一天、工具无输出时限一天，Extra 管理连续恢复与累计重试上限；工具/交互前的 Codex 暂态失败可新建尝试，原生提示仅计入恢复预算，Host 保持单次执行。真实 Codex 受控 503 后恢复成功；真实 IM 收发及一天持续运行未验收。按用户要求移除 Runtime 与 Work App 的 adapter-icons 依赖，详见[验证记录](journal/shared/2026-10-15-im-long-running-retry.md)。
+
 - 创建[第三方 Adapter/Extra 飞书开发指南](https://my.feishu.cn/docx/IW30d2KL6o137ExHKHRc2yrJngh)，补齐公开类型、完整示例、Agent Run 和兼容边界。按用户要求从普通 --help 隐藏高级 --manifest，解析继续支持；19 项针对性回归及隔离示例执行结果见[记录](journal/shared/2026-10-15-third-party-plugin-guide.md)。
 
 - 开放单一 npm 发行包的 `/extra` 与 `/protocol`，提供完整 Extra 和执行协议类型及校验工具；隔离安装的外部 TS 插件编译、加载及真实 Codex Agent Run 通过。另记录 CLI TS 内置集合加 `extra_adapters.json` 的第三方 Adapter 追加目标，加载改造与 `/adapter` 尚未实施。范围和回归环境缺失见[记录](journal/shared/2026-10-15-public-plugin-contracts.md)。

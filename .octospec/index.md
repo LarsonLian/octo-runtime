@@ -41,6 +41,8 @@
 
 ## 历史与取舍
 
+- [IM 长任务时限与 Codex 故障重试](tasks/im-long-running-retry/brief.md)：已实施一天默认值与独立恢复预算；Extra 重试工具/交互前的明确 Codex 暂态失败，Host 保持单次执行。真实 Codex 受控 503 恢复通过，真实 IM 收发、一天持续运行与工具后恢复仍待验收。
+
 - [单一发行包的第三方插件合同](tasks/public-plugin-contracts/brief.md)：公开 Extra/协议类型与工具，仓库外 TS 工程及真实 Agent Run 验证；第三方 Adapter 入口和 CLI 追加清单仍待实施，详见[验证记录](journal/shared/2026-10-15-public-plugin-contracts.md)。
 
 - [CLI 与 SDK 分别决定 Adapter 加载集合](tasks/adapter-composition-ownership/brief.md)：记录共享清单和全量依赖的问题、各产品自行选择的目标、实现步骤与兼容影响；本次只记录方案，代码尚未改造。

@@ -2184,12 +2184,41 @@ function turnCompletedEvents(turn: JsonRecord | undefined): CanonicalEvent[] {
         type: "run.failed",
         payload: {
           message: stringValue(error?.message) || "Codex turn failed",
+          ...codexFailureDetails(error),
           ...(error ? { error } : {})
         }
       }
     ];
   }
   return [{ protocolVersion: 2, type: "run.completed", payload: {} }];
+}
+
+/** 仅转换 Provider 的结构化故障事实；是否自动重跑由 Extra 决定。 */
+function codexFailureDetails(error: JsonRecord | undefined): JsonRecord {
+  const info = error?.codexErrorInfo;
+  if (info === "rateLimitExceeded") return { httpStatus: 429 };
+  if (info === "serverOverloaded") return { httpStatus: 503 };
+  if (info === "internalServerError") return { httpStatus: 500 };
+  if (info === "unauthorized") return { httpStatus: 401 };
+  if (info === "usageLimitExceeded") return { code: "PROVIDER_QUOTA_EXHAUSTED" };
+  const detail = recordValue(info);
+  for (const kind of [
+    "httpConnectionFailed",
+    "responseStreamConnectionFailed",
+    "responseStreamDisconnected",
+    "responseTooManyFailedAttempts"
+  ]) {
+    const value = recordValue(detail?.[kind]);
+    if (!value) continue;
+    const status = numberValue(value.httpStatusCode);
+    return {
+      ...(status === undefined || status >= 500 || status === 429
+        ? { code: "PROVIDER_UNAVAILABLE" }
+        : {}),
+      ...(status !== undefined ? { httpStatus: status } : {})
+    };
+  }
+  return {};
 }
 
 /**

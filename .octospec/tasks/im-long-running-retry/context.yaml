@@ -1,0 +1,16 @@
+rules:
+  - runtime-architecture
+  - runtime-channel
+  - runtime-extras
+  - runtime-local-execution
+  - runtime-stateless
+  - runtime-session-reset
+  - runtime-engineering
+sources:
+  - .octospec/rules/architecture.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/local-execution.md
+  - .octospec/rules/stateless-execution.md
+  - .octospec/rules/session-reset.md
+  - .octospec/rules/engineering.md

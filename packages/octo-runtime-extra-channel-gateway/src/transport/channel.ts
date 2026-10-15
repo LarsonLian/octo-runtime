@@ -45,6 +45,7 @@ export class GatewayTransport {
       senderId: string;
       controls: ImRunControls;
       expires: number;
+      active: boolean;
     }
   >();
   constructor(
@@ -135,13 +136,29 @@ export class GatewayTransport {
               address: message,
               senderId: message.fromUid,
               controls,
-              expires: Date.now() + 30 * 60_000
+              expires: Date.now() + 86_400_000 + 30 * 60_000,
+              active: true
             });
-            if (this.#bindings.size > 128)
-              this.#bindings.delete(this.#bindings.keys().next().value!);
+            if (this.#bindings.size > 128) {
+              const idle = [...this.#bindings].find(([, binding]) => !binding.active);
+              if (idle) this.#bindings.delete(idle[0]);
+            }
             if (!this.#polling)
               this.#polling = this.#pollActions(token, registration.owner_uid, signal);
-            return card;
+            return {
+              update: (snapshot) => card.update(snapshot),
+              finish: async () => {
+                try {
+                  await card.finish();
+                } finally {
+                  const binding = this.#bindings.get(runId);
+                  if (binding) {
+                    binding.active = false;
+                    binding.expires = Date.now() + 30 * 60_000;
+                  }
+                }
+              }
+            };
           }
         });
       },

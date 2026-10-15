@@ -28,6 +28,15 @@ export interface ImCommonConfig {
   context?: ContextEnvelope;
   approval_mode?: ApprovalMode;
   run_timeout_ms?: number;
+  /** Codex 专用的故障恢复预算；不会让其他 Adapter 自动重跑。 */
+  codex_retry?: {
+    enabled?: boolean;
+    max_consecutive_retries?: number;
+    max_total_retries?: number;
+    recovery_timeout_ms?: number;
+    initial_delay_ms?: number;
+    max_delay_ms?: number;
+  };
   allowed_sender_ids?: string[];
 }
 
@@ -72,6 +81,14 @@ export interface ImPresentation {
 export interface ImRunControls {
   cancel(): Promise<boolean>;
   retry(senderId: string, occurrenceId: string): boolean;
+}
+
+export interface ImTaskAttempt {
+  runId: string;
+  invocationId: string;
+  outcome: string;
+  failureCode?: string;
+  diagnosticId?: string;
 }
 
 export interface ChannelCallbacks {

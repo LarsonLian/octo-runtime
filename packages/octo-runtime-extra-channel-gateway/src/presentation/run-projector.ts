@@ -4,6 +4,7 @@
  */
 import type { CanonicalEvent, FailureEnvelope } from "@mininglamp-oss/octo-runtime-protocol";
 import { sanitizePublicValue } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+import type { ImTaskAttempt } from "../contracts.js";
 
 export interface ProgressItem {
   id: string;
@@ -34,6 +35,7 @@ export interface RunPresentation {
   failureMessage?: string;
   failureDetail?: string;
   resultUnknown?: boolean;
+  attempts?: ImTaskAttempt[];
 }
 
 const publicExposures = new Set(["public_reasoning", "public_summary", "public_plan"]);

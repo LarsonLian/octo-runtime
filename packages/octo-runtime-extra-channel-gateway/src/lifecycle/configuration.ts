@@ -60,10 +60,34 @@ export function validateImConfig(config: ImBotConfig): void {
   if (
     config.run_timeout_ms !== undefined &&
     (!Number.isInteger(config.run_timeout_ms) ||
-      config.run_timeout_ms < 1 ||
-      config.run_timeout_ms > 600_000)
+      config.run_timeout_ms < 100 ||
+      config.run_timeout_ms > 86_400_000)
   )
     throw new Error("IM_CONFIG_INVALID");
+  if (config.codex_retry !== undefined) {
+    const retry = config.codex_retry;
+    if (!retry || typeof retry !== "object" || Array.isArray(retry))
+      throw new Error("IM_RETRY_CONFIG_INVALID");
+    if (retry.enabled !== undefined && typeof retry.enabled !== "boolean")
+      throw new Error("IM_RETRY_CONFIG_INVALID");
+    const bounds = {
+      max_consecutive_retries: [0, 100],
+      max_total_retries: [0, 100],
+      recovery_timeout_ms: [100, 3_600_000],
+      initial_delay_ms: [100, 60_000],
+      max_delay_ms: [100, 300_000]
+    } as const;
+    for (const field of Object.keys(bounds) as (keyof typeof bounds)[]) {
+      const value = retry[field];
+      if (
+        value !== undefined &&
+        (!Number.isInteger(value) || value < bounds[field][0] || value > bounds[field][1])
+      )
+        throw new Error("IM_RETRY_CONFIG_INVALID");
+    }
+    if ((retry.initial_delay_ms ?? 2_000) > (retry.max_delay_ms ?? 30_000))
+      throw new Error("IM_RETRY_CONFIG_INVALID");
+  }
   if (config.enabled !== undefined && typeof config.enabled !== "boolean")
     throw new Error("IM_CONFIG_INVALID");
   if (typeof config.api_url !== "string" || !config.api_url.trim())

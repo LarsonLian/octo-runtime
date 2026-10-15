@@ -1,10 +1,12 @@
 import type { InvokeRequest, ProviderSession } from "@mininglamp-oss/octo-runtime-protocol";
+import type { ImTaskAttempt } from "../contracts.js";
 
 export interface ImSessionOccurrence {
   text: string;
   sessionId: string;
   runId: string;
   snapshot?: Omit<InvokeRequest, "signal">;
+  attempts?: ImTaskAttempt[];
 }
 export interface ImSessionBinding {
   id?: string;

@@ -16,12 +16,40 @@ import { sanitizePublicValue } from "../packages/octo-runtime-adapter-sdk/dist/i
 import { ImRunProjector } from "../packages/octo-runtime-extra-channel-gateway/dist/presentation/run-projector.js";
 import { buildReasoningFrame } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/reasoning-frame.js";
 import { invokeRequest } from "./runtime-fixture.js";
+import { classifyFailure } from "@mininglamp-oss/octo-runtime-protocol";
+
+test("Codex structured upstream failures survive canonical normalization and catalog classification", () => {
+  for (const [codexErrorInfo, expected] of [
+    ["rateLimitExceeded", "OH-PRV-4005"],
+    ["serverOverloaded", "OH-PRV-4006"],
+    ["internalServerError", "OH-PRV-4006"],
+    ["unauthorized", "OH-PRV-4001"],
+    ["usageLimitExceeded", "OH-PRV-4004"],
+    [{ responseStreamDisconnected: { httpStatusCode: null } }, "OH-PRV-4006"],
+    [{ responseTooManyFailedAttempts: { httpStatusCode: 503 } }, "OH-PRV-4006"],
+    [{ httpConnectionFailed: { httpStatusCode: 401 } }, "OH-PRV-4001"],
+    [{ responseStreamConnectionFailed: { httpStatusCode: 403 } }, "OH-PRV-4002"]
+  ]) {
+    const error = { message: "Provider request failed", codexErrorInfo };
+    const failed = new CodexEventNormalizer()
+      .normalize({ method: "turn/completed", params: { turn: { status: "failed", error } } })
+      .find((e) => e.type === "run.failed");
+    assert.deepEqual(failed.payload.error, error);
+    const failure = classifyFailure(failed.payload, {
+      stage: "provider.invoke",
+      defaultDomain: "provider",
+      source: { component: "octo-runtime", adapter: "codex" }
+    });
+    assert.equal(failure.code, expected);
+  }
+});
 
 async function failed(adapter, workdir = process.cwd()) {
   const host = new AdapterHost();
   host.register(adapter);
   const events = [];
-  for await (const frame of preparedFrames(host,
+  for await (const frame of preparedFrames(
+    host,
     adapter.metadata.type,
     invokeRequest({ workdir, approvalMode: "full_access" }),
     { protocolMode: "canonical" }

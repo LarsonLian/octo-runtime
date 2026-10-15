@@ -59,7 +59,11 @@ export function createImInvocation(
       {
         namespace: "octo.execution",
         name: "limits",
-        payload: { run_timeout_ms: config.run_timeout_ms ?? 120_000 }
+        payload: {
+          run_timeout_ms: config.run_timeout_ms ?? 86_400_000,
+          // IM 的长工具可能长时间无输出；业务可通过本轮 limits 显式收紧。
+          tool_timeout_ms: 86_400_000
+        }
       },
       ...(workdir
         ? [

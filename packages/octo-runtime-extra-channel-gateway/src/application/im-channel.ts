@@ -1,9 +1,9 @@
-import { invocationInput } from "@mininglamp-oss/octo-runtime-protocol";
 /**
- * 单 Bot 编排：把授权 IM 消息转换成一次统一执行，并把公开结果投递回原会话。
+ * 单 Bot 编排：把授权 IM 消息转换为有界任务，并把公开结果投递回原会话。
  * 管理会话、排队、取消和交互归属；平台协议交给 connector，领域业务交给发起方。
  */
 import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import type {
   InteractionRequestedPayload,
   InteractionResponse,
@@ -14,12 +14,14 @@ import type {
   ImConnectionState,
   ImSession,
   ImInboundMessage,
-  ImRunControls
+  ImRunControls,
+  ImPresentation
 } from "../contracts.js";
 import type { ImModuleDependencies } from "../ports.js";
 import { imBotIdentity, validateImConfig } from "../lifecycle/configuration.js";
 import { GatewayTransport } from "../transport/channel.js";
 import { createImInvocation } from "../execution/dispatcher.js";
+import { ImTask } from "../execution/task.js";
 import { ImDeliveryDispatcher } from "../delivery/dispatcher.js";
 import { ImRunProjector, clampRunes } from "../presentation/run-projector.js";
 import { MemoryImSessionStore, type ImSessionStore } from "./session-store.js";
@@ -32,6 +34,7 @@ export class ImRuntime {
   readonly #sessionStore: ImSessionStore;
   readonly #seen = new Map<string, number>();
   readonly #queuedOccurrences = new Set<string>();
+  readonly #tasks = new Map<string, { rootInvocationId: string; task: ImTask }>();
   readonly #interactions = new Map<
     string,
     { invocationId: string; key: string; senderId: string; request: InteractionRequestedPayload }
@@ -75,6 +78,11 @@ export class ImRuntime {
         runId: session.lastRunId,
         eventId: session.lastEventId,
         active: !!session.activeInvocationId
+      })),
+      tasks: [...this.#tasks.values()].map(({ task }) => ({
+        runId: task.request.runId,
+        attempts: task.attempts.map((attempt) => ({ ...attempt })),
+        stopReason: task.stopReason
       }))
     };
   }
@@ -247,6 +255,7 @@ export class ImRuntime {
       if (command === "/reset") {
         try {
           const binding = this.#sessionStore.reset(key, message.messageId);
+          this.#tasks.get(key)?.task.stopRetries();
           session.id = binding.id;
           session.generation = binding.generation;
           session.providerSession = binding.providerSession;
@@ -271,9 +280,12 @@ export class ImRuntime {
         // 控制命令绕过普通消息队列，否则 stop 会排在待取消的长任务之后。
         const invocationId = session.activeInvocationId;
         void (async () => {
-          const cancelled = invocationId
-            ? (await this.dependencies.host.cancel(invocationId, "IM user stop")).cancelled
-            : false;
+          const task = this.#tasks.get(key)?.task;
+          const cancelled = task
+            ? await task.cancel()
+            : invocationId
+              ? (await this.dependencies.host.cancel(invocationId, "IM user stop")).cancelled
+              : false;
           await this.#reply(
             message,
             cancelled ? "已请求停止本轮执行。" : "当前没有可停止的执行。",
@@ -315,8 +327,8 @@ export class ImRuntime {
     const controls = {
       failed: false,
       cancel: async () =>
-        this.#sessions.get(key)?.activeInvocationId === invocationId &&
-        (await this.dependencies.host.cancel(invocationId, "IM card stop")).cancelled,
+        this.#tasks.get(key)?.rootInvocationId === invocationId &&
+        (await this.#tasks.get(key)!.task.cancel("IM card stop")),
       retry: (senderId: string, id: string): boolean =>
         controls.failed && this.#enqueue({ ...message, senderId }, key, id)
     };
@@ -483,21 +495,47 @@ export class ImRuntime {
       return;
     }
     if (this.#closed || this.#signal.aborted) return;
-    const { request } = prepared;
-    const projector = new ImRunProjector(request.runId, message.conversationKind === "direct");
-    const controls = this.#runControls(message, key, request.invocationId);
-    const presentation = message.beginPresentation?.(
-      request.runId,
-      (code) => this.#diagnostic(code, request.runId),
-      controls
+    let { request } = prepared;
+    const rootRunId = request.runId;
+    const startedAt = performance.now();
+    let presentationSeq = 0;
+    let projector = new ImRunProjector(rootRunId, message.conversationKind === "direct");
+    const task = new ImTask(
+      this.dependencies.host,
+      request,
+      prepared.adapterType,
+      this.config,
+      environment,
+      (attempt) => {
+        for (const [id, entry] of this.#interactions)
+          if (entry.invocationId === request.invocationId) this.#interactions.delete(id);
+        request = attempt;
+        projector = new ImRunProjector(rootRunId, message.conversationKind === "direct");
+        session.activeInvocationId = request.invocationId;
+        if (session.id === request.agentSessionId) {
+          session.lastRunId = request.runId;
+          this.#saveBinding(key, session);
+        } else task.stopRetries();
+      }
     );
-    presentation?.update(projector.snapshot());
-    session.activeInvocationId = request.invocationId;
+    this.#tasks.set(key, { rootInvocationId: request.invocationId, task });
+    const snapshot = () => ({
+      ...projector.snapshot(),
+      seq: ++presentationSeq,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      attempts: task.attempts.map((attempt) => ({ ...attempt }))
+    });
+    const controls = this.#runControls(message, key, request.invocationId);
+    let presentation: ImPresentation | undefined;
     try {
-      for await (const event of this.dependencies.host.invoke(
-        { ...invocationInput(request, "canonical"), protocol_mode: "canonical" },
-        { ...environment, signal: request.signal }
-      )) {
+      presentation = message.beginPresentation?.(
+        rootRunId,
+        (code) => this.#diagnostic(code, rootRunId),
+        controls
+      );
+      presentation?.update(snapshot());
+      session.activeInvocationId = request.invocationId;
+      for await (const event of task.events()) {
         if (this.#closed || this.#signal.aborted) break;
         if (event.type === "session.update" && session.id === request.agentSessionId) {
           session.providerSession = event.payload.providerSession;
@@ -541,7 +579,7 @@ export class ImRuntime {
           this.#interactions.delete(event.payload.interactionId);
         projector.accept(event);
         controls.failed = projector.snapshot().terminal === "failed";
-        presentation?.update(projector.snapshot());
+        presentation?.update(snapshot());
       }
       if (!projector.snapshot().terminal) throw new Error("IM_RUN_WITHOUT_TERMINAL");
     } catch {
@@ -551,9 +589,25 @@ export class ImRuntime {
           .cancel(request.invocationId, "IM execution stream failed")
           .catch(() => undefined);
         this.#diagnostic("IM_EXECUTION_RESULT_UNKNOWN", request.runId);
-        presentation?.update({ ...projector.snapshot(), resultUnknown: true });
+        presentation?.update({ ...snapshot(), resultUnknown: true });
       }
     } finally {
+      if (task.stopReason) this.#diagnostic(task.stopReason, rootRunId);
+      this.#tasks.delete(key);
+      try {
+        // 长任务结束后重新开始终态去重窗口，保留有界尝试身份，避免立即重复执行。
+        const saved = { ...prepared.request };
+        delete saved.signal;
+        this.#sessionStore.remember(key, occurrenceId ?? message.messageId, {
+          text: message.text,
+          sessionId: request.agentSessionId,
+          runId: rootRunId,
+          snapshot: saved,
+          attempts: task.attempts.map((attempt) => ({ ...attempt }))
+        });
+      } catch {
+        this.#diagnostic("IM_SESSION_STORE_FAILED", rootRunId);
+      }
       session.activeInvocationId = undefined;
       for (const [id, entry] of this.#interactions)
         if (entry.invocationId === request.invocationId) this.#interactions.delete(id);
@@ -574,7 +628,7 @@ export class ImRuntime {
             ? `执行失败：${clampRunes(projector.snapshot().failureDetail || "系统未返回具体原因，请查看运行记录。", 8000)}`
             : "本轮执行结果未知，请查看运行记录，避免重复执行。";
     // 最终文本拥有独立投递身份，即使进度卡投递失败，也必须尝试回复用户。
-    await this.#reply(message, text, `final:${request.runId}`);
+    await this.#reply(message, text, `final:${rootRunId}`);
   }
   #saveBinding(key: string, session: ImSession): void {
     this.#sessionStore.save(key, {
