@@ -7,6 +7,7 @@ import {
 } from "@mininglamp-oss/octo-runtime-acp-client";
 import {
   initialControlInstructions,
+  actmodeEvidence,
   AcpApprovalBridge,
   AcpTurnNormalizer,
   acpToolTerminalStatus,
@@ -21,6 +22,7 @@ import {
 } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
   canonicalTerminalStatus,
+  contextActmode,
   executionFeatures,
   providerInputParts,
   type InteractionResponse
@@ -56,6 +58,42 @@ export interface StandardAcpUpdate extends AcpUpdate {
 export interface AcpModelSelectionRequest {
   method: "session/set_config_option" | "session/set_model";
   params: JsonRecord;
+}
+
+/** 只使用 Provider 发布的模式 ID；不从产品名称、审批档位或正文猜测。 */
+export function acpActmodeSelectionRequest(
+  session: JsonRecord,
+  sessionId: string,
+  requested: "default" | "plan"
+): {
+  method: "session/set_config_option" | "session/set_mode";
+  params: JsonRecord;
+  effective: "default" | "plan";
+  nativeMode: string;
+  unchanged: boolean;
+} {
+  const option = arrayField(session, "configOptions").map(recordValue).find(
+    value => stringField(value, "category") === "mode" || stringField(value, "id") === "mode"
+  );
+  const modes = recordValue(session.modes);
+  const available = option
+    ? arrayField(option, "options").flatMap(value => {
+        const entry = recordValue(value);
+        return Array.isArray(entry.options) ? entry.options.map(recordValue) : [entry];
+      }).map(value => stringField(value, "value"))
+    : arrayField(modes, "availableModes").map(value => stringField(recordValue(value), "id"));
+  const ordinary = available.includes("default") ? "default" : available.includes("build") ? "build" : undefined;
+  const nativeMode = requested === "plan" && available.includes("plan") ? "plan" : ordinary;
+  if (!nativeMode) throw new Error("ACTMODE_UNSUPPORTED: ACP did not advertise an applicable mode");
+  return {
+    method: option ? "session/set_config_option" : "session/set_mode",
+    params: option
+      ? { sessionId, configId: stringField(option, "id"), value: nativeMode }
+      : { sessionId, modeId: nativeMode },
+    nativeMode,
+    effective: nativeMode === "plan" ? "plan" : "default",
+    unchanged: (option ? stringField(option, "currentValue") : stringField(modes, "currentModeId")) === nativeMode
+  };
 }
 
 /** Resolve the model-selection RPC advertised by an ACP session response. */
@@ -165,7 +203,7 @@ export function normalizeAcpUpdate(update: StandardAcpUpdate, provider: string):
       {
         protocolVersion: 2,
         type: "usage.update",
-        payload: { ...update.usage, model: update.model }
+        payload: { ...update.usage, ...(update.model !== undefined ? { model: update.model } : {}) }
       }
     ];
   }
@@ -331,6 +369,19 @@ export function createAcpAdapter(
         ? stringField(sessionResult, "sessionId")
         : (requestedSessionId ?? stringField(sessionResult, "sessionId"));
       if (!sessionId) throw new Error("ACP session/new returned no sessionId");
+      const requestedMode = contextActmode(request.context);
+      if (requestedMode !== undefined) {
+        const selection = acpActmodeSelectionRequest(sessionResult, sessionId, requestedMode);
+        if (!selection.unchanged)
+          await client.request(selection.method, selection.params);
+        yield actmodeEvidence({
+          requested: requestedMode,
+          effective: selection.effective,
+          nativeMode: selection.nativeMode,
+          status: selection.effective === requestedMode ? "applied" : "fallback",
+          ...(selection.effective !== requestedMode ? { reason: "provider_unsupported" as const } : {})
+        });
+      }
       const requestedModel = nonEmptyString(request.agentConfig?.model);
       if (requestedModel) {
         const selection = acpModelSelectionRequest(sessionResult, sessionId, requestedModel);

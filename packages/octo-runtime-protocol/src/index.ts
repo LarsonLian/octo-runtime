@@ -104,6 +104,8 @@ export type {
   RunContextProjection,
   ContextAdapterPayload,
   ContextModelPayload,
+  ContextActmodePayload,
+  ExecutionEvidence,
   ContextReasoningPayload,
   ContextWorkspacePayload,
   ContextLimitsPayload,
@@ -210,8 +212,12 @@ export type TerminalEventType = (typeof TERMINAL_EVENT_TYPES)[number];
  * updates -> a Run terminal. Provider-native event names must be translated
  * inside the adapter and must never leak through to this level.
  */
+export { contextActmode, assertExecutionEvidence } from "./actmode.js";
+import { assertExecutionEvidence } from "./actmode.js";
+
 export const CANONICAL_EVENT_TYPES = [
   "session.update",
+  "execution.update",
   "usage.update",
   "model_step.started",
   "model_step.finished",
@@ -569,6 +575,7 @@ export function assertCanonicalEvent(event: unknown): asserts event is Canonical
   if (event.protocolVersion !== PROTOCOL_VERSION)
     throw new TypeError("canonical protocolVersion must be 2");
   const payload = isRecord(event.payload) ? event.payload : {};
+  if (event.type === "execution.update") assertExecutionEvidence(payload);
   assertExperiencePayload(event.type, payload);
   if (event.type === "run.failed" && payload.failure !== undefined) {
     assertFailureEnvelope(payload.failure);

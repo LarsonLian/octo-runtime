@@ -52,6 +52,11 @@ export type ProtocolMode1 = "native" | "canonical";
 export type HostControl =
   | {
       type: "evidence";
+      name: "execution";
+      payload: ExecutionEvidence;
+    }
+  | {
+      type: "evidence";
       name: "session";
       payload: {
         [k: string]: unknown;
@@ -330,6 +335,7 @@ export interface CanonicalEventWire {
   protocolVersion: 2;
   type:
     | "session.update"
+    | "execution.update"
     | "usage.update"
     | "model_step.started"
     | "model_step.finished"
@@ -547,6 +553,19 @@ export interface NativeInteractionResponse {
   requestId: string | number;
   payload: {
     [k: string]: unknown;
+  };
+}
+/**
+ * This interface was referenced by `OctoRuntimeProtocolSchema`'s JSON-Schema
+ * via the `definition` "ExecutionEvidence".
+ */
+export interface ExecutionEvidence {
+  actmode: {
+    requested: "default" | "plan";
+    effective: "default" | "plan" | null;
+    status: "applied" | "fallback" | "unknown";
+    nativeMode?: string;
+    reason?: "provider_unsupported" | "adapter_unmapped" | "provider_unconfirmed";
   };
 }
 /**
@@ -2018,6 +2037,13 @@ export interface ContextAdapterPayload {
 }
 /**
  * This interface was referenced by `OctoRuntimeProtocolSchema`'s JSON-Schema
+ * via the `definition` "ContextActmodePayload".
+ */
+export interface ContextActmodePayload {
+  mode: "default" | "plan";
+}
+/**
+ * This interface was referenced by `OctoRuntimeProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextModelPayload".
  */
 export interface ContextModelPayload {
@@ -2204,6 +2230,7 @@ export interface ResolvedRuntimeSelection1 {
   failover: "candidates" | "none";
 }
 export interface ResolvedExecutionPlan1 {
+  actmode?: "default" | "plan";
   adapter_type: string;
   workdir: string;
   workspace?: ContextWorkspacePayload;

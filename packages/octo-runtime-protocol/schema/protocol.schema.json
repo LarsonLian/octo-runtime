@@ -51,6 +51,7 @@
         "type": {
           "enum": [
             "session.update",
+            "execution.update",
             "usage.update",
             "model_step.started",
             "model_step.finished",
@@ -229,6 +230,16 @@
     "HostControl": {
       "title": "HostControl",
       "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "name", "payload"],
+          "properties": {
+            "type": { "const": "evidence" },
+            "name": { "const": "execution" },
+            "payload": { "$ref": "#/definitions/ExecutionEvidence" }
+          }
+        },
         {
           "type": "object",
           "additionalProperties": false,
@@ -887,14 +898,14 @@
                 "const": "octo.execution"
               },
               "name": {
-                "const": "adapter"
+                "const": "actmode"
               }
             }
           },
           "then": {
             "properties": {
               "payload": {
-                "$ref": "#/definitions/ContextAdapterPayload"
+                "$ref": "#/definitions/ContextActmodePayload"
               }
             }
           }
@@ -916,6 +927,17 @@
                 "$ref": "#/definitions/ContextModelPayload"
               }
             }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "namespace": { "const": "octo.execution" },
+              "name": { "const": "adapter" }
+            }
+          },
+          "then": {
+            "properties": { "payload": { "$ref": "#/definitions/ContextAdapterPayload" } }
           }
         },
         {
@@ -1647,6 +1669,33 @@
         }
       }
     },
+    "ContextActmodePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": { "enum": ["default", "plan"] }
+      }
+    },
+    "ExecutionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actmode"],
+      "properties": {
+        "actmode": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["requested", "effective", "status"],
+          "properties": {
+            "requested": { "enum": ["default", "plan"] },
+            "effective": { "enum": ["default", "plan", null] },
+            "status": { "enum": ["applied", "fallback", "unknown"] },
+            "nativeMode": { "type": "string", "minLength": 1 },
+            "reason": { "enum": ["provider_unsupported", "adapter_unmapped", "provider_unconfirmed"] }
+          }
+        }
+      }
+    },
     "ContextModelPayload": {
       "type": "object",
       "additionalProperties": false,
@@ -2204,6 +2253,7 @@
         "approval_mode"
       ],
       "properties": {
+        "actmode": { "enum": ["default", "plan"] },
         "adapter_type": {
           "type": "string",
           "minLength": 1

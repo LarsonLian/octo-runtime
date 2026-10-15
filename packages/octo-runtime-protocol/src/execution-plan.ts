@@ -16,7 +16,7 @@ function executionValues(context: ContextEnvelope): Record<string, Record<string
   )) {
     if (
       item.namespace === "octo.execution" &&
-      ["adapter", "workspace", "limits", "envs", "mcp"].includes(item.name)
+      ["adapter", "workspace", "limits", "envs", "mcp", "actmode"].includes(item.name)
     )
       result[item.name] = item.payload;
     if (item.namespace === "octo.security" && item.name === "approval_policy")
@@ -64,6 +64,7 @@ export function assertFrozenContextPlan(
   match("approval_policy", "mode", plan.approval_mode);
   match("model", "id", plan.model);
   match("reasoning", "effort", plan.effort);
+  match("actmode", "mode", plan.actmode);
   const canonical = (value: unknown): string =>
     JSON.stringify(value, function (_key, child: unknown) {
       return isObject(child)

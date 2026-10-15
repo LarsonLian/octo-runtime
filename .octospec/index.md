@@ -6,7 +6,7 @@
 
 | 主题 | 入口 |
 | --- | --- |
-| 总体责任边界与按合同归属修复问题 | [基础架构](rules/architecture.md) |
+| 强制产品意图归属、需求范围检查与按合同归属修复 | [基础架构](rules/architecture.md) |
 | 总体协议、调用时序与审批／追问往返 | [协议与调用设计](rules/protocol-design.md) |
 | 身份、Home、profile、安装与生命周期 | [本地 Runtime](rules/runtime-lifecycle.md) |
 | 公共输入、默认值与多模态 | [InvokeInput](rules/invoke-input.md) |
@@ -41,6 +41,8 @@
 宿主接入与部署仍由根目录 [INTEGRATION.md](../INTEGRATION.md) 和 [DEPLOYMENTS.md](../DEPLOYMENTS.md) 提供入口；包 README 保留包级用法。
 
 ## 历史与取舍
+
+- [现有 Adapter 的 Plan 模式与用户交互探索体验](tasks/adapter-plan-interaction-exploration/brief.md)：Context v3 显式 actmode 已接通 Codex、CC、OpenCode ACP，完成 Work App / im-test 验证及 Codex 结构化问答；会话及模式默认策略归产品，IM Channel Gateway 不接入 Plan。限制见[交付记录](journal/shared/2026-10-16-actmode-first-three-delivery.md)，职责纠偏见[记录](journal/shared/2026-10-16-product-intent-ownership.md)。
 
 - [Channel 六项决策实施与测试环境验收](journal/shared/2026-10-16-channel-features-delivery.md)：当前分支分批实现 Codex 独立图片、新会话一次历史、原生 Mention 与固定目录校验；全仓回归及 im-test 群/话题、真实 Codex 识图和客户端高亮通过，限制逐项记录。
 

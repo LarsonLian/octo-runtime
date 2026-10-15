@@ -1,7 +1,8 @@
-import { invocationEnvs, mapReasoningEffort } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+import { actmodeEvidence, invocationEnvs, mapReasoningEffort } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
   canonicalTerminalStatus,
   contextHash,
+  contextActmode,
   assertJsonByteLimit,
   INVOKE_REQUEST_MAX_BYTES,
   hasImageInput,
@@ -251,11 +252,32 @@ export async function* runCodexAppServerTurn({
     let threadId = extractThreadId(threadResult);
     if (!threadId) throw new Error("codex thread start/resume returned no thread id");
     client.setActiveThread(threadId);
+    const requestedMode = contextActmode(request.context);
+    let collaborationMode: JsonRecord | undefined;
+    let effectiveMode: "default" | "plan" | undefined;
+    if (requestedMode !== undefined) {
+      const modes = recordValue(await client.request("collaborationMode/list", {}));
+      const available = Array.isArray(modes?.data) ? modes.data.map(recordValue) : [];
+      effectiveMode = available.some(mode => mode?.mode === requestedMode) ? requestedMode : "default";
+      if (!available.some(mode => mode?.mode === effectiveMode))
+        throw new Error("ACTMODE_UNSUPPORTED: Codex did not advertise a default collaboration mode");
+      const thread = recordValue(threadResult);
+      const model = request.agentConfig.model ?? stringValue(thread?.model);
+      if (!model) throw new Error("ACTMODE_UNCONFIRMED: Codex omitted its effective model");
+      collaborationMode = {
+        mode: effectiveMode,
+        settings: {
+          model,
+          reasoning_effort: mapReasoningEffort("codex", request.agentConfig.effort) ?? thread?.reasoningEffort ?? null,
+          developer_instructions: null
+        }
+      };
+    }
     let turnResult: unknown;
     try {
       turnResult = await client.request(
         "turn/start",
-        turnParams(request, threadId, resumeFallback !== undefined)
+        { ...turnParams(request, threadId, resumeFallback !== undefined), ...(collaborationMode ? { collaborationMode } : {}) }
       );
     } catch (error) {
       // Some corrupt sessions pass thread/resume but only reveal the missing rollout at turn/start.
@@ -271,12 +293,23 @@ export async function* runCodexAppServerTurn({
         throw new Error("codex fresh fallback returned no thread id", { cause: error });
       }
       client.setActiveThread(threadId);
-      turnResult = await client.request("turn/start", turnParams(request, threadId, true));
+      turnResult = await client.request("turn/start", {
+        ...turnParams(request, threadId, true),
+        ...(collaborationMode ? { collaborationMode } : {})
+      });
     }
 
     const turnId = extractTurnId(turnResult);
     if (turnId) client.setActiveTurn(turnId);
     context?.reportActivity?.({ kind: "turn_started", method: "turn_start" });
+    if (requestedMode !== undefined && effectiveMode !== undefined)
+      yield actmodeEvidence({
+        requested: requestedMode,
+        effective: effectiveMode,
+        status: effectiveMode === requestedMode ? "applied" : "fallback",
+        nativeMode: effectiveMode,
+        ...(effectiveMode !== requestedMode ? { reason: "provider_unsupported" as const } : {})
+      }, context?.protocolMode);
 
     // Must come after turn/start: otherwise the Core would persist a provider session that cannot be executed.
     const session: CanonicalEvent = {

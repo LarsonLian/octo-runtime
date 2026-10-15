@@ -3,9 +3,10 @@ import {
   invocationEnvironment,
   invocationMcpServers,
   assertMcpOptions,
+  actmodeEvidence,
   mapReasoningEffort
 } from "@mininglamp-oss/octo-runtime-adapter-sdk";
-import { canonicalTerminalStatus } from "@mininglamp-oss/octo-runtime-protocol";
+import { canonicalTerminalStatus, contextActmode } from "@mininglamp-oss/octo-runtime-protocol";
 /**
  * Claude Code local CLI transport and event normalization layer.
  *
@@ -100,7 +101,7 @@ export async function buildClaudeCommand(
   command = "claude",
   commandArgsPrefix: string[] = []
 ) {
-  const mode = claudePermissionMode(req.approvalMode);
+  const mode = contextActmode(req.context) === "plan" ? "plan" : claudePermissionMode(req.approvalMode);
   const servers = invocationMcpServers(req);
   assertMcpOptions(servers, "claude-code", []);
   // Native Claude expands placeholders again at connection time. Reject values
@@ -719,6 +720,8 @@ export function createClaudeCodeAdapter({
     // The normalizer must not be hoisted to an adapter singleton: one adapter may run several invocations concurrently.
     const normalizer =
       permissions instanceof NativeInteractionBridge ? undefined : new ClaudeEventNormalizer();
+    const requestedMode = contextActmode(request.context);
+    let modeReported = false;
     try {
       if (normalizer)
         yield {
@@ -837,6 +840,18 @@ export function createClaudeCodeAdapter({
         },
         parseLine: parseJsonLine
       })) {
+        if (requestedMode !== undefined && !modeReported && native.type === "system" && native.subtype === "init") {
+          modeReported = true;
+          const nativeMode = typeof native.permissionMode === "string" ? native.permissionMode : undefined;
+          const effective = nativeMode === "plan" ? "plan" : nativeMode && ["default", "auto", "bypassPermissions", "acceptEdits", "dontAsk"].includes(nativeMode) ? "default" : null;
+          yield actmodeEvidence({
+            requested: requestedMode,
+            effective,
+            status: effective === requestedMode ? "applied" : "unknown",
+            ...(nativeMode ? { nativeMode } : {}),
+            ...(effective !== requestedMode ? { effective: null, reason: "provider_unconfirmed" as const } : {})
+          }, context?.protocolMode);
+        }
         if (native.type === "system" && native.subtype === "init")
           context?.reportActivity?.({ kind: "turn_started", method: "turn_start" });
         if (native.type === "stream_event") {

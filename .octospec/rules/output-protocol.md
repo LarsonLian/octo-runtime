@@ -24,6 +24,8 @@ supersedes: []
 
 ## 1. 已实现的合同
 
+显式 actmode 的执行事实通过 canonical `execution.update` 或 native control `{type:"evidence",name:"execution",payload}` 返回。`payload.actmode` 包含 requested、effective、status 和可选 nativeMode/reason：applied 必须与请求一致；fallback 仅用于已确认的不支持且 effective 为 default；unknown 的 effective 为 null、reason 为 provider_unconfirmed。认证、超时和执行错误不能伪装成不支持。省略 actmode 不制造执行事实或模式设置，也不建立产品模式记忆。首批接线及验证范围见[交付记录](../journal/shared/2026-10-16-actmode-first-three-delivery.md)。
+
 | 合同                        | 内容与运行时入口                                                                                                               |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `HostInvokeOptions`         | TypeScript 选择器；`resolveHostInvokeOptions` 仅在省略 `protocolMode` 时解析为 native，返回独立且冻结的结果                    |

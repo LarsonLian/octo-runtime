@@ -11,6 +11,7 @@ import { mapReasoningEffort, reasoningLevelMap, type ReasoningLevelMap } from ".
 export type { AdapterInvocationContext, ProviderActivity } from "./activity.js";
 export { invocationEnvironment, invocationEnvs } from "./environment.js";
 export { invocationMcpServers, expandMcpValue, assertMcpOptions } from "./mcp.js";
+export { actmodeEvidence } from "./actmode.js";
 
 import {
   isTerminal,

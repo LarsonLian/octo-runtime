@@ -24,6 +24,7 @@ supersedes: []
 | ------------------------------- | ---------- | ----------------------------------------------------------------------------- |
 | `octo.execution/adapter`        | 否         | 选择 Adapter；不拼入提示词                                                    |
 | `octo.execution/model`          | 否         | Provider 模型及推理强度参数；不拼入提示词                                     |
+| `octo.execution/actmode`        | 否         | 显式行为模式 default / plan；adapter 映射原生参数，不拼入提示词                |
 | `octo.execution/workspace`      | 否         | 工作目录准备与执行参数；不拼入提示词                                          |
 | `octo.execution/limits`         | 否         | 执行预算和限额；不拼入提示词                                                  |
 | `octo.execution/envs`           | 否         | Run 范围进程环境；值不得作为上下文提示词输出                                  |

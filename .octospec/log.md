@@ -2,6 +2,12 @@
 
 ## 2026-10-16
 
+- 将“Runtime 不代替产品决策”提升为[强制架构定位](rules/architecture.md)及[需求范围检查](rules/engineering.md)：SDK/CLI 接入产品拥有模式、思考强度、会话策略与选项展示，Runtime 只执行合同内校验/转发/原生映射。撤回 actmode 计划中的每轮强制恢复 default、会话生命周期选择及跨产品统一体验策略；IM Channel Gateway 不接入 Plan。记录与 mention 越界兜底的共同教训，见[产品意图归属记录](journal/shared/2026-10-16-product-intent-ownership.md)。本次只修正文档，未修改运行行为。
+
+- 建立[现有 Adapter 的 Plan 与交互探索计划](tasks/adapter-plan-interaction-exploration/brief.md)：固定默认 Default、Plan 显式选择、Work App 仅测试宿主、不纳入 MiMo/新增 Adapter。记录 Codex 临时配置真机问答及后续撤回应用层私有开关的决定；最终统一启用和模式接入仍待探索，未将实验写成最终实现。
+
+- 交付 Context v3 显式 actmode 的 Codex、CC、OpenCode ACP 首批映射及真实执行事实，完成 Work App / im-test 三家执行和 Codex 结构化问答；OpenCode 重复续聊超时等限制见[交付记录](journal/shared/2026-10-16-actmode-first-three-delivery.md)。省略不补模式、会话策略归产品。
+
 - 在当前 main 分批交付 Channel 决策：真实 UID/ais 准入、Codex 独立图片、新会话一次历史、fixed workdir 校验及 final 真人 Mention。保留有界内存与既有重试，回写架构责任边界；840 项自动化通过，im-test 群/话题、真实 Codex 图片和客户端高亮已验收，详见[交付记录](journal/shared/2026-10-16-channel-features-delivery.md)。
 
 - 将“谁的模块有问题就修谁”写入[基础架构](rules/architecture.md)：从业务意图与协议责任定位根因，生产、传输和消费各负其责，拒绝下游通过猜测正文或放宽准入掩盖上游缺陷。同步 Channel 规则与 Mention 计划，记录[决策依据和评审思路](journal/shared/2026-10-16-contract-responsibility-decision.md)。本次只更新架构文档，不修改功能代码。

@@ -139,6 +139,7 @@ export function assertResolvedExecutionPlan(
     "approval_mode",
     "model",
     "effort",
+    "actmode",
     "runtime_limits",
     "envs",
     "mcp"
@@ -146,6 +147,8 @@ export function assertResolvedExecutionPlan(
   if (value.envs !== undefined) assertContextEnvs(value.envs);
   if (value.mcp !== undefined) assertContextMcp(value.mcp);
   assertAgentSource(value.agent_source);
+  if (value.actmode !== undefined && value.actmode !== "default" && value.actmode !== "plan")
+    throw new TypeError("CONTEXT_SCHEMA_INVALID");
   text(value.adapter_type);
   assertProviderAgent(value.adapter_type, value.provider_agent_id);
   if (typeof value.workdir !== "string") throw new TypeError("CONTEXT_SCHEMA_INVALID");
@@ -310,6 +313,12 @@ export function mergeReferences(
 }
 
 function publicPayload(namespace: string, name: string, value: Record<string, unknown>): void {
+  if (namespace === "octo.execution" && name === "actmode") {
+    fields(value, ["mode"]);
+    if (value.mode !== "default" && value.mode !== "plan")
+      throw new TypeError("CONTEXT_SCHEMA_INVALID");
+    return;
+  }
   if (namespace === "octo.execution" && name === "mcp") {
     assertContextMcp(value);
     return;

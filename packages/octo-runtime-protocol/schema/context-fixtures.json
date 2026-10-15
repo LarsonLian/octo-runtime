@@ -1,5 +1,14 @@
 [
   {
+    "name": "explicit-actmode-plan",
+    "valid": true,
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [{ "namespace": "octo.execution", "name": "actmode", "payload": { "mode": "plan" } }]
+    },
+    "expected_canonical": "{\"items\":[{\"name\":\"actmode\",\"namespace\":\"octo.execution\",\"payload\":{\"mode\":\"plan\"}}],\"schema\":\"octo.context-envelope/v3\"}"
+  },
+  {
     "name": "knowledge-selection",
     "valid": false,
     "context": {

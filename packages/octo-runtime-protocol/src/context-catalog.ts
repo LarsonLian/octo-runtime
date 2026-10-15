@@ -26,6 +26,7 @@ function entry(
 export const CONTEXT_TYPE_CATALOG: readonly ContextTypeDefinition[] = Object.freeze([
   entry("octo.execution", "adapter", "ContextAdapterPayload", true),
   entry("octo.execution", "model", "ContextModelPayload", true),
+  entry("octo.execution", "actmode", "ContextActmodePayload", true),
   entry("octo.execution", "workspace", "ContextWorkspacePayload", true),
   entry("octo.execution", "envs", "ContextEnvsPayload", true),
   entry("octo.execution", "mcp", "ContextMcpPayload", true),

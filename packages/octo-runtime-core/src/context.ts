@@ -76,6 +76,7 @@ export function resolveLocalContext(
   const choices = contextItem(effectiveContext, "octo.execution", "model")?.payload;
   const model = (choices?.selection as Record<string, unknown> | undefined)?.id;
   const effort = (choices?.reasoning as Record<string, unknown> | undefined)?.effort;
+  const actmode = contextItem(effectiveContext, "octo.execution", "actmode")?.payload.mode;
   const limits = contextItem(effectiveContext, "octo.execution", "limits")?.payload;
   const envs = contextItem(effectiveContext, "octo.execution", "envs")?.payload;
   const mcp = contextItem(effectiveContext, "octo.execution", "mcp")?.payload;
@@ -88,6 +89,7 @@ export function resolveLocalContext(
     approval_mode: contextItem(effectiveContext, "octo.security", "approval_policy")!.payload.mode,
     ...(typeof model === "string" ? { model } : {}),
     ...(typeof effort === "string" ? { effort } : {}),
+    ...(actmode !== undefined ? { actmode } : {}),
     ...(limits ? { runtime_limits: structuredClone(limits) } : {}),
     ...(envs ? { envs: structuredClone(envs) } : {}),
     ...(mcp ? { mcp: structuredClone(mcp) } : {})
