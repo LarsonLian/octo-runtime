@@ -106,7 +106,6 @@ await host.close();
 当前执行的原生反向请求通过 `respondNative(invocationId, { requestId, payload })` 回复，
 `payload` 为完整 Provider 响应。终态、过期、重复响应和扩大授权范围的响应均拒绝。
 本地 native 支持 Codex app-server 和 Claude stream-json；其他 Adapter 声明 canonical-only。
-可运行样例见 `examples/managed-turn.mjs`，支持 native / canonical 与 SIGINT 取消。
 
 `spawnAdapterHost` 以首次 `list` 成功作为就绪握手：manifest 错误或可执行文件缺失会在此阶段即时暴露，而非延迟到首次调用。
 

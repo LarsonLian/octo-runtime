@@ -109,10 +109,8 @@ Claude Code 当前范围依据现有 `can_use_tool` 桥；不能据此宣称已�
 请求未声明的 native 模式在接纳前拒绝。清单中的 codebuddy、hermes、kimi-code、mcode、
 opencode、openclaw、qodercli、qoderclicn、zcode-gui、antigravity 及通用 ACP 均为 canonical-only。
 Codex 协议标识为 `codex.app-server`，Claude 为 `claude.stream-json`。
-`examples/managed-turn.mjs` 可调用两个 Provider 的 native/canonical，在 pending 时接收
-对应模式的 JSON 响应，并通过 SIGINT 取消；初始化和唯一 turn 启动由 Driver 完成。
-native 日志只记录元数据、数量、字节和转换次数，
-不记录原生正文。客户示例显式打印所选择的流。
+初始化和唯一 turn 启动由 Driver 完成。
+native 日志只记录元数据、数量、字节和转换次数，不记录原生正文。
 
 
 ## 核对入口
