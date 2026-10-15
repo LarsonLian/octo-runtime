@@ -1,7 +1,7 @@
 import type { ExtraContext, JsonObject } from "@mininglamp-oss/octo-runtime-daemon";
 import { ImChannelManager } from "./lifecycle/manager.js";
 import { validateImBots, configuredCredential } from "./lifecycle/file-config.js";
-import { imBotIdentity } from "./lifecycle/configuration.js";
+import { imBotIdentity, IM_MAX_BOTS } from "./lifecycle/configuration.js";
 
 export const name = "channel-gateway";
 export default async function load(context: ExtraContext, config: JsonObject): Promise<void> {
@@ -16,7 +16,7 @@ export default async function load(context: ExtraContext, config: JsonObject): P
         JSON.stringify({ bots: [...(channels?.status ?? []), ...invalidBots], errors })
       ) as JsonObject
   );
-  if (!Array.isArray(bots) || bots.length > 16) {
+  if (!Array.isArray(bots) || bots.length > IM_MAX_BOTS) {
     errors.push({ error: "IM_CONFIG_LIST_REQUIRED" });
     return;
   }

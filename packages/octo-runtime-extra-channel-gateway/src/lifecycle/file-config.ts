@@ -1,10 +1,11 @@
 /** 插件内部的 Bot 列表校验与凭据文件读取。 */
 import { readFileSync, statSync } from "node:fs";
 import type { ImBotConfig } from "../contracts.js";
-import { imBotIdentity, validateImConfig } from "./configuration.js";
+import { imBotIdentity, validateImConfig, IM_MAX_BOTS } from "./configuration.js";
 
 export function validateImBots(value: unknown): asserts value is ImBotConfig[] {
-  if (!Array.isArray(value) || value.length > 16) throw new Error("IM_CONFIG_LIST_REQUIRED");
+  if (!Array.isArray(value) || value.length > IM_MAX_BOTS)
+    throw new Error("IM_CONFIG_LIST_REQUIRED");
   const identities = new Set<string>();
   for (const bot of value as ImBotConfig[]) {
     validateImConfig(bot);

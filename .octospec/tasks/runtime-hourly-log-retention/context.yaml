@@ -1,0 +1,25 @@
+rules:
+  - runtime-architecture
+  - runtime-stateless
+  - runtime-engineering
+sources:
+  - AGENTS.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/stateless-execution.md
+  - .octospec/rules/engineering.md
+  - packages/octo-runtime-adapter-host/src/host-log.ts
+  - packages/octo-runtime-daemon/src/runtime/supervisor.ts
+  - apps/cli/src/service-control.ts
+  - apps/daemon/src/launcher.ts
+status: planned-not-implemented
+decisions:
+  rotation: utc-hour
+  requested_retention_hours: 3
+  proposed_retention_hour_buckets: 3
+  max_file_bytes: 104857600
+  max_files_per_category: 3
+  size_overflow: discard-until-next-hour
+  cleanup_interval_ms: 60000
+  preserve_legacy_files: true
+  provider_storage_cleanup: false

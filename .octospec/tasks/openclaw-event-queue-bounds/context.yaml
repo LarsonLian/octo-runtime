@@ -1,0 +1,22 @@
+rules:
+  - runtime-architecture
+  - runtime-stateless
+  - runtime-openclaw
+  - runtime-engineering
+sources:
+  - AGENTS.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/stateless-execution.md
+  - .octospec/rules/openclaw.md
+  - .octospec/rules/engineering.md
+  - packages/octo-runtime-adapter-openclaw/src/index.ts
+  - packages/octo-runtime-adapter-sdk/src/native.ts
+status: planned-not-implemented
+decisions:
+  prefilter_irrelevant_events: true
+  queue_max_count: 4096
+  queue_max_bytes: 4194304
+  item_max_bytes: 262144
+  overflow_scope: owning-invocation
+  persistence: false

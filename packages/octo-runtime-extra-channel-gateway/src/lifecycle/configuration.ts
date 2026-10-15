@@ -1,10 +1,19 @@
 /** Octo 插件内部的 Bot 配置合同。 */
 import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
-import { assertApprovalMode, assertContextEnvelope } from "@mininglamp-oss/octo-runtime-protocol";
+import {
+  assertApprovalMode,
+  assertContextEnvelope,
+  assertJsonByteLimit
+} from "@mininglamp-oss/octo-runtime-protocol";
 import type { ImBotConfig } from "../contracts.js";
 
+export const IM_MAX_BOTS = 64;
+export const IM_MAX_CONFIG_OPERATIONS = 64;
+export const IM_MAX_CONFIG_BYTES = 256 * 1024;
+
 export function validateImConfig(config: ImBotConfig): void {
+  assertJsonByteLimit(config, IM_MAX_CONFIG_BYTES, "IM_CONFIG_TOO_LARGE");
   if (!config || typeof config !== "object" || Array.isArray(config))
     throw new Error("IM_CONFIG_INVALID");
   if (typeof config.bot_id !== "string" || !config.bot_id.trim())

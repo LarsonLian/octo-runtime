@@ -50,7 +50,7 @@ JSON
 
 | 字段 | 含义 |
 | --- | --- |
-| `config.bots` | 最多 16 项；相同 API 地址与 `bot_id` 不得重复 |
+| `config.bots` | 单个 Extra 实例最多 64 项；相同 API 地址与 `bot_id` 不得重复。管理操作最多 64 个在途，单份配置最多 256 KiB，超限在复制前拒绝 |
 | `bot_name` | 可选本地展示名称，省略时运行状态使用 `bot_id`；不参与身份匹配、不修改远端名称；`name` 不是别名 |
 | Bot 内的 `enabled` | 默认 `true`，控制单个 Bot；外层 `enabled` 控制整个插件 |
 | `bf_token` / `bf_token_file` | 凭据来源二选一；文件建议使用绝对路径，POSIX 权限要求 `0600` |

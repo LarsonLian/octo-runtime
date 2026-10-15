@@ -1,12 +1,18 @@
 import type { ImBotConfig } from "../contracts.js";
 import type { ImModuleDependencies } from "../ports.js";
 import { ImRuntime } from "../application/im-channel.js";
-import { imBotIdentity, validateImConfig } from "./configuration.js";
+import {
+  imBotIdentity,
+  validateImConfig,
+  IM_MAX_BOTS,
+  IM_MAX_CONFIG_OPERATIONS
+} from "./configuration.js";
 
 /** Serial updates replace only the target connection. */
 export class ImChannelManager {
   readonly #endpoints = new Map<string, ImRuntime>();
   #queue: Promise<void> = Promise.resolve();
+  #operations = 0;
   #closed = false;
   #closing?: Promise<void>;
   readonly #abort = new AbortController();
@@ -15,12 +21,22 @@ export class ImChannelManager {
     return [...this.#endpoints.values()].map((runtime) => ({ ...runtime.status }));
   }
   upsert(config: ImBotConfig): Promise<Record<string, unknown>> {
-    const snapshot = structuredClone(config);
+    if (this.#closed) return Promise.reject(new Error("IM_MANAGER_CLOSED"));
+    if (this.#operations >= IM_MAX_CONFIG_OPERATIONS)
+      return Promise.reject(new Error("IM_CONFIG_QUEUE_CAPACITY_EXHAUSTED"));
+    let snapshot: ImBotConfig;
+    try {
+      validateImConfig(config);
+      snapshot = structuredClone(config);
+    } catch (error) {
+      return Promise.reject(error instanceof Error ? error : new Error("IM_CONFIG_INVALID"));
+    }
     return this.#enqueue(async () => {
       validateImConfig(snapshot);
       const key = imBotIdentity(snapshot);
       const current = this.#endpoints.get(key);
-      if (!current && this.#endpoints.size >= 16) throw new Error("IM_ENDPOINT_CAPACITY_EXHAUSTED");
+      if (!current && this.#endpoints.size >= IM_MAX_BOTS)
+        throw new Error("IM_ENDPOINT_CAPACITY_EXHAUSTED");
       await current?.close();
       if (this.#closed) throw new Error("IM_MANAGER_CLOSED");
       const runtime = new ImRuntime(snapshot, {
@@ -42,10 +58,18 @@ export class ImChannelManager {
     });
   }
   #enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    const task = this.#queue.then(() => {
-      if (this.#closed) throw new Error("IM_MANAGER_CLOSED");
-      return operation();
-    });
+    if (this.#closed) return Promise.reject(new Error("IM_MANAGER_CLOSED"));
+    if (this.#operations >= IM_MAX_CONFIG_OPERATIONS)
+      return Promise.reject(new Error("IM_CONFIG_QUEUE_CAPACITY_EXHAUSTED"));
+    this.#operations++;
+    const task = this.#queue
+      .then(() => {
+        if (this.#closed) throw new Error("IM_MANAGER_CLOSED");
+        return operation();
+      })
+      .finally(() => {
+        this.#operations--;
+      });
     this.#queue = task.then(
       () => undefined,
       () => undefined
