@@ -317,7 +317,7 @@ test("host shutdown aborts every active provider invocation before returning", a
   assert.deepEqual(results.map(events => events.at(-1).type), ["run.cancelled", "run.cancelled"]);
 });
 
-test("RPC trace observes every client frame without changing the wire", async () => {
+test("RPC trace observes frame metadata without retaining payloads or changing the wire", async () => {
   const clientToServer = new PassThrough();
   const serverToClient = new PassThrough();
   const host = new AdapterHost();
@@ -331,9 +331,10 @@ test("RPC trace observes every client frame without changing the wire", async ()
 
   assert.deepEqual(await client.list(), []);
   assert.deepEqual(traced.map(item => item.direction), ["send", "receive"]);
+  const id = JSON.parse(traced[0].frame).id;
   assert.deepEqual(traced.map(item => JSON.parse(item.frame)), [
-    { jsonrpc: "2.0", id: JSON.parse(traced[0].frame).id, method: "list", params: {} },
-    { jsonrpc: "2.0", id: JSON.parse(traced[0].frame).id, result: [] }
+    { jsonrpc: "2.0", id, method: "list", bytes: Buffer.byteLength(JSON.stringify({ jsonrpc: "2.0", id, method: "list", params: {} })) },
+    { jsonrpc: "2.0", id, bytes: Buffer.byteLength(JSON.stringify({ jsonrpc: "2.0", id, result: [] })) }
   ]);
   client.close();
   clientToServer.end();

@@ -12,7 +12,7 @@ sources:
   - packages/octo-runtime-daemon/src/runtime/supervisor.ts
   - apps/cli/src/service-control.ts
   - apps/daemon/src/launcher.ts
-status: planned-not-implemented
+status: implemented-targeted-verified
 decisions:
   rotation: utc-hour
   requested_retention_hours: 3
@@ -23,3 +23,6 @@ decisions:
   cleanup_interval_ms: 60000
   preserve_legacy_files: true
   provider_storage_cleanup: false
+  concurrent_writers: nonblocking-per-hour-exclusive-lock
+  stale_lock_policy: discard-for-that-hour
+  child_output_drain_timeout_ms: 1000

@@ -40,6 +40,12 @@ SDK 查看 `health.local.ready`、`adapterHostReady`、profiles 和扩展状态�
 
 ## 日志与验收
 
-启动前设置 `OCTO_RUNTIME_DEBUG=1` 可开启 Host 本地诊断，检查有效 Home 的 `logs/adapter-host.log`。改变终端环境不会改变已运行进程，需重启受影响实例。日志可能包含调用内容，分享前检查凭据及业务数据。
+启动前设置 `OCTO_RUNTIME_DEBUG=1` 可开启 Host 本地诊断，检查有效 Home 的 `logs/adapter-host-YYYYMMDDTHH.log`（UTC）。RPC trace 仅记录方法、身份、事件类型及大小，不保存输入正文、Context、图片 base64 或可信工具环境。改变终端环境不会改变已运行进程，需重启受影响实例；分享日志前仍检查 Provider 或第三方扩展可能自行输出的敏感信息。
+
+Host debug、SDK 子进程输出及 CLI 托管服务输出分别按类别保留当前小时及前两个小时，实际覆盖最近 2 至 3 小时；每文件最多 100 MiB，每类别最多 300 MiB。满额后持续排空并丢弃本小时后续输出，下一小时恢复，不新增分片或内存写队列。SDK 文件位于账号的 logs，CLI service-out/service-err 位于 Home/logs；启动、小时切换和运行中每 60 秒清理普通受管文件。停止后没有后台清理进程，下次启动继续清理。
+
+写入/清理失败仅报告一次有界诊断；清理失败时停止新增日志，避免跨小时无限增长。多个写入进程使用当小时非等待独占锁；崩溃遗留锁时保守放弃该小时，下一小时恢复，过期锁随桶清理。符号链接和用户文件不跟随、不删除，旧 adapter-host.log/embedded-runtime.log/service.out.log/service.err.log 停止追加但保留。Provider 原生历史、用户重定向和系统日志服务的保留不在本策略内。
+
+已安装的 CLI 原生服务不会在普通 start 时自动重写定义。升级后需显式 daemon install 更新为 --managed-logs 接线并重启，才能关闭旧服务定义指向固定文件的增长路径。当前测试验证了真实 launcher 与 SDK；Linux/Windows 服务安装和 macOS launchd 系统级启停不能由生成测试冒充实测。
 
 本版没有 Runtime SQLite outbox 或逐事件 durable ACK，不采用清 outbox／修 ACK 水位作为运维步骤。分别记录 IPC 就绪、扩展连接、真实 Provider 终态及业务保存／投递结果。fixture 测试不能替代 im-test 与真实桌面 renderer 验收；文档修改本身不产生新的实测证据。

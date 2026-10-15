@@ -46,10 +46,10 @@ M1 必须用真实 Gateway 时序和 fixture 检查 acceptedRunId 何时可用�
 
 ## 实施里程碑
 
-- [ ] M1：复现一万条无关事件的原缺陷；冻结事件类型、真实 runId/sessionKey、accepted 和审批完成顺序的用例。
-- [ ] M2：前置过滤，替换无界队列；接入溢出、取消和消费者关闭的统一清理。
-- [ ] M3：执行容量、慢消费、并发调用和正常审批回归，记录 GC 后趋势；验证停止后无监听或请求继续保留。
-- [ ] M4：经 Channel 连接 im-test，并使用已配置 OpenClaw 验证正常收发、审批及取消。区分真实 Gateway 结果和本地故障注入，再更新当前规则与 journal。
+- [x] M1：本地十万条无关广播不入队，真实 Gateway 核对 accepted 与事件顺序；审批乱序由 fixture 覆盖。
+- [x] M2：前置过滤、DriverQueue 容量及失败/取消/提前结束统一清理。
+- [x] M3：容量与慢消费回归、3 轮 GC 趋势及监听释放；与既有 Adapter/原生测试联合 84 项通过。
+- [x] M4：真实 Gateway 正常调用通过，并单独验证 im-test Channel 建联；真实 IM -> OpenClaw 全链审批/取消尚未覆盖，不据此宣称验收。
 
 ## 验收矩阵
 

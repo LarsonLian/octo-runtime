@@ -51,6 +51,10 @@ Octo 和 WeCom 各自使用有界内存会话映射，具体容量及 reset 见 
 
 旧数据库不读取、不迁移，也不自动删除用户文件。应用可以保存自己的完整业务历史，但该存储不能反过来成为 Host 的 durable ACK 或历史恢复合同。
 
+## 受管日志
+
+Runtime 自管的 Host debug、SDK 子进程输出和 CLI 托管服务输出按 UTC 小时分桶，保留当前及前两个小时，每类别最多 3 个文件、每文件最多 100 MiB。满额持续排空但丢弃后续输出，下一小时恢复；启动、切小时及运行中每 60 秒清理。没有无限写队列或 overflow 分片，同小时重启继承实际文件容量；跨进程以当小时非等待独占锁控制容量。失败不影响执行；清理失败停止新增增长并做一次有界诊断。RPC trace 不保存输入 Context、图片、正文或可信环境。只处理受管普通文件，既有身份、Provider 文件、用户文件及旧固定日志不因本规则自动删除。具体归属、停机及原生服务定义更新见[运维](../guides/operations.md)。
+
 ## 核对入口
 
 [Core 导出](../../packages/octo-runtime-core/src/index.ts)、[HostRunService](../../packages/octo-runtime-adapter-host/src/host-run-service.ts)、[进程清理清单](../../packages/octo-runtime-daemon/src/invocation-manifest.ts)、[无数据库回归](../../test/stateless-executor.test.js)。

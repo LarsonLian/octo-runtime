@@ -6,6 +6,8 @@
 
 - 建立[现有 Adapter 的 Plan 与交互探索计划](tasks/adapter-plan-interaction-exploration/brief.md)：固定默认 Default、Plan 显式选择、Work App 仅测试宿主、不纳入 MiMo/新增 Adapter。记录 Codex 临时配置真机问答及后续撤回应用层私有开关的决定；最终统一启用和模式接入仍待探索，未将实验写成最终实现。
 
+- 按完整 Runtime review 建立[四项整改计划](guides/runtime-long-running-review-plan.md)后，依用户授权在当前 main 分批实施：64 Bot/64 管理操作/256 KiB、OpenClaw 前置过滤与 4096 条/4 MiB、经用户更新的整请求 32 MiB 与独立 Host 图片链、小时日志 3 桶/每文件 100 MiB。已进行定向回归、GC、真实 Gateway 和 im-test 验证；完整检查、平台缺项及 commit/push 结果见[收尾记录](journal/shared/2026-10-16-hourly-log-delivery.md)。
+
 - 交付 Context v3 显式 actmode 的 Codex、CC、OpenCode ACP 首批映射及真实执行事实，完成 Work App / im-test 三家执行和 Codex 结构化问答；OpenCode 重复续聊超时等限制见[交付记录](journal/shared/2026-10-16-actmode-first-three-delivery.md)。省略不补模式、会话策略归产品。
 
 - 在当前 main 分批交付 Channel 决策：真实 UID/ais 准入、Codex 独立图片、新会话一次历史、fixed workdir 校验及 final 真人 Mention。保留有界内存与既有重试，回写架构责任边界；840 项自动化通过，im-test 群/话题、真实 Codex 图片和客户端高亮已验收，详见[交付记录](journal/shared/2026-10-16-channel-features-delivery.md)。

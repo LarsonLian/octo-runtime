@@ -2,7 +2,7 @@ import { preparedFrames } from "./runtime-fixture.js";
 import { preparedTestInvoke } from "./runtime-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnAdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
@@ -11,6 +11,7 @@ import { invokeRequest } from "./runtime-fixture.js";
 
 const entrypoint = resolve("packages/octo-runtime-adapter-host/dist/runner.js");
 const manifest = resolve("test/fixtures/adapters.json");
+const logPath = async home => join(home, "logs", (await readdir(join(home, "logs"))).find(name => /^adapter-host-\d{8}T\d{2}\.log$/.test(name)));
 
 for (const debug of [undefined, "0", "true", "1"]) {
   test(`Host file logging requires OCTO_RUNTIME_DEBUG=1 (value=${debug})`, async () => {
@@ -27,9 +28,10 @@ for (const debug of [undefined, "0", "true", "1"]) {
       assert.equal(events.at(-1).type, "run.completed");
       await host.close();
       if (debug === "1") {
-        const path = join(home, "logs/adapter-host.log");
+        const path = await logPath(home);
         const records = (await readFile(path, "utf8")).trim().split("\n").map(JSON.parse);
-        assert.ok(records.some(record => record.event === "receive" && record.data.includes("debug-log-fixture")));
+        assert.ok(records.some(record => record.event === "receive" && record.data.includes('"method":"invoke"')));
+        assert.ok(!JSON.stringify(records).includes("debug-log-fixture"));
         assert.ok(records.some(record => record.event === "send" && record.data.includes("run.completed")));
         assert.ok(records.every(record => record.pid === host.child.pid));
         if (process.platform !== "win32") assert.equal((await stat(path)).mode & 0o777, 0o600);
@@ -52,7 +54,7 @@ test("debug logging failure does not prevent Host readiness or invocation", asyn
     const events = [];
     for await (const event of preparedTestInvoke((...args) => preparedFrames(host.client, ...args))("test", invokeRequest({ approvalMode: "full_access" }), { protocolMode: "canonical" })) events.push(event);
     assert.equal(events.at(-1).type, "run.completed");
-    assert.match(host.stderr(), /unable to write adapter-host debug log/);
+    assert.match(host.stderr(), /unable to maintain adapter-host debug log/);
   } finally {
     await host?.close();
     await rm(home, { recursive: true, force: true });
@@ -81,7 +83,7 @@ test("daemon passes the selected Home and debug environment through Host restart
     assert.equal("inspectUrl" in app, false);
     await app.close();
     app = undefined;
-    const records = (await readFile(join(home, "logs/adapter-host.log"), "utf8")).trim().split("\n").map(JSON.parse);
+    const records = (await readFile(await logPath(home), "utf8")).trim().split("\n").map(JSON.parse);
     assert.ok(records.some(record => record.pid === firstPid));
     assert.ok(records.some(record => record.pid === secondPid));
   } finally {

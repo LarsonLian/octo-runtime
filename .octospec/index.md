@@ -44,6 +44,8 @@
 
 - [现有 Adapter 的 Plan 模式与用户交互探索体验](tasks/adapter-plan-interaction-exploration/brief.md)：Context v3 显式 actmode 已接通 Codex、CC、OpenCode ACP，完成 Work App / im-test 验证及 Codex 结构化问答；会话及模式默认策略归产品，IM Channel Gateway 不接入 Plan。限制见[交付记录](journal/shared/2026-10-16-actmode-first-three-delivery.md)，职责纠偏见[记录](journal/shared/2026-10-16-product-intent-ownership.md)。
 
+- [Runtime 长期运行四项整改总览与评分](guides/runtime-long-running-review-plan.md)：OpenClaw 入队过滤/容量、小时日志保留与单文件 100 MiB、整请求 32 MiB 与图片 IPC、64 Bot/配置操作准入已分批实施；保留实施前评分 96/95/96/95，实际验证与推送状态见[收尾记录](journal/shared/2026-10-16-hourly-log-delivery.md)。
+
 - [Channel 六项决策实施与测试环境验收](journal/shared/2026-10-16-channel-features-delivery.md)：当前分支分批实现 Codex 独立图片、新会话一次历史、原生 Mention 与固定目录校验；全仓回归及 im-test 群/话题、真实 Codex 识图和客户端高亮通过，限制逐项记录。
 
 - [协议责任与拒绝跨模块猜测兜底](journal/shared/2026-10-16-contract-responsibility-decision.md)：从业务与合同定位问题，在责任模块修复；发送端漏填 mention 不由接收端正文匹配补救，旧实现的兼容动机不是复制设计的理由。

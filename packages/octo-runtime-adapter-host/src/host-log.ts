@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { HourlyLogWriter } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -9,24 +9,19 @@ const home =
     ? join(process.env.LOCALAPPDATA, "OctoRuntime")
     : join(homedir(), ".octo-runtime"));
 const directory = join(home, "logs");
-let ready = false;
-let failed = false;
+let writer: HourlyLogWriter | undefined;
 
-/** Debug-only host log. No queue, subscriptions, capture receipts or background work. */
+/** Debug-only output; retention also runs while debug is disabled. */
 export function hostLog(event: string, data: unknown): void {
-  if (!enabled || failed) return;
+  writer ??= new HourlyLogWriter(directory, "adapter-host", {
+    onError: () => process.stderr.write("octo-runtime: unable to maintain adapter-host debug log\n")
+  });
+  if (!enabled) return;
   try {
-    if (!ready) {
-      mkdirSync(directory, { recursive: true, mode: 0o700 });
-      ready = true;
-    }
-    appendFileSync(
-      join(directory, "adapter-host.log"),
-      `${JSON.stringify({ time: new Date().toISOString(), pid: process.pid, event, data })}\n`,
-      { mode: 0o600 }
+    writer.write(
+      `${JSON.stringify({ time: new Date().toISOString(), pid: process.pid, event, data })}\n`
     );
   } catch {
-    failed = true;
-    process.stderr.write("octo-runtime: unable to write adapter-host debug log\n");
+    /* Diagnostics must not fail an invocation. */
   }
 }

@@ -108,7 +108,9 @@ octo-runtime adapter probe codex
 
 这些命令通过 Home 级 Unix socket 或 Windows named pipe 读取本地状态。Worker 仅管理对应远程执行，源事件窗口不能当作完整历史；本地会话及完整 trajectory 由宿主业务存储负责。
 
-调试时在启动前设置 `OCTO_RUNTIME_DEBUG=1`，Host 日志直接追加到 `$OCTO_RUNTIME_HOME/logs/adapter-host.log`。默认关闭；该开关通过进程环境传递到 daemon 和 Host。
+调试时在启动前设置 `OCTO_RUNTIME_DEBUG=1`，Host 诊断写入 `$OCTO_RUNTIME_HOME/logs/adapter-host-YYYYMMDDTHH.log`（UTC）。默认关闭；该开关通过进程环境传递到 daemon 和 Host。RPC 日志只记录方法、身份、事件类型和大小，不保存输入 Context、图片或工具凭据。
+
+Runtime 自管日志统一保留当前小时和前两个小时，每类别最多 3 个文件；单文件最多 100 MiB，满后丢弃本小时后续日志，下一小时恢复。启动、切小时及运行中每 60 秒清理过期桶。CLI 后台服务由 launcher 排空输出，分别写 `service-out-YYYYMMDDTHH.log` 和 `service-err-YYYYMMDDTHH.log`，SDK 子进程在账号 logs 下写 `embedded-runtime-YYYYMMDDTHH.log`。前台 `daemon run` 仍输出到终端。旧固定日志停止追加但不自动删除，系统日志及 Provider 原生文件不由此策略管理。升级后已有原生服务定义需显式执行 `daemon install` 更新接线，再重启；普通 `daemon start` 不自动修改服务定义。
 
 ## Playboard: standalone local trials
 

@@ -613,24 +613,17 @@ function traceFrame(message: RpcMessage, raw: string): string {
   const params = message.params ?? {};
   const event = isRecord(params.event) ? params.event : {};
   const input = isRecord(params.input) ? params.input : {};
-  if (
-    message.method === "invoke.with-environment" ||
-    message.method === "native.respond" ||
-    event.protocol_mode === "native" ||
-    (isRecord(message.result) && message.result.protocol_mode === "native") ||
-    (message.method === "invoke" && input.protocol_mode !== "canonical")
-  ) {
-    return JSON.stringify({
-      jsonrpc: message.jsonrpc,
-      id: message.id,
-      method: message.method,
-      invocationId: params.invocationId,
-      protocolMode: "native",
-      frameKind: event.kind,
-      bytes: Buffer.byteLength(raw)
-    });
-  }
-  return raw;
+  const canonical = isRecord(event.event) ? event.event : {};
+  return JSON.stringify({
+    jsonrpc: message.jsonrpc,
+    id: message.id,
+    method: message.method,
+    invocationId: params.invocationId ?? input.invocationId,
+    protocolMode: event.protocol_mode ?? input.protocol_mode,
+    eventType: canonical.type,
+    frameKind: event.kind,
+    bytes: Buffer.byteLength(raw)
+  });
 }
 
 function probeOptions(value: unknown): AdapterProbeOptions | undefined {

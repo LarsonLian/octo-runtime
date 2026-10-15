@@ -43,6 +43,7 @@ export { AcpApprovalBridge } from "./approval.js";
 export { DriverQueue, NativeInteractionBridge } from "./native.js";
 export { watchLineLimit } from "./line-limit.js";
 export { readBoundedLines } from "./bounded-lines.js";
+export { HourlyLogWriter, HOURLY_LOG_MAX_BYTES } from "./hourly-log.js";
 export { sanitizePublicValue } from "./public-display.js";
 export {
   DEFAULT_REASONING_LEVEL_MAPS,

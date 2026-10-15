@@ -132,6 +132,9 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-openclaw':
         specifier: workspace:*
         version: link:../../packages/octo-runtime-adapter-openclaw
+      '@mininglamp-oss/octo-runtime-adapter-sdk':
+        specifier: workspace:*
+        version: link:../../packages/octo-runtime-adapter-sdk
       '@mininglamp-oss/octo-runtime-daemon':
         specifier: workspace:*
         version: link:../../packages/octo-runtime-daemon

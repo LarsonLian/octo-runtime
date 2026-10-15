@@ -1,7 +1,7 @@
 import { preparedFrames } from "./runtime-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile, stat, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, writeFile, stat, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseEnv } from "node:util";
@@ -50,7 +50,8 @@ test("tool overrides cross a real Host subprocess and reach child tools without 
   };
   await Promise.all([execute(token, 1), execute("bf_another_fixture", 2)]);
   assert.deepEqual(context, original);
-  assert.ok(!(await readFile(join(root, "logs/adapter-host.log"), "utf8")).includes(token));
+  const log = (await readdir(join(root, "logs"))).find(name => /^adapter-host-\d{8}T\d{2}\.log$/.test(name));
+  assert.ok(!(await readFile(join(root, "logs", log), "utf8")).includes(token));
   const request = invokeRequest({ context, executionEnvOverrides: octoCliEnvironment(`${base}/api`, token) });
   assert.equal(codexEnvironmentConfig(request, {})["shell_environment_policy.set"].OCTO_BOT_TOKEN, token);
   assert.equal(sanitizePublicValue(request).executionEnvOverrides, "[REDACTED]");

@@ -1,5 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, openSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { HourlyLogWriter } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DaemonRuntimeError } from "./errors.js";
@@ -16,6 +17,7 @@ import {
   type DaemonRunnerSession
 } from "./runtime-contract.js";
 import type { AccountSubject, DaemonRuntimeOptions } from "./types.js";
+const closedChildren = new WeakSet<ChildProcess>();
 
 export interface SupervisedRuntime {
   child: ChildProcess;
@@ -66,7 +68,7 @@ export async function startManagedDaemon(options: {
       : {})
   };
   writeJsonAtomic(options.paths.sessionFile, session, true);
-  const output = openSync(join(options.account.logs, "embedded-runtime.log"), "a", 0o600);
+  const output = new HourlyLogWriter(options.account.logs, "embedded-runtime");
   let child: ChildProcess;
   try {
     child = spawn(nodePath, [runnerPath, "--session", options.paths.sessionFile], {
@@ -75,12 +77,30 @@ export async function startManagedDaemon(options: {
       detached: false,
       shell: false,
       windowsHide: true,
-      stdio: ["ignore", output, output],
+      stdio: ["ignore", "pipe", "pipe"],
       env: childEnvironment(options.paths)
     });
-  } finally {
-    closeSync(output);
+  } catch (error) {
+    output.close();
+    throw error;
   }
+  child.stdout?.on("data", (chunk: Buffer) => output.write(chunk));
+  child.stderr?.on("data", (chunk: Buffer) => output.write(chunk));
+  let drainTimer: NodeJS.Timeout | undefined;
+  child.once("exit", () => {
+    drainTimer = setTimeout(() => {
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      output.close();
+    }, 1000);
+    drainTimer.unref();
+  });
+  child.once("close", () => {
+    closedChildren.add(child);
+    if (drainTimer) clearTimeout(drainTimer);
+    output.close();
+  });
+  child.once("error", () => output.close());
   const supervised: SupervisedRuntime = { child, nonce: options.nonce, paths: options.paths };
   const startupTimeout = options.sdk.startupTimeoutMs ?? 30_000;
   const deadline = Date.now() + startupTimeout;
@@ -126,7 +146,13 @@ export async function stopManagedDaemon(supervised: SupervisedRuntime): Promise<
   });
   if (await waitForExit(supervised.child, 5_000)) {
     cleanup(supervised.paths);
-    if (cleanupFailed) throw new DaemonRuntimeError("EXTRA_DISPOSE_FAILED", "shutdown", false, "Extra cleanup failed before process exit");
+    if (cleanupFailed)
+      throw new DaemonRuntimeError(
+        "EXTRA_DISPOSE_FAILED",
+        "shutdown",
+        false,
+        "Extra cleanup failed before process exit"
+      );
     return;
   }
   await terminateOwnedChild(supervised.child);
@@ -147,7 +173,13 @@ export async function stopManagedDaemon(supervised: SupervisedRuntime): Promise<
     );
   }
   cleanup(supervised.paths);
-  if (cleanupFailed) throw new DaemonRuntimeError("EXTRA_DISPOSE_FAILED", "shutdown", false, "Extra cleanup failed before process exit");
+  if (cleanupFailed)
+    throw new DaemonRuntimeError(
+      "EXTRA_DISPOSE_FAILED",
+      "shutdown",
+      false,
+      "Extra cleanup failed before process exit"
+    );
 }
 
 export async function runtimeStatus(
@@ -296,7 +328,7 @@ async function terminateOwnedChild(child: ChildProcess): Promise<void> {
 }
 
 function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
-  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
+  if (closedChildren.has(child)) return Promise.resolve(true);
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       cleanupListener();
@@ -308,9 +340,9 @@ function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
       resolve(true);
     };
     const cleanupListener = (): void => {
-      child.off("exit", onExit);
+      child.off("close", onExit);
     };
-    child.once("exit", onExit);
+    child.once("close", onExit);
   });
 }
 

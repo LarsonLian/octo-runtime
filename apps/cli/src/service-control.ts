@@ -26,30 +26,30 @@ export function resolveServiceControl(options: ServiceControlOptions = {}): {
 } {
   const platform = options.platform ?? process.platform;
   const environment = options.environment ?? process.env;
-  const daemonEntrypoint = resolve(options.daemonEntrypoint
-    ?? fileURLToPath(new URL("../../daemon/dist/launcher.js", import.meta.url)));
+  const daemonEntrypoint = resolve(
+    options.daemonEntrypoint ??
+      fileURLToPath(new URL("../../daemon/dist/launcher.js", import.meta.url))
+  );
   const nodeExecutable = resolve(options.nodeExecutable ?? process.execPath);
-  const backend = options.backend ?? createServiceBackend({
-    platform,
-    homeDirectory: options.systemHome ?? homedir()
-  });
+  const backend =
+    options.backend ??
+    createServiceBackend({
+      platform,
+      homeDirectory: options.systemHome ?? homedir()
+    });
   return {
     backend,
     spec(paths: RuntimePaths, enabled = true, daemonArgs: string[] = []): ServiceSpec {
-      const output = platform === "win32"
-        ? {}
-        : {
-            stdoutPath: resolve(paths.logs, "service.out.log"),
-            stderrPath: resolve(paths.logs, "service.err.log")
-          };
       return {
         id: RUNTIME_SERVICE_ID,
         description: "Octo Runtime daemon",
         command: nodeExecutable,
-        args: [daemonEntrypoint, "--home", paths.home, ...daemonArgs],
+        args: [daemonEntrypoint, "--home", paths.home, "--managed-logs", ...daemonArgs],
         workingDirectory: paths.home,
         environment: {
-          ...(environment.PATH || environment.Path ? { PATH: environment.PATH ?? environment.Path ?? "" } : {}),
+          ...(environment.PATH || environment.Path
+            ? { PATH: environment.PATH ?? environment.Path ?? "" }
+            : {}),
           ...(environment.OCTO_RUNTIME_DEBUG === "1" ? { OCTO_RUNTIME_DEBUG: "1" } : {})
         },
         enabled,
@@ -59,8 +59,7 @@ export function resolveServiceControl(options: ServiceControlOptions = {}): {
           launchdLabel: RUNTIME_SERVICE_ID,
           systemdUnit: `${RUNTIME_SERVICE_ID}.service`,
           windowsTaskName: "\\OctoRuntime.daemon"
-        },
-        ...output
+        }
       };
     }
   };
@@ -69,8 +68,11 @@ export function resolveServiceControl(options: ServiceControlOptions = {}): {
 export async function verifyServiceProgram(spec: ServiceSpec): Promise<void> {
   await Promise.all([access(spec.command), access(spec.args?.[0] ?? "")]);
   await mkdir(spec.workingDirectory, { recursive: true, mode: 0o700 });
-  await mkdir(dirname(spec.stdoutPath ?? resolve(spec.workingDirectory, "logs", "service.out.log")), {
-    recursive: true,
-    mode: 0o700
-  });
+  await mkdir(
+    dirname(spec.stdoutPath ?? resolve(spec.workingDirectory, "logs", "service.out.log")),
+    {
+      recursive: true,
+      mode: 0o700
+    }
+  );
 }
