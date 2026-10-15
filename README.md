@@ -6,6 +6,8 @@
 
 函数式业务扩展见 [Extra 插件设计与使用](.octospec/rules/extras.md)。`octo-runtime extraset <name>` 从 stdin 保存完整 JSON 声明；daemon 重启后自动加载。原生 HTTP → Host → SSE 演示包为 [octo-runtime-extra-sse-demo](packages/octo-runtime-extra-sse-demo/README.md)。
 
+第三方 TypeScript 插件使用发行包公开入口 `@mininglamp-oss/octo-runtime/extra` 和 `/protocol` 获取完整 Extra/执行协议类型与校验工具，无需源码或独立安装私有 packages；见[仓库外开发指南](.octospec/guides/extra-configuration.md)。CLI 外部 Adapter 追加清单和 `/adapter` 公开入口仍属[待实施目标](.octospec/tasks/adapter-composition-ownership/brief.md)。
+
 Octo Runtime 是 provider-neutral 的本地 Agent Runtime。本地接入使用 `HostApp → daemon 包的 SDK → IPC → Host → Adapter`。本地 Runtime ID 在初始化时生成并保存；Host socket 就绪即为本地启动成功。云端注册和对外连接由宿主显式控制，不是本地运行的前置条件。
 
 架构评审指出，原项目名称容易被理解为自研 ReAct 的 Agent 框架，与项目实际作用和价值不符。项目现统一命名为 **Octo Runtime**，包使用 `octo-runtime-*`，CLI 使用 `octo-runtime`。独立 CLI 默认 Home 为 `~/.octo-runtime`；Octo Work 保持产品名称，默认 Home 改为 `~/.octo-runtime-work`，本次本机改造将已有数据整目录移动到新位置。改造范围与验证记录见 [命名改造方案](.octospec/journal/shared/architecture-evolution.md)。本地改名不表示新 npm 包或线上安装路由已经发布。

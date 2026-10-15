@@ -4,12 +4,22 @@
   "private": false,
   "description": "Provider-neutral Agent runtime for unified execution through provider adapters",
   "type": "module",
-  "exports": {},
+  "exports": {
+    "./extra": {
+      "types": "./dist/public/extra.d.ts",
+      "import": "./dist/public/extra.js"
+    },
+    "./protocol": {
+      "types": "./dist/public/protocol.d.ts",
+      "import": "./dist/public/protocol.js"
+    }
+  },
   "bin": {
     "octo-runtime": "apps/cli/dist/index.js",
     "octo-runtime-daemon": "apps/daemon/dist/launcher.js"
   },
   "files": [
+    "dist/public",
     "apps/cli/dist/**/*.js",
     "apps/cli/dist/build-info.json",
     "apps/cli/README.md",
@@ -31,7 +41,7 @@
     "cli": "pnpm build && node apps/cli/dist/index.js",
     "daemon": "pnpm build && node apps/daemon/dist/launcher.js",
     "host": "pnpm build && node packages/octo-runtime-adapter-host/dist/runner.js --manifest config/adapters.json",
-    "build": "pnpm --recursive --filter \"./packages/**\" --filter \"./apps/**\" run build",
+    "build": "pnpm --recursive --filter \"./packages/**\" --filter \"./apps/**\" run build && tsc -p public/tsconfig.json",
     "prepare": "pnpm run build",
     "typecheck": "pnpm build && tsc -p tsconfig.json --noEmit",
     "lint": "eslint apps packages",

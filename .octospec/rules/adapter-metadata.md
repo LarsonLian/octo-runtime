@@ -46,6 +46,8 @@ Provider 的 `available`、认证、目标 Agent、当前输入可执行性与�
 
 产品选择的加载集合也独立于以上状态。CLI 与 SDK 嵌入代码分别决定集合；Host 不因框架支持更多类型或机器上探测到更多 Provider 就自行加载。SDK 不继承 CLI 全量清单，加载选择与依赖归属的改造尚未实施，见 [方案及影响](../tasks/adapter-composition-ownership/brief.md)。
 
+2026-10-15 最新决定：CLI 默认集合固定为 `apps/cli/src/default_adapters.json`，SDK 在自己的独立 Host 入口直接 import 并注册，不读取或复制 CLI 清单。后续将追加 `<home>/extra_adapters.json`（默认 `~/.octo-runtime/extra_adapters.json`）中的第三方 Adapter，采用既有 version/adapters 描述格式。按 type 保留先出现项，内置优先；同名外部项忽略且不执行其模块。SDK 不自动读取此文件。客户只持有发行包，也应能通过公开 `/adapter` 与 `/protocol` 合同开发独立 Dify 等 Adapter；内部包继续 private。公开 Adapter 入口与外部追加加载均待实施，详细路径、错误与验收规则见上述任务及[公开插件合同](../tasks/public-plugin-contracts/brief.md)。
+
 Host 按实际执行合同校验来源、模式、审批及输入。非空 MCP 配置在未支持的 Adapter 上明确报错。SDK 的 `mcp` 是本地实现支持标识，不新增远程 Runtime 能力准入门槛。不得将业务标签迁入 `executionFeatures` 以恢复已删除的能力体系。
 
 ## 协议删除边界
@@ -59,6 +61,12 @@ Host 按实际执行合同校验来源、模式、审批及输入。非空 MCP �
 模型上下文统一使用本轮 Context v3，由 Host 固定渲染；没有 Compiler/Pipeline 或来源专属的自动背景链路。Run 版本保持 7，Adapter transport 版本保持 2。
 
 ## 实现与验证入口
+
+### CLI 帮助与开发者高级入口
+
+普通 CLI `--help` 说明默认使用内置 Adapter、无需 Adapter 配置，不展示高级 `--manifest` 参数。隐藏只影响帮助渲染，不能删除参数解析、优先级或显式清单执行支持。现有显式 manifest 是完整加载集合，不是自动追加；第三方结构式模块可由其加载，但 `/adapter` 公开 SDK 和 extra_adapters.json 自动追加仍须分别实施验收。
+
+开发者用法、公开 import、完整 Extra/Adapter 示例及 SDK/CLI 兼容边界见[飞书开发指南](https://my.feishu.cn/docx/IW30d2KL6o137ExHKHRc2yrJngh)。公开合同属于增量导出，不能据此声称使用旧物理清单路径的宿主无需迁移。
 
 - [Adapter SDK](../../packages/octo-runtime-adapter-sdk/src/index.ts)、[Adapter Host](../../packages/octo-runtime-adapter-host/src/index.ts)。
 - [Protocol Schema](../../packages/octo-runtime-protocol/schema/protocol.schema.json)及[本地执行配置解析](../../packages/octo-runtime-core/src/context.ts)。

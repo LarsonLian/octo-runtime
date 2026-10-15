@@ -1,4 +1,4 @@
-import type { HostRunService } from "@mininglamp-oss/octo-runtime-adapter-host";
+import type { InputInvoke, InteractionResponse } from "@mininglamp-oss/octo-runtime-protocol";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 export interface JsonObject {
@@ -7,9 +7,16 @@ export interface JsonObject {
 export type ExtraDisposer = () => void | Promise<void>;
 export type ExtraStatusHandler = () => JsonObject;
 
+/** 插件复用宿主执行实例，不依赖 HostRunService 的内部实现。 */
+export interface ExtraAdapterHost {
+  invoke: InputInvoke;
+  cancel(invocationId: string, reason?: string): Promise<{ cancelled: boolean }>;
+  respondInteraction(invocationId: string, response: InteractionResponse): Promise<void>;
+}
+
 /** This execution environment is unrelated to the model Context envelope. */
 export interface ExtraContext {
-  readonly adapterHost: Pick<HostRunService, "invoke" | "cancel" | "respondInteraction">;
+  readonly adapterHost: ExtraAdapterHost;
   readonly signal: AbortSignal;
   onDispose(dispose: ExtraDisposer): void;
   onStatus(handler: ExtraStatusHandler): void;

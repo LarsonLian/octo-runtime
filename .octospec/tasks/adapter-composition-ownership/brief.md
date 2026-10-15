@@ -18,6 +18,35 @@ timestamp: 2026-10-15T00:00:00Z
 
 ## 当前问题与源码依据
 
+### 第三方 Adapter 与 CLI 追加清单（2026-10-15 补充决定）
+
+客户不需要 Runtime 源码，只安装可执行 `@mininglamp-oss/octo-runtime`，即可在独立工程开发 Dify 等第三方 Adapter。公开开发入口和类型依赖闭包按 [第三方插件合同](../public-plugin-contracts/brief.md) 实施；私有 workspace 包不单独发布。Adapter 处理 Provider 协议转换，不承担 Extra 的业务接入职责。
+
+CLI 默认集合使用 CLI 自己维护的 `apps/cli/src/default_adapters.json`，不再以根目录共享文件作为产品默认源。后续追加能力将额外读取 `<home>/extra_adapters.json`；默认 Home 为 `~/.octo-runtime`，指定 `--home` 时使用指定 Home。文件使用原清单结构，例如：
+
+```json
+{
+  "version": 1,
+  "adapters": [
+    {
+      "type": "dify",
+      "module": "/absolute/customer-dify/dist/index.js",
+      "export": "difyAdapter"
+    }
+  ]
+}
+```
+
+- 保持既有描述格式：`type`、`module`、`export`，以及现有 loader 支持的 factory/options 语义，不在业务 Context 中传加载描述或凭据。
+- 合并顺序为默认 JSON 内置项在前、外部项按文件顺序追加。按 `type` 去重，已存在则忽略该外部项，不 import、不调用工厂、不覆盖内置项；同一文件重复时保留第一项，报告被忽略的类型。此规则专用于 CLI 追加源，不改变 SDK 显式集合重复类型报错的规则。
+- 文件不存在表示没有附加项。文件损坏、版本错误或描述格式非法应明确报错；有效且新增的模块缺失、导出错误或 metadata.type 与声明不符时，就绪前明确失败，不静默丢弃。去重必须发生在模块加载前。
+- 相对路径相对于 extra_adapters.json 所在目录解析；包名同样从该目录解析，再固定已解析入口交给子进程，避免相对于 Runtime 内部私有包或临时目录解析。绝对路径和 file URL 保持明确来源。第三方模块及其依赖由客户/HostApp 安装，CLI 不自动下载安装。
+- CLI daemon、Playboard 和 adapter 命令使用同一有效集合。Host 崩溃恢复使用本次启动快照；用户修改文件后由 CLI/宿主协调重启应用新集合，不热加载，不自动停止活动 Run，不删除 Home、身份或配置。
+- SDK 产品不自动读取这个文件，也不继承 CLI 默认 JSON；仍由其嵌入代码直接 import。显式 CLI manifest 覆盖如何与默认/追加源组合须在实现时明确，不能暗中叠加或替换。
+- Dify 可先仅声明 canonical 模式，诚实声明支持的来源、会话和交互能力。网络 API 可达不代表调用成功，未实现取消或审批不能伪造已应用。
+
+后续追加能力验收必须覆盖：没有源码和私有依赖的外部 TS 工程、真实发行包安装、追加 Dify、内置同名忽略且模块不执行、外部重复、文件缺失/损坏、相对路径、坏导出、metadata 不符、重启快照、独立产品隔离，以及 Dify 实际请求与终态。当前追加清单和公开 Adapter 入口尚未实施。
+
 1. 根 [config/adapters.json](../../../config/adapters.json) 列出全部 12 个默认 Adapter，[CLI daemon](../../../apps/daemon/src/runtime-options.ts) 和 [Playboard](../../../apps/cli/src/playboard.ts) 默认使用它。
 2. [copy-manifest.mjs](../../../packages/octo-runtime-daemon/scripts/copy-manifest.mjs) 在 SDK 构建时复制同一清单，[SDK runner](../../../packages/octo-runtime-daemon/src/runtime/runner.ts) 默认加载副本。新增 CLI Adapter 因此会影响 SDK 默认集合，客户产品没有独立、明确的选择。
 3. [Host package.json](../../../packages/octo-runtime-adapter-host/package.json) 当前声明全部内置 Adapter 的生产依赖。此事实需要在对接文档中说明，不能把只加载 5 个解释为产物只包含 5 个。依赖和包体由宿主 App 管理，不将裁剪客户依赖树纳入本次 Runtime 改造目标。

@@ -1,0 +1,45 @@
+// 公开完整协议类型，保留其原始泛型、判别联合与传递引用。
+export type * from "@mininglamp-oss/octo-runtime-protocol";
+export type {
+  CanonicalEventWire,
+  ContextMcpLocator,
+  ContextMcpPayload,
+  ContextModelSelectionPayload,
+  PersistentContextEnvelope,
+  PublicObjectMaterial
+} from "@mininglamp-oss/octo-runtime-protocol/browser";
+export {
+  InvokeInput,
+  assertInvokeInput,
+  CONTEXT_SCHEMA,
+  CONTEXT_MAX_BYTES,
+  CONTEXT_MAX_ITEMS,
+  RUNTIME_RUN_CONTRACT,
+  PROTOCOL_VERSION,
+  APPROVAL_MODES,
+  CANONICAL_EVENT_TYPES,
+  TERMINAL_EVENT_TYPES,
+  INTERACTION_RESPONSE_OUTCOMES,
+  IMAGE_INPUT_LIMITS,
+  IMAGE_INPUT_MIME_TYPES,
+  assertContextEnvelope,
+  assertModelInputParts,
+  assertRuntimeLimits,
+  assertCanonicalEvent,
+  assertApprovalRequest,
+  assertInteractionResponse,
+  assertNativeInteractionResponse,
+  assertHostRunReceipt,
+  assertHostControl,
+  assertHostFrame,
+  assertHostFrameIdentity,
+  assertFailureEnvelope,
+  isTerminal,
+  isHostTerminal,
+  canonicalEvents,
+  contextItem,
+  contextHash,
+  messageExposure,
+  isFailureEnvelope,
+  failureMessage
+} from "@mininglamp-oss/octo-runtime-protocol";

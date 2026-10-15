@@ -1,6 +1,8 @@
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
+await rm("dist/public", { recursive: true, force: true });
+
 for (const workspaceRoot of ["apps", "packages"]) {
   const entries = await readdir(workspaceRoot, { withFileTypes: true });
   for (const entry of entries) {

@@ -62,6 +62,14 @@ Extra 是 Host 上可装配的业务能力。Runtime、IPC Host 和 Provider Ada
 
 ## 插件是什么
 
+### 第三方 TypeScript 插件与发行包
+
+第三方无需源码或私有包安装权限。单一 npm 发行包通过 `@mininglamp-oss/octo-runtime/extra` 导出完整 Extra 类型与协议类型，通过 `/protocol` 提供同一协议类型及常用校验、常量和事件工具。内部 packages 继续 private；不能要求客户 import 私有包名或内部路径。`.d.ts` 的传递依赖必须随发行物携带，并在仓库外以 `skipLibCheck=false` 验证。
+
+`ExtraAdapterHost` 显式声明 invoke、cancel、respondInteraction，不通过内部 HostRunService 类间接暴露实现。实例由 `ctx.adapterHost` 注入，调用方只导入类型/工具，不创建第二个内核。invoke 保留 native/canonical 重载；事件流是异步迭代器，流内元素分别为 HostFrame 或 CanonicalEvent，事件类型保留判别联合。InvokeInput、Context、配置、会话、MCP、交互、错误等依赖类型必须可从公开入口取得。
+
+独立工程的安装、编译、加载及 Agent Run 验收见 [第三方插件合同](../tasks/public-plugin-contracts/brief.md)与[开发指南](../guides/extra-configuration.md)。框架类型不替代插件业务 JSON 的运行时校验；发行包不自动下载插件。下文私有包 import 仅供仓库内部开发，第三方使用公开入口。
+
 插件包导出一个稳定名称和一个默认 lambda：
 
 ```ts

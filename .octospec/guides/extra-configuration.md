@@ -9,6 +9,55 @@ implementation_baseline: df63c8f
 
 # Extra 配置与调用
 
+## 没有 Runtime 源码时开发插件
+
+客户工程局部安装发行包以解析类型，不能依赖全局 npm 安装的类型：
+
+```sh
+npm install @mininglamp-oss/octo-runtime
+npm install -D typescript @types/node
+```
+
+工程使用 ESM（package.json 设置 `"type": "module"`），tsconfig 使用 `module/moduleResolution: NodeNext`，目标 ES2022 或以上。编译产物是普通 JS，Runtime 运行要求 Node 24 或以上。只使用类型时用 import type；需要检查外部请求时普通 import InvokeInput。
+
+```ts
+import {
+  InvokeInput,
+  isTerminal,
+  type ExtraPlugin,
+  type ExtraContext,
+  type CanonicalEvent
+} from "@mininglamp-oss/octo-runtime/extra";
+
+export const name = "customer-service";
+
+// 业务服务在收到已认证、已授权请求后调用；JSON 必须经过运行时检查。
+export async function execute(ctx: ExtraContext, value: unknown) {
+  const input = InvokeInput.check(value);
+  const events = ctx.adapterHost.invoke(
+    { ...input, protocol_mode: "canonical" },
+    { signal: ctx.signal }
+  );
+  for await (const event of events) {
+    const output: CanonicalEvent = event;
+    // 在这里消费或回传业务结果；terminal 可能是完成、失败或取消。
+    if (isTerminal(output)) return output;
+  }
+}
+
+const load: ExtraPlugin = (ctx, config) => {
+  ctx.onStatus(() => ({ enabled: true }));
+  // 在此用 config 启动业务监听，并以 ctx.onDispose 登记关闭监听和等待任务退出。
+};
+export default load;
+```
+
+invoke 的 input 由业务构造，至少含 inputs 与 contexts；Context=v3，必要执行 adapter 独立选择，完整示例见 [InvokeInput 规则](../rules/invoke-input.md)。运行中的交互通过 `ctx.adapterHost.respondInteraction(invocationId, response)` 回复，取消通过 cancel 或调用环境的 AbortSignal；需要按请求取消时建立自己的 controller，并响应 Extra 的 signal。
+
+公开类型还包括 ExtraAdapterHost、ExtraDescriptor、ExtraPluginModule、JsonObject/JsonValue、InvokeEnvironment、InputInvoke、HostFrame/HostRunReceipt/HostControl、ContextEnvelope/ContextItem、ModelInputPart、AgentConfig、ProviderSession、RuntimeLimits、McpServers、InteractionResponse、ApprovalRequest、FailureEnvelope 及完整协议类型。`/protocol` 可单独导入协议类型、InvokeInput.check、事件校验与终态工具，不需要私有包。
+
+安装编译后的第三方包，使用 extraset 将 module 设为已安装入口的绝对路径，再重启同一 Home 的 daemon；不要假设全局 Runtime 能按包名找到项目局部安装的插件。当前 CLI 没有 extra load/unload/status 命令；单插件控制属于宿主 SDK。完整发布和验证要求见 [公开插件合同](../tasks/public-plugin-contracts/brief.md)。
+
 本文描述宿主编排卸载、修改配置和重新加载的入口。状态能力必备且默认 `{}`，没有原地更新与通用业务 RPC。详见 [Extra 规则](../rules/extras.md)和[责任边界决策](../tasks/extra-responsibility-boundary/brief.md)。
 
 CLI 是个人设备的 headless 运维入口。普通用户由 Desktop App 静默准备配置并启动 Runtime，无需使用 CLI，也无需让 App 调用 CLI。

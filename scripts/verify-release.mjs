@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { access, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { access, cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
@@ -8,26 +8,53 @@ import { once } from "node:events";
 
 const execute = promisify(execFile);
 const archive = resolve(process.argv[2]);
+const root = resolve(import.meta.dirname, "..");
+const live = process.argv.includes("--live");
 // macOS Unix sockets have a short path limit; its default temp directory is too long.
 const directory = await mkdtemp(join(process.platform === "darwin" ? "/tmp" : tmpdir(), "orc-"));
-const npm = join(dirname(process.execPath), process.platform === "win32"
-  ? "node_modules/npm/bin/npm-cli.js" : "../lib/node_modules/npm/bin/npm-cli.js");
+const npm = join(
+  dirname(process.execPath),
+  process.platform === "win32"
+    ? "node_modules/npm/bin/npm-cli.js"
+    : "../lib/node_modules/npm/bin/npm-cli.js"
+);
 let daemon;
 let daemonExit;
 try {
-  await execute(process.execPath, [npm, "install", "--global", "--prefix", directory,
-    "--offline", "--cache", join(directory, "empty-cache"), "--no-audit", "--no-fund", archive],
-  { cwd: directory, timeout: 60_000 });
-  const installed = join(directory, process.platform === "win32" ? "node_modules" : "lib/node_modules",
-    "@mininglamp-oss/octo-runtime");
+  await execute(
+    process.execPath,
+    [
+      npm,
+      "install",
+      "--global",
+      "--prefix",
+      directory,
+      "--offline",
+      "--cache",
+      join(directory, "empty-cache"),
+      "--no-audit",
+      "--no-fund",
+      archive
+    ],
+    { cwd: directory, timeout: 60_000 }
+  );
+  const installed = join(
+    directory,
+    process.platform === "win32" ? "node_modules" : "lib/node_modules",
+    "@mininglamp-oss/octo-runtime"
+  );
   const metadata = JSON.parse(await readFile(join(installed, "package.json"), "utf8"));
   assert.deepEqual((await readdir(join(installed, "apps"))).sort(), ["cli", "daemon"]);
-  await access(join(installed, "node_modules/@mininglamp-oss/octo-runtime-adapter-host/dist/runner.js"));
-  assert.deepEqual(metadata.exports, {});
+  await access(
+    join(installed, "node_modules/@mininglamp-oss/octo-runtime-adapter-host/dist/runner.js")
+  );
+  assert.deepEqual(Object.keys(metadata.exports).sort(), ["./extra", "./protocol"]);
   assert.equal(metadata.scripts, undefined);
   for (const [name, version] of Object.entries(metadata.dependencies)) {
     assert.doesNotMatch(version, /workspace:|link:|file:/);
-    const dependency = JSON.parse(await readFile(join(installed, "node_modules", name, "package.json"), "utf8"));
+    const dependency = JSON.parse(
+      await readFile(join(installed, "node_modules", name, "package.json"), "utf8")
+    );
     if (name.startsWith("@mininglamp-oss/")) {
       assert.equal(dependency.version, metadata.version);
       assert.equal(dependency.private, true);
@@ -35,66 +62,206 @@ try {
   }
   const cli = join(installed, "apps/cli/dist/index.js");
   const home = join(directory, "home");
-  const run = args => execute(process.execPath, [cli, ...args, "--home", home], { cwd: directory, timeout: 10_000 });
+  const run = (args) =>
+    execute(process.execPath, [cli, ...args, "--home", home], { cwd: directory, timeout: 10_000 });
   assert.match((await run(["--help"])).stdout, /Octo Runtime CLI/);
-  const build = JSON.parse(await readFile(join(installed, "apps/cli/dist/build-info.json"), "utf8"));
+  const build = JSON.parse(
+    await readFile(join(installed, "apps/cli/dist/build-info.json"), "utf8")
+  );
   assert.match(build.commit, /^[a-f0-9]{40,64}$/);
   const versionInfo = `${metadata.version}\ncommit:${build.commit.slice(0, 12)}${build.dirty ? " (dirty)" : ""}`;
   assert.equal((await run(["--version"])).stdout.trim(), versionInfo);
-  assert.match((await run([])).stdout, new RegExp(`Octo Runtime CLI \\(${metadata.version.replaceAll(".", "\\.")}\\)`));
+  assert.match(
+    (await run([])).stdout,
+    new RegExp(`Octo Runtime CLI \\(${metadata.version.replaceAll(".", "\\.")}\\)`)
+  );
   assert.equal((await run(["daemon"])).stdout, (await run(["daemon", "--help"])).stdout);
   const playboardHelp = (await run(["playboard", "--help"])).stdout;
   assert.match(playboardHelp, /Examples:/);
   const reference = playboardHelp.split("Reference:\n  ")[1].trim();
   await access(reference);
   // Exercise the generated global command, not just the JS entrypoint.
-  const command = join(directory, process.platform === "win32" ? "octo-runtime.cmd" : "bin/octo-runtime");
-  assert.match((await execute(command, ["--help"], { cwd: directory, shell: process.platform === "win32" })).stdout, /Octo Runtime CLI/);
+  const command = join(
+    directory,
+    process.platform === "win32" ? "octo-runtime.cmd" : "bin/octo-runtime"
+  );
+  assert.match(
+    (await execute(command, ["--help"], { cwd: directory, shell: process.platform === "win32" }))
+      .stdout,
+    /Octo Runtime CLI/
+  );
   const consumer = process.platform === "win32" ? directory : join(directory, "lib");
+  await writeFile(join(consumer, "package.json"), '{"type":"module"}\n');
+  await cp(join(root, "test-support/public-extra/plugin.mts"), join(consumer, "plugin.mts"));
+  // 业务库只从离线发行包解析；TypeScript 与 Node 类型是开发工具依赖。
+  await execute(
+    process.execPath,
+    [
+      join(root, "node_modules/typescript/bin/tsc"),
+      "plugin.mts",
+      "--module",
+      "NodeNext",
+      "--target",
+      "ES2022",
+      "--strict",
+      "--skipLibCheck",
+      "false",
+      "--types",
+      "node",
+      "--typeRoots",
+      join(root, "node_modules/@types"),
+      "--outDir",
+      "compiled"
+    ],
+    { cwd: consumer, timeout: 30_000 }
+  );
+  const publicImports = await execute(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      'const e = await import("@mininglamp-oss/octo-runtime/extra"); const p = await import("@mininglamp-oss/octo-runtime/protocol"); if (e.InvokeInput !== p.InvokeInput) throw Error("public exports mismatch"); await import("./compiled/plugin.mjs");'
+    ],
+    { cwd: consumer }
+  );
+  assert.equal(publicImports.stderr, "");
+  const resultFile = join(directory, "plugin-result.json");
+  const marker = `PUBLIC_EXTRA_${Date.now()}`;
+  if (live) {
+    const response = await fetch("https://im-test.deepminer.com.cn/", {
+      signal: AbortSignal.timeout(15_000)
+    });
+    assert.ok(response.ok, "im-test 必须可达；这项检查本身不证明业务链路已打通");
+  }
+  const save = spawn(process.execPath, [cli, "--home", home, "extraset", "public-extra"], {
+    cwd: consumer,
+    stdio: ["pipe", "ignore", "inherit"]
+  });
+  const saved = once(save, "exit");
+  save.stdin.end(
+    JSON.stringify({
+      module: join(consumer, "compiled/plugin.mjs"),
+      config: {
+        resultFile,
+        ...(live
+          ? {
+              input: {
+                inputs: [{ type: "text", text: `Reply exactly ${marker}. Do not call tools.` }],
+                contexts: {
+                  schema: "octo.context-envelope/v3",
+                  items: [
+                    { namespace: "octo.execution", name: "adapter", payload: { type: "codex" } }
+                  ]
+                },
+                approvalMode: "full_access"
+              }
+            }
+          : {})
+      }
+    })
+  );
+  assert.equal((await saved)[0], 0);
   for (const [specifier, code] of [
     ["@mininglamp-oss/octo-runtime", "ERR_PACKAGE_PATH_NOT_EXPORTED"],
     ["@mininglamp-oss/octo-runtime/apps/cli/dist/index.js", "ERR_PACKAGE_PATH_NOT_EXPORTED"],
-    ["@mininglamp-oss/octo-runtime/node_modules/@mininglamp-oss/octo-runtime-core/dist/index.js", "ERR_PACKAGE_PATH_NOT_EXPORTED"],
+    [
+      "@mininglamp-oss/octo-runtime/node_modules/@mininglamp-oss/octo-runtime-core/dist/index.js",
+      "ERR_PACKAGE_PATH_NOT_EXPORTED"
+    ],
     ["@mininglamp-oss/octo-runtime-core", "ERR_MODULE_NOT_FOUND"],
     ["@mininglamp-oss/octo-runtime-daemon", "ERR_MODULE_NOT_FOUND"]
   ]) {
-    const result = await execute(process.execPath, ["--input-type=module", "-e",
-      `try { await import(${JSON.stringify(specifier)}); process.exitCode = 1; } catch (error) { console.log(error.code); }`],
-    { cwd: consumer });
+    const result = await execute(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `try { await import(${JSON.stringify(specifier)}); process.exitCode = 1; } catch (error) { console.log(error.code); }`
+      ],
+      { cwd: consumer }
+    );
     assert.equal(result.stdout.trim(), code, specifier);
   }
-  daemon = spawn(process.execPath, [join(installed, "apps/daemon/dist/index.js"), "--home", home],
-    { cwd: directory, stdio: ["ignore", "ignore", "pipe"] });
+  daemon = spawn(process.execPath, [join(installed, "apps/daemon/dist/index.js"), "--home", home], {
+    cwd: directory,
+    stdio: ["ignore", "ignore", "pipe"]
+  });
   daemonExit = once(daemon, "exit");
   let errors = "";
-  daemon.stderr.on("data", data => { errors += data; });
+  daemon.stderr.on("data", (data) => {
+    errors += data;
+  });
   let ready = false;
   for (let attempt = 0; attempt < 100; attempt++) {
     if (daemon.exitCode !== null) throw new Error(errors);
     try {
       ready = JSON.parse((await run(["status"])).stdout).ready === true;
       if (ready) break;
-    } catch { /* Wait for the isolated daemon socket. */ }
-    await new Promise(resolve => setTimeout(resolve, 100));
+    } catch {
+      /* Wait for the isolated daemon socket. */
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert.ok(ready, errors);
+  let pluginResult;
+  for (let attempt = 0; attempt < (live ? 1200 : 100); attempt++) {
+    try {
+      pluginResult = JSON.parse(await readFile(resultFile, "utf8"));
+      break;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(pluginResult?.schema, "octo.context-envelope/v3", errors);
+  if (live) {
+    assert.equal(pluginResult.terminal, "run.completed");
+    assert.equal(pluginResult.answer.trim(), marker);
+  }
   const adapters = JSON.parse((await run(["adapter", "list"])).stdout);
-  assert.ok(adapters.some(adapter => adapter.type === "codex"));
-  assert.ok(adapters.some(adapter => adapter.type === "claude-code"));
+  assert.ok(adapters.some((adapter) => adapter.type === "codex"));
+  assert.ok(adapters.some((adapter) => adapter.type === "claude-code"));
   daemon.kill("SIGTERM");
   const stopTimer = setTimeout(() => daemon.kill("SIGKILL"), 10_000);
   await daemonExit;
   clearTimeout(stopTimer);
-  await execute(process.execPath, [npm, "uninstall", "--global", "--prefix", directory,
-    "--offline", "--cache", join(directory, "empty-cache"), "--no-audit", "--no-fund", metadata.name],
-  { cwd: directory, timeout: 60_000 });
+  await execute(
+    process.execPath,
+    [
+      npm,
+      "uninstall",
+      "--global",
+      "--prefix",
+      directory,
+      "--offline",
+      "--cache",
+      join(directory, "empty-cache"),
+      "--no-audit",
+      "--no-fund",
+      metadata.name
+    ],
+    { cwd: directory, timeout: 60_000 }
+  );
   await assert.rejects(access(installed), { code: "ENOENT" });
   await assert.rejects(access(command), { code: "ENOENT" });
   await access(home);
-  console.log(JSON.stringify({ version: metadata.version, offlineInstall: true, globalCli: true,
-    commit: build.commit, dirty: build.dirty,
-    importsBlocked: true, daemonReady: ready, adapters: adapters.map(adapter => adapter.type),
-    uninstallRemovedPackage: true, uninstallPreservedHome: true }));
+  console.log(
+    JSON.stringify({
+      version: metadata.version,
+      offlineInstall: true,
+      globalCli: true,
+      commit: build.commit,
+      dirty: build.dirty,
+      privateImportsBlocked: true,
+      publicTypesChecked: true,
+      externalExtraLoaded: true,
+      liveAgentRun: live ? pluginResult.terminal : "not-run",
+      daemonReady: ready,
+      adapters: adapters.map((adapter) => adapter.type),
+      uninstallRemovedPackage: true,
+      uninstallPreservedHome: true
+    })
+  );
 } finally {
   if (daemon && daemon.exitCode === null && daemon.signalCode === null) {
     daemon.kill("SIGTERM");

@@ -73,6 +73,7 @@ try {
   for (const app of ["cli", "daemon"]) {
     await cp(join(root, "apps", app, "dist"), join(temporary, "apps", app, "dist"), { recursive: true });
   }
+  await cp(join(root, "dist/public"), join(temporary, "dist/public"), { recursive: true });
   await cp(join(root, "apps/cli/README.md"), join(temporary, "apps/cli/README.md"));
   for (const file of ["config/adapters.json", "LICENSE", "NOTICE"]) {
     await mkdir(dirname(join(temporary, file)), { recursive: true });
@@ -90,9 +91,9 @@ try {
     description: manifest.description,
     type: "module",
     bin: manifest.bin,
-    exports: {},
+    exports: manifest.exports,
     engines: { node: manifest.engines.node },
-    files: ["apps", "config", "LICENSE", "NOTICE"],
+    files: ["apps", "dist/public", "config", "LICENSE", "NOTICE"],
     publishConfig: { access: "public" },
     dependencies,
     bundleDependencies: Object.keys(dependencies)

@@ -7,7 +7,7 @@ export default defineConfig(
     ignores: ["**/dist/**", "**/node_modules/**", "coverage/**"]
   },
   {
-    files: ["apps/**/*.ts", "packages/**/*.ts"],
+    files: ["apps/**/*.ts", "packages/**/*.ts", "public/**/*.ts"],
     extends: [js.configs.recommended, tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: {

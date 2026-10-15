@@ -22,7 +22,7 @@ interface Command {
 }
 
 const commands: Command = {
-  description: "Manage the local Agent runtime, provider adapters, and background service.",
+  description: "Manage the local Agent runtime, provider adapters, and background service.\nBuilt-in adapters work by default; no adapter configuration is required.",
   children: {
     adapter: { description: "Inspect provider adapters", children: {
       list: { description: "List available provider adapters" },
@@ -43,7 +43,7 @@ const commands: Command = {
     status: { description: "Show local runtime status" },
     version: { description: "Print the installed CLI version" },
     help: { description: "Help about any command", usage: "[command]" },
-    playboard: { description: "Run a development request from stdin and stream events", usage: "< request.json", details: "Starts a temporary daemon using real providers. For development and integration debugging.\nRequires an installed, authenticated provider. Outputs NDJSON; diagnostics go to stderr.\nDefaults: codex, current directory, approval ask, 120-second timeout.\nOverride execution settings with contexts.items. Pending interactions fail explicitly.", flags: { "--manifest PATH": "Use an explicit adapter manifest" } }
+    playboard: { description: "Run a development request from stdin and stream events", usage: "< request.json", details: "Starts a temporary daemon using real providers. For development and integration debugging.\nUses built-in adapters by default; no adapter configuration is required.\nRequires an installed, authenticated provider. Outputs NDJSON; diagnostics go to stderr.\nDefaults: codex, current directory, approval ask, 120-second timeout.\nOverride execution settings with contexts.items. Pending interactions fail explicitly.", flags: { "--manifest PATH": "Optional advanced override; not required for built-in adapters" } }
   }
 };
 
@@ -83,7 +83,8 @@ export function helpText(path: string[] = []): string {
     ...(command.details ? [command.details] : []),
     `Usage:\n  ${invocation}${command.children ? " [command]" : command.usage ? ` ${command.usage}` : ""} [flags]`,
     ...(command.children ? [`Available Commands:\n${rows(Object.fromEntries(Object.entries(command.children).map(([name, child]) => [name, child.description])))}`] : []),
-    `Flags:\n${rows({ ...command.flags, "-h, --help": `Help for ${invocation}`, ...(path.length ? {} : { "-v, --version": "Print the installed CLI version" }) })}`,
+    // --manifest 保留解析和执行支持，只在开发者文档说明，不展示在普通帮助中。
+    `Flags:\n${rows({ ...Object.fromEntries(Object.entries(command.flags ?? {}).filter(([flag]) => flag !== "--manifest PATH")), "-h, --help": `Help for ${invocation}`, ...(path.length ? {} : { "-v, --version": "Print the installed CLI version" }) })}`,
     `Global Flags:\n${rows(globalFlags)}`,
     ...(path[0] === "playboard" ? [
       `Examples:\n  # Run a minimal request with Codex (bash/zsh)\n  octo-runtime playboard <<'JSON'\n  {\n    "inputs": [{"type": "text", "text": "Reply OK"}],\n    "contexts": {"schema": "octo.context-envelope/v3", "items": []},\n    "protocol_mode": "canonical"\n  }\nJSON\n\n  # Run a saved request\n  octo-runtime playboard < request.json`,

@@ -4,6 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./extra": {
+      "types": "./dist/extras.d.ts",
+      "import": "./dist/extras.js"
+    },
+    "./extra-config": {
+      "types": "./dist/extra-config.d.ts",
+      "import": "./dist/extra-config.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
