@@ -199,7 +199,14 @@ test(
     await wait(
       async () => (await probeDaemon(join(root, "sockets", "octo-runtime-daemon.sock"), 200))?.ready
     );
-    await wait(() => files(join(root, "selected-logs")).some((name) => name.startsWith("kernel-")));
+    await wait(() => {
+      try {
+        return files(join(root, "selected-logs")).some((name) => name.startsWith("kernel-"));
+      } catch (error) {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      }
+    });
     child.kill("SIGTERM");
     const exit = await done;
     assert.ok(exit.code === 0 || exit.signal === "SIGTERM", stderr);
