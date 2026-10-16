@@ -2,11 +2,11 @@
 
 日期：2026-10-15。部署选择由 HostApp 决定。本地 Runtime 存在与云端登记独立，统一原则见 [Runtime 合同](.octospec/rules/runtime-lifecycle.md)。
 
-Electron、Tauri 2 桌面程序严禁使用 CLI 接入，必须采用 [SDK 原生接入](SDK_NATIVE_INTEGRATION_GUIDE.md)。云端设备的 CLI 使用见 [CLI 使用指南](CLI_USAGE_GUIDE.md)。
+Electron、Tauri 2 桌面程序严禁使用 CLI 接入，必须采用 [SDK 原生接入](SDK_NATIVE_INTEGRATION_FULL_GUIDE.md)。云端设备的 CLI 使用见 [CLI 使用指南](CLI_USAGE_GUIDE.md)。
 
 ## 1. 客户 App 的最小部署
 
-宿主 App 自行管理 Adapter 的生产依赖、依赖裁剪及安装包内容，并确保 SDK 选择加载的模块及必要依赖可解析。Runtime 不替客户修改依赖树，不承诺最终包体只包含所选 Adapter。CLI 和 SDK 已分别管理加载集合，详见 [接入说明](SDK_NATIVE_INTEGRATION_GUIDE.md#22-本地启动与宿主发行物)与[实施方案](.octospec/tasks/adapter-composition-ownership/brief.md)。加载选择、实际携带的模块和 Provider 安装必须分别说明。
+宿主 App 自行管理 Adapter 的生产依赖、依赖裁剪及安装包内容，并确保 SDK 选择加载的模块及必要依赖可解析。Runtime 不替客户修改依赖树，不承诺最终包体只包含所选 Adapter。CLI 和 SDK 已分别管理加载集合，详见 [接入说明](SDK_NATIVE_INTEGRATION_FULL_GUIDE.md#16-准备正式包资源)与[实施方案](.octospec/tasks/adapter-composition-ownership/brief.md)。加载选择、实际携带的模块和 Provider 安装必须分别说明。
 
 `packages/*` 全部是内部模块，不独立发布或供用户从 npm 引用。Eva2.0 等内部项目仅需要本地执行时，由维护者从源码构建 daemon 及其本地生产依赖，再手动拷贝发行目录并覆盖目标程序文件。这里的包名仅用于内部模块解析，不是独立 npm 产品。无需携带 worker-access、channel-gateway、标品 Work App 代码或独立 embedded 包；不通过 apps/cli 承载 SDK。
 
@@ -21,7 +21,7 @@ node scripts/verify-daemon-deployment.mjs /absolute/staging/daemon
 
 验证脚本检查可选包缺席、本地实际执行和缺失模块失败隔离；它不是云端或所有 Provider 的端到端验收。
 
-HostApp 提供固定版本的 Node 24+、SDK runner、直接 import 并注册所选 Adapter 的独立 Host 入口及其依赖和所需 Provider。CLI 专属默认清单为 `apps/cli/src/default_adapters.json`，SDK 不复制或读取；宿主自行管理依赖、裁剪和包体，加载较少不保证包体缩小。具体 `distribution` 参数及带中文注释的加载示例见 [接入指南](SDK_NATIVE_INTEGRATION_GUIDE.md#2-sdk-原生接入步骤)。Runtime 与 Provider 缺失时返回状态，由 HostApp 决定安装；执行层不自动下载。
+HostApp 提供固定版本的 Node 24+、SDK runner、直接 import 并注册所选 Adapter 的独立 Host 入口及其依赖和所需 Provider。CLI 专属默认清单为 `apps/cli/src/default_adapters.json`，SDK 不复制或读取；宿主自行管理依赖、裁剪和包体，加载较少不保证包体缩小。具体 `distribution` 参数及带中文注释的加载示例见 [接入指南](SDK_NATIVE_INTEGRATION_FULL_GUIDE.md#1-原生启动-octo-runtime)。Runtime 与 Provider 缺失时返回状态，由 HostApp 决定安装；执行层不自动下载。
 
 程序文件与 app-owned Home 分离。Home 保存本地身份、profile、IPC 运行状态和日志；仅云端模块启用后才需要注册凭据。同一产品账号／租户的稳定身份应保留，不因未注册或离线更换。
 

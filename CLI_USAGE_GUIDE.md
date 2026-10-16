@@ -6,7 +6,7 @@ CLI 是独立 Runtime 的完整发行物，面向云端设备的定制接入、�
 
 “默认包含”描述发行范围，不表示安装 CLI 后全部 Extra 自动启用，也不表示系统自启已经注册。Extra 按配置加载；原生服务及自启由下文的 `daemon install` 等命令管理。Adapter 所依赖的 Provider 软件、认证及外部服务仍须按实际使用范围准备，不能把“包含 Adapter”理解为已安装并配置对应 Provider。
 
-**基于 Electron 或 Tauri 2 的桌面程序，严禁通过 CLI 接入 Runtime，必须使用 [SDK 原生接入指南](SDK_NATIVE_INTEGRATION_GUIDE.md)。** 不得把 CLI 可执行程序、命令输出解析或 CLI 原生服务包装成桌面业务接口。SDK 管理的 daemon、Host、Provider 子进程属于 SDK 接入的执行方式。
+**基于 Electron 或 Tauri 2 的桌面程序，严禁通过 CLI 接入 Runtime，必须使用 [SDK 原生接入指南](SDK_NATIVE_INTEGRATION_FULL_GUIDE.md)。** 不得把 CLI 可执行程序、命令输出解析或 CLI 原生服务包装成桌面业务接口。SDK 管理的 daemon、Host、Provider 子进程属于 SDK 接入的执行方式。
 
 本指南只描述 CLI 使用；诊断命令和 `playboard` 用于开发验证。需要在客户应用中管理生命周期、持续会话和交互答复时，使用 SDK。
 
@@ -77,7 +77,7 @@ HARNESS_PROFILE="default"
 | CLI 前台运行 | `octo-runtime daemon run` | 当前命令持续运行，Ctrl+C 停止 |
 | CLI 后台原生服务 | `octo-runtime daemon install` 后 `octo-runtime daemon start` | 系统服务管理器负责运行，使用 `daemon stop` 停止 |
 
-当前 CLI 的前台入口是 `daemon run`，没有 `daemon start --foreground` 参数。桌面宿主的启动与回收方式见 [SDK 生命周期管理](SDK_NATIVE_INTEGRATION_GUIDE.md#23-获取-runtime-id-和管理生命周期)。
+当前 CLI 的前台入口是 `daemon run`，没有 `daemon start --foreground` 参数。桌面宿主的启动与回收方式见 [SDK 生命周期管理](SDK_NATIVE_INTEGRATION_FULL_GUIDE.md#15-在主进程启动和退出)。
 
 先使用默认配置目录启动前台 daemon，由 daemon 管理共享 Host：
 
@@ -208,7 +208,7 @@ OpenClaw 自动发现由 CLI 启动编排负责，默认读取 `~/.openclaw/open
 
 以上两个示例是同名插件的替代配置，依次执行时后者会覆盖前者。若两个 Bot 要同时启用，将两个 Bot 对象放进同一个 `config.bots` 数组，一次提交完整配置。配置只保存在对应插件的 `extras/<name>/config.json`，不提供渠道专用配置文件。
 
-本节描述 CLI 的文件配置入口；通过 SDK 接入的 App 使用 [SDK 对象配置契约](SDK_NATIVE_INTEGRATION_GUIDE.md#12-配置来源与-sdk-契约)，不需要遵循这里的文件保存与加载约定。
+本节描述 CLI 的文件配置入口；通过 SDK 接入的 App 使用 [SDK 对象配置契约](SDK_NATIVE_INTEGRATION_FULL_GUIDE.md#22-加载和重载-extra)，不需要遵循这里的文件保存与加载约定。
 
 使用 `octo-runtime extraset <name>`，从 stdin 提交完整的 `{ module, enabled?, config }` JSON 对象。Octo IM 使用 `channel-gateway` 插件，其配置为 `config.bots` 数组，可包含多个 Bot；插件级和 Bot 级的 `enabled` 均默认 `true`。
 
@@ -220,7 +220,7 @@ CLI 将完整对象保存到 `<home>/extras/<name>/config.json`，POSIX 文件�
 
 标准 npm CLI 已随包携带 Octo IM 插件，无需单独安装。内部宿主从源码构建并手动拷贝所需插件及其生产依赖，或使用相邻源码仓库的编译入口；需确保插件对 daemon 的模块解析位置可见，也可将 `module` 填为已部署插件的绝对入口路径。内部插件不独立发布到 npm。
 
-名称必须等于插件导出的稳定 `name`，否则加载返回 `EXTRA_NAME_MISMATCH`；第二个 Bot 应放进同一 `bots` 数组，不能改名为 `channel-gateway-2`。保存成功不表示插件加载或连接成功；CLI 通过 `octo-runtime status` 查询状态，前台运行时也会输出插件状态；SDK 的逐插件查询见 [Extra 装配](SDK_NATIVE_INTEGRATION_GUIDE.md#26-通过-sdk-装配可选-extra)。`loaded` 只表示初始化完成，不证明每个 Bot 已在线。插件加载失败会报告脱敏错误码，本地 Host 可继续使用。不要同时通过对象模块和 Extra 装配同名连接；daemon 会拒绝名称冲突。
+名称必须等于插件导出的稳定 `name`，否则加载返回 `EXTRA_NAME_MISMATCH`；第二个 Bot 应放进同一 `bots` 数组，不能改名为 `channel-gateway-2`。保存成功不表示插件加载或连接成功；CLI 通过 `octo-runtime status` 查询状态，前台运行时也会输出插件状态；SDK 的逐插件查询见 [Extra 装配](SDK_CHANNEL_GATEWAY_GUIDE.md#5-保存或重新加载-im-配置)。`loaded` 只表示初始化完成，不证明每个 Bot 已在线。插件加载失败会报告脱敏错误码，本地 Host 可继续使用。不要同时通过对象模块和 Extra 装配同名连接；daemon 会拒绝名称冲突。
 
 修改配置通过 `extraset <name>` 保存完整声明，再执行 `daemon restart` 应用。持久停用保存顶层 `enabled: false` 后重启。CLI 不再提供 extra status/load/unload；SDK 宿主继续管理单插件生命周期。
 

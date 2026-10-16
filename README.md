@@ -16,7 +16,9 @@ Octo Runtime 是 provider-neutral 的本地 Agent Runtime。本地接入使用 `
 
 ## 使用场景与指南
 
-**Electron、Tauri 2 桌面程序严禁通过 CLI 接入，必须通过 [SDK 原生接入指南](SDK_NATIVE_INTEGRATION_GUIDE.md)接入。** 客户系统融合使用 daemon SDK；[CLI 使用指南](CLI_USAGE_GUIDE.md)仅面向云端设备的定制接入、部署和运维。CLI 默认包含全部 Adapter、Extra，以及系统管理、开启自启等服务能力；默认包含不等于安装后全部启用。 宿主应用调用 SDK，经 IPC 由 Host 调用对应 Adapter；相比把 `octo-runtime` CLI／CMD 可执行程序作为业务调用入口，这种方式更适合持续会话、交互审批和应用内运行管理。
+仅需接入 Octo IM 的 Electron 项目（建议 OctoBuddy 采用）看 [Channel Gateway 接入指南](SDK_CHANNEL_GATEWAY_GUIDE.md)；自行装配或直接调用 Agent 看 [完整原生接入指南](SDK_NATIVE_INTEGRATION_FULL_GUIDE.md)。
+
+**Electron、Tauri 2 桌面程序严禁通过 CLI 接入，必须通过 [SDK 原生接入指南](SDK_NATIVE_INTEGRATION_FULL_GUIDE.md)接入。** 客户系统融合使用 daemon SDK；[CLI 使用指南](CLI_USAGE_GUIDE.md)仅面向云端设备的定制接入、部署和运维。CLI 默认包含全部 Adapter、Extra，以及系统管理、开启自启等服务能力；默认包含不等于安装后全部启用。 宿主应用调用 SDK，经 IPC 由 Host 调用对应 Adapter；相比把 `octo-runtime` CLI／CMD 可执行程序作为业务调用入口，这种方式更适合持续会话、交互审批和应用内运行管理。
 
 - **接口明确**：通过类型化请求、结构化事件和错误处理执行结果，减少命令拼接、参数转义、终端输出解析和退出码映射的集成代码。
 - **生命周期可控**：宿主统一安排启动、停止、取消和交互答复，把执行状态接入自己的 UI 与业务流程，便于处理应用退出和执行中断。
@@ -36,7 +38,7 @@ SDK 接入不表示所有执行都在宿主进程内完成；daemon、Host 和 P
 
 **CLI 的配置文件约定属于 CLI 入口，不是 SDK 的接入要求。** `extraset <name>` 保存完整 `{ module, enabled?, config }` 到 `<home>/extras/<name>/config.json`；每次整份替换，重启 daemon 后加载。CLI/daemon 不解释或合并 Bot 字段。SDK 宿主从自己的 store 构造同样的声明对象，无需创建此文件。
 
-配置来源自由与 SDK 的内部运行状态持久化是两层职责。SDK／模块仍可在选定 Home 下管理 Runtime 身份、设备凭据、PID/socket、日志等状态；这些内部文件不要求宿主把自己的模块配置也存到同一位置。详细边界见 [接入指南：配置来源与 SDK 契约](SDK_NATIVE_INTEGRATION_GUIDE.md#12-配置来源与-sdk-契约)。
+配置来源自由与 SDK 的内部运行状态持久化是两层职责。SDK／模块仍可在选定 Home 下管理 Runtime 身份、设备凭据、PID/socket、日志等状态；这些内部文件不要求宿主把自己的模块配置也存到同一位置。详细边界见 [接入指南：配置来源与 SDK 契约](SDK_NATIVE_INTEGRATION_FULL_GUIDE.md#22-加载和重载-extra)。
 
 ### 本地运行与按需在线
 

@@ -2,6 +2,8 @@
 
 ## 2026-10-16
 
+- 重写 [SDK 操作指南](journal/shared/2026-10-16-sdk-action-guides.md)：新增完整原生与 Channel Gateway 两篇，先给 submodule、Codex/OpenClaw 依赖与可编译主进程示例，Gateway 提供配置文件及串行保存/重载；旧入口仅作导航。
+
 - 按用户最新要求[清理旧凭据配置残留](journal/shared/2026-10-16-host-config-source-boundary.md#后续清理不考虑旧配置兼容)：删除两个 file-config 模块、旧文件权限错误分支，不保留路径转发、兼容解析、迁移或回退。重跑构建、Node 1018 通过/8 跳过、UI 35 通过、类型、lint、发行包残留检查与 im-test 只读认证通过。
 
 - 固化[配置来源归宿主的架构边界](journal/shared/2026-10-16-host-config-source-boundary.md)：宿主负责 JSON/SQLite/Nacos 等来源并传入实际值，SDK/Extra 只校验和消费。移除两个 Channel 的 bf_token_file / app_secret_file、类型、schema 与凭据文件读取，后续不为配置来源扩展业务字段。构建、类型、lint、Node 1018 通过/8 跳过、UI 35 通过、六份发行 schema 及 im-test 两账号只读认证通过。

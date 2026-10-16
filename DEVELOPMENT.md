@@ -37,7 +37,7 @@ CLI 是运维入口，客户 SDK 不依赖其 app launcher 或原生服务安装
 
 ## 3. 纯本地验证
 
-使用独立 app-owned Home，按 [SDK 接入指南](SDK_NATIVE_INTEGRATION_GUIDE.md#2-sdk-原生接入步骤)提供稳定 appId、subject 与完整 tenant 集合。不要复用或覆盖正在运行的 Work App／standalone Home。
+使用独立 app-owned Home，按 [SDK 接入指南](SDK_NATIVE_INTEGRATION_FULL_GUIDE.md#1-原生启动-octo-runtime)提供稳定 appId、subject 与完整 tenant 集合。不要复用或覆盖正在运行的 Work App／standalone Home。
 
 检查：
 

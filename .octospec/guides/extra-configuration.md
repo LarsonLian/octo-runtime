@@ -168,7 +168,7 @@ const runtime = createDaemonRuntime({
 
 启动账号后调用 `runtime.loadExtra(descriptor)` 加载完整声明；更新由宿主先等待 `runtime.unloadExtra(name)`，修改并保存自己的配置，再加载最新声明。`extraStatus()` 查询生命周期，`extraStatus(name)` 查询插件同步回调返回的自定义 JSON 对象，默认 `{}`。没有通用业务请求接口，也不自动重载。SDK 不写 CLI 文件；加载失败不回滚宿主已保存配置。
 
-IM 插件加载完整 bots，重载会重新建立该插件内连接；宿主传入 authorized_space_ids 约束 Octo 认证得到的租户。Work App 已使用统一 Extra，SQLite 只属于宿主，逐 Bot 界面操作转换为所属 Extra 的整体重载。完整的 Node 与桌面发行接入见 [接入指南](../../SDK_NATIVE_INTEGRATION_GUIDE.md#26-通过-sdk-装配可选-extra)。
+IM 插件加载完整 bots，重载会重新建立该插件内连接；宿主传入 authorized_space_ids 约束 Octo 认证得到的租户。Work App 已使用统一 Extra，SQLite 只属于宿主，逐 Bot 界面操作转换为所属 Extra 的整体重载。完整的 Node 与桌面发行接入见 [接入指南](../../SDK_CHANNEL_GATEWAY_GUIDE.md#5-保存或重新加载-im-配置)。
 
 已有 Node 宿主还可使用 `startDaemonServer({ extras })`，通过 `extraRegistration(descriptor)` 构造动态声明，或直接注入 `ExtraRegistration.load` 工厂。各方式都复用同一个 Host。
 

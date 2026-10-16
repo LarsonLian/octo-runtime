@@ -38,9 +38,11 @@
 - [IM Agent 与通用 invoke 的责任边界](guides/im-agent-invocation-boundary.md)：长期 Agent 的业务策略与单次执行能力分层；固定 workdir 与 reset 是 IM 架构决策，不是每会话目录功能计划。
 - [本地运维](guides/operations.md)：真实状态、排障和日志。
 
-根目录按场景分为 [CLI 使用指南](../CLI_USAGE_GUIDE.md) 和 [SDK 原生接入指南](../SDK_NATIVE_INTEGRATION_GUIDE.md)；[INTEGRATION.md](../INTEGRATION.md)仅作选型导航，[DEPLOYMENTS.md](../DEPLOYMENTS.md)说明发行部署。包 README 保留包级用法。
+根目录按场景分为 [CLI 使用指南](../CLI_USAGE_GUIDE.md)、[SDK 完整原生接入指南](../SDK_NATIVE_INTEGRATION_FULL_GUIDE.md) 和 [SDK Channel Gateway 指南](../SDK_CHANNEL_GATEWAY_GUIDE.md)；[INTEGRATION.md](../INTEGRATION.md)仅作选型导航，[DEPLOYMENTS.md](../DEPLOYMENTS.md)说明发行部署。包 README 保留包级用法。
 
 ## 历史与取舍
+
+- [SDK 按宿主操作拆分](journal/shared/2026-10-16-sdk-action-guides.md)：完整原生指南按启动、特性、可选调用组织；OctoBuddy 推荐 Gateway 专篇，提供 submodule、workspace 依赖、主进程代码与 IM 配置重载。
 
 - [CLI 使用与 SDK 原生接入文档分拆](journal/shared/2026-10-16-cli-sdk-guides-split.md)：按使用场景拆分完整正文，桌面应用必须 SDK 接入；明确 CLI 全量发行与实际启用的区别，迁移文档链接与示例。
 

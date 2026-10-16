@@ -30,9 +30,9 @@ Octo 使用 `channel-gateway`，企业微信使用 `channel-wecom`；两个插�
 
 SDK 宿主自行保存配置并在应用重启或账号变化后重新提供。CLI 是另一种宿主：先 `extra unload <name>`，用 `extraset <name>` 保存完整声明到 `<home>/extras/<name>/config.json`，再 `extra load <name>` 读取新文件加载。CLI 文件不构成 SDK 的存储要求。
 
-直接使用 `startDaemonServer` 的 Node 宿主可通过 `extraRegistration(descriptor)` 构造 `extras` 声明，所有插件复用同一 Host。完整 SDK 示例见 [接入指南](../../SDK_NATIVE_INTEGRATION_GUIDE.md#26-通过-sdk-装配可选-extra)。
+直接使用 `startDaemonServer` 的 Node 宿主可通过 `extraRegistration(descriptor)` 构造 `extras` 声明，所有插件复用同一 Host。完整 SDK 示例见 [接入指南](../../SDK_NATIVE_INTEGRATION_FULL_GUIDE.md#22-加载和重载-extra)。
 
-生产隔离验证：`scripts/verify-daemon-deployment.mjs <pnpm-deploy-dir>` 实际检查 Worker/IM 缺席、启动并执行，再启用缺失模块，确认本地继续执行。完整示例见 [INTEGRATION](../../SDK_NATIVE_INTEGRATION_GUIDE.md#2-sdk-原生接入步骤)。
+生产隔离验证：`scripts/verify-daemon-deployment.mjs <pnpm-deploy-dir>` 实际检查 Worker/IM 缺席、启动并执行，再启用缺失模块，确认本地继续执行。完整示例见 [INTEGRATION](../../SDK_NATIVE_INTEGRATION_FULL_GUIDE.md#1-原生启动-octo-runtime)。
 
 > 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../.octospec/rules/context-input.md) 与 [IPD-SE](../../.octospec/rules/context-input.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
 

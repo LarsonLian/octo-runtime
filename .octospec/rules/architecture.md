@@ -197,4 +197,4 @@ Extra 必须保持这一责任边界：宿主编排“卸载 → 修改并保存
 - 外部接入必须在实际合同边界校验身份、权限及适用的租约、fencing；这些要求不把外部登记变成本地 Runtime 存在或本地调用的前置条件。
 - 凭据留在受保护的宿主或插件配置中，不进入 renderer、模型文本、公开日志或命令行参数。Provider workdir 是工作目录，不是操作系统隔离边界。
 
-实现与接入细节见 [CLI 使用指南](../../CLI_USAGE_GUIDE.md)、[SDK 原生接入指南](../../SDK_NATIVE_INTEGRATION_GUIDE.md)、[部署说明](../../DEPLOYMENTS.md) 和 [Context 输入合同](context-input.md)。历史决策与撤回理由见 [架构演进](../journal/shared/architecture-evolution.md)。
+实现与接入细节见 [CLI 使用指南](../../CLI_USAGE_GUIDE.md)、[SDK 完整原生接入指南](../../SDK_NATIVE_INTEGRATION_FULL_GUIDE.md)、[SDK Channel Gateway 指南](../../SDK_CHANNEL_GATEWAY_GUIDE.md)、[部署说明](../../DEPLOYMENTS.md) 和 [Context 输入合同](context-input.md)。历史决策与撤回理由见 [架构演进](../journal/shared/architecture-evolution.md)。

@@ -151,7 +151,7 @@ Extra 只对 Codex 结构化暂态限流或不可用失败（`OH-PRV-4005/4006` 
 
 更新由宿主卸载本插件、保存完整配置、重新加载；插件内所有连接重新建立。CLI 同样使用 `extra unload channel-gateway`、`extraset channel-gateway`、`extra load channel-gateway`，load 读取最新文件，不重启共享 Host。
 
-`runtime.extraStatus("channel-gateway")` 或 `extra status channel-gateway` 返回本插件定义的 `{ "bots": [...], "errors": [...] }`，`runtime.extraStatus()` 查询框架生命周期。每个有效 Bot 包含 `connection_key`、`type: "octo"`、`bot_name`、`enabled`、`connected`、`state`、脱敏 `error`、`deliveries` 和 `sessions`，已解析时包含 `botId` 等连接状态。停用 Bot 保留在数组，显示 `enabled: false`、`state: "stopped"`、`connected: false`。错误配置跳过连接，状态项返回从零开始的 `config_index`、`state: "config_error"` 和脱敏错误码，`errors` 同时记录位置及错误码；有效 Bot 继续初始化。列表或授权配置错误记录在 `errors`，不建立连接。读取内存状态，不发起联网探测；字段由本插件维护，宿主负责解释。完整 SDK 示例见 [对接指南](../../SDK_NATIVE_INTEGRATION_GUIDE.md#26-通过-sdk-装配可选-extra)。
+`runtime.extraStatus("channel-gateway")` 或 `extra status channel-gateway` 返回本插件定义的 `{ "bots": [...], "errors": [...] }`，`runtime.extraStatus()` 查询框架生命周期。每个有效 Bot 包含 `connection_key`、`type: "octo"`、`bot_name`、`enabled`、`connected`、`state`、脱敏 `error`、`deliveries` 和 `sessions`，已解析时包含 `botId` 等连接状态。停用 Bot 保留在数组，显示 `enabled: false`、`state: "stopped"`、`connected: false`。错误配置跳过连接，状态项返回从零开始的 `config_index`、`state: "config_error"` 和脱敏错误码，`errors` 同时记录位置及错误码；有效 Bot 继续初始化。列表或授权配置错误记录在 `errors`，不建立连接。读取内存状态，不发起联网探测；字段由本插件维护，宿主负责解释。完整 SDK 示例见 [对接指南](../../SDK_CHANNEL_GATEWAY_GUIDE.md#5-保存或重新加载-im-配置)。
 
 ## Bot 连接状态机
 

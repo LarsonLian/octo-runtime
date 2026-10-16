@@ -122,6 +122,8 @@ pnpm --filter @mininglamp-oss/octo-runtime-adapter-codex list
 
 这样 pnpm 安装时只会链接当前 workspace package，不会意外从 registry 拉取同名旧版本。
 
+外部 SDK 宿主不必加入本仓 workspace：submodule 位于宿主的 `octo-runtime/` 子目录，保留自己的 `pnpm-workspace.yaml`、内部包声明和 lockfile，在子仓独立安装、构建；宿主根 `package.json` 的直接依赖使用 `link:./octo-runtime/packages/<包目录>` 相对路径。`link:` 不安装目标包的传递依赖，不能省略子仓安装。`protocol`、`core`、`adapter-sdk` 等按子仓现有依赖安装，宿主直接 import 时才另加直接依赖；正式发行仍携带完整生产依赖。完整步骤见 [SDK 完整原生接入指南](../../SDK_NATIVE_INTEGRATION_FULL_GUIDE.md#12-配置依赖并构建)与 [Channel Gateway 指南](../../SDK_CHANNEL_GATEWAY_GUIDE.md#2-配置-packagejson-和构建)。
+
 ## 新增 Adapter Package
 
 以下步骤描述当前实现。已确认的目标改造为 [CLI 与 SDK 分别选择集合](../tasks/adapter-composition-ownership/brief.md)：CLI 自管清单，SDK 嵌入代码自管选择，宿主 App 自行管理依赖、裁剪及打包，框架不承诺客户包体。实施后新增 Adapter 不应自动加载到所有客户产品；对接文档和加载代码的详细中文注释必须同步交付。在改造完成前，不能把下面的共享 JSON 当作长期责任划分。
