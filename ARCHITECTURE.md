@@ -80,7 +80,7 @@ flowchart TB
         IM["wukong-im Server"]
         Cloud["设备注册 / 可见范围 / 寻址 / 授权 / 转发（目标）"]
     end
-    subgraph Machine["目标机器 · 宿主 App / CLI"]
+    subgraph Machine["部署位置：本地 / 云端 · 承载应用：宿主 App / CLI"]
         direction TB
         Local["同机其他 App / 宿主模块"]
         subgraph Device["设备实例 A · 特定 Runtime Home"]
