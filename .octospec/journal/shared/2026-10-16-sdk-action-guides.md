@@ -53,3 +53,9 @@ pnpm 11.19.0 实测发现首次安装的原生依赖构建需要宿主显式允�
 Gateway 指南仅保留 Codex Bot、Codex 的宿主直接依赖及 Host 注册，删除 OpenClaw 配置和连接辅助示例；当前 daemon/Host 的传递依赖仍完整保留。adapter 示例增加 model 和 effort，模型 ID 使用占位符，思考强度列出 low/medium/high/xhigh。加粗说明两项均可选，未填写的项采用 Codex 默认配置；不指定固定默认模型或档位，不用空字符串代表省略。
 
 验证通过：四段完整 TypeScript 示例以真实 SDK 声明及最小 Electron 环境声明进行 strict/NodeNext、skipLibCheck=false 检查，零诊断；模型与四档 effort、各字段单独省略及全部省略的十种组合通过实际 schema、assertStoredExtra 和 Gateway 校验器，输入未被修改。原样提取配置辅助函数在内存 Runtime 中验证对象加载、宿主持久化、停用、错误声明、卸载/保存/加载失败、失败后恢复及并发串行顺序；不读取或写入配置文件。所有 JSON 块、OKF 链接及 diff 检查通过。本轮仅修改文档，未启动 Electron、Provider 或进行真实 IM 收发。
+
+## 多 Bot 配置与 Extra 重载
+
+“准备 IM 配置”明确 `config.bots` 为数组，并提供两个 Bot 的完整示例。新增、修改或删除 Bot 后，仅保存配置不会自动生效；桌面 SDK 须等待 `channel-gateway` Extra 卸载清理成功，再由宿主保存完整配置，最后加载最新完整声明。只重新应用时省略保存步骤，停用时不重新加载。
+
+强调重载单位是整个 Extra：其所有 Bot 连接一起重建，未列入新数组的 Bot 不保留；daemon、AdapterHost 执行内核和其他 Extra 无需重启或重载。沿用现有串行辅助函数及失败处理，不新增 SDK API 或修改运行代码。

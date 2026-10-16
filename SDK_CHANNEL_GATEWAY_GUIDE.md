@@ -102,6 +102,8 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
 
 通过宿主自己的方式取得 JSON 配置数据：可以从 SQLite 查询、读取本地 JSON 文件，也可以实时生成。配置来源、读取和持久化由宿主决定；SDK 接收的是已经取得的配置对象，不要求固定文件名或存放路径。对象格式如下，替换 Bot ID、Token、工作目录和模型 ID：
 
+**`config.bots` 是数组：一个 Bot 填一项，多个 Bot 填多项。** 下例配置两个 Bot；只接一个时保留一项即可，每项填写对应 Bot 的凭据和执行配置。
+
 ```json
 {
   "module": "@mininglamp-oss/octo-runtime-extra-channel-gateway",
@@ -118,6 +120,18 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
           "model": "<CODEX_MODEL_ID>",
           "effort": "high"
         }
+      },
+      {
+        "api_url": "https://im.deepminer.com.cn/api",
+        "bot_id": "<CODEX_BOT_ID_2>",
+        "bot_name": "Codex 助理 2",
+        "bf_token": "<CODEX_BF_TOKEN_2>",
+        "adapter": {
+          "adapter_type": "codex",
+          "workdir": "/absolute/workspace-2",
+          "model": "<CODEX_MODEL_ID>",
+          "effort": "high"
+        }
       }
     ]
   }
@@ -125,6 +139,8 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
 ```
 
 `config.bots` 就是 Channel Gateway 的 IM 配置。宿主将上面的完整对象交给下文的配置辅助函数，由辅助函数把 `config` 对象传给 SDK；配置来源变化时，传入的对象格式保持一致。
+
+**配置生效方式：`channel-gateway` 是 Runtime 的 Extra 插件。桌面宿主已启动 Runtime 后，新增、修改或删除 Bot，需卸载并重新加载这个 Extra；仅保存配置不会自动生效。daemon 和 AdapterHost 执行内核无需重启，其他 Extra 无需重载。** 重载会重建该插件内所有 Bot 的连接；每次传入完整 `bots` 数组，未列出的 Bot 不保留。具体顺序见[保存或重新加载 IM 配置](#5-保存或重新加载-im-配置)。
 
 | 字段 | 填什么 |
 | --- | --- |
@@ -321,7 +337,13 @@ pnpm exec tsc -p tsconfig.octo.json
 
 宿主已取得配置对象、只需应用时调用 `reloadIm(完整配置对象)`。需要保存设置并立即生效时，在主进程现有设置处理函数中调用 `saveImConfiguration(完整配置对象, 宿主保存函数)`，保存函数接收完整对象并返回 Promise，可以写 SQLite、本地文件或宿主已有配置服务。实时生成且无需持久化的配置直接调用 `reloadIm`。这是上一节提供的两个宿主辅助函数，不是额外 SDK API。
 
-保存时的操作顺序为 **卸载 channel-gateway → 调用宿主保存函数 → 通过 SDK 加载最新完整配置**；只重新应用时省略保存步骤。同插件内的 Bot 连接一起重建，daemon 和共享 Host 不重启；提交完整 bots 数组，缺席的 Bot 不保留。两个函数已串行执行，调用方仍须等待结果并显示失败。
+上述辅助函数按以下顺序执行：
+
+1. `await runtime.unloadExtra("channel-gateway")`，等待插件连接、订阅等资源清理成功；失败时不继续保存和加载。
+2. 调用宿主保存函数，保存最新完整配置；只重新应用时省略此步。
+3. `await runtime.loadExtra({ name: "channel-gateway", module: runtimeModule("octo-runtime-extra-channel-gateway"), config: value.config })`，传入最新完整 `bots` 数组；若顶层 `enabled: false`，则保持卸载状态。
+
+**只重载整个 `channel-gateway` Extra，不重启 daemon 或 AdapterHost 执行内核。** 同插件内的所有 Bot 连接一起重建，未列入新数组的 Bot 不保留。两个辅助函数已串行执行，调用方仍须等待结果并显示失败。
 
 返回的 `lifecycle` 是加载状态，`status` 是插件自己的 Bot 状态。只有 Bot 的 `state: "online"` / `connected: true` 才表示 IM 已连接；`loaded` 不能代替连接成功。真实消息执行还取决于 Codex 认证是否可用。主进程自行解释状态，不向 renderer 回传 Token 或整份配置。
 
