@@ -59,3 +59,9 @@ Gateway 指南仅保留 Codex Bot、Codex 的宿主直接依赖及 Host 注册�
 “准备 IM 配置”明确 `config.bots` 为数组，并提供两个 Bot 的完整示例。新增、修改或删除 Bot 后，仅保存配置不会自动生效；桌面 SDK 须等待 `channel-gateway` Extra 卸载清理成功，再由宿主保存完整配置，最后加载最新完整声明。只重新应用时省略保存步骤，停用时不重新加载。
 
 强调重载单位是整个 Extra：其所有 Bot 连接一起重建，未列入新数组的 Bot 不保留；daemon、AdapterHost 执行内核和其他 Extra 无需重启或重载。沿用现有串行辅助函数及失败处理，不新增 SDK API 或修改运行代码。
+
+## Bot 系统提示词接入示例
+
+按用户要求，在 Channel Gateway 指南的完整 Bot JSON 中补充 `config.bots[i].context`，使用 `octo.context-envelope/v3` 的 `octo.control/instructions`，正文为 `payload.entries[].text`，来源为 `agent_configuration`。提示词在配置 Bot 时确定，session 首轮注入；每个 Bot 独立配置，无提示词时省略该 item。链接 Work App 的 `imChannelBotConfig` 作为现有实现参考。接入指南只说明配置位置和加载方式，不展开 Provider 会话恢复实现。
+
+验证通过：4 个 JSON 代码块可解析，完整声明通过 `assertStoredExtra`，两个 Bot 通过实际 Gateway 配置校验；新增 Context 通过 v3 校验，控制指令提取结果与配置正文一致，Context 中不含连接 Token。`git diff --check` 通过。OKF 全仓检查报告两处既有链接引用已在其他未提交工作中删除的 `host-log.ts`，本次新增链接有效。本轮仅文档，未修改运行代码、未进行线上调试或真实模型调用。

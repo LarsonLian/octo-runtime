@@ -119,6 +119,23 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
           "workdir": "/absolute/workspace",
           "model": "<CODEX_MODEL_ID>",
           "effort": "high"
+        },
+        "context": {
+          "schema": "octo.context-envelope/v3",
+          "items": [
+            {
+              "namespace": "octo.control",
+              "name": "instructions",
+              "payload": {
+                "entries": [
+                  {
+                    "text": "你是团队的 IM 助理。使用中文简洁回复；结论引用已核实的来源，无法确认时明确说明。",
+                    "source": "agent_configuration"
+                  }
+                ]
+              }
+            }
+          ]
         }
       },
       {
@@ -149,11 +166,20 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
 | `adapter_type: codex` | 本机 Codex，执行前已安装并完成认证 |
 | `adapter.model` | 可选，填写当前 Codex 可用的模型 ID；示例占位符需替换或删除该字段 |
 | `adapter.effort` | 可选，思考强度为 `low` / `medium` / `high` / `xhigh`；示例为 `high` |
+| `context` | 可选，该 Bot 的 Context v3 配置；系统提示词使用 `octo.control/instructions`，见下节 |
 | 顶层 `enabled: false` | 停用整个 IM 插件；Bot 内的 `enabled: false` 仅停用该 Bot |
 
 **模型 `adapter.model` 和思考强度 `adapter.effort` 都是可选配置；未填写的项采用 Codex 默认配置。需要默认值时直接省略对应字段，不要传空字符串。本示例不指定固定的默认模型或思考强度。**
 
 限制 Octo Space 时在 `config` 中增加 `authorized_space_ids`，填写认证应允许的真实 Space ID；不需要宿主额外限制时省略。完整字段见 [Gateway config-schema.json](packages/octo-runtime-extra-channel-gateway/config-schema.json)。
+
+### 3.1 配置 Agent 的 IM 系统提示词
+
+给 Agent 开通 IM 通道时，宿主在配置该 Bot 时确定专用系统提示词，并通过 octo-contexts 的 `octo.context-envelope/v3` 协议写入 **`config.bots[i].context`**。上面的完整 JSON 已给出配置位置：item 使用 `namespace: "octo.control"`、`name: "instructions"`，提示词正文放在 `payload.entries[].text`，来源填写 `source: "agent_configuration"`。
+
+每个 Bot 分别配置自己的提示词；没有提示词时省略该 item。将包含 `context` 的完整配置对象按第 4、5 节加载即可，配置的指令会在 session 首轮注入，无需宿主自行拼接到 IM 消息正文。
+
+参考 [Work App 的 imChannelBotConfig](../octo-work-app/src/main/im-channel-service.ts)：它将通道设置中保存的 `channel.instructions` 转成上述 item，空白提示词不生成 item，再与该 Bot 的连接和 Adapter 配置一起交给 Gateway。这里的提示词来自宿主授权的 Agent 配置入口，IM 消息正文不能冒充该来源；协议说明见 [Context 输入合同](.octospec/rules/context-input.md)。
 
 ## 4. 在主进程启动 daemon 和 IM
 
