@@ -62,11 +62,11 @@ Octo 插件配置只校验已识别字段，未知扩展字段保留并忽略，
 
 业务渠道决定 Actor、Trigger、Target、Input 和本轮 Context，并在调用前处理业务 defaults/mandatory。Octo 群固定加载 GROUP.md，话题固定加载群和本话题规则，不设置 group_rules/topic_rules 开关；404 明确记录不存在，权限或网络失败不伪装成空规则。规则、历史读取和消息 selection 均属于渠道业务选择，不是 Host 的自动采集能力。F18 的开关清理已实施，验证见[实施记录](../tasks/gateway-august-feature-assessment/implementation.md)。
 
-文档、网盘文件及内部附件采用[资源地址 Context 决策](../journal/shared/2026-10-16-resource-context-access-decision.md)：Channel 从本条真实报文组织资源类型、来源、标识/地址及获取指引，放入 extra.im。在线文档、网盘文件和内部 file 的读取方法分别由实际 octo-cli/工具提供，Provider/Harness 内的 Agent 按需调用；Channel 不要求 Adapter 预下载或转换原生附件，Host 不按资源类型预取。业务指引与执行凭据分开，读取沿当前 Bot 的权限和工具环境进行，不在提示词暴露 Token。该资源接线尚待实施，不扩大已完成的 Codex 独立图片范围或更改真实 mention 准入。
+文档、网盘文件及内部附件采用[资源地址 Context 决策](../journal/shared/2026-10-16-resource-context-access-decision.md)：Channel 从本条真实报文组织资源类型、来源、标识/地址及获取指引，放入 extra.im。在线文档、网盘文件和内部 file 的读取方法分别由实际 octo-cli/工具提供，Provider/Harness 内的 Agent 按需调用；Channel 不要求 Adapter 预下载或转换原生附件，Host 不按资源类型预取。业务指引与执行凭据分开，读取沿当前 Bot 的权限和工具环境进行，不在提示词暴露 Token。F04 资源 Context 接线已实施并通过 im-test 附件投影；完整文档/网盘取材矩阵未验，不扩大 Codex 独立图片范围或更改真实 mention 准入。
 
 渠道使用公共 InvokeInput 并显式选择 canonical，保存 Provider binding，处理交互与 reset。源事件及 payload 必须完整交给消费应用；UI 展示过滤不应裁剪原始历史数据。
 
-所有执行卡片（状态、工具进度及用户交互）必须由 CanonicalEvent 投影；不得解析助手正文、Provider 原始消息或自定义工具字段来替代统一事件与交互合同。AskUser 的既定接入路径是 interaction.requested → Channel 卡片 → 用户回答 → respondInteraction → 原模型继续执行，interaction.resolved 收敛卡片状态。交互卡片首版须支持选项与自定义输入，后续核心实现注释引用 [F09 方案](../tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf09-统一用户交互的-im-呈现与响应)，让后续维护者定位标准接入点；特殊解析必须明确标注非标准，不作为默认替代方案。此项已确认纳入后续实施，当前 Channel 交互卡片尚未接通；本轮只记录计划，不添加 TODO 或临时代码。
+所有执行卡片（状态、工具进度及用户交互）必须由 CanonicalEvent 投影；不得解析助手正文、Provider 原始消息或自定义工具字段来替代统一事件与交互合同。AskUser 的既定接入路径是 interaction.requested → Channel 卡片 → 用户回答 → respondInteraction → 原模型继续执行，interaction.resolved 收敛卡片状态。交互卡片首版支持选项与自定义输入，核心注释引用 [F09 方案](../tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf09-统一用户交互的-im-呈现与响应)；特殊解析必须标注非标准，不作为默认替代。首版已接通，im-test 创建/收敛通过，真人回调未验；isSecret 不进入普通卡片或聊天回答回退，仅提示不支持安全输入并请求停止，宿主安全产品路径待决。
 
 IM 后台配置对应的 Agent 使用固定目录，不按任务选择或改变 workdir。Octo Channel Gateway 的本地引擎省略 Agent 配置中的 `adapter.workdir` 时，由渠道入口使用并创建 `~/octo-runtime/channels/{bot_id}`，不随配置 Home、任务或会话变化。显式 Agent 目录必须是绝对路径；任务级 workdir 或 workspace Context 不得覆盖该 Agent 的目录。OpenClaw 保留 Provider Agent 自有固定工作区。显式更新 Agent 配置与提交任务是不同操作。
 
@@ -97,22 +97,22 @@ octo-cli 是业务团队共同维护的 Go 二进制程序，提供 Octo 各业�
 - OpenClaw 例外：由 CLI 编排层按当前渠道配置，把这两个变量写入目标 OpenClaw 实际读取的全局 `.env`（通常为 `~/.openclaw/.env` 或 `$OPENCLAW_STATE_DIR/.env`）。复用 CLI 发现来源，必要时调用只读 `openclaw config file --json` 确认实例；不得在 Adapter/probe/invoke 中扫描或写文件。不同目标目录分别写入；同一文件按配置处理顺序后写覆盖前写，不拒绝多个 Bot 使用同一目标。只更新这两个变量，保留其他内容。Gateway 重启由人工处理，写入完成不表示正在运行的 Gateway 已生效。此路径使用实例共享身份，不承诺逐轮或逐 Agent 隔离；不向 OpenClaw 的每轮调用传入那两个内部覆盖项。
 - Host/Adapter 只承载按调用传递的执行值，不读取 gateway 配置、不理解 OCTO 变量的业务来源。实现所需的内部传递扩展不得改变 Context v3、Run 7 或桌面调用方自行选择身份并使用 `envs` 的合同。
 - F23 已确认：OpenClaw Gateway 按独立 Agent 实例使用固定环境，符合当前需求；CLI daemon 启动编排配置其实例 `.env`，不修改上游 OpenClaw 设计或源码，不增加特殊 `session.create` 注入。Codex/Claude Code 等通用执行路径按原生能力逐轮传递。不得将 OpenClaw 无逐轮环境载体重新列为待补功能；原生加载优先级、人工重启及真实生效验证边界继续保留。
-- F24 用户确认的目标补充：普通调用以当前 Extra Bot 的合法身份及 API 配置为权威，覆盖进程级同名默认值，不能串用其他 Bot。OpenClaw 同一实例只从启用、合法且 `adapter_type=openclaw` 的配置中按顺序取最后一项，用户可通过调整 items 顺序主动选择实例工具身份；其他 Adapter 项不得成为候选，没有 OpenClaw 候选时不借用其他 Bot。此为实例级开放配置能力，不新增身份开关或逐轮注入。当前同步实现尚未筛选 Adapter，已记录为必须修复、待实施，不能视为已完成；配置错误仍明确报告，排序不绕过原生环境优先级或人工重启要求。
+- F24 用户确认的身份选择：普通调用以当前 Extra Bot 的合法身份及 API 配置为权威，覆盖进程级同名默认值，不能串用其他 Bot。OpenClaw 同一实例只从启用、合法且 `adapter_type=openclaw` 的配置中按顺序取最后一项，用户可通过调整 items 顺序主动选择实例工具身份；其他 Adapter 项不得成为候选，没有 OpenClaw 候选时不借用其他 Bot。此为实例级开放配置能力，不新增身份开关或逐轮注入。候选筛选修正已实施并通过临时目录回归；配置错误明确报告，排序不绕过原生环境优先级或人工重启要求，不声称用户当前运行实例已加载。
 - 两种注入原理分别保持：普通 Adapter 每次调用使用自己所属 Bot 的配置；OpenClaw 启动准备读取配置、写实例共享 `.env`，再由 Gateway 原生加载。只有后者采用同实例最后一个合法 OpenClaw 配置的选择规则，不让其他 Adapter 共用最后一项的身份或统一写共享 `.env`。
 - `octo-cli` 是否安装及版本由 HostApp 决定。gateway 不因收到消息而隐式下载或安装工具。本节不保证 Provider 专用配置或工具显式重新设置环境后仍使用相同身份，也不把 workdir 当作凭据隔离沙箱。
 
 ## 回执与恢复
 
-F26 最新目标、待实施，必须使用两个独立名称及计数，不统称“64 条限额”：
+F26 已实施，必须使用两个独立名称及计数，不统称“64 条限额”：
 
 - **Bot 最大工作并发数：64**。单个 Bot 的全部 session 中，已开始处理且未结束的任务数总和不得超过 64；排队任务不计入。同一 session 最多同时处理 1 条。该数值不限制 session 总数，也不是宿主所有 Bot 的共享并发上限。
 - **单 session 最大排队任务数：4**。每个逻辑 session 独立统计已受理但尚未开始处理的任务，最多 4 条，不含正在处理的 0 或 1 条。A 处理时 B/C/D/E 可以排队，F 因队列满被拒收。此前“1 条工作+3 条排队即满”不再作为目标。
 
-工作任务等待模型、工具、用户交互或本轮内部重试时仍占同一工作槽位，执行及必要清理结束才释放；排队转工作必须取得可用槽位。当前代码仍为 Bot 运行中加排队合计 64 条，与两层目标不同，必须修改，不能写成已完成。两层容量的调度及拒收顺序建议见 [F26 评审](../tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf26-有界队列执行期限与过载反馈)，不新增每秒消息数门槛或跨 Bot 调度体系。
+工作任务等待模型、工具、用户交互或本轮内部重试时仍占同一工作槽位，执行及必要清理结束才释放；有排队时槽位原子交给本 session 下一条，队列清空才释放给其他 session。Bot 工作数不混加排队数。调度及拒收顺序见 [F26 评审](../tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf26-有界队列执行期限与过载反馈)，不新增每秒消息数门槛或跨 Bot 调度体系。
 
 术语含义、计数增减、同群多用户、跨群独立、Bot 并发满与队列满的区别，以及名额释放后的行为，统一以 [F26 定义与具体例子](../tasks/gateway-august-feature-assessment/assessment.md#f26-定义与具体例子)的 E01–E13 为交接与验收依据。例如 20 个 session 各 1 条工作+4 条排队时，工作并发只有 20，不能继续用旧总量 64 拒收；两个数字也不限制累计 session 总数。示例是目标说明，不表示实现或实测完成。
 
-两类真实容量拒收均尝试独立错误卡片＋普通文本“当前智能体繁忙，请稍后再试”，卡片明确“本条消息未受理，尚未开始执行”。**文案相同、公开错误码不同**：Bot 工作并发满复用 OH-RUN-2003；单 session 排队满在共享错误目录新增不同公开码，具体编号核对目录后分配，不仅更换内部 reasonCode。详情展示繁忙类型、公开码及 diagnosticId，保留真实 Channel 准入阶段；共享入口分类，不建第二份 Channel 错误码表。卡片来自 Channel 本地准入失败 CanonicalEvent run.failed 的标准投影，不发 Host.invoke、不创建真实 AgentRun、不伪造启动，也不复用在途任务的卡片或终态。卡片/文本独立投递，任一路失败不阻止另一路；通知按消息幂等、限频且内存有界，不自动重提任务。此为受理回执，不是业务工具代执行；关闭、重复或未授权消息不能误报繁忙。本节是目标约束，实施状态以 F26 记录为准。
+两类真实容量拒收均尝试独立错误卡片＋普通文本“当前智能体繁忙，请稍后再试”，卡片明确“本条消息未受理，尚未开始执行”。**文案相同、公开错误码不同**：Bot 工作并发满 OH-RUN-2003；单 session 排队满 OH-RUN-2004，均来自共享目录。详情展示繁忙类型、公开码及 diagnosticId，保留真实 Channel 准入阶段，不建第二份错误码表。卡片来自 Channel 本地准入失败 CanonicalEvent run.failed 的标准投影，不发 Host.invoke、不创建真实 AgentRun、不伪造启动，不复用在途任务卡片或终态。卡片/文本独立投递，失败互不阻塞；通知按消息幂等、限频且内存有界，不自动重提。关闭、重复或未授权消息不误报繁忙。Gateway 已实施并通过 im-test 卡片/文本回读；WeCom 容量合同不在本项修改范围。
 
 2026-10-16 已确认：新 octo-server 自动根据 IM 长连接上下线事件维护在线状态并推送给客户端，Runtime 的在线展示沿用这条链路及现有 WS 协议心跳。独立 REST `/v1/bot/heartbeat` 属于历史兼容设计，不再是当前在线展示要求，Channel 不新增 REST 心跳循环，也不因该 REST 请求失败触发 WS 重连。此决定不要求删除已有 helper，不把 IM 在线等同于 Provider 可用或任务执行成功。源码核对、用户本地观察与验证边界见 [F06 评审](../tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf06-在线展示与旧-rest-心跳)。
 

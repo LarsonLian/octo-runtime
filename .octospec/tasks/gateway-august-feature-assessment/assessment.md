@@ -8,7 +8,7 @@ timestamp: 2026-10-16T00:00:00Z
 
 # 评估口径
 
-范围、版本与授权见[任务简报](brief.md)。下面“已覆盖”只表示本轮源码存在接通链路；既有 journal 的验收是历史证据，本轮没有重新运行。旧实现的开关默认关闭、宿主装配前提和后续撤回项单独列出。
+范围、版本与授权见[任务简报](brief.md)。本次已按最新授权逐项实施，真实进度、提交及 im-test 证据见[实施记录](implementation.md)。下方总表的“当前实现”已经更新；逐项 Review 章节保留原评审过程，其中“尚未实施/仅文档”是当时状态，不能覆盖当前实施记录。既有 journal 仍是历史证据，新验收不扩大原结论。
 
 成本为相对评估：小=Channel 局部接线；中=涉及输入解析、资源预算或多个边界；大=新增 Provider、持久化或执行架构。不是工期承诺。P1/P2 为候选先后顺序，不表示本轮发现已证实的生产故障。
 
@@ -34,23 +34,23 @@ timestamp: 2026-10-16T00:00:00Z
 
 整行删除线表示：按该行明确的业务目标，当前方案已覆盖，无需作为新功能继续评审。当前标记 F03、F06、F07、F08、F19、F33；F03 限已确定的 Codex 独立图片范围，F06 限 IM 在线展示，依据现有连接链、服务端/Web 源码及用户本地观察，不表示实现了 REST 循环。F07 限当前单版本 SaaS 的起始 typing 与卡片接替反馈。删除线不表示删除能力，也不表示本轮重新做过线上验收。F03 的真实 DM 图片和 F33 的合盖等未验场景仍沿原任务验收。
 
-“目标方案应覆盖比例”是建议选择的范围，不能据此划掉尚未实现的 F01、F05，或仍待核对验收的 F21、F26、F32。其他仅覆盖旧能力部分范围、明确不采用旧设计或仍待验证的项目保留原行；保留不代表需要开发，也不重新推翻 Runtime 已有决定。
+“目标方案应覆盖比例”是选择的范围，不能只因目标写了 100% 就划掉尚未接通的能力。删除线需有对应实现；待验范围必须保留说明。明确不采用旧设计的项目保留原结论，不重新推翻 Runtime 已有决定。
 
-其余项目一次只评审一项。F01 已确定统一 Context 方案，尚未实现；F02 已讨论，文本阅读目标 100%，未单独明确纳入决定；F03 既定范围已完整接通。F04 已确定资源地址 Context 与 Agent 按需取材的架构方向，接线尚未实施；F05 已确认纳入改动计划、方案确定、待实施。F06 在线展示已覆盖、不新增 REST；F07 已按当前单版本 SaaS 的 typing 与卡片交接目标标记已覆盖、保留现状，后续保留项尚未逐项评审。不因继续下一项、建议或分数自动进入代码实施。
+本次 F01/F05/F18/F24/F26 的确认范围已接通，按目标标记删除线；F04/F09/F21 的具体未验范围和 F27 的已知重复风险仍明确保留。F02 未决，F28 延期，F31 文件策略未决；不把目标 100% 写成全部线上场景已验收。评分继续表达原需求价值及方案判断，不等于开发完成率；实施后剩余工作以当前实现列和实施记录为准。
 
 ## 输入、反馈与输出
 
 | ID / 特性 | 旧 Gateway 八月变更及最终行为 | Runtime 当前实现 | 需求必要性（满分 100） | 技术方案可执行性（满分 100） | 目标方案应覆盖比例 | 同步必要性、成本与归属 |
 | --- | --- | --- | --- | --- | --- | --- |
-| F01 引用/回复消息 | `369823a`；从 `payload.reply` 取来源和正文，清洗后加入 userMessage，reset 单独解析（O01） | `channel.ts` 只把当前 `payload.content` 交给执行；`contexts.ts` 不提取 reply（R01/R02）；以下目标已确定但尚未实现 | 90：引用缺失影响理解 | 90：复用 Context v3/extra.im，待验报文 | 100%：当前消息随附的有效文本引用；不预取缺失正文 | **已确定纳入计划，P1，中，未实施**。Channel 将引用来源与正文构造成文本，统一放入本轮 `extra.im`；Host 按现有 renderer 保序输出，LLM 结合当前问题理解材料 |
+| ~~F01 引用/回复消息~~ | ~~`369823a`；从 payload.reply 取来源和正文（O01）~~ | ~~已将当前有效文本引用及来源投影 extra.im/reply；7 项回归与 im-test 群报文回读通过~~ | ~~90：原改造必要性~~ | ~~100：已按统一 Context 路径落地~~ | ~~100%：随消息提供的有效文本引用；不预取缺失正文~~ | ~~已实施。引用不参与准入、mention 或控制命令；不声称全部 DM/话题均已实机验收~~ |
 | F02 富文本、合并转发等文本 | `1140335`、`6c6f10b`；富文本 plain/文本块归一、转发按来源及顺序展开，旧限制深度 5/节点 200（O02） | `acceptsImMessage` 仅接纳 type=1/2，其余类型在模型前被过滤；调度还会跳过无 text 且无 buildInputs 的消息（R03/R08） | 85：复杂正文当前被过滤 | 85：extra.im 已有，类型准入/执行触发与预算待接 | 100%：富文本/转发的文本阅读业务目标；不是当前完成率，也不等于媒体理解 | **评审中，建议补齐 P1，中**。建议 Channel 保留来源/顺序/段落并构造文本，统一放入 extra.im；独立复杂消息须能沿既有执行合同发起。支持类型、命令隔离及预算需明确，不自动采用旧数值 |
 | ~~F03 Codex 独立图片输入（既定范围）~~ | ~~`524e805`、`d391ff4`、`920cab4` 等，旧有 CC/Codex/OpenClaw 下载及原生映射；有取消、大小和路径修正~~ | ~~Codex 独立 type=2 图片已接通，单图 2 MiB、不落盘、逐跳地址校验；群/话题先过 mention（R04）~~ | ~~15：已覆盖当前要求，无明确扩展需求~~ | ~~95：既定 inputs image 路径已接通~~ | ~~100%：既定 Codex 独立图片范围；旧多引擎/多载体全集仍为部分覆盖~~ | ~~已按既定目标覆盖，建议保留。其他引擎及富文本/转发内图片属真实范围差异，非提示词拼接差异；本轮不新增扩展~~ |
-| F04 资源地址 Context 与按需取材 | `3848129`、`9599ebd` 等；旧有占位/URL 与部分引擎原生附件路径，实际行为不同（O02/O17） | extra.im 可承载资源及指引，CLI 工具环境已有；Channel 尚未接通全部文档/网盘/file 资源映射与纯资源消息执行（R01/R03/R12/R23） | 90：明确需要提供业务资源及正确获取方式 | 90：复用统一 Context 和现有工具，真实地址/命令/身份链待验 | 100%：资源引用与按需获取指引目标；不等于所有媒体原生格式理解保证 | **已确定架构方向，未实施，中**。Channel 提供真实类型/来源/地址/获取指引；Harness 内 Agent 按需调用 octo-cli 或下载/读取工具。Host/Adapter 不管理资源、不预取，首轮原生图片是独立路径 |
-| F05 已读回执 | `3dc8a2b`、`bd14d7c`、`64e0e63`；门禁/QPS 后 onAccepted 发 read receipt，失败隔离（O03） | `api/messages.ts` 有 `sendReadReceipt`，实际 Channel 接收链未调用（R01/R05） | 70：补足消息接纳反馈 | 98：复用现有 helper，局部补一次调用 | 100%：已接纳并开始处理的普通任务消息回执；不代表执行完成 | **已确认改动，方案确定，待实施；P2，小**。Channel 开始处理有效消息时异步调用现有 API；被过滤、重复或队列拒绝的消息不发，失败不阻断执行 |
+| F04 资源地址 Context 与按需取材 | `3848129`、`9599ebd` 等；旧占位/URL 与原生附件路径（O02/O17） | 附件、文档分享及正文文档/网盘地址进入 extra.im/resources，纯资源消息可执行；28 项回归和 im-test 真实附件投影通过 | 90：提供真实资源及获取方式 | 100：已按 Channel Context 路径落地；全取材矩阵是验收缺口 | 目标 100%；接线已实施，不等于所有资源已读取/理解 | **接线已实施**。Agent 按需调用工具，Host/Adapter 不预取；文档/网盘权限、过期及工具缺失矩阵尚未完整实机验证 |
+| ~~F05 已读回执~~ | ~~`3dc8a2b` 等；接纳后发回执、失败隔离（O03）~~ | ~~普通工作开始后异步调用现有 readReceipt；13 项回归及 im-test API 接受通过~~ | ~~70：原改造必要性~~ | ~~100：现有 API 接线已落地~~ | ~~100%：开始处理的普通任务消息回执~~ | ~~已实施。排队未开始、被过滤、重复或容量拒收均不发；失败不阻断执行，API 接受不等于真人已读~~ |
 | ~~F06 在线展示（旧 REST 心跳）~~ | ~~生产 slice 每 30 秒发送独立 REST 心跳（O03/O04）；OpenClaw 同时具有 WS 和 REST 心跳~~ | ~~现有 WS 心跳、上下线事件及 Web 在线展示链已覆盖目标；用户本地观察无需 REST 也可展示上下线。REST helper 未接，不影响该目标~~ | ~~5：在线展示目标已有，不需重复上报~~ | ~~98：保留现有连接及在线展示链~~ | ~~100%：IM 在线/离线展示；不代表新增 REST 循环或模型执行健康检查~~ | ~~已覆盖，无新增改动。沿用 WS/IM 在线状态，不新增 REST 定时循环；本轮源码核对与用户观察，不冒称重新完成线上验收~~ |
 | ~~F07 typing 与长任务~~ | ~~3dc8a2b；开始发送并每 4 秒续期，finally 停止（O03）~~ | ~~已接起始 typing、每 5 秒续期；卡片首次投递成功即接替，等待/终态/结束停止。用户确认当前单版本 SaaS 均支持卡片（R07/R08）~~ | ~~5：现有体验已满足，不新增工作~~ | ~~98：保留现有 typing 与卡片链~~ | ~~100%：当前 SaaS 的起始 typing 与卡片接替反馈~~ | ~~已覆盖，保留现状，无新增改动。不为不存在的客户端版本差异扩展全程 typing；投递失败按现有错误和最终文本处理，不等于协议不支持~~ |
 | ~~F08 工具进度、卡片和最终文本~~ | ~~`eb25042` 接 OpenClaw 工具流进进度卡；沿旧 sink 投影~~ | ~~canonical → RunProjector → CardSession；最终文本独立投递，诊断无答复显示待核查（R08/R09）~~ | ~~10：当前主链已覆盖~~ | ~~95：canonical 投影与最终文本已接~~ | ~~100%：真实工具进度、状态卡与独立最终文本~~ | ~~已覆盖，不复制旧 sink，中。继续使用现有事件合同；工具执行事实归 Adapter，卡片样式归 Channel，不能以卡片成功替代正文投递~~ |
-| F09 统一用户交互的 IM 呈现与响应 | 旧自定义交互卡有模型生成/授权/回调体系，默认关闭（O05）；仅可参考 v2 卡片传输格式 | CanonicalEvent 已有 interaction.requested/resolved，Codex 已映射 requestUserInput 与 elicitation，Host 已有 respondInteraction；IM 尚缺完整 questions[]/schema 呈现与结构化答案接线 | 80：已有统一交互需在 IM 正确呈现并可回答 | 90：复用既有事件和响应合同，补 Channel 呈现/回传接线 | **已确定 100%**：受支持 Provider 已发出的统一用户交互，含选项及自定义输入；不等于所有 Provider 未实现原生请求 | **已确认改动、方案确定、待实施**。直接设计 CanonicalEvent 投影的完整首版，答案回原 invocation/interaction；不是临时代码或 TODO。本轮仅文档，未实施、不标删除线 |
+| F09 统一用户交互的 IM 呈现与响应 | 旧自定义卡体系默认关闭（O05）；仅参考 v2 传输格式 | 首版已接 CanonicalEvent 题目/选项/自定义输入、审批与 JSON elicitation，回答回原 invocation；im-test 创建/收敛通过，真人按钮未验 | 80：统一交互需在 IM 呈现并回答 | 90：普通交互已落地；秘密输入缺宿主安全产品入口，不能评整项 100 | 目标 100%；首版已实施，秘密输入未覆盖，不先划掉整项 | **首版已实施**。普通 IM 不收 isSecret、不回退 /respond，提示不支持并请求停止；安全入口待决，真人回调待验，不解析模型正文或自定义 tool call |
 | ~~F10 出站 mention 与入站 AI 广播~~ | ~~`a76cdca` 增出站渲染/清理；旧入站支持 UID/ais~~ | ~~当前 final 真人 mention 按成员校验；普通回复不自动 @；UID 或纯 ais 入站，all/humans 抑制 ais 路径（R03/R11）~~ | ~~10：现有策略已明确，无新增需求~~ | ~~95：真实 mention 与 final 转换已接~~ | ~~100%：既定入站 UID/纯 ais、出站真人点名范围；旧出站 Bot/广播属于未采用的额外范围~~ | ~~用户已确认保留现状，无新增改动。维持出站 Bot/广播不开放的决定，不从正文补造入站触发~~ |
 | ~~F11 跨会话主动发送~~ | ~~`0276635`、`431fc04` 及修正；独立工具和 crossSessionSend 开关，含目标解析与话题重定向（O06）~~ | ~~已有 Bot CLI 环境与 message send，支持明确 DM/群/话题目标；用户确认当前 octo-cli 已能实际发送消息（R01/R12/R24）~~ | ~~0：当前发送能力已覆盖，无需新增 Channel 实现~~ | ~~98：复用现有 Agent tool call → octo-cli → 服务端路径~~ | ~~100%：当前有权限且明确指定的跨会话发送业务目标；当前完成度 100%~~ | ~~用户已确认现有 CLI 工具调用方案，已覆盖、无新增改动。无需 Channel 硬编码 API 或复制旧发送 broker。本轮未独立线上复测，属于验收记录边界，不记为功能缺失~~ |
 | ~~F12 本地文件、artifact、多附件~~ | ~~`22bd51c`、`4138e7a`、`cdbf27b` 等；显式发文件与框架自动 artifact 两条历史路径（O07）~~ | ~~已有 CLI 上传及文件/图片消息发送，多个文件由 Agent 工具调用完成；业务要求的自动交付由 Context instructions 约束 Agent 执行（R12/R25）~~ | ~~0：工具能力已覆盖，无需新增 Channel 中间业务~~ | ~~98：复用工具调用及 Context 指令对齐~~ | ~~100%：按任务要求交付文件和多个产物；当前目标已覆盖~~ | ~~用户已确认完成。框架自动收集、上传、投递 artifact 明确禁止，不是待实施项；工具调用不稳定通过 Context/提示词/工具说明对齐，严禁在 Channel 硬编码代执行流程~~ |
@@ -64,7 +64,7 @@ timestamp: 2026-10-16T00:00:00Z
 | F15 Provider binding 与 transcript 持久化 | `87bfa16`、`6cce3e7`；归属校验的会话映射文件与 Hermes exchange JSON 存储（O09） | 有界内存 binding、occurrence、reset；重启不承诺原 Provider 会话恢复（R14） | 0：不新增 Channel 业务持久库 | 95：推荐的有界内存方案已存在；不评价旧持久库的迁入可行性 | 0%：旧 binding/transcript/投递账本持久化明确排除；不表示当前业务方案完成率为零 | **已过项，沿用已决架构**。频道背景由 F14 取得，Provider 原生状态归 Provider；不提供跨重启精确续接或恰好一次投递，不删除现有用户文件。属于排除项，不冒充已实现旧持久化而标删除线 |
 | F16 逐会话工作目录 | `38f8cd4`、`b11a360`、`6cfe3e8`；按 Bot/会话派生持久 cwd（O10） | 一个 IM Agent 固定 workdir，任务/reset/session 不变，任务覆盖报错（R15） | 0：逐会话目录不是当前需求 | 98：推荐的固定 Agent 目录与覆盖校验已有实现 | 0%：不采用旧逐会话目录；既定固定目录目标当前已覆盖 100%，两者不混为完成率 | **已过项，保留固定目录架构**。不因 reset 切目录或删除文件，不新增目录生命周期；多会话可访问相同文件，固定目录不等于 OS 沙箱。旧方案为排除项，不冒充已实现而标删除线 |
 | ~~F17 persona、skill 导出与自动指引~~ | ~~`65fe0c4`、`505a400`、`933e42f`、`353cb93`；内置 octo-core、用户 skill 按名合并、能力派生指导、外部 CLI 导出索引（O11）~~ | ~~Bot config.context 的业务 items 经统一 renderer 进入模型输入，可承载人格、技能说明及真实资源索引；没有旧 catalog/启动导出体系（R02/R12）~~ | ~~0：指引传递已有统一载体，无新增 Channel 需求~~ | ~~95：现有配置、Context v3 与模型输入链可复用~~ | ~~100%：业务显式选择的人格文本与技能指引传递；不包含旧自动扫描/导出/强制注入，或所有技能已安装的承诺~~ | ~~已过项，按统一 Context 的业务材料传递范围已覆盖，标删除线；不因标准拼装而扣分。技能安装由宿主决定、原生加载沿 Provider 合同，Channel 不新增技能管理器；权限不能靠提示词代替~~ |
-| F18 群规则、成员和群信息背景 | 旧 memory provider 读取 GROUP.md、成员、群信息并缓存后主动注入（O08） | 规则 Context 与按需 CLI 已有，但现有规则开关与用户要求冲突，必须清理（R02/R11） | 90：删除多余规则开关是用户明确要求 | 98：复用现有读取链，移除条件、类型、校验和 schema 残留 | 100%：群规则固定加载，话题固定加载群及本话题规则；不做全量资料常驻 | **方案已确认，待实施，撤销删除线**。删除额外不必要参数与相关代码，同步检查 WeCom/ChannelGateway schema，不考虑旧开关兼容。已有读取能力不等于目标已完成；本轮仅讨论并记录计划 |
+| ~~F18 群规则、成员和群信息背景~~ | ~~旧 memory provider 读取和缓存群资料（O08）~~ | ~~已删除 group_rules 类型/schema/默认值/条件；topic_rules 原无开关，WeCom 无对应残留；28 项回归和 im-test 固定规则通过~~ | ~~90：原清理必要性~~ | ~~100：已沿原读取链落地~~ | ~~100%：群固定规则、话题固定群及本话题规则~~ | ~~已实施。404 缺失与权限/网络错误区分；全量成员/资料继续工具按需获取，不恢复常驻缓存~~ |
 
 ## 执行、生命周期与运维
 
@@ -75,15 +75,15 @@ timestamp: 2026-10-16T00:00:00Z
 | ~~F21 初始化/停止竞态与清理~~ | ~~`620b6e1`、`20c5169`、`8ddc89e`；pre-lock Worker 收不到 socket stop 时，线程 shutdown 消息补齐，防孤儿子进程（O12）~~ | ~~Extra signal 贯通初始化与任务；先 abort 再等待清理；重复 close 共用 Promise，真实失败汇总；既有专项和回归已覆盖（R16/R17/R27）~~ | ~~0：既定取消与清理目标已修复并有证据，无新增功能需求~~ | ~~95：复用 signal/onDispose 和现有资源清理路径~~ | ~~100%：合同内初始化可取消、活动任务可停止、等待清理、幂等关闭与真实失败回报~~ | ~~既定目标已覆盖，当前评审建议保留，不迁入旧 Worker shutdown/锁。此为核心卸载正确性，插件内部自行清理，宿主不接管；不承诺强杀任意不响应 signal 的第三方函数~~ |
 | ~~F22 readiness、状态与单实例锁~~ | ~~`f2934de`、`8e0b3b7` 等，以及 8 月末 host status/锁/停机预算；首次启动多 Bot 任一失败回滚（O12/O13）~~ | ~~Extra loaded 与 Bot online 分离；错误 Bot 不阻止其他 Bot；连接五态、脱敏 error；宿主管本地 Home/daemon 单实例（R06/R16/R17/R28）~~ | ~~0：既定状态分层与本地实例保护已有~~ | ~~95：现有状态查询、连接状态机及本地单实例合同~~ | ~~100%：按各自边界报告真实状态及本地实例保护；不包含跨机器 Bot 排他锁、全组回滚或模型请求成功保证~~ | ~~既定范围已覆盖，当前评审建议保留。插件报告自身状态、宿主负责本地进程；不复制逐 Bot 锁或全组回滚，不据 loaded/online 推导其他层就绪~~ |
 | ~~F23 每账号 runtimeEnv~~ | ~~`034557e`；按账号传入 Provider 环境，拒绝 Gateway 保留键和动态加载器变量（O14）~~ | ~~统一 envs 与独立工具覆盖按调用传递；OpenClaw 在 CLI daemon 启动编排中配置实例 .env（R12/R13）~~ | ~~0：用户确认保留现状，无新增字段或执行链需求~~ | ~~95：复用各 Provider 原生环境合同~~ | ~~目标/当前 100%：现有 Provider 合同下的环境传递；OpenClaw 使用实例固定环境~~ | ~~用户已确认完成、标删除线。OpenClaw Gateway 按独立 Agent 实例固定环境合理，不修改上游或增加 session.create 特殊注入；Codex/CC 等按支持能力逐轮传递。文件落盘与运行实例实际加载分别判断~~ |
-| F24 CLI 身份与 shell rc | `181a79b`、`47bdf98` 及至 `1472b1e` 的修正；外部 CLI、每 Bot store/launcher、自检、shell rc/ZDOTDIR 防污染；OpenClaw 有同机前提（O15） | 普通调用独立覆盖身份及地址；OpenClaw 有实例 dotenv 顺序覆盖，但当前候选遍历未筛选 OpenClaw Bot（R12） | 0：不引入旧体系；90：已确认的 OpenClaw 候选范围修正有必要 | 95：沿现有路径局部修正及验收 | 目标 100%；普通调用合同已具备，OpenClaw 新确认候选筛选尚有缺口，不先标全部完成 | **方案已确认；仅记录待改，不实施**。Extra 配置覆盖进程默认身份；同一 OpenClaw 实例由配置顺序最后一个合法 OpenClaw Bot 决定身份，用户可排序选择。修正候选筛选，不复制旧 store/launcher/rc/ZDOTDIR 体系 |
+| ~~F24 CLI 身份与 shell rc~~ | ~~旧多 store/launcher/rc 及实例身份体系（O15）~~ | ~~普通逐 Run 独立覆盖；OpenClaw 只取最后一个合法、启用、显式 OpenClaw item；4 项工具环境回归通过~~ | ~~0：不引入旧体系；90：原候选修正必要性~~ | ~~100：筛选修正已落地~~ | ~~100%：确认的身份选择合同；不表示用户运行中实例已重启加载~~ | ~~已实施。后续 Codex/默认 item 不覆盖，无 OpenClaw 候选不写文件；临时目录验证，不改用户 OpenClaw 实例~~ |
 | ~~F25 已知 Bot 过滤、防互触发~~ | ~~`29e310c`、`620b6e1`、`89a41f5`；配置账号名单用于 isBot，增删热推，入站丢 Bot（O01/O12）~~ | ~~拒绝自身；发送者默认为 owner 或显式名单，群/话题另有范围及真实 @ 校验（R03）~~ | ~~0：用户确认尊重明确授权，不新增分类拒绝~~ | ~~95：保留现有准入合同~~ | ~~目标/当前 100%：真实授权及自身防环；旧已知 Bot 一律拒绝覆盖 0%~~ | ~~用户已确认完成、标删除线。允许名单可以授权其他 Bot，不额外拒绝；群聊双方持续互相 @ 的循环属于协作模型边界，不在 Channel 新增自动防环流程，不承诺已授权双方永不循环~~ |
-| F26 Bot 工作并发、单 session 排队与繁忙反馈 | `fabb31e` 及修正；队列/整轮上限、串行屏障归还、冷却的带外提示（O16） | 当前仍为每 Bot 运行中加排队合计 64 条、同会话串行，尚未拆分工作并发与单 session 排队；繁忙卡片/文本未接（R08） | 85：拆分资源保护与会话等待长度，用户已明确方向 | 90：需调整本 Bot 调度计数、队列准入及两类统一错误投影，不只是换文案 | 目标 100%：Bot 最大工作并发数 64；单 session 最大排队任务数 4（不含工作中 1）；执行期限及两类繁忙反馈。新增目标待实施 | **需修改，不标删除线**。两种繁忙同文案、不同公开错误码；现有 Bot 总 pending>=64 不是新目标。每 session 同时最多工作 1 条，另可排队 4 条；Bot 工作并发达到 64 或对应 session 队列满时拒收并尝试卡片＋文本，不新增 QPS 桶 |
-| F27 入站令牌桶、429 与重试 | `296c641` 补 REST 429；旧入站 QPS 桶实际按 Bot/accountId，超速拒收（O16） | 普通回复走 WS、卡片走 REST；WS 明确拒绝仍被投递层归为 unknown 并重试，尚无本项确认的 1/5/10 秒重试及独立未知结果卡片（R01/R06/R18） | 0：不新增 QPS 桶；80：修正分类、重试与未知结果反馈 | 90：复用现有发送/投递/REST 卡片；ACK 原因及服务端去重仍需核对 | 目标 100%；当前分类、重试及反馈有缺口，不标完成或删除线；旧 QPS 桶覆盖 0% | **方案已确认，待实施**。首次发送后最多额外重试 3 次，间隔 1/5/10 秒；最终未知时 REST 独立错误卡片及专用公开码；不重跑 Agent 或工具 |
+| ~~F26 Bot 工作并发、单 session 排队与繁忙反馈~~ | ~~旧队列、整轮上限及带外提示（O16）~~ | ~~已拆分 Bot 工作 64、每 session 另排队 4；25 项回归通过，im-test 第六条消息拒收卡片/文本通过~~ | ~~85：原拆分必要性~~ | ~~100：计数、原子接续与统一错误投影已落地~~ | ~~100%：确认的 Gateway 两层容量及反馈；不扩展 WeCom 合同~~ | ~~已实施。OH-RUN-2003/2004 区分并发满与队列满，同文案；同群跨用户共享 session 队列，两项都满优先队列满，不自动重提~~ |
+| F27 入站令牌桶、429 与重试 | `296c641` 补 REST 429；旧 Bot 级 QPS 桶（O16） | 已修正 failed/unknown、初次加三次 WS 发送、迟到 ACK 抑制重试和 REST 未知卡片；im-test ACK 延迟/丢弃/WS 断开通知通过 | 0：不新增 QPS 桶；80：原投递修正必要性 | 100：有界投递方案已落地；恰好一次不在目标内 | 目标 100%；确认改造已实施，旧 QPS 桶 0% | **已实施，有已知副作用**。同一 clientMsgNo 在 im-test 实际显示四份原消息；保留用户确认的有限重发，不能承诺无重复。最终未知 OH-RUN-2005，不重跑 Agent/工具 |
 | F28 DSH 独立 Adapter | `d076d06` 等；旧仓有 SDK 启动 dsh 子进程的接线，不等于独立嵌入式内核或已上线证明 | 当前无 DSH Adapter；用户不认可直接沿用旧接入，要求整体评估（R19） | 当前实施 0；后续专项明确为重要 P1 TODO，替代原“无需求”的判断 | 原初评 50，仅作历史参考；整体方案未评估、未批准，专项须重评 | 本轮 0%；未来独立 Adapter 的具体功能范围由专项评估，不预先承诺旧功能全集 | **遗留 P1，当前不做，不标删除线**。P0 是整体架构与内核稳定性；稳定后开展[DSH 独立 Adapter 整体评估](../dsh-adapter-assessment/brief.md)，原生入口和方案待定，Channel 不加特殊执行流程 |
 | ~~F29 接入、工具身份与 AgentRun 权限边界~~ | ~~`5f95f4b`、`cc70e7c`、`675d25e` 等；旧 minimal/host、trustedInput/groupPolicy 和业务 broker 集中装配多种责任~~ | ~~Extra 做准入；Channel 为 AgentRun 提供 Bot 工具身份；统一 approval_policy 管执行权限，Adapter 原生映射、工具及服务端检查业务权限（R03/R12/R13/R20）~~ | ~~0：保留现有职责，不新增旧分档及代理~~ | ~~95：现有分层路径具备，Provider 原生差异沿各自合同核对~~ | ~~100%：本项三类权限职责目标已覆盖；旧耦合控制体系覆盖 0%、明确排除~~ | ~~用户确认保留现状、架构评审已过项。此前把不同责任混在一个缺口内的口径撤销；不新增 Channel 权限管理中间层。F24 身份筛选修正仍单独待实施，不以此声称全部 Provider 无缺陷~~ |
 | ~~F30 宿主配置与凭据保护责任~~ | ~~`dbf359a`、`6d6fdc6`、`5519de2`、`1e4d029`；旧受管根、目录认领及文件保护~~ | ~~默认 CLI 是 SDK 的 headless 宿主，管理自己的 JSON 文件；Desktop HostApp 自行管理凭据并构造 Extra config；SDK/Extra 校验和消费值~~ | ~~0：不新增通用凭据存储层~~ | ~~100：保留已具备的值对象与宿主分工，无本项新增改造~~ | ~~当前/目标职责覆盖 100%；旧 gwHome 布局、claim 与迁移 0%，明确排除~~ | ~~**用户确认、已过项**。宿主配置/Token 存储保护不属于通用 Runtime 缺口；撤销此前 70% 混合口径及以宿主存储核查项扣至 90 分的评价。框架自身安全合同仍有效~~ |
 | F31 统一内核与 Extra 结构化日志 | `d11b396`；旧 launcher 为独立 Bot 进程写 slice.log | 已接入 SDK/Runtime CLI 的可选日志、ExtraContext.log、内核生命周期及双渠道诊断；28 项针对性检查与 im-test 真实 Codex 调用通过，见实施记录 | 80：统一责任、关联身份和可选装配 | 100：已确认核心方案已实施，文件策略最后定稿独立待决 | 目标 100%：内核生命周期及 Extra 业务日志；不复制旧 slice.log | **核心改造已实施，文件策略待决**。默认关闭，显式目录，元数据白名单，专用有界写入线程；暂沿用原 UTC 小时桶，未决定固定活动文件名与最近三个文件口径，不标全部完成 |
-| F32 CI、runbook 与生命周期测试 | `5d62bc0` 修黑盒测试前 build；8 月末补 known-bot 删除与 pre-lock 回归 | 当前 CI 先构建再测试；已有 Extra/SDK/双渠道清理及连接状态回归，部署/接入文档与验证记录（R22） | 65：前面确认的改造需要有效验收，不是新增平台需求 | 100：沿现有构建、回归、打包和实机验证路径执行，无已识别的方案阻碍；撤销无具体缺口依据的 95 分 | 目标建议 100%：确认改动的必要回归、真实验证及操作说明；不复制旧 CI 或旧生命周期模型 | **当前评审项，建议复用现有工程体系**。既有基础已具备，新改动的测试和验收随各项实施完成；不以未实施/未实测扣方案可执行性，也不标整项完成 |
+| F32 CI、runbook 与生命周期测试 | 旧黑盒测试前 build 及生命周期回归 | 已完成全包构建、Node 1035 项通过/8 项跳过、WebUI 35 项通过、lint 与类型检查；真实 IM 证据逐项记录 | 65：必要交付约束，不新增平台 | 100：复用现有工程体系 | 目标 100%；自动化通过，必要未验范围仍单列，不冒称全部验收 | **已执行交付检查，保留验收缺口**。F04 完整取材矩阵、F09 真人按钮、F21 WeCom 线上场景未验；详见实施记录，未运行远端 CI 或创建 MR |
 | ~~F33 WS 断线恢复~~ | ~~8 月 readiness/停止修正避免把曾连接当当前仍连接；旧重连可配置~~ | ~~现有工作树已区分首次失败与曾上线后恢复，5/10/20/30 秒、成功清错、终端错误停止（R06）~~ | ~~10：已有连接专项实现~~ | ~~95：现有五态与恢复路径已接~~ | ~~100%：目标合同内断线恢复、终端拒绝、停止；不复制旧重连默认值~~ | ~~已覆盖，不再开第二套重连。真实合盖等未验场景沿现有任务继续；连接恢复不等于补发旧消息或恢复旧 Run~~ |
 
 ## 逐项 Review：F01 引用/回复材料
@@ -235,8 +235,8 @@ Channel 根据本条报文提供的来源字段构造“引用来源”，保留
 | 需求必要性 | 5/100：评价新增工作。已有起始 typing、续期与卡片进度反馈，当前体验满足目标，无需复制旧 Gateway 的全程 typing |
 | 技术方案可执行性 | 98/100：保留现有 Channel 租约与卡片接线，无需修改 Context、Adapter 或任务时限 |
 | 目标应覆盖比例 | 100% 的“开始处理先显示 typing，卡片投递成功后由卡片接替”反馈目标，当前源码已接通此路径，标记删除线。全程持续 typing 不属于当前目标，原 70% 无明确分母，撤回 |
-| 实际启动与续期 | [beginPresentation](/Users/lvsijia/codex.mlamp.cn/dmwork/octo-harness-ecosystem/octo-runtime/packages/octo-runtime-extra-channel-gateway/src/transport/channel.ts:175) 在处理阶段获取租约，typing=false 可关闭；[TypingController](/Users/lvsijia/codex.mlamp.cn/dmwork/octo-harness-ecosystem/octo-runtime/packages/octo-runtime-extra-channel-gateway/src/presentation/typing.ts:13) 立即发送并默认每 5 秒续期，按地址共享、按 Run 释放，避免同地址多租约互相误停 |
-| 实际交接 | [CardSession](/Users/lvsijia/codex.mlamp.cn/dmwork/octo-harness-ecosystem/octo-runtime/packages/octo-runtime-extra-channel-gateway/src/transport/card-session.ts:32) 在等待输入/审批或终态停止 typing；首次卡片投递返回 delivered 后也停止，由进度卡承载后续状态，并非必须等任务结束才停。投递成功不保证每个客户端实际渲染了卡片 |
+| 实际启动与续期 | [beginPresentation](../../../packages/octo-runtime-extra-channel-gateway/src/transport/channel.ts) 在处理阶段获取租约，typing=false 可关闭；[TypingController](../../../packages/octo-runtime-extra-channel-gateway/src/presentation/typing.ts) 立即发送并默认每 5 秒续期，按地址共享、按 Run 释放，避免同地址多租约互相误停 |
+| 实际交接 | [CardSession](../../../packages/octo-runtime-extra-channel-gateway/src/transport/card-session.ts) 在等待输入/审批或终态停止 typing；首次卡片投递返回 delivered 后也停止，由进度卡承载后续状态，并非必须等任务结束才停。投递成功不保证每个客户端实际渲染了卡片 |
 | 10 分钟的含义 | 默认 maxLifetimeMs=600000 是单个 typing 租约寿命，不是任务总时限；它可能因卡片或等待状态更早停止。没有卡片接替且任务仍运行时，超过该期限不再续发 typing。后续卡片更新或终态回复仍沿既有路径，不以任务允许一天推导 typing 必须显示一天 |
 | 失败与清理 | API 失败由租约发送链记录，不阻断执行；单地址发送不重叠。结束、取消收尾与关闭连接回收计时器及在途请求。等待后继续执行或卡片交接后，现有 CardSession 不重新获取 typing 租约，不能声称已经实现自动恢复 typing |
 | 结论与异常边界 | 保留现有起始 typing 与进度卡交接，无新增改动，不增加全天 typing 或无卡片客户端兼容需求。卡片投递可能失败与客户端不支持协议是两回事；失败沿现有诊断、投递和最终文本链处理，不据此扩大本项范围，也不声称投递永不失败 |
@@ -252,10 +252,10 @@ Channel 根据本条报文提供的来源字段构造“引用来源”，保留
 | 需求必要性 | 80/100：统一协议已承载问题/选项/表单信息，IM 应正确呈现并提交所需答案，避免已有交互在入口丢失信息或无法回答 |
 | 技术方案可执行性 | 90/100：复用现有 CanonicalEvent、Host 响应入口、Provider 原生映射与 Channel 卡片能力，主要是呈现和答案接线；字段支持、可信回调和实际 Provider 闭环仍需核实 |
 | 目标应覆盖比例 | 用户已确定 100% 覆盖受支持 Provider 已发出的统一用户交互，按各交互实际字段及约束呈现和回传，支持选项与自定义输入；不保证所有 Provider 均会产生这些事件，也不引入任意主动业务表单。100% 是目标范围，不是当前完成率，暂不标删除线 |
-| 统一合同已存在 | [InteractionRequestedPayload](/Users/lvsijia/codex.mlamp.cn/dmwork/octo-harness-ecosystem/octo-runtime/packages/octo-runtime-protocol/src/generated/protocol-types.ts:2338) 已定义 approval/question/elicitation、interactionId、executionInstanceId、expiresAt 与 request；对应 interaction.resolved 和 Host.respondInteraction 已存在，不需要新增业务卡片执行协议 |
-| Codex 原生映射已存在 | [Codex 映射](/Users/lvsijia/codex.mlamp.cn/dmwork/octo-harness-ecosystem/octo-runtime/packages/octo-runtime-adapter-codex/src/app-server.ts:890) 把 item/tool/requestUserInput 映射为 question，投影 questions[] 的题目/选项等；elicitation 投影 requestedSchema。回复转换回原 Provider 请求，不新开一轮。其他 Adapter 的实际支持分别核对，不从通用类型推导全部支持 |
+| 统一合同已存在 | [InteractionRequestedPayload](../../../packages/octo-runtime-protocol/src/generated/protocol-types.ts) 已定义 approval/question/elicitation、interactionId、executionInstanceId、expiresAt 与 request；对应 interaction.resolved 和 Host.respondInteraction 已存在，不需要新增业务卡片执行协议 |
+| Codex 原生映射已存在 | [Codex 映射](../../../packages/octo-runtime-adapter-codex/src/app-server.ts) 把 item/tool/requestUserInput 映射为 question，投影 questions[] 的题目/选项等；elicitation 投影 requestedSchema。回复转换回原 Provider 请求，不新开一轮。其他 Adapter 的实际支持分别核对，不从通用类型推导全部支持 |
 | 旧方案实际状态 | [工具入口](/Users/lvsijia/codex.mlamp.cn/dmwork/octo-agent-gateway/src/octo/octo-tools.ts:363) 支持动作按钮及 text/number/toggle/choice 字段；默认不暴露，只有环境开关启用且注入可信服务才可发送。[main.ts](/Users/lvsijia/codex.mlamp.cn/dmwork/octo-agent-gateway/src/main.ts:184) 也受开关与工厂注入约束，不能将旧代码存在当默认可用证据 |
-| 当前 IM 的真实缺口 | [IM 展示链](/Users/lvsijia/codex.mlamp.cn/dmwork/octo-harness-ecosystem/octo-runtime/packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts:615) 只取 operation.summary/question/message，未呈现 Codex questions[] 及 elicitation schema；回调仅接停止/重试。question 的 /respond 将答案作为字符串，Codex questionAnswers 则要求答案对象，现路径不匹配；不能把已有审批文本命令回归视为 ask-user 已闭环 |
+| 当前 IM 的真实缺口 | [IM 展示链](../../../packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts) 只取 operation.summary/question/message，未呈现 Codex questions[] 及 elicitation schema；回调仅接停止/重试。question 的 /respond 将答案作为字符串，Codex questionAnswers 则要求答案对象，现路径不匹配；不能把已有审批文本命令回归视为 ask-user 已闭环 |
 | 与 F07 的关系 | 当前单版本 SaaS 支持卡片协议，说明客户端可以展示卡片；F09 缺的是业务生成与回调处理链，不是旧客户端兼容或 typing。不能从 F07 已覆盖推导 F09 已覆盖 |
 | 已确定目标路径 | AskUser → interaction.requested → Channel 按实际问题/选项/schema 投影交互卡片，支持选项与自定义输入 → 用户回答 → 校验服务端操作人、原消息/会话、invocation/interaction 归属及有效期 → 以正确结构调用 Host.respondInteraction → Adapter 回应原请求，原模型继续同一次执行 → interaction.resolved 更新卡片。等待中的问答答案走独立交互通道，不通过新 Context/聊天 Event 替代原请求响应 |
 | 卡片协议参考 | 可参考旧 Gateway 的 v2 卡片发送、编辑及回调格式，第一版交互细节由后续实施按本设计确定；旧卡片业务生成、会话运行及解析体系不是目标基线 |
@@ -656,7 +656,7 @@ F18 结论已记录，F19/F20 已获用户确认，F21 的评分维度与后续�
 | F26-E06 Bot 工作满 | Bot M 的 64 个 session 各有 1 条工作任务；空闲 S65 收到新任务 | 因 W_bot=64 拒收，卡片显示 Bot 工作并发已满、OH-RUN-2003；S65 队列原本为空也不能据此绕过 Bot 并发检查 |
 | F26-E07 已有群也遇到 Bot 满 | W_bot=64；S1 仍有工作任务，但 Q_S1=2；S1 又收到新普通消息 | 按本次准入建议拒收，报告 Bot 工作并发已满，而不是会话排队已满；已有两条排队任务不清退 |
 | F26-E08 两种都满 | W_bot=64，Q_S1=4；S1 又收到新任务 | 两项条件均成立，固定优先报告单 session 排队已满。主文案与 E06 相同，但公开码不同 |
-| F26-E09 释放并接续 | Bot 工作槽位可用；S1 的 T1 工作、T2/T3/T4/T5 排队；T1 结束并完成必要清理 | T1 释放槽位，T2 随后取得槽位开始；稳定状态仍为 W_S1=1，Q_S1 从 4 变 3。若其他 session 先取得最后槽位，T2 继续保留在队列，不能超出 Bot 64 |
+| F26-E09 释放并接续 | S1 的 T1 工作、T2/T3/T4/T5 排队；T1 结束并完成必要清理 | 已实现原子接续：本 session 有排队时将原槽位直接交给 T2，不先暴露给其他 session；稳定状态仍为 W_S1=1，Q_S1 从 4 变 3。队列清空才释放 Bot 工作槽位，避免已接纳任务因竞争丢失工作资格 |
 | F26-E10 工具等待不释放 | S1 的 T1 在等工具结果或用户交互，T2 已排队 | T1 仍占 1 个工作槽位，T2 不得启动；不能把“当前没输出”误判为 session 空闲 |
 | F26-E11 结束不自动重提 | T6 因会话队列满被拒；稍后 T1 结束并空出队列位置 | T6 不会自动执行。用户稍后发送一条新的普通消息，才按当时状态重新准入；不因重投原 WS 帧而重复创建任务 |
 | F26-E12 不限制历史 session 数 | Bot M 已关联 100 个逻辑 session，但当前只有 S1/S2 工作，均无排队 | W_bot=2。从这两项容量规则看未超限；不因曾有关联 100 个 session 而拒收。现有缓存容量、TTL 与其他宿主约束另行生效，不承诺无限保留会话 |
@@ -909,7 +909,7 @@ SDK/Extra 仍负责输入约束校验，并按接入协议携带凭据完成实�
 
 ## 逐项 Review：F32 工程验证与操作说明
 
-状态：当前最后一项，建议方案待用户评审。本项是前面改造的验证与交接要求，不是新增 Channel 业务功能，也不另建测试平台。本项后没有未过的评估项；这不表示前面待实施、待验收的工作已经完成，F33 已覆盖并跳过。
+状态：已按最新实施授权执行，本项为验证与交接约束，不另建测试平台。当前全包构建、Node 1035 项通过/8 项跳过、WebUI 35 项通过、代码 lint 和类型检查通过；真实 im-test 证据及未验范围见[实施记录](implementation.md)。本项不能替未验的产品入口作全部验收承诺。下表及后续建议保留原评审逻辑，以此状态段为当前结论。
 
 通俗解释：功能改好后，要证明“按约定工作、不会影响已有能力、接入方知道怎么用”。CI 是自动运行构建和测试的流水线；runbook 是安装、配置、启停、升级及排障等操作说明。
 
