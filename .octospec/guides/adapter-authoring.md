@@ -15,6 +15,8 @@ implementation_baseline: df63c8f
 
 一个 adapter 提供静态元数据 `metadata` 和 `invoke`。元数据包含 `type`、`agentSources` 和 `executionFeatures`；`defineAdapter` 在未声明输出模式时补 canonical-only 的 `protocolSupport`。`probe` 是可选项；省略时 Host 标记为 `unchecked`，不代表 Provider 已确认可用。
 
+以上及下例描述当前尚未清理的 SDK 接口。2026-10-16 已确定删除 `executionFeatures` 自建能力声明机制，功能支持范围归宿主管理；不得按此旧字段继续扩展标签或设计替代能力表。Adapter 按明确执行合同适配转发，必要的校验与原生握手仍在执行边界处理。规则和实施状态见 [Adapter 责任边界](../rules/adapter-metadata.md#宿主掌握支持范围adapter-适配转发)。
+
 ```js
 import { defineAdapter, probeCommand } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 
@@ -47,14 +49,14 @@ CLI 默认项在 [`apps/cli/src/default_adapters.json`](../../apps/cli/src/defau
 6. 必须响应 `request.signal`，把取消请求传递给直接启动的 provider 子进程并完成资源清理。当前 SDK 只负责向直接子进程请求终止，不保证进程一定退出；生产 adapter 必须补齐超时后的 `SIGKILL` 升级，以及整个进程组或后代进程树的回收。
 7. 控制指令应优先通过 Provider 原生的 system、developer 或配置通道传递。Provider 没有独立载体时，必须明确记录所用载体；例如 Antigravity 将控制指令和用户输入放入同一 user 消息的不同 text block，不得宣称为原生 system role。OpenClaw 使用原生额外系统提示载体。
 8. Token 和其他敏感值不得出现在命令行参数、prompt、事件 payload 或工作目录中。
-9. 会话、审批等真实执行特性放到 `executionFeatures`，输出模式放到 `protocolSupport`。业务标签不进入 Adapter 元数据，不定义自有 capabilities 或 AbilityProvider 注册体系。只能声明已实现的支持范围，并单独记录真实 Provider 验证范围。
+9. 会话、审批、图片等行为在 Adapter 中按具体合同实现，由宿主管理功能支持范围；不得新增 `executionFeatures` 标签、自有 capabilities、能力字段表或 AbilityProvider 注册体系。当前输出模式仍使用 `protocolSupport`，其简化不在本次文档决定中实施。单独记录真实 Provider 验证范围，不将静态声明当作执行证据。
 
 上例演示 canonical 事件生成；调用 Host 时显式指定 `{ protocolMode: "canonical" }`。需要 native 时实现 Driver 与独立控制帧，不能直接声明支持后继续只返回 canonical 事件。详情见 [模式合同](../rules/output-protocol.md)。
 
 ## Adapter 接入验收清单
 
 - 实现 `probe` 时，覆盖 provider 命令存在和不存在两种情况；不实现时，验证 Host 返回 `unchecked`。
-- Provider 支持 session 或 adapter 声明 `session.serialize` 时，原生 session ID 能正确转换为 `session.update`。
+- 实现 Provider session 传递时，原生 session ID 能正确转换为 `session.update`；验收依据为真实行为，不以 `session.serialize` 标签代替。
 - 使用固定样例覆盖文本和 provider 错误；provider 能输出分析过程、工具调用或用量统计时，再覆盖对应事件。
 - 覆盖成功退出、非零退出码、缺少终态事件、清理失败和取消调用。
 - Provider 支持恢复 session 时，校验新建 session 与恢复 session 两种命令形态。

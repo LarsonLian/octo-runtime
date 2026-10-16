@@ -17,7 +17,7 @@
 | 未知可选项与业务 extra | [Context 扩展](rules/context-extensions.md) |
 | 本轮进程环境变量 | [envs](rules/environment.md) |
 | 本轮 MCP 连接 | [MCP](rules/mcp.md) |
-| Adapter 执行元数据与实际可用性 | [Adapter 声明](rules/adapter-metadata.md) |
+| 宿主管理支持范围、Adapter 适配转发与实际可用性 | [Adapter 责任边界](rules/adapter-metadata.md) |
 | OpenClaw profile 连接与目标 | [OpenClaw](rules/openclaw.md) |
 | 四挡 effort 与诚实回执 | [思考强度](rules/reasoning.md) |
 | 插件归属、装配与资源清理 | [Extra](rules/extras.md) |
@@ -41,6 +41,8 @@
 宿主接入与部署仍由根目录 [INTEGRATION.md](../INTEGRATION.md) 和 [DEPLOYMENTS.md](../DEPLOYMENTS.md) 提供入口；包 README 保留包级用法。
 
 ## 历史与取舍
+
+- [宿主管理 Adapter 支持范围](journal/shared/2026-10-16-adapter-forwarding-ownership.md)：确定 `executionFeatures` 为待删除的自建能力声明机制；Adapter 按合同适配转发，宿主管理功能使用，必要的运行状态及原生协议校验留在执行边界。本轮仅落 OKF，代码清理尚未实施。
 
 - [IM 中途诊断后无有效回复的收尾体验](tasks/im-diagnostic-silent-completion/brief.md)：参考 PR #49，已实施首条有界诊断和 IM 待核查收尾；正常路径无新增诊断通知、网络或模型调用。全量 929 通过、8 跳过，im-test 五场景及真实桌面组件验收通过，见[实施记录](journal/shared/2026-10-16-im-diagnostic-silent-completion-delivery.md)。
 
