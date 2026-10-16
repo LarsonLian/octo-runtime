@@ -126,7 +126,9 @@ pnpm --filter @mininglamp-oss/octo-runtime-adapter-codex list
 
 集成安装和构建均从宿主根目录执行：`pnpm install` 后，使用 `pnpm --filter <模块包名>... run build` 按依赖顺序构建，无需单独命名一个宿主 Runtime 构建 script。子仓原有 workspace 文件与 lockfile 保留；集成时使用宿主 workspace 配置及 lockfile，宿主 lockfile 与 submodule 指针一起提交，CI 使用宿主 `pnpm install --frozen-lockfile`。SDK 无需纳入子仓根 CLI 包或 apps，正式发行仍携带完整生产依赖。完整步骤见 [SDK 完整原生接入指南](../../SDK_NATIVE_INTEGRATION_FULL_GUIDE.md#12-配置依赖并构建)与 [Channel Gateway 指南](../../SDK_CHANNEL_GATEWAY_GUIDE.md#2-添加-dependencies-并构建)。
 
-宿主保留预编译方案，将上述过滤构建及独立 Host 入口编译前置到原有 `dev` / `build` 命令，保留原有开发、检查与打包步骤；不要求安装时的 `prepare` 或额外脚本文件。开发启动后仅 App 源码由原服务监听，修改 Runtime 源码需重新编译。普通安装覆盖所有 workspace 项目：不需要 WebUI 时，在宿主 packages 中追加 `!octo-runtime/packages/octo-runtime-webui-extra`，避免安装其专用开发依赖；构建过滤本身不限制安装范围。
+宿主保留预编译方案，将上述过滤构建及独立 Host 入口编译前置到原有 `dev` / `build` 命令，保留原有开发、检查与打包步骤；不要求安装时的 `prepare` 或额外脚本文件。开发启动后仅 App 源码由原服务监听，修改 Runtime 源码需重新编译。普通安装覆盖所有 workspace 项目，构建过滤本身不限制安装范围。
+
+SDK 宿主按实际依赖闭包用 `!octo-runtime/packages/<目录>` 排除无关包。Gateway 示例排除 CLI 专用 `octo-runtime-cross-service`、企业微信 Extra 和 WebUI；基础 SDK 示例还排除 Gateway。启用某项 Extra 时先移除对应排除项，再声明宿主直接依赖并安装、构建。当前 daemon/Host 依赖的其他 Adapter 仍须保留，不能按是否启用判断可否排除。完整排除清单以两篇 SDK 指南的 workspace 示例为准。
 
 ## 新增 Adapter Package
 

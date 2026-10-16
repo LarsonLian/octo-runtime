@@ -39,3 +39,9 @@ pnpm 11.19.0 实测发现首次安装的原生依赖构建需要宿主显式允�
 用户最终选择保留预编译，不采用宿主直接编译 Runtime 源码的集成方式。两篇指南补充现有 `dev` / `build` 命令的合并示例：先按依赖顺序构建 Runtime，再编译宿主独立 Host 入口，最后执行宿主原有完整命令；保留原有类型检查、环境配置和打包步骤，不增加安装时 prepare 或额外脚本文件。CI 安装后执行已合并的 `pnpm build`，无需重复预编译。App 热更新沿用宿主流程，Runtime 源码变更需重新编译，不宣称自动监听 Runtime。
 
 同时明确安装范围与构建范围的区别：`packages/*` 会使普通安装包含 WebUI 的开发依赖。OctoBuddy 示例增加 `!octo-runtime/packages/octo-runtime-webui-extra`，并移除只为 WebUI 安装准备的 watcher allowBuilds；宿主自己的 allowBuilds 继续保留。隔离 workspace 实测排除后发现 23 个项目，安装移除 132 个依赖包，lockfile 不含 WebUI importer；offline frozen-lockfile 重装及五包实际 import、公共依赖链路断言通过。两篇指南的 9 个 JSON/YAML 块、dev/build 命令 Shell 语法及前后步骤顺序、OKF 链接和 diff 检查通过。未运行真实 Electron 开发服务器或 IM 收发；本轮仅修改文档。
+
+## 按 SDK 依赖闭包补齐排除项
+
+用户要求继续排除 CLI 专用及其他不需要的包。核对包内 dependencies/devDependencies/optionalDependencies 及源码引用后，当前 cross-service 仅由 CLI 引用，用于系统服务管理；Gateway 接入还不需要企业微信 Extra 和 WebUI。Gateway 指南用 `!` 排除这三个包，基础 SDK 指南再额外排除 Gateway。需要某项 Extra 时先移除对应排除项，再声明宿主直接依赖并安装、构建。daemon/Host 当前依赖的所有 Adapter 仍保留，不按是否启用或包名猜测可排除范围。
+
+文档配置与隔离宿主实际配置、宿主 lockfile importers 及从宿主直接依赖递归得到的内部依赖闭包逐项一致：Gateway 保留 20 个 Runtime 包，基础 SDK 保留 19 个 Runtime 包，均无多余 workspace 包或缺失内部依赖。Gateway 隔离宿主安装/frozen-lockfile 重装、20 包构建及五包 import 通过；基础 SDK 另建无 node_modules/dist 的源码副本，安装/frozen-lockfile 重装、19 包构建及四包 import 通过。两篇指南的 9 个 JSON/YAML 块、OKF 和 diff 检查通过。本轮仅修改文档，不改变 CLI 自身的依赖、Runtime 执行逻辑、Home 或身份，不进行线上接口验收。

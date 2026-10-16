@@ -14,7 +14,7 @@ timestamp: 2026-10-16T00:00:00Z
 
 ## 范围与合同
 
-同步 Gateway、完整 SDK 指南及工作区指南。宿主纳入 `octo-runtime/packages/*`，显式排除不需要的 `octo-runtime-webui-extra`，统一根目录安装、过滤构建和 lockfile；不纳入 CLI 根包及 apps。公共包按内部依赖自动链接，宿主直接 import 时才增加直接依赖。过滤构建不包含 WebUI；不安装其依赖须通过 workspace 排除实现。
+同步 Gateway、完整 SDK 指南及工作区指南。宿主纳入 `octo-runtime/packages/*`，Gateway 示例显式排除 CLI 专用 `cross-service`、企业微信 Extra 和 WebUI，基础 SDK 示例还排除 Gateway；保留各示例的完整内部依赖闭包。统一根目录安装、过滤构建和 lockfile，不纳入 CLI 根包及 apps。公共包按内部依赖自动链接，宿主直接 import 时才增加直接依赖。不安装无关包的依赖须通过 workspace 排除实现，不能只过滤构建或按未启用的 Adapter 推断可排除。
 
 干净安装发现 ACP、Claude Code、CodeBuddy、Codex、OpenClaw、OpenCode、ZCode GUI 直接 import protocol，却未声明该直接依赖。修复各 Adapter manifest 并同步 Runtime lockfile，避免依赖原仓根包间接提供解析路径。不改变执行逻辑、公开协议、加载集合、安装决策或已有 Home/身份/配置。
 

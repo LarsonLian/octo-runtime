@@ -18,11 +18,14 @@ git submodule update --init --recursive
 
 ### 1.2 配置依赖并构建
 
-第一步：在宿主根目录新建或合并 `pnpm-workspace.yaml`，保留宿主已有配置，纳入 Runtime 内部包并排除本示例不需要的 WebUI：
+第一步：在宿主根目录新建或合并 `pnpm-workspace.yaml`，保留宿主已有配置，纳入 Runtime 内部包并用 `!` 排除基础 SDK 示例不需要的包：
 
 ```yaml
 packages:
   - "octo-runtime/packages/*"
+  - "!octo-runtime/packages/octo-runtime-cross-service"
+  - "!octo-runtime/packages/octo-runtime-extra-channel-gateway"
+  - "!octo-runtime/packages/octo-runtime-extra-channel-wecom"
   - "!octo-runtime/packages/octo-runtime-webui-extra"
 
 allowBuilds:
@@ -33,7 +36,7 @@ sharedWorkspaceLockfile: true
 
 子仓原有 workspace 文件和 lockfile 保留；集成安装从宿主根目录执行，使用宿主 workspace 配置及 lockfile。SDK 不需要纳入子仓根 CLI 包或 `octo-runtime/apps/*`。
 
-普通 `pnpm install` 会安装所有 workspace 项目的依赖；上述显式排除使 WebUI 及其专用开发依赖不进入安装范围。需要 WebUI 的宿主再移除该排除项，并按其依赖合并 allowBuilds。
+普通 `pnpm install` 会安装所有 workspace 项目的依赖；上述排除使 CLI 专用的系统服务管理包 `cross-service`，以及基础示例不使用的 Octo IM、企业微信、WebUI Extra 及其专用依赖不进入安装范围。需要某项 Extra 时先移除对应排除项，再声明宿主直接依赖、安装并构建，按其依赖合并 allowBuilds。当前 daemon/Host 仍依赖其他 Adapter，不能仅因本次只注册 Codex/OpenClaw 就排除它们。
 
 第二步：在宿主根目录的 `package.json` 添加 dependencies，统一使用 `workspace:*`。只需 Codex + OpenClaw 时，合并以下内容：
 
@@ -69,7 +72,7 @@ pnpm --filter @mininglamp-oss/octo-runtime-daemon... run build
 | 上述 4 项 | 宿主直接使用，列入宿主 `dependencies`，值为 `workspace:*` |
 | `octo-runtime-protocol`、`octo-runtime-core`、`octo-runtime-adapter-sdk` | 全部纳入宿主 workspace，按包内声明自动链接和构建；宿主直接 import 时再添加 `workspace:*` 直接依赖 |
 | 其他 Adapter 及第三方库 | 按现有包依赖传递安装；只注册 Codex/OpenClaw 不会裁剪这部分依赖 |
-| `octo-runtime-extra-channel-gateway` | 已纳入 workspace；需要 Octo IM 时添加宿主直接依赖并构建，按 [Channel Gateway 指南](SDK_CHANNEL_GATEWAY_GUIDE.md)操作 |
+| `octo-runtime-extra-channel-gateway` | 基础示例已排除；需要 Octo IM 时移除对应排除项、添加宿主直接依赖并构建，按 [Channel Gateway 指南](SDK_CHANNEL_GATEWAY_GUIDE.md)操作 |
 
 正式包仍须携带完整生产依赖，不能只复制这 4 个目录，见 1.6 节。宿主不依赖子仓根 CLI 包，也不执行 CLI 的安装或启动命令。
 
@@ -258,7 +261,7 @@ export async function setOpenClawConnection(url: string, token: string) {
 
 ### 2.2 加载和重载 Extra
 
-在宿主根目录 `package.json` 的 `dependencies` 中以 `workspace:*` 加入所需模块，再从宿主根目录执行 `pnpm install` 和 `pnpm --filter <模块包名>... run build`。Octo IM 使用 `@mininglamp-oss/octo-runtime-extra-channel-gateway`，完整依赖、文件格式及可直接使用的重载函数见 [Channel Gateway 指南](SDK_CHANNEL_GATEWAY_GUIDE.md#2-添加-dependencies-并构建)。
+先在宿主 `pnpm-workspace.yaml` 中移除所需 Extra 的排除项，在宿主根目录 `package.json` 的 `dependencies` 中以 `workspace:*` 加入该模块，再从宿主根目录执行 `pnpm install` 和 `pnpm --filter <模块包名>... run build`。Octo IM 使用 `@mininglamp-oss/octo-runtime-extra-channel-gateway`，完整依赖、文件格式及可直接使用的重载函数见 [Channel Gateway 指南](SDK_CHANNEL_GATEWAY_GUIDE.md#2-添加-dependencies-并构建)。
 
 通用装配代码如下；先完成 `startOcto()`，再调用。保存由宿主自己的文件、SQLite 或配置平台完成。
 

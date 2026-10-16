@@ -18,11 +18,13 @@ git submodule update --init --recursive
 
 ## 1. 配置 pnpm-workspace.yaml
 
-在宿主根目录新建或合并 `pnpm-workspace.yaml`，保留宿主已有的 packages、allowBuilds 等配置，纳入 Runtime 内部包并显式排除 OctoBuddy 不需要的 WebUI：
+在宿主根目录新建或合并 `pnpm-workspace.yaml`，保留宿主已有的 packages、allowBuilds 等配置，纳入 Runtime 内部包并用 `!` 排除当前 SDK 接入不需要的包：
 
 ```yaml
 packages:
   - "octo-runtime/packages/*"
+  - "!octo-runtime/packages/octo-runtime-cross-service"
+  - "!octo-runtime/packages/octo-runtime-extra-channel-wecom"
   - "!octo-runtime/packages/octo-runtime-webui-extra"
 
 allowBuilds:
@@ -31,7 +33,15 @@ allowBuilds:
 sharedWorkspaceLockfile: true
 ```
 
-该配置保留 `adapter-sdk`、`protocol`、`core`、所有 Adapter 及其他 Extra。普通 `pnpm install` 会安装所有 workspace 项目的依赖，仅不在宿主 dependencies 声明 WebUI 不能阻止其安装；上面的排除项使 WebUI 不进入宿主 workspace，也不安装它专用的开发依赖。需要 WebUI 的宿主再移除该排除项，并按其依赖合并 allowBuilds。
+该配置保留 Gateway、`adapter-sdk`、`protocol`、`core`、daemon/Host 及其 Adapter 依赖，排除以下三个不在本示例依赖闭包内的包：
+
+| 排除包 | 本示例不需要的用途 |
+| --- | --- |
+| `octo-runtime-cross-service` | CLI 的系统服务安装、自启等管理能力；SDK 启动不引用它 |
+| `octo-runtime-extra-channel-wecom` | 企业微信接入，本示例只接 Octo IM |
+| `octo-runtime-webui-extra` | 本地 WebUI，本示例使用宿主自己的界面 |
+
+普通 `pnpm install` 会安装所有 workspace 项目的依赖，仅不在宿主 dependencies 声明某包不能阻止其安装。排除项使这些包及其专用依赖不进入安装范围；宿主需要某项扩展时，再移除对应排除项、声明其直接依赖并合并所需 allowBuilds。排除依据是实际依赖关系，不能仅按包名或未启用的功能推断；当前 daemon/Host 仍依赖其他 Adapter，必须保留它们。
 
 SDK 接入不需要把子仓根 CLI 包或 `octo-runtime/apps/*` 加入宿主 workspace。子仓原有 workspace 文件和 lockfile 保留，集成安装统一从宿主根目录执行，使用宿主 workspace 配置及 lockfile。
 
@@ -83,7 +93,7 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
 
 将示例中的 `electron-vite dev` / `electron-vite build` 换成宿主原有的完整命令，保留已有类型检查、环境配置和打包步骤；若原流程已编译 `tsconfig.octo.json`，无需重复该步骤。完成第 4 节的文件后，照常执行 `pnpm dev` 或 `pnpm build`，预编译失败时不会继续启动或构建 App。无需配置安装时的 `prepare`，也无需额外的 Runtime 构建脚本文件。
 
-启动开发前预编译一次 Runtime，随后由原有 App 开发服务处理 App 源码变化；开发期间修改 Runtime 源码时需重新执行 `pnpm dev`，不会自动监听 Runtime 源码重新编译。过滤构建不包含 WebUI，但构建过滤不能代替第 1 节的安装范围排除。
+启动开发前预编译一次 Runtime，随后由原有 App 开发服务处理 App 源码变化；开发期间修改 Runtime 源码时需重新执行 `pnpm dev`，不会自动监听 Runtime 源码重新编译。过滤构建不包含上述三个排除包，但构建过滤不能代替第 1 节的安装范围排除。
 
 将宿主生成的 `pnpm-lock.yaml` 随宿主代码及 submodule 指针一起提交。后续机器或 CI 先检出 submodule，再在宿主根目录执行 `pnpm install --frozen-lockfile` 和已合并预编译的 `pnpm build`，无需再单独执行过滤构建；更新 submodule 后重新安装、构建，并提交宿主 lockfile 的实际变化。
 
