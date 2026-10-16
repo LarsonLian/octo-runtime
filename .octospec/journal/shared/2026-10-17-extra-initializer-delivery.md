@@ -31,7 +31,7 @@ WebUI 新增显式 config.context，并与本轮 InvokeInput.contexts 按相同�
 - Runtime 全量构建、TypeScript、eslint、名称检查通过。最终 Node 共 1062 项、1053 通过、9 跳过、0 失败；WebUI Vitest 35 项通过。OKF 校验通过：175 个单元、20 条规则、1433 个本地文件链接；git diff --check 通过。
 - 强制 GC：动态加载预热 1000 次后再执行 10000 次，保留堆增量 -964312 字节，最终单独复验为 -1520944 字节；Gateway 10000 会话为 -1417608 字节，WeCom 为 40112 字节。受控压力测试未见随累计轮次增长的保留堆；不推断任意业务 IO 或生产长期稳定性。
 - 同步/异步回调、整项覆盖、异常不 invoke、超时未结束占额、取消、迟到结果、卸载失败不重载及正常 100 次 load/unload 回归通过。两个 Channel 均验证准备阶段 /stop 能取消回调。
-- 发行包离线安装验证通过：公开 /extra 严格 TypeScript、私有入口阻断、外部插件加载、三个内置 Extra 保存声明后实际加载，以及 WebUI HTTP 200。卸载包保留测试 Home；未发布 npm。
+- 发行包离线安装验证通过：公开 /extra 严格 TypeScript、私有入口阻断、外部插件加载、三个内置 Extra 保存声明后实际加载，以及 WebUI HTTP 200。首次检查只验证 loaded，安装后发现企业微信测试声明漏填 workdir，Bot 被标为配置错误；已补齐测试配置并收紧验证，三个插件内部 errors 均为空、两个停用 Bot 都为 stopped。本机全局安装产物的隔离 Home 同样通过。卸载包保留测试 Home；未发布 npm。
 - im-test 真实 Gateway 入站到 Codex 完成：动态函数调用 1 次、Provider 调用 1 次，验证控制指令为固定人设加动态指令的 text-only 文本，最终完成并返回预期标记；日志未包含正文和凭据。命令为 `node scripts/verify-im-context-live.mjs --dynamic-contexts`，QA 账号通过本地环境变量指定，未写入提交。
 - Worker `make build` 和桌面 `pnpm build:test` 通过。两处源码未为本任务修改；该构建不证明桌面已接入本次 SDK 函数组装，既有桌面进程不宣称已更新。本轮通过隔离 CLI daemon 启停验证新的运行产物。
 

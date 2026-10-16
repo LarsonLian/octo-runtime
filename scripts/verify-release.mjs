@@ -210,7 +210,7 @@ try {
   const context = { schema: "octo.context-envelope/v3", items: [{ namespace: "octo.control", name: "instructions", payload: { entries: [{ text: "我是明略科技的Octo助理" }] } }] };
   for (const [name, config] of [
     ["channel-gateway", { bots: [{ bot_id: "release-qa", api_url: "https://im-test.deepminer.com.cn/api", enabled: false, adapter: {}, context }] }],
-    ["channel-wecom", { bots: [{ bot_id: "release-qa", enabled: false, adapter: {}, context }] }],
+    ["channel-wecom", { bots: [{ bot_id: "release-qa", enabled: false, adapter: { adapter_type: "codex", workdir: home }, context }] }],
     ["webui", { port, sessionStorePath: join(home, "webui-sessions.json"), defaultProjectPath: home, context }]
   ]) {
     const save = spawn(process.execPath, [cli, "--home", home, "extraset", name], { cwd: directory, stdio: ["pipe", "ignore", "pipe"] });
@@ -266,7 +266,14 @@ try {
     if (["channel-gateway", "channel-wecom", "webui"].every(name => state.extras[name]?.phase === "loaded")) break;
     await new Promise(resolve => setTimeout(resolve, 50));
   }
-  for (const name of ["channel-gateway", "channel-wecom", "webui"]) assert.equal(state.extras[name]?.phase, "loaded", name);
+  for (const name of ["channel-gateway", "channel-wecom", "webui"]) {
+    assert.equal(state.extras[name]?.phase, "loaded", name);
+    assert.deepEqual(state.extras[name].status.errors, [], name);
+  }
+  for (const name of ["channel-gateway", "channel-wecom"]) {
+    assert.equal(state.extras[name].status.bots.length, 1, name);
+    assert.equal(state.extras[name].status.bots[0].state, "stopped", name);
+  }
   assert.equal((await fetch(`http://127.0.0.1:${port}`)).status, 200);
   let pluginResult;
   for (let attempt = 0; attempt < (live ? 1200 : 100); attempt++) {

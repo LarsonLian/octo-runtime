@@ -139,7 +139,7 @@ test(
           ]
         }
       ],
-      ["channel-wecom", { bots: [{ bot_id: "qa", enabled: false, adapter: {}, context }] }],
+      ["channel-wecom", { bots: [{ bot_id: "qa", enabled: false, adapter: { adapter_type: "codex", workdir: home }, context }] }],
       [
         "webui",
         { port, sessionStorePath: join(home, "sessions.json"), defaultProjectPath: home, context }
@@ -194,8 +194,17 @@ test(
         break;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    for (const name of ["channel-gateway", "channel-wecom", "webui"])
+    for (const name of ["channel-gateway", "channel-wecom", "webui"]) {
       assert.equal(status?.extras[name]?.phase, "loaded", name);
+      const internal = await callDaemon(join(home, "sockets/octo-runtime-daemon.sock"), {
+        method: "extra.status", params: { name }
+      });
+      assert.deepEqual(internal.errors, [], name);
+      if (name !== "webui") {
+        assert.equal(internal.bots.length, 1, name);
+        assert.equal(internal.bots[0].state, "stopped", name);
+      }
+    }
     assert.equal((await fetch(`http://127.0.0.1:${port}`)).status, 200);
   }
 );
