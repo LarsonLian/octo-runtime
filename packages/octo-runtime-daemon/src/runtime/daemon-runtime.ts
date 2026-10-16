@@ -1,4 +1,5 @@
 import { createInputInvoke, type InvokeInput, type InvokeEnvironment } from "@mininglamp-oss/octo-runtime-protocol";
+import { assertRuntimeLogging } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import { extraRegistration, type ExtraDescriptor } from "../extra-config.js";
 import { assertExtraName, type ExtraStatus, type JsonObject } from "../extras.js";
 import { subscribeDaemonRun, invokeDaemonRun } from "./run-stream.js";
@@ -75,6 +76,7 @@ export class NodeDaemonRuntime implements DaemonRuntime {
   #pollTimer?: NodeJS.Timeout;
 
   constructor(options: DaemonRuntimeOptions) {
+    assertRuntimeLogging(options.logging);
     this.#options = options;
     this.#paths = daemonHomePaths(options.home, options.platform);
     this.#snapshot = emptyHealth(this.#paths.home);

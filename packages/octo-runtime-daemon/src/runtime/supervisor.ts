@@ -1,6 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { HourlyLogWriter } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DaemonRuntimeError } from "./errors.js";
@@ -57,7 +56,7 @@ export async function startManagedDaemon(options: {
     extras: options.sdk.extras ?? [],
     socket_path: options.paths.socket,
     pid_path: options.paths.pidFile,
-    log_directory: options.account.logs,
+    ...(options.sdk.logging ? { log_directory: options.sdk.logging.directory } : {}),
     shutdown_file: options.paths.shutdownFile,
     supervisor_state: options.paths.supervisorState,
     ...(options.sdk.distribution?.manifestPath
@@ -68,39 +67,18 @@ export async function startManagedDaemon(options: {
       : {})
   };
   writeJsonAtomic(options.paths.sessionFile, session, true);
-  const output = new HourlyLogWriter(options.account.logs, "embedded-runtime");
-  let child: ChildProcess;
-  try {
-    child = spawn(nodePath, [runnerPath, "--session", options.paths.sessionFile], {
-      argv0: "octo-runtime-daemon",
-      cwd: dirname(runnerPath),
-      detached: false,
-      shell: false,
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: childEnvironment(options.paths)
-    });
-  } catch (error) {
-    output.close();
-    throw error;
-  }
-  child.stdout?.on("data", (chunk: Buffer) => output.write(chunk));
-  child.stderr?.on("data", (chunk: Buffer) => output.write(chunk));
-  let drainTimer: NodeJS.Timeout | undefined;
-  child.once("exit", () => {
-    drainTimer = setTimeout(() => {
-      child.stdout?.destroy();
-      child.stderr?.destroy();
-      output.close();
-    }, 1000);
-    drainTimer.unref();
+  const child = spawn(nodePath, [runnerPath, "--session", options.paths.sessionFile], {
+    argv0: "octo-runtime-daemon",
+    cwd: dirname(runnerPath),
+    detached: false,
+    shell: false,
+    windowsHide: true,
+    stdio: ["ignore", "ignore", "inherit"],
+    env: childEnvironment(options.paths)
   });
   child.once("close", () => {
     closedChildren.add(child);
-    if (drainTimer) clearTimeout(drainTimer);
-    output.close();
   });
-  child.once("error", () => output.close());
   const supervised: SupervisedRuntime = { child, nonce: options.nonce, paths: options.paths };
   const startupTimeout = options.sdk.startupTimeoutMs ?? 30_000;
   const deadline = Date.now() + startupTimeout;

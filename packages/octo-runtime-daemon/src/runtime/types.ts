@@ -7,6 +7,8 @@ import type {
 import type { HostedAdapterMetadata } from "@mininglamp-oss/octo-runtime-adapter-host";
 import type { ExtraDescriptor } from "../extra-config.js";
 import type { ExtraStatus, JsonObject } from "../extras.js";
+import type { RuntimeLoggingOptions } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+export type { RuntimeLoggingOptions } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 export interface DaemonModuleDescriptor {
   id: string;
   module: string;
@@ -34,6 +36,7 @@ export interface DaemonDistribution {
 }
 
 export interface DaemonRuntimeOptions {
+  logging?: RuntimeLoggingOptions;
   appId: string;
   home: string;
   distribution?: DaemonDistribution;

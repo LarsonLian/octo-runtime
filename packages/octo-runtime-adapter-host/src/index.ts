@@ -6,7 +6,11 @@ import { sanitizePublicValue } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 export { HostRunService } from "./host-run-service.js";
 export { readAdapterConfigurations } from "./runtime-configuration.js";
 export { startHostSocketServer, streamHostRun, type HostSocketRequest } from "./socket-server.js";
-export { prepareRunContext, type PreparedRunContext, type WorkspaceAssignments } from "./execution-preparation.js";
+export {
+  prepareRunContext,
+  type PreparedRunContext,
+  type WorkspaceAssignments
+} from "./execution-preparation.js";
 import type {
   AdapterInvocationContext,
   AdapterProbeOptions,
@@ -44,11 +48,8 @@ import {
 } from "@mininglamp-oss/octo-runtime-protocol";
 import { InvocationExperience } from "./experience.js";
 import { withModelContexts } from "./model-input.js";
-import { hostLog } from "./host-log.js";
-import {
-  AdapterWatchdogTimeoutError,
-  InvocationWatchdog
-} from "./watchdog.js";
+import { noopRuntimeLog, type RuntimeLog } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+import { AdapterWatchdogTimeoutError, InvocationWatchdog } from "./watchdog.js";
 
 /** Provider-neutral metadata the Host uses for registration and capability discovery. */
 export interface HostedAdapterMetadata {
@@ -95,6 +96,18 @@ interface MessageState {
  * a single terminal, and turns cancellation into an AbortSignal.
  */
 export class AdapterHost {
+  // F31：.octospec/tasks/gateway-august-feature-assessment/assessment.md
+  readonly #log: RuntimeLog;
+  constructor(options: { log?: RuntimeLog } = {}) {
+    const log = options.log ?? noopRuntimeLog;
+    this.#log = (level, event, data) => {
+      try {
+        log(level, event, data);
+      } catch {
+        /* 宿主诊断不影响执行。 */
+      }
+    };
+  }
   readonly invoke = createInputInvoke((input, environment) =>
     this.invokeFrames(input, environment)
   );
@@ -130,7 +143,9 @@ export class AdapterHost {
   }
 
   /** Report installed provider identity separately from adapter registration. */
-  async describe(configurations: Record<string, AdapterProbeOptions> = {}): Promise<HostedAdapterMetadata[]> {
+  async describe(
+    configurations: Record<string, AdapterProbeOptions> = {}
+  ): Promise<HostedAdapterMetadata[]> {
     return Promise.all(
       [...this.#adapters.values()].map(async (adapter) => {
         let probe: Record<string, unknown> = {};
@@ -236,27 +251,54 @@ export class AdapterHost {
   }
 
   /** Public invocations default to native; canonical consumers explicitly select their view. */
-  invokeFrames(
-    input: InvokeInput,
-    environment: InvokeEnvironment = {}
-  ): AsyncGenerator<HostFrame> {
-    environment.signal?.throwIfAborted();
-    assertInvokeRequestSize(input, environment);
-    const { adapterType, request, protocolMode } = prepareInvokeInput(input);
-    request.signal = environment.signal;
-    if (environment.executionEnvOverrides)
-      request.executionEnvOverrides = structuredClone(environment.executionEnvOverrides);
-    const receipt = this.#prepare(adapterType, request, { protocolMode });
-    const run = this.#runs.get(request.invocationId)!;
-    if (run.started)
-      throw protocolError(
-        "EXECUTION_IDENTITY_CONFLICT",
-        "Invocation already executed; subscribe to the retained stream"
-      );
-    run.started = true;
-    const frozenRequest = withModelContexts({ ...run.request!, signal: request.signal });
-    run.request = undefined;
-    return this.#streamInvocation(adapterType, frozenRequest, receipt);
+  invokeFrames(input: InvokeInput, environment: InvokeEnvironment = {}): AsyncGenerator<HostFrame> {
+    const received = Date.now();
+    try {
+      const parts = Array.isArray(input?.inputs) ? input.inputs : [];
+      const items = Array.isArray(input?.contexts?.items) ? input.contexts.items : [];
+      this.#log("info", "invoke.received", {
+        run_id: input?.runId,
+        invocation_id: input?.invocationId,
+        session_id: input?.sessionId,
+        input_count: parts.length,
+        text_input_count: parts.filter((part) => part?.type === "text").length,
+        image_input_count: parts.filter((part) => part?.type === "image").length,
+        context_count: items.filter(
+          (item) => !(item?.namespace === "octo.execution" && item?.name === "adapter")
+        ).length
+      });
+      environment.signal?.throwIfAborted();
+      assertInvokeRequestSize(input, environment);
+      const { adapterType, request, protocolMode } = prepareInvokeInput(input);
+      request.signal = environment.signal;
+      if (environment.executionEnvOverrides)
+        request.executionEnvOverrides = structuredClone(environment.executionEnvOverrides);
+      const receipt = this.#prepare(adapterType, request, { protocolMode });
+      const run = this.#runs.get(request.invocationId)!;
+      if (run.started)
+        throw protocolError(
+          "EXECUTION_IDENTITY_CONFLICT",
+          "Invocation already executed; subscribe to the retained stream"
+        );
+      run.started = true;
+      this.#log("info", "invoke.accepted", {
+        run_id: request.runId,
+        invocation_id: request.invocationId,
+        session_id: request.agentSessionId,
+        adapter_type: adapterType,
+        model: request.agentConfig?.model,
+        duration_ms: Date.now() - received
+      });
+      const frozenRequest = withModelContexts({ ...run.request!, signal: request.signal });
+      run.request = undefined;
+      return this.#streamInvocation(adapterType, frozenRequest, receipt);
+    } catch (error) {
+      this.#log("warn", "invoke.rejected", {
+        code: errorCode(error) ?? "INVOKE_REJECTED",
+        duration_ms: Date.now() - received
+      });
+      throw error;
+    }
   }
 
   async *#streamInvocation(
@@ -264,9 +306,15 @@ export class AdapterHost {
     request: InvokeRequest,
     receipt: HostRunReceipt
   ): AsyncGenerator<HostFrame> {
+    const started = Date.now();
+    const identity = {
+      run_id: request.runId,
+      invocation_id: request.invocationId,
+      session_id: request.agentSessionId,
+      adapter_type: adapterType
+    };
     this.#modes.set(request.invocationId, receipt.protocol_mode);
     let seq = 0;
-    let bytes = 0;
     const frame = (output: AdapterOutput): HostFrame => {
       const result: HostFrame =
         "kind" in output
@@ -283,10 +331,10 @@ export class AdapterHost {
       const size = Buffer.byteLength(JSON.stringify(result));
       if (size > 256 * 1024) throw new Error("STREAM_EVENT_TOO_LARGE");
       seq++;
-      bytes += size;
       return result;
     };
     let state: (HostControl & { type: "state" }) | undefined;
+    let failureCode: string | undefined;
     const pendingInteractions = new Set<string | number>();
     const source =
       receipt.protocol_mode === "canonical"
@@ -300,6 +348,10 @@ export class AdapterHost {
         const next = await pending;
         if (next.done) break;
         const output = next.value;
+        if (!("kind" in output) && output.type === "run.failed")
+          failureCode = output.payload.failure?.code;
+        if ("kind" in output && output.kind === "control" && output.control.type === "error")
+          failureCode = output.control.code;
         if (
           "kind" in output &&
           output.kind === "control" &&
@@ -377,16 +429,24 @@ export class AdapterHost {
       };
       yield { ...receipt, kind: "control", seq: ++seq, control: state };
     } finally {
-      this.cancel(request.invocationId, "consumer_closed");
-      await source.return(undefined);
-      this.#modes.delete(request.invocationId);
-      this.#runs.get(request.invocationId)!.at = Date.now();
-      hostLog("protocol.stream", {
-        ...receipt,
-        frameCount: seq,
-        byteCount: bytes,
-        terminalState: state?.state
-      });
+      try {
+        this.cancel(request.invocationId, "consumer_closed");
+        await source.return(undefined);
+      } finally {
+        this.#modes.delete(request.invocationId);
+        this.#runs.get(request.invocationId)!.at = Date.now();
+        if (state?.state === "failed")
+          this.#log("error", "invoke.failed", {
+            ...identity,
+            code: failureCode ?? "EXECUTION_FAILED"
+          });
+        this.#log(state?.state === "failed" ? "error" : "info", "invoke.finished", {
+          ...identity,
+          frame_count: seq,
+          status: state?.state ?? "unknown",
+          duration_ms: Date.now() - started
+        });
+      }
     }
   }
 
@@ -444,6 +504,12 @@ export class AdapterHost {
     request: InvokeRequest,
     protocolMode: "native" | "canonical" = "canonical"
   ): AsyncGenerator<AdapterOutput> {
+    this.#log("info", "invoke.started", {
+      run_id: request.runId,
+      invocation_id: request.invocationId,
+      session_id: request.agentSessionId,
+      adapter_type: adapterType
+    });
     const adapter = this.#adapters.get(adapterType);
     if (!adapter) throw new Error(`unknown adapter: ${adapterType}`);
     const controller = new AbortController();
@@ -460,26 +526,16 @@ export class AdapterHost {
     let outcome = "stopped";
     let conversions = 0;
     const identity = {
-      ...(typeof request.runMetadata?.profile === "string"
-        ? { profile: request.runMetadata.profile }
-        : {}),
-      ...(typeof request.runMetadata?.runtimeId === "string"
-        ? { runtimeId: request.runMetadata.runtimeId }
-        : {}),
-      runId: request.runId,
-      invocationId: request.invocationId,
-      agentSessionId: request.agentSessionId,
-      adapterType
+      run_id: request.runId,
+      invocation_id: request.invocationId,
+      session_id: request.agentSessionId,
+      adapter_type: adapterType
     };
-    const watchdog = new InvocationWatchdog(
-      request.runtimeLimits,
-      controller,
-      (diagnostic) =>
-        hostLog("watchdog", {
-          ...identity,
-          ...diagnostic,
-          data: diagnostic.data
-        })
+    const watchdog = new InvocationWatchdog(request.runtimeLimits, controller, (diagnostic) =>
+      this.#log("warn", "invoke.watchdog", {
+        ...identity,
+        code: diagnostic.event
+      })
     );
     let iterator: AsyncIterator<AdapterOutput> | undefined;
     let cleanup: Promise<unknown> | undefined;
@@ -734,14 +790,9 @@ export class AdapterHost {
         error.timeoutReason === "cleanup_timeout"
       ) {
         try {
-          hostLog("watchdog", {
+          this.#log("warn", "invoke.watchdog", {
             ...identity,
-            event: "timeout",
-            data: {
-              ...watchdog.snapshot(),
-              timeoutReason: error.timeoutReason,
-              timeoutMs: error.timeoutMs
-            }
+            code: "ADAPTER_CLEANUP_TIMEOUT"
           });
         } catch {
           /* best effort */
@@ -789,11 +840,11 @@ export class AdapterHost {
       }
     } finally {
       watchdog.finish(outcome);
-      hostLog("protocol.conversion", {
-        runId: request.runId,
-        invocationId: request.invocationId,
-        protocolMode,
-        conversionCount: conversions
+      this.#log("info", "invoke.conversion", {
+        run_id: request.runId,
+        invocation_id: request.invocationId,
+        protocol_mode: protocolMode,
+        conversion_count: conversions
       });
       if (!terminal && !nativeTerminal && !controller.signal.aborted)
         controller.abort("consumer closed");
@@ -818,7 +869,9 @@ export class AdapterHost {
   cancel(invocationId: string, reason = "cancelled"): boolean {
     const controller = this.#active.get(invocationId);
     if (!controller || this.#acceptedTerminals.has(invocationId)) return false;
+    this.#log("info", "invoke.cancel_requested", { invocation_id: invocationId });
     controller.abort(reason);
+    this.#log("info", "invoke.cancel_accepted", { invocation_id: invocationId });
     return true;
   }
 

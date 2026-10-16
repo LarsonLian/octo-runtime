@@ -4,6 +4,7 @@ import type { Readable, Writable } from "node:stream";
 import {
   watchLineLimit,
   readBoundedLines,
+  type RuntimeLog,
   type AdapterProbeOptions
 } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
@@ -130,6 +131,7 @@ function writer(
  * a notification event stream.
  */
 export class AdapterHostRpcServer {
+  readonly #log: RuntimeLog;
   readonly #controllers = new Map<string, AbortController>();
   readonly #host: AdapterHost;
   readonly #send: (value: RpcMessage) => void;
@@ -137,7 +139,24 @@ export class AdapterHostRpcServer {
   readonly #output: Writable;
   #closed = false;
 
-  constructor({ host, output, trace }: { host: AdapterHost; output: Writable; trace?: RpcTrace }) {
+  constructor({
+    host,
+    output,
+    trace,
+    log
+  }: {
+    host: AdapterHost;
+    output: Writable;
+    trace?: RpcTrace;
+    log?: RuntimeLog;
+  }) {
+    this.#log = (level, event, data) => {
+      try {
+        log?.(level, event, data);
+      } catch {
+        /* 诊断不能破坏协议流。 */
+      }
+    };
     this.#host = host;
     this.#output = output;
     const send = writer(output, trace, (error) => this.#close(error));
@@ -247,6 +266,11 @@ export class AdapterHostRpcServer {
       }
       if (method === "invoke" || method === "invoke.with-environment") {
         const input = params.input as InvokeInput;
+        this.#log("info", "rpc.invoke_received", {
+          invocation_id: input?.invocationId,
+          run_id: input?.runId,
+          session_id: input?.sessionId
+        });
         const invocationId = requiredString(input?.invocationId, "invocationId");
         if (this.#controllers.has(invocationId)) throw new Error("EXECUTION_IDENTITY_CONFLICT");
         const controller = new AbortController();
@@ -317,6 +341,8 @@ export class AdapterHostRpcServer {
 
   async #streamInvoke(invocationId: string, source: AsyncIterable<HostFrame>): Promise<void> {
     if (this.#closed) return;
+    const started = Date.now();
+    let failed = false;
     try {
       for await (const event of source) {
         if (this.#closed) break;
@@ -333,12 +359,18 @@ export class AdapterHostRpcServer {
         params: { invocationId }
       });
     } catch (error) {
+      failed = true;
       this.#send({
         jsonrpc: "2.0",
         method: "invoke.done",
         params: { invocationId, error: { message: errorMessage(error) } }
       });
     } finally {
+      this.#log(failed ? "error" : "info", "rpc.stream_closed", {
+        invocation_id: invocationId,
+        duration_ms: Date.now() - started,
+        status: failed || this.#closed ? "unknown" : "ended"
+      });
       this.#controllers.delete(invocationId);
     }
   }

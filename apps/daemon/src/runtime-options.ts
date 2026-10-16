@@ -18,6 +18,7 @@ export function resolveDaemonRuntimePaths(args = process.argv.slice(2), env: Nod
     homePath: home,
     pidPath: resolve(option(args, ["--pid-file"], env.OCTO_RUNTIME_PID_FILE ?? join(home, "octo-daemon.pid"))),
     consoleOutput: args.includes("--console"),
+    ...(args.includes("--logs-dir") ? {logging:{directory: resolve(option(args, ["--logs-dir"], ""))}} : {}),
     socketPath: option(args, ["--socket"], env.OCTO_RUNTIME_SOCKET ?? socket),
     // 这是 CLI 模式的 daemon 默认值；SDK 使用自己的代码装配入口，不读取此资源。
     manifestPath: resolve(option(args, ["--manifest"], env.OCTO_RUNTIME_MANIFEST ?? fileURLToPath(new URL("../../cli/dist/default_adapters.json", import.meta.url)))),
@@ -33,6 +34,7 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions & { execu
     ...(paths.homePath ? ["--home", paths.homePath] : []),
     ...(paths.pidPath ? ["--pid-file", paths.pidPath] : []),
     ...(paths.consoleOutput ? ["--console"] : []),
+    ...(paths.logging ? ["--logs-dir", paths.logging.directory] : []),
     "--socket", paths.socketPath,
     ...(paths.manifestPath ? ["--manifest", paths.manifestPath] : []),
     "--adapter-host", paths.hostEntrypoint

@@ -4,12 +4,14 @@
  */
 import type { ImBotConfig, ImExecutionPort } from "./contracts.js";
 import type { ImSessionStore } from "./application/session-store.js";
+import type { RuntimeLog } from "@mininglamp-oss/octo-runtime-daemon";
 
 export type ImCredentialSource = (
   config: ImBotConfig,
   signal: AbortSignal
 ) => Promise<string | undefined>;
 export interface ImModuleDependencies {
+  log?: RuntimeLog;
   host: ImExecutionPort;
   /** Owning Extra/manager lifetime; aborts connections, execution and delivery. */
   signal?: AbortSignal;

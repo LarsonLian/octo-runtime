@@ -3,19 +3,10 @@
 // signal/exit propagation and reports child process startup failures.
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { join } from "node:path";
-import { HourlyLogWriter } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import { daemonRuntimeArguments, resolveDaemonRuntimePaths } from "./runtime-options.js";
 
 const entrypoint = fileURLToPath(new URL("./index.js", import.meta.url));
 const runtimePaths = resolveDaemonRuntimePaths();
-const managed = process.argv.includes("--managed-logs");
-const logs = managed
-  ? {
-      stdout: new HourlyLogWriter(join(runtimePaths.homePath!, "logs"), "service-out"),
-      stderr: new HourlyLogWriter(join(runtimePaths.homePath!, "logs"), "service-err")
-    }
-  : undefined;
 const child = spawn(
   process.execPath,
   [
@@ -26,20 +17,9 @@ const child = spawn(
   {
     argv0: "octo-runtime-daemon",
     env: process.env,
-    stdio: managed ? ["ignore", "pipe", "pipe"] : "inherit"
+    stdio: "inherit"
   }
 );
-child.stdout?.on("data", (chunk: Buffer) => logs?.stdout.write(chunk));
-child.stderr?.on("data", (chunk: Buffer) => logs?.stderr.write(chunk));
-let drainTimer: NodeJS.Timeout | undefined;
-if (managed)
-  child.once("exit", () => {
-    drainTimer = setTimeout(() => {
-      child.stdout?.destroy();
-      child.stderr?.destroy();
-    }, 1000);
-    drainTimer.unref();
-  });
 
 const forward = (signal: NodeJS.Signals): void => {
   if (child.exitCode === null && child.signalCode === null) child.kill(signal);
@@ -64,10 +44,6 @@ try {
     error: error instanceof Error ? error.message : String(error)
   });
   throw error;
-} finally {
-  if (drainTimer) clearTimeout(drainTimer);
-  logs?.stdout.close();
-  logs?.stderr.close();
 }
 process.removeListener("SIGINT", forwardSigint);
 process.removeListener("SIGTERM", forwardSigterm);

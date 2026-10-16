@@ -23,6 +23,7 @@ import { chmod, lstat, mkdir, open, readFile, rm } from "node:fs/promises";
 import net, { type Server } from "node:net";
 import { dirname, join } from "node:path";
 import { readBoundedLines } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+import { RuntimeLogging, assertRuntimeLogging, type RuntimeLoggingOptions } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import { INVOKE_REQUEST_MAX_BYTES } from "@mininglamp-oss/octo-runtime-protocol";
 import { HostRunService } from "@mininglamp-oss/octo-runtime-adapter-host";
 import { InvocationManifest } from "./invocation-manifest.js";
@@ -30,6 +31,7 @@ import { ExtraPlugins, type ExtraRegistration } from "./extras.js";
 import { extraRegistration, type ExtraDescriptor } from "./extra-config.js";
 
 export interface StartDaemonServerOptions {
+  logging?: RuntimeLoggingOptions;
   extras?: readonly ExtraRegistration[];
   modules?: DaemonModuleRegistration[];
   account?: DaemonModuleContext["account"];
@@ -113,11 +115,13 @@ export async function startDaemonServer({
   socketPath,
   manifestPath,
   hostEntrypoint,
+  logging,
   consoleOutput = false,
 
   adapterHostRestartDelaysMs = DEFAULT_ADAPTER_HOST_RESTART_DELAYS_MS,
   adapterHostReadyTimeoutMs
 }: StartDaemonServerOptions): Promise<DaemonApplication> {
+  assertRuntimeLogging(logging);
   DaemonModules.validate(registrations);
   // Validate duplicate names before acquiring process resources.
   ExtraPlugins.validate(extraRegistrations);
@@ -161,11 +165,12 @@ export async function startDaemonServer({
     throw error;
   }
 
+  const logs = new RuntimeLogging(logging);
   const spawnHost = async (signal?: AbortSignal): Promise<AdapterHostProcess> => {
     const spawned = await spawnAdapterHost({
       entrypoint: hostEntrypoint,
       manifest: manifestPath,
-      env: { ...process.env, OCTO_RUNTIME_HOME: homePath ?? dirname(socketPath) },
+      env: { ...process.env, OCTO_RUNTIME_HOME: homePath ?? dirname(socketPath), OCTO_RUNTIME_LOGS_DIRECTORY: logging?.directory ?? "" },
       ...(signal ? { signal } : {}),
       ...(adapterHostReadyTimeoutMs !== undefined
         ? { readyTimeoutMs: adapterHostReadyTimeoutMs }
@@ -181,6 +186,7 @@ export async function startDaemonServer({
   try {
     hostProcess = await spawnHost();
   } catch (error) {
+    await logs.close();
     await invocationManifest.close();
     await releasePid();
     throw error;
@@ -189,6 +195,7 @@ export async function startDaemonServer({
   try {
     adapters = hostProcess.adapters.map((adapter) => adapter.type);
   } catch (error) {
+    await logs.close();
     await hostProcess.close();
     await invocationManifest.close();
     await releasePid();
@@ -390,8 +397,8 @@ export async function startDaemonServer({
     host,
     homePath: homePath ?? dirname(socketPath),
     account
-  });
-  const extras = new ExtraPlugins(extraRegistrations, host);
+  }, name => logs.extra(name));
+  const extras = new ExtraPlugins(extraRegistrations, host, name => logs.extra(name));
   const connections = new Set<net.Socket>();
   const server = net.createServer((socket) => {
     connections.add(socket);
@@ -468,6 +475,7 @@ export async function startDaemonServer({
     await invocationManifest.close();
     if (process.platform !== "win32") await rm(socketPath, { force: true });
     await releasePid();
+    await logs.close();
     throw error;
   }
 
@@ -496,6 +504,7 @@ export async function startDaemonServer({
       await invocationManifest.close();
       if (process.platform !== "win32") await rm(socketPath, { force: true });
       await releasePid();
+      await logs.close();
       if (consoleOutput) console.error("daemon stopped");
       if (extraError) throw extraError instanceof Error ? extraError : new Error("EXTRA_DISPOSE_FAILED", { cause: extraError });
     }

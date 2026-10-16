@@ -8,7 +8,7 @@ sources:
   - .octospec/rules/architecture.md
   - .octospec/rules/stateless-execution.md
   - .octospec/rules/engineering.md
-  - packages/octo-runtime-adapter-host/src/host-log.ts
+  - packages/octo-runtime-adapter-sdk/src/runtime-log.ts
   - packages/octo-runtime-daemon/src/runtime/supervisor.ts
   - apps/cli/src/service-control.ts
   - apps/daemon/src/launcher.ts

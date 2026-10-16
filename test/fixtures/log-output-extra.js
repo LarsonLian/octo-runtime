@@ -1,8 +1,11 @@
 export const name = "log-output";
 export default async function load(context) {
-  process.stdout.write("hourly-test-stdout\n");
-  process.stderr.write("hourly-test-stderr\n");
+  context.log("info", "fixture.started", {
+    status: "running",
+    text: "private body",
+    token: "bf_secret"
+  });
   context.onDispose(() => {
-    process.stderr.write("hourly-test-disposed\n");
+    context.log("info", "fixture.disposed", { status: "stopped" });
   });
 }

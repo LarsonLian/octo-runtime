@@ -27,7 +27,7 @@ timestamp: 2026-10-16T00:00:00Z
 | F26 并发与排队        | 待实施       | Bot 工作 64，每 session 另排队 4，两种繁忙公开码                                              |
 | F27 ACK 与投递        | 已实施       | 四次 WS 预算、迟到 ACK、独立未知通知；im-test 验证通过，服务端实际显示四份原消息              |
 | F28 DSH               | 延期         | 保留稳定后 P1 整体评估                                                                        |
-| F31 统一日志          | 待实施       | 已确认核心方向先落实，文件名/保留口径未决部分集中记录                                         |
+| F31 统一日志          | 核心已实施   | SDK/CLI 可选目录、Extra 日志和内核生命周期；28 项检查及 im-test 真实 Codex 通过，文件策略待决 |
 | F32 工程交付          | 随各项验证   | 必要回归、真实验证和文档，最终汇总                                                            |
 
 其他已覆盖/已排除项按[评审表](assessment.md)保持现状；发现真实违约时明确归属并独立记录，不为凑提交制造改动。
@@ -40,6 +40,18 @@ F04 已接线，不将 Context 投影成功宣称为所有文档/网盘的模型
 - F31 固定文件名、保留 3 个文件或 3 个小时桶等细节，按原文保留待决，先核实共享写入边界。
 
 ## 验证状态
+
+### F31 核心改造已实施
+
+SDK logging.directory、Runtime CLI daemon run/install --logs-dir 显式启用；默认不创建日志目录、文件、计时器或 Worker。ExtraContext 始终注入 log(level,event,data)，加载器绑定真实 extra_type，双渠道函数式和对象式入口均已接入。内核记录 invoke 接收/拒绝/接纳/开始/终态、稳定错误码、取消与 RPC 流结束；接纳、执行终态、流结束分别表达，不把流结束认定为模型成功。
+
+共同格式 time/level/source/event/extra_type?/data。允许字段明确限于 run_id、invocation_id、session_id、adapter_type、model、status、code、endpoint_id、state、protocol_mode，以及 duration_ms、input_count、text_input_count、image_input_count、context_count、attempt、frame_count、conversion_count、working_tasks、queued_tasks。字符串为有界标识，数量只统计当轮结构项数；未知字段与任意对象不读取、不序列化。正文、原始错误、完整配置、环境值、地址、预览、截断及内容哈希均不记录。
+
+专用 Worker 复用既有 HourlyLogWriter，每进程最多 128 条在途、128 个文件序列；写入失败、锁竞争、满额可丢诊断，不影响执行，关闭最多等 1 秒。它不是审计/投递账本。停止 SDK embedded-runtime、CLI service-out/err 的任意原始输出重复落盘与 Host debug/逐帧 trace；必要 stderr 继续由宿主终端或系统服务接收。旧文件和用户 Home 保留，不自动清除。
+
+**文件策略仍待最后决定**：暂沿用 UTC 小时桶 kernel-YYYYMMDDTHH.log 与 extras/<extra_type>-YYYYMMDDTHH.log，当前及前两小时、单文件 100 MiB，原有锁和容量检查保持。未擅自切换固定活动文件名或“当前+最近两个文件”的语义。
+
+日志与生命周期专项 28 项通过，覆盖默认关闭、显式目录、字段/正文隔离、实际 Worker 写入/关闭、队列上限、失败隔离、小时轮转/100 MiB/进程互斥、真实 launcher、SDK 两次账号启停及双渠道卸载。im-test 隔离群授权消息经真实 Extra 加载器和共享 AdapterHost 调用本机 Codex，观察 completed、内核与 Extra 对应日志且不含输入/输出正文。未宣称已验收所有 Provider 或各平台原生服务安装。
 
 ### F27 已实施
 

@@ -20,6 +20,7 @@ export function createImModule(context: DaemonModuleContext, input: unknown): Da
   const sessions = new MemoryImSessionStore();
   const im = new ImChannelManager({
     host: context.host,
+    log: context.log,
     sessions,
     ...(context.account
       ? {

@@ -15,7 +15,7 @@ export interface DaemonRunnerSession {
   extras?: readonly ExtraDescriptor[];
   socket_path: string;
   pid_path: string;
-  log_directory: string;
+  log_directory?: string;
   shutdown_file: string;
   supervisor_state: string;
   manifest_path?: string;

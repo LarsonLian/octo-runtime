@@ -2,6 +2,8 @@ export * from "./protocol.js";
 export type {
   ExtraAdapterHost,
   ExtraContext,
+  RuntimeLog,
+  RuntimeLogLevel,
   ExtraDisposer,
   ExtraPlugin,
   ExtraPluginModule,

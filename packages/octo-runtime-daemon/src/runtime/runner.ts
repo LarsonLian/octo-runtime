@@ -61,6 +61,7 @@ const application = await startDaemonServer({
   socketPath: session.socket_path,
   manifestPath,
   hostEntrypoint,
+  ...(session.log_directory ? {logging:{directory:session.log_directory}} : {}),
   localRuntimes: profiles,
   extras: (session.extras ?? []).map(extraRegistration),
   account: {

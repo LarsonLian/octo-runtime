@@ -1,5 +1,7 @@
 import type { InputInvoke, InteractionResponse } from "@mininglamp-oss/octo-runtime-protocol";
 import type { HostedAdapterMetadata } from "@mininglamp-oss/octo-runtime-adapter-host";
+import { noopRuntimeLog, type RuntimeLog } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+export type { RuntimeLog, RuntimeLogLevel } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 export interface JsonObject {
@@ -18,6 +20,8 @@ export interface ExtraAdapterHost {
 
 /** This execution environment is unrelated to the model Context envelope. */
 export interface ExtraContext {
+  /** F31：.octospec/tasks/gateway-august-feature-assessment/assessment.md；无日志宿主也提供 no-op。 */
+  readonly log: RuntimeLog;
   readonly adapterHost: ExtraAdapterHost;
   readonly signal: AbortSignal;
   onDispose(dispose: ExtraDisposer): void;
@@ -78,7 +82,8 @@ export class ExtraPlugins {
 
   constructor(
     registrations: readonly ExtraRegistration[],
-    private readonly adapterHost: ExtraContext["adapterHost"]
+    private readonly adapterHost: ExtraContext["adapterHost"],
+    private readonly logForExtra: (name: string) => RuntimeLog = () => noopRuntimeLog
   ) {
     ExtraPlugins.validate(registrations);
     for (const registration of registrations) {
@@ -164,6 +169,7 @@ export class ExtraPlugins {
         await plugin.default(
           {
             adapterHost: this.adapterHost,
+            log: (level, event, data) => { try { this.logForExtra(name)(level, event, data); } catch { /* 宿主 logger 不影响插件。 */ } },
             signal: instance.controller.signal,
             onDispose(dispose) {
               if (instance.sealed) throw new Error("EXTRA_ALREADY_DISPOSED");

@@ -33,9 +33,9 @@ const commands: Command = {
       stop: { description: "Stop the background service" },
       restart: { description: "Restart the background service" },
       status: { description: "Show native service and local daemon status" },
-      install: { description: "Install the current-user service", flags: { "--no-autostart": "Disable automatic start at login" } },
+      install: { description: "Install the current-user service", flags: { "--no-autostart": "Disable automatic start at login", "--logs-dir <path>": "Enable metadata logs in this explicit directory" } },
       uninstall: { description: "Stop and remove the current-user service", details: "Preserves Runtime Home, identity, credentials, and logs." },
-      run: { description: "Run the daemon in the foreground", flags: { "--quiet": "Suppress terminal lifecycle output" } }
+      run: { description: "Run the daemon in the foreground", flags: { "--quiet": "Suppress terminal lifecycle output", "--logs-dir <path>": "Enable metadata logs in this explicit directory" } }
     } },
     doctor: { description: "Check local configuration, service, and daemon health", flags: { "--json": "Output diagnostic checks as JSON (default)" } },
     extraset: { description: "Save a complete Extra plugin configuration from stdin", usage: "<name> < config.json", details: "Reads {module, enabled?, config}. Saves to <home>/extras/<name>/config.json, shared by all profiles.\nRestart the daemon to apply changes. Credentials are never echoed." },

@@ -184,6 +184,7 @@ export class ImRuntime {
       starting = false;
       this.#everOnline = true;
       this.#state = "online";
+      this.#log("channel.connected", { state: "online" });
       this.#error = undefined;
       this.#retry = 0;
     } catch (error) {
@@ -194,6 +195,7 @@ export class ImRuntime {
       this.#error = failure.message;
       const retry = recovering && this.#everOnline && failure.retryable;
       this.#state = retry ? "retrying" : "failed";
+      this.#log("channel.connection_failed", { state: this.#state, code: failure.message });
       try {
         await connector.close();
       } catch {
@@ -207,6 +209,7 @@ export class ImRuntime {
     }
   }
   #lostConnection(connector: GatewayTransport, failure: ImConnectionError): void {
+    this.#log("channel.disconnected", { code: failure.message });
     this.#error = failure.message;
     const retry = this.#everOnline && failure.retryable;
     this.#state = retry ? "retrying" : "failed";
@@ -250,12 +253,24 @@ export class ImRuntime {
   }
   #diagnostic(code: string, runId?: string): void {
     try {
+      this.dependencies.log?.("warn", "channel.diagnostic", {
+        code,
+        endpoint_id: imBotIdentity(this.config),
+        ...(runId ? { run_id: runId } : {})
+      });
       this.dependencies.onDiagnostic?.(code, {
         endpointId: imBotIdentity(this.config),
         ...(runId ? { runId } : {})
       });
     } catch {
       /* Diagnostics cannot fail execution. */
+    }
+  }
+  #log(event: string, data: Record<string, unknown> = {}): void {
+    try {
+      this.dependencies.log?.("info", event, { endpoint_id: imBotIdentity(this.config), ...data });
+    } catch {
+      /* 诊断不改变业务结果。 */
     }
   }
   #key(message: ImInboundMessage): string {
@@ -676,6 +691,11 @@ export class ImRuntime {
     if (this.#closed || this.#signal.aborted) return;
     let { request } = prepared;
     const rootRunId = request.runId;
+    this.#log("agent_run.requested", {
+      run_id: request.runId,
+      invocation_id: request.invocationId,
+      session_id: request.agentSessionId
+    });
     const startedAt = performance.now();
     let presentationSeq = 0;
     let projector = new ImRunProjector(rootRunId, message.conversationKind === "direct");
@@ -789,6 +809,12 @@ export class ImRuntime {
       }
     } finally {
       if (task.stopReason) this.#diagnostic(task.stopReason, rootRunId);
+      this.#log("agent_run.finished", {
+        run_id: rootRunId,
+        invocation_id: request.invocationId,
+        session_id: request.agentSessionId,
+        status: projector.snapshot().terminal ?? "unknown"
+      });
       this.#tasks.delete(key);
       try {
         // 长任务结束后重新开始终态去重窗口，保留有界尝试身份，避免立即重复执行。
@@ -839,6 +865,7 @@ export class ImRuntime {
     if (this.#closing) return this.#closing;
     this.#closed = true;
     this.#state = "stopped";
+    this.#log("channel.stopped", { state: "stopped" });
     this.#error = undefined;
     this.#everOnline = false;
     this.#retry = 0;

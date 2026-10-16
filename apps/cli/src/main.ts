@@ -5,7 +5,7 @@ import type { ServiceBackend } from "@mininglamp-oss/octo-runtime-cross-service"
 import { createHash, randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
 import net from "node:net";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { arch, hostname, platform as osPlatform, release } from "node:os";
 import { resolveServiceControl, verifyServiceProgram, type ServiceControlOptions } from "./service-control.js";
 import {
@@ -173,6 +173,7 @@ async function runDaemonCommand(context: CliContext, action: string | undefined)
     await withSetupLock(context.paths, () => ensureLocalRuntime(context));
     const exitCode = await context.runForegroundDaemon([
       "--home", context.home,
+      ...loggingArguments(context),
       ...(context.flags.quiet === true ? [] : ["--console"]),
       ...(context.flags.verbose === true ? ["--verbose"] : [])
     ]);
@@ -233,7 +234,7 @@ async function installDaemonService(context: CliContext, onlyIfMissing = false):
     }
     await ensureLocalRuntime(context);
     const autostart = onlyIfMissing || context.flags.noAutostart !== true;
-    const spec = context.service.spec(context.paths, autostart);
+    const spec = context.service.spec(context.paths, autostart, loggingArguments(context));
     await verifyServiceProgram(spec);
     const probe = await context.service.backend.probe();
     if (!probe.supported) {
@@ -494,8 +495,13 @@ async function daemonServiceSpec(context: CliContext, enabled = true) {
   assertHomeConfiguration(configuration);
   return context.service.spec(
     context.paths,
-    enabled
+    enabled,
+    loggingArguments(context)
   );
+}
+
+function loggingArguments(context: CliContext): string[] {
+  return context.flags.logsDir === undefined ? [] : ["--logs-dir", resolve(requiredFlag(context.flags.logsDir, "logs-dir"))];
 }
 
 

@@ -139,6 +139,7 @@ export class ImRuntime {
         return;
       }
       this.#state = "online";
+      this.#log("channel.connected", { state: "online" });
       this.#error = undefined;
       this.#retry = 0;
     } catch (error) {
@@ -195,12 +196,24 @@ export class ImRuntime {
   #diagnostic(code: string, runId?: string): void {
     this.#error = code;
     try {
+      this.dependencies.log?.("warn", "channel.diagnostic", {
+        code,
+        endpoint_id: imBotIdentity(this.config),
+        ...(runId ? { run_id: runId } : {})
+      });
       this.dependencies.onDiagnostic?.(code, {
         endpointId: imBotIdentity(this.config),
         ...(runId ? { runId } : {})
       });
     } catch {
       /* Diagnostics cannot fail execution. */
+    }
+  }
+  #log(event: string, data: Record<string, unknown> = {}): void {
+    try {
+      this.dependencies.log?.("info", event, { endpoint_id: imBotIdentity(this.config), ...data });
+    } catch {
+      /* 诊断不改变业务结果。 */
     }
   }
   #key(message: ImInboundMessage): string {
@@ -476,6 +489,11 @@ export class ImRuntime {
     }
     if (this.#closed || this.#signal.aborted) return;
     const { request } = prepared;
+    this.#log("agent_run.requested", {
+      run_id: request.runId,
+      invocation_id: request.invocationId,
+      session_id: request.agentSessionId
+    });
     const projector = new ImRunProjector(request.runId, message.conversationKind === "direct");
     const controls = this.#runControls(message, key, request.invocationId);
     const presentation = message.beginPresentation?.(
@@ -546,6 +564,12 @@ export class ImRuntime {
         presentation?.update({ ...projector.snapshot(), resultUnknown: true });
       }
     } finally {
+      this.#log("agent_run.finished", {
+        run_id: request.runId,
+        invocation_id: request.invocationId,
+        session_id: request.agentSessionId,
+        status: projector.snapshot().terminal ?? "unknown"
+      });
       session.activeInvocationId = undefined;
       for (const [id, entry] of this.#interactions)
         if (entry.invocationId === request.invocationId) this.#interactions.delete(id);
@@ -581,6 +605,7 @@ export class ImRuntime {
     if (this.#closing) return this.#closing;
     this.#closed = true;
     this.#state = "stopped";
+    this.#log("channel.stopped", { state: "stopped" });
     this.#abort.abort();
     this.#connectionAbort?.abort();
     if (this.#reconnect) {

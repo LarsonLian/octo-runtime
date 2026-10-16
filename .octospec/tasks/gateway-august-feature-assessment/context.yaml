@@ -40,7 +40,7 @@ sources:
   - packages/octo-runtime-extra-channel-gateway/src/ports.ts
   - packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts
   - packages/octo-runtime-adapter-sdk/src/hourly-log.ts
-  - packages/octo-runtime-adapter-host/src/host-log.ts
+  - packages/octo-runtime-adapter-sdk/src/runtime-log.ts
   - .octospec/guides/operations.md
   - .octospec/journal/shared/2026-10-15-extra-dispose-repair.md
   - test/im-extra-disposal.test.js

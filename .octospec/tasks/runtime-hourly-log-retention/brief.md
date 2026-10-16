@@ -12,7 +12,7 @@ timestamp: 2026-10-16T00:00:00Z
 
 状态：已实现，定向回归通过；真实进程及 im-test 验证以[交付记录](../../journal/shared/2026-10-16-hourly-log-delivery.md)为准。用户要求调试日志自动按 hour rotate，只保留最近 3 小时；随后明确每个文件最大 100 MiB。日志是短期排障材料，不建设持久归档、上传服务或复杂可配置保留系统。
 
-审查发现 [host-log](../../../packages/octo-runtime-adapter-host/src/host-log.ts) 在 debug 开启后无限追加；[SDK supervisor](../../../packages/octo-runtime-daemon/src/runtime/supervisor.ts) 固定追加 embedded-runtime.log；[CLI service-control](../../../apps/cli/src/service-control.ts) 的固定输出文件也没有保留上限。只改 debug 文件仍不能关闭这次 review 的全部磁盘风险。
+审查发现 当时的 Host debug（现已由 [F31 统一日志](../gateway-august-feature-assessment/implementation.md)替代） 在 debug 开启后无限追加；[SDK supervisor](../../../packages/octo-runtime-daemon/src/runtime/supervisor.ts) 固定追加 embedded-runtime.log；[CLI service-control](../../../apps/cli/src/service-control.ts) 的固定输出文件也没有保留上限。只改 debug 文件仍不能关闭这次 review 的全部磁盘风险。
 
 ## 首版范围与保留口径
 

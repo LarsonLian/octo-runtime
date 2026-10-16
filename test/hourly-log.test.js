@@ -148,20 +148,20 @@ test("concurrent processes cannot jointly exceed the same hourly file budget", a
   assert.ok(statSync(join(root, files(root)[0])).size <= 4096);
 });
 
-test("all native service specs delegate output to the managed launcher", () => {
+test("native service specs use explicit structured logging rather than implicit output capture", () => {
   for (const platform of ["darwin", "linux", "win32"]) {
     const spec = resolveServiceControl({ platform, backend: {} }).spec({
       home: "/tmp/runtime",
       logs: "/tmp/runtime/logs"
     });
-    assert.ok(spec.args.includes("--managed-logs"));
+    assert.equal(spec.args.includes("--managed-logs"), false);
     assert.equal(spec.stdoutPath, undefined);
     assert.equal(spec.stderrPath, undefined);
   }
 });
 
 test(
-  "real managed launcher drains child output and preserves shutdown and legacy logs",
+  "real launcher enables only selected structured logs and preserves foreground output",
   { timeout: 15000 },
   async (t) => {
     const root = directory(t);
@@ -171,7 +171,8 @@ test(
         resolve("apps/daemon/dist/launcher.js"),
         "--home",
         root,
-        "--managed-logs",
+        "--logs-dir",
+        join(root, "selected-logs"),
         "--execution-only",
         "--console",
         "--manifest",
@@ -198,14 +199,14 @@ test(
     await wait(
       async () => (await probeDaemon(join(root, "sockets", "octo-runtime-daemon.sock"), 200))?.ready
     );
-    await wait(() => files(join(root, "logs")).some((name) => name.startsWith("service-err-")));
+    await wait(() => files(join(root, "selected-logs")).some((name) => name.startsWith("kernel-")));
     child.kill("SIGTERM");
     const exit = await done;
     assert.ok(exit.code === 0 || exit.signal === "SIGTERM", stderr);
-    assert.ok(files(join(root, "logs")).some((name) => name.startsWith("adapter-host-")));
+    assert.match(stderr, /daemon (ready|listening|stopping)/);
     assert.equal(
-      files(join(root, "logs")).some((name) =>
-        /^(service\.(out|err)|adapter-host)\.log$/.test(name)
+      files(join(root, "selected-logs")).some((name) =>
+        /^(service-|adapter-host-|embedded-runtime-)/.test(name)
       ),
       false
     );
@@ -213,7 +214,7 @@ test(
 );
 
 test(
-  "SDK supervisor writes hourly child output and releases it across account restarts",
+  "SDK explicit logging records Extra events and releases writers across account restarts",
   { timeout: 20000 },
   async (t) => {
     const root = directory(t);
@@ -221,6 +222,7 @@ test(
       appId: "hourly-test",
       home: root,
       development: true,
+      logging: { directory: join(root, "selected-logs") },
       extras: [
         { name: "log-output", module: resolve("test/fixtures/log-output-extra.js"), config: {} }
       ]
@@ -234,13 +236,13 @@ test(
       await runtime.stop("account-switch");
     }
     const account = readdirSync(join(root, "accounts"))[0];
-    const logs = join(root, "accounts", account, "logs");
-    assert.equal(files(logs).includes("embedded-runtime.log"), false);
-    const output = files(logs).filter((name) => name.startsWith("embedded-runtime-"));
+    const logs = join(root, "selected-logs", "extras");
+    const output = files(logs).filter((name) => name.startsWith("log-output-"));
     assert.equal(output.length, 1);
     const content = readFileSync(join(logs, output[0]), "utf8");
-    assert.equal(content.match(/hourly-test-stdout/g).length, 2);
-    assert.equal(content.match(/hourly-test-stderr/g).length, 2);
-    assert.equal(content.match(/hourly-test-disposed/g).length, 2);
+    assert.equal(content.match(/fixture.started/g).length, 2);
+    assert.equal(content.match(/fixture.disposed/g).length, 2);
+    assert.doesNotMatch(content, /private body|bf_secret/);
+    assert.equal(readdirSync(join(root, "accounts", account)).includes("logs"), false);
   }
 );

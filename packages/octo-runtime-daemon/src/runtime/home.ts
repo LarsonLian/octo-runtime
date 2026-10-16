@@ -186,7 +186,6 @@ export function ensureAccount(account: DaemonAccountPaths, profiles: readonly st
       false,
       "at least one authorized tenant is required"
     );
-  mkdirSync(account.logs, { recursive: true });
   for (const profile of profiles) {
     const paths = profilePaths(account, profile);
     mkdirSync(dirname(paths.identityFile), { recursive: true });

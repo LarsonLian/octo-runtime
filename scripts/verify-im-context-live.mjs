@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, mkdtemp, writeFile, rm } from "node:fs/promises";
+import { readFile, mkdtemp, writeFile, rm, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
@@ -21,6 +21,10 @@ import {
 } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/api/events.js";
 import { parseCardAction } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/card-action.js";
 import { interactionAnswer } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/interaction-card.js";
+import { RuntimeLogging } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
+import { AdapterHost } from "../packages/octo-runtime-adapter-host/dist/index.js";
+import { createCodexAdapter } from "../packages/octo-runtime-adapter-codex/dist/index.js";
+import { ExtraPlugins } from "../packages/octo-runtime-daemon/dist/index.js";
 import Ws from "ws";
 import {
   registerBot,
@@ -257,6 +261,115 @@ const env = {
 };
 delete env.OCTO_BOT_ID;
 delete env.OCTO_PROFILE;
+if (process.argv.includes("--logging")) {
+  const root = await mkdtemp(join(tmpdir(), "octo-f31-live-"));
+  const logging = new RuntimeLogging({ directory: join(root, "logs") });
+  const host = new AdapterHost({ log: logging.kernel });
+  host.register(createCodexAdapter());
+  const plugins = new ExtraPlugins(
+    [
+      {
+        name: "channel-gateway",
+        load: () => import("../packages/octo-runtime-extra-channel-gateway/dist/extra.js"),
+        config: {
+          bots: [
+            {
+              bot_id: receiver.id,
+              bf_token: receiver.token,
+              api_url: receiver.api,
+              group_ids: [group.group_no],
+              allowed_sender_ids: [sender.id],
+              adapter: { adapter_type: "codex", workdir: root },
+              approval_mode: "full_access",
+              run_timeout_ms: 90000
+            }
+          ]
+        }
+      }
+    ],
+    {
+      invoke: host.invoke,
+      cancel: async (id, reason) => ({ cancelled: host.cancel(id, reason) }),
+      respondInteraction: (id, response) => host.respondInteraction(id, response)
+    },
+    (name) => logging.extra(name)
+  );
+  try {
+    await plugins.loadConfigured();
+    const status = await plugins.inspect("channel-gateway");
+    assert.equal(status.bots[0].connected, true);
+    const result = await execute(
+      "octo-cli",
+      [
+        "message",
+        "send",
+        "--data",
+        JSON.stringify({channel_id:group.group_no,channel_type:2,payload:{type:1,content:"请不要调用工具，只回复 F31_LOG_QA_OK。",mention:{uids:[receiver.id]}}})
+      ],
+      { env, timeout:15000, maxBuffer: 1 << 20 }
+    );
+    assert.equal(JSON.parse(result.stdout).ok, true);
+    let finished = false;
+    for (let i = 0; i < 120; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const files = await readdir(join(root, "logs")).catch(() => []);
+      const text = (
+        await Promise.all(
+          files
+            .filter((file) => file.endsWith(".log"))
+            .map((file) => readFile(join(root, "logs", file), "utf8"))
+        )
+      ).join("");
+      if (text.includes('"event":"invoke.finished"')) {
+        finished = true;
+        break;
+      }
+    }
+    assert.equal(finished, true, "Real provider must finish before the test deadline");
+    await plugins.close();
+    await host.shutdown();
+    await logging.close();
+    const kernel = (
+      await Promise.all(
+        (await readdir(join(root, "logs")))
+          .filter((file) => file.endsWith(".log"))
+          .map((file) => readFile(join(root, "logs", file), "utf8"))
+      )
+    ).join("");
+    const extras = (
+      await Promise.all(
+        (await readdir(join(root, "logs", "extras")))
+          .filter((file) => file.endsWith(".log"))
+          .map((file) => readFile(join(root, "logs", "extras", file), "utf8"))
+      )
+    ).join("");
+    const final = kernel
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .find((row) => row.event === "invoke.finished");
+    assert.equal(final.data.status, "completed");
+    assert.match(extras, /agent_run.requested/);
+    assert.match(extras, /agent_run.finished/);
+    assert.doesNotMatch(kernel + extras, /F31_LOG_QA_OK|bf_|请不要调用工具/);
+    console.log(
+      JSON.stringify({
+        feature: "F31",
+        imTestInbound: true,
+        realProvider: "codex",
+        terminal: final.data.status,
+        kernelAndExtraLogs: true,
+        noBodies: true
+      })
+    );
+  } finally {
+    await plugins.close();
+    await host.shutdown();
+    await logging.close();
+    await rm(root, { recursive: true, force: true });
+  }
+  process.exit(0);
+}
 if (process.argv.includes("--capacity")) {
   let release,
     calls = 0;

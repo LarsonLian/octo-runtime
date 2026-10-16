@@ -15,6 +15,8 @@ await runtime.startAccount({ subject: { type: 'user', id: userId }, tenants: [{ 
 await runtime.stop('quit');
 ```
 
+统一结构化日志默认关闭。宿主可向上述选项加入 `logging: { directory: "/absolute/logs" }`；只在该目录记录内核调用与 Extra 元数据，不收集模型正文。Extra 获得始终可调用的 `ctx.log(level, event, data)`，未启用时为空操作。真实 extra_type 由加载器绑定，插件不写文件。当前小时桶、容量、内容白名单和有界丢弃策略见[运维说明](../../.octospec/guides/operations.md)。
+
 宿主发布时可以只部署本包及其本地执行依赖，明确提供 Node、runner、manifest 和 adapter-host 入口；执行层不自动安装。
 
 需要外部接入时，HostApp 安装对应 Extra 包，构造完整声明 `{ name, module, enabled?, config }`。初始声明放入 `createDaemonRuntime({ appId, home, extras: [...] })`，启动账号时加载；运行中使用 `runtime.loadExtra(descriptor)`。SDK 不根据平台读取专用配置文件，不自行安装插件。

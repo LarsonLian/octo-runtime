@@ -1,6 +1,8 @@
 import type { HostRunService } from "@mininglamp-oss/octo-runtime-adapter-host";
+import { noopRuntimeLog, type RuntimeLog } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 
 export interface DaemonModuleContext {
+  log?: RuntimeLog;
   host: HostRunService;
   homePath: string;
   signal: AbortSignal;
@@ -55,7 +57,8 @@ export class DaemonModules {
 
   constructor(
     registrations: readonly DaemonModuleRegistration[],
-    private readonly context: Omit<DaemonModuleContext, "signal">
+    private readonly context: Omit<DaemonModuleContext, "signal">,
+    private readonly logForModule: (name: string) => RuntimeLog = () => noopRuntimeLog
   ) {
     DaemonModules.validate(registrations);
     for (const registration of registrations) {
@@ -102,7 +105,7 @@ export class DaemonModules {
       active.starting = (async () => {
         try {
           const instance = await registration.create(
-            { ...this.context, signal: active.controller.signal },
+            { ...this.context, signal: active.controller.signal, log: this.logForModule(id) },
             config
           );
           active.instance = instance;

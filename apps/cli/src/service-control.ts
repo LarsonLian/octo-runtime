@@ -44,13 +44,12 @@ export function resolveServiceControl(options: ServiceControlOptions = {}): {
         id: RUNTIME_SERVICE_ID,
         description: "Octo Runtime daemon",
         command: nodeExecutable,
-        args: [daemonEntrypoint, "--home", paths.home, "--managed-logs", ...daemonArgs],
+        args: [daemonEntrypoint, "--home", paths.home, ...daemonArgs],
         workingDirectory: paths.home,
         environment: {
           ...(environment.PATH || environment.Path
             ? { PATH: environment.PATH ?? environment.Path ?? "" }
             : {}),
-          ...(environment.OCTO_RUNTIME_DEBUG === "1" ? { OCTO_RUNTIME_DEBUG: "1" } : {})
         },
         enabled,
         restart: { policy: "on-failure", delaySeconds: 5, maxBurst: 5 },
@@ -68,11 +67,5 @@ export function resolveServiceControl(options: ServiceControlOptions = {}): {
 export async function verifyServiceProgram(spec: ServiceSpec): Promise<void> {
   await Promise.all([access(spec.command), access(spec.args?.[0] ?? "")]);
   await mkdir(spec.workingDirectory, { recursive: true, mode: 0o700 });
-  await mkdir(
-    dirname(spec.stdoutPath ?? resolve(spec.workingDirectory, "logs", "service.out.log")),
-    {
-      recursive: true,
-      mode: 0o700
-    }
-  );
+  if (spec.stdoutPath) await mkdir(dirname(spec.stdoutPath), {recursive:true,mode:0o700});
 }

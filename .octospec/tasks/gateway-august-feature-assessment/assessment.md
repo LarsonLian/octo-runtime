@@ -82,7 +82,7 @@ timestamp: 2026-10-16T00:00:00Z
 | F28 DSH 独立 Adapter | `d076d06` 等；旧仓有 SDK 启动 dsh 子进程的接线，不等于独立嵌入式内核或已上线证明 | 当前无 DSH Adapter；用户不认可直接沿用旧接入，要求整体评估（R19） | 当前实施 0；后续专项明确为重要 P1 TODO，替代原“无需求”的判断 | 原初评 50，仅作历史参考；整体方案未评估、未批准，专项须重评 | 本轮 0%；未来独立 Adapter 的具体功能范围由专项评估，不预先承诺旧功能全集 | **遗留 P1，当前不做，不标删除线**。P0 是整体架构与内核稳定性；稳定后开展[DSH 独立 Adapter 整体评估](../dsh-adapter-assessment/brief.md)，原生入口和方案待定，Channel 不加特殊执行流程 |
 | ~~F29 接入、工具身份与 AgentRun 权限边界~~ | ~~`5f95f4b`、`cc70e7c`、`675d25e` 等；旧 minimal/host、trustedInput/groupPolicy 和业务 broker 集中装配多种责任~~ | ~~Extra 做准入；Channel 为 AgentRun 提供 Bot 工具身份；统一 approval_policy 管执行权限，Adapter 原生映射、工具及服务端检查业务权限（R03/R12/R13/R20）~~ | ~~0：保留现有职责，不新增旧分档及代理~~ | ~~95：现有分层路径具备，Provider 原生差异沿各自合同核对~~ | ~~100%：本项三类权限职责目标已覆盖；旧耦合控制体系覆盖 0%、明确排除~~ | ~~用户确认保留现状、架构评审已过项。此前把不同责任混在一个缺口内的口径撤销；不新增 Channel 权限管理中间层。F24 身份筛选修正仍单独待实施，不以此声称全部 Provider 无缺陷~~ |
 | ~~F30 宿主配置与凭据保护责任~~ | ~~`dbf359a`、`6d6fdc6`、`5519de2`、`1e4d029`；旧受管根、目录认领及文件保护~~ | ~~默认 CLI 是 SDK 的 headless 宿主，管理自己的 JSON 文件；Desktop HostApp 自行管理凭据并构造 Extra config；SDK/Extra 校验和消费值~~ | ~~0：不新增通用凭据存储层~~ | ~~100：保留已具备的值对象与宿主分工，无本项新增改造~~ | ~~当前/目标职责覆盖 100%；旧 gwHome 布局、claim 与迁移 0%，明确排除~~ | ~~**用户确认、已过项**。宿主配置/Token 存储保护不属于通用 Runtime 缺口；撤销此前 70% 混合口径及以宿主存储核查项扣至 90 分的评价。框架自身安全合同仍有效~~ |
-| F31 统一内核与 Extra 结构化日志 | `d11b396`；旧 launcher 为独立 Bot 进程写 slice.log | 现有执行、子进程及服务输出分散；已有小时容量写入器和渠道诊断身份，ExtraContext 尚无 log（R21） | 80：统一责任、关联身份和可选装配的价值高于单纯补打印 | 100：Context 注入日志能力及公共写入策略技术可行；接口和轮转细节仍待细化 | 目标 100%：内核生命周期及 Extra 业务日志；旧 slice.log 和独立原始进程落盘类别不作为目标 | **改造方向已确认纳入计划、待实施**。宿主显式启用并指定目录，ExtraContext 注入 log；input/其他 Context 仅数量，Adapter Context 仅安全摘要。文件名与保留口径尚未定案，不标完成或删除线 |
+| F31 统一内核与 Extra 结构化日志 | `d11b396`；旧 launcher 为独立 Bot 进程写 slice.log | 已接入 SDK/Runtime CLI 的可选日志、ExtraContext.log、内核生命周期及双渠道诊断；28 项针对性检查与 im-test 真实 Codex 调用通过，见实施记录 | 80：统一责任、关联身份和可选装配 | 100：已确认核心方案已实施，文件策略最后定稿独立待决 | 目标 100%：内核生命周期及 Extra 业务日志；不复制旧 slice.log | **核心改造已实施，文件策略待决**。默认关闭，显式目录，元数据白名单，专用有界写入线程；暂沿用原 UTC 小时桶，未决定固定活动文件名与最近三个文件口径，不标全部完成 |
 | F32 CI、runbook 与生命周期测试 | `5d62bc0` 修黑盒测试前 build；8 月末补 known-bot 删除与 pre-lock 回归 | 当前 CI 先构建再测试；已有 Extra/SDK/双渠道清理及连接状态回归，部署/接入文档与验证记录（R22） | 65：前面确认的改造需要有效验收，不是新增平台需求 | 100：沿现有构建、回归、打包和实机验证路径执行，无已识别的方案阻碍；撤销无具体缺口依据的 95 分 | 目标建议 100%：确认改动的必要回归、真实验证及操作说明；不复制旧 CI 或旧生命周期模型 | **当前评审项，建议复用现有工程体系**。既有基础已具备，新改动的测试和验收随各项实施完成；不以未实施/未实测扣方案可执行性，也不标整项完成 |
 | ~~F33 WS 断线恢复~~ | ~~8 月 readiness/停止修正避免把曾连接当当前仍连接；旧重连可配置~~ | ~~现有工作树已区分首次失败与曾上线后恢复，5/10/20/30 秒、成功清错、终端错误停止（R06）~~ | ~~10：已有连接专项实现~~ | ~~95：现有五态与恢复路径已接~~ | ~~100%：目标合同内断线恢复、终端拒绝、停止；不复制旧重连默认值~~ | ~~已覆盖，不再开第二套重连。真实合盖等未验场景沿现有任务继续；连接恢复不等于补发旧消息或恢复旧 Run~~ |
 
@@ -806,6 +806,8 @@ SDK/Extra 仍负责输入约束校验，并按接入协议携带凭据完成实�
 
 ## 逐项 Review：F31 日志归属与 Bot 诊断输出
 
+2026-10-16 实施更新：已确认的接口、责任和内容边界已落地，见[实施记录](implementation.md#f31-核心改造已实施)。SDK logging.directory、Runtime CLI --logs-dir、ExtraContext.log 已接通；原始 stdout/stderr 重复落盘和独立 Host debug 已停止。文件名/保留口径仍待集中确认，暂沿用已有小时桶。下文为原评审依据，不将其历史“未实施”文字视为当前状态。
+
 状态：用户要求记录后继续下一项，统一日志改造方向已确认纳入计划、待实施，不标删除线。默认关闭、宿主指定目录、两类责任日志、ExtraContext 注入 log 及日志内容边界已记录；具体接口名、文件名和保留口径仍待细化。**本节“当前改造评估”取代此前仅补 onDiagnostic → console 的建议**；后文最小接线调查保留为证据，不再作为推荐终案。本轮只更新文档，不改代码、日志配置或进程。
 
 ### 当前改造评估
@@ -903,7 +905,7 @@ SDK/Extra 仍负责输入约束校验，并按接入协议携带凭据完成实�
 | 当前完成状态 | 日志容量管理和内部诊断身份已具备，默认 Extra 诊断出口未接。不是完整覆盖，不标删除线；撤销原混合目标 70% 口径，不将不同层能力强行折算为当前完成率 |
 | 待用户决策 | 是否接受“宿主管存储，不做每 Bot 文件；仅补齐默认 Extra 的脱敏诊断输出”作为后续范围。当前没有实施授权 |
 
-依据：旧 [slice-log](/Users/lvsijia/codex.mlamp.cn/dmwork/octo-agent-gateway/src/deploy/slice-log.ts)；当前 [容量管理](../../../packages/octo-runtime-adapter-sdk/src/hourly-log.ts)、[Host 日志](../../../packages/octo-runtime-adapter-host/src/host-log.ts)、[诊断产生](../../../packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts)、[内部诊断依赖](../../../packages/octo-runtime-extra-channel-gateway/src/ports.ts)、[默认 Extra 入口](../../../packages/octo-runtime-extra-channel-gateway/src/extra.ts)、[对象式入口](../../../packages/octo-runtime-extra-channel-gateway/src/daemon-module.ts)及[受管日志规则](../../rules/stateless-execution.md#受管日志)。本轮未做真实日志验收。本项后只剩 F32 一项。
+依据：旧 [slice-log](/Users/lvsijia/codex.mlamp.cn/dmwork/octo-agent-gateway/src/deploy/slice-log.ts)；当前 [容量管理](../../../packages/octo-runtime-adapter-sdk/src/hourly-log.ts)、[统一日志](../../../packages/octo-runtime-adapter-sdk/src/runtime-log.ts)、[诊断产生](../../../packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts)、[内部诊断依赖](../../../packages/octo-runtime-extra-channel-gateway/src/ports.ts)、[默认 Extra 入口](../../../packages/octo-runtime-extra-channel-gateway/src/extra.ts)、[对象式入口](../../../packages/octo-runtime-extra-channel-gateway/src/daemon-module.ts)及[受管日志规则](../../rules/stateless-execution.md#受管日志)。本轮未做真实日志验收。本项后只剩 F32 一项。
 
 ## 逐项 Review：F32 工程验证与操作说明
 

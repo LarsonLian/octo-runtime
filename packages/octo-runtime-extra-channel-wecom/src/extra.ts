@@ -31,6 +31,7 @@ export default async function load(context: ExtraContext, config: JsonObject): P
   channels = new ImChannelManager({
     host: context.adapterHost,
     signal: context.signal,
+    log: context.log,
     credentials: (bot) => Promise.resolve(configuredCredential(bot)),
     ...(allowed
       ? {
