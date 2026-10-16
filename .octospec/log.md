@@ -2,6 +2,8 @@
 
 ## 2026-10-16
 
+- 拆分 [CLI 使用与 SDK 原生接入指南](journal/shared/2026-10-16-cli-sdk-guides-split.md)：CLI 面向云端设备定制接入与运维，默认包含全部 Adapter、Extra 及系统管理、自启服务；Electron/Tauri 2 桌面程序必须 SDK 接入。原 INTEGRATION 仅作导航，迁移现有示例和当前文档链接，本轮不修改运行代码。
+
 - 完成[executionFeatures 全量清理与自动验收](tasks/remove-execution-features/delivery.md)：三个仓库逐 Feature 提交推送，移除自建字段、常量、默认数组、发现/加载及标签准入，修复watchdog、Codex MCP窄覆盖和错误分类。新发现的桌面基线问题先独立评估再修复；正式im文档与配置已同步。Runtime1001通过/8跳过、WebUI35通过、桌面/kit2555通过/2跳过，Worker测试构建和离线发行验证通过。真实Codex文本/图片/审批/取消/MCP及重启后renderer通过；远端部署、未启用Provider和OpenAPI基线漂移分别记录，不宣称已验收。
 
 - 建立[全自动清理与关联缺陷修复计划](tasks/remove-execution-features/autonomous-plan.md)，纳入 MCP 配置回灌、错误误分类和 watchdog 进度/暂停计时问题；独立首评三项 94 未通过，补齐提交快照、前置依赖和远端部署边界后[复评](tasks/remove-execution-features/feasibility-review.md)均分 97.125、最低 96，达到用户要求的实施门槛。

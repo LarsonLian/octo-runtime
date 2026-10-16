@@ -17,6 +17,12 @@ supersedes: []
 
 # Octo Runtime 基础架构
 
+## CLI 使用与 SDK 原生接入
+
+CLI 面向云端设备的定制接入、部署和运维，默认包含全部 Adapter、Extra，以及系统管理、开启自启等服务能力。发行物包含组件不表示安装后全部 Extra 已启用或系统自启已注册；启用与注册按各自配置和命令执行。
+
+Electron、Tauri 2 桌面程序严禁通过 CLI 接入，必须使用 SDK。宿主通过 SDK 管理装配、配置、执行及生命周期，不把 CLI 可执行程序、终端输出解析或 CLI 系统服务作为业务接入层。SDK 管理 daemon、Host、Provider 子进程及 Adapter 依赖 Provider CLI 不违反此约束。SDK 宿主自行选择依赖和配置来源，不继承 CLI 的全量集合或文件约定。
+
 ## 强制定位：执行基础设施不得代替产品决策
 
 2026-10-16 用户再次明确：Octo Runtime 是供 SDK 嵌入、CLI 和不同业务入口使用的执行基础设施。框架提供协议校验、合同内配置解析、传输、原生适配和真实结果返回；不得自行定义或修改产品的用户体验意图。本节是后续需求、方案、实现及评审的强制范围检查，不是仅适用于 Plan 的局部建议。
@@ -27,7 +33,7 @@ supersedes: []
 - **Adapter 管技术差异，不管产品方向。** Adapter 负责将统一的显式输入转换为原生参数或操作，并返回真实支持/应用结果；无权默认开启实验功能、模拟产品流程或替宿主决定何时切换 Plan。宿主负责是否展示选项以及不支持能力的产品处理。
 - **例外必须有明确合同和授权。** 本轮用户允许 actmode 不支持时降级 default，仅限该可选能力的已定义适配合同，不构成通用兜底授权，不改写其他维度或已有 mandatory/权限约束。不把网络错误、上游错误或未知状态扩展解释为可降级条件。
 - **不替其他模块修错。** 谁产生错误协议或错误产品输入，谁负责修复。Runtime 返回真实错误或合同规定的未应用结果，不能在下游猜测、补造或改写意图以隐藏上游问题。协议转换与缺陷补偿必须区分；具体责任规则见下文。
-- **接入方独立。** IM Channel Gateway 当前产品决定始终普通/default 执行，不配置或接入 Plan。该策略属于此业务入口，不能转成通用 Runtime 的 Plan 开关、拒绝规则或其他产品的默认策略。桌面及自研 App 经 SDK/CLI 使用 actmode，按各自产品设计管理。
+- **接入方独立。** IM Channel Gateway 当前产品决定始终普通/default 执行，不配置或接入 Plan。该策略属于此业务入口，不能转成通用 Runtime 的 Plan 开关、拒绝规则或其他产品的默认策略。桌面及自研 App 经 SDK 使用 actmode，按各自产品设计管理。
 
 每个后续需求进入方案前必须回答并写入对应 brief：
 
@@ -178,4 +184,4 @@ Extra 必须保持这一责任边界：宿主编排“卸载 → 修改并保存
 - 外部接入必须在实际合同边界校验身份、权限及适用的租约、fencing；这些要求不把外部登记变成本地 Runtime 存在或本地调用的前置条件。
 - 凭据留在受保护的宿主或插件配置中，不进入 renderer、模型文本、公开日志或命令行参数。Provider workdir 是工作目录，不是操作系统隔离边界。
 
-实现与接入细节见 [接入指南](../../INTEGRATION.md)、[部署说明](../../DEPLOYMENTS.md) 和 [Context 输入合同](context-input.md)。历史决策与撤回理由见 [架构演进](../journal/shared/architecture-evolution.md)。
+实现与接入细节见 [CLI 使用指南](../../CLI_USAGE_GUIDE.md)、[SDK 原生接入指南](../../SDK_NATIVE_INTEGRATION_GUIDE.md)、[部署说明](../../DEPLOYMENTS.md) 和 [Context 输入合同](context-input.md)。历史决策与撤回理由见 [架构演进](../journal/shared/architecture-evolution.md)。

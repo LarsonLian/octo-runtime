@@ -118,7 +118,7 @@ octo-runtime daemon restart
 
 宿主卸载本插件、保存完整配置并重新加载，插件内连接整体重建。CLI 使用 `extra unload channel-wecom`、`extraset channel-wecom`、`extra load channel-wecom`，load 读取最新文件。
 
-`runtime.extraStatus("channel-wecom")` 或 `extra status channel-wecom` 返回本插件自己的 `{ "bots": [...], "errors": [...] }`。有效项包含 `connection_key`、`type: "wecom"`、`enabled`、`connected`、`state`、脱敏 `error`、`deliveries`、`sessions`，可包含已解析的 `botId`。停用项仍可见，`enabled: false`、`state: "stopped"`、`connected: false`。错误配置跳过连接，状态项返回从零开始的 `config_index`、`state: "config_error"` 和脱敏错误码，`errors` 同时记录位置及错误码；有效 Bot 继续初始化。列表或授权配置错误记录在 `errors`，不建立连接。状态同步读取内存，由宿主解释，不依赖 Octo 状态模型。`runtime.extraStatus()` 查询生命周期。完整示例见 [SDK 对接指南](../../INTEGRATION.md#26-通过-sdk-装配可选-extra)。
+`runtime.extraStatus("channel-wecom")` 或 `extra status channel-wecom` 返回本插件自己的 `{ "bots": [...], "errors": [...] }`。有效项包含 `connection_key`、`type: "wecom"`、`enabled`、`connected`、`state`、脱敏 `error`、`deliveries`、`sessions`，可包含已解析的 `botId`。停用项仍可见，`enabled: false`、`state: "stopped"`、`connected: false`。错误配置跳过连接，状态项返回从零开始的 `config_index`、`state: "config_error"` 和脱敏错误码，`errors` 同时记录位置及错误码；有效 Bot 继续初始化。列表或授权配置错误记录在 `errors`，不建立连接。状态同步读取内存，由宿主解释，不依赖 Octo 状态模型。`runtime.extraStatus()` 查询生命周期。完整示例见 [SDK 对接指南](../../SDK_NATIVE_INTEGRATION_GUIDE.md#26-通过-sdk-装配可选-extra)。
 
 本包作为 Event 发起方提交本轮 Context，空输入与显式重复有效；不会按会话补齐上下文。执行配置独立校验，不进入模型文本。Run=7、Context=v3。会话与回执使用有界内存，不承诺跨重启恢复；真实企业微信客户端显示效果需平台验收。
 

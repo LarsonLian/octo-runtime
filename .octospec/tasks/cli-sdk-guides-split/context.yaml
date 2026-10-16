@@ -1,0 +1,21 @@
+rules:
+  - runtime-architecture
+  - runtime-lifecycle
+  - runtime-extras
+  - commit
+sources:
+  - AGENTS.md
+  - CLAUDE.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - INTEGRATION.md
+  - README.md
+  - DEPLOYMENTS.md
+  - DEVELOPMENT.md
+  - apps/cli/README.md
+  - apps/cli/src/playboard.ts
+  - packages/octo-runtime-protocol/src/invoke-size.ts
+decisions:
+  - CLI 使用与 SDK 原生接入分别维护完整指南，旧文档仅作导航。
+  - Electron 和 Tauri 2 桌面程序必须 SDK 接入，严禁 CLI 接入。
+  - CLI 默认包含全部 Adapter、Extra 及系统管理和自启服务，包含不等于启用。

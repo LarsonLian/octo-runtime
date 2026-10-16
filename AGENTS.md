@@ -10,7 +10,9 @@
 - `packages/`：协议、执行内核、daemon SDK、Provider Adapter 和 Extra。
 - `test/`：跨包测试；包内测试按各包目录维护。
 - `.octospec/rules/`、`.octospec/guides/`：当前合同与操作指南；历史结论放 journal。
-- `INTEGRATION.md`、`DEPLOYMENTS.md`：宿主接入及部署入口。
+- `CLI_USAGE_GUIDE.md`：云端设备的 CLI 使用、部署和运维。
+- `SDK_NATIVE_INTEGRATION_GUIDE.md`：客户应用及桌面程序的 SDK 原生接入。
+- `INTEGRATION.md`、`DEPLOYMENTS.md`：选型导航及发行部署入口。
 - `pnpm build`：构建 workspace。
 - `pnpm typecheck`：构建并检查类型。
 - `pnpm lint`、`pnpm lint:names`：代码和命名检查。

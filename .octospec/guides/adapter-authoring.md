@@ -36,7 +36,7 @@ export const adapter = defineAdapter({
 });
 ```
 
-CLI 默认项在 [`apps/cli/src/default_adapters.json`](../../apps/cli/src/default_adapters.json) 中登记 `type`、模块路径和导出名称。导出对象可以直接是 adapter，也可以通过 `factory` 加 `options` 创建实例。Host 会校验导出形状；清单声明了 `type` 时，还会校验它是否与 `metadata.type` 一致。SDK 产品不读取该清单，而在自己的独立 Host 入口直接 import 并调用 `serveAdapterHost` 注册；完整代码和必须保留的中文注释见 [接入文档](../../INTEGRATION.md)。
+CLI 默认项在 [`apps/cli/src/default_adapters.json`](../../apps/cli/src/default_adapters.json) 中登记 `type`、模块路径和导出名称。导出对象可以直接是 adapter，也可以通过 `factory` 加 `options` 创建实例。Host 会校验导出形状；清单声明了 `type` 时，还会校验它是否与 `metadata.type` 一致。SDK 产品不读取该清单，而在自己的独立 Host 入口直接 import 并调用 `serveAdapterHost` 注册；完整代码和必须保留的中文注释见 [SDK 原生接入指南](../../SDK_NATIVE_INTEGRATION_GUIDE.md#22-本地启动与宿主发行物)。
 
 ## 设计规则
 

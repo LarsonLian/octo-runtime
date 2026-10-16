@@ -14,9 +14,9 @@ Octo Runtime 是 provider-neutral 的本地 Agent Runtime。本地接入使用 `
 
 `octo-runtime-embedded` 独立包已移除，其本地生命周期与 IPC API 收入 `octo-runtime-daemon`。daemon 包不依赖 worker-access 或 channel-gateway；客户可以只部署 daemon 及其本地执行依赖。标准产品由 HostApp 另行携带可选连接包，通过 Extra 声明显式装配。当前 SDK 的本地控制进程仍使用 daemon server；下面记录的最终对外进程职责和在线 toggle 按各自里程碑验收，不能从本次包合并推断已经全部实现。
 
-## 客户系统融合：建议优先通过 SDK 接入
+## 使用场景与指南
 
-**对于需要融入客户现有系统的 FDE 项目，建议客户系统直接通过 Octo Runtime 的 daemon SDK 接入 Adapter 执行能力。** 宿主应用调用 SDK，经 IPC 由 Host 调用对应 Adapter；相比把 `octo-runtime` CLI／CMD 可执行程序作为业务调用入口，这种方式更适合持续会话、交互审批和应用内运行管理。
+**Electron、Tauri 2 桌面程序严禁通过 CLI 接入，必须通过 [SDK 原生接入指南](SDK_NATIVE_INTEGRATION_GUIDE.md)接入。** 客户系统融合使用 daemon SDK；[CLI 使用指南](CLI_USAGE_GUIDE.md)仅面向云端设备的定制接入、部署和运维。CLI 默认包含全部 Adapter、Extra，以及系统管理、开启自启等服务能力；默认包含不等于安装后全部启用。 宿主应用调用 SDK，经 IPC 由 Host 调用对应 Adapter；相比把 `octo-runtime` CLI／CMD 可执行程序作为业务调用入口，这种方式更适合持续会话、交互审批和应用内运行管理。
 
 - **接口明确**：通过类型化请求、结构化事件和错误处理执行结果，减少命令拼接、参数转义、终端输出解析和退出码映射的集成代码。
 - **生命周期可控**：宿主统一安排启动、停止、取消和交互答复，把执行状态接入自己的 UI 与业务流程，便于处理应用退出和执行中断。
@@ -24,7 +24,7 @@ Octo Runtime 是 provider-neutral 的本地 Agent Runtime。本地接入使用 `
 - **测试与诊断更直接**：围绕请求、事件和终态验证业务行为，便于将运行 ID、错误和执行事件关联到客户系统的日志与监控。
 - **便于定制和维护**：把 SDK 与 Adapter 依赖纳入客户应用的版本管理和发布流程，减少对全局 CLI、shell 环境和人工操作步骤的依赖。
 
-SDK 接入不表示所有执行都在宿主进程内完成；daemon、Host 和 Provider 仍可能使用独立子进程，部分 Adapter 仍依赖 Provider CLI。Runtime 及运行依赖的安装方案由 HostApp 决定。CLI 适合独立设备部署与运维、脚本操作和人工诊断；需要融合客户业务的应用优先采用 SDK。
+SDK 接入不表示所有执行都在宿主进程内完成；daemon、Host 和 Provider 仍可能使用独立子进程，部分 Adapter 仍依赖 Provider CLI。Runtime 及运行依赖的安装方案由 HostApp 决定。云端设备的 CLI 使用和客户应用的 SDK 接入分别维护，选型入口见 [INTEGRATION.md](INTEGRATION.md)。
 
 ## 设计原则与实施状态
 
@@ -36,7 +36,7 @@ SDK 接入不表示所有执行都在宿主进程内完成；daemon、Host 和 P
 
 **CLI 的配置文件约定属于 CLI 入口，不是 SDK 的接入要求。** `extraset <name>` 保存完整 `{ module, enabled?, config }` 到 `<home>/extras/<name>/config.json`；每次整份替换，重启 daemon 后加载。CLI/daemon 不解释或合并 Bot 字段。SDK 宿主从自己的 store 构造同样的声明对象，无需创建此文件。
 
-配置来源自由与 SDK 的内部运行状态持久化是两层职责。SDK／模块仍可在选定 Home 下管理 Runtime 身份、设备凭据、PID/socket、日志等状态；这些内部文件不要求宿主把自己的模块配置也存到同一位置。详细边界见 [接入指南：配置来源与 SDK 契约](INTEGRATION.md#02-配置来源与-sdk-契约)。
+配置来源自由与 SDK 的内部运行状态持久化是两层职责。SDK／模块仍可在选定 Home 下管理 Runtime 身份、设备凭据、PID/socket、日志等状态；这些内部文件不要求宿主把自己的模块配置也存到同一位置。详细边界见 [接入指南：配置来源与 SDK 契约](SDK_NATIVE_INTEGRATION_GUIDE.md#12-配置来源与-sdk-契约)。
 
 ### 本地运行与按需在线
 
