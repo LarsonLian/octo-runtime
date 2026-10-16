@@ -66,6 +66,8 @@ Octo 插件配置只校验已识别字段，未知扩展字段保留并忽略，
 
 渠道使用公共 InvokeInput 并显式选择 canonical，保存 Provider binding，处理交互与 reset。源事件及 payload 必须完整交给消费应用；UI 展示过滤不应裁剪原始历史数据。
 
+2026-10-16 补充：读取 adapter 选择以执行渠道业务策略，不等于解析执行计划。Extra 组装公开输入后直接调用 Host，`resolveLocalContext()` 仅在 Host 的共享准备路径使用。当前双渠道 dispatcher 的重复准备偏离该边界，待按[统一执行计划](../tasks/unify-execution-and-simplify-instructions/brief.md)删除；故障链和目标视图见[排查经验](../journal/shared/2026-10-16-im-invoke-preparation-lessons.md)。准备失败必须单独报告尚未发起执行，沿既有标准失败投影展示安全原因；Octo 独立错误卡片和普通文本分别投递。连接在线不代表本轮执行成功，任务错误不得污染连接状态。准备失败展示的补齐亦待实施，不将规则要求写成已验收能力。
+
 所有执行卡片（状态、工具进度及用户交互）必须由 CanonicalEvent 投影；不得解析助手正文、Provider 原始消息或自定义工具字段来替代统一事件与交互合同。AskUser 的既定接入路径是 interaction.requested → Channel 卡片 → 用户回答 → respondInteraction → 原模型继续执行，interaction.resolved 收敛卡片状态。交互卡片首版支持选项与自定义输入，核心注释引用 [F09 方案](../tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf09-统一用户交互的-im-呈现与响应)；特殊解析必须标注非标准，不作为默认替代。首版已接通，im-test 创建/收敛通过，真人回调未验；isSecret 不进入普通卡片或聊天回答回退，仅提示不支持安全输入并请求停止，宿主安全产品路径待决。
 
 IM 后台配置对应的 Agent 使用固定目录，不按任务选择或改变 workdir。Octo Channel Gateway 的本地引擎省略 Agent 配置中的 `adapter.workdir` 时，由渠道入口使用并创建 `~/octo-runtime/channels/{bot_id}`，不随配置 Home、任务或会话变化。显式 Agent 目录必须是绝对路径；任务级 workdir 或 workspace Context 不得覆盖该 Agent 的目录。OpenClaw 保留 Provider Agent 自有固定工作区。显式更新 Agent 配置与提交任务是不同操作。

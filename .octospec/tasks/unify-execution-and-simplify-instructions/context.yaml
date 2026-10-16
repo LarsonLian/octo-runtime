@@ -1,0 +1,50 @@
+status: planned
+baseline:
+  branch: feat/open-source-github
+  commit: fed4244
+  note: 规划时工作树有其他任务的未提交改动，实施前重新核对源码。
+rules:
+  - runtime-architecture
+  - runtime-invoke-input
+  - runtime-local-execution
+  - runtime-context-input
+  - runtime-context-extensions
+  - runtime-protocol-schema
+  - runtime-protocol-design
+  - runtime-output-protocol
+  - runtime-channel
+  - runtime-session-reset
+  - runtime-adapter-metadata
+  - runtime-extras
+  - runtime-engineering
+  - commit
+sources:
+  - AGENTS.md
+  - ../AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/tasks/_brief.template.md
+  - .claude/commands/octospec-plan.md
+  - .octospec/rules/architecture.md
+  - .octospec/rules/invoke-input.md
+  - .octospec/rules/local-execution.md
+  - .octospec/rules/context-input.md
+  - .octospec/rules/context-extensions.md
+  - .octospec/rules/protocol-schema.md
+  - .octospec/rules/protocol-design.md
+  - .octospec/rules/output-protocol.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/session-reset.md
+  - .octospec/rules/adapter-metadata.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+  - .octospec/tasks/unify-invoke-transport/brief.md
+  - .octospec/guides/im-agent-invocation-boundary.md
+  - /Users/lvsijia/.codex/skills/technical-writing-zh/SKILL.md
+decisions:
+  - IM Extra 可以读取 adapter；只通过公开 InvokeInput 调用 Host，执行解析归 AdapterHost。
+  - instructions 条目只保留 text，按原顺序用单个换行拼接。
+  - 删除 source，不兼容旧条目，不提供迁移或回退。
+  - 系统指令新 Provider 会话注入，续聊不重复注入。
+  - 当前仅规划，旧规则中按 source 分类的合同列为实施时更新项，不冒充已生效。

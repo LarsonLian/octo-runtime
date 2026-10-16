@@ -1,7 +1,7 @@
 ---
 type: Guide
 title: IM Agent 与通用 invoke 的责任边界
-description: 区分长期 IM Agent 的业务策略与通用单次执行能力，避免从 session 推导工作目录需求。
+description: 区分 IM 业务策略与 Host 执行准备，说明固定目录、公开输入和系统指令的责任边界。
 tags: [architecture, channel, agent, invoke, workspace, session]
 timestamp: 2026-10-16T00:00:00Z
 ---
@@ -23,6 +23,7 @@ IM 入口管理长期 Agent；`AdapterHost.invoke(input, environment)` 执行调
 | 事项 | IM 业务入口 / Channel Gateway | 通用 AdapterHost 与 Provider Adapter |
 | --- | --- | --- |
 | Agent 身份与配置 | 选择本次使用的长期 Agent、Bot 配置及业务默认值 | 根据已提交的执行配置调用 Provider，不维护 IM Agent 注册或业务配置 |
+| adapter 与执行准备 | 读取 adapter 选择用于业务判断，组装公开 InvokeInput | 统一解析执行配置、构造内部请求并调用所选 Adapter；Extra 的重复准备待删除 |
 | 工作目录 | 按 IM 后台 Agent 配置使用固定目录，不接受任务级目录切换；OpenClaw 可由 Provider 管理 | 校验和准备本轮已解析的目录；Provider 原生限制继续执行，不自行决定业务目录生命周期 |
 | 会话关联 | 管理频道到业务 session、generation、Provider binding 的有界映射 | 接收本轮身份与 opaque Provider session，返回真实会话及恢复结果，不自行维护频道映射 |
 | reset | 拦截业务命令、清除 binding 并切换会话代次；不切目录、不删文件、不等同取消 | 不解释 IM 的 /reset 命令，不根据新 sessionId 创建目录或删除旧会话文件 |
@@ -31,6 +32,30 @@ IM 入口管理长期 Agent；`AdapterHost.invoke(input, environment)` 执行调
 | 故障恢复 | 按业务证据与预算决定是否再次 invoke，避免重复副作用 | 一次 invoke 报告真实结果；Provider 原生恢复按其合同执行，不自动升级为 IM 业务重跑 |
 
 “单次执行”不表示每次必须新建 Provider 会话。同一 Provider 会话可以供后续 invoke 显式续接；业务 sessionId、Provider sessionId、调用 invocationId 与工作目录是不同概念，不互相推导。
+
+## 执行准备与系统指令调用视图
+
+2026-10-16 用户确认以下责任边界。图表示改造目标；当前 Octo / WeCom dispatcher 仍有重复 resolver 和内部请求构造，删除工作见[统一执行计划](../tasks/unify-execution-and-simplify-instructions/brief.md)。
+
+```mermaid
+flowchart TD
+    CONFIG[宿主持有的配置] --> EXTRA[Extra：adapter 业务判断、目录策略、会话与本轮 Context]
+    EXTRA --> INPUT[InvokeInput + environment]
+    OTHER[其他 SDK / CLI / AgentRun 入口] --> INPUT
+    INPUT --> HOST[AdapterHost 共享准备流程]
+    HOST --> RESOLVE[prepareInvokeInput 内解析执行项]
+    HOST --> RENDER[完整 Context：区分普通材料与系统指令]
+    RESOLVE --> ADAPTER[Provider Adapter 原生映射]
+    RENDER --> ADAPTER
+    ADAPTER --> FRESH[新 Provider 会话：初始化系统指令]
+    ADAPTER --> CONTINUE[续聊：普通本轮输入，不重复系统指令]
+```
+
+Extra 在发起调用时读取当前业务配置并冻结本轮输入，不要求在启动时固化提示词。Extra 可以读取 adapter 选择，但不得调用 `resolveLocalContext()` 或先生成内部 `InvokeRequest` 再转回公开输入；业务默认值和目录约束继续在 Extra 处理。Host 负责将执行项交给执行 resolver，完整 Context 进入共享渲染与指令处理路径。
+
+普通业务 Context 是否逐轮发送由发起方决定，底层不缓存补齐或去重。`octo.control/instructions` 使用独立系统指令通道，续聊不重复初始化；需要更换系统指令时，业务显式新建或 reset Provider 会话。不能以减少重复 system 为由省略普通本轮 Context，也不能把 system 转成每轮用户正文。
+
+协议目标为 entries 只包含 `{ text }` 并以单个换行拼接，删除 source 且不兼容；这是待实施的变更，当前运行时校验仍要求旧字段。故障链、易错做法和调试顺序见[排查经验](../journal/shared/2026-10-16-im-invoke-preparation-lessons.md)。
 
 ## 目录能力与产品策略不能互相替代
 

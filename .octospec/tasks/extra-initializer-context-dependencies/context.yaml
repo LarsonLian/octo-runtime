@@ -1,0 +1,72 @@
+status: planned
+baseline:
+  commit: 147ee40
+  note: 工作树存在并行改动；本轮仅新增详细方案并更新本任务既有默认人设计划。
+rules:
+  - runtime-architecture
+  - runtime-extras
+  - runtime-context-input
+  - runtime-context-extensions
+  - runtime-channel
+  - runtime-invoke-input
+  - runtime-engineering
+  - runtime-lifecycle
+  - runtime-stateless
+  - runtime-session-reset
+  - commit
+sources:
+  - ../AGENTS.md
+  - AGENTS.md
+  - .claude/commands/octospec-plan.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/context-input.md
+  - .octospec/rules/context-extensions.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/invoke-input.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/runtime-lifecycle.md
+  - .octospec/rules/stateless-execution.md
+  - .octospec/rules/session-reset.md
+  - .octospec/rules/collaboration.md
+  - .octospec/tasks/_brief.template.md
+  - .octospec/tasks/im-agent-persona-and-context-audit/brief.md
+  - .octospec/tasks/unify-execution-and-simplify-instructions/brief.md
+  - packages/octo-runtime-daemon/src/extras.ts
+  - packages/octo-runtime-daemon/src/extra-config.ts
+  - packages/octo-runtime-daemon/src/server.ts
+  - packages/octo-runtime-daemon/src/runtime/types.ts
+  - packages/octo-runtime-daemon/src/runtime/supervisor.ts
+  - packages/octo-runtime-daemon/src/runtime/runner.ts
+  - packages/octo-runtime-daemon/src/runtime/daemon-runtime.ts
+  - packages/octo-runtime-extra-channel-gateway/src/extra.ts
+  - packages/octo-runtime-extra-channel-wecom/src/extra.ts
+  - packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts
+  - packages/octo-runtime-extra-channel-wecom/src/application/im-channel.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/contexts.ts
+  - packages/octo-runtime-protocol/src/context.ts
+  - public/extra.ts
+  - package.json
+  - test/extras.test.js
+  - test/im-extra-disposal.test.js
+  - test/im-session-scheduling.test.js
+  - /Users/lvsijia/.codex/skills/technical-writing-zh/SKILL.md
+decisions:
+  - 本次支持破坏性更新，不保留旧 Extra 接口兼容；不扩大为删除身份或配置数据的授权。
+  - config 始终为 JsonObject，函数依赖通过第二阶段独立参数注入。
+  - 外层同步返回初始化函数，初始化可异步，loadContexts 同时支持数组和 Promise 返回。
+  - 合并为无状态纯函数，同 key 动态整项替换，保留 base 位置，新项按动态顺序追加。
+  - 推荐 SDK 在 HostApp Node 组合层执行 Extra，需 M0 证实；不设计函数跨进程代理。
+  - 动态结果不缓存为历史；超时操作真正 settle 前继续计入并发，不靠重载绕过挂起操作。
+  - 默认 IM 人设正文为我是明略科技的Octo助理，动态 instructions 覆盖时不暗中拼接默认。
+  - 新增资源初值是设计建议，尚无本轮实测；任意不合作 JS 不能承诺绝对 OOM 防护。
+  - 本轮仅规划及文档核验，不修改产品代码或线上配置。
+validation:
+  - command: uv run --with pyyaml python .octospec/scripts/lint.py
+    result: 通过，174 个 OKF 单元、20 条规则、1410 个本地文件链接。
+  - command: git diff --check
+    result: 通过。
+  - scope: 产品与内存验证
+    result: 本轮仅规划；未运行产品构建、回调堆测试、真实 Provider 或线上功能联调。

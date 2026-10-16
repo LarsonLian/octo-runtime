@@ -2,6 +2,16 @@
 
 ## 2026-10-16
 
+- 按 technical-writing-zh 新建[Extra 两阶段初始化与动态 Context 详细计划](tasks/extra-initializer-context-dependencies/brief.md)，附接口装配选型、内存合同及逐模块评分。采用纯 JSON config 与独立函数依赖，动态回调可同步或异步，明确整项替换、无历史缓存、真实未结束调用限额和卸载失败边界。用户本次明确支持破坏性更新，不考虑旧接口兼容；默认正文修订为“我是明略科技的Octo助理”。准备度 86，SDK 同进程装配须先验证；仅文档，未改产品代码或运行配置，未做新增内存或线上功能测试。
+
+- 新建[IM Agent 默认人设与 Context v3 简化计划](tasks/im-agent-persona-and-context-audit/brief.md)及[逐项评估](tasks/im-agent-persona-and-context-audit/assessment.md)：默认 IM 配置与完整 CLI/Extra/SDK 示例逐 Bot 显式写入“我是Octo助理”；保留 text 列表、完整移除 instructions.source，关联已有统一准备修复。区分无兼容解析、活动配置升级与历史快照保留；审查 MCP 引用、旧同步类型、catalog、路由常量、业务合并与旧限额开关。仅计划与源码评估，未改产品代码或配置，未线上调试。
+
+- 补充[准备失败及相邻 catch 的隔离排查](journal/shared/2026-10-16-im-invoke-preparation-lessons.md#同类错误的补充排查)：Octo 七种准备故障均只回通用文案、未 invoke 且未创建展示；instructions 之外还复现 Runtime selection 被 Extra resolver 拒绝。核对规则 403/404、非法 MCP，并复现双渠道会话读取失败无回复、展示初始化异常、明确 Host 拒绝被误报结果未知及 WeCom 任务诊断污染连接 error。更新计划与验收；无线上请求、Provider 调用或产品代码改动。
+
+- 按用户要求沉淀[IM 预置指令故障与架构经验](journal/shared/2026-10-16-im-invoke-preparation-lessons.md)，刷新 IM Agent 指南的责任矩阵与调用图，并补充架构、Context 和 Channel 规则。区分读取 adapter 与解析执行计划、普通 Context 与会话初始化指令、连接绿点与执行状态；明确局部复现证据、CLI 差异未完整重放及待实施范围。仅更新 Octospec，不将计划标成代码已完成。
+
+- 新建[统一执行准备与简化指令协议计划](tasks/unify-execution-and-simplify-instructions/brief.md)：核对 Extra 重复解析与 Host 已有共享准备路径，局部复现 `LOCAL_CONTEXT_TYPE_UNSUPPORTED: octo.control/instructions`。按用户决策规划 Extra 直接 invoke、entries 只留 text 且单换行拼接、删除 source 不兼容；列出全 Adapter 会话语义、错误展示和消费者升级验收。仅规划，未改产品代码或运行配置，未进行 Provider / IM 功能联调。
+
 - 澄清 [F32 的约束性质与完成口径](tasks/gateway-august-feature-assessment/assessment.md#f32-是交付约束如何判定完成)：建议作为各改造共同引用的交付验收约束，不新增独立产品功能或默认改 CI。逐项确认场景、完成必要检查/真实验证并更新变化的说明与版本证据；必要未验项继续待验收。可执行性已为 100，目标 100% 不等于当前通过率，必要性 65 不需要追成 100；仍待用户评审，仅文档。
 
 - F31 改造方向按用户要求收束为已确认纳入计划、待实施，具体接口名/文件名/保留口径仍待细化；开始最后一项 [F32 工程验证与操作说明](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf32-工程验证与操作说明)。核对旧漏 build 修复与当前测试前构建、CI、SDK/双渠道生命周期回归及操作文档；建议复用现有工程体系，验收随各改造完成，不迁入旧 Worker/known-bot 模型。必要性 65、可执行性 100、目标建议 100%；撤销原无具体障碍依据的 95 分。F32 待评审、本项后剩 0 项，仅文档，未运行功能测试或线上调试。

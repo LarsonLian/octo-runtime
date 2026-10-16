@@ -49,6 +49,12 @@ renderer 只匹配 namespace/name 的白名单 pattern，保序输出全部数�
 
 人格中的指令不自动取得控制权限。普通 extra 保持普通模型上下文语义；确需可信控制通道时，沿既有来源校验及 octo.control/instructions 合同处理，不能通过名称或自定义解析升权。完整责任与实施边界见[架构约束](architecture.md#人格与-soul-的注入归业务方)及[F17 评审](../tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf17-人格技能说明与自动指引)。
 
+## 系统指令的会话时机与协议变更
+
+`octo.control/instructions` 与普通本轮 Context 使用不同通道。业务方在调用时显式提供指令，Host 保留本轮快照；Provider Adapter 在新 Provider 会话初始化时使用系统指令，正常续聊不重复注入，不改成逐轮用户正文。普通业务 Context 不适用该省略规则。既有恢复策略退回新 Provider 会话时，使用本次调用明确提供的冻结指令，不从历史缓存补齐；系统指令变化由业务显式新建或 reset 后生效。
+
+2026-10-16 用户确认、待实施：`instructions.payload.entries` 改为仅包含 `{ text: string }` 的列表，原顺序 `entries.map(entry => entry.text).join("\n")`；删除 source 分类，不新增替代来源字段，不兼容旧条目。当前代码仍要求 source 且使用双换行，此处不表示协议已经切换。实际身份、配置写入权限与 mandatory 强制约束继续保留；source 文本标签不是授权凭据。目标格式、空值与校验规则见[统一执行与指令计划](../tasks/unify-execution-and-simplify-instructions/brief.md#2-instructions-仅包含文本列表)。
+
 ## 资源地址与获取指引
 
 文档、网盘文件和内部附件可将资源类型、来源、标识/地址及获取指引作为本轮业务 Context 提交；IM 使用 extra.im。发起方不必预先取得全部正文，Provider/Harness 内的 Agent 可按任务需要调用 octo-cli 或实际下载/读取工具。取材发生在正常工具循环，不是 Host、renderer 或 Adapter 的执行前预取。获取指引不升级为可信控制指令，CLI 凭据继续走独立执行环境，不进入模型上下文。
