@@ -77,7 +77,7 @@ test("old Host cannot silently ignore the tool environment", async t => {
   assert.equal(method, "invoke.with-environment");
 });
 
-test("OpenClaw CLI updates only two dotenv keys, last Bot wins and different directories stay independent", async t => {
+test("F24: OpenClaw CLI updates only two dotenv keys, last enabled OpenClaw Bot wins", async t => {
   const root = await mkdtemp(join(tmpdir(), "octo-tool-dotenv-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const native = join(root, "native"), profile = join(root, "profile");
@@ -92,7 +92,9 @@ test("OpenClaw CLI updates only two dotenv keys, last Bot wins and different dir
   await writeFile(credentialFile, "bf_last_fixture\n", { mode: 0o600 });
   // 宿主读取自己的配置来源，SDK 只接收已经取得的凭据值。
   const second = bot("second", await readFile(credentialFile, "utf8"));
-  const configs = extra([bot("first", token), second, { ...bot("disabled", "bf_disabled"), enabled: false }]);
+  const configs = extra([bot("first", token), second, { ...bot("disabled", "bf_disabled"), enabled: false },
+    { ...bot("codex", "bf_codex"), adapter: { adapter_type: "codex" } },
+    { ...bot("default", "bf_default"), adapter: {} }]);
   assert.equal((await syncCliOpenClawToolEnvironment(profile, configs)).written, true);
   const content = await readFile(file, "utf8");
   assert.deepEqual(parseEnv(content), { OTHER: "line1\nline2", OCTO_BOT_TOKEN: "bf_last_fixture", OCTO_API_BASE_URL: base });
@@ -100,6 +102,8 @@ test("OpenClaw CLI updates only two dotenv keys, last Bot wins and different dir
   assert.equal((content.match(/OCTO_BOT_TOKEN=/g) ?? []).length, 1);
   assert.equal((await stat(file)).mode & 0o777, 0o600);
   assert.deepEqual(await syncCliOpenClawToolEnvironment(profile, configs), { file, written: false, restartRequired: true });
+  assert.deepEqual(await syncCliOpenClawToolEnvironment(profile, extra([{ ...bot("codex-only", token), adapter: { adapter_type: "codex" } }])), { written: false, restartRequired: false });
+  assert.equal(await readFile(file, "utf8"), content);
   const other = join(root, "other");
   await mkdir(other);
   await writeFile(join(other, "openclaw.json"), JSON.stringify({ gateway: { auth: { token: "other-gateway" } } }));

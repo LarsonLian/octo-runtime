@@ -128,7 +128,7 @@ async function readCliOrigin(
   }
 }
 
-/** CLI startup only. One instance has one shared dotenv identity; last configured Bot wins. */
+/** Octospec F24: one instance uses the last enabled OpenClaw Bot, never another Adapter. */
 export async function syncCliOpenClawToolEnvironment(
   runtimeRoot: string,
   extras: readonly ExtraRegistration[]
@@ -142,7 +142,7 @@ export async function syncCliOpenClawToolEnvironment(
   validateImBots(bots);
   let values: Record<string, string> | undefined;
   for (const bot of bots) {
-    if (bot.enabled === false) continue;
+    if (bot.enabled === false || bot.adapter.adapter_type !== "openclaw") continue;
     const token = configuredCredential(bot);
     if (!token) throw new Error("IM_CREDENTIALS_REQUIRED");
     values = Object.fromEntries(
