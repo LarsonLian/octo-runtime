@@ -29,6 +29,7 @@ import { getJson } from "./api/client.js";
 import { connectionFailure, ImConnectionError } from "./connection-error.js";
 import { sendReadReceipt } from "./api/messages.js";
 import { deliveryNoticeCard } from "../presentation/delivery-notice.js";
+import { ImSendError } from "../delivery/text-send.js";
 
 /** Octo IM 平台连接器：WuKong 与 Octo REST 适配；不是 MCP 连接器。 */
 export class GatewayTransport {
@@ -136,16 +137,17 @@ export class GatewayTransport {
           },
           isReplyDelivered: (effectKey) =>
             connection.isDelivered(stableEffectKey(this.identity, message, effectKey, "text")),
-          replyDeliveryUnknown: async (event, effectKey, replyEffectKey) => {
+          replyDeliveryUnknown: async (event, effectKey, replyEffectKey, deliverySignal) => {
             if (
-              this.#closed ||
-              signal.aborted ||
+              deliverySignal.aborted ||
               connection.isDelivered(
                 stableEffectKey(this.identity, message, replyEffectKey, "text")
               )
             )
               return;
-            await this.#api!.displayCard(
+            // F27：REST 跟随 Bot/Extra 的投递期限，不跟随已断开的 WS 连接期限。
+            const rest = new OctoConnector(this.config, token, deliverySignal, async () => {});
+            const sent = await rest.displayCard(
               message,
               deliveryNoticeCard(event),
               stableEffectKey(this.identity, message, effectKey, "delivery"),
@@ -154,6 +156,13 @@ export class GatewayTransport {
                   stableEffectKey(this.identity, message, replyEffectKey, "text")
                 )
             );
+            if (
+              !sent &&
+              !connection.isDelivered(
+                stableEffectKey(this.identity, message, replyEffectKey, "text")
+              )
+            )
+              throw new ImSendError("IM_DELIVERY_NOTICE_UNSUPPORTED", "failed");
           },
           replyFailure: async (event, effectKey) => {
             if (this.#closed || signal.aborted) return;

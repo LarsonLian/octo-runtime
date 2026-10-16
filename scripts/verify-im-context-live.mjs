@@ -25,6 +25,7 @@ import { RuntimeLogging } from "../packages/octo-runtime-adapter-sdk/dist/index.
 import { AdapterHost } from "../packages/octo-runtime-adapter-host/dist/index.js";
 import { createCodexAdapter } from "../packages/octo-runtime-adapter-codex/dist/index.js";
 import { ExtraPlugins } from "../packages/octo-runtime-daemon/dist/index.js";
+import { GatewayTransport } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/channel.js";
 import Ws from "ws";
 import {
   registerBot,
@@ -261,6 +262,93 @@ const env = {
 };
 delete env.OCTO_BOT_ID;
 delete env.OCTO_PROFILE;
+if (process.argv.includes("--delivery-disconnect")) {
+  const lifetime = new AbortController();
+  let accept;
+  const inbound = new Promise((resolve) => {
+    accept = resolve;
+  });
+  const transport = new GatewayTransport(
+    {
+      bot_id: receiver.id,
+      bf_token: receiver.token,
+      api_url: receiver.api,
+      group_ids: [group.group_no],
+      allowed_sender_ids: [sender.id],
+      adapter: { adapter_type: "codex" }
+    },
+    async () => receiver.token,
+    {
+      onMessage: (message) => {
+        if (message.text === marker) accept(message);
+      },
+      onDisconnect: () => {}
+    }
+  );
+  try {
+    await transport.start(lifetime.signal);
+    await execute(
+      "octo-cli",
+      [
+        "message",
+        "send",
+        "--data",
+        JSON.stringify({
+          channel_id: group.group_no,
+          channel_type: 2,
+          payload: { type: 1, content: marker, mention: { uids: [receiver.id] } }
+        })
+      ],
+      { env, timeout: 15000, maxBuffer: 1 << 20 }
+    );
+    let timer;
+    const message = await Promise.race([
+      inbound,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(Error("QA_INBOUND_TIMEOUT")), 15000);
+      })
+    ]).finally(() => clearTimeout(timer));
+    await transport.close();
+    const before = new Set(
+      (
+        await getChannelMessages({
+          apiUrl: receiver.api,
+          botToken: receiver.token,
+          channelId: group.group_no,
+          channelType: 2,
+          limit: 50
+        })
+      ).map((message) => String(message.message_id))
+    );
+    await message.replyDeliveryUnknown(
+      deliveryNotice(),
+      `${marker}:notice`,
+      `${marker}:text`,
+      lifetime.signal
+    );
+    const after = await getChannelMessages({
+      apiUrl: receiver.api,
+      botToken: receiver.token,
+      channelId: group.group_no,
+      channelType: 2,
+      limit: 50
+    });
+    assert.ok(
+      after.some(
+        (message) =>
+          !before.has(String(message.message_id)) &&
+          JSON.stringify(message.payload).includes("OH-RUN-2005")
+      )
+    );
+    console.log(
+      JSON.stringify({ feature: "F27", wsClosed: true, restUnknownNoticeReadBack: true })
+    );
+  } finally {
+    lifetime.abort();
+    await transport.close();
+  }
+  process.exit(0);
+}
 if (process.argv.includes("--logging")) {
   const root = await mkdtemp(join(tmpdir(), "octo-f31-live-"));
   const logging = new RuntimeLogging({ directory: join(root, "logs") });
@@ -304,9 +392,17 @@ if (process.argv.includes("--logging")) {
         "message",
         "send",
         "--data",
-        JSON.stringify({channel_id:group.group_no,channel_type:2,payload:{type:1,content:"请不要调用工具，只回复 F31_LOG_QA_OK。",mention:{uids:[receiver.id]}}})
+        JSON.stringify({
+          channel_id: group.group_no,
+          channel_type: 2,
+          payload: {
+            type: 1,
+            content: "请不要调用工具，只回复 F31_LOG_QA_OK。",
+            mention: { uids: [receiver.id] }
+          }
+        })
       ],
-      { env, timeout:15000, maxBuffer: 1 << 20 }
+      { env, timeout: 15000, maxBuffer: 1 << 20 }
     );
     assert.equal(JSON.parse(result.stdout).ok, true);
     let finished = false;

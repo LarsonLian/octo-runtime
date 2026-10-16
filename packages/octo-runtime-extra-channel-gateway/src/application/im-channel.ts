@@ -529,7 +529,13 @@ export class ImRuntime {
         const notice = deliveryNotice();
         const result = await this.#delivery.deliver(
           `delivery-unknown:${effectKey}`,
-          () => message.replyDeliveryUnknown!(notice, `delivery-unknown:${effectKey}`, effectKey),
+          () =>
+            message.replyDeliveryUnknown!(
+              notice,
+              `delivery-unknown:${effectKey}`,
+              effectKey,
+              this.#signal
+            ),
           { obsolete: () => Boolean(message.isReplyDelivered?.(effectKey)) }
         );
         if (result.state !== "delivered") this.#diagnostic("IM_DELIVERY_NOTICE_FAILED");

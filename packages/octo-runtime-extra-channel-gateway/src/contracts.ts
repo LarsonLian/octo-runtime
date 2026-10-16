@@ -69,7 +69,8 @@ export interface ImInboundMessage {
   replyDeliveryUnknown?(
     event: CanonicalEvent,
     effectKey: string,
-    replyEffectKey: string
+    replyEffectKey: string,
+    signal: AbortSignal
   ): Promise<void>;
   isReplyDelivered?(effectKey: string): boolean;
   buildContext(
