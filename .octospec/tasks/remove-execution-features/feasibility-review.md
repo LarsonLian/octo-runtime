@@ -111,3 +111,63 @@ SDK/ACP 类型、Host descriptor/runner/serve、协议导出和默认数组均�
 F5/F6 的依赖项由 17 升至 20，依据是明确的提交快照、跨仓依赖和前置变更处理合同；测试项由 17 升至 18，依据是隔离验证消除脏树掩盖缺依赖的风险。仍扣 2 分保留实际构建/回归尚未执行的不确定性。F7 依赖项由 17 升至 20，依据同上及生产切换门槛；其余扣分和 F2/F3/F8/F9/F1 的扣分保持首轮说明，不因文档修订虚增实施证据。
 
 执行时必须检查初始暂存区归属，确保导出的 index tree 只含本任务准备提交的增量；若已有他人暂存内容，使用本任务独立 index 构造快照，不能把他人内容作为“完整 index tree”一并提交。每项真实测试失败或新发现缺陷继续记录和评估，未完成的真实链路仍按计划列为未完成，不以本报告分数替代。
+
+# F6 隐藏消费者增量评估
+
+独立审查 `autonomous-plan.md` 新增的“F6 隔离构建发现的提交依赖”，并只读检查隔离快照 `/var/folders/76/39mbswr923z8ykj89093khl00000gp/T/octo-features-ejzjaB/octo-agent-worker`。本次不是对已完成产品修改的代码评审；扩展实现尚未开始。
+
+评分：目标与责任 20、具体实现 19、依赖与发布 19、失败与安全 19、测试与交付 19，合计 **96/100，可以实施该 F6 增量**。其余 Feature 保持前次复评结果。没有必须先由用户决定的产品分歧，仍须依计划验证后才提交。
+
+## 独立证据
+
+- `internal/service/agent_readiness_svc.go:32` 的 helper 直接读取 RuntimeAdapter.ExecutionFeatures；`runtimeSupportsAdapter` 当前只是它的空 feature 包装。将其改成校验 Run 合同、已知 Adapter 和真实 available 的直接判断，保留 `runtimeSupportsAgentSource`，是删除字段后的必要依赖修复。
+- `internal/service/run_svc.go:325` 逐个检查 RequiredExecutionFeatures；其前后分别保留租户/owner/online、Adapter、来源和 watchdog 参数检查。删除标签循环不应影响这些独立约束，计划已明确。
+- `internal/service/agent_run_svc.go:165` 先调用 InputImageParts 做格式/大小校验，`:236` 后才按 input.image 标签预筛选。移除后者及 `input_modality.go` 不要求移除前者。授权候选在 `runtime_selection_svc.go` 按 actor、space、owner 和 teamspace membership 建立，必须继续保留，计划对此已有回归要求。
+- `internal/service/runtime_limits.go:60` 的额外门槛读取 executionFeatures；`validateRuntimeLimits` 有独立的字段、整数范围和 observe/enforce 校验。只删门槛、保留调用点的数值/策略校验，能够同时解决编译问题和过期准入逻辑，不能将校验成功当作远端已应用策略的证据。
+- `internal/domain/context.go:127`、`:144`、`:152` 仍定义三个过期字段，context 解析自动追加审批/interaction 标签，`runtime_selection_svc.go:73` 自动追加 react/existing-target。Runtime 当前提交的 `assertResolvedExecutionPlan` 白名单与 schema 均不接受这些字段。同步 Worker 类型、校验、生成、profile、fixtures 和 OpenAPI 是与当前合同一致的修复，不是新增执行协议。
+- `internal/service/context_svc.go:20` 仍将 ProviderCompatibility 放入 continuity 身份哈希，而 `internal/repository/work_repo.go:93` 根据哈希变更决定 Provider binding/epoch。计划保留存储字段和全部真实身份、模型、审批、工作区及关键执行配置，避免把字段清理扩为会话数据清洗。原哈希的 provider 使用 omitempty；原值为空时删除该占位应保持同一 JSON 及哈希，适合作为定向回归断言。
+- 主工作树中的相关服务文件由并行任务删除，隔离快照仍包含它们。仅在快照编辑并把受测 blob 更新到本任务 index，可以提交最小修复而不恢复主工作树文件或夹带服务拆分删除。提交 tree 与受测 tree 的一致性仍是必要条件。
+
+## 扣分与实施检查
+
+具体实现扣 1 分：间接消费者和 fixtures 的完整性需要全量搜索、编译和测试最终确认，不能仅以直接字段引用消失结束。依赖与发布扣 1 分：本次修复覆盖已提交旧服务路径，真实环境尚未部署该消费者，发布顺序约束继续有效。
+
+失败与安全扣 1 分：三字段按未知执行计划字段拒绝后，含旧字段的历史冻结请求可能不能被新解码器读取；计划明确拒绝旧合同且不做迁移，实施记录须如实注明这一发布风险。不得为消除失败而删除历史请求、重建数据库或清空 Provider 会话。旧 Runtime 发现额外字段被忽略与旧执行计划字段被拒绝是两个不同合同，测试不得混同。
+
+测试与交付扣 1 分：增量回归尚未运行。实施至少确认无标签可派发、错误租户/owner/source 仍失败、图片前置格式仍拒绝、非法预算在 claim 前失败、旧计划三个字段分别拒绝，以及无 compatibility 值时 continuity 哈希与原算法一致。继续执行完整隔离测试/构建与 OpenAPI 检查；仓库中 ExecutionTarget 等非直接依赖不因本次增量评估获得额外清理授权。
+
+以上均为已定义边界内可验证的实施风险，不构成低于 95 的未决方案阻断。本结论不授权远端部署、数据库迁移或修改既有 Runtime 身份与配置。
+
+# F10 桌面提交基线增量评估
+
+独立读取新增 F10 计划、`/tmp/octo-execution-features-app-baseline-typecheck.log`，并核对固定桌面快照 `/var/folders/76/39mbswr923z8ykj89093khl00000gp/T/octo-features-IXULIK/octo-work-app` 的实际源码和语言包。此次仍仅写报告，未修改桌面产品源码。
+
+评分：目标与责任 20、具体实现 19、依赖与发布 20、失败与安全 20、测试与交付 18，总计 **97/100，可以在 F5 前独立实施并提交 F10**。其他 Feature 保持既有评估结果。
+
+## 证据与边界
+
+typecheck 日志中的 ScenarioRequest/assertScenarioRequest 缺失均对应实际旧引用：`src/main/agent-conversation-service.ts:5` 与 `:120`、`src/shared/contracts.ts:869`、access-kit 两处输入合同，以及 `docSelectionBuilder.ts` 的 import/构造。access-kit client/preflight 和 `useDocumentReview.ts` 还有类型错误修复后仍须删除的透传路径。计划已经覆盖这条完整生产调用链，没有选择恢复 Runtime 已删除的协议。
+
+`docSelectionBuilder.ts` 当前把文本构造成显式 inline Context，再附带 scenario。删除后者仍能保留 document_id、选区原文、来源、32 KiB UTF-8 上限和 Context 协议校验。`useDocumentReview` 的执行配置、preflight、身份检查、重试与 clientRequestId 可继续沿用；不能借本次清理把材料构造移入 Host 或重新引入场景自动注入。main 的 assertContextEnvelope、禁止不可信 octo.control、owner/租户作用域和实际执行合同也须保持。计划明确保留这些边界。
+
+`ApprovalCards.tsx:117` 起实际引用 `chat.question.title`、`additional`、`answer`、`cancel`、`submit` 五个键。独立解析两份 JSON，`zh_CN`、`en_US` 均不存在 chat.question。补对应中英文文案可直接修复类型错误与原始 key 回显；无需变动回答收集、密码输入、过期/断线禁用、审批 pending 或提交行为。现有 approval-cards、approval-submission 和 i18n 测试可复用。
+
+固定快照的 Runtime 已构建，桌面 typecheck 真实失败，因此这是有证据的 F5 前置缺陷，而不是为夹带其他工作扩大范围。只提交混合文件里的退役引用和五个键，继续采用受测 index tree 快照；不得夹带主工作树中的分页、插件、项目或配置改动。
+
+## 扣分与执行要求
+
+具体实现扣 1 分：计划首段称“六个翻译键”，后续明确枚举五个，实际也只有五个，主代理应将首段改成五个，避免交付记录前后冲突。另有 `scripts/test-object-mentions-live.mjs` 读取旧响应的 context.scenario 作为诊断，实施时按既有 F7 QA 清理范围处理，不把诊断字段保留误写成生产协议仍可用。
+
+测试与交付扣 2 分：尚未运行修复后的隔离类型/全量测试与 build:test，也未取得 UI 真实 renderer 证据。按原计划 F7 对 im-test 的 CDP 要求，在交付记录核实五个文案可用、选区仍作为本轮 Context 传入、没有恢复 scenario 透传；不能仅以 typecheck 通过宣称真实执行已完成。翻译只改文本时不必另造与实现镜像的新测试，但现有问答/翻译用例必须通过。
+
+除上述可直接纠正的笔误和实施验证外，没有需要先补产品决定的阻断项。F10 的通过不扩展为删除业务自有同名 scenario 概念、重建会话存储或恢复旧协议的授权。
+
+## F10 文案路径与测试环境修订复评
+
+更正前节表述：两份语言包缺的是组件要求的 `chat.question` 路径，并非五条文案物理缺失。独立解析固定快照确认，原值均位于 `chat.activity.question`：中文为“需要你的回答 / 补充或其他回答 / 你的回答 / 取消回答 / 提交回答”，英文为对应完整五项。源码搜索未找到使用旧嵌套路径的消费者。将整个已有 question 对象移到 chat 直属，保持原文案，比另建重复对象更小且正确；前节“均不存在 chat.question”的路径判断仍成立。
+
+独立检查测试日志及源码，package.json 仅声明 happy-dom，四份测试首行却指定 jsdom，日志显示全部因 ERR_MODULE_NOT_FOUND 未启动。`local-context-attachment`、`object-source-button`、`object-context-transfer`、`run-context-receipt` 只使用 React act、标准 DOM、事件、location 和 bridge mocks，未见依赖 jsdom 专有 API。将四行环境注释改成仓库其他 UI 测试使用的 happy-dom，不增依赖、不跳过断言，方案可执行；不能在未运行前宣称其行为测试已通过。
+
+Electron 二进制缺失来自 ignore-scripts 安装，显式执行锁定 Electron 依赖的安装脚本属于隔离环境准备，无需改产品代码或扩大 Runtime 安装决策权限。
+
+本次两项修订维持 F10 **97/100**，仍达到实施门槛。维度为目标与责任 20、具体实现 19、依赖与发布 20、失败与安全 20、测试与交付 18。具体实现保留 1 分针对 DOM 环境差异待实际用例验证，测试与交付保留 2 分针对完整验证尚未完成；移除旧笔误不被用来虚增完成证据。主代理继续执行四份实际用例、全量检查和既定真实 renderer 验证；失败时保持断言并定位差异，不以换环境掩盖错误。

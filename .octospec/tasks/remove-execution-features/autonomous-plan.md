@@ -44,6 +44,7 @@ F4 已由 `69341da` 提交并推送；本计划补齐[原计划](brief.md)中待
 | 顺序 | Feature | 具体产物与验收 |
 | --- | --- | --- |
 | 1 | F6 Worker 消费者 | 删除 DTO 字段及必填/长度检查，补无字段与旧额外字段用例，保留其他校验 |
+| 1.5 | F10 桌面提交基线 | 修复隔离 HEAD 中已退役 ScenarioRequest 引用及问答翻译遗漏，建立 F5 可构建基线 |
 | 2 | F5 桌面产品策略 | 停止依赖标签，明确本产品交付类型的审批选项及未知类型处理，删除映射和 fixtures 字段 |
 | 3 | F2 执行合同 | Host 删除标签判断，具体 Adapter 明确拒绝无法传递的图片/审批，保留真实 responder 及身份校验 |
 | 4 | F3 watchdog | 按本次实际原生活动切换进度来源，修复审批计时与 MCP 工具进度遗漏 |
@@ -62,7 +63,26 @@ F4 已由 `69341da` 提交并推送；本计划补齐[原计划](brief.md)中待
 
 新增/扩展 domain 测试：无字段可用/不可用 provider、旧额外字段、重复 provider、无效来源、缺少 available、可用但无 path；HTTP/WS 登记合同的现有测试继续运行。执行 `go test ./...`、`go build ./cmd/server ./cmd/migrate` 和现有 OpenAPI 检查。对混合文件只提交本次删除和测试，不将新增 AgentSource 等服务拆分差异混入。
 
+### F6 隔离构建发现的提交依赖
+
+`67de2b5` 的完整提交仍有旧服务消费者，被工作树中的并行服务删除隐藏。隔离构建确认 `agent_readiness_svc.go` 与 `runtime_limits.go` 直接读取已删字段；`run_svc.go` 仍以标签筛选候选，`agent_run_svc.go` 仍按图片标签拒绝输入。该发现使原 F6 尚不能提交，以下增量须先独立复评达到 95 分再实施。
+
+- `runtimeSupportsAdapter` 直接校验 Run 合同及可用 Adapter，删除带 feature 参数的 helper；来源判断继续校验真实 `agent_sources`。
+- `run_svc.go` 删除 RequiredExecutionFeatures 循环；`agent_run_svc.go` 删除图片标签预筛选及仅为该筛选存在的 `input_modality.go`。图片格式、大小、资源权限、授权候选及 Adapter 实际编码检查继续由原有边界承担。
+- watchdog 仅校验数值和策略参数，删除静态标签门槛及其错误码分支；保留调用点的参数验证，不把可选策略识别伪装成已应用证据。改测无标签时可派发，非法预算仍在 claim 前拒绝。
+- 与 Runtime 已提交的执行计划白名单同步：从 Worker 的 ResolvedExecutionPlan、JSON 校验、上下文生成及 executionProfile 删除 `required_capabilities`、`required_execution_features`、`provider_compatibility`，移除 react/approval/interaction/existing-target 的自动追加。continuity 哈希保留其余身份、会话、模型、审批、工作区及实际关键配置项，删除已无协议来源的 compatibility 占位，不修改会话数据或进行迁移。
+- 同步执行计划 fixtures 和 OpenAPI，只删除对应三个字段；旧字段作为未知执行计划字段明确拒绝，与 Runtime 一致。Runtime 发现中的旧可选 `execution_features` 仍按前述规则忽略，两者合同不同。补候选授权、无标签派发、图片前置格式与旧计划字段拒绝回归。
+- 被工作树删除的旧服务文件只在隔离快照中修改，并将受测 blob 暂存到本仓 index；不恢复这些工作树文件，不提交服务拆分的删除。完整测试/构建通过且受测 tree 与提交 tree 相等后才推送。
+
 ## F5：宿主决定可用选项
+
+### F10：隔离提交基线的新增缺陷
+
+桌面 `8ba4332` 与 Runtime `56f201f` 的固定快照安装和 Runtime build 均通过，桌面 typecheck 实测失败：仍引用 Runtime 已删除的 ScenarioRequest/assertScenarioRequest，且既有问答组件缺少五个翻译键。此项先独立复评达到 95 分，再于 F5 前单独实施提交。
+
+移除 main conversation service 的失效 import/校验、shared SendInput 与 access-kit 的两处 scenario 可选声明，以及 access-kit client/preflight 的透传。文档 selection builder 只返回原有 context，useDocumentReview 不再附加场景；保持业务方显式组织本轮 Context、选区大小/格式、执行配置与权限校验。更新 object-selection 测试验证仅 context 及原有边界。只采纳混合文件中对应退役引用的最小删除，不带入本地项目、分页或插件等并行改动。
+
+ApprovalCards 的五个翻译键实际误放在 `chat.activity.question`，将已有中英文对象移至 `chat.question`，保持文案和问答交互。全量测试另发现四个用例指定未声明的 jsdom；将 `local-context-attachment`、`object-source-button`、`object-context-transfer`、`run-context-receipt` 的环境注释与仓库已声明的 happy-dom 对齐，运行这些实际测试确认兼容，不新增依赖。Electron 在 ignore-scripts 安装后的初始化属于验收准备，显式运行已声明依赖的安装脚本后重测，不作为源码缺陷。运行隔离 typecheck、相关选区/问答/翻译测试、全量测试和 build:test；若再发现基线缺口，先记录实际错误并复评，不恢复 Runtime 已退役的协议来绕过检查。
 
 保留现有 `adapterQualification` 作为 Work App 私有产品入口，参数只接收 type，不接收 Runtime 标签。以本产品已交付的执行实现确定选项：Codex、Claude、CodeBuddy 三种审批；ACP 系列、OpenCode、OpenClaw、ZCode 为 ask/full_access；Antigravity 为 full_access。模型入口沿用当前产品的类型选择，不扩大支持。
 
