@@ -1,0 +1,11 @@
+rules:
+  - runtime-architecture
+  - runtime-adapter-metadata
+  - runtime-protocol-design
+  - runtime-local-execution
+  - runtime-output-protocol
+  - runtime-stateless
+  - runtime-engineering
+  - commit
+guides:
+  - adapter-authoring

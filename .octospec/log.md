@@ -2,6 +2,8 @@
 
 ## 2026-10-16
 
+- 建立[executionFeatures 清理开发计划](tasks/remove-execution-features/brief.md)：依据实际消费拆为七项，列出修改位置、依赖、失败行为、验收及 100 分制开发准备度；明确桌面标签筛选、Worker 必填字段和 watchdog 活动判定均为真实依赖，先调整消费者再移除生产字段。本轮仅计划，不宣称实现或线上验收完成。
+
 - 固化[宿主管理 Adapter 支持范围的决定](journal/shared/2026-10-16-adapter-forwarding-ownership.md)：`executionFeatures` 确定为待删除的过度设计，不新增标签或替代能力表；Adapter 负责明确输入的原生适配转发，运行状态及必要协议校验按实际执行边界处理。同步架构、Adapter 规则和开发指南；本轮仅更新 OKF，源码清理与线上验收未实施。
 
 - 实施[诊断后无回复收尾](tasks/im-diagnostic-silent-completion/brief.md)：canonical 通过 `run.notice/provider_diagnostic` 保留首条原因，IM 统一选择最终回复；无有效答案且有诊断时卡片/文本均提示待核查，不触发重放。正常执行不增加诊断、模型或网络请求。全量 929 通过、8 跳过，im-test 五场景、真实 Codex 正常执行和桌面 CDP 通过，详见[交付记录](journal/shared/2026-10-16-im-diagnostic-silent-completion-delivery.md)。
