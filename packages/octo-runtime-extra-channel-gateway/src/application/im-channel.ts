@@ -496,6 +496,12 @@ export class ImRuntime {
       return;
     }
     let prepared: ReturnType<typeof createImInvocation>;
+    // Octospec F05: .octospec/tasks/gateway-august-feature-assessment/assessment.md
+    // 仅普通任务开始时回执；通知失败不阻断 Context 准备和模型执行。
+    if (message.markRead)
+      void Promise.resolve()
+        .then(() => message.markRead!(this.#signal))
+        .catch(() => this.#diagnostic("IM_READ_RECEIPT_FAILED"));
     let environment: InvokeEnvironment;
     try {
       environment = message.executionEnvironment?.() ?? {};

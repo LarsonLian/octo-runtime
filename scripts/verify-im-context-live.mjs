@@ -6,6 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { build_im_contexts } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
 import { verifyBotIdentity } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/auth.js";
+import { sendReadReceipt } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/api/messages.js";
 import {
   getChannelMessages,
   fetchBotGroups
@@ -119,6 +120,17 @@ for (let attempt = 0; attempt < 10 && !received; attempt++) {
   if (!received) await new Promise((resolve) => setTimeout(resolve, 300));
 }
 assert.ok(received, "Test message must be visible through the receiver identity");
+if (process.argv.includes("--read")) {
+  await sendReadReceipt({
+    apiUrl: receiver.api,
+    botToken: receiver.token,
+    channelId: group.group_no,
+    channelType: 2,
+    messageIds: [received.message_id],
+    signal: AbortSignal.timeout(15000)
+  });
+  console.log(JSON.stringify({ feature: "F05", readReceiptAccepted: true }));
+}
 if (!resourceTest) assert.deepEqual(received.payload.reply, quoted);
 const envelope = await build_im_contexts(
   {

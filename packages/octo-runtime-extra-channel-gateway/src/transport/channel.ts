@@ -23,6 +23,7 @@ import { prepareFinalMention } from "./mentions.js";
 import { getGroupMembers, type GroupMember } from "./api/conversations.js";
 import { getJson } from "./api/client.js";
 import { connectionFailure, ImConnectionError } from "./connection-error.js";
+import { sendReadReceipt } from "./api/messages.js";
 
 /** Octo IM 平台连接器：WuKong 与 Octo REST 适配；不是 MCP 连接器。 */
 export class GatewayTransport {
@@ -86,6 +87,15 @@ export class GatewayTransport {
         let finalReply: { key: string; value: ReturnType<typeof prepareFinalMention> } | undefined;
         this.callbacks.onMessage({
           messageId: message.messageId,
+          markRead: (turnSignal) =>
+            sendReadReceipt({
+              apiUrl: this.config.api_url,
+              botToken: token,
+              channelId: message.channelId,
+              channelType: message.channelType,
+              messageIds: [message.messageId],
+              signal: AbortSignal.any([signal, turnSignal])
+            }),
           senderId: message.fromUid,
           conversationId: message.channelId,
           conversationKind:

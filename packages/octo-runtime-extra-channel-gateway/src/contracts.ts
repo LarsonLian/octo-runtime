@@ -56,6 +56,7 @@ export type ScopedOctoBotConfig = OctoBotConfig & { spaceId: string };
 
 /** 平台归一化后的单条消息。平台回调身份与正文保留在 connector 的闭包内。 */
 export interface ImInboundMessage {
+  markRead?(signal: AbortSignal): Promise<void>;
   messageId: string;
   senderId: string;
   conversationId: string;
