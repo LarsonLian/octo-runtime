@@ -1,26 +1,29 @@
+import { connectionFetch, connectionJson, httpConnectionFailure } from "./connection-error.js";
+
 /** Resolve tenant scope through the octo-auth verify-bot contract. */
 export async function verifyBotIdentity(
   apiUrl: string,
   token: string,
   signal: AbortSignal
 ): Promise<{ bot_uid: string; space_id: string }> {
-  const response = await fetch(`${apiUrl.replace(/\/+$/, "")}/v1/auth/verify-bot`, {
-    method: "POST",
-    redirect: "error",
-    signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ bot_token: token })
-  });
+  const response = await connectionFetch(
+    `${apiUrl.replace(/\/+$/, "")}/v1/auth/verify-bot`,
+    {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bot_token: token })
+    },
+    "AUTH"
+  );
   if (!response.ok) {
-    await response.body?.cancel();
-    throw new Error(`IM_AUTH_HTTP_${response.status}`);
+    throw await httpConnectionFailure(response, "AUTH");
   }
-  let data: { bot_uid?: unknown; space_id?: unknown };
-  try {
-    data = (await response.json()) as typeof data;
-  } catch {
-    throw new Error("IM_AUTH_IDENTITY_INVALID");
-  }
+  const data = (await connectionJson(response, "AUTH", "IM_AUTH_IDENTITY_INVALID")) as {
+    bot_uid?: unknown;
+    space_id?: unknown;
+  };
   if (
     !data ||
     typeof data.bot_uid !== "string" ||

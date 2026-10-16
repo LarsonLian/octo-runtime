@@ -27,6 +27,7 @@ import { ImTask } from "../execution/task.js";
 import { ImDeliveryDispatcher } from "../delivery/dispatcher.js";
 import { ImRunProjector } from "../presentation/run-projector.js";
 import { MemoryImSessionStore, type ImSessionStore } from "./session-store.js";
+import { connectionFailure, ImConnectionError } from "../transport/connection-error.js";
 
 export class ImRuntime {
   readonly config: ImBotConfig;
@@ -53,6 +54,8 @@ export class ImRuntime {
   #error?: string;
   #pending = 0;
   #retry = 0;
+  #everOnline = false;
+  #disconnecting?: Promise<void>;
   constructor(
     config: ImBotConfig,
     readonly dependencies: ImModuleDependencies
@@ -92,29 +95,53 @@ export class ImRuntime {
     if (this.#closing) await this.#closing;
     this.dependencies.signal?.throwIfAborted();
     if (this.config.enabled === false) return;
-    if (!this.#closed) return this.#connecting;
-    this.#closed = false;
-    this.#closing = undefined;
-    this.#abort = new AbortController();
-    this.#signal = AbortSignal.any([
-      this.#abort.signal,
-      ...(this.dependencies.signal ? [this.dependencies.signal] : [])
-    ]);
-    this.#delivery = new ImDeliveryDispatcher(this.#signal);
-    this.#connecting = this.#connect();
+    if (!this.#closed && this.#state !== "failed") return this.#connecting;
+    if (this.#connecting) return this.#connecting;
+    if (this.#closed) {
+      this.#closed = false;
+      this.#closing = undefined;
+      this.#abort = new AbortController();
+      this.#signal = AbortSignal.any([
+        this.#abort.signal,
+        ...(this.dependencies.signal ? [this.dependencies.signal] : [])
+      ]);
+      this.#signal.addEventListener(
+        "abort",
+        () => {
+          if (!this.#closed) void this.close().catch(() => this.#diagnostic("IM_DISPOSE_FAILED"));
+        },
+        { once: true }
+      );
+      this.#delivery = new ImDeliveryDispatcher(this.#signal);
+    }
+    this.#everOnline = false;
+    this.#retry = 0;
+    this.#error = undefined;
+    this.#state = "connecting";
+    this.#connecting = this.#connect(false);
     try {
       await this.#connecting;
     } finally {
       this.#connecting = undefined;
     }
   }
-  async #connect(): Promise<void> {
+  async #connect(recovering: boolean): Promise<void> {
     if (this.#closed || this.#signal.aborted) return;
     this.#connectionAbort?.abort();
-    await this.#connector?.close();
+    try {
+      await this.#disconnecting;
+      await this.#connector?.close();
+    } catch {
+      this.#state = this.#closed ? "stopped" : "failed";
+      if (!this.#closed) this.#error = "IM_DISPOSE_FAILED";
+      this.#everOnline = false;
+      return;
+    }
     if (this.#closed || this.#signal.aborted) return;
     this.#connectionAbort = new AbortController();
     const signal = AbortSignal.any([this.#signal, this.#connectionAbort.signal]);
+    let starting = true;
+    let disconnected: ImConnectionError | undefined;
     const credentials =
       this.dependencies.credentials ?? ((config) => Promise.resolve(config.bf_token));
     const connector = new GatewayTransport(this.config, credentials, {
@@ -127,87 +154,87 @@ export class ImRuntime {
       },
       onDisconnect: (code, retryable = true) => {
         if (connector !== this.#connector || this.#closed || signal.aborted) return;
-        this.#error = code;
-        if (!retryable) {
-          this.#connectionAbort?.abort();
-          void connector.close().catch(() => this.#diagnostic("IM_DISPOSE_FAILED"));
-          this.#state = "stopped";
-          if (this.#reconnect) {
-            clearTimeout(this.#reconnect);
-            this.#reconnect = undefined;
-          }
-          return;
-        }
-        this.#state = "retrying";
-        this.#scheduleReconnect();
+        if (disconnected) return;
+        disconnected = new ImConnectionError(code, retryable);
+        if (!starting) this.#lostConnection(connector, disconnected);
       }
     });
     this.#connector = connector;
-    this.#state = "connecting";
     try {
       await connector.start(signal);
       if (signal.aborted) {
         await connector.close();
         return;
       }
+      if (disconnected) throw disconnected;
+      starting = false;
+      this.#everOnline = true;
       this.#state = "online";
       this.#error = undefined;
       this.#retry = 0;
     } catch (error) {
       if (signal.aborted) return;
-      const code =
-        error instanceof Error && /^(?:IM|WECOM)_[A-Z0-9_]+$/.test(error.message)
-          ? error.message
-          : "IM_CONNECTION_FAILED";
+      starting = false;
+      const failure = connectionFailure(error);
       this.#connectionAbort.abort();
-      await connector.close();
-      this.#error = code;
-      if (this.#reconnect) {
-        clearTimeout(this.#reconnect);
-        this.#reconnect = undefined;
+      this.#error = failure.message;
+      const retry = recovering && this.#everOnline && failure.retryable;
+      this.#state = retry ? "retrying" : "failed";
+      try {
+        await connector.close();
+      } catch {
+        this.#everOnline = false;
+        if (!this.#closed) this.#state = "failed";
+        this.#diagnostic("IM_DISPOSE_FAILED");
+        return;
       }
-      if (code === "IM_CREDENTIALS_REQUIRED") {
-        // 账号可先登记后补凭据；每次重连重新调用宿主凭据源，无需重启 Daemon。
-        this.#state = "waiting_credentials";
-        this.#error = undefined;
-        this.#scheduleReconnect();
-      } else if (
-        [
-          "IM_BOT_TOKEN_INVALID",
-          "IM_TENANT_NOT_ACTIVE",
-          "IM_AUTH_HTTP_401",
-          "IM_AUTH_HTTP_403",
-          "IM_AUTH_IDENTITY_INVALID",
-          "IM_BOT_IDENTITY_MISMATCH",
-          "IM_REGISTER_HTTP_401",
-          "IM_REGISTER_HTTP_403",
-          "IM_TOKEN_PERMISSIONS_REQUIRE_0600",
-          "IM_CREDENTIAL_PERMISSIONS_REQUIRE_0600"
-        ].includes(code) ||
-        code.startsWith("WECOM_AUTH_REJECTED")
-      )
-        this.#state = "authentication_failed";
-      else {
-        this.#state = "retrying";
-        this.#scheduleReconnect();
-      }
+      if (!retry) this.#everOnline = false;
+      if (retry) this.#scheduleReconnect(failure.retryAfterMs);
     }
   }
-  #scheduleReconnect(): void {
-    if (this.#closed || this.#signal.aborted || this.#reconnect) return;
-    this.#reconnect = setTimeout(
+  #lostConnection(connector: GatewayTransport, failure: ImConnectionError): void {
+    this.#error = failure.message;
+    const retry = this.#everOnline && failure.retryable;
+    this.#state = retry ? "retrying" : "failed";
+    if (!retry) this.#everOnline = false;
+    this.#connectionAbort?.abort();
+    // 先收回旧连接资源，再计时；停止信号与迟到回调不能建立第二条连接。
+    this.#disconnecting = connector.close();
+    void this.#disconnecting.then(
       () => {
-        this.#reconnect = undefined;
-        this.#connecting = this.#connect().finally(() => {
-          this.#connecting = undefined;
-        });
+        if (retry) this.#scheduleReconnect(failure.retryAfterMs);
       },
-      Math.min(30_000, 5_000 * 2 ** this.#retry++)
+      () => {
+        if (!this.#closed) this.#state = "failed";
+        this.#everOnline = false;
+        this.#diagnostic("IM_DISPOSE_FAILED");
+      }
     );
+  }
+  #scheduleReconnect(retryAfterMs = 0): void {
+    if (this.#closed || this.#signal.aborted || this.#state !== "retrying" || this.#reconnect)
+      return;
+    const delayMs = Math.max(Math.min(30_000, 5_000 * 2 ** this.#retry), retryAfterMs);
+    this.#retry = Math.min(3, this.#retry + 1);
+    // Node 超过 2^31-1 的 timeout 会变为 1ms；长 Retry-After 分段等待，不能绕过限流。
+    const deadline = performance.now() + delayMs;
+    const wake = (): void => {
+      if (this.#closed || this.#signal.aborted || this.#state !== "retrying") return;
+      const remaining = deadline - performance.now();
+      if (remaining > 0) {
+        this.#reconnect = setTimeout(wake, Math.min(remaining, 2_147_483_647));
+        this.#reconnect.unref();
+        return;
+      }
+      this.#reconnect = undefined;
+      this.#connecting = this.#connect(true).finally(() => {
+        this.#connecting = undefined;
+      });
+    };
+    this.#reconnect = setTimeout(wake, Math.min(delayMs, 2_147_483_647));
     this.#reconnect.unref();
   }
   #diagnostic(code: string, runId?: string): void {
-    this.#error = code;
     try {
       this.dependencies.onDiagnostic?.(code, {
         endpointId: imBotIdentity(this.config),
@@ -671,6 +698,9 @@ export class ImRuntime {
     if (this.#closing) return this.#closing;
     this.#closed = true;
     this.#state = "stopped";
+    this.#error = undefined;
+    this.#everOnline = false;
+    this.#retry = 0;
     this.#abort.abort();
     this.#connectionAbort?.abort();
     if (this.#reconnect) {

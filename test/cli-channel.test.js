@@ -23,15 +23,23 @@ const octo = (workdir, overrides = {}) => ({
 
 test("generic extra configuration stays independent; CLI OpenClaw tool preparation is the only channel dependency", async () => {
   for (const app of ["cli", "daemon"]) {
-    const manifest = JSON.parse(await readFile(new URL(`../apps/${app}/package.json`, import.meta.url), "utf8"));
-    assert.deepEqual(Object.keys(manifest.dependencies).filter((name) => name.includes("-extra-")),
-      app === "daemon" ? ["@mininglamp-oss/octo-runtime-extra-channel-gateway"] : []);
+    const manifest = JSON.parse(
+      await readFile(new URL(`../apps/${app}/package.json`, import.meta.url), "utf8")
+    );
+    assert.deepEqual(
+      Object.keys(manifest.dependencies).filter((name) => name.includes("-extra-")),
+      app === "daemon" ? ["@mininglamp-oss/octo-runtime-extra-channel-gateway"] : []
+    );
   }
   const daemon = await readFile(new URL("../apps/daemon/src/index.ts", import.meta.url), "utf8");
   assert.doesNotMatch(daemon, /im-config|imBots|wecomBots|initializeCliImAdapters/);
   assert.match(daemon, /readExtraDirectory/);
   let help = "";
-  await runCli(["help"], { output: (line) => { help += line; } });
+  await runCli(["help"], {
+    output: (line) => {
+      help += line;
+    }
+  });
   assert.doesNotMatch(help, /channel configure/);
   assert.match(help, /extraset/);
 });
@@ -57,11 +65,16 @@ test("extraset without workdir can be loaded by channel-gateway", async (t) => {
 test("Extra config preserves Bot arrays, names and arbitrary plugin fields", async (t) => {
   const home = await mkdtemp(join(tmpdir(), "cli-channel-names-"));
   t.after(() => rm(home, { recursive: true, force: true }));
-  const configure = (bots) => runCli(["--home", home, "extraset", "channel-gateway"], {
-    input: Readable.from([JSON.stringify({
-      module: "@mininglamp-oss/octo-runtime-extra-channel-gateway", config: { bots }
-    })]), output() {}
-  });
+  const configure = (bots) =>
+    runCli(["--home", home, "extraset", "channel-gateway"], {
+      input: Readable.from([
+        JSON.stringify({
+          module: "@mininglamp-oss/octo-runtime-extra-channel-gateway",
+          config: { bots }
+        })
+      ]),
+      output() {}
+    });
   const first = octo(home, {
     bot_name: "本地助理",
     custom: { nested: [1, true, null, { value: "preserved" }] },
@@ -130,7 +143,7 @@ test("omitted channel workspace is created per Bot and remains stable across eve
   }
 });
 
-test("default-enabled endpoint waits for credentials, while explicit disabled does not read credentials", async (t) => {
+test("default-enabled endpoint fails without credentials, while explicit disabled does not read credentials", async (t) => {
   let reads = 0;
   for (const enabled of [undefined, false]) {
     const runtime = new ImRuntime(
@@ -145,7 +158,8 @@ test("default-enabled endpoint waits for credentials, while explicit disabled do
     );
     t.after(() => runtime.close());
     await runtime.start();
-    assert.equal(runtime.status.state, enabled === false ? "stopped" : "waiting_credentials");
+    assert.equal(runtime.status.state, enabled === false ? "stopped" : "failed");
+    assert.equal(runtime.status.error, enabled === false ? null : "IM_CREDENTIALS_REQUIRED");
   }
   assert.equal(reads, 1);
 });
@@ -211,7 +225,7 @@ test("Octo verifies Bot and tenant before registering or connecting, without a c
     }
   });
   await wrongTenant.start();
-  assert.equal(wrongTenant.status.state, "authentication_failed");
+  assert.equal(wrongTenant.status.state, "failed");
   assert.equal(wrongTenant.status.error, "IM_TENANT_NOT_ACTIVE");
   await wrongTenant.close();
   assert.equal(registrationCalls, 0);

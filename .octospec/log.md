@@ -8,11 +8,13 @@
 
 - 将“Runtime 不代替产品决策”提升为[强制架构定位](rules/architecture.md)及[需求范围检查](rules/engineering.md)：SDK/CLI 接入产品拥有模式、思考强度、会话策略与选项展示，Runtime 只执行合同内校验/转发/原生映射。撤回 actmode 计划中的每轮强制恢复 default、会话生命周期选择及跨产品统一体验策略；IM Channel Gateway 不接入 Plan。记录与 mention 越界兜底的共同教训，见[产品意图归属记录](journal/shared/2026-10-16-product-intent-ownership.md)。本次只修正文档，未修改运行行为。
 
+- 按用户后续决定更新[Channel 配置容量计划](tasks/channel-config-admission-bounds/brief.md)：单个 channel-gateway Extra 实例最多 64 个 Bot；撤回 16 个操作/1 MiB 的偏紧建议，改为建议最多 64 个在途管理操作、单份 256 KiB，取消独立累计字节准入。明确 Bot 数量、配置操作数与设备范围各自含义；本次仅文档更新，代码仍为原有 16 Bot 上限。
+
+- 实施 [Channel Gateway Bot 连接状态机](tasks/channel-connection-state-machine/brief.md)：首次失败停止，曾上线后按 5/10/20/30 秒恢复，成功清错误及计数；终端踢线停止反抢，业务诊断不污染连接状态。Work App 后台轮询及 failed 显示同步；im-test 真实收发、重复连接踢旧、双 Bot 隔离与 CDP 通过，合盖待验，见[交付记录](journal/shared/2026-10-16-channel-connection-state-machine-delivery.md)。
+
 - 建立[现有 Adapter 的 Plan 与交互探索计划](tasks/adapter-plan-interaction-exploration/brief.md)：固定默认 Default、Plan 显式选择、Work App 仅测试宿主、不纳入 MiMo/新增 Adapter。记录 Codex 临时配置真机问答及后续撤回应用层私有开关的决定；最终统一启用和模式接入仍待探索，未将实验写成最终实现。
 
 - 按完整 Runtime review 建立[四项整改计划](guides/runtime-long-running-review-plan.md)后，依用户授权在当前 main 分批实施：64 Bot/64 管理操作/256 KiB、OpenClaw 前置过滤与 4096 条/4 MiB、经用户更新的整请求 32 MiB 与独立 Host 图片链、小时日志 3 桶/每文件 100 MiB。已进行定向回归、GC、真实 Gateway 和 im-test 验证；完整检查、平台缺项及 commit/push 结果见[收尾记录](journal/shared/2026-10-16-hourly-log-delivery.md)。
-
-- 交付 Context v3 显式 actmode 的 Codex、CC、OpenCode ACP 首批映射及真实执行事实，完成 Work App / im-test 三家执行和 Codex 结构化问答；OpenCode 重复续聊超时等限制见[交付记录](journal/shared/2026-10-16-actmode-first-three-delivery.md)。省略不补模式、会话策略归产品。
 
 - 在当前 main 分批交付 Channel 决策：真实 UID/ais 准入、Codex 独立图片、新会话一次历史、fixed workdir 校验及 final 真人 Mention。保留有界内存与既有重试，回写架构责任边界；840 项自动化通过，im-test 群/话题、真实 Codex 图片和客户端高亮已验收，详见[交付记录](journal/shared/2026-10-16-channel-features-delivery.md)。
 
@@ -47,6 +49,8 @@
 - 按用户对齐拆分 Channel 六个初版专项：[图片](tasks/channel-image-input/brief.md)、[新会话此前 15 条历史](tasks/channel-new-session-history/brief.md)、[不持久化](tasks/channel-no-context-persistence/brief.md)、[限流重试协作](tasks/channel-rate-limit-retry/brief.md)、[固定 workdir 决策评估](tasks/channel-fixed-workdir-decision/brief.md)、[mention 身份来源](tasks/channel-mention-context/brief.md)。确认 Codex/OpenClaw 图片范围、有界内存与固定 Agent 工作区，撤回新增持久绑定及每会话目录建议；reset 历史边界和 mention 接线仍待决。本次只更新 OKF，未修改业务代码或执行线上调试；检查结果见[文档验证记录](journal/shared/2026-10-15-channel-six-topic-alignment.md)。
 
 - 实施 [IM 长任务与 Codex 重试改造](tasks/im-long-running-retry/brief.md)：默认一天、工具无输出时限一天，Extra 管理连续恢复与累计重试上限；工具/交互前的 Codex 暂态失败可新建尝试，原生提示仅计入恢复预算，Host 保持单次执行。真实 Codex 受控 503 后恢复成功；真实 IM 收发及一天持续运行未验收。按用户要求移除 Runtime 与 Work App 的 adapter-icons 依赖，详见[验证记录](journal/shared/2026-10-15-im-long-running-retry.md)。
+
+- 按用户最新要求迁移 CLI 默认清单到 apps/cli/src/default_adapters.json；SDK 在独立 Host 入口直接 import 并注册，不再复制 CLI JSON。同步调用端、带中文注释的接入示例与架构规则，记录[实现验证及图标包缺失造成的检查阻塞](journal/shared/2026-10-15-cli-default-adapters-sdk-imports.md)。
 
 - 开放单一 npm 发行包的 `/extra` 与 `/protocol`，提供完整 Extra 和执行协议类型及校验工具；隔离安装的外部 TS 插件编译、加载及真实 Codex Agent Run 通过。另记录 CLI TS 内置集合加 `extra_adapters.json` 的第三方 Adapter 追加目标，加载改造与 `/adapter` 尚未实施。范围和回归环境缺失见[记录](journal/shared/2026-10-15-public-plugin-contracts.md)。
 
@@ -88,6 +92,8 @@
 - 记录 channel-gateway 使用 octo-cli 的渠道执行环境约束与[改造方案](tasks/channel-octo-cli-environment/brief.md)：使用连接凭据覆盖两个 OCTO 变量，不写入 Context，不改变桌面身份选择；实现与线上验收尚未执行。
 
 - 将 OpenClaw 自动发现和刷新移到 CLI 启动编排，SDK 显式配置，Adapter 只读连接；见 [合同](rules/openclaw.md)与[验证记录](journal/shared/2026-10-15-openclaw-cli-discovery.md)。
+
+- 交付 Context v3 显式 actmode 的 Codex、CC、OpenCode ACP 首批映射及真实执行事实，完成 Work App / im-test 三家执行和 Codex 结构化问答；OpenCode 重复续聊超时等限制见[交付记录](journal/shared/2026-10-16-actmode-first-three-delivery.md)。省略不补模式、会话策略归产品。
 
 - 接入 octo-spec / OKF，补充中文 Agent 入口、规则索引与工作流。
 - 将架构正文迁入 `rules/architecture.md`，根目录仅保留导航。

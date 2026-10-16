@@ -9,6 +9,11 @@ export function validateImConfig(config: ImBotConfig): void {
     throw new Error("IM_CONFIG_INVALID");
   if (typeof config.bot_id !== "string" || !config.bot_id.trim())
     throw new Error("IM_BOT_ID_REQUIRED");
+  if (
+    config.bot_name !== undefined &&
+    (typeof config.bot_name !== "string" || !config.bot_name.trim())
+  )
+    throw new Error("IM_BOT_NAME_INVALID");
   const adapter = config.adapter;
   if (!adapter || typeof adapter !== "object" || Array.isArray(adapter))
     throw new Error("IM_ADAPTER_REQUIRED");
@@ -58,6 +63,7 @@ export function validateImConfig(config: ImBotConfig): void {
     throw new Error("IM_CONFIG_INVALID");
   const fields = [
     "bot_id",
+    "bot_name",
     "enabled",
     "adapter",
     "context",

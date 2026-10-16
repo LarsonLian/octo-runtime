@@ -13,6 +13,12 @@ import {
 } from "node:crypto";
 import WebSocket from "ws";
 import type { ImTextMention } from "./mentions.js";
+import {
+  connectionFetch,
+  connectionJson,
+  httpConnectionFailure,
+  ImConnectionError
+} from "./connection-error.js";
 
 export interface ImMessage {
   messageId: string;
@@ -38,24 +44,35 @@ export async function registerBot(
   token: string,
   signal?: AbortSignal
 ): Promise<BotRegistration> {
-  const response = await fetch(`${apiUrl.replace(/\/$/, "")}/v1/bot/register`, {
-    method: "POST",
-    redirect: "error",
-    signal: signal
-      ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
-      : AbortSignal.timeout(15_000),
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      agent_platform: "octo-runtime-extra-channel-gateway",
-      agent_version: "0.1.0"
-    })
-  });
+  const response = await connectionFetch(
+    `${apiUrl.replace(/\/$/, "")}/v1/bot/register`,
+    {
+      method: "POST",
+      redirect: "error",
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+        : AbortSignal.timeout(15_000),
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agent_platform: "octo-runtime-extra-channel-gateway",
+        agent_version: "0.1.0"
+      })
+    },
+    "REGISTER"
+  );
   if (!response.ok) {
-    await response.body?.cancel();
-    throw new Error(`IM_REGISTER_HTTP_${response.status}`);
+    throw await httpConnectionFailure(response, "REGISTER");
   }
-  const data = (await response.json()) as BotRegistration;
-  if (!data.robot_id || !data.im_token || !data.ws_url) throw new Error("IM_REGISTRATION_INVALID");
+  const data = (await connectionJson(
+    response,
+    "REGISTER",
+    "IM_REGISTRATION_INVALID"
+  )) as BotRegistration;
+  if (
+    !data ||
+    [data.robot_id, data.im_token, data.ws_url].some((value) => typeof value !== "string" || !value)
+  )
+    throw new Error("IM_REGISTRATION_INVALID");
   const url = new URL(data.ws_url);
   if (!["wss:", "ws:"].includes(url.protocol) || url.username || url.password)
     throw new Error("IM_WS_URL_INVALID");
@@ -147,6 +164,7 @@ export class WukongConnection {
   #heartbeat?: NodeJS.Timeout;
   #lastPacket = Date.now();
   #closed = false;
+  #ready = false;
   #sends = new Map<
     number,
     { resolve: (id: string) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
@@ -155,6 +173,9 @@ export class WukongConnection {
     readonly onMessage: (message: ImMessage) => void,
     readonly onDisconnect: (error: Error) => void = () => {}
   ) {}
+  get connected(): boolean {
+    return this.#ready && this.#socket?.readyState === WebSocket.OPEN;
+  }
   async connect(registration: BotRegistration): Promise<void> {
     if (this.#socket) throw new Error("IM_ALREADY_CONNECTED");
     const keys = generateKeyPairSync("x25519");
@@ -168,11 +189,13 @@ export class WukongConnection {
       followRedirects: false
     });
     this.#socket = socket;
+    let failure: Error | undefined;
     await new Promise<void>((resolve, reject) => {
       let ready = false;
       const timeout = setTimeout(() => {
+        failure = new ImConnectionError("IM_CONNECT_TIMEOUT", true);
         socket.terminate();
-        reject(new Error("IM_CONNECT_TIMEOUT"));
+        reject(failure);
       }, 15_000);
       socket.on("open", () =>
         socket.send(
@@ -191,12 +214,14 @@ export class WukongConnection {
         )
       );
       socket.on("error", () => {
+        failure ??= new ImConnectionError("IM_WS_ERROR", true);
         if (!ready) {
           clearTimeout(timeout);
-          reject(new Error("IM_WS_ERROR"));
+          reject(failure);
         }
       });
       socket.on("close", () => {
+        this.#ready = false;
         clearTimeout(timeout);
         if (this.#heartbeat) clearInterval(this.#heartbeat);
         for (const pending of this.#sends.values()) {
@@ -204,8 +229,9 @@ export class WukongConnection {
           pending.reject(new Error("IM_DISCONNECTED"));
         }
         this.#sends.clear();
-        if (!ready) reject(new Error("IM_DISCONNECTED"));
-        else if (!this.#closed) this.onDisconnect(new Error("IM_DISCONNECTED"));
+        const error = failure ?? new ImConnectionError("IM_DISCONNECTED", true);
+        if (!ready) reject(error);
+        else if (!this.#closed) this.onDisconnect(error);
       });
       socket.on("message", (data, binary) => {
         try {
@@ -250,10 +276,10 @@ export class WukongConnection {
               if (header & 1) this.#version = reader.byte();
               reader.u64();
               const reason = reader.byte();
+              if (reason !== 1) throw new ImConnectionError(`IM_CONNECT_REJECTED_${reason}`, false);
               const remoteKey = reader.string();
               const salt = reader.string();
               if (this.#version >= 4) reader.u64();
-              if (reason !== 1) throw new Error(`IM_CONNECT_REJECTED_${reason}`);
               const raw = Buffer.from(remoteKey, "base64");
               if (raw.length !== 32 || Buffer.byteLength(salt) < 16)
                 throw new Error("IM_KEY_INVALID");
@@ -272,10 +298,13 @@ export class WukongConnection {
               );
               this.#iv = Buffer.from(salt).subarray(0, 16);
               ready = true;
+              this.#ready = true;
               clearTimeout(timeout);
               this.#heartbeat = setInterval(() => {
-                if (Date.now() - this.#lastPacket > 90_000) socket.terminate();
-                else if (socket.readyState === WebSocket.OPEN) socket.send(Buffer.from([7 << 4]));
+                if (Date.now() - this.#lastPacket > 90_000) {
+                  failure = new ImConnectionError("IM_HEARTBEAT_TIMEOUT", true);
+                  socket.terminate();
+                } else if (socket.readyState === WebSocket.OPEN) socket.send(Buffer.from([7 << 4]));
               }, 25_000);
               this.#heartbeat.unref();
               resolve();
@@ -293,15 +322,19 @@ export class WukongConnection {
                 if (reason === 1) pending.resolve(id);
                 else pending.reject(new Error(`IM_SEND_REJECTED_${reason}`));
               }
-            } else if (kind === 9) throw new Error("IM_SERVER_DISCONNECTED");
+            } else if (kind === 9)
+              throw new ImConnectionError(`IM_SERVER_DISCONNECTED_${reader.byte()}`, false);
           }
         } catch (error) {
+          this.#ready = false;
+          failure = error instanceof Error ? error : new Error("IM_PROTOCOL_ERROR");
           clearTimeout(timeout);
-          if (!ready) reject(error instanceof Error ? error : new Error("IM_PROTOCOL_ERROR"));
+          if (!ready) reject(failure);
           socket.terminate();
         }
       });
     });
+    if (!this.connected) throw failure ?? new ImConnectionError("IM_DISCONNECTED", true);
   }
   #encrypt(value: string): string {
     if (!this.#key || !this.#iv) throw new Error("IM_NOT_READY");
@@ -403,6 +436,7 @@ export class WukongConnection {
   close(): Promise<void> {
     if (this.#closing) return this.#closing;
     this.#closed = true;
+    this.#ready = false;
     if (this.#heartbeat) clearInterval(this.#heartbeat);
     const socket = this.#socket;
     this.#closing =

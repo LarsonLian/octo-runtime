@@ -686,18 +686,23 @@ test("Delivery retries use one effect key and never rerun execution", async () =
   );
 });
 
-test("Dynamic endpoints update independently, wait for credentials, and remove idempotently", async (t) => {
+test("Dynamic endpoints retain startup errors independently and remove idempotently", async (t) => {
   const manager = new ImChannelManager({ host: { cancel: async () => ({ cancelled: true }) } });
   t.after(() => manager.close());
   await manager.upsert(config());
   await manager.upsert(config({ bot_id: "other" }));
   await manager.upsert(Object.fromEntries(Object.entries(config()).reverse()));
-  assert.ok(manager.status.every((endpoint) => endpoint.state === "waiting_credentials"));
+  assert.ok(
+    manager.status.every(
+      (endpoint) => endpoint.state === "failed" && endpoint.error === "IM_CREDENTIALS_REQUIRED"
+    )
+  );
   await manager.upsert(config({ bf_token: "invalid" }));
-  assert.equal(manager.status[0].state, "authentication_failed");
-  assert.equal(manager.status[1].state, "waiting_credentials");
+  assert.equal(manager.status[0].state, "failed");
+  assert.equal(manager.status[0].error, "IM_BOT_TOKEN_INVALID");
+  assert.equal(manager.status[1].error, "IM_CREDENTIALS_REQUIRED");
   await manager.upsert(config());
-  assert.equal(manager.status[0].state, "waiting_credentials");
+  assert.equal(manager.status[0].state, "failed");
   await manager.upsert(config());
   assert.equal(manager.status.length, 2, "same Bot replaces one entry");
   await manager.remove(imBotIdentity(config()));

@@ -50,6 +50,8 @@
 
 - [Channel 六项决策实施与测试环境验收](journal/shared/2026-10-16-channel-features-delivery.md)：当前分支分批实现 Codex 独立图片、新会话一次历史、原生 Mention 与固定目录校验；全仓回归及 im-test 群/话题、真实 Codex 识图和客户端高亮通过，限制逐项记录。
 
+- [Channel Gateway Bot 连接状态机与断线恢复](tasks/channel-connection-state-machine/brief.md)：五态与首次失败不重试已实现，上线后按 5/10/20/30 秒恢复，成功清错误并重置计数。im-test 真实收发、重复连接踢旧、双 Bot 隔离及 CDP 显示通过；合盖待验，见[交付记录](journal/shared/2026-10-16-channel-connection-state-machine-delivery.md)。
+
 - [协议责任与拒绝跨模块猜测兜底](journal/shared/2026-10-16-contract-responsibility-decision.md)：从业务与合同定位问题，在责任模块修复；发送端漏填 mention 不由接收端正文匹配补救，旧实现的兼容动机不是复制设计的理由。
 
 2026-10-15 Channel 讨论拆分为六项，包含功能计划、架构决策和协作核对，不能统一按开发 plan 评分。2026-10-16 明确固定 workdir 与 reset 为已接受的架构决策，不是待开发功能；各项实现与验收状态以正文为准：

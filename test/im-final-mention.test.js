@@ -112,6 +112,7 @@ test("transport resolves topic members once and sends mention with final text on
   t.mock.method(WukongConnection.prototype, "connect", async function () {
     receive = this.onMessage;
   });
+  t.mock.getter(WukongConnection.prototype, "connected", () => true);
   t.mock.method(WukongConnection.prototype, "close", async () => {});
   t.mock.method(WukongConnection.prototype, "sendText", async function (...args) {
     sends.push(args);

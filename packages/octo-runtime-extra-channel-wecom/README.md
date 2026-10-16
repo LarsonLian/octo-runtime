@@ -17,13 +17,25 @@ octo-runtime extraset channel-wecom <<'JSON'
     "bots": [
       {
         "bot_id": "<WECOM_BOT_ID_1>",
+        "bot_name": "本地助理",
         "app_secret": "<WECOM_APP_SECRET_1>",
-        "adapter": { "adapter_type": "codex", "workdir": "/absolute/workspace/first", "model": "gpt-6.1-sol", "effort": "medium" }
+        "adapter": {
+          "adapter_type": "codex",
+          "workdir": "/absolute/workspace/first",
+          "model": "gpt-6.1-sol",
+          "effort": "medium"
+        }
       },
       {
         "bot_id": "<WECOM_BOT_ID_2>",
+        "bot_name": "项目助理",
         "app_secret": "<WECOM_APP_SECRET_2>",
-        "adapter": { "adapter_type": "codex", "workdir": "/absolute/workspace/second", "model": "gpt-6.1-sol", "effort": "medium" }
+        "adapter": {
+          "adapter_type": "codex",
+          "workdir": "/absolute/workspace/second",
+          "model": "gpt-6.1-sol",
+          "effort": "medium"
+        }
       }
     ]
   }
@@ -37,7 +49,68 @@ JSON
 
 保存后，已安装并启用后台服务时执行 `octo-runtime daemon restart`；前台运行使用 `octo-runtime daemon run`。`octo-runtime extra status` 查询插件生命周期，`loaded` 不保证每个 Bot 在线。
 
-凭据可以内联为 `app_secret`，或用 `app_secret_file` 指定，二选一；文件建议使用绝对路径，POSIX 权限要求 `0600`。Bot 内 `enabled` 默认 `true`，控制单个 Bot，外层 `enabled` 控制整个插件。默认 WS 为 `wss://openws.work.weixin.qq.com`。Bot 字段由本插件校验；Octo 的 `bot_name` 不属于 WeCom 当前合同，不应混用。连接探针为 `scripts/probe-wecom.mjs`。
+凭据可以内联为 `app_secret`，或用 `app_secret_file` 指定，二选一；文件建议使用绝对路径，POSIX 权限要求 `0600`。Bot 内 `enabled` 默认 `true`，控制单个 Bot，外层 `enabled` 控制整个插件。默认 WS 为 `wss://openws.work.weixin.qq.com`。Bot 字段由本插件校验。连接探针为 `scripts/probe-wecom.mjs`。
+
+## 插件字段
+
+下表除 `config.*` 外均为 `config.bots[]` 内的字段。“连接必选”表示允许先保存空凭据配置，但实际建联必须提供。
+
+| 字段 | 必选 / 可选 | 默认值与约束 |
+| --- | --- | --- |
+| `config.bots` | 可选；接入 Bot 时必选 | 省略为 `[]`；最多 16 项，相同 WS 地址与 `bot_id` 不得重复 |
+| `bot_id` | 必选 | 非空企业微信 Bot ID |
+| `bot_name` | 可选，建议填写 | 自定义本地展示名称，便于直接区分 Bot，避免通过 `bot_id` 反查；省略时展示 `bot_id`。填写时必须为非空字符串，不参与身份匹配、不修改企业微信上的名称 |
+| `app_secret` / `app_secret_file` | 连接必选，二选一 | Secret 或凭据文件；文件建议使用绝对路径，POSIX 权限要求 `0600` |
+| `ws_url` | 可选 | 默认 `wss://openws.work.weixin.qq.com` |
+| `enabled` | 可选 | 默认 `true`，控制单个 Bot；外层 `enabled` 控制整个插件 |
+| `adapter` | 必选 | 执行设置对象；子字段要求见下表 |
+| `context` | 可选 | 提供时必须符合 `octo.context-envelope/v3`；允许空 `items` |
+| `approval_mode` | 可选 | 默认 `full_access`；支持范围按所选 Adapter 合同 |
+| `allowed_sender_ids` | 可选 | 发送者 ID 白名单；省略不按此项限制，`[]` 不允许任何发送者 |
+| `run_timeout_ms` | 可选 | 默认 `120000`，范围 `1..600000`，单位毫秒 |
+| `config.authorized_space_ids` | 可选 | 租户授权列表；省略不按此项限制，`[]` 不授权任何 Space |
+
+## Adapter 配置与 OpenClaw 示例
+
+`adapter` 与 `channel-gateway` 使用相同的执行字段：
+
+| 字段 | 必选 / 可选 | 默认值与约束 |
+| --- | --- | --- |
+| `adapter_type` | 可选 | 默认 `codex`，可填 `claude-code`、`codebuddy`、`openclaw` 等；宿主须已安装并配置对应 Provider |
+| `workdir` | 本地引擎必选；OpenClaw 禁止 | 本地引擎要求绝对路径，不同于 gateway 可省略目录的默认策略；OpenClaw 工作区由目标 Agent 管理 |
+| `model` | 可选 | 对应 Provider 已配置且可用的模型 ID；省略时使用 Provider 默认值 |
+| `effort` | 可选 | `low / medium / high / xhigh`；省略不传强度参数，实际应用及降档按 Adapter 合同，见[思考强度](../../.octospec/rules/reasoning.md) |
+| `provider_agent_id` | OpenClaw 可选；其他引擎禁止 | 默认 `main`；目标必须已存在，不存在时执行失败，不自动创建或改选 |
+
+以下为单 Bot 使用 OpenClaw 的完整声明。将模型占位符替换为目标 Gateway 可用的模型 ID；也可删除 `model` 使用 Provider 默认值。
+
+```bash
+octo-runtime extraset channel-wecom <<'JSON'
+{
+  "module": "@mininglamp-oss/octo-runtime-extra-channel-wecom",
+  "enabled": true,
+  "config": {
+    "bots": [
+      {
+        "bot_id": "<WECOM_BOT_ID>",
+        "bot_name": "OpenClaw 助理",
+        "app_secret": "<WECOM_APP_SECRET>",
+        "adapter": {
+          "adapter_type": "openclaw",
+          "provider_agent_id": "main",
+          "model": "<OPENCLAW_MODEL_ID>",
+          "effort": "high"
+        }
+      }
+    ]
+  }
+}
+JSON
+
+octo-runtime daemon restart
+```
+
+此命令整体替换 WeCom 插件配置；同时接入 Codex 和 OpenClaw 时，将两个不同 Bot 的配置放进同一次提交的 `bots` 数组。OpenClaw Gateway 连接由宿主预先准备，不能将 Gateway URL/token 填入 Bot 的 `adapter`；`ws_url` 是企业微信连接地址。连接准备见 [OpenClaw 合同](../../.octospec/rules/openclaw.md)。使用自定义 `--home` 时，保存和重启使用同一个 Home；未运行后台服务时使用 `daemon run`。
 
 ## SDK 装配
 

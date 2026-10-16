@@ -107,13 +107,7 @@ export interface ImAddress {
   channelId: string;
   channelType: number;
 }
-export type ImConnectionState =
-  | "stopped"
-  | "waiting_credentials"
-  | "connecting"
-  | "online"
-  | "retrying"
-  | "authentication_failed";
+export type ImConnectionState = "stopped" | "connecting" | "online" | "retrying" | "failed";
 
 export interface ImExecutionPort {
   invoke(

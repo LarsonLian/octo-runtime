@@ -697,6 +697,8 @@ Work App 从账号 SQLite 读取配置，使用本节的统一入口。它的显
 
 SQLite 是 Work App 的配置来源；每次加载重新读取保存的数据并在内存中生成完整 Extra config，不要求额外写入插件配置文件。App 不以某个 Bot 的执行引擎尚未安装或不可用为由阻断 Extra 加载。需要执行时，由执行层校验引擎并返回明确失败；认证和授权仍由插件在连接边界检查。
 
+Octo Bot 的 `state` 为 stopped / connecting / online / retrying / failed，仅 online 对应 `connected: true`。首次连接失败返回 failed 和真实 `error`，不自动重试，补齐配置后由宿主显式重载。曾完整上线后的网络断线进入 retrying，按 5/10/20/30 秒恢复，后续保持 30 秒；完整重连成功自动清 error 和计数，下次断线从 5 秒开始。明确终端拒绝停止恢复；主动卸载取消等待与在途连接。框架仅转发状态，Extra loaded 不表示 Bot online；业务执行/投递诊断也不改变连接健康。WeCom 保持自身状态合同，详见 [Octo Bot 连接状态机](packages/octo-runtime-extra-channel-gateway/README.md#bot-连接状态机)。
+
 ### 2.7 会话和 Context 接入规则
 
 当前 Context 固定为 `octo.context-envelope/v3`，Host 请求为 `protocolVersion=2`，远程内部 Run 为 `schema_version=7`，三者属于不同协议。

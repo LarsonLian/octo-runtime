@@ -22,6 +22,7 @@ import { downloadImageInput } from "./image-input.js";
 import { prepareFinalMention } from "./mentions.js";
 import { getGroupMembers, type GroupMember } from "./api/conversations.js";
 import { getJson } from "./api/client.js";
+import { connectionFailure, ImConnectionError } from "./connection-error.js";
 
 /** Octo IM 平台连接器：WuKong 与 Octo REST 适配；不是 MCP 连接器。 */
 export class GatewayTransport {
@@ -213,9 +214,10 @@ export class GatewayTransport {
           }
         });
       },
-      () => {
+      (error) => {
         this.#connected = false;
-        this.callbacks.onDisconnect("IM_DISCONNECTED");
+        const failure = connectionFailure(error);
+        this.callbacks.onDisconnect(failure.message, failure.retryable);
       }
     );
     this.#connection = connection;
@@ -245,6 +247,7 @@ export class GatewayTransport {
       await connection.close();
       return;
     }
+    if (!connection.connected) throw new ImConnectionError("IM_DISCONNECTED", true);
     this.#connected = true;
   }
   async #pollActions(token: string, owner: string, signal: AbortSignal): Promise<void> {

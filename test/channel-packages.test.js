@@ -12,6 +12,12 @@ test('independent channels accept Bots without type and validate platform fields
   const wecom = { ...common };
   gatewayConfig(gateway);
   wecomConfig(wecom);
+  for (const [validate, config] of [[gatewayConfig, gateway], [wecomConfig, wecom]]) {
+    validate({ ...config, bot_name: '项目助理' });
+    for (const bot_name of ['', '  ', 42, null]) {
+      assert.throws(() => validate({ ...config, bot_name }), /IM_BOT_NAME_INVALID/);
+    }
+  }
   for (const validate of [gatewayConfig, wecomConfig]) {
     for (const invalid of [null, [], 'octo']) assert.throws(() => validate(invalid), /IM_CONFIG_INVALID/);
   }
@@ -41,13 +47,14 @@ test('channel Extra reports disabled Bots and reloads a full snapshot with expli
       assert.throws(() => this.dependencies.authorizeSpace?.('other'), /IM_TENANT_NOT_ACTIVE/);
       return original.call(this, bot);
     };
-    const bot = id => ({ bot_id: id, enabled: false, adapter: { adapter_type: 'codex', workdir: process.cwd() }, ...(type === 'octo' ? { api_url: 'https://im-test.deepminer.com.cn/api' } : {}) });
+    const bot = id => ({ bot_id: id, ...(id === 'first' ? { bot_name: '项目助理' } : {}), enabled: false, adapter: { adapter_type: 'codex', workdir: process.cwd() }, ...(type === 'octo' ? { api_url: 'https://im-test.deepminer.com.cn/api' } : {}) });
     const registration = bots => ({ name, module: name, load: async () => ({ name, default: load }), config: { bots, authorized_space_ids: ['allowed'] } });
     const extras = new ExtraPlugins([registration([bot('first'), bot('second')])], {});
     try {
       await extras.loadConfigured();
       const status = await extras.inspect(name);
       assert.equal(status.bots.length, 2);
+      assert.deepEqual(status.bots.map(bot => bot.bot_name), ['项目助理', 'second']);
       assert.ok(status.bots.every(bot => bot.enabled === false && bot.state === 'stopped' && bot.connected === false));
       await extras.unload(name);
       await extras.load(name, registration([bot('second')]));

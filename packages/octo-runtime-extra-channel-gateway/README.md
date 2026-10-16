@@ -24,13 +24,23 @@ octo-runtime extraset channel-gateway <<'JSON'
         "bot_id": "<BOT_ID_1>",
         "bot_name": "本地助理",
         "bf_token": "<BOT_TOKEN_1>",
-        "adapter": { "adapter_type": "codex", "workdir": "/absolute/workspace/first", "model": "gpt-6.1-sol", "effort": "medium" }
+        "adapter": {
+          "adapter_type": "codex",
+          "workdir": "/absolute/workspace/first",
+          "model": "gpt-6.1-sol",
+          "effort": "medium"
+        }
       },
       {
         "api_url": "https://im-test.deepminer.com.cn/api",
         "bot_id": "<BOT_ID_2>",
         "bf_token": "<BOT_TOKEN_2>",
-        "adapter": { "adapter_type": "codex", "workdir": "/absolute/workspace/second", "model": "gpt-6.1-sol", "effort": "medium" }
+        "adapter": {
+          "adapter_type": "codex",
+          "workdir": "/absolute/workspace/second",
+          "model": "gpt-6.1-sol",
+          "effort": "medium"
+        }
       }
     ]
   }
@@ -46,20 +56,63 @@ JSON
 
 ## 插件字段
 
-框架只校验声明和 JSON 结构，Bot 字段由本插件解释。
+框架只校验声明和 JSON 结构，Bot 字段由本插件解释。下表除 `config.*` 外均为 `config.bots[]` 内的字段。“连接必选”表示允许先保存空凭据配置，但实际建联必须提供。
 
-| 字段 | 含义 |
-| --- | --- |
-| `config.bots` | 单个 Extra 实例最多 64 项；相同 API 地址与 `bot_id` 不得重复。管理操作最多 64 个在途，单份配置最多 256 KiB，超限在复制前拒绝 |
-| `bot_name` | 可选本地展示名称，省略时运行状态使用 `bot_id`；不参与身份匹配、不修改远端名称；`name` 不是别名 |
-| Bot 内的 `enabled` | 默认 `true`，控制单个 Bot；外层 `enabled` 控制整个插件 |
-| `bf_token` / `bf_token_file` | 凭据来源二选一；文件建议使用绝对路径，POSIX 权限要求 `0600` |
-| `adapter` | 执行设置对象，可配置引擎、模型、思考强度和绝对工作目录 |
-| `run_timeout_ms` | IM 本轮总运行时限，默认 `86400000`（一天），范围 `100..86400000`；包含所有尝试、恢复等待与交互等待 |
-| `codex_retry` | 可选 Codex 恢复策略，字段及默认值见下文；不影响其他 Extra |
-| `config.authorized_space_ids` | 可选租户授权列表；空数组不授权任何 Space |
+| 字段 | 必选 / 可选 | 默认值与约束 |
+| --- | --- | --- |
+| `config.bots` | 可选；接入 Bot 时必选 | 省略为 `[]`；最多 64 项，相同 API 地址与 `bot_id` 不得重复。管理操作最多 64 个在途，单份配置最多 256 KiB |
+| `api_url` | 必选 | Octo API 地址，如 `https://im-test.deepminer.com.cn/api` |
+| `bot_id` | 必选 | 非空 Bot ID |
+| `bot_name` | 可选，建议填写 | 自定义本地展示名称，便于直接区分 Bot，避免通过 `bot_id` 反查；省略时展示 `bot_id`。不参与身份匹配、不修改远端名称；`name` 不是别名 |
+| `enabled` | 可选 | 默认 `true`，控制单个 Bot；外层 `enabled` 控制整个插件 |
+| `bf_token` / `bf_token_file` | 连接必选，二选一 | Token 或凭据文件；文件建议使用绝对路径，POSIX 权限要求 `0600` |
+| `adapter` | 必选 | 执行设置对象；子字段要求见下表 |
+| `context` | 可选 | 提供时必须符合 `octo.context-envelope/v3`；允许空 `items` |
+| `approval_mode` | 可选 | 默认 `full_access`；支持范围按所选 Adapter 合同 |
+| `allowed_sender_ids` | 可选 | 发送者 ID 白名单；省略不按此项限制，`[]` 不允许任何发送者 |
+| `run_timeout_ms` | 可选 | 默认 `86400000`（一天），范围 `100..86400000`；包含所有尝试、恢复等待与交互等待 |
+| `codex_retry` | 可选 | Codex 恢复策略；各子字段均可选，默认值见下文；不影响其他 Extra |
+| `config.authorized_space_ids` | 可选 | 租户授权列表；省略不按此项限制，`[]` 不授权任何 Space |
+
+| `adapter` 子字段 | 必选 / 可选 | 默认值与约束 |
+| --- | --- | --- |
+| `adapter_type` | 可选 | 默认 `codex`，如需 OpenClaw 必须显式填 `openclaw` |
+| `workdir` | 本地引擎可选；OpenClaw 禁止 | 本地引擎省略时使用下述固定目录；填写时必须为绝对路径 |
+| `model` | 可选 | 对应 Provider 可用的模型 ID；省略时使用 Provider 默认值 |
+| `effort` | 可选 | `low / medium / high / xhigh`；省略不传强度参数，实际应用及降档按 Adapter 合同 |
+| `provider_agent_id` | OpenClaw 可选；其他引擎禁止 | 默认 `main`；目标 Agent 必须已存在 |
 
 本地引擎省略 `adapter.workdir` 时，插件使用并创建 `~/octo-runtime/channels/{bot_id}`。OpenClaw 不填 `workdir`，可选 `provider_agent_id` 默认 `main`；连接配置由宿主通过 Adapter 配置入口准备。未知扩展字段保留并忽略，不代表已经应用；已识别字段继续校验。
+
+### OpenClaw 配置示例
+
+```bash
+octo-runtime extraset channel-gateway <<'JSON'
+{
+  "module": "@mininglamp-oss/octo-runtime-extra-channel-gateway",
+  "enabled": true,
+  "config": {
+    "bots": [
+      {
+        "api_url": "https://im-test.deepminer.com.cn/api",
+        "bot_id": "<BOT_ID>",
+        "bf_token": "<BOT_TOKEN>",
+        "adapter": {
+          "adapter_type": "openclaw",
+          "provider_agent_id": "main",
+          "model": "<OPENCLAW_MODEL_ID>",
+          "effort": "high"
+        }
+      }
+    ]
+  }
+}
+JSON
+
+octo-runtime daemon restart
+```
+
+`model` 替换为目标 Gateway 已配置且可用的模型 ID，也可删除以使用 Provider 默认值。`effort` 可选 `low / medium / high / xhigh`，实际应用及降档见[思考强度](../../.octospec/rules/reasoning.md)。目标 Agent 必须已存在，OpenClaw 不填 `workdir`；Gateway 连接由宿主预先准备，见 [OpenClaw 合同](../../.octospec/rules/openclaw.md)。此命令整体替换插件声明，多个 Bot 须在同一次提交的 `bots` 数组中保留。使用自定义 `--home` 时保存和重启使用同一个 Home；前台运行使用 `daemon run`。
 
 IM Agent 使用固定工作目录，任务 Context 的 workspace 不得覆盖；reset 只切换会话和 Provider binding。新会话首次普通输入自动尝试一次读取当前 DM/群/话题此前最多 15 条消息，裁剪为最多 1500 Unicode 字符的纯文本背景。失败或空结果继续当前任务，同一会话后续不再自动拉取；reset 后下一条普通消息重新获得一次资格，也可以包含 reset 前历史。不提供旧 `history_limit` 模式，不新增上下文或 binding 持久化。
 
@@ -97,6 +150,26 @@ Extra 只对 Codex 结构化暂态限流或不可用失败（`OH-PRV-4005/4006` 
 更新由宿主卸载本插件、保存完整配置、重新加载；插件内所有连接重新建立。CLI 同样使用 `extra unload channel-gateway`、`extraset channel-gateway`、`extra load channel-gateway`，load 读取最新文件，不重启共享 Host。
 
 `runtime.extraStatus("channel-gateway")` 或 `extra status channel-gateway` 返回本插件定义的 `{ "bots": [...], "errors": [...] }`，`runtime.extraStatus()` 查询框架生命周期。每个有效 Bot 包含 `connection_key`、`type: "octo"`、`bot_name`、`enabled`、`connected`、`state`、脱敏 `error`、`deliveries` 和 `sessions`，已解析时包含 `botId` 等连接状态。停用 Bot 保留在数组，显示 `enabled: false`、`state: "stopped"`、`connected: false`。错误配置跳过连接，状态项返回从零开始的 `config_index`、`state: "config_error"` 和脱敏错误码，`errors` 同时记录位置及错误码；有效 Bot 继续初始化。列表或授权配置错误记录在 `errors`，不建立连接。读取内存状态，不发起联网探测；字段由本插件维护，宿主负责解释。完整 SDK 示例见 [对接指南](../../INTEGRATION.md#26-通过-sdk-装配可选-extra)。
+
+## Bot 连接状态机
+
+| state | 含义 | connected / error |
+| --- | --- | --- |
+| stopped | 未启动、禁用或主动停止 | false / null |
+| connecting | 本次启动的首次连接尝试 | false / null |
+| online | 身份校验、注册、WS 握手全部成功 | true / null |
+| retrying | 曾上线后断线，等待或正在恢复连接 | false / 最近连接错误码 |
+| failed | 首次连接失败，或恢复遇到终端错误 | false / 真实连接错误码 |
+
+只有 online 表示连接健康。首次尝试任一步失败均结束本次启动，不后台重试；缺凭据也不会定时轮询。宿主补齐配置后显式卸载/重载 Extra，CLI 使用上节的卸载、保存、加载流程。一个 Bot 失败不影响其他 Bot，也不把 Extra 的 loaded 变为 Bot 已上线的证明。
+
+本次启动曾完整上线后，网络异常断线按 5、10、20、30、30 秒等待恢复。每次等待从上次失败和资源回收完成后开始；恢复请求进行中仍为 retrying。每次完整成功自动清连接错误和计数，下一次断线重新从 5 秒开始。只有注册成功不算恢复；已识别 429 的 Retry-After 可延长当次等待。停止或卸载取消定时器和在途建联，不再恢复。
+
+鉴权/权限错误、身份不匹配、服务端明确握手或断开拒绝、未知协议错误停止恢复。HTTP 状态保留为 IM_AUTH_HTTP_* / IM_REGISTER_HTTP_*，WS 拒绝保留数字原因 IM_CONNECT_REJECTED_* / IM_SERVER_DISCONNECTED_*；没有已确认的业务错误合同就不将任意 HTTP 409 或 reason 猜测成 Bot 占用。Provider、卡片、投递诊断走独立诊断通道，不污染连接 state/error，连接恢复也不代表旧任务已完成或旧回复已送达。
+
+2026-10-16 的 im-test 专用 Bot 实测中，第二次注册和握手成功，旧连接收到 reason=12 并进入 failed / IM_SERVER_DISCONNECTED_12。该环境采用替换旧连接的行为，并非拒绝第二连接；插件不会为此自动反抢，不承诺跨机器排他锁。此样本不把 reason=12 的所有来源都解释为重复登录，详见[验收记录](../../.octospec/journal/shared/2026-10-16-channel-connection-state-machine-delivery.md)。
+
+断线状态在传输层检测到异常后更新；心跳每 25 秒发送，90 秒无包后在心跳检查时终止连接。物理断网与状态变更之间可能存在检测延迟，合盖期间不承诺 JavaScript 定时器持续运行。状态机及测试矩阵见[开发计划](../../.octospec/tasks/channel-connection-state-machine/brief.md)。
 
 凭据只用于连接，不进入模型输入或状态。会话和投递回执有界保存在内存中，不承诺跨进程恢复或 exactly-once。
 

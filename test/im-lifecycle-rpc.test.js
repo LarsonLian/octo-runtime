@@ -45,14 +45,16 @@ test("Daemon IM RPC dynamically manages one endpoint and never discovers client 
     adapter: { workdir: home }
   };
   const first = await rpc("im.upsert", { config });
-  assert.equal(first.state, "waiting_credentials");
+  assert.equal(first.state, "failed");
+  assert.equal(first.error, "IM_CREDENTIALS_REQUIRED");
   const secondConfig = { ...config, bot_id: "other" };
   await rpc("im.upsert", { config: secondConfig });
   const status = await rpc("status");
   const hostPid = status.adapterHost.pid;
   assert.equal((await rpc("im.status")).length, 2);
   await rpc("im.upsert", { config: { ...config, bf_token: "malformed" } });
-  assert.equal((await rpc("im.status"))[1].state, "waiting_credentials");
+  assert.equal((await rpc("im.status"))[1].state, "failed");
+  assert.equal((await rpc("im.status"))[1].error, "IM_CREDENTIALS_REQUIRED");
   await rpc("im.remove", { connection_key: first.connection_key });
   await rpc("im.remove", { connection_key: first.connection_key });
   assert.equal((await rpc("im.status")).length, 1);
