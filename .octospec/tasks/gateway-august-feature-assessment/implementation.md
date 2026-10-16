@@ -22,7 +22,7 @@ timestamp: 2026-10-16T00:00:00Z
 | F05 已读回执          | 待实施       | 已接纳并开始处理的普通消息，失败隔离                                                          |
 | F09 统一交互卡片      | 待实施       | CanonicalEvent 投影及原 invocation 响应                                                       |
 | F18 删除规则开关      | 待实施       | 同步两渠道类型、schema、示例及回归                                                            |
-| F21 生命周期实机证据  | 待核实       | 只在复现真实违约后修改责任模块                                                                |
+| F21 生命周期实机证据  | Octo 已验证  | im-test 真实工具调用中整体卸载，再复用同一 Host 重载执行成功；WeCom 线上场景未验              |
 | F24 OpenClaw 身份筛选 | 待实施       | 最后一个合法启用的 OpenClaw item                                                              |
 | F26 并发与排队        | 待实施       | Bot 工作 64，每 session 另排队 4，两种繁忙公开码                                              |
 | F27 ACK 与投递        | 已实施       | 四次 WS 预算、迟到 ACK、独立未知通知；im-test 验证通过，服务端实际显示四份原消息              |
@@ -77,7 +77,9 @@ CLI 的 OpenClaw dotenv 同步只选择启用、合法、显式 adapter_type=ope
 
 ### F21 生命周期复核
 
-本轮重新执行 IM/SDK 清理专项 16 项，全部通过：双渠道初始化中卸载、活动调用取消并等待、重复清理、真实本地握手、SDK 退出/账号切换及失败传播。未复现需要修改的新缺陷，保持现有整体卸载和共享 AdapterHost 边界。有效 Octo Bot 长工具期间卸载重挂及 WeCom 线上鉴权/中断证据仍未补齐，保持 F21-V01/V02 未验收，不以本地回归抹平实机缺口。
+本轮重新执行 IM/SDK 清理专项 16 项，全部通过：双渠道初始化中卸载、活动调用取消并等待、重复清理、真实本地握手、SDK 退出/账号切换及失败传播。未复现需要修改的新缺陷，保持现有整体卸载和共享 AdapterHost 边界。
+
+补充 `scripts/verify-im-context-live.mjs --lifecycle`：im-test 隔离群真实消息驱动本机 Codex 调用 `sleep 20`；观察工具开始事件后整体卸载 Gateway，复用原 AdapterHost 加载同一 Extra，再发送消息并观察 completed。Host 未重建，真实内核及 Extra 日志均存在且不含正文。F21-V01 的 Octo 工具期间卸载重挂路径已验证；不扩大为所有 Provider/平台验证。WeCom 线上鉴权/中断证据仍未补齐，F21-V02 继续未验收。
 
 ### F18 已实施
 

@@ -349,7 +349,12 @@ if (process.argv.includes("--delivery-disconnect")) {
   }
   process.exit(0);
 }
-if (process.argv.includes("--logging")) {
+if (process.argv.includes("--logging") || process.argv.includes("--lifecycle")) {
+  const lifecycle = process.argv.includes("--lifecycle");
+  let toolStarted;
+  const tool = new Promise((resolve) => {
+    toolStarted = resolve;
+  });
   const root = await mkdtemp(join(tmpdir(), "octo-f31-live-"));
   const logging = new RuntimeLogging({ directory: join(root, "logs") });
   const host = new AdapterHost({ log: logging.kernel });
@@ -376,7 +381,12 @@ if (process.argv.includes("--logging")) {
       }
     ],
     {
-      invoke: host.invoke,
+      async *invoke(...args) {
+        for await (const event of host.invoke(...args)) {
+          if (event.type === "tool_call.create") toolStarted();
+          yield event;
+        }
+      },
       cancel: async (id, reason) => ({ cancelled: host.cancel(id, reason) }),
       respondInteraction: (id, response) => host.respondInteraction(id, response)
     },
@@ -386,25 +396,47 @@ if (process.argv.includes("--logging")) {
     await plugins.loadConfigured();
     const status = await plugins.inspect("channel-gateway");
     assert.equal(status.bots[0].connected, true);
-    const result = await execute(
-      "octo-cli",
-      [
-        "message",
-        "send",
-        "--data",
-        JSON.stringify({
-          channel_id: group.group_no,
-          channel_type: 2,
-          payload: {
-            type: 1,
-            content: "请不要调用工具，只回复 F31_LOG_QA_OK。",
-            mention: { uids: [receiver.id] }
-          }
-        })
-      ],
-      { env, timeout: 15000, maxBuffer: 1 << 20 }
-    );
-    assert.equal(JSON.parse(result.stdout).ok, true);
+    const send = async (content) => {
+      const result = await execute(
+        "octo-cli",
+        [
+          "message",
+          "send",
+          "--data",
+          JSON.stringify({
+            channel_id: group.group_no,
+            channel_type: 2,
+            payload: {
+              type: 1,
+              content,
+              mention: { uids: [receiver.id] }
+            }
+          })
+        ],
+        { env, timeout: 15000, maxBuffer: 1 << 20 }
+      );
+      assert.equal(JSON.parse(result.stdout).ok, true);
+    };
+    if (lifecycle) {
+      await send(
+        "请调用一次 shell 工具执行 sleep 20，不操作文件和网络；工具结束后只回复 F21_QA_DONE。"
+      );
+      let timer;
+      try {
+        await Promise.race([
+          tool,
+          new Promise((_, reject) => {
+            timer = setTimeout(() => reject(Error("Real provider did not start a tool")), 90000);
+          })
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+      await plugins.unload("channel-gateway");
+      await plugins.load("channel-gateway");
+      assert.equal((await plugins.inspect("channel-gateway")).bots[0].connected, true);
+    }
+    await send("请不要调用工具，只回复 F31_LOG_QA_OK。");
     let finished = false;
     for (let i = 0; i < 120; i++) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -416,7 +448,15 @@ if (process.argv.includes("--logging")) {
             .map((file) => readFile(join(root, "logs", file), "utf8"))
         )
       ).join("");
-      if (text.includes('"event":"invoke.finished"')) {
+      if (
+        text
+          .split("\n")
+          .filter(Boolean)
+          .some((line) => {
+            const record = JSON.parse(line);
+            return record.event === "invoke.finished" && record.data.status === "completed";
+          })
+      ) {
         finished = true;
         break;
       }
@@ -443,14 +483,15 @@ if (process.argv.includes("--logging")) {
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line))
-      .find((row) => row.event === "invoke.finished");
+      .findLast((row) => row.event === "invoke.finished");
     assert.equal(final.data.status, "completed");
     assert.match(extras, /agent_run.requested/);
     assert.match(extras, /agent_run.finished/);
     assert.doesNotMatch(kernel + extras, /F31_LOG_QA_OK|bf_|请不要调用工具/);
     console.log(
       JSON.stringify({
-        feature: "F31",
+        feature: lifecycle ? "F21" : "F31",
+        ...(lifecycle ? { toolStarted: true, sharedHostReload: true } : {}),
         imTestInbound: true,
         realProvider: "codex",
         terminal: final.data.status,
