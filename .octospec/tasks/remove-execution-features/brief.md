@@ -10,14 +10,17 @@ timestamp: 2026-10-16T00:00:00Z
 
 依据[宿主归属决定](../../journal/shared/2026-10-16-adapter-forwarding-ownership.md)及[现行规则](../../rules/adapter-metadata.md)，删除 `executionFeatures` / `execution_features` 自建标签及其驱动的发现、匹配和准入。宿主管理所用 Adapter 的功能；Adapter 对明确输入做原生适配和转发，返回真实结果。
 
-状态为 in_progress。计划核对基线为 Runtime `5f7c825` 与当时生态工作树；实施从 Runtime `ce9df82` 开始，按用户要求每次完成一个 Feature 后单独提交。F4 已完成，独立删除标签专用探测，不影响其余字段消费者；其他 Feature 尚未开始。未发布服务。
+状态为 completed（源码与当前可自动验证范围）。计划核对基线为 Runtime `5f7c825` 与当时生态工作树；实施从 Runtime `ce9df82` 开始，按用户要求每个 Feature 独立提交并推送。最终 Runtime `439a800`、Work App `c7d084c`、Worker `8a7d330`；完整提交、隔离 tree、检查和真实验收边界见[交付记录](delivery.md)。未发布服务。
 
 用户后续授权全自动完成全部清理及关联缺陷，要求独立评估至少 95 分才实施。[自动执行计划](autonomous-plan.md)已补齐 F2/F3/F5、增加 F8/F9，并明确逐提交隔离验证；[独立复评](feasibility-review.md)均分 97.125、最低 96，实施门槛已通过。初始评分保留为计划制定时的历史记录，后续进展按 Feature 更新。
 
 | Feature | 实施状态 | 证据 |
 | --- | --- | --- |
 | F4 删除 computer-use 标签专用探测 | completed | [实现与验证记录](../../journal/shared/2026-10-16-remove-computer-use-probe.md) |
-| F1/F2/F3/F5/F6/F7 | planned | 保持下列依赖和验收要求，不能将 F4 完成理解为整个机制已删除 |
+| F1/F2/F3/F5/F6/F7 | completed | 类型、消费者、执行合同、watchdog、发行包及自动验收闭环完成，见[记录](delivery.md) |
+| F8/F9/F10/F11/F12 | completed | MCP、错误分类、两次提交基线修复及正式环境文档同步；均经独立评估后实施 |
+
+下文评分、待决项及 im-test 目标保留初始计划历史语义。后续修订与独立评估以[自动计划](autonomous-plan.md)为准；用户最新决定使用正式 `im` 域名并仅完成可自动验证部分，实际结果以[交付记录](delivery.md)为准。
 
 ## 责任与范围
 

@@ -42,7 +42,7 @@
 
 ## 历史与取舍
 
-- [executionFeatures 自动清理计划与独立评估](tasks/remove-execution-features/autonomous-plan.md)：覆盖剩余六项和新发现的 MCP/错误分类缺陷；[复评](tasks/remove-execution-features/feasibility-review.md)均分 97.125、每项至少 96，逐 Feature 独立快照验证后提交，远端部署另记状态。
+- [executionFeatures 删除交付](tasks/remove-execution-features/delivery.md)：Runtime、Work App、Worker 按 Feature 提交并推送，类型/常量/发现与消费者清理完成；1001项Runtime、2555项桌面/kit测试通过，正式im renderer及真实Codex文本/图片/审批/取消/MCP通过，远端未部署。实施门槛及新增问题见[独立评估](tasks/remove-execution-features/feasibility-review.md)。
 
 - [F4 删除 computer-use 标签专用探测](journal/shared/2026-10-16-remove-computer-use-probe.md)：删除 Codex 创建时的配置扫描、helper 和 TOML 依赖；930 项回归通过，真实 Codex 工具请求 im-test 成功。其余 Feature 待实施，真实 Home 动态 MCP 注入问题单独记录。
 

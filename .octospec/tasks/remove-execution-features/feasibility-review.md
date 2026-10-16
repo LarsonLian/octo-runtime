@@ -171,3 +171,27 @@ typecheck 日志中的 ScenarioRequest/assertScenarioRequest 缺失均对应实�
 Electron 二进制缺失来自 ignore-scripts 安装，显式执行锁定 Electron 依赖的安装脚本属于隔离环境准备，无需改产品代码或扩大 Runtime 安装决策权限。
 
 本次两项修订维持 F10 **97/100**，仍达到实施门槛。维度为目标与责任 20、具体实现 19、依赖与发布 20、失败与安全 20、测试与交付 18。具体实现保留 1 分针对 DOM 环境差异待实际用例验证，测试与交付保留 2 分针对完整验证尚未完成；移除旧笔误不被用来虚增完成证据。主代理继续执行四份实际用例、全量检查和既定真实 renderer 验证；失败时保持断言并定位差异，不以换环境掩盖错误。
+
+# F11 正式环境与文档评估
+
+依据主代理转达的用户最新明确指令，后续联调使用 `https://im.deepminer.com.cn` 并更新 Work App 文档，登录相关只完成当前可自动验证部分。计划开头已记录该决定覆盖此前 im-test 目标；此前报告中的 im-test 内容保留为当时要求和历史证据，不继续约束新验证，也不改写为正式环境已验证。
+
+评分：目标与责任 20、具体实现 20、依赖与发布 20、失败与安全 20、测试与交付 18，合计 **98/100，可实施并独立提交 F11，无阻断项**。
+
+独立检查 Work App diff，`.env`、`.env.test`、`.env.prod` 仅包含 server_url、octo_worker_url、octo_loop_url、octo_channel_url 四个非敏感地址键及注释。统一正式根服务并清空三个覆盖，符合 main config 现有派生逻辑；显式启动环境变量仍优先。README 地址/运行命令/调试段和新 AGENTS.md 已解释正式环境目标、build:test 模式与服务环境的区别及现有身份和数据保留。README 同时含其他并行产品改动，本提交只暂存本任务环境段；package.json 中依赖新增等无关差异也不得混入。
+
+测试与交付扣 2 分：计划中的 dotenv 四键检查、main config 单测、隔离 build:prod 和实际重启配置核对仍需取得本次结果。不能以当前脏树新增的配置用例通过代替独立提交快照验证。若提交中的 AGENTS.md 要求默认 dev/build 显式采用 prod mode，应同步核对待提交 scripts；仅工作树里的命令修改不能视为已提交行为，必要时只纳入对应两行的本任务增量。
+
+新授权允许正式地址联调，不额外授权服务部署、外部消息、修改他人数据、安装 Provider 或重建 Home/Runtime 身份/数据库。登录不足时继续完成无需登录的检查，记录受限项，不将未执行链路宣称通过。本评估不要求用户再次确认已明确的环境选择。
+
+# F12 已提交合同的测试桩同步评估
+
+独立读取 F12 计划、`/tmp/octo-features-f7-app-typecheck.log` 与 `tests.log`，并核对 Work App `6d88e87` 的隔离快照和实际测试 diff。评分为目标与责任 20、具体实现 20、依赖与发布 20、失败与安全 20、测试与交付 18，合计 **98/100，可以实施 F12，无阻断项**。
+
+`src/shared/contracts.ts` 已定义 localProjectsList/localProjectsCreate 两个通道及 listLocalProjects/createLocalProject 两个 PreloadApi 方法；preload 与 main 各有对应接线。`tests/contracts.test.ts` 的 methodNames 与 typed stub 均遗漏这两个方法，日志分别报告 186 对 188 的枚举计数差异和 TS2739。补齐方法枚举及桩对象即可保持 1:1 守卫；不能修改预期计数公式、删通道或取消类型检查来避开失败。
+
+`usePersonalWorkProjects.ts` 已通过 `octoWork.listLocalProjects(owner)` 查询个人项目，而 `tests/new-conversation-context.test.ts` 仍只在 agentAccess.listWorkProjects 返回现有 A/B fixtures，导致项目列表和重试后的名称断言三项失败。把个人项目 fixtures 同步到已提交的新 bridge 方法，与产品实际调用关系一致；继续保留 agentAccess.listWorkspaceBindings、执行配置和 preflight mocks，原有项目选择、清空、文本/图片保留及失败重试断言均不减少。已有 personal-work-projects 测试也使用相同新入口，支持这是测试桩过期而非需要云端回退的产品缺陷。
+
+隔离快照当前仅有 `tests/im-channel-service.test.ts` 一处修改，删除模拟 Adapter 中的 capabilities/executionFeatures 空数组，保留 type、available、agentSources；与 F1 已删除的 SDK 合同相符，不改变测试动作和断言。这三个测试文件合并为一次测试桩同步提交具有一致范围；须只提交本任务增量，不能直接纳入主工作树其他测试重写。
+
+测试与交付扣 2 分：同步后的三文件定向测试、完整 typecheck:all/test:all 和 build:prod 尚未完成。最终提交 tree 应与受测快照一致；若仍失败，应重新归因并按用户门槛评估新增修复，不靠放宽断言宣布通过。该通过只覆盖测试桩，不授权产品逻辑、远端数据或其他并行功能修改。

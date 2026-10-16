@@ -12,9 +12,13 @@ timestamp: 2026-10-16T00:00:00Z
 
 分数表示方案可执行性，不是完成率或成功概率。评分维度为目标与责任、具体实现、依赖与发布顺序、失败/安全行为、测试与交付，每项 20 分。评估人须列出源码证据、扣分理由和阻断项，不能为了达到门槛给分。评分记录写入本目录 `feasibility-review.md`。
 
-F4 已由 `69341da` 提交并推送；本计划补齐[原计划](brief.md)中待决的 F2/F3/F5 方案，加入实际发现的 F8/F9。当前仅进行只读盘点和计划编写，尚未实施剩余功能。
+计划建立时，F4 已由 `69341da` 提交并推送；本计划补齐[原计划](brief.md)中待决的 F2/F3/F5 方案，加入实际发现的 F8/F9。以下保留实施前的方案与门槛。
+
+2026-10-16 最终状态：F1 至 F12 的源码修复与可自动执行的验收已完成，产品提交均已推送；具体提交、受测 tree、正式环境验证和验收边界见[交付记录](delivery.md)。远端 Worker 服务未部署。
 
 ## 责任与范围
+
+2026-10-16 后续用户明确将本任务联调改为正式域名 `https://im.deepminer.com.cn`，并要求写入 Work App 文档。该决定覆盖本文早先的 im-test 联调目标；已有 im-test 请求仅保留历史证据，后续验证使用正式域名。用户同时选择仅完成可自动验证部分，无需等待独立 QA 登录。
 
 - 宿主选择和交付 Adapter，决定功能入口。Runtime 不再维护 `executionFeatures`、`execution_features`、替代能力 struct、布尔支持表或跨产品注册中心。
 - Adapter 适配明确输入并如实失败；必要的原生协议握手、格式、权限、执行身份、审批、取消和超时仍在各自边界处理。保留 `protocolSupport`、`agentSources`、MCP 和工作目录合同。
@@ -45,6 +49,8 @@ F4 已由 `69341da` 提交并推送；本计划补齐[原计划](brief.md)中待
 | --- | --- | --- |
 | 1 | F6 Worker 消费者 | 删除 DTO 字段及必填/长度检查，补无字段与旧额外字段用例，保留其他校验 |
 | 1.5 | F10 桌面提交基线 | 修复隔离 HEAD 中已退役 ScenarioRequest 引用及问答翻译遗漏，建立 F5 可构建基线 |
+| 按新增指令 | F11 正式环境与文档 | Work App AGENTS/README 与三份地址配置统一正式根服务；无凭据、无远端写入 |
+| 最终提交基线缺口 | F12 测试桩合同同步 | 已提交的本机项目 API 与无标签 SDK 对应测试桩同步，恢复隔离基线完整验证 |
 | 2 | F5 桌面产品策略 | 停止依赖标签，明确本产品交付类型的审批选项及未知类型处理，删除映射和 fixtures 字段 |
 | 3 | F2 执行合同 | Host 删除标签判断，具体 Adapter 明确拒绝无法传递的图片/审批，保留真实 responder 及身份校验 |
 | 4 | F3 watchdog | 按本次实际原生活动切换进度来源，修复审批计时与 MCP 工具进度遗漏 |
@@ -129,14 +135,24 @@ fake clock 精确验收：first=100 时 session/usage 不阻止 t100 超时；id
 
 ## F1/F7：删除与交付
 
+### F12：最终桌面基线的测试桩缺口
+
+最终 Runtime `439a800` 已通过全量1009项，Work App 固定提交更新到并行任务的 `6d88e87` 后，全量出现4项失败且 tsc 报缺少 listLocalProjects/createLocalProject。这是该提交将项目改为本机 SQLite 后，tests/contracts.test.ts 的方法枚举/PreloadApi stub，以及 tests/new-conversation-context.test.ts 的 bridge mock 仍使用旧项目入口，不能由主工作树中尚未提交的其他改动补齐。
+
+本项须独立评估至少95分后实施：只同步上述两个测试文件，将枚举与 typed stub 补齐两个已提交的 PreloadApi 方法，项目选择用例通过 listLocalProjects 返回现有项目fixtures；保留旧 agentAccess mock 中仍被其他测试使用的执行配置和绑定，不改产品代码、不降低断言、不上传项目、不增加云端回退。连同 F1 对 tests/im-channel-service.test.ts 的 capabilities/executionFeatures 两个失效 SDK fixture 字段删除，作为一次“测试桩与已提交合同同步”提交。测试只覆盖已有功能，新的错误先归因再复评。执行相关三文件、完整 typecheck:all/test:all 及 build:prod；严格核对提交tree等于受测快照，保留并行测试修改。
+
+### F11：用户指定正式环境
+
+仅将 Work App `.env`、`.env.test`、`.env.prod` 中已跟踪的非敏感地址配置统一到 `https://im.deepminer.com.cn`，Worker/Loop/Channel 留空按根服务派生；保留启动环境变量显式覆盖。README 的运行时配置段和末尾调试要求同步，新建 AGENTS.md 明确本项目覆盖上级旧 im-test 要求。依该项目最新说明，仅同步 package.json 的 dev/build 两条命令为显式 `--mode prod`，不将并行依赖或产品文档差异混入。独立复评后单独提交，核对 dotenv 四个键及 main config 解析单测，并执行 build:prod。临时 QA 也以正式地址重启。仅验证当前任务获授权的操作，不新增远端部署、发消息或重建身份；登录缺失不阻断自动可验部分。
+
 F1 在上述消费者和行为已迁移后删除 SDK/ACP 类型、协议 constants/helper 与 browser/Node 导出、Host descriptor/runner/serve、默认 Adapter 数组及发现 watchdog 注入。CLI/SDK/daemon/Extra 的有效调用不能依赖空数组占位。生产代码搜索无自建符号；历史说明和明确旧字段兼容用例独立保留。更新当前规则、README、样例与测试，不机械修改原生 Provider capabilities。
 
 按以下次序执行验证，禁止 Runtime clean/build 与依赖其 dist 的桌面检查并行：
 
 1. Runtime `pnpm typecheck`、`pnpm lint`、`pnpm lint:names`、全量 Node 测试；已有 release pack 脚本生成发行包，在临时前缀检查 CLI 和 SDK 无字段加载。
-2. Work App `pnpm typecheck`、`pnpm test`、`pnpm build:test`；Worker 完成上文检查。并行工作引入的失败先定位归属，不能随意回滚或夹带修改。
-3. 使用 im-test 联调：根站和 Worker health/ready 已于本轮只读检查返回 200。真实 Provider 文本、图片路径、受控审批、取消及 MCP 分别记录证据；未安装 Provider 用 fake 覆盖，不能写成真实验收。
-4. 重启本任务影响的本地 Host/daemon/桌面实例以加载新产物，保留身份和配置。优先复用/重启隔离 QA 实例；独立 CDP 端口、userData 和 `OCTO_WORK_HOME_ROOT` 避免影响并行实例。真实 renderer 确认 `getConfig().serverUrl` 为 im-test 后检查无字段发现、默认引擎、审批选择和执行；不向生产环境发送调试请求，不发送外部消息。
+2. Work App `pnpm typecheck`、`pnpm test`、`pnpm build:prod`；Worker 完成上文检查。并行工作引入的失败先定位归属，不能随意回滚或夹带修改。
+3. 使用正式域名 `https://im.deepminer.com.cn` 联调：根站和 Worker health/ready 只读检查分别记录。真实 Provider 文本、图片路径、受控审批、取消及 MCP 分别记录证据；未安装 Provider 用 fake 覆盖，不能写成真实验收。
+4. 重启本任务影响的本地 Host/daemon/桌面实例以加载新产物，保留身份和配置。优先复用/重启隔离 QA 实例；独立 CDP 端口、userData 和 `OCTO_WORK_HOME_ROOT` 避免影响并行实例。真实 renderer 确认 `getConfig().serverUrl` 为正式域名后检查无字段发现、默认引擎、审批选择和当前可自动验证部分；不等待用户登录，不发送外部消息。
 5. Worker 登记以真实 HTTP/WS 合同测试和当前线上只读可达性分别记录。若线上仍是旧消费者，不声称已部署新代码，不以本地 SDK 执行代替登记验收；发布由实际接入方按消费者先行顺序进行。
 
 每项提交记录改动、检查、SHA 和遗留项；最终汇总三仓提交及推送状态。没有完成的真实链路明确列出，不以评估高分替代验收。
