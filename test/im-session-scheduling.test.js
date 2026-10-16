@@ -206,15 +206,28 @@ for (const [name, suffix, transportName, platform] of channels) {
     f.send("queued-before-reset");
     f.send("/reset");
     for (let index = 0; index < 62; index++) f.send(`queued-${index}`);
-    f.send("rejected", "different-chat");
-    assert.equal(f.runtime.status.sessions.length, 1);
-    assert.ok(f.diagnostics.includes("IM_INBOUND_CAPACITY_EXHAUSTED"));
+    f.send("other", "different-chat");
+    if (suffix === "gateway") {
+      assert.equal(f.runtime.status.sessions.length, 2);
+      assert.ok(f.diagnostics.includes("IM_SESSION_QUEUE_FULL"));
+    } else {
+      assert.equal(f.runtime.status.sessions.length, 1);
+      assert.ok(f.diagnostics.includes("IM_INBOUND_CAPACITY_EXHAUSTED"));
+    }
     release();
     await settle();
-    assert.equal(f.calls.length, 64);
-    assert.equal(f.calls[1].agentSessionId, old.agentSessionId);
-    assert.notEqual(f.calls[2].agentSessionId, old.agentSessionId);
-    assert.ok(f.calls.slice(2).every((call) => call.sessionGeneration === 2));
+    assert.equal(f.calls.length, suffix === "gateway" ? 6 : 64);
+    assert.equal(
+      f.calls.find((call) => call.prompt === "queued-before-reset").agentSessionId,
+      old.agentSessionId
+    );
+    const afterReset = f.calls.filter((call) => /^queued-\d/.test(call.prompt));
+    assert.ok(afterReset.length > 0);
+    assert.ok(
+      afterReset.every(
+        (call) => call.agentSessionId !== old.agentSessionId && call.sessionGeneration === 2
+      )
+    );
     assert.equal(f.runtime.status.sessions.length, 0);
   });
 

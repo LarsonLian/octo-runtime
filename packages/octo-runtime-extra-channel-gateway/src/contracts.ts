@@ -65,6 +65,7 @@ export interface ImInboundMessage {
   buildInputs?(signal: AbortSignal): Promise<ModelInputPart[]>;
   reply(text: string, effectKey?: string): Promise<void>;
   replyFinal?(text: string, effectKey: string): Promise<void>;
+  replyFailure?(event: CanonicalEvent, effectKey: string): Promise<void>;
   buildContext(
     signal: AbortSignal,
     options?: { initialSession: boolean; mentionGuidance?: boolean }

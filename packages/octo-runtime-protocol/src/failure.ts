@@ -77,6 +77,14 @@ export const FAILURE_CATALOG = Object.freeze({
     "retry_later",
     30_000
   ),
+  "OH-RUN-2004": entry(
+    "session_queue_capacity",
+    "当前会话的排队任务已满，请稍后重试。",
+    "error.runtime.session_queue_capacity",
+    true,
+    "retry_later",
+    30_000
+  ),
   "OH-RUN-2008": entry(
     "runtime_local_store",
     "运行设备存储异常，本轮任务已安全结束。",
@@ -541,10 +549,14 @@ function classify(
   };
   if (explicit && timeouts[explicit]) return result(timeouts[explicit], explicit);
   if (explicit === "RUNTIME_DRAINING") return result("OH-RUN-2002", "RUNTIME_DRAINING");
+  if (explicit === "IM_SESSION_QUEUE_FULL") return result("OH-RUN-2004", explicit);
   if (
-    ["OUTBOX_HARD_LIMIT", "OUTBOX_BACKPRESSURE", "RUNTIME_CAPACITY_EXHAUSTED"].includes(
-      explicit ?? ""
-    )
+    [
+      "OUTBOX_HARD_LIMIT",
+      "OUTBOX_BACKPRESSURE",
+      "RUNTIME_CAPACITY_EXHAUSTED",
+      "IM_BOT_WORKING_FULL"
+    ].includes(explicit ?? "")
   ) {
     return result("OH-RUN-2003", explicit ?? "RUNTIME_CAPACITY_EXHAUSTED");
   }

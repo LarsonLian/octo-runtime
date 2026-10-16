@@ -3,7 +3,7 @@
  * 管理会话、排队、取消和交互归属；平台协议交给 connector，领域业务交给发起方。
  */
 import { randomUUID } from "node:crypto";
-import { assertModelInputParts } from "@mininglamp-oss/octo-runtime-protocol";
+import { assertModelInputParts, failurePayload } from "@mininglamp-oss/octo-runtime-protocol";
 import { ImImageInputError } from "../transport/image-input.js";
 import { performance } from "node:perf_hooks";
 import type {
@@ -58,7 +58,9 @@ export class ImRuntime {
   #closing?: Promise<void>;
   #connectionAbort?: AbortController;
   #error?: string;
-  #pending = 0;
+  #working = 0;
+  readonly #busyNotifications = new Map<string, Promise<void>>();
+  readonly #busyNotifiedAt = new Map<string, number>();
   #retry = 0;
   #everOnline = false;
   #disconnecting?: Promise<void>;
@@ -83,6 +85,11 @@ export class ImRuntime {
       state: this.#state,
       error: this.#error ?? null,
       deliveries: this.#delivery?.receipts ?? [],
+      workingTasks: this.#working,
+      queuedTasks: [...this.#sessions.values()].reduce(
+        (sum, session) => sum + Math.max(0, session.pending - 1),
+        0
+      ),
       sessions: [...this.#sessions.values()].map((session) => ({
         sessionId: session.id,
         generation: session.generation,
@@ -378,10 +385,7 @@ export class ImRuntime {
     return controls;
   }
   #enqueue(message: ImInboundMessage, key: string, occurrenceId?: string): boolean {
-    if (this.#closed || this.#signal.aborted || this.#pending >= 64) {
-      this.#diagnostic("IM_INBOUND_CAPACITY_EXHAUSTED");
-      return false;
-    }
+    if (this.#closed || this.#signal.aborted) return false;
     const id = occurrenceId ?? message.messageId;
     const queuedKey = JSON.stringify([key, id]);
     if (this.#queuedOccurrences.has(queuedKey)) return false;
@@ -398,6 +402,19 @@ export class ImRuntime {
     }
     const session = this.#session(key);
     try {
+      // Octospec F26: .octospec/tasks/gateway-august-feature-assessment/assessment.md
+      // 每个非空 session 占一个工作槽位；结束清理后原子交给同 session 的下一条。
+      // 排队另计四条，不把 Bot 的工作数与所有排队消息混加。
+      const full =
+        session.pending >= 5
+          ? "IM_SESSION_QUEUE_FULL"
+          : this.#working >= 64
+            ? "IM_BOT_WORKING_FULL"
+            : undefined;
+      if (full) {
+        this.#busy(message, key, full);
+        return false;
+      }
       if (message.text.trim() !== "/session" && !session.id) {
         const binding = {
           id: `as_${randomUUID()}`,
@@ -409,21 +426,66 @@ export class ImRuntime {
       }
       const executionSession = { ...session };
       this.#queuedOccurrences.add(queuedKey);
-      session.pending++;
-      this.#pending++;
+      if (session.pending++ === 0) this.#working++;
       session.tail = session.tail
         .then(() => this.#turn(message, key, session, occurrenceId, executionSession))
         .catch(() => this.#diagnostic("IM_TURN_FAILED"))
         .finally(() => {
           this.#queuedOccurrences.delete(queuedKey);
           session.pending--;
-          this.#pending--;
+          if (session.pending === 0) this.#working--;
           this.#releaseSession(key, session);
         });
       return true;
     } finally {
       this.#releaseSession(key, session);
     }
+  }
+  #busy(message: ImInboundMessage, key: string, code: string): void {
+    this.#diagnostic(code);
+    const now = Date.now();
+    if (
+      this.#busyNotifications.has(key) ||
+      this.#busyNotifications.size >= 64 ||
+      now - (this.#busyNotifiedAt.get(key) ?? 0) < 1000
+    )
+      return;
+    this.#busyNotifiedAt.set(key, now);
+    if (this.#busyNotifiedAt.size > 128)
+      this.#busyNotifiedAt.delete(this.#busyNotifiedAt.keys().next().value!);
+    const payload = failurePayload(
+      { code },
+      {
+        stage: "channel_admission",
+        defaultDomain: "runtime",
+        source: { component: "octo-runtime" }
+      }
+    );
+    const event = {
+      protocolVersion: 2 as const,
+      type: "run.failed" as const,
+      payload: {
+        ...payload,
+        message: `当前智能体繁忙，请稍后再试。本条消息未受理，尚未开始执行。${code === "IM_SESSION_QUEUE_FULL" ? "单 session 排队已满。" : "Bot 工作并发已满。"}`
+      }
+    };
+    const effect = `busy:${message.messageId}`;
+    const notification = Promise.allSettled([
+      Promise.resolve().then(() => message.replyFailure?.(event, effect)),
+      this.#reply(
+        message,
+        `当前智能体繁忙，请稍后再试\n错误码：${payload.failure.code}`,
+        `${effect}:text`
+      )
+    ])
+      .then((results) => {
+        if (results.some((result) => result.status === "rejected"))
+          this.#diagnostic("IM_BUSY_NOTIFICATION_FAILED");
+      })
+      .finally(() => {
+        this.#busyNotifications.delete(key);
+      });
+    this.#busyNotifications.set(key, notification);
   }
   async #reply(
     message: ImInboundMessage,
@@ -781,6 +843,7 @@ export class ImRuntime {
       );
       await attempt(() => this.#connecting);
       await Promise.all([...this.#sessions.values()].map((session) => attempt(() => session.tail)));
+      await Promise.all(this.#busyNotifications.values());
       if (!this.dependencies.sessions) await attempt(() => this.#sessionStore.close?.());
       if (errors.length) throw new AggregateError(errors, "IM_DISPOSE_FAILED");
       this.#sessions.clear();

@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { build_im_contexts } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
+import {
+  build_im_contexts,
+  ImRuntime
+} from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
 import { verifyBotIdentity } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/auth.js";
 import { sendReadReceipt } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/api/messages.js";
 import { interactionCard } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/interaction-card.js";
@@ -155,6 +158,105 @@ const env = {
 };
 delete env.OCTO_BOT_ID;
 delete env.OCTO_PROFILE;
+if (process.argv.includes("--capacity")) {
+  let release,
+    calls = 0;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const runtime = new ImRuntime(
+    {
+      bot_id: receiver.id,
+      bf_token: receiver.token,
+      api_url: receiver.api,
+      group_ids: [group.group_no],
+      allowed_sender_ids: [sender.id],
+      typing: false,
+      adapter: { adapter_type: "codex", workdir: "/tmp" }
+    },
+    {
+      host: {
+        async *invoke() {
+          calls++;
+          await gate;
+          yield { protocolVersion: 2, type: "run.completed", payload: {} };
+        },
+        async cancel() {
+          release();
+          return { cancelled: true };
+        },
+        async respondInteraction() {}
+      }
+    }
+  );
+  try {
+    await runtime.start();
+    assert.equal(runtime.status.state, "online");
+    for (let index = 0; index < 6; index++) {
+      try {
+        await execute(
+          "octo-cli",
+          [
+            "message",
+            "send",
+            "--data",
+            JSON.stringify({
+              channel_id: group.group_no,
+              channel_type: 2,
+              payload: {
+                type: 1,
+                content: `${marker}_capacity_${index}`,
+                mention: { uids: [receiver.id] }
+              }
+            })
+          ],
+          { env, timeout: 15000, maxBuffer: 1 << 20 }
+        );
+      } catch {
+        throw Error("IM_CAPACITY_TEST_SEND_FAILED");
+      }
+    }
+    let busy, busyCard;
+    for (let attempt = 0; attempt < 30 && (!busy || !busyCard); attempt++) {
+      const messages = await getChannelMessages({
+        apiUrl: receiver.api,
+        botToken: receiver.token,
+        channelId: group.group_no,
+        channelType: 2,
+        limit: 50,
+        pullMode: 0
+      });
+      busy = messages.find(
+        (message) => message.from_uid === receiver.id && message.content.includes("OH-RUN-2004")
+      );
+      busyCard = messages.find(
+        (message) =>
+          message.from_uid === receiver.id &&
+          message.type === 17 &&
+          JSON.stringify(message.payload).includes("OH-RUN-2004")
+      );
+      if (!busy || !busyCard) await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    assert.ok(busy, "Session queue rejection must send a real busy text");
+    assert.ok(busyCard, "Session queue rejection must send a separate error card");
+    assert.equal(calls, 1);
+    assert.equal(runtime.status.workingTasks, 1);
+    assert.equal(runtime.status.queuedTasks, 4);
+    console.log(
+      JSON.stringify({
+        feature: "F26",
+        liveWs: true,
+        working: 1,
+        waiting: 4,
+        sixthRejectedWithCardAndText: true
+      })
+    );
+  } finally {
+    release();
+    await runtime.close();
+  }
+  process.exit(0);
+}
 let payload = { type: 1, content: marker, reply: quoted };
 if (resourceTest) {
   const directory = await mkdtemp(join(tmpdir(), "octo-resource-qa-"));

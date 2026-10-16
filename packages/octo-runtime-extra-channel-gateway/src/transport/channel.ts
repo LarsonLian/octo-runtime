@@ -15,6 +15,8 @@ import { build_im_contexts } from "./contexts.js";
 import { OctoConnector, stableEffectKey } from "./connector.js";
 import { CardSession } from "./card-session.js";
 import { TypingController } from "../presentation/typing.js";
+import { ImRunProjector } from "../presentation/run-projector.js";
+import { buildReasoningFrame } from "./reasoning-frame.js";
 import { ImDeliveryDispatcher } from "../delivery/dispatcher.js";
 import { fetchBotEvents, ackBotEvent } from "./api/events.js";
 import { parseCardAction } from "./card-action.js";
@@ -130,6 +132,24 @@ export class GatewayTransport {
             spaceId: this.#spaceId,
             botId: this.config.bot_id,
             channelType: message.channelType
+          },
+          replyFailure: async (event, effectKey) => {
+            if (this.#closed || signal.aborted) return;
+            const template = await this.#api!.reasoningTemplate();
+            if (!template) return;
+            const projector = new ImRunProjector(`channel:${effectKey}`, message.channelType === 1);
+            projector.accept(event);
+            const frame = buildReasoningFrame(projector.snapshot(), template);
+            if (!frame) throw Error("IM_CARD_BUDGET_EXCEEDED");
+            await this.#api!.card(
+              message,
+              template,
+              frame,
+              stableEffectKey(this.identity, message, effectKey, "error"),
+              undefined,
+              1,
+              false
+            );
           },
           reply: async (text, effectKey) => {
             // 闭包绑定接收消息的连接和地址；配置替换后不把旧 Run 的回复转到新账号。
