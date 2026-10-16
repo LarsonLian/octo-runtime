@@ -10,7 +10,12 @@ timestamp: 2026-10-16T00:00:00Z
 
 依据[宿主归属决定](../../journal/shared/2026-10-16-adapter-forwarding-ownership.md)及[现行规则](../../rules/adapter-metadata.md)，删除 `executionFeatures` / `execution_features` 自建标签及其驱动的发现、匹配和准入。宿主管理所用 Adapter 的功能；Adapter 对明确输入做原生适配和转发，返回真实结果。
 
-状态为 planned。本轮交付计划和源码盘点，未修改产品代码、发布服务或执行线上验收。核对基线为 Runtime `5f7c825` 与当前生态工作树；实施前复查三个仓库的版本和未提交修改。
+状态为 in_progress。计划核对基线为 Runtime `5f7c825` 与当时生态工作树；实施从 Runtime `ce9df82` 开始，按用户要求每次完成一个 Feature 后单独提交。F4 已完成，独立删除标签专用探测，不影响其余字段消费者；其他 Feature 尚未开始。未发布服务。
+
+| Feature | 实施状态 | 证据 |
+| --- | --- | --- |
+| F4 删除 computer-use 标签专用探测 | completed | [实现与验证记录](../../journal/shared/2026-10-16-remove-computer-use-probe.md) |
+| F1/F2/F3/F5/F6/F7 | planned | 保持下列依赖和验收要求，不能将 F4 完成理解为整个机制已删除 |
 
 ## 责任与范围
 
@@ -114,7 +119,7 @@ Runtime 入口为 `packages/octo-runtime-adapter-{sdk,host,acp,codex}/src` 和 `
 
 1. 补齐 F2 行为表、F3 假时钟对照、F5 未知 Adapter 策略、F6 部署基线。已有信息能独立推进的部分继续执行，不为常规实现重复申请授权。
 2. 先实施 F6 和 F5 消费者调整，能处理无字段结果并停止依赖标签；可忽略旧额外字段，但不再用于功能判断。
-3. 完成 F2/F3 后，与 F1/F4 的类型、声明和探测删除形成可构建的 Runtime 提交。禁止推送会造成桌面空列表、Worker 拒绝登记或超时失效的中间态。
+3. F4 无执行消费者，已先独立完成。完成 F2/F3 后，与 F1 的类型、声明删除形成可构建的 Runtime 提交。禁止推送会造成桌面空列表、Worker 拒绝登记或超时失效的中间态。
 4. 完成 F7，三个仓库分别记录源码 SHA、构建、重启和实测证据后提交推送。消费者先于生产者发布；不触发未授权部署或数据重建。
 
 ## 完成标准
@@ -123,4 +128,4 @@ Runtime 入口为 `packages/octo-runtime-adapter-{sdk,host,acp,codex}/src` 和 `
 - 有效调用不失效，不支持的图片和审批不被静默接受；会话、交互、取消、超时及错误继续符合合同。
 - 构建、回归、发行、真实 renderer 和 im-test 结果分别可追溯，缺项明确列出，不将计划评分写成验收分数。
 
-本轮只检查 OKF 格式、索引、链接和 diff，没有执行上述产品回归或线上验收。实际读取规则见 [context.yaml](context.yaml)。
+计划制定阶段只检查了 OKF 格式、索引、链接和 diff。后续实施验证按 Feature 记录，不能将初始评分当作已验收。实际读取规则见 [context.yaml](context.yaml)。

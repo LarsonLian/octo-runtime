@@ -83,13 +83,13 @@ provisioning 的具体形态：
 2. **能力已 provisioning / 开启**（config 中相应条目存在）。
 3. **adapter 侧放行**——本适配器已默认满足：`buildCodexCommand` 复用真实 `CODEX_HOME`、`app-server.ts` 使用 `approvalPolicy: "untrusted"`，且不禁用任何 MCP server；默认自动接受受支持的反向审批，`autoApprove: false` 则交给 Worker durable interaction。`mcpToolCall` 事件已被 normalizer 统一映射为 `mcp__<server>__<tool>`。所以默认无需额外运行时开关，cua / computer-use 的工具调用会像普通 MCP 工具一样透传给上层。
 
-`createCodexAdapter` 在创建时用 `detectComputerUseProvisioningSync` 检查将要使用的 `CODEX_HOME`：若 computer use 已 provisioning 且启用，就在 `metadata.executionFeatures` 加上 `tool.computer_use`（常量 `COMPUTER_USE_CAPABILITY`）。Host 的 `list()` / `describe()` 返回这一执行支持声明；业务调用方决定是否以及如何对外登记。检测在每次 adapter-host 启动 / 注册时执行，不为每轮调用重新探测，不创建业务能力标签或自有 capabilities。节点安装或启用情况变化后，重启 adapter-host 重新探测；声明不代表实际调用成功。
+宿主应用负责决定 computer use 的安装、配置与入口。Adapter 创建和模块导入时不读取 `config.toml` 判断支持范围，也不生成 `tool.computer_use` 标签；执行时沿用原生 Codex 配置并转发真实结果。
 
 关键约束：
 
 - **必须使用真实 `CODEX_HOME`**。`[mcp_servers.computer-use].command` 是按 `CODEX_HOME` 解析的相对路径；临时 HOME 会使该相对路径失效。Adapter 不创建 shadow HOME，不安装或覆盖用户配置的插件。
 - **能力传递性依赖 ChatGPT.app 存在**。`node_repl` 指向 `/Applications/ChatGPT.app/...`；卸载 ChatGPT.app 后即使保留 config 也会失效。
-- **`probe` 只查 codex 可执行文件**，probe 通过并不代表 computer use 可用。用导出的 `detectComputerUseProvisioning(env)` 对将要使用的同一 `CODEX_HOME` 做检查：它读取 `config.toml`，收集 `computer-use` / `node_repl` 这两个由 ChatGPT.app 写入的 MCP server，返回 `{ available, codexHome, servers, reason? }`。`available` 为「至少一个相关 server 存在且未被显式 `enabled = false` 关闭」；`reason` 为 `config_missing` / `mcp_server_absent` / `mcp_server_disabled`，便于在开跑前给出「先安装 / 启动 ChatGPT.app」或「computer-use 已 provisioning 但被禁用」而非 turn 中静默的 tool-not-found。检查停留在配置层：`computer-use` 的 command 是 Codex 按 provider 内部基准目录解析的相对路径（实测落在 `<CODEX_HOME>/computer-use/…` 而非 `<CODEX_HOME>` 下），因此 helper 原样报告声明的 `command` / `cwd`，不猜绝对路径去 stat。
+- **`probe` 只查 codex 可执行文件**，probe 通过不代表 computer use 调用成功。宿主应用管理配置与系统授权，实际工具启动、调用失败按 Provider 返回的结果处理。
 
 ## 使用
 

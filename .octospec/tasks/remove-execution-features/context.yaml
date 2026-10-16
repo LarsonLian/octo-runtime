@@ -6,6 +6,8 @@ rules:
   - runtime-output-protocol
   - runtime-stateless
   - runtime-engineering
+  - runtime-environment
+  - runtime-mcp
   - commit
 guides:
   - adapter-authoring

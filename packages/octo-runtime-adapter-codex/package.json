@@ -5,8 +5,7 @@
   "type": "module",
   "exports": "./dist/index.js",
   "dependencies": {
-    "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*",
-    "smol-toml": "^1.4.2"
+    "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*"
   },
   "types": "./dist/index.d.ts",
   "files": [

@@ -42,6 +42,8 @@
 
 ## 历史与取舍
 
+- [F4 删除 computer-use 标签专用探测](journal/shared/2026-10-16-remove-computer-use-probe.md)：删除 Codex 创建时的配置扫描、helper 和 TOML 依赖；930 项回归通过，真实 Codex 工具请求 im-test 成功。其余 Feature 待实施，真实 Home 动态 MCP 注入问题单独记录。
+
 - [executionFeatures 清理开发计划与逐项评分](tasks/remove-execution-features/brief.md)：按实际消费者拆为七项，覆盖 Adapter 输入检查、watchdog、标签专用探测、桌面产品策略、Worker 登记合同及真实验收；当前准备度平均约 94 分，待补齐活动源切换和未知 Adapter 策略。本轮仅计划，未改产品代码。
 
 - [宿主管理 Adapter 支持范围](journal/shared/2026-10-16-adapter-forwarding-ownership.md)：确定 `executionFeatures` 为待删除的自建能力声明机制；Adapter 按合同适配转发，宿主管理功能使用，必要的运行状态及原生协议校验留在执行边界。本轮仅落 OKF，代码清理尚未实施。

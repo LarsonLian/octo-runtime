@@ -30,7 +30,7 @@ Agent 定义由业务方管理。Adapter 元数据与 probe 分别描述执行�
 - Provider 是否已安装、登录或可连接属于实际运行状态。仅在必要的准备或调用边界检查并如实报告，不为维护功能标签额外启动 Provider、扫描 Home 或探测工具；安装决策仍归 HostApp。
 - Provider 原生握手中确实用于通信的字段在 Adapter 内按原协议处理，不复制为 Runtime 统一能力目录。原生字段名包含 capabilities，不构成保留自建声明机制的理由。
 
-本节为已确认的目标约束。当前源码仍有 `executionFeatures` 及 Host 消费逻辑，清理尚未实施；下文保留字段盘点供定位，不能视为继续扩展该机制的许可。决定依据和后续验收边界见[记录](../journal/shared/2026-10-16-adapter-forwarding-ownership.md)。
+本节为已确认的目标约束。Codex 的 computer-use 标签专用探测已删除，见[F4 实现记录](../journal/shared/2026-10-16-remove-computer-use-probe.md)。当前源码仍有其余 `executionFeatures` 及 Host 消费逻辑；下文保留字段盘点供定位，不能视为继续扩展该机制的许可。决定依据和后续验收边界见[记录](../journal/shared/2026-10-16-adapter-forwarding-ownership.md)。
 
 ## 来源
 

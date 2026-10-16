@@ -19,9 +19,6 @@ import {
   type InteractionResponse,
   type NativeInteractionResponse
 } from "@mininglamp-oss/octo-runtime-protocol";
-import { parse } from "smol-toml";
-import { readFileSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -44,147 +41,6 @@ export {
   type CodexAppServerSpawn,
   type CodexInteractionResponder
 } from "./app-server.js";
-
-/** Read an optional resource; only ENOENT is ignored, permission and I/O errors must surface to the caller. */
-async function readOptional(file: string): Promise<string> {
-  try {
-    return await readFile(file, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
-    throw error;
-  }
-}
-
-/** MCP servers that ChatGPT.app provisions to carry computer-use capability, in preference order. */
-const COMPUTER_USE_MCP_SERVERS = ["computer-use", "node_repl"] as const;
-
-/** Why a shared CODEX_HOME does not currently expose computer use, or `undefined` when it does. */
-export type ComputerUseUnavailableReason =
-  "config_missing" | "mcp_server_absent" | "mcp_server_disabled";
-
-/** One computer-use MCP server as declared in the shared config.toml. */
-export interface ComputerUseMcpServer {
-  /** Server key, e.g. `computer-use` or `node_repl`. */
-  name: string;
-  /** Declared launch command. May be a relative path Codex resolves internally; reported verbatim. */
-  command?: string;
-  /** Declared working directory for the server, reported verbatim. */
-  cwd?: string;
-  /** Enabled state; a Codex MCP server is enabled unless `enabled = false` is set explicitly. */
-  enabled: boolean;
-}
-
-/** Result of inspecting the shared CODEX_HOME for ChatGPT.app's computer-use provisioning. */
-export interface ComputerUseProvisioning {
-  /** True when at least one computer-use MCP server is declared and enabled. */
-  available: boolean;
-  /** The CODEX_HOME that was inspected. */
-  codexHome: string;
-  /** Every computer-use MCP server found in config, whether enabled or not. */
-  servers: ComputerUseMcpServer[];
-  /** Why provisioning is unavailable; omitted when `available` is true. */
-  reason?: ComputerUseUnavailableReason;
-}
-
-/**
- * Capability advertised in adapter metadata when the shared CODEX_HOME exposes ChatGPT.app's
- * computer-use MCP provisioning. It is derived from `config.toml` at adapter creation and flows to
- * the Agent Work Runtime via `host.list()` — the channel that actually feeds the Runtime's
- * capability set — as well as to the control-plane `describe()` display, which spreads the same
- * metadata.
- */
-export const COMPUTER_USE_CAPABILITY = "tool.computer_use";
-
-/** Pure classification of a config.toml body; empty text means the config is missing or unreadable. */
-function parseComputerUseProvisioning(
-  codexHome: string,
-  configText: string
-): ComputerUseProvisioning {
-  if (!configText) return { available: false, codexHome, servers: [], reason: "config_missing" };
-
-  const config = parse(configText) as {
-    mcp_servers?: Record<string, { command?: unknown; cwd?: unknown; enabled?: unknown }>;
-  };
-  const mcpServers = config.mcp_servers ?? {};
-
-  const servers: ComputerUseMcpServer[] = [];
-  for (const name of COMPUTER_USE_MCP_SERVERS) {
-    const entry = mcpServers[name];
-    if (!entry) continue;
-    servers.push({
-      name,
-      ...(typeof entry.command === "string" ? { command: entry.command } : {}),
-      ...(typeof entry.cwd === "string" ? { cwd: entry.cwd } : {}),
-      // A Codex MCP server is enabled unless disabled explicitly.
-      enabled: entry.enabled !== false
-    });
-  }
-
-  if (servers.length === 0)
-    return { available: false, codexHome, servers, reason: "mcp_server_absent" };
-  if (!servers.some((server) => server.enabled)) {
-    return { available: false, codexHome, servers, reason: "mcp_server_disabled" };
-  }
-  return { available: true, codexHome, servers };
-}
-
-/** Resolve the CODEX_HOME an invocation would use, matching `buildCodexCommand`. */
-function resolveCodexHome(env: NodeJS.ProcessEnv): string {
-  return env.CODEX_HOME || join(homedir(), ".codex");
-}
-
-/**
- * Detect whether the shared CODEX_HOME carries ChatGPT.app's computer-use capability.
- *
- * Desktop GUI abilities (screen/click/type) are not part of the codex binary and are not cloud
- * calls. The ChatGPT.app acts as a provisioner: it writes local MCP servers — `computer-use`
- * (a `Codex Computer Use.app` helper holding the OS TCC grants) and `node_repl` (`cua_repl`) —
- * into the shared `~/.codex`, and any codex binary reading that home inherits the capability. The
- * Runtime codex adapter already reuses the real CODEX_HOME, routes untrusted-tool approvals through
- * its non-interactive response handler and does not strip MCP servers, so no runtime toggle is
- * needed; this helper only reports whether the
- * provisioning is present and enabled, so a caller can surface a clear "install/run ChatGPT.app
- * first" message instead of a silent tool-not-found at turn time.
- *
- * The detection stays at the config level on purpose: the `computer-use` command is a relative
- * path Codex resolves against a provider-internal base directory (observed under
- * `<CODEX_HOME>/computer-use/…`, not `<CODEX_HOME>` directly), so this helper reports the declared
- * `command`/`cwd` verbatim rather than guessing an absolute path and stat-ing it. That the path is
- * relative is exactly why a shadow home breaks computer use and why production must use the real
- * home. `probe` only checks the codex executable, so an available probe does not imply computer use
- * is usable — call this against the same CODEX_HOME `buildCodexCommand` will use.
- */
-export async function detectComputerUseProvisioning(
-  env: NodeJS.ProcessEnv = process.env
-): Promise<ComputerUseProvisioning> {
-  const codexHome = resolveCodexHome(env);
-  return parseComputerUseProvisioning(
-    codexHome,
-    await readOptional(join(codexHome, "config.toml"))
-  );
-}
-
-/**
- * Synchronous, best-effort variant used at adapter-creation time to decide capability advertising.
- * Any read or parse failure yields "not provisioned" rather than throwing, so building the adapter
- * (including at module import for the exported singleton) can never fail on a missing/locked config.
- */
-export function detectComputerUseProvisioningSync(
-  env: NodeJS.ProcessEnv = process.env
-): ComputerUseProvisioning {
-  const codexHome = resolveCodexHome(env);
-  let configText = "";
-  try {
-    configText = readFileSync(join(codexHome, "config.toml"), "utf8");
-  } catch {
-    // Missing or unreadable config simply means computer use is not advertised.
-  }
-  try {
-    return parseComputerUseProvisioning(codexHome, configText);
-  } catch {
-    return { available: false, codexHome, servers: [] };
-  }
-}
 
 /**
  * Convert an Octo Runtime InvokeRequest into a launchable app-server process spec.
@@ -262,8 +118,6 @@ export function createCodexAdapter({
     executionFeatures.APPROVAL_FULL_ACCESS,
     executionFeatures.INPUT_IMAGE
   ];
-  if (detectComputerUseProvisioningSync(env).available)
-    adapterCapabilities.push(COMPUTER_USE_CAPABILITY);
   const interactionResponders = new Map<string, CodexInteractionResponder>();
   const nativeResponders = new Map<
     string,
