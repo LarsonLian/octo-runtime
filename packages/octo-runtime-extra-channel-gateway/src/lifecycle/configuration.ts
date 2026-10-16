@@ -124,7 +124,7 @@ export function validateImConfig(config: ImBotConfig): void {
       config.group_ids.some((id) => typeof id !== "string" || !id))
   )
     throw new Error("IM_CONFIG_INVALID");
-  for (const key of ["cards", "typing", "group_rules"] as const)
+  for (const key of ["cards", "typing"] as const)
     if (config[key] !== undefined && typeof config[key] !== "boolean")
       throw new Error("IM_CONFIG_INVALID");
   if (config.bf_token !== undefined && typeof config.bf_token !== "string")

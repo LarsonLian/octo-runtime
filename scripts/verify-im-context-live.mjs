@@ -259,6 +259,14 @@ assert.ok(
       item.payload.text.includes(marker)
   )
 );
+assert.ok(
+  envelope.some(
+    (item) =>
+      item.name === "group-rules" && ["present", "empty", "not_found"].includes(item.payload.status)
+  )
+);
+if (process.argv.includes("--rules"))
+  console.log(JSON.stringify({ feature: "F18", groupRulesLoadedWithoutSwitch: true }));
 console.log(
   JSON.stringify({
     endpoint: receiver.api,

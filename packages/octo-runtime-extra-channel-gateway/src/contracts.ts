@@ -46,7 +46,6 @@ export interface OctoBotConfig extends ImCommonConfig {
   api_url: string;
   bf_token?: string;
   group_ids?: string[];
-  group_rules?: boolean;
   cards?: boolean;
   typing?: boolean;
 }

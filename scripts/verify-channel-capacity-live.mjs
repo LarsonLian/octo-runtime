@@ -18,7 +18,6 @@ const config = {
   adapter: { adapter_type: "codex" },
   cards: false,
   typing: false,
-  group_rules: false,
   allowed_sender_ids: ["capacity-qa-no-inbound"]
 };
 assert.ok(config.bf_token?.startsWith("bf_"));

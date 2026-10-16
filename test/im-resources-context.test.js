@@ -32,7 +32,7 @@ test("F04: resources preserve source and address without fetching or provider at
   ]) {
     const [item] = await build_im_contexts(
       config,
-      incoming(payload),
+      { ...incoming(payload), channelType: 1 },
       "bf_fixture",
       new AbortController().signal
     );
@@ -50,14 +50,14 @@ test("F04: resources preserve source and address without fetching or provider at
 test("F04: missing addresses remain explicit, arbitrary objects and unsupported message types stay excluded", async () => {
   const [item] = await build_im_contexts(
     config,
-    incoming({ type: 8, name: "missing" }),
+    { ...incoming({ type: 8, name: "missing" }), channelType: 1 },
     "bf_fixture",
     new AbortController().signal
   );
   assert.equal(item.payload.status, "missing_address");
   const empty = await build_im_contexts(
     config,
-    incoming({ type: 1, content: "https://other.invalid/a.pdf" }),
+    { ...incoming({ type: 1, content: "https://other.invalid/a.pdf" }), channelType: 1 },
     "bf_fixture",
     new AbortController().signal
   );

@@ -60,7 +60,7 @@ Octo 与 WeCom 的 Bot 配置不包含渠道 `type`；平台由加载的 Extra �
 
 Octo 插件配置只校验已识别字段，未知扩展字段保留并忽略，不使用字段白名单拒绝整个配置。可选 `bot_name` 为本地展示名称，省略时使用 `bot_id`，不参与身份或授权。CLI/daemon 统一经 Extra 声明装配，不提供渠道专用命令或文件读取。`extraset` 原样保存并替换整份插件声明，多机器人由插件自己的 `config.bots` 数组表达；Bot 校验、默认值与连接管理属于插件。
 
-业务渠道决定 Actor、Trigger、Target、Input 和本轮 Context，并在调用前处理业务 defaults/mandatory。Octo 的可选 GROUP.md、历史读取和消息 selection 属于渠道业务选择，不是 Host 的自动采集能力。
+业务渠道决定 Actor、Trigger、Target、Input 和本轮 Context，并在调用前处理业务 defaults/mandatory。Octo 群固定加载 GROUP.md，话题固定加载群和本话题规则，不设置 group_rules/topic_rules 开关；404 明确记录不存在，权限或网络失败不伪装成空规则。规则、历史读取和消息 selection 均属于渠道业务选择，不是 Host 的自动采集能力。F18 的开关清理已实施，验证见[实施记录](../tasks/gateway-august-feature-assessment/implementation.md)。
 
 文档、网盘文件及内部附件采用[资源地址 Context 决策](../journal/shared/2026-10-16-resource-context-access-decision.md)：Channel 从本条真实报文组织资源类型、来源、标识/地址及获取指引，放入 extra.im。在线文档、网盘文件和内部 file 的读取方法分别由实际 octo-cli/工具提供，Provider/Harness 内的 Agent 按需调用；Channel 不要求 Adapter 预下载或转换原生附件，Host 不按资源类型预取。业务指引与执行凭据分开，读取沿当前 Bot 的权限和工具环境进行，不在提示词暴露 Token。该资源接线尚待实施，不扩大已完成的 Codex 独立图片范围或更改真实 mention 准入。
 

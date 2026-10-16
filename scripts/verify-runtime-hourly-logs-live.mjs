@@ -40,7 +40,6 @@ try {
             adapter: { adapter_type: "codex" },
             cards: false,
             typing: false,
-            group_rules: false,
             allowed_sender_ids: ["hourly-qa-no-inbound"]
           }
         ]

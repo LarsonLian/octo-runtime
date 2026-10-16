@@ -204,11 +204,6 @@
                   "description": "允许的群范围 ID（groupNo）。"
                 }
               },
-              "group_rules": {
-                "type": "boolean",
-                "default": false,
-                "description": "可选。是否由此业务入口为当前群/话题读取 GROUP.md/话题规则并显式放入本轮 extra.im Context；省略不读取。开启会产生规则 API 请求，不是 Host 自动预取，也不是免 @ 开关；规则读取的权限或网络失败不能当作规则不存在。"
-              },
               "cards": {
                 "type": "boolean",
                 "default": true,
@@ -277,7 +272,6 @@
             },
             "allowed_sender_ids": ["<OCTO_USER_ID>"],
             "group_ids": ["<OCTO_GROUP_NO>"],
-            "group_rules": false,
             "cards": true,
             "typing": true
           }

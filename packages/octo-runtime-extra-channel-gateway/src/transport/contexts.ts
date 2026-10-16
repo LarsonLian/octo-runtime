@@ -68,7 +68,8 @@ export async function build_im_contexts(
     add("resources", resources);
     items[items.length - 1].guidance = RESOURCE_GUIDANCE;
   }
-  if (config.group_rules && [2, 5].includes(message.channelType)) {
+  // Octospec F18: 群/话题规则由本业务入口每轮固定加载，不设置额外开关。
+  if ([2, 5].includes(message.channelType)) {
     const scope = groupScope(message.channelId);
     const rule = async (name: string, read: () => Promise<RuleDocument>): Promise<void> => {
       try {

@@ -478,7 +478,7 @@ test("Group/topic rules become ordered v3 items; history excludes the trigger an
     }
   });
   const bot = {
-    ...config({ api_url: f.apiUrl, group_rules: true }),
+    ...config({ api_url: f.apiUrl }),
     spaceId: "s"
   };
   const message = {

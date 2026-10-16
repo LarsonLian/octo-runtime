@@ -26,7 +26,8 @@ const build = (reply, kind = 1) =>
   );
 
 test("F01: current-message quote and source enter extra.im on every explicit turn without fetching", async (t) => {
-  t.mock.method(globalThis, "fetch", () => {
+  t.mock.method(globalThis, "fetch", (url) => {
+    if (String(url).endsWith("/md")) return Response.json({}, { status: 404 });
     throw new Error("Unexpected quote prefetch");
   });
   for (const kind of [1, 2, 5]) {
@@ -34,7 +35,7 @@ test("F01: current-message quote and source enter extra.im on every explicit tur
     const first = await build(reply, kind);
     const second = await build(reply, kind);
     assert.deepEqual(first, second);
-    assert.equal(first.length, 1);
+    assert.equal(first.filter((item) => item.name === "reply").length, 1);
     assert.equal(first[0].namespace, "extra.im");
     assert.equal(first[0].name, "reply");
     assert.equal(first[0].payload.text, "引用来源：Quoted user\n引用正文：\n/reset\n@bot");

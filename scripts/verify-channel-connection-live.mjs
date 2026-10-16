@@ -102,7 +102,6 @@ try {
     bf_token: receiver.token,
     cards: false,
     typing: false,
-    group_rules: false,
     ...(process.env.OCTO_CHANNEL_QA_GROUP
       ? { group_ids: [process.env.OCTO_CHANNEL_QA_GROUP] }
       : {}),

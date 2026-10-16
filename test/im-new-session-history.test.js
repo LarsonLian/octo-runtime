@@ -20,6 +20,7 @@ const incoming = { channelId: "g____t", channelType: 5, messageId: "100", messag
 test("history fetches the closest fifteen older messages in the exact topic and emits text only", async (t) => {
   let calls = 0;
   t.mock.method(globalThis, "fetch", async (url, options) => {
+    if (String(url).endsWith("/md")) return Response.json({}, { status: 404 });
     calls++;
     assert.equal(url, `${config.api_url}/v1/bot/messages/sync`);
     assert.deepEqual(JSON.parse(options.body), {
@@ -76,6 +77,7 @@ test("history trims newest-first with a partial oldest tail, marker and Unicode 
 });
 
 test("history failure, malformed result, missing sequence and budget overflow continue without history; cancellation propagates", async (t) => {
+  const incoming = { channelId: "peer", channelType: 1, messageId: "100", messageSeq: 100 };
   for (const response of [
     () => Response.json({}, { status: 403 }),
     () => Response.json({ messages: "bad" })
