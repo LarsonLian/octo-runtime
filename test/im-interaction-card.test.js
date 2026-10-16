@@ -157,3 +157,81 @@ test("F09: card answer resumes original invocation once and stale reset cards ca
   await settle();
   await assert.rejects(() => controls.respond(response));
 });
+
+test("F09: secret questions never fall back to ordinary chat input", async (t) => {
+  let receive,
+    release,
+    cancelCount = 0,
+    presented = false;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const replies = [];
+  t.mock.method(GatewayTransport.prototype, "start", async function () {
+    receive = this.callbacks.onMessage;
+  });
+  t.mock.method(GatewayTransport.prototype, "close", async () => {});
+  const runtime = new ImRuntime(
+    {
+      bot_id: "fixture",
+      api_url: "https://im-test.deepminer.com.cn/api",
+      adapter: { adapter_type: "codex" }
+    },
+    {
+      host: {
+        async *invoke() {
+          yield {
+            protocolVersion: 2,
+            type: "interaction.requested",
+            payload: {
+              ...request(),
+              request: {
+                questions: [{ id: "private-field", question: "PRIVATE_PROMPT", isSecret: true }]
+              }
+            }
+          };
+          await gate;
+          yield { protocolVersion: 2, type: "run.cancelled", payload: {} };
+        },
+        async cancel() {
+          cancelCount++;
+          release();
+          return { cancelled: true };
+        },
+        async respondInteraction() {
+          assert.fail("Secret input must not be accepted in chat");
+        }
+      }
+    }
+  );
+  await runtime.start();
+  t.after(() => runtime.close());
+  receive({
+    messageId: "secret",
+    senderId: "owner",
+    conversationId: "chat",
+    conversationKind: "direct",
+    text: "work",
+    async reply(text) {
+      replies.push(text);
+    },
+    async buildContext() {
+      return { schema: "octo.context-envelope/v3", items: [] };
+    },
+    beginPresentation() {
+      return {
+        async interaction() {
+          presented = true;
+          return false;
+        },
+        update() {},
+        async finish() {}
+      };
+    }
+  });
+  for (let i = 0; i < 20 && !cancelCount; i++) await settle();
+  assert.equal(cancelCount, 1);
+  assert.equal(presented, false);
+  assert.match(replies.join("\n"), /安全输入/);
+  assert.doesNotMatch(replies.join("\n"), /PRIVATE_PROMPT|private-field|\/respond/);
+});

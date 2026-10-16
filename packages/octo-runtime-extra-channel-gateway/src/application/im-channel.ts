@@ -756,6 +756,30 @@ export class ImRuntime {
         )
           continue;
         if (event.type === "interaction.requested") {
+          // Octospec F09: .octospec/tasks/gateway-august-feature-assessment/assessment.md
+          // 普通 IM 不提供秘密输入通道，禁止退回聊天命令收集凭据。
+          if (
+            Array.isArray(event.payload.request.questions) &&
+            event.payload.request.questions.some(
+              (question: unknown) =>
+                question !== null &&
+                typeof question === "object" &&
+                "isSecret" in question &&
+                question.isSecret === true
+            )
+          ) {
+            this.#diagnostic("IM_INTERACTION_SECRET_UNSUPPORTED", request.runId);
+            await this.#reply(
+              message,
+              "本次执行需要安全输入，当前聊天不支持。请勿在聊天中发送密码或密钥；本次执行已请求停止。",
+              `interaction:${event.payload.interactionId}`
+            );
+            await this.dependencies.host.cancel(
+              request.invocationId,
+              "IM secret input unsupported"
+            );
+            continue;
+          }
           if (this.#interactions.size >= 64) throw new Error("IM_INTERACTION_CAPACITY_EXHAUSTED");
           this.#interactions.set(event.payload.interactionId, {
             invocationId: request.invocationId,

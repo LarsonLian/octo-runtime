@@ -91,7 +91,7 @@ CLI 的 OpenClaw dotenv 同步只选择启用、合法、显式 adapter_type=ope
 
 CanonicalEvent 驱动独立交互卡；支持多问题、选项、自定义输入、审批与 JSON elicitation，回答回原 invocation。真实身份/地址/消息、有效期、reset 后会话身份及重复响应校验均在现有边界；终态/交互 resolved 收敛按钮。文字入口可提交结构化问题答案，不再把多问题强转字符串。
 
-Gateway 构建、交互与本地真实 WS 回归通过。im-test 创建/编辑收敛通过；曾发现 Action.Submit 缺 id，已按服务端合同修复。真人回调未验：已运行 Work App 当前为非 im-test，脚本以 TEST_ONLY 拒绝，未切换用户环境。含 isSecret 的问题拒绝在普通聊天卡片收集；需安全输入产品路径才能覆盖，不把普通文本框宣称为秘密输入。
+Gateway 构建、交互与本地真实 WS 回归通过。im-test 创建/编辑收敛通过；曾发现 Action.Submit 缺 id，已按服务端合同修复。真人回调未验：已运行 Work App 当前为非 im-test，脚本以 TEST_ONLY 拒绝，未切换用户环境。含 isSecret 的问题不进入卡片、交互登记或普通 /respond 回退；仅提示聊天不支持安全输入并请求停止本次执行，不展示问题明细。新增秘密输入回退回归通过。需安全输入产品路径才能覆盖，不把普通文本框宣称为秘密输入。
 
 ### F05 已实施
 
