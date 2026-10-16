@@ -45,3 +45,11 @@ pnpm 11.19.0 实测发现首次安装的原生依赖构建需要宿主显式允�
 用户要求继续排除 CLI 专用及其他不需要的包。核对包内 dependencies/devDependencies/optionalDependencies 及源码引用后，当前 cross-service 仅由 CLI 引用，用于系统服务管理；Gateway 接入还不需要企业微信 Extra 和 WebUI。Gateway 指南用 `!` 排除这三个包，基础 SDK 指南再额外排除 Gateway。需要某项 Extra 时先移除对应排除项，再声明宿主直接依赖并安装、构建。daemon/Host 当前依赖的所有 Adapter 仍保留，不按是否启用或包名猜测可排除范围。
 
 文档配置与隔离宿主实际配置、宿主 lockfile importers 及从宿主直接依赖递归得到的内部依赖闭包逐项一致：Gateway 保留 20 个 Runtime 包，基础 SDK 保留 19 个 Runtime 包，均无多余 workspace 包或缺失内部依赖。Gateway 隔离宿主安装/frozen-lockfile 重装、20 包构建及五包 import 通过；基础 SDK 另建无 node_modules/dist 的源码副本，安装/frozen-lockfile 重装、19 包构建及四包 import 通过。两篇指南的 9 个 JSON/YAML 块、OKF 和 diff 检查通过。本轮仅修改文档，不改变 CLI 自身的依赖、Runtime 执行逻辑、Home 或身份，不进行线上接口验收。
+
+## Gateway 配置来源归宿主，示例聚焦 Codex
+
+用户要求 Gateway 指南不再规定 userData 下的 im.json：宿主可从 SQLite、本地 JSON 或实时生成取得同格式对象。后续启动、重新应用及保存示例同步接收对象；保存经宿主传入的持久化回调完成，保持卸载、保存、加载的顺序，不把存储方式交给 SDK。Runtime 自身 Home 的 userData 路径保留，与 IM 业务配置来源明确区分。
+
+Gateway 指南仅保留 Codex Bot、Codex 的宿主直接依赖及 Host 注册，删除 OpenClaw 配置和连接辅助示例；当前 daemon/Host 的传递依赖仍完整保留。adapter 示例增加 model 和 effort，模型 ID 使用占位符，思考强度列出 low/medium/high/xhigh。加粗说明两项均可选，未填写的项采用 Codex 默认配置；不指定固定默认模型或档位，不用空字符串代表省略。
+
+验证通过：四段完整 TypeScript 示例以真实 SDK 声明及最小 Electron 环境声明进行 strict/NodeNext、skipLibCheck=false 检查，零诊断；模型与四档 effort、各字段单独省略及全部省略的十种组合通过实际 schema、assertStoredExtra 和 Gateway 校验器，输入未被修改。原样提取配置辅助函数在内存 Runtime 中验证对象加载、宿主持久化、停用、错误声明、卸载/保存/加载失败、失败后恢复及并发串行顺序；不读取或写入配置文件。所有 JSON 块、OKF 链接及 diff 检查通过。本轮仅修改文档，未启动 Electron、Provider 或进行真实 IM 收发。

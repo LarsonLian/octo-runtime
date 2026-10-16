@@ -47,7 +47,7 @@ SDK 接入不需要把子仓根 CLI 包或 `octo-runtime/apps/*` 加入宿主 wo
 
 ## 2. 添加 dependencies 并构建
 
-只需 Codex + OpenClaw + Octo IM 时，将以下内容合并到宿主根目录的 `package.json`。所有 Runtime 依赖统一使用 `workspace:*`：
+只需 Codex + Octo IM 时，将以下内容合并到宿主根目录的 `package.json`。所有 Runtime 依赖统一使用 `workspace:*`：
 
 ```json
 {
@@ -57,7 +57,6 @@ SDK 接入不需要把子仓根 CLI 包或 `octo-runtime/apps/*` 加入宿主 wo
     "@mininglamp-oss/octo-runtime-daemon": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-codex": "workspace:*",
-    "@mininglamp-oss/octo-runtime-adapter-openclaw": "workspace:*",
     "@mininglamp-oss/octo-runtime-extra-channel-gateway": "workspace:*"
   },
   "devDependencies": {
@@ -67,7 +66,7 @@ SDK 接入不需要把子仓根 CLI 包或 `octo-runtime/apps/*` 加入宿主 wo
 }
 ```
 
-`daemon` 提供 SDK；`adapter-host` 承载执行；两个 Adapter 对应 Codex/OpenClaw；`extra-channel-gateway` 负责 Octo IM。内部包不独立发布到 npm，其 `package.json` 和内部 `workspace:*` 保持原样。
+`daemon` 提供 SDK；`adapter-host` 承载执行；Codex Adapter 对接本机 Codex；`extra-channel-gateway` 负责 Octo IM。内部包不独立发布到 npm，其 `package.json` 和内部 `workspace:*` 保持原样。
 
 ```bash
 # 在宿主根目录执行，统一安装宿主和 Runtime 的依赖
@@ -76,7 +75,7 @@ pnpm install
 pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
 ```
 
-`pnpm install` 自动链接同一 workspace 中的内部依赖，例如 `OpenClaw → adapter-sdk → protocol`，并安装第三方依赖。上述 5 项是宿主直接使用的包，公共包不需要重复列到宿主；宿主代码直接 import 某个公共包时，再将它以 `workspace:*` 加入宿主直接依赖。
+`pnpm install` 自动链接同一 workspace 中的内部依赖，例如 `Codex → adapter-sdk → protocol`，并安装第三方依赖。上述 4 项是宿主直接使用的包，公共包不需要重复列到宿主；宿主代码直接 import 某个公共包时，再将它以 `workspace:*` 加入宿主直接依赖。
 
 构建筛选器末尾 `...` 表示同时按依赖顺序构建 Gateway 及其完整依赖闭包。安装建立依赖链接，构建生成包入口所需的 `dist`；完成后即可按包名 import，无需手动配置路径别名或额外链接脚本。
 
@@ -97,11 +96,11 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
 
 将宿主生成的 `pnpm-lock.yaml` 随宿主代码及 submodule 指针一起提交。后续机器或 CI 先检出 submodule，再在宿主根目录执行 `pnpm install --frozen-lockfile` 和已合并预编译的 `pnpm build`，无需再单独执行过滤构建；更新 submodule 后重新安装、构建，并提交宿主 lockfile 的实际变化。
 
-当前 daemon/Host 还依赖其他 Adapter，下面只注册两个并不裁剪安装依赖。正式包须携带完整生产依赖并保留可解析布局，见第 6 节。
+当前 daemon/Host 还依赖其他 Adapter，下面只注册 Codex 并不裁剪安装依赖。正式包须携带完整生产依赖并保留可解析布局，见第 6 节。
 
 ## 3. 准备 IM 配置
 
-将下面内容保存为 Electron `app.getPath("userData")` 目录下的 `im.json`。替换 Bot ID、Token 和 Codex 绝对工作目录；两个 Bot 可同时启用，不需要哪一个就删除其整个对象。
+通过宿主自己的方式取得 JSON 配置数据：可以从 SQLite 查询、读取本地 JSON 文件，也可以实时生成。配置来源、读取和持久化由宿主决定；SDK 接收的是已经取得的配置对象，不要求固定文件名或存放路径。对象格式如下，替换 Bot ID、Token、工作目录和模型 ID：
 
 ```json
 {
@@ -115,17 +114,9 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
         "bf_token": "<CODEX_BF_TOKEN>",
         "adapter": {
           "adapter_type": "codex",
-          "workdir": "/absolute/workspace"
-        }
-      },
-      {
-        "api_url": "https://im.deepminer.com.cn/api",
-        "bot_id": "<OPENCLAW_BOT_ID>",
-        "bot_name": "OpenClaw 助理",
-        "bf_token": "<OPENCLAW_BF_TOKEN>",
-        "adapter": {
-          "adapter_type": "openclaw",
-          "provider_agent_id": "main"
+          "workdir": "/absolute/workspace",
+          "model": "<CODEX_MODEL_ID>",
+          "effort": "high"
         }
       }
     ]
@@ -133,18 +124,20 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
 }
 ```
 
-`config.bots` 就是 Channel Gateway 的 IM 配置；SDK 接收该对象，不接收文件路径。这里的文件由宿主读取，换成 SQLite 或其他配置来源时仍传相同对象。
+`config.bots` 就是 Channel Gateway 的 IM 配置。宿主将上面的完整对象交给下文的配置辅助函数，由辅助函数把 `config` 对象传给 SDK；配置来源变化时，传入的对象格式保持一致。
 
 | 字段 | 填什么 |
 | --- | --- |
 | `api_url` | Octo IM 的 API 根地址；示例使用正式环境 |
-| `bot_id` / `bf_token` | 对应 Octo Bot 的 ID 和 Token，两个 Bot 分别填写 |
+| `bot_id` / `bf_token` | 对应 Octo Bot 的 ID 和 Token |
 | `adapter_type: codex` | 本机 Codex，执行前已安装并完成认证 |
-| `adapter_type: openclaw` | 已运行的 OpenClaw Gateway；还需配置下一节的连接 |
-| `provider_agent_id` | OpenClaw 已有 Agent ID，如 `main`，不是 Octo Bot ID |
+| `adapter.model` | 可选，填写当前 Codex 可用的模型 ID；示例占位符需替换或删除该字段 |
+| `adapter.effort` | 可选，思考强度为 `low` / `medium` / `high` / `xhigh`；示例为 `high` |
 | 顶层 `enabled: false` | 停用整个 IM 插件；Bot 内的 `enabled: false` 仅停用该 Bot |
 
-不填写 `model` / `effort` 时使用引擎默认值。限制 Octo Space 时在 `config` 中增加 `authorized_space_ids`，填写认证应允许的真实 Space ID；不需要宿主额外限制时省略。完整字段见 [Gateway config-schema.json](packages/octo-runtime-extra-channel-gateway/config-schema.json)。
+**模型 `adapter.model` 和思考强度 `adapter.effort` 都是可选配置；未填写的项采用 Codex 默认配置。需要默认值时直接省略对应字段，不要传空字符串。本示例不指定固定的默认模型或思考强度。**
+
+限制 Octo Space 时在 `config` 中增加 `authorized_space_ids`，填写认证应允许的真实 Space ID；不需要宿主额外限制时省略。完整字段见 [Gateway config-schema.json](packages/octo-runtime-extra-channel-gateway/config-schema.json)。
 
 ## 4. 在主进程启动 daemon 和 IM
 
@@ -154,10 +147,9 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
 // src/main/octo/adapter-host.ts：只由独立 Host 子进程执行，main 不 import 此文件。
 import { serveAdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
 import { codexAdapter } from "@mininglamp-oss/octo-runtime-adapter-codex";
-import { openclawAdapter } from "@mininglamp-oss/octo-runtime-adapter-openclaw";
 
-// 本产品只注册这两个 Adapter；新增框架支持不会自动加入。
-serveAdapterHost([codexAdapter, openclawAdapter]);
+// 本示例只注册 Codex；新增框架支持不会自动加入。
+serveAdapterHost([codexAdapter]);
 ```
 
 宿主根目录增加 `tsconfig.octo.json`：
@@ -235,18 +227,16 @@ export async function startOcto() {
 
 开发时 PATH 中须有 Node.js 24+。本地示例使用稳定的 `local-user/local`，不要求宿主先接 Octo 登录；已有账号体系时使用真实稳定 UID 和租户 ID，并保持原 Home。
 
-### 4.3 读取和应用 IM 配置
+### 4.3 应用宿主取得的 IM 配置对象
 
 ```ts
 // src/main/octo/im.ts
-import { app } from "electron";
-import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { assertStoredExtra } from "@mininglamp-oss/octo-runtime-daemon";
+import { assertStoredExtra, type StoredExtra } from "@mininglamp-oss/octo-runtime-daemon";
 import { runtime, runtimeModule } from "./runtime.js";
 
-export const imConfigFile = join(app.getPath("userData"), "im.json");
 const gateway = "@mininglamp-oss/octo-runtime-extra-channel-gateway";
+// 宿主按自己的存储方式保存完整对象；实时生成且无需保存时不提供此回调。
+type PersistImConfiguration = (value: StoredExtra) => Promise<void>;
 // 所有本插件的保存/重载串行处理，避免两个设置操作互相覆盖。
 let pending: Promise<void> = Promise.resolve();
 
@@ -256,15 +246,12 @@ function enqueue<T>(operation: () => Promise<T>): Promise<T> {
   return result;
 }
 
-async function applyIm(value: unknown, persist: boolean) {
+async function applyIm(value: unknown, persist?: PersistImConfiguration) {
   assertStoredExtra(value);
   if (value.module !== gateway) throw new Error("IM_MODULE_INVALID");
   await runtime.unloadExtra("channel-gateway"); // 等待清理；失败则不继续保存和加载。
   if (persist) {
-    await mkdir(dirname(imConfigFile), { recursive: true });
-    const temporary = imConfigFile + ".tmp";
-    await writeFile(temporary, JSON.stringify(value, null, 2), { mode: 0o600 });
-    await rename(temporary, imConfigFile);
+    await persist(value);
   }
   if (value.enabled !== false) {
     await runtime.loadExtra({
@@ -280,18 +267,18 @@ async function applyIm(value: unknown, persist: boolean) {
   return { lifecycle, status };
 }
 
-// 启动时或手动点击“重新加载”时，从宿主文件读取最新配置。
-export function reloadIm() {
-  return enqueue(async () => applyIm(JSON.parse(await readFile(imConfigFile, "utf8")), false));
+// 启动或重新加载：宿主先取得最新完整对象，再传入；不在这里读取配置来源。
+export function reloadIm(value: unknown) {
+  return enqueue(() => applyIm(value));
 }
 
-// 设置页由可信主进程提交完整对象；保存后立即生效，无需重启 daemon。
-export function saveImConfiguration(value: unknown) {
-  return enqueue(() => applyIm(value, true));
+// 设置页由可信主进程提交完整对象及宿主保存函数；保存后立即生效。
+export function saveImConfiguration(value: unknown, persist: PersistImConfiguration) {
+  return enqueue(() => applyIm(value, persist));
 }
 ```
 
-读取失败、声明校验失败、卸载失败或加载失败都会向调用方抛错；保存成功后加载失败，文件仍保留本次完整配置，修正后可再次重载。Bot 认证失败可能表现为插件已加载、Bot 的 `state` 为 `failed`，须查看返回的插件状态。
+宿主在调用前处理自己的配置获取失败；辅助函数会向调用方抛出声明校验、卸载、保存或加载错误。保存成功后加载失败，宿主已保存的完整配置不回滚，修正后可再次重载。Bot 认证失败可能表现为插件已加载、Bot 的 `state` 为 `failed`，须查看返回的插件状态。
 
 ### 4.4 启动与退出
 
@@ -301,14 +288,12 @@ import { app } from "electron";
 import { runtime, startOcto } from "./octo/runtime.js";
 import { reloadIm } from "./octo/im.js";
 
-void app.whenReady().then(async () => {
+// 宿主从自己的配置流程取得对象后，调用并等待此函数。
+export async function startOctoWithIm(imConfiguration: unknown) {
+  await app.whenReady();
   await startOcto();
-  await reloadIm(); // 读取宿主 im.json，通过 SDK 加载 Channel Gateway。
-  // 继续宿主原有的窗口创建等流程。
-}).catch(() => {
-  console.error("Octo Runtime 启动失败，请检查本地配置和运行状态");
-  app.quit();
-});
+  await reloadIm(imConfiguration); // 配置对象与第 3 节格式相同。
+}
 
 let cleanupFinished = false;
 app.on("before-quit", event => {
@@ -324,38 +309,21 @@ app.on("before-quit", event => {
 });
 ```
 
+宿主在自己的启动流程中取得第 3 节格式的 `imConfiguration`，再调用并等待 `startOctoWithIm(imConfiguration)`，随后继续原有窗口创建等流程。配置获取或启动失败由宿主原有错误处理流程接住，不把 Token 或完整配置写入日志。这里的 `runtimeHome` 用于 Runtime 自身状态，与 IM 业务配置的来源无关。
+
 宿主原有 main 构建和 Electron 启动前执行：
 
 ```bash
 pnpm exec tsc -p tsconfig.octo.json
 ```
 
-仅用 Codex 时至此完成。使用 OpenClaw 时，再加入下面的辅助文件，在读取宿主保存的 Gateway URL/Token 后调用 `setOpenClawConnection(url, token)`，然后再调用 `reloadIm()`：
-
-```ts
-// src/main/octo/openclaw.ts：仅使用 OpenClaw 时需要。
-import { join } from "node:path";
-import { accountKeyFor, profileNameFor } from "@mininglamp-oss/octo-runtime-daemon";
-import { configureOpenClawConnection } from "@mininglamp-oss/octo-runtime-adapter-openclaw";
-import { appId, runtimeHome, subjectId, tenantId } from "./runtime.js";
-
-export async function setOpenClawConnection(url: string, token: string) {
-  // 定位当前 SDK 账号及租户的 profile，保留已有设备身份。
-  const profileRoot = join(runtimeHome, "accounts",
-    accountKeyFor("user", subjectId), profileNameFor(appId, tenantId));
-  await configureOpenClawConnection(profileRoot, { url, token });
-}
-```
-
-OpenClaw Gateway 必须已运行；其连接 Token 与 IM 的 `bf_token` 不同。SDK 不自动读取 `~/.openclaw/openclaw.json`。如果宿主有多个执行 profile，分别配置实际使用的 profile。
-
 ## 5. 保存或重新加载 IM 配置
 
-在主进程现有设置处理函数中调用 `saveImConfiguration(完整配置对象)`，等待返回后更新设置页。用户只修改了宿主文件、想重新应用时调用 `reloadIm()`。这是上一节已提供的两个函数，不是额外 SDK API。
+宿主已取得配置对象、只需应用时调用 `reloadIm(完整配置对象)`。需要保存设置并立即生效时，在主进程现有设置处理函数中调用 `saveImConfiguration(完整配置对象, 宿主保存函数)`，保存函数接收完整对象并返回 Promise，可以写 SQLite、本地文件或宿主已有配置服务。实时生成且无需持久化的配置直接调用 `reloadIm`。这是上一节提供的两个宿主辅助函数，不是额外 SDK API。
 
-操作顺序为 **卸载 channel-gateway → 保存最新完整配置 → 通过 SDK 加载**。同插件内的 Bot 连接一起重建，daemon 和共享 Host 不重启；保存时提交完整 bots 数组，缺席的 Bot 不保留。两个函数已串行执行，调用方仍须等待结果并显示失败。
+保存时的操作顺序为 **卸载 channel-gateway → 调用宿主保存函数 → 通过 SDK 加载最新完整配置**；只重新应用时省略保存步骤。同插件内的 Bot 连接一起重建，daemon 和共享 Host 不重启；提交完整 bots 数组，缺席的 Bot 不保留。两个函数已串行执行，调用方仍须等待结果并显示失败。
 
-返回的 `lifecycle` 是加载状态，`status` 是插件自己的 Bot 状态。只有 Bot 的 `state: "online"` / `connected: true` 才表示 IM 已连接；`loaded` 不能代替连接成功。真实消息执行还取决于 Codex 认证或 OpenClaw 连接是否可用。主进程自行解释状态，不向 renderer 回传 Token 或整份配置。
+返回的 `lifecycle` 是加载状态，`status` 是插件自己的 Bot 状态。只有 Bot 的 `state: "online"` / `connected: true` 才表示 IM 已连接；`loaded` 不能代替连接成功。真实消息执行还取决于 Codex 认证是否可用。主进程自行解释状态，不向 renderer 回传 Token 或整份配置。
 
 ## 6. 打包到 Electron 正式程序
 
@@ -370,8 +338,8 @@ resources/octo-runtime/
     octo-runtime-daemon/dist/...
     octo-runtime-adapter-host/dist/...
     octo-runtime-adapter-codex/dist/...
-    octo-runtime-adapter-openclaw/dist/...
-    ...                           # 完整生产依赖；Gateway 场景还包含 Extra 包
+    octo-runtime-extra-channel-gateway/dist/...
+    ...                           # 完整生产依赖，包含 daemon/Host 传递依赖的其他 Adapter
 ```
 
 宿主打包流程负责复制同次构建的完整依赖闭包，并保留可解析的 node_modules 布局；不能只复制入口文件或悬空的 pnpm 链接。宿主 main 中的 SDK 保留为外部依赖，独立 Host 入口单独编译，不并入 main bundle。参考 [Work App 打包脚本](../octo-work-app/scripts/prepare-embedded-runtime.mjs)和 [部署说明](DEPLOYMENTS.md)。更新程序时保留原 `runtimeHome`、身份和配置。
