@@ -19,7 +19,8 @@ export function resolveDaemonRuntimePaths(args = process.argv.slice(2), env: Nod
     pidPath: resolve(option(args, ["--pid-file"], env.OCTO_RUNTIME_PID_FILE ?? join(home, "octo-daemon.pid"))),
     consoleOutput: args.includes("--console"),
     socketPath: option(args, ["--socket"], env.OCTO_RUNTIME_SOCKET ?? socket),
-    manifestPath: resolve(option(args, ["--manifest"], env.OCTO_RUNTIME_MANIFEST ?? fileURLToPath(new URL("../../../config/adapters.json", import.meta.url)))),
+    // 这是 CLI 模式的 daemon 默认值；SDK 使用自己的代码装配入口，不读取此资源。
+    manifestPath: resolve(option(args, ["--manifest"], env.OCTO_RUNTIME_MANIFEST ?? fileURLToPath(new URL("../../cli/dist/default_adapters.json", import.meta.url)))),
     hostEntrypoint: resolve(option(args, ["--adapter-host", "--host-entrypoint"], env.OCTO_RUNTIME_ADAPTER_HOST ?? fileURLToPath(import.meta.resolve("@mininglamp-oss/octo-runtime-adapter-host/runner"))))
   };
 }
@@ -32,7 +33,9 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions & { execu
     ...(paths.homePath ? ["--home", paths.homePath] : []),
     ...(paths.pidPath ? ["--pid-file", paths.pidPath] : []),
     ...(paths.consoleOutput ? ["--console"] : []),
-    "--socket", paths.socketPath, "--manifest", paths.manifestPath, "--adapter-host", paths.hostEntrypoint
+    "--socket", paths.socketPath,
+    ...(paths.manifestPath ? ["--manifest", paths.manifestPath] : []),
+    "--adapter-host", paths.hostEntrypoint
   ];
 }
 

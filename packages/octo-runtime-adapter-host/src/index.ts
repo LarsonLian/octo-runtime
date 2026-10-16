@@ -1036,6 +1036,7 @@ function watchdogFailureDetails(error: unknown): Record<string, unknown> {
 }
 
 export { spawnAdapterHost } from "./process.js";
+export { serveAdapterHost } from "./serve.js";
 export type { AdapterHostProcess, SpawnAdapterHostOptions } from "./process.js";
 export {
   AdapterHostRpcClient,

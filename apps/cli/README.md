@@ -192,7 +192,7 @@ end without a terminal frame; consumers must also check the process exit code/st
 Requests are limited to 32 MiB of UTF-8 JSON, including embedded images and Context.
 
 `--manifest /absolute/adapters.json` selects an explicit adapter manifest for adapter
-experiments or fake-provider tests; the default is the bundled `config/adapters.json`,
+experiments or fake-provider tests; the default is the CLI-owned `apps/cli/src/default_adapters.json` (built as `apps/cli/dist/default_adapters.json`),
 resolved relative to the installed CLI. Playboard does not read daemon profiles or
 provider bindings from Runtime Home. It tests execution, not remote scheduling,
 leases, persistence, or production end-to-end delivery.

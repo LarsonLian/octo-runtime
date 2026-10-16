@@ -76,7 +76,7 @@ export async function runPlayboard(options: PlayboardOptions): Promise<number> {
       profile,
       manifest: options.manifest
         ? resolve(options.manifest)
-        : fileURLToPath(new URL("../../../config/adapters.json", import.meta.url)),
+        : fileURLToPath(new URL("./default_adapters.json", import.meta.url)),
       env: options.env ?? process.env,
       signal: controller.signal
     });

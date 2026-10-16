@@ -46,7 +46,7 @@ export interface StartDaemonServerOptions {
   /** Enables foreground lifecycle messages when launched in the foreground. */
   consoleOutput?: boolean;
   socketPath: string;
-  manifestPath: string;
+  manifestPath?: string;
   hostEntrypoint: string;
 
   /** Test/embedding override for the capped adapter-host restart schedule. */
@@ -60,7 +60,7 @@ export interface DaemonRuntimeInfo {
   homePath?: string;
   pidPath?: string;
   socketPath: string;
-  manifestPath: string;
+  manifestPath?: string;
   adapterHost: {
     pid: number | null;
     entrypoint: string;

@@ -22,6 +22,6 @@ timestamp: 2026-10-15T00:00:00Z
 
 ## 尚未实施
 
-`/adapter` 公开入口、CLI TS 固定默认集合与 `<home>/extra_adapters.json` 合并在本记录验收时只更新了目标合同，尚未改造加载代码。Dify 独立 Adapter 未实现、未实测。随后用户明确 CLI 使用专属 JSON、SDK 直接 import，默认来源拆分已另行实施，见[后续记录](../../tasks/adapter-composition-ownership/brief.md)；追加清单及 Dify 仍按[装配任务](../../tasks/adapter-composition-ownership/brief.md)另行验收。
+`/adapter` 公开入口、CLI TS 固定默认集合与 `<home>/extra_adapters.json` 合并在本记录验收时只更新了目标合同，尚未改造加载代码。Dify 独立 Adapter 未实现、未实测。随后用户明确 CLI 使用专属 JSON、SDK 直接 import，默认来源拆分已另行实施，见[后续记录](2026-10-15-cli-default-adapters-sdk-imports.md)；追加清单及 Dify 仍按[装配任务](../../tasks/adapter-composition-ownership/brief.md)另行验收。
 
 根 exports 原先为空的历史发行记录保留历史含义；从本次工作树开始仅两个声明子入口公开，任意私有实现仍不属于公开合同。最终安装版本是否具备这些入口以实际发布产物为准。

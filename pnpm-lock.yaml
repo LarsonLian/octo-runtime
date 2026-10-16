@@ -314,12 +314,48 @@ importers:
 
   packages/octo-runtime-daemon:
     dependencies:
+      '@mininglamp-oss/octo-runtime-adapter-antigravity':
+        specifier: workspace:*
+        version: link:../octo-runtime-adapter-antigravity
+      '@mininglamp-oss/octo-runtime-adapter-claude-code':
+        specifier: workspace:*
+        version: link:../octo-runtime-adapter-claude-code
+      '@mininglamp-oss/octo-runtime-adapter-codebuddy':
+        specifier: workspace:*
+        version: link:../octo-runtime-adapter-codebuddy
+      '@mininglamp-oss/octo-runtime-adapter-codex':
+        specifier: workspace:*
+        version: link:../octo-runtime-adapter-codex
+      '@mininglamp-oss/octo-runtime-adapter-hermes':
+        specifier: workspace:*
+        version: link:../octo-runtime-adapter-hermes
       '@mininglamp-oss/octo-runtime-adapter-host':
         specifier: workspace:*
         version: link:../octo-runtime-adapter-host
+      '@mininglamp-oss/octo-runtime-adapter-kimi-code':
+        specifier: workspace:*
+        version: link:../octo-runtime-adapter-kimi-code
+      '@mininglamp-oss/octo-runtime-adapter-mcode':
+        specifier: workspace:*
+        version: link:../octo-runtime-adapter-mcode
+      '@mininglamp-oss/octo-runtime-adapter-openclaw':
+        specifier: workspace:*
+        version: link:../octo-runtime-adapter-openclaw
+      '@mininglamp-oss/octo-runtime-adapter-opencode':
+        specifier: workspace:*
+        version: link:../octo-runtime-adapter-opencode
+      '@mininglamp-oss/octo-runtime-adapter-qodercli':
+        specifier: workspace:*
+        version: link:../octo-runtime-adapter-qodercli
+      '@mininglamp-oss/octo-runtime-adapter-qoderclicn':
+        specifier: workspace:*
+        version: link:../octo-runtime-adapter-qoderclicn
       '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-runtime-adapter-sdk
+      '@mininglamp-oss/octo-runtime-adapter-zcode-gui':
+        specifier: workspace:*
+        version: link:../octo-runtime-adapter-zcode-gui
       '@mininglamp-oss/octo-runtime-core':
         specifier: workspace:*
         version: link:../octo-runtime-core
@@ -350,6 +386,9 @@ importers:
       '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
         version: link:../octo-runtime-protocol
+      mdast-util-from-markdown:
+        specifier: ^2.1.0
+        version: 2.1.0
       ws:
         specifier: ^8.18.3
         version: 8.21.3
@@ -372,9 +411,6 @@ importers:
       '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
         version: link:../octo-runtime-protocol
-      mdast-util-from-markdown:
-        specifier: ^2.1.0
-        version: 2.1.0
       ws:
         specifier: ^8.18.3
         version: 8.21.3

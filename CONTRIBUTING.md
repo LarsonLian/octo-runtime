@@ -50,7 +50,7 @@ model is invoked.
 | `pnpm test` | Build, then `node --test` |
 | `pnpm daemon` | Start the daemon (Unix socket control plane + worker) |
 | `pnpm cli <args>` | Run the CLI against a running daemon |
-| `pnpm host` | Start a standalone adapter-host with `config/adapters.json` |
+| `pnpm host` | Start a standalone adapter-host with the CLI's `apps/cli/dist/default_adapters.json` |
 
 ### Running Locally
 
@@ -80,7 +80,7 @@ octo-runtime/
 │   ├── octo-runtime-adapter-sdk/         # adapter helpers + subprocess runtime
 │   ├── octo-runtime-acp-client/          # CodeBuddy ACP JSON-RPC client
 │   └── octo-runtime-adapter-*/           # per-provider adapters
-├── config/adapters.json     # adapter manifest
+├── apps/cli/src/default_adapters.json # CLI-only default adapters
 ├── test/                    # contract and integration tests
 ├── ARCHITECTURE.md          # design document
 └── CLAUDE.md                # instructions for Claude Code / coding agents
@@ -158,7 +158,7 @@ Adapters are the only place provider specifics may live. In brief:
 2. Implement `build*Command` (generic `InvokeRequest` → provider input) and
    `normalize*Event` (native stream → `CanonicalEvent`). Report the opaque
    provider session through a `session.update` event so continuations resume.
-3. Register the module in `config/adapters.json`.
+3. Register CLI defaults in `apps/cli/src/default_adapters.json`. SDK products choose their own adapters through direct imports in their independent Host entrypoint; they do not consume this CLI resource.
 4. Add a contract test with representative native events.
 
 The full walkthrough is in

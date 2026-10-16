@@ -27,7 +27,9 @@ export type DaemonPhase =
 export interface DaemonDistribution {
   nodePath?: string;
   runnerPath?: string;
+  /** 显式 JSON 覆盖的兼容入口；SDK 默认不读取清单，也不读取 CLI 的默认资源。 */
   manifestPath?: string;
+  /** 宿主选择的独立 Host JS 入口：在该子进程中直接 import 并注册 Adapter，不能在 main 中执行。 */
   adapterHostEntrypoint?: string;
 }
 

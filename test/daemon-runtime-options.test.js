@@ -5,11 +5,13 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { resolveDaemonRuntimePaths } from "../apps/daemon/dist/runtime-options.js";
 
-test("CLI daemon resolves the same standalone package runner as the SDK", async () => {
+test("CLI daemon resolves its own default manifest and the JSON Host runner", async () => {
   const paths = resolveDaemonRuntimePaths([], {});
   assert.equal(paths.hostEntrypoint,
     fileURLToPath(import.meta.resolve("@mininglamp-oss/octo-runtime-adapter-host/runner")));
   await access(paths.hostEntrypoint);
+  assert.equal(paths.manifestPath, fileURLToPath(new URL("../apps/cli/dist/default_adapters.json", import.meta.url)));
+  await access(paths.manifestPath);
 });
 
 test("explicit Host entrypoints retain flag and environment precedence", () => {

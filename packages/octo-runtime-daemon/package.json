@@ -22,6 +22,18 @@
     }
   },
   "dependencies": {
+    "@mininglamp-oss/octo-runtime-adapter-codex": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-claude-code": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-codebuddy": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-hermes": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-kimi-code": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-mcode": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-opencode": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-openclaw": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-qodercli": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-qoderclicn": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-zcode-gui": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-antigravity": "workspace:*",
     "@mininglamp-oss/octo-runtime-core": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
@@ -34,6 +46,6 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/copy-manifest.mjs"
+    "build": "tsc -p tsconfig.json"
   }
 }

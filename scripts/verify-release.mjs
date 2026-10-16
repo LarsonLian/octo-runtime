@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { once } from "node:events";
+import { pathToFileURL } from "node:url";
 
 const execute = promisify(execFile);
 const archive = resolve(process.argv[2]);
@@ -50,6 +51,31 @@ try {
     await readFile(join(root, "LICENSE"), "utf8")
   );
   assert.deepEqual((await readdir(join(installed, "apps"))).sort(), ["cli", "daemon"]);
+  await access(join(installed, "apps/cli/dist/default_adapters.json"));
+  await assert.rejects(access(join(installed, "config/adapters.json")), { code: "ENOENT" });
+  // 隔离安装的 SDK 必须在没有复制 JSON 的情况下启动自己的直接 import 入口。
+  const installedSdk = join(installed, "node_modules/@mininglamp-oss/octo-runtime-daemon");
+  await assert.rejects(access(join(installedSdk, "dist/runtime/config/adapters.json")), { code: "ENOENT" });
+  await execute(process.execPath, ["--input-type=module", "--eval", `
+    import assert from "node:assert/strict";
+    const { createDaemonRuntime } = await import(process.env.OCTO_VERIFY_SDK_MODULE);
+    const runtime = createDaemonRuntime({ appId: "release-sdk-check", home: process.env.OCTO_VERIFY_SDK_HOME });
+    try {
+      const health = await runtime.startAccount({ subject: { type: "user", id: "release-check" }, tenants: [{ id: "local" }] });
+      assert.equal(health.local.adapterHostReady, true);
+      assert.equal((await runtime.listAdapters()).length, 12);
+    } finally {
+      await runtime.stop("quit");
+    }
+  `], {
+    cwd: directory,
+    timeout: 30_000,
+    env: {
+      ...process.env,
+      OCTO_VERIFY_SDK_MODULE: pathToFileURL(join(installedSdk, "dist/index.js")).href,
+      OCTO_VERIFY_SDK_HOME: join(directory, "sdk-home")
+    }
+  });
   await access(
     join(installed, "node_modules/@mininglamp-oss/octo-runtime-adapter-host/dist/runner.js")
   );

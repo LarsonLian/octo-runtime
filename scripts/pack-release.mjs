@@ -75,10 +75,10 @@ try {
   }
   await cp(join(root, "dist/public"), join(temporary, "dist/public"), { recursive: true });
   await cp(join(root, "apps/cli/README.md"), join(temporary, "apps/cli/README.md"));
-  for (const file of ["config/adapters.json", "LICENSE", "NOTICE"]) {
+  for (const file of ["LICENSE", "NOTICE"]) {
     await mkdir(dirname(join(temporary, file)), { recursive: true });
     await cp(join(root, file), join(temporary, file)).catch(error => {
-      if (file === "config/adapters.json" || file === "LICENSE" || error.code !== "ENOENT") throw error;
+      if (file === "LICENSE" || error.code !== "ENOENT") throw error;
     });
   }
   await cp(join(root, "release/README.md"), join(temporary, "README.md"));
@@ -97,7 +97,7 @@ try {
     bin: manifest.bin,
     exports: manifest.exports,
     engines: { node: manifest.engines.node },
-    files: ["apps", "dist/public", "config", "LICENSE", "NOTICE"],
+    files: ["apps", "dist/public", "LICENSE", "NOTICE"],
     publishConfig: { access: "public" },
     dependencies,
     bundleDependencies: Object.keys(dependencies)

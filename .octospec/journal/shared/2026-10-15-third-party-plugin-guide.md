@@ -22,4 +22,4 @@ timestamp: 2026-10-15T00:00:00Z
 
 ## 兼容结论
 
-公开 /extra、/protocol 与 ExtraAdapterHost 是增量导出/同签名类型收敛，不改变既有 invoke、交互和取消调用。SDK/CLI 默认行为保持，但工作树另有 CLI 默认 JSON 与 SDK import 入口拆分，使用旧 config/adapters.json 或 SDK 复制清单物理路径的宿主需迁移，详见[该项验证](../../tasks/adapter-composition-ownership/brief.md)。不能将本次示例和针对性回归扩大为全部历史发行物、Work App/CDP 或 Dify 验收通过。
+公开 /extra、/protocol 与 ExtraAdapterHost 是增量导出/同签名类型收敛，不改变既有 invoke、交互和取消调用。SDK/CLI 默认行为保持，但工作树另有 CLI 默认 JSON 与 SDK import 入口拆分，使用旧 config/adapters.json 或 SDK 复制清单物理路径的宿主需迁移，详见[该项验证](2026-10-15-cli-default-adapters-sdk-imports.md)。不能将本次示例和针对性回归扩大为全部历史发行物、Work App/CDP 或 Dify 验收通过。

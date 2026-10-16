@@ -66,7 +66,7 @@ CLI → UDS / Pipe → daemon → stdio NDJSON JSON-RPC → package runner → P
 
 ### 自定义宿主
 
-宿主要加载的适配器由 manifest（`config/adapters.json`）声明。正常运行时由 daemon 负责拉起宿主子进程并与之通信，无需手工实例化；如需在自定义进程中直接驱动，使用 `spawnAdapterHost`：
+CLI 的适配器由专属清单 `apps/cli/src/default_adapters.json` 声明；SDK 产品在自己的独立 Host 入口直接 import 并调用 `serveAdapterHost([adapter])`。正常运行时由 daemon 拉起 Host 子进程并与之通信。直接驱动 JSON 入口时使用 `spawnAdapterHost`；驱动代码入口时省略 `manifest`，将 `entrypoint` 指向自己的编译后 JS：
 
 ```ts
 import { spawnAdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
@@ -75,7 +75,7 @@ import { fileURLToPath } from "node:url";
 
 const host = await spawnAdapterHost({
   entrypoint: fileURLToPath(import.meta.resolve("@mininglamp-oss/octo-runtime-adapter-host/runner")),
-  manifest: "config/adapters.json"
+  manifest: "apps/cli/dist/default_adapters.json"
 });
 
 const input: InvokeInput = {

@@ -5,7 +5,8 @@ import { AdapterHostRpcClient } from "./rpc.js";
 
 export interface SpawnAdapterHostOptions {
   entrypoint: string;
-  manifest: string;
+  /** CLI JSON 来源；SDK 的直接 import 入口不需要此参数。 */
+  manifest?: string;
   env?: NodeJS.ProcessEnv;
   /** Cancels readiness and terminates the complete child process group. */
   signal?: AbortSignal;
@@ -41,7 +42,8 @@ export async function spawnAdapterHost({
   if (!Number.isFinite(readyTimeoutMs) || readyTimeoutMs < 1) {
     throw new Error("adapter-host readyTimeoutMs must be positive");
   }
-  const child = spawn(process.execPath, [entrypoint, "--manifest", manifest], {
+  // 跨进程只传程序入口及可选文件路径，不序列化 Adapter 实例或工厂函数。
+  const child = spawn(process.execPath, [entrypoint, ...(manifest ? ["--manifest", manifest] : [])], {
     argv0: "octo-runtime-adapter-host",
     env,
     stdio: ["pipe", "pipe", "pipe"],

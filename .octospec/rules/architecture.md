@@ -131,7 +131,7 @@ IM Agent 固定 workdir、reset 只切会话是架构决策，不是待开发功
 
 当前 AdapterHost 运行在独立子进程中，daemon 负责启动和管理它。SDK、内部 IPC 和 Extra 都复用该内核，不为每种外部系统另建执行内核。
 
-可执行 app 只保留 `apps/cli` 与 `apps/daemon`。AdapterHost 的子进程入口统一使用 `@mininglamp-oss/octo-runtime-adapter-host/runner`，不再维护 `apps/adapter-host` 启动壳。独立进程边界与独立 workspace 包是两件事：daemon 必须继续通过 stdio RPC 调用 Host，不得将 Provider Adapter 内联到 daemon 进程。CLI daemon 和 SDK 必须解析同一个 package runner；宿主显式指定的 Host 入口覆盖仍然有效。
+可执行 app 只保留 `apps/cli` 与 `apps/daemon`，不再维护 `apps/adapter-host` 启动壳。CLI JSON 使用 `@mininglamp-oss/octo-runtime-adapter-host/runner`；SDK 使用自己的直接 import 入口，二者共享 `serveAdapterHost` 注册、RPC 与退出清理。独立进程边界与独立 workspace 包是两件事：daemon 必须继续通过 stdio RPC 调用 Host，不得将 Provider Adapter 内联到 daemon 进程。宿主显式指定的 Host 入口覆盖仍然有效。
 
 这次目录收敛必须保留 `octo-runtime` 的现有命令、参数和执行行为。构建、测试及单一 npm 发行物必须携带 runner 与 Adapter 生产依赖，不得再依赖旧 app 路径。更新程序后使用原 Home、身份、profile 和配置，不为入口迁移重新初始化 Runtime。验收范围见 [移除 Host app 任务](../tasks/remove-adapter-host-app/brief.md)。
 
@@ -139,13 +139,15 @@ IM Agent 固定 workdir、reset 只切会话是架构决策，不是待开发功
 
 CLI 的第三方追加目标为：专属默认 JSON 集合，加 `<home>/extra_adapters.json` 第三方清单；按 type 去重，已有则忽略外部项，不加载其模块。客户无需源码即可开发独立 Adapter，公开类型与工具通过单一 npm 包提供。SDK 产品不自动读取此 CLI 文件。追加加载及 `/adapter` 入口尚未实施，见[装配任务](../tasks/adapter-composition-ownership/brief.md)；已实施的 `/extra` 与 `/protocol` 入口及其验证边界见[第三方插件合同](../tasks/public-plugin-contracts/brief.md)。
 
-CLI 与客户产品的 SDK 嵌入代码各自决定加载哪些 Adapter。各自使用 JSON、TS 或直接写代码均可；SDK 是产品内部嵌入实现，不独立发包，也不要求终端用户另行装配。框架支持的全部 Adapter 不等于产品本次加载集合，Host 只加载显式选择，不自行扩充。Provider 的安装仍由 HostApp 决定。
+CLI 与客户产品的 SDK 嵌入代码各自决定加载哪些 Adapter。CLI 维护自己的默认 JSON，SDK 在代码中直接导入；SDK 是产品内部嵌入实现，不独立发包，也不要求终端用户另行装配。框架支持的全部 Adapter 不等于产品本次加载集合，Host 只加载显式选择，不自行扩充。Provider 的安装仍由 HostApp 决定。
 
-通用执行层共享加载与校验机制，不共享产品默认全量清单。SDK 不得通过构建复制 CLI 清单而继承 CLI 的选择。生产依赖、依赖裁剪及最终包体由宿主 App 自行管理，Runtime 只要求选中模块可解析，不承诺产物只包含选中项，也不替客户调整依赖树。独立 Host 子进程与共同 runner 保留。
+2026-10-15 最新明确：CLI 的默认清单必须位于 `apps/cli/src/default_adapters.json`，作为 CLI 专属资源构建和交付，不能再放在仓库根目录伪装成全产品共享配置。SDK 的选择写在其独立 Host 入口的代码中，直接 `import` 所需 Adapter 并注册，不维护或复制 CLI 的 JSON。实例只在 Host 子进程内创建，不能把函数或实例跨进程序列化。宿主通过自己的 Host 入口决定集合，CLI 与 SDK 共享执行机制，不共享选择来源。
+
+通用执行层共享加载与校验机制，不共享产品默认全量清单。SDK 不得通过构建复制 CLI 清单而继承 CLI 的选择。生产依赖、依赖裁剪及最终包体由宿主 App 自行管理，Runtime 只要求选中模块可解析，不承诺产物只包含选中项，也不替客户调整依赖树。独立 Host 子进程保留。
 
 此改造必须同步对接文档，并提供使用真实接口的完整加载示例。示例与加载关键实现必须用中文代码注释说明选择的用途、责任来源、字段、路径解析、子进程传递、失败与重启行为；只给一段无注释调用代码不满足交付要求。
 
-这是 2026-10-15 确认的目标约束，尚未实施。当前根清单、SDK 构建复制和 Host 全量依赖仍存在；变更步骤、迁移影响、失败行为及验收见 [Adapter 装配归属方案](../tasks/adapter-composition-ownership/brief.md)。
+2026-10-15 已迁移默认入口并删除根清单和 SDK 复制脚本。SDK 自带入口在代码中保留原有 12 项选择，客户可指定自己的直接 import 入口；旧显式 manifest 覆盖保留兼容，不再是 SDK 隐式来源。第三方追加清单等后续范围和验证记录见 [Adapter 装配归属方案](../tasks/adapter-composition-ownership/brief.md)。
 
 ### Extra 外部接入插件
 

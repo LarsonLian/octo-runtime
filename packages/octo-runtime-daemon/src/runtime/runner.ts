@@ -17,11 +17,14 @@ if (session.schema_version !== 1 || !session.nonce || !Number.isSafeInteger(sess
   throw new Error("embedded runner session is invalid");
 }
 
-const manifestPath =
-  session.manifest_path ?? fileURLToPath(new URL("./config/adapters.json", import.meta.url));
+// SDK 默认执行自己的 import/注册入口，不再继承 CLI JSON。
+// 已有显式 manifest 覆盖仍使用通用 JSON runner，避免路径迁移破坏调用方。
+const manifestPath = session.manifest_path;
 const hostEntrypoint =
   session.adapter_host_entrypoint ??
-  fileURLToPath(import.meta.resolve("@mininglamp-oss/octo-runtime-adapter-host/runner"));
+  (manifestPath
+    ? fileURLToPath(import.meta.resolve("@mininglamp-oss/octo-runtime-adapter-host/runner"))
+    : fileURLToPath(new URL("./adapter-host.js", import.meta.url)));
 const profiles = session.profiles.map((profile) => {
   const root = join(session.account_root, profile);
   const identity = readJson<{ runtime_id: string; octo_space_id: string }>(

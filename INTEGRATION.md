@@ -380,17 +380,34 @@ Home 使用 SDK 的 `resolveDaemonHome(appId)` 或产品指定路径，与 stand
 
 ### 2.2 本地启动与宿主发行物
 
-#### Adapter 加载责任（改造约定，尚未实施）
+#### Adapter 加载责任与直接导入
 
-CLI 自己决定加载哪些 Adapter，客户产品的 SDK 嵌入代码也自己决定；框架支持的全部 Adapter 不是客户默认加载集合。下面的 manifest 布局和初始化示例仍描述当前实现，共享清单的改造尚未完成，不能将其当作最终加载接口。
+CLI 的默认清单是 `apps/cli/src/default_adapters.json`，构建到 CLI dist。SDK 不读取或复制它。客户产品在自己的独立 Host 入口直接 import 所需 Adapter，再把入口路径交给 SDK；支持 20 个不表示客户必须加载 20 个。仓库内 SDK 自带入口在代码中保留当前 12 个默认项，宿主需要不同集合时指定自己的入口。
 
 宿主 App 自行管理生产依赖、依赖裁剪和安装包内容，并确保选中模块及其必要依赖在正式包中能够解析。Runtime 只负责按选择加载和校验，不管理客户依赖树，也不保证“加载 5 个”就意味着“包里只有 5 个”。加载 Adapter 与安装、认证 Provider 是不同操作；安装决策始终属于 HostApp。
 
-改造交付时，本节必须补齐使用真实 API 的完整可运行示例，并在代码中逐段添加中文注释，说明为什么需要这段加载代码、谁维护选择、各字段用途、模块路径和打包前提、如何交给独立 Host、加载失败如何处理，以及停止和重启如何保持选择。实际加载关键实现同样必须有注释。此项为必要验收要求，详见 [装配方案与注释清单](.octospec/tasks/adapter-composition-ownership/brief.md)。
+下面两个文件构成一个完整的本地启动示例。内部包名在 Runtime workspace 或宿主准备的完整依赖目录中解析，不表示 SDK 独立发布；源码引用和部署方式见上一节。宿主需要将两个 TS 文件编译成相邻的 ESM JS，并携带选中模块的生产依赖。详细中文注释是后续修改时必须保留的验收要求，见 [装配方案与注释清单](.octospec/tasks/adapter-composition-ownership/brief.md)。
 
 SDK 由宿主管理生命周期：通过 `startAccount()` 启动本地 daemon／Host 子进程，通过 `stop("quit")` 在应用退出时回收。接入方无需先执行 CLI 的 `daemon install` 或 `daemon start`，也无需传入 `--foreground`。宿主应将正常退出流程接到 SDK 的 `stop()`；子进程对宿主存活的监测用于异常退出后的回收。
 
-Node.js 24+ 宿主仅使用本地执行时：
+`customer-adapter-host.ts`：
+
+```ts
+// 由客户产品维护自己的选择：此产品只需要 Codex 和 Claude Code。
+// 新增框架支持不会自动加入这个集合；所选模块及依赖必须由宿主打包提供。
+import { codexAdapter } from "@mininglamp-oss/octo-runtime-adapter-codex";
+import { claudeCodeAdapter } from "@mininglamp-oss/octo-runtime-adapter-claude-code";
+import { serveAdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
+
+// 此文件只作为独立 Host 子进程入口执行，不能从 Electron main import。
+// 这里创建并注册所选实例，向 daemon 提供 stdio RPC；实例/函数不跨进程序列化。
+// 重复类型或协议不合法会在就绪前失败；缺模块由 Node 报解析错误，不能伪造 ready。
+// [] 是有效的空集合；调用未注册类型会失败，不会临时补加载。
+// 注册成功不代表 Provider 已安装或认证：安装决策与准备仍属于 HostApp。
+serveAdapterHost([codexAdapter, claudeCodeAdapter]);
+```
+
+`customer-runtime.ts`：
 
 ```ts
 import {
@@ -398,20 +415,36 @@ import {
   resolveDaemonHome,
   type DaemonHealth
 } from "@mininglamp-oss/octo-runtime-daemon";
+import { fileURLToPath } from "node:url";
 
 export const harness = createDaemonRuntime({
   appId: "customer-app",
-  home: resolveDaemonHome("customer-app")
+  // 固定使用本产品 Home，停止和更新时保留身份、profile 与配置。
+  home: resolveDaemonHome("customer-app"),
+  distribution: {
+    // 相对当前编译后 JS 定位，转为绝对路径，不依赖启动工作目录。
+    // SDK 只传入口路径；daemon 启动子进程后，才执行该文件中的 import。
+    // 不提供 manifestPath，不需要终端用户维护另一份 JSON。
+    adapterHostEntrypoint: fileURLToPath(new URL("./customer-adapter-host.js", import.meta.url))
+  }
 });
 
 export async function startRuntime(session: {
   uid: string;
   spaces: Array<{ spaceId: string; name?: string }>;
 }): Promise<DaemonHealth> {
+  // 启动过程等待 Host 握手；模块加载或入口错误由启动失败/health.problem 暴露。
+  // Host 崩溃后仍使用同一入口恢复，不读取 CLI 清单、不重放中断的调用。
+  // 更新选择需由宿主协调退出和重启，不能在活动调用中偷偷换集合。
   return harness.startAccount({
     subject: { type: "user", id: session.uid },
     tenants: session.spaces.map(space => ({ id: space.spaceId, name: space.name }))
   });
+}
+
+// 必须接入宿主退出流程，等待 daemon/Host 清理资源；不能只退出主进程。
+export async function stopRuntime(): Promise<void> {
+  await harness.stop("quit");
 }
 ```
 
@@ -421,7 +454,7 @@ Worker 接入预研已迁到生态目录外的 `octo-runtime-worker-access` 独�
 
 IM 接入独立安装对应 Extra，通过 `extras` 初始声明或运行中的 `loadExtra` 装配，见第 2.6 节。不需要 Worker。渠道接入统一使用 Extra 声明，daemon/CLI 不提供渠道专用装配入口。
 
-参考实现：[Octo Work DaemonRuntimeService](../octo-work-app/src/main/daemon-runtime-service.ts)。正式桌面宿主通过 `DaemonRuntimeOptions.distribution` 指定已安装的 Node、runner、manifest 和 adapter-host 入口；SDK 不自动安装这些依赖。公开类型见 [SDK 类型](packages/octo-runtime-daemon/src/runtime/types.ts)。
+参考实现：[Octo Work DaemonRuntimeService](../octo-work-app/src/main/daemon-runtime-service.ts)。正式桌面宿主通过 `DaemonRuntimeOptions.distribution` 指定已安装的 Node、runner 和自己的 adapter-host 入口；SDK 不自动安装这些依赖。类型见 [SDK 类型](packages/octo-runtime-daemon/src/runtime/types.ts)。旧 `manifestPath` 显式覆盖暂时保留兼容：仅在主动指定时走 JSON loader，并非 SDK 默认来源。
 
 桌面正式包应随发行物准备以下布局，具体路径由宿主决定：
 
@@ -429,13 +462,12 @@ IM 接入独立安装对应 Extra，通过 `extras` 初始声明或运行中的 
 resources/runtime/
   node/bin/node                 # Windows 为 node.exe
   sdk/dist/runtime/runner.js
-  sdk/dist/runtime/config/adapters.json
-  sdk/node_modules/@mininglamp-oss/octo-runtime-adapter-host/dist/runner.js
+  customer-adapter-host.js       # 上面示例编译后的独立入口
   sdk/modules/extra-channel-gateway/dist/index.js
   sdk/modules/extra-channel-wecom/dist/index.js
 ```
 
-将前四项绝对路径依次传给 `distribution.nodePath/runnerPath/manifestPath/adapterHostEntrypoint`，插件默认入口绝对路径传给 `descriptor.module`。每个插件还必须携带生产依赖。参考 [Work App 打包脚本](../octo-work-app/scripts/prepare-embedded-runtime.mjs) 的独立 deploy 和固定 Node 准备。纯 Node 24 宿主可复用当前 Node；Electron 正式包不能依赖用户 PATH 中偶然存在的 Node。
+将前三项绝对路径依次传给 `distribution.nodePath/runnerPath/adapterHostEntrypoint`，插件默认入口绝对路径传给 `descriptor.module`。自定义 Host 的 import 必须能从该文件所在位置解析，例如由宿主在 runtime/node_modules 放置完整依赖；不能只把入口丢到孤立目录。每个插件同样要携带生产依赖。参考 [Work App 打包脚本](../octo-work-app/scripts/prepare-embedded-runtime.mjs) 的独立 deploy 和固定 Node 准备。纯 Node 24 宿主可复用当前 Node；Electron 正式包不能依赖用户 PATH 中偶然存在的 Node。
 
 例如，Electron main 进程可将第 2.2 节的 `harness` 初始化替换为以下代码。`resources/runtime` 必须由宿主打包流程实际准备，下面的路径与上面的布局对应：
 
@@ -452,9 +484,9 @@ export const harness = createDaemonRuntime({
       ? join(runtimeRoot, "node", "node.exe")
       : join(runtimeRoot, "node", "bin", "node"),
     runnerPath: join(sdkRoot, "dist", "runtime", "runner.js"),
-    manifestPath: join(sdkRoot, "dist", "runtime", "config", "adapters.json"),
-    adapterHostEntrypoint: join(sdkRoot, "node_modules", "@mininglamp-oss",
-      "octo-runtime-adapter-host", "dist", "runner.js")
+    // 本产品自己的直接 import 入口，必须连同依赖一起交付；不复用 CLI JSON。
+    // 若明确采用仓库 SDK 的 12 项选择，可指向 sdk/dist/runtime/adapter-host.js。
+    adapterHostEntrypoint: join(runtimeRoot, "customer-adapter-host.js")
   }
 });
 ```

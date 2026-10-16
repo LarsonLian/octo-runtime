@@ -25,7 +25,7 @@
     "apps/cli/dist/build-info.json",
     "apps/cli/README.md",
     "apps/daemon/dist/**/*.js",
-    "config/adapters.json",
+    "apps/cli/dist/default_adapters.json",
     "DEPLOYMENTS.md"
   ],
   "packageManager": "pnpm@11.19.0",
@@ -45,7 +45,7 @@
     "test": "pnpm build && node --test test/*.test.js packages/octo-runtime-protocol/test/*.test.js",
     "cli": "pnpm build && node apps/cli/dist/index.js",
     "daemon": "pnpm build && node apps/daemon/dist/launcher.js",
-    "host": "pnpm build && node packages/octo-runtime-adapter-host/dist/runner.js --manifest config/adapters.json",
+    "host": "pnpm build && node packages/octo-runtime-adapter-host/dist/runner.js --manifest apps/cli/dist/default_adapters.json",
     "build": "pnpm --recursive --filter \"./packages/**\" --filter \"./apps/**\" run build && tsc -p public/tsconfig.json",
     "prepare": "pnpm run build",
     "typecheck": "pnpm build && tsc -p tsconfig.json --noEmit",

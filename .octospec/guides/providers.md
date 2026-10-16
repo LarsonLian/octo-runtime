@@ -9,7 +9,7 @@ implementation_baseline: df63c8f
 
 # Provider Adapters
 
-可加载实现以 [adapters.json](../../config/adapters.json) 为准，完整包入口见 [Packages Guide](../../packages/README.md)。下面描述当前传输和执行边界，具体认证及原生参数见各包 README。
+CLI 默认加载集合以 [default_adapters.json](../../apps/cli/src/default_adapters.json) 为准，SDK 在自己的独立 Host 入口直接 import 并注册，不继承 CLI 清单。完整包入口见 [Packages Guide](../../packages/README.md)。下面描述当前传输和执行边界，具体认证及原生参数见各包 README。
 
 ## 传输与输出
 

@@ -6,8 +6,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { hostLog } from "./host-log.js";
-import { AdapterHost, AdapterHostRpcServer, type HostedAdapter } from "./index.js";
+import { serveAdapterHost, type HostedAdapter } from "./index.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -24,10 +23,6 @@ interface AdapterManifest {
   adapters: AdapterManifestEntry[];
 }
 
-process.on("uncaughtExceptionMonitor", (error) =>
-  hostLog("error", { message: error.message, stack: error.stack })
-);
-
 const index = process.argv.indexOf("--manifest");
 if (index < 0 || !process.argv[index + 1])
   throw new Error("usage: octo-runtime-adapter-host --manifest <file>");
@@ -35,7 +30,7 @@ if (index < 0 || !process.argv[index + 1])
 const manifestPath = resolve(process.argv[index + 1]);
 const rawManifest: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
 const manifest = parseManifest(rawManifest);
-const host = new AdapterHost();
+const adapters: HostedAdapter[] = [];
 
 for (const entry of manifest.adapters) {
   const specifier =
@@ -58,47 +53,11 @@ for (const entry of manifest.adapters) {
   if (entry.type && instance.metadata.type !== entry.type) {
     throw new Error(`manifest type ${entry.type} does not match adapter ${instance.metadata.type}`);
   }
-  host.register(instance);
-  hostLog("lifecycle", {
-    level: "info",
-    scope: "adapter.registry",
-    event: "adapter.registered",
-    message: "adapter registered",
-    adapterType: instance.metadata.type,
-    data: {
-      agentSources: instance.metadata.agentSources,
-      executionFeatures: instance.metadata.executionFeatures
-    }
-  });
+  adapters.push(instance);
 }
 
-new AdapterHostRpcServer({
-  host,
-  output: process.stdout,
-  trace: (direction, frame) => hostLog(direction, frame)
-}).listen(process.stdin);
-hostLog("lifecycle", {
-  level: "info",
-  scope: "adapter-host.lifecycle",
-  event: "adapter-host.ready",
-  message: "adapter host ready",
-  data: { manifest_path: manifestPath, adapters: host.list().map((adapter) => adapter.type) }
-});
-
-let stopping = false;
-const stop = (): void => {
-  if (stopping) return;
-  stopping = true;
-  void host.shutdown().then(
-    () => process.exit(0),
-    () => process.exit(1)
-  );
-};
-process.once("SIGINT", stop);
-process.once("SIGTERM", stop);
-process.once("SIGHUP", stop);
-process.stdin.once("end", stop);
-process.stdin.once("close", stop);
+// JSON 是 CLI 的装配来源；注册、RPC 和退出清理与 SDK 的代码入口共用。
+serveAdapterHost(adapters);
 
 /** Parse and validate the on-disk manifest. Only version 1 is supported; each
  * entry names a module, an export, whether that export is a factory, and options. */

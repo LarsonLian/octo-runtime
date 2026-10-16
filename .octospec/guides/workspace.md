@@ -131,7 +131,7 @@ pnpm --filter @mininglamp-oss/octo-runtime-adapter-codex list
 1. 创建 `packages/octo-runtime-adapter-foo/package.json`、`src/index.ts` 和 `README.md`。
 2. 包名使用 `@mininglamp-oss/octo-runtime-adapter-foo`，依赖 `@mininglamp-oss/octo-runtime-adapter-sdk: workspace:*`。
 3. 实现 metadata、probe、invoke、session 和 canonical event mapping。
-4. 在 [config/adapters.json](../../config/adapters.json) 注册 adapter type/module/export。
+4. CLI 默认项在 [default_adapters.json](../../apps/cli/src/default_adapters.json) 注册 type/module/export；SDK 在各自 Host 入口直接 import 并注册，不复制 CLI 资源。
 5. 在 `packages/octo-runtime-adapter-host/package.json` 增加所需 workspace dependency；标准 CLI 发行时同步根生产依赖，确保 runner 在源码和发行物中都能解析模块。CLI daemon 与 SDK 都独立启动该 package runner。
 6. 若根测试直接 import 该包，在根 `devDependencies` 增加 workspace dependency。
 7. 在 `test/` 添加 native event、success/error/cancel/session resume 契约测试。
