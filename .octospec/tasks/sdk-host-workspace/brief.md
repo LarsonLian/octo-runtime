@@ -10,11 +10,11 @@ timestamp: 2026-10-16T00:00:00Z
 
 ## 目标与归属
 
-用户明确选择宿主独立 pnpm workspace：Runtime 作为 `octo-runtime/` submodule，先配置宿主 `pnpm-workspace.yaml`，再添加 `workspace:*` dependencies。宿主拥有包管理、构建和最终打包的决定权；Runtime 提供正确的内部依赖声明与现有 build。无需新增宿主构建 script。
+用户明确选择宿主独立 pnpm workspace：Runtime 作为 `octo-runtime/` submodule，先配置宿主 `pnpm-workspace.yaml`，再添加 `workspace:*` dependencies。宿主拥有包管理、构建和最终打包的决定权；Runtime 提供正确的内部依赖声明与现有 build。保留预编译，将其及独立 Host 入口编译直接合入 App 原有 `dev` / `build` 流程，保留原有构建步骤，不要求安装时的 prepare 或额外脚本文件。
 
 ## 范围与合同
 
-同步 Gateway、完整 SDK 指南及工作区指南。宿主纳入 `octo-runtime/packages/*`，统一根目录安装、过滤构建和 lockfile；不纳入 CLI 根包及 apps。公共包按内部依赖自动链接，宿主直接 import 时才增加直接依赖。
+同步 Gateway、完整 SDK 指南及工作区指南。宿主纳入 `octo-runtime/packages/*`，显式排除不需要的 `octo-runtime-webui-extra`，统一根目录安装、过滤构建和 lockfile；不纳入 CLI 根包及 apps。公共包按内部依赖自动链接，宿主直接 import 时才增加直接依赖。过滤构建不包含 WebUI；不安装其依赖须通过 workspace 排除实现。
 
 干净安装发现 ACP、Claude Code、CodeBuddy、Codex、OpenClaw、OpenCode、ZCode GUI 直接 import protocol，却未声明该直接依赖。修复各 Adapter manifest 并同步 Runtime lockfile，避免依赖原仓根包间接提供解析路径。不改变执行逻辑、公开协议、加载集合、安装决策或已有 Home/身份/配置。
 

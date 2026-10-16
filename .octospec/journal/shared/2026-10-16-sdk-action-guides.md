@@ -33,3 +33,9 @@ OKF lint 与 git diff --check 通过。本轮仅文档；不修改产品运行�
 使用无 node_modules/dist 的独立仓库副本验证，宿主只声明五个直接包。首次构建发现七个 Adapter 直接 import protocol 而未声明直接依赖；已在各包补齐 `workspace:*` 并同步 Runtime lockfile，修复依赖声明所在边界，不让宿主添加公共包来掩盖缺失。全部包纳入 workspace 不表示自动启用全部 Adapter/Extra。
 
 pnpm 11.19.0 实测发现首次安装的原生依赖构建需要宿主显式允许：示例合并 `esbuild` 与 `@parcel/watcher` 的 allowBuilds，保留宿主现有配置。修复后宿主安装及 offline frozen-lockfile 重装通过，发现 24 个 workspace 项目；Gateway 及其依赖闭包的 20 个包全部构建通过。Node 实际导入 daemon、Host、Codex、OpenClaw、Gateway 成功，`OpenClaw → adapter-sdk → protocol` 链路断言通过。两篇指南的 7 个 JSON/YAML 代码块全部可解析。该验收仅验证安装、构建和模块解析，不启动 Provider、不连接 IM，不改变已有 Runtime 身份、Home 或配置。
+
+## 保留预编译并合入 App 开发构建
+
+用户最终选择保留预编译，不采用宿主直接编译 Runtime 源码的集成方式。两篇指南补充现有 `dev` / `build` 命令的合并示例：先按依赖顺序构建 Runtime，再编译宿主独立 Host 入口，最后执行宿主原有完整命令；保留原有类型检查、环境配置和打包步骤，不增加安装时 prepare 或额外脚本文件。CI 安装后执行已合并的 `pnpm build`，无需重复预编译。App 热更新沿用宿主流程，Runtime 源码变更需重新编译，不宣称自动监听 Runtime。
+
+同时明确安装范围与构建范围的区别：`packages/*` 会使普通安装包含 WebUI 的开发依赖。OctoBuddy 示例增加 `!octo-runtime/packages/octo-runtime-webui-extra`，并移除只为 WebUI 安装准备的 watcher allowBuilds；宿主自己的 allowBuilds 继续保留。隔离 workspace 实测排除后发现 23 个项目，安装移除 132 个依赖包，lockfile 不含 WebUI importer；offline frozen-lockfile 重装及五包实际 import、公共依赖链路断言通过。两篇指南的 9 个 JSON/YAML 块、dev/build 命令 Shell 语法及前后步骤顺序、OKF 链接和 diff 检查通过。未运行真实 Electron 开发服务器或 IM 收发；本轮仅修改文档。

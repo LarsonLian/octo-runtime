@@ -2,7 +2,7 @@
 
 **已有 Electron 项目，只需要接入 Octo IM，按本篇操作；建议 OctoBuddy 使用本篇。** 宿主只需管理配置、启动和重载，无需自行编写 Agent 请求或消息转发。桌面程序通过 SDK 启动，不执行 Runtime CLI。
 
-以下从已有 Electron + TypeScript 项目开始，要求使用 pnpm 11+ 安装和构建，因为宿主采用独立的 pnpm workspace，将 `octo-runtime/` submodule 内的全部内部包统一纳入。示例使用 ESM 和 Node.js 24+；保留宿主原有依赖、脚本和 Electron 版本。CommonJS 项目需将 Runtime 辅助文件单独编译为 ESM，不能直接修改整个项目的模块制式。
+以下从已有 Electron + TypeScript 项目开始，要求使用 pnpm 11+ 安装和构建，因为宿主采用独立的 pnpm workspace，将 `octo-runtime/` submodule 内所需的内部包统一纳入。采用预编译：先生成 Runtime 的 `dist`，再由宿主使用；预编译直接合入 App 原有的 `dev` / `build` 流程。示例使用 ESM 和 Node.js 24+；保留宿主原有依赖、构建步骤和 Electron 版本。CommonJS 项目需将 Runtime 辅助文件单独编译为 ESM，不能直接修改整个项目的模块制式。
 
 宿主若当前使用 npm，先完成包管理器迁移；以下安装、构建和 CI 命令均在宿主根目录通过 pnpm 执行。
 
@@ -18,20 +18,22 @@ git submodule update --init --recursive
 
 ## 1. 配置 pnpm-workspace.yaml
 
-在宿主根目录新建或合并 `pnpm-workspace.yaml`，保留宿主已有的 packages、allowBuilds 等配置，增加 Runtime 全部内部包：
+在宿主根目录新建或合并 `pnpm-workspace.yaml`，保留宿主已有的 packages、allowBuilds 等配置，纳入 Runtime 内部包并显式排除 OctoBuddy 不需要的 WebUI：
 
 ```yaml
 packages:
   - "octo-runtime/packages/*"
+  - "!octo-runtime/packages/octo-runtime-webui-extra"
 
 allowBuilds:
   esbuild: true
-  "@parcel/watcher": true
 
 sharedWorkspaceLockfile: true
 ```
 
-该路径包含 `adapter-sdk`、`protocol`、`core`、所有 Adapter 和 Extra。SDK 接入不需要把子仓根 CLI 包或 `octo-runtime/apps/*` 加入宿主 workspace。子仓原有 workspace 文件和 lockfile 保留，集成安装统一从宿主根目录执行，使用宿主 workspace 配置及 lockfile。
+该配置保留 `adapter-sdk`、`protocol`、`core`、所有 Adapter 及其他 Extra。普通 `pnpm install` 会安装所有 workspace 项目的依赖，仅不在宿主 dependencies 声明 WebUI 不能阻止其安装；上面的排除项使 WebUI 不进入宿主 workspace，也不安装它专用的开发依赖。需要 WebUI 的宿主再移除该排除项，并按其依赖合并 allowBuilds。
+
+SDK 接入不需要把子仓根 CLI 包或 `octo-runtime/apps/*` 加入宿主 workspace。子仓原有 workspace 文件和 lockfile 保留，集成安装统一从宿主根目录执行，使用宿主 workspace 配置及 lockfile。
 
 ## 2. 添加 dependencies 并构建
 
@@ -68,7 +70,22 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
 
 构建筛选器末尾 `...` 表示同时按依赖顺序构建 Gateway 及其完整依赖闭包。安装建立依赖链接，构建生成包入口所需的 `dist`；完成后即可按包名 import，无需手动配置路径别名或额外链接脚本。
 
-将宿主生成的 `pnpm-lock.yaml` 随宿主代码及 submodule 指针一起提交。后续机器或 CI 先检出 submodule，再在宿主根目录执行 `pnpm install --frozen-lockfile` 和上述构建命令；更新 submodule 后重新安装、构建，并提交宿主 lockfile 的实际变化。
+日常开发将预编译直接合入 App 原有的 `dev` / `build` 命令。以下以 electron-vite 为例，包含第 4 节独立 Host 入口的编译：
+
+```json
+{
+  "scripts": {
+    "dev": "pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build && pnpm exec tsc -p tsconfig.octo.json && electron-vite dev",
+    "build": "pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build && pnpm exec tsc -p tsconfig.octo.json && electron-vite build"
+  }
+}
+```
+
+将示例中的 `electron-vite dev` / `electron-vite build` 换成宿主原有的完整命令，保留已有类型检查、环境配置和打包步骤；若原流程已编译 `tsconfig.octo.json`，无需重复该步骤。完成第 4 节的文件后，照常执行 `pnpm dev` 或 `pnpm build`，预编译失败时不会继续启动或构建 App。无需配置安装时的 `prepare`，也无需额外的 Runtime 构建脚本文件。
+
+启动开发前预编译一次 Runtime，随后由原有 App 开发服务处理 App 源码变化；开发期间修改 Runtime 源码时需重新执行 `pnpm dev`，不会自动监听 Runtime 源码重新编译。过滤构建不包含 WebUI，但构建过滤不能代替第 1 节的安装范围排除。
+
+将宿主生成的 `pnpm-lock.yaml` 随宿主代码及 submodule 指针一起提交。后续机器或 CI 先检出 submodule，再在宿主根目录执行 `pnpm install --frozen-lockfile` 和已合并预编译的 `pnpm build`，无需再单独执行过滤构建；更新 submodule 后重新安装、构建，并提交宿主 lockfile 的实际变化。
 
 当前 daemon/Host 还依赖其他 Adapter，下面只注册两个并不裁剪安装依赖。正式包须携带完整生产依赖并保留可解析布局，见第 6 节。
 
