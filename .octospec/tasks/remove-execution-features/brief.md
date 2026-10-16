@@ -12,6 +12,8 @@ timestamp: 2026-10-16T00:00:00Z
 
 状态为 in_progress。计划核对基线为 Runtime `5f7c825` 与当时生态工作树；实施从 Runtime `ce9df82` 开始，按用户要求每次完成一个 Feature 后单独提交。F4 已完成，独立删除标签专用探测，不影响其余字段消费者；其他 Feature 尚未开始。未发布服务。
 
+用户后续授权全自动完成全部清理及关联缺陷，要求独立评估至少 95 分才实施。[自动执行计划](autonomous-plan.md)已补齐 F2/F3/F5、增加 F8/F9，并明确逐提交隔离验证；[独立复评](feasibility-review.md)均分 97.125、最低 96，实施门槛已通过。初始评分保留为计划制定时的历史记录，后续进展按 Feature 更新。
+
 | Feature | 实施状态 | 证据 |
 | --- | --- | --- |
 | F4 删除 computer-use 标签专用探测 | completed | [实现与验证记录](../../journal/shared/2026-10-16-remove-computer-use-probe.md) |

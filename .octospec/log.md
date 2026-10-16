@@ -2,6 +2,8 @@
 
 ## 2026-10-16
 
+- 建立[全自动清理与关联缺陷修复计划](tasks/remove-execution-features/autonomous-plan.md)，纳入 MCP 配置回灌、错误误分类和 watchdog 进度/暂停计时问题；独立首评三项 94 未通过，补齐提交快照、前置依赖和远端部署边界后[复评](tasks/remove-execution-features/feasibility-review.md)均分 97.125、最低 96，达到用户要求的实施门槛。
+
 - 完成[F4 computer-use 标签专用探测删除](journal/shared/2026-10-16-remove-computer-use-probe.md)：删除 Codex 配置扫描、同步异步 helper 和专用依赖，补齐创建不读配置的回归；构建、类型与 lint 通过，全量 930 通过、8 跳过，真实 Codex 原生命令请求 im-test 并返回校验值。仅 F4 完成，真实 Home 的动态 MCP 配置类型错误仍待单独处理。
 
 - 建立[executionFeatures 清理开发计划](tasks/remove-execution-features/brief.md)：依据实际消费拆为七项，列出修改位置、依赖、失败行为、验收及 100 分制开发准备度；明确桌面标签筛选、Worker 必填字段和 watchdog 活动判定均为真实依赖，先调整消费者再移除生产字段。本轮仅计划，不宣称实现或线上验收完成。
