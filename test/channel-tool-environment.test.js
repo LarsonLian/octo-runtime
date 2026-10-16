@@ -90,7 +90,8 @@ test("OpenClaw CLI updates only two dotenv keys, last Bot wins and different dir
   const bot = (id, credential) => ({ bot_id: id, api_url: `${base}/api/`, bf_token: credential, adapter: { adapter_type: "openclaw" } });
   const credentialFile = join(root, "bot-token");
   await writeFile(credentialFile, "bf_last_fixture\n", { mode: 0o600 });
-  const second = { ...bot("second", undefined), bf_token_file: credentialFile };
+  // 宿主读取自己的配置来源，SDK 只接收已经取得的凭据值。
+  const second = bot("second", await readFile(credentialFile, "utf8"));
   const configs = extra([bot("first", token), second, { ...bot("disabled", "bf_disabled"), enabled: false }]);
   assert.equal((await syncCliOpenClawToolEnvironment(profile, configs)).written, true);
   const content = await readFile(file, "utf8");

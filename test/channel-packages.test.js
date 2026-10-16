@@ -1,10 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateImConfig as gatewayConfig, default as gatewayExtra, name as gatewayName } from '@mininglamp-oss/octo-runtime-extra-channel-gateway';
-import { validateImConfig as wecomConfig, default as wecomExtra, name as wecomName } from '@mininglamp-oss/octo-runtime-extra-channel-wecom';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { configuredCredential as gatewayCredential, validateImConfig as gatewayConfig, default as gatewayExtra, name as gatewayName } from '@mininglamp-oss/octo-runtime-extra-channel-gateway';
+import { configuredCredential as wecomCredential, validateImConfig as wecomConfig, default as wecomExtra, name as wecomName } from '@mininglamp-oss/octo-runtime-extra-channel-wecom';
 import { ImChannelManager as GatewayManager } from '../packages/octo-runtime-extra-channel-gateway/dist/lifecycle/manager.js';
 import { ImChannelManager as WecomManager } from '../packages/octo-runtime-extra-channel-wecom/dist/lifecycle/manager.js';
 import { ExtraPlugins } from '@mininglamp-oss/octo-runtime-daemon';
+
+test('hosts resolve credential storage before passing values to channel SDKs', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'octo-host-credentials-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const file = join(directory, 'credential');
+  await writeFile(file, '  bf_host_fixture\n', { mode: 0o600 });
+  for (const [readCredential, field] of [[gatewayCredential, 'bf_token'], [wecomCredential, 'app_secret']]) {
+    assert.equal(readCredential({ [`${field}_file`]: file }), undefined);
+    // 配置来源归宿主；同一 SDK 输入也可以由 SQLite 或 Nacos 取得。
+    const config = { [field]: await readFile(file, 'utf8') };
+    assert.equal(readCredential(config), 'bf_host_fixture');
+    assert.equal(readCredential({ ...config, [`${field}_file`]: '/nonexistent/ignored' }), 'bf_host_fixture');
+  }
+});
 
 test('independent channels accept Bots without type and validate platform fields', () => {
   const common = { bot_id: 'bot', adapter: { workdir: process.cwd() } };

@@ -443,7 +443,7 @@ test("duplicate bot identities fail before opening connections", async (t) => {
   const bot = {
     api_url: "https://im.example/api",
     bot_id: "bot",
-    bf_token_file: "token",
+    bf_token: "bf_fixture",
     adapter: { adapter_type: "codex", workdir: dir },
     context: { schema: "octo.context-envelope/v3", items: [] }
   };

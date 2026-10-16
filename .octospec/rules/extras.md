@@ -109,7 +109,15 @@ interface ExtraContext {
 
 `config` 是宿主构造的插件专属 JSON 对象。框架没有通用业务 Config，也不要求插件导出 `validateConfig()`。插件自行检查业务配置；内部配置有误时跳过受影响项，通过自定义状态返回脱敏错误，有效项继续初始化。授权配置无效时不得建立未授权连接。此类内部错误不等于 Extra 加载失败；入口、声明或清理等框架错误仍按生命周期报告。
 
+2026-10-16 配置合同：三个内置 Extra 提供原始 `config-schema.json`，描述完整 `{ module, enabled?, config }` 声明。`module` 以对应包名 `const` 表达；字段 description 必须说明业务用途、必填条件、何时设置及省略行为，不能仅复述字段名。特别区分 OpenClaw 已有 Provider Agent ID、平台 Bot ID 与 Runtime ID。可选 `context` 只描述固定 v3 标识及开放的 items 对象数组，并说明 IM Channel 执行 AgentRun 时固定附带；不内嵌或引用完整协议定义，item 内部合同仍归 octo-runtime Context v3。业务方自行参考 schema、选择校验器或生成类型；框架不强制 Zod、不增加配置编译器，不从 schema 自动填值或改变 JsonObject 加载合同。非 JSON Schema 可表达的真实权限、资源可用性及协议语义约束继续在现有边界校验。公开入口和打包要求见[配置指南](../guides/extra-configuration.md#原始-json-schema-配置合同)。
+
 CLI 默认从 JSON 文件读取；Desktop App 可以从 SQLite 或其他来源读取，再构造对象。插件无需知道配置来源。SDK 不扫描配置目录，宿主明确提供声明；CLI daemon 的启动装配明确选择目录读取适配器。
+
+配置值与其来源必须分开：Channel 仅接收宿主已解析的 `bf_token` / `app_secret`，不提供 `bf_token_file` / `app_secret_file` 或其他文件、环境变量、配置中心的取值字段。来源读取、解密、组合、持久化及刷新由宿主负责；SDK/Extra 校验并消费值。新增配置须遵循[架构责任边界](architecture.md#配置来源归宿主sdk-消费配置值)，schema 不为不同存储来源增加业务字段。真正的工作目录、资源与内部状态路径按各自业务合同保留。
+
+本次删除不考虑旧凭据文件配置兼容：读取解析、文件权限错误分支及旧 file-config 模块一并移除，不保留旧路径转发、迁移或回退。未知可选扩展仍按各插件原有合同处理，不代表支持旧取值机制。
+
+配置 schema 以直接阅读为目标：Bot、Adapter、重试等业务字段按实际 JSON 层级直接内联，不使用 `$ref`、`definitions` 拆分。字段说明和原有条件约束保留，不能以减少引用为由省略必填关系或扩大运行时接受范围。
 
 业务发起方决定每轮 `Actor + Trigger + Target + Input + Context`，处理业务 defaults/mandatory。Extra 若只是原始请求代理，则不追加或重建模型 Context。执行边界继续校验协议、身份、权限与必要执行配置；空模型 Context 与不同 Event 中显式重复的 item 都保持原语义。
 

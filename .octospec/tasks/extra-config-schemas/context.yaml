@@ -1,0 +1,28 @@
+rules:
+  - runtime-architecture
+  - runtime-extras
+  - runtime-engineering
+  - runtime-protocol-design
+  - runtime-protocol-schema
+  - runtime-channel
+  - runtime-context-input
+  - runtime-invoke-input
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/protocol-design.md
+  - .octospec/rules/protocol-schema.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/context-input.md
+  - .octospec/rules/invoke-input.md
+  - .octospec/rules/collaboration.md
+decisions:
+  - 原始 JSON Schema 供业务方参考或自行编译，不增加框架编译器和强制校验。
+  - 完整声明固定 module 包名；模型、配置来源与工具由业务方决定。
+  - Channel 的可选 context 只描述 v3 外壳和开放 items 对象，不嵌入或引用完整协议；协议校验仍归运行时。
+  - 配置字段直接内联，不使用 $ref 或 definitions 过度拆分。

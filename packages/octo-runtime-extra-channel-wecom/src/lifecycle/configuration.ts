@@ -4,6 +4,21 @@ import { isAbsolute } from "node:path";
 import { assertApprovalMode, assertContextEnvelope } from "@mininglamp-oss/octo-runtime-protocol";
 import type { ImBotConfig } from "../contracts.js";
 
+export function validateImBots(value: unknown): asserts value is ImBotConfig[] {
+  if (!Array.isArray(value) || value.length > 16) throw new Error("IM_CONFIG_LIST_REQUIRED");
+  const identities = new Set<string>();
+  for (const bot of value as ImBotConfig[]) {
+    validateImConfig(bot);
+    const identity = imBotIdentity(bot);
+    if (identities.has(identity)) throw new Error("IM_BOT_DUPLICATED");
+    identities.add(identity);
+  }
+}
+
+export function configuredCredential(config: ImBotConfig): string | undefined {
+  return config.app_secret?.trim() || undefined;
+}
+
 export function validateImConfig(config: ImBotConfig): void {
   if (!config || typeof config !== "object" || Array.isArray(config))
     throw new Error("IM_CONFIG_INVALID");
@@ -71,9 +86,10 @@ export function validateImConfig(config: ImBotConfig): void {
     "run_timeout_ms",
     "allowed_sender_ids"
   ];
-  fields.push("app_secret", "app_secret_file", "ws_url");
+  fields.push("app_secret", "ws_url");
   validateUrl(config.ws_url ?? "wss://openws.work.weixin.qq.com", "wss:", "ws:");
-  validateCredential(config.app_secret, config.app_secret_file);
+  if (config.app_secret !== undefined && typeof config.app_secret !== "string")
+    throw new Error("IM_CREDENTIAL_INVALID");
   if (Object.keys(config).some((key) => !fields.includes(key)))
     throw new Error("IM_CONFIG_UNKNOWN_FIELD");
 }
@@ -82,13 +98,6 @@ export function validateImConfig(config: ImBotConfig): void {
 export function imBotIdentity(config: ImBotConfig): string {
   const identity = ["wecom", new URL(config.ws_url ?? "wss://openws.work.weixin.qq.com").href, config.bot_id];
   return createHash("sha256").update(JSON.stringify(identity)).digest("hex");
-}
-
-function validateCredential(value?: string, file?: string): void {
-  if (value !== undefined && typeof value !== "string") throw new Error("IM_CREDENTIAL_INVALID");
-  if (file !== undefined && (typeof file !== "string" || !file.trim()))
-    throw new Error("IM_CREDENTIAL_INVALID");
-  if (value?.trim() && file?.trim()) throw new Error("IM_CREDENTIAL_SOURCE_CONFLICT");
 }
 
 function validateUrl(value: string, secure: string, local: string): void {

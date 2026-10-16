@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:mininglamp-oss:octo-runtime:extra:webui:config",
+  "title": "本地 WebUI Extra 完整配置声明",
+  "description": "描述 module、enabled 和 config 的完整 JSON 声明，供接入方参考、生成类型或自行构造校验器。加载入口仍接收 JsonObject，不自动执行本 schema、不转换配置、不填充 default。default 记录插件现有的省略行为，不代表宿主必须采用该业务选择。",
+  "$comment": "声明文件最多 1 MiB，POSIX 权限须为 0600。端口占用、路径可访问性、会话文件内容及文件权限仍需运行时检查。加载生命周期 loaded 不等于监听成功，宿主须检查插件状态中的 listening 与 errors。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["module", "config"],
+  "properties": {
+    "module": {
+      "type": "string",
+      "const": "@mininglamp-oss/octo-runtime-webui-extra",
+      "description": "必填。本地 WebUI Extra 的固定包入口；宿主须预先安装并确保模块可解析。此 schema 约束包名声明，宿主通过绝对路径加载同一模块时可自行调整该约束。插件实例名及 CLI 配置目录名为 webui。"
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "可选。是否加载整个 WebUI 插件，省略视为 true；false 时加载器不导入插件、不启动 HTTP 监听。不会因此删除已保存会话、项目目录或 Runtime 身份。"
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["sessionStorePath"],
+      "description": "必填。传给 WebUI Extra load 的原始 JSON 对象；来源由宿主决定。仅支持下列业务字段，未知配置字段当前忽略。监听地址固定为 127.0.0.1，不能通过增加 host 字段改为公网监听。",
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 13888,
+          "description": "可选。本机 HTTP 工作台端口，范围 1..65535，省略为 13888；固定监听 127.0.0.1。不能用 0 自动分配；端口被占用时插件状态报告 WEBUI_ADDRESS_IN_USE，schema 无法预先证明端口可用。"
+        },
+        "sessionStorePath": {
+          "type": "string",
+          "pattern": "^(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\[^\\\\/]+[\\\\/][^\\\\/]+)",
+          "description": "必填。宿主指定的本机 WebUI 会话 JSON 文件绝对路径，不能写 ~ 或相对路径，也不会按 Runtime Home 自动推导。用于保存最多 100 条本 WebUI 会话及不透明 Provider binding，文件以 0600 原子写入，总大小上限 32 MiB。宿主应选择受保护且可写的位置；损坏文件不会被自动覆盖。不是模型工作目录或 Runtime 身份文件。",
+          "examples": ["/absolute/host-home/extras/webui/sessions.json"]
+        },
+        "defaultProjectPath": {
+          "type": "string",
+          "description": "可选。页面初始默认项目的本机目录；省略使用运行进程用户 Home 下的 octo-runtime-workspace，并在启动时创建目录。显式相对路径按进程 cwd 解析，建议使用绝对路径；~ 和环境变量不会展开。页面可另外选择项目，本字段不限制所有调用的工作区，也不是沙箱边界。",
+          "examples": ["/absolute/workspace"]
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "module": "@mininglamp-oss/octo-runtime-webui-extra",
+      "enabled": true,
+      "config": {
+        "port": 13888,
+        "sessionStorePath": "/absolute/host-home/extras/webui/sessions.json",
+        "defaultProjectPath": "/absolute/workspace"
+      }
+    },
+    {
+      "module": "@mininglamp-oss/octo-runtime-webui-extra",
+      "config": {
+        "sessionStorePath": "/absolute/host-home/extras/webui/sessions.json"
+      }
+    }
+  ]
+}

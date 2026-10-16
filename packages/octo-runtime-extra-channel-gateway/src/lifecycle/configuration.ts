@@ -12,6 +12,22 @@ export const IM_MAX_BOTS = 64;
 export const IM_MAX_CONFIG_OPERATIONS = 64;
 export const IM_MAX_CONFIG_BYTES = 256 * 1024;
 
+export function validateImBots(value: unknown): asserts value is ImBotConfig[] {
+  if (!Array.isArray(value) || value.length > IM_MAX_BOTS)
+    throw new Error("IM_CONFIG_LIST_REQUIRED");
+  const identities = new Set<string>();
+  for (const bot of value as ImBotConfig[]) {
+    validateImConfig(bot);
+    const identity = imBotIdentity(bot);
+    if (identities.has(identity)) throw new Error("IM_BOT_DUPLICATED");
+    identities.add(identity);
+  }
+}
+
+export function configuredCredential(config: ImBotConfig): string | undefined {
+  return config.bf_token?.trim() || undefined;
+}
+
 export function validateImConfig(config: ImBotConfig): void {
   assertJsonByteLimit(config, IM_MAX_CONFIG_BYTES, "IM_CONFIG_TOO_LARGE");
   if (!config || typeof config !== "object" || Array.isArray(config))
@@ -111,20 +127,14 @@ export function validateImConfig(config: ImBotConfig): void {
   for (const key of ["cards", "typing", "group_rules"] as const)
     if (config[key] !== undefined && typeof config[key] !== "boolean")
       throw new Error("IM_CONFIG_INVALID");
-  validateCredential(config.bf_token, config.bf_token_file);
+  if (config.bf_token !== undefined && typeof config.bf_token !== "string")
+    throw new Error("IM_CREDENTIAL_INVALID");
 }
 
 /** Stable local lookup key, not a caller-supplied identity or authorization token. */
 export function imBotIdentity(config: ImBotConfig): string {
   const identity = ["octo", new URL(config.api_url).href.replace(/\/+$/, ""), config.bot_id];
   return createHash("sha256").update(JSON.stringify(identity)).digest("hex");
-}
-
-function validateCredential(value?: string, file?: string): void {
-  if (value !== undefined && typeof value !== "string") throw new Error("IM_CREDENTIAL_INVALID");
-  if (file !== undefined && (typeof file !== "string" || !file.trim()))
-    throw new Error("IM_CREDENTIAL_INVALID");
-  if (value?.trim() && file?.trim()) throw new Error("IM_CREDENTIAL_SOURCE_CONFLICT");
 }
 
 function validateUrl(value: string, secure: string, local: string): void {

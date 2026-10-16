@@ -6,7 +6,7 @@
 
 | 主题 | 入口 |
 | --- | --- |
-| 强制产品意图归属、需求范围检查与按合同归属修复 | [基础架构](rules/architecture.md) |
+| 产品意图归属、配置来源归宿主、需求范围检查与按合同归属修复 | [基础架构](rules/architecture.md) |
 | 总体协议、调用时序与审批／追问往返 | [协议与调用设计](rules/protocol-design.md) |
 | 身份、Home、profile、安装与生命周期 | [本地 Runtime](rules/runtime-lifecycle.md) |
 | 公共输入、默认值与多模态 | [InvokeInput](rules/invoke-input.md) |
@@ -43,6 +43,8 @@
 ## 历史与取舍
 
 - [CLI 使用与 SDK 原生接入文档分拆](journal/shared/2026-10-16-cli-sdk-guides-split.md)：按使用场景拆分完整正文，桌面应用必须 SDK 接入；明确 CLI 全量发行与实际启用的区别，迁移文档链接与示例。
+
+- [三个 Extra 原始配置 Schema](journal/shared/2026-10-16-extra-config-schemas.md)：完整声明与字段语义、业务方自主校验及单包公开 JSON 入口；按用户最新澄清，context 仅声明 v3 外壳与开放 items 对象，不展开完整协议。首次构建、类型、lint、1017 项 Node/35 项 UI 测试和仓库外安装通过，收敛后 16 项定向测试及发行文件检查通过；未修改运行逻辑或进行线上联调。
 
 - [executionFeatures 删除交付](tasks/remove-execution-features/delivery.md)：Runtime、Work App、Worker 按 Feature 提交并推送，类型/常量/发现与消费者清理完成；1001项Runtime、2555项桌面/kit测试通过，正式im renderer及真实Codex文本/图片/审批/取消/MCP通过，远端未部署。实施门槛及新增问题见[独立评估](tasks/remove-execution-features/feasibility-review.md)。
 

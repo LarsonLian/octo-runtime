@@ -1,0 +1,205 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:mininglamp-oss:octo-runtime:extra:channel-wecom:config",
+  "title": "企业微信 Extra 完整配置声明",
+  "description": "描述 module、enabled 和 config 的完整 JSON 声明，供接入方参考、生成类型或自行构造校验器。加载入口仍接收 JsonObject，不自动执行本 schema、不转换配置、不填充 default。default 记录插件现有的省略行为，不代表宿主必须采用该业务选择。",
+  "$comment": "声明文件最多 1 MiB，POSIX 权限须为 0600。Bot 按 ws_url 与 bot_id 的组合判重；凭据文件权限、目标 Agent 是否存在、Provider 是否可用等仍需运行时检查。Context 内部对象遵循 octo.context-envelope/v3，具体协议约束由现有运行时校验，本文件不重复展开。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["module", "config"],
+  "properties": {
+    "module": {
+      "type": "string",
+      "const": "@mininglamp-oss/octo-runtime-extra-channel-wecom",
+      "description": "必填。企业微信 Extra 的固定包入口；宿主须预先安装并确保模块可解析。此 schema 约束包名声明，宿主通过绝对路径加载同一模块时可自行调整该约束。插件实例名及 CLI 配置目录名为 channel-wecom。"
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "可选。是否加载整个企业微信插件；省略视为 true。false 时加载器不导入插件。与 config.bots[].enabled 的单 Bot 开关不同。"
+    },
+    "config": {
+      "type": "object",
+      "description": "必填。传给企业微信 Extra load 的原始 JSON 对象；由业务方构造，插件不关心它来自文件还是宿主存储。未识别的顶层配置字段当前忽略。",
+      "additionalProperties": true,
+      "properties": {
+        "bots": {
+          "type": "array",
+          "maxItems": 16,
+          "default": [],
+          "description": "可选。完整 Bot 列表，最多 16 个；省略或空数组表示没有连接。多个 Bot 属于同一个 Extra；宿主保存时替换完整声明，不按 bot_id 追加、合并或补齐旧配置。同一 ws_url 与 bot_id 不可重复。",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["bot_id", "adapter"],
+            "description": "一个企业微信 Bot 的连接与执行设置。允许暂存无凭据配置，但启用建联需要有效 Secret；无效 Bot 单独报告 config_error，有效 Bot 继续初始化。",
+            "properties": {
+              "bot_id": {
+                "type": "string",
+                "pattern": "\\S",
+                "description": "必填。企业微信智能机器人平台分配的 Bot ID，用于 WebSocket 鉴权与连接身份识别。不是 Runtime ID、业务会话 ID，也不是 OpenClaw Agent ID。",
+                "examples": ["<WECOM_BOT_ID>"]
+              },
+              "bot_name": {
+                "type": "string",
+                "pattern": "\\S",
+                "description": "可选。本地展示名称，省略时显示 bot_id；方便宿主区分多个机器人，不修改企业微信平台名称，也不参与身份匹配或授权。",
+                "examples": ["项目助理"]
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "可选。是否启动这个 Bot，省略为 true。false 时保留配置与 stopped 状态但不建立连接，不影响同一插件的其他 Bot。"
+              },
+              "app_secret": {
+                "type": "string",
+                "writeOnly": true,
+                "description": "可选；实际启用建联时必需。宿主从自己的配置来源取得并传入的 Secret 值，由企业微信为此 bot_id 分配；读取时去除首尾空白。省略或为空可暂存配置，但不能上线。插件不读取凭据文件或配置中心。不得放入模型上下文、公开状态或日志。",
+                "examples": ["<WECOM_APP_SECRET>"]
+              },
+              "ws_url": {
+                "type": "string",
+                "format": "uri",
+                "pattern": "^(?:wss://[^/?#@\\s]+|ws://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?)(?:/[^?#\\s]*)?$",
+                "default": "wss://openws.work.weixin.qq.com",
+                "description": "可选。企业微信 Bot WebSocket 服务地址，不是 OpenClaw Gateway 地址。通常省略；只有连接专门的平台接入地址或本机测试服务时设置。必须为 wss；ws 仅允许 localhost、127.0.0.1 或 [::1]。禁止 URL 凭据、query 和 fragment。"
+              },
+              "adapter": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "必填。本 Bot 调用宿主共享执行内核时采用的引擎设置；本地引擎需要 workdir，OpenClaw 使用其已有 Agent 的工作区。 宿主已安装且已装配的执行引擎。配置不触发 Provider 安装或创建。模型与强度由业务方选择，最终可用性以 Provider 真实结果为准。",
+                "properties": {
+                  "adapter_type": {
+                    "type": "string",
+                    "pattern": "\\S",
+                    "default": "codex",
+                    "description": "可选。宿主已装配的 Adapter 类型标识，省略时本插件默认使用 codex，例如 claude-code、codebuddy、openclaw。不是 npm 包名或模型 ID；schema 不枚举宿主的全部引擎。",
+                    "examples": ["codex", "claude-code", "openclaw"]
+                  },
+                  "workdir": {
+                    "type": "string",
+                    "pattern": "^(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\[^\\\\/]+[\\\\/][^\\\\/]+)",
+                    "description": "条件必填。adapter_type 非 openclaw（包括省略）时，必须设置运行机器上的绝对工作目录；不能写 ~ 或相对路径。它是 Provider 执行目录，不是安全沙箱。openclaw 时禁止设置，工作区由目标 Provider Agent 管理。路径是否符合宿主操作系统、是否可访问仍须运行时检查。",
+                    "examples": ["/absolute/workspace"]
+                  },
+                  "model": {
+                    "type": "string",
+                    "pattern": "\\S",
+                    "description": "可选。所选 Provider 可识别的模型 ID，由业务方按自己的模型配置填写；不固定为某个模型，也不在 schema 中维护模型目录。省略不传显式模型选择，按执行解析与 Provider 配置处理。设置此值不保证模型已授权或可用。",
+                    "examples": ["<PROVIDER_MODEL_ID>"]
+                  },
+                  "effort": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high", "xhigh"],
+                    "description": "可选。统一推理强度档位，由业务方选择；省略不显式指定。Adapter 按 Provider 合同映射或报告不支持，填写 high 不等于每个 Provider 都能原样应用该档位。"
+                  },
+                  "provider_agent_id": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_][a-z0-9_-]{0,63}$",
+                    "description": "仅 adapter_type=openclaw 时可选。指定 OpenClaw Gateway 中已存在、预先配置好的目标 Agent ID；需要选择非默认 Agent 时填写，省略使用 main。不是企业微信 bot_id、Runtime ID、Provider 会话 ID 或模型 ID。不会创建 Agent、切换为其他 Agent 或覆盖其工作区；目标不存在时执行失败。其他 Adapter 禁止设置此字段。",
+                    "examples": ["main", "research_assistant"]
+                  }
+                },
+                "if": {
+                  "required": ["adapter_type"],
+                  "properties": { "adapter_type": { "const": "openclaw" } }
+                },
+                "then": { "not": { "required": ["workdir"] } },
+                "else": { "required": ["workdir"], "not": { "required": ["provider_agent_id"] } }
+              },
+              "context": {
+                "type": "object",
+                "description": "可选。遵循 octo-runtime 的 octo.context-envelope/v3 协议；配置后，IM Channel 在每次执行 AgentRun 时固定附带这些配置项。items 的内部对象结构不在本配置 schema 中展开，具体内容由现有 Context v3 协议校验。",
+                "additionalProperties": false,
+                "required": ["schema", "items"],
+                "properties": {
+                  "schema": {
+                    "type": "string",
+                    "const": "octo.context-envelope/v3",
+                    "description": "必填。固定使用 octo-runtime 的 Context v3 协议标识。"
+                  },
+                  "items": {
+                    "type": "array",
+                    "description": "必填。执行 AgentRun 时固定附带的 Context 项；允许空数组，每项为遵循 Context v3 协议的 JSON 对象，此处不展开内部字段。",
+                    "items": { "type": "object", "additionalProperties": true }
+                  }
+                }
+              },
+              "approval_mode": {
+                "type": "string",
+                "enum": ["ask", "assisted", "full_access"],
+                "default": "full_access",
+                "description": "可选。本 Bot 提供的默认执行审批策略：ask 请求审批，assisted 使用辅助审批策略，full_access 请求完整访问策略。具体支持及行为由所选 Adapter 决定，不代表操作系统隔离，也不绕过平台权限；本轮 Context 的审批项可按现有合同覆盖。"
+              },
+              "run_timeout_ms": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 600000,
+                "default": 120000,
+                "description": "可选。此 Bot 默认单轮执行总时限，单位毫秒，范围 1..600000，省略为 120000。本轮 Context 的 limits 可按执行合同覆盖；与 Octo Gateway 的一天默认值不同。"
+              },
+              "allowed_sender_ids": {
+                "type": "array",
+                "description": "可选。允许触发本 Bot 的真实平台发送者 ID 白名单；省略不按此项限制，空数组拒绝所有发送者。ID 来自已解析的平台身份，不能用展示名称代替，也不赋予发送者额外权限。",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "允许触发的企业微信发送者 ID。"
+                }
+              }
+            }
+          }
+        },
+        "authorized_space_ids": {
+          "type": "array",
+          "description": "可选。宿主可提供的 Space 业务 ID 白名单，格式由插件校验。当前企业微信连接没有解析并核对 Octo Space 身份，因此设置该列表（包括空数组）不构成企业微信消息的 Space 准入限制，也不能证明已完成 Space 授权。企业微信消息仍按平台可见范围和 allowed_sender_ids 准入；不要把它与 Octo Gateway 中实际生效的同名字段混淆。",
+          "items": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "允许的 Space 业务 ID，须含非空白字符。"
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "module": "@mininglamp-oss/octo-runtime-extra-channel-wecom",
+      "enabled": true,
+      "config": {
+        "bots": [
+          {
+            "bot_id": "<WECOM_BOT_ID>",
+            "bot_name": "个人助理",
+            "app_secret": "<WECOM_APP_SECRET>",
+            "enabled": true,
+            "ws_url": "wss://openws.work.weixin.qq.com",
+            "adapter": {
+              "adapter_type": "codex",
+              "workdir": "/absolute/workspace",
+              "model": "<PROVIDER_MODEL_ID>",
+              "effort": "medium"
+            },
+            "context": { "schema": "octo.context-envelope/v3", "items": [] },
+            "approval_mode": "full_access",
+            "run_timeout_ms": 120000,
+            "allowed_sender_ids": ["<WECOM_USER_ID>"]
+          }
+        ]
+      }
+    },
+    {
+      "module": "@mininglamp-oss/octo-runtime-extra-channel-wecom",
+      "config": {
+        "bots": [
+          {
+            "bot_id": "<WECOM_BOT_ID>",
+            "adapter": { "adapter_type": "openclaw", "provider_agent_id": "research_assistant" },
+            "app_secret": "<WECOM_APP_SECRET>"
+          }
+        ],
+        "authorized_space_ids": ["<AUTHORIZED_SPACE_ID>"]
+      }
+    }
+  ]
+}

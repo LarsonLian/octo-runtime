@@ -2,7 +2,13 @@
 
 ## 2026-10-16
 
+- 按用户最新要求[清理旧凭据配置残留](journal/shared/2026-10-16-host-config-source-boundary.md#后续清理不考虑旧配置兼容)：删除两个 file-config 模块、旧文件权限错误分支，不保留路径转发、兼容解析、迁移或回退。重跑构建、Node 1018 通过/8 跳过、UI 35 通过、类型、lint、发行包残留检查与 im-test 只读认证通过。
+
+- 固化[配置来源归宿主的架构边界](journal/shared/2026-10-16-host-config-source-boundary.md)：宿主负责 JSON/SQLite/Nacos 等来源并传入实际值，SDK/Extra 只校验和消费。移除两个 Channel 的 bf_token_file / app_secret_file、类型、schema 与凭据文件读取，后续不为配置来源扩展业务字段。构建、类型、lint、Node 1018 通过/8 跳过、UI 35 通过、六份发行 schema 及 im-test 两账号只读认证通过。
+
 - 拆分 [CLI 使用与 SDK 原生接入指南](journal/shared/2026-10-16-cli-sdk-guides-split.md)：CLI 面向云端设备定制接入与运维，默认包含全部 Adapter、Extra 及系统管理、自启服务；Electron/Tauri 2 桌面程序必须 SDK 接入。原 INTEGRATION 仅作导航，迁移现有示例和当前文档链接，本轮不修改运行代码。
+
+- 完成[三个 Extra 原始配置 Schema](journal/shared/2026-10-16-extra-config-schemas.md)：覆盖固定 module、enabled、完整 config 及嵌套用途和条件，说明 Provider Agent ID 与平台身份区别；业务方自行选择校验工具，不改变 JsonObject 加载。公开与内置文件随单包交付；构建、类型、lint、Node 1017 通过/8 跳过、UI 35 通过及仓库外离线安装验证通过。未改执行逻辑或进行线上联调。
 
 - 完成[executionFeatures 全量清理与自动验收](tasks/remove-execution-features/delivery.md)：三个仓库逐 Feature 提交推送，移除自建字段、常量、默认数组、发现/加载及标签准入，修复watchdog、Codex MCP窄覆盖和错误分类。新发现的桌面基线问题先独立评估再修复；正式im文档与配置已同步。Runtime1001通过/8跳过、WebUI35通过、桌面/kit2555通过/2跳过，Worker测试构建和离线发行验证通过。真实Codex文本/图片/审批/取消/MCP及重启后renderer通过；远端部署、未启用Provider和OpenAPI基线漂移分别记录，不宣称已验收。
 

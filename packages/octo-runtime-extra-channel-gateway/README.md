@@ -10,6 +10,8 @@
 
 ## CLI 配置多个 Bot
 
+完整配置合同见 [config-schema.json](config-schema.json)，包含外层 `module`、`enabled`、`config` 及全部嵌套字段的用途、必填关系、限制和占位示例。包括 Codex 重试预算和 OpenClaw 条件字段；`provider_agent_id` 是 Provider 已有 Agent 的 ID，不是 Octo Bot ID。schema 的使用及单一发行包公开入口见 [配置指南](../../.octospec/guides/extra-configuration.md#原始-json-schema-配置合同)。
+
 宿主先安装本包及所需 Provider，再提交完整声明：
 
 ```bash
@@ -65,7 +67,7 @@ JSON
 | `bot_id` | 必选 | 非空 Bot ID |
 | `bot_name` | 可选，建议填写 | 自定义本地展示名称，便于直接区分 Bot，避免通过 `bot_id` 反查；省略时展示 `bot_id`。不参与身份匹配、不修改远端名称；`name` 不是别名 |
 | `enabled` | 可选 | 默认 `true`，控制单个 Bot；外层 `enabled` 控制整个插件 |
-| `bf_token` / `bf_token_file` | 连接必选，二选一 | Token 或凭据文件；文件建议使用绝对路径，POSIX 权限要求 `0600` |
+| `bf_token` | 连接必选 | 宿主解析配置来源后传入的 Bot Token 值；插件不读取凭据文件或配置中心 |
 | `adapter` | 必选 | 执行设置对象；子字段要求见下表 |
 | `context` | 可选 | 提供时必须符合 `octo.context-envelope/v3`；允许空 `items` |
 | `approval_mode` | 可选 | 默认 `full_access`；支持范围按所选 Adapter 合同 |

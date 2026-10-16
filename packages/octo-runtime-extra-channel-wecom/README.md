@@ -6,6 +6,8 @@
 
 ## CLI 配置多个 Bot
 
+完整配置合同见 [config-schema.json](config-schema.json)，包含外层 `module`、`enabled`、`config` 及全部嵌套字段的用途、必填关系、限制和占位示例。模块入口固定为本包名；`provider_agent_id` 仅在选择 OpenClaw 且需要指定已有目标 Agent 时设置，省略为 `main`，不是企业微信 Bot ID。schema 的使用及单一发行包公开入口见 [配置指南](../../.octospec/guides/extra-configuration.md#原始-json-schema-配置合同)。
+
 宿主安装本包后提交完整声明：
 
 ```bash
@@ -49,7 +51,7 @@ JSON
 
 保存后，已安装并启用后台服务时执行 `octo-runtime daemon restart`；前台运行使用 `octo-runtime daemon run`。`octo-runtime extra status` 查询插件生命周期，`loaded` 不保证每个 Bot 在线。
 
-凭据可以内联为 `app_secret`，或用 `app_secret_file` 指定，二选一；文件建议使用绝对路径，POSIX 权限要求 `0600`。Bot 内 `enabled` 默认 `true`，控制单个 Bot，外层 `enabled` 控制整个插件。默认 WS 为 `wss://openws.work.weixin.qq.com`。Bot 字段由本插件校验。连接探针为 `scripts/probe-wecom.mjs`。
+宿主自行从 JSON、SQLite、Nacos 等来源取得凭据，通过 `app_secret` 传入实际值；插件不读取凭据文件或配置中心。Bot 内 `enabled` 默认 `true`，控制单个 Bot，外层 `enabled` 控制整个插件。默认 WS 为 `wss://openws.work.weixin.qq.com`。Bot 字段由本插件校验。连接探针为 `scripts/probe-wecom.mjs`。
 
 ## 插件字段
 
@@ -60,7 +62,7 @@ JSON
 | `config.bots` | 可选；接入 Bot 时必选 | 省略为 `[]`；最多 16 项，相同 WS 地址与 `bot_id` 不得重复 |
 | `bot_id` | 必选 | 非空企业微信 Bot ID |
 | `bot_name` | 可选，建议填写 | 自定义本地展示名称，便于直接区分 Bot，避免通过 `bot_id` 反查；省略时展示 `bot_id`。填写时必须为非空字符串，不参与身份匹配、不修改企业微信上的名称 |
-| `app_secret` / `app_secret_file` | 连接必选，二选一 | Secret 或凭据文件；文件建议使用绝对路径，POSIX 权限要求 `0600` |
+| `app_secret` | 连接必选 | 宿主解析配置来源后传入的 Secret 值；插件不读取凭据文件或配置中心 |
 | `ws_url` | 可选 | 默认 `wss://openws.work.weixin.qq.com` |
 | `enabled` | 可选 | 默认 `true`，控制单个 Bot；外层 `enabled` 控制整个插件 |
 | `adapter` | 必选 | 执行设置对象；子字段要求见下表 |
@@ -68,7 +70,7 @@ JSON
 | `approval_mode` | 可选 | 默认 `full_access`；支持范围按所选 Adapter 合同 |
 | `allowed_sender_ids` | 可选 | 发送者 ID 白名单；省略不按此项限制，`[]` 不允许任何发送者 |
 | `run_timeout_ms` | 可选 | 默认 `120000`，范围 `1..600000`，单位毫秒 |
-| `config.authorized_space_ids` | 可选 | 租户授权列表；省略不按此项限制，`[]` 不授权任何 Space |
+| `config.authorized_space_ids` | 可选 | 当前仅校验列表格式；企业微信连接不解析或核对 Octo Space 身份，不构成企业微信消息的 Space 准入限制。发送者限制使用 `allowed_sender_ids` |
 
 ## Adapter 配置与 OpenClaw 示例
 

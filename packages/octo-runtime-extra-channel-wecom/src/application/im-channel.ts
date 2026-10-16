@@ -168,9 +168,7 @@ export class ImRuntime {
           "IM_AUTH_IDENTITY_INVALID",
           "IM_BOT_IDENTITY_MISMATCH",
           "IM_REGISTER_HTTP_401",
-          "IM_REGISTER_HTTP_403",
-          "IM_TOKEN_PERMISSIONS_REQUIRE_0600",
-          "IM_CREDENTIAL_PERMISSIONS_REQUIRE_0600"
+          "IM_REGISTER_HTTP_403"
         ].includes(code) ||
         code.startsWith("WECOM_AUTH_REJECTED")
       )

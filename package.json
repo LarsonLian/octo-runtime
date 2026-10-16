@@ -6,6 +6,9 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
+    "./extras/channel-gateway/config-schema.json": "./packages/octo-runtime-extra-channel-gateway/config-schema.json",
+    "./extras/channel-wecom/config-schema.json": "./packages/octo-runtime-extra-channel-wecom/config-schema.json",
+    "./extras/webui/config-schema.json": "./packages/octo-runtime-webui-extra/config-schema.json",
     "./extra": {
       "types": "./dist/public/extra.d.ts",
       "import": "./dist/public/extra.js"
@@ -20,6 +23,7 @@
     "octo-runtime-daemon": "apps/daemon/dist/launcher.js"
   },
   "files": [
+    "packages/*/config-schema.json",
     "dist/public",
     "apps/cli/dist/**/*.js",
     "apps/cli/dist/build-info.json",

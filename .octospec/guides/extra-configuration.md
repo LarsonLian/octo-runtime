@@ -9,6 +9,28 @@ implementation_baseline: df63c8f
 
 # Extra 配置与调用
 
+## 原始 JSON Schema 配置合同
+
+三个内置 Extra 各自提供完整的 `config-schema.json`，约束对象是 CLI 保存的整个 `{ module, enabled?, config }` 声明，不只是内层 `config`。字段 `description` 说明用途、何时填写、必填条件、当前省略行为及运行时边界；`required`、`const`、`enum`、范围和条件分支提供机器可读约束。`module` 固定为对应内置包名，`model` 保留业务方选择的模型 ID 字符串。
+
+| Extra | 仓库文件 | 单一 npm 发行包公开入口 |
+| --- | --- | --- |
+| Octo IM | [config-schema.json](../../packages/octo-runtime-extra-channel-gateway/config-schema.json) | `@mininglamp-oss/octo-runtime/extras/channel-gateway/config-schema.json` |
+| 企业微信 | [config-schema.json](../../packages/octo-runtime-extra-channel-wecom/config-schema.json) | `@mininglamp-oss/octo-runtime/extras/channel-wecom/config-schema.json` |
+| 本地 WebUI | [config-schema.json](../../packages/octo-runtime-webui-extra/config-schema.json) | `@mininglamp-oss/octo-runtime/extras/webui/config-schema.json` |
+
+接入方可通过 `import.meta.resolve(公开入口)` 找到原始 JSON 文件，再自行参考、编译为校验器或生成类型。仓库内包也导出自己的 `/config-schema.json` 子路径；第三方使用上表公开入口，不要求单独安装私有 workspace 包。两个 Channel 的 `context` 为可选字段，配置后由 IM Channel 在执行 AgentRun 时固定附带；仅声明 `schema` 固定为 `octo.context-envelope/v3`、`items` 为对象数组，不展开 item 内部字段，也不内嵌或引用完整协议 schema。item 内容仍须遵循整个 octo-runtime 的 Context v3 协议，由现有运行时校验。
+
+schema 的 Bot、Adapter、重试等字段全部直接内联，不使用 `$ref` 或 `definitions` 拆分，按实际配置层级从外向内阅读即可。schema 仅提供声明性合同，不给统一加载器增加强制校验、Zod 或配置编译步骤；`load(context, config: JsonObject)`、CLI 原始 JSON 与 SDK 对象入口保持现有合同。业务方决定如何构造配置、是否使用 schema 以及选用什么工具。若只校验 SDK 的内层配置，可直接取 schema 的 `properties.config` 对象；SDK 声明的 `name` 不属于此 CLI schema。
+
+`default` 是插件现有省略行为的说明，不会自动写入或转换数据，也不要求其他宿主沿用同一业务策略。OpenClaw 的 `provider_agent_id` 仅选择预先存在的目标 Agent，省略用 `main`；不能用于其他引擎，也不创建 Agent。凭据可先省略以暂存配置，实际连接仍需有效凭据。schema 示例全部使用占位值，不能证明可建联。
+
+宿主负责从 JSON、SQLite、Nacos 等来源取得配置并传入实际值；例如 Bot Token 通过 `bf_token` 传值，企业微信 Secret 通过 `app_secret` 传值。插件不提供 `bf_token_file` / `app_secret_file`，也不根据配置自动选择来源、读文件或连接配置中心。本次不提供旧凭据文件配置的兼容、迁移或回退。后续字段设计统一遵循[架构责任边界](../rules/architecture.md#配置来源归宿主sdk-消费配置值)。
+
+普通 JSON Schema 不能证明凭据有效、路径可访问、Provider 或 Agent 已存在，也不能覆盖动态数值比较、Bot 组合判重及所有 `x-octo-*` Context 语义约束；这些继续由插件和现有协议校验器处理。`additionalProperties` 按各插件当前边界设置：顶层声明拒绝未知字段，WeCom Bot/Adapter 拒绝未知字段，Octo Bot/Adapter 与插件 config 保留未知扩展。不要把 `$schema` 写入 CLI 声明本身，外层当前不接受该字段。
+
+同名字段不等于相同平台效果：Octo Gateway 的 `authorized_space_ids` 会核对 octo-auth 得到的 Space；当前企业微信没有解析并核对 Octo Space 身份，该字段只校验格式，不能当作已生效的 Space 准入。schema 与 WeCom 字段表明确记录此边界，不为补文档而改变连接逻辑。
+
 ## 没有 Runtime 源码时开发插件
 
 客户工程局部安装发行包以解析类型，不能依赖全局 npm 安装的类型：

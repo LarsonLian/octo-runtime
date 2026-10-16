@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ImChannelManager } from "../packages/octo-runtime-extra-channel-gateway/dist/lifecycle/manager.js";
 import { ImRuntime } from "../packages/octo-runtime-extra-channel-gateway/dist/application/im-channel.js";
-import { validateImBots } from "../packages/octo-runtime-extra-channel-gateway/dist/lifecycle/file-config.js";
+import { validateImBots } from "@mininglamp-oss/octo-runtime-extra-channel-gateway";
 import load from "../packages/octo-runtime-extra-channel-gateway/dist/extra.js";
 import { assertJsonByteLimit } from "../packages/octo-runtime-protocol/dist/index.js";
 

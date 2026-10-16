@@ -4,8 +4,11 @@
   "type": "module",
   "description": "Local Runtime workbench with canonical SSE presentation",
   "license": "Apache-2.0",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "files": ["dist", "README.md", "porting-map.md"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./config-schema.json": "./config-schema.json"
+  },
+  "files": ["dist", "config-schema.json", "README.md", "porting-map.md"],
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p web/tsconfig.json && vite build --config vite.config.ts",
     "test:ui": "vitest run --config vite.config.ts"

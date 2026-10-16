@@ -4,6 +4,8 @@
 
 ## CLI
 
+完整配置合同见 [config-schema.json](config-schema.json)，包含外层 `module`、`enabled`、`config` 及端口、会话文件和默认项目目录的用途、必填关系、限制和示例。`sessionStorePath` 必填且必须为绝对路径；监听地址固定为 `127.0.0.1`。schema 的使用及单一发行包公开入口见 [配置指南](../../.octospec/guides/extra-configuration.md#原始-json-schema-配置合同)。
+
 宿主明确设置会话 JSON 的绝对路径。示例中的 Home 使用 CLI 默认值；自定义 `--home` 时同步调整路径：
 
 ```sh

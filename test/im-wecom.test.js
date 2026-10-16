@@ -134,7 +134,7 @@ test("typed IM config keeps execution settings optional and rejects platform fie
   validateImConfig({ ...config, app_secret: "" });
   assert.throws(
     () => validateImConfig({ ...config, app_secret_file: "secret" }),
-    /IM_CREDENTIAL_SOURCE_CONFLICT/
+    /IM_CONFIG_UNKNOWN_FIELD/
   );
   assert.notEqual(imBotIdentity(config), imBotIdentity({ ...config, bot_id: "other" }));
 });

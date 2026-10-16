@@ -32,7 +32,6 @@ export interface ImCommonConfig {
 
 export interface WecomBotConfig extends ImCommonConfig {
   app_secret?: string;
-  app_secret_file?: string;
   ws_url?: string;
 }
 

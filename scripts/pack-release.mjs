@@ -56,6 +56,9 @@ try {
     await mkdir(target, { recursive: true });
     if (workspaces.has(source.name)) {
       await cp(join(path, "dist"), join(target, "dist"), { recursive: true });
+      if (source.exports?.["./config-schema.json"]) {
+        await cp(join(path, "config-schema.json"), join(target, "config-schema.json"));
+      }
       const { scripts, devDependencies, packageManager, ...metadata } = source;
       const dependencies = Object.fromEntries(Object.keys(source.dependencies ?? {}).map(name => [
         name, workspaces.has(name) ? manifest.version : packages.get(name).source.version
@@ -74,6 +77,12 @@ try {
     await cp(join(root, "apps", app, "dist"), join(temporary, "apps", app, "dist"), { recursive: true });
   }
   await cp(join(root, "dist/public"), join(temporary, "dist/public"), { recursive: true });
+  // 将公开的原始 schema 原样交付，接入方自行选择校验或类型生成工具。
+  for (const target of Object.values(manifest.exports)) {
+    if (typeof target !== "string" || !target.endsWith("/config-schema.json")) continue;
+    await mkdir(dirname(join(temporary, target)), { recursive: true });
+    await cp(join(root, target), join(temporary, target));
+  }
   await cp(join(root, "apps/cli/README.md"), join(temporary, "apps/cli/README.md"));
   for (const file of ["LICENSE", "NOTICE"]) {
     await mkdir(dirname(join(temporary, file)), { recursive: true });
@@ -97,7 +106,7 @@ try {
     bin: manifest.bin,
     exports: manifest.exports,
     engines: { node: manifest.engines.node },
-    files: ["apps", "dist/public", "LICENSE", "NOTICE"],
+    files: ["apps", "dist/public", "packages/*/config-schema.json", "LICENSE", "NOTICE"],
     publishConfig: { access: "public" },
     dependencies,
     bundleDependencies: Object.keys(dependencies)

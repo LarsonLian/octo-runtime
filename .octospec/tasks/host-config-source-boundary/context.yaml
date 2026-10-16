@@ -1,0 +1,24 @@
+rules:
+  - runtime-architecture
+  - runtime-extras
+  - runtime-channel
+  - runtime-engineering
+  - runtime-protocol-design
+  - runtime-context-input
+  - runtime-invoke-input
+sources:
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/protocol-design.md
+  - .octospec/rules/context-input.md
+  - .octospec/rules/invoke-input.md
+decisions:
+  - 用户明确本次不考虑旧配置文件兼容，删除旧模块和文件错误分支，不保留转发或迁移逻辑。
+  - 配置来源的选择与读取归宿主，SDK/Extra 只校验和消费已解析的值。
+  - 同时移除 bf_token_file 与 app_secret_file，不新增来源抽象或自动迁移。
+  - CLI 配置读写及业务资源和内部状态路径继续按各自合同处理。
