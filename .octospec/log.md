@@ -2,6 +2,60 @@
 
 ## 2026-10-16
 
+- 澄清 [F32 的约束性质与完成口径](tasks/gateway-august-feature-assessment/assessment.md#f32-是交付约束如何判定完成)：建议作为各改造共同引用的交付验收约束，不新增独立产品功能或默认改 CI。逐项确认场景、完成必要检查/真实验证并更新变化的说明与版本证据；必要未验项继续待验收。可执行性已为 100，目标 100% 不等于当前通过率，必要性 65 不需要追成 100；仍待用户评审，仅文档。
+
+- F31 改造方向按用户要求收束为已确认纳入计划、待实施，具体接口名/文件名/保留口径仍待细化；开始最后一项 [F32 工程验证与操作说明](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf32-工程验证与操作说明)。核对旧漏 build 修复与当前测试前构建、CI、SDK/双渠道生命周期回归及操作文档；建议复用现有工程体系，验收随各改造完成，不迁入旧 Worker/known-bot 模型。必要性 65、可执行性 100、目标建议 100%；撤销原无具体障碍依据的 95 分。F32 待评审、本项后剩 0 项，仅文档，未运行功能测试或线上调试。
+
+- 补充 [F31 日志内容边界](tasks/gateway-august-feature-assessment/assessment.md#日志内容边界用户已明确待实施)：用户明确 Adapter Context 最多打印安全白名单摘要，核心 input 和其他 Context 仅记录本轮结构项数；内核与 Extra 均不转储正文、完整配置或原始错误对象，不以预览/截断/内容哈希替代。记录减少数据量、序列化开销及正文结构耦合的收益；仅文档，未实施，其他接口与轮转建议仍待评审。
+
+- 按 technical-writing-zh 重评 [F31 改造的架构价值](tasks/gateway-august-feature-assessment/assessment.md#当前改造评估)：用户提出内核执行/Extra 业务两类结构化日志、ExtraContext 注入 log、CLI/SDK 默认关闭且启用须指定目录。记录统一责任、关联身份、插件封装和轮转复用的收益，必要性 80、技术可执行性 100；候选接口、basename、3 个文件保留口径待定，未实施。澄清现有小时桶已轮转、playboard 不等价于历史日志、SDK/CLI 外层捕获角色相近但启动链不同；不能因合并而吞启动/崩溃诊断。此前 console-only 建议保留为历史调查，仅文档。
+
+- 补充 F31 六类具体诊断输出缺口：入站容量、Context/本轮处理、交互/reset/取消、投递/卡片、未知结果/停止、会话状态/清理。最小建议为现有 onDiagnostic 接结构化 console/stderr，由宿主既有机制收集，不新增文件、logger 公共接口或存储层。方案可执行性改为 100，纠正以尚未选定输出方式扣至 90 的评价；未实施、不标完成，仍待用户确认。仅文档。
+
+- 开始 [F31 日志评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf31-日志归属与-bot-诊断输出)：旧 slice.log 对应每 Bot 独立进程，建议不复制；日志存储与平台归宿主。核对现有小时容量和 Bot/Run 诊断字段，同时发现默认 Extra、对象模块未接可选 onDiagnostic，不以字段存在冒充实际输出。建议评估默认入口的最小脱敏诊断接线，必要性 40、可执行性 90；方案待确认、不改接口或代码，仅文档。本项后剩 F32 一项。
+
+- 用户补充 [octo-cli 的定位和价值](rules/architecture.md#octo-cli-的业务定位与产品价值)：业务团队共同维护的 Go 二进制程序，提供 Octo 各业务子系统 API 调用能力。记录宿主预置后在 ChannelGateway IM 中通过 Agent 工具循环完成取材、业务操作和交付的产品价值；用户评价为体验上的质的提升，不写成实测结果。工具归业务团队，装配归 HostApp，通用执行归 Runtime；保留显式安装和 Context/凭据边界。同步渠道、决策与评估入口，仅文档。
+
+- 消除“官方 CLI”歧义：限定为 Runtime CLI（`octo-runtime` 可执行程序，通过 `npm install -g @mininglamp-oss/octo-runtime` 安装），与业务工具 octo-cli 分开；包名根据本仓 package.json 核对。同步架构、Extra 规则、F30 及配置责任记录，仅文档，未安装任何包。
+
+- 用户进一步明确接入定位：SDK 是主要方式，Buddy 等宿主由其他团队维护；官方 CLI 只是 Runtime 团队基于 SDK 维护的开箱即用特殊宿主。纠正将 CLI 与桌面视为封闭两类或以 CLI 为架构中心的表述；CLI 的配置、目录和运维约定不成为其他宿主的依赖。同步架构、Extra 规则与 F30 决策，职责覆盖与评分不变，仅文档。
+
+- F30 用户明确[两类宿主与凭据保护责任](journal/shared/2026-10-16-host-config-source-boundary.md#f30-补充两类宿主与凭据保护归属仅文档)：默认 CLI 是 SDK 的 headless 宿主，管理自己的 JSON；Desktop HostApp 管理 Token 获取、授权流程、认证状态、存储保护和更新，再构造 Extra config。SDK/Extra 校验消费值并完成接入认证，不接管宿主凭据存储，框架内部安全合同仍有效。职责目标/当前 100%、标删除线，必要性 0、可执行性 100；纠正将宿主安全证据不足算作 Runtime 缺口的前次评价。同步架构责任表、Extra 规则及评估记录，仅文档；下一项 F31，剩 2 项。
+
+- 开始 [F30 本地文件保护评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf30-本地文件保护与旧-gateway-目录体系)：拆分必要的文件保护与旧目录/claim 机制。核对 CLI、SDK secret 和 OpenClaw .env 写入，建议保留现状，不迁入旧目录体系；必要性 0、可执行性 90，说明路径威胁边界及 Windows ACL 证据限制，撤销原混合 70% 口径。不把未核对项认定为代码缺陷；待用户确认，不标删除线。本轮仅文档，本项后剩 F31/F32 两项。
+
+- 按用户要求补充 [F29 架构收益与旧设计教训](journal/shared/2026-10-16-kernel-extra-tool-boundary.md)：确认设备执行内核 + Extra + 外部工具满足本项目标；记录权限含义、内核复用、分别演进、减少重复状态及故障归责的收益。说明旧准入、Provider 权限映射与业务 broker 耦合的问题，禁止借功能对齐恢复混合控制和业务代执行；同步基础架构、渠道规则及任务入口。保留 F24 缺陷与原生权限证据限制，只更新 Octospec，未实施代码。
+
+- F29 用户确认当前权限职责划分清晰，旧方案杂糅不同责任，不新增混合权限层。明确 Extra 准入、ChannelGateway 的 Bot 工具身份、AgentRun 统一 approval_policy 三类边界，工程评估同意；full_access 不扩大 bf_token 资源权限，独立 MCP 配置/OpenClaw 启动环境按既有合同。三类职责目标/当前覆盖 100%、标删除线，必要性 0、可执行性 95；旧 tier/broker 排除，F24 既有缺陷继续待改。同步规则和评估，仅文档；下一项 F30，剩 3 项。
+
+- 开始 [F29 权限分档与工具网关评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf29-权限分档与工具网关)：旧 tier 是实际策略/原生参数映射，broker 另有业务代理职责，不能与功能标签删除混同。建议不迁入，保留 Channel 准入、统一审批、Provider 权限、Agent 工具及服务端 ACL；标准 MCP 不在排除范围，Context 不替代授权。本轮不改 IM 默认 full_access。必要性 0，推荐方案可执行性 95；原 0 分只表示旧体系不合架构，不是技术不可实现。待用户 review，不先标确认或删除线，仅文档；本项后剩 F30–F32 共 3 项。
+
+- F28 用户对旧 DSH 接入提出异议，明确登记为[独立 DSH Adapter 整体评估](tasks/dsh-adapter-assessment/brief.md) P1 遗留 TODO，当前不实施；P0 为整体架构与内核稳定性，稳定后再安排专项。只确定独立 Adapter 架构方向，原生入口、版本、具体方案及功能范围待整体评估。旧 50 分保留为历史初评、须重评，当前实施必要性/覆盖均为 0，不以此表示未来排除。只新增和更新 Octospec，未启动原型、安装、测试或运行修改；后续 F29–F32 共 4 项。
+
+- F27 用户确认重试口径：WS 首次之外最多额外 3 次，等待 1/5/10 秒，单次 ACK 15 秒，全超时发送阶段约 76 秒。最终未知时 REST 独立错误卡片及专用公开码；相同消息标识、迟到成功 ACK 停止后续尝试、取消及期限、未知不被后次失败反证、错误卡片不递归均记入计划。执行与投递终态分开，沿通用事件投影，不重跑 Agent/工具；去重与 ACK 原因须核实。必要性 80、可执行性 90、目标 100%，方案已确认但未实施，无删除线。本轮仅文档，后续 F28–F32 共 5 项。
+
+- 继续 [F27 分层重试评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf27-入站频率429-与分层重试)：普通回复 WS、卡片 REST、业务工具各守责任边界。核对 WS ACK 拒绝以普通 Error 抛出，投递层按非 HTTP 错误归 unknown 并重试，撤销此前当前覆盖 100% 的建议；提出结构化发送结果的局部修正，必要性 80、可执行性 90、目标 100%，待用户评审。旧 QPS 桶必要性仍为 0；不重跑 Agent 或工具，不编造 ACK 原因语义。仅更新文档，未实施或调试；本项后剩 5 项 F28–F32。
+
+- 按 technical-writing-zh 补齐 [F26 定义与具体例子](tasks/gateway-august-feature-assessment/assessment.md#f26-定义与具体例子)：固定 Bot/逻辑 session/任务、工作与排队计数及生命周期，用 E01–E13 展示单群、跨群、两类繁忙、双重满、释放、工具等待、拒收后不重提及不同 Bot。明确“20 个 session 各 1 工作+4 排队”的并发为 20，非混合总量 64；示例作为后续验收依据，不声称已实现或已测试。本轮仅文档。
+
+- F26 按最新命名拆分目标：“Bot 最大工作并发数 64”只统计工作中任务，“单 session 最大排队任务数 4”不含正在处理的 0/1 条。A 工作、B/C/D/E 排队、F 拒收，替代此前总量 4 的歧义例子。现有 Bot 混合 pending<=64 仅为源码现状，必须调整；两类繁忙卡片＋文本同文案、不同共享公开码，会话排队新码待目录分配。必要性 85、可执行性 90，记录调度及验收建议，未改代码。
+
+- 开始 [F27 分层重试评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf27-入站频率429-与分层重试)：保留已有 REST 429、消息投递及既定 Codex 安全恢复建议，不新增令牌桶。纠正旧入站限速实际按 Bot/accountId 的源码口径；不混淆 F26 容量保护及各层尝试次数。必要性 0、可执行性 90、既定范围建议覆盖 100%，待用户确认；真实 IM 限流注入及工具后恢复边界保留。本轮仅文档。
+
+- F26 用户确认补满载拒收的独立错误卡片＋普通文案“当前智能体繁忙，请稍后再试”，卡片明确未受理，复用统一容量错误码 OH-RUN-2003 及诊断编号。记录共享分类映射、本地准入失败 CanonicalEvent 投影、两路独立投递和验收要求，不创建模型任务或自动重提；标已确认改动、待实施，不加删除线。本轮仅 Octospec，下一项 F27，剩 6 项。
+
+- 开始 [F26 队列与过载反馈评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf26-有界队列执行期限与过载反馈)：确认每 Bot 64 条包含运行中与排队；一天执行期限从首次 invoke 起，不含排队/准备。源码满载拒收仅诊断，建议补有界、限频的独立用户提示；必要性 65、可执行性 95、目标 100%，待用户确认。未改代码或做线上满载调试。
+
+- F25 用户确认尊重明确授权，不额外拒绝已授权 Bot；目标/当前覆盖 100%、标删除线。澄清当前名单同时用于私聊与群/话题、回复按原频道权限可见；双方持续互相 @ 的循环归协作模型边界，不新增 Channel 防环流程。同步渠道规则和评审状态；下一项 F26，剩 7 项。本轮仅文档。
+
+- 重写 [统一设备讲解](../ARCHITECTURE.md)：以三图说明旧 IM 内连 OpenClaw Channel、通用设备底座及本地 IPC / 异地云端寻址目标。指出旧链路执行位置隐含于 Bot / Channel；旧 Loop daemon 另作业务耦合反例。明确设备为特定 Home 承载的实例，区分 machineId 与虚拟 runtimeId；统一远程寻址和共享访问 Extra 仍待实现。本次仅文档，见[任务](tasks/unified-device-explanation/brief.md)。
+
+- F24 用户确认需要修正 OpenClaw 实例身份候选：只取同实例最后一个合法、启用的 adapter_type=openclaw 配置，用户可调整顺序选择；其他 Adapter 各用自身配置覆盖进程默认身份。现有同步循环缺少 Adapter 筛选，标必须修改、不加删除线；仅记录计划，未实施。开始 [F25 授权与 Bot 防环评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf25-已知-bot-过滤与防互触发)，建议不额外否定已授权 Bot，待用户确认。
+
+- F23 用户确认现有 Provider 环境合同覆盖 100%，标删除线；OpenClaw 使用实例固定 .env，不修改上游或新增特殊 session.create 注入。开始 [F24 CLI 身份评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf24-cli-身份与-shell-rc)：建议保留现有路径，不迁入旧 shell 管控；补列已有真实 Codex/CLI 证据与完整入站、真实 OpenClaw 加载待验范围，等待用户确认。本轮仅文档。
+
+- 补充 [F22 在线状态归属](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf22-就绪状态连接状态与单实例锁)：客户端维持 WS、协议心跳与本连接恢复，云端维护在线状态并刷新 Redis；拒绝客户端在线账本、全局控制及新增 REST 心跳。同步渠道规则及评审元数据；服务端职责按用户确认记录，本轮仅文档，未重新验收 Redis 实现。
+
 - 重写 [SDK 操作指南](journal/shared/2026-10-16-sdk-action-guides.md)：新增完整原生与 Channel Gateway 两篇，先给 submodule、Codex/OpenClaw 依赖与可编译主进程示例，Gateway 提供配置文件及串行保存/重载；旧入口仅作导航。
 
 - 按用户最新要求[清理旧凭据配置残留](journal/shared/2026-10-16-host-config-source-boundary.md#后续清理不考虑旧配置兼容)：删除两个 file-config 模块、旧文件权限错误分支，不保留路径转发、兼容解析、迁移或回退。重跑构建、Node 1018 通过/8 跳过、UI 35 通过、类型、lint、发行包残留检查与 im-test 只读认证通过。
@@ -14,6 +68,8 @@
 
 - 完成[executionFeatures 全量清理与自动验收](tasks/remove-execution-features/delivery.md)：三个仓库逐 Feature 提交推送，移除自建字段、常量、默认数组、发现/加载及标签准入，修复watchdog、Codex MCP窄覆盖和错误分类。新发现的桌面基线问题先独立评估再修复；正式im文档与配置已同步。Runtime1001通过/8跳过、WebUI35通过、桌面/kit2555通过/2跳过，Worker测试构建和离线发行验证通过。真实Codex文本/图片/审批/取消/MCP及重启后renderer通过；远端部署、未启用Provider和OpenAPI基线漂移分别记录，不宣称已验收。
 
+- 确定[资源地址 Context 与按需取材架构](journal/shared/2026-10-16-resource-context-access-decision.md)：文档、网盘和内部附件提供地址及真实获取指引，由 Harness 内的 Agent 根据任务调用工具，Host/Adapter 不预取或管理业务资源。与首轮原生图片输入分开；修正 F04 评估为资源 Context 目标，必要性/可执行性各 90、目标覆盖 100%。同步架构、Context 与 Channel 规则；本轮仅文档，未改代码或进行线上验收。
+
 - 建立[全自动清理与关联缺陷修复计划](tasks/remove-execution-features/autonomous-plan.md)，纳入 MCP 配置回灌、错误误分类和 watchdog 进度/暂停计时问题；独立首评三项 94 未通过，补齐提交快照、前置依赖和远端部署边界后[复评](tasks/remove-execution-features/feasibility-review.md)均分 97.125、最低 96，达到用户要求的实施门槛。
 
 - 完成[F4 computer-use 标签专用探测删除](journal/shared/2026-10-16-remove-computer-use-probe.md)：删除 Codex 配置扫描、同步异步 helper 和专用依赖，补齐创建不读配置的回归；构建、类型与 lint 通过，全量 930 通过、8 跳过，真实 Codex 原生命令请求 im-test 并返回校验值。仅 F4 完成，真实 Home 的动态 MCP 配置类型错误仍待单独处理。
@@ -23,6 +79,23 @@
 - 建立[executionFeatures 清理开发计划](tasks/remove-execution-features/brief.md)：依据实际消费拆为七项，列出修改位置、依赖、失败行为、验收及 100 分制开发准备度；明确桌面标签筛选、Worker 必填字段和 watchdog 活动判定均为真实依赖，先调整消费者再移除生产字段。本轮仅计划，不宣称实现或线上验收完成。
 
 - 固化[宿主管理 Adapter 支持范围的决定](journal/shared/2026-10-16-adapter-forwarding-ownership.md)：`executionFeatures` 确定为待删除的过度设计，不新增标签或替代能力表；Adapter 负责明确输入的原生适配转发，运行状态及必要协议校验按实际执行边界处理。同步架构、Adapter 规则和开发指南；本轮仅更新 OKF，源码清理与线上验收未实施。
+
+- 新建[旧 Gateway 八月特性评估计划](tasks/gateway-august-feature-assessment/brief.md)：固定旧仓 HEAD，保存 170 条非合并提交台账，对照当前 Runtime 工作树列出 33 项特性、同步必要性、执行/模型材料的传递边界与候选验收。未定位历史使用方锁定 SHA，未将旧 HEAD 当作部署版本；本轮只保留 OKF 文档和入口，不保留代码改动、不执行线上联调。
+- F09 已确认纳入后续改动计划、目标 100%：CanonicalEvent 投影支持选项及自定义输入的交互卡片，respondInteraction 回原模型继续执行，不设临时代码或 TODO。用户明确当前仅记录 Octospec；误启动的源码、测试和新增构建产物均已撤回，现有包产物重新构建以恢复。见[F09 评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf09-统一用户交互的-im-呈现与响应)。
+- 用户确认 F10 按既定入站 UID/ais 与出站真人点名范围保留现状、不扩大出站 Bot/广播。[F11 跨会话主动发送](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf11-跨会话主动发送) 经用户确认现有 CLI 实际可发送消息，Agent tool call 方案按当前目标已完成、覆盖 100%，标删除线，新增必要性 0、可执行性 98，无需 Channel 硬编码 API。纠正先前把“本轮未独立复测”当作“未实现”的判断；本轮只更新文档，不宣称已完成独立线上验收。
+- [F12 文件交付](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf12-本地文件artifact多附件) 已由用户确认目标 100% 已覆盖，标删除线。固化[定制业务流程责任决定](journal/shared/2026-10-16-agent-toolcall-channel-boundary.md)：所有类似的非必要流程通过业务 Context v3 instructions 约束 Agent 工具调用，严禁 Channel/Host/Adapter 硬编码步骤、分支或业务收尾。旧 artifact 自动收集上传属于历史遗留、明确不迁入；工具调用不稳定通过 Context/提示词/技能/工具说明对齐，实际工具合同缺陷修复其责任模块。本轮仅更新规则与记录，不改代码、实际提示词或线上状态。
+- 进入[F13 长尾工具评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf13-长尾业务工具)：旧 resolve/voice-context/thread 删除同样使用 CLI api，当前通用工具入口与本地服务端路由已存在，按既定范围覆盖 100%、新增必要性 0、可执行性 95，无需 Channel 封装。包含当前项还剩 19 项逐条评审，本项后剩 18 项，跳过 F19/F33；不是待开发项数。本轮只更新文档及本机帮助/源码核对，未调用线上接口。
+- 进入[F14 历史与 reset 评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf14-群话题历史与-reset-边界)：依据既有用户决定和当前实现，将按旧实现全集估算的 30% 修正为既定业务目标覆盖 100%，标删除线；新增必要性 0、可执行性 95。新会话一次最多 15 条/1500 Unicode 码点，reset 后允许旧聊天，不迁入 SWR/负缓存/watermark。包含当前剩 18 项评审，本项后剩 17 项，跳过 F19/F33；本轮仅更新文档和静态复核，未重跑线上验收。
+- 用户确认 F14 保留现状，补充用户意见与工程评估：避免 Channel 自建 SQLite 或其他业务持久库，reset 后保留有限近期频道背景；在当前 IM 目标下减少状态副本及一致性责任，不承诺完整工具或在途任务恢复。进入[F15 持久化评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf15-provider-binding-与-transcript-持久化)：新增必要性 0、推荐的有界内存方案可执行性 95，旧业务持久化目标 0% 为排除项。旧参考的 binding/Hermes exchange 主要是文件/JSON，不一概称为 SQLite。包含当前剩 17 项，本项后剩 16 项；仅文档及静态核对。
+- 进入[F16 工作目录评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf16-逐会话工作目录)：延续固定 IM Agent workdir 的既有决定，不采用逐会话目录；新增必要性 0、推荐方案可执行性 98，既定固定目录目标已实现 100%。reset 不切目录或删除产物，任务不能覆盖 Agent 目录；共享文件及并发冲突边界不冒充安全隔离，也不扩大到所有 Host 调用。包含当前剩 16 项，本项后剩 15 项；仅文档与静态核对，未运行线上调试。
+- 补充 F16 用户意见与工程判断：旧逐会话目录方案混合 ChannelGateway 与 AgentRun 的责任，新架构必须区分渠道会话与执行工作区生命周期。同步[渠道规则](rules/channel-integration.md)、[责任边界指南](guides/im-agent-invocation-boundary.md)及固定目录决策；业务/宿主确定配置，Channel 组织输入并关联会话，执行层执行既定合同，不从 session/reset 推导目录管理。本轮仅更新文档，不新增 AgentRun 组件、协议或开发任务。
+- 进入[F17 人格与技能指引评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf17-人格技能说明与自动指引)：按统一 Context 口径，将业务显式选择的人格文本与技能指引传递修正为覆盖 100%、标删除线；新增必要性 0、可执行性 95。不复制旧 catalog、技能扫描、强制注入和 CLI 启动导出；传递说明不等于技能已安装、资源可读或权限已授予。包含当前剩 15 项，本项后剩 14 项；仅文档及静态核对，未更改配置、安装技能或线上验收。
+- 用户确认[人格/SOUL 注入架构约定](rules/architecture.md#人格与-soul-的注入归业务方)：人格属于提示词指令，完全由业务方或 ChannelGateway 构造 Context v3，决定内容、顺序与发送时机；底层不读取人格文件、合并默认人格、补历史或按 session 去重。同步 Context、渠道规则与 F17 记录；普通 extra 不自动升为可信控制指令。仅文档，不改变或删除 Provider 原生文件，不宣称本轮已核验全部 Provider 的原生加载行为。
+- [F18 群背景评审结论更正](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf18-群规则成员和群信息背景)：用户明确群/话题规则固定加载，不存在开关；必须删除额外参数及相关代码、schema/示例，核对 ChannelGateway/WeCom，不考虑旧开关兼容。撤销原完成与删除线，标记方案已确认、待实施；必要性 90、可执行性 98、目标 100%。当前仅讨论并更新 Octospec，误启动的 10 个源码、配置、测试及脚本文件改动已撤回，错误的实施授权专项已移除；未运行测试或线上验证。讨论和方案确认均不构成本轮实施授权。
+- 用户随后要求恢复一项一项评审，并确认 [F19 多 Bot 与环境隔离](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf19-单进程多-bot-与环境隔离)：保留现有架构，不迁入每 Bot Worker/完整 Gateway 执行链。Codex 按 AgentRun 自动注入 bf_token；OpenClaw 同一实例启动时固定一个 Bot 身份为明确接受的例外，不要求逐 Run 切换，不作为欠项。必要性修正为 0、可执行性 95、既定目标覆盖 100%，保留删除线；F24 按各 Provider 的实际身份合同核对 CLI。下一项 F20，剩 13 项；仅更新文档，不新增配置拒绝或启动改动，未重跑线上验证。
+- [F20 配置重载评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf20-配置监测与局部热重载)已由用户确认：既定目标覆盖 100%、标删除线，必要性 0、可执行性 95；不引入逐 Bot 热更。形成 [Extra 整体生命周期决策](journal/shared/2026-10-16-extra-whole-plugin-boundary.md)，同步架构、Extra、Channel 规则和原责任边界任务。主要单机单 Bot 不存在其他 Bot 连带断线，纠正此前将少数部署代价普遍化的表述；少数多 Bot 重连已接受。用户进一步估计仅约 1% 的用户或设备可能同机多 Bot，比例按业务估计记录；明确函数式加载入口封装内部状态和流程，宿主 App/CLI 只消费完整配置及核心生命周期接口，不接管内部 Bot、连接和 manager，也不另建公开插件对象。SDK 单插件重载与 CLI daemon 重启的范围分别说明；本轮仅文档，不实施或执行线上重载。
+- [F21 初始化／停止竞态评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf21-初始化停止竞态与资源清理)：核对 loader、manager、runtime、双渠道和 SDK 回归及既有 dispose 修复记录，合同内目标已覆盖 100%、标删除线；能力重要性 100、新增必要性 0、可执行性 95、实机证据充分性评估 85。按用户澄清，补齐上述维度对应的后续改造/验收表 F21-V01/V02/C01，含责任、完成标准、状态和复现缺陷后才修改的条件；正常 Extra 重挂保留共享 AdapterHost，未实际执行验收或修复。用户要求记录后进入下一项，不再等待本项重复讨论。
+- [F22 状态与单实例评审](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf22-就绪状态连接状态与单实例锁)方向已明确：既定目标覆盖 100%、标删除线，新增必要性 0、可执行性 95。用户拒绝为少数场景扩大跨 Bot 全局状态控制；核对旧代码为进程内 Worker 协调和只读状态汇总，不能笼统称为分布式状态中心。保留每个连接本启动周期首次成功后才恢复的合同、真实状态及本地实例保护；不新增全组回滚、全局健康联动或恢复管理器。只读聚合用于展示，局部 socket/signal/错误/退避状态仍必需；普通断网并非只在人为操作时发生。此处“无状态”不授权删除既有身份、Home、配置或 Provider 数据。本项后剩 10 项，下一项 F23；仅静态核对和文档，既有未验范围保留。
 
 - 实施[诊断后无回复收尾](tasks/im-diagnostic-silent-completion/brief.md)：canonical 通过 `run.notice/provider_diagnostic` 保留首条原因，IM 统一选择最终回复；无有效答案且有诊断时卡片/文本均提示待核查，不触发重放。正常执行不增加诊断、模型或网络请求。全量 929 通过、8 跳过，im-test 五场景、真实 Codex 正常执行和桌面 CDP 通过，详见[交付记录](journal/shared/2026-10-16-im-diagnostic-silent-completion-delivery.md)。
 

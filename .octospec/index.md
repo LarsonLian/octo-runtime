@@ -6,7 +6,8 @@
 
 | 主题 | 入口 |
 | --- | --- |
-| 产品意图归属、配置来源归宿主、需求范围检查与按合同归属修复 | [基础架构](rules/architecture.md) |
+| SDK 主要接入、CLI 特殊宿主、产品意图、Context v3 与模块责任归属 | [基础架构](rules/architecture.md) |
+| 业务团队共同维护的 Go 工具 octo-cli、Octo API 能力与 IM 预置价值 | [octo-cli 定位](rules/architecture.md#octo-cli-的业务定位与产品价值) |
 | 总体协议、调用时序与审批／追问往返 | [协议与调用设计](rules/protocol-design.md) |
 | 身份、Home、profile、安装与生命周期 | [本地 Runtime](rules/runtime-lifecycle.md) |
 | 公共输入、默认值与多模态 | [InvokeInput](rules/invoke-input.md) |
@@ -20,7 +21,7 @@
 | 宿主管理支持范围、Adapter 适配转发与实际可用性 | [Adapter 责任边界](rules/adapter-metadata.md) |
 | OpenClaw profile 连接与目标 | [OpenClaw](rules/openclaw.md) |
 | 四挡 effort 与诚实回执 | [思考强度](rules/reasoning.md) |
-| 插件归属、装配与资源清理 | [Extra](rules/extras.md) |
+| 插件整体生命周期、最小公开接口、装配与资源清理 | [Extra](rules/extras.md) |
 | 渠道上下文、回执与投递 | [Channel](rules/channel-integration.md) |
 | 会话 binding、代次与 reset | [会话重置](rules/session-reset.md) |
 | 生成类型与运行时校验 | [协议 Schema](rules/protocol-schema.md) |
@@ -31,6 +32,7 @@
 
 ## 操作指南
 
+- [为什么统一设备](../ARCHITECTURE.md)：新旧对比、Home 级设备实例、本地 IPC / 异地云端寻址目标及移动端 Buddy 的价值。
 - [工作区与开发组织](guides/workspace.md)：目录、依赖、构建及新增包。
 - [Adapter 开发](guides/adapter-authoring.md)：接口示例和验收。
 - [Provider 实现矩阵](guides/providers.md)：传输、模式及权限差异。
@@ -42,11 +44,27 @@
 
 ## 历史与取舍
 
+- [F32 工程验证与操作说明](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf32-工程验证与操作说明)：最后一项待评审，建议复用现有工程体系，随已确认改造完成必要回归、真实验证与说明更新，不迁入旧 CI/Worker 测试模型。必要性 65、可执行性 100、目标建议 100%；基础已有，不冒充新行为已验收。仅文档，本项后剩 0 项。
+
+- [F31 统一日志改造价值评估](tasks/gateway-august-feature-assessment/assessment.md#当前改造评估)：方向已确认纳入计划、待实施；两类责任日志、ExtraContext 注入 log、宿主显式启用及目录、统一结构和轮转，input/其他 Context 仅数量，Adapter Context 仅安全摘要。必要性 80、技术可执行性 100、目标 100%；具体接口/文件/保留细节待细化，不将新方向写成现行接口。仅文档。
+
+- [F30 宿主配置与凭据保护责任](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf30-本地文件保护与旧-gateway-目录体系)：用户确认默认 CLI 管理自己的 JSON，Desktop HostApp 管理 Token 授权流程及存储保护，SDK/Extra 消费配置值。职责覆盖 100%、标删除线，必要性 0、可执行性 100；宿主存储不作为 Runtime 缺口，内部安全合同保持有效。仅文档。
+
+- [设备执行内核、Extra 与外部工具的分工及旧设计教训](journal/shared/2026-10-16-kernel-extra-tool-boundary.md)：F29 已确认当前职责权限满足目标；解释内核复用、分别演进、减少重复控制和清晰归责的收益，记录旧混合分档与业务代理的耦合问题，并将防止重复的评审要求同步为现行规则。仅文档。
+
+- [统一设备定义与讲解](journal/shared/2026-10-16-unified-device-explanation.md)：旧 IM 执行位置隐含于 OpenClaw Channel；设备按特定 Home 定义，三图解释本地 IPC、异地云端寻址及多场景复用的价值。本轮仅文档，统一远程寻址仍待实现。
+
+- [Extra 整体生命周期与最小公开接口](journal/shared/2026-10-16-extra-whole-plugin-boundary.md)：F20 已确认保留当前架构。主要单机单 Bot 没有连带断线，少数多 Bot 更新时重连已接受；解释局部热更的有限收益与接口耦合、状态及失败合同成本。宿主编辑公开配置、展示状态，运行控制止于整个 Extra，不操作插件内部对象。本轮只更新文档。
+
+- [定制业务流程由 Context v3 约束 Agent 工具调用](journal/shared/2026-10-16-agent-toolcall-channel-boundary.md)：非必要的定制步骤、条件和收尾统一通过业务 Context instructions 表达，严禁 Channel/Host/Adapter 硬编码代执行；工具调用不稳定通过提示词/技能/工具说明对齐。F11/F12 目标已覆盖，旧 artifact 自动收集上传明确不迁入。
+
 - [SDK 按宿主操作拆分](journal/shared/2026-10-16-sdk-action-guides.md)：完整原生指南按启动、特性、可选调用组织；OctoBuddy 推荐 Gateway 专篇，提供 submodule、workspace 依赖、主进程代码与 IM 配置重载。
 
 - [CLI 使用与 SDK 原生接入文档分拆](journal/shared/2026-10-16-cli-sdk-guides-split.md)：按使用场景拆分完整正文，桌面应用必须 SDK 接入；明确 CLI 全量发行与实际启用的区别，迁移文档链接与示例。
 
 - [三个 Extra 原始配置 Schema](journal/shared/2026-10-16-extra-config-schemas.md)：完整声明与字段语义、业务方自主校验及单包公开 JSON 入口；按用户最新澄清，context 仅声明 v3 外壳与开放 items 对象，不展开完整协议。首次构建、类型、lint、1017 项 Node/35 项 UI 测试和仓库外安装通过，收敛后 16 项定向测试及发行文件检查通过；未修改运行逻辑或进行线上联调。
+
+- [资源地址 Context 与 Harness 按需取材](journal/shared/2026-10-16-resource-context-access-decision.md)：文档、网盘和内部附件以类型、地址及获取指引进入统一 Context，由 Provider/Harness 内的 Agent 按需调用 octo-cli 或下载/读取工具；Host/Adapter 不管理业务附件或预取。区别于首轮原生图片 inputs；架构方向已确定，Channel 接线与取材验证待实施。
 
 - [executionFeatures 删除交付](tasks/remove-execution-features/delivery.md)：Runtime、Work App、Worker 按 Feature 提交并推送，类型/常量/发现与消费者清理完成；1001项Runtime、2555项桌面/kit测试通过，正式im renderer及真实Codex文本/图片/审批/取消/MCP通过，远端未部署。实施门槛及新增问题见[独立评估](tasks/remove-execution-features/feasibility-review.md)。
 
@@ -57,6 +75,10 @@
 - [executionFeatures 清理开发计划与逐项评分](tasks/remove-execution-features/brief.md)：按实际消费者拆为七项，覆盖 Adapter 输入检查、watchdog、标签专用探测、桌面产品策略、Worker 登记合同及真实验收；当前准备度平均约 94 分，待补齐活动源切换和未知 Adapter 策略。本轮仅计划，未改产品代码。
 
 - [宿主管理 Adapter 支持范围](journal/shared/2026-10-16-adapter-forwarding-ownership.md)：确定 `executionFeatures` 为待删除的自建能力声明机制；Adapter 按合同适配转发，宿主管理功能使用，必要的运行状态及原生协议校验留在执行边界。本轮仅落 OKF，代码清理尚未实施。
+
+- [旧 Gateway 八月变更与 Runtime Channel 特性评估](tasks/gateway-august-feature-assessment/brief.md)：核对旧仓 170 条八月非合并提交，整理 33 项特性。F18/F24/F26/F27/F31 等已确认改造待实施，F28 为稳定后 P1 独立 DSH Adapter 评估。F29 权限分层和 F30 宿主凭据责任已确认，职责目标/当前 100%、标删除线；不迁入旧耦合体系或宿主存储管理层。仅文档，当前最后一项 F32 待评审，本项后剩 0 项。
+
+- [DSH 独立 Adapter 接入整体评估](tasks/dsh-adapter-assessment/brief.md)：P1 遗留 TODO，排在 P0 架构与内核稳定性之后。原生入口、版本及合同适配待整体评估，不能照搬旧 Gateway；50 分仅为历史初评，当前不开发、不安装、不调试。
 
 - [IM 中途诊断后无有效回复的收尾体验](tasks/im-diagnostic-silent-completion/brief.md)：参考 PR #49，已实施首条有界诊断和 IM 待核查收尾；正常路径无新增诊断通知、网络或模型调用。全量 929 通过、8 跳过，im-test 五场景及真实桌面组件验收通过，见[实施记录](journal/shared/2026-10-16-im-diagnostic-silent-completion-delivery.md)。
 
