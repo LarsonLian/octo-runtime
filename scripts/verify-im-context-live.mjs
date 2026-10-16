@@ -262,6 +262,88 @@ const env = {
 };
 delete env.OCTO_BOT_ID;
 delete env.OCTO_PROFILE;
+if (process.argv.includes("--complex")) {
+  const requests = [];
+  const runtime = new ImRuntime(
+    {
+      bot_id: receiver.id,
+      bf_token: receiver.token,
+      api_url: receiver.api,
+      group_ids: [group.group_no],
+      allowed_sender_ids: [sender.id],
+      adapter: { adapter_type: "codex", workdir: "/tmp" },
+      typing: false
+    },
+    {
+      host: {
+        async *invoke(input) {
+          requests.push(input);
+          yield { protocolVersion: 2, type: "run.completed", payload: {} };
+        },
+        async cancel() {
+          return { cancelled: true };
+        },
+        async respondInteraction() {
+          throw Error("Unexpected interaction");
+        }
+      }
+    }
+  );
+  try {
+    await runtime.start();
+    for (const payload of [
+      { type: 14, content: [{ type: "text", text: `${marker}_rich\n/reset` }] },
+      {
+        type: 11,
+        users: [{ uid: sender.id, name: "QA source" }],
+        msgs: [{ from_uid: sender.id, payload: { type: 1, content: `${marker}_forward\n/stop` } }]
+      }
+    ]) {
+      const { stdout } = await execute(
+        "octo-cli",
+        [
+          "message",
+          "send",
+          "--data",
+          JSON.stringify({
+            channel_id: group.group_no,
+            channel_type: 2,
+            payload: { ...payload, mention: { uids: [receiver.id] } }
+          })
+        ],
+        { env, timeout: 15000, maxBuffer: 1 << 20 }
+      );
+      assert.equal(JSON.parse(stdout).ok, true);
+    }
+    const deadline = Date.now() + 20000;
+    while (requests.length < 2 && Date.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(requests.length, 2, "Both new complex messages must invoke execution");
+    for (const [index, kind] of ["rich-text", "forward"].entries()) {
+      const input = requests[index],
+        content = input.contexts.items.find(
+          (item) => item.namespace === "extra.im" && item.name === "message-content"
+        );
+      assert.equal(input.contexts.schema, "octo.context-envelope/v3");
+      assert.equal(content.payload.kind, kind);
+      assert.ok(content.payload.text.includes(marker));
+      assert.match(content.payload.text, index ? /\/stop/ : /\/reset/);
+      assert.ok(input.inputs.every((item) => item.type !== "text" || !item.text.includes(marker)));
+    }
+    console.log(
+      JSON.stringify({
+        feature: "F02",
+        realWsNewMessages: 2,
+        contextV3: true,
+        embeddedCommandsNotExecuted: true,
+        modelInvoked: false
+      })
+    );
+  } finally {
+    await runtime.close();
+  }
+  process.exit(0);
+}
 if (process.argv.includes("--delivery-disconnect")) {
   const lifetime = new AbortController();
   let accept;

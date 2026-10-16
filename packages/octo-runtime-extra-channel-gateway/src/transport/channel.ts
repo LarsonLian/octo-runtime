@@ -110,11 +110,13 @@ export class GatewayTransport {
           text:
             message.payload.type === 2
               ? ""
-              : message.payload.type === 8 || message.payload.type === 18
-                ? typeof message.payload.content === "string" && message.payload.content.trim()
-                  ? message.payload.content
-                  : "请根据本轮资源上下文处理此资源。"
-                : String(message.payload.content),
+              : message.payload.type === 11 || message.payload.type === 14
+                ? `收到一条${message.payload.type === 14 ? "富文本" : "合并转发"}新消息；正文见本轮 extra.im/message-content。`
+                : message.payload.type === 8 || message.payload.type === 18
+                  ? typeof message.payload.content === "string" && message.payload.content.trim()
+                    ? message.payload.content
+                    : "请根据本轮资源上下文处理此资源。"
+                  : String(message.payload.content),
           ...(message.payload.type === 2
             ? {
                 buildInputs: (turnSignal: AbortSignal) =>

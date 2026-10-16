@@ -4,6 +4,7 @@
  */
 import type { ScopedOctoBotConfig } from "../contracts.js";
 import type { ImMessage } from "./wukong.js";
+import { messageContent } from "./message-content.js";
 
 export function groupScope(channelId: string): { groupNo: string; shortId?: string } {
   const separator = channelId.indexOf("____");
@@ -21,19 +22,21 @@ export function acceptsImMessage(
     message.fromUid === config.bot_id ||
     !message.messageId ||
     !message.channelId ||
-    ![1, 2, 8, 18].includes(message.payload.type as number) ||
+    ![1, 2, 8, 11, 14, 18].includes(message.payload.type as number) ||
     (message.payload.type === 1 && typeof message.payload.content !== "string") ||
     (message.payload.space_id && message.payload.space_id !== config.spaceId)
   )
     return false;
   if (!(config.allowed_sender_ids ?? [owner]).includes(message.fromUid)) return false;
-  if (message.channelType === 1) return true;
+  const contentSupported = (): boolean =>
+    ![11, 14].includes(message.payload.type as number) || Boolean(messageContent(message.payload));
+  if (message.channelType === 1) return contentSupported();
   if (
     ![2, 5].includes(message.channelType) ||
     !config.group_ids?.includes(groupScope(message.channelId).groupNo)
   )
     return false;
-  return mentionsBot(message.payload.mention, config.bot_id);
+  return mentionsBot(message.payload.mention, config.bot_id) && contentSupported();
 }
 
 export function mentionsBot(value: unknown, botId: string): boolean {
