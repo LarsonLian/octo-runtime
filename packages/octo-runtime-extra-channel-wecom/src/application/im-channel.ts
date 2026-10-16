@@ -456,6 +456,7 @@ export class ImRuntime {
       );
       return;
     }
+    // 准备阶段尚无 invocationId，用独立 controller 让 /stop 和卸载能够取消宿主 Context IO。
     const preparation = new AbortController();
     this.#preparing.set(key, preparation);
     const turnSignal = AbortSignal.any([this.#signal, preparation.signal]);
@@ -468,6 +469,7 @@ export class ImRuntime {
         this.config,
         message,
         await message.buildContext(turnSignal, {
+          // 先取得本轮完整配置快照，再交渠道构造业务材料；加载失败时不会进入 Provider。
           configuredItems: await this.dependencies.prepareContexts?.(
             this.config as unknown as JsonObject,
             turnSignal

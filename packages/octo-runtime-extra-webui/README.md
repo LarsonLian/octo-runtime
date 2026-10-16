@@ -1,4 +1,4 @@
-# octo-runtime-webui-extra
+# octo-runtime-extra-webui
 
 本地浏览器工作台，Extra 名称 `webui`，默认地址 `http://127.0.0.1:13888/`。复用宿主的 AdapterHost，不启动另一套执行内核。界面与事件投影从 `octo-work-app` 移植，来源和适配边界见 [porting-map.md](porting-map.md)。旧 SSE demo 已移除。
 
@@ -11,7 +11,7 @@
 ```sh
 octo-runtime extraset webui <<JSON
 {
-  "module": "@mininglamp-oss/octo-runtime-webui-extra",
+  "module": "@mininglamp-oss/octo-runtime-extra-webui",
   "enabled": true,
   "config": {
     "port": 13888,
@@ -49,7 +49,7 @@ import { fileURLToPath } from 'node:url';
 
 await runtime.loadExtra({
   name: 'webui',
-  module: fileURLToPath(import.meta.resolve('@mininglamp-oss/octo-runtime-webui-extra')),
+  module: fileURLToPath(import.meta.resolve('@mininglamp-oss/octo-runtime-extra-webui')),
   config: {
     port: 13888,
     sessionStorePath: '/absolute/host-owned-home/extras/webui/sessions.json',
@@ -84,8 +84,8 @@ await runtime.unloadExtra('webui');
 ## 验证
 
 ```sh
-pnpm --filter @mininglamp-oss/octo-runtime-webui-extra build
-pnpm --filter @mininglamp-oss/octo-runtime-webui-extra test:ui
+pnpm --filter @mininglamp-oss/octo-runtime-extra-webui build
+pnpm --filter @mininglamp-oss/octo-runtime-extra-webui test:ui
 node --test test/webui-extra.test.js
 ```
 

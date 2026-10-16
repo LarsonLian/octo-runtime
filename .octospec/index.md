@@ -77,7 +77,7 @@
 
 - [F4 删除 computer-use 标签专用探测](journal/shared/2026-10-16-remove-computer-use-probe.md)：删除 Codex 创建时的配置扫描、helper 和 TOML 依赖；930 项回归通过，真实 Codex 工具请求 im-test 成功。其余 Feature 待实施，真实 Home 动态 MCP 注入问题单独记录。
 
-- [本地 WebUI Extra 替换 SSE Demo](tasks/runtime-webui-extra/brief.md)：已实现 `octo-runtime-webui-extra`，端口 `13888`，默认项目 `~/octo-runtime-workspace`；移植 Work App 的 thinking/工具、Composer 和模型菜单，项目使用 sessionStorage，独立 JSON 最多保留 100 个会话与 Provider binding，支持刷新/清理。真实 Codex、浏览器与仓库外安装证据及线上限制见[交付记录](journal/shared/2026-10-16-runtime-webui-extra-delivery.md)。
+- [本地 WebUI Extra 替换 SSE Demo](tasks/runtime-webui-extra/brief.md)：已实现 `octo-runtime-extra-webui`，端口 `13888`，默认项目 `~/octo-runtime-workspace`；移植 Work App 的 thinking/工具、Composer 和模型菜单，项目使用 sessionStorage，独立 JSON 最多保留 100 个会话与 Provider binding，支持刷新/清理。真实 Codex、浏览器与仓库外安装证据及线上限制见[交付记录](journal/shared/2026-10-16-runtime-webui-extra-delivery.md)。
 
 - [executionFeatures 清理开发计划与逐项评分](tasks/remove-execution-features/brief.md)：按实际消费者拆为七项，覆盖 Adapter 输入检查、watchdog、标签专用探测、桌面产品策略、Worker 登记合同及真实验收；当前准备度平均约 94 分，待补齐活动源切换和未知 Adapter 策略。本轮仅计划，未改产品代码。
 

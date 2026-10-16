@@ -148,10 +148,7 @@ test(
       await runCli(["--home", home, "extraset", name], {
         input: Readable.from([
           JSON.stringify({
-            module:
-              name === "webui"
-                ? "@mininglamp-oss/octo-runtime-webui-extra"
-                : `@mininglamp-oss/octo-runtime-extra-${name}`,
+            module: `@mininglamp-oss/octo-runtime-extra-${name}`,
             config
           })
         ]),

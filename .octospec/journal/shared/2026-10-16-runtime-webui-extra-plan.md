@@ -6,6 +6,8 @@ tags: [extra, architecture, stream, workspace, interaction, adapter, testing]
 timestamp: 2026-10-16T00:00:00Z
 ---
 
+2026-10-17 命名已更正为 octo-runtime-extra-webui，下面保留当时的计划表述；现行包名与验证见[更名记录](2026-10-17-extra-webui-rename.md)。
+
 # 本地 WebUI Extra 计划
 
 已建立[任务简报](../../tasks/runtime-webui-extra/brief.md)和 context.yaml，并更新知识索引与 log。本轮按用户要求只产出 OctoSpec 计划，未实施运行代码、删除旧包、修改运行配置、启动服务或连接线上环境。

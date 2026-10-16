@@ -312,6 +312,7 @@ async function initialize(ctx: ExtraContext, config: JsonObject): Promise<void> 
       let input: InvokeInput;
       try {
         input = InvokeInput.check(await bodyJson(req));
+        // WebUI 是本轮发起方：显式请求同 key 整项覆盖配置，instructions 不暗中拼接默认人设。
         input = {
           ...input,
           contexts: {

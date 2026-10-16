@@ -6,9 +6,11 @@ tags: [extra, stream, workspace, interaction, adapter, testing]
 timestamp: 2026-10-16T04:00:00Z
 ---
 
+2026-10-17 包与目录已更名为 octo-runtime-extra-webui，历史命令保留原名，文件链接指向新目录；现行验证见[更名记录](2026-10-17-extra-webui-rename.md)。
+
 # 本地 WebUI Extra 实施
 
-用户在[计划](../../tasks/runtime-webui-extra/brief.md)后授权直接在当前分支实施。新增 [WebUI 包](../../../packages/octo-runtime-webui-extra/README.md)，删除旧 SSE demo 的源码、生产依赖、专属测试和验证脚本。当前配置指南已替换；用户已有声明、Runtime Home、身份、profile、Provider 原生会话与项目文件未删除或重新初始化。
+用户在[计划](../../tasks/runtime-webui-extra/brief.md)后授权直接在当前分支实施。新增 [WebUI 包](../../../packages/octo-runtime-extra-webui/README.md)，删除旧 SSE demo 的源码、生产依赖、专属测试和验证脚本。当前配置指南已替换；用户已有声明、Runtime Home、身份、profile、Provider 原生会话与项目文件未删除或重新初始化。
 
 ## 实现与边界
 
@@ -23,7 +25,7 @@ timestamp: 2026-10-16T04:00:00Z
 
 ## 移植证据
 
-来源基线为 Work App `8ba43327bc4d6eedd29bf6305f9e8e968d10cd45` 及复制时工作树。来源仓库在实施期间有其他任务更新，不把后来的 HEAD 当作复制证明。逐文件来源、实际差异和保留内容见 [porting-map](../../../packages/octo-runtime-webui-extra/porting-map.md)。Runtime 实施期间基线推进到 `56f201f`，未回退其他任务改动。
+来源基线为 Work App `8ba43327bc4d6eedd29bf6305f9e8e968d10cd45` 及复制时工作树。来源仓库在实施期间有其他任务更新，不把后来的 HEAD 当作复制证明。逐文件来源、实际差异和保留内容见 [porting-map](../../../packages/octo-runtime-extra-webui/porting-map.md)。Runtime 实施期间基线推进到 `56f201f`，未回退其他任务改动。
 
 Transcript、过程分组、工具展示、计时、RawRunPresentation、reducer、ModelPicker、ApprovalPolicyPicker、ApprovalCards、Popover 与 ConversationComposer 使用原实现或最小宿主接口替换。历史消息使用原 scroller 分页；本页新轮持续使用 live 渲染，完成时不切换渲染树，保留手动展开身份。仅在 HTTP/目录/本地 JSON 与浏览器组合层接线。batcher 原文件保留，当前接线使用完整 snapshot，未接增量合帧。
 

@@ -99,9 +99,10 @@ export function createImInvocation(
         : [])
     ]
   };
-  // Channel owns its defaults; only Host resolves execution and renders this snapshot.
+  // Channel 只组装公开 InvokeInput；执行解析和指令渲染统一交给 Host，避免再次拒绝业务 Context。
   let submitted = context;
   let snapshot: ContextEnvelope | undefined;
+  // 执行默认项也占协议预算；只降级本渠道自动追加的辅助材料，不丢弃显式业务项。
   for (const optional of ["history", "mention-instructions", undefined]) {
     try {
       snapshot = mergeContext(defaults, submitted);

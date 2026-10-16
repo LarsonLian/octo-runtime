@@ -7,8 +7,8 @@ import { createServer } from "node:net";
 import { Readable } from "node:stream";
 import { randomUUID } from "node:crypto";
 import { ExtraPlugins, readExtraDirectory } from "../packages/octo-runtime-daemon/dist/index.js";
-import load, { name } from "../packages/octo-runtime-webui-extra/dist/index.js";
-import { SessionStore } from "../packages/octo-runtime-webui-extra/dist/store.js";
+import load, { name } from "../packages/octo-runtime-extra-webui/dist/index.js";
+import { SessionStore } from "../packages/octo-runtime-extra-webui/dist/store.js";
 import { runCli } from "../apps/cli/dist/main.js";
 
 async function freePort() {
@@ -191,7 +191,7 @@ test("CLI extraset retains explicit WebUI config and loads only the selected ext
   const home = await mkdtemp(join(tmpdir(), "octo-webui-config-"));
   t.after(() => rm(home, { recursive: true, force: true }));
   const value = {
-    module: "@mininglamp-oss/octo-runtime-webui-extra",
+    module: "@mininglamp-oss/octo-runtime-extra-webui",
     enabled: true,
     config: { port: 13888, sessionStorePath: join(home, "extras/webui/sessions.json") }
   };

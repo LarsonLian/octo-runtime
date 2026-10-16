@@ -28,6 +28,7 @@ supersedes: []
 ## 工程与验证要求
 
 - 使用严格 TypeScript ES modules，不显式使用 `any`；类型引用使用 type-only import，错误必须显式处理。
+- Extra 核心代码须以中文注释说明关键合同和设计原因，包括函数/JSON 边界、资源所有权、实际在途额度、超时与取消竞态、清理失败及重载限制。注释应贴近对应接口或分支，不逐句复述实现；行为变更时同步更新，避免注释作出代码无法保证的内存或生命周期承诺。
 - `pnpm build` 将源码 Git commit 与 dirty 状态写入 CLI 的 `dist/build-info.json`；版本命令及根帮助展示构建时的 `commit:<12 位短 SHA>`，未提交修改标记 `(dirty)`。发行物保留此元数据，运行时不查询用户当前目录的 Git；缺少 Git 来源时显示 `commit:unknown`，不得伪造为干净提交。
 - 协议 wire types 从 JSON Schema 生成。修改协议时同步 schema、生成类型、样例、调用端及测试，不手工只改生成文件。
 - CLI 普通控制请求使用 Unix socket / Windows Pipe 单行 JSON；SDK 执行和订阅使用 JSON-RPC 2.0，daemon 到 adapter-host 使用 stdio NDJSON JSON-RPC 2.0。具体形状见 [本地传输合同](local-execution.md)。Provider 差异封装在 `octo-runtime-adapter-*` 内。

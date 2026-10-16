@@ -68,9 +68,9 @@ importers:
       '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
         version: link:packages/octo-runtime-protocol
-      '@mininglamp-oss/octo-runtime-webui-extra':
+      '@mininglamp-oss/octo-runtime-extra-webui':
         specifier: workspace:*
-        version: link:packages/octo-runtime-webui-extra
+        version: link:packages/octo-runtime-extra-webui
       ws:
         specifier: ^8.18.3
         version: 8.21.3
@@ -443,7 +443,7 @@ importers:
         specifier: ^16.0.0
         version: 16.0.0
 
-  packages/octo-runtime-webui-extra:
+  packages/octo-runtime-extra-webui:
     dependencies:
       '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*

@@ -285,7 +285,7 @@ Extra 的函数式入口负责封装内部流程：宿主传入完整配置和�
 | 设备接入 Extra | 待架构确认 | 独立模块，主要表达设备登记与在线状态保持，考虑使用独立设备 Token；具体模块方案与协议待确认，远程服务不直接连接执行内核，不作为设备本体存在的前置条件 |
 | 其他 Extra | 待确定 | 按具体外部系统或业务接入需求扩展 |
 
-图中的插件仅作架构示例。当前还有独立的 `extra-channel-wecom` 和 `octo-runtime-webui-extra` 包，以各包实际合同为准。`webui-extra` 提供类似 OpenClaw 的 WebUI 能力，仅用于本地服务调试，不用于实际生产环境。旧 `worker-access` 已退出当前 workspace，不作为已完成的设备 Agent 访问方案。
+图中的插件仅作架构示例。当前还有独立的 `extra-channel-wecom` 和 `octo-runtime-extra-webui` 包，以各包实际合同为准。`webui-extra` 提供类似 OpenClaw 的 WebUI 能力，仅用于本地服务调试，不用于实际生产环境。旧 `worker-access` 已退出当前 workspace，不作为已完成的设备 Agent 访问方案。
 
 ## 保持的执行约束
 

@@ -1,5 +1,5 @@
 {
-  "name": "@mininglamp-oss/octo-runtime-webui-extra",
+  "name": "@mininglamp-oss/octo-runtime-extra-webui",
   "version": "1.0.0",
   "type": "module",
   "description": "Local Runtime workbench with canonical SSE presentation",

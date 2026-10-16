@@ -174,7 +174,7 @@ export class ImTask {
           this.#stop("IM_TASK_DEADLINE");
           break;
         }
-        // Retry carries the same turn snapshot and the remaining execution budget.
+        // 重试复用同一轮 Context，只更新剩余执行预算；复制后修改，保留原始快照供幂等记录使用。
         request = { ...request, contexts: structuredClone(request.contexts) };
         for (const item of request.contexts.items)
           if (item.namespace === "octo.execution" && item.name === "limits")

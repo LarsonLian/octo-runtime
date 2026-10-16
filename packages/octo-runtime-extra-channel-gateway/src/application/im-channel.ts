@@ -633,6 +633,7 @@ export class ImRuntime {
       );
       return;
     }
+    // 准备阶段还没有 invocationId；按会话单独持有 controller，使 /stop 也能取消动态 Context/取材。
     const preparation = new AbortController();
     this.#preparing.set(key, preparation);
     const turnSignal = AbortSignal.any([this.#signal, preparation.signal]);
@@ -657,6 +658,7 @@ export class ImRuntime {
         this.config,
         message,
         await message.buildContext(turnSignal, {
+          // 每个已准入的逻辑轮只加载一次；下面的 Provider 重试复用快照，不重复调用宿主 IO。
           configuredItems: await this.dependencies.prepareContexts?.(
             this.config as unknown as JsonObject,
             turnSignal

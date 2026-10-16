@@ -5,6 +5,7 @@ import {
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type { JsonObject, JsonValue } from "./extras.js";
 
+/** 宿主业务函数：每轮接收独立 Bot 配置快照；IO 实现须把 signal 传给底层请求。 */
 export type LoadContexts = (
   config: JsonObject,
   options: { readonly signal: AbortSignal }
@@ -13,7 +14,10 @@ export interface ChannelDependencies {
   readonly loadContexts?: LoadContexts;
 }
 
-/** Dynamic items replace the entire item at its original position. */
+/**
+ * 只合并本轮数据，不保留历史。动态同 key 整项替换且保留静态位置，新项按返回顺序追加。
+ * 两个来源先分别校验，避免同源重复 key 被覆盖掩盖；返回副本隔离宿主与插件的后续修改。
+ */
 export function mergeConfiguredContexts(
   base: readonly ContextItem[],
   dynamic: readonly ContextItem[]
@@ -35,7 +39,10 @@ export function mergeConfiguredContexts(
   return structuredClone(items);
 }
 
-/** One bounded callback pool per Extra; timeout does not free an unsettled slot. */
+/**
+ * 每个 Extra 共用一个有界回调池，而非每个 Bot 各建一份额度。
+ * 超时只结束本轮等待，不能强制结束外部 Promise；实际操作结束前仍须占额，防止挂起 IO 累积。
+ */
 export function createContextLoader(
   callback: LoadContexts | undefined,
   settings: JsonValue | undefined,
@@ -72,6 +79,7 @@ export function createContextLoader(
       owner.throwIfAborted();
       stop.signal.throwIfAborted();
       signal.throwIfAborted();
+      // 满额直接拒绝，不再建立等待队列；否则排队的配置副本和闭包也可能无限增长。
       if (pending.size >= capacity) throw new Error("IM_CONTEXT_LOADING_BUSY");
       const abort = new AbortController();
       const combined = AbortSignal.any([owner, stop.signal, signal, abort.signal]);
@@ -83,11 +91,13 @@ export function createContextLoader(
           return callback(structuredClone(config), { signal: combined });
         })
         .then((items) => {
+          // 超时或取消后的迟到结果不能再校验、复制或进入本轮模型输入。
           combined.throwIfAborted();
           assertBoundedJson(items);
           return mergeConfiguredContexts(base as unknown as ContextItem[], items);
         });
       pending.add(operation);
+      // 跟踪真实操作，而非 race 的等待结果；迟到 reject 也必须被消费，避免未处理拒绝。
       void operation.finally(() => pending.delete(operation)).catch(() => undefined);
       try {
         return await Promise.race([
@@ -108,6 +118,7 @@ export function createContextLoader(
       }
     },
     async close(): Promise<void> {
+      // 这里等待实际 IO 退出；外层 Extra loader 负责 5 秒宽限，超时后保留失败实例阻止重载。
       stop.abort();
       await Promise.allSettled([...pending]);
     },
@@ -117,10 +128,11 @@ export function createContextLoader(
   };
 }
 
-// Check before cloning/stringifying externally supplied values. Provider code is trusted JS,
-// but its result must still be finite JSON within the Context protocol's resource budget.
+// 先限制外部结果的深度和遍历成本，再进入协议校验、序列化和复制，避免校验本身放大内存。
+// 这不是 JS 沙箱：无法限制业务函数执行期间自行分配的内存或阻塞事件循环。
 function assertBoundedJson(value: unknown): asserts value is readonly ContextItem[] {
   if (!Array.isArray(value) || value.length > 32) throw new Error("IM_CONTEXT_RESULT_INVALID");
+  // 预检预算覆盖节点、键和字符；最终字节数及 item 约束仍由 Context v3 校验器决定。
   let budget = 262_144;
   const ancestors = new Set<object>();
   const visit = (item: unknown, depth: number): void => {
@@ -141,6 +153,7 @@ function assertBoundedJson(value: unknown): asserts value is readonly ContextIte
       throw new Error("IM_CONTEXT_RESULT_INVALID");
     if (Array.isArray(item) && item.length > budget)
       throw new Error("IM_CONTEXT_RESULT_TOO_LARGE");
+    // 不执行业务 getter/toJSON；否则一次普通校验也可能触发副作用或生成更大的对象。
     const toJson = Object.getOwnPropertyDescriptor(item, "toJSON");
     if (toJson && (!Object.hasOwn(toJson, "value") || typeof toJson.value === "function"))
       throw new Error("IM_CONTEXT_RESULT_INVALID");

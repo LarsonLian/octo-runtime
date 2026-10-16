@@ -29,9 +29,11 @@ export interface ExtraContext {
   onStatus(handler: ExtraStatusHandler): void;
 }
 
+/** 第二阶段接收同进程业务函数，允许异步启动；返回完成只代表初始化完成，不代表卸载。 */
 export type ExtraInitializer<D extends object = Record<string, never>> = (
   dependencies: Readonly<D>
 ) => void | Promise<void>;
+/** 第一阶段必须同步返回 initializer；JSON 配置与不可序列化的业务函数依赖始终分开。 */
 export type ExtraPlugin<D extends object = Record<string, never>> = (
   context: ExtraContext,
   config: JsonObject
@@ -68,7 +70,7 @@ export function assertExtraName(name: unknown): asserts name is string {
     throw new Error("EXTRA_NAME_INVALID");
 }
 
-/** One scoped instance per declared name. Only HostApp-selected entries load. */
+/** 每个声明名最多一个实例；只加载宿主选定的插件，并统一管理取消、状态和清理。 */
 export class ExtraPlugins {
   readonly #registrations = new Map<string, ExtraRegistration>();
   readonly #instances = new Map<string, ExtraInstance>();
@@ -132,6 +134,7 @@ export class ExtraPlugins {
     });
   }
 
+  // 同名操作串行，失败不阻断后续操作；队尾结束后移除引用，避免保留已完成的任务链。
   #serial<T>(name: string, operation: () => Promise<T>): Promise<T> {
     const task = (this.#queues.get(name) ?? Promise.resolve())
       .catch(() => undefined)
@@ -159,6 +162,7 @@ export class ExtraPlugins {
     dependencies?: Readonly<D>
   ): Promise<void> {
     if (typeof target !== "string") {
+      // 仅在同一 Node 进程闭包捕获函数；复用下方生命周期，不把函数写入声明或传过 IPC。
       const functions = Object.freeze({ ...dependencies }) as Readonly<D>;
       const registration: ExtraRegistration = {
         name: target.name,
@@ -177,6 +181,7 @@ export class ExtraPlugins {
           })
       };
       return this.load(target.name, registration).finally(() => {
+        // 此声明只服务本次装配；释放宿主闭包。下次加载必须由宿主重新提供依赖。
         if (this.#registrations.get(target.name) === registration)
           this.#registrations.delete(target.name);
       });
@@ -192,6 +197,7 @@ export class ExtraPlugins {
     const epoch = this.#loadEpochs.get(name) ?? 0;
     const unloading = this.#unloading.get(name);
     return this.#serial(name, async () => {
+      // 正在卸载时必须等清理成功；清理失败直接拒绝替换，不能借重载绕过挂起资源。
       if (unloading) await unloading;
       if (registration) {
         ExtraPlugins.validate([registration]);
@@ -257,11 +263,12 @@ export class ExtraPlugins {
           structuredClone(registration.config)
         );
         if (typeof initialize !== "function") {
-          // Consume a rejected legacy async entry without accepting the old ABI.
+          // 拒绝旧 ABI，同时消费旧 async 入口可能产生的拒绝，不把它当作初始化成功。
           void Promise.resolve(initialize).catch(() => undefined);
           throw new Error("EXTRA_INITIALIZER_REQUIRED");
         }
         instance.controller.signal.throwIfAborted();
+        // JSON 声明入口没有业务函数；同进程装配的包装函数会传入本次绑定的依赖。
         await initialize(Object.freeze({}));
         instance.controller.signal.throwIfAborted();
         this.#statuses.set(name, { phase: "loaded" });
@@ -272,7 +279,7 @@ export class ExtraPlugins {
           cleanupFailed = true;
           instance.disposalError ??= new AggregateError([cleanupError], "EXTRA_DISPOSE_FAILED");
         });
-        // Never copy third-party error text or configuration secrets into public status.
+        // 对外只保留稳定错误码，避免第三方错误正文携带配置或凭据。
         const code =
           error instanceof Error && /^(?:EXTRA|IM|WECOM)_[A-Z0-9_]+$/.test(error.message)
             ? error.message
@@ -296,11 +303,11 @@ export class ExtraPlugins {
     if (unloading) return unloading;
     if (!this.#registrations.has(name) && !this.#instances.has(name) && !this.#queues.has(name))
       return Promise.resolve();
-    // Cancel queued initialization even when its AbortController does not exist yet.
+    // 递增代次也能撤销尚未创建 AbortController 的排队 load，防止卸载后又启动旧声明。
     this.#loadEpochs.set(name, (this.#loadEpochs.get(name) ?? 0) + 1);
     this.#instances.get(name)?.controller.abort();
     const instance = this.#instances.get(name);
-    // Do not queue cancellation behind an initializer that may never settle.
+    // abort 不能排在初始化 Promise 后面；外部初始化可能正等待这个取消信号才会退出。
     const task = instance ? this.#unload(name) : this.#serial(name, () => this.#unload(name));
     this.#unloading.set(name, task);
     void task
@@ -331,6 +338,7 @@ export class ExtraPlugins {
         this.#statuses.set(name, { phase: "error", error: "EXTRA_DISPOSE_FAILED" });
         throw error;
       } finally {
+        // 只有完整清理成功才允许释放实例；超时不是资源已释放的证据，失败实例必须阻止重载。
         if (!instance.disposalError && this.#statuses.get(name)?.phase === "disposed")
           this.#instances.delete(name);
       }
@@ -357,15 +365,18 @@ export class ExtraPlugins {
   }
 
   async #dispose(instance: ExtraInstance): Promise<void> {
+    // 初始化失败、主动卸载和整体关闭可能并发到达；所有路径共用一次清理过程。
     if (instance.cleanup) return instance.cleanup;
     if (instance.sealed) {
       if (instance.disposalError) throw instance.disposalError;
       return;
     }
     instance.sealed = true;
+    // 状态回调通常闭包引用整个业务服务，清理开始即解除该引用，禁止再登记资源。
     instance.status = () => ({});
     instance.cleanup = (async () => {
       const errors: unknown[] = [];
+      // 逆序匹配资源的创建依赖；所有 disposer 共用宽限，单项失败仍继续尝试其余清理。
       const deadline = Date.now() + 5_000;
       for (const dispose of instance.disposers.reverse()) {
         try {

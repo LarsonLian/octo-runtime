@@ -12,7 +12,7 @@ const readJson = (path) => JSON.parse(readFileSync(new URL(path, import.meta.url
 const packages = {
   "channel-gateway": "octo-runtime-extra-channel-gateway",
   "channel-wecom": "octo-runtime-extra-channel-wecom",
-  webui: "octo-runtime-webui-extra"
+  webui: "octo-runtime-extra-webui"
 };
 const schemas = Object.fromEntries(
   Object.entries(packages).map(([name, directory]) => [

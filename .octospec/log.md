@@ -2,6 +2,8 @@
 
 ## 2026-10-17
 
+- 按用户纠正统一 WebUI 包与目录为 `octo-runtime-extra-webui`，同步 workspace、锁文件、Schema、构建/打包引用、测试和当前指南；Extra 名称与配置目录仍为 webui，不保留旧包别名、不改写用户数据。按用户补充要求，为两阶段入口、动态 Context 覆盖、实际在途额度、取消和清理失败边界补充中文注释。历史命令保留原始名称，现行链接指向新目录，验证见[记录](journal/shared/2026-10-17-extra-webui-rename.md)。
+
 - [Extra 两阶段入口实施交付](journal/shared/2026-10-17-extra-initializer-delivery.md)：共享 loader、Gateway/WeCom/WebUI 三个 CLI Extra、动态同步异步 Context 及 text-only 指令已落地，配置 Schema 和完整使用示例显式携带固定人设。双渠道移除重复执行解析，超时回调未结束继续占额，取消及卸载有界；强制 GC、一万次加载、双渠道各一万会话、发行包离线加载及 im-test 真实 Codex 通过。用户最新指定 SDK 接入先不改，HostApp 函数装配延期；不自动重写既有配置或身份。完整检查和未验范围以交付记录为准。
 
 - 用户澄清第 3 项能力区别已确认，第 4 项生命周期只是初步想法、需工程评估。补充[生命周期分工评估](tasks/extra-initializer-context-dependencies/design.md#生命周期分工的工程评估)，建议保留宿主通知、SDK 协调、Extra 内部清理，规定单个卸载仅取消自身任务、初始化前置 abort、整体有界清理后继续关闭所拥有的 daemon，失败如实汇总。更正前条将初步想法写成已确认细节的表述；5 秒宽限为待验证的设计初值，未实现或实测，仅文档。

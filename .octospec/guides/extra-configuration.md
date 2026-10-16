@@ -17,7 +17,7 @@ implementation_baseline: df63c8f
 | --- | --- | --- |
 | Octo IM | [config-schema.json](../../packages/octo-runtime-extra-channel-gateway/config-schema.json) | `@mininglamp-oss/octo-runtime/extras/channel-gateway/config-schema.json` |
 | 企业微信 | [config-schema.json](../../packages/octo-runtime-extra-channel-wecom/config-schema.json) | `@mininglamp-oss/octo-runtime/extras/channel-wecom/config-schema.json` |
-| 本地 WebUI | [config-schema.json](../../packages/octo-runtime-webui-extra/config-schema.json) | `@mininglamp-oss/octo-runtime/extras/webui/config-schema.json` |
+| 本地 WebUI | [config-schema.json](../../packages/octo-runtime-extra-webui/config-schema.json) | `@mininglamp-oss/octo-runtime/extras/webui/config-schema.json` |
 
 接入方可通过 `import.meta.resolve(公开入口)` 找到原始 JSON 文件，再自行参考、编译为校验器或生成类型。仓库内包也导出自己的 `/config-schema.json` 子路径；第三方使用上表公开入口，不要求单独安装私有 workspace 包。两个 Channel 的 `context` 为可选字段，配置后由 IM Channel 在执行 AgentRun 时固定附带；仅声明 `schema` 固定为 `octo.context-envelope/v3`、`items` 为对象数组，不展开 item 内部字段，也不内嵌或引用完整协议 schema。item 内容仍须遵循整个 octo-runtime 的 Context v3 协议，由现有运行时校验。
 
@@ -97,7 +97,7 @@ CLI 是个人设备的 headless 运维入口。普通用户由 Desktop App 静�
 ```sh
 octo-runtime extraset webui <<JSON
 {
-  "module": "@mininglamp-oss/octo-runtime-webui-extra",
+  "module": "@mininglamp-oss/octo-runtime-extra-webui",
   "enabled": true,
   "config": {
     "port": 13888,
@@ -200,7 +200,7 @@ IM 插件加载完整 bots，重载会重新建立该插件内连接；宿主传
 
 ## 本地 WebUI 与 canonical SSE
 
-[WebUI 包说明](../../packages/octo-runtime-webui-extra/README.md) 给出配置、SDK 及接口。打开 `http://127.0.0.1:13888/` 即可使用本地项目、会话与聊天页面；复用共享 Host，不以云端登录为前提。
+[WebUI 包说明](../../packages/octo-runtime-extra-webui/README.md) 给出配置、SDK 及接口。打开 `http://127.0.0.1:13888/` 即可使用本地项目、会话与聊天页面；复用共享 Host，不以云端登录为前提。
 
 ```text
 GET http://127.0.0.1:13888/

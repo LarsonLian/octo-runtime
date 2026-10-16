@@ -30,10 +30,10 @@ sources:
   - .octospec/.claude/commands/octospec-plan.md
   - .octospec/.claude/skills/octospec-workflow/SKILL.md
   - .octospec/tasks/_brief.template.md
-  - packages/octo-runtime-webui-extra/src/index.ts
-  - packages/octo-runtime-webui-extra/src/store.ts
-  - packages/octo-runtime-webui-extra/README.md
-  - packages/octo-runtime-webui-extra/porting-map.md
+  - packages/octo-runtime-extra-webui/src/index.ts
+  - packages/octo-runtime-extra-webui/src/store.ts
+  - packages/octo-runtime-extra-webui/README.md
+  - packages/octo-runtime-extra-webui/porting-map.md
   - test/webui-extra.test.js
   - packages/octo-runtime-daemon/src/extras.ts
   - packages/octo-runtime-daemon/src/server.ts
@@ -63,8 +63,8 @@ baseline:
   runtime_implementation_baseline: 56f201f
   includes_current_worktrees: true
 decisions:
-  package_directory: packages/octo-runtime-webui-extra
-  package_name: '@mininglamp-oss/octo-runtime-webui-extra'
+  package_directory: packages/octo-runtime-extra-webui
+  package_name: '@mininglamp-oss/octo-runtime-extra-webui'
   extra_name: webui
   listen_host: 127.0.0.1
   listen_port: 13888
@@ -96,6 +96,8 @@ decisions:
   server_business_history_database: false
   automatic_reinvoke_on_disconnect: false
   preserve_runtime_home_identity_profiles_and_provider_state: true
+  naming_correction_2026_10_17: package-and-directory-use-octo-runtime-extra-webui
+  extra_core_comments: chinese-contract-ownership-budget-cancellation-and-cleanup
 validation:
   documentation: okf-lint-and-diff-check-passed
   planning_record: .octospec/journal/shared/2026-10-16-runtime-webui-extra-plan.md
@@ -105,3 +107,4 @@ validation:
   online_test_environment: real-codex-curl-passed-html-shell-worker-coexistence-not-verified
   browser_cdp: playwright-desktop-and-mobile-passed
   release_installation: offline-outside-repository-passed
+  naming_delivery_record: .octospec/journal/shared/2026-10-17-extra-webui-rename.md

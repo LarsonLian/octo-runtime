@@ -82,6 +82,7 @@ export function createImInvocation(
         : [])
     ]
   };
+  // 这里只组合本轮公开输入；Host 负责解析执行配置和渲染指令，不能在渠道重复运行 resolver。
   const snapshot = mergeContext(defaults, context);
   const eventId = `evt_${randomUUID()}`,
     runId = `run_${randomUUID()}`;

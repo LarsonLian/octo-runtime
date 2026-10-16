@@ -25,6 +25,7 @@ async function initialize(
   config: JsonObject,
   dependencies: Readonly<ChannelDependencies>
 ): Promise<void> {
+  // 回调池归整个 Extra 所有，所有 Bot 共用额度；逆序清理时先停 manager，再等待业务 IO 退出。
   const contexts = createContextLoader(
     dependencies.loadContexts,
     config.context_loading,

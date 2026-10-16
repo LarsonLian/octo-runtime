@@ -10,7 +10,7 @@
   "properties": {
     "module": {
       "type": "string",
-      "const": "@mininglamp-oss/octo-runtime-webui-extra",
+      "const": "@mininglamp-oss/octo-runtime-extra-webui",
       "description": "必填。本地 WebUI Extra 的固定包入口；宿主须预先安装并确保模块可解析。此 schema 约束包名声明，宿主通过绝对路径加载同一模块时可自行调整该约束。插件实例名及 CLI 配置目录名为 webui。"
     },
     "enabled": {
@@ -84,7 +84,7 @@
   },
   "examples": [
     {
-      "module": "@mininglamp-oss/octo-runtime-webui-extra",
+      "module": "@mininglamp-oss/octo-runtime-extra-webui",
       "enabled": true,
       "config": {
         "port": 13888,
@@ -109,7 +109,7 @@
       }
     },
     {
-      "module": "@mininglamp-oss/octo-runtime-webui-extra",
+      "module": "@mininglamp-oss/octo-runtime-extra-webui",
       "config": {
         "sessionStorePath": "/absolute/host-home/extras/webui/sessions.json",
         "context": {

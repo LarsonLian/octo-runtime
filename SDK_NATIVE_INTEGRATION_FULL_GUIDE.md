@@ -26,7 +26,7 @@ packages:
   - "!octo-runtime/packages/octo-runtime-cross-service"
   - "!octo-runtime/packages/octo-runtime-extra-channel-gateway"
   - "!octo-runtime/packages/octo-runtime-extra-channel-wecom"
-  - "!octo-runtime/packages/octo-runtime-webui-extra"
+  - "!octo-runtime/packages/octo-runtime-extra-webui"
 
 allowBuilds:
   esbuild: true

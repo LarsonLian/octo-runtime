@@ -4,7 +4,7 @@
 
 业务标签与功能入口由宿主管理。本地 Runtime 已删除自有 Adapter capabilities、executionFeatures、执行计划 required_capabilities 和 ExecutionTarget / AbilityProvider 预留合同，不提供替代能力表；执行元数据、协议支持、审批和原生 Provider 协商的边界见 [Adapter 元数据规则](.octospec/rules/adapter-metadata.md)。
 
-函数式业务扩展见 [Extra 插件设计与使用](.octospec/rules/extras.md)。`octo-runtime extraset <name>` 从 stdin 保存完整 JSON 声明；daemon 重启后自动加载。本地项目、会话与聊天页面使用 [octo-runtime-webui-extra](packages/octo-runtime-webui-extra/README.md)，默认端口 `13888`。
+函数式业务扩展见 [Extra 插件设计与使用](.octospec/rules/extras.md)。`octo-runtime extraset <name>` 从 stdin 保存完整 JSON 声明；daemon 重启后自动加载。本地项目、会话与聊天页面使用 [octo-runtime-extra-webui](packages/octo-runtime-extra-webui/README.md)，默认端口 `13888`。
 
 第三方 TypeScript 插件使用发行包公开入口 `@mininglamp-oss/octo-runtime/extra` 和 `/protocol` 获取完整 Extra/执行协议类型与校验工具，无需源码或独立安装私有 packages；见[仓库外开发指南](.octospec/guides/extra-configuration.md)。CLI 外部 Adapter 追加清单和 `/adapter` 公开入口仍属[待实施目标](.octospec/tasks/adapter-composition-ownership/brief.md)。
 

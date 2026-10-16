@@ -3,7 +3,7 @@ import {cpSync,mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 import {dirname,resolve} from 'node:path';
 import ts from 'typescript';
 const source=resolve('../octo-work-app');
-const target=resolve('packages/octo-runtime-webui-extra/web');
+const target=resolve('packages/octo-runtime-extra-webui/web');
 function copy(a,b){mkdirSync(dirname(`${target}/${b}`),{recursive:true});cpSync(`${source}/${a}`,`${target}/${b}`,{recursive:true});}
 for(const name of ['ApprovalCards.tsx','run-context.scss'])copy(`src/renderer/src/surfaces/${name}`,`src/surfaces/${name}`);
 copy('packages/ui-kit/src/react/ConversationComposer.tsx','src/components/ConversationComposer.tsx');

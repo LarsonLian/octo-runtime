@@ -25,7 +25,7 @@ packages:
   - "octo-runtime/packages/*"
   - "!octo-runtime/packages/octo-runtime-cross-service"
   - "!octo-runtime/packages/octo-runtime-extra-channel-wecom"
-  - "!octo-runtime/packages/octo-runtime-webui-extra"
+  - "!octo-runtime/packages/octo-runtime-extra-webui"
 
 allowBuilds:
   esbuild: true
@@ -39,7 +39,7 @@ sharedWorkspaceLockfile: true
 | --- | --- |
 | `octo-runtime-cross-service` | CLI 的系统服务安装、自启等管理能力；SDK 启动不引用它 |
 | `octo-runtime-extra-channel-wecom` | 企业微信接入，本示例只接 Octo IM |
-| `octo-runtime-webui-extra` | 本地 WebUI，本示例使用宿主自己的界面 |
+| `octo-runtime-extra-webui` | 本地 WebUI，本示例使用宿主自己的界面 |
 
 普通 `pnpm install` 会安装所有 workspace 项目的依赖，仅不在宿主 dependencies 声明某包不能阻止其安装。排除项使这些包及其专用依赖不进入安装范围；宿主需要某项扩展时，再移除对应排除项、声明其直接依赖并合并所需 allowBuilds。排除依据是实际依赖关系，不能仅按包名或未启用的功能推断；当前 daemon/Host 仍依赖其他 Adapter，必须保留它们。
 

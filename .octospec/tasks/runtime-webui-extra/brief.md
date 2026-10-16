@@ -12,7 +12,9 @@ timestamp: 2026-10-16T00:00:00Z
 
 用户已授权在当前分支直接实施。M0–M3 已实现，本地页面已启动；M4 已完成真实 Codex、浏览器及仓库外发行安装验证，线上既有连接共存仍未验证。代码入口、实际差异和证据见[交付记录](../../journal/shared/2026-10-16-runtime-webui-extra-delivery.md)。下文保留原计划合同，已实施接口及限制以该记录和包 README 为准，不能把所有计划验收项视为已通过。
 
-新增 `packages/octo-runtime-webui-extra`，包名为 `@mininglamp-oss/octo-runtime-webui-extra`，Extra 稳定名称为 `webui`。删除 `packages/octo-runtime-extra-sse-demo` 及其发行依赖、测试和当前用法引用，用完整本地 WebUI 接替。启用后监听 `http://127.0.0.1:13888/`，直接提供可用的项目与会话界面。
+新增 `packages/octo-runtime-extra-webui`，包名为 `@mininglamp-oss/octo-runtime-extra-webui`，Extra 稳定名称为 `webui`。删除 `packages/octo-runtime-extra-sse-demo` 及其发行依赖、测试和当前用法引用，用完整本地 WebUI 接替。启用后监听 `http://127.0.0.1:13888/`，直接提供可用的项目与会话界面。
+
+2026-10-17 用户纠正包名与目录，统一为上述 extra-webui 命名，覆盖 workspace、锁文件、公开 schema 指向、构建脚本、测试和当前文档；不增加旧包名别名。已有配置由宿主决定是否更新，Runtime 身份、Home 和会话数据不变。同时按用户要求，为 Extra 两阶段初始化、动态 Context、资源预算和取消/清理关键路径补充中文注释，解释责任边界和设计原因，不改变运行行为。验收见[更名记录](../../journal/shared/2026-10-17-extra-webui-rename.md)。
 
 页面以当前 `octo-work-app` 工作台为源码基准：左侧项目与 session 列表，中间对话及执行过程，底部输入区，右下角唯一模型/引擎入口。thinking 展开收缩、工具过程、最终答复、动画、滚动和模型菜单直接移植原代码、样式、资源及测试，不根据截图重新猜测交互。用户澄清后没有指定另一个 `octo-web-ui` 仓库。
 
