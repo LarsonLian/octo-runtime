@@ -61,7 +61,7 @@ Runtime 的设备与执行事实如下：
 
 以 IM 接入为例，宿主读取配置并构造完整插件声明，通过 `loadExtra({ name, module, config: { bots } })` 加载。变更由宿主编排：等待 `unloadExtra(name)` 完成，修改并保存配置，再加载最新完整声明。同一插件内连接整体重建，其他 Extra 与共享 Host 不受影响。`config` 是对象参数，不是文件路径；完整示例见第 2.6 节。
 
-**CLI 的默认文件加载行为不构成 SDK 接入要求。** [CLI 使用指南第 4 节](CLI_USAGE_GUIDE.md#4-通过统一-extra-入口配置和管理多个-im-接入)通过统一的 `extraset` 将插件声明保存到 `<home>/extras/<name>/config.json`，由 CLI daemon 启动时加载；客户桌面 App 可以使用自己的 store，再通过 SDK 下发配置，无需创建或同步该文件。参考 Octo Work 把 IM 通道配置保存到应用自己的 SQLite，恢复时读取并通过 SDK 应用；SQLite 同样只是该 App 的选择，不是第三方宿主的必需依赖。
+**CLI 的默认文件加载行为不构成 SDK 接入要求。** [CLI 使用指南第 4 节](CLI_USAGE_GUIDE.md#4-接入-octo-im)通过统一的 `extraset` 将插件声明保存到 `<home>/extras/<name>/config.json`，由 CLI daemon 启动时加载；客户桌面 App 可以使用自己的 store，再通过 SDK 下发配置，无需创建或同步该文件。参考 Octo Work 把 IM 通道配置保存到应用自己的 SQLite，恢复时读取并通过 SDK 应用；SQLite 同样只是该 App 的选择，不是第三方宿主的必需依赖。
 
 当前部分模块仍会在 Home/profile 下读写 `config.json`、Runtime 身份及设备凭据等内部文件。上述原则不表示 SDK 完全不访问磁盘，也不表示现有内部状态格式已经移除；它说明的是**宿主配置来源与模块执行能力分离**。宿主仍需满足所调用 API 的字段、认证、授权和生命周期要求。
 

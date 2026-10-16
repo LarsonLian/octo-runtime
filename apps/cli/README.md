@@ -36,7 +36,7 @@ The native HTTP/Bearer/SSE demonstration and full here-string examples are docum
 
 CLI 统一使用 `extraset <name>` 从 stdin 接收完整插件声明 `{ module, enabled?, config }`，保存在 `<home>/extras/<name>/config.json`。框架只校验声明及 JSON 结构，业务配置由插件解释；同名插件每次整份替换。
 
-渠道的 Bot 配置、凭据和执行设置由插件解释。多个 Bot 一次写入完整的 `config.bots` 数组。OpenClaw 连接由宿主通过通用 Adapter 配置入口明确配置，daemon 不根据 Bot 列表探测或写入 Provider 配置。示例见 [CLI 使用指南](../../CLI_USAGE_GUIDE.md#4-通过统一-extra-入口配置和管理多个-im-接入)。
+渠道的 Bot 配置、凭据和执行设置由插件解释。多个 Bot 一次写入完整的 `config.bots` 数组。OpenClaw 连接由宿主通过通用 Adapter 配置入口明确配置，daemon 不根据 Bot 列表探测或写入 Provider 配置。示例见 [CLI 使用指南](../../CLI_USAGE_GUIDE.md#4-接入-octo-im)。
 
 设备／Runtime 注册使用独立命令，候选名称为 `octo-runtime devices register`，最终命令名与参数待冻结。配置频道不隐式注册设备，注册也不隐式启用所有连接。
 

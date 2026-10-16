@@ -18,9 +18,15 @@ CLI 是独立 Runtime 的完整发行物，面向云端设备的定制接入、�
 
 - Node.js 24 或更高版本。
 - **整仓源码开发必须使用 pnpm 11 或更高版本**，具体版本以根目录 `package.json` 的 `packageManager` 为准。仓库内部依赖使用 `workspace:*`，构建脚本也依赖 pnpm；不支持用 npm 或 Yarn 替代整仓依赖安装和构建。
-- 安装已发布的 CLI 包可以使用 npm；源码完成 pnpm 安装和构建后，也可以使用 `npm link` 创建全局命令。
+- 安装已发布的 Runtime 发行包和工具包可以使用 npm；源码完成 pnpm 安装和构建后，也可以使用 `npm link` 创建全局命令。
 
-安装已发布的 CLI 包：
+安装已发布的工具包（建议安装，优化体验）：
+
+```bash
+npm install -g @mininglamp-oss/octo-cli
+```
+
+安装 Runtime 发行包，提供后续使用的 `octo-runtime` 命令：
 
 ```bash
 npm install -g @mininglamp-oss/octo-runtime
@@ -110,23 +116,11 @@ octo-runtime daemon uninstall
 
 
 
-## 4. 通过统一 Extra 入口配置和管理多个 IM 接入
+## 4. 接入 Octo IM
 
-本节描述 CLI 的文件配置入口；通过 SDK 接入的 App 使用 [SDK 对象配置契约](SDK_NATIVE_INTEGRATION_GUIDE.md#12-配置来源与-sdk-契约)，不需要遵循这里的文件保存与加载约定。
+### 4.1 Codex / Claude Code（CC）类型
 
-使用 `octo-runtime extraset <name>`，从 stdin 提交完整的 `{ module, enabled?, config }` JSON 对象。Octo IM 使用 `channel-gateway` 插件，其配置为 `config.bots` 数组，可包含多个 Bot；插件级和 Bot 级的 `enabled` 均默认 `true`。
-
-CLI 将完整对象保存到 `<home>/extras/<name>/config.json`，POSIX 文件权限为 `0600`，不回显配置或凭据。**每次保存整体替换同名插件配置，不按 `bot_id` 合并。** 增删或修改 Bot 时，提交需要保留的完整 `config.bots` 数组。不同名称的 Extra 配置互不覆盖。
-
-单个与多个 Bot 使用相同格式：一个 Bot 为 `config.bots: [botA]`，多个为 `config.bots: [botA, botB]`。若上次保存 `[botA, botB]`，本次提交 `[botB]`，最终配置只保留 botB；提交 `[]` 表示不保留任何 Bot。整个声明中的其他字段也随本次提交覆盖，不从上次配置补齐。
-
-`module` 指向宿主已安装的插件包或绝对入口路径；`extraset` 只保存配置，不安装插件、不建立连接。通用入口校验声明格式，插件在加载时校验自己的 `config`。业务配置错误由插件跳过受影响项并在内部状态中报告，有效项继续初始化；不把某个 Bot 的配置错误扩大为整个 Extra 加载失败。CLI 前台启动和显式加载会输出插件状态，SDK 宿主通过 `extraStatus(name)` 自行展示。
-
-标准 npm CLI 已随包携带 Octo IM 插件，无需单独安装。内部宿主从源码构建并手动拷贝所需插件及其生产依赖，或使用相邻源码仓库的编译入口；需确保插件对 daemon 的模块解析位置可见，也可将 `module` 填为已部署插件的绝对入口路径。内部插件不独立发布到 npm。
-
-名称必须等于插件导出的稳定 `name`，否则加载返回 `EXTRA_NAME_MISMATCH`；第二个 Bot 应放进同一 `bots` 数组，不能改名为 `channel-gateway-2`。保存成功不表示插件加载或连接成功；CLI 通过 `octo-runtime status` 查询状态，前台运行时也会输出插件状态；SDK 的逐插件查询见 [Extra 装配](SDK_NATIVE_INTEGRATION_GUIDE.md#26-通过-sdk-装配可选-extra)。`loaded` 只表示初始化完成，不证明每个 Bot 已在线。插件加载失败会报告脱敏错误码，本地 Host 可继续使用。不要同时通过对象模块和 Extra 装配同名连接；daemon 会拒绝名称冲突。
-
-**方案一：Codex 等本地引擎。** `adapter.workdir` 可省略，默认使用并创建 `~/octo-runtime/channels/{bot_id}`，同一 Agent 后续执行复用此目录；显式填写时必须是绝对路径。该默认路径不随 CLI `--home` 改变。
+以 Codex 为例，替换 Bot ID、Token、服务地址和工作目录后执行：
 
 ```bash
 octo-runtime extraset channel-gateway <<'JSON'
@@ -152,9 +146,11 @@ octo-runtime extraset channel-gateway <<'JSON'
 JSON
 ```
 
-`model`、`effort` 可省略，使用引擎默认值；`effort` 是思考强度。
+使用 Claude Code（CC）时，将 `adapter_type` 改为 `claude-code`，省略示例中的 Codex `model` 和 `effort`，使用 Claude Code 默认值。
 
-**方案二：OpenClaw。** `provider_agent_id` 是 OpenClaw 内部的 Agent ID，默认 `main`；不填写 `workdir`。建议显式填写 `bot_name`，使用该 Agent 的 `IDENTITY.md` 中的名称，方便管理员在本地运行状态中识别机器人。此字段不自动读取 `IDENTITY.md`，也不修改远端机器人名称。
+### 4.2 OpenClaw 类型
+
+已有 OpenClaw Agent 时，替换 Bot ID、Token 和服务地址后执行：
 
 ```bash
 octo-runtime extraset channel-gateway <<'JSON'
@@ -178,27 +174,53 @@ octo-runtime extraset channel-gateway <<'JSON'
 JSON
 ```
 
+### 4.3 启动并查看状态
+
+配置保存后，前台运行：
+
+```bash
+octo-runtime daemon run
+```
+
+已有前台进程时先 Ctrl+C 停止再启动。使用系统后台服务时，首次安装并启动：
+
+```bash
+octo-runtime daemon install
+octo-runtime daemon start
+```
+
+后台服务已安装并启用时，修改配置后重启，再查看状态：
+
+```bash
+octo-runtime daemon restart
+octo-runtime status
+```
+
+### 4.4 配置说明与多个 Bot
+
+`adapter.workdir` 可省略，默认使用并创建 `~/octo-runtime/channels/{bot_id}`，同一 Agent 后续执行复用此目录；显式填写时必须是绝对路径。该默认路径不随 CLI `--home` 改变。
+
+`model`、`effort` 可省略，使用引擎默认值；`effort` 是思考强度。
+
+`provider_agent_id` 是 OpenClaw 内部的 Agent ID，默认 `main`；不填写 `workdir`。建议显式填写 `bot_name`，使用该 Agent 的 `IDENTITY.md` 中的名称，方便管理员在本地运行状态中识别机器人。此字段不自动读取 `IDENTITY.md`，也不修改远端机器人名称。
+
 OpenClaw 自动发现由 CLI 启动编排负责，默认读取 `~/.openclaw/openclaw.json`，首次可通过 `OPENCLAW_HOME` 指定目录。CLI 保存来源，每次 daemon 启动重新读取 URL/token 并保存连接快照，再认证探测；端口/token 轮换后重启即可。Adapter 的 probe/invoke 只读取快照，不自动发现或写文件。SDK 由宿主显式调用 `configureOpenClawConnection(profileRoot, {url, token})` 初始化连接与设备身份，或通过 `providerOptions` 传入 URL/token 及设备身份；详见 [OpenClaw 合同](.octospec/rules/openclaw.md)。工作区由 OpenClaw Agent 管理。
 
 以上两个示例是同名插件的替代配置，依次执行时后者会覆盖前者。若两个 Bot 要同时启用，将两个 Bot 对象放进同一个 `config.bots` 数组，一次提交完整配置。配置只保存在对应插件的 `extras/<name>/config.json`，不提供渠道专用配置文件。
 
-配置保存后，选择前台或后台启动：
+本节描述 CLI 的文件配置入口；通过 SDK 接入的 App 使用 [SDK 对象配置契约](SDK_NATIVE_INTEGRATION_GUIDE.md#12-配置来源与-sdk-契约)，不需要遵循这里的文件保存与加载约定。
 
-```bash
-# 前台运行；已有前台进程时先 Ctrl+C 停止再启动
-octo-runtime daemon run
+使用 `octo-runtime extraset <name>`，从 stdin 提交完整的 `{ module, enabled?, config }` JSON 对象。Octo IM 使用 `channel-gateway` 插件，其配置为 `config.bots` 数组，可包含多个 Bot；插件级和 Bot 级的 `enabled` 均默认 `true`。
 
-# 系统后台运行；须已安装并启用原生服务
-octo-runtime daemon restart
-```
+CLI 将完整对象保存到 `<home>/extras/<name>/config.json`，POSIX 文件权限为 `0600`，不回显配置或凭据。**每次保存整体替换同名插件配置，不按 `bot_id` 合并。** 增删或修改 Bot 时，提交需要保留的完整 `config.bots` 数组。不同名称的 Extra 配置互不覆盖。
 
-首次使用系统后台服务时，先执行 `octo-runtime daemon install`，再执行 `octo-runtime daemon start`。
+单个与多个 Bot 使用相同格式：一个 Bot 为 `config.bots: [botA]`，多个为 `config.bots: [botA, botB]`。若上次保存 `[botA, botB]`，本次提交 `[botB]`，最终配置只保留 botB；提交 `[]` 表示不保留任何 Bot。整个声明中的其他字段也随本次提交覆盖，不从上次配置补齐。
 
-daemon 启动后可查询本地状态：
+`module` 指向宿主已安装的插件包或绝对入口路径；`extraset` 只保存配置，不安装插件、不建立连接。通用入口校验声明格式，插件在加载时校验自己的 `config`。业务配置错误由插件跳过受影响项并在内部状态中报告，有效项继续初始化；不把某个 Bot 的配置错误扩大为整个 Extra 加载失败。CLI 前台启动和显式加载会输出插件状态，SDK 宿主通过 `extraStatus(name)` 自行展示。
 
-```bash
-octo-runtime status
-```
+标准 npm CLI 已随包携带 Octo IM 插件，无需单独安装。内部宿主从源码构建并手动拷贝所需插件及其生产依赖，或使用相邻源码仓库的编译入口；需确保插件对 daemon 的模块解析位置可见，也可将 `module` 填为已部署插件的绝对入口路径。内部插件不独立发布到 npm。
+
+名称必须等于插件导出的稳定 `name`，否则加载返回 `EXTRA_NAME_MISMATCH`；第二个 Bot 应放进同一 `bots` 数组，不能改名为 `channel-gateway-2`。保存成功不表示插件加载或连接成功；CLI 通过 `octo-runtime status` 查询状态，前台运行时也会输出插件状态；SDK 的逐插件查询见 [Extra 装配](SDK_NATIVE_INTEGRATION_GUIDE.md#26-通过-sdk-装配可选-extra)。`loaded` 只表示初始化完成，不证明每个 Bot 已在线。插件加载失败会报告脱敏错误码，本地 Host 可继续使用。不要同时通过对象模块和 Extra 装配同名连接；daemon 会拒绝名称冲突。
 
 修改配置通过 `extraset <name>` 保存完整声明，再执行 `daemon restart` 应用。持久停用保存顶层 `enabled: false` 后重启。CLI 不再提供 extra status/load/unload；SDK 宿主继续管理单插件生命周期。
 

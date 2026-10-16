@@ -12,7 +12,7 @@
 CLI 默认包含全部 Adapter、Extra，以及系统管理、开启自启等服务能力；默认包含不表示安装后全部启用或已注册自启。SDK 宿主自行选择需要的依赖和装配范围。
 
 - 配置来源与对象契约：[SDK 配置说明](SDK_NATIVE_INTEGRATION_GUIDE.md#12-配置来源与-sdk-契约)。
-- CLI Extra 文件配置：[CLI Extra 管理](CLI_USAGE_GUIDE.md#4-通过统一-extra-入口配置和管理多个-im-接入)。
+- CLI Extra 文件配置：[接入 Octo IM](CLI_USAGE_GUIDE.md#4-接入-octo-im)。
 - SDK Extra 装配：[SDK Extra 管理](SDK_NATIVE_INTEGRATION_GUIDE.md#26-通过-sdk-装配可选-extra)。
 - 发行与打包：[DEPLOYMENTS.md](DEPLOYMENTS.md)。
 - 架构合同：[基础架构](.octospec/rules/architecture.md)、[Runtime 生命周期](.octospec/rules/runtime-lifecycle.md)。

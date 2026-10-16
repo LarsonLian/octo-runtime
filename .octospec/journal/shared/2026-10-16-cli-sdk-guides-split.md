@@ -21,3 +21,7 @@ timestamp: 2026-10-16T00:00:00Z
 验证通过：`uv run --with pyyaml python .octospec/scripts/lint.py` 检查 153 个 OKF 单元、20 条规则和 1100 个本地文件链接；32 处新指南链接及章节跳转有效。迁移前后 13 个 CLI 代码块和 7 个 SDK 代码块逐字一致，`git diff --check` 通过。
 
 此任务仅修改文档，不启动或重启 Runtime，不修改既有 Home、身份、配置及 SQLite，不进行线上联调。
+
+## 后续阅读顺序修正
+
+按用户反馈，安装段先列建议安装的 `@mininglamp-oss/octo-cli` 工具包，再单独说明提供 `octo-runtime` 命令的 Runtime 发行包。第 4 节改为“接入 Octo IM”，先给 Codex / Claude Code（CC）类型和 OpenClaw 类型配置，再给启动与状态命令，最后集中说明配置字段和多 Bot 管理。不再使用“方案一／方案二”；CC 使用真实的 `claude-code` 配置值，切换时省略 Codex 示例中的模型和思考强度。相关章节链接同步迁移。
