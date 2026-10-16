@@ -25,7 +25,7 @@ export function preparedTestInvoke(source) {
   };
 }
 
-export function codexAppServerFixture({ method = "item/commandExecution/requestApproval", holdResponseWrites = false, turnStartError, skills = [] } = {}) {
+export function codexAppServerFixture({ method = "item/commandExecution/requestApproval", holdResponseWrites = false, turnStartError, skills = [], config = {} } = {}) {
   const child = new EventEmitter();
   const writes = [];
   const pendingWrites = [];
@@ -55,7 +55,8 @@ export function codexAppServerFixture({ method = "item/commandExecution/requestA
       const message = JSON.parse(chunk.toString());
       writes.push(message);
       if (message.method === "initialize") send({ id: message.id, result: {} });
-      if (message.method === "thread/start") send({ id: message.id, result: { thread: { id: "thread-fixture" } } });
+      if (message.method === "config/read") send({ id: message.id, result: { config } });
+      if (["thread/start", "thread/resume"].includes(message.method)) send({ id: message.id, result: { thread: { id: "thread-fixture" } } });
       if (["skills/extraRoots/set", "skills/config/write"].includes(message.method)) send({ id: message.id, result: {} });
       if (message.method === "skills/list") send({ id: message.id, result: { data: [{ skills }] } });
       if (message.method === "turn/start") {

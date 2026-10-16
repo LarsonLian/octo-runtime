@@ -104,6 +104,8 @@ Host IPC 承载 invoke、取消、审批／问答答复和执行事件。daemon 
 
 当前 Run 固定为 `schema_version=7`，Context 固定为 `octo.context-envelope/v3`，不增加旧协议回退。技能、插件及 MCP 程序的安装与更新由 HostApp 管理；本轮 MCP 连接配置通过 `octo.execution/mcp` 传入，由 adapter 转换，见 [Run MCP 合同](.octospec/rules/mcp.md)。凭据不进入模型输入。旧 Channel context、聊天 SQLite 和相关业务实现已移出；参考快照位于同级 `octo-channel-design-reference/`，不参与构建。源执行事件使用有界内存窗口，不等待 durable ACK。
 
+Codex 保留原生既有 MCP，由 Provider 自行加载；本轮仅覆盖新增连接与必要的环境变量白名单。HostApp 提供的 MCP 名称若与任一原生连接同名（包括 disabled 条目），会在创建或恢复会话及发送输入前返回 `MCP_SERVER_NAME_CONFLICT`，须由 HostApp 选择唯一名称。Runtime 不回写用户 Home 配置。
+
 ## 代码结构
 
 ```text

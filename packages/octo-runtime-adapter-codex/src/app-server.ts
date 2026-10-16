@@ -207,18 +207,29 @@ export async function* runCodexAppServerTurn({
       const config = recordValue(result?.config);
       if (!config)
         throw new Error("CONTEXT_ENVS_UNAVAILABLE: provider effective configuration is missing");
-      if (spec.mcpServers)
-        config.mcp_servers = { ...recordValue(config.mcp_servers), ...spec.mcpServers };
-      environmentConfig = codexEnvironmentConfig(request, config);
+      const nativeServers = recordValue(config.mcp_servers) ?? {};
+      for (const name of Object.keys(spec.mcpServers ?? {})) {
+        if (Object.hasOwn(nativeServers, name))
+          throw Object.assign(new Error(`MCP_SERVER_NAME_CONFLICT: ${name}`), {
+            code: "MCP_SERVER_NAME_CONFLICT"
+          });
+      }
+      environmentConfig = codexEnvironmentConfig(request, {
+        ...config,
+        mcp_servers: { ...nativeServers, ...spec.mcpServers }
+      });
       if (spec.mcpServers) {
-        const servers = recordValue(config.mcp_servers) ?? {};
         const forwarding = recordValue(environmentConfig.mcp_servers) ?? {};
-        environmentConfig.mcp_servers = Object.fromEntries(
-          Object.entries(servers).map(([name, server]) => [
-            name,
-            { ...recordValue(server), ...recordValue(forwarding[name]) }
-          ])
-        );
+        // config/read is a read model: optional nulls cannot be round-tripped as overrides.
+        environmentConfig.mcp_servers = {
+          ...forwarding,
+          ...Object.fromEntries(
+            Object.entries(spec.mcpServers).map(([name, server]) => [
+              name,
+              { ...server, ...recordValue(forwarding[name]) }
+            ])
+          )
+        };
       }
     }
 
