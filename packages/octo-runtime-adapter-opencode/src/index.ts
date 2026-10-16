@@ -21,7 +21,6 @@ import {
   type CanonicalEvent,
   type InvokeRequest
 } from "@mininglamp-oss/octo-runtime-adapter-sdk";
-import { executionFeatures } from "@mininglamp-oss/octo-runtime-protocol";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -351,14 +350,7 @@ export function createOpenCodeAdapter({ command = "opencode" }: { command?: stri
     metadata: {
       mcp: true,
       type: "opencode",
-      agentSources: ["provisioned"],
-      executionFeatures: [
-        "session.serialize",
-        "tool.canonical",
-        executionFeatures.INTERACTION_RESPONSE,
-        executionFeatures.APPROVAL_ASK,
-        executionFeatures.APPROVAL_FULL_ACCESS
-      ]
+      agentSources: ["provisioned"]
     },
     probe: () => probeCommand(command),
     buildCommand: (req: InvokeRequest) => buildOpenCodeCommand(req, command),

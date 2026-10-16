@@ -18,7 +18,7 @@ export function serveAdapterHost(adapters: readonly HostedAdapter[]): void {
     hostLog("lifecycle", {
       level: "info", scope: "adapter.registry", event: "adapter.registered",
       message: "adapter registered", adapterType: adapter.metadata.type,
-      data: { agentSources: adapter.metadata.agentSources, executionFeatures: adapter.metadata.executionFeatures }
+      data: { agentSources: adapter.metadata.agentSources }
     });
   }
 

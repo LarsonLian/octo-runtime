@@ -95,7 +95,7 @@ function callFactory(value: unknown, options: JsonRecord, entry: AdapterManifest
   return factory(options);
 }
 
-/** Structural type guard: only `metadata.type`, execution metadata and
+/** Structural type guard: only `metadata.type`, Agent sources and
  * an `invoke` method are required, so any conforming object can be a hosted adapter. */
 function isHostedAdapter(value: unknown): value is HostedAdapter {
   if (!isRecord(value) || !isRecord(value.metadata)) return false;
@@ -106,8 +106,6 @@ function isHostedAdapter(value: unknown): value is HostedAdapter {
     value.metadata.agentSources.every(
       (source) => source === "preset" || source === "provisioned"
     ) &&
-    Array.isArray(value.metadata.executionFeatures) &&
-    value.metadata.executionFeatures.every((feature) => typeof feature === "string") &&
     typeof value.invoke === "function"
   );
 }

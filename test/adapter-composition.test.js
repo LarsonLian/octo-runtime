@@ -13,12 +13,37 @@ test("direct-import Host serves only its selected adapter without a manifest", a
   const host = await spawnAdapterHost({ entrypoint });
   try {
     assert.deepEqual(host.adapters.map(item => item.type), ["test"]);
+    assert.ok(host.adapters.every(item => !Object.hasOwn(item, "executionFeatures")));
     const events = [];
     for await (const event of canonicalEvents(host.client.invokeFrames(invocationInput(invokeRequest({ approvalMode: "full_access" }), "canonical", "test")))) events.push(event);
     assert.ok(events.some(event => event.type === "run.completed"));
     await assert.rejects(async () => {
       for await (const frame of host.client.invokeFrames(invocationInput(invokeRequest(), "canonical", "codex"))) void frame;
     }, /adapter.*codex|unknown adapter/i);
+  } finally {
+    await host.close();
+  }
+});
+
+test("JSON loader discovers and executes an Adapter without feature metadata", async () => {
+  const host = await spawnAdapterHost({
+    entrypoint: fileURLToPath(new URL("../packages/octo-runtime-adapter-host/dist/runner.js", import.meta.url)),
+    manifest: fileURLToPath(new URL("./fixtures/adapters.json", import.meta.url))
+  });
+  try {
+    const adapters = await host.client.list();
+    assert.deepEqual(adapters.map(item => item.type), ["test"]);
+    for (const metadata of [...host.adapters, ...adapters]) {
+      assert.equal(Object.hasOwn(metadata, "executionFeatures"), false);
+      assert.equal(Object.hasOwn(metadata, "capabilities"), false);
+      assert.deepEqual(metadata.agentSources, ["provisioned"]);
+    }
+    const events = [];
+    for await (const event of canonicalEvents(host.client.invokeFrames(invocationInput(
+      invokeRequest({ prompt: "featureless-loader", approvalMode: "full_access" }), "canonical", "test"
+    )))) events.push(event);
+    assert.ok(events.some(event => event.type === "message.delta" && event.payload.text === "Handled: featureless-loader"));
+    assert.equal(events.at(-1).type, "run.completed");
   } finally {
     await host.close();
   }
@@ -41,7 +66,15 @@ test("SDK starts and restarts a product's direct-import entry without CLI JSON",
     for (let i = 0; i < 2; i++) {
       const health = await runtime.startAccount({ subject: { type: "user", id: "composition-test" }, tenants: [{ id: "tenant" }] });
       assert.equal(health.local.adapterHostReady, true);
-      assert.deepEqual((await runtime.listAdapters()).map(item => item.type), ["test"]);
+      const adapters = await runtime.listAdapters();
+      assert.deepEqual(adapters.map(item => item.type), ["test"]);
+      assert.ok(adapters.every(item => !Object.hasOwn(item, "executionFeatures")));
+      const events = [];
+      for await (const event of runtime.invoke(invocationInput(invokeRequest({
+        runId: `sdk-featureless-${i}`, prompt: "featureless-sdk", approvalMode: "full_access"
+      }), "canonical", "test"))) events.push(event);
+      assert.ok(events.some(event => event.type === "message.delta" && event.payload.text === "Handled: featureless-sdk"));
+      assert.equal(events.at(-1).type, "run.completed");
       await runtime.stop("quit");
     }
   } finally {

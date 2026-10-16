@@ -516,23 +516,6 @@ export const MESSAGE_CHANNELS: ReadonlySet<MessageChannel> = new Set([
   "final"
 ]);
 
-/** Execution features must describe support implemented by the Adapter and Host. */
-export const executionFeatures = Object.freeze({
-  APPROVAL_ASK: "approval.ask",
-  APPROVAL_ASSISTED: "approval.assisted",
-  APPROVAL_FULL_ACCESS: "approval.full_access",
-  SESSION_SERIALIZE: "session.serialize",
-  SESSION_RESUME_RECOVERY: "session.resume_recovery",
-  SESSION_FORK: "session.fork",
-  MESSAGE_APPEND: "message.append",
-  TOOL_CANONICAL: "tool.canonical",
-  REATTACH: "run.reattach",
-  INTERACTION_RESPONSE: "interaction.response",
-  INPUT_IMAGE: "input.image"
-} as const);
-
-export { adapterApprovalModes } from "./permissions.js";
-
 /**
  * Validate an adapter event and stamp it with the ID, sequence, timestamp and
  * Run ownership that persistence requires. Returns a frozen object so callers

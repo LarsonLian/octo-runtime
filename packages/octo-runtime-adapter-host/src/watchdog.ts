@@ -6,8 +6,6 @@ import {
 } from "@mininglamp-oss/octo-runtime-protocol";
 import { performance } from "node:perf_hooks";
 
-export const WATCHDOG_CAPABILITY = "runtime.watchdog.v2";
-export const ACTIVITY_CAPABILITY = "activity.turn-progress";
 export const DEFAULT_RUNTIME_LIMITS = {
   firstFrameTimeoutMs: 60_000,
   modelIdleTimeoutMs: 300_000,

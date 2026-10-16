@@ -58,7 +58,7 @@ test("ZCode GUI adapter rejects unqualified assisted before starting its native 
       for await (const event of adapter.invoke({ ...request(), approvalMode })) assert.fail(`unexpected ${event.type}`);
     }, /APPROVAL_MODE_UNSUPPORTED/);
   }
-  assert.equal(adapter.metadata.executionFeatures.includes("interaction.response"), true);
+  assert.equal(typeof adapter.respondInteraction, "function");
   assert.equal(spawned, false);
 });
 

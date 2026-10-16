@@ -14,7 +14,6 @@ import {
 } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
   canonicalTerminalStatus,
-  executionFeatures,
   type InteractionResponse
 } from "@mininglamp-oss/octo-runtime-protocol";
 import { randomUUID } from "node:crypto";
@@ -1061,14 +1060,7 @@ export function createOpenClawAdapter({
       workspace: false,
       processModel: "websocket-per-invocation",
       transport: "openclaw-gateway-rpc",
-      agentSources: ["preset", "provisioned"],
-      executionFeatures: [
-        "tool.canonical",
-        "agent.existing-target.v1",
-        executionFeatures.INTERACTION_RESPONSE,
-        executionFeatures.APPROVAL_ASK,
-        executionFeatures.APPROVAL_FULL_ACCESS
-      ]
+      agentSources: ["preset", "provisioned"]
     },
     probe: probeGateway,
     async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {

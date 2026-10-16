@@ -8,8 +8,7 @@ function fixture(t, invoke) {
   const host = new AdapterHost();
   host.register({
     metadata: {
-      type: "fixture", agentSources: ["provisioned"], executionFeatures: ["approval.full_access"],
-      protocolSupport: { protocol: "fixture", modes: ["native", "canonical"], nativeMethods: [] }
+      type: "fixture", agentSources: ["provisioned"], protocolSupport: { protocol: "fixture", modes: ["native", "canonical"], nativeMethods: [] }
     }, invoke
   });
   const input = new PassThrough(), output = new PassThrough(), wire = [];

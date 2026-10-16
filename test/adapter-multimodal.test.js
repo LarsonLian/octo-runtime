@@ -212,7 +212,7 @@ test("Host forwards image blocks to an implementing Adapter without feature labe
   const host = new AdapterHost();
   let received;
   host.register({
-    metadata: { type: "fixture", protocolSupport: { protocol: "fixture.canonical", modes: ["canonical"], nativeMethods: [] }, agentSources: ["provisioned"], executionFeatures: [] },
+    metadata: { type: "fixture", protocolSupport: { protocol: "fixture.canonical", modes: ["canonical"], nativeMethods: [] }, agentSources: ["provisioned"] },
     async *invoke(request) {
       received = request.modelInputParts;
       yield { protocolVersion: 2, type: "run.completed", payload: {} };

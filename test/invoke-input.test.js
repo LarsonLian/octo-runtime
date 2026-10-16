@@ -89,7 +89,6 @@ test("every ingress can use the same plain JSON and exact model parts reach the 
     metadata: {
       type: "fixture",
       agentSources: ["provisioned"],
-      executionFeatures: ["approval.ask", "interaction.response"],
       protocolSupport: { protocol: "fixture.canonical", modes: ["canonical"], nativeMethods: [] }
     },
     async respondInteraction() {},

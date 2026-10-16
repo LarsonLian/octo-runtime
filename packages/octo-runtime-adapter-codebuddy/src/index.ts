@@ -3,7 +3,6 @@ import {
 import {
   canonicalTerminalStatus,
   hasImageInput,
-  executionFeatures,
   type InteractionResponse
 } from "@mininglamp-oss/octo-runtime-protocol";
 /**
@@ -132,15 +131,7 @@ export function createCodeBuddyAdapter({
   return defineAdapter({
     metadata: {
       type: "codebuddy",
-      agentSources: ["provisioned"],
-      executionFeatures: [
-        "session.serialize",
-        "tool.canonical",
-        executionFeatures.INTERACTION_RESPONSE,
-        executionFeatures.APPROVAL_ASK,
-        executionFeatures.APPROVAL_ASSISTED,
-        executionFeatures.APPROVAL_FULL_ACCESS
-      ]
+      agentSources: ["provisioned"]
     },
     probe: () => probeCommand(command),
     async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {

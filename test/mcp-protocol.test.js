@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { assertInvokeRequest, assertMcpServers, executionFeatures } from "@mininglamp-oss/octo-runtime-protocol";
+import { assertInvokeRequest, assertMcpServers } from "@mininglamp-oss/octo-runtime-protocol";
+import * as protocol from "@mininglamp-oss/octo-runtime-protocol";
+import * as browserProtocol from "../packages/octo-runtime-protocol/dist/browser.js";
 
 const baseRequest = { protocolVersion: 2,
   invocationId: "invoke-1",
@@ -40,7 +42,13 @@ test("local transports validate while remote execution cannot configure MCP", ()
   for (const [key, value] of [["skills", []], ["skillRoots", []], ["providerStateDir", "/tmp"]]) {
     assert.throws(() => assertInvokeRequest({ ...baseRequest, [key]: value }), /LOCAL_PLUGIN_CONFIGURATION_REQUIRED/);
   }
-  assert.equal(executionFeatures.MCP_DYNAMIC, undefined);
+});
+
+test("Node and browser protocol exports contain no Adapter feature catalogue", () => {
+  for (const exported of [protocol, browserProtocol]) {
+    assert.equal(Object.hasOwn(exported, "executionFeatures"), false);
+    assert.equal(Object.hasOwn(exported, "adapterApprovalModes"), false);
+  }
 });
 
 test("dynamic MCP contract rejects unknown transports, fields, names, and malformed URLs", () => {

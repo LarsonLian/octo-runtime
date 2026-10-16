@@ -15,7 +15,6 @@ import {
   type InvokeRequest
 } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
-  executionFeatures,
   type InteractionResponse,
   type NativeInteractionResponse
 } from "@mininglamp-oss/octo-runtime-protocol";
@@ -106,18 +105,6 @@ export function createCodexAdapter({
   spawnFn?: CodexAppServerSpawn;
   env?: NodeJS.ProcessEnv;
 } = {}) {
-  // Thread serialization and same-turn fresh fallback are end-to-end supported.
-  const adapterCapabilities = [
-    "session.serialize",
-    "session.resume_recovery",
-    "activity.turn-progress",
-
-    executionFeatures.INTERACTION_RESPONSE,
-    executionFeatures.APPROVAL_ASK,
-    executionFeatures.APPROVAL_ASSISTED,
-    executionFeatures.APPROVAL_FULL_ACCESS,
-    executionFeatures.INPUT_IMAGE
-  ];
   const interactionResponders = new Map<string, CodexInteractionResponder>();
   const nativeResponders = new Map<
     string,
@@ -144,7 +131,6 @@ export function createCodexAdapter({
       },
       type: "codex",
       agentSources: ["provisioned"],
-      executionFeatures: adapterCapabilities,
       processModel: "subprocess-per-invocation",
       transport: "json-rpc-2.0/stdio"
     },

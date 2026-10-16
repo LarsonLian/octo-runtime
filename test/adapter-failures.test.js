@@ -91,7 +91,6 @@ test("all Adapters preserve the same canonical failure detail and structured err
         type,
 
         agentSources: ["provisioned"],
-        executionFeatures: ["approval.full_access"],
         protocolSupport: { protocol: `${type}.canonical`, modes: ["canonical"], nativeMethods: [] }
       },
       async *invoke() {

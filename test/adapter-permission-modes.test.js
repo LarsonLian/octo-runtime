@@ -35,7 +35,7 @@ for (const approvalMode of ["ask", "assisted", "full_access"])
   test(`Host admits ${approvalMode} through the actual responder without feature labels`, async () => {
     const host = new AdapterHost();
     let invoked;
-    host.register({ metadata: { protocolSupport: { protocol: "fixture.canonical", modes: ["canonical"], nativeMethods: [] }, type: "fixture", agentSources: ["provisioned"], executionFeatures: [] },
+    host.register({ metadata: { protocolSupport: { protocol: "fixture.canonical", modes: ["canonical"], nativeMethods: [] }, type: "fixture", agentSources: ["provisioned"] },
       async respondInteraction() {}, async *invoke(input) {
         invoked = input.approvalMode;
         yield { protocolVersion: 2, type: "run.completed", payload: {} };
@@ -50,7 +50,7 @@ for (const protocolMode of ["canonical", "native"])
   test(`Host requires the actual ${protocolMode} responder for interactive approval`, async () => {
     const host = new AdapterHost();
     let invoked = false;
-    host.register({ metadata: { protocolSupport: { protocol: "fixture.raw", modes: ["native", "canonical"], nativeMethods: [] }, type: "fixture", agentSources: ["provisioned"], executionFeatures: [] },
+    host.register({ metadata: { protocolSupport: { protocol: "fixture.raw", modes: ["native", "canonical"], nativeMethods: [] }, type: "fixture", agentSources: ["provisioned"] },
       ...(protocolMode === "native" ? { async respondInteraction() {} } : { async respondNative() {} }),
       async *invoke() { invoked = true; } });
     await assert.rejects(async () => {

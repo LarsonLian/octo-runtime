@@ -1,7 +1,7 @@
 ---
 type: Rule
 title: Adapter 执行元数据与可用状态
-description: 宿主管理 Adapter 支持范围，Adapter 按执行合同适配转发；自建能力声明待清理。
+description: 宿主管理 Adapter 支持范围，Adapter 按执行合同适配转发，不维护自建能力声明。
 tags: ["adapter","agent-source"]
 timestamp: 2026-10-16T00:00:00Z
 implementation_baseline: df63c8f
@@ -24,13 +24,13 @@ Agent 定义由业务方管理。Adapter 元数据与 probe 分别描述执行�
 
 2026-10-16 用户明确：CLI、desktop 及其他 SDK 宿主选择并交付具体 Adapter 和版本，功能支持范围由宿主管理。Adapter 将宿主的显式请求转换为 Provider 原生操作并返回真实结果；Runtime 不再额外维护一套功能标签供宿主发现、匹配或准入。
 
-- `executionFeatures` 是自建的字符串标签机制，不是 Provider 原生协议。该机制属于过度设计，目标为删除字段、常量、发现投影和标签驱动的判断；不得继续新增标签，也不得换成另一份布尔字段表、能力 struct 或注册中心延续同一机制。
+- `executionFeatures` 自建字符串标签机制已删除，包括字段、常量、发现投影和标签驱动的判断；不得恢复标签，也不得换成另一份布尔字段表、能力 struct 或注册中心延续同一机制。
 - “透传”表示不改变业务意图和参数语义。必要的协议编码、参数映射、事件转换、交互响应和取消仍由 Adapter 实现；宿主不需要为此理解 Provider 私有传输细节。
 - 宿主决定使用哪些功能和如何展示选项。不支持的请求由对应 Adapter 按具体执行合同明确拒绝或返回已约定的未应用结果；不得静默丢参、扩大权限、改选 Adapter 或伪造成功。
 - Provider 是否已安装、登录或可连接属于实际运行状态。仅在必要的准备或调用边界检查并如实报告，不为维护功能标签额外启动 Provider、扫描 Home 或探测工具；安装决策仍归 HostApp。
 - Provider 原生握手中确实用于通信的字段在 Adapter 内按原协议处理，不复制为 Runtime 统一能力目录。原生字段名包含 capabilities，不构成保留自建声明机制的理由。
 
-本节为已确认的目标约束。Codex 的 computer-use 标签专用探测已删除，见[F4 实现记录](../journal/shared/2026-10-16-remove-computer-use-probe.md)。当前源码仍有其余 `executionFeatures` 及 Host 消费逻辑；下文保留字段盘点供定位，不能视为继续扩展该机制的许可。决定依据和后续验收边界见[记录](../journal/shared/2026-10-16-adapter-forwarding-ownership.md)。
+SDK、全部内置 Adapter、Host 加载与发现已删除标签字段，不再导出标签常量或审批标签转换函数。Codex 的 computer-use 标签专用探测也已删除，见[F4 实现记录](../journal/shared/2026-10-16-remove-computer-use-probe.md)。决定依据见[记录](../journal/shared/2026-10-16-adapter-forwarding-ownership.md)，本地构建和真实 Provider 验收分别记录，不代表远端 Worker 已发布。
 
 ## 来源
 
@@ -48,25 +48,24 @@ OpenClaw 声明两种来源，Adapter 边界都要求有效目标；公共 `Invo
 当前源码的 [AdapterMetadata](../../packages/octo-runtime-adapter-sdk/src/index.ts) 包含以下字段：
 
 - `agentSources`：支持的 Agent 来源。
-- `executionFeatures`：会话、审批、图片等自建执行特性标签，待按上述决定删除。
 - `protocolSupport`：native／canonical 输出模式及原生协议标识。
 - `mcp`、`workspace`：本地 MCP 配置支持和工作目录行为。
 
 自有 `metadata.capabilities` 已删除。`react` 没有可检查的本地执行定义，不作为默认值、发现结果、注册要求或准入条件。业务标签及其匹配由业务方管理，不在 SDK、Host、daemon 或 Adapter 内建立能力目录、AbilityProvider、Binding 或业务执行目标注册中心。
 
-Provider 的 `available`、认证、目标 Agent、当前输入可执行性与执行完成分别判断。可用性以实际 probe 为准；标签和静态支持声明不能证明执行成功。
+Provider 的 `available`、认证、目标 Agent、当前输入可执行性与执行完成分别判断。可用性以实际 probe 为准，不证明当前输入可执行或执行成功。
 
 产品选择的加载集合也独立于以上状态。CLI 与 SDK 嵌入代码分别决定集合；Host 不因框架支持更多类型或机器上探测到更多 Provider 就自行加载。默认来源拆分已实施，SDK 不读取 CLI 清单，见 [方案及影响](../tasks/adapter-composition-ownership/brief.md)。
 
 2026-10-15 最新决定：CLI 默认集合固定为 `apps/cli/src/default_adapters.json`，SDK 在自己的独立 Host 入口直接 import 并注册，不读取或复制 CLI 清单。后续将追加 `<home>/extra_adapters.json`（默认 `~/.octo-runtime/extra_adapters.json`）中的第三方 Adapter，采用既有 version/adapters 描述格式。按 type 保留先出现项，内置优先；同名外部项忽略且不执行其模块。SDK 不自动读取此文件。客户只持有发行包，也应能通过公开 `/adapter` 与 `/protocol` 合同开发独立 Dify 等 Adapter；内部包继续 private。公开 Adapter 入口与外部追加加载均待实施，详细路径、错误与验收规则见上述任务及[公开插件合同](../tasks/public-plugin-contracts/brief.md)。
 
-当前 Host 仍按执行合同及部分 `executionFeatures` 标签校验来源、模式、审批及输入。后续清理必须将标签驱动的判断逐项归还具体执行合同及对应 Adapter，不能只删判断而放行错误请求。非空 MCP 配置在未支持的 Adapter 上明确报错。SDK 的 `mcp` 是当前本地实现字段，不新增远程 Runtime 能力准入门槛；其他元数据字段是否简化不在本次文档决定中实施。
+Host 按执行合同校验来源、输出模式和实际交互 responder；审批参数映射、图片编码及不支持的输入由具体 Adapter 处理。watchdog 在本次调用实际收到合法原生进度后采用原生进度，此前使用有效 canonical 工作事件；不依赖静态标签。非空 MCP 配置在未支持的 Adapter 上明确报错。SDK 的 `mcp` 是当前本地实现字段，不新增远程 Runtime 能力准入门槛；其他元数据字段是否简化不在本次决定中实施。
 
 ## 协议删除边界
 
 - 执行计划不再定义 `required_capabilities`、`required_execution_features` 或 `provider_compatibility`；schema、生成类型和运行时字段白名单同步删除。提交这些字段按未知执行计划字段拒绝，不进行改名转换。
 - 删除整个 `ExecutionTarget` 类型及校验器，不保留 `standard_harness_agent` / `ability_provider` 分支、`executor_id`、`provider_binding_ref`。通过既有 adapter 选择执行实现，Provider Agent 目标仍使用 `providerAgentId`。
-- SDK、AdapterHost 加载、发现和桌面映射不再输出或要求自有 capabilities 字段；旧额外标签不参与执行判断，也不作为新合同的一部分。
+- SDK、AdapterHost 加载、发现和桌面映射不再输出或要求自有 capabilities 或 executionFeatures 字段；旧额外标签不参与执行判断，也不作为新合同的一部分。
 - ACP 的 `agentCapabilities` / `clientCapabilities`、MCP 握手和 Codex app-server 初始化中的 capabilities 属于 Provider 原生协议，按原协议处理。
 - Run=7、Context=v3、Adapter transport=2 不变。此次删除不触发 Home、Runtime 身份、profile、认证配置或 Provider 状态重建。
 

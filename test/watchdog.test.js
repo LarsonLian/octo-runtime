@@ -165,7 +165,7 @@ test("late user cancellation cannot replace a terminal during cleanup", { timeou
   let release, markCleaning;
   const cleaning = new Promise(resolve => { markCleaning = resolve; });
   const cleanup = new Promise(resolve => { release = resolve; });
-  host.register({ metadata: { protocolSupport: { protocol: ("terminal-race") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "terminal-race", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke() {
+  host.register({ metadata: { protocolSupport: { protocol: ("terminal-race") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "terminal-race", agentSources: ["provisioned"] }, async *invoke() {
     yield { protocolVersion: 2, type: "run.completed", payload: {} };
     markCleaning(); await cleanup;
   } });
@@ -307,7 +307,7 @@ const request = { protocolVersion: 2, invocationId:"watchdog-v2",agentSessionId:
 test("host preserves a single pending next during activity and ignores failing diagnostic sinks", async () => {
   let calls=0; let active=0; let peak=0;
   const host = new AdapterHost();
-  host.register({metadata:{ protocolSupport: { protocol: ("native") + '.canonical', modes: ['canonical'], nativeMethods: [] },type:"native",agentSources:["provisioned"],executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"]},invoke(req,ctx){
+  host.register({metadata:{ protocolSupport: { protocol: ("native") + '.canonical', modes: ['canonical'], nativeMethods: [] },type:"native",agentSources:["provisioned"]},invoke(req,ctx){
     ctx.reportActivity(started);
     return { [Symbol.asyncIterator](){return this;}, async next(){
       calls++; active++; peak=Math.max(peak,active);
@@ -327,7 +327,7 @@ test("host uses canonical progress until this invocation actually reports native
   const host = new AdapterHost();
   host.register({
     metadata: { protocolSupport: { protocol: "fallback.canonical", modes: ["canonical"], nativeMethods: [] },
-      type: "fallback", agentSources: ["provisioned"], executionFeatures: ["activity.turn-progress"] },
+      type: "fallback", agentSources: ["provisioned"] },
     async *invoke() {
       for (let index = 0; index < 4; index++) {
         yield event("message.delta", { text: "working" });
@@ -346,7 +346,7 @@ test("host uses canonical progress until this invocation actually reports native
 test("host hard deadline aborts provider even when its consumer is paused", async () => {
   let signal;
   const host=new AdapterHost();
-  host.register({metadata:{ protocolSupport: { protocol: ("paused") + '.canonical', modes: ['canonical'], nativeMethods: [] },type:"paused",agentSources:["provisioned"],executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"]},async *invoke(req){signal=req.signal; yield { protocolVersion: 2,type:"message.create",payload:{}}; await new Promise(()=>{});}});
+  host.register({metadata:{ protocolSupport: { protocol: ("paused") + '.canonical', modes: ['canonical'], nativeMethods: [] },type:"paused",agentSources:["provisioned"]},async *invoke(req){signal=req.signal; yield { protocolVersion: 2,type:"message.create",payload:{}}; await new Promise(()=>{});}});
   const iterator=preparedTestInvoke((...args) => preparedFrames(host, ...args))("paused",{...request,runtimeLimits:{runTimeoutMs:100,cancelGraceMs:100,modelIdlePolicy:"observe"}}, { protocolMode: "canonical" });
   await iterator.next(); await new Promise(r=>setTimeout(r,130));
   assert.equal(signal.aborted,true); assert.equal(signal.reason.timeoutReason,"run_deadline");
@@ -356,7 +356,7 @@ test("host hard deadline aborts provider even when its consumer is paused", asyn
 
 test("host bounds cleanup after terminal and timeout wins over provider stopped projection", async () => {
   const host=new AdapterHost();
-  host.register({metadata:{ protocolSupport: { protocol: ("cleanup") + '.canonical', modes: ['canonical'], nativeMethods: [] },type:"cleanup",agentSources:["provisioned"],executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"]},async *invoke(){yield { protocolVersion: 2,type:"run.completed",payload:{}};await new Promise(()=>{});}});
+  host.register({metadata:{ protocolSupport: { protocol: ("cleanup") + '.canonical', modes: ['canonical'], nativeMethods: [] },type:"cleanup",agentSources:["provisioned"]},async *invoke(){yield { protocolVersion: 2,type:"run.completed",payload:{}};await new Promise(()=>{});}});
   const events=[];
   for await(const e of preparedTestInvoke((...args) => preparedFrames(host, ...args))("cleanup",{...request,runtimeLimits:{cancelGraceMs:100}}, { protocolMode: "canonical" })) if (!e.type.startsWith("activity.")) events.push(e);
   assert.equal(events.length,1);

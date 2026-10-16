@@ -42,7 +42,7 @@ test("host rejects missing mandatory invocation inputs and untyped context befor
   let invoked = false;
   const host = new AdapterHost();
   host.register({
-    metadata: { protocolSupport: { protocol: ("contract") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "contract", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] },
+    metadata: { protocolSupport: { protocol: ("contract") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "contract", agentSources: ["provisioned"] },
     async *invoke() {
       invoked = true;
       yield { protocolVersion: 2, type: "run.completed", payload: {} };
@@ -72,7 +72,7 @@ test("host rejects legacy prompt, permission and reasoning contracts before disp
   let invoked = false;
   const host = new AdapterHost();
   host.register({
-    metadata: { protocolSupport: { protocol: ("legacy") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "legacy", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] },
+    metadata: { protocolSupport: { protocol: ("legacy") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "legacy", agentSources: ["provisioned"] },
     async *invoke() {
       invoked = true;
       yield { protocolVersion: 2, type: "run.completed", payload: {} };
@@ -95,35 +95,27 @@ test("host rejects legacy prompt, permission and reasoning contracts before disp
   assert.equal(invoked, false);
 });
 
-test("host requires an actual responder for ask and assisted regardless of labels", async () => {
+test("host requires an actual responder for ask and assisted", async () => {
   let invoked = false;
-  let responded = false;
   const host = new AdapterHost();
-  for (const [type, capabilities, responder] of [
-    ["neither", [], false],
-    ["declaration-only", ["interaction.response"], false]
-  ]) {
-    host.register({
-      metadata: { protocolSupport: { protocol: (type) + '.canonical', modes: ['canonical'], nativeMethods: [] }, type, agentSources: ["provisioned"], executionFeatures: [...capabilities, "approval.ask", "approval.assisted", "approval.full_access"] },
-      async *invoke() {
-        invoked = true;
-        yield { protocolVersion: 2, type: "run.completed", payload: {} };
-      },
-      ...(responder ? { async respondInteraction() { responded = true; } } : {})
-    });
-    for (const approvalMode of ["ask", "assisted"]) {
-      await assert.rejects(async () => {
-        for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))(type, { ...request, approvalMode }, { protocolMode: "canonical" })) assert.fail(`unexpected ${event.type}`);
-      }, /APPROVAL_MODE_UNSUPPORTED/);
+  host.register({
+    metadata: { protocolSupport: { protocol: "no-responder.canonical", modes: ["canonical"], nativeMethods: [] }, type: "no-responder", agentSources: ["provisioned"] },
+    async *invoke() {
+      invoked = true;
+      yield { protocolVersion: 2, type: "run.completed", payload: {} };
     }
+  });
+  for (const approvalMode of ["ask", "assisted"]) {
+    await assert.rejects(async () => {
+      for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("no-responder", { ...request, approvalMode }, { protocolMode: "canonical" })) assert.fail(`unexpected ${event.type}`);
+    }, /APPROVAL_MODE_UNSUPPORTED/);
   }
   assert.equal(invoked, false);
-  assert.equal(responded, false);
 });
 
 test("host holds terminal until adapter stream cleanup succeeds", async () => {
   const host = new AdapterHost();
-  host.register({ metadata: { protocolSupport: { protocol: ("bad") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "bad", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; throw new Error("cleanup failed"); } });
+  host.register({ metadata: { protocolSupport: { protocol: ("bad") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "bad", agentSources: ["provisioned"] }, async *invoke() { yield { protocolVersion: 2, type: "run.completed", payload: {} }; throw new Error("cleanup failed"); } });
   const events = []; for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("bad", request, { protocolMode: "canonical" })) { if (!event.type.startsWith("activity.")) events.push(event); };
   assert.deepEqual(events.map(x => x.type), ["run.failed"]);
   assert.equal(events[0].payload.failure.code, "OH-ADP-3004");
@@ -133,7 +125,7 @@ test("host holds terminal until adapter stream cleanup succeeds", async () => {
 
 test("host reports failure when adapter exits without terminal", async () => {
   const host = new AdapterHost();
-  host.register({ metadata: { protocolSupport: { protocol: ("short") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "short", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke() { yield { protocolVersion: 2, type: "message.create", payload: {} }; } });
+  host.register({ metadata: { protocolSupport: { protocol: ("short") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "short", agentSources: ["provisioned"] }, async *invoke() { yield { protocolVersion: 2, type: "message.create", payload: {} }; } });
   const events = []; for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("short", request, { protocolMode: "canonical" })) { if (!event.type.startsWith("activity.")) events.push(event); };
   assert.equal(events.at(-1).type, "run.failed");
 });
@@ -141,7 +133,7 @@ test("host reports failure when adapter exits without terminal", async () => {
 test("host classifies and redacts adapter-provided provider failures", async () => {
   const host = new AdapterHost();
   host.register({
-    metadata: { protocolSupport: { protocol: ("provider-fixture") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "provider-fixture", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] },
+    metadata: { protocolSupport: { protocol: ("provider-fixture") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "provider-fixture", agentSources: ["provisioned"] },
     async *invoke() {
       yield { protocolVersion: 2,
         type: "run.failed",
@@ -167,7 +159,7 @@ test("host classifies and redacts adapter-provided provider failures", async () 
 test("host normalizes unclassified analysis to an explicit fail-closed exposure", async () => {
   const host = new AdapterHost();
   host.register({
-    metadata: { protocolSupport: { protocol: ("legacy") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "legacy", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] },
+    metadata: { protocolSupport: { protocol: ("legacy") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "legacy", agentSources: ["provisioned"] },
     async *invoke() {
       yield { protocolVersion: 2, type: "message.delta", payload: { channel: "analysis", text: "internal" } };
       yield { protocolVersion: 2, type: "run.completed", payload: {} };
@@ -186,7 +178,7 @@ test("host normalizes unclassified analysis to an explicit fail-closed exposure"
 test("host keeps step-scoped analysis messages separate and closes each round", async () => {
   const host = new AdapterHost();
   host.register({
-    metadata: { protocolSupport: { protocol: ("steps") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "steps", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] },
+    metadata: { protocolSupport: { protocol: ("steps") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "steps", agentSources: ["provisioned"] },
     async *invoke() {
       for (const stepId of ["step-1", "step-2"]) {
         yield { protocolVersion: 2, type: "model_step.started", payload: { stepId } };
@@ -215,7 +207,7 @@ test("host keeps step-scoped analysis messages separate and closes each round", 
 
 test("host cancellation aborts provider and emits stopped once", async () => {
   const host = new AdapterHost();
-  host.register({ metadata: { protocolSupport: { protocol: ("slow") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "slow", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke(req) {
+  host.register({ metadata: { protocolSupport: { protocol: ("slow") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "slow", agentSources: ["provisioned"] }, async *invoke(req) {
     yield { protocolVersion: 2, type: "message.create", payload: {} };
     await new Promise((_, reject) => req.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
   } });
@@ -231,7 +223,7 @@ test("host cancellation aborts provider and emits stopped once", async () => {
 test("host watchdog fails a provider that never emits its first protocol frame", async () => {
   const host = new AdapterHost();
   host.register({
-    metadata: { protocolSupport: { protocol: ("silent-start") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "silent-start", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] },
+    metadata: { protocolSupport: { protocol: ("silent-start") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "silent-start", agentSources: ["provisioned"] },
     async *invoke() { await new Promise(() => {}); }
   });
   const events = [];
@@ -262,7 +254,7 @@ test("host watchdog fails a provider that never emits its first protocol frame",
 test("host watchdog uses the tool budget while a canonical tool call is open", async () => {
   const host = new AdapterHost();
   host.register({
-    metadata: { protocolSupport: { protocol: ("silent-tool") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "silent-tool", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] },
+    metadata: { protocolSupport: { protocol: ("silent-tool") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "silent-tool", agentSources: ["provisioned"] },
     async *invoke() {
       yield { protocolVersion: 2, type: "model_step.started", payload: { stepId: "step-1" } };
       yield { protocolVersion: 2, type: "tool_call.create", payload: { id: "tool-1", name: "exec", args: {}, status: "running" } };
@@ -295,7 +287,7 @@ test("host watchdog uses the tool budget while a canonical tool call is open", a
 test("host shutdown aborts every active provider invocation before returning", async () => {
   const host = new AdapterHost();
   let aborted = 0;
-  host.register({ metadata: { protocolSupport: { protocol: ("slow") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "slow", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] }, async *invoke(req) {
+  host.register({ metadata: { protocolSupport: { protocol: ("slow") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "slow", agentSources: ["provisioned"] }, async *invoke(req) {
     yield { protocolVersion: 2, type: "message.create", payload: {} };
     await new Promise((_, reject) => req.signal.addEventListener("abort", () => {
       aborted += 1;
@@ -435,7 +427,7 @@ test("RPC server closes active providers when its output fails", { timeout: 5_00
   let aborted;
   const providerAborted = new Promise(resolve => { aborted = resolve; });
   host.register({
-    metadata: { protocolSupport: { protocol: ("broken-output") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "broken-output", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"] },
+    metadata: { protocolSupport: { protocol: ("broken-output") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "broken-output", agentSources: ["provisioned"] },
     async *invoke(invoke) {
       started();
       await new Promise(resolve => invoke.signal.addEventListener("abort", () => { aborted(); resolve(); }, { once: true }));
@@ -461,7 +453,7 @@ test("RPC interaction responses resume the same active ask invocation", { timeou
   let resume;
   const response = new Promise(resolve => { resume = resolve; });
   host.register({
-    metadata: { protocolSupport: { protocol: ("interactive") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "interactive", agentSources: ["provisioned"], executionFeatures: [] },
+    metadata: { protocolSupport: { protocol: ("interactive") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "interactive", agentSources: ["provisioned"] },
     async *invoke(invocation) {
       yield { protocolVersion: 2,
         type: "interaction.requested",

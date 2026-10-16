@@ -33,7 +33,7 @@ test("Codex import and adapter creation do not inspect Home for computer-use lab
     for (configError of [undefined, "ENOENT", "EACCES"]) {
       const adapter = module.createCodexAdapter({ env: { CODEX_HOME: home } });
       assert.equal(adapter.metadata.type, "codex");
-      assert.ok(!adapter.metadata.executionFeatures.includes("tool.computer_use"));
+      assert.equal(Object.hasOwn(adapter.metadata, "executionFeatures"), false);
     }
     assert.equal(reads, 0, "import and creation must leave Provider configuration to Codex");
   `], { timeout: 10000 });

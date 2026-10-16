@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { invocationEnvironment } from "../../packages/octo-runtime-adapter-sdk/dist/index.js";
 
 export const adapter = {
-  metadata: { type: "tool-env", protocolSupport: { protocol: "tool-env.canonical", modes: ["canonical"], nativeMethods: [] }, agentSources: ["provisioned"], executionFeatures: ["approval.full_access"] },
+  metadata: { type: "tool-env", protocolSupport: { protocol: "tool-env.canonical", modes: ["canonical"], nativeMethods: [] }, agentSources: ["provisioned"] },
   async *invoke(request) {
     const env = invocationEnvironment(request);
     const result = execFileSync(process.execPath, ["-e", `process.stdout.write(JSON.stringify({

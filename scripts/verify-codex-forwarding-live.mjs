@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const endpoint = "https://im-test.deepminer.com.cn/";
+const endpoint = "https://im.deepminer.com.cn/";
 
 // The native tool performs one fixed, read-only request; no credentials are used.
 if (process.argv[2] === "--check-endpoint") {
@@ -27,7 +27,7 @@ if (process.argv[2] === "--check-endpoint") {
     .map(shellQuote).join(" ");
   let terminal, failureCode, text = "", completedTools = 0;
   try {
-    assert.ok(!host.list()[0].executionFeatures.includes("tool.computer_use"));
+    assert.equal(Object.hasOwn(host.list()[0], "executionFeatures"), false);
     for await (const event of host.invoke({
       inputs: [{ type: "text", text:
         `Run this exact read-only test command once: ${command}\nThen reply exactly with the marker it prints. Do not run other commands, modify other files, or send messages.` }],
@@ -52,7 +52,7 @@ if (process.argv[2] === "--check-endpoint") {
     assert.ok(text.includes(receipt.marker));
     assert.ok(completedTools > 0);
     console.log(JSON.stringify({ provider: "codex", endpoint, terminal, completedTools,
-      nativeCommandCalled: true, markerReturned: true, computerUseLabel: false }));
+      nativeCommandCalled: true, markerReturned: true, executionFeatureField: false }));
   } finally {
     await host.shutdown();
     await rm(directory, { recursive: true, force: true });

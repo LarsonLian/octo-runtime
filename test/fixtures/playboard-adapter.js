@@ -7,13 +7,7 @@ export const playboardAdapter = {
       nativeMethods: []
     },
 
-    agentSources: ["provisioned", "preset"],
-    executionFeatures: [
-      "approval.ask",
-      "approval.full_access",
-      "interaction.response",
-      "input.image"
-    ]
+    agentSources: ["provisioned", "preset"]
   },
   async respondInteraction() {},
   async *invoke(request) {

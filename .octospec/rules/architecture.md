@@ -129,7 +129,7 @@ IM Agent 固定 workdir、reset 只切会话是架构决策，不是待开发功
 
 业务标签及其匹配也由业务方管理。自有 `metadata.capabilities`、执行计划 `required_capabilities` 和整个 `ExecutionTarget` / AbilityProvider 预留合同已删除；不另建能力注册或分发体系。Host 保留协议转发和执行生命周期职责，执行模式、审批、输入及来源按真实执行支持校验，详见 [Adapter 元数据](adapter-metadata.md)。
 
-2026-10-16 进一步明确：CLI、desktop 和其他 SDK 宿主管理所选 Adapter 及版本的功能支持范围；Adapter 负责显式输入的原生适配、转发和真实结果返回。Runtime 不再额外建立功能发现、标签匹配或能力准入体系；`executionFeatures` 自建声明机制确定为待删除的过度设计，不得增加标签或换成能力字段表继续保留。必要的参数、权限、身份和原生协议校验仍在各自边界执行，实际安装/认证/连接状态与功能目录分别处理。当前源码清理尚未实施，具体边界见 [Adapter 规则](adapter-metadata.md#宿主掌握支持范围adapter-适配转发)及[决策记录](../journal/shared/2026-10-16-adapter-forwarding-ownership.md)。
+2026-10-16 进一步明确：CLI、desktop 和其他 SDK 宿主管理所选 Adapter 及版本的功能支持范围；Adapter 负责显式输入的原生适配、转发和真实结果返回。Runtime 不再额外建立功能发现、标签匹配或能力准入体系；`executionFeatures` 自建声明的字段、常量、发现投影和消费者已删除，不得恢复标签或换成能力字段表。必要的参数、权限、身份和原生协议校验仍在各自边界执行，实际安装/认证/连接状态与功能目录分别处理。具体边界见 [Adapter 规则](adapter-metadata.md#宿主掌握支持范围adapter-适配转发)及[决策记录](../journal/shared/2026-10-16-adapter-forwarding-ownership.md)。
 
 当前 AdapterHost 运行在独立子进程中，daemon 负责启动和管理它。SDK、内部 IPC 和 Extra 都复用该内核，不为每种外部系统另建执行内核。
 

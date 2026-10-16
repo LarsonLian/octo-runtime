@@ -228,7 +228,6 @@ test("unsupported adapters and native options fail explicitly", async () => {
     metadata: {
       type: "unsupported",
 
-      executionFeatures: [],
       agentSources: ["provisioned"]
     },
     async *invoke() {

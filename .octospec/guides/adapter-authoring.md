@@ -13,9 +13,9 @@ implementation_baseline: df63c8f
 
 ## 最小契约
 
-一个 adapter 提供静态元数据 `metadata` 和 `invoke`。元数据包含 `type`、`agentSources` 和 `executionFeatures`；`defineAdapter` 在未声明输出模式时补 canonical-only 的 `protocolSupport`。`probe` 是可选项；省略时 Host 标记为 `unchecked`，不代表 Provider 已确认可用。
+一个 adapter 提供静态元数据 `metadata` 和 `invoke`。元数据包含 `type` 和 `agentSources`；`defineAdapter` 在未声明输出模式时补 canonical-only 的 `protocolSupport`。`probe` 是可选项；省略时 Host 返回 `available: false`、`unavailableReason: "probe_missing"`，不代表 Provider 已确认可用。
 
-以上及下例描述当前尚未清理的 SDK 接口。2026-10-16 已确定删除 `executionFeatures` 自建能力声明机制，功能支持范围归宿主管理；不得按此旧字段继续扩展标签或设计替代能力表。Adapter 按明确执行合同适配转发，必要的校验与原生握手仍在执行边界处理。规则和实施状态见 [Adapter 责任边界](../rules/adapter-metadata.md#宿主掌握支持范围adapter-适配转发)。
+SDK 已删除 `executionFeatures` 自建能力声明机制，功能支持范围归宿主管理；不得恢复标签或设计替代能力表。Adapter 按明确执行合同适配转发，必要的校验与原生握手仍在执行边界处理。规则见 [Adapter 责任边界](../rules/adapter-metadata.md#宿主掌握支持范围adapter-适配转发)。
 
 ```js
 import { defineAdapter, probeCommand } from "@mininglamp-oss/octo-runtime-adapter-sdk";
@@ -23,8 +23,7 @@ import { defineAdapter, probeCommand } from "@mininglamp-oss/octo-runtime-adapte
 export const adapter = defineAdapter({
   metadata: {
     type: "my-provider",
-    agentSources: ["provisioned"],
-    executionFeatures: ["session.serialize"]
+    agentSources: ["provisioned"]
   },
   probe: () => probeCommand("my-provider"),
   async *invoke(request) {
@@ -55,7 +54,7 @@ CLI 默认项在 [`apps/cli/src/default_adapters.json`](../../apps/cli/src/defau
 
 ## Adapter 接入验收清单
 
-- 实现 `probe` 时，覆盖 provider 命令存在和不存在两种情况；不实现时，验证 Host 返回 `unchecked`。
+- 实现 `probe` 时，覆盖 provider 命令存在和不存在两种情况；不实现时，验证 Host 返回 `available: false`、`unavailableReason: "probe_missing"`。
 - 实现 Provider session 传递时，原生 session ID 能正确转换为 `session.update`；验收依据为真实行为，不以 `session.serialize` 标签代替。
 - 使用固定样例覆盖文本和 provider 错误；provider 能输出分析过程、工具调用或用量统计时，再覆盖对应事件。
 - 覆盖成功退出、非零退出码、缺少终态事件、清理失败和取消调用。

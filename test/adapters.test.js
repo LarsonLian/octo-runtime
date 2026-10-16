@@ -8,6 +8,8 @@ import {
   createJsonCliAdapter
 } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
 import { createCodeBuddyAdapter } from "@mininglamp-oss/octo-runtime-adapter-codebuddy";
+import { createZcodeGuiAdapter } from "@mininglamp-oss/octo-runtime-adapter-zcode-gui";
+import { createAntigravityAdapter } from "@mininglamp-oss/octo-runtime-adapter-antigravity";
 import { acpModelSelectionRequest, createAcpAdapter, normalizeAcpUpdate } from "@mininglamp-oss/octo-runtime-adapter-acp";
 import { hermesAdapter } from "@mininglamp-oss/octo-runtime-adapter-hermes";
 import { kimiCodeAdapter } from "@mininglamp-oss/octo-runtime-adapter-kimi-code";
@@ -421,7 +423,7 @@ test("Claude explicitly maps all permission modes; OpenCode routes human approva
       assert.equal(spec.args[spec.args.indexOf("--permission-prompt-tool") + 1], "stdio");
     } finally { await spec.cleanup(); }
   }
-  assert.equal(createOpenCodeAdapter().metadata.executionFeatures.includes("approval.ask"), true);
+  assert.equal(typeof createOpenCodeAdapter().respondInteraction, "function");
   const adapter = createOpenCodeAdapter({ command: "/provider-must-not-launch" });
   await assert.rejects(async () => { for await (const event of adapter.invoke({ ...request, approvalMode: "assisted" })) assert.fail(event.type); }, /APPROVAL_MODE_UNSUPPORTED/);
 });
@@ -548,7 +550,7 @@ test("OpenCode preserves model rounds and associates their reasoning, tools, and
 
 test("JSON CLI adapters reap a provider that stays alive after a semantic terminal", async () => {
   const adapter = createJsonCliAdapter({
-    metadata: { type: "semantic-terminal", agentSources: ["provisioned"], executionFeatures: [] },
+    metadata: { type: "semantic-terminal", agentSources: ["provisioned"] },
     buildCommand: () => ({
       command: process.execPath,
       args: ["-e", "console.log(JSON.stringify({done:true}));setInterval(()=>{},1000)"]
@@ -1171,10 +1173,15 @@ test("OpenClaw Gateway adapter fails reconciliation when non-terminal timeouts r
   assert.equal(events.some(event => event.type === "run.completed"), false);
 });
 
-test("only Codex declares append-only continuity recovery", () => {
-  assert.equal(createCodexAdapter().metadata.executionFeatures.includes("session.resume_recovery"), true);
-  assert.equal(createClaudeCodeAdapter().metadata.executionFeatures.includes("session.resume_recovery"), false);
-  assert.equal(createCodeBuddyAdapter().metadata.executionFeatures.includes("session.resume_recovery"), false);
+test("built-in Adapters expose execution metadata without feature catalogues", () => {
+  for (const adapter of [createCodexAdapter(), createClaudeCodeAdapter(), createCodeBuddyAdapter(),
+    createOpenCodeAdapter(), createOpenClawAdapter(), createZcodeGuiAdapter(), createAntigravityAdapter(),
+    hermesAdapter, kimiCodeAdapter, mcodeAdapter, qoderCliAdapter, qoderCliCnAdapter]) {
+    assert.equal(Object.hasOwn(adapter.metadata, "executionFeatures"), false, adapter.metadata.type);
+    assert.equal(Object.hasOwn(adapter.metadata, "capabilities"), false, adapter.metadata.type);
+    assert.ok(adapter.metadata.agentSources.length > 0);
+    assert.equal(typeof adapter.invoke, "function");
+  }
 });
 
 test("generic ACP and CodeBuddy full_access audit allow_once and cancel allow_always-only requests", { timeout: 5_000 }, async testContext => {
@@ -1196,7 +1203,7 @@ test("generic ACP and CodeBuddy full_access audit allow_once and cancel allow_al
         assert.equal(state.sideEffects, allowOnce ? 1 : 0);
         if (provider === "CodeBuddy") {
           assert.deepEqual(state.spawnOptions.args, ["--acp", "--permission-mode", "bypassPermissions"]);
-          assert.equal(adapter.metadata.executionFeatures.includes("interaction.response"), true);
+          assert.equal(typeof adapter.respondInteraction, "function");
         }
         const interactions = events.filter(event => event.type.startsWith("interaction."));
         assert.deepEqual(interactions.map(event => event.type), ["interaction.requested", "interaction.resolved"]);
@@ -1224,7 +1231,6 @@ test("generic ACP ask waits for actual respondInteraction before continuing the 
         options => createAcpAdapter({ type: "fixture-acp", provider: "fixture-acp", command: "fixture" }, options),
         [{ optionId: "allow-once", kind: "allow_once" }, { optionId: "reject-once", kind: "reject_once" }]
       );
-      assert.equal(adapter.metadata.executionFeatures.includes("interaction.response"), true);
       assert.equal(typeof adapter.respondInteraction, "function");
       const events = [];
       for await (const event of adapter.invoke({ ...request, approvalMode: "ask" })) {
@@ -1622,28 +1628,20 @@ test("Hermes and Kimi Code expose distinct ACP adapter types", () => {
   }, "fixture")[0].type, "tool_call.update");
 });
 
-test("MiniMax Code exposes an ACP adapter with default session and tool capabilities", () => {
+test("MiniMax Code exposes an ACP adapter and interaction responder", () => {
   assert.equal(mcodeAdapter.metadata.type, "mcode");
-  assert.deepEqual([...mcodeAdapter.metadata.executionFeatures].sort(), ["approval.ask", "approval.full_access", "input.image", "interaction.response", "session.serialize", "tool.canonical"]);
   assert.equal(typeof mcodeAdapter.respondInteraction, "function");
-  // MiniMax Code manages model selection itself, so it must not claim Codex's
-  // append-only continuity recovery capability.
-  assert.equal(mcodeAdapter.metadata.executionFeatures.includes("session.resume_recovery"), false);
 });
 
-test("Qoder CLI exposes an ACP adapter with default session and tool capabilities", () => {
+test("Qoder CLI exposes an ACP adapter and interaction responder", () => {
   assert.equal(qoderCliAdapter.metadata.type, "qodercli");
-  assert.deepEqual([...qoderCliAdapter.metadata.executionFeatures].sort(), ["approval.ask", "approval.full_access", "input.image", "interaction.response", "session.serialize", "tool.canonical"]);
   assert.equal(typeof qoderCliAdapter.respondInteraction, "function");
-  assert.equal(qoderCliAdapter.metadata.executionFeatures.includes("session.resume_recovery"), false);
 });
 
 test("Qoder CN CLI exposes a distinct ACP adapter type from Qoder CLI", () => {
   assert.equal(qoderCliCnAdapter.metadata.type, "qoderclicn");
   assert.notEqual(qoderCliCnAdapter.metadata.type, qoderCliAdapter.metadata.type);
-  assert.deepEqual([...qoderCliCnAdapter.metadata.executionFeatures].sort(), ["approval.ask", "approval.full_access", "input.image", "interaction.response", "session.serialize", "tool.canonical"]);
   assert.equal(typeof qoderCliCnAdapter.respondInteraction, "function");
-  assert.equal(qoderCliCnAdapter.metadata.executionFeatures.includes("session.resume_recovery"), false);
 });
 
 test("generic ACP cancellation sends session/cancel and converges to run.cancelled", async () => {

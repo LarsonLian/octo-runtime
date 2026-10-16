@@ -109,7 +109,6 @@ test("Host renders each run independently without deduplicating resumed context"
     metadata: {
       type: "fixture",
       agentSources: ["provisioned"],
-      executionFeatures: ["approval.full_access"],
       protocolSupport: { protocol: "fixture", modes: ["canonical"], nativeMethods: [] }
     },
     async *invoke(request) {
@@ -147,7 +146,6 @@ test("Host freezes contexts and injects once for both modes and image input", as
       metadata: {
         type: "fixture",
         agentSources: ["provisioned"],
-        executionFeatures: ["approval.full_access", "input.image"],
         protocolSupport: { protocol: "fixture", modes: ["native", "canonical"], nativeMethods: [] }
       },
       async *invoke(request) {

@@ -58,7 +58,7 @@ interface NativeEvent {
 }
 
 export const exampleAdapter = createJsonCliAdapter<NativeEvent>({
-  metadata: { type: "example", agentSources: ["provisioned"], executionFeatures: [] },
+  metadata: { type: "example", agentSources: ["provisioned"] },
   probe: () => probeCommand("example-cli"),
   buildCommand: (request) => ({
     command: "example-cli",

@@ -269,8 +269,7 @@ test("RPC native admission rejects unsupported mode before ACK; genuine native f
         nativeMethods: []
       },
       type: "canonical-only",
-      agentSources: ["provisioned"],
-      executionFeatures: ["approval.full_access"]
+      agentSources: ["provisioned"]
     },
     async *invoke() {
       invokes++;
@@ -401,7 +400,6 @@ test("invalid driver frames preserve continuous sequence for failure controls", 
     metadata: {
       type: "invalid",
       agentSources: ["provisioned"],
-      executionFeatures: ["approval.full_access"],
       protocolSupport: { protocol: "invalid.raw", modes: ["native"], nativeMethods: [] }
     },
     async *invoke() {
@@ -423,7 +421,6 @@ for (const protocolMode of ["native", "canonical"])
       metadata: {
         type: "cleanup",
         agentSources: ["provisioned"],
-        executionFeatures: ["approval.full_access"],
         protocolSupport: {
           protocol: "cleanup.raw",
           modes: ["native", "canonical"],

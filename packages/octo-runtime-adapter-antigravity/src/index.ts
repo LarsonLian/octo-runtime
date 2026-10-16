@@ -411,7 +411,6 @@ export function createAntigravityAdapter({
     metadata: {
       type: "antigravity",
       agentSources: ["provisioned"],
-      executionFeatures: ["approval.full_access", "session.serialize", "tool.canonical"],
       processModel: "subprocess-per-invocation",
       transport: "ndjson/stdio"
     },

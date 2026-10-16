@@ -12,7 +12,7 @@ import {
   type InvokeRequest,
   type ProbeResult
 } from "@mininglamp-oss/octo-runtime-adapter-sdk";
-import { executionFeatures, type InteractionResponse } from "@mininglamp-oss/octo-runtime-protocol";
+import { type InteractionResponse } from "@mininglamp-oss/octo-runtime-protocol";
 import {
   runZcodeAppServerTurn,
   type ZcodeAppServerCommand,
@@ -140,14 +140,6 @@ export function createZcodeGuiAdapter({
     metadata: {
       type: "zcode-gui",
       agentSources: ["provisioned"],
-      executionFeatures: [
-        "session.serialize",
-        "session.resume_recovery",
-        "tool.canonical",
-        executionFeatures.INTERACTION_RESPONSE,
-        executionFeatures.APPROVAL_ASK,
-        executionFeatures.APPROVAL_FULL_ACCESS
-      ],
       processModel: "subprocess-per-invocation",
       transport: "zcode-ndjson-rpc/stdio"
     },

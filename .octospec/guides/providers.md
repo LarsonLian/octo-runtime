@@ -26,7 +26,7 @@ CLI 默认加载集合以 [default_adapters.json](../../apps/cli/src/default_ada
 
 Host 公共 `invoke` 默认 native。使用 canonical-only Adapter，或需要统一事件的业务方，必须显式指定 `{ protocolMode: "canonical" }`。模式不支持时在接纳前拒绝，不从 canonical 重建原生输出，见 [输出模式合同](../rules/output-protocol.md)。当前仓库不再提供 Worker 远程接入包。
 
-`executionFeatures` 描述实际执行特性，`agentSources` 声明来源支持，`protocolSupport` 描述输出协议；可用状态由真实 probe 单独判断。详见 [执行元数据](../rules/adapter-metadata.md)。Host 当前没有公开 fork 流程，不因 Provider 原生具有 fork 就声明端到端支持。
+`agentSources` 声明来源支持，`protocolSupport` 描述输出协议；可用状态由真实 probe 单独判断。Runtime 已删除 `executionFeatures` 标签机制；功能入口归宿主管理，Adapter 按具体执行合同适配或明确拒绝。详见 [执行元数据](../rules/adapter-metadata.md)。Host 当前没有公开 fork 流程，不因 Provider 原生具有 fork 就声明端到端支持。
 
 ## 会话与权限
 

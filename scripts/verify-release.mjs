@@ -63,7 +63,12 @@ try {
     try {
       const health = await runtime.startAccount({ subject: { type: "user", id: "release-check" }, tenants: [{ id: "local" }] });
       assert.equal(health.local.adapterHostReady, true);
-      assert.equal((await runtime.listAdapters()).length, 12);
+      const adapters = await runtime.listAdapters();
+      assert.equal(adapters.length, 12);
+      for (const adapter of adapters) {
+        assert.equal(Object.hasOwn(adapter, "executionFeatures"), false, adapter.type);
+        assert.equal(Object.hasOwn(adapter, "capabilities"), false, adapter.type);
+      }
     } finally {
       await runtime.stop("quit");
     }
@@ -151,7 +156,12 @@ try {
     [
       "--input-type=module",
       "-e",
-      'const e = await import("@mininglamp-oss/octo-runtime/extra"); const p = await import("@mininglamp-oss/octo-runtime/protocol"); if (e.InvokeInput !== p.InvokeInput) throw Error("public exports mismatch"); await import("./compiled/plugin.mjs");'
+      `const e = await import("@mininglamp-oss/octo-runtime/extra");
+      const p = await import("@mininglamp-oss/octo-runtime/protocol");
+      if (e.InvokeInput !== p.InvokeInput) throw Error("public exports mismatch");
+      for (const name of ["executionFeatures", "adapterApprovalModes"])
+        if (Object.hasOwn(p, name)) throw Error("removed protocol export: " + name);
+      await import("./compiled/plugin.mjs");`
     ],
     { cwd: consumer }
   );

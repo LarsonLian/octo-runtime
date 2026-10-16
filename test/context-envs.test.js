@@ -55,7 +55,7 @@ test("concurrent CLI invocations and their child tools inherit isolated envs", a
   const previous = process.env[key];
   const child = `process.stdout.write(JSON.stringify({value:process.env.${key}}))`;
   const source = `const {execFileSync}=require('node:child_process'); console.log(execFileSync(process.execPath,['-e',${JSON.stringify(child)}],{encoding:'utf8'}));`;
-  const adapter = createJsonCliAdapter({ metadata: { type: "env-test", agentSources: ["provisioned"], executionFeatures: [] },
+  const adapter = createJsonCliAdapter({ metadata: { type: "env-test", agentSources: ["provisioned"] },
     buildCommand: () => ({ command: process.execPath, args: ["-e", source] }),
     normalize: native => [{ protocolVersion: 2, type: "run.completed", payload: { result: native.value } }] });
   const run = async value => {

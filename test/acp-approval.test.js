@@ -86,7 +86,7 @@ test("Host rejects interactive approval with no response implementation", async 
   const { AdapterHost } = await import("@mininglamp-oss/octo-runtime-adapter-host");
   const host = new AdapterHost();
   let started = false;
-  host.register({ metadata: { protocolSupport: { protocol: ("broken") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "broken", agentSources: ["provisioned"], executionFeatures: [] }, async *invoke() { started = true; yield { protocolVersion: 2, type: "run.completed", payload: {} }; } });
+  host.register({ metadata: { protocolSupport: { protocol: ("broken") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "broken", agentSources: ["provisioned"] }, async *invoke() { started = true; yield { protocolVersion: 2, type: "run.completed", payload: {} }; } });
   await assert.rejects(async () => { for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("broken", request, { protocolMode: "canonical" })) assert.fail(event.type); }, /APPROVAL_MODE_UNSUPPORTED/);
   assert.equal(started, false);
 });

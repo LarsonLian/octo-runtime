@@ -23,7 +23,6 @@ import {
 import {
   canonicalTerminalStatus,
   contextActmode,
-  executionFeatures,
   providerInputParts,
   type InteractionResponse
 } from "@mininglamp-oss/octo-runtime-protocol";
@@ -36,7 +35,6 @@ export interface AcpAdapterDefinition {
   command: string;
   args?: readonly string[] | ((request: InvokeRequest) => readonly string[]);
   env?: (request: InvokeRequest) => NodeJS.ProcessEnv;
-  executionFeatures?: readonly string[];
   protocolVersion?: string | number;
   emptyLoadResultMeansMissing?: boolean;
 }
@@ -226,14 +224,7 @@ export function createAcpAdapter(
       metadata: {
         mcp: true,
         type: definition.type,
-        agentSources: ["provisioned"],
-        executionFeatures: [
-          ...(definition.executionFeatures ?? ["session.serialize", "tool.canonical"]),
-          executionFeatures.INTERACTION_RESPONSE,
-          executionFeatures.INPUT_IMAGE,
-          executionFeatures.APPROVAL_ASK,
-          executionFeatures.APPROVAL_FULL_ACCESS
-        ]
+        agentSources: ["provisioned"]
       },
       probe: () => probeCommand(command),
       async respondInteraction(invocationId: string, response: InteractionResponse): Promise<void> {

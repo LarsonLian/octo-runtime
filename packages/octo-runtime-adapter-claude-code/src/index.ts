@@ -33,7 +33,6 @@ import {
   type MessageExposure
 } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
-  executionFeatures,
   protocolError,
   type InteractionResponse,
   type NativeInteractionResponse
@@ -656,15 +655,6 @@ export function createClaudeCodeAdapter({
       },
       type: "claude-code",
       agentSources: ["provisioned"],
-      executionFeatures: [
-        "activity.turn-progress",
-        "session.serialize",
-        "tool.canonical",
-        executionFeatures.INTERACTION_RESPONSE,
-        executionFeatures.APPROVAL_ASK,
-        executionFeatures.APPROVAL_ASSISTED,
-        executionFeatures.APPROVAL_FULL_ACCESS
-      ],
       processModel: "subprocess-per-invocation",
       transport: "ndjson/stdio"
     },

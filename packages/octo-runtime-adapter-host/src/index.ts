@@ -47,8 +47,7 @@ import { withModelContexts } from "./model-input.js";
 import { hostLog } from "./host-log.js";
 import {
   AdapterWatchdogTimeoutError,
-  InvocationWatchdog,
-  WATCHDOG_CAPABILITY
+  InvocationWatchdog
 } from "./watchdog.js";
 
 /** Provider-neutral metadata the Host uses for registration and capability discovery. */
@@ -58,7 +57,6 @@ export interface HostedAdapterMetadata {
   protocolSupport?: AdapterProtocolSupport;
   type: string;
   agentSources: ("preset" | "provisioned")[];
-  executionFeatures: string[];
   processModel?: string;
   transport?: string;
   providerVersion?: string | null;
@@ -127,8 +125,7 @@ export class AdapterHost {
   list(): HostedAdapterMetadata[] {
     return [...this.#adapters.values()].map((adapter) => ({
       ...adapter.metadata,
-      protocolSupport: this.#support(adapter),
-      executionFeatures: [...new Set([...adapter.metadata.executionFeatures, WATCHDOG_CAPABILITY])]
+      protocolSupport: this.#support(adapter)
     }));
   }
 
@@ -164,9 +161,6 @@ export class AdapterHost {
         return {
           ...adapter.metadata,
           protocolSupport: this.#support(adapter),
-          executionFeatures: [
-            ...new Set([...adapter.metadata.executionFeatures, WATCHDOG_CAPABILITY])
-          ],
           available,
           unavailableReason: available ? null : unavailableReason,
           providerPath: available ? (probe.command as string) : null,

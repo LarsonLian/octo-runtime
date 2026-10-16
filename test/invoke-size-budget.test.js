@@ -36,7 +36,6 @@ function fixture(t, invoke) {
     metadata: {
       type: "size-fixture",
       agentSources: ["provisioned"],
-      executionFeatures: ["approval.full_access", "input.image.v1"],
       protocolSupport: { protocol: "size-fixture", modes: ["canonical"], nativeMethods: [] }
     },
     invoke:
