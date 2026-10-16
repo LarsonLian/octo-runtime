@@ -35,7 +35,7 @@ test("tool overrides cross a real Host subprocess and reach child tools without 
   const manifest = join(root, "adapters.json");
   await writeFile(manifest, JSON.stringify({ version: 1, adapters: [{ type: "tool-env", module: resolve("test/fixtures/tool-environment-adapter.js"), export: "adapter" }] }));
   const host = await spawnAdapterHost({ entrypoint: resolve("packages/octo-runtime-adapter-host/dist/runner.js"), manifest,
-    env: { ...process.env, OCTO_RUNTIME_HOME: root, OCTO_RUNTIME_DEBUG: "1", OCTO_BOT_TOKEN: "wrong-device", OCTO_API_BASE_URL: "wrong-device" } });
+    env: { ...process.env, OCTO_RUNTIME_HOME: root, OCTO_RUNTIME_LOGS_DIRECTORY: join(root, "logs"), OCTO_BOT_TOKEN: "wrong-device", OCTO_API_BASE_URL: "wrong-device" } });
   t.after(() => host.close());
   const original = structuredClone(context);
   const execute = async (value, index) => {
@@ -50,7 +50,8 @@ test("tool overrides cross a real Host subprocess and reach child tools without 
   };
   await Promise.all([execute(token, 1), execute("bf_another_fixture", 2)]);
   assert.deepEqual(context, original);
-  const log = (await readdir(join(root, "logs"))).find(name => /^adapter-host-\d{8}T\d{2}\.log$/.test(name));
+  await host.close();
+  const log = (await readdir(join(root, "logs"))).find(name => /^kernel-\d{8}T\d{2}\.log$/.test(name));
   assert.ok(!(await readFile(join(root, "logs", log), "utf8")).includes(token));
   const request = invokeRequest({ context, executionEnvOverrides: octoCliEnvironment(`${base}/api`, token) });
   assert.equal(codexEnvironmentConfig(request, {})["shell_environment_policy.set"].OCTO_BOT_TOKEN, token);
