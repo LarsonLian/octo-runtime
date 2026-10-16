@@ -131,7 +131,7 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
     else if (req.url === "/v1/bot/sendMessage") {
       const body = JSON.parse(Buffer.concat(chunks));
       const messageId = String(2000 + cards.length);
-      cards.push({ messageId, frame: body.payload.data });
+      cards.push({ messageId, frame: body.payload.data, interaction: body.payload.card });
       res.end(JSON.stringify({ message_id: messageId }));
     } else if (req.url === "/v1/bot/events") {
       const body = JSON.parse(Buffer.concat(chunks));
@@ -369,7 +369,11 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   assert.notEqual(calls[1].agentSessionId, session);
   assert.equal(calls[1].sessionGeneration, 2);
   send("approval");
-  await waitFor(() => replies.some((reply) => reply.includes("/approve interaction-fixture")));
+  await waitFor(() =>
+    cards.some((card) =>
+      card.interaction?.actions?.some((action) => action.id === "interaction_accepted")
+    )
+  );
   send("/approve interaction-fixture", "stranger");
   send("/approve interaction-fixture", "other");
   await waitFor(() => replies.some((reply) => reply.includes("不属于当前会话")));
@@ -399,9 +403,9 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   };
   send("card-wait");
   await waitFor(
-    () => calls.length === 5 && cards.some((card) => card.frame.reasoningId === calls[4].runId)
+    () => calls.length === 5 && cards.some((card) => card.frame?.reasoningId === calls[4].runId)
   );
-  const current = cards.find((card) => card.frame.reasoningId === calls[4].runId);
+  const current = cards.find((card) => card.frame?.reasoningId === calls[4].runId);
   const callback = {
     message_id: current.messageId,
     channel_id: "owner",
@@ -423,9 +427,9 @@ test("IM owns one binary WS, reuses session, resets provider handle, and replies
   assert.ok(!acknowledged.includes(forged));
   send("retry-card");
   await waitFor(
-    () => calls.length === 6 && cards.some((card) => card.frame.reasoningId === calls[5].runId)
+    () => calls.length === 6 && cards.some((card) => card.frame?.reasoningId === calls[5].runId)
   );
-  const failed = cards.find((card) => card.frame.reasoningId === calls[5].runId);
+  const failed = cards.find((card) => card.frame?.reasoningId === calls[5].runId);
   const retry = push("card_action", {
     ...callback,
     message_id: failed.messageId,

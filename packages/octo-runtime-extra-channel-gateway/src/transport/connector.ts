@@ -8,6 +8,7 @@ import { getCardProfile, sendTemplateCardMessage, editTemplateCardMessage } from
 import { sendMessage, sendTyping } from "./api/messages.js";
 import { selectReasoningTemplate } from "./cards.js";
 import type { ReasoningFrame, ReasoningTemplate } from "./reasoning-frame.js";
+import { postJson } from "./api/client.js";
 
 export class OctoConnector {
   #profile?: { expires: number; template?: ReasoningTemplate };
@@ -54,6 +55,54 @@ export class OctoConnector {
     });
     if (!receipt?.message_id) throw new Error("IM_DELIVERY_RECEIPT_UNKNOWN");
     return String(receipt.message_id);
+  }
+  async interactionCard(
+    address: ImAddress,
+    card: Record<string, unknown>,
+    effectKey: string,
+    messageId?: string
+  ): Promise<string | undefined> {
+    if (this.config.cards === false) return;
+    const profile = await getCardProfile({
+      apiUrl: this.config.api_url,
+      botToken: this.token,
+      signal: this.requestSignal()
+    });
+    if (
+      !profile.available ||
+      !profile.enabled ||
+      !profile.config?.interaction_enabled ||
+      !profile.profiles?.includes("octo/v2")
+    )
+      return;
+    const payload = {
+      type: 17,
+      profile: "octo/v2",
+      card_version: "1.5",
+      card,
+      card_seq: messageId ? 2 : 1
+    };
+    if (
+      Buffer.byteLength(JSON.stringify(payload)) >
+      Number(profile.limits?.max_payload_bytes ?? 16384)
+    )
+      throw Error("IM_INTERACTION_CARD_TOO_LARGE");
+    const result = await postJson<{ message_id?: string }>(
+      this.config.api_url,
+      this.token,
+      messageId ? "/v1/bot/message/edit" : "/v1/bot/sendMessage",
+      {
+        channel_id: address.channelId,
+        channel_type: address.channelType,
+        ...(messageId
+          ? { message_id: messageId, content_edit: JSON.stringify(payload) }
+          : { payload, client_msg_no: effectKey })
+      },
+      this.requestSignal(),
+      { retryOn429: false }
+    );
+    if (!messageId && !result?.message_id) throw Error("IM_DELIVERY_RECEIPT_UNKNOWN");
+    return messageId ?? String(result!.message_id);
   }
   async card(
     address: ImAddress,

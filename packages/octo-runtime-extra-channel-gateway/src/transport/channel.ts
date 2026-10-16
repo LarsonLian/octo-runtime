@@ -4,6 +4,8 @@
  */
 import { CONTEXT_SCHEMA } from "@mininglamp-oss/octo-runtime-protocol";
 import type { ChannelCallbacks, OctoBotConfig, ImRunControls, ImAddress } from "../contracts.js";
+import type { InteractionRequestedPayload } from "@mininglamp-oss/octo-runtime-protocol";
+import { interactionCard, interactionAnswer } from "./interaction-card.js";
 import type { ImCredentialSource } from "../ports.js";
 import { imBotIdentity } from "../lifecycle/configuration.js";
 import { verifyBotIdentity } from "./auth.js";
@@ -52,6 +54,7 @@ export class GatewayTransport {
       controls: ImRunControls;
       expires: number;
       active: boolean;
+      interactions: Map<string, { request: InteractionRequestedPayload; messageId: string }>;
     }
   >();
   constructor(
@@ -190,6 +193,21 @@ export class GatewayTransport {
             )
           }),
           beginPresentation: (runId, onDiagnostic, controls) => {
+            const interactions = new Map<
+              string,
+              { request: InteractionRequestedPayload; messageId: string }
+            >();
+            const resolveInteraction = async (id: string, status: string) => {
+              const entry = interactions.get(id);
+              if (!entry) return;
+              interactions.delete(id);
+              await this.#api!.interactionCard(
+                message,
+                interactionCard(entry.request, status),
+                stableEffectKey(this.identity, message, id, "interaction"),
+                entry.messageId
+              );
+            };
             const stopTyping =
               this.config.typing === false ? () => {} : this.#typing!.acquire(message, runId);
             const card = new CardSession(
@@ -206,7 +224,8 @@ export class GatewayTransport {
               senderId: message.fromUid,
               controls,
               expires: Date.now() + 86_400_000 + 30 * 60_000,
-              active: true
+              active: true,
+              interactions
             });
             if (this.#bindings.size > 128) {
               const idle = [...this.#bindings].find(([, binding]) => !binding.active);
@@ -215,9 +234,38 @@ export class GatewayTransport {
             if (!this.#polling)
               this.#polling = this.#pollActions(token, registration.owner_uid, signal);
             return {
+              interaction: async (request) => {
+                const document = interactionCard(request);
+                const effect = stableEffectKey(
+                  this.identity,
+                  message,
+                  request.interactionId,
+                  "interaction"
+                );
+                let messageId: string | undefined;
+                const receipt = await this.#delivery!.deliver(effect, async () => {
+                  messageId = await this.#api!.interactionCard(message, document, effect);
+                  if (!messageId) throw Error("IM_INTERACTION_CARD_UNAVAILABLE");
+                  return messageId;
+                });
+                if (receipt.state !== "delivered" || !receipt.messageId) return false;
+                interactions.set(request.interactionId, {
+                  request: structuredClone(request),
+                  messageId: receipt.messageId
+                });
+                return true;
+              },
+              resolveInteraction,
               update: (snapshot) => card.update(snapshot),
               finish: async () => {
                 try {
+                  for (const id of interactions.keys()) {
+                    try {
+                      await resolveInteraction(id, "invalidated");
+                    } catch {
+                      onDiagnostic("IM_INTERACTION_CARD_FAILED");
+                    }
+                  }
                   await card.finish();
                 } finally {
                   const binding = this.#bindings.get(runId);
@@ -311,15 +359,38 @@ export class GatewayTransport {
               (Number(action.channelType) === 1 &&
                 binding.address.channelId === `s${this.#spaceId}_${action.channelId}`);
             // 操作者、空间、原消息和地址均匹配才允许控制 Run，不信任表单中的归属声明。
+            const interaction = [...binding.interactions.values()].find(
+              (entry) => entry.messageId === action.messageId
+            );
             if (
-              binding.card.messageId !== action.messageId ||
+              (binding.card.messageId !== action.messageId && !interaction) ||
               binding.address.channelType !== Number(action.channelType) ||
               binding.senderId !== action.operatorUid ||
               !sameAddress
             )
               continue;
-            if (action.actionId === "reasoning_stop") await binding.controls.cancel();
-            else if (action.actionId === "reasoning_retry")
+            if (interaction && action.actionId.startsWith("interaction_")) {
+              if (!binding.active || !binding.controls.respond) continue;
+              await binding.controls.respond(interactionAnswer(interaction.request, action));
+              binding.interactions.delete(interaction.request.interactionId);
+              try {
+                await this.#api!.interactionCard(
+                  binding.address,
+                  interactionCard(interaction.request, "resolved"),
+                  stableEffectKey(
+                    this.identity,
+                    binding.address,
+                    interaction.request.interactionId,
+                    "interaction"
+                  ),
+                  interaction.messageId
+                );
+              } catch {
+                this.callbacks.onDiagnostic?.("IM_INTERACTION_CARD_FAILED");
+              }
+            } else if (!interaction && action.actionId === "reasoning_stop")
+              await binding.controls.cancel();
+            else if (!interaction && action.actionId === "reasoning_retry")
               binding.controls.retry(action.operatorUid, `card_action:${event.event_id}`);
             else continue;
             consumed = true;

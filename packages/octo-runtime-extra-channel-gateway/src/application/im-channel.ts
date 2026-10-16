@@ -40,7 +40,13 @@ export class ImRuntime {
   readonly #tasks = new Map<string, { rootInvocationId: string; task: ImTask }>();
   readonly #interactions = new Map<
     string,
-    { invocationId: string; key: string; senderId: string; request: InteractionRequestedPayload }
+    {
+      invocationId: string;
+      sessionId: string;
+      key: string;
+      senderId: string;
+      request: InteractionRequestedPayload;
+    }
   >();
   readonly #responding = new Set<string>();
   #closed = true;
@@ -358,6 +364,11 @@ export class ImRuntime {
   ): ImRunControls & { failed: boolean } {
     const controls = {
       failed: false,
+      respond: async (response: InteractionResponse) => {
+        if (this.#tasks.get(key)?.rootInvocationId !== invocationId)
+          throw Error("IM_INTERACTION_STALE_RUN");
+        await this.#submitInteraction(key, message.senderId, response);
+      },
       cancel: async () =>
         this.#tasks.get(key)?.rootInvocationId === invocationId &&
         (await this.#tasks.get(key)!.task.cancel("IM card stop")),
@@ -465,8 +476,30 @@ export class ImRuntime {
     if (!approval) {
       if (!match[3]?.trim()) return;
       response.value =
-        entry.request.kind === "elicitation" ? (JSON.parse(match[3]) as unknown) : match[3];
+        entry.request.kind === "elicitation" || Array.isArray(entry.request.request.questions)
+          ? (JSON.parse(match[3]) as unknown)
+          : match[3];
     }
+    await this.#submitInteraction(key, message.senderId, response);
+    await this.#reply(message, "已提交本次响应。", `interaction:${message.messageId}`);
+  }
+  async #submitInteraction(
+    key: string,
+    senderId: string,
+    response: InteractionResponse
+  ): Promise<void> {
+    const entry = this.#interactions.get(response.interactionId);
+    if (
+      this.#closed ||
+      this.#signal.aborted ||
+      !entry ||
+      entry.key !== key ||
+      entry.senderId !== senderId ||
+      this.#sessionStore.read(key)?.id !== entry.sessionId ||
+      !Number.isFinite(Date.parse(entry.request.expiresAt)) ||
+      Date.parse(entry.request.expiresAt) <= Date.now()
+    )
+      throw Error("IM_INTERACTION_STALE");
     if (this.#responding.has(response.interactionId)) return;
     this.#responding.add(response.interactionId);
     try {
@@ -475,7 +508,6 @@ export class ImRuntime {
     } finally {
       this.#responding.delete(response.interactionId);
     }
-    await this.#reply(message, "已提交本次响应。", `interaction:${message.messageId}`);
   }
   async #turn(
     message: ImInboundMessage,
@@ -622,11 +654,18 @@ export class ImRuntime {
           if (this.#interactions.size >= 64) throw new Error("IM_INTERACTION_CAPACITY_EXHAUSTED");
           this.#interactions.set(event.payload.interactionId, {
             invocationId: request.invocationId,
+            sessionId: request.agentSessionId,
             key,
             senderId: message.senderId,
             request: structuredClone(event.payload)
           });
           const interaction = event.payload;
+          let cardShown = false;
+          try {
+            cardShown = (await presentation?.interaction?.(interaction)) ?? false;
+          } catch {
+            this.#diagnostic("IM_INTERACTION_CARD_FAILED", request.runId);
+          }
           const display = interaction.request.operation as { summary?: unknown } | undefined;
           const summary = [
             display?.summary,
@@ -637,14 +676,24 @@ export class ImRuntime {
             interaction.kind === "approval"
               ? `/approve ${interaction.interactionId} 或 /decline ${interaction.interactionId}`
               : `/respond ${interaction.interactionId} ${interaction.kind === "elicitation" ? "<JSON>" : "<回答>"}`;
-          await this.#reply(
-            message,
-            `${summary?.slice(0, 1000) ?? "执行需要你的确认或输入。"}\n${instruction}`,
-            `interaction:${interaction.interactionId}`
-          );
+          if (!cardShown)
+            await this.#reply(
+              message,
+              `${summary?.slice(0, 1000) ?? "执行需要你的确认或输入。"}\n${Array.isArray(interaction.request.questions) ? JSON.stringify(interaction.request.questions).slice(0, 8000) + "\n请按问题 ID 提交 JSON 答案。\n" : ""}${instruction}`,
+              `interaction:${interaction.interactionId}`
+            );
         }
-        if (event.type === "interaction.resolved")
+        if (event.type === "interaction.resolved") {
           this.#interactions.delete(event.payload.interactionId);
+          try {
+            await presentation?.resolveInteraction?.(
+              event.payload.interactionId,
+              event.payload.status
+            );
+          } catch {
+            this.#diagnostic("IM_INTERACTION_CARD_FAILED", request.runId);
+          }
+        }
         projector.accept(event);
         controls.failed = projector.snapshot().terminal === "failed";
         presentation?.update(snapshot());

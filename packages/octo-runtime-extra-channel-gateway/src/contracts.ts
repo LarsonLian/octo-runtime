@@ -6,6 +6,7 @@ import type {
   ContextEnvelope,
   CanonicalEvent,
   InteractionResponse,
+  InteractionRequestedPayload,
   InvokeInput,
   InvokeEnvironment,
   ModelInputPart,
@@ -79,11 +80,14 @@ export interface ImInboundMessage {
 }
 
 export interface ImPresentation {
+  interaction?(request: InteractionRequestedPayload): Promise<boolean>;
+  resolveInteraction?(id: string, status: string): Promise<void>;
   update(snapshot: RunPresentation): void;
   finish(): Promise<void>;
 }
 /** 控制原执行；平台连接器先验证真实操作者和原卡片身份。 */
 export interface ImRunControls {
+  respond?(response: InteractionResponse): Promise<void>;
   cancel(): Promise<boolean>;
   retry(senderId: string, occurrenceId: string): boolean;
 }
