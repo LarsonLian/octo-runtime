@@ -7,36 +7,57 @@ import { readFile } from "node:fs/promises";
 import { createClaudeCodeAdapter } from "@mininglamp-oss/octo-runtime-adapter-claude-code";
 import { createZcodeGuiAdapter } from "@mininglamp-oss/octo-runtime-adapter-zcode-gui";
 import { AdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
-import { adapterApprovalModes } from "@mininglamp-oss/octo-runtime-protocol";
 
 const request = { protocolVersion: 2, invocationId: "permission-instance", agentSessionId: "session", runId: "run", prompt: "fixture", modelInput: "fixture", controlInstructions: "", workdir: process.cwd(), approvalMode: "ask", agentSource: "provisioned", agentConfig: {}, context: { schema: "octo.context-envelope/v3", items: [] } };
 
-test("registered adapters advertise executable permission modes and responders for interactive approvals", async () => {
+test("default adapters reject unsupported approval modes at their execution boundary", async () => {
   const manifest = JSON.parse(await readFile(new URL("../apps/cli/src/default_adapters.json", import.meta.url), "utf8"));
   assert.equal(manifest.adapters.length, 12);
   for (const entry of manifest.adapters) {
     const adapter = (await import(entry.module))[entry.export];
-    const modes = adapterApprovalModes(adapter.metadata.executionFeatures);
     if (entry.type === "antigravity") {
-      assert.deepEqual(modes, ["full_access"]);
       assert.equal(adapter.respondInteraction, undefined);
+      for (const approvalMode of ["ask", "assisted"])
+        await assert.rejects(async () => {
+          for await (const event of adapter.invoke({ ...request, approvalMode })) assert.fail(event.type);
+        }, /APPROVAL_MODE_UNSUPPORTED/);
       continue;
     }
-    assert.ok(modes.length >= 2 && modes.length <= 3, entry.type);
-    assert.ok(modes.includes("ask") && modes.includes("full_access"), entry.type);
     assert.equal(typeof adapter.respondInteraction, "function", entry.type);
-    assert.equal(modes.includes("assisted"), ["codex", "claude-code", "codebuddy"].includes(entry.type), entry.type);
+    if (!["codex", "claude-code", "codebuddy"].includes(entry.type))
+      await assert.rejects(async () => {
+        for await (const event of adapter.invoke({ ...request, approvalMode: "assisted" })) assert.fail(event.type);
+      }, /APPROVAL_MODE_UNSUPPORTED/);
   }
 });
 
-test("host rejects undeclared permission mode before provider invocation", async () => {
-  const host = new AdapterHost();
-  let invoked = false;
-  host.register({ metadata: { protocolSupport: { protocol: ("two-mode") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "two-mode", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.full_access", "interaction.response"] },
-    async respondInteraction() {}, async *invoke() { invoked = true; } });
-  await assert.rejects(async () => { for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("two-mode", { ...request, approvalMode: "assisted" }, { protocolMode: "canonical" })) assert.fail(event.type); }, /APPROVAL_MODE_UNSUPPORTED/);
-  assert.equal(invoked, false);
-});
+for (const approvalMode of ["ask", "assisted", "full_access"])
+  test(`Host admits ${approvalMode} through the actual responder without feature labels`, async () => {
+    const host = new AdapterHost();
+    let invoked;
+    host.register({ metadata: { protocolSupport: { protocol: "fixture.canonical", modes: ["canonical"], nativeMethods: [] }, type: "fixture", agentSources: ["provisioned"], executionFeatures: [] },
+      async respondInteraction() {}, async *invoke(input) {
+        invoked = input.approvalMode;
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
+      } });
+    const events = [];
+    for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("fixture", { ...request, approvalMode }, { protocolMode: "canonical" })) events.push(event);
+    assert.equal(invoked, approvalMode);
+    assert.equal(events.at(-1).type, "run.completed");
+  });
+
+for (const protocolMode of ["canonical", "native"])
+  test(`Host requires the actual ${protocolMode} responder for interactive approval`, async () => {
+    const host = new AdapterHost();
+    let invoked = false;
+    host.register({ metadata: { protocolSupport: { protocol: "fixture.raw", modes: ["native", "canonical"], nativeMethods: [] }, type: "fixture", agentSources: ["provisioned"], executionFeatures: [] },
+      ...(protocolMode === "native" ? { async respondInteraction() {} } : { async respondNative() {} }),
+      async *invoke() { invoked = true; } });
+    await assert.rejects(async () => {
+      for await (const frame of preparedFrames(host, "fixture", request, { protocolMode })) assert.fail(frame.kind);
+    }, /APPROVAL_MODE_UNSUPPORTED/);
+    assert.equal(invoked, false);
+  });
 
 for (const [provider, factory] of [
   ["Claude", () => createClaudeCodeAdapter({ command: process.execPath, commandArgsPrefix: [fileURLToPath(new URL("../test-support/claude/fake-permission-cli.js", import.meta.url))] })],

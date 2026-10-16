@@ -1,5 +1,6 @@
 import {
   initialControlInstructions,
+  hasImageInput,
   AcpApprovalBridge,
   DriverQueue,
   defineAdapter,
@@ -75,6 +76,8 @@ export function composeOpenClawPrompt(req: InvokeRequest): string {
 }
 
 export function buildOpenClawGatewayInvocation(req: InvokeRequest): OpenClawGatewayInvocation {
+  if (hasImageInput(req))
+    throw new Error("UNSUPPORTED_INPUT_MODALITY: openclaw does not encode image input");
   if (Object.keys(invocationEnvs(req)).length)
     throw new Error(
       "CONTEXT_ENVS_UNSUPPORTED: openclaw gateway has no per-run environment carrier"
@@ -1077,6 +1080,8 @@ export function createOpenClawAdapter({
       req: InvokeRequest,
       context?: AdapterInvocationContext
     ): AsyncGenerator<CanonicalEvent> {
+      if (hasImageInput(req))
+        throw new Error("UNSUPPORTED_INPUT_MODALITY: openclaw does not encode image input");
       if (req.approvalMode === "assisted")
         throw new Error("APPROVAL_MODE_UNSUPPORTED: OpenClaw has no qualified assisted policy");
       if (responders.has(req.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");

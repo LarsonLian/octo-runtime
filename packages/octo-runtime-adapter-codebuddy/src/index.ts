@@ -2,6 +2,7 @@ import {
   initialControlInstructions, invocationEnvironment } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
   canonicalTerminalStatus,
+  hasImageInput,
   executionFeatures,
   type InteractionResponse
 } from "@mininglamp-oss/octo-runtime-protocol";
@@ -148,6 +149,8 @@ export function createCodeBuddyAdapter({
       await bridge.respond(response);
     },
     async *invoke(req: InvokeRequest): AsyncGenerator<CanonicalEvent> {
+      if (hasImageInput(req))
+        throw new Error("UNSUPPORTED_INPUT_MODALITY: codebuddy does not encode image input");
       if (responders.has(req.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
       const permissions = new AcpApprovalBridge(req);
       responders.set(req.invocationId, permissions);

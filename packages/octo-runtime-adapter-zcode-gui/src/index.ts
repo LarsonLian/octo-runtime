@@ -1,4 +1,4 @@
-import { invocationEnvironment } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+import { hasImageInput, invocationEnvironment } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -73,6 +73,8 @@ export function buildZcodeCommand(
   command?: string,
   appServerArgs?: readonly string[]
 ): ZcodeAppServerCommand {
+  if (hasImageInput(request))
+    throw new Error("UNSUPPORTED_INPUT_MODALITY: zcode-gui does not encode image input");
   if (command) {
     return {
       command,

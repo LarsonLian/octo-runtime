@@ -17,7 +17,6 @@ import {
   assertInvokeRequestSize,
   type InvokeInput,
   type InvokeEnvironment,
-  adapterApprovalModes,
   assertProtocolSupport,
   assertAdapterProtocolSupport,
   assertHostFrame,
@@ -34,9 +33,7 @@ import {
   assertCanonicalEvent,
   assertInteractionResponse,
   assertInvokeRequest,
-  executionFeatures,
   failurePayload,
-  hasImageInput,
   isTerminal,
   type CanonicalEvent,
   type InteractionResponse,
@@ -199,27 +196,10 @@ export class AdapterHost {
     const support = this.#support(registered);
     assertProtocolSupport(support, resolved);
     if (
-      !registered ||
-      !adapterApprovalModes(registered.metadata.executionFeatures).includes(request.approvalMode)
-    ) {
-      throw new Error(
-        `APPROVAL_MODE_UNSUPPORTED: ${adapterType} does not advertise ${request.approvalMode}`
-      );
-    }
-    if (
-      hasImageInput(request) &&
-      !registered?.metadata.executionFeatures.includes(executionFeatures.INPUT_IMAGE)
-    ) {
-      throw new Error(
-        `UNSUPPORTED_INPUT_MODALITY: ${adapterType} does not implement native image input`
-      );
-    }
-    if (
       request.approvalMode !== "full_access" &&
-      (!registered?.metadata.executionFeatures.includes(executionFeatures.INTERACTION_RESPONSE) ||
-        (resolved.protocolMode === "native"
-          ? typeof registered.respondNative !== "function"
-          : typeof registered.respondInteraction !== "function"))
+      (resolved.protocolMode === "native"
+        ? typeof registered.respondNative !== "function"
+        : typeof registered.respondInteraction !== "function")
     ) {
       throw new Error(
         `APPROVAL_MODE_UNSUPPORTED: ${adapterType} does not implement execution-time approval responses`
@@ -861,11 +841,6 @@ export class AdapterHost {
       throw protocolError("EXECUTION_PROTOCOL_MISMATCH");
     if (!adapter.respondInteraction) {
       throw new Error(`adapter does not support interaction responses: ${adapter.metadata.type}`);
-    }
-    if (!adapter.metadata.executionFeatures.includes(executionFeatures.INTERACTION_RESPONSE)) {
-      throw new Error(
-        `adapter did not declare interaction response capability: ${adapter.metadata.type}`
-      );
     }
     await adapter.respondInteraction(invocationId, response);
   }

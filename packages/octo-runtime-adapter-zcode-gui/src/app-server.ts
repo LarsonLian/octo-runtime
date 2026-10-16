@@ -1,5 +1,6 @@
 import {
   initialControlInstructions,
+  hasImageInput,
   freshFallbackInputText,
   providerInputText,
   type AcpApprovalBridge,
@@ -437,6 +438,8 @@ export async function* runZcodeAppServerTurn({
   spawnFn?: ZcodeAppServerSpawn;
   approvalBridge?: AcpApprovalBridge;
 }): AsyncGenerator<CanonicalEvent> {
+  if (hasImageInput(request))
+    throw new Error("UNSUPPORTED_INPUT_MODALITY: zcode-gui does not encode image input");
   if (request.approvalMode === "assisted" || (request.approvalMode === "ask" && !approvalBridge))
     throw new Error("APPROVAL_MODE_UNSUPPORTED");
   if (request.agentConfig.model)

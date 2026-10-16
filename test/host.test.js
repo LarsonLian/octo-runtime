@@ -95,14 +95,13 @@ test("host rejects legacy prompt, permission and reasoning contracts before disp
   assert.equal(invoked, false);
 });
 
-test("host requires both declared interaction capability and a responder for ask and assisted", async () => {
+test("host requires an actual responder for ask and assisted regardless of labels", async () => {
   let invoked = false;
   let responded = false;
   const host = new AdapterHost();
   for (const [type, capabilities, responder] of [
     ["neither", [], false],
-    ["declaration-only", ["interaction.response"], false],
-    ["responder-only", [], true]
+    ["declaration-only", ["interaction.response"], false]
   ]) {
     host.register({
       metadata: { protocolSupport: { protocol: (type) + '.canonical', modes: ['canonical'], nativeMethods: [] }, type, agentSources: ["provisioned"], executionFeatures: [...capabilities, "approval.ask", "approval.assisted", "approval.full_access"] },
@@ -462,7 +461,7 @@ test("RPC interaction responses resume the same active ask invocation", { timeou
   let resume;
   const response = new Promise(resolve => { resume = resolve; });
   host.register({
-    metadata: { protocolSupport: { protocol: ("interactive") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "interactive", agentSources: ["provisioned"], executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access", "interaction.response"] },
+    metadata: { protocolSupport: { protocol: ("interactive") + '.canonical', modes: ['canonical'], nativeMethods: [] }, type: "interactive", agentSources: ["provisioned"], executionFeatures: [] },
     async *invoke(invocation) {
       yield { protocolVersion: 2,
         type: "interaction.requested",

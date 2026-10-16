@@ -6,9 +6,16 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCodexAdapter } from "@mininglamp-oss/octo-runtime-adapter-codex";
+import { buildClaudeCommand, createClaudeCodeAdapter } from "@mininglamp-oss/octo-runtime-adapter-claude-code";
+import { createCodeBuddyAdapter } from "@mininglamp-oss/octo-runtime-adapter-codebuddy";
+import { buildOpenCodeCommand, createOpenCodeAdapter } from "@mininglamp-oss/octo-runtime-adapter-opencode";
+import { buildOpenClawGatewayInvocation, createOpenClawAdapter } from "@mininglamp-oss/octo-runtime-adapter-openclaw";
+import { buildZcodeCommand, createZcodeGuiAdapter, runZcodeAppServerTurn } from "@mininglamp-oss/octo-runtime-adapter-zcode-gui";
+import { buildAntigravityCommand, createAntigravityAdapter } from "@mininglamp-oss/octo-runtime-adapter-antigravity";
+import { AdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
 import { createAcpAdapter } from "@mininglamp-oss/octo-runtime-adapter-acp";
 import { acpPromptParams } from "@mininglamp-oss/octo-runtime-acp-client";
-import { invokeRequest } from "./runtime-fixture.js";
+import { invokeRequest, preparedFrames, preparedTestInvoke } from "./runtime-fixture.js";
 import { visualInputImages } from "../test-support/multimodal-images.mjs";
 
 const images = visualInputImages();
@@ -48,6 +55,22 @@ function codexFixture({ fallback = false } = {}) {
   return { spawnFn: () => child, frames };
 }
 
+for (const [approvalMode, approvalPolicy, sandbox] of [
+  ["ask", "untrusted", "workspace-write"],
+  ["assisted", "on-request", "workspace-write"],
+  ["full_access", "untrusted", "danger-full-access"]
+]) {
+  test(`Codex maps ${approvalMode} to native approval and sandbox parameters`, async () => {
+    const server = codexFixture();
+    const adapter = createCodexAdapter({ command: "fixture", spawnFn: server.spawnFn });
+    const events = await collect(adapter.invoke(invokeRequest({ approvalMode })));
+    const thread = server.frames.find(frame => frame.method === "thread/start");
+    assert.equal(thread.params.approvalPolicy, approvalPolicy);
+    assert.equal(thread.params.sandbox, sandbox);
+    assert.equal(events.at(-1).type, "run.completed");
+  });
+}
+
 for (const fallback of [false, true]) {
   test(`Codex preserves mixed native input order and redacts image captures${fallback ? " after resume fallback" : ""}`, async () => {
     const server = codexFixture({ fallback });
@@ -60,7 +83,6 @@ for (const fallback of [false, true]) {
     assert.deepEqual(input, mixed.map(part => part.type === "image" ? { type: "image", url: `data:${part.mimeType};base64,${part.data}` } : { type: "text", text: part.text, text_elements: [] }));
     assert.equal(events.at(-1).type, "run.completed");
     if (fallback) assert.equal(events.find(event => event.type === "session.update").payload.providerSession.contextInputVariant, "recovery");
-    assert.equal(adapter.metadata.executionFeatures.includes("input.image"), true);
   });
 }
 
@@ -129,6 +151,78 @@ test("ACP rejects recovery-only image input when the agent lacks image capabilit
   const adapter = createAcpAdapter({ type: "fixture", provider: "fixture", command: "fixture" }, { acpClientFactory: () => fixture.client });
   await assert.rejects(collect(adapter.invoke(invokeRequest({ providerSession: { sessionId: "old" }, freshFallbackModelInputParts: images }))), /UNSUPPORTED_INPUT_MODALITY/);
   assert.deepEqual(fixture.frames, []);
+});
+
+for (const recoveryOnly of [false, true]) {
+  const imageRequest = () => invokeRequest({
+    approvalMode: "full_access",
+    ...(recoveryOnly ? { providerSession: { sessionId: "old" }, freshFallbackModelInputParts: mixed } : { modelInputParts: mixed })
+  });
+  const variant = recoveryOnly ? "recovery-only" : "current-turn";
+
+  for (const [name, build] of [
+    ["Claude", buildClaudeCommand],
+    ["OpenCode", buildOpenCodeCommand],
+    ["OpenClaw", buildOpenClawGatewayInvocation],
+    ["ZCode", buildZcodeCommand],
+    ["Antigravity", buildAntigravityCommand]
+  ]) {
+    test(`${name} direct command construction rejects ${variant} images`, async () => {
+      const request = imageRequest();
+      Object.defineProperty(request, "agentConfig", { get() { assert.fail("image rejection must precede native configuration access"); } });
+      await assert.rejects(async () => build(request), /UNSUPPORTED_INPUT_MODALITY|ANTIGRAVITY_IMAGE_INPUT_UNSUPPORTED/);
+    });
+  }
+
+  for (const [name, factory] of [
+    ["Claude", () => createClaudeCodeAdapter({ command: "/provider-must-not-start" })],
+    ["CodeBuddy", mustNotStart => createCodeBuddyAdapter({ acpClientFactory: mustNotStart })],
+    ["OpenCode", () => createOpenCodeAdapter({ command: "/provider-must-not-start" })],
+    ["OpenClaw", mustNotStart => createOpenClawAdapter({ clientFactory: mustNotStart })],
+    ["ZCode", mustNotStart => createZcodeGuiAdapter({ command: "/provider-must-not-start", spawnFn: mustNotStart })],
+    ["Antigravity", () => createAntigravityAdapter({ command: "/provider-must-not-start" })]
+  ]) {
+    test(`${name} invocation rejects ${variant} images before Provider work`, async () => {
+      let starts = 0;
+      const adapter = factory(() => { starts += 1; assert.fail("Provider must not start"); });
+      const request = imageRequest();
+      Object.defineProperty(request.agentConfig, "providerOptions", { get() { assert.fail("image rejection must precede native connection configuration access"); } });
+      await assert.rejects(collect(adapter.invoke(request)), /UNSUPPORTED_INPUT_MODALITY|ANTIGRAVITY_IMAGE_INPUT_UNSUPPORTED/);
+      assert.equal(starts, 0);
+    });
+  }
+
+  test(`OpenCode ask rejects ${variant} images before its ACP path`, async () => {
+    const adapter = createOpenCodeAdapter({ command: "/provider-must-not-start" });
+    await assert.rejects(collect(adapter.invoke({ ...imageRequest(), approvalMode: "ask" })), /UNSUPPORTED_INPUT_MODALITY/);
+  });
+
+  test(`ZCode direct Driver rejects ${variant} images before client creation`, async () => {
+    let starts = 0;
+    await assert.rejects(collect(runZcodeAppServerTurn({
+      request: imageRequest(),
+      spec: { command: "/provider-must-not-start", args: [], cwd: process.cwd(), env: process.env },
+      spawnFn: () => { starts += 1; assert.fail("Provider must not start"); }
+    })), /UNSUPPORTED_INPUT_MODALITY/);
+    assert.equal(starts, 0);
+  });
+}
+
+test("Host forwards image blocks to an implementing Adapter without feature labels", async () => {
+  const host = new AdapterHost();
+  let received;
+  host.register({
+    metadata: { type: "fixture", protocolSupport: { protocol: "fixture.canonical", modes: ["canonical"], nativeMethods: [] }, agentSources: ["provisioned"], executionFeatures: [] },
+    async *invoke(request) {
+      received = request.modelInputParts;
+      yield { protocolVersion: 2, type: "run.completed", payload: {} };
+    }
+  });
+  const events = await collect(preparedTestInvoke((...args) => preparedFrames(host, ...args))(
+    "fixture", invokeRequest({ modelInputParts: mixed, approvalMode: "full_access" }), { protocolMode: "canonical" }
+  ));
+  assert.deepEqual(received, mixed);
+  assert.equal(events.at(-1).type, "run.completed");
 });
 
 test("Codex real app-server identifies three native images in supplied order", { skip: process.env.OCTO_CODEX_MULTIMODAL_LIVE !== "1", timeout: 180_000 }, async () => {

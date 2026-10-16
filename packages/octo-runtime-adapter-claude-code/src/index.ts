@@ -1,5 +1,6 @@
 import {
   initialControlInstructions,
+  hasImageInput,
   invocationEnvironment,
   invocationMcpServers,
   assertMcpOptions,
@@ -101,6 +102,8 @@ export async function buildClaudeCommand(
   command = "claude",
   commandArgsPrefix: string[] = []
 ) {
+  if (hasImageInput(req))
+    throw new Error("UNSUPPORTED_INPUT_MODALITY: claude-code does not encode image input");
   const mode = contextActmode(req.context) === "plan" ? "plan" : claudePermissionMode(req.approvalMode);
   const servers = invocationMcpServers(req);
   assertMcpOptions(servers, "claude-code", []);

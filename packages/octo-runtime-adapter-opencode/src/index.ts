@@ -1,5 +1,6 @@
 import {
   initialControlInstructions,
+  hasImageInput,
   mapReasoningEffort,
   invocationEnvironment,
   invocationMcpServers,
@@ -67,6 +68,8 @@ interface OpenCodeNativeEvent extends OpenCodePart {
  *
  */
 export async function buildOpenCodeCommand(req: InvokeRequest, command = "opencode") {
+  if (hasImageInput(req))
+    throw new Error("UNSUPPORTED_INPUT_MODALITY: opencode does not encode image input");
   if (req.approvalMode !== "full_access")
     throw new Error("APPROVAL_MODE_UNSUPPORTED: opencode permission transport is not qualified");
   const runEnv = invocationEnvironment(req);
@@ -377,6 +380,8 @@ export function createOpenCodeAdapter({ command = "opencode" }: { command?: stri
       request: InvokeRequest,
       context?: AdapterInvocationContext
     ): AsyncGenerator<CanonicalEvent> {
+      if (hasImageInput(request))
+        throw new Error("UNSUPPORTED_INPUT_MODALITY: opencode does not encode image input");
       if (request.approvalMode === "assisted")
         throw new Error("APPROVAL_MODE_UNSUPPORTED: opencode has no qualified assisted policy");
       if (request.approvalMode === "ask") {
