@@ -1933,9 +1933,9 @@ class CodexAppServerClient {
     ) {
       this.context?.reportActivity?.({ kind: "turn_progress", method: "text_delta" });
     } else if (
-      (["item/commandExecution/outputDelta", "item/fileChange/outputDelta"].includes(method) ||
-        isToolArgsDeltaMethod(method)) &&
-      stringValue(params.delta) &&
+      (((["item/commandExecution/outputDelta", "item/fileChange/outputDelta"].includes(method) ||
+        isToolArgsDeltaMethod(method)) && stringValue(params.delta)) ||
+        (method === "item/mcpToolCall/progress" && stringValue(params.message))) &&
       itemId(params)
     ) {
       this.context?.reportActivity?.({

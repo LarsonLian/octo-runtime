@@ -57,6 +57,10 @@ test("Codex reports scoped activity before normalization without retry/duplicate
     reportActivity:a=>activities.push(a)
   })) events.push(event);
   assert.equal(activities.filter(a=>a.kind==="turn_progress" && a.method==="text_delta").length,1);
+  assert.deepEqual(activities.filter(a=>a.kind==="turn_progress" && a.method==="tool_delta"), [
+    { kind: "turn_progress", method: "tool_delta", toolCallId: "mcp" }
+  ]);
+  assert.equal(events.filter(event => event.type === "tool_call.progress" && event.payload.progress.message === "working").length, 1);
   assert.equal(activities.filter(a=>a.method==="usage").length,1);
   assert.equal(activities.filter(a=>a.method==="item_lifecycle").length,1);
   assert.equal(activities.filter(a=>a.kind==="retry_notice").length,1);

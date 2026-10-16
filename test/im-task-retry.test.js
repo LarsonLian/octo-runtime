@@ -132,7 +132,6 @@ test("IM limits allow a quiet 15-minute tool and preserve explicit watchdog over
   const watchdog = new InvocationWatchdog(
     f.request.runtimeLimits,
     controller,
-    true,
     () => {},
     f.time
   );

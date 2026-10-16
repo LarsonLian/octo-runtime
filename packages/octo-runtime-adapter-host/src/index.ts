@@ -46,7 +46,6 @@ import { InvocationExperience } from "./experience.js";
 import { withModelContexts } from "./model-input.js";
 import { hostLog } from "./host-log.js";
 import {
-  ACTIVITY_CAPABILITY,
   AdapterWatchdogTimeoutError,
   InvocationWatchdog,
   WATCHDOG_CAPABILITY
@@ -481,7 +480,6 @@ export class AdapterHost {
     const watchdog = new InvocationWatchdog(
       request.runtimeLimits,
       controller,
-      adapter.metadata.executionFeatures.includes(ACTIVITY_CAPABILITY),
       (diagnostic) =>
         hostLog("watchdog", {
           ...identity,

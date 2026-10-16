@@ -6,7 +6,7 @@ import { InvocationWatchdog } from "../packages/octo-runtime-adapter-host/dist/w
 import { AdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
 import { assertRuntimeLimits } from "@mininglamp-oss/octo-runtime-protocol";
 
-function fixture(limits = {}, native = true) {
+function fixture(limits = {}) {
   let now = 0;
   const timers = new Map();
   let id = 0;
@@ -16,7 +16,7 @@ function fixture(limits = {}, native = true) {
   };
   const controller = new AbortController();
   const records = [];
-  const watchdog = new InvocationWatchdog(limits, controller, native, r => records.push(r), clock);
+  const watchdog = new InvocationWatchdog(limits, controller, r => records.push(r), clock);
   return {
     watchdog, controller, records, timers,
     tick(ms) {
@@ -32,6 +32,133 @@ function fixture(limits = {}, native = true) {
 }
 const started = { kind: "turn_started", method: "turn_start" };
 const progress = { kind: "turn_progress", method: "text_delta" };
+const event = (type, payload = {}) => ({ protocolVersion: 2, type, payload });
+
+test("canonical work rearms idle until valid native progress is observed", () => {
+  const f = fixture({ firstFrameTimeoutMs: 500, modelIdleTimeoutMs: 100 });
+  f.watchdog.canonical(event("message.delta", { text: "a" }));
+  f.tick(80);
+  f.watchdog.activity({ kind: "transport_response", method: "rpc_response" });
+  f.watchdog.activity({ kind: "retry_notice", method: "retry" });
+  f.watchdog.canonical(event("message.delta", { text: "b" }));
+  f.tick(80); f.watchdog.canonical(event("message.delta", { text: "c" }));
+  assert.equal(f.watchdog.snapshot().activitySupport, "canonical_only");
+  f.tick(99); assert.equal(f.controller.signal.aborted, false);
+  f.tick(1);
+  assert.equal(f.controller.signal.reason.timeoutReason, "model_silence");
+  assert.equal(f.controller.signal.reason.evidence.elapsedMs, 260);
+});
+
+test("late native start switches progress source without extending the existing idle budget", () => {
+  const f = fixture({ firstFrameTimeoutMs: 500, modelIdleTimeoutMs: 100 });
+  f.watchdog.canonical(event("message.delta", { text: "a" }));
+  f.tick(80); f.watchdog.canonical(event("message.delta", { text: "b" }));
+  f.tick(70); f.watchdog.activity(started);
+  assert.equal(f.watchdog.snapshot().activitySupport, "native_progress");
+  f.tick(20); f.watchdog.canonical(event("message.delta", { text: "c" }));
+  f.tick(9); assert.equal(f.controller.signal.aborted, false);
+  f.tick(1); assert.equal(f.controller.signal.reason.evidence.elapsedMs, 180);
+});
+
+test("native priority ignores canonical text while real native progress renews idle", () => {
+  for (const nativeProgress of [false, true]) {
+    const f = fixture({ modelIdleTimeoutMs: 100 });
+    f.watchdog.activity(started); f.tick(90);
+    f.watchdog.canonical(event("message.delta", { text: "canonical projection" }));
+    if (nativeProgress) f.watchdog.activity(progress);
+    f.tick(nativeProgress ? 99 : 9); assert.equal(f.controller.signal.aborted, false);
+    f.tick(1);
+    assert.equal(f.controller.signal.reason.evidence.elapsedMs, nativeProgress ? 190 : 100);
+  }
+});
+
+test("invalid activity cannot switch sources, create tools, or close an active tool", () => {
+  const f = fixture({ firstFrameTimeoutMs: 100 });
+  for (const value of [
+    { kind: "unknown", method: "item_lifecycle" },
+    { kind: "turn_progress", method: "unknown" },
+    { kind: "transport_response", method: "text_delta" },
+    { kind: "turn_started", method: "rpc_response" },
+    { kind: "retry_notice", method: "item_lifecycle" }
+  ]) f.watchdog.activity({ ...value, toolCallId: "forged", toolState: "started" });
+  assert.equal(f.watchdog.snapshot().openToolCount, 0);
+  assert.equal(f.watchdog.snapshot().activitySupport, "canonical_only");
+  f.tick(100); assert.equal(f.controller.signal.reason.timeoutReason, "first_frame");
+  const g = fixture({ toolTimeoutMs: 100 });
+  g.watchdog.canonical(event("tool_call.create", { id: "a" }));
+  g.tick(90);
+  g.watchdog.activity({ kind: "unknown", method: "item_lifecycle", toolCallId: "a", toolState: "completed" });
+  assert.equal(g.watchdog.snapshot().openToolCount, 1);
+  g.tick(10); assert.equal(g.controller.signal.reason.timeoutReason, "tool_idle");
+});
+
+test("canonical bookkeeping and empty placeholders cannot escape startup deadline", () => {
+  const f = fixture({ firstFrameTimeoutMs: 100 });
+  const records = [event("session.update"), event("usage.update"), event("run.notice"),
+    event("execution.update"), event("message.create"), event("message.delta", { text: "" }),
+    event("tool_call.delta", { id: "missing", outputDelta: "" }),
+    event("tool_call.progress", { id: "missing", progress: {} })];
+  for (const record of records) { f.tick(10); f.watchdog.canonical(record); }
+  assert.equal(f.watchdog.snapshot().phase, "starting");
+  f.tick(20); assert.equal(f.controller.signal.reason.evidence.elapsedMs, 100);
+  assert.equal(f.controller.signal.reason.timeoutReason, "first_frame");
+});
+
+test("canonical model steps and tool progress are real fallback work", () => {
+  const f = fixture({ modelIdleTimeoutMs: 100 });
+  f.watchdog.canonical(event("model_step.started", { stepId: "s" }));
+  f.tick(90); f.watchdog.canonical(event("model_step.finished", { stepId: "s", status: "completed" }));
+  f.tick(99); assert.equal(f.controller.signal.aborted, false);
+  f.tick(1); assert.equal(f.controller.signal.reason.evidence.elapsedMs, 190);
+  const g = fixture({ toolTimeoutMs: 100 });
+  g.watchdog.canonical(event("tool_call.create", { id: "a" }));
+  g.tick(90); g.watchdog.canonical(event("tool_call.progress", { id: "a", progress: { message: "working" } }));
+  g.tick(99); assert.equal(g.controller.signal.aborted, false);
+  g.tick(1); assert.equal(g.controller.signal.reason.evidence.elapsedMs, 190);
+});
+
+for (const native of [false, true]) {
+  test(`approval priority survives new tools and multiple pending requests: native=${native}`, () => {
+    const f = fixture({ toolTimeoutMs: 100, toolWallTimeoutMs: 200, runTimeoutMs: 1000 });
+    f.watchdog.canonical(event("tool_call.create", { id: "old" }));
+    f.tick(40); f.watchdog.interaction("a", true); f.watchdog.interaction("b", true);
+    f.tick(300);
+    if (native) f.watchdog.activity({ kind: "turn_progress", method: "item_lifecycle", toolCallId: "new", toolState: "started" });
+    else f.watchdog.canonical(event("tool_call.create", { id: "new" }));
+    assert.equal(f.watchdog.snapshot().phase, "waiting_approval");
+    f.tick(100); f.watchdog.interaction("a", false);
+    assert.equal(f.watchdog.snapshot().phase, "waiting_approval");
+    f.tick(100); f.watchdog.interaction("b", false);
+    assert.equal(f.watchdog.snapshot().phase, "tool_active");
+    f.tick(59); assert.equal(f.controller.signal.aborted, false);
+    f.tick(1); assert.equal(f.controller.signal.reason.evidence.elapsedMs, 600);
+    assert.equal(f.controller.signal.reason.timeoutReason, "tool_idle");
+  });
+}
+
+test("tools created during approval receive only their overlapping wall-clock pause", () => {
+  const f = fixture({ toolTimeoutMs: 1000, toolWallTimeoutMs: 200, runTimeoutMs: 1000 });
+  f.watchdog.interaction("a", true);
+  f.tick(300); f.watchdog.activity({ kind: "turn_progress", method: "item_lifecycle", toolCallId: "new", toolState: "started" });
+  f.tick(100); f.watchdog.interaction("a", false);
+  f.tick(199); assert.equal(f.controller.signal.aborted, false);
+  f.tick(1); assert.equal(f.controller.signal.reason.evidence.elapsedMs, 600);
+  assert.equal(f.controller.signal.reason.timeoutReason, "tool_deadline");
+});
+
+test("model approval pause preserves its remaining idle budget and run deadline stays fixed", () => {
+  const f = fixture({ modelIdleTimeoutMs: 100, runTimeoutMs: 1000 });
+  f.watchdog.activity(started); f.tick(40); f.watchdog.interaction("a", true);
+  f.tick(300); f.watchdog.interaction("a", false);
+  f.tick(59); assert.equal(f.controller.signal.aborted, false);
+  f.tick(1); assert.equal(f.controller.signal.reason.evidence.elapsedMs, 400);
+  const g = fixture({ toolTimeoutMs: 100, runTimeoutMs: 500 });
+  g.watchdog.interaction("a", true); g.tick(300);
+  g.watchdog.activity({ kind: "turn_progress", method: "item_lifecycle", toolCallId: "new", toolState: "started" });
+  g.tick(200);
+  assert.equal(g.controller.signal.reason.timeoutReason, "run_deadline");
+  assert.equal(g.controller.signal.reason.evidence.elapsedMs, 500);
+});
 
 test("late user cancellation cannot replace a terminal during cleanup", { timeout: 2000 }, async () => {
   const host = new AdapterHost();
@@ -54,14 +181,15 @@ test("late user cancellation cannot replace a terminal during cleanup", { timeou
 test("session and usage records cannot escape startup deadline", () => {
   const f = fixture({ firstFrameTimeoutMs: 100 });
   f.tick(50); f.watchdog.canonical({ protocolVersion: 2, type: "session.update", payload: {} });
-  f.watchdog.canonical({ protocolVersion: 2, type: "usage.update", payload: {} });
-  f.tick(50);
+  f.tick(40); f.watchdog.canonical({ protocolVersion: 2, type: "usage.update", payload: {} });
+  f.tick(10);
   assert.equal(f.controller.signal.reason.timeoutReason, "first_frame");
 });
 
 test("terminal freezes timers but completion metrics wait for cleanup outcome", () => {
   const f = fixture(); f.watchdog.activity(started); f.tick(10);
   f.watchdog.canonical({ protocolVersion: 2, type: "run.completed", payload: {} });
+  assert.equal(f.timers.size, 0);
   assert.equal(f.records.filter(x => x.event === "finished").length, 0);
   f.tick(10000); f.watchdog.finish("failed"); f.watchdog.finish("completed");
   const records = f.records.filter(x => x.event === "finished");
@@ -179,7 +307,7 @@ const request = { protocolVersion: 2, invocationId:"watchdog-v2",agentSessionId:
 test("host preserves a single pending next during activity and ignores failing diagnostic sinks", async () => {
   let calls=0; let active=0; let peak=0;
   const host = new AdapterHost();
-  host.register({metadata:{ protocolSupport: { protocol: ("native") + '.canonical', modes: ['canonical'], nativeMethods: [] },type:"native",agentSources:["provisioned"],executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access", "activity.turn-progress"]},invoke(req,ctx){
+  host.register({metadata:{ protocolSupport: { protocol: ("native") + '.canonical', modes: ['canonical'], nativeMethods: [] },type:"native",agentSources:["provisioned"],executionFeatures: ["approval.ask", "approval.assisted", "approval.full_access"]},invoke(req,ctx){
     ctx.reportActivity(started);
     return { [Symbol.asyncIterator](){return this;}, async next(){
       calls++; active++; peak=Math.max(peak,active);
@@ -193,6 +321,26 @@ test("host preserves a single pending next during activity and ignores failing d
   const events=[];
   for await(const e of preparedTestInvoke((...args) => preparedFrames(host, ...args))("native",{...request,runtimeLimits:{modelIdleTimeoutMs:100,modelIdleWarningMs:100,runTimeoutMs:1000}}, { protocolMode: "canonical" }))events.push(e);
   assert.equal(peak,1); assert.equal(calls,2); assert.equal(events.at(-1).type,"run.completed");
+});
+
+test("host uses canonical progress until this invocation actually reports native work", async () => {
+  const host = new AdapterHost();
+  host.register({
+    metadata: { protocolSupport: { protocol: "fallback.canonical", modes: ["canonical"], nativeMethods: [] },
+      type: "fallback", agentSources: ["provisioned"], executionFeatures: ["activity.turn-progress"] },
+    async *invoke() {
+      for (let index = 0; index < 4; index++) {
+        yield event("message.delta", { text: "working" });
+        await new Promise(resolve => setTimeout(resolve, 40));
+      }
+      yield event("run.completed");
+    }
+  });
+  const events = [];
+  for await (const value of preparedTestInvoke((...args) => preparedFrames(host, ...args))("fallback", {
+    ...request, invocationId: "canonical-fallback", runtimeLimits: { modelIdleTimeoutMs: 100, runTimeoutMs: 1000 }
+  }, { protocolMode: "canonical" })) events.push(value);
+  assert.equal(events.at(-1).type, "run.completed");
 });
 
 test("host hard deadline aborts provider even when its consumer is paused", async () => {

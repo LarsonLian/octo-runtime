@@ -17,6 +17,11 @@ reader.on("line",line=>{
     emit("item/started",{item:{id:"m",type:"agentMessage"}});
     emit("item/started",{item:{id:"m",type:"agentMessage"}});
     emit("item/agentMessage/delta",{itemId:"m",delta:"ok"});
+    emit("item/mcpToolCall/progress",{threadId:"other-thread",itemId:"mcp",message:"not ours"});
+    emit("item/mcpToolCall/progress",{turnId:"old-turn",itemId:"mcp",message:"not current"});
+    emit("item/mcpToolCall/progress",{itemId:"mcp",message:""});
+    emit("item/mcpToolCall/progress",{message:"missing item"});
+    emit("item/mcpToolCall/progress",{itemId:"mcp",message:"working"});
     emit("thread/tokenUsage/updated",{tokenUsage:{total:{totalTokens:12}}});
     emit("thread/tokenUsage/updated",{tokenUsage:{total:{totalTokens:12}}});
     emit("error",{willRetry:true,message:"secret provider details"});

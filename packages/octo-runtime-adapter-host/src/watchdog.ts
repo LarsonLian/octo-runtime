@@ -58,6 +58,8 @@ export class InvocationWatchdog {
   readonly #tools = new Map<string, { startedAt: number; progressAt: number }>();
   readonly #interactions = new Set<string>();
   #waitingSince?: number;
+  #nativeProgressSeen = false;
+  #modelStarted = false;
   #phase: WatchdogPhase = "starting";
   #phaseAt: number;
   #progressAt: number;
@@ -77,7 +79,6 @@ export class InvocationWatchdog {
   constructor(
     limits: RuntimeLimits | undefined,
     readonly controller: AbortController,
-    readonly nativeActivity: boolean,
     readonly diagnostic: (value: WatchdogDiagnostic) => void = () => {},
     readonly time: WatchdogClock = clock
   ) {
@@ -103,48 +104,43 @@ export class InvocationWatchdog {
 
   activity(activity: ProviderActivity): void {
     if (!this.#active()) return;
+    const valid =
+      activity.kind === "turn_started"
+        ? activity.method === "turn_start"
+        : activity.kind === "turn_progress"
+          ? ["text_delta", "tool_delta", "item_lifecycle", "usage"].includes(activity.method)
+          : activity.kind === "transport_response"
+            ? activity.method === "rpc_response"
+            : activity.kind === "retry_notice" && activity.method === "retry";
+    if (
+      !valid ||
+      (activity.toolCallId !== undefined &&
+        (typeof activity.toolCallId !== "string" || !activity.toolCallId)) ||
+      (activity.toolState !== undefined &&
+        (activity.kind !== "turn_progress" ||
+          activity.method !== "item_lifecycle" ||
+          !activity.toolCallId ||
+          !["started", "completed"].includes(activity.toolState)))
+    )
+      return;
+    const now = this.time.now();
+    if (activity.kind === "turn_started" || activity.kind === "turn_progress")
+      this.#nativeProgressSeen = true;
     if (activity.toolCallId && activity.toolState === "started") {
-      const now = this.time.now();
       if (!this.#tools.has(activity.toolCallId))
         this.#tools.set(activity.toolCallId, { startedAt: now, progressAt: now });
-      this.#phase = "tool_active";
-      this.#phaseAt = this.#progressAt = now;
     }
     if (activity.toolCallId && activity.toolState === "completed") {
       this.#tools.delete(activity.toolCallId);
-      if (!this.#tools.size && !this.#interactions.size) {
-        this.#phase = "model_active";
-        this.#phaseAt = this.#progressAt = this.time.now();
-      }
     }
-    if (
-      !["turn_started", "turn_progress", "transport_response", "retry_notice"].includes(
-        activity.kind
-      )
-    )
-      return;
-    if (
-      ![
-        "turn_start",
-        "text_delta",
-        "tool_delta",
-        "item_lifecycle",
-        "usage",
-        "rpc_response",
-        "retry"
-      ].includes(activity.method)
-    )
-      return;
-    this.#transportAt = this.time.now();
+    this.#transportAt = now;
     this.#lastMethod = activity.method;
     if (activity.kind === "turn_started") {
-      if (this.#phase === "starting") {
-        this.#phase = "model_active";
-        this.#phaseAt = this.#progressAt = this.time.now();
-      }
+      if (!this.#modelStarted) this.#progress();
     } else if (activity.kind === "turn_progress") {
       this.#progress(activity.toolCallId);
     } else if (activity.kind === "retry_notice") this.#retryCount++;
+    this.#syncPhase();
     if (this.time.now() - this.#activityLoggedAt >= 1000) {
       this.#activityLoggedAt = this.time.now();
       this.#emit("activity");
@@ -163,83 +159,76 @@ export class InvocationWatchdog {
       this.dispose();
       return;
     }
-    // Session establishment and usage bookkeeping are not the first turn frame.
-    if (
-      this.#phase === "starting" &&
-      (event.type === "session.update" || event.type === "usage.update")
-    )
-      return;
     const rawID = event.payload.toolCallId ?? event.payload.id ?? event.payload.itemId;
-    const id = typeof rawID === "string" ? rawID : "tool";
-    if (event.type === "tool_call.create" && !this.#tools.has(id)) {
+    const id = typeof rawID === "string" && rawID ? rawID : undefined;
+    let toolChanged = false;
+    if (event.type === "tool_call.create" && id && !this.#tools.has(id)) {
       this.#tools.set(id, { startedAt: now, progressAt: now });
+      this.#modelStarted = toolChanged = true;
     }
     if (
       event.type === "tool_call.update" &&
+      id &&
       ["completed", "failed", "cancelled", "stopped"].includes(String(event.payload.status))
     ) {
-      this.#tools.delete(id);
+      toolChanged = this.#tools.delete(id);
     }
     if (event.type === "interaction.requested" && typeof event.payload.interactionId === "string") {
-      if (!this.#interactions.size) this.#waitingSince = now;
-      this.#interactions.add(event.payload.interactionId);
+      this.#interaction(event.payload.interactionId, true);
     }
     if (event.type === "interaction.resolved" && typeof event.payload.interactionId === "string") {
-      this.#interactions.delete(event.payload.interactionId);
-      if (!this.#interactions.size && this.#waitingSince !== undefined) {
-        const pausedMs = now - this.#waitingSince;
-        for (const tool of this.#tools.values()) {
-          tool.startedAt += pausedMs;
-          tool.progressAt = now;
-        }
-        this.#waitingSince = undefined;
-      }
+      this.#interaction(event.payload.interactionId, false);
     }
-    const phase = this.#interactions.size
-      ? "waiting_approval"
-      : this.#tools.size
-        ? "tool_active"
-        : "model_active";
-    if (phase !== this.#phase) {
-      this.#phase = phase;
-      this.#phaseAt = this.#progressAt = now;
-      this.#warned = false;
-    }
-    // Native-aware providers classify progress before normalization. Repeated
-    // usage or unrelated canonical records cannot keep a stalled turn alive.
-    if (!this.nativeActivity && event.type !== "usage.update" && event.type !== "session.update") {
+    const hasText = (value: unknown): boolean => typeof value === "string" && value.length > 0;
+    const toolProgress = event.payload.progress;
+    const progress =
+      toolChanged ||
+      (event.type.startsWith("message.") && hasText(event.payload.text)) ||
+      event.type === "model_step.started" ||
+      event.type === "model_step.finished" ||
+      (event.type === "tool_call.delta" &&
+        [event.payload.argsDelta, event.payload.outputDelta, event.payload.outputSnapshot].some(
+          hasText
+        )) ||
+      (event.type === "tool_call.progress" &&
+        typeof toolProgress === "object" &&
+        toolProgress !== null &&
+        !Array.isArray(toolProgress) &&
+        (("message" in toolProgress && hasText(toolProgress.message)) ||
+          ("completed" in toolProgress && typeof toolProgress.completed === "number")));
+    // Only real turn work exits startup. Bookkeeping and empty placeholders do not.
+    if (!this.#nativeProgressSeen && progress) {
       this.#progress(event.type.startsWith("tool_call.") ? id : undefined);
     }
+    this.#syncPhase();
     this.#arm();
   }
 
   /** Lifetime evidence is independent of provider payload conversion. */
   interaction(requestId: string | number, pending: boolean): void {
     if (!this.#active()) return;
-    const id = `${typeof requestId}:${requestId}`,
-      now = this.time.now();
+    this.#interaction(`${typeof requestId}:${requestId}`, pending);
+    this.#syncPhase();
+    this.#arm();
+  }
+
+  #interaction(id: string, pending: boolean): void {
+    const now = this.time.now();
     if (pending) {
       if (!this.#interactions.size) this.#waitingSince = now;
       this.#interactions.add(id);
     } else {
       this.#interactions.delete(id);
       if (!this.#interactions.size && this.#waitingSince !== undefined) {
-        const pausedMs = now - this.#waitingSince;
+        // Each timestamp is suspended only for its own overlap with the wait.
+        this.#progressAt += now - Math.max(this.#waitingSince, this.#progressAt);
         for (const tool of this.#tools.values()) {
-          tool.startedAt += pausedMs;
-          tool.progressAt = now;
+          tool.startedAt += now - Math.max(this.#waitingSince, tool.startedAt);
+          tool.progressAt += now - Math.max(this.#waitingSince, tool.progressAt);
         }
         this.#waitingSince = undefined;
       }
     }
-    this.#phase = this.#interactions.size
-      ? "waiting_approval"
-      : this.#tools.size
-        ? "tool_active"
-        : "model_active";
-    this.#phaseAt = this.#progressAt = now;
-    this.#warned = false;
-    this.#arm();
   }
 
   terminal(): void {
@@ -264,7 +253,7 @@ export class InvocationWatchdog {
       pendingInteractionCount: this.#interactions.size,
       retryCount: this.#retryCount,
       lastMethod: this.#lastMethod,
-      activitySupport: this.nativeActivity ? "native_progress" : "canonical_only",
+      activitySupport: this.#nativeProgressSeen ? "native_progress" : "canonical_only",
       modelIdlePolicy: this.limits.modelIdlePolicy
     };
   }
@@ -293,16 +282,29 @@ export class InvocationWatchdog {
     const now = this.time.now();
     this.#maxProgressGapMs = Math.max(this.#maxProgressGapMs, now - this.#progressAt);
     this.#progressAt = now;
-    if (this.#phase === "starting") {
-      this.#phase = "model_active";
-      this.#phaseAt = now;
-    }
+    this.#modelStarted = true;
     const tool = toolCallId ? this.#tools.get(toolCallId) : undefined;
     if (tool) tool.progressAt = now;
     if (this.#warned) {
       this.#warned = false;
       this.#emit("progress_resumed");
     }
+  }
+
+  #syncPhase(): void {
+    const phase = this.#interactions.size
+      ? "waiting_approval"
+      : this.#tools.size
+        ? "tool_active"
+        : this.#modelStarted
+          ? "model_active"
+          : "starting";
+    if (phase === this.#phase) return;
+    if (this.#phase === "tool_active" && phase === "model_active")
+      this.#progressAt = this.time.now();
+    this.#phase = phase;
+    this.#phaseAt = this.time.now();
+    this.#warned = false;
   }
 
   #arm(): void {
