@@ -61,7 +61,14 @@
               "bf_token": {
                 "type": "string",
                 "writeOnly": true,
-                "anyOf": [{ "pattern": "^\\s*$" }, { "pattern": "^\\s*bf_[A-Za-z0-9_-]+\\s*$" }],
+                "anyOf": [
+                  {
+                    "pattern": "^\\s*$"
+                  },
+                  {
+                    "pattern": "^\\s*bf_[A-Za-z0-9_-]+\\s*$"
+                  }
+                ],
                 "description": "可选；实际启用建联时必需。宿主从自己的配置来源取得并传入的 Bot Token 值，由 Octo 为此 Bot 签发，以 bf_ 开头，用于 octo-auth、注册和消息 API；不是个人登录 Token、enroll token 或模型 API Key。去除首尾空白后须符合 ^bf_[A-Za-z0-9_-]+$；空值允许暂存但不能建联。插件不读取凭据文件或配置中心。不得进入模型文本、公开状态或日志。",
                 "examples": ["bf_REPLACE_WITH_REAL_BOT_TOKEN"]
               },
@@ -103,10 +110,22 @@
                 },
                 "if": {
                   "required": ["adapter_type"],
-                  "properties": { "adapter_type": { "const": "openclaw" } }
+                  "properties": {
+                    "adapter_type": {
+                      "const": "openclaw"
+                    }
+                  }
                 },
-                "then": { "not": { "required": ["workdir"] } },
-                "else": { "not": { "required": ["provider_agent_id"] } }
+                "then": {
+                  "not": {
+                    "required": ["workdir"]
+                  }
+                },
+                "else": {
+                  "not": {
+                    "required": ["provider_agent_id"]
+                  }
+                }
               },
               "context": {
                 "type": "object",
@@ -122,7 +141,10 @@
                   "items": {
                     "type": "array",
                     "description": "必填。执行 AgentRun 时固定附带的 Context 项；允许空数组，每项为遵循 Context v3 协议的 JSON 对象，此处不展开内部字段。",
-                    "items": { "type": "object", "additionalProperties": true }
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
                   }
                 }
               },
@@ -217,11 +239,28 @@
             },
             "allOf": [
               {
-                "if": { "properties": { "adapter": { "not": { "required": ["workdir"] } } } },
+                "if": {
+                  "properties": {
+                    "adapter": {
+                      "not": {
+                        "required": ["workdir"]
+                      }
+                    }
+                  }
+                },
                 "then": {
                   "properties": {
                     "bot_id": {
-                      "not": { "anyOf": [{ "enum": [".", ".."] }, { "pattern": "[/\\\\\u0000]" }] }
+                      "not": {
+                        "anyOf": [
+                          {
+                            "enum": [".", ".."]
+                          },
+                          {
+                            "pattern": "[/\\\\\u0000]"
+                          }
+                        ]
+                      }
                     }
                   }
                 }
@@ -236,6 +275,27 @@
             "type": "string",
             "pattern": "\\S",
             "description": "已授权的 Space 业务 ID，须含非空白字符。"
+          }
+        },
+        "context_loading": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "可选。宿主代码注入 loadContexts 时的回调预算；不是函数配置。每个 Extra 共用在途上限，超时但未结束的回调仍占用名额。",
+          "properties": {
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30000,
+              "default": 5000,
+              "description": "单次动态加载超时，单位毫秒；到期取消本次等待和 signal，不保证外部 I/O 已停止。"
+            },
+            "max_in_flight": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32,
+              "default": 8,
+              "description": "每个 Extra 尚未结束的回调数上限；达到上限直接拒绝当前轮次，不增加等待队列。"
+            }
           }
         }
       }
@@ -259,7 +319,22 @@
               "model": "<PROVIDER_MODEL_ID>",
               "effort": "medium"
             },
-            "context": { "schema": "octo.context-envelope/v3", "items": [] },
+            "context": {
+              "schema": "octo.context-envelope/v3",
+              "items": [
+                {
+                  "namespace": "octo.control",
+                  "name": "instructions",
+                  "payload": {
+                    "entries": [
+                      {
+                        "text": "我是明略科技的Octo助理"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
             "approval_mode": "full_access",
             "run_timeout_ms": 86400000,
             "codex_retry": {
@@ -286,8 +361,27 @@
           {
             "api_url": "https://im-test.deepminer.com.cn/api",
             "bot_id": "<OCTO_BOT_ID>",
-            "adapter": { "adapter_type": "openclaw", "provider_agent_id": "research_assistant" },
-            "bf_token": "bf_REPLACE_WITH_REAL_BOT_TOKEN"
+            "adapter": {
+              "adapter_type": "openclaw",
+              "provider_agent_id": "research_assistant"
+            },
+            "bf_token": "bf_REPLACE_WITH_REAL_BOT_TOKEN",
+            "context": {
+              "schema": "octo.context-envelope/v3",
+              "items": [
+                {
+                  "namespace": "octo.control",
+                  "name": "instructions",
+                  "payload": {
+                    "entries": [
+                      {
+                        "text": "我是明略科技的Octo助理"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
           }
         ]
       }

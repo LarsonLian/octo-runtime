@@ -30,7 +30,9 @@ await runtime.stop('quit');
 
 Octo 使用 `channel-gateway`，企业微信使用 `channel-wecom`；两个插件都使用 `config.bots` 数组表达多个 Bot。宿主卸载对应 Extra、保存完整配置、重新加载，同一插件内连接整体重建，其他插件和共享 Host 不重启。插件通过同步 `ctx.onStatus` 返回内部快照，继续通过 `ctx.onDispose` 清理；没有原地配置钩子或通用业务 RPC。daemon 不识别 Bot 字段，加载失败不回滚宿主持久配置。
 
-SDK 宿主自行保存配置并在应用重启或账号变化后重新提供。CLI 是另一种宿主：先 `extra unload <name>`，用 `extraset <name>` 保存完整声明到 `<home>/extras/<name>/config.json`，再 `extra load <name>` 读取新文件加载。CLI 文件不构成 SDK 的存储要求。
+SDK 宿主自行保存配置并在应用重启或账号变化后重新提供。CLI 是另一种宿主：用 `extraset <name>` 保存完整声明到 `<home>/extras/<name>/config.json`，再重启 daemon 读取新文件。CLI 文件不构成 SDK 的存储要求。
+
+Extra 入口现为 `extra(context, jsonConfig)(dependencies)`；CLI 以空对象初始化三个内置插件。共享 ExtraPlugins 支持同进程 `load(module, config, dependencies)`，但本轮未迁移 SDK HostApp 函数组装，runtime.loadExtra 继续只接收 JSON 声明。完整配置示例显式使用 text-only 指令人设“我是明略科技的Octo助理”，见[配置指南](../../.octospec/guides/extra-configuration.md)。
 
 直接使用 `startDaemonServer` 的 Node 宿主可通过 `extraRegistration(descriptor)` 构造 `extras` 声明，所有插件复用同一 Host。完整 SDK 示例见 [接入指南](../../SDK_NATIVE_INTEGRATION_FULL_GUIDE.md#22-加载和重载-extra)。
 

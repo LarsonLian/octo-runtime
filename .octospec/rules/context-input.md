@@ -53,7 +53,7 @@ renderer 只匹配 namespace/name 的白名单 pattern，保序输出全部数�
 
 `octo.control/instructions` 与普通本轮 Context 使用不同通道。业务方在调用时显式提供指令，Host 保留本轮快照；Provider Adapter 在新 Provider 会话初始化时使用系统指令，正常续聊不重复注入，不改成逐轮用户正文。普通业务 Context 不适用该省略规则。既有恢复策略退回新 Provider 会话时，使用本次调用明确提供的冻结指令，不从历史缓存补齐；系统指令变化由业务显式新建或 reset 后生效。
 
-2026-10-16 用户确认、待实施：`instructions.payload.entries` 改为仅包含 `{ text: string }` 的列表，原顺序 `entries.map(entry => entry.text).join("\n")`；删除 source 分类，不新增替代来源字段，不兼容旧条目。当前代码仍要求 source 且使用双换行，此处不表示协议已经切换。实际身份、配置写入权限与 mandatory 强制约束继续保留；source 文本标签不是授权凭据。目标格式、空值与校验规则见[统一执行与指令计划](../tasks/unify-execution-and-simplify-instructions/brief.md#2-instructions-仅包含文本列表)。
+2026-10-17 已实施：`instructions.payload.entries` 仅包含 `{ text: string }` 的列表，原顺序 `entries.map(entry => entry.text).join("\n")`；删除 source 分类，不新增替代来源字段，不兼容旧条目。旧 source 字段按协议拒绝，身份、配置写入权限与 mandatory 强制约束继续保留。格式、空值与校验规则见[统一执行与指令计划](../tasks/unify-execution-and-simplify-instructions/brief.md#2-instructions-仅包含文本列表)；本轮运行验证边界见[实施记录](../journal/shared/2026-10-17-extra-initializer-delivery.md)。
 
 ## 资源地址与获取指引
 

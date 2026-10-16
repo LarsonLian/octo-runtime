@@ -102,10 +102,23 @@
                 },
                 "if": {
                   "required": ["adapter_type"],
-                  "properties": { "adapter_type": { "const": "openclaw" } }
+                  "properties": {
+                    "adapter_type": {
+                      "const": "openclaw"
+                    }
+                  }
                 },
-                "then": { "not": { "required": ["workdir"] } },
-                "else": { "required": ["workdir"], "not": { "required": ["provider_agent_id"] } }
+                "then": {
+                  "not": {
+                    "required": ["workdir"]
+                  }
+                },
+                "else": {
+                  "required": ["workdir"],
+                  "not": {
+                    "required": ["provider_agent_id"]
+                  }
+                }
               },
               "context": {
                 "type": "object",
@@ -121,7 +134,10 @@
                   "items": {
                     "type": "array",
                     "description": "必填。执行 AgentRun 时固定附带的 Context 项；允许空数组，每项为遵循 Context v3 协议的 JSON 对象，此处不展开内部字段。",
-                    "items": { "type": "object", "additionalProperties": true }
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
                   }
                 }
               },
@@ -158,6 +174,27 @@
             "pattern": "\\S",
             "description": "允许的 Space 业务 ID，须含非空白字符。"
           }
+        },
+        "context_loading": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "可选。宿主代码注入 loadContexts 时的回调预算；不是函数配置。每个 Extra 共用在途上限，超时但未结束的回调仍占用名额。",
+          "properties": {
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30000,
+              "default": 5000,
+              "description": "单次动态加载超时，单位毫秒；到期取消本次等待和 signal，不保证外部 I/O 已停止。"
+            },
+            "max_in_flight": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32,
+              "default": 8,
+              "description": "每个 Extra 尚未结束的回调数上限；达到上限直接拒绝当前轮次，不增加等待队列。"
+            }
+          }
         }
       }
     }
@@ -180,7 +217,22 @@
               "model": "<PROVIDER_MODEL_ID>",
               "effort": "medium"
             },
-            "context": { "schema": "octo.context-envelope/v3", "items": [] },
+            "context": {
+              "schema": "octo.context-envelope/v3",
+              "items": [
+                {
+                  "namespace": "octo.control",
+                  "name": "instructions",
+                  "payload": {
+                    "entries": [
+                      {
+                        "text": "我是明略科技的Octo助理"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
             "approval_mode": "full_access",
             "run_timeout_ms": 120000,
             "allowed_sender_ids": ["<WECOM_USER_ID>"]
@@ -194,8 +246,27 @@
         "bots": [
           {
             "bot_id": "<WECOM_BOT_ID>",
-            "adapter": { "adapter_type": "openclaw", "provider_agent_id": "research_assistant" },
-            "app_secret": "<WECOM_APP_SECRET>"
+            "adapter": {
+              "adapter_type": "openclaw",
+              "provider_agent_id": "research_assistant"
+            },
+            "app_secret": "<WECOM_APP_SECRET>",
+            "context": {
+              "schema": "octo.context-envelope/v3",
+              "items": [
+                {
+                  "namespace": "octo.control",
+                  "name": "instructions",
+                  "payload": {
+                    "entries": [
+                      {
+                        "text": "我是明略科技的Octo助理"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
           }
         ],
         "authorized_space_ids": ["<AUTHORIZED_SPACE_ID>"]

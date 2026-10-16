@@ -89,13 +89,30 @@ function fixture(invoke, options = {}) {
       return { cancelled: true };
     }
   };
-  const task = new ImTask(host, request, options.adapter ?? "codex", bot, {}, () => {}, time);
+  const task = new ImTask(
+    host,
+    request,
+    options.adapter ?? "codex",
+    bot,
+    { signal: options.signal },
+    () => {},
+    time
+  );
   const collect = async () => {
     const events = [];
     for await (const e of task.events()) events.push(e);
     return events;
   };
-  return { task, time, timers, calls, cancellations, waits, collect, request };
+  return {
+    task,
+    time,
+    timers,
+    calls,
+    cancellations,
+    waits,
+    collect,
+    request: prepareInvokeInput(request).request
+  };
 }
 
 test("IM defaults to one day, accepts explicit long and short limits, validates retry options", () => {
@@ -129,12 +146,7 @@ test("IM defaults to one day, accepts explicit long and short limits, validates 
 test("IM limits allow a quiet 15-minute tool and preserve explicit watchdog overrides", () => {
   const f = fixture(async function* () {});
   const controller = new AbortController();
-  const watchdog = new InvocationWatchdog(
-    f.request.runtimeLimits,
-    controller,
-    () => {},
-    f.time
-  );
+  const watchdog = new InvocationWatchdog(f.request.runtimeLimits, controller, () => {}, f.time);
   watchdog.canonical(event("tool_call.create", { toolCallId: "long-tool" }));
   f.time.tick(15 * 60_000);
   assert.equal(controller.signal.aborted, false);

@@ -298,7 +298,7 @@ test("Extra status keeps per-Bot startup failures visible and isolates healthy/d
       }
     },
     { bots: [bot({ bot_id: "bad" }), bot({ bot_id: "good" }), bot({ enabled: false })] }
-  );
+  )({});
   t.after(dispose);
   assert.deepEqual(
     status().bots.map((b) => [b.state, b.error, b.connected]),

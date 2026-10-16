@@ -58,7 +58,7 @@ test("Extra and manager accept 64 bots; a 65th endpoint is rejected", async () =
       }
     },
     { bots }
-  );
+  )({});
   assert.equal(status().bots.length, 64);
   assert.deepEqual(status().errors, []);
   await dispose();

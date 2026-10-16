@@ -1,3 +1,4 @@
+import { prepareInvokeInput } from "../packages/octo-runtime-core/dist/invoke-input.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
@@ -11,7 +12,7 @@ import {
   validateImConfig,
   ImRuntime
 } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
-import { createImInvocation } from "../packages/octo-runtime-extra-channel-gateway/dist/execution/dispatcher.js";
+import { createImInvocation as createChannelInput } from "../packages/octo-runtime-extra-channel-gateway/dist/execution/dispatcher.js";
 
 const octo = (workdir, overrides = {}) => ({
   api_url: "https://im-test.deepminer.com.cn/api",
@@ -230,3 +231,8 @@ test("Octo verifies Bot and tenant before registering or connecting, without a c
   await wrongTenant.close();
   assert.equal(registrationCalls, 0);
 });
+
+const createImInvocation = (...args) => {
+  const result = createChannelInput(...args);
+  return { ...result, request: prepareInvokeInput(result.request).request };
+};

@@ -7,7 +7,7 @@ tags: [invoke, context, protocol, channel, adapter]
 
 # 目标
 
-状态：已建立计划，待实施。本轮只产出规划，不修改协议、执行代码或运行中的服务。
+状态：2026-10-17 已实施核心前置修复：两个 Channel 直接提交公开 InvokeInput，Host 统一准备；instructions entries 仅 text、单换行、拒绝 source。默认人设与三个 CLI Extra 同步交付。全 Adapter 会话矩阵、HostApp 配置生产者迁移和完整准备失败展示仍按[验收清单](acceptance.md)保留待办，不将本轮核心修复等同整个关联任务完成。证据见[交付记录](../../journal/shared/2026-10-17-extra-initializer-delivery.md)。
 
 排查中的坑、经验和故障时序已沉淀为[独立记录](../../journal/shared/2026-10-16-im-invoke-preparation-lessons.md)，目标调用图同步至[IM Agent 指南](../../guides/im-agent-invocation-boundary.md#执行准备与系统指令调用视图)。
 

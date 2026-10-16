@@ -1,13 +1,9 @@
+import type { ImInvocationInput } from "./dispatcher.js";
 /** IM 业务恢复编排。Host 每次仍只执行一个 invoke，不承担重放决策。 */
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { setTimeout as delay } from "node:timers/promises";
-import {
-  invocationInput,
-  type CanonicalEvent,
-  type InvokeEnvironment,
-  type InvokeRequest
-} from "@mininglamp-oss/octo-runtime-protocol";
+import { type CanonicalEvent, type InvokeEnvironment } from "@mininglamp-oss/octo-runtime-protocol";
 import type { ImBotConfig, ImExecutionPort, ImTaskAttempt } from "../contracts.js";
 
 export const DEFAULT_CODEX_RETRY = Object.freeze({
@@ -56,17 +52,17 @@ export class ImTask {
   stopReason?: string;
   constructor(
     readonly host: ImExecutionPort,
-    readonly request: InvokeRequest,
+    readonly request: ImInvocationInput,
     readonly adapterType: string,
     config: ImBotConfig,
     readonly environment: InvokeEnvironment,
-    readonly onAttempt: (request: InvokeRequest) => void,
+    readonly onAttempt: (request: ImInvocationInput) => void,
     readonly time: ImTaskClock = clock
   ) {
     this.#policy = { ...DEFAULT_CODEX_RETRY, ...config.codex_retry };
     this.#signal = AbortSignal.any([
       this.#abort.signal,
-      ...(request.signal ? [request.signal] : [])
+      ...(environment.signal ? [environment.signal] : [])
     ]);
   }
   /** reset 只阻止后续尝试，不把 reset 变成取消当前 Provider 执行。 */
@@ -159,7 +155,13 @@ export class ImTask {
   async *events(): AsyncGenerator<CanonicalEvent> {
     if (this.#started) throw new Error("IM_TASK_ALREADY_STARTED");
     this.#started = true;
-    const deadline = this.time.now() + (this.request.runtimeLimits?.runTimeoutMs ?? 86_400_000);
+    const deadline =
+      this.time.now() +
+      Number(
+        this.request.contexts.items.find(
+          (item) => item.namespace === "octo.execution" && item.name === "limits"
+        )?.payload.run_timeout_ms ?? 86_400_000
+      );
     const clearDeadline = this.time.schedule(
       () => this.#stop("IM_TASK_DEADLINE"),
       deadline - this.time.now()
@@ -172,13 +174,9 @@ export class ImTask {
           this.#stop("IM_TASK_DEADLINE");
           break;
         }
-        request = {
-          ...request,
-          runtimeLimits: { ...request.runtimeLimits, runTimeoutMs: remaining }
-        };
-        // 用与 runtimeLimits 相同的剩余预算进入 Host，避免两处执行配置相互矛盾。
-        request.context = structuredClone(request.context);
-        for (const item of request.context.items)
+        // Retry carries the same turn snapshot and the remaining execution budget.
+        request = { ...request, contexts: structuredClone(request.contexts) };
+        for (const item of request.contexts.items)
           if (item.namespace === "octo.execution" && item.name === "limits")
             item.payload.run_timeout_ms = remaining;
         this.onAttempt(request);
@@ -192,10 +190,10 @@ export class ImTask {
         this.attempts.push(attempt);
         let terminal: CanonicalEvent | undefined;
         try {
-          for await (const event of this.host.invoke(
-            { ...invocationInput(request, "canonical"), protocol_mode: "canonical" },
-            { ...this.environment, signal: this.#signal }
-          )) {
+          for await (const event of this.host.invoke(request, {
+            ...this.environment,
+            signal: this.#signal
+          })) {
             if (terminal) throw new Error("IM_FRAME_AFTER_TERMINAL");
             this.#observe(event);
             if (event.type === "session.update")

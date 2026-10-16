@@ -5,23 +5,28 @@
 import { randomUUID } from "node:crypto";
 import {
   assertContextEnvelope,
-  assertInvokeRequest,
-  contextControlInstructions,
+  mergeContext,
+  type ApprovalMode,
   type ContextEnvelope,
-  type InvokeRequest
+  type InvokeInput
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type { ImBotConfig, ImInboundMessage, ImSession } from "../contracts.js";
-import { resolveLocalContext, localRuntimeLimits } from "@mininglamp-oss/octo-runtime-core";
 
+export type ImInvocationInput = InvokeInput & {
+  runId: string;
+  invocationId: string;
+  sessionId: string;
+  protocol_mode: "canonical";
+};
 export function createImInvocation(
   config: ImBotConfig,
   message: ImInboundMessage,
   context: ContextEnvelope,
   sessionKey: string,
   session: ImSession,
-  signal: AbortSignal,
+  _signal: AbortSignal,
   occurrenceId = message.messageId
-): { request: InvokeRequest; adapterType: string } {
+): { request: ImInvocationInput; adapterType: string } {
   assertContextEnvelope(context);
   if (!session.id) throw new Error("IM_SESSION_NOT_ALLOCATED");
   const selectedAdapter =
@@ -29,6 +34,7 @@ export function createImInvocation(
       ?.payload.type ??
     config.adapter.adapter_type ??
     "codex";
+  if (typeof selectedAdapter !== "string") throw new Error("IM_EXECUTION_CONFIG_INVALID");
   const agentSource = selectedAdapter === "openclaw" ? "preset" : "provisioned";
   const defaults: ContextEnvelope = {
     schema: context.schema,
@@ -76,35 +82,23 @@ export function createImInvocation(
         : [])
     ]
   };
-  // 执行默认值经现有 resolver 解析；本轮业务材料仍保持原顺序，不按会话补齐或去重。
-  const { effectiveContext: snapshot, resolvedExecutionPlan: plan } = resolveLocalContext(
-    defaults,
-    context,
-    agentSource
-  );
+  const snapshot = mergeContext(defaults, context);
   const eventId = `evt_${randomUUID()}`,
     runId = `run_${randomUUID()}`;
   const prompt = message.text.trim();
-  const request: InvokeRequest = {
-    protocolVersion: 2,
+  const request: ImInvocationInput = {
+    protocol_mode: "canonical",
     invocationId: `invoke_${randomUUID()}`,
     runId,
-    agentSessionId: session.id,
+    sessionId: session.id,
     sessionGeneration: session.generation,
     providerEpoch: session.generation,
     agentSource,
-    prompt,
-    modelInput: prompt,
-    context: snapshot,
-    controlInstructions: contextControlInstructions(snapshot),
-    workdir: plan.workdir,
-    approvalMode: plan.approval_mode,
-    agentConfig: {
-      workdir: plan.workdir,
-      ...(plan.model ? { model: plan.model } : {}),
-      ...(plan.effort ? { effort: plan.effort } : {}),
-      ...(plan.provider_agent_id ? { providerAgentId: plan.provider_agent_id } : {})
-    },
+    inputs: [{ type: "text", text: prompt }],
+    contexts: snapshot,
+    approvalMode: snapshot.items.find(
+      (item) => item.namespace === "octo.security" && item.name === "approval_policy"
+    )?.payload.mode as ApprovalMode,
     ...(session.providerSession ? { providerSession: session.providerSession } : {}),
     runMetadata: {
       ...message.runMetadata,
@@ -116,12 +110,9 @@ export function createImInvocation(
       actorId: message.senderId,
       channelId: message.conversationId,
       triggerOccurrenceId: occurrenceId
-    },
-    runtimeLimits: localRuntimeLimits(plan),
-    signal
+    }
   };
-  assertInvokeRequest(request);
   session.lastEventId = eventId;
   session.lastRunId = runId;
-  return { request, adapterType: plan.adapter_type };
+  return { request, adapterType: selectedAdapter };
 }

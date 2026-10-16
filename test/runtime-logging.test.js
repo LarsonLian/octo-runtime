@@ -43,7 +43,7 @@ test("F31 disabled logging creates no files, rejects implicit directories, and n
         config: {},
         load: async () => ({
           name: "fixture",
-          default: async (ctx) => {
+          default: (ctx) => async () => {
             assert.equal(typeof ctx.log, "function");
             ctx.log("info", "fixture.started", {
               extra_type: "forged",

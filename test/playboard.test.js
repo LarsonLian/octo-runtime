@@ -212,7 +212,7 @@ test("temporary daemon renders ordered context and leaves no identity or process
   const contexts = [
     item("extra.playboard", "second", { text: "business-b" }),
     item("octo.control", "instructions", {
-      entries: [{ source: "agent_configuration", text: "control-only" }]
+      entries: [{ text: "control-only" }]
     }),
     item("extra.playboard", "first", { text: "business-a" }),
     item("octo.execution", "model", { selection: { id: "test-model" } })

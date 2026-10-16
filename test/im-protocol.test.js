@@ -1,3 +1,4 @@
+import { prepareInvokeInput } from "../packages/octo-runtime-core/dist/invoke-input.js";
 import { imBotIdentity } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
 // 协议与展示回归：验证 Context、公开事件投影、卡片合同、终态和投递幂等。
 // 服务端 0.4.1 schema fixture 防止合法 TypeScript 对象生成不合法卡片报文。
@@ -27,7 +28,7 @@ import { parseCardAction } from "../packages/octo-runtime-extra-channel-gateway/
 import { ImDeliveryDispatcher } from "../packages/octo-runtime-extra-channel-gateway/dist/delivery/dispatcher.js";
 import { ProgressScheduler } from "../packages/octo-runtime-extra-channel-gateway/dist/delivery/scheduler.js";
 import { TypingController } from "../packages/octo-runtime-extra-channel-gateway/dist/presentation/typing.js";
-import { createImInvocation } from "../packages/octo-runtime-extra-channel-gateway/dist/execution/dispatcher.js";
+import { createImInvocation as createChannelInput } from "../packages/octo-runtime-extra-channel-gateway/dist/execution/dispatcher.js";
 
 const template = { ref: { id: "ai.reasoning-process", version: "0.4.0" }, maxPayloadBytes: 16384 };
 const event = (type, payload = {}) => ({ protocolVersion: 2, type, payload });
@@ -562,6 +563,27 @@ test("Empty Context remains empty and per-run snapshots do not mutate the caller
   assert.equal(first.approvalMode, "full_access");
 });
 
+test("Channel public input keeps automatic material budget fallback without dropping explicit items", () => {
+  const context = {
+    schema: "octo.context-envelope/v3",
+    items: [
+      ...Array.from({ length: 28 }, (_, i) => ({ namespace: "extra.business", name: `item-${i}`, payload: {} })),
+      { namespace: "extra.im", name: "history", payload: { automatic: true, text: "history" } },
+      { namespace: "extra.im", name: "mention-instructions", payload: { automatic: true, text: "guidance" } }
+    ]
+  };
+  const create = () => createChannelInput(config(),
+    { messageId: "budget", senderId: "actor", conversationId: "channel", text: "request" },
+    context, "key", { id: "session", generation: 1 }, new AbortController().signal);
+  const { request } = create();
+  assert.equal(request.contexts.items.length, 32);
+  assert.equal(request.contexts.items.filter((item) => item.namespace === "extra.business").length, 28);
+  assert.equal(request.contexts.items.some((item) => item.namespace === "extra.im"), false);
+  assert.equal(context.items.length, 30);
+  context.items.at(-2).payload.automatic = false;
+  assert.throws(create, /CONTEXT_BUDGET_EXCEEDED/);
+});
+
 test("Execution choices preserve the fixed IM Agent directory without entering request text", () => {
   const context = {
     schema: "octo.context-envelope/v3",
@@ -733,3 +755,8 @@ test("Card action parsing uses server actor/address rather than untrusted submit
   assert.equal(action.inputs.toggle, "false");
   assert.equal(parseCardAction({ event_id: 2, event_type: "doc_mention", event_data: {} }), null);
 });
+
+const createImInvocation = (...args) => {
+  const result = createChannelInput(...args);
+  return { ...result, request: prepareInvokeInput(result.request).request };
+};

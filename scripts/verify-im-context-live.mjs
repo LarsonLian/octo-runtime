@@ -431,8 +431,11 @@ if (process.argv.includes("--delivery-disconnect")) {
   }
   process.exit(0);
 }
-if (process.argv.includes("--logging") || process.argv.includes("--lifecycle")) {
+if (process.argv.includes("--logging") || process.argv.includes("--lifecycle") || process.argv.includes("--dynamic-contexts")) {
   const lifecycle = process.argv.includes("--lifecycle");
+  const dynamic = process.argv.includes("--dynamic-contexts");
+  let contextLoads = 0, providerCalls = 0, answer = "";
+  const instruction = { namespace: "octo.control", name: "instructions", payload: { entries: [{ text: "我是明略科技的Octo助理" }] } };
   let toolStarted;
   const tool = new Promise((resolve) => {
     toolStarted = resolve;
@@ -440,9 +443,16 @@ if (process.argv.includes("--logging") || process.argv.includes("--lifecycle")) 
   const root = await mkdtemp(join(tmpdir(), "octo-f31-live-"));
   const logging = new RuntimeLogging({ directory: join(root, "logs") });
   const host = new AdapterHost({ log: logging.kernel });
-  host.register(createCodexAdapter());
-  const plugins = new ExtraPlugins(
-    [
+  const adapter = createCodexAdapter();
+  const invoke = adapter.invoke.bind(adapter);
+  host.register({ ...adapter, invoke: async function* (request, context) {
+    if (dynamic) {
+      providerCalls++;
+      assert.equal(request.controlInstructions, "我是明略科技的Octo助理\n只回复 OCTO_CONTEXT_DYNAMIC_OK，不调用工具。");
+    }
+    yield* invoke(request, context);
+  } });
+  const registrations = [
       {
         name: "channel-gateway",
         load: () => import("../packages/octo-runtime-extra-channel-gateway/dist/extra.js"),
@@ -457,15 +467,19 @@ if (process.argv.includes("--logging") || process.argv.includes("--lifecycle")) 
               adapter: { adapter_type: "codex", workdir: root },
               approval_mode: "full_access",
               run_timeout_ms: 90000
+              ,...(dynamic ? { context: { schema: "octo.context-envelope/v3", items: [instruction] } } : {})
             }
           ]
         }
       }
-    ],
+    ];
+  const plugins = new ExtraPlugins(
+    registrations,
     {
       async *invoke(...args) {
         for await (const event of host.invoke(...args)) {
           if (event.type === "tool_call.create") toolStarted();
+          if (event.type === "message.delta" && event.payload.channel === "final") answer += event.payload.text ?? "";
           yield event;
         }
       },
@@ -475,7 +489,14 @@ if (process.argv.includes("--logging") || process.argv.includes("--lifecycle")) 
     (name) => logging.extra(name)
   );
   try {
-    await plugins.loadConfigured();
+    if (dynamic) {
+      const module = await import("../packages/octo-runtime-extra-channel-gateway/dist/extra.js");
+      await plugins.load(module, registrations[0].config, { loadContexts: async (_config, { signal }) => {
+        signal.throwIfAborted();
+        contextLoads++;
+        return [{ ...instruction, payload: { entries: [...instruction.payload.entries, { text: "只回复 OCTO_CONTEXT_DYNAMIC_OK，不调用工具。" }] } }];
+      } });
+    } else await plugins.loadConfigured();
     const status = await plugins.inspect("channel-gateway");
     assert.equal(status.bots[0].connected, true);
     const send = async (content) => {
@@ -544,6 +565,11 @@ if (process.argv.includes("--logging") || process.argv.includes("--lifecycle")) 
       }
     }
     assert.equal(finished, true, "Real provider must finish before the test deadline");
+    if (dynamic) {
+      assert.equal(contextLoads, 1);
+      assert.equal(providerCalls, 1);
+      assert.match(answer, /OCTO_CONTEXT_DYNAMIC_OK/);
+    }
     await plugins.close();
     await host.shutdown();
     await logging.close();
@@ -572,7 +598,8 @@ if (process.argv.includes("--logging") || process.argv.includes("--lifecycle")) 
     assert.doesNotMatch(kernel + extras, /F31_LOG_QA_OK|bf_|请不要调用工具/);
     console.log(
       JSON.stringify({
-        feature: lifecycle ? "F21" : "F31",
+        feature: dynamic ? "dynamic-contexts" : lifecycle ? "F21" : "F31",
+        ...(dynamic ? { contextLoads, providerCalls, textOnlyInstructions: true } : {}),
         ...(lifecycle ? { toolStarted: true, sharedHostReload: true } : {}),
         imTestInbound: true,
         realProvider: "codex",

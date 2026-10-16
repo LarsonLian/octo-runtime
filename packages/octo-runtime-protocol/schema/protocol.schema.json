@@ -1172,7 +1172,7 @@
     },
     "ContextConfiguration": {
       "title": "ContextConfiguration",
-      "description": "Agent defaults and mandatory constraints, stored under one external configuration version. Authorized configuration writers may persist system instructions in mandatory with source agent_configuration. Ephemeral business content and default-layer instructions are forbidden; callers cannot submit trusted control instructions.",
+      "description": "Agent defaults and mandatory constraints, stored under one external configuration version. Authorized configuration writers may persist system instructions in mandatory with text-only entries. Ephemeral business content and default-layer instructions are forbidden; callers cannot submit trusted control instructions.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -1493,32 +1493,6 @@
             "items": {
               "items": {
                 "allOf": [
-                  {
-                    "if": {
-                      "properties": {
-                        "namespace": {
-                          "const": "octo.control"
-                        }
-                      }
-                    },
-                    "then": {
-                      "properties": {
-                        "payload": {
-                          "properties": {
-                            "entries": {
-                              "items": {
-                                "properties": {
-                                  "source": {
-                                    "const": "agent_configuration"
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  },
                   {
                     "not": {
                       "properties": {
@@ -2065,23 +2039,16 @@
       }
     },
     "ContextInstructionEntry": {
-      "description": "Minimal control instruction: non-empty text plus a source label. The source label is not proof of trust; authenticated upstream configuration must authorize it.",
+      "description": "Control instruction containing only non-empty text. Authorization belongs to the authenticated upstream boundary, not to a caller-supplied source label.",
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "text",
-        "source"
+        "text"
       ],
       "properties": {
         "text": {
           "type": "string",
           "minLength": 1
-        },
-        "source": {
-          "enum": [
-            "agent_configuration",
-            "platform_policy"
-          ]
         }
       }
     },

@@ -89,6 +89,8 @@ octo-runtime daemon status
 
 `config` 是插件自己的 JSON 对象；CLI/daemon 不解释、合并或补写 Bot 字段。Octo 插件在 `config.bots` 数组中配置多个机器人，`bot_name` 的默认值也由该插件处理。重新执行 `extraset` 会替换整个插件声明，必须提交希望保留的完整数组；重启 daemon 后加载文件变更。SDK 宿主显式提供 Extra 声明，不扫描配置文件。
 
+Gateway、WeCom、WebUI 均使用两阶段 Extra 入口，CLI 传空函数依赖。三个插件的新配置 Schema 和完整示例显式带固定人设“我是明略科技的Octo助理”：两个 Channel 使用 `config.bots[i].context`，WebUI 使用 `config.context`，均为 Context v3 的 octo.control/instructions，entries 只含 text。已有空配置不自动补齐，旧 source 不再接受；完整 JSON 见[配置指南](../../.octospec/guides/extra-configuration.md)。
+
 ## Doctor
 
 ```bash

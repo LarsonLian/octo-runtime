@@ -18,14 +18,19 @@ async function freePort() {
   await new Promise((resolve) => server.close(resolve));
   return port;
 }
-async function setup(t, host = {}) {
+async function setup(t, host = {}, config = {}) {
   const home = await mkdtemp(join(tmpdir(), "octo-webui-"));
   const port = await freePort();
   const extras = new ExtraPlugins(
     [
       {
         name,
-        config: { port, sessionStorePath: join(home, "sessions.json"), defaultProjectPath: home },
+        config: {
+          port,
+          sessionStorePath: join(home, "sessions.json"),
+          defaultProjectPath: home,
+          ...config
+        },
         load: async () => ({ name, default: load })
       }
     ],
@@ -138,7 +143,17 @@ test("canonical SSE passes unchanged and cleanup waits for active invocation can
       responded = { id, response };
     }
   };
-  const { request, home, extras } = await setup(t, host);
+  const context = {
+    schema: "octo.context-envelope/v3",
+    items: [
+      {
+        namespace: "octo.control",
+        name: "instructions",
+        payload: { entries: [{ text: "我是明略科技的Octo助理" }] }
+      }
+    ]
+  };
+  const { request, home, extras } = await setup(t, host, { context });
   const session = await request("/sessions", "POST", { projectPath: home }).then((r) => r.json());
   const id = randomUUID();
   const input = {
@@ -155,7 +170,7 @@ test("canonical SSE passes unchanged and cleanup waits for active invocation can
   const reader = response.body.getReader();
   const first = new TextDecoder().decode((await reader.read()).value);
   assert.equal(first, `data: ${JSON.stringify(event)}\n\n`);
-  assert.deepEqual(received, input);
+  assert.deepEqual(received, { ...input, contexts: context });
   assert.equal(
     (await request("/invoke", "POST", { ...input, invocationId: randomUUID() })).status,
     409
@@ -191,12 +206,37 @@ test("CLI extraset retains explicit WebUI config and loads only the selected ext
   assert.equal((await readExtraDirectory(join(home, "extras")))[0].name, "webui");
 });
 
-test('WebUI status reports occupied port and corrupted JSON without overwriting data',async t=>{
-  const {port,home}=await setup(t);
-  const path=join(home,'broken.json');await writeFile(path,'{broken');
-  const bad=new ExtraPlugins([{name,config:{port:await freePort(),sessionStorePath:path},load:async()=>({name,default:load})}],{});
-  const occupied=new ExtraPlugins([{name,config:{port,sessionStorePath:join(home,'other.json')},load:async()=>({name,default:load})}],{});
-  t.after(async()=>{await bad.close();await occupied.close();});
-  await bad.loadConfigured();assert.deepEqual((await bad.inspect(name)).errors,['WEBUI_STORE_INVALID']);assert.equal(await readFile(path,'utf8'),'{broken');
-  await occupied.loadConfigured();assert.deepEqual((await occupied.inspect(name)).errors,['WEBUI_ADDRESS_IN_USE']);
+test("WebUI status reports occupied port and corrupted JSON without overwriting data", async (t) => {
+  const { port, home } = await setup(t);
+  const path = join(home, "broken.json");
+  await writeFile(path, "{broken");
+  const bad = new ExtraPlugins(
+    [
+      {
+        name,
+        config: { port: await freePort(), sessionStorePath: path },
+        load: async () => ({ name, default: load })
+      }
+    ],
+    {}
+  );
+  const occupied = new ExtraPlugins(
+    [
+      {
+        name,
+        config: { port, sessionStorePath: join(home, "other.json") },
+        load: async () => ({ name, default: load })
+      }
+    ],
+    {}
+  );
+  t.after(async () => {
+    await bad.close();
+    await occupied.close();
+  });
+  await bad.loadConfigured();
+  assert.deepEqual((await bad.inspect(name)).errors, ["WEBUI_STORE_INVALID"]);
+  assert.equal(await readFile(path, "utf8"), "{broken");
+  await occupied.loadConfigured();
+  assert.deepEqual((await occupied.inspect(name)).errors, ["WEBUI_ADDRESS_IN_USE"]);
 });

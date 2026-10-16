@@ -356,10 +356,8 @@ function publicPayload(namespace: string, name: string, value: Record<string, un
     for (const entry of value.entries) {
       object(entry, "CONTEXT_SCHEMA_INVALID");
       if (name === "instructions") {
-        fields(entry, ["text", "source"]);
+        fields(entry, ["text"]);
         text(entry.text);
-        if (!["agent_configuration", "platform_policy"].includes(String(entry.source)))
-          throw new TypeError("CONTEXT_SCHEMA_INVALID");
       } else if (name === "references") {
         resource(entry);
         const ref = String(entry.resource_ref);

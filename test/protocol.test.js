@@ -110,13 +110,13 @@ test("execution Context fixtures carry explicit frozen selections and provider d
   }
 });
 
-test("typed content selections, continuity and sourced instructions have bounded entry shapes", () => {
+test("typed content selections, continuity and text-only instructions have bounded entry shapes", () => {
   const items = [
     { namespace: "octo.content", name: "inline", payload: { entries: [{ resource_ref: "octo://messages/selected", text: "Selected message" }] } },
-    { namespace: "octo.control", name: "instructions", payload: { entries: [{ text: "Keep changes scoped.", source: "platform_policy" }] } },
+    { namespace: "octo.control", name: "instructions", payload: { entries: [{ text: "Keep changes scoped." }] } },
   ];
   assert.doesNotThrow(() => assertContextEnvelope(contextEnvelope(items)));
-  for (const entry of [{ text: "legacy instruction" }, { source: "revision" }, { text: "control", source: 42 }, { text: "control", source: "revision", command: "legacy" }]) {
+  for (const entry of [{}, { source: "revision" }, { text: "control", source: 42 }, { text: "control", source: "revision", command: "legacy" }]) {
     assert.throws(() => assertContextEnvelope(contextEnvelope([{
       namespace: "octo.control", name: "instructions", payload: { entries: [entry] }
     }])), /CONTEXT_SCHEMA_INVALID/);

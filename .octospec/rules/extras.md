@@ -89,10 +89,12 @@ import type { ExtraContext, JsonObject } from "@mininglamp-oss/octo-runtime-daem
 
 export const name = "example";
 
-export default async function load(ctx: ExtraContext, config: JsonObject): Promise<void> {
-  const service = createBusinessService(config);
-  ctx.onDispose(() => service.close());
-  await service.start(ctx.signal);
+export default function load(ctx: ExtraContext, config: JsonObject) {
+  return async () => {
+    const service = createBusinessService(config);
+    ctx.onDispose(() => service.close());
+    await service.start(ctx.signal);
+  };
 }
 ```
 
@@ -107,7 +109,10 @@ export default async function load(ctx: ExtraContext, config: JsonObject): Promi
 保留函数式加载入口和既有清理注册，仅增加同步状态回调，不另建 Extra 对象或 dispose 接口。
 
 ```ts
-type ExtraPlugin = (ctx: ExtraContext, config: JsonObject) => void | Promise<void>;
+type ExtraInitializer<D extends object = Record<string, never>> =
+  (dependencies: Readonly<D>) => void | Promise<void>;
+type ExtraPlugin<D extends object = Record<string, never>> =
+  (ctx: ExtraContext, config: JsonObject) => ExtraInitializer<D>;
 
 interface ExtraContext {
   adapterHost: Pick<HostRunService, "invoke" | "cancel" | "respondInteraction">;
@@ -142,7 +147,8 @@ CLI 默认从 JSON 文件读取；Desktop App 可以从 SQLite 或其他来源�
   -> loader 创建独立 context / signal / 清理列表
   -> import 已安装包
   -> 核对声明名称
-  -> load(ctx, config)
+  -> initialize = load(ctx, config)，外层同步且不启动资源
+  -> await initialize(dependencies)，CLI JSON 装配传入冻结的空对象
   -> 初始化完成，状态 loaded
 
 卸载 / daemon 退出 / 初始化失败
@@ -152,7 +158,11 @@ CLI 默认从 JSON 文件读取；Desktop App 可以从 SQLite 或其他来源�
   -> 等待异步清理完成
 ```
 
-lambda 返回或 Promise 完成表示初始化完成，不表示插件卸载。长期连接、监听器与任务仍由插件持有。
+initializer 返回或 Promise 完成表示初始化完成，不表示插件卸载。长期连接、监听器与任务仍由插件持有。旧的直接 void/Promise 入口拒绝为 EXTRA_INITIALIZER_REQUIRED，不提供兼容转发。
+
+2026-10-17 两阶段接口已实施。共享 ExtraPlugins 支持代码装配 `load(module, config, dependencies)`；config 继续是普通 JSON，函数不得写入 JSON。业务函数由宿主实现，模型执行端口继续由框架提供。CLI 三个 Extra 均使用新入口；现有 createDaemonRuntime SDK 的同进程函数装配接线本轮暂缓，不把共享 loader 的代码接口写成已支持 SDK 跨进程传函数。
+
+两个 Channel 的可选 loadContexts 接收单 Bot JSON 快照及 `{ signal }`，可返回有序 ContextItem 数组或其 Promise。准入后、每轮开始时调用一次；控制消息和 Provider 内部重试不重新调用。静态与动态同 namespace/name 整项替换，保留静态位置，新项按返回顺序追加。动态 instructions 不暗中追加静态人设。config.context_loading 默认 timeout_ms=5000、max_in_flight=8，分别限制为 1..30000 和 1..32；超时未结束仍占名额，满额直接失败，无新增回调等待队列。仅保留本轮及既有有界重试快照，无动态历史缓存。卸载先 abort，等待清理最多 5000ms；失败阻止同名重载，其他 Extra 仍尝试清理。任意不合作 JS 不在沙箱内，不能承诺绝对 OOM 防护。详见[设计](../tasks/extra-initializer-context-dependencies/design.md)。
 
 每创建一个资源，应立即登记清理动作，再继续后续初始化。清理逆序执行，同一实例每个 disposer 只执行一次。单个 disposer 失败时仍继续其他清理，最终报告 `EXTRA_DISPOSE_FAILED`。初始化中途失败会回收已登记资源，其他插件和本地 Host 可以继续运行。
 

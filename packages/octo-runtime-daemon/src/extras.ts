@@ -1,6 +1,7 @@
 import type { InputInvoke, InteractionResponse } from "@mininglamp-oss/octo-runtime-protocol";
 import type { HostedAdapterMetadata } from "@mininglamp-oss/octo-runtime-adapter-host";
 import { noopRuntimeLog, type RuntimeLog } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+export type { ChannelDependencies, LoadContexts } from "./context-loader.js";
 export type { RuntimeLog, RuntimeLogLevel } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
@@ -28,10 +29,16 @@ export interface ExtraContext {
   onStatus(handler: ExtraStatusHandler): void;
 }
 
-export type ExtraPlugin = (context: ExtraContext, config: JsonObject) => void | Promise<void>;
-export interface ExtraPluginModule {
+export type ExtraInitializer<D extends object = Record<string, never>> = (
+  dependencies: Readonly<D>
+) => void | Promise<void>;
+export type ExtraPlugin<D extends object = Record<string, never>> = (
+  context: ExtraContext,
+  config: JsonObject
+) => ExtraInitializer<D>;
+export interface ExtraPluginModule<D extends object = Record<string, never>> {
   name: string;
-  default: ExtraPlugin;
+  default: ExtraPlugin<D>;
 }
 export interface ExtraRegistration {
   name: string;
@@ -51,6 +58,7 @@ interface ExtraInstance {
   disposing?: Promise<void>;
   sealed: boolean;
   disposalError?: AggregateError;
+  cleanup?: Promise<void>;
   status: ExtraStatusHandler;
   statusRegistered: boolean;
 }
@@ -69,8 +77,11 @@ export class ExtraPlugins {
   #closing?: Promise<void>;
   readonly #queues = new Map<string, Promise<unknown>>();
   readonly #loadEpochs = new Map<string, number>();
+  readonly #unloading = new Map<string, Promise<void>>();
+  #pendingLoads = 0;
 
   static validate(registrations: readonly ExtraRegistration[]): void {
+    if (registrations.length > 64) throw new Error("EXTRA_CAPACITY_EXHAUSTED");
     const names = new Set<string>();
     for (const entry of registrations) {
       assertExtraName(entry.name);
@@ -122,16 +133,66 @@ export class ExtraPlugins {
   }
 
   #serial<T>(name: string, operation: () => Promise<T>): Promise<T> {
-    const task = (this.#queues.get(name) ?? Promise.resolve()).catch(() => undefined).then(operation);
+    const task = (this.#queues.get(name) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(operation);
     this.#queues.set(name, task);
-    void task.finally(() => { if (this.#queues.get(name) === task) this.#queues.delete(name); }).catch(() => undefined);
+    void task
+      .finally(() => {
+        if (this.#queues.get(name) === task) this.#queues.delete(name);
+        if (!this.#statuses.has(name) && !this.#queues.has(name) && !this.#unloading.has(name))
+          this.#loadEpochs.delete(name);
+      })
+      .catch(() => undefined);
     return task;
   }
 
-  load(name: string, registration?: ExtraRegistration): Promise<void> {
+  load<D extends object>(
+    module: ExtraPluginModule<D>,
+    config: JsonObject,
+    dependencies: Readonly<D>
+  ): Promise<void>;
+  load(name: string, registration?: ExtraRegistration): Promise<void>;
+  load<D extends object>(
+    target: string | ExtraPluginModule<D>,
+    configOrRegistration?: JsonObject | ExtraRegistration,
+    dependencies?: Readonly<D>
+  ): Promise<void> {
+    if (typeof target !== "string") {
+      const functions = Object.freeze({ ...dependencies }) as Readonly<D>;
+      const registration: ExtraRegistration = {
+        name: target.name,
+        config: configOrRegistration as JsonObject,
+        load: () =>
+          Promise.resolve({
+            name: target.name,
+            default: (context, config) => {
+              const initialize = target.default(context, config);
+              if (typeof initialize !== "function") {
+                void Promise.resolve(initialize).catch(() => undefined);
+                throw new Error("EXTRA_INITIALIZER_REQUIRED");
+              }
+              return () => initialize(functions);
+            }
+          })
+      };
+      return this.load(target.name, registration).finally(() => {
+        if (this.#registrations.get(target.name) === registration)
+          this.#registrations.delete(target.name);
+      });
+    }
+    const name = target;
+    const registration = configOrRegistration as ExtraRegistration | undefined;
     assertExtraName(name);
+    if (this.#closed) return Promise.reject(new Error("EXTRA_LOADER_CLOSED"));
+    if (this.#pendingLoads >= 64) return Promise.reject(new Error("EXTRA_LOAD_QUEUE_FULL"));
+    if (!this.#statuses.has(name) && this.#statuses.size >= 64)
+      return Promise.reject(new Error("EXTRA_CAPACITY_EXHAUSTED"));
+    this.#pendingLoads++;
     const epoch = this.#loadEpochs.get(name) ?? 0;
-    return this.#serial(name, () => {
+    const unloading = this.#unloading.get(name);
+    return this.#serial(name, async () => {
+      if (unloading) await unloading;
       if (registration) {
         ExtraPlugins.validate([registration]);
         if (registration.name !== name) throw new Error("EXTRA_NAME_MISMATCH");
@@ -141,12 +202,15 @@ export class ExtraPlugins {
         this.#registrations.set(name, registration);
       }
       return this.#load(name, epoch);
+    }).finally(() => {
+      this.#pendingLoads--;
     });
   }
 
   #load(name: string, epoch: number): Promise<void> {
     if (this.#closed) return Promise.reject(new Error("EXTRA_LOADER_CLOSED"));
-    if (epoch !== (this.#loadEpochs.get(name) ?? 0)) return Promise.reject(new Error("EXTRA_LOAD_CANCELLED"));
+    if (epoch !== (this.#loadEpochs.get(name) ?? 0))
+      return Promise.reject(new Error("EXTRA_LOAD_CANCELLED"));
     const registration = this.#registrations.get(name);
     if (!registration) return Promise.reject(new Error("EXTRA_NOT_REGISTERED"));
     if (this.#instances.has(name)) return Promise.reject(new Error("EXTRA_ALREADY_LOADED"));
@@ -165,11 +229,18 @@ export class ExtraPlugins {
         const plugin = await registration.load();
         if (plugin.name !== name) throw new Error("EXTRA_NAME_MISMATCH");
         if (typeof plugin.default !== "function") throw new Error("EXTRA_LAMBDA_MISSING");
+        assertStatusObject(registration.config);
         instance.controller.signal.throwIfAborted();
-        await plugin.default(
+        const initialize = plugin.default(
           {
             adapterHost: this.adapterHost,
-            log: (level, event, data) => { try { this.logForExtra(name)(level, event, data); } catch { /* 宿主 logger 不影响插件。 */ } },
+            log: (level, event, data) => {
+              try {
+                this.logForExtra(name)(level, event, data);
+              } catch {
+                /* 宿主 logger 不影响插件。 */
+              }
+            },
             signal: instance.controller.signal,
             onDispose(dispose) {
               if (instance.sealed) throw new Error("EXTRA_ALREADY_DISPOSED");
@@ -177,19 +248,29 @@ export class ExtraPlugins {
               instance.disposers.push(dispose);
             },
             onStatus(handler) {
-              if (instance.sealed || instance.statusRegistered || typeof handler !== "function") throw new Error("EXTRA_STATUS_HANDLER_INVALID");
+              if (instance.sealed || instance.statusRegistered || typeof handler !== "function")
+                throw new Error("EXTRA_STATUS_HANDLER_INVALID");
               instance.status = handler;
               instance.statusRegistered = true;
             }
           },
           structuredClone(registration.config)
         );
-        if (!instance.controller.signal.aborted) this.#statuses.set(name, { phase: "loaded" });
+        if (typeof initialize !== "function") {
+          // Consume a rejected legacy async entry without accepting the old ABI.
+          void Promise.resolve(initialize).catch(() => undefined);
+          throw new Error("EXTRA_INITIALIZER_REQUIRED");
+        }
+        instance.controller.signal.throwIfAborted();
+        await initialize(Object.freeze({}));
+        instance.controller.signal.throwIfAborted();
+        this.#statuses.set(name, { phase: "loaded" });
       } catch (error) {
         instance.controller.abort();
         let cleanupFailed = false;
-        await this.#dispose(instance).catch(() => {
+        await withDisposalDeadline(this.#dispose(instance)).catch((cleanupError: unknown) => {
           cleanupFailed = true;
+          instance.disposalError ??= new AggregateError([cleanupError], "EXTRA_DISPOSE_FAILED");
         });
         // Never copy third-party error text or configuration secrets into public status.
         const code =
@@ -197,7 +278,7 @@ export class ExtraPlugins {
             ? error.message
             : error instanceof Error && "code" in error && error.code === "ERR_MODULE_NOT_FOUND"
               ? "EXTRA_MODULE_NOT_FOUND"
-            : "EXTRA_LOAD_FAILED";
+              : "EXTRA_LOAD_FAILED";
         this.#statuses.set(name, {
           phase: "error",
           error: cleanupFailed ? "EXTRA_DISPOSE_FAILED" : code
@@ -210,10 +291,25 @@ export class ExtraPlugins {
   }
 
   unload(name: string): Promise<void> {
+    assertExtraName(name);
+    const unloading = this.#unloading.get(name);
+    if (unloading) return unloading;
+    if (!this.#registrations.has(name) && !this.#instances.has(name) && !this.#queues.has(name))
+      return Promise.resolve();
     // Cancel queued initialization even when its AbortController does not exist yet.
     this.#loadEpochs.set(name, (this.#loadEpochs.get(name) ?? 0) + 1);
     this.#instances.get(name)?.controller.abort();
-    return this.#serial(name, () => this.#unload(name));
+    const instance = this.#instances.get(name);
+    // Do not queue cancellation behind an initializer that may never settle.
+    const task = instance ? this.#unload(name) : this.#serial(name, () => this.#unload(name));
+    this.#unloading.set(name, task);
+    void task
+      .finally(() => {
+        if (this.#unloading.get(name) === task) this.#unloading.delete(name);
+        if (!this.#statuses.has(name) && !this.#queues.has(name)) this.#loadEpochs.delete(name);
+      })
+      .catch(() => undefined);
+    return task;
   }
 
   #unload(name: string): Promise<void> {
@@ -223,15 +319,20 @@ export class ExtraPlugins {
     instance.controller.abort();
     this.#statuses.set(name, { phase: "disposing" });
     instance.disposing = (async () => {
-      await instance.starting.catch(() => undefined);
       try {
-        await this.#dispose(instance);
+        await withDisposalDeadline(
+          (async () => {
+            await instance.starting.catch(() => undefined);
+            await this.#dispose(instance);
+          })()
+        );
         this.#statuses.set(name, { phase: "disposed" });
       } catch (error) {
         this.#statuses.set(name, { phase: "error", error: "EXTRA_DISPOSE_FAILED" });
         throw error;
       } finally {
-        if (!instance.disposalError) this.#instances.delete(name);
+        if (!instance.disposalError && this.#statuses.get(name)?.phase === "disposed")
+          this.#instances.delete(name);
       }
     })();
     return instance.disposing;
@@ -256,35 +357,61 @@ export class ExtraPlugins {
   }
 
   async #dispose(instance: ExtraInstance): Promise<void> {
+    if (instance.cleanup) return instance.cleanup;
     if (instance.sealed) {
       if (instance.disposalError) throw instance.disposalError;
       return;
     }
     instance.sealed = true;
-    const errors: unknown[] = [];
-    for (const dispose of instance.disposers.reverse()) {
-      try {
-        await dispose();
-      } catch (error) {
-        errors.push(error);
+    instance.status = () => ({});
+    instance.cleanup = (async () => {
+      const errors: unknown[] = [];
+      const deadline = Date.now() + 5_000;
+      for (const dispose of instance.disposers.reverse()) {
+        try {
+          const operation = Promise.resolve().then(dispose);
+          await withDisposalDeadline(operation, Math.max(1, deadline - Date.now()));
+        } catch (error) {
+          errors.push(error);
+        }
       }
-    }
-    instance.disposers.length = 0;
-    if (errors.length) {
-      instance.disposalError = new AggregateError(errors, "EXTRA_DISPOSE_FAILED");
-      throw instance.disposalError;
-    }
+      instance.disposers.length = 0;
+      if (errors.length) {
+        instance.disposalError = new AggregateError(errors, "EXTRA_DISPOSE_FAILED");
+        throw instance.disposalError;
+      }
+    })();
+    return instance.cleanup;
+  }
+}
+
+async function withDisposalDeadline(operation: Promise<void>, timeoutMs = 5_000): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("EXTRA_DISPOSE_FAILED")), timeoutMs);
+      })
+    ]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
 function assertStatusObject(value: unknown): asserts value is JsonObject {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("EXTRA_STATUS_JSON_REQUIRED");
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("EXTRA_STATUS_JSON_REQUIRED");
   const seen = new Set<object>();
   const visit = (item: unknown): void => {
     if (item === null || typeof item === "string" || typeof item === "boolean") return;
     if (typeof item === "number" && Number.isFinite(item)) return;
-    if (!item || typeof item !== "object" || seen.has(item) ||
-      (!Array.isArray(item) && Object.getPrototypeOf(item) !== Object.prototype))
+    if (
+      !item ||
+      typeof item !== "object" ||
+      seen.has(item) ||
+      (!Array.isArray(item) && Object.getPrototypeOf(item) !== Object.prototype)
+    )
       throw new Error("EXTRA_STATUS_JSON_REQUIRED");
     seen.add(item);
     for (const child of Object.values(item)) visit(child);

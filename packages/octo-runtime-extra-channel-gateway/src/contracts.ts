@@ -4,6 +4,7 @@
 import type {
   ApprovalMode,
   ContextEnvelope,
+  ContextItem,
   CanonicalEvent,
   InteractionResponse,
   InteractionRequestedPayload,
@@ -75,7 +76,11 @@ export interface ImInboundMessage {
   isReplyDelivered?(effectKey: string): boolean;
   buildContext(
     signal: AbortSignal,
-    options?: { initialSession: boolean; mentionGuidance?: boolean }
+    options?: {
+      initialSession: boolean;
+      mentionGuidance?: boolean;
+      configuredItems?: readonly ContextItem[];
+    }
   ): Promise<ContextEnvelope>;
   executionEnvironment?(): InvokeEnvironment;
   runMetadata?: Record<string, unknown>;

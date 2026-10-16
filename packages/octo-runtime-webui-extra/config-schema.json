@@ -41,6 +41,43 @@
           "type": "string",
           "description": "可选。页面初始默认项目的本机目录；省略使用运行进程用户 Home 下的 octo-runtime-workspace，并在启动时创建目录。显式相对路径按进程 cwd 解析，建议使用绝对路径；~ 和环境变量不会展开。页面可另外选择项目，本字段不限制所有调用的工作区，也不是沙箱边界。",
           "examples": ["/absolute/workspace"]
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "items"],
+          "description": "可选。WebUI 发起每轮调用时使用的固定 Context v3；本轮显式同 namespace/name 项整项覆盖配置项。省略为空，不从历史补齐。建议新配置包含固定助理人设。",
+          "properties": {
+            "schema": {
+              "const": "octo.context-envelope/v3",
+              "description": "固定 Context 协议版本。"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "Context v3 的有序项；具体内部结构由 Context 协议校验。"
+            }
+          },
+          "examples": [
+            {
+              "schema": "octo.context-envelope/v3",
+              "items": [
+                {
+                  "namespace": "octo.control",
+                  "name": "instructions",
+                  "payload": {
+                    "entries": [
+                      {
+                        "text": "我是明略科技的Octo助理"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
         }
       }
     }
@@ -52,13 +89,45 @@
       "config": {
         "port": 13888,
         "sessionStorePath": "/absolute/host-home/extras/webui/sessions.json",
-        "defaultProjectPath": "/absolute/workspace"
+        "defaultProjectPath": "/absolute/workspace",
+        "context": {
+          "schema": "octo.context-envelope/v3",
+          "items": [
+            {
+              "namespace": "octo.control",
+              "name": "instructions",
+              "payload": {
+                "entries": [
+                  {
+                    "text": "我是明略科技的Octo助理"
+                  }
+                ]
+              }
+            }
+          ]
+        }
       }
     },
     {
       "module": "@mininglamp-oss/octo-runtime-webui-extra",
       "config": {
-        "sessionStorePath": "/absolute/host-home/extras/webui/sessions.json"
+        "sessionStorePath": "/absolute/host-home/extras/webui/sessions.json",
+        "context": {
+          "schema": "octo.context-envelope/v3",
+          "items": [
+            {
+              "namespace": "octo.control",
+              "name": "instructions",
+              "payload": {
+                "entries": [
+                  {
+                    "text": "我是明略科技的Octo助理"
+                  }
+                ]
+              }
+            }
+          ]
+        }
       }
     }
   ]

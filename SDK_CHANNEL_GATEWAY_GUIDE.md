@@ -129,8 +129,7 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
               "payload": {
                 "entries": [
                   {
-                    "text": "你是团队的 IM 助理。使用中文简洁回复；结论引用已核实的来源，无法确认时明确说明。",
-                    "source": "agent_configuration"
+                    "text": "我是明略科技的Octo助理"
                   }
                 ]
               }
@@ -148,6 +147,22 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
           "workdir": "/absolute/workspace-2",
           "model": "<CODEX_MODEL_ID>",
           "effort": "high"
+        },
+        "context": {
+          "schema": "octo.context-envelope/v3",
+          "items": [
+            {
+              "namespace": "octo.control",
+              "name": "instructions",
+              "payload": {
+                "entries": [
+                  {
+                    "text": "我是明略科技的Octo助理"
+                  }
+                ]
+              }
+            }
+          ]
         }
       }
     ]
@@ -175,9 +190,9 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
 
 ### 3.1 配置 Agent 的 IM 系统提示词
 
-给 Agent 开通 IM 通道时，宿主在配置该 Bot 时确定专用系统提示词，并通过 octo-contexts 的 `octo.context-envelope/v3` 协议写入 **`config.bots[i].context`**。上面的完整 JSON 已给出配置位置：item 使用 `namespace: "octo.control"`、`name: "instructions"`，提示词正文放在 `payload.entries[].text`，来源填写 `source: "agent_configuration"`。
+给 Agent 开通 IM 通道时，宿主在配置该 Bot 时确定专用系统提示词，并通过 octo-contexts 的 `octo.context-envelope/v3` 协议写入 **`config.bots[i].context`**。上面的完整 JSON 已给出配置位置：item 使用 `namespace: "octo.control"`、`name: "instructions"`，提示词正文放在 `payload.entries[].text`；每个条目只保留 `text`，不填写 `source`。
 
-每个 Bot 分别配置自己的提示词；没有提示词时省略该 item。将包含 `context` 的完整配置对象按第 4、5 节加载即可，配置的指令会在 session 首轮注入，无需宿主自行拼接到 IM 消息正文。
+每个 Bot 分别配置自己的提示词；没有提示词时省略该 item。将包含 `context` 的完整配置对象按第 4、5 节加载即可，配置的指令会随每轮调用传递，无需宿主自行拼接到 IM 消息正文。
 
 参考 [Work App 的 imChannelBotConfig](../octo-work-app/src/main/im-channel-service.ts)：它将通道设置中保存的 `channel.instructions` 转成上述 item，空白提示词不生成 item，再与该 Bot 的连接和 Adapter 配置一起交给 Gateway。这里的提示词来自宿主授权的 Agent 配置入口，IM 消息正文不能冒充该来源；协议说明见 [Context 输入合同](.octospec/rules/context-input.md)。
 

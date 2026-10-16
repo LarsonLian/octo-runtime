@@ -93,7 +93,7 @@ test("references are displayed without a resolver and controls remain separate",
     {
       namespace: "octo.control",
       name: "instructions",
-      payload: { entries: [{ text: "control-only", source: "agent_configuration" }] }
+      payload: { entries: [{ text: "control-only" }] }
     }
   ]);
   const rendered = renderModelContexts(context);

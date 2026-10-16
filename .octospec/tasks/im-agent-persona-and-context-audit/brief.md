@@ -8,7 +8,7 @@ timestamp: 2026-10-16T00:00:00Z
 
 # IM Agent 默认人设配置与 Context v3 简化评估
 
-状态：已建立计划与源码评估，待实施。基线为 `feat/open-source-github` / `d7e9dcd` 及工作树；其他任务已有未提交改动，实施前重新核对。本轮不修改产品代码或实际配置。
+状态：2026-10-17 已随 Extra 改造实施 Runtime 指令协议、两个 Channel 的前置修复及三个 Extra/CLI 的显式人设配置示例。用户要求 SDK 接入先不改，HostApp 的配置生产者迁移及全 Provider 矩阵不标记完成；现有用户配置不自动重写。其他简化候选仍是评估。证据见[交付记录](../../journal/shared/2026-10-17-extra-initializer-delivery.md)。下文现状表保留为实施前排查依据。
 
 ## 目标与评估结论
 

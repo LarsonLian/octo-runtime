@@ -34,21 +34,21 @@ function validateLayers(configuration: ContextConfiguration): void {
     for (const item of envelope.items) {
       if (!findContextTypeDefinition(item.namespace, item.name)?.persistent)
         throw new TypeError("CONTEXT_CONFIGURATION_TYPE_FORBIDDEN");
-      if (item.namespace === "octo.control") {
-        const entries = item.payload.entries as { source: string }[];
-        if (layer === 0 || entries.some(entry => entry.source !== "agent_configuration"))
-          throw new TypeError("CONTEXT_CONFIGURATION_TYPE_FORBIDDEN");
-      }
+      if (item.namespace === "octo.control" && layer === 0)
+        throw new TypeError("CONTEXT_CONFIGURATION_TYPE_FORBIDDEN");
     }
   }
 }
 
 /** Agent mandatory values are authoritative; request differences are overwritten. */
-export function resolveContextConfiguration(configuration: ContextConfiguration, request: ContextEnvelope): ContextEnvelope {
+export function resolveContextConfiguration(
+  configuration: ContextConfiguration,
+  request: ContextEnvelope
+): ContextEnvelope {
   validateLayers(configuration);
   assertContextEnvelope(request);
   const effective = mergeContext(configuration.defaults, request);
-  const items = new Map(effective.items.map(item => [keyOf(item), item]));
+  const items = new Map(effective.items.map((item) => [keyOf(item), item]));
   for (const required of configuration.mandatory.items) {
     const key = keyOf(required);
     const selected = items.get(key);
@@ -57,10 +57,17 @@ export function resolveContextConfiguration(configuration: ContextConfiguration,
       payload = { ...structuredClone(selected?.payload ?? {}), ...payload };
     } else if (key === "octo.execution/mcp") {
       assertContextMcp(required.payload);
-      payload = { mcpServers: { ...(selected?.payload.mcpServers as Record<string, unknown>), ...structuredClone(required.payload.mcpServers) } };
+      payload = {
+        mcpServers: {
+          ...(selected?.payload.mcpServers as Record<string, unknown>),
+          ...structuredClone(required.payload.mcpServers)
+        }
+      };
     } else if (key === "octo.execution/envs") {
       assertContextEnvs(required.payload);
-      payload = { ...mergeContextEnvs(selected?.payload ?? { env_variables: [] }, required.payload) };
+      payload = {
+        ...mergeContextEnvs(selected?.payload ?? { env_variables: [] }, required.payload)
+      };
     }
     items.set(key, { ...structuredClone(required), payload });
   }

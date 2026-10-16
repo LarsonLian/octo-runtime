@@ -543,10 +543,7 @@
             "name": "selection",
             "payload": {
               "mode": "candidates",
-              "runtime_ids": [
-                "device-a",
-                "device-b"
-              ],
+              "runtime_ids": ["device-a", "device-b"],
               "strategy": "preferred_failover",
               "offline_behavior": "wait"
             }
@@ -575,10 +572,7 @@
           "name": "selection",
           "payload": {
             "mode": "candidates",
-            "runtime_ids": [
-              "device-a",
-              "device-b"
-            ],
+            "runtime_ids": ["device-a", "device-b"],
             "strategy": "preferred_failover",
             "offline_behavior": "wait"
           }
@@ -601,10 +595,7 @@
             "name": "selection",
             "payload": {
               "mode": "candidates",
-              "runtime_ids": [
-                "device-a",
-                "device-b"
-              ],
+              "runtime_ids": ["device-a", "device-b"],
               "strategy": "preferred_failover",
               "offline_behavior": "wait"
             }
@@ -633,10 +624,7 @@
           "name": "selection",
           "payload": {
             "mode": "candidates",
-            "runtime_ids": [
-              "device-a",
-              "device-b"
-            ],
+            "runtime_ids": ["device-a", "device-b"],
             "strategy": "preferred_failover",
             "offline_behavior": "wait"
           }
@@ -659,10 +647,7 @@
             "name": "selection",
             "payload": {
               "mode": "candidates",
-              "runtime_ids": [
-                "device-a",
-                "device-b"
-              ],
+              "runtime_ids": ["device-a", "device-b"],
               "strategy": "preferred_failover",
               "offline_behavior": "wait"
             }
@@ -692,10 +677,7 @@
           "name": "selection",
           "payload": {
             "mode": "candidates",
-            "runtime_ids": [
-              "device-a",
-              "device-b"
-            ],
+            "runtime_ids": ["device-a", "device-b"],
             "strategy": "preferred_failover",
             "offline_behavior": "wait"
           }
@@ -1056,8 +1038,7 @@
             "payload": {
               "entries": [
                 {
-                  "text": "我是个人助理",
-                  "source": "agent_configuration"
+                  "text": "我是个人助理"
                 }
               ]
             }
@@ -1078,8 +1059,7 @@
           "payload": {
             "entries": [
               {
-                "text": "我是个人助理",
-                "source": "agent_configuration"
+                "text": "我是个人助理"
               }
             ]
           }
@@ -1099,8 +1079,7 @@
             "payload": {
               "entries": [
                 {
-                  "text": "我是个人助理",
-                  "source": "agent_configuration"
+                  "text": "我是个人助理"
                 }
               ]
             }
@@ -1150,7 +1129,7 @@
     "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
-    "name": "mandatory-instructions-cannot-claim-platform_policy",
+    "name": "mandatory-instructions-rejects-legacy-source",
     "configuration": {
       "defaults": {
         "schema": "octo.context-envelope/v3",
@@ -1178,7 +1157,7 @@
       "schema": "octo.context-envelope/v3",
       "items": []
     },
-    "error": "CONTEXT_CONFIGURATION_TYPE_FORBIDDEN"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "mandatory-system-instructions-override",
@@ -1196,8 +1175,7 @@
             "payload": {
               "entries": [
                 {
-                  "text": "我是个人助理",
-                  "source": "agent_configuration"
+                  "text": "我是个人助理"
                 }
               ]
             }
@@ -1214,8 +1192,7 @@
           "payload": {
             "entries": [
               {
-                "text": "覆盖系统提示词",
-                "source": "agent_configuration"
+                "text": "覆盖系统提示词"
               }
             ]
           }
@@ -1231,8 +1208,7 @@
           "payload": {
             "entries": [
               {
-                "text": "我是个人助理",
-                "source": "agent_configuration"
+                "text": "我是个人助理"
               }
             ]
           }

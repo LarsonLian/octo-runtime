@@ -8,6 +8,8 @@ import {
   type ExtraAdapterHost,
   type ExtraDescriptor,
   type ExtraPluginModule,
+  ExtraPlugins,
+  type ChannelDependencies,
   type JsonObject,
   type CanonicalEvent,
   type HostFrame,
@@ -59,7 +61,16 @@ export interface BusinessState {
   module?: ExtraPluginModule;
 }
 
-const load: ExtraPlugin = async (ctx, config) => {
+export function checkAssembly(loader: ExtraPlugins, module: ExtraPluginModule<ChannelDependencies>, config: JsonObject) {
+  void loader.load(module, config, { loadContexts: (_config, { signal }) => {
+    signal.throwIfAborted();
+    return [];
+  } });
+  // @ts-expect-error Dynamic callbacks must return ContextItem arrays, not strings.
+  void loader.load(module, config, { loadContexts: async () => "invalid" });
+}
+
+const load: ExtraPlugin = (ctx, config) => async () => {
   const state: JsonObject = { schema: CONTEXT_SCHEMA, stopped: false, events: 0 };
   ctx.onStatus(() => state);
   ctx.onDispose(() => {

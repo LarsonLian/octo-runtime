@@ -22,9 +22,15 @@ export async function build_im_contexts(
   message: ImMessage,
   botToken: string,
   signal: AbortSignal,
-  options: { initialSession: boolean; mentionGuidance?: boolean } = { initialSession: false }
+  options: {
+    initialSession: boolean;
+    mentionGuidance?: boolean;
+    configuredItems?: readonly ContextItem[];
+  } = { initialSession: false }
 ): Promise<ContextItem[]> {
-  const items: ContextItem[] = structuredClone(config.context?.items ?? []);
+  const items: ContextItem[] = structuredClone([
+    ...(options.configuredItems ?? config.context?.items ?? [])
+  ]);
   const source = {
     service: config.api_url,
     spaceId: config.spaceId,

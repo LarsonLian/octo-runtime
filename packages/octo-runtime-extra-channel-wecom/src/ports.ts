@@ -4,13 +4,15 @@
  */
 import type { ImBotConfig, ImExecutionPort } from "./contracts.js";
 import type { ImSessionStore } from "./application/session-store.js";
-import type { RuntimeLog } from "@mininglamp-oss/octo-runtime-daemon";
+import type { RuntimeLog, JsonObject } from "@mininglamp-oss/octo-runtime-daemon";
+import type { ContextItem } from "@mininglamp-oss/octo-runtime-protocol";
 
 export type ImCredentialSource = (
   config: ImBotConfig,
   signal: AbortSignal
 ) => Promise<string | undefined>;
 export interface ImModuleDependencies {
+  prepareContexts?: (config: JsonObject, signal: AbortSignal) => Promise<ContextItem[]>;
   log?: RuntimeLog;
   host: ImExecutionPort;
   /** Owning Extra/manager lifetime; aborts connections, execution and delivery. */

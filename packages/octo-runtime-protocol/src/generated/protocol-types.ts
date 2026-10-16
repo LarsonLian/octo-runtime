@@ -1970,7 +1970,7 @@ export interface ContextEnvelope {
   items: ContextItem[];
 }
 /**
- * Agent defaults and mandatory constraints, stored under one external configuration version. Authorized configuration writers may persist system instructions in mandatory with source agent_configuration. Ephemeral business content and default-layer instructions are forbidden; callers cannot submit trusted control instructions.
+ * Agent defaults and mandatory constraints, stored under one external configuration version. Authorized configuration writers may persist system instructions in mandatory with text-only entries. Ephemeral business content and default-layer instructions are forbidden; callers cannot submit trusted control instructions.
  *
  * This interface was referenced by `OctoRuntimeProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextConfiguration".
@@ -2110,14 +2110,13 @@ export interface ContextResourceEntry {
   revision?: string;
 }
 /**
- * Minimal control instruction: non-empty text plus a source label. The source label is not proof of trust; authenticated upstream configuration must authorize it.
+ * Control instruction containing only non-empty text. Authorization belongs to the authenticated upstream boundary, not to a caller-supplied source label.
  *
  * This interface was referenced by `OctoRuntimeProtocolSchema`'s JSON-Schema
  * via the `definition` "ContextInstructionEntry".
  */
 export interface ContextInstructionEntry {
   text: string;
-  source: "agent_configuration" | "platform_policy";
 }
 /**
  * This interface was referenced by `OctoRuntimeProtocolSchema`'s JSON-Schema

@@ -8,24 +8,29 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   assertContextEnvelope,
-  assertInvokeRequest,
-  contextControlInstructions,
+  mergeContext,
+  type ApprovalMode,
   type ContextEnvelope,
-  type InvokeRequest
+  type InvokeInput
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type { ImBotConfig, ImInboundMessage, ImSession } from "../contracts.js";
-import { resolveLocalContext, localRuntimeLimits } from "@mininglamp-oss/octo-runtime-core";
 import { validateImConfig } from "../lifecycle/configuration.js";
 
+export type ImInvocationInput = InvokeInput & {
+  runId: string;
+  invocationId: string;
+  sessionId: string;
+  protocol_mode: "canonical";
+};
 export function createImInvocation(
   config: ImBotConfig,
   message: ImInboundMessage,
   context: ContextEnvelope,
   sessionKey: string,
   session: ImSession,
-  signal: AbortSignal,
+  _signal: AbortSignal,
   occurrenceId = message.messageId
-): { request: InvokeRequest; adapterType: string } {
+): { request: ImInvocationInput; adapterType: string } {
   validateImConfig(config);
   assertContextEnvelope(context);
   if (!session.id) throw new Error("IM_SESSION_NOT_ALLOCATED");
@@ -34,6 +39,7 @@ export function createImInvocation(
       ?.payload.type ??
     config.adapter.adapter_type ??
     "codex";
+  if (typeof selectedAdapter !== "string") throw new Error("IM_EXECUTION_CONFIG_INVALID");
   const agentSource = selectedAdapter === "openclaw" ? "preset" : "provisioned";
   const defaultWorkdir = join(homedir(), "octo-runtime", "channels", config.bot_id);
   const workdir =
@@ -93,12 +99,12 @@ export function createImInvocation(
         : [])
     ]
   };
-  // 执行默认值经现有 resolver 解析；本轮业务材料仍保持原顺序，不按会话补齐或去重。
+  // Channel owns its defaults; only Host resolves execution and renders this snapshot.
   let submitted = context;
-  let resolved;
+  let snapshot: ContextEnvelope | undefined;
   for (const optional of ["history", "mention-instructions", undefined]) {
     try {
-      resolved = resolveLocalContext(defaults, submitted, agentSource);
+      snapshot = mergeContext(defaults, submitted);
       break;
     } catch (error) {
       if (!(error instanceof Error) || error.message !== "CONTEXT_BUDGET_EXCEEDED" || !optional)
@@ -116,31 +122,23 @@ export function createImInvocation(
       };
     }
   }
-  if (!resolved) throw new Error("IM_EXECUTION_CONFIG_INVALID");
-  const { effectiveContext: snapshot, resolvedExecutionPlan: plan } = resolved;
+  if (!snapshot) throw new Error("IM_EXECUTION_CONFIG_INVALID");
   const eventId = `evt_${randomUUID()}`,
     runId = `run_${randomUUID()}`;
   const prompt = message.buildInputs ? "[Image]" : message.text.trim();
-  const request: InvokeRequest = {
-    protocolVersion: 2,
+  const request: ImInvocationInput = {
+    protocol_mode: "canonical",
     invocationId: `invoke_${randomUUID()}`,
     runId,
-    agentSessionId: session.id,
+    sessionId: session.id,
     sessionGeneration: session.generation,
     providerEpoch: session.generation,
     agentSource,
-    prompt,
-    modelInput: prompt,
-    context: snapshot,
-    controlInstructions: contextControlInstructions(snapshot),
-    workdir: plan.workdir,
-    approvalMode: plan.approval_mode,
-    agentConfig: {
-      workdir: plan.workdir,
-      ...(plan.model ? { model: plan.model } : {}),
-      ...(plan.effort ? { effort: plan.effort } : {}),
-      ...(plan.provider_agent_id ? { providerAgentId: plan.provider_agent_id } : {})
-    },
+    inputs: [{ type: "text", text: prompt }],
+    contexts: snapshot,
+    approvalMode: snapshot.items.find(
+      (item) => item.namespace === "octo.security" && item.name === "approval_policy"
+    )?.payload.mode as ApprovalMode,
     ...(session.providerSession ? { providerSession: session.providerSession } : {}),
     runMetadata: {
       ...message.runMetadata,
@@ -152,18 +150,15 @@ export function createImInvocation(
       actorId: message.senderId,
       channelId: message.conversationId,
       triggerOccurrenceId: occurrenceId
-    },
-    runtimeLimits: localRuntimeLimits(plan),
-    signal
+    }
   };
-  assertInvokeRequest(request);
   if (
     config.adapter.workdir === undefined &&
     agentSource === "provisioned" &&
-    plan.workdir === defaultWorkdir
+    workdir === defaultWorkdir
   )
     mkdirSync(defaultWorkdir, { recursive: true, mode: 0o700 });
   session.lastEventId = eventId;
   session.lastRunId = runId;
-  return { request, adapterType: plan.adapter_type };
+  return { request, adapterType: selectedAdapter };
 }

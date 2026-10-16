@@ -67,11 +67,21 @@ export async function execute(ctx: ExtraContext, value: unknown) {
   }
 }
 
-const load: ExtraPlugin = (ctx, config) => {
+const load: ExtraPlugin = (ctx, config) => () => {
   ctx.onStatus(() => ({ enabled: true }));
   // 在此用 config 启动业务监听，并以 ctx.onDispose 登记关闭监听和等待任务退出。
 };
 export default load;
+```
+
+外层同步返回初始化函数，实际连接和清理登记放在内层。CLI 只读取 JSON，加载器以 `{}` 调用内层；旧 void/Promise 入口不再支持。需要宿主业务函数时，在同一 Node 进程使用公开 ExtraPlugins 的 `load(module, jsonConfig, dependencies)`；现有 `runtime.loadExtra(descriptor)` 仍为 JSON 声明接口，本轮不迁移 SDK 进程装配，不支持把函数放进 descriptor。
+
+两个 Channel 内层接收可选 `ChannelDependencies.loadContexts`：`(botConfig, {signal}) => readonly ContextItem[] | Promise<readonly ContextItem[]>`。回调每个准入轮次执行一次，静态与动态同 namespace/name 整项替换并保留位置。业务函数须响应 signal，不缓存历史结果；JSON 的 `context_loading` 可指定 `timeout_ms`（默认 5000，1..30000）及 `max_in_flight`（默认 8，1..32）。超时未结束继续占名额；满额拒绝当前轮次。
+
+三个 Extra 的新配置示例显式携带下列固定人设。Gateway/WeCom 放在 `config.bots[i].context`，WebUI 放在 `config.context`；不为已有省略或空列表自动填充：
+
+```json
+{"schema":"octo.context-envelope/v3","items":[{"namespace":"octo.control","name":"instructions","payload":{"entries":[{"text":"我是明略科技的Octo助理"}]}}]}
 ```
 
 invoke 的 input 由业务构造，至少含 inputs 与 contexts；Context=v3，必要执行 adapter 独立选择，完整示例见 [InvokeInput 规则](../rules/invoke-input.md)。运行中的交互通过 `ctx.adapterHost.respondInteraction(invocationId, response)` 回复，取消通过 cancel 或调用环境的 AbortSignal；需要按请求取消时建立自己的 controller，并响应 Extra 的 signal。
@@ -91,7 +101,15 @@ octo-runtime extraset webui <<JSON
   "enabled": true,
   "config": {
     "port": 13888,
-    "sessionStorePath": "$HOME/.octo-runtime/extras/webui/sessions.json"
+    "sessionStorePath": "$HOME/.octo-runtime/extras/webui/sessions.json",
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [{
+        "namespace": "octo.control",
+        "name": "instructions",
+        "payload": { "entries": [{ "text": "我是明略科技的Octo助理" }] }
+      }]
+    }
   }
 }
 JSON
@@ -159,7 +177,15 @@ const runtime = createDaemonRuntime({
   extras: [{
     name: "webui",
     module: "/absolute/installed-extra/dist/index.js",
-    config: { port: 13888, sessionStorePath: "/absolute/app-owned/runtime-home/extras/webui/sessions.json" }
+    config: {
+      port: 13888,
+      sessionStorePath: "/absolute/app-owned/runtime-home/extras/webui/sessions.json",
+      context: {
+        schema: "octo.context-envelope/v3",
+        items: [{ namespace: "octo.control", name: "instructions",
+          payload: { entries: [{ text: "我是明略科技的Octo助理" }] } }]
+      }
+    }
   }]
 });
 ```

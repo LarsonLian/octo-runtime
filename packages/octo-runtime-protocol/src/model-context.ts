@@ -6,6 +6,6 @@ export function contextControlInstructions(context: ContextEnvelope): string {
   assertContextEnvelope(context);
   const entries = contextItem(context, "octo.control", "instructions")?.payload.entries;
   return Array.isArray(entries)
-    ? entries.map((entry) => (entry as { text: string }).text).join("\n\n")
+    ? entries.map((entry) => (entry as { text: string }).text).join("\n")
     : "";
 }

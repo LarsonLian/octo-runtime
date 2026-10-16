@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { once } from "node:events";
+import { createServer } from "node:net";
 import { pathToFileURL } from "node:url";
 
 const execute = promisify(execFile);
@@ -84,7 +85,7 @@ try {
   await access(
     join(installed, "node_modules/@mininglamp-oss/octo-runtime-adapter-host/dist/runner.js")
   );
-  assert.deepEqual(Object.keys(metadata.exports).sort(), ["./extra", "./protocol"]);
+  assert.deepEqual(Object.keys(metadata.exports).sort(), ["./extra", "./extras/channel-gateway/config-schema.json", "./extras/channel-wecom/config-schema.json", "./extras/webui/config-schema.json", "./protocol"]);
   assert.equal(metadata.scripts, undefined);
   for (const [name, version] of Object.entries(metadata.dependencies)) {
     assert.doesNotMatch(version, /workspace:|link:|file:/);
@@ -202,6 +203,21 @@ try {
     })
   );
   assert.equal((await saved)[0], 0);
+  const probe = createServer();
+  await new Promise(resolve => probe.listen(0, "127.0.0.1", resolve));
+  const port = probe.address().port;
+  await new Promise(resolve => probe.close(resolve));
+  const context = { schema: "octo.context-envelope/v3", items: [{ namespace: "octo.control", name: "instructions", payload: { entries: [{ text: "我是明略科技的Octo助理" }] } }] };
+  for (const [name, config] of [
+    ["channel-gateway", { bots: [{ bot_id: "release-qa", api_url: "https://im-test.deepminer.com.cn/api", enabled: false, adapter: {}, context }] }],
+    ["channel-wecom", { bots: [{ bot_id: "release-qa", enabled: false, adapter: {}, context }] }],
+    ["webui", { port, sessionStorePath: join(home, "webui-sessions.json"), defaultProjectPath: home, context }]
+  ]) {
+    const save = spawn(process.execPath, [cli, "--home", home, "extraset", name], { cwd: directory, stdio: ["pipe", "ignore", "pipe"] });
+    const saved = once(save, "exit");
+    save.stdin.end(JSON.stringify({ module: name === "webui" ? "@mininglamp-oss/octo-runtime-webui-extra" : `@mininglamp-oss/octo-runtime-extra-${name}`, config }));
+    assert.equal((await saved)[0], 0, name);
+  }
   for (const [specifier, code] of [
     ["@mininglamp-oss/octo-runtime", "ERR_PACKAGE_PATH_NOT_EXPORTED"],
     ["@mininglamp-oss/octo-runtime/apps/cli/dist/index.js", "ERR_PACKAGE_PATH_NOT_EXPORTED"],
@@ -244,6 +260,14 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert.ok(ready, errors);
+  let state;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    state = JSON.parse((await run(["status"])).stdout);
+    if (["channel-gateway", "channel-wecom", "webui"].every(name => state.extras[name]?.phase === "loaded")) break;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  for (const name of ["channel-gateway", "channel-wecom", "webui"]) assert.equal(state.extras[name]?.phase, "loaded", name);
+  assert.equal((await fetch(`http://127.0.0.1:${port}`)).status, 200);
   let pluginResult;
   for (let attempt = 0; attempt < (live ? 1200 : 100); attempt++) {
     try {
@@ -296,6 +320,7 @@ try {
       privateImportsBlocked: true,
       publicTypesChecked: true,
       externalExtraLoaded: true,
+      allThreeBuiltinExtrasLoaded: true,
       liveAgentRun: live ? pluginResult.terminal : "not-run",
       daemonReady: ready,
       adapters: adapters.map((adapter) => adapter.type),

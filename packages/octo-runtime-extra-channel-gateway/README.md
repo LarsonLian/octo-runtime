@@ -8,6 +8,14 @@
 
 `transport/` 持有 Octo 协议和 REST API；`application/` 管理单 Bot 会话与调用；`lifecycle/` 管理配置和启停；`execution/`、`delivery/`、`presentation/` 负责本包的调用与输出。没有跨平台 connector registry，不依赖 WeCom channel。
 
+## 初始化与动态 Context
+
+入口为 `extra(context, jsonConfig)(dependencies)`：外层同步返回函数，内层异步启动。CLI 以 `{}` 初始化，使用各 Bot 显式配置的 context；下面的新配置示例均包含“我是明略科技的Octo助理”。省略 context 不会自动填充。instructions.entries 只接受 `{ text }`，旧 source 字段会被拒绝。
+
+同进程宿主可经公开 `ExtraPlugins.load(module, jsonConfig, { loadContexts })` 注入业务函数：`loadContexts(botConfig, { signal })` 返回 ContextItem 数组或 Promise。每个已接纳轮次调用一次，同 namespace/name 动态整项替换静态项并保留位置，新项按动态顺序追加；重试复用本轮快照。函数不进入 JSON，插件内部 manager 不向宿主暴露。本轮未改 SDK HostApp 的函数装配，既有 runtime.loadExtra 仍只接收 JSON。
+
+插件级 JSON 配置 `context_loading` 支持 `timeout_ms`（默认 5000，1..30000）和 `max_in_flight`（默认 8，1..32）。超时、异常或容量已满时本轮不调用模型；未结束的 IO 继续占名额，没有等待回调的队列或历史结果缓存。业务函数必须响应 signal；`/stop` 及卸载会取消加载。任意外部同步代码和自行建立的缓存不受框架内存预算约束。完整合同见[配置指南](../../.octospec/guides/extra-configuration.md)。
+
 ## CLI 配置多个 Bot
 
 完整配置合同见 [config-schema.json](config-schema.json)，包含外层 `module`、`enabled`、`config` 及全部嵌套字段的用途、必填关系、限制和占位示例。包括 Codex 重试预算和 OpenClaw 条件字段；`provider_agent_id` 是 Provider 已有 Agent 的 ID，不是 Octo Bot ID。schema 的使用及单一发行包公开入口见 [配置指南](../../.octospec/guides/extra-configuration.md#原始-json-schema-配置合同)。
@@ -31,6 +39,22 @@ octo-runtime extraset channel-gateway <<'JSON'
           "workdir": "/absolute/workspace/first",
           "model": "gpt-6.1-sol",
           "effort": "medium"
+        },
+        "context": {
+          "schema": "octo.context-envelope/v3",
+          "items": [
+            {
+              "namespace": "octo.control",
+              "name": "instructions",
+              "payload": {
+                "entries": [
+                  {
+                    "text": "我是明略科技的Octo助理"
+                  }
+                ]
+              }
+            }
+          ]
         }
       },
       {
@@ -42,6 +66,22 @@ octo-runtime extraset channel-gateway <<'JSON'
           "workdir": "/absolute/workspace/second",
           "model": "gpt-6.1-sol",
           "effort": "medium"
+        },
+        "context": {
+          "schema": "octo.context-envelope/v3",
+          "items": [
+            {
+              "namespace": "octo.control",
+              "name": "instructions",
+              "payload": {
+                "entries": [
+                  {
+                    "text": "我是明略科技的Octo助理"
+                  }
+                ]
+              }
+            }
+          ]
         }
       }
     ]
@@ -54,7 +94,7 @@ JSON
 
 单个 Bot 也使用 `config.bots: [bot]`，没有单对象格式。上次为 `[botA, botB]`，本次为 `[botB]`，覆盖后只保留 botB；`[]` 表示没有 Bot。声明内省略的字段不会从旧配置补齐。
 
-保存后，已安装并启用后台服务的设备执行 `octo-runtime daemon restart`；前台运行使用 `octo-runtime daemon run`。`octo-runtime extra status` 查询生命周期，`loaded` 不表示所有 Bot 在线。配置写入不安装包、不立即连接，也不修改运行中的配置。
+保存后，已安装并启用后台服务的设备执行 `octo-runtime daemon restart`；前台运行使用 `octo-runtime daemon run`。`octo-runtime status` 查询生命周期，`loaded` 不表示所有 Bot 在线。配置写入不安装包、不立即连接，也不修改运行中的配置。
 
 ## 插件字段
 
@@ -104,6 +144,22 @@ octo-runtime extraset channel-gateway <<'JSON'
           "provider_agent_id": "main",
           "model": "<OPENCLAW_MODEL_ID>",
           "effort": "high"
+        },
+        "context": {
+          "schema": "octo.context-envelope/v3",
+          "items": [
+            {
+              "namespace": "octo.control",
+              "name": "instructions",
+              "payload": {
+                "entries": [
+                  {
+                    "text": "我是明略科技的Octo助理"
+                  }
+                ]
+              }
+            }
+          ]
         }
       }
     ]
@@ -151,9 +207,9 @@ Extra 只对 Codex 结构化暂态限流或不可用失败（`OH-PRV-4005/4006` 
 
 默认导出为 Extra 加载函数，稳定名称为 `channel-gateway`。宿主构造 `{ name: "channel-gateway", module, config: { bots } }`，通过初始 `extras` 声明或运行中的 `runtime.loadExtra(descriptor)` 装配。`module` 使用宿主已安装插件的绝对入口；SDK 不读写 CLI 配置文件。
 
-更新由宿主卸载本插件、保存完整配置、重新加载；插件内所有连接重新建立。CLI 同样使用 `extra unload channel-gateway`、`extraset channel-gateway`、`extra load channel-gateway`，load 读取最新文件，不重启共享 Host。
+更新由宿主卸载本插件、保存完整配置、重新加载；插件内所有连接重新建立。CLI 使用 `extraset channel-gateway` 保存完整声明，再用 `daemon restart` 读取最新文件；前台未安装服务时停止并重新运行 `daemon run`。单插件装卸通过宿主接口完成。
 
-`runtime.extraStatus("channel-gateway")` 或 `extra status channel-gateway` 返回本插件定义的 `{ "bots": [...], "errors": [...] }`，`runtime.extraStatus()` 查询框架生命周期。每个有效 Bot 包含 `connection_key`、`type: "octo"`、`bot_name`、`enabled`、`connected`、`state`、脱敏 `error`、`deliveries` 和 `sessions`，已解析时包含 `botId` 等连接状态。停用 Bot 保留在数组，显示 `enabled: false`、`state: "stopped"`、`connected: false`。错误配置跳过连接，状态项返回从零开始的 `config_index`、`state: "config_error"` 和脱敏错误码，`errors` 同时记录位置及错误码；有效 Bot 继续初始化。列表或授权配置错误记录在 `errors`，不建立连接。读取内存状态，不发起联网探测；字段由本插件维护，宿主负责解释。完整 SDK 示例见 [对接指南](../../SDK_CHANNEL_GATEWAY_GUIDE.md#5-保存或重新加载-im-配置)。
+`runtime.extraStatus("channel-gateway")` 返回本插件定义的 `{ "bots": [...], "errors": [...] }`，`runtime.extraStatus()` 查询框架生命周期；CLI 使用 `octo-runtime status`。每个有效 Bot 包含 `connection_key`、`type: "octo"`、`bot_name`、`enabled`、`connected`、`state`、脱敏 `error`、`deliveries` 和 `sessions`，已解析时包含 `botId` 等连接状态。停用 Bot 保留在数组，显示 `enabled: false`、`state: "stopped"`、`connected: false`。错误配置跳过连接，状态项返回从零开始的 `config_index`、`state: "config_error"` 和脱敏错误码，`errors` 同时记录位置及错误码；有效 Bot 继续初始化。列表或授权配置错误记录在 `errors`，不建立连接。读取内存状态，不发起联网探测；字段由本插件维护，宿主负责解释。完整 SDK 示例见 [对接指南](../../SDK_CHANNEL_GATEWAY_GUIDE.md#5-保存或重新加载-im-配置)。
 
 ## Bot 连接状态机
 

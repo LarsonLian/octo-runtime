@@ -21,11 +21,11 @@ for (const action of ["unload", "quit", "account-switch"]) {
         module,
         `import { writeFile } from 'node:fs/promises';
       export const name = 'pending';
-      export default async function(ctx, config) {
+      export default function(ctx, config) { return async () => {
         ctx.onDispose(() => writeFile(config.disposed, 'done'));
         await writeFile(config.marker, 'started');
         if (!ctx.signal.aborted) await new Promise(resolve => ctx.signal.addEventListener('abort', resolve, { once: true }));
-      }`
+      }; }`
       );
       const runtime = createDaemonRuntime({
         appId: "extra-stop",
@@ -46,8 +46,14 @@ for (const action of ["unload", "quit", "account-switch"]) {
         if (action === "unload") await runtime.unloadExtra("pending");
         else if (action === "quit") await runtime.stop();
         else {
-          const switching = runtime.startAccount({ ...account, subject: { type: "user", id: "two" } });
-          const staleUnload = assert.rejects(runtime.unloadExtra("pending"), /EXTRA_ACCOUNT_CHANGED/);
+          const switching = runtime.startAccount({
+            ...account,
+            subject: { type: "user", id: "two" }
+          });
+          const staleUnload = assert.rejects(
+            runtime.unloadExtra("pending"),
+            /EXTRA_ACCOUNT_CHANGED/
+          );
           await switching;
           await staleUnload;
           assert.equal((await runtime.extraStatus()).pending, undefined);
@@ -80,7 +86,7 @@ test(
     const module = join(home, "broken.mjs");
     await writeFile(
       module,
-      `export const name = 'broken'; export default function(ctx) { ctx.onDispose(() => { throw new Error('private cleanup detail'); }); }`
+      `export const name = 'broken'; export default function(ctx) { return () => { ctx.onDispose(() => { throw new Error('private cleanup detail'); }); }; }`
     );
     const runtime = createDaemonRuntime({
       appId: "extra-stop",

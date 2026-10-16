@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ExtraPlugins } from "../packages/octo-runtime-daemon/dist/index.js";
 import { waitFor } from "./runtime-fixture.js";
+import { prepareInvokeInput } from "../packages/octo-runtime-core/dist/invoke-input.js";
 
 for (const kind of ["gateway", "wecom"]) {
   const base = `../packages/octo-runtime-extra-channel-${kind}/dist/`;
@@ -17,6 +18,97 @@ for (const kind of ["gateway", "wecom"]) {
     ...(kind === "gateway" ? { api_url: "https://im-test.deepminer.com.cn/api" } : {})
   });
   const entry = (bots) => ({ name, config: { bots }, load: async () => ({ name, default: load }) });
+
+  test(`${kind}: injected async contexts reach Host once per accepted turn and preserve the configured persona`, async (t) => {
+    let callbacks;
+    let calls = 0,
+      pendingSignal;
+    const requests = [],
+      replies = [];
+    const persona = {
+      namespace: "octo.control",
+      name: "instructions",
+      payload: { entries: [{ text: "我是明略科技的Octo助理" }] }
+    };
+    t.mock.method(Transport.prototype, "start", async function () {
+      callbacks = this.callbacks;
+    });
+    t.mock.method(Transport.prototype, "close", async () => {});
+    const extras = new ExtraPlugins([], {
+      async *invoke(input) {
+        assert.equal("agentConfig" in input, false);
+        requests.push(prepareInvokeInput(input).request);
+        yield { protocolVersion: 2, type: "run.completed", payload: {} };
+      },
+      async cancel() {
+        return { cancelled: true };
+      }
+    });
+    const config = {
+      ...bot("contexts"),
+      context: { schema: "octo.context-envelope/v3", items: [persona] }
+    };
+    await extras.load(
+      { name, default: load },
+      { bots: [config] },
+      {
+        loadContexts: async (value, { signal }) => {
+          assert.equal(value.bot_id, "contexts");
+          assert.equal(signal.aborted, false);
+          await Promise.resolve();
+          calls++;
+          if (calls === 3) throw new Error("private business I/O failure");
+          if (calls === 4) {
+            pendingSignal = signal;
+            await new Promise((resolve) =>
+              signal.addEventListener("abort", resolve, { once: true })
+            );
+          }
+          return calls === 1
+            ? []
+            : [{ ...persona, payload: { entries: [{ text: "dynamic persona" }] } }];
+        }
+      }
+    );
+    t.after(() => extras.close());
+    const send = (id, text = "hello") =>
+      callbacks.onMessage({
+        messageId: id,
+        senderId: "sender",
+        conversationId: "conversation",
+        conversationKind: "direct",
+        text,
+        buildContext: async (_signal, options) => ({
+          schema: config.context.schema,
+          items: options.configuredItems
+        }),
+        reply: async (text) => {
+          replies.push(text);
+        }
+      });
+    send("control", "/session");
+    await waitFor(() => replies.length === 1);
+    assert.equal(calls, 0);
+    send("first");
+    await waitFor(() => replies.length === 2);
+    send("second");
+    await waitFor(() => replies.length === 3);
+    assert.equal(requests[0].controlInstructions, "我是明略科技的Octo助理");
+    assert.equal(requests[1].controlInstructions, "dynamic persona");
+    assert.deepEqual(config.context.items, [persona]);
+    send("third");
+    await waitFor(() => replies.length === 4);
+    assert.equal(calls, 3);
+    assert.equal(requests.length, 2, "callback failure must not invoke a model");
+    assert.doesNotMatch(replies.join("\n"), /private business/);
+    send("fourth");
+    await waitFor(() => pendingSignal);
+    send("stop-preparation", "/stop");
+    await waitFor(() => replies.length === 5);
+    assert.equal(pendingSignal.aborted, true);
+    await extras.unload(name);
+    assert.equal(requests.length, 2, "cancelled preparation must not start a model");
+  });
 
   test(
     `${kind}: unloading aborts pending initialization and waits for cleanup`,
@@ -249,19 +341,30 @@ test(
   }
 );
 
-test('typing disposal aborts and waits for an in-flight send even after its lease was released', async () => {
-  const { TypingController } = await import('../packages/octo-runtime-extra-channel-gateway/dist/presentation/typing.js');
+test("typing disposal aborts and waits for an in-flight send even after its lease was released", async () => {
+  const { TypingController } =
+    await import("../packages/octo-runtime-extra-channel-gateway/dist/presentation/typing.js");
   let signal, finish;
-  const sending = new Promise(resolve => { finish = resolve; });
-  const typing = new TypingController(async (_address, value) => { signal = value; await sending; }, () => {});
-  const release = typing.acquire({ channelType: 1, channelId: 'test' }, 'lease');
+  const sending = new Promise((resolve) => {
+    finish = resolve;
+  });
+  const typing = new TypingController(
+    async (_address, value) => {
+      signal = value;
+      await sending;
+    },
+    () => {}
+  );
+  const release = typing.acquire({ channelType: 1, channelId: "test" }, "lease");
   release();
   assert.equal(signal.aborted, true);
   let done = false;
   const closing = typing.close();
   assert.equal(closing, typing.close());
-  void closing.then(() => { done = true; });
-  await new Promise(resolve => setImmediate(resolve));
+  void closing.then(() => {
+    done = true;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(done, false);
   finish();
   await closing;

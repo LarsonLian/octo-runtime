@@ -157,7 +157,7 @@ test("image-only IM reaches Codex as image inputs; unsupported engine does not d
     assert.equal(downloads, calls.length);
     if (calls.length) {
       assert.deepEqual(calls[0].inputs, [imagePart(png)]);
-      assert.equal(calls[0].modelInput, "[Image]");
+      assert.equal("modelInput" in calls[0], false, "Host prepares the public image input");
     } else assert.match(replies[0], /仅 Codex/);
     await runtime.close();
   }

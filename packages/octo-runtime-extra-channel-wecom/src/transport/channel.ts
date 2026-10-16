@@ -78,10 +78,13 @@ export class WecomTransport {
       conversationId,
       conversationKind: body.chattype === "single" ? "direct" : "group",
       text: body.text.content,
-      buildContext: () =>
-        Promise.resolve(
-          structuredClone(this.config.context ?? { schema: CONTEXT_SCHEMA, items: [] })
-        ),
+      buildContext: (_signal, options) =>
+        Promise.resolve({
+          schema: CONTEXT_SCHEMA,
+          items: structuredClone([
+            ...(options?.configuredItems ?? this.config.context?.items ?? [])
+          ])
+        }),
       beginPresentation: (_runId, onDiagnostic) => {
         this.#streams.add(stream);
         return stream.begin(onDiagnostic);

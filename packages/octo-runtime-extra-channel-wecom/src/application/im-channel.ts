@@ -1,4 +1,4 @@
-import { invocationInput } from "@mininglamp-oss/octo-runtime-protocol";
+import type { JsonObject } from "@mininglamp-oss/octo-runtime-daemon";
 /**
  * 单 Bot 编排：把授权 IM 消息转换成一次统一执行，并把公开结果投递回原会话。
  * 管理会话、排队、取消和交互归属；平台协议交给 connector，领域业务交给发起方。
@@ -24,6 +24,7 @@ import { ImRunProjector } from "../presentation/run-projector.js";
 import { MemoryImSessionStore, type ImSessionStore } from "./session-store.js";
 
 export class ImRuntime {
+  readonly #preparing = new Map<string, AbortController>();
   readonly config: ImBotConfig;
   #connector?: WecomTransport;
   #delivery?: ImDeliveryDispatcher;
@@ -278,11 +279,15 @@ export class ImRuntime {
       }
       if (command === "/stop" || command === "/cancel") {
         // 控制命令绕过普通消息队列，否则 stop 会排在待取消的长任务之后。
+        const preparation = this.#preparing.get(key);
+        preparation?.abort();
         const invocationId = session.activeInvocationId;
         void (async () => {
-          const cancelled = invocationId
-            ? (await this.dependencies.host.cancel(invocationId, "IM user stop")).cancelled
-            : false;
+          const cancelled = preparation
+            ? true
+            : invocationId
+              ? (await this.dependencies.host.cancel(invocationId, "IM user stop")).cancelled
+              : false;
           await this.#reply(
             message,
             cancelled ? "已请求停止本轮执行。" : "当前没有可停止的执行。",
@@ -451,6 +456,9 @@ export class ImRuntime {
       );
       return;
     }
+    const preparation = new AbortController();
+    this.#preparing.set(key, preparation);
+    const turnSignal = AbortSignal.any([this.#signal, preparation.signal]);
     let prepared: ReturnType<typeof createImInvocation>;
     try {
       if (session.id === executionSession.id)
@@ -459,26 +467,34 @@ export class ImRuntime {
       prepared = createImInvocation(
         this.config,
         message,
-        await message.buildContext(this.#signal),
+        await message.buildContext(turnSignal, {
+          configuredItems: await this.dependencies.prepareContexts?.(
+            this.config as unknown as JsonObject,
+            turnSignal
+          )
+        }),
         key,
         executionSession,
-        this.#signal,
+        turnSignal,
         occurrenceId
       );
-      if (session.id === prepared.request.agentSessionId) {
+      if (session.id === prepared.request.sessionId) {
         session.lastEventId = executionSession.lastEventId;
         session.lastRunId = prepared.request.runId;
         this.#saveBinding(key, session);
       }
+      turnSignal.throwIfAborted();
       const snapshot = { ...prepared.request };
-      delete snapshot.signal;
       this.#sessionStore.remember(key, occurrenceId ?? message.messageId, {
         text: message.text,
         sessionId: executionSession.id!,
         runId: prepared.request.runId,
         snapshot
       });
-    } catch {
+    } catch (error) {
+      if (turnSignal.aborted) return;
+      if (error instanceof Error && /^IM_CONTEXT_(?:LOADING|RESULT)_[A-Z_]+$/.test(error.message))
+        this.#diagnostic(error.message);
       this.#diagnostic("IM_CONTEXT_PREPARATION_FAILED");
       await this.#reply(
         message,
@@ -486,13 +502,15 @@ export class ImRuntime {
         `prepare:${occurrenceId ?? message.messageId}`
       );
       return;
+    } finally {
+      this.#preparing.delete(key);
     }
     if (this.#closed || this.#signal.aborted) return;
     const { request } = prepared;
     this.#log("agent_run.requested", {
       run_id: request.runId,
       invocation_id: request.invocationId,
-      session_id: request.agentSessionId
+      session_id: request.sessionId
     });
     const projector = new ImRunProjector(request.runId, message.conversationKind === "direct");
     const controls = this.#runControls(message, key, request.invocationId);
@@ -504,12 +522,9 @@ export class ImRuntime {
     presentation?.update(projector.snapshot());
     session.activeInvocationId = request.invocationId;
     try {
-      for await (const event of this.dependencies.host.invoke(
-        { ...invocationInput(request, "canonical"), protocol_mode: "canonical" },
-        { signal: request.signal }
-      )) {
+      for await (const event of this.dependencies.host.invoke(request, { signal: this.#signal })) {
         if (this.#closed || this.#signal.aborted) break;
-        if (event.type === "session.update" && session.id === request.agentSessionId) {
+        if (event.type === "session.update" && session.id === request.sessionId) {
           session.providerSession = event.payload.providerSession;
           this.#saveBinding(key, session);
         }
@@ -567,7 +582,7 @@ export class ImRuntime {
       this.#log("agent_run.finished", {
         run_id: request.runId,
         invocation_id: request.invocationId,
-        session_id: request.agentSessionId,
+        session_id: request.sessionId,
         status: projector.snapshot().terminal ?? "unknown"
       });
       session.activeInvocationId = undefined;

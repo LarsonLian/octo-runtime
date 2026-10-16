@@ -1,9 +1,36 @@
-import type { ExtraContext, JsonObject } from "@mininglamp-oss/octo-runtime-daemon";
+import {
+  createContextLoader,
+  type ChannelDependencies,
+  type ExtraInitializer,
+  type ExtraContext,
+  type JsonObject
+} from "@mininglamp-oss/octo-runtime-daemon";
 import { ImChannelManager } from "./lifecycle/manager.js";
-import { validateImBots, configuredCredential, imBotIdentity, IM_MAX_BOTS } from "./lifecycle/configuration.js";
+import {
+  validateImBots,
+  configuredCredential,
+  imBotIdentity,
+  IM_MAX_BOTS
+} from "./lifecycle/configuration.js";
 
 export const name = "channel-gateway";
-export default async function load(context: ExtraContext, config: JsonObject): Promise<void> {
+export default function load(
+  context: ExtraContext,
+  config: JsonObject
+): ExtraInitializer<ChannelDependencies> {
+  return (dependencies) => initialize(context, config, dependencies);
+}
+async function initialize(
+  context: ExtraContext,
+  config: JsonObject,
+  dependencies: Readonly<ChannelDependencies>
+): Promise<void> {
+  const contexts = createContextLoader(
+    dependencies.loadContexts,
+    config.context_loading,
+    context.signal
+  );
+  context.onDispose(() => contexts.close());
   const bots = config.bots ?? [];
   const errors: JsonObject[] = [];
   const invalidBots: JsonObject[] = [];
@@ -32,6 +59,7 @@ export default async function load(context: ExtraContext, config: JsonObject): P
     host: context.adapterHost,
     signal: context.signal,
     log: context.log,
+    prepareContexts: (bot, signal) => contexts.load(bot, signal),
     credentials: (bot) => Promise.resolve(configuredCredential(bot)),
     ...(allowed
       ? {

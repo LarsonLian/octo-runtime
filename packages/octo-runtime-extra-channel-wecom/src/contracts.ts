@@ -4,6 +4,7 @@
 import type {
   ApprovalMode,
   ContextEnvelope,
+  ContextItem,
   CanonicalEvent,
   InteractionResponse,
   InvokeInput,
@@ -45,7 +46,10 @@ export interface ImInboundMessage {
   conversationKind: "direct" | "group" | "thread";
   text: string;
   reply(text: string, effectKey?: string): Promise<void>;
-  buildContext(signal: AbortSignal): Promise<ContextEnvelope>;
+  buildContext(
+    signal: AbortSignal,
+    options?: { configuredItems?: readonly ContextItem[] }
+  ): Promise<ContextEnvelope>;
   runMetadata?: Record<string, unknown>;
   beginPresentation?(
     runId: string,

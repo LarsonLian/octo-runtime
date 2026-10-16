@@ -47,10 +47,10 @@ test('both channels load as extras and dispose their own resources', async () =>
     assert.ok(['channel-gateway', 'channel-wecom'].includes(name));
     const disposers = [];
     let status;
-    await load({ adapterHost: {}, signal: new AbortController().signal, onDispose: dispose => disposers.push(dispose), onStatus: callback => { status = callback; } }, { bots: [] });
+    await load({ adapterHost: {}, signal: new AbortController().signal, onDispose: dispose => disposers.push(dispose), onStatus: callback => { status = callback; } }, { bots: [] })({});
     assert.deepEqual(status(), { bots: [], errors: [] });
-    assert.equal(disposers.length, 1);
-    await disposers[0]();
+    assert.equal(disposers.length, 2);
+    for (const dispose of disposers.reverse()) await dispose();
   }
 });
 

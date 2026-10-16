@@ -1,3 +1,4 @@
+import type { JsonObject } from "@mininglamp-oss/octo-runtime-daemon";
 /**
  * 单 Bot 编排：把授权 IM 消息转换为有界任务，并把公开结果投递回原会话。
  * 管理会话、排队、取消和交互归属；平台协议交给 connector，领域业务交给发起方。
@@ -31,6 +32,7 @@ import { MemoryImSessionStore, type ImSessionStore } from "./session-store.js";
 import { connectionFailure, ImConnectionError } from "../transport/connection-error.js";
 
 export class ImRuntime {
+  readonly #preparing = new Map<string, AbortController>();
   readonly config: ImBotConfig;
   #connector?: GatewayTransport;
   #delivery?: ImDeliveryDispatcher;
@@ -337,14 +339,18 @@ export class ImRuntime {
       }
       if (command === "/stop" || command === "/cancel") {
         // 控制命令绕过普通消息队列，否则 stop 会排在待取消的长任务之后。
+        const preparation = this.#preparing.get(key);
+        preparation?.abort();
         const invocationId = session.activeInvocationId;
         void (async () => {
           const task = this.#tasks.get(key)?.task;
-          const cancelled = task
-            ? await task.cancel()
-            : invocationId
-              ? (await this.dependencies.host.cancel(invocationId, "IM user stop")).cancelled
-              : false;
+          const cancelled = preparation
+            ? true
+            : task
+              ? await task.cancel()
+              : invocationId
+                ? (await this.dependencies.host.cancel(invocationId, "IM user stop")).cancelled
+                : false;
           await this.#reply(
             message,
             cancelled ? "已请求停止本轮执行。" : "当前没有可停止的执行。",
@@ -627,12 +633,15 @@ export class ImRuntime {
       );
       return;
     }
+    const preparation = new AbortController();
+    this.#preparing.set(key, preparation);
+    const turnSignal = AbortSignal.any([this.#signal, preparation.signal]);
     let prepared: ReturnType<typeof createImInvocation>;
     // Octospec F05: .octospec/tasks/gateway-august-feature-assessment/assessment.md
     // 仅普通任务开始时回执；通知失败不阻断 Context 准备和模型执行。
     if (message.markRead)
       void Promise.resolve()
-        .then(() => message.markRead!(this.#signal))
+        .then(() => message.markRead!(turnSignal))
         .catch(() => this.#diagnostic("IM_READ_RECEIPT_FAILED"));
     let environment: InvokeEnvironment;
     try {
@@ -647,34 +656,37 @@ export class ImRuntime {
       prepared = createImInvocation(
         this.config,
         message,
-        await message.buildContext(this.#signal, {
+        await message.buildContext(turnSignal, {
+          configuredItems: await this.dependencies.prepareContexts?.(
+            this.config as unknown as JsonObject,
+            turnSignal
+          ),
           initialSession,
           mentionGuidance: initialSession || !executionSession.providerSession
         }),
         key,
         executionSession,
-        this.#signal,
+        turnSignal,
         occurrenceId
       );
       if (message.buildInputs) {
         if (prepared.adapterType !== "codex")
           throw new ImImageInputError("本期仅 Codex 支持独立图片输入，当前引擎不支持。");
-        const parts = await message.buildInputs(this.#signal);
+        const parts = await message.buildInputs(turnSignal);
         assertModelInputParts(parts);
         if (parts.length !== 1 || parts[0].type !== "image")
           throw new ImImageInputError("每条独立图片消息只接收一张图片。");
-        prepared.request.modelInputParts = parts;
-        prepared.request.prompt = "[图片]";
+        prepared.request.inputs = parts;
       }
-      if (session.id === prepared.request.agentSessionId) {
+      if (session.id === prepared.request.sessionId) {
         session.lastEventId = executionSession.lastEventId;
         session.lastRunId = prepared.request.runId;
         this.#saveBinding(key, session);
       }
       message.executionEnvironment?.();
       if (prepared.adapterType === "openclaw") environment = {};
+      turnSignal.throwIfAborted();
       const snapshot = { ...prepared.request };
-      delete snapshot.signal;
       this.#sessionStore.remember(key, occurrenceId ?? message.messageId, {
         text: message.text,
         sessionId: executionSession.id!,
@@ -682,6 +694,9 @@ export class ImRuntime {
         snapshot
       });
     } catch (error) {
+      if (turnSignal.aborted) return;
+      if (error instanceof Error && /^IM_CONTEXT_(?:LOADING|RESULT)_[A-Z_]+$/.test(error.message))
+        this.#diagnostic(error.message);
       this.#diagnostic("IM_CONTEXT_PREPARATION_FAILED");
       await this.#reply(
         message,
@@ -693,6 +708,8 @@ export class ImRuntime {
         `prepare:${occurrenceId ?? message.messageId}`
       );
       return;
+    } finally {
+      this.#preparing.delete(key);
     }
     if (this.#closed || this.#signal.aborted) return;
     let { request } = prepared;
@@ -700,7 +717,7 @@ export class ImRuntime {
     this.#log("agent_run.requested", {
       run_id: request.runId,
       invocation_id: request.invocationId,
-      session_id: request.agentSessionId
+      session_id: request.sessionId
     });
     const startedAt = performance.now();
     let presentationSeq = 0;
@@ -710,14 +727,14 @@ export class ImRuntime {
       request,
       prepared.adapterType,
       this.config,
-      environment,
+      { ...environment, signal: this.#signal },
       (attempt) => {
         for (const [id, entry] of this.#interactions)
           if (entry.invocationId === request.invocationId) this.#interactions.delete(id);
         request = attempt;
         projector = new ImRunProjector(rootRunId, message.conversationKind === "direct");
         session.activeInvocationId = request.invocationId;
-        if (session.id === request.agentSessionId) {
+        if (session.id === request.sessionId) {
           session.lastRunId = request.runId;
           this.#saveBinding(key, session);
         } else task.stopRetries();
@@ -742,7 +759,7 @@ export class ImRuntime {
       session.activeInvocationId = request.invocationId;
       for await (const event of task.events()) {
         if (this.#closed || this.#signal.aborted) break;
-        if (event.type === "session.update" && session.id === request.agentSessionId) {
+        if (event.type === "session.update" && session.id === request.sessionId) {
           session.providerSession = event.payload.providerSession;
           this.#saveBinding(key, session);
         }
@@ -783,7 +800,7 @@ export class ImRuntime {
           if (this.#interactions.size >= 64) throw new Error("IM_INTERACTION_CAPACITY_EXHAUSTED");
           this.#interactions.set(event.payload.interactionId, {
             invocationId: request.invocationId,
-            sessionId: request.agentSessionId,
+            sessionId: request.sessionId,
             key,
             senderId: message.senderId,
             request: structuredClone(event.payload)
@@ -842,17 +859,16 @@ export class ImRuntime {
       this.#log("agent_run.finished", {
         run_id: rootRunId,
         invocation_id: request.invocationId,
-        session_id: request.agentSessionId,
+        session_id: request.sessionId,
         status: projector.snapshot().terminal ?? "unknown"
       });
       this.#tasks.delete(key);
       try {
         // 长任务结束后重新开始终态去重窗口，保留有界尝试身份，避免立即重复执行。
         const saved = { ...prepared.request };
-        delete saved.signal;
         this.#sessionStore.remember(key, occurrenceId ?? message.messageId, {
           text: message.text,
-          sessionId: request.agentSessionId,
+          sessionId: request.sessionId,
           runId: rootRunId,
           snapshot: saved,
           attempts: task.attempts.map((attempt) => ({ ...attempt }))

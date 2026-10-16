@@ -9,13 +9,24 @@ import { pipeline } from "node:stream/promises";
 import {
   InvokeInput,
   INVOKE_REQUEST_MAX_BYTES,
+  CONTEXT_SCHEMA,
+  assertContextEnvelope,
+  type ContextEnvelope,
   type InteractionResponse
 } from "@mininglamp-oss/octo-runtime-protocol";
-import type { ExtraContext, JsonObject } from "@mininglamp-oss/octo-runtime-daemon";
+import type {
+  ExtraInitializer,
+  ExtraContext,
+  JsonObject
+} from "@mininglamp-oss/octo-runtime-daemon";
+import { mergeConfiguredContexts } from "@mininglamp-oss/octo-runtime-daemon";
 import { SessionStore, validMessages, validBinding, type Session } from "./store.js";
 
 export const name = "webui";
-export default async function load(ctx: ExtraContext, config: JsonObject): Promise<void> {
+export default function load(ctx: ExtraContext, config: JsonObject): ExtraInitializer {
+  return () => initialize(ctx, config);
+}
+async function initialize(ctx: ExtraContext, config: JsonObject): Promise<void> {
   const configuredPort = config.port ?? 13888;
   const port = typeof configuredPort === "number" ? configuredPort : 0;
   const host = "127.0.0.1";
@@ -69,6 +80,15 @@ export default async function load(ctx: ExtraContext, config: JsonObject): Promi
   }
   if (typeof config.sessionStorePath !== "string" || !isAbsolute(config.sessionStorePath)) {
     errors.push("WEBUI_STORE_PATH_REQUIRED");
+    return;
+  }
+  let configuredContext: ContextEnvelope;
+  try {
+    const value: unknown = config.context ?? { schema: CONTEXT_SCHEMA, items: [] };
+    assertContextEnvelope(value);
+    configuredContext = value;
+  } catch {
+    errors.push("WEBUI_CONTEXT_INVALID");
     return;
   }
   const store = new SessionStore(config.sessionStorePath);
@@ -292,6 +312,13 @@ export default async function load(ctx: ExtraContext, config: JsonObject): Promi
       let input: InvokeInput;
       try {
         input = InvokeInput.check(await bodyJson(req));
+        input = {
+          ...input,
+          contexts: {
+            schema: CONTEXT_SCHEMA,
+            items: mergeConfiguredContexts(configuredContext.items, input.contexts.items)
+          }
+        };
       } catch {
         throw new HttpError(400, "WEBUI_INVOKE_INVALID");
       }

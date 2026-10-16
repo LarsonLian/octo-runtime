@@ -15,7 +15,23 @@ octo-runtime extraset webui <<JSON
   "enabled": true,
   "config": {
     "port": 13888,
-    "sessionStorePath": "$HOME/.octo-runtime/extras/webui/sessions.json"
+    "sessionStorePath": "$HOME/.octo-runtime/extras/webui/sessions.json",
+    "context": {
+      "schema": "octo.context-envelope/v3",
+      "items": [
+        {
+          "namespace": "octo.control",
+          "name": "instructions",
+          "payload": {
+            "entries": [
+              {
+                "text": "我是明略科技的Octo助理"
+              }
+            ]
+          }
+        }
+      ]
+    }
   }
 }
 JSON
@@ -36,7 +52,12 @@ await runtime.loadExtra({
   module: fileURLToPath(import.meta.resolve('@mininglamp-oss/octo-runtime-webui-extra')),
   config: {
     port: 13888,
-    sessionStorePath: '/absolute/host-owned-home/extras/webui/sessions.json'
+    sessionStorePath: '/absolute/host-owned-home/extras/webui/sessions.json',
+    context: {
+      schema: 'octo.context-envelope/v3',
+      items: [{ namespace: 'octo.control', name: 'instructions',
+        payload: { entries: [{ text: '我是明略科技的Octo助理' }] } }]
+    }
   }
 });
 await runtime.extraStatus('webui');
@@ -46,6 +67,8 @@ await runtime.unloadExtra('webui');
 `runtime` 是已经启动的 `createDaemonRuntime()` 实例。也可把同一声明放进其 `extras` 数组。宿主须提供 Extra 的 `adapterHost.list` 只读端口；daemon 的共享 Host 已实现。旧宿主缺少此端口时返回 `ADAPTER_LIST_UNAVAILABLE`，不会虚构可用引擎，也不会安装 Provider。
 
 ## 数据与接口
+
+入口采用 `extra(context, jsonConfig)(dependencies)` 两阶段合同：外层同步返回函数，内层可异步。CLI 用空对象初始化，WebUI 当前没有业务函数依赖。`config.context` 在每轮请求前与请求中的 contexts 合并；同 namespace/name 时本轮请求整项覆盖配置，其他项保序。示例显式配置固定人设；省略 context 或传空 items 不会自动补人设。instructions 的 entries 是仅含 text 的列表，旧 source 字段会被拒绝。
 
 - 配置：`port` 默认 `13888`，仅绑定 `127.0.0.1`；`sessionStorePath` 必须为绝对路径；`defaultProjectPath` 可覆盖默认的 `~/octo-runtime-workspace`。
 - 项目是服务所在机器的真实目录。默认目录首次创建，其他目录通过页面目录选择器添加，项目列表、选择、文本草稿和模型 ID 保存在 `sessionStorage`。

@@ -70,7 +70,7 @@ test("status includes each loaded Extra JSON and isolates lifecycle and query fa
   const home = await mkdtemp(join(tmpdir(), "extra-status-"));
   const socketPath = join(home, "sockets/octo-runtime-daemon.sock");
   const registration = (name, callback, enabled = true) => ({ name, config: {}, enabled,
-    load: async () => ({ name, default: callback }) });
+    load: async () => ({ name, default: (ctx, config) => () => callback(ctx, config) }) });
   const expected = { bots: [{ connected: true, state: "online" }], custom: { nested: [1, false, null] } };
   const app = await startDaemonServer({ homePath: home, socketPath,
     manifestPath: join(root, "test/fixtures/adapters.json"),

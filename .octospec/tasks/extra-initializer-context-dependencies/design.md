@@ -8,7 +8,7 @@ timestamp: 2026-10-16T00:00:00Z
 
 # Extra 函数接口、宿主装配与动态 Context 时序
 
-状态：推荐设计，未实施。需求及范围以[任务简报](brief.md)为准。
+状态：共享接口、CLI 三个 Extra 及两渠道动态加载已实施；SDK HostApp 同进程装配按用户最新要求延期。本文中的 SDK 目标 API 仍为后续设计，当前可用代码接口为 `ExtraPlugins.load(module, config, dependencies)`。范围、验证与后续项见[任务简报](brief.md)和[交付记录](../../journal/shared/2026-10-17-extra-initializer-delivery.md)。
 
 ## 1. 三类函数各做什么
 
@@ -48,6 +48,16 @@ export interface ExtraPluginModule<D extends object = Record<string, never>> {
 ```
 
 ExtraContext 保留现有 adapterHost、signal、log、onDispose、onStatus。不加入业务 Context 拉取器，不把所有插件依赖合成通用大接口。依赖对象只作为具名函数参数的容器；不新增 register/get/resolve 或运行时反射机制。
+
+为避免“执行能力”一词混淆，本文统一区分：
+
+| 名称 | 例子 | 提供者 | 含义 |
+| --- | --- | --- | --- |
+| 业务函数依赖 | dependencies.loadContexts | 宿主业务代码 | 取得当轮业务 Context，允许同步或异步 |
+| 模型执行端口 | context.adapterHost.invoke/cancel/respondInteraction | SDK/loader | 提交模型执行、取消调用和回答交互，属于已有执行链 |
+| 生命周期通知 | loadExtra/unloadExtra/stop | 宿主 App 发起，SDK 执行 | 装配单个 Extra、卸载单个 Extra 或停止整个 runtime |
+
+本次只向业务方新增第一类函数注入。业务方无需实现第二套 invoke、Provider 或执行内核；模型执行端口由 SDK 在内部接好。宿主负责生命周期决定及通知，插件负责内部资源清理。
 
 通用 loader 的目标加载方法：
 
@@ -100,9 +110,9 @@ export default function extra(context: ExtraContext, config: JsonObject) {
 
 源码依据：[SDK 类型](../../../packages/octo-runtime-daemon/src/runtime/types.ts)、[SDK 加载](../../../packages/octo-runtime-daemon/src/runtime/daemon-runtime.ts)、[supervisor](../../../packages/octo-runtime-daemon/src/runtime/supervisor.ts)、[runner](../../../packages/octo-runtime-daemon/src/runtime/runner.ts)、[server](../../../packages/octo-runtime-daemon/src/server.ts)。
 
-### 推荐选择：Extra 在调用方的 Node 组合层执行
+### 已确认选择：Extra 在调用方的 Node 组合层执行
 
-SDK 的目标方法为 `runtime.loadExtra(module, config, dependencies)`。SDK 在 HostApp 的 Node 进程内拥有 ExtraPlugins；依赖是同进程普通函数调用。共享执行端口调用已有 daemon/AdapterHost 执行链。此处不移动 Provider 或 AdapterHost，不改变其进程隔离合同。
+2026-10-17 用户同意此选型。SDK 的目标方法为 `runtime.loadExtra(module, config, dependencies)`。SDK 在 HostApp 的 Node 进程内拥有 ExtraPlugins；依赖是同进程普通函数调用。模型执行端口调用已有 daemon/AdapterHost 执行链。此处不移动 Provider 或 AdapterHost，不改变其进程隔离合同。
 
 ```ts
 await runtime.loadExtra(channelGatewayModule, jsonConfig, {
@@ -116,7 +126,7 @@ module 和 hostBusiness 为宿主显式 import 的代码值；jsonConfig 为宿�
 
 这是一项明确的 SDK 装配改动，尚未证明完成，不包装为现有 API 已支持。M0 必须完成：
 
-1. SDK 本地 loader 使用与 Host 相同语义的执行端口，invoke/cancel/respondInteraction 均按 invocationId 工作。
+1. SDK 本地 loader 使用与 Host 相同语义的模型执行端口，invoke/cancel/respondInteraction 均按 invocationId 工作；这项接线由 SDK 实现，不转交业务 loadContexts 实现。
 2. 当前 SDK 的 cancelRun/respondRun 使用 runId，不能直接改名后冒充 ExtraAdapterHost；增加准确的 invocation 端口桥接并验证相应 RPC 处理，不建立历史 runId 映射缓存。
 3. SDK stop/account switch/reconfigure 先使本地 Extra 停止接纳并 abort，再等待清理，最后停止执行服务；停止失败如实返回，不自动重建新实例。
 4. SDK health 的 Extra 状态归本地 loader；daemon 不再为 SDK 重复加载相同 Extra。CLI daemon 状态仍查询它自己装配的实例，不合并两份互相矛盾的状态。
@@ -126,6 +136,44 @@ module 和 hostBusiness 为宿主显式 import 的代码值；jsonConfig 为宿�
 CLI 是另一宿主。CLI 继续读取 JSON descriptor、检查 enabled、import 模块，在 daemon 内调用同一 load(module, config, {})；模块名字必须与 descriptor.name 一致。CLI 默认不提供动态函数，不增加 JS 表达式配置开关。需要自定义函数的代码宿主显式装配。
 
 不采用另一条函数 RPC、回调服务、函数 ID 注册表或生成源码方案。SDK 组合位置不通时，M0 保持未完成并修订装配设计，不靠跨进程代理补齐。
+
+### 宿主通知与资源清理的分工
+
+| 宿主动作 | SDK/loader 动作 | Extra 内部动作 |
+| --- | --- | --- |
+| loadExtra(module, config, dependencies) | 创建生命周期 context，调用两阶段入口并等待 | 校验依赖、创建资源、登记清理、完成启动 |
+| unloadExtra(name) | 通知该实例 abort，等待其清理并返回真实结果 | 停止接纳、关闭连接、结束回调及任务、释放引用 |
+| stop(reason) | 通知所有本地 Extra 停止并尝试完成清理，再停止 daemon | 执行与单个 unload 相同的内部清理 |
+
+单个 unload 不停止 daemon、共享 AdapterHost 或其他 Extra。整体 stop 不要求宿主遍历内部 Bot 或自行调用 disposer；宿主一次通知 SDK，由 SDK 执行既定停止顺序。配置和函数实现变化仍由宿主显式 unload 后 load，不增加自动重载。
+
+### 生命周期分工的工程评估
+
+2026-10-17 用户澄清：宿主通知的分工是初步建议，具体是否合适由本次工程评估回答。结论是建议采用。宿主最清楚启停、登录退出和配置改变的产品时机；SDK 最清楚 Extra 与执行服务的资源依赖；插件最清楚自己的连接、任务和清理方式。三层按此分工可保留封装，同时让宿主只处理少量完整生命周期命令。
+
+该结论不要求宿主自己实现停止算法。目标使用方式仍是 await runtime.loadExtra(...)、await runtime.unloadExtra(name)、await runtime.stop(reason)，没有“先手动清 Bot，再发 socket，再杀 daemon”的宿主操作步骤。
+
+具体行为建议如下，均为待实现合同：
+
+| 场景 | 推荐行为 | 理由 |
+| --- | --- | --- |
+| runtime 未就绪时 load | 明确返回 HOST_NOT_RUNNING，不隐式安装或启动 daemon | 保留宿主的启动决定权，避免加载插件引发额外生命周期 |
+| 单个 Extra unload | 立即停止该实例接纳，取消该实例的准备/回调及其自身 invocation，然后等待清理 | 卸载不等待长时间模型自然结束，不取消其他入口的调用 |
+| load 尚在初始化时 unload/stop | 排队前即发 abort 和使代次失效，再等有界清理 | 不把取消排在可能永不完成的初始化后面 |
+| 整体 stop | 先拒绝新 load 和业务接纳，同时通知全部本地 Extra abort；有界等待后继续停止本 SDK 所拥有的 daemon | 清理期间执行端口仍可用于取消、收尾；一项失败不阻断其余资源回收 |
+| 重复 unload/stop | 同一在途操作共享 Promise；成功卸载后再卸载无副作用；stop 期间禁止重启新实例 | 防止重复清理和无限操作队列 |
+| 某个 Extra 清理失败 | 单个卸载报告失败并阻止同名覆盖；整体停止仍尝试其他 Extra 及 daemon 关闭，最后报告全部必要失败 | 不把清理失败假报成功，也不让共享服务永远留在运行状态 |
+| daemon 已退出或不可达 | SDK 仍清理本地 Extra；准确报告模型调用结果，不能仅因 cancel 无回执就宣称任务已取消 | Extra 已移到本地，停止 daemon 本身不再意味着本地资源已释放 |
+
+单个 unload 采用取消自身在途任务的既有信号语义，不新增“等待所有任务自然完成”模式，也不增加每 Bot 控制接口。任务取消与资源释放分别观察：取消请求收到回执不代表连接、监听器及回调已经清理。
+
+整体停止时，本地 Extra 阶段推荐共用 5,000 ms 清理宽限，从停止准入并发出全部 abort 时开始计时；初始化退出、动态回调及 disposer 均计入，不按 Extra 数量逐个累加。此为本方案初值，非既有实现或实测结果。达到期限即报告未完成清理，继续尝试既有 daemon 关闭流程；不能把外部未结束 JS 当作已终止。单个 unload 使用相同资源清理宽限。实现需让失败实例阻止同名重载，并使重复停止不产生新的后台操作。
+
+停止结果继续以 Promise 成功或拒绝表达。内部应保留可区分的事实：本地 Extra 是否清理完成、daemon 是否真正退出；daemon 已退出但本地清理失败时不能只显示“全部停止成功”。错误保留稳定码与插件名等脱敏信息，不带配置和业务正文。异常后如何提示用户、退出宿主或重新启动由 HostApp 决定，SDK 不强杀宿主进程。
+
+同进程代码若不合作取消仍可能存活，停止通知本身不是内存回收证据；因此本选型的关键验收是 initializer 可中断、回调有界、清理释放引用和失败不叠加新实例。无需因此引入函数 RPC、第二个插件对象或通用资源管理框架。
+
+源码评估依据：现有 ExtraPlugins 已有立即 abort、按名串行、失败实例保留及 close 汇总；SDK stop 目前通过 stopManagedDaemon 停止子进程。迁到本地 Extra 后必须在 SDK stop 中先通知本地 loader，不能沿用“子进程退出就代表全部 Extra 已释放”的旧前提。当前 #unload 仍等待 instance.starting，新增有界等待及不合作操作处置是实施工作，不写成现有能力。
 
 ## 5. 生命周期时序
 

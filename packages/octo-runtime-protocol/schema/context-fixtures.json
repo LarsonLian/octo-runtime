@@ -4,7 +4,15 @@
     "valid": true,
     "context": {
       "schema": "octo.context-envelope/v3",
-      "items": [{ "namespace": "octo.execution", "name": "actmode", "payload": { "mode": "plan" } }]
+      "items": [
+        {
+          "namespace": "octo.execution",
+          "name": "actmode",
+          "payload": {
+            "mode": "plan"
+          }
+        }
+      ]
     },
     "expected_canonical": "{\"items\":[{\"name\":\"actmode\",\"namespace\":\"octo.execution\",\"payload\":{\"mode\":\"plan\"}}],\"schema\":\"octo.context-envelope/v3\"}"
   },
@@ -909,7 +917,7 @@
     "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
-    "name": "instruction-source-agent_configuration",
+    "name": "instruction-text-only",
     "valid": true,
     "context": {
       "schema": "octo.context-envelope/v3",
@@ -920,20 +928,19 @@
           "payload": {
             "entries": [
               {
-                "text": "Keep changes scoped.",
-                "source": "agent_configuration"
+                "text": "Keep changes scoped."
               }
             ]
           }
         }
       ]
     },
-    "expected_canonical": "{\"items\":[{\"name\":\"instructions\",\"namespace\":\"octo.control\",\"payload\":{\"entries\":[{\"source\":\"agent_configuration\",\"text\":\"Keep changes scoped.\"}]}}],\"schema\":\"octo.context-envelope/v3\"}",
-    "expected_hash": "sha256:172e0ff859d207cedb3d95b72308aaf08ac2ac02f701b456c5c8631f09927f51"
+    "expected_canonical": "{\"items\":[{\"name\":\"instructions\",\"namespace\":\"octo.control\",\"payload\":{\"entries\":[{\"text\":\"Keep changes scoped.\"}]}}],\"schema\":\"octo.context-envelope/v3\"}",
+    "expected_hash": "sha256:51ea457ebede0145a9fd2217a62584e9bbabeb81aee840e924e7659ea7fc7157"
   },
   {
-    "name": "instruction-source-platform_policy",
-    "valid": true,
+    "name": "instruction-rejects-legacy-source",
+    "valid": false,
     "context": {
       "schema": "octo.context-envelope/v3",
       "items": [
@@ -951,8 +958,7 @@
         }
       ]
     },
-    "expected_canonical": "{\"items\":[{\"name\":\"instructions\",\"namespace\":\"octo.control\",\"payload\":{\"entries\":[{\"source\":\"platform_policy\",\"text\":\"Keep changes scoped.\"}]}}],\"schema\":\"octo.context-envelope/v3\"}",
-    "expected_hash": "sha256:5b0da1688bf1b26bb45e14e1d1ba0f9f4183eb10b7ed6b429eb92adc98bdb490"
+    "error": "CONTEXT_SCHEMA_INVALID"
   },
   {
     "name": "empty-instructions",
@@ -1312,9 +1318,8 @@
     }
   },
   {
-    "name": "instruction-missing-source",
-    "valid": false,
-    "error": "CONTEXT_SCHEMA_INVALID",
+    "name": "instruction-text-preserves-whitespace",
+    "valid": true,
     "context": {
       "schema": "octo.context-envelope/v3",
       "items": [
@@ -1324,13 +1329,15 @@
           "payload": {
             "entries": [
               {
-                "text": "Text"
+                "text": "  我是明略科技的Octo助理\n"
               }
             ]
           }
         }
       ]
-    }
+    },
+    "expected_canonical": "{\"items\":[{\"name\":\"instructions\",\"namespace\":\"octo.control\",\"payload\":{\"entries\":[{\"text\":\"  我是明略科技的Octo助理\\n\"}]}}],\"schema\":\"octo.context-envelope/v3\"}",
+    "expected_hash": "sha256:2ac49e43506ac01b12993f4c1eef572374fbd4d26620a2073c92c847597fda40"
   },
   {
     "name": "instruction-unknown-source",
@@ -2544,7 +2551,11 @@
       "adapter_type": "codex",
       "workdir": "/workspace",
       "approval_mode": "ask",
-      "provider_compatibility": { "native": { "option": true } }
+      "provider_compatibility": {
+        "native": {
+          "option": true
+        }
+      }
     },
     "error": "CONTEXT_SCHEMA_INVALID"
   },
@@ -5787,9 +5798,7 @@
               "constructor": {
                 "type": "stdio",
                 "command": "node",
-                "args": [
-                  "${SCRIPT}"
-                ],
+                "args": ["${SCRIPT}"],
                 "env": {
                   "MODE": "fixed"
                 }
@@ -5972,9 +5981,7 @@
       "adapter_type": "codex",
       "workdir": "/workspace",
       "approval_mode": "ask",
-      "required_capabilities": [
-        "react"
-      ]
+      "required_capabilities": ["react"]
     },
     "error": "CONTEXT_SCHEMA_INVALID"
   }

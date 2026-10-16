@@ -1,5 +1,13 @@
 # 工程知识变更记录
 
+## 2026-10-17
+
+- [Extra 两阶段入口实施交付](journal/shared/2026-10-17-extra-initializer-delivery.md)：共享 loader、Gateway/WeCom/WebUI 三个 CLI Extra、动态同步异步 Context 及 text-only 指令已落地，配置 Schema 和完整使用示例显式携带固定人设。双渠道移除重复执行解析，超时回调未结束继续占额，取消及卸载有界；强制 GC、一万次加载、双渠道各一万会话、发行包离线加载及 im-test 真实 Codex 通过。用户最新指定 SDK 接入先不改，HostApp 函数装配延期；不自动重写既有配置或身份。完整检查和未验范围以交付记录为准。
+
+- 用户澄清第 3 项能力区别已确认，第 4 项生命周期只是初步想法、需工程评估。补充[生命周期分工评估](tasks/extra-initializer-context-dependencies/design.md#生命周期分工的工程评估)，建议保留宿主通知、SDK 协调、Extra 内部清理，规定单个卸载仅取消自身任务、初始化前置 abort、整体有界清理后继续关闭所拥有的 daemon，失败如实汇总。更正前条将初步想法写成已确认细节的表述；5 秒宽限为待验证的设计初值，未实现或实测，仅文档。
+
+- [Extra 评审确认](tasks/extra-initializer-context-dependencies/brief.md#2026-10-17-评审确认)：用户同意 SDK 同进程装配和两阶段初始化，明确宿主通知单个 Extra load/unload 或整体停止、SDK 协调、插件内部清理。区分新增业务 loadContexts 与既有模型执行端口，后者由 SDK 接线，不要求业务实现。确认不保存历史动态结果、有界在途及内存增长验收目标；保留 86 分历史评估，尚未实现或实测。仅文档。
+
 ## 2026-10-16
 
 - 按 technical-writing-zh 新建[Extra 两阶段初始化与动态 Context 详细计划](tasks/extra-initializer-context-dependencies/brief.md)，附接口装配选型、内存合同及逐模块评分。采用纯 JSON config 与独立函数依赖，动态回调可同步或异步，明确整项替换、无历史缓存、真实未结束调用限额和卸载失败边界。用户本次明确支持破坏性更新，不考虑旧接口兼容；默认正文修订为“我是明略科技的Octo助理”。准备度 86，SDK 同进程装配须先验证；仅文档，未改产品代码或运行配置，未做新增内存或线上功能测试。

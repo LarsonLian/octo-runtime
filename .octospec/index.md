@@ -38,18 +38,18 @@
 - [Provider 实现矩阵](guides/providers.md)：传输、模式及权限差异。
 - [Extra 配置与调用](guides/extra-configuration.md)：当前 CLI 路径、SDK 和本地 WebUI。
 - [IM Agent 与通用 invoke 的责任边界](guides/im-agent-invocation-boundary.md)：长期 Agent 的业务策略与单次执行能力分层；固定 workdir 与 reset 是 IM 架构决策，不是每会话目录功能计划。
-- [IM 执行准备排查经验与架构视图](journal/shared/2026-10-16-im-invoke-preparation-lessons.md)：完整 Context 误入执行 resolver、Extra 重复准备、系统指令时机、在线状态与任务错误的区别；包含故障时序、目标调用图入口与调试顺序。修复待实施。
+- [IM 执行准备排查经验与架构视图](journal/shared/2026-10-16-im-invoke-preparation-lessons.md)：完整 Context 误入执行 resolver、Extra 重复准备、系统指令时机、在线状态与任务错误的区别；重复准备已修复，全面错误展示仍待实施，见[本轮交付](journal/shared/2026-10-17-extra-initializer-delivery.md)。
 - [本地运维](guides/operations.md)：真实状态、排障和日志。
 
 根目录按场景分为 [CLI 使用指南](../CLI_USAGE_GUIDE.md)、[SDK 完整原生接入指南](../SDK_NATIVE_INTEGRATION_FULL_GUIDE.md) 和 [SDK Channel Gateway 指南](../SDK_CHANNEL_GATEWAY_GUIDE.md)；[INTEGRATION.md](../INTEGRATION.md)仅作选型导航，[DEPLOYMENTS.md](../DEPLOYMENTS.md)说明发行部署。包 README 保留包级用法。
 
 ## 历史与取舍
 
-- [Extra 两阶段函数入口与动态 Context](tasks/extra-initializer-context-dependencies/brief.md)：本次允许破坏性更新，不保留旧接口兼容；`extra(context, JSON config)(dependencies)`，动态回调支持同步数组或 Promise。[详细设计](tasks/extra-initializer-context-dependencies/design.md)说明同进程 SDK 装配选型、整项替换与 Provider 生效边界；[内存合同](tasks/extra-initializer-context-dependencies/memory.md)限制未结束调用和重载引用；[逐模块评估](tasks/extra-initializer-context-dependencies/assessment.md)整体准备度 86 分，SDK 接线是主要 gap。仅规划，未实现或实测。
+- [Extra 两阶段函数入口与动态 Context](tasks/extra-initializer-context-dependencies/brief.md)：共享 loader 和三个 CLI Extra 已实施，`extra(context, JSON config)(dependencies)`；同步异步动态加载、同 key 整项替换、超时占额及 5 秒卸载清理已验证。[内存合同](tasks/extra-initializer-context-dependencies/memory.md)和[逐模块评估](tasks/extra-initializer-context-dependencies/assessment.md)保留设计与历史评分；用户最新指定 SDK 接入先不改，HostApp 函数装配延期。实际回归、GC、安装及 im-test 证据见[交付记录](journal/shared/2026-10-17-extra-initializer-delivery.md)。
 
-- [IM Agent 默认人设与 Context v3 简化评估](tasks/im-agent-persona-and-context-audit/brief.md)：已建计划、待实施；两个 Channel 的默认新建配置与完整 CLI/Extra/SDK 示例逐 Bot 包含“我是明略科技的Octo助理”。关联 text-only instructions 和统一准备修复，本次不做旧结构兼容或自动迁移，历史快照不改写；[逐项评估](tasks/im-agent-persona-and-context-audit/assessment.md)区分 source 确定删除、MCP 引用/旧同步类型等候选与必要合同。仅规划和源码审查。
+- [IM Agent 默认人设与 Context v3 简化评估](tasks/im-agent-persona-and-context-audit/brief.md)：三个 Extra 的 Schema 和完整配置示例已显式包含“我是明略科技的Octo助理”；instructions 已仅保留 text，无旧 source 兼容。不自动改写已有空 Context、配置或历史快照；[逐项评估](tasks/im-agent-persona-and-context-audit/assessment.md)中的其他简化候选仍待决，SDK 消费者迁移延期。证据见[交付记录](journal/shared/2026-10-17-extra-initializer-delivery.md)。
 
-- [统一执行准备与简化系统指令列表](tasks/unify-execution-and-simplify-instructions/brief.md)：已建立计划、待实施；IM Extra 读取 adapter 并提交公开 InvokeInput，执行解析统一归 AdapterHost。instructions entries 仅保留 text、单换行拼接，删除 source 且不兼容旧结构；覆盖全部 Adapter、新会话/续聊和准备失败展示，见[验收清单](tasks/unify-execution-and-simplify-instructions/acceptance.md)。本轮仅规划。
+- [统一执行准备与简化系统指令列表](tasks/unify-execution-and-simplify-instructions/brief.md)：双渠道已直接提交公开 InvokeInput，执行解析归 AdapterHost；instructions.entries 仅保留 text、单换行拼接并拒绝 source。全面准备失败展示、SDK 消费者及全 Provider 会话矩阵仍待完成，见[验收清单](tasks/unify-execution-and-simplify-instructions/acceptance.md)与[本轮交付](journal/shared/2026-10-17-extra-initializer-delivery.md)。
 
 - [F32 工程验证与操作说明](tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf32-工程验证与操作说明)：最后一项待评审，建议复用现有工程体系，随已确认改造完成必要回归、真实验证与说明更新，不迁入旧 CI/Worker 测试模型。必要性 65、可执行性 100、目标建议 100%；基础已有，不冒充新行为已验收。仅文档，本项后剩 0 项。
 

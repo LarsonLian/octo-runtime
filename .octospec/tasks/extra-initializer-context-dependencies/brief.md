@@ -8,9 +8,21 @@ timestamp: 2026-10-16T00:00:00Z
 
 # Extra 两阶段函数入口与动态 Context 依赖注入
 
-状态：详细设计与评估，待实施。源码基线 `147ee40` 加当前工作树。用户已明确本次支持破坏性更新，不考虑旧 Extra 接口兼容。本文接口均为目标设计，不代表当前发行包已有这些导出。
+状态：2026-10-17 已实施共享 loader、三个 CLI Extra、两个 Channel 动态 Context、text-only 指令及配置示例。实施基线 `aad4086`。用户最新要求“SDK 接入的先不用改”，因此 SDK HostApp 同进程装配迁移明确延期；下文保留该部分目标设计。实际证据与未验项见[交付记录](../../journal/shared/2026-10-17-extra-initializer-delivery.md)。本次不兼容旧 Extra ABI 和 instructions.source，不删除或重新初始化用户身份、Home 或配置。
+
+## 本轮实施范围
+
+共享 `ExtraPlugins.load(module, config, dependencies)` 可在同一 Node 进程装配类型明确的业务函数；CLI 的 JSON 声明继续通过 `load(name, registration)` 加载并传空依赖。Gateway、WeCom 和 WebUI 全部迁移；WebUI 增加显式 `config.context`，本轮输入同 key 整项覆盖静态配置。现有 `createDaemonRuntime.loadExtra(descriptor)` 继续传 JSON，未增加函数跨进程入口。两个 Channel 的回调加载结果通过 buildContext 参数进入本轮快照，内部 manager 未向宿主暴露。
 
 配套阅读：[接口与装配设计](design.md)、[内存与异步资源合同](memory.md)、[逐模块评估与实施顺序](assessment.md)。
+
+## 2026-10-17 评审确认
+
+用户同意 SDK 在 HostApp Node 组合层装配 Extra，以及 loader 调用并等待第二阶段初始化。关于宿主通知单个 Extra load/unload 和整体停止，用户说明这是初步想法，要求进行工程评估，不作为已确认的全部实现细节。评估建议采用：宿主决定并通知，SDK 有界协调，Extra 自己清理内部资源；具体停止、取消和失败行为见[生命周期评估](design.md#生命周期分工的工程评估)。
+
+“业务能力注入”专指本次新增的 loadContexts 等业务函数。“模型执行端口”专指 ExtraContext 已有的 adapterHost.invoke/cancel/respondInteraction。后者是调整装配位置时需要接通的既有基础设施，不要求业务方再提供模型执行实现，也不是本次新增的业务依赖字段。用户已确认这一区分。
+
+用户同意动态结果不保存为历史、限制在途调用并在结束或卸载时释放。验收目标是框架新增内存不随累计消息或重载次数无界增长；需以受控测试证明，尚未声称已验证。此确认不表示任意外部 IO、业务缓存或同步代码均可获得绝对内存上限。
 
 ## 1. 业务目标和决定权
 
@@ -109,18 +121,18 @@ await initialize({ loadContexts });
 
 一次性更新 Extra 类型、loader、三个内置 Extra、JS fixtures、SDK/CLI 装配、公开导出、打包脚本和全部当前消费者。旧 `(context, config) => void` 不适配；loader 遇到没有返回初始化函数时明确失败，不标记 loaded。
 
-SDK 当前只把 JSON descriptor 发到 daemon。直接闭包不能沿这条路径传递。本设计推荐 SDK 将 Extra 执行放在宿主的 Node 组合层，与业务函数同进程；AdapterHost 继续沿原执行链工作。该选择有真实装配成本，须先完成 design.md 的 SDK 验证，不能只改签名后声称完整能力已具备。CLI 仍在自己的 daemon 组合层调用同一 loader，默认传空函数依赖。
+SDK 当前只把 JSON descriptor 发到 daemon。直接闭包不能沿这条路径传递。用户已确认 SDK 将 Extra 执行放在宿主的 Node 组合层，与业务函数同进程；AdapterHost 继续沿原执行链工作。该选择有真实装配成本，须先完成 design.md 的 SDK 验证，不能只改签名后声称完整能力已具备。CLI 仍在自己的 daemon 组合层调用同一 loader，默认传空函数依赖。
 
 删除兼容层不等于删除用户数据。不扫描和改写用户 Home；旧配置结构需要更新时，由其宿主按当前合同重新提供值。不可变历史快照不改写。
 
 ## 7. 实施与依赖
 
-- [ ] M0：验证 SDK 同进程 Extra 装配、共享执行端口身份、停止顺序和仓外打包；失败则先修订本设计，不能加函数 RPC 兜底。
-- [ ] M1：实现新两阶段类型及 generic load，更新 loader 生命周期与所有内置入口，拒绝旧接口。
-- [ ] M2：实现无状态合并函数、动态加载合同、取消、容量和两渠道准备链。
-- [ ] M3：完成已有[统一执行准备与 text-only instructions 任务](../unify-execution-and-simplify-instructions/brief.md)，同时交付默认人设与完整示例。
-- [ ] M4：同步 SDK/CLI 消费者、公开类型与包导出，完成仓外编译、生命周期及内存验收。
-- [ ] M5：真实线上测试环境验证，记录源码/构建版本、实际接入范围和未验项。
+- [ ] M0：SDK 同进程装配按用户最新要求延期，不增加函数 RPC。
+- [x] M1：新两阶段类型、generic load、三个内置入口及失败清理。
+- [x] M2：纯合并、同步/异步加载、取消、容量和两渠道准备链。
+- [x] M3 核心前置：双渠道直接提交 InvokeInput、text-only 指令和默认人设示例；原关联任务的全 Adapter 会话矩阵及完整错误展示未在本轮全部交付。
+- [x] M4 本轮范围：CLI、公开导出、仓外严格 TS、发行包、生命周期和 GC 回归。SDK HostApp 函数接线延期。
+- [x] M5 本轮范围：im-test 隔离群、真实 Codex、动态指令一次调用及 completed；WeCom 真实平台、全 Provider 新建/续聊/reset 矩阵仍待验。
 
 M3 是带系统指令的端到端验收前置，不阻塞先做纯合并函数。此前“执行准备错误”具体指 Extra 将含 `octo.control/instructions` 的完整 Context 交给只支持局部类型的 resolver，可能在 Provider 启动前拒绝；不是要求人设配置承担额外必填执行字段。
 
@@ -140,4 +152,4 @@ M3 是带系统指令的端到端验收前置，不阻塞先做纯合并函数�
 - [ ] build、typecheck、lint、lint:names、相关 Node 测试及跨包回归通过；内存测试按 memory.md 单独启用 GC。
 - [ ] Octo 真实联调使用 `https://im-test.deepminer.com.cn/`；WeCom 用真实测试 Bot，缺条件则保持待验。涉及桌面时按 CDP 规则验证。
 
-本轮仅文档，不运行产品构建、真实模型或线上功能联调。检查结果记录在 context.yaml，不将方案评分当作已实现比例或实测成功率。
+上方完整验收清单包含延期 SDK 和更广的 Provider 场景，不全部勾选。当前范围的检查与证据记录在 context.yaml 及交付记录，不将 86 分历史设计准备度当作完成比例。

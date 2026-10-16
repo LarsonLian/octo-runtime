@@ -276,7 +276,8 @@ test("WeCom plugin validates Bot lists and honors explicit disabled", async (t) 
   const { mkdtemp, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const { validateImBots } = await import("../packages/octo-runtime-extra-channel-wecom/dist/index.js");
+  const { validateImBots } =
+    await import("../packages/octo-runtime-extra-channel-wecom/dist/index.js");
   const home = await mkdtemp(join(tmpdir(), "im-defaults-"));
   t.after(() => rm(home, { recursive: true, force: true }));
   const bot = {
@@ -302,8 +303,12 @@ test("WeCom plugin validates Bot lists and honors explicit disabled", async (t) 
 });
 
 test("execution Context overrides default adapter and maps reasoning to agentConfig", async () => {
-  const { createImInvocation } =
+  const { createImInvocation: createChannelInput } =
     await import("../packages/octo-runtime-extra-channel-wecom/dist/execution/dispatcher.js");
+  const createImInvocation = (...args) => {
+    const result = createChannelInput(...args);
+    return { ...result, request: prepareInvokeInput(result.request).request };
+  };
   const config = {
     enabled: true,
     bot_id: credentials.appBot,
@@ -345,8 +350,12 @@ test("execution Context overrides default adapter and maps reasoning to agentCon
 });
 
 test("IM constructs full_access approval Context for both platforms and honors explicit policies", async () => {
-  const { createImInvocation } =
+  const { createImInvocation: createChannelInput } =
     await import("../packages/octo-runtime-extra-channel-wecom/dist/execution/dispatcher.js");
+  const createImInvocation = (...args) => {
+    const result = createChannelInput(...args);
+    return { ...result, request: prepareInvokeInput(result.request).request };
+  };
   const message = {
     messageId: "m",
     senderId: "u",

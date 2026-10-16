@@ -1,10 +1,11 @@
-import type { InvokeRequest, ProviderSession } from "@mininglamp-oss/octo-runtime-protocol";
+import type { ImInvocationInput } from "../execution/dispatcher.js";
+import type { ProviderSession } from "@mininglamp-oss/octo-runtime-protocol";
 
 export interface ImSessionOccurrence {
   text: string;
   sessionId: string;
   runId: string;
-  snapshot?: Omit<InvokeRequest, "signal">;
+  snapshot?: ImInvocationInput;
 }
 export interface ImSessionBinding {
   id?: string;

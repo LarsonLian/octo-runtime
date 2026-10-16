@@ -138,6 +138,22 @@ octo-runtime extraset channel-gateway <<'JSON'
           "workdir": "/srv/octo/workspaces/dev",
           "model": "gpt-6.1-sol",
           "effort": "medium"
+        },
+        "context": {
+          "schema": "octo.context-envelope/v3",
+          "items": [
+            {
+              "namespace": "octo.control",
+              "name": "instructions",
+              "payload": {
+                "entries": [
+                  {
+                    "text": "我是明略科技的Octo助理"
+                  }
+                ]
+              }
+            }
+          ]
         }
       }
     ]
@@ -166,6 +182,22 @@ octo-runtime extraset channel-gateway <<'JSON'
         "adapter": {
           "adapter_type": "openclaw",
           "provider_agent_id": "main"
+        },
+        "context": {
+          "schema": "octo.context-envelope/v3",
+          "items": [
+            {
+              "namespace": "octo.control",
+              "name": "instructions",
+              "payload": {
+                "entries": [
+                  {
+                    "text": "我是明略科技的Octo助理"
+                  }
+                ]
+              }
+            }
+          ]
         }
       }
     ]
@@ -212,6 +244,8 @@ OpenClaw 自动发现由 CLI 启动编排负责，默认读取 `~/.openclaw/open
 
 使用 `octo-runtime extraset <name>`，从 stdin 提交完整的 `{ module, enabled?, config }` JSON 对象。Octo IM 使用 `channel-gateway` 插件，其配置为 `config.bots` 数组，可包含多个 Bot；插件级和 Bot 级的 `enabled` 均默认 `true`。
 
+三个内置 Extra 均采用两阶段入口，CLI 传空函数依赖。新配置示例显式包含固定人设“我是明略科技的Octo助理”：Gateway/WeCom 在 `config.bots[i].context`，WebUI 在 `config.context`，使用 octo.control/instructions 的 text-only entries 列表；省略或空列表不自动填充，旧 source 字段不再接受。企业微信和 WebUI 的完整 JSON 分别见[WeCom 配置](packages/octo-runtime-extra-channel-wecom/README.md)与[WebUI 配置](packages/octo-runtime-webui-extra/README.md)。业务动态函数不能通过 CLI JSON 传递；SDK HostApp 接线本轮暂缓。
+
 CLI 将完整对象保存到 `<home>/extras/<name>/config.json`，POSIX 文件权限为 `0600`，不回显配置或凭据。**每次保存整体替换同名插件配置，不按 `bot_id` 合并。** 增删或修改 Bot 时，提交需要保留的完整 `config.bots` 数组。不同名称的 Extra 配置互不覆盖。
 
 单个与多个 Bot 使用相同格式：一个 Bot 为 `config.bots: [botA]`，多个为 `config.bots: [botA, botB]`。若上次保存 `[botA, botB]`，本次提交 `[botB]`，最终配置只保留 botB；提交 `[]` 表示不保留任何 Bot。整个声明中的其他字段也随本次提交覆盖，不从上次配置补齐。
@@ -252,6 +286,11 @@ octo-runtime playboard <<'JSON'
   "contexts": {
     "schema": "octo.context-envelope/v3",
     "items": [
+      {
+        "namespace": "octo.control",
+        "name": "instructions",
+        "payload": { "entries": [{ "text": "我是明略科技的Octo助理" }] }
+      },
       {
         "namespace": "octo.execution",
         "name": "adapter",
