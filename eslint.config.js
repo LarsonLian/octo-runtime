@@ -8,6 +8,7 @@ export default defineConfig(
   },
   {
     files: ["apps/**/*.ts", "packages/**/*.ts", "public/**/*.ts"],
+    ignores: ["packages/octo-runtime-webui-extra/web/**", "packages/octo-runtime-webui-extra/vite.config.ts"],
     extends: [js.configs.recommended, tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: {
@@ -19,5 +20,15 @@ export default defineConfig(
       "@typescript-eslint/consistent-type-imports": "error",
       "@typescript-eslint/no-explicit-any": "error"
     }
+  },
+  {
+    files: ["packages/octo-runtime-webui-extra/web/**/*.{ts,tsx}", "packages/octo-runtime-webui-extra/vite.config.ts"],
+    extends: [js.configs.recommended, tseslint.configs.recommended],
+    rules: { "@typescript-eslint/no-explicit-any": "error" }
+  },
+  {
+    // Preserve the upstream component verbatim, including its unused presentation helpers.
+    files: ["packages/octo-runtime-webui-extra/web/src/surfaces/Transcript.tsx"],
+    rules: { "@typescript-eslint/no-unused-vars": "off" }
   }
 );

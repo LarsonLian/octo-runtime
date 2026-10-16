@@ -34,7 +34,7 @@
 - [工作区与开发组织](guides/workspace.md)：目录、依赖、构建及新增包。
 - [Adapter 开发](guides/adapter-authoring.md)：接口示例和验收。
 - [Provider 实现矩阵](guides/providers.md)：传输、模式及权限差异。
-- [Extra 配置与调用](guides/extra-configuration.md)：当前 CLI 路径、SDK 和 SSE 示例。
+- [Extra 配置与调用](guides/extra-configuration.md)：当前 CLI 路径、SDK 和本地 WebUI。
 - [IM Agent 与通用 invoke 的责任边界](guides/im-agent-invocation-boundary.md)：长期 Agent 的业务策略与单次执行能力分层；固定 workdir 与 reset 是 IM 架构决策，不是每会话目录功能计划。
 - [本地运维](guides/operations.md)：真实状态、排障和日志。
 
@@ -45,6 +45,8 @@
 - [executionFeatures 自动清理计划与独立评估](tasks/remove-execution-features/autonomous-plan.md)：覆盖剩余六项和新发现的 MCP/错误分类缺陷；[复评](tasks/remove-execution-features/feasibility-review.md)均分 97.125、每项至少 96，逐 Feature 独立快照验证后提交，远端部署另记状态。
 
 - [F4 删除 computer-use 标签专用探测](journal/shared/2026-10-16-remove-computer-use-probe.md)：删除 Codex 创建时的配置扫描、helper 和 TOML 依赖；930 项回归通过，真实 Codex 工具请求 im-test 成功。其余 Feature 待实施，真实 Home 动态 MCP 注入问题单独记录。
+
+- [本地 WebUI Extra 替换 SSE Demo](tasks/runtime-webui-extra/brief.md)：已实现 `octo-runtime-webui-extra`，端口 `13888`，默认项目 `~/octo-runtime-workspace`；移植 Work App 的 thinking/工具、Composer 和模型菜单，项目使用 sessionStorage，独立 JSON 最多保留 100 个会话与 Provider binding，支持刷新/清理。真实 Codex、浏览器与仓库外安装证据及线上限制见[交付记录](journal/shared/2026-10-16-runtime-webui-extra-delivery.md)。
 
 - [executionFeatures 清理开发计划与逐项评分](tasks/remove-execution-features/brief.md)：按实际消费者拆为七项，覆盖 Adapter 输入检查、watchdog、标签专用探测、桌面产品策略、Worker 登记合同及真实验收；当前准备度平均约 94 分，待补齐活动源切换和未知 Adapter 策略。本轮仅计划，未改产品代码。
 

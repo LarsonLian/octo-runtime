@@ -58,7 +58,7 @@ Runtime Home / Host
 
 Extra 是 Host 上可装配的业务能力。Runtime、IPC Host 和 Provider Adapter 在本地独立存在；加载 Extra 不要求云端注册。Extra 通过宿主注入的执行能力提交请求，自己实现触发、连接、认证、业务状态和结果投递。
 
-当前提供统一加载器、CLI JSON 配置入口和 `octo-runtime-extra-sse-demo` 示例。Octo 与 WeCom 的代码分别位于 `octo-runtime-extra-channel-gateway` 和 `octo-runtime-extra-channel-wecom`；两包均已提供默认函数式 Extra 导出，也保留对象式模块工厂；两者按不同合同加载，不能混用。旧 worker-access 已移除。
+当前提供统一加载器、CLI JSON 配置入口和 `octo-runtime-webui-extra` 本地工作台。Octo 与 WeCom 的代码分别位于 `octo-runtime-extra-channel-gateway` 和 `octo-runtime-extra-channel-wecom`；两包均已提供默认函数式 Extra 导出，也保留对象式模块工厂；两者按不同合同加载，不能混用。旧 worker-access 已移除。
 
 ## 插件是什么
 
@@ -88,7 +88,7 @@ export default async function load(ctx: ExtraContext, config: JsonObject): Promi
 
 一个 daemon 中，同名插件只加载一次。多个机器人、账号或 WS 属于插件内部配置和管理范围，不拆成多个框架实例。卸载后允许再次加载；重复加载尚未卸载的实例返回 `EXTRA_ALREADY_LOADED`。
 
-`name` 只能使用小写字母开头、后续小写字母/数字/连字符，最长 64 字符。配置目录名称必须与模块导出的 `name` 相同；不匹配返回 `EXTRA_NAME_MISMATCH`。例如包名 `@mininglamp-oss/octo-runtime-extra-sse-demo` 声明名称 `sse-demo`。
+`name` 只能使用小写字母开头、后续小写字母/数字/连字符，最长 64 字符。配置目录名称必须与模块导出的 `name` 相同；不匹配返回 `EXTRA_NAME_MISMATCH`。例如包名 `@mininglamp-oss/octo-runtime-webui-extra` 声明名称 `webui`。Extra 的只读 `adapterHost.list` 可选端口返回共享 Host 已加载 Adapter 的实际探测结果；旧宿主未提供此端口时 WebUI 明确返回不可用，不猜测引擎状态。
 
 ## Context 与配置分别承担什么
 

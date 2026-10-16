@@ -1,0 +1,160 @@
+.shell-workspace :where(button:not([class]), button[class='']),
+.ui-dialog :where(button:not([class]), button[class='']) {
+  min-height: var(--control-height-sm);
+  padding: 4px 9px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-size-control);
+  cursor: pointer;
+}
+.shell-workspace :where(button:not([class]), button[class='']):hover:not(:disabled),
+.ui-dialog :where(button:not([class]), button[class='']):hover:not(:disabled) { background: var(--color-hover); }
+.shell-workspace :where(button:not([class]), button[class='']):focus-visible,
+.ui-dialog :where(button:not([class]), button[class='']):focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+.theme-color-trigger { min-width: 120px; justify-content: flex-start; font-variant-numeric: tabular-nums; }
+.theme-color-dot { width: 16px; height: 16px; border-radius: 4px; flex: none; box-shadow: inset 0 0 0 1px var(--color-line); }
+.theme-select { width: 180px; }
+.ui-menu.theme-color-popover { padding: 12px; border-radius: var(--radius-menu); box-shadow: var(--shadow-menu); }
+.theme-color-swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 14px; }
+.theme-color-swatches button { display: grid; place-items: center; height: 30px; padding: 0; border: 1px solid var(--color-line); border-radius: var(--radius-menu-item); cursor: pointer; }
+.theme-color-swatches button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.theme-color-popover footer { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }
+
+.agent-access-task-project { min-width: 0; }
+.agent-access-task-project .ow-select { max-width: 220px; }
+.agent-access-task-filter-condition > .ow-select { min-width: 0; }
+.agent-access-task-add-condition .ow-select { flex: 1; padding-left: 0; }
+.agent-access-task-properties > label > .ow-select { min-width: 0; max-width: 100%; }
+.agent-access-task-advanced-filter,
+.agent-access-task-display-menu,
+.agent-access-task-value-popover { border-radius: var(--radius-menu); box-shadow: var(--shadow-menu); }
+.agent-access-task-value-trigger { border-radius: var(--radius-control); }
+.agent-access-task-create-more > div > label { min-width: 0; }
+.agent-access-context-strip .agent-access-select .ow-select { max-width: 190px; font-size: var(--text-12); }
+.agent-access-repeat-row .ow-select { min-width: 104px; }
+.agent-access-time-fields .ow-select { min-width: 60px; font-variant-numeric: tabular-nums; }
+
+.ui-menu { border-radius: var(--radius-menu); box-shadow: var(--shadow-menu); }
+.ui-menu-item { border-radius: var(--radius-menu-item); }
+
+// 弹出菜单用背景指示键盘焦点；选中状态仍由勾选/aria 状态表达。
+html .ui-menu :is(button, [role='menuitem'], [role='menuitemradio'], [role='menuitemcheckbox']):focus-visible:not(:disabled) {
+  outline: none;
+  box-shadow: none;
+  background-color: var(--color-selected);
+}
+
+.ui-dialog { border-radius: var(--radius-dialog); box-shadow: var(--shadow-dialog); }
+.ui-input, .ui-button:not(.ui-icon-button) { border-radius: var(--radius-control); }
+.ui-input, .ui-textarea { box-sizing: border-box; background: var(--surface-control); }
+.ui-input--sm { height: var(--control-height-sm); }
+.ui-input--md { height: var(--control-height-md); }
+
+.ui-menu:is(.agent-access-task-advanced-filter, .agent-access-task-display-menu, .agent-access-task-value-popover) {
+  position: relative;
+  top: auto;
+  right: auto;
+  left: auto;
+  width: 100%;
+  max-height: none;
+  box-sizing: border-box;
+}
+.ui-menu.agent-access-task-advanced-filter { padding: 0; }
+.agent-access-task-advanced-filter > [role=dialog] > :is(header, footer) { display: flex; align-items: center; gap: 10px; padding: 12px 16px; }
+.agent-access-task-advanced-filter > [role=dialog] > header { border-bottom: 1px solid var(--color-line); }
+.agent-access-task-advanced-filter > [role=dialog] > header strong { flex: 1; font-size: var(--text-14); }
+.agent-access-task-advanced-filter > [role=dialog] > footer { border-top: 1px solid var(--color-line); justify-content: flex-end; }
+.agent-access-task-advanced-filter > [role=dialog] > footer > :first-child { margin-right: auto; }
+.agent-access-task-display-menu > [role=dialog] > label { display: flex; align-items: center; gap: 8px; min-height: 30px; }
+.agent-access-task-display-menu > [role=dialog] > label:first-child { justify-content: space-between; margin-bottom: 14px; }
+.agent-access-task-display-menu .ow-select { max-width: 140px; }
+
+:is(.shell-workspace, .ui-dialog, .popover-portal) :is(input, textarea)::placeholder { color: var(--color-text-placeholder); opacity: 1; }
+.ui-button.ui-button--primary, .agent-access-task-new,
+.ow-calendar .ow-calendar-day.is-selected, .ow-calendar .ow-calendar-day.is-selected:hover,
+.ow-datetime-actions .is-primary, .ow-datetime-actions .is-primary:hover:not(:disabled) {
+  background: var(--color-accent-text);
+  color: var(--color-bg);
+}
+.agent-access-task-new { border-radius: var(--radius-control); }
+
+.ui-menu.theme-picker__popover { border-radius: var(--radius-menu); box-shadow: var(--shadow-menu); }
+.theme-picker__option { border-radius: var(--radius-menu-item); }
+
+.octo-doc-surface {
+  --docs-bg: var(--color-bg);
+  --docs-fg: var(--color-text);
+  --docs-muted: var(--color-text-muted);
+  --docs-line: var(--color-line);
+  --docs-line-strong: var(--color-line-strong);
+  --docs-accent: var(--color-accent-text);
+  --docs-accent-ink: var(--color-bg);
+  --docs-surface-2: var(--color-surface);
+  --docs-danger: var(--color-danger);
+  --docs-radius: var(--radius-card);
+  --docs-sans: var(--font-ui);
+  --docs-mono: var(--font-mono);
+}
+.octo-doc-toolbar > .ui-field { flex: 1 1 180px; min-width: 120px; max-width: 220px; margin: 0; }
+.octo-doc-toolbar .ui-input { box-sizing: border-box; height: var(--control-height-sm); padding: 4px 9px; font-size: var(--font-size-control); }
+
+.octo-preview-surface {
+  --pv-sans: var(--font-ui);
+  --pv-mono: var(--font-mono);
+}
+.octo-doc-doc__source, .octo-doc-html-source {
+  font-family: var(--font-mono);
+  font-size: var(--code-font-size);
+  line-height: var(--code-line-height);
+}
+.octo-doc-btn, .octo-doc-title-input { border-radius: var(--radius-control); }
+.octo-doc-btn:hover:not(:disabled) { border-color: var(--color-line-strong); background: var(--color-hover); }
+
+// Catalog navigation and content use the host's neutral hierarchy in every theme.
+.pm-panel {
+  --pm-text: var(--color-text);
+  --pm-muted: var(--color-text-muted);
+  --pm-line: var(--color-line);
+  background: var(--color-bg);
+}
+.pm-nav { padding: 8px 10px; }
+.pm-nav__group { gap: 2px; }
+.pm-nav__sources { margin-top: 12px; padding-top: 8px; }
+.pm-nav .pm-nav__item { min-height: 32px; padding: 5px 10px; gap: 8px; }
+.pm-nav .pm-nav__item svg { width: 16px; height: 16px; }
+.pm-nav .pm-nav__group .pm-nav__item.is-active,
+.pm-panel .pm-filter.is-active { color: var(--color-text); background: var(--color-selected); }
+.pm-panel .pm-row__icon--fallback { color: var(--color-text-muted); background: var(--color-surface); }
+.pm-panel .pm-row { min-height: 64px; padding: 10px 8px; gap: 12px; }
+.pm-panel .pm-row__icon { width: 32px; height: 32px; }
+.pm-panel .pm-row__body { gap: 3px; }
+.pm-panel .pm-row__name { font-weight: 500; }
+.pm-panel .pm-row:hover,
+.pm-panel .pm-table tbody tr:hover { background: var(--color-hover); }
+.pm-panel .pm-row.is-active,
+.pm-panel .pm-table tr.is-active { background: var(--color-selected); }
+.pm-panel .pm-table__open:hover { color: var(--color-text); text-decoration: underline; text-underline-offset: 3px; }
+.pm-panel .pm-action { color: var(--color-text); background: var(--color-selected); }
+.pm-panel .pm-filters { padding: 8px 16px; }
+.pm-panel .pm-toolbar { padding-inline: 16px; }
+.pm-panel .pm-body { padding: 0 16px 16px; }
+.pm-panel .pm-detail { background: var(--color-bg); }
+@media (prefers-reduced-motion: no-preference) {
+  .pm-nav .pm-nav__item,
+  .pm-panel :is(.pm-row, .pm-filter, .pm-action, .pm-close) {
+    transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+  }
+  .pm-panel .pm-detail { animation: catalog-detail-in var(--duration-base) var(--ease-out); }
+}
+@keyframes catalog-detail-in {
+  from { opacity: .6; transform: translateX(6px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+// Icon-only display switch: keep accessible names without spending toolbar width.
+.pm-panel .pm-view-toggle .ui-seg__item { width: 30px; height: 28px; padding: 0; gap: 0; justify-content: center; }
+.pm-view-label { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

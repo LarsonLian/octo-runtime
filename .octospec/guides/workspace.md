@@ -34,7 +34,7 @@ packages/
   octo-runtime-daemon/               local SDK, lifecycle, IPC and optional modules
   octo-runtime-extra-channel-gateway/ optional Octo IM integration
   octo-runtime-extra-channel-wecom/   optional WeCom integration
-  octo-runtime-extra-sse-demo/        optional HTTP/SSE invocation example
+  octo-runtime-webui-extra/           optional local WebUI with canonical SSE
   octo-runtime-adapter-host/         adapter lifecycle, RPC and standalone runner
   octo-runtime-adapter-sdk/          adapter authoring helpers
   octo-runtime-acp-client/           reusable ACP client

@@ -1,4 +1,5 @@
 import type { InputInvoke, InteractionResponse } from "@mininglamp-oss/octo-runtime-protocol";
+import type { HostedAdapterMetadata } from "@mininglamp-oss/octo-runtime-adapter-host";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 export interface JsonObject {
@@ -9,6 +10,7 @@ export type ExtraStatusHandler = () => JsonObject;
 
 /** 插件复用宿主执行实例，不依赖 HostRunService 的内部实现。 */
 export interface ExtraAdapterHost {
+  list?(): Promise<HostedAdapterMetadata[]>;
   invoke: InputInvoke;
   cancel(invocationId: string, reason?: string): Promise<{ cancelled: boolean }>;
   respondInteraction(invocationId: string, response: InteractionResponse): Promise<void>;

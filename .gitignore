@@ -16,6 +16,7 @@ coverage/
 .nx/
 .eslintcache
 .impeccable/critique/
+.impeccable/review/
 
 # Logs and process files
 *.log

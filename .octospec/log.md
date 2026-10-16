@@ -6,6 +6,8 @@
 
 - 完成[F4 computer-use 标签专用探测删除](journal/shared/2026-10-16-remove-computer-use-probe.md)：删除 Codex 配置扫描、同步异步 helper 和专用依赖，补齐创建不读配置的回归；构建、类型与 lint 通过，全量 930 通过、8 跳过，真实 Codex 原生命令请求 im-test 并返回校验值。仅 F4 完成，真实 Home 的动态 MCP 配置类型错误仍待单独处理。
 
+- 实施[本地 WebUI Extra](tasks/runtime-webui-extra/brief.md)：删除旧 SSE demo，新增 `octo-runtime-webui-extra`，端口 `13888`；从 Work App 移植交互源码、样式、图标和 35 个行为断言，完整 canonical SSE 在前端投影，复用共享 Host。项目使用 sessionStorage，WebUI 独立 JSON 最多保留 100 个会话和完整 Provider binding，支持淘汰、刷新、单条/全部清理。真实 Codex 文本/续聊/审批工具/取消、桌面/手机页面与仓库外安装通过；线上测试域名返回 HTML，既有线上连接共存未验，见[记录](journal/shared/2026-10-16-runtime-webui-extra-delivery.md)。
+
 - 建立[executionFeatures 清理开发计划](tasks/remove-execution-features/brief.md)：依据实际消费拆为七项，列出修改位置、依赖、失败行为、验收及 100 分制开发准备度；明确桌面标签筛选、Worker 必填字段和 watchdog 活动判定均为真实依赖，先调整消费者再移除生产字段。本轮仅计划，不宣称实现或线上验收完成。
 
 - 固化[宿主管理 Adapter 支持范围的决定](journal/shared/2026-10-16-adapter-forwarding-ownership.md)：`executionFeatures` 确定为待删除的过度设计，不新增标签或替代能力表；Adapter 负责明确输入的原生适配转发，运行状态及必要协议校验按实际执行边界处理。同步架构、Adapter 规则和开发指南；本轮仅更新 OKF，源码清理与线上验收未实施。

@@ -42,7 +42,7 @@
     "prepack": "node scripts/require-release-pack.mjs",
     "clean": "node scripts/clean-dist.mjs",
     "prebuild": "pnpm run clean",
-    "test": "pnpm build && node --test test/*.test.js packages/octo-runtime-protocol/test/*.test.js",
+    "test": "pnpm build && pnpm --filter @mininglamp-oss/octo-runtime-webui-extra test:ui && node --test test/*.test.js packages/octo-runtime-protocol/test/*.test.js",
     "cli": "pnpm build && node apps/cli/dist/index.js",
     "daemon": "pnpm build && node apps/daemon/dist/launcher.js",
     "host": "pnpm build && node packages/octo-runtime-adapter-host/dist/runner.js --manifest apps/cli/dist/default_adapters.json",
@@ -55,7 +55,7 @@
     "format:check": "prettier --check"
   },
   "dependencies": {
-    "@mininglamp-oss/octo-runtime-extra-sse-demo": "workspace:*",
+    "@mininglamp-oss/octo-runtime-webui-extra": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-acp": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-antigravity": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-claude-code": "workspace:*",
