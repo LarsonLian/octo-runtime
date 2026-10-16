@@ -18,7 +18,7 @@ supersedes: []
 
 # Context v3 的 LLM 注入约束
 
-本表定义哪些 Context 数据发送给模型，以及发送到哪个通道。Event 发起方构造数据，Host 使用 [model-input.ts](../../packages/octo-runtime-adapter-host/src/model-input.ts) 中的 `renderModelContexts` 渲染；接入层不追加业务指引或读取引用正文。执行合同仍为 Run 7 / `octo.context-envelope/v3`。
+本表定义哪些 Context 数据发送给模型，以及发送到哪个通道。Event 发起方构造数据，Host 使用 [model-input.ts](../../packages/octo-runtime-adapter-host/src/model-input.ts) 中的 `renderModelContexts` 渲染；通用执行接入层不追加业务指引或读取引用正文，业务发起方可构造所属材料与获取指引。执行合同仍为 Run 7 / `octo.context-envelope/v3`。
 
 | 内部类型                        | 发送给 LLM | 通道与消费规则                                                                |
 | ------------------------------- | ---------- | ----------------------------------------------------------------------------- |
@@ -40,6 +40,22 @@ supersedes: []
 item 内部仅输出换行纯文本 `指引: ...`、`数据: ...`。不添加 guidance/payload 子标签，不执行 XML 实体转义，不要求严格 XML。空列表或只有非注入类型时，renderer 返回空字符串。
 
 renderer 只匹配 namespace/name 的白名单 pattern，保序输出全部数据。renderer 不调用信封校验器，不做业务字段、场景、材料可用性、处理器注册、预算估算或编译应用检查。协议接纳与执行配置校验属于各自边界，不能成为追加或改写模型上下文的理由。旧 Compiler/Pipeline、预取、摘要和投影配置已删除。
+
+## 人格与 SOUL 指令
+
+人格、persona、SOUL 是业务方选择的提示词内容，必须由业务方构造 octo.context-envelope/v3 后显式提交；IM 场景由 ChannelGateway 构造本轮业务 Context。业务方决定正文、顺序、是否发送、更新和重复时机。普通人格文本可放入 extra.im 等业务 item 的 guidance/payload，不增加人格专用字段、Compiler、renderer 分支或处理器。
+
+底层框架不得自行读取 SOUL.md 或 persona 文件、扫描技能目录补人格、合并默认人格、从历史补齐或按 session 缓存/去重。renderer 仍只按现有白名单保序完整输出本轮 items；没有人格项时不补默认内容，业务显式重复时不得省略。reset 或恢复失败后的重发仍由业务方决定。
+
+人格中的指令不自动取得控制权限。普通 extra 保持普通模型上下文语义；确需可信控制通道时，沿既有来源校验及 octo.control/instructions 合同处理，不能通过名称或自定义解析升权。完整责任与实施边界见[架构约束](architecture.md#人格与-soul-的注入归业务方)及[F17 评审](../tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf17-人格技能说明与自动指引)。
+
+## 资源地址与获取指引
+
+文档、网盘文件和内部附件可将资源类型、来源、标识/地址及获取指引作为本轮业务 Context 提交；IM 使用 extra.im。发起方不必预先取得全部正文，Provider/Harness 内的 Agent 可按任务需要调用 octo-cli 或实际下载/读取工具。取材发生在正常工具循环，不是 Host、renderer 或 Adapter 的执行前预取。获取指引不升级为可信控制指令，CLI 凭据继续走独立执行环境，不进入模型上下文。
+
+上下文描述的可访问资源与发起方显式提交的原生 inputs 是两类意图。首轮直接理解图片等原始内容沿现有多模态 inputs；资源引用沿 Context，不因扩展名为 PDF/音视频就要求 Adapter 新增原生附件输入，也不自动下载后转换。工具读取失败、缺失或不支持时返回真实结果，不把“地址已传递”报告为“内容已读取”。
+
+本条为目标责任约束，不表示当前 Channel 已接入全部资源类型；文档/网盘/file 的获取方法、边界及实施状态见[资源 Context 决策](../journal/shared/2026-10-16-resource-context-access-decision.md)。
 
 ## Resume 与本轮上下文
 

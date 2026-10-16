@@ -24,6 +24,18 @@ supersedes: []
 
 当前工作树已按此边界删除原地配置钩子与通用业务 RPC，提供同步状态回调、宿主显式卸载后加载完整新声明。旧接口不保留兼容入口。问题复盘、责任表、三个插件的源码依据及迁移验收见 [责任边界决策](../tasks/extra-responsibility-boundary/brief.md)，实际验证范围以其实施记录为准。
 
+## 整体生命周期与最小公开接口
+
+2026-10-16 F20 已确认：Extra 是宿主装配和生命周期管理的完整模块，宿主只通过核心加载、卸载和状态接口协作，配置变化时提交最新完整声明并重载对应插件。宿主可以按公开 schema 编辑配置、解释公开状态，但不得直接操作插件内部 Bot、连接、队列或 manager，不得为逐 Bot 热更恢复 onConfigure、通用业务控制 RPC 或局部 reconcile 合同。内部类有 upsert/remove 方法不构成对外接口。
+
+按用户明确的当前部署判断，主要是单机单 Bot，大部分 Bot 为独立部署实体；用户估计仅约 1% 的用户或设备可能采用同机多 Bot，该比例为业务估计，非实测统计或运行参数。主流场景没有其他 Bot 因整体重载而连带断线，少数同机多 Bot 在配置变更时短暂重连是已接受取舍。逐 Bot 热更的受益范围很窄，却会长期增加宿主与插件的业务耦合、增量状态、并发和失败合同；当前需求价值不足以支持扩大公开接口，不把局部热更列为缺失能力或预留功能。
+
+函数式入口是这一边界的实现合同：宿主调用插件提供的加载函数并注入完整 config、执行能力和生命周期 context；内部连接、状态和业务流程封装在函数及其闭包中，通过既有 onDispose/onStatus 注册清理与状态。宿主 App、宿主 CLI 均不得接管函数内部流程，不取得内部 manager 逐 Bot 下发命令，不用任意业务 RPC 绕过封装，也不另建公开插件对象或逐对象方法集合。宿主的整体生命周期编排与插件内部业务控制必须分开。
+
+AdapterHost 的生命周期归设备 Host；Extra 只取得注入的执行端口。正常卸载、重新挂载单个 Extra 时，AdapterHost 及其他 Extra 保持运行；插件通过 signal/onDispose 停止自己的连接、调用与资源，取消自身 invocation 不等于关闭共享执行内核。重新加载时向新插件实例注入同一共享执行能力，不为重载重建 AdapterHost。CLI 当前整体 daemon restart 的范围按真实入口另行说明，不能与单插件卸载混同。
+
+逐 Bot 编辑界面仍可保留，运行时操作仍为整个 Extra 的重载。配置保存、生命周期清理和真实错误处理必须继续满足既有合同；接受正常重连不等于允许静默丢失任务或假报清理成功。SDK 单 Extra 重载与 CLI 当前 daemon restart 的范围分别说明，不扩大本次决定为代码变更。设计原因、示例、少数场景收益及长期维护成本见[架构决策](../journal/shared/2026-10-16-extra-whole-plugin-boundary.md)。
+
 ## 背景：为什么需要 extras
 
 octo-runtime 为设备提供统一的本地执行能力。设备上的 AdapterHost 承载执行内核，各个业务入口通过同一个 `AdapterHost.invoke()` 提交执行请求。无论请求来自宿主应用、IM、飞书还是团队共享入口，业务入口使用的执行合同相同。
@@ -108,6 +120,8 @@ interface ExtraContext {
 `ctx` 是插件运行环境，提供共享 Host 的 `invoke`、实例停止信号及清理登记。它不是发给模型的 Context v3，不能整体序列化为模型输入。
 
 `config` 是宿主构造的插件专属 JSON 对象。框架没有通用业务 Config，也不要求插件导出 `validateConfig()`。插件自行检查业务配置；内部配置有误时跳过受影响项，通过自定义状态返回脱敏错误，有效项继续初始化。授权配置无效时不得建立未授权连接。此类内部错误不等于 Extra 加载失败；入口、声明或清理等框架错误仍按生命周期报告。
+
+F30 已确认：config 是值对象，不是插件管理凭据存储的入口。SDK 是主要接入方式，Buddy 等 HostApp 可由其他团队维护，Token 获取、授权流程、认证状态、存储与保护由对应宿主团队负责，再将实际值放入 config。Runtime CLI（octo-runtime，由 `npm install -g @mininglamp-oss/octo-runtime` 安装）是 Runtime 团队维护的开箱即用特殊宿主，负责自己的 JSON 文件读写及保护；其约定不成为其他宿主的前提，也不指 Agent 使用的业务工具 octo-cli。Extra 不接管宿主登录或凭据库；实际连接认证、配置校验和权限拒绝仍归相应接入合同。宿主示例及框架内部状态的例外边界见[配置来源与凭据保护规则](architecture.md#配置来源归宿主sdk-消费配置值)。
 
 2026-10-16 配置合同：三个内置 Extra 提供原始 `config-schema.json`，描述完整 `{ module, enabled?, config }` 声明。`module` 以对应包名 `const` 表达；字段 description 必须说明业务用途、必填条件、何时设置及省略行为，不能仅复述字段名。特别区分 OpenClaw 已有 Provider Agent ID、平台 Bot ID 与 Runtime ID。可选 `context` 只描述固定 v3 标识及开放的 items 对象数组，并说明 IM Channel 执行 AgentRun 时固定附带；不内嵌或引用完整协议定义，item 内部合同仍归 octo-runtime Context v3。业务方自行参考 schema、选择校验器或生成类型；框架不强制 Zod、不增加配置编译器，不从 schema 自动填值或改变 JsonObject 加载合同。非 JSON Schema 可表达的真实权限、资源可用性及协议语义约束继续在现有边界校验。公开入口和打包要求见[配置指南](../guides/extra-configuration.md#原始-json-schema-配置合同)。
 

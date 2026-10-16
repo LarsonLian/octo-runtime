@@ -16,6 +16,8 @@ IM 入口管理长期 Agent；`AdapterHost.invoke(input, environment)` 执行调
 
 这里的固定目录属于 IM 后台配置对应的 Agent：该 Agent 的所有任务使用同一个配置目录，不随任务 workdir 或 workspace Context 改变。IM 入口不是允许每个任务另选工作目录的通用执行入口；任务参数不能充当 Agent 配置更新。
 
+2026-10-16 F16 评审中，用户指出旧实现混合了 ChannelGateway 与 AgentRun 的责任，进而引入逐会话目录等不符合当前需求的功能。新架构必须将渠道会话生命周期与执行工作区生命周期分开。本文中的 AgentRun 指单次 Agent 执行职责，不表示新增组件或协议类型。ChannelGateway 使用业务方已确定的 Agent 配置；执行层按执行合同校验、准备和使用目录。渠道会话变化不能自行产生目录切换、迁移或清理要求。具体意见见[F16 评审](../tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf16-逐会话工作目录)。
+
 ## 责任归属
 
 | 事项 | IM 业务入口 / Channel Gateway | 通用 AdapterHost 与 Provider Adapter |
@@ -45,5 +47,6 @@ IM 入口管理长期 Agent；`AdapterHost.invoke(input, environment)` 执行调
 3. 涉及 session 时分别说明业务会话、Provider binding 和本次调用的变化。若涉及目录或文件生命周期，必须有独立明确需求，不能从 sessionId 改变自动推导。
 4. 架构决策不计入功能开发计划准备度。实现若偏离规则，另列具体缺陷、证据与修复范围，不把“保持固定目录”重新包装为新功能。
 5. IM 目录变更必须来自明确的 Agent 配置更新；不能把通用 InvokeInput 的 workdir 字段解释为 IM 任务可覆盖 Agent 目录的授权。实现核对覆盖任务级 workspace 输入，不能只验证 reset 前后路径相同。
+6. 不得混合 ChannelGateway 的渠道接入责任与 AgentRun 的执行责任：Channel 负责本轮业务输入、会话关联和结果投递，执行层负责既定请求的执行、权限/审批、原生适配及取消/资源回收。不能因执行层存在目录能力就给 Channel 新增目录生命周期，也不能因 Channel 的固定目录策略删除其他调用方合法的目录选择能力。
 
 本文定义责任约束。2026-10-16 已在 IM 入口补齐任务目录不可覆盖校验，历史与 Mention 由 Channel 构造；具体实现与 im-test 验证范围见[交付记录](../journal/shared/2026-10-16-channel-features-delivery.md)。通用 Host 目录能力未因本决策改变。

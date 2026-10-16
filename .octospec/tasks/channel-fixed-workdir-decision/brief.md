@@ -16,6 +16,8 @@ timestamp: 2026-10-16T00:00:00Z
 
 2026-10-16 分类纠正：本文件是已接受的 IM Agent 架构决策，不是待开发 plan，不参与功能计划准备度评分。保留历史专项路径以便追溯；实际规则已写入[架构合同](../../rules/architecture.md)、[渠道合同](../../rules/channel-integration.md)与[会话合同](../../rules/session-reset.md)。
 
+2026-10-16 F16 评审补充：用户指出旧实现混合 ChannelGateway 与 AgentRun 的责任，才衍生出逐会话工作目录等不符合当前需求的功能。工程评估赞同将渠道会话与执行工作区生命周期分开：宿主/业务方确定 Agent 配置，Channel 使用固定配置组织输入并关联会话，执行层按既定合同准备和使用目录。不得从渠道 session、reset 或单次 Run 自动推导目录切换、迁移和清理需求。该说明固化架构边界，不是新增开发项；双方意见见[F16 评审](../gateway-august-feature-assessment/assessment.md#逐项-reviewf16-逐会话工作目录)。
+
 本决策约束 Channel 管理的 IM Agent，不把所有 `AdapterHost.invoke` 调用视为同一个长期 Agent。通用 Host 按本轮请求准备目录，其他业务可以显式选择合法目录；Host 不因 sessionId 变化自动创建目录。完整责任矩阵见[IM Agent 与 invoke 边界](../../guides/im-agent-invocation-boundary.md)。
 
 ## 行为合同

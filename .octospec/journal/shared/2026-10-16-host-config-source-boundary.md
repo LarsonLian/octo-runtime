@@ -33,3 +33,21 @@ timestamp: 2026-10-16T00:00:00Z
 源码 packages/apps/scripts/public 中已无旧文件字段、来源冲突/文件权限错误码和 file-config 引用。SDK 按宿主传入值工作，CLI 自有配置文件读取仍属 CLI 宿主职责，不因此删除真实工作目录或内部状态读写。
 
 重新运行 pnpm test，Node 1018 通过、8 跳过，WebUI 35 通过；类型和 lint 通过。重建发行包后检查确认旧 file-config 模块不存在，六份 schema 一致，两个插件的入口、类型、配置及连接实现无旧凭据代码。im-test 两测试账号只读认证匹配、无效凭据仍返回 401；没有建立 WS 或发送消息。
+
+## F30 补充：两类宿主与凭据保护归属（仅文档）
+
+术语限定：本节“官方 CLI”专指 Runtime CLI（`octo-runtime` 可执行程序，通过 `npm install -g @mininglamp-oss/octo-runtime` 安装），不指 Agent 调用的业务工具 `octo-cli`。包名按本仓 package.json 核对，npm scope 为 `@mininglamp-oss`。
+
+用户进一步确认接入主次：SDK 是主要接入方式，Buddy 等宿主产品由其他团队维护；官方 CLI 是 Runtime 团队基于 SDK 提供的开箱即用特殊 headless 宿主。本文列举 CLI 和 Desktop 说明责任，不将宿主封闭为两种形态，也不以 CLI 为架构中心。各宿主团队负责自己的产品策略、认证、配置和凭据保护；Runtime 团队维护通用 SDK 与执行合同，另以 CLI 维护方身份承担 CLI 的宿主责任。
+
+CLI 负责自己的目录和 JSON 配置文件，当前 Extra 声明保存于 `<Runtime Home>/extras/<name>/config.json`。其他 SDK HostApp 的 Token 获取、登录授权流程、认证状态、存储、访问保护、更新及撤销由对应宿主团队负责，宿主准备好值后构造 Extra config JSON。官方维护、同仓发行或开箱即用均不使 CLI 的产品约定成为通用 SDK 合同。
+
+Extra 接收的是 config: JsonObject，不拥有宿主配置来源，也不接管宿主凭据库。宿主从文件换到数据库或系统凭据存储时，SDK/Extra 的值对象合同保持不变。CLI 的文件约定不能成为桌面原生接入条件；CLI 与通用 SDK/执行内核即使同仓发行，责任也不合并。
+
+这样设计让宿主复用自身认证和存储机制，避免 Token 复制到另一套 Gateway 文件、插件感知宿主内部结构，以及多套凭据更新流程。旧设计的目录保护措施有其适用背景，但不能因旧仓存在就把对应存储体系下沉到通用 Runtime。后续评审先确定配置来源的宿主，再决定具体存储措施，不把宿主安全核查项记作 Runtime 功能缺口。
+
+SDK/Extra 继续校验配置并按真实接入合同完成认证，工具/服务端继续检查资源 ACL；框架自身的内部状态、IPC、身份和租约保护仍归框架。上述分工不改变 OpenClaw 既有实例环境写入合同，不删除或重建任何配置、Home 和身份。
+
+F30 按该职责目标覆盖 100%、标删除线，新增必要性 0、方案可执行性 100。撤销此前以宿主路径/Windows ACL 证据不完整为由给 Runtime 保留方案扣至 90 分的评价；不表示任意宿主存储已完成安全验收。现行责任表见[架构规则](../../rules/architecture.md#配置来源归宿主sdk-消费配置值)，完整状态见[F30](../../tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf30-本地文件保护与旧-gateway-目录体系)。
+
+本节仅补充架构文档。上文测试和 im-test 结果属于此前实现记录，本轮只核对 Extra JSON 入口、凭据值消费及 CLI 配置保存代码，没有重新运行功能测试、认证或线上调试。
