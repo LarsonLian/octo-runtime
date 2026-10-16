@@ -20,6 +20,7 @@ export class HourlyLogWriter {
   #closed = false;
   #fullHour: number | undefined;
   #lastCleanup: number | undefined;
+  #retainedHour: number | undefined;
   #warned = false;
   readonly #pattern: RegExp;
 
@@ -70,6 +71,7 @@ export class HourlyLogWriter {
         if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink())
           throw new Error("LOG_DIRECTORY_NOT_REGULAR");
         const directory = opendirSync(this.directory);
+        const entries: Array<{ name: string; bucket: number; lock: boolean }> = [];
         try {
           for (let entry = directory.readSync(); entry; entry = directory.readSync()) {
             const match = this.#pattern.exec(entry.name);
@@ -79,7 +81,20 @@ export class HourlyLogWriter {
               `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)}T${stamp.slice(9)}:00:00Z`
             );
             const bucket = Math.floor(timestamp / HOUR_MS);
-            if (Number.isFinite(bucket) && bucket >= hour - 2 && bucket <= hour) continue;
+            if (!Number.isFinite(bucket)) continue;
+            entries.push({ name: entry.name, bucket, lock: Boolean(match[2]) });
+          }
+          // Octospec F31: .octospec/tasks/gateway-august-feature-assessment/assessment.md
+          // 保留当前活动文件及最近两个归档；没有当前文件时保留最近三个，不按时长删除。
+          const logs = entries.filter((entry) => !entry.lock).sort((a, b) => b.bucket - a.bucket);
+          const active = logs.find((entry) => entry.bucket === hour);
+          const keep = new Set(
+            [...(active ? [active] : []), ...logs.filter((entry) => entry !== active)]
+              .slice(0, 3)
+              .map((entry) => entry.bucket)
+          );
+          for (const entry of entries) {
+            if (keep.has(entry.bucket) || (entry.lock && entry.bucket === hour)) continue;
             try {
               unlinkSync(join(this.directory, entry.name));
             } catch (error) {
@@ -146,6 +161,8 @@ export class HourlyLogWriter {
         if (count === 0) throw new Error("LOG_SHORT_WRITE");
         written += count;
       }
+      // 新小时文件已实际创建，才将最旧归档移出保留集合。
+      if (this.#retainedHour !== hour && this.cleanup()) this.#retainedHour = hour;
       if (stat.size + bytes === maximum) this.#fullHour = hour;
       return true;
     } catch {

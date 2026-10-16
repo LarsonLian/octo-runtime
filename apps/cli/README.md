@@ -110,7 +110,7 @@ octo-runtime adapter probe codex
 
 统一日志默认关闭；前台使用 `octo-runtime daemon run --logs-dir /absolute/logs`，后台使用 `octo-runtime daemon install --logs-dir /absolute/logs` 后重启服务。目录由宿主明确指定，SDK 对应 `logging: { directory: "/absolute/logs" }`，不自动从 Home 推导。旧 OCTO_RUNTIME_DEBUG 不再启用独立 Host debug 文件。
 
-当前沿用 UTC 小时桶：内核 `kernel-YYYYMMDDTHH.log`，Extra `extras/<extra_type>-YYYYMMDDTHH.log`；每序列保留当前及前两个小时，单文件最多 100 MiB。固定活动文件名和最近三个文件的新口径仍待 F31 评审。日志为结构化元数据，仅记身份、状态、耗时和输入/Context 项数，不记正文、原始错误或凭据。写入线程和队列有界，失败不影响执行；停止原始输出的重复落盘，必要 stderr 继续可见，旧文件不删除。详见[运维说明](../../.octospec/guides/operations.md)。
+按 UTC 小时命名：内核 `kernel-YYYYMMDDTHH.log`，Extra `extras/<extra_type>-YYYYMMDDTHH.log`；每序列保留最近 3 个实际文件（含当前文件），单文件最多 100 MiB。空闲或停机跨天仍保留这 3 个文件，产生第四个时淘汰最旧归档，不按“最近 3 小时”清理。日志仅记身份、状态、耗时和输入/Context 项数，不记正文、原始错误或凭据。写入线程和队列有界，失败不影响执行；必要 stderr 继续可见，不删除旧固定日志或用户文件。详见[运维说明](../../.octospec/guides/operations.md)。
 
 ## Playboard: standalone local trials
 

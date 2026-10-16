@@ -37,23 +37,49 @@ async function wait(predicate) {
   }
 }
 
-test("24 hours, idle cleanup and clock reversal retain only the current and two preceding buckets", async (t) => {
+test("F31 retains three actual files across idle days, restart and clock reversal", (t) => {
   const root = directory(t);
   let now = Date.UTC(2026, 9, 16);
-  const writer = new HourlyLogWriter(root, "test", { now: () => now, cleanupIntervalMs: 10 });
+  let writer = new HourlyLogWriter(root, "test", { now: () => now, cleanupIntervalMs: 10 });
   t.after(() => writer.close());
   for (let i = 0; i < 24; i++) {
     assert.equal(writer.write("row\n"), true);
     assert.ok(files(root).length <= 3);
     now += hour;
   }
-  now += 3 * hour;
-  await wait(() => files(root).length === 0);
-  writer.write("future\n");
+  const beforeIdle = files(root).sort();
+  now += 48 * hour;
+  writer.cleanup();
+  assert.deepEqual(files(root).sort(), beforeIdle);
+  writer.close();
+  writer = new HourlyLogWriter(root, "test", { now: () => now });
+  assert.deepEqual(files(root).sort(), beforeIdle);
+  assert.equal(writer.write("after restart\n"), true);
+  assert.equal(files(root).length, 3);
+  assert.equal(files(root).includes(beforeIdle[0]), false);
   now -= 12 * hour;
-  writer.write("past\n");
-  assert.equal(files(root).length, 1);
-  assert.match(files(root)[0], /T15\.log$/);
+  assert.equal(writer.write("clock reversed\n"), true);
+  assert.equal(files(root).length, 3);
+  const stamp = new Date(now).toISOString().slice(0, 13).replace(/[-:]/g, "");
+  assert.ok(files(root).includes(`test-${stamp}.log`));
+});
+
+test("F31 retention is per category and never ages out an otherwise retained file", (t) => {
+  const root = directory(t);
+  let now = Date.UTC(2026, 9, 16);
+  const writers = ["kernel", "channel-gateway"].map(
+    (category) => new HourlyLogWriter(root, category, { now: () => now })
+  );
+  t.after(() => writers.forEach((writer) => writer.close()));
+  for (let i = 0; i < 5; i++) {
+    for (const writer of writers) assert.equal(writer.write("metadata\n"), true);
+    now += 24 * hour;
+  }
+  for (const writer of writers) {
+    writer.cleanup();
+    assert.equal(files(root).filter((name) => name.startsWith(writer.category + "-")).length, 3);
+  }
+  assert.equal(files(root).length, 6);
 });
 
 test("actual 100 MiB boundary is inherited after restart and never creates overflow shards", (t) => {
@@ -118,7 +144,15 @@ test("write failures remain bounded and recover; a stale lock disables only its 
   assert.equal(writer.write("next"), true);
   now += 3 * hour;
   writer.cleanup();
-  assert.equal(readdirSync(blocked).length, 0);
+  assert.equal(files(blocked).length, 2);
+  assert.equal(writer.write("third file"), true);
+  now += hour;
+  assert.equal(writer.write("fourth file"), true);
+  assert.equal(files(blocked).length, 3);
+  assert.equal(
+    readdirSync(blocked).some((name) => name.endsWith(".lock")),
+    false
+  );
 });
 
 test("a symlinked log directory is neither cleaned nor written", (t) => {

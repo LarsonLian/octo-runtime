@@ -1,10 +1,11 @@
-status: confirmed-corrections-implemented-final-decisions-pending
+status: confirmed-corrections-implemented-verification-gaps-recorded
 current_implementation:
   record: .octospec/tasks/gateway-august-feature-assessment/implementation.md
   implemented: [F01, F02, F04, F05, F09, F18, F24, F26, F27]
-  core_implemented_policy_pending: [F31]
+  logging_implemented: [F31]
   live_octo_lifecycle_verified: [F21]
-  final_decisions: [F31-file-policy]
+  final_decisions: []
+  f31_retention_decision: three-actual-files-per-category-including-active-no-age-expiry
   f09_secret_input_decision: retain-current-explicit-unsupported-and-request-cancellation
   deferred: [F28]
   historical_review_below: true

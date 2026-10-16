@@ -42,7 +42,7 @@ SDK 查看 `health.local.ready`、`adapterHostReady`、profiles 和扩展状态�
 
 统一日志默认关闭。SDK 宿主显式传 `logging: { directory: "/absolute/logs" }`；Runtime CLI 使用 `octo-runtime daemon run --logs-dir /absolute/logs`，后台服务用 `daemon install --logs-dir /absolute/logs` 更新定义后重启。旧 OCTO_RUNTIME_DEBUG 不再创建独立 Host debug 文件；普通 start 不改已安装的服务定义。
 
-当前文件策略沿用 UTC 小时桶：内核 `<directory>/kernel-YYYYMMDDTHH.log`，Extra `<directory>/extras/<extra_type>-YYYYMMDDTHH.log`；各序列只保留当前及前两小时，每文件最多 100 MiB。固定活动文件名和“最近三个文件”的新口径仍待 F31 最后评审，不在本次擅自切换。启动、切小时及每 60 秒清理本序列，停止后不清理；旧文件保留。见[逐项实施记录](../tasks/gateway-august-feature-assessment/implementation.md)。
+文件按 UTC 小时命名：内核 `<directory>/kernel-YYYYMMDDTHH.log`，Extra `<directory>/extras/<extra_type>-YYYYMMDDTHH.log`。每个序列保留最近 3 个实际日志文件，包含当前文件，单文件最多 100 MiB；没有新日志的小时不创建空文件。停机或空闲跨天不按时间年龄删除这 3 个文件，产生第四个文件后淘汰最旧归档。启动、首条小时写入及每 60 秒执行本序列清理，停止后不清理；其他类别、用户文件和旧固定文件不受影响。时钟回拨时保留当前活动文件，再按文件名时间保留两个最新归档。见[逐项实施记录](../tasks/gateway-august-feature-assessment/implementation.md)。
 
 格式为 `time/level/source/event/extra_type?/data`。data 只允许既有调用/Run/session 标识、Adapter 类型/模型、状态/稳定错误码、耗时、输入/非 Adapter Context 项数及帧/转换计数等元数据；不保存正文、原始错误、完整配置、环境值、图片、地址、预览或内容哈希。ExtraContext 的 log 由加载器绑定真实 extra_type，插件不管理文件，也不能通过 data 覆盖来源。日志关闭不建立目录、文件或日志 Worker。
 
