@@ -11,6 +11,24 @@ import { codexAppServerFixture, invokeRequest, withTimeout } from "./runtime-fix
 
 const fixture = fileURLToPath(new URL("../test-support/fake-codex-cancellation.mjs", import.meta.url));
 
+for (const mode of ["eof", "nonzero", "malformed", "wait"]) {
+  test(`Codex diagnostics preserve transport failure/cancellation: ${mode}`, { timeout: 6000 }, async () => {
+    const adapter = createCodexAdapter({ command: process.execPath,
+      appServerArgs: [fileURLToPath(new URL("../test-support/fake-codex-diagnostics.mjs", import.meta.url))] });
+    const controller = new AbortController();
+    const events = [];
+    for await (const e of adapter.invoke(invokeRequest({ modelInput: `DIAGNOSTIC_QA:${mode}`,
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(4000)]) }))) {
+      events.push(e);
+      if (mode === "wait" && e.type === "run.notice") controller.abort("test_cancel");
+    }
+    assert.equal(events.filter(e => e.payload.code === "provider_diagnostic").length, 1);
+    const terminal = events.filter(e => ["run.completed", "run.failed", "run.cancelled"].includes(e.type));
+    assert.equal(terminal.length, 1);
+    assert.equal(terminal[0].type, mode === "wait" ? "run.cancelled" : "run.failed");
+  });
+}
+
 for (const mode of ["normal", "stall", "ignore-interrupt", "commentary", "open-tool", "new-work"]) {
   test(`Codex finalization deadline: ${mode}`, { timeout: 6_000 }, async () => {
     const adapter = createCodexAdapter({ command: process.execPath,

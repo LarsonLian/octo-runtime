@@ -2784,7 +2784,7 @@ export interface ToolProgressPayload {
  */
 export interface RunNoticePayload {
   noticeId: string;
-  code: "retry_scheduled" | "context_compacted" | "model_rerouted" | "config_warning";
+  code: "retry_scheduled" | "context_compacted" | "model_rerouted" | "config_warning" | "provider_diagnostic";
   severity: "info" | "warning";
   params: {
     [k: string]: string | number | boolean;

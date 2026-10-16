@@ -110,6 +110,8 @@ Skill、Plugin、CLI 和 MCP 程序由 HostApp 管理安装；本轮 MCP 连接�
 
 ## 相关设计
 
+Canonical `run.notice` 支持 `provider_diagnostic`，严重度固定 `warning`。`params` 必须且只能包含字符串 `adapter`、`diagnosticId`、`category`、`message`；前三项各 1–191 字符，公开原因经脱敏后最多 2048 UTF-8 字节。它记录过程错误，不是失败终态，也不授予重放资格。原生重试沿用 `retry_scheduled`。新 code 需要同步升级严格校验的独立消费者；Run 7、Context v3、Adapter protocol 2 保持不变。业务收尾规则见 [IM 任务](../../.octospec/tasks/im-diagnostic-silent-completion/brief.md)。
+
 - 事件生命周期与 JSON-RPC 映射：[Architecture](../../.octospec/rules/architecture.md)
 - 为何选用 JSON Schema：[Protocol Schema And Codegen](../../.octospec/rules/protocol-schema.md)
 

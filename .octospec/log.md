@@ -2,6 +2,10 @@
 
 ## 2026-10-16
 
+- 实施[诊断后无回复收尾](tasks/im-diagnostic-silent-completion/brief.md)：canonical 通过 `run.notice/provider_diagnostic` 保留首条原因，IM 统一选择最终回复；无有效答案且有诊断时卡片/文本均提示待核查，不触发重放。正常执行不增加诊断、模型或网络请求。全量 929 通过、8 跳过，im-test 五场景、真实 Codex 正常执行和桌面 CDP 通过，详见[交付记录](journal/shared/2026-10-16-im-diagnostic-silent-completion-delivery.md)。
+
+- 建立[IM 诊断后无有效回复收尾任务](tasks/im-diagnostic-silent-completion/brief.md)：固定参考 PR #49 的 `5d664fe` 实现与检查结果，明确“Provider 完成”和“IM 可交付回复”的区别；规划有界诊断、统一回复判定、待核查提示与禁止自动重放。保留无文本成功及其他接入产品语义；103 项现有测试与受控探针的证据边界见[核查记录](journal/shared/2026-10-16-im-diagnostic-silent-completion-assessment.md)。本次只落 OKF，未修改功能或执行线上故障验收。
+
 - 将“Runtime 不代替产品决策”提升为[强制架构定位](rules/architecture.md)及[需求范围检查](rules/engineering.md)：SDK/CLI 接入产品拥有模式、思考强度、会话策略与选项展示，Runtime 只执行合同内校验/转发/原生映射。撤回 actmode 计划中的每轮强制恢复 default、会话生命周期选择及跨产品统一体验策略；IM Channel Gateway 不接入 Plan。记录与 mention 越界兜底的共同教训，见[产品意图归属记录](journal/shared/2026-10-16-product-intent-ownership.md)。本次只修正文档，未修改运行行为。
 
 - 建立[现有 Adapter 的 Plan 与交互探索计划](tasks/adapter-plan-interaction-exploration/brief.md)：固定默认 Default、Plan 显式选择、Work App 仅测试宿主、不纳入 MiMo/新增 Adapter。记录 Codex 临时配置真机问答及后续撤回应用层私有开关的决定；最终统一启用和模式接入仍待探索，未将实验写成最终实现。

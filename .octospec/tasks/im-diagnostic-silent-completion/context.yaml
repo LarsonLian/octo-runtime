@@ -1,0 +1,52 @@
+status: implemented
+rules:
+  - runtime-architecture
+  - runtime-protocol-design
+  - runtime-channel
+  - runtime-output-protocol
+  - runtime-stateless
+  - runtime-engineering
+  - commit
+sources:
+  - ../AGENTS.md
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/protocol-design.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/output-protocol.md
+  - .octospec/rules/stateless-execution.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+  - .octospec/tasks/im-long-running-retry/brief.md
+  - packages/octo-runtime-adapter-codex/src/app-server.ts
+  - packages/octo-runtime-protocol/schema/protocol.schema.json
+  - packages/octo-runtime-extra-channel-gateway/src/execution/task.ts
+  - packages/octo-runtime-extra-channel-gateway/src/presentation/run-projector.ts
+  - packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts
+  - test/adapters.test.js
+  - test/codex-app-server.test.js
+  - test/runtime-fixture.js
+references:
+  pull_request: https://github.com/Mininglamp-OSS/codex-channel-octo/pull/49
+  issue: https://github.com/Mininglamp-OSS/codex-channel-octo/issues/48
+  reviewed_head: 5d664fe64e1ad2bf07a8e6fea94fe48110dabdb8
+scope:
+  diagnostic_facts_owner: codex-adapter
+  delivery_judgment_owner: channel-gateway
+  provider_terminal_unchanged: true
+  auto_replay_for_silent_completion: false
+  run_schema_version: 7
+  context_schema: octo.context-envelope/v3
+  canonical_diagnostic_carrier: run.notice/provider_diagnostic
+  normal_execution_additional_notices: false
+  diagnostic_limit_per_attempt: 1
+  diagnostic_message_max_utf8_bytes: 2048
+  delivery_assessment: [ready, empty, needs_verification]
+milestones:
+  assessment: completed
+  m1_diagnostic_contract: completed
+  m2_adapter_transport: completed
+  m3_im_delivery: completed
+  m4_regression_live_validation: completed

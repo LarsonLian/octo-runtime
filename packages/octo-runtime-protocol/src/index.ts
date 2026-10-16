@@ -8,6 +8,7 @@ export * from "./execution-plan.js";
 export { contextHash } from "./context-hash.js";
 export type { ToolAuthorization, IssuedToolAuthorization } from "./generated/protocol-types.js";
 import { assertExperiencePayload } from "./experience.js";
+export { PROVIDER_DIAGNOSTIC_MAX_BYTES } from "./experience.js";
 import { assertModelInputParts, assertImageRecoveryParts, hasImageInput } from "./multimodal.js";
 export {
   IMAGE_INPUT_LIMITS,

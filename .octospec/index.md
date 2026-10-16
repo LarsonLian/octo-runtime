@@ -42,6 +42,8 @@
 
 ## 历史与取舍
 
+- [IM 中途诊断后无有效回复的收尾体验](tasks/im-diagnostic-silent-completion/brief.md)：参考 PR #49，已实施首条有界诊断和 IM 待核查收尾；正常路径无新增诊断通知、网络或模型调用。全量 929 通过、8 跳过，im-test 五场景及真实桌面组件验收通过，见[实施记录](journal/shared/2026-10-16-im-diagnostic-silent-completion-delivery.md)。
+
 - [现有 Adapter 的 Plan 模式与用户交互探索体验](tasks/adapter-plan-interaction-exploration/brief.md)：Context v3 显式 actmode 已接通 Codex、CC、OpenCode ACP，完成 Work App / im-test 验证及 Codex 结构化问答；会话及模式默认策略归产品，IM Channel Gateway 不接入 Plan。限制见[交付记录](journal/shared/2026-10-16-actmode-first-three-delivery.md)，职责纠偏见[记录](journal/shared/2026-10-16-product-intent-ownership.md)。
 
 - [Runtime 长期运行四项整改总览与评分](guides/runtime-long-running-review-plan.md)：OpenClaw 入队过滤/容量、小时日志保留与单文件 100 MiB、整请求 32 MiB 与图片 IPC、64 Bot/配置操作准入已分批实施；保留实施前评分 96/95/96/95，实际验证与推送状态见[收尾记录](journal/shared/2026-10-16-hourly-log-delivery.md)。

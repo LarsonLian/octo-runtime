@@ -5,6 +5,7 @@
 import type { CanonicalEvent, FailureEnvelope } from "@mininglamp-oss/octo-runtime-protocol";
 import { sanitizePublicValue } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import type { ImTaskAttempt } from "../contracts.js";
+import { fromMarkdown } from "mdast-util-from-markdown";
 
 export interface ProgressItem {
   id: string;
@@ -36,6 +37,9 @@ export interface RunPresentation {
   failureDetail?: string;
   resultUnknown?: boolean;
   attempts?: ImTaskAttempt[];
+  replyAssessment?: "ready" | "empty" | "needs_verification";
+  providerDiagnostic?: { adapter: string; diagnosticId: string; category: string; message: string };
+  retryNoticeCount?: number;
 }
 
 const publicExposures = new Set(["public_reasoning", "public_summary", "public_plan"]);
@@ -54,6 +58,10 @@ export class ImRunProjector {
   #failure?: FailureEnvelope;
   #failureMessage?: string;
   #failureDetail?: string;
+  #providerDiagnostic?: RunPresentation["providerDiagnostic"];
+  #retryNoticeCount = 0;
+  #finalReply?: { text: string; allowMention: boolean };
+  #replyAssessment?: RunPresentation["replyAssessment"];
   constructor(
     readonly runId: string,
     readonly allowToolPreview = false
@@ -184,11 +192,22 @@ export class ImRunProjector {
     }
     if (event.type === "run.notice") {
       const p = event.payload;
+      if (p.code === "provider_diagnostic" && !this.#providerDiagnostic) {
+        this.#providerDiagnostic = {
+          adapter: String(p.params.adapter),
+          diagnosticId: String(p.params.diagnosticId),
+          category: String(p.params.category),
+          message: String(sanitizePublicValue(p.params.message))
+        };
+      }
+      if (p.code === "retry_scheduled")
+        this.#retryNoticeCount = Math.min(65535, this.#retryNoticeCount + 1);
       const labels: Record<string, string> = {
         retry_scheduled: "正在重试",
         context_compacted: "上下文已压缩",
         model_rerouted: "已切换模型",
-        config_warning: "执行配置提示"
+        config_warning: "执行配置提示",
+        provider_diagnostic: "执行遇到问题，等待最终结果"
       };
       this.#label = labels[p.code];
     }
@@ -204,6 +223,7 @@ export class ImRunProjector {
             ? "failed"
             : "cancelled";
       this.#endedAt = now;
+      this.#label = undefined;
       this.#failure = p.failure;
       if (event.type === "run.failed") {
         const message = sanitizePublicValue(p.message);
@@ -220,6 +240,7 @@ export class ImRunProjector {
             ? [this.#failureMessage, detail].filter(Boolean).join("\n")
             : this.#failureMessage || detail;
       }
+      this.#selectFinalReply();
       for (const item of this.#items.values())
         if (item.status === "running")
           item.status = this.#terminal === "completed" ? "completed" : "cancelled";
@@ -251,6 +272,39 @@ export class ImRunProjector {
       .filter(Boolean)
       .join("\n\n");
   }
+  // 只在终态选择一次；有故障证据的轮次才解析可见 Markdown 内容。
+  #selectFinalReply(): void {
+    let text: string;
+    let allowMention = false;
+    if (this.#terminal === "completed") {
+      const selected = this.finalText;
+      const diagnosed = !!this.#providerDiagnostic || this.#retryNoticeCount > 0;
+      const visible = diagnosed ? hasVisibleReply(selected) : !!selected.trim();
+      this.#replyAssessment = visible ? "ready" : diagnosed ? "needs_verification" : "empty";
+      allowMention = visible;
+      text = visible
+        ? selected
+        : diagnosed
+          ? "执行已结束，但未收到可确认的回复。请核查任务结果，避免重复执行。" +
+            (this.#providerDiagnostic
+              ? `\n原因：${this.#providerDiagnostic.message}\n诊断编号：${this.#providerDiagnostic.diagnosticId}`
+              : "")
+          : "执行已结束，未返回文本。";
+    } else
+      text =
+        this.#terminal === "cancelled"
+          ? "本轮执行已中断。"
+          : `执行失败：${clampRunes(this.#failureDetail || "系统未返回具体原因，请查看运行记录。", 8000)}`;
+    this.#finalReply = { text, allowMention };
+  }
+  get finalReply(): { text: string; allowMention: boolean } {
+    return (
+      this.#finalReply ?? {
+        text: "本轮执行结果未知，请查看运行记录，避免重复执行。",
+        allowMention: false
+      }
+    );
+  }
   snapshot(now = Date.now()): RunPresentation {
     const items = structuredClone([...this.#items.values()]);
     return {
@@ -269,9 +323,41 @@ export class ImRunProjector {
       modelStepCount: items.filter((i) => i.kind === "model_step").length,
       failure: this.#failure,
       failureMessage: this.#failureMessage,
-      failureDetail: this.#failureDetail
+      failureDetail: this.#failureDetail,
+      replyAssessment: this.#replyAssessment,
+      providerDiagnostic: this.#providerDiagnostic && { ...this.#providerDiagnostic },
+      ...(this.#retryNoticeCount ? { retryNoticeCount: this.#retryNoticeCount } : {})
     };
   }
+}
+
+function hasVisibleReply(text: string): boolean {
+  const visible = (value: string): boolean =>
+    !!value.replace(/[\s\p{Default_Ignorable_Code_Point}]/gu, "");
+  if (!visible(text)) return false;
+  interface ReplyNode {
+    type: string;
+    value?: string;
+    children?: readonly ReplyNode[];
+    url?: string;
+    identifier?: string;
+  }
+  const tree = fromMarkdown(text);
+  const definitions = new Set<string>();
+  const collectDefinitions = (node: ReplyNode): void => {
+    if (node.type === "definition" && node.url && node.identifier) definitions.add(node.identifier);
+    for (const child of node.children ?? []) collectDefinitions(child);
+  };
+  collectDefinitions(tree);
+  const visit = (node: ReplyNode): boolean => {
+    if (node.type === "definition") return false;
+    if (node.type === "html") return visible((node.value ?? "").replace(/<!--[\s\S]*?-->/g, ""));
+    if (["text", "code", "inlineCode"].includes(node.type)) return visible(node.value ?? "");
+    if (node.type === "image") return !!node.url;
+    if (node.type === "imageReference") return definitions.has(node.identifier ?? "");
+    return (node.children ?? []).some(visit);
+  };
+  return visit(tree);
 }
 
 export function clampRunes(value: string, maximum: number): string {

@@ -5,6 +5,10 @@ import { ImRuntime } from "../packages/octo-runtime-extra-channel-gateway/dist/i
 import { GatewayTransport } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/channel.js";
 import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-core";
 import { failurePayload } from "@mininglamp-oss/octo-runtime-protocol";
+import { canonicalEvents, invocationInput } from "@mininglamp-oss/octo-runtime-protocol";
+import { spawnAdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
+import { fileURLToPath } from "node:url";
+import { buildReasoningFrame } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/reasoning-frame.js";
 const event = (type, payload = {}) => ({ protocolVersion: 2, type, payload });
 const failure = () => {
   const payload = failurePayload(
@@ -193,3 +197,47 @@ test("a successful retry discards partial failed-attempt text", async (t) => {
     ["run.failed", "run.completed"]
   );
 });
+
+for (const mode of ["normal", "recovered", "silent", "snapshot", "tool", "failed"]) {
+  test(`Codex subprocess → Host/RPC → IM: ${mode}`, { timeout: 10000 }, async (t) => {
+    const hosted = await spawnAdapterHost({
+      entrypoint: fileURLToPath(new URL("../test-support/im-diagnostic-host.mjs", import.meta.url))
+    });
+    t.after(() => hosted.close());
+    const f = await fixture(t, async function* (request, environment) {
+      yield* canonicalEvents(
+        hosted.client.invokeFrames(invocationInput(request, "canonical", "codex"), environment)
+      );
+    });
+    f.send(`DIAGNOSTIC_QA:${mode}`);
+    await f.done();
+    assert.equal(f.calls.length, 1, "a diagnostic must not schedule a new invocation");
+    assert.equal(f.replies.length, 1);
+    assert.equal(f.cards.length, 1);
+    assert.equal(f.cards[0].finished, true);
+    const snapshot = f.cards[0].snapshots.at(-1);
+    const frame = buildReasoningFrame(snapshot, {
+      ref: { id: "ai.reasoning-process", version: "0.4.0" },
+      maxPayloadBytes: 16384
+    });
+    if (["silent", "snapshot", "tool"].includes(mode)) {
+      assert.equal(snapshot.terminal, "completed");
+      assert.equal(snapshot.replyAssessment, "needs_verification");
+      assert.match(f.replies[0].text, /请核查任务结果，避免重复执行/);
+      assert.match(f.replies[0].text, /Synthetic in-turn diagnostic/);
+      assert.doesNotMatch(f.replies[0].text, /old partial|Later diagnostic/);
+      assert.equal(frame.state, "stopped");
+      assert.equal(await f.cards[0].controls.retry(), false);
+      if (mode === "tool") assert.equal(snapshot.toolCallCount, 1);
+    } else if (mode === "failed") {
+      assert.equal(snapshot.terminal, "failed");
+      assert.match(f.replies[0].text, /Synthetic terminal failure/);
+    } else {
+      assert.equal(snapshot.terminal, "completed");
+      assert.equal(snapshot.replyAssessment, "ready");
+      assert.equal(f.replies[0].text, `DIAGNOSTIC_QA:${mode}:answer`);
+      assert.equal(frame.statusLabel, "已完成");
+      assert.equal(!!snapshot.providerDiagnostic, mode === "recovered");
+    }
+  });
+}

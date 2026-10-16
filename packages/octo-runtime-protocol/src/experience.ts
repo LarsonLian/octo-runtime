@@ -1,4 +1,5 @@
 type Payload = Record<string, unknown>;
+export const PROVIDER_DIAGNOSTIC_MAX_BYTES = 2048;
 const kinds = new Set([
   "starting",
   "thinking",
@@ -172,6 +173,23 @@ export function assertExperiencePayload(type: string, payload: Payload): void {
         case "config_warning":
           fields(params, ["warningCode"], ["warningCode"]);
           string(params.warningCode);
+          break;
+        case "provider_diagnostic":
+          fields(
+            params,
+            ["adapter", "diagnosticId", "category", "message"],
+            ["adapter", "diagnosticId", "category", "message"]
+          );
+          string(params.adapter);
+          string(params.diagnosticId);
+          string(params.category);
+          if (
+            payload.severity !== "warning" ||
+            typeof params.message !== "string" ||
+            !params.message.trim() ||
+            new TextEncoder().encode(params.message).byteLength > PROVIDER_DIAGNOSTIC_MAX_BYTES
+          )
+            throw new TypeError("invalid provider diagnostic");
           break;
         default:
           throw new TypeError("invalid notice code");

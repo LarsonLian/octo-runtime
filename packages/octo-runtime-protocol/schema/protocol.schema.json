@@ -4175,7 +4175,8 @@
             "retry_scheduled",
             "context_compacted",
             "model_rerouted",
-            "config_warning"
+            "config_warning",
+            "provider_diagnostic"
           ]
         },
         "severity": {

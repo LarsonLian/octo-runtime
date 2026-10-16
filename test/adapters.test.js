@@ -169,7 +169,8 @@ test("Codex waits for turn/completed after a non-retry error so ReAct can recove
       error: { message: "tool execution failed" }
     }
   });
-  assert.deepEqual(diagnostic.map(event => event.type), ["model_step.finished"]);
+  assert.deepEqual(diagnostic.map(event => event.type), ["model_step.finished", "run.notice"]);
+  assert.equal(diagnostic[1].payload.code, "provider_diagnostic");
   assert.equal(diagnostic.some(event => event.type === "run.failed"), false);
 
   const recovery = normalizer.normalize({

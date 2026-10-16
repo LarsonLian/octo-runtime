@@ -329,6 +329,34 @@ export function buildReasoningFrame(
     delete frame.progressText;
     frame.collapsedSummary = "执行事件流中断，请查看运行记录，避免重复执行。";
   }
+  if (snapshot.replyAssessment === "needs_verification") {
+    frame.state = "stopped";
+    frame.statusLabel = "结果待核查";
+    frame.statusTone = "Warning";
+    frame.traceExpanded = false;
+    frame.traceCollapsed = true;
+    delete frame.progressText;
+    frame.collapsedSummary = "执行已结束，但未收到可确认的回复。请核查任务结果，避免重复执行。";
+  }
+  if (snapshot.replyAssessment === "empty" && snapshot.terminal === "completed")
+    frame.statusLabel = "已结束";
+  if (snapshot.providerDiagnostic) {
+    const diagnostic = snapshot.providerDiagnostic;
+    frame.phases = [
+      ...frame.phases.slice(-2).map((phase) => ({ ...phase, actions: phase.actions.slice(-3) })),
+      {
+        thought: diagnostic.message,
+        actions: [
+          {
+            tool: "过程诊断",
+            detail: diagnostic.diagnosticId,
+            statusGlyph: "!",
+            statusTone: "Attention"
+          }
+        ]
+      }
+    ];
+  }
   for (const phase of frame.phases) phase.thought = clampRunes(phase.thought, thoughtMax);
   let total = frame.phases.reduce((size, phase) => size + Array.from(phase.thought).length, 0);
   for (const phase of frame.phases) {

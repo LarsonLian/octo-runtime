@@ -1,12 +1,14 @@
 import { actmodeEvidence, invocationEnvs, mapReasoningEffort } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
   canonicalTerminalStatus,
+  classifyFailure,
   contextHash,
   contextActmode,
   assertJsonByteLimit,
   INVOKE_REQUEST_MAX_BYTES,
   hasImageInput,
-  providerInputParts
+  providerInputParts,
+  PROVIDER_DIAGNOSTIC_MAX_BYTES
 } from "@mininglamp-oss/octo-runtime-protocol";
 import { codexEnvironmentConfig } from "./environment.js";
 /**
@@ -474,6 +476,7 @@ export class CodexEventNormalizer {
   #planRevision = 0;
   #noticeNumber = 0;
   #attempt = 1;
+  #diagnosticReported = false;
   #activeStepId?: string;
   #toolBatchStepId?: string;
   readonly #itemSteps = new Map<string, string>();
@@ -657,14 +660,55 @@ export class CodexEventNormalizer {
                 noticeId: `codex:notice:${++this.#noticeNumber}`,
                 code: "retry_scheduled",
                 severity: "warning",
-                params: { attempt: ++this.#attempt }
+                params: { attempt: (this.#attempt = Math.min(this.#attempt + 1, 65535)) }
               }
             }
           ];
         // ErrorNotification is an in-turn diagnostic. Codex may still recover
         // after a failed tool and emit more items; turn/completed is the only
         // authoritative turn terminal.
-        return this.#finishActiveStep("failed", "error");
+        const finished = this.#finishActiveStep("failed", "error");
+        if (this.#diagnosticReported) return finished;
+        this.#diagnosticReported = true;
+        const error = recordValue(params.error);
+        // 分类只使用 Provider 结构化证据；文本仅经脱敏后供业务展示。
+        const failure = classifyFailure(codexFailureDetails(error), {
+          stage: "provider.invoke",
+          defaultDomain: "provider",
+          source: { component: "octo-runtime", adapter: "codex" }
+        });
+        const safeMessage = String(
+          sanitizePublicValue(
+            (stringValue(error?.message) || stringValue(params.message)).trim() ||
+              "Codex reported an in-turn error"
+          )
+        );
+        let message = "";
+        let bytes = 0;
+        for (const character of safeMessage) {
+          const size = Buffer.byteLength(character);
+          if (bytes + size > PROVIDER_DIAGNOSTIC_MAX_BYTES) break;
+          message += character;
+          bytes += size;
+        }
+        return [
+          ...finished,
+          {
+            protocolVersion: 2,
+            type: "run.notice",
+            payload: {
+              noticeId: `codex:notice:${++this.#noticeNumber}`,
+              code: "provider_diagnostic",
+              severity: "warning",
+              params: {
+                adapter: "codex",
+                diagnosticId: failure.diagnosticId,
+                category: failure.category,
+                message
+              }
+            }
+          }
+        ];
       }
       default: {
         if (isToolArgsDeltaMethod(native.method)) {
@@ -2201,7 +2245,7 @@ function itemCompletedEvents(
           channel,
           ...(id ? { messageId: id } : {}),
           ...(stepId ? { stepId } : {}),
-          ...(stringValue(item.text) ? { text: stringValue(item.text) } : {})
+          ...(typeof item.text === "string" ? { text: item.text } : {})
         }
       }
     ];
