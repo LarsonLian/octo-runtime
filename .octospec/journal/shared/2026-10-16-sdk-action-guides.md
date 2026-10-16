@@ -25,3 +25,11 @@ OKF lint 与 git diff --check 通过。本轮仅文档；不修改产品运行�
 宿主示例直接依赖仍为 daemon、Host、Codex、OpenClaw，IM 再加 Gateway。protocol、core、adapter-sdk 等已由内部包声明，子仓负责安装和构建；宿主直接 import 时再添加直接依赖。当前其他 Adapter 仍在传递依赖中，加载两个不代表裁剪安装依赖，正式发行需完整生产依赖闭包。相对路径以声明依赖的 package.json 为基准，开发机与 CI 保持相同子目录即可使用。
 
 在无 pnpm-workspace.yaml 的隔离宿主中，将现有 Runtime 仓映射到 `octo-runtime/` 子目录，以与文档完全一致的 5 条相对 `link:` 依赖执行 pnpm 11.19.0 离线安装成功；两篇指南 JSON 与包路径校验通过。Node 实际导入 5 包成功，从 daemon 入口解析 protocol/core/adapter-sdk 成功，且宿主没有这三项直接依赖。只验证导入与依赖解析，不启动 daemon、Host 或 IM。行为依据同时核对 [pnpm link 官方文档](https://pnpm.io/cli/link)。
+
+## 宿主统一 pnpm workspace（当前方案）
+
+用户随后明确改用统一 workspace，取代上节的独立子仓安装与 `link:` 接入步骤。要求使用 pnpm 安装和构建；submodule 在 `octo-runtime/`，开发来源为 GitHub 的 `feat/open-source-github` 分支。第一步配置宿主 `pnpm-workspace.yaml`，纳入 `octo-runtime/packages/*`；第二步在宿主 package.json 添加 `workspace:*` dependencies。宿主统一安装、过滤构建并维护 lockfile，不新增宿主构建 script。两篇 SDK 指南与工作区指南已同步；子仓原 workspace 文件及 lockfile 保留，集成时从宿主根目录执行。范围及验收见[任务记录](../../tasks/sdk-host-workspace/brief.md)。
+
+使用无 node_modules/dist 的独立仓库副本验证，宿主只声明五个直接包。首次构建发现七个 Adapter 直接 import protocol 而未声明直接依赖；已在各包补齐 `workspace:*` 并同步 Runtime lockfile，修复依赖声明所在边界，不让宿主添加公共包来掩盖缺失。全部包纳入 workspace 不表示自动启用全部 Adapter/Extra。
+
+pnpm 11.19.0 实测发现首次安装的原生依赖构建需要宿主显式允许：示例合并 `esbuild` 与 `@parcel/watcher` 的 allowBuilds，保留宿主现有配置。修复后宿主安装及 offline frozen-lockfile 重装通过，发现 24 个 workspace 项目；Gateway 及其依赖闭包的 20 个包全部构建通过。Node 实际导入 daemon、Host、Codex、OpenClaw、Gateway 成功，`OpenClaw → adapter-sdk → protocol` 链路断言通过。两篇指南的 7 个 JSON/YAML 代码块全部可解析。该验收仅验证安装、构建和模块解析，不启动 Provider、不连接 IM，不改变已有 Runtime 身份、Home 或配置。

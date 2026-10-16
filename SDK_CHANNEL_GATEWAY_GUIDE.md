@@ -2,11 +2,11 @@
 
 **已有 Electron 项目，只需要接入 Octo IM，按本篇操作；建议 OctoBuddy 使用本篇。** 宿主只需管理配置、启动和重载，无需自行编写 Agent 请求或消息转发。桌面程序通过 SDK 启动，不执行 Runtime CLI。
 
-## 1. 把代码加入宿主项目
+以下从已有 Electron + TypeScript 项目开始，要求使用 pnpm 11+ 安装和构建，因为宿主采用独立的 pnpm workspace，将 `octo-runtime/` submodule 内的全部内部包统一纳入。示例使用 ESM 和 Node.js 24+；保留宿主原有依赖、脚本和 Electron 版本。CommonJS 项目需将 Runtime 辅助文件单独编译为 ESM，不能直接修改整个项目的模块制式。
 
-以下从已有 Electron + TypeScript 项目开始，以 ESM、pnpm 11+ 和 Node.js 24+ 为例。宿主不需要新建或修改 `pnpm-workspace.yaml`，也不需要把 Runtime 的 packages 纳入宿主 workspace。依赖接入只需在宿主 `package.json` 中增加下文的 `link:` 声明；Runtime 子仓保留自己已有的 workspace 文件，独立安装和构建。保留宿主原有依赖、脚本和 Electron 版本。CommonJS 项目需将本节 Runtime 辅助文件单独编译为 ESM，不能直接修改整个项目的模块制式。
+宿主若当前使用 npm，先完成包管理器迁移；以下安装、构建和 CI 命令均在宿主根目录通过 pnpm 执行。
 
-本篇源码接入方式要求宿主和 Runtime 子仓均使用 pnpm。宿主若当前使用 npm，须先完成包管理器迁移再按本篇接入；不能将下文命令直接替换为 `npm install`：npm 不支持这里的 `link:`，也不能解析子仓的 `workspace:*` 依赖。
+前置准备：将 Runtime 作为 submodule 检出到宿主的 `octo-runtime/` 目录：
 
 ```bash
 # 在已有 Electron 项目（例如 OctoBuddy）的根目录执行
@@ -16,29 +16,41 @@ git submodule update --init --recursive
 
 当前开发接入使用 GitHub 仓库的 `feat/open-source-github` 分支。后续克隆宿主时使用 `git clone --recurse-submodules <宿主仓库地址>`。将 submodule 指针随宿主代码提交，固定集成版本；指定分支不会让后续检出自动跟随分支最新提交。
 
-## 2. 配置 package.json 和构建
+## 1. 配置 pnpm-workspace.yaml
 
-子仓位于宿主的 `octo-runtime/` 子目录。宿主通过 `link:./octo-runtime/packages/<包目录>` 引用具体包，路径相对于声明该依赖的 `package.json`，指向包含目标包 `package.json` 的目录。例如 core 包对应 `link:./octo-runtime/packages/octo-runtime-core`。
+在宿主根目录新建或合并 `pnpm-workspace.yaml`，保留宿主已有的 packages、allowBuilds 等配置，增加 Runtime 全部内部包：
 
-只需 Codex + OpenClaw + Octo IM 时，将这 5 项宿主直接依赖合并到宿主根目录的 `package.json`。这不是完整依赖清单；`adapter-sdk`、`protocol`、`core` 等公共包仍须在 Runtime 子仓中安装和构建，步骤见下文：
+```yaml
+packages:
+  - "octo-runtime/packages/*"
+
+allowBuilds:
+  esbuild: true
+  "@parcel/watcher": true
+
+sharedWorkspaceLockfile: true
+```
+
+该路径包含 `adapter-sdk`、`protocol`、`core`、所有 Adapter 和 Extra。SDK 接入不需要把子仓根 CLI 包或 `octo-runtime/apps/*` 加入宿主 workspace。子仓原有 workspace 文件和 lockfile 保留，集成安装统一从宿主根目录执行，使用宿主 workspace 配置及 lockfile。
+
+## 2. 添加 dependencies 并构建
+
+只需 Codex + OpenClaw + Octo IM 时，将以下内容合并到宿主根目录的 `package.json`。所有 Runtime 依赖统一使用 `workspace:*`：
 
 ```json
 {
   "type": "module",
+  "packageManager": "pnpm@11.19.0",
   "dependencies": {
-    "@mininglamp-oss/octo-runtime-daemon": "link:./octo-runtime/packages/octo-runtime-daemon",
-    "@mininglamp-oss/octo-runtime-adapter-host": "link:./octo-runtime/packages/octo-runtime-adapter-host",
-    "@mininglamp-oss/octo-runtime-adapter-codex": "link:./octo-runtime/packages/octo-runtime-adapter-codex",
-    "@mininglamp-oss/octo-runtime-adapter-openclaw": "link:./octo-runtime/packages/octo-runtime-adapter-openclaw",
-    "@mininglamp-oss/octo-runtime-extra-channel-gateway": "link:./octo-runtime/packages/octo-runtime-extra-channel-gateway"
+    "@mininglamp-oss/octo-runtime-daemon": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-codex": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-openclaw": "workspace:*",
+    "@mininglamp-oss/octo-runtime-extra-channel-gateway": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^6.0.3"
-  },
-  "scripts": {
-    "build:octo:deps": "pnpm --dir octo-runtime --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build",
-    "build:octo:host": "tsc -p tsconfig.octo.json"
   }
 }
 ```
@@ -46,32 +58,19 @@ git submodule update --init --recursive
 `daemon` 提供 SDK；`adapter-host` 承载执行；两个 Adapter 对应 Codex/OpenClaw；`extra-channel-gateway` 负责 Octo IM。内部包不独立发布到 npm，其 `package.json` 和内部 `workspace:*` 保持原样。
 
 ```bash
-# 在宿主根目录执行：先安装、构建 Runtime，再安装宿主
-pnpm --dir octo-runtime install --frozen-lockfile
-pnpm run build:octo:deps
+# 在宿主根目录执行，统一安装宿主和 Runtime 的依赖
 pnpm install
+# 调用 Runtime 包已有的 build，无需新增宿主 script
+pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
 ```
 
-两次安装处理的是两个独立项目：
+`pnpm install` 自动链接同一 workspace 中的内部依赖，例如 `OpenClaw → adapter-sdk → protocol`，并安装第三方依赖。上述 5 项是宿主直接使用的包，公共包不需要重复列到宿主；宿主代码直接 import 某个公共包时，再将它以 `workspace:*` 加入宿主直接依赖。
 
-- `pnpm --dir octo-runtime install --frozen-lockfile` 读取子仓的 `pnpm-workspace.yaml` 和 lockfile，将内部 `workspace:*` 解析为子仓包，并安装它们的第三方依赖。这一步建立公共包的实际依赖链接，不能省略。
-- `pnpm run build:octo:deps` 的筛选器末尾 `...` 表示同时构建 Channel Gateway 及其依赖闭包，包括 `adapter-sdk`、`protocol`、`core` 等公共包，按依赖顺序生成 `dist`。
-- 宿主的 `pnpm install` 只为这 5 项 `link:` 建立符号链接，不会替目标包安装传递依赖。Node.js 默认按符号链接的真实路径解析模块，因此 OpenClaw 使用的是子仓已安装的公共包：
+构建筛选器末尾 `...` 表示同时按依赖顺序构建 Gateway 及其完整依赖闭包。安装建立依赖链接，构建生成包入口所需的 `dist`；完成后即可按包名 import，无需手动配置路径别名或额外链接脚本。
 
-```text
-宿主/node_modules/@mininglamp-oss/octo-runtime-adapter-openclaw
-  → octo-runtime/packages/octo-runtime-adapter-openclaw
-    → 该包/node_modules/@mininglamp-oss/octo-runtime-adapter-sdk
-      → octo-runtime/packages/octo-runtime-adapter-sdk
-        → 该包/node_modules/@mininglamp-oss/octo-runtime-protocol
-          → octo-runtime/packages/octo-runtime-protocol
-```
+将宿主生成的 `pnpm-lock.yaml` 随宿主代码及 submodule 指针一起提交。后续机器或 CI 先检出 submodule，再在宿主根目录执行 `pnpm install --frozen-lockfile` 和上述构建命令；更新 submodule 后重新安装、构建，并提交宿主 lockfile 的实际变化。
 
-`workspace:*` 在子仓安装时由 pnpm 解析，Node.js 执行时沿已建立的链接加载编译产物。宿主代码如果直接 import 公共包，也必须将对应 `link:` 加入宿主直接依赖；例如直接使用 `adapter-sdk` 时增加 `"@mininglamp-oss/octo-runtime-adapter-sdk": "link:./octo-runtime/packages/octo-runtime-adapter-sdk"`。仅在宿主多列几项依赖，不能代替子仓安装。
-
-上述解析依赖 Node.js 默认的真实路径行为，不要为这些入口启用 `--preserve-symlinks`；宿主构建工具也须保持相同解析方式。当前 daemon/Host 还依赖其他 Adapter，下面只注册两个并不裁剪安装依赖；正式包须携带完整生产依赖并保留可解析布局，不能只复制这 5 个目录或开发时的符号链接，见第 6 节。
-
-其他机器或 CI 按相同子目录检出 submodule 后即可使用这些相对路径。运行时仍通过包名 import。
+当前 daemon/Host 还依赖其他 Adapter，下面只注册两个并不裁剪安装依赖。正式包须携带完整生产依赖并保留可解析布局，见第 6 节。
 
 ## 3. 准备 IM 配置
 
@@ -301,7 +300,7 @@ app.on("before-quit", event => {
 宿主原有 main 构建和 Electron 启动前执行：
 
 ```bash
-pnpm run build:octo:host
+pnpm exec tsc -p tsconfig.octo.json
 ```
 
 仅用 Codex 时至此完成。使用 OpenClaw 时，再加入下面的辅助文件，在读取宿主保存的 Gateway URL/Token 后调用 `setOpenClawConnection(url, token)`，然后再调用 `reloadIm()`：

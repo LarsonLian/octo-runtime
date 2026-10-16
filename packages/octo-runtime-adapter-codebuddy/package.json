@@ -5,6 +5,7 @@
   "type": "module",
   "exports": "./dist/index.js",
   "dependencies": {
+    "@mininglamp-oss/octo-runtime-protocol": "workspace:*",
     "@mininglamp-oss/octo-runtime-acp-client": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*"
   },

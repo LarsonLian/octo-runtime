@@ -158,6 +158,9 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-runtime-adapter-sdk
+      '@mininglamp-oss/octo-runtime-protocol':
+        specifier: workspace:*
+        version: link:../octo-runtime-protocol
 
   packages/octo-runtime-adapter-antigravity:
     dependencies:
@@ -173,6 +176,9 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-runtime-adapter-sdk
+      '@mininglamp-oss/octo-runtime-protocol':
+        specifier: workspace:*
+        version: link:../octo-runtime-protocol
 
   packages/octo-runtime-adapter-codebuddy:
     dependencies:
@@ -182,12 +188,18 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-runtime-adapter-sdk
+      '@mininglamp-oss/octo-runtime-protocol':
+        specifier: workspace:*
+        version: link:../octo-runtime-protocol
 
   packages/octo-runtime-adapter-codex:
     dependencies:
       '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-runtime-adapter-sdk
+      '@mininglamp-oss/octo-runtime-protocol':
+        specifier: workspace:*
+        version: link:../octo-runtime-protocol
 
   packages/octo-runtime-adapter-hermes:
     dependencies:
@@ -260,6 +272,9 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-runtime-adapter-sdk
+      '@mininglamp-oss/octo-runtime-protocol':
+        specifier: workspace:*
+        version: link:../octo-runtime-protocol
       ws:
         specifier: ^8.18.3
         version: 8.21.3
@@ -276,6 +291,9 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-runtime-adapter-sdk
+      '@mininglamp-oss/octo-runtime-protocol':
+        specifier: workspace:*
+        version: link:../octo-runtime-protocol
 
   packages/octo-runtime-adapter-qodercli:
     dependencies:
@@ -300,6 +318,9 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-runtime-adapter-sdk
+      '@mininglamp-oss/octo-runtime-protocol':
+        specifier: workspace:*
+        version: link:../octo-runtime-protocol
 
   packages/octo-runtime-core:
     dependencies:
