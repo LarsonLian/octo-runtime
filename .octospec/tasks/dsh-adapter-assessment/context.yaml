@@ -1,0 +1,41 @@
+status: deferred-backlog-p1-assessment-not-started
+rules:
+  - runtime-architecture
+  - runtime-protocol-design
+  - runtime-context-input
+  - runtime-engineering
+sources:
+  - .octospec/tasks/gateway-august-feature-assessment/assessment.md
+  - .octospec/guides/adapter-authoring.md
+  - .octospec/rules/adapter-metadata.md
+  - .octospec/rules/context-input.md
+  - .octospec/rules/output-protocol.md
+  - .octospec/rules/runtime-lifecycle.md
+decisions:
+  origin_feature: F28
+  priority: P1
+  preceding_priority:
+    priority: P0
+    scope: overall-architecture-and-execution-kernel-stability
+  timing: important-followup-after-system-stability-no-current-schedule
+  target: independent-dsh-adapter-via-existing-public-adapter-contract
+  user_objection: old-gateway-dsh-integration-not-accepted-as-target-solution
+  native_entrypoint_version_and_implementation: require-overall-assessment-not-selected
+  current_implementation_authorized: false
+  current_prototype_installation_or_live_debugging_authorized: false
+  current_turn: documents-only
+  historical_feasibility_score: 50
+  historical_score_status: preliminary-not-solution-approval-reassess-after-contract-and-version-evidence
+  current_implementation_necessity: 0
+  current_implementation_scope_coverage: 0
+  future_feature_scope_coverage: determine-during-overall-assessment-no-legacy-parity-promise
+  context_schema: octo.context-envelope/v3
+  run_schema_version: 7
+  installation_decision_owner: HostApp
+  channel_provider_specific_execution: prohibited
+  existing_identity_home_profile_and_state: preserve
+  external_document_evidence: current-official-sdk-documents-do-not-prove-old-locked-version-or-live-deployment
+verification:
+  assessment_completed: false
+  implementation_completed: false
+  runtime_tests_this_turn: not-run-documents-only
