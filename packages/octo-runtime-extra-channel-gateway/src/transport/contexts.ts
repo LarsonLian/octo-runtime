@@ -35,6 +35,33 @@ export async function build_im_contexts(
       throw new Error("IM_CONTEXT_KEY_CONFLICT");
     items.push({ namespace: "extra.im", name, payload: { source, ...payload } });
   };
+  // Octospec F01: .octospec/tasks/gateway-august-feature-assessment/assessment.md
+  // 引用是本轮业务材料；不参与命令/mention 准入，不解引用或补抓历史。
+  const reply = message.payload?.reply;
+  if (reply && typeof reply === "object" && !Array.isArray(reply)) {
+    const quoted = reply as Record<string, unknown>;
+    const payload = quoted.payload;
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      const content = payload as Record<string, unknown>;
+      if (
+        (content.type === undefined || content.type === 1) &&
+        typeof content.content === "string" &&
+        content.content.trim()
+      ) {
+        const text = Array.from(content.content);
+        const sender =
+          typeof quoted.from_name === "string" && quoted.from_name.trim()
+            ? quoted.from_name
+            : typeof quoted.from_uid === "string" && quoted.from_uid.trim()
+              ? quoted.from_uid
+              : "未知来源";
+        add("reply", {
+          text: `引用来源：${Array.from(sender).slice(0, 120).join("")}\n引用正文：\n${text.slice(0, 4000).join("")}${text.length > 4000 ? "\n<引用已截断>" : ""}`,
+          status: text.length > 4000 ? "truncated" : "present"
+        });
+      }
+    }
+  }
   if (config.group_rules && [2, 5].includes(message.channelType)) {
     const scope = groupScope(message.channelId);
     const rule = async (name: string, read: () => Promise<RuleDocument>): Promise<void> => {
