@@ -66,6 +66,12 @@ export interface ImInboundMessage {
   reply(text: string, effectKey?: string): Promise<void>;
   replyFinal?(text: string, effectKey: string): Promise<void>;
   replyFailure?(event: CanonicalEvent, effectKey: string): Promise<void>;
+  replyDeliveryUnknown?(
+    event: CanonicalEvent,
+    effectKey: string,
+    replyEffectKey: string
+  ): Promise<void>;
+  isReplyDelivered?(effectKey: string): boolean;
   buildContext(
     signal: AbortSignal,
     options?: { initialSession: boolean; mentionGuidance?: boolean }

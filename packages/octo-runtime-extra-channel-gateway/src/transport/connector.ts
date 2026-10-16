@@ -62,16 +62,35 @@ export class OctoConnector {
     effectKey: string,
     messageId?: string
   ): Promise<string | undefined> {
+    return this.#rawCard(address, card, effectKey, messageId, true);
+  }
+  async displayCard(
+    address: ImAddress,
+    card: Record<string, unknown>,
+    effectKey: string,
+    obsolete?: () => boolean
+  ): Promise<string | undefined> {
+    return this.#rawCard(address, card, effectKey, undefined, false, obsolete);
+  }
+  async #rawCard(
+    address: ImAddress,
+    card: Record<string, unknown>,
+    effectKey: string,
+    messageId: string | undefined,
+    interactive: boolean,
+    obsolete?: () => boolean
+  ): Promise<string | undefined> {
     if (this.config.cards === false) return;
     const profile = await getCardProfile({
       apiUrl: this.config.api_url,
       botToken: this.token,
       signal: this.requestSignal()
     });
+    if (this.signal.aborted || obsolete?.()) return;
     if (
       !profile.available ||
       !profile.enabled ||
-      !profile.config?.interaction_enabled ||
+      !(interactive ? profile.config?.interaction_enabled : profile.config?.display_enabled) ||
       !profile.profiles?.includes("octo/v2")
     )
       return;

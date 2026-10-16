@@ -26,6 +26,7 @@ import { createImInvocation } from "../execution/dispatcher.js";
 import { ImTask } from "../execution/task.js";
 import { ImDeliveryDispatcher } from "../delivery/dispatcher.js";
 import { ImRunProjector } from "../presentation/run-projector.js";
+import { deliveryNotice } from "../presentation/delivery-notice.js";
 import { MemoryImSessionStore, type ImSessionStore } from "./session-store.js";
 import { connectionFailure, ImConnectionError } from "../transport/connection-error.js";
 
@@ -492,7 +493,8 @@ export class ImRuntime {
     text: string,
     effectKey: string,
     requireDelivered = false,
-    final = false
+    final = false,
+    allowUnknownNotice = true
   ): Promise<void> {
     if (this.#closed || this.#signal.aborted || !this.#delivery) return;
     const receipt = await this.#delivery.deliver(effectKey, () =>
@@ -502,6 +504,21 @@ export class ImRuntime {
     );
     if (receipt.state !== "delivered") {
       this.#diagnostic(receipt.code ?? "IM_DELIVERY_FAILED");
+      if (
+        allowUnknownNotice &&
+        receipt.state === "unknown" &&
+        message.replyDeliveryUnknown &&
+        !this.#closed &&
+        !this.#signal.aborted
+      ) {
+        const notice = deliveryNotice();
+        const result = await this.#delivery.deliver(
+          `delivery-unknown:${effectKey}`,
+          () => message.replyDeliveryUnknown!(notice, `delivery-unknown:${effectKey}`, effectKey),
+          { obsolete: () => Boolean(message.isReplyDelivered?.(effectKey)) }
+        );
+        if (result.state !== "delivered") this.#diagnostic("IM_DELIVERY_NOTICE_FAILED");
+      }
       if (requireDelivered) throw new Error(receipt.code ?? "IM_DELIVERY_FAILED");
     }
   }
@@ -799,7 +816,14 @@ export class ImRuntime {
     if (this.#closed || this.#signal.aborted) return;
     const { text, allowMention } = projector.finalReply;
     // 最终文本拥有独立投递身份，即使进度卡投递失败，也必须尝试回复用户。
-    await this.#reply(message, text, `final:${rootRunId}`, false, allowMention);
+    await this.#reply(
+      message,
+      text,
+      `final:${rootRunId}`,
+      false,
+      allowMention,
+      projector.snapshot().terminal !== "cancelled"
+    );
   }
   #saveBinding(key: string, session: ImSession): void {
     this.#sessionStore.save(key, {

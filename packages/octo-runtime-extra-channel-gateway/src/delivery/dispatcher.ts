@@ -4,6 +4,7 @@
  */
 import type { ImDeliveryReceipt } from "../contracts.js";
 import { OctoApiError } from "../transport/api/errors.js";
+import { ImSendError } from "./text-send.js";
 
 export class ImDeliveryDispatcher {
   readonly #receipts = new Map<string, ImDeliveryReceipt>();
@@ -32,12 +33,20 @@ export class ImDeliveryDispatcher {
       } catch (error) {
         const status = error instanceof OctoApiError ? error.status : undefined;
         // 无 HTTP 回应时可能已经送达；保留 unknown，不能把网络异常当作确定未发送。
+        const state = error instanceof ImSendError ? error.state : status ? "failed" : "unknown";
         receipt = {
           effectKey,
-          state: status ? "failed" : "unknown",
-          code: status ? `IM_HTTP_${status}` : "IM_DELIVERY_UNKNOWN"
+          state: receipt.state === "unknown" ? "unknown" : state,
+          code:
+            error instanceof ImSendError
+              ? error.code
+              : status
+                ? `IM_HTTP_${status}`
+                : "IM_DELIVERY_UNKNOWN"
         };
         this.#record(receipt);
+        // WS 已在同一确认窗口完成四次预算，不再叠乘 REST 的重试次数。
+        if (error instanceof ImSendError) break;
         if (status && status !== 429 && status < 500) break;
         if (attempt + 1 === attempts) break;
         const delay =

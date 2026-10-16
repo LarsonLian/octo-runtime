@@ -85,6 +85,13 @@ export const FAILURE_CATALOG = Object.freeze({
     "retry_later",
     30_000
   ),
+  "OH-RUN-2005": entry(
+    "channel_delivery_unknown",
+    "回复已尝试发送，但未收到消息服务的确认，可能已送达。请先检查聊天记录，避免重复提交任务。",
+    "error.channel.delivery_unknown",
+    false,
+    "contact_admin"
+  ),
   "OH-RUN-2008": entry(
     "runtime_local_store",
     "运行设备存储异常，本轮任务已安全结束。",
@@ -550,6 +557,7 @@ function classify(
   if (explicit && timeouts[explicit]) return result(timeouts[explicit], explicit);
   if (explicit === "RUNTIME_DRAINING") return result("OH-RUN-2002", "RUNTIME_DRAINING");
   if (explicit === "IM_SESSION_QUEUE_FULL") return result("OH-RUN-2004", explicit);
+  if (explicit === "IM_DELIVERY_UNKNOWN") return result("OH-RUN-2005", explicit);
   if (
     [
       "OUTBOX_HARD_LIMIT",

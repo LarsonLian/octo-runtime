@@ -28,6 +28,7 @@ import { getGroupMembers, type GroupMember } from "./api/conversations.js";
 import { getJson } from "./api/client.js";
 import { connectionFailure, ImConnectionError } from "./connection-error.js";
 import { sendReadReceipt } from "./api/messages.js";
+import { deliveryNoticeCard } from "../presentation/delivery-notice.js";
 
 /** Octo IM 平台连接器：WuKong 与 Octo REST 适配；不是 MCP 连接器。 */
 export class GatewayTransport {
@@ -132,6 +133,27 @@ export class GatewayTransport {
             spaceId: this.#spaceId,
             botId: this.config.bot_id,
             channelType: message.channelType
+          },
+          isReplyDelivered: (effectKey) =>
+            connection.isDelivered(stableEffectKey(this.identity, message, effectKey, "text")),
+          replyDeliveryUnknown: async (event, effectKey, replyEffectKey) => {
+            if (
+              this.#closed ||
+              signal.aborted ||
+              connection.isDelivered(
+                stableEffectKey(this.identity, message, replyEffectKey, "text")
+              )
+            )
+              return;
+            await this.#api!.displayCard(
+              message,
+              deliveryNoticeCard(event),
+              stableEffectKey(this.identity, message, effectKey, "delivery"),
+              () =>
+                connection.isDelivered(
+                  stableEffectKey(this.identity, message, replyEffectKey, "text")
+                )
+            );
           },
           replyFailure: async (event, effectKey) => {
             if (this.#closed || signal.aborted) return;

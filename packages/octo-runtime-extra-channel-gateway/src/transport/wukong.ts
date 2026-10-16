@@ -12,6 +12,7 @@ import {
   randomUUID
 } from "node:crypto";
 import WebSocket from "ws";
+import { ImSendError, ImTextSend } from "../delivery/text-send.js";
 import type { ImTextMention } from "./mentions.js";
 import {
   connectionFetch,
@@ -165,10 +166,11 @@ export class WukongConnection {
   #lastPacket = Date.now();
   #closed = false;
   #ready = false;
-  #sends = new Map<
-    number,
-    { resolve: (id: string) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
-  >();
+  #sends = new Map<number, { operation: ImTextSend; key: string }>();
+  #active = new Set<ImTextSend>();
+  #confirmed = new Set<string>();
+  #retained = new Map<ImTextSend, NodeJS.Timeout>();
+  #abort = new AbortController();
   constructor(
     readonly onMessage: (message: ImMessage) => void,
     readonly onDisconnect: (error: Error) => void = () => {}
@@ -224,11 +226,10 @@ export class WukongConnection {
         this.#ready = false;
         clearTimeout(timeout);
         if (this.#heartbeat) clearInterval(this.#heartbeat);
-        for (const pending of this.#sends.values()) {
-          clearTimeout(pending.timer);
-          pending.reject(new Error("IM_DISCONNECTED"));
-        }
+        for (const pending of [...this.#active]) pending.disconnected();
         this.#sends.clear();
+        for (const timer of this.#retained.values()) clearTimeout(timer);
+        this.#retained.clear();
         const error = failure ?? new ImConnectionError("IM_DISCONNECTED", true);
         if (!ready) reject(error);
         else if (!this.#closed) this.onDisconnect(error);
@@ -317,10 +318,13 @@ export class WukongConnection {
               const reason = reader.byte();
               const pending = this.#sends.get(seq);
               if (pending) {
-                clearTimeout(pending.timer);
-                this.#sends.delete(seq);
-                if (reason === 1) pending.resolve(id);
-                else pending.reject(new Error(`IM_SEND_REJECTED_${reason}`));
+                if (reason === 1) {
+                  this.#confirmed.add(pending.key);
+                  if (this.#confirmed.size > 512)
+                    this.#confirmed.delete(this.#confirmed.values().next().value!);
+                  this.#forget(pending.operation);
+                }
+                pending.operation.ack(id, reason);
               }
             } else if (kind === 9)
               throw new ImConnectionError(`IM_SERVER_DISCONNECTED_${reader.byte()}`, false);
@@ -389,53 +393,78 @@ export class WukongConnection {
     text: string,
     clientMsgNo: string = randomUUID(),
     spaceId?: string,
-    mention?: ImTextMention
+    mention?: ImTextMention,
+    signal?: AbortSignal
   ): Promise<string> {
     if (this.#socket?.readyState !== WebSocket.OPEN || !this.#key)
-      return Promise.reject(new Error("IM_NOT_READY"));
+      return Promise.reject(new ImSendError("IM_NOT_READY", "failed"));
     if (
       Buffer.byteLength(text) > 256 * 1024 ||
-      this.#sends.size >= 64 ||
+      this.#active.size >= 64 ||
       this.#socket.bufferedAmount > LIMIT
     )
-      return Promise.reject(new Error("IM_SEND_CAPACITY_EXHAUSTED"));
-    const seq = ++this.#seq,
-      encrypted = this.#encrypt(
-        JSON.stringify({
-          type: 1,
-          content: text,
-          ...(spaceId ? { space_id: spaceId } : {}),
-          ...(mention ? { mention } : {})
-        })
-      );
-    const body = new Writer()
-      .byte(0)
-      .u32(seq)
-      .string(clientMsgNo)
-      .string(channelId)
-      .byte(channelType);
-    if (this.#version >= 3) body.u32(0);
-    body
-      .string(md5(this.#encrypt(`${seq}${clientMsgNo}${channelId}${channelType}${encrypted}`)))
-      .bytes(Buffer.from(encrypted));
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.#sends.delete(seq);
-        reject(new Error("IM_SEND_TIMEOUT"));
-      }, 15_000);
-      this.#sends.set(seq, { resolve, reject, timer });
-      this.#socket!.send(frame(3, body.finish(), 2), (error) => {
-        if (error) {
-          clearTimeout(timer);
-          this.#sends.delete(seq);
-          reject(new Error("IM_SEND_FAILED", { cause: error }));
-        }
-      });
-    });
+      return Promise.reject(new ImSendError("IM_SEND_CAPACITY_EXHAUSTED", "failed"));
+    const encrypted = this.#encrypt(
+      JSON.stringify({
+        type: 1,
+        content: text,
+        ...(spaceId ? { space_id: spaceId } : {}),
+        ...(mention ? { mention } : {})
+      })
+    );
+    const operation = new ImTextSend(
+      () => {
+        if (!this.connected) throw new ImSendError("IM_NOT_READY", "failed");
+        if (this.#socket!.bufferedAmount > LIMIT)
+          throw new ImSendError("IM_SEND_CAPACITY_EXHAUSTED", "failed");
+        const seq = ++this.#seq;
+        const body = new Writer()
+          .byte(0)
+          .u32(seq)
+          .string(clientMsgNo)
+          .string(channelId)
+          .byte(channelType);
+        if (this.#version >= 3) body.u32(0);
+        body
+          .string(md5(this.#encrypt(`${seq}${clientMsgNo}${channelId}${channelType}${encrypted}`)))
+          .bytes(Buffer.from(encrypted));
+        this.#sends.set(seq, { operation, key: clientMsgNo });
+        this.#socket!.send(frame(3, body.finish(), 2), (error) => {
+          if (error) operation.disconnected();
+        });
+      },
+      (state) => {
+        this.#active.delete(operation);
+        if (state === "unknown" && !this.#closed) {
+          // 留出 REST 降级窗口关联迟到 ACK；映射与计时器均有界。
+          while (this.#retained.size >= 64) this.#forget(this.#retained.keys().next().value!);
+          const timer = setTimeout(() => this.#forget(operation), 30_000);
+          timer.unref();
+          this.#retained.set(operation, timer);
+        } else this.#forget(operation);
+      },
+      signal ? AbortSignal.any([this.#abort.signal, signal]) : this.#abort.signal
+    );
+    this.#active.add(operation);
+    operation.start();
+    return operation.result;
+  }
+  isDelivered(clientMsgNo: string): boolean {
+    return this.#confirmed.has(clientMsgNo);
+  }
+  #forget(operation: ImTextSend): void {
+    clearTimeout(this.#retained.get(operation));
+    this.#retained.delete(operation);
+    for (const [seq, pending] of this.#sends)
+      if (pending.operation === operation) this.#sends.delete(seq);
   }
   close(): Promise<void> {
     if (this.#closing) return this.#closing;
     this.#closed = true;
+    this.#abort.abort();
+    for (const timer of this.#retained.values()) clearTimeout(timer);
+    this.#retained.clear();
+    this.#sends.clear();
     this.#ready = false;
     if (this.#heartbeat) clearInterval(this.#heartbeat);
     const socket = this.#socket;
