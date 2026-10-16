@@ -627,7 +627,7 @@ function classify(
   }
   if (
     defaultDomain === "provider" &&
-    containsAny(text, ["timeout", "timed out", "etimedout", "econnreset"])
+    (hasTimeoutEvidence(explicit, text) || explicit === "ECONNRESET" || /\beconnreset\b/.test(text))
   ) {
     return result("OH-PRV-4006", "PROVIDER_TIMEOUT");
   }
@@ -657,7 +657,13 @@ function isProtocolFailure(code: string | undefined, text: string): boolean {
 
 function isAdapterTimeout(code: string | undefined, text: string, domain: FailureDomain): boolean {
   if (code === "ADAPTER_TIMEOUT" || code === "RPC_TIMEOUT") return true;
-  return domain === "adapter" && containsAny(text, ["timeout", "timed out", "etimedout"]);
+  return domain === "adapter" && hasTimeoutEvidence(code, text);
+}
+
+function hasTimeoutEvidence(code: string | undefined, text: string): boolean {
+  if (code === "ETIMEDOUT" || code === "TIMEOUT" || code?.endsWith("_TIMEOUT")) return true;
+  // Keep timeout words and error identifiers, but exclude fields such as tool_timeout_sec.
+  return /\b(?:[a-z0-9]+_)*timeout(?:error)?\b|\btimed\s+out\b|\betimedout\b/.test(text);
 }
 
 function result(

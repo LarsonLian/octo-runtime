@@ -109,6 +109,56 @@ test("failure payload is backwards compatible and excludes untrusted secrets", (
   assert.doesNotThrow(() => assertCanonicalEvent({ protocolVersion: 2, type: "run.failed", payload }));
 });
 
+test("configuration timeout field names do not imply a timeout", () => {
+  const messages = [
+    'Error parsing config: invalid type: string "", expected u64 in mcp_servers.node_repl.tool_timeout_sec',
+    'invalid value for mcp_servers.local.startup_timeout_sec',
+    'APPROVAL_TIMEOUT_INVALID',
+    'invalid model_idle_timeout_ms and appServerRequestTimeoutMs'
+  ];
+  for (const message of messages) {
+    assert.equal(classify(new Error(message), "adapter").code, "OH-ADP-3004", message);
+    assert.equal(classify(new Error(message), "provider").code, "OH-PRV-4099", message);
+  }
+});
+
+test("explicit errors and bounded timeout expressions retain their classifications", () => {
+  const inputs = [
+    { code: "ETIMEDOUT", message: "request failed" },
+    new Error("upstream timed out after 30000ms"),
+    new Error("request timeout after 30000ms"),
+    Object.assign(new Error("operation interrupted"), { name: "TimeoutError" }),
+    new Error("APPROVAL_CLEANUP_TIMEOUT"),
+    { code: "ERR_SOCKET_TIMEOUT", message: "request failed" },
+    new Error("request failed", { cause: Object.assign(new Error("connection failed"), { code: "ETIMEDOUT" }) }),
+    { message: "tool_timeout_sec is configured, but the request timed out" }
+  ];
+  for (const input of inputs) {
+    assert.equal(classify(input, "adapter").code, "OH-ADP-3006");
+    assert.equal(classify(input, "provider").code, "OH-PRV-4006");
+  }
+  for (const input of [{ code: "ECONNRESET" }, new Error("read ECONNRESET")])
+    assert.equal(classify(input, "provider").reasonCode, "PROVIDER_TIMEOUT");
+  assert.equal(classify({ code: "RPC_TIMEOUT", message: "invalid tool_timeout_sec" }, "adapter").code, "OH-ADP-3013");
+});
+
+test("provider HTTP and protocol errors retain priority over generic timeout evidence", () => {
+  for (const [status, code] of [[401, "OH-PRV-4001"], [403, "OH-PRV-4002"], [404, "OH-PRV-4003"], [429, "OH-PRV-4005"], [503, "OH-PRV-4006"]]) {
+    for (const message of ["invalid tool_timeout_sec", "upstream timed out"])
+      assert.equal(classify({ status, message }, "provider").code, code);
+  }
+  assert.equal(classify({ code: "INVALID_JSON", message: "upstream timed out" }, "adapter").code, "OH-ADP-3005");
+  assert.equal(classify({ code: "ADAPTER_MODEL_IDLE_TIMEOUT", message: "invalid tool_timeout_sec" }, "adapter").code, "OH-ADP-3008");
+});
+
+test("configuration parsing diagnostics do not enter public failure messages", () => {
+  const payload = failurePayload(new Error('invalid tool_timeout_sec in config: Authorization: Bearer private-token'), {
+    defaultDomain: "adapter", stage: "adapter.invoke", source
+  });
+  assert.equal(payload.failure.code, "OH-ADP-3004");
+  assert.doesNotMatch(JSON.stringify(payload), /private-token|Authorization|tool_timeout_sec/);
+});
+
 test("Agent Run UUID deterministically owns the diagnostic UUID", () => {
   const runId = "run_35c4ffc5db9940c9be7ce3a894819ae3";
   const classified = classifyFailure({ code: "RPC_TIMEOUT" }, {
