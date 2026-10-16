@@ -21,7 +21,7 @@ export function acceptsImMessage(
     message.fromUid === config.bot_id ||
     !message.messageId ||
     !message.channelId ||
-    (message.payload.type !== 1 && message.payload.type !== 2) ||
+    ![1, 2, 8, 18].includes(message.payload.type as number) ||
     (message.payload.type === 1 && typeof message.payload.content !== "string") ||
     (message.payload.space_id && message.payload.space_id !== config.spaceId)
   )

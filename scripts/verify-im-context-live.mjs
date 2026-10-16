@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { build_im_contexts } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
@@ -39,6 +41,7 @@ const group = groups[0].find(
 );
 assert.ok(group, "An existing isolated Channel_QA_ group shared by both test bots is required");
 const marker = `F01_QA_${Date.now()}`;
+const resourceTest = process.argv.includes("--resources");
 const quoted = {
   from_uid: receiver.id,
   from_name: "引用测试来源",
@@ -51,6 +54,30 @@ const env = {
 };
 delete env.OCTO_BOT_ID;
 delete env.OCTO_PROFILE;
+let payload = { type: 1, content: marker, reply: quoted };
+if (resourceTest) {
+  const directory = await mkdtemp(join(tmpdir(), "octo-resource-qa-"));
+  try {
+    const file = join(directory, `${marker}.txt`);
+    await writeFile(file, marker);
+    let upload;
+    try {
+      const { stdout } = await execute("octo-cli", ["file", "upload", "--file", file], {
+        env,
+        timeout: 30000,
+        maxBuffer: 1 << 20
+      });
+      upload = JSON.parse(stdout).data;
+    } catch {
+      throw Error("IM_TEST_UPLOAD_FAILED");
+    }
+    const address = upload?.url ?? upload?.path;
+    assert.equal(typeof address, "string", "Uploaded file must have a real address");
+    payload = { type: 8, content: marker, name: `${marker}.txt`, url: address };
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
 try {
   const { stdout } = await execute(
     "octo-cli",
@@ -61,7 +88,7 @@ try {
       JSON.stringify({
         channel_id: group.group_no,
         channel_type: 2,
-        payload: { type: 1, content: marker, reply: quoted }
+        payload
       })
     ],
     { env, timeout: 30000, maxBuffer: 1 << 20 }
@@ -92,7 +119,7 @@ for (let attempt = 0; attempt < 10 && !received; attempt++) {
   if (!received) await new Promise((resolve) => setTimeout(resolve, 300));
 }
 assert.ok(received, "Test message must be visible through the receiver identity");
-assert.deepEqual(received.payload.reply, quoted);
+if (!resourceTest) assert.deepEqual(received.payload.reply, quoted);
 const envelope = await build_im_contexts(
   {
     bot_id: receiver.id,
@@ -115,14 +142,16 @@ const envelope = await build_im_contexts(
 assert.ok(
   envelope.some(
     (item) =>
-      item.namespace === "extra.im" && item.name === "reply" && item.payload.text.includes(marker)
+      item.namespace === "extra.im" &&
+      item.name === (resourceTest ? "resources" : "reply") &&
+      item.payload.text.includes(marker)
   )
 );
 console.log(
   JSON.stringify({
     endpoint: receiver.api,
-    feature: "F01",
-    serverPreservesReply: true,
+    feature: resourceTest ? "F04" : "F01",
+    serverPreservesPayload: true,
     contextProjected: true
   })
 );

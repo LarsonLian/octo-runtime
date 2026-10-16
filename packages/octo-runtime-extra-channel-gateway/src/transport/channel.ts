@@ -90,7 +90,14 @@ export class GatewayTransport {
           conversationId: message.channelId,
           conversationKind:
             message.channelType === 1 ? "direct" : message.channelType === 5 ? "thread" : "group",
-          text: message.payload.type === 2 ? "" : String(message.payload.content),
+          text:
+            message.payload.type === 2
+              ? ""
+              : message.payload.type === 8 || message.payload.type === 18
+                ? typeof message.payload.content === "string" && message.payload.content.trim()
+                  ? message.payload.content
+                  : "请根据本轮资源上下文处理此资源。"
+                : String(message.payload.content),
           ...(message.payload.type === 2
             ? {
                 buildInputs: (turnSignal: AbortSignal) =>

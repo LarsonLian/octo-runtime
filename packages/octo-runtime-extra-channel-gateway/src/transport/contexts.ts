@@ -9,6 +9,7 @@ import {
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type { ScopedOctoBotConfig } from "../contracts.js";
 import type { ImMessage } from "./wukong.js";
+import { resourceContext, RESOURCE_GUIDANCE } from "./resources.js";
 import { groupScope } from "./normalize.js";
 import { getGroupMd, getThreadMd, type RuleDocument } from "./api/rules.js";
 import { getChannelMessages } from "./api/conversations.js";
@@ -61,6 +62,11 @@ export async function build_im_contexts(
         });
       }
     }
+  }
+  const resources = resourceContext(message);
+  if (resources) {
+    add("resources", resources);
+    items[items.length - 1].guidance = RESOURCE_GUIDANCE;
   }
   if (config.group_rules && [2, 5].includes(message.channelType)) {
     const scope = groupScope(message.channelId);
